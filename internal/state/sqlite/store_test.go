@@ -99,6 +99,15 @@ func TestRepositoryScopeAndImmutableReferences(t *testing.T) {
 		job.Phase = record.PhasePublication
 		return tx.PutJob(ctx, job)
 	}), state.ErrConflict)
+	// Only a job that skipped verification and publishes may step straight from preparation to publication.
+	require.ErrorIs(t, s.Update(t.Context(), a.ID, func(ctx context.Context, tx state.Tx) error {
+		job, err := tx.Job(ctx, first.JobID)
+		if err != nil {
+			return err
+		}
+		job.Phase, job.Spec.Verification, job.Spec.Destination = record.PhasePublication, record.VerificationSkipped, record.Published
+		return tx.PutJob(ctx, job)
+	}), state.ErrConflict, "the verification policy is immutable; only a job accepted with it may skip the phase")
 }
 func TestRollbackSnapshotAndReadOnlyContract(t *testing.T) {
 	t.Parallel()

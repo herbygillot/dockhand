@@ -70,6 +70,17 @@ func TestActionRulesDecideWhatEachActionAccepts(t *testing.T) {
 	publish.Destination = record.Published
 	_, err = normalizeSpec(publish)
 	require.ErrorContains(t, err, "publish requires publication intent")
+	unverified := validSpec(record.Publish)
+	unverified.Destination, unverified.Verification, unverified.Build = record.Published, record.VerificationSkipped, nil
+	unverified.Publication = &record.PublicationSpec{Forge: "fixture", Repository: "macports/macports-ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "master", PushURL: "https://example.invalid/ports.git", BaseURL: "https://example.invalid/base.git", LockDirectory: "/locks", Unverified: true, Desired: record.PublicationContent{Head: unverified.Source.Commit, Title: "fixture: update"}}
+	_, err = normalizeSpec(unverified)
+	require.NoError(t, err, "an explicitly unverified publication needs no build or evidence")
+	unverified.Publication.Unverified = false
+	_, err = normalizeSpec(unverified)
+	require.Error(t, err, "skipped verification must be declared on the publication")
+	unverified.Publication.Unverified, unverified.Publication.EvidenceAttempt = true, "attempt"
+	_, err = normalizeSpec(unverified)
+	require.Error(t, err, "an unverified publication cites no evidence")
 	publish.KeepFailed = true
 	_, err = normalizeSpec(publish)
 	require.ErrorContains(t, err, "keeping failed environments requires local verification")

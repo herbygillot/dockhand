@@ -78,7 +78,9 @@ func (c *cycle) planPublication(ctx context.Context, job record.Job) (bool, stri
 		if job.Prepared == nil || change.CurrentRevision != revisionID || change.Disposition != record.ChangeOpen || change.Branch != job.Prepared.Branch {
 			return ErrStaleRevision
 		}
-		if job.ReusedAttempt != "" {
+		if job.Spec.Verification == record.VerificationSkipped {
+			// An unverified publication cites no attempt; the PR body discloses it.
+		} else if job.ReusedAttempt != "" {
 			evidence, err = r.Attempt(ctx, job.ReusedAttempt)
 		} else {
 			var attempts []record.Attempt
@@ -107,7 +109,7 @@ func (c *cycle) planPublication(ctx context.Context, job record.Job) (bool, stri
 			}
 			associated = &pr
 		}
-		return policy.PublicationEvidence(ctx, r, job, record.PublicationSpec{EvidenceAttempt: evidence.ID})
+		return policy.PublicationEvidence(ctx, r, job, record.PublicationSpec{EvidenceAttempt: evidence.ID, Unverified: evidence.ID == ""})
 	})
 	if err != nil {
 		return fail(err)

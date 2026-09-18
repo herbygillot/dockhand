@@ -24,12 +24,12 @@ type Streams struct {
 // The defaults are the foreground and the PR: a command stays through
 // verification and publication unless told to stop earlier or to detach.
 type Options struct {
-	Detach    bool
-	Trace     bool
-	JSON      bool
-	NoVerify  bool
-	NoPublish bool
-	Diff      bool
+	Detach     bool
+	Trace      bool
+	JSON       bool
+	SkipVerify bool
+	NoPublish  bool
+	Diff       bool
 	// AllSubports verifies every buildable member of a shared release
 	// locally instead of the newest subport alone.
 	AllSubports bool

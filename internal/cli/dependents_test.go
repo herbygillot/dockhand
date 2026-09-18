@@ -18,7 +18,7 @@ func TestDependentOptionsRejectIncompatibleWorkBeforeState(t *testing.T) {
 		{"verify", "jq", "--dependents", "--target-image", "child="},
 		{"verify", "jq", "--dependents", "--target-image", "child=a", "--target-image", "child=b"},
 		{"verify", "jq", "--dependents", "--provider", "github", "--branch", "candidate"},
-		{"bump-revision", "jq", "--dependents", "--no-verify"},
+		{"bump-revision", "jq", "--dependents", "--skip-verify"},
 		{"refresh-checksums", "jq", "--dependents", "--diff"},
 	} {
 		config := app.Config{Repository: "/missing/repository", DBPath: filepath.Join(t.TempDir(), "absent", "state.db")}

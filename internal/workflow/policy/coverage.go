@@ -120,7 +120,7 @@ func PublicationCoverage(ctx context.Context, r state.Reader, root record.Attemp
 // DescribeCoverage appends the verification coverage summary to a new pull
 // request body once the evidence proves the whole cohort.
 func DescribeCoverage(ctx context.Context, r state.Reader, spec *record.PublicationSpec) error {
-	if spec.ExpectedPR != nil {
+	if spec.ExpectedPR != nil || spec.Unverified {
 		return nil
 	}
 	{

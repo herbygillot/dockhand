@@ -417,6 +417,9 @@ func activeNext(job record.Job) string {
 		if job.Spec.Destination == record.BranchReady {
 			return "branch ready when preparation completes"
 		}
+		if job.Spec.Verification == record.VerificationSkipped {
+			return "publication pending; verification skipped"
+		}
 		return "verification pending"
 	case record.PhaseVerification:
 		if job.Spec.Destination == record.Published {
@@ -438,10 +441,14 @@ func completedWords(entry JobStatus, pr *record.PullRequest) (phase, state, next
 	case record.BranchReady:
 		return "preparation", "branch ready", "verify when ready: dockhand verify " + jobPort(job)
 	case record.Published:
-		if pr != nil {
-			return "publication", "published", pullRequestNext(pr)
+		state := "published"
+		if job.Spec.Verification == record.VerificationSkipped {
+			state = "published unverified"
 		}
-		return "publication", "published", "PR recorded; refresh to observe it"
+		if pr != nil {
+			return "publication", state, pullRequestNext(pr)
+		}
+		return "publication", state, "PR recorded; refresh to observe it"
 	}
 	if job.Spec.Action == record.Verify && job.ChangeID == "" {
 		return "verification", "verified", "standalone verification; no update was prepared"

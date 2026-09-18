@@ -143,8 +143,13 @@ type PublicationSpec struct {
 	LockDirectory      string
 	ExpectedRemoteHead ExpectedHead
 	ExpectedPR         *PullRequest
-	EvidenceAttempt    AttemptID
-	Desired            PublicationContent
+	// EvidenceAttempt names the passing verification the pull request cites.
+	// It is empty exactly when Unverified is set.
+	EvidenceAttempt AttemptID
+	// Unverified records that the author asked to publish without a local
+	// build; the pull request body discloses it.
+	Unverified bool `json:"unverified,omitempty"`
+	Desired    PublicationContent
 }
 
 // PublicationAction retains the checkpoints needed to reconcile external writes.

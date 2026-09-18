@@ -24,6 +24,9 @@ type CorrectionRequest struct {
 	Publication       *publish.Options
 	Preview           bool
 	IncludeDependents bool
+	// SkipVerify prepares the replacement without a build; with Publication it
+	// publishes unverified, otherwise it stops at the branch.
+	SkipVerify bool
 }
 type BoundCorrection struct {
 	Request Request
@@ -186,16 +189,22 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 	if input.Preview {
 		return result, nil
 	}
-	if input.ResolveBuild == nil {
-		return result, ErrInvalidRequest
-	}
-	build, err := input.ResolveBuild(ctx, evaluation)
-	if err != nil {
-		return result, err
+	var build BuildResolution
+	if !input.SkipVerify {
+		if input.ResolveBuild == nil {
+			return result, ErrInvalidRequest
+		}
+		build, err = input.ResolveBuild(ctx, evaluation)
+		if err != nil {
+			return result, err
+		}
 	}
 	spec := record.JobSpec{KeepFailed: input.KeepFailed, Action: input.Action, Source: committed.Source(revision.Source.Base), Targets: targets, Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: build.Build, BuildRequirements: build.Requirements, IncludeDependents: input.IncludeDependents, TargetBuilds: build.TargetBuilds,
 		Preparation: &record.PreparationSpec{SourceBranch: branch, Platform: input.Platform, Author: record.CommitIdentity{Name: author.Name, Email: author.Email}, VerificationProblem: build.Problem,
 			Correction: &record.CorrectionSpec{Scope: scope, ChangeID: change.ID, RevisionID: revision.ID, Branch: branch, PreviousHead: committed.Head, RemoteHead: remoteHead, Candidate: candidate}}}
+	if input.SkipVerify {
+		spec.Destination, spec.Verification = record.BranchReady, record.VerificationSkipped
+	}
 	if input.Publication != nil {
 		destination, err := e.publicationDestination(ctx, *input.Publication)
 		if err != nil {

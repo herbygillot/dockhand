@@ -83,16 +83,15 @@ type Preparation struct {
 	ID                record.RequestID
 	Selection         macports.Selection
 	Reason            string
-	NoVerify          bool
-	Publish           *publish.Options
-	Tests             record.TestPolicy
-	FromSource        bool
+	// SkipVerify prepares without a build. With Publish it opens the PR
+	// unverified, which the PR body discloses; alone it stops at the branch.
+	SkipVerify bool
+	Publish    *publish.Options
+	Tests      record.TestPolicy
+	FromSource bool
 }
 
 func (s *Services) BindPreparation(ctx context.Context, request Preparation) (workflow.BoundPreparation, error) {
-	if request.Publish != nil && request.NoVerify {
-		return workflow.BoundPreparation{}, fmt.Errorf("publication requires verification")
-	}
 	var prior *record.Job
 	var err error
 	if macports.ValidName(request.Selection.Selector) || request.ChangeID != "" {
@@ -140,7 +139,7 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 	bound := workflow.PreparationRequest{EditIntent: request.EditIntent, AllSubports: request.AllSubports, KeepFailed: request.KeepFailed, ChangeID: request.ChangeID, IncludeDependents: request.IncludeDependents, Action: request.Action, Version: request.Version, ID: request.ID, Source: source, SourceBranch: macports.PortsBranch, SourceURL: macports.PortsRepositoryURL, Selection: request.Selection, Reason: request.Reason,
 		Author: record.CommitIdentity{Name: author.Name, Email: author.Email}, Platform: platform,
 		Destination: record.VerificationComplete, Verification: record.VerificationRequired}
-	if request.NoVerify {
+	if request.SkipVerify {
 		bound.Destination, bound.Verification = record.BranchReady, record.VerificationSkipped
 	} else {
 		bound.ResolveBuild = s.buildResolver(platform, request.Tests, request.FromSource, true)

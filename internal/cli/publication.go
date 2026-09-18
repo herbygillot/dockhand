@@ -15,9 +15,9 @@ import (
 func (r *runtime) publishCommand() *cobra.Command {
 	var branch, change string
 	var options publish.Options
-	var dryRun, detach bool
+	var dryRun, detach, skipVerify bool
 	cmd := &cobra.Command{Use: "publish [target]", Short: "Publish a verified, committed contribution to GitHub", Args: cobra.MaximumNArgs(1),
-		Long: "Publish the unique open contribution for a target. Omit the target to use the current branch, or select --branch or --change explicitly. A verified user-created branch becomes a tracked contribution when publication is accepted. Uses the latest terminal verification for the committed tree and selected port; it must have passed. Its recorded build configuration is preserved. The contribution must contain one commit in one verified port directory. Existing PR bodies are preserved. The command stays through confirmation of the pushed head and PR metadata; --detach returns after driver pickup. Ctrl-C detaches, and wait or start resumes the durable job. GitHub API authentication comes from GH_TOKEN or GITHUB_TOKEN when set, otherwise from the credential auth login saved, otherwise from an authenticated GitHub CLI. Git uses its configured credentials for the push.",
+		Long: "Publish the unique open contribution for a target. Omit the target to use the current branch, or select --branch or --change explicitly. A verified user-created branch becomes a tracked contribution when publication is accepted. Uses the latest terminal verification for the committed tree and selected port; it must have passed. Its recorded build configuration is preserved. --skip-verify (-V) publishes a tracked contribution without any verification and discloses in the PR body that no local build ran. The contribution must contain one commit in one verified port directory. Existing PR bodies are preserved. The command stays through confirmation of the pushed head and PR metadata; --detach returns after driver pickup. Ctrl-C detaches, and wait or start resumes the durable job. GitHub API authentication comes from GH_TOKEN or GITHUB_TOKEN when set, otherwise from the credential auth login saved, otherwise from an authenticated GitHub CLI. Git uses its configured credentials for the push.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			services, err := r.build(cmd.Context(), r.config)
 			if err != nil {
@@ -31,7 +31,7 @@ func (r *runtime) publishCommand() *cobra.Command {
 					return fmt.Errorf("target must not be empty")
 				}
 			}
-			input := workflow.PublicationRequest{Target: target, ChangeID: record.ChangeID(change), ID: record.RequestID("request_" + rand.Text()), Branch: branch, Options: options}
+			input := workflow.PublicationRequest{Target: target, ChangeID: record.ChangeID(change), ID: record.RequestID("request_" + rand.Text()), Branch: branch, Options: options, SkipVerify: skipVerify}
 			var request workflow.Request
 			if dryRun {
 				request, err = services.Workflow.PlanPublication(cmd.Context(), input)
@@ -46,7 +46,11 @@ func (r *runtime) publishCommand() *cobra.Command {
 				if r.json {
 					return r.emit(request.Spec)
 				}
-				_, err := fmt.Fprintf(cmd.OutOrStdout(), "Publish %s at %s\n  %s:%s -> %s:%s\n  title: %s\n  target: %s\n  verification: %s (%s; tests %s; from source %t)\n", plain(spec.HeadBranch), spec.Desired.Head, plain(spec.HeadRepository), plain(spec.HeadBranch), plain(spec.Repository), plain(spec.BaseBranch), plain(spec.Desired.Title), plain(targetLabel(request.Spec.Targets[0])), spec.EvidenceAttempt, macos.Describe(request.Spec.Build.Platform), request.Spec.Build.Tests, request.Spec.Build.FromSource)
+				verification := "skipped at the author's request; the PR body discloses that no local build ran"
+				if build := request.Spec.Build; build != nil {
+					verification = fmt.Sprintf("%s (%s; tests %s; from source %t)", spec.EvidenceAttempt, macos.Describe(build.Platform), build.Tests, build.FromSource)
+				}
+				_, err := fmt.Fprintf(cmd.OutOrStdout(), "Publish %s at %s\n  %s:%s -> %s:%s\n  title: %s\n  target: %s\n  verification: %s\n", plain(spec.HeadBranch), spec.Desired.Head, plain(spec.HeadRepository), plain(spec.HeadBranch), plain(spec.Repository), plain(spec.BaseBranch), plain(spec.Desired.Title), plain(targetLabel(request.Spec.Targets[0])), verification)
 				if err != nil {
 					return err
 				}
@@ -57,7 +61,11 @@ func (r *runtime) publishCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("accepting request %s: %w", request.ID, err)
 			}
-			progress.VerboseReport(cmd.Context(), "Accepted publication job %s; branch %s at %s; verification %s", receipt.JobID, plain(spec.HeadBranch), spec.Desired.Head, spec.EvidenceAttempt)
+			cited := string(spec.EvidenceAttempt)
+			if spec.Unverified {
+				cited = "skipped"
+			}
+			progress.VerboseReport(cmd.Context(), "Accepted publication job %s; branch %s at %s; verification %s", receipt.JobID, plain(spec.HeadBranch), spec.Desired.Head, cited)
 			milestone := workflow.Completion
 			if detach {
 				milestone = workflow.Admission
@@ -68,6 +76,7 @@ func (r *runtime) publishCommand() *cobra.Command {
 	cmd.Flags().StringVar(&branch, "branch", "", "Publish committed contents of this local branch")
 	cmd.Flags().StringVar(&change, "change", "", "Select one tracked contribution when the target is ambiguous")
 	publicationFlags(cmd, &options)
+	cmd.Flags().BoolVarP(&skipVerify, "skip-verify", "V", false, "Publish without verification; the PR body discloses that no local build ran")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show the publication plan without accepting a job or writing remotely")
 	cmd.Flags().BoolVar(&detach, "detach", false, "Return after driver pickup; wait or start finishes it")
 	return cmd

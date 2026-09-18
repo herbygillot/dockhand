@@ -133,7 +133,7 @@ func (s *Service) PlanTo(ctx context.Context, change record.Change, source recor
 		return spec, err
 	}
 	content.Body = publicationBody(content, change, source, evidence)
-	spec = record.PublicationSpec{Forge: destination.Forge, Repository: destination.Repository, HeadRepository: destination.HeadRepository, BaseBranch: destination.BaseBranch, PushURL: destination.PushURL, BaseURL: destination.BaseURL, LockDirectory: destination.LockDirectory, LocalBranch: change.Branch, HeadBranch: change.Branch, EvidenceAttempt: evidence.ID, Desired: content}
+	spec = record.PublicationSpec{Forge: destination.Forge, Repository: destination.Repository, HeadRepository: destination.HeadRepository, BaseBranch: destination.BaseBranch, PushURL: destination.PushURL, BaseURL: destination.BaseURL, LockDirectory: destination.LockDirectory, LocalBranch: change.Branch, HeadBranch: change.Branch, EvidenceAttempt: evidence.ID, Unverified: evidence.ID == "", Desired: content}
 	if associated != nil {
 		if associated.Ref.Forge != spec.Forge || associated.Ref.Repository != spec.Repository || associated.HeadRepository != spec.HeadRepository || associated.BaseBranch != spec.BaseBranch {
 			return spec, fmt.Errorf("%w: existing PR destination cannot change", ErrPrecondition)

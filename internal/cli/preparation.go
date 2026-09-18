@@ -17,7 +17,7 @@ import (
 
 func (r *runtime) changeCommands() []*cobra.Command {
 	var commands []*cobra.Command
-	const shared = "New preparations use freshly fetched master from macports/macports-ports; local commits and working-tree edits are excluded. The command continues the port's open contribution and its frozen source; a preparation that stopped before any branch has retired, and the next one starts from fresh master. By default the command stays in the foreground through verification and publication of a PR on macports/macports-ports from your fork. --no-publish stops after verification, --no-verify stops at the prepared branch, and --detach returns once the work is accepted and admitted, leaving wait or start to finish it. Ctrl-C detaches without canceling accepted work. --diff previews the edit without touching the checkout or opening the state database."
+	const shared = "New preparations use freshly fetched master from macports/macports-ports; local commits and working-tree edits are excluded. The command continues the port's open contribution and its frozen source; a preparation that stopped before any branch has retired, and the next one starts from fresh master. By default the command stays in the foreground through verification and publication of a PR on macports/macports-ports from your fork. --no-publish (-P) stops after verification, --skip-verify (-V) publishes the prepared branch without building it and says so in the PR, both together stop at the prepared branch, and --detach returns once the work is accepted and admitted, leaving wait or start to finish it. Ctrl-C detaches without canceling accepted work. --diff previews the edit without touching the checkout or opening the state database."
 	for _, spec := range []struct {
 		action  record.Action
 		short   string
@@ -26,7 +26,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 	}{
 		{record.Bump, "Prepare a port version update",
 			shared + " The version is found in a literal version, a github.setup, gitlab.setup, or go.setup argument, or a perl5.setup, R.setup, or ruby.setup argument, and is edited in the spelling the source uses. Version updates support GitHub/GitLab tags, explicit archive versions, ports fetched with git, scoped release subports, conditional archive checksums, archives on HTTP or anonymous FTP master sites, legacy checksum blocks, and supported Go/Cargo dependency declarations. A python, perl, or ruby stub bumps through its newest versioned subport as one shared release. Independent pinned releases are preserved. Omitting the version selects the newest eligible version using the port's source convention and livecheck filter, stable releases only unless the port already rides a prerelease; ports whose source selects published releases ignore tags without a release. Already-current ports complete without branch creation or verification. An explicit version may include its upstream tag prefix.",
-			"  dockhand bump jq\n  dockhand bump jq 1.8.1 --diff\n  dockhand bump rust-analyzer 2026-09-14 --no-publish\n  dockhand bump py-idna --detach"},
+			"  dockhand bump jq\n  dockhand bump jq 1.8.1 --diff\n  dockhand bump rust-analyzer 2026-09-14 --no-publish\n  dockhand bump jq --skip-verify\n  dockhand bump py-idna --detach"},
 		{record.BumpRevision, "Prepare a port revision bump",
 			shared + " The literal revision increments by one; revision expressions and ambiguous or dynamically named scopes are refused. --reason becomes the commit body and pull-request description. The version and checksums are preserved.",
 			"  dockhand bump-revision jq --reason \"rebuild against oniguruma 6.9.10\"\n  dockhand bump-revision jq --diff --reason rebuild"},
@@ -61,8 +61,8 @@ func (r *runtime) changeCommands() []*cobra.Command {
 				return nil
 			},
 			RunE: func(cmd *cobra.Command, args []string) error {
-				if build.dependents && (options.NoVerify || options.Diff) {
-					return fmt.Errorf("--dependents requires verification; omit --no-verify or --diff")
+				if build.dependents && (options.SkipVerify || options.Diff) {
+					return fmt.Errorf("--dependents requires verification; omit --skip-verify or --diff")
 				}
 				choices, err := parseVariants(variants)
 				if err != nil {
@@ -73,10 +73,10 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					version = args[1]
 				}
 				var destination *publish.Options
-				if !options.NoPublish && !options.NoVerify && !options.Diff {
+				if !options.NoPublish && !options.Diff {
 					destination = &publication
 				} else if (cmd.Flags().Changed("remote") || cmd.Flags().Changed("upstream") || cmd.Flags().Changed("base")) && build.provider != "github" && build.provider != "auto" {
-					return fmt.Errorf("publication destination flags need publication; drop --no-publish or --no-verify")
+					return fmt.Errorf("publication destination flags need publication; drop --no-publish")
 				}
 				if !options.Diff {
 					config, err := build.config(cmd, r.config)
@@ -92,7 +92,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					bound, err := services.BindPreparation(cmd.Context(), app.Preparation{EditIntent: record.EditIntent{SharedRelease: sharedRelease, KeepOldChecksums: keepOldChecksums}, AllSubports: options.AllSubports, KeepFailed: build.keepFailed,
 						ChangeID: record.ChangeID(change), IncludeDependents: build.dependents, Action: spec.action, Version: version, ID: record.RequestID("request_" + rand.Text()),
 						Selection: macports.Selection{Selector: args[0], Variants: choices},
-						Reason:    reason, Publish: destination, NoVerify: options.NoVerify, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource,
+						Reason:    reason, Publish: destination, SkipVerify: options.SkipVerify, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource,
 					})
 					if err != nil {
 						return publicationIntakeHint(err, destination != nil)

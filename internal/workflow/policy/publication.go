@@ -32,6 +32,15 @@ func PublicationEvidence(ctx context.Context, r state.Reader, job record.Job, sp
 	if len(change.Targets) != 1 || record.CompareTargets(change.Targets[0], job.Spec.Targets[0]) != 0 {
 		return fmt.Errorf("%w: publication must cover the tracked contribution target", publish.ErrPrecondition)
 	}
+	if spec.Unverified {
+		if spec.EvidenceAttempt != "" || job.Spec.Verification != record.VerificationSkipped || job.Spec.Build != nil || job.ReusedAttempt != "" {
+			return fmt.Errorf("%w: an unverified publication requires a job that explicitly skipped verification", ErrInvalidRequest)
+		}
+		return nil
+	}
+	if job.Spec.Verification != record.VerificationRequired {
+		return fmt.Errorf("%w: a verified publication requires a job that requested verification", ErrInvalidRequest)
+	}
 	candidate, err := r.Attempt(ctx, spec.EvidenceAttempt)
 	if err != nil {
 		return err

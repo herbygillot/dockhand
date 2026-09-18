@@ -634,3 +634,30 @@ func TestContributionMigrationRetainsLegacyPreparationAndStandaloneEvidence(t *t
 	require.False(t, rows.Next())
 	require.NoError(t, rows.Err())
 }
+
+func TestUnverifiedPublicationMigrationKeepsCitedEvidenceAndAdmitsNone(t *testing.T) {
+	t.Parallel()
+	path, db := versionEightWithWork(t)
+	_, err := db.Exec(`INSERT INTO publications VALUES('publication','preserved','job','change','revision','attempt','fixture','author/ports','candidate','{}','pending',0,0,NULL,'')`)
+	require.NoError(t, err)
+	columns, before := migrationRows(t, db, "publications", nil)
+	store, err := Open(t.Context(), path, Options{})
+	require.NoError(t, err)
+	defer store.Close()
+	_, after := migrationRows(t, db, "publications", columns)
+	require.Equal(t, before, after)
+	var version int
+	require.NoError(t, db.QueryRow("PRAGMA user_version").Scan(&version))
+	require.Equal(t, schemaVersion, version)
+	var indexed int
+	require.NoError(t, db.QueryRow("SELECT count(*) FROM sqlite_schema WHERE type='index' AND name='publication_active_head'").Scan(&indexed))
+	require.Equal(t, 1, indexed)
+	// The evidence column is nullable only for publications that declare themselves unverified.
+	_, err = db.Exec(`UPDATE publications SET evidence_attempt=NULL WHERE id='publication'`)
+	require.Error(t, err)
+	_, err = db.Exec(`UPDATE publications SET spec='{"unverified":true}' WHERE id='publication'`)
+	require.Error(t, err)
+	_, err = db.Exec(`UPDATE publications SET evidence_attempt=NULL, spec='{"unverified":true}' WHERE id='publication'`)
+	require.NoError(t, err)
+	require.NoError(t, store.Check(t.Context()))
+}

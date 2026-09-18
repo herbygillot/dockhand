@@ -101,8 +101,9 @@ Preview or prepare a version update from freshly fetched `master` in `macports/m
 
 ```sh
 dockhand bump jq --diff
-dockhand bump jq --no-verify
-dockhand bump jq --no-publish
+dockhand bump jq --no-publish                 # build, then stop before the PR
+dockhand bump jq --skip-verify                # open the PR without building; the PR says so
+dockhand bump jq --no-publish --skip-verify   # prepare the branch and stop
 dockhand bump jq --image dockhand-base-tahoe --no-publish
 dockhand bump jq 1.8.1 --diff
 ```
@@ -122,7 +123,7 @@ dockhand bump-revision jq --reason "rebuild against oniguruma 6.9.10" --trace
 dockhand bump jq --detach       # submit, return at admission; wait or start finishes it
 ```
 
-The destination is captured before acceptance. The driver verifies the prepared revision, then pushes it and confirms the PR. `--image` may be omitted after `setup`; Dockhand selects the matching default image. Automatic provider selection prefers a suitable Tart image and falls back to GitHub when unavailable. An explicit Tart request can reuse applicable evidence; otherwise missing build configuration preserves the prepared branch for a later verification run. With `--detach`, the command returns at build admission or evidence reuse; `wait <port>` or `start` continues the same job. Publication requires verification, so `--no-verify` also stops before the PR. Already-current automatic bumps complete without a PR. Failed verification preserves the local branch for correction and a later explicit `verify`/`publish`.
+The destination is captured before acceptance. The driver verifies the prepared revision, then pushes it and confirms the PR. `--image` may be omitted after `setup`; Dockhand selects the matching default image. Automatic provider selection prefers a suitable Tart image and falls back to GitHub when unavailable. An explicit Tart request can reuse applicable evidence; otherwise missing build configuration preserves the prepared branch for a later verification run. With `--detach`, the command returns at build admission or evidence reuse; `wait <port>` or `start` continues the same job. `--skip-verify` (`-V`) prepares the branch and opens the PR without building it, because you asked; the PR body says the change was not built locally and that the MacPorts workflow is its only check, and `status` shows it as published unverified. `--no-publish` (`-P`) stops after the build, and the two together stop at the prepared branch. Already-current automatic bumps complete without a PR. Failed verification preserves the local branch for correction and a later explicit `verify`/`publish`.
 
 ## Publish an existing branch
 
@@ -165,7 +166,7 @@ dockhand bump jq --dependents
 dockhand verify jq --branch my-update --dependents --trace
 ```
 
-`--dependents` also works with `bump-revision` and `refresh-checksums`. It requires local Tart verification and cannot be combined with `--provider github`, `--no-verify`, or `--diff`. Discovery selects the roots plus their direct build, library, and runtime dependents from the frozen source index. Reverse dependencies are not expanded transitively. The reverse index uses default-variant metadata, so it is not exhaustive coverage of every possible variant combination. Root variants are retained; downstream ports use their default variants.
+`--dependents` also works with `bump-revision` and `refresh-checksums`. It requires local Tart verification and cannot be combined with `--provider github`, `--skip-verify`, or `--diff`. Discovery selects the roots plus their direct build, library, and runtime dependents from the frozen source index. Reverse dependencies are not expanded transitively. The reverse index uses default-variant metadata, so it is not exhaustive coverage of every possible variant combination. Root variants are retained; downstream ports use their default variants.
 
 Each target has an isolated guest. Before a downstream build, Dockhand builds and installs the requested roots from the same frozen tree. Ordinary dependency binaries remain available unless `--from-source` was requested. Conflicts between downstream targets therefore do not require them to coexist in one guest. Root/dependent conflicts remain real build failures and are reported.
 

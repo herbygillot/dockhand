@@ -12,17 +12,17 @@ Existing commands should report the selected branch, commit/tree, revision, evid
 
 ## Managed amendment
 
-Interface: `dockhand amend [--branch NAME] [--diff] [--no-publish] [--detach|--trace]`.
+Interface: `dockhand amend [--branch NAME] [--diff] [--no-publish] [--skip-verify] [--detach|--trace]`.
 
 The default branch is the current tracked contribution. For this first implementation, stage the intended contents before adopting a checked-out amendment; Dockhand does not automatically stage edits. `--branch` selects committed contents. Amendment captures tracked edits and staged new files using the same capture boundary as verification, preserves the original contribution base, and constructs one replacement contribution commit. It preserves the title unless the user explicitly supplies a replacement. Changes outside the expected port directory or ambiguous untracked files require the user to resolve them first. It does not absorb unrelated commits or silently stage new files.
 
-`--diff` shows the difference from the current recorded revision without moving refs or accepting work. An accepted amendment follows preparation, guarded branch replacement, verification, and publication of the updated PR, in the foreground. With `--no-publish`, it stops after verification; `--detach` returns once it is accepted. It uses the existing state/claim lifecycle rather than spawning a separate controller.
+`--diff` shows the difference from the current recorded revision without moving refs or accepting work. An accepted amendment follows preparation, guarded branch replacement, verification, and publication of the updated PR, in the foreground. With `--no-publish`, it stops after verification; `--skip-verify` updates the PR without a build and says so in its body, and with both it stops at the replaced branch; `--detach` returns once it is accepted. It uses the existing state/claim lifecycle rather than spawning a separate controller.
 
 Updating a checked-out branch requires a clean index/worktree after the captured changes and a recheck of their exact captured identities. A branch checked out in a different worktree must be handled explicitly rather than invalidating that worktree's index. Stage the replacement privately, then adopt it only when the branch and checkout preconditions still match. If they moved, preserve the candidate and report the conflict; do not reset or discard user work.
 
 ## Rebase and squash
 
-Interface: `dockhand rebase [--branch NAME] [--diff] [--no-publish] [--detach|--trace]`.
+Interface: `dockhand rebase [--branch NAME] [--diff] [--no-publish] [--skip-verify] [--detach|--trace]`.
 
 Switch away from the contribution branch before running a managed rebase, including in linked worktrees. Fetch and freeze the intended upstream base. Reapply the contribution in a disposable Git workspace and retain one contribution commit relative to that base. The source, previous branch head, and intended base are recorded before replacement. A successful rebase produces a new revision and requires applicable verification before publication.
 

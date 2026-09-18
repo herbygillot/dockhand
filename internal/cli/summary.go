@@ -141,6 +141,9 @@ func jobState(entry view.JobStatus) string {
 			return "no update needed"
 		}
 		if job.Spec.Destination == record.Published && len(entry.Publications) > 0 && entry.Publications[0].State == record.PublicationConfirmed {
+			if job.Spec.Verification == record.VerificationSkipped {
+				return "published unverified"
+			}
 			return "published"
 		}
 		if job.Spec.Destination == record.BranchReady && job.ResultRevision != "" {

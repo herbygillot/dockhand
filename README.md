@@ -158,8 +158,9 @@ dockhand bump jq
 
 Dockhand fetches the current MacPorts `master`, creates an update branch named like `dockhand/bump/jq-...`, builds it (in a Tart VM if you prepared an image, otherwise on GitHub Actions), and when the build passes pushes the branch to your fork and opens the pull request against MacPorts. It stays in the foreground the whole way and prints the branch, the verdict, and the pull request URL. Your current checkout is not touched. If the port is already at the newest version, the command finishes with nothing to do. If the build fails, the branch is kept and no pull request is opened.
 
-- `--no-publish` stops after the build, for updates you want to look at before opening a pull request.
-- `--no-verify` prepares the branch and stops, for updates you want to finish by hand.
+- `--no-publish` (`-P`) stops after the build, for updates you want to look at before opening a pull request.
+- `--skip-verify` (`-V`) opens the pull request without building, when you have decided the build is not worth waiting for. The pull request says the change was not built locally, and `status` shows it as published unverified.
+- Both together prepare the branch and stop, for updates you want to finish by hand.
 - `--detach` submits the work and returns as soon as the build is admitted; `dockhand wait jq` picks it back up. Ctrl-C does the same without canceling anything.
 - `--trace` streams the build log as it runs.
 - `--provider tart` or `--provider github` overrides the automatic choice.

@@ -157,16 +157,16 @@ func validateDestination(spec *record.JobSpec, rule actionRule) error {
 		return fmt.Errorf("%w: a valid destination is required", ErrInvalidRequest)
 	}
 	if rule.publication {
-		if spec.Destination != record.Published || spec.Publication == nil || spec.Build == nil || spec.Verification != record.VerificationRequired {
-			return fmt.Errorf("%w: publish requires publication intent, passing verification configuration, and the published destination", ErrInvalidRequest)
+		if spec.Destination != record.Published || spec.Publication == nil || !publicationVerification(spec, spec.Publication.Unverified, true) {
+			return fmt.Errorf("%w: publish requires publication intent, the published destination, and either passing verification configuration or an explicitly unverified publication", ErrInvalidRequest)
 		}
 	} else if !slices.Contains(rule.destinations, spec.Destination) {
 		return fmt.Errorf("%w: %s must request %s", ErrInvalidRequest, spec.Action, rule.destinations[0])
 	}
 	if spec.PublishTo != nil {
 		destination := *spec.PublishTo
-		if !rule.prepares || spec.Preparation == nil || spec.Destination != record.Published || spec.Verification != record.VerificationRequired || spec.Publication != nil {
-			return fmt.Errorf("%w: combined publication requires a verified preparation job", ErrInvalidRequest)
+		if !rule.prepares || spec.Preparation == nil || spec.Destination != record.Published || spec.Publication != nil || !publicationVerification(spec, spec.Verification == record.VerificationSkipped, false) {
+			return fmt.Errorf("%w: combined publication requires a preparation job that verifies or explicitly skips verification", ErrInvalidRequest)
 		}
 		if err := publish.ValidateDestination(destination); err != nil {
 			return fmt.Errorf("%w: %v", ErrInvalidRequest, err)
@@ -179,6 +179,16 @@ func validateDestination(spec *record.JobSpec, rule actionRule) error {
 	return nil
 }
 
+// publicationVerification reports whether a publishing job's verification
+// intent is coherent: required, with a build when the action carries its own
+// evidence, or explicitly skipped with nothing to build or reuse.
+func publicationVerification(spec *record.JobSpec, unverified, ownEvidence bool) bool {
+	if unverified {
+		return spec.Verification == record.VerificationSkipped && spec.Build == nil && spec.BuildRequirements == nil
+	}
+	return spec.Verification == record.VerificationRequired && (!ownEvidence || spec.Build != nil)
+}
+
 func normalizePublication(spec *record.JobSpec, rule actionRule) error {
 	if spec.Publication == nil {
 		return nil
@@ -187,7 +197,7 @@ func normalizePublication(spec *record.JobSpec, rule actionRule) error {
 	if v.LocalBranch != "" && !git.ValidBranchName(v.LocalBranch) {
 		return ErrInvalidRequest
 	}
-	if !rule.publication || v.Forge == "" || v.Repository == "" || v.HeadRepository == "" || !git.ValidBranchName(v.HeadBranch) || !git.ValidBranchName(v.BaseBranch) || v.PushURL == "" || v.BaseURL == "" || !filepath.IsAbs(v.LockDirectory) || !git.ValidObjectID(string(v.Desired.Head)) || v.Desired.Title == "" || !validToken(string(v.EvidenceAttempt)) || v.ExpectedRemoteHead.Exists != (v.ExpectedRemoteHead.Commit != "") || v.ExpectedRemoteHead.Exists && !git.ValidObjectID(string(v.ExpectedRemoteHead.Commit)) {
+	if !rule.publication || v.Forge == "" || v.Repository == "" || v.HeadRepository == "" || !git.ValidBranchName(v.HeadBranch) || !git.ValidBranchName(v.BaseBranch) || v.PushURL == "" || v.BaseURL == "" || !filepath.IsAbs(v.LockDirectory) || !git.ValidObjectID(string(v.Desired.Head)) || v.Desired.Title == "" || (v.EvidenceAttempt == "") != v.Unverified || !v.Unverified && !validToken(string(v.EvidenceAttempt)) || v.ExpectedRemoteHead.Exists != (v.ExpectedRemoteHead.Commit != "") || v.ExpectedRemoteHead.Exists && !git.ValidObjectID(string(v.ExpectedRemoteHead.Commit)) {
 		return ErrInvalidRequest
 	}
 	if v.ExpectedPR != nil {

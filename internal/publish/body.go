@@ -27,7 +27,10 @@ func publicationBody(content record.PublicationContent, change record.Change, so
 	}
 	fmt.Fprintln(&b, "\n###### Tested on")
 	evidence := attempt.Evidence
-	if evidence == nil {
+	unverified := attempt.ID == ""
+	if unverified {
+		fmt.Fprintln(&b, "\nNot built locally. The author asked dockhand to publish this change without verification (`--skip-verify`), so no lint, test, or install verdict exists for it. The MacPorts pull request workflow is the only check it has had.")
+	} else if evidence == nil {
 		fmt.Fprintln(&b, "\nEnvironment details were not recorded.")
 	} else {
 		environment := evidence.Environment
@@ -99,6 +102,8 @@ func publicationBody(content record.PublicationContent, change record.Change, so
 			label += " (exact command was not recorded)"
 		} else if phase == "test" && evidence != nil && evidence.TestOmission != "" {
 			label += " — " + oneLine(evidence.TestOmission)
+		} else if unverified {
+			label += " (skipped at the author's request)"
 		} else {
 			label += " (no successful execution recorded)"
 		}

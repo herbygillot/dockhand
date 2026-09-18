@@ -126,7 +126,15 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 			} else if job.Spec.Destination == record.BranchReady {
 				finishJob(&job, record.JobCompleted, "Prepared branch "+job.Prepared.Branch, e.now())
 			} else if len(job.Prepared.PatchProblems) > 0 {
-				finishJob(&job, record.JobNeedsAttention, "Prepared branch "+job.Prepared.Branch+"; verification not started because a patch no longer applies to the new source: "+strings.Join(job.Prepared.PatchProblems, "; ")+". Refresh the patch on the branch, then verify.", e.now())
+				nextStep, resume := "verification", "verify"
+				if job.Spec.Verification == record.VerificationSkipped {
+					nextStep, resume = "publication", "publish"
+				}
+				finishJob(&job, record.JobNeedsAttention, "Prepared branch "+job.Prepared.Branch+"; "+nextStep+" not started because a patch no longer applies to the new source: "+strings.Join(job.Prepared.PatchProblems, "; ")+". Refresh the patch on the branch, then "+resume+".", e.now())
+			} else if job.Spec.Verification == record.VerificationSkipped {
+				// The author asked to publish without a local build.
+				job.Phase = record.PhasePublication
+				job.State, job.Detail = record.JobActive, "Prepared branch "+job.Prepared.Branch+"; publication pending, verification skipped at the author's request"
 			} else {
 				job.Phase = record.PhaseVerification
 				job.State, job.Detail = record.JobActive, "Prepared branch "+job.Prepared.Branch+"; verification pending"

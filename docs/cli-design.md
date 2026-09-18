@@ -179,7 +179,8 @@ dockhand bump jq                           # verify, then open the PR; reuse app
 dockhand bump jq --no-publish              # stop after verification
 dockhand bump jq --image dockhand-base-tahoe
 dockhand bump jq 1.8.1 --diff
-dockhand bump jq jq-1.8.1 --no-verify
+dockhand bump jq jq-1.8.1 --skip-verify   # open the PR without a build; the PR body says so
+dockhand bump jq --no-publish --skip-verify  # prepare the branch and stop
 dockhand bump jq 1.8.1 --image dockhand-base-tahoe --detach
 ```
 
@@ -197,19 +198,19 @@ Archive preparation observes exact checksum/revision declarations and uses MacPo
 
 Modeled metadata is explicitly separated from native runtime facts and build verification. Unresolved context boundaries, unassociated checksum groups, host-dependent modeled evaluation, changed declaration ownership, and conflicting required digests remain gaps or refusals. Fetch credentials, unrecognized hooks, remote patches, and unsupported dependency forms retain their existing restrictions. Supported dependency generators still regenerate manifest-backed blocks separately. See [bump preparation](bump-planner.md) for implementation limits and exercises.
 
-The driver records the resolved release before archive preparation. Forge tags are checked before and after preparation; a moved or missing tag requires attention. HTTP-listing candidates retain their observation and selected version across retries without reselecting from a newer page. Previews report the release and diff without opening state; normal jobs create `dockhand/bump/<port>-<job suffix>` through the same integration machinery as revision bumps. `--no-verify`, `--no-publish`, `--image`, `--capacity`, `--tests`, `--from-source`, `--detach`, `--trace`, `--reason`, `wait`, and `start` have the same meanings on both bump paths. A verified bump continues through the shared publication phase unless `--no-publish` was given. See the [implementation report](activity/2026-09-13-explicit-version-bumps.md).
+The driver records the resolved release before archive preparation. Forge tags are checked before and after preparation; a moved or missing tag requires attention. HTTP-listing candidates retain their observation and selected version across retries without reselecting from a newer page. Previews report the release and diff without opening state; normal jobs create `dockhand/bump/<port>-<job suffix>` through the same integration machinery as revision bumps. `--skip-verify`, `--no-publish`, `--image`, `--capacity`, `--tests`, `--from-source`, `--detach`, `--trace`, `--reason`, `wait`, and `start` have the same meanings on both bump paths. A verified bump continues through the shared publication phase unless `--no-publish` was given. See the [implementation report](activity/2026-09-13-explicit-version-bumps.md).
 
 ### Revision-bump jobs
 
 ```sh
-dockhand bump-revision jq --no-verify
+dockhand bump-revision jq --skip-verify
 dockhand bump-revision jq --image dockhand-base-tahoe
 dockhand bump-revision jq --image dockhand-base-tahoe --no-publish --detach
 ```
 
 A new contribution starts from freshly fetched authoritative MacPorts `master`, using the same immutable intake as version bumps. Equivalent repeated requests join existing work; retries retain the contribution and its original source. A new contribution receives a branch named `dockhand/revbump/<port>-<job suffix>`. The source branch, checkout, and index stay in place. Git author identity, source commit/tree/base, target, platform, and any verification configuration are captured before acceptance. `--reason` becomes the commit body, followed by the generated-contribution trailer. The output reports the job, prepared branch, commit, and result revision.
 
-`--no-verify` completes once the branch is recorded. Otherwise the command prepares the branch and stays through verification and, unless `--no-publish`, publication; `--detach` returns at verification admission or evidence reuse and `--trace` also streams logs. Revision bumps accept the same image, capacity, test, and source-build options as `verify`. Automatic bumps bind one concrete provider at intake when available; applicable evidence can satisfy its verification after the prepared tree is known. Explicit Tart requests may also use the evidence-selection behavior described above. A missing executable configuration or reuse miss in that evidence-only path is recorded as needs-attention after preserving the branch. A later `verify <target> --image <image>` continues the contribution with a new verification job. The same job continues through publication of the verified prepared revision by default, using the destination options of standalone `publish`; `--no-publish` stops before it. Publication requires verification, so `--no-verify` implies `--no-publish`.
+`--no-publish --skip-verify` completes once the branch is recorded. Otherwise the command prepares the branch and stays through verification and, unless `--no-publish`, publication; `--detach` returns at verification admission or evidence reuse and `--trace` also streams logs. Revision bumps accept the same image, capacity, test, and source-build options as `verify`. Automatic bumps bind one concrete provider at intake when available; applicable evidence can satisfy its verification after the prepared tree is known. Explicit Tart requests may also use the evidence-selection behavior described above. A missing executable configuration or reuse miss in that evidence-only path is recorded as needs-attention after preserving the branch. A later `verify <target> --image <image>` continues the contribution with a new verification job. The same job continues through publication of the verified prepared revision by default, using the destination options of standalone `publish`; `--no-publish` stops before it. `--skip-verify` publishes the prepared revision without any verification, at the author's explicit request: the job has no verification phase, cites no evidence, and its PR body discloses that no local build ran.
 
 `wait --job <job_id>` and `start` resume recorded preparation and integration as well as verification. Cancellation before integration leaves no output branch. After integration may have started, the driver reconciles the recorded candidate and preserves any confirmed branch. An interrupted integration whose branch is absent or contains another commit requires attention; it never overwrites user work or guesses that a deleted branch should be recreated. See the [driver implementation report](activity/2026-09-13-revision-driver.md).
 
@@ -252,13 +253,13 @@ Standalone verification does not establish an exclusive contribution association
 
 ## The flow
 
-The standard workflow for `dockhand` involves bumping a port's version to its latest release by default, bumping its revision, or refreshing its checksums. This produces a Git branch with the proposed changes. Build verification of these changes is requested by default unless `-N` / `--no-verify` is specified, and a verified branch is submitted as a pull request against [macports/macports-ports](https://github.com/macports/macports-ports) unless `--no-publish` is specified.
+The standard workflow for `dockhand` involves bumping a port's version to its latest release by default, bumping its revision, or refreshing its checksums. This produces a Git branch with the proposed changes. Build verification of these changes is requested by default unless `-V` / `--skip-verify` is specified, and the branch is submitted as a pull request against [macports/macports-ports](https://github.com/macports/macports-ports) unless `-P` / `--no-publish` is specified. The four combinations: the default verifies and publishes; `--no-publish` verifies and stops; `--skip-verify` publishes without a build and says so in the PR; both together prepare the branch and stop.
 
 The driver owns each accepted job and its bookkeeping. The CLI submits the request transactionally to the state store through the shared workflow API, runs targeted driver cycles in the same invocation, and observes recorded progress. A normal invocation remains attached until the requested work completes, running the required cycles itself; `--detach` returns once the verification provider accepts the build. After a detached invocation exits, further workflow advancement requires `wait`, a running `dockhand start` process, or a later driver cycle. Both modes use the same workflow implementation; commands do not launch background drivers.
 
 ```text
-dockhand bump <port|selector> [version] [-N|--no-verify] [--no-publish] [--detach|--trace]
-dockhand (bump-revision | refresh-checksums) <port|selector> [-N|--no-verify] [--no-publish] [--detach|--trace]
+dockhand bump <port|selector> [version] [-V|--skip-verify] [-P|--no-publish] [--detach|--trace]
+dockhand (bump-revision | refresh-checksums) <port|selector> [-V|--skip-verify] [-P|--no-publish] [--detach|--trace]
 ```
 
 ```sh
@@ -287,8 +288,11 @@ dockhand bump jq --no-publish
 # wait, a running persistent driver, or a later driver cycle.
 dockhand bump jq --detach
 
+# Open the PR without building; the PR body discloses that no build ran.
+dockhand bump jq --skip-verify
+
 # Create only the branch, with verification explicitly skipped.
-dockhand bump jq --no-verify
+dockhand bump jq --no-publish --skip-verify
 
 # Publish the current contribution, or select a branch.
 dockhand publish [--branch <branch>] [--detach]
@@ -346,10 +350,11 @@ Display the resolved version and tag when they differ, including in `--diff` out
 | Verification with `--no-publish` | After the requested verification finishes or requires attention. |
 | Verification when the provider is at capacity | It reports that it is waiting, stays attached, and submits when capacity becomes available. |
 | Any of the above with `--detach` | After the provider admits the initial build, or an earlier conclusive result is available; later settlement and publication require `wait` or a persistent driver. |
-| `--no-verify` | After the driver records completion of branch creation. There is no provider-admission milestone, and no publication, since it requires passing verification. |
+| `--skip-verify` | After publication completes or requires attention. There is no provider-admission milestone and no verification phase; the PR body discloses that no local build ran. |
+| `--no-publish --skip-verify` | After the driver records completion of branch creation. |
 | Default publication that cannot be bound | Rejected before submission, before any preparation: no GitHub login, no fork, or an ambiguous remote layout; the refusal names `--no-publish`. |
 
-For an existing change, standalone `publish` requires matching passing evidence and stays through confirmation by default. Scheduling missing verification or joining an active build from this command remains later work. A combined bump performs its own verification or reuses matching evidence before publication.
+For an existing change, standalone `publish` requires matching passing evidence and stays through confirmation by default; `publish --skip-verify` publishes a tracked contribution without evidence and discloses it. Scheduling missing verification or joining an active build from this command remains later work. A combined bump performs its own verification or reuses matching evidence before publication.
 
 For a selector, the return condition applies to each selected target operation. With `--detach`, each must reach its applicable handoff milestone or report a conclusive result. When there are more initial builds than available slots, this can require waiting for earlier builds to finish. The driver continues independent targets when another fails. Downstream follow-up builds remain the driver's responsibility after the initial admission; the default attachment follows the full requested operation.
 
@@ -357,9 +362,9 @@ For a selector, the return condition applies to each selected target operation. 
 
 Requests and progress pass through the state store. Attachment means observing the selected durable jobs, not opening a socket to a driver. Successful submission records a durable job; the command then stays attached through completion, or with `--detach` only until provider admission. After a detached invocation exits, report pending work and how to resume it without promising automatic advancement when no persistent driver is running.
 
-`--detach` changes attachment, not the requested destination. The destination is chosen by `--no-verify` and `--no-publish`; with verification skipped, attachment ends at branch creation.
+`--detach` changes attachment, not the requested destination. The destination is chosen by `--skip-verify` and `--no-publish`; with both, attachment ends at branch creation.
 
-`--trace` keeps the default completion behavior and also streams build logs. It is available for a single selected port when verification is enabled. With publication, it stays attached through the publication result after the build logs end. Reject incompatible requests such as `--trace --no-verify` or `--trace --detach`, or tracing a multi-port selector, with a clear usage error.
+`--trace` keeps the default completion behavior and also streams build logs. It is available for a single selected port when verification is enabled. With publication, it stays attached through the publication result after the build logs end. Reject incompatible requests such as `--trace --skip-verify` or `--trace --detach`, or tracing a multi-port selector, with a clear usage error.
 
 `wait` attaches to existing work; it does not submit a fresh verification or request publication. It can run targeted cycles in the current process to resume the selected durable jobs, sharing the same engine and state claims as `dockhand start`. It binds the jobs and revisions selected when the command starts rather than silently following future requests or new branch tips.
 
@@ -369,9 +374,9 @@ Once a job is durably accepted in the database, Ctrl-C stops the CLI's observati
 
 Temporary capacity pressure is different from missing tools, an unprovisioned environment, or an unsupported target configuration. Capacity pressure waits for admission. A setup requirement or a preflight refusal returns an explicit result and a next action instead of waiting indefinitely for a slot that cannot become usable.
 
-Branch creation remains useful when verification tools are unavailable. Preserve the branch and record why verification could not proceed. Distinguish that from `--no-verify`, where the user explicitly chose to skip verification. Neither case is a verification pass.
+Branch creation remains useful when verification tools are unavailable. Preserve the branch and record why verification could not proceed. Distinguish that from `--skip-verify`, where the user explicitly chose to skip verification. Neither case is a verification pass.
 
-Publication requires passing verification. If verification is unavailable, the job records the setup requirement, preserves the prepared branch, and ends needing attention, so the default bump exits 3 rather than quietly succeeding without a PR. `--no-verify` requests branch creation on its own and therefore implies `--no-publish`. A negative build result is never a pass.
+Publication cites passing verification unless the author explicitly skipped it. If verification is unavailable, the job records the setup requirement, preserves the prepared branch, and ends needing attention, so the default bump exits 3 rather than quietly succeeding without a PR. `--skip-verify` is the one way to publish without a build: the job has no verification phase, the publication record carries no evidence and is marked unverified, the PR body says the change was not built locally and that the MacPorts workflow is its only check, and `status` shows it as published unverified. Dockhand never infers that choice from unavailable tooling. A negative build result is never a pass.
 
 **Observation, previews, and results**
 
@@ -411,7 +416,7 @@ The architecture must support these workflows from phase one, even though their 
 
 `outdated` shares discovery and version assessment with `bump`. Automatic latest-version bumps already skip current ports, so no separate `--outdated` filter is needed. Unknown results remain visible and do not prevent independent known updates from proceeding.
 
-`rebase` and `amend` follow the same `--no-publish` and `--detach` conventions. `dockhand amend --branch <branch>` incorporates selected corrections, verifies the resulting revision, and updates the existing PR; `--no-publish` stops after verification, which never publishes local corrections by itself. Neither command silently includes unrelated working-tree edits.
+`rebase` and `amend` follow the same `--no-publish`, `--skip-verify`, and `--detach` conventions. `dockhand amend --branch <branch>` incorporates selected corrections, verifies the resulting revision, and updates the existing PR; `--no-publish` stops after verification, which never publishes local corrections by itself. Neither command silently includes unrelated working-tree edits.
 
 `status` distinguishes the local revision, evidence applicable to it, the last confirmed published revision, and the latest recorded PR observations. In phase two, `start` refreshes PR state, remote CI checks, review decisions, and conflict information. Before a field has been observed, it is unknown; an old observation is shown with its age. Observations do not automatically trigger corrective work.
 
@@ -440,7 +445,7 @@ One job owns preparation, verification, and publication. Its accepted input sour
 
 By default the command stays attached until PR confirmation. With `--detach` it waits through capacity pressure and returns at build admission, evidence reuse, or an earlier terminal outcome; `wait <port>` and `start` resume the exact accepted destination without repeating flags. An automatic no-update result needs no branch, verification, or PR.
 
-Failed verification prevents publication. A changed or missing prepared branch or newer matching negative evidence stops fresh remote effects; human edits require a new explicit verification/publication request. Cancellation before a PR request preserves any branch already created or pushed. Once the PR request has started, the existing observation-only recovery applies. This slice adds no unverified publication override, automatic rebase/squash, downstream scheduling, or post-PR monitoring.
+Failed verification prevents publication; only `--skip-verify`, requested up front, publishes without a build. A changed or missing prepared branch or newer matching negative evidence stops fresh remote effects; human edits require a new explicit verification/publication request. Cancellation before a PR request preserves any branch already created or pushed. Once the PR request has started, the existing observation-only recovery applies. This slice adds no automatic rebase/squash, downstream scheduling, or post-PR monitoring.
 
 ### Calculated source versions
 

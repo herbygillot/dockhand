@@ -20,6 +20,9 @@ type PublicationRequest struct {
 	ID       record.RequestID
 	Branch   string
 	Options  publish.Options
+	// SkipVerify publishes a tracked contribution without citing verification;
+	// the pull request body discloses that no local build ran.
+	SkipVerify bool
 }
 
 // BindPublication freezes committed source, applicable evidence, and remote
@@ -122,6 +125,9 @@ func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, 
 	}
 	query := state.VerificationQuery{Tree: source.Tree, Limit: 1}
 	if change.ID == "" {
+		if input.SkipVerify {
+			return Request{}, fmt.Errorf("%w: --skip-verify publishes a tracked contribution; branch %s is not tracked, so verify it first or prepare it with dockhand", ErrInvalidRequest, input.Branch)
+		}
 		source, query.Target.Portfile, err = e.Publisher.UntrackedSource(ctx, source)
 		if err != nil {
 			return Request{}, err
@@ -129,6 +135,9 @@ func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, 
 		change.Branch = input.Branch
 	} else {
 		query.Target = change.Targets[0]
+	}
+	if input.SkipVerify {
+		return e.finishPublicationBind(ctx, input, change, revision, source, snapshot, evidence, associated)
 	}
 	err = e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
 		candidates, err := r.VerificationCandidates(ctx, query)
@@ -154,6 +163,12 @@ func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, 
 	if err != nil {
 		return Request{}, err
 	}
+	return e.finishPublicationBind(ctx, input, change, revision, source, snapshot, evidence, associated)
+}
+
+// finishPublicationBind plans the publication and freezes the job. A zero
+// evidence attempt publishes unverified; the body discloses it.
+func (e *Engine) finishPublicationBind(ctx context.Context, input PublicationRequest, change record.Change, revision record.Revision, source record.Source, snapshot changeset.Snapshot, evidence record.Attempt, associated *record.PullRequest) (Request, error) {
 	publication, err := e.Publisher.Plan(ctx, change, source, evidence, associated, input.Options)
 	if err != nil {
 		return Request{}, err
@@ -168,7 +183,11 @@ func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, 
 	if current.Commit != snapshot.Commit || current.Tree != snapshot.Tree {
 		return Request{}, fmt.Errorf("%w: branch %s changed while planning publication; run publish again", ErrStaleRevision, input.Branch)
 	}
-	spec, err := normalizeSpec(record.JobSpec{Action: record.Publish, Source: source, Targets: change.Targets, Build: &evidence.Spec.Config, Verification: record.VerificationRequired, Destination: record.Published, Publication: &publication})
+	job := record.JobSpec{Action: record.Publish, Source: source, Targets: change.Targets, Build: &evidence.Spec.Config, Verification: record.VerificationRequired, Destination: record.Published, Publication: &publication}
+	if evidence.ID == "" {
+		job.Build, job.Verification = nil, record.VerificationSkipped
+	}
+	spec, err := normalizeSpec(job)
 	if err != nil {
 		return Request{}, err
 	}

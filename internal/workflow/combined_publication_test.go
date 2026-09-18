@@ -271,7 +271,7 @@ func TestCombinedPublicationRequiresVerifiedPreparationAndImmutableDestination(t
 	for _, mutate := range []func(*record.JobSpec){
 		func(s *record.JobSpec) { s.PublishTo = nil },
 		func(s *record.JobSpec) { s.Preparation = nil },
-		func(s *record.JobSpec) { s.Verification = record.VerificationSkipped },
+		func(s *record.JobSpec) { s.Verification = record.VerificationSkipped }, // a build with nothing to verify it
 		func(s *record.JobSpec) { s.Destination = record.VerificationComplete },
 		func(s *record.JobSpec) { s.Action = record.Verify },
 		func(s *record.JobSpec) { s.Publication = &record.PublicationSpec{} },

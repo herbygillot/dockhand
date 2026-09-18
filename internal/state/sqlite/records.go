@@ -383,7 +383,10 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 			return state.ErrConflict
 		}
 		if old.Phase != v.Phase {
-			if jobPhaseOrder(v.Phase) != jobPhaseOrder(old.Phase)+1 || old.State != record.JobActive || v.State != record.JobActive || old.FinishedAt != nil || v.FinishedAt != nil {
+			// A job that skipped verification at the author's request has no
+			// verification phase: it publishes straight from preparation.
+			skipsVerification := old.Phase == record.PhasePreparation && v.Phase == record.PhasePublication && v.Spec.Verification == record.VerificationSkipped && v.Spec.Destination == record.Published
+			if jobPhaseOrder(v.Phase) != jobPhaseOrder(old.Phase)+1 && !skipsVerification || old.State != record.JobActive || v.State != record.JobActive || old.FinishedAt != nil || v.FinishedAt != nil {
 				return state.ErrConflict
 			}
 		}

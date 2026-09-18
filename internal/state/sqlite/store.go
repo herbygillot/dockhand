@@ -81,7 +81,10 @@ var branchCleanupSchema string
 //go:embed migrations/021.sql
 var observationScheduleSchema string
 
-const schemaVersion = 21
+//go:embed migrations/022.sql
+var unverifiedPublicationSchema string
+
+const schemaVersion = 22
 const applicationID = 0x44484e44
 
 type Options struct {
@@ -296,6 +299,7 @@ func migrations() []schemaMigration {
 		{version: 19, schema: waitKindSchema},
 		{version: 20, schema: branchCleanupSchema},
 		{version: 21, schema: observationScheduleSchema},
+		{version: 22, schema: unverifiedPublicationSchema},
 	}
 }
 

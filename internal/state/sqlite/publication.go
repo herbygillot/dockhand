@@ -27,7 +27,7 @@ func (t *transaction) PublicationForJob(ctx context.Context, id record.JobID) (r
 }
 
 func (t *transaction) PutPublication(ctx context.Context, v record.PublicationAction) error {
-	if v.ID == "" || v.JobID == "" || v.ChangeID == "" || v.RevisionID == "" || v.Spec.EvidenceAttempt == "" {
+	if v.ID == "" || v.JobID == "" || v.ChangeID == "" || v.RevisionID == "" || (v.Spec.EvidenceAttempt == "") != v.Spec.Unverified {
 		return state.ErrInvalid
 	}
 	job, err := t.Job(ctx, v.JobID)
@@ -65,7 +65,7 @@ func (t *transaction) PutPublication(ctx context.Context, v record.PublicationAc
 	if err != nil {
 		return err
 	}
-	return t.exec(ctx, "INSERT INTO publications(id,repository_id,job_id,change_id,revision_id,evidence_attempt,forge,head_repository,head_branch,spec,state,push_started,write_started,last_error) VALUES(?,?,?,?,?,?,?,?,?,?,?,0,0,?)", v.ID, t.repo, v.JobID, v.ChangeID, v.RevisionID, v.Spec.EvidenceAttempt, v.Spec.Forge, v.Spec.HeadRepository, v.Spec.HeadBranch, raw, v.State, v.LastError)
+	return t.exec(ctx, "INSERT INTO publications(id,repository_id,job_id,change_id,revision_id,evidence_attempt,forge,head_repository,head_branch,spec,state,push_started,write_started,last_error) VALUES(?,?,?,?,?,?,?,?,?,?,?,0,0,?)", v.ID, t.repo, v.JobID, v.ChangeID, v.RevisionID, nullableID(v.Spec.EvidenceAttempt), v.Spec.Forge, v.Spec.HeadRepository, v.Spec.HeadBranch, raw, v.State, v.LastError)
 }
 
 type pullRequestObservation struct {

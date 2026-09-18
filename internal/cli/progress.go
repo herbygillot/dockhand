@@ -171,6 +171,9 @@ func completedOutcome(entry view.JobStatus) string {
 		return "update branch prepared; this job did not request verification"
 	}
 	if entry.Job.Spec.Destination == record.Published && len(entry.Publications) > 0 && entry.Publications[0].State == record.PublicationConfirmed {
+		if entry.Job.Spec.Verification == record.VerificationSkipped {
+			return "publication confirmed; verification skipped at the author's request"
+		}
 		return "publication confirmed"
 	}
 	if entry.Reused != nil && entry.Reused.Evidence != nil && entry.Reused.Evidence.Verdict == record.VerdictPassed {
