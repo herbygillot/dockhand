@@ -37,9 +37,15 @@ func (p *Provider) PruneLogCache(ctx context.Context, run record.ProviderRun, be
 	if _, _, _, err := p.execution(ctx, run); err != nil {
 		return false, err
 	}
+	// The request lock exists once a log was downloaded; without it there is
+	// no cache to prune. Held, a download is in progress and the cache is
+	// left for the next sweep, which the caller is told.
 	lock, err := filelock.TryExisting(ctx, filelock.Path(p.Directory, string(run.RequestID)), filelock.Exclusive)
-	if errors.Is(err, filelock.ErrBusy) || errors.Is(err, os.ErrNotExist) {
+	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
+	}
+	if errors.Is(err, filelock.ErrBusy) {
+		return false, fmt.Errorf("%w: request %s", verify.ErrCacheBusy, run.RequestID)
 	}
 	if err != nil {
 		return false, err

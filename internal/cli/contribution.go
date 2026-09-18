@@ -18,7 +18,11 @@ func (r *runtime) contributionCommands() []*cobra.Command {
 			short = "Observe a contribution's PR and retire matching finished work"
 		}
 		command := &cobra.Command{Use: action + " [target]", Short: short, Args: cobra.MaximumNArgs(1)}
-		command.Long = short + ".\n\nSelect a unique open contribution by port/subport name, --branch, or the current branch. --change selects an exact contribution, including historical work. Abandon is local only and refuses pending jobs; wait or cancel them first. Refresh observes the associated PR without changing it, and preserves newer local edits. Status remains a read-only snapshot."
+		detail := "Abandon is local only and refuses pending jobs; wait or cancel them first. It preserves the branch, the evidence, and any PR, and does not close the PR; a later bump starts a new contribution."
+		if action == "refresh" {
+			detail = "Refresh reads the PR from the forge without changing it, records its state and, while it is open, its mergeability, review, and checks, and retires a merged or closed contribution whose published revision still matches the PR head and the local branch; newer local edits keep it open. A merged contribution's branch cleanup is settled at once, and what is still owed is retried. The next periodic look is scheduled from this observation."
+		}
+		command.Long = short + ".\n\nSelect a unique open contribution by port/subport name, --branch, or the current branch. --change selects an exact contribution, including historical work. " + detail
 		command.Flags().StringVar(&selector.branch, "branch", "", "Select a tracked contribution branch")
 		command.Flags().StringVar(&selector.change, "change", "", "Select a contribution by ID, including historical work")
 		command.MarkFlagsMutuallyExclusive("branch", "change")

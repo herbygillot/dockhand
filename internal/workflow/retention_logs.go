@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
@@ -50,7 +51,10 @@ func (c *cycle) collectLogCaches(ctx context.Context, result *RetentionResult) e
 				cancel()
 				if err != nil || found {
 					item := CleanupItem{AttemptID: attempt.ID, Action: "prune-log-cache", Completed: err == nil && !result.DryRun}
-					if err != nil {
+					switch {
+					case errors.Is(err, verify.ErrCacheBusy):
+						item.Detail = "kept; a download holds the request lock; the next sweep retries"
+					case err != nil:
 						item.Detail = err.Error()
 					}
 					result.Items = append(result.Items, item)

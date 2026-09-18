@@ -127,7 +127,7 @@ func (r *runtime) verifyCommand() *cobra.Command {
 	command.Flags().BoolVar(&fresh, "fresh", false, "Run a new build even when previous passing evidence applies")
 	command.Flags().BoolVar(&allSubports, "all-subports", false, "Verify every subport of a shared release locally, not only the initiating one")
 	command.Flags().BoolVar(&detach, "detach", false, "Return once the build is admitted; wait or start finishes it")
-	command.Flags().BoolVar(&trace, "trace", false, "Stream build logs to stderr through completion")
+	command.Flags().BoolVar(&trace, "trace", false, "Follow build logs on stderr through completion")
 	command.MarkFlagsMutuallyExclusive("detach", "trace")
 	return command
 }
@@ -194,7 +194,7 @@ func (s workSelector) contribution(ctx context.Context, services *app.Services, 
 func (r *runtime) waitCommand() *cobra.Command {
 	var selected workSelector
 	var trace bool
-	command := &cobra.Command{Use: "wait [target]", Short: "Resume existing work through completion", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	command := &cobra.Command{Use: "wait [target]", Short: "Resume existing work through completion", Long: "Attach to the selected contribution's pending jobs, or to one job with --job, process them in this invocation, and return when they settle. Jobs frozen at selection are the ones waited for; later submissions do not join. Ctrl-C detaches without canceling accepted work, and the next wait or start resumes it.", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		if cmd.Flags().Changed("branch") && !git.ValidBranchName(selected.branch) {
 			return fmt.Errorf("branch must name a literal recorded contribution branch")
 		}
@@ -221,14 +221,14 @@ func (r *runtime) waitCommand() *cobra.Command {
 		return r.attachScope(cmd, services, scope, workflow.Completion, trace, false, nil, ActionResult{JobIDs: slices.Clone(scope.Jobs), Branch: selector.Branch})
 	}}
 	selected.flags(command)
-	command.Flags().BoolVar(&trace, "trace", false, "Stream build logs to stderr")
+	command.Flags().BoolVar(&trace, "trace", false, "Follow build logs on stderr through completion")
 	return command
 }
 func (r *runtime) cancelCommand() *cobra.Command {
 	var selected workSelector
 	var wait bool
 	var reason string
-	command := &cobra.Command{Use: "cancel [target]", Short: "Request cancellation while preserving branches and evidence", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	command := &cobra.Command{Use: "cancel [target]", Short: "Request cancellation while preserving branches and evidence", Long: "Record a cancellation request for the selected contribution's pending jobs, or for one job with --job; the driver applies it at the next safe point, releasing environments and leaving branches, evidence, and any PR in place. The contribution stays open for a retry; abandon ends it. --wait stays attached until the selected jobs settle.", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		if cmd.Flags().Changed("branch") && !git.ValidBranchName(selected.branch) {
 			return fmt.Errorf("branch must name a literal recorded contribution branch")
 		}
@@ -287,7 +287,7 @@ func joinJobIDs(ids []record.JobID) string {
 }
 
 func (r *runtime) startCommand() *cobra.Command {
-	return &cobra.Command{Use: "start", Short: "Advance this repository's work until interrupted", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+	return &cobra.Command{Use: "start", Short: "Advance this repository's work until interrupted", Long: "Run driver cycles for this repository in the foreground until interrupted: queued jobs are claimed and advanced, open contributions' PRs are observed on their recorded schedule, owed branch cleanup is settled, and released environments are pruned. The live status table does the same while it is open; start is for a terminal that should only process.", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		services, err := r.build(cmd.Context(), r.config)
 		if err != nil {
 			return err

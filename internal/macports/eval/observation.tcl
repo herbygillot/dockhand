@@ -81,15 +81,19 @@ namespace eval ::dockhand {
         $worker eval [list set ::dockhand_observation::source_root $::dockhand::source_root]
     }
     proc observation_setup {platform trace_declarations operands_to_observe} {
-        variable operands $operands_to_observe
-        variable observing 1
-        variable declarations $trace_declarations
-        variable modeled [expr {[llength $platform] > 0}]
+        # Validate before recording anything, so a refused platform leaves
+        # the session as it was.
         if {[llength $platform]} {
             lassign $platform os major arch macos
             if {$os ne "darwin" || ![string is integer -strict $major] || $major < 8 || $arch ni {arm64 x86_64 i386 ppc ppc64}} {
                 error "unsupported modeled platform"
             }
+        }
+        variable operands $operands_to_observe
+        variable observing 1
+        variable declarations $trace_declarations
+        variable modeled [expr {[llength $platform] > 0}]
+        if {[llength $platform]} {
             set deployment $macos
             if {$major >= 20} { append deployment .0 }
             set universal [expr {$major >= 20 ? "arm64 x86_64" : ($major == 19 ? "x86_64" : ($major >= 10 ? "x86_64 i386" : "i386 ppc"))}]

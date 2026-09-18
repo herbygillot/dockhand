@@ -19,8 +19,14 @@ func (r *runtime) correctionCommands() []*cobra.Command {
 		var diff, noPublish, detach, trace bool
 		var build buildOptions
 		var destination publish.Options
-		command := &cobra.Command{Use: string(action), Short: "Correct a tracked contribution and verify it", Args: cobra.NoArgs,
-			Long: "Amend captures the current tracked checkout (stage intended changes before branch adoption); --branch selects committed contents. Rebase fetches MacPorts master and reapplies the contribution as one commit in a disposable workspace. Switch away from the branch before rebasing it. Conflicts preserve that workspace and leave the original branch intact. Both commands verify the replacement and update its PR, staying in the foreground through both; --no-publish stops after verification and --detach returns once the work is accepted. --diff previews without accepting work or moving branches.",
+		short := "Replace a contribution's commit with your checkout's changes and verify it"
+		long := "Amend captures the tracked checkout of the contribution's branch as its new commit; stage intended additions and deletions first, since the capture takes what Git tracks. --branch selects committed contents of a branch instead. --title replaces the commit title and keeps its body. The replacement is verified and its PR updated, in the foreground through both; --no-publish stops after verification and --detach returns once the work is accepted. --diff previews without accepting work or moving branches."
+		if action == record.Rebase {
+			short = "Reapply a contribution onto fresh MacPorts master and verify it"
+			long = "Rebase fetches MacPorts master and reapplies the contribution as one commit in a disposable workspace, then moves the branch to the result. Switch away from the branch before rebasing it. A conflict preserves that workspace and leaves the original branch intact. The replacement is verified and its PR updated, in the foreground through both; --no-publish stops after verification and --detach returns once the work is accepted. --diff previews without accepting work or moving branches."
+		}
+		command := &cobra.Command{Use: string(action), Short: short, Args: cobra.NoArgs,
+			Long: long,
 			RunE: func(cmd *cobra.Command, _ []string) error {
 				if cmd.Flags().Changed("branch") && !git.ValidBranchName(branch) {
 					return fmt.Errorf("branch must name a literal local branch")
@@ -73,14 +79,14 @@ func (r *runtime) correctionCommands() []*cobra.Command {
 		command.Flags().BoolVar(&diff, "diff", false, "Preview without moving branches or accepting work")
 		command.Flags().BoolVar(&noPublish, "no-publish", false, "Stop after verification; leave the PR untouched")
 		command.Flags().BoolVar(&detach, "detach", false, "Return once the correction is accepted and admitted; wait or start finishes it")
-		command.Flags().BoolVar(&trace, "trace", false, "Stream logs through completion")
+		command.Flags().BoolVar(&trace, "trace", false, "Follow build logs on stderr through completion")
 		command.MarkFlagsMutuallyExclusive("detach", "trace")
 		build.flags(command, r.config)
 		publicationFlags(command, &destination)
 		commands = append(commands, command)
 	}
 	var branch string
-	command := &cobra.Command{Use: "reassociate <change_id> --branch NAME", Short: "Associate a renamed branch with its existing contribution", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	command := &cobra.Command{Use: "reassociate <change_id> --branch NAME", Short: "Associate a renamed branch with its existing contribution", Long: "Tell the contribution that its local branch now has another name. The commit the contribution tracks must be the new branch's head; the recorded published head branch on the fork is unchanged, so publication still updates the same PR, and the local name only locates the commit.", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		if !git.ValidBranchName(branch) {
 			return fmt.Errorf("--branch must name a literal local branch")
 		}

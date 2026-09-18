@@ -95,7 +95,7 @@ func TestLogCacheRetentionChecksIdentityAgeAndRequestLock(t *testing.T) {
 	lock, err := filelock.Acquire(t.Context(), filepath.Join(f.provider.Directory, digest([]byte(f.request.ID))+".lock"), filelock.Exclusive)
 	require.NoError(t, err)
 	found, err = f.provider.PruneLogCache(t.Context(), submission.Run, cutoff, false)
-	require.NoError(t, err)
+	require.ErrorIs(t, err, verify.ErrCacheBusy, "a held request lock is reported, not silently skipped")
 	require.False(t, found)
 	require.FileExists(t, name)
 	require.NoError(t, lock.Close())

@@ -65,7 +65,7 @@ func (v executablePathValue) Set(value string) error {
 
 func verificationFlags(command *cobra.Command, options *Options) {
 	command.Flags().BoolVar(&options.Detach, "detach", false, "Return once the work is accepted and admitted; wait or start finishes it")
-	command.Flags().BoolVar(&options.Trace, "trace", false, "Follow build logs through completion")
+	command.Flags().BoolVar(&options.Trace, "trace", false, "Follow build logs on stderr through completion")
 	command.MarkFlagsMutuallyExclusive("detach", "trace")
 }
 
