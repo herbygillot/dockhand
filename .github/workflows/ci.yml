@@ -22,6 +22,9 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
+      - name: Vendor
+        run: make vendor-check
+
       - name: Test
         run: make test
 
