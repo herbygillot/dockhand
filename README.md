@@ -1,5 +1,5 @@
-> [!WARNING]
-> **Pre-release software under rapid development.** Commands, behavior, and stored data can change or break without notice. There are no stability or compatibility guarantees yet.
+> [!NOTE]
+> **Early software; the command surface is still settling.** Your stored data is safe: the state database is migrated forward by each newer Dockhand, never discarded, and `dockhand db backup` keeps a copy before any migration. Commands, flags, output, and the workflow itself may still change between releases, so scripts built on them should expect to be revisited.
 
 <p align="center">
   <picture>
