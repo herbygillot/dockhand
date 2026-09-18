@@ -24,7 +24,7 @@ You can take an update one step at a time, previewing the diff, preparing a bran
 ## Requirements
 
 - **A Mac running macOS.** Building ports in local virtual machines needs an Apple silicon Mac with [Tart](https://tart.run) installed; the prepared images cover macOS Monterey through Tahoe. On any other Mac you can still prepare updates and build them on GitHub Actions instead.
-- **Go 1.27.1 or newer**, to build Dockhand from source. There are no binary releases yet.
+- **Go 1.27.1 or newer**, to build Dockhand from source; its dependencies are vendored, so the build needs no network. A MacPorts port is under review in [macports/macports-ports#34756](https://github.com/macports/macports-ports/pull/34756); until it is accepted, build from source.
 - **Git.**
 - **A local MacPorts installation.** Dockhand reads Portfiles through MacPorts' own Tcl interpreter, so it sees exactly what `port` sees, including computed versions and PortGroup effects.
 - **A GitHub account with a fork of `macports/macports-ports`**, cloned to your machine, with Git able to push to that fork.
@@ -59,7 +59,7 @@ Optional, depending on what you work on:
 **Publishing**
 
 - Pull requests opened from your fork against MacPorts, with the commit message as the description and a body that reports the build environment and a review checklist based on what actually ran.
-- Publication only for committed contents with a passing build on record. Dockhand refuses to publish anything it has not seen pass.
+- Publication only for committed contents, with a passing build on record unless you ask for `--skip-verify`, in which case the pull request says the change was not built and `status` shows it as published unverified.
 - Safe recovery when GitHub does not answer: an uncertain pull-request request is checked, never blindly repeated.
 
 **Working style**
@@ -80,7 +80,7 @@ cd dockhand
 make build
 ```
 
-This produces `./dockhand`; `./dockhand --version` shows the build it came from. Put it somewhere on your `PATH`:
+This produces `./dockhand`; `./dockhand --version` shows the build it came from, stamped from the nearest Git tag, or from `make VERSION=...` when building outside a checkout. Put it somewhere on your `PATH`:
 
 ```sh
 mkdir -p "$HOME/.local/bin"
@@ -179,7 +179,7 @@ dockhand publish jq --dry-run
 dockhand publish jq
 ```
 
-The dry run shows the full pull-request body without pushing anything. The real run pushes the branch to your fork and opens the pull request against MacPorts. Publishing requires a passing build for exactly the committed contents; if you changed the branch since it was built, Dockhand asks you to verify it again first.
+The dry run shows the full pull-request body without pushing anything. The real run pushes the branch to your fork and opens the pull request against MacPorts. Publishing requires a passing build for exactly the committed contents; if you changed the branch since it was built, Dockhand asks you to verify it again first. `publish --skip-verify` opens the pull request without one, and says so in its body.
 
 ### Edit by hand
 
