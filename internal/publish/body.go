@@ -2,6 +2,7 @@ package publish
 
 import (
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"path"
 	"strings"
 	"unicode"
@@ -17,7 +18,7 @@ func publicationBody(content record.PublicationContent, change record.Change, so
 	fmt.Fprintf(&b, "\n#### Description\n\n%s\n", content.Title)
 	var description []string
 	for _, line := range strings.Split(content.Body, "\n") {
-		if !strings.HasPrefix(line, "Generated-by: ") {
+		if !portedit.IsAttribution(line) {
 			description = append(description, line)
 		}
 	}

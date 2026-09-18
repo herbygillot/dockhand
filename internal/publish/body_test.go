@@ -12,7 +12,7 @@ func TestBodyUsesSelectedEvidenceAndGeneratedIdentity(t *testing.T) {
 	t.Parallel()
 	source := record.Source{Commit: record.ObjectID(strings.Repeat("a", 40))}
 	change := record.Change{GeneratedCommit: source.Commit}
-	content := record.PublicationContent{Title: "fixture: update to 2", Body: "Useful explanation\n\nGenerated-by: [dockhand](https://github.com/herbygillot/dockhand)"}
+	content := record.PublicationContent{Title: "fixture: update to 2", Body: "Useful explanation\n\nAssisted-By: Dockhand devel+1a2b3c4d5e6f (https://github.com/herbygillot/dockhand)\nGenerated-by: [dockhand](https://github.com/herbygillot/dockhand)"}
 	attempt := record.Attempt{ID: "earlier-reused-attempt", Spec: record.BuildSpec{Target: record.Target{Name: "fixture-subport", Portfile: "devel/fixture/Portfile"}, Config: record.BuildConfig{FromSource: false, Tests: record.TestDeclared}}, Evidence: &record.Evidence{Verdict: record.VerdictPassed, ObservedAt: time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC), Environment: &record.EnvironmentEvidence{Provider: "tart", ProviderVersion: "2.30", Image: "recorded-image", EnvironmentDigest: "sha256:recorded", Guest: &record.GuestEnvironment{MacOSVersion: "26.1", MacOSBuild: "25B77", Architecture: "arm64", DeveloperTools: record.DeveloperToolsXcode, DeveloperToolsVersion: "Xcode 26.1\nBuild version 17B12", CommandLineToolsVersion: "26.1.0.0.1", NoActivePorts: true, NoForeignPackageManagers: true}}}}
 	for _, phase := range []string{"lint", "test", "install"} {
 		args := []string{"/opt/local/bin/port", "-N", "-D", "/var/tmp/dockhand2/ports/devel/fixture"}
@@ -27,6 +27,7 @@ func TestBodyUsesSelectedEvidenceAndGeneratedIdentity(t *testing.T) {
 		require.Contains(t, body, want)
 	}
 	require.NotContains(t, body, "Generated-by:")
+	require.NotContains(t, body, "Assisted-By:")
 	require.NotContains(t, body, " -s ")
 	require.NotContains(t, body, "Before verification:")
 	require.NotContains(t, body, "Command paths above")
