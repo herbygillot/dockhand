@@ -28,8 +28,8 @@ type observedArchivePlan struct {
 	downloads []plannedArchive
 }
 
-func (s *Service) bindArchives(input *sourceInput, contents []byte, observed macports.Observation) (distfiles.Binding, error) {
-	port, inconclusive := tolerateToolchainProbes(observed.Ports[input.target.Name], contents)
+func (s *Service) bindArchives(ctx context.Context, input *sourceInput, contents []byte, observed macports.Observation) (distfiles.Binding, error) {
+	port, inconclusive := tolerateExplainedProbes(ctx, observed.Ports[input.target.Name], contents, input.files.root)
 	if inconclusive {
 		return distfiles.Binding{}, fmt.Errorf("%w: modeled context depends on host state%s", errProbeInconclusive, hostInputs(port))
 	}
@@ -91,18 +91,18 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 				return nil, fmt.Errorf("%w: context %+v: %v", ErrFidelity, profile, report.UnexpectedChanges)
 			}
 		}
-		oldBinding, err := s.bindArchives(input, input.data, before)
+		oldBinding, err := s.bindArchives(ctx, input, input.data, before)
 		if err != nil {
 			return nil, fmt.Errorf("baseline %+v: %w", profile, err)
 		}
-		binding, err := s.bindArchives(input, contents, after)
+		binding, err := s.bindArchives(ctx, input, contents, after)
 		if err != nil {
 			return nil, fmt.Errorf("candidate %+v: %w", profile, err)
 		}
-		if err := s.checkSharedArchiveOwners(input, input.data, before, oldBinding); err != nil {
+		if err := s.checkSharedArchiveOwners(ctx, input, input.data, before, oldBinding); err != nil {
 			return nil, err
 		}
-		if err := s.checkSharedArchiveOwners(input, contents, after, binding); err != nil {
+		if err := s.checkSharedArchiveOwners(ctx, input, contents, after, binding); err != nil {
 			return nil, err
 		}
 		if len(oldBinding.Groups) != len(binding.Groups) || len(oldBinding.Artifacts) != len(binding.Artifacts) {

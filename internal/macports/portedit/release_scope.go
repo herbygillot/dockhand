@@ -1,6 +1,7 @@
 package portedit
 
 import (
+	"context"
 	"fmt"
 	"slices"
 
@@ -8,7 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
 )
 
-func (s *Service) checkSharedArchiveOwners(input *sourceInput, contents []byte, observed macports.Observation, selected distfiles.Binding) error {
+func (s *Service) checkSharedArchiveOwners(ctx context.Context, input *sourceInput, contents []byte, observed macports.Observation, selected distfiles.Binding) error {
 	if input.scope == nil {
 		return nil
 	}
@@ -18,7 +19,7 @@ func (s *Service) checkSharedArchiveOwners(input *sourceInput, contents []byte, 
 		}
 		next := *input
 		next.target = member.Target
-		binding, err := s.bindArchives(&next, contents, observed)
+		binding, err := s.bindArchives(ctx, &next, contents, observed)
 		if err != nil {
 			return err
 		}

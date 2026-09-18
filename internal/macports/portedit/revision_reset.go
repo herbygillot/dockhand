@@ -77,10 +77,19 @@ func revisionReset(contents []byte, path string, info macports.PortInfo, events 
 			return text.Edit{}, fmt.Errorf("%w: revision is not a literal", ErrUnsupported)
 		}
 		value, literal := cmd.Words[1].Literal(contents)
-		if !literal || value != strconv.Itoa(info.Revision) {
-			return text.Edit{}, fmt.Errorf("%w: revision is calculated or overridden", ErrUnsupported)
+		if literal && value == strconv.Itoa(info.Revision) {
+			return text.Edit{Span: cmd.Words[1].Span, New: []byte("0")}, nil
 		}
-		return text.Edit{Span: cmd.Words[1].Span, New: []byte("0")}, nil
+		// A calculated revision, as the qt family reads from its module
+		// table, is owned by the one place the Portfile writes it as the
+		// words "revision N": that literal is reset, as a checksum held in
+		// a table is refreshed at its one literal.
+		if !literal {
+			if span, ok := portfile.UniqueLiteral(contents, "revision "+strconv.Itoa(info.Revision)); ok {
+				return text.Edit{Span: span, New: []byte("revision 0")}, nil
+			}
+		}
+		return text.Edit{}, fmt.Errorf("%w: revision is calculated or overridden", ErrUnsupported)
 	}
 	return text.Edit{}, fmt.Errorf("%w: nonzero revision has no editable declaration", ErrUnsupported)
 }

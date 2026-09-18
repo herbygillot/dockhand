@@ -62,7 +62,9 @@ const (
 )
 
 var (
-	stable = regexp.MustCompile(`^[0-9]+(?:[.-][0-9]+)*$`)
+	// A leading v, as perl's dotted-decimal module versions spell it, is
+	// part of a stable spelling.
+	stable = regexp.MustCompile(`^v?[0-9]+(?:[.-][0-9]+)*$`)
 	// pep440 covers 1.0a1 and 1.0b2, where a single letter between digits is a
 	// pre-release segment rather than a patch letter such as 1.0.2u.
 	pep440  = regexp.MustCompile(`[0-9](?:a|b|c|rc)[0-9]`)

@@ -62,7 +62,7 @@ func (s *Service) contextProfiles(ctx context.Context, request Request, input *s
 					return nil, err
 				}
 				for _, port := range observed.Ports {
-					if port, inconclusive := tolerateToolchainProbes(port, contents); inconclusive {
+					if port, inconclusive := tolerateExplainedProbes(ctx, port, contents, input.files.root); inconclusive {
 						return nil, fmt.Errorf("%w: platform boundary depends on host state%s", errProbeInconclusive, hostInputs(port))
 					}
 					for _, fact := range port.Operands {

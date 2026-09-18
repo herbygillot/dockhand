@@ -72,11 +72,11 @@ func (s *Service) planObservedChecksums(ctx context.Context, request Request, in
 		if obsoleteIn(observed.Snapshot.Ports[input.target.Name]) {
 			continue
 		}
-		binding, err := s.bindArchives(input, input.data, observed)
+		binding, err := s.bindArchives(ctx, input, input.data, observed)
 		if err != nil {
 			return nil, fmt.Errorf("context %+v: %w", profile, err)
 		}
-		if err := s.checkSharedArchiveOwners(input, input.data, observed, binding); err != nil {
+		if err := s.checkSharedArchiveOwners(ctx, input, input.data, observed, binding); err != nil {
 			return nil, err
 		}
 		info := observed.Snapshot.Ports[input.target.Name]

@@ -211,3 +211,24 @@ checksums sha256 aaaa size 2
 	_, err = s.Prepare(t.Context(), r)
 	require.Error(t, err, "a release whose version is not what the spelling evaluates to is refused")
 }
+
+// A revision calculated from a table, as the qt family reads its module
+// revisions, is reset at the one place the Portfile writes it as "revision N",
+// the way a checksum held in the same table is refreshed at its literal.
+func TestPrepareResetsARevisionCarriedInATable(t *testing.T) {
+	t.Parallel()
+	s, r, _ := archiveFixture(t, `set module_info {{`+strings.Repeat("a", 64)+` 2} "revision 1"}
+version 1.2.3
+revision [regexp -inline {[0-9]+} [lindex ${module_info} 1]]
+master_sites @SITE@/${version}
+distfiles fixture.tar.gz
+checksums sha256 [lindex [lindex ${module_info} 0] 0] size [lindex [lindex ${module_info} 0] 1]
+`)
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	after := string(result.Files[0].After)
+	require.Contains(t, after, `"revision 0"`)
+	require.NotContains(t, after, `"revision 1"`)
+	require.Contains(t, after, "version 1.2.4")
+	require.NotContains(t, after, strings.Repeat("a", 64))
+}

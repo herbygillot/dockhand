@@ -86,8 +86,8 @@ func downloadSources(info macports.PortInfo, portdir string) ([]archiveSource, e
 	locations := map[string][]string{}
 	for _, raw := range sites {
 		site, err := url.Parse(raw)
-		if err != nil || site.Host == "" || site.User != nil || site.Fragment != "" || (site.Scheme != "https" && site.Scheme != "http") {
-			return nil, fmt.Errorf("%w: only direct HTTP(S) master sites are supported", ErrUnsupported)
+		if err != nil || site.Host == "" || site.User != nil || site.Fragment != "" || !fetch.Scheme(site.Scheme) {
+			return nil, fmt.Errorf("%w: only direct HTTP(S) or FTP master sites are supported", ErrUnsupported)
 		}
 		tags := []string{""}
 		authority := strings.Index(raw, "://") + 3
@@ -126,36 +126,49 @@ func (s *Service) downloadArchive(ctx context.Context, info macports.PortInfo, s
 	name, address := source.Name, source.URL
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
-	if err != nil {
-		return Download{}, err
-	}
-	request.Header.Set("Accept-Encoding", "identity")
-	agent := info.Options["fetch.user_agent"]
-	if agent == "" {
-		agent = fetch.UserAgent
-	}
-	request.Header.Set("User-Agent", agent)
 	limit := s.MaxDownloadBytes
 	if limit <= 0 {
 		limit = 512 << 20
 	}
-	response, err := fetch.Open(s.HTTP, request, limit)
-	if err != nil {
-		var status *fetch.StatusError
-		if errors.As(err, &status) && status.Status == http.StatusNotFound {
-			return Download{}, fmt.Errorf("portedit: downloading %s: %w; no archive is published at that location yet, and a release tag alone does not publish its assets", name, err)
+	var reader io.ReadCloser
+	if strings.HasPrefix(address, "ftp://") {
+		// An anonymous FTP fetch, which about a hundred ports' only master
+		// sites offer; the body is hashed and sniffed like an HTTP one.
+		body, err := fetch.OpenFTP(ctx, address, limit)
+		if err != nil {
+			return Download{}, fmt.Errorf("portedit: downloading %s: %w", name, err)
 		}
-		return Download{}, fmt.Errorf("portedit: downloading %s: %w", name, err)
+		reader = body
+	} else {
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
+		if err != nil {
+			return Download{}, err
+		}
+		request.Header.Set("Accept-Encoding", "identity")
+		agent := info.Options["fetch.user_agent"]
+		if agent == "" {
+			agent = fetch.UserAgent
+		}
+		request.Header.Set("User-Agent", agent)
+		response, err := fetch.Open(s.HTTP, request, limit)
+		if err != nil {
+			var status *fetch.StatusError
+			if errors.As(err, &status) && status.Status == http.StatusNotFound {
+				return Download{}, fmt.Errorf("portedit: downloading %s: %w; no archive is published at that location yet, and a release tag alone does not publish its assets", name, err)
+			}
+			return Download{}, fmt.Errorf("portedit: downloading %s: %w", name, err)
+		}
+		if encoding := response.Header.Get("Content-Encoding"); encoding != "" && encoding != "identity" {
+			response.Body.Close()
+			return Download{}, fmt.Errorf("portedit: download returned encoded content")
+		}
+		if strings.Contains(strings.ToLower(response.Header.Get("Content-Type")), "text/html") {
+			response.Body.Close()
+			return Download{}, fmt.Errorf("portedit: download returned HTML for %s", name)
+		}
+		reader = response.Body
 	}
-	defer response.Body.Close()
-	if encoding := response.Header.Get("Content-Encoding"); encoding != "" && encoding != "identity" {
-		return Download{}, fmt.Errorf("portedit: download returned encoded content")
-	}
-	if strings.Contains(strings.ToLower(response.Header.Get("Content-Type")), "text/html") {
-		return Download{}, fmt.Errorf("portedit: download returned HTML for %s", name)
-	}
-	reader := response.Body
+	defer reader.Close()
 	prefix := make([]byte, 512)
 	n, err := io.ReadFull(reader, prefix)
 	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
