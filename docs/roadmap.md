@@ -52,6 +52,10 @@ Managed amend/rebase and explicit reassociation are implemented under the [human
 
 Standalone `publish` continues to require explicit verification when evidence is missing. Combined correction-and-publish commands authorize both steps; this is a settled rule, not an unimplemented feature.
 
+### Instance coordination
+
+Several processes on one database all drive today, arbitrated only by claims. The [instance coordination note](instance-coordination.md) records the leader-and-observer design discussed on 2026-09-18, the gotchas a walk-through found (anonymous claim owners, takeover gated by step timeouts, cancellation applied only inside cycles, driver-local progress lines), the multi-database and on-disk boundaries, and the redesigns that would make it robust: sessions with fenced leases first, then either a client-and-service split or an event journal. Two foundation pieces stand on their own: a stable per-process claim owner and a heartbeat record keyed by database and repository. A per-image lock in `setup` and a host-level Tart capacity lease fix races that exist today.
+
 ### Evidence across repository registrations
 
 One database supports multiple repositories, but evidence is currently scoped to one registered clone. Decide whether identical tree/build inputs may share evidence across registrations and what repository trust checks are necessary. This is distinct from preserving identity within one contribution.
