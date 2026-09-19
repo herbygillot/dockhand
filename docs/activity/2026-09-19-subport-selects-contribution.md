@@ -1,0 +1,5 @@
+# A subport name selects its stub's contribution
+
+`dockhand publish rb33-mustache` failed with "no open contribution for rb33-mustache" while `rb-mustache` resolved, although status had named the subport as the thing to run next. A shared release is initiated by its stub, so the contribution's initiating target is `rb-mustache`, but the target that is prepared and built is the subport, and every selector compared only the initiating name.
+
+`record.Change.Names` now says which names select a contribution: the initiating port and any target it carries, case-insensitively. It is used at the three places that compared only the initiating target: the SQL target filters for changes and jobs, which match the stored targets through `json_each`; the post-lookup guard in contribution selection; and the control request's contribution match. A test resolves the stub, the subport, and a mixed-case subport to the same contribution and confirms a sibling the contribution does not carry is still not found. The fix was written in another session and landed here after the full suite passed on it.
