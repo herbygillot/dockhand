@@ -14,6 +14,7 @@ import (
 func TestDatabaseFlagAndHelp(t *testing.T) {
 	home, err := os.UserHomeDir()
 	require.NoError(t, err)
+	t.Setenv("DOCKHAND_DB", "")
 	root, err := cli.NewRoot(app.Config{})
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(home, ".dockhand", "state.db"), root.PersistentFlags().Lookup("db").DefValue)
@@ -21,6 +22,20 @@ func TestDatabaseFlagAndHelp(t *testing.T) {
 
 	working := t.TempDir()
 	t.Chdir(working)
+	fromEnv := filepath.Join(t.TempDir(), "env", "state.db")
+	t.Setenv("DOCKHAND_DB", fromEnv)
+	root, err = cli.NewRoot(app.Config{})
+	require.NoError(t, err)
+	require.Equal(t, fromEnv, root.PersistentFlags().Lookup("db").DefValue, "DOCKHAND_DB supplies the default")
+	require.Contains(t, root.PersistentFlags().Lookup("db").Usage, "DOCKHAND_DB")
+	var envOut bytes.Buffer
+	require.NoError(t, cli.Run(t.Context(), []string{"status", "--help"}, cli.Streams{Out: &envOut, Err: &envOut}, app.Config{Repository: "/missing/repository"}))
+	require.Contains(t, envOut.String(), "State database: "+fromEnv)
+	envOut.Reset()
+	require.NoError(t, cli.Run(t.Context(), []string{"--db", "explicit", "status", "--help"}, cli.Streams{Out: &envOut, Err: &envOut}, app.Config{Repository: "/missing/repository"}))
+	require.NotContains(t, envOut.String(), "State database: "+fromEnv, "the flag overrides the environment")
+	require.Contains(t, envOut.String(), "State database: "+filepath.Join(working, "explicit"))
+	t.Setenv("DOCKHAND_DB", "")
 	for _, args := range [][]string{
 		{"--db", "custom", "status", "--help"},
 		{"status", "--db=custom", "--help"},

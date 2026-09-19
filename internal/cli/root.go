@@ -67,6 +67,9 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, *runtime,
 		config.Tart.Executable = os.Getenv("TART_BIN")
 	}
 	if config.DBPath == "" {
+		config.DBPath = os.Getenv("DOCKHAND_DB")
+	}
+	if config.DBPath == "" {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
 			return nil, nil, fmt.Errorf("cli: locating home directory for default state database: %w", err)
@@ -91,7 +94,7 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, *runtime,
 	if err := dbPath.Set(runtime.config.DBPath); err != nil {
 		return nil, nil, fmt.Errorf("cli: resolving state database: %w", err)
 	}
-	root.PersistentFlags().Var(dbPath, "db", "Path to the Dockhand state database")
+	root.PersistentFlags().Var(dbPath, "db", "Path to the Dockhand state database (DOCKHAND_DB; otherwise ~/.dockhand/state.db)")
 	for _, flag := range []struct {
 		name, shorthand, usage string
 		target                 *string

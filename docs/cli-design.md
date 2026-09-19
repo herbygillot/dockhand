@@ -22,7 +22,7 @@ Explicit flags override the environment. The global path flags are inherited by 
 
 ```sh
 dockhand -T ~/Source/macports-ports -P /opt/local status
-MACPORTS_TREE=~/Source/macports-ports MACPORTS_PREFIX=/opt/local GIT_BIN=/opt/local/bin/git dockhand bump jq
+MACPORTS_TREE=~/Source/macports-ports MACPORTS_PREFIX=/opt/local GIT_BIN=/opt/local/bin/git DOCKHAND_DB=~/.dockhand/work.db dockhand bump jq
 ```
 
 `--db PATH` selects the state database, defaulting to `$HOME/.dockhand/state.db` across all checkouts. Both `--db PATH` and `--db=PATH` work before or after the command. The `--` separator ends option parsing. Relative paths resolve against the invocation's working directory, and an explicitly empty path is rejected. Accept a filesystem path, not SQLite URI options. No short alias is assigned. The old `--lock-dir`, `-L`, and `--lockfile` flags are rejected.
