@@ -72,7 +72,7 @@ func lookupContribution(ctx context.Context, reader state.Reader, selected Contr
 	if requireOpen && change.Disposition != record.ChangeOpen {
 		return change, fmt.Errorf("%w: contribution %s is %s", ErrInvalidRequest, change.ID, change.Disposition)
 	}
-	if selected.Branch != "" && selected.Branch != change.Branch || selected.Target != "" && !strings.EqualFold(selected.Target, change.InitiatingTarget) {
+	if selected.Branch != "" && selected.Branch != change.Branch || selected.Target != "" && !change.Names(selected.Target) {
 		return change, fmt.Errorf("%w: selector does not match contribution %s (%s)", ErrInvalidRequest, change.ID, change.InitiatingTarget)
 	}
 	return change, nil

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
-	"strings"
 	"unicode/utf8"
 
 	"github.com/herbygillot/dockhand/internal/record"
@@ -206,7 +205,7 @@ func controlMatchesContribution(ctx context.Context, r state.Reader, request rec
 	if err != nil {
 		return err
 	}
-	if selector.Branch != "" && change.Branch != selector.Branch || selector.ChangeID != "" && change.ID != selector.ChangeID || selector.Target != "" && !strings.EqualFold(change.InitiatingTarget, selector.Target) {
+	if selector.Branch != "" && change.Branch != selector.Branch || selector.ChangeID != "" && change.ID != selector.ChangeID || selector.Target != "" && !change.Names(selector.Target) {
 		return state.ErrConflict
 	}
 	return nil

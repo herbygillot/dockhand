@@ -1,6 +1,9 @@
 package record
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // Disposition describes whether a contribution is still being pursued.
 // It is independent of the outcomes of individual jobs.
@@ -40,6 +43,26 @@ type Change struct {
 	// merge and on contributions retired before it was recorded.
 	Cleanup   *BranchCleanup `json:",omitempty"`
 	CreatedAt time.Time
+}
+
+// Names reports whether name selects this contribution. The initiating port
+// names it, and so does any target it carries: a shared release is initiated
+// by its stub -- rb-mustache -- while the target that is prepared and built is
+// a subport of it, rb33-mustache, and status names that subport when it tells
+// a reader what to run next. Both spellings reach the same contribution.
+func (c Change) Names(name string) bool {
+	if name == "" {
+		return false
+	}
+	if strings.EqualFold(c.InitiatingTarget, name) {
+		return true
+	}
+	for _, target := range c.Targets {
+		if strings.EqualFold(target.Name, name) {
+			return true
+		}
+	}
+	return false
 }
 
 // CleanupState is where one side of a merged contribution's cleanup stands.

@@ -91,8 +91,8 @@ func (t *transaction) Jobs(ctx context.Context, q state.Query) ([]record.Job, er
 		args = append(args, t.repo, q.Branch)
 	}
 	if q.Target != "" {
-		sql += " AND j.change_id IN (SELECT id FROM changes WHERE repository_id=? AND initiating_target=? COLLATE NOCASE)"
-		args = append(args, t.repo, q.Target)
+		sql += " AND j.change_id IN (SELECT id FROM changes WHERE repository_id=? AND " + targetNameClause + ")"
+		args = append(args, t.repo, q.Target, q.Target)
 	}
 	if q.ChangeID != "" {
 		sql += " AND j.change_id=?"
@@ -119,6 +119,12 @@ func (t *transaction) Jobs(ctx context.Context, q state.Query) ([]record.Job, er
 	ids, err := t.ids(ctx, sql, args...)
 	return fetch(ctx, ids, err, func(ctx context.Context, id string) (record.Job, error) { return t.Job(ctx, record.JobID(id)) })
 }
+
+// targetNameClause matches a contribution by the port that initiated it or by
+// any target it carries, so that the subport of a shared release selects the
+// contribution its stub initiated. It takes the name twice.
+const targetNameClause = "(initiating_target=? COLLATE NOCASE OR EXISTS (SELECT 1 FROM json_each(coalesce(changes.targets,'[]')) WHERE json_extract(value,'$.Name')=? COLLATE NOCASE))"
+
 func (t *transaction) Changes(ctx context.Context, q state.Query) ([]record.Change, error) {
 	limit, err := queryLimit(q)
 	if err != nil {
@@ -135,8 +141,8 @@ func (t *transaction) Changes(ctx context.Context, q state.Query) ([]record.Chan
 		if q.Jobs != nil {
 			return nil, state.ErrInvalid
 		}
-		query += " AND initiating_target=? COLLATE NOCASE"
-		args = append(args, q.Target)
+		query += " AND " + targetNameClause
+		args = append(args, q.Target, q.Target)
 	}
 	if q.Pending {
 		if q.Jobs != nil {

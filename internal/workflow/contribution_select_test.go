@@ -125,3 +125,29 @@ func TestTargetControlRetainsFrozenJobsBeforeBranchExists(t *testing.T) {
 	require.Equal(t, frozen, replay)
 	require.Equal(t, record.JobQueued, f.status(t, later).Jobs[0].Job.State)
 }
+
+// A shared release is initiated by its stub and prepared as one subport of it.
+// Status names that subport when it says what to run next, so the same name
+// has to reach the contribution the stub initiated -- and a name the
+// contribution does not carry still must not.
+func TestSubportOfSharedReleaseSelectsItsContribution(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	change := record.Change{
+		ID:               "shared",
+		InitiatingTarget: "rb-mustache",
+		Branch:           "dockhand/bump/rb-mustache",
+		Targets:          []record.Target{{Name: "rb33-mustache", Portfile: "ruby/rb-mustache/Portfile", Subport: "rb33-mustache"}},
+		Disposition:      record.ChangeOpen,
+	}
+	require.NoError(t, f.store.Update(t.Context(), f.repository, func(ctx context.Context, tx state.Tx) error {
+		return tx.PutChange(ctx, change)
+	}))
+	for _, name := range []string{"rb-mustache", "rb33-mustache", "RB33-Mustache"} {
+		selected, err := f.engine.SelectContribution(t.Context(), workflow.ContributionSelector{Target: name})
+		require.NoError(t, err, name)
+		require.Equal(t, change.ID, selected.ID, name)
+	}
+	_, err := f.engine.SelectContribution(t.Context(), workflow.ContributionSelector{Target: "rb24-mustache"})
+	require.ErrorIs(t, err, state.ErrNotFound)
+}
