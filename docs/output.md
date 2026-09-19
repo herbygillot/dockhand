@@ -60,7 +60,7 @@ Headline verdict words: `assess` says "ready" instead of "input-found" and "cand
 
 Rows are per port (decided 2026-09-17 after seeing the table on real data): the port's newest open contribution leads, and its earlier contributions and standalone verifications fold underneath. A preparation that stops before creating a branch retires its contribution rather than leaving an empty open one.
 
-The "next" derivation moves out of the CLI's progress formatting and beside this projection.
+The "next" derivation moves out of the CLI's progress formatting and beside this projection. The action results of `bump`, `verify`, and `publish` read a job's port label, change, and state words from the same projection (done 2026-09-19), so a summary line and the table never disagree about a job; the summary owns only its layout and the identifier-level detail the projection leaves out.
 
 ## The status table
 

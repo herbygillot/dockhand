@@ -1,12 +1,14 @@
 // Package view is the contribution-centric projection of the engine's
-// recorded snapshot: the rows a person reads in status, its JSON, and the
-// live table. It reads records only; it knows neither the engine nor the
-// store, so what a phase, state, or next step is called lives in one place
-// that nothing operational depends on.
+// recorded snapshot and the phrasebook for it: the rows a person reads in
+// status, its JSON, and the live table, and the words an action's summary
+// uses for the same job. It reads records only; it knows neither the engine
+// nor the store, so what a change, phase, state, or next step is called
+// lives in one place that nothing operational depends on.
 package view
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -276,21 +278,16 @@ func latest(current, accepted time.Time, finished *time.Time) time.Time {
 }
 
 // changeWords says what a job changes: the version move for a bump once its
-// release is resolved, otherwise the kind of change.
+// release is resolved, otherwise the kind of change. A publication or
+// correction has no words of its own; its contribution's row keeps the
+// words of the update it carries.
 func changeWords(job record.Job) string {
 	switch job.Spec.Action {
 	case record.Bump:
-		release := job.ResolvedRelease
-		if release == nil {
+		if job.ResolvedRelease == nil {
 			return "version bump"
 		}
-		if release.NoUpdate {
-			return "current at " + release.CurrentVersion
-		}
-		if release.CurrentVersion == "" {
-			return "-> " + release.Version
-		}
-		return release.CurrentVersion + " -> " + release.Version
+		return VersionMove(job.ResolvedRelease)
 	case record.BumpRevision:
 		return "revision bump"
 	case record.RefreshChecksums:
@@ -301,6 +298,74 @@ func changeWords(job record.Job) string {
 		return ""
 	}
 	return string(job.Spec.Action)
+}
+
+// ChangeWords is what a job does, for a line about the job itself: the
+// version move or kind of update, else the kind of job.
+func ChangeWords(job record.Job) string {
+	if words := changeWords(job); words != "" {
+		return words
+	}
+	switch job.Spec.Action {
+	case record.Publish:
+		return "publication"
+	case record.Amend:
+		return "amendment"
+	case record.Rebase:
+		return "rebase"
+	}
+	return string(job.Spec.Action)
+}
+
+// VersionMove words a resolved release as the change a person sees:
+// "1.7 -> 1.8.1", or that the port is already current.
+func VersionMove(release *record.Release) string {
+	if release.NoUpdate {
+		words := "already current at " + release.CurrentVersion
+		if release.Version != "" && release.Version != release.CurrentVersion {
+			words += "; latest eligible version is " + release.Version
+		}
+		return words
+	}
+	if release.CurrentVersion == "" {
+		return "-> " + release.Version
+	}
+	return release.CurrentVersion + " -> " + release.Version
+}
+
+// PortLabel names a job by its first target and explicit variants, the way
+// a summary line reads ("jq +docs"), never by ID unless it has no target.
+func PortLabel(job record.Job) string {
+	if len(job.Spec.Targets) == 0 {
+		return string(job.ID)
+	}
+	target := job.Spec.Targets[0]
+	name := target.Name
+	for _, variant := range slices.Sorted(maps.Keys(target.Variants)) {
+		prefix := "-"
+		if target.Variants[variant] {
+			prefix = "+"
+		}
+		name += " " + prefix + variant
+	}
+	return name
+}
+
+// PortSelector names a job the way a command selects it: the first target's
+// name, or "--job <id>" when it has none, so it can be pasted after a verb.
+func PortSelector(job record.Job) string {
+	if len(job.Spec.Targets) == 0 {
+		return "--job " + string(job.ID)
+	}
+	return job.Spec.Targets[0].Name
+}
+
+// JobState is the state word for one job, the same one its contribution's
+// row shows when this is the current job: queued, preparing, building on
+// macOS 26, waiting for capacity, verified, published, needs attention.
+func JobState(entry JobStatus, pr *record.PullRequest) string {
+	_, state, _ := jobWords(entry, pr)
+	return state
 }
 
 // revisionWords recovers the version move of a change whose bump job is not
@@ -346,17 +411,22 @@ func words(change record.Change, known bool, current *JobStatus, pr *record.Pull
 		}
 		return "preparation", "recorded", "no jobs recorded"
 	}
+	return jobWords(*current, pr)
+}
+
+// jobWords derives the phase, state, and next columns from a job alone.
+func jobWords(current JobStatus, pr *record.PullRequest) (phase, state, next string) {
 	job := current.Job
 	phase = string(job.Phase)
 	switch job.State {
 	case record.JobQueued:
 		return phase, "queued", "waiting for a driver; run dockhand start or dockhand wait"
 	case record.JobActive:
-		return phase, activeState(*current), activeNext(job)
+		return phase, activeState(current), activeNext(job)
 	case record.JobCompleted:
-		return completedWords(*current, pr)
+		return completedWords(current, pr)
 	case record.JobFailed:
-		return phase, "failed", failedNext(*current)
+		return phase, "failed", failedNext(current)
 	case record.JobNeedsAttention:
 		next = job.Detail
 		switch {
@@ -435,11 +505,11 @@ func activeNext(job record.Job) string {
 func completedWords(entry JobStatus, pr *record.PullRequest) (phase, state, next string) {
 	job := entry.Job
 	if job.ResolvedRelease != nil && job.ResolvedRelease.NoUpdate {
-		return "done", "current", "no update needed"
+		return "done", "no update needed", "bump again when upstream releases"
 	}
 	switch job.Spec.Destination {
 	case record.BranchReady:
-		return "preparation", "branch ready", "verify when ready: dockhand verify " + jobPort(job)
+		return "preparation", "branch ready", "verify when ready: dockhand verify " + PortSelector(job)
 	case record.Published:
 		state := "published"
 		if job.Spec.Verification == record.VerificationSkipped {
@@ -453,7 +523,7 @@ func completedWords(entry JobStatus, pr *record.PullRequest) (phase, state, next
 	if job.Spec.Action == record.Verify && job.ChangeID == "" {
 		return "verification", "verified", "standalone verification; no update was prepared"
 	}
-	return "verification", "verified", "publish when ready: dockhand publish " + jobPort(job)
+	return "verification", "verified", "publish when ready: dockhand publish " + PortSelector(job)
 }
 
 func failedNext(entry JobStatus) string {
@@ -513,13 +583,6 @@ func pullRequestNext(pr *record.PullRequest) string {
 		parts = append(parts, detail)
 	}
 	return strings.Join(parts, ", ")
-}
-
-func jobPort(job record.Job) string {
-	if len(job.Spec.Targets) == 0 {
-		return "--job " + string(job.ID)
-	}
-	return job.Spec.Targets[0].Name
 }
 
 // mergedNext words a merged contribution's housekeeping from its recorded

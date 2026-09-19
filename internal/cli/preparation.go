@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/workflow"
+	"github.com/herbygillot/dockhand/internal/workflow/view"
 	"github.com/spf13/cobra"
 )
 
@@ -124,7 +125,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 				}
 				progress.VerboseReport(cmd.Context(), "Repository %s; branch %s; commit %s; target %s", preview.Repository, preview.Branch, preview.Preparation.Base.Commit, preview.Preparation.Target.Name)
 				if release := preview.Preparation.Release; release != nil {
-					fmt.Fprintf(cmd.ErrOrStderr(), "%s: %s\n", plain(preview.Preparation.Target.Name), plain(versionMove(release)))
+					fmt.Fprintf(cmd.ErrOrStderr(), "%s: %s\n", plain(preview.Preparation.Target.Name), plain(view.VersionMove(release)))
 					switch {
 					case release.Archive && release.Listing != nil:
 						progress.VerboseReport(cmd.Context(), "Archive version %s discovered at %s", release.Version, release.Listing.URL)

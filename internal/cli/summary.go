@@ -3,20 +3,20 @@ package cli
 import (
 	"bytes"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/workflow/view"
 	"io"
-	"maps"
-	"slices"
-	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/workflow"
+	"github.com/herbygillot/dockhand/internal/workflow/view"
 )
 
 // renderSummary prints the info-level result of an action: for each job its
 // port, what changed, the branch, the verdict per platform, and the pull
-// request. Identifiers and the full record stay behind -v in renderStatus.
+// request. The port, change, and state words come from the view, so an
+// action's summary and the status table say the same thing about a job;
+// this file owns the layout and the identifier-level detail the projection
+// leaves out. Identifiers and the full record stay behind -v in renderStatus.
 func renderSummary(out io.Writer, status workflow.Status) error {
 	var buffer bytes.Buffer
 	line := func(format string, values ...any) {
@@ -33,7 +33,7 @@ func renderSummary(out io.Writer, status workflow.Status) error {
 			line("")
 		}
 		job := entry.Job
-		line("%s: %s", jobPort(job), jobHeadline(entry))
+		line("%s: %s; %s", view.PortLabel(job), view.ChangeWords(job), view.JobState(entry, pullRequestOf(entry, status.PullRequests)))
 		if prepared := job.Prepared; prepared != nil {
 			if job.ResultRevision != "" {
 				line("  branch: %s", prepared.Branch)
@@ -68,95 +68,17 @@ func renderSummary(out io.Writer, status workflow.Status) error {
 	return err
 }
 
-// jobPort names a job by its first target and explicit variants, never by ID.
-func jobPort(job record.Job) string {
-	if len(job.Spec.Targets) == 0 {
-		return string(job.ID)
+// pullRequestOf is the recorded pull request of the job's contribution.
+func pullRequestOf(entry view.JobStatus, pulls []record.PullRequest) *record.PullRequest {
+	if entry.Job.ChangeID == "" {
+		return nil
 	}
-	target := job.Spec.Targets[0]
-	name := target.Name
-	for _, variant := range slices.Sorted(maps.Keys(target.Variants)) {
-		prefix := "-"
-		if target.Variants[variant] {
-			prefix = "+"
+	for i := range pulls {
+		if pulls[i].ChangeID == entry.Job.ChangeID {
+			return &pulls[i]
 		}
-		name += " " + prefix + variant
 	}
-	return name
-}
-
-// jobHeadline says what the job does and where it stands: "1.7 -> 1.8.1; verified".
-func jobHeadline(entry view.JobStatus) string {
-	job := entry.Job
-	var what string
-	switch job.Spec.Action {
-	case record.Bump:
-		if release := job.ResolvedRelease; release != nil {
-			what = versionMove(release)
-		} else {
-			what = "version bump"
-		}
-	case record.BumpRevision:
-		what = "revision bump"
-	case record.RefreshChecksums:
-		what = "checksum refresh"
-	case record.Verify:
-		what = "verification"
-	case record.Publish:
-		what = "publication"
-	default:
-		what = string(job.Spec.Action)
-	}
-	return what + "; " + jobState(entry)
-}
-
-// versionMove words a resolved release as the change a person sees.
-func versionMove(release *record.Release) string {
-	if release.NoUpdate {
-		return fmt.Sprintf("already current at %s; latest eligible version is %s", release.CurrentVersion, release.Version)
-	}
-	if release.CurrentVersion == "" {
-		return "-> " + release.Version
-	}
-	return release.CurrentVersion + " -> " + release.Version
-}
-
-func jobState(entry view.JobStatus) string {
-	job := entry.Job
-	switch job.State {
-	case record.JobQueued:
-		return "queued"
-	case record.JobActive:
-		switch job.Phase {
-		case record.PhasePreparation:
-			return "preparing"
-		case record.PhaseVerification:
-			return "verifying"
-		case record.PhasePublication:
-			return "publishing"
-		}
-		return "in progress"
-	case record.JobCompleted:
-		if job.ResolvedRelease != nil && job.ResolvedRelease.NoUpdate {
-			return "no update needed"
-		}
-		if job.Spec.Destination == record.Published && len(entry.Publications) > 0 && entry.Publications[0].State == record.PublicationConfirmed {
-			if job.Spec.Verification == record.VerificationSkipped {
-				return "published unverified"
-			}
-			return "published"
-		}
-		if job.Spec.Destination == record.BranchReady && job.ResultRevision != "" {
-			return "branch ready"
-		}
-		if strings.HasPrefix(completedOutcome(entry), "verification passed") {
-			return "verified"
-		}
-		return "completed"
-	case record.JobNeedsAttention:
-		return "needs attention"
-	}
-	return string(job.State)
+	return nil
 }
 
 func platformLabel(platform record.Platform) string {
@@ -252,9 +174,6 @@ func pendingGuidance(job record.Job) string {
 	if job.Spec.Destination == record.Published {
 		pending = "PR publication remains pending."
 	}
-	resume := "dockhand wait --job " + string(job.ID)
-	if len(job.Spec.Targets) > 0 {
-		resume = "dockhand wait " + job.Spec.Targets[0].Name
-	}
+	resume := "dockhand wait " + view.PortSelector(job)
 	return fmt.Sprintf("%s A running driver must settle the result and perform cleanup. Resume with %s or run dockhand start for this repository.", pending, resume)
 }

@@ -48,7 +48,7 @@ func TestSummaryShowsFailingPhaseLogAndResumeByPort(t *testing.T) {
 	require.NoError(t, renderSummary(&out, workflow.Status{Jobs: []view.JobStatus{failed, pending}}))
 	text := out.String()
 	require.Contains(t, text, "deno: revision bump; failed\n  branch: dockhand/revbump/deno\n  failed on macOS 15 arm64; build phase: error: linking failed; log: /tmp/attempt/build.log\n  verification failed\n")
-	require.Contains(t, text, "jq: verification; verifying\n  waiting for a build slot on macOS 15 arm64\n")
+	require.Contains(t, text, "jq: verification; waiting for capacity\n  waiting for a build slot on macOS 15 arm64\n")
 	require.Contains(t, text, "Resume with dockhand wait jq or run dockhand start")
 	require.NotContains(t, text, "job_")
 }
@@ -63,5 +63,25 @@ func TestSummaryReportsCurrentPortsAndReusedEvidence(t *testing.T) {
 	}}
 	var out bytes.Buffer
 	require.NoError(t, renderSummary(&out, status))
-	require.Equal(t, "gh: already current at 2.0; latest eligible version is 2.0; no update needed\n\njq: verification; verified\n  passed on macOS 26 arm64 (reused from an earlier build)\n", out.String())
+	require.Equal(t, "gh: already current at 2.0; no update needed\n\njq: verification; verified\n  passed on macOS 26 arm64 (reused from an earlier build)\n", out.String())
+}
+
+// The summary and the status table read a job through the same words.
+func TestSummaryAndProjectionAgreeOnAJobsWords(t *testing.T) {
+	t.Parallel()
+	platform := record.Platform{OS: "macOS", Version: "26", Architecture: "arm64"}
+	entry := view.JobStatus{
+		Job: record.Job{ID: "job_9", ChangeID: "change_9", State: record.JobActive, Phase: record.PhasePreparation,
+			Spec:            record.JobSpec{Action: record.Bump, Destination: record.Published, Verification: record.VerificationRequired, Targets: []record.Target{{Name: "jq", Portfile: "sysutils/jq/Portfile"}}},
+			ResolvedRelease: &record.Release{Selection: record.Selection{CurrentVersion: "1.7"}, Version: "1.8.1"},
+			Prepared:        &record.PreparedChange{Branch: "dockhand/bump/jq-1.8.1"}},
+		Attempts: []record.Attempt{{State: record.AttemptQueued, Spec: record.BuildSpec{Target: record.Target{Name: "jq"}, Config: record.BuildConfig{Platform: platform}}}},
+	}
+	status := workflow.Status{Snapshot: view.Snapshot{Jobs: []view.JobStatus{entry}, Changes: []record.Change{{ID: "change_9", InitiatingTarget: "jq", Disposition: record.ChangeOpen, Targets: []record.Target{{Name: "jq"}}}}}}
+	rows := view.Project(status.Snapshot)
+	require.Len(t, rows, 1)
+	var out bytes.Buffer
+	require.NoError(t, renderSummary(&out, status))
+	require.Contains(t, out.String(), "jq: "+rows[0].Change+"; "+rows[0].State+"\n")
+	require.Equal(t, "integrating branch", rows[0].State)
 }

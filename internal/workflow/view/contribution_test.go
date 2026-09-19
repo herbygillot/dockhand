@@ -151,3 +151,27 @@ func TestMergedNextWordsTheRecordedCleanup(t *testing.T) {
 	kept := &record.BranchCleanup{Local: record.CleanupOutcome{Name: "b", State: record.CleanupKept, Detail: "kept; it no longer holds the published commit"}, Fork: record.CleanupOutcome{Name: "o/r:b", State: record.CleanupComplete}}
 	require.Equal(t, "merged; local branch b kept; it no longer holds the published commit", mergedNext(kept))
 }
+
+func TestWordsForOneJobMatchItsRow(t *testing.T) {
+	t.Parallel()
+	job := record.Job{ID: "job_1", State: record.JobCompleted, Phase: record.PhaseVerification, ResultRevision: "revision",
+		Spec:            record.JobSpec{Action: record.Bump, Destination: record.VerificationComplete, Targets: []record.Target{{Name: "jq", Variants: map[string]bool{"docs": true, "universal": false}}}},
+		ResolvedRelease: &record.Release{Selection: record.Selection{CurrentVersion: "1.7"}, Version: "1.8.1"}}
+	entry := JobStatus{Job: job, Attempts: []record.Attempt{{State: record.AttemptFinished, Evidence: &record.Evidence{Verdict: record.VerdictPassed}}}}
+	require.Equal(t, "jq +docs -universal", PortLabel(job))
+	require.Equal(t, "jq", PortSelector(job))
+	require.Equal(t, "--job job_1", PortSelector(record.Job{ID: "job_1"}), "a job without a target is selected by ID")
+	require.Equal(t, "1.7 -> 1.8.1", ChangeWords(job))
+	require.Equal(t, "verified", JobState(entry, nil))
+	rows := Project(Snapshot{Jobs: []JobStatus{entry}})
+	require.Equal(t, ChangeWords(job), rows[0].Change)
+	require.Equal(t, JobState(entry, nil), rows[0].State)
+	for action, words := range map[record.Action]string{record.Publish: "publication", record.Amend: "amendment", record.Rebase: "rebase", record.Verify: "verification", record.RefreshChecksums: "checksum refresh"} {
+		require.Equal(t, words, ChangeWords(record.Job{Spec: record.JobSpec{Action: action}}))
+	}
+	current := &record.Release{Selection: record.Selection{CurrentVersion: "2.0", NoUpdate: true}, Version: "2.0"}
+	require.Equal(t, "already current at 2.0", VersionMove(current))
+	current.Version = "1.9"
+	require.Equal(t, "already current at 2.0; latest eligible version is 1.9", VersionMove(current))
+	require.Equal(t, "no update needed", JobState(JobStatus{Job: record.Job{State: record.JobCompleted, ResolvedRelease: current, Spec: record.JobSpec{Action: record.Bump}}}, nil))
+}
