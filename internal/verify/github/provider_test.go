@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -89,10 +90,50 @@ type fixture struct {
 	remote   string
 	engine   *workflow.Engine
 	job      record.JobID
+	// clock is the engine's simulated time. Scheduling is durable and
+	// deadline-based, so driving it here keeps progress independent of how
+	// long a cycle actually takes on a loaded machine.
+	clock atomic.Int64
+}
+
+func (f *fixture) now() time.Time          { return time.Unix(0, f.clock.Load()).UTC() }
+func (f *fixture) advance(d time.Duration) { f.clock.Add(int64(d)) }
+
+// settleCycles bounds a drive loop. It is a stuck-workflow guard, not a wait:
+// every look advances the simulated clock past any scheduled retry, so a
+// workflow that can progress does so on the next cycle.
+const settleCycles = 200
+
+// settle drives the workflow until cond reports the expected state.
+//
+// It replaces require.Eventually deliberately. Eventually runs its condition
+// on another goroutine under a wall-clock deadline, so one slow cycle - the
+// first look performs a real git push - is cut short under load even though it
+// would have succeeded, and an assertion inside the condition calls FailNow off
+// the test goroutine. Here the condition runs on the test goroutine and the
+// engine's clock is advanced between looks instead of sleeping.
+func (f *fixture) settle(t *testing.T, cond func() bool) {
+	t.Helper()
+	// Retry and wait deadlines back off exponentially up to a five-minute
+	// ceiling, so the simulated step doubles too: each look lands past the next
+	// deadline however far the engine has pushed it, without waiting for real time.
+	step := time.Millisecond
+	for range settleCycles {
+		if cond() {
+			return
+		}
+		f.advance(step)
+		if step < time.Hour {
+			step *= 2
+		}
+	}
+	t.Fatalf("workflow did not reach the expected state within %d cycles", settleCycles)
 }
 
 func setup(t *testing.T) *fixture {
 	t.Helper()
+	f := &fixture{}
+	f.clock.Store(time.Now().UTC().Truncate(time.Millisecond).UnixNano())
 	root := t.TempDir()
 	command := func(args ...string) string {
 		t.Helper()
@@ -131,7 +172,7 @@ func setup(t *testing.T) *fixture {
 	p := &Provider{State: store, Repository: repository.ID, Repo: repo, Directory: filepath.Join(t.TempDir(), "coordination"), backend: func(context.Context, string) (actionsAPI, error) { return api, nil }}
 	config, err := buildConfig(record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, Config{WorkflowID: 7, Destination: record.PublicationDestination{Forge: verify.ProviderGitHub, Repository: "macports/macports-ports", HeadRepository: "contributor/macports-ports", BaseBranch: "master", PushURL: remote, BaseURL: remote, LockDirectory: filepath.Join(t.TempDir(), "push-locks")}}, false)
 	require.NoError(t, err)
-	e := &workflow.Engine{State: store, Repository: repository.ID, Repo: repo, Provider: atCapacity{}, WaitInterval: time.Millisecond, RetryDelay: time.Millisecond, ObserveInterval: time.Millisecond}
+	e := &workflow.Engine{State: store, Repository: repository.ID, Repo: repo, Provider: atCapacity{}, Now: f.now, WaitInterval: time.Millisecond, RetryDelay: time.Millisecond, ObserveInterval: time.Millisecond}
 	receipt, err := e.Submit(t.Context(), workflow.Request{ID: "fixture", Spec: record.JobSpec{Action: record.Verify, SourceBranch: "candidate", Source: record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree), Base: record.ObjectID(base)}, Targets: []record.Target{{Name: "fixture", Portfile: "devel/fixture/Portfile"}}, Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &config}})
 	require.NoError(t, err)
 	_, err = e.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{receipt.JobID}})
@@ -142,7 +183,8 @@ func setup(t *testing.T) *fixture {
 	attempt := status.Jobs[0].Attempts[0]
 	e.Provider = nil
 	e.Providers = map[string]verify.Provider{verify.ProviderGitHub: p}
-	return &fixture{p, api, verify.Request{ID: attempt.SubmissionID, AttemptID: attempt.ID, Spec: attempt.Spec}, remote, e, receipt.JobID}
+	f.provider, f.api, f.request, f.remote, f.engine, f.job = p, api, verify.Request{ID: attempt.SubmissionID, AttemptID: attempt.ID, Spec: attempt.Spec}, remote, e, receipt.JobID
+	return f
 }
 
 func (f *fixture) ready() {
@@ -181,13 +223,13 @@ func TestPushRecoveryAndDriverCompletion(t *testing.T) {
 	require.Nil(t, observation.Environment)
 	require.Contains(t, observation.TestOmission, "permits port test failures")
 	require.Len(t, observation.Workflow.Jobs, 2)
-	require.Eventually(t, func() bool {
+	f.settle(t, func() bool {
 		_, err := f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
 		require.NoError(t, err)
 		status, err := f.engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
 		require.NoError(t, err)
 		return status.Jobs[0].Job.State == record.JobCompleted
-	}, 5*time.Second, 10*time.Millisecond)
+	})
 	status, err := f.engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
 	require.NoError(t, err)
 	require.Equal(t, int64(10), status.Jobs[0].Attempts[0].Evidence.Workflow.RunID)
@@ -319,13 +361,13 @@ func TestCancellationFencesUncertainPush(t *testing.T) {
 				f.api.runsErr = errors.New("Actions unavailable before push")
 			}
 			// Go through the driver so cancellation intent must cross the provider boundary.
-			require.Eventually(t, func() bool {
+			f.settle(t, func() bool {
 				_, err := f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
 				require.NoError(t, err)
 				status, err := f.engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
 				require.NoError(t, err)
 				return status.Jobs[0].Attempts[0].State == record.AttemptUncertain
-			}, 5*time.Second, 10*time.Millisecond)
+			})
 			row, err := f.provider.read(t.Context(), f.request.ID)
 			require.NoError(t, err)
 			require.Equal(t, record.ExecutionReserved, row.State)
@@ -335,13 +377,13 @@ func TestCancellationFencesUncertainPush(t *testing.T) {
 			require.NoError(t, f.engine.Control(t.Context(), record.ControlRequest{ID: "cancel-fixture", Kind: record.Cancel, Jobs: []record.JobID{f.job}}))
 			// Closure must work even if GitHub is unavailable.
 			f.api.err = errors.New("offline")
-			require.Eventually(t, func() bool {
+			f.settle(t, func() bool {
 				_, err := f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
 				require.NoError(t, err)
 				status, err := f.engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
 				require.NoError(t, err)
 				return status.Jobs[0].Job.State == record.JobCanceled
-			}, 5*time.Second, 10*time.Millisecond)
+			})
 			restarted := *f.provider
 			row, err = restarted.read(t.Context(), f.request.ID)
 			require.NoError(t, err)
@@ -409,22 +451,22 @@ func TestDriverCancellationDetachesGitHubRun(t *testing.T) {
 	f := setup(t)
 	f.ready()
 	f.api.run.Status, f.api.run.Conclusion = gh.Ptr("in_progress"), nil
-	require.Eventually(t, func() bool {
+	f.settle(t, func() bool {
 		_, err := f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
 		require.NoError(t, err)
 		status, err := f.engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
 		require.NoError(t, err)
 		return status.Jobs[0].Attempts[0].State == record.AttemptRunning
-	}, 5*time.Second, 10*time.Millisecond)
+	})
 	require.NoError(t, f.engine.Control(t.Context(), record.ControlRequest{ID: "cancel-admitted", Kind: record.Cancel, Jobs: []record.JobID{f.job}}))
 	f.api.err = errors.New("offline")
-	require.Eventually(t, func() bool {
+	f.settle(t, func() bool {
 		_, err := f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
 		require.NoError(t, err)
 		status, err := f.engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
 		require.NoError(t, err)
 		return status.Jobs[0].Job.State == record.JobCanceled
-	}, 5*time.Second, 10*time.Millisecond)
+	})
 	require.Equal(t, "in_progress", f.api.run.GetStatus())
 }
 
@@ -497,7 +539,7 @@ func TestIndependentJobsShareRunAndCancelSeparately(t *testing.T) {
 	second, err := f.engine.Submit(t.Context(), workflow.Request{ID: "independent-observer", Spec: spec})
 	require.NoError(t, err)
 	scope := workflow.Scope{Jobs: []record.JobID{f.job, second.JobID}}
-	require.Eventually(t, func() bool {
+	f.settle(t, func() bool {
 		_, err := f.engine.Cycle(t.Context(), scope)
 		require.NoError(t, err)
 		status, err := f.engine.Status(t.Context(), scope)
@@ -509,9 +551,9 @@ func TestIndependentJobsShareRunAndCancelSeparately(t *testing.T) {
 			require.Equal(t, "10:1", job.Attempts[0].Run.RunID)
 		}
 		return true
-	}, 5*time.Second, 10*time.Millisecond)
+	})
 	require.NoError(t, f.engine.Control(t.Context(), record.ControlRequest{ID: "cancel-second", Kind: record.Cancel, Jobs: []record.JobID{second.JobID}}))
-	require.Eventually(t, func() bool {
+	f.settle(t, func() bool {
 		_, err := f.engine.Cycle(t.Context(), scope)
 		require.NoError(t, err)
 		status, err := f.engine.Status(t.Context(), scope)
@@ -525,15 +567,15 @@ func TestIndependentJobsShareRunAndCancelSeparately(t *testing.T) {
 			}
 		}
 		return canceled
-	}, 5*time.Second, 10*time.Millisecond)
+	})
 	f.api.run.Status, f.api.run.Conclusion = gh.Ptr("completed"), gh.Ptr("success")
-	require.Eventually(t, func() bool {
+	f.settle(t, func() bool {
 		_, err := f.engine.Cycle(t.Context(), scope)
 		require.NoError(t, err)
 		status, err := f.engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
 		require.NoError(t, err)
 		return status.Jobs[0].Job.State == record.JobCompleted
-	}, 5*time.Second, 10*time.Millisecond)
+	})
 }
 
 type lostRejectionReply struct{ verify.Provider }
@@ -570,13 +612,13 @@ func TestPermanentAdmissionFailureSurvivesLostReply(t *testing.T) {
 				f.api.err = &gh.ErrorResponse{Response: &http.Response{StatusCode: 404}, Message: "workflow missing"}
 			}
 			f.engine.Providers[verify.ProviderGitHub] = lostRejectionReply{f.provider}
-			require.Eventually(t, func() bool {
+			f.settle(t, func() bool {
 				_, err := f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
 				require.NoError(t, err)
 				status, err := f.engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
 				require.NoError(t, err)
 				return status.Jobs[0].Job.State == record.JobNeedsAttention
-			}, 5*time.Second, 10*time.Millisecond)
+			})
 			restarted := *f.provider
 			recovered, err := restarted.Reconcile(t.Context(), f.request.ID, verify.ReconcileOptions{})
 			require.NoError(t, err)
@@ -604,22 +646,22 @@ func TestTemporaryPreflightFailureCanRecover(t *testing.T) {
 		t.Run(fmt.Sprint(code), func(t *testing.T) {
 			f := setup(t)
 			f.api.err = &gh.ErrorResponse{Response: &http.Response{StatusCode: code}, Message: "temporarily unavailable"}
-			require.Eventually(t, func() bool {
+			f.settle(t, func() bool {
 				_, err := f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
 				require.NoError(t, err)
 				status, err := f.engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
 				require.NoError(t, err)
 				return status.Jobs[0].Attempts[0].State == record.AttemptUncertain
-			}, 5*time.Second, 10*time.Millisecond)
+			})
 			f.api.err = nil
 			f.ready()
-			require.Eventually(t, func() bool {
+			f.settle(t, func() bool {
 				_, err := f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
 				require.NoError(t, err)
 				status, err := f.engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
 				require.NoError(t, err)
 				return status.Jobs[0].Job.State == record.JobCompleted
-			}, 5*time.Second, 10*time.Millisecond)
+			})
 		})
 	}
 }
@@ -628,18 +670,18 @@ func TestDriverProgressFollowsGitHubRun(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	scope := workflow.Scope{Jobs: []record.JobID{f.job}}
-	require.Eventually(t, func() bool {
+	f.settle(t, func() bool {
 		_, err := f.engine.Cycle(t.Context(), scope)
 		require.NoError(t, err)
 		status, err := f.engine.Status(t.Context(), scope)
 		require.NoError(t, err)
 		return strings.Contains(status.Jobs[0].Job.Detail, "No matching GitHub Actions run observed for contributor/macports-ports:candidate")
-	}, 5*time.Second, 10*time.Millisecond)
+	})
 	f.ready()
 	f.api.run.Conclusion = nil
 	for _, phase := range []string{"queued", "in_progress"} {
 		f.api.run.Status = gh.Ptr(phase)
-		require.Eventually(t, func() bool {
+		f.settle(t, func() bool {
 			_, err := f.engine.Cycle(t.Context(), scope)
 			require.NoError(t, err)
 			status, err := f.engine.Status(t.Context(), scope)
@@ -654,6 +696,6 @@ func TestDriverProgressFollowsGitHubRun(t *testing.T) {
 			require.Equal(t, phase, job.Attempts[0].Evidence.Workflow.Status)
 			require.Empty(t, job.Attempts[0].LastError)
 			return true
-		}, 5*time.Second, 10*time.Millisecond)
+		})
 	}
 }

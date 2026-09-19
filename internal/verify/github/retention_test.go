@@ -32,14 +32,14 @@ func TestLogRetentionProtectsActiveJobsAndPreservesEvidenceOffline(t *testing.T)
 	require.NoError(t, err)
 	require.Empty(t, result.Items)
 	require.FileExists(t, name)
-	f.engine.Now = nil
-	require.Eventually(t, func() bool {
+	f.engine.Now = f.now
+	f.settle(t, func() bool {
 		_, err := f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
 		require.NoError(t, err)
 		status, err := f.engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
 		require.NoError(t, err)
 		return status.Jobs[0].Job.State == record.JobCompleted
-	}, 5*time.Second, 10*time.Millisecond)
+	})
 	before, err := f.engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
 	require.NoError(t, err)
 	row, err := f.provider.read(t.Context(), f.request.ID)

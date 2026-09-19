@@ -130,25 +130,25 @@ func TestDriverRecordsMissingRunGuidanceAndCancelsOffline(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	scope := workflow.Scope{Jobs: []record.JobID{f.job}}
-	require.Eventually(t, func() bool {
+	f.settle(t, func() bool {
 		_, err := f.engine.Cycle(t.Context(), scope)
 		require.NoError(t, err)
 		status, err := f.engine.Status(t.Context(), scope)
 		require.NoError(t, err)
 		return status.Jobs[0].Attempts[0].State == record.AttemptUncertain
-	}, 5*time.Second, 10*time.Millisecond)
+	})
 	status, err := f.engine.Status(t.Context(), scope)
 	require.NoError(t, err)
 	require.Contains(t, status.Jobs[0].Job.Detail, "dockhand cancel <job-id> --wait")
 	f.api.err = errors.New("offline")
 	require.NoError(t, f.engine.Control(t.Context(), record.ControlRequest{ID: "stop-missing-run", Kind: record.Cancel, Jobs: scope.Jobs}))
-	require.Eventually(t, func() bool {
+	f.settle(t, func() bool {
 		_, err := f.engine.Cycle(t.Context(), scope)
 		require.NoError(t, err)
 		status, err := f.engine.Status(t.Context(), scope)
 		require.NoError(t, err)
 		return status.Jobs[0].Job.State == record.JobCanceled
-	}, 5*time.Second, 10*time.Millisecond)
+	})
 	head, err := f.provider.Repo.RemoteHead(t.Context(), f.remote, "candidate")
 	require.NoError(t, err)
 	require.Equal(t, string(f.request.Spec.Source.Commit), head.Object)
