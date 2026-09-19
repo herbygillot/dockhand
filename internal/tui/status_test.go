@@ -23,6 +23,23 @@ func rows() []view.Contribution {
 	}
 }
 
+// testVerbs stands in for the command tree: a verb selects the row's
+// contribution by ID, and the verbs that start or discard work ask first.
+func testVerbs() Verbs {
+	return Verbs{
+		Args: func(verb string, row view.Contribution) ([]string, string) {
+			args := []string{verb, "--change", string(row.ChangeID)}
+			if verb == "publish" {
+				args = append(args, "--detach")
+			}
+			return args, ""
+		},
+		Confirms: func(verb string) bool {
+			return verb == "verify" || verb == "publish" || verb == "cancel" || verb == "abandon" || verb == "bump"
+		},
+	}
+}
+
 func key(k string) tea.KeyMsg {
 	if k == "enter" {
 		return tea.KeyMsg{Type: tea.KeyEnter}
@@ -53,7 +70,8 @@ func TestTableShowsRowsAndExpandsIdentifiersOnSelection(t *testing.T) {
 func TestKeysMapOntoVerbsWithConfirmation(t *testing.T) {
 	var ran []string
 	m := newModel(Options{
-		Poll: func(context.Context) (workflow.Overview, error) { return workflow.Overview{Contributions: rows()}, nil },
+		Verbs: testVerbs(),
+		Poll:  func(context.Context) (workflow.Overview, error) { return workflow.Overview{Contributions: rows()}, nil },
 		Run: func(_ context.Context, args []string, out io.Writer) error {
 			ran = append(ran, strings.Join(args, " "))
 			_, _ = io.WriteString(out, "Accepted\n")
@@ -81,24 +99,6 @@ func TestKeysMapOntoVerbsWithConfirmation(t *testing.T) {
 	require.NotNil(t, cmd)
 	cmd()
 	require.Equal(t, "publish --change change_jq --detach", ran[1], "work-starting verbs detach; the table's processing carries them")
-}
-
-func TestVerbArgsForStandaloneWork(t *testing.T) {
-	standalone := rows()[1]
-	args, problem := verbArgs("cancel", standalone)
-	require.Empty(t, problem)
-	require.Equal(t, []string{"cancel", "--job", "job_2"}, args)
-	args, problem = verbArgs("verify", standalone)
-	require.Empty(t, problem)
-	require.Equal(t, []string{"verify", "deno", "--detach"}, args)
-	args, problem = verbArgs("bump", rows()[0])
-	require.Empty(t, problem)
-	require.Equal(t, []string{"bump", "jq", "--detach"}, args, "a bump continues the port's open contribution or starts afresh")
-	_, problem = verbArgs("publish", standalone)
-	require.Contains(t, problem, "not a tracked contribution")
-	standalone.Active = nil
-	_, problem = verbArgs("cancel", standalone)
-	require.Equal(t, "nothing is pending", problem)
 }
 
 func TestOpenKeysReportMissingTargets(t *testing.T) {

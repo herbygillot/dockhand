@@ -15,6 +15,8 @@ dockhand2/
     cli/                 # Command parsing, human/JSON output, attachment
     proc/                # Current-process driver lifetime and residency
     subprocess/          # One external command with shared capture and error conventions
+    tui/                 # The live status table: rows from the projection, keys onto the verbs the CLI supplies
+    version/             # What this build is: the stamped tag, the linked version, or devel
     progress/            # Optional transient operation observations
     credential/          # Device authorization and secret-store contracts
       keychain/          # macOS Keychain implementation
@@ -48,6 +50,8 @@ dockhand2/
       installation/      # MacPorts installation and observed installation facts
       fidelity/          # Before-and-after evaluation comparison reports
       portedit/          # Evaluator-driven source edits in a disposable workspace
+      distfiles/         # Native fetch observations tied to exact checksum declarations
+      dependency/        # Go and Cargo dependency blocks: parsing, generators, validation
       portfile/          # Tcl literal candidates and precise source edits
       version/           # Version spellings: validation, tag patterns, stability
       patchcheck/        # Declared patch files checked against a candidate source

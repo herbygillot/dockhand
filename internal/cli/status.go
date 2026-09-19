@@ -85,6 +85,7 @@ func (r *runtime) liveStatus(cmd *cobra.Command, filter workflow.StatusFilter, s
 	level := r.level(cmd)
 	options := tui.Options{
 		ShowRetired: showRetired,
+		Verbs:       tableVerbs(),
 		Poll: func(ctx context.Context) (workflow.Overview, error) {
 			status, err := services.Workflow.FilteredStatus(ctx, filter)
 			if err != nil {

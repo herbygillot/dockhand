@@ -1,6 +1,3 @@
-// Package tui renders the live status table: the contribution projection
-// polled from the state database, one row per contribution, with keys that
-// map onto the existing verbs and add no authority of their own.
 package tui
 
 import (
@@ -29,12 +26,23 @@ type Options struct {
 	Run       func(ctx context.Context, args []string, out io.Writer) error
 	Open      func(target string) error
 	Processor func(ctx context.Context, say func(scope, text string)) error
+	// Verbs turns a key's verb on a row into a command. The command tree
+	// supplies it, so the verb and flag spellings live where they are defined.
+	Verbs Verbs
 	// ShowRetired starts the table with merged, closed, and abandoned rows
 	// visible; the h key toggles them.
 	ShowRetired bool
 	Interval    time.Duration
 	// Messages is how many strip lines stay visible.
 	Messages int
+}
+
+// Verbs is how the table maps a verb on a row onto a dockhand command.
+type Verbs struct {
+	// Args builds the command for a verb on a row, or says why it cannot run.
+	Args func(verb string, row view.Contribution) (args []string, problem string)
+	// Confirms says whether a verb asks before it runs.
+	Confirms func(verb string) bool
 }
 
 // Run shows the table until the person quits or the context ends. The
@@ -280,14 +288,19 @@ func (m *model) open(what, target string) {
 	m.say(row.Port, "opened "+target)
 }
 
-// verb maps a key onto a dockhand command for the selected row. Verbs that
-// cost minutes, push, or discard ask first.
+// verb maps a key onto a dockhand command for the selected row through the
+// verbs the command tree supplied; those that cost minutes, push, or discard
+// ask first.
 func (m *model) verb(verb string) tea.Cmd {
 	row := m.selected()
 	if row.Port == "" {
 		return nil
 	}
-	args, problem := verbArgs(verb, row)
+	if m.options.Verbs.Args == nil {
+		m.say(row.Port, "no commands are wired to this table")
+		return nil
+	}
+	args, problem := m.options.Verbs.Args(verb, row)
 	if problem != "" {
 		m.say(row.Port, problem)
 		return nil
@@ -297,40 +310,11 @@ func (m *model) verb(verb string) tea.Cmd {
 		return nil
 	}
 	action := pending{verb: verb, args: args, port: row.Port}
-	switch verb {
-	case "verify", "publish", "cancel", "abandon", "bump":
+	if m.options.Verbs.Confirms != nil && m.options.Verbs.Confirms(verb) {
 		m.confirm = &action
 		return nil
 	}
 	return m.start(action)
-}
-
-// verbArgs builds the command for a verb on a row: exact by contribution ID
-// when the row is a tracked change, by job for standalone work. Verbs that
-// start work detach, since the table's own processing carries it on.
-func verbArgs(verb string, row view.Contribution) ([]string, string) {
-	var args []string
-	switch {
-	case verb == "bump":
-		// A bump continues the port's open contribution by itself, and starts
-		// afresh when the row's contribution has retired.
-		args = []string{verb, row.Port}
-	case row.ChangeID != "":
-		args = []string{verb, "--change", string(row.ChangeID)}
-	case verb == "cancel":
-		if row.Active == nil {
-			return nil, "nothing is pending"
-		}
-		args = []string{verb, "--job", string(row.Active.JobID)}
-	case verb == "verify":
-		args = []string{verb, row.Port}
-	default:
-		return nil, "not a tracked contribution; " + verb + " needs one"
-	}
-	if verb == "bump" || verb == "verify" || verb == "publish" {
-		args = append(args, "--detach")
-	}
-	return args, ""
 }
 
 func (m *model) start(action pending) tea.Cmd {
