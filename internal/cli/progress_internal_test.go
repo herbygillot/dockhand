@@ -69,7 +69,8 @@ func TestAttachedCommandNarratesMilestonesAtInfo(t *testing.T) {
 	require.NoError(t, reporter.status(t.Context(), status))
 	require.NoError(t, reporter.status(t.Context(), status), "a repeated snapshot adds no lines")
 	status.Jobs[0].Attempts[0].State = record.AttemptRunning
-	require.NoError(t, reporter.status(t.Context(), status))
+	status.Jobs[0].Attempts[0].Evidence = &record.Evidence{Verdict: record.VerdictUnknown}
+	require.NoError(t, reporter.status(t.Context(), status), "a running attempt's unknown verdict is not a milestone")
 	status.Jobs[0].Attempts[0].State = record.AttemptFinished
 	status.Jobs[0].Attempts[0].Evidence = &record.Evidence{Verdict: record.VerdictPassed}
 	status.Jobs[0].Job.Phase = record.PhasePublication

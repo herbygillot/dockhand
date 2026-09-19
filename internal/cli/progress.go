@@ -196,7 +196,9 @@ func (r *reporter) narrate(entry view.JobStatus, pulls []record.PullRequest) err
 		}
 	}
 	for _, attempt := range entry.Attempts {
-		if attempt.Evidence == nil || attempt.Evidence.Verdict == "" {
+		// A running attempt carries an observation whose verdict is unknown;
+		// only a conclusion is a milestone.
+		if attempt.Evidence == nil || attempt.Evidence.Verdict == "" || attempt.Evidence.Verdict == record.VerdictUnknown {
 			continue
 		}
 		if err := say("verdict:"+string(attempt.ID), attemptLine(job, attempt)+advisoryTestNote(attempt.Evidence)); err != nil {
