@@ -70,35 +70,22 @@ func (r *reporter) cycle(result workflow.CycleResult) error {
 	}
 	return nil
 }
+
+// status reports what changed for the jobs a command is attached to. At the
+// info level it narrates the milestones a person waits for, in the words
+// the status table uses: the change, the branch, the build's platform and
+// verdict, the pull request, and any outcome that needs them. With -v it
+// prints every state change with the job's recorded detail, as the driver
+// sees it.
 func (r *reporter) status(ctx context.Context, status workflow.Status) error {
 	for _, entry := range status.Jobs {
-		message := fmt.Sprintf("%s: %s", r.label(entry.Job), entry.Job.State)
-		if entry.Job.ReuseDetail != "" && entry.Job.State != record.JobCompleted {
-			if err := r.changed("reuse:"+string(entry.Job.ID), fmt.Sprintf("%s: %s", r.label(entry.Job), entry.Job.ReuseDetail)); err != nil {
-				return err
-			}
+		var err error
+		if r.level >= progress.Verbose {
+			err = r.detailed(entry)
+		} else {
+			err = r.narrate(entry, status.PullRequests)
 		}
-		if outcome := completedOutcome(entry); outcome != "" {
-			message += "; " + outcome
-		}
-		if entry.Job.Detail != "" && entry.Job.Detail != entry.Job.ReuseDetail {
-			message += "; " + entry.Job.Detail
-		}
-		waiting := 0
-		for _, attempt := range entry.Attempts {
-			if attempt.State == record.AttemptQueued {
-				waiting++
-			}
-			if attempt.LastError != "" && attempt.LastError != entry.Job.Detail {
-				message += "; " + attempt.LastError
-			}
-		}
-		if waiting == 1 {
-			message += "; waiting for provider admission"
-		} else if waiting > 1 {
-			message += fmt.Sprintf("; %d targets waiting for provider admission", waiting)
-		}
-		if err := r.changed("job:"+string(entry.Job.ID), message); err != nil {
+		if err != nil {
 			return err
 		}
 		if !r.trace || entry.Job.ReusedAttempt != "" {
@@ -149,6 +136,100 @@ func (r *reporter) status(ctx context.Context, status workflow.Status) error {
 				}
 			}
 		}
+	}
+	return nil
+}
+
+// detailed is the -v stream: the job's state with its recorded detail,
+// reuse decisions, attempt errors, and admission waits, whenever any changes.
+func (r *reporter) detailed(entry view.JobStatus) error {
+	message := fmt.Sprintf("%s: %s", r.label(entry.Job), entry.Job.State)
+	if entry.Job.ReuseDetail != "" && entry.Job.State != record.JobCompleted {
+		if err := r.changed("reuse:"+string(entry.Job.ID), fmt.Sprintf("%s: %s", r.label(entry.Job), entry.Job.ReuseDetail)); err != nil {
+			return err
+		}
+	}
+	if outcome := completedOutcome(entry); outcome != "" {
+		message += "; " + outcome
+	}
+	if entry.Job.Detail != "" && entry.Job.Detail != entry.Job.ReuseDetail {
+		message += "; " + entry.Job.Detail
+	}
+	waiting := 0
+	for _, attempt := range entry.Attempts {
+		if attempt.State == record.AttemptQueued {
+			waiting++
+		}
+		if attempt.LastError != "" && attempt.LastError != entry.Job.Detail {
+			message += "; " + attempt.LastError
+		}
+	}
+	if waiting == 1 {
+		message += "; waiting for provider admission"
+	} else if waiting > 1 {
+		message += fmt.Sprintf("; %d targets waiting for provider admission", waiting)
+	}
+	return r.changed("job:"+string(entry.Job.ID), message)
+}
+
+// narrate is the info-level story of one job: each line appears once, when
+// the milestone it names is reached, and says only what a person waits for.
+func (r *reporter) narrate(entry view.JobStatus, pulls []record.PullRequest) error {
+	job := entry.Job
+	id := string(job.ID)
+	label := r.label(job)
+	say := func(key, text string) error { return r.changed(key+":"+id, label+": "+text) }
+	if job.Spec.Action.Prepares() && !(job.Spec.Action == record.Bump && job.ResolvedRelease == nil) {
+		if err := say("change", view.ChangeWords(job)); err != nil {
+			return err
+		}
+	}
+	if job.Prepared != nil && job.ResultRevision != "" {
+		if err := say("branch", "branch "+job.Prepared.Branch+" prepared"); err != nil {
+			return err
+		}
+	}
+	pr := pullRequestOf(entry, pulls)
+	if reused := entry.Reused; reused != nil && reused.Evidence != nil && reused.Evidence.Verdict == record.VerdictPassed {
+		if err := say("reused", "passed on "+platformLabel(reused.Spec.Config.Platform)+" (reused from an earlier build)"+advisoryTestNote(reused.Evidence)); err != nil {
+			return err
+		}
+	}
+	for _, attempt := range entry.Attempts {
+		if attempt.Evidence == nil || attempt.Evidence.Verdict == "" {
+			continue
+		}
+		if err := say("verdict:"+string(attempt.ID), attemptLine(job, attempt)+advisoryTestNote(attempt.Evidence)); err != nil {
+			return err
+		}
+	}
+	if job.State == record.JobActive {
+		switch state := view.JobState(entry, pr); state {
+		case "preparing", "integrating branch", "verifying", "in progress":
+			// Covered by the change, branch, and verdict lines.
+		default:
+			if err := say("state", state); err != nil {
+				return err
+			}
+		}
+	}
+	if line := pullRequestLine(entry, pulls); line != "" {
+		if err := say("pr", line); err != nil {
+			return err
+		}
+	}
+	switch job.State {
+	case record.JobCompleted:
+		// The verdict and PR lines already said it; only other outcomes need words.
+		if outcome := completedOutcome(entry); outcome != "" && outcome != "verification passed" && outcome != "verification passed (reused)" && outcome != "publication confirmed" {
+			return say("outcome", outcome)
+		}
+	case record.JobFailed, record.JobNeedsAttention, record.JobCanceled, record.JobSuperseded:
+		text := view.JobState(entry, pr)
+		if job.Detail != "" {
+			text += "; " + job.Detail
+		}
+		return say("outcome", text)
 	}
 	return nil
 }

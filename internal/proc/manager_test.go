@@ -18,6 +18,7 @@ type scriptedEngine struct {
 	problem              bool
 	cycleErr             error
 	onCycle              func()
+	cycleCtx             func(context.Context)
 }
 
 func (e *scriptedEngine) Status(ctx context.Context, scope workflow.Scope) (workflow.Status, error) {
@@ -29,6 +30,9 @@ func (e *scriptedEngine) Status(ctx context.Context, scope workflow.Scope) (work
 }
 func (e *scriptedEngine) Cycle(ctx context.Context, scope workflow.Scope) (workflow.CycleResult, error) {
 	e.cycles++
+	if e.cycleCtx != nil {
+		e.cycleCtx(ctx)
+	}
 	if e.onCycle != nil {
 		e.onCycle()
 	}
@@ -102,4 +106,34 @@ func TestStateErrorsAndInvalidScopeStopAttachment(t *testing.T) {
 	_, err = manager.Attach(t.Context(), engine, workflow.Scope{Jobs: []record.JobID{"job"}}, workflow.Completion, nil)
 	require.ErrorIs(t, err, sentinel)
 	require.Equal(t, 1, engine.cycles)
+}
+
+// Attachment drives under the context Drive derives; a resident Run does not.
+func TestAttachDrivesUnderTheDerivedContextAndRunDoesNot(t *testing.T) {
+	t.Parallel()
+	type key struct{}
+	var seen []bool
+	engine := &scriptedEngine{stages: stages()}
+	manager := &Manager{Interval: time.Millisecond, Drive: func(ctx context.Context) context.Context { return context.WithValue(ctx, key{}, true) }}
+	cycleCtx := func(ctx context.Context) { quiet, _ := ctx.Value(key{}).(bool); seen = append(seen, quiet) }
+	engine.cycleCtx = cycleCtx
+	_, err := manager.Attach(t.Context(), engine, workflow.Scope{Jobs: []record.JobID{"job"}}, workflow.Completion, nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, seen)
+	for _, quiet := range seen {
+		require.True(t, quiet, "an attached cycle runs under the derived context")
+	}
+	seen = nil
+	run := &scriptedEngine{stages: stages(), cycleCtx: cycleCtx}
+	ctx, cancel := context.WithCancel(t.Context())
+	run.onCycle = func() {
+		if run.cycles >= 2 {
+			cancel()
+		}
+	}
+	require.ErrorIs(t, manager.Run(ctx, run, workflow.Scope{All: true}), context.Canceled)
+	require.NotEmpty(t, seen)
+	for _, quiet := range seen {
+		require.False(t, quiet, "a resident driver runs under the plain context")
+	}
 }

@@ -16,6 +16,10 @@ type Engine interface {
 type Manager struct {
 	Interval time.Duration
 	OnCycle  func(workflow.CycleResult) error
+	// Drive, when set, derives the context an attached command drives under.
+	// Attachment is for seeing one job through; a resident driver runs under
+	// the plain context and is the audience for the driver's own reports.
+	Drive func(context.Context) context.Context
 }
 
 func (m *Manager) interval() (time.Duration, error) {
@@ -98,7 +102,11 @@ func (m *Manager) Attach(ctx context.Context, e Engine, scope workflow.Scope, mi
 		if workflow.Reached(status, milestone) {
 			return true, false, nil
 		}
-		progressed, err := m.cycle(ctx, e, scope)
+		driving := ctx
+		if m.Drive != nil {
+			driving = m.Drive(ctx)
+		}
+		progressed, err := m.cycle(driving, e, scope)
 		return false, progressed, err
 	})
 	return status, err

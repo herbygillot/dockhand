@@ -42,7 +42,7 @@ func TestJSONResultKeepsLogsAndProgressOffStdout(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	r := runtime{json: true}
 	result := ActionResult{Status: workflow.Status{ReadAt: time.Now(), Jobs: []view.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive}}}}}
-	reporter := newReporter(&stderr, nil, false, progress.Info, false)
+	reporter := newReporter(&stderr, nil, false, progress.Verbose, false)
 	require.NoError(t, reporter.status(t.Context(), result.Status))
 	require.NoError(t, reporter.status(t.Context(), result.Status))
 	require.NoError(t, r.result(&stdout, progress.Info, result))
@@ -68,7 +68,7 @@ func TestTraceResumesOffsetsAndDrainsTerminalLogs(t *testing.T) {
 	t.Parallel()
 	var output bytes.Buffer
 	provider := &logProvider{data: []byte("first\nsecond\n")}
-	reporter := newReporter(&output, provider, true, progress.Info, false)
+	reporter := newReporter(&output, provider, true, progress.Verbose, false)
 	run := record.ProviderRun{Provider: "test", RunID: "run"}
 	status := workflow.Status{Jobs: []view.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive}, Attempts: []record.Attempt{{Run: run, State: record.AttemptRunning}}}}}
 	require.NoError(t, reporter.status(t.Context(), status))
@@ -82,7 +82,7 @@ func TestTraceResumesOffsetsAndDrainsTerminalLogs(t *testing.T) {
 func TestCompletionEmphasizesPassedVerificationAndKeepsReuseDecisionEarlier(t *testing.T) {
 	t.Parallel()
 	var output bytes.Buffer
-	reporter := newReporter(&output, nil, false, progress.Info, false)
+	reporter := newReporter(&output, nil, false, progress.Verbose, false)
 	status := workflow.Status{Jobs: []view.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive, ReuseDetail: "Previous image differs; running a new build"}}}}
 	require.NoError(t, reporter.status(t.Context(), status))
 	status.Jobs[0].Job.State = record.JobCompleted

@@ -32,3 +32,15 @@ func TestReporterSerializesConcurrentScopesAndPreservesCancellation(t *testing.T
 	progress.Report(t.Context(), "no observer required")
 	progress.Report(progress.WithReporter(t.Context(), nil), "no observer required")
 }
+
+func TestQuietLowersInfoToVerbose(t *testing.T) {
+	t.Parallel()
+	var seen []progress.Level
+	ctx := progress.WithReporter(context.Background(), func(update progress.Update) { seen = append(seen, update.Level) })
+	quiet := progress.Quiet(ctx)
+	progress.Report(quiet, "cloning image")
+	progress.VerboseReport(quiet, "already verbose")
+	progress.DebugReport(quiet, "a sub-operation")
+	progress.Report(ctx, "still info outside the quiet context")
+	require.Equal(t, []progress.Level{progress.Verbose, progress.Verbose, progress.Debug, progress.Info}, seen)
+}

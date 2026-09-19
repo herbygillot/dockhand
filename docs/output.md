@@ -16,6 +16,8 @@ Every operation reports progress through `progress.Report`. Each report carries 
 
 No logging library is adopted. Reports are user-facing sentences, not log lines; the structured form of a run is its JSON result.
 
+Who is reporting decides the level, not only what is reported (decided 2026-09-19, after the default-to-publish bump made every change command its own driver). A command attached to its job narrates that job in the status table's words, one line per milestone: the change, the branch, the build's platform and verdict, the pull request, and any outcome a person must act on. It drives the workflow under a quiet context that lowers the engine's and providers' info reports to verbose, since to it they are the work behind the scenes. `start` and the live status table drive under the plain context and are the audience for those reports at info. `-v` restores the full interleaving on any command.
+
 ## The JSON envelope
 
 Every command supports `--json`, and every JSON result has the same envelope:

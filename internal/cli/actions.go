@@ -314,6 +314,9 @@ func (r *runtime) attachScope(cmd *cobra.Command, services *app.Services, scope 
 	reporter := newReporter(cmd.ErrOrStderr(), services.Workflow.Provider, trace, r.level(cmd), r.json)
 	reporter.providers = services.Workflow.Providers
 	services.Processes.OnCycle = reporter.cycle
+	// The command drives only to see its job through; the driver's own
+	// reports are the work behind the scenes and print at -v.
+	services.Processes.Drive = progress.Quiet
 	status, err := services.Processes.Attach(cmd.Context(), services.Workflow, scope, milestone, func(status workflow.Status) error { return reporter.status(cmd.Context(), status) })
 	if len(status.Jobs) == 0 {
 		if receipt == nil {
