@@ -112,7 +112,8 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 			return workflow.BoundPreparation{}, err
 		}
 	} else {
-		progress.Report(ctx, "Continuing contribution %s from recorded source %s", prior.ChangeID, prior.Spec.Source.Commit)
+		progress.Report(ctx, "Continuing the port's open contribution from its recorded source")
+		progress.VerboseReport(ctx, "Continuing contribution %s from recorded source %s", prior.ChangeID, prior.Spec.Source.Commit)
 		source = prior.Spec.Source
 		request.ChangeID = prior.ChangeID
 		if prior.Spec.Preparation != nil {

@@ -129,7 +129,7 @@ func (i *sourceInput) native(ctx context.Context, ports macports.Evaluator) snap
 	}
 	session, err := ports.OpenBatch(ctx, i.tree)
 	if err != nil {
-		progress.DebugReport(ctx, "evaluating without a shared session: %v", err)
+		progress.DebugReport(ctx, "Evaluating without a shared session: %v", err)
 		return ports
 	}
 	i.session = session

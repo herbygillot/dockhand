@@ -136,7 +136,7 @@ func TestOldSchemaStatusExplainsDatabaseOnlyMigration(t *testing.T) {
 	for range 2 {
 		var output bytes.Buffer
 		require.NoError(t, cli.Run(t.Context(), []string{"db", "migrate", "--json"}, cli.Streams{Out: &output, Err: &output}, config))
-		require.JSONEq(t, `{"command":"db migrate","exit_code":0,"error":"","result":{"Current":true}}`, output.String())
+		require.JSONEq(t, `{"command":"db migrate","exit_code":0,"error":"","result":{"current":true}}`, output.String())
 		require.NoError(t, db.QueryRow("PRAGMA user_version").Scan(&version))
 		require.Equal(t, required, version)
 	}
@@ -251,9 +251,14 @@ func TestGCAllRepositoriesReachesRegistrationsWithoutACheckout(t *testing.T) {
 	require.NoError(t, store.Close())
 	var output bytes.Buffer
 	require.NoError(t, cli.Run(t.Context(), []string{"gc", "--all-repositories", "--dry-run"}, cli.Streams{Out: &output, Err: &output}, config), output.String())
+	require.Contains(t, output.String(), "Registration: "+repo.CommonDir+"\n")
+	require.Contains(t, output.String(), "Registration: "+filepath.Join(root, "deleted-checkout", ".git")+" (checkout missing)\n")
+	require.NotContains(t, output.String(), string(kept.ID), "identifiers wait for -v")
+	require.Contains(t, output.String(), "No eligible cleanup.")
+	output.Reset()
+	require.NoError(t, cli.Run(t.Context(), []string{"gc", "--all-repositories", "--dry-run", "-v"}, cli.Streams{Out: &output, Err: &output}, config), output.String())
 	require.Contains(t, output.String(), "Registration "+string(kept.ID)+": "+repo.CommonDir+"\n")
 	require.Contains(t, output.String(), "Registration "+string(gone.ID)+": "+filepath.Join(root, "deleted-checkout", ".git")+" (checkout missing)\n")
-	require.Contains(t, output.String(), "No eligible cleanup.")
 	output.Reset()
 	require.NoError(t, cli.Run(t.Context(), []string{"gc", "--all-repositories", "--json"}, cli.Streams{Out: &output, Err: &output}, config))
 	var result app.CollectResult
@@ -275,4 +280,29 @@ func portsTreeCheckout(t *testing.T) string {
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "devel", "fixture"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "devel", "fixture", "Portfile"), []byte("PortSystem 1.0\nname fixture\n"), 0o644))
 	return root
+}
+
+// A sweep that never ran is not a clean sweep: outside a ports tree gc fails
+// without claiming there was nothing to clean, and its JSON result is null.
+func TestGCOutsideAPortsTreeReportsNoSweep(t *testing.T) {
+	t.Parallel()
+	config := app.Config{Repository: t.TempDir(), DBPath: filepath.Join(t.TempDir(), "state.db")}
+	var stdout, stderr bytes.Buffer
+	err := cli.Run(t.Context(), []string{"gc", "--dry-run"}, cli.Streams{Out: &stdout, Err: &stderr}, config)
+	require.Error(t, err)
+	require.NotContains(t, stdout.String(), "No eligible cleanup.")
+	stdout.Reset()
+	stderr.Reset()
+	err = cli.Run(t.Context(), []string{"gc", "--dry-run", "--json"}, cli.Streams{Out: &stdout, Err: &stderr}, config)
+	require.Error(t, err)
+	var envelope struct {
+		Command  string `json:"command"`
+		ExitCode int    `json:"exit_code"`
+		Error    string `json:"error"`
+		Result   any    `json:"result"`
+	}
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &envelope))
+	require.Equal(t, "gc", envelope.Command)
+	require.NotEmpty(t, envelope.Error)
+	require.Nil(t, envelope.Result, "a failed sweep has no result")
 }

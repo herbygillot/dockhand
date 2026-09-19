@@ -28,7 +28,7 @@ func TestHelpGroupsCommandsInContributionOrder(t *testing.T) {
 		"Verify and publish:", "verify", "publish",
 		"Watch and manage jobs:", "status", "wait", "cancel", "start", "refresh", "abandon",
 		"Housekeeping:", "gc", "db",
-		"Additional Commands:", "review",
+		"Planned, not implemented yet:", "review",
 	}
 	position := 0
 	for _, token := range expected {
@@ -39,7 +39,7 @@ func TestHelpGroupsCommandsInContributionOrder(t *testing.T) {
 		require.GreaterOrEqual(t, index, 0, "expected %q after position %d in help:\n%s", token, position, help)
 		position += index + 1
 	}
-	ungrouped := map[string]bool{"help": true, "completion": true, "review": true}
+	ungrouped := map[string]bool{"help": true, "completion": true}
 	for _, command := range root.Commands() {
 		if ungrouped[command.Name()] {
 			require.Empty(t, command.GroupID, "%s should stay ungrouped", command.Name())

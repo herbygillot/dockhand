@@ -193,6 +193,7 @@ var helpGroups = []struct {
 	{"publish", "Verify and publish:", []string{"verify", "publish"}},
 	{"jobs", "Watch and manage jobs:", []string{"status", "wait", "cancel", "start", "refresh", "abandon"}},
 	{"housekeeping", "Housekeeping:", []string{"gc", "db"}},
+	{"planned", "Planned, not implemented yet:", []string{"review"}},
 }
 
 // Help lists commands in group order, never alphabetically. The setting is a

@@ -159,6 +159,7 @@ func TestWordsForOneJobMatchItsRow(t *testing.T) {
 		ResolvedRelease: &record.Release{Selection: record.Selection{CurrentVersion: "1.7"}, Version: "1.8.1"}}
 	entry := JobStatus{Job: job, Attempts: []record.Attempt{{State: record.AttemptFinished, Evidence: &record.Evidence{Verdict: record.VerdictPassed}}}}
 	require.Equal(t, "jq +docs -universal", PortLabel(job))
+	require.Equal(t, "standalone job", PortLabel(record.Job{ID: "job_1"}), "a label never shows an identifier where a port name belongs")
 	require.Equal(t, "jq", PortSelector(job))
 	require.Equal(t, "--job job_1", PortSelector(record.Job{ID: "job_1"}), "a job without a target is selected by ID")
 	require.Equal(t, "1.7 -> 1.8.1", ChangeWords(job))

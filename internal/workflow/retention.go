@@ -18,20 +18,20 @@ type RetentionOptions struct {
 
 type CleanupItem struct {
 	// Repository is set by callers that collect several registrations.
-	Repository record.RepositoryID `json:",omitempty"`
-	ResourceID record.ResourceID
-	AttemptID  record.AttemptID
-	Path       string
-	Action     string
-	Completed  bool
-	Detail     string
+	Repository record.RepositoryID `json:"repository,omitempty"`
+	ResourceID record.ResourceID   `json:"resource_id,omitempty"`
+	AttemptID  record.AttemptID    `json:"attempt_id,omitempty"`
+	Path       string              `json:"path,omitempty"`
+	Action     string              `json:"action"`
+	Completed  bool                `json:"completed"`
+	Detail     string              `json:"detail,omitempty"`
 }
 
 // RetentionResult can describe partial progress when collection returns an error.
 type RetentionResult struct {
-	Before time.Time
-	DryRun bool
-	Items  []CleanupItem
+	Before time.Time     `json:"before"`
+	DryRun bool          `json:"dry_run"`
+	Items  []CleanupItem `json:"items"`
 }
 
 // Collect releases old terminal resources through the driver's existing cleanup

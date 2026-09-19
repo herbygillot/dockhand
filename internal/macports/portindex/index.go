@@ -268,7 +268,8 @@ func buildPortIndex(ctx context.Context, c Config, platform record.Platform, sou
 		short = short[:12]
 	}
 	if seed == "" {
-		progress.Report(ctx, "Generating full PortIndex for source %s; this may take several minutes", short)
+		progress.Report(ctx, "Building the PortIndex; this may take several minutes")
+		progress.VerboseReport(ctx, "Generating full PortIndex for source %s", short)
 	} else {
 		progress.VerboseReport(ctx, "Updating PortIndex for source %s from %d changed paths", short, len(changed))
 	}

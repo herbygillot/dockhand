@@ -83,7 +83,7 @@ func (r *runtime) correctionCommands() []*cobra.Command {
 		command.Flags().BoolVarP(&noPublish, "no-publish", "P", false, "Leave the PR untouched; with --skip-verify, stop at the replaced branch")
 		command.Flags().BoolVarP(&skipVerify, "skip-verify", "V", false, "Update the PR without a local build; the PR body discloses it")
 		command.Flags().BoolVar(&detach, "detach", false, "Return once the correction is accepted and admitted; wait or start finishes it")
-		command.Flags().BoolVar(&trace, "trace", false, "Follow build logs on stderr through completion")
+		command.Flags().BoolVar(&trace, "trace", false, "Follow build logs on stderr through completion; implies --debug")
 		command.MarkFlagsMutuallyExclusive("detach", "trace")
 		command.MarkFlagsMutuallyExclusive("trace", "skip-verify")
 		build.flags(command, r.config)

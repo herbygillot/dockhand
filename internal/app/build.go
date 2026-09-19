@@ -84,15 +84,18 @@ func (s *Services) buildResolver(platform record.Platform, tests record.TestPoli
 				if needsXcode {
 					setup = "dockhand setup --xcode <archive-or-directory>"
 				}
-				progress.Report(ctx, "No suitable prepared Tart image is available. Run %s to verify locally. Using GitHub verification.", setup)
+				progress.Report(ctx, "No suitable prepared Tart image is available; run %s to verify locally. Trying GitHub verification.", setup)
 			} else if errors.Is(err, tart.ErrExecutableUnavailable) {
-				progress.Report(ctx, "Tart is not available; using GitHub verification.")
+				progress.Report(ctx, "Tart is not available. Trying GitHub verification.")
 			} else {
 				return workflow.BuildResolution{}, err
 			}
 			resolved, githubErr := githubBuild()
 			if githubErr != nil && preserve && ctx.Err() == nil {
 				return workflow.BuildResolution{Problem: "GitHub verification could not be configured: " + githubErr.Error()}, nil
+			}
+			if githubErr == nil {
+				progress.Report(ctx, "Using GitHub verification.")
 			}
 			return resolved, githubErr
 		}

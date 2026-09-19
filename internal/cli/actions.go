@@ -127,7 +127,7 @@ func (r *runtime) verifyCommand() *cobra.Command {
 	command.Flags().BoolVar(&fresh, "fresh", false, "Run a new build even when previous passing evidence applies")
 	command.Flags().BoolVar(&allSubports, "all-subports", false, "Verify every subport of a shared release locally, not only the initiating one")
 	command.Flags().BoolVar(&detach, "detach", false, "Return once the build is admitted; wait or start finishes it")
-	command.Flags().BoolVar(&trace, "trace", false, "Follow build logs on stderr through completion")
+	command.Flags().BoolVar(&trace, "trace", false, "Follow build logs on stderr through completion; implies --debug")
 	command.MarkFlagsMutuallyExclusive("detach", "trace")
 	return command
 }
@@ -221,7 +221,7 @@ func (r *runtime) waitCommand() *cobra.Command {
 		return r.attachScope(cmd, services, scope, workflow.Completion, trace, false, nil, ActionResult{JobIDs: slices.Clone(scope.Jobs), Branch: selector.Branch})
 	}}
 	selected.flags(command)
-	command.Flags().BoolVar(&trace, "trace", false, "Follow build logs on stderr through completion")
+	command.Flags().BoolVar(&trace, "trace", false, "Follow build logs on stderr through completion; implies --debug")
 	return command
 }
 func (r *runtime) cancelCommand() *cobra.Command {

@@ -328,10 +328,11 @@ func VersionMove(release *record.Release) string {
 }
 
 // PortLabel names a job by its first target and explicit variants, the way
-// a summary line reads ("jq +docs"), never by ID unless it has no target.
+// a summary line reads ("jq +docs"); a job with no target is a standalone
+// job, never a UUID standing where a port name should be.
 func PortLabel(job record.Job) string {
 	if len(job.Spec.Targets) == 0 {
-		return string(job.ID)
+		return "standalone job"
 	}
 	target := job.Spec.Targets[0]
 	name := target.Name

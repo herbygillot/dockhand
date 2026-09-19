@@ -140,7 +140,8 @@ func (c *cache) ensure(ctx context.Context, repo *git.Repository, tree, root str
 	guard, err := filelock.TryExisting(ctx, lockPath, filelock.Exclusive)
 	switch {
 	case errors.Is(err, filelock.ErrBusy):
-		progress.Report(ctx, "Waiting for another process indexing source %s", tree[:12])
+		progress.Report(ctx, "Waiting for another process to finish indexing this source")
+		progress.VerboseReport(ctx, "Waiting for another process indexing source %s", tree[:12])
 		fallthrough
 	case errors.Is(err, os.ErrNotExist):
 		guard, err = filelock.Acquire(ctx, lockPath, filelock.Exclusive)

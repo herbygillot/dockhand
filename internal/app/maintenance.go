@@ -54,18 +54,28 @@ type CollectOptions struct {
 
 // Registration describes one repository gc visited.
 type Registration struct {
-	ID record.RepositoryID
+	ID record.RepositoryID `json:"id"`
 	// CommonDir is the registered Git common directory.
-	CommonDir string
+	CommonDir string `json:"common_dir"`
 	// CheckoutMissing means the common directory no longer exists; nothing
 	// can resume that registration's work, so releasing it is always safe.
-	CheckoutMissing bool
+	CheckoutMissing bool `json:"checkout_missing,omitempty"`
+}
+
+// DatabaseCheck is db check's result.
+type DatabaseCheck struct {
+	Valid bool `json:"valid"`
+}
+
+// DatabaseMigration is db migrate's result.
+type DatabaseMigration struct {
+	Current bool `json:"current"`
 }
 
 // CollectResult is the retention result plus the registrations it covered.
 type CollectResult struct {
 	workflow.RetentionResult
-	Registrations []Registration `json:",omitempty"`
+	Registrations []Registration `json:"registrations,omitempty"`
 }
 
 func Collect(ctx context.Context, config Config, options CollectOptions) (CollectResult, error) {

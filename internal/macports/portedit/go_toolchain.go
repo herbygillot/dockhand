@@ -59,7 +59,7 @@ func (s *Service) raiseGoToolchain(ctx context.Context, request Request, input *
 		progress.Report(ctx, "%s requires Go %s per go.mod and declares no go.toolchain_min; declaring it would gate the port on systems whose Go is older", input.target.Name, required)
 		return nil
 	case semver.Compare("v"+semver.MajorMinor("v" + current)[1:], "v"+required) >= 0:
-		progress.VerboseReport(ctx, "go.toolchain_min %s already covers the %s that go.mod requires", current, required)
+		progress.VerboseReport(ctx, "The Portfile's go.toolchain_min %s already covers the %s that go.mod requires", current, required)
 		return nil
 	}
 	contents, err := rewriteLiteralDeclaration(result.Files[0].After, "go.toolchain_min", current, required)

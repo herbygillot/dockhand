@@ -381,12 +381,12 @@ func tolerateExplainedProbes(ctx context.Context, port macports.PortObservation,
 				toolchainBenign, toolchainChecked = toolchainReadsBenign(contents), true
 			}
 			if !toolchainBenign {
-				progress.DebugReport(ctx, "host access is a compiler probe but the Portfile reads toolchain options outside build positions: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
+				progress.DebugReport(ctx, "Host access is a compiler probe but the Portfile reads toolchain options outside build positions: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
 				return port, true
 			}
 		case portGroupReadBenign(root, declaration.Frames, groups):
 		default:
-			progress.DebugReport(ctx, "host access not explained: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
+			progress.DebugReport(ctx, "Host access not explained: %s; frames: %s", declaration.Values[0], strings.Join(where, " <- "))
 			return port, true
 		}
 		explained[declaration.Values[0]] = true

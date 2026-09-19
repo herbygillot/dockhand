@@ -98,7 +98,7 @@ subport fixture-1.15 {
 	require.Equal(t, job.ID, result.Status.Jobs[0].Job.ID)
 	require.Empty(t, result.Status.Jobs[0].Job.ResolvedRelease.Requested)
 	require.Equal(t, int64(1), listingReads.Load())
-	require.Contains(t, logs.String(), "Continuing contribution")
+	require.Contains(t, logs.String(), "Continuing the port's open contribution")
 	out.Reset()
 	logs.Reset()
 	err = Run(t.Context(), []string{"verify", "fixture-1.15", "--branch", job.Prepared.Branch}, Streams{Out: &out, Err: &logs}, config)

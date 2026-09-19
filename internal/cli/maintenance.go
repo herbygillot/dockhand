@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/app"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/spf13/cobra"
 )
@@ -36,7 +37,7 @@ func (r *runtime) databaseCommand() *cobra.Command {
 				return err
 			}
 			if r.json {
-				return r.emit(struct{ Valid bool }{true})
+				return r.emit(app.DatabaseCheck{Valid: true})
 			}
 			_, err := fmt.Fprintln(cmd.OutOrStdout(), "Database integrity: ok")
 			return err
@@ -50,7 +51,7 @@ func (r *runtime) databaseCommand() *cobra.Command {
 				return err
 			}
 			if r.json {
-				return r.emit(struct{ Current bool }{true})
+				return r.emit(app.DatabaseMigration{Current: true})
 			}
 			_, err := fmt.Fprintln(cmd.OutOrStdout(), "Database schema is current.")
 			return err
@@ -68,10 +69,14 @@ func (r *runtime) gcCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			result, callErr := app.Collect(cmd.Context(), r.config, options)
 			if r.json {
+				if callErr != nil {
+					return databaseReadError(callErr)
+				}
 				if err := r.emit(result); err != nil {
 					return err
 				}
 			} else {
+				verbose := r.level(cmd) >= progress.Verbose
 				prefix := ""
 				if options.Retention.DryRun {
 					prefix = "Would "
@@ -82,7 +87,11 @@ func (r *runtime) gcCommand() *cobra.Command {
 						if registration.CheckoutMissing {
 							note = " (checkout missing)"
 						}
-						if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Registration %s: %s%s\n", registration.ID, registration.CommonDir, note); err != nil {
+						label := "Registration"
+						if verbose {
+							label += " " + string(registration.ID)
+						}
+						if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s: %s%s\n", label, registration.CommonDir, note); err != nil {
 							return err
 						}
 					}
@@ -95,9 +104,15 @@ func (r *runtime) gcCommand() *cobra.Command {
 					if options.Retention.DryRun {
 						status = "preview"
 					}
-					target := string(item.ResourceID)
+					target := "environment"
+					if verbose {
+						target = string(item.ResourceID)
+					}
 					if item.AttemptID != "" {
-						target = string(item.AttemptID)
+						target = "build attempt"
+						if verbose {
+							target = string(item.AttemptID)
+						}
 					}
 					if item.Path != "" {
 						target = item.Path
@@ -111,7 +126,7 @@ func (r *runtime) gcCommand() *cobra.Command {
 						}
 					}
 				}
-				if len(result.Items) == 0 {
+				if len(result.Items) == 0 && callErr == nil {
 					if _, err := fmt.Fprintln(cmd.OutOrStdout(), "No eligible cleanup."); err != nil {
 						return err
 					}

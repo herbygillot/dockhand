@@ -115,7 +115,7 @@ func (e *Engine) settleDueCleanups(ctx context.Context) {
 		return err
 	})
 	if err != nil {
-		progress.VerboseReport(ctx, "branch cleanup skipped: %v", err)
+		progress.VerboseReport(ctx, "Branch cleanup skipped: %v", err)
 		return
 	}
 	taken := 0

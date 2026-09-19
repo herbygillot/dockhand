@@ -30,7 +30,7 @@ func (r *runtime) statusCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "status [target]",
 		Short: "Show recorded workflow status",
-		Long:  "Show the repository's contributions as one row each: port, change, phase, state, and what comes next. On a terminal the table is live: it processes the repository's pending work while open, rereads the snapshot as work advances, and its keys run the existing verbs on the selected contribution. --print prints the snapshot once and processes nothing; --json and output that is not a terminal imply --print; -v prints the full record with identifiers.",
+		Long:  "Show the repository's contributions as one row each: port, change, phase, state, and what comes next. On a terminal the table is live: it processes the repository's pending work while open, rereads the snapshot as work advances, and its keys run the existing verbs on the selected contribution. --print prints the snapshot once and processes nothing; --json and output that is not a terminal imply --print; with --print, -v prints the full record with identifiers. A level changes what is shown, never whether work is processed.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 1 {
@@ -53,11 +53,11 @@ func (r *runtime) statusCommand() *cobra.Command {
 			if r.json {
 				return r.emit(overview)
 			}
-			if r.level(cmd) >= progress.Verbose {
-				return renderStatus(cmd.OutOrStdout(), status)
-			}
 			if !printOnly && isTerminal(cmd.OutOrStdout()) && isTerminal(cmd.InOrStdin()) {
 				return r.liveStatus(cmd, filter, all)
+			}
+			if r.level(cmd) >= progress.Verbose {
+				return renderStatus(cmd.OutOrStdout(), status)
 			}
 			return renderContributions(cmd.OutOrStdout(), overview, len(view.Project(status.Snapshot))-len(overview.Contributions))
 		},
