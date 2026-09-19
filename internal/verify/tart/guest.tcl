@@ -15,6 +15,9 @@ set steps {}
 set failure null
 set detail ""
 set testOmission ""
+set testFailure ""
+set testTimeout 1800
+if {[dict exists $input TestTimeoutSeconds] && [dict get $input TestTimeoutSeconds] > 0} {set testTimeout [dict get $input TestTimeoutSeconds]}
 set environment [dict create NoActivePorts false NoForeignPackageManagers false]
 set runUser ""
 
@@ -38,18 +41,65 @@ proc environmentJSON {} {
 }
 
 proc save {state verdict} {
-    global root input steps failure detail testOmission
-    set data [json::write object Protocol 1 ID [json::write string [dict get $input ID]] Digest [json::write string [dict get $input Digest]] Environment [environmentJSON] TestOmission [json::write string $testOmission] State [json::write string $state] Verdict [json::write string $verdict] Steps [json::write array {*}$steps] Failure $failure Detail [json::write string $detail]]
+    global root input steps failure detail testOmission testFailure
+    set data [json::write object Protocol 1 ID [json::write string [dict get $input ID]] Digest [json::write string [dict get $input Digest]] Environment [environmentJSON] TestOmission [json::write string $testOmission] TestFailure [json::write string $testFailure] State [json::write string $state] Verdict [json::write string $verdict] Steps [json::write array {*}$steps] Failure $failure Detail [json::write string $detail]]
     set fd [open $root/result.json.tmp w]
     puts $fd $data
     close $fd
     file rename -force $root/result.json.tmp $root/result.json
 }
-proc step {phase argv {stepPackage ""}} {
-    global name log steps detail failure root runUser
+# launch starts a command whose merged output is read through the returned
+# channel; a test prelude may define it first to stand in for port.
+if {[llength [info procs launch]] == 0} {
+    proc launch {argv} {return [open |[concat $argv 2>@1] r]}
+}
+proc pump {chan} {
+    global log runDone
+    set data [read $chan]
+    if {$data ne ""} {puts -nonewline $log $data; flush $log}
+    if {[eof $chan]} {set runDone eof}
+}
+# timed runs a command with a deadline, returning "" on success or a message.
+# A run past its deadline is terminated, then killed, and reported as such.
+proc timed {argv seconds} {
+    global runDone
+    set chan [launch $argv]
+    fconfigure $chan -blocking 0 -buffering none
+    set runDone ""
+    fileevent $chan readable [list pump $chan]
+    set timer [after [expr {$seconds * 1000}] [list set runDone timeout]]
+    vwait runDone
+    after cancel $timer
+    fileevent $chan readable {}
+    if {$runDone eq "timeout"} {
+        foreach p [pid $chan] {catch {exec kill -TERM $p}}
+        after 10000
+        foreach p [pid $chan] {catch {exec kill -KILL $p}}
+        fconfigure $chan -blocking 1
+        catch {close $chan}
+        return "timed out after ${seconds}s"
+    }
+    fconfigure $chan -blocking 1
+    if {[catch {close $chan} message]} {return $message}
+    return ""
+}
+proc step {phase argv {stepPackage ""} {advisory 0} {seconds 0}} {
+    global name log steps detail failure root runUser testFailure
     if {$stepPackage eq ""} {set stepPackage $name}
     puts $log "dockhand: $stepPackage $phase"
-    if {[catch {exec {*}$argv >@$log 2>@$log} message]} {
+    if {$seconds > 0} {
+        set message [timed $argv $seconds]
+        set failed [expr {$message ne ""}]
+    } else {
+        set failed [catch {exec {*}$argv >@$log 2>@$log} message]
+    }
+    if {$failed && $advisory} {
+        lappend steps [json::write object Package [json::write string $stepPackage] Phase [json::write string $phase] Command [jsonStrings $argv] User [json::write string $runUser] Verdict [json::write string failed] Detail [json::write string $message]]
+        set testFailure $message
+        puts $log "dockhand: $phase failed; advisory under the declared test policy: $message"
+        return
+    }
+    if {$failed} {
         lappend steps [json::write object Package [json::write string $stepPackage] Phase [json::write string $phase] Command [jsonStrings $argv] User [json::write string $runUser] Verdict [json::write string failed] Detail [json::write string $message]]
         set detail "$phase failed: $message"
         set fd [open $root/build.log r]
@@ -148,10 +198,11 @@ try {
     step lint [concat $base lint $selection]
     set phase build
     step build [concat $base -d build $selection]
-    if {[dict get $spec Config Tests] eq "declared" && [string is true -strict $declared]} {
+    set tests [dict get $spec Config Tests]
+    if {$tests in {declared required} && [string is true -strict $declared]} {
         set phase test
-        step test [concat $base -d test $selection]
-    } elseif {[dict get $spec Config Tests] eq "skip"} {
+        step test [concat $base -d test $selection] "" [expr {$tests eq "declared"}] $testTimeout
+    } elseif {$tests eq "skip"} {
         set testOmission "Skipped by request"
     } else {
         set testOmission "Port declares no test phase"

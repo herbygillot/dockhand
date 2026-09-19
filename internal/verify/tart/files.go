@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/herbygillot/dockhand/internal/git"
@@ -33,10 +34,13 @@ type guestInput struct {
 	Digest   string
 	Spec     record.BuildSpec
 	Prefix   string
+	// TestTimeoutSeconds bounds the test phase; the guest kills a longer run.
+	TestTimeoutSeconds int
 }
 type guestResult struct {
 	Environment  *record.GuestEnvironment
 	TestOmission string
+	TestFailure  string
 	Protocol     int
 	ID           string
 	Digest       string
@@ -53,7 +57,7 @@ func verifierDigest() string {
 }
 
 func makeInput(ctx context.Context, repo *git.Repository, request verify.Request, c Config, indexCache, directory string, client *http.Client) (string, error) {
-	input, err := json.Marshal(guestInput{Protocol: 1, ID: string(request.ID), Digest: buildDigest(request.Spec), Spec: request.Spec, Prefix: c.GuestPrefix})
+	input, err := json.Marshal(guestInput{Protocol: 1, ID: string(request.ID), Digest: buildDigest(request.Spec), Spec: request.Spec, Prefix: c.GuestPrefix, TestTimeoutSeconds: int(c.testTimeout() / time.Second)})
 	if err != nil {
 		return "", err
 	}

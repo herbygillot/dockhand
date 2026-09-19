@@ -25,7 +25,7 @@ func ValidateConfig(config record.BuildConfig) error {
 	if config.CapabilityDigest != "" && (!config.CapabilitiesRequired || !utf8.ValidString(config.CapabilityDigest) || strings.IndexFunc(config.CapabilityDigest, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0) {
 		return fmt.Errorf("verify: invalid environment capability identity")
 	}
-	if config.Tests != record.TestDeclared && config.Tests != record.TestSkip && config.Tests != record.TestWorkflow {
+	if config.Tests != record.TestDeclared && config.Tests != record.TestRequired && config.Tests != record.TestSkip && config.Tests != record.TestWorkflow {
 		return fmt.Errorf("verify: an explicit test policy is required")
 	}
 	return nil
@@ -37,7 +37,7 @@ func ValidateRequirements(requirements record.BuildRequirements) error {
 			return fmt.Errorf("verify: provider and platform requirements are required")
 		}
 	}
-	if requirements.Tests != record.TestDeclared && requirements.Tests != record.TestSkip && requirements.Tests != record.TestWorkflow {
+	if requirements.Tests != record.TestDeclared && requirements.Tests != record.TestRequired && requirements.Tests != record.TestSkip && requirements.Tests != record.TestWorkflow {
 		return fmt.Errorf("verify: an explicit test policy is required")
 	}
 	return nil

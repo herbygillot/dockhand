@@ -102,6 +102,8 @@ func publicationBody(content record.PublicationContent, change record.Change, so
 			label += " (exact command was not recorded)"
 		} else if phase == "test" && evidence != nil && evidence.TestOmission != "" {
 			label += " — " + oneLine(evidence.TestOmission)
+		} else if phase == "test" && evidence != nil && evidence.TestFailure != "" {
+			label += " — the port's tests failed; advisory here as in the MacPorts workflow: " + oneLine(evidence.TestFailure)
 		} else if unverified {
 			label += " (skipped at the author's request)"
 		} else {

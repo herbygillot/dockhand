@@ -63,6 +63,8 @@ func coverageSummary(plan record.VerificationPlan, attempts []record.Attempt, sh
 			fmt.Fprintf(&b, "; test policy: %s", attempt.Spec.Config.Tests)
 			if attempt.Evidence.TestOmission != "" {
 				fmt.Fprintf(&b, " (%s)", oneLine(attempt.Evidence.TestOmission))
+			} else if attempt.Evidence.TestFailure != "" {
+				fmt.Fprintf(&b, " (tests failed, advisory: %s)", oneLine(attempt.Evidence.TestFailure))
 			}
 		}
 	}

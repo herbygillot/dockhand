@@ -104,7 +104,7 @@ Provisioning uses temporary `-next` images. A failed build leaves the current ba
 dockhand verify [target] [--image <prepared-local-image>]
     [--branch <branch> | --change <id> | --working-tree]
     [--variant +name|--variant=-name ...]
-    [--capacity <positive-limit>] [--tests declared|skip]
+    [--capacity <positive-limit>] [--tests declared|required|skip] [--test-timeout <duration>]
     [--from-source] [--fresh] [--detach|--trace]
 dockhand wait [target] [--job <id> | --branch <branch> | --change <id>] [--trace]
 dockhand cancel [target] [--job <id> | --branch <branch> | --change <id>]
@@ -457,7 +457,7 @@ Specify an upstream tag or its source version with the usual optional prefix. Do
 
 Build commands accept `--provider tart|github`; bumps additionally accept `auto` and use it by default, preferring a suitable prepared Tart image. Standalone `verify` defaults to Tart. `github` pushes a committed contribution to a personal `macports-ports` fork and observes its existing `main.yml` workflow. `--remote` selects the fork's Git remote, defaulting to `origin`. `bump --provider github` continues to publication after workflow success. Explicit `verify` requires `--branch`.
 
-GitHub selects `--tests workflow` by default, reflecting the workflow's tolerance of individual test failures. It refuses Tart image/capacity/source-build flags and variant overrides. A newly accepted GitHub verification observes the current remote run attempt rather than reusing old local evidence; `--fresh` does not dispatch a rerun. `--trace` retrieves completed-job logs. See [GitHub verification](github-verification.md) for coverage, credentials, recovery, and initial limits.
+GitHub selects `--tests workflow` by default, reflecting the workflow's tolerance of individual test failures. Tart's default, `declared`, mirrors that policy: the port's declared tests run and a failure or timeout is recorded on the evidence and shown in status and the PR body, but the verdict rests on lint, build, and install, as it does for a pull request against MacPorts. `required` makes a failing or timed-out test fail verification; `skip` omits the test phase. `--test-timeout` bounds the test phase, 30 minutes by default, since some suites hang in a virtual machine; a timeout counts as a test failure under either policy. It refuses Tart image/capacity/source-build flags and variant overrides. A newly accepted GitHub verification observes the current remote run attempt rather than reusing old local evidence; `--fresh` does not dispatch a rerun. `--trace` retrieves completed-job logs. See [GitHub verification](github-verification.md) for coverage, credentials, recovery, and initial limits.
 
 
 ### Retry and credential behavior

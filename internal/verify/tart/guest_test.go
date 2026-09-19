@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/stretchr/testify/require"
@@ -49,6 +50,7 @@ proc file {op args} {
  if {$op eq "exists" && [lindex $args 0] in {/opt/homebrew /usr/local/Homebrew /usr/local/Cellar /sw /opt/pkg}} {return 0}
  return [realFile $op {*}$args]
 }
+proc launch {argv} {return [open |[list /bin/sh -c {echo "tests ran"; exit 0}] r]}
 rename exec realExec
 proc exec {args} {
  if {[lindex $args 0] eq "/usr/bin/id"} {return root}
@@ -94,6 +96,118 @@ proc exec {args} {
 				require.Equal(t, "dependency", string(result.Failure.Kind))
 				require.Equal(t, failure, result.Failure.Package)
 				require.Equal(t, "unknown", string(result.Failure.Attribution))
+			}
+		})
+	}
+}
+
+// The declared policy runs the port's tests and records how they went without
+// letting them decide the verdict, as the MacPorts workflow does; required
+// makes them decisive; a hung test is stopped at the timeout either way.
+func TestGuestTestPolicyDecidesWhetherTestsAreAdvisory(t *testing.T) {
+	t.Parallel()
+	executable, err := exec.LookPath("port-tclsh")
+	if err != nil {
+		t.Skip("MacPorts Tcl required")
+	}
+	for _, tc := range []struct {
+		policy  record.TestPolicy
+		mode    string
+		verdict record.Verdict
+		failure string
+	}{
+		{record.TestDeclared, "pass", record.VerdictPassed, ""},
+		{record.TestDeclared, "fail", record.VerdictPassed, "exit"},
+		{record.TestDeclared, "hang", record.VerdictPassed, "timed out after 1s"},
+		{record.TestRequired, "pass", record.VerdictPassed, ""},
+		{record.TestRequired, "fail", record.VerdictFailed, ""},
+		{record.TestRequired, "hang", record.VerdictFailed, ""},
+	} {
+		t.Run(string(tc.policy)+"/"+tc.mode, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			prefix := filepath.Join(root, "prefix")
+			require.NoError(t, os.MkdirAll(filepath.Join(prefix, "etc/macports"), 0700))
+			require.NoError(t, os.MkdirAll(filepath.Join(root, "ports"), 0700))
+			for _, name := range []string{"PortIndex", "PortIndex.quick"} {
+				require.NoError(t, os.WriteFile(filepath.Join(root, "ports", name), nil, 0600))
+			}
+			input := guestInput{Protocol: 1, ID: "request", Digest: "digest", Prefix: prefix, TestTimeoutSeconds: 1, Spec: record.BuildSpec{Target: record.Target{Name: "fixture", Portfile: "devel/fixture/Portfile"}, Config: record.BuildConfig{Platform: record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, Tests: tc.policy}}}
+			data, err := json.Marshal(input)
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(filepath.Join(root, "input.json"), data, 0600))
+			prelude := `
+package require json
+package require json::write
+package provide macports 1.0
+namespace eval macports {variable os_platform darwin; variable os_major 25; variable build_arch arm64}
+proc mportinit {} {}
+proc mportopen {args} {return handle}
+proc mportinfo {handle} {return {name fixture}}
+proc ditem_key {args} {return worker}
+proc worker {args} {return 1}
+proc mportclose {args} {}
+rename file realFile
+proc file {op args} {
+ if {$op eq "exists" && [lindex $args 0] in {/opt/homebrew /usr/local/Homebrew /usr/local/Cellar /sw /opt/pkg}} {return 0}
+ return [realFile $op {*}$args]
+}
+proc launch {argv} {
+ switch $::env(TEST_MODE) {
+  hang {return [open |[list /bin/sh -c {echo "tests running"; exec sleep 60}] r]}
+  fail {return [open |[list /bin/sh -c {echo "a test failed"; exit 3}] r]}
+ }
+ return [open |[list /bin/sh -c {echo "tests ran"; exit 0}] r]
+}
+rename exec realExec
+proc exec {args} {
+ if {[lindex $args 0] eq "kill"} {return [realExec {*}$args]}
+ if {[lindex $args 0] eq "/usr/bin/id"} {return root}
+ if {[lindex $args 0] eq "/usr/bin/xcode-select"} {return /Library/Developer/CommandLineTools}
+ return ""
+}
+`
+			script := prelude + strings.Replace(string(guestScript), "set root /var/tmp/dockhand2", "set root $env(TEST_ROOT)", 1)
+			filename := filepath.Join(root, "guest.tcl")
+			require.NoError(t, os.WriteFile(filename, []byte(script), 0600))
+			command := exec.CommandContext(t.Context(), executable, filename)
+			command.Env = append(os.Environ(), "TEST_ROOT="+root, "TEST_MODE="+tc.mode)
+			started := time.Now()
+			output, err := command.CombinedOutput()
+			require.NoError(t, err, "%s", output)
+			data, err = os.ReadFile(filepath.Join(root, "result.json"))
+			require.NoError(t, err)
+			var result guestResult
+			require.NoError(t, json.Unmarshal(data, &result))
+			require.Equal(t, tc.verdict, result.Verdict)
+			var test *record.StepResult
+			for i := range result.Steps {
+				if result.Steps[i].Phase == "test" {
+					test = &result.Steps[i]
+				}
+			}
+			require.NotNil(t, test, "the test phase ran")
+			log, err := os.ReadFile(filepath.Join(root, "build.log"))
+			require.NoError(t, err)
+			require.Contains(t, string(log), map[string]string{"pass": "tests ran", "fail": "a test failed", "hang": "tests running"}[tc.mode], "test output reaches the build log")
+			if tc.mode == "hang" {
+				require.Less(t, time.Since(started), 40*time.Second, "the hung test was stopped")
+				require.Contains(t, test.Detail, "timed out after 1s")
+			}
+			if tc.mode == "pass" {
+				require.Equal(t, record.VerdictPassed, test.Verdict)
+				require.Empty(t, result.TestFailure)
+				return
+			}
+			require.Equal(t, record.VerdictFailed, test.Verdict)
+			if tc.policy == record.TestDeclared {
+				require.Contains(t, result.TestFailure, tc.failure)
+				require.Nil(t, result.Failure)
+				require.Equal(t, "install", result.Steps[len(result.Steps)-1].Phase, "the build went on to install")
+			} else {
+				require.Empty(t, result.TestFailure)
+				require.Contains(t, result.Detail, "test failed")
+				require.Equal(t, "test", result.Steps[len(result.Steps)-1].Phase, "the build stopped at the test phase")
 			}
 		})
 	}

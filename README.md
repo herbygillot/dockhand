@@ -50,7 +50,7 @@ Optional, depending on what you work on:
 
 **Building and checking**
 
-- Clean builds in a disposable virtual machine cloned from an image you prepare once: lint, build, declared tests, and install, with the build log available live.
+- Clean builds in a disposable virtual machine cloned from an image you prepare once: lint, build, declared tests, and install, with the build log available live. As in the MacPorts workflow, a failing test suite is reported but does not fail the build; `--tests required` makes it fail, and a test that hangs is stopped after `--test-timeout`.
 - Builds on GitHub Actions in your fork when you have no Tart, using the MacPorts workflow that already lives there.
 - Automatic choice between the two for bumps, or an explicit `--provider`.
 - Reuse of a passing result when the same source tree and build settings are checked again, so committing verified edits does not cost a second build.
@@ -243,6 +243,6 @@ A few things worth knowing up front:
 - Automatic version discovery covers GitHub and GitLab sources that follow the PortGroup conventions, and any port whose livecheck MacPorts resolves to a plain regex over an HTTP listing. A port with a custom livecheck script, a version composed from several variables, or a commit pinned as its version can still be bumped to a version you name, or edited by hand and then built and published with Dockhand.
 - `review` appears in `--help` but is not implemented yet.
 - Build results, VM images, and logs live outside the database: VMs under Tart's home directory, logs and artifacts next to the database under `~/.dockhand/`.
-- A successful GitHub Actions workflow is recorded as a pass under the workflow's own rules, which may tolerate individual port test failures. A Tart build reports lint, build, tests, and install separately.
+- A successful GitHub Actions workflow is recorded as a pass under the workflow's own rules, which may tolerate individual port test failures. A Tart build reports lint, build, tests, and install separately, and treats a test failure the same way unless `--tests required` was given.
 
 Dockhand is developed at [github.com/herbygillot/dockhand](https://github.com/herbygillot/dockhand) and licensed under the [MIT License](LICENSE).

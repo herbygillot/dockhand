@@ -80,6 +80,7 @@ func (o *operation) observe(ctx context.Context, v record.ProviderExecution, dat
 	result.Verdict = status.Verdict
 	result.Steps = status.Steps
 	result.TestOmission = status.TestOmission
+	result.TestFailure = status.TestFailure
 	result.Environment.Guest = status.Environment
 	result.Failure = status.Failure
 	result.Detail = status.Detail

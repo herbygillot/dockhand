@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"strings"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -18,6 +19,7 @@ type buildOptions struct {
 	image        string
 	capacity     int
 	tests        string
+	testTimeout  time.Duration
 	fromSource   bool
 }
 
@@ -45,7 +47,8 @@ func (o *buildOptions) flags(cmd *cobra.Command, config app.Config) {
 	} else if provider == verify.ProviderGitHub {
 		testDefault = string(record.TestWorkflow)
 	}
-	cmd.Flags().StringVar(&o.tests, "tests", testDefault, "Test policy override: declared or skip for Tart; workflow for GitHub")
+	cmd.Flags().StringVar(&o.tests, "tests", testDefault, "Test policy: declared runs the port's tests as advisory, required fails the build on them, skip omits them (Tart); workflow for GitHub")
+	cmd.Flags().DurationVar(&o.testTimeout, "test-timeout", config.Tart.TestTimeout, "Stop the port's tests after this long; a timeout counts as a test failure (Tart; default 30m)")
 	cmd.Flags().BoolVar(&o.fromSource, "from-source", false, "Build the target and needed dependencies from source instead of using binary archives")
 }
 
@@ -87,7 +90,7 @@ func (o *buildOptions) config(cmd *cobra.Command, config app.Config) (app.Config
 		}
 	}
 	if o.provider == "auto" {
-		if cmd.Flags().Changed("image") || config.Tart.Image != "" || cmd.Flags().Changed("capacity") || cmd.Flags().Changed("from-source") || cmd.Flags().Changed("variant") {
+		if cmd.Flags().Changed("image") || config.Tart.Image != "" || cmd.Flags().Changed("capacity") || cmd.Flags().Changed("from-source") || cmd.Flags().Changed("variant") || cmd.Flags().Changed("test-timeout") {
 			o.provider = verify.ProviderTart
 		}
 		if cmd.Flags().Changed("tests") {
@@ -100,8 +103,8 @@ func (o *buildOptions) config(cmd *cobra.Command, config app.Config) (app.Config
 	}
 	config.VerificationProvider = o.provider
 	if o.provider == verify.ProviderGitHub || o.provider == "auto" {
-		if cmd.Flags().Changed("image") || cmd.Flags().Changed("capacity") || cmd.Flags().Changed("from-source") {
-			return config, fmt.Errorf("GitHub verification uses the workflow's runner matrix and dependency policy; --image, --capacity, and --from-source are Tart options")
+		if cmd.Flags().Changed("image") || cmd.Flags().Changed("capacity") || cmd.Flags().Changed("from-source") || cmd.Flags().Changed("test-timeout") {
+			return config, fmt.Errorf("GitHub verification uses the workflow's runner matrix and dependency policy; --image, --capacity, --from-source, and --test-timeout are Tart options")
 		}
 		if !cmd.Flags().Changed("tests") {
 			if o.provider == "auto" {
@@ -130,8 +133,14 @@ func (o *buildOptions) config(cmd *cobra.Command, config app.Config) (app.Config
 	if !cmd.Flags().Changed("tests") && o.tests == "" {
 		o.tests = string(record.TestDeclared)
 	}
-	if o.tests != string(record.TestDeclared) && o.tests != string(record.TestSkip) {
-		return config, fmt.Errorf("tests must be declared or skip")
+	if o.tests != string(record.TestDeclared) && o.tests != string(record.TestRequired) && o.tests != string(record.TestSkip) {
+		return config, fmt.Errorf("tests must be declared, required, or skip")
+	}
+	if cmd.Flags().Changed("test-timeout") {
+		if o.testTimeout <= 0 {
+			return config, fmt.Errorf("test-timeout must be positive")
+		}
+		config.Tart.TestTimeout = o.testTimeout
 	}
 	if cmd.Flags().Changed("image") {
 		config.Tart.Image = o.image
@@ -143,7 +152,7 @@ func (o *buildOptions) config(cmd *cobra.Command, config app.Config) (app.Config
 }
 
 func verificationSettingsChanged(cmd *cobra.Command) bool {
-	for _, name := range []string{"provider", "image", "capacity", "tests", "from-source", "dependents", "target-image", "remote"} {
+	for _, name := range []string{"provider", "image", "capacity", "tests", "test-timeout", "from-source", "dependents", "target-image", "remote"} {
 		if cmd.Flags().Changed(name) {
 			return true
 		}

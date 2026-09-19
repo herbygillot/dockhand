@@ -177,17 +177,30 @@ func completedOutcome(entry view.JobStatus) string {
 		return "publication confirmed"
 	}
 	if entry.Reused != nil && entry.Reused.Evidence != nil && entry.Reused.Evidence.Verdict == record.VerdictPassed {
-		return verificationOutcome(entry.Job) + " (reused)"
+		return verificationOutcome(entry.Job) + " (reused)" + advisoryTestNote(entry.Reused.Evidence)
 	}
 	if len(entry.Attempts) == 0 {
 		return ""
 	}
+	var note string
 	for _, attempt := range entry.Attempts {
 		if attempt.State != record.AttemptFinished || attempt.Evidence == nil || attempt.Evidence.Verdict != record.VerdictPassed {
 			return ""
 		}
+		if note == "" {
+			note = advisoryTestNote(attempt.Evidence)
+		}
 	}
-	return verificationOutcome(entry.Job)
+	return verificationOutcome(entry.Job) + note
+}
+
+// advisoryTestNote says when a passing build's declared tests failed, which
+// the declared policy records without changing the verdict.
+func advisoryTestNote(evidence *record.Evidence) string {
+	if evidence == nil || evidence.TestFailure == "" {
+		return ""
+	}
+	return "; the port's tests failed (advisory): " + evidence.TestFailure
 }
 
 // level resolves the report level from -v, --debug, and a command's --trace.

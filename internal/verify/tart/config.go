@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
@@ -198,6 +199,19 @@ type Config struct {
 	PortIndexExecutable string
 	PortIndexDigest     string
 	PortIndexURL        string
+	// TestTimeout bounds the port's test phase in the guest; zero means
+	// DefaultTestTimeout. A timed-out test counts as a failed test.
+	TestTimeout time.Duration
+}
+
+// DefaultTestTimeout is how long the guest lets a port's tests run.
+const DefaultTestTimeout = 30 * time.Minute
+
+func (c Config) testTimeout() time.Duration {
+	if c.TestTimeout <= 0 {
+		return DefaultTestTimeout
+	}
+	return c.TestTimeout
 }
 
 type Environment struct {

@@ -92,3 +92,13 @@ func TestBodyDisclosesAnUnverifiedPublication(t *testing.T) {
 		require.NotContains(t, body, absent)
 	}
 }
+
+func TestBodyReportsAnAdvisoryTestFailure(t *testing.T) {
+	t.Parallel()
+	source := record.Source{Commit: record.ObjectID(strings.Repeat("a", 40))}
+	attempt := record.Attempt{ID: "attempt", Spec: record.BuildSpec{Target: record.Target{Name: "fixture", Portfile: "devel/fixture/Portfile"}, Config: record.BuildConfig{Tests: record.TestDeclared}}, Evidence: &record.Evidence{Verdict: record.VerdictPassed, ObservedAt: time.Date(2026, 9, 19, 1, 2, 3, 0, time.UTC), TestFailure: "child process exited abnormally", Steps: []record.StepResult{{Package: "fixture", Phase: "lint", Verdict: record.VerdictPassed}, {Package: "fixture", Phase: "test", Verdict: record.VerdictFailed, Detail: "child process exited abnormally"}, {Package: "fixture", Phase: "install", Verdict: record.VerdictPassed}}}}
+	body := publicationBody(record.PublicationContent{Title: "fixture: update to 2"}, record.Change{}, source, attempt)
+	require.Contains(t, body, "[ ] Ran the port's tests — the port's tests failed; advisory here as in the MacPorts workflow: child process exited abnormally.")
+	require.Contains(t, body, "[x] Completed a full install")
+	require.NotContains(t, body, "no successful execution recorded")
+}

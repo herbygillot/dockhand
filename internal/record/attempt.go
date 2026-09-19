@@ -9,8 +9,13 @@ import (
 type TestPolicy string
 
 const (
-	// TestDeclared requests the tests declared by the port, when available.
+	// TestDeclared runs the tests the port declares and records their outcome
+	// without letting a failure decide the verdict, as the MacPorts workflow
+	// does: a build that passes lint, build, and install passes.
 	TestDeclared TestPolicy = "declared"
+	// TestRequired runs the declared tests and fails verification when they
+	// fail or time out.
+	TestRequired TestPolicy = "required"
 	// TestSkip explicitly skips the port's test phase.
 	TestSkip TestPolicy = "skip"
 	// TestWorkflow accepts the remote workflow policy, which may tolerate test failures.
@@ -265,7 +270,10 @@ type StepResult struct {
 type Evidence struct {
 	Workflow     *WorkflowEvidence `json:",omitempty"`
 	TestOmission string            `json:",omitempty"`
-	Verdict      Verdict
+	// TestFailure says how the declared tests failed when the policy let the
+	// build pass regardless; the PR body and status carry it as a notice.
+	TestFailure string `json:",omitempty"`
+	Verdict     Verdict
 	// Environment identifies the observed build environment when the provider requires it.
 	Environment *EnvironmentEvidence `json:",omitempty"`
 	// Failure provides diagnostic context when present.

@@ -1,0 +1,9 @@
+# Tests are advisory, as they are for MacPorts
+
+A pull request against macports-ports runs `mpbb test-port --builtin-only` on each changed port and does not fail on it; the workflow's own comment says a fully passing test suite is not considered essential to merge. Dockhand's Tart guest treated a failed `port test` as a failed verification, and some suites hang or fail in a virtual machine for reasons that have nothing to do with the change. The two now agree.
+
+Under the default `declared` policy the guest still runs the port's declared tests, but a failure is recorded on the step and in a new `TestFailure` field of the evidence rather than deciding the verdict; the build goes on to install, and the verdict rests on lint, build, and install. The failure is not hidden: the completion line says "the port's tests failed (advisory)" with the detail, the PR checklist's test item stays unchecked and says the tests failed and that this is advisory here as in the MacPorts workflow, and the coverage summary carries it too. A new `required` policy makes a failing test fail verification as before; `skip` and `workflow` are unchanged. Evidence reuse already compares policies, so `required` never reuses a `declared` result.
+
+A hung test is now stopped. The guest runs the test phase through a pipe with a deadline, `--test-timeout`, thirty minutes by default, sends the process a TERM and then a KILL, and records "timed out after Ns" as the test failure, advisory or decisive by the same policy. The guest script changed, so the verifier digest changed, and evidence from earlier guests is not reused.
+
+The guest tests run the script under `port-tclsh` with a stand-in for the test command: pass, fail, and hang under each policy, checking the verdict, the step, the recorded failure, whether the build went on to install, and that the hang was cut short. The PR body test covers the advisory wording.
