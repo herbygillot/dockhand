@@ -104,7 +104,7 @@ func TestRevisionPreparationCreatesSeparateContributionWithoutProvider(t *testin
 	require.NoFileExists(t, filepath.Join(f.repo.CommonDir, "index"))
 	out, err := exec.CommandContext(t.Context(), "git", "-C", f.repo.Root, "show", "-s", "--format=%P%n%an <%ae>%n%at%n%B", commit).CombinedOutput()
 	require.NoError(t, err)
-	require.Contains(t, string(out), "\n\n"+preparation.AssistedBy())
+	require.Contains(t, string(out), "\n\n"+preparation.GeneratedBy())
 	require.Contains(t, string(out), sourceCommit+"\nAccepted Author <accepted@example.invalid>\n")
 	require.Contains(t, string(out), "fixture: revbump\n\nRebuild dependents")
 	require.Len(t, status.Changes, 1)

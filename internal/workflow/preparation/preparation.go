@@ -19,8 +19,8 @@ import (
 type Request = portedit.Request
 type CommitIntent = portedit.CommitIntent
 
-// AssistedBy is the trailer generated contribution commits end with.
-func AssistedBy() string { return portedit.AssistedBy() }
+// GeneratedBy is the trailer generated contribution commits end with.
+func GeneratedBy() string { return portedit.GeneratedBy() }
 
 var ErrUnsupported = portedit.ErrUnsupported
 var ErrFidelity = portedit.ErrFidelity
