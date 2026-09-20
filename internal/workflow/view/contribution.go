@@ -397,7 +397,12 @@ func words(change record.Change, known bool, current *JobStatus, pr *record.Pull
 			next = mergedNext(change.Cleanup)
 		case change.Disposition == record.ChangeClosed && change.Branch == "" && pr == nil:
 			state = "retired"
-			next = "stopped before a branch; bump again once fixed"
+			// Nothing was built, so this starts over from fresh master rather
+			// than adopting anything; the action is still the one to run.
+			next = "stopped before a branch; fix it, then start over"
+			if current != nil {
+				next = "stopped before a branch; fix it, then " + retryCommand(current.Job) + " again"
+			}
 			if current != nil && current.Job.Detail != "" {
 				next += ": " + current.Job.Detail
 			}
@@ -436,16 +441,18 @@ func jobWords(current JobStatus, pr *record.PullRequest) (phase, state, next str
 		case job.Prepared != nil && len(job.Prepared.PatchProblems) > 0:
 			next = fmt.Sprintf("patches no longer apply (%d); refresh them and amend", len(job.Prepared.PatchProblems))
 		case job.Phase == record.PhasePreparation && job.Prepared == nil:
-			next = "bump again once fixed, or abandon: " + job.Detail
+			next = "fix it, then " + retryCommand(job) + " again, or abandon: " + job.Detail
 		case job.Phase == record.PhaseVerification:
-			next = "verify again once fixed, or abandon: " + job.Detail
+			// Nothing here resumes on its own: this attempt is over, and the
+			// command below starts a new one rather than continuing it.
+			next = "fix it, then " + retryCommand(job) + " again, which starts a new attempt, or abandon: " + job.Detail
 			if beyond := beyondTheChange(current); beyond != "" {
 				next = beyond
 			}
 		}
 		return phase, "needs attention", next
 	case record.JobCanceled:
-		return phase, "canceled", "verify or publish again, or abandon"
+		return phase, "canceled", retryCommand(job) + " again, or abandon"
 	}
 	return phase, string(job.State), job.Detail
 }
@@ -546,7 +553,7 @@ func failedNext(entry JobStatus) string {
 		return "build failed; fix and amend, or abandon"
 	}
 	if entry.Job.Phase == record.PhasePreparation {
-		return "preparation failed; retry the bump"
+		return "preparation failed; " + retryCommand(entry.Job) + " again"
 	}
 	return "fix and amend, or abandon"
 }

@@ -91,7 +91,7 @@ func TestProjectWordsWaitingFailureAndAttention(t *testing.T) {
 	require.Equal(t, "patches no longer apply (2); refresh them and amend", byPort["c"].Next)
 	require.Equal(t, "branch ready", byPort["d"].State)
 	require.Equal(t, "verify when ready: dockhand verify d", byPort["d"].Next)
-	require.Equal(t, "bump again once fixed, or abandon: forge: authentication is required", byPort["e"].Next, "a preparation that stopped before a branch is retried by bumping again")
+	require.Equal(t, "fix it, then dockhand bump e again, or abandon: forge: authentication is required", byPort["e"].Next, "a preparation that stopped before a branch is retried by bumping again")
 }
 
 func TestProjectFoldsAPortsContributionsUnderItsOpenOne(t *testing.T) {
@@ -123,7 +123,7 @@ func TestProjectFoldsAPortsContributionsUnderItsOpenOne(t *testing.T) {
 	require.True(t, row.Earlier[0].Retired, "a finished standalone verification is history")
 	require.Equal(t, "merged", row.Earlier[1].State)
 	require.Equal(t, "retired", row.Earlier[2].State)
-	require.Equal(t, "stopped before a branch; bump again once fixed: forge: authentication is required", row.Earlier[2].Next)
+	require.Equal(t, "stopped before a branch; fix it, then dockhand bump wasmer again: forge: authentication is required", row.Earlier[2].Next)
 	require.True(t, row.Earlier[2].Retired)
 }
 
@@ -244,4 +244,35 @@ func TestTheRetryVerbFollowsHowTheContributionWasMade(t *testing.T) {
 	require.Empty(t, row(record.Bump, record.JobActive).Retry, "nothing stopped")
 	require.Empty(t, row(record.Bump, record.JobCompleted).Retry, "nothing stopped")
 	require.Equal(t, "bump", row(record.Bump, record.JobFailed).Retry)
+}
+
+// Every line that tells a person what to run names the contribution's own
+// command. A bump is never advised to verify, which would re-run the build
+// and stop short of the pull request it was going to open.
+func TestStoppedWorkIsAlwaysAdvisedWithItsOwnCommand(t *testing.T) {
+	t.Parallel()
+	change := record.Change{ID: "change_1", InitiatingTarget: "jq", Branch: "candidate", CurrentRevision: "revision", Disposition: record.ChangeOpen, Targets: []record.Target{{Name: "jq"}}}
+	next := func(action record.Action, state record.JobState, phase record.JobPhase, detail string) string {
+		job := record.Job{ID: "job_1", ChangeID: "change_1", State: state, Phase: phase, Detail: detail,
+			Spec: record.JobSpec{Action: action, Targets: []record.Target{{Name: "jq"}}}}
+		if phase == record.PhaseVerification {
+			job.Prepared = &record.PreparedChange{Branch: "candidate"}
+		}
+		return Project(Snapshot{Jobs: []JobStatus{{Job: job}}, Changes: []record.Change{change}})[0].Next
+	}
+
+	// An unsupported verdict: the person fixes the cause, and the command
+	// they are given starts a new attempt rather than resuming a closed one.
+	advice := next(record.BumpRevision, record.JobNeedsAttention, record.PhaseVerification, "contribution must contain one commit above its base")
+	require.Contains(t, advice, "dockhand bump-revision jq again")
+	require.Contains(t, advice, "starts a new attempt")
+	require.Contains(t, advice, "one commit above its base")
+	require.NotContains(t, advice, "verify again", "a revision bump is not retried by verifying")
+
+	// Canceled work, and a preparation that failed before building anything.
+	require.Contains(t, next(record.Bump, record.JobCanceled, record.PhaseVerification, ""), "dockhand bump jq again")
+	require.Contains(t, next(record.RefreshChecksums, record.JobFailed, record.PhasePreparation, "evaluation failed"), "dockhand refresh-checksums jq again")
+
+	// A branch dockhand never prepared has no action to re-run but its own.
+	require.Contains(t, next(record.Verify, record.JobNeedsAttention, record.PhaseVerification, "workflow is disabled"), "dockhand verify jq again")
 }
