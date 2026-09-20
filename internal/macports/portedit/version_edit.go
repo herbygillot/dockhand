@@ -30,6 +30,7 @@ func (s *Service) versionCarriers(ctx context.Context, request Request, input *s
 		return nil, err
 	}
 	candidates, err := portfile.Candidates(input.data)
+	zzT(fmt.Sprintf("carriers: %d candidates", len(candidates)))
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrUnsupported, err)
 	}
@@ -84,6 +85,7 @@ func (s *Service) versionCarriers(ctx context.Context, request Request, input *s
 			}
 		}
 	}
+	zzT("carriers: done")
 	if len(carriers) == 0 {
 		if failures > 0 {
 			return nil, fmt.Errorf("%w: %w: no editable version input established (%d candidate evaluations were inconclusive)", ErrUnsupported, errProbeInconclusive, failures)

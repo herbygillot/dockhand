@@ -12,11 +12,13 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 		return []ContextCoverage{{Fetch: input.info.Fetch, Platform: input.before.Platform}}, checkGitSource(input.info), nil
 	}
 	profiles, err := s.contextProfiles(ctx, request, input, input.data)
+	zzT("artifact_assess: contextProfiles done")
 	if err != nil {
 		return coverage, err, nil
 	}
 	declared, covered, inert := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	observations, err := s.observeProfiles(ctx, input, input.data, profiles, true, false)
+	zzT("artifact_assess: observeProfiles done")
 	if err != nil {
 		return coverage, err, nil
 	}
@@ -31,6 +33,7 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 		if err := checkArchivePolicy(info, input.portdir()); err != nil {
 			return coverage, err, nil
 		}
+		zzT("artifact_assess: tolerate start")
 		metadata, inconclusive := tolerateExplainedProbes(ctx, observed.Ports[input.target.Name], input.data, input.files.root)
 		if inconclusive {
 			return coverage, fmt.Errorf("%w: modeled context depends on host state%s", errProbeInconclusive, hostInputs(metadata)), nil

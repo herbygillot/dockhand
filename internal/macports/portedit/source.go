@@ -78,7 +78,9 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 	if err != nil {
 		return nil, err
 	}
+	zzT("load: baseline Evaluate start")
 	before, err := input.native(ctx, s.Ports).Evaluate(ctx, bound)
+	zzT("load: baseline Evaluate done")
 	if err != nil {
 		return nil, err
 	}
