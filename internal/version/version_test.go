@@ -35,3 +35,20 @@ func TestCurrentPrefersTheStampedTagThenTheLinkedOverride(t *testing.T) {
 	require.Equal(t, Info{Version: "v0.9.0"}, current(nil, false, "0.9.0"), "no build information at all still takes the linked version")
 	require.Equal(t, Info{Version: "unknown"}, current(nil, false, ""))
 }
+
+// A pseudo-version already ends in the commit it was derived from, so the
+// parenthetical would say it twice.
+func TestAPseudoVersionDoesNotRepeatItsRevision(t *testing.T) {
+	t.Parallel()
+	pseudo := Info{Version: "v0.0.0-20260918123022-d3e24659d56a", Revision: "d3e24659d56a"}
+	require.Equal(t, "v0.0.0-20260918123022-d3e24659d56a", pseudo.String())
+	pseudo.Modified = true
+	require.Equal(t, "v0.0.0-20260918123022-d3e24659d56a+dirty (modified)", Info{Version: pseudo.Version + "+dirty", Revision: pseudo.Revision, Modified: true}.String(),
+		"the toolchain marks a modified tree in the version; the note still says so once")
+	require.Equal(t, "v0.0.0-20260918123022-d3e24659d56a (modified)", pseudo.String())
+
+	// A tag that merely looks date-shaped is not its own revision.
+	require.Equal(t, "v0.0.0-20260919.2 (65f702e200d8)", Info{Version: "v0.0.0-20260919.2", Revision: "65f702e200d8"}.String())
+	require.Equal(t, "v0.9.0 (5e3a5de30bb3)", Info{Version: "v0.9.0", Revision: "5e3a5de30bb3"}.String())
+	require.Equal(t, "devel (1a2b3c4d5e6f)", Info{Version: "devel", Revision: "1a2b3c4d5e6f"}.String())
+}

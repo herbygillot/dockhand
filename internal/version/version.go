@@ -61,17 +61,30 @@ func current(info *debug.BuildInfo, ok bool, named string) Info {
 }
 
 // String is the form `dockhand --version` prints: "v0.3.0 (1a2b3c4d5e6f)"
-// or "devel (1a2b3c4d5e6f, modified)".
+// or "devel (1a2b3c4d5e6f, modified)". A version that already ends in its own
+// revision, which a pseudo-version does, does not repeat it.
 func (i Info) String() string {
 	text := i.Version
-	if i.Revision != "" {
+	switch {
+	case i.Revision != "" && !namesRevision(i.Version, i.Revision):
 		text += " (" + i.Revision
 		if i.Modified {
 			text += ", modified"
 		}
 		text += ")"
+	case i.Modified:
+		text += " (modified)"
 	}
 	return strings.TrimSpace(text)
+}
+
+// namesRevision reports whether a version ends with this revision. A Go
+// pseudo-version does: its last hyphenated component is the short commit,
+// after any +dirty the toolchain appends for a modified tree.
+func namesRevision(version, revision string) bool {
+	base, _, _ := strings.Cut(version, "+")
+	index := strings.LastIndex(base, "-")
+	return index >= 0 && base[index+1:] == revision
 }
 
 // Tag is the one-token form for trailers and user agents: the module
