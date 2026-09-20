@@ -30,6 +30,10 @@ const (
 	ListElementNotSpaced
 
 	DictMissingValue
+
+	ExprUnexpected
+
+	ExprUnsupported
 )
 
 func (t ErrorType) String() string {
@@ -56,6 +60,10 @@ func (t ErrorType) String() string {
 		return "list element not followed by space"
 	case DictMissingValue:
 		return "missing value to go with key"
+	case ExprUnexpected:
+		return "unexpected token in expression"
+	case ExprUnsupported:
+		return "expression form not modeled"
 	}
 	return "unknown error"
 }
