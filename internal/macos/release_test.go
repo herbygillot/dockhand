@@ -27,13 +27,13 @@ func TestParseRelease(t *testing.T) {
 }
 
 func TestProductForDarwinDoesNotExtendProvisioning(t *testing.T) {
-	for darwin, want := range map[int]string{8: "10.4", 16: "10.12", 19: "10.15", 20: "11", 24: "15", 25: "26"} {
+	for darwin, want := range map[int]string{8: "10.4", 16: "10.12", 19: "10.15", 20: "11", 24: "15", 25: "26", 26: "27"} {
 		got, err := ProductForDarwin(darwin)
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 	}
-	_, err := ProductForDarwin(26)
-	require.Error(t, err)
+	_, err := ProductForDarwin(27)
+	require.Error(t, err, "a release the table does not carry")
 	_, err = ReleaseForDarwin(16)
 	require.Error(t, err)
 }
@@ -43,4 +43,50 @@ func TestDescribeWordsDarwinAsMacOS(t *testing.T) {
 	require.Equal(t, "macOS 15 (Sequoia)", Describe(record.Platform{OS: "darwin", Version: "24"}))
 	require.Equal(t, "darwin 99 arm64", Describe(record.Platform{OS: "darwin", Version: "99", Architecture: "arm64"}), "an unknown release keeps the raw fields")
 	require.Equal(t, "linux 6", Describe(record.Platform{OS: "linux", Version: "6"}))
+}
+
+// The table is the one place the release set is written. Everything that names
+// it, or decides whether a platform is one of them, reads it from here.
+func TestTheTableIsTheOnlyPlaceTheReleaseSetIsWritten(t *testing.T) {
+	known := Known()
+	require.NotEmpty(t, known)
+	for i, release := range known {
+		if i > 0 {
+			require.Greater(t, release.Darwin, known[i-1].Darwin, "oldest first")
+		}
+		found, err := ReleaseForDarwin(release.Darwin)
+		require.NoError(t, err)
+		require.Equal(t, release, found)
+		bySlug, err := ParseRelease(release.Slug)
+		require.NoError(t, err)
+		require.Equal(t, release, bySlug)
+		byProduct, err := ParseRelease(release.Product)
+		require.NoError(t, err)
+		require.Equal(t, release, byProduct, "%s is selectable by its macOS version", release.Name)
+	}
+	// The refusal names every release rather than a list kept by hand.
+	_, err := ParseRelease("nope")
+	for _, release := range known {
+		require.ErrorContains(t, err, release.Slug+" ("+release.Product+")")
+	}
+}
+
+func TestGoldenGateIsMacOS27OnDarwin26(t *testing.T) {
+	release, err := ReleaseForDarwin(26)
+	require.NoError(t, err)
+	require.Equal(t, Release{Darwin: 26, Product: "27", Name: "Golden Gate", Slug: "golden-gate"}, release)
+	require.Equal(t, "macOS 27 (Golden Gate) arm64", Describe(record.Platform{OS: "darwin", Version: "26", Architecture: "arm64"}))
+}
+
+// The default build release does not track the newest entry in the table. A
+// release added here becomes selectable, not automatically what dockhand uses.
+func TestTheDefaultBuildReleaseIsNamedNotTheNewest(t *testing.T) {
+	def, err := ReleaseForDarwin(DefaultDarwin)
+	require.NoError(t, err)
+	require.Equal(t, "Tahoe", def.Name)
+	require.False(t, NewerThanDefault(def))
+	newest := Known()[len(Known())-1]
+	if newest.Darwin != DefaultDarwin {
+		require.True(t, NewerThanDefault(newest), "%s is past the default and is not adopted unasked", newest.Name)
+	}
 }

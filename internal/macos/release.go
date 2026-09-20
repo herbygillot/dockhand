@@ -2,9 +2,11 @@ package macos
 
 import (
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/record"
+	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 type Release struct {
@@ -20,6 +22,31 @@ var releases = map[int]Release{
 	23: {Darwin: 23, Product: "14", Name: "Sonoma", Slug: "sonoma"},
 	24: {Darwin: 24, Product: "15", Name: "Sequoia", Slug: "sequoia"},
 	25: {Darwin: 25, Product: "26", Name: "Tahoe", Slug: "tahoe"},
+	26: {Darwin: 26, Product: "27", Name: "Golden Gate", Slug: "golden-gate"},
+}
+
+// DefaultDarwin is the newest release dockhand builds on without being asked.
+// It is deliberately not the newest entry in the table. Local verification
+// should prove what a MacPorts pull request is built on, and MacPorts adds a
+// macOS to its CI well after Apple ships it, so a host that upgrades does not
+// silently become the build platform: --os names the new release for setup and
+// --image selects its built image.
+const DefaultDarwin = 25
+
+// NewerThanDefault reports whether a release is past the one dockhand builds
+// on unasked.
+func NewerThanDefault(release Release) bool { return release.Darwin > DefaultDarwin }
+
+// Known lists the releases this table carries, oldest first. It is the one
+// place the set is written; callers that need to name it, or to decide whether
+// a platform is one of them, read it rather than repeating the range.
+func Known() []Release {
+	known := make([]Release, 0, len(releases))
+	for _, release := range releases {
+		known = append(known, release)
+	}
+	slices.SortFunc(known, func(a, b Release) int { return a.Darwin - b.Darwin })
+	return known
 }
 
 func ReleaseForDarwin(darwin int) (Release, error) {
@@ -38,7 +65,11 @@ func ParseRelease(value string) (Release, error) {
 			return release, nil
 		}
 	}
-	return Release{}, fmt.Errorf("macos: unknown release %q; use monterey (12), ventura (13), sonoma (14), sequoia (15), or tahoe (26)", value)
+	var known []string
+	for _, release := range Known() {
+		known = append(known, release.Slug+" ("+release.Product+")")
+	}
+	return Release{}, fmt.Errorf("macos: unknown release %q; use %s", value, strings.Join(known, ", "))
 }
 
 // ProductForDarwin returns the macOS release used for metadata modeling. This

@@ -17,10 +17,11 @@ func ReleaseForPlatform(platform record.Platform) (macos.Release, error) {
 	if err != nil {
 		return macos.Release{}, fmt.Errorf("tart: invalid Darwin version %q", platform.Version)
 	}
-	if darwin < 21 || darwin > 25 {
+	release, err := macos.ReleaseForDarwin(darwin)
+	if err != nil {
 		return macos.Release{}, fmt.Errorf("tart: no provisionable macOS image for Darwin %d", darwin)
 	}
-	return macos.ReleaseForDarwin(darwin)
+	return release, nil
 }
 
 // DefaultImageName returns the conventional command-line-tools image name.
