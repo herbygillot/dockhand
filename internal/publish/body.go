@@ -14,7 +14,7 @@ import (
 // SourceContent has already established a single-commit contribution range.
 func publicationBody(content record.PublicationContent, change record.Change, source record.Source, attempt record.Attempt) string {
 	var b strings.Builder
-	fmt.Fprintln(&b, "Submitted by [dockhand](https://github.com/herbygillot/dockhand)")
+	fmt.Fprintln(&b, "Submitted by **[dockhand](https://github.com/herbygillot/dockhand)**")
 	fmt.Fprintf(&b, "\n#### Description\n\n%s\n", content.Title)
 	var description []string
 	for _, line := range strings.Split(content.Body, "\n") {
@@ -34,40 +34,27 @@ func publicationBody(content record.PublicationContent, change record.Change, so
 		fmt.Fprintln(&b, "\nEnvironment details were not recorded.")
 	} else {
 		environment := evidence.Environment
+		writeEnvironmentTable(&b, evidence)
 		if flow := evidence.Workflow; flow != nil {
-			fmt.Fprintf(&b, "\nProvider: GitHub Actions; [workflow run](%s), attempt %d.\n", oneLine(flow.URL), flow.RunAttempt)
+			fmt.Fprint(&b, "\nProvider: GitHub Actions\n\n")
+			fmt.Fprintf(&b, "- [workflow run](%s), attempt %d\n", oneLine(flow.URL), flow.RunAttempt)
 			for _, job := range flow.Jobs {
-				fmt.Fprintf(&b, "\n- %s: %s\n", oneLine(job.Name), oneLine(job.Conclusion))
+				fmt.Fprintf(&b, "- %s: %s\n", oneLine(job.Name), oneLine(job.Conclusion))
 			}
 			fmt.Fprintln(&b, "\nThe MacPorts workflow passed under its own policy. It may tolerate port test failures; individual port phases and exact runner tool versions are not independently established.")
 		} else if environment == nil {
 			fmt.Fprintln(&b, "\nEnvironment details were not recorded.")
 		} else {
-			guest := environment.Guest
-			if guest == nil {
+			if environment.Guest == nil {
 				fmt.Fprintln(&b, "\nGuest macOS and developer tools versions were not recorded.")
-			} else {
-				fmt.Fprintf(&b, "\nmacOS %s; build %s; %s\n", known(guest.MacOSVersion), known(guest.MacOSBuild), known(guest.Architecture))
-				tools := "Developer tools"
-				switch guest.DeveloperTools {
-				case record.DeveloperToolsXcode:
-					tools = "Xcode"
-				case record.DeveloperToolsCommandLine:
-					tools = "Command Line Tools"
-				}
-				fmt.Fprintf(&b, "\n%s: %s\n", tools, known(guest.DeveloperToolsVersion))
-				if guest.DeveloperTools != record.DeveloperToolsCommandLine && guest.CommandLineToolsVersion != "" {
-					fmt.Fprintf(&b, "\nCommand Line Tools: %s\n", known(guest.CommandLineToolsVersion))
-				}
-				if guest.MacPortsVersion != "" {
-					fmt.Fprintf(&b, "\nMacPorts: %s\n", oneLine(strings.TrimPrefix(guest.MacPortsVersion, "Version: ")))
-				}
 			}
 			image := known(environment.Image)
-			if strings.TrimSpace(environment.Image) != "" && guest != nil && guest.NoActivePorts && guest.NoForeignPackageManagers {
+			if guest := environment.Guest; strings.TrimSpace(environment.Image) != "" && guest != nil && guest.NoActivePorts && guest.NoForeignPackageManagers {
 				image += " (pristine)"
 			}
-			fmt.Fprintf(&b, "\nProvider: %s; version: %s; image: %s\n", known(environment.Provider), known(environment.ProviderVersion), image)
+			fmt.Fprintf(&b, "\nProvider: %s\n\n", known(environment.Provider))
+			fmt.Fprintf(&b, "- version: %s\n", known(environment.ProviderVersion))
+			fmt.Fprintf(&b, "- image: %s\n", image)
 			fmt.Fprintf(&b, "\nEnvironment identity: `%s`\n", oneLine(environment.EnvironmentDigest))
 		}
 		fmt.Fprintf(&b, "\nVerification attempt: `%s`; observed %s.\n", attempt.ID, evidence.ObservedAt.UTC().Format("2006-01-02 15:04:05 UTC"))
@@ -115,6 +102,54 @@ func publicationBody(content record.PublicationContent, change record.Change, so
 	check(false, "Checked the port's most important [variants](https://trac.macports.org/wiki/Variants).")
 	fmt.Fprintln(&b, "\nUnchecked manual items require contributor review.")
 	return b.String()
+}
+
+// writeEnvironmentTable lists what the build ran on: the guest's macOS,
+// developer tools and MacPorts, and the dockhand that drove it. It is a table
+// because these are facts with values, read down a column rather than through
+// a paragraph. Only what was recorded appears, and a run with nothing to show,
+// as a workflow observation has, writes no table at all.
+func writeEnvironmentTable(b *strings.Builder, evidence *record.Evidence) {
+	type row struct{ name, detail string }
+	var rows []row
+	add := func(name, detail string) {
+		if strings.TrimSpace(detail) != "" {
+			rows = append(rows, row{name, oneLine(detail)})
+		}
+	}
+	if guest := guestOf(evidence); guest != nil {
+		if strings.TrimSpace(guest.MacOSVersion) != "" {
+			add("macOS "+oneLine(guest.MacOSVersion), "build "+known(guest.MacOSBuild)+"; "+known(guest.Architecture))
+		}
+		switch guest.DeveloperTools {
+		case record.DeveloperToolsXcode:
+			add("Xcode", strings.TrimPrefix(oneLine(guest.DeveloperToolsVersion), "Xcode "))
+			add("Command Line Tools", guest.CommandLineToolsVersion)
+		case record.DeveloperToolsCommandLine:
+			add("Command Line Tools", guest.DeveloperToolsVersion)
+		default:
+			add("Developer tools", guest.DeveloperToolsVersion)
+			add("Command Line Tools", guest.CommandLineToolsVersion)
+		}
+		add("MacPorts", strings.TrimPrefix(guest.MacPortsVersion, "Version: "))
+	}
+	add("dockhand", evidence.Dockhand)
+	if len(rows) == 0 {
+		return
+	}
+	// The header is empty on purpose: each row names itself, and a column
+	// heading would only repeat that.
+	fmt.Fprint(b, "\n|  |  |\n| --- | --- |\n")
+	for _, entry := range rows {
+		fmt.Fprintf(b, "| %s | %s |\n", entry.name, entry.detail)
+	}
+}
+
+func guestOf(evidence *record.Evidence) *record.GuestEnvironment {
+	if evidence == nil || evidence.Environment == nil {
+		return nil
+	}
+	return evidence.Environment.Guest
 }
 
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }

@@ -47,16 +47,20 @@ type Observation struct {
 	Workflow     *record.WorkflowEvidence `json:",omitempty"`
 	TestOmission string                   `json:",omitempty"`
 	TestFailure  string                   `json:",omitempty"`
-	Run          record.ProviderRun
-	State        record.AttemptState
-	Environment  *record.EnvironmentEvidence `json:",omitempty"`
-	Steps        []record.StepResult
-	Artifacts    []record.Artifact
-	Logs         []record.Artifact
-	Detail       string
-	Verdict      record.Verdict
-	Failure      *record.Failure
-	ObservedAt   time.Time
+	// Dockhand is the build that ran this verification. The provider reports
+	// it rather than these contracts reading it, which keeps this package to
+	// records and Git as its dependency test requires.
+	Dockhand    string `json:",omitempty"`
+	Run         record.ProviderRun
+	State       record.AttemptState
+	Environment *record.EnvironmentEvidence `json:",omitempty"`
+	Steps       []record.StepResult
+	Artifacts   []record.Artifact
+	Logs        []record.Artifact
+	Detail      string
+	Verdict     record.Verdict
+	Failure     *record.Failure
+	ObservedAt  time.Time
 }
 
 type ReconciliationState string

@@ -75,7 +75,7 @@ func Judge(observation Observation) (record.Evidence, error) {
 		}
 		workflow = &value
 	}
-	evidence := record.Evidence{Workflow: workflow, TestOmission: observation.TestOmission, TestFailure: observation.TestFailure, Verdict: verdict, Environment: environment, Steps: slices.Clone(observation.Steps), Artifacts: slices.Clone(observation.Artifacts), Logs: slices.Clone(observation.Logs), ObservedAt: observation.ObservedAt}
+	evidence := record.Evidence{Workflow: workflow, TestOmission: observation.TestOmission, TestFailure: observation.TestFailure, Verdict: verdict, Dockhand: observation.Dockhand, Environment: environment, Steps: slices.Clone(observation.Steps), Artifacts: slices.Clone(observation.Artifacts), Logs: slices.Clone(observation.Logs), ObservedAt: observation.ObservedAt}
 	for i := range evidence.Steps {
 		evidence.Steps[i].Command = slices.Clone(evidence.Steps[i].Command)
 	}

@@ -11,6 +11,7 @@ import (
 	gh "github.com/google/go-github/v91/github"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/version"
 )
 
 func matches(saved payload, run *gh.WorkflowRun) bool {
@@ -110,6 +111,7 @@ func (p *Provider) Observe(ctx context.Context, handle record.ProviderRun) (veri
 		}
 	}
 	result.Workflow = evidence
+	result.Dockhand = version.Current().Tag()
 	result.TestOmission = "GitHub workflow policy permits port test failures; individual test success is not established"
 	selected.URL = run.GetHTMLURL()
 	result.Detail = runDetail(saved, selected, run.GetStatus())

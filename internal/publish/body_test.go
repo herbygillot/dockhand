@@ -23,7 +23,7 @@ func TestBodyUsesSelectedEvidenceAndGeneratedIdentity(t *testing.T) {
 		attempt.Evidence.Steps = append(attempt.Evidence.Steps, record.StepResult{Package: "fixture-subport", Phase: phase, Verdict: record.VerdictPassed, Command: args, User: "root"})
 	}
 	body := publicationBody(content, change, source, attempt)
-	for _, want := range []string{"Submitted by [dockhand]", "Useful explanation", "macOS 26.1; build 25B77; arm64", "Xcode 26.1 Build version 17B12", "Provider: tart; version: 2.30; image: recorded-image (pristine)", "Command Line Tools: 26.1.0.0.1", "Unchecked manual items require contributor review.", "earlier-reused-attempt", "2025-01-02 03:04:05 UTC", "[x] Squashed", "[x] Checked the Portfile", "[x] Ran the port's tests", "[x] Completed a full install", "-N -D devel/fixture -d install subport=fixture-subport +debug -universal", "run as root", "[ ] Followed", "[ ] Checked for other open", "[ ] Referenced", "[ ] Tested basic functionality", "[ ] Checked the port's most important"} {
+	for _, want := range []string{"Submitted by **[dockhand]", "Useful explanation", "| macOS 26.1 | build 25B77; arm64 |", "| Xcode | 26.1 Build version 17B12 |", "Provider: tart\n\n- version: 2.30\n- image: recorded-image (pristine)\n", "| Command Line Tools | 26.1.0.0.1 |", "Unchecked manual items require contributor review.", "earlier-reused-attempt", "2025-01-02 03:04:05 UTC", "[x] Squashed", "[x] Checked the Portfile", "[x] Ran the port's tests", "[x] Completed a full install", "-N -D devel/fixture -d install subport=fixture-subport +debug -universal", "run as root", "[ ] Followed", "[ ] Checked for other open", "[ ] Referenced", "[ ] Tested basic functionality", "[ ] Checked the port's most important"} {
 		require.Contains(t, body, want)
 	}
 	require.NotContains(t, body, "Generated-by:")
@@ -57,8 +57,8 @@ func TestBodyDoesNotInventTestsOrEnvironmentForOlderEvidence(t *testing.T) {
 	}
 	attempt.Evidence.Environment = &record.EnvironmentEvidence{Guest: &record.GuestEnvironment{DeveloperTools: record.DeveloperToolsCommandLine, DeveloperToolsVersion: "26.0.0.0.1"}}
 	body := publicationBody(record.PublicationContent{}, record.Change{}, record.Source{}, attempt)
-	require.Contains(t, body, "macOS not recorded")
-	require.Contains(t, body, "Command Line Tools: 26.0.0.0.1")
+	require.NotContains(t, body, "macOS", "a guest with no recorded macOS gets no row, rather than a row of blanks")
+	require.Contains(t, body, "| Command Line Tools | 26.0.0.0.1 |")
 	require.NotContains(t, body, "no active MacPorts ports")
 	for _, guest := range []*record.GuestEnvironment{nil, {}, {NoActivePorts: true}, {NoForeignPackageManagers: true}} {
 		attempt.Evidence.Environment.Image = "recorded-image"
@@ -102,4 +102,32 @@ func TestBodyReportsAnAdvisoryTestFailure(t *testing.T) {
 	require.Contains(t, body, "[ ] Ran the port's tests — the port's tests failed; advisory here as in the MacPorts workflow: child process exited abnormally.")
 	require.Contains(t, body, "[x] Completed a full install")
 	require.NotContains(t, body, "no successful execution recorded")
+}
+
+// The environment is a table of facts with values, and the provider's own
+// facts hang off the provider that reported them.
+func TestTestedOnTablesTheEnvironmentAndBulletsTheProvider(t *testing.T) {
+	t.Parallel()
+	attempt := record.Attempt{ID: "attempt_1", Spec: record.BuildSpec{Target: record.Target{Name: "jc"}, Config: record.BuildConfig{Tests: record.TestDeclared}},
+		Evidence: &record.Evidence{Verdict: record.VerdictPassed, ObservedAt: time.Date(2026, 9, 20, 10, 25, 56, 0, time.UTC), Dockhand: "v0.0.0-20260920.1",
+			Environment: &record.EnvironmentEvidence{Provider: "tart", ProviderVersion: "2.37.0", Image: "dockhand-base-tahoe", EnvironmentDigest: "sha256:4602",
+				Guest: &record.GuestEnvironment{MacOSVersion: "26.6.2", MacOSBuild: "25G83", Architecture: "arm64", DeveloperTools: record.DeveloperToolsCommandLine,
+					DeveloperToolsVersion: "27.0.0.0.1788430756", MacPortsVersion: "Version: 2.12.6", NoActivePorts: true, NoForeignPackageManagers: true}}}}
+	body := publicationBody(record.PublicationContent{Title: "jc: update to 1.26.0"}, record.Change{}, record.Source{}, attempt)
+	require.Contains(t, body, "\n|  |  |\n| --- | --- |\n| macOS 26.6.2 | build 25G83; arm64 |\n| Command Line Tools | 27.0.0.0.1788430756 |\n| MacPorts | 2.12.6 |\n| dockhand | v0.0.0-20260920.1 |\n")
+	require.Contains(t, body, "\nProvider: tart\n\n- version: 2.37.0\n- image: dockhand-base-tahoe (pristine)\n")
+	require.Contains(t, body, "\nEnvironment identity: `sha256:4602`\n")
+
+	// A workflow observation establishes no runner versions, so it tables only
+	// the build that drove it and hangs the run and its jobs off the provider.
+	attempt.Evidence.Environment = nil
+	attempt.Evidence.Workflow = &record.WorkflowEvidence{URL: "https://github.com/author/ports/actions/runs/10", RunAttempt: 2,
+		Jobs: []record.WorkflowJob{{Name: "macos-14", Conclusion: "success"}, {Name: "macos-15", Conclusion: "success"}}}
+	body = publicationBody(record.PublicationContent{}, record.Change{}, record.Source{}, attempt)
+	require.Contains(t, body, "\n|  |  |\n| --- | --- |\n| dockhand | v0.0.0-20260920.1 |\n")
+	require.Contains(t, body, "\nProvider: GitHub Actions\n\n- [workflow run](https://github.com/author/ports/actions/runs/10), attempt 2\n- macos-14: success\n- macos-15: success\n")
+
+	// Evidence from a build that recorded none of this writes no table.
+	attempt.Evidence.Dockhand, attempt.Evidence.Workflow = "", nil
+	require.NotContains(t, publicationBody(record.PublicationContent{}, record.Change{}, record.Source{}, attempt), "| --- | --- |")
 }

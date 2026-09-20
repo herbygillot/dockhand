@@ -208,7 +208,7 @@ func TestPublicationPushesConfirmsAndRetainsAssociationAcrossRestart(t *testing.
 	f, hosting := publicationFixture(t)
 	request := bindPublication(t, f, "publish")
 	require.Contains(t, request.Spec.Publication.Desired.Body, "Contribution details")
-	require.Contains(t, request.Spec.Publication.Desired.Body, "Submitted by [dockhand]")
+	require.Contains(t, request.Spec.Publication.Desired.Body, "Submitted by **[dockhand]")
 	receipt, err := f.engine.Submit(t.Context(), request)
 	require.NoError(t, err)
 	retry, err := f.engine.Submit(t.Context(), request)

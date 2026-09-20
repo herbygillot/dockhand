@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/version"
 )
 
 func (p *Provider) Observe(ctx context.Context, run record.ProviderRun) (verify.Observation, error) {
@@ -79,6 +80,7 @@ func (o *operation) observe(ctx context.Context, v record.ProviderExecution, dat
 	result.State = record.AttemptFinished
 	result.Verdict = status.Verdict
 	result.Steps = status.Steps
+	result.Dockhand = version.Current().Tag()
 	result.TestOmission = status.TestOmission
 	result.TestFailure = status.TestFailure
 	result.Environment.Guest = status.Environment

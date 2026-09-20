@@ -274,6 +274,10 @@ type Evidence struct {
 	// build pass regardless; the PR body and status carry it as a notice.
 	TestFailure string `json:",omitempty"`
 	Verdict     Verdict
+	// Dockhand is the build that ran this verification, recorded here rather
+	// than read when a body is written, because the build that publishes need
+	// not be the one that verified. Older evidence carries none.
+	Dockhand string `json:",omitempty"`
 	// Environment identifies the observed build environment when the provider requires it.
 	Environment *EnvironmentEvidence `json:",omitempty"`
 	// Failure provides diagnostic context when present.
