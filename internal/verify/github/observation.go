@@ -71,24 +71,42 @@ func (p *Provider) Observe(ctx context.Context, handle record.ProviderRun) (veri
 	}
 	evidence := &record.WorkflowEvidence{Repository: saved.Config.Destination.HeadRepository, Branch: saved.Request.Spec.PushBranch(), Commit: saved.Request.Spec.Source.Commit, Path: macports.PortsWorkflowPath, RunID: selected.ID, RunAttempt: selected.Attempt, URL: run.GetHTMLURL(), Status: run.GetStatus(), Conclusion: run.GetConclusion()}
 	seen := map[string]bool{}
-	complete := len(jobs) == len(saved.Matrix)
+	// A run establishes a macOS build when it carries jobs, each one ran to a
+	// successful conclusion on a macOS runner, and no name appears twice. The
+	// workflow's own prediction, when it made a sound one, is held to as well.
+	complete, incomplete := len(jobs) > 0, "the workflow ran no jobs"
+	fail := func(reason string) {
+		if complete {
+			complete, incomplete = false, reason
+		}
+	}
 	for _, job := range jobs {
 		if job.GetRunID() != selected.ID || job.GetRunAttempt() != int64(selected.Attempt) || job.GetHeadSHA() != string(saved.Request.Spec.Source.Commit) {
 			return result, fmt.Errorf("github verification: job identifies a different run attempt or commit")
 		}
 		if seen[job.GetName()] {
-			complete = false
+			fail("job " + job.GetName() + " appears twice")
 		}
 		seen[job.GetName()] = true
 		if job.GetStatus() != "completed" || job.GetConclusion() != "success" {
-			complete = false
+			fail("job " + job.GetName() + " is " + job.GetStatus() + " " + job.GetConclusion())
+		}
+		// Labels are the job's own runs-on values. An older run may not carry
+		// them, and an absent label says nothing either way.
+		if len(job.Labels) > 0 && !macOSRunner(job.Labels) {
+			fail("job " + job.GetName() + " did not run on macOS")
 		}
 		result.Logs = append(result.Logs, record.Artifact{Name: job.GetName() + " logs", Location: job.GetHTMLURL(), MediaType: "text/html"})
 		evidence.Jobs = append(evidence.Jobs, record.WorkflowJob{ID: job.GetID(), Name: job.GetName(), URL: job.GetHTMLURL(), Status: job.GetStatus(), Conclusion: job.GetConclusion(), Labels: job.Labels})
 	}
-	for _, name := range saved.Matrix {
-		if !seen[name] {
-			complete = false
+	if len(saved.Matrix) > 0 {
+		if len(jobs) != len(saved.Matrix) {
+			fail(fmt.Sprintf("the workflow declared %d jobs and the run carried %d", len(saved.Matrix), len(jobs)))
+		}
+		for _, name := range saved.Matrix {
+			if !seen[name] {
+				fail("the workflow declared job " + name + ", which the run did not carry")
+			}
 		}
 	}
 	result.Workflow = evidence
@@ -104,7 +122,7 @@ func (p *Provider) Observe(ctx context.Context, handle record.ProviderRun) (veri
 		result.Verdict = record.VerdictPassed
 		if !complete {
 			result.Verdict = record.VerdictBlocked
-			result.Detail = "GitHub workflow succeeded without a complete successful build matrix"
+			result.Detail = "GitHub workflow succeeded but its jobs do not establish a complete macOS build: " + incomplete
 		}
 	case "failure":
 		result.Verdict = record.VerdictFailed
@@ -141,3 +159,14 @@ func (p *Provider) Release(context.Context, record.ResourceHandle) (verify.Relea
 }
 
 var _ verify.Provider = (*Provider)(nil)
+
+// macOSRunner reports whether a job's runs-on labels name a macOS runner,
+// covering both the hosted "macos-15" spelling and a "macOS" self-hosted label.
+func macOSRunner(labels []string) bool {
+	for _, label := range labels {
+		if strings.HasPrefix(strings.ToLower(label), "macos") {
+			return true
+		}
+	}
+	return false
+}

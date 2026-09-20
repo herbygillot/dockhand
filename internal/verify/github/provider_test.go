@@ -147,7 +147,11 @@ func setup(t *testing.T) *fixture {
 	command("config", "user.name", "Fixture")
 	command("config", "user.email", "fixture@example.invalid")
 	require.NoError(t, os.MkdirAll(filepath.Join(root, ".github/workflows"), 0700))
-	require.NoError(t, os.WriteFile(filepath.Join(root, macports.PortsWorkflowPath), []byte(testWorkflow), 0600))
+	recipe := testWorkflow
+	if override := workflowOverride(t); override != "" {
+		recipe = override
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(root, macports.PortsWorkflowPath), []byte(recipe), 0600))
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "devel/fixture"), 0700))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "devel/fixture/Portfile"), []byte("version 1\n"), 0600))
 	command("add", ".")
@@ -341,15 +345,51 @@ func TestCompletedLogsArePinnedAndCached(t *testing.T) {
 	require.Equal(t, 2, f.api.logCalls)
 }
 
-func TestWorkflowMatrixRejectsUnsupportedTriggers(t *testing.T) {
+// The workflow belongs to MacPorts. Reading it refuses only what would leave
+// nothing to wait for, and predicts job names only when the file makes that
+// prediction sound.
+func TestReadWorkflowRefusesOnlyTriggersThatWouldStartNoRun(t *testing.T) {
 	t.Parallel()
-	matrix, err := workflowMatrix([]byte(testWorkflow))
+	names, err := readWorkflow([]byte(testWorkflow), "candidate")
 	require.NoError(t, err)
-	require.Equal(t, []string{"macos-14", "macos-15"}, matrix)
-	for _, raw := range []string{strings.Replace(testWorkflow, "push:", "pull_request:", 1), strings.Replace(testWorkflow, "[master]", "[master, candidate]", 1), strings.Replace(testWorkflow, "macos-15", "macos-14", 1)} {
-		_, err := workflowMatrix([]byte(raw))
-		require.Error(t, err)
+	require.Equal(t, []string{"macos-14", "macos-15"}, names)
+
+	// Shapes the earlier validator refused, every one of them upstream's to choose.
+	for _, change := range []struct{ name, raw string }{
+		{"a runner added to the matrix", strings.Replace(testWorkflow, "[macos-14, macos-15]", "[macos-14, macos-15, macos-26]", 1)},
+		{"a second job", testWorkflow + "  summary:\n    runs-on: ubuntu-latest\n    steps: [{run: 'true'}]\n"},
+		{"a renamed job", strings.Replace(testWorkflow, "  build:", "  ports:", 1)},
+		{"a condition on the job", strings.Replace(testWorkflow, "    runs-on:", "    if: always()\n    runs-on:", 1)},
+		{"a path filter", strings.Replace(testWorkflow, "    branches-ignore: [master]", "    branches-ignore: [master]\n    paths-ignore: ['.github/**']", 1)},
+	} {
+		_, err := readWorkflow([]byte(change.raw), "candidate")
+		require.NoError(t, err, change.name)
 	}
+
+	// A prediction is only made when the run's job names will match it.
+	for _, change := range []string{
+		strings.Replace(testWorkflow, "    name: ${{ matrix.os }}\n", "", 1),
+		testWorkflow + "        include: [{os: macos-26}]\n",
+	} {
+		names, err := readWorkflow([]byte(change), "candidate")
+		require.NoError(t, err)
+		require.Empty(t, names, "an unsound prediction is no prediction; the run speaks for itself")
+	}
+
+	// What is still refused: a push that would start no run at all.
+	for _, change := range []struct{ name, raw, branch string }{
+		{"no push trigger", strings.Replace(testWorkflow, "  push:", "  pull_request:", 1), "candidate"},
+		{"this branch ignored", strings.Replace(testWorkflow, "[master]", "[master, candidate]", 1), "candidate"},
+		{"this branch ignored by pattern", strings.Replace(testWorkflow, "[master]", "['dockhand/**']", 1), "dockhand/bump/jq-abc"},
+		{"only other branches run", strings.Replace(testWorkflow, "    branches-ignore: [master]", "    branches: [release]", 1), "candidate"},
+	} {
+		_, err := readWorkflow([]byte(change.raw), change.branch)
+		require.Error(t, err, change.name)
+		require.Contains(t, err.Error(), "no run", change.name)
+	}
+	// The same pattern that excludes one branch lets another through.
+	_, err = readWorkflow([]byte(strings.Replace(testWorkflow, "[master]", "['dockhand/**']", 1)), "candidate")
+	require.NoError(t, err)
 }
 
 func TestCancellationFencesUncertainPush(t *testing.T) {
@@ -698,4 +738,65 @@ func TestDriverProgressFollowsGitHubRun(t *testing.T) {
 			return true
 		})
 	}
+}
+
+// workflowOverride lets one test give the fixture repository a workflow other
+// than the MacPorts one, keyed by test name so the fixture needs no new argument.
+var workflowOverrides sync.Map
+
+func workflowOverride(t *testing.T) string {
+	value, _ := workflowOverrides.Load(t.Name())
+	text, _ := value.(string)
+	return text
+}
+
+// A workflow dockhand never predicted still produces a verdict: the run says
+// which jobs it carried, and every one of them succeeded on a macOS runner.
+func TestUnpredictedWorkflowIsJudgedByTheRunItProduced(t *testing.T) {
+	t.Parallel()
+	// No "name:", so the job names are GitHub's own and dockhand predicts none.
+	workflowOverrides.Store(t.Name(), strings.Replace(testWorkflow, "    name: ${{ matrix.os }}\n", "", 1))
+	f := setup(t)
+	f.ready()
+	f.api.jobs = nil
+	for i, name := range []string{"build (macos-14)", "build (macos-15)", "build (macos-26)"} {
+		f.api.jobs = append(f.api.jobs, &gh.WorkflowJob{ID: gh.Ptr(int64(i + 100)), RunID: gh.Ptr(int64(10)), RunAttempt: gh.Ptr(int64(1)), HeadSHA: gh.Ptr(string(f.request.Spec.Source.Commit)),
+			Name: gh.Ptr(name), Status: gh.Ptr("completed"), Conclusion: gh.Ptr("success"), Labels: []string{strings.TrimSuffix(strings.TrimPrefix(name, "build ("), ")")},
+			HTMLURL: gh.Ptr("https://github.com/contributor/macports-ports/actions/runs/10/job")})
+	}
+	submitted, err := f.provider.Submit(t.Context(), f.request)
+	require.NoError(t, err)
+	require.Equal(t, verify.Admitted, submitted.State)
+	observed, err := f.provider.Observe(t.Context(), submitted.Run)
+	require.NoError(t, err)
+	require.Equal(t, record.VerdictPassed, observed.Verdict, "%s", observed.Detail)
+	require.Len(t, observed.Workflow.Jobs, 3)
+
+	// A job that did not run on macOS is not a macOS build, whatever the run says.
+	f.api.jobs[2].Labels = []string{"ubuntu-latest"}
+	observed, err = f.provider.Observe(t.Context(), submitted.Run)
+	require.NoError(t, err)
+	require.Equal(t, record.VerdictBlocked, observed.Verdict)
+	require.Contains(t, observed.Detail, "did not run on macOS")
+
+	// So is a run that carried no jobs at all.
+	f.api.jobs = nil
+	observed, err = f.provider.Observe(t.Context(), submitted.Run)
+	require.NoError(t, err)
+	require.Equal(t, record.VerdictBlocked, observed.Verdict)
+	require.Contains(t, observed.Detail, "ran no jobs")
+}
+
+// When the workflow did name the jobs it would run, the run is still held to it.
+func TestPredictedJobsAreStillRequiredOfTheRun(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	f.ready()
+	submitted, err := f.provider.Submit(t.Context(), f.request)
+	require.NoError(t, err)
+	f.api.jobs = f.api.jobs[:1]
+	observed, err := f.provider.Observe(t.Context(), submitted.Run)
+	require.NoError(t, err)
+	require.Equal(t, record.VerdictBlocked, observed.Verdict)
+	require.Contains(t, observed.Detail, "declared 2 jobs and the run carried 1")
 }
