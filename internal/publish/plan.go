@@ -56,7 +56,7 @@ func (s *Service) Destination(ctx context.Context, options Options) (record.Publ
 		options.Base = target.DefaultBranch
 	}
 
-	destination = record.PublicationDestination{Forge: s.Forge.Name(), Repository: target.Name, HeadRepository: head.Name, BaseBranch: options.Base, PushURL: push.PushURL, BaseURL: target.CloneURL, LockDirectory: s.LockDirectory}
+	destination = record.PublicationDestination{Forge: s.Forge.Name(), Repository: target.Name, HeadRepository: head.Name, BaseBranch: options.Base, PushURL: push.PushURL, BaseURL: target.CloneURL, LockDirectory: s.LockDirectory, RefreshBody: options.RefreshBody}
 	return destination, ValidateDestination(destination)
 }
 
@@ -140,7 +140,8 @@ func (s *Service) PlanTo(ctx context.Context, change record.Change, source recor
 		}
 		spec.HeadBranch = associated.HeadBranch
 		spec.ExpectedPR = associated
-		spec.Desired.Body = associated.Body
+		spec.RefreshBody = destination.RefreshBody
+		spec.Desired.Body = keepBody(associated.Body, content.Body, destination.RefreshBody)
 	}
 	observed, err := s.Observe(ctx, spec)
 	if err != nil {
@@ -157,7 +158,8 @@ func (s *Service) PlanTo(ctx context.Context, change record.Change, source recor
 			return spec, fmt.Errorf("%w: matching PR is %s", ErrPrecondition, observed.PullRequest.State)
 		}
 		spec.ExpectedPR = &observed.PullRequest
-		spec.Desired.Body = observed.PullRequest.Body
+		spec.RefreshBody = destination.RefreshBody
+		spec.Desired.Body = keepBody(observed.PullRequest.Body, content.Body, destination.RefreshBody)
 	}
 	remote, err := s.Repo.RemoteHead(ctx, spec.PushURL, spec.HeadBranch)
 	if err != nil {

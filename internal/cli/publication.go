@@ -88,4 +88,5 @@ func publicationFlags(cmd *cobra.Command, options *publish.Options) {
 	cmd.Flags().StringVar(&options.Remote, "remote", "", "Git remote whose push URL receives the contribution (default: the remote pushing to your fork)")
 	cmd.Flags().StringVar(&options.Upstream, "upstream", "", "Upstream Git remote (default: the remote naming macports/macports-ports, then upstream, then the fork parent)")
 	cmd.Flags().StringVar(&options.Base, "base", "", "PR base branch (defaults to the upstream default branch)")
+	cmd.Flags().BoolVar(&options.RefreshBody, "refresh-body", false, "Rewrite an existing PR's environment section from this verification; its description and review checklist are left alone")
 }

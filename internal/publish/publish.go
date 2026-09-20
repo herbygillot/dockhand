@@ -39,7 +39,11 @@ type Service struct {
 // remote that is not the upstream when the login is unknown. Upstream defaults
 // to the remote naming Service.Upstream, then one called "upstream", then the
 // fork's parent.
-type Options struct{ Remote, Upstream, Base string }
+type Options struct {
+	Remote, Upstream, Base string
+	// RefreshBody rewrites an existing pull request's environment section.
+	RefreshBody bool
+}
 
 func (s *Service) Preflight(ctx context.Context) error {
 	if s == nil || s.Forge == nil {

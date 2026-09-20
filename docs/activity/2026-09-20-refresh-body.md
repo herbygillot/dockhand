@@ -1,0 +1,9 @@
+# Refreshing the part of a body dockhand wrote
+
+Publishing to an existing pull request took the live remote body verbatim, discarding the one it had just generated. That is the right default and the reason is stronger than "someone might have edited it": the verification checklist is built to be completed by a person, and says so in its own closing line, so a body under review holds tick state that cannot be regenerated. A maintainer may also have rewritten the description. Neither survives a wholesale rewrite.
+
+`--refresh-body` therefore replaces one section rather than the body. Between the "Tested on" and "Verification" headings is the environment dockhand recorded, and it is the only part no person is expected to have written; it is also the part that goes stale when the template changes or newer evidence supersedes it. Everything outside those bounds is copied byte for byte. A body with no such section was written by somebody from scratch, so it is kept whole rather than guessed at, and a freshly generated body missing one cannot overwrite anything either.
+
+The flag travels with the accepted destination, which is why no signature changed to carry it. What a publication will do to someone's pull request is decided when the work is accepted, not when a driver reaches it, which is the same reason the destination is frozen there; `PublicationSpec` carries it too so the two round-trip through the equality check that holds a recorded action to its job's intent. It reaches every publishing path at once, since they share one flag helper: `publish`, the bumps, and the corrections.
+
+The test states the distinction the feature rests on. A reviewed body keeps its maintainer's description and its ticked item, gains the new environment, and does not acquire the machine's title; a hand-written body is untouched.

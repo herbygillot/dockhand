@@ -130,3 +130,33 @@ func TestTestedOnTablesTheEnvironmentAndBulletsTheProvider(t *testing.T) {
 	attempt.Evidence.Dockhand, attempt.Evidence.Workflow = "", nil
 	require.NotContains(t, publicationBody(record.PublicationContent{}, record.Change{}, record.Source{}, attempt), "| --- | --- |")
 }
+
+// An existing pull request's body is kept exactly, because a maintainer may
+// have rewritten the description and a reviewer may have ticked the checklist.
+// Refreshing replaces only the section dockhand writes from evidence.
+func TestRefreshingABodyReplacesOnlyTheEnvironmentSection(t *testing.T) {
+	t.Parallel()
+	reviewed := "Submitted by **[dockhand](https://github.com/herbygillot/dockhand)**\n\n" +
+		"#### Description\n\njc: update to 1.26.0\n\nMaintainer asked for this wording.\n\n" +
+		"###### Tested on\n\nold environment\n\n" +
+		"###### Verification\n\n- [x] Tested basic functionality of all binary files.\n"
+	fresh := "Submitted by **[dockhand](https://github.com/herbygillot/dockhand)**\n\n" +
+		"#### Description\n\nmachine title\n\n" +
+		"###### Tested on\n\nnew environment\n\n" +
+		"###### Verification\n\n- [ ] Tested basic functionality of all binary files.\n"
+
+	require.Equal(t, reviewed, keepBody(reviewed, fresh, false), "by default nothing is touched")
+
+	refreshed := keepBody(reviewed, fresh, true)
+	require.Contains(t, refreshed, "new environment")
+	require.NotContains(t, refreshed, "old environment")
+	require.Contains(t, refreshed, "Maintainer asked for this wording.", "the description is the maintainer's")
+	require.Contains(t, refreshed, "- [x] Tested basic functionality", "a reviewer's tick is not regenerated away")
+	require.NotContains(t, refreshed, "machine title", "only the environment section comes across")
+
+	// A body somebody wrote themselves has no such section and is kept whole.
+	written := "I wrote this by hand and there is no section here.\n"
+	require.Equal(t, written, keepBody(written, fresh, true))
+	// Neither is a fresh body without one able to overwrite anything.
+	require.Equal(t, reviewed, keepBody(reviewed, "no sections at all", true))
+}

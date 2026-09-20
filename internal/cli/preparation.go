@@ -80,7 +80,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 				var destination *publish.Options
 				if !options.NoPublish && !options.Diff {
 					destination = &publication
-				} else if (cmd.Flags().Changed("remote") || cmd.Flags().Changed("upstream") || cmd.Flags().Changed("base")) && build.provider != "github" && build.provider != "auto" {
+				} else if (cmd.Flags().Changed("remote") || cmd.Flags().Changed("upstream") || cmd.Flags().Changed("base") || cmd.Flags().Changed("refresh-body")) && build.provider != "github" && build.provider != "auto" {
 					return fmt.Errorf("publication destination flags need publication; drop --no-publish")
 				}
 				if !options.Diff {

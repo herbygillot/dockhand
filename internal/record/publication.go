@@ -143,6 +143,8 @@ type PublicationSpec struct {
 	LockDirectory      string
 	ExpectedRemoteHead ExpectedHead
 	ExpectedPR         *PullRequest
+	// RefreshBody is the accepted destination's, kept here so the two round-trip.
+	RefreshBody bool `json:",omitempty"`
 	// EvidenceAttempt names the passing verification the pull request cites.
 	// It is empty exactly when Unverified is set.
 	EvidenceAttempt AttemptID
@@ -178,11 +180,17 @@ type PublicationDestination struct {
 	PushURL        string
 	BaseURL        string
 	LockDirectory  string
+	// RefreshBody replaces an existing pull request's "Tested on" section
+	// with a freshly written one. It travels with the destination because it
+	// is frozen at acceptance for the same reason the destination is: what a
+	// publication will do to someone's pull request is decided when the work
+	// is accepted, not when a driver gets to it.
+	RefreshBody bool `json:",omitempty"`
 }
 
 // Destination separates the accepted destination from revision-specific preconditions.
 func (s PublicationSpec) Destination() PublicationDestination {
-	return PublicationDestination{Forge: s.Forge, Repository: s.Repository, HeadRepository: s.HeadRepository, BaseBranch: s.BaseBranch, PushURL: s.PushURL, BaseURL: s.BaseURL, LockDirectory: s.LockDirectory}
+	return PublicationDestination{Forge: s.Forge, Repository: s.Repository, HeadRepository: s.HeadRepository, BaseBranch: s.BaseBranch, PushURL: s.PushURL, BaseURL: s.BaseURL, LockDirectory: s.LockDirectory, RefreshBody: s.RefreshBody}
 }
 
 // SourceBranch is the accepted local locator, distinct from an existing PR head.

@@ -152,6 +152,61 @@ func guestOf(evidence *record.Evidence) *record.GuestEnvironment {
 	return evidence.Environment.Guest
 }
 
+// testedOnHeading and verificationHeading bound the section of a body that
+// dockhand writes from evidence. What is above them is the description, and
+// what is below is the review checklist, which a person completes.
+const testedOnHeading = "###### Tested on"
+const verificationHeading = "###### Verification"
+
+// keepBody decides what an existing pull request's body becomes.
+//
+// By default it becomes itself: whatever is on the forge is kept exactly,
+// because a maintainer may have rewritten the description and a reviewer may
+// have ticked items in the checklist, and neither can be regenerated.
+//
+// Refreshing replaces one section, the environment dockhand recorded, and
+// leaves every byte outside it alone. That is the part that goes stale when a
+// template changes or newer evidence supersedes it, and it is the only part no
+// person is expected to have written. A body without that section is one
+// somebody wrote themselves, so it is kept whole.
+func keepBody(existing, fresh string, refresh bool) string {
+	if !refresh {
+		return existing
+	}
+	from, to, ok := testedOnBounds(existing)
+	if !ok {
+		return existing
+	}
+	replacement, freshOK := testedOnSection(fresh)
+	if !freshOK {
+		return existing
+	}
+	return existing[:from] + replacement + existing[to:]
+}
+
+// testedOnBounds locates the section in a body, from its heading to whatever
+// follows it, which is the verification heading in a body dockhand wrote.
+func testedOnBounds(body string) (int, int, bool) {
+	from := strings.Index(body, testedOnHeading)
+	if from < 0 {
+		return 0, 0, false
+	}
+	rest := body[from+len(testedOnHeading):]
+	next := strings.Index(rest, verificationHeading)
+	if next < 0 {
+		return from, len(body), true
+	}
+	return from, from + len(testedOnHeading) + next, true
+}
+
+func testedOnSection(body string) (string, bool) {
+	from, to, ok := testedOnBounds(body)
+	if !ok {
+		return "", false
+	}
+	return body[from:to], true
+}
+
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 func known(s string) string {
 	if strings.TrimSpace(s) == "" {
