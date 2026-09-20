@@ -23,7 +23,7 @@ func TestBodyUsesSelectedEvidenceAndGeneratedIdentity(t *testing.T) {
 		attempt.Evidence.Steps = append(attempt.Evidence.Steps, record.StepResult{Package: "fixture-subport", Phase: phase, Verdict: record.VerdictPassed, Command: args, User: "root"})
 	}
 	body := publicationBody(content, change, source, attempt)
-	for _, want := range []string{"Submitted by **[dockhand]", "Useful explanation", "| macOS 26.1 | build 25B77; arm64 |", "| Xcode | 26.1 Build version 17B12 |", "Provider: tart\n\n- version: 2.30\n- image: recorded-image (pristine)\n", "| Command Line Tools | 26.1.0.0.1 |", "Unchecked manual items require contributor review.", "earlier-reused-attempt", "2025-01-02 03:04:05 UTC", "[x] Squashed", "[x] Checked the Portfile", "[x] Ran the port's tests", "[x] Completed a full install", "-N -D devel/fixture -d install subport=fixture-subport +debug -universal", "run as root", "[ ] Followed", "[ ] Checked for other open", "[ ] Referenced", "[ ] Tested basic functionality", "[ ] Checked the port's most important"} {
+	for _, want := range []string{"Submitted by **[dockhand]", "Useful explanation", "| macOS 26.1 | build 25B77; arm64 |", "| Xcode | 26.1 Build version 17B12 |", "Provider: tart\n\n- version: 2.30\n- image: recorded-image (pristine)\n- environment identity: `sha256:recorded`\n", "| Command Line Tools | 26.1.0.0.1 |", "Unchecked manual items require contributor review.", "earlier-reused-attempt", "2025-01-02 03:04:05 UTC", "[x] Squashed", "[x] Checked the Portfile", "[x] Ran the port's tests", "[x] Completed a full install", "-N -D devel/fixture -d install subport=fixture-subport +debug -universal", "run as root", "[ ] Followed", "[ ] Checked for other open", "[ ] Referenced", "[ ] Tested basic functionality", "[ ] Checked the port's most important"} {
 		require.Contains(t, body, want)
 	}
 	require.NotContains(t, body, "Generated-by:")
@@ -115,8 +115,7 @@ func TestTestedOnTablesTheEnvironmentAndBulletsTheProvider(t *testing.T) {
 					DeveloperToolsVersion: "27.0.0.0.1788430756", MacPortsVersion: "Version: 2.12.6", NoActivePorts: true, NoForeignPackageManagers: true}}}}
 	body := publicationBody(record.PublicationContent{Title: "jc: update to 1.26.0"}, record.Change{}, record.Source{}, attempt)
 	require.Contains(t, body, "\n|  |  |\n| --- | --- |\n| macOS 26.6.2 | build 25G83; arm64 |\n| Command Line Tools | 27.0.0.0.1788430756 |\n| MacPorts | 2.12.6 |\n| dockhand | v0.0.0-20260920.1 |\n")
-	require.Contains(t, body, "\nProvider: tart\n\n- version: 2.37.0\n- image: dockhand-base-tahoe (pristine)\n")
-	require.Contains(t, body, "\nEnvironment identity: `sha256:4602`\n")
+	require.Contains(t, body, "\nProvider: tart\n\n- version: 2.37.0\n- image: dockhand-base-tahoe (pristine)\n- environment identity: `sha256:4602`\n")
 
 	// A workflow observation establishes no runner versions, so it tables only
 	// the build that drove it and hangs the run and its jobs off the provider.

@@ -55,7 +55,7 @@ func publicationBody(content record.PublicationContent, change record.Change, so
 			fmt.Fprintf(&b, "\nProvider: %s\n\n", known(environment.Provider))
 			fmt.Fprintf(&b, "- version: %s\n", known(environment.ProviderVersion))
 			fmt.Fprintf(&b, "- image: %s\n", image)
-			fmt.Fprintf(&b, "\nEnvironment identity: `%s`\n", oneLine(environment.EnvironmentDigest))
+			fmt.Fprintf(&b, "- environment identity: `%s`\n", oneLine(environment.EnvironmentDigest))
 		}
 		fmt.Fprintf(&b, "\nVerification attempt: `%s`; observed %s.\n", attempt.ID, evidence.ObservedAt.UTC().Format("2006-01-02 15:04:05 UTC"))
 	}
