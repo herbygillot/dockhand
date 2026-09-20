@@ -40,6 +40,12 @@ func (s *Service) Probe(ctx context.Context, source ProbeSource) (*VersionProbe,
 	return &VersionProbe{editor: s, request: request, input: input}, nil
 }
 
+// Stub names the port the selection was made under when that port was a stub
+// and the probe redirected to the subport carrying its release, and is empty
+// otherwise. A caller holding an indexed name can tell a redirection from a
+// port that evaluated as something else.
+func (p *VersionProbe) Stub() string { return p.request.Stub }
+
 func (p *VersionProbe) Port() macports.PortInfo {
 	info := p.input.info
 	info.Options = maps.Clone(info.Options)

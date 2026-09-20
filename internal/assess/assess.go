@@ -160,8 +160,8 @@ func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files
 		}
 		probe, problem := editor.Probe(ctx, portedit.ProbeSource{SharedRelease: request.SharedRelease, Source: files.Source, Root: files.Root, Selection: selected.Selection, Platform: platform})
 		defer probe.Close()
-		if problem == nil && selected.Name != "" && selected.Name != probe.Port().Name {
-			problem = fmt.Errorf("%w: indexed subport %s; evaluation selected a different port %s", portedit.ErrUnsupported, selected.Name, probe.Port().Name)
+		if problem == nil && selected.Name != "" {
+			problem = indexAgreement(selected.Name, probe.Port().Name, probe.Stub())
 		}
 		if problem != nil {
 			item.Findings = []portedit.Finding{portedit.Problem("evaluation", problem)}
@@ -192,4 +192,17 @@ func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files
 		}
 	}
 	return item, nil
+}
+
+// indexAgreement checks that the port evaluation settled on is the one the
+// index named. A stub is the one legitimate disagreement: the index names the
+// stub, and the probe redirects to the subport that carries its release, so
+// the evaluated port is that carrier and the stub is the name the selection
+// was made under. Any other difference means evaluation chose a port the
+// index did not, which is not an edit this assessment can vouch for.
+func indexAgreement(indexed, evaluated, stub string) error {
+	if indexed == evaluated || (stub != "" && stub == indexed) {
+		return nil
+	}
+	return fmt.Errorf("%w: indexed subport %s; evaluation selected a different port %s", portedit.ErrUnsupported, indexed, evaluated)
 }
