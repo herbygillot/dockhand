@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/workflow"
+	"github.com/herbygillot/dockhand/internal/workflow/view"
 	"github.com/stretchr/testify/require"
 )
 
@@ -150,4 +151,41 @@ func TestSubportOfSharedReleaseSelectsItsContribution(t *testing.T) {
 	}
 	_, err := f.engine.SelectContribution(t.Context(), workflow.ContributionSelector{Target: "rb24-mustache"})
 	require.ErrorIs(t, err, state.ErrNotFound)
+}
+
+// The status table tells a reader what to run next by naming a contribution,
+// and the resolver behind that verb has to accept the name it printed. They
+// are composed in different packages from different fields, so the agreement
+// is asserted rather than assumed: every hint must resolve back to the
+// contribution it was composed from.
+func TestStatusHintsResolveBackToTheirContribution(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	for _, shape := range []struct {
+		label  string
+		change record.Change
+	}{
+		{"plain port", record.Change{
+			ID: "plain", InitiatingTarget: "bashunit", Branch: "dockhand/bump/bashunit",
+			Targets: []record.Target{{Name: "bashunit", Portfile: "devel/bashunit/Portfile"}},
+		}},
+		{"shared release built as its newest subport", record.Change{
+			ID: "shared", InitiatingTarget: "rb-mustache", Branch: "dockhand/bump/rb-mustache",
+			Targets: []record.Target{{Name: "rb33-mustache", Portfile: "ruby/rb-mustache/Portfile", Subport: "rb33-mustache"}},
+		}},
+		{"several targets", record.Change{
+			ID: "several", InitiatingTarget: "rsync", Branch: "dockhand/bump/rsync",
+			Targets: []record.Target{{Name: "rrsync", Portfile: "net/rsync/Portfile", Subport: "rrsync"}, {Name: "rsync", Portfile: "net/rsync/Portfile"}},
+		}},
+	} {
+		change := shape.change
+		change.Disposition = record.ChangeOpen
+		require.NoError(t, f.store.Update(t.Context(), f.repository, func(ctx context.Context, tx state.Tx) error {
+			return tx.PutChange(ctx, change)
+		}))
+		hint := view.PortSelector(record.Job{ID: record.JobID("job_" + change.ID), Spec: record.JobSpec{Targets: change.Targets}})
+		selected, err := f.engine.SelectContribution(t.Context(), workflow.ContributionSelector{Target: hint})
+		require.NoError(t, err, "%s: status prints %q", shape.label, hint)
+		require.Equal(t, change.ID, selected.ID, shape.label)
+	}
 }

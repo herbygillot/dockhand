@@ -123,6 +123,11 @@ func (t *transaction) Jobs(ctx context.Context, q state.Query) ([]record.Job, er
 // targetNameClause matches a contribution by the port that initiated it or by
 // any target it carries, so that the subport of a shared release selects the
 // contribution its stub initiated. It takes the name twice.
+//
+// This is record.Change.Names expressed in SQL, because the store filters and
+// pages before any record reaches Go. Two encodings of one rule drift: keep
+// them together, and see TestChangeNameFilterAgreesWithTheRuleAboveIt, which
+// compares them over the shapes where they could differ.
 const targetNameClause = "(initiating_target=? COLLATE NOCASE OR EXISTS (SELECT 1 FROM json_each(coalesce(changes.targets,'[]')) WHERE json_extract(value,'$.Name')=? COLLATE NOCASE))"
 
 func (t *transaction) Changes(ctx context.Context, q state.Query) ([]record.Change, error) {

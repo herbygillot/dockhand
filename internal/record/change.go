@@ -50,6 +50,10 @@ type Change struct {
 // by its stub -- rb-mustache -- while the target that is prepared and built is
 // a subport of it, rb33-mustache, and status names that subport when it tells
 // a reader what to run next. Both spellings reach the same contribution.
+//
+// The store states this same rule in SQL, since it filters before any record
+// reaches Go; sqlite.targetNameClause is the other half, and a test compares
+// the two.
 func (c Change) Names(name string) bool {
 	if name == "" {
 		return false

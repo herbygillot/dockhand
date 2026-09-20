@@ -166,3 +166,50 @@ func TestOperationShapedQueries(t *testing.T) {
 		return nil
 	}))
 }
+
+// Selecting a contribution by name is stated twice: once as SQL, so the store
+// can filter and page, and once as record.Change.Names, which every guard
+// above the store calls. Two encodings of one rule drift, so they are compared
+// here over the shapes that differ -- a stub and the subport it carries, case,
+// and a sibling subport nobody prepared.
+func TestChangeNameFilterAgreesWithTheRuleAboveIt(t *testing.T) {
+	t.Parallel()
+	s := openStore(t, filepath.Join(t.TempDir(), "state.db"))
+	repo := repository(t, s, "names")
+	stored := []record.Change{
+		{ID: "plain", InitiatingTarget: "bashunit", Targets: []record.Target{{Name: "bashunit", Portfile: "devel/bashunit/Portfile"}}},
+		{ID: "shared", InitiatingTarget: "rb-mustache", Targets: []record.Target{{Name: "rb33-mustache", Portfile: "ruby/rb-mustache/Portfile", Subport: "rb33-mustache"}}},
+		{ID: "several", InitiatingTarget: "rsync", Targets: []record.Target{{Name: "rrsync", Portfile: "net/rsync/Portfile", Subport: "rrsync"}, {Name: "rsync", Portfile: "net/rsync/Portfile"}}},
+		{ID: "untargeted", InitiatingTarget: "lonely"},
+	}
+	require.NoError(t, s.Update(t.Context(), repo.ID, func(ctx context.Context, tx state.Tx) error {
+		for _, change := range stored {
+			change.Disposition = record.ChangeOpen
+			change.CreatedAt = time.Now().UTC().Truncate(time.Millisecond)
+			if err := tx.PutChange(ctx, change); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	probes := []string{"bashunit", "rb-mustache", "rb33-mustache", "RB33-Mustache", "rb24-mustache", "rsync", "rrsync", "lonely", "nothing"}
+	require.NoError(t, s.View(t.Context(), repo.ID, func(ctx context.Context, r state.Reader) error {
+		for _, probe := range probes {
+			var want []record.ChangeID
+			for _, change := range stored {
+				if change.Names(probe) {
+					want = append(want, change.ID)
+				}
+			}
+			found, err := r.Changes(ctx, state.Query{Target: probe, Limit: 16})
+			require.NoError(t, err, probe)
+			var got []record.ChangeID
+			for _, change := range found {
+				got = append(got, change.ID)
+				require.True(t, change.Names(probe), "%s: store returned %s, which the rule does not name", probe, change.ID)
+			}
+			require.ElementsMatch(t, want, got, probe)
+		}
+		return nil
+	}))
+}
