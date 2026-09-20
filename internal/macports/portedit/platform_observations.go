@@ -15,7 +15,6 @@ import (
 // contextProfiles closes over boundaries seen in baseline and candidate metadata.
 // The source scan also covers declarations in branches that have not executed.
 func (s *Service) contextProfiles(ctx context.Context, request Request, input *sourceInput, candidate []byte) ([]record.Platform, error) {
-	zzT("contextProfiles: start")
 	needs, err := scanPlatformNeeds(input.data)
 	if err != nil {
 		return nil, err

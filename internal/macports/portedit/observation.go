@@ -28,7 +28,6 @@ func (s *Service) observeProfiles(ctx context.Context, input *sourceInput, conte
 	observer := s.Ports
 	results := make([]macports.Observation, len(profiles))
 	requests := make([]macports.ObservationRequest, len(profiles))
-	zzT(fmt.Sprintf("observeProfiles: start, %d profiles, declarations=%v selectedOnly=%v", len(profiles), declarations, selectedOnly))
 	keys := make([]observationKey, len(profiles))
 	baseline := declarations && bytes.Equal(contents, input.data)
 	pending := false

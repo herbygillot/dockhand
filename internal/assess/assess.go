@@ -158,10 +158,8 @@ func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files
 		} else if selected.Name != "" && selected.Name != path.Base(path.Dir(selected.Selection.Selector)) {
 			selected.Selection.Subport = selected.Name
 		}
-		zzT("assess: probe start")
 		probe, problem := editor.Probe(ctx, portedit.ProbeSource{SharedRelease: request.SharedRelease, Source: files.Source, Root: files.Root, Selection: selected.Selection, Platform: platform})
 		defer probe.Close()
-		zzT("assess: probe loaded")
 		if problem == nil && selected.Name != "" {
 			problem = indexAgreement(selected.Name, probe.Port().Name, probe.Stub())
 		}
@@ -183,9 +181,7 @@ func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files
 				}
 			}
 			var err error
-			zzT("assess: Assess start")
 			item.Assessment, err = probe.Assess(ctx, release)
-			zzT("assess: Assess done")
 			if err != nil {
 				return Port{}, err
 			}
