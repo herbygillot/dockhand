@@ -151,13 +151,12 @@ func safeToken(value string) bool {
 	return true
 }
 func literalWords(src []byte, cmd syntax.Command) ([]string, error) {
-	var values []string
-	for _, word := range cmd.Words[1:] {
-		value, ok := word.Literal(src)
-		if !ok || !safeToken(value) {
-			return nil, fmt.Errorf("dependency: declaration contains expressions or unsupported tokens")
-		}
-		values = append(values, value)
+	values, ok := cmd.LiteralArgs(src)
+	for _, value := range values {
+		ok = ok && safeToken(value)
+	}
+	if !ok {
+		return nil, fmt.Errorf("dependency: declaration contains expressions or unsupported tokens")
 	}
 	return values, nil
 }

@@ -106,7 +106,7 @@ func classifyReads(src []byte, script *syntax.Script, d *dimension) error {
 			continue
 		}
 		name, _ := cmd.Name(src)
-		if controls, bodies, ok := controlParts(src, cmd); ok {
+		if controls, bodies, ok := cmd.Control(src); ok {
 			guarded := false
 			for _, control := range controls {
 				guarded = guarded || d.matches(control.Span.Text(src))
@@ -118,8 +118,10 @@ func classifyReads(src []byte, script *syntax.Script, d *dimension) error {
 						d.tainted[names] = true
 					} else if len(controls[i].Segments) == 1 {
 						if braced, ok := controls[i].Segments[0].(syntax.Braced); ok {
-							for _, variable := range strings.Fields(braced.Body.Text(src)) {
-								d.tainted[variable] = true
+							if names, errs := syntax.ListValues(braced.Body.Text(src)); len(errs) == 0 {
+								for _, variable := range names {
+									d.tainted[variable] = true
+								}
 							}
 						}
 					}
@@ -162,39 +164,6 @@ func classifyReads(src []byte, script *syntax.Script, d *dimension) error {
 	return nil
 }
 
-// controlParts separates a control structure's conditions or iteration words
-// from the bodies it executes. Other commands report ok false.
-func controlParts(src []byte, cmd syntax.Command) (controls, bodies []syntax.Word, ok bool) {
-	name, _ := cmd.Name(src)
-	words := cmd.Words[1:]
-	switch {
-	case name == "if":
-		expectCondition := true
-		for _, word := range words {
-			literal, _ := word.Literal(src)
-			switch {
-			case expectCondition:
-				controls = append(controls, word)
-				expectCondition = false
-			case literal == "then" || literal == "else":
-			case literal == "elseif":
-				expectCondition = true
-			default:
-				bodies = append(bodies, word)
-			}
-		}
-	case (name == "foreach" || name == "while") && len(words) > 1:
-		controls, bodies = words[:len(words)-1], words[len(words)-1:]
-	case name == "catch" && len(words) > 0:
-		bodies = words[:1]
-	case name == "for" && len(words) == 4:
-		controls, bodies = words[1:2], []syntax.Word{words[0], words[2], words[3]}
-	default:
-		return nil, nil, false
-	}
-	return controls, bodies, true
-}
-
 // phaseHook matches hook and phase-override commands that run after the
 // source is fetched and extracted; their bodies are judged like a branch.
 // Fetch and extract hooks are left to the fetch-semantics check.
@@ -216,7 +185,7 @@ func benignBody(src []byte, body syntax.Word, d *dimension) error {
 			continue
 		}
 		name, _ := cmd.Name(src)
-		_, nested, control := controlParts(src, cmd)
+		_, nested, control := cmd.Control(src)
 		if !control && phaseHook.MatchString(name) {
 			control = true
 			for _, word := range cmd.Words[1:] {
@@ -329,7 +298,7 @@ func benignAt(src []byte, line int) bool {
 		return false
 	}
 	name, _ := innermost.Name(src)
-	controls, bodies, control := controlParts(src, *innermost)
+	controls, bodies, control := innermost.Control(src)
 	if !control {
 		return benignSink(name)
 	}

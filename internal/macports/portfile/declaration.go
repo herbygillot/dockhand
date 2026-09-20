@@ -88,3 +88,26 @@ var continuedLine = regexp.MustCompile(`\\\r?\n[ \t]*`)
 func sourceCommand(value string) string {
 	return strings.TrimSpace(continuedLine.ReplaceAllString(value, " "))
 }
+
+// RewriteLiteralDeclaration replaces the one declaration of command whose
+// single literal argument is old. A value carried any other way is refused
+// rather than guessed at.
+func RewriteLiteralDeclaration(contents []byte, command, old, next string) ([]byte, error) {
+	script, errs := syntax.Parse(contents)
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("%w: invalid Portfile syntax", ErrUnsupported)
+	}
+	var edits []text.Edit
+	for cmd := range script.Commands(contents, func(syntax.Command) bool { return true }) {
+		if name, _ := cmd.Name(contents); name != command || len(cmd.Words) != 2 {
+			continue
+		}
+		if literal, ok := cmd.Words[1].Literal(contents); ok && literal == old && !cmd.Words[1].Expand {
+			edits = append(edits, text.Edit{Span: cmd.Words[1].Span, New: []byte(next)})
+		}
+	}
+	if len(edits) != 1 {
+		return nil, fmt.Errorf("%w: %s is %s but no single literal declaration carries it", ErrUnsupported, command, old)
+	}
+	return text.Apply(contents, edits)
+}

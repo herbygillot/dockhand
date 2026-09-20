@@ -3,13 +3,12 @@ package portedit
 import (
 	"context"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"regexp"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/progress"
-	"github.com/herbygillot/dockhand/internal/tcl/syntax"
-	"github.com/herbygillot/dockhand/internal/text"
 )
 
 // A port fetched with git has no archive to download and no checksums to
@@ -70,7 +69,7 @@ func (s *Service) planGitVersion(ctx context.Context, request Request, input *so
 		if release.Commit == "" {
 			return archivePlan{}, fmt.Errorf("%w: git.branch pins a commit and the resolved release names none", ErrUnsupported)
 		}
-		rewritten, err := rewriteLiteralDeclaration(contents, "git.branch", old, release.Commit)
+		rewritten, err := portfile.RewriteLiteralDeclaration(contents, "git.branch", old, release.Commit)
 		if err != nil {
 			return archivePlan{}, err
 		}
@@ -89,29 +88,6 @@ func (s *Service) planGitVersion(ctx context.Context, request Request, input *so
 	}
 	progress.VerboseReport(ctx, "%s is fetched with git; the build clones %s at %s", input.target.Name, next.Options["git.url"], next.Options["git.branch"])
 	return archivePlan{result: result, contents: contents, versioned: versioned, viaGit: true, branch: branch, subject: "update to " + release.Version}, nil
-}
-
-// rewriteLiteralDeclaration replaces the one declaration of command whose
-// single literal argument is old. A value carried any other way is refused
-// rather than guessed at.
-func rewriteLiteralDeclaration(contents []byte, command, old, next string) ([]byte, error) {
-	script, errs := syntax.Parse(contents)
-	if len(errs) > 0 {
-		return nil, fmt.Errorf("%w: invalid Portfile syntax", ErrUnsupported)
-	}
-	var edits []text.Edit
-	for cmd := range script.Commands(contents, func(syntax.Command) bool { return true }) {
-		if name, _ := cmd.Name(contents); name != command || len(cmd.Words) != 2 {
-			continue
-		}
-		if literal, ok := cmd.Words[1].Literal(contents); ok && literal == old && !cmd.Words[1].Expand {
-			edits = append(edits, text.Edit{Span: cmd.Words[1].Span, New: []byte(next)})
-		}
-	}
-	if len(edits) != 1 {
-		return nil, fmt.Errorf("%w: %s is %s but no single literal declaration carries it", ErrUnsupported, command, old)
-	}
-	return text.Apply(contents, edits)
 }
 
 // applyGitVersion evaluates the final candidate once more and commits it;

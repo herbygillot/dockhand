@@ -50,13 +50,8 @@ func Candidates(src []byte) ([]Candidate, error) {
 		if w.Expand {
 			return
 		}
-		span := w.Span
+		span := w.Inner()
 		value := span.Text(src)
-		if len(value) >= 2 && ((value[0] == '{' && value[len(value)-1] == '}') || (value[0] == '"' && value[len(value)-1] == '"')) {
-			span.Start++
-			span.End--
-			value = span.Text(src)
-		}
 		if Literal(value) && strings.ContainsAny(value, "0123456789") && !seen[span] {
 			seen[span] = true
 			result = append(result, Candidate{Span: span, Value: value})
@@ -152,73 +147,21 @@ func Candidates(src []byte) ([]Candidate, error) {
 			if index >= 0 {
 				word(cmd.Words[index])
 			}
-			body := func(index int) {
-				if index < len(cmd.Words) {
-					if script, ok := cmd.Words[index].BracedScript(src); ok {
+			// A control structure's bodies are scripts, whatever its shape;
+			// the shape is the parser's to know. Declaration blocks carry
+			// their script last.
+			if _, bodies, ok := cmd.Control(src); ok {
+				for _, body := range bodies {
+					if script, ok := body.BracedScript(src); ok {
 						walk(script, false)
 					}
 				}
+				continue
 			}
 			switch name {
-			case "proc", "platform", "variant", "subport", "foreach":
-				body(len(cmd.Words) - 1)
-			case "if":
-				i := 2
-				for i < len(cmd.Words) {
-					if value, _ := cmd.Words[i].Literal(src); value == "then" {
-						i++
-					}
-					body(i)
-					i++
-					if i >= len(cmd.Words) {
-						break
-					}
-					value, _ := cmd.Words[i].Literal(src)
-					if value == "else" {
-						body(i + 1)
-						break
-					}
-					if value != "elseif" {
-						break
-					}
-					i += 2
-				}
-			// switch ?options? string ?pattern body ...?, or one braced list
-			// of alternating patterns and bodies, which is how php chooses a
-			// version per branch. Patterns are not inputs; bodies are
-			// scripts. A "-" body falls through and is not braced, so it is
-			// passed over.
-			case "switch":
-				i := 1
-				for i < len(cmd.Words) {
-					value, literal := cmd.Words[i].Literal(src)
-					if !literal || !strings.HasPrefix(value, "-") {
-						break
-					}
-					i++
-					if value == "--" {
-						break
-					}
-				}
-				if i+1 >= len(cmd.Words) {
-					break
-				}
-				if i+2 == len(cmd.Words) {
-					if arms, ok := cmd.Words[i+1].BracedScript(src); ok {
-						for _, item := range arms.Items {
-							if arm, ok := item.(syntax.Command); ok {
-								for j := 1; j < len(arm.Words); j += 2 {
-									if script, ok := arm.Words[j].BracedScript(src); ok {
-										walk(script, false)
-									}
-								}
-							}
-						}
-					}
-					break
-				}
-				for j := i + 2; j < len(cmd.Words); j += 2 {
-					body(j)
+			case "proc", "platform", "variant", "subport":
+				if script, ok := cmd.Words[len(cmd.Words)-1].BracedScript(src); ok {
+					walk(script, false)
 				}
 			}
 		}

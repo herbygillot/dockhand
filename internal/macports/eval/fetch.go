@@ -47,7 +47,7 @@ func assessFetch(info macports.PortInfo, procedure, pre, post string) macports.F
 // A rejection-only hook consists of harmless diagnostic arguments followed by
 // an unconditional error return. The registered Base wrapper must also match.
 func rejectionOnly(body string) bool {
-	body, ok := strings.CutPrefix(body, "global {*}[info globals]\n")
+	body, ok := hookBody(body)
 	if !ok {
 		return false
 	}
@@ -56,7 +56,7 @@ func rejectionOnly(body string) bool {
 	if len(errs) != 0 {
 		return false
 	}
-	return rejectionCommands(src, scriptCommands(script))
+	return rejectionCommands(src, script.Direct())
 }
 
 // rejectionCommands accepts diagnostics followed by an unconditional error return.
@@ -67,13 +67,13 @@ func rejectionCommands(src []byte, commands []syntax.Command) bool {
 	for i, command := range commands {
 		words := command.Words
 		if i == len(commands)-1 {
-			if len(words) < 3 || len(words) > 4 || !commandWords(src, syntax.Command{Words: words[:3]}, "return", "-code", "error") {
+			if len(words) < 3 || len(words) > 4 || !(syntax.Command{Words: words[:3]}).Is(src, "return", "-code", "error") {
 				return false
 			}
-			if len(words) == 4 && (words[3].Expand || !messageSegments(words[3].Segments)) {
+			if len(words) == 4 && (!words[3].Plain()) {
 				return false
 			}
-		} else if len(words) != 2 || words[0].Span.Text(src) != "ui_error" || words[1].Expand || !messageSegments(words[1].Segments) {
+		} else if len(words) != 2 || words[0].Span.Text(src) != "ui_error" || !words[1].Plain() {
 			return false
 		}
 	}
@@ -88,7 +88,7 @@ func rejectionCommands(src []byte, commands []syntax.Command) bool {
 // needs; any other command substitution, and branches that do anything
 // else, are not recognized.
 func conditionalRejection(body string) bool {
-	body, ok := strings.CutPrefix(body, "global {*}[info globals]\n")
+	body, ok := hookBody(body)
 	if !ok {
 		return false
 	}
@@ -97,40 +97,30 @@ func conditionalRejection(body string) bool {
 	if len(errs) != 0 {
 		return false
 	}
-	commands := scriptCommands(script)
+	commands := script.Direct()
 	if len(commands) == 0 {
 		return false
 	}
 	for _, command := range commands {
-		words := command.Words
-		if len(words) < 3 || words[0].Span.Text(src) != "if" {
+		name, _ := command.Name(src)
+		controls, bodies, ok := command.Control(src)
+		if !ok || name != "if" || len(bodies) == 0 {
 			return false
 		}
-		expectCondition := true
-		for _, word := range words[1:] {
-			literal, _ := word.Literal(src)
-			switch {
-			case expectCondition:
-				if word.Expand || len(word.Segments) != 1 {
-					return false
-				}
-				braced, ok := word.Segments[0].(syntax.Braced)
-				if !ok || !pureCondition(braced.Body.Text(src)) {
-					return false
-				}
-				expectCondition = false
-			case literal == "then" || literal == "else":
-			case literal == "elseif":
-				expectCondition = true
-			default:
-				block, ok := word.BracedScript(src)
-				if !ok || !rejectionCommands(src, scriptCommands(block)) {
-					return false
-				}
+		for _, control := range controls {
+			if control.Expand || len(control.Segments) != 1 {
+				return false
+			}
+			braced, ok := control.Segments[0].(syntax.Braced)
+			if !ok || !pureCondition(braced.Body.Text(src)) {
+				return false
 			}
 		}
-		if expectCondition {
-			return false
+		for _, body := range bodies {
+			block, ok := body.BracedScript(src)
+			if !ok || !rejectionCommands(src, block.Direct()) {
+				return false
+			}
 		}
 	}
 	return true
@@ -171,7 +161,7 @@ func pureCondition(condition string) bool {
 // Recognize its structure; different commands or substitutions prevent direct
 // archive fetching. MacPorts still runs this check during verification.
 func goToolchainCheck(body string) bool {
-	body, ok := strings.CutPrefix(body, "global {*}[info globals]\n")
+	body, ok := hookBody(body)
 	if !ok {
 		return false
 	}
@@ -180,8 +170,8 @@ func goToolchainCheck(body string) bool {
 	if len(errs) != 0 {
 		return false
 	}
-	commands := scriptCommands(script)
-	if len(commands) != 4 || !commandWords(src, commands[0], "global", "go.toolchain_unmet") || !commandWords(src, commands[1], "set", "ceiling", "[go_toolchain.ceiling]") {
+	commands := script.Direct()
+	if len(commands) != 4 || !commands[0].Is(src, "global", "go.toolchain_unmet") || !commands[1].Is(src, "set", "ceiling", "[go_toolchain.ceiling]") {
 		return false
 	}
 	for index, condition := range []string{`${ceiling} eq "none"`, `${go.toolchain_unmet} ne ""`} {
@@ -201,15 +191,15 @@ func goToolchainCheck(body string) bool {
 		if !ok {
 			return false
 		}
-		statements := scriptCommands(block)
+		statements := block.Direct()
 		if len(statements) != 2 || len(statements[0].Words) != 2 || len(statements[1].Words) != 4 {
 			return false
 		}
-		if statements[0].Words[0].Span.Text(src) != "ui_error" || !commandWords(src, syntax.Command{Words: statements[1].Words[:3]}, "return", "-code", "error") {
+		if statements[0].Words[0].Span.Text(src) != "ui_error" || !(syntax.Command{Words: statements[1].Words[:3]}).Is(src, "return", "-code", "error") {
 			return false
 		}
 		for _, message := range []syntax.Word{statements[0].Words[1], statements[1].Words[3]} {
-			if message.Expand || !messageSegments(message.Segments) {
+			if !message.Plain() {
 				return false
 			}
 		}
@@ -217,43 +207,8 @@ func goToolchainCheck(body string) bool {
 	return true
 }
 
-func scriptCommands(script *syntax.Script) []syntax.Command {
-	var commands []syntax.Command
-	for _, item := range script.Items {
-		if command, ok := item.(syntax.Command); ok {
-			commands = append(commands, command)
-		}
-	}
-	return commands
-}
+// A hook registered through Base arrives wrapped: its first line imports
+// every global, and the body the Portfile wrote follows.
+const baseHookPrefix = "global {*}[info globals]\n"
 
-func commandWords(src []byte, command syntax.Command, expected ...string) bool {
-	if len(command.Words) != len(expected) {
-		return false
-	}
-	for i, word := range command.Words {
-		if word.Expand || word.Span.Text(src) != expected[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func messageSegments(segments []syntax.Segment) bool {
-	for _, segment := range segments {
-		switch value := segment.(type) {
-		case syntax.Literal, syntax.Braced:
-		case syntax.VarSub:
-			if value.HasIndex {
-				return false
-			}
-		case syntax.Quoted:
-			if !messageSegments(value.Segments) {
-				return false
-			}
-		default:
-			return false
-		}
-	}
-	return true
-}
+func hookBody(body string) (string, bool) { return strings.CutPrefix(body, baseHookPrefix) }

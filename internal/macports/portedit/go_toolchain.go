@@ -62,7 +62,7 @@ func (s *Service) raiseGoToolchain(ctx context.Context, request Request, input *
 		progress.VerboseReport(ctx, "The Portfile's go.toolchain_min %s already covers the %s that go.mod requires", current, required)
 		return nil
 	}
-	contents, err := rewriteLiteralDeclaration(result.Files[0].After, "go.toolchain_min", current, required)
+	contents, err := portfile.RewriteLiteralDeclaration(result.Files[0].After, "go.toolchain_min", current, required)
 	if errors.Is(err, ErrUnsupported) {
 		progress.Report(ctx, "Warning: %s requires Go %s per go.mod but go.toolchain_min %s is not a single literal declaration; raise it by hand", input.target.Name, required, current)
 		return nil
