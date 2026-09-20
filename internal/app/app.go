@@ -165,3 +165,13 @@ func FilteredStatus(ctx context.Context, config Config, filter workflow.StatusFi
 	engine := workflow.Engine{State: store, Repository: repository.ID}
 	return engine.FilteredStatus(ctx, filter)
 }
+
+// TestTimeout is how long a port's tests may run under this configuration:
+// the configured bound, or Tart's default when none is set. The CLI derives
+// its help from this rather than from the provider.
+func (c Config) TestTimeout() time.Duration {
+	if c.Tart.TestTimeout <= 0 {
+		return tart.DefaultTestTimeout
+	}
+	return c.Tart.TestTimeout
+}

@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/verify"
-	"github.com/herbygillot/dockhand/internal/verify/tart"
 	"strings"
 	"time"
 
@@ -49,7 +48,7 @@ func (o *buildOptions) flags(cmd *cobra.Command, config app.Config) {
 		testDefault = string(record.TestWorkflow)
 	}
 	cmd.Flags().StringVar(&o.tests, "tests", testDefault, "Test policy: declared runs the port's tests as advisory, required fails the build on them, skip omits them (Tart); workflow for GitHub")
-	cmd.Flags().DurationVar(&o.testTimeout, "test-timeout", config.Tart.TestTimeout, fmt.Sprintf("Stop the port's tests after this long; a timeout counts as a test failure (Tart; default %s)", tart.DefaultTestTimeout))
+	cmd.Flags().DurationVar(&o.testTimeout, "test-timeout", config.Tart.TestTimeout, fmt.Sprintf("Stop the port's tests after this long; a timeout counts as a test failure (Tart; default %s)", config.TestTimeout()))
 	cmd.Flags().BoolVar(&o.fromSource, "from-source", false, "Build the target and needed dependencies from source instead of using binary archives")
 }
 

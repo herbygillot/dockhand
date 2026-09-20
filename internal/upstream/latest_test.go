@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports/dependency"
 	"github.com/herbygillot/dockhand/internal/record"
 	"os/exec"
 	"strings"
@@ -339,7 +338,7 @@ func TestManifestReadsTheReleaseCommit(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "go 1.25\n", string(data))
 	_, err = service.Manifest(t.Context(), port, release, "Cargo.toml")
-	require.ErrorIs(t, err, dependency.ErrManifestMissing)
+	require.ErrorIs(t, err, macports.ErrManifestMissing)
 	other := release
 	other.Repository = "owner/other"
 	_, err = service.Manifest(t.Context(), port, other, "go.mod")

@@ -2,8 +2,8 @@ package dependency
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"io"
 	"path"
 	"strings"
@@ -13,7 +13,9 @@ import (
 
 const maxManifestBytes = 16 << 20
 
-var ErrManifestMissing = errors.New("dependency: manifest missing")
+// ErrManifestMissing is macports.ErrManifestMissing, which the forge reader
+// in upstream reports as well.
+var ErrManifestMissing = macports.ErrManifestMissing
 
 // Manifest reads a regular archive member without extracting files onto the host.
 // GOPATHLayout reports whether worksrcdir is the Go PortGroup's default,
