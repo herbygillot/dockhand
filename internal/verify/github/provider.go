@@ -17,6 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/git/changeset"
 	githubapi "github.com/herbygillot/dockhand/internal/github"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/verify"
@@ -240,6 +241,20 @@ func (p *Provider) pushAndFind(ctx context.Context, row record.ProviderExecution
 		if selected.GetRunAttempt() <= 0 || selected.GetID() <= 0 {
 			return result, fmt.Errorf("github verification: incomplete workflow run identity")
 		}
+		// The run for this commit already finished without succeeding, and the
+		// engine asked for a verdict anyway, which it does only when recorded
+		// evidence did not satisfy it. Adopting the old conclusion would
+		// answer with what is already known, so ask GitHub to run the
+		// unsuccessful jobs again and observe the attempt that produces.
+		if selected.GetStatus() == "completed" && selected.GetConclusion() != "success" {
+			again, rerunErr := p.rerun(ctx, api, saved, selected)
+			if rerunErr != nil {
+				return result, rerunErr
+			}
+			if again != nil {
+				selected = again
+			}
+		}
 		row.Result, err = json.Marshal(executionRun{ID: selected.GetID(), Attempt: selected.GetRunAttempt(), URL: selected.GetHTMLURL()})
 		if err != nil {
 			return result, err
@@ -260,6 +275,40 @@ func (p *Provider) pushAndFind(ctx context.Context, row record.ProviderExecution
 	}
 	result.Detail, err = missingRunDetail(ctx, api, row, saved, push)
 	return result, err
+}
+
+// rerun asks for another attempt of a finished run and returns it once GitHub
+// reports one.
+//
+// One request asks at most once, and nothing needs to be written down for
+// that: the caller admits a run either way in the same pass, so this is not
+// reached again for the request, and a run that did accept a rerun is no
+// longer completed, which is the condition that brings anything here. A
+// refusal is not fatal: a run GitHub will not repeat, because its logs have
+// expired or it has no unsuccessful job to repeat, still carries the
+// conclusion it reached, and that conclusion is observed.
+func (p *Provider) rerun(ctx context.Context, api actionsAPI, saved payload, selected *gh.WorkflowRun) (*gh.WorkflowRun, error) {
+	if err := api.Rerun(ctx, selected.GetID()); err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		progress.Report(ctx, "GitHub would not run %s again (%s); observing the attempt it already has", selected.GetHTMLURL(), err)
+		return nil, nil
+	}
+	current, err := api.Run(ctx, selected.GetID(), 0)
+	if err != nil {
+		return nil, err
+	}
+	if current.GetRunAttempt() <= selected.GetRunAttempt() {
+		// The attempt is not visible yet; the next observation finds it, and
+		// Reran keeps this from asking twice.
+		return nil, nil
+	}
+	if !matches(saved, current) {
+		return nil, fmt.Errorf("github verification: the rerun attempt does not match this contribution")
+	}
+	progress.Report(ctx, "Asked GitHub to run %s again; observing attempt %d", selected.GetHTMLURL(), current.GetRunAttempt())
+	return current, nil
 }
 
 func admitted(row record.ProviderExecution) (verify.Submission, error) {

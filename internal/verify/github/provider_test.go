@@ -48,6 +48,11 @@ type fakeActions struct {
 	runsErr  error
 	logCalls int
 	jobLog   func(context.Context, int64) (io.ReadCloser, error)
+	// reruns counts rerun requests; rerunErr refuses them, and onRerun stands
+	// in for what GitHub does to the run when it accepts one.
+	reruns   int
+	rerunErr error
+	onRerun  func()
 }
 
 func (a *fakeActions) Workflow(context.Context, string) (*gh.Workflow, error) { return a.flow, a.err }
@@ -62,6 +67,16 @@ func (a *fakeActions) Run(_ context.Context, _ int64, attempt int) (*gh.Workflow
 		return nil, errors.New("wrong run attempt requested")
 	}
 	return a.run, a.err
+}
+func (a *fakeActions) Rerun(context.Context, int64) error {
+	a.reruns++
+	if a.rerunErr != nil {
+		return a.rerunErr
+	}
+	if a.onRerun != nil {
+		a.onRerun()
+	}
+	return nil
 }
 func (a *fakeActions) Jobs(context.Context, int64, int) ([]*gh.WorkflowJob, error) {
 	return a.jobs, a.err
@@ -817,4 +832,94 @@ func TestTheRealMacPortsWorkflowIsReadAndPredicted(t *testing.T) {
 	require.Equal(t, []string{"macos-14", "macos-15", "macos-26"}, names)
 	_, err = readWorkflow(raw, "master")
 	require.Error(t, err, "master is the one branch its push trigger ignores")
+}
+
+// A run that already finished without succeeding is not an answer to a new
+// request: the engine asks for a verdict only when recorded evidence did not
+// satisfy it, so the unsuccessful jobs are run again and the attempt that
+// produces is the one observed.
+func TestAFinishedFailureIsRunAgainRatherThanAdopted(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	f.ready()
+	f.api.run.Conclusion = gh.Ptr("failure")
+	// GitHub answers a rerun by adding an attempt to the same run.
+	f.api.onRerun = func() {
+		f.api.run.RunAttempt = gh.Ptr(2)
+		f.api.run.Status, f.api.run.Conclusion = gh.Ptr("in_progress"), nil
+		for _, job := range f.api.jobs {
+			job.RunAttempt = gh.Ptr(int64(2))
+		}
+	}
+	submitted, err := f.provider.Submit(t.Context(), f.request)
+	require.NoError(t, err)
+	require.Equal(t, verify.Admitted, submitted.State)
+	require.Equal(t, 1, f.api.reruns)
+	require.Equal(t, "10:2", submitted.Run.RunID, "the new attempt is what this request observes")
+
+	// The old attempt is untouched, so a job that watched it keeps its verdict.
+	f.api.run.Status, f.api.run.Conclusion = gh.Ptr("completed"), gh.Ptr("success")
+	observed, err := f.provider.Observe(t.Context(), submitted.Run)
+	require.NoError(t, err)
+	require.Equal(t, record.VerdictPassed, observed.Verdict)
+	require.Equal(t, 1, f.api.reruns, "observing asks for nothing further")
+}
+
+// One request asks once. A refusal, or an attempt GitHub has not published
+// yet, leaves the run it already has rather than asking again.
+func TestARequestAsksForOneRerun(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		arrange func(f *fixture)
+		admits  bool
+	}{
+		{"github refuses", func(f *fixture) { f.api.rerunErr = errors.New("logs expired") }, true},
+		{"the attempt is not visible yet", func(f *fixture) {}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := setup(t)
+			f.ready()
+			f.api.run.Conclusion = gh.Ptr("failure")
+			tc.arrange(f)
+			submitted, err := f.provider.Submit(t.Context(), f.request)
+			require.NoError(t, err)
+			require.Equal(t, 1, f.api.reruns)
+			if tc.admits {
+				require.Equal(t, "10:1", submitted.Run.RunID, "the conclusion it already reached is observed")
+			}
+			// A later cycle on the same request must not ask a second time.
+			for range 2 {
+				_, err = f.provider.Submit(t.Context(), f.request)
+				require.NoError(t, err)
+			}
+			require.Equal(t, 1, f.api.reruns, "the request recorded that it asked before it asked")
+		})
+	}
+}
+
+// A run that succeeded, or one still going, is observed as it stands.
+func TestARunWorthWaitingForIsNotRerun(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ status, conclusion string }{
+		{"completed", "success"},
+		{"in_progress", ""},
+		{"queued", ""},
+	} {
+		t.Run(tc.status+tc.conclusion, func(t *testing.T) {
+			t.Parallel()
+			f := setup(t)
+			f.ready()
+			f.api.run.Status = gh.Ptr(tc.status)
+			if tc.conclusion == "" {
+				f.api.run.Conclusion = nil
+			} else {
+				f.api.run.Conclusion = gh.Ptr(tc.conclusion)
+			}
+			_, err := f.provider.Submit(t.Context(), f.request)
+			require.NoError(t, err)
+			require.Zero(t, f.api.reruns)
+		})
+	}
 }

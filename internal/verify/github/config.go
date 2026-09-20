@@ -29,6 +29,7 @@ type actionsAPI interface {
 	Run(context.Context, int64, int) (*gh.WorkflowRun, error)
 	Jobs(context.Context, int64, int) ([]*gh.WorkflowJob, error)
 	JobLog(context.Context, int64) (io.ReadCloser, error)
+	Rerun(context.Context, int64) error
 }
 
 func buildConfig(platform record.Platform, config Config, needsXcode bool) (record.BuildConfig, error) {

@@ -59,6 +59,16 @@ func (a *actionsClient) Run(ctx context.Context, id int64, attempt int) (*gh.Wor
 	return value, githubapi.RateLimitError(err)
 }
 
+// Rerun asks GitHub to run this run's unsuccessful jobs again, which adds an
+// attempt to the same run rather than creating another one. Only the legs that
+// did not succeed are repeated, so retrying a matrix costs one runner rather
+// than all of them. The call returns no identity, so the caller re-reads the
+// run to learn the attempt it produced.
+func (a *actionsClient) Rerun(ctx context.Context, id int64) error {
+	_, err := a.service.RerunFailedJobsByID(ctx, a.owner, a.repository, id)
+	return githubapi.RateLimitError(err)
+}
+
 func (a *actionsClient) Jobs(ctx context.Context, id int64, attempt int) ([]*gh.WorkflowJob, error) {
 	options := &gh.ListOptions{}
 	var jobs []*gh.WorkflowJob
