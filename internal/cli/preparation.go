@@ -69,6 +69,10 @@ func (r *runtime) changeCommands() []*cobra.Command {
 				if err != nil {
 					return err
 				}
+				selector, err := portName(args[0])
+				if err != nil {
+					return err
+				}
 				var version string
 				if spec.action == record.Bump && len(args) == 2 {
 					version = args[1]
@@ -92,7 +96,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					progress.VerboseReport(cmd.Context(), "Binding contribution source; local commits and working-tree edits are excluded")
 					bound, err := services.BindPreparation(cmd.Context(), app.Preparation{EditIntent: record.EditIntent{SharedRelease: sharedRelease, KeepOldChecksums: keepOldChecksums}, AllSubports: options.AllSubports, KeepFailed: build.keepFailed,
 						ChangeID: record.ChangeID(change), IncludeDependents: build.dependents, Action: spec.action, Version: version, ID: record.RequestID("request_" + rand.Text()),
-						Selection: macports.Selection{Selector: args[0], Variants: choices},
+						Selection: macports.Selection{Selector: selector, Variants: choices},
 						Reason:    reason, Publish: destination, SkipVerify: options.SkipVerify, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource,
 					})
 					if err != nil {
@@ -109,7 +113,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					}
 					return r.attach(cmd, services, receipt.JobID, milestone, options.Trace, false, &receipt)
 				}
-				request := app.PreviewRequest{EditIntent: record.EditIntent{SharedRelease: sharedRelease, KeepOldChecksums: keepOldChecksums}, Action: spec.action, Selection: macports.Selection{Selector: args[0], Variants: choices}, Reason: reason}
+				request := app.PreviewRequest{EditIntent: record.EditIntent{SharedRelease: sharedRelease, KeepOldChecksums: keepOldChecksums}, Action: spec.action, Selection: macports.Selection{Selector: selector, Variants: choices}, Reason: reason}
 				if len(args) == 2 {
 					request.Version = args[1]
 				}

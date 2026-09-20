@@ -95,7 +95,9 @@ func (r *runtime) verifyCommand() *cobra.Command {
 			}
 			var selector string
 			if len(args) == 1 {
-				selector = args[0]
+				if selector, err = portName(args[0]); err != nil {
+					return err
+				}
 			}
 			bound, err := services.BindVerification(cmd.Context(), app.Verification{KeepFailed: build.keepFailed, AllSubports: allSubports, WorkingTree: workingTree, ChangeID: record.ChangeID(change), UseRecordedBuild: !verificationSettingsChanged(cmd), IncludeDependents: build.dependents, ID: record.RequestID("request_" + rand.Text()), Branch: branch, Selection: macports.Selection{Selector: selector, Variants: choices}, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource, Fresh: fresh})
 			if err != nil {
@@ -166,8 +168,8 @@ func (s workSelector) validate(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("--%s requires a nonempty selector", name)
 		}
 	}
-	if len(args) == 1 && (args[0] == "" || !macports.ValidName(args[0])) {
-		return fmt.Errorf("target must name a port or subport")
+	if len(args) == 1 && (args[0] == "" || !pathToken(args[0]) && !macports.ValidName(args[0])) {
+		return fmt.Errorf("target must name a port or subport, a port directory, or a Portfile")
 	}
 	if len(args) > 0 && s.job != "" {
 		return fmt.Errorf("select a target or --job, not both")
@@ -180,7 +182,11 @@ func (s workSelector) validate(cmd *cobra.Command, args []string) error {
 func (s workSelector) contribution(ctx context.Context, services *app.Services, args []string) (workflow.ContributionSelector, error) {
 	selected := workflow.ContributionSelector{Branch: s.branch, ChangeID: record.ChangeID(s.change)}
 	if len(args) == 1 {
-		selected.Target = args[0]
+		target, err := portName(args[0])
+		if err != nil {
+			return selected, err
+		}
+		selected.Target = target
 	}
 	if selected == (workflow.ContributionSelector{}) {
 		branch, err := services.Workflow.Repo.CurrentBranch(ctx)

@@ -37,7 +37,11 @@ func (r *runtime) statusCommand() *cobra.Command {
 				if args[0] == "" {
 					return fmt.Errorf("status requires a nonempty target")
 				}
-				filter.Target = args[0]
+				target, err := portName(args[0])
+				if err != nil {
+					return err
+				}
+				filter.Target = target
 			}
 			if cmd.Flags().Changed("branch") && filter.Branch == "" {
 				return fmt.Errorf("--branch requires a nonempty branch name")

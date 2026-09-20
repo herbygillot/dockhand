@@ -26,9 +26,11 @@ func (r *runtime) publishCommand() *cobra.Command {
 			defer services.Close()
 			var target string
 			if len(args) == 1 {
-				target = args[0]
-				if target == "" {
+				if args[0] == "" {
 					return fmt.Errorf("target must not be empty")
+				}
+				if target, err = portName(args[0]); err != nil {
+					return err
 				}
 			}
 			input := workflow.PublicationRequest{Target: target, ChangeID: record.ChangeID(change), ID: record.RequestID("request_" + rand.Text()), Branch: branch, Options: options, SkipVerify: skipVerify}

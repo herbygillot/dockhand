@@ -18,7 +18,11 @@ func (r *runtime) assessCommand() *cobra.Command {
 		Example:     "  dockhand assess terraform-1.16\n  dockhand assess rust-analyzer --version 2026-09-14\n  dockhand assess --maintainer herbygillot@github\n  dockhand assess --all --json",
 		Annotations: map[string]string{stateIndependentHelp: "true"},
 		Args: func(cmd *cobra.Command, args []string) error {
-			request.Selection.Ports = args
+			ports, err := portNames(args)
+			if err != nil {
+				return err
+			}
+			request.Selection.Ports = ports
 			if cmd.Flags().Changed("version") && request.Version == "" {
 				return fmt.Errorf("assess: --version must not be empty")
 			}
