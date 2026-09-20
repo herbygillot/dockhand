@@ -431,6 +431,9 @@ func jobWords(current JobStatus, pr *record.PullRequest) (phase, state, next str
 			next = "bump again once fixed, or abandon: " + job.Detail
 		case job.Phase == record.PhaseVerification:
 			next = "verify again once fixed, or abandon: " + job.Detail
+			if beyond := beyondTheChange(current); beyond != "" {
+				next = beyond
+			}
 		}
 		return phase, "needs attention", next
 	case record.JobCanceled:
@@ -522,6 +525,9 @@ func completedWords(entry JobStatus, pr *record.PullRequest) (phase, state, next
 }
 
 func failedNext(entry JobStatus) string {
+	if beyond := beyondTheChange(entry); beyond != "" {
+		return beyond
+	}
 	for _, attempt := range entry.Attempts {
 		if attempt.Evidence == nil || attempt.Evidence.Verdict != record.VerdictFailed {
 			continue
@@ -536,6 +542,37 @@ func failedNext(entry JobStatus) string {
 	}
 	return "fix and amend, or abandon"
 }
+
+// beyondTheChange words a verification that did not fail on the candidate
+// itself, and says to run it again rather than to change something. A build
+// the machinery never completed, or one whose failing package is a dependency
+// rather than the target, says nothing about the contribution: the same
+// source run again is the useful next step, and amending it is not.
+func beyondTheChange(entry JobStatus) string {
+	for _, attempt := range entry.Attempts {
+		evidence := attempt.Evidence
+		if evidence == nil {
+			continue
+		}
+		failure := evidence.Failure
+		switch {
+		case failure != nil && failure.Kind == record.InfrastructureFailure:
+			return "verification could not run (" + oneLine(failure.Detail) + "); nothing to fix in the change, verify again"
+		case failure != nil && failure.Kind == record.DockhandFailure:
+			return "dockhand failed to run the verification (" + oneLine(failure.Detail) + "); verify again, and report it if it repeats"
+		case failure != nil && failure.Kind == record.DependencyFailure && failure.Package != "":
+			return "dependency " + failure.Package + " failed to build, not the change itself; verify again, or fix that port first"
+		case evidence.Verdict == record.VerdictErrored:
+			return "verification errored before reaching a verdict; nothing to fix in the change, verify again"
+		case evidence.Verdict == record.VerdictBlocked:
+			return "verification was blocked before it could judge the change; verify again once the blocker is cleared"
+		}
+	}
+	return ""
+}
+
+// oneLine keeps a recorded detail on the row it is printed in.
+func oneLine(text string) string { return strings.Join(strings.Fields(text), " ") }
 
 // pullRequestNext words an observed PR: its state, then the mergeability,
 // review, and check counts when they were inspected.

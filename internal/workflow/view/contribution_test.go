@@ -176,3 +176,40 @@ func TestWordsForOneJobMatchItsRow(t *testing.T) {
 	require.Equal(t, "already current at 2.0; latest eligible version is 1.9", VersionMove(current))
 	require.Equal(t, "no update needed", JobState(JobStatus{Job: record.Job{State: record.JobCompleted, ResolvedRelease: current, Spec: record.JobSpec{Action: record.Bump}}}, nil))
 }
+
+// A verification that never judged the change, or that failed on something
+// other than the target, says to run it again rather than to change anything.
+func TestAFailureBeyondTheChangeAdvisesVerifyingAgain(t *testing.T) {
+	t.Parallel()
+	job := record.Job{ID: "job_1", ChangeID: "change_1", Phase: record.PhaseVerification, Detail: "verification errored",
+		Spec: record.JobSpec{Action: record.Bump, Targets: []record.Target{{Name: "jq"}}}}
+	change := record.Change{ID: "change_1", InitiatingTarget: "jq", Branch: "candidate", CurrentRevision: "revision", Disposition: record.ChangeOpen, Targets: []record.Target{{Name: "jq"}}}
+	row := func(state record.JobState, evidence *record.Evidence) Contribution {
+		entry := JobStatus{Job: job, Attempts: []record.Attempt{{ID: "attempt_1", State: record.AttemptFinished, Evidence: evidence}}}
+		entry.Job.State = state
+		rows := Project(Snapshot{Jobs: []JobStatus{entry}, Changes: []record.Change{change}})
+		return rows[0]
+	}
+
+	// The machinery never reached a verdict.
+	next := row(record.JobNeedsAttention, &record.Evidence{Verdict: record.VerdictErrored,
+		Failure: &record.Failure{Kind: record.InfrastructureFailure, Detail: "guest agent never became ready"}}).Next
+	require.Contains(t, next, "nothing to fix in the change, verify again")
+	require.Contains(t, next, "guest agent never became ready")
+	require.NotContains(t, next, "amend")
+
+	// A dependency failed, not the port being changed.
+	next = row(record.JobFailed, &record.Evidence{Verdict: record.VerdictFailed,
+		Failure: &record.Failure{Kind: record.DependencyFailure, Package: "openssl3", Phase: "build"}}).Next
+	require.Contains(t, next, "dependency openssl3 failed to build, not the change itself")
+	require.Contains(t, next, "verify again")
+
+	// The port itself failed: that is the change's business, and amending is right.
+	next = row(record.JobFailed, &record.Evidence{Verdict: record.VerdictFailed,
+		Failure: &record.Failure{Kind: record.TargetFailure, Package: "jq", Phase: "build"}}).Next
+	require.Equal(t, "build failed; fix and amend, or abandon", next)
+
+	// An errored attempt with no failure record still says what it means.
+	next = row(record.JobNeedsAttention, &record.Evidence{Verdict: record.VerdictErrored}).Next
+	require.Contains(t, next, "errored before reaching a verdict")
+}
