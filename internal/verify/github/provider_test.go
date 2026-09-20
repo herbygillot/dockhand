@@ -800,3 +800,21 @@ func TestPredictedJobsAreStillRequiredOfTheRun(t *testing.T) {
 	require.Equal(t, record.VerdictBlocked, observed.Verdict)
 	require.Contains(t, observed.Detail, "declared 2 jobs and the run carried 1")
 }
+
+// The real thing: macports/macports-ports' own .github/workflows/main.yml as
+// of 2026-09-20, unedited, 289 lines of it. The point of the fixture is that it
+// is not synthetic. A run of this workflow that day reported its jobs as
+// macos-14, macos-15 and macos-26, each with its own name as its runs-on label,
+// which is what the prediction below has to agree with for the run's job list
+// to be held to it. Replacing this file with a newer copy is welcome; a newer
+// copy that no longer parses is the signal worth having.
+func TestTheRealMacPortsWorkflowIsReadAndPredicted(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile(filepath.Join("testdata", "macports-main.yml"))
+	require.NoError(t, err)
+	names, err := readWorkflow(raw, "dockhand/bump/jq-abc")
+	require.NoError(t, err)
+	require.Equal(t, []string{"macos-14", "macos-15", "macos-26"}, names)
+	_, err = readWorkflow(raw, "master")
+	require.Error(t, err, "master is the one branch its push trigger ignores")
+}
