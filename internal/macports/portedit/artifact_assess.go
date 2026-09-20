@@ -16,7 +16,9 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 		return coverage, err, nil
 	}
 	declared, covered, inert := map[string]bool{}, map[string]bool{}, map[string]bool{}
-	observations, err := s.observeProfiles(ctx, input, input.data, profiles, true, false)
+	// Only the selected port is read below, so each context evaluates it
+	// alone; the family is for edits, whose fidelity must see siblings.
+	observations, err := s.observeProfiles(ctx, input, input.data, profiles, true, true)
 	if err != nil {
 		return coverage, err, nil
 	}

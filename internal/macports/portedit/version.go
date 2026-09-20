@@ -61,7 +61,11 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 	if versioned.Ports[input.target.Name].Version != release.Version {
 		return archivePlan{}, fmt.Errorf("%w: evaluated version differs from resolved release", ErrFidelity)
 	}
-	scope, err := fidelity.ReleaseScope(input.before, versioned, input.target.Name, request.SharedRelease)
+	family, err := input.familySnapshot(ctx, s.Ports)
+	if err != nil {
+		return archivePlan{}, err
+	}
+	scope, err := fidelity.ReleaseScope(family, versioned, input.target.Name, request.SharedRelease)
 	if err != nil {
 		return archivePlan{}, err
 	}
@@ -76,7 +80,7 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 	}
 	observed, err := s.planObservedArchives(ctx, request, input, contents)
 	result := Result{Scope: input.scope, Base: request.Source, Target: input.target, Release: release}
-	result.report(fidelity.ScopedVersion(request.SharedRelease, input.before, versioned, input.target.Name, input.files.root, *release, versioned.Ports[input.target.Name].Options["checksums"]))
+	result.report(fidelity.ScopedVersion(request.SharedRelease, family, versioned, input.target.Name, input.files.root, *release, versioned.Ports[input.target.Name].Options["checksums"]))
 	if observed != nil {
 		for _, frame := range observed.contexts {
 			result.Coverage = append(result.Coverage, ContextCoverage{Fetch: frame.after.Ports[input.target.Name].Fetch, Platform: frame.profile, Modeled: frame.profile != input.before.Platform, Affected: frame.affected})

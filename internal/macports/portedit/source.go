@@ -28,8 +28,12 @@ type sourceInput struct {
 	// the baseline, every candidate, and the final edit. Modeled
 	// observations never use it; each starts its own interpreter, since
 	// observation setup changes the interpreter it runs in.
-	session              macports.Batch
-	before               macports.Snapshot
+	session macports.Batch
+	before  macports.Snapshot
+	// family is the baseline across the owning Portfile's every subport,
+	// known at load for a main-port selection and evaluated on demand for a
+	// subport's, by familySnapshot.
+	family               *macports.Snapshot
 	primary, target      record.Target
 	info                 macports.PortInfo
 	data                 []byte
@@ -74,13 +78,39 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 			return nil, fmt.Errorf("%w: select one owning Portfile", ErrUnsupported)
 		}
 	}
-	bound, err := tree.Select(targets[0])
+	primary, err := tree.Select(targets[0])
 	if err != nil {
 		return nil, err
 	}
-	before, err := input.native(ctx, s.Ports).Evaluate(ctx, bound)
-	if err != nil {
-		return nil, err
+	// The baseline is the selected port's own evaluation. A main-port
+	// selection evaluates its whole Portfile, since stub detection reads the
+	// siblings and an edit there is what they share; a subport's siblings
+	// are evaluated on demand by familySnapshot, for the fidelity checks
+	// that must see them, and never for an assessment that edits nothing.
+	bound := primary
+	var before macports.Snapshot
+	if selected.Subport == "" {
+		before, err = input.native(ctx, s.Ports).Evaluate(ctx, bound)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		if bound, err = tree.Select(selected); err != nil {
+			return nil, err
+		}
+		before, err = input.native(ctx, s.Ports).EvaluateSelected(ctx, bound)
+		if err != nil {
+			return nil, err
+		}
+		if request.Stub != "" {
+			// The recorded stub is the main port: its entry is checked
+			// below and lends its livecheck to the carrier.
+			owner, err := input.native(ctx, s.Ports).EvaluateSelected(ctx, primary)
+			if err != nil {
+				return nil, err
+			}
+			maps.Copy(before.Ports, owner.Ports)
+		}
 	}
 	if err := fidelity.CheckSnapshot(before, bound); err != nil {
 		return nil, err
@@ -115,7 +145,34 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 		return nil, err
 	}
 	input.before, input.primary, input.target, input.info, input.data = before, targets[0], selected, info, data
+	if selected.Subport == "" {
+		input.family = &input.before
+	}
 	return input, nil
+}
+
+// familySnapshot is the baseline across the owning Portfile's every subport,
+// which the fidelity checks compare an edit against so a sibling that moved
+// unexpectedly is seen. A main-port selection evaluated it at load; a
+// subport's is evaluated on first demand through the shared session and
+// kept, so an assessment that never edits never pays for it.
+func (i *sourceInput) familySnapshot(ctx context.Context, ports macports.Evaluator) (macports.Snapshot, error) {
+	if i.family != nil {
+		return *i.family, nil
+	}
+	bound, err := i.context(i.before.Platform, false)
+	if err != nil {
+		return macports.Snapshot{}, err
+	}
+	snapshot, err := i.native(ctx, ports).Evaluate(ctx, bound)
+	if err != nil {
+		return macports.Snapshot{}, err
+	}
+	if err := fidelity.CheckSnapshot(snapshot, bound); err != nil {
+		return macports.Snapshot{}, err
+	}
+	i.family = &snapshot
+	return snapshot, nil
 }
 
 // native is the reader for the input's native evaluations: one interpreter

@@ -199,7 +199,15 @@ func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator,
 		if spec.Forge != "" {
 			desired.Tag = spec.Pattern.Tag(sourceVersion)
 		}
-		report := fidelity.ScopedVersion(request.SharedRelease, input.before, after, input.target.Name, input.files.root, desired, next.Options["checksums"])
+		// A probe compares the selected port with itself; an actual bump
+		// compares the family, so a sibling that moved is an unexpected change.
+		baseline := input.before
+		if checkFidelity {
+			if baseline, err = input.familySnapshot(ctx, s.Ports); err != nil {
+				return nil, snapshot, err
+			}
+		}
+		report := fidelity.ScopedVersion(request.SharedRelease, baseline, after, input.target.Name, input.files.root, desired, next.Options["checksums"])
 		if checkFidelity && len(report.UnexpectedChanges) > 0 {
 			rejected = fmt.Errorf("%w: %v", ErrFidelity, report.UnexpectedChanges)
 			continue
@@ -235,8 +243,12 @@ func (s *Service) followObsolete(ctx context.Context, reader snapshotEvaluator, 
 	if oldVersion == "" || newVersion == "" || oldVersion == newVersion {
 		return contents, after, nil
 	}
-	for _, name := range slices.Sorted(maps.Keys(input.before.Ports)) {
-		old := input.before.Ports[name]
+	family, err := input.familySnapshot(ctx, s.Ports)
+	if err != nil {
+		return contents, after, err
+	}
+	for _, name := range slices.Sorted(maps.Keys(family.Ports)) {
+		old := family.Ports[name]
 		if name == target || old.Options["replaced_by"] != target || old.Version != oldVersion || old.Revision != 0 || after.Ports[name].Version != oldVersion {
 			continue
 		}

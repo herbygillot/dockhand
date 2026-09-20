@@ -131,6 +131,10 @@ func (s *Service) dependencyBase(ctx context.Context, request Request, input *so
 	baseValue := *input
 	baseValue.data, baseValue.before = stripped, strippedSnapshot
 	baseValue.info = strippedSnapshot.Ports[input.target.Name]
+	// The stripped evaluation covers the family, and it is the baseline the
+	// regenerated declarations are compared against, so the family follows
+	// the rebase rather than pointing back at the Portfile as loaded.
+	baseValue.family = &baseValue.before
 	base := &baseValue
 
 	sources, err := downloadSources(base.info, base.portdir())
@@ -230,11 +234,15 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 			return Result{}, fmt.Errorf("%w: evaluated %s differs from regenerated declarations", ErrFidelity, name)
 		}
 	}
-	final := Fidelity{Before: input.before, After: after, ExpectedChanges: []string{input.target.Name + ".version, revision, source checksums and regenerated dependencies"}}
-	if len(input.before.Ports) != len(after.Ports) {
+	family, err := input.familySnapshot(ctx, s.Ports)
+	if err != nil {
+		return Result{}, err
+	}
+	final := Fidelity{Before: family, After: after, ExpectedChanges: []string{input.target.Name + ".version, revision, source checksums and regenerated dependencies"}}
+	if len(family.Ports) != len(after.Ports) {
 		return Result{}, fmt.Errorf("%w: dependency regeneration changed the port set", ErrFidelity)
 	}
-	for name, old := range input.before.Ports {
+	for name, old := range family.Ports {
 		if name == input.target.Name {
 			continue
 		}
