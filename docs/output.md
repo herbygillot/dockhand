@@ -56,6 +56,7 @@ Headline verdict words: `assess` says "ready" instead of "input-found" and "cand
 - **port** and **version move**: old to new, or the revision bump.
 - **phase**: preparation, verification, publication, done.
 - **state**: the phase's current word: preparing, building on macOS 26, waiting for capacity, verified, publishing, published, published unverified, merged, closed, abandoned, needs attention.
+- **retry**: the verb that re-runs stopped work without redoing it, which the table's key runs: the contribution's own preparing action, which adopts the branch already built and keeps its publication, or `verify` for a branch dockhand did not prepare. Absent when nothing is stopped.
 - **next**: what happens or is needed next: "verification pending", "PR open, 3 checks pending", "merged; branches cleaned", "merged; fork branch author/ports:dockhand/bump/jq cleanup pending: kept: push failed", "needs attention: patch rejects 4 hunks", "waiting for a Tart slot".
 - **active job**: at most one; its last progress message.
 - **history**: earlier jobs and attempts, shown only when expanded.

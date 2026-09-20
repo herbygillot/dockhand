@@ -241,8 +241,22 @@ func (m *model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.open("PR", m.selected().PullRequest)
 	case "l":
 		m.open("log", m.selected().Log)
-	case "c", "v", "p", "r", "a", "b":
-		verb := map[string]string{"c": "cancel", "v": "verify", "p": "publish", "r": "refresh", "a": "abandon", "b": "bump"}[key]
+	case "b":
+		// Retry runs the row's own stopped work again. Which verb that is
+		// belongs to the projection: a contribution dockhand prepared is
+		// retried by its preparing action, one adopted from someone's own
+		// branch by verifying it.
+		row := m.selected()
+		if row.Port == "" {
+			return m, nil
+		}
+		if row.Retry == "" {
+			m.say(row.Port, "nothing stopped to retry")
+			return m, nil
+		}
+		return m, m.verb(row.Retry)
+	case "c", "v", "p", "r", "a":
+		verb := map[string]string{"c": "cancel", "v": "verify", "p": "publish", "r": "refresh", "a": "abandon"}[key]
 		return m, m.verb(verb)
 	}
 	return m, nil
@@ -412,7 +426,7 @@ func (m *model) View() string {
 	if m.confirm != nil {
 		fmt.Fprintf(&b, "%s", headerStyle.Render(fmt.Sprintf("Run dockhand %s for %s? y/n", m.confirm.verb, m.confirm.port)))
 	} else {
-		b.WriteString(faintStyle.Render("↑/↓ select  enter expand  h history  b bump again  v verify  p publish  r refresh  c cancel  a abandon  o open PR  l log  q quit"))
+		b.WriteString(faintStyle.Render("↑/↓ select  enter expand  h history  b retry  v verify  p publish  r refresh  c cancel  a abandon  o open PR  l log  q quit"))
 	}
 	return b.String()
 }

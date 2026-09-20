@@ -60,6 +60,11 @@ type Contribution struct {
 	PullRequest string `json:",omitempty"`
 	// Log is the location of the latest failed build's log, when one is recorded.
 	Log string `json:",omitempty"`
+	// Retry is the verb that re-runs stopped work without redoing it: the
+	// action that prepared the contribution, which adopts the branch already
+	// built and keeps the publication it was going to make, or verify for one
+	// dockhand did not prepare. Empty when nothing is stopped.
+	Retry string `json:",omitempty"`
 	// Active is the one job still doing work, with its last recorded detail.
 	Active *ActiveJob `json:",omitempty"`
 	// Detail is the current job's last recorded detail when nothing is active.
@@ -254,6 +259,9 @@ func project(change record.Change, known bool, entries []JobStatus, pr *record.P
 		}
 	}
 	row.Phase, row.State, row.Next = words(change, known, current, pr)
+	if current != nil && current.Job.State.Terminal() && current.Job.State != record.JobCompleted {
+		row.Retry = retryVerb(current.Job)
+	}
 	// A retired change is history. So is a standalone verification once its
 	// job has finished: it belongs to no contribution, so there is nothing
 	// to abandon and nothing further to do with it.
@@ -578,15 +586,26 @@ func beyondTheChange(entry JobStatus) string {
 // make; that is the command to offer, not the weaker verify, which stops at
 // a verified contribution. Anything else is retried by verifying again.
 func retryCommand(job record.Job) string {
+	command := "dockhand " + retryVerb(job) + " " + PortSelector(job)
+	if job.Spec.Action == record.Bump && job.ResolvedRelease != nil && job.ResolvedRelease.Requested != "" {
+		command += " " + job.ResolvedRelease.Requested
+	}
+	return command
+}
+
+// retryVerb is the verb of that command. A contribution dockhand prepared is
+// retried by its own preparing action, which is the only one that adopts the
+// prepared branch and carries the publication forward. A branch someone made
+// themselves was never prepared, so there is nothing to bump: verifying it
+// again is the retry.
+func retryVerb(job record.Job) string {
 	switch job.Spec.Action {
 	case record.Bump, record.BumpRevision, record.RefreshChecksums:
-		command := "dockhand " + string(job.Spec.Action) + " " + PortSelector(job)
-		if job.Spec.Action == record.Bump && job.ResolvedRelease != nil && job.ResolvedRelease.Requested != "" {
-			command += " " + job.ResolvedRelease.Requested
-		}
-		return command
+		return string(job.Spec.Action)
+	case record.Publish:
+		return "publish"
 	}
-	return "dockhand verify " + PortSelector(job)
+	return "verify"
 }
 
 // oneLine keeps a recorded detail on the row it is printed in.

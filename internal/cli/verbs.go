@@ -18,9 +18,10 @@ func tableVerbs() tui.Verbs {
 func verbArgs(verb string, row view.Contribution) ([]string, string) {
 	var args []string
 	switch {
-	case verb == "bump":
-		// A bump continues the port's open contribution by itself, and starts
-		// afresh when the row's contribution has retired.
+	case prepares(verb):
+		// A preparing verb continues the port's open contribution by itself,
+		// adopting the branch it already built, and starts afresh when the
+		// row's contribution has retired. It takes the port, not --change.
 		args = []string{verb, row.Port}
 	case row.ChangeID != "":
 		args = []string{verb, "--change", string(row.ChangeID)}
@@ -34,17 +35,27 @@ func verbArgs(verb string, row view.Contribution) ([]string, string) {
 	default:
 		return nil, "not a tracked contribution; " + verb + " needs one"
 	}
-	if verb == "bump" || verb == "verify" || verb == "publish" {
+	if prepares(verb) || verb == "verify" || verb == "publish" {
 		args = append(args, "--detach")
 	}
 	return args, ""
 }
 
-// verbConfirms names the verbs that cost minutes, push, or discard.
-func verbConfirms(verb string) bool {
+// prepares names the verbs that build a contribution's branch, which are the
+// ones a retry re-runs to adopt it.
+func prepares(verb string) bool {
 	switch verb {
-	case "verify", "publish", "cancel", "abandon", "bump":
+	case "bump", "bump-revision", "refresh-checksums":
 		return true
 	}
 	return false
+}
+
+// verbConfirms names the verbs that cost minutes, push, or discard.
+func verbConfirms(verb string) bool {
+	switch verb {
+	case "verify", "publish", "cancel", "abandon":
+		return true
+	}
+	return prepares(verb)
 }

@@ -214,3 +214,34 @@ func TestAFailureBeyondTheChangeAdvisesVerifyingAgain(t *testing.T) {
 	require.Contains(t, next, "errored before reaching a verdict")
 	require.Contains(t, next, "dockhand bump jq", "the bump is what resumes its publication; verify would stop short")
 }
+
+// The verb that retries a row depends on how its contribution was made. One
+// dockhand prepared is retried by its own preparing action, which adopts the
+// branch already built; one adopted from someone's own branch was never
+// prepared, so verifying it again is the retry.
+func TestTheRetryVerbFollowsHowTheContributionWasMade(t *testing.T) {
+	t.Parallel()
+	row := func(action record.Action, state record.JobState) Contribution {
+		job := record.Job{ID: "job_1", ChangeID: "change_1", State: state, Phase: record.PhaseVerification,
+			Spec: record.JobSpec{Action: action, Targets: []record.Target{{Name: "jq"}}}}
+		change := record.Change{ID: "change_1", InitiatingTarget: "jq", Branch: "candidate", CurrentRevision: "revision", Disposition: record.ChangeOpen, Targets: []record.Target{{Name: "jq"}}}
+		rows := Project(Snapshot{Jobs: []JobStatus{{Job: job}}, Changes: []record.Change{change}})
+		return rows[0]
+	}
+	for action, want := range map[record.Action]string{
+		record.Bump:             "bump",
+		record.BumpRevision:     "bump-revision",
+		record.RefreshChecksums: "refresh-checksums",
+		record.Publish:          "publish",
+		// A branch dockhand did not prepare: its work is a verification.
+		record.Verify: "verify",
+		// Corrections recapture a checkout, so retrying one re-runs the build.
+		record.Amend:  "verify",
+		record.Rebase: "verify",
+	} {
+		require.Equal(t, want, row(action, record.JobNeedsAttention).Retry, "%s", action)
+	}
+	require.Empty(t, row(record.Bump, record.JobActive).Retry, "nothing stopped")
+	require.Empty(t, row(record.Bump, record.JobCompleted).Retry, "nothing stopped")
+	require.Equal(t, "bump", row(record.Bump, record.JobFailed).Retry)
+}

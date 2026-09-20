@@ -64,3 +64,23 @@ func lookupFlag(command *cobra.Command, name string) any {
 	}
 	return nil
 }
+
+// Every verb the table can retry with is a command that takes a port.
+func TestRetryVerbsAreCommandsThatTakeAPort(t *testing.T) {
+	t.Parallel()
+	root, _, err := newRoot(app.Config{}, nil)
+	require.NoError(t, err)
+	tracked := view.Contribution{Port: "jq", ChangeID: "change_jq"}
+	for _, verb := range []string{"bump", "bump-revision", "refresh-checksums", "verify", "publish"} {
+		args, problem := verbArgs(verb, tracked)
+		require.Empty(t, problem, verb)
+		command, _, err := root.Find(args[:1])
+		require.NoError(t, err, verb)
+		require.Equal(t, verb, command.Name())
+		if prepares(verb) {
+			require.Equal(t, []string{verb, "jq", "--detach"}, args, "a preparing retry names the port, which continues its contribution")
+			require.NoError(t, command.Args(command, []string{"jq"}), "%s accepts a bare port", verb)
+		}
+		require.True(t, verbConfirms(verb), "%s costs minutes or pushes, so it asks first", verb)
+	}
+}
