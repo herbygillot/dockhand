@@ -160,3 +160,27 @@ func TestRetiredRowsHideUntilHistoryIsAsked(t *testing.T) {
 	m.Update(key("h"))
 	require.Equal(t, "deno", m.selected().Port, "hiding again clamps the cursor to the last visible row")
 }
+
+// A refresh names everything it did, joined by "; ". The strip packs those
+// facts onto a line while they fit and continues on indented lines when they
+// do not, so nothing is lost at the edge; only a fact wider than the screen
+// is truncated, and the strip never exceeds its line budget.
+func TestMessageStripWrapsFactsInsteadOfTruncatingThem(t *testing.T) {
+	t.Parallel()
+	message := "fzf: PR is merged; contribution retired; a later bump can start a new update; local branch dockhand/bump/fzf-ncgxv33r5lw6mmiethywp53ewu deleted; fork branch herbygillot/macports-ports:dockhand/bump/fzf-ncgxv33r5lw6mmiethywp53ewu deleted"
+	lines := wrapFacts(message, 60)
+	require.Equal(t, []string{
+		"fzf: PR is merged; contribution retired",
+		"  a later bump can start a new update",
+		"  local branch dockhand/bump/fzf-ncgxv33r5lw6mmiethywp53ewu…",
+		"  fork branch herbygillot/macports-ports:dockhand/bump/fzf-…",
+	}, lines, "a fact wider than the screen is the one thing still truncated")
+	for _, line := range lines {
+		require.LessOrEqual(t, len([]rune(line)), 60)
+	}
+	require.Equal(t, []string{"jq: Verification admitted"}, wrapFacts("jq: Verification admitted", 60), "a short message is one line, as before")
+
+	m := &model{options: Options{Messages: 2}, width: 60}
+	m.say("fzf", strings.TrimPrefix(message, "fzf: "))
+	require.Equal(t, lines[2:], m.strip(), "the strip keeps its newest lines within the budget")
+}

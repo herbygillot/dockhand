@@ -420,8 +420,8 @@ func (m *model) View() string {
 		m.table(&b)
 	}
 	b.WriteString("\n")
-	for _, message := range m.messages {
-		b.WriteString(truncate(message, m.width) + "\n")
+	for _, line := range m.strip() {
+		b.WriteString(line + "\n")
 	}
 	if m.confirm != nil {
 		fmt.Fprintf(&b, "%s", headerStyle.Render(fmt.Sprintf("Run dockhand %s for %s? y/n", m.confirm.verb, m.confirm.port)))
@@ -495,6 +495,40 @@ func fit(columns []column, width int) {
 		}
 		break
 	}
+}
+
+// strip is the message strip's lines, newest last, at most Messages of them.
+// A message is one or more facts joined by "; "; they are packed onto a line
+// while they fit the width and continue on indented lines when they do not,
+// so a refresh that names every branch it deleted is read whole rather than
+// cut at the edge. A single fact wider than the screen is still truncated.
+func (m *model) strip() []string {
+	var lines []string
+	for _, message := range m.messages {
+		lines = append(lines, wrapFacts(message, m.width)...)
+	}
+	if len(lines) > m.options.Messages {
+		lines = lines[len(lines)-m.options.Messages:]
+	}
+	return lines
+}
+
+func wrapFacts(message string, width int) []string {
+	const indent = "  "
+	facts := strings.Split(message, "; ")
+	lines := []string{facts[0]}
+	for _, fact := range facts[1:] {
+		last := len(lines) - 1
+		if joined := lines[last] + "; " + fact; len([]rune(joined)) <= width {
+			lines[last] = joined
+		} else {
+			lines = append(lines, indent+fact)
+		}
+	}
+	for i, line := range lines {
+		lines[i] = truncate(line, width)
+	}
+	return lines
 }
 
 // window keeps the cursor visible when there are more rows than lines.
