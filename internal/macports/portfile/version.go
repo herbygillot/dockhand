@@ -110,6 +110,44 @@ func Candidates(src []byte) ([]Candidate, error) {
 				if len(cmd.Words) >= 3 && len(cmd.Words) <= 7 {
 					index = 2
 				}
+			// Dictionary, font, cross-toolchain, and Pure module PortGroups
+			// take the version second: aspelldict.setup locale version lang
+			// ?aspell-version?, hunspelldict.setup locale version lang
+			// ?source?, x11font.setup name version subdir, pure.setup module
+			// version, crossbinutils.setup target version.
+			case "aspelldict.setup", "hunspelldict.setup":
+				if len(cmd.Words) >= 4 && len(cmd.Words) <= 5 {
+					index = 2
+				}
+			case "x11font.setup":
+				if len(cmd.Words) == 4 {
+					index = 2
+				}
+			case "pure.setup", "crossbinutils.setup":
+				if len(cmd.Words) == 3 {
+					index = 2
+				}
+			// Two more forges take it third, after author and project:
+			// bitbucket.setup author project version ?tag_prefix? and
+			// codeberg.setup author project version ?tag_prefix? ?tag_suffix?.
+			case "bitbucket.setup":
+				if len(cmd.Words) >= 4 && len(cmd.Words) <= 5 {
+					index = 3
+				}
+			case "codeberg.setup":
+				if len(cmd.Words) >= 4 && len(cmd.Words) <= 6 {
+					index = 3
+				}
+			// octave.setup keeps a two-argument form, module version, beside
+			// its full one, repo author module version ?tag_prefix?
+			// ?tag_suffix?; three arguments name no version at all.
+			case "octave.setup":
+				switch {
+				case len(cmd.Words) == 3:
+					index = 2
+				case len(cmd.Words) >= 5 && len(cmd.Words) <= 7:
+					index = 4
+				}
 			}
 			if index >= 0 {
 				word(cmd.Words[index])
@@ -144,6 +182,43 @@ func Candidates(src []byte) ([]Candidate, error) {
 						break
 					}
 					i += 2
+				}
+			// switch ?options? string ?pattern body ...?, or one braced list
+			// of alternating patterns and bodies, which is how php chooses a
+			// version per branch. Patterns are not inputs; bodies are
+			// scripts. A "-" body falls through and is not braced, so it is
+			// passed over.
+			case "switch":
+				i := 1
+				for i < len(cmd.Words) {
+					value, literal := cmd.Words[i].Literal(src)
+					if !literal || !strings.HasPrefix(value, "-") {
+						break
+					}
+					i++
+					if value == "--" {
+						break
+					}
+				}
+				if i+1 >= len(cmd.Words) {
+					break
+				}
+				if i+2 == len(cmd.Words) {
+					if arms, ok := cmd.Words[i+1].BracedScript(src); ok {
+						for _, item := range arms.Items {
+							if arm, ok := item.(syntax.Command); ok {
+								for j := 1; j < len(arm.Words); j += 2 {
+									if script, ok := arm.Words[j].BracedScript(src); ok {
+										walk(script, false)
+									}
+								}
+							}
+						}
+					}
+					break
+				}
+				for j := i + 2; j < len(cmd.Words); j += 2 {
+					body(j)
 				}
 			}
 		}
