@@ -32,7 +32,7 @@ func ExitCode(err error) int {
 		return 0
 	case errors.Is(err, context.Canceled), errors.Is(err, errJobCanceled):
 		return 130
-	case errors.Is(err, errNeedsAttention):
+	case errors.Is(err, errNeedsAttention), errors.Is(err, workflow.ErrContinuation):
 		return 3
 	case errors.Is(err, errJobFailed):
 		return 2

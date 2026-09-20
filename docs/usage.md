@@ -99,6 +99,8 @@ Both commands accept a unique open port/subport target, `--branch`, or the curre
 
 Preview or prepare a version update from freshly fetched `master` in `macports/macports-ports`. Local branches and uncommitted edits are excluded; a failed fetch stops the request without falling back to stale source:
 
+A port with an open contribution is continued from that contribution's recorded source, but only after master and its PR have been read: a merged PR retires the contribution and a new update starts from master; a port master already carries, or that someone else moved, stops and says what it found; a PR closed without merging is not re-proposed. If master cannot be fetched there, the contribution is continued as recorded and the output says master was not checked.
+
 ```sh
 dockhand bump jq --diff
 dockhand bump jq --no-publish                 # build, then stop before the PR

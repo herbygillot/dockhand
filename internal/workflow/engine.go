@@ -39,6 +39,9 @@ var (
 	// ErrNoPendingJobs means a tracked contribution has no queued or active work
 	// to attach to or cancel.
 	ErrNoPendingJobs = errors.New("workflow: no pending jobs")
+	// ErrContinuation means a port's open contribution met a master or a PR
+	// that changed what continuing it would mean, and a person decides.
+	ErrContinuation = errors.New("workflow: the open contribution needs a decision")
 )
 
 // Engine owns request intake, workflow advancement, and state projections.

@@ -105,12 +105,36 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 		}
 	}
 	var source record.Source
-	if prior == nil {
-		progress.VerboseReport(ctx, "Fetching MacPorts master")
-		source, err = preparationSource(ctx, s.Workflow.Repo)
-		if err != nil {
-			return workflow.BoundPreparation{}, err
+	progress.VerboseReport(ctx, "Fetching MacPorts master")
+	master, fetchErr := preparationSource(ctx, s.Workflow.Repo)
+	if prior == nil && fetchErr != nil {
+		return workflow.BoundPreparation{}, fetchErr
+	}
+	if prior != nil {
+		// An open contribution is continued only after master and its PR
+		// have been read: a merged PR retires it and a new update starts
+		// from master; a port master already carries, or that someone else
+		// moved, is a person's decision. An unreachable master leaves the
+		// recorded source as the only fact, and says so.
+		if fetchErr != nil {
+			progress.Report(ctx, "master not checked (%v); the open contribution is continued as recorded", fetchErr)
+		} else {
+			platform, err := s.ports.NativePlatform(ctx)
+			if err != nil {
+				return workflow.BoundPreparation{}, err
+			}
+			decision, err := s.Workflow.CheckContinuation(ctx, *prior, master, platform)
+			if err != nil {
+				return workflow.BoundPreparation{}, err
+			}
+			progress.Report(ctx, "%s", decision.Detail)
+			if decision.Fresh {
+				prior = nil
+			}
 		}
+	}
+	if prior == nil {
+		source = master
 	} else {
 		progress.Report(ctx, "Continuing the port's open contribution from its recorded source")
 		progress.VerboseReport(ctx, "Continuing contribution %s from recorded source %s", prior.ChangeID, prior.Spec.Source.Commit)
