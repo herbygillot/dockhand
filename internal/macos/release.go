@@ -25,18 +25,6 @@ var releases = map[int]Release{
 	26: {Darwin: 26, Product: "27", Name: "Golden Gate", Slug: "golden-gate"},
 }
 
-// DefaultDarwin is the newest release dockhand builds on without being asked.
-// It is deliberately not the newest entry in the table. Local verification
-// should prove what a MacPorts pull request is built on, and MacPorts adds a
-// macOS to its CI well after Apple ships it, so a host that upgrades does not
-// silently become the build platform: --os names the new release for setup and
-// --image selects its built image.
-const DefaultDarwin = 25
-
-// NewerThanDefault reports whether a release is past the one dockhand builds
-// on unasked.
-func NewerThanDefault(release Release) bool { return release.Darwin > DefaultDarwin }
-
 // Known lists the releases this table carries, oldest first. It is the one
 // place the set is written; callers that need to name it, or to decide whether
 // a platform is one of them, read it rather than repeating the range.

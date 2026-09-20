@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
-	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -76,8 +75,8 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, op
 		return record.BuildConfig{}, err
 	}
 	if c.Image == "" {
-		if release, rErr := tartvm.ReleaseForPlatform(platform); rErr == nil && macos.NewerThanDefault(release) {
-			def, _ := macos.ReleaseForDarwin(macos.DefaultDarwin)
+		if release, rErr := tartvm.ReleaseForPlatform(platform); rErr == nil && tartvm.NewerThanDefault(release) {
+			def, _ := tartvm.DefaultRelease()
 			return record.BuildConfig{}, fmt.Errorf("%w: this Mac runs %s, which dockhand does not build on by default; it builds on %s and older. Run dockhand setup --os %s and pass --image to build on %s deliberately, or use --provider github", ErrImageUnavailable, release.Name, def.Name, release.Slug, release.Name)
 		}
 		if options.NeedsXcode {

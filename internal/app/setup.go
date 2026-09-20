@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
+	"github.com/herbygillot/dockhand/internal/tart"
 	"github.com/herbygillot/dockhand/internal/tart/provision"
 )
 
@@ -46,8 +47,8 @@ func Setup(ctx context.Context, config Config, options SetupOptions, progress io
 		// A host newer than the release dockhand builds on says which release
 		// it wants. Verification builds on the image's own release, so a newer
 		// machine choosing silently would verify on an untested macOS.
-		if release, err := macos.ReleaseForDarwin(darwin); err == nil && macos.NewerThanDefault(release) {
-			def, _ := macos.ReleaseForDarwin(macos.DefaultDarwin)
+		if release, err := macos.ReleaseForDarwin(darwin); err == nil && tart.NewerThanDefault(release) {
+			def, _ := tart.DefaultRelease()
 			return SetupResult{}, fmt.Errorf("setup: this Mac runs %s, which dockhand does not prepare by default; it prepares %s and older. Pass --os %s to prepare it deliberately, or --os %s", release.Name, def.Name, release.Slug, def.Slug)
 		}
 	}

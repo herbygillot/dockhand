@@ -9,6 +9,20 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
+// DefaultDarwin is the newest macOS a Tart build uses without being asked. It
+// is deliberately not the newest release the macOS table carries. Local
+// verification should prove what a MacPorts pull request is built on, MacPorts
+// adds a macOS to its own CI well after Apple ships it, and a Tart build runs
+// on its image's release and no other, so a host that upgrades is asked rather
+// than assumed: --os names the release for setup, --image selects its image.
+const DefaultDarwin = 25
+
+// DefaultRelease is the release Tart builds on unasked.
+func DefaultRelease() (macos.Release, error) { return macos.ReleaseForDarwin(DefaultDarwin) }
+
+// NewerThanDefault reports whether a release is past it.
+func NewerThanDefault(release macos.Release) bool { return release.Darwin > DefaultDarwin }
+
 func ReleaseForPlatform(platform record.Platform) (macos.Release, error) {
 	if platform.OS != "darwin" || platform.Architecture != "arm64" {
 		return macos.Release{}, fmt.Errorf("tart: unsupported setup platform %s %s", platform.OS, platform.Architecture)

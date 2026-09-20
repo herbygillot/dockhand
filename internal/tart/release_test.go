@@ -52,3 +52,17 @@ func TestEveryKnownReleaseNamesItsImagesAndSource(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "ghcr.io/cirruslabs/macos-golden-gate-vanilla:latest", source)
 }
+
+// The release Tart builds on unasked is named here, not taken from whichever
+// entry the macOS table happens to carry last. A release added there becomes
+// selectable; adopting it is a decision made in this package.
+func TestTheDefaultBuildReleaseIsNamedNotTheNewest(t *testing.T) {
+	def, err := DefaultRelease()
+	require.NoError(t, err)
+	require.Equal(t, "Tahoe", def.Name)
+	require.False(t, NewerThanDefault(def))
+	known := macos.Known()
+	if newest := known[len(known)-1]; newest.Darwin != DefaultDarwin {
+		require.True(t, NewerThanDefault(newest), "%s is past the default and is not adopted unasked", newest.Name)
+	}
+}

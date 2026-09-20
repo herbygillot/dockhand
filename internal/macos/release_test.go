@@ -77,16 +77,3 @@ func TestGoldenGateIsMacOS27OnDarwin26(t *testing.T) {
 	require.Equal(t, Release{Darwin: 26, Product: "27", Name: "Golden Gate", Slug: "golden-gate"}, release)
 	require.Equal(t, "macOS 27 (Golden Gate) arm64", Describe(record.Platform{OS: "darwin", Version: "26", Architecture: "arm64"}))
 }
-
-// The default build release does not track the newest entry in the table. A
-// release added here becomes selectable, not automatically what dockhand uses.
-func TestTheDefaultBuildReleaseIsNamedNotTheNewest(t *testing.T) {
-	def, err := ReleaseForDarwin(DefaultDarwin)
-	require.NoError(t, err)
-	require.Equal(t, "Tahoe", def.Name)
-	require.False(t, NewerThanDefault(def))
-	newest := Known()[len(Known())-1]
-	if newest.Darwin != DefaultDarwin {
-		require.True(t, NewerThanDefault(newest), "%s is past the default and is not adopted unasked", newest.Name)
-	}
-}

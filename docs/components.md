@@ -39,7 +39,7 @@ dockhand2/
       github/            # Fork Actions verification and SDK adapter
     atomicfile/          # Durable replacement of small local files
     archive/             # Tar and zip member walks without host extraction
-    macos/               # OS/toolchain facts, operations, and launchd plist rendering
+    macos/               # OS/toolchain facts, operations, and launchd plist rendering; the release table is reference data and holds no build policy
     tart/                # Shared local Tart commands, runtime paths, images, and coordination
       host/              # VM lifecycle, launchd, foreground boot, and guest transport
       provision/         # Tart base-image construction and validation
