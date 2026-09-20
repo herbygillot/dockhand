@@ -6,6 +6,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
+	"github.com/herbygillot/dockhand/internal/text"
 )
 
 func assessFetch(info macports.PortInfo, procedure, pre, post string) macports.FetchSemantics {
@@ -112,7 +113,7 @@ func conditionalRejection(body string) bool {
 				return false
 			}
 			braced, ok := control.Segments[0].(syntax.Braced)
-			if !ok || !pureCondition(braced.Body.Text(src)) {
+			if !ok || !pureCondition(src, braced.Body) {
 				return false
 			}
 		}
@@ -132,29 +133,39 @@ func conditionalRejection(body string) bool {
 var pureConditionCommands = map[string]bool{"variant_isset": true, "variant_exists": true, "fortran_variant_name": true}
 
 // pureCondition accepts a condition whose command substitutions, if any, are
-// all pure variant queries with literal arguments; nested substitutions,
-// variable arguments, and unbalanced brackets are refused.
-func pureCondition(condition string) bool {
-	for {
-		open := strings.IndexByte(condition, '[')
-		if open < 0 {
-			return !strings.ContainsRune(condition, ']')
+// all pure variant queries with literal arguments. A condition that does not
+// parse as an expression, a call to anything else, an argument that is not a
+// bare literal, and a nested substitution are refused.
+func pureCondition(src []byte, body text.Span) bool {
+	e, errs := syntax.ParseExpr(src, body)
+	if len(errs) != 0 {
+		return false
+	}
+	pure := true
+	syntax.WalkExpr(e, func(node syntax.Expr) bool {
+		call, ok := node.(syntax.Call)
+		if !ok {
+			return pure
 		}
-		end := strings.IndexByte(condition[open:], ']')
-		if end < 0 {
+		commands := call.Script.Direct()
+		if len(commands) != 1 {
+			pure = false
 			return false
 		}
-		call := strings.Fields(condition[open+1 : open+end])
-		if len(call) == 0 || !pureConditionCommands[call[0]] {
+		name, _ := commands[0].Name(src)
+		args, literal := commands[0].LiteralArgs(src)
+		if !pureConditionCommands[name] || !literal {
+			pure = false
 			return false
 		}
-		for _, argument := range call[1:] {
+		for _, argument := range args {
 			if strings.ContainsAny(argument, "$[]{}\\\"") {
-				return false
+				pure = false
 			}
 		}
-		condition = condition[open+end+1:]
-	}
+		return false
+	})
+	return pure
 }
 
 // The Go PortGroup's compatibility check does not change the fetched archive.

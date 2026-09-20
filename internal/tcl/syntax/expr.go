@@ -307,9 +307,7 @@ func (w Word) Variables(src []byte) []VarSub {
 				segments(value.Segments)
 			case CmdSub:
 				for command := range value.Script.Commands(src, func(Command) bool { return true }) {
-					for _, word := range command.Words {
-						reads = append(reads, word.Variables(src)...)
-					}
+					reads = append(reads, command.Reads(src)...)
 				}
 			}
 		}
@@ -333,5 +331,83 @@ func ExprVariables(src []byte, e Expr) []VarSub {
 		}
 		return true
 	})
+	return reads
+}
+
+// Expressions lists the source windows a command evaluates as expressions:
+// the conditions of an if, a while, or a for, and expr's argument, which is
+// its one braced word's body or the span across its bare words, since Tcl
+// joins those before evaluating. Every other word of every command is
+// text, substitutions, or a body.
+func (c Command) Expressions(src []byte) []text.Span {
+	name, _ := c.Name(src)
+	switch name {
+	case "if", "while", "for":
+		controls, _, ok := c.Control(src)
+		if !ok {
+			return nil
+		}
+		var windows []text.Span
+		for _, control := range controls {
+			windows = append(windows, control.Inner())
+		}
+		return windows
+	case "expr":
+		switch {
+		case len(c.Words) == 2:
+			return []text.Span{c.Words[1].Inner()}
+		case len(c.Words) > 2:
+			return []text.Span{{Start: c.Words[1].Span.Start, End: c.Words[len(c.Words)-1].Span.End}}
+		}
+	}
+	return nil
+}
+
+// Covered reports whether the word lies in one of the windows, as a
+// condition does in its own body or expr's bare words in their span.
+func (w Word) Covered(windows []text.Span) bool {
+	for _, window := range windows {
+		if (window.Start <= w.Span.Start && w.Span.End <= window.End) || w.Inner() == window {
+			return true
+		}
+	}
+	return false
+}
+
+// Reads lists the variables a command reads in its own words: those of its
+// expressions, and the substitutions of every other word. A body is not the
+// command's own word; walk it as the commands it holds. An expression that
+// does not parse contributes the substitutions of its text instead, so a
+// read is never missed for want of a grammar.
+func (c Command) Reads(src []byte) []VarSub {
+	var reads []VarSub
+	windows := c.Expressions(src)
+	for _, window := range windows {
+		reads = append(reads, readsIn(src, window)...)
+	}
+	_, bodies, _ := c.Control(src)
+	for _, word := range c.Words {
+		isBody := false
+		for _, body := range bodies {
+			isBody = isBody || body.Span == word.Span
+		}
+		if isBody || word.Covered(windows) {
+			continue
+		}
+		reads = append(reads, word.Variables(src)...)
+	}
+	return reads
+}
+
+func readsIn(src []byte, window text.Span) []VarSub {
+	if e, errs := ParseExpr(src, window); len(errs) == 0 {
+		return ExprVariables(src, e)
+	}
+	var reads []VarSub
+	if script, errs := ParseScript(src, window); len(errs) == 0 {
+		for command := range script.Commands(src, func(Command) bool { return true }) {
+			reads = append(reads, command.Reads(src)...)
+		}
+	}
 	return reads
 }

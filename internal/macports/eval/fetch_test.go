@@ -104,6 +104,8 @@ func TestConditionalRejectionGuardsAreRecognized(t *testing.T) {
 `
 	require.True(t, conditionalRejection(fortran), "the compilers PortGroup's guard queries variants and changes nothing")
 	require.True(t, conditionalRejection(wrapper+`if {![variant_isset gfortran] && [variant_exists gcc15]} { return -code error "no" }`+"\n"))
+	require.True(t, conditionalRejection(wrapper+`if {[variant_isset a] && (${x} || [variant_exists b]) && ${y} eq {}} { return -code error "no" }`+"\n"), "grouping and braced text are part of the grammar")
+	require.False(t, conditionalRejection(wrapper+`if {[variant_isset a] ? 1 : 0} { return -code error "no" }`+"\n"), "a form the parser does not model is refused")
 	for _, body := range []string{
 		wrapper + `if {[exec uname] eq "Darwin"} { return -code error "no" }` + "\n",
 		wrapper + `if {[variant_isset $which]} { return -code error "no" }` + "\n",

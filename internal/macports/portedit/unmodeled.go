@@ -57,23 +57,35 @@ const toolchainDimension = "the selected compiler or its flags, which depend on 
 
 // toolchainRead matches options whose defaults run MacPorts compiler
 // selection, which probes the host for compilers. Their values shape builds only.
-var toolchainRead = regexp.MustCompile(`\$(?:\{configure\.(?:compiler|cc|cxx|objc|objcxx|f77|f90|fc|cpp|cflags|cxxflags|objcflags|objcxxflags|fflags|f90flags|fcflags|ldflags|cppflags|[a-z]+_archflags|universal_[a-z]+|sdkroot)\}|configure\.(?:compiler|cc|cxx|objc|objcxx|f77|f90|fc|cpp|cflags|cxxflags|objcflags|objcxxflags|fflags|f90flags|fcflags|ldflags|cppflags|[a-z]+_archflags|universal_[a-z]+|sdkroot)\b)`)
+var toolchainName = regexp.MustCompile(`^configure\.(?:compiler|cc|cxx|objc|objcxx|f77|f90|fc|cpp|cflags|cxxflags|objcflags|objcxxflags|fflags|f90flags|fcflags|ldflags|cppflags|[a-z]+_archflags|universal_[a-z]+|sdkroot)$`)
+
+func toolchainRead(name string) bool { return toolchainName.MatchString(name) }
+
+// unmodeledRead names the OS minor version and deployment target, which no
+// modeled context sets.
+func unmodeledRead(name string) bool {
+	switch name {
+	case "os.version", "macosx_version", "macos_version", "macosx_deployment_target":
+		return true
+	}
+	return false
+}
 
 // dimension is one class of read the scanner classifies by position: the
 // pattern that spots a read, the words for a refusal, and the variables a
 // set command has tainted with such a read so their later uses count too.
 type dimension struct {
-	read    *regexp.Regexp
+	read    func(name string) bool
 	label   string
 	tainted map[string]bool
 }
 
-func (d *dimension) matches(text string) bool {
-	if d.read.MatchString(text) {
-		return true
-	}
-	for name, tainted := range d.tainted {
-		if tainted && regexp.MustCompile(`\$(?:\{`+regexp.QuoteMeta(name)+`\}|`+regexp.QuoteMeta(name)+`\b)`).MatchString(text) {
+// any reports whether one of the reads is of the dimension, or of a
+// variable a set has tainted with it.
+func (d *dimension) any(src []byte, reads []syntax.VarSub) bool {
+	for _, read := range reads {
+		name := read.Name.Text(src)
+		if d.read(name) || d.tainted[name] {
 			return true
 		}
 	}
@@ -107,10 +119,7 @@ func classifyReads(src []byte, script *syntax.Script, d *dimension) error {
 		}
 		name, _ := cmd.Name(src)
 		if controls, bodies, ok := cmd.Control(src); ok {
-			guarded := false
-			for _, control := range controls {
-				guarded = guarded || d.matches(control.Span.Text(src))
-			}
+			guarded := d.any(src, cmd.Reads(src))
 			if guarded && name == "foreach" {
 				// Loop variables bound from the dimension carry it into the body.
 				for i := 0; i < len(controls); i += 2 {
@@ -145,7 +154,7 @@ func classifyReads(src []byte, script *syntax.Script, d *dimension) error {
 			// A variable set from the dimension carries it; one set from
 			// anything else stops carrying it.
 			if variable, ok := cmd.Words[1].Literal(src); ok {
-				d.tainted[variable] = d.matches(cmd.Words[2].Span.Text(src))
+				d.tainted[variable] = d.any(src, cmd.Words[2].Variables(src))
 				continue
 			}
 		}
@@ -156,7 +165,7 @@ func classifyReads(src []byte, script *syntax.Script, d *dimension) error {
 				}
 				continue
 			}
-			if d.matches(word.Span.Text(src)) && !benignSink(name) {
+			if d.any(src, word.Variables(src)) && !benignSink(name) {
 				return fmt.Errorf("%w: %s reads %s", errProbeInconclusive, name, d.label)
 			}
 		}
@@ -313,7 +322,7 @@ func benignAt(src []byte, line int) bool {
 	if !inCondition {
 		return false
 	}
-	d := &dimension{read: regexp.MustCompile(`$^`), label: "a host read inside a PortGroup", tainted: map[string]bool{}}
+	d := &dimension{read: func(string) bool { return false }, label: "a host read inside a PortGroup", tainted: map[string]bool{}}
 	for _, body := range bodies {
 		if err := benignBody(src, body, d); err != nil {
 			return false

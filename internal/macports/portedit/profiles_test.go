@@ -63,6 +63,8 @@ func TestUnmodeledReadsAreGapsOnlyWhereTheyCanSelectSources(t *testing.T) {
 		`if {[vercmp $macosx_deployment_target 10.12] < 0} { foreach f {a b} { configure.args-append $f } } elseif {${os.version} eq "1"} { ui_msg x } else { build.env-append A=1 }`,
 		`if {[vercmp $macosx_deployment_target 10.12] < 0} then { if {${os.platform} eq "darwin"} { depends_lib-append port:x } }`,
 		`ui_msg "targeting ${macos_version}"`,
+		// Bare $os.version is the variable os followed by text, as Tcl reads it.
+		`distname fixture-$os.version`,
 		`foreach re [list "s/A/$a/" "s/\$(MACOSX_DEPLOYMENT_TARGET)/${macosx_deployment_target}/"] { reinplace $re ${build.dir}/Info.plist }`,
 		`while {[vercmp $macosx_deployment_target 10.12] < 0} { ui_msg looping }`,
 		`set target ${macosx_deployment_target}`,
@@ -159,6 +161,13 @@ func TestScanPlatformNeedsRecognizesOperandForms(t *testing.T) {
 		"literal":     {source: "if {${os.major} < 20} {version 1}", majors: []int{19, 20, 21}},
 		"arch":        {source: "if {${configure.build_arch} eq \"arm64\"} {distfiles a} else {distfiles b}", arch: true},
 		"conjunction": {source: "if {${os.major} >= 17 && ${os.major} < 20} {version 1}", majors: []int{16, 17, 18, 19, 20, 21}},
+		"grouped":     {source: "if {(${os.major} >= 17) || [variant_isset x]} {version 1}", majors: []int{16, 17, 18}},
+		"argument":    {source: "if {[vercmp ${os.major} >= 18]} {version 1}", exhaustive: true},
+		"membership":  {source: "if {${os.major} in {21 22}} {version 1}", exhaustive: true},
+		// A braced word of an ordinary command may be a script run later, a
+		// subport's or a variant's body, so it is walked as one and its reads count.
+		"braced word": {source: "if {${os.major} >= 17} {version 1}\nnotes {built for darwin ${os.major}}", majors: []int{16, 17, 18}, exhaustive: true},
+		"expr arg":    {source: "set modern [expr ${os.major} >= 17]\nif {$modern} {version 1}", majors: []int{16, 17, 18}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -176,6 +185,7 @@ func TestScanPlatformNeedsRecognizesOperandForms(t *testing.T) {
 		})
 	}
 	for _, source := range []string{
+		`set user_group [expr {${os.platform} eq "darwin" && ${os.major} <= 8 ? "www" : "_www"}]`,
 		"if {${os.major} >= 17 + 5} {version 1}",
 		"if {${os.major} >= 7} {version 1}",
 		"if {[vercmp $macosx_deployment_target 10.12] < 0} {distfiles legacy.tar.gz} else {distfiles source.tar.gz}",
