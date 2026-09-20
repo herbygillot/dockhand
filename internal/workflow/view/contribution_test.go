@@ -194,7 +194,7 @@ func TestAFailureBeyondTheChangeAdvisesVerifyingAgain(t *testing.T) {
 	// The machinery never reached a verdict.
 	next := row(record.JobNeedsAttention, &record.Evidence{Verdict: record.VerdictErrored,
 		Failure: &record.Failure{Kind: record.InfrastructureFailure, Detail: "guest agent never became ready"}}).Next
-	require.Contains(t, next, "nothing to fix in the change, verify again")
+	require.Contains(t, next, "nothing to fix in the change, retry it: dockhand bump jq")
 	require.Contains(t, next, "guest agent never became ready")
 	require.NotContains(t, next, "amend")
 
@@ -202,7 +202,7 @@ func TestAFailureBeyondTheChangeAdvisesVerifyingAgain(t *testing.T) {
 	next = row(record.JobFailed, &record.Evidence{Verdict: record.VerdictFailed,
 		Failure: &record.Failure{Kind: record.DependencyFailure, Package: "openssl3", Phase: "build"}}).Next
 	require.Contains(t, next, "dependency openssl3 failed to build, not the change itself")
-	require.Contains(t, next, "verify again")
+	require.Contains(t, next, "retry it, or fix that port first: dockhand bump jq")
 
 	// The port itself failed: that is the change's business, and amending is right.
 	next = row(record.JobFailed, &record.Evidence{Verdict: record.VerdictFailed,
@@ -212,4 +212,5 @@ func TestAFailureBeyondTheChangeAdvisesVerifyingAgain(t *testing.T) {
 	// An errored attempt with no failure record still says what it means.
 	next = row(record.JobNeedsAttention, &record.Evidence{Verdict: record.VerdictErrored}).Next
 	require.Contains(t, next, "errored before reaching a verdict")
+	require.Contains(t, next, "dockhand bump jq", "the bump is what resumes its publication; verify would stop short")
 }

@@ -362,3 +362,45 @@ func TestWorkflowPolicyEvidenceCanContinueThroughPublication(t *testing.T) {
 	require.Equal(t, status.Jobs[0].Job.Prepared.Branch, spec.HeadBranch)
 	require.Equal(t, status.Jobs[0].Job.Prepared.Source.Commit, spec.Desired.Head)
 }
+
+// A bump whose verification never judged the change is retried by submitting
+// the same bump again. It adopts the branch already prepared, so it starts at
+// verification rather than preparing a second time, and it keeps the
+// publication the first one was going to make.
+func TestRetryingAFailedVerificationKeepsItsPublicationIntent(t *testing.T) {
+	t.Parallel()
+	f, hosting, request := combinedFixture(t, record.BumpRevision)
+	first := prepareCombined(t, f, request)
+	f.run(t, first)
+	f.provider.observe = terminal(f, record.VerdictErrored)
+	f.run(t, first)
+	stopped := f.status(t, first).Jobs[0].Job
+	require.Equal(t, record.JobNeedsAttention, stopped.State, "an operational error is not the change's failure")
+	require.NotNil(t, stopped.Prepared)
+	require.NotEmpty(t, stopped.ResultRevision)
+	require.Zero(t, hosting.writes, "nothing was published")
+
+	// The same bump again, which is what a person retries with.
+	retry := request
+	retry.ID = "request_retry"
+	receipt, err := f.engine.Submit(t.Context(), retry)
+	require.NoError(t, err)
+	require.NotEqual(t, first, receipt.JobID, "a retry is its own job")
+	second := f.status(t, receipt.JobID).Jobs[0].Job
+	require.Equal(t, record.PhaseVerification, second.Phase, "the prepared branch is adopted, not prepared again")
+	require.Equal(t, stopped.ResultRevision, second.ResultRevision)
+	require.Equal(t, stopped.Prepared.Branch, second.Prepared.Branch)
+	require.Equal(t, record.Published, second.Spec.Destination)
+	require.NotNil(t, second.Spec.PublishTo, "the publication the first job was going to make survives")
+	require.Equal(t, *request.Spec.PublishTo, *second.Spec.PublishTo)
+
+	// It succeeds this time, and goes on to publish.
+	f.provider.observe = terminal(f, record.VerdictPassed)
+	for range 6 {
+		f.run(t, receipt.JobID)
+	}
+	status := f.status(t, receipt.JobID)
+	require.Equal(t, record.JobCompleted, status.Jobs[0].Job.State, "%s", status.Jobs[0].Job.Detail)
+	require.Equal(t, record.PublicationConfirmed, status.Jobs[0].Publications[0].State)
+	require.Equal(t, 1, hosting.writes)
+}

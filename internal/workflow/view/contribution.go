@@ -549,6 +549,7 @@ func failedNext(entry JobStatus) string {
 // rather than the target, says nothing about the contribution: the same
 // source run again is the useful next step, and amending it is not.
 func beyondTheChange(entry JobStatus) string {
+	retry := retryCommand(entry.Job)
 	for _, attempt := range entry.Attempts {
 		evidence := attempt.Evidence
 		if evidence == nil {
@@ -557,18 +558,35 @@ func beyondTheChange(entry JobStatus) string {
 		failure := evidence.Failure
 		switch {
 		case failure != nil && failure.Kind == record.InfrastructureFailure:
-			return "verification could not run (" + oneLine(failure.Detail) + "); nothing to fix in the change, verify again"
+			return "verification could not run (" + oneLine(failure.Detail) + "); nothing to fix in the change, retry it: " + retry
 		case failure != nil && failure.Kind == record.DockhandFailure:
-			return "dockhand failed to run the verification (" + oneLine(failure.Detail) + "); verify again, and report it if it repeats"
+			return "dockhand failed to run the verification (" + oneLine(failure.Detail) + "); retry it, and report it if it repeats: " + retry
 		case failure != nil && failure.Kind == record.DependencyFailure && failure.Package != "":
-			return "dependency " + failure.Package + " failed to build, not the change itself; verify again, or fix that port first"
+			return "dependency " + failure.Package + " failed to build, not the change itself; retry it, or fix that port first: " + retry
 		case evidence.Verdict == record.VerdictErrored:
-			return "verification errored before reaching a verdict; nothing to fix in the change, verify again"
+			return "verification errored before reaching a verdict; nothing to fix in the change, retry it: " + retry
 		case evidence.Verdict == record.VerdictBlocked:
-			return "verification was blocked before it could judge the change; verify again once the blocker is cleared"
+			return "verification was blocked before it could judge the change; retry it once the blocker is cleared: " + retry
 		}
 	}
 	return ""
+}
+
+// retryCommand names what re-runs a stopped job without redoing its work.
+// Submitting the same preparation again adopts the branch it already built,
+// so it starts at verification and keeps the publication it was going to
+// make; that is the command to offer, not the weaker verify, which stops at
+// a verified contribution. Anything else is retried by verifying again.
+func retryCommand(job record.Job) string {
+	switch job.Spec.Action {
+	case record.Bump, record.BumpRevision, record.RefreshChecksums:
+		command := "dockhand " + string(job.Spec.Action) + " " + PortSelector(job)
+		if job.Spec.Action == record.Bump && job.ResolvedRelease != nil && job.ResolvedRelease.Requested != "" {
+			command += " " + job.ResolvedRelease.Requested
+		}
+		return command
+	}
+	return "dockhand verify " + PortSelector(job)
 }
 
 // oneLine keeps a recorded detail on the row it is printed in.
