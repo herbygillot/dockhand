@@ -1,0 +1,9 @@
+# A correction replaces what it corrects
+
+Forge verification pushes the candidate to the contribution's branch on the fork, and refuses to disturb a head that is neither the candidate, the contribution's base, nor a head it was told it may replace. That authorization came from one place: a correction carried the pull request's head when the contribution had an open pull request pointing at that branch, and nothing otherwise.
+
+The gap that left is an ordinary sequence. Verify a bump on GitHub without publishing, which pushes the candidate to the fork; fix something; amend; verify again. There is no pull request, so the correction named no head, while the fork branch held the commit dockhand itself pushed for the first verification. The second verification refused it as another commit to reconcile with Git by hand, and refused permanently, since a source failure closes the request.
+
+A correction now names the commit it is correcting when no pull request names one. That is the same commit a previous forge verification of this contribution would have pushed, and authorizing it is safe because authorization is not permission to overwrite: the provider compares the fork's head against the named commit and pushes only if they are the same, under a lease the server enforces too. A branch holding anything else, someone's own work or another tool's, is still left alone and reported.
+
+The distinction the tests draw is between what a correction authorizes and what the provider does with it. In `verify`, a published correction still authorizes the pull request's head, an unpublished one authorizes the commit being corrected, and a job that is not a correction authorizes nothing. In the provider, the existing test already holds the other half: an authorized head is replaced and an unexpected one is refused with the remote untouched.

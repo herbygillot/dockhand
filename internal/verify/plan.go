@@ -129,8 +129,18 @@ func PlanWithConfig(job record.Job, revision record.Revision, config record.Buil
 			branch = job.Prepared.Branch
 		}
 		build := record.BuildSpec{Branch: branch, RevisionID: revision.ID, Source: source, Target: target, Config: config, Inputs: []record.Artifact{}}
-		if job.Spec.Preparation != nil && job.Spec.Preparation.Correction != nil {
-			build.ReplaceRemoteHead = job.Spec.Preparation.Correction.RemoteHead
+		if correction := correctionOf(job); correction != nil {
+			// A published contribution names the head its pull request points
+			// at. An unpublished one names nothing, yet a previous forge
+			// verification of this contribution pushed its own commit to that
+			// branch, and a correction replaces exactly that. Authorizing the
+			// commit being corrected is what makes it replaceable: the
+			// provider still refuses unless the fork's head is that commit,
+			// so a branch holding anything else is left alone.
+			build.ReplaceRemoteHead = correction.RemoteHead
+			if build.ReplaceRemoteHead == "" {
+				build.ReplaceRemoteHead = correction.PreviousHead
+			}
 		}
 		build.Config.ProviderConfig = slices.Clone(build.Config.ProviderConfig)
 		if revision.Scope != nil {
@@ -186,4 +196,12 @@ func requireSingle(job record.Job, revision record.Revision) error {
 		return fmt.Errorf("verify: this cycle requires one verification target and an explicit build configuration")
 	}
 	return nil
+}
+
+// correctionOf is the correction a job is making, or nil when it is not one.
+func correctionOf(job record.Job) *record.CorrectionSpec {
+	if job.Spec.Preparation == nil {
+		return nil
+	}
+	return job.Spec.Preparation.Correction
 }
