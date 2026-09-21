@@ -20,7 +20,7 @@ func TestAmendCLIReusesVerificationAndKeepsContribution(t *testing.T) {
 	before, err := repo.ReadRefs(t.Context(), "refs/heads/")
 	require.NoError(t, err)
 	var preview bytes.Buffer
-	require.NoError(t, Run(t.Context(), []string{"amend", "--branch", branch, "--diff"}, Streams{Out: &preview, Err: &stderr}, config))
+	require.NoError(t, Run(t.Context(), []string{"amend", "--branch", branch, "--dry-run"}, Streams{Out: &preview, Err: &stderr}, config))
 	require.Empty(t, preview.String())
 	after, err := repo.ReadRefs(t.Context(), "refs/heads/")
 	require.NoError(t, err)
@@ -38,7 +38,7 @@ func TestCorrectionPreviewDoesNotInitializeMissingState(t *testing.T) {
 	t.Parallel()
 	config, _, _ := preparationCLI(t)
 	var out bytes.Buffer
-	err := Run(t.Context(), []string{"amend", "--diff"}, Streams{Out: &out, Err: &out}, config)
+	err := Run(t.Context(), []string{"amend", "--dry-run"}, Streams{Out: &out, Err: &out}, config)
 	require.Error(t, err)
 	require.NoFileExists(t, config.DBPath)
 }

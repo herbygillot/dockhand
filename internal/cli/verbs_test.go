@@ -32,12 +32,12 @@ func TestTableVerbsBuildCommandsTheTreeAccepts(t *testing.T) {
 	_, problem = verbArgs("cancel", standalone)
 	require.Equal(t, "nothing is pending", problem)
 	require.True(t, verbConfirms("publish"))
-	require.False(t, verbConfirms("refresh"))
+	require.False(t, verbConfirms("sync"))
 
 	// Every verb and flag the table spells must exist in the command tree.
 	root, _, err := newRoot(app.Config{}, nil)
 	require.NoError(t, err)
-	for _, verb := range []string{"bump", "verify", "publish", "cancel", "abandon", "refresh"} {
+	for _, verb := range []string{"bump", "verify", "publish", "cancel", "abandon", "sync"} {
 		for _, row := range []view.Contribution{tracked, standalone} {
 			args, problem := verbArgs(verb, row)
 			if problem != "" {
@@ -71,7 +71,7 @@ func TestRetryVerbsAreCommandsThatTakeAPort(t *testing.T) {
 	root, _, err := newRoot(app.Config{}, nil)
 	require.NoError(t, err)
 	tracked := view.Contribution{Port: "jq", ChangeID: "change_jq"}
-	for _, verb := range []string{"bump", "bump-revision", "refresh-checksums", "verify", "publish"} {
+	for _, verb := range []string{"bump", "bump-revision", "checksums", "verify", "publish"} {
 		args, problem := verbArgs(verb, tracked)
 		require.Empty(t, problem, verb)
 		command, _, err := root.Find(args[:1])

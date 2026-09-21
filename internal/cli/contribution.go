@@ -11,16 +11,16 @@ import (
 
 func (r *runtime) contributionCommands() []*cobra.Command {
 	var commands []*cobra.Command
-	for _, action := range []string{"abandon", "refresh"} {
+	for _, action := range []string{"abandon", "sync"} {
 		var selector workSelector
 		short := "Stop pursuing a contribution, preserving its branch and history"
-		if action == "refresh" {
-			short = "Observe a contribution's PR and retire matching finished work"
+		if action == "sync" {
+			short = "Sync a contribution's record with its pull request"
 		}
 		command := &cobra.Command{Use: action + " [target]", Short: short, Args: cobra.MaximumNArgs(1)}
 		detail := "Abandon is local only and refuses pending jobs; wait or cancel them first. It preserves the branch, the evidence, and any PR, and does not close the PR; a later bump starts a new contribution."
-		if action == "refresh" {
-			detail = "Refresh reads the PR from the forge without changing it, records its state and, while it is open, its mergeability, review, and checks, and retires a merged or closed contribution whose published revision still matches the PR head and the local branch; newer local edits keep it open. A merged contribution's branch cleanup is settled at once, and what is still owed is retried. The next periodic look is scheduled from this observation."
+		if action == "sync" {
+			detail = "Sync reads the PR from the forge without changing it, records its state and, while it is open, its mergeability, review, and checks, and retires a merged or closed contribution whose published revision still matches the PR head and the local branch; newer local edits keep it open. A merged contribution's branch cleanup is settled at once, and what is still owed is retried. The next periodic look is scheduled from this observation."
 		}
 		command.Long = short + ".\n\nSelect a unique open contribution by port/subport name, --branch, or the current branch. --change selects an exact contribution, including historical work. " + detail
 		command.Flags().StringVar(&selector.branch, "branch", "", "Select a tracked contribution branch")

@@ -75,7 +75,7 @@ A reader/transaction is bound to exactly one registered repository. Its lookups,
 
 For this slice, a change has one local repository and one branch association, stored directly on the change row. Its stable ID is independent of that association. A missing or renamed branch is an actionable error; no automatic branch guessing or evidence reassignment occurs. Branch uniqueness applies to active changes within a repository. Tracking the same changeline concurrently in multiple clones, cross-repository moves, and automatic identity-note discovery are deferred. They do not require changing job IDs or the meaning of already accepted inputs.
 
-`status`, selectors, and `start` initially operate on the selected repository. An all-jobs scope means all jobs in that repository, not all repositories in the file. Several resident drivers can work on different repositories using the same database. Cross-repository listing and resident scheduling can be added through explicit scopes later; an omitted repository must never silently mean the whole database. The driver retains the repository context of each accepted job.
+`status`, selectors, and `serve` initially operate on the selected repository. An all-jobs scope means all jobs in that repository, not all repositories in the file. Several resident drivers can work on different repositories using the same database. Cross-repository listing and resident scheduling can be added through explicit scopes later; an omitted repository must never silently mean the whole database. The driver retains the repository context of each accepted job.
 
 ## Minimal data model
 

@@ -4,11 +4,11 @@ A design discussion from 2026-09-18, recorded before any of it is built. Nothing
 
 ## The idea
 
-Several `dockhand` processes can run against one database at once: a `start` driver in one terminal, a live `status` table in another, a `bump` in a third. Claims in state keep them from doing a job's work twice, but they all drive. The idea is that one process, the **leader**, does the driving and maintains a heartbeat for the others to watch, and every other process, a **standard** process, defers to it.
+Several `dockhand` processes can run against one database at once: a `serve` driver in one terminal, a live `status` table in another, a `bump` in a third. Claims in state keep them from doing a job's work twice, but they all drive. The idea is that one process, the **leader**, does the driving and maintains a heartbeat for the others to watch, and every other process, a **standard** process, defers to it.
 
 The first framing was that a command finding a live leader would queue its work and detach. The discussion moved it to a different rule: the command submits its work, lets the leader advance it, and **stays attached as an observer**, printing the same progress, verdict, and pull request URL it prints today, with the same exit code. Detaching on the presence of a leader would make one command mean two things depending on invisible ambient state, would break `--json` consumers that expect a final status, and would leave work queued behind a leader that had died. Observing keeps every command's meaning fixed; `--detach`, and possibly a `--queue` flag or configured default, remain the explicit ways to return early.
 
-A **second `start`** does not exit and does not compete. It stands by: it reports the active leader, waits, and takes over when the heartbeat lapses. That turns a stale leader into the standby's problem and makes `start` safe to run under a login item without checking first. The live `status` table is a driver too and takes the same role: leader when none exists, standby otherwise.
+A **second `serve`** does not exit and does not compete. It stands by: it reports the active leader, waits, and takes over when the heartbeat lapses. That turns a stale leader into the standby's problem and makes `serve` safe to run under a login item without checking first. The live `status` table is a driver too and takes the same role: leader when none exists, standby otherwise.
 
 ## What the current code already gives
 
@@ -23,7 +23,7 @@ A **second `start`** does not exit and does not compete. It stands by: it report
 - **Cancellation is applied inside the cycle.** `cancel` writes a control request that the next cycle applies. An observer never cycles, so with no live leader a cancel would sit unapplied; the fallback must cover controls, and quickly.
 - **Half the progress lines belong to whoever works.** Job detail reaches an observer through state. "Cloning image", "starting VM", "waiting for the guest agent", and capacity waits are progress calls in the Tart provider and the cycle, printed on the driving process's stderr. Under a leader they go to its terminal, and the observer's terminal is silent for the minutes a VM takes to boot. They need to become recorded detail or events.
 - **Cycle problems are driver-local too.** Claim-lost and conflict details ride on the cycle result; an observer sees none of them, so a leader failing a step with a non-durable error is invisible from the observer's side.
-- **Repository scoping.** An engine is bound to one registered repository and `start` advances one checkout; only `gc` reaches across all. A heartbeat is per database and per repository.
+- **Repository scoping.** An engine is bound to one registered repository and `serve` advances one checkout; only `gc` reaches across all. A heartbeat is per database and per repository.
 - **The manager's contract says otherwise today.** "Claims in state allow multiple callers; there is no resident singleton lock", and the competing-driver tests pin it. Coordination is a policy over that guarantee, and the tests should keep proving that two drivers stay correct when the policy is ignored.
 
 ## Concerns beyond the code

@@ -5,9 +5,13 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/verify"
+	"golang.org/x/sync/errgroup"
 	"io"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -136,7 +140,7 @@ func (r *runtime) verifyCommand() *cobra.Command {
 	build.flags(command, r.config)
 	command.Flags().BoolVar(&fresh, "fresh", false, "Run a new build even when previous passing evidence applies")
 	command.Flags().BoolVar(&allSubports, "all-subports", false, "Verify every subport of a shared release locally, not only the initiating one")
-	command.Flags().BoolVar(&detach, "detach", false, "Return once the build is admitted; wait or start finishes it")
+	command.Flags().BoolVar(&detach, "detach", false, "Return once the build is admitted; wait or serve finishes it")
 	command.Flags().BoolVar(&trace, "trace", false, "Follow build logs on stderr through completion; implies --debug")
 	command.MarkFlagsMutuallyExclusive("detach", "trace")
 	return command
@@ -300,26 +304,108 @@ func joinJobIDs(ids []record.JobID) string {
 	return strings.Join(values, ", ")
 }
 
-func (r *runtime) startCommand() *cobra.Command {
-	return &cobra.Command{Use: "start", Short: "Advance this repository's work until interrupted", Long: "Run driver cycles for this repository in the foreground until interrupted: queued jobs are claimed and advanced, open contributions' PRs are observed on their recorded schedule, owed branch cleanup is settled, and released environments are pruned. The live status table does the same while it is open; start is for a terminal that should only process.", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
-		services, err := r.build(cmd.Context(), r.config)
-		if err != nil {
+func (r *runtime) serveCommand() *cobra.Command {
+	var all, install bool
+	command := &cobra.Command{Use: "serve", Short: "Run the driver as a service until stopped", Args: cobra.NoArgs,
+		Long: "Run driver cycles until stopped: queued jobs are claimed and advanced, open contributions' PRs are synced on their recorded schedule, owed branch cleanup is settled, and released environments are pruned. It serves the selected repository, or with --all-repositories every repository registered in the state database whose checkout still exists, which is what a launchd agent wants, since it has no checkout of its own. One serve per database: a second refuses to start. Ctrl-C and SIGTERM stop it cleanly, and accepted work stays recorded for the next serve. --install-launchd writes a launchd agent that runs serve --all-repositories against this database with your PATH, and prints how to load it.",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if install {
+				return r.installLaunchd(cmd)
+			}
+			held, err := app.HoldService(cmd.Context(), r.config)
+			if err != nil {
+				return err
+			}
+			defer held.Close()
+			configs := []app.Config{r.config}
+			if all {
+				checkouts, err := app.RegisteredCheckouts(cmd.Context(), r.config)
+				if err != nil {
+					return err
+				}
+				if len(checkouts) == 0 {
+					progress.Report(cmd.Context(), "No registered repository has a checkout; nothing to serve.")
+					return nil
+				}
+				configs = nil
+				for _, checkout := range checkouts {
+					config := r.config
+					config.Repository = checkout
+					configs = append(configs, config)
+				}
+			}
+			group, ctx := errgroup.WithContext(cmd.Context())
+			for _, config := range configs {
+				services, err := r.build(ctx, config)
+				if err != nil {
+					return fmt.Errorf("%s: %w", config.Repository, err)
+				}
+				defer services.Close()
+				progress.Report(ctx, "Serving %s.", config.Repository)
+				reporter := newReporter(cmd.ErrOrStderr(), services.Workflow.Provider, false, r.level(cmd), r.json)
+				services.Processes.OnCycle = reporter.cycle
+				group.Go(func() error { return services.Processes.Run(ctx, services.Workflow, workflow.Scope{All: true}) })
+			}
+			err = group.Wait()
+			stopped := cmd.Context().Err() != nil
+			if stopped {
+				// Being stopped is what a service expects: launchd reads a
+				// clean exit, and the work is recorded for the next serve.
+				err = nil
+			}
+			if r.json {
+				err = errors.Join(err, r.emit(struct {
+					Stopped     bool
+					Interrupted bool
+				}{true, stopped}))
+			}
 			return err
-		}
-		defer services.Close()
-		progress.Report(cmd.Context(), "Driver running for this repository. Ctrl-C stops the driver; accepted work remains recorded.")
-		reporter := newReporter(cmd.ErrOrStderr(), services.Workflow.Provider, false, r.level(cmd), r.json)
-		services.Processes.OnCycle = reporter.cycle
-		err = services.Processes.Run(cmd.Context(), services.Workflow, workflow.Scope{All: true})
-		if r.json {
-			encodeErr := r.emit(struct {
-				Stopped     bool
-				Interrupted bool
-			}{true, cmd.Context().Err() != nil})
-			err = errors.Join(err, encodeErr)
-		}
+		}}
+	command.Flags().BoolVar(&all, "all-repositories", false, "Serve every repository registered in the state database whose checkout exists")
+	command.Flags().BoolVar(&install, "install-launchd", false, "Write a launchd agent that runs serve --all-repositories against this database, and print how to load it")
+	return command
+}
+
+// serviceLabel names the launchd agent in reverse-DNS form, from the module path.
+const serviceLabel = "com.github.herbygillot.dockhand.serve"
+
+// installLaunchd writes the agent's plist under the user's LaunchAgents and
+// prints the launchctl commands rather than running them, so loading a
+// service into the session is the person's own step, and visible.
+func (r *runtime) installLaunchd(cmd *cobra.Command) error {
+	executable, err := os.Executable()
+	if err != nil {
 		return err
-	}}
+	}
+	if resolved, err := filepath.EvalSymlinks(executable); err == nil {
+		executable = resolved
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	directory := filepath.Join(home, "Library", "LaunchAgents")
+	if err := os.MkdirAll(directory, 0755); err != nil {
+		return err
+	}
+	plist := filepath.Join(directory, serviceLabel+".plist")
+	log := filepath.Join(filepath.Dir(r.config.DBPath), "serve.log")
+	// A launchd agent's PATH is the system's, without MacPorts or Homebrew;
+	// the agent inherits the PATH this was installed from, and the tool
+	// variables set now, so serve finds what the shell finds.
+	env := map[string]string{"PATH": os.Getenv("PATH")}
+	for _, name := range []string{"MACPORTS_PREFIX", "TART_BIN", "GIT_BIN", "GO2PORT_BIN", "CARGO2PORT_BIN"} {
+		if value := os.Getenv(name); value != "" {
+			env[name] = value
+		}
+	}
+	args := []string{executable, "--db", r.config.DBPath, "serve", "--all-repositories"}
+	if err := os.WriteFile(plist, macos.LaunchdServicePlist(serviceLabel, args, log, env), 0644); err != nil {
+		return err
+	}
+	uid := os.Getuid()
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "Wrote %s\nLoad:   launchctl bootstrap gui/%d %s\nUnload: launchctl bootout gui/%d/%s\nLog:    %s\n", plist, uid, plist, uid, serviceLabel, log)
+	return err
 }
 func (r *runtime) attach(cmd *cobra.Command, services *app.Services, id record.JobID, milestone workflow.Milestone, trace, canceling bool, receipt *workflow.Receipt) error {
 	return r.attachScope(cmd, services, workflow.Scope{Jobs: []record.JobID{id}}, milestone, trace, canceling, receipt, ActionResult{JobID: id})

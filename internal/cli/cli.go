@@ -27,7 +27,7 @@ type Options struct {
 	Detach bool
 	Trace  bool
 	JSON   bool
-	Diff   bool
+	DryRun bool
 	// AllSubports verifies every buildable member of a shared release
 	// locally instead of the newest subport alone.
 	AllSubports bool

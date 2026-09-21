@@ -31,7 +31,7 @@ func TestBumpParsesOptionalVersionWithoutInitializingState(t *testing.T) {
 		err := Run(t.Context(), args, Streams{Out: &out, Err: &out}, config)
 		require.ErrorContains(t, err, "git rev-parse")
 	}
-	for _, args := range [][]string{{"bump"}, {"bump", "jq", "1", "2"}, {"bump-revision", "jq", "1"}, {"bump", "jq", "1", "--diff", "--detach"}, {"bump-revision", "jq", "--diff", "--branch="}, {"bump-revision", "jq", "--diff", "--variant=bad"}, {"bump", "jq", "--publish"}, {"bump-revision", "jq", "--wait"}, {"bump", "jq", "--diff", "--to", "verified"}, {"bump", "jq", "--trace", "--detach"}, {"bump", "jq", "--provider", "tart", "--to", "verified", "--remote", "origin"}, {"bump-revision", "jq", "--provider", "tart", "--to", "branch", "--base", "main"}, {"bump", "jq", "--provider", "tart", "--to", "verified", "--upstream", "upstream"}} {
+	for _, args := range [][]string{{"bump"}, {"bump", "jq", "1", "2"}, {"bump-revision", "jq", "1"}, {"bump", "jq", "1", "--dry-run", "--detach"}, {"bump-revision", "jq", "--dry-run", "--branch="}, {"bump-revision", "jq", "--dry-run", "--variant=bad"}, {"bump", "jq", "--publish"}, {"bump-revision", "jq", "--wait"}, {"bump", "jq", "--dry-run", "--to", "verified"}, {"bump", "jq", "--trace", "--detach"}, {"bump", "jq", "--provider", "tart", "--to", "verified", "--remote", "origin"}, {"bump-revision", "jq", "--provider", "tart", "--to", "branch", "--base", "main"}, {"bump", "jq", "--provider", "tart", "--to", "verified", "--upstream", "upstream"}} {
 		var out bytes.Buffer
 		err := Run(t.Context(), args, Streams{Out: &out, Err: &out}, config)
 		require.Error(t, err)
@@ -40,7 +40,7 @@ func TestBumpParsesOptionalVersionWithoutInitializingState(t *testing.T) {
 	}
 	var out bytes.Buffer
 	require.ErrorIs(t, Run(t.Context(), []string{"bump", "jq", ""}, Streams{Out: &out, Err: &out}, config), upstream.ErrVersionInput)
-	require.ErrorContains(t, Run(t.Context(), []string{"bump", "jq", "2", "--diff"}, Streams{Out: &out, Err: &out}, config), "git rev-parse")
+	require.ErrorContains(t, Run(t.Context(), []string{"bump", "jq", "2", "--dry-run"}, Streams{Out: &out, Err: &out}, config), "git rev-parse")
 	require.NoDirExists(t, filepath.Dir(config.DBPath))
 }
 
@@ -49,7 +49,7 @@ func TestRevisionPreviewCLIUsesCommittedSourceWithoutStateOrProvider(t *testing.
 	config, repo, commit := preparationCLI(t)
 	var err error
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--diff", "--reason", "rebuild", "-v"}, Streams{Out: &stdout, Err: &stderr}, config))
+	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--dry-run", "--reason", "rebuild", "-v"}, Streams{Out: &stdout, Err: &stderr}, config))
 	require.Contains(t, stdout.String(), "-revision 0\n+revision 1")
 	require.Contains(t, stderr.String(), "branch master")
 	require.Contains(t, stderr.String(), "working-tree edits are excluded")
@@ -60,7 +60,7 @@ func TestRevisionPreviewCLIUsesCommittedSourceWithoutStateOrProvider(t *testing.
 	require.Equal(t, commit, actual)
 	stdout.Reset()
 	stderr.Reset()
-	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--diff", "--json", "-vv"}, Streams{Out: &stdout, Err: &stderr}, config))
+	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--dry-run", "--json", "-vv"}, Streams{Out: &stdout, Err: &stderr}, config))
 	var result app.Preview
 	decodeResult(t, stdout.Bytes(), &result)
 	require.Equal(t, "master", result.Branch)
@@ -218,7 +218,7 @@ checksums rmd160 %s \
 	require.NoError(t, err)
 	require.NoError(t, repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/candidate", Expected: git.RefValue{Exists: true, Object: original}, Desired: git.RefValue{Exists: true, Object: commit}}, {Name: "refs/heads/master", Expected: git.RefValue{Exists: true, Object: original}, Desired: git.RefValue{Exists: true, Object: commit}}}))
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, Run(t.Context(), []string{"bump", "fixture", "2.0", "--diff", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	require.NoError(t, Run(t.Context(), []string{"bump", "fixture", "2.0", "--dry-run", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var preview app.Preview
 	decodeResult(t, stdout.Bytes(), &preview)
 	require.Equal(t, "v2.0", preview.Preparation.Release.Tag)
@@ -272,13 +272,13 @@ func TestPreparationIgnoresLocalBranchAndRefusesFailedFetch(t *testing.T) {
 		require.NoError(t, err, "%s", out)
 	}
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--diff", "--json", "-vv"}, Streams{Out: &stdout, Err: &stderr}, config))
+	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--dry-run", "--json", "-vv"}, Streams{Out: &stdout, Err: &stderr}, config))
 	var preview app.Preview
 	decodeResult(t, stdout.Bytes(), &preview)
 	require.Equal(t, record.ObjectID(upstream), preview.Preparation.Base.Commit)
 	require.Equal(t, "https://github.com/macports/macports-ports.git", preview.Repository)
 	require.NoError(t, repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/master", Expected: git.RefValue{Exists: true, Object: upstream}}}))
-	for _, mode := range [][]string{{"--diff"}, {"--to", "verified"}, {"--to", "branch"}} {
+	for _, mode := range [][]string{{"--dry-run"}, {"--to", "verified"}, {"--to", "branch"}} {
 		err := Run(t.Context(), append([]string{"bump-revision", "fixture"}, mode...), Streams{Out: &stdout, Err: &stderr}, config)
 		require.ErrorContains(t, err, "fetching authoritative MacPorts master")
 	}

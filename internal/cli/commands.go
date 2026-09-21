@@ -12,7 +12,7 @@ func (r *runtime) workflowCommand(use, short string, args cobra.PositionalArgs) 
 		Long:  short + ".\n\nThis command's workflow is not implemented yet.",
 		Args:  args,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if options.Diff {
+			if options.DryRun {
 				return execute(cmd.Context(), cmd.CommandPath(), args, *options, Streams{In: cmd.InOrStdin(), Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}, nil)
 			}
 			services, err := r.build(cmd.Context(), r.config)

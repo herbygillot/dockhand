@@ -103,14 +103,14 @@ func TestDetachedPublicationNamesPendingPRAndResumeCommand(t *testing.T) {
 	require.NoError(t, r.result(&out, progress.Info, ActionResult{Status: status}))
 	require.Contains(t, out.String(), "PR publication remains pending.")
 	require.Contains(t, out.String(), "dockhand wait --job job")
-	require.Contains(t, out.String(), "dockhand start")
+	require.Contains(t, out.String(), "dockhand serve")
 }
 
 func TestEmptyWorkSelectorsDoNotFallBackToCurrentBranch(t *testing.T) {
 	t.Parallel()
-	for _, command := range []string{"wait", "cancel", "abandon", "refresh"} {
+	for _, command := range []string{"wait", "cancel", "abandon", "sync"} {
 		for _, selector := range []string{"job", "change", "branch"} {
-			if selector == "job" && (command == "abandon" || command == "refresh") {
+			if selector == "job" && (command == "abandon" || command == "sync") {
 				continue
 			}
 			t.Run(command+"/"+selector, func(t *testing.T) {

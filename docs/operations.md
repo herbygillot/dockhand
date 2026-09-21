@@ -36,7 +36,7 @@ After that reconciliation, use the replacement as the sole operational database 
 
 ## Routine cleanup
 
-Ordinary driver cycles release terminal verification VMs, including failures, after collecting their result and available build logs. `bump`, `bump-revision`, `refresh-checksums`, `verify`, `amend`, and `rebase` accept `--keep-failed` to retain failed local environments for investigation. That choice is stored with the accepted job and survives driver restarts. Successful and canceled runs are released even when the flag was set. It does not change verification evidence compatibility. Existing retained environments are not retroactively released by this policy change.
+Ordinary driver cycles release terminal verification VMs, including failures, after collecting their result and available build logs. `bump`, `bump-revision`, `checksums`, `verify`, `amend`, and `rebase` accept `--keep-failed` to retain failed local environments for investigation. That choice is stored with the accepted job and survives driver restarts. Successful and canceled runs are released even when the flag was set. It does not change verification evidence compatibility. Existing retained environments are not retroactively released by this policy change.
 
 Tart removes its host `input.tar` after guest staging and durable admission; retries launch the same staged guest without retransferring the archive. Interrupted staging keeps its input until the reserved execution is closed and released. Normal preparation/staging scratch remains scoped to the operation and is removed on return, including errors. Unknown leftovers from process death are not swept blindly.
 

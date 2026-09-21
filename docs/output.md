@@ -16,7 +16,7 @@ Every operation reports progress through `progress.Report`. Each report carries 
 
 No logging library is adopted. Reports are user-facing sentences, not log lines; the structured form of a run is its JSON result.
 
-Who is reporting decides the level, not only what is reported (decided 2026-09-19, after the default-to-publish bump made every change command its own driver). A command attached to its job narrates that job in the status table's words, one line per milestone: the change, the branch, the build's platform and verdict, the pull request, and any outcome a person must act on. It drives the workflow under a quiet context that lowers the engine's and providers' info reports to verbose, since to it they are the work behind the scenes. `start` and the live status table drive under the plain context and are the audience for those reports at info. `-v` restores the full interleaving on any command.
+Who is reporting decides the level, not only what is reported (decided 2026-09-19, after the default-to-publish bump made every change command its own driver). A command attached to its job narrates that job in the status table's words, one line per milestone: the change, the branch, the build's platform and verdict, the pull request, and any outcome a person must act on. It drives the workflow under a quiet context that lowers the engine's and providers' info reports to verbose, since to it they are the work behind the scenes. `serve` and the live status table drive under the plain context and are the audience for those reports at info. `-v` restores the full interleaving on any command.
 
 ## The JSON envelope
 
@@ -34,11 +34,11 @@ The info level prints only these; everything else moves to verbose or debug.
 
 | Command | Info output |
 | --- | --- |
-| `bump`, `bump-revision`, `refresh-checksums` | port, old version to new version (or the revision), the branch name, then the verdict line, then the PR URL and whether it was created or updated; `--detach` stops after the branch name |
-| `--diff` variants | the same header lines, then the diff on stdout |
+| `bump`, `bump-revision`, `checksums` | port, old version to new version (or the revision), the branch name, then the verdict line, then the PR URL and whether it was created or updated; `--detach` stops after the branch name |
+| `--dry-run` variants | the same header lines, then the diff on stdout |
 | `verify` | port, platform, verdict; on failure the phase that failed and where the log is |
 | `publish` | PR URL, created or updated, the head commit |
-| `refresh` | PR state and the one-line status (mergeable, review, checks); what was retired or cleaned up |
+| `sync` | PR state and the one-line status (mergeable, review, checks); what was retired or cleaned up |
 | `abandon` | what was preserved |
 | `assess`, `outdated` | the headline line per port as today, with plain words for the verdict (see below) |
 | `status` | the contribution table (below); `--json` gives the projection |
@@ -67,7 +67,7 @@ The "next" derivation moves out of the CLI's progress formatting and beside this
 
 ## The status table
 
-Interactive `status` on a TTY renders the projection as a live table with Bubble Tea, polling the snapshot every second or two; non-TTY output and `--json` keep the plain snapshot. Rows are contributions, one per open contribution plus recently retired ones; the columns are port, versions, phase, state, next. Selecting a row expands its history and identifiers.
+`console` renders the projection as a live table with Bubble Tea, polling the snapshot every second or two; `status` keeps the plain snapshot. Rows are contributions, one per open contribution plus recently retired ones; the columns are port, versions, phase, state, next. Selecting a row expands its history and identifiers.
 
 Keys map onto existing verbs and add no authority: wait, cancel, verify, publish, refresh, abandon, open the PR in the browser, show the log. Verify, publish, cancel, and abandon confirm before acting, since they cost minutes, push, or discard.
 

@@ -47,13 +47,14 @@ Dockhand needs somewhere to build. You have two choices, and it picks whichever 
 
 ```sh
 dockhand outdated --maintainer you@example.org   # which of my ports have a newer release
-dockhand bump jq --diff                          # what would change, without touching anything
+dockhand bump jq --dry-run                          # what would change, without touching anything
 dockhand bump jq                                 # do it: branch, build, pull request
-dockhand status                                  # everything I have open, as a live table
-dockhand refresh jq                              # record the PR's fate after review
+dockhand status                                  # everything I have open
+dockhand console                                 # the same, live, and doing the work
+dockhand sync jq                              # record the PR's fate after review
 ```
 
-`outdated` reads your checkout and asks each port's upstream, or its livecheck, whether there is something newer. `bump jq 1.8.1` names the version yourself; `bump-revision jq --reason "…"` and `refresh-checksums jq` do the other two kinds of update, with the same flags. `status` shows one row per port with its phase, state, and what comes next; on a terminal it is live, processes your pending work while open, and its keys run the other commands on the selected row. After a pull request is merged or closed, `refresh` records it and cleans up the branches so the next bump starts fresh.
+`outdated` reads your checkout and asks each port's upstream, or its livecheck, whether there is something newer. `bump jq 1.8.1` names the version yourself; `bump-revision jq --reason "…"` and `checksums jq` do the other two kinds of update, with the same flags. `status` shows one row per port with its phase, state, and what comes next; on a terminal it is live, processes your pending work while open, and its keys run the other commands on the selected row. After a pull request is merged or closed, `sync` records it and cleans up the branches so the next bump starts fresh.
 
 Every accepted job is durable. Close the terminal and `dockhand wait jq` picks the same job back up; Ctrl-C detaches without canceling anything, and `dockhand cancel jq` cancels on purpose.
 
@@ -67,7 +68,7 @@ dockhand rebase     # reapply the contribution onto current master when it has m
 dockhand abandon jq # stop pursuing this update; the branch and its history are kept
 ```
 
-`amend --diff` and `rebase --diff` show what would change first. Both verify and update the pull request the way `bump` does, and take the same stop-early flags below.
+`amend --dry-run` and `rebase --dry-run` show what would change first. Both verify and update the pull request the way `bump` does, and take the same stop-early flags below.
 
 Dockhand's branches are ordinary Git branches, and it will build and publish a branch you made yourself: keep the contribution to one commit in one port directory, then `dockhand verify` and `dockhand publish` it.
 
@@ -82,7 +83,7 @@ One `--to` and one modifier cover every change command:
 | `--to branch` | prepare the branch and stop |
 | `--unverified` | prepare and open the pull request without building; the PR says so |
 
-`--detach` submits the work and returns as soon as the build is admitted; `wait` finishes it. `--diff` previews without creating anything. A branch left at `--to verified` is published later with `dockhand publish jq`, and `publish --dry-run` shows the full pull request body first.
+`--detach` submits the work and returns as soon as the build is admitted; `wait` finishes it. `--dry-run` previews without creating anything. A branch left at `--to verified` is published later with `dockhand publish jq`, and `publish --dry-run` shows the full pull request body first.
 
 ## Requirements
 

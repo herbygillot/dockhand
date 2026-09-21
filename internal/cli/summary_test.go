@@ -49,7 +49,7 @@ func TestSummaryShowsFailingPhaseLogAndResumeByPort(t *testing.T) {
 	text := out.String()
 	require.Contains(t, text, "deno: revision bump; failed\n  branch: dockhand/revbump/deno\n  failed on macOS 15 arm64; build phase: error: linking failed; log: /tmp/attempt/build.log\n  verification failed\n")
 	require.Contains(t, text, "jq: verification; waiting for capacity\n  waiting for a build slot on macOS 15 arm64\n")
-	require.Contains(t, text, "Resume with dockhand wait jq or run dockhand start")
+	require.Contains(t, text, "Resume with dockhand wait jq or run dockhand serve")
 	require.NotContains(t, text, "job_")
 }
 

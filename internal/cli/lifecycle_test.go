@@ -149,13 +149,13 @@ func TestResidentDriverAppliesAcceptedControlAndStopsWithoutNewWork(t *testing.T
 	defer cancel()
 	var stdout, stderr bytes.Buffer
 	done := make(chan error, 1)
-	go func() { done <- Run(ctx, []string{"start", "--json"}, Streams{Out: &stdout, Err: &stderr}, config) }()
+	go func() { done <- Run(ctx, []string{"serve", "--json"}, Streams{Out: &stdout, Err: &stderr}, config) }()
 	require.Eventually(t, func() bool {
 		status, err := app.Status(t.Context(), config)
 		return err == nil && len(status.Jobs) == 1 && status.Jobs[0].Job.State == record.JobCanceled
 	}, 5*time.Second, 20*time.Millisecond)
 	cancel()
-	require.ErrorIs(t, <-done, context.Canceled)
+	require.NoError(t, <-done, "a stopped serve is a clean exit, as launchd expects")
 	var result struct{ Stopped, Interrupted bool }
 	decodeResult(t, stdout.Bytes(), &result)
 	require.True(t, result.Stopped)
@@ -184,6 +184,6 @@ func TestAbandonRequiresSettledWorkAndPreservesBranch(t *testing.T) {
 	output, err := exec.CommandContext(t.Context(), "git", "-C", config.Repository, "rev-parse", "--verify", "refs/heads/candidate").CombinedOutput()
 	require.NoError(t, err, "%s", output)
 	out.Reset()
-	err = Run(t.Context(), []string{"refresh", "--change", "change"}, Streams{Out: &out, Err: &out}, config)
+	err = Run(t.Context(), []string{"sync", "--change", "change"}, Streams{Out: &out, Err: &out}, config)
 	require.ErrorContains(t, err, "no recorded pull request")
 }

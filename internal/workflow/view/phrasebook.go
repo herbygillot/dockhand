@@ -163,7 +163,7 @@ func jobWords(current JobStatus, pr *record.PullRequest) (phase, state, next str
 	phase = string(job.Phase)
 	switch job.State {
 	case record.JobQueued:
-		return phase, "queued", "waiting for a driver; run dockhand start or dockhand wait"
+		return phase, "queued", "waiting for a driver; run dockhand serve or dockhand wait"
 	case record.JobActive:
 		return phase, activeState(current), activeNext(job)
 	case record.JobCompleted:
@@ -342,8 +342,12 @@ func retryCommand(job record.Job) string {
 // again is the retry.
 func retryVerb(job record.Job) string {
 	switch job.Spec.Action {
-	case record.Bump, record.BumpRevision, record.RefreshChecksums:
+	case record.Bump, record.BumpRevision:
 		return string(job.Spec.Action)
+	case record.RefreshChecksums:
+		// The command is named for what it prepares; the action keeps its
+		// recorded spelling.
+		return "checksums"
 	case record.Publish:
 		return "publish"
 	}
@@ -358,14 +362,14 @@ func oneLine(text string) string { return strings.Join(strings.Fields(text), " "
 func pullRequestNext(pr *record.PullRequest) string {
 	switch pr.State {
 	case record.PullRequestMerged:
-		return "merged; run dockhand refresh to retire the contribution"
+		return "merged; run dockhand sync to retire the contribution"
 	case record.PullRequestClosed:
-		return "PR closed; run dockhand refresh to retire the contribution"
+		return "PR closed; run dockhand sync to retire the contribution"
 	case record.PullRequestUnknown:
-		return "PR state unknown; run dockhand refresh"
+		return "PR state unknown; run dockhand sync"
 	}
 	if pr.Status == nil {
-		return "PR open; run dockhand refresh for checks and review"
+		return "PR open; run dockhand sync for checks and review"
 	}
 	parts := []string{"PR open"}
 	if pr.Status.Draft {

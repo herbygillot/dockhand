@@ -45,7 +45,7 @@ func verbArgs(verb string, row view.Contribution) ([]string, string) {
 // ones a retry re-runs to adopt it.
 func prepares(verb string) bool {
 	switch verb {
-	case "bump", "bump-revision", "refresh-checksums":
+	case "bump", "bump-revision", "checksums":
 		return true
 	}
 	return false

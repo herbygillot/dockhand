@@ -1,6 +1,6 @@
 # Go and Rust dependency preparation
 
-`bump` and `bump --diff` can regenerate literal `go.vendors`, `cargo.crates`, and supported `cargo.crates_github` declarations. The existing preparation contract still produces one candidate Portfile, source tree, diff, and contribution commit. Verification and publication use their usual paths.
+`bump` and `bump --dry-run` can regenerate literal `go.vendors`, `cargo.crates`, and supported `cargo.crates_github` declarations. The existing preparation contract still produces one candidate Portfile, source tree, diff, and contribution commit. Verification and publication use their usual paths.
 
 ## Optional host tools
 

@@ -255,8 +255,8 @@ func (m *model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, m.verb(row.Retry)
-	case "c", "v", "p", "r", "a":
-		verb := map[string]string{"c": "cancel", "v": "verify", "p": "publish", "r": "refresh", "a": "abandon"}[key]
+	case "c", "v", "p", "s", "a":
+		verb := map[string]string{"c": "cancel", "v": "verify", "p": "publish", "s": "sync", "a": "abandon"}[key]
 		return m, m.verb(verb)
 	}
 	return m, nil
@@ -426,7 +426,7 @@ func (m *model) View() string {
 	if m.confirm != nil {
 		fmt.Fprintf(&b, "%s", headerStyle.Render(fmt.Sprintf("Run dockhand %s for %s? y/n", m.confirm.verb, m.confirm.port)))
 	} else {
-		b.WriteString(faintStyle.Render("↑/↓ select  enter expand  h history  b retry  v verify  p publish  r refresh  c cancel  a abandon  o open PR  l log  q quit"))
+		b.WriteString(faintStyle.Render("↑/↓ select  enter expand  h history  b retry  v verify  p publish  s sync  c cancel  a abandon  o open PR  l log  q quit"))
 	}
 	return b.String()
 }

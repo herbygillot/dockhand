@@ -42,7 +42,7 @@ Those lifetimes differ. Retrying a build preserves the earlier attempt. Completi
 
 The driver owns the durable progression of an accepted job, including waiting for capacity, submitting builds, recording evidence, making decisions, publishing when authorized, and cleaning up. The CLI submits requests to the state store through shared workflow intake functions and observes recorded progress. Durable submission is distinct from driver pickup and provider admission. The state store provides the handoff between processes; no separate request transport is needed. Waiting or tracing changes how long the CLI stays attached, not who owns the work or what publication is authorized.
 
-Action invocations and explicit persistent mode (`dockhand start`) use the same workflow implementation in their current process. Commands do not spawn background drivers. A CLI exit or driver crash must leave enough durable information for a later driver cycle to resume or report what needs attention; durable records alone do not execute pending work.
+Action invocations and explicit persistent mode (`dockhand serve`) use the same workflow implementation in their current process. Commands do not spawn background drivers. A CLI exit or driver crash must leave enough durable information for a later driver cycle to resume or report what needs attention; durable records alone do not execute pending work.
 
 ## Report observations without silently refreshing them
 

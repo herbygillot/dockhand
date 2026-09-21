@@ -155,13 +155,13 @@ func TestGlobalPrefixReachesPreviewAndDriverConstruction(t *testing.T) {
 	t.Setenv("MACPORTS_TREE", repo.Root)
 	t.Setenv("MACPORTS_PREFIX", "MacPorts prefix")
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--diff"}, Streams{Out: &stdout, Err: &stderr}, config))
+	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--dry-run"}, Streams{Out: &stdout, Err: &stderr}, config))
 	require.Contains(t, stdout.String(), "+revision 1")
 	require.NoDirExists(t, filepath.Dir(config.DBPath))
 
 	stdout.Reset()
 	stderr.Reset()
-	err = Run(t.Context(), []string{"bump-revision", "fixture", "--diff", "--prefix", "missing prefix"}, Streams{Out: &stdout, Err: &stderr}, config)
+	err = Run(t.Context(), []string{"bump-revision", "fixture", "--dry-run", "--prefix", "missing prefix"}, Streams{Out: &stdout, Err: &stderr}, config)
 	require.ErrorContains(t, err, filepath.Join(working, "missing prefix", "bin"))
 	require.NoDirExists(t, filepath.Dir(config.DBPath))
 

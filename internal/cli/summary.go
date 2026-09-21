@@ -175,5 +175,5 @@ func pendingGuidance(job record.Job) string {
 		pending = "PR publication remains pending."
 	}
 	resume := "dockhand wait " + view.PortSelector(job)
-	return fmt.Sprintf("%s A running driver must settle the result and perform cleanup. Resume with %s or run dockhand start for this repository.", pending, resume)
+	return fmt.Sprintf("%s A running driver must settle the result and perform cleanup. Resume with %s or run dockhand serve for this repository.", pending, resume)
 }

@@ -161,7 +161,7 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, *runtime,
 	root.AddCommand(runtime.correctionCommands()...)
 	root.AddCommand(runtime.contributionCommands()...)
 	root.AddCommand(runtime.verifyCommand(), runtime.publishCommand())
-	root.AddCommand(runtime.statusCommand(), runtime.waitCommand(), runtime.cancelCommand(), runtime.startCommand(), runtime.reviewCommand())
+	root.AddCommand(runtime.statusCommand(), runtime.consoleCommand(), runtime.waitCommand(), runtime.cancelCommand(), runtime.serveCommand(), runtime.reviewCommand())
 	groupCommands(root)
 
 	root.InitDefaultHelpCmd()
@@ -191,10 +191,10 @@ var helpGroups = []struct {
 }{
 	{"start", "Get started:", []string{"setup", "auth"}},
 	{"investigate", "Investigate ports:", []string{"outdated", "assess"}},
-	{"prepare", "Prepare an update:", []string{"bump", "bump-revision", "refresh-checksums"}},
+	{"prepare", "Prepare an update:", []string{"bump", "bump-revision", "checksums"}},
 	{"revise", "Revise your update:", []string{"amend", "rebase", "reassociate"}},
 	{"publish", "Verify and publish:", []string{"verify", "publish"}},
-	{"jobs", "Watch and manage jobs:", []string{"status", "wait", "cancel", "start", "refresh", "abandon"}},
+	{"jobs", "Watch and manage jobs:", []string{"status", "console", "wait", "cancel", "serve", "sync", "abandon"}},
 	{"housekeeping", "Housekeeping:", []string{"gc", "db"}},
 	{"planned", "Planned, not implemented yet:", []string{"review"}},
 }

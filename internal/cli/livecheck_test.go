@@ -63,7 +63,7 @@ subport fixture-1.15 {
 	require.NoError(t, err)
 	require.NoError(t, repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/master", Expected: git.RefValue{Exists: true, Object: original}, Desired: git.RefValue{Exists: true, Object: commit}}}))
 	var out, logs bytes.Buffer
-	require.NoError(t, Run(t.Context(), []string{"bump", "fixture-1.16", "1.16.2", "--diff", "--json"}, Streams{Out: &out, Err: &logs}, config), logs.String())
+	require.NoError(t, Run(t.Context(), []string{"bump", "fixture-1.16", "1.16.2", "--dry-run", "--json"}, Streams{Out: &out, Err: &logs}, config), logs.String())
 	var explicit app.Preview
 	decodeResult(t, out.Bytes(), &explicit)
 	require.Contains(t, explicit.Diff, "+ set patchNumber 2")

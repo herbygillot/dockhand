@@ -76,7 +76,7 @@ func TestAutomaticBumpCLIUsesResolvedReleaseAndPreparedBranch(t *testing.T) {
 	t.Parallel()
 	config, repo, downloads, catalogs := automaticCLI(t, "1.0")
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, Run(t.Context(), []string{"bump", "fixture", "--diff", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	require.NoError(t, Run(t.Context(), []string{"bump", "fixture", "--dry-run", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var preview app.Preview
 	decodeResult(t, stdout.Bytes(), &preview)
 	require.Contains(t, preview.Diff, "+version 2.0")
@@ -109,7 +109,7 @@ func TestCurrentBumpCLIIsSuccessfulWithoutDownloadsBranchOrProvider(t *testing.T
 	before, err := repo.ReadRefs(t.Context(), "refs/heads/")
 	require.NoError(t, err)
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, Run(t.Context(), []string{"bump", "fixture", "--diff"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	require.NoError(t, Run(t.Context(), []string{"bump", "fixture", "--dry-run"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	require.Empty(t, stdout.String())
 	require.Contains(t, stderr.String(), "fixture: already current at 2.0")
 	require.NoDirExists(t, filepath.Dir(config.DBPath))

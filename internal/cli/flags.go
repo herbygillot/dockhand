@@ -65,7 +65,7 @@ func (v executablePathValue) Set(value string) error {
 }
 
 func verificationFlags(command *cobra.Command, options *Options) {
-	command.Flags().BoolVar(&options.Detach, "detach", false, "Return once the work is accepted and admitted; wait or start finishes it")
+	command.Flags().BoolVar(&options.Detach, "detach", false, "Return once the work is accepted and admitted; wait or serve finishes it")
 	command.Flags().BoolVar(&options.Trace, "trace", false, "Follow build logs on stderr through completion; implies --debug")
 	command.MarkFlagsMutuallyExclusive("detach", "trace")
 }
@@ -108,10 +108,10 @@ func (d *destinationFlags) resolve() (to string, publish, skipVerify bool, err e
 func changeFlags(command *cobra.Command, options *Options, destination *destinationFlags) {
 	verificationFlags(command, options)
 	destination.add(command, "opens or updates")
-	command.Flags().BoolVar(&options.Diff, "diff", false, "Preview source changes without submitting work")
+	command.Flags().BoolVar(&options.DryRun, "dry-run", false, "Print the proposed diff and submit nothing")
 	command.Flags().BoolVar(&options.AllSubports, "all-subports", false, "Verify every subport of a shared release locally, not only the newest")
 	for _, name := range []string{"to", "unverified", "detach", "trace"} {
-		command.MarkFlagsMutuallyExclusive("diff", name)
+		command.MarkFlagsMutuallyExclusive("dry-run", name)
 	}
 	command.MarkFlagsMutuallyExclusive("trace", "unverified")
 }

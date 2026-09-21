@@ -231,7 +231,7 @@ func TestTheRetryVerbFollowsHowTheContributionWasMade(t *testing.T) {
 	for action, want := range map[record.Action]string{
 		record.Bump:             "bump",
 		record.BumpRevision:     "bump-revision",
-		record.RefreshChecksums: "refresh-checksums",
+		record.RefreshChecksums: "checksums",
 		record.Publish:          "publish",
 		// A branch dockhand did not prepare: its work is a verification.
 		record.Verify: "verify",
@@ -271,7 +271,7 @@ func TestStoppedWorkIsAlwaysAdvisedWithItsOwnCommand(t *testing.T) {
 
 	// Canceled work, and a preparation that failed before building anything.
 	require.Contains(t, next(record.Bump, record.JobCanceled, record.PhaseVerification, ""), "dockhand bump jq again")
-	require.Contains(t, next(record.RefreshChecksums, record.JobFailed, record.PhasePreparation, "evaluation failed"), "dockhand refresh-checksums jq again")
+	require.Contains(t, next(record.RefreshChecksums, record.JobFailed, record.PhasePreparation, "evaluation failed"), "dockhand checksums jq again")
 
 	// A branch dockhand never prepared has no action to re-run but its own.
 	require.Contains(t, next(record.Verify, record.JobNeedsAttention, record.PhaseVerification, "workflow is disabled"), "dockhand verify jq again")
