@@ -192,3 +192,25 @@ func TestApplicabilityComparesWorkflowEvidenceOnTheRemoteBranch(t *testing.T) {
 	require.Equal(t, "candidate", record.BuildSpec{Branch: "renamed", RemoteBranch: "candidate"}.PushBranch())
 	require.Equal(t, "renamed", record.BuildSpec{Branch: "renamed"}.PushBranch())
 }
+
+func TestJudgeAndReuseAcceptOnlyAnAdvisoryTestFailure(t *testing.T) {
+	t.Parallel()
+	build := record.StepResult{Package: "fixture", Phase: "build", Verdict: record.VerdictPassed}
+	test := record.StepResult{Package: "fixture", Phase: "test", Verdict: record.VerdictFailed, Detail: "2 failed"}
+	observation := func(steps []record.StepResult, failure string) verify.Observation {
+		return verify.Observation{Run: record.ProviderRun{Provider: "tart", RequestID: "request", RunID: "run"}, State: record.AttemptFinished, Verdict: record.VerdictPassed, ObservedAt: time.Now(), Steps: steps, TestFailure: failure}
+	}
+	evidence, err := verify.Judge(observation([]record.StepResult{build, test}, "2 failed"))
+	require.NoError(t, err, "declared tests that failed under the advisory policy are a pass that says so")
+	require.Equal(t, "2 failed", evidence.TestFailure)
+	require.Equal(t, record.VerdictFailed, evidence.Steps[1].Verdict, "the step keeps what happened")
+	_, err = verify.Judge(observation([]record.StepResult{build, test}, ""))
+	require.ErrorContains(t, err, "non-passing step", "a failed test step with no advisory failure recorded is inconsistent")
+	failedBuild := build
+	failedBuild.Verdict = record.VerdictFailed
+	_, err = verify.Judge(observation([]record.StepResult{failedBuild}, "2 failed"))
+	require.ErrorContains(t, err, "non-passing step", "only the test step may fail under a pass")
+
+	attempt := record.Attempt{ID: "a", Spec: reusableBuild(), State: record.AttemptFinished, Evidence: &evidence}
+	require.True(t, verify.Applicable(reusableBuild(), attempt).Matches, "a pass with an advisory test failure is reusable evidence")
+}

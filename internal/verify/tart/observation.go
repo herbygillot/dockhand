@@ -87,7 +87,15 @@ func (o *operation) observe(ctx context.Context, v record.ProviderExecution, dat
 	result.Failure = status.Failure
 	result.Detail = status.Detail
 	if _, err = verify.Judge(result); err != nil {
-		return verify.Observation{}, err
+		// A guest result the judge refuses is a disagreement between the two
+		// programs, which another look will not change: settle it as errored,
+		// keep the log, and release the VM rather than observing the same
+		// answer forever.
+		result.Verdict, result.Failure = record.VerdictErrored, nil
+		result.Detail = "guest result is inconsistent: " + err.Error()
+		if _, err = verify.Judge(result); err != nil {
+			return verify.Observation{}, err
+		}
 	}
 	log := filepath.Join(o.directory(v), "build.log")
 	if err = o.machine.Logs(ctx, v.Resource, log); err != nil {

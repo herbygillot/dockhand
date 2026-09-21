@@ -36,7 +36,7 @@ func Judge(observation Observation) (record.Evidence, error) {
 			return record.Evidence{}, fmt.Errorf("verify: passing observation includes a failure")
 		}
 		for _, step := range observation.Steps {
-			if step.Verdict != record.VerdictPassed {
+			if step.Verdict != record.VerdictPassed && !advisoryFailure(step, observation.TestFailure) {
 				return record.Evidence{}, fmt.Errorf("verify: passing observation contains a non-passing step")
 			}
 		}
@@ -85,4 +85,13 @@ func Judge(observation Observation) (record.Evidence, error) {
 		evidence.Failure = &failure
 	}
 	return evidence, nil
+}
+
+// advisoryFailure is the one non-passing step a passing verdict may carry:
+// the port's declared tests failed under a policy that made them advisory,
+// which the observation says in TestFailure. The step keeps its failed
+// verdict, since that is what happened, and the verdict stays passed, since
+// that is what the policy means.
+func advisoryFailure(step record.StepResult, testFailure string) bool {
+	return step.Phase == "test" && step.Verdict == record.VerdictFailed && testFailure != ""
 }

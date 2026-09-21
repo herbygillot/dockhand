@@ -686,3 +686,31 @@ func TestBuildConfigWarnsWhenHostAndImageMacPortsDiffer(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, strings.Join(messages, "\n"), "Warning")
 }
+
+func TestInconsistentGuestResultSettlesAsErroredAndAdvisoryFailuresPass(t *testing.T) {
+	t.Parallel()
+	f, m := singleRun(t)
+	result, err := f.provider.Submit(t.Context(), f.request)
+	require.NoError(t, err)
+	failed := record.StepResult{Package: "fixture", Phase: "test", Verdict: record.VerdictFailed, Detail: "2 failed"}
+	m.results[result.Run.RunID] = guestResult{Protocol: 1, ID: string(result.Run.RequestID), Digest: buildDigest(f.request.Spec), State: "finished", Verdict: record.VerdictPassed, TestFailure: "2 failed", Steps: []record.StepResult{{Package: "fixture", Phase: "build", Verdict: record.VerdictPassed}, failed}}
+	observed, err := f.provider.Observe(t.Context(), result.Run)
+	require.NoError(t, err)
+	require.Equal(t, record.AttemptFinished, observed.State)
+	require.Equal(t, record.VerdictPassed, observed.Verdict, "an advisory test failure is a pass that says so")
+	require.Equal(t, "2 failed", observed.TestFailure)
+
+	f, m = singleRun(t)
+	result, err = f.provider.Submit(t.Context(), f.request)
+	require.NoError(t, err)
+	m.results[result.Run.RunID] = guestResult{Protocol: 1, ID: string(result.Run.RequestID), Digest: buildDigest(f.request.Spec), State: "finished", Verdict: record.VerdictPassed, Steps: []record.StepResult{{Package: "fixture", Phase: "build", Verdict: record.VerdictFailed}}}
+	observed, err = f.provider.Observe(t.Context(), result.Run)
+	require.NoError(t, err)
+	require.Equal(t, record.AttemptFinished, observed.State)
+	require.Equal(t, record.VerdictErrored, observed.Verdict, "a result the judge refuses settles rather than being observed forever")
+	require.Contains(t, observed.Detail, "guest result is inconsistent: verify: passing observation contains a non-passing step")
+	require.FileExists(t, observed.Logs[0].Location)
+	released, err := f.provider.Release(t.Context(), result.Resources[0])
+	require.NoError(t, err)
+	require.True(t, released.Confirmed)
+}

@@ -26,7 +26,7 @@ func Applicable(wanted record.BuildSpec, previous record.Attempt) Applicability 
 		reject("previous attempt has no conclusive passing evidence")
 	} else {
 		for _, step := range evidence.Steps {
-			if step.Verdict != record.VerdictPassed {
+			if step.Verdict != record.VerdictPassed && !advisoryFailure(step, evidence.TestFailure) {
 				reject("previous evidence includes a non-passing step")
 				break
 			}
