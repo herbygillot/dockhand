@@ -92,7 +92,7 @@ func (s *Service) Resolve(ctx context.Context, port macports.PortInfo, requested
 	if version == port.Version {
 		return record.Release{}, fmt.Errorf("upstream: %s is already at version %s", port.Name, port.Version)
 	}
-	return classified(record.Release{Selection: record.Selection{Requested: requested}, Version: version, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: selection.Candidate.Tag, Commit: commits[selection.Candidate.Tag], ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}, port.Version), nil
+	return classified(record.Release{Selection: record.Selection{Requested: requested, CurrentVersion: port.Version}, Version: version, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: selection.Candidate.Tag, Commit: commits[selection.Candidate.Tag], ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}, port.Version), nil
 }
 
 func (s *Service) Check(ctx context.Context, port macports.PortInfo, release record.Release) error {

@@ -70,7 +70,15 @@ func (r *Repository) ReplaceContribution(ctx context.Context, branch, previous, 
 			if err != nil {
 				return fmt.Errorf("git: cannot guard checkout index: %w", err)
 			}
-			defer func() { lock.Close(); os.Remove(name + ".lock") }()
+			held := true
+			release := func() {
+				if held {
+					lock.Close()
+					os.Remove(name + ".lock")
+					held = false
+				}
+			}
+			defer release()
 			captured, err := r.CaptureCheckout(ctx)
 			if err != nil {
 				return err
@@ -92,8 +100,31 @@ func (r *Repository) ReplaceContribution(ctx context.Context, branch, previous, 
 			if err != nil {
 				return err
 			}
-			if captured.Branch != branch || captured.Head != previous || captured.Tree != tree || strings.TrimSpace(string(index)) != tree {
+			staged := strings.TrimSpace(string(index))
+			if captured.Branch != branch || captured.Head != previous {
 				return fmt.Errorf("git: checkout/index changed or edits are unstaged; stage the intended amendment, or switch away before rebasing; candidate %s is preserved", candidate)
+			}
+			if captured.Tree != tree || staged != tree {
+				// The checkout does not hold the amendment. A checkout clean at
+				// the previous commit is moved forward with the branch, as a
+				// fast-forward would: the index and working tree take the
+				// candidate's tree, touching only the files it changes, and the
+				// ref moves after. An interruption between the two leaves the
+				// amendment staged against the previous head, which the rule
+				// above accepts on the retry. Anything else is the person's
+				// work, and stays theirs.
+				trees, err := r.CommitTrees(ctx, []string{previous})
+				if err != nil {
+					return err
+				}
+				clean := trees[previous]
+				if captured.Tree != clean || staged != clean {
+					return fmt.Errorf("git: checkout/index changed or edits are unstaged; stage the intended amendment, or switch away before rebasing; candidate %s is preserved", candidate)
+				}
+				release()
+				if _, err := r.run(ctx, nil, nil, "read-tree", "-m", "-u", clean, tree); err != nil {
+					return fmt.Errorf("git: moving the clean checkout to the amendment: %w", err)
+				}
 			}
 		}
 	}

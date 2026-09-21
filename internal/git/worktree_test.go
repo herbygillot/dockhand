@@ -202,3 +202,42 @@ func TestCaptureRealPortsCheckout(t *testing.T) {
 	require.Equal(t, before, after)
 	require.Equal(t, head, workGit(t, repo, "rev-parse", "HEAD"))
 }
+
+func TestReplaceContributionMovesACleanCheckoutForwardAndRefusesADirtyOne(t *testing.T) {
+	t.Parallel()
+	repo := snapshotRepo(t)
+	workFile(t, repo, "devel/fixture/Portfile", "version 1\n")
+	workGit(t, repo, "add", ".")
+	workGit(t, repo, "commit", "-qm", "fixture: one")
+	branch := strings.TrimSpace(string(workGit(t, repo, "rev-parse", "--abbrev-ref", "HEAD")))
+	previous := strings.TrimSpace(string(workGit(t, repo, "rev-parse", "HEAD")))
+	trees, err := repo.CommitTrees(t.Context(), []string{previous})
+	require.NoError(t, err)
+	candidateFor := func(contents string) (string, string) {
+		before, _, err := repo.File(t.Context(), trees[previous], "devel/fixture/Portfile")
+		require.NoError(t, err)
+		tree, err := repo.EditTree(t.Context(), trees[previous], []git.FileEdit{{Path: "devel/fixture/Portfile", Before: before, After: []byte(contents), Mode: before.Mode}})
+		require.NoError(t, err)
+		sig := git.Signature{Name: "Fixture", Email: "fixture@example.invalid", When: time.Now()}
+		commit, err := repo.WriteCommit(t.Context(), git.Commit{Tree: tree, Parents: []string{previous}, Message: "fixture: amended", Author: sig, Committer: sig})
+		require.NoError(t, err)
+		return commit, tree
+	}
+	candidate, tree := candidateFor("version 2\n")
+	require.NoError(t, repo.ReplaceContribution(t.Context(), branch, previous, candidate, tree), "a clean checkout at the previous commit moves forward")
+	head := strings.TrimSpace(string(workGit(t, repo, "rev-parse", "HEAD")))
+	require.Equal(t, candidate, head)
+	data, err := os.ReadFile(filepath.Join(repo.Root, "devel/fixture/Portfile"))
+	require.NoError(t, err)
+	require.Equal(t, "version 2\n", string(data), "the working tree took the amendment")
+	require.Empty(t, strings.TrimSpace(string(workGit(t, repo, "status", "--porcelain"))), "nothing is left staged or modified")
+
+	workFile(t, repo, "devel/fixture/Portfile", "version 2\nmy edit\n")
+	other, otherTree := candidateFor("version 3\n")
+	err = repo.ReplaceContribution(t.Context(), branch, candidate, other, otherTree)
+	require.ErrorContains(t, err, "stage the intended amendment", "an edited checkout is the person's work")
+	require.Equal(t, candidate, strings.TrimSpace(string(workGit(t, repo, "rev-parse", "HEAD"))))
+	data, err = os.ReadFile(filepath.Join(repo.Root, "devel/fixture/Portfile"))
+	require.NoError(t, err)
+	require.Equal(t, "version 2\nmy edit\n", string(data))
+}
