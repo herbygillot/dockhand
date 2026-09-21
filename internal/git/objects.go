@@ -237,3 +237,39 @@ func (r *Repository) SingleParent(ctx context.Context, commit string) (string, e
 	}
 	return fields[1], nil
 }
+
+// CommitBefore is the newest first-parent ancestor of start, start itself
+// included, committed at or before the instant; empty when none is.
+func (r *Repository) CommitBefore(ctx context.Context, start string, before time.Time) (string, error) {
+	if !ValidObjectID(start) {
+		return "", fmt.Errorf("git: literal commit objects are required")
+	}
+	out, err := r.output(ctx, "rev-list", "-1", "--first-parent", "--before="+before.UTC().Format(time.RFC3339), start, "--")
+	if err != nil {
+		return "", err
+	}
+	value := strings.TrimSpace(string(out))
+	if value == "" {
+		return "", nil
+	}
+	if !ValidObjectID(value) {
+		return "", fmt.Errorf("git: invalid commit from rev-list")
+	}
+	return value, nil
+}
+
+// CommitTime is the committer time of a commit.
+func (r *Repository) CommitTime(ctx context.Context, commit string) (time.Time, error) {
+	if !ValidObjectID(commit) {
+		return time.Time{}, fmt.Errorf("git: literal commit objects are required")
+	}
+	out, err := r.output(ctx, "show", "-s", "--format=%ct", commit, "--")
+	if err != nil {
+		return time.Time{}, err
+	}
+	seconds, err := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("git: invalid commit time")
+	}
+	return time.Unix(seconds, 0).UTC(), nil
+}

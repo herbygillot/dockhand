@@ -42,6 +42,10 @@ type Config struct {
 	Digest         string
 	Runtime        string
 	CacheDirectory string
+	// Mirror enables the MacPorts mirror's index as a bootstrap seed for a
+	// cache with no usable generation; nil keeps indexing offline, which
+	// assess and outdated rely on.
+	Mirror *Mirror
 }
 
 // DefaultMirrorURL returns the MacPorts mirror index for a platform. Recorded
@@ -201,13 +205,19 @@ func Stage(ctx context.Context, repo *git.Repository, source record.Source, plat
 	var entry string
 	if baseTree != "" && baseTree != tree {
 		// The base generation is an exact seed for the candidate and the
-		// preferred seed for later work from the same upstream.
-		if _, err := cache.ensure(ctx, repo, baseTree, "", false, nil, true); err != nil {
+		// preferred seed for later work from the same upstream. The base
+		// names its commit when it is one, which is what the mirror
+		// bootstrap brackets.
+		baseCommit := ""
+		if string(source.Base) != baseTree {
+			baseCommit = string(source.Base)
+		}
+		if _, err := cache.ensure(ctx, repo, baseTree, "", false, nil, true, baseCommit); err != nil {
 			return err
 		}
-		entry, err = cache.ensure(ctx, repo, tree, root, true, []string{baseTree}, false)
+		entry, err = cache.ensure(ctx, repo, tree, root, true, []string{baseTree}, false, string(source.Commit))
 	} else {
-		entry, err = cache.ensure(ctx, repo, tree, root, source.Base != "", nil, true)
+		entry, err = cache.ensure(ctx, repo, tree, root, source.Base != "", nil, true, string(source.Commit))
 	}
 	if err != nil {
 		return err
@@ -357,7 +367,8 @@ func buildPortIndex(ctx context.Context, c Config, platform record.Platform, sou
 			return fmt.Errorf("portindex: executable produced an incomplete index")
 		}
 		meta.Strict, meta.Changed, meta.Full, meta.Built = strict, len(changed), seed == "", time.Now().UTC()
-		if seed != "" {
+		meta.Duration = time.Since(started).Milliseconds()
+		if seed != "" && meta.Mirror == nil {
 			meta.Seed = filepath.Base(seed)
 		}
 		encoded, err := json.Marshal(meta)
@@ -372,6 +383,8 @@ func buildPortIndex(ctx context.Context, c Config, platform record.Platform, sou
 	pass := "incremental"
 	if seed == "" {
 		pass = "full"
+	} else if meta.Mirror != nil {
+		pass = "incremental from the mirror"
 	}
 	progress.VerboseReport(ctx, "PortIndex generated (%s pass, %s)", pass, time.Since(started).Round(time.Second))
 	return nil

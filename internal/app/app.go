@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"maps"
 	"net/http"
 	"path/filepath"
@@ -73,7 +74,7 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		return nil, err
 	}
 
-	ports := portReader(config, repo)
+	ports := portReader(config, repo, &portindex.Mirror{HTTP: http.DefaultClient})
 	githubClient := newGitHubClient(config.GitHub)
 	discovery := releaseDiscovery(ports, githubClient, http.DefaultClient)
 	preparation := &preparation.Service{Repo: repo, Ports: ports, Upstream: discovery, DependencyTools: config.DependencyTools}

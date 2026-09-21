@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"path"
 	"strings"
 
@@ -68,7 +67,7 @@ type Workspace struct {
 func (w *Workspace) Close() error { return w.files.Close() }
 
 // Open freezes HEAD, then selects explicit ports or stages and queries its index.
-func Open(ctx context.Context, repo *git.Repository, platform record.Platform, index portindex.Config, client *http.Client, selection Selection) (_ *Workspace, err error) {
+func Open(ctx context.Context, repo *git.Repository, platform record.Platform, index portindex.Config, selection Selection) (_ *Workspace, err error) {
 	if err := selection.Validate(); err != nil {
 		return nil, err
 	}
@@ -93,14 +92,14 @@ func Open(ctx context.Context, repo *git.Repository, platform record.Platform, i
 	if err := macports.ValidatePortsTree(files.Root, repo.Root); err != nil {
 		return nil, err
 	}
-	ports, problems, err := selectPorts(ctx, repo, source, platform, index, client, files.Root, selection)
+	ports, problems, err := selectPorts(ctx, repo, source, platform, index, files.Root, selection)
 	if err != nil {
 		return nil, err
 	}
 	return &Workspace{Source: source, Root: files.Root, Ports: ports, Problems: problems, files: files}, nil
 }
 
-func selectPorts(ctx context.Context, repo *git.Repository, source record.Source, platform record.Platform, config portindex.Config, client *http.Client, root string, selection Selection) ([]Port, []portindex.SelectionProblem, error) {
+func selectPorts(ctx context.Context, repo *git.Repository, source record.Source, platform record.Platform, config portindex.Config, root string, selection Selection) ([]Port, []portindex.SelectionProblem, error) {
 	var selected []Port
 	var problems []portindex.SelectionProblem
 	seen := map[string]bool{}

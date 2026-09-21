@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"io/fs"
 	"net/http"
 	"path/filepath"
@@ -63,6 +64,6 @@ func makeInput(ctx context.Context, repo *git.Repository, request verify.Request
 	}
 	payload := map[string][]byte{"guest.tcl": guestScript, "input.json": input, "guest.plist": guestPlist(c.GuestPrefix)}
 	path := filepath.Join(directory, "input.tar")
-	err = staging.Archive(ctx, repo, staging.Request{AdditionalTargets: request.Spec.Preinstall, Source: request.Spec.Source, Target: request.Spec.Target, Platform: request.Spec.Config.Platform, Index: sourceIndex(c, indexCache)}, path, payload, client)
+	err = staging.Archive(ctx, repo, staging.Request{AdditionalTargets: request.Spec.Preinstall, Source: request.Spec.Source, Target: request.Spec.Target, Platform: request.Spec.Config.Platform, Index: sourceIndex(c, indexCache, &portindex.Mirror{HTTP: client})}, path, payload, client)
 	return path, err
 }

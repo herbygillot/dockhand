@@ -16,11 +16,11 @@ func Outdated(ctx context.Context, config Config, selection outdated.Selection) 
 	if err != nil {
 		return outdated.Result{}, err
 	}
-	ports := portReader(config, repo)
+	ports := portReader(config, repo, nil)
 	index, err := surveyIndex(config, len(selection.Ports) == 0)
 	if err != nil {
 		return outdated.Result{}, err
 	}
-	service := outdated.Service{Repo: repo, Ports: ports, Upstream: releaseDiscovery(ports, newGitHubClient(config.GitHub), http.DefaultClient), Index: index, HTTP: http.DefaultClient}
+	service := outdated.Service{Repo: repo, Ports: ports, Upstream: releaseDiscovery(ports, newGitHubClient(config.GitHub), http.DefaultClient), Index: index}
 	return service.Observe(ctx, selection)
 }

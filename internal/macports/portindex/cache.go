@@ -38,6 +38,12 @@ type generation struct {
 	Full    bool      `json:"full"`
 	Strict  bool      `json:"strict"`
 	Built   time.Time `json:"built_at"`
+	// Duration is how long the indexer ran, in milliseconds, so the cost
+	// of a full pass is a measurement rather than a figure.
+	Duration int64 `json:"duration_ms"`
+	// Mirror is the provenance of a generation seeded from the mirror's
+	// index rather than from a generation of this cache.
+	Mirror *mirrorProvenance `json:"mirror,omitempty"`
 }
 
 type environment struct {
@@ -125,9 +131,11 @@ func (c *cache) usable(tree string, strict bool) bool {
 // ensure returns the directory of a usable generation for the tree, building
 // it when needed. An empty root materializes the tree privately for indexing.
 // Seeds name preferred trees to derive from; without them the latest pointer
-// and recently used generations are tried. The latest pointer advances only
-// when requested, so candidate trees never displace an upstream seed.
-func (c *cache) ensure(ctx context.Context, repo *git.Repository, tree, root string, strict bool, seeds []string, advance bool) (string, error) {
+// and recently used generations are tried, and then, for a non-strict request
+// with the mirror enabled, the mirror's index bracketed to the tree's commit.
+// The latest pointer advances only when requested, so candidate trees never
+// displace an upstream seed.
+func (c *cache) ensure(ctx context.Context, repo *git.Repository, tree, root string, strict bool, seeds []string, advance bool, commit string) (string, error) {
 	if !git.ValidObjectID(tree) {
 		return "", fmt.Errorf("portindex: invalid source tree %q", tree)
 	}
@@ -168,7 +176,19 @@ func (c *cache) ensure(ctx context.Context, repo *git.Repository, tree, root str
 	if err != nil {
 		return "", err
 	}
-	if err := buildPortIndex(ctx, c.config, c.platform, root, target, seed, changed, strict, guard, generation{Tree: tree}); err != nil {
+	meta := generation{Tree: tree}
+	if seed == "" && !strict && c.config.Mirror != nil && repo != nil && git.ValidObjectID(commit) {
+		var provenance *mirrorProvenance
+		seed, changed, provenance, err = c.mirrorSeed(ctx, repo, commit, tree)
+		if err != nil {
+			return "", err
+		}
+		if seed != "" {
+			defer os.RemoveAll(seed)
+			meta.Mirror = provenance
+		}
+	}
+	if err := buildPortIndex(ctx, c.config, c.platform, root, target, seed, changed, strict, guard, meta); err != nil {
 		return "", err
 	}
 	if advance {

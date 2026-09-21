@@ -11,7 +11,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/selection"
 )
 
-func portReader(config Config, repo *git.Repository) *selection.Reader {
+// portReader resolves names against a staged index. mirror, when given, lets
+// a cold cache bootstrap from the mirror's index; the commands that stay
+// offline pass nil.
+func portReader(config Config, repo *git.Repository, mirror *portindex.Mirror) *selection.Reader {
 	native := &eval.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}
 	// One command resolves names repeatedly against the same materialized
 	// tree; the generation is installed there once.
@@ -31,6 +34,7 @@ func portReader(config Config, repo *git.Repository) *selection.Reader {
 		if err != nil {
 			return nil, err
 		}
+		index.Mirror = mirror
 		platform := tree.Platform()
 		if platform.OS == "" {
 			platform, err = native.NativePlatform(ctx)

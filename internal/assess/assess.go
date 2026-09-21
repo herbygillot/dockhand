@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/version"
-	"net/http"
 	"path"
 
 	"github.com/herbygillot/dockhand/internal/git"
@@ -69,7 +68,6 @@ type Service struct {
 	Upstream        *upstream.Service
 	DependencyTools dependency.Tools
 	Index           portindex.Config
-	HTTP            *http.Client
 }
 
 func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err error) {
@@ -86,7 +84,7 @@ func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err er
 	if err != nil {
 		return Result{}, err
 	}
-	files, err := survey.Open(ctx, s.Repo, platform, s.Index, s.HTTP, request.Selection)
+	files, err := survey.Open(ctx, s.Repo, platform, s.Index, request.Selection)
 	if err != nil {
 		return Result{}, err
 	}

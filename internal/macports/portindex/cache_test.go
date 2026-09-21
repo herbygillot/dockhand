@@ -2,12 +2,15 @@ package portindex
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/progress"
@@ -273,4 +276,128 @@ func TestConcurrentStagersShareOneBuild(t *testing.T) {
 	}
 	joined := strings.Join(messages, "\n")
 	require.Equal(t, 1, strings.Count(joined, "Generating full PortIndex"), joined)
+}
+
+// commitAt records the working files with the given author and committer
+// time, so a test can bracket commits against a mirror's Last-Modified.
+func (f *indexFixture) commitAt(when time.Time) (commit, tree string) {
+	f.t.Helper()
+	f.run("add", "-A", ".")
+	command := exec.CommandContext(f.t.Context(), "git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "fixture")
+	command.Dir = f.root
+	stamp := when.UTC().Format(time.RFC3339)
+	command.Env = append(os.Environ(), "GIT_AUTHOR_DATE="+stamp, "GIT_COMMITTER_DATE="+stamp)
+	out, err := command.CombinedOutput()
+	require.NoError(f.t, err, "%s", out)
+	return f.run("rev-parse", "HEAD"), f.run("rev-parse", "HEAD^{tree}")
+}
+
+// A cold cache with the mirror enabled seeds from the mirror's index instead
+// of a full pass: the index's Last-Modified less the margin brackets a master
+// commit, the paths changed from it to the target are re-indexed, and the
+// generation records the provenance and is never strict. A target older than
+// the mirror's index, a shared-resource change since the bracket, and a cache
+// without the mirror each index in full; a strict candidate still derives
+// from the mirror-seeded base through the ordinary incremental path.
+func TestMirrorBootstrapSeedsAColdCacheWithinItsBracket(t *testing.T) {
+	f := newIndexFixture(t)
+	start := time.Date(2026, 9, 21, 8, 0, 0, 0, time.UTC)
+	f.put("devel/working/Portfile", workingPortfile)
+	f.put("devel/other/Portfile", "PortSystem 1.0\nname other\nversion 1\ncategories devel\n")
+	older, olderTree := f.commitAt(start)
+	_, _, err := f.stage(record.Source{Commit: record.ObjectID(older), Tree: record.ObjectID(olderTree)})
+	require.NoError(t, err)
+	mirrored, err := os.ReadFile(filepath.Join(f.environment(), generationsDirectory, olderTree, portIndexName))
+	require.NoError(t, err)
+	lastModified := start.Add(150 * time.Minute)
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		require.Equal(t, "/PortIndex", r.URL.Path)
+		w.Header().Set("Last-Modified", lastModified.Format(http.TimeFormat))
+		w.Write(mirrored)
+	}))
+	defer server.Close()
+	f.put("devel/working/Portfile", strings.Replace(workingPortfile, "version 1", "version 2", 1))
+	f.put("devel/new/Portfile", "PortSystem 1.0\nname new\nversion 1\ncategories devel\n")
+	newer, newerTree := f.commitAt(start.Add(3 * time.Hour))
+
+	cold := *f
+	cold.config.CacheDirectory = t.TempDir()
+	cold.config.Mirror = &Mirror{HTTP: server.Client(), URL: server.URL + "/PortIndex"}
+	index, messages, err := cold.stage(record.Source{Commit: record.ObjectID(newer), Tree: record.ObjectID(newerTree)})
+	require.NoError(t, err)
+	requireVersion(t, index, "working", "2")
+	requireVersion(t, index, "new", "1")
+	requireVersion(t, index, "other", "1")
+	joined := strings.Join(messages, "\n")
+	require.Contains(t, joined, "Seeding the PortIndex from the mirror index of 2026-09-21T10:30:00Z, re-indexing 2 paths changed since master "+older[:12])
+	require.Contains(t, joined, "incremental from the mirror")
+	require.NotContains(t, joined, "Generating full PortIndex")
+	require.Equal(t, 1, requests)
+	meta, ok := readGeneration(filepath.Join(cold.environment(), generationsDirectory, newerTree))
+	require.True(t, ok)
+	require.False(t, meta.Full)
+	require.False(t, meta.Strict, "the mirror's indexer is not the local one")
+	require.Empty(t, meta.Seed)
+	require.Equal(t, 2, meta.Changed)
+	require.Positive(t, meta.Duration)
+	require.NotNil(t, meta.Mirror)
+	require.Equal(t, &mirrorProvenance{URL: server.URL + "/PortIndex", LastModified: lastModified, Commit: older, Margin: "2h0m0s"}, meta.Mirror)
+	entries, err := os.ReadDir(cold.environment())
+	require.NoError(t, err)
+	for _, entry := range entries {
+		require.False(t, strings.HasPrefix(entry.Name(), ".mirror-seed-"), "the downloaded seed is removed")
+	}
+
+	// A strict candidate derives from the mirror-seeded base as from any other.
+	f.put("devel/working/Portfile", strings.Replace(workingPortfile, "version 1", "version 3", 1))
+	f.run("add", "-A", ".")
+	candidateTree := f.run("write-tree")
+	require.NotEqual(t, newerTree, candidateTree)
+	index, _, err = cold.stage(record.Source{Tree: record.ObjectID(candidateTree), Base: record.ObjectID(newer)})
+	require.NoError(t, err)
+	requireVersion(t, index, "working", "3")
+	meta, ok = readGeneration(filepath.Join(cold.environment(), generationsDirectory, candidateTree))
+	require.True(t, ok)
+	require.True(t, meta.Strict)
+	require.Equal(t, newerTree, meta.Seed)
+	require.Nil(t, meta.Mirror)
+	require.Equal(t, 1, requests, "the base generation was reused")
+	f.put("devel/working/Portfile", strings.Replace(workingPortfile, "version 1", "version 2", 1))
+
+	// A target older than the mirror's index cannot be made current from it.
+	stale := *f
+	stale.config.CacheDirectory = t.TempDir()
+	stale.config.Mirror = cold.config.Mirror
+	_, messages, err = stale.stage(record.Source{Commit: record.ObjectID(older), Tree: record.ObjectID(olderTree)})
+	require.NoError(t, err)
+	require.Contains(t, strings.Join(messages, "\n"), "predates the mirror index")
+	require.Contains(t, strings.Join(messages, "\n"), "Generating full PortIndex")
+	require.Equal(t, 2, requests)
+
+	// Shared resources changed since the bracket need a full pass.
+	f.put("_resources/port1.0/group/fixture-1.0.tcl", "# a group\n")
+	grouped, groupedTree := f.commitAt(start.Add(4 * time.Hour))
+	resourced := *f
+	resourced.config.CacheDirectory = t.TempDir()
+	resourced.config.Mirror = cold.config.Mirror
+	_, messages, err = resourced.stage(record.Source{Commit: record.ObjectID(grouped), Tree: record.ObjectID(groupedTree)})
+	require.NoError(t, err)
+	require.Contains(t, strings.Join(messages, "\n"), "Shared resources changed since the mirror index's bracket "+older[:12])
+	require.Contains(t, strings.Join(messages, "\n"), "Generating full PortIndex")
+	require.Equal(t, 3, requests)
+
+	// Without the mirror a cold cache builds locally and touches no network.
+	offline := *f
+	offline.config.CacheDirectory = t.TempDir()
+	offline.config.Mirror = nil
+	_, messages, err = offline.stage(record.Source{Commit: record.ObjectID(newer), Tree: record.ObjectID(newerTree)})
+	require.NoError(t, err)
+	require.Contains(t, strings.Join(messages, "\n"), "Generating full PortIndex")
+	require.Equal(t, 3, requests)
+	meta, ok = readGeneration(filepath.Join(offline.environment(), generationsDirectory, newerTree))
+	require.True(t, ok)
+	require.True(t, meta.Full)
+	require.Positive(t, meta.Duration)
 }

@@ -13,7 +13,7 @@ import (
 // SourceIndex returns the index recipe frozen in an accepted Tart configuration,
 // staged through the shared cache root. An empty cache root falls back to the
 // legacy location beneath the recorded artifact directory.
-func SourceIndex(build record.BuildConfig, indexCache string) (portindex.Config, error) {
+func SourceIndex(build record.BuildConfig, indexCache string, mirror *portindex.Mirror) (portindex.Config, error) {
 	var config Config
 	if build.Provider != verify.ProviderTart || len(build.ProviderConfig) == 0 {
 		return portindex.Config{}, fmt.Errorf("tart: recorded configuration required for source indexing")
@@ -24,12 +24,14 @@ func SourceIndex(build record.BuildConfig, indexCache string) (portindex.Config,
 	if config.Platform != build.Platform || config.PortIndexExecutable == "" || config.PortIndexDigest == "" || config.ArtifactDirectory == "" {
 		return portindex.Config{}, fmt.Errorf("tart: incomplete recorded index configuration")
 	}
-	return sourceIndex(config, indexCache), nil
+	return sourceIndex(config, indexCache, mirror), nil
 }
 
-func sourceIndex(c Config, indexCache string) portindex.Config {
+// sourceIndex is the staging index recipe; mirror lets a cold cache bootstrap
+// from the mirror's index, since verification already reaches the network.
+func sourceIndex(c Config, indexCache string, mirror *portindex.Mirror) portindex.Config {
 	if indexCache == "" {
 		indexCache = filepath.Join(c.ArtifactDirectory, "indexes")
 	}
-	return portindex.Config{Executable: c.PortIndexExecutable, Digest: c.PortIndexDigest, CacheDirectory: indexCache}
+	return portindex.Config{Executable: c.PortIndexExecutable, Digest: c.PortIndexDigest, CacheDirectory: indexCache, Mirror: mirror}
 }

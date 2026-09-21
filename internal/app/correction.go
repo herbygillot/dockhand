@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"github.com/herbygillot/dockhand/internal/macports/portindex"
+	"net/http"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -51,7 +53,7 @@ func PreviewCorrection(ctx context.Context, config Config, request workflow.Corr
 	if err != nil {
 		return workflow.BoundCorrection{}, err
 	}
-	ports := portReader(config, repo)
+	ports := portReader(config, repo, &portindex.Mirror{HTTP: http.DefaultClient})
 	services := Services{Workflow: &workflow.Engine{State: store, Repository: repository.ID, Repo: repo, Ports: ports}, ports: ports}
 	request.Preview = true
 	return services.BindCorrection(ctx, request, "", false)

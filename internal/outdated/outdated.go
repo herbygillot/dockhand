@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
@@ -35,7 +34,6 @@ type Service struct {
 	Ports    macports.NativeEvaluator
 	Upstream *upstream.Service
 	Index    portindex.Config
-	HTTP     *http.Client
 }
 
 // Observe captures local HEAD and assesses every selected port independently.
@@ -55,7 +53,7 @@ func (s *Service) Observe(ctx context.Context, selection Selection) (_ Result, e
 	if err != nil {
 		return Result{}, err
 	}
-	files, err := survey.Open(ctx, s.Repo, platform, s.Index, s.HTTP, selection)
+	files, err := survey.Open(ctx, s.Repo, platform, s.Index, selection)
 	if err != nil {
 		return Result{}, err
 	}
