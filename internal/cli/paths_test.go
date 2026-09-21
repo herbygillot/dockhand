@@ -68,9 +68,11 @@ func TestGlobalToolAndMacPortsPathsDefaultsAndPrecedence(t *testing.T) {
 			require.Contains(t, out.String(), "--git")
 			bump, _, err := root.Find([]string{"bump"})
 			require.NoError(t, err)
-			require.Equal(t, "P", bump.Flags().Lookup("no-publish").Shorthand)
-			require.Equal(t, "V", bump.Flags().Lookup("skip-verify").Shorthand)
-			require.Nil(t, bump.Flags().Lookup("no-verify"), "the old name is gone, not aliased")
+			require.Equal(t, "pr", bump.Flags().Lookup("to").DefValue, "the destination is named, and the PR is the default")
+			require.NotNil(t, bump.Flags().Lookup("unverified"))
+			for _, gone := range []string{"no-verify", "no-publish", "skip-verify"} {
+				require.Nil(t, bump.Flags().Lookup(gone), "%s is gone, not aliased", gone)
+			}
 			require.Nil(t, bump.Flags().Lookup("publish"), "publication is the default, not a flag")
 			require.Nil(t, bump.Flags().Lookup("wait"), "waiting is the default; --detach is the exception")
 			require.NoDirExists(t, filepath.Dir(db))

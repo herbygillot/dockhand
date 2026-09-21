@@ -46,7 +46,7 @@ func (r *runtime) correctionCommands() []*cobra.Command {
 				if err != nil {
 					return err
 				}
-				if diff && (cmd.Flags().Changed("to") || destination.unverified || destination.noPublish || destination.skipVerify || detach || trace || build.dependents) {
+				if diff && (cmd.Flags().Changed("to") || destination.unverified || detach || trace || build.dependents) {
 					return fmt.Errorf("--diff previews only; it does not go with --to, --unverified, --detach, --trace, or --dependents")
 				}
 				if build.dependents && skipVerify {
@@ -103,7 +103,6 @@ func (r *runtime) correctionCommands() []*cobra.Command {
 		command.Flags().BoolVar(&trace, "trace", false, "Follow build logs on stderr through completion; implies --debug")
 		command.MarkFlagsMutuallyExclusive("detach", "trace")
 		command.MarkFlagsMutuallyExclusive("trace", "unverified")
-		command.MarkFlagsMutuallyExclusive("trace", "skip-verify")
 		build.flags(command, r.config)
 		publicationFlags(command, &publication)
 		commands = append(commands, command)
