@@ -74,7 +74,8 @@ func (t *transaction) Change(ctx context.Context, id record.ChangeID) (record.Ch
 	var current, published, pullRequest, cleanup sql.NullString
 	var raw string
 	var created int64
-	dests, err := changes.scanArgs(map[string]any{"id": &v.ID, "branch": &v.Branch, "current_revision": &current, "disposition": &v.Disposition, "targets": &raw, "created_at": &created, "published_revision": &published, "pull_request_id": &pullRequest, "generated_commit": &v.GeneratedCommit, "initiating_target": &v.InitiatingTarget, "cleanup": &cleanup})
+	var keepBody int
+	dests, err := changes.scanArgs(map[string]any{"id": &v.ID, "branch": &v.Branch, "current_revision": &current, "disposition": &v.Disposition, "targets": &raw, "created_at": &created, "published_revision": &published, "pull_request_id": &pullRequest, "generated_commit": &v.GeneratedCommit, "initiating_target": &v.InitiatingTarget, "cleanup": &cleanup, "keep_body": &keepBody})
 	if err != nil {
 		return v, err
 	}
@@ -84,6 +85,7 @@ func (t *transaction) Change(ctx context.Context, id record.ChangeID) (record.Ch
 	v.CurrentRevision = record.RevisionID(current.String)
 	v.PublishedRevision, v.PullRequestID = record.RevisionID(published.String), record.PullRequestID(pullRequest.String)
 	v.CreatedAt = fromTime(created)
+	v.KeepBody = keepBody == 1
 	if cleanup.Valid && cleanup.String != "" {
 		v.Cleanup = &record.BranchCleanup{}
 		if err := decode(cleanup.String, v.Cleanup); err != nil {
@@ -145,9 +147,9 @@ func (t *transaction) PutChange(ctx context.Context, v record.Change) error {
 		}
 		cleanup = sql.NullString{String: encoded, Valid: true}
 	}
-	named := map[string]any{"id": v.ID, "branch": v.Branch, "current_revision": nullableID(v.CurrentRevision), "disposition": v.Disposition, "targets": raw, "created_at": v.CreatedAt.UnixMilli(), "published_revision": nullableID(v.PublishedRevision), "pull_request_id": nullableID(v.PullRequestID), "generated_commit": v.GeneratedCommit, "initiating_target": v.InitiatingTarget, "cleanup": cleanup}
+	named := map[string]any{"id": v.ID, "branch": v.Branch, "current_revision": nullableID(v.CurrentRevision), "disposition": v.Disposition, "targets": raw, "created_at": v.CreatedAt.UnixMilli(), "published_revision": nullableID(v.PublishedRevision), "pull_request_id": nullableID(v.PullRequestID), "generated_commit": v.GeneratedCommit, "initiating_target": v.InitiatingTarget, "cleanup": cleanup, "keep_body": boolInt(v.KeepBody)}
 	if old.ID != "" {
-		updated := []string{"branch", "current_revision", "disposition", "targets", "published_revision", "pull_request_id", "generated_commit", "cleanup"}
+		updated := []string{"branch", "current_revision", "disposition", "targets", "published_revision", "pull_request_id", "generated_commit", "cleanup", "keep_body"}
 		args, err := changes.updateArgs(updated, named, t.repo, v.ID)
 		if err != nil {
 			return err
@@ -564,4 +566,11 @@ func (t *transaction) OpenChangeByBranch(ctx context.Context, branch string) (re
 		return record.Change{}, storageError(err)
 	}
 	return t.Change(ctx, id)
+}
+
+func boolInt(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
 }

@@ -29,7 +29,15 @@ type CorrectionRequest struct {
 	// Tree, when set, is a prepared tree that becomes the replacement
 	// commit's contents in place of a checkout capture: an update dockhand
 	// prepared onto the contribution's own revision.
-	Tree              record.ObjectID
+	Tree record.ObjectID
+	// Squash replaces the branch's commits, however many, with one commit of
+	// the branch's tree on the contribution's base; the subject is the pull
+	// request's title when one is attached. It is how a stacked pull request
+	// becomes the one commit the port wants.
+	Squash bool
+	// Message, when set, is the whole commit message, as the person edited
+	// it, in place of the one composed from the contribution's.
+	Message           string
 	Base              record.ObjectID
 	Platform          record.Platform
 	ResolveBuild      BuildResolver
@@ -44,6 +52,8 @@ type BoundCorrection struct {
 	Request Request
 	Diff    string
 	Branch  string
+	// Message is the replacement commit's message, for a person to edit.
+	Message string
 }
 
 func correctionIdle(ctx context.Context, r state.Reader, id record.ChangeID, except record.JobID) error {
@@ -105,6 +115,7 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 	var change record.Change
 	var revision record.Revision
 	var remoteHead record.ObjectID
+	var title string
 	err = e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
 		var err error
 		change, err = r.OpenChangeByBranch(ctx, branch)
@@ -127,6 +138,7 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 			if pr.State != record.PullRequestOpen {
 				return fmt.Errorf("workflow: associated PR is %s", pr.State)
 			}
+			title = pr.Title
 			if pr.HeadBranch == branch {
 				remoteHead = pr.RemoteHead
 			} else {
@@ -143,11 +155,16 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 		return result, err
 	}
 	snapshot := committed
+	if change.KeepBody && input.Publication != nil && input.Publication.RefreshBody {
+		return result, fmt.Errorf("%w: %s was adopted with --keep-body; its pull request body is its author's", ErrInvalidRequest, initiatingNameOf(change))
+	}
 	if input.Tree != "" {
 		if !git.ValidObjectID(string(input.Tree)) {
 			return result, fmt.Errorf("%w: prepared tree must be a literal object", ErrInvalidRequest)
 		}
 		snapshot.Tree, snapshot.ModifiedPaths, snapshot.UntrackedPaths = input.Tree, nil, nil
+	} else if input.Squash {
+		// The branch's tree as committed, folded onto the base below.
 	} else if input.Action == record.Amend && input.Branch == "" {
 		snapshot, err = changeset.CaptureCheckout(ctx, e.Repo)
 		if err != nil {
@@ -187,6 +204,16 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 	if err != nil {
 		return result, err
 	}
+	if input.Squash && title != "" {
+		// A stacked pull request's commits say what they said; the title is
+		// what its author meant, in the port's own words when they wrote it
+		// that way, and with the port name supplied when they did not.
+		if _, _, ok := strings.Cut(title, ": "); ok {
+			message = title
+		} else if message, err = portedit.Subject(target.Name, title); err != nil {
+			return result, err
+		}
+	}
 	if input.Subject != "" || len(input.References) > 0 {
 		var subject string
 		if input.Subject != "" {
@@ -203,6 +230,14 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 		}
 		message = portedit.Rewrite(message, subject, input.References)
 	}
+	if input.Message != "" {
+		first, _, _ := strings.Cut(input.Message, "\n")
+		if strings.TrimSpace(first) == "" {
+			return result, fmt.Errorf("%w: the edited message needs a subject line", ErrInvalidRequest)
+		}
+		message = strings.TrimRight(input.Message, "\n")
+	}
+	result.Message = message
 	candidate, err := changeset.Correct(ctx, e.Repo, snapshot, revision.Source.Base, base, message, author)
 	if err != nil {
 		return result, err

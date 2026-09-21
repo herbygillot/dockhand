@@ -45,6 +45,19 @@ The default local image name follows the native release, such as `dockhand-base-
 
 All cooperating drivers using the same Tart home must use the same DB, capacity, and artifact directory. A separate DB does not coordinate the shared execution pool. Base images are hashed by contents. Digests persist in SQLite across invocations and repositories; unchanged file metadata permits reuse. A new or changed image still needs a full hash. `setup --capacity N` records the shared pool limit, initially two; every run reads the record, and a driver already running keeps the limit it started with until it restarts.
 
+## Adopt a pull request
+
+A pull request someone opened by hand, yours or a contributor's, comes in by number or URL:
+
+```sh
+dockhand adopt --pr 34812                        # your own fork: the PR's branch, with the PR attached
+dockhand amend jump --squash                     # fold its commits into one under the PR title, build, update the PR
+dockhand adopt --pr 34792 --keep-body            # someone else's: fetched as pr/34792; verify it, leave its description alone
+dockhand verify whisper
+```
+
+A head of several commits is adopted as it stands, and `amend <port> --squash` folds them into one commit under the pull request's title, verifies it, and updates the pull request; `--edit` opens the message in your editor first, and `--subject` and `--closes` apply as always. That is the whole answer for a contributor whose pull request has grown commits they do not know how to squash. A body without a Tested on section gains one when dockhand next updates the pull request, unless the contribution was adopted with `--keep-body`. A pull request from someone else's fork is verified and followed but not yet pushed to; the evaluation of their Portfile happens on your machine, and the judgement is yours.
+
 ## Verify, follow, and cancel work
 
 Verify current edits or committed branch contents, then reattach by port, branch, or the job ID that `-v` prints:

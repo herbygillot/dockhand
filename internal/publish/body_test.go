@@ -145,18 +145,25 @@ func TestRefreshingABodyReplacesOnlyTheEnvironmentSection(t *testing.T) {
 		"###### Tested on\n\nnew environment\n\n" +
 		"###### Verification\n\n- [ ] Tested basic functionality of all binary files.\n"
 
-	require.Equal(t, reviewed, keepBody(reviewed, fresh, false), "by default nothing is touched")
+	require.Equal(t, reviewed, keepBody(reviewed, fresh, false, false), "by default a body with the section is not touched")
 
-	refreshed := keepBody(reviewed, fresh, true)
+	refreshed := keepBody(reviewed, fresh, true, false)
 	require.Contains(t, refreshed, "new environment")
 	require.NotContains(t, refreshed, "old environment")
 	require.Contains(t, refreshed, "Maintainer asked for this wording.", "the description is the maintainer's")
 	require.Contains(t, refreshed, "- [x] Tested basic functionality", "a reviewer's tick is not regenerated away")
 	require.NotContains(t, refreshed, "machine title", "only the environment section comes across")
 
-	// A body somebody wrote themselves has no such section and is kept whole.
+	// A body somebody wrote themselves has no such section and gains it at
+	// the end, refresh or not; the rest of what they wrote is untouched.
 	written := "I wrote this by hand and there is no section here.\n"
-	require.Equal(t, written, keepBody(written, fresh, true))
-	// Neither is a fresh body without one able to overwrite anything.
-	require.Equal(t, reviewed, keepBody(reviewed, "no sections at all", true))
+	appended := "I wrote this by hand and there is no section here.\n\n###### Tested on\n\nnew environment\n"
+	require.Equal(t, appended, keepBody(written, fresh, true, false))
+	require.Equal(t, appended, keepBody(written, fresh, false, false))
+	// A contribution adopted with --keep-body leaves the body entirely its author's.
+	require.Equal(t, written, keepBody(written, fresh, true, true))
+	require.Equal(t, reviewed, keepBody(reviewed, fresh, true, true))
+	// A fresh body without a section overwrites nothing.
+	require.Equal(t, reviewed, keepBody(reviewed, "no sections at all", true, false))
+	require.Equal(t, written, keepBody(written, "no sections at all", false, false))
 }

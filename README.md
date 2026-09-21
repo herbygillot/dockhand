@@ -52,6 +52,7 @@ dockhand bump jq                                 # do it: branch, build, pull re
 dockhand status                                  # everything I have open
 dockhand console                                 # the same, live, and doing the work
 dockhand sync jq                              # record the PR's fate after review
+dockhand adopt --pr 34812 && dockhand amend jump --squash   # fold a contributor's commits into one, build, update the PR
 ```
 
 `outdated` reads your checkout and asks each port's upstream, or its livecheck, whether there is something newer. `adopt my-branch` brings a branch you made by hand into the same loop, which is how a Portfile dockhand cannot edit still gets built and published. `bump jq 1.8.1` names the version yourself; `bump-revision jq --subject "…"` and `checksums jq` do the other two kinds of update, with the same flags. `status` shows one row per port with its phase, state, and what comes next; `console` is the same table live, processing your pending work while open, with keys that run the other commands on the selected row. After a pull request is merged or closed, `sync` records it and cleans up the branches so the next bump starts fresh.

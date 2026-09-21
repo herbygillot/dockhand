@@ -3,6 +3,7 @@ package workflow_test
 import (
 	"context"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -204,8 +205,8 @@ func TestCorrectionUpdatesExistingPRAndPreservesHumanBody(t *testing.T) {
 	}
 	result := f.status(t, receipt.JobID)
 	require.Equal(t, record.JobCompleted, result.Jobs[0].Job.State, result.Jobs[0].Job.Detail)
-	require.Equal(t, 1, hosting.writes, "head replacement alone needs no redundant PR metadata write")
-	require.Equal(t, "human edited PR body", result.PullRequests[0].Body)
+	require.Equal(t, 2, hosting.writes, "the head replacement, and one write to give the hand-written body its Tested on section")
+	require.True(t, strings.HasPrefix(result.PullRequests[0].Body, "human edited PR body\n\n###### Tested on"), "the person's words stay first: %q", result.PullRequests[0].Body)
 	require.EqualValues(t, 1, result.PullRequests[0].Ref.Number)
 	require.Equal(t, result.Jobs[0].Job.Prepared.Source.Commit, result.PullRequests[0].RemoteHead)
 }

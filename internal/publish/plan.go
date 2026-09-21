@@ -141,7 +141,7 @@ func (s *Service) PlanTo(ctx context.Context, change record.Change, source recor
 		spec.HeadBranch = associated.HeadBranch
 		spec.ExpectedPR = associated
 		spec.RefreshBody = destination.RefreshBody
-		spec.Desired.Body = keepBody(associated.Body, content.Body, destination.RefreshBody)
+		spec.Desired.Body = keepBody(associated.Body, content.Body, destination.RefreshBody, change.KeepBody)
 	}
 	observed, err := s.Observe(ctx, spec)
 	if err != nil {
@@ -159,7 +159,7 @@ func (s *Service) PlanTo(ctx context.Context, change record.Change, source recor
 		}
 		spec.ExpectedPR = &observed.PullRequest
 		spec.RefreshBody = destination.RefreshBody
-		spec.Desired.Body = keepBody(observed.PullRequest.Body, content.Body, destination.RefreshBody)
+		spec.Desired.Body = keepBody(observed.PullRequest.Body, content.Body, destination.RefreshBody, change.KeepBody)
 	}
 	remote, err := s.Repo.RemoteHead(ctx, spec.PushURL, spec.HeadBranch)
 	if err != nil {

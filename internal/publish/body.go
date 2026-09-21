@@ -167,16 +167,25 @@ const verificationHeading = "###### Verification"
 // template changes or newer evidence supersedes it, and it is the only part no
 // person is expected to have written. A body without that section is one
 // somebody wrote themselves, so it is kept whole.
-func keepBody(existing, fresh string, refresh bool) string {
-	if !refresh {
-		return existing
-	}
-	from, to, ok := testedOnBounds(existing)
-	if !ok {
+// keepBody decides what an existing pull request body becomes. The
+// description and the checklist are never dockhand's to change. The Tested
+// on section is: a body without one gains it at the end, since a person's
+// pull request adopted by dockhand should show how it was built; a body with
+// one keeps it unless refresh rewrites it from this verification; and a
+// contribution adopted with keep says the body is entirely its author's.
+func keepBody(existing, fresh string, refresh, keep bool) string {
+	if keep {
 		return existing
 	}
 	replacement, freshOK := testedOnSection(fresh)
 	if !freshOK {
+		return existing
+	}
+	from, to, ok := testedOnBounds(existing)
+	if !ok {
+		return strings.TrimRight(existing, "\n") + "\n\n" + strings.TrimRight(replacement, "\n") + "\n"
+	}
+	if !refresh {
 		return existing
 	}
 	return existing[:from] + replacement + existing[to:]

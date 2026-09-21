@@ -143,6 +143,9 @@ func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, 
 	} else {
 		query.Target = change.Targets[0]
 	}
+	if change.KeepBody && input.Options.RefreshBody {
+		return Request{}, fmt.Errorf("%w: %s was adopted with --keep-body; its pull request body is its author's", ErrInvalidRequest, initiatingNameOf(change))
+	}
 	if input.SkipVerify {
 		return e.finishPublicationBind(ctx, input, change, revision, source, snapshot, evidence, associated)
 	}

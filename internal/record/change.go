@@ -41,7 +41,12 @@ type Change struct {
 	// Cleanup is the housekeeping a merged contribution owes, recorded
 	// with the merged disposition and settled afterwards; nil before the
 	// merge and on contributions retired before it was recorded.
-	Cleanup   *BranchCleanup `json:",omitempty"`
+	Cleanup *BranchCleanup `json:",omitempty"`
+	// KeepBody says the pull request's body is not dockhand's to touch: a
+	// contribution adopted from a pull request with --keep-body keeps the
+	// description its author wrote, and no publication rewrites or appends
+	// to it.
+	KeepBody  bool `json:",omitempty"`
 	CreatedAt time.Time
 }
 

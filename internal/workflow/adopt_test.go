@@ -4,7 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/workflow"
@@ -105,4 +107,80 @@ func TestAdoptSquashFoldsAStackedBranchAndKeepsTheOriginals(t *testing.T) {
 	backup, err := f.repo.ReadRef(t.Context(), "refs/dockhand/adopted/stacked")
 	require.NoError(t, err)
 	require.Equal(t, git.RefValue{Exists: true, Object: stacked}, backup, "the originals stay reachable")
+}
+
+func pullRequestFixture(t *testing.T, f *fixture, hosting *publicationForge, head record.ObjectID, headRepository, headBranch string) record.PullRequestRef {
+	t.Helper()
+	ref := record.PullRequestRef{Forge: "fixture", Repository: "macports/macports-ports", Number: 7, URL: "https://example.invalid/pull/7"}
+	hosting.observation = forge.PullRequestObservation{Found: true, ObservedAt: f.now(), PullRequest: record.PullRequest{Ref: ref, HeadRepository: headRepository, HeadBranch: headBranch, BaseBranch: "main", State: record.PullRequestOpen, RemoteHead: head, Title: "fixture: update to 2", Body: "I wrote this myself."}}
+	return ref
+}
+
+func TestAdoptPullRequestFromOwnForkReusesTheLocalBranchAndAttachesThePR(t *testing.T) {
+	t.Parallel()
+	f, hosting := manualPublicationFixture(t)
+	require.NoError(t, f.repo.Push(t.Context(), git.Push{Remote: hosting.remote, Branch: "candidate", Commit: string(f.source.Commit)}))
+	ref := pullRequestFixture(t, f, hosting, f.source.Commit, "author/ports", "candidate")
+	result, err := f.engine.AdoptContribution(t.Context(), workflow.AdoptRequest{PullRequest: &ref, Upstream: f.source.Base, Platform: buildPlatform, KeepBody: true})
+	require.NoError(t, err)
+	require.Equal(t, "candidate", result.Change.Branch, "the person's own fork keeps the pull request's branch name")
+	require.NotNil(t, result.PullRequest)
+	change, err := f.engine.SelectContribution(t.Context(), workflow.ContributionSelector{Target: "fixture"})
+	require.NoError(t, err)
+	require.Equal(t, result.PullRequest.ID, change.PullRequestID)
+	require.Equal(t, change.CurrentRevision, change.PublishedRevision, "the pull request's head is what is published")
+	require.True(t, change.KeepBody)
+	require.Contains(t, result.Detail, "amend fixture revises it and updates the pull request")
+
+	_, err = f.engine.BindPublication(t.Context(), workflow.PublicationRequest{ID: "refresh", Branch: "candidate", Options: publish.Options{RefreshBody: true}})
+	require.ErrorContains(t, err, "adopted with --keep-body")
+}
+
+func TestAdoptStackedPullRequestThenSquashFoldsItUnderThePRTitle(t *testing.T) {
+	t.Parallel()
+	f, hosting := manualPublicationFixture(t)
+	sig := git.Signature{Name: "Contributor", Email: "contributor@example.invalid", When: f.now()}
+	second := commitPortOnto(t, f, f.source.Commit, "version 2\nrevision 1\n", "oops", sig)
+	third := commitPortOnto(t, f, record.ObjectID(second), "version 2\nrevision 2\n", "fix again", sig)
+	require.NoError(t, f.repo.Push(t.Context(), git.Push{Remote: hosting.remote, Branch: "feature", Commit: third}))
+	ref := pullRequestFixture(t, f, hosting, record.ObjectID(third), "someone/ports", "feature")
+	result, err := f.engine.AdoptContribution(t.Context(), workflow.AdoptRequest{PullRequest: &ref, Upstream: f.source.Base, Platform: buildPlatform})
+	require.NoError(t, err)
+	require.Equal(t, "pr/7", result.Change.Branch, "someone else's head goes under a name that says so")
+	require.Equal(t, 3, result.Commits)
+	require.Equal(t, f.source.Base, result.Revision.Source.Base, "a stacked head is recorded on its merge base")
+	require.Contains(t, result.Detail, "amend fixture --squash")
+
+	input := workflow.CorrectionRequest{ID: "fold", Action: record.Amend, Target: "fixture", Squash: true, Platform: buildPlatform, SkipVerify: true}
+	bound, err := f.engine.BindCorrection(t.Context(), input)
+	require.NoError(t, err)
+	candidate := bound.Request.Spec.Preparation.Correction.Candidate
+	parent, err := f.repo.SingleParent(t.Context(), string(candidate.Commit))
+	require.NoError(t, err)
+	require.Equal(t, string(f.source.Base), parent, "one commit on the base")
+	_, headTree, err := f.repo.Branch(t.Context(), "pr/7")
+	require.NoError(t, err)
+	require.Equal(t, record.ObjectID(headTree), candidate.Tree, "the fold carries the head's tree")
+	require.Equal(t, "fixture: update to 2", bound.Message, "the pull request's title is the subject")
+	input.Message = "fixture: update to 2\n\nEdited by hand.\n"
+	bound, err = f.engine.BindCorrection(t.Context(), input)
+	require.NoError(t, err)
+	message, err := f.repo.CommitMessage(t.Context(), string(bound.Request.Spec.Preparation.Correction.Candidate.Commit))
+	require.NoError(t, err)
+	require.Equal(t, "fixture: update to 2\n\nEdited by hand.", message)
+}
+
+func commitPortOnto(t *testing.T, f *fixture, parent record.ObjectID, contents, message string, sig git.Signature) string {
+	t.Helper()
+	blob, err := f.repo.WriteBlob(t.Context(), []byte(contents))
+	require.NoError(t, err)
+	port, err := f.repo.WriteTree(t.Context(), []git.TreeEntry{{Name: "Portfile", Object: blob, Type: "blob", Mode: 0100644}})
+	require.NoError(t, err)
+	category, err := f.repo.WriteTree(t.Context(), []git.TreeEntry{{Name: "fixture", Object: port, Type: "tree", Mode: 040000}})
+	require.NoError(t, err)
+	tree, err := f.repo.WriteTree(t.Context(), []git.TreeEntry{{Name: "devel", Object: category, Type: "tree", Mode: 040000}})
+	require.NoError(t, err)
+	commit, err := f.repo.WriteCommit(t.Context(), git.Commit{Tree: tree, Parents: []string{string(parent)}, Message: message, Author: sig, Committer: sig})
+	require.NoError(t, err)
+	return commit
 }

@@ -17,15 +17,15 @@ func (r *runtime) correctionCommands() []*cobra.Command {
 	for _, action := range []record.Action{record.Amend, record.Rebase} {
 		var branch, subject string
 		var references referenceFlags
-		var dryRun, detach, trace bool
+		var dryRun, detach, trace, squash, edit bool
 		var build buildOptions
 		var destination destinationFlags
 		var publication publish.Options
 		short := "Replace a contribution's commit with your checkout's changes and verify it"
-		long := "Amend captures the tracked checkout of the contribution's branch as its new commit; stage intended additions and deletions first, since the capture takes what Git tracks. A target, or --branch, selects the contribution instead of the current branch. --subject replaces the commit subject after the port name and keeps the body; --closes and --see add the ticket trailers the commit does not already carry. The replacement is verified and its PR updated, in the foreground through both; --to verified (-P) stops after verification, --unverified (-V) updates the PR without building and says so in its body, both together stop at the branch, and --detach returns once the work is accepted. --dry-run previews without accepting work or moving branches."
+		long := "Amend captures the tracked checkout of the contribution's branch as its new commit; stage intended additions and deletions first, since the capture takes what Git tracks. A target, or --branch, selects the contribution instead of the current branch. --subject replaces the commit subject after the port name and keeps the body; --closes and --see add the ticket trailers the commit does not already carry; --edit opens the message in your editor first. --squash replaces the branch's commits, however many, with one commit of its tree, under the pull request's title when one is attached, which is how an adopted pull request's stack becomes the one commit the port wants. The replacement is verified and its PR updated, in the foreground through both; --to verified (-P) stops after verification, --unverified (-V) updates the PR without building and says so in its body, both together stop at the branch, and --detach returns once the work is accepted. --dry-run previews without accepting work or moving branches."
 		if action == record.Rebase {
 			short = "Reapply a contribution onto fresh MacPorts master and verify it"
-			long = "Rebase fetches MacPorts master and reapplies the contribution as one commit in a disposable workspace, then moves the branch to the result. Switch away from the branch before rebasing it. A conflict preserves that workspace and leaves the original branch intact. --subject replaces the commit subject after the port name and keeps the body; --closes and --see add the ticket trailers the commit does not already carry. The replacement is verified and its PR updated, in the foreground through both; --to verified (-P) stops after verification, --unverified (-V) updates the PR without building and says so in its body, both together stop at the branch, and --detach returns once the work is accepted. --dry-run previews without accepting work or moving branches."
+			long = "Rebase fetches MacPorts master and reapplies the contribution as one commit in a disposable workspace, then moves the branch to the result. Switch away from the branch before rebasing it. A conflict preserves that workspace and leaves the original branch intact. --subject replaces the commit subject after the port name and keeps the body; --closes and --see add the ticket trailers the commit does not already carry; --edit opens the message in your editor first. The replacement is verified and its PR updated, in the foreground through both; --to verified (-P) stops after verification, --unverified (-V) updates the PR without building and says so in its body, both together stop at the branch, and --detach returns once the work is accepted. --dry-run previews without accepting work or moving branches."
 		}
 		command := &cobra.Command{Use: string(action) + " [target]", Short: short, Args: cobra.MaximumNArgs(1),
 			Long: long,
@@ -64,8 +64,20 @@ func (r *runtime) correctionCommands() []*cobra.Command {
 				if err != nil {
 					return err
 				}
+				var message string
+				if edit {
+					// The message is composed by a preview binding, edited, and
+					// handed to the real one whole.
+					preview, err := app.PreviewCorrection(cmd.Context(), config, workflow.CorrectionRequest{Action: action, Subject: subject, References: references, Target: target, Branch: branch, Squash: squash, Preview: true})
+					if err != nil {
+						return err
+					}
+					if message, err = editMessage(cmd.Context(), preview.Message); err != nil {
+						return err
+					}
+				}
 				if dryRun {
-					bound, err := app.PreviewCorrection(cmd.Context(), config, workflow.CorrectionRequest{Action: action, Subject: subject, References: references, Target: target, Branch: branch, Preview: true})
+					bound, err := app.PreviewCorrection(cmd.Context(), config, workflow.CorrectionRequest{Action: action, Subject: subject, References: references, Target: target, Branch: branch, Squash: squash, Message: message, Preview: true})
 					if err != nil {
 						return err
 					}
@@ -80,7 +92,7 @@ func (r *runtime) correctionCommands() []*cobra.Command {
 					return err
 				}
 				defer services.Close()
-				input := workflow.CorrectionRequest{KeepFailed: build.keepFailed, ID: record.RequestID("request_" + rand.Text()), Action: action, Subject: subject, References: references, Target: target, Branch: branch, Preview: dryRun, IncludeDependents: build.dependents, SkipVerify: skipVerify}
+				input := workflow.CorrectionRequest{KeepFailed: build.keepFailed, ID: record.RequestID("request_" + rand.Text()), Action: action, Subject: subject, References: references, Target: target, Branch: branch, Squash: squash, Message: message, Preview: dryRun, IncludeDependents: build.dependents, SkipVerify: skipVerify}
 				if publishing {
 					input.Publication = &publication
 				}
@@ -103,6 +115,11 @@ func (r *runtime) correctionCommands() []*cobra.Command {
 		command.Flags().StringVar(&branch, "branch", "", "Select a tracked contribution branch (default: the current branch, or the target's)")
 		command.Flags().StringVar(&subject, "subject", "", "Replace the commit subject after the port name; the body is kept")
 		references.add(command)
+		if action == record.Amend {
+			command.Flags().BoolVar(&squash, "squash", false, "Replace the branch's commits, however many, with one commit of its tree on the contribution's base; the subject is the pull request's title when one is attached")
+			section(command.Flags(), sectionChange, "squash")
+		}
+		command.Flags().BoolVar(&edit, "edit", false, "Open the replacement commit's message in VISUAL or EDITOR before it is verified")
 		command.Flags().BoolVar(&dryRun, "dry-run", false, "Print the replacement's diff without moving branches or accepting work")
 		destination.add(command, "updates")
 		command.Flags().BoolVar(&detach, "detach", false, "Return once the correction is accepted and admitted; wait or serve finishes it")
@@ -112,7 +129,7 @@ func (r *runtime) correctionCommands() []*cobra.Command {
 		build.flags(command, r.config)
 		publicationFlags(command, &publication)
 		section(command.Flags(), sectionSelection, "branch")
-		section(command.Flags(), sectionChange, "subject")
+		section(command.Flags(), sectionChange, "subject", "edit")
 		section(command.Flags(), sectionRun, "dry-run", "detach", "trace")
 		commands = append(commands, command)
 	}

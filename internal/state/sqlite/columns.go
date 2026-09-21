@@ -81,7 +81,7 @@ func (t table) scanArgs(named map[string]any) ([]any, error) {
 }
 
 var (
-	changes      = table{name: "changes", columns: []string{"id", "branch", "current_revision", "disposition", "targets", "created_at", "published_revision", "pull_request_id", "generated_commit", "initiating_target", "cleanup"}}
+	changes      = table{name: "changes", columns: []string{"id", "branch", "current_revision", "disposition", "targets", "created_at", "published_revision", "pull_request_id", "generated_commit", "initiating_target", "cleanup", "keep_body"}}
 	pullRequests = table{name: "pull_requests", columns: []string{"id", "change_id", "forge", "remote_repository", "number", "observation", "observe_after"}}
 	jobs         = table{name: "jobs", columns: []string{"id", "request_id", "change_id", "spec_change_id", "input_revision", "result_revision", "source_id", "action", "phase", "destination", "verification", "options", "state", "accepted_at", "cancel_at", "admitted_at", "finished_at", "detail", "claim_owner", "claim_generation", "claim_until", "retry_at", "prepared", "resolved_release", "reused_attempt", "reuse_detail", "consecutive_failures", "consecutive_waits", "wait_kind"}}
 )
