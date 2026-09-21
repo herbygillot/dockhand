@@ -291,6 +291,9 @@ func (e *Engine) adoptBranch(ctx context.Context, input AdoptRequest, pullReques
 	if input.DryRun {
 		if result.Detail == "" {
 			result.Detail = fmt.Sprintf("Would track %s as the contribution for %s; nothing recorded", input.Branch, target.Name)
+			if result.Commits > 1 {
+				result.Detail = fmt.Sprintf("Would track %s as the contribution for %s, %d commits above master that amend %s --squash would fold into one; nothing recorded", input.Branch, target.Name, result.Commits, target.Name)
+			}
 		}
 		return result, nil
 	}

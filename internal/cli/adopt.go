@@ -65,6 +65,12 @@ func (r *runtime) adoptCommand() *cobra.Command {
 			}
 			change := result.Change
 			fmt.Fprintf(cmd.OutOrStdout(), "%s (%s): %s\n  Portfile: %s\n  commit %s on base %s\n", plain(change.InitiatingTarget), plain(change.Branch), map[bool]string{true: "would be tracked", false: "tracked"}[dryRun], plain(result.Portfile), result.Revision.Source.Commit, result.Revision.Source.Base)
+			if result.Commits > 1 {
+				fmt.Fprintf(cmd.OutOrStdout(), "  commits above master: %d\n", result.Commits)
+			}
+			if pr := result.PullRequest; pr != nil {
+				fmt.Fprintf(cmd.OutOrStdout(), "  pull request: %s (%s:%s)\n", plain(pr.Ref.URL), plain(pr.HeadRepository), plain(pr.HeadBranch))
+			}
 			if r.level(cmd) >= progress.Verbose {
 				fmt.Fprintf(cmd.OutOrStdout(), "  contribution: %s; revision: %s\n", change.ID, change.CurrentRevision)
 			}
