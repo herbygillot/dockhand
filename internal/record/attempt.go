@@ -251,8 +251,18 @@ type Failure struct {
 	// package was needed, including packages outside the edited cohort.
 	DependencyChain []string
 	Attribution     Attribution
-	Detail          string
+	// Detail is what MacPorts said when the log held its error lines, up to
+	// the line naming the package and phase; otherwise the runner's message.
+	Detail string
+	// Fetches lists the mirrors MacPorts tried for a distfile that failed to
+	// fetch, each with its reason, in the order tried. MacPorts chooses the
+	// mirrors, so the build log is the only place they are named.
+	Fetches []FetchAttempt `json:",omitempty"`
 }
+
+// FetchAttempt is one download MacPorts tried for a distfile that failed to
+// fetch, with the reason that mirror gave.
+type FetchAttempt struct{ URL, Reason string }
 
 // StepResult records the outcome of one package phase within verification.
 type StepResult struct {

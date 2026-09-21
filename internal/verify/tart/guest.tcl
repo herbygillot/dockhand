@@ -83,6 +83,65 @@ proc timed {argv seconds} {
     if {[catch {close $chan} message]} {return $message}
     return ""
 }
+# summarize reads the failing step's own part of the build log, after the
+# marker line step wrote before it, and keeps what MacPorts said rather than
+# the exit message exec gives: its Error lines up to the last "Failed to
+# <phase> <package>:" line, which names the failing package and phase, and for
+# a distfile that failed to fetch every mirror tried for it with the reason
+# each gave. MacPorts chooses those mirrors, so the log is the only place
+# they are named. A fallback that later succeeded is not a failure and is
+# left out.
+proc summarize {text marker} {
+    set text "\n$text"
+    set at [string last "\n$marker\n" $text]
+    if {$at >= 0} {set text [string range $text [expr {$at + [string length $marker] + 2}] end]}
+    set errors {}
+    set attempts {}
+    set pending ""
+    set package ""
+    set failedphase ""
+    set last -1
+    foreach line [split $text "\n"] {
+        if {[regexp {^(?:--->\s+)?Attempting to fetch (\S+)$} $line -> url]} {
+            set pending $url
+            continue
+        }
+        if {$pending ne "" && [regexp {^DEBUG: Fetching (\S+) failed: (.*)$} $line -> url reason] && $url eq $pending} {
+            lappend attempts [list $url [string trim $reason]]
+        }
+        set pending ""
+        if {[regexp {^Error: (.*)$} $line -> message]} {
+            set message [string trim $message]
+            if {$message eq ""} continue
+            lappend errors $message
+            if {[regexp {^Failed to ([^\s:]+) ([A-Za-z0-9_.+-]+):} $message -> phase found]} {
+                set failedphase $phase
+                set package $found
+                set last [expr {[llength $errors] - 1}]
+            }
+        }
+    }
+    if {$last >= 0} {
+        set errors [lrange $errors 0 $last]
+    } else {
+        set kept {}
+        foreach message $errors {
+            if {![regexp {^(See |Follow https://guide\.macports\.org|Processing of port )} $message]} {lappend kept $message}
+        }
+        set errors $kept
+    }
+    if {[llength $errors] > 6} {set errors [concat [lrange $errors 0 4] [list [lindex $errors end]]]}
+    set distfiles {}
+    foreach message $errors {
+        if {[regexp {^Failed to fetch ([^\s:]+):} $message -> distfile]} {lappend distfiles $distfile}
+    }
+    set fetches {}
+    foreach attempt $attempts {
+        set url [lindex $attempt 0]
+        if {[file tail $url] in $distfiles && [llength $fetches] < 20} {lappend fetches $attempt}
+    }
+    return [dict create Detail [join $errors "; "] Package $package Phase $failedphase Fetches $fetches]
+}
 proc step {phase argv {stepPackage ""} {advisory 0} {seconds 0}} {
     global name log steps detail failure root runUser testFailure
     if {$stepPackage eq ""} {set stepPackage $name}
@@ -93,27 +152,33 @@ proc step {phase argv {stepPackage ""} {advisory 0} {seconds 0}} {
     } else {
         set failed [catch {exec {*}$argv >@$log 2>@$log} message]
     }
-    if {$failed && $advisory} {
-        lappend steps [json::write object Package [json::write string $stepPackage] Phase [json::write string $phase] Command [jsonStrings $argv] User [json::write string $runUser] Verdict [json::write string failed] Detail [json::write string $message]]
-        set testFailure $message
-        puts $log "dockhand: $phase failed; advisory under the declared test policy: $message"
-        return
-    }
     if {$failed} {
-        lappend steps [json::write object Package [json::write string $stepPackage] Phase [json::write string $phase] Command [jsonStrings $argv] User [json::write string $runUser] Verdict [json::write string failed] Detail [json::write string $message]]
-        set detail "$phase failed: $message"
         set fd [open $root/build.log r]
         set text [read $fd]
         close $fd
-        set matches [regexp -all -inline {Error: Failed to ([^\n]+?) ([A-Za-z0-9_.+-]+):} $text]
-        if {[llength $matches] >= 3} {
-            set package [lindex $matches end]
-            set failedphase [lindex $matches end-1]
+        set cause [summarize $text "dockhand: $stepPackage $phase"]
+        set why [dict get $cause Detail]
+        if {$why eq ""} {set why $message}
+        lappend steps [json::write object Package [json::write string $stepPackage] Phase [json::write string $phase] Command [jsonStrings $argv] User [json::write string $runUser] Verdict [json::write string failed] Detail [json::write string $why]]
+    }
+    if {$failed && $advisory} {
+        set testFailure $why
+        puts $log "dockhand: $phase failed; advisory under the declared test policy: $why"
+        return
+    }
+    if {$failed} {
+        set detail "$phase failed: $why"
+        if {[dict get $cause Phase] ne ""} {
+            set package [dict get $cause Package]
             set kind dependency
             if {$package eq $name} { set kind target }
-            set failure [json::write object Kind [json::write string $kind] Package [json::write string $package] Phase [json::write string $failedphase] Attribution [json::write string unknown] Detail [json::write string $message]]
+            set fetches {}
+            foreach attempt [dict get $cause Fetches] {
+                lappend fetches [json::write object URL [json::write string [lindex $attempt 0]] Reason [json::write string [lindex $attempt 1]]]
+            }
+            set failure [json::write object Kind [json::write string $kind] Package [json::write string $package] Phase [json::write string [dict get $cause Phase]] Attribution [json::write string unknown] Detail [json::write string $why] Fetches [json::write array {*}$fetches]]
         }
-        return -code error $message
+        return -code error $why
     }
     lappend steps [json::write object Package [json::write string $stepPackage] Phase [json::write string $phase] Command [jsonStrings $argv] User [json::write string $runUser] Verdict [json::write string passed]]
 }

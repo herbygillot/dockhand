@@ -212,3 +212,95 @@ proc exec {args} {
 		})
 	}
 }
+
+// A failed step keeps what MacPorts said in the log rather than the exit
+// message: its Error lines up to the one naming the package and phase, and
+// for a distfile that failed to fetch each mirror tried for it with its
+// reason. Lines from an earlier step, and a fallback that succeeded for
+// another distfile, stay out.
+func TestGuestKeepsMacPortsErrorLinesAndMirrorAttempts(t *testing.T) {
+	t.Parallel()
+	executable, err := exec.LookPath("port-tclsh")
+	if err != nil {
+		t.Skip("MacPorts Tcl required")
+	}
+	root := t.TempDir()
+	prefix := filepath.Join(root, "prefix")
+	require.NoError(t, os.MkdirAll(filepath.Join(prefix, "etc/macports"), 0700))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "ports"), 0700))
+	for _, name := range []string{"PortIndex", "PortIndex.quick"} {
+		require.NoError(t, os.WriteFile(filepath.Join(root, "ports", name), nil, 0600))
+	}
+	input := guestInput{Protocol: 1, ID: "request", Digest: "digest", Prefix: prefix, Spec: record.BuildSpec{Target: record.Target{Name: "downstream", Portfile: "devel/downstream/Portfile"}, Config: record.BuildConfig{Platform: record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, Tests: record.TestDeclared}}}
+	data, err := json.Marshal(input)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(root, "input.json"), data, 0600))
+	prelude := `
+package require json
+package require json::write
+package provide macports 1.0
+namespace eval macports {variable os_platform darwin; variable os_major 25; variable build_arch arm64}
+proc mportinit {} {}
+proc mportopen {args} {return handle}
+proc mportinfo {handle} {return {name downstream}}
+proc ditem_key {args} {return worker}
+proc worker {args} {return 1}
+proc mportclose {args} {}
+rename file realFile
+proc file {op args} {
+ if {$op eq "exists" && [lindex $args 0] in {/opt/homebrew /usr/local/Homebrew /usr/local/Cellar /sw /opt/pkg}} {return 0}
+ return [realFile $op {*}$args]
+}
+rename exec realExec
+proc exec {args} {
+ if {[lindex $args 0] eq "/usr/bin/id"} {return root}
+ if {[lindex $args 0] eq "/usr/bin/xcode-select"} {return /Library/Developer/CommandLineTools}
+ if {[lsearch -exact $args lint]>=0} {
+  puts $::log "Error: Failed to build stale: an earlier step's line"
+ }
+ if {[lsearch -exact $args build]>=0} {
+  puts $::log "Attempting to fetch https://a.example/other-1.0.tar.gz"
+  puts $::log "DEBUG: Fetching https://a.example/other-1.0.tar.gz failed: The requested URL returned error: 404"
+  puts $::log "Attempting to fetch https://b.example/other-1.0.tar.gz"
+  puts $::log "--->  Attempting to fetch https://a.example/jxrlib-1.4.3.tar.gz"
+  puts $::log "DEBUG: Fetching https://a.example/jxrlib-1.4.3.tar.gz failed: The requested URL returned error: 404"
+  puts $::log "Attempting to fetch https://b.example/jxrlib-1.4.3.tar.gz"
+  puts $::log "DEBUG: Fetching https://b.example/jxrlib-1.4.3.tar.gz failed: The requested URL returned error: 403"
+  puts $::log "Error: Failed to fetch jxrlib-1.4.3.tar.gz: The requested URL returned error: 404"
+  puts $::log "Error: Failed to fetch jxrlib: Failed to fetch distfiles"
+  puts $::log "DEBUG: Backtrace: Failed to fetch distfiles"
+  puts $::log "Error: See /opt/local/var/macports/logs/jxrlib/main.log for details."
+  puts $::log "Error: Follow https://guide.macports.org/#project.tickets if you believe there is a bug."
+  puts $::log "Error: Processing of port downstream failed"
+  return -code error "child process exited abnormally"
+ }
+ return ""
+}
+`
+	script := prelude + strings.Replace(string(guestScript), "set root /var/tmp/dockhand2", "set root $env(TEST_ROOT)", 1)
+	filename := filepath.Join(root, "guest.tcl")
+	require.NoError(t, os.WriteFile(filename, []byte(script), 0600))
+	command := exec.CommandContext(t.Context(), executable, filename)
+	command.Env = append(os.Environ(), "TEST_ROOT="+root)
+	output, err := command.CombinedOutput()
+	require.NoError(t, err, "%s", output)
+	data, err = os.ReadFile(filepath.Join(root, "result.json"))
+	require.NoError(t, err)
+	var result guestResult
+	require.NoError(t, json.Unmarshal(data, &result))
+	require.Equal(t, record.VerdictFailed, result.Verdict)
+	const cause = "Failed to fetch jxrlib-1.4.3.tar.gz: The requested URL returned error: 404; Failed to fetch jxrlib: Failed to fetch distfiles"
+	require.Equal(t, "build failed: "+cause, result.Detail)
+	require.Len(t, result.Steps, 2)
+	require.Equal(t, record.VerdictFailed, result.Steps[1].Verdict)
+	require.Equal(t, cause, result.Steps[1].Detail)
+	require.NotNil(t, result.Failure)
+	require.Equal(t, record.DependencyFailure, result.Failure.Kind)
+	require.Equal(t, "jxrlib", result.Failure.Package)
+	require.Equal(t, "fetch", result.Failure.Phase)
+	require.Equal(t, cause, result.Failure.Detail)
+	require.Equal(t, []record.FetchAttempt{
+		{URL: "https://a.example/jxrlib-1.4.3.tar.gz", Reason: "The requested URL returned error: 404"},
+		{URL: "https://b.example/jxrlib-1.4.3.tar.gz", Reason: "The requested URL returned error: 403"},
+	}, result.Failure.Fetches)
+}

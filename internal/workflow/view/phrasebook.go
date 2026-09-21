@@ -290,7 +290,7 @@ func failedNext(entry JobStatus) string {
 			continue
 		}
 		if failure := attempt.Evidence.Failure; failure != nil && failure.Phase != "" {
-			return failure.Phase + " failed; fix and amend, or abandon"
+			return failure.Phase + " failed" + causeOf(failure, ": ", "") + "; fix and amend, or abandon"
 		}
 		return "build failed; fix and amend, or abandon"
 	}
@@ -319,7 +319,7 @@ func beyondTheChange(entry JobStatus) string {
 		case failure != nil && failure.Kind == record.DockhandFailure:
 			return "dockhand failed to run the verification (" + oneLine(failure.Detail) + "); retry it, and report it if it repeats: " + retry
 		case failure != nil && failure.Kind == record.DependencyFailure && failure.Package != "":
-			return "dependency " + failure.Package + " failed to build, not the change itself; retry it, or fix that port first: " + retry
+			return "dependency " + failure.Package + " failed to " + phaseOrBuild(failure) + ", not the change itself" + causeOf(failure, " (", ")") + "; retry it, or fix that port first: " + retry
 		case evidence.Verdict == record.VerdictErrored:
 			return "verification errored before reaching a verdict; nothing to fix in the change, retry it: " + retry
 		case evidence.Verdict == record.VerdictBlocked:
@@ -363,6 +363,24 @@ func retryVerb(job record.Job) string {
 
 // oneLine keeps a recorded detail on the row it is printed in.
 func oneLine(text string) string { return strings.Join(strings.Fields(text), " ") }
+
+// causeOf is the failure's detail, MacPorts' own error lines when the guest
+// found them, wrapped for the sentence it joins, or nothing when there is none.
+func causeOf(failure *record.Failure, before, after string) string {
+	if failure.Detail == "" {
+		return ""
+	}
+	return before + oneLine(failure.Detail) + after
+}
+
+// phaseOrBuild is the MacPorts phase that failed, which reads as a verb after
+// "failed to"; a failure that names none is worded as a build.
+func phaseOrBuild(failure *record.Failure) string {
+	if failure.Phase == "" {
+		return "build"
+	}
+	return failure.Phase
+}
 
 // pullRequestNext words an observed PR: its state, then the mergeability,
 // review, and check counts when they were inspected.

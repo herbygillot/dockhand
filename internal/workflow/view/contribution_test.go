@@ -204,10 +204,18 @@ func TestAFailureBeyondTheChangeAdvisesVerifyingAgain(t *testing.T) {
 	require.Contains(t, next, "dependency openssl3 failed to build, not the change itself")
 	require.Contains(t, next, "retry it, or fix that port first: dockhand bump jq")
 
+	// A dependency's failure names its phase and MacPorts' own reason.
+	next = row(record.JobFailed, &record.Evidence{Verdict: record.VerdictFailed,
+		Failure: &record.Failure{Kind: record.DependencyFailure, Package: "jxrlib", Phase: "fetch", Detail: "Failed to fetch jxrlib-1.4.3.tar.gz: The requested URL returned error: 404"}}).Next
+	require.Equal(t, "dependency jxrlib failed to fetch, not the change itself (Failed to fetch jxrlib-1.4.3.tar.gz: The requested URL returned error: 404); retry it, or fix that port first: dockhand bump jq", next)
+
 	// The port itself failed: that is the change's business, and amending is right.
 	next = row(record.JobFailed, &record.Evidence{Verdict: record.VerdictFailed,
 		Failure: &record.Failure{Kind: record.TargetFailure, Package: "jq", Phase: "build"}}).Next
 	require.Equal(t, "build failed; fix and amend, or abandon", next)
+	next = row(record.JobFailed, &record.Evidence{Verdict: record.VerdictFailed,
+		Failure: &record.Failure{Kind: record.TargetFailure, Package: "jq", Phase: "fetch", Detail: "Failed to fetch jq-1.8.tar.gz: The requested URL returned error: 404\nFailed to fetch jq: Failed to fetch distfiles"}}).Next
+	require.Equal(t, "fetch failed: Failed to fetch jq-1.8.tar.gz: The requested URL returned error: 404 Failed to fetch jq: Failed to fetch distfiles; fix and amend, or abandon", next)
 
 	// An errored attempt with no failure record still says what it means.
 	next = row(record.JobNeedsAttention, &record.Evidence{Verdict: record.VerdictErrored}).Next

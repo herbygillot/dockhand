@@ -389,6 +389,9 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 				environment("    ", attempt.Evidence)
 				if failure := attempt.Evidence.Failure; failure != nil {
 					line("    failure: %s; package: %s; phase: %s; %s", failure.Kind, failure.Package, failure.Phase, failure.Detail)
+					for _, fetch := range failure.Fetches {
+						line("      fetch: %s: %s", fetch.URL, fetch.Reason)
+					}
 				}
 			}
 		}

@@ -82,6 +82,7 @@ func Judge(observation Observation) (record.Evidence, error) {
 	if observation.Failure != nil {
 		failure := *observation.Failure
 		failure.DependencyChain = slices.Clone(failure.DependencyChain)
+		failure.Fetches = slices.Clone(failure.Fetches)
 		evidence.Failure = &failure
 	}
 	return evidence, nil

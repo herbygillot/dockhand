@@ -110,6 +110,14 @@ func TestStatusRendersWorkingTreeFileCount(t *testing.T) {
 	require.Contains(t, output.String(), "environment: tart sha256:image; capabilities: sha256:capabilities")
 	require.Contains(t, output.String(), "MacPorts: 2.12.6 at /opt/local; developer tools: xcode 26.6")
 	require.NotContains(t, output.String(), "%!")
+
+	// A failed fetch lists the mirrors MacPorts tried, each with its reason.
+	status.Jobs[0].Attempts[0].Evidence.Verdict = record.VerdictFailed
+	status.Jobs[0].Attempts[0].Evidence.Failure = &record.Failure{Kind: record.DependencyFailure, Package: "jxrlib", Phase: "fetch", Detail: "Failed to fetch jxrlib-1.4.3.tar.gz: The requested URL returned error: 404",
+		Fetches: []record.FetchAttempt{{URL: "https://a.example/jxrlib-1.4.3.tar.gz", Reason: "The requested URL returned error: 404"}, {URL: "https://b.example/jxrlib-1.4.3.tar.gz", Reason: "The requested URL returned error: 403"}}}
+	output.Reset()
+	require.NoError(t, renderStatus(&output, status))
+	require.Contains(t, output.String(), "failure: dependency; package: jxrlib; phase: fetch; Failed to fetch jxrlib-1.4.3.tar.gz: The requested URL returned error: 404\n      fetch: https://a.example/jxrlib-1.4.3.tar.gz: The requested URL returned error: 404\n      fetch: https://b.example/jxrlib-1.4.3.tar.gz: The requested URL returned error: 403\n")
 }
 
 func TestStatusRendersGitHubRunIdentity(t *testing.T) {
