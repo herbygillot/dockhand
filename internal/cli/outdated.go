@@ -57,7 +57,8 @@ func (r *runtime) outdatedCommand() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringArrayVar(&selection.Maintainers, "maintainer", nil, "Exact maintainer: @handle, handle@github, or email (repeatable)")
+	cmd.Flags().StringArrayVar(&selection.Maintainers, "maintainer", nil, "Exact maintainer: @handle, handle@github, or email; or a class, openmaintainer or nomaintainer (repeatable)")
+	cmd.Flags().StringArrayVar(&selection.NotMaintainers, "not-maintainer", nil, "Leave out ports with this maintainer, spelled as for --maintainer (repeatable; goes with --all too)")
 	cmd.Flags().StringArrayVar(&selection.Categories, "category", nil, "Exact MacPorts category (repeatable; intersects maintainer selection)")
 	return cmd
 }

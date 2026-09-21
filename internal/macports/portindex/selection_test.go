@@ -16,6 +16,7 @@ func TestMetadataSelection(t *testing.T) {
 		{"alpha", "name alpha portdir devel/alpha maintainers {{example.org:owner @contributor} openmaintainer} categories {devel net}"},
 		{"alpha-child", "name alpha-child portdir devel/alpha maintainers @contributor categories net"},
 		{"beta", "name beta portdir sysutils/beta maintainers {other@example.org macporter} categories sysutils"},
+		{"gamma", "name gamma portdir sysutils/gamma maintainers nomaintainer categories sysutils"},
 	}, nil))
 	require.NoError(t, err)
 	for _, test := range []struct {
@@ -23,12 +24,17 @@ func TestMetadataSelection(t *testing.T) {
 		filter portindex.Filter
 		want   []string
 	}{
-		{"all", portindex.Filter{All: true}, []string{"alpha", "alpha-child", "beta"}},
+		{"all", portindex.Filter{All: true}, []string{"alpha", "alpha-child", "beta", "gamma"}},
+		{"open class", portindex.Filter{Maintainers: []string{"openmaintainer"}}, []string{"alpha"}},
+		{"no maintainer class", portindex.Filter{Maintainers: []string{"NoMaintainer"}}, []string{"gamma"}},
+		{"either class", portindex.Filter{Maintainers: []string{"openmaintainer", "nomaintainer"}}, []string{"alpha", "gamma"}},
+		{"open but not mine", portindex.Filter{Maintainers: []string{"openmaintainer"}, NotMaintainers: []string{"contributor@github"}}, nil},
+		{"all but mine", portindex.Filter{All: true, NotMaintainers: []string{"@contributor", "macporter"}}, []string{"gamma"}},
 		{"github", portindex.Filter{Maintainers: []string{"contributor@github"}}, []string{"alpha", "alpha-child"}},
 		{"MacPorts email", portindex.Filter{Maintainers: []string{"macporter@macports.org"}}, []string{"beta"}},
 		{"email", portindex.Filter{Maintainers: []string{"owner@example.org"}}, []string{"alpha"}},
 		{"intersection", portindex.Filter{Maintainers: []string{"@CONTRIBUTOR"}, Categories: []string{"devel"}}, []string{"alpha"}},
-		{"alternatives", portindex.Filter{Categories: []string{"net", "sysutils"}}, []string{"alpha", "alpha-child", "beta"}},
+		{"alternatives", portindex.Filter{Categories: []string{"net", "sysutils"}}, []string{"alpha", "alpha-child", "beta", "gamma"}},
 		{"exact", portindex.Filter{Maintainers: []string{"@contrib"}}, nil},
 		{"none", portindex.Filter{Categories: []string{"missing"}}, nil},
 	} {

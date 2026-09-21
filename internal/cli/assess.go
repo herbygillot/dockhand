@@ -100,7 +100,8 @@ func (r *runtime) assessCommand() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&request.SharedRelease, "shared-release", false, "Assess the full shared release across sibling subports")
 	cmd.Flags().StringVar(&request.Version, "at", "", "Check the update to one explicit upstream version or tag (one port only; forge sources query upstream)")
-	cmd.Flags().StringArrayVar(&request.Selection.Maintainers, "maintainer", nil, "Exact maintainer: @handle, handle@github, or email (repeatable)")
+	cmd.Flags().StringArrayVar(&request.Selection.Maintainers, "maintainer", nil, "Exact maintainer: @handle, handle@github, or email; or a class, openmaintainer or nomaintainer (repeatable)")
+	cmd.Flags().StringArrayVar(&request.Selection.NotMaintainers, "not-maintainer", nil, "Leave out ports with this maintainer, spelled as for --maintainer (repeatable; goes with --all too)")
 	cmd.Flags().StringArrayVar(&request.Selection.Categories, "category", nil, "Exact MacPorts category (repeatable; intersects maintainer selection)")
 	cmd.Flags().BoolVar(&request.Selection.All, "all", false, "Assess the entire committed ports tree")
 	cmd.Flags().StringVar(&journalPath, "journal", "", "Append one JSON line per port to this file as each finishes; a rerun with the same file skips the ports it holds, so an interrupted run continues")

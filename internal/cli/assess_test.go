@@ -81,7 +81,7 @@ func TestAssessKeepsIndependentFailuresAndDeduplicates(t *testing.T) {
 func TestAssessValidatesSelectorsBeforeOpeningRepository(t *testing.T) {
 	for _, args := range [][]string{
 		{"assess"}, {"assess", "fixture", "--all"}, {"assess", "--all", "--category", "devel"},
-		{"assess", "--maintainer", "*"}, {"assess", "fixture", "other", "--at", "2"},
+		{"assess", "--maintainer", "*"}, {"assess", "--not-maintainer", ""}, {"assess", "fixture", "--not-maintainer", "@me"}, {"assess", "fixture", "other", "--at", "2"},
 		{"assess", "--all", "--at", "2"}, {"assess", "fixture", "--at", ""},
 	} {
 		config := app.Config{Repository: "/missing/repository", DBPath: filepath.Join(t.TempDir(), "missing", "state.db")}

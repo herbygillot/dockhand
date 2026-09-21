@@ -18,20 +18,21 @@ import (
 
 // Selection chooses explicit ports, exact maintainer/category filters, or all ports.
 type Selection struct {
-	All         bool
-	Ports       []string
-	Maintainers []string
-	Categories  []string
+	All            bool
+	Ports          []string
+	Maintainers    []string
+	Categories     []string
+	NotMaintainers []string
 }
 
 // Validate rejects mixed selector modes and malformed filter values.
 func (s Selection) Validate() error {
-	grouped := s.All || len(s.Maintainers)+len(s.Categories) > 0
+	grouped := s.All || len(s.Maintainers)+len(s.Categories)+len(s.NotMaintainers) > 0
 	if grouped && len(s.Ports) > 0 {
 		return fmt.Errorf("choose explicit ports, maintainer/category filters, or --all; do not mix selector modes")
 	}
 	if grouped {
-		return (portindex.Filter{All: s.All, Maintainers: s.Maintainers, Categories: s.Categories}).Validate()
+		return (portindex.Filter{All: s.All, Maintainers: s.Maintainers, Categories: s.Categories, NotMaintainers: s.NotMaintainers}).Validate()
 	}
 	if len(s.Ports) == 0 {
 		return fmt.Errorf("select ports with arguments or a selection flag")
@@ -136,7 +137,7 @@ func selectPorts(ctx context.Context, repo *git.Repository, source record.Source
 		if err != nil {
 			return nil, nil, err
 		}
-		matches, err := index.Select(ctx, portindex.Filter{All: selection.All, Maintainers: selection.Maintainers, Categories: selection.Categories})
+		matches, err := index.Select(ctx, portindex.Filter{All: selection.All, Maintainers: selection.Maintainers, Categories: selection.Categories, NotMaintainers: selection.NotMaintainers})
 		if err != nil {
 			return nil, nil, err
 		}

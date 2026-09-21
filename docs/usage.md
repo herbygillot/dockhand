@@ -221,13 +221,15 @@ dockhand outdated jq croc
 dockhand outdated category/port --json
 dockhand outdated --maintainer herbygillot@github
 dockhand outdated --maintainer @herbygillot --category devel --json
+dockhand outdated --maintainer openmaintainer --not-maintainer @herbygillot   # open ports that are not mine
+dockhand assess --maintainer nomaintainer --category sysutils
 ```
 
 This reads committed local `HEAD` and checks each selected port using the same GitHub/GitLab catalogs, livechecks, and calculated-version probing as bump. A livecheck is taken exactly as `port livecheck` would resolve it: the evaluator applies the tree's own checker definitions under `_resources/port1.0/livecheck`, so a `pypi`, `sourceforge`, or defaulted type becomes the URL and regex it stands for, and dockhand supports whatever comes down to a regex without custom hooks. A python stub's subports borrow the stub's livecheck, since MacPorts disables theirs when they share its version. It excludes working-tree edits and does not fetch MacPorts master, initialize a database, download source archives, create branches/jobs, or grant publication authority. Update the checkout first if you want newer MacPorts definitions.
 
 Results distinguish `current`, `update-available`, and `unknown`. Unsupported ports and incomplete observations stay visible alongside successful results; any unknown result produces a nonzero exit status. An available update by itself is successful discovery. Automatic bump intake and unattended publication policy remain separate work.
 
-Use explicit port arguments or metadata selectors. Repeat `--maintainer` or `--category` for alternatives within that field; combining the two fields selects their intersection. Matching is exact and case-insensitive. Maintainers accept `@handle`, Repology's `handle@github`, email addresses, and MacPorts' `domain:user` form. Categories match every indexed category, not just the Portfile directory. These selectors do not expand workflow or publication authority.
+Use explicit port arguments or metadata selectors. `--maintainer` takes a handle, an email, or the class words `openmaintainer` and `nomaintainer`; `--not-maintainer` leaves out ports you maintain, with filters or with `--all`. Repeat `--maintainer` or `--category` for alternatives within that field; combining the two fields selects their intersection. Matching is exact and case-insensitive. Maintainers accept `@handle`, Repology's `handle@github`, email addresses, and MacPorts' `domain:user` form. Categories match every indexed category, not just the Portfile directory. These selectors do not expand workflow or publication authority.
 
 Metadata selection requires the host MacPorts `portindex` (`--prefix` selects its installation). Dockhand generates an index from the captured local HEAD in the same shared cache that verification uses, keyed by source tree, platform, and indexer identity, in the system user cache under `dockhand/indexes`. The first pass in a new indexing environment takes several minutes; later trees update incrementally from the newest cached generation. It does not use the checkout's possibly stale PortIndex, fetch master, or initialize SQLite.
 

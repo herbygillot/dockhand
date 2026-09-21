@@ -1,0 +1,5 @@
+# Selecting by maintainer class
+
+Finding ports to exercise dockhand on that are not Herby's meant grepping Portfiles for `openmaintainer` and `nomaintainer` and piping names into `outdated`, which a zsh quoting slip then made look empty three times. The index already knew the classes: its maintainer matching treats `openmaintainer` and `nomaintainer` as identities in their own right, so `--maintainer nomaintainer` selected the right ports all along. Nobody had said so; the help described a handle, a GitHub handle, or an email.
+
+The help says so now, on `outdated` and `assess`, and the selection test covers each class word and both together. The piece that was missing is exclusion: "open, but not mine" has no spelling in alternatives that intersect. `--not-maintainer <value>`, repeatable and spelled as for `--maintainer`, leaves out any port one of its values maintains, with filters or with `--all`, where it is the only filter allowed beside it. On the archivers category it left out seven of the 117 openmaintainer ports, Herby's own.

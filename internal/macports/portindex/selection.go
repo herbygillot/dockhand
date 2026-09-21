@@ -13,12 +13,17 @@ import (
 )
 
 // Filter matches exact metadata values: alternatives within a field, intersection
-// across fields. Maintainers accept MacPorts handles/emails and Repology handles.
-// All selects every indexed entry while retaining coverage problems.
+// across fields. Maintainers accept MacPorts handles/emails and Repology handles,
+// and the class words openmaintainer and nomaintainer, which the index carries
+// as maintainers in their own right. NotMaintainers leaves out any port one of
+// its values maintains, whichever way the rest was selected, which is how
+// "open, but not mine" is asked. All selects every indexed entry while
+// retaining coverage problems.
 type Filter struct {
-	All         bool
-	Maintainers []string
-	Categories  []string
+	All            bool
+	Maintainers    []string
+	Categories     []string
+	NotMaintainers []string
 }
 
 func (f Filter) Validate() error {
@@ -26,12 +31,10 @@ func (f Filter) Validate() error {
 		if len(f.Maintainers)+len(f.Categories) > 0 {
 			return fmt.Errorf("portindex: choose all ports or metadata filters")
 		}
-		return nil
-	}
-	if len(f.Maintainers)+len(f.Categories) == 0 {
+	} else if len(f.Maintainers)+len(f.Categories) == 0 {
 		return fmt.Errorf("portindex: a maintainer or category is required")
 	}
-	for _, values := range [][]string{f.Maintainers, f.Categories} {
+	for _, values := range [][]string{f.Maintainers, f.Categories, f.NotMaintainers} {
 		for _, value := range values {
 			if value == "" || strings.ContainsAny(value, "/\\*?[]{}") || strings.ContainsFunc(value, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) {
 				return fmt.Errorf("portindex: selector %q must be a nonempty exact value", value)
@@ -158,17 +161,10 @@ func (f Filter) matches(entry Entry) (bool, error) {
 			return false, fmt.Errorf("invalid indexed %s; selector membership is unknown", field.name)
 		}
 		if field.name == "maintainers" {
-			var expanded []string
-			for _, value := range values {
-				group, failures := syntax.ListValues(value)
-				if len(failures) > 0 {
-					return false, fmt.Errorf("invalid indexed maintainer group; selector membership is unknown")
-				}
-				for _, member := range group {
-					expanded = append(expanded, maintainerIdentity(member))
-				}
+			var err error
+			if values, err = maintainerIdentities(values); err != nil {
+				return false, err
 			}
-			values = expanded
 		}
 		found := false
 		for _, wanted := range field.wanted {
@@ -183,7 +179,41 @@ func (f Filter) matches(entry Entry) (bool, error) {
 		}
 		matched = matched && found
 	}
+	if matched && len(f.NotMaintainers) > 0 {
+		if entry.Fields["maintainers"] == "" {
+			return false, fmt.Errorf("missing indexed maintainers; selector membership is unknown")
+		}
+		values, failures := syntax.ListValues(entry.Fields["maintainers"])
+		if len(failures) > 0 {
+			return false, fmt.Errorf("invalid indexed maintainers; selector membership is unknown")
+		}
+		identities, err := maintainerIdentities(values)
+		if err != nil {
+			return false, err
+		}
+		for _, excluded := range f.NotMaintainers {
+			if slices.ContainsFunc(identities, func(value string) bool { return strings.EqualFold(maintainerIdentity(excluded), value) }) {
+				return false, nil
+			}
+		}
+	}
 	return matched, nil
+}
+
+// maintainerIdentities flattens the index's maintainer groups, {{a b} c},
+// into one identity per member.
+func maintainerIdentities(values []string) ([]string, error) {
+	var expanded []string
+	for _, value := range values {
+		group, failures := syntax.ListValues(value)
+		if len(failures) > 0 {
+			return nil, fmt.Errorf("invalid indexed maintainer group; selector membership is unknown")
+		}
+		for _, member := range group {
+			expanded = append(expanded, maintainerIdentity(member))
+		}
+	}
+	return expanded, nil
 }
 
 func maintainerIdentity(value string) string {
