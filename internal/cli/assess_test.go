@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -144,4 +145,44 @@ func TestAssessIndexedSelectionKeepsSubportsAndCoverageProblems(t *testing.T) {
 	require.Zero(t, downloads.Load())
 	require.Zero(t, catalogs.Load())
 	require.NoDirExists(t, filepath.Dir(config.DBPath))
+}
+
+func TestAssessJournalResumesAndRefusesAnotherCommit(t *testing.T) {
+	config, _, _, _ := automaticCLI(t, "1.0")
+	journal := filepath.Join(t.TempDir(), "survey.jsonl")
+	args := []string{"assess", "fixture", "--json", "--journal", journal}
+	var out, stderr bytes.Buffer
+	require.NoError(t, Run(t.Context(), args, Streams{Out: &out, Err: &stderr}, config), stderr.String())
+	var result assess.Result
+	decodeResult(t, out.Bytes(), &result)
+	require.Len(t, result.Ports, 1)
+	require.Zero(t, result.Skipped)
+	lines := journalLines(t, journal)
+	require.Len(t, lines, 2, "the source, then one line per port")
+	require.Contains(t, lines[0], `"Source":{"Commit":"`+string(result.Source.Commit))
+	require.Contains(t, lines[1], `"Selector":"fixture"`)
+	require.Contains(t, lines[1], `"Outcome":"`+portedit.InputFound+`"`)
+
+	out.Reset()
+	require.NoError(t, Run(t.Context(), args, Streams{Out: &out, Err: &stderr}, config), stderr.String())
+	decodeResult(t, out.Bytes(), &result)
+	require.Empty(t, result.Ports)
+	require.Equal(t, 1, result.Skipped)
+	require.Equal(t, lines, journalLines(t, journal), "a rerun appends nothing it already holds")
+	out.Reset()
+	require.NoError(t, Run(t.Context(), []string{"assess", "fixture", "--journal", journal}, Streams{Out: &out, Err: &stderr}, config), stderr.String())
+	require.Contains(t, out.String(), "Assessed 0: 0 ready, 0 candidate ready, 0 blocked, 0 unsupported, 0 unknown. 1 already in the journal.")
+
+	data, err := os.ReadFile(journal)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(journal, []byte(strings.Replace(string(data), string(result.Source.Commit), strings.Repeat("0", 40), 1)), 0o644))
+	err = Run(t.Context(), args, Streams{Out: &out, Err: &stderr}, config)
+	require.ErrorContains(t, err, "holds an assessment of commit")
+}
+
+func journalLines(t *testing.T, path string) []string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	return strings.Split(strings.TrimRight(string(data), "\n"), "\n")
 }

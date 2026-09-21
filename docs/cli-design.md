@@ -137,10 +137,10 @@ dockhand assess terraform
 dockhand assess jq rust-analyzer
 dockhand assess rust-analyzer --at 2026-09-14
 dockhand assess --maintainer herbygillot@github --category devel
-dockhand assess --all --json
+dockhand assess --all --journal survey.jsonl
 ```
 
-Explicit ports, maintainer/category filters, and `--all` are separate selection modes. Repeated values within a metadata field are alternatives; maintainer and category fields intersect. `--at` requires exactly one explicit port and accepts the same tag-prefix inference as `bump`.
+Explicit ports, maintainer/category filters, and `--all` are separate selection modes. Repeated values within a metadata field are alternatives; maintainer and category fields intersect. `--at` requires exactly one explicit port and accepts the same tag-prefix inference as `bump`. `--journal <file>` appends one JSON line per port to the file as each finishes, after a first line naming the assessed source, so a whole-tree run shows its progress in the file and an interrupted run continues: a rerun with the same file skips the ports it holds, reports how many, and refuses a file written against another commit, whose lines would not be comparable. The JSON envelope and the human summary still cover the run's own ports.
 
 Every command that selects a checkout, including `status`, `wait`, `gc`, and the bumps, validates it before touching state or fetching anything into it: the working tree, or the checked-out branch when the working tree is sparse, must contain at least one `<category>/<port>/Portfile`. A wrong directory, such as dockhand's own repository, fails immediately, naming the checkout, with a hint to pass `--tree` or set `MACPORTS_TREE`; it is never registered in the state database. Only `setup`, `auth`, and `db` need no ports tree. `dockhand --version` prints the module version or VCS revision embedded at build time.
 

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/progress"
 
@@ -12,10 +13,11 @@ import (
 
 func (r *runtime) assessCommand() *cobra.Command {
 	var request assess.Request
+	var journalPath string
 	cmd := &cobra.Command{
 		Use: "assess [port...]", Short: "Assess whether Dockhand can prepare a port update",
 		Long:        "Assess committed ports from local HEAD; working-tree edits are excluded. Select explicit ports, exact maintainer/category filters, or --all. The default checks local declarations and probes version inputs without querying upstream. With --at, resolve a specific upstream tag or explicit archive version and check the proposed edit to it. No source archives are downloaded, helpers executed, builds run, branches changed, or jobs created. Native Portfile evaluation still executes Tcl. A ready or candidate-ready result is preparation evidence, not a build guarantee. Blocked, unsupported, or unknown results exit with status 1 after reporting all selected ports.",
-		Example:     "  dockhand assess terraform-1.16\n  dockhand assess rust-analyzer --at 2026-09-14\n  dockhand assess --maintainer herbygillot@github\n  dockhand assess --all --json",
+		Example:     "  dockhand assess terraform-1.16\n  dockhand assess rust-analyzer --at 2026-09-14\n  dockhand assess --maintainer herbygillot@github\n  dockhand assess --all --journal survey.jsonl",
 		Annotations: map[string]string{stateIndependentHelp: "true"},
 		Args: func(cmd *cobra.Command, args []string) error {
 			ports, err := portNames(args)
@@ -28,7 +30,15 @@ func (r *runtime) assessCommand() *cobra.Command {
 			}
 			return request.Validate()
 		},
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) (err error) {
+			if journalPath != "" {
+				journal, err := assess.OpenJournal(journalPath)
+				if err != nil {
+					return err
+				}
+				defer func() { err = errors.Join(err, journal.Close()) }()
+				request.Journal = journal
+			}
 			result, err := app.Assess(cmd.Context(), r.config, request)
 			if err != nil {
 				return err
@@ -73,7 +83,11 @@ func (r *runtime) assessCommand() *cobra.Command {
 						fmt.Fprintf(cmd.OutOrStdout(), "  %s: %s; %s\n", finding.Check, finding.Status, plain(finding.Detail))
 					}
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "Assessed %d: %d ready, %d candidate ready, %d blocked, %d unsupported, %d unknown.\n", len(result.Ports), counts[portedit.InputFound], counts[portedit.CandidateChecked], counts[portedit.Blocked], counts[portedit.Unsupported], counts[portedit.Unknown])
+				fmt.Fprintf(cmd.OutOrStdout(), "Assessed %d: %d ready, %d candidate ready, %d blocked, %d unsupported, %d unknown.", len(result.Ports), counts[portedit.InputFound], counts[portedit.CandidateChecked], counts[portedit.Blocked], counts[portedit.Unsupported], counts[portedit.Unknown])
+				if result.Skipped > 0 {
+					fmt.Fprintf(cmd.OutOrStdout(), " %d already in the journal.", result.Skipped)
+				}
+				fmt.Fprintln(cmd.OutOrStdout())
 			}
 			if err != nil {
 				return err
@@ -89,6 +103,8 @@ func (r *runtime) assessCommand() *cobra.Command {
 	cmd.Flags().StringArrayVar(&request.Selection.Maintainers, "maintainer", nil, "Exact maintainer: @handle, handle@github, or email (repeatable)")
 	cmd.Flags().StringArrayVar(&request.Selection.Categories, "category", nil, "Exact MacPorts category (repeatable; intersects maintainer selection)")
 	cmd.Flags().BoolVar(&request.Selection.All, "all", false, "Assess the entire committed ports tree")
+	cmd.Flags().StringVar(&journalPath, "journal", "", "Append one JSON line per port to this file as each finishes; a rerun with the same file skips the ports it holds, so an interrupted run continues")
+	_ = cmd.MarkFlagFilename("journal", "jsonl")
 	return cmd
 }
 

@@ -3,6 +3,7 @@ package assess
 import (
 	"runtime"
 	"sync"
+	"sync/atomic"
 
 	"context"
 	"errors"
@@ -28,6 +29,9 @@ type Request struct {
 	Selection     survey.Selection
 	Version       string
 	Subport       string
+	// Journal, when set, receives each port as it finishes and names the
+	// ports a rerun leaves out.
+	Journal *Journal
 }
 
 func (r Request) Validate() error {
@@ -49,6 +53,8 @@ func (r Request) Validate() error {
 type Result struct {
 	Source record.Source
 	Ports  []Port
+	// Skipped counts the selected ports the journal already held.
+	Skipped int `json:",omitempty"`
 }
 
 type Port struct {
@@ -86,8 +92,24 @@ func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err er
 	}
 	defer func() { err = errors.Join(err, files.Close()) }()
 	result := Result{Source: files.Source, Ports: []Port{}}
+	journal := request.Journal
+	if journal != nil {
+		if err := journal.Begin(files.Source); err != nil {
+			return Result{}, err
+		}
+	}
 	for _, problem := range files.Problems {
-		result.Ports = append(result.Ports, Port{Selector: problem.Port, Assessment: portedit.Assessment{Outcome: portedit.Unknown, Findings: []portedit.Finding{{Check: "selection", Status: portedit.Unknown, Code: "index-coverage", Detail: problem.Detail}}}})
+		port := Port{Selector: problem.Port, Assessment: portedit.Assessment{Outcome: portedit.Unknown, Findings: []portedit.Finding{{Check: "selection", Status: portedit.Unknown, Code: "index-coverage", Detail: problem.Detail}}}}
+		if journal != nil {
+			if journal.Has(port.Selector) {
+				result.Skipped++
+				continue
+			}
+			if err := journal.Record(port); err != nil {
+				return result, err
+			}
+		}
+		result.Ports = append(result.Ports, port)
 	}
 	editor := &portedit.Service{Ports: s.Ports, DependencyTools: s.DependencyTools}
 	// Ports are assessed concurrently, each with its own interpreters, and
@@ -99,11 +121,17 @@ func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err er
 	// host can run at once.
 	assessed := make([]Port, len(files.Ports))
 	failures := make([]error, len(files.Ports))
+	skipped := make([]bool, len(files.Ports))
 	slots := make(chan struct{}, Concurrency)
 	var wait sync.WaitGroup
 	byPortfile := map[string][]int{}
 	var order []string
 	for i, selected := range files.Ports {
+		if journal != nil && journal.Has(selected.Label) {
+			skipped[i] = true
+			result.Skipped++
+			continue
+		}
 		key := selected.Portfile
 		if key == "" {
 			key = selected.Selection.Selector
@@ -113,7 +141,12 @@ func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err er
 		}
 		byPortfile[key] = append(byPortfile[key], i)
 	}
-	progress.VerboseReport(ctx, "Assessing %d ports across %d Portfiles, %d at a time", len(files.Ports), len(order), Concurrency)
+	total := len(files.Ports) - result.Skipped
+	progress.VerboseReport(ctx, "Assessing %d ports across %d Portfiles, %d at a time", total, len(order), Concurrency)
+	if journal != nil && result.Skipped > 0 {
+		progress.Report(ctx, "Continuing the journal: %d ports already assessed, %d to go", result.Skipped, total)
+	}
+	var finished atomic.Int64
 	for _, key := range order {
 		if ctx.Err() != nil {
 			break
@@ -128,6 +161,12 @@ func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err er
 					return
 				}
 				assessed[i], failures[i] = s.assessOne(ctx, editor, files, platform, request, files.Ports[i])
+				if failures[i] == nil && journal != nil {
+					failures[i] = journal.Record(assessed[i])
+				}
+				if n := finished.Add(1); journal != nil && n%1000 == 0 {
+					progress.Report(ctx, "Assessed %d of %d ports", n, total)
+				}
 			}
 		}()
 	}
@@ -137,7 +176,11 @@ func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err er
 			return result, err
 		}
 	}
-	result.Ports = append(result.Ports, assessed...)
+	for i := range assessed {
+		if !skipped[i] {
+			result.Ports = append(result.Ports, assessed[i])
+		}
+	}
 	return result, ctx.Err()
 }
 
