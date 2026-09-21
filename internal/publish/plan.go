@@ -103,11 +103,43 @@ func ValidateDestination(d record.PublicationDestination) error {
 }
 
 func (s *Service) Plan(ctx context.Context, change record.Change, source record.Source, evidence record.Attempt, associated *record.PullRequest, options Options) (record.PublicationSpec, error) {
-	destination, err := s.Destination(ctx, options)
+	var destination record.PublicationDestination
+	var err error
+	if associated != nil {
+		destination, err = s.DestinationFor(ctx, *associated, options)
+	} else {
+		destination, err = s.Destination(ctx, options)
+	}
 	if err != nil {
 		return record.PublicationSpec{}, err
 	}
 	return s.PlanTo(ctx, change, source, evidence, associated, destination)
+}
+
+// DestinationFor is the destination an attached pull request names: its base
+// repository and branch, and its head repository as the push target, whoever
+// owns it. Whether the person may push there is the forge's to decide when
+// the push arrives, which is how a maintainer's permission to edit a
+// contributor's pull request is used without dockhand modeling it. The
+// remote options do not apply; the pull request has already chosen.
+func (s *Service) DestinationFor(ctx context.Context, pr record.PullRequest, options Options) (record.PublicationDestination, error) {
+	var destination record.PublicationDestination
+	if s == nil || s.Repo == nil || s.Forge == nil || !filepath.IsAbs(s.LockDirectory) {
+		return destination, fmt.Errorf("publish: Git, forge, and absolute lock directory are required")
+	}
+	if pr.Ref.Forge != s.Forge.Name() {
+		return destination, fmt.Errorf("%w: pull request is on %s, not %s", ErrPrecondition, pr.Ref.Forge, s.Forge.Name())
+	}
+	head, err := s.Forge.RepositoryInfo(ctx, pr.HeadRepository)
+	if err != nil {
+		return destination, err
+	}
+	base, err := s.Forge.RepositoryInfo(ctx, pr.Ref.Repository)
+	if err != nil {
+		return destination, err
+	}
+	destination = record.PublicationDestination{Forge: s.Forge.Name(), Repository: pr.Ref.Repository, HeadRepository: pr.HeadRepository, BaseBranch: pr.BaseBranch, PushURL: head.CloneURL, BaseURL: base.CloneURL, LockDirectory: s.LockDirectory, RefreshBody: options.RefreshBody}
+	return destination, ValidateDestination(destination)
 }
 
 // PlanTo freezes a publication for the verified source at an already accepted destination.
@@ -119,8 +151,12 @@ func (s *Service) PlanTo(ctx context.Context, change record.Change, source recor
 	if err := ValidateDestination(destination); err != nil {
 		return spec, err
 	}
-	if err := s.requireOwnedHead(ctx, destination.HeadRepository, "", nil); err != nil {
-		return spec, err
+	if associated == nil {
+		// A pull request already attached names its own head; the forge
+		// decides whether the person may push there.
+		if err := s.requireOwnedHead(ctx, destination.HeadRepository, "", nil); err != nil {
+			return spec, err
+		}
 	}
 	content, err := s.SourceContent(ctx, source, change.Targets)
 	if err != nil {

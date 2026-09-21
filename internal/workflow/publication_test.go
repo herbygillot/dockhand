@@ -27,6 +27,10 @@ type publicationForge struct {
 	status      record.PullRequestStatus
 	f           *fixture
 	remote      string
+	// forkRemote and headName stand for someone else's fork when a test
+	// adopts their pull request: a second bare repository and its name.
+	forkRemote  string
+	headName    string
 	observation forge.PullRequestObservation
 	writes      int
 	writeErr    error
@@ -50,12 +54,18 @@ func (p *publicationForge) AuthenticatedUser(context.Context) (string, error) {
 	return "author", nil
 }
 func (p *publicationForge) NameFromRemote(remote string) (string, error) {
+	if p.forkRemote != "" && remote == p.forkRemote {
+		return p.headName, nil
+	}
 	if remote != p.remote {
 		return "", fmt.Errorf("unexpected remote")
 	}
 	return "author/ports", nil
 }
-func (p *publicationForge) RepositoryInfo(context.Context, string) (forge.RepositoryInfo, error) {
+func (p *publicationForge) RepositoryInfo(_ context.Context, name string) (forge.RepositoryInfo, error) {
+	if p.forkRemote != "" && name == p.headName {
+		return forge.RepositoryInfo{Name: p.headName, DefaultBranch: "main", CloneURL: p.forkRemote}, nil
+	}
 	return forge.RepositoryInfo{Name: "author/ports", DefaultBranch: "main", CloneURL: p.remote}, nil
 }
 func (p *publicationForge) Find(ctx context.Context, _ forge.PullRequestQuery) (forge.PullRequestObservation, error) {
@@ -69,7 +79,11 @@ func (p *publicationForge) Find(ctx context.Context, _ forge.PullRequestQuery) (
 	result := p.observation
 	result.ObservedAt = p.f.now()
 	if result.Found {
-		head, err := p.f.repo.RemoteHead(ctx, p.remote, result.PullRequest.HeadBranch)
+		remote := p.remote
+		if p.forkRemote != "" && result.PullRequest.HeadRepository == p.headName {
+			remote = p.forkRemote
+		}
+		head, err := p.f.repo.RemoteHead(ctx, remote, result.PullRequest.HeadBranch)
 		if err != nil {
 			return result, err
 		}
@@ -106,6 +120,22 @@ func (p *publicationForge) Create(ctx context.Context, input forge.PullRequestIn
 	return p.observation, p.writeErr
 }
 func (p *publicationForge) Update(ctx context.Context, input forge.PullRequestInput) (forge.PullRequestObservation, error) {
+	// An update keeps the pull request's identity, as a forge would; the
+	// fixture's own pull request is number 1, an adopted one keeps its number.
+	if input.ExistingPR != nil && p.observation.Found && p.observation.PullRequest.Ref == *input.ExistingPR {
+		p.writes++
+		if p.writeLost {
+			return forge.PullRequestObservation{}, errors.New("PATCH pulls: 500")
+		}
+		var limited *forge.RateLimitError
+		if errors.Is(p.writeErr, forge.ErrRejected) || errors.As(p.writeErr, &limited) {
+			return forge.PullRequestObservation{}, p.writeErr
+		}
+		pr := p.observation.PullRequest
+		pr.RemoteHead, pr.Title, pr.Body, pr.ObservedAt = input.Desired.Head, input.Desired.Title, input.Desired.Body, p.f.now()
+		p.observation = forge.PullRequestObservation{Found: true, ObservedAt: p.f.now(), PullRequest: pr}
+		return p.observation, p.writeErr
+	}
 	return p.Create(ctx, input)
 }
 

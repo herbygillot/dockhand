@@ -56,7 +56,7 @@ dockhand adopt --pr 34792 --keep-body            # someone else's: fetched as pr
 dockhand verify whisper
 ```
 
-A head of several commits is adopted as it stands, and `amend <port> --squash` folds them into one commit under the pull request's title, verifies it, and updates the pull request; `--edit` opens the message in your editor first, and `--subject` and `--closes` apply as always. That is the whole answer for a contributor whose pull request has grown commits they do not know how to squash. A body without a Tested on section gains one when dockhand next updates the pull request, unless the contribution was adopted with `--keep-body`. A pull request from someone else's fork is verified and followed but not yet pushed to; the evaluation of their Portfile happens on your machine, and the judgement is yours.
+A head of several commits is adopted as it stands, and `amend <port> --squash` folds them into one commit under the pull request's title, verifies it, and updates the pull request; `--edit` opens the message in your editor first, and `--subject` and `--closes` apply as always. That is the whole answer for a contributor whose pull request has grown commits they do not know how to squash. A body without a Tested on section gains one when dockhand next updates the pull request, unless the contribution was adopted with `--keep-body`. A pull request from someone else's fork is pushed to like your own when GitHub allows it, which it does for a maintainer of macports-ports when the pull request permits edits by maintainers, and refuses otherwise; the evaluation of their Portfile happens on your machine, and the judgement is yours.
 
 ## Verify, follow, and cancel work
 

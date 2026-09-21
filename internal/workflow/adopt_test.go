@@ -1,6 +1,8 @@
 package workflow_test
 
 import (
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -111,7 +113,7 @@ func TestAdoptSquashFoldsAStackedBranchAndKeepsTheOriginals(t *testing.T) {
 
 func pullRequestFixture(t *testing.T, f *fixture, hosting *publicationForge, head record.ObjectID, headRepository, headBranch string) record.PullRequestRef {
 	t.Helper()
-	ref := record.PullRequestRef{Forge: "fixture", Repository: "macports/macports-ports", Number: 7, URL: "https://example.invalid/pull/7"}
+	ref := record.PullRequestRef{Forge: "fixture", Repository: "author/ports", Number: 7, URL: "https://example.invalid/pull/7"}
 	hosting.observation = forge.PullRequestObservation{Found: true, ObservedAt: f.now(), PullRequest: record.PullRequest{Ref: ref, HeadRepository: headRepository, HeadBranch: headBranch, BaseBranch: "main", State: record.PullRequestOpen, RemoteHead: head, Title: "fixture: update to 2", Body: "I wrote this myself."}}
 	return ref
 }
@@ -183,4 +185,33 @@ func commitPortOnto(t *testing.T, f *fixture, parent record.ObjectID, contents, 
 	commit, err := f.repo.WriteCommit(t.Context(), git.Commit{Tree: tree, Parents: []string{string(parent)}, Message: message, Author: sig, Committer: sig})
 	require.NoError(t, err)
 	return commit
+}
+
+func TestSquashOfSomeoneElsesPullRequestPushesToTheirForkAndLetsTheForgeDecide(t *testing.T) {
+	t.Parallel()
+	f, hosting := manualPublicationFixture(t)
+	sig := git.Signature{Name: "Contributor", Email: "contributor@example.invalid", When: f.now()}
+	second := commitPortOnto(t, f, f.source.Commit, "version 2\nrevision 1\n", "oops", sig)
+	fork := filepath.Join(t.TempDir(), "fork.git")
+	out, err := exec.CommandContext(t.Context(), "git", "init", "--bare", "-q", fork).CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	hosting.forkRemote, hosting.headName = fork, "someone/ports"
+	require.NoError(t, f.repo.Push(t.Context(), git.Push{Remote: fork, Branch: "feature", Commit: second}))
+	ref := pullRequestFixture(t, f, hosting, record.ObjectID(second), "someone/ports", "feature")
+	_, err = f.engine.AdoptContribution(t.Context(), workflow.AdoptRequest{PullRequest: &ref, Upstream: f.source.Base, Platform: buildPlatform})
+	require.NoError(t, err)
+	bound, err := f.engine.BindCorrection(t.Context(), workflow.CorrectionRequest{ID: "fold", Action: record.Amend, Target: "fixture", Squash: true, Platform: buildPlatform, SkipVerify: true, Publication: &publish.Options{}})
+	require.NoError(t, err, "no ownership check stands between a reviewer and a contributor's pull request")
+	require.Equal(t, "someone/ports", bound.Request.Spec.PublishTo.HeadRepository)
+	require.Equal(t, fork, bound.Request.Spec.PublishTo.PushURL, "the push goes to the pull request's fork")
+	receipt, err := f.engine.Submit(t.Context(), bound.Request)
+	require.NoError(t, err)
+	for range 8 {
+		f.run(t, receipt.JobID)
+	}
+	status := f.status(t, receipt.JobID)
+	require.Equal(t, record.JobCompleted, status.Jobs[0].Job.State, status.Jobs[0].Job.Detail)
+	remote, err := f.repo.RemoteHead(t.Context(), fork, "feature")
+	require.NoError(t, err)
+	require.Equal(t, bound.Request.Spec.Preparation.Correction.Candidate.Commit, record.ObjectID(remote.Object), "the fork's branch now holds the one folded commit")
 }

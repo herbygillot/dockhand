@@ -116,6 +116,7 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 	var revision record.Revision
 	var remoteHead record.ObjectID
 	var title string
+	var attached *record.PullRequest
 	err = e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
 		var err error
 		change, err = r.OpenChangeByBranch(ctx, branch)
@@ -139,6 +140,7 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 				return fmt.Errorf("workflow: associated PR is %s", pr.State)
 			}
 			title = pr.Title
+			attached = &pr
 			if pr.HeadBranch == branch {
 				remoteHead = pr.RemoteHead
 			} else {
@@ -278,7 +280,7 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 		spec.Destination, spec.Verification = record.BranchReady, record.VerificationSkipped
 	}
 	if input.Publication != nil {
-		destination, err := e.publicationDestination(ctx, *input.Publication)
+		destination, err := e.publicationDestinationFor(ctx, attached, *input.Publication)
 		if err != nil {
 			return result, err
 		}
