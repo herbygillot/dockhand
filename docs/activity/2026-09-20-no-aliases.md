@@ -1,0 +1,3 @@
+# No aliases
+
+The flag redesign landed with `-P`, `-V`, `--no-publish`, and `--skip-verify` kept as deprecated aliases, mapped onto `--to` and `--unverified` and printing a notice when used. That was the habit of a released tool, and dockhand is not one: the interface is still being designed for the first real users, and an alias would only teach them a spelling that is already gone. The aliases are removed, `resolve` maps nothing but the two flags it names, and the rule for the renames still to come, `sync`, `checksums`, `--update-body`, `--dry-run`, and the split of `status`, is the same: the new name, and nothing kept beside it.
