@@ -152,6 +152,13 @@ func words(change record.Change, known bool, current *JobStatus, pr *record.Pull
 		if pr != nil {
 			return "publication", "published", pullRequestNext(pr)
 		}
+		if known && change.Branch != "" && change.CurrentRevision != "" {
+			port := change.InitiatingTarget
+			if port == "" && len(change.Targets) > 0 {
+				port = change.Targets[0].Name
+			}
+			return "preparation", "adopted", "verify " + port + " builds it; publish " + port + " opens its pull request"
+		}
 		return "preparation", "recorded", "no jobs recorded"
 	}
 	return jobWords(*current, pr)

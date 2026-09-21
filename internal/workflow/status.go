@@ -154,6 +154,23 @@ func (e *Engine) status(ctx context.Context, scope Scope, filter StatusFilter) (
 		if result.Changes, err = collectRelated(ctx, selection, r.Changes, func(v record.Change) string { return string(v.ID) }); err != nil {
 			return err
 		}
+		if filter.Target != "" || filter.Branch != "" || filter.ChangeID != "" {
+			// A contribution with no job yet, one just adopted, is reached by
+			// no job; the selector that named it finds it directly.
+			selected, err := selectContribution(ctx, r, ContributionSelector{Target: filter.Target, Branch: filter.Branch, ChangeID: filter.ChangeID})
+			if err == nil && !slices.ContainsFunc(result.Changes, func(v record.Change) bool { return v.ID == selected.ID }) {
+				result.Changes = append(result.Changes, selected)
+				if selected.CurrentRevision != "" {
+					revision, err := r.Revision(ctx, selected.CurrentRevision)
+					if err != nil {
+						return err
+					}
+					result.Revisions = append(result.Revisions, revision)
+				}
+			} else if err != nil && !errors.Is(err, state.ErrNotFound) && !errors.Is(err, ErrInvalidRequest) {
+				return err
+			}
+		}
 		for _, change := range result.Changes {
 			if change.PullRequestID != "" {
 				pr, err := r.PullRequest(ctx, change.PullRequestID)
@@ -163,8 +180,14 @@ func (e *Engine) status(ctx context.Context, scope Scope, filter StatusFilter) (
 				result.PullRequests = append(result.PullRequests, pr)
 			}
 		}
-		if result.Revisions, err = collectRelated(ctx, selection, r.Revisions, func(v record.Revision) string { return string(v.ID) }); err != nil {
+		revisions, err := collectRelated(ctx, selection, r.Revisions, func(v record.Revision) string { return string(v.ID) })
+		if err != nil {
 			return err
+		}
+		for _, revision := range revisions {
+			if !slices.ContainsFunc(result.Revisions, func(v record.Revision) bool { return v.ID == revision.ID }) {
+				result.Revisions = append(result.Revisions, revision)
+			}
 		}
 		result.Resources, err = collectRelated(ctx, selection, r.Resources, func(v record.Resource) string { return string(v.ID) })
 		return err

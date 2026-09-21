@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/workflow"
+	"github.com/herbygillot/dockhand/internal/workflow/view"
 	"github.com/stretchr/testify/require"
 )
 
@@ -214,4 +215,19 @@ func TestSquashOfSomeoneElsesPullRequestPushesToTheirForkAndLetsTheForgeDecide(t
 	remote, err := f.repo.RemoteHead(t.Context(), fork, "feature")
 	require.NoError(t, err)
 	require.Equal(t, bound.Request.Spec.Preparation.Correction.Candidate.Commit, record.ObjectID(remote.Object), "the fork's branch now holds the one folded commit")
+}
+
+func TestAnAdoptedContributionWithNoJobShowsInFilteredStatus(t *testing.T) {
+	t.Parallel()
+	f, _ := manualPublicationFixture(t)
+	_, err := f.engine.AdoptContribution(t.Context(), workflow.AdoptRequest{Branch: "candidate", Upstream: f.source.Base, Platform: buildPlatform})
+	require.NoError(t, err)
+	status, err := f.engine.FilteredStatus(t.Context(), workflow.StatusFilter{Target: "fixture"})
+	require.NoError(t, err)
+	overview := workflow.Overview{Status: status, Contributions: view.Project(status.Snapshot)}
+	require.Len(t, overview.Contributions, 1, "the selector reaches a contribution no job has touched")
+	row := overview.Contributions[0]
+	require.Equal(t, "fixture", row.Port)
+	require.Equal(t, "adopted", row.State)
+	require.Contains(t, row.Next, "verify fixture builds it")
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/spf13/cobra"
+	"strings"
 )
 
 func (r *runtime) correctionCommands() []*cobra.Command {
@@ -83,6 +84,14 @@ func (r *runtime) correctionCommands() []*cobra.Command {
 					}
 					if r.json {
 						return r.emit(bound)
+					}
+					if squash || edit || strings.TrimSpace(bound.Diff) == "" {
+						// A squash changes history, not the tree, so the diff alone
+						// would show nothing; the message is what changes.
+						fmt.Fprintf(cmd.ErrOrStderr(), "%s: replacement commit message:\n%s\n", plain(bound.Branch), plain(bound.Message))
+						if strings.TrimSpace(bound.Diff) == "" {
+							fmt.Fprintln(cmd.ErrOrStderr(), "The tree is unchanged; only the commit changes.")
+						}
 					}
 					_, err = fmt.Fprint(cmd.OutOrStdout(), bound.Diff)
 					return err
