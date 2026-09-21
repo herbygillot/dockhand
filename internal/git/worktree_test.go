@@ -241,3 +241,19 @@ func TestReplaceContributionMovesACleanCheckoutForwardAndRefusesADirtyOne(t *tes
 	require.NoError(t, err)
 	require.Equal(t, "version 2\nmy edit\n", string(data))
 }
+
+func TestRequireCleanBranchCountsOnlyTheContributionDirectory(t *testing.T) {
+	t.Parallel()
+	repo := snapshotRepo(t)
+	workFile(t, repo, "devel/fixture/Portfile", "version 1\n")
+	workFile(t, repo, "aqua/other/Portfile", "version 1\n")
+	workGit(t, repo, "add", ".")
+	workGit(t, repo, "commit", "-qm", "fixture")
+	branch := strings.TrimSpace(string(workGit(t, repo, "rev-parse", "--abbrev-ref", "HEAD")))
+	workFile(t, repo, "aqua/new/Portfile", "untracked elsewhere\n")
+	workFile(t, repo, "aqua/other/Portfile", "edited elsewhere\n")
+	require.NoError(t, repo.RequireCleanBranch(t.Context(), branch, "devel/fixture/"), "files outside the port directory are not the contribution's")
+	require.ErrorContains(t, repo.RequireCleanBranch(t.Context(), branch), "uncommitted files", "with no directory, the whole checkout must be clean")
+	workFile(t, repo, "devel/fixture/files/patch.diff", "new patch\n")
+	require.ErrorContains(t, repo.RequireCleanBranch(t.Context(), branch, "devel/fixture/"), "uncommitted files", "an untracked file under the port directory is an edit to it")
+}

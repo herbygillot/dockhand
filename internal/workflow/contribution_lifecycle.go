@@ -236,7 +236,7 @@ func (e *Engine) refreshChange(ctx context.Context, expected record.Change) (Con
 		if head.Exists && head.Object != string(published.Source.Commit) {
 			problem = "local branch differs from the published revision; preserve corrections or explicitly abandon"
 		}
-		if err := e.Repo.RequireCleanBranch(ctx, expected.Branch); err != nil {
+		if err := e.Repo.RequireCleanBranch(ctx, expected.Branch, contributionDirectories(expected)...); err != nil {
 			problem = err.Error()
 		}
 		return apply(ctx, problem)

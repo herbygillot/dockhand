@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/git"
@@ -181,4 +182,16 @@ func newestJob(history []record.Job, accept func(record.Job) bool) (record.Job, 
 		}
 	}
 	return record.Job{}, false
+}
+
+// contributionDirectories are the port directories a contribution's targets
+// live in, which is where uncommitted edits would belong to it.
+func contributionDirectories(change record.Change) []string {
+	var directories []string
+	for _, target := range change.Targets {
+		if target.Portfile != "" {
+			directories = append(directories, path.Dir(target.Portfile)+"/")
+		}
+	}
+	return directories
 }

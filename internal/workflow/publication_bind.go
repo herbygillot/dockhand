@@ -69,7 +69,7 @@ func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, 
 		if err := contributionPrepared(change); err != nil {
 			return Request{}, err
 		}
-		if err := e.Repo.RequireCleanBranch(ctx, change.Branch); err != nil {
+		if err := e.Repo.RequireCleanBranch(ctx, change.Branch, contributionDirectories(change)...); err != nil {
 			return Request{}, err
 		}
 		input.Branch = change.Branch

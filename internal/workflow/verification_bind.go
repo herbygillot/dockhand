@@ -67,7 +67,7 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 		if err := contributionPrepared(change); err != nil {
 			return BoundVerification{}, err
 		}
-		if err := e.Repo.RequireCleanBranch(ctx, change.Branch); err != nil {
+		if err := e.Repo.RequireCleanBranch(ctx, change.Branch, contributionDirectories(change)...); err != nil {
 			return BoundVerification{}, err
 		}
 		continuation = &change
