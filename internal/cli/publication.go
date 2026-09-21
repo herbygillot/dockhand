@@ -88,6 +88,8 @@ func (r *runtime) publishCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&unverified, "unverified", false, "Publish without verification; the PR body discloses that no local build ran")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show the publication plan without accepting a job or writing remotely")
 	cmd.Flags().BoolVar(&detach, "detach", false, "Return after driver pickup; wait or serve finishes it")
+	section(cmd.Flags(), sectionSelection, "branch", "adopt", "change")
+	section(cmd.Flags(), sectionRun, "unverified", "dry-run", "detach")
 	return cmd
 }
 
@@ -96,4 +98,5 @@ func publicationFlags(cmd *cobra.Command, options *publish.Options) {
 	cmd.Flags().StringVar(&options.Upstream, "upstream", "", "Upstream Git remote (default: the remote naming macports/macports-ports, then upstream, then the fork parent)")
 	cmd.Flags().StringVar(&options.Base, "base", "", "PR base branch (defaults to the upstream default branch)")
 	cmd.Flags().BoolVar(&options.RefreshBody, "update-body", false, "Rewrite an existing PR's environment section from this verification; its description and review checklist are left alone")
+	section(cmd.Flags(), sectionGitHub, "remote", "upstream", "base", "update-body")
 }

@@ -30,7 +30,7 @@ func (p *Provider) beginWith(ctx context.Context, id record.RequestID, config Co
 	if err := os.MkdirAll(c.ArtifactDirectory, 0700); err != nil {
 		return nil, err
 	}
-	pool := record.ProviderPool{ID: "tart_" + digest([]byte(c.Home)), Scope: "tart:" + c.Home, Directory: c.ArtifactDirectory, Capacity: c.Capacity}
+	pool := poolOf(c)
 	if config.Capacity == 0 {
 		existing, e := p.State.ProviderPool(ctx, pool.ID)
 		if e == nil {
@@ -115,6 +115,23 @@ func (p *Provider) openRun(ctx context.Context, run record.ProviderRun) (*operat
 }
 func buildDigest(spec record.BuildSpec) string { raw, _ := json.Marshal(spec); return digest(raw) }
 func digest(data []byte) string                { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
+
+// poolOf is the execution pool a resolved configuration shares: every driver
+// on the same Tart home coordinates through it.
+func poolOf(c Config) record.ProviderPool {
+	return record.ProviderPool{ID: "tart_" + digest([]byte(c.Home)), Scope: "tart:" + c.Home, Directory: c.ArtifactDirectory, Capacity: c.Capacity}
+}
+
+// Pool resolves the configuration and names its execution pool, with the
+// capacity the configuration carries, or the default for a pool not yet
+// recorded.
+func Pool(config Config) (record.ProviderPool, error) {
+	c, err := settings(config)
+	if err != nil {
+		return record.ProviderPool{}, err
+	}
+	return poolOf(c), nil
+}
 
 type payload struct {
 	ProviderVersion string `json:",omitempty"`

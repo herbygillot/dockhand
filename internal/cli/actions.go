@@ -143,6 +143,10 @@ func (r *runtime) verifyCommand() *cobra.Command {
 	command.Flags().BoolVar(&detach, "detach", false, "Return once the build is admitted; wait or serve finishes it")
 	command.Flags().BoolVar(&trace, "trace", false, "Follow build logs on stderr through completion; implies --debug")
 	command.MarkFlagsMutuallyExclusive("detach", "trace")
+	section(command.Flags(), sectionSelection, "branch", "adopt", "change", "working-tree")
+	section(command.Flags(), sectionBuild, "variant", "fresh", "all-subports")
+	section(command.Flags(), sectionGitHub, "remote")
+	section(command.Flags(), sectionRun, "detach", "trace")
 	return command
 }
 func parseVariants(values []string) (map[string]bool, error) {

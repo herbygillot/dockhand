@@ -14,16 +14,26 @@ func (r *runtime) setupCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:         "setup",
 		Short:       "Prepare a local Tart verification image",
-		Long:        "Check the native MacPorts platform and prepare a clean local Tart image with the guest agent, command line tools, and MacPorts. Pass --os to choose another macOS release. Pass --xcode to prepare a separate full-Xcode profile from one .xip archive or a directory of release archives. An existing image is validated in a disposable clone. Missing images are provisioned from the matching vanilla macOS image.",
+		Long:        "Check the native MacPorts platform and prepare a clean local Tart image with the guest agent, command line tools, and MacPorts. Pass --os to choose another macOS release. Pass --xcode to prepare a separate full-Xcode profile from one .xip archive or a directory of release archives. An existing image is validated in a disposable clone. Missing images are provisioned from the matching vanilla macOS image. --capacity records how many Tart guests may build at once on this Tart home, which every driver sharing it reads; it is the one thing setup writes to the state database, and a driver already running keeps its limit until it restarts.",
 		Args:        cobra.NoArgs,
 		Annotations: map[string]string{stateIndependentHelp: "true"},
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if cmd.Flags().Changed("capacity") && options.Capacity <= 0 {
+				return fmt.Errorf("capacity must be positive")
+			}
 			result, err := app.Setup(cmd.Context(), r.config, options, cmd.ErrOrStderr())
 			if err != nil {
 				return err
 			}
 			if r.json {
 				return r.emit(result)
+			}
+			if change := result.Capacity; change != nil {
+				was := "a new pool"
+				if change.Previous > 0 {
+					was = fmt.Sprintf("was %d", change.Previous)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Recorded Tart capacity %d (%s).\n", change.Limit, was)
 			}
 			review := "no source-review record"
 			if result.HostMacPorts.SourceReviewed {
@@ -63,6 +73,7 @@ func (r *runtime) setupCommand() *cobra.Command {
 	command.Flags().StringVar(&options.Source, "source", "", "Source Tart OCI image (defaults to the matching vanilla macOS image)")
 	command.Flags().StringVar(&options.MacPortsVersion, "macports-version", macports.DefaultBaseVersion, "MacPorts version to install and require")
 	command.Flags().StringVar(&options.Xcode, "xcode", "", "Xcode .xip archive or directory of compatible release archives")
+	command.Flags().IntVar(&options.Capacity, "capacity", 0, "Record how many Tart guests may build at once on this Tart home, for every driver sharing it (initially 2)")
 	_ = command.MarkFlagFilename("xcode", "xip")
 	command.MarkFlagsMutuallyExclusive("check", "rebuild")
 	return command

@@ -22,15 +22,26 @@ type SetupOptions struct {
 	Source          string
 	MacPortsVersion string
 	Xcode           string
+	// Capacity, when positive, is recorded as the Tart pool's limit first.
+	Capacity int
 }
 
 type SetupResult struct {
 	HostMacPorts macports.Runtime `json:"host_macports"`
 	provision.Result
 	OptionalTools []dependency.Availability `json:"optional_tools"`
+	Capacity      *CapacityChange           `json:"capacity,omitempty"`
 }
 
 func Setup(ctx context.Context, config Config, options SetupOptions, progress io.Writer) (SetupResult, error) {
+	var capacity *CapacityChange
+	if options.Capacity > 0 {
+		change, err := RecordCapacity(ctx, config, options.Capacity)
+		if err != nil {
+			return SetupResult{}, err
+		}
+		capacity = &change
+	}
 	ports := &eval.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}
 	runtime, err := ports.Inspect(ctx)
 	if err != nil {
@@ -70,5 +81,5 @@ func Setup(ctx context.Context, config Config, options SetupOptions, progress io
 		Progress: progress,
 	}
 	result, err := service.Run(ctx, provision.Options{Check: options.Check, Rebuild: options.Rebuild})
-	return SetupResult{HostMacPorts: runtime, Result: result, OptionalTools: config.DependencyTools.Probe()}, err
+	return SetupResult{HostMacPorts: runtime, Result: result, OptionalTools: config.DependencyTools.Probe(), Capacity: capacity}, err
 }

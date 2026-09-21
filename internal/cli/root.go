@@ -170,6 +170,10 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, *runtime,
 			command.Aliases = append(command.Aliases, "usage")
 		}
 	}
+	section(root.PersistentFlags(), sectionPaths, "tree", "prefix", "db", "git", "tart", "go2port", "cargo2port")
+	section(root.PersistentFlags(), sectionOutput, "json", "verbose", "debug")
+	cobra.AddTemplateFunc("flagSections", flagSections)
+	root.SetUsageTemplate(usageTemplate)
 	help := root.HelpFunc()
 	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		help(cmd, args)

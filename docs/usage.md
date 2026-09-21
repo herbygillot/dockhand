@@ -30,6 +30,7 @@ Prepare the native host's conventional verification image before the first build
 ```sh
 dockhand setup
 dockhand setup --check
+dockhand setup --capacity 3
 dockhand setup --rebuild
 dockhand setup --xcode ~/Downloads/xcode_archives
 ```
@@ -42,7 +43,7 @@ During replacement, the stopped old image is temporarily named `<image>-previous
 
 The default local image name follows the native release, such as `dockhand-base-tahoe`; an Xcode profile uses `dockhand-xcode-tahoe` and its own golden image. Verification and bump commands evaluate `use_xcode` and select the matching default image when `--image` is omitted. An explicit `--image` still takes precedence. `--source` and `--macports-version` override setup inputs. Per-image read/write locks under the Tart home allow concurrent verification clones while preventing setup from replacing their source image. A separate per-image setup lock prevents competing provisioners, including processes that selected different SQLite databases.
 
-All cooperating drivers using the same Tart home must use the same DB, capacity, and artifact directory. A separate DB does not coordinate the shared execution pool. Base images are hashed by contents. Digests persist in SQLite across invocations and repositories; unchanged file metadata permits reuse. A new or changed image still needs a full hash. An optional `--capacity` establishes the shared pool limit. Subsequent `wait` and `serve` invocations use the accepted job settings and recorded pool limit.
+All cooperating drivers using the same Tart home must use the same DB, capacity, and artifact directory. A separate DB does not coordinate the shared execution pool. Base images are hashed by contents. Digests persist in SQLite across invocations and repositories; unchanged file metadata permits reuse. A new or changed image still needs a full hash. `setup --capacity N` records the shared pool limit, initially two; every run reads the record, and a driver already running keeps the limit it started with until it restarts.
 
 ## Verify, follow, and cancel work
 

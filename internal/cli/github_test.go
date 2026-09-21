@@ -23,7 +23,6 @@ func TestGitHubBuildFlagsSelectWorkflowPolicy(t *testing.T) {
 		{[]string{"--provider", "github", "--tests", "declared"}, false},
 		{[]string{"--provider", "github", "--tests", "skip"}, false},
 		{[]string{"--provider", "github", "--image", "image"}, false},
-		{[]string{"--provider", "github", "--capacity", "2"}, false},
 		{[]string{"--provider", "github", "--from-source=false"}, false},
 		{[]string{"--provider", "tart", "--tests", "workflow"}, false},
 		{[]string{"--provider", "unknown"}, false},

@@ -17,7 +17,6 @@ type buildOptions struct {
 	dependents   bool
 	provider     string
 	image        string
-	capacity     int
 	tests        string
 	testTimeout  time.Duration
 	fromSource   bool
@@ -33,10 +32,10 @@ func (o *buildOptions) flags(cmd *cobra.Command, config app.Config) {
 	}
 	cmd.Flags().StringVar(&o.provider, "provider", provider, "Verification provider: auto builds on a prepared Tart image and otherwise on GitHub; tart; or github (pushes to your fork). Any Tart option selects tart")
 	cmd.Flags().StringVar(&o.image, "image", config.Tart.Image, "Prepared local Tart image")
-	cmd.Flags().IntVar(&o.capacity, "capacity", config.Tart.Capacity, "Shared Tart capacity (uses the recorded pool limit, initially 2)")
 	cmd.Flags().StringVar(&o.tests, "tests", string(record.TestDeclared), "Test policy for a Tart build: declared runs the port's tests as advisory, required fails the build on them, skip omits them. GitHub's workflow decides its own")
 	cmd.Flags().DurationVar(&o.testTimeout, "test-timeout", config.Tart.TestTimeout, fmt.Sprintf("Stop the port's tests after this long; a timeout counts as a test failure (Tart; default %s)", config.TestTimeout()))
 	cmd.Flags().BoolVar(&o.fromSource, "from-source", false, "Build the target and needed dependencies from source instead of using binary archives")
+	section(cmd.Flags(), sectionBuild, "keep-failed", "dependents", "target-image", "provider", "image", "tests", "test-timeout", "from-source")
 }
 
 func (o *buildOptions) config(cmd *cobra.Command, config app.Config) (app.Config, error) {
@@ -76,7 +75,7 @@ func (o *buildOptions) config(cmd *cobra.Command, config app.Config) (app.Config
 	// A Tart option is a choice of Tart: auto resolves to it rather than
 	// refusing the option, and never resolves to GitHub from any option.
 	if o.provider == "auto" {
-		for _, name := range []string{"image", "capacity", "from-source", "variant", "test-timeout", "tests", "working-tree", "fresh"} {
+		for _, name := range []string{"image", "from-source", "variant", "test-timeout", "tests", "working-tree", "fresh"} {
 			if cmd.Flags().Lookup(name) != nil && cmd.Flags().Changed(name) {
 				o.provider = verify.ProviderTart
 			}
@@ -87,8 +86,8 @@ func (o *buildOptions) config(cmd *cobra.Command, config app.Config) (app.Config
 	}
 	config.VerificationProvider = o.provider
 	if o.provider == verify.ProviderGitHub || o.provider == "auto" {
-		if cmd.Flags().Changed("image") || cmd.Flags().Changed("capacity") || cmd.Flags().Changed("from-source") || cmd.Flags().Changed("test-timeout") {
-			return config, fmt.Errorf("GitHub verification uses the workflow's runner matrix and dependency policy; --image, --capacity, --from-source, and --test-timeout are Tart options")
+		if cmd.Flags().Changed("image") || cmd.Flags().Changed("from-source") || cmd.Flags().Changed("test-timeout") {
+			return config, fmt.Errorf("GitHub verification uses the workflow's runner matrix and dependency policy; --image, --from-source, and --test-timeout are Tart options")
 		}
 		if cmd.Flags().Changed("tests") {
 			return config, fmt.Errorf("GitHub's workflow decides its test policy; --tests is a Tart option")
@@ -110,9 +109,6 @@ func (o *buildOptions) config(cmd *cobra.Command, config app.Config) (app.Config
 		}
 		return config, nil
 	}
-	if o.capacity < 0 || cmd.Flags().Changed("capacity") && o.capacity == 0 {
-		return config, fmt.Errorf("capacity must be positive")
-	}
 	if !cmd.Flags().Changed("tests") && o.tests == "" {
 		o.tests = string(record.TestDeclared)
 	}
@@ -128,14 +124,11 @@ func (o *buildOptions) config(cmd *cobra.Command, config app.Config) (app.Config
 	if cmd.Flags().Changed("image") {
 		config.Tart.Image = o.image
 	}
-	if cmd.Flags().Changed("capacity") {
-		config.Tart.Capacity = o.capacity
-	}
 	return config, nil
 }
 
 func verificationSettingsChanged(cmd *cobra.Command) bool {
-	for _, name := range []string{"provider", "image", "capacity", "tests", "test-timeout", "from-source", "dependents", "target-image", "remote"} {
+	for _, name := range []string{"provider", "image", "tests", "test-timeout", "from-source", "dependents", "target-image", "remote"} {
 		if cmd.Flags().Changed(name) {
 			return true
 		}

@@ -35,6 +35,27 @@ func (s *Store) RegisterProviderPool(ctx context.Context, p record.ProviderPool)
 	}
 	return p, nil
 }
+
+// SetProviderPoolCapacity changes the one pool fact that is policy rather
+// than identity: how many executions may run at once. The pool must exist.
+func (s *Store) SetProviderPoolCapacity(ctx context.Context, id string, capacity int) error {
+	if id == "" || capacity <= 0 {
+		return state.ErrInvalid
+	}
+	return s.transaction(ctx, true, "", func(ctx context.Context, t *transaction) error {
+		result, err := t.conn.ExecContext(ctx, "UPDATE provider_pools SET capacity=? WHERE id=?", capacity, id)
+		if err != nil {
+			return storageError(err)
+		}
+		if changed, err := result.RowsAffected(); err != nil {
+			return storageError(err)
+		} else if changed == 0 {
+			return state.ErrNotFound
+		}
+		return nil
+	})
+}
+
 func (s *Store) ProviderView(ctx context.Context, pool string, fn func(context.Context, state.ProviderReader) error) error {
 	if fn == nil {
 		return state.ErrInvalid

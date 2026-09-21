@@ -111,6 +111,9 @@ func (r *runtime) correctionCommands() []*cobra.Command {
 		command.MarkFlagsMutuallyExclusive("trace", "unverified")
 		build.flags(command, r.config)
 		publicationFlags(command, &publication)
+		section(command.Flags(), sectionSelection, "branch")
+		section(command.Flags(), sectionChange, "subject")
+		section(command.Flags(), sectionRun, "dry-run", "detach", "trace")
 		commands = append(commands, command)
 	}
 	var branch string

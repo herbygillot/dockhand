@@ -96,7 +96,7 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, op
 		}
 	}
 	if p.State != nil {
-		pool, e := p.State.ProviderPool(ctx, "tart_"+digest([]byte(c.Home)))
+		pool, e := p.State.ProviderPool(ctx, poolOf(c).ID)
 		if e == nil && (pool.Directory != c.ArtifactDirectory || p.Config.Capacity != 0 && pool.Capacity != p.Config.Capacity) {
 			return record.BuildConfig{}, fmt.Errorf("tart: configuration differs from the existing pool")
 		}

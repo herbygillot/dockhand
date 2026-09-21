@@ -189,9 +189,11 @@ func (r *runtime) changeCommands() []*cobra.Command {
 		changeFlags(command, options, &destination)
 		if spec.action == record.Bump {
 			command.Flags().BoolVar(&sharedRelease, "shared-release", false, "Authorize updating all subports that share this release source")
+			section(command.Flags(), sectionChange, "shared-release")
 		}
 		if spec.action == record.Bump || spec.action == record.RefreshChecksums {
 			command.Flags().BoolVar(&keepOldChecksums, "keep-old-checksums", false, "Keep a legacy checksum block's algorithms and layout, refreshing md5/sha1 values in place instead of rewriting the block as rmd160, sha256, and size")
+			section(command.Flags(), sectionChange, "keep-old-checksums")
 		}
 		command.Flags().StringVar(&change, "change", "", "Continue one contribution when the target is ambiguous")
 		command.MarkFlagsMutuallyExclusive("change", "dry-run")
@@ -201,7 +203,10 @@ func (r *runtime) changeCommands() []*cobra.Command {
 			publicationFlags(command, &publication)
 			command.Flags().StringVar(&subject, "subject", "", spec.subject)
 			references.add(command)
+			section(command.Flags(), sectionChange, "subject")
 		}
+		section(command.Flags(), sectionSelection, "change")
+		section(command.Flags(), sectionBuild, "variant")
 		commands = append(commands, command)
 	}
 	return commands

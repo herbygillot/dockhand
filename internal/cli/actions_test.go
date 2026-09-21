@@ -19,7 +19,7 @@ import (
 
 func TestVerificationArgumentsFailBeforeOpeningState(t *testing.T) {
 	t.Parallel()
-	for _, args := range [][]string{{"verify", "jq", "--image", "base", "--capacity", "0"}, {"verify", "jq", "--image", "base", "--tests", "perhaps"}, {"verify", "jq", "--image", "base", "--variant", "ssl"}, {"verify", "jq", "--image", "base", "--variant", "+ssl", "--variant=-ssl"}} {
+	for _, args := range [][]string{{"verify", "jq", "--image", "base", "--tests", "perhaps"}, {"verify", "jq", "--image", "base", "--variant", "ssl"}, {"verify", "jq", "--image", "base", "--variant", "+ssl", "--variant=-ssl"}} {
 		var out bytes.Buffer
 		db := filepath.Join(t.TempDir(), "missing", "state.db")
 		err := Run(t.Context(), args, Streams{Out: &out, Err: &out}, app.Config{DBPath: db, Repository: "/does-not-exist"})

@@ -27,7 +27,6 @@ func TestBuildProviderDefaultsAndExplicitChoices(t *testing.T) {
 		{name: "explicit image", command: "bump", args: []string{"--image=custom"}, provider: "tart", tests: "declared"},
 		{name: "explicit tests", command: "bump", args: []string{"--tests=skip"}, provider: "tart", tests: "skip"},
 		{name: "a test policy chooses local", command: "bump", args: []string{"--tests=required"}, provider: "tart", tests: "required"},
-		{name: "capacity", command: "bump", args: []string{"--capacity=1"}, provider: "tart", tests: "declared"},
 		{name: "variants", command: "bump", args: []string{"--variant=+debug"}, provider: "tart", tests: "declared"},
 		{name: "source policy", command: "bump", args: []string{"--from-source"}, provider: "tart", tests: "declared"},
 	} {

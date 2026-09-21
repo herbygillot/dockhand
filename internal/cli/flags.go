@@ -71,6 +71,7 @@ func verificationFlags(command *cobra.Command, options *Options) {
 	command.Flags().BoolVar(&options.Detach, "detach", false, "Return once the work is accepted and admitted; wait or serve finishes it")
 	command.Flags().BoolVar(&options.Trace, "trace", false, "Follow build logs on stderr through completion; implies --debug")
 	command.MarkFlagsMutuallyExclusive("detach", "trace")
+	section(command.Flags(), sectionRun, "detach", "trace")
 }
 
 // The places a preparation or correction can stop.
@@ -91,6 +92,7 @@ type destinationFlags struct {
 func (d *destinationFlags) add(command *cobra.Command, prVerb string) {
 	command.Flags().StringVar(&d.to, "to", toPR, "Where to stop: branch prepares only; verified builds and stops before the PR; pr builds and "+prVerb+" the PR")
 	command.Flags().BoolVar(&d.unverified, "unverified", false, "With --to pr, "+prVerb+" the PR without a build; the PR body discloses it")
+	section(command.Flags(), sectionRun, "to", "unverified")
 }
 
 // resolve maps the flags onto the destination: whether the PR is opened or
@@ -113,6 +115,8 @@ func changeFlags(command *cobra.Command, options *Options, destination *destinat
 	destination.add(command, "opens or updates")
 	command.Flags().BoolVar(&options.DryRun, "dry-run", false, "Print the proposed diff and submit nothing")
 	command.Flags().BoolVar(&options.AllSubports, "all-subports", false, "Verify every subport of a shared release locally, not only the newest")
+	section(command.Flags(), sectionRun, "dry-run")
+	section(command.Flags(), sectionBuild, "all-subports")
 	for _, name := range []string{"to", "unverified", "detach", "trace"} {
 		command.MarkFlagsMutuallyExclusive("dry-run", name)
 	}
@@ -127,6 +131,7 @@ type referenceFlags struct{ closes, see []string }
 func (f *referenceFlags) add(command *cobra.Command) {
 	command.Flags().StringArrayVar(&f.closes, "closes", nil, "Trac ticket this change closes, as a number or URL; written as a Closes: trailer (repeatable)")
 	command.Flags().StringArrayVar(&f.see, "see", nil, "Related Trac ticket, as a number or URL; written as a See: trailer (repeatable)")
+	section(command.Flags(), sectionChange, "closes", "see")
 }
 
 func (f *referenceFlags) resolve() ([]record.Reference, error) {
