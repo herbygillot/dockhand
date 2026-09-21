@@ -23,7 +23,7 @@ func TestBodyUsesSelectedEvidenceAndGeneratedIdentity(t *testing.T) {
 		attempt.Evidence.Steps = append(attempt.Evidence.Steps, record.StepResult{Package: "fixture-subport", Phase: phase, Verdict: record.VerdictPassed, Command: args, User: "root"})
 	}
 	body := publicationBody(content, change, source, attempt)
-	for _, want := range []string{"Submitted by **[dockhand]", "Useful explanation", "| macOS 26.1 | build 25B77; arm64 |", "| Xcode | 26.1 Build version 17B12 |", "Provider: tart\n\n- version: 2.30\n- image: recorded-image (pristine)\n- environment identity: `sha256:recorded`\n", "| Command Line Tools | 26.1.0.0.1 |", "Unchecked manual items require contributor review.", "earlier-reused-attempt", "2025-01-02 03:04:05 UTC", "[x] Squashed", "[x] Checked the Portfile", "[x] Ran the port's tests", "[x] Completed a full install", "-N -D devel/fixture -d install subport=fixture-subport +debug -universal", "run as root", "[ ] Followed", "[ ] Checked for other open", "[ ] Referenced", "[ ] Tested basic functionality", "[ ] Checked the port's most important"} {
+	for _, want := range []string{"Submitted by **[dockhand]", "Useful explanation", "| **Component** | **Version** |", "| macOS | 26.1 (build 25B77; arm64) |", "| Xcode | 26.1 Build version 17B12 |", "Provider: tart\n\n- version: 2.30\n- image: recorded-image (pristine)\n- environment identity: `sha256:recorded`\n", "| Command Line Tools | 26.1.0.0.1 |", "Unchecked manual items require contributor review.", "earlier-reused-attempt", "2025-01-02 03:04:05 UTC", "[x] Squashed", "[x] Checked the Portfile", "[x] Ran the port's tests", "[x] Completed a full install", "-N -D devel/fixture -d install subport=fixture-subport +debug -universal", "run as root", "[ ] Followed", "[ ] Checked for other open", "[ ] Referenced", "[ ] Tested basic functionality", "[ ] Checked the port's most important"} {
 		require.Contains(t, body, want)
 	}
 	require.NotContains(t, body, "Generated-by:")
@@ -52,7 +52,7 @@ func TestBodyDoesNotInventTestsOrEnvironmentForOlderEvidence(t *testing.T) {
 		require.Contains(t, body, "Environment details were not recorded")
 		require.Contains(t, body, "[ ] Ran the port's tests")
 		require.Contains(t, body, "[x] Completed a full install (exact command was not recorded)")
-		require.NotContains(t, body, "macOS 26")
+		require.NotContains(t, body, "| macOS |")
 		require.Contains(t, body, reason)
 	}
 	attempt.Evidence.Environment = &record.EnvironmentEvidence{Guest: &record.GuestEnvironment{DeveloperTools: record.DeveloperToolsCommandLine, DeveloperToolsVersion: "26.0.0.0.1"}}
@@ -114,7 +114,7 @@ func TestTestedOnTablesTheEnvironmentAndBulletsTheProvider(t *testing.T) {
 				Guest: &record.GuestEnvironment{MacOSVersion: "26.6.2", MacOSBuild: "25G83", Architecture: "arm64", DeveloperTools: record.DeveloperToolsCommandLine,
 					DeveloperToolsVersion: "27.0.0.0.1788430756", MacPortsVersion: "Version: 2.12.6", NoActivePorts: true, NoForeignPackageManagers: true}}}}
 	body := publicationBody(record.PublicationContent{Title: "jc: update to 1.26.0"}, record.Change{}, record.Source{}, attempt)
-	require.Contains(t, body, "\n|  |  |\n| --- | --- |\n| macOS 26.6.2 | build 25G83; arm64 |\n| Command Line Tools | 27.0.0.0.1788430756 |\n| MacPorts | 2.12.6 |\n| dockhand | v0.0.0-20260920.1 |\n")
+	require.Contains(t, body, "\n| **Component** | **Version** |\n| --- | --- |\n| macOS | 26.6.2 (build 25G83; arm64) |\n| Command Line Tools | 27.0.0.0.1788430756 |\n| MacPorts | 2.12.6 |\n| dockhand | v0.0.0-20260920.1 |\n")
 	require.Contains(t, body, "\nProvider: tart\n\n- version: 2.37.0\n- image: dockhand-base-tahoe (pristine)\n- environment identity: `sha256:4602`\n")
 
 	// A workflow observation establishes no runner versions, so it tables only
@@ -123,7 +123,7 @@ func TestTestedOnTablesTheEnvironmentAndBulletsTheProvider(t *testing.T) {
 	attempt.Evidence.Workflow = &record.WorkflowEvidence{URL: "https://github.com/author/ports/actions/runs/10", RunAttempt: 2,
 		Jobs: []record.WorkflowJob{{Name: "macos-14", Conclusion: "success"}, {Name: "macos-15", Conclusion: "success"}}}
 	body = publicationBody(record.PublicationContent{}, record.Change{}, record.Source{}, attempt)
-	require.Contains(t, body, "\n|  |  |\n| --- | --- |\n| dockhand | v0.0.0-20260920.1 |\n")
+	require.Contains(t, body, "\n| **Component** | **Version** |\n| --- | --- |\n| dockhand | v0.0.0-20260920.1 |\n")
 	require.Contains(t, body, "\nProvider: GitHub Actions\n\n- [workflow run](https://github.com/author/ports/actions/runs/10), attempt 2\n- macos-14: success\n- macos-15: success\n")
 
 	// Evidence from a build that recorded none of this writes no table.

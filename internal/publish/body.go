@@ -119,7 +119,7 @@ func writeEnvironmentTable(b *strings.Builder, evidence *record.Evidence) {
 	}
 	if guest := guestOf(evidence); guest != nil {
 		if strings.TrimSpace(guest.MacOSVersion) != "" {
-			add("macOS "+oneLine(guest.MacOSVersion), "build "+known(guest.MacOSBuild)+"; "+known(guest.Architecture))
+			add("macOS", oneLine(guest.MacOSVersion)+" (build "+known(guest.MacOSBuild)+"; "+known(guest.Architecture)+")")
 		}
 		switch guest.DeveloperTools {
 		case record.DeveloperToolsXcode:
@@ -137,9 +137,7 @@ func writeEnvironmentTable(b *strings.Builder, evidence *record.Evidence) {
 	if len(rows) == 0 {
 		return
 	}
-	// The header is empty on purpose: each row names itself, and a column
-	// heading would only repeat that.
-	fmt.Fprint(b, "\n|  |  |\n| --- | --- |\n")
+	fmt.Fprint(b, "\n| **Component** | **Version** |\n| --- | --- |\n")
 	for _, entry := range rows {
 		fmt.Fprintf(b, "| %s | %s |\n", entry.name, entry.detail)
 	}
