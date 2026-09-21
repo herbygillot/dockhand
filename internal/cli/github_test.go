@@ -18,7 +18,8 @@ func TestGitHubBuildFlagsSelectWorkflowPolicy(t *testing.T) {
 		valid bool
 	}{
 		{[]string{"--provider", "github"}, true},
-		{[]string{"--provider", "github", "--tests", "workflow"}, true},
+		{[]string{"--provider", "github", "--tests", "workflow"}, false},
+		{[]string{"--provider", "github", "--tests", "required"}, false},
 		{[]string{"--provider", "github", "--tests", "declared"}, false},
 		{[]string{"--provider", "github", "--tests", "skip"}, false},
 		{[]string{"--provider", "github", "--image", "image"}, false},

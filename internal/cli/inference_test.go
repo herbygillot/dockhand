@@ -19,7 +19,7 @@ func TestVerifyCLIInfersTrackedBranchAndCurrentCheckout(t *testing.T) {
 	config, repo, _ := preparationCLI(t)
 	configureReuseImage(t, &config)
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--no-publish", "--skip-verify", "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
+	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--to", "branch", "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
 	var prepared ActionResult
 	decodeResult(t, stdout.Bytes(), &prepared)
 	branch := prepared.Status.Jobs[0].Job.Prepared.Branch
@@ -67,7 +67,7 @@ func TestVerifyCLIRejectsUnknownInferenceWithoutAcceptingWork(t *testing.T) {
 	config, _, _ := preparationCLI(t)
 	configureReuseImage(t, &config)
 	var stdout, stderr bytes.Buffer
-	err := Run(t.Context(), []string{"verify", "--branch", "candidate", "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
+	err := Run(t.Context(), []string{"verify", "--adopt", "candidate", "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
 	require.ErrorContains(t, err, "without a tracked contribution; specify a port explicitly")
 	var envelope Envelope
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &envelope))

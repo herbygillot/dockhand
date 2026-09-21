@@ -51,14 +51,14 @@ type ActionResult struct {
 }
 
 func (r *runtime) verifyCommand() *cobra.Command {
-	var branch, change string
+	var branch, adopt, change string
 	var workingTree bool
 	var build buildOptions
 	var variants []string
 	var detach, trace, fresh, allSubports bool
 	command := &cobra.Command{
 		Use: "verify [port]", Short: "Verify a prepared contribution or explicit source",
-		Long: "Verify one named port or subport, or a snapshot-relative Portfile. By default, continue the unique open contribution for the target using its committed branch and recorded verification settings. Use --working-tree to capture tracked working-tree contents, including staged additions and deletions. Stage new files with git add to include them. An explicit --branch selects committed contents. Omit the port to use a tracked contribution's single target, including its subport and variant choices. Explicit variants override those choices. Inference requires changes confined to that port relative to its recorded base. The captured snapshot stays fixed while you continue editing. Matching passing evidence is reused unless --fresh is supplied. The command stays through completion; --detach returns once the provider admits the build. Ctrl-C detaches without canceling accepted work.",
+		Long: "Verify one named port or subport, or a snapshot-relative Portfile. By default, continue the unique open contribution for the target using its committed branch and recorded verification settings. Use --working-tree to capture tracked working-tree contents, including staged additions and deletions. Stage new files with git add to include them. --branch selects a tracked contribution branch; --adopt selects the committed contents of a branch dockhand did not make. Omit the port to use a tracked contribution's single target, including its subport and variant choices. Explicit variants override those choices. Inference requires changes confined to that port relative to its recorded base. The captured snapshot stays fixed while you continue editing. Matching passing evidence is reused unless --fresh is supplied. The command stays through completion; --detach returns once the provider admits the build. Ctrl-C detaches without canceling accepted work.",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if err := cobra.MaximumNArgs(1)(cmd, args); err != nil {
 				return err
@@ -90,8 +90,8 @@ func (r *runtime) verifyCommand() *cobra.Command {
 			defer services.Close()
 			if workingTree {
 				progress.VerboseReport(cmd.Context(), "Capturing working-tree source and checking verification settings")
-			} else if branch != "" {
-				progress.VerboseReport(cmd.Context(), "Binding committed source from %s and checking verification settings", branch)
+			} else if adopt != "" {
+				progress.VerboseReport(cmd.Context(), "Binding committed source from %s and checking verification settings", adopt)
 			}
 			var selector string
 			if len(args) == 1 {
@@ -99,7 +99,11 @@ func (r *runtime) verifyCommand() *cobra.Command {
 					return err
 				}
 			}
-			bound, err := services.BindVerification(cmd.Context(), app.Verification{KeepFailed: build.keepFailed, AllSubports: allSubports, WorkingTree: workingTree, ChangeID: record.ChangeID(change), UseRecordedBuild: !verificationSettingsChanged(cmd), IncludeDependents: build.dependents, ID: record.RequestID("request_" + rand.Text()), Branch: branch, Selection: macports.Selection{Selector: selector, Variants: choices}, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource, Fresh: fresh})
+			source := branch
+			if adopt != "" {
+				source = adopt
+			}
+			bound, err := services.BindVerification(cmd.Context(), app.Verification{KeepFailed: build.keepFailed, AllSubports: allSubports, WorkingTree: workingTree, ChangeID: record.ChangeID(change), UseRecordedBuild: !verificationSettingsChanged(cmd), IncludeDependents: build.dependents, ID: record.RequestID("request_" + rand.Text()), Branch: source, Adopt: adopt != "", Selection: macports.Selection{Selector: selector, Variants: choices}, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource, Fresh: fresh})
 			if err != nil {
 				return err
 			}
@@ -118,11 +122,15 @@ func (r *runtime) verifyCommand() *cobra.Command {
 			return r.attach(cmd, services, receipt.JobID, milestone, trace, false, &receipt)
 		},
 	}
-	command.Flags().StringVar(&branch, "branch", "", "Explicitly verify committed contents of this local branch")
+	command.Flags().StringVar(&branch, "branch", "", "Select a tracked contribution branch (default: the current branch, or the target's)")
+	command.Flags().StringVar(&adopt, "adopt", "", "Verify the committed contents of a branch dockhand did not make")
 	command.Flags().StringVar(&change, "change", "", "Select one tracked contribution when the target is ambiguous")
 	command.Flags().BoolVar(&workingTree, "working-tree", false, "Explicitly capture tracked checkout edits and staged new files")
 	command.MarkFlagsMutuallyExclusive("working-tree", "branch")
 	command.MarkFlagsMutuallyExclusive("working-tree", "change")
+	command.MarkFlagsMutuallyExclusive("adopt", "branch")
+	command.MarkFlagsMutuallyExclusive("adopt", "change")
+	command.MarkFlagsMutuallyExclusive("adopt", "working-tree")
 	command.Flags().StringArrayVar(&variants, "variant", nil, "Explicit variant choice, such as +ssl or -x11 (repeatable)")
 	command.Flags().String("remote", "", "Git remote receiving the branch for GitHub verification (default: the remote pushing to your fork)")
 	build.flags(command, r.config)

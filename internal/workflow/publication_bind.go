@@ -19,7 +19,11 @@ type PublicationRequest struct {
 	ChangeID record.ChangeID
 	ID       record.RequestID
 	Branch   string
-	Options  publish.Options
+	// Adopt says Branch names a branch dockhand did not make, whose committed
+	// contents become a tracked contribution when publication is accepted.
+	// Without it, a branch that is not tracked is refused rather than adopted.
+	Adopt   bool
+	Options publish.Options
 	// SkipVerify publishes a tracked contribution without citing verification;
 	// the pull request body discloses that no local build ran.
 	SkipVerify bool
@@ -95,6 +99,9 @@ func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, 
 		var err error
 		change, err = r.OpenChangeByBranch(ctx, input.Branch)
 		if errors.Is(err, state.ErrNotFound) && continuation == nil {
+			if !input.Adopt {
+				return fmt.Errorf("%w: branch %s is not a tracked contribution; --adopt %s publishes its committed contents", ErrInvalidRequest, input.Branch, input.Branch)
+			}
 			return nil
 		}
 		if err != nil {
@@ -126,7 +133,7 @@ func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, 
 	query := state.VerificationQuery{Tree: source.Tree, Limit: 1}
 	if change.ID == "" {
 		if input.SkipVerify {
-			return Request{}, fmt.Errorf("%w: --skip-verify publishes a tracked contribution; branch %s is not tracked, so verify it first or prepare it with dockhand", ErrInvalidRequest, input.Branch)
+			return Request{}, fmt.Errorf("%w: --unverified publishes a tracked contribution; branch %s is not tracked, so verify it first or prepare it with dockhand", ErrInvalidRequest, input.Branch)
 		}
 		source, query.Target.Portfile, err = e.Publisher.UntrackedSource(ctx, source)
 		if err != nil {

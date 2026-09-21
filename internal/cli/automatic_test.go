@@ -85,7 +85,7 @@ func TestAutomaticBumpCLIUsesResolvedReleaseAndPreparedBranch(t *testing.T) {
 	require.NoDirExists(t, filepath.Dir(config.DBPath))
 	stdout.Reset()
 	stderr.Reset()
-	require.NoError(t, Run(t.Context(), []string{"bump", "fixture", "--no-publish", "--skip-verify", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	require.NoError(t, Run(t.Context(), []string{"bump", "fixture", "--to", "branch", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var result ActionResult
 	decodeResult(t, stdout.Bytes(), &result)
 	job := result.Status.Jobs[0].Job
@@ -116,7 +116,7 @@ func TestCurrentBumpCLIIsSuccessfulWithoutDownloadsBranchOrProvider(t *testing.T
 	require.Zero(t, downloads.Load())
 	stdout.Reset()
 	stderr.Reset()
-	require.NoError(t, Run(t.Context(), []string{"bump", "fixture", "--no-publish", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	require.NoError(t, Run(t.Context(), []string{"bump", "fixture", "--to", "verified", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var result ActionResult
 	decodeResult(t, stdout.Bytes(), &result)
 	job := result.Status.Jobs[0].Job
@@ -148,7 +148,7 @@ func TestFailedAutomaticDiscoveryCLIRequiresAttention(t *testing.T) {
 	defer server.Close()
 	config.GitHub.BaseURL = server.URL
 	var stdout, stderr bytes.Buffer
-	err := Run(t.Context(), []string{"bump", "fixture", "--no-publish", "--skip-verify", "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
+	err := Run(t.Context(), []string{"bump", "fixture", "--to", "branch", "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
 	require.ErrorIs(t, err, errNeedsAttention)
 	var result ActionResult
 	decodeResult(t, stdout.Bytes(), &result)

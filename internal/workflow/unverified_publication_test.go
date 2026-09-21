@@ -43,7 +43,7 @@ func TestCombinedUnverifiedPublicationDisclosesTheSkippedBuild(t *testing.T) {
 			require.True(t, publication.Spec.Unverified)
 			require.Empty(t, publication.Spec.EvidenceAttempt)
 			require.Contains(t, publication.Spec.Desired.Body, "Not built locally")
-			require.Contains(t, publication.Spec.Desired.Body, "--skip-verify")
+			require.Contains(t, publication.Spec.Desired.Body, "--unverified")
 			require.Contains(t, publication.Spec.Desired.Body, "[ ] Completed a full install (skipped at the author's request)")
 			require.NotContains(t, publication.Spec.Desired.Body, "Verification attempt:")
 			f.run(t, id) // Push.
@@ -89,7 +89,7 @@ func TestStandalonePublishCanSkipVerificationForTrackedContributionsOnly(t *test
 	for _, tracked := range []bool{true, false} {
 		t.Run(map[bool]string{true: "tracked", false: "untracked"}[tracked], func(t *testing.T) {
 			f, hosting := publicationFixtureWithTracking(t, tracked)
-			request, err := f.engine.BindPublication(t.Context(), workflow.PublicationRequest{ID: "unverified", Branch: "candidate", SkipVerify: true})
+			request, err := f.engine.BindPublication(t.Context(), workflow.PublicationRequest{ID: "unverified", Branch: "candidate", Adopt: true, SkipVerify: true})
 			if !tracked {
 				require.ErrorIs(t, err, workflow.ErrInvalidRequest)
 				require.ErrorContains(t, err, "not tracked")

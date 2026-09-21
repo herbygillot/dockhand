@@ -73,16 +73,16 @@ Dockhand's branches are ordinary Git branches, and it will build and publish a b
 
 ## Stopping early, or skipping the build
 
-Four combinations cover every change command:
+One `--to` and one modifier cover every change command:
 
 | Flags | What happens |
 | --- | --- |
 | none | prepare, build, open the pull request |
-| `--no-publish` (`-P`) | prepare and build; look before you publish |
-| `--skip-verify` (`-V`) | prepare and open the pull request without building; the PR says so |
-| both | prepare the branch and stop |
+| `--to verified` | prepare and build; look before you publish |
+| `--to branch` | prepare the branch and stop |
+| `--unverified` | prepare and open the pull request without building; the PR says so |
 
-`--detach` submits the work and returns as soon as the build is admitted; `wait` finishes it. `--diff` previews without creating anything. A branch left at `--no-publish` is published later with `dockhand publish jq`, and `publish --dry-run` shows the full pull request body first.
+`--detach` submits the work and returns as soon as the build is admitted; `wait` finishes it. `--diff` previews without creating anything. A branch left at `--to verified` is published later with `dockhand publish jq`, and `publish --dry-run` shows the full pull request body first.
 
 ## Requirements
 

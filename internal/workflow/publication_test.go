@@ -162,7 +162,7 @@ func publicationFixtureWithTracking(t *testing.T, tracked bool) (*fixture, *publ
 }
 func bindPublication(t *testing.T, f *fixture, id string) workflow.Request {
 	t.Helper()
-	request, err := f.engine.BindPublication(t.Context(), workflow.PublicationRequest{ID: record.RequestID(id), Branch: "candidate"})
+	request, err := f.engine.BindPublication(t.Context(), workflow.PublicationRequest{ID: record.RequestID(id), Branch: "candidate", Adopt: true})
 	require.NoError(t, err)
 	return request
 }
@@ -263,7 +263,7 @@ func TestPublicationAuthenticationPrecedesAcceptanceAndRemoteEffects(t *testing.
 	t.Run("acceptance", func(t *testing.T) {
 		f, hosting := publicationFixture(t)
 		hosting.authErr = fmt.Errorf("%w: credential missing", forge.ErrAuthentication)
-		_, err := f.engine.BindPublication(t.Context(), workflow.PublicationRequest{ID: "denied", Branch: "candidate"})
+		_, err := f.engine.BindPublication(t.Context(), workflow.PublicationRequest{ID: "denied", Branch: "candidate", Adopt: true})
 		require.ErrorIs(t, err, publish.ErrPrecondition)
 		require.Equal(t, 1, hosting.authCalls)
 		remote, err := f.repo.RemoteHead(t.Context(), hosting.remote, "candidate")

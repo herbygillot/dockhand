@@ -13,10 +13,13 @@ import (
 )
 
 type CorrectionRequest struct {
-	KeepFailed        bool
-	Title             string
-	ID                record.RequestID
-	Action            record.Action
+	KeepFailed bool
+	Title      string
+	ID         record.RequestID
+	Action     record.Action
+	// Target selects the contribution by port; Branch by its tracked branch;
+	// neither means the current branch.
+	Target            string
 	Branch            string
 	Base              record.ObjectID
 	Platform          record.Platform
@@ -73,7 +76,13 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 		return result, err
 	}
 	branch := input.Branch
-	if branch == "" {
+	if input.Target != "" {
+		change, err := e.SelectContribution(ctx, ContributionSelector{Target: input.Target})
+		if err != nil {
+			return result, err
+		}
+		branch = change.Branch
+	} else if branch == "" {
 		branch, err = e.Repo.CurrentBranch(ctx)
 		if err != nil {
 			return result, err

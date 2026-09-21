@@ -86,7 +86,7 @@ func TestBodyDisclosesAnUnverifiedPublication(t *testing.T) {
 	change := record.Change{GeneratedCommit: source.Commit}
 	content := record.PublicationContent{Title: "fixture: update to 2", Body: "Useful explanation"}
 	body := publicationBody(content, change, source, record.Attempt{})
-	for _, want := range []string{"###### Tested on", "Not built locally", "`--skip-verify`", "no lint, test, or install verdict", "[ ] Checked the Portfile with lint (skipped at the author's request).", "[ ] Ran the port's tests (skipped at the author's request).", "[ ] Completed a full install (skipped at the author's request).", "[x] Squashed"} {
+	for _, want := range []string{"###### Tested on", "Not built locally", "`--unverified`", "no lint, test, or install verdict", "[ ] Checked the Portfile with lint (skipped at the author's request).", "[ ] Ran the port's tests (skipped at the author's request).", "[ ] Completed a full install (skipped at the author's request).", "[x] Squashed"} {
 		require.Contains(t, body, want)
 	}
 	for _, absent := range []string{"Verification attempt:", "Environment details were not recorded", "no successful execution recorded"} {

@@ -167,7 +167,7 @@ func TestGlobalPrefixReachesPreviewAndDriverConstruction(t *testing.T) {
 	stderr.Reset()
 	t.Setenv("MACPORTS_TREE", "/missing/ports")
 	t.Setenv("MACPORTS_PREFIX", "/missing/macports")
-	require.NoError(t, Run(t.Context(), []string{"-t", repo.Root, "-p", "MacPorts prefix", "bump-revision", "fixture", "--no-publish", "--skip-verify", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	require.NoError(t, Run(t.Context(), []string{"-t", repo.Root, "-p", "MacPorts prefix", "bump-revision", "fixture", "--to", "branch", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var result ActionResult
 	decodeResult(t, stdout.Bytes(), &result)
 	require.Len(t, result.Status.Jobs, 1)

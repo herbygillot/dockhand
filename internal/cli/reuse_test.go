@@ -27,7 +27,7 @@ func TestVerifyCLIReusesEvidenceAndFreshFlagIsDurable(t *testing.T) {
 	configureReuseImage(t, &config)
 	observed := seedCLIVerification(t, config, "candidate")
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, Run(t.Context(), []string{"verify", "fixture", "--branch", "candidate", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	require.NoError(t, Run(t.Context(), []string{"verify", "fixture", "--adopt", "candidate", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var result ActionResult
 	decodeResult(t, stdout.Bytes(), &result)
 	entry := result.Status.Jobs[0]
@@ -46,7 +46,7 @@ func TestVerifyCLIReusesEvidenceAndFreshFlagIsDurable(t *testing.T) {
 	defer cancel()
 	detach := &detachOnAcceptance{cancel: cancel}
 	stdout.Reset()
-	err := Run(ctx, []string{"verify", "fixture", "--branch", "candidate", "--fresh", "--json", "-v"}, Streams{Out: &stdout, Err: detach}, config)
+	err := Run(ctx, []string{"verify", "fixture", "--adopt", "candidate", "--fresh", "--json", "-v"}, Streams{Out: &stdout, Err: detach}, config)
 	require.ErrorIs(t, err, context.Canceled)
 	status, err := app.Status(t.Context(), config)
 	require.NoError(t, err)
@@ -74,7 +74,7 @@ func seedCLIVerification(t *testing.T, config app.Config, branch string) time.Ti
 	t.Helper()
 	services, err := app.Build(t.Context(), config)
 	require.NoError(t, err)
-	bound, err := services.BindVerification(t.Context(), app.Verification{ID: "original", Branch: branch, Selection: macports.Selection{Selector: "fixture"}, Tests: record.TestDeclared})
+	bound, err := services.BindVerification(t.Context(), app.Verification{ID: "original", Branch: branch, Adopt: true, Selection: macports.Selection{Selector: "fixture"}, Tests: record.TestDeclared})
 	require.NoError(t, err)
 	receipt, err := services.Workflow.Submit(t.Context(), bound.Request)
 	require.NoError(t, err)
@@ -133,7 +133,7 @@ func TestVerifyCLISelectsSetupImageWhenImageIsOmitted(t *testing.T) {
 	config.Tart.Image = ""
 	seedCLIVerification(t, config, "candidate")
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, Run(t.Context(), []string{"verify", "fixture", "--branch", "candidate", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	require.NoError(t, Run(t.Context(), []string{"verify", "fixture", "--adopt", "candidate", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var result ActionResult
 	decodeResult(t, stdout.Bytes(), &result)
 	require.Equal(t, record.JobCompleted, result.Status.Jobs[0].Job.State)

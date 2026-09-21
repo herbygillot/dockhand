@@ -29,7 +29,7 @@ func publicationBody(content record.PublicationContent, change record.Change, so
 	evidence := attempt.Evidence
 	unverified := attempt.ID == ""
 	if unverified {
-		fmt.Fprintln(&b, "\nNot built locally. The author asked dockhand to publish this change without verification (`--skip-verify`), so no lint, test, or install verdict exists for it. The MacPorts pull request workflow is the only check it has had.")
+		fmt.Fprintln(&b, "\nNot built locally. The author asked dockhand to publish this change without verification (`--unverified`), so no lint, test, or install verdict exists for it. The MacPorts pull request workflow is the only check it has had.")
 	} else if evidence == nil {
 		fmt.Fprintln(&b, "\nEnvironment details were not recorded.")
 	} else {

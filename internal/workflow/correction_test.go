@@ -221,7 +221,7 @@ func TestExistingPRRejectsUnexpectedRemoteHeadDuringPlanning(t *testing.T) {
 	other, err := f.repo.WriteCommit(t.Context(), git.Commit{Tree: string(f.source.Tree), Parents: []string{string(f.source.Base)}, Message: "someone else's change", Author: sig, Committer: sig})
 	require.NoError(t, err)
 	require.NoError(t, f.repo.Push(t.Context(), git.Push{Remote: hosting.remote, Branch: "candidate", Commit: other, ExpectedRemote: git.RefValue{Exists: true, Object: string(f.source.Commit)}}))
-	_, err = f.engine.BindPublication(t.Context(), workflow.PublicationRequest{ID: "again", Branch: "candidate"})
+	_, err = f.engine.BindPublication(t.Context(), workflow.PublicationRequest{ID: "again", Branch: "candidate", Adopt: true})
 	require.ErrorContains(t, err, "head changed remotely")
 }
 

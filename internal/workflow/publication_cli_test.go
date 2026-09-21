@@ -70,7 +70,7 @@ func TestPublishCLIAdoptsManualBranchOnlyAfterDryRun(t *testing.T) {
 	// The dry run needs the authenticated login to prove the push repository is owned by the user.
 	config := app.Config{DBPath: f.store.Path(), Repository: f.repo.Root, GitExecutable: wrapper, GitHub: github.Config{BaseURL: server.URL, Token: "fixture"}}
 	var output, diagnostics bytes.Buffer
-	err = cli.Run(t.Context(), []string{"publish", "--branch", "candidate", "--dry-run", "--json"}, cli.Streams{Out: &output, Err: &diagnostics}, config)
+	err = cli.Run(t.Context(), []string{"publish", "--adopt", "candidate", "--dry-run", "--json"}, cli.Streams{Out: &output, Err: &diagnostics}, config)
 	require.NoError(t, err, "%s", diagnostics.String())
 	var plan record.JobSpec
 	decodeCLIResult(t, output.Bytes(), &plan)
@@ -86,7 +86,7 @@ func TestPublishCLIAdoptsManualBranchOnlyAfterDryRun(t *testing.T) {
 	config.GitHub.Token = ""
 	output.Reset()
 	diagnostics.Reset()
-	err = cli.Run(t.Context(), []string{"publish", "--branch", "candidate", "--detach", "--json"}, cli.Streams{Out: &output, Err: &diagnostics}, config)
+	err = cli.Run(t.Context(), []string{"publish", "--adopt", "candidate", "--detach", "--json"}, cli.Streams{Out: &output, Err: &diagnostics}, config)
 	require.ErrorIs(t, err, github.ErrAuthentication)
 	afterRejected, err := f.engine.Status(t.Context(), workflow.Scope{All: true})
 	require.NoError(t, err)
@@ -97,7 +97,7 @@ func TestPublishCLIAdoptsManualBranchOnlyAfterDryRun(t *testing.T) {
 	config.GitHub.Token = "fixture"
 	output.Reset()
 	diagnostics.Reset()
-	err = cli.Run(t.Context(), []string{"publish", "--branch", "candidate", "--json"}, cli.Streams{Out: &output, Err: &diagnostics}, config)
+	err = cli.Run(t.Context(), []string{"publish", "--adopt", "candidate", "--json"}, cli.Streams{Out: &output, Err: &diagnostics}, config)
 	require.NoError(t, err, "%s", diagnostics.String())
 	var result cli.ActionResult
 	decodeCLIResult(t, output.Bytes(), &result)

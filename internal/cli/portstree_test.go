@@ -27,8 +27,8 @@ func TestCommandsRefuseCheckoutsThatAreNotPortsTrees(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "state", "state.db")
 	config := app.Config{Repository: root, DBPath: db}
 	for _, args := range [][]string{
-		{"status"}, {"status", "--json"}, {"bump", "jq", "--no-publish", "--skip-verify"}, {"bump", "jq", "--diff"}, {"bump-revision", "jq", "--reason", "x"},
-		{"verify", "jq", "--branch", "main", "--provider", "tart"}, {"publish", "--branch", "main"}, {"wait", "--branch", "main"}, {"refresh", "--branch", "main"}, {"gc"}, {"outdated", "jq"}, {"assess", "jq"},
+		{"status"}, {"status", "--json"}, {"bump", "jq", "--to", "branch"}, {"bump", "jq", "--diff"}, {"bump-revision", "jq", "--reason", "x"},
+		{"verify", "jq", "--adopt", "main", "--provider", "tart"}, {"publish", "--adopt", "main"}, {"wait", "--branch", "main"}, {"refresh", "--branch", "main"}, {"gc"}, {"outdated", "jq"}, {"assess", "jq"},
 	} {
 		var out bytes.Buffer
 		err := Run(t.Context(), args, Streams{Out: &out, Err: &out}, config)

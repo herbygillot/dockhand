@@ -1,20 +1,20 @@
 # GitHub verification
 
-`--provider github` verifies a committed branch through GitHub Actions on your personal fork of `macports/macports-ports`. Selecting it authorizes pushing the candidate branch to that fork. Opening an upstream PR follows by default; `--no-publish` stops after the workflow, and the `publish` command does it later. Bumps default to `--provider auto`: Tart is preferred when its matching prepared image is available; missing Tart or an unavailable suitable image selects GitHub instead. Standalone `verify` still defaults to Tart. Explicit provider choices take precedence.
+`--provider github` verifies a committed branch through GitHub Actions on your personal fork of `macports/macports-ports`. Selecting it authorizes pushing the candidate branch to that fork. Opening an upstream PR follows by default; `--to verified` stops after the workflow, and the `publish` command does it later. Bumps default to `--provider auto`: Tart is preferred when its matching prepared image is available; missing Tart or an unavailable suitable image selects GitHub instead. Standalone `verify` still defaults to Tart. Explicit provider choices take precedence.
 
 ```sh
 # Prepare an update, push it to your fork, wait for its workflow, and open the PR.
 dockhand bump croc --provider github
 
 # Stop after workflow success without a PR.
-dockhand bump croc --provider github --no-publish
+dockhand bump croc --provider github --to verified
 
 # Verify a committed contribution you edited yourself.
-dockhand verify croc --branch my-update --provider github
+dockhand verify croc --adopt my-update --provider github
 
 # Use a different local remote for your personal fork.
 # The fork is found by URL and login; name it only when two remotes qualify:
-dockhand verify croc --branch my-update --provider github --remote personal
+dockhand verify croc --adopt my-update --provider github --remote personal
 
 # Resume an accepted job. Its recorded provider and destination are retained.
 dockhand wait --branch my-update
@@ -28,7 +28,7 @@ The provider uses the candidate commit's existing MacPorts workflow, which runs 
 
 The verdict comes from the run. A passing workflow requires a successful terminal run that carried at least one job, every job concluded successfully, no job name repeated, and every job that reported its `runs-on` labels having run on a macOS runner. When the workflow also named its jobs after its runner matrix, which is what makes that prediction match GitHub's own job names, the run is held to that list as well. A blocked verdict names which of these failed.
 
-The accepted test policy is `workflow`, selected automatically for this provider. The MacPorts workflow may tolerate individual port test failures, and Tart's default `declared` policy tolerates them the same way; only `--tests required` on Tart makes them decisive. A successful workflow is recorded as success under that policy; it does not certify that all declared tests passed, every subport built, or every requested port phase ran. Status and PR bodies retain the workflow URL, exact run attempt, and job outcomes. They do not invent compiler versions, image identities, or successful `port` commands. The local platform remains the Portfile evaluation context; the recorded remote job matrix describes execution coverage.
+The provider's test policy is its workflow's, recorded as `workflow`; `--tests` is a Tart option and is refused with `--provider github`. The MacPorts workflow may tolerate individual port test failures, and Tart's default `declared` policy tolerates them the same way; only `--tests required` on Tart makes them decisive. A successful workflow is recorded as success under that policy; it does not certify that all declared tests passed, every subport built, or every requested port phase ran. Status and PR bodies retain the workflow URL, exact run attempt, and job outcomes. They do not invent compiler versions, image identities, or successful `port` commands. The local platform remains the Portfile evaluation context; the recorded remote job matrix describes execution coverage.
 
 The first version requires one commit changing one selected port directory above an upstream base. At least one added or modified `Portfile` or `files/` entry must match the workflow's Git `AM` filter; deletion-only and rename-only edits do not qualify. All changed paths, including deletions, remain subject to the single-port scope check. It accepts the standard workflow matrix and push filters. The workflow controls subport eligibility, default variants, runners, and dependency installation. Explicit variant overrides, `--tests declared`, `--tests skip`, `--image`, `--capacity`, and `--from-source` are refused with this provider. Working-tree snapshots are not pushed: `verify` requires `--branch`. Preparation commands create committed branches themselves.
 

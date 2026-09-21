@@ -16,33 +16,51 @@ func (r *runtime) correctionCommands() []*cobra.Command {
 	var commands []*cobra.Command
 	for _, action := range []record.Action{record.Amend, record.Rebase} {
 		var branch, title string
-		var diff, noPublish, skipVerify, detach, trace bool
+		var diff, detach, trace bool
 		var build buildOptions
-		var destination publish.Options
+		var destination destinationFlags
+		var publication publish.Options
 		short := "Replace a contribution's commit with your checkout's changes and verify it"
-		long := "Amend captures the tracked checkout of the contribution's branch as its new commit; stage intended additions and deletions first, since the capture takes what Git tracks. --branch selects committed contents of a branch instead. --title replaces the commit title and keeps its body. The replacement is verified and its PR updated, in the foreground through both; --no-publish (-P) stops after verification, --skip-verify (-V) updates the PR without building and says so in its body, both together stop at the branch, and --detach returns once the work is accepted. --diff previews without accepting work or moving branches."
+		long := "Amend captures the tracked checkout of the contribution's branch as its new commit; stage intended additions and deletions first, since the capture takes what Git tracks. A target, or --branch, selects the contribution instead of the current branch. --title replaces the commit title and keeps its body. The replacement is verified and its PR updated, in the foreground through both; --to verified (-P) stops after verification, --unverified (-V) updates the PR without building and says so in its body, both together stop at the branch, and --detach returns once the work is accepted. --diff previews without accepting work or moving branches."
 		if action == record.Rebase {
 			short = "Reapply a contribution onto fresh MacPorts master and verify it"
-			long = "Rebase fetches MacPorts master and reapplies the contribution as one commit in a disposable workspace, then moves the branch to the result. Switch away from the branch before rebasing it. A conflict preserves that workspace and leaves the original branch intact. The replacement is verified and its PR updated, in the foreground through both; --no-publish (-P) stops after verification, --skip-verify (-V) updates the PR without building and says so in its body, both together stop at the branch, and --detach returns once the work is accepted. --diff previews without accepting work or moving branches."
+			long = "Rebase fetches MacPorts master and reapplies the contribution as one commit in a disposable workspace, then moves the branch to the result. Switch away from the branch before rebasing it. A conflict preserves that workspace and leaves the original branch intact. The replacement is verified and its PR updated, in the foreground through both; --to verified (-P) stops after verification, --unverified (-V) updates the PR without building and says so in its body, both together stop at the branch, and --detach returns once the work is accepted. --diff previews without accepting work or moving branches."
 		}
-		command := &cobra.Command{Use: string(action), Short: short, Args: cobra.NoArgs,
+		command := &cobra.Command{Use: string(action) + " [target]", Short: short, Args: cobra.MaximumNArgs(1),
 			Long: long,
-			RunE: func(cmd *cobra.Command, _ []string) error {
+			RunE: func(cmd *cobra.Command, args []string) error {
 				if cmd.Flags().Changed("branch") && !git.ValidBranchName(branch) {
 					return fmt.Errorf("branch must name a literal local branch")
 				}
-				if diff && (noPublish || skipVerify || detach || trace || build.dependents) {
-					return fmt.Errorf("--diff cannot be combined with publication or verification attachment flags")
+				var target string
+				if len(args) == 1 {
+					var err error
+					if target, err = portName(args[0]); err != nil {
+						return err
+					}
+					if branch != "" {
+						return fmt.Errorf("select the contribution by target or by --branch, not both")
+					}
+				}
+				to, publishing, skipVerify, err := destination.resolve()
+				if err != nil {
+					return err
+				}
+				if diff && (cmd.Flags().Changed("to") || destination.unverified || destination.noPublish || destination.skipVerify || detach || trace || build.dependents) {
+					return fmt.Errorf("--diff previews only; it does not go with --to, --unverified, --detach, --trace, or --dependents")
 				}
 				if build.dependents && skipVerify {
-					return fmt.Errorf("--dependents requires verification; omit --skip-verify")
+					return fmt.Errorf("--dependents requires a build; it does not go with --to branch or --unverified")
+				}
+				if trace && to == toBranch {
+					return fmt.Errorf("--to branch builds nothing to trace")
 				}
 				config, err := build.config(cmd, r.config)
 				if err != nil {
 					return err
 				}
 				if diff {
-					bound, err := app.PreviewCorrection(cmd.Context(), config, workflow.CorrectionRequest{Action: action, Title: title, Branch: branch, Preview: true})
+					bound, err := app.PreviewCorrection(cmd.Context(), config, workflow.CorrectionRequest{Action: action, Title: title, Target: target, Branch: branch, Preview: true})
 					if err != nil {
 						return err
 					}
@@ -57,13 +75,13 @@ func (r *runtime) correctionCommands() []*cobra.Command {
 					return err
 				}
 				defer services.Close()
-				input := workflow.CorrectionRequest{KeepFailed: build.keepFailed, ID: record.RequestID("request_" + rand.Text()), Action: action, Title: title, Branch: branch, Preview: diff, IncludeDependents: build.dependents, SkipVerify: skipVerify}
-				if !noPublish {
-					input.Publication = &destination
+				input := workflow.CorrectionRequest{KeepFailed: build.keepFailed, ID: record.RequestID("request_" + rand.Text()), Action: action, Title: title, Target: target, Branch: branch, Preview: diff, IncludeDependents: build.dependents, SkipVerify: skipVerify}
+				if publishing {
+					input.Publication = &publication
 				}
 				bound, err := services.BindCorrection(cmd.Context(), input, record.TestPolicy(build.tests), build.fromSource)
 				if err != nil {
-					return publicationIntakeHint(err, !noPublish)
+					return publicationIntakeHint(err, publishing)
 				}
 				receipt, err := services.Workflow.Submit(cmd.Context(), bound.Request)
 				if err != nil {
@@ -77,17 +95,17 @@ func (r *runtime) correctionCommands() []*cobra.Command {
 				return r.attach(cmd, services, receipt.JobID, milestone, trace, false, &receipt)
 			},
 		}
-		command.Flags().StringVar(&branch, "branch", "", "Select a tracked local contribution branch")
+		command.Flags().StringVar(&branch, "branch", "", "Select a tracked contribution branch (default: the current branch, or the target's)")
 		command.Flags().StringVar(&title, "title", "", "Replace the contribution commit title, preserving its body")
 		command.Flags().BoolVar(&diff, "diff", false, "Preview without moving branches or accepting work")
-		command.Flags().BoolVarP(&noPublish, "no-publish", "P", false, "Leave the PR untouched; with --skip-verify, stop at the replaced branch")
-		command.Flags().BoolVarP(&skipVerify, "skip-verify", "V", false, "Update the PR without a local build; the PR body discloses it")
+		destination.add(command, "updates")
 		command.Flags().BoolVar(&detach, "detach", false, "Return once the correction is accepted and admitted; wait or start finishes it")
 		command.Flags().BoolVar(&trace, "trace", false, "Follow build logs on stderr through completion; implies --debug")
 		command.MarkFlagsMutuallyExclusive("detach", "trace")
+		command.MarkFlagsMutuallyExclusive("trace", "unverified")
 		command.MarkFlagsMutuallyExclusive("trace", "skip-verify")
 		build.flags(command, r.config)
-		publicationFlags(command, &destination)
+		publicationFlags(command, &publication)
 		commands = append(commands, command)
 	}
 	var branch string

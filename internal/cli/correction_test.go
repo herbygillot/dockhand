@@ -12,7 +12,7 @@ func TestAmendCLIReusesVerificationAndKeepsContribution(t *testing.T) {
 	config, repo, _ := preparationCLI(t)
 	configureReuseImage(t, &config)
 	var out, stderr bytes.Buffer
-	require.NoError(t, runFixture(t.Context(), []string{"bump-revision", "fixture", "--no-publish", "--skip-verify", "--json"}, Streams{Out: &out, Err: &stderr}, config))
+	require.NoError(t, runFixture(t.Context(), []string{"bump-revision", "fixture", "--to", "branch", "--json"}, Streams{Out: &out, Err: &stderr}, config))
 	var original ActionResult
 	decodeResult(t, out.Bytes(), &original)
 	branch := original.Status.Jobs[0].Job.Prepared.Branch
@@ -27,7 +27,7 @@ func TestAmendCLIReusesVerificationAndKeepsContribution(t *testing.T) {
 	require.Equal(t, before, after)
 	out.Reset()
 	stderr.Reset()
-	require.NoError(t, runFixture(t.Context(), []string{"amend", "--branch", branch, "--provider", "tart", "--no-publish", "--json"}, Streams{Out: &out, Err: &stderr}, config), stderr.String())
+	require.NoError(t, runFixture(t.Context(), []string{"amend", "--branch", branch, "--provider", "tart", "--to", "verified", "--json"}, Streams{Out: &out, Err: &stderr}, config), stderr.String())
 	var result ActionResult
 	decodeResult(t, out.Bytes(), &result)
 	require.Equal(t, record.JobCompleted, result.Status.Jobs[0].Job.State)

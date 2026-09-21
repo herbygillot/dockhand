@@ -29,25 +29,12 @@ func (o *buildOptions) flags(cmd *cobra.Command, config app.Config) {
 	cmd.Flags().StringArrayVar(&o.targetImages, "target-image", nil, "Dependent port=image override (repeatable; requires --dependents, same platform)")
 	provider := config.VerificationProvider
 	if provider == "" {
-		provider = verify.ProviderTart
-		if cmd.Name() == "bump" || cmd.Name() == "bump-revision" || cmd.Name() == "refresh-checksums" || cmd.Name() == "amend" || cmd.Name() == "rebase" {
-			provider = "auto"
-		}
+		provider = "auto"
 	}
-	providerHelp := "Verification provider: tart or github (pushes to your fork)"
-	if cmd.Name() == "bump" || cmd.Name() == "bump-revision" || cmd.Name() == "refresh-checksums" || cmd.Name() == "amend" || cmd.Name() == "rebase" {
-		providerHelp = "Verification provider: auto (prefers prepared Tart), tart, or github (pushes to your fork)"
-	}
-	cmd.Flags().StringVar(&o.provider, "provider", provider, providerHelp)
+	cmd.Flags().StringVar(&o.provider, "provider", provider, "Verification provider: auto builds on a prepared Tart image and otherwise on GitHub; tart; or github (pushes to your fork). Any Tart option selects tart")
 	cmd.Flags().StringVar(&o.image, "image", config.Tart.Image, "Prepared local Tart image")
 	cmd.Flags().IntVar(&o.capacity, "capacity", config.Tart.Capacity, "Shared Tart capacity (uses the recorded pool limit, initially 2)")
-	testDefault := string(record.TestDeclared)
-	if provider == "auto" {
-		testDefault = ""
-	} else if provider == verify.ProviderGitHub {
-		testDefault = string(record.TestWorkflow)
-	}
-	cmd.Flags().StringVar(&o.tests, "tests", testDefault, "Test policy: declared runs the port's tests as advisory, required fails the build on them, skip omits them (Tart); workflow for GitHub")
+	cmd.Flags().StringVar(&o.tests, "tests", string(record.TestDeclared), "Test policy for a Tart build: declared runs the port's tests as advisory, required fails the build on them, skip omits them. GitHub's workflow decides its own")
 	cmd.Flags().DurationVar(&o.testTimeout, "test-timeout", config.Tart.TestTimeout, fmt.Sprintf("Stop the port's tests after this long; a timeout counts as a test failure (Tart; default %s)", config.TestTimeout()))
 	cmd.Flags().BoolVar(&o.fromSource, "from-source", false, "Build the target and needed dependencies from source instead of using binary archives")
 }
@@ -55,9 +42,6 @@ func (o *buildOptions) flags(cmd *cobra.Command, config app.Config) {
 func (o *buildOptions) config(cmd *cobra.Command, config app.Config) (app.Config, error) {
 	if o.provider != "auto" && o.provider != verify.ProviderTart && o.provider != verify.ProviderGitHub {
 		return config, fmt.Errorf("provider must be auto, tart, or github")
-	}
-	if o.provider == "auto" && cmd.Name() != "bump" && cmd.Name() != "bump-revision" && cmd.Name() != "refresh-checksums" && cmd.Name() != "amend" && cmd.Name() != "rebase" {
-		return config, fmt.Errorf("automatic provider selection is supported for preparation commands; choose --provider tart or github")
 	}
 	if len(o.targetImages) > 0 {
 		if !o.dependents {
@@ -89,16 +73,16 @@ func (o *buildOptions) config(cmd *cobra.Command, config app.Config) (app.Config
 			o.provider = verify.ProviderTart
 		}
 	}
+	// A Tart option is a choice of Tart: auto resolves to it rather than
+	// refusing the option, and never resolves to GitHub from any option.
 	if o.provider == "auto" {
-		if cmd.Flags().Changed("image") || config.Tart.Image != "" || cmd.Flags().Changed("capacity") || cmd.Flags().Changed("from-source") || cmd.Flags().Changed("variant") || cmd.Flags().Changed("test-timeout") {
-			o.provider = verify.ProviderTart
-		}
-		if cmd.Flags().Changed("tests") {
-			if o.tests == string(record.TestWorkflow) && o.provider == "auto" {
-				o.provider = verify.ProviderGitHub
-			} else if o.provider == "auto" {
+		for _, name := range []string{"image", "capacity", "from-source", "variant", "test-timeout", "tests", "working-tree", "fresh"} {
+			if cmd.Flags().Lookup(name) != nil && cmd.Flags().Changed(name) {
 				o.provider = verify.ProviderTart
 			}
+		}
+		if config.Tart.Image != "" {
+			o.provider = verify.ProviderTart
 		}
 	}
 	config.VerificationProvider = o.provider
@@ -106,15 +90,14 @@ func (o *buildOptions) config(cmd *cobra.Command, config app.Config) (app.Config
 		if cmd.Flags().Changed("image") || cmd.Flags().Changed("capacity") || cmd.Flags().Changed("from-source") || cmd.Flags().Changed("test-timeout") {
 			return config, fmt.Errorf("GitHub verification uses the workflow's runner matrix and dependency policy; --image, --capacity, --from-source, and --test-timeout are Tart options")
 		}
-		if !cmd.Flags().Changed("tests") {
-			if o.provider == "auto" {
-				o.tests = ""
-			} else {
-				o.tests = string(record.TestWorkflow)
-			}
+		if cmd.Flags().Changed("tests") {
+			return config, fmt.Errorf("GitHub's workflow decides its test policy; --tests is a Tart option")
 		}
-		if o.provider == verify.ProviderGitHub && o.tests != string(record.TestWorkflow) {
-			return config, fmt.Errorf("GitHub verification requires --tests workflow; its workflow may tolerate test failures")
+		// GitHub's policy is the provider's fact, recorded as such; under auto
+		// the resolver fills it in for whichever provider it picks.
+		o.tests = ""
+		if o.provider == verify.ProviderGitHub {
+			o.tests = string(record.TestWorkflow)
 		}
 		if cmd.Flags().Lookup("remote") != nil {
 			config.VerificationDestination.Remote, _ = cmd.Flags().GetString("remote")

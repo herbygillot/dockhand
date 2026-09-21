@@ -29,7 +29,7 @@ func TestRevisionBumpPublicationCLIWaitAndResume(t *testing.T) {
 			config, repo, source := preparationCLI(t)
 			configureReuseImage(t, &config)
 			var stdout, stderr bytes.Buffer
-			require.NoError(t, runFixture(t.Context(), []string{"bump-revision", "fixture", "--no-publish", "--skip-verify", "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
+			require.NoError(t, runFixture(t.Context(), []string{"bump-revision", "fixture", "--to", "branch", "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
 			var prior ActionResult
 			decodeResult(t, stdout.Bytes(), &prior)
 			seedCLIVerification(t, config, prior.Status.Jobs[0].Job.Prepared.Branch)
@@ -173,7 +173,7 @@ func TestRevisionBumpSkipVerifyPublishesWithDisclosure(t *testing.T) {
 	config, repo, source := preparationCLI(t)
 	forge := publicationCLI(t, &config, repo, source)
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, runFixture(t.Context(), []string{"bump-revision", "fixture", "--remote", "contribution", "--base", "main", "-V", "--json", "-v"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	require.NoError(t, runFixture(t.Context(), []string{"bump-revision", "fixture", "--remote", "contribution", "--base", "main", "--unverified", "--json", "-v"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var result ActionResult
 	decodeResult(t, stdout.Bytes(), &result)
 	entry := result.Status.Jobs[0]
@@ -190,7 +190,7 @@ func TestRevisionBumpSkipVerifyPublishesWithDisclosure(t *testing.T) {
 	require.Equal(t, "https://github.com/author/ports/pull/1", result.Status.PullRequests[0].Ref.URL)
 	require.Equal(t, 1, forge.writes())
 	require.Contains(t, forge.body(), "Not built locally")
-	require.Contains(t, forge.body(), "--skip-verify")
+	require.Contains(t, forge.body(), "--unverified")
 	require.Contains(t, stderr.String(), "verification skipped at the author's request")
 	stdout.Reset()
 	stderr.Reset()
@@ -202,7 +202,7 @@ func TestRevisionBumpSkipVerifyPublishesWithDisclosure(t *testing.T) {
 	err := runFixture(t.Context(), []string{"publish", "--branch", entry.Job.Prepared.Branch, "--remote", "contribution", "--base", "main", "--dry-run"}, Streams{Out: &stdout, Err: &stderr}, config)
 	require.ErrorContains(t, err, "verify the committed contribution before publishing")
 	stdout.Reset()
-	require.NoError(t, runFixture(t.Context(), []string{"publish", "--branch", entry.Job.Prepared.Branch, "--remote", "contribution", "--base", "main", "--dry-run", "--skip-verify"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	require.NoError(t, runFixture(t.Context(), []string{"publish", "--branch", entry.Job.Prepared.Branch, "--remote", "contribution", "--base", "main", "--dry-run", "--unverified"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	require.Contains(t, stdout.String(), "verification: skipped at the author's request")
 	require.Contains(t, stdout.String(), "Not built locally")
 	require.Equal(t, 1, forge.writes())
@@ -212,7 +212,7 @@ func TestSkipVerifyWithNoPublishStopsAtTheBranch(t *testing.T) {
 	t.Parallel()
 	config, _, _ := preparationCLI(t)
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, runFixture(t.Context(), []string{"bump-revision", "fixture", "-P", "-V", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	require.NoError(t, runFixture(t.Context(), []string{"bump-revision", "fixture", "--to", "branch", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var result ActionResult
 	decodeResult(t, stdout.Bytes(), &result)
 	entry := result.Status.Jobs[0]
@@ -221,7 +221,7 @@ func TestSkipVerifyWithNoPublishStopsAtTheBranch(t *testing.T) {
 	require.Equal(t, record.VerificationSkipped, entry.Job.Spec.Verification)
 	require.Empty(t, entry.Publications)
 	require.Empty(t, entry.Attempts)
-	for _, args := range [][]string{{"bump-revision", "fixture", "--dependents", "--skip-verify"}, {"amend", "--dependents", "--skip-verify"}, {"bump-revision", "fixture", "--trace", "--skip-verify"}} {
+	for _, args := range [][]string{{"bump-revision", "fixture", "--dependents", "--unverified"}, {"amend", "--dependents", "--unverified"}, {"bump-revision", "fixture", "--trace", "--unverified"}} {
 		err := runFixture(t.Context(), args, Streams{Out: &stdout, Err: &stderr}, config)
 		require.Error(t, err, "%v", args)
 	}

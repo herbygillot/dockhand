@@ -93,7 +93,7 @@ func TestManualPublicationRechecksEvidenceAndRollsBackAdoption(t *testing.T) {
 		require.Len(t, revisions, 1)
 		return nil
 	}))
-	_, err = f.engine.BindPublication(t.Context(), workflow.PublicationRequest{ID: "new-plan", Branch: "candidate"})
+	_, err = f.engine.BindPublication(t.Context(), workflow.PublicationRequest{ID: "new-plan", Branch: "candidate", Adopt: true})
 	require.ErrorIs(t, err, publish.ErrPrecondition)
 	require.Zero(t, hosting.writes)
 }
@@ -145,7 +145,7 @@ func TestManualPublicationRejectsMovedBranchesBeforeRemoteEffects(t *testing.T) 
 			move := func() { commitPort(t, f, "candidate", "version 3\n") }
 			if stage == "binding" {
 				hosting.onFind = move
-				_, err := f.engine.BindPublication(t.Context(), workflow.PublicationRequest{ID: "moving", Branch: "candidate"})
+				_, err := f.engine.BindPublication(t.Context(), workflow.PublicationRequest{ID: "moving", Branch: "candidate", Adopt: true})
 				require.ErrorIs(t, err, workflow.ErrStaleRevision)
 				requireUntrackedPublication(t, f)
 			} else {
@@ -196,7 +196,7 @@ func TestManualPublicationRequiresEvidenceForTheWholeTreeAndPort(t *testing.T) {
 				completeVerification(t, f, request, record.VerdictFailed)
 				f.engine.Provider = nil
 				// The other port's newer failure must not hide this port's passing evidence.
-				_, err := f.engine.BindPublication(t.Context(), workflow.PublicationRequest{ID: "good-plan", Branch: "candidate"})
+				_, err := f.engine.BindPublication(t.Context(), workflow.PublicationRequest{ID: "good-plan", Branch: "candidate", Adopt: true})
 				require.NoError(t, err)
 				return
 			case "foreign-repository":
@@ -218,7 +218,7 @@ func TestManualPublicationRequiresEvidenceForTheWholeTreeAndPort(t *testing.T) {
 			case "merged":
 				require.NoError(t, f.repo.Push(t.Context(), git.Push{Remote: hosting.remote, Branch: "main", Commit: string(f.source.Commit), ExpectedRemote: git.RefValue{Exists: true, Object: string(f.source.Base)}}))
 			}
-			_, err := f.engine.BindPublication(t.Context(), workflow.PublicationRequest{ID: "invalid", Branch: "candidate"})
+			_, err := f.engine.BindPublication(t.Context(), workflow.PublicationRequest{ID: "invalid", Branch: "candidate", Adopt: true})
 			require.Error(t, err)
 			if mode == "two-commits" {
 				require.ErrorContains(t, err, "base is not in")

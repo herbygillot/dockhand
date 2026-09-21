@@ -31,7 +31,7 @@ func TestBumpParsesOptionalVersionWithoutInitializingState(t *testing.T) {
 		err := Run(t.Context(), args, Streams{Out: &out, Err: &out}, config)
 		require.ErrorContains(t, err, "git rev-parse")
 	}
-	for _, args := range [][]string{{"bump"}, {"bump", "jq", "1", "2"}, {"bump-revision", "jq", "1"}, {"bump", "jq", "1", "--diff", "--detach"}, {"bump-revision", "jq", "--diff", "--branch="}, {"bump-revision", "jq", "--diff", "--variant=bad"}, {"bump", "jq", "--publish"}, {"bump-revision", "jq", "--wait"}, {"bump", "jq", "--diff", "--no-publish"}, {"bump", "jq", "--trace", "--detach"}, {"bump", "jq", "--provider", "tart", "--no-publish", "--remote", "origin"}, {"bump-revision", "jq", "--provider", "tart", "--no-publish", "--skip-verify", "--base", "main"}, {"bump", "jq", "--provider", "tart", "--no-publish", "--upstream", "upstream"}} {
+	for _, args := range [][]string{{"bump"}, {"bump", "jq", "1", "2"}, {"bump-revision", "jq", "1"}, {"bump", "jq", "1", "--diff", "--detach"}, {"bump-revision", "jq", "--diff", "--branch="}, {"bump-revision", "jq", "--diff", "--variant=bad"}, {"bump", "jq", "--publish"}, {"bump-revision", "jq", "--wait"}, {"bump", "jq", "--diff", "--to", "verified"}, {"bump", "jq", "--trace", "--detach"}, {"bump", "jq", "--provider", "tart", "--to", "verified", "--remote", "origin"}, {"bump-revision", "jq", "--provider", "tart", "--to", "branch", "--base", "main"}, {"bump", "jq", "--provider", "tart", "--to", "verified", "--upstream", "upstream"}} {
 		var out bytes.Buffer
 		err := Run(t.Context(), args, Streams{Out: &out, Err: &out}, config)
 		require.Error(t, err)
@@ -115,7 +115,7 @@ func TestRevisionBumpCLITracksCommittedChangeAndPreservesCheckout(t *testing.T) 
 	require.NoError(t, err)
 	config.Tart = tart.Config{Executable: "/missing/tart"}
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--no-publish", "--skip-verify", "--json", "-v", "--reason", "Rebuild fixture"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--to", "branch", "--json", "-v", "--reason", "Rebuild fixture"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var result ActionResult
 	decodeResult(t, stdout.Bytes(), &result)
 	require.Len(t, result.Status.Jobs, 1)
@@ -154,7 +154,7 @@ func TestRevisionBumpCLIPreservesBranchWhenVerificationCannotStart(t *testing.T)
 			config, repo, _ := preparationCLI(t)
 			config.Tart = tart.Config{Executable: "/missing/tart", Image: image}
 			var stdout, stderr bytes.Buffer
-			err := Run(t.Context(), []string{"bump-revision", "fixture", "--provider", "tart", "--no-publish", "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
+			err := Run(t.Context(), []string{"bump-revision", "fixture", "--provider", "tart", "--to", "verified", "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
 			require.ErrorIs(t, err, errNeedsAttention, "%s", stderr.String())
 			var result ActionResult
 			decodeResult(t, stdout.Bytes(), &result)
@@ -227,7 +227,7 @@ checksums rmd160 %s \
 	require.NoDirExists(t, filepath.Dir(config.DBPath))
 	stdout.Reset()
 	stderr.Reset()
-	require.NoError(t, Run(t.Context(), []string{"bump", "fixture", "v2.0", "--no-publish", "--skip-verify", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	require.NoError(t, Run(t.Context(), []string{"bump", "fixture", "v2.0", "--to", "branch", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var result ActionResult
 	decodeResult(t, stdout.Bytes(), &result)
 	require.Len(t, result.Status.Jobs, 1)
@@ -278,7 +278,7 @@ func TestPreparationIgnoresLocalBranchAndRefusesFailedFetch(t *testing.T) {
 	require.Equal(t, record.ObjectID(upstream), preview.Preparation.Base.Commit)
 	require.Equal(t, "https://github.com/macports/macports-ports.git", preview.Repository)
 	require.NoError(t, repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/master", Expected: git.RefValue{Exists: true, Object: upstream}}}))
-	for _, mode := range [][]string{{"--diff"}, {"--no-publish"}, {"--no-publish", "--skip-verify"}} {
+	for _, mode := range [][]string{{"--diff"}, {"--to", "verified"}, {"--to", "branch"}} {
 		err := Run(t.Context(), append([]string{"bump-revision", "fixture"}, mode...), Streams{Out: &stdout, Err: &stderr}, config)
 		require.ErrorContains(t, err, "fetching authoritative MacPorts master")
 	}

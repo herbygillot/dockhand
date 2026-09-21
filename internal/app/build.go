@@ -34,7 +34,7 @@ func (s *Services) buildResolver(platform record.Platform, tests record.TestPoli
 				policy = record.TestWorkflow
 			}
 			if policy != record.TestWorkflow || fromSource || len(evaluation.Target.Variants) != 0 {
-				return workflow.BuildResolution{}, fmt.Errorf("github verification uses --tests workflow and default variants and dependency policy; select --provider tart for local policies")
+				return workflow.BuildResolution{}, fmt.Errorf("GitHub verification uses its workflow's test policy, default variants, and dependency policy; select --provider tart for local policies")
 			}
 			config, err := s.githubBuild(ctx, platform, needsXcode)
 			if err != nil {
