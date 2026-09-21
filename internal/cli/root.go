@@ -160,6 +160,7 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, *runtime,
 	root.AddCommand(runtime.changeCommands()...)
 	root.AddCommand(runtime.correctionCommands()...)
 	root.AddCommand(runtime.contributionCommands()...)
+	root.AddCommand(runtime.adoptCommand())
 	root.AddCommand(runtime.verifyCommand(), runtime.publishCommand())
 	root.AddCommand(runtime.statusCommand(), runtime.consoleCommand(), runtime.waitCommand(), runtime.cancelCommand(), runtime.serveCommand(), runtime.reviewCommand())
 	groupCommands(root)
@@ -195,7 +196,7 @@ var helpGroups = []struct {
 }{
 	{"start", "Get started:", []string{"setup", "auth"}},
 	{"investigate", "Investigate ports:", []string{"outdated", "assess"}},
-	{"prepare", "Prepare an update:", []string{"bump", "bump-revision", "checksums"}},
+	{"prepare", "Prepare an update:", []string{"bump", "bump-revision", "checksums", "adopt"}},
 	{"revise", "Revise your update:", []string{"amend", "rebase", "reassociate"}},
 	{"publish", "Verify and publish:", []string{"verify", "publish"}},
 	{"jobs", "Watch and manage jobs:", []string{"status", "console", "wait", "cancel", "serve", "sync", "abandon"}},

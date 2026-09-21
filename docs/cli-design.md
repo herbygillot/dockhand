@@ -101,6 +101,7 @@ Provisioning uses temporary `-next` images. A failed build leaves the current ba
 ## Implemented verification commands
 
 ```text
+dockhand adopt <branch> [port] [--dry-run]
 dockhand verify [target] [--image <prepared-local-image>]
     [--branch <branch> | --adopt <branch> | --change <id> | --working-tree]
     [--variant +name|--variant=-name ...]
@@ -112,7 +113,7 @@ dockhand cancel [target] [--job <id> | --branch <branch> | --change <id>]
 dockhand serve
 ```
 
-`verify <target>` continues the unique open contribution for that port or subport, selecting its prepared committed branch and retaining recorded build settings unless overridden. `--change` and `--branch` disambiguate contributions; an accompanying target must agree. Missing or unprepared contributions cannot fall back to the checkout. `--working-tree` explicitly captures tracked checkout contents, and `--adopt` selects committed manual source. Manual selectors may be a name or snapshot-relative port directory/Portfile; names are located through the captured source’s index and validated by native evaluation. Output identifies the source, selected target, and accepted tree. Standalone verification does not create a contribution. Omitting the target infers the single target of the selected tracked branch; multi-target intake remains future work.
+`verify <target>` continues the unique open contribution for that port or subport, selecting its prepared committed branch and retaining recorded build settings unless overridden. `--change` and `--branch` disambiguate contributions; an accompanying target must agree. Missing or unprepared contributions cannot fall back to the checkout. `--working-tree` explicitly captures tracked checkout contents, and `--adopt` selects committed manual source. Manual selectors may be a name or snapshot-relative port directory/Portfile; names are located through the captured source’s index and validated by native evaluation. Output identifies the source, selected target, and accepted tree. Standalone verification does not create a contribution. `adopt <branch> [port]` tracks a hand-made branch as one before any build: it must be one commit above a commit of fetched master and change one port directory, from which the port is inferred unless named; several commits or several directories are refused and told why, and `--dry-run` reports what would be tracked. It is the way in for a Portfile dockhand cannot edit, which a refused preparation now says, and for a new port; `--adopt` on verify and publish stays as the one-step spelling. Omitting the target infers the single target of the selected tracked branch; multi-target intake remains future work.
 
 The prepared image can be selected explicitly with `--image` or through the Go application's configured default. Otherwise Dockhand selects the conventional image for the native MacPorts platform; `setup` prepares and checks that image. The effective provider settings and image digest are recorded in the job, so queued and admitted work can resume without repeating image-selection flags. The shared pool's capacity is initially two; `setup --capacity` records another positive limit, and every run reads the record. An existing pool's directory must agree. Image availability and platform checks are distinct from admission capacity.
 
@@ -230,6 +231,7 @@ The initiating target is the everyday selector for a tracked contribution; its d
 | --- | --- |
 | `bump <port\|selector> [version]` | Prepare the requested update; omission of the version requests the latest eligible release. Explicit version resolution is specified below. |
 | `verify <target>` | Verify the unique open contribution's committed branch and inherit its recorded build settings. |
+| `adopt <branch> [port]` | Track a branch dockhand did not make as a contribution: one commit above master, one port directory, the port inferred from it unless named; `--dry-run` records nothing. |
 | `verify` | Use the current tracked branch and infer its single target. |
 | `verify <target> --working-tree` | Explicitly capture tracked checkout contents, including staged additions. |
 | `verify [<target>] --branch <branch>` | Select a tracked contribution branch; `--adopt <branch>` selects committed manual source. |

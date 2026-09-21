@@ -24,7 +24,7 @@ func TestHelpGroupsCommandsInContributionOrder(t *testing.T) {
 	expected := []string{
 		"Get started:", "setup", "auth",
 		"Investigate ports:", "outdated", "assess",
-		"Prepare an update:", "bump", "bump-revision", "checksums",
+		"Prepare an update:", "bump", "bump-revision", "checksums", "adopt",
 		"Revise your update:", "amend", "rebase", "reassociate",
 		"Verify and publish:", "verify", "publish",
 		"Watch and manage jobs:", "status", "console", "wait", "cancel", "serve", "sync", "abandon",

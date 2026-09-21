@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/workflow"
@@ -121,6 +122,9 @@ func (r *runtime) changeCommands() []*cobra.Command {
 						Selection: macports.Selection{Selector: selector, Variants: choices},
 						Subject:   subject, References: references, Publish: publishTo, SkipVerify: skipVerify, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource,
 					})
+					if errors.Is(err, portedit.ErrUnsupported) {
+						return adoptHint(err)
+					}
 					if err != nil {
 						return publicationIntakeHint(err, publishTo != nil)
 					}
@@ -143,6 +147,9 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					progress.VerboseReport(cmd.Context(), "Fetching MacPorts master for preview; local commits and working-tree edits are excluded")
 				}
 				preview, err := app.PreviewPreparation(cmd.Context(), r.config, request)
+				if errors.Is(err, portedit.ErrUnsupported) {
+					return adoptHint(err)
+				}
 				if err != nil {
 					return err
 				}

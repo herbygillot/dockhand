@@ -127,7 +127,7 @@ func (r *runtime) verifyCommand() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&branch, "branch", "", "Select a tracked contribution branch (default: the current branch, or the target's)")
-	command.Flags().StringVar(&adopt, "adopt", "", "Verify the committed contents of a branch dockhand did not make")
+	command.Flags().StringVar(&adopt, "adopt", "", "Verify the committed contents of a branch dockhand did not make, tracking it as a contribution once published; dockhand adopt <branch> tracks it first")
 	command.Flags().StringVar(&change, "change", "", "Select one tracked contribution when the target is ambiguous")
 	command.Flags().BoolVar(&workingTree, "working-tree", false, "Explicitly capture tracked checkout edits and staged new files")
 	command.MarkFlagsMutuallyExclusive("working-tree", "branch")

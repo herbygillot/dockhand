@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -101,22 +102,15 @@ func (r *Repository) CheckContributionBase(ctx context.Context, remote, branch, 
 			return err
 		}
 	}
-	ancestor := func(a, b string) (bool, error) {
-		_, err := r.output(ctx, "merge-base", "--is-ancestor", a, b)
-		var exit *exec.ExitError
-		if errors.As(err, &exit) && exit.ExitCode() == 1 && ctx.Err() == nil {
-			return false, nil
-		}
-		return err == nil, err
-	}
-	included, err := ancestor(base, head.Object)
+	ancestor := r.IsAncestor
+	included, err := ancestor(ctx, base, head.Object)
 	if err != nil {
 		return err
 	}
 	if !included {
 		return fmt.Errorf("%w: recorded base is not in the selected upstream branch", ErrRefConflict)
 	}
-	merged, err := ancestor(commit, head.Object)
+	merged, err := ancestor(ctx, commit, head.Object)
 	if err != nil {
 		return err
 	}
@@ -146,4 +140,29 @@ func (r *Repository) DeleteRemoteBranch(ctx context.Context, remote, branch stri
 	ref := "refs/heads/" + branch
 	_, err = r.output(ctx, "-c", "push.followTags=false", "push", "--porcelain", "--no-verify", "--no-follow-tags", "--recurse-submodules=no", "--force-with-lease="+ref+":"+expected.Object, "--", remote, ":"+ref)
 	return err
+}
+
+// IsAncestor reports whether ancestor is reachable from descendant.
+func (r *Repository) IsAncestor(ctx context.Context, ancestor, descendant string) (bool, error) {
+	if !ValidObjectID(ancestor) || !ValidObjectID(descendant) {
+		return false, fmt.Errorf("git: literal commit objects are required")
+	}
+	_, err := r.output(ctx, "merge-base", "--is-ancestor", ancestor, descendant)
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == 1 && ctx.Err() == nil {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// CountCommits counts the commits reachable from head that base does not reach.
+func (r *Repository) CountCommits(ctx context.Context, base, head string) (int, error) {
+	if !ValidObjectID(base) || !ValidObjectID(head) {
+		return 0, fmt.Errorf("git: literal commit objects are required")
+	}
+	out, err := r.output(ctx, "rev-list", "--count", base+".."+head, "--")
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(string(out)))
 }

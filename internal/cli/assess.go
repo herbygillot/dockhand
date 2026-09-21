@@ -88,6 +88,9 @@ func (r *runtime) assessCommand() *cobra.Command {
 					fmt.Fprintf(cmd.OutOrStdout(), " %d already in the journal.", result.Skipped)
 				}
 				fmt.Fprintln(cmd.OutOrStdout())
+				if counts[portedit.Unsupported] > 0 {
+					fmt.Fprintln(cmd.OutOrStdout(), "An unsupported port can still be updated by hand on a branch and adopted with dockhand adopt <branch>, which verifies and publishes it.")
+				}
 			}
 			if err != nil {
 				return err
