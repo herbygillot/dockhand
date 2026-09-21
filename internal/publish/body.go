@@ -137,7 +137,7 @@ func writeEnvironmentTable(b *strings.Builder, evidence *record.Evidence) {
 	if len(rows) == 0 {
 		return
 	}
-	fmt.Fprint(b, "\n| **Component** | **Version** |\n| --- | --- |\n")
+	fmt.Fprint(b, "\n| **Component** | **Version** |\n| :--- | :--- |\n")
 	for _, entry := range rows {
 		fmt.Fprintf(b, "| %s | %s |\n", entry.name, entry.detail)
 	}

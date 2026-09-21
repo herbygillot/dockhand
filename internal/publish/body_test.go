@@ -114,7 +114,7 @@ func TestTestedOnTablesTheEnvironmentAndBulletsTheProvider(t *testing.T) {
 				Guest: &record.GuestEnvironment{MacOSVersion: "26.6.2", MacOSBuild: "25G83", Architecture: "arm64", DeveloperTools: record.DeveloperToolsCommandLine,
 					DeveloperToolsVersion: "27.0.0.0.1788430756", MacPortsVersion: "Version: 2.12.6", NoActivePorts: true, NoForeignPackageManagers: true}}}}
 	body := publicationBody(record.PublicationContent{Title: "jc: update to 1.26.0"}, record.Change{}, record.Source{}, attempt)
-	require.Contains(t, body, "\n| **Component** | **Version** |\n| --- | --- |\n| macOS | 26.6.2 (build 25G83; arm64) |\n| Command Line Tools | 27.0.0.0.1788430756 |\n| MacPorts | 2.12.6 |\n| dockhand | v0.0.0-20260920.1 |\n")
+	require.Contains(t, body, "\n| **Component** | **Version** |\n| :--- | :--- |\n| macOS | 26.6.2 (build 25G83; arm64) |\n| Command Line Tools | 27.0.0.0.1788430756 |\n| MacPorts | 2.12.6 |\n| dockhand | v0.0.0-20260920.1 |\n")
 	require.Contains(t, body, "\nProvider: tart\n\n- version: 2.37.0\n- image: dockhand-base-tahoe (pristine)\n- environment identity: `sha256:4602`\n")
 
 	// A workflow observation establishes no runner versions, so it tables only
@@ -123,12 +123,12 @@ func TestTestedOnTablesTheEnvironmentAndBulletsTheProvider(t *testing.T) {
 	attempt.Evidence.Workflow = &record.WorkflowEvidence{URL: "https://github.com/author/ports/actions/runs/10", RunAttempt: 2,
 		Jobs: []record.WorkflowJob{{Name: "macos-14", Conclusion: "success"}, {Name: "macos-15", Conclusion: "success"}}}
 	body = publicationBody(record.PublicationContent{}, record.Change{}, record.Source{}, attempt)
-	require.Contains(t, body, "\n| **Component** | **Version** |\n| --- | --- |\n| dockhand | v0.0.0-20260920.1 |\n")
+	require.Contains(t, body, "\n| **Component** | **Version** |\n| :--- | :--- |\n| dockhand | v0.0.0-20260920.1 |\n")
 	require.Contains(t, body, "\nProvider: GitHub Actions\n\n- [workflow run](https://github.com/author/ports/actions/runs/10), attempt 2\n- macos-14: success\n- macos-15: success\n")
 
 	// Evidence from a build that recorded none of this writes no table.
 	attempt.Evidence.Dockhand, attempt.Evidence.Workflow = "", nil
-	require.NotContains(t, publicationBody(record.PublicationContent{}, record.Change{}, record.Source{}, attempt), "| --- | --- |")
+	require.NotContains(t, publicationBody(record.PublicationContent{}, record.Change{}, record.Source{}, attempt), "| :--- | :--- |")
 }
 
 // An existing pull request's body is kept exactly, because a maintainer may
