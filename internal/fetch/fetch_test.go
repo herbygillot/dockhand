@@ -3,6 +3,7 @@ package fetch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -28,7 +29,7 @@ func TestLimitsKnownAndStreamingBodies(t *testing.T) {
 				body, readErr := io.ReadAll(response.Body)
 				require.NoError(t, response.Body.Close())
 				if size > 4 {
-					require.ErrorIs(t, readErr, errTooLarge)
+					require.ErrorIs(t, readErr, ErrTooLarge)
 					require.Len(t, body, 4)
 				} else {
 					require.NoError(t, readErr)
@@ -36,7 +37,7 @@ func TestLimitsKnownAndStreamingBodies(t *testing.T) {
 				}
 			} else {
 				require.Greater(t, size, 4)
-				require.ErrorIs(t, err, errTooLarge)
+				require.ErrorIs(t, err, ErrTooLarge)
 			}
 			server.Close()
 		}
@@ -79,6 +80,26 @@ func TestResponseStatusAndReaderErrors(t *testing.T) {
 	require.NoError(t, err)
 	_, err = Open(server.Client(), req, 10)
 	require.ErrorContains(t, err, "HTTP 404")
+
+	// A text or JSON body's first line says why, and a redirect that led to
+	// the refusal names the URL that was asked for.
+	explained := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/asset" {
+			http.Redirect(w, r, "/gone", http.StatusFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprint(w, "  rate limit exceeded for this address\nsecond line is not shown")
+	}))
+	defer explained.Close()
+	req, err = http.NewRequestWithContext(t.Context(), http.MethodGet, explained.URL+"/asset", nil)
+	require.NoError(t, err)
+	_, err = Open(explained.Client(), req, 10)
+	var status *StatusError
+	require.ErrorAs(t, err, &status)
+	require.Equal(t, &StatusError{Status: http.StatusForbidden, URL: explained.URL + "/gone", Requested: explained.URL + "/asset", Reason: "rate limit exceeded for this address"}, status)
+	require.Equal(t, "fetch: HTTP 403 for "+explained.URL+"/gone, redirected from "+explained.URL+"/asset: rate limit exceeded for this address", err.Error())
 	failure := errors.New("broken stream")
 	reader := &boundedBody{ReadCloser: failingBody{failure}, remaining: 4}
 	_, err = io.ReadAll(reader)

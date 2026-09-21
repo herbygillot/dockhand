@@ -124,25 +124,33 @@ func downloadSources(info macports.PortInfo, portdir string) ([]archiveSource, e
 
 func (s *Service) downloadArchive(ctx context.Context, info macports.PortInfo, source archiveSource, output io.Writer) (Download, error) {
 	name, address := source.Name, source.URL
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
+	timeout := s.DownloadTimeout
+	if timeout <= 0 {
+		timeout = 2 * time.Minute
+	}
 	limit := s.MaxDownloadBytes
 	if limit <= 0 {
 		limit = 512 << 20
 	}
+	parent := ctx
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	// fail words a failure with the file, the URL it was asked from, and the
+	// cause, so the job's detail says where and why without the log.
+	fail := func(err error) error { return downloadError(parent, name, address, limit, timeout, err) }
 	var reader io.ReadCloser
 	if strings.HasPrefix(address, "ftp://") {
 		// An anonymous FTP fetch, which about a hundred ports' only master
 		// sites offer; the body is hashed and sniffed like an HTTP one.
 		body, err := fetch.OpenFTP(ctx, address, limit)
 		if err != nil {
-			return Download{}, fmt.Errorf("portedit: downloading %s: %w", name, err)
+			return Download{}, fail(err)
 		}
 		reader = body
 	} else {
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
 		if err != nil {
-			return Download{}, err
+			return Download{}, fail(err)
 		}
 		request.Header.Set("Accept-Encoding", "identity")
 		agent := info.Options["fetch.user_agent"]
@@ -152,19 +160,15 @@ func (s *Service) downloadArchive(ctx context.Context, info macports.PortInfo, s
 		request.Header.Set("User-Agent", agent)
 		response, err := fetch.Open(s.HTTP, request, limit)
 		if err != nil {
-			var status *fetch.StatusError
-			if errors.As(err, &status) && status.Status == http.StatusNotFound {
-				return Download{}, fmt.Errorf("portedit: downloading %s: %w; no archive is published at that location yet, and a release tag alone does not publish its assets", name, err)
-			}
-			return Download{}, fmt.Errorf("portedit: downloading %s: %w", name, err)
+			return Download{}, fail(err)
 		}
 		if encoding := response.Header.Get("Content-Encoding"); encoding != "" && encoding != "identity" {
 			response.Body.Close()
-			return Download{}, fmt.Errorf("portedit: download returned encoded content")
+			return Download{}, fail(fmt.Errorf("the server sent %s-encoded content instead of the file", encoding))
 		}
 		if strings.Contains(strings.ToLower(response.Header.Get("Content-Type")), "text/html") {
 			response.Body.Close()
-			return Download{}, fmt.Errorf("portedit: download returned HTML for %s", name)
+			return Download{}, fail(errHTMLPage)
 		}
 		reader = response.Body
 	}
@@ -172,11 +176,11 @@ func (s *Service) downloadArchive(ctx context.Context, info macports.PortInfo, s
 	prefix := make([]byte, 512)
 	n, err := io.ReadFull(reader, prefix)
 	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
-		return Download{}, err
+		return Download{}, fail(fmt.Errorf("transfer stopped after %d bytes: %w", n, err))
 	}
 	prefix = prefix[:n]
 	if strings.Contains(http.DetectContentType(prefix), "text/html") {
-		return Download{}, fmt.Errorf("portedit: download body is HTML for %s", name)
+		return Download{}, fail(errHTMLPage)
 	}
 	sha, rmd, md, sha1sum := sha256.New(), ripemd160.New(), md5.New(), sha1.New()
 	writers := []io.Writer{sha, rmd, md, sha1sum}
@@ -189,13 +193,56 @@ func (s *Service) downloadArchive(ctx context.Context, info macports.PortInfo, s
 	}
 	remaining, err := io.Copy(hashes, reader)
 	if err != nil {
-		return Download{}, err
+		return Download{}, fail(fmt.Errorf("transfer stopped after %d bytes: %w", int64(n)+remaining, err))
 	}
 	size := int64(n) + remaining
-	if size == 0 || size > limit {
-		return Download{}, fmt.Errorf("portedit: empty or oversized distfile %s", name)
+	if size == 0 {
+		return Download{}, fail(errors.New("the server sent an empty file"))
 	}
 	return Download{Name: name, URL: address, SHA256: fmt.Sprintf("%x", sha.Sum(nil)), RMD160: fmt.Sprintf("%x", rmd.Sum(nil)), MD5: fmt.Sprintf("%x", md.Sum(nil)), SHA1: fmt.Sprintf("%x", sha1sum.Sum(nil)), Size: size}, nil
+}
+
+var errHTMLPage = errors.New("the server sent an HTML page instead of the file")
+
+// downloadError words one archive's failure: the file, the URL it was asked
+// from, and the cause. A refusal keeps its status, the redirect that led to
+// it, and what the server said; the size limit and dockhand's own deadline
+// are named as such, since the bare errors say neither the number nor whose
+// limit it was; a transport error drops the URL it repeats. The parent
+// context's own cancellation passes through unworded, and every cause stays
+// reachable with errors.Is and errors.As.
+func downloadError(parent context.Context, name, address string, limit int64, timeout time.Duration, err error) error {
+	if parent.Err() != nil {
+		return fmt.Errorf("portedit: downloading %s from %s: %w", name, address, parent.Err())
+	}
+	var status *fetch.StatusError
+	var transport *url.Error
+	switch {
+	case errors.As(err, &status):
+		note := ""
+		if status.Status == http.StatusNotFound {
+			note = "; no archive is published at that location yet, and a release tag alone does not publish its assets"
+		}
+		return fmt.Errorf("portedit: downloading %s: %w%s", name, err, note)
+	case errors.Is(err, fetch.ErrTooLarge):
+		return fmt.Errorf("portedit: downloading %s from %s: larger than the %s limit: %w", name, address, byteLabel(limit), err)
+	case errors.Is(err, context.DeadlineExceeded):
+		return fmt.Errorf("portedit: downloading %s from %s: no complete response within dockhand's %s limit: %w", name, address, timeout, err)
+	case errors.As(err, &transport):
+		return fmt.Errorf("portedit: downloading %s from %s: %w", name, address, transport.Err)
+	}
+	return fmt.Errorf("portedit: downloading %s from %s: %w", name, address, err)
+}
+
+// byteLabel is a size in the unit that reads naturally for a download limit.
+func byteLabel(size int64) string {
+	switch {
+	case size >= 1<<30 && size%(1<<30) == 0:
+		return fmt.Sprintf("%d GiB", size>>30)
+	case size >= 1<<20 && size%(1<<20) == 0:
+		return fmt.Sprintf("%d MiB", size>>20)
+	}
+	return fmt.Sprintf("%d bytes", size)
 }
 
 func checkFetchCredentials(info macports.PortInfo) error {

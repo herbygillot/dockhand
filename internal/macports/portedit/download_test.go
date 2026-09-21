@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/stretchr/testify/require"
@@ -50,12 +51,22 @@ func TestDownloadRejectsErrorBodiesAndSizeOverflow(t *testing.T) {
 		name, body string
 		status     int
 		chunked    bool
+		header     http.Header
+		wording    []string
 	}{
-		{"HTML", "<!doctype html><title>error</title>", 200, false}, {"empty", "", 200, false}, {"not found", "missing", 404, false},
-		{"size header", strings.Repeat("x", 1025), 200, false}, {"size stream", strings.Repeat("x", 1025), 200, true},
+		{"HTML", "<!doctype html><title>error</title>", 200, false, nil, []string{"downloading source-2.tar.gz from ", "the server sent an HTML page instead of the file"}},
+		{"empty", "", 200, false, nil, []string{"the server sent an empty file"}},
+		{"not found", "missing", 404, false, nil, []string{"downloading source-2.tar.gz: fetch: HTTP 404 for ", ": missing; no archive is published at that location yet"}},
+		{"size header", strings.Repeat("x", 1025), 200, false, nil, []string{"larger than the 1024 bytes limit"}},
+		{"size stream", strings.Repeat("x", 1025), 200, true, nil, []string{"larger than the 1024 bytes limit"}},
+		{"encoded", "x", 200, false, http.Header{"Content-Encoding": {"gzip"}}, []string{"the server sent gzip-encoded content instead of the file"}},
+		{"truncated", "ten bytes!", 200, false, http.Header{"Content-Length": {"100"}}, []string{"transfer stopped after 10 bytes: unexpected EOF"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				for key, values := range test.header {
+					w.Header()[key] = values
+				}
 				w.WriteHeader(test.status)
 				if test.chunked {
 					w.(http.Flusher).Flush()
@@ -67,12 +78,28 @@ func TestDownloadRejectsErrorBodiesAndSizeOverflow(t *testing.T) {
 			result, err := service.download(t.Context(), archiveInfo(server.URL))
 			require.Error(t, err)
 			require.Empty(t, result.SHA256)
+			for _, wording := range test.wording {
+				require.ErrorContains(t, err, wording)
+			}
+			require.Equal(t, 1, strings.Count(err.Error(), server.URL+"/source-2.tar.gz"), "the URL is named once: %s", err)
 		})
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	_, err := (&Service{}).download(ctx, archiveInfo("http://localhost"))
 	require.ErrorIs(t, err, context.Canceled)
+
+	// Dockhand's own deadline is named as its own, with the URL and the file.
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
+	defer slow.Close()
+	_, err = (&Service{DownloadTimeout: 50 * time.Millisecond}).download(t.Context(), archiveInfo(slow.URL))
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.ErrorContains(t, err, "downloading source-2.tar.gz from "+slow.URL+"/source-2.tar.gz: no complete response within dockhand's 50ms limit")
+
+	// A transport failure names the cause without repeating the URL.
+	_, err = (&Service{}).download(t.Context(), archiveInfo("http://127.0.0.1:1"))
+	require.ErrorContains(t, err, "downloading source-2.tar.gz from http://127.0.0.1:1/source-2.tar.gz: dial tcp")
+	require.Equal(t, 1, strings.Count(err.Error(), "http://127.0.0.1:1/source-2.tar.gz"), "%s", err)
 }
 func TestDownloadSourceDeclinesUnsupportedFetchConventions(t *testing.T) {
 	t.Parallel()

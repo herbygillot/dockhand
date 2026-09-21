@@ -7,6 +7,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
@@ -95,6 +96,8 @@ type Service struct {
 	Ports            macports.Evaluator
 	HTTP             *http.Client
 	MaxDownloadBytes int64
+	// DownloadTimeout bounds each archive download; two minutes when unset.
+	DownloadTimeout time.Duration
 	// Manifests reads a manifest from the resolved release's repository, for
 	// a git-fetched port that downloads no archive to read it from; nil
 	// leaves such a port's toolchain minimum as declared.

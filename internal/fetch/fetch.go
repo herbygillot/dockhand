@@ -5,17 +5,55 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
-var errTooLarge = errors.New("fetch: response exceeds size limit")
+// ErrTooLarge reports a body that exceeds the caller's size limit, whether the
+// server declared the size or the limit was reached while reading.
+var ErrTooLarge = errors.New("fetch: response exceeds size limit")
 
 // StatusError reports an unsuccessful response with the URL that produced it.
+// Requested is the URL asked for when a redirect led somewhere else, and
+// Reason is the first line of a plain-text or JSON body, which is where a
+// server usually says why it refused.
 type StatusError struct {
-	Status int
-	URL    string
+	Status    int
+	URL       string
+	Requested string `json:",omitempty"`
+	Reason    string `json:",omitempty"`
 }
 
-func (e *StatusError) Error() string { return fmt.Sprintf("fetch: HTTP %d for %s", e.Status, e.URL) }
+func (e *StatusError) Error() string {
+	text := fmt.Sprintf("fetch: HTTP %d for %s", e.Status, e.URL)
+	if e.Requested != "" {
+		text += ", redirected from " + e.Requested
+	}
+	if e.Reason != "" {
+		text += ": " + e.Reason
+	}
+	return text
+}
+
+// reasonFrom is the first line of a short plain-text or JSON error body. An
+// HTML page is left out; its text is markup around a generic message.
+func reasonFrom(response *http.Response) string {
+	kind := strings.ToLower(response.Header.Get("Content-Type"))
+	if !strings.HasPrefix(kind, "text/plain") && !strings.HasPrefix(kind, "application/json") {
+		return ""
+	}
+	data, _ := io.ReadAll(io.LimitReader(response.Body, 512))
+	line, _, _ := strings.Cut(strings.TrimSpace(string(data)), "\n")
+	line = strings.Map(func(r rune) rune {
+		if r < ' ' || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, line)
+	if len(line) > 200 {
+		line = line[:200]
+	}
+	return strings.TrimSpace(line)
+}
 
 // Open requires a successful HTTP response and bounds bytes read from its body.
 // The caller closes the body and decides content validation, hashing, and storage.
@@ -51,12 +89,16 @@ func Open(client *http.Client, request *http.Request, limit int64) (*http.Respon
 		return nil, err
 	}
 	if response.StatusCode != http.StatusOK {
+		failure := &StatusError{Status: response.StatusCode, URL: response.Request.URL.Redacted(), Reason: reasonFrom(response)}
 		response.Body.Close()
-		return nil, &StatusError{Status: response.StatusCode, URL: response.Request.URL.Redacted()}
+		if requested := request.URL.Redacted(); requested != failure.URL {
+			failure.Requested = requested
+		}
+		return nil, failure
 	}
 	if response.ContentLength > limit {
 		response.Body.Close()
-		return nil, errTooLarge
+		return nil, ErrTooLarge
 	}
 	response.Body = &boundedBody{ReadCloser: response.Body, remaining: limit}
 	return response, nil
@@ -75,7 +117,7 @@ func (b *boundedBody) Read(p []byte) (int, error) {
 		var extra [1]byte
 		n, err := b.ReadCloser.Read(extra[:])
 		if n > 0 {
-			return 0, errTooLarge
+			return 0, ErrTooLarge
 		}
 		return 0, err
 	}
