@@ -29,7 +29,7 @@ func TestRevisionBumpPublicationCLIWaitAndResume(t *testing.T) {
 			config, repo, source := preparationCLI(t)
 			configureReuseImage(t, &config)
 			var stdout, stderr bytes.Buffer
-			require.NoError(t, runFixture(t.Context(), []string{"bump-revision", "fixture", "--to", "branch", "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
+			require.NoError(t, runFixture(t.Context(), []string{"bump-revision", "fixture", "--subject", "rebuild", "--to", "branch", "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
 			var prior ActionResult
 			decodeResult(t, stdout.Bytes(), &prior)
 			seedCLIVerification(t, config, prior.Status.Jobs[0].Job.Prepared.Branch)
@@ -38,7 +38,7 @@ func TestRevisionBumpPublicationCLIWaitAndResume(t *testing.T) {
 			forge := publicationCLI(t, &config, repo, source)
 			stdout.Reset()
 			stderr.Reset()
-			args := []string{"bump-revision", "fixture", "--remote", "contribution", "--base", "main", "--json"}
+			args := []string{"bump-revision", "fixture", "--subject", "rebuild", "--remote", "contribution", "--base", "main", "--json"}
 			if !wait {
 				args = append(args, "--detach")
 			}
@@ -173,7 +173,7 @@ func TestRevisionBumpSkipVerifyPublishesWithDisclosure(t *testing.T) {
 	config, repo, source := preparationCLI(t)
 	forge := publicationCLI(t, &config, repo, source)
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, runFixture(t.Context(), []string{"bump-revision", "fixture", "--remote", "contribution", "--base", "main", "--unverified", "--json", "-v"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	require.NoError(t, runFixture(t.Context(), []string{"bump-revision", "fixture", "--subject", "rebuild", "--remote", "contribution", "--base", "main", "--unverified", "--json", "-v"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var result ActionResult
 	decodeResult(t, stdout.Bytes(), &result)
 	entry := result.Status.Jobs[0]
@@ -212,7 +212,7 @@ func TestSkipVerifyWithNoPublishStopsAtTheBranch(t *testing.T) {
 	t.Parallel()
 	config, _, _ := preparationCLI(t)
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, runFixture(t.Context(), []string{"bump-revision", "fixture", "--to", "branch", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	require.NoError(t, runFixture(t.Context(), []string{"bump-revision", "fixture", "--subject", "rebuild", "--to", "branch", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var result ActionResult
 	decodeResult(t, stdout.Bytes(), &result)
 	entry := result.Status.Jobs[0]
@@ -221,7 +221,7 @@ func TestSkipVerifyWithNoPublishStopsAtTheBranch(t *testing.T) {
 	require.Equal(t, record.VerificationSkipped, entry.Job.Spec.Verification)
 	require.Empty(t, entry.Publications)
 	require.Empty(t, entry.Attempts)
-	for _, args := range [][]string{{"bump-revision", "fixture", "--dependents", "--unverified"}, {"amend", "--dependents", "--unverified"}, {"bump-revision", "fixture", "--trace", "--unverified"}} {
+	for _, args := range [][]string{{"bump-revision", "fixture", "--subject", "rebuild", "--dependents", "--unverified"}, {"amend", "--dependents", "--unverified"}, {"bump-revision", "fixture", "--subject", "rebuild", "--trace", "--unverified"}} {
 		err := runFixture(t.Context(), args, Streams{Out: &stdout, Err: &stderr}, config)
 		require.Error(t, err, "%v", args)
 	}

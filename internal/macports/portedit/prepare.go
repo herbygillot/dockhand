@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"net/http"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
@@ -24,7 +25,9 @@ var (
 type CommitIntent struct {
 	Subject string
 	Body    string
-	Paths   []string
+	// References are cited in the trailer block, ahead of the attribution.
+	References []record.Reference
+	Paths      []string
 }
 
 type Request struct {
@@ -39,8 +42,12 @@ type Request struct {
 	Selection macports.Selection
 	Platform  record.Platform
 	Version   string
-	Reason    string
-	Release   *record.Release
+	// Subject is the commit subject after the port name; empty takes the
+	// editor's default for the action, and a revision bump has none.
+	Subject string
+	// References are the tickets the commit cites.
+	References []record.Reference
+	Release    *record.Release
 }
 
 // Fidelity is the comparison report for one evaluated edit.
@@ -144,6 +151,9 @@ func (request Request) Validate() error {
 	}
 	if request.Action != record.Bump && request.Version != "" {
 		return fmt.Errorf("portedit: an explicit version applies only to bump")
+	}
+	if request.Action == record.BumpRevision && strings.TrimSpace(request.Subject) == "" {
+		return fmt.Errorf("portedit: a revision bump needs a subject saying why")
 	}
 	return nil
 }

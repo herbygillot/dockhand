@@ -212,7 +212,7 @@ func (s workSelector) contribution(ctx context.Context, services *app.Services, 
 func (r *runtime) waitCommand() *cobra.Command {
 	var selected workSelector
 	var trace bool
-	command := &cobra.Command{Use: "wait [target]", Short: "Resume existing work through completion", Long: "Attach to the selected contribution's pending jobs, or to one job with --job, process them in this invocation, and return when they settle. Jobs frozen at selection are the ones waited for; later submissions do not join. Ctrl-C detaches without canceling accepted work, and the next wait or start resumes it.", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	command := &cobra.Command{Use: "wait [target]", Short: "Resume existing work through completion", Long: "Attach to the selected contribution's pending jobs, or to one job with --job, process them in this invocation, and return when they settle. Jobs frozen at selection are the ones waited for; later submissions do not join. Ctrl-C detaches without canceling accepted work, and the next wait or serve resumes it.", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		if cmd.Flags().Changed("branch") && !git.ValidBranchName(selected.branch) {
 			return fmt.Errorf("branch must name a literal recorded contribution branch")
 		}

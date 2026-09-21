@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -18,29 +19,34 @@ import (
 
 func (r *runtime) changeCommands() []*cobra.Command {
 	var commands []*cobra.Command
-	const shared = "New preparations use freshly fetched master from macports/macports-ports; local commits and working-tree edits are excluded. The command continues the port's open contribution and its frozen source; a preparation that stopped before any branch has retired, and the next one starts from fresh master. By default the command stays in the foreground through verification and publication of a PR on macports/macports-ports from your fork. --to verified (-P) stops after verification, --unverified (-V) publishes the prepared branch without building it and says so in the PR, both together stop at the prepared branch, and --detach returns once the work is accepted and admitted, leaving wait or start to finish it. Ctrl-C detaches without canceling accepted work. --dry-run previews the edit without touching the checkout or opening the state database."
+	const shared = "New preparations use freshly fetched master from macports/macports-ports; local commits and working-tree edits are excluded. The command continues the port's open contribution and its frozen source; a preparation that stopped before any branch has retired, and the next one starts from fresh master. By default the command stays in the foreground through verification and publication of a PR on macports/macports-ports from your fork. --to verified (-P) stops after verification, --unverified (-V) publishes the prepared branch without building it and says so in the PR, both together stop at the prepared branch, and --detach returns once the work is accepted and admitted, leaving wait or serve to finish it. Ctrl-C detaches without canceling accepted work. --dry-run previews the edit without touching the checkout or opening the state database."
 	for _, spec := range []struct {
 		action  record.Action
 		name    string
 		short   string
 		long    string
 		example string
+		subject string
 	}{
 		{record.Bump, "bump", "Prepare a port version update",
 			shared + " The version is found in a literal version, a github.setup, gitlab.setup, or go.setup argument, or a perl5.setup, R.setup, or ruby.setup argument, and is edited in the spelling the source uses. Version updates support GitHub/GitLab tags, explicit archive versions, ports fetched with git, scoped release subports, conditional archive checksums, archives on HTTP or anonymous FTP master sites, legacy checksum blocks, and supported Go/Cargo dependency declarations. A python, perl, or ruby stub bumps through its newest versioned subport as one shared release. Independent pinned releases are preserved. Omitting the version selects the newest eligible version using the port's source convention and livecheck filter, stable releases only unless the port already rides a prerelease; ports whose source selects published releases ignore tags without a release. Already-current ports complete without branch creation or verification. An explicit version may include its upstream tag prefix.",
-			"  dockhand bump jq\n  dockhand bump jq 1.8.1 --dry-run\n  dockhand bump rust-analyzer 2026-09-14 --to verified\n  dockhand bump jq --unverified\n  dockhand bump py-idna --detach"},
+			"  dockhand bump jq\n  dockhand bump jq 1.8.1 --dry-run\n  dockhand bump rust-analyzer 2026-09-14 --to verified\n  dockhand bump jq --unverified\n  dockhand bump jq 1.8.1 --closes 74379\n  dockhand bump py-idna --detach",
+			"Commit subject after the port name, and the pull request title (default: update to <version>)"},
 		{record.BumpRevision, "bump-revision", "Prepare a port revision bump",
-			shared + " The literal revision increments by one; revision expressions and ambiguous or dynamically named scopes are refused. --reason becomes the commit body and pull-request description. The version and checksums are preserved.",
-			"  dockhand bump-revision jq --reason \"rebuild against oniguruma 6.9.10\"\n  dockhand bump-revision jq --dry-run --reason rebuild"},
+			shared + " The literal revision increments by one; revision expressions and ambiguous or dynamically named scopes are refused. --subject is required: it follows the port name in the commit subject and is the pull request title, so it says why, the way maintainers write revision bumps. The version and checksums are preserved.",
+			"  dockhand bump-revision jq --subject \"revbump for oniguruma 6.9.10\"\n  dockhand bump-revision jq --dry-run --subject \"rebuild against libgit2 1.9\"\n  dockhand bump-revision jq --subject \"rebuild for the linker fix\" --closes 74379",
+			"Commit subject after the port name, saying why; required"},
 		{record.RefreshChecksums, "checksums", "Refresh a port's distfile checksums",
 			shared + " The port's declared archives are downloaded from their direct HTTP or FTP master sites and every declared digest is recomputed from the real contents, including named and conditional checksums; a legacy block of md5 or sha1 digests is rewritten as rmd160, sha256, and size unless --keep-old-checksums keeps it as written. The version and revision are preserved; a changed archive is reported rather than silently accepted when the port pins its size.",
-			"  dockhand checksums jq --dry-run\n  dockhand checksums jq --reason \"upstream re-rolled the tarball\""},
+			"  dockhand checksums jq --dry-run\n  dockhand checksums jq --subject \"refresh checksums; upstream re-rolled the tarball\"",
+			"Commit subject after the port name, and the pull request title (default: refresh checksums)"},
 	} {
 		options := &Options{}
 		var destination destinationFlags
 		var build buildOptions
 		var publication publish.Options
-		var reason, change string
+		var subject, change string
+		var references referenceFlags
 		var sharedRelease, keepOldChecksums bool
 		var variants []string
 		use, maximum := spec.name+" <port>", 1
@@ -65,6 +71,13 @@ func (r *runtime) changeCommands() []*cobra.Command {
 			},
 			RunE: func(cmd *cobra.Command, args []string) error {
 				to, publishing, skipVerify, err := destination.resolve()
+				if err != nil {
+					return err
+				}
+				if spec.action == record.BumpRevision && options.DryRun && strings.TrimSpace(subject) == "" {
+					return fmt.Errorf("bump-revision needs --subject: the reason is what maintainers read, e.g. --subject \"revbump for oniguruma 6.9.10\"")
+				}
+				references, err := references.resolve()
 				if err != nil {
 					return err
 				}
@@ -106,7 +119,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					bound, err := services.BindPreparation(cmd.Context(), app.Preparation{EditIntent: record.EditIntent{SharedRelease: sharedRelease, KeepOldChecksums: keepOldChecksums}, AllSubports: options.AllSubports, KeepFailed: build.keepFailed,
 						ChangeID: record.ChangeID(change), IncludeDependents: build.dependents, Action: spec.action, Version: version, ID: record.RequestID("request_" + rand.Text()),
 						Selection: macports.Selection{Selector: selector, Variants: choices},
-						Reason:    reason, Publish: publishTo, SkipVerify: skipVerify, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource,
+						Subject:   subject, References: references, Publish: publishTo, SkipVerify: skipVerify, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource,
 					})
 					if err != nil {
 						return publicationIntakeHint(err, publishTo != nil)
@@ -122,7 +135,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					}
 					return r.attach(cmd, services, receipt.JobID, milestone, options.Trace, false, &receipt)
 				}
-				request := app.PreviewRequest{EditIntent: record.EditIntent{SharedRelease: sharedRelease, KeepOldChecksums: keepOldChecksums}, Action: spec.action, Selection: macports.Selection{Selector: selector, Variants: choices}, Reason: reason}
+				request := app.PreviewRequest{EditIntent: record.EditIntent{SharedRelease: sharedRelease, KeepOldChecksums: keepOldChecksums}, Action: spec.action, Selection: macports.Selection{Selector: selector, Variants: choices}, Subject: subject, References: references}
 				if len(args) == 2 {
 					request.Version = args[1]
 				}
@@ -186,7 +199,8 @@ func (r *runtime) changeCommands() []*cobra.Command {
 		if spec.action == record.BumpRevision || spec.action == record.Bump || spec.action == record.RefreshChecksums {
 			build.flags(command, r.config)
 			publicationFlags(command, &publication)
-			command.Flags().StringVar(&reason, "reason", "", "Reason for the change")
+			command.Flags().StringVar(&subject, "subject", "", spec.subject)
+			references.add(command)
 		}
 		commands = append(commands, command)
 	}

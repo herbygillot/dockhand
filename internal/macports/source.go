@@ -14,4 +14,12 @@ const (
 	DefaultPrefix = "/opt/local"
 	// TclShell is the MacPorts Tcl interpreter under the prefix.
 	TclShell = "port-tclsh"
+	// TracURL is the MacPorts issue tracker.
+	TracURL = "https://trac.macports.org"
 )
+
+// TicketURL is how a commit cites a Trac ticket: the full URL, which the
+// ports repository's pull request template asks for.
+func TicketURL(number string) string {
+	return TracURL + "/ticket/" + number
+}

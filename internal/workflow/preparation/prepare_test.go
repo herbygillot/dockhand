@@ -39,7 +39,7 @@ func preparationFixture(t *testing.T, body string) (*preparation.Service, prepar
 	commit, tree, err := repo.Branch(t.Context(), "candidate")
 	require.NoError(t, err)
 	return &preparation.Service{Repo: repo, Ports: &eval.Evaluator{Executable: executable}}, preparation.Request{
-		Action: record.BumpRevision, Source: record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree)}, Selection: macports.Selection{Selector: "fixture"}, Reason: "rebuild against updated dependency",
+		Action: record.BumpRevision, Source: record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree)}, Selection: macports.Selection{Selector: "fixture"}, Subject: "rebuild against updated dependency",
 	}
 }
 
@@ -79,7 +79,7 @@ func TestPrepareRevisionUsesWholeSnapshotAndPreservesCheckout(t *testing.T) {
 	require.Equal(t, 9, result.Fidelity[0].After.Ports["fixture-child"].Revision)
 	require.Empty(t, result.Fidelity[0].After.Source.Commit)
 	require.Equal(t, result.PreparedTree, result.Fidelity[0].After.Source.Tree)
-	require.Equal(t, request.Reason, result.Commits[0].Body)
+	require.Equal(t, "fixture: "+request.Subject, result.Commits[0].Subject)
 	require.Empty(t, result.Fidelity[0].UnexpectedChanges)
 	require.Equal(t, status, fixtureGit(t, service.Repo.Root, "status", "--porcelain=v1"))
 	afterIndex, err := os.ReadFile(filepath.Join(service.Repo.CommonDir, "index"))

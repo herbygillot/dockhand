@@ -3,6 +3,7 @@ package workflow
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -15,25 +16,28 @@ type PreparationRequest struct {
 	// EditIntent is the person's choices; binding resolves a fresh stub
 	// selection into it, and a continued contribution carries its prior one.
 	record.EditIntent
-	AllSubports         bool
-	KeepFailed          bool
-	ChangeID            record.ChangeID
-	TargetBuilds        map[string]record.BuildConfig
-	IncludeDependents   bool
-	Action              record.Action
-	Version             string
-	ID                  record.RequestID
-	Source              record.Source
-	SourceBranch        string
-	SourceURL           string
-	Selection           macports.Selection
-	Destination         record.Destination
-	Verification        record.VerificationPolicy
-	Build               *record.BuildConfig
-	BuildRequirements   *record.BuildRequirements
-	Author              record.CommitIdentity
-	Platform            record.Platform
-	Reason              string
+	AllSubports       bool
+	KeepFailed        bool
+	ChangeID          record.ChangeID
+	TargetBuilds      map[string]record.BuildConfig
+	IncludeDependents bool
+	Action            record.Action
+	Version           string
+	ID                record.RequestID
+	Source            record.Source
+	SourceBranch      string
+	SourceURL         string
+	Selection         macports.Selection
+	Destination       record.Destination
+	Verification      record.VerificationPolicy
+	Build             *record.BuildConfig
+	BuildRequirements *record.BuildRequirements
+	Author            record.CommitIdentity
+	Platform          record.Platform
+	// Subject is the commit subject after the port name; a revision bump
+	// requires one, since the reason is what maintainers read there.
+	Subject             string
+	References          []record.Reference
 	VerificationProblem string
 	Publication         publish.Options
 	ResolveBuild        BuildResolver
@@ -56,6 +60,9 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	}
 	if err := e.requireRepository(ctx, "preparation repository does not match state scope"); err != nil {
 		return BoundPreparation{}, err
+	}
+	if request.Action == record.BumpRevision && strings.TrimSpace(request.Subject) == "" {
+		return BoundPreparation{}, fmt.Errorf("%w: a revision bump needs a subject saying why; --subject \"revbump for simdutf update\" is what maintainers read", ErrInvalidRequest)
 	}
 	source := request.Source
 	if source.Base != source.Commit {
@@ -102,7 +109,7 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	source.Base = source.Commit
 	evaluation.Source = source
 	spec, err := normalizeSpec(record.JobSpec{KeepFailed: request.KeepFailed,
-		ChangeID: request.ChangeID, TargetBuilds: request.TargetBuilds, IncludeDependents: request.IncludeDependents, AllSubports: request.AllSubports, Action: request.Action, PublishTo: destination, Version: request.Version, Source: source, Targets: targets, EvaluatedVersions: evaluatedVersions(evaluation, targets), Destination: request.Destination, Verification: request.Verification, Build: request.Build, BuildRequirements: request.BuildRequirements, Reason: request.Reason,
+		ChangeID: request.ChangeID, TargetBuilds: request.TargetBuilds, IncludeDependents: request.IncludeDependents, AllSubports: request.AllSubports, Action: request.Action, PublishTo: destination, Version: request.Version, Source: source, Targets: targets, EvaluatedVersions: evaluatedVersions(evaluation, targets), Destination: request.Destination, Verification: request.Verification, Build: request.Build, BuildRequirements: request.BuildRequirements, Subject: request.Subject, References: request.References,
 		Preparation: &record.PreparationSpec{EditIntent: request.EditIntent, SourceBranch: request.SourceBranch, SourceURL: request.SourceURL, Platform: request.Platform, Author: request.Author, VerificationProblem: request.VerificationProblem},
 	})
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"slices"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/record"
@@ -53,7 +54,7 @@ func acceptPreparation(ctx context.Context, tx state.Tx, id record.JobID, reques
 		if !ok {
 			return job, nil, fmt.Errorf("%w: %s already has contribution %s; continue it with verify or publish", ErrInvalidRequest, initiatingName(spec), change.ID)
 		}
-		if old.Spec.Action != spec.Action || !reflect.DeepEqual(old.Spec.Targets, spec.Targets) || old.Spec.Reason != spec.Reason {
+		if old.Spec.Action != spec.Action || !reflect.DeepEqual(old.Spec.Targets, spec.Targets) || old.Spec.Subject != spec.Subject || !slices.Equal(old.Spec.References, spec.References) {
 			return job, nil, fmt.Errorf("%w: contribution %s already has a different preparation intent", ErrInvalidRequest, change.ID)
 		}
 		if old.Spec.Version != spec.Version && (old.ResolvedRelease != nil || old.Prepared != nil || !old.State.Terminal()) {

@@ -155,13 +155,13 @@ func TestGlobalPrefixReachesPreviewAndDriverConstruction(t *testing.T) {
 	t.Setenv("MACPORTS_TREE", repo.Root)
 	t.Setenv("MACPORTS_PREFIX", "MacPorts prefix")
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--dry-run"}, Streams{Out: &stdout, Err: &stderr}, config))
+	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--subject", "rebuild", "--dry-run"}, Streams{Out: &stdout, Err: &stderr}, config))
 	require.Contains(t, stdout.String(), "+revision 1")
 	require.NoDirExists(t, filepath.Dir(config.DBPath))
 
 	stdout.Reset()
 	stderr.Reset()
-	err = Run(t.Context(), []string{"bump-revision", "fixture", "--dry-run", "--prefix", "missing prefix"}, Streams{Out: &stdout, Err: &stderr}, config)
+	err = Run(t.Context(), []string{"bump-revision", "fixture", "--subject", "rebuild", "--dry-run", "--prefix", "missing prefix"}, Streams{Out: &stdout, Err: &stderr}, config)
 	require.ErrorContains(t, err, filepath.Join(working, "missing prefix", "bin"))
 	require.NoDirExists(t, filepath.Dir(config.DBPath))
 
@@ -169,7 +169,7 @@ func TestGlobalPrefixReachesPreviewAndDriverConstruction(t *testing.T) {
 	stderr.Reset()
 	t.Setenv("MACPORTS_TREE", "/missing/ports")
 	t.Setenv("MACPORTS_PREFIX", "/missing/macports")
-	require.NoError(t, Run(t.Context(), []string{"-t", repo.Root, "-p", "MacPorts prefix", "bump-revision", "fixture", "--to", "branch", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	require.NoError(t, Run(t.Context(), []string{"-t", repo.Root, "-p", "MacPorts prefix", "bump-revision", "fixture", "--subject", "rebuild", "--to", "branch", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var result ActionResult
 	decodeResult(t, stdout.Bytes(), &result)
 	require.Len(t, result.Status.Jobs, 1)

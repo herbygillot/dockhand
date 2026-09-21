@@ -91,6 +91,13 @@ func (r *Result) commitEdit(input *sourceInput, request Request, edit portfile.E
 	if request.Stub != "" {
 		name = request.Stub
 	}
-	r.Commits = []CommitIntent{{Subject: name + ": " + subject, Body: request.Reason, Paths: []string{input.target.Portfile}}}
+	if request.Subject != "" {
+		subject = request.Subject
+	}
+	line, err := Subject(name, subject)
+	if err != nil {
+		return err
+	}
+	r.Commits = []CommitIntent{{Subject: line, References: request.References, Paths: []string{input.target.Portfile}}}
 	return nil
 }

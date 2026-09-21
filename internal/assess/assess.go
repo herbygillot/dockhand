@@ -39,7 +39,7 @@ func (r Request) Validate() error {
 	}
 	if r.Version != "" {
 		if len(r.Selection.Ports) != 1 {
-			return fmt.Errorf("assess: --version requires exactly one explicit port")
+			return fmt.Errorf("assess: --at requires exactly one explicit port")
 		}
 		return version.Validate(r.Version)
 	}

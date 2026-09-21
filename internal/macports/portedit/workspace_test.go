@@ -87,13 +87,13 @@ func TestArchiveStoreKeepsBytesOnlyWithADirectory(t *testing.T) {
 func TestCommitEditRecordsFilesAndFidelityBeforeJudging(t *testing.T) {
 	t.Parallel()
 	input := &sourceInput{target: record.Target{Name: "fixture", Portfile: "devel/fixture/Portfile"}}
-	request := Request{Reason: "because"}
+	request := Request{Subject: "because"}
 	edit := portfile.Edit{Path: "devel/fixture/Portfile", After: []byte("new")}
 	var result Result
 	require.NoError(t, result.commitEdit(input, request, edit, Fidelity{ExpectedChanges: []string{"fixture.revision +1"}}, "revbump"))
 	require.Equal(t, []portfile.Edit{edit}, result.Files)
 	require.Len(t, result.Fidelity, 1)
-	require.Equal(t, []CommitIntent{{Subject: "fixture: revbump", Body: "because", Paths: []string{"devel/fixture/Portfile"}}}, result.Commits)
+	require.Equal(t, []CommitIntent{{Subject: "fixture: because", Paths: []string{"devel/fixture/Portfile"}}}, result.Commits)
 
 	var failed Result
 	err := failed.commitEdit(input, request, edit, Fidelity{UnexpectedChanges: []string{"sibling.version changed"}}, "revbump")

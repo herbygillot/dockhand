@@ -261,7 +261,8 @@ type jobOptions struct {
 	Targets           []record.Target
 	Build             *record.BuildConfig
 	BuildRequirements *record.BuildRequirements `json:",omitempty"`
-	Version, Reason   string
+	Version, Subject  string
+	References        []record.Reference `json:",omitempty"`
 	Preparation       *record.PreparationSpec
 	Checkout          *record.Checkout `json:",omitempty"`
 }
@@ -287,7 +288,7 @@ func (t *transaction) Job(ctx context.Context, id record.JobID) (record.Job, err
 	if err = decode(raw, &options); err != nil {
 		return v, err
 	}
-	v.Spec.Targets, v.Spec.Build, v.Spec.BuildRequirements, v.Spec.Version, v.Spec.Reason = options.Targets, options.Build, options.BuildRequirements, options.Version, options.Reason
+	v.Spec.Targets, v.Spec.Build, v.Spec.BuildRequirements, v.Spec.Version, v.Spec.Subject, v.Spec.References = options.Targets, options.Build, options.BuildRequirements, options.Version, options.Subject, options.References
 	v.Spec.EvaluatedVersions = options.EvaluatedVersions
 	v.Spec.SourceBranch = options.SourceBranch
 	v.Spec.Publication = options.Publication
@@ -439,7 +440,7 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 	if err != nil {
 		return err
 	}
-	raw, err := encode(jobOptions{KeepFailed: v.Spec.KeepFailed, EvaluatedVersions: v.Spec.EvaluatedVersions, TargetBuilds: v.Spec.TargetBuilds, IncludeDependents: v.Spec.IncludeDependents, AllSubports: v.Spec.AllSubports, SourceBranch: v.Spec.SourceBranch, Publication: v.Spec.Publication, PublishTo: v.Spec.PublishTo, Targets: v.Spec.Targets, Build: v.Spec.Build, BuildRequirements: v.Spec.BuildRequirements, Version: v.Spec.Version, Reason: v.Spec.Reason, Preparation: v.Spec.Preparation, Checkout: v.Spec.Checkout, FreshVerification: v.Spec.FreshVerification})
+	raw, err := encode(jobOptions{KeepFailed: v.Spec.KeepFailed, EvaluatedVersions: v.Spec.EvaluatedVersions, TargetBuilds: v.Spec.TargetBuilds, IncludeDependents: v.Spec.IncludeDependents, AllSubports: v.Spec.AllSubports, SourceBranch: v.Spec.SourceBranch, Publication: v.Spec.Publication, PublishTo: v.Spec.PublishTo, Targets: v.Spec.Targets, Build: v.Spec.Build, BuildRequirements: v.Spec.BuildRequirements, Version: v.Spec.Version, Subject: v.Spec.Subject, References: v.Spec.References, Preparation: v.Spec.Preparation, Checkout: v.Spec.Checkout, FreshVerification: v.Spec.FreshVerification})
 	if err != nil {
 		return err
 	}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git/changeset"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
@@ -14,7 +15,10 @@ import (
 
 type CorrectionRequest struct {
 	KeepFailed bool
-	Title      string
+	// Subject replaces the commit subject after the port name; References
+	// are added to the trailers the commit does not already carry.
+	Subject    string
+	References []record.Reference
 	ID         record.RequestID
 	Action     record.Action
 	// Target selects the contribution by port; Branch by its tracked branch;
@@ -65,8 +69,13 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 	if e == nil || e.State == nil || e.Repo == nil || e.Ports == nil {
 		return result, errNoState
 	}
-	if input.Title != "" && (strings.TrimSpace(input.Title) == "" || strings.ContainsAny(input.Title, "\r\n\x00")) {
-		return result, fmt.Errorf("workflow: title must be one nonempty line")
+	if input.Subject != "" && (strings.TrimSpace(input.Subject) == "" || strings.ContainsAny(input.Subject, "\r\n\x00")) {
+		return result, fmt.Errorf("workflow: subject must be one nonempty line")
+	}
+	for _, reference := range input.References {
+		if !reference.Valid() {
+			return result, fmt.Errorf("workflow: invalid reference %q", reference.Trailer())
+		}
 	}
 	if input.Action != record.Amend && input.Action != record.Rebase {
 		return result, ErrInvalidRequest
@@ -168,12 +177,21 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 	if err != nil {
 		return result, err
 	}
-	if input.Title != "" {
-		_, body, hasBody := strings.Cut(message, "\n")
-		message = input.Title
-		if hasBody {
-			message += "\n" + body
+	if input.Subject != "" || len(input.References) > 0 {
+		var subject string
+		if input.Subject != "" {
+			// The name the contribution already carries in its subject stays,
+			// which keeps a stub's name over its carrying subport's.
+			name := target.Name
+			first, _, _ := strings.Cut(message, "\n")
+			if prefix, _, ok := strings.Cut(first, ": "); ok && macports.ValidName(prefix) {
+				name = prefix
+			}
+			if subject, err = portedit.Subject(name, input.Subject); err != nil {
+				return result, err
+			}
 		}
+		message = portedit.Rewrite(message, subject, input.References)
 	}
 	candidate, err := changeset.Correct(ctx, e.Repo, snapshot, revision.Source.Base, base, message, author)
 	if err != nil {

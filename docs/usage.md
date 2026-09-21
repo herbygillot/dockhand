@@ -123,11 +123,13 @@ A plain bump prepares, verifies, and publishes as one durable job, staying in th
 ```sh
 dockhand bump jq
 dockhand bump jq --image dockhand-base-tahoe
-dockhand bump-revision jq --reason "rebuild against oniguruma 6.9.10" --trace
+dockhand bump-revision jq --subject "revbump for oniguruma 6.9.10" --trace
 dockhand bump jq --detach       # submit, return at admission; wait or serve finishes it
 ```
 
 The destination is captured before acceptance. The driver verifies the prepared revision, then pushes it and confirms the PR. `--image` may be omitted after `setup`; Dockhand selects the matching default image. Automatic provider selection prefers a suitable Tart image and falls back to GitHub when unavailable. An explicit Tart request can reuse applicable evidence; otherwise missing build configuration preserves the prepared branch for a later verification run. With `--detach`, the command returns at build admission or evidence reuse; `wait <port>` or `serve` continues the same job. `--unverified` prepares the branch and opens the PR without building it, because you asked; the PR body says the change was not built locally and that the MacPorts workflow is its only check, and `status` shows it as published unverified. `--to verified` stops after the build, and `--to branch` stops at the prepared branch. Already-current automatic bumps complete without a PR. Failed verification preserves the local branch for correction and a later explicit `verify`/`publish`.
+
+`--subject` is what follows the port name in the commit subject, and the pull request title; `bump` defaults to "update to <version>" and `checksums` to "refresh checksums", while a revision bump requires one, since the reason is what maintainers write there. Give only what follows the name: dockhand writes `jq: ` itself and refuses a subject that already carries it. `--closes 74379` and `--see 74422` cite Trac tickets as `Closes:` and `See:` trailers in the form the pull request template asks for, the full ticket URL; both repeat, and a URL is taken as given.
 
 ## Publish an existing branch
 
@@ -207,7 +209,7 @@ dockhand rebase --branch dockhand/bump/example-...
 dockhand reassociate change_... --branch new-local-name
 ```
 
-`amend` defaults to the current tracked checkout; a target, or `--branch`, selects the contribution instead. Checked-out amendments require matching staged and working contents; Dockhand does not stage files or reset the checkout. Switch away before rebasing, including in linked worktrees. Rebase fetches MacPorts master, preserves one contribution commit, and leaves a conflict workspace for inspection if replay fails. Both commands retain the original contribution message (`--title` replaces its subject), verify the replacement, and accept the usual provider and `--dependents` options. With `--to verified`, they stop after verification; `--detach` returns once the correction is accepted.
+`amend` defaults to the current tracked checkout; a target, or `--branch`, selects the contribution instead. Checked-out amendments require matching staged and working contents; Dockhand does not stage files or reset the checkout. Switch away before rebasing, including in linked worktrees. Rebase fetches MacPorts master, preserves one contribution commit, and leaves a conflict workspace for inspection if replay fails. Both commands retain the original contribution message; `--subject` replaces what follows the port name in its subject, and `--closes` and `--see` add the ticket trailers it does not already carry. A rewrite that leaves the tree unchanged reuses the evidence that tree has, so citing a forgotten ticket costs no build. They verify the replacement and accept the usual provider and `--dependents` options. With `--to verified`, they stop after verification; `--detach` returns once the correction is accepted.
 
 An existing PR retains its remote branch and body after local reassociation. Unexpected remote changes require reconciliation. `publish` still requires applicable verification; managed `amend` and `rebase` authorize both steps by default, and `--to verified` stops them after verification.
 

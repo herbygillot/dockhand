@@ -118,6 +118,7 @@ pre-fetch {
 	require.NoError(t, err)
 	request.Source = record.Source{Tree: record.ObjectID(tree)}
 	request.Action = record.Bump
+	request.Subject = "" // the revision fixture's reason; a bump takes the editor's default
 	request.Version = "2.0"
 	resolver := releaseTagFunc(func(_ context.Context, repo, name string) (forge.Tag, error) {
 		if name != "v2.0" {

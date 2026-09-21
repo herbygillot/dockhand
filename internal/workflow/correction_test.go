@@ -225,18 +225,47 @@ func TestExistingPRRejectsUnexpectedRemoteHeadDuringPlanning(t *testing.T) {
 	require.ErrorContains(t, err, "head changed remotely")
 }
 
-func TestCorrectionExplicitTitlePreservesBody(t *testing.T) {
+func TestCorrectionExplicitSubjectPreservesBody(t *testing.T) {
 	t.Parallel()
 	f, input := correctionFixture(t)
-	input.Title = "fixture: corrective update"
+	input.Subject = "corrective update"
 	bound, err := f.engine.BindCorrection(t.Context(), input)
 	require.NoError(t, err)
 	message, err := f.repo.CommitMessage(t.Context(), string(bound.Request.Spec.Preparation.Correction.Candidate.Commit))
 	require.NoError(t, err)
 	require.Equal(t, "fixture: corrective update\n\nContribution details", message)
-	input.Title = "bad\nsubject"
+	input.Subject = "bad\nsubject"
 	_, err = f.engine.BindCorrection(t.Context(), input)
 	require.ErrorContains(t, err, "one nonempty line")
+	input.Subject = "fixture: corrective update"
+	_, err = f.engine.BindCorrection(t.Context(), input)
+	require.ErrorContains(t, err, "already begins with")
+}
+
+func TestCorrectionCitesTicketsOnceAndStillReusesEvidence(t *testing.T) {
+	t.Parallel()
+	f, input := correctionFixture(t)
+	closes := record.Reference{Relation: record.ReferenceCloses, URL: "https://trac.macports.org/ticket/74379"}
+	see := record.Reference{Relation: record.ReferenceSee, URL: "https://trac.macports.org/ticket/74422"}
+	input.References = []record.Reference{closes, see, closes}
+	bound, err := f.engine.BindCorrection(t.Context(), input)
+	require.NoError(t, err)
+	message, err := f.repo.CommitMessage(t.Context(), string(bound.Request.Spec.Preparation.Correction.Candidate.Commit))
+	require.NoError(t, err)
+	require.Equal(t, "fixture: update to 2\n\nContribution details\n\nCloses: https://trac.macports.org/ticket/74379\nSee: https://trac.macports.org/ticket/74422", message)
+	receipt, err := f.engine.Submit(t.Context(), bound.Request)
+	require.NoError(t, err)
+	for range 4 {
+		f.run(t, receipt.JobID)
+	}
+	result := f.status(t, receipt.JobID)
+	require.Equal(t, record.JobCompleted, result.Jobs[0].Job.State, result.Jobs[0].Job.Detail)
+	require.NotEmpty(t, result.Jobs[0].Job.ReusedAttempt, "a message-only amendment keeps the tree and its evidence")
+	require.Equal(t, 1, f.provider.count("submit"))
+
+	input.References = []record.Reference{{Relation: "fixes", URL: "https://trac.macports.org/ticket/1"}}
+	_, err = f.engine.BindCorrection(t.Context(), input)
+	require.ErrorContains(t, err, "invalid reference")
 }
 
 func TestVerificationAfterRenameKeepsThePRHeadAsItsRemoteBranch(t *testing.T) {

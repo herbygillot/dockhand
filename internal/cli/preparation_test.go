@@ -49,7 +49,7 @@ func TestRevisionPreviewCLIUsesCommittedSourceWithoutStateOrProvider(t *testing.
 	config, repo, commit := preparationCLI(t)
 	var err error
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--dry-run", "--reason", "rebuild", "-v"}, Streams{Out: &stdout, Err: &stderr}, config))
+	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--dry-run", "--subject", "rebuild", "-v"}, Streams{Out: &stdout, Err: &stderr}, config))
 	require.Contains(t, stdout.String(), "-revision 0\n+revision 1")
 	require.Contains(t, stderr.String(), "branch master")
 	require.Contains(t, stderr.String(), "working-tree edits are excluded")
@@ -60,11 +60,21 @@ func TestRevisionPreviewCLIUsesCommittedSourceWithoutStateOrProvider(t *testing.
 	require.Equal(t, commit, actual)
 	stdout.Reset()
 	stderr.Reset()
-	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--dry-run", "--json", "-vv"}, Streams{Out: &stdout, Err: &stderr}, config))
+	err = Run(t.Context(), []string{"bump-revision", "fixture", "--dry-run", "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
+	require.ErrorContains(t, err, "--subject", "a revision bump without a reason is refused before anything is read")
+	require.NoDirExists(t, filepath.Dir(config.DBPath))
+	err = Run(t.Context(), []string{"bump-revision", "fixture", "--dry-run", "--json", "--subject", "rebuild", "--closes", "ticket"}, Streams{Out: &stdout, Err: &stderr}, config)
+	require.ErrorContains(t, err, "--closes takes a Trac ticket number or a URL")
+	stdout.Reset()
+	stderr.Reset()
+	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--dry-run", "--json", "-vv", "--subject", "rebuild", "--closes", "74379", "--see", "#74422", "--see", "https://github.com/macports/macports-ports/issues/1"}, Streams{Out: &stdout, Err: &stderr}, config))
 	var result app.Preview
 	decodeResult(t, stdout.Bytes(), &result)
 	require.Equal(t, "master", result.Branch)
 	require.Contains(t, result.Diff, "+revision 1")
+	require.Len(t, result.Preparation.Commits, 1)
+	require.Equal(t, "fixture: rebuild", result.Preparation.Commits[0].Subject)
+	require.Equal(t, []record.Reference{{Relation: record.ReferenceCloses, URL: "https://trac.macports.org/ticket/74379"}, {Relation: record.ReferenceSee, URL: "https://trac.macports.org/ticket/74422"}, {Relation: record.ReferenceSee, URL: "https://github.com/macports/macports-ports/issues/1"}}, result.Preparation.Commits[0].References)
 	require.Contains(t, stderr.String(), "PortIndex for source")
 	require.NoDirExists(t, filepath.Dir(config.DBPath))
 }
@@ -115,7 +125,7 @@ func TestRevisionBumpCLITracksCommittedChangeAndPreservesCheckout(t *testing.T) 
 	require.NoError(t, err)
 	config.Tart = tart.Config{Executable: "/missing/tart"}
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--to", "branch", "--json", "-v", "--reason", "Rebuild fixture"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--to", "branch", "--json", "-v", "--subject", "Rebuild fixture"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var result ActionResult
 	decodeResult(t, stdout.Bytes(), &result)
 	require.Len(t, result.Status.Jobs, 1)
@@ -154,7 +164,7 @@ func TestRevisionBumpCLIPreservesBranchWhenVerificationCannotStart(t *testing.T)
 			config, repo, _ := preparationCLI(t)
 			config.Tart = tart.Config{Executable: "/missing/tart", Image: image}
 			var stdout, stderr bytes.Buffer
-			err := Run(t.Context(), []string{"bump-revision", "fixture", "--provider", "tart", "--to", "verified", "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
+			err := Run(t.Context(), []string{"bump-revision", "fixture", "--subject", "rebuild", "--provider", "tart", "--to", "verified", "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
 			require.ErrorIs(t, err, errNeedsAttention, "%s", stderr.String())
 			var result ActionResult
 			decodeResult(t, stdout.Bytes(), &result)
@@ -272,14 +282,14 @@ func TestPreparationIgnoresLocalBranchAndRefusesFailedFetch(t *testing.T) {
 		require.NoError(t, err, "%s", out)
 	}
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--dry-run", "--json", "-vv"}, Streams{Out: &stdout, Err: &stderr}, config))
+	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--subject", "rebuild", "--dry-run", "--json", "-vv"}, Streams{Out: &stdout, Err: &stderr}, config))
 	var preview app.Preview
 	decodeResult(t, stdout.Bytes(), &preview)
 	require.Equal(t, record.ObjectID(upstream), preview.Preparation.Base.Commit)
 	require.Equal(t, "https://github.com/macports/macports-ports.git", preview.Repository)
 	require.NoError(t, repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/master", Expected: git.RefValue{Exists: true, Object: upstream}}}))
 	for _, mode := range [][]string{{"--dry-run"}, {"--to", "verified"}, {"--to", "branch"}} {
-		err := Run(t.Context(), append([]string{"bump-revision", "fixture"}, mode...), Streams{Out: &stdout, Err: &stderr}, config)
+		err := Run(t.Context(), append([]string{"bump-revision", "fixture", "--subject", "rebuild"}, mode...), Streams{Out: &stdout, Err: &stderr}, config)
 		require.ErrorContains(t, err, "fetching authoritative MacPorts master")
 	}
 	current, _, err := repo.Branch(t.Context(), "candidate")

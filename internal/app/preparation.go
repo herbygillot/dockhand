@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -17,10 +18,11 @@ import (
 
 type PreviewRequest struct {
 	record.EditIntent
-	Action    record.Action
-	Selection macports.Selection
-	Version   string
-	Reason    string
+	Action     record.Action
+	Selection  macports.Selection
+	Version    string
+	Subject    string
+	References []record.Reference
 }
 
 type Preview struct {
@@ -51,7 +53,7 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 	service := preparation.Service{DependencyTools: config.DependencyTools, Repo: repo, Ports: ports, Upstream: releaseDiscovery(ports, githubClient, http.DefaultClient)}
 	input := preparation.Request{
 		EditIntent: request.EditIntent, Action: request.Action, Source: source,
-		Selection: request.Selection, Version: request.Version, Reason: request.Reason,
+		Selection: request.Selection, Version: request.Version, Subject: request.Subject, References: request.References,
 	}
 	if request.Action == record.Bump {
 		release, err := service.ResolveRelease(ctx, input)
@@ -82,7 +84,8 @@ type Preparation struct {
 	Version           string
 	ID                record.RequestID
 	Selection         macports.Selection
-	Reason            string
+	Subject           string
+	References        []record.Reference
 	// SkipVerify prepares without a build. With Publish it opens the PR
 	// unverified, which the PR body discloses; alone it stops at the branch.
 	SkipVerify bool
@@ -145,6 +148,14 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 			request.KeepOldChecksums = request.KeepOldChecksums || prior.Spec.Preparation.KeepOldChecksums
 			request.Stub = prior.Spec.Preparation.Stub
 		}
+		// A continued contribution keeps the subject and tickets it was
+		// given; the console's retry names only the port.
+		if request.Subject == "" {
+			request.Subject = prior.Spec.Subject
+		}
+		if len(request.References) == 0 {
+			request.References = prior.Spec.References
+		}
 		target := prior.Spec.Targets[0]
 		variants := maps.Clone(target.Variants)
 		if variants == nil {
@@ -152,6 +163,9 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 		}
 		maps.Copy(variants, request.Selection.Variants)
 		request.Selection = macports.Selection{Selector: target.Portfile, Subport: target.Subport, Variants: variants}
+	}
+	if request.Action == record.BumpRevision && strings.TrimSpace(request.Subject) == "" {
+		return workflow.BoundPreparation{}, fmt.Errorf("bump-revision needs --subject: the reason is what maintainers read, e.g. --subject \"revbump for oniguruma 6.9.10\"")
 	}
 	author, err := s.Workflow.Repo.Author(ctx)
 	if err != nil {
@@ -161,7 +175,7 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 	if err != nil {
 		return workflow.BoundPreparation{}, err
 	}
-	bound := workflow.PreparationRequest{EditIntent: request.EditIntent, AllSubports: request.AllSubports, KeepFailed: request.KeepFailed, ChangeID: request.ChangeID, IncludeDependents: request.IncludeDependents, Action: request.Action, Version: request.Version, ID: request.ID, Source: source, SourceBranch: macports.PortsBranch, SourceURL: macports.PortsRepositoryURL, Selection: request.Selection, Reason: request.Reason,
+	bound := workflow.PreparationRequest{EditIntent: request.EditIntent, AllSubports: request.AllSubports, KeepFailed: request.KeepFailed, ChangeID: request.ChangeID, IncludeDependents: request.IncludeDependents, Action: request.Action, Version: request.Version, ID: request.ID, Source: source, SourceBranch: macports.PortsBranch, SourceURL: macports.PortsRepositoryURL, Selection: request.Selection, Subject: request.Subject, References: request.References,
 		Author: record.CommitIdentity{Name: author.Name, Email: author.Email}, Platform: platform,
 		Destination: record.VerificationComplete, Verification: record.VerificationRequired}
 	if request.SkipVerify {

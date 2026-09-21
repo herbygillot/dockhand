@@ -27,7 +27,7 @@ func TestAssessFrozenSourceWithoutStateDownloadsOrCatalogs(t *testing.T) {
 	for _, version := range []string{"", "2.0", "v2.0"} {
 		args := []string{"assess", "fixture", "--json"}
 		if version != "" {
-			args = append(args, "--version", version)
+			args = append(args, "--at", version)
 		}
 		var stdout, stderr bytes.Buffer
 		require.NoError(t, Run(t.Context(), args, Streams{Out: &stdout, Err: &stderr}, config), stderr.String())
@@ -71,7 +71,7 @@ func TestAssessKeepsIndependentFailuresAndDeduplicates(t *testing.T) {
 	require.Equal(t, portedit.Unknown, result.Ports[0].Outcome)
 	require.Equal(t, portedit.InputFound, result.Ports[1].Outcome)
 	out.Reset()
-	err = Run(t.Context(), []string{"assess", "fixture", "--version", "does-not-exist", "--json"}, Streams{Out: &out, Err: &stderr}, config)
+	err = Run(t.Context(), []string{"assess", "fixture", "--at", "does-not-exist", "--json"}, Streams{Out: &out, Err: &stderr}, config)
 	require.Error(t, err)
 	decodeResult(t, out.Bytes(), &result)
 	require.Equal(t, portedit.Unknown, result.Ports[0].Outcome)
@@ -80,8 +80,8 @@ func TestAssessKeepsIndependentFailuresAndDeduplicates(t *testing.T) {
 func TestAssessValidatesSelectorsBeforeOpeningRepository(t *testing.T) {
 	for _, args := range [][]string{
 		{"assess"}, {"assess", "fixture", "--all"}, {"assess", "--all", "--category", "devel"},
-		{"assess", "--maintainer", "*"}, {"assess", "fixture", "other", "--version", "2"},
-		{"assess", "--all", "--version", "2"}, {"assess", "fixture", "--version", ""},
+		{"assess", "--maintainer", "*"}, {"assess", "fixture", "other", "--at", "2"},
+		{"assess", "--all", "--at", "2"}, {"assess", "fixture", "--at", ""},
 	} {
 		config := app.Config{Repository: "/missing/repository", DBPath: filepath.Join(t.TempDir(), "missing", "state.db")}
 		var out bytes.Buffer

@@ -3,9 +3,12 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/spf13/cobra"
 )
 
@@ -114,4 +117,45 @@ func changeFlags(command *cobra.Command, options *Options, destination *destinat
 		command.MarkFlagsMutuallyExclusive("dry-run", name)
 	}
 	command.MarkFlagsMutuallyExclusive("trace", "unverified")
+}
+
+// referenceFlags collect the tickets a contribution cites: --closes for
+// the ones it resolves and --see for the ones worth reading beside it,
+// each a Trac ticket number or a URL, each written as its own trailer.
+type referenceFlags struct{ closes, see []string }
+
+func (f *referenceFlags) add(command *cobra.Command) {
+	command.Flags().StringArrayVar(&f.closes, "closes", nil, "Trac ticket this change closes, as a number or URL; written as a Closes: trailer (repeatable)")
+	command.Flags().StringArrayVar(&f.see, "see", nil, "Related Trac ticket, as a number or URL; written as a See: trailer (repeatable)")
+}
+
+func (f *referenceFlags) resolve() ([]record.Reference, error) {
+	var references []record.Reference
+	for _, group := range []struct {
+		relation record.ReferenceRelation
+		values   []string
+	}{{record.ReferenceCloses, f.closes}, {record.ReferenceSee, f.see}} {
+		for _, value := range group.values {
+			cited, err := ticketURL(value)
+			if err != nil {
+				return nil, fmt.Errorf("--%s %w", group.relation, err)
+			}
+			references = append(references, record.Reference{Relation: group.relation, URL: cited})
+		}
+	}
+	return references, nil
+}
+
+// ticketURL turns a Trac ticket number, with or without #, into the full
+// URL MacPorts asks for in commit messages; a URL passes through as given.
+func ticketURL(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if number := strings.TrimPrefix(value, "#"); number != "" && strings.Trim(number, "0123456789") == "" {
+		return macports.TicketURL(number), nil
+	}
+	parsed, err := url.Parse(value)
+	if err == nil && (parsed.Scheme == "https" || parsed.Scheme == "http") && parsed.Host != "" && !strings.ContainsAny(value, " \t\r\n") {
+		return value, nil
+	}
+	return "", fmt.Errorf("takes a Trac ticket number or a URL, not %q", value)
 }

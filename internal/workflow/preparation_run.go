@@ -152,7 +152,7 @@ func preparationRequest(job record.Job) preparation.Request {
 	selection := macports.Selection{Selector: target.Portfile, Subport: target.Subport, Variants: target.Variants}
 	return preparation.Request{EditIntent: job.Spec.Preparation.EditIntent, Action: job.Spec.Action, Source: job.Spec.Source,
 		Selection: selection,
-		Platform:  job.Spec.Preparation.Platform, Reason: job.Spec.Reason, Version: job.Spec.Version, Release: job.ResolvedRelease}
+		Platform:  job.Spec.Preparation.Platform, Subject: job.Spec.Subject, References: job.Spec.References, Version: job.Spec.Version, Release: job.ResolvedRelease}
 }
 
 func (c *cycle) prepareCandidate(ctx context.Context, job record.Job) (record.PreparedChange, error) {

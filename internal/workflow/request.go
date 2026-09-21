@@ -84,8 +84,13 @@ func validateEncodings(spec *record.JobSpec, _ actionRule) error {
 	if spec.SourceBranch != "" && !git.ValidBranchName(spec.SourceBranch) {
 		return fmt.Errorf("%w: invalid source branch", ErrInvalidRequest)
 	}
-	if !utf8.ValidString(spec.Reason) || (spec.ChangeID != "" && !validToken(string(spec.ChangeID))) || (spec.InputRevision != "" && !validToken(string(spec.InputRevision))) {
-		return fmt.Errorf("%w: invalid change ID, revision ID, or reason encoding", ErrInvalidRequest)
+	if !utf8.ValidString(spec.Subject) || strings.ContainsAny(spec.Subject, "\r\n\x00") || (spec.ChangeID != "" && !validToken(string(spec.ChangeID))) || (spec.InputRevision != "" && !validToken(string(spec.InputRevision))) {
+		return fmt.Errorf("%w: invalid change ID, revision ID, or subject encoding", ErrInvalidRequest)
+	}
+	for _, reference := range spec.References {
+		if !reference.Valid() {
+			return fmt.Errorf("%w: invalid reference %q", ErrInvalidRequest, reference.Trailer())
+		}
 	}
 	return nil
 }

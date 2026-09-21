@@ -35,7 +35,7 @@ func preparationFixture(t *testing.T, verification bool) (*fixture, workflow.Req
 	require.NoError(t, err)
 	req := workflow.PreparationRequest{Action: record.BumpRevision, ID: "prepare", SourceBranch: "master", Source: record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree), Base: record.ObjectID(commit)}, Selection: bindRequest(f, "").Selection,
 		Destination: record.BranchReady, Verification: record.VerificationSkipped,
-		Author: record.CommitIdentity{Name: "Accepted Author", Email: "accepted@example.invalid"}, Platform: buildPlatform, Reason: "Rebuild dependents"}
+		Author: record.CommitIdentity{Name: "Accepted Author", Email: "accepted@example.invalid"}, Platform: buildPlatform, Subject: "Rebuild dependents"}
 	if verification {
 		req.Destination, req.Verification, req.Build = record.VerificationComplete, record.VerificationRequired, f.request("").Spec.Build
 	}
@@ -51,7 +51,7 @@ func preparationFixture(t *testing.T, verification bool) (*fixture, workflow.Req
 			return preparation.Result{}, err
 		}
 		tree, err := f.repo.EditTree(ctx, string(r.Source.Tree), []git.FileEdit{{Path: r.Selection.Selector, Before: before, After: []byte("version 1\nrevision 1\n"), Mode: before.Mode}})
-		return preparation.Result{Base: r.Source, Release: r.Release, Target: bound.Request.Spec.Targets[0], PreparedTree: record.ObjectID(tree), Commits: []preparation.CommitIntent{{Subject: "fixture: revbump", Body: r.Reason}}}, err
+		return preparation.Result{Base: r.Source, Release: r.Release, Target: bound.Request.Spec.Targets[0], PreparedTree: record.ObjectID(tree), Commits: []preparation.CommitIntent{{Subject: "fixture: " + r.Subject, References: r.References}}}, err
 	})
 	return f, bound.Request
 }
@@ -106,7 +106,7 @@ func TestRevisionPreparationCreatesSeparateContributionWithoutProvider(t *testin
 	require.NoError(t, err)
 	require.Contains(t, string(out), "\n\n"+preparation.GeneratedBy())
 	require.Contains(t, string(out), sourceCommit+"\nAccepted Author <accepted@example.invalid>\n")
-	require.Contains(t, string(out), "fixture: revbump\n\nRebuild dependents")
+	require.Contains(t, string(out), "fixture: Rebuild dependents\n\n"+preparation.GeneratedBy())
 	require.Len(t, status.Changes, 1)
 	require.Equal(t, req.Spec.Targets, status.Changes[0].Targets)
 	require.Equal(t, job.ResultRevision, status.Changes[0].CurrentRevision)

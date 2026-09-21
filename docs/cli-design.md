@@ -135,16 +135,16 @@ Every JSON result is wrapped in one envelope, `{"command", "exit_code", "error",
 ```sh
 dockhand assess terraform
 dockhand assess jq rust-analyzer
-dockhand assess rust-analyzer --version 2026-09-14
+dockhand assess rust-analyzer --at 2026-09-14
 dockhand assess --maintainer herbygillot@github --category devel
 dockhand assess --all --json
 ```
 
-Explicit ports, maintainer/category filters, and `--all` are separate selection modes. Repeated values within a metadata field are alternatives; maintainer and category fields intersect. `--version` requires exactly one explicit port and accepts the same tag-prefix inference as `bump`.
+Explicit ports, maintainer/category filters, and `--all` are separate selection modes. Repeated values within a metadata field are alternatives; maintainer and category fields intersect. `--at` requires exactly one explicit port and accepts the same tag-prefix inference as `bump`.
 
 Every command that selects a checkout, including `status`, `wait`, `gc`, and the bumps, validates it before touching state or fetching anything into it: the working tree, or the checked-out branch when the working tree is sparse, must contain at least one `<category>/<port>/Portfile`. A wrong directory, such as dockhand's own repository, fails immediately, naming the checkout, with a hint to pass `--tree` or set `MACPORTS_TREE`; it is never registered in the state database. Only `setup`, `auth`, and `db` need no ports tree. `dockhand --version` prints the module version or VCS revision embedded at build time.
 
-Default assessment evaluates local declarations and probes literal version inputs without querying upstream. `--version` resolves the requested tag and runs the shared preparation plan through version, source, checksum-association, and edit-fidelity checks, stopping before downloads; human output echoes the resolved candidate version and tag on the port line. Neither mode opens workflow state, creates jobs, changes branches, executes dependency generators, or builds ports. It evaluates Tcl in an isolated materialization; this is not a sandbox for untrusted Portfiles. Working-tree edits are excluded. Indexed scans may create or refresh the source-bound index cache.
+Default assessment evaluates local declarations and probes literal version inputs without querying upstream. `--at` resolves the requested tag and runs the shared preparation plan through version, source, checksum-association, and edit-fidelity checks, stopping before downloads; human output echoes the resolved candidate version and tag on the port line. Neither mode opens workflow state, creates jobs, changes branches, executes dependency generators, or builds ports. It evaluates Tcl in an isolated materialization; this is not a sandbox for untrusted Portfiles. Working-tree edits are excluded. Indexed scans may create or refresh the source-bound index cache.
 
 Each result retains findings with a check, status, stable reason code, and explanation, plus input locations where available:
 
@@ -163,7 +163,7 @@ Independent ports continue after a per-port failure. Indexed subports are select
 ```text
 dockhand bump-revision <port> --dry-run
     [--variant +name|--variant=-name ...]
-    [--reason <text>] [--json]
+    [--subject <text>] [--closes <ticket>...] [--see <ticket>...] [--json]
 dockhand bump <port> [version]
 ```
 
@@ -198,7 +198,7 @@ Archive preparation observes exact checksum/revision declarations and uses MacPo
 
 Modeled metadata is explicitly separated from native runtime facts and build verification. Unresolved context boundaries, unassociated checksum groups, host-dependent modeled evaluation, changed declaration ownership, and conflicting required digests remain gaps or refusals. Fetch credentials, unrecognized hooks, remote patches, and unsupported dependency forms retain their existing restrictions. Supported dependency generators still regenerate manifest-backed blocks separately. See [bump preparation](bump-planner.md) for implementation limits and exercises.
 
-The driver records the resolved release before archive preparation. Forge tags are checked before and after preparation; a moved or missing tag requires attention. HTTP-listing candidates retain their observation and selected version across retries without reselecting from a newer page. Previews report the release and diff without opening state; normal jobs create `dockhand/bump/<port>-<job suffix>` through the same integration machinery as revision bumps. `--unverified`, `--to verified`, `--image`, `--capacity`, `--tests`, `--from-source`, `--detach`, `--trace`, `--reason`, `wait`, and `serve` have the same meanings on both bump paths. A verified bump continues through the shared publication phase unless `--to verified` was given. See the [implementation report](activity/2026-09-13-explicit-version-bumps.md).
+The driver records the resolved release before archive preparation. Forge tags are checked before and after preparation; a moved or missing tag requires attention. HTTP-listing candidates retain their observation and selected version across retries without reselecting from a newer page. Previews report the release and diff without opening state; normal jobs create `dockhand/bump/<port>-<job suffix>` through the same integration machinery as revision bumps. `--unverified`, `--to verified`, `--image`, `--capacity`, `--tests`, `--from-source`, `--detach`, `--trace`, `--subject`, `--closes`, `--see`, `wait`, and `serve` have the same meanings on both bump paths. A verified bump continues through the shared publication phase unless `--to verified` was given. See the [implementation report](activity/2026-09-13-explicit-version-bumps.md).
 
 ### Revision-bump jobs
 
@@ -208,7 +208,7 @@ dockhand bump-revision jq --image dockhand-base-tahoe
 dockhand bump-revision jq --image dockhand-base-tahoe --to verified --detach
 ```
 
-A new contribution starts from freshly fetched authoritative MacPorts `master`, using the same immutable intake as version bumps. Equivalent repeated requests join existing work; retries retain the contribution and its original source. A new contribution receives a branch named `dockhand/revbump/<port>-<job suffix>`. The source branch, checkout, and index stay in place. Git author identity, source commit/tree/base, target, platform, and any verification configuration are captured before acceptance. `--reason` becomes the commit body, followed by the generated-contribution trailer. The output reports the job, prepared branch, commit, and result revision.
+A new contribution starts from freshly fetched authoritative MacPorts `master`, using the same immutable intake as version bumps. Equivalent repeated requests join existing work; retries retain the contribution and its original source. A new contribution receives a branch named `dockhand/revbump/<port>-<job suffix>`. The source branch, checkout, and index stay in place. Git author identity, source commit/tree/base, target, platform, and any verification configuration are captured before acceptance. `--subject` is required and follows the port name in the commit subject, which is also the pull request title, since the reason is what maintainers write there; dockhand supplies the name and refuses a subject that already begins with it. `--closes` and `--see` cite Trac tickets as `Closes:` and `See:` trailers, a number becoming the full ticket URL the pull request template asks for and a URL passing through as given, ahead of the generated-contribution trailer. The output reports the job, prepared branch, commit, and result revision.
 
 `--to branch` completes once the branch is recorded. Otherwise the command prepares the branch and stays through verification and, unless `--to verified`, publication; `--detach` returns at verification admission or evidence reuse and `--trace` also streams logs. Revision bumps accept the same image, capacity, test, and source-build options as `verify`. Automatic bumps bind one concrete provider at intake when available; applicable evidence can satisfy its verification after the prepared tree is known. Explicit Tart requests may also use the evidence-selection behavior described above. A missing executable configuration or reuse miss in that evidence-only path is recorded as needs-attention after preserving the branch. A later `verify <target> --image <image>` continues the contribution with a new verification job. The same job continues through publication of the verified prepared revision by default, using the destination options of standalone `publish`; `--to verified` stops before it. `--unverified` publishes the prepared revision without any verification, at the author's explicit request: the job has no verification phase, cites no evidence, and its PR body discloses that no local build ran.
 
@@ -259,7 +259,9 @@ The driver owns each accepted job and its bookkeeping. The CLI submits the reque
 
 ```text
 dockhand bump <port|selector> [version] [--to branch|verified|pr] [--unverified] [--detach|--trace]
+    [--subject <text>] [--closes <ticket>...] [--see <ticket>...]
 dockhand (bump-revision | checksums) <port|selector> [--to branch|verified|pr] [--unverified] [--detach|--trace]
+    [--subject <text>] [--closes <ticket>...] [--see <ticket>...]
 ```
 
 ```sh
@@ -319,7 +321,7 @@ dockhand cancel [<job_id>] [--branch <branch>]
 dockhand serve
 ```
 
-The examples using `bump` flags also apply to `bump-revision` and `checksums` where meaningful. The optional version immediately follows the `bump` target. Other command-specific arguments, such as a revision-bump reason, remain separate from workflow options.
+The examples using `bump` flags also apply to `bump-revision` and `checksums` where meaningful. The optional version immediately follows the `bump` target. Other command-specific arguments, such as a revision bump's subject, remain separate from workflow options.
 
 **Explicit versions and upstream tags**
 
@@ -481,7 +483,7 @@ An automatic GitHub configuration failure is retained as a preparation verificat
 
 ### Shared-release authorization
 
-For a named subport whose release is shared with siblings, inspect with `dockhand assess py313-ipdb --version <version> --shared-release` or preview with `dockhand bump py313-ipdb <version> --shared-release --dry-run`. Use `bump --shared-release` to authorize the listed release cohort. Continue with `verify py313-ipdb` and `publish py313-ipdb`; the immutable revision retains the required sibling coverage. Each buildable sibling needs passing local verification. Metadata-only parents are recorded but do not receive a build. Multi-target GitHub verification is not yet supported.
+For a named subport whose release is shared with siblings, inspect with `dockhand assess py313-ipdb --at <version> --shared-release` or preview with `dockhand bump py313-ipdb <version> --shared-release --dry-run`. Use `bump --shared-release` to authorize the listed release cohort. Continue with `verify py313-ipdb` and `publish py313-ipdb`; the immutable revision retains the required sibling coverage. Each buildable sibling needs passing local verification. Metadata-only parents are recorded but do not receive a build. Multi-target GitHub verification is not yet supported.
 
 A stub needs no authorization either. A port that builds nothing while its versioned subports carry its release, the python `py-foo` over `py3x-foo` shape, is what maintainers name in commits (2,324 of last year's 2,440 python bumps say `py-foo: update to X`). `bump py-foo` therefore edits the newest versioned subport and its siblings as one shared release, keeps `py-foo` as the contribution's name, branch, and commit subject, and verifies the newest subport locally; the pull request's own workflow builds every subport, and the PR body says which were not built locally. `--all-subports` builds every buildable member locally instead, on `bump` and on `verify`. `status`, `verify`, and `publish` select the contribution by the stub's name.
 

@@ -91,7 +91,11 @@ type JobSpec struct {
 	KeepFailed bool `json:",omitempty"`
 	// Version is an optional explicit version for Bump; empty requests automatic selection.
 	Version string
-	Reason  string
+	// Subject is the commit subject after the port name, as the person wrote
+	// it; empty leaves the editor's default, which a revision bump has none of.
+	Subject string `json:",omitempty"`
+	// References are the tickets the commit cites in its trailers.
+	References []Reference `json:",omitempty"`
 	// Preparation freezes source-branch, platform, and author choices for a new contribution.
 	Preparation *PreparationSpec `json:",omitempty"`
 }

@@ -27,6 +27,7 @@ func TestRefreshChecksumsPreservesVersionsAndCanBeCurrent(t *testing.T) {
 			}
 			service, request := preparationFixture(t, "revision 4\nmaster_sites "+server.URL+"/\n"+declarations)
 			request.Action = record.RefreshChecksums
+			request.Subject = ""
 			result, err := service.Prepare(t.Context(), request)
 			require.NoError(t, err)
 			require.Len(t, result.Commits, 1)
@@ -52,7 +53,7 @@ func TestRefreshChecksumsRejectsCustomFetchBeforeDownload(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { reads.Add(1) }))
 	defer server.Close()
 	service, request := preparationFixture(t, "master_sites "+server.URL+"/\ndistfiles source.tar.gz\nchecksums sha256 "+strings.Repeat("0", 64)+"\npre-fetch { error custom }\n")
-	request.Action = record.RefreshChecksums
+	request.Action, request.Subject = record.RefreshChecksums, ""
 	result, err := service.Prepare(t.Context(), request)
 	require.ErrorIs(t, err, preparation.ErrUnsupported)
 	require.Empty(t, result.Commits)

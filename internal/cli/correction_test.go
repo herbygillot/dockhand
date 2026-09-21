@@ -12,7 +12,7 @@ func TestAmendCLIReusesVerificationAndKeepsContribution(t *testing.T) {
 	config, repo, _ := preparationCLI(t)
 	configureReuseImage(t, &config)
 	var out, stderr bytes.Buffer
-	require.NoError(t, runFixture(t.Context(), []string{"bump-revision", "fixture", "--to", "branch", "--json"}, Streams{Out: &out, Err: &stderr}, config))
+	require.NoError(t, runFixture(t.Context(), []string{"bump-revision", "fixture", "--subject", "rebuild", "--to", "branch", "--json"}, Streams{Out: &out, Err: &stderr}, config))
 	var original ActionResult
 	decodeResult(t, out.Bytes(), &original)
 	branch := original.Status.Jobs[0].Job.Prepared.Branch
