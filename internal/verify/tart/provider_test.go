@@ -52,7 +52,7 @@ func TestBuildConfigSelectsConventionalNativeImage(t *testing.T) {
 	require.NoError(t, json.Unmarshal(config.ProviderConfig, &settings))
 	require.Equal(t, "dockhand-base-tahoe", settings.Image)
 	require.Equal(t, testPlatform, settings.Platform)
-	require.Equal(t, "https://ftp.fau.de/macports/release/tarballs/PortIndex_darwin_25_arm64/PortIndex", settings.PortIndexURL)
+	require.Equal(t, "https://ftp.fau.de/macports/release/tarballs/PortIndex_darwin_25_arm/PortIndex", settings.PortIndexURL)
 	require.NotEmpty(t, settings.PortIndexDigest)
 }
 

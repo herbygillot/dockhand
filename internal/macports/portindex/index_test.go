@@ -19,7 +19,12 @@ func TestPortIndexMirrorURL(t *testing.T) {
 	t.Parallel()
 	address, err := DefaultMirrorURL(testPlatform)
 	require.NoError(t, err)
-	require.Equal(t, "https://ftp.fau.de/macports/release/tarballs/PortIndex_darwin_25_arm64/PortIndex", address)
+	require.Equal(t, "https://ftp.fau.de/macports/release/tarballs/PortIndex_darwin_25_arm/PortIndex", address, "the mirror names an index by kernel architecture, arm not arm64")
+	intel, err := DefaultMirrorURL(record.Platform{OS: "darwin", Version: "24", Architecture: "x86_64"})
+	require.NoError(t, err)
+	require.Equal(t, "https://ftp.fau.de/macports/release/tarballs/PortIndex_darwin_24_i386/PortIndex", intel, "and i386 for every Intel build")
+	_, err = DefaultMirrorURL(record.Platform{OS: "darwin", Version: "25", Architecture: "riscv"})
+	require.Error(t, err, "an architecture the mirror does not publish is refused, not guessed")
 	_, err = DefaultMirrorURL(record.Platform{OS: "darwin"})
 	require.Error(t, err)
 }
