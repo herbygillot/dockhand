@@ -166,3 +166,35 @@ func (r *Repository) CountCommits(ctx context.Context, base, head string) (int, 
 	}
 	return strconv.Atoi(strings.TrimSpace(string(out)))
 }
+
+// MergeBase is the best common ancestor of two commits.
+func (r *Repository) MergeBase(ctx context.Context, a, b string) (string, error) {
+	if !ValidObjectID(a) || !ValidObjectID(b) {
+		return "", fmt.Errorf("git: literal commit objects are required")
+	}
+	out, err := r.output(ctx, "merge-base", a, b)
+	if err != nil {
+		return "", err
+	}
+	base := strings.TrimSpace(string(out))
+	if !ValidObjectID(base) {
+		return "", fmt.Errorf("git: no common ancestor")
+	}
+	return base, nil
+}
+
+// FirstCommitAbove is the oldest commit reachable from head that base does not reach.
+func (r *Repository) FirstCommitAbove(ctx context.Context, base, head string) (string, error) {
+	if !ValidObjectID(base) || !ValidObjectID(head) {
+		return "", fmt.Errorf("git: literal commit objects are required")
+	}
+	out, err := r.output(ctx, "rev-list", "--reverse", base+".."+head, "--")
+	if err != nil {
+		return "", err
+	}
+	first, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
+	if !ValidObjectID(first) {
+		return "", fmt.Errorf("git: nothing above the base")
+	}
+	return first, nil
+}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/git/changeset"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
@@ -23,8 +24,12 @@ type CorrectionRequest struct {
 	Action     record.Action
 	// Target selects the contribution by port; Branch by its tracked branch;
 	// neither means the current branch.
-	Target            string
-	Branch            string
+	Target string
+	Branch string
+	// Tree, when set, is a prepared tree that becomes the replacement
+	// commit's contents in place of a checkout capture: an update dockhand
+	// prepared onto the contribution's own revision.
+	Tree              record.ObjectID
 	Base              record.ObjectID
 	Platform          record.Platform
 	ResolveBuild      BuildResolver
@@ -138,7 +143,12 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 		return result, err
 	}
 	snapshot := committed
-	if input.Action == record.Amend && input.Branch == "" {
+	if input.Tree != "" {
+		if !git.ValidObjectID(string(input.Tree)) {
+			return result, fmt.Errorf("%w: prepared tree must be a literal object", ErrInvalidRequest)
+		}
+		snapshot.Tree, snapshot.ModifiedPaths, snapshot.UntrackedPaths = input.Tree, nil, nil
+	} else if input.Action == record.Amend && input.Branch == "" {
 		snapshot, err = changeset.CaptureCheckout(ctx, e.Repo)
 		if err != nil {
 			return result, err

@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/git"
@@ -12,6 +14,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/state"
+	"github.com/herbygillot/dockhand/internal/state/sqlite"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/herbygillot/dockhand/internal/workflow/preparation"
 )
@@ -23,6 +27,11 @@ type PreviewRequest struct {
 	Version    string
 	Subject    string
 	References []record.Reference
+	// Onto, when set, is the source the update is prepared onto instead of
+	// master: a contribution's revision, or the branch an adoption would
+	// track. Without it, an open contribution for the port is looked up in
+	// the state database when there is one.
+	Onto *record.Source
 }
 
 type Preview struct {
@@ -44,9 +53,26 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 	if err != nil {
 		return Preview{}, err
 	}
-	source, err := preparationSource(ctx, repo)
-	if err != nil {
+	branch := macports.PortsBranch
+	var source record.Source
+	onto := request.Onto != nil
+	if onto {
+		source = *request.Onto
+	} else if found, tracked, err := openContributionSource(ctx, config, repo, request.Selection.Selector); err != nil {
 		return Preview{}, err
+	} else if found != nil {
+		source, branch, onto = *found, tracked, true
+		progress.Report(ctx, "Preparing the update onto the open contribution's branch %s", tracked)
+	} else if source, err = preparationSource(ctx, repo); err != nil {
+		return Preview{}, err
+	}
+	if request.Action == record.BumpRevision && !onto && strings.TrimSpace(request.Subject) == "" {
+		return Preview{}, fmt.Errorf("bump-revision needs --subject: the reason is what maintainers read, e.g. --subject \"revbump for oniguruma 6.9.10\"")
+	}
+	if onto {
+		if request.Subject, err = subjectOnto(ctx, repo, source, request.Subject); err != nil {
+			return Preview{}, err
+		}
 	}
 	ports := portReader(config, repo)
 	githubClient := newGitHubClient(config.GitHub)
@@ -64,13 +90,111 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 	}
 	result, err := service.Prepare(ctx, input)
 	if err != nil {
-		return Preview{Repository: macports.PortsRepositoryURL, Branch: macports.PortsBranch, Preparation: result}, err
+		return Preview{Repository: macports.PortsRepositoryURL, Branch: branch, Preparation: result}, err
 	}
 	diff, err := repo.DiffTrees(ctx, string(source.Tree), string(result.PreparedTree))
 	if err != nil {
 		return Preview{}, err
 	}
-	return Preview{Repository: macports.PortsRepositoryURL, Branch: macports.PortsBranch, Preparation: result, Diff: string(diff)}, nil
+	return Preview{Repository: macports.PortsRepositoryURL, Branch: branch, Preparation: result, Diff: string(diff)}, nil
+}
+
+// openContributionSource finds the open contribution for a port in the state
+// database, when the database exists, and returns its current revision's
+// source and branch; a port with no contribution returns nothing.
+func openContributionSource(ctx context.Context, config Config, repo *git.Repository, selector string) (_ *record.Source, branch string, err error) {
+	if !macports.ValidName(selector) {
+		return nil, "", nil
+	}
+	if _, err := os.Stat(config.DBPath); errors.Is(err, os.ErrNotExist) {
+		return nil, "", nil
+	} else if err != nil {
+		return nil, "", err
+	}
+	store, err := sqlite.Open(ctx, config.DBPath, sqlite.Options{ReadOnly: true})
+	if err != nil {
+		return nil, "", err
+	}
+	defer func() { err = errors.Join(err, store.Close()) }()
+	repository, err := store.FindRepository(ctx, repo.CommonDir)
+	if errors.Is(err, state.ErrNotFound) {
+		return nil, "", nil
+	} else if err != nil {
+		return nil, "", err
+	}
+	engine := &workflow.Engine{State: store, Repository: repository.ID, Repo: repo}
+	change, err := engine.SelectContribution(ctx, workflow.ContributionSelector{Target: selector})
+	if errors.Is(err, state.ErrNotFound) {
+		return nil, "", nil
+	} else if err != nil {
+		return nil, "", err
+	}
+	revision, err := engine.CurrentRevision(ctx, change)
+	if err != nil {
+		return nil, "", err
+	}
+	return &revision.Source, change.Branch, nil
+}
+
+// prepareOnto prepares the update onto the open contribution's own revision
+// rather than onto master, and binds it as an amendment of that
+// contribution: the edit is made on the branch's tree, the commit keeps the
+// contribution's message unless a subject is given, and the amend job
+// verifies and publishes the result. It is what a port that exists only on
+// its branch, or a contribution already amended by hand, needs.
+func (s *Services) prepareOnto(ctx context.Context, request Preparation, change record.Change) (workflow.BoundPreparation, error) {
+	revision, err := s.Workflow.CurrentRevision(ctx, change)
+	if err != nil {
+		return workflow.BoundPreparation{}, err
+	}
+	if len(change.Targets) != 1 {
+		return workflow.BoundPreparation{}, fmt.Errorf("contribution %s has %d targets; prepare onto one-target contributions only", change.ID, len(change.Targets))
+	}
+	target := change.Targets[0]
+	name := change.InitiatingTarget
+	if name == "" {
+		name = target.Name
+	}
+	progress.Report(ctx, "Preparing the update onto %s's open contribution, branch %s; it lands as an amendment", name, change.Branch)
+	platform, err := s.ports.NativePlatform(ctx)
+	if err != nil {
+		return workflow.BoundPreparation{}, err
+	}
+	variants := maps.Clone(target.Variants)
+	if variants == nil {
+		variants = map[string]bool{}
+	}
+	maps.Copy(variants, request.Selection.Variants)
+	input := preparation.Request{EditIntent: request.EditIntent, Action: request.Action, Source: revision.Source, Selection: macports.Selection{Selector: target.Portfile, Subport: target.Subport, Variants: variants}, Platform: platform, Version: request.Version, Subject: request.Subject, References: request.References}
+	if input.Subject, err = subjectOnto(ctx, s.Workflow.Repo, revision.Source, request.Subject); err != nil {
+		return workflow.BoundPreparation{}, err
+	}
+	if request.Action == record.Bump {
+		release, err := s.Preparation.ResolveRelease(ctx, input)
+		if err != nil {
+			return workflow.BoundPreparation{}, err
+		}
+		input.Release = &release
+	}
+	result, err := s.Preparation.Prepare(ctx, input)
+	if err != nil {
+		return workflow.BoundPreparation{}, err
+	}
+	if result.PreparedTree == revision.Source.Tree {
+		return workflow.BoundPreparation{}, fmt.Errorf("%s on branch %s already has this update; nothing to amend", name, change.Branch)
+	}
+	correction := workflow.CorrectionRequest{KeepFailed: request.KeepFailed, ID: request.ID, Action: record.Amend, Target: name, Tree: result.PreparedTree, Subject: request.Subject, References: request.References, Platform: platform, IncludeDependents: request.IncludeDependents, SkipVerify: request.SkipVerify}
+	if !request.SkipVerify {
+		correction.ResolveBuild = s.buildResolver(platform, request.Tests, request.FromSource, true)
+	}
+	if request.Publish != nil {
+		correction.Publication = request.Publish
+	}
+	bound, err := s.Workflow.BindCorrection(ctx, correction)
+	if err != nil {
+		return workflow.BoundPreparation{}, err
+	}
+	return workflow.BoundPreparation{Request: bound.Request}, nil
 }
 
 // Preparation captures the choices needed to create a new contribution.
@@ -102,9 +226,13 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 		if macports.ValidName(request.Selection.Selector) {
 			selector.Target = request.Selection.Selector
 		}
-		prior, err = s.Workflow.PreparationInput(ctx, selector, request.Action)
+		var contribution *record.Change
+		prior, contribution, err = s.Workflow.PreparationInput(ctx, selector, request.Action)
 		if err != nil {
 			return workflow.BoundPreparation{}, err
+		}
+		if prior == nil && contribution != nil {
+			return s.prepareOnto(ctx, request, *contribution)
 		}
 	}
 	var source record.Source
@@ -195,4 +323,24 @@ func preparationSource(ctx context.Context, repo *git.Repository) (record.Source
 		return record.Source{}, fmt.Errorf("fetching authoritative MacPorts master: %w", err)
 	}
 	return record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree), Base: record.ObjectID(commit)}, nil
+}
+
+// subjectOnto is the editor's subject for an update prepared onto a
+// contribution. The commit keeps the contribution's message unless a
+// subject was given, so the editor's own subject is never written; a
+// revision bump still wants one, and the contribution's is the truthful
+// choice.
+func subjectOnto(ctx context.Context, repo *git.Repository, source record.Source, subject string) (string, error) {
+	if subject != "" {
+		return subject, nil
+	}
+	message, err := repo.CommitMessage(ctx, string(source.Commit))
+	if err != nil {
+		return "", err
+	}
+	first, _, _ := strings.Cut(message, "\n")
+	if _, after, ok := strings.Cut(first, ": "); ok {
+		return after, nil
+	}
+	return first, nil
 }

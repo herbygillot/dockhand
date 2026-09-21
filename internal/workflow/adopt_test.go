@@ -1,6 +1,7 @@
 package workflow_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/git"
@@ -62,4 +63,46 @@ func TestAdoptRefusesSeveralCommitsAndSeveralDirectories(t *testing.T) {
 	require.NoError(t, f.repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/wide", Desired: git.RefValue{Exists: true, Object: wide}}}))
 	_, err = f.engine.AdoptContribution(t.Context(), workflow.AdoptRequest{Branch: "wide", Upstream: f.source.Base, Platform: buildPlatform})
 	require.ErrorContains(t, err, "one port directory")
+}
+
+func TestAdoptSquashFoldsAStackedBranchAndKeepsTheOriginals(t *testing.T) {
+	t.Parallel()
+	f, _ := manualPublicationFixture(t)
+	sig := git.Signature{Name: "Fixture", Email: "fixture@example.invalid", When: f.now()}
+	blob, err := f.repo.WriteBlob(t.Context(), []byte("version 2\nrevision 1\n"))
+	require.NoError(t, err)
+	port, err := f.repo.WriteTree(t.Context(), []git.TreeEntry{{Name: "Portfile", Object: blob, Type: "blob", Mode: 0100644}})
+	require.NoError(t, err)
+	category, err := f.repo.WriteTree(t.Context(), []git.TreeEntry{{Name: "fixture", Object: port, Type: "tree", Mode: 040000}})
+	require.NoError(t, err)
+	tree, err := f.repo.WriteTree(t.Context(), []git.TreeEntry{{Name: "devel", Object: category, Type: "tree", Mode: 040000}})
+	require.NoError(t, err)
+	stacked, err := f.repo.WriteCommit(t.Context(), git.Commit{Tree: tree, Parents: []string{string(f.source.Commit)}, Message: "fixture: second thoughts", Author: sig, Committer: sig})
+	require.NoError(t, err)
+	require.NoError(t, f.repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/stacked", Desired: git.RefValue{Exists: true, Object: stacked}}}))
+
+	request := workflow.AdoptRequest{Branch: "stacked", Upstream: f.source.Base, Platform: buildPlatform, Squash: true, DryRun: true}
+	dry, err := f.engine.AdoptContribution(t.Context(), request)
+	require.NoError(t, err)
+	require.Contains(t, dry.Detail, "Would squash the 2 commits")
+	head, _, err := f.repo.Branch(t.Context(), "stacked")
+	require.NoError(t, err)
+	require.Equal(t, stacked, head, "a dry run moves nothing")
+
+	request.DryRun = false
+	result, err := f.engine.AdoptContribution(t.Context(), request)
+	require.NoError(t, err)
+	head, headTree, err := f.repo.Branch(t.Context(), "stacked")
+	require.NoError(t, err)
+	require.Equal(t, string(result.Revision.Source.Commit), head)
+	require.Equal(t, tree, headTree, "the fold carries the branch's tree")
+	parent, err := f.repo.SingleParent(t.Context(), head)
+	require.NoError(t, err)
+	require.Equal(t, string(f.source.Base), parent, "one commit on the master base")
+	message, err := f.repo.CommitMessage(t.Context(), head)
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(message, "fixture: update to 2"), "the oldest commit's message: %q", message)
+	backup, err := f.repo.ReadRef(t.Context(), "refs/dockhand/adopted/stacked")
+	require.NoError(t, err)
+	require.Equal(t, git.RefValue{Exists: true, Object: stacked}, backup, "the originals stay reachable")
 }

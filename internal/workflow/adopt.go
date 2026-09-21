@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/git/changeset"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 )
@@ -107,6 +108,10 @@ type AdoptRequest struct {
 	Upstream record.ObjectID
 	Platform record.Platform
 	DryRun   bool
+	// Squash folds a branch of several commits into one on its master base,
+	// with the oldest commit's message, keeping the originals under
+	// refs/dockhand/adopted/<branch>.
+	Squash bool
 }
 
 // AdoptResult is the contribution adoption recorded, or with DryRun would record.
@@ -163,10 +168,22 @@ func (e *Engine) AdoptContribution(ctx context.Context, input AdoptRequest) (Ado
 			return result, err
 		}
 		if !onMaster {
-			if count, err := e.Repo.CountCommits(ctx, string(input.Upstream), string(snapshot.Commit)); err == nil && count > 1 {
-				return result, fmt.Errorf("%w: branch %s is %d commits above master; dockhand adopts one commit above a commit of master, so squash them first", ErrInvalidRequest, input.Branch, count)
+			count, err := e.Repo.CountCommits(ctx, string(input.Upstream), string(snapshot.Commit))
+			if err != nil {
+				return result, err
 			}
-			return result, fmt.Errorf("%w: the commit under branch %s is not on master; rebase the branch onto master first", ErrInvalidRequest, input.Branch)
+			if count <= 1 {
+				return result, fmt.Errorf("%w: the commit under branch %s is not on master; rebase the branch onto master first", ErrInvalidRequest, input.Branch)
+			}
+			if !input.Squash {
+				return result, fmt.Errorf("%w: branch %s is %d commits above master; dockhand adopts one commit above a commit of master, so squash them first, or adopt --squash", ErrInvalidRequest, input.Branch, count)
+			}
+			if input.DryRun {
+				result.Detail = fmt.Sprintf("Would squash the %d commits of %s into one and track it; nothing recorded", count, input.Branch)
+			}
+			if snapshot, err = e.squash(ctx, input.Branch, snapshot, string(input.Upstream), count, input.DryRun); err != nil {
+				return result, err
+			}
 		}
 	}
 	source, portfile, err := e.Publisher.UntrackedSource(ctx, snapshot.Source(""))
@@ -188,6 +205,11 @@ func (e *Engine) AdoptContribution(ctx context.Context, input AdoptRequest) (Ado
 	if path.Dir(target.Portfile) != path.Dir(portfile) {
 		return result, fmt.Errorf("%w: %s lives in %s, but the branch changes %s", ErrInvalidRequest, target.Name, path.Dir(target.Portfile), path.Dir(portfile))
 	}
+	if existing, err := e.SelectContribution(ctx, ContributionSelector{Target: target.Name}); err == nil {
+		return result, fmt.Errorf("%w: %s already has an open contribution on branch %s; amend that one, or abandon it first", ErrInvalidRequest, target.Name, existing.Branch)
+	} else if !errors.Is(err, state.ErrNotFound) && !errors.Is(err, ErrInvalidRequest) {
+		return result, err
+	}
 	scope, err := e.rebindReleaseScope(ctx, nil, source, input.Platform)
 	if err != nil {
 		return result, err
@@ -196,9 +218,11 @@ func (e *Engine) AdoptContribution(ctx context.Context, input AdoptRequest) (Ado
 	change := record.Change{InitiatingTarget: target.Name, ID: record.ChangeID("change_" + rand.Text()), Branch: input.Branch, Targets: []record.Target{target}, Disposition: record.ChangeOpen, CreatedAt: now}
 	revision := record.Revision{Scope: scope, ID: record.RevisionID("revision_" + rand.Text()), ChangeID: change.ID, Source: source, CreatedAt: now}
 	change.CurrentRevision = revision.ID
-	result = AdoptResult{Change: change, Revision: revision, Portfile: portfile}
+	result.Change, result.Revision, result.Portfile = change, revision, portfile
 	if input.DryRun {
-		result.Detail = fmt.Sprintf("Would track %s as the contribution for %s; nothing recorded", input.Branch, target.Name)
+		if result.Detail == "" {
+			result.Detail = fmt.Sprintf("Would track %s as the contribution for %s; nothing recorded", input.Branch, target.Name)
+		}
 		return result, nil
 	}
 	err = e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
@@ -228,4 +252,49 @@ func initiatingNameOf(change record.Change) string {
 		return change.Targets[0].Name
 	}
 	return string(change.ID)
+}
+
+// squash folds a branch's commits above master into one commit on their
+// merge base, carrying the branch's tree and the oldest commit's message,
+// and moves the branch to it. The originals stay reachable under
+// refs/dockhand/adopted/<branch>. A dry run computes the commit without
+// moving anything.
+func (e *Engine) squash(ctx context.Context, branch string, snapshot changeset.Snapshot, upstream string, count int, dryRun bool) (changeset.Snapshot, error) {
+	base, err := e.Repo.MergeBase(ctx, upstream, string(snapshot.Commit))
+	if err != nil {
+		return snapshot, err
+	}
+	first, err := e.Repo.FirstCommitAbove(ctx, base, string(snapshot.Commit))
+	if err != nil {
+		return snapshot, err
+	}
+	message, err := e.Repo.CommitMessage(ctx, first)
+	if err != nil {
+		return snapshot, err
+	}
+	author, err := e.Repo.Author(ctx)
+	if err != nil {
+		return snapshot, err
+	}
+	author.When = e.now()
+	commit, err := e.Repo.WriteCommit(ctx, git.Commit{Tree: string(snapshot.Tree), Parents: []string{base}, Message: message, Author: author, Committer: author})
+	if err != nil {
+		return snapshot, err
+	}
+	if !dryRun {
+		previous := git.RefValue{Exists: true, Object: string(snapshot.Commit)}
+		backup, err := e.Repo.ReadRef(ctx, "refs/dockhand/adopted/"+branch)
+		if err != nil {
+			return snapshot, err
+		}
+		if err := e.Repo.UpdateRefs(ctx, []git.RefChange{
+			{Name: "refs/dockhand/adopted/" + branch, Expected: backup, Desired: previous},
+			{Name: "refs/heads/" + branch, Expected: previous, Desired: git.RefValue{Exists: true, Object: commit}},
+		}); err != nil {
+			return snapshot, err
+		}
+		progress.Report(ctx, "Squashed the %d commits of %s into one; the originals stay under refs/dockhand/adopted/%s", count, branch, branch)
+	}
+	snapshot.Commit, snapshot.Head = record.ObjectID(commit), record.ObjectID(commit)
+	return snapshot, nil
 }

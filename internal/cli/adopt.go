@@ -11,17 +11,17 @@ import (
 )
 
 func (r *runtime) adoptCommand() *cobra.Command {
-	var dryRun bool
+	var dryRun, squash bool
 	command := &cobra.Command{
 		Use: "adopt <branch> [port]", Short: "Track a branch you prepared by hand as a contribution",
-		Long:    "Adopt a branch dockhand did not make: one commit above a commit of MacPorts master, changing one port directory, whose port is inferred from that directory unless named. Once tracked, every verb selects it by port name: verify builds it, publish opens its pull request, amend and rebase revise it, and status shows it. This is the way in for a Portfile dockhand cannot edit itself, and for a new port. The branch stays where it is under its own name. A branch with several commits, or changes in several port directories, is refused and told why. --dry-run reports what would be tracked and records nothing.",
+		Long:    "Adopt a branch dockhand did not make: one commit above a commit of MacPorts master, changing one port directory, whose port is inferred from that directory unless named. Once tracked, every verb selects it by port name: verify builds it, publish opens its pull request, amend and rebase revise it, and status shows it. This is the way in for a Portfile dockhand cannot edit itself, and for a new port. The branch stays where it is under its own name. A branch with several commits is refused unless --squash folds them into one, keeping the originals under a backup ref; changes in several port directories are refused and named. --dry-run reports what would be tracked and records nothing.",
 		Example: "  dockhand adopt my-branch\n  dockhand adopt my-branch newport --dry-run\n  dockhand adopt my-branch && dockhand verify newport",
 		Args:    cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !git.ValidBranchName(args[0]) {
 				return fmt.Errorf("adopt needs a literal local branch, not %q", args[0])
 			}
-			request := app.AdoptRequest{Branch: args[0], DryRun: dryRun}
+			request := app.AdoptRequest{Branch: args[0], DryRun: dryRun, Squash: squash}
 			if len(args) == 2 {
 				port, err := portName(args[1])
 				if err != nil {
@@ -52,6 +52,7 @@ func (r *runtime) adoptCommand() *cobra.Command {
 		},
 	}
 	command.Flags().BoolVar(&dryRun, "dry-run", false, "Report what would be tracked and record nothing")
+	command.Flags().BoolVar(&squash, "squash", false, "Fold a branch of several commits into one on its master base, with the oldest commit's message; the originals stay under refs/dockhand/adopted/<branch>")
 	return command
 }
 

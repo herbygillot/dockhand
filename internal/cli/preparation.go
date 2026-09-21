@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/progress"
-	"strings"
 
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -46,7 +45,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 		var destination destinationFlags
 		var build buildOptions
 		var publication publish.Options
-		var subject, change string
+		var subject, change, adopt string
 		var references referenceFlags
 		var sharedRelease, keepOldChecksums bool
 		var variants []string
@@ -74,9 +73,6 @@ func (r *runtime) changeCommands() []*cobra.Command {
 				to, publishing, skipVerify, err := destination.resolve()
 				if err != nil {
 					return err
-				}
-				if spec.action == record.BumpRevision && options.DryRun && strings.TrimSpace(subject) == "" {
-					return fmt.Errorf("bump-revision needs --subject: the reason is what maintainers read, e.g. --subject \"revbump for oniguruma 6.9.10\"")
 				}
 				references, err := references.resolve()
 				if err != nil {
@@ -116,6 +112,13 @@ func (r *runtime) changeCommands() []*cobra.Command {
 						return err
 					}
 					defer services.Close()
+					if adopt != "" {
+						adopted, err := services.Adopt(cmd.Context(), app.AdoptRequest{Branch: adopt, Target: selector})
+						if err != nil {
+							return err
+						}
+						progress.Report(cmd.Context(), "%s", adopted.Detail)
+					}
 					progress.VerboseReport(cmd.Context(), "Binding contribution source; local commits and working-tree edits are excluded")
 					bound, err := services.BindPreparation(cmd.Context(), app.Preparation{EditIntent: record.EditIntent{SharedRelease: sharedRelease, KeepOldChecksums: keepOldChecksums}, AllSubports: options.AllSubports, KeepFailed: build.keepFailed,
 						ChangeID: record.ChangeID(change), IncludeDependents: build.dependents, Action: spec.action, Version: version, ID: record.RequestID("request_" + rand.Text()),
@@ -142,6 +145,20 @@ func (r *runtime) changeCommands() []*cobra.Command {
 				request := app.PreviewRequest{EditIntent: record.EditIntent{SharedRelease: sharedRelease, KeepOldChecksums: keepOldChecksums}, Action: spec.action, Selection: macports.Selection{Selector: selector, Variants: choices}, Subject: subject, References: references}
 				if len(args) == 2 {
 					request.Version = args[1]
+				}
+				if adopt != "" {
+					// A dry run with --adopt reads the state database to check the
+					// branch is untracked, records nothing, and previews onto it.
+					services, err := r.build(cmd.Context(), r.config)
+					if err != nil {
+						return err
+					}
+					adopted, err := services.Adopt(cmd.Context(), app.AdoptRequest{Branch: adopt, Target: selector, DryRun: true})
+					services.Close()
+					if err != nil {
+						return err
+					}
+					request.Onto = &adopted.Revision.Source
 				}
 				if !r.json {
 					progress.VerboseReport(cmd.Context(), "Fetching MacPorts master for preview; local commits and working-tree edits are excluded")
@@ -204,6 +221,8 @@ func (r *runtime) changeCommands() []*cobra.Command {
 		}
 		command.Flags().StringVar(&change, "change", "", "Continue one contribution when the target is ambiguous")
 		command.MarkFlagsMutuallyExclusive("change", "dry-run")
+		command.Flags().StringVar(&adopt, "adopt", "", "Track this hand-made branch as the port's contribution first, then prepare the update onto it")
+		command.MarkFlagsMutuallyExclusive("change", "adopt")
 		command.Flags().StringArrayVar(&variants, "variant", nil, "Select a variant, e.g. +debug or --variant=-debug")
 		if spec.action == record.BumpRevision || spec.action == record.Bump || spec.action == record.RefreshChecksums {
 			build.flags(command, r.config)
@@ -212,7 +231,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 			references.add(command)
 			section(command.Flags(), sectionChange, "subject")
 		}
-		section(command.Flags(), sectionSelection, "change")
+		section(command.Flags(), sectionSelection, "change", "adopt")
 		section(command.Flags(), sectionBuild, "variant")
 		commands = append(commands, command)
 	}

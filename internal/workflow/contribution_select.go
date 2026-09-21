@@ -124,11 +124,18 @@ func (e *Engine) contributionBuild(ctx context.Context, change record.Change) (r
 
 // PreparationInput selects the frozen input of existing preparation before an
 // application fetches new upstream source. Nil means a new contribution.
-func (e *Engine) PreparationInput(ctx context.Context, selector ContributionSelector, action record.Action) (*record.Job, error) {
+// PreparationInput finds what a preparation of the action continues for the
+// selected port: the open contribution, and the newest job of the same
+// action when the contribution still stands at that job's result. A
+// contribution whose current revision is not that result, one adopted from
+// a person's branch or amended since, is returned without a job, and the
+// caller prepares the update onto it instead of onto master.
+func (e *Engine) PreparationInput(ctx context.Context, selector ContributionSelector, action record.Action) (*record.Job, *record.Change, error) {
 	if e == nil || e.State == nil || e.Repository == "" {
-		return nil, errNoState
+		return nil, nil, errNoState
 	}
 	var result *record.Job
+	var contribution *record.Change
 	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
 		change, err := selectContribution(ctx, r, selector)
 		if errors.Is(err, state.ErrNotFound) && selector.ChangeID == "" && selector.Branch == "" {
@@ -137,18 +144,32 @@ func (e *Engine) PreparationInput(ctx context.Context, selector ContributionSele
 		if err != nil {
 			return err
 		}
+		contribution = &change
 		history, err := r.JobHistory(ctx, change.ID)
 		if err != nil {
 			return err
 		}
 		newest, ok := newestJob(history, func(job record.Job) bool { return job.Spec.Action == action })
-		if !ok {
-			return fmt.Errorf("%w: contribution %s has different preparation intent; use verify or publish", ErrInvalidRequest, change.ID)
+		if ok && (change.CurrentRevision == "" || newest.ResultRevision == change.CurrentRevision || !newest.State.Terminal()) {
+			result = &newest
 		}
-		result = &newest
 		return nil
 	})
-	return result, err
+	return result, contribution, err
+}
+
+// CurrentRevision reads the contribution's current revision.
+func (e *Engine) CurrentRevision(ctx context.Context, change record.Change) (record.Revision, error) {
+	var revision record.Revision
+	if e == nil || e.State == nil || e.Repository == "" {
+		return revision, errNoState
+	}
+	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+		var err error
+		revision, err = r.Revision(ctx, change.CurrentRevision)
+		return err
+	})
+	return revision, err
 }
 
 // newestJob is the first job of a newest-first history that satisfies the
