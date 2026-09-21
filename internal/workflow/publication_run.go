@@ -211,7 +211,26 @@ func (c *cycle) runPublication(ctx context.Context, job record.Job, action recor
 		return c.finishPublication(ctx, job, record.JobCompleted, fmt.Sprintf("Published %s from verified branch %s:%s at %s", observed.PullRequest.Ref.URL, spec.HeadRepository, spec.HeadBranch, spec.Desired.Head), &observed.PullRequest)
 	}
 	if action.WriteStarted {
-		return c.publicationRetry(ctx, job, waitingFor(waitForge, "PR request outcome is unresolved; observing without repeating the write"))
+		if action.State != record.PublicationUncertain || action.LastError != "" || observed.Found || remote != desired || job.CancelRequestedAt != nil {
+			return c.publicationRetry(ctx, job, waitingFor(waitForge, "PR request outcome is unresolved; observing without repeating the write"))
+		}
+		// The write was not confirmed, two looks since then show no pull
+		// request for the head branch (the first cleared the write's error,
+		// this one finds nothing), and the branch is at the verified commit.
+		// The forge refuses a second pull request for one head, so asking
+		// again cannot double up: the intent is cleared and the request
+		// repeated. A job asked to cancel stays observation-only.
+		if err := c.publicationUpdate(ctx, job, func(_ state.Tx, _ *record.Job, stored *record.PublicationAction) error {
+			if !stored.WriteStarted || stored.WriteRefusals == ^uint32(0) {
+				return state.ErrConflict
+			}
+			stored.WriteStarted = false
+			stored.WriteRefusals++
+			stored.State, stored.LastError = record.PublicationPending, "no pull request on the forge after an unconfirmed request; asking again"
+			return nil
+		}); err != nil {
+			return err
+		}
 	}
 	if err := s.Repo.CheckContributionBase(ctx, spec.BaseURL, spec.BaseBranch, string(source.Base), string(source.Commit)); err != nil {
 		return err

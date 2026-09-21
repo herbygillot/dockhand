@@ -30,9 +30,12 @@ type publicationForge struct {
 	observation forge.PullRequestObservation
 	writes      int
 	writeErr    error
-	onFind      func()
-	authErr     error
-	authCalls   int
+	// writeLost makes Create fail without creating anything, the forge
+	// answering an error before it acted.
+	writeLost bool
+	onFind    func()
+	authErr   error
+	authCalls int
 }
 
 func (p *publicationForge) Name() string { return "fixture" }
@@ -92,6 +95,9 @@ func (p *publicationForge) Inspect(ctx context.Context, _ record.PullRequestRef)
 }
 func (p *publicationForge) Create(ctx context.Context, input forge.PullRequestInput) (forge.PullRequestObservation, error) {
 	p.writes++
+	if p.writeLost {
+		return forge.PullRequestObservation{}, errors.New("POST pulls: 500")
+	}
 	var limited *forge.RateLimitError
 	if errors.Is(p.writeErr, forge.ErrRejected) || errors.As(p.writeErr, &limited) {
 		return forge.PullRequestObservation{}, p.writeErr
@@ -542,4 +548,26 @@ func TestUnknownPublicationCannotClearWriteIntentWithoutRecordedRefusal(t *testi
 		return tx.PutPublication(ctx, action)
 	})
 	require.ErrorIs(t, err, workflow.ErrRequestConflict)
+}
+
+func TestUncertainPRRequestIsRepeatedOnceTheForgeShowsNoPullRequest(t *testing.T) {
+	t.Parallel()
+	f, hosting := publicationFixture(t)
+	hosting.writeLost = true
+	id := submitPublication(t, f, "publish")
+	f.run(t, id) // pushes the branch
+	f.run(t, id) // asks for the pull request; the forge fails before acting
+	require.Equal(t, 1, hosting.writes, "the first request failed before the forge acted")
+	f.run(t, id)
+	require.Equal(t, record.PublicationUncertain, f.status(t, id).Jobs[0].Publications[0].State, "one look after the failure keeps the write uncertain")
+	require.Equal(t, 1, hosting.writes, "one look is not enough to repeat")
+	hosting.writeLost = false
+	for range 4 {
+		f.run(t, id)
+	}
+	status := f.status(t, id)
+	require.Equal(t, record.JobCompleted, status.Jobs[0].Job.State, status.Jobs[0].Job.Detail)
+	require.Equal(t, 2, hosting.writes, "the second look found no pull request for the head, so the request was repeated once")
+	require.Equal(t, uint32(1), status.Jobs[0].Publications[0].WriteRefusals)
+	require.NotNil(t, status.Jobs[0].Publications[0].ConfirmedAt, "the repeated request was confirmed")
 }
