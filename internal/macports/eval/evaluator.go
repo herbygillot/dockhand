@@ -261,11 +261,15 @@ func decodeMetadata(reply string) (macports.PortInfo, []string, error) {
 	delete(values, "option_errors")
 	if details, ok := values["fetch_details"]; ok {
 		fields, errs := syntax.ListValues(details)
-		if len(errs) != 0 || len(fields) != 3 {
+		if len(errs) != 0 || len(fields) < 3 || len(fields) > 4 {
 			return macports.PortInfo{}, nil, fmt.Errorf("macports: invalid fetch metadata")
 		}
 		values["fetch.archive_compatible"] = "0"
-		assessment := assessFetch(value, fields[0], fields[1], fields[2])
+		var origins []hookOrigin
+		if len(fields) == 4 {
+			origins = parseOrigins(fields[3])
+		}
+		assessment := assessFetch(value, fields[0], fields[1], fields[2], origins)
 		value.Fetch = &assessment
 		if assessment.Kind != "custom" {
 			values["fetch.archive_compatible"] = "1"

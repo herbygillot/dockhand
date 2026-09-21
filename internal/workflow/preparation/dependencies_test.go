@@ -93,7 +93,7 @@ func TestGoDependencyPreparation(t *testing.T) {
 			result, err := service.Prepare(t.Context(), request)
 			switch scenario {
 			case "unsupported-context":
-				require.ErrorContains(t, err, "pre-fetch hook 1 has unrecognized behavior")
+				require.ErrorContains(t, err, "pre-fetch hook 1 ends with `set distfiles changed.tar.gz` rather than return -code error, at Portfile line 46")
 				require.NotContains(t, err.Error(), "dependency resolution failed")
 				require.Zero(t, requests.Load(), "local refusal must precede old-source download and helper")
 			case "missing":
@@ -201,7 +201,7 @@ extract.rename no
 			result, err := service.Prepare(t.Context(), request)
 			switch scenario {
 			case "unsupported-context":
-				require.ErrorContains(t, err, "pre-fetch hook 1 has unrecognized behavior")
+				require.ErrorContains(t, err, "pre-fetch hook 1 ends with `set distfiles changed.tar.gz` rather than return -code error, at Portfile line 46")
 				require.NotContains(t, err.Error(), "dependency resolution failed")
 				require.Zero(t, requests.Load(), "local refusal must precede old-source download and helper")
 			case "missing":

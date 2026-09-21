@@ -74,15 +74,38 @@ namespace eval ::dockhand {
             set procedure [dict get $record procedure]
             if {![llength [info commands $procedure]]} { error "fetch procedure is unavailable" }
             set pre {}
+            set origins {}
+            # The files a hook can have been written in: the PortGroups this
+            # port loaded, then its Portfile. A body found in one of them
+            # gives the hook an origin and the line its text starts on.
+            set sources {}
+            if {[info exists PortInfo(portgroups)]} {
+                foreach group $PortInfo(portgroups) {
+                    if {[llength $group] >= 3} { lappend sources [list "the [lindex $group 0]-[lindex $group 1] PortGroup" [lindex $group 2]] }
+                }
+            }
+            if {[info exists portpath]} { lappend sources [list Portfile [file join $portpath Portfile]] }
             foreach hook [ditem_key $target pre] {
                 if {![llength [info procs user${hook}]]} { error "unrecognized pre-fetch wrapper" }
                 set body [info body user${hook}]
                 if {[string first "global {*}\[info globals\]\n" $body] != 0} { error "unrecognized pre-fetch scope wrapper" }
                 lappend pre $body
+                set needle [string trim [string range $body [string length "global {*}\[info globals\]\n"] end]]
+                set origin {}
+                foreach source $sources {
+                    if {$needle eq ""} break
+                    lassign $source label path
+                    if {[catch {set fd [open $path r]; set content [read $fd]; close $fd}]} continue
+                    set at [string first $needle $content]
+                    if {$at < 0} continue
+                    set origin [list $label [expr {[regexp -all {\n} [string range $content 0 $at-1]] + 1}]]
+                    break
+                }
+                lappend origins $origin
             }
             set post [ditem_key $target post]
             llength $post
-            list $procedure $pre $post
+            list $procedure $pre $post $origins
         }]
     }
 }

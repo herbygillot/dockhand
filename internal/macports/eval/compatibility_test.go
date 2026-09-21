@@ -99,3 +99,33 @@ func TestUnknownFetchLayoutKeepsMetadataButBlocksArchivePreparation(t *testing.T
 	require.Contains(t, info.OptionErrors["fetch.archive_compatible"], "automatic archive preparation is unavailable")
 	require.NotContains(t, info.Options, "fetch_details")
 }
+
+// The worker finds a refused hook's body in the Portfile or in a PortGroup it
+// loaded, so the refusal says the line, and a Portfile that only rejects is
+// still archive-compatible.
+func TestRefusedHookIsPlacedInItsFile(t *testing.T) {
+	t.Parallel()
+	evaluator := liveEvaluator(t)
+	for _, test := range []struct{ name, portfile, group, want string }{
+		{"Portfile", "PortSystem 1.0\nname fixture\nversion 1\ncategories devel\n\npre-fetch {\n    ui_error \"no\"\n    error \"${name} needs macOS 11\"\n}\n", "", "pre-fetch hook 1 ends with `error \"${name} needs macOS 11\"` rather than return -code error, at Portfile line 8"},
+		{"PortGroup", "PortSystem 1.0\nPortGroup dockhand-guard 1.0\nname fixture\nversion 1\ncategories devel\n", "# a group\npre-fetch {\n    catch {set result [active_variants R tcltk]}\n    return -code error no\n}\n", "pre-fetch hook 1 runs `catch {set result [active_variants R tcltk]}` before rejecting, in the dockhand-guard-1.0 PortGroup at line 3"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tree := fixtureTree(t)
+			if test.group != "" {
+				putFile(t, tree.Root(), "_resources/port1.0/group/dockhand-guard-1.0.tcl", test.group)
+			}
+			putFile(t, tree.Root(), "devel/fixture/Portfile", test.portfile)
+			targets, err := evaluator.Resolve(t.Context(), tree, macports.Selection{Selector: "fixture"})
+			require.NoError(t, err)
+			bound, err := tree.Select(targets[0])
+			require.NoError(t, err)
+			snapshot, err := evaluator.Evaluate(t.Context(), bound)
+			require.NoError(t, err)
+			info := snapshot.Ports["fixture"]
+			require.Equal(t, "0", info.Options["fetch.archive_compatible"])
+			require.Equal(t, "MacPorts Base "+snapshot.Runtime.BaseVersion+": "+test.want+"; prepare this port manually", info.OptionErrors["fetch.archive_compatible"])
+			require.NotContains(t, info.Options, "fetch_details")
+		})
+	}
+}
