@@ -367,7 +367,7 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 			line("  detail: %s", job.Detail)
 		}
 		if job.ConsecutiveWaits > 1 && job.RetryAt != nil {
-			line("  waiting: %d consecutive %s waits; next look %s", job.ConsecutiveWaits, job.WaitKind, statusTime(*job.RetryAt))
+			line("  waiting: %s consecutive %s waits; next look %s", job.ConsecutiveWaits, job.WaitKind, statusTime(*job.RetryAt))
 		}
 		if len(entry.Attempts) == 0 {
 			line("  verification: no recorded attempts")
@@ -382,7 +382,7 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 				line("    detail: %s", attempt.LastError)
 			}
 			if attempt.ConsecutiveWaits > 1 && attempt.RetryAt != nil {
-				line("    waiting: %d consecutive %s waits; next look %s", attempt.ConsecutiveWaits, attempt.WaitKind, statusTime(*attempt.RetryAt))
+				line("    waiting: %s consecutive %s waits; next look %s", attempt.ConsecutiveWaits, attempt.WaitKind, statusTime(*attempt.RetryAt))
 			}
 			if attempt.Evidence != nil {
 				line("    verdict: %s; observed: %s", attempt.Evidence.Verdict, statusTime(attempt.Evidence.ObservedAt))
