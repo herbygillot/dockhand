@@ -111,7 +111,11 @@ func (p *VersionProbe) Assess(ctx context.Context, release *record.Release) (Ass
 	}
 	add("source", sourceDetail, err)
 	if discovery, discoveryErr := portsource.Interpret(p.input.info, portsource.Discovery); discoveryErr == nil {
-		a.Findings = append(a.Findings, Finding{Check: "discovery", Status: Passed, Code: "discovery-supported", Detail: "Supported " + string(discovery.Catalog) + " discovery; remote availability is untested"})
+		detail := "Supported " + string(discovery.Catalog) + " discovery; remote availability is untested"
+		if discovery.Livecheck.Overridden {
+			detail = "Supported discovery through the port's own livecheck, proven against the " + string(discovery.Catalog) + " catalog; remote availability is untested"
+		}
+		a.Findings = append(a.Findings, Finding{Check: "discovery", Status: Passed, Code: "discovery-supported", Detail: detail})
 	} else {
 		a.Findings = append(a.Findings, Finding{Check: "discovery", Status: NotTested, Code: "explicit-version-required", Detail: discoveryErr.Error() + "; supply an explicit version"})
 	}

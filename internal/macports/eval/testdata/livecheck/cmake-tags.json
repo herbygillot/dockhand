@@ -1,0 +1,302 @@
+[
+  {
+    "name": "v4.4.3",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.4.3",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.4.3",
+    "commit": {
+      "sha": "af7ecc8c294d153b0120813776e1fa11c5bfe4a1",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/af7ecc8c294d153b0120813776e1fa11c5bfe4a1"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC40LjM="
+  },
+  {
+    "name": "v4.4.2",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.4.2",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.4.2",
+    "commit": {
+      "sha": "c162d6852d09a82cf87ff0cda6a23abc775dfdb6",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/c162d6852d09a82cf87ff0cda6a23abc775dfdb6"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC40LjI="
+  },
+  {
+    "name": "v4.4.1",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.4.1",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.4.1",
+    "commit": {
+      "sha": "d1cffecacdfd7d6fb0cda0d1e0bf1ba30b967019",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/d1cffecacdfd7d6fb0cda0d1e0bf1ba30b967019"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC40LjE="
+  },
+  {
+    "name": "v4.4.0",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.4.0",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.4.0",
+    "commit": {
+      "sha": "44125a9e977c834f06ac1e5fe8db55355261ef87",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/44125a9e977c834f06ac1e5fe8db55355261ef87"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC40LjA="
+  },
+  {
+    "name": "v4.4.0-rc3",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.4.0-rc3",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.4.0-rc3",
+    "commit": {
+      "sha": "a61c57997a4d120f8e0518fa259459d6cd02171c",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/a61c57997a4d120f8e0518fa259459d6cd02171c"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC40LjAtcmMz"
+  },
+  {
+    "name": "v4.4.0-rc2",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.4.0-rc2",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.4.0-rc2",
+    "commit": {
+      "sha": "d9c35d02bb2d2129fd8c6767cf83966ea01c77ed",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/d9c35d02bb2d2129fd8c6767cf83966ea01c77ed"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC40LjAtcmMy"
+  },
+  {
+    "name": "v4.4.0-rc1",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.4.0-rc1",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.4.0-rc1",
+    "commit": {
+      "sha": "adcfdb6d3c131a044189406f44fd4445ac6e91ab",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/adcfdb6d3c131a044189406f44fd4445ac6e91ab"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC40LjAtcmMx"
+  },
+  {
+    "name": "v4.3.5",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.3.5",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.3.5",
+    "commit": {
+      "sha": "4d4a0f16bbfef8cdd01e4ba8653c80747565a531",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/4d4a0f16bbfef8cdd01e4ba8653c80747565a531"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC4zLjU="
+  },
+  {
+    "name": "v4.3.4",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.3.4",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.3.4",
+    "commit": {
+      "sha": "c2fd48014f39786ba5c5e51b983d1cdcf05aa269",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/c2fd48014f39786ba5c5e51b983d1cdcf05aa269"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC4zLjQ="
+  },
+  {
+    "name": "v4.3.3",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.3.3",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.3.3",
+    "commit": {
+      "sha": "06cc1d04d8d5a4e13abdadfe20f6937787b1968e",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/06cc1d04d8d5a4e13abdadfe20f6937787b1968e"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC4zLjM="
+  },
+  {
+    "name": "v4.3.2",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.3.2",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.3.2",
+    "commit": {
+      "sha": "8d3c68cc0f36108f7ebb23ba7a6bc08b9b1d81e4",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/8d3c68cc0f36108f7ebb23ba7a6bc08b9b1d81e4"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC4zLjI="
+  },
+  {
+    "name": "v4.3.1",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.3.1",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.3.1",
+    "commit": {
+      "sha": "3a7d797d5b217e4cf375135831a6424c09df7d29",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/3a7d797d5b217e4cf375135831a6424c09df7d29"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC4zLjE="
+  },
+  {
+    "name": "v4.3.0",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.3.0",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.3.0",
+    "commit": {
+      "sha": "84aeddb4ea8211e0e9321789a7c8a75ee236f7b9",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/84aeddb4ea8211e0e9321789a7c8a75ee236f7b9"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC4zLjA="
+  },
+  {
+    "name": "v4.3.0-rc3",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.3.0-rc3",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.3.0-rc3",
+    "commit": {
+      "sha": "412d326d36df4c9ef2f4b767b396fe10654166b1",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/412d326d36df4c9ef2f4b767b396fe10654166b1"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC4zLjAtcmMz"
+  },
+  {
+    "name": "v4.3.0-rc2",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.3.0-rc2",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.3.0-rc2",
+    "commit": {
+      "sha": "2defff58e28e154ab9e12e43d12b90d8f2374d0a",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/2defff58e28e154ab9e12e43d12b90d8f2374d0a"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC4zLjAtcmMy"
+  },
+  {
+    "name": "v4.3.0-rc1",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.3.0-rc1",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.3.0-rc1",
+    "commit": {
+      "sha": "ff0cd9500e71468cdc6d3c0a02e2600e27dba95f",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/ff0cd9500e71468cdc6d3c0a02e2600e27dba95f"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC4zLjAtcmMx"
+  },
+  {
+    "name": "v4.2.8",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.2.8",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.2.8",
+    "commit": {
+      "sha": "ff7c4824e7cd1f11e3a6af4cdeb39840bbb62cdc",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/ff7c4824e7cd1f11e3a6af4cdeb39840bbb62cdc"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC4yLjg="
+  },
+  {
+    "name": "v4.2.7",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.2.7",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.2.7",
+    "commit": {
+      "sha": "24581cbe9885e4549a72cc54ea1f3960a32a7c9c",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/24581cbe9885e4549a72cc54ea1f3960a32a7c9c"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC4yLjc="
+  },
+  {
+    "name": "v4.2.6",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.2.6",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.2.6",
+    "commit": {
+      "sha": "046f192cf18a6210db61870c313d6bde75d0fa90",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/046f192cf18a6210db61870c313d6bde75d0fa90"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC4yLjY="
+  },
+  {
+    "name": "v4.2.5",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.2.5",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.2.5",
+    "commit": {
+      "sha": "414c24d13ecf4cd343194cbd848c0854af44fce0",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/414c24d13ecf4cd343194cbd848c0854af44fce0"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC4yLjU="
+  },
+  {
+    "name": "v4.2.4",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.2.4",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.2.4",
+    "commit": {
+      "sha": "cfbb1649dd0a6ddb978eaf7aba721824a8ba1e49",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/cfbb1649dd0a6ddb978eaf7aba721824a8ba1e49"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC4yLjQ="
+  },
+  {
+    "name": "v4.2.3",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.2.3",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.2.3",
+    "commit": {
+      "sha": "53ae242d55f89bee1f44ecc6e2fc460ae0f92f20",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/53ae242d55f89bee1f44ecc6e2fc460ae0f92f20"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC4yLjM="
+  },
+  {
+    "name": "v4.2.2",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.2.2",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.2.2",
+    "commit": {
+      "sha": "3356d93e66fb2a70c4cf8e4849429c1d8839bdee",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/3356d93e66fb2a70c4cf8e4849429c1d8839bdee"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC4yLjI="
+  },
+  {
+    "name": "v4.2.1",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.2.1",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.2.1",
+    "commit": {
+      "sha": "485f11a780435eb6495b79227d3237383778ac3e",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/485f11a780435eb6495b79227d3237383778ac3e"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC4yLjE="
+  },
+  {
+    "name": "v4.2.0",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.2.0",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.2.0",
+    "commit": {
+      "sha": "a0c7f1d29c77fd5c862b087f9d2442c84798a4b6",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/a0c7f1d29c77fd5c862b087f9d2442c84798a4b6"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC4yLjA="
+  },
+  {
+    "name": "v4.2.0-rc4",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.2.0-rc4",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.2.0-rc4",
+    "commit": {
+      "sha": "9c091c7d1755d1db973fd8cc8e5e1af9deef0da7",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/9c091c7d1755d1db973fd8cc8e5e1af9deef0da7"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC4yLjAtcmM0"
+  },
+  {
+    "name": "v4.2.0-rc3",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.2.0-rc3",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.2.0-rc3",
+    "commit": {
+      "sha": "8b32e8c057c0ad215d75f51ef1e2853c52499cde",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/8b32e8c057c0ad215d75f51ef1e2853c52499cde"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC4yLjAtcmMz"
+  },
+  {
+    "name": "v4.2.0-rc2",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.2.0-rc2",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.2.0-rc2",
+    "commit": {
+      "sha": "a86b6c4db4c7c77a4ef4e88a74902b2d6b7c3828",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/a86b6c4db4c7c77a4ef4e88a74902b2d6b7c3828"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC4yLjAtcmMy"
+  },
+  {
+    "name": "v4.2.0-rc1",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.2.0-rc1",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.2.0-rc1",
+    "commit": {
+      "sha": "42c7246dca82acfc915096e1483fbd6fc7499a6f",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/42c7246dca82acfc915096e1483fbd6fc7499a6f"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC4yLjAtcmMx"
+  },
+  {
+    "name": "v4.1.6",
+    "zipball_url": "https://api.github.com/repos/Kitware/CMake/zipball/refs/tags/v4.1.6",
+    "tarball_url": "https://api.github.com/repos/Kitware/CMake/tarball/refs/tags/v4.1.6",
+    "commit": {
+      "sha": "14d9bf456f5b307889c999e422278da1fdf7480c",
+      "url": "https://api.github.com/repos/Kitware/CMake/commits/14d9bf456f5b307889c999e422278da1fdf7480c"
+    },
+    "node_id": "MDM6UmVmNTM3Njk5OnJlZnMvdGFncy92NC4xLjY="
+  }
+]

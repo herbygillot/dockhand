@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/record"
+	"net/http"
+	"net/http/httptest"
 	"os/exec"
 	"strings"
 	"testing"
@@ -28,6 +30,18 @@ type catalog struct {
 	name         string
 	instance     string
 	file         func(commit, path string) ([]byte, error)
+	document     func(url string) ([]byte, bool, error)
+	documents    []string
+	agent        string
+}
+
+func (c *catalog) Document(_ context.Context, url string, headers http.Header) ([]byte, bool, error) {
+	c.documents = append(c.documents, url)
+	c.agent = headers.Get("User-Agent")
+	if c.document == nil {
+		return nil, false, nil
+	}
+	return c.document(url)
 }
 
 func (c *catalog) Releases(context.Context) ([]forge.Release, error) {
@@ -345,4 +359,115 @@ func TestManifestReadsTheReleaseCommit(t *testing.T) {
 	require.Error(t, err, "the release must name this port's repository")
 	_, err = service.Manifest(t.Context(), port, record.Release{Archive: true, Version: "2.0"}, "go.mod")
 	require.Error(t, err, "an archive release has no commit to read at")
+}
+
+// overridingPort is a GitHub port whose maintainer replaced the tags-page
+// livecheck with the releases API's latest release, as flyctl does.
+func overridingPort() macports.PortInfo {
+	port := automaticPort()
+	port.Options["livecheck.url"] = "https://api.github.com/repos/owner/project/releases/latest"
+	port.Options["livecheck.regex"] = `{"tag_name": "v(\d+(?:\.\d+)+)"}`
+	for key, value := range map[string]string{"livecheck.ignore_sslcert": "no", "livecheck.compression": "yes", "livecheck.curloptions": "", "dockhand.livecheck_standard": "1", "dockhand.base_version": "2.12.6"} {
+		port.Options[key] = value
+	}
+	return port
+}
+
+// The maintainer's livecheck decides the version; the catalog proves the tag
+// and, in releases mode, the published release; the record is the catalog
+// path's. A version whose tag or release is missing is refused by name.
+func TestOverridingLivecheckSelectsThroughTheCatalog(t *testing.T) {
+	t.Parallel()
+	latest := "{\n  \"tag_name\": \"v1.10\",\n  \"name\": \"v2.0 soon\",\n  \"prerelease\": false\n}\n"
+	c := &catalog{releases: []forge.Release{{Tag: "v1.9"}, {Tag: "v1.10"}, {Tag: "v2.0", Prerelease: true}}, tags: []forge.Tag{{Name: "v1.9"}, {Name: "v1.10"}, {Name: "v2.0"}}}
+	c.document = func(url string) ([]byte, bool, error) {
+		if url != "https://api.github.com/repos/owner/project/releases/latest" {
+			return nil, false, nil
+		}
+		return []byte(latest), true, nil
+	}
+	service := automaticService(t, c)
+	service.HTTP = nil
+	result, err := service.DiscoverPort(t.Context(), overridingPort())
+	require.NoError(t, err)
+	require.Equal(t, upstream.UpdateAvailable, result.Assessment)
+	require.Equal(t, "1.10", result.Release.Version)
+	require.Equal(t, "v1.10", result.Release.Tag)
+	require.Equal(t, strings.Repeat("a", 40), result.Release.Commit)
+	require.Equal(t, "github", result.Release.Forge)
+	require.Equal(t, "owner/project", result.Release.Repository)
+	require.False(t, result.Release.Archive)
+	require.Equal(t, "Selected v1.10 from the port's livecheck", result.Detail)
+	require.Equal(t, "github-livecheck", result.Evidence[0].Source)
+	require.Equal(t, "https://api.github.com/repos/owner/project/releases/latest", result.Evidence[0].URL)
+	require.Zero(t, c.tagReads, "the tags list is not consulted; the tag itself is")
+	require.Equal(t, "MacPorts/2.12.6 libcurl dockhand/2", c.agent, "the request says it is MacPorts' libcurl fetch run by dockhand, which decides the API's JSON layout")
+	require.Equal(t, 1, c.releaseReads, "releases mode proves the published release")
+	require.NoError(t, service.Check(t.Context(), overridingPort(), *result.Release))
+
+	// Already current: the livecheck names the port's own version.
+	current := overridingPort()
+	current.Version, current.Options["github.version"], current.Options["git.branch"], current.Options["livecheck.version"] = "1.10", "1.10", "v1.10", "1.10"
+	result, err = service.DiscoverPort(t.Context(), current)
+	require.NoError(t, err)
+	require.Equal(t, upstream.Current, result.Assessment)
+	require.True(t, result.Release.NoUpdate)
+	require.Equal(t, "Already current at 1.10; latest eligible version by the port's livecheck is 1.10", result.Detail)
+
+	// The livecheck names a version with no tag.
+	c.tag = tagFunc(func(_ context.Context, _ string, name string) (forge.Tag, error) {
+		if name == "v1.10" {
+			return forge.Tag{}, forge.ErrNotFound
+		}
+		return forge.Tag{Name: name, Commit: strings.Repeat("a", 40)}, nil
+	})
+	_, err = service.DiscoverPort(t.Context(), overridingPort())
+	require.ErrorIs(t, err, upstream.ErrReleaseMissing)
+	require.ErrorContains(t, err, "the port's livecheck names version 1.10, but owner/project has no tag v1.10")
+
+	// The tag exists but no published release carries it.
+	c.tag = nil
+	service = automaticService(t, c)
+	c.releases = []forge.Release{{Tag: "v1.9"}, {Tag: "v1.10", Draft: true}}
+	_, err = service.DiscoverPort(t.Context(), overridingPort())
+	require.ErrorIs(t, err, upstream.ErrReleaseMissing)
+	require.ErrorContains(t, err, "the port's livecheck names version 1.10, but owner/project has no published release for tag v1.10")
+
+	// Archive mode needs only the tag.
+	archive := overridingPort()
+	archive.Options["github.tarball_from"] = "archive"
+	c.releaseReads = 0
+	result, err = service.DiscoverPort(t.Context(), archive)
+	require.NoError(t, err)
+	require.Equal(t, "v1.10", result.Release.Tag)
+	require.Zero(t, c.releaseReads)
+
+	// A prerelease named by the livecheck is not selected for a stable port.
+	latest = "{\"tag_name\": \"v2.0-rc1\"}"
+	_, err = service.DiscoverPort(t.Context(), archive)
+	require.ErrorIs(t, err, upstream.ErrReleaseMissing)
+	require.ErrorContains(t, err, "no eligible version matches the port's livecheck")
+
+	// A livecheck the forge does not serve is fetched plainly.
+	page := "<a>v1.10</a>"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, page) }))
+	defer server.Close()
+	plain := overridingPort()
+	plain.Options["livecheck.url"] = server.URL + "/versions"
+	plain.Options["livecheck.regex"] = `{<a>v([0-9.]+)</a>}`
+	plain.Options["github.tarball_from"] = "archive"
+	service.HTTP = server.Client()
+	result, err = service.DiscoverPort(t.Context(), plain)
+	require.NoError(t, err)
+	require.Equal(t, "v1.10", result.Release.Tag)
+	require.Contains(t, c.documents, server.URL+"/versions", "the forge was asked first")
+
+	// A disabled livecheck says so and names the way forward.
+	disabled := overridingPort()
+	disabled.Options["livecheck.type"] = "none"
+	_, err = service.DiscoverPort(t.Context(), disabled)
+	require.ErrorContains(t, err, "the port's livecheck is disabled (livecheck.type none); name the version to update to")
+	release, err := service.Resolve(t.Context(), disabled, "v1.10")
+	require.NoError(t, err, "an explicit version needs no livecheck")
+	require.Equal(t, "v1.10", release.Tag)
 }

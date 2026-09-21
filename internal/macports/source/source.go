@@ -39,10 +39,15 @@ type Livecheck struct {
 	// Multiline is Base's regexm: the expression is matched once against
 	// the whole listing rather than against each line.
 	Multiline bool
-	Type      string
-	URL       string
-	Regex     string
-	Version   string
+	// Overridden says the maintainer replaced the forge PortGroup's default
+	// livecheck, the catalog page, with their own definition of the latest
+	// version: discovery runs that livecheck as Base would and proves its
+	// answer against the catalog before it becomes a release.
+	Overridden bool `json:",omitempty"`
+	Type       string
+	URL        string
+	Regex      string
+	Version    string
 }
 
 type Spec struct {
@@ -106,11 +111,15 @@ func Interpret(port macports.PortInfo, purpose Purpose) (Spec, error) {
 		Type: port.Options["livecheck.type"], URL: port.Options["livecheck.url"],
 		Regex: port.Options["livecheck.regex"], Version: port.Options["livecheck.version"],
 	}
-	if spec.Livecheck.Type != "regex" || spec.Livecheck.Regex == "" || (spec.Livecheck.Version != spec.CurrentVersion && spec.Livecheck.Version != spec.SourceVersion) {
+	switch {
+	case spec.Livecheck.Type == "none":
+		return Spec{}, fmt.Errorf("%w: the port's livecheck is disabled (livecheck.type none); name the version to update to", ErrUnsupported)
+	case spec.Livecheck.Type != "regex" && spec.Livecheck.Type != "regexm":
+		return Spec{}, fmt.Errorf("%w: livecheck.type %s is not a regex livecheck; name the version to update to", ErrUnsupported, spec.Livecheck.Type)
+	case spec.Livecheck.Regex == "" || (spec.Livecheck.Version != spec.CurrentVersion && spec.Livecheck.Version != spec.SourceVersion):
 		return Spec{}, fmt.Errorf("%w: require a regex livecheck for the evaluated port version", ErrUnsupported)
 	}
-	switch spec.Forge {
-	case GitHub:
+	if spec.Forge == GitHub {
 		if err := evaluated(port, "github.tarball_from"); err != nil {
 			return Spec{}, fmt.Errorf("%w: %v", ErrUnsupported, err)
 		}
@@ -124,22 +133,26 @@ func Interpret(port macports.PortInfo, purpose Purpose) (Spec, error) {
 		if mode == "releases" {
 			spec.Catalog = Releases
 		}
-		expected, err := spec.tagsURL()
-		if err != nil {
-			return Spec{}, err
-		}
-		if trimURL(spec.Livecheck.URL) != trimURL(expected) {
-			return Spec{}, fmt.Errorf("%w: livecheck does not inspect the GitHub tags page", ErrUnsupported)
-		}
-	case GitLab:
-		expected, err := spec.tagsURL()
-		if err != nil {
-			return Spec{}, err
-		}
-		if trimURL(spec.Livecheck.URL) != trimURL(expected) {
-			return Spec{}, fmt.Errorf("%w: livecheck does not inspect the GitLab tags feed", ErrUnsupported)
-		}
 	}
+	// The PortGroup's default livecheck reads the catalog page; the catalog
+	// itself is the same list without the page's truncation, so discovery
+	// consults it directly. Any other livecheck is the maintainer's own
+	// definition of the latest version, run as written and proven against
+	// the catalog; it is read with the curl behavior Base would use.
+	expected, err := spec.tagsURL()
+	if err != nil {
+		return Spec{}, err
+	}
+	if trimURL(spec.Livecheck.URL) == trimURL(expected) && spec.Livecheck.Type == "regex" {
+		return spec, nil
+	}
+	if err := readListing(port, &spec.Livecheck); err != nil {
+		return Spec{}, err
+	}
+	if port.Options["dockhand.livecheck_standard"] != "1" {
+		return Spec{}, fmt.Errorf("%w: the port's livecheck has custom hooks; name the version to update to", ErrUnsupported)
+	}
+	spec.Livecheck.Overridden = true
 	return spec, nil
 }
 

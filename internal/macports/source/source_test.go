@@ -89,7 +89,74 @@ func TestSourceInterpretationRejectsAmbiguousOrInconsistentMetadata(t *testing.T
 	port := githubPort()
 	port.Options["livecheck.url"] = "https://example.invalid/releases"
 	_, err = source.Interpret(port, source.Discovery)
-	require.ErrorIs(t, err, source.ErrUnsupported)
+	require.ErrorIs(t, err, source.ErrUnsupported, "an overriding livecheck needs the curl options the listing reads")
+}
+
+// A maintainer's own livecheck, anything but the PortGroup's catalog page,
+// is run as written and proven against the catalog: the interpretation says
+// so and keeps the curl options Base would use. A disabled livecheck, a
+// non-regex type, and custom livecheck hooks refuse automatic selection
+// with the version named as the way forward.
+func TestOverridingLivecheckIsRunAndProvenRatherThanRefused(t *testing.T) {
+	overriding := func(port macports.PortInfo) macports.PortInfo {
+		port.Options["livecheck.url"] = "https://api.github.com/repos/owner/project/releases/latest"
+		port.Options["livecheck.regex"] = `{"tag_name": "release/([^"]+)-stable"}`
+		for key, value := range map[string]string{"livecheck.ignore_sslcert": "no", "livecheck.compression": "yes", "livecheck.curloptions": `--append-http-header {Accept: application/json}`, "dockhand.livecheck_standard": "1"} {
+			port.Options[key] = value
+		}
+		return port
+	}
+	spec, err := source.Interpret(overriding(githubPort()), source.Discovery)
+	require.NoError(t, err)
+	require.True(t, spec.Livecheck.Overridden)
+	require.Equal(t, source.Releases, spec.Catalog, "the archive mode still says what must exist")
+	require.Equal(t, "https://api.github.com/repos/owner/project/releases/latest", spec.Livecheck.URL)
+	require.Equal(t, map[string]string{"Accept": "application/json"}, spec.Livecheck.Headers)
+	require.True(t, spec.Livecheck.Compression)
+	require.False(t, spec.Livecheck.Multiline)
+
+	regexm := overriding(githubPort())
+	regexm.Options["livecheck.type"] = "regexm"
+	regexm.Options["livecheck.url"] = "https://github.com/owner/project/tags"
+	spec, err = source.Interpret(regexm, source.Discovery)
+	require.NoError(t, err)
+	require.True(t, spec.Livecheck.Overridden, "a whole-page match of the tags page is the maintainer's own livecheck, not the PortGroup's")
+	require.True(t, spec.Livecheck.Multiline)
+
+	spec, err = source.Interpret(githubPort(), source.Discovery)
+	require.NoError(t, err)
+	require.False(t, spec.Livecheck.Overridden, "the PortGroup's default stays a catalog query")
+
+	lab := gitlabPort()
+	lab.Options["livecheck.url"] = "https://gitlab.example.com/root/group/subgroup/project/-/releases"
+	for key, value := range map[string]string{"livecheck.ignore_sslcert": "no", "livecheck.compression": "no", "livecheck.curloptions": "", "dockhand.livecheck_standard": "1"} {
+		lab.Options[key] = value
+	}
+	spec, err = source.Interpret(lab, source.Discovery)
+	require.NoError(t, err)
+	require.True(t, spec.Livecheck.Overridden)
+
+	for _, test := range []struct {
+		name   string
+		mutate func(*macports.PortInfo)
+		want   string
+	}{
+		{"disabled", func(port *macports.PortInfo) { port.Options["livecheck.type"] = "none" }, "the port's livecheck is disabled (livecheck.type none); name the version to update to"},
+		{"other type", func(port *macports.PortInfo) { port.Options["livecheck.type"] = "sourceforge" }, "livecheck.type sourceforge is not a regex livecheck; name the version to update to"},
+		{"custom hooks", func(port *macports.PortInfo) { port.Options["dockhand.livecheck_standard"] = "0" }, "the port's livecheck has custom hooks; name the version to update to"},
+		{"insecure", func(port *macports.PortInfo) { port.Options["livecheck.ignore_sslcert"] = "yes" }, "livecheck.ignore_sslcert must be disabled"},
+		{"other version", func(port *macports.PortInfo) { port.Options["livecheck.version"] = "9" }, "require a regex livecheck for the evaluated port version"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			port := overriding(githubPort())
+			test.mutate(&port)
+			_, err := source.Interpret(port, source.Discovery)
+			require.ErrorIs(t, err, source.ErrUnsupported)
+			require.ErrorContains(t, err, test.want)
+			_, err = source.Interpret(port, source.Edit)
+			require.NoError(t, err, "an explicit version never needs the livecheck")
+		})
+	}
 }
 
 func TestSourceSpellingIsIndependentOfCalculatedPortVersion(t *testing.T) {

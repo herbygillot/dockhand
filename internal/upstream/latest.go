@@ -46,6 +46,9 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 	if !automatic(port.Version) {
 		return result, fmt.Errorf("%w: require a stable or prerelease numeric version", errAutomaticUnsupported)
 	}
+	if spec.Livecheck.Overridden {
+		return s.discoverOverridden(ctx, port, spec, repository)
+	}
 	followsPrereleases := followsPrereleases(port.Version)
 	var observations []forge.Release
 	if spec.Catalog == portsource.Releases {

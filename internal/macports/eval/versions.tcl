@@ -36,8 +36,11 @@ proc ::dockhand::extract_versions {expression page {mode line}} {
         if {$version eq ""} {error "empty livecheck version capture"}
         return [list $version]
     }
-    # Match each line like Base's regex livecheck. Progress is explicit even for
-    # zero-width matches, so malformed patterns cannot trap the interpreter.
+    # Match each line like Base's regex livecheck, which resumes each search
+    # at the last character of the previous match, so two matches may share
+    # that character. Base loops forever on a match that ends where it began;
+    # progress is forced there instead, so a malformed pattern cannot trap
+    # the interpreter.
     set versions [dict create]
     foreach line [split $page "\n"] {
         set start 0
@@ -47,7 +50,7 @@ proc ::dockhand::extract_versions {expression page {mode line}} {
             set version [string range $line $first $last]
             if {$version eq ""} {error "empty livecheck version capture"}
             dict set versions $version 1
-            set start [expr {max($start + 1, [lindex $whole 1] + 1)}]
+            set start [expr {max($start + 1, [lindex $whole 1])}]
         }
     }
     return [dict keys $versions]
