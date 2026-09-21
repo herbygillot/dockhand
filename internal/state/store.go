@@ -87,6 +87,9 @@ type VerificationQuery struct {
 
 type Reader interface {
 	PublicationForJob(context.Context, record.JobID) (record.PublicationAction, error)
+	// ActivePublicationForHead finds the pending, applying, or uncertain
+	// publication holding a remote head branch, if any.
+	ActivePublicationForHead(ctx context.Context, forge, headRepository, headBranch string) (record.PublicationAction, error)
 	PullRequest(context.Context, record.PullRequestID) (record.PullRequest, error)
 	VerificationCandidates(context.Context, VerificationQuery) ([]record.Attempt, error)
 	Change(context.Context, record.ChangeID) (record.Change, error)

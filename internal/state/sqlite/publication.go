@@ -11,14 +11,27 @@ import (
 	"github.com/herbygillot/dockhand/internal/state"
 )
 
+const publicationColumns = "SELECT id,job_id,change_id,revision_id,spec,state,push_started,write_started,confirmed_at,last_error,write_refusals FROM publications WHERE repository_id=? AND "
+
 func (t *transaction) PublicationForJob(ctx context.Context, id record.JobID) (record.PublicationAction, error) {
+	return t.publication(ctx, "job_id=?", id)
+}
+
+// ActivePublicationForHead finds the publication that holds a remote head
+// branch: one still pending, applying, or uncertain, which is the set the
+// unique index guards.
+func (t *transaction) ActivePublicationForHead(ctx context.Context, forge, headRepository, headBranch string) (record.PublicationAction, error) {
+	return t.publication(ctx, "forge=? AND head_repository=? AND head_branch=? AND state IN ('pending','applying','uncertain')", forge, headRepository, headBranch)
+}
+
+func (t *transaction) publication(ctx context.Context, where string, args ...any) (record.PublicationAction, error) {
 	var v record.PublicationAction
 	if err := t.check(ctx, false); err != nil {
 		return v, err
 	}
 	var raw string
 	var confirmed sql.NullInt64
-	err := t.conn.QueryRowContext(ctx, "SELECT id,job_id,change_id,revision_id,spec,state,push_started,write_started,confirmed_at,last_error,write_refusals FROM publications WHERE repository_id=? AND job_id=?", t.repo, id).Scan(&v.ID, &v.JobID, &v.ChangeID, &v.RevisionID, &raw, &v.State, &v.PushStarted, &v.WriteStarted, &confirmed, &v.LastError, &v.WriteRefusals)
+	err := t.conn.QueryRowContext(ctx, publicationColumns+where, append([]any{t.repo}, args...)...).Scan(&v.ID, &v.JobID, &v.ChangeID, &v.RevisionID, &raw, &v.State, &v.PushStarted, &v.WriteStarted, &confirmed, &v.LastError, &v.WriteRefusals)
 	if err != nil {
 		return v, storageError(err)
 	}

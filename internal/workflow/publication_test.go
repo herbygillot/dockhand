@@ -571,3 +571,32 @@ func TestUncertainPRRequestIsRepeatedOnceTheForgeShowsNoPullRequest(t *testing.T
 	require.Equal(t, uint32(1), status.Jobs[0].Publications[0].WriteRefusals)
 	require.NotNil(t, status.Jobs[0].Publications[0].ConfirmedAt, "the repeated request was confirmed")
 }
+
+func TestPublishingAgainSupersedesASettledUncertainRequest(t *testing.T) {
+	t.Parallel()
+	f, hosting := publicationFixture(t)
+	hosting.writeLost = true
+	id := submitPublication(t, f, "publish")
+	f.run(t, id) // pushes the branch
+	f.run(t, id) // asks for the pull request; the forge fails before acting
+	f.cancel(t, id)
+	for range 25 {
+		f.advance(6 * time.Minute)
+		f.run(t, id)
+	}
+	settled := f.status(t, id).Jobs[0]
+	require.True(t, settled.Job.State.Terminal(), settled.Job.Detail)
+	require.Equal(t, record.PublicationUncertain, settled.Publications[0].State, "a settled uncertain request keeps the head until someone looks")
+	require.Equal(t, 1, hosting.writes)
+
+	hosting.writeLost = false
+	again := submitPublication(t, f, "again")
+	old := f.status(t, id).Jobs[0].Publications[0]
+	require.Equal(t, record.PublicationNeedsAttention, old.State, "publishing again is the look it waited for")
+	require.Contains(t, old.LastError, "superseded by publication")
+	for range 4 {
+		f.run(t, again)
+	}
+	require.Equal(t, record.JobCompleted, f.status(t, again).Jobs[0].Job.State, f.status(t, again).Jobs[0].Job.Detail)
+	require.Equal(t, 2, hosting.writes, "the new request created the pull request the old one never did")
+}

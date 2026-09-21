@@ -172,6 +172,9 @@ func (e *Engine) Submit(ctx context.Context, request Request) (Receipt, error) {
 			if err := policy.ValidatePublicationAction(job, action); err != nil {
 				return err
 			}
+			if err := supersedeSettledPublication(ctx, tx, action); err != nil {
+				return err
+			}
 			if err := tx.PutPublication(ctx, action); err != nil {
 				return fmt.Errorf("accept publication (another job may own this remote branch): %w", err)
 			}
@@ -223,4 +226,33 @@ func bindRevision(ctx context.Context, spec record.JobSpec, reader state.Reader)
 	spec.ChangeID = change.ID
 	spec.Source = revision.Source
 	return spec, nil
+}
+
+// supersedeSettledPublication frees the remote head branch a settled
+// publication still holds. An uncertain pull request request keeps its
+// state when its job settles as needing attention, so that nobody writes
+// to that head unknowingly; a person who looked and asked to publish again
+// is the someone it waited for, and the new request's binding has already
+// observed the forge, so it updates a pull request that exists and creates
+// one that does not. A publication whose job is still running keeps the
+// head, and the new request is refused as before.
+func supersedeSettledPublication(ctx context.Context, tx state.Tx, action record.PublicationAction) error {
+	spec := action.Spec
+	stale, err := tx.ActivePublicationForHead(ctx, spec.Forge, spec.HeadRepository, spec.HeadBranch)
+	if errors.Is(err, state.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	job, err := tx.Job(ctx, stale.JobID)
+	if err != nil {
+		return err
+	}
+	if !job.State.Terminal() {
+		return fmt.Errorf("%w: job %s still owns the remote branch %s:%s", ErrRequestConflict, job.ID, spec.HeadRepository, spec.HeadBranch)
+	}
+	stale.State = record.PublicationNeedsAttention
+	stale.LastError = "superseded by publication " + string(action.ID) + " after its job settled: " + stale.LastError
+	return tx.PutPublication(ctx, stale)
 }
