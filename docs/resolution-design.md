@@ -4,8 +4,12 @@ Status: specified 2026-09-22, not implemented. Written after the
 [second architecture review](reviews/2026-09-22-architecture-and-organization.md)
 and its [reconciliation](activity/2026-09-22-review-reconciliation.md),
 and after a pressure test of the `app` plan by a second reviewer on a
-different model, whose findings are folded in. Every claim about today's
-code names its file.
+different model. A second pass by that reviewer attacked this document
+scenario by scenario, every bump, revision bump, checksums, and verify
+shape through today's code and then through the steps below; the six
+gaps it found and their resolutions are in the validation section, and
+the steps and the value carry the fixes. Every claim about today's code
+names its file.
 
 ## The problem
 
@@ -94,11 +98,19 @@ type Resolution struct {
 	// Selection is the target as the records name it, with the person's
 	// variant choices laid over the recorded ones.
 	Selection macports.Selection
-	// Intent, Subject, and References are inherited from the prior job or
-	// the contribution's commit when the request left them empty.
+	// Intent, Subject, and References are the request's; a Continue
+	// inherits all three from the prior job where the request left them
+	// empty, an Onto inherits only the subject, from the contribution's
+	// commit, as today, and a Fresh inherits nothing.
 	Intent     record.EditIntent
 	Subject    string
 	References []record.Reference
+	// Branch is what the work lands on: master's name for a Fresh, the
+	// contribution's branch otherwise. A preview reports it.
+	Branch string
+	// Checked is whether master and the pull request were consulted for a
+	// Continue; a preview does not consult them, and says so in Detail.
+	Checked bool
 	// Detail is the one line a command reports: what master holds, what
 	// the pull request is, why the contribution continues or retires.
 	Detail string
@@ -122,8 +134,22 @@ type ResolutionRequest struct {
 	Selection macports.Selection
 	ChangeID  record.ChangeID
 	Branch    string
-	// Adopt names a branch to track first.
+	// Adopt names a branch to track first; with Preview it is tracked in
+	// a dry run and the resolution reads the revision adoption would have
+	// recorded, as the CLI's dry-run adopt does today.
 	Adopt bool
+	// Require refuses a selection with no open contribution rather than
+	// resolving Fresh: a verification continues something or says so.
+	Require bool
+	// Lookup stops after step 4: the contribution and the prior job are
+	// read, master is not fetched and the continuation is not checked. A
+	// verification resolves this way; its action has no release to check
+	// master against.
+	Lookup bool
+	// Preview reads and never writes: master is fetched, the pull request
+	// is not refreshed and the continuation is not checked, and nothing
+	// is recorded. A Continue found this way is unchecked, and says so.
+	Preview bool
 	// Offline forbids the master fetch: a resolution that would need it,
 	// Fresh or a Continue that checks master, is refused rather than made.
 	Offline    bool
@@ -148,25 +174,34 @@ repository and the ports repository constants, as `app.preparationSource`
 does today; `Offline` is the only control, and it is a refusal, not a
 degradation. The degraded path is a fetch that was attempted and failed.
 
-The steps, in the order `app.BindPreparation` takes them today:
+The steps, in the order `app.BindPreparation` takes them today, with
+adoption first because it is refused for a path selector today and must
+not be silently skipped by one:
 
-1. With no store, or a selector that is a path rather than a name and no
-   change or branch given, the resolution is Fresh from `Master`.
-2. Adopt: track the branch first, then resolve as Onto.
+1. Adopt: track the branch first, refusing a path selector as adoption
+   does, in a dry run under `Preview`; then resolve as Onto against the
+   recorded revision, or the one the dry run would have recorded.
+2. With no store, or a selector that is a path rather than a name and no
+   change or branch given, the resolution is Fresh from master. A nil
+   store with `Adopt` is an error: adoption needs the store.
 3. Look up the open contribution and the newest job of the action that is
    still its current revision or still running, as `PreparationInput`
-   does. No contribution: Fresh.
+   does. No contribution: Fresh, or the no-contribution error under
+   `Require`, with the wording verification gives today.
 4. A contribution with no such job, or whose job was itself prepared onto
    it (`Spec.Preparation.Correction != nil`): Onto. Source is the current
    revision's; the selection is the contribution's target with the
    request's variants laid over; the subject is the contribution's own
    unless one was given. This is what `bindOnto` computes today and keeps
    computing; the resolution names it.
-5. Otherwise fetch master, unless `Offline`, which refuses here.
-   Unreachable: Continue from the prior job's recorded source, `Degraded`
-   set, `Detail` saying master was not checked. Reachable:
-   `CheckContinuation` decides; retired means Fresh from master with its
-   detail; a stop is the error it raises today.
+5. Under `Lookup`, stop: the prior job is a Continue as found. Otherwise
+   fetch master, unless `Offline`, which refuses here. Unreachable:
+   Continue from the prior job's recorded source, `Degraded` set,
+   `Detail` saying master was not checked. Reachable: under `Preview`,
+   Continue unchecked, since the continuation check refreshes the pull
+   request and writes; otherwise `CheckContinuation` decides; retired
+   means Fresh from master with its detail; a stop is the error it raises
+   today.
 6. Continue inherits: `SharedRelease` and `KeepOldChecksums` or-ed with
    the request's, `Stub` taken, subject and references taken when the
    request's are empty, the selection from the prior target with the
@@ -178,12 +213,19 @@ step 3 and stops being an entry point.
 
 ## Three properties, or it is worse than today
 
-**It answers without a database.** Seven dry-run tests assert that a
-preview never creates the state database. `PreparationInput` runs inside a
-store view, so `Resolve` is the one engine method that accepts a nil
-store, and answers Fresh, or Onto for an explicit adopt, without one. The
-read-only opener that `app` grows, item 1 of the app plan reduced to its
-useful part, returns "no database" as a value the engine is built with.
+**It answers without a database, and never writes for a preview.** Seven
+dry-run tests assert that a preview never creates the state database.
+`PreparationInput` runs inside a store view, so `Resolve` is the one
+engine method that accepts a nil store, and answers Fresh without one;
+adoption needs the store and is refused without it. The read-only opener
+that `app` grows, item 1 of the app plan reduced to its useful part,
+returns "no database" as a value the engine is built with. With a
+database, a preview reads it and writes nothing: `Preview` skips the
+continuation check, because `CheckContinuation` refreshes the pull
+request through `refreshChange`, which records what it observed with
+`State.Update` (`internal/workflow/contribution_lifecycle.go`) and defers
+a failed observation the same way. A resolution that wrote during a dry
+run would break the promise the command's help makes.
 
 **It degrades explicitly.** Master unreachable with a prior job is a
 Continue with `Degraded` set, never a silent Fresh. The wording is the
@@ -205,26 +247,40 @@ records, and nothing caches one across commands.
   build resolution, and the destination. `app.Preparation` loses the
   fields the resolution carries and, once provider choice has its own
   home, the rest; the CLI then builds the workflow request.
-- **Preview.** Resolves with the store when it exists and without it
-  otherwise, and prepares on `Resolution.Source`. Preview then goes onto a
-  contribution exactly when a bump would, which closes the divergence the
-  second review predicted and the pressure test confirmed. The
-  `"Preparing the update onto the open contribution's branch %s"` line
-  becomes the resolution's detail; the change of wording is a commit of
-  its own.
-- **Verify.** The tracked cases resolve: a target, a branch, a change, or
-  the current branch by default is a Continue whose `Change` and
-  `Revision` are what `BindVerification` checks the captured branch
-  against; a branch adopted by name that is tracked is the same. The
-  working-tree capture and the untracked-branch capture are not
-  resolutions of a contribution and stay outside the value.
+- **Preview.** Resolves under `Preview`, with the store when it exists
+  and without it otherwise, and prepares on `Resolution.Source`. Preview
+  then goes onto a contribution exactly when a bump would, and continues
+  a prior job from its recorded source exactly when a bump would, which
+  closes the divergence the second review predicted and the pressure test
+  confirmed. That is a user-visible change and a deliberate one: today a
+  preview of a port mid-bump edits the branch head, while the bump that
+  follows edits the recorded source, so the preview shows a diff the
+  bump will not make. The `"Preparing the update onto the open
+  contribution's branch %s"` line becomes the resolution's detail, and a
+  test covers a preview onto a contribution, which nothing does today.
+  `Resolution.Branch` is what `Preview.Branch` reports, so its JSON is
+  unchanged.
+- **Verify.** The tracked cases resolve under `Lookup` and `Require`: a
+  target, a branch, a change, or the current branch by default, which the
+  request fills before resolving as `app.BindVerification` does today, is
+  a Continue whose `Change` and `Revision` are what `BindVerification`
+  checks the captured branch against, and no contribution is the error
+  with today's wording and the `--adopt` hint. A branch adopted by name
+  that is tracked is the same only when a port name was given, the guard
+  `app.BindVerification` keeps today; without one the branch is an
+  untracked capture, and the value does not change that. The working-tree
+  capture and the untracked-branch capture are not resolutions of a
+  contribution and stay outside the value.
 - **Adopt.** `AdoptContribution` is the Adopt kind's first half and stays;
   a bump with `--adopt` resolves Adopt, which tracks and then reads as
   Onto, as the CLI does today in two calls.
 - **Corrections.** Amend, rebase, and squash select a contribution by
   branch and capture a candidate; they are Onto with a captured candidate,
   and `BindCorrection` may read `Change` and `Revision` from a resolution
-  later. Not part of the first landing.
+  later. Not part of the first landing, and the validation is right that
+  this leaves the lookup of a contribution by name or branch written a
+  third time; step 3's lookup is the one `BindCorrection` reuses when it
+  follows, and the sequence says when.
 
 ## What it replaces
 
@@ -248,15 +304,67 @@ resolution removes the translation that mattered without it.
 
 ## What must not change
 
-- The state database is never created by a dry run.
+- The state database is never created or written by a dry run, except
+  that `--dry-run --adopt` builds the services and so creates the
+  database today, an inconsistency the roadmap carries; this design does
+  not widen it.
 - The lines tests assert: "Continuing the port's open contribution",
-  "lands as an amendment", "fetching authoritative MacPorts master".
+  "selector does not match contribution", "lands as an amendment",
+  "fetching authoritative MacPorts master", "no open contribution for"
+  with its `--adopt` hint, "tracked" from adoption, and "branch master"
+  in a verbose preview.
 - `app.Preview`'s JSON, which carries no tags, and the status and gc
   result shapes.
-- The continuation stops: a port already at the version on master, a
-  port someone else moved, a retired contribution, each with its wording.
+- The continuation stops, each with its wording: a port already at the
+  version on master, a port someone else moved, a retired contribution
+  whose pull request is neither open nor merged, a port no longer on
+  master, and a port that could not be evaluated on master; and their
+  exit code, which the CLI maps from `ErrContinuation`.
+- The flag exclusions that keep some combinations from arising:
+  `--change` with `--dry-run`, and `--change` with `--adopt`.
+- The revision-bump subject rule: a subject is required unless the update
+  goes onto a contribution, which then supplies its own. The resolution
+  carries the subject; the rule reads the kind.
 - One open contribution per port; a second branch adopted for a port with
   one is refused as today.
+
+## Validation
+
+The scenario pass found six gaps. Each is resolved above; this is the
+record of what and why.
+
+1. A verification with no contribution is an error today, and a
+   resolution that answered Fresh could not say so: `Require` refuses
+   with today's wording. Verification also has no release to check
+   master against, and a prior verify job has no resolved release for
+   `CheckContinuation` to read: `Lookup` stops after the lookup.
+2. A preview that resolved as a bump does would fetch master and run the
+   continuation check, whose pull request refresh writes: `Preview`
+   fetches and does not check, and a Continue found that way is
+   unchecked, in `Checked` and in the detail. The preview of a port
+   mid-bump changes from the branch head to the recorded source, which is
+   what the bump edits; that is the divergence closed, and it lands with
+   its own test.
+3. `Preview.Branch` is reported JSON with nothing to read it from:
+   `Resolution.Branch`.
+4. The value's doc read as if an Onto inherited the prior job's intent;
+   it inherits only the contribution's subject, as today. The pass also
+   found that today's Onto therefore drops a stub's redirection and its
+   shared-release authorization, so a checksums refresh or a second bump
+   onto an adopted `py-foo` contribution edits the carrier without
+   authorizing its siblings; that is a defect in the current code, not a
+   property to preserve, and the roadmap carries it.
+5. A dry-run adopt had no representation: `Adopt` under `Preview` is the
+   dry-run adoption the CLI performs today, and the resolution reads the
+   revision it would have recorded.
+6. The path-selector shortcut preceded adoption, so `--adopt` with a path
+   selector would have been ignored where today it is refused: adoption
+   is step 1.
+
+The pass also lengthened the list of what must not change, above, and
+noted that the promise "a dry run touches no database" is already broken
+by `--dry-run --adopt`, which builds the services; the roadmap carries
+that too.
 
 ## Sequence
 
@@ -270,10 +378,14 @@ resolution removes the translation that mattered without it.
 3. `Engine.BindPreparation` takes a resolution; `app.BindPreparation`
    resolves and hands it over; the continuation tests in `cli` and
    `workflow` are the acceptance test.
-4. Preview resolves the same way; the preview wording change is its own
-   commit.
-5. `BindVerification`'s selector becomes a Continue resolution.
-6. Then, and only then, the question whether the four bindings and
+4. Preview resolves under `Preview`; the change to what a preview of a
+   port mid-bump shows, and its wording, is its own commit with its own
+   test.
+5. `BindVerification`'s selector becomes a Continue resolution under
+   `Lookup` and `Require`, with the current-branch default filled before
+   resolving.
+6. `BindCorrection` reuses step 3's lookup for its contribution.
+7. Then, and only then, the question whether the four bindings and
    `Resolve` lift into `workflow/intake` as a leaf that takes the store,
    the repository, the evaluator, and the forge as values and hands the
    engine a finished request. That move is about 1,300 lines and is worth
