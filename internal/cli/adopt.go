@@ -50,7 +50,13 @@ func (r *runtime) adoptCommand() *cobra.Command {
 				}
 				request.Target = port
 			}
-			services, err := r.build(cmd.Context(), r.config)
+			build := r.build
+			if dryRun {
+				// A dry run reads the records when there are any and creates
+				// nothing, the database included.
+				build = app.BuildForReading
+			}
+			services, err := build(cmd.Context(), r.config)
 			if err != nil {
 				return err
 			}

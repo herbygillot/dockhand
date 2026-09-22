@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"github.com/herbygillot/dockhand/internal/app"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -30,6 +31,7 @@ func TestAdoptCLITracksAHandMadeBranchAndDryRunRecordsNothing(t *testing.T) {
 
 	var out, stderr bytes.Buffer
 	require.NoError(t, Run(t.Context(), []string{"adopt", "mine", "--dry-run", "--json"}, Streams{Out: &out, Err: &stderr}, config), stderr.String())
+	require.NoDirExists(t, filepath.Dir(config.DBPath), "a dry run creates no database")
 	var result workflow.AdoptResult
 	decodeResult(t, out.Bytes(), &result)
 	require.Equal(t, "devel/fixture/Portfile", result.Portfile)
@@ -68,6 +70,7 @@ func TestPreparationsLandOnAnAdoptedBranchAsAmendments(t *testing.T) {
 	handMade("mine", "1.3")
 	var out, stderr bytes.Buffer
 	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--adopt", "mine", "--dry-run"}, Streams{Out: &out, Err: &stderr}, config), stderr.String())
+	require.NoDirExists(t, filepath.Dir(config.DBPath), "a dry run creates no database, adoption included")
 	require.Contains(t, out.String(), "-revision 0\n+revision 1")
 	require.Contains(t, out.String(), " version 1.3", "the edit is made on the branch's Portfile, not master's")
 	out.Reset()

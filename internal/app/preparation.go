@@ -56,12 +56,12 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 		return Preview{}, err
 	}
 	// The preview resolves as a bump would, reading the records when there
-	// are any and writing nothing. A dry-run adoption needs the store the
-	// way adoption does, so it opens the services as the command would.
+	// are any and writing nothing. A dry-run adoption needs the publisher
+	// the way adoption does, so it assembles the services for reading.
 	selection := workflow.ResolutionRequest{Action: request.Action, Selection: request.Selection, Preview: true, Platform: platform, Intent: request.EditIntent, Subject: request.Subject, References: request.References}
 	var resolution workflow.Resolution
 	if request.Adopt != "" {
-		services, err := Build(ctx, config)
+		services, err := BuildForReading(ctx, config)
 		if err != nil {
 			return Preview{}, err
 		}

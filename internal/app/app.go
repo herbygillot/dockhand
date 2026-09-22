@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/workflow/choice"
@@ -18,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/selection"
 	"github.com/herbygillot/dockhand/internal/proc"
 	"github.com/herbygillot/dockhand/internal/publish"
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
 	"github.com/herbygillot/dockhand/internal/verify"
@@ -61,11 +63,11 @@ type Services struct {
 	githubDestination publish.Options
 }
 
+// Build assembles the services for a command that records: the state
+// database is opened for writing, created when absent, and the checkout is
+// registered in it.
 func Build(ctx context.Context, config Config) (*Services, error) {
-	if config.VerificationProvider != "" && config.VerificationProvider != "auto" && config.VerificationProvider != verify.ProviderTart && config.VerificationProvider != verify.ProviderGitHub {
-		return nil, fmt.Errorf("unknown verification provider %q", config.VerificationProvider)
-	}
-	repo, err := openPortsTree(ctx, config.Repository, config.GitExecutable)
+	repo, err := checkedPortsTree(ctx, config)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +80,47 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		store.Close()
 		return nil, err
 	}
+	return assemble(config, repo, store, repository.ID)
+}
 
+// BuildForReading assembles the same services for a command that records
+// nothing, a dry run: the state database is opened for reading when it
+// exists and the checkout is registered in it, and the engine has no store
+// otherwise. Nothing is created.
+func BuildForReading(ctx context.Context, config Config) (*Services, error) {
+	repo, err := checkedPortsTree(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+	store, repository, err := openReadOnly(ctx, config, repo)
+	if err != nil {
+		return nil, err
+	}
+	return assemble(config, repo, store, repository)
+}
+
+func checkedPortsTree(ctx context.Context, config Config) (*git.Repository, error) {
+	if config.VerificationProvider != "" && config.VerificationProvider != "auto" && config.VerificationProvider != verify.ProviderTart && config.VerificationProvider != verify.ProviderGitHub {
+		return nil, fmt.Errorf("unknown verification provider %q", config.VerificationProvider)
+	}
+	return openPortsTree(ctx, config.Repository, config.GitExecutable)
+}
+
+// assemble wires the services around a store, which a dry run may lack.
+func assemble(config Config, repo *git.Repository, store *sqlite.Store, repository record.RepositoryID) (*Services, error) {
+	// A nil store must stay a nil interface, not an interface holding one.
+	var engineStore state.Store
+	var providerStore state.ProviderStore
+	stateDirectory := filepath.Dir(config.DBPath)
+	if store != nil {
+		engineStore, providerStore, stateDirectory = store, store, filepath.Dir(store.Path())
+	}
+	closeStore := func() error {
+		if store == nil {
+			return nil
+		}
+		return store.Close()
+	}
 	ports := portReader(config, repo, indexMirror(config))
 	githubClient := newGitHubClient(config.GitHub)
 	discovery := releaseDiscovery(ports, githubClient, http.DefaultClient, config.GitExecutable)
@@ -87,22 +129,21 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 	workspaces := &workspace.Registry{}
 	preparation := &preparation.Service{Repo: repo, Ports: ports, Upstream: discovery, DependencyTools: config.DependencyTools, Workspaces: workspaces}
 	if config.Tart.ArtifactDirectory == "" {
-		config.Tart.ArtifactDirectory = filepath.Join(filepath.Dir(store.Path()), "artifacts", "tart")
+		config.Tart.ArtifactDirectory = filepath.Join(stateDirectory, "artifacts", "tart")
 	}
 	if config.Tart.PortIndexExecutable == "" && config.MacPortsPrefix != "" {
 		config.Tart.PortIndexExecutable = filepath.Join(config.MacPortsPrefix, "bin", "portindex")
 	}
 	indexCache, err := indexCacheDirectory(config)
 	if err != nil {
-		store.Close()
-		return nil, err
+		return nil, errors.Join(err, closeStore())
 	}
-	provider := &tart.Provider{Config: config.Tart, IndexCache: indexCache, State: store, Repository: repository.ID, Repo: repo, Workspaces: workspaces}
-	githubProvider := &githubverify.Provider{State: store, Repository: repository.ID, Repo: repo, Directory: filepath.Join(filepath.Dir(store.Path()), "github-verification"), Client: githubClient}
+	provider := &tart.Provider{Config: config.Tart, IndexCache: indexCache, State: providerStore, Repository: repository, Repo: repo, Workspaces: workspaces}
+	githubProvider := &githubverify.Provider{State: providerStore, Repository: repository, Repo: repo, Directory: filepath.Join(stateDirectory, "github-verification"), Client: githubClient}
 
 	engine := &workflow.Engine{
-		State:      store,
-		Repository: repository.ID,
+		State:      engineStore,
+		Repository: repository,
 		Repo:       repo,
 		Ports:      ports,
 		Workspaces: workspaces,
@@ -111,14 +152,14 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		Releases:   preparation,
 		Provider:   provider,
 		Providers:  map[string]verify.Provider{verify.ProviderTart: provider, verify.ProviderGitHub: githubProvider},
-		Publisher:  &publish.Service{Repo: repo, Forge: &forgegithub.Client{Client: githubClient}, LockDirectory: filepath.Join(filepath.Dir(store.Path()), "publication-locks"), Upstream: macports.PortsRepository},
+		Publisher:  &publish.Service{Repo: repo, Forge: &forgegithub.Client{Client: githubClient}, LockDirectory: filepath.Join(stateDirectory, "publication-locks"), Upstream: macports.PortsRepository},
 		Now:        time.Now,
 	}
 	services := &Services{
 		Workflow:          engine,
 		Processes:         &proc.Manager{},
 		Preparation:       preparation,
-		close:             func() error { return errors.Join(workspaces.Close(), store.Close()) },
+		close:             func() error { return errors.Join(workspaces.Close(), closeStore()) },
 		ports:             ports,
 		providerName:      config.VerificationProvider,
 		githubClient:      githubClient,

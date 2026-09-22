@@ -62,14 +62,18 @@ type AdoptResult struct {
 // it, publish opens its pull request, and amend and rebase revise it.
 func (e *Engine) AdoptContribution(ctx context.Context, input AdoptRequest) (AdoptResult, error) {
 	var result AdoptResult
-	if e == nil || e.State == nil || e.Repo == nil || e.Ports == nil || e.Publisher == nil {
+	// A dry run reads the records when there are any and writes nothing;
+	// with no store there are no records, and nothing is tracked.
+	if e == nil || e.State == nil && !input.DryRun || e.Repo == nil || e.Ports == nil || e.Publisher == nil {
 		return result, errNoState
 	}
 	if input.Target != "" && !macports.ValidName(input.Target) {
 		return result, fmt.Errorf("%w: %q is not a port name", ErrInvalidRequest, input.Target)
 	}
-	if err := e.requireRepository(ctx, ""); err != nil {
-		return result, err
+	if e.State != nil {
+		if err := e.requireRepository(ctx, ""); err != nil {
+			return result, err
+		}
 	}
 	var pullRequest *record.PullRequest
 	if input.PullRequest != nil {
@@ -97,16 +101,18 @@ func (e *Engine) adoptBranch(ctx context.Context, input AdoptRequest, pullReques
 		return result, fmt.Errorf("%w: adopt needs a literal local branch", ErrInvalidRequest)
 	}
 	var tracked record.Change
-	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
-		change, err := r.OpenChangeByBranch(ctx, input.Branch)
-		if errors.Is(err, state.ErrNotFound) {
-			return nil
+	if e.State != nil {
+		err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+			change, err := r.OpenChangeByBranch(ctx, input.Branch)
+			if errors.Is(err, state.ErrNotFound) {
+				return nil
+			}
+			tracked = change
+			return err
+		})
+		if err != nil {
+			return result, err
 		}
-		tracked = change
-		return err
-	})
-	if err != nil {
-		return result, err
 	}
 	if tracked.ID != "" {
 		return result, fmt.Errorf("%w: branch %s is already tracked as the contribution for %s; verify, publish, and amend select it by that name", ErrInvalidRequest, input.Branch, initiatingNameOf(tracked))
@@ -183,7 +189,7 @@ func (e *Engine) adoptBranch(ctx context.Context, input AdoptRequest, pullReques
 	}
 	if existing, err := e.SelectContribution(ctx, ContributionSelector{Target: target.Name}); err == nil {
 		return result, fmt.Errorf("%w: %s already has an open contribution on branch %s; amend that one, or abandon it first", ErrInvalidRequest, target.Name, existing.Branch)
-	} else if !errors.Is(err, state.ErrNotFound) && !errors.Is(err, ErrInvalidRequest) {
+	} else if !errors.Is(err, state.ErrNotFound) && !errors.Is(err, ErrInvalidRequest) && !(e.State == nil && errors.Is(err, errNoState)) {
 		return result, err
 	}
 	scope, err := e.rebindReleaseScope(ctx, nil, source, input.Platform)
