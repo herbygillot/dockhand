@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/herbygillot/dockhand/internal/workflow/view"
@@ -48,10 +47,10 @@ func renderSummary(out io.Writer, status workflow.Status) error {
 			line("  warning: %s is a prerelease; this takes the port out of stable", release.Version)
 		}
 		if reused := entry.Reused; reused != nil && reused.Evidence != nil && reused.Evidence.Verdict == record.VerdictPassed {
-			line("  passed on %s (reused from an earlier build)", platformLabel(reused.Spec.Config.Platform))
+			line("  passed on %s (reused from an earlier build)", view.Platform(reused.Spec.Config.Platform))
 		}
 		for _, attempt := range entry.Attempts {
-			line("  %s", attemptLine(job, attempt))
+			line("  %s", view.AttemptWords(job, attempt))
 		}
 		if pr := pullRequestLine(entry, status.PullRequests); pr != "" {
 			line("  %s", pr)
@@ -79,56 +78,6 @@ func pullRequestOf(entry view.JobStatus, pulls []record.PullRequest) *record.Pul
 		}
 	}
 	return nil
-}
-
-func platformLabel(platform record.Platform) string {
-	return macos.Describe(platform)
-}
-
-// attemptLine is one build's verdict or progress on its platform, with the
-// failing phase and the log location when it failed.
-func attemptLine(job record.Job, attempt record.Attempt) string {
-	platform := platformLabel(attempt.Spec.Config.Platform)
-	var prefix string
-	if name := attempt.Spec.Target.Name; name != "" && (len(job.Spec.Targets) == 0 || name != job.Spec.Targets[0].Name) {
-		prefix = name + ": "
-	}
-	if evidence := attempt.Evidence; evidence != nil && evidence.Verdict != "" {
-		text := prefix + string(evidence.Verdict) + " on " + platform
-		if failure := evidence.Failure; failure != nil {
-			if failure.Phase != "" {
-				text += "; " + failure.Phase + " phase"
-			}
-			if failure.Package != "" && failure.Package != attempt.Spec.Target.Name {
-				text += " of " + failure.Package
-			}
-			if failure.Detail != "" {
-				text += ": " + failure.Detail
-			}
-		}
-		for _, log := range evidence.Logs {
-			if log.Location != "" {
-				text += "; log: " + log.Location
-				break
-			}
-		}
-		return text
-	}
-	var text string
-	switch attempt.State {
-	case record.AttemptQueued:
-		text = "waiting for a build slot on " + platform
-	case record.AttemptSubmitting, record.AttemptRunning:
-		text = "building on " + platform
-	case record.AttemptUncertain:
-		text = "outcome uncertain on " + platform
-	default:
-		text = string(attempt.State) + " on " + platform
-	}
-	if attempt.LastError != "" {
-		text += "; " + attempt.LastError
-	}
-	return prefix + text
 }
 
 // pullRequestLine names the PR a publication confirmed, or the recorded PR of

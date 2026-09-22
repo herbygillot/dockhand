@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/app"
-	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/tui"
@@ -217,30 +216,19 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 		}
 		fmt.Fprintf(&buffer, format+"\n", values...)
 	}
-	environment := func(indent string, evidence *record.Evidence) {
-		if evidence != nil && evidence.Workflow != nil {
-			flow := evidence.Workflow
-			outcome := flow.Status
-			if flow.Conclusion != "" {
-				outcome = flow.Conclusion
-			}
-			line("%sGitHub Actions: %s; run %s attempt %s; %s", indent, outcome, flow.RunID, flow.RunAttempt, flow.URL)
+	environment := func(indent string, facts view.Evidence) {
+		if flow := facts.Workflow; flow != nil {
+			line("%sGitHub Actions: %s; run %s attempt %s; %s", indent, flow.Outcome, flow.RunID, flow.RunAttempt, flow.URL)
 			line("%s  Fork branch: %s:%s at %s", indent, flow.Repository, flow.Branch, flow.Commit)
 			for _, job := range flow.Jobs {
 				line("%s  %s: %s %s; %s", indent, job.Name, job.Status, job.Conclusion, job.URL)
 			}
 			line("%sTest policy: workflow; individual port test success is not established", indent)
 		}
-		if evidence == nil || evidence.Environment == nil {
-			return
+		if observed := facts.Environment; observed != nil {
+			line("%senvironment: %s %s; capabilities: %s", indent, observed.Provider, observed.Identity, observed.CapabilityIdentity)
+			line("%sMacPorts: %s at %s; developer tools: %s", indent, observed.MacPortsVersion, observed.MacPortsPrefix, observed.DeveloperTools)
 		}
-		observed := evidence.Environment
-		tools := string(observed.Capabilities.DeveloperTools)
-		if observed.Capabilities.XcodeVersion != "" {
-			tools += " " + observed.Capabilities.XcodeVersion
-		}
-		line("%senvironment: %s %s; capabilities: %s", indent, observed.Provider, observed.EnvironmentDigest, observed.CapabilityDigest)
-		line("%sMacPorts: %s at %s; developer tools: %s", indent, observed.Capabilities.MacPortsVersion, observed.Capabilities.MacPortsPrefix, tools)
 	}
 	line("Snapshot read at %s", statusTime(status.ReadAt))
 	if status.Repository != "" {
@@ -312,7 +300,7 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 		}
 		if entry.Reused != nil {
 			line("  original attempt: %s; job: %s", entry.Reused.ID, entry.Reused.JobID)
-			environment("  ", entry.Reused.Evidence)
+			environment("  ", view.Facts(entry.Reused.Evidence))
 		}
 		if c := job.Spec.Checkout; c != nil {
 			label := c.Branch
@@ -377,7 +365,8 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 			if attempt.Spec.Config.Tests == record.TestWorkflow {
 				platformLabel = "evaluation platform"
 			}
-			line("  attempt %s: %s; target: %s; %s: %s", attempt.ID, attempt.State, targetLabel(attempt.Spec.Target), platformLabel, macos.Describe(attempt.Spec.Config.Platform))
+			facts := view.Verification(attempt)
+			line("  attempt %s: %s; target: %s; %s: %s", attempt.ID, attempt.State, targetLabel(attempt.Spec.Target), platformLabel, facts.Platform)
 			if attempt.LastError != "" {
 				line("    detail: %s", attempt.LastError)
 			}
@@ -385,12 +374,12 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 				line("    waiting: %s consecutive %s waits; next look %s", attempt.ConsecutiveWaits, attempt.WaitKind, statusTime(*attempt.RetryAt))
 			}
 			if attempt.Evidence != nil {
-				line("    verdict: %s; observed: %s", attempt.Evidence.Verdict, statusTime(attempt.Evidence.ObservedAt))
-				environment("    ", attempt.Evidence)
-				if failure := attempt.Evidence.Failure; failure != nil {
+				line("    verdict: %s; observed: %s", facts.Verdict, statusTime(facts.ObservedAt))
+				environment("    ", facts)
+				if failure := facts.Failure; failure != nil {
 					line("    failure: %s; package: %s; phase: %s; %s", failure.Kind, failure.Package, failure.Phase, failure.Detail)
 					for _, fetch := range failure.Fetches {
-						line("      fetch: %s: %s", fetch.URL, fetch.Reason)
+						line("      fetch: %s", fetch)
 					}
 				}
 			}

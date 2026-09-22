@@ -45,31 +45,31 @@ func publicationBody(content record.PublicationContent, change record.Change, so
 	} else if evidence == nil {
 		fmt.Fprintln(&b, "\nEnvironment details were not recorded.")
 	} else {
-		environment := evidence.Environment
-		writeEnvironmentTable(&b, evidence)
-		if flow := evidence.Workflow; flow != nil {
-			fmt.Fprint(&b, "\nProvider: GitHub Actions\n\n")
+		facts := view.Facts(evidence)
+		writeComponentTable(&b, facts.Components)
+		if flow := facts.Workflow; flow != nil {
+			fmt.Fprintf(&b, "\nProvider: %s\n\n", facts.Provider)
 			fmt.Fprintf(&b, "- [workflow run](%s), attempt %d\n", oneLine(flow.URL), flow.RunAttempt)
 			for _, job := range flow.Jobs {
 				fmt.Fprintf(&b, "- %s: %s\n", oneLine(job.Name), oneLine(job.Conclusion))
 			}
 			fmt.Fprintln(&b, "\nThe MacPorts workflow passed under its own policy. It may tolerate port test failures; individual port phases and exact runner tool versions are not independently established.")
-		} else if environment == nil {
+		} else if environment := facts.Environment; environment == nil {
 			fmt.Fprintln(&b, "\nEnvironment details were not recorded.")
 		} else {
-			if environment.Guest == nil {
+			if !environment.GuestRecorded {
 				fmt.Fprintln(&b, "\nGuest macOS and developer tools versions were not recorded.")
 			}
 			image := known(environment.Image)
-			if guest := environment.Guest; strings.TrimSpace(environment.Image) != "" && guest != nil && guest.NoActivePorts && guest.NoForeignPackageManagers {
+			if environment.Pristine {
 				image += " (pristine)"
 			}
 			fmt.Fprintf(&b, "\nProvider: %s\n\n", known(environment.Provider))
-			fmt.Fprintf(&b, "- version: %s\n", known(environment.ProviderVersion))
+			fmt.Fprintf(&b, "- version: %s\n", known(environment.Version))
 			fmt.Fprintf(&b, "- image: %s\n", image)
-			fmt.Fprintf(&b, "- environment identity: `%s`\n", oneLine(environment.EnvironmentDigest))
+			fmt.Fprintf(&b, "- environment identity: `%s`\n", oneLine(environment.Identity))
 		}
-		fmt.Fprintf(&b, "\nVerification attempt: `%s`; observed %s.\n", attempt.ID, evidence.ObservedAt.UTC().Format("2006-01-02 15:04:05 UTC"))
+		fmt.Fprintf(&b, "\nVerification attempt: `%s`; observed %s.\n", attempt.ID, facts.ObservedAt.UTC().Format("2006-01-02 15:04:05 UTC"))
 	}
 	fmt.Fprint(&b, "\n###### Verification\n\n")
 	check := func(yes bool, text string) {
@@ -116,50 +116,19 @@ func publicationBody(content record.PublicationContent, change record.Change, so
 	return b.String()
 }
 
-// writeEnvironmentTable lists what the build ran on: the guest's macOS,
+// writeComponentTable lists what the build ran on: the guest's macOS,
 // developer tools and MacPorts, and the dockhand that drove it. It is a table
 // because these are facts with values, read down a column rather than through
 // a paragraph. Only what was recorded appears, and a run with nothing to show,
 // as a workflow observation has, writes no table at all.
-func writeEnvironmentTable(b *strings.Builder, evidence *record.Evidence) {
-	type row struct{ name, detail string }
-	var rows []row
-	add := func(name, detail string) {
-		if strings.TrimSpace(detail) != "" {
-			rows = append(rows, row{name, oneLine(detail)})
-		}
-	}
-	if guest := guestOf(evidence); guest != nil {
-		if strings.TrimSpace(guest.MacOSVersion) != "" {
-			add("macOS", oneLine(guest.MacOSVersion)+" (build "+known(guest.MacOSBuild)+"; "+known(guest.Architecture)+")")
-		}
-		switch guest.DeveloperTools {
-		case record.DeveloperToolsXcode:
-			add("Xcode", strings.TrimPrefix(oneLine(guest.DeveloperToolsVersion), "Xcode "))
-			add("Command Line Tools", guest.CommandLineToolsVersion)
-		case record.DeveloperToolsCommandLine:
-			add("Command Line Tools", guest.DeveloperToolsVersion)
-		default:
-			add("Developer tools", guest.DeveloperToolsVersion)
-			add("Command Line Tools", guest.CommandLineToolsVersion)
-		}
-		add("MacPorts", strings.TrimPrefix(guest.MacPortsVersion, "Version: "))
-	}
-	add("dockhand", evidence.Dockhand)
-	if len(rows) == 0 {
+func writeComponentTable(b *strings.Builder, components []view.Component) {
+	if len(components) == 0 {
 		return
 	}
 	fmt.Fprint(b, "\n| **Component** | **Version** |\n| :--- | :--- |\n")
-	for _, entry := range rows {
-		fmt.Fprintf(b, "| %s | %s |\n", entry.name, entry.detail)
+	for _, entry := range components {
+		fmt.Fprintf(b, "| %s | %s |\n", entry.Name, entry.Version)
 	}
-}
-
-func guestOf(evidence *record.Evidence) *record.GuestEnvironment {
-	if evidence == nil || evidence.Environment == nil {
-		return nil
-	}
-	return evidence.Environment.Guest
 }
 
 // testedOnHeading and verificationHeading bound the section of a body that

@@ -191,7 +191,7 @@ func (r *reporter) narrate(entry view.JobStatus, pulls []record.PullRequest) err
 	}
 	pr := pullRequestOf(entry, pulls)
 	if reused := entry.Reused; reused != nil && reused.Evidence != nil && reused.Evidence.Verdict == record.VerdictPassed {
-		if err := say("reused", "passed on "+platformLabel(reused.Spec.Config.Platform)+" (reused from an earlier build)"+advisoryTestNote(reused.Evidence)); err != nil {
+		if err := say("reused", "passed on "+view.Platform(reused.Spec.Config.Platform)+" (reused from an earlier build)"+advisoryTestNote(reused.Evidence)); err != nil {
 			return err
 		}
 	}
@@ -201,7 +201,7 @@ func (r *reporter) narrate(entry view.JobStatus, pulls []record.PullRequest) err
 		if attempt.Evidence == nil || attempt.Evidence.Verdict == "" || attempt.Evidence.Verdict == record.VerdictUnknown {
 			continue
 		}
-		if err := say("verdict:"+string(attempt.ID), attemptLine(job, attempt)+advisoryTestNote(attempt.Evidence)); err != nil {
+		if err := say("verdict:"+string(attempt.ID), view.AttemptWords(job, attempt)+advisoryTestNote(attempt.Evidence)); err != nil {
 			return err
 		}
 	}
