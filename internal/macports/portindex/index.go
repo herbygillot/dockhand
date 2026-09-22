@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/atomicfile"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/subprocess"
 	"io"
 	"io/fs"
@@ -340,7 +341,20 @@ func buildPortIndex(ctx context.Context, c Config, platform record.Platform, sou
 		if strict {
 			args = append(args, "-e")
 		}
-		args = append(args, "-p", strings.Join([]string{platform.OS, platform.Version, platform.Architecture}, "_"), "-o", temp, sourceRoot)
+		// The indexer is told what the platform looks like the way the
+		// buildbot tells it, with a file of variable overrides: os_arch is
+		// what uname -p reports there, arm on Apple silicon, which a bare
+		// plat_ver_arch argument would set verbatim to the build
+		// architecture and so answer every ${os.arch} test wrongly.
+		overrides, err := macports.PlatformVariables(platform)
+		if err != nil {
+			return err
+		}
+		variables := filepath.Join(configRoot, "index_vars")
+		if err = os.WriteFile(variables, []byte(overrides+"\n"), 0600); err != nil {
+			return err
+		}
+		args = append(args, "-p", "file:"+variables, "-o", temp, sourceRoot)
 		configuration := filepath.Join(configRoot, "macports.conf")
 		sources := filepath.Join(configRoot, "sources.conf")
 		variants := filepath.Join(configRoot, "variants.conf")

@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/tcl/rpc"
@@ -165,19 +164,14 @@ func evaluateIn(ctx context.Context, session *rpc.Session, runtime macports.Runt
 				return macports.Observation{}, fmt.Errorf("macports: invalid observation operand %q", operand)
 			}
 		}
-		platform := ""
+		overrides := ""
 		if request.Platform != (record.Platform{}) && request.Platform != runtime.Platform {
-			major, err := strconv.Atoi(request.Platform.Version)
-			if err != nil {
-				return macports.Observation{}, fmt.Errorf("macports: invalid modeled Darwin release")
-			}
-			product, err := macos.ProductForDarwin(major)
-			if err != nil {
+			var err error
+			if overrides, err = macports.PlatformVariables(request.Platform); err != nil {
 				return macports.Observation{}, err
 			}
-			platform = request.Platform.OS + " " + request.Platform.Version + " " + request.Platform.Architecture + " " + product
 		}
-		if _, err := session.Call(ctx, "observation_setup", platform, strconv.FormatBool(request.Declarations), strings.Join(request.Operands, " ")); err != nil {
+		if _, err := session.Call(ctx, "observation_setup", overrides, strconv.FormatBool(request.Declarations), strings.Join(request.Operands, " ")); err != nil {
 			return macports.Observation{}, err
 		}
 	}

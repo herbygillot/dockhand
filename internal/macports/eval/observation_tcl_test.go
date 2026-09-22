@@ -1,6 +1,7 @@
 package eval
 
 import (
+	"github.com/herbygillot/dockhand/internal/record"
 	"os"
 	"path/filepath"
 	"strings"
@@ -104,17 +105,18 @@ checksums sha256 abcd
 	require.Equal(t, 5, len(commands))
 }
 
-// A modeled platform is validated before the interpreter is overridden, and
-// an unsupported one is refused without changing anything.
+// The override list is validated before the interpreter is changed, and a
+// malformed one is refused without changing anything; which platforms are
+// supported is decided in Go, by macports.PlatformVariables.
 func TestObservationSetupRefusesUnsupportedPlatforms(t *testing.T) {
 	t.Parallel()
 	_, tcl := tclSession(t)
-	for _, platform := range []string{"{plan9 20 arm64 11}", "{darwin 7 x86_64 10.3}", "{darwin 20 mips 11}", "{darwin twenty arm64 11}"} {
-		reply := tcl("catch {::dockhand::observation_setup " + platform + " 0 {}} message; set message")
-		require.Equal(t, "unsupported modeled platform", reply, platform)
-	}
+	reply := tcl("catch {::dockhand::observation_setup {os_major 21 os_arch} 0 {}} message; set message")
+	require.Equal(t, "unsupported modeled platform", reply)
 	require.Equal(t, "0", tcl("set ::dockhand::modeled"), "a refused setup leaves the session unmodeled")
-	tcl("::dockhand::observation_setup {darwin 21 x86_64 12} 1 {}")
+	overrides, err := macports.PlatformVariables(record.Platform{OS: "darwin", Version: "21", Architecture: "x86_64"})
+	require.NoError(t, err)
+	tcl("::dockhand::observation_setup {" + overrides + "} 1 {}")
 	require.Equal(t, "1", tcl("set ::dockhand::modeled"))
 	require.Equal(t, "21", tcl("set ::macports::os_major"))
 	require.Equal(t, "x86_64", tcl("set ::macports::build_arch"))

@@ -80,25 +80,22 @@ namespace eval ::dockhand {
         $worker eval [list set ::dockhand_platform::operands $::dockhand::operands]
         $worker eval [list set ::dockhand_observation::source_root $::dockhand::source_root]
     }
-    proc observation_setup {platform trace_declarations operands_to_observe} {
+    # overrides is the list of variable and value pairs that make this
+    # interpreter describe another platform, built once in Go by
+    # macports.PlatformVariables, the same list a generated index gets;
+    # empty observes the native platform.
+    proc observation_setup {overrides trace_declarations operands_to_observe} {
         # Validate before recording anything, so a refused platform leaves
         # the session as it was.
-        if {[llength $platform]} {
-            lassign $platform os major arch macos
-            if {$os ne "darwin" || ![string is integer -strict $major] || $major < 8 || $arch ni {arm64 x86_64 i386 ppc ppc64}} {
-                error "unsupported modeled platform"
-            }
+        if {[llength $overrides] % 2 != 0} {
+            error "unsupported modeled platform"
         }
         variable operands $operands_to_observe
         variable observing 1
         variable declarations $trace_declarations
-        variable modeled [expr {[llength $platform] > 0}]
-        if {[llength $platform]} {
-            set deployment $macos
-            if {$major >= 20} { append deployment .0 }
-            set universal [expr {$major >= 20 ? "arm64 x86_64" : ($major == 19 ? "x86_64" : ($major >= 10 ? "x86_64 i386" : "i386 ppc"))}]
-            set osarch [expr {$arch in {arm64} ? "arm" : ($arch in {ppc ppc64} ? "powerpc" : "i386")}]
-            ::macports::override_vars [list os_platform darwin os_subplatform macosx os_major $major os_version $major.0.0 os_arch $osarch build_arch $arch macos_version $macos macos_version_major $macos macosx_version $macos macosx_deployment_target $deployment universal_archs $universal cxx_stdlib [expr {$major >= 10 ? "libc++" : "libstdc++"}]]
+        variable modeled [expr {[llength $overrides] > 0}]
+        if {[llength $overrides]} {
+            ::macports::override_vars $overrides
         }
         if {$declarations} {
             trace add execution ::macports::worker_init leave ::dockhand::observe_worker

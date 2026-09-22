@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/atomicfile"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"os"
 	"path/filepath"
 	"sort"
@@ -53,6 +54,8 @@ type environment struct {
 	Digest     string          `json:"digest"`
 	Runtime    string          `json:"runtime,omitempty"`
 	Platform   record.Platform `json:"platform"`
+	// Variables is what the indexer was told the platform looks like.
+	Variables string `json:"variables,omitempty"`
 }
 
 // cache is one indexing environment within the shared cache root. Its shared
@@ -61,6 +64,7 @@ type environment struct {
 type cache struct {
 	config    Config
 	platform  record.Platform
+	variables string
 	directory string
 	guard     *os.File
 }
@@ -74,13 +78,20 @@ func openCache(ctx context.Context, c Config, platform record.Platform) (*cache,
 	if c.Digest == "" {
 		return nil, fmt.Errorf("portindex: resolved executable identity required")
 	}
-	identity := digest([]byte(strings.Join([]string{cacheLayout, c.Digest, c.Runtime, platform.OS, platform.Version, platform.Architecture}, "\x00")))
+	// A generation is a function of what the indexer was told about the
+	// platform, so the variables are part of the identity: an index built
+	// under an earlier description is not reused under this one.
+	variables, err := macports.PlatformVariables(platform)
+	if err != nil {
+		return nil, err
+	}
+	identity := digest([]byte(strings.Join([]string{cacheLayout, c.Digest, c.Runtime, platform.OS, platform.Version, platform.Architecture, variables}, "\x00")))
 	directory := filepath.Join(c.CacheDirectory, identity)
 	guard, err := filelock.Acquire(ctx, filepath.Join(directory, cacheLockName), filelock.Shared)
 	if err != nil {
 		return nil, err
 	}
-	result := &cache{config: c, platform: platform, directory: directory, guard: guard}
+	result := &cache{config: c, platform: platform, variables: variables, directory: directory, guard: guard}
 	if err := result.describe(); err != nil {
 		guard.Close()
 		return nil, err
@@ -98,7 +109,7 @@ func (c *cache) describe() error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	encoded, err := json.Marshal(environment{Layout: cacheLayout, Executable: c.config.Executable, Digest: c.config.Digest, Runtime: c.config.Runtime, Platform: c.platform})
+	encoded, err := json.Marshal(environment{Layout: cacheLayout, Executable: c.config.Executable, Digest: c.config.Digest, Runtime: c.config.Runtime, Platform: c.platform, Variables: c.variables})
 	if err != nil {
 		return err
 	}
