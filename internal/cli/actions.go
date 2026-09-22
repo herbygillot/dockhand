@@ -346,7 +346,7 @@ func (r *runtime) serveCommand() *cobra.Command {
 				}
 				defer services.Close()
 				progress.Report(ctx, "Serving %s.", config.Repository)
-				reporter := newReporter(cmd.ErrOrStderr(), services.Workflow.Provider, false, r.level(cmd), r.json)
+				reporter := newReporter(cmd.ErrOrStderr(), services.Workflow.Provider, false, r.level(cmd), r.json, r.timestamps)
 				services.Processes.OnCycle = reporter.cycle
 				group.Go(func() error { return services.Processes.Run(ctx, services.Workflow, workflow.Scope{All: true}) })
 			}
@@ -415,7 +415,7 @@ func (r *runtime) attach(cmd *cobra.Command, services *app.Services, id record.J
 	return r.attachScope(cmd, services, workflow.Scope{Jobs: []record.JobID{id}}, milestone, trace, canceling, receipt, ActionResult{JobID: id})
 }
 func (r *runtime) attachScope(cmd *cobra.Command, services *app.Services, scope workflow.Scope, milestone workflow.Milestone, trace, canceling bool, receipt *workflow.Receipt, result ActionResult) error {
-	reporter := newReporter(cmd.ErrOrStderr(), services.Workflow.Provider, trace, r.level(cmd), r.json)
+	reporter := newReporter(cmd.ErrOrStderr(), services.Workflow.Provider, trace, r.level(cmd), r.json, r.timestamps)
 	reporter.providers = services.Workflow.Providers
 	services.Processes.OnCycle = reporter.cycle
 	// The command drives only to see its job through; the driver's own

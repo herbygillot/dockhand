@@ -124,6 +124,10 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 					return err
 				}
 				job.ChangeID, job.ResultRevision = change.ID, revision.ID
+				integrated := e.now()
+				prepared := *job.Prepared
+				prepared.IntegratedAt = &integrated
+				job.Prepared = &prepared
 			}
 			if job.CancelRequestedAt != nil {
 				finishJob(&job, record.JobCanceled, "Canceled; any integrated branch is preserved", e.now())

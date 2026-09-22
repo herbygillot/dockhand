@@ -1,5 +1,7 @@
 package record
 
+import "time"
+
 // CommitIdentity is captured from Git configuration when preparation is requested.
 type CommitIdentity struct {
 	Name  string
@@ -42,6 +44,9 @@ type PreparedChange struct {
 	Branch             string
 	Source             Source
 	IntegrationStarted bool
+	// IntegratedAt is when the branch was integrated, the end of the
+	// preparation phase; nil until it is.
+	IntegratedAt *time.Time `json:",omitempty"`
 	// PatchProblems names declared patches that no longer apply to the
 	// candidate source. The branch is still created; verification is not
 	// started until a person refreshes the patch.

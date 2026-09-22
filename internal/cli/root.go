@@ -22,6 +22,7 @@ type runtime struct {
 	outcome      any
 	verbosity    int
 	debug        bool
+	timestamps   bool
 	build        serviceBuilder
 	statusGitHub func(context.Context, *github.Client) (app.GitHubAuthStatus, error)
 	logoutGitHub func(context.Context, credential.Remover) (app.GitHubLogoutResult, error)
@@ -86,7 +87,13 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, *runtime,
 		Args:          cobra.NoArgs,
 		SilenceErrors: true,
 		PersistentPreRun: func(cmd *cobra.Command, _ []string) {
-			cmd.SetContext(progressContext(cmd.Context(), cmd.ErrOrStderr(), runtime.level(cmd), runtime.json))
+			if runtime.timestamps && !runtime.json {
+				// Every line the command writes to stderr, progress and
+				// its own, carries the time it was printed; JSON reports
+				// carry it as a field instead, so their lines stay pure.
+				cmd.SetErr(&stampedWriter{w: cmd.ErrOrStderr()})
+			}
+			cmd.SetContext(progressContext(cmd.Context(), cmd.ErrOrStderr(), runtime.level(cmd), runtime.json, runtime.timestamps))
 		},
 		SilenceUsage: true,
 		RunE:         func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
@@ -146,6 +153,7 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, *runtime,
 	root.PersistentFlags().BoolVar(&runtime.json, "json", false, "Output command results as JSON")
 	root.PersistentFlags().CountVarP(&runtime.verbosity, "verbose", "v", "Show identifiers and the work behind the scenes; -vv shows every sub-operation")
 	root.PersistentFlags().BoolVar(&runtime.debug, "debug", false, "Show every sub-operation (same as -vv)")
+	root.PersistentFlags().BoolVar(&runtime.timestamps, "timestamps", false, "Prefix each progress line with the time it was printed; JSON reports carry it as time")
 	if err := root.MarkPersistentFlagFilename("db"); err != nil {
 		return nil, nil, err
 	}
@@ -173,7 +181,7 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, *runtime,
 		}
 	}
 	section(root.PersistentFlags(), sectionPaths, "tree", "prefix", "db", "git", "tart", "go2port", "cargo2port")
-	section(root.PersistentFlags(), sectionOutput, "json", "verbose", "debug")
+	section(root.PersistentFlags(), sectionOutput, "json", "verbose", "debug", "timestamps")
 	registerTemplateFuncs()
 	root.SetUsageTemplate(usageTemplate)
 	help := root.HelpFunc()

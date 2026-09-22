@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -24,13 +25,53 @@ type reporter struct {
 	trace     bool
 	level     progress.Level
 	jsonMode  bool
-	last      map[string]string
-	offsets   map[record.ProviderRun]int64
+	// stamped puts the time on JSON reports, as --timestamps asks; text
+	// lines are stamped by the writer they reach stderr through.
+	stamped bool
+	last    map[string]string
+	offsets map[record.ProviderRun]int64
 }
 
-func newReporter(out io.Writer, p verify.Provider, trace bool, level progress.Level, jsonMode bool) *reporter {
+func newReporter(out io.Writer, p verify.Provider, trace bool, level progress.Level, jsonMode, stamped bool) *reporter {
 	logs, _ := p.(verify.LogReader)
-	return &reporter{out: out, logs: logs, trace: trace, level: level, jsonMode: jsonMode, last: map[string]string{}, offsets: map[record.ProviderRun]int64{}}
+	return &reporter{out: out, logs: logs, trace: trace, level: level, jsonMode: jsonMode, stamped: stamped, last: map[string]string{}, offsets: map[record.ProviderRun]int64{}}
+}
+
+// stamp is the time a line is printed, for --timestamps: the wall clock to
+// the second, which is what a person reading a terminal can relate to.
+func stamp() string { return time.Now().Format("15:04:05") }
+
+// stampedWriter prefixes each line written through it with the time, for
+// --timestamps: the progress reports and the command's own lines alike,
+// since both reach stderr through it. A line written in pieces is stamped
+// once, at its start.
+type stampedWriter struct {
+	w       io.Writer
+	midline bool
+}
+
+func (s *stampedWriter) Write(p []byte) (int, error) {
+	out := make([]byte, 0, len(p)+16)
+	rest := p
+	for len(rest) > 0 {
+		if !s.midline {
+			out = append(out, stamp()...)
+			out = append(out, ' ')
+			s.midline = true
+		}
+		i := bytes.IndexByte(rest, '\n')
+		if i < 0 {
+			out = append(out, rest...)
+			break
+		}
+		out = append(out, rest[:i+1]...)
+		s.midline = false
+		rest = rest[i+1:]
+	}
+	if _, err := s.w.Write(out); err != nil {
+		return 0, err
+	}
+	return len(p), nil
 }
 
 // label names a job for a person: its port at the info level, its job ID
@@ -51,12 +92,21 @@ func (r *reporter) changed(key, value string) error {
 	r.last[key] = value
 	if r.jsonMode {
 		return json.NewEncoder(r.out).Encode(struct {
+			Time    string `json:"time,omitempty"`
 			Level   string `json:"level"`
 			Message string `json:"message"`
-		}{"info", value})
+		}{stampJSON(r.stamped), "info", value})
 	}
 	_, err := fmt.Fprintln(r.out, plain(value))
 	return err
+}
+
+// stampJSON is the time a stamped JSON report carries, and nothing otherwise.
+func stampJSON(stamped bool) string {
+	if !stamped {
+		return ""
+	}
+	return time.Now().UTC().Format(time.RFC3339)
 }
 func (r *reporter) cycle(result workflow.CycleResult) error {
 	for _, problem := range result.Problems {
@@ -169,6 +219,11 @@ func (r *reporter) detailed(entry view.JobStatus) error {
 	} else if waiting > 1 {
 		message += fmt.Sprintf("; %d targets waiting for provider admission", waiting)
 	}
+	if entry.Job.State.Terminal() {
+		if words := view.PhaseWords(entry); words != "" {
+			message += "; " + words
+		}
+	}
 	return r.changed("job:"+string(entry.Job.ID), message)
 }
 
@@ -185,7 +240,11 @@ func (r *reporter) narrate(entry view.JobStatus, pulls []record.PullRequest) err
 		}
 	}
 	if job.Prepared != nil && job.ResultRevision != "" {
-		if err := say("branch", "branch "+job.Prepared.Branch+" prepared"); err != nil {
+		text := "branch " + job.Prepared.Branch + " prepared"
+		if job.Prepared.IntegratedAt != nil {
+			text += " in " + view.Took(job.AcceptedAt, *job.Prepared.IntegratedAt)
+		}
+		if err := say("branch", text); err != nil {
 			return err
 		}
 	}
@@ -201,7 +260,11 @@ func (r *reporter) narrate(entry view.JobStatus, pulls []record.PullRequest) err
 		if attempt.Evidence == nil || attempt.Evidence.Verdict == "" || attempt.Evidence.Verdict == record.VerdictUnknown {
 			continue
 		}
-		if err := say("verdict:"+string(attempt.ID), view.AttemptWords(job, attempt)+advisoryTestNote(attempt.Evidence)); err != nil {
+		text := view.AttemptWords(job, attempt) + advisoryTestNote(attempt.Evidence)
+		if !attempt.CreatedAt.IsZero() && !attempt.Evidence.ObservedAt.IsZero() {
+			text += " in " + view.Took(attempt.CreatedAt, attempt.Evidence.ObservedAt)
+		}
+		if err := say("verdict:"+string(attempt.ID), text); err != nil {
 			return err
 		}
 	}
@@ -224,14 +287,25 @@ func (r *reporter) narrate(entry view.JobStatus, pulls []record.PullRequest) err
 	case record.JobCompleted:
 		// The verdict and PR lines already said it; only other outcomes need words.
 		if outcome := completedOutcome(entry); outcome != "" && outcome != "verification passed" && outcome != "verification passed (reused)" && outcome != "publication confirmed" {
-			return say("outcome", outcome)
+			if err := say("outcome", outcome); err != nil {
+				return err
+			}
 		}
 	case record.JobFailed, record.JobNeedsAttention, record.JobCanceled, record.JobSuperseded:
 		text := view.JobState(entry, pr)
 		if job.Detail != "" {
 			text += "; " + job.Detail
 		}
-		return say("outcome", text)
+		if err := say("outcome", text); err != nil {
+			return err
+		}
+	}
+	// A finished job says how long its phases took, from the record, so
+	// the numbers are the same on a reattach.
+	if job.State.Terminal() {
+		if words := view.PhaseWords(entry); words != "" {
+			return say("took", words)
+		}
 	}
 	return nil
 }
@@ -299,8 +373,9 @@ func (r *runtime) level(cmd *cobra.Command) progress.Level {
 }
 
 // progressContext prints reports at or below level. In JSON mode each report
-// is one JSON object per line on stderr, so stdout stays the result.
-func progressContext(ctx context.Context, out io.Writer, level progress.Level, jsonMode bool) context.Context {
+// is one JSON object per line on stderr, so stdout stays the result. With
+// stamped, each line carries the time it was printed.
+func progressContext(ctx context.Context, out io.Writer, level progress.Level, jsonMode, stamped bool) context.Context {
 	var last progress.Update
 	return progress.WithReporter(ctx, func(update progress.Update) {
 		if update == last || update.Level > level {
@@ -309,10 +384,11 @@ func progressContext(ctx context.Context, out io.Writer, level progress.Level, j
 		last = update
 		if jsonMode {
 			_ = json.NewEncoder(out).Encode(struct {
+				Time    string `json:"time,omitempty"`
 				Level   string `json:"level"`
 				Scope   string `json:"scope,omitempty"`
 				Message string `json:"message"`
-			}{update.Level.String(), update.Scope, update.Message})
+			}{stampJSON(stamped), update.Level.String(), update.Scope, update.Message})
 			return
 		}
 		message := update.Message

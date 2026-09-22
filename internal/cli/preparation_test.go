@@ -49,9 +49,12 @@ func TestRevisionPreviewCLIUsesCommittedSourceWithoutStateOrProvider(t *testing.
 	config, repo, commit := preparationCLI(t)
 	var err error
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--dry-run", "--subject", "rebuild", "-v"}, Streams{Out: &stdout, Err: &stderr}, config))
+	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--dry-run", "--subject", "rebuild", "-v", "--timestamps"}, Streams{Out: &stdout, Err: &stderr}, config))
 	require.Contains(t, stdout.String(), "-revision 0\n+revision 1")
 	require.Contains(t, stderr.String(), "branch master")
+	for _, line := range strings.Split(strings.TrimRight(stderr.String(), "\n"), "\n") {
+		require.Regexp(t, `^[0-9]{2}:[0-9]{2}:[0-9]{2} `, line, "--timestamps prefixes every progress line")
+	}
 	require.Contains(t, stderr.String(), "working-tree edits are excluded")
 	require.NoDirExists(t, filepath.Dir(config.DBPath))
 	require.NoFileExists(t, filepath.Join(repo.CommonDir, "index"))

@@ -40,7 +40,7 @@ func TestCommandProgressStaysOnStderrAndEscapesControlCharacters(t *testing.T) {
 func TestCohortProgressCountsQueuedTargets(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
-	reporter := newReporter(&out, nil, false, progress.Verbose, false)
+	reporter := newReporter(&out, nil, false, progress.Verbose, false, false)
 	status := workflow.Status{Jobs: []view.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive}, Attempts: []record.Attempt{{State: record.AttemptQueued}, {State: record.AttemptRunning}, {State: record.AttemptQueued}}}}}
 	require.NoError(t, reporter.status(t.Context(), status))
 	require.Equal(t, 1, strings.Count(out.String(), "waiting for provider admission"))
@@ -53,7 +53,7 @@ func TestAttachedCommandNarratesMilestonesAtInfo(t *testing.T) {
 	t.Parallel()
 	platform := record.Platform{OS: "macOS", Version: "26", Architecture: "arm64"}
 	var out bytes.Buffer
-	reporter := newReporter(&out, nil, false, progress.Info, false)
+	reporter := newReporter(&out, nil, false, progress.Info, false, false)
 	entry := view.JobStatus{Job: record.Job{ID: "job_1", ChangeID: "change_1", State: record.JobActive, Phase: record.PhasePreparation, Detail: "Prepared candidate; awaiting branch integration",
 		Spec: record.JobSpec{Action: record.Bump, Destination: record.Published, Targets: []record.Target{{Name: "jq"}}}}}
 	status := workflow.Status{Jobs: []view.JobStatus{entry}}

@@ -577,6 +577,8 @@ func TestPreparationOntoAContributionKeepsItsScopeDestinationAndMessage(t *testi
 		edit(f, nil)
 		job := prepare(t, f, submitPreparation(t, f, bound.Request))
 		require.NotEmpty(t, job.ResultRevision, "%s", job.Detail)
+		require.NotNil(t, job.Prepared.IntegratedAt, "the record says when the branch was integrated")
+		require.False(t, job.Prepared.IntegratedAt.Before(job.AcceptedAt))
 		head, err := f.repo.ReadRef(t.Context(), "refs/heads/candidate")
 		require.NoError(t, err)
 		message, err := f.repo.CommitMessage(t.Context(), head.Object)

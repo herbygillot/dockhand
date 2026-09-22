@@ -132,7 +132,7 @@ func (r *runtime) liveStatus(cmd *cobra.Command, filter workflow.StatusFilter, s
 	}
 	if drive {
 		options.Processor = func(ctx context.Context, say func(scope, text string)) error {
-			ctx = progressContext(ctx, &lineWriter{say: func(text string) { say("", text) }}, level, false)
+			ctx = progressContext(ctx, &lineWriter{say: func(text string) { say("", text) }}, level, false, false)
 			services.Processes.OnCycle = func(result workflow.CycleResult) error {
 				for _, problem := range result.Problems {
 					say(string(problem.JobID), problem.Detail)
@@ -350,6 +350,13 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 		}
 		if job.FinishedAt != nil {
 			line("  finished: %s", statusTime(*job.FinishedAt))
+		}
+		if phases := view.Phases(entry); len(phases) > 0 {
+			var parts []string
+			for _, phase := range phases {
+				parts = append(parts, phase.Name+" "+phase.Took)
+			}
+			line("  took: %s", strings.Join(parts, "; "))
 		}
 		if job.Detail != "" {
 			line("  detail: %s", job.Detail)
