@@ -208,8 +208,10 @@ type Config struct {
 	TestTimeout time.Duration
 }
 
-// DefaultTestTimeout is how long the guest lets a port's tests run.
-const DefaultTestTimeout = 30 * time.Minute
+// DefaultTestTimeout is how long the guest lets a port's tests run: an
+// hour, since a suite the size of git's needs most of one in a virtual
+// machine, and a suite that hangs is stopped and recorded either way.
+const DefaultTestTimeout = time.Hour
 
 func (c Config) testTimeout() time.Duration {
 	if c.TestTimeout <= 0 {
