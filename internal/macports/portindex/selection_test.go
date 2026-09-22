@@ -89,3 +89,33 @@ func TestAllSelectionRequiresAnExplicitMode(t *testing.T) {
 	require.Error(t, (portindex.Filter{All: true, Categories: []string{"devel"}}).Validate())
 	require.NoError(t, (portindex.Filter{All: true}).Validate())
 }
+
+// A port indexed with no categories, an obsolete port or an R port, is
+// placed by its directory rather than reported as of unknown membership,
+// so --category and --all agree on it; a maintainer selection of the same
+// port still cannot be answered.
+func TestCategorySelectionPlacesAnUncategorizedPortByItsDirectory(t *testing.T) {
+	t.Parallel()
+	root := writeIndex(t, []indexRecord{
+		{"legacy", "name legacy portdir gnome/legacy maintainers nomaintainer"},
+		{"present", "name present portdir gnome/present maintainers nomaintainer categories {gnome x11}"},
+	}, nil)
+	index, err := portindex.Open(root)
+	require.NoError(t, err)
+	selection, err := index.Select(t.Context(), portindex.Filter{Categories: []string{"gnome"}})
+	require.NoError(t, err)
+	names := make([]string, 0, len(selection.Entries))
+	for _, entry := range selection.Entries {
+		names = append(names, entry.Name)
+	}
+	require.ElementsMatch(t, []string{"legacy", "present"}, names)
+	require.Empty(t, selection.Problems)
+	selection, err = index.Select(t.Context(), portindex.Filter{Categories: []string{"x11"}})
+	require.NoError(t, err)
+	require.Len(t, selection.Entries, 1)
+	require.Equal(t, "present", selection.Entries[0].Name)
+	require.Empty(t, selection.Problems, "the directory places the port in one category, not out of the others")
+	selection, err = index.Select(t.Context(), portindex.Filter{Categories: []string{"gnome"}, Maintainers: []string{"nomaintainer"}})
+	require.NoError(t, err)
+	require.Len(t, selection.Entries, 2)
+}

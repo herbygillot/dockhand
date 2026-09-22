@@ -153,10 +153,19 @@ func (f Filter) matches(entry Entry) (bool, error) {
 		if len(field.wanted) == 0 {
 			continue
 		}
-		if entry.Fields[field.name] == "" {
+		indexed := entry.Fields[field.name]
+		if indexed == "" && field.name == "categories" {
+			// A port indexed with no categories, an obsolete port or an R
+			// port, is placed by its directory: the first category is the
+			// directory's by convention, and it is the one a person names.
+			if category, _, ok := strings.Cut(entry.Portdir, "/"); ok && category != "" {
+				indexed = category
+			}
+		}
+		if indexed == "" {
 			return false, fmt.Errorf("missing indexed %s; selector membership is unknown", field.name)
 		}
-		values, failures := syntax.ListValues(entry.Fields[field.name])
+		values, failures := syntax.ListValues(indexed)
 		if len(failures) > 0 {
 			return false, fmt.Errorf("invalid indexed %s; selector membership is unknown", field.name)
 		}
