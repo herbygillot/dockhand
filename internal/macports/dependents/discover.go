@@ -56,7 +56,7 @@ func (s *Service) Discover(ctx context.Context, source record.Source, platform r
 			return verify.Coverage{}, err
 		}
 	}
-	if err := portindex.Stage(ctx, s.Repo, source, platform, s.Index, files.Root()); err != nil {
+	if err := portindex.Stage(ctx, s.Repo, source, platform, s.Index, tree); err != nil {
 		return verify.Coverage{}, err
 	}
 	index, err := portindex.Open(files.Root())

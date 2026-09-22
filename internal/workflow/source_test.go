@@ -3,7 +3,6 @@ package workflow_test
 import (
 	"context"
 	"errors"
-	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"os"
 	"path/filepath"
 	"sync"
@@ -37,7 +36,7 @@ func (p *boundPorts) Resolve(ctx context.Context, tree macports.Tree, sel macpor
 	p.selection = sel
 	// A reader materializes what it resolves into a sparse workspace, as
 	// the index-backed reader does.
-	if err := workspace.EnsurePortAt(ctx, tree.Root(), record.Target{Name: "fixture", Portfile: "devel/fixture/Portfile"}); err != nil {
+	if err := tree.Projection().EnsurePort(ctx, record.Target{Name: "fixture", Portfile: "devel/fixture/Portfile"}); err != nil {
 		return nil, err
 	}
 	data, err := os.ReadFile(filepath.Join(tree.Root(), "devel/fixture/Portfile"))

@@ -59,11 +59,6 @@ type Workspace struct {
 	adopted bool
 }
 
-var (
-	openMu sync.Mutex
-	open   = map[string]*Workspace{}
-)
-
 // Open claims a directory for the tree, creates it, and materializes
 // nothing into it.
 func Open(ctx context.Context, repo *git.Repository, source record.Source) (*Workspace, error) {
@@ -82,7 +77,6 @@ func Open(ctx context.Context, repo *git.Repository, source record.Source) (*Wor
 		return nil, errors.Join(err, os.RemoveAll(directory))
 	}
 	w := &Workspace{repo: repo, source: source, directory: directory, entries: map[string]git.TreeEntry{}}
-	register(w)
 	return w, nil
 }
 
@@ -107,7 +101,6 @@ func Adopt(root string, source record.Source) (*Workspace, error) {
 	if err := w.scan(); err != nil {
 		return nil, err
 	}
-	register(w)
 	return w, nil
 }
 
@@ -162,58 +155,6 @@ func (w *Workspace) scan() error {
 	return nil
 }
 
-// EnsurePortAt materializes a port's directory into the open workspace
-// whose root this is, for a consumer that resolved the port by name and is
-// about to read it. A root that is no workspace's needs nothing.
-func EnsurePortAt(ctx context.Context, root string, target record.Target) error {
-	openMu.Lock()
-	w := open[root]
-	openMu.Unlock()
-	if w == nil {
-		return nil
-	}
-	return w.EnsurePort(ctx, target)
-}
-
-// WidenAt materializes the whole tree into the open workspace whose root
-// this is, for a consumer that walks the root and was handed a sparse one.
-// A root that is no workspace's needs nothing.
-func WidenAt(ctx context.Context, root string) error {
-	openMu.Lock()
-	w := open[root]
-	openMu.Unlock()
-	if w == nil {
-		return nil
-	}
-	return w.EnsureAll(ctx)
-}
-
-func register(w *Workspace) {
-	openMu.Lock()
-	defer openMu.Unlock()
-	open[w.directory] = w
-}
-
-func unregister(w *Workspace) {
-	openMu.Lock()
-	defer openMu.Unlock()
-	delete(open, w.directory)
-}
-
-// ScopeOf reports the scope of an open workspace by its root, so a consumer
-// handed a root string can refuse work that needs the whole tree. A root
-// that is no workspace's, a plain materialization for instance, reports
-// false and is taken as whole.
-func ScopeOf(root string) (Scope, bool) {
-	openMu.Lock()
-	w := open[root]
-	openMu.Unlock()
-	if w == nil {
-		return Scope{}, false
-	}
-	return w.Scope(), true
-}
-
 func (w *Workspace) Source() record.Source { return w.source }
 func (w *Workspace) Root() string          { return w.directory }
 
@@ -230,6 +171,13 @@ func (w *Workspace) Scope() Scope {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return Scope{Ports: slices.Clone(w.ports), All: w.all}
+}
+
+// Whole reports whether the root holds the whole tree.
+func (w *Workspace) Whole() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.all
 }
 
 // EnsurePort materializes _resources and the target's port directory,
@@ -315,7 +263,7 @@ func (w *Workspace) ensure(ctx context.Context, directories []string) error {
 
 // Tree is the evaluator's view of the root; an overlay's names its base.
 func (w *Workspace) Tree(platform record.Platform) (macports.Tree, error) {
-	return macports.NewTreeOver(w.source, w.directory, w.Base().directory, platform)
+	return macports.NewTreeOver(w.source, w.directory, w.Base().directory, platform, w)
 }
 
 // Context selects a target in the tree.
@@ -427,7 +375,6 @@ func (w *Workspace) Overlay(ctx context.Context, edits []git.FileEdit) (*Workspa
 			return nil, errors.Join(err, os.RemoveAll(directory))
 		}
 	}
-	register(overlay)
 	return overlay, nil
 }
 
@@ -556,7 +503,6 @@ func (w *Workspace) Close() error {
 	batch := w.batch
 	w.batch = nil
 	w.mu.Unlock()
-	unregister(w)
 	var err error
 	if batch != nil {
 		err = batch.Close()

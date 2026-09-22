@@ -102,14 +102,19 @@ func Open(ctx context.Context, repo *git.Repository, workspaces *workspace.Regis
 	if err := macports.ValidatePortsTree(files.Root(), repo.Root); err != nil {
 		return nil, err
 	}
-	ports, problems, err := selectPorts(ctx, repo, source, platform, index, files.Root(), selection)
+	into, err := files.Tree(platform)
+	if err != nil {
+		return nil, err
+	}
+	ports, problems, err := selectPorts(ctx, repo, source, platform, index, into, selection)
 	if err != nil {
 		return nil, err
 	}
 	return &Workspace{Source: source, Root: files.Root(), Ports: ports, Problems: problems, Projection: files, release: release}, nil
 }
 
-func selectPorts(ctx context.Context, repo *git.Repository, source record.Source, platform record.Platform, config portindex.Config, root string, selection Selection) ([]Port, []portindex.SelectionProblem, error) {
+func selectPorts(ctx context.Context, repo *git.Repository, source record.Source, platform record.Platform, config portindex.Config, into macports.Tree, selection Selection) ([]Port, []portindex.SelectionProblem, error) {
+	root := into.Root()
 	var selected []Port
 	var problems []portindex.SelectionProblem
 	seen := map[string]bool{}
@@ -117,7 +122,7 @@ func selectPorts(ctx context.Context, repo *git.Repository, source record.Source
 		// The index is staged for resolution later anyway; consulting it now
 		// tells which explicit names share a Portfile.
 		var index *portindex.Index
-		if err := portindex.Stage(ctx, repo, source, platform, config, root); err != nil {
+		if err := portindex.Stage(ctx, repo, source, platform, config, into); err != nil {
 			progress.VerboseReport(ctx, "PortIndex unavailable for grouping explicit ports: %v", err)
 		} else if index, err = portindex.Open(root); err != nil {
 			progress.VerboseReport(ctx, "PortIndex unreadable for grouping explicit ports: %v", err)
@@ -139,7 +144,7 @@ func selectPorts(ctx context.Context, repo *git.Repository, source record.Source
 		}
 	}
 	if len(selection.Ports) == 0 {
-		if err := portindex.Stage(ctx, repo, source, platform, config, root); err != nil {
+		if err := portindex.Stage(ctx, repo, source, platform, config, into); err != nil {
 			return nil, nil, err
 		}
 		index, err := portindex.Open(root)

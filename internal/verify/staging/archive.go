@@ -63,7 +63,11 @@ func Archive(ctx context.Context, repo *git.Repository, workspaces *workspace.Re
 		return err
 	}
 	root := files.Root()
-	if err = portindex.Stage(ctx, repo, request.Source, request.Platform, request.Index, root); err != nil {
+	into, err := files.Tree(request.Platform)
+	if err != nil {
+		return err
+	}
+	if err = portindex.Stage(ctx, repo, request.Source, request.Platform, request.Index, into); err != nil {
 		return err
 	}
 	for _, target := range append([]record.Target{request.Target}, request.AdditionalTargets...) {

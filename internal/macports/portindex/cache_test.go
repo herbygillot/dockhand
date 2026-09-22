@@ -1,6 +1,7 @@
 package portindex
 
 import (
+	"github.com/herbygillot/dockhand/internal/macports"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -83,7 +84,11 @@ func (f *indexFixture) stage(source record.Source) (*Index, []string, error) {
 		defer mu.Unlock()
 		messages = append(messages, update.Message)
 	})
-	if err := Stage(ctx, f.repo, source, testPlatform, f.config, snapshot.Root); err != nil {
+	into, err := macports.NewTree(source, snapshot.Root, testPlatform)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := Stage(ctx, f.repo, source, testPlatform, f.config, into); err != nil {
 		return nil, messages, err
 	}
 	index, err := Open(snapshot.Root)
@@ -268,7 +273,12 @@ func TestConcurrentStagersShareOneBuild(t *testing.T) {
 		group.Add(1)
 		go func(i int, root string) {
 			defer group.Done()
-			errs[i] = Stage(ctx, f.repo, source, testPlatform, f.config, root)
+			into, err := macports.NewTree(source, root, testPlatform)
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			errs[i] = Stage(ctx, f.repo, source, testPlatform, f.config, into)
 		}(i, snapshot.Root)
 	}
 	group.Wait()
@@ -431,7 +441,9 @@ func TestIndexGenerationWidensASparseWorkspace(t *testing.T) {
 	defer ws.Close()
 	require.NoError(t, ws.EnsurePort(t.Context(), record.Target{Name: "working", Portfile: "devel/working/Portfile"}))
 	require.False(t, ws.Scope().All)
-	require.NoError(t, Stage(t.Context(), f.repo, source, testPlatform, f.config, ws.Root()))
+	into, err := ws.Tree(testPlatform)
+	require.NoError(t, err)
+	require.NoError(t, Stage(t.Context(), f.repo, source, testPlatform, f.config, into))
 	require.True(t, ws.Scope().All, "generation widened the workspace")
 	index, err := Open(ws.Root())
 	require.NoError(t, err)

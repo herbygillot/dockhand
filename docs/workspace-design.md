@@ -159,7 +159,20 @@ per bump, not three: Tart staging and dependent discovery both work on the
 prepared tree, so they share one workspace with each other and not with the
 preparation, which worked on the base. The index closure in `app/selection.go`
 keeps a `staged` map keyed by root for the same reason; it moves into the
-registry keyed by tree, together with the assertion below.
+registry keyed by tree.
+
+The first registry also kept a package-global map from root paths to open
+workspaces, which `EnsurePortAt`, `WidenAt`, and `ScopeOf` consulted so a
+consumer holding a root string could materialize more of it. The second
+architecture review called that an implicit second mechanism, and it was:
+whether a root was registered changed what a call did. Since 2026-09-22 the
+projection travels with the `macports.Tree` instead: a workspace's tree
+carries the workspace as its `Projection`, with `EnsurePort`, `EnsureAll`,
+and `Whole`, and a plain materialization's tree carries one that needs
+nothing. Name resolution asks the tree's projection for the port it found,
+category enumeration asks it for the whole tree, index staging takes the
+tree and asks it before generating, and the whole-tree assertion reads
+`Whole`. There is no lookup by root.
 
 ### What writes into a root
 

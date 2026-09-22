@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
@@ -34,7 +33,7 @@ func (e *Evaluator) Resolve(ctx context.Context, tree macports.Tree, selection m
 	case 0:
 		// Resolving a bare name walks the categories: a sparse workspace
 		// widens to the whole tree first.
-		if err := workspace.WidenAt(ctx, tree.Root()); err != nil {
+		if err := tree.Projection().EnsureAll(ctx); err != nil {
 			return nil, err
 		}
 		categories, err := os.ReadDir(tree.Root())

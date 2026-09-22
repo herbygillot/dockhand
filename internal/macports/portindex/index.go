@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
-	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 )
@@ -196,7 +195,8 @@ func indexerEnvironment(configuration string) []string {
 // materialized source root. Completed generations are shared by every consumer
 // naming the same tree and indexing environment; a contribution's candidate
 // derives from the generation of its recorded base.
-func Stage(ctx context.Context, repo *git.Repository, source record.Source, platform record.Platform, c Config, root string) error {
+func Stage(ctx context.Context, repo *git.Repository, source record.Source, platform record.Platform, c Config, into macports.Tree) error {
+	root, projection := into.Root(), into.Projection()
 	resolved, err := ResolveTool(ctx, c)
 	if err != nil {
 		return err
@@ -227,12 +227,12 @@ func Stage(ctx context.Context, repo *git.Repository, source record.Source, plat
 		if string(source.Base) != baseTree {
 			baseCommit = string(source.Base)
 		}
-		if _, err := cache.ensure(ctx, repo, baseTree, "", false, nil, true, baseCommit); err != nil {
+		if _, err := cache.ensure(ctx, repo, baseTree, "", nil, false, nil, true, baseCommit); err != nil {
 			return err
 		}
-		entry, err = cache.ensure(ctx, repo, tree, root, true, []string{baseTree}, false, string(source.Commit))
+		entry, err = cache.ensure(ctx, repo, tree, root, projection, true, []string{baseTree}, false, string(source.Commit))
 	} else {
-		entry, err = cache.ensure(ctx, repo, tree, root, source.Base != "", nil, true, string(source.Commit))
+		entry, err = cache.ensure(ctx, repo, tree, root, projection, source.Base != "", nil, true, string(source.Commit))
 	}
 	if err != nil {
 		return err
@@ -301,16 +301,16 @@ func sameFile(source, destination string) bool {
 // the seed's entries are reused and the changed port directories are reindexed.
 // The guard, when present, is inherited by the indexer so the generation lock
 // outlives a parent that exits mid-build.
-func buildPortIndex(ctx context.Context, c Config, platform record.Platform, sourceRoot, destination, seed string, changed []string, strict bool, guard *os.File, meta generation) (err error) {
+func buildPortIndex(ctx context.Context, c Config, platform record.Platform, sourceRoot string, projection macports.Projection, destination, seed string, changed []string, strict bool, guard *os.File, meta generation) (err error) {
 	short := meta.Tree
 	if len(short) > 12 {
 		short = short[:12]
 	}
-	if scope, ok := workspace.ScopeOf(sourceRoot); ok && !scope.All {
+	if projection != nil && !projection.Whole() {
 		// The indexer lists what the root holds; a port absent from a
 		// sparse projection would be indexed as absent from the tree and
 		// cached under the tree id for every later process.
-		return fmt.Errorf("portindex: index generation needs the whole tree; the workspace holds only %v", scope.Ports)
+		return fmt.Errorf("portindex: index generation needs the whole tree; the root is a sparse projection")
 	}
 	if seed == "" {
 		progress.Report(ctx, "Building the PortIndex; this may take several minutes")

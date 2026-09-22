@@ -66,7 +66,7 @@ func TestPortIndexUsesPortGroupsFromFrozenSource(t *testing.T) {
 	config, err := ResolveTool(t.Context(), Config{Executable: executable})
 	require.NoError(t, err)
 	destination := filepath.Join(t.TempDir(), "index")
-	require.NoError(t, buildPortIndex(t.Context(), config, testPlatform, root, destination, "", nil, true, nil, testGeneration()))
+	require.NoError(t, buildPortIndex(t.Context(), config, testPlatform, root, nil, destination, "", nil, true, nil, testGeneration()))
 	data, err := os.ReadFile(filepath.Join(destination, portIndexName))
 	require.NoError(t, err)
 	require.Contains(t, string(data), "version 7.3")
@@ -76,7 +76,7 @@ func TestPortIndexUsesPortGroupsFromFrozenSource(t *testing.T) {
 	require.True(t, meta.Strict)
 	put("devel/index-fixture/Portfile", "PortSystem 1.0\nPortGroup dockhand-index 1.0\nname index-fixture\ncategories devel\nrevision 4\n")
 	updated := filepath.Join(t.TempDir(), "index")
-	require.NoError(t, buildPortIndex(t.Context(), config, testPlatform, root, updated, destination, []string{"devel/index-fixture/Portfile"}, true, nil, testGeneration()))
+	require.NoError(t, buildPortIndex(t.Context(), config, testPlatform, root, nil, updated, destination, []string{"devel/index-fixture/Portfile"}, true, nil, testGeneration()))
 	data, err = os.ReadFile(filepath.Join(updated, portIndexName))
 	require.NoError(t, err)
 	require.Contains(t, string(data), "version 7.3")
@@ -113,7 +113,7 @@ func TestIncrementalIndexAllowsOnlyExistingUnrelatedOmissions(t *testing.T) {
 	config, err := ResolveTool(t.Context(), Config{Executable: executable})
 	require.NoError(t, err)
 	build := func(destination, seed string, changed []string, strict bool) error {
-		return buildPortIndex(t.Context(), config, testPlatform, root, destination, seed, changed, strict, nil, testGeneration())
+		return buildPortIndex(t.Context(), config, testPlatform, root, nil, destination, seed, changed, strict, nil, testGeneration())
 	}
 	seed := filepath.Join(t.TempDir(), "seed")
 	require.NoError(t, build(seed, "", nil, false))

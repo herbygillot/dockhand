@@ -15,7 +15,6 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/filelock"
 	"github.com/herbygillot/dockhand/internal/git"
-	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 )
@@ -147,7 +146,7 @@ func (c *cache) usable(tree string, strict bool) bool {
 // with the mirror enabled, the mirror's index bracketed to the tree's commit.
 // The latest pointer advances only when requested, so candidate trees never
 // displace an upstream seed.
-func (c *cache) ensure(ctx context.Context, repo *git.Repository, tree, root string, strict bool, seeds []string, advance bool, commit string) (string, error) {
+func (c *cache) ensure(ctx context.Context, repo *git.Repository, tree, root string, projection macports.Projection, strict bool, seeds []string, advance bool, commit string) (string, error) {
 	if !git.ValidObjectID(tree) {
 		return "", fmt.Errorf("portindex: invalid source tree %q", tree)
 	}
@@ -184,10 +183,12 @@ func (c *cache) ensure(ctx context.Context, repo *git.Repository, tree, root str
 		defer snapshot.Close()
 		root = snapshot.Root
 	}
-	// A sparse workspace handed in as the root widens to the whole tree
+	// A sparse projection handed in as the root widens to the whole tree
 	// before the indexer lists it.
-	if err := workspace.WidenAt(ctx, root); err != nil {
-		return "", err
+	if projection != nil {
+		if err := projection.EnsureAll(ctx); err != nil {
+			return "", err
+		}
 	}
 	seed, changed, err := c.selectSeed(ctx, repo, tree, seeds)
 	if err != nil {
@@ -205,7 +206,7 @@ func (c *cache) ensure(ctx context.Context, repo *git.Repository, tree, root str
 			meta.Mirror = provenance
 		}
 	}
-	if err := buildPortIndex(ctx, c.config, c.platform, root, target, seed, changed, strict, guard, meta); err != nil {
+	if err := buildPortIndex(ctx, c.config, c.platform, root, projection, target, seed, changed, strict, guard, meta); err != nil {
 		return "", err
 	}
 	if advance {

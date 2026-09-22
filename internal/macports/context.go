@@ -1,6 +1,7 @@
 package macports
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -11,21 +12,47 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
-type Tree struct {
-	source   record.Source
-	root     string
-	base     string
-	platform record.Platform
+// Projection is what a tree can materialize of itself on demand. A sparse
+// workspace holds a port's directory and _resources and brings more when a
+// consumer asks; a plain materialization holds everything and needs
+// nothing. Carried by the Tree, it says what the root is rather than
+// leaving a consumer to find out by the root's path.
+type Projection interface {
+	// EnsurePort materializes the target's port directory and _resources.
+	EnsurePort(ctx context.Context, target record.Target) error
+	// EnsureAll materializes the whole tree.
+	EnsureAll(ctx context.Context) error
+	// Whole reports whether the root holds the whole tree.
+	Whole() bool
 }
 
+// whole is a complete materialization: every ensure is satisfied already.
+type whole struct{}
+
+func (whole) EnsurePort(context.Context, record.Target) error { return nil }
+func (whole) EnsureAll(context.Context) error                 { return nil }
+func (whole) Whole() bool                                     { return true }
+
+type Tree struct {
+	source     record.Source
+	root       string
+	base       string
+	platform   record.Platform
+	projection Projection
+	projected  bool
+}
+
+// NewTree is the tree of a plain, complete materialization.
 func NewTree(source record.Source, root string, platform record.Platform) (Tree, error) {
-	return NewTreeOver(source, root, root, platform)
+	return NewTreeOver(source, root, root, platform, nil)
 }
 
 // NewTreeOver describes an overlay of a base projection: a root holding the
 // same tree with some files replaced, evaluated by the session bound to the
 // base. The base of a base is itself.
-func NewTreeOver(source record.Source, root, base string, platform record.Platform) (Tree, error) {
+// NewTreeOver is the tree of a projection, which brings more of the tree
+// when a consumer asks; a nil projection is a complete materialization.
+func NewTreeOver(source record.Source, root, base string, platform record.Platform, projection Projection) (Tree, error) {
 	if source.Tree == "" || !filepath.IsAbs(root) || !filepath.IsAbs(base) {
 		return Tree{}, fmt.Errorf("macports: source tree and absolute snapshot roots are required")
 	}
@@ -44,10 +71,22 @@ func NewTreeOver(source record.Source, root, base string, platform record.Platfo
 	if !info.IsDir() {
 		return Tree{}, fmt.Errorf("macports: snapshot root is not a directory")
 	}
-	return Tree{source: source, root: root, base: base, platform: platform}, nil
+	tree := Tree{source: source, root: root, base: base, platform: platform, projection: projection, projected: projection != nil}
+	if projection == nil {
+		tree.projection = whole{}
+	}
+	return tree, nil
 }
 
-func (t Tree) Source() record.Source     { return t.source }
+func (t Tree) Source() record.Source { return t.source }
+
+// Projection is what the tree can materialize on demand; a plain
+// materialization's satisfies every ensure already.
+func (t Tree) Projection() Projection { return t.projection }
+
+// Projected reports whether a workspace projects this tree, which the
+// repository validated when it opened, as opposed to a plain directory.
+func (t Tree) Projected() bool           { return t.projected }
 func (t Tree) Root() string              { return t.root }
 func (t Tree) Platform() record.Platform { return t.platform }
 
