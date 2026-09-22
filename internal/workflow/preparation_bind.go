@@ -13,23 +13,18 @@ import (
 )
 
 type PreparationRequest struct {
-	// EditIntent is the person's choices; binding resolves a fresh stub
-	// selection into it, and a continued contribution carries its prior one.
-	record.EditIntent
+	// Resolution is what the selection resolved to: the source the edit
+	// runs on, the contribution it lands on, the target, and the intent,
+	// subject, and references with a prior job's inherited. Binding
+	// resolves a fresh stub selection into the intent it records.
+	Resolution        Resolution
 	AllSubports       bool
 	KeepFailed        bool
-	ChangeID          record.ChangeID
 	TargetBuilds      map[string]record.BuildConfig
 	IncludeDependents bool
 	Action            record.Action
 	Version           string
 	ID                record.RequestID
-	// Onto names an open contribution the update is prepared onto: the
-	// source is its current revision, the selection its target, and the
-	// candidate replaces its branch head as an amendment. Source and
-	// Selection are then filled by the binding.
-	Onto              record.ChangeID
-	Source            record.Source
 	SourceBranch      string
 	SourceURL         string
 	Selection         macports.Selection
@@ -37,12 +32,9 @@ type PreparationRequest struct {
 	Verification      record.VerificationPolicy
 	Build             *record.BuildConfig
 	BuildRequirements *record.BuildRequirements
-	Author            record.CommitIdentity
-	Platform          record.Platform
-	// Subject is the commit subject after the port name; a revision bump
-	// requires one, since the reason is what maintainers read there.
-	Subject             string
-	References          []record.Reference
+	// Author is filled by the binding when empty, from the repository.
+	Author              record.CommitIdentity
+	Platform            record.Platform
 	VerificationProblem string
 	Publication         publish.Options
 	ResolveBuild        BuildResolver
@@ -66,30 +58,46 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	if err := e.requireRepository(ctx, "preparation repository does not match state scope"); err != nil {
 		return BoundPreparation{}, err
 	}
-	source := request.Source
+	resolution := request.Resolution
+	source := resolution.Source
+	intent, subject, references, selection := resolution.Intent, resolution.Subject, resolution.References, resolution.Selection
 	var target *onto
-	if request.Onto != "" {
-		bound, err := e.bindOnto(ctx, request.Onto)
+	switch resolution.Kind {
+	case Fresh, Continue:
+		if source.Base != source.Commit {
+			return BoundPreparation{}, ErrInvalidRequest
+		}
+	case Onto, Adopt:
+		if resolution.Change == nil || resolution.Revision == nil {
+			return BoundPreparation{}, ErrInvalidRequest
+		}
+		// The binding reconfirms what integration will check: the
+		// revision is current, no other job is pending on the
+		// contribution, and an attached pull request is open.
+		bound, err := e.bindOnto(ctx, resolution.Change.ID)
 		if err != nil {
 			return BoundPreparation{}, err
+		}
+		if bound.revision.ID != resolution.Revision.ID {
+			return BoundPreparation{}, ErrStaleRevision
 		}
 		if bound.change.KeepBody && request.Destination == record.Published && request.Publication.RefreshBody {
 			return BoundPreparation{}, fmt.Errorf("%w: %s was adopted with --keep-body; its pull request body is its author's", ErrInvalidRequest, initiatingNameOf(bound.change))
 		}
 		target = &bound
-		source = bound.revision.Source
-		request.ChangeID = bound.change.ID
-		request.Selection = bound.selection(request.Selection.Variants)
-		if request.Subject, err = ContributionSubject(ctx, e.Repo, source, request.Subject); err != nil {
+	default:
+		return BoundPreparation{}, fmt.Errorf("%w: unresolved selection", ErrInvalidRequest)
+	}
+	if request.Author == (record.CommitIdentity{}) {
+		author, err := e.Repo.Author(ctx)
+		if err != nil {
 			return BoundPreparation{}, err
 		}
-		progress.Report(ctx, "Preparing the update onto %s's open contribution, branch %s; it lands as an amendment", initiatingNameOf(bound.change), bound.change.Branch)
-	} else if source.Base != source.Commit {
-		return BoundPreparation{}, ErrInvalidRequest
+		request.Author = record.CommitIdentity{Name: author.Name, Email: author.Email}
 	}
 	// A revision bump needs a subject saying why; an update onto a
-	// contribution has taken the contribution's own by now.
-	if request.Action == record.BumpRevision && strings.TrimSpace(request.Subject) == "" {
+	// contribution, or one continuing a job, has taken its own by now.
+	if request.Action == record.BumpRevision && strings.TrimSpace(subject) == "" {
 		return BoundPreparation{}, fmt.Errorf("%w: a revision bump needs a subject saying why; --subject \"revbump for simdutf update\" is what maintainers read", ErrInvalidRequest)
 	}
 	trees, err := e.Repo.CommitTrees(ctx, []string{string(source.Commit)})
@@ -99,7 +107,7 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	if trees[string(source.Commit)] != string(source.Tree) {
 		return BoundPreparation{}, fmt.Errorf("%w: preparation commit/tree mismatch", ErrInvalidRequest)
 	}
-	targets, evaluation, err := e.bindSnapshot(ctx, source, request.Selection, request.Platform, nil)
+	targets, evaluation, err := e.bindSnapshot(ctx, source, selection, request.Platform, nil)
 	if err != nil {
 		return BoundPreparation{}, err
 	}
@@ -108,14 +116,14 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	// name stays on the contribution.
 	if carrier, stub := macports.ResolveStub(evaluation, targets[0]); stub != "" {
 		targets = []record.Target{carrier}
-		request.SharedRelease, request.Stub = true, stub
+		intent.SharedRelease, intent.Stub = true, stub
 		progress.Report(ctx, "%s is a stub; editing %s and its sibling subports as one release", stub, carrier.Name)
 	} else if request.Action == record.Bump && targets[0].Subport == "" {
 		// A main port's release is its Portfile's: the subports sharing its
 		// version move with it by construction, and the person reviews the
 		// whole edit. The authorization is recorded with the job, as a
 		// stub's is; only a named subport needs --shared-release.
-		request.SharedRelease = true
+		intent.SharedRelease = true
 	}
 	if request.ResolveBuild != nil {
 		if request.Build != nil || request.BuildRequirements != nil || request.VerificationProblem != "" || request.Verification != record.VerificationRequired {
@@ -141,8 +149,8 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	}
 	evaluation.Source = source
 	spec, err := normalizeSpec(record.JobSpec{KeepFailed: request.KeepFailed,
-		ChangeID: request.ChangeID, TargetBuilds: request.TargetBuilds, IncludeDependents: request.IncludeDependents, AllSubports: request.AllSubports, Action: request.Action, PublishTo: destination, Version: request.Version, Source: source, Targets: targets, EvaluatedVersions: evaluatedVersions(evaluation, targets), Destination: request.Destination, Verification: request.Verification, Build: request.Build, BuildRequirements: request.BuildRequirements, Subject: request.Subject, References: request.References,
-		Preparation: &record.PreparationSpec{EditIntent: request.EditIntent, SourceBranch: request.SourceBranch, SourceURL: request.SourceURL, Platform: request.Platform, Author: request.Author, VerificationProblem: request.VerificationProblem},
+		ChangeID: resolution.ChangeID(), TargetBuilds: request.TargetBuilds, IncludeDependents: request.IncludeDependents, AllSubports: request.AllSubports, Action: request.Action, PublishTo: destination, Version: request.Version, Source: source, Targets: targets, EvaluatedVersions: evaluatedVersions(evaluation, targets), Destination: request.Destination, Verification: request.Verification, Build: request.Build, BuildRequirements: request.BuildRequirements, Subject: subject, References: references,
+		Preparation: &record.PreparationSpec{EditIntent: intent, SourceBranch: request.SourceBranch, SourceURL: request.SourceURL, Platform: request.Platform, Author: request.Author, VerificationProblem: request.VerificationProblem},
 	})
 	if err != nil {
 		return BoundPreparation{}, err

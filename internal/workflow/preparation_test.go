@@ -3,6 +3,7 @@ package workflow_test
 import (
 	"context"
 	"errors"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,9 +35,10 @@ func preparationFixture(t *testing.T, verification bool) (*fixture, workflow.Req
 	f, _ := bindingFixture(t)
 	commit, tree, err := f.repo.Branch(t.Context(), "candidate")
 	require.NoError(t, err)
-	req := workflow.PreparationRequest{Action: record.BumpRevision, ID: "prepare", SourceBranch: "master", Source: record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree), Base: record.ObjectID(commit)}, Selection: bindRequest(f, "").Selection,
+	req := workflow.PreparationRequest{Action: record.BumpRevision, ID: "prepare", SourceBranch: "master",
+		Resolution:  workflow.Resolution{Kind: workflow.Fresh, Source: record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree), Base: record.ObjectID(commit)}, Selection: bindRequest(f, "").Selection, Subject: "Rebuild dependents"},
 		Destination: record.BranchReady, Verification: record.VerificationSkipped,
-		Author: record.CommitIdentity{Name: "Accepted Author", Email: "accepted@example.invalid"}, Platform: buildPlatform, Subject: "Rebuild dependents"}
+		Author: record.CommitIdentity{Name: "Accepted Author", Email: "accepted@example.invalid"}, Platform: buildPlatform}
 	if verification {
 		req.Destination, req.Verification, req.Build = record.VerificationComplete, record.VerificationRequired, f.request("").Spec.Build
 	}
@@ -442,7 +444,10 @@ func TestPreparationOntoAContributionKeepsChoicesAndPatchFindings(t *testing.T) 
 	f, _ := publicationFixtureWithTracking(t, true)
 	previous, err := f.repo.ReadRef(t.Context(), "refs/heads/candidate")
 	require.NoError(t, err)
-	req := workflow.PreparationRequest{Action: record.BumpRevision, ID: "onto", Onto: "change", AllSubports: true, SourceBranch: "master",
+	resolution, err := f.engine.Resolve(t.Context(), workflow.ResolutionRequest{Action: record.BumpRevision, Selection: macports.Selection{Selector: "fixture"}, Platform: buildPlatform})
+	require.NoError(t, err)
+	require.Equal(t, workflow.Onto, resolution.Kind)
+	req := workflow.PreparationRequest{Action: record.BumpRevision, ID: "onto", Resolution: resolution, AllSubports: true, SourceBranch: "master",
 		Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: f.request("").Spec.Build,
 		Author: record.CommitIdentity{Name: "Accepted Author", Email: "accepted@example.invalid"}, Platform: buildPlatform}
 	bound, err := f.engine.BindPreparation(t.Context(), req)

@@ -150,7 +150,7 @@ func (e *Engine) Resolve(ctx context.Context, request ResolutionRequest) (Resolu
 	// A contribution with no job of the action, or whose last job was
 	// itself prepared onto it, takes the update onto its own revision.
 	if prior == nil || prior.Spec.Preparation != nil && prior.Spec.Preparation.Correction != nil {
-		return e.resolveOnto(ctx, request, change.ID)
+		return e.resolveOnto(ctx, request, *change)
 	}
 	resolution := e.continued(request, *prior, *change)
 	if request.Lookup {
@@ -228,12 +228,25 @@ func (e *Engine) resolveFresh(ctx context.Context, request ResolutionRequest, de
 }
 
 // resolveOnto is an update onto an open contribution's current revision.
-func (e *Engine) resolveOnto(ctx context.Context, request ResolutionRequest, id record.ChangeID) (Resolution, error) {
-	bound, err := e.bindOnto(ctx, id)
+// The binding reconfirms the preconditions integration checks; the
+// resolution reads the contribution and its revision.
+func (e *Engine) resolveOnto(ctx context.Context, request ResolutionRequest, change record.Change) (Resolution, error) {
+	if change.Disposition != record.ChangeOpen || change.Branch == "" || change.CurrentRevision == "" {
+		return Resolution{}, fmt.Errorf("%w: contribution %s is not open on a branch", ErrInvalidRequest, change.ID)
+	}
+	if len(change.Targets) != 1 {
+		return Resolution{}, fmt.Errorf("%w: contribution %s has %d targets; prepare onto one-target contributions only", ErrInvalidRequest, change.ID, len(change.Targets))
+	}
+	revision, err := e.CurrentRevision(ctx, change)
 	if err != nil {
 		return Resolution{}, err
 	}
-	return e.onto(ctx, request, Onto, bound.change, bound.revision)
+	resolution, err := e.onto(ctx, request, Onto, change, revision)
+	if err != nil {
+		return Resolution{}, err
+	}
+	progress.Report(ctx, "%s", resolution.Detail)
+	return resolution, nil
 }
 
 // onto builds an Onto or Adopt resolution over a contribution's revision.

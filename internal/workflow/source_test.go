@@ -362,8 +362,9 @@ func TestStubSelectionBumpsItsNewestSubportAsASharedRelease(t *testing.T) {
 	ports.targetName = "py-fixture"
 	commit, tree, err := f.repo.Branch(t.Context(), "candidate")
 	require.NoError(t, err)
-	req := workflow.PreparationRequest{Action: record.Bump, ID: "prepare", SourceBranch: "master", Source: record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree), Base: record.ObjectID(commit)},
-		Selection: macports.Selection{Selector: "py-fixture"}, Destination: record.BranchReady, Verification: record.VerificationSkipped, KeepOldChecksums: true,
+	req := workflow.PreparationRequest{Action: record.Bump, ID: "prepare", SourceBranch: "master",
+		Resolution:  workflow.Resolution{Kind: workflow.Fresh, Source: record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree), Base: record.ObjectID(commit)}, Selection: macports.Selection{Selector: "py-fixture"}, Intent: record.EditIntent{KeepOldChecksums: true}},
+		Destination: record.BranchReady, Verification: record.VerificationSkipped,
 		Author: record.CommitIdentity{Name: "A", Email: "a@example.invalid"}, Platform: buildPlatform}
 	bound, err := f.engine.BindPreparation(t.Context(), req)
 	require.NoError(t, err)

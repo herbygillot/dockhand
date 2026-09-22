@@ -123,8 +123,8 @@ func (e *Engine) contributionBuild(ctx context.Context, change record.Change) (r
 }
 
 // PreparationInput is the open contribution for a port and the newest job
-// of the action that is still its current revision or still running; the
-// resolution reads it, and app until the resolution replaces its decision.
+// of the action that is still its current revision or still running, as
+// the resolution reads them.
 func (e *Engine) PreparationInput(ctx context.Context, selector ContributionSelector, action record.Action) (*record.Job, *record.Change, error) {
 	if e == nil || e.State == nil || e.Repository == "" {
 		return nil, nil, errNoState

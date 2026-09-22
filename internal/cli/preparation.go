@@ -111,15 +111,8 @@ func (r *runtime) changeCommands() []*cobra.Command {
 						return err
 					}
 					defer services.Close()
-					if adopt != "" {
-						adopted, err := services.Adopt(cmd.Context(), app.AdoptRequest{Branch: adopt, Target: selector})
-						if err != nil {
-							return err
-						}
-						progress.Report(cmd.Context(), "%s", adopted.Detail)
-					}
 					progress.VerboseReport(cmd.Context(), "Binding contribution source; local commits and working-tree edits are excluded")
-					bound, err := services.BindPreparation(cmd.Context(), app.Preparation{EditIntent: record.EditIntent{SharedRelease: sharedRelease, KeepOldChecksums: keepOldChecksums}, AllSubports: options.AllSubports, KeepFailed: build.keepFailed,
+					bound, err := services.BindPreparation(cmd.Context(), app.Preparation{EditIntent: record.EditIntent{SharedRelease: sharedRelease, KeepOldChecksums: keepOldChecksums}, AllSubports: options.AllSubports, Adopt: adopt, KeepFailed: build.keepFailed,
 						ChangeID: record.ChangeID(change), IncludeDependents: build.dependents, Action: spec.action, Version: version, ID: record.RequestID("request_" + rand.Text()),
 						Selection: macports.Selection{Selector: selector, Variants: choices},
 						Subject:   subject, References: references, Publish: publishTo, SkipVerify: skipVerify, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource,

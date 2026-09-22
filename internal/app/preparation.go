@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
-	"maps"
 	"net/http"
 	"os"
 	"strings"
@@ -148,8 +147,11 @@ type Preparation struct {
 	Version           string
 	ID                record.RequestID
 	Selection         macports.Selection
-	Subject           string
-	References        []record.Reference
+	// Adopt names a hand-made branch to track first; the update then goes
+	// onto it.
+	Adopt      string
+	Subject    string
+	References []record.Reference
 	// SkipVerify prepares without a build. With Publish it opens the PR
 	// unverified, which the PR body discloses; alone it stops at the branch.
 	SkipVerify bool
@@ -158,102 +160,22 @@ type Preparation struct {
 	FromSource bool
 }
 
+// BindPreparation resolves what the selection means, then binds the
+// preparation from the resolution; the engine fills the source, the
+// platform, and the author.
 func (s *Services) BindPreparation(ctx context.Context, request Preparation) (workflow.BoundPreparation, error) {
-	var prior *record.Job
-	var onto record.ChangeID
-	var err error
-	if macports.ValidName(request.Selection.Selector) || request.ChangeID != "" {
-		selector := workflow.ContributionSelector{ChangeID: request.ChangeID}
-		if macports.ValidName(request.Selection.Selector) {
-			selector.Target = request.Selection.Selector
-		}
-		var contribution *record.Change
-		prior, contribution, err = s.Workflow.PreparationInput(ctx, selector, request.Action)
-		if err != nil {
-			return workflow.BoundPreparation{}, err
-		}
-		// A contribution with no bump job of its own, one adopted or amended
-		// by hand, or whose last bump was itself prepared onto it, takes
-		// the update onto its own revision; the engine binds the rest.
-		if contribution != nil && (prior == nil || prior.Spec.Preparation != nil && prior.Spec.Preparation.Correction != nil) {
-			onto = contribution.ID
-			prior = nil
-		}
-	}
-	var source record.Source
-	var master record.Source
-	var fetchErr error
-	if onto == "" {
-		progress.VerboseReport(ctx, "Fetching MacPorts master")
-		master, fetchErr = preparationSource(ctx, s.Workflow.Repo)
-		if prior == nil && fetchErr != nil {
-			return workflow.BoundPreparation{}, fetchErr
-		}
-	}
-	if prior != nil {
-		// An open contribution is continued only after master and its PR
-		// have been read: a merged PR retires it and a new update starts
-		// from master; a port master already carries, or that someone else
-		// moved, is a person's decision. An unreachable master leaves the
-		// recorded source as the only fact, and says so.
-		if fetchErr != nil {
-			progress.Report(ctx, "master not checked (%v); the open contribution is continued as recorded", fetchErr)
-		} else {
-			platform, err := s.ports.NativePlatform(ctx)
-			if err != nil {
-				return workflow.BoundPreparation{}, err
-			}
-			decision, err := s.Workflow.CheckContinuation(ctx, *prior, master, platform)
-			if err != nil {
-				return workflow.BoundPreparation{}, err
-			}
-			progress.Report(ctx, "%s", decision.Detail)
-			if decision.Fresh {
-				prior = nil
-			}
-		}
-	}
-	if prior == nil {
-		source = master
-	} else {
-		progress.Report(ctx, "Continuing the port's open contribution from its recorded source")
-		progress.VerboseReport(ctx, "Continuing contribution %s from recorded source %s", prior.ChangeID, prior.Spec.Source.Commit)
-		source = prior.Spec.Source
-		request.ChangeID = prior.ChangeID
-		if prior.Spec.Preparation != nil {
-			request.SharedRelease = request.SharedRelease || prior.Spec.Preparation.SharedRelease
-			request.KeepOldChecksums = request.KeepOldChecksums || prior.Spec.Preparation.KeepOldChecksums
-			request.Stub = prior.Spec.Preparation.Stub
-		}
-		// A continued contribution keeps the subject and tickets it was
-		// given; the console's retry names only the port.
-		if request.Subject == "" {
-			request.Subject = prior.Spec.Subject
-		}
-		if len(request.References) == 0 {
-			request.References = prior.Spec.References
-		}
-		target := prior.Spec.Targets[0]
-		variants := maps.Clone(target.Variants)
-		if variants == nil {
-			variants = map[string]bool{}
-		}
-		maps.Copy(variants, request.Selection.Variants)
-		request.Selection = macports.Selection{Selector: target.Portfile, Subport: target.Subport, Variants: variants}
-	}
-	if request.Action == record.BumpRevision && onto == "" && strings.TrimSpace(request.Subject) == "" {
-		return workflow.BoundPreparation{}, fmt.Errorf("bump-revision needs --subject: the reason is what maintainers read, e.g. --subject \"revbump for oniguruma 6.9.10\"")
-	}
-	author, err := s.Workflow.Repo.Author(ctx)
-	if err != nil {
-		return workflow.BoundPreparation{}, err
-	}
 	platform, err := s.ports.NativePlatform(ctx)
 	if err != nil {
 		return workflow.BoundPreparation{}, err
 	}
-	bound := workflow.PreparationRequest{EditIntent: request.EditIntent, AllSubports: request.AllSubports, KeepFailed: request.KeepFailed, ChangeID: request.ChangeID, IncludeDependents: request.IncludeDependents, Action: request.Action, Version: request.Version, ID: request.ID, Onto: onto, Source: source, SourceBranch: macports.PortsBranch, SourceURL: macports.PortsRepositoryURL, Selection: request.Selection, Subject: request.Subject, References: request.References,
-		Author: record.CommitIdentity{Name: author.Name, Email: author.Email}, Platform: platform,
+	resolution, err := s.Workflow.Resolve(ctx, workflow.ResolutionRequest{Action: request.Action, Selection: request.Selection, ChangeID: request.ChangeID, Branch: request.Adopt, Adopt: request.Adopt != "", Platform: platform, Intent: request.EditIntent, Subject: request.Subject, References: request.References})
+	if err != nil {
+		return workflow.BoundPreparation{}, err
+	}
+	if request.Action == record.BumpRevision && strings.TrimSpace(resolution.Subject) == "" {
+		return workflow.BoundPreparation{}, fmt.Errorf("bump-revision needs --subject: the reason is what maintainers read, e.g. --subject \"revbump for oniguruma 6.9.10\"")
+	}
+	bound := workflow.PreparationRequest{Resolution: resolution, AllSubports: request.AllSubports, KeepFailed: request.KeepFailed, IncludeDependents: request.IncludeDependents, Action: request.Action, Version: request.Version, ID: request.ID, SourceBranch: macports.PortsBranch, SourceURL: macports.PortsRepositoryURL, Platform: platform,
 		Destination: record.VerificationComplete, Verification: record.VerificationRequired}
 	if request.SkipVerify {
 		bound.Destination, bound.Verification = record.BranchReady, record.VerificationSkipped

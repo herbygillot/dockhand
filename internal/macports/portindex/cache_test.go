@@ -1,8 +1,8 @@
 package portindex
 
 import (
-	"github.com/herbygillot/dockhand/internal/macports"
 	"context"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"net/http"
 	"net/http/httptest"
 	"os"
