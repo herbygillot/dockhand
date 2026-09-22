@@ -99,19 +99,21 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 	if err != nil {
 		return result, err
 	}
-	branch := input.Branch
-	if input.Target != "" {
-		change, err := e.SelectContribution(ctx, ContributionSelector{Target: input.Target})
-		if err != nil {
-			return result, err
-		}
-		branch = change.Branch
-	} else if branch == "" {
-		branch, err = e.Repo.CurrentBranch(ctx)
+	// The contribution is resolved as a verification's is: by target, by
+	// branch, or by the current branch; the transaction below rereads it
+	// by that branch with the pull request it is attached to.
+	selection := ResolutionRequest{Action: input.Action, Selection: macports.Selection{Selector: input.Target}, Branch: input.Branch, Platform: input.Platform}
+	if input.Target == "" && input.Branch == "" {
+		selection.Branch, err = e.Repo.CurrentBranch(ctx)
 		if err != nil {
 			return result, err
 		}
 	}
+	resolution, err := e.Resolve(ctx, selection)
+	if err != nil {
+		return result, err
+	}
+	branch := resolution.Branch
 	var change record.Change
 	var revision record.Revision
 	var remoteHead record.ObjectID
