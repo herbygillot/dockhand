@@ -63,6 +63,12 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		// The revision's shared files are read from the immutable candidate
+		// before the transaction; the lookup runs git.
+		var shared []record.SharedFile
+		if confirmed && operationErr == nil {
+			shared = e.sharedFiles(ctx, selected.Prepared.Source)
+		}
 		return e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
 			job, err := tx.Job(ctx, selected.ID)
 			if err != nil {
@@ -85,7 +91,7 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 			job.ConsecutiveFailures = 0
 			if confirmed {
 				change := record.Change{ID: record.ChangeID("change_" + string(job.ID)), Branch: job.Prepared.Branch, Targets: job.Spec.Targets, GeneratedCommit: job.Prepared.Source.Commit, Disposition: record.ChangeOpen, CreatedAt: job.AcceptedAt}
-				revision := record.Revision{Scope: job.Prepared.Scope, ID: record.RevisionID("revision_" + string(job.ID)), ChangeID: change.ID, Source: job.Prepared.Source, CreatedAt: job.AcceptedAt, Shared: e.sharedFiles(ctx, job.Prepared.Source)}
+				revision := record.Revision{Scope: job.Prepared.Scope, ID: record.RevisionID("revision_" + string(job.ID)), ChangeID: change.ID, Source: job.Prepared.Source, CreatedAt: job.AcceptedAt, Shared: shared}
 				if job.ChangeID != "" && job.Spec.Preparation.Correction == nil {
 					existing, err := tx.Change(ctx, job.ChangeID)
 					if err != nil {

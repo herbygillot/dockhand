@@ -67,6 +67,10 @@ func (e *Engine) Submit(ctx context.Context, request Request) (Receipt, error) {
 			target.Variants = maps.Clone(target.Variants)
 			branch.InferredTarget = &target
 		}
+		// The shared files a branch changes are read from the immutable
+		// source here, before the transaction: the lookup runs git, and
+		// the writer lock is not held over a subprocess.
+		branch.Shared = e.sharedFiles(ctx, spec.Source)
 		request.Branch = &branch
 	}
 	if err := validateBranchInput(request.Branch, spec); err != nil {
@@ -116,9 +120,7 @@ func (e *Engine) Submit(ctx context.Context, request Request) (Receipt, error) {
 		if request.Branch == nil {
 			accepted, err = bindRevision(ctx, spec, tx)
 		} else {
-			branch := *request.Branch
-			branch.Shared = e.sharedFiles(ctx, spec.Source)
-			accepted, err = adoptBranch(ctx, tx, spec, branch, now)
+			accepted, err = adoptBranch(ctx, tx, spec, *request.Branch, now)
 		}
 		if err != nil {
 			return err

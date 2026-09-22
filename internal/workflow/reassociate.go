@@ -60,6 +60,9 @@ func (e *Engine) Reassociate(ctx context.Context, id record.ChangeID, branch str
 	if err != nil {
 		return change, err
 	}
+	// Read before the lock and the transaction: the lookup runs git, and
+	// the source it reads is the immutable one the lock reconfirms.
+	shared := e.sharedFiles(ctx, source)
 	err = e.Repo.WithBranchLock(ctx, branch, func(ctx context.Context) error {
 		current, err := changeset.CaptureBranch(ctx, e.Repo, branch)
 		if err != nil {
@@ -87,7 +90,7 @@ func (e *Engine) Reassociate(ctx context.Context, id record.ChangeID, branch str
 				return fmt.Errorf("workflow: branch already belongs to %s", owner.ID)
 			}
 			if source != previous.Source {
-				revision := record.Revision{Scope: scope, ID: record.RevisionID("revision_" + rand.Text()), ChangeID: id, Previous: previous.ID, Source: source, CreatedAt: e.now(), Shared: e.sharedFiles(ctx, source)}
+				revision := record.Revision{Scope: scope, ID: record.RevisionID("revision_" + rand.Text()), ChangeID: id, Previous: previous.ID, Source: source, CreatedAt: e.now(), Shared: shared}
 				if err := tx.PutRevision(ctx, revision); err != nil {
 					return err
 				}
