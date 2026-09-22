@@ -61,7 +61,7 @@ func imageFixture(t *testing.T) string {
 	for _, name := range []string{"config.json", "disk.img", "nvram.bin"} {
 		require.NoError(t, os.WriteFile(filepath.Join(root, "vms", "base", name), []byte("original"), 0600))
 	}
-	require.NoError(t, os.WriteFile(filepath.Join(root, "tart"), []byte("#!/bin/sh\nprintf '%s\\n' '[{\"Name\":\"base\",\"Source\":\"local\",\"State\":\"stopped\"}]'\n"), 0700))
+	writeExecutable(t, filepath.Join(root, "tart"), "#!/bin/sh\nprintf '%s\\n' '[{\"Name\":\"base\",\"Source\":\"local\",\"State\":\"stopped\"}]'\n")
 	return root
 }
 func imageProcess(t *testing.T, root string) *exec.Cmd {
@@ -218,7 +218,7 @@ func TestImageAvailabilityErrorsAreSpecific(t *testing.T) {
 			case "missing binary":
 				p.Config.Executable = filepath.Join(root, "missing-tart")
 			case "running image":
-				require.NoError(t, os.WriteFile(filepath.Join(root, "tart"), []byte("#!/bin/sh\nprintf '%s\\n' '[{\"Name\":\"base\",\"Source\":\"local\",\"State\":\"running\"}]'\n"), 0700))
+				writeExecutable(t, filepath.Join(root, "tart"), "#!/bin/sh\nprintf '%s\\n' '[{\"Name\":\"base\",\"Source\":\"local\",\"State\":\"running\"}]'\n")
 			case "missing disk":
 				require.NoError(t, os.Remove(filepath.Join(root, "vms", "base", "disk.img")))
 			}

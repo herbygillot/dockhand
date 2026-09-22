@@ -25,9 +25,9 @@ func TestImageDigestTracksContentDespiteRestoredModificationTime(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(vm, name), []byte("original"), 0600))
 	}
 	executable := filepath.Join(root, "tart")
-	require.NoError(t, os.WriteFile(executable, []byte(`#!/bin/sh
+	writeExecutable(t, executable, `#!/bin/sh
 printf '%s\n' '[{"Name":"base","Source":"local","State":"stopped"}]'
-`), 0700))
+`)
 	p := &Provider{Config: Config{Home: root, Image: "base", ArtifactDirectory: filepath.Join(root, "artifacts"), Executable: executable, Platform: testPlatform}}
 	var messages []string
 	ctx := progress.WithReporter(t.Context(), func(update progress.Update) { messages = append(messages, update.Message) })
@@ -197,7 +197,7 @@ func TestRunningMarkerDoesNotHideExitedGuestRunner(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	executable := filepath.Join(root, "tart")
-	require.NoError(t, os.WriteFile(executable, []byte(`#!/bin/sh
+	writeExecutable(t, executable, `#!/bin/sh
 case "$1" in
 list) printf '%s\n' '[{"Name":"vm","Source":"local","State":"running"}]' ;;
 exec)
@@ -206,7 +206,7 @@ exec)
   *) printf '%s\n' '{"State":"running","Protocol":1,"ID":"fixture","Digest":"fixture"}' ;;
  esac ;;
 esac
-`), 0700))
+`)
 	n := newNative(Config{Home: root, Executable: executable}, nil, nil, nil)
 	result, err := n.Inspect(t.Context(), "vm")
 	require.NoError(t, err)
@@ -230,7 +230,7 @@ exec)
  esac ;;
 esac
 `
-			require.NoError(t, os.WriteFile(executable, []byte(script), 0700))
+			writeExecutable(t, executable, script)
 			n := newNative(Config{Home: root, Executable: executable}, nil, nil, nil)
 			result, err := n.Inspect(t.Context(), "vm")
 			require.NoError(t, err)

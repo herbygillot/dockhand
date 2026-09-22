@@ -216,7 +216,7 @@ mkdir -p "$out"
 printf 'fixture 45\nportdir devel/fixture name fixture version 1\n' > "$out/PortIndex"
 printf 'fixture 0\n' > "$out/PortIndex.quick"
 `
-	require.NoError(t, os.WriteFile(path, []byte(script), 0700))
+	writeExecutable(t, path, script)
 	return path
 }
 
