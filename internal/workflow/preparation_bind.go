@@ -24,6 +24,11 @@ type PreparationRequest struct {
 	Action            record.Action
 	Version           string
 	ID                record.RequestID
+	// Onto names an open contribution the update is prepared onto: the
+	// source is its current revision, the selection its target, and the
+	// candidate replaces its branch head as an amendment. Source and
+	// Selection are then filled by the binding.
+	Onto              record.ChangeID
 	Source            record.Source
 	SourceBranch      string
 	SourceURL         string
@@ -61,12 +66,31 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	if err := e.requireRepository(ctx, "preparation repository does not match state scope"); err != nil {
 		return BoundPreparation{}, err
 	}
+	source := request.Source
+	var target *onto
+	if request.Onto != "" {
+		bound, err := e.bindOnto(ctx, request.Onto)
+		if err != nil {
+			return BoundPreparation{}, err
+		}
+		if bound.change.KeepBody && request.Destination == record.Published && request.Publication.RefreshBody {
+			return BoundPreparation{}, fmt.Errorf("%w: %s was adopted with --keep-body; its pull request body is its author's", ErrInvalidRequest, initiatingNameOf(bound.change))
+		}
+		target = &bound
+		source = bound.revision.Source
+		request.ChangeID = bound.change.ID
+		request.Selection = bound.selection(request.Selection.Variants)
+		if request.Subject, err = ContributionSubject(ctx, e.Repo, source, request.Subject); err != nil {
+			return BoundPreparation{}, err
+		}
+		progress.Report(ctx, "Preparing the update onto %s's open contribution, branch %s; it lands as an amendment", initiatingNameOf(bound.change), bound.change.Branch)
+	} else if source.Base != source.Commit {
+		return BoundPreparation{}, ErrInvalidRequest
+	}
+	// A revision bump needs a subject saying why; an update onto a
+	// contribution has taken the contribution's own by now.
 	if request.Action == record.BumpRevision && strings.TrimSpace(request.Subject) == "" {
 		return BoundPreparation{}, fmt.Errorf("%w: a revision bump needs a subject saying why; --subject \"revbump for simdutf update\" is what maintainers read", ErrInvalidRequest)
-	}
-	source := request.Source
-	if source.Base != source.Commit {
-		return BoundPreparation{}, ErrInvalidRequest
 	}
 	trees, err := e.Repo.CommitTrees(ctx, []string{string(source.Commit)})
 	if err != nil {
@@ -112,7 +136,9 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 		}
 		destination = &resolved
 	}
-	source.Base = source.Commit
+	if target == nil {
+		source.Base = source.Commit
+	}
 	evaluation.Source = source
 	spec, err := normalizeSpec(record.JobSpec{KeepFailed: request.KeepFailed,
 		ChangeID: request.ChangeID, TargetBuilds: request.TargetBuilds, IncludeDependents: request.IncludeDependents, AllSubports: request.AllSubports, Action: request.Action, PublishTo: destination, Version: request.Version, Source: source, Targets: targets, EvaluatedVersions: evaluatedVersions(evaluation, targets), Destination: request.Destination, Verification: request.Verification, Build: request.Build, BuildRequirements: request.BuildRequirements, Subject: request.Subject, References: request.References,
@@ -120,6 +146,9 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	})
 	if err != nil {
 		return BoundPreparation{}, err
+	}
+	if target != nil {
+		spec.Preparation.Correction = &target.spec
 	}
 	return BoundPreparation{Request: Request{ID: request.ID, Spec: spec}, Evaluation: evaluation}, nil
 }

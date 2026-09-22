@@ -24,7 +24,10 @@ import (
 type actionRule struct {
 	prepares     bool
 	destinations []record.Destination
-	// correction requires a correction spec: amend and rebase adopt a branch.
+	// correction requires a correction spec with a captured candidate:
+	// amend and rebase adopt a branch. A preparing action may carry a
+	// correction without a candidate, an update onto the contribution's
+	// revision that the job prepares itself.
 	correction bool
 	// version accepts an explicit version; only a bump selects one.
 	version bool
@@ -262,7 +265,8 @@ func normalizePreparation(spec *record.JobSpec, rule actionRule) error {
 	if correction := choices.Correction; correction != nil {
 		copy := *correction
 		choices.Correction = &copy
-		if !rule.correction || !validToken(string(copy.ChangeID)) || !validToken(string(copy.RevisionID)) || !git.ValidBranchName(copy.Branch) || !git.ValidObjectID(string(copy.PreviousHead)) || copy.RemoteHead != "" && !git.ValidObjectID(string(copy.RemoteHead)) || validateSource(copy.Candidate) != nil || copy.Candidate.Commit == "" || copy.Candidate.Base == "" {
+		captured := copy.Candidate != (record.Source{})
+		if rule.correction != captured || !rule.prepares || !validToken(string(copy.ChangeID)) || !validToken(string(copy.RevisionID)) || !git.ValidBranchName(copy.Branch) || !git.ValidObjectID(string(copy.PreviousHead)) || copy.RemoteHead != "" && !git.ValidObjectID(string(copy.RemoteHead)) || captured && (validateSource(copy.Candidate) != nil || copy.Candidate.Commit == "" || copy.Candidate.Base == "") {
 			return ErrInvalidRequest
 		}
 	}

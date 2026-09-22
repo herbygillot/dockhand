@@ -71,7 +71,7 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 		return Preview{}, fmt.Errorf("bump-revision needs --subject: the reason is what maintainers read, e.g. --subject \"revbump for oniguruma 6.9.10\"")
 	}
 	if onto {
-		if request.Subject, err = subjectOnto(ctx, repo, source, request.Subject); err != nil {
+		if request.Subject, err = workflow.ContributionSubject(ctx, repo, source, request.Subject); err != nil {
 			return Preview{}, err
 		}
 	}
@@ -137,67 +137,6 @@ func openContributionSource(ctx context.Context, config Config, repo *git.Reposi
 	return &revision.Source, change.Branch, nil
 }
 
-// prepareOnto prepares the update onto the open contribution's own revision
-// rather than onto master, and binds it as an amendment of that
-// contribution: the edit is made on the branch's tree, the commit keeps the
-// contribution's message unless a subject is given, and the amend job
-// verifies and publishes the result. It is what a port that exists only on
-// its branch, or a contribution already amended by hand, needs.
-func (s *Services) prepareOnto(ctx context.Context, request Preparation, change record.Change) (workflow.BoundPreparation, error) {
-	revision, err := s.Workflow.CurrentRevision(ctx, change)
-	if err != nil {
-		return workflow.BoundPreparation{}, err
-	}
-	if len(change.Targets) != 1 {
-		return workflow.BoundPreparation{}, fmt.Errorf("contribution %s has %d targets; prepare onto one-target contributions only", change.ID, len(change.Targets))
-	}
-	target := change.Targets[0]
-	name := change.InitiatingTarget
-	if name == "" {
-		name = target.Name
-	}
-	progress.Report(ctx, "Preparing the update onto %s's open contribution, branch %s; it lands as an amendment", name, change.Branch)
-	platform, err := s.ports.NativePlatform(ctx)
-	if err != nil {
-		return workflow.BoundPreparation{}, err
-	}
-	variants := maps.Clone(target.Variants)
-	if variants == nil {
-		variants = map[string]bool{}
-	}
-	maps.Copy(variants, request.Selection.Variants)
-	input := preparation.Request{EditIntent: request.EditIntent, Action: request.Action, Source: revision.Source, Selection: macports.Selection{Selector: target.Portfile, Subport: target.Subport, Variants: variants}, Platform: platform, Version: request.Version, Subject: request.Subject, References: request.References}
-	if input.Subject, err = subjectOnto(ctx, s.Workflow.Repo, revision.Source, request.Subject); err != nil {
-		return workflow.BoundPreparation{}, err
-	}
-	if request.Action == record.Bump {
-		release, err := s.Preparation.ResolveRelease(ctx, input)
-		if err != nil {
-			return workflow.BoundPreparation{}, err
-		}
-		input.Release = &release
-	}
-	result, err := s.Preparation.Prepare(ctx, input)
-	if err != nil {
-		return workflow.BoundPreparation{}, err
-	}
-	if result.PreparedTree == revision.Source.Tree {
-		return workflow.BoundPreparation{}, fmt.Errorf("%s on branch %s already has this update; nothing to amend", name, change.Branch)
-	}
-	correction := workflow.CorrectionRequest{KeepFailed: request.KeepFailed, ID: request.ID, Action: record.Amend, Target: name, Tree: result.PreparedTree, Subject: request.Subject, References: request.References, Platform: platform, IncludeDependents: request.IncludeDependents, SkipVerify: request.SkipVerify}
-	if !request.SkipVerify {
-		correction.ResolveBuild = s.buildResolver(platform, request.Tests, request.FromSource, true)
-	}
-	if request.Publish != nil {
-		correction.Publication = request.Publish
-	}
-	bound, err := s.Workflow.BindCorrection(ctx, correction)
-	if err != nil {
-		return workflow.BoundPreparation{}, err
-	}
-	return workflow.BoundPreparation{Request: bound.Request}, nil
-}
-
 // Preparation captures the choices needed to create a new contribution.
 type Preparation struct {
 	record.EditIntent
@@ -221,6 +160,7 @@ type Preparation struct {
 
 func (s *Services) BindPreparation(ctx context.Context, request Preparation) (workflow.BoundPreparation, error) {
 	var prior *record.Job
+	var onto record.ChangeID
 	var err error
 	if macports.ValidName(request.Selection.Selector) || request.ChangeID != "" {
 		selector := workflow.ContributionSelector{ChangeID: request.ChangeID}
@@ -232,15 +172,23 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 		if err != nil {
 			return workflow.BoundPreparation{}, err
 		}
-		if prior == nil && contribution != nil {
-			return s.prepareOnto(ctx, request, *contribution)
+		// A contribution with no bump job of its own, one adopted or amended
+		// by hand, or whose last bump was itself prepared onto it, takes
+		// the update onto its own revision; the engine binds the rest.
+		if contribution != nil && (prior == nil || prior.Spec.Preparation != nil && prior.Spec.Preparation.Correction != nil) {
+			onto = contribution.ID
+			prior = nil
 		}
 	}
 	var source record.Source
-	progress.VerboseReport(ctx, "Fetching MacPorts master")
-	master, fetchErr := preparationSource(ctx, s.Workflow.Repo)
-	if prior == nil && fetchErr != nil {
-		return workflow.BoundPreparation{}, fetchErr
+	var master record.Source
+	var fetchErr error
+	if onto == "" {
+		progress.VerboseReport(ctx, "Fetching MacPorts master")
+		master, fetchErr = preparationSource(ctx, s.Workflow.Repo)
+		if prior == nil && fetchErr != nil {
+			return workflow.BoundPreparation{}, fetchErr
+		}
 	}
 	if prior != nil {
 		// An open contribution is continued only after master and its PR
@@ -293,7 +241,7 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 		maps.Copy(variants, request.Selection.Variants)
 		request.Selection = macports.Selection{Selector: target.Portfile, Subport: target.Subport, Variants: variants}
 	}
-	if request.Action == record.BumpRevision && strings.TrimSpace(request.Subject) == "" {
+	if request.Action == record.BumpRevision && onto == "" && strings.TrimSpace(request.Subject) == "" {
 		return workflow.BoundPreparation{}, fmt.Errorf("bump-revision needs --subject: the reason is what maintainers read, e.g. --subject \"revbump for oniguruma 6.9.10\"")
 	}
 	author, err := s.Workflow.Repo.Author(ctx)
@@ -304,7 +252,7 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 	if err != nil {
 		return workflow.BoundPreparation{}, err
 	}
-	bound := workflow.PreparationRequest{EditIntent: request.EditIntent, AllSubports: request.AllSubports, KeepFailed: request.KeepFailed, ChangeID: request.ChangeID, IncludeDependents: request.IncludeDependents, Action: request.Action, Version: request.Version, ID: request.ID, Source: source, SourceBranch: macports.PortsBranch, SourceURL: macports.PortsRepositoryURL, Selection: request.Selection, Subject: request.Subject, References: request.References,
+	bound := workflow.PreparationRequest{EditIntent: request.EditIntent, AllSubports: request.AllSubports, KeepFailed: request.KeepFailed, ChangeID: request.ChangeID, IncludeDependents: request.IncludeDependents, Action: request.Action, Version: request.Version, ID: request.ID, Onto: onto, Source: source, SourceBranch: macports.PortsBranch, SourceURL: macports.PortsRepositoryURL, Selection: request.Selection, Subject: request.Subject, References: request.References,
 		Author: record.CommitIdentity{Name: author.Name, Email: author.Email}, Platform: platform,
 		Destination: record.VerificationComplete, Verification: record.VerificationRequired}
 	if request.SkipVerify {
@@ -324,26 +272,6 @@ func preparationSource(ctx context.Context, repo *git.Repository) (record.Source
 		return record.Source{}, fmt.Errorf("fetching authoritative MacPorts master: %w", err)
 	}
 	return record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree), Base: record.ObjectID(commit)}, nil
-}
-
-// subjectOnto is the editor's subject for an update prepared onto a
-// contribution. The commit keeps the contribution's message unless a
-// subject was given, so the editor's own subject is never written; a
-// revision bump still wants one, and the contribution's is the truthful
-// choice.
-func subjectOnto(ctx context.Context, repo *git.Repository, source record.Source, subject string) (string, error) {
-	if subject != "" {
-		return subject, nil
-	}
-	message, err := repo.CommitMessage(ctx, string(source.Commit))
-	if err != nil {
-		return "", err
-	}
-	first, _, _ := strings.Cut(message, "\n")
-	if _, after, ok := strings.Cut(first, ": "); ok {
-		return after, nil
-	}
-	return first, nil
 }
 
 // IsUnsupported reports whether a preparation failed because the editor does

@@ -16,6 +16,10 @@ import (
 
 var errNoSourceChanges = errors.New("Checksums are already current")
 
+// errNothingToAmend is an update onto a contribution whose branch already
+// holds it; the job completes and the contribution stays as it is.
+var errNothingToAmend = errors.New("The branch already has this update; nothing to amend")
+
 func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, string, error) {
 	e := c.engine
 	var selected record.Job
@@ -42,7 +46,7 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 		if !job.Eligible(e.now()) {
 			return nil
 		}
-		if job.Spec.Preparation == nil || e.Repo == nil || e.Preparer == nil && job.Spec.Preparation.Correction == nil {
+		if job.Spec.Preparation == nil || e.Repo == nil || e.Preparer == nil && !capturedCorrection(job.Spec.Preparation.Correction) {
 			detail = "workflow: preparation requires bound source, author, platform, Git, and a preparer"
 			if err := closeEmptyContribution(ctx, tx, job.ChangeID); err != nil {
 				return err
@@ -97,7 +101,7 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 		job.Release()
 		if job.CancelRequestedAt != nil {
 			finishJob(&job, record.JobCanceled, "Canceled before branch integration", e.now())
-		} else if errors.Is(operationErr, errNoSourceChanges) {
+		} else if errors.Is(operationErr, errNoSourceChanges) || errors.Is(operationErr, errNothingToAmend) {
 			if err := closeEmptyContribution(ctx, tx, job.ChangeID); err != nil {
 				return err
 			}
@@ -166,7 +170,10 @@ func (c *cycle) prepareCandidate(ctx context.Context, job record.Job) (record.Pr
 	}
 	target := job.Spec.Targets[0]
 	choices := job.Spec.Preparation
-	if correction := choices.Correction; correction != nil {
+	correction := choices.Correction
+	if capturedCorrection(correction) {
+		// An amend or rebase captured its candidate at binding; the job
+		// integrates it.
 		return record.PreparedChange{Scope: correction.Scope, Branch: correction.Branch, Source: correction.Candidate}, nil
 	}
 	result, err := e.Preparer.Prepare(ctx, preparationRequest(job))
@@ -179,6 +186,9 @@ func (c *cycle) prepareCandidate(ctx context.Context, job record.Job) (record.Pr
 	if job.Spec.Action == record.RefreshChecksums && result.PreparedTree == job.Spec.Source.Tree && len(result.Commits) == 0 && len(result.Files) == 0 {
 		return record.PreparedChange{}, errNoSourceChanges
 	}
+	if correction != nil && result.PreparedTree == job.Spec.Source.Tree {
+		return record.PreparedChange{}, errNothingToAmend
+	}
 	if !result.Scope.Valid() || result.Scope != nil && !choices.SharedRelease {
 		return record.PreparedChange{}, fmt.Errorf("workflow: unapproved shared-release scope")
 	}
@@ -188,9 +198,19 @@ func (c *cycle) prepareCandidate(ctx context.Context, job record.Job) (record.Pr
 	intent := result.Commits[0]
 	signature := git.Signature{Name: choices.Author.Name, Email: choices.Author.Email, When: job.AcceptedAt}
 	message := intent.Message()
-	commit, err := e.Repo.WriteCommit(ctx, git.Commit{Tree: string(result.PreparedTree), Parents: []string{string(job.Spec.Source.Commit)}, Message: message, Author: signature, Committer: signature})
+	// A fresh preparation commits on the source it edited, master; an
+	// update onto a contribution commits on the contribution's base, so the
+	// contribution stays one commit, and lands on its own branch.
+	parent := job.Spec.Source.Commit
+	if correction != nil {
+		parent = job.Spec.Source.Base
+	}
+	commit, err := e.Repo.WriteCommit(ctx, git.Commit{Tree: string(result.PreparedTree), Parents: []string{string(parent)}, Message: message, Author: signature, Committer: signature})
 	if err != nil {
 		return record.PreparedChange{}, err
+	}
+	if correction != nil {
+		return record.PreparedChange{Scope: result.Scope, Branch: correction.Branch, Source: record.Source{Commit: record.ObjectID(commit), Tree: result.PreparedTree, Base: job.Spec.Source.Base}, PatchProblems: result.PatchProblems()}, nil
 	}
 	name := strings.Map(func(r rune) rune {
 		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
@@ -214,4 +234,11 @@ func (c *cycle) prepareCandidate(ctx context.Context, job record.Job) (record.Pr
 	}
 	branch := prefix + name + "-" + strings.ToLower(strings.TrimPrefix(string(job.ID), "job_"))
 	return record.PreparedChange{Scope: result.Scope, Branch: branch, Source: record.Source{Commit: record.ObjectID(commit), Tree: result.PreparedTree, Base: job.Spec.Source.Base}, PatchProblems: result.PatchProblems()}, nil
+}
+
+// capturedCorrection reports whether a correction carries the candidate an
+// amend or rebase captured at binding, which the job integrates rather than
+// prepares.
+func capturedCorrection(correction *record.CorrectionSpec) bool {
+	return correction != nil && correction.Candidate.Tree != ""
 }

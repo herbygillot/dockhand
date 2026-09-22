@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -429,4 +430,65 @@ func TestRejectedPatchCreatesTheBranchButNotVerification(t *testing.T) {
 	require.Contains(t, job.Detail, "Prepared branch "+job.Prepared.Branch+"; verification not started because a patch no longer applies")
 	require.Contains(t, job.Detail, "patch-daemon.diff: 4 out of 5 hunks failed")
 	require.NotEmpty(t, job.ChangeID, "the branch and change exist for a correction")
+}
+
+// An update onto an adopted contribution runs through the same durable
+// stages as a fresh preparation: the person's choices reach the job, the
+// editor's patch findings reach the branch integration gate, and the
+// candidate replaces the contribution's branch head as one commit on its
+// base with the message it had.
+func TestPreparationOntoAContributionKeepsChoicesAndPatchFindings(t *testing.T) {
+	t.Parallel()
+	f, _ := publicationFixtureWithTracking(t, true)
+	previous, err := f.repo.ReadRef(t.Context(), "refs/heads/candidate")
+	require.NoError(t, err)
+	req := workflow.PreparationRequest{Action: record.BumpRevision, ID: "onto", Onto: "change", AllSubports: true, SourceBranch: "master",
+		Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: f.request("").Spec.Build,
+		Author: record.CommitIdentity{Name: "Accepted Author", Email: "accepted@example.invalid"}, Platform: buildPlatform}
+	bound, err := f.engine.BindPreparation(t.Context(), req)
+	require.NoError(t, err)
+	spec := bound.Request.Spec
+	require.True(t, spec.AllSubports, "the choice reaches the job")
+	require.Equal(t, record.ChangeID("change"), spec.ChangeID)
+	require.Equal(t, f.source, spec.Source, "the source is the contribution's current revision")
+	require.Equal(t, "update to 2", spec.Subject, "the contribution's own subject")
+	require.NotNil(t, spec.Preparation.Correction)
+	require.Equal(t, record.CorrectionSpec{ChangeID: "change", RevisionID: "publication_revision", Branch: "candidate", PreviousHead: f.source.Commit, RemoteHead: f.source.Commit}, *spec.Preparation.Correction, "no captured candidate: the job prepares it")
+	f.engine.Preparer = prepareFunc(func(ctx context.Context, r preparation.Request) (preparation.Result, error) {
+		require.Equal(t, f.source, r.Source)
+		before, _, err := f.repo.File(ctx, string(r.Source.Tree), r.Selection.Selector)
+		if err != nil {
+			return preparation.Result{}, err
+		}
+		tree, err := f.repo.EditTree(ctx, string(r.Source.Tree), []git.FileEdit{{Path: r.Selection.Selector, Before: before, After: []byte("version 2\nrevision 1\n"), Mode: before.Mode}})
+		return preparation.Result{Base: r.Source, Target: spec.Targets[0], PreparedTree: record.ObjectID(tree),
+			Commits: []preparation.CommitIntent{{Subject: "fixture: " + r.Subject}},
+			Patches: []patchcheck.Result{{Name: "patch-daemon.diff", Checked: true, Applies: false, Detail: "4 out of 5 hunks failed"}}}, err
+	})
+	id := submitPreparation(t, f, bound.Request)
+	var job record.Job
+	for i := 0; i < 6; i++ {
+		f.run(t, id)
+		job = f.status(t, id).Jobs[0].Job
+		if job.State != record.JobActive && job.State != record.JobQueued {
+			break
+		}
+	}
+	require.Equal(t, record.JobNeedsAttention, job.State)
+	require.Equal(t, []string{"patch-daemon.diff: 4 out of 5 hunks failed"}, job.Prepared.PatchProblems, "the findings reach the gate")
+	require.Contains(t, job.Detail, "verification not started because a patch no longer applies")
+	require.Equal(t, "candidate", job.Prepared.Branch, "the candidate lands on the contribution's branch")
+	head, err := f.repo.ReadRef(t.Context(), "refs/heads/candidate")
+	require.NoError(t, err)
+	require.NotEqual(t, previous.Object, head.Object)
+	require.Equal(t, string(job.Prepared.Source.Commit), head.Object)
+	parent, err := f.repo.SingleParent(t.Context(), head.Object)
+	require.NoError(t, err)
+	require.Equal(t, string(f.source.Base), parent, "one commit on the contribution's base")
+	message, err := f.repo.CommitMessage(t.Context(), head.Object)
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(message, "fixture: update to 2"), message)
+	change, err := f.engine.SelectContribution(t.Context(), workflow.ContributionSelector{ChangeID: "change"})
+	require.NoError(t, err)
+	require.Equal(t, job.ResultRevision, change.CurrentRevision, "the contribution's current revision is the amendment")
 }

@@ -48,7 +48,11 @@ type PreparedChange struct {
 	PatchProblems []string `json:",omitempty"`
 }
 
-// CorrectionSpec freezes branch adoption preconditions alongside its candidate.
+// CorrectionSpec freezes the preconditions for replacing a contribution's
+// branch head: the revision it replaces and the heads it expects. An amend
+// or rebase carries its captured candidate; an update prepared onto the
+// contribution's own revision carries none, since the job prepares the
+// candidate itself through the same stages as a fresh preparation.
 type CorrectionSpec struct {
 	Scope        *ReleaseScope `json:",omitempty"`
 	ChangeID     ChangeID
@@ -56,5 +60,5 @@ type CorrectionSpec struct {
 	Branch       string
 	PreviousHead ObjectID
 	RemoteHead   ObjectID
-	Candidate    Source
+	Candidate    Source `json:",omitempty"`
 }
