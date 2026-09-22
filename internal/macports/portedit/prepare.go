@@ -139,7 +139,7 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	if err != nil {
 		return Result{}, err
 	}
-	err = result.commitEdit(input, request, evaluated.edit, fidelity.Revision(family, evaluated.after, input.target.Name, input.files.root), "revbump")
+	err = result.commitEdit(input, request, evaluated.edit, fidelity.Revision(family, evaluated.after, input.target.Name), "revbump")
 	return result, err
 }
 

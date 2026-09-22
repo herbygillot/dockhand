@@ -188,7 +188,7 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	if snapshot.Source != source {
 		return result, fmt.Errorf("%w: stored candidate source identity differs", ErrFidelity)
 	}
-	if err = fidelity.Equivalent(expected, snapshot, files.Root, candidate.Root); err != nil {
+	if err = fidelity.Equivalent(expected, snapshot); err != nil {
 		return result, err
 	}
 	// The committed candidate is the prepared result, and the last report

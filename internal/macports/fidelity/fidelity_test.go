@@ -14,12 +14,21 @@ func snapshot(ports map[string]macports.PortInfo) macports.Snapshot {
 
 func TestEquivalentNormalizesRelocatedWorkspaces(t *testing.T) {
 	before := snapshot(map[string]macports.PortInfo{"main": {Name: "main", Version: "1", Revision: 2, Options: map[string]string{"filespath": "/before/devel/main/files"}}})
+	before.Root = "/before"
 	after := snapshot(map[string]macports.PortInfo{"main": {Name: "main", Version: "1", Revision: 2, Options: map[string]string{"filespath": "/after/devel/main/files"}}})
-	require.NoError(t, Equivalent(before, after, "/before", "/after"), "paths under different roots compare equal")
-	require.ErrorIs(t, Equivalent(before, after, "/before", "/elsewhere"), ErrMismatch, "an unexpected root shows as a changed option")
+	after.Root = "/after"
+	require.NoError(t, Equivalent(before, after), "paths under different roots compare equal, each normalized by its own")
+	elsewhere := after
+	elsewhere.Root = "/elsewhere"
+	require.ErrorIs(t, Equivalent(before, elsewhere), ErrMismatch, "a snapshot claiming another root shows as a changed option")
 	require.Equal(t, "/before/devel/main/files", before.Ports["main"].Options["filespath"], "comparison must not mutate observations")
 	changed := snapshot(map[string]macports.PortInfo{"main": {Name: "main", Version: "1", Revision: 3, Options: map[string]string{"filespath": "/after/devel/main/files"}}})
-	require.ErrorIs(t, Equivalent(before, changed, "/before", "/after"), ErrMismatch)
+	changed.Root = "/after"
+	require.ErrorIs(t, Equivalent(before, changed), ErrMismatch)
+	unrooted := before
+	unrooted.Root = ""
+	require.ErrorIs(t, Equivalent(unrooted, after), ErrMismatch, "a snapshot read back without its root keeps its paths, and they differ from a normalized one")
+	require.NoError(t, Equivalent(unrooted, unrooted), "and compares equal to itself")
 }
 
 func TestRevisionAndChecksumsReportOnlyIntendedChanges(t *testing.T) {
@@ -31,21 +40,21 @@ func TestRevisionAndChecksumsReportOnlyIntendedChanges(t *testing.T) {
 		"main":  {Name: "main", Version: "1", Revision: 1, Options: map[string]string{"checksums": "sha256 aaaa"}},
 		"child": {Name: "child", Version: "2", Revision: 3, Options: map[string]string{}},
 	})
-	report := Revision(before, bumped, "main", "/source")
+	report := Revision(before, bumped, "main")
 	require.Equal(t, []string{"main.revision +1"}, report.ExpectedChanges)
 	require.Empty(t, report.UnexpectedChanges)
 	sibling := snapshot(map[string]macports.PortInfo{
 		"main":  {Name: "main", Version: "1", Revision: 1, Options: map[string]string{"checksums": "sha256 aaaa"}},
 		"child": {Name: "child", Version: "2", Revision: 4, Options: map[string]string{}},
 	})
-	require.NotEmpty(t, Revision(before, sibling, "main", "/source").UnexpectedChanges, "a sibling revision change is unexpected")
+	require.NotEmpty(t, Revision(before, sibling, "main").UnexpectedChanges, "a sibling revision change is unexpected")
 
 	refreshed := snapshot(map[string]macports.PortInfo{
 		"main":  {Name: "main", Version: "1", Revision: 0, Options: map[string]string{"checksums": "sha256 bbbb"}},
 		"child": {Name: "child", Version: "2", Revision: 3, Options: map[string]string{}},
 	})
-	require.Empty(t, Checksums(before, refreshed, "main", "/source", "sha256 bbbb").UnexpectedChanges)
-	require.NotEmpty(t, Checksums(before, refreshed, "main", "/source", "sha256 cccc").UnexpectedChanges, "checksums must match the intended values")
+	require.Empty(t, Checksums(before, refreshed, "main", "sha256 bbbb").UnexpectedChanges)
+	require.NotEmpty(t, Checksums(before, refreshed, "main", "sha256 cccc").UnexpectedChanges, "checksums must match the intended values")
 	require.Error(t, CheckSnapshot(macports.Snapshot{}, macports.Context{}))
 }
 
@@ -58,9 +67,9 @@ func TestVersionAllowsAHomepageThatFollowsTheVersion(t *testing.T) {
 	after := snapshot(map[string]macports.PortInfo{
 		"main": {Name: "main", Version: "0.230.0", Revision: 0, Options: map[string]string{"checksums": "sha256 bbbb", "homepage": "https://metacpan.org/release/List-Uniq-0.23"}},
 	})
-	report := ScopedVersion(false, before, after, "main", "/source", record.Release{Version: "0.230.0"}, "sha256 bbbb")
+	report := ScopedVersion(false, before, after, "main", record.Release{Version: "0.230.0"}, "sha256 bbbb")
 	require.Empty(t, report.UnexpectedChanges)
 	after.Ports["main"].Options["description"] = "changed"
-	report = ScopedVersion(false, before, after, "main", "/source", record.Release{Version: "0.230.0"}, "sha256 bbbb")
+	report = ScopedVersion(false, before, after, "main", record.Release{Version: "0.230.0"}, "sha256 bbbb")
 	require.NotEmpty(t, report.UnexpectedChanges, "other metadata still may not move")
 }

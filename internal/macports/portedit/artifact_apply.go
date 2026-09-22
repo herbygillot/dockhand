@@ -70,7 +70,7 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 	for i, frame := range plan.observed.contexts {
 		final := finals[i]
 		checksums := strings.Join(wantedChecksums(frame.binding, updates), " ")
-		finalFidelity := fidelity.ScopedChecksums(input.scope, frame.after, final.Snapshot, input.target.Name, input.files.root, checksums)
+		finalFidelity := fidelity.ScopedChecksums(input.scope, frame.after, final.Snapshot, input.target.Name, checksums)
 		if len(finalFidelity.UnexpectedChanges) > 0 {
 			return result, fmt.Errorf("%w: final context %+v: %v", ErrFidelity, frame.profile, finalFidelity.UnexpectedChanges)
 		}
@@ -89,7 +89,7 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 			break
 		}
 	}
-	report := fidelity.ScopedChecksums(input.scope, native.after, final, input.target.Name, input.files.root, strings.Join(wantedChecksums(native.binding, updates), " "))
+	report := fidelity.ScopedChecksums(input.scope, native.after, final, input.target.Name, strings.Join(wantedChecksums(native.binding, updates), " "))
 	if err := result.commitEdit(input, request, evaluated.edit, report, plan.subject); err != nil {
 		return result, err
 	}

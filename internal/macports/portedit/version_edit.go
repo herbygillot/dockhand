@@ -208,7 +208,7 @@ func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator,
 				return nil, snapshot, err
 			}
 		}
-		report := fidelity.ScopedVersion(request.SharedRelease, baseline, after, input.target.Name, input.files.root, desired, next.Options["checksums"])
+		report := fidelity.ScopedVersion(request.SharedRelease, baseline, after, input.target.Name, desired, next.Options["checksums"])
 		if checkFidelity && len(report.UnexpectedChanges) > 0 {
 			rejected = fmt.Errorf("%w: %v", ErrFidelity, report.UnexpectedChanges)
 			continue

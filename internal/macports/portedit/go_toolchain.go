@@ -90,7 +90,7 @@ func (s *Service) raiseGoToolchain(ctx context.Context, request Request, input *
 			expected.Options = maps.Clone(old.Options)
 			expected.Options["go.toolchain_min"] = required
 		}
-		report.UnexpectedChanges = append(report.UnexpectedChanges, fidelity.Compare(name, fidelity.ComparablePort(expected, input.files.root), fidelity.ComparablePort(next, input.files.root))...)
+		report.UnexpectedChanges = append(report.UnexpectedChanges, fidelity.Compare(name, fidelity.ComparablePort(expected, previous.Root), fidelity.ComparablePort(next, after.Root))...)
 	}
 	result.Files = []portfile.Edit{evaluated.edit}
 	result.report(report)

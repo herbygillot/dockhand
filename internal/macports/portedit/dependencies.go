@@ -254,7 +254,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 		if old.Revision != next.Revision {
 			final.UnexpectedChanges = append(final.UnexpectedChanges, name+".revision changed")
 		}
-		final.UnexpectedChanges = append(final.UnexpectedChanges, fidelity.Compare(name, fidelity.ComparablePort(old, input.files.root), fidelity.ComparablePort(next, input.files.root))...)
+		final.UnexpectedChanges = append(final.UnexpectedChanges, fidelity.Compare(name, fidelity.ComparablePort(old, family.Root), fidelity.ComparablePort(next, after.Root))...)
 	}
 	if len(final.UnexpectedChanges) > 0 {
 		return Result{}, fmt.Errorf("%w: %v", ErrFidelity, final.UnexpectedChanges)

@@ -84,7 +84,7 @@ func (s *Service) planGitVersion(ctx context.Context, request Request, input *so
 	if err != nil {
 		return archivePlan{}, err
 	}
-	report := fidelity.GitVersion(request.SharedRelease, family, versioned, input.target.Name, input.files.root, *release, branch)
+	report := fidelity.GitVersion(request.SharedRelease, family, versioned, input.target.Name, *release, branch)
 	result := Result{Scope: input.scope, Base: request.Source, Target: input.target, Release: release, Coverage: []ContextCoverage{{Fetch: next.Fetch, Platform: input.before.Platform}}}
 	result.report(report)
 	if len(report.UnexpectedChanges) > 0 {
@@ -106,7 +106,7 @@ func (s *Service) applyGitVersion(ctx context.Context, request Request, input *s
 	if err != nil {
 		return result, err
 	}
-	report := fidelity.GitVersion(request.SharedRelease, family, evaluated.after, input.target.Name, input.files.root, *request.Release, plan.branch)
+	report := fidelity.GitVersion(request.SharedRelease, family, evaluated.after, input.target.Name, *request.Release, plan.branch)
 	if err := result.commitEdit(input, request, evaluated.edit, report, plan.subject); err != nil {
 		return result, err
 	}

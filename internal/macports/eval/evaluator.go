@@ -214,7 +214,7 @@ func evaluateIn(ctx context.Context, session *rpc.Session, runtime macports.Runt
 			ports[sub] = value
 		}
 	}
-	snapshot := macports.Snapshot{Source: source.Source(), Target: source.Target(), Platform: runtime.Platform, Runtime: runtime, Ports: ports, ObservedAt: time.Now().UTC()}
+	snapshot := macports.Snapshot{Source: source.Source(), Target: source.Target(), Platform: runtime.Platform, Runtime: runtime, Ports: ports, Root: source.Root(), ObservedAt: time.Now().UTC()}
 	modeled := request != nil && request.Platform != (record.Platform{}) && request.Platform != runtime.Platform
 	if modeled {
 		snapshot.Platform = request.Platform

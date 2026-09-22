@@ -42,6 +42,12 @@ type Snapshot struct {
 	Platform   record.Platform
 	Ports      map[string]PortInfo
 	ObservedAt time.Time
+	// Root is the directory the evaluation ran in, which option values
+	// such as filespath name absolutely. Comparisons normalize each
+	// snapshot by its own root, so two evaluations of the same tree in
+	// different directories compare equal. It is not persisted; a snapshot
+	// read back has none, and normalization then leaves values as they are.
+	Root string `json:"-"`
 }
 
 func (s Snapshot) RequiresXcode() (bool, error) {

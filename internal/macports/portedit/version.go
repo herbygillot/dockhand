@@ -80,7 +80,7 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 	}
 	observed, err := s.planObservedArchives(ctx, request, input, contents)
 	result := Result{Scope: input.scope, Base: request.Source, Target: input.target, Release: release}
-	result.report(fidelity.ScopedVersion(request.SharedRelease, family, versioned, input.target.Name, input.files.root, *release, versioned.Ports[input.target.Name].Options["checksums"]))
+	result.report(fidelity.ScopedVersion(request.SharedRelease, family, versioned, input.target.Name, *release, versioned.Ports[input.target.Name].Options["checksums"]))
 	if observed != nil {
 		for _, frame := range observed.contexts {
 			result.Coverage = append(result.Coverage, ContextCoverage{Fetch: frame.after.Ports[input.target.Name].Fetch, Platform: frame.profile, Modeled: frame.profile != input.before.Platform, Affected: frame.affected})
@@ -135,6 +135,6 @@ func (s *Service) applyArchivePlan(ctx context.Context, request Request, input *
 	if err != nil {
 		return result, err
 	}
-	final := fidelity.Checksums(versioned, evaluated.after, input.target.Name, input.files.root, checksums)
+	final := fidelity.Checksums(versioned, evaluated.after, input.target.Name, checksums)
 	return result, result.commitEdit(input, request, evaluated.edit, final, plan.subject)
 }

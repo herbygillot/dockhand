@@ -44,7 +44,7 @@ func CheckSnapshot(snapshot macports.Snapshot, bound macports.Context) error {
 }
 
 // Revision expects only the selected port's revision to advance by one.
-func Revision(before, after macports.Snapshot, selected, root string) Report {
+func Revision(before, after macports.Snapshot, selected string) Report {
 	result := Report{Before: before, After: after, ExpectedChanges: []string{selected + ".revision +1"}, UnexpectedChanges: []string{}}
 	names := map[string]bool{}
 	for name := range before.Ports {
@@ -67,8 +67,8 @@ func Revision(before, after macports.Snapshot, selected, root string) Report {
 		if next.Revision != wanted {
 			result.UnexpectedChanges = append(result.UnexpectedChanges, fmt.Sprintf("%s.revision: expected %d, got %d", name, wanted, next.Revision))
 		}
-		old = ComparablePort(old, root)
-		next = ComparablePort(next, root)
+		old = ComparablePort(old, before.Root)
+		next = ComparablePort(next, after.Root)
 		result.UnexpectedChanges = append(result.UnexpectedChanges, Compare(name, old, next)...)
 	}
 	slices.Sort(result.UnexpectedChanges)
@@ -76,14 +76,19 @@ func Revision(before, after macports.Snapshot, selected, root string) Report {
 }
 
 // ComparablePort normalizes a port for comparison: the revision is compared
-// separately, and workspace roots are replaced so relocated snapshots compare equal.
+// separately, and the workspace root the port was evaluated in is replaced
+// so relocated snapshots compare equal. An empty root, as a snapshot read
+// back from a record has, leaves values as they are.
 func ComparablePort(port macports.PortInfo, root string) macports.PortInfo {
 	port.Options = maps.Clone(port.Options)
 	delete(port.Options, "revision")
+	port.OptionErrors = maps.Clone(port.OptionErrors)
+	if root == "" {
+		return port
+	}
 	for key, value := range port.Options {
 		port.Options[key] = strings.ReplaceAll(value, root, "<source>")
 	}
-	port.OptionErrors = maps.Clone(port.OptionErrors)
 	for key, value := range port.OptionErrors {
 		port.OptionErrors[key] = strings.ReplaceAll(value, root, "<source>")
 	}
@@ -126,8 +131,8 @@ func Compare(name string, old, next macports.PortInfo) []string {
 }
 
 // Equivalent requires two evaluations of the same context to agree on every
-// port and every compared field.
-func Equivalent(expected, actual macports.Snapshot, expectedRoot, actualRoot string) error {
+// port and every compared field, each normalized by its own root.
+func Equivalent(expected, actual macports.Snapshot) error {
 	if expected.Platform != actual.Platform || !reflect.DeepEqual(expected.Target, actual.Target) {
 		return fmt.Errorf("%w: candidate evaluation changed evaluation context", ErrMismatch)
 	}
@@ -139,7 +144,7 @@ func Equivalent(expected, actual macports.Snapshot, expectedRoot, actualRoot str
 		if !ok || old.Revision != next.Revision {
 			return fmt.Errorf("%w: candidate evaluation changed %s", ErrMismatch, name)
 		}
-		if changes := Compare(name, ComparablePort(old, expectedRoot), ComparablePort(next, actualRoot)); len(changes) > 0 {
+		if changes := Compare(name, ComparablePort(old, expected.Root), ComparablePort(next, actual.Root)); len(changes) > 0 {
 			return fmt.Errorf("%w: candidate evaluation: %v", ErrMismatch, changes)
 		}
 	}
@@ -148,7 +153,7 @@ func Equivalent(expected, actual macports.Snapshot, expectedRoot, actualRoot str
 
 // Version expects the selected port to move to the release, its revision to
 // reset, and its source declarations and checksums to change, and nothing else.
-func version(before, after macports.Snapshot, selected, root string, release record.Release, checksums string) Report {
+func version(before, after macports.Snapshot, selected string, release record.Release, checksums string) Report {
 	result := Report{Before: before, After: after, ExpectedChanges: []string{selected + ".version -> " + release.Version, selected + ".revision -> 0", selected + ".distfiles and checksums"}, UnexpectedChanges: []string{}}
 	names := map[string]bool{}
 	for name := range before.Ports {
@@ -164,8 +169,8 @@ func version(before, after macports.Snapshot, selected, root string, release rec
 			result.UnexpectedChanges = append(result.UnexpectedChanges, name+": port set changed")
 			continue
 		}
-		old := ComparablePort(original, root)
-		next = ComparablePort(next, root)
+		old := ComparablePort(original, before.Root)
+		next = ComparablePort(next, after.Root)
 		if name == selected {
 			old.Version, old.Revision = release.Version, 0
 			for _, key := range macports.VersionFollowers {
@@ -199,9 +204,9 @@ func version(before, after macports.Snapshot, selected, root string, release rec
 // version moves, the revision resets, nothing is downloaded, and git.branch
 // lands on branch, the resolved tag or the resolved commit. An empty branch
 // leaves git.branch unchecked, for a source whose tag is not known.
-func GitVersion(shared bool, before, after macports.Snapshot, selected, root string, release record.Release, branch string) Report {
+func GitVersion(shared bool, before, after macports.Snapshot, selected string, release record.Release, branch string) Report {
 	release.Tag = branch
-	report := ScopedVersion(shared, before, after, selected, root, release, "")
+	report := ScopedVersion(shared, before, after, selected, release, "")
 	for i, change := range report.ExpectedChanges {
 		if change == selected+".distfiles and checksums" {
 			report.ExpectedChanges[i] = selected + ".git.branch -> " + branch
@@ -214,7 +219,7 @@ func GitVersion(shared bool, before, after macports.Snapshot, selected, root str
 }
 
 // Checksums expects only the selected port's checksums to change.
-func Checksums(before, after macports.Snapshot, selected, root, checksums string) Report {
+func Checksums(before, after macports.Snapshot, selected, checksums string) Report {
 	expected := before
 	expected.Ports = maps.Clone(before.Ports)
 	info := expected.Ports[selected]
@@ -233,7 +238,7 @@ func Checksums(before, after macports.Snapshot, selected, root, checksums string
 	}
 	next.Options["checksums"] = checksums
 	normalized.Ports[selected] = next
-	if err := Equivalent(expected, normalized, root, root); err != nil {
+	if err := Equivalent(expected, normalized); err != nil {
 		result.UnexpectedChanges = append(result.UnexpectedChanges, err.Error())
 	}
 	return result
@@ -297,13 +302,13 @@ func followsObsolete(name, selected string, old, next, oldRoot, nextRoot macport
 // ScopedVersion applies Version to every affected member of a release and
 // Equivalent to the rest. Without shared authorization the affected members
 // are the selected port and its obsolete followers.
-func ScopedVersion(shared bool, before, after macports.Snapshot, selected, root string, release record.Release, checksums string) Report {
+func ScopedVersion(shared bool, before, after macports.Snapshot, selected string, release record.Release, checksums string) Report {
 	scope, err := ReleaseScope(before, after, selected, shared)
 	if err != nil {
 		return Report{Before: before, After: after, UnexpectedChanges: []string{err.Error()}}
 	}
 	if len(scope.Affected) == 1 && scope.Affected[0].Target.Name == selected {
-		return version(before, after, selected, root, release, checksums)
+		return version(before, after, selected, release, checksums)
 	}
 	normalized := before
 	normalized.Ports = maps.Clone(before.Ports)
@@ -317,20 +322,22 @@ func ScopedVersion(shared bool, before, after macports.Snapshot, selected, root 
 		if member.MetadataOnly {
 			ownRelease.Tag = ""
 		}
-		f := version(oneBefore, oneAfter, name, root, ownRelease, after.Ports[name].Options["checksums"])
+		f := version(oneBefore, oneAfter, name, ownRelease, after.Ports[name].Options["checksums"])
 		problems = append(problems, f.UnexpectedChanges...)
-		normalized.Ports[name] = after.Ports[name]
+		// The member's after state joins the before snapshot, whose root
+		// is not the after root: normalize it by its own first.
+		normalized.Ports[name] = ComparablePort(after.Ports[name], after.Root)
 	}
-	if err := Equivalent(normalized, after, root, root); err != nil {
+	if err := Equivalent(normalized, after); err != nil {
 		problems = append(problems, err.Error())
 	}
 	return Report{Before: before, After: after, UnexpectedChanges: problems}
 }
 
 // ScopedChecksums applies Checksums across the affected members of a scope.
-func ScopedChecksums(scope *record.ReleaseScope, before, after macports.Snapshot, selected, root, checksums string) Report {
+func ScopedChecksums(scope *record.ReleaseScope, before, after macports.Snapshot, selected, checksums string) Report {
 	if scope == nil {
-		return Checksums(before, after, selected, root, checksums)
+		return Checksums(before, after, selected, checksums)
 	}
 	expected := before
 	expected.Ports = maps.Clone(before.Ports)
@@ -345,7 +352,7 @@ func ScopedChecksums(scope *record.ReleaseScope, before, after macports.Snapshot
 		expected.Ports[name] = info
 	}
 	result := Report{Before: before, After: after}
-	if err := Equivalent(expected, after, root, root); err != nil {
+	if err := Equivalent(expected, after); err != nil {
 		result.UnexpectedChanges = append(result.UnexpectedChanges, err.Error())
 	}
 	return result
