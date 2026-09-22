@@ -594,3 +594,61 @@ func TestPreparationOntoAContributionKeepsItsScopeDestinationAndMessage(t *testi
 		require.Equal(t, "1", current.Scope.Affected[0].After.Version, "rebound onto the candidate")
 	})
 }
+
+// An update onto a contribution whose target is a stub's carrier, a
+// py313-foo adopted by hand or chosen by an earlier bump, edits the stub's
+// shared release as a fresh bump of the stub would: the stub is recorded
+// on the intent and the siblings are authorized to move.
+func TestPreparationOntoAStubCarrierEditsTheSharedRelease(t *testing.T) {
+	t.Parallel()
+	family := func(stub bool) func(macports.Context) map[string]macports.PortInfo {
+		return func(macports.Context) map[string]macports.PortInfo {
+			owner := map[string]string{}
+			if stub {
+				owner["dockhand.metadata_only"] = "1"
+			}
+			return map[string]macports.PortInfo{
+				"fixture":       {Name: "fixture", Version: "1", Options: owner},
+				"py312-fixture": {Name: "py312-fixture", Version: "1", Options: map[string]string{}},
+				"py313-fixture": {Name: "py313-fixture", Version: "1", Options: map[string]string{}},
+			}
+		}
+	}
+	for _, stub := range []bool{true, false} {
+		t.Run(map[bool]string{true: "stub", false: "ordinary"}[stub], func(t *testing.T) {
+			t.Parallel()
+			f, _ := publicationFixtureWithTracking(t, true)
+			f.engine.Ports.(*boundPorts).snapshot = family(stub)
+			carrier := record.Target{Name: "py313-fixture", Portfile: "devel/fixture/Portfile", Subport: "py313-fixture"}
+			// A contribution tracked on the carrier, as adopting a hand-made
+			// py313-fixture branch records it.
+			require.NoError(t, f.store.Update(t.Context(), f.repository, func(ctx context.Context, tx state.Tx) error {
+				change := record.Change{ID: "carrier", InitiatingTarget: carrier.Name, Targets: []record.Target{carrier}, Branch: "carrier-branch", Disposition: record.ChangeOpen, CreatedAt: f.now()}
+				if err := tx.PutChange(ctx, change); err != nil {
+					return err
+				}
+				if err := tx.PutRevision(ctx, record.Revision{ID: "carrier_revision", ChangeID: change.ID, Source: f.source, CreatedAt: f.now()}); err != nil {
+					return err
+				}
+				change.CurrentRevision = "carrier_revision"
+				return tx.PutChange(ctx, change)
+			}))
+			resolution, err := f.engine.Resolve(t.Context(), workflow.ResolutionRequest{Action: record.BumpRevision, Selection: macports.Selection{Selector: "py313-fixture"}, Subject: "rebuild", Platform: buildPlatform})
+			require.NoError(t, err)
+			require.Equal(t, workflow.Onto, resolution.Kind)
+			require.Equal(t, "py313-fixture", resolution.Selection.Subport)
+			bound, err := f.engine.BindPreparation(t.Context(), workflow.PreparationRequest{Action: record.BumpRevision, ID: "onto-carrier", Resolution: resolution, SourceBranch: "master",
+				Destination: record.BranchReady, Verification: record.VerificationSkipped, Author: record.CommitIdentity{Name: "A", Email: "a@example.invalid"}, Platform: buildPlatform})
+			require.NoError(t, err)
+			spec := bound.Request.Spec
+			require.Equal(t, carrier, spec.Targets[0], "the carrier stays the target")
+			if stub {
+				require.Equal(t, "fixture", spec.Preparation.EditIntent.Stub, "the stub is recorded, so the editor keeps its name, its livecheck, and its family")
+				require.False(t, spec.Preparation.EditIntent.SharedRelease, "the shared-release authorization is a bump's alone; a revision bump records the stub without it")
+			} else {
+				require.Empty(t, spec.Preparation.EditIntent.Stub)
+				require.False(t, spec.Preparation.EditIntent.SharedRelease, "a named subport of an ordinary Portfile moves its siblings only when asked")
+			}
+		})
+	}
+}

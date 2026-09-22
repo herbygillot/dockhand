@@ -118,11 +118,21 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	}
 	// A stub such as py-foo cannot be edited or built itself; the bump lands
 	// on its newest versioned subport as a shared release, and the person's
-	// name stays on the contribution.
+	// name stays on the contribution. The stub is recorded on the intent for
+	// every action, so the editor keeps its name and its livecheck; the
+	// shared-release authorization is a bump's alone, since only a bump
+	// moves siblings, and the editor authorizes a recorded stub's family
+	// itself.
 	if carrier, stub := macports.ResolveStub(evaluation, targets[0]); stub != "" {
 		targets = []record.Target{carrier}
-		intent.SharedRelease, intent.Stub = true, stub
+		intent.SharedRelease, intent.Stub = request.Action == record.Bump, stub
 		progress.Report(ctx, "%s is a stub; editing %s and its sibling subports as one release", stub, carrier.Name)
+	} else if stub := macports.StubOf(evaluation, targets[0].Name); target != nil && stub != "" {
+		// An update onto a contribution names the contribution's target,
+		// the carrier a fresh bump chose or a hand-made branch edited; the
+		// release it edits is still the stub's, shared by every member.
+		intent.SharedRelease, intent.Stub = request.Action == record.Bump, stub
+		progress.Report(ctx, "%s carries %s's release; editing it and its sibling subports as one release", targets[0].Name, stub)
 	} else if request.Action == record.Bump && targets[0].Subport == "" {
 		// A main port's release is its Portfile's: the subports sharing its
 		// version move with it by construction, and the person reviews the
