@@ -52,7 +52,7 @@ func TestRefreshChecksumsRejectsCustomFetchBeforeDownload(t *testing.T) {
 	var reads atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { reads.Add(1) }))
 	defer server.Close()
-	service, request := preparationFixture(t, "master_sites "+server.URL+"/\ndistfiles source.tar.gz\nchecksums sha256 "+strings.Repeat("0", 64)+"\npre-fetch { error custom }\n")
+	service, request := preparationFixture(t, "master_sites "+server.URL+"/\ndistfiles source.tar.gz\nchecksums sha256 "+strings.Repeat("0", 64)+"\npre-fetch { set distfiles other.tar.gz }\n")
 	request.Action, request.Subject = record.RefreshChecksums, ""
 	result, err := service.Prepare(t.Context(), request)
 	require.ErrorIs(t, err, preparation.ErrUnsupported)

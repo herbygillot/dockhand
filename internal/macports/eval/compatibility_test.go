@@ -107,7 +107,7 @@ func TestRefusedHookIsPlacedInItsFile(t *testing.T) {
 	t.Parallel()
 	evaluator := liveEvaluator(t)
 	for _, test := range []struct{ name, portfile, group, want string }{
-		{"Portfile", "PortSystem 1.0\nname fixture\nversion 1\ncategories devel\n\npre-fetch {\n    ui_error \"no\"\n    error \"${name} needs macOS 11\"\n}\n", "", "pre-fetch hook 1 ends with `error \"${name} needs macOS 11\"` rather than return -code error, at Portfile line 8"},
+		{"Portfile", "PortSystem 1.0\nname fixture\nversion 1\ncategories devel\n\npre-fetch {\n    ui_error \"no\"\n    ui_msg \"${name} needs macOS 11\"\n}\n", "", "pre-fetch hook 1 ends with `ui_msg \"${name} needs macOS 11\"` rather than return -code error, at Portfile line 8"},
 		{"PortGroup", "PortSystem 1.0\nPortGroup dockhand-guard 1.0\nname fixture\nversion 1\ncategories devel\n", "# a group\npre-fetch {\n    catch {set result [active_variants R tcltk]}\n    return -code error no\n}\n", "pre-fetch hook 1 runs `catch {set result [active_variants R tcltk]}` before rejecting, in the dockhand-guard-1.0 PortGroup at line 3"},
 	} {
 		t.Run(test.name, func(t *testing.T) {

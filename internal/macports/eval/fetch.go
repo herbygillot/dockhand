@@ -132,8 +132,9 @@ func rejectionOnly(hook string) bool {
 	return ok && rejectionReason(src, commands).text == ""
 }
 
-// rejectionReason accepts diagnostics followed by an unconditional error
-// return, and otherwise names the command that is neither.
+// rejectionReason accepts diagnostics followed by an unconditional error,
+// return -code error or Tcl's error with one plain message, and otherwise
+// names the command that is neither.
 func rejectionReason(src []byte, commands []syntax.Command) refusal {
 	if len(commands) == 0 {
 		return refuse(-1, "is empty")
@@ -141,11 +142,19 @@ func rejectionReason(src []byte, commands []syntax.Command) refusal {
 	for i, command := range commands {
 		words := command.Words
 		if i == len(commands)-1 {
-			if len(words) < 3 || len(words) > 4 || !(syntax.Command{Words: words[:3]}).Is(src, "return", "-code", "error") {
+			var message *syntax.Word
+			switch {
+			case len(words) >= 3 && len(words) <= 4 && (syntax.Command{Words: words[:3]}).Is(src, "return", "-code", "error"):
+				if len(words) == 4 {
+					message = &words[3]
+				}
+			case len(words) == 2 && !words[0].Expand && words[0].Span.Text(src) == "error":
+				message = &words[1]
+			default:
 				return refuse(command.Span.Start, "ends with `%s` rather than return -code error", snippet(src, command.Span))
 			}
-			if len(words) == 4 && (!words[3].Plain()) {
-				return refuse(command.Span.Start, "returns a computed message `%s`", snippet(src, words[3].Span))
+			if message != nil && !message.Plain() {
+				return refuse(command.Span.Start, "returns a computed message `%s`", snippet(src, message.Span))
 			}
 		} else if len(words) != 2 || words[0].Span.Text(src) != "ui_error" || !words[1].Plain() {
 			return refuse(command.Span.Start, "runs `%s` before rejecting", snippet(src, command.Span))
@@ -155,12 +164,13 @@ func rejectionReason(src []byte, commands []syntax.Command) refusal {
 }
 
 // A conditional rejection consists only of if statements whose conditions
-// read variables and whose every branch is a rejection: the perl5 PortGroup's
-// required-variant check, for example. Such a hook can fail the fetch but
-// never change what is fetched. Conditions may call the variant queries in
-// pureConditionCommands, which the compilers PortGroup's Fortran check
-// needs; any other command substitution, and branches that do anything
-// else, are not recognized.
+// read variables and whose every branch is a rejection, or is itself such
+// an if: the perl5 PortGroup's required-variant check, for example, or
+// llvm-10's platform check around a host check. Such a hook can fail the
+// fetch but never change what is fetched. Conditions may call the reads in
+// pureConditionCommands, which the compilers PortGroup's Fortran check and
+// the clang ports' runtime check need; any other command substitution, and
+// branches that do anything else, are not recognized.
 func conditionalRejection(hook string) bool {
 	src, commands, ok := parseHook(hook)
 	return ok && conditionalReason(src, commands).text == ""
@@ -196,10 +206,25 @@ func conditionalReason(src []byte, commands []syntax.Command) refusal {
 			if !ok {
 				return refuse(body.Span.Start, "has a branch that is not braced: `%s`", snippet(src, body.Span))
 			}
-			if refused := rejectionReason(src, block.Direct()); refused.text != "" {
-				return refuse(refused.at, "has a branch that %s", refused.text)
+			if refused := branchReason(src, block.Direct()); refused.text != "" {
+				return refused
 			}
 		}
+	}
+	return accepted
+}
+
+// branchReason reads one branch of a conditional rejection: a rejection,
+// or, when it opens with if, a conditional rejection in its own right,
+// whose refusals already say what they stopped at.
+func branchReason(src []byte, commands []syntax.Command) refusal {
+	if len(commands) > 0 {
+		if name, _ := commands[0].Name(src); name == "if" {
+			return conditionalReason(src, commands)
+		}
+	}
+	if refused := rejectionReason(src, commands); refused.text != "" {
+		return refuse(refused.at, "has a branch that %s", refused.text)
 	}
 	return accepted
 }
@@ -207,12 +232,25 @@ func conditionalReason(src []byte, commands []syntax.Command) refusal {
 // pureConditionCommands are the commands a rejection's condition may call:
 // queries of the selected variants that read interpreter state and change
 // nothing, and take literal arguments only.
-var pureConditionCommands = map[string]bool{"variant_isset": true, "variant_exists": true, "fortran_variant_name": true}
+var pureConditionCommands = map[string]bool{"variant_isset": true, "variant_exists": true, "fortran_variant_name": true, "mpi_variant_name": true}
+
+// hostReadCommands are the reads of the host a rejection's condition may
+// make, each a predicate with no effect on the host or the interpreter: a
+// file's existence or kind, a version comparison, whether a variable is
+// set. Their arguments may substitute variables but not commands.
+var hostReadCommands = map[string]func(args []string) bool{
+	"file": func(args []string) bool {
+		return len(args) == 2 && (args[0] == "exists" || args[0] == "isdirectory" || args[0] == "isfile")
+	},
+	"vercmp": func(args []string) bool { return len(args) == 2 || len(args) == 3 },
+	"info":   func(args []string) bool { return len(args) == 2 && args[0] == "exists" },
+}
 
 // pureCondition accepts a condition whose command substitutions, if any, are
-// all pure variant queries with literal arguments. A condition that does not
-// parse as an expression, a call to anything else, an argument that is not a
-// bare literal, and a nested substitution are refused.
+// all pure variant queries with literal arguments, or host reads with plain
+// arguments. A condition that does not parse as an expression, a call to
+// anything else, an argument the rule does not allow, and a nested
+// substitution are refused.
 func pureCondition(src []byte, body text.Span) bool {
 	return pureConditionReason(src, body).text == ""
 }
@@ -234,6 +272,15 @@ func pureConditionReason(src []byte, body text.Span) refusal {
 			return false
 		}
 		name, _ := commands[0].Name(src)
+		if allowed, ok := hostReadCommands[name]; ok {
+			switch plain, read := hostRead(src, commands[0], allowed); {
+			case !plain:
+				refused = refuse(commands[0].Span.Start, "calls `%s` with a computed argument in its condition: `%s`", name, snippet(src, body))
+			case !read:
+				refused = refuse(commands[0].Span.Start, "calls `%s` in its condition: `%s`", snippet(src, commands[0].Span), snippet(src, body))
+			}
+			return false
+		}
 		args, literal := commands[0].LiteralArgs(src)
 		switch {
 		case !pureConditionCommands[name]:
@@ -249,6 +296,21 @@ func pureConditionReason(src []byte, body text.Span) refusal {
 		return false
 	})
 	return refused
+}
+
+// hostRead reports whether a host read's arguments are all plain, text and
+// simple variable substitutions, and whether its subcommand and arity are
+// ones the rule allows, judged on the words' text with the substitutions
+// left in place.
+func hostRead(src []byte, command syntax.Command, allowed func(args []string) bool) (plain, read bool) {
+	args := make([]string, 0, len(command.Words)-1)
+	for _, word := range command.Words[1:] {
+		if !word.Plain() {
+			return false, false
+		}
+		args = append(args, word.Span.Text(src))
+	}
+	return true, allowed(args)
 }
 
 // The Go PortGroup's compatibility check does not change the fetched archive.

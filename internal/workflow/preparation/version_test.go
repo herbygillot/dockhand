@@ -184,9 +184,9 @@ func TestVersionPreparationRefusesCollateralChangesBeforeDownloading(t *testing.
 		// A named subport moves its siblings, here the main port, only with
 		// --shared-release; a main port's own subports move with it.
 		{"sibling", "setup", "subport fixture-child {}\n", preparation.ErrFidelity, "fixture-child"},
-		{"fetch hook", "literal", "pre-fetch {error custom}\n", preparation.ErrUnsupported, ""},
-		{"conditional hook", "literal", "if {1} { pre-fetch {error custom} }\n", preparation.ErrUnsupported, ""},
-		{"custom hook after Go check", "go-check", "if {1} { pre-fetch {error custom} }\n", preparation.ErrUnsupported, ""},
+		{"fetch hook", "literal", "pre-fetch {set distfiles other.tar.gz}\n", preparation.ErrUnsupported, ""},
+		{"conditional hook", "literal", "if {1} { pre-fetch {set distfiles other.tar.gz} }\n", preparation.ErrUnsupported, ""},
+		{"custom hook after Go check", "go-check", "if {1} { pre-fetch {set distfiles other.tar.gz} }\n", preparation.ErrUnsupported, ""},
 		{"post-fetch after Go check", "go-check", "if {1} { post-fetch {error custom} }\n", preparation.ErrUnsupported, ""},
 		{"Go dependency", "go-check", "if {$version eq {2.0}} {depends_lib port:other}\n", preparation.ErrFidelity, ""},
 		{"credentials", "literal", "fetch.password secret-test-value\n", preparation.ErrUnsupported, ""},

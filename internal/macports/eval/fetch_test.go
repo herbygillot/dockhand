@@ -135,12 +135,17 @@ func TestRefusalNamesTheCommandTheGrammarStoppedAt(t *testing.T) {
 		info       macports.PortInfo
 		want       string
 	}{
-		{"error instead of return", wrapper + "\n    ui_error \"unsupported\"\n    error \"${name} needs macOS 11\"\n", plain, "ends with `error \"${name} needs macOS 11\"` rather than return -code error"},
+		{"message instead of rejecting", wrapper + "\n    ui_error \"unsupported\"\n    ui_msg \"${name} needs macOS 11\"\n", plain, "ends with `ui_msg \"${name} needs macOS 11\"` rather than return -code error"},
+		{"error with a computed message", wrapper + "error \"[exec uname] is unsupported\"\n", plain, "returns a computed message `\"[exec uname] is unsupported\"`"},
+		{"error with an info argument", wrapper + "error \"no\" {} {NONE}\n", plain, "ends with `error \"no\" {} {NONE}` rather than return -code error"},
 		{"work before rejecting", wrapper + "catch {set result [active_variants R tcltk]}\nreturn -code error no\n", plain, "runs `catch {set result [active_variants R tcltk]}` before rejecting"},
 		{"computed message", wrapper + "return -code error [subst text]\n", plain, "returns a computed message `[subst text]`"},
-		{"nested if", wrapper + "if {${os.major} < 11} {\n    if {![variant_isset x]} { return -code error no }\n}\n", plain, "has a branch that ends with `if {![variant_isset x]} { return -code error no }` rather than return -code error"},
-		{"host read in a condition", wrapper + "if {![file exists /usr/lib/libc++.dylib]} { return -code error no }\n", plain, "calls `file` in its condition: `![file exists /usr/lib/libc++.dylib]`"},
-		{"vercmp in a condition", wrapper + "if {[vercmp ${macosx_version} 10.10] < 0} { return -code error no }\n", plain, "calls `vercmp` in its condition: `[vercmp ${macosx_version} 10.10] < 0`"},
+		{"nested if with a branch doing work", wrapper + "if {${os.major} < 11} {\n    if {![variant_isset x]} { set distfiles other }\n}\n", plain, "has a branch that ends with `set distfiles other` rather than return -code error"},
+		{"nested if after work", wrapper + "if {${os.major} < 11} {\n    ui_error x\n    if {![variant_isset x]} { return -code error no }\n}\n", plain, "has a branch that ends with `if {![variant_isset x]} { return -code error no }` rather than return -code error"},
+		{"host read with a command substitution", wrapper + "if {![file exists [exec brew --prefix]/lib]} { return -code error no }\n", plain, "calls `file` with a computed argument in its condition: `![file exists [exec brew --prefix]/lib]`"},
+		{"host write in a condition", wrapper + "if {[file delete ${prefix}/lib]} { return -code error no }\n", plain, "calls `file delete ${prefix}/lib` in its condition: `[file delete ${prefix}/lib]`"},
+		{"catch in a condition", wrapper + "if {![catch {set result [active_variants R tcltk]}]} { return -code error no }\n", plain, "calls `catch` in its condition: `![catch {set result [active_variants R tcltk]}]`"},
+		{"info other than exists", wrapper + "if {[info commands foo] ne \"\"} { return -code error no }\n", plain, "calls `info commands foo` in its condition: `[info commands foo] ne \"\"`"},
 		{"computed query argument", wrapper + "if {[variant_isset ${flavor}]} { return -code error no }\n", plain, "calls `variant_isset` with a computed argument in its condition: `[variant_isset ${flavor}]`"},
 		{"procedure after the if", wrapper + "if {${a}} { return -code error no }\nmpi.action_enforce_variants ${name}\n", plain, "runs `mpi.action_enforce_variants ${name}` outside an if"},
 		{"unbraced condition", wrapper + "if $a { return -code error no }\n", plain, "has a condition that is not braced: `$a`"},
@@ -160,14 +165,74 @@ func TestRefusalNamesTheCommandTheGrammarStoppedAt(t *testing.T) {
 	// The origin places the offending command at its own line in the file:
 	// the hook body starts at Portfile line 12, its first line blank, and the
 	// error is on the body's third line.
-	hook := wrapper + "\n    ui_error \"unsupported\"\n    error \"no\"\n"
+	hook := wrapper + "\n    ui_error \"unsupported\"\n    ui_msg \"no\"\n"
 	semantics := assessFetch(plain, "portfetch::fetch_main", "{"+hook+"}", "", []hookOrigin{{Label: "Portfile", Line: 12}})
-	require.Equal(t, "pre-fetch hook 1 ends with `error \"no\"` rather than return -code error, at Portfile line 13", semantics.Problem)
+	require.Equal(t, "pre-fetch hook 1 ends with `ui_msg \"no\"` rather than return -code error, at Portfile line 13", semantics.Problem)
 	semantics = assessFetch(plain, "portfetch::fetch_main", "{"+hook+"}", "", []hookOrigin{{Label: "the java-1.0 PortGroup", Line: 40}})
-	require.Equal(t, "pre-fetch hook 1 ends with `error \"no\"` rather than return -code error, in the java-1.0 PortGroup at line 41", semantics.Problem)
+	require.Equal(t, "pre-fetch hook 1 ends with `ui_msg \"no\"` rather than return -code error, in the java-1.0 PortGroup at line 41", semantics.Problem)
 	require.Equal(t, []hookOrigin{{Label: "Portfile", Line: 5}, {}, {Label: "the x-1.0 PortGroup", Line: 9}}, parseOrigins("{Portfile 5} {} {{the x-1.0 PortGroup} 9}"))
 	// A recognized hook with an origin is a guard as before.
 	semantics = assessFetch(plain, "portfetch::fetch_main", "{"+wrapper+"return -code error no\n}", "", []hookOrigin{{Label: "Portfile", Line: 3}})
 	require.Equal(t, "guarded", semantics.Kind)
 	require.Empty(t, semantics.Problem)
+}
+
+// The three extensions of 2026-09-22, each a shape the survey found behind
+// ports whose hooks can fail the fetch but never change what is fetched:
+// Tcl's error with one plain message where return -code error stood, a
+// branch that is itself a conditional rejection, and a host read in a
+// condition, a file's existence or kind, a version comparison, or whether
+// a variable is set, with plain arguments.
+func TestGrammarExtensionsOnlyAdmitRejections(t *testing.T) {
+	t.Parallel()
+	wrapper := "global {*}[info globals]\n"
+	plain := macports.PortInfo{Options: map[string]string{}}
+	for name, hook := range map[string]string{
+		"error with a plain message":  wrapper + "error \"Building ${subport} @${version} on Mac OS X 10.6 requires the MacOSX10.7.sdk\"\n",
+		"ui_error then error":         wrapper + "ui_error \"$name requires Rust\"\nerror \"unsupported OS version\"\n",
+		"error in a branch":           wrapper + "if {![variant_isset jdk11] && ![variant_isset jdk17]} {\n    error \"Either +jdk11 or +jdk17 is required\"\n}\n",
+		"nested if":                   wrapper + "if {${os.major} < 11} {\n    if {![variant_isset x]} { ui_error \"no runtime\"; return -code error no }\n}\n",
+		"llvm-10's check":             wrapper + "if {${os.major} < 11} {\n    if {![file exists /usr/lib/libc++.dylib]} {\n        ui_error \"$name requires a C++11 runtime\"\n        error \"unsupported configuration\"\n    }\n}\n",
+		"ld64's check three deep":     wrapper + "if {${os.major} < 9} {\n    if {${llvm_version} != \"\"} {\n        if {![file exists ${prefix}/bin/llvm-config-mp-${llvm_version}]} {\n            return -code error \"install ld64 first\"\n        }\n    }\n}\n",
+		"file exists with a variable": wrapper + "if {![file exists ${java_home}]} { ui_error \"Java 1.6 is required\"; return -code error \"Java 1.6 missing\" }\n",
+		"file isdirectory":            wrapper + "if {![file isdirectory ${prefix}/lib/foo]} { return -code error no }\n",
+		"vercmp":                      wrapper + "if {[vercmp ${xcodeversion} ${xcodeversion_min_required}] < 0} { ui_error \"old Xcode\"; return -code error \"incompatible Xcode version\" }\n",
+		"vercmp with an operator":     wrapper + "if {${os.major} >= 12 || [vercmp $xcodeversion >= 4.4]} { return -code error no }\n",
+		"info exists":                 wrapper + "if {![info exists python_framework]} { error \"one python variant must be enabled\" }\n",
+		"mpi variant query":           wrapper + "if {${mpi.require} && [mpi_variant_name] eq \"\"} { return -code error \"must set at least one mpi variant\" }\n",
+		"nested else branches":        wrapper + "if {${a}} { if {${b}} { return -code error b } else { return -code error c } } elseif {${d}} { error d }\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			semantics := assessFetch(plain, "portfetch::fetch_main", "{"+hook+"}", "", nil)
+			require.Empty(t, semantics.Problem)
+			require.Equal(t, "guarded", semantics.Kind)
+		})
+	}
+	// A hook that rejects unconditionally through error still preserves the
+	// platform restriction; a nested conditional still does not claim one.
+	semantics := assessFetch(plain, "portfetch::fetch_main", "{"+wrapper+"error \"unsupported platform\"\n}", "", nil)
+	require.True(t, semantics.Rejected)
+	semantics = assessFetch(plain, "portfetch::fetch_main", "{"+wrapper+"if {${a}} { if {${b}} { error no } }\n}", "", nil)
+	require.False(t, semantics.Rejected)
+	require.Equal(t, []string{"pre-fetch hook 1 only rejects unsupported configurations"}, semantics.Guards)
+	// What stays outside: a read whose argument is computed by a command, a
+	// file subcommand that is not a predicate, a query other than exists, a
+	// branch that works before its nested if, and an error carrying more
+	// than a message.
+	for _, hook := range []string{
+		wrapper + "if {[file exists [glob ${prefix}/lib/*.dylib]]} { error no }\n",
+		wrapper + "if {[file mkdir ${prefix}/lib]} { error no }\n",
+		wrapper + "if {[file exists ${prefix}/a ${prefix}/b]} { error no }\n",
+		wrapper + "if {[info vars python*] eq \"\"} { error no }\n",
+		wrapper + "if {[vercmp]} { error no }\n",
+		wrapper + "if {${a}} { set x 1; if {${b}} { error no } }\n",
+		wrapper + "if {${a}} { if {${b}} { error no }; set distfiles other }\n",
+		wrapper + "error \"no\" \"info\"\n",
+		wrapper + "error [subst no]\n",
+		wrapper + "error {*}$messages\n",
+	} {
+		semantics := assessFetch(plain, "portfetch::fetch_main", "{"+hook+"}", "", nil)
+		require.NotEmpty(t, semantics.Problem, hook)
+		require.Equal(t, "custom", semantics.Kind, hook)
+	}
 }
