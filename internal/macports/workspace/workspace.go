@@ -223,10 +223,9 @@ func (w *Workspace) Base() *Workspace {
 
 // Scope reports what is present; an overlay's scope is its base's.
 func (w *Workspace) Scope() Scope {
-	base := w.Base()
-	base.mu.Lock()
-	defer base.mu.Unlock()
-	return Scope{Ports: slices.Clone(base.ports), All: base.all}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return Scope{Ports: slices.Clone(w.ports), All: w.all}
 }
 
 // EnsurePort materializes _resources and the target's port directory,
@@ -250,6 +249,17 @@ func (w *Workspace) ensure(ctx context.Context, directories []string) error {
 		if err := w.base.ensure(ctx, directories); err != nil {
 			return err
 		}
+		w.mu.Lock()
+		if directories == nil {
+			w.all = true
+		}
+		for _, directory := range directories {
+			if !slices.Contains(w.ports, directory) {
+				w.ports = append(w.ports, directory)
+			}
+		}
+		slices.Sort(w.ports)
+		w.mu.Unlock()
 		return w.linkNew()
 	}
 	w.mu.Lock()
@@ -337,11 +347,15 @@ func (w *Workspace) Batch(ctx context.Context, ports macports.BatchReader) (macp
 	return batch, nil
 }
 
-// Overlay is a sibling projection with the edits applied. Tracked files the
-// edits do not touch are hardlinked from the base, symlinks are re-created,
-// edited files are written with their entries' modes, and the scope is the
-// base's. Untracked files in the base directory are not part of it. An edit
-// must name a tracked regular file; an overlay adds and deletes nothing.
+// Overlay is a sibling projection with the edits applied. Its scope is the
+// edits' port directories and _resources, what evaluating those Portfiles
+// reads, however wide the base is: a candidate evaluated over a whole-tree
+// base must not link the whole tree. Tracked files in scope that the edits
+// do not touch are hardlinked from the base, symlinks are re-created, and
+// edited files are written with their entries' modes. Ensure widens the
+// overlay as it widens a base. Untracked files in the base directory are not
+// part of it. An edit must name a tracked regular file; an overlay adds and
+// deletes nothing.
 func (w *Workspace) Overlay(ctx context.Context, edits []git.FileEdit) (*Workspace, error) {
 	base := w.Base()
 	if err := ctx.Err(); err != nil {
@@ -377,11 +391,18 @@ func (w *Workspace) Overlay(ctx context.Context, edits []git.FileEdit) (*Workspa
 	if err != nil {
 		return nil, errors.Join(err, os.RemoveAll(directory))
 	}
-	overlay := &Workspace{repo: base.repo, source: base.source, directory: directory, base: base, entries: map[string]git.TreeEntry{}}
+	overlay := &Workspace{repo: base.repo, source: base.source, directory: directory, base: base, entries: map[string]git.TreeEntry{}, resources: true}
 	for _, edit := range edits {
 		overlay.edits = append(overlay.edits, edited[edit.Path])
+		if port := portDirectory(edit.Path); port != "" && !slices.Contains(overlay.ports, port) {
+			overlay.ports = append(overlay.ports, port)
+		}
 	}
+	slices.Sort(overlay.ports)
 	for name, entry := range entries {
+		if !overlay.holds(name) {
+			continue
+		}
 		if err := overlay.place(name, entry, edited); err != nil {
 			return nil, errors.Join(err, os.RemoveAll(directory))
 		}
@@ -427,8 +448,33 @@ func (w *Workspace) place(name string, entry git.TreeEntry, edited map[string]gi
 	return nil
 }
 
-// linkNew places the base's entries the overlay does not hold yet, after
-// the base gained scope.
+// holds reports whether a tracked path is within this projection's scope:
+// everything once widened, _resources when materialized, and the port
+// directories ensured or edited. Callers hold w.mu.
+func (w *Workspace) holds(name string) bool {
+	if w.all {
+		return true
+	}
+	if strings.HasPrefix(name, resources+"/") {
+		return w.resources
+	}
+	port := portDirectory(name)
+	return port != "" && slices.Contains(w.ports, port)
+}
+
+// portDirectory is the category/port directory a tracked path lies in, or
+// empty for a path outside one: _resources, a dotfile directory, a
+// top-level file.
+func portDirectory(name string) string {
+	parts := strings.SplitN(name, "/", 3)
+	if len(parts) < 3 || strings.HasPrefix(parts[0], "_") || strings.HasPrefix(parts[0], ".") {
+		return ""
+	}
+	return parts[0] + "/" + parts[1]
+}
+
+// linkNew places the base's entries within the overlay's scope that the
+// overlay does not hold yet, after the base or the overlay gained scope.
 func (w *Workspace) linkNew() error {
 	base := w.base
 	base.mu.Lock()
@@ -444,7 +490,7 @@ func (w *Workspace) linkNew() error {
 		edited[edit.Path] = edit
 	}
 	for name, entry := range entries {
-		if _, ok := w.entries[name]; ok {
+		if _, ok := w.entries[name]; ok || !w.holds(name) {
 			continue
 		}
 		if err := w.place(name, entry, edited); err != nil {
@@ -460,7 +506,7 @@ func (w *Workspace) Edits() []git.FileEdit { return slices.Clone(w.edits) }
 
 // Commit writes the overlay's edits as git objects over the base tree and
 // returns the source whose tree they make. The overlay's files are, by
-// construction, that tree's projection over the base's scope.
+// construction, that tree's projection over the overlay's scope.
 func (w *Workspace) Commit(ctx context.Context) (record.Source, error) {
 	if w.base == nil {
 		return w.source, nil

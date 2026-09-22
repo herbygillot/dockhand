@@ -172,6 +172,28 @@ func TestOverlaySharesTrackedFilesAndReplacesTheEdited(t *testing.T) {
 	require.True(t, exists(base.Root(), "devel/a/files/patch-a.diff"), "closing an overlay leaves the base")
 }
 
+// An overlay over a wide base holds the edited port and _resources, not the
+// rest of the tree: a candidate evaluation reads nothing else, and a
+// thousand candidates over a whole tree would link a thousand trees.
+func TestOverlayHoldsOnlyTheEditedPortAndResources(t *testing.T) {
+	f := newFixture(t)
+	base, err := workspace.Open(t.Context(), f.repo, f.source())
+	require.NoError(t, err)
+	defer base.Close()
+	require.NoError(t, base.EnsureAll(t.Context()))
+	overlay, err := base.Overlay(t.Context(), []git.FileEdit{{Path: "devel/a/Portfile", After: []byte("edited\n")}})
+	require.NoError(t, err)
+	defer overlay.Close()
+	require.True(t, exists(overlay.Root(), "devel/a/files/patch-a.diff"))
+	require.True(t, exists(overlay.Root(), "_resources/port1.0/group/fixture-1.0.tcl"))
+	require.False(t, exists(overlay.Root(), "devel/b/Portfile"), "a port the edits do not touch is not linked")
+	require.Equal(t, workspace.Scope{Ports: []string{"devel/a"}}, overlay.Scope())
+	require.True(t, base.Scope().All, "the base keeps its own scope")
+	require.NoError(t, overlay.EnsurePort(t.Context(), targetB))
+	require.True(t, exists(overlay.Root(), "devel/b/Portfile"), "ensuring widens the overlay")
+	require.Equal(t, []string{"devel/a", "devel/b"}, overlay.Scope().Ports)
+}
+
 // Ensuring through an overlay widens the base and links what it gained,
 // keeping the overlay's edit.
 func TestEnsureOnAnOverlayLinksWhatTheBaseGained(t *testing.T) {

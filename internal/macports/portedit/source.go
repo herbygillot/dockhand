@@ -28,10 +28,12 @@ type sourceInput struct {
 	versionInput record.ReleaseInput
 	ws           *workspace.Workspace
 	tree         macports.Tree
-	// overlays are the candidate projections this input made; they live
-	// as long as the input does, since evaluated paths such as filespath
-	// name them, and Close removes them together.
-	overlays []*workspace.Workspace
+	// projections holds the candidate overlays this input and the inputs
+	// derived from it make; they live as long as the input does, since
+	// evaluated paths such as filespath name them, and Close removes them
+	// together. A derived input is a copy of this one, so the holder is
+	// shared by pointer: an overlay made through the copy is still closed.
+	projections *projections
 	// session is the one native interpreter the input's evaluations share:
 	// the baseline, every candidate, and the final edit. Modeled
 	// observations never use it; each starts its own interpreter, since
@@ -53,6 +55,11 @@ type sourceInput struct {
 	observe *observe.Session
 }
 
+// projections is the overlay holder an input shares with its derived inputs.
+type projections struct {
+	overlays []*workspace.Workspace
+}
+
 // load binds the request's selection to a disposable workspace. A stub
 // selection, a port that builds nothing while its versioned subports carry
 // its release, is redirected to the newest subport as a shared release,
@@ -66,7 +73,7 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 	if err != nil {
 		return nil, err
 	}
-	input := &sourceInput{ws: ws, tree: tree}
+	input := &sourceInput{ws: ws, tree: tree, projections: &projections{}}
 	defer func() {
 		if err != nil {
 			err = errors.Join(err, input.Close())
@@ -239,10 +246,12 @@ func (i *sourceInput) Close() error {
 		i.session = nil
 		err = session.Close()
 	}
-	overlays := i.overlays
-	i.overlays = nil
-	for _, overlay := range overlays {
-		err = errors.Join(err, overlay.Close())
+	if i.projections != nil {
+		overlays := i.projections.overlays
+		i.projections.overlays = nil
+		for _, overlay := range overlays {
+			err = errors.Join(err, overlay.Close())
+		}
 	}
 	return err
 }
@@ -295,7 +304,7 @@ func (i *sourceInput) projection(ctx context.Context, contents []byte) (*workspa
 	if err != nil {
 		return nil, err
 	}
-	i.overlays = append(i.overlays, overlay)
+	i.projections.overlays = append(i.projections.overlays, overlay)
 	return overlay, nil
 }
 

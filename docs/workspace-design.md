@@ -88,10 +88,12 @@ func (w *Workspace) Context(target record.Target, platform record.Platform) (mac
 // sourceInput.native does today. An overlay's Batch is its base's.
 func (w *Workspace) Batch(ctx context.Context, ports macports.BatchReader) (macports.Batch, error)
 
-// Overlay is a sibling projection with the edits applied. Tracked files the
-// edits do not touch are hardlinked from the base, symlinks are re-created
-// from their tree entries, edited files are written with their entries'
-// modes, and the overlay's scope is the base's. Untracked files in the base
+// Overlay is a sibling projection with the edits applied. Its scope is the
+// edits' port directories and _resources, what evaluating those Portfiles
+// reads, however wide the base is; Ensure widens it as it widens a base.
+// Tracked files in scope that the edits do not touch are hardlinked from
+// the base, symlinks are re-created from their tree entries, and edited
+// files are written with their entries' modes. Untracked files in the base
 // directory, the staged index among them, are not part of an overlay. The
 // overlay's git tree is not computed until Commit.
 func (w *Workspace) Overlay(ctx context.Context, edits []git.FileEdit) (*Workspace, error)
