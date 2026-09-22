@@ -52,6 +52,7 @@ dockhand2/
       workspace/         # Scoped projections of a git tree with overlays for edits
       portedit/          # Evaluator-driven source edits in a disposable workspace
         archives/        # Direct archive downloads, hashing, and checksum rewriting
+        observe/         # Modeled observations of a Portfile and which host reads are benign
       distfiles/         # Native fetch observations tied to exact checksum declarations
       dependency/        # Go and Cargo dependency blocks: parsing, generators, validation
       portfile/          # Tcl literal candidates and precise source edits

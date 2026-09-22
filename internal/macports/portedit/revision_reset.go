@@ -11,7 +11,7 @@ import (
 )
 
 func (s *Service) resetRevision(ctx context.Context, request Request, input *sourceInput, contents []byte) ([]byte, error) {
-	profiles, err := s.contextProfiles(ctx, request, input, contents)
+	profiles, err := input.observe.Profiles(ctx, contents)
 	if err != nil {
 		return nil, err
 	}
@@ -19,11 +19,11 @@ func (s *Service) resetRevision(ctx context.Context, request Request, input *sou
 	selectedVersion := ""
 	for _, profile := range profiles {
 		mode := macports.ObservationRequest{Platform: profile, Declarations: true}
-		before, err := s.observeContents(ctx, input, input.data, mode, !request.SharedRelease)
+		before, err := input.observe.One(ctx, input.data, mode, !request.SharedRelease)
 		if err != nil {
 			return nil, fmt.Errorf("%w: baseline revision evaluation was inconclusive: %w", errProbeInconclusive, err)
 		}
-		after, err := s.observeContents(ctx, input, contents, mode, !request.SharedRelease)
+		after, err := input.observe.One(ctx, contents, mode, !request.SharedRelease)
 		if err != nil {
 			return nil, fmt.Errorf("%w: candidate revision evaluation was inconclusive: %w", errProbeInconclusive, err)
 		}

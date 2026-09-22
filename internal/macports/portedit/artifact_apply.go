@@ -63,7 +63,7 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 	for i, frame := range plan.observed.contexts {
 		finalProfiles[i] = frame.profile
 	}
-	finals, err := s.observeProfiles(ctx, input, contents, finalProfiles, false, false)
+	finals, err := input.observe.Observe(ctx, contents, finalProfiles, false, false)
 	if err != nil {
 		return result, err
 	}

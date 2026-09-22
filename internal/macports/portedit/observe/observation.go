@@ -1,4 +1,4 @@
-package portedit
+package observe
 
 import (
 	"runtime"
@@ -14,32 +14,32 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
-type observationKey struct {
+type key struct {
 	contents [sha256.Size]byte
 	profile  string
 }
 
-// observeProfiles observes one set of contents in every profile at once. The
+// Observe observes one set of contents in every profile at once. The
 // contents are one overlay of the workspace and each profile gets its own
 // interpreter, so the observations run concurrently on an immutable
 // projection; results keep the profiles' order. Baseline observations come from and go
-// to the request's cache like single observations do.
-func (s *Service) observeProfiles(ctx context.Context, input *sourceInput, contents []byte, profiles []record.Platform, declarations, selectedOnly bool) ([]macports.Observation, error) {
+// to the session's cache like single observations do.
+func (s *Session) Observe(ctx context.Context, contents []byte, profiles []record.Platform, declarations, selectedOnly bool) ([]macports.Observation, error) {
 	observer := s.Ports
 	results := make([]macports.Observation, len(profiles))
 	requests := make([]macports.ObservationRequest, len(profiles))
-	keys := make([]observationKey, len(profiles))
-	baseline := declarations && bytes.Equal(contents, input.data)
+	keys := make([]key, len(profiles))
+	baseline := declarations && bytes.Equal(contents, s.Baseline)
 	pending := false
 	for i, profile := range profiles {
 		requests[i] = macports.ObservationRequest{Platform: profile, Declarations: declarations, SelectedOnly: selectedOnly}
 		if declarations {
-			requests[i].Operands = input.platformOperands
+			requests[i].Operands = s.operands
 		}
 		encoded, _ := json.Marshal(requests[i])
-		keys[i] = observationKey{contents: sha256.Sum256(contents), profile: string(encoded)}
+		keys[i] = key{contents: sha256.Sum256(contents), profile: string(encoded)}
 		if baseline {
-			if cached, ok := input.baselineObservations[keys[i]]; ok {
+			if cached, ok := s.cache[keys[i]]; ok {
 				results[i] = cached
 				continue
 			}
@@ -49,11 +49,11 @@ func (s *Service) observeProfiles(ctx context.Context, input *sourceInput, conte
 	if !pending {
 		return results, nil
 	}
-	projection, err := input.projection(ctx, contents)
+	projection, err := s.Project(ctx, contents)
 	if err != nil {
 		return nil, err
 	}
-	bound, err := input.contextIn(projection, input.before.Runtime.Platform, selectedOnly)
+	bound, err := s.bind(projection, selectedOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +61,7 @@ func (s *Service) observeProfiles(ctx context.Context, input *sourceInput, conte
 	group.SetLimit(observationConcurrency)
 	for i := range profiles {
 		if baseline {
-			if _, ok := input.baselineObservations[keys[i]]; ok {
+			if _, ok := s.cache[keys[i]]; ok {
 				continue
 			}
 		}
@@ -79,11 +79,11 @@ func (s *Service) observeProfiles(ctx context.Context, input *sourceInput, conte
 		return nil, err
 	}
 	if baseline {
-		if input.baselineObservations == nil {
-			input.baselineObservations = make(map[observationKey]macports.Observation)
+		if s.cache == nil {
+			s.cache = make(map[key]macports.Observation)
 		}
 		for i := range profiles {
-			input.baselineObservations[keys[i]] = results[i]
+			s.cache[keys[i]] = results[i]
 		}
 	}
 	return results, nil
@@ -95,40 +95,41 @@ func (s *Service) observeProfiles(ctx context.Context, input *sourceInput, conte
 // process startup and Portfile evaluation that dominate each one.
 var observationConcurrency = min(8, max(2, runtime.NumCPU()))
 
-func (s *Service) observeContents(ctx context.Context, input *sourceInput, contents []byte, profile macports.ObservationRequest, selectedOnly bool) (macports.Observation, error) {
+// One observes contents in one profile. Only immutable baseline
+// declarations are reused from the cache; candidate observations and
+// final untraced evaluations always run afresh.
+func (s *Session) One(ctx context.Context, contents []byte, profile macports.ObservationRequest, selectedOnly bool) (macports.Observation, error) {
 	observer := s.Ports
 	if err := ctx.Err(); err != nil {
 		return macports.Observation{}, err
 	}
 	profile.SelectedOnly = selectedOnly
 	if profile.Declarations {
-		profile.Operands = input.platformOperands
+		profile.Operands = s.operands
 	}
 	encoded, _ := json.Marshal(profile)
-	key := observationKey{contents: sha256.Sum256(contents), profile: string(encoded)}
-	// Reuse only immutable baseline declarations in this source-bound request.
-	// Candidate observations and final untraced evaluations always run afresh.
-	baseline := profile.Declarations && bytes.Equal(contents, input.data)
+	k := key{contents: sha256.Sum256(contents), profile: string(encoded)}
+	baseline := profile.Declarations && bytes.Equal(contents, s.Baseline)
 	if baseline {
-		if cached, ok := input.baselineObservations[key]; ok {
+		if cached, ok := s.cache[k]; ok {
 			return cached, nil
 		}
 	}
-	projection, err := input.projection(ctx, contents)
+	projection, err := s.Project(ctx, contents)
 	if err != nil {
 		return macports.Observation{}, err
 	}
-	bound, err := input.contextIn(projection, input.before.Runtime.Platform, selectedOnly)
+	bound, err := s.bind(projection, selectedOnly)
 	if err != nil {
 		return macports.Observation{}, err
 	}
 	observed, err := observer.Observe(ctx, bound, profile)
 	observed.Snapshot.Source = record.Source{}
 	if err == nil && baseline {
-		if input.baselineObservations == nil {
-			input.baselineObservations = make(map[observationKey]macports.Observation)
+		if s.cache == nil {
+			s.cache = make(map[key]macports.Observation)
 		}
-		input.baselineObservations[key] = observed
+		s.cache[k] = observed
 	}
 	return observed, err
 }

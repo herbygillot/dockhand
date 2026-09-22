@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 )
@@ -31,9 +32,9 @@ type observedArchivePlan struct {
 }
 
 func (s *Service) bindArchives(ctx context.Context, input *sourceInput, contents []byte, observed macports.Observation) (distfiles.Binding, error) {
-	port, inconclusive := tolerateExplainedProbes(ctx, observed.Ports[input.target.Name], contents, observed.Snapshot.Root)
+	port, inconclusive := observe.Tolerate(ctx, observed.Ports[input.target.Name], contents, observed.Snapshot.Root)
 	if inconclusive {
-		return distfiles.Binding{}, fmt.Errorf("%w: modeled context depends on host state%s", errProbeInconclusive, hostInputs(port))
+		return distfiles.Binding{}, fmt.Errorf("%w: modeled context depends on host state%s", errProbeInconclusive, observe.HostInputs(port))
 	}
 	info := observed.Snapshot.Ports[input.target.Name]
 	if err := archives.CheckPolicy(info, input.portdirIn(observed.Snapshot.Root)); err != nil {
@@ -47,7 +48,7 @@ func (s *Service) bindArchives(ctx context.Context, input *sourceInput, contents
 }
 
 func (s *Service) planObservedArchives(ctx context.Context, request Request, input *sourceInput, contents []byte) (*observedArchivePlan, error) {
-	profiles, err := s.contextProfiles(ctx, request, input, contents)
+	profiles, err := input.observe.Profiles(ctx, contents)
 	if err != nil {
 		return nil, err
 	}
@@ -58,11 +59,11 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 	changed := map[string]bool{}
 	unique := map[string]bool{}
 	progress.DebugReport(ctx, "Observing %d archive contexts", len(profiles))
-	befores, err := s.observeProfiles(ctx, input, input.data, profiles, true, false)
+	befores, err := input.observe.Observe(ctx, input.data, profiles, true, false)
 	if err != nil {
 		return nil, fmt.Errorf("%w: observing baseline %v", errProbeInconclusive, err)
 	}
-	afters, err := s.observeProfiles(ctx, input, contents, profiles, true, false)
+	afters, err := input.observe.Observe(ctx, contents, profiles, true, false)
 	if err != nil {
 		return nil, fmt.Errorf("%w: observing candidate %v", errProbeInconclusive, err)
 	}

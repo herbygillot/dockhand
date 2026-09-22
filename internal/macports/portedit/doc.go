@@ -5,7 +5,8 @@
 // version or revision bumps and checksum refreshes, and regenerates supported
 // dependency blocks. Archive plans cover relevant metadata contexts, preserve
 // independent release pins, and associate checksums through macports/distfiles;
-// the downloads themselves are portedit/archives. It checks the edited evaluation against the intended change
+// the downloads themselves are portedit/archives, and the modeled observations
+// that judge a context and its host reads are portedit/observe. It checks the edited evaluation against the intended change
 // and returns edits, commit intent, and fidelity diagnostics. Assessment shares
 // the pre-download checks and reports untested stages explicitly.
 //

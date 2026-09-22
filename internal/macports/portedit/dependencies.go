@@ -131,6 +131,7 @@ func (s *Service) dependencyBase(ctx context.Context, request Request, input *so
 	strippedSnapshot := evaluated.after
 	baseValue := *input
 	baseValue.data, baseValue.before = stripped, strippedSnapshot
+	baseValue.observe = input.observe.WithBaseline(stripped)
 	baseValue.info = strippedSnapshot.Ports[input.target.Name]
 	// The stripped evaluation covers the family, and it is the baseline the
 	// regenerated declarations are compared against, so the family follows

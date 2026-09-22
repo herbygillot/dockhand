@@ -1,4 +1,4 @@
-package portedit
+package observe
 
 import (
 	"context"
@@ -46,19 +46,19 @@ set layout [file exists ${prefix}/lib/qt4]
 	}
 	contents := []byte("PortSystem 1.0\nPortGroup qt4 1.0\nname fixture\nversion 1\n")
 
-	port, inconclusive := tolerateExplainedProbes(context.Background(), observed(access(group, 4)), contents, root)
+	port, inconclusive := Tolerate(context.Background(), observed(access(group, 4)), contents, root)
 	require.False(t, inconclusive, "a dependency choice inside the PortGroup is explained")
 	require.Empty(t, port.Problems)
 	require.False(t, port.HostAccess)
 
-	_, inconclusive = tolerateExplainedProbes(context.Background(), observed(access(group, 11)), contents, root)
+	_, inconclusive = Tolerate(context.Background(), observed(access(group, 11)), contents, root)
 	require.True(t, inconclusive, "a branch that declares master sites is not")
-	_, inconclusive = tolerateExplainedProbes(context.Background(), observed(access(group, 14)), contents, root)
+	_, inconclusive = Tolerate(context.Background(), observed(access(group, 14)), contents, root)
 	require.True(t, inconclusive, "a read stored in a variable is judged where it is used, which this does not follow")
-	_, inconclusive = tolerateExplainedProbes(context.Background(), observed(access(portfile, 2)), contents, root)
+	_, inconclusive = Tolerate(context.Background(), observed(access(portfile, 2)), contents, root)
 	require.True(t, inconclusive, "a read in the Portfile itself is the Portfile's own")
-	_, inconclusive = tolerateExplainedProbes(context.Background(), observed(access(group, 4), access(portfile, 2)), contents, root)
+	_, inconclusive = Tolerate(context.Background(), observed(access(group, 4), access(portfile, 2)), contents, root)
 	require.True(t, inconclusive, "every access must be explained")
-	_, inconclusive = tolerateExplainedProbes(context.Background(), observed(), contents, root)
+	_, inconclusive = Tolerate(context.Background(), observed(), contents, root)
 	require.True(t, inconclusive, "host access without a recorded declaration stays inconclusive")
 }

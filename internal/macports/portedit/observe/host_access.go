@@ -1,4 +1,4 @@
-package portedit
+package observe
 
 import (
 	"context"
@@ -130,7 +130,7 @@ func benignAt(src []byte, line int) bool {
 // inside a PortGroup whose only effect is a branch of build-only options.
 // The second result says whether the remaining host state, if any, still
 // makes the context inconclusive.
-func tolerateExplainedProbes(ctx context.Context, port macports.PortObservation, contents []byte, root string) (macports.PortObservation, bool) {
+func Tolerate(ctx context.Context, port macports.PortObservation, contents []byte, root string) (macports.PortObservation, bool) {
 	if !(port.HostAccess || port.ModeledHostAccess) {
 		return port, false
 	}

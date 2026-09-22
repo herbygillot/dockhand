@@ -32,13 +32,13 @@ func (s *Service) prepareChecksums(ctx context.Context, request Request, input *
 }
 
 func (s *Service) planObservedChecksums(ctx context.Context, request Request, input *sourceInput) (*observedArchivePlan, error) {
-	profiles, err := s.contextProfiles(ctx, request, input, input.data)
+	profiles, err := input.observe.Profiles(ctx, input.data)
 	if err != nil {
 		return nil, err
 	}
 	plan := &observedArchivePlan{}
 	declared, covered, unique, inert := map[string]bool{}, map[string]bool{}, map[string]bool{}, map[string]bool{}
-	observations, err := s.observeProfiles(ctx, input, input.data, profiles, true, false)
+	observations, err := input.observe.Observe(ctx, input.data, profiles, true, false)
 	if err != nil {
 		return nil, fmt.Errorf("%w: observing %v", errProbeInconclusive, err)
 	}

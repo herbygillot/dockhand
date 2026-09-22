@@ -24,9 +24,10 @@ func TestBaselineObservationReuseExcludesCandidatesAndFinalEvaluations(t *testin
 	s, _, input := probeFixture(t, "github.setup owner fixture 1.2.3 v")
 	counted := &countedObserver{Evaluator: s.Ports.(*eval.Evaluator)}
 	s.Ports = counted
+	input.observe.Ports = counted
 	mode := macports.ObservationRequest{Declarations: true}
 	observe := func(contents []byte, mode macports.ObservationRequest, selected bool) {
-		_, err := s.observeContents(t.Context(), input, contents, mode, selected)
+		_, err := input.observe.One(t.Context(), contents, mode, selected)
 		require.NoError(t, err)
 	}
 	observe(input.data, mode, true)
@@ -41,12 +42,12 @@ func TestBaselineObservationReuseExcludesCandidatesAndFinalEvaluations(t *testin
 	observe(input.data, macports.ObservationRequest{}, true)
 	observe(input.data, macports.ObservationRequest{}, true)
 	require.Equal(t, 6, counted.calls, "final untraced evaluation must not use a cache")
-	input.data = candidate
+	input.observe = input.observe.WithBaseline(candidate)
 	observe(candidate, mode, true)
-	require.Equal(t, 7, counted.calls, "stripped dependency inputs cannot reuse a different baseline")
+	require.Equal(t, 7, counted.calls, "a session for other baseline contents starts with no cache")
 	cancelled, cancel := context.WithCancel(t.Context())
 	cancel()
-	_, err := s.observeContents(cancelled, input, candidate, mode, true)
+	_, err := input.observe.One(cancelled, candidate, mode, true)
 	require.ErrorIs(t, err, context.Canceled)
 	require.Equal(t, 7, counted.calls)
 }

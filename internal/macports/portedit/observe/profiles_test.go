@@ -1,4 +1,4 @@
-package portedit
+package observe
 
 import (
 	"fmt"
@@ -19,7 +19,7 @@ if {${build_arch} eq "arm64"} {distfiles a} else {distfiles b}`), native)
 	require.Contains(t, profiles, record.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"})
 	require.NotContains(t, profiles, record.Platform{OS: "darwin", Version: "16", Architecture: "arm64"})
 	_, err = observationProfiles([]byte(`if {${os.major} >= $minimum} {version 1}`), native)
-	require.ErrorIs(t, err, errProbeInconclusive)
+	require.ErrorIs(t, err, ErrInconclusive)
 }
 
 func TestProfilesRefuseUnresolvedReadsAlongsideKnownBoundaries(t *testing.T) {
@@ -35,7 +35,7 @@ func TestProfilesRefuseUnresolvedReadsAlongsideKnownBoundaries(t *testing.T) {
 	} {
 		t.Run(source, func(t *testing.T) {
 			_, err := observationProfiles([]byte(source), native)
-			require.ErrorIs(t, err, errProbeInconclusive)
+			require.ErrorIs(t, err, ErrInconclusive)
 		})
 	}
 }
@@ -97,7 +97,7 @@ func TestUnmodeledReadsAreGapsOnlyWhereTheyCanSelectSources(t *testing.T) {
 	} {
 		t.Run(source, func(t *testing.T) {
 			_, err := observationProfiles([]byte(source), native)
-			require.ErrorIs(t, err, errProbeInconclusive)
+			require.ErrorIs(t, err, ErrInconclusive)
 			require.Contains(t, err.Error(), "not modeled")
 		})
 	}
@@ -107,7 +107,7 @@ func TestUnmodeledReadsAreGapsOnlyWhereTheyCanSelectSources(t *testing.T) {
 func contextBoundaries(src []byte) (map[int]bool, bool, error) {
 	n, err := scanPlatformNeeds(src)
 	if err == nil && (len(n.operands) > 0 || n.exhaustive) {
-		err = fmt.Errorf("%w: native platform observations required", errProbeInconclusive)
+		err = fmt.Errorf("%w: native platform observations required", ErrInconclusive)
 	}
 	return n.majors, n.arch, err
 }
@@ -191,6 +191,6 @@ func TestScanPlatformNeedsRecognizesOperandForms(t *testing.T) {
 		"if {[vercmp $macosx_deployment_target 10.12] < 0} {distfiles legacy.tar.gz} else {distfiles source.tar.gz}",
 	} {
 		_, err := scanPlatformNeeds([]byte(source))
-		require.ErrorIs(t, err, errProbeInconclusive, source)
+		require.ErrorIs(t, err, ErrInconclusive, source)
 	}
 }

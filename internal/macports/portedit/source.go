@@ -13,6 +13,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/progress"
@@ -46,9 +47,10 @@ type sourceInput struct {
 	// data is the input's baseline Portfile contents, which a derived
 	// input may replace with a stripped form; loaded is what the workspace
 	// holds on disk, and the only contents that evaluate there directly.
-	data, loaded         []byte
-	platformOperands     []string
-	baselineObservations map[observationKey]macports.Observation
+	data, loaded []byte
+	// observe runs the input's modeled observations; its projections are
+	// this input's overlays.
+	observe *observe.Session
 }
 
 // load binds the request's selection to a disposable workspace. A stub
@@ -168,6 +170,7 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 		return nil, err
 	}
 	input.before, input.primary, input.target, input.info, input.data, input.loaded = before, targets[0], selected, info, data, data
+	input.observe = &observe.Session{Ports: s.Ports, Primary: targets[0], Target: selected, Native: before.Platform, Baseline: data, Project: input.projection}
 	if selected.Subport == "" {
 		input.family = &input.before
 	}

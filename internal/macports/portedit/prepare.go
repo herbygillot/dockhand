@@ -11,13 +11,14 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
 var (
-	errProbeInconclusive = errors.New("portedit: version probe is inconclusive")
+	errProbeInconclusive = observe.ErrInconclusive
 	ErrNotImplemented    = errors.New("portedit: requested transformation is not implemented")
 	ErrUnsupported       = portfile.ErrUnsupported
 	ErrFidelity          = fidelity.ErrMismatch

@@ -1,7 +1,8 @@
-package portedit
+package observe
 
 import (
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"slices"
@@ -28,7 +29,7 @@ func scanPlatformNeeds(src []byte) (platformNeeds, error) {
 	n := platformNeeds{majors: map[int]bool{}}
 	script, errs := syntax.Parse(src)
 	if len(errs) > 0 {
-		return n, fmt.Errorf("%w: invalid context syntax", ErrUnsupported)
+		return n, fmt.Errorf("%w: invalid context syntax", portfile.ErrUnsupported)
 	}
 	if err := unmodeledReads(src, script); err != nil {
 		return n, err
@@ -75,7 +76,7 @@ func (s *platformScanner) command(cmd syntax.Command) error {
 			for nested := range script.Commands(s.src, func(syntax.Command) bool { return true }) {
 				for _, read := range nested.Reads(s.src) {
 					if read.Name.Text(s.src) == "os.major" {
-						return fmt.Errorf("%w: Darwin major in an expression form that is not modeled", errProbeInconclusive)
+						return fmt.Errorf("%w: Darwin major in an expression form that is not modeled", ErrInconclusive)
 					}
 				}
 			}
@@ -220,7 +221,7 @@ func (s *platformScanner) boundary(other syntax.Expr) error {
 			}
 		}
 	}
-	return fmt.Errorf("%w: unresolved Darwin comparison", errProbeInconclusive)
+	return fmt.Errorf("%w: unresolved Darwin comparison", ErrInconclusive)
 }
 
 func (s *platformScanner) operand(name string) {
@@ -231,7 +232,7 @@ func (s *platformScanner) operand(name string) {
 
 func addBoundary(majors map[int]bool, n int) error {
 	if n < 8 || n > 1000 {
-		return fmt.Errorf("%w: unsupported Darwin boundary %d", errProbeInconclusive, n)
+		return fmt.Errorf("%w: unsupported Darwin boundary %d", ErrInconclusive, n)
 	}
 	for _, v := range []int{n - 1, n, n + 1} {
 		if v >= 8 {
@@ -244,7 +245,7 @@ func addBoundary(majors map[int]bool, n int) error {
 func profilesForBoundaries(majors map[int]bool, archDependent bool, native record.Platform) ([]record.Platform, error) {
 	result := []record.Platform{native}
 	if native.OS != "darwin" && (archDependent || len(majors) > 0) {
-		return nil, fmt.Errorf("%w: alternate platforms require Darwin modeling", errProbeInconclusive)
+		return nil, fmt.Errorf("%w: alternate platforms require Darwin modeling", ErrInconclusive)
 	}
 	current, _ := strconv.Atoi(native.Version)
 	appendProfile := func(major int, arch string) {
