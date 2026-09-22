@@ -116,36 +116,37 @@ text the preparation tests assert.
 ## How it is computed
 
 ```go
-// Resolver reads what a selection means. State may be nil: with no
-// database there are no records, and every selection is Fresh unless the
-// request names a branch to adopt.
-type Resolver struct {
-	State      state.Store
-	Repository record.RepositoryID
-	Repo       *git.Repository
-	Ports      macports.Reader
-	Forge      forge.PullRequests // for the continuation's PR refresh; nil means not re-checked
-}
-
-type Request struct {
+// ResolutionRequest is the selection as the person made it.
+type ResolutionRequest struct {
 	Action    record.Action
 	Selection macports.Selection
 	ChangeID  record.ChangeID
 	Branch    string
 	// Adopt names a branch to track first.
 	Adopt bool
-	// Master fetches authoritative master; a Fresh or Continue needs it,
-	// an Onto does not, and a nil Master is only for a resolution that
-	// must not touch the network, which then refuses Fresh.
-	Master   func(context.Context) (record.Source, error)
-	Platform record.Platform
-	Intent   record.EditIntent
-	Subject  string
+	// Offline forbids the master fetch: a resolution that would need it,
+	// Fresh or a Continue that checks master, is refused rather than made.
+	Offline    bool
+	Platform   record.Platform
+	Intent     record.EditIntent
+	Subject    string
 	References []record.Reference
 }
 
-func (r *Resolver) Resolve(ctx context.Context, request Request) (Resolution, error)
+// Resolve is an engine method: the engine has the store, the repository,
+// the evaluator, and the forge already, and a separate resolver would be
+// the engine's dependency set under a second name, the layering the
+// second review objected to in app. The one rule this method adds is
+// that a nil State means no records: every selection is Fresh, or Onto
+// for an explicit adopt, and nothing is read. A preview builds an engine
+// without a store the way it builds one without providers.
+func (e *Engine) Resolve(ctx context.Context, request ResolutionRequest) (Resolution, error)
 ```
+
+The engine fetches master itself when a resolution needs it, through its
+repository and the ports repository constants, as `app.preparationSource`
+does today; `Offline` is the only control, and it is a refusal, not a
+degradation. The degraded path is a fetch that was attempted and failed.
 
 The steps, in the order `app.BindPreparation` takes them today:
 
@@ -161,10 +162,11 @@ The steps, in the order `app.BindPreparation` takes them today:
    request's variants laid over; the subject is the contribution's own
    unless one was given. This is what `bindOnto` computes today and keeps
    computing; the resolution names it.
-5. Otherwise fetch master. Unreachable: Continue from the prior job's
-   recorded source, `Degraded` set, `Detail` saying master was not
-   checked. Reachable: `CheckContinuation` decides; retired means Fresh
-   from master with its detail; a stop is the error it raises today.
+5. Otherwise fetch master, unless `Offline`, which refuses here.
+   Unreachable: Continue from the prior job's recorded source, `Degraded`
+   set, `Detail` saying master was not checked. Reachable:
+   `CheckContinuation` decides; retired means Fresh from master with its
+   detail; a stop is the error it raises today.
 6. Continue inherits: `SharedRelease` and `KeepOldChecksums` or-ed with
    the request's, `Stub` taken, subject and references taken when the
    request's are empty, the selection from the prior target with the
@@ -178,10 +180,10 @@ step 3 and stops being an entry point.
 
 **It answers without a database.** Seven dry-run tests assert that a
 preview never creates the state database. `PreparationInput` runs inside a
-store view, so the resolver takes a store that may be nil and answers
-Fresh, or Onto for an explicit adopt, without one. The read-only opener
-that `app` grows, item 1 of the app plan reduced to its useful part,
-returns "no database" as a value the resolver is built with.
+store view, so `Resolve` is the one engine method that accepts a nil
+store, and answers Fresh, or Onto for an explicit adopt, without one. The
+read-only opener that `app` grows, item 1 of the app plan reduced to its
+useful part, returns "no database" as a value the engine is built with.
 
 **It degrades explicitly.** Master unreachable with a prior job is a
 Continue with `Degraded` set, never a silent Fresh. The wording is the
@@ -190,13 +192,13 @@ continued as recorded".
 
 **It is fallible.** Step 5 refreshes the pull request through the forge,
 and an unreachable forge leaves the recorded state as the only fact, in
-the detail. The resolver is therefore not a pure function of the records,
-and nothing caches a resolution across commands.
+the detail. The resolution is therefore not a pure function of the
+records, and nothing caches one across commands.
 
 ## What each consumer does
 
-- **Bump, revision bump, checksums.** `app.BindPreparation` becomes: build
-  the resolver from the services, resolve, and hand the resolution to
+- **Bump, revision bump, checksums.** `app.BindPreparation` becomes:
+  resolve through the engine, then hand the resolution to
   `Engine.BindPreparation`, which takes a `Resolution` in place of
   `Source`, `Onto`, `ChangeID`, and the inherited fields. The engine's
   binding keeps the stub redirection, the main-port authorization, the
@@ -261,17 +263,18 @@ resolution removes the translation that mattered without it.
 1. Provider choice out of `app`: `buildResolver` behind interfaces for
    the two providers, in a policy package `app` wires. Self-contained; its
    package-internal test moves with it.
-2. The `Resolution` value and `Resolver` in `workflow`, with the four
-   kinds, the degraded path, and the no-store path each under test, and
-   `PreparationInput` folded in. No consumer changes yet.
+2. The `Resolution` value and `Engine.Resolve` in `workflow`, with the
+   four kinds, the degraded path, the offline refusal, and the no-store
+   path each under test, and `PreparationInput` folded in. No consumer
+   changes yet.
 3. `Engine.BindPreparation` takes a resolution; `app.BindPreparation`
    resolves and hands it over; the continuation tests in `cli` and
    `workflow` are the acceptance test.
 4. Preview resolves the same way; the preview wording change is its own
    commit.
 5. `BindVerification`'s selector becomes a Continue resolution.
-6. Then, and only then, the question whether the four bindings and the
-   resolver lift into `workflow/intake` as a leaf that takes the store,
+6. Then, and only then, the question whether the four bindings and
+   `Resolve` lift into `workflow/intake` as a leaf that takes the store,
    the repository, the evaluator, and the forge as values and hands the
    engine a finished request. That move is about 1,300 lines and is worth
    making only if the value has made the bindings alike enough that the
@@ -282,10 +285,13 @@ resolution removes the translation that mattered without it.
 - Behavior that lives in the merge of a prior job's intent is covered
   only end to end today; step 2 writes the unit tests before step 3
   moves the code.
-- The resolver reaches the forge and the network from inside what reads
-  like a lookup; the `Master` function and the nil forge make that
-  explicit at every call site, and the resolution's `Degraded` field is
-  the only way a failure becomes a value.
+- `Resolve` reaches the forge and the network from inside what reads like
+  a lookup; `Offline` and a nil forge make that explicit at the call
+  site, and the resolution's `Degraded` field is the only way a failure
+  becomes a value.
+- A method that accepts a nil store on an engine whose every other method
+  refuses one is a rule to state once and test, not a convention; the
+  test is a preview resolved against no database.
 - A resolution is computed before binding and consumed by it; nothing
   holds a lock between the two, as nothing does today, and the binding's
   own checks, the idle contribution and the open pull request, stay in
