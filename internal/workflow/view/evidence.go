@@ -37,6 +37,30 @@ type Evidence struct {
 	// TestOmission says why the declared tests did not run; TestFailure
 	// how they failed when the policy let the build pass regardless.
 	TestOmission, TestFailure string
+	// Steps are the phases the build ran, in order, as recorded.
+	Steps []Step
+}
+
+// Step is one phase of a build as recorded: what it ran, for which
+// package, as whom, and how it ended.
+type Step struct {
+	Phase   string
+	Package string
+	Verdict string
+	Command []string
+	User    string
+}
+
+// Passed is the recorded step that passed the phase for the package, the
+// last when the phase ran more than once, or nil.
+func (e Evidence) Passed(phase, pkg string) *Step {
+	var passed *Step
+	for i := range e.Steps {
+		if step := &e.Steps[i]; step.Phase == phase && step.Package == pkg && step.Verdict == string(record.VerdictPassed) {
+			passed = step
+		}
+	}
+	return passed
 }
 
 // Workflow is a GitHub Actions run as evidence: its outcome, its identity,
@@ -111,6 +135,9 @@ func Facts(evidence *record.Evidence) Evidence {
 	facts.ObservedAt = evidence.ObservedAt
 	facts.TestOmission = evidence.TestOmission
 	facts.TestFailure = evidence.TestFailure
+	for _, step := range evidence.Steps {
+		facts.Steps = append(facts.Steps, Step{Phase: step.Phase, Package: step.Package, Verdict: string(step.Verdict), Command: step.Command, User: step.User})
+	}
 	if flow := evidence.Workflow; flow != nil {
 		facts.Provider = "GitHub Actions"
 		run := &Workflow{Outcome: flow.Conclusion, RunID: flow.RunID, RunAttempt: flow.RunAttempt, URL: flow.URL, Repository: flow.Repository, Branch: flow.Branch, Commit: string(flow.Commit)}

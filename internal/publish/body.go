@@ -83,16 +83,9 @@ func publicationBody(content record.PublicationContent, change record.Change, so
 	check(change.GeneratedCommit != "" && change.GeneratedCommit == source.Commit, "Squashed and [minimized commits](https://guide.macports.org/#project.github).")
 	check(false, "Checked for other open [pull requests](https://github.com/macports/macports-ports/pulls) for the same change.")
 	check(false, "Referenced applicable [Trac tickets](https://trac.macports.org/wiki/Tickets) with full URLs in the commit message.")
+	recorded := view.Facts(evidence)
 	for _, phase := range []string{"lint", "test", "install"} {
-		var found *record.StepResult
-		if evidence != nil {
-			for i := range evidence.Steps {
-				step := &evidence.Steps[i]
-				if step.Package == attempt.Spec.Target.Name && step.Phase == phase && step.Verdict == record.VerdictPassed {
-					found = step
-				}
-			}
-		}
+		found := recorded.Passed(phase, attempt.Spec.Target.Name)
 		labels := map[string]string{"lint": "Checked the Portfile with lint", "test": "Ran the port's tests", "install": "Completed a full install"}
 		label := labels[phase]
 		if found != nil && len(found.Command) > 0 {
