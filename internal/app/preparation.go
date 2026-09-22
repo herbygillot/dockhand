@@ -87,7 +87,7 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 		return Preview{}, fmt.Errorf("bump-revision needs --subject: the reason is what maintainers read, e.g. --subject \"revbump for oniguruma 6.9.10\"")
 	}
 	githubClient := newGitHubClient(config.GitHub)
-	service := preparation.Service{DependencyTools: config.DependencyTools, Repo: repo, Ports: ports, Upstream: releaseDiscovery(ports, githubClient, http.DefaultClient)}
+	service := preparation.Service{DependencyTools: config.DependencyTools, Repo: repo, Ports: ports, Upstream: releaseDiscovery(ports, githubClient, http.DefaultClient, config.GitExecutable)}
 	input := preparation.Request{
 		EditIntent: resolution.Intent, Action: request.Action, Source: resolution.Source,
 		Selection: resolution.Selection, Version: request.Version, Subject: resolution.Subject, References: resolution.References,

@@ -13,6 +13,9 @@ import (
 type Config struct {
 	BaseURL string
 	Token   string
+	// CloneURL is where repositories are read with plain git, when the API
+	// cannot answer; empty is https://github.com.
+	CloneURL string
 }
 
 // Configure a Client before its first API operation; it is then safe to share.

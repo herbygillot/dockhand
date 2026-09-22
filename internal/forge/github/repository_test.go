@@ -21,6 +21,11 @@ type githubRepository interface {
 
 func testRepository(t *testing.T, client *github.Client) githubRepository {
 	t.Helper()
+	// A failing API falls back to git; an empty clone base keeps that
+	// fallback on this machine, where it finds no repository.
+	if client.Client != nil && client.Config.CloneURL == "" {
+		client.Config.CloneURL = t.TempDir()
+	}
 	repository, err := client.Repository("https://github.com", "owner/project")
 	require.NoError(t, err)
 	result, ok := repository.(githubRepository)

@@ -81,7 +81,7 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 
 	ports := portReader(config, repo, indexMirror(config))
 	githubClient := newGitHubClient(config.GitHub)
-	discovery := releaseDiscovery(ports, githubClient, http.DefaultClient)
+	discovery := releaseDiscovery(ports, githubClient, http.DefaultClient, config.GitExecutable)
 	// One workspace per source for the command: Tart staging and dependent
 	// discovery share the prepared tree rather than materializing it twice.
 	workspaces := &workspace.Registry{}

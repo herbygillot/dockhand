@@ -21,6 +21,6 @@ func Outdated(ctx context.Context, config Config, selection outdated.Selection) 
 	if err != nil {
 		return outdated.Result{}, err
 	}
-	service := outdated.Service{Repo: repo, Ports: ports, Upstream: releaseDiscovery(ports, newGitHubClient(config.GitHub), http.DefaultClient), Index: index}
+	service := outdated.Service{Repo: repo, Ports: ports, Upstream: releaseDiscovery(ports, newGitHubClient(config.GitHub), http.DefaultClient, config.GitExecutable), Index: index}
 	return service.Observe(ctx, selection)
 }

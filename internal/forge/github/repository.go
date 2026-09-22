@@ -2,6 +2,7 @@ package github
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	githubapi "github.com/herbygillot/dockhand/internal/github"
@@ -23,3 +24,13 @@ func (c *Client) Repository(instance, name string) (forge.Repository, error) {
 }
 
 func (r *repository) Name() string { return r.name }
+
+// cloneURL is where git reads the repository: the configured clone base, or
+// GitHub itself.
+func (r *repository) cloneURL() string {
+	base := publicInstance
+	if r.client.Client != nil && r.client.Config.CloneURL != "" {
+		base = strings.TrimSuffix(r.client.Config.CloneURL, "/")
+	}
+	return base + "/" + r.name + ".git"
+}

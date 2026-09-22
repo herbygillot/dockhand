@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -197,4 +198,69 @@ func (r *Repository) FirstCommitAbove(ctx context.Context, base, head string) (s
 		return "", fmt.Errorf("git: nothing above the base")
 	}
 	return first, nil
+}
+
+// RemoteTag is a tag of a repository read by URL and the object it peels
+// to: the commit an annotated tag finally names, or a lightweight tag's own
+// object. ls-remote does not say what kind of object that is, so a tag that
+// names a blob, as git/git's junio-gpg-pub does, reads like any other.
+type RemoteTag struct{ Name, Object string }
+
+// ListRemoteTags reads a remote repository's tags by URL with ls-remote,
+// with no checkout of its own, or only the named tags when names are given;
+// a named tag the remote lacks is absent from the result. It runs outside
+// any checkout, so no repository's configuration applies, and never
+// prompts for credentials.
+func ListRemoteTags(ctx context.Context, executable, url string, names ...string) ([]RemoteTag, error) {
+	if !validRemoteURL(url) {
+		return nil, fmt.Errorf("git: invalid remote")
+	}
+	args := []string{"ls-remote", "--tags", "--", url}
+	wanted := map[string]bool{}
+	for _, name := range names {
+		if !ValidRefName("refs/tags/" + name) {
+			return nil, fmt.Errorf("git: invalid tag %q", name)
+		}
+		wanted[name] = true
+		// A pattern matches the tag, not its peeled line; ask for both.
+		args = append(args, "refs/tags/"+name, "refs/tags/"+name+"^{}")
+	}
+	out, err := (&Repository{Root: os.TempDir(), Executable: executable}).output(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	var order []string
+	direct, peeled := map[string]string{}, map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		object, ref, ok := strings.Cut(line, "\t")
+		name, found := strings.CutPrefix(ref, "refs/tags/")
+		if !ok || !found || !ValidObjectID(object) {
+			return nil, fmt.Errorf("git: unreadable ls-remote line %q", line)
+		}
+		if base, ok := strings.CutSuffix(name, "^{}"); ok {
+			peeled[base] = object
+			continue
+		}
+		// Patterns match a ref's trailing components; keep only exact names.
+		if len(wanted) > 0 && !wanted[name] || !ValidRefName(ref) {
+			continue
+		}
+		if _, seen := direct[name]; seen {
+			return nil, fmt.Errorf("git: remote lists tag %s twice", name)
+		}
+		direct[name] = object
+		order = append(order, name)
+	}
+	tags := make([]RemoteTag, 0, len(order))
+	for _, name := range order {
+		object := direct[name]
+		if commit, ok := peeled[name]; ok {
+			object = commit
+		}
+		tags = append(tags, RemoteTag{Name: name, Object: object})
+	}
+	return tags, nil
 }

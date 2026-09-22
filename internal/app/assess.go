@@ -25,7 +25,7 @@ func Assess(ctx context.Context, config Config, request assess.Request) (assess.
 	}
 	service := assess.Service{Repo: repo, Ports: ports, Index: index, DependencyTools: config.DependencyTools}
 	if request.Version != "" {
-		service.Upstream = releaseDiscovery(ports, newGitHubClient(config.GitHub), http.DefaultClient)
+		service.Upstream = releaseDiscovery(ports, newGitHubClient(config.GitHub), http.DefaultClient, config.GitExecutable)
 	}
 	return service.Assess(ctx, request)
 }
