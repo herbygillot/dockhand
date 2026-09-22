@@ -11,6 +11,10 @@ import (
 )
 
 func TestAgentRegistrationRequiresObservedService(t *testing.T) {
+	// The script runs in the macOS guest under zsh, as provisioning runs it.
+	if _, err := os.Stat("/bin/zsh"); err != nil {
+		t.Skip("/bin/zsh is required")
+	}
 	for _, scenario := range []string{"ready", "domain-delay", "bootstrap-125", "already-loaded", "refused", "never-ready"} {
 		t.Run(scenario, func(t *testing.T) {
 			root := t.TempDir()

@@ -32,6 +32,9 @@ const good = "--- dir/a.txt\n+++ dir/a.txt\n@@ -1,3 +1,3 @@\n one\n-two\n+TWO\n 
 const stale = "--- dir/a.txt\n+++ dir/a.txt\n@@ -1,3 +1,3 @@\n uno\n-dos\n+DOS\n tres\n"
 const missing = "--- dir/gone.txt\n+++ dir/gone.txt\n@@ -1,1 +1,1 @@\n-x\n+y\n"
 
+// staleHunk matches the stale patch's rejection in either patch's words.
+const staleHunk = `(?i)1 out of 1 hunks? failed`
+
 func TestCheckReportsEachPatch(t *testing.T) {
 	archive := sourceArchive(t, map[string]string{"project-2.0/dir/a.txt": "one\ntwo\nthree\n", "project-2.0/README": "unrelated\n"})
 	var gzipped bytes.Buffer
@@ -47,14 +50,15 @@ func TestCheckReportsEachPatch(t *testing.T) {
 	require.Equal(t, Result{Name: "good.diff", Checked: true, Applies: true, Detail: "applies"}, results[0])
 	require.True(t, results[1].Checked)
 	require.False(t, results[1].Applies)
-	require.Contains(t, results[1].Detail, "1 out of 1 hunks failed")
+	// Apple's patch says "hunks failed" and GNU patch "hunk FAILED".
+	require.Regexp(t, staleHunk, results[1].Detail)
 	require.False(t, results[2].Applies)
 	require.Contains(t, results[2].Detail, "No file to patch")
 	require.True(t, results[3].Applies, "gzip-compressed patches are decompressed")
 	require.False(t, results[4].Checked)
 	require.Contains(t, results[4].Detail, "xz compression is not modeled")
 	require.Len(t, Rejected(results), 2)
-	require.Contains(t, Summary(results), "stale.diff 1 out of 1 hunks failed")
+	require.Regexp(t, "stale.diff "+staleHunk, Summary(results))
 	require.Contains(t, Summary(results), "packed.diff.xz unchecked")
 }
 

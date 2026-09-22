@@ -200,7 +200,9 @@ func TestDecodeMetadataPreservesTclValuesAndDependencySyntax(t *testing.T) {
 func TestStartupErrorsAreNotSuccessfulHandshakes(t *testing.T) {
 	t.Parallel()
 	executable, err := exec.LookPath("tclsh")
-	require.NoError(t, err)
+	if err != nil {
+		t.Skip("tclsh is required")
+	}
 	evaluator := &Evaluator{Executable: executable}
 	_, err = evaluator.NativePlatform(t.Context())
 	require.True(t, errors.Is(err, macports.ErrStartup))

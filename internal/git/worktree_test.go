@@ -125,7 +125,8 @@ func TestCheckoutRejectsSparseAndConflictedIndexes(t *testing.T) {
 	workGit(t, repo, "checkout", "-qb", "diverged", "HEAD~1")
 	workFile(t, repo, "file", "diverged")
 	workGit(t, repo, "commit", "-qam", "diverged")
-	command := exec.CommandContext(t.Context(), "git", "merge", "other")
+	// The merge must stop on its conflict, not on a missing identity.
+	command := exec.CommandContext(t.Context(), "git", "-c", "user.name=Fixture", "-c", "user.email=test@example.invalid", "merge", "other")
 	command.Dir = repo.Root
 	require.Error(t, command.Run())
 	_, err = repo.CaptureCheckout(t.Context())
