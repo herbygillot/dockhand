@@ -52,6 +52,31 @@ func (s *Snapshot) Close() error { return os.RemoveAll(s.directory) }
 // Materialize reads raw blobs, avoiding checkout filters and archive attributes.
 // The returned directory is owned by the caller until Close.
 func (r *Repository) Materialize(ctx context.Context, tree string) (_ *Snapshot, err error) {
+	directory, err := os.MkdirTemp("", "dockhand-source-")
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, os.RemoveAll(directory))
+		}
+	}()
+	canonical, err := filepath.EvalSymlinks(directory)
+	if err != nil {
+		return nil, err
+	}
+	directory = canonical
+	if _, err = r.MaterializeInto(ctx, tree, directory, nil, nil); err != nil {
+		return nil, err
+	}
+	return &Snapshot{Tree: tree, Root: directory, directory: directory}, nil
+}
+
+// MaterializeInto writes the tree's blobs under an existing directory: the
+// paths the include pathspecs select, or every path with none, less the
+// paths present already, which are skipped rather than created again. It
+// returns the entries it wrote.
+func (r *Repository) MaterializeInto(ctx context.Context, tree, directory string, include []string, present map[string]bool) ([]TreeEntry, error) {
 	typ, err := r.ObjectType(ctx, tree)
 	if err != nil {
 		return nil, err
@@ -59,7 +84,17 @@ func (r *Repository) Materialize(ctx context.Context, tree string) (_ *Snapshot,
 	if typ != "tree" {
 		return nil, fmt.Errorf("git: %s is not a tree", tree)
 	}
-	out, err := r.output(ctx, "ls-tree", "-rz", tree)
+	args := []string{"ls-tree", "-rz", tree, "--"}
+	for _, name := range include {
+		if !snapshotPath(name) {
+			return nil, fmt.Errorf("git: invalid pathspec %q", name)
+		}
+		args = append(args, name)
+	}
+	if len(include) == 0 {
+		args = append(args, ".")
+	}
+	out, err := r.output(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -78,29 +113,14 @@ func (r *Repository) Materialize(ctx context.Context, tree string) (_ *Snapshot,
 		if parseErr != nil || (mode != 0100644 && mode != 0100755 && mode != 0120000) {
 			return nil, fmt.Errorf("git: unsupported snapshot mode %q", fields[0])
 		}
+		if present[string(name)] {
+			continue
+		}
 		entries = append(entries, TreeEntry{Name: string(name), Mode: uint32(mode), Object: fields[2]})
 		input.WriteString(fields[2] + "\n")
 	}
-	directory, err := os.MkdirTemp("", "dockhand-source-")
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err != nil {
-			err = errors.Join(err, os.RemoveAll(directory))
-		}
-	}()
-	canonical, err := filepath.EvalSymlinks(directory)
-	if err != nil {
-		return nil, err
-	}
-	directory = canonical
-	snapshot := &Snapshot{Tree: tree, Root: directory, directory: directory}
 	if len(entries) == 0 {
-		if err = ctx.Err(); err != nil {
-			return nil, err
-		}
-		return snapshot, nil
+		return nil, ctx.Err()
 	}
 	command := r.command(ctx, nil, "cat-file", "--batch")
 	command.Stdin = strings.NewReader(input.String())
@@ -121,7 +141,7 @@ func (r *Repository) Materialize(ctx context.Context, tree string) (_ *Snapshot,
 	if err = errors.Join(ctx.Err(), readErr, waitErr); err != nil {
 		return nil, fmt.Errorf("git: materializing %s: %w: %s", tree, err, strings.TrimSpace(stderr.String()))
 	}
-	return snapshot, nil
+	return entries, nil
 }
 
 func snapshotPath(name string) bool {

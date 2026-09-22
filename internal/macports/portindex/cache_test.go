@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/stretchr/testify/require"
@@ -400,4 +401,27 @@ func TestMirrorBootstrapSeedsAColdCacheWithinItsBracket(t *testing.T) {
 	require.True(t, ok)
 	require.True(t, meta.Full)
 	require.Positive(t, meta.Duration)
+}
+
+// Index generation lists what the root holds, so a sparse workspace is
+// refused before a truncated index could be cached under the tree id;
+// the whole tree is accepted.
+func TestIndexGenerationRefusesASparseWorkspace(t *testing.T) {
+	f := newIndexFixture(t)
+	f.put("devel/working/Portfile", workingPortfile)
+	f.put("devel/other/Portfile", "PortSystem 1.0\nname other\nversion 1\ncategories devel\n")
+	commit, tree := f.commit()
+	source := record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree)}
+	ws, err := workspace.Open(t.Context(), f.repo, source)
+	require.NoError(t, err)
+	defer ws.Close()
+	require.NoError(t, ws.EnsurePort(t.Context(), record.Target{Name: "working", Portfile: "devel/working/Portfile"}))
+	err = Stage(t.Context(), f.repo, source, testPlatform, f.config, ws.Root())
+	require.ErrorContains(t, err, "needs the whole tree")
+	require.ErrorContains(t, err, "devel/working")
+	require.NoError(t, ws.EnsureAll(t.Context()))
+	require.NoError(t, Stage(t.Context(), f.repo, source, testPlatform, f.config, ws.Root()))
+	index, err := Open(ws.Root())
+	require.NoError(t, err)
+	requireVersion(t, index, "other", "1")
 }

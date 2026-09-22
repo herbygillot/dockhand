@@ -147,8 +147,13 @@ func (s *Session) evaluate(ctx context.Context, source macports.Context, selecte
 	if err != nil {
 		return macports.Observation{}, err
 	}
-	if checked.Tree.Root() != s.tree.Root() {
-		return macports.Observation{}, fmt.Errorf("%w: session is bound to %s, not %s", macports.ErrTarget, s.tree.Root(), checked.Tree.Root())
+	// An overlay of the session's root evaluates in the session: MacPorts
+	// resolves _resources from the port directory upward and loads
+	// PortGroups per worker interpreter, so the overlay's files are what
+	// it reads, and the session's sources setting names the base the
+	// overlay is a copy of.
+	if checked.Tree.Base() != s.tree.Base() {
+		return macports.Observation{}, fmt.Errorf("%w: session is bound to %s, not %s", macports.ErrTarget, s.tree.Base(), checked.Tree.Base())
 	}
 	return evaluateIn(ctx, s.session, s.runtime, checked, source, nil, selectedOnly)
 }

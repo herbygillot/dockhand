@@ -14,14 +14,26 @@ import (
 type Tree struct {
 	source   record.Source
 	root     string
+	base     string
 	platform record.Platform
 }
 
 func NewTree(source record.Source, root string, platform record.Platform) (Tree, error) {
-	if source.Tree == "" || !filepath.IsAbs(root) {
-		return Tree{}, fmt.Errorf("macports: source tree and absolute snapshot root are required")
+	return NewTreeOver(source, root, root, platform)
+}
+
+// NewTreeOver describes an overlay of a base projection: a root holding the
+// same tree with some files replaced, evaluated by the session bound to the
+// base. The base of a base is itself.
+func NewTreeOver(source record.Source, root, base string, platform record.Platform) (Tree, error) {
+	if source.Tree == "" || !filepath.IsAbs(root) || !filepath.IsAbs(base) {
+		return Tree{}, fmt.Errorf("macports: source tree and absolute snapshot roots are required")
 	}
 	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return Tree{}, err
+	}
+	base, err = filepath.EvalSymlinks(base)
 	if err != nil {
 		return Tree{}, err
 	}
@@ -32,12 +44,16 @@ func NewTree(source record.Source, root string, platform record.Platform) (Tree,
 	if !info.IsDir() {
 		return Tree{}, fmt.Errorf("macports: snapshot root is not a directory")
 	}
-	return Tree{source: source, root: root, platform: platform}, nil
+	return Tree{source: source, root: root, base: base, platform: platform}, nil
 }
 
 func (t Tree) Source() record.Source     { return t.source }
 func (t Tree) Root() string              { return t.root }
 func (t Tree) Platform() record.Platform { return t.platform }
+
+// Base is the root of the projection this tree overlays, or the root
+// itself; an interpreter session bound to the base serves the overlay.
+func (t Tree) Base() string { return t.base }
 
 type Context struct {
 	Tree

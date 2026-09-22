@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 )
@@ -288,6 +289,12 @@ func buildPortIndex(ctx context.Context, c Config, platform record.Platform, sou
 	short := meta.Tree
 	if len(short) > 12 {
 		short = short[:12]
+	}
+	if scope, ok := workspace.ScopeOf(sourceRoot); ok && !scope.All {
+		// The indexer lists what the root holds; a port absent from a
+		// sparse projection would be indexed as absent from the tree and
+		// cached under the tree id for every later process.
+		return fmt.Errorf("portindex: index generation needs the whole tree; the workspace holds only %v", scope.Ports)
 	}
 	if seed == "" {
 		progress.Report(ctx, "Building the PortIndex; this may take several minutes")

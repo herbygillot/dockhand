@@ -49,6 +49,7 @@ dockhand2/
       eval/              # Native Tcl evaluation and MacPorts runtime compatibility
       installation/      # MacPorts installation and observed installation facts
       fidelity/          # Before-and-after evaluation comparison reports
+      workspace/         # Scoped projections of a git tree with overlays for edits
       portedit/          # Evaluator-driven source edits in a disposable workspace
         archives/        # Direct archive downloads, hashing, and checksum rewriting
       distfiles/         # Native fetch observations tied to exact checksum declarations

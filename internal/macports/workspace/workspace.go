@@ -1,0 +1,392 @@
+package workspace
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path"
+	"path/filepath"
+	"slices"
+	"strings"
+	"sync"
+
+	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/record"
+)
+
+// The shared resources every evaluation reads: PortGroups, livecheck and
+// fetch definitions, variant descriptions, and the Xcode table.
+const resources = "_resources"
+
+// Scope is what a workspace holds: port directories as category/port, and
+// whether the whole tree is present. _resources is present after any Ensure.
+type Scope struct {
+	Ports []string
+	All   bool
+}
+
+// Holds reports whether the scope covers a port directory.
+func (s Scope) Holds(directory string) bool {
+	return s.All || slices.Contains(s.Ports, directory)
+}
+
+// Workspace is one projection of a tree. A base owns its directory, its
+// session, and its overlays; an overlay shares the base's tracked files and
+// replaces the edited ones.
+type Workspace struct {
+	repo      *git.Repository
+	source    record.Source
+	directory string
+	base      *Workspace
+	edits     []git.FileEdit
+
+	mu        sync.Mutex
+	entries   map[string]git.TreeEntry
+	ports     []string
+	all       bool
+	resources bool
+	batch     macports.Batch
+	closed    bool
+}
+
+var (
+	openMu sync.Mutex
+	open   = map[string]*Workspace{}
+)
+
+// Open claims a directory for the tree, creates it, and materializes
+// nothing into it.
+func Open(ctx context.Context, repo *git.Repository, source record.Source) (*Workspace, error) {
+	if repo == nil || !git.ValidObjectID(string(source.Tree)) {
+		return nil, fmt.Errorf("workspace: a repository and a source tree are required")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	directory, err := os.MkdirTemp("", "dockhand-workspace-")
+	if err != nil {
+		return nil, err
+	}
+	directory, err = filepath.EvalSymlinks(directory)
+	if err != nil {
+		return nil, errors.Join(err, os.RemoveAll(directory))
+	}
+	w := &Workspace{repo: repo, source: source, directory: directory, entries: map[string]git.TreeEntry{}}
+	register(w)
+	return w, nil
+}
+
+func register(w *Workspace) {
+	openMu.Lock()
+	defer openMu.Unlock()
+	open[w.directory] = w
+}
+
+func unregister(w *Workspace) {
+	openMu.Lock()
+	defer openMu.Unlock()
+	delete(open, w.directory)
+}
+
+// ScopeOf reports the scope of an open workspace by its root, so a consumer
+// handed a root string can refuse work that needs the whole tree. A root
+// that is no workspace's, a plain materialization for instance, reports
+// false and is taken as whole.
+func ScopeOf(root string) (Scope, bool) {
+	openMu.Lock()
+	w := open[root]
+	openMu.Unlock()
+	if w == nil {
+		return Scope{}, false
+	}
+	return w.Scope(), true
+}
+
+func (w *Workspace) Source() record.Source { return w.source }
+func (w *Workspace) Root() string          { return w.directory }
+
+// Base is the workspace an overlay was made from; a base returns itself.
+func (w *Workspace) Base() *Workspace {
+	if w.base != nil {
+		return w.base
+	}
+	return w
+}
+
+// Scope reports what is present; an overlay's scope is its base's.
+func (w *Workspace) Scope() Scope {
+	base := w.Base()
+	base.mu.Lock()
+	defer base.mu.Unlock()
+	return Scope{Ports: slices.Clone(base.ports), All: base.all}
+}
+
+// EnsurePort materializes _resources and the target's port directory,
+// including its files/ tree. It is idempotent and cheap when present.
+func (w *Workspace) EnsurePort(ctx context.Context, target record.Target) error {
+	directory := path.Dir(target.Portfile)
+	if strings.Count(directory, "/") != 1 || !fsValid(directory) {
+		return fmt.Errorf("workspace: %q is not a category/port/Portfile target", target.Portfile)
+	}
+	return w.ensure(ctx, []string{directory})
+}
+
+// EnsureAll materializes the whole tree; later Ensure calls are no-ops.
+func (w *Workspace) EnsureAll(ctx context.Context) error { return w.ensure(ctx, nil) }
+
+// ensure materializes the named port directories, or everything with none,
+// skipping what is present. An overlay ensures its base and links what the
+// base gained.
+func (w *Workspace) ensure(ctx context.Context, directories []string) error {
+	if w.base != nil {
+		if err := w.base.ensure(ctx, directories); err != nil {
+			return err
+		}
+		return w.linkNew()
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed {
+		return fmt.Errorf("workspace: closed")
+	}
+	if w.all {
+		return nil
+	}
+	var include []string
+	if directories != nil {
+		for _, directory := range directories {
+			if !slices.Contains(w.ports, directory) {
+				include = append(include, directory)
+			}
+		}
+		if !w.resources {
+			include = append(include, resources)
+		}
+		if len(include) == 0 {
+			return nil
+		}
+	}
+	present := make(map[string]bool, len(w.entries))
+	for name := range w.entries {
+		present[name] = true
+	}
+	entries, err := w.repo.MaterializeInto(ctx, string(w.source.Tree), w.directory, include, present)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		w.entries[entry.Name] = entry
+	}
+	if directories == nil {
+		w.all, w.resources = true, true
+		return nil
+	}
+	w.resources = true
+	for _, directory := range directories {
+		if !slices.Contains(w.ports, directory) {
+			w.ports = append(w.ports, directory)
+		}
+	}
+	slices.Sort(w.ports)
+	return nil
+}
+
+// Tree is the evaluator's view of the root; an overlay's names its base.
+func (w *Workspace) Tree(platform record.Platform) (macports.Tree, error) {
+	return macports.NewTreeOver(w.source, w.directory, w.Base().directory, platform)
+}
+
+// Context selects a target in the tree.
+func (w *Workspace) Context(target record.Target, platform record.Platform) (macports.Context, error) {
+	tree, err := w.Tree(platform)
+	if err != nil {
+		return macports.Context{}, err
+	}
+	return tree.Select(target)
+}
+
+// Batch is the interpreter session bound to the base root, opened on first
+// use and shared by the base and its overlays until Close.
+func (w *Workspace) Batch(ctx context.Context, ports macports.BatchReader) (macports.Batch, error) {
+	base := w.Base()
+	base.mu.Lock()
+	defer base.mu.Unlock()
+	if base.closed {
+		return nil, fmt.Errorf("workspace: closed")
+	}
+	if base.batch != nil {
+		return base.batch, nil
+	}
+	tree, err := base.Tree(record.Platform{})
+	if err != nil {
+		return nil, err
+	}
+	batch, err := ports.OpenBatch(ctx, tree)
+	if err != nil {
+		return nil, err
+	}
+	base.batch = batch
+	return batch, nil
+}
+
+// Overlay is a sibling projection with the edits applied. Tracked files the
+// edits do not touch are hardlinked from the base, symlinks are re-created,
+// edited files are written with their entries' modes, and the scope is the
+// base's. Untracked files in the base directory are not part of it. An edit
+// must name a tracked regular file; an overlay adds and deletes nothing.
+func (w *Workspace) Overlay(ctx context.Context, edits []git.FileEdit) (*Workspace, error) {
+	base := w.Base()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	base.mu.Lock()
+	if base.closed {
+		base.mu.Unlock()
+		return nil, fmt.Errorf("workspace: closed")
+	}
+	entries := make(map[string]git.TreeEntry, len(base.entries))
+	for name, entry := range base.entries {
+		entries[name] = entry
+	}
+	base.mu.Unlock()
+	edited := map[string]git.FileEdit{}
+	for _, edit := range edits {
+		entry, ok := entries[edit.Path]
+		if !ok || entry.Mode == 0120000 || edit.Delete {
+			return nil, fmt.Errorf("workspace: an overlay replaces a tracked regular file the base holds; %q is not one", edit.Path)
+		}
+		if edit.Mode == 0 {
+			edit.Mode = entry.Mode
+		}
+		edit.Before = git.FileState{Exists: true, Blob: entry.Object, Mode: entry.Mode}
+		edited[edit.Path] = edit
+	}
+	directory, err := os.MkdirTemp(filepath.Dir(base.directory), "dockhand-overlay-")
+	if err != nil {
+		return nil, err
+	}
+	directory, err = filepath.EvalSymlinks(directory)
+	if err != nil {
+		return nil, errors.Join(err, os.RemoveAll(directory))
+	}
+	overlay := &Workspace{repo: base.repo, source: base.source, directory: directory, base: base, entries: map[string]git.TreeEntry{}}
+	for _, edit := range edits {
+		overlay.edits = append(overlay.edits, edited[edit.Path])
+	}
+	for name, entry := range entries {
+		if err := overlay.place(name, entry, edited); err != nil {
+			return nil, errors.Join(err, os.RemoveAll(directory))
+		}
+	}
+	register(overlay)
+	return overlay, nil
+}
+
+// place puts one tracked entry into the overlay: the edit's contents, a
+// re-created symlink, or a hardlink to the base's file.
+func (w *Workspace) place(name string, entry git.TreeEntry, edited map[string]git.FileEdit) error {
+	source := filepath.Join(w.base.directory, filepath.FromSlash(name))
+	destination := filepath.Join(w.directory, filepath.FromSlash(name))
+	if err := os.MkdirAll(filepath.Dir(destination), 0700); err != nil {
+		return err
+	}
+	if edit, ok := edited[name]; ok {
+		mode := os.FileMode(0600)
+		if edit.Mode == 0100755 {
+			mode = 0700
+		}
+		if err := os.WriteFile(destination, edit.After, mode); err != nil {
+			return err
+		}
+		w.entries[name] = entry
+		return nil
+	}
+	if entry.Mode == 0120000 {
+		target, err := os.Readlink(source)
+		if err != nil {
+			return err
+		}
+		if err := os.Symlink(target, destination); err != nil {
+			return err
+		}
+		w.entries[name] = entry
+		return nil
+	}
+	if err := os.Link(source, destination); err != nil {
+		return err
+	}
+	w.entries[name] = entry
+	return nil
+}
+
+// linkNew places the base's entries the overlay does not hold yet, after
+// the base gained scope.
+func (w *Workspace) linkNew() error {
+	base := w.base
+	base.mu.Lock()
+	entries := make(map[string]git.TreeEntry, len(base.entries))
+	for name, entry := range base.entries {
+		entries[name] = entry
+	}
+	base.mu.Unlock()
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	edited := map[string]git.FileEdit{}
+	for _, edit := range w.edits {
+		edited[edit.Path] = edit
+	}
+	for name, entry := range entries {
+		if _, ok := w.entries[name]; ok {
+			continue
+		}
+		if err := w.place(name, entry, edited); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Edits are the overlay's edits with their before states filled from the
+// base's entries; a base has none.
+func (w *Workspace) Edits() []git.FileEdit { return slices.Clone(w.edits) }
+
+// Commit writes the overlay's edits as git objects over the base tree and
+// returns the source whose tree they make. The overlay's files are, by
+// construction, that tree's projection over the base's scope.
+func (w *Workspace) Commit(ctx context.Context) (record.Source, error) {
+	if w.base == nil {
+		return w.source, nil
+	}
+	tree, err := w.repo.EditTree(ctx, string(w.source.Tree), w.edits)
+	if err != nil {
+		return record.Source{}, err
+	}
+	return record.Source{Tree: record.ObjectID(tree), Base: w.source.Base}, nil
+}
+
+// Close closes the session, then removes the directory. Overlays close
+// before their base; closing a base with open overlays leaves their files
+// intact, since hardlinks survive their source.
+func (w *Workspace) Close() error {
+	w.mu.Lock()
+	if w.closed {
+		w.mu.Unlock()
+		return nil
+	}
+	w.closed = true
+	batch := w.batch
+	w.batch = nil
+	w.mu.Unlock()
+	unregister(w)
+	var err error
+	if batch != nil {
+		err = batch.Close()
+	}
+	return errors.Join(err, os.RemoveAll(w.directory))
+}
+
+func fsValid(name string) bool {
+	return name != "" && !strings.HasPrefix(name, "/") && !strings.Contains(name, "..") && !strings.ContainsAny(name, "\\\x00")
+}
