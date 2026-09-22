@@ -53,7 +53,11 @@ func publicationBody(content record.PublicationContent, change record.Change, so
 			// list says so: each is nested under the run.
 			fmt.Fprintf(&b, "- [workflow run](%s), attempt %d\n", oneLine(flow.URL), flow.RunAttempt)
 			for _, job := range flow.Jobs {
-				fmt.Fprintf(&b, "  - %s: %s\n", oneLine(job.Name), oneLine(job.Conclusion))
+				name := oneLine(job.Name)
+				if job.URL != "" {
+					name = "[" + name + "](" + oneLine(job.URL) + ")"
+				}
+				fmt.Fprintf(&b, "  - %s: %s\n", name, oneLine(job.Conclusion))
 			}
 			fmt.Fprintln(&b, "\nThe MacPorts workflow passed under its own policy. It may tolerate port test failures; individual port phases and exact runner tool versions are not independently established.")
 		} else if environment := facts.Environment; environment == nil {

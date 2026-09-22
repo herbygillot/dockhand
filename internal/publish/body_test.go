@@ -121,10 +121,10 @@ func TestTestedOnTablesTheEnvironmentAndBulletsTheProvider(t *testing.T) {
 	// the build that drove it and hangs the run and its jobs off the provider.
 	attempt.Evidence.Environment = nil
 	attempt.Evidence.Workflow = &record.WorkflowEvidence{URL: "https://github.com/author/ports/actions/runs/10", RunAttempt: 2,
-		Jobs: []record.WorkflowJob{{Name: "macos-14", Conclusion: "success"}, {Name: "macos-15", Conclusion: "success"}}}
+		Jobs: []record.WorkflowJob{{Name: "macos-14", Conclusion: "success", URL: "https://github.com/author/ports/actions/runs/10/job/14"}, {Name: "macos-15", Conclusion: "success"}}}
 	body = publicationBody(record.PublicationContent{}, record.Change{}, record.Source{}, attempt, nil)
 	require.Contains(t, body, "\n| **Component** | **Version** |\n| :--- | :--- |\n| dockhand | v0.0.0-20260920.1 |\n")
-	require.Contains(t, body, "\nProvider: GitHub Actions\n\n- [workflow run](https://github.com/author/ports/actions/runs/10), attempt 2\n  - macos-14: success\n  - macos-15: success\n")
+	require.Contains(t, body, "\nProvider: GitHub Actions\n\n- [workflow run](https://github.com/author/ports/actions/runs/10), attempt 2\n  - [macos-14](https://github.com/author/ports/actions/runs/10/job/14): success\n  - macos-15: success\n", "a job links to its own page when the record has one")
 
 	// Evidence from a build that recorded none of this writes no table.
 	attempt.Evidence.Dockhand, attempt.Evidence.Workflow = "", nil
