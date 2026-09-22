@@ -124,7 +124,7 @@ func TestTestedOnTablesTheEnvironmentAndBulletsTheProvider(t *testing.T) {
 		Jobs: []record.WorkflowJob{{Name: "macos-14", Conclusion: "success"}, {Name: "macos-15", Conclusion: "success"}}}
 	body = publicationBody(record.PublicationContent{}, record.Change{}, record.Source{}, attempt, nil)
 	require.Contains(t, body, "\n| **Component** | **Version** |\n| :--- | :--- |\n| dockhand | v0.0.0-20260920.1 |\n")
-	require.Contains(t, body, "\nProvider: GitHub Actions\n\n- [workflow run](https://github.com/author/ports/actions/runs/10), attempt 2\n- macos-14: success\n- macos-15: success\n")
+	require.Contains(t, body, "\nProvider: GitHub Actions\n\n- [workflow run](https://github.com/author/ports/actions/runs/10), attempt 2\n  - macos-14: success\n  - macos-15: success\n")
 
 	// Evidence from a build that recorded none of this writes no table.
 	attempt.Evidence.Dockhand, attempt.Evidence.Workflow = "", nil
