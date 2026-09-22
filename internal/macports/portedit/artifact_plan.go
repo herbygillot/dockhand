@@ -31,15 +31,15 @@ type observedArchivePlan struct {
 }
 
 func (s *Service) bindArchives(ctx context.Context, input *sourceInput, contents []byte, observed macports.Observation) (distfiles.Binding, error) {
-	port, inconclusive := tolerateExplainedProbes(ctx, observed.Ports[input.target.Name], contents, input.files.root)
+	port, inconclusive := tolerateExplainedProbes(ctx, observed.Ports[input.target.Name], contents, observed.Snapshot.Root)
 	if inconclusive {
 		return distfiles.Binding{}, fmt.Errorf("%w: modeled context depends on host state%s", errProbeInconclusive, hostInputs(port))
 	}
 	info := observed.Snapshot.Ports[input.target.Name]
-	if err := archives.CheckPolicy(info, input.portdir()); err != nil {
+	if err := archives.CheckPolicy(info, input.portdirIn(observed.Snapshot.Root)); err != nil {
 		return distfiles.Binding{}, err
 	}
-	binding, err := distfiles.Bind(contents, input.portfile(), info, port)
+	binding, err := distfiles.Bind(contents, input.portfileIn(observed.Snapshot.Root), info, port)
 	if err == nil && len(binding.Artifacts) == 0 {
 		err = fmt.Errorf("%w: no downloadable source archives; select a release subport when this is a metaport", ErrUnsupported)
 	}

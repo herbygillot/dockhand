@@ -1,6 +1,7 @@
 package portedit
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,8 +11,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 )
@@ -22,8 +25,12 @@ import (
 type sourceInput struct {
 	scope        *record.ReleaseScope
 	versionInput record.ReleaseInput
-	files        *workspace
+	ws           *workspace.Workspace
 	tree         macports.Tree
+	// overlays are the candidate projections this input made; they live
+	// as long as the input does, since evaluated paths such as filespath
+	// name them, and Close removes them together.
+	overlays []*workspace.Workspace
 	// session is the one native interpreter the input's evaluations share:
 	// the baseline, every candidate, and the final edit. Modeled
 	// observations never use it; each starts its own interpreter, since
@@ -33,10 +40,13 @@ type sourceInput struct {
 	// family is the baseline across the owning Portfile's every subport,
 	// known at load for a main-port selection and evaluated on demand for a
 	// subport's, by familySnapshot.
-	family               *macports.Snapshot
-	primary, target      record.Target
-	info                 macports.PortInfo
-	data                 []byte
+	family          *macports.Snapshot
+	primary, target record.Target
+	info            macports.PortInfo
+	// data is the input's baseline Portfile contents, which a derived
+	// input may replace with a stripped form; loaded is what the workspace
+	// holds on disk, and the only contents that evaluate there directly.
+	data, loaded         []byte
 	platformOperands     []string
 	baselineObservations map[observationKey]macports.Observation
 }
@@ -46,21 +56,29 @@ type sourceInput struct {
 // its release, is redirected to the newest subport as a shared release,
 // and the request is updated so the commit keeps the stub's name.
 func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, err error) {
-	if s == nil || s.Ports == nil || request.Root == "" {
-		return nil, fmt.Errorf("portedit: a disposable source workspace and MacPorts reader are required")
+	if s == nil || s.Ports == nil || request.Workspace == nil {
+		return nil, fmt.Errorf("portedit: a source workspace and MacPorts reader are required")
 	}
-	files := &workspace{root: request.Root, source: request.Source}
-
-	tree, err := macports.NewTree(request.Source, files.root, request.Platform)
+	ws := request.Workspace
+	tree, err := ws.Tree(request.Platform)
 	if err != nil {
 		return nil, err
 	}
-	input := &sourceInput{files: files, tree: tree}
+	input := &sourceInput{ws: ws, tree: tree}
 	defer func() {
 		if err != nil {
 			err = errors.Join(err, input.Close())
 		}
 	}()
+	// A selector that names the port directory is resolved on disk, so a
+	// sparse workspace brings that directory first; a bare name resolves
+	// through the index, which widens the workspace itself when it must
+	// generate one.
+	if directory := selectedDirectory(request.Selection.Selector); directory != "" {
+		if err := ws.EnsurePort(ctx, record.Target{Portfile: directory + "/Portfile"}); err != nil {
+			return nil, err
+		}
+	}
 	targets, err := s.Ports.Resolve(ctx, tree, request.Selection)
 	if err != nil {
 		return nil, err
@@ -77,6 +95,11 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 		if len(targets) != 1 || targets[0].Subport != "" {
 			return nil, fmt.Errorf("%w: select one owning Portfile", ErrUnsupported)
 		}
+	}
+	// The owning Portfile's directory and _resources are what the
+	// evaluations read; a sparse workspace brings them now.
+	if err := ws.EnsurePort(ctx, targets[0]); err != nil {
+		return nil, err
 	}
 	primary, err := tree.Select(targets[0])
 	if err != nil {
@@ -140,11 +163,11 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 		// that carries the edit, since the release is one and the same.
 		info = withLivecheckOf(info, before.Ports[stub])
 	}
-	data, err := os.ReadFile(files.path(selected.Portfile))
+	data, err := os.ReadFile(filepath.Join(ws.Root(), filepath.FromSlash(selected.Portfile)))
 	if err != nil {
 		return nil, err
 	}
-	input.before, input.primary, input.target, input.info, input.data = before, targets[0], selected, info, data
+	input.before, input.primary, input.target, input.info, input.data, input.loaded = before, targets[0], selected, info, data, data
 	if selected.Subport == "" {
 		input.family = &input.before
 	}
@@ -193,58 +216,76 @@ func (i *sourceInput) native(ctx context.Context, ports macports.Evaluator) snap
 	return session
 }
 
-// Close ends the input's shared session, if one was opened.
+// Close ends the input's shared session, if one was opened, and removes
+// the candidate overlays it made. The workspace itself is the caller's.
 func (i *sourceInput) Close() error {
-	if i == nil || i.session == nil {
+	if i == nil {
 		return nil
 	}
-	session := i.session
-	i.session = nil
-	return session.Close()
-}
-
-// workspace is the exclusively owned, disposable source snapshot an editing
-// session probes: never a user checkout. It owns the paths under its root and
-// the cycle that writes candidate contents over a file, evaluates, and restores
-// the original, so callers never touch the snapshot directly.
-type workspace struct {
-	root   string
-	source record.Source
-}
-
-func (w *workspace) path(relative string) string {
-	return filepath.Join(w.root, filepath.FromSlash(relative))
-}
-
-// withContents runs fn with contents written over the named file, then
-// restores the original even when fn fails.
-func (w *workspace) withContents(relative string, contents []byte, fn func() error) (err error) {
-	path := w.path(relative)
-	original, err := os.ReadFile(path)
-	if err != nil {
-		return err
+	var err error
+	if i.session != nil {
+		session := i.session
+		i.session = nil
+		err = session.Close()
 	}
-	if err = os.WriteFile(path, contents, 0600); err != nil {
-		return err
+	overlays := i.overlays
+	i.overlays = nil
+	for _, overlay := range overlays {
+		err = errors.Join(err, overlay.Close())
 	}
-	defer func() { err = errors.Join(err, os.WriteFile(path, original, 0600)) }()
-	return fn()
+	return err
 }
 
 // portfile is the selected target's Portfile inside the workspace.
-func (i *sourceInput) portfile() string { return i.files.path(i.target.Portfile) }
+func (i *sourceInput) portfile() string {
+	return filepath.Join(i.ws.Root(), filepath.FromSlash(i.target.Portfile))
+}
 
 // portdir is the selected target's port directory inside the workspace.
 func (i *sourceInput) portdir() string { return filepath.Dir(i.portfile()) }
 
+// portdirIn is the target's port directory inside the projection an
+// evaluation ran in, which is what its evaluated paths such as filespath
+// name.
+func (i *sourceInput) portdirIn(root string) string { return filepath.Dir(i.portfileIn(root)) }
+
+// portfileIn is the target's Portfile inside the projection an evaluation
+// ran in, which is what its declarations' source locations name.
+func (i *sourceInput) portfileIn(root string) string {
+	if root == "" {
+		return i.portfile()
+	}
+	return filepath.Join(root, filepath.FromSlash(i.target.Portfile))
+}
+
 // context binds the workspace to the owning Portfile, or to the selected
 // subport alone for counterfactual probes.
 func (i *sourceInput) context(platform record.Platform, selectedOnly bool) (macports.Context, error) {
+	return i.contextIn(i.ws, platform, selectedOnly)
+}
+
+// contextIn binds a projection, the workspace or one of its overlays.
+func (i *sourceInput) contextIn(ws *workspace.Workspace, platform record.Platform, selectedOnly bool) (macports.Context, error) {
 	target := i.primary
 	if selectedOnly {
 		target = i.target
 	}
-	return macports.NewContext(i.files.source, i.files.root, target, platform)
+	return ws.Context(target, platform)
+}
+
+// projection is the workspace itself for the contents it holds on disk,
+// and an overlay with the contents written over the target's Portfile
+// otherwise. Overlays are kept until the input closes.
+func (i *sourceInput) projection(ctx context.Context, contents []byte) (*workspace.Workspace, error) {
+	if bytes.Equal(contents, i.loaded) {
+		return i.ws, nil
+	}
+	overlay, err := i.ws.Overlay(ctx, []git.FileEdit{{Path: i.target.Portfile, After: contents}})
+	if err != nil {
+		return nil, err
+	}
+	i.overlays = append(i.overlays, overlay)
+	return overlay, nil
 }
 
 // evaluation is one candidate's edit and its evaluated snapshot.
@@ -272,25 +313,26 @@ type snapshotEvaluator interface {
 
 func (s *Service) evaluateContents(ctx context.Context, reader snapshotEvaluator, input *sourceInput, contents []byte, selectedOnly bool) (evaluation, error) {
 	result := evaluation{edit: portfile.Edit{Path: input.target.Portfile, After: contents}}
-	err := input.files.withContents(input.target.Portfile, contents, func() error {
-		bound, err := input.context(input.before.Platform, selectedOnly)
-		if err != nil {
-			return err
-		}
-		var after macports.Snapshot
-		if selectedOnly {
-			after, err = reader.EvaluateSelected(ctx, bound)
-		} else {
-			after, err = reader.Evaluate(ctx, bound)
-		}
-		if err == nil {
-			err = fidelity.CheckSnapshot(after, bound)
-		}
-		// Probe snapshots describe uncommitted contents, not the immutable base tree.
-		after.Source = record.Source{}
-		result.after = after
-		return err
-	})
+	projection, err := input.projection(ctx, contents)
+	if err != nil {
+		return result, err
+	}
+	bound, err := input.contextIn(projection, input.before.Platform, selectedOnly)
+	if err != nil {
+		return result, err
+	}
+	var after macports.Snapshot
+	if selectedOnly {
+		after, err = reader.EvaluateSelected(ctx, bound)
+	} else {
+		after, err = reader.Evaluate(ctx, bound)
+	}
+	if err == nil {
+		err = fidelity.CheckSnapshot(after, bound)
+	}
+	// Probe snapshots describe uncommitted contents, not the immutable base tree.
+	after.Source = record.Source{}
+	result.after = after
 	return result, err
 }
 
@@ -323,4 +365,18 @@ func withLivecheckOf(port, owner macports.PortInfo) macports.PortInfo {
 		}
 	}
 	return port
+}
+
+// selectedDirectory is the category/port directory a selector names, for a
+// category/port or category/port/Portfile selector, and empty for a name.
+func selectedDirectory(selector string) string {
+	parts := strings.Split(selector, "/")
+	switch {
+	case len(parts) == 3 && parts[2] == "Portfile", len(parts) == 2:
+		if parts[0] == "" || parts[1] == "" || strings.HasPrefix(parts[0], ".") || parts[0] == ".." || parts[1] == ".." {
+			return ""
+		}
+		return parts[0] + "/" + parts[1]
+	}
+	return ""
 }

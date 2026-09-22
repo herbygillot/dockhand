@@ -192,7 +192,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 		return Result{}, err
 	}
 	next := result.Prepared.Ports[input.target.Name]
-	nextSources, err := archives.Sources(next, base.portdir())
+	nextSources, err := archives.Sources(next, base.portdirIn(result.Prepared.Root))
 	if err != nil {
 		return Result{}, err
 	}

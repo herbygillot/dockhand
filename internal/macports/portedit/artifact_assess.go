@@ -31,10 +31,10 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 			// An obsolete follower has no archive in this context by design.
 			continue
 		}
-		if err := archives.CheckPolicy(info, input.portdir()); err != nil {
+		if err := archives.CheckPolicy(info, input.portdirIn(observed.Snapshot.Root)); err != nil {
 			return coverage, err, nil
 		}
-		metadata, inconclusive := tolerateExplainedProbes(ctx, observed.Ports[input.target.Name], input.data, input.files.root)
+		metadata, inconclusive := tolerateExplainedProbes(ctx, observed.Ports[input.target.Name], input.data, observed.Snapshot.Root)
 		if inconclusive {
 			return coverage, fmt.Errorf("%w: modeled context depends on host state%s", errProbeInconclusive, hostInputs(metadata)), nil
 		}
@@ -44,7 +44,7 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 		if len(metadata.Distfiles) == 0 {
 			return coverage, fmt.Errorf("%w: no source archives; select a release subport if this is a metaport", ErrUnsupported), nil
 		}
-		binding, err := distfiles.Bind(input.data, input.portfile(), info, metadata)
+		binding, err := distfiles.Bind(input.data, input.portfileIn(observed.Snapshot.Root), info, metadata)
 		if err != nil {
 			return coverage, nil, err
 		}

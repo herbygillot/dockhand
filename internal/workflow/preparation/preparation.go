@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
@@ -69,7 +70,11 @@ func (s *Service) editor() *portedit.Service {
 	}
 	return editor
 }
-func (s *Service) open(ctx context.Context, request Request) (*git.Snapshot, error) {
+
+// open projects the request's source: a workspace that materializes the
+// selected port's directory and _resources when the editor resolves the
+// target, and the whole tree only if a consumer asks for it.
+func (s *Service) open(ctx context.Context, request Request) (*workspace.Workspace, error) {
 	if s == nil || s.Repo == nil {
 		return nil, fmt.Errorf("preparation: Git repository is required")
 	}
@@ -87,7 +92,7 @@ func (s *Service) open(ctx context.Context, request Request) (*git.Snapshot, err
 			return nil, err
 		}
 	}
-	return s.Repo.Materialize(ctx, string(request.Source.Tree))
+	return workspace.Open(ctx, s.Repo, request.Source)
 }
 func (s *Service) ResolveRelease(ctx context.Context, request Request) (_ record.Release, err error) {
 	files, err := s.open(ctx, request)
@@ -95,7 +100,7 @@ func (s *Service) ResolveRelease(ctx context.Context, request Request) (_ record
 		return record.Release{}, err
 	}
 	defer func() { err = errors.Join(err, files.Close()) }()
-	request.Root = files.Root
+	request.Workspace = files
 	if request.Action != record.Bump {
 		return record.Release{}, fmt.Errorf("%w: release resolution requires a bump action", ErrNotImplemented)
 	}
@@ -126,7 +131,7 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 		return Result{}, err
 	}
 	defer func() { err = errors.Join(err, files.Close()) }()
-	request.Root = files.Root
+	request.Workspace = files
 	var original macports.PortInfo
 	if request.Action == record.Bump {
 		if s.Upstream == nil {
@@ -170,14 +175,20 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	if err != nil {
 		return result, err
 	}
-	candidate, err := s.Repo.Materialize(ctx, tree)
+	// The committed candidate is evaluated once more from git, in a
+	// projection of its own tree holding the target's directory, to prove
+	// the stored tree evaluates as the prepared overlay did.
+	expected := result.Prepared
+	source := record.Source{Tree: record.ObjectID(tree), Base: request.Source.Base}
+	candidate, err := workspace.Open(ctx, s.Repo, source)
 	if err != nil {
 		return result, err
 	}
 	defer func() { err = errors.Join(err, candidate.Close()) }()
-	expected := result.Prepared
-	source := record.Source{Tree: record.ObjectID(tree), Base: request.Source.Base}
-	bound, err := macports.NewContext(source, candidate.Root, expected.Target, expected.Platform)
+	if err = candidate.EnsurePort(ctx, expected.Target); err != nil {
+		return result, err
+	}
+	bound, err := candidate.Context(expected.Target, expected.Platform)
 	if err != nil {
 		return result, err
 	}
@@ -200,5 +211,5 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 }
 
 func probeSource(request Request) portedit.ProbeSource {
-	return portedit.ProbeSource{EditIntent: request.EditIntent, Source: request.Source, Root: request.Root, Selection: request.Selection, Platform: request.Platform}
+	return portedit.ProbeSource{EditIntent: request.EditIntent, Source: request.Source, Workspace: request.Workspace, Selection: request.Selection, Platform: request.Platform}
 }

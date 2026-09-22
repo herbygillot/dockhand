@@ -56,7 +56,7 @@ func familyFixture(t *testing.T) (*countedPorts, Request) {
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "devel/fixture"), 0700))
 	body := "PortSystem 1.0\nname fixture\nversion 1.0\ncategories devel\nlicense MIT\ndescription fixture\nlong_description fixture\nhomepage https://example.invalid\nmaster_sites https://example.invalid/\nchecksums sha256 " + strings.Repeat("0", 64) + "\nsubport fixture-child {\n version 2.0\n}\n"
 	require.NoError(t, os.WriteFile(filepath.Join(root, "devel/fixture/Portfile"), []byte(body), 0600))
-	request := Request{Action: record.Bump, Source: record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, Root: root}
+	request := Request{Action: record.Bump, Source: record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, Workspace: adopt(t, root)}
 	return &countedPorts{Evaluator: &eval.Evaluator{Executable: executable}}, request
 }
 

@@ -30,7 +30,7 @@ func TestAssessmentCapabilityDependencies(t *testing.T) {
 	pkg, err := build.Default.ImportDir(".", 0)
 	require.NoError(t, err)
 	const prefix = "github.com/herbygillot/dockhand/internal/"
-	allowed := map[string]bool{"git": true, "macports": true, "macports/dependency": true, "macports/portedit": true, "macports/portindex": true, "macports/survey": true, "macports/version": true, "progress": true, "record": true, "upstream": true}
+	allowed := map[string]bool{"git": true, "macports": true, "macports/dependency": true, "macports/portedit": true, "macports/portindex": true, "macports/survey": true, "macports/version": true, "macports/workspace": true, "progress": true, "record": true, "upstream": true}
 	for _, path := range pkg.Imports {
 		if strings.Contains(strings.Split(path, "/")[0], ".") {
 			require.True(t, strings.HasPrefix(path, prefix) && allowed[strings.TrimPrefix(path, prefix)], "assessment must not import app, workflow state, or concrete forge clients: %s", path)

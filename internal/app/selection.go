@@ -9,6 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/selection"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 )
 
 // portReader resolves names against a staged index. mirror, when given, lets
@@ -27,8 +28,12 @@ func portReader(config Config, repo *git.Repository, mirror *portindex.Mirror) *
 		if staged[key] {
 			return portindex.Open(tree.Root())
 		}
-		if err := macports.ValidatePortsTree(tree.Root(), repo.Root); err != nil {
-			return nil, err
+		// A workspace projects a tree the repository already validated,
+		// and may hold nothing yet; a plain materialization is checked.
+		if _, projected := workspace.ScopeOf(tree.Root()); !projected {
+			if err := macports.ValidatePortsTree(tree.Root(), repo.Root); err != nil {
+				return nil, err
+			}
 		}
 		index, err := surveyIndex(config, true)
 		if err != nil {

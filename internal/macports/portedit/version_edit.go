@@ -292,7 +292,7 @@ func (s *Service) followObsolete(ctx context.Context, reader snapshotEvaluator, 
 			if other == name {
 				continue
 			}
-			if !samePort(port, evaluated.after.Ports[other]) {
+			if !samePort(port, after.Root, evaluated.after.Ports[other], evaluated.after.Root) {
 				clean = false
 				break
 			}
@@ -305,7 +305,11 @@ func (s *Service) followObsolete(ctx context.Context, reader snapshotEvaluator, 
 	return contents, after, nil
 }
 
-func samePort(a, b macports.PortInfo) bool {
+// samePort compares two evaluations of a port from different projections,
+// each normalized by its own root, since paths such as filespath name the
+// projection they were evaluated in.
+func samePort(a macports.PortInfo, aRoot string, b macports.PortInfo, bRoot string) bool {
+	a, b = fidelity.ComparablePort(a, aRoot), fidelity.ComparablePort(b, bRoot)
 	return a.Version == b.Version && a.Revision == b.Revision && a.Epoch == b.Epoch && maps.Equal(a.Options, b.Options)
 }
 

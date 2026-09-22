@@ -45,7 +45,7 @@ livecheck.url https://github.com/owner/fixture/tags
 livecheck.regex {archive/refs/tags/v([^/]+)\.tar\.gz}
 livecheck.version ${github.version}
 `)
-		probe, err := service.Probe(t.Context(), ProbeSource{Source: request.Source, Root: request.Root, Selection: request.Selection, Platform: request.Platform})
+		probe, err := service.Probe(t.Context(), ProbeSource{Source: request.Source, Workspace: request.Workspace, Selection: request.Selection, Platform: request.Platform})
 		require.NoError(t, err)
 		info := probe.Port()
 		info.Options["github.project"] = "changed-by-caller"
@@ -71,7 +71,7 @@ livecheck.version ${github.version}
 		cancel()
 		_, err = probe.EvaluateVersion(ctx, strings.TrimPrefix(test.tag, "v"))
 		require.ErrorIs(t, err, context.Canceled)
-		original, err := os.ReadFile(filepath.Join(request.Root, "devel/fixture/Portfile"))
+		original, err := os.ReadFile(filepath.Join(request.Workspace.Root(), "devel/fixture/Portfile"))
 		require.NoError(t, err)
 		require.Equal(t, input.data, original)
 	}

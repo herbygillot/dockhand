@@ -41,7 +41,7 @@ func (s *Service) resetRevision(ctx context.Context, request Request, input *sou
 			if next.Revision == 0 {
 				continue
 			}
-			edit, err := revisionReset(contents, input.portfile(), next, after.Ports[name].Declarations)
+			edit, err := revisionReset(contents, input.portfileIn(after.Snapshot.Root), next, after.Ports[name].Declarations)
 			if err != nil {
 				return nil, err
 			}

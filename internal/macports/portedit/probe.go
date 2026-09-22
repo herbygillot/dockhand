@@ -8,16 +8,18 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
-// ProbeSource selects an exclusively owned disposable source workspace.
-// Probing restores the Portfile after each evaluation; it does not fetch archives.
+// ProbeSource selects a port in a workspace. Probing evaluates candidates
+// as overlays of the workspace and never writes into it; it does not fetch
+// archives.
 type ProbeSource struct {
 	record.EditIntent
 	Source    record.Source
-	Root      string
+	Workspace *workspace.Workspace
 	Selection macports.Selection
 	Platform  record.Platform
 }
@@ -32,7 +34,7 @@ type VersionProbe struct {
 }
 
 func (s *Service) Probe(ctx context.Context, source ProbeSource) (*VersionProbe, error) {
-	request := Request{EditIntent: source.EditIntent, Source: source.Source, Root: source.Root, Selection: source.Selection, Platform: source.Platform}
+	request := Request{EditIntent: source.EditIntent, Source: source.Source, Workspace: source.Workspace, Selection: source.Selection, Platform: source.Platform}
 	input, err := s.load(ctx, &request)
 	if err != nil {
 		return nil, err

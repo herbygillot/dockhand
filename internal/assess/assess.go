@@ -17,6 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/survey"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/upstream"
@@ -89,6 +90,13 @@ func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err er
 		return Result{}, err
 	}
 	defer func() { err = errors.Join(err, files.Close()) }()
+	// The survey's materialization is the whole tree; the probes overlay it
+	// for their candidates and never write into it.
+	projection, err := workspace.Adopt(files.Root, files.Source)
+	if err != nil {
+		return Result{}, err
+	}
+	defer func() { err = errors.Join(err, projection.Close()) }()
 	result := Result{Source: files.Source, Ports: []Port{}}
 	journal := request.Journal
 	if journal != nil {
@@ -158,7 +166,7 @@ func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err er
 				if ctx.Err() != nil {
 					return
 				}
-				assessed[i], failures[i] = s.assessOne(ctx, editor, files, platform, request, files.Ports[i])
+				assessed[i], failures[i] = s.assessOne(ctx, editor, files, projection, platform, request, files.Ports[i])
 				if failures[i] == nil && journal != nil {
 					failures[i] = journal.Record(assessed[i])
 				}
@@ -187,7 +195,7 @@ var Concurrency = min(8, max(2, runtime.NumCPU()))
 
 // assessOne assesses one selected port: its probe, the optional release
 // resolution, and the assessment itself.
-func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files *survey.Workspace, platform record.Platform, request Request, selected survey.Port) (Port, error) {
+func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files *survey.Workspace, projection *workspace.Workspace, platform record.Platform, request Request, selected survey.Port) (Port, error) {
 	if err := ctx.Err(); err != nil {
 		return Port{}, err
 	}
@@ -199,7 +207,7 @@ func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files
 		} else if selected.Name != "" && selected.Name != path.Base(path.Dir(selected.Selection.Selector)) {
 			selected.Selection.Subport = selected.Name
 		}
-		probe, problem := editor.Probe(ctx, portedit.ProbeSource{SharedRelease: request.SharedRelease, Source: files.Source, Root: files.Root, Selection: selected.Selection, Platform: platform})
+		probe, problem := editor.Probe(ctx, portedit.ProbeSource{SharedRelease: request.SharedRelease, Source: files.Source, Workspace: projection, Selection: selected.Selection, Platform: platform})
 		defer probe.Close()
 		if problem == nil && selected.Name != "" {
 			problem = indexAgreement(selected.Name, probe.Port().Name, probe.Stub())

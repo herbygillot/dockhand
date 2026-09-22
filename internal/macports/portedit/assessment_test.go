@@ -44,7 +44,7 @@ func TestAssessmentDistinguishesInputsFromCandidateFidelity(t *testing.T) {
 			}
 			require.Equal(t, NotTested, assessmentFinding(t, actual, "archives").Status)
 			require.Equal(t, NotTested, assessmentFinding(t, actual, "verification").Status)
-			data, err := os.ReadFile(filepath.Join(p.request.Root, input.target.Portfile))
+			data, err := os.ReadFile(filepath.Join(p.request.Workspace.Root(), input.target.Portfile))
 			require.NoError(t, err)
 			require.Equal(t, input.data, data)
 		})
@@ -109,7 +109,7 @@ github.setup owner fixture [release] v`)
 	require.NoError(t, err)
 	require.Equal(t, Unknown, result.Outcome, "%+v", result.Findings)
 	require.Equal(t, "probe-inconclusive", assessmentFinding(t, result, "version-input").Code)
-	data, err := os.ReadFile(filepath.Join(p.request.Root, input.target.Portfile))
+	data, err := os.ReadFile(filepath.Join(p.request.Workspace.Root(), input.target.Portfile))
 	require.NoError(t, err)
 	require.Equal(t, input.data, data)
 }

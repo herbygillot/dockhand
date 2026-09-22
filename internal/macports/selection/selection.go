@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
@@ -55,6 +56,11 @@ func (r *Reader) Resolve(ctx context.Context, tree macports.Tree, selected macpo
 	}
 	bound := FromEntry(entry, selected.Variants)
 	if err := bound.Validate(); err != nil {
+		return nil, err
+	}
+	// The index named the port's directory; a sparse workspace brings it
+	// before the evaluator reads it.
+	if err := workspace.EnsurePortAt(ctx, tree.Root(), record.Target{Portfile: bound.Selector}); err != nil {
 		return nil, err
 	}
 	targets, err := r.Evaluator.Resolve(ctx, tree, bound)

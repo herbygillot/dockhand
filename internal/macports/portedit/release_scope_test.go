@@ -149,7 +149,7 @@ if {${subport} eq ${name}} {
  livecheck.regex {shared-(\d+(\.\d+)+)\.tar}
 }
 `)
-	probe, err := s.Probe(t.Context(), ProbeSource{Source: r.Source, Root: r.Root, Selection: macports.Selection{Selector: "fixture"}, Platform: r.Platform})
+	probe, err := s.Probe(t.Context(), ProbeSource{Source: r.Source, Workspace: r.Workspace, Selection: macports.Selection{Selector: "fixture"}, Platform: r.Platform})
 	require.NoError(t, err)
 	port := probe.Port()
 	require.Equal(t, "fixture-314", port.Name, "the newest subport carries the edit")
@@ -185,7 +185,7 @@ if {${subport} eq ${name}} {
  build {}
 }
 `)
-	probe, err := s.Probe(t.Context(), ProbeSource{Source: r.Source, Root: r.Root, Selection: macports.Selection{Selector: "fixture"}, Platform: r.Platform})
+	probe, err := s.Probe(t.Context(), ProbeSource{Source: r.Source, Workspace: r.Workspace, Selection: macports.Selection{Selector: "fixture"}, Platform: r.Platform})
 	require.NoError(t, err)
 	port := probe.Port()
 	require.Equal(t, "fixture-34", port.Name)

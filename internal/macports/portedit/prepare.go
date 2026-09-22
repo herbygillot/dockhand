@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
@@ -37,8 +38,10 @@ type Request struct {
 	record.EditIntent
 	Action record.Action
 	Source record.Source
-	// Root is an exclusively owned disposable source snapshot, never a user checkout.
-	Root      string
+	// Workspace is the projection of the source the edit reads and never
+	// writes; every candidate is an overlay of it. It is the caller's to
+	// open and close, and it outlives every probe made from it.
+	Workspace *workspace.Workspace
 	Selection macports.Selection
 	Platform  record.Platform
 	Version   string

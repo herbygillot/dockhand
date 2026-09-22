@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/stretchr/testify/require"
 )
@@ -37,7 +38,7 @@ proc github.setup {owner project raw prefix} {
 }
 ` + declaration + "\nrevision 3\nchecksums sha256 " + strings.Repeat("0", 64) + "\n"
 	require.NoError(t, os.WriteFile(filepath.Join(root, "devel/fixture/Portfile"), []byte(body), 0600))
-	request := Request{Action: record.Bump, Source: record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, Root: root, Selection: macports.Selection{Selector: "fixture"}}
+	request := Request{Action: record.Bump, Source: record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, Workspace: adopt(t, root), Selection: macports.Selection{Selector: "fixture"}}
 	service := &Service{Ports: &eval.Evaluator{Executable: executable}}
 	input, err := service.load(t.Context(), &request)
 	require.NoError(t, err)
@@ -66,7 +67,7 @@ version [clock format [clock scan ${github.version} -format %Y-%m-%d -gmt 1] -fo
 			require.Equal(t, test.version, snapshot.Ports["fixture"].Version)
 			require.Equal(t, "v"+test.source, snapshot.Ports["fixture"].Options["git.branch"])
 			require.Contains(t, string(contents), test.kept)
-			original, err := os.ReadFile(filepath.Join(request.Root, "devel/fixture/Portfile"))
+			original, err := os.ReadFile(filepath.Join(request.Workspace.Root(), "devel/fixture/Portfile"))
 			require.NoError(t, err)
 			require.Equal(t, input.data, original)
 		})
@@ -95,7 +96,7 @@ github.setup owner fixture $release v`, "inconclusive", ErrUnsupported},
 			}
 			require.ErrorIs(t, err, test.expected)
 			require.ErrorContains(t, err, test.detail)
-			original, readErr := os.ReadFile(filepath.Join(request.Root, "devel/fixture/Portfile"))
+			original, readErr := os.ReadFile(filepath.Join(request.Workspace.Root(), "devel/fixture/Portfile"))
 			require.NoError(t, readErr)
 			require.Equal(t, input.data, original)
 		})
@@ -108,4 +109,14 @@ func TestProbeCancellation(t *testing.T) {
 	cancel()
 	_, err := service.versionCarriers(ctx, request, input)
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+// adopt wraps a fixture directory as the workspace a request needs; the
+// directory stays the test's.
+func adopt(t *testing.T, root string) *workspace.Workspace {
+	t.Helper()
+	ws, err := workspace.Adopt(root, record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))})
+	require.NoError(t, err)
+	t.Cleanup(func() { ws.Close() })
+	return ws
 }

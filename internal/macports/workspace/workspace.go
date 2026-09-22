@@ -49,6 +49,10 @@ type Workspace struct {
 	resources bool
 	batch     macports.Batch
 	closed    bool
+	// adopted marks a workspace over a directory someone else owns and
+	// filled: the whole tree is present, its entries come from a walk, and
+	// Close leaves the directory.
+	adopted bool
 }
 
 var (
@@ -76,6 +80,108 @@ func Open(ctx context.Context, repo *git.Repository, source record.Source) (*Wor
 	w := &Workspace{repo: repo, source: source, directory: directory, entries: map[string]git.TreeEntry{}}
 	register(w)
 	return w, nil
+}
+
+// Adopt describes a directory that already holds the whole tree, a plain
+// materialization or a test fixture, so overlays can be made over it. The
+// directory stays the caller's: Close leaves it. Entries come from a walk
+// of the directory, so an overlay's Commit has no blob to check against
+// and is refused; Rescan picks up files added after adoption.
+func Adopt(root string, source record.Source) (*Workspace, error) {
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Stat(root)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("workspace: %s is not a directory", root)
+	}
+	w := &Workspace{source: source, directory: root, adopted: true, all: true, resources: true}
+	if err := w.scan(); err != nil {
+		return nil, err
+	}
+	register(w)
+	return w, nil
+}
+
+// Rescan re-reads an adopted directory's entries after files were added
+// beneath it. A materialized workspace knows its entries and needs none.
+func (w *Workspace) Rescan() error {
+	if !w.adopted {
+		return nil
+	}
+	return w.scan()
+}
+
+// scan lists the regular files and symlinks under an adopted directory as
+// tree entries without objects.
+func (w *Workspace) scan() error {
+	entries := map[string]git.TreeEntry{}
+	err := filepath.WalkDir(w.directory, func(name string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if entry.Name() == ".git" && name != w.directory {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		relative, err := filepath.Rel(w.directory, name)
+		if err != nil {
+			return err
+		}
+		relative = filepath.ToSlash(relative)
+		mode := uint32(0100644)
+		switch info, err := entry.Info(); {
+		case err != nil:
+			return err
+		case info.Mode()&os.ModeSymlink != 0:
+			mode = 0120000
+		case info.Mode()&0100 != 0:
+			mode = 0100755
+		case !info.Mode().IsRegular():
+			return nil
+		}
+		entries[relative] = git.TreeEntry{Name: relative, Mode: mode}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.entries = entries
+	return nil
+}
+
+// EnsurePortAt materializes a port's directory into the open workspace
+// whose root this is, for a consumer that resolved the port by name and is
+// about to read it. A root that is no workspace's needs nothing.
+func EnsurePortAt(ctx context.Context, root string, target record.Target) error {
+	openMu.Lock()
+	w := open[root]
+	openMu.Unlock()
+	if w == nil {
+		return nil
+	}
+	return w.EnsurePort(ctx, target)
+}
+
+// WidenAt materializes the whole tree into the open workspace whose root
+// this is, for a consumer that walks the root and was handed a sparse one.
+// A root that is no workspace's needs nothing.
+func WidenAt(ctx context.Context, root string) error {
+	openMu.Lock()
+	w := open[root]
+	openMu.Unlock()
+	if w == nil {
+		return nil
+	}
+	return w.EnsureAll(ctx)
 }
 
 func register(w *Workspace) {
@@ -359,6 +465,9 @@ func (w *Workspace) Commit(ctx context.Context) (record.Source, error) {
 	if w.base == nil {
 		return w.source, nil
 	}
+	if w.repo == nil {
+		return record.Source{}, fmt.Errorf("workspace: an overlay of an adopted directory has no repository to commit to")
+	}
 	tree, err := w.repo.EditTree(ctx, string(w.source.Tree), w.edits)
 	if err != nil {
 		return record.Source{}, err
@@ -383,6 +492,9 @@ func (w *Workspace) Close() error {
 	var err error
 	if batch != nil {
 		err = batch.Close()
+	}
+	if w.adopted {
+		return err
 	}
 	return errors.Join(err, os.RemoveAll(w.directory))
 }

@@ -39,7 +39,7 @@ func archiveFixture(t *testing.T, body string) (*Service, Request, *[]string) {
 	src := "PortSystem 1.0\nname fixture\ncategories devel\n" + strings.ReplaceAll(body, "@SITE@", server.URL) + "\n"
 	require.NoError(t, os.WriteFile(path, []byte(src), 0600))
 	s := &Service{Ports: &eval.Evaluator{Executable: executable}, Archives: archives.Client{HTTP: server.Client()}}
-	r := Request{Action: record.Bump, Source: record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, Root: root, Selection: macports.Selection{Selector: "fixture"}, Version: "1.2.4", Release: &record.Release{Selection: record.Selection{Requested: "1.2.4"}, Archive: true, Version: "1.2.4"}}
+	r := Request{Action: record.Bump, Source: record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, Workspace: adopt(t, root), Selection: macports.Selection{Selector: "fixture"}, Version: "1.2.4", Release: &record.Release{Selection: record.Selection{Requested: "1.2.4"}, Archive: true, Version: "1.2.4"}}
 	return s, r, &requested
 }
 
@@ -58,7 +58,7 @@ if {${build_arch} eq "arm64"} {distfiles arm.zip} else {distfiles intel.zip}
 	require.Contains(t, string(result.Files[0].After), "version 1.2.4")
 	require.Contains(t, string(result.Files[0].After), "revision 0")
 	require.NotContains(t, string(result.Files[0].After), "sha256 aaaa")
-	original, err := os.ReadFile(filepath.Join(r.Root, "devel/fixture/Portfile"))
+	original, err := os.ReadFile(filepath.Join(r.Workspace.Root(), "devel/fixture/Portfile"))
 	require.NoError(t, err)
 	require.Contains(t, string(original), "version 1.2.3")
 }
@@ -154,7 +154,7 @@ checksums sha256 aaaa size 2
 	_, err := s.Prepare(t.Context(), r)
 	require.ErrorIs(t, err, ErrFidelity)
 	require.ErrorContains(t, err, "different bytes")
-	original, err := os.ReadFile(filepath.Join(r.Root, "devel/fixture/Portfile"))
+	original, err := os.ReadFile(filepath.Join(r.Workspace.Root(), "devel/fixture/Portfile"))
 	require.NoError(t, err)
 	require.Contains(t, string(original), "version 1.2.3")
 }

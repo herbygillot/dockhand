@@ -32,12 +32,12 @@ if {${build_arch} eq "arm64"} {distfiles arm.zip} else {distfiles intel.zip}
 	require.NotContains(t, after, "sha256 aaaa")
 	require.NotContains(t, after, "sha256 bbbb")
 	require.Len(t, result.Coverage, 2, "both architectures are observed contexts")
-	original, err := os.ReadFile(filepath.Join(r.Root, "devel/fixture/Portfile"))
+	original, err := os.ReadFile(filepath.Join(r.Workspace.Root(), "devel/fixture/Portfile"))
 	require.NoError(t, err)
 	require.Contains(t, string(original), "sha256 aaaa", "the workspace is restored")
 
 	// Writing the refreshed contents back and refreshing again downloads but changes nothing.
-	require.NoError(t, os.WriteFile(filepath.Join(r.Root, "devel/fixture/Portfile"), result.Files[0].After, 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(r.Workspace.Root(), "devel/fixture/Portfile"), result.Files[0].After, 0600))
 	*requests = nil
 	again, err := s.Prepare(t.Context(), r)
 	require.NoError(t, err)
@@ -166,8 +166,9 @@ patchfiles patch-x.diff
 checksums fixture.tar.gz md5 00000000000000000000000000000000 \
           patch-x.diff md5 11111111111111111111111111111111
 `)
-	require.NoError(t, os.MkdirAll(filepath.Join(r.Root, "devel/fixture/files"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(r.Root, "devel/fixture/files/patch-x.diff"), []byte("--- a\n+++ b\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(r.Workspace.Root(), "devel/fixture/files"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(r.Workspace.Root(), "devel/fixture/files/patch-x.diff"), []byte("--- a\n+++ b\n"), 0o644))
+	require.NoError(t, r.Workspace.Rescan(), "an adopted directory learns the files added under it")
 	result, err := s.Prepare(t.Context(), r)
 	require.NoError(t, err)
 	require.Equal(t, []string{"/1.2.4/fixture.tar.gz"}, *requests, "only the archive is fetched")

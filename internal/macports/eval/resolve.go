@@ -32,8 +32,10 @@ func (e *Evaluator) Resolve(ctx context.Context, tree macports.Tree, selection m
 	case 1:
 		candidates = append(candidates, selector+"/Portfile")
 	case 0:
-		if scope, ok := workspace.ScopeOf(tree.Root()); ok && !scope.All {
-			return nil, fmt.Errorf("%w: resolving %q by name needs the whole tree; the workspace holds only %v", macports.ErrTarget, selector, scope.Ports)
+		// Resolving a bare name walks the categories: a sparse workspace
+		// widens to the whole tree first.
+		if err := workspace.WidenAt(ctx, tree.Root()); err != nil {
+			return nil, err
 		}
 		categories, err := os.ReadDir(tree.Root())
 		if err != nil {

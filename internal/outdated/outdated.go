@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/survey"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
@@ -58,6 +59,11 @@ func (s *Service) Observe(ctx context.Context, selection Selection) (_ Result, e
 		return Result{}, err
 	}
 	defer func() { err = errors.Join(err, files.Close()) }()
+	projection, err := workspace.Adopt(files.Root, files.Source)
+	if err != nil {
+		return Result{}, err
+	}
+	defer func() { err = errors.Join(err, projection.Close()) }()
 	source := files.Source
 	discovery := s.Upstream
 	editor := &portedit.Service{Ports: ports}
@@ -71,7 +77,7 @@ func (s *Service) Observe(ctx context.Context, selection Selection) (_ Result, e
 			return result, err
 		}
 		item := Port{Selector: selector, Result: upstream.Result{Assessment: upstream.Unknown, ObservedAt: time.Now().UTC()}}
-		probe, problem := editor.Probe(ctx, portedit.ProbeSource{Source: source, Root: files.Root, Selection: selected.Selection, Platform: platform})
+		probe, problem := editor.Probe(ctx, portedit.ProbeSource{Source: source, Workspace: projection, Selection: selected.Selection, Platform: platform})
 		if problem == nil && selected.Name != "" && probe.Port().Name != selected.Name {
 			problem = fmt.Errorf("indexed subport %s: upstream version probing currently supports the primary port %s", selected.Name, probe.Port().Name)
 		}

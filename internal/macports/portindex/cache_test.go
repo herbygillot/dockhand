@@ -403,10 +403,10 @@ func TestMirrorBootstrapSeedsAColdCacheWithinItsBracket(t *testing.T) {
 	require.Positive(t, meta.Duration)
 }
 
-// Index generation lists what the root holds, so a sparse workspace is
-// refused before a truncated index could be cached under the tree id;
-// the whole tree is accepted.
-func TestIndexGenerationRefusesASparseWorkspace(t *testing.T) {
+// Index generation lists what the root holds, so a sparse workspace handed
+// in as the root is widened to the whole tree before the indexer runs, and
+// the index it produces holds every port.
+func TestIndexGenerationWidensASparseWorkspace(t *testing.T) {
 	f := newIndexFixture(t)
 	f.put("devel/working/Portfile", workingPortfile)
 	f.put("devel/other/Portfile", "PortSystem 1.0\nname other\nversion 1\ncategories devel\n")
@@ -416,12 +416,11 @@ func TestIndexGenerationRefusesASparseWorkspace(t *testing.T) {
 	require.NoError(t, err)
 	defer ws.Close()
 	require.NoError(t, ws.EnsurePort(t.Context(), record.Target{Name: "working", Portfile: "devel/working/Portfile"}))
-	err = Stage(t.Context(), f.repo, source, testPlatform, f.config, ws.Root())
-	require.ErrorContains(t, err, "needs the whole tree")
-	require.ErrorContains(t, err, "devel/working")
-	require.NoError(t, ws.EnsureAll(t.Context()))
+	require.False(t, ws.Scope().All)
 	require.NoError(t, Stage(t.Context(), f.repo, source, testPlatform, f.config, ws.Root()))
+	require.True(t, ws.Scope().All, "generation widened the workspace")
 	index, err := Open(ws.Root())
 	require.NoError(t, err)
 	requireVersion(t, index, "other", "1")
+	requireVersion(t, index, "working", "1")
 }

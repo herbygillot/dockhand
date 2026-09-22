@@ -14,6 +14,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/filelock"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 )
@@ -171,6 +172,11 @@ func (c *cache) ensure(ctx context.Context, repo *git.Repository, tree, root str
 		}
 		defer snapshot.Close()
 		root = snapshot.Root
+	}
+	// A sparse workspace handed in as the root widens to the whole tree
+	// before the indexer lists it.
+	if err := workspace.WidenAt(ctx, root); err != nil {
+		return "", err
 	}
 	seed, changed, err := c.selectSeed(ctx, repo, tree, seeds)
 	if err != nil {

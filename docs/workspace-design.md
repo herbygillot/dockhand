@@ -1,9 +1,11 @@
 # Workspace design
 
-Status: proposed 2026-09-21, not implemented. Measured against the tree and
-the code on that date; see the evidence section. A second reviewer, on a
+Status: steps 1 through 3 of the sequence implemented 2026-09-21; the
+registry and the interposer work remain. Measured against the tree and the
+code on that date; see the evidence section. A second reviewer, on a
 different model, attacked the first draft scenario by scenario; the findings
-that held are folded in and listed in the last section.
+that held are folded in and listed in the last section. What the
+implementation taught is in the [adoption note](activity/2026-09-21-workspace-adoption.md).
 
 ## The problem
 
