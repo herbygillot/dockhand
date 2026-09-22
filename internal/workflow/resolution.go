@@ -28,6 +28,11 @@ const (
 	Onto Kind = "onto"
 	// Adopt tracked a branch dockhand did not make, and prepares onto it.
 	Adopt Kind = "adopt"
+	// Tracked is a contribution as recorded, with its current revision:
+	// what an action that prepares no update, a verification or a
+	// correction, works on. It decides nothing about master or a prior
+	// job, and its Source is the revision's.
+	Tracked Kind = "tracked"
 )
 
 // Resolution is what one selection means for one action: the one value
@@ -43,7 +48,7 @@ type Resolution struct {
 	Master   *record.Source
 	Degraded string
 	// Change and Revision are the contribution and revision the work
-	// lands on, for Continue, Onto, and Adopt.
+	// lands on, for Continue, Onto, Adopt, and Tracked.
 	Change   *record.Change
 	Revision *record.Revision
 	// Prior is the job a Continue inherits from.
@@ -77,54 +82,33 @@ func (r Resolution) ChangeID() record.ChangeID {
 	return r.Change.ID
 }
 
-// ResolutionRequest is the selection as the person made it.
+// ResolutionRequest is the selection as the person made it. An action that
+// prepares an update, a bump, a revision bump, or a checksum refresh,
+// resolves Fresh, Continue, or Onto; any other action resolves Tracked, the
+// contribution as recorded, or the error the records give.
 type ResolutionRequest struct {
 	Action    record.Action
 	Selection macports.Selection
 	ChangeID  record.ChangeID
-	// Branch selects the contribution tracked on it; with Adopt it is the
-	// branch adoption tracks first.
+	// Branch selects the contribution tracked on it.
 	Branch string
-	// Adopt tracks Branch first; with Preview it is tracked in a dry run
-	// and the resolution reads the revision adoption would have recorded.
-	Adopt bool
-	// Squash and KeepBody are adoption's choices.
-	Squash, KeepBody bool
-	// Require refuses a selection with no open contribution rather than
-	// resolving Fresh.
-	Require bool
-	// Lookup stops after the contribution and the prior job are read:
-	// master is not fetched and the continuation is not checked. An
-	// action that prepares no update, a verification or a correction,
-	// resolves this way whatever the flags: the contribution as recorded,
-	// or the error the records give.
-	Lookup bool
 	// Preview reads and never writes: master is fetched, the pull request
 	// is not refreshed and the continuation is not checked, and nothing
 	// is recorded. A Continue found this way is unchecked, and says so.
-	Preview bool
-	// Offline forbids the master fetch: a resolution that would need it is
-	// refused rather than made.
-	Offline    bool
+	Preview    bool
 	Platform   record.Platform
 	Intent     record.EditIntent
 	Subject    string
 	References []record.Reference
 }
 
-// ErrOffline is a resolution that needed master when the request forbade
-// fetching it.
-var ErrOffline = errors.New("workflow: resolution needs master, which the request forbade fetching")
-
-// Resolve is the one engine method that accepts a nil store: with no
-// database there are no records, so every selection is Fresh, and adoption
-// is refused. The engine fetches master itself when a resolution needs it.
+// Resolve reads and never writes. It is the one engine method that accepts
+// a nil store: with no database there are no records, so every update is
+// Fresh and nothing is Tracked. The engine fetches master itself when a
+// resolution needs it.
 func (e *Engine) Resolve(ctx context.Context, request ResolutionRequest) (Resolution, error) {
 	if e == nil || e.Repo == nil {
 		return Resolution{}, errNoState
-	}
-	if request.Adopt {
-		return e.resolveAdoption(ctx, request)
 	}
 	if !updates(request.Action) {
 		return e.resolveTracked(ctx, request)
@@ -145,13 +129,6 @@ func (e *Engine) Resolve(ctx context.Context, request ResolutionRequest) (Resolu
 		return Resolution{}, err
 	}
 	if change == nil {
-		if request.Require {
-			_, err := e.SelectContribution(ctx, selector)
-			return Resolution{}, err
-		}
-		if request.Lookup {
-			return Resolution{Kind: Fresh, Selection: request.Selection, Intent: request.Intent, Subject: request.Subject, References: request.References, Branch: macports.PortsBranch}, nil
-		}
 		return e.resolveFresh(ctx, request, "")
 	}
 	// A contribution with no job of the action, or whose last job was
@@ -160,12 +137,6 @@ func (e *Engine) Resolve(ctx context.Context, request ResolutionRequest) (Resolu
 		return e.resolveOnto(ctx, request, *change)
 	}
 	resolution := e.continued(request, *prior, *change)
-	if request.Lookup {
-		return resolution, nil
-	}
-	if request.Offline {
-		return Resolution{}, ErrOffline
-	}
 	master, err := e.fetchMaster(ctx)
 	if err != nil {
 		// An unreachable master leaves the recorded source as the only
@@ -202,7 +173,7 @@ func updates(action record.Action) bool {
 
 // resolveTracked is the contribution as recorded, for an action that
 // prepares no update of its own: what a verification or a correction
-// continues. It reads the records and nothing else, and a selection with
+// works on. It reads the records and nothing else, and a selection with
 // no open contribution is the error the records give.
 func (e *Engine) resolveTracked(ctx context.Context, request ResolutionRequest) (Resolution, error) {
 	if e.State == nil || e.Repository == "" {
@@ -212,7 +183,7 @@ func (e *Engine) resolveTracked(ctx context.Context, request ResolutionRequest) 
 	if err != nil {
 		return Resolution{}, err
 	}
-	resolution := Resolution{Kind: Continue, Change: &change, Selection: request.Selection, Intent: request.Intent, Subject: request.Subject, References: request.References, Branch: change.Branch}
+	resolution := Resolution{Kind: Tracked, Change: &change, Selection: request.Selection, Intent: request.Intent, Subject: request.Subject, References: request.References, Branch: change.Branch}
 	if change.CurrentRevision != "" {
 		revision, err := e.CurrentRevision(ctx, change)
 		if err != nil {
@@ -253,9 +224,6 @@ func (e *Engine) continued(request ResolutionRequest, prior record.Job, change r
 // resolveFresh is a Fresh from master, with the detail that retired a
 // contribution when one did.
 func (e *Engine) resolveFresh(ctx context.Context, request ResolutionRequest, detail string) (Resolution, error) {
-	if request.Offline {
-		return Resolution{}, ErrOffline
-	}
 	master, err := e.fetchMaster(ctx)
 	if err != nil {
 		return Resolution{}, err
@@ -297,30 +265,18 @@ func (e *Engine) onto(ctx context.Context, request ResolutionRequest, kind Kind,
 	return resolution, nil
 }
 
-// resolveAdoption tracks the branch, in a dry run under Preview, and
-// prepares onto the revision adoption recorded or would have recorded.
-func (e *Engine) resolveAdoption(ctx context.Context, request ResolutionRequest) (Resolution, error) {
-	if e.State == nil {
-		return Resolution{}, fmt.Errorf("%w: adopting a branch needs the state database", ErrInvalidRequest)
+// ResolveAdopted is the Adopt kind: what a bump onto a branch adoption
+// just tracked, or in a dry run would have tracked, means. Adoption is the
+// engine's one write on the way to a resolution, and it is the caller's
+// call, made first; this reads its result and writes nothing.
+func (e *Engine) ResolveAdopted(ctx context.Context, adopted AdoptResult, request ResolutionRequest) (Resolution, error) {
+	if e == nil || e.Repo == nil {
+		return Resolution{}, errNoState
 	}
-	if request.Offline {
-		return Resolution{}, ErrOffline
+	if !updates(request.Action) {
+		return Resolution{}, fmt.Errorf("%w: %s does not prepare onto an adopted branch", ErrInvalidRequest, request.Action)
 	}
-	master, err := e.fetchMaster(ctx)
-	if err != nil {
-		return Resolution{}, err
-	}
-	adopted, err := e.AdoptContribution(ctx, AdoptRequest{Branch: request.Branch, Target: request.Selection.Selector, Upstream: master.Commit, Platform: request.Platform, DryRun: request.Preview, Squash: request.Squash, KeepBody: request.KeepBody})
-	if err != nil {
-		return Resolution{}, err
-	}
-	progress.Report(ctx, "%s", adopted.Detail)
-	resolution, err := e.onto(ctx, request, Adopt, adopted.Change, adopted.Revision)
-	if err != nil {
-		return Resolution{}, err
-	}
-	resolution.Master = &master
-	return resolution, nil
+	return e.onto(ctx, request, Adopt, adopted.Change, adopted.Revision)
 }
 
 // fetchMaster freezes authoritative master.

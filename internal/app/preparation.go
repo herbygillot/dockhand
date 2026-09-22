@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
@@ -57,15 +58,19 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 	// The preview resolves as a bump would, reading the records when there
 	// are any and writing nothing. A dry-run adoption needs the store the
 	// way adoption does, so it opens the services as the command would.
-	engine := &workflow.Engine{Repo: repo, Ports: ports}
+	selection := workflow.ResolutionRequest{Action: request.Action, Selection: request.Selection, Preview: true, Platform: platform, Intent: request.EditIntent, Subject: request.Subject, References: request.References}
+	var resolution workflow.Resolution
 	if request.Adopt != "" {
 		services, err := Build(ctx, config)
 		if err != nil {
 			return Preview{}, err
 		}
 		defer services.Close()
-		engine = services.Workflow
+		if resolution, err = services.resolve(ctx, selection, request.Adopt, true); err != nil {
+			return Preview{}, err
+		}
 	} else {
+		engine := &workflow.Engine{Repo: repo, Ports: ports}
 		store, repository, err := openReadOnly(ctx, config, repo)
 		if err != nil {
 			return Preview{}, err
@@ -74,10 +79,9 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 			defer store.Close()
 			engine.State, engine.Repository = store, repository
 		}
-	}
-	resolution, err := engine.Resolve(ctx, workflow.ResolutionRequest{Action: request.Action, Selection: request.Selection, Branch: request.Adopt, Adopt: request.Adopt != "", Preview: true, Platform: platform, Intent: request.EditIntent, Subject: request.Subject, References: request.References})
-	if err != nil {
-		return Preview{}, err
+		if resolution, err = engine.Resolve(ctx, selection); err != nil {
+			return Preview{}, err
+		}
 	}
 	if request.Action == record.BumpRevision && strings.TrimSpace(resolution.Subject) == "" {
 		return Preview{}, fmt.Errorf("bump-revision needs --subject: the reason is what maintainers read, e.g. --subject \"revbump for oniguruma 6.9.10\"")
@@ -157,7 +161,7 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 	if err != nil {
 		return workflow.BoundPreparation{}, err
 	}
-	resolution, err := s.Workflow.Resolve(ctx, workflow.ResolutionRequest{Action: request.Action, Selection: request.Selection, ChangeID: request.ChangeID, Branch: request.Adopt, Adopt: request.Adopt != "", Platform: platform, Intent: request.EditIntent, Subject: request.Subject, References: request.References})
+	resolution, err := s.resolve(ctx, workflow.ResolutionRequest{Action: request.Action, Selection: request.Selection, ChangeID: request.ChangeID, Platform: platform, Intent: request.EditIntent, Subject: request.Subject, References: request.References}, request.Adopt, false)
 	if err != nil {
 		return workflow.BoundPreparation{}, err
 	}
@@ -175,6 +179,21 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 		bound.Destination, bound.Publication = record.Published, *request.Publish
 	}
 	return s.Workflow.BindPreparation(ctx, bound)
+}
+
+// resolve is what a selection means for the action, with the branch a
+// person asked to adopt tracked first, in a dry run when the resolution is
+// a preview, and the resolution read from what adoption recorded.
+func (s *Services) resolve(ctx context.Context, selection workflow.ResolutionRequest, adopt string, dryRun bool) (workflow.Resolution, error) {
+	if adopt == "" {
+		return s.Workflow.Resolve(ctx, selection)
+	}
+	adopted, err := s.Adopt(ctx, AdoptRequest{Branch: adopt, Target: selection.Selection.Selector, DryRun: dryRun})
+	if err != nil {
+		return workflow.Resolution{}, err
+	}
+	progress.Report(ctx, "%s", adopted.Detail)
+	return s.Workflow.ResolveAdopted(ctx, adopted, selection)
 }
 
 func preparationSource(ctx context.Context, repo *git.Repository) (record.Source, error) {

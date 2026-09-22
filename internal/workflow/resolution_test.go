@@ -39,8 +39,8 @@ func TestResolveFreshWithoutRecordsOrContribution(t *testing.T) {
 	require.Equal(t, "master", resolution.Branch)
 	require.Equal(t, "update", resolution.Subject)
 	require.Empty(t, resolution.ChangeID())
-	_, err = without.Resolve(t.Context(), workflow.ResolutionRequest{Action: record.Bump, Selection: macports.Selection{Selector: "fixture"}, Branch: "candidate", Adopt: true})
-	require.ErrorContains(t, err, "needs the state database")
+	_, err = without.Resolve(t.Context(), workflow.ResolutionRequest{Action: record.Verify, Selection: macports.Selection{Selector: "fixture"}})
+	require.Error(t, err, "nothing is tracked without the records")
 	// A database with no contribution for the port: Fresh too, and a path
 	// selector never looks.
 	for _, selector := range []string{"fixture", "devel/fixture/Portfile", "devel/fixture"} {
@@ -50,11 +50,8 @@ func TestResolveFreshWithoutRecordsOrContribution(t *testing.T) {
 		require.Equal(t, master, resolution.Source)
 		require.Equal(t, selector, resolution.Selection.Selector)
 	}
-	// Offline forbids the fetch a Fresh needs.
-	_, err = f.engine.Resolve(t.Context(), workflow.ResolutionRequest{Action: record.Bump, Selection: macports.Selection{Selector: "fixture"}, Offline: true})
-	require.ErrorIs(t, err, workflow.ErrOffline)
 	// A verification requires a contribution and says so in its words.
-	_, err = f.engine.Resolve(t.Context(), workflow.ResolutionRequest{Action: record.Verify, Selection: macports.Selection{Selector: "fixture"}, Require: true, Lookup: true})
+	_, err = f.engine.Resolve(t.Context(), workflow.ResolutionRequest{Action: record.Verify, Selection: macports.Selection{Selector: "fixture"}})
 	require.ErrorIs(t, err, state.ErrNotFound)
 	require.ErrorContains(t, err, "no open contribution for fixture")
 }
@@ -74,14 +71,14 @@ func TestResolveOntoAContributionWithoutAJobOfItsOwn(t *testing.T) {
 	require.Equal(t, record.EditIntent{KeepOldChecksums: true}, resolution.Intent, "an Onto inherits no intent from a job")
 	require.Nil(t, resolution.Master, "an Onto does not fetch master")
 	require.Contains(t, resolution.Detail, "lands as an amendment")
-	// A verification resolves the same contribution as recorded: a Continue
+	// A verification resolves the same contribution as recorded: Tracked,
 	// with the change and revision to check the captured branch against,
 	// by name, by branch, or by change, and reads nothing else.
 	for _, selection := range []workflow.ResolutionRequest{{Selection: macports.Selection{Selector: "fixture"}}, {Branch: "candidate"}, {ChangeID: "change"}, {Selection: macports.Selection{Selector: "fixture"}, Branch: "candidate"}} {
 		selection.Action = record.Verify
 		found, err := f.engine.Resolve(t.Context(), selection)
 		require.NoError(t, err)
-		require.Equal(t, workflow.Continue, found.Kind)
+		require.Equal(t, workflow.Tracked, found.Kind)
 		require.Equal(t, record.ChangeID("change"), found.ChangeID())
 		require.Equal(t, "candidate", found.Branch)
 		require.NotNil(t, found.Revision)
@@ -115,24 +112,19 @@ func TestResolveContinuesAPriorJobAndInheritsItsChoices(t *testing.T) {
 	// continuation check can evaluate it there.
 	master := masterAt(t, f, job.Spec.Source.Commit)
 	request := workflow.ResolutionRequest{Action: record.BumpRevision, Selection: macports.Selection{Selector: "fixture", Variants: map[string]bool{"debug": true}}, Platform: buildPlatform}
-	// Lookup stops at the records: no master, no check.
-	looked, err := f.engine.Resolve(t.Context(), func() workflow.ResolutionRequest { r := request; r.Lookup = true; return r }())
-	require.NoError(t, err)
-	require.Equal(t, workflow.Continue, looked.Kind)
-	require.Nil(t, looked.Master)
-	require.False(t, looked.Checked)
-	require.Equal(t, job.Spec.Source, looked.Source, "the prior job's recorded source")
-	require.Equal(t, job.ID, looked.Prior.ID)
-	require.Equal(t, "Rebuild dependents", looked.Subject, "inherited from the prior job")
-	require.Equal(t, job.Spec.Targets[0].Portfile, looked.Selection.Selector)
-	require.True(t, looked.Selection.Variants["debug"], "the request's variants lie over the recorded ones")
-	// A preview fetches master and does not check the continuation.
+	// A preview fetches master and does not check the continuation; the
+	// prior job's choices are inherited as recorded.
 	previewed, err := f.engine.Resolve(t.Context(), func() workflow.ResolutionRequest { r := request; r.Preview = true; return r }())
 	require.NoError(t, err)
 	require.Equal(t, workflow.Continue, previewed.Kind)
 	require.Equal(t, &master, previewed.Master)
 	require.False(t, previewed.Checked)
 	require.Contains(t, previewed.Detail, "not checked in a preview")
+	require.Equal(t, job.Spec.Source, previewed.Source, "the prior job's recorded source")
+	require.Equal(t, job.ID, previewed.Prior.ID)
+	require.Equal(t, "Rebuild dependents", previewed.Subject, "inherited from the prior job")
+	require.Equal(t, job.Spec.Targets[0].Portfile, previewed.Selection.Selector)
+	require.True(t, previewed.Selection.Variants["debug"], "the request's variants lie over the recorded ones")
 	// The real thing checks master and the pull request; no PR is recorded
 	// and master still holds the port, so the contribution continues.
 	checked, err := f.engine.Resolve(t.Context(), request)
@@ -158,27 +150,32 @@ func TestResolveContinuesAPriorJobAndInheritsItsChoices(t *testing.T) {
 	require.ErrorContains(t, err, "fetching authoritative MacPorts master")
 }
 
-func TestResolveAdoptsABranchThenPreparesOntoIt(t *testing.T) {
+// Adoption is the caller's write, made first; the resolution reads what it
+// recorded, or in a dry run would have recorded, and writes nothing.
+func TestResolveAdoptedReadsWhatAdoptionRecorded(t *testing.T) {
 	t.Parallel()
 	f, _ := manualPublicationFixture(t)
 	master := masterAt(t, f, f.source.Base)
-	request := workflow.ResolutionRequest{Action: record.BumpRevision, Selection: macports.Selection{Selector: "fixture"}, Branch: "candidate", Adopt: true, Platform: buildPlatform}
-	previewed, err := f.engine.Resolve(t.Context(), func() workflow.ResolutionRequest { r := request; r.Preview = true; return r }())
+	request := workflow.ResolutionRequest{Action: record.BumpRevision, Selection: macports.Selection{Selector: "fixture"}, Platform: buildPlatform}
+	dryRun, err := f.engine.AdoptContribution(t.Context(), workflow.AdoptRequest{Branch: "candidate", Target: "fixture", Upstream: master.Commit, Platform: buildPlatform, DryRun: true})
+	require.NoError(t, err)
+	previewed, err := f.engine.ResolveAdopted(t.Context(), dryRun, func() workflow.ResolutionRequest { r := request; r.Preview = true; return r }())
 	require.NoError(t, err)
 	require.Equal(t, workflow.Adopt, previewed.Kind)
 	require.Equal(t, f.source, previewed.Source, "the revision adoption would record")
 	require.Equal(t, "candidate", previewed.Branch)
-	require.Equal(t, &master, previewed.Master)
 	_, err = f.engine.SelectContribution(t.Context(), workflow.ContributionSelector{Branch: "candidate"})
-	require.ErrorIs(t, err, state.ErrNotFound, "a preview records nothing")
-	adopted, err := f.engine.Resolve(t.Context(), request)
+	require.ErrorIs(t, err, state.ErrNotFound, "a dry run records nothing")
+	recorded, err := f.engine.AdoptContribution(t.Context(), workflow.AdoptRequest{Branch: "candidate", Target: "fixture", Upstream: master.Commit, Platform: buildPlatform})
+	require.NoError(t, err)
+	adopted, err := f.engine.ResolveAdopted(t.Context(), recorded, request)
 	require.NoError(t, err)
 	require.Equal(t, workflow.Adopt, adopted.Kind)
 	change, err := f.engine.SelectContribution(t.Context(), workflow.ContributionSelector{Branch: "candidate"})
 	require.NoError(t, err)
 	require.Equal(t, change.ID, adopted.ChangeID())
-	// A path selector with --adopt is refused, as adoption refuses it.
-	_, err = f.engine.Resolve(t.Context(), workflow.ResolutionRequest{Action: record.BumpRevision, Selection: macports.Selection{Selector: "devel/fixture/Portfile"}, Branch: "candidate", Adopt: true, Platform: buildPlatform})
-	require.ErrorContains(t, err, "is not a port name")
+	require.Equal(t, "update to 2", adopted.Subject, "the contribution's own subject")
+	_, err = f.engine.ResolveAdopted(t.Context(), recorded, workflow.ResolutionRequest{Action: record.Verify, Selection: macports.Selection{Selector: "fixture"}})
+	require.ErrorIs(t, err, workflow.ErrInvalidRequest, "only an update prepares onto an adopted branch")
 	_ = context.Background
 }

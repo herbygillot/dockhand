@@ -18,10 +18,10 @@ import (
 
 type VerificationRequest struct {
 	KeepFailed bool
-	// Continue, when set, is the resolution of the tracked contribution
-	// the verification continues, made under its action; nil captures an
-	// untracked branch or the working tree.
-	Continue          *Resolution
+	// Tracked, when set, is the contribution the verification works on,
+	// resolved under its action; nil captures an untracked branch or the
+	// working tree.
+	Tracked           *Resolution
 	UseRecordedBuild  bool
 	TargetBuilds      map[string]record.BuildConfig
 	IncludeDependents bool
@@ -61,11 +61,11 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 		return BoundVerification{}, fmt.Errorf("workflow: source binding requires Git and MacPorts")
 	}
 	var continuation *record.Change
-	if request.Continue != nil {
-		if request.Continue.Change == nil {
-			return BoundVerification{}, fmt.Errorf("%w: the continued resolution names no contribution", ErrInvalidRequest)
+	if request.Tracked != nil {
+		if request.Tracked.Kind != Tracked || request.Tracked.Change == nil {
+			return BoundVerification{}, fmt.Errorf("%w: a verification works on a tracked contribution, not a %s resolution", ErrInvalidRequest, request.Tracked.Kind)
 		}
-		change := *request.Continue.Change
+		change := *request.Tracked.Change
 		if err := contributionPrepared(change); err != nil {
 			return BoundVerification{}, err
 		}

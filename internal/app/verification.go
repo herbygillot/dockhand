@@ -67,7 +67,7 @@ func (s *Services) BindVerification(ctx context.Context, request Verification) (
 		}
 	}
 	bound, err := s.Workflow.BindVerification(ctx, workflow.VerificationRequest{KeepFailed: request.KeepFailed,
-		Continue: continuation, UseRecordedBuild: request.UseRecordedBuild, IncludeDependents: request.IncludeDependents, AllSubports: request.AllSubports, ID: request.ID, Branch: request.Branch, Selection: request.Selection, Platform: platform, Fresh: request.Fresh,
+		Tracked: continuation, UseRecordedBuild: request.UseRecordedBuild, IncludeDependents: request.IncludeDependents, AllSubports: request.AllSubports, ID: request.ID, Branch: request.Branch, Selection: request.Selection, Platform: platform, Fresh: request.Fresh,
 		ResolveBuild: s.resolver(platform, request.Tests, request.FromSource, false),
 	})
 	if errors.Is(err, state.ErrNotFound) && request.Branch != "" && !request.Adopt && !request.WorkingTree {
