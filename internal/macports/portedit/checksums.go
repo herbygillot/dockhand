@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/progress"
 )
 
@@ -29,7 +28,7 @@ func (s *Service) prepareChecksums(ctx context.Context, request Request, input *
 	for _, frame := range observed.contexts {
 		result.Coverage = append(result.Coverage, ContextCoverage{Fetch: frame.after.Ports[input.target.Name].Fetch, Platform: frame.profile, Modeled: frame.profile != input.before.Platform})
 	}
-	return s.applyObservedArchives(ctx, request, input, archivePlan{result: result, contents: input.data, observed: observed, subject: "refresh checksums"}, s.archives(""))
+	return s.applyObservedArchives(ctx, request, input, archivePlan{result: result, contents: input.data, observed: observed, subject: "refresh checksums"}, s.Archives.Store(""))
 }
 
 func (s *Service) planObservedChecksums(ctx context.Context, request Request, input *sourceInput) (*observedArchivePlan, error) {
@@ -77,15 +76,6 @@ func (s *Service) planObservedChecksums(ctx context.Context, request Request, in
 		}
 	}
 	return plan, nil
-}
-
-func checkChecksumSources(contents []byte, info macports.PortInfo, sources []archiveSource) error {
-	placeholders := make([]portfile.Checksum, len(sources))
-	for i, source := range sources {
-		placeholders[i] = portfile.Checksum{Name: source.Name}
-	}
-	_, _, err := portfile.ReplaceChecksums(contents, info.Options["checksums"], placeholders...)
-	return err
 }
 
 // inertChecksumGroups names the declared checksum groups that no archive

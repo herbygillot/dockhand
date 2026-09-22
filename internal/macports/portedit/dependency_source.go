@@ -9,9 +9,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 )
 
-func dependencySources(info macports.PortInfo, sources []archiveSource) ([]archiveSource, error) {
+func dependencySources(info macports.PortInfo, sources []archives.Source) ([]archives.Source, error) {
 	names := make([]string, len(sources))
 	for i, s := range sources {
 		names[i] = s.Name
@@ -20,7 +21,7 @@ func dependencySources(info macports.PortInfo, sources []archiveSource) ([]archi
 	if err != nil {
 		return nil, err
 	}
-	var result []archiveSource
+	var result []archives.Source
 	for _, source := range sources {
 		if slices.Contains(selected, source.Name) {
 			result = append(result, source)
@@ -29,10 +30,10 @@ func dependencySources(info macports.PortInfo, sources []archiveSource) ([]archi
 	return result, nil
 }
 
-func originalDependencySource(ctx context.Context, archives *archiveStore, info macports.PortInfo, sources []archiveSource, plan *dependency.Plan) (dependency.Input, error) {
-	var downloads []Download
+func originalDependencySource(ctx context.Context, store *archives.Store, info macports.PortInfo, sources []archives.Source, plan *dependency.Plan) (dependency.Input, error) {
+	var downloads []archives.Download
 	for _, source := range sources {
-		download, err := archives.fetch(ctx, info, source)
+		download, err := store.Fetch(ctx, info, source)
 		if err != nil {
 			return dependency.Input{}, err
 		}
@@ -41,7 +42,7 @@ func originalDependencySource(ctx context.Context, archives *archiveStore, info 
 	return selectDependencySource(ctx, info, sources, downloads, plan)
 }
 
-func selectDependencySource(ctx context.Context, info macports.PortInfo, sources []archiveSource, downloads []Download, plan *dependency.Plan) (dependency.Input, error) {
+func selectDependencySource(ctx context.Context, info macports.PortInfo, sources []archives.Source, downloads []archives.Download, plan *dependency.Plan) (dependency.Input, error) {
 	var selected *dependency.Input
 	for _, source := range sources {
 		matches := 0
@@ -49,7 +50,7 @@ func selectDependencySource(ctx context.Context, info macports.PortInfo, sources
 		for _, download := range downloads {
 			if download.Name == source.Name {
 				matches++
-				filename = download.path
+				filename = download.Path
 			}
 		}
 		if matches != 1 || filename == "" {

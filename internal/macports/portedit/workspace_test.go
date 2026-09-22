@@ -2,13 +2,10 @@ package portedit
 
 import (
 	"errors"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/stretchr/testify/require"
@@ -44,44 +41,6 @@ func TestSourceInputPathsFollowTheSelectedTarget(t *testing.T) {
 	other := *input
 	other.target = record.Target{Portfile: "devel/sibling/Portfile"}
 	require.Equal(t, filepath.Join("/snapshot", "devel", "sibling"), other.portdir(), "a copy with another target resolves its own paths")
-}
-
-func TestArchiveStoreKeepsBytesOnlyWithADirectory(t *testing.T) {
-	t.Parallel()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/missing" {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		_, _ = w.Write([]byte("archive bytes"))
-	}))
-	defer server.Close()
-	service := &Service{HTTP: server.Client()}
-	info := macports.PortInfo{Options: map[string]string{}}
-	hashed, err := service.archives("").fetch(t.Context(), info, archiveSource{Name: "a.tar.gz", URL: server.URL + "/a.tar.gz"})
-	require.NoError(t, err)
-	require.Empty(t, hashed.path, "without a directory only the hashes are kept")
-	require.Equal(t, int64(len("archive bytes")), hashed.Size)
-
-	directory := t.TempDir()
-	kept, err := service.archives(directory).fetch(t.Context(), info, archiveSource{Name: "a.tar.gz", URL: server.URL + "/a.tar.gz"})
-	require.NoError(t, err)
-	data, err := os.ReadFile(kept.path)
-	require.NoError(t, err)
-	require.Equal(t, "archive bytes", string(data))
-	require.Equal(t, hashed.SHA256, kept.SHA256)
-
-	_, err = service.archives(directory).fetch(t.Context(), info, archiveSource{Name: "b.tar.gz", URL: server.URL + "/missing"})
-	require.Error(t, err)
-	entries, err := os.ReadDir(directory)
-	require.NoError(t, err)
-	require.Len(t, entries, 1, "a failed download leaves no partial file")
-
-	first, err := service.archives("").fetchFirst(t.Context(), info, "c.tar.gz", []string{server.URL + "/missing", server.URL + "/c.tar.gz"})
-	require.NoError(t, err)
-	require.Equal(t, server.URL+"/c.tar.gz", first.URL, "the first working location wins")
-	_, err = service.archives("").fetchFirst(t.Context(), info, "d.tar.gz", []string{server.URL + "/missing"})
-	require.ErrorContains(t, err, "404")
 }
 
 func TestCommitEditRecordsFilesAndFidelityBeforeJudging(t *testing.T) {

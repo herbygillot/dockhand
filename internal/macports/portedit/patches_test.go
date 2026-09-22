@@ -14,6 +14,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/stretchr/testify/require"
 )
@@ -50,7 +51,7 @@ master_sites @SITE@/${version}
 checksums sha256 aaaa size 2
 patchfiles good.diff stale.diff
 `, "@SITE@", server.URL)), 0600))
-	s := &Service{Ports: &eval.Evaluator{Executable: executable}, HTTP: server.Client()}
+	s := &Service{Ports: &eval.Evaluator{Executable: executable}, Archives: archives.Client{HTTP: server.Client()}}
 	r := Request{Action: record.Bump, Source: record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, Root: root, Selection: macports.Selection{Selector: "fixture"}, Version: "1.2.4", Release: &record.Release{Selection: record.Selection{Requested: "1.2.4"}, Archive: true, Version: "1.2.4"}}
 	result, err := s.Prepare(t.Context(), r)
 	require.NoError(t, err, "a rejected patch is a finding, not a refusal")

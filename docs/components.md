@@ -50,6 +50,7 @@ dockhand2/
       installation/      # MacPorts installation and observed installation facts
       fidelity/          # Before-and-after evaluation comparison reports
       portedit/          # Evaluator-driven source edits in a disposable workspace
+        archives/        # Direct archive downloads, hashing, and checksum rewriting
       distfiles/         # Native fetch observations tied to exact checksum declarations
       dependency/        # Go and Cargo dependency blocks: parsing, generators, validation
       portfile/          # Tcl literal candidates and precise source edits

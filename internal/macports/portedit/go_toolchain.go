@@ -9,6 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"golang.org/x/mod/semver"
@@ -103,7 +104,7 @@ func (s *Service) raiseGoToolchain(ctx context.Context, request Request, input *
 // goRequirement finds go.mod in the first kept archive that holds one at
 // the port's worksrcdir, or in the repository at the resolved commit when
 // the port is fetched with git, and reports the Go series it requires.
-func (s *Service) goRequirement(ctx context.Context, request Request, info macports.PortInfo, downloads []Download) (required string, found bool, err error) {
+func (s *Service) goRequirement(ctx context.Context, request Request, info macports.PortInfo, downloads []archives.Download) (required string, found bool, err error) {
 	if gitFetched(info) {
 		if s.Manifests == nil || request.Release == nil {
 			progress.VerboseReport(ctx, "%s is fetched with git and no manifest source is configured; go.toolchain_min is left as declared", info.Name)
@@ -123,10 +124,10 @@ func (s *Service) goRequirement(ctx context.Context, request Request, info macpo
 		return required, true, nil
 	}
 	for _, download := range downloads {
-		if download.path == "" {
+		if download.Path == "" {
 			continue
 		}
-		data, _, err := dependency.Manifest(ctx, download.path, info.Options["worksrcdir"], "go.mod")
+		data, _, err := dependency.Manifest(ctx, download.Path, info.Options["worksrcdir"], "go.mod")
 		if errors.Is(err, dependency.ErrManifestMissing) {
 			continue
 		}

@@ -1,4 +1,4 @@
-package portedit
+package archives
 
 import (
 	"context"
@@ -22,26 +22,43 @@ import (
 	"golang.org/x/crypto/ripemd160"
 )
 
+// Download is one fetched archive: its hashes, and the path of its kept
+// bytes when the store kept them.
 type Download struct {
-	path                      string
+	// Path is the kept file, empty when only the hashes were wanted.
+	Path                      string `json:"-"`
 	Name, URL, SHA256, RMD160 string
 	// MD5 and SHA1 serve only a legacy group kept on request.
 	MD5, SHA1 string `json:",omitempty"`
 	Size      int64
 }
 
-type archiveSource struct{ Name, URL string }
+// Source is one declared distfile and the single direct location it is
+// fetched from.
+type Source struct{ Name, URL string }
 
-func localPatches(info macports.PortInfo, portdir string) error {
+// Client fetches archives with bounded size and time; the zero value uses
+// the default HTTP client, 512 MiB, and two minutes.
+type Client struct {
+	HTTP *http.Client
+	// MaxBytes bounds each archive; 512 MiB when unset.
+	MaxBytes int64
+	// Timeout bounds each archive download; two minutes when unset.
+	Timeout time.Duration
+}
+
+// LocalPatches checks that every declared patch file is a frozen regular
+// file inside the port directory.
+func LocalPatches(info macports.PortInfo, portdir string) error {
 	files, errs := syntax.ListValues(info.Options["patchfiles"])
 	if len(errs) > 0 {
-		return fmt.Errorf("%w: invalid patchfiles", ErrUnsupported)
+		return fmt.Errorf("%w: invalid patchfiles", portfile.ErrUnsupported)
 	}
 	if len(files) == 0 {
 		return nil
 	}
 	if portdir == "" {
-		return fmt.Errorf("%w: patchfiles require a frozen local files directory", ErrUnsupported)
+		return fmt.Errorf("%w: patchfiles require a frozen local files directory", portfile.ErrUnsupported)
 	}
 	root := info.Options["filespath"]
 	if root == "" {
@@ -49,45 +66,47 @@ func localPatches(info macports.PortInfo, portdir string) error {
 	}
 	resolved, err := filepath.EvalSymlinks(root)
 	if err != nil {
-		return fmt.Errorf("%w: local patch directory is unavailable", ErrUnsupported)
+		return fmt.Errorf("%w: local patch directory is unavailable", portfile.ErrUnsupported)
 	}
 	base, err := filepath.EvalSymlinks(portdir)
 	if err != nil {
-		return fmt.Errorf("%w: frozen port directory is unavailable", ErrUnsupported)
+		return fmt.Errorf("%w: frozen port directory is unavailable", portfile.ErrUnsupported)
 	}
 	relative, err := filepath.Rel(base, resolved)
 	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("%w: patches must be inside the frozen port directory", ErrUnsupported)
+		return fmt.Errorf("%w: patches must be inside the frozen port directory", portfile.ErrUnsupported)
 	}
 	for _, name := range files {
 		if !portfile.Literal(name) || name == "." || name == ".." {
-			return fmt.Errorf("%w: remote or ambiguous patchfile %s", ErrUnsupported, name)
+			return fmt.Errorf("%w: remote or ambiguous patchfile %s", portfile.ErrUnsupported, name)
 		}
 		stat, err := os.Lstat(filepath.Join(resolved, name))
 		if err != nil || !stat.Mode().IsRegular() {
-			return fmt.Errorf("%w: patchfile %s is not a frozen regular file", ErrUnsupported, name)
+			return fmt.Errorf("%w: patchfile %s is not a frozen regular file", portfile.ErrUnsupported, name)
 		}
 	}
 	return nil
 }
 
-func downloadSources(info macports.PortInfo, portdir string) ([]archiveSource, error) {
-	if err := checkArchivePolicy(info, portdir); err != nil {
+// Sources maps the evaluated distfiles to their direct locations after
+// the archive policy checks.
+func Sources(info macports.PortInfo, portdir string) ([]Source, error) {
+	if err := CheckPolicy(info, portdir); err != nil {
 		return nil, err
 	}
 	files, errs := syntax.ListValues(info.Options["distfiles"])
 	if len(errs) > 0 || len(files) == 0 {
-		return nil, fmt.Errorf("%w: source distfiles are required", ErrUnsupported)
+		return nil, fmt.Errorf("%w: source distfiles are required", portfile.ErrUnsupported)
 	}
 	sites, errs := syntax.ListValues(info.Options["master_sites"])
 	if len(errs) > 0 || len(sites) == 0 {
-		return nil, fmt.Errorf("%w: direct master sites are required", ErrUnsupported)
+		return nil, fmt.Errorf("%w: direct master sites are required", portfile.ErrUnsupported)
 	}
 	locations := map[string][]string{}
 	for _, raw := range sites {
 		site, err := url.Parse(raw)
 		if err != nil || site.Host == "" || site.User != nil || site.Fragment != "" || !fetch.Scheme(site.Scheme) {
-			return nil, fmt.Errorf("%w: only direct HTTP(S) or FTP master sites are supported", ErrUnsupported)
+			return nil, fmt.Errorf("%w: only direct HTTP(S) or FTP master sites are supported", portfile.ErrUnsupported)
 		}
 		tags := []string{""}
 		authority := strings.Index(raw, "://") + 3
@@ -96,7 +115,7 @@ func downloadSources(info macports.PortInfo, portdir string) ([]archiveSource, e
 			tags = strings.Split(raw[cut+1:], ",")
 			for _, tag := range tags {
 				if tag == "" || !portfile.Literal(tag) {
-					return nil, fmt.Errorf("%w: invalid master-site tag", ErrUnsupported)
+					return nil, fmt.Errorf("%w: invalid master-site tag", portfile.ErrUnsupported)
 				}
 			}
 			raw = raw[:cut]
@@ -106,29 +125,29 @@ func downloadSources(info macports.PortInfo, portdir string) ([]archiveSource, e
 		}
 	}
 	seen := map[string]bool{}
-	var result []archiveSource
+	var result []Source
 	for _, file := range files {
 		name, tag, _ := strings.Cut(file, ":")
 		if name == "" || !portfile.Literal(name) || name == "." || name == ".." || seen[name] || (tag != "" && !portfile.Literal(tag)) {
-			return nil, fmt.Errorf("%w: ambiguous distfile %s", ErrUnsupported, file)
+			return nil, fmt.Errorf("%w: ambiguous distfile %s", portfile.ErrUnsupported, file)
 		}
 		choices := locations[tag]
 		if len(choices) != 1 {
-			return nil, fmt.Errorf("%w: distfile %s must select exactly one direct master site", ErrUnsupported, file)
+			return nil, fmt.Errorf("%w: distfile %s must select exactly one direct master site", portfile.ErrUnsupported, file)
 		}
 		seen[name] = true
-		result = append(result, archiveSource{Name: name, URL: strings.TrimRight(choices[0], "/") + "/" + url.PathEscape(name)})
+		result = append(result, Source{Name: name, URL: strings.TrimRight(choices[0], "/") + "/" + url.PathEscape(name)})
 	}
 	return result, nil
 }
 
-func (s *Service) downloadArchive(ctx context.Context, info macports.PortInfo, source archiveSource, output io.Writer) (Download, error) {
+func (c Client) download(ctx context.Context, info macports.PortInfo, source Source, output io.Writer) (Download, error) {
 	name, address := source.Name, source.URL
-	timeout := s.DownloadTimeout
+	timeout := c.Timeout
 	if timeout <= 0 {
 		timeout = 2 * time.Minute
 	}
-	limit := s.MaxDownloadBytes
+	limit := c.MaxBytes
 	if limit <= 0 {
 		limit = 512 << 20
 	}
@@ -158,7 +177,7 @@ func (s *Service) downloadArchive(ctx context.Context, info macports.PortInfo, s
 			agent = fetch.UserAgent
 		}
 		request.Header.Set("User-Agent", agent)
-		response, err := fetch.Open(s.HTTP, request, limit)
+		response, err := fetch.Open(c.HTTP, request, limit)
 		if err != nil {
 			return Download{}, fail(err)
 		}
@@ -213,7 +232,7 @@ var errHTMLPage = errors.New("the server sent an HTML page instead of the file")
 // reachable with errors.Is and errors.As.
 func downloadError(parent context.Context, name, address string, limit int64, timeout time.Duration, err error) error {
 	if parent.Err() != nil {
-		return fmt.Errorf("portedit: downloading %s from %s: %w", name, address, parent.Err())
+		return fmt.Errorf("archives: downloading %s from %s: %w", name, address, parent.Err())
 	}
 	var status *fetch.StatusError
 	var transport *url.Error
@@ -223,15 +242,15 @@ func downloadError(parent context.Context, name, address string, limit int64, ti
 		if status.Status == http.StatusNotFound {
 			note = "; no archive is published at that location yet, and a release tag alone does not publish its assets"
 		}
-		return fmt.Errorf("portedit: downloading %s: %w%s", name, err, note)
+		return fmt.Errorf("archives: downloading %s: %w%s", name, err, note)
 	case errors.Is(err, fetch.ErrTooLarge):
-		return fmt.Errorf("portedit: downloading %s from %s: larger than the %s limit: %w", name, address, byteLabel(limit), err)
+		return fmt.Errorf("archives: downloading %s from %s: larger than the %s limit: %w", name, address, byteLabel(limit), err)
 	case errors.Is(err, context.DeadlineExceeded):
-		return fmt.Errorf("portedit: downloading %s from %s: no complete response within dockhand's %s limit: %w", name, address, timeout, err)
+		return fmt.Errorf("archives: downloading %s from %s: no complete response within dockhand's %s limit: %w", name, address, timeout, err)
 	case errors.As(err, &transport):
-		return fmt.Errorf("portedit: downloading %s from %s: %w", name, address, transport.Err)
+		return fmt.Errorf("archives: downloading %s from %s: %w", name, address, transport.Err)
 	}
-	return fmt.Errorf("portedit: downloading %s from %s: %w", name, address, err)
+	return fmt.Errorf("archives: downloading %s from %s: %w", name, address, err)
 }
 
 // byteLabel is a size in the unit that reads naturally for a download limit.
@@ -245,32 +264,37 @@ func byteLabel(size int64) string {
 	return fmt.Sprintf("%d bytes", size)
 }
 
-func checkFetchCredentials(info macports.PortInfo) error {
+// CheckFetchCredentials refuses a port whose downloads need MacPorts
+// credentials, which the direct downloader does not carry.
+func CheckFetchCredentials(info macports.PortInfo) error {
 	if info.OptionErrors["fetch.has_credentials"] != "" || info.Options["fetch.has_credentials"] == "" {
-		return fmt.Errorf("%w: cannot determine applicable MacPorts fetch credentials; prepare this update manually with MacPorts", ErrUnsupported)
+		return fmt.Errorf("%w: cannot determine applicable MacPorts fetch credentials; prepare this update manually with MacPorts", portfile.ErrUnsupported)
 	}
 	if info.Options["fetch.has_credentials"] != "0" {
-		return fmt.Errorf("%w: MacPorts credentials apply to the selected source downloads; authenticated fetching is not supported by the direct downloader; prepare this update manually with MacPorts", ErrUnsupported)
+		return fmt.Errorf("%w: MacPorts credentials apply to the selected source downloads; authenticated fetching is not supported by the direct downloader; prepare this update manually with MacPorts", portfile.ErrUnsupported)
 	}
 	return nil
 }
 
-func checkArchivePolicy(info macports.PortInfo, portdir string) error {
-	if err := checkFetchCredentials(info); err != nil {
+// CheckPolicy refuses a port whose archives the direct downloader cannot
+// fetch as MacPorts would: credentials, an incompatible fetch, customized
+// fetching, vendored sources, or patches outside the port directory.
+func CheckPolicy(info macports.PortInfo, portdir string) error {
+	if err := CheckFetchCredentials(info); err != nil {
 		return err
 	}
 	if problem := info.OptionErrors["fetch.archive_compatible"]; problem != "" {
-		return fmt.Errorf("%w: %s", ErrUnsupported, problem)
+		return fmt.Errorf("%w: %s", portfile.ErrUnsupported, problem)
 	}
 	for _, key := range []string{"distfiles", "master_sites", "checksums", "fetch.type", "fetch.archive_compatible", "patchfiles", "filespath", "fetch.ignore_sslcert", "go.vendors", "cargo.crates", "cargo.crates_github"} {
 		if info.OptionErrors[key] != "" {
-			return fmt.Errorf("%w: cannot evaluate %s", ErrUnsupported, key)
+			return fmt.Errorf("%w: cannot evaluate %s", portfile.ErrUnsupported, key)
 		}
 	}
 	if info.Options["fetch.type"] != "standard" || info.Options["fetch.archive_compatible"] != "1" || info.Options["fetch.ignore_sslcert"] != "no" || info.Options["go.vendors"] != "" || info.Options["cargo.crates"] != "" || info.Options["cargo.crates_github"] != "" {
-		return fmt.Errorf("%w: fetch customization or vendored source requires a dedicated preparer", ErrUnsupported)
+		return fmt.Errorf("%w: fetch customization or vendored source requires a dedicated preparer", portfile.ErrUnsupported)
 	}
-	if err := localPatches(info, portdir); err != nil {
+	if err := LocalPatches(info, portdir); err != nil {
 		return err
 	}
 

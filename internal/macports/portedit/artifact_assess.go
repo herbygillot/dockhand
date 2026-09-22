@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"maps"
 )
 
@@ -30,7 +31,7 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 			// An obsolete follower has no archive in this context by design.
 			continue
 		}
-		if err := checkArchivePolicy(info, input.portdir()); err != nil {
+		if err := archives.CheckPolicy(info, input.portdir()); err != nil {
 			return coverage, err, nil
 		}
 		metadata, inconclusive := tolerateExplainedProbes(ctx, observed.Ports[input.target.Name], input.data, input.files.root)

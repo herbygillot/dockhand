@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
 )
 
@@ -16,7 +16,7 @@ type archivePlan struct {
 	result    Result
 	contents  []byte
 	versioned macports.Snapshot
-	sources   []archiveSource
+	sources   []archives.Source
 	// viaGit marks a git-fetched port's plan, which downloads nothing;
 	// branch is where git.branch must land, empty when the tag is unknown.
 	viaGit bool
@@ -94,14 +94,14 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 	if err != nil {
 		return plan.result, err
 	}
-	store := s.archives("")
+	store := s.Archives.Store("")
 	if patched(input.info) || moduleModeGo(input.info) {
 		directory, err := os.MkdirTemp("", "dockhand-patchcheck-")
 		if err != nil {
 			return Result{}, err
 		}
 		defer os.RemoveAll(directory)
-		store = s.archives(directory)
+		store = s.Archives.Store(directory)
 	}
 	result, err := s.applyArchivePlan(ctx, request, input, plan, store)
 	if err != nil {
@@ -113,7 +113,7 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 	return result, s.checkPatches(ctx, input, &result)
 }
 
-func (s *Service) applyArchivePlan(ctx context.Context, request Request, input *sourceInput, plan archivePlan, archives *archiveStore) (Result, error) {
+func (s *Service) applyArchivePlan(ctx context.Context, request Request, input *sourceInput, plan archivePlan, store *archives.Store) (Result, error) {
 	result := plan.result
 	if request.Release.NoUpdate {
 		return result, nil
@@ -122,11 +122,11 @@ func (s *Service) applyArchivePlan(ctx context.Context, request Request, input *
 		return s.applyGitVersion(ctx, request, input, plan)
 	}
 	if plan.observed != nil {
-		return s.applyObservedArchives(ctx, request, input, plan, archives)
+		return s.applyObservedArchives(ctx, request, input, plan, store)
 	}
 	contents, versioned, sources := plan.contents, plan.versioned, plan.sources
 	info := versioned.Ports[input.target.Name]
-	contents, checksums, downloads, err := archives.refresh(ctx, contents, info, sources, request.KeepOldChecksums)
+	contents, checksums, downloads, err := store.Refresh(ctx, contents, info, sources, request.KeepOldChecksums)
 	if err != nil {
 		return result, err
 	}
@@ -137,12 +137,4 @@ func (s *Service) applyArchivePlan(ctx context.Context, request Request, input *
 	}
 	final := fidelity.Checksums(versioned, evaluated.after, input.target.Name, input.files.root, checksums)
 	return result, result.commitEdit(input, request, evaluated.edit, final, plan.subject)
-}
-
-func checksumValues(downloads []Download) []portfile.Checksum {
-	values := make([]portfile.Checksum, len(downloads))
-	for i, d := range downloads {
-		values[i] = portfile.Checksum{Name: d.Name, SHA256: d.SHA256, RMD160: d.RMD160, MD5: d.MD5, SHA1: d.SHA1, Size: d.Size}
-	}
-	return values
 }

@@ -33,8 +33,8 @@ func (s *Service) checkPatches(ctx context.Context, input *sourceInput, result *
 	}
 	var archives []string
 	for _, download := range result.Downloads {
-		if download.path != "" {
-			archives = append(archives, download.path)
+		if download.Path != "" {
+			archives = append(archives, download.Path)
 		}
 	}
 	if len(archives) == 0 {

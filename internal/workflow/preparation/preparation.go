@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
@@ -39,7 +40,7 @@ type Result struct {
 	// its committed source identity once the candidate tree is written.
 	Prepared  macports.Snapshot `json:"-"`
 	Release   *record.Release
-	Downloads []portedit.Download
+	Downloads []archives.Download
 	Patches   []patchcheck.Result `json:",omitempty"`
 }
 
@@ -62,7 +63,7 @@ type Service struct {
 }
 
 func (s *Service) editor() *portedit.Service {
-	editor := &portedit.Service{Ports: s.Ports, DependencyTools: s.DependencyTools, HTTP: s.HTTP, MaxDownloadBytes: s.MaxDownloadBytes}
+	editor := &portedit.Service{Ports: s.Ports, DependencyTools: s.DependencyTools, Archives: archives.Client{HTTP: s.HTTP, MaxBytes: s.MaxDownloadBytes}}
 	if s.Upstream != nil {
 		editor.Manifests = s.Upstream
 	}

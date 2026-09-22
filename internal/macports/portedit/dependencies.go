@@ -12,6 +12,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
@@ -98,7 +99,7 @@ func dependencyPatches(input *sourceInput, kind string) error {
 		return err
 	}
 	portdir := input.portdir()
-	if err := localPatches(input.info, portdir); err != nil {
+	if err := archives.LocalPatches(input.info, portdir); err != nil {
 		return err
 	}
 	patches, _ := syntax.ListValues(input.info.Options["patchfiles"])
@@ -118,7 +119,7 @@ func dependencyPatches(input *sourceInput, kind string) error {
 	return nil
 }
 
-func (s *Service) dependencyBase(ctx context.Context, request Request, input *sourceInput, plan *dependency.Plan) (*sourceInput, []archiveSource, error) {
+func (s *Service) dependencyBase(ctx context.Context, request Request, input *sourceInput, plan *dependency.Plan) (*sourceInput, []archives.Source, error) {
 	stripped, err := plan.Strip(input.data)
 	if err != nil {
 		return nil, nil, err
@@ -137,7 +138,7 @@ func (s *Service) dependencyBase(ctx context.Context, request Request, input *so
 	baseValue.family = &baseValue.before
 	base := &baseValue
 
-	sources, err := downloadSources(base.info, base.portdir())
+	sources, err := archives.Sources(base.info, base.portdir())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -165,8 +166,8 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 		return Result{}, err
 	}
 	defer os.RemoveAll(directory)
-	archives := s.archives(directory)
-	oldInput, err := originalDependencySource(ctx, archives, base.info, sources, plan)
+	store := s.Archives.Store(directory)
+	oldInput, err := originalDependencySource(ctx, store, base.info, sources, plan)
 	if err != nil {
 		return Result{}, err
 	}
@@ -186,12 +187,12 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 			return Result{}, fmt.Errorf("%w: existing %s differs from the original manifest/helper output; preserve these overrides with manual preparation", ErrUnsupported, name)
 		}
 	}
-	result, err := s.applyArchivePlan(ctx, baseRequest, base, archivePlan, archives)
+	result, err := s.applyArchivePlan(ctx, baseRequest, base, archivePlan, store)
 	if err != nil {
 		return Result{}, err
 	}
 	next := result.Prepared.Ports[input.target.Name]
-	nextSources, err := downloadSources(next, base.portdir())
+	nextSources, err := archives.Sources(next, base.portdir())
 	if err != nil {
 		return Result{}, err
 	}
@@ -282,7 +283,7 @@ func dependencyInput(info macports.PortInfo, archive string, plan *dependency.Pl
 	return dependency.Input{Archive: archive, Worksrcdir: filepath.ToSlash(root), Package: info.Options["go.package"], Tag: info.Options["git.branch"], Git: plan.Git}, nil
 }
 
-func (s *Service) gitCrateChecksums(ctx context.Context, request Request, input *sourceInput, contents []byte, generated dependency.GeneratedBlocks) (map[string][]string, []Download, error) {
+func (s *Service) gitCrateChecksums(ctx context.Context, request Request, input *sourceInput, contents []byte, generated dependency.GeneratedBlocks) (map[string][]string, []archives.Download, error) {
 	sums := map[string]string{}
 	for _, crate := range generated.Git {
 		sums[crate.Distfile()] = strings.Repeat("0", 64)
@@ -308,21 +309,21 @@ func (s *Service) gitCrateChecksums(ctx context.Context, request Request, input 
 		info.Options[key] = ""
 	}
 	info.Options["patchfiles"] = ""
-	sources, err := downloadSources(info, "")
+	sources, err := archives.Sources(info, "")
 	if err != nil {
 		return nil, nil, err
 	}
-	byName := map[string]archiveSource{}
+	byName := map[string]archives.Source{}
 	for _, source := range sources {
 		byName[source.Name] = source
 	}
-	var downloads []Download
+	var downloads []archives.Download
 	for _, crate := range generated.Git {
 		source, ok := byName[crate.Distfile()]
 		if !ok {
 			return nil, nil, fmt.Errorf("%w: Git crate archive missing from evaluated PortGroup", ErrFidelity)
 		}
-		download, err := s.downloadArchive(ctx, info, source, nil)
+		download, err := s.Archives.Store("").Fetch(ctx, info, source)
 		if err != nil {
 			return nil, nil, err
 		}

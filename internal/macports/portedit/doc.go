@@ -4,7 +4,8 @@
 // Service probes literal inputs to understand calculated versions, prepares
 // version or revision bumps and checksum refreshes, and regenerates supported
 // dependency blocks. Archive plans cover relevant metadata contexts, preserve
-// independent release pins, and associate checksums through macports/distfiles. It checks the edited evaluation against the intended change
+// independent release pins, and associate checksums through macports/distfiles;
+// the downloads themselves are portedit/archives. It checks the edited evaluation against the intended change
 // and returns edits, commit intent, and fidelity diagnostics. Assessment shares
 // the pre-download checks and reports untested stages explicitly.
 //

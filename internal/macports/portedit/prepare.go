@@ -5,13 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
-	"net/http"
 	"strings"
-	"time"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/record"
 )
@@ -78,7 +77,7 @@ type Result struct {
 	// any reader having to know that.
 	Prepared  macports.Snapshot `json:"-"`
 	Release   *record.Release
-	Downloads []Download
+	Downloads []archives.Download
 	// Patches reports whether each declared patch file still applies to the
 	// candidate source; a rejected patch is a finding, not a refusal.
 	Patches []patchcheck.Result `json:",omitempty"`
@@ -92,12 +91,11 @@ func (r *Result) report(report Fidelity) {
 }
 
 type Service struct {
-	DependencyTools  dependency.Tools
-	Ports            macports.Evaluator
-	HTTP             *http.Client
-	MaxDownloadBytes int64
-	// DownloadTimeout bounds each archive download; two minutes when unset.
-	DownloadTimeout time.Duration
+	DependencyTools dependency.Tools
+	Ports           macports.Evaluator
+	// Archives fetches source archives; its zero value downloads with the
+	// default client and limits.
+	Archives archives.Client
 	// Manifests reads a manifest from the resolved release's repository, for
 	// a git-fetched port that downloads no archive to read it from; nil
 	// leaves such a port's toolchain minimum as declared.
@@ -158,5 +156,29 @@ func (request Request) Validate() error {
 	if request.Action == record.BumpRevision && strings.TrimSpace(request.Subject) == "" {
 		return fmt.Errorf("portedit: a revision bump needs a subject saying why")
 	}
+	return nil
+}
+
+// commitEdit records one evaluated edit as the result's single commit unless
+// fidelity found unexpected changes. Files and fidelity are recorded either
+// way so callers can report what was attempted.
+func (r *Result) commitEdit(input *sourceInput, request Request, edit portfile.Edit, report Fidelity, subject string) error {
+	r.Files = []portfile.Edit{edit}
+	r.report(report)
+	if len(report.UnexpectedChanges) > 0 {
+		return fmt.Errorf("%w: %v", ErrFidelity, report.UnexpectedChanges)
+	}
+	name := input.target.Name
+	if request.Stub != "" {
+		name = request.Stub
+	}
+	if request.Subject != "" {
+		subject = request.Subject
+	}
+	line, err := Subject(name, subject)
+	if err != nil {
+		return err
+	}
+	r.Commits = []CommitIntent{{Subject: line, References: request.References, Paths: []string{input.target.Portfile}}}
 	return nil
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 )
@@ -35,7 +36,7 @@ func (s *Service) bindArchives(ctx context.Context, input *sourceInput, contents
 		return distfiles.Binding{}, fmt.Errorf("%w: modeled context depends on host state%s", errProbeInconclusive, hostInputs(port))
 	}
 	info := observed.Snapshot.Ports[input.target.Name]
-	if err := checkArchivePolicy(info, input.portdir()); err != nil {
+	if err := archives.CheckPolicy(info, input.portdir()); err != nil {
 		return distfiles.Binding{}, err
 	}
 	binding, err := distfiles.Bind(contents, input.portfile(), info, port)

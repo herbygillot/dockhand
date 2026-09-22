@@ -10,25 +10,26 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/text"
 )
 
-func (s *Service) applyObservedArchives(ctx context.Context, request Request, input *sourceInput, plan archivePlan, archives *archiveStore) (Result, error) {
+func (s *Service) applyObservedArchives(ctx context.Context, request Request, input *sourceInput, plan archivePlan, store *archives.Store) (Result, error) {
 	result := plan.result
 	updates := map[text.Span]checksumUpdate{}
-	var downloads []Download
+	var downloads []archives.Download
 	for _, item := range plan.observed.downloads {
 		progress.VerboseReport(ctx, "Refreshing %s", item.artifact.Name)
-		download, err := archives.fetchFirst(ctx, item.info, item.artifact.Name, item.artifact.URLs)
+		download, err := store.FetchFirst(ctx, item.info, item.artifact.Name, item.artifact.URLs)
 		if err != nil {
 			return result, err
 		}
 		group := item.artifact.Group
 		if group.Legacy() && !request.KeepOldChecksums && !group.Traced() {
-			edit, values := portfile.RewriteChecksumGroup(plan.contents, group.Pairs, checksumValues([]Download{download})[0])
+			edit, values := portfile.RewriteChecksumGroup(plan.contents, group.Pairs, archives.ChecksumValues([]archives.Download{download})[0])
 			if _, ok := updates[edit.Span]; !ok {
 				progress.Report(ctx, "Modernizing %s checksums: %s -> %s", item.artifact.Name, strings.Join(group.Kinds, " "), strings.Join(portfile.ModernChecksumKinds, " "))
 			}

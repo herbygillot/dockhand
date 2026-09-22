@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -190,7 +191,7 @@ func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator,
 			continue
 		}
 		if checkFidelity {
-			if err := checkFetchCredentials(next); err != nil {
+			if err := archives.CheckFetchCredentials(next); err != nil {
 				rejected = err
 				continue
 			}
