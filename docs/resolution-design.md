@@ -395,6 +395,16 @@ that too.
    engine a finished request. That move is about 1,300 lines and is worth
    making only if the value has made the bindings alike enough that the
    package boundary is obvious; it is not this design's precondition.
+   Answered no on 2026-09-22, from the code after step 6
+   ([note](activity/2026-09-22-no-intake-leaf.md)): the set is 2,223
+   lines that call nine engine helpers, one of them the pull request
+   refresh that writes state and reaches the forge, and that the
+   acceptance side calls back into for the request type, the branch
+   adoption, the correction's transactional checks, and the contribution
+   lookup; the bindings read alike at their prologues and their result
+   and nowhere in between; and "intake" already names the submit
+   transaction in the architecture. The 2026-09-16 review's condition
+   for the split, that the shared pieces move cleanly, is not met.
 
 ## Risks
 
