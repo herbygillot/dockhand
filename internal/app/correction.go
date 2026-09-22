@@ -24,7 +24,7 @@ func (s *Services) BindCorrection(ctx context.Context, request workflow.Correcti
 		request.Base = record.ObjectID(commit)
 	}
 	if !request.Preview && !request.SkipVerify {
-		request.ResolveBuild = s.buildResolver(platform, tests, fromSource, true)
+		request.ResolveBuild = s.resolver(platform, tests, fromSource, true)
 	}
 	return s.Workflow.BindCorrection(ctx, request)
 }

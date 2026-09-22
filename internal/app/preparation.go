@@ -258,7 +258,7 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 	if request.SkipVerify {
 		bound.Destination, bound.Verification = record.BranchReady, record.VerificationSkipped
 	} else {
-		bound.ResolveBuild = s.buildResolver(platform, request.Tests, request.FromSource, true)
+		bound.ResolveBuild = s.resolver(platform, request.Tests, request.FromSource, true)
 	}
 	if request.Publish != nil {
 		bound.Destination, bound.Publication = record.Published, *request.Publish

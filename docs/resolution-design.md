@@ -369,8 +369,8 @@ that too.
 ## Sequence
 
 1. Provider choice out of `app`: `buildResolver` behind interfaces for
-   the two providers, in a policy package `app` wires. Self-contained; its
-   package-internal test moves with it.
+   the two providers, in a policy package `app` wires. Landed 2026-09-22
+   as `workflow/choice` ([note](activity/2026-09-22-provider-choice.md)).
 2. The `Resolution` value and `Engine.Resolve` in `workflow`, with the
    four kinds, the degraded path, the offline refusal, and the no-store
    path each under test, and `PreparationInput` folded in. No consumer

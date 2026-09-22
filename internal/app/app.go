@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
+	"github.com/herbygillot/dockhand/internal/workflow/choice"
 	"maps"
 	"net/http"
 	"path/filepath"
@@ -48,13 +49,13 @@ type Config struct {
 }
 
 type Services struct {
-	Workflow          *workflow.Engine
-	Processes         *proc.Manager
-	Preparation       *preparation.Service
-	close             func() error
-	tartVerification  tartBuildConfigurator
+	Workflow    *workflow.Engine
+	Processes   *proc.Manager
+	Preparation *preparation.Service
+	close       func() error
+	// providers is the provider choice the bindings resolve builds with.
+	providers         choice.Providers
 	ports             *selection.Reader
-	targetImages      map[string]string
 	providerName      string
 	githubClient      *github.Client
 	githubDestination publish.Options
@@ -113,18 +114,18 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		Publisher:  &publish.Service{Repo: repo, Forge: &forgegithub.Client{Client: githubClient}, LockDirectory: filepath.Join(filepath.Dir(store.Path()), "publication-locks"), Upstream: macports.PortsRepository},
 		Now:        time.Now,
 	}
-	return &Services{
+	services := &Services{
 		Workflow:          engine,
 		Processes:         &proc.Manager{},
 		Preparation:       preparation,
 		close:             func() error { return errors.Join(workspaces.Close(), store.Close()) },
-		tartVerification:  provider,
 		ports:             ports,
 		providerName:      config.VerificationProvider,
-		targetImages:      maps.Clone(config.TargetImages),
 		githubClient:      githubClient,
 		githubDestination: config.VerificationDestination,
-	}, nil
+	}
+	services.providers = choice.Providers{Name: config.VerificationProvider, Local: provider, Remote: remoteBuild{services}, TargetImages: maps.Clone(config.TargetImages)}
+	return services, nil
 }
 
 func (s *Services) Close() error {

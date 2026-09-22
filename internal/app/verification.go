@@ -64,7 +64,7 @@ func (s *Services) BindVerification(ctx context.Context, request Verification) (
 	}
 	bound, err := s.Workflow.BindVerification(ctx, workflow.VerificationRequest{KeepFailed: request.KeepFailed,
 		Continue: continuation, UseRecordedBuild: request.UseRecordedBuild, IncludeDependents: request.IncludeDependents, AllSubports: request.AllSubports, ID: request.ID, Branch: request.Branch, Selection: request.Selection, Platform: platform, Fresh: request.Fresh,
-		ResolveBuild: s.buildResolver(platform, request.Tests, request.FromSource, false),
+		ResolveBuild: s.resolver(platform, request.Tests, request.FromSource, false),
 	})
 	if errors.Is(err, state.ErrNotFound) && request.Branch != "" && !request.Adopt && !request.WorkingTree {
 		return bound, fmt.Errorf("%w; --adopt %s verifies that branch's committed contents", err, request.Branch)
