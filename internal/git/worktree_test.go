@@ -3,6 +3,7 @@ package git_test
 import (
 	"bytes"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 	"os"
 	"os/exec"
@@ -149,7 +150,7 @@ func TestCheckoutRejectsEditsObservedDuringCapture(t *testing.T) {
 	}
 	quoted := "'" + strings.ReplaceAll(executable, "'", "'\\''") + "'"
 	wrapper := filepath.Join(t.TempDir(), "git")
-	require.NoError(t, os.WriteFile(wrapper, []byte("#!/bin/sh\nfor arg do\n if [ \"$arg\" = hash-object ]; then printf 'concurrent edit' > a; fi\ndone\nexec "+quoted+" \"$@\"\n"), 0700))
+	testsupport.WriteExecutable(t, wrapper, "#!/bin/sh\nfor arg do\n if [ \"$arg\" = hash-object ]; then printf 'concurrent edit' > a; fi\ndone\nexec "+quoted+" \"$@\"\n")
 	repo.Executable = wrapper
 	_, err := repo.CaptureCheckout(t.Context())
 	require.ErrorIs(t, err, git.ErrCheckoutChanged)

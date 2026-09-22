@@ -2,19 +2,19 @@ package host
 
 import (
 	"bytes"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/tart"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
 func TestGuestCommandsCloseInheritedDescriptorsAndPreserveInputAndArguments(t *testing.T) {
 	root := t.TempDir()
 	executable := filepath.Join(root, "tart")
-	require.NoError(t, os.WriteFile(executable, []byte(`#!/bin/sh
+	testsupport.WriteExecutable(t, executable, `#!/bin/sh
 set -eu
 [ "$1" = exec ]
 shift
@@ -22,7 +22,7 @@ shift
 shift 2
 exec 9>/dev/null
 exec "$@"
-`), 0700))
+`)
 	n := Machine{Client: tart.Client{Home: root, Executable: executable}}
 	var output bytes.Buffer
 	argument := "spaces; $(do-not-execute) 'literal'"

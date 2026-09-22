@@ -16,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -213,7 +214,7 @@ func TestDiscoverUsesFrozenTreeAndReleasesMaterialization(t *testing.T) {
 	put(t, root, "devel/core/Portfile", "dirty checkout\n")
 	put(t, root, ".fixture-index", "not an index\n")
 	indexer := filepath.Join(t.TempDir(), "portindex")
-	require.NoError(t, os.WriteFile(indexer, []byte(`#!/bin/sh
+	testsupport.WriteExecutable(t, indexer, `#!/bin/sh
 set -eu
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -225,7 +226,7 @@ while [ "$#" -gt 0 ]; do
 done
 cp "$source_root/.fixture-index" "$destination/PortIndex"
 printf 'core 0\n' > "$destination/PortIndex.quick"
-`), 0700))
+`)
 	var materialized string
 	reader := evaluationFunc(func(ctx context.Context, target macports.Context) (macports.Snapshot, error) {
 		materialized = target.Root()

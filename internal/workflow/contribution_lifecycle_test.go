@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/herbygillot/dockhand/internal/workflow/preparation"
 	"github.com/stretchr/testify/require"
@@ -437,7 +438,7 @@ func refuseRefDeletion(t *testing.T, remote string) func() {
 	hook := filepath.Join(remote, "hooks", "pre-receive")
 	script := "#!/bin/sh\nzero=0000000000000000000000000000000000000000\nwhile read old new ref; do\n\tif [ \"$new\" = \"$zero\" ]; then\n\t\techo \"deleting $ref is refused\" >&2\n\t\texit 1\n\tfi\ndone\n"
 	require.NoError(t, os.MkdirAll(filepath.Dir(hook), 0o755))
-	require.NoError(t, os.WriteFile(hook, []byte(script), 0o755))
+	testsupport.WriteExecutable(t, hook, script)
 	return func() { require.NoError(t, os.Remove(hook)) }
 }
 

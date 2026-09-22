@@ -38,6 +38,7 @@ dockhand2/
       tart/              # Concrete Tart verification provider
       github/            # Fork Actions verification and SDK adapter
     atomicfile/          # Durable replacement of small local files
+    testsupport/         # Helpers that several packages' tests share
     archive/             # Tar and zip member walks without host extraction
     macos/               # OS/toolchain facts, operations, and launchd plist rendering; the release table is reference data and holds no build policy
     tart/                # Shared local Tart commands, runtime paths, images, and coordination
@@ -178,6 +179,7 @@ Desired revision, expected remote head, PR title/body, and observed forge state 
 - `filelock` depends only on the standard library and coordinates external resources without authorizing state changes.
 - `tart` owns runtime resolution, CLI invocation, image metadata, naming, and coordination. `tart/host` consumes it for concrete VM lifecycle and guest transport, with macOS launchd rendering and atomic file replacement. `tart/provision` owns recipes, SSH bootstrap, readiness deadlines, and validation. None imports verification, workflow, or state.
 - `atomicfile` depends only on the standard library. It replaces small files durably; callers retain naming, cache policy, and lifecycle ownership.
+- `testsupport` depends on the standard library and testify, and only tests import it. It holds helpers several packages' tests share, such as `WriteExecutable` for stand-in programs; a helper one package uses stays in that package's tests.
 - `forge` defines remote facts and access contracts using shared records and the standard library. It imports no capability or concrete adapter.
 - `github` owns shared authentication and SDK transport, depending on `credential` and `forge` errors. `forge/github` depends on that client, `forge`, `record`, and Git validation mechanics; `forge/gitlab` depends on `forge`, Git validation mechanics, and the GitLab SDK. Neither adapter imports `upstream`, `publish`, nor `macports`.
 - `macports/source` depends on evaluated MacPorts metadata and Tcl value decoding. It imports no forge adapter or upstream policy.

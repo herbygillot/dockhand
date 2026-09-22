@@ -18,6 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/stretchr/testify/require"
@@ -216,7 +217,7 @@ mkdir -p "$out"
 printf 'fixture 45\nportdir devel/fixture name fixture version 1\n' > "$out/PortIndex"
 printf 'fixture 0\n' > "$out/PortIndex.quick"
 `
-	writeExecutable(t, path, script)
+	testsupport.WriteExecutable(t, path, script)
 	return path
 }
 

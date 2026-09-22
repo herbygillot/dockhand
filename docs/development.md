@@ -12,6 +12,8 @@ The module requires Go 1.27.1 or newer. Dependencies are vendored: the `vendor` 
 
 The syntax package has `FuzzParse` and `FuzzSplitList` targets; their seed cases run in ordinary tests.
 
+Tests that stand in for an external tool, a fake `tart`, `git`, `gh`, or `portindex`, write it with `testsupport.WriteExecutable`, never with `os.WriteFile` and an executable mode. Tests run in parallel and start commands constantly; a child forked while the program is still open for writing keeps a copy of the descriptor until it execs, and running the program then fails with "text file busy". The helper writes while holding `syscall.ForkLock`, so no fork can start in that window. A script that only an interpreter reads, such as a Tcl file passed to `tclsh`, does not need it.
+
 ## Real VM acceptance test
 
 The opt-in real VM acceptance test requires macOS with a GUI login domain, Tart, a prepared local image with the Tart guest agent, passwordless guest sudo, MacPorts with Tcl JSON support, and no installed ports. It creates a disposable clone and preserves host diagnostics. It proves that one driver process can submit and exit and another process can settle and release the same run:

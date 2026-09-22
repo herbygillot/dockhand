@@ -10,13 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
 func script(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "tool")
-	require.NoError(t, os.WriteFile(path, []byte("#!/bin/sh\n"+body), 0700))
+	testsupport.WriteExecutable(t, path, "#!/bin/sh\n"+body)
 	return path
 }
 

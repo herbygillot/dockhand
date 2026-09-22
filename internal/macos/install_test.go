@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,7 +19,7 @@ func TestXcodeExpansionStagesArchiveBesideItsOutput(t *testing.T) {
 	require.NoError(t, os.WriteFile(archive, []byte("fixture"), 0600))
 	xip := filepath.Join(root, "xip")
 	// xip expands beside its input archive, which need not be the caller's cwd.
-	require.NoError(t, os.WriteFile(xip, []byte("#!/bin/sh\nset -eu\nmkdir -p \"$(dirname \"$2\")/Xcode.app\"\n"), 0700))
+	testsupport.WriteExecutable(t, xip, "#!/bin/sh\nset -eu\nmkdir -p \"$(dirname \"$2\")/Xcode.app\"\n")
 	err := InstallXcode(t.Context(), func(ctx context.Context, _ io.Reader, args ...string) ([]byte, error) {
 		script, _, ok := strings.Cut(args[2], "sudo -n /bin/rm -rf /Applications/Xcode.app")
 		require.True(t, ok)

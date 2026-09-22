@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -14,6 +13,7 @@ import (
 	forgegithub "github.com/herbygillot/dockhand/internal/forge/github"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -46,7 +46,7 @@ func TestSystemCredentialsPreferEnvironmentAndReuseGitHubCLI(t *testing.T) {
 		t.Setenv("GITHUB_TOKEN", "")
 		dir := t.TempDir()
 		executable := filepath.Join(dir, "gh")
-		require.NoError(t, os.WriteFile(executable, []byte("#!/bin/sh\n[ \"$1 $2 $3 $4\" = \"auth token --hostname github.com\" ] || exit 2\nprintf fixture-from-gh\n"), 0700))
+		testsupport.WriteExecutable(t, executable, "#!/bin/sh\n[ \"$1 $2 $3 $4\" = \"auth token --hostname github.com\" ] || exit 2\nprintf fixture-from-gh\n")
 		t.Setenv("PATH", dir)
 		token, err := (github.SystemCredentials{}).Token(t.Context())
 		require.NoError(t, err)
@@ -57,7 +57,7 @@ func TestSystemCredentialsPreferEnvironmentAndReuseGitHubCLI(t *testing.T) {
 		t.Setenv("GITHUB_TOKEN", "")
 		dir := t.TempDir()
 		executable := filepath.Join(dir, "gh")
-		require.NoError(t, os.WriteFile(executable, []byte("#!/bin/sh\nprintf credential-from-gh\n"), 0700))
+		testsupport.WriteExecutable(t, executable, "#!/bin/sh\nprintf credential-from-gh\n")
 		t.Setenv("PATH", dir)
 		source := github.SystemCredentials{Store: savedCredential{secret: "credential-from-keychain"}, Key: credential.Key{Service: "fixture", Account: "github.com"}}
 		token, err := source.Token(t.Context())
@@ -153,7 +153,7 @@ func TestRejectedCredentialsIdentifySourceWithoutFallback(t *testing.T) {
 			dir := t.TempDir()
 			marker := filepath.Join(dir, "gh-called")
 			t.Setenv("GH_MARKER", marker)
-			require.NoError(t, os.WriteFile(filepath.Join(dir, "gh"), []byte("#!/bin/sh\nprintf called > \"$GH_MARKER\"\nprintf private-token\n"), 0700))
+			testsupport.WriteExecutable(t, filepath.Join(dir, "gh"), "#!/bin/sh\nprintf called > \"$GH_MARKER\"\nprintf private-token\n")
 			t.Setenv("PATH", dir)
 			saved := savedCredential{secret: secret}
 			switch source {

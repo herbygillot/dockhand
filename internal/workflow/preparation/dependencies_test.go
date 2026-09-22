@@ -9,13 +9,13 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/record"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,7 +34,7 @@ func manifestArchive(t *testing.T, name, manifest, version string) []byte {
 func dependencyHelper(t *testing.T, body string) string {
 	t.Helper()
 	file := filepath.Join(t.TempDir(), "dependency helper")
-	require.NoError(t, os.WriteFile(file, []byte("#!/bin/sh\nset -eu\n"+body+"\n"), 0700))
+	testsupport.WriteExecutable(t, file, "#!/bin/sh\nset -eu\n"+body+"\n")
 	return file
 }
 func TestGoDependencyPreparation(t *testing.T) {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -104,7 +105,7 @@ func TestBranchLockSurvivesDriverExitWhileGitStillRuns(t *testing.T) {
 	started, gate := filepath.Join(root, "started"), filepath.Join(root, "gate")
 	wrapper := filepath.Join(root, "git-wrapper")
 	script := "#!/bin/sh\n: > " + quote(started) + "\nwhile [ ! -f " + quote(gate) + " ]; do /bin/sleep 0.025; done\nexec " + quote(executable) + " \"$@\"\n"
-	require.NoError(t, os.WriteFile(wrapper, []byte(script), 0700))
+	testsupport.WriteExecutable(t, wrapper, script)
 	t.Cleanup(func() { os.WriteFile(gate, nil, 0600) })
 	child := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestBranchLockChild$")
 	child.Env = append(os.Environ(), "DOCKHAND_BRANCH_LOCK_CHILD="+root, "DOCKHAND_BRANCH_LOCK_GIT="+wrapper)

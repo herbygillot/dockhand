@@ -16,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/herbygillot/dockhand/internal/verify"
 	providertart "github.com/herbygillot/dockhand/internal/verify/tart"
 	"github.com/stretchr/testify/require"
@@ -62,7 +63,7 @@ func configureReuseImage(t *testing.T, config *app.Config) {
 	config.Tart.Home = t.TempDir()
 	config.Tart.Image = "base"
 	config.Tart.Executable = filepath.Join(t.TempDir(), "tart")
-	require.NoError(t, os.WriteFile(config.Tart.Executable, []byte("#!/bin/sh\n[ \"$1\" = list ] || exit 1\nprintf '%s\\n' '[{\"Name\":\"base\",\"Source\":\"local\",\"State\":\"stopped\"}]'\n"), 0700))
+	testsupport.WriteExecutable(t, config.Tart.Executable, "#!/bin/sh\n[ \"$1\" = list ] || exit 1\nprintf '%s\\n' '[{\"Name\":\"base\",\"Source\":\"local\",\"State\":\"stopped\"}]'\n")
 	image := filepath.Join(config.Tart.Home, "vms", "base")
 	require.NoError(t, os.MkdirAll(image, 0700))
 	for _, name := range []string{"config.json", "disk.img", "nvram.bin"} {
@@ -129,7 +130,7 @@ func TestVerifyCLISelectsSetupImageWhenImageIsOmitted(t *testing.T) {
 	require.NoError(t, os.Rename(filepath.Join(config.Tart.Home, "vms", "base"), filepath.Join(config.Tart.Home, "vms", name)))
 	script, err := os.ReadFile(config.Tart.Executable)
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(config.Tart.Executable, []byte(strings.ReplaceAll(string(script), "base", name)), 0700))
+	testsupport.WriteExecutable(t, config.Tart.Executable, strings.ReplaceAll(string(script), "base", name))
 	config.Tart.Image = ""
 	seedCLIVerification(t, config, "candidate")
 	var stdout, stderr bytes.Buffer

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -129,7 +129,7 @@ func publicationCLI(t *testing.T, config *app.Config, repo *git.Repository, sour
 	quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
 	config.GitExecutable = filepath.Join(t.TempDir(), "git-fixture")
 	script := "#!/bin/bash\nargs=()\nfor arg in \"$@\"; do\nif [ \"$arg\" = " + quote(remoteURL) + " ]; then arg=" + quote(remote) + "; fi\nargs+=(\"$arg\")\ndone\nexec " + quote(gitPath) + " \"${args[@]}\"\n"
-	require.NoError(t, os.WriteFile(config.GitExecutable, []byte(script), 0700))
+	testsupport.WriteExecutable(t, config.GitExecutable, script)
 	forge := &fakeGitHub{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		forge.mu.Lock()

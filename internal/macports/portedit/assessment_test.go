@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -63,7 +64,7 @@ func TestAssessmentReportsMissingHelperWithoutRunningIt(t *testing.T) {
 	require.Equal(t, "missing-helper", assessmentFinding(t, result, "helper").Code)
 	helper := filepath.Join(t.TempDir(), "helper")
 	marker := filepath.Join(t.TempDir(), "executed")
-	require.NoError(t, os.WriteFile(helper, []byte("#!/bin/sh\ntouch '"+marker+"'\nexit 1\n"), 0700))
+	testsupport.WriteExecutable(t, helper, "#!/bin/sh\ntouch '"+marker+"'\nexit 1\n")
 	p.editor.DependencyTools.Go2Port = helper
 	result, err = p.Assess(t.Context(), nil)
 	require.NoError(t, err)

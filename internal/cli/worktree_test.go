@@ -5,6 +5,7 @@ import (
 	"context"
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 	"os"
 	"os/exec"
@@ -38,7 +39,7 @@ func TestVerifyCLISelectsExplicitWorkingTreeOrBranch(t *testing.T) {
 			config.Tart.Home = t.TempDir()
 			config.Tart.Image = "base"
 			config.Tart.Executable = filepath.Join(t.TempDir(), "tart")
-			require.NoError(t, os.WriteFile(config.Tart.Executable, []byte("#!/bin/sh\n[ \"$1\" = list ] || exit 1\nprintf '%s\\n' '[{\"Name\":\"base\",\"Source\":\"local\",\"State\":\"stopped\"}]'\n"), 0700))
+			testsupport.WriteExecutable(t, config.Tart.Executable, "#!/bin/sh\n[ \"$1\" = list ] || exit 1\nprintf '%s\\n' '[{\"Name\":\"base\",\"Source\":\"local\",\"State\":\"stopped\"}]'\n")
 			image := filepath.Join(config.Tart.Home, "vms", "base")
 			require.NoError(t, os.MkdirAll(image, 0700))
 			for _, name := range []string{"config.json", "disk.img", "nvram.bin"} {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,7 +20,7 @@ func TestAgentRegistrationRequiresObservedService(t *testing.T) {
 		t.Run(scenario, func(t *testing.T) {
 			root := t.TempDir()
 			launch := filepath.Join(root, "launchctl")
-			require.NoError(t, os.WriteFile(launch, []byte(`#!/bin/sh
+			testsupport.WriteExecutable(t, launch, `#!/bin/sh
 set -eu
 printf '%s\n' "$*" >> "$FIXTURE/events"
 key=$(printf '%s' "$2" | tr / _)
@@ -36,7 +37,7 @@ if [ "$SCENARIO" = refused ]; then echo 'fixture permission failure' >&2; exit 5
 if [ "$SCENARIO" = bootstrap-125 ] && [ ! -f "$FIXTURE/tried-$key" ]; then touch "$FIXTURE/tried-$key"; exit 125; fi
 label=$(basename "$3" .plist)
 touch "$FIXTURE/loaded-${key}_${label}"
-`), 0700))
+`)
 			script := strings.ReplaceAll(agentRegistrationScript(), "sudo -n /bin/launchctl", "\""+launch+"\"")
 			script = strings.ReplaceAll(script, "/bin/launchctl", "\""+launch+"\"")
 			script = strings.ReplaceAll(script, "/bin/sleep 1", ":")

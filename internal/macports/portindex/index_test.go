@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,7 +33,7 @@ func TestPortIndexMirrorURL(t *testing.T) {
 func TestResolveToolProbesRuntimeOnlyForTclLaunchers(t *testing.T) {
 	t.Parallel()
 	stub := filepath.Join(t.TempDir(), "portindex")
-	require.NoError(t, os.WriteFile(stub, []byte("#!/bin/sh\nexit 0\n"), 0700))
+	testsupport.WriteExecutable(t, stub, "#!/bin/sh\nexit 0\n")
 	config, err := ResolveTool(t.Context(), Config{Executable: stub})
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(config.Digest, "sha256:"))

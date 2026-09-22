@@ -7,6 +7,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/credential/keychain"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -36,7 +37,7 @@ delete-generic-password)
 *) exit 2 ;;
 esac
 `
-	require.NoError(t, os.WriteFile(executable, []byte(script), 0700))
+	testsupport.WriteExecutable(t, executable, script)
 	store := keychain.Store{Executable: executable}
 	key := credential.Key{Service: "fixture.service", Account: "github.com"}
 	_, err := store.Get(t.Context(), key)
@@ -59,7 +60,7 @@ esac
 
 func TestStoreDistinguishesKeychainFailuresFromMissingItems(t *testing.T) {
 	executable := filepath.Join(t.TempDir(), "security")
-	require.NoError(t, os.WriteFile(executable, []byte("#!/bin/sh\nexit 2\n"), 0700))
+	testsupport.WriteExecutable(t, executable, "#!/bin/sh\nexit 2\n")
 	_, err := (keychain.Store{Executable: executable}).Get(t.Context(), credential.Key{Service: "fixture", Account: "github.com"})
 	require.Error(t, err)
 	require.NotErrorIs(t, err, credential.ErrNotFound)

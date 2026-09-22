@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/stretchr/testify/require"
 )
@@ -25,7 +26,7 @@ func TestImageDigestTracksContentDespiteRestoredModificationTime(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(vm, name), []byte("original"), 0600))
 	}
 	executable := filepath.Join(root, "tart")
-	writeExecutable(t, executable, `#!/bin/sh
+	testsupport.WriteExecutable(t, executable, `#!/bin/sh
 printf '%s\n' '[{"Name":"base","Source":"local","State":"stopped"}]'
 `)
 	p := &Provider{Config: Config{Home: root, Image: "base", ArtifactDirectory: filepath.Join(root, "artifacts"), Executable: executable, Platform: testPlatform}}
@@ -197,7 +198,7 @@ func TestRunningMarkerDoesNotHideExitedGuestRunner(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	executable := filepath.Join(root, "tart")
-	writeExecutable(t, executable, `#!/bin/sh
+	testsupport.WriteExecutable(t, executable, `#!/bin/sh
 case "$1" in
 list) printf '%s\n' '[{"Name":"vm","Source":"local","State":"running"}]' ;;
 exec)
@@ -230,7 +231,7 @@ exec)
  esac ;;
 esac
 `
-			writeExecutable(t, executable, script)
+			testsupport.WriteExecutable(t, executable, script)
 			n := newNative(Config{Home: root, Executable: executable}, nil, nil, nil)
 			result, err := n.Inspect(t.Context(), "vm")
 			require.NoError(t, err)

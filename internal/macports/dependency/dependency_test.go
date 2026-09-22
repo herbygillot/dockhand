@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,7 +35,7 @@ func sourceArchive(t *testing.T, files map[string]string) string {
 func helper(t *testing.T, body string) string {
 	t.Helper()
 	file := filepath.Join(t.TempDir(), "helper with spaces")
-	require.NoError(t, os.WriteFile(file, []byte("#!/bin/sh\nset -eu\n"+body+"\n"), 0700))
+	testsupport.WriteExecutable(t, file, "#!/bin/sh\nset -eu\n"+body+"\n")
 	return file
 }
 func outputHelper(t *testing.T, body string) string {

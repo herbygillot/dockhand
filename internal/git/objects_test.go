@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -41,7 +42,7 @@ func TestCommitTreesBatchesAndValidatesImmutableInputs(t *testing.T) {
 			log := filepath.Join(root, "calls")
 			wrapper := filepath.Join(root, "git-wrapper")
 			script := "#!/bin/sh\nprintf 'call\n' >> " + quote(log) + "\nexec " + quote(executable) + " \"$@\"\n"
-			require.NoError(t, os.WriteFile(wrapper, []byte(script), 0o700))
+			testsupport.WriteExecutable(t, wrapper, script)
 			repo.Executable = wrapper
 			trees, err := repo.CommitTrees(t.Context(), []string{commits[1], commits[0], commits[1]})
 			require.NoError(t, err)
@@ -75,7 +76,7 @@ func TestCommitTreesRejectsMalformedBatchResponses(t *testing.T) {
 		commit + " commit\nmissing tree\n",
 		commit + " commit\n" + tree + " blob\n",
 	} {
-		require.NoError(t, os.WriteFile(wrapper, []byte("#!/bin/sh\ncat >/dev/null\nprintf '%s' "+quote(output)+"\n"), 0o700))
+		testsupport.WriteExecutable(t, wrapper, "#!/bin/sh\ncat >/dev/null\nprintf '%s' "+quote(output)+"\n")
 		result, err := repo.CommitTrees(t.Context(), []string{commit})
 		require.Error(t, err)
 		require.Nil(t, result)

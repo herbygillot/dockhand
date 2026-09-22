@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -29,14 +30,14 @@ func TestAPFSSpaceChecksCapacityAndPreservesResizeErrors(t *testing.T) {
 			df := filepath.Join(root, "df")
 			disk := filepath.Join(root, "diskutil")
 			require.NoError(t, os.WriteFile(state, []byte(tc.initial), 0600))
-			require.NoError(t, os.WriteFile(df, []byte("#!/bin/sh\nprintf 'Filesystem Size Used Available\\nfixture 100 20 %s\\n' \"$(cat \"$TEST_SPACE\")\"\n"), 0700))
-			require.NoError(t, os.WriteFile(disk, []byte(`#!/bin/sh
+			testsupport.WriteExecutable(t, df, "#!/bin/sh\nprintf 'Filesystem Size Used Available\\nfixture 100 20 %s\\n' \"$(cat \"$TEST_SPACE\")\"\n")
+			testsupport.WriteExecutable(t, disk, `#!/bin/sh
 printf '%s\n' "$*" >> "$TEST_CALLS"
 if [ "$1" = apfs ]; then
  printf '%s' "$TEST_AFTER" > "$TEST_SPACE"
  if [ "$TEST_FAIL" = yes ]; then echo 'fixture: resize unavailable' >&2; exit 1; fi
 fi
-`), 0700))
+`)
 			var output []byte
 			err := EnsureAPFSSpace(t.Context(), func(ctx context.Context, _ io.Reader, args ...string) ([]byte, error) {
 				script := strings.ReplaceAll(args[2], "/bin/df", `"$TEST_DF"`)

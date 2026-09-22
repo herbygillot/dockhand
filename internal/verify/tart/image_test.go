@@ -13,6 +13,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -61,7 +62,7 @@ func imageFixture(t *testing.T) string {
 	for _, name := range []string{"config.json", "disk.img", "nvram.bin"} {
 		require.NoError(t, os.WriteFile(filepath.Join(root, "vms", "base", name), []byte("original"), 0600))
 	}
-	writeExecutable(t, filepath.Join(root, "tart"), "#!/bin/sh\nprintf '%s\\n' '[{\"Name\":\"base\",\"Source\":\"local\",\"State\":\"stopped\"}]'\n")
+	testsupport.WriteExecutable(t, filepath.Join(root, "tart"), "#!/bin/sh\nprintf '%s\\n' '[{\"Name\":\"base\",\"Source\":\"local\",\"State\":\"stopped\"}]'\n")
 	return root
 }
 func imageProcess(t *testing.T, root string) *exec.Cmd {
@@ -218,7 +219,7 @@ func TestImageAvailabilityErrorsAreSpecific(t *testing.T) {
 			case "missing binary":
 				p.Config.Executable = filepath.Join(root, "missing-tart")
 			case "running image":
-				writeExecutable(t, filepath.Join(root, "tart"), "#!/bin/sh\nprintf '%s\\n' '[{\"Name\":\"base\",\"Source\":\"local\",\"State\":\"running\"}]'\n")
+				testsupport.WriteExecutable(t, filepath.Join(root, "tart"), "#!/bin/sh\nprintf '%s\\n' '[{\"Name\":\"base\",\"Source\":\"local\",\"State\":\"running\"}]'\n")
 			case "missing disk":
 				require.NoError(t, os.Remove(filepath.Join(root, "vms", "base", "disk.img")))
 			}

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/tart"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -13,7 +14,7 @@ func fixtureMachine(t *testing.T, script string) Machine {
 	t.Helper()
 	root := t.TempDir()
 	executable := filepath.Join(root, "tart")
-	require.NoError(t, os.WriteFile(executable, []byte("#!/bin/sh\nset -eu\n"+script), 0700))
+	testsupport.WriteExecutable(t, executable, "#!/bin/sh\nset -eu\n"+script)
 	return Machine{Client: tart.Client{Executable: executable, Home: root}}
 }
 

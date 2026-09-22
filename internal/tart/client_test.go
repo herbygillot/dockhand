@@ -2,16 +2,16 @@ package tart
 
 import (
 	"bytes"
-	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
 func TestClientAppliesTartEnvironmentAndStreamsOutput(t *testing.T) {
 	executable := filepath.Join(t.TempDir(), "tart")
-	require.NoError(t, os.WriteFile(executable, []byte("#!/bin/sh\nprintf '%s\\n' \"$TART_HOME:$TART_NO_AUTO_PRUNE:$LC_ALL:$1\"\n"), 0700))
+	testsupport.WriteExecutable(t, executable, "#!/bin/sh\nprintf '%s\\n' \"$TART_HOME:$TART_NO_AUTO_PRUNE:$LC_ALL:$1\"\n")
 	var streamed bytes.Buffer
 	output, err := (Client{Executable: executable, Home: "/tart/home"}).Run(t.Context(), RunOptions{Output: &streamed}, "list")
 	require.NoError(t, err)
@@ -21,7 +21,7 @@ func TestClientAppliesTartEnvironmentAndStreamsOutput(t *testing.T) {
 
 func TestClientCombinedOutputRetainsCommandFailure(t *testing.T) {
 	executable := filepath.Join(t.TempDir(), "tart")
-	require.NoError(t, os.WriteFile(executable, []byte("#!/bin/sh\necho stdout\necho stderr >&2\nexit 7\n"), 0700))
+	testsupport.WriteExecutable(t, executable, "#!/bin/sh\necho stdout\necho stderr >&2\nexit 7\n")
 	output, err := (Client{Executable: executable, Home: t.TempDir()}).Run(t.Context(), RunOptions{Combined: true}, "clone")
 	require.ErrorContains(t, err, "tart clone")
 	require.Contains(t, string(output), "stdout")
