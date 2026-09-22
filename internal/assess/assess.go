@@ -62,6 +62,50 @@ type Port struct {
 	portedit.Assessment
 }
 
+// Headline is the plain word for a port's outcome; the code itself stays in
+// JSON.
+func (p Port) Headline() string {
+	switch p.Outcome {
+	case portedit.InputFound:
+		return "ready"
+	case portedit.CandidateChecked:
+		return "candidate ready"
+	}
+	return p.Outcome
+}
+
+// Tally counts a result's ports by outcome, so a caller reads the verdict
+// from the result rather than from the editor's constants.
+type Tally struct {
+	Ready, CandidateReady, Blocked, Unsupported, Unknown int
+}
+
+// Tally counts the ports by outcome.
+func (r Result) Tally() Tally {
+	var tally Tally
+	for _, port := range r.Ports {
+		switch port.Outcome {
+		case portedit.InputFound:
+			tally.Ready++
+		case portedit.CandidateChecked:
+			tally.CandidateReady++
+		case portedit.Blocked:
+			tally.Blocked++
+		case portedit.Unsupported:
+			tally.Unsupported++
+		default:
+			tally.Unknown++
+		}
+	}
+	return tally
+}
+
+// Incomplete reports whether any port is blocked, unsupported, or unknown:
+// the assessment did not reach a ready verdict for every port.
+func (t Tally) Incomplete() bool {
+	return t.Blocked+t.Unsupported+t.Unknown > 0
+}
+
 // Service receives evaluation, source selection, and optional release integrations.
 type Service struct {
 	Repo            *git.Repository

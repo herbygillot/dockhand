@@ -7,7 +7,6 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/assess"
-	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/spf13/cobra"
 )
 
@@ -43,12 +42,7 @@ func (r *runtime) assessCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			incomplete := false
-			counts := map[string]int{}
-			for _, port := range result.Ports {
-				counts[port.Outcome]++
-				incomplete = incomplete || port.Outcome == portedit.Blocked || port.Outcome == portedit.Unsupported || port.Outcome == portedit.Unknown
-			}
+			tally := result.Tally()
 			if r.json {
 				err = r.emit(result)
 			} else {
@@ -57,7 +51,7 @@ func (r *runtime) assessCommand() *cobra.Command {
 					fmt.Fprintln(cmd.OutOrStdout(), "No ports matched the selectors.")
 				}
 				for _, port := range result.Ports {
-					fmt.Fprintf(cmd.OutOrStdout(), "%s: %s", plain(port.Selector), assessmentWord(port.Outcome))
+					fmt.Fprintf(cmd.OutOrStdout(), "%s: %s", plain(port.Selector), port.Headline())
 					if port.CurrentVersion != "" {
 						fmt.Fprintf(cmd.OutOrStdout(), "; current %s", plain(port.CurrentVersion))
 					}
@@ -83,19 +77,19 @@ func (r *runtime) assessCommand() *cobra.Command {
 						fmt.Fprintf(cmd.OutOrStdout(), "  %s: %s; %s\n", finding.Check, finding.Status, plain(finding.Detail))
 					}
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "Assessed %d: %d ready, %d candidate ready, %d blocked, %d unsupported, %d unknown.", len(result.Ports), counts[portedit.InputFound], counts[portedit.CandidateChecked], counts[portedit.Blocked], counts[portedit.Unsupported], counts[portedit.Unknown])
+				fmt.Fprintf(cmd.OutOrStdout(), "Assessed %d: %d ready, %d candidate ready, %d blocked, %d unsupported, %d unknown.", len(result.Ports), tally.Ready, tally.CandidateReady, tally.Blocked, tally.Unsupported, tally.Unknown)
 				if result.Skipped > 0 {
 					fmt.Fprintf(cmd.OutOrStdout(), " %d already in the journal.", result.Skipped)
 				}
 				fmt.Fprintln(cmd.OutOrStdout())
-				if counts[portedit.Unsupported] > 0 {
+				if tally.Unsupported > 0 {
 					fmt.Fprintln(cmd.OutOrStdout(), "An unsupported port can still be updated by hand on a branch and adopted with dockhand adopt <branch>, which verifies and publishes it.")
 				}
 			}
 			if err != nil {
 				return err
 			}
-			if incomplete {
+			if tally.Incomplete() {
 				return fmt.Errorf("some preparation assessments are blocked, unsupported, or unknown; see the per-port results")
 			}
 			return nil
@@ -110,16 +104,4 @@ func (r *runtime) assessCommand() *cobra.Command {
 	cmd.Flags().StringVar(&journalPath, "journal", "", "Append one JSON line per port to this file as each finishes; a rerun with the same file skips the ports it holds, so an interrupted run continues")
 	_ = cmd.MarkFlagFilename("journal", "jsonl")
 	return cmd
-}
-
-// assessmentWord is the plain headline for an assessment outcome; the code
-// itself stays in JSON.
-func assessmentWord(outcome string) string {
-	switch outcome {
-	case portedit.InputFound:
-		return "ready"
-	case portedit.CandidateChecked:
-		return "candidate ready"
-	}
-	return outcome
 }

@@ -16,7 +16,7 @@ func TestCommandPackageDependencies(t *testing.T) {
 	pkg, err := build.Default.ImportDir(".", 0)
 	require.NoError(t, err)
 	const prefix = "github.com/herbygillot/dockhand/internal/"
-	allowed := map[string]bool{"app": true, "assess": true, "credential": true, "git": true, "github": true, "macos": true, "macports": true, "macports/portedit": true, "macports/version": true, "scratch": true, "outdated": true, "progress": true, "publish": true, "record": true, "state": true, "tui": true, "upstream": true, "verify": true, "version": true, "workflow": true, "workflow/view": true}
+	allowed := map[string]bool{"app": true, "assess": true, "credential": true, "git": true, "github": true, "macos": true, "macports": true, "macports/version": true, "scratch": true, "outdated": true, "progress": true, "publish": true, "record": true, "state": true, "tui": true, "verify": true, "version": true, "workflow": true, "workflow/view": true}
 	for _, path := range pkg.Imports {
 		if strings.HasPrefix(path, "github.com/herbygillot/dockhand/") {
 			require.True(t, strings.HasPrefix(path, prefix) && allowed[strings.TrimPrefix(path, prefix)], "cli must not import a verification provider or another concrete integration: %s", path)

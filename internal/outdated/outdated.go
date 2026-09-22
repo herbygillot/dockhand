@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
@@ -26,6 +27,24 @@ type Result struct {
 type Port struct {
 	Selector string
 	upstream.Result
+}
+
+// Headline is the plain wording of a port's assessment; the code itself
+// stays in JSON.
+func (p Port) Headline() string {
+	return strings.ReplaceAll(string(p.Assessment), "-", " ")
+}
+
+// Incomplete reports whether any port's observation is unknown, so a caller
+// reads the verdict from the result rather than from the catalog's
+// constants.
+func (r Result) Incomplete() bool {
+	for _, port := range r.Ports {
+		if port.Assessment == upstream.Unknown {
+			return true
+		}
+	}
+	return false
 }
 
 // Service observes committed ports using caller-supplied integrations and cache

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"maps"
 	"net/http"
@@ -344,4 +345,11 @@ func subjectOnto(ctx context.Context, repo *git.Repository, source record.Source
 		return after, nil
 	}
 	return first, nil
+}
+
+// IsUnsupported reports whether a preparation failed because the editor does
+// not handle the Portfile's shape, the case a person finishes by hand and
+// adopts, rather than because something went wrong.
+func IsUnsupported(err error) bool {
+	return errors.Is(err, portedit.ErrUnsupported)
 }

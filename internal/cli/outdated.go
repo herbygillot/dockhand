@@ -3,11 +3,9 @@ package cli
 import (
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/progress"
-	"strings"
 
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/outdated"
-	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/spf13/cobra"
 )
 
@@ -23,10 +21,6 @@ func (r *runtime) outdatedCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			unknown := false
-			for _, port := range result.Ports {
-				unknown = unknown || port.Assessment == upstream.Unknown
-			}
 			if r.json {
 				err = r.emit(result)
 			} else {
@@ -35,7 +29,7 @@ func (r *runtime) outdatedCommand() *cobra.Command {
 					fmt.Fprintln(cmd.OutOrStdout(), "No ports matched the selectors.")
 				}
 				for _, port := range result.Ports {
-					fmt.Fprintf(cmd.OutOrStdout(), "%s: %s", plain(port.Selector), strings.ReplaceAll(string(port.Assessment), "-", " "))
+					fmt.Fprintf(cmd.OutOrStdout(), "%s: %s", plain(port.Selector), port.Headline())
 					if port.CurrentVersion != "" {
 						fmt.Fprintf(cmd.OutOrStdout(), "; current %s", plain(port.CurrentVersion))
 					}
@@ -51,7 +45,7 @@ func (r *runtime) outdatedCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if unknown {
+			if result.Incomplete() {
 				return fmt.Errorf("some upstream observations are unknown; see the per-port results")
 			}
 			return nil
