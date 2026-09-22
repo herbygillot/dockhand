@@ -374,17 +374,21 @@ that too.
 2. The `Resolution` value and `Engine.Resolve` in `workflow`, with the
    four kinds, the degraded path, the offline refusal, and the no-store
    path each under test, and `PreparationInput` folded in. No consumer
-   changes yet.
+   changes yet. Landed 2026-09-22.
 3. `Engine.BindPreparation` takes a resolution; `app.BindPreparation`
    resolves and hands it over; the continuation tests in `cli` and
-   `workflow` are the acceptance test.
+   `workflow` are the acceptance test. Landed 2026-09-22.
 4. Preview resolves under `Preview`; the change to what a preview of a
    port mid-bump shows, and its wording, is its own commit with its own
-   test.
+   test. Landed 2026-09-22.
 5. `BindVerification`'s selector becomes a Continue resolution under
    `Lookup` and `Require`, with the current-branch default filled before
-   resolving.
-6. `BindCorrection` reuses step 3's lookup for its contribution.
+   resolving. Landed 2026-09-22: an action that prepares no update
+   resolves to the contribution as recorded, so the two flags are
+   implied for it.
+6. `BindCorrection` reuses step 3's lookup for its contribution. Landed
+   2026-09-22; the five landings are in one
+   [note](activity/2026-09-22-resolution-landed.md).
 7. Then, and only then, the question whether the four bindings and
    `Resolve` lift into `workflow/intake` as a leaf that takes the store,
    the repository, the evaluator, and the forge as values and hands the
