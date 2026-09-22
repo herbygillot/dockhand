@@ -87,7 +87,10 @@ var unverifiedPublicationSchema string
 //go:embed migrations/023.sql
 var keepBodySchema string
 
-const schemaVersion = 23
+//go:embed migrations/024.sql
+var sharedFilesSchema string
+
+const schemaVersion = 24
 const applicationID = 0x44484e44
 
 type Options struct {
@@ -304,6 +307,7 @@ func migrations() []schemaMigration {
 		{version: 21, schema: observationScheduleSchema},
 		{version: 22, schema: unverifiedPublicationSchema},
 		{version: 23, schema: keepBodySchema},
+		{version: 24, schema: sharedFilesSchema},
 	}
 }
 

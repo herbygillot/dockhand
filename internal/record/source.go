@@ -79,6 +79,20 @@ type Revision struct {
 	Previous  RevisionID
 	Source    Source
 	CreatedAt time.Time
+	// Shared lists the files under _resources this revision changes beside
+	// its port, each with the Portfiles and PortGroups that load it, so
+	// what verification of the one port does not cover is on record.
+	Shared []SharedFile `json:",omitempty"`
+}
+
+// SharedFile is a file under _resources a contribution changes, and the
+// paths that load it at the contribution's tree: Portfiles for the ports
+// and group files for the PortGroups. A file that is not a PortGroup, a
+// livecheck or fetch definition for instance, is read by every port's
+// evaluation and lists no loaders.
+type SharedFile struct {
+	Path    string
+	Loaders []string `json:",omitempty"`
 }
 
 // Artifact identifies externally stored build output, input, or logs.

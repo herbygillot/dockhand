@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/git/changeset"
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
@@ -168,7 +169,11 @@ func (s *Service) PlanTo(ctx context.Context, change record.Change, source recor
 	if err := s.Repo.CheckContributionBase(ctx, destination.BaseURL, destination.BaseBranch, string(source.Base), string(source.Commit)); err != nil {
 		return spec, err
 	}
-	content.Body = publicationBody(content, change, source, evidence)
+	shared, err := changeset.SharedUsers(ctx, s.Repo, source)
+	if err != nil {
+		return spec, err
+	}
+	content.Body = publicationBody(content, change, source, evidence, shared)
 	spec = record.PublicationSpec{Forge: destination.Forge, Repository: destination.Repository, HeadRepository: destination.HeadRepository, BaseBranch: destination.BaseBranch, PushURL: destination.PushURL, BaseURL: destination.BaseURL, LockDirectory: destination.LockDirectory, LocalBranch: change.Branch, HeadBranch: change.Branch, EvidenceAttempt: evidence.ID, Unverified: evidence.ID == "", Desired: content}
 	if associated != nil {
 		if associated.Ref.Forge != spec.Forge || associated.Ref.Repository != spec.Repository || associated.HeadRepository != spec.HeadRepository || associated.BaseBranch != spec.BaseBranch {

@@ -87,7 +87,7 @@ func (e *Engine) Reassociate(ctx context.Context, id record.ChangeID, branch str
 				return fmt.Errorf("workflow: branch already belongs to %s", owner.ID)
 			}
 			if source != previous.Source {
-				revision := record.Revision{Scope: scope, ID: record.RevisionID("revision_" + rand.Text()), ChangeID: id, Previous: previous.ID, Source: source, CreatedAt: e.now()}
+				revision := record.Revision{Scope: scope, ID: record.RevisionID("revision_" + rand.Text()), ChangeID: id, Previous: previous.ID, Source: source, CreatedAt: e.now(), Shared: e.sharedFiles(ctx, source)}
 				if err := tx.PutRevision(ctx, revision); err != nil {
 					return err
 				}

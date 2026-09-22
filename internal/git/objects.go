@@ -3,7 +3,9 @@ package git
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -272,4 +274,28 @@ func (r *Repository) CommitTime(ctx context.Context, commit string) (time.Time, 
 		return time.Time{}, fmt.Errorf("git: invalid commit time")
 	}
 	return time.Unix(seconds, 0).UTC(), nil
+}
+
+// GrepTree lists the paths in a tree whose contents match an extended
+// regular expression, within the pathspecs given, or every path with none.
+func (r *Repository) GrepTree(ctx context.Context, tree, pattern string, pathspecs ...string) ([]string, error) {
+	if !ValidObjectID(tree) {
+		return nil, fmt.Errorf("git: literal tree objects are required")
+	}
+	args := append([]string{"grep", "-l", "-E", "-e", pattern, tree, "--"}, pathspecs...)
+	out, err := r.output(ctx, args...)
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == 1 && ctx.Err() == nil {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if _, name, ok := strings.Cut(line, ":"); ok && name != "" {
+			paths = append(paths, name)
+		}
+	}
+	return paths, nil
 }

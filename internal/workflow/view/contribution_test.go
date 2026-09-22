@@ -284,3 +284,20 @@ func TestStoppedWorkIsAlwaysAdvisedWithItsOwnCommand(t *testing.T) {
 	// A branch dockhand never prepared has no action to re-run but its own.
 	require.Contains(t, next(record.Verify, record.JobNeedsAttention, record.PhaseVerification, "workflow is disabled"), "dockhand verify jq again")
 }
+
+// A shared file is worded by what loads it and by the one port that was
+// built, so a reader sees what verification did not cover.
+func TestSharedWordsNameLoadersAndTheBuiltPort(t *testing.T) {
+	t.Parallel()
+	lines := SharedWords([]record.SharedFile{
+		{Path: "_resources/port1.0/group/java-1.0.tcl", Loaders: []string{"aqua/Okapi/Portfile", "java/jarviz/Portfile", "_resources/port1.0/group/kotlin-1.0.tcl"}},
+		{Path: "_resources/port1.0/group/lone-1.0.tcl", Loaders: []string{"devel/one/Portfile"}},
+		{Path: "_resources/port1.0/fetch/archive_sites.tcl"},
+	}, "Okapi")
+	require.Equal(t, []string{
+		"changes PortGroup java-1.0, loaded by 2 ports and 1 other PortGroup; only Okapi was built",
+		"changes PortGroup lone-1.0, loaded by 1 port; only Okapi was built",
+		"changes _resources/port1.0/fetch/archive_sites.tcl, which every port's evaluation reads; only Okapi was built",
+	}, lines)
+	require.Nil(t, SharedWords(nil, "Okapi"))
+}

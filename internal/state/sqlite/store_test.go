@@ -364,3 +364,24 @@ func TestRepositoriesListsEveryRegistrationOldestFirst(t *testing.T) {
 	require.Equal(t, first.ID, listed[0].ID)
 	require.Equal(t, second.ID, listed[1].ID)
 }
+
+// A revision keeps the shared files it changes and what loads them.
+func TestRevisionKeepsItsSharedFiles(t *testing.T) {
+	t.Parallel()
+	s := openStore(t, filepath.Join(t.TempDir(), "shared.db"))
+	r := repository(t, s, "shared")
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	shared := []record.SharedFile{{Path: "_resources/port1.0/group/java-1.0.tcl", Loaders: []string{"aqua/Okapi/Portfile", "_resources/port1.0/group/kotlin-1.0.tcl"}}, {Path: "_resources/port1.0/fetch/archive_sites.tcl"}}
+	require.NoError(t, s.Update(t.Context(), r.ID, func(ctx context.Context, tx state.Tx) error {
+		if err := tx.PutChange(ctx, record.Change{ID: "change", Branch: "grouped", CurrentRevision: "revision", Disposition: record.ChangeOpen, CreatedAt: now}); err != nil {
+			return err
+		}
+		return tx.PutRevision(ctx, record.Revision{ID: "revision", ChangeID: "change", Source: source(), CreatedAt: now, Shared: shared})
+	}))
+	require.NoError(t, s.View(t.Context(), r.ID, func(ctx context.Context, tx state.Reader) error {
+		revision, err := tx.Revision(ctx, "revision")
+		require.NoError(t, err)
+		require.Equal(t, shared, revision.Shared)
+		return nil
+	}))
+}

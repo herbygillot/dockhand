@@ -25,6 +25,9 @@ type BranchInput struct {
 	// InferredTarget is the recorded contribution target used for inference.
 	// Acceptance rechecks it even if the contribution revision has not changed.
 	InferredTarget *record.Target `json:",omitempty"`
+	// Shared lists the files under _resources the branch changes beside its
+	// port and what loads them, for the revision adoption records.
+	Shared []record.SharedFile `json:",omitempty"`
 }
 
 func validateBranchInput(branch *BranchInput, spec record.JobSpec) error {
@@ -85,7 +88,7 @@ func adoptBranch(ctx context.Context, tx state.Tx, spec record.JobSpec, input Br
 	}
 	revision := previous
 	if revision.ID == "" || revision.Source != spec.Source {
-		revision = record.Revision{Scope: input.Scope, ID: record.RevisionID("revision_" + rand.Text()), ChangeID: change.ID, Previous: change.CurrentRevision, Source: spec.Source, CreatedAt: now}
+		revision = record.Revision{Scope: input.Scope, ID: record.RevisionID("revision_" + rand.Text()), ChangeID: change.ID, Previous: change.CurrentRevision, Source: spec.Source, CreatedAt: now, Shared: input.Shared}
 		if err := tx.PutRevision(ctx, revision); err != nil {
 			return record.JobSpec{}, err
 		}
@@ -274,7 +277,7 @@ func (e *Engine) adoptBranch(ctx context.Context, input AdoptRequest, pullReques
 	}
 	now := e.now()
 	change := record.Change{InitiatingTarget: target.Name, ID: record.ChangeID("change_" + rand.Text()), Branch: input.Branch, Targets: []record.Target{target}, Disposition: record.ChangeOpen, CreatedAt: now, KeepBody: input.KeepBody && pullRequest != nil}
-	revision := record.Revision{Scope: scope, ID: record.RevisionID("revision_" + rand.Text()), ChangeID: change.ID, Source: source, CreatedAt: now}
+	revision := record.Revision{Scope: scope, ID: record.RevisionID("revision_" + rand.Text()), ChangeID: change.ID, Source: source, CreatedAt: now, Shared: e.sharedFiles(ctx, source)}
 	change.CurrentRevision = revision.ID
 	if pullRequest != nil {
 		pullRequest.ID, pullRequest.ChangeID = record.PullRequestID("pr_"+rand.Text()), change.ID

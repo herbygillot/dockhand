@@ -8,11 +8,12 @@ import (
 	"unicode"
 
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/workflow/view"
 )
 
 // publicationBody uses only the contribution and its selected, durable evidence.
 // SourceContent has already established a single-commit contribution range.
-func publicationBody(content record.PublicationContent, change record.Change, source record.Source, attempt record.Attempt) string {
+func publicationBody(content record.PublicationContent, change record.Change, source record.Source, attempt record.Attempt, shared []record.SharedFile) string {
 	var b strings.Builder
 	fmt.Fprintln(&b, "Submitted by **[dockhand](https://github.com/herbygillot/dockhand)**")
 	fmt.Fprintf(&b, "\n#### Description\n\n%s\n", content.Title)
@@ -24,6 +25,17 @@ func publicationBody(content record.PublicationContent, change record.Change, so
 	}
 	if text := strings.TrimSpace(strings.Join(description, "\n")); text != "" {
 		fmt.Fprintf(&b, "\n%s\n", text)
+	}
+	if len(shared) > 0 {
+		fmt.Fprintln(&b, "\n###### Shared files")
+		fmt.Fprintln(&b)
+		port := change.InitiatingTarget
+		if port == "" && len(change.Targets) > 0 {
+			port = change.Targets[0].Name
+		}
+		for _, line := range view.SharedWords(shared, port) {
+			fmt.Fprintf(&b, "- %s\n", oneLine(line))
+		}
 	}
 	fmt.Fprintln(&b, "\n###### Tested on")
 	evidence := attempt.Evidence

@@ -562,6 +562,9 @@ func expansion(row view.Contribution) []string {
 	if row.PullRequest != "" {
 		lines = append(lines, "PR: "+row.PullRequest)
 	}
+	for _, shared := range row.Shared {
+		lines = append(lines, "shared: "+shared)
+	}
 	if row.Log != "" {
 		lines = append(lines, "log: "+row.Log)
 	}

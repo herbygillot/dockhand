@@ -412,6 +412,12 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 		line("\nChange %s: %s; branch: %s; current revision: %s; published revision: %s", change.ID, change.Disposition, change.Branch, change.CurrentRevision, change.PublishedRevision)
 	}
 	for _, revision := range status.Revisions {
+		for _, file := range revision.Shared {
+			line("\nShared file %s changed by revision %s; loaded by %d files, only the port was built", file.Path, revision.ID, len(file.Loaders))
+			for _, loader := range file.Loaders {
+				line("  %s", loader)
+			}
+		}
 		if revision.Scope != nil {
 			line("\nShared release %s:", revision.ID)
 			for _, member := range revision.Scope.Affected {

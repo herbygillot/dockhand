@@ -169,13 +169,16 @@ func (t *transaction) Revision(ctx context.Context, id record.RevisionID) (recor
 	}
 	var source string
 	var previous sql.NullString
-	var scope string
+	var scope, shared string
 	var created int64
-	err := t.conn.QueryRowContext(ctx, "SELECT id,change_id,source_id,previous_id,created_at,release_scope FROM revisions WHERE repository_id=? AND id=?", t.repo, id).Scan(&v.ID, &v.ChangeID, &source, &previous, &created, &scope)
+	err := t.conn.QueryRowContext(ctx, "SELECT id,change_id,source_id,previous_id,created_at,release_scope,shared FROM revisions WHERE repository_id=? AND id=?", t.repo, id).Scan(&v.ID, &v.ChangeID, &source, &previous, &created, &scope, &shared)
 	if err != nil {
 		return v, storageError(err)
 	}
 	if err := decode(scope, &v.Scope); err != nil {
+		return v, err
+	}
+	if err := decode(shared, &v.Shared); err != nil {
 		return v, err
 	}
 	v.Previous = record.RevisionID(previous.String)
@@ -209,7 +212,11 @@ func (t *transaction) PutRevision(ctx context.Context, v record.Revision) error 
 	if err != nil {
 		return err
 	}
-	return t.exec(ctx, "INSERT INTO revisions(id,repository_id,change_id,source_id,previous_id,created_at,release_scope) VALUES(?,?,?,?,?,?,?)", v.ID, t.repo, v.ChangeID, source, nullableID(v.Previous), v.CreatedAt.UnixMilli(), scope)
+	shared, err := encode(v.Shared)
+	if err != nil {
+		return err
+	}
+	return t.exec(ctx, "INSERT INTO revisions(id,repository_id,change_id,source_id,previous_id,created_at,release_scope,shared) VALUES(?,?,?,?,?,?,?,?)", v.ID, t.repo, v.ChangeID, source, nullableID(v.Previous), v.CreatedAt.UnixMilli(), scope, shared)
 }
 func (t *transaction) Request(ctx context.Context, id record.RequestID) (record.AcceptedRequest, error) {
 	var v record.AcceptedRequest

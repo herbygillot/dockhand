@@ -46,6 +46,9 @@ type Contribution struct {
 	Branch  string   `json:",omitempty"`
 	// Change words the version move ("1.7 -> 1.8.1") or the kind of change.
 	Change string
+	// Shared words each file under _resources the current revision changes
+	// beside the port and what loads it, since only the port was built.
+	Shared []string `json:",omitempty"`
 	// Phase is preparation, verification, publication, or done.
 	Phase string
 	// State is the phase's current word: preparing, building on macOS 26,
@@ -202,6 +205,11 @@ func project(change record.Change, known bool, entries []JobStatus, pr *record.P
 	row := Contribution{ChangeID: change.ID, Branch: change.Branch, Port: change.InitiatingTarget, History: []ContributionJob{}, UpdatedAt: change.CreatedAt}
 	for _, target := range change.Targets {
 		row.Targets = append(row.Targets, target.Name)
+	}
+	for _, revision := range revisions {
+		if revision.ID == change.CurrentRevision {
+			row.Shared = SharedWords(revision.Shared, row.Port)
+		}
 	}
 	var current *JobStatus
 	for i := range entries {

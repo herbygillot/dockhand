@@ -454,3 +454,39 @@ func mergedNext(cleanup *record.BranchCleanup) string {
 	}
 	return "merged; " + strings.Join(parts, "; ")
 }
+
+// SharedWords words each shared file a revision changes beside its port:
+// a PortGroup with the ports and other groups that load it, or another
+// definition every port's evaluation reads, and that only the port named
+// was built.
+func SharedWords(shared []record.SharedFile, port string) []string {
+	var lines []string
+	for _, file := range shared {
+		name := strings.TrimPrefix(file.Path, "_resources/")
+		if group, ok := strings.CutPrefix(name, "port1.0/group/"); ok {
+			ports, groups := 0, 0
+			for _, loader := range file.Loaders {
+				if strings.HasPrefix(loader, "_resources/") {
+					groups++
+				} else {
+					ports++
+				}
+			}
+			text := "changes PortGroup " + strings.TrimSuffix(group, ".tcl") + ", loaded by " + plural(ports, "port")
+			if groups > 0 {
+				text += " and " + plural(groups, "other PortGroup")
+			}
+			lines = append(lines, text+"; only "+port+" was built")
+			continue
+		}
+		lines = append(lines, "changes "+file.Path+", which every port's evaluation reads; only "+port+" was built")
+	}
+	return lines
+}
+
+func plural(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
+}

@@ -116,7 +116,9 @@ func (e *Engine) Submit(ctx context.Context, request Request) (Receipt, error) {
 		if request.Branch == nil {
 			accepted, err = bindRevision(ctx, spec, tx)
 		} else {
-			accepted, err = adoptBranch(ctx, tx, spec, *request.Branch, now)
+			branch := *request.Branch
+			branch.Shared = e.sharedFiles(ctx, spec.Source)
+			accepted, err = adoptBranch(ctx, tx, spec, branch, now)
 		}
 		if err != nil {
 			return err
