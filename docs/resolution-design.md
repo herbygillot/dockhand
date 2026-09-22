@@ -192,7 +192,7 @@ not be silently skipped by one:
    it (`Spec.Preparation.Correction != nil`): Onto. Source is the current
    revision's; the selection is the contribution's target with the
    request's variants laid over; the subject is the contribution's own
-   unless one was given. This is what `bindOnto` computes today and keeps
+   unless one was given. This is what the onto binding computes today and keeps
    computing; the resolution names it.
 5. Under `Lookup`, stop: the prior job is a Continue as found. Otherwise
    fetch master, unless `Offline`, which refuses here. Unreachable:

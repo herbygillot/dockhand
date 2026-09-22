@@ -238,9 +238,6 @@ func (e *Engine) resolveOnto(ctx context.Context, request ResolutionRequest, cha
 	if change.Disposition != record.ChangeOpen || change.Branch == "" || change.CurrentRevision == "" {
 		return Resolution{}, fmt.Errorf("%w: contribution %s is not open on a branch", ErrInvalidRequest, change.ID)
 	}
-	if len(change.Targets) != 1 {
-		return Resolution{}, fmt.Errorf("%w: contribution %s has %d targets; prepare onto one-target contributions only", ErrInvalidRequest, change.ID, len(change.Targets))
-	}
 	revision, err := e.CurrentRevision(ctx, change)
 	if err != nil {
 		return Resolution{}, err
@@ -259,8 +256,11 @@ func (e *Engine) onto(ctx context.Context, request ResolutionRequest, kind Kind,
 	if err != nil {
 		return Resolution{}, err
 	}
-	target := onto{change: change, revision: revision}
-	resolution := Resolution{Kind: kind, Source: revision.Source, Change: &change, Revision: &revision, Selection: target.selection(request.Selection.Variants), Intent: request.Intent, Subject: subject, References: request.References, Branch: change.Branch,
+	selection, err := (contribution{change: change, revision: revision}).selection(request.Selection.Variants)
+	if err != nil {
+		return Resolution{}, err
+	}
+	resolution := Resolution{Kind: kind, Source: revision.Source, Change: &change, Revision: &revision, Selection: selection, Intent: request.Intent, Subject: subject, References: request.References, Branch: change.Branch,
 		Detail: fmt.Sprintf("Preparing the update onto %s's open contribution, branch %s; it lands as an amendment", initiatingNameOf(change), change.Branch)}
 	return resolution, nil
 }

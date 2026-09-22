@@ -61,7 +61,7 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	resolution := request.Resolution
 	source := resolution.Source
 	intent, subject, references, selection := resolution.Intent, resolution.Subject, resolution.References, resolution.Selection
-	var target *onto
+	var target *contribution
 	switch resolution.Kind {
 	case Fresh, Continue:
 		if source.Base != source.Commit {
@@ -74,15 +74,20 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 		// The binding reconfirms what integration will check: the
 		// revision is current, no other job is pending on the
 		// contribution, and an attached pull request is open.
-		bound, err := e.bindOnto(ctx, resolution.Change.ID)
+		bound, err := e.bindContribution(ctx, resolution.Change.ID)
 		if err != nil {
 			return BoundPreparation{}, err
 		}
 		if bound.revision.ID != resolution.Revision.ID {
 			return BoundPreparation{}, ErrStaleRevision
 		}
-		if bound.change.KeepBody && request.Destination == record.Published && request.Publication.RefreshBody {
-			return BoundPreparation{}, fmt.Errorf("%w: %s was adopted with --keep-body; its pull request body is its author's", ErrInvalidRequest, initiatingNameOf(bound.change))
+		if _, err := bound.selection(nil); err != nil {
+			return BoundPreparation{}, err
+		}
+		if request.Destination == record.Published {
+			if err := bound.allowsPublication(&request.Publication); err != nil {
+				return BoundPreparation{}, err
+			}
 		}
 		target = &bound
 	default:
@@ -140,11 +145,7 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	if request.Destination == record.Published {
 		// An update onto a contribution with a pull request publishes
 		// where the pull request is, whoever owns its head.
-		var attached *record.PullRequest
-		if target != nil {
-			attached = target.attached
-		}
-		resolved, err := e.publicationDestinationFor(ctx, attached, request.Publication)
+		resolved, err := e.destination(ctx, target, request.Publication)
 		if err != nil {
 			return BoundPreparation{}, err
 		}
@@ -162,7 +163,8 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 		return BoundPreparation{}, err
 	}
 	if target != nil {
-		spec.Preparation.Correction = &target.spec
+		correction := target.correction(target.revision.Source.Commit, record.Source{})
+		spec.Preparation.Correction = &correction
 	}
 	return BoundPreparation{Request: Request{ID: request.ID, Spec: spec}, Evaluation: evaluation}, nil
 }

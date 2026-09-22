@@ -100,8 +100,8 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 		return result, err
 	}
 	// The contribution is resolved as a verification's is: by target, by
-	// branch, or by the current branch; the transaction below rereads it
-	// by that branch with the pull request it is attached to.
+	// branch, or by the current branch, and bound as an update onto it is
+	// bound, with its revision, its pull request, and its preconditions.
 	selection := ResolutionRequest{Action: input.Action, Selection: macports.Selection{Selector: input.Target}, Branch: input.Branch, Platform: input.Platform}
 	if input.Target == "" && input.Branch == "" {
 		selection.Branch, err = e.Repo.CurrentBranch(ctx)
@@ -114,53 +114,18 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 		return result, err
 	}
 	branch := resolution.Branch
-	var change record.Change
-	var revision record.Revision
-	var remoteHead record.ObjectID
-	var title string
-	var attached *record.PullRequest
-	err = e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
-		var err error
-		change, err = r.OpenChangeByBranch(ctx, branch)
-		if err != nil {
-			return err
-		}
-		if err = correctionIdle(ctx, r, change.ID, ""); err != nil {
-			return err
-		}
-		revision, err = r.Revision(ctx, change.CurrentRevision)
-		if err != nil {
-			return err
-		}
-		remoteHead = revision.Source.Commit
-		if change.PullRequestID != "" {
-			pr, err := r.PullRequest(ctx, change.PullRequestID)
-			if err != nil {
-				return err
-			}
-			if pr.State != record.PullRequestOpen {
-				return fmt.Errorf("workflow: associated PR is %s", pr.State)
-			}
-			title = pr.Title
-			attached = &pr
-			if pr.HeadBranch == branch {
-				remoteHead = pr.RemoteHead
-			} else {
-				remoteHead = ""
-			}
-		}
-		return nil
-	})
+	bound, err := e.bindContribution(ctx, resolution.Change.ID)
 	if err != nil {
 		return result, err
 	}
+	change, revision, title := bound.change, bound.revision, bound.title()
 	committed, err := changeset.CaptureBranch(ctx, e.Repo, branch)
 	if err != nil {
 		return result, err
 	}
 	snapshot := committed
-	if change.KeepBody && input.Publication != nil && input.Publication.RefreshBody {
-		return result, fmt.Errorf("%w: %s was adopted with --keep-body; its pull request body is its author's", ErrInvalidRequest, initiatingNameOf(change))
+	if err := bound.allowsPublication(input.Publication); err != nil {
+		return result, err
 	}
 	if input.Tree != "" {
 		if !git.ValidObjectID(string(input.Tree)) {
@@ -264,14 +229,17 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 			return result, err
 		}
 	}
+	// The corrected revision keeps the scope as rebound onto the candidate.
+	correction := bound.correction(committed.Head, candidate)
+	correction.Scope = scope
 	spec := record.JobSpec{KeepFailed: input.KeepFailed, Action: input.Action, Source: committed.Source(revision.Source.Base), Targets: targets, Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: build.Build, BuildRequirements: build.Requirements, IncludeDependents: input.IncludeDependents, TargetBuilds: build.TargetBuilds,
 		Preparation: &record.PreparationSpec{SourceBranch: branch, Platform: input.Platform, Author: record.CommitIdentity{Name: author.Name, Email: author.Email}, VerificationProblem: build.Problem,
-			Correction: &record.CorrectionSpec{Scope: scope, ChangeID: change.ID, RevisionID: revision.ID, Branch: branch, PreviousHead: committed.Head, RemoteHead: remoteHead, Candidate: candidate}}}
+			Correction: &correction}}
 	if input.SkipVerify {
 		spec.Destination, spec.Verification = record.BranchReady, record.VerificationSkipped
 	}
 	if input.Publication != nil {
-		destination, err := e.publicationDestinationFor(ctx, attached, *input.Publication)
+		destination, err := e.destination(ctx, &bound, *input.Publication)
 		if err != nil {
 			return result, err
 		}

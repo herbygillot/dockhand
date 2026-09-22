@@ -9,7 +9,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/workflow/preparation"
@@ -255,42 +254,4 @@ func (c *cycle) prepareCandidate(ctx context.Context, job record.Job) (record.Pr
 // prepares.
 func capturedCorrection(correction *record.CorrectionSpec) bool {
 	return correction != nil && correction.Candidate.Tree != ""
-}
-
-// revisedMessage is a contribution's commit message after an update onto
-// it: the subject replaced by the update's, under the name the message
-// already carries, which keeps a stub's name over its carrying subport's,
-// and the update's references added where the message does not cite them.
-// Nothing else the author wrote changes. Corrections and updates prepared
-// onto a contribution compose their messages this way.
-func revisedMessage(original, targetName, subject string, references []record.Reference) (string, error) {
-	var line string
-	if subject != "" {
-		name := targetName
-		first, _, _ := strings.Cut(original, "\n")
-		if prefix, _, ok := strings.Cut(first, ": "); ok && macports.ValidName(prefix) {
-			name = prefix
-		}
-		var err error
-		if line, err = portedit.Subject(name, subject); err != nil {
-			return "", err
-		}
-	}
-	return portedit.Rewrite(original, line, references), nil
-}
-
-// revisedScope is the release scope of a revision prepared onto a
-// contribution, settled before the branch moves: the edit's own when it
-// produced one, which must keep the contribution's membership, and the
-// contribution's otherwise, rebound onto the candidate as a correction
-// rebinds it. A contribution's membership is fixed when it is created; an
-// update that would change it is a new bump, not an amendment.
-func (e *Engine) revisedScope(ctx context.Context, prior, edited *record.ReleaseScope, candidate record.Source, platform record.Platform) (*record.ReleaseScope, error) {
-	if edited != nil {
-		if prior != nil && !prior.SameMembership(edited) {
-			return nil, fmt.Errorf("%w: the update would change the contribution's release scope; start a new bump", ErrInvalidRequest)
-		}
-		return edited, nil
-	}
-	return e.rebindReleaseScope(ctx, prior, candidate, platform)
 }
