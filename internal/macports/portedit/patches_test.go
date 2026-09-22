@@ -63,7 +63,8 @@ patchfiles good.diff stale.diff
 	require.Equal(t, "stale.diff", result.Patches[1].Name)
 	require.True(t, result.Patches[1].Checked)
 	require.False(t, result.Patches[1].Applies)
-	require.Contains(t, result.Patches[1].Detail, "1 out of 1 hunks failed")
+	// Apple's patch says "hunks failed" and GNU patch "hunk FAILED".
+	require.Regexp(t, `(?i)1 out of 1 hunks? failed`, result.Patches[1].Detail)
 	root, err = scratch.Root()
 	require.NoError(t, err)
 	matches, _ := filepath.Glob(filepath.Join(root, "patchcheck-*"))

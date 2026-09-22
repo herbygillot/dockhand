@@ -53,7 +53,9 @@ if {${build_arch} eq "arm64"} { distfiles a.zip:release } else { distfiles b.zip
 	require.Equal(t, native.Platform, final.Platform)
 	plain, err := e.Observe(t.Context(), bound, macports.ObservationRequest{})
 	require.NoError(t, err)
-	require.False(t, plain.Modeled)
+	// A native observation is modeled exactly when its runtime models the
+	// host: never on a Mac, always elsewhere.
+	require.Equal(t, native.Runtime.Modeled(), plain.Modeled)
 	require.Empty(t, plain.Ports["observed-child"].Declarations)
 	require.Equal(t, native.Ports, plain.Snapshot.Ports)
 }

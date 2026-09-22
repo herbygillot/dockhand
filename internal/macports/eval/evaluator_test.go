@@ -299,3 +299,49 @@ livecheck.name foo
 	require.Equal(t, `{"version": *"([^"]+)"[,\}]}`, port.Options["livecheck.regex"], "option values keep their list encoding, as the raw path does")
 	require.NotContains(t, port.OptionErrors, "livecheck.url")
 }
+
+// A host that is not a Mac describes the current macOS with its Command Line
+// Tools: a port that compiles takes Apple's clang, even one that refuses old
+// clangs, and needs no Xcode, as on a Mac with the tools installed. Another
+// release is modeled when asked. A Mac describes itself, so this runs only
+// where the host is not one.
+func TestModeledHostDescribesAMacWithTheCommandLineTools(t *testing.T) {
+	t.Parallel()
+	e := liveEvaluator(t)
+	runtime, err := e.Inspect(t.Context())
+	require.NoError(t, err)
+	if !runtime.Modeled() {
+		t.Skip("the host is a Mac and describes itself")
+	}
+	require.Equal(t, DefaultModel(), runtime.Platform)
+	require.NotEqual(t, "darwin", runtime.Host.OS)
+	tree := fixtureTree(t)
+	putFile(t, tree.Root(), "devel/compiled/Portfile", `PortSystem 1.0
+name compiled
+version 1.0
+categories devel
+license MIT
+maintainers nomaintainer
+description compiled
+long_description compiled
+homepage https://example.invalid
+master_sites https://example.invalid
+compiler.blacklist-append {clang < 1300}
+`)
+	targets, err := e.Resolve(t.Context(), tree, macports.Selection{Selector: "compiled"})
+	require.NoError(t, err)
+	bound, err := tree.Select(targets[0])
+	require.NoError(t, err)
+	snapshot, err := e.Evaluate(t.Context(), bound)
+	require.NoError(t, err)
+	require.Equal(t, DefaultModel(), snapshot.Platform)
+	port := snapshot.Ports["compiled"]
+	for _, dependency := range port.Dependencies {
+		require.NotContains(t, dependency.Port, "clang", "Apple's clang is the compiler")
+	}
+	require.Equal(t, "0", port.Options["use_xcode"])
+	older := &Evaluator{Executable: e.Executable, Model: record.Platform{OS: "darwin", Version: "23", Architecture: "x86_64"}}
+	chosen, err := older.NativePlatform(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, older.Model, chosen)
+}

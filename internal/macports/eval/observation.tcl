@@ -2,6 +2,9 @@ namespace eval ::dockhand {
     variable observing 0
     variable declarations 0
     variable modeled 0
+    # session_modeled is set when the whole session describes a platform
+    # other than its host's; see model_platform.
+    variable session_modeled 0
     proc observe_worker {cmd code result op} {
         if {$code != 0} { return }
         set worker [lindex $cmd 1]
@@ -97,7 +100,8 @@ namespace eval ::dockhand {
         variable operands $operands_to_observe
         variable observing 1
         variable declarations $trace_declarations
-        variable modeled [expr {[llength $overrides] > 0}]
+        variable session_modeled
+        variable modeled [expr {[llength $overrides] > 0 || $session_modeled}]
         if {[llength $overrides]} {
             ::macports::override_vars $overrides
         }

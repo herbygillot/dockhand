@@ -88,7 +88,7 @@ One `--to` and one modifier cover every change command:
 
 ## Requirements
 
-- **macOS.** Local builds need an Apple silicon Mac with Tart; the prepared images cover macOS Monterey through Golden Gate. Any other Mac can still prepare updates and build them on GitHub Actions.
+- **macOS, or Linux for preparing.** Local builds need an Apple silicon Mac with Tart; the prepared images cover macOS Monterey through Golden Gate. Any other Mac can still prepare updates and build them on GitHub Actions. On Linux, with MacPorts Base built there, dockhand prepares and publishes the same way but describes a Mac rather than being one: the current macOS on Apple silicon with its Command Line Tools. It cannot build locally, so a pull request goes out with GitHub verification or `--unverified`.
 - **A local MacPorts installation.** Dockhand reads Portfiles through MacPorts' own Tcl interpreter, so it sees exactly what `port` sees.
 - **Git, and a clone of your fork** of `macports/macports-ports` that Git can push to. Dockhand recognizes `macports/macports-ports` as upstream whatever the remote is called, and finds your fork by your GitHub login; `--remote` is only for ambiguous layouts.
 - **A GitHub credential**: `dockhand auth login`, an existing `gh auth login`, or `GH_TOKEN`.

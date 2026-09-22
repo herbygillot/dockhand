@@ -16,6 +16,26 @@ type Release struct {
 	Slug    string
 }
 
+// CurrentDarwin is the newest macOS dockhand works on without being asked.
+// It is deliberately not the newest release the table carries: MacPorts adds a
+// macOS to its own CI well after Apple ships it, so a pull request is built and
+// judged on this release or older. A Tart build uses it unless told otherwise,
+// and a host that is not a Mac models it.
+const CurrentDarwin = 25
+
+// Toolchain is a release of Apple's Command Line Tools as MacPorts sees it:
+// the Xcode version the tools carry and the build number of their clang,
+// which is what a Portfile's compiler requirements are compared with.
+type Toolchain struct {
+	Xcode string
+	Clang string
+}
+
+// CurrentToolchain is the Command Line Tools of the current release: those for
+// Xcode 26.3, whose Apple clang reports clang-1700.6.4.2. A host that is not a
+// Mac models it, since MacPorts cannot ask such a host for Apple's compiler.
+var CurrentToolchain = Toolchain{Xcode: "26.3", Clang: "1700.6.4.2"}
+
 var releases = map[int]Release{
 	21: {Darwin: 21, Product: "12", Name: "Monterey", Slug: "monterey"},
 	22: {Darwin: 22, Product: "13", Name: "Ventura", Slug: "ventura"},

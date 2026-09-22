@@ -73,3 +73,29 @@ func PlatformVariables(platform record.Platform) (string, error) {
 	}
 	return strings.Join(pairs, " "), nil
 }
+
+// CommandLineTools is where the Command Line Tools live on a Mac, the
+// developer directory a modeled Mac reports.
+const CommandLineTools = "/Library/Developer/CommandLineTools"
+
+// ModelVariables is PlatformVariables for an interpreter or indexer on a host
+// that is not a Mac, which has no Apple toolchain for MacPorts to ask about:
+// it also describes a Mac with the current Command Line Tools and no Xcode,
+// and answers MacPorts' question of which Apple clang the tools' compiler is,
+// at /usr/bin/clang or in the tools' own directory, with their build, through
+// the compiler cache MacPorts consults before running a compiler. A Mac never
+// needs this: its own tools answer for every platform it models.
+func ModelVariables(platform record.Platform) (string, error) {
+	pairs, err := PlatformVariables(platform)
+	if err != nil {
+		return "", err
+	}
+	tools := macos.CurrentToolchain
+	compilers := "/usr/bin/clang " + tools.Clang + " " + CommandLineTools + "/usr/bin/clang " + tools.Clang
+	return strings.Join([]string{pairs,
+		"developer_dir", CommandLineTools,
+		"xcodeversion", "none",
+		"xcodecltversion", tools.Xcode,
+		"compiler_version_cache", "{versions {" + CommandLineTools + " {" + compilers + "}}}",
+	}, " "), nil
+}

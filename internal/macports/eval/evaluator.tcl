@@ -17,6 +17,42 @@ namespace eval ::dockhand {
         return [dict create platform [list $::macports::os_platform $::macports::os_major $::macports::build_arch] base_version [base_version] tcl_version [info patchlevel]]
     }
 
+    # model_platform makes this interpreter describe another platform for
+    # the rest of the session, a host that is not a Mac describing a macOS,
+    # with the pairs macports.PlatformVariables builds; every observation
+    # after it is modeled, native or not.
+    proc model_platform {overrides tools} {
+        if {[llength $overrides] == 0 || [llength $overrides] % 2 != 0 || $tools eq ""} {
+            error "unsupported modeled platform"
+        }
+        ::macports::override_vars $overrides
+        variable session_modeled 1
+        variable model_tools $tools
+        trace add execution ::macports::worker_init leave ::dockhand::model_worker
+        return [list $::macports::os_platform $::macports::os_major $::macports::build_arch]
+    }
+
+    # model_worker gives a port's worker the modeled Mac's Command Line
+    # Tools. Base asks the host's filesystem whether they are installed,
+    # through the tools' make for use_xcode's default and through their
+    # clang when /usr/bin/clang is absent; in a modeled session the model
+    # answers that the tools' programs exist, and every other question
+    # about the filesystem goes to the host as before.
+    proc model_worker {cmd code result op} {
+        if {$code != 0} { return }
+        variable model_tools
+        [lindex $cmd 1] eval [list apply {{tools} {
+            rename ::file ::dockhand_host_file
+            proc ::file {args} [string map [list @TOOLS@ $tools] {
+                if {[llength $args] == 2 && [lindex $args 0] in {exists executable isfile}
+                    && [string match {@TOOLS@/usr/bin/*} [lindex $args 1]]} {
+                    return 1
+                }
+                tailcall ::dockhand_host_file {*}$args
+            }]
+        }} $model_tools]
+    }
+
     proc metadata {portdir subport args} {
         set opts {}
         if {$subport ne ""} { lappend opts subport $subport }
@@ -152,4 +188,5 @@ namespace eval ::dockhand {
     }
 }
 ::tclrpc::register initialize ::dockhand::initialize
+::tclrpc::register model_platform ::dockhand::model_platform
 ::tclrpc::register metadata ::dockhand::metadata

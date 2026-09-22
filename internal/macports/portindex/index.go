@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"time"
 
@@ -359,7 +360,12 @@ func buildPortIndex(ctx context.Context, c Config, platform record.Platform, sou
 		// what uname -p reports there, arm on Apple silicon, which a bare
 		// plat_ver_arch argument would set verbatim to the build
 		// architecture and so answer every ${os.arch} test wrongly.
-		overrides, err := macports.PlatformVariables(platform)
+		describe := macports.PlatformVariables
+		if goruntime.GOOS != "darwin" {
+			// A host that is not a Mac models the Mac's toolchain as well.
+			describe = macports.ModelVariables
+		}
+		overrides, err := describe(platform)
 		if err != nil {
 			return err
 		}

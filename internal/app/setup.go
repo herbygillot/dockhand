@@ -47,6 +47,11 @@ func Setup(ctx context.Context, config Config, options SetupOptions, progress io
 	if err != nil {
 		return SetupResult{}, err
 	}
+	// A Tart image is provisioned on the Mac that runs it; a host that only
+	// models a macOS has none to offer.
+	if runtime.Modeled() {
+		return SetupResult{}, fmt.Errorf("setup: Tart verification images are prepared on a Mac; this host runs %s %s %s", runtime.Host.OS, runtime.Host.Version, runtime.Host.Architecture)
+	}
 	platform := runtime.Platform
 	if options.OS != "" {
 		release, err := macos.ParseRelease(options.OS)

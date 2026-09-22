@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/tcl/rpc"
@@ -22,6 +23,16 @@ import (
 type Evaluator struct {
 	Executable string
 	Prefix     string
+	// Model is the macOS an interpreter describes as its own when MacPorts
+	// runs on a host that is not a Mac; zero selects DefaultModel. A Mac
+	// always describes itself.
+	Model record.Platform
+}
+
+// DefaultModel is the platform a host that is not a Mac models unless told
+// otherwise: the current macOS on Apple silicon.
+func DefaultModel() record.Platform {
+	return record.Platform{OS: "darwin", Version: strconv.Itoa(macos.CurrentDarwin), Architecture: "arm64"}
 }
 
 //go:embed evaluator.tcl
@@ -67,10 +78,43 @@ func (e *Evaluator) start(ctx context.Context, tree macports.Tree) (*rpc.Session
 	if err != nil {
 		return fail(err)
 	}
+	if runtime.Platform.OS != "darwin" {
+		if runtime, err = e.model(ctx, session, runtime); err != nil {
+			return fail(err)
+		}
+	}
 	if tree.Platform() != (record.Platform{}) && tree.Platform() != runtime.Platform {
 		return fail(fmt.Errorf("%w: MacPorts Base %s; requested %+v; native %+v", macports.ErrPlatform, runtime.BaseVersion, tree.Platform(), runtime.Platform))
 	}
 	return session, runtime, nil
+}
+
+// model makes a session on a host that is not a Mac describe a macOS for the
+// rest of its life, with the variables an index generated on such a host is
+// given, and reads the platform back from the interpreter rather than
+// assuming the override took.
+func (e *Evaluator) model(ctx context.Context, session *rpc.Session, runtime macports.Runtime) (macports.Runtime, error) {
+	model := e.Model
+	if model == (record.Platform{}) {
+		model = DefaultModel()
+	}
+	overrides, err := macports.ModelVariables(model)
+	if err != nil {
+		return runtime, fmt.Errorf("%w: %w", macports.ErrPlatform, err)
+	}
+	reply, err := session.Call(ctx, "model_platform", overrides, macports.CommandLineTools)
+	if err != nil {
+		return runtime, fmt.Errorf("%w: %w", macports.ErrStartup, err)
+	}
+	described, err := decodePlatform(reply)
+	if err != nil {
+		return runtime, err
+	}
+	if described != model {
+		return runtime, fmt.Errorf("%w: MacPorts Base %s on %+v describes %+v, not the modeled %+v", macports.ErrPlatform, runtime.BaseVersion, runtime.Platform, described, model)
+	}
+	runtime.Host, runtime.Platform = runtime.Platform, model
+	return runtime, nil
 }
 
 func (e *Evaluator) NativePlatform(ctx context.Context) (record.Platform, error) {
@@ -214,11 +258,12 @@ func evaluateIn(ctx context.Context, session *rpc.Session, runtime macports.Runt
 		}
 	}
 	snapshot := macports.Snapshot{Source: source.Source(), Target: source.Target(), Platform: runtime.Platform, Runtime: runtime, Ports: ports, Root: source.Root(), ObservedAt: time.Now().UTC()}
-	modeled := request != nil && request.Platform != (record.Platform{}) && request.Platform != runtime.Platform
-	if modeled {
+	other := request != nil && request.Platform != (record.Platform{}) && request.Platform != runtime.Platform
+	if other {
 		snapshot.Platform = request.Platform
 	}
-	return macports.Observation{Snapshot: snapshot, Modeled: modeled, Ports: observations}, nil
+	// A runtime that models its own platform models every context.
+	return macports.Observation{Snapshot: snapshot, Modeled: other || runtime.Modeled(), Ports: observations}, nil
 }
 
 func evaluateOne(ctx context.Context, session *rpc.Session, source macports.Context, subport string) (macports.PortInfo, []string, error) {

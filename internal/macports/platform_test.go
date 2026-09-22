@@ -3,8 +3,10 @@ package macports_test
 import (
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,4 +33,31 @@ func TestPlatformVariablesFollowMacPortsBase(t *testing.T) {
 		_, err := macports.PlatformVariables(platform)
 		require.ErrorContains(t, err, "unsupported modeled platform", "%+v", platform)
 	}
+}
+
+// A host that is not a Mac describes the platform and a Mac with the current
+// Command Line Tools and no Xcode, whose clang answers for both places Base
+// looks for it, as one list of pairs override_vars accepts.
+func TestModelVariablesAddTheCommandLineTools(t *testing.T) {
+	t.Parallel()
+	platform := record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
+	base, err := macports.PlatformVariables(platform)
+	require.NoError(t, err)
+	got, err := macports.ModelVariables(platform)
+	require.NoError(t, err)
+	tools := macos.CurrentToolchain
+	require.Equal(t, base+" developer_dir /Library/Developer/CommandLineTools xcodeversion none xcodecltversion "+tools.Xcode+
+		" compiler_version_cache {versions {/Library/Developer/CommandLineTools {/usr/bin/clang "+tools.Clang+" /Library/Developer/CommandLineTools/usr/bin/clang "+tools.Clang+"}}}", got)
+	pairs, errs := syntax.ListValues(got)
+	require.Empty(t, errs)
+	require.Zero(t, len(pairs)%2)
+	_, err = macports.ModelVariables(record.Platform{OS: "linux", Version: "6", Architecture: "x86_64"})
+	require.ErrorContains(t, err, "unsupported modeled platform")
+}
+
+func TestRuntimeIsModeledWhenItDescribesAnotherHost(t *testing.T) {
+	t.Parallel()
+	mac := record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
+	require.False(t, macports.Runtime{Platform: mac}.Modeled())
+	require.True(t, macports.Runtime{Platform: mac, Host: record.Platform{OS: "linux", Version: "6", Architecture: "x86_64"}}.Modeled())
 }
