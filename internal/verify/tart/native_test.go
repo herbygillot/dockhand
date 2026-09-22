@@ -57,7 +57,7 @@ func TestStagedInputUsesAcceptedGitObjects(t *testing.T) {
 	config, err := f.provider.settings()
 	require.NoError(t, err)
 	directory := t.TempDir()
-	archive, err := makeInput(t.Context(), f.provider.Repo, f.request, config, "", directory, nil)
+	archive, err := makeInput(t.Context(), f.provider.Repo, nil, f.request, config, "", directory, nil)
 	require.NoError(t, err)
 	file, err := os.Open(archive)
 	require.NoError(t, err)
@@ -85,7 +85,7 @@ func TestStagedInputUsesAcceptedGitObjects(t *testing.T) {
 	require.NotEmpty(t, entries["ports/PortIndex.quick"])
 	changed := f.request
 	changed.Spec.Source.Tree = record.ObjectID("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	_, err = makeInput(t.Context(), f.provider.Repo, changed, config, "", directory, nil)
+	_, err = makeInput(t.Context(), f.provider.Repo, nil, changed, config, "", directory, nil)
 	require.ErrorContains(t, err, "commit and tree disagree")
 }
 
@@ -97,11 +97,11 @@ func TestPortIndexCacheBuildsBaseOnceAndUpdatesChangedPort(t *testing.T) {
 	require.NoError(t, err)
 	var messages []string
 	ctx := progress.WithReporter(t.Context(), func(update progress.Update) { messages = append(messages, update.Message) })
-	_, err = makeInput(ctx, f.provider.Repo, f.request, config, "", t.TempDir(), nil)
+	_, err = makeInput(ctx, f.provider.Repo, nil, f.request, config, "", t.TempDir(), nil)
 	require.NoError(t, err)
 	require.Contains(t, strings.Join(messages, "\n"), "Generating full PortIndex")
 	messages = nil
-	_, err = makeInput(ctx, f.provider.Repo, f.request, config, "", t.TempDir(), nil)
+	_, err = makeInput(ctx, f.provider.Repo, nil, f.request, config, "", t.TempDir(), nil)
 	require.NoError(t, err)
 	require.NotContains(t, strings.Join(messages, "\n"), "Generating full PortIndex")
 	require.Contains(t, strings.Join(messages, "\n"), "Using cached PortIndex")
@@ -117,7 +117,7 @@ func TestPortIndexCacheBuildsBaseOnceAndUpdatesChangedPort(t *testing.T) {
 	require.NoError(t, err)
 	changed := f.request
 	changed.Spec.Source = record.Source{Tree: record.ObjectID(tree), Base: f.request.Spec.Source.Commit}
-	_, err = makeInput(t.Context(), f.provider.Repo, changed, config, "", t.TempDir(), nil)
+	_, err = makeInput(t.Context(), f.provider.Repo, nil, changed, config, "", t.TempDir(), nil)
 	require.NoError(t, err)
 	data, err = os.ReadFile(calls)
 	require.NoError(t, err)
@@ -128,7 +128,7 @@ func TestPortIndexCacheBuildsBaseOnceAndUpdatesChangedPort(t *testing.T) {
 	retained, err := filepath.Glob(filepath.Join(config.ArtifactDirectory, "indexes", "*", "generations", tree))
 	require.NoError(t, err)
 	require.Len(t, retained, 1)
-	_, err = makeInput(t.Context(), f.provider.Repo, changed, config, "", t.TempDir(), nil)
+	_, err = makeInput(t.Context(), f.provider.Repo, nil, changed, config, "", t.TempDir(), nil)
 	require.NoError(t, err)
 	after, err := os.ReadFile(calls)
 	require.NoError(t, err)
@@ -146,7 +146,7 @@ func TestConcurrentPortIndexPreparationBuildsOneCacheEntry(t *testing.T) {
 		directory := t.TempDir()
 		go func() {
 			<-start
-			_, err := makeInput(t.Context(), f.provider.Repo, f.request, config, "", directory, nil)
+			_, err := makeInput(t.Context(), f.provider.Repo, nil, f.request, config, "", directory, nil)
 			results <- err
 		}()
 	}
@@ -171,7 +171,7 @@ func TestCandidateIndexDerivesFromBaseGenerationInSharedCache(t *testing.T) {
 	config, err := f.provider.settings()
 	require.NoError(t, err)
 	indexCache := t.TempDir()
-	_, err = makeInput(t.Context(), f.provider.Repo, request, config, indexCache, t.TempDir(), nil)
+	_, err = makeInput(t.Context(), f.provider.Repo, nil, request, config, indexCache, t.TempDir(), nil)
 	require.NoError(t, err)
 	data, err := os.ReadFile(config.PortIndexExecutable + ".calls")
 	require.NoError(t, err)
@@ -253,7 +253,7 @@ func TestTreeOnlyInputArchivesTheFrozenEditAndRejectsMissingObjects(t *testing.T
 	require.NoError(t, validateRequest(f.request))
 	config, err := f.provider.settings()
 	require.NoError(t, err)
-	archive, err := makeInput(t.Context(), f.provider.Repo, f.request, config, "", t.TempDir(), nil)
+	archive, err := makeInput(t.Context(), f.provider.Repo, nil, f.request, config, "", t.TempDir(), nil)
 	require.NoError(t, err)
 	file, err := os.Open(archive)
 	require.NoError(t, err)
@@ -278,7 +278,7 @@ func TestTreeOnlyInputArchivesTheFrozenEditAndRejectsMissingObjects(t *testing.T
 	require.NoError(t, err)
 	require.Equal(t, verify.Admitted, result.State)
 	f.request.Spec.Source.Tree = record.ObjectID("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	_, err = makeInput(t.Context(), f.provider.Repo, f.request, config, "", t.TempDir(), nil)
+	_, err = makeInput(t.Context(), f.provider.Repo, nil, f.request, config, "", t.TempDir(), nil)
 	require.Error(t, err)
 }
 

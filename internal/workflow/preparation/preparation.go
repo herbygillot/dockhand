@@ -61,6 +61,9 @@ type Service struct {
 	DependencyTools  dependency.Tools
 	HTTP             *http.Client
 	MaxDownloadBytes int64
+	// Workspaces hands out one projection per source; nil opens one per
+	// preparation.
+	Workspaces *workspace.Registry
 }
 
 func (s *Service) editor() *portedit.Service {
@@ -74,32 +77,32 @@ func (s *Service) editor() *portedit.Service {
 // open projects the request's source: a workspace that materializes the
 // selected port's directory and _resources when the editor resolves the
 // target, and the whole tree only if a consumer asks for it.
-func (s *Service) open(ctx context.Context, request Request) (*workspace.Workspace, error) {
+func (s *Service) open(ctx context.Context, request Request) (*workspace.Workspace, func() error, error) {
 	if s == nil || s.Repo == nil {
-		return nil, fmt.Errorf("preparation: Git repository is required")
+		return nil, nil, fmt.Errorf("preparation: Git repository is required")
 	}
 	if request.Source.Commit != "" {
 		trees, err := s.Repo.CommitTrees(ctx, []string{string(request.Source.Commit)})
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if trees[string(request.Source.Commit)] != string(request.Source.Tree) {
-			return nil, fmt.Errorf("preparation: source commit and tree disagree")
+			return nil, nil, fmt.Errorf("preparation: source commit and tree disagree")
 		}
 	}
 	if request.Source.Base != "" {
 		if _, err := s.Repo.CommitTrees(ctx, []string{string(request.Source.Base)}); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
-	return workspace.Open(ctx, s.Repo, request.Source)
+	return s.Workspaces.Acquire(ctx, s.Repo, request.Source)
 }
 func (s *Service) ResolveRelease(ctx context.Context, request Request) (_ record.Release, err error) {
-	files, err := s.open(ctx, request)
+	files, done, err := s.open(ctx, request)
 	if err != nil {
 		return record.Release{}, err
 	}
-	defer func() { err = errors.Join(err, files.Close()) }()
+	defer func() { err = errors.Join(err, done()) }()
 	request.Workspace = files
 	if request.Action != record.Bump {
 		return record.Release{}, fmt.Errorf("%w: release resolution requires a bump action", ErrNotImplemented)
@@ -126,11 +129,11 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	if err := request.Validate(); err != nil {
 		return Result{}, err
 	}
-	files, err := s.open(ctx, request)
+	files, done, err := s.open(ctx, request)
 	if err != nil {
 		return Result{}, err
 	}
-	defer func() { err = errors.Join(err, files.Close()) }()
+	defer func() { err = errors.Join(err, done()) }()
 	request.Workspace = files
 	var original macports.PortInfo
 	if request.Action == record.Bump {

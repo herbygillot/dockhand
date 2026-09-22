@@ -298,7 +298,12 @@ and the workspace is ready for it when it lands.
 4. `portedit/observe` on top of the workspace: it takes a workspace, a
    target, and a platform, and observes immutable directories.
 5. The registry, adopted by staging and dependent discovery, replacing
-   `git.Snapshot` everywhere; index installation by rename.
+   `git.Snapshot` everywhere; index installation by rename. Landed
+   2026-09-22 ([note](activity/2026-09-22-workspace-registry.md)): one
+   registry per command in `app`, held by preparation, the engine's
+   bindings, Tart staging, and dependent discovery; the survey hands its
+   projection to assess and outdated; the index cache keeps its private
+   materialization for generation, as the section above requires.
 6. The interposer as a proof, in three parts, and the blob store, each only
    if a measurement asks for it.
 

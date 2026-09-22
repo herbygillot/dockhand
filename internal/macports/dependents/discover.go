@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"maps"
 	"net/http"
 	"path"
@@ -22,6 +23,9 @@ type Service struct {
 	Ports macports.Reader
 	Index portindex.Config
 	HTTP  *http.Client
+	// Workspaces shares the prepared tree with Tart staging; nil
+	// materializes one for discovery alone.
+	Workspaces *workspace.Registry
 }
 
 // Discover stages an index and evaluates candidates against the same immutable
@@ -34,12 +38,16 @@ func (s *Service) Discover(ctx context.Context, source record.Source, platform r
 	if s == nil || s.Repo == nil || s.Ports == nil || len(roots) == 0 {
 		return verify.Coverage{}, fmt.Errorf("dependents: Git, MacPorts, and at least one root are required")
 	}
-	files, err := s.Repo.Materialize(ctx, string(source.Tree))
+	// Discovery evaluates arbitrary dependents, so it needs the whole tree.
+	files, release, err := s.Workspaces.Acquire(ctx, s.Repo, source)
 	if err != nil {
 		return verify.Coverage{}, err
 	}
-	defer func() { err = errors.Join(err, files.Close()) }()
-	tree, err := macports.NewTree(source, files.Root, platform)
+	defer func() { err = errors.Join(err, release()) }()
+	if err := files.EnsureAll(ctx); err != nil {
+		return verify.Coverage{}, err
+	}
+	tree, err := files.Tree(platform)
 	if err != nil {
 		return verify.Coverage{}, err
 	}
@@ -48,10 +56,10 @@ func (s *Service) Discover(ctx context.Context, source record.Source, platform r
 			return verify.Coverage{}, err
 		}
 	}
-	if err := portindex.Stage(ctx, s.Repo, source, platform, s.Index, files.Root); err != nil {
+	if err := portindex.Stage(ctx, s.Repo, source, platform, s.Index, files.Root()); err != nil {
 		return verify.Coverage{}, err
 	}
-	index, err := portindex.Open(files.Root)
+	index, err := portindex.Open(files.Root())
 	if err != nil {
 		return verify.Coverage{}, err
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
@@ -54,6 +55,9 @@ type Engine struct {
 	// Repo and Ports support explicit branch binding before submission.
 	Repo  *git.Repository
 	Ports macports.Reader
+	// Workspaces hands out one projection per source to the bindings that
+	// evaluate a selection; nil opens one per binding.
+	Workspaces *workspace.Registry
 	// Preparer produces immutable candidate trees without adopting branches.
 	Preparer   SourcePreparer
 	Dependents DependentDiscoverer

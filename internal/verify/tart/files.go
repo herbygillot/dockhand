@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"io/fs"
 	"net/http"
 	"path/filepath"
@@ -57,13 +58,13 @@ func verifierDigest() string {
 	return digest(append([]byte("tart-verification-v2\x00"+host.ExecScript+"\x00"+string(guestPlist("/prefix"))), guestScript...))
 }
 
-func makeInput(ctx context.Context, repo *git.Repository, request verify.Request, c Config, indexCache, directory string, client *http.Client) (string, error) {
+func makeInput(ctx context.Context, repo *git.Repository, workspaces *workspace.Registry, request verify.Request, c Config, indexCache, directory string, client *http.Client) (string, error) {
 	input, err := json.Marshal(guestInput{Protocol: 1, ID: string(request.ID), Digest: buildDigest(request.Spec), Spec: request.Spec, Prefix: c.GuestPrefix, TestTimeoutSeconds: int(c.testTimeout() / time.Second)})
 	if err != nil {
 		return "", err
 	}
 	payload := map[string][]byte{"guest.tcl": guestScript, "input.json": input, "guest.plist": guestPlist(c.GuestPrefix)}
 	path := filepath.Join(directory, "input.tar")
-	err = staging.Archive(ctx, repo, staging.Request{AdditionalTargets: request.Spec.Preinstall, Source: request.Spec.Source, Target: request.Spec.Target, Platform: request.Spec.Config.Platform, Index: sourceIndex(c, indexCache, &portindex.Mirror{HTTP: client})}, path, payload, client)
+	err = staging.Archive(ctx, repo, workspaces, staging.Request{AdditionalTargets: request.Spec.Preinstall, Source: request.Spec.Source, Target: request.Spec.Target, Platform: request.Spec.Config.Platform, Index: sourceIndex(c, indexCache, &portindex.Mirror{HTTP: client})}, path, payload, client)
 	return path, err
 }

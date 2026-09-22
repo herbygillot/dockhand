@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/atomicfile"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"io"
 	"io/fs"
 	"net/http"
@@ -28,7 +29,7 @@ type Request struct {
 
 // Archive stages the frozen tree and index, then atomically installs the archive.
 // Payload contains provider-owned top-level files outside the reserved ports tree.
-func Archive(ctx context.Context, repo *git.Repository, request Request, destination string, payload map[string][]byte, client *http.Client) (err error) {
+func Archive(ctx context.Context, repo *git.Repository, workspaces *workspace.Registry, request Request, destination string, payload map[string][]byte, client *http.Client) (err error) {
 	for name := range payload {
 		if !fs.ValidPath(name) || name == "." || name == "ports" || filepath.Base(name) != name {
 			return fmt.Errorf("staging: invalid provider payload name %q", name)
@@ -51,22 +52,28 @@ func Archive(ctx context.Context, repo *git.Repository, request Request, destina
 		}
 	}
 	progress.DebugReport(ctx, "Materializing committed source for verification")
-	snapshot, err := repo.Materialize(ctx, string(request.Source.Tree))
+	// The archive packs the whole tree, from the workspace dependent
+	// discovery shares when it worked on the same prepared tree.
+	files, release, err := workspaces.Acquire(ctx, repo, request.Source)
 	if err != nil {
 		return err
 	}
-	defer func() { err = errors.Join(err, snapshot.Close()) }()
-	if err = portindex.Stage(ctx, repo, request.Source, request.Platform, request.Index, snapshot.Root); err != nil {
+	defer func() { err = errors.Join(err, release()) }()
+	if err = files.EnsureAll(ctx); err != nil {
+		return err
+	}
+	root := files.Root()
+	if err = portindex.Stage(ctx, repo, request.Source, request.Platform, request.Index, root); err != nil {
 		return err
 	}
 	for _, target := range append([]record.Target{request.Target}, request.AdditionalTargets...) {
-		if err = requireIndexedTarget(snapshot.Root, target); err != nil {
+		if err = requireIndexedTarget(root, target); err != nil {
 			return err
 		}
 	}
 	progress.DebugReport(ctx, "Packing source and verification inputs")
 	return atomicfile.Create(destination, 0600, func(temp *os.File) error {
-		return packSource(ctx, snapshot.Root, payload, temp)
+		return packSource(ctx, root, payload, temp)
 	})
 }
 

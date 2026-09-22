@@ -113,6 +113,8 @@ type Service struct {
 	Upstream        *upstream.Service
 	DependencyTools dependency.Tools
 	Index           portindex.Config
+	// Workspaces hands out the tree; nil materializes one for this survey.
+	Workspaces *workspace.Registry
 }
 
 func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err error) {
@@ -129,18 +131,12 @@ func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err er
 	if err != nil {
 		return Result{}, err
 	}
-	files, err := survey.Open(ctx, s.Repo, platform, s.Index, request.Selection)
+	files, err := survey.Open(ctx, s.Repo, s.Workspaces, platform, s.Index, request.Selection)
 	if err != nil {
 		return Result{}, err
 	}
 	defer func() { err = errors.Join(err, files.Close()) }()
-	// The survey's materialization is the whole tree; the probes overlay it
-	// for their candidates and never write into it.
-	projection, err := workspace.Adopt(files.Root, files.Source)
-	if err != nil {
-		return Result{}, err
-	}
-	defer func() { err = errors.Join(err, projection.Close()) }()
+	projection := files.Projection
 	result := Result{Source: files.Source, Ports: []Port{}}
 	journal := request.Journal
 	if journal != nil {

@@ -54,6 +54,8 @@ type Service struct {
 	Ports    macports.NativeEvaluator
 	Upstream *upstream.Service
 	Index    portindex.Config
+	// Workspaces hands out the tree; nil materializes one for this survey.
+	Workspaces *workspace.Registry
 }
 
 // Observe captures local HEAD and assesses every selected port independently.
@@ -73,16 +75,12 @@ func (s *Service) Observe(ctx context.Context, selection Selection) (_ Result, e
 	if err != nil {
 		return Result{}, err
 	}
-	files, err := survey.Open(ctx, s.Repo, platform, s.Index, selection)
+	files, err := survey.Open(ctx, s.Repo, s.Workspaces, platform, s.Index, selection)
 	if err != nil {
 		return Result{}, err
 	}
 	defer func() { err = errors.Join(err, files.Close()) }()
-	projection, err := workspace.Adopt(files.Root, files.Source)
-	if err != nil {
-		return Result{}, err
-	}
-	defer func() { err = errors.Join(err, projection.Close()) }()
+	projection := files.Projection
 	source := files.Source
 	discovery := s.Upstream
 	editor := &portedit.Service{Ports: ports}

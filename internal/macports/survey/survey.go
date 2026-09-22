@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"path"
 	"strings"
 
@@ -55,19 +56,23 @@ type Port struct {
 	Portfile string
 }
 
-// Workspace owns a temporary tree until Close. Callers may probe edits only here.
+// Workspace holds the whole tree at HEAD until Close. Probes overlay its
+// Projection for their candidates and never write into it.
 type Workspace struct {
 	Source   record.Source
 	Root     string
 	Ports    []Port
 	Problems []portindex.SelectionProblem
-	files    *git.Snapshot
+	// Projection is the workspace the tree is materialized in.
+	Projection *workspace.Workspace
+	release    func() error
 }
 
-func (w *Workspace) Close() error { return w.files.Close() }
+func (w *Workspace) Close() error { return w.release() }
 
-// Open freezes HEAD, then selects explicit ports or stages and queries its index.
-func Open(ctx context.Context, repo *git.Repository, platform record.Platform, index portindex.Config, selection Selection) (_ *Workspace, err error) {
+// Open freezes HEAD, then selects explicit ports or stages and queries its
+// index. The tree comes from the registry when one is given.
+func Open(ctx context.Context, repo *git.Repository, workspaces *workspace.Registry, platform record.Platform, index portindex.Config, selection Selection) (_ *Workspace, err error) {
 	if err := selection.Validate(); err != nil {
 		return nil, err
 	}
@@ -80,23 +85,28 @@ func Open(ctx context.Context, repo *git.Repository, platform record.Platform, i
 		return nil, err
 	}
 	source := record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(trees[commit])}
-	files, err := repo.Materialize(ctx, string(source.Tree))
+	files, release, err := workspaces.Acquire(ctx, repo, source)
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
 		if err != nil {
-			err = errors.Join(err, files.Close())
+			err = errors.Join(err, release())
 		}
 	}()
-	if err := macports.ValidatePortsTree(files.Root, repo.Root); err != nil {
+	// A survey resolves names and evaluates whatever it selected: the
+	// whole tree.
+	if err := files.EnsureAll(ctx); err != nil {
 		return nil, err
 	}
-	ports, problems, err := selectPorts(ctx, repo, source, platform, index, files.Root, selection)
+	if err := macports.ValidatePortsTree(files.Root(), repo.Root); err != nil {
+		return nil, err
+	}
+	ports, problems, err := selectPorts(ctx, repo, source, platform, index, files.Root(), selection)
 	if err != nil {
 		return nil, err
 	}
-	return &Workspace{Source: source, Root: files.Root, Ports: ports, Problems: problems, files: files}, nil
+	return &Workspace{Source: source, Root: files.Root(), Ports: ports, Problems: problems, Projection: files, release: release}, nil
 }
 
 func selectPorts(ctx context.Context, repo *git.Repository, source record.Source, platform record.Platform, config portindex.Config, root string, selection Selection) ([]Port, []portindex.SelectionProblem, error) {

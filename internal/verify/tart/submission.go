@@ -98,7 +98,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 		return verify.Submission{}, err
 	}
 	defer os.RemoveAll(prepared)
-	archive, err := makeInput(ctx, p.Repo, request, o.config, p.IndexCache, prepared, p.HTTP)
+	archive, err := makeInput(ctx, p.Repo, p.Workspaces, request, o.config, p.IndexCache, prepared, p.HTTP)
 	if err != nil {
 		return verify.Submission{}, err
 	}

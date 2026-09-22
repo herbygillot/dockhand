@@ -22,6 +22,11 @@ type Selection struct {
 	Variants map[string]bool
 }
 
+// Reader evaluates a selected port and resolves a selection to targets.
+// Resolve may be handed a sparse workspace, one holding only what earlier
+// consumers ensured: a reader materializes what it resolves, the port an
+// index lookup names or the whole tree when a name needs it enumerated,
+// so the target it returns can be evaluated where it was resolved.
 type Reader interface {
 	Evaluate(context.Context, Context) (Snapshot, error)
 	Resolve(context.Context, Tree, Selection) ([]record.Target, error)

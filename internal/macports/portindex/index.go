@@ -257,7 +257,9 @@ func requiresFullIndex(paths []string) bool {
 }
 
 // install copies a completed generation into the staged root, skipping files
-// already installed from the same generation.
+// already installed from the same generation. Each file lands by rename, so
+// a reader of a root shared with another consumer never sees a truncated
+// index.
 func install(entry, root string) error {
 	for _, name := range []string{portIndexName, quickIndexName} {
 		source, destination := filepath.Join(entry, name), filepath.Join(root, name)
@@ -438,7 +440,9 @@ func validIndexEntry(directory string) bool {
 	return true
 }
 
-func copyIndexFile(source, destination string) error {
+// copyIndexFile writes the source's bytes and mtime to a temporary name
+// beside the destination and renames it into place.
+func copyIndexFile(source, destination string) (err error) {
 	input, err := os.Open(source)
 	if err != nil {
 		return err
@@ -448,17 +452,26 @@ func copyIndexFile(source, destination string) error {
 	if err != nil || !info.Mode().IsRegular() {
 		return errors.Join(err, fmt.Errorf("portindex: cached index is not a regular file"))
 	}
-	output, err := os.OpenFile(destination, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+	output, err := os.CreateTemp(filepath.Dir(destination), "."+filepath.Base(destination)+".*")
 	if err != nil {
 		return err
 	}
+	temp := output.Name()
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, os.Remove(temp))
+		}
+	}()
 	_, copyErr := io.Copy(output, input)
 	closeErr := output.Close()
 	if copyErr == nil {
 		copyErr = closeErr
 	}
 	if copyErr == nil {
-		copyErr = os.Chtimes(destination, info.ModTime(), info.ModTime())
+		copyErr = os.Chtimes(temp, info.ModTime(), info.ModTime())
+	}
+	if copyErr == nil {
+		copyErr = os.Rename(temp, destination)
 	}
 	return copyErr
 }

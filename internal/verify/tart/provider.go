@@ -3,6 +3,7 @@ package tart
 import (
 	"context"
 	"errors"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"net/http"
 
 	"github.com/herbygillot/dockhand/internal/git"
@@ -25,6 +26,9 @@ type Provider struct {
 	State      state.ProviderStore
 	Repository record.RepositoryID
 	Repo       *git.Repository
+	// Workspaces shares the prepared tree with dependent discovery; nil
+	// materializes one for staging alone.
+	Workspaces *workspace.Registry
 	HTTP       *http.Client
 	backend    machine
 	images     imageCache

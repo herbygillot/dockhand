@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"maps"
 	"net/http"
 	"path/filepath"
@@ -77,7 +78,10 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 	ports := portReader(config, repo, &portindex.Mirror{HTTP: http.DefaultClient})
 	githubClient := newGitHubClient(config.GitHub)
 	discovery := releaseDiscovery(ports, githubClient, http.DefaultClient)
-	preparation := &preparation.Service{Repo: repo, Ports: ports, Upstream: discovery, DependencyTools: config.DependencyTools}
+	// One workspace per source for the command: Tart staging and dependent
+	// discovery share the prepared tree rather than materializing it twice.
+	workspaces := &workspace.Registry{}
+	preparation := &preparation.Service{Repo: repo, Ports: ports, Upstream: discovery, DependencyTools: config.DependencyTools, Workspaces: workspaces}
 	if config.Tart.ArtifactDirectory == "" {
 		config.Tart.ArtifactDirectory = filepath.Join(filepath.Dir(store.Path()), "artifacts", "tart")
 	}
@@ -89,7 +93,7 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		store.Close()
 		return nil, err
 	}
-	provider := &tart.Provider{Config: config.Tart, IndexCache: indexCache, State: store, Repository: repository.ID, Repo: repo}
+	provider := &tart.Provider{Config: config.Tart, IndexCache: indexCache, State: store, Repository: repository.ID, Repo: repo, Workspaces: workspaces}
 	githubProvider := &githubverify.Provider{State: store, Repository: repository.ID, Repo: repo, Directory: filepath.Join(filepath.Dir(store.Path()), "github-verification"), Client: githubClient}
 
 	engine := &workflow.Engine{
@@ -97,8 +101,9 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		Repository: repository.ID,
 		Repo:       repo,
 		Ports:      ports,
+		Workspaces: workspaces,
 		Preparer:   preparation,
-		Dependents: dependentDiscovery{repo: repo, ports: ports, indexCache: indexCache},
+		Dependents: dependentDiscovery{repo: repo, ports: ports, indexCache: indexCache, workspaces: workspaces},
 		Releases:   preparation,
 		Provider:   provider,
 		Providers:  map[string]verify.Provider{verify.ProviderTart: provider, verify.ProviderGitHub: githubProvider},
@@ -109,7 +114,7 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		Workflow:          engine,
 		Processes:         &proc.Manager{},
 		Preparation:       preparation,
-		close:             store.Close,
+		close:             func() error { return errors.Join(workspaces.Close(), store.Close()) },
 		tartVerification:  provider,
 		ports:             ports,
 		providerName:      config.VerificationProvider,

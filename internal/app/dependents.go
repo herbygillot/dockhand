@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"net/http"
 
 	"github.com/herbygillot/dockhand/internal/git"
@@ -17,6 +18,7 @@ type dependentDiscovery struct {
 	repo       *git.Repository
 	ports      macports.Reader
 	indexCache string
+	workspaces *workspace.Registry
 }
 
 func (d dependentDiscovery) Discover(ctx context.Context, source record.Source, build record.BuildConfig, roots []record.Target) (verify.Coverage, error) {
@@ -24,6 +26,6 @@ func (d dependentDiscovery) Discover(ctx context.Context, source record.Source, 
 	if err != nil {
 		return verify.Coverage{}, err
 	}
-	service := dependents.Service{Repo: d.repo, Ports: d.ports, Index: index}
+	service := dependents.Service{Repo: d.repo, Ports: d.ports, Index: index, Workspaces: d.workspaces}
 	return service.Discover(ctx, source, build.Platform, roots)
 }

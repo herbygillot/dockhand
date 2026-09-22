@@ -237,17 +237,26 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 }
 
 func (e *Engine) bindSnapshot(ctx context.Context, source record.Source, selection macports.Selection, platform record.Platform, untracked []string) (_ []record.Target, _ macports.Snapshot, err error) {
-	files, err := e.Repo.Materialize(ctx, string(source.Tree))
+	// One selection is resolved and evaluated: a sparse projection, which
+	// resolution widens when a bare name needs the tree enumerated.
+	files, release, err := e.Workspaces.Acquire(ctx, e.Repo, source)
 	if err != nil {
 		return nil, macports.Snapshot{}, err
 	}
-	defer func() { err = errors.Join(err, files.Close()) }()
-	bound, err := macports.NewTree(source, files.Root, platform)
+	defer func() { err = errors.Join(err, release()) }()
+	bound, err := files.Tree(platform)
 	if err != nil {
 		return nil, macports.Snapshot{}, err
 	}
 	if err := checkUntrackedSelection(untracked, selection.Selector); err != nil {
 		return nil, macports.Snapshot{}, err
+	}
+	// A path selector names its directory before resolution; a name is
+	// materialized by the reader that resolves it.
+	if directory := selectedDirectory(selection.Selector); directory != "" {
+		if err := files.EnsurePort(ctx, record.Target{Portfile: directory + "/Portfile"}); err != nil {
+			return nil, macports.Snapshot{}, err
+		}
 	}
 	targets, err := e.Ports.Resolve(ctx, bound, selection)
 	if err != nil {
@@ -257,6 +266,9 @@ func (e *Engine) bindSnapshot(ctx context.Context, source record.Source, selecti
 		return nil, macports.Snapshot{}, fmt.Errorf("%w: branch verification currently requires one target", ErrInvalidRequest)
 	}
 	if err := checkUntracked(untracked, targets[0].Portfile); err != nil {
+		return nil, macports.Snapshot{}, err
+	}
+	if err := files.EnsurePort(ctx, targets[0]); err != nil {
 		return nil, macports.Snapshot{}, err
 	}
 	target, err := bound.Select(targets[0])
@@ -309,4 +321,18 @@ func evaluatedVersions(snapshot macports.Snapshot, targets []record.Target) map[
 		}
 	}
 	return versions
+}
+
+// selectedDirectory is the category/port directory a path selector names,
+// or empty for a name.
+func selectedDirectory(selector string) string {
+	parts := strings.Split(selector, "/")
+	switch {
+	case len(parts) == 3 && parts[2] == "Portfile", len(parts) == 2:
+		if parts[0] == "" || parts[1] == "" || strings.HasPrefix(parts[0], ".") || parts[0] == ".." || parts[1] == ".." {
+			return ""
+		}
+		return parts[0] + "/" + parts[1]
+	}
+	return ""
 }

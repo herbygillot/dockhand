@@ -267,3 +267,39 @@ func TestAnOverlayEvaluatesInTheBaseSession(t *testing.T) {
 	_, err = base.Batch(context.Background(), evaluator)
 	require.ErrorContains(t, err, "closed")
 }
+
+// A registry hands out one workspace per source: the second holder gets the
+// first's, with the scope it ensured, and the workspace closes when the
+// last holder releases it. A nil registry shares nothing.
+func TestRegistrySharesOneWorkspacePerSource(t *testing.T) {
+	f := newFixture(t)
+	registry := &workspace.Registry{}
+	first, releaseFirst, err := registry.Acquire(t.Context(), f.repo, f.source())
+	require.NoError(t, err)
+	require.NoError(t, first.EnsurePort(t.Context(), targetA))
+	second, releaseSecond, err := registry.Acquire(t.Context(), f.repo, f.source())
+	require.NoError(t, err)
+	require.Same(t, first, second, "one workspace per source")
+	require.True(t, second.Scope().Holds("devel/a"), "the scope the first holder ensured")
+	other, releaseOther, err := registry.Acquire(t.Context(), f.repo, record.Source{Tree: f.source().Tree, Base: "0000000000000000000000000000000000000001"})
+	require.NoError(t, err)
+	require.NotSame(t, first, other, "a different source identity is a different workspace")
+	require.NoError(t, releaseFirst())
+	require.NoError(t, releaseFirst(), "releasing twice releases once")
+	require.DirExists(t, first.Root(), "a holder remains")
+	require.NoError(t, releaseSecond())
+	require.NoDirExists(t, first.Root(), "the last release closes it")
+	require.NoError(t, registry.Close())
+	require.NoDirExists(t, other.Root(), "closing the registry closes what is still held")
+	require.NoError(t, releaseOther(), "a release after the registry closed is a no-op")
+
+	var none *workspace.Registry
+	alone, release, err := none.Acquire(t.Context(), f.repo, f.source())
+	require.NoError(t, err)
+	again, releaseAgain, err := none.Acquire(t.Context(), f.repo, f.source())
+	require.NoError(t, err)
+	require.NotSame(t, alone, again, "a nil registry shares nothing")
+	require.NoError(t, release())
+	require.NoDirExists(t, alone.Root())
+	require.NoError(t, releaseAgain())
+}
