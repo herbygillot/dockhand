@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -383,5 +384,38 @@ func TestRevisionKeepsItsSharedFiles(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, shared, revision.Shared)
 		return nil
+	}))
+}
+
+// A contribution's membership is fixed by the first revision that records
+// a scope: an unscoped revision, an adopted branch's, may be followed by a
+// scoped one, and a scoped one only by the same membership.
+func TestRevisionScopeMembershipIsFixedOnceRecorded(t *testing.T) {
+	t.Parallel()
+	store := openStore(t, filepath.Join(t.TempDir(), "state.db"))
+	repo := repository(t, store, "ports").ID
+	now := time.Now()
+	member := func(name string) record.ReleaseMember {
+		return record.ReleaseMember{Target: record.Target{Name: name, Portfile: "devel/fixture/Portfile", Subport: name}}
+	}
+	one := &record.ReleaseScope{Input: record.ReleaseInput{Portfile: "devel/fixture/Portfile", Before: "1", After: "2"}, Affected: []record.ReleaseMember{member("fixture")}}
+	two := &record.ReleaseScope{Input: one.Input, Affected: []record.ReleaseMember{member("fixture"), member("fixture-sibling")}}
+	require.NoError(t, store.Update(t.Context(), repo, func(ctx context.Context, tx state.Tx) error {
+		if err := tx.PutChange(ctx, record.Change{ID: "change", InitiatingTarget: "fixture", Targets: []record.Target{{Name: "fixture", Portfile: "devel/fixture/Portfile"}}, Disposition: record.ChangeOpen, CreatedAt: now}); err != nil {
+			return err
+		}
+		if err := tx.PutRevision(ctx, record.Revision{ID: "adopted", ChangeID: "change", Source: source(), CreatedAt: now}); err != nil {
+			return err
+		}
+		if err := tx.PutRevision(ctx, record.Revision{ID: "scoped", ChangeID: "change", Previous: "adopted", Source: source(), Scope: one, CreatedAt: now}); err != nil {
+			return err
+		}
+		if err := tx.PutRevision(ctx, record.Revision{ID: "wider", ChangeID: "change", Previous: "scoped", Source: source(), Scope: two, CreatedAt: now}); !errors.Is(err, state.ErrInvalid) {
+			return fmt.Errorf("a wider membership was accepted: %v", err)
+		}
+		if err := tx.PutRevision(ctx, record.Revision{ID: "unscoped", ChangeID: "change", Previous: "scoped", Source: source(), CreatedAt: now}); !errors.Is(err, state.ErrInvalid) {
+			return fmt.Errorf("a revision dropping the scope was accepted: %v", err)
+		}
+		return tx.PutRevision(ctx, record.Revision{ID: "same", ChangeID: "change", Previous: "scoped", Source: source(), Scope: one, CreatedAt: now})
 	}))
 }

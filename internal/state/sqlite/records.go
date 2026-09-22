@@ -200,7 +200,10 @@ func (t *transaction) PutRevision(ctx context.Context, v record.Revision) error 
 		if err != nil {
 			return err
 		}
-		if prior.ChangeID != v.ChangeID || !prior.Scope.SameMembership(v.Scope) {
+		// A contribution's membership is fixed by the first revision that
+		// records a scope; a revision adopted or captured without one may be
+		// followed by a scoped one, which records the membership it had.
+		if prior.ChangeID != v.ChangeID || prior.Scope != nil && !prior.Scope.SameMembership(v.Scope) {
 			return state.ErrInvalid
 		}
 	}

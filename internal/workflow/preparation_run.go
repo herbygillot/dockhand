@@ -9,6 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/workflow/preparation"
@@ -198,19 +199,32 @@ func (c *cycle) prepareCandidate(ctx context.Context, job record.Job) (record.Pr
 	intent := result.Commits[0]
 	signature := git.Signature{Name: choices.Author.Name, Email: choices.Author.Email, When: job.AcceptedAt}
 	message := intent.Message()
-	// A fresh preparation commits on the source it edited, master; an
-	// update onto a contribution commits on the contribution's base, so the
-	// contribution stays one commit, and lands on its own branch.
+	// A fresh preparation commits on the source it edited, master, with a
+	// message of its own; an update onto a contribution commits on the
+	// contribution's base, so the contribution stays one commit, lands on
+	// its own branch, and keeps the message its author wrote.
 	parent := job.Spec.Source.Commit
 	if correction != nil {
 		parent = job.Spec.Source.Base
+		original, err := e.Repo.CommitMessage(ctx, string(job.Spec.Source.Commit))
+		if err != nil {
+			return record.PreparedChange{}, err
+		}
+		if message, err = revisedMessage(original, target.Name, job.Spec.Subject, job.Spec.References); err != nil {
+			return record.PreparedChange{}, err
+		}
 	}
 	commit, err := e.Repo.WriteCommit(ctx, git.Commit{Tree: string(result.PreparedTree), Parents: []string{string(parent)}, Message: message, Author: signature, Committer: signature})
 	if err != nil {
 		return record.PreparedChange{}, err
 	}
 	if correction != nil {
-		return record.PreparedChange{Scope: result.Scope, Branch: correction.Branch, Source: record.Source{Commit: record.ObjectID(commit), Tree: result.PreparedTree, Base: job.Spec.Source.Base}, PatchProblems: result.PatchProblems()}, nil
+		candidate := record.Source{Commit: record.ObjectID(commit), Tree: result.PreparedTree, Base: job.Spec.Source.Base}
+		scope, err := e.revisedScope(ctx, correction.Scope, result.Scope, candidate, choices.Platform)
+		if err != nil {
+			return record.PreparedChange{}, err
+		}
+		return record.PreparedChange{Scope: scope, Branch: correction.Branch, Source: candidate, PatchProblems: result.PatchProblems()}, nil
 	}
 	name := strings.Map(func(r rune) rune {
 		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
@@ -241,4 +255,42 @@ func (c *cycle) prepareCandidate(ctx context.Context, job record.Job) (record.Pr
 // prepares.
 func capturedCorrection(correction *record.CorrectionSpec) bool {
 	return correction != nil && correction.Candidate.Tree != ""
+}
+
+// revisedMessage is a contribution's commit message after an update onto
+// it: the subject replaced by the update's, under the name the message
+// already carries, which keeps a stub's name over its carrying subport's,
+// and the update's references added where the message does not cite them.
+// Nothing else the author wrote changes. Corrections and updates prepared
+// onto a contribution compose their messages this way.
+func revisedMessage(original, targetName, subject string, references []record.Reference) (string, error) {
+	var line string
+	if subject != "" {
+		name := targetName
+		first, _, _ := strings.Cut(original, "\n")
+		if prefix, _, ok := strings.Cut(first, ": "); ok && macports.ValidName(prefix) {
+			name = prefix
+		}
+		var err error
+		if line, err = portedit.Subject(name, subject); err != nil {
+			return "", err
+		}
+	}
+	return portedit.Rewrite(original, line, references), nil
+}
+
+// revisedScope is the release scope of a revision prepared onto a
+// contribution, settled before the branch moves: the edit's own when it
+// produced one, which must keep the contribution's membership, and the
+// contribution's otherwise, rebound onto the candidate as a correction
+// rebinds it. A contribution's membership is fixed when it is created; an
+// update that would change it is a new bump, not an amendment.
+func (e *Engine) revisedScope(ctx context.Context, prior, edited *record.ReleaseScope, candidate record.Source, platform record.Platform) (*record.ReleaseScope, error) {
+	if edited != nil {
+		if prior != nil && !prior.SameMembership(edited) {
+			return nil, fmt.Errorf("%w: the update would change the contribution's release scope; start a new bump", ErrInvalidRequest)
+		}
+		return edited, nil
+	}
+	return e.rebindReleaseScope(ctx, prior, candidate, platform)
 }

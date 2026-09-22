@@ -219,20 +219,9 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 		}
 	}
 	if input.Subject != "" || len(input.References) > 0 {
-		var subject string
-		if input.Subject != "" {
-			// The name the contribution already carries in its subject stays,
-			// which keeps a stub's name over its carrying subport's.
-			name := target.Name
-			first, _, _ := strings.Cut(message, "\n")
-			if prefix, _, ok := strings.Cut(first, ": "); ok && macports.ValidName(prefix) {
-				name = prefix
-			}
-			if subject, err = portedit.Subject(name, input.Subject); err != nil {
-				return result, err
-			}
+		if message, err = revisedMessage(message, target.Name, input.Subject, input.References); err != nil {
+			return result, err
 		}
-		message = portedit.Rewrite(message, subject, input.References)
 	}
 	if input.Message != "" {
 		first, _, _ := strings.Cut(input.Message, "\n")

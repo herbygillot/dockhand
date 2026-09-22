@@ -39,12 +39,16 @@ type onto struct {
 	change   record.Change
 	revision record.Revision
 	spec     record.CorrectionSpec
+	// attached is the contribution's open pull request, when it has one:
+	// the destination a publication of the update keeps.
+	attached *record.PullRequest
 }
 
 // bindOnto reads the contribution an update is prepared onto and freezes
 // the preconditions its integration checks: the revision is current, the
 // branch is the contribution's, no other job is pending on it, and an
-// attached pull request is open.
+// attached pull request is open. It carries what the revision must keep:
+// the contribution's release scope and its pull request.
 func (e *Engine) bindOnto(ctx context.Context, id record.ChangeID) (onto, error) {
 	var result onto
 	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
@@ -66,6 +70,7 @@ func (e *Engine) bindOnto(ctx context.Context, id record.ChangeID) (onto, error)
 			return err
 		}
 		remoteHead := revision.Source.Commit
+		var attached *record.PullRequest
 		if change.PullRequestID != "" {
 			pr, err := r.PullRequest(ctx, change.PullRequestID)
 			if err != nil {
@@ -79,8 +84,9 @@ func (e *Engine) bindOnto(ctx context.Context, id record.ChangeID) (onto, error)
 			} else {
 				remoteHead = ""
 			}
+			attached = &pr
 		}
-		result = onto{change: change, revision: revision, spec: record.CorrectionSpec{ChangeID: change.ID, RevisionID: revision.ID, Branch: change.Branch, PreviousHead: revision.Source.Commit, RemoteHead: remoteHead}}
+		result = onto{change: change, revision: revision, attached: attached, spec: record.CorrectionSpec{Scope: revision.Scope, ChangeID: change.ID, RevisionID: revision.ID, Branch: change.Branch, PreviousHead: revision.Source.Commit, RemoteHead: remoteHead}}
 		return nil
 	})
 	return result, err

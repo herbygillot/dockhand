@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/publish"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -496,4 +497,100 @@ func TestPreparationOntoAContributionKeepsChoicesAndPatchFindings(t *testing.T) 
 	change, err := f.engine.SelectContribution(t.Context(), workflow.ContributionSelector{ChangeID: "change"})
 	require.NoError(t, err)
 	require.Equal(t, job.ResultRevision, change.CurrentRevision, "the contribution's current revision is the amendment")
+}
+
+// An update prepared onto a contribution keeps what the contribution
+// already settled: its release scope, rebound onto the candidate before the
+// branch moves, its pull request's destination, and its commit message with
+// the body and trailers its author wrote.
+func TestPreparationOntoAContributionKeepsItsScopeDestinationAndMessage(t *testing.T) {
+	t.Parallel()
+	scoped := func(t *testing.T) (*fixture, *publicationForge, *record.ReleaseScope) {
+		t.Helper()
+		f, forge := publicationFixtureWithTracking(t, true)
+		fixture := record.Target{Name: "fixture", Portfile: "devel/fixture/Portfile"}
+		scope := &record.ReleaseScope{Input: record.ReleaseInput{Portfile: fixture.Portfile, Before: "1", After: "2"}, Affected: []record.ReleaseMember{{Target: fixture, After: record.ReleaseState{Version: "1"}}}}
+		fork := filepath.Join(t.TempDir(), "fork.git")
+		out, err := exec.CommandContext(t.Context(), "git", "init", "--bare", "-q", fork).CombinedOutput()
+		require.NoError(t, err, "%s", out)
+		forge.forkRemote, forge.headName = fork, "stranger/ports"
+		require.NoError(t, f.store.Update(t.Context(), f.repository, func(ctx context.Context, tx state.Tx) error {
+			change, err := tx.Change(ctx, "change")
+			if err != nil {
+				return err
+			}
+			if err := tx.PutRevision(ctx, record.Revision{ID: "scoped", ChangeID: change.ID, Previous: change.CurrentRevision, Source: f.source, Scope: scope, CreatedAt: f.now()}); err != nil {
+				return err
+			}
+			if err := tx.PutPullRequest(ctx, record.PullRequest{ID: "pr", ChangeID: change.ID, Ref: record.PullRequestRef{Forge: "fixture", Repository: "author/ports", Number: 7, URL: "https://example.invalid/pull/7"}, HeadRepository: "stranger/ports", HeadBranch: "candidate", BaseBranch: "main", State: record.PullRequestOpen, RemoteHead: f.source.Commit, ObservedAt: f.now()}); err != nil {
+				return err
+			}
+			change.CurrentRevision, change.PullRequestID = "scoped", "pr"
+			return tx.PutChange(ctx, change)
+		}))
+		return f, forge, scope
+	}
+	bind := func(t *testing.T, f *fixture, id string) workflow.BoundPreparation {
+		t.Helper()
+		resolution, err := f.engine.Resolve(t.Context(), workflow.ResolutionRequest{Action: record.BumpRevision, Selection: macports.Selection{Selector: "fixture"}, Subject: "rebuild for the new runtime", References: []record.Reference{{Relation: record.ReferenceCloses, URL: "https://trac.macports.org/ticket/74379"}}, Platform: buildPlatform})
+		require.NoError(t, err)
+		require.Equal(t, workflow.Onto, resolution.Kind)
+		bound, err := f.engine.BindPreparation(t.Context(), workflow.PreparationRequest{Action: record.BumpRevision, ID: record.RequestID(id), Resolution: resolution, SourceBranch: "master",
+			Destination: record.Published, Verification: record.VerificationRequired, Build: f.request("").Spec.Build, Publication: publish.Options{},
+			Author: record.CommitIdentity{Name: "Accepted Author", Email: "accepted@example.invalid"}, Platform: buildPlatform})
+		require.NoError(t, err)
+		return bound
+	}
+	edit := func(f *fixture, scope *record.ReleaseScope) {
+		f.engine.Preparer = prepareFunc(func(ctx context.Context, r preparation.Request) (preparation.Result, error) {
+			before, _, err := f.repo.File(ctx, string(r.Source.Tree), r.Selection.Selector)
+			if err != nil {
+				return preparation.Result{}, err
+			}
+			tree, err := f.repo.EditTree(ctx, string(r.Source.Tree), []git.FileEdit{{Path: r.Selection.Selector, Before: before, After: []byte("version 2\nrevision 1\n"), Mode: before.Mode}})
+			return preparation.Result{Base: r.Source, Target: record.Target{Name: "fixture", Portfile: "devel/fixture/Portfile"}, PreparedTree: record.ObjectID(tree), Scope: scope,
+				Commits: []preparation.CommitIntent{{Subject: "fixture: " + r.Subject, References: r.References}}}, err
+		})
+	}
+	prepare := func(t *testing.T, f *fixture, id record.JobID) record.Job {
+		t.Helper()
+		var job record.Job
+		for range 6 {
+			f.run(t, id)
+			job = f.status(t, id).Jobs[0].Job
+			if job.Prepared != nil && job.Prepared.IntegrationStarted || job.State.Terminal() {
+				break
+			}
+		}
+		return job
+	}
+
+	t.Run("kept", func(t *testing.T) {
+		t.Parallel()
+		f, forge, scope := scoped(t)
+		bound := bind(t, f, "onto-kept")
+		spec := bound.Request.Spec
+		require.Equal(t, scope, spec.Preparation.Correction.Scope, "the contribution's scope travels with the correction")
+		require.Equal(t, "stranger/ports", spec.PublishTo.HeadRepository, "the pull request's head, whoever owns it")
+		require.Equal(t, forge.forkRemote, spec.PublishTo.PushURL)
+		require.Equal(t, "author/ports", spec.PublishTo.Repository)
+		edit(f, nil)
+		job := prepare(t, f, submitPreparation(t, f, bound.Request))
+		require.NotEmpty(t, job.ResultRevision, "%s", job.Detail)
+		head, err := f.repo.ReadRef(t.Context(), "refs/heads/candidate")
+		require.NoError(t, err)
+		message, err := f.repo.CommitMessage(t.Context(), head.Object)
+		require.NoError(t, err)
+		require.Equal(t, "fixture: rebuild for the new runtime\n\nContribution details\n\nCloses: https://trac.macports.org/ticket/74379", strings.TrimRight(message, "\n"), "the author's body stays; the new subject and reference are laid over it")
+		revisions := f.status(t, job.ID).Revisions
+		var current record.Revision
+		for _, revision := range revisions {
+			if revision.ID == job.ResultRevision {
+				current = revision
+			}
+		}
+		require.NotNil(t, current.Scope, "an edit with no scope of its own carries the contribution's")
+		require.True(t, scope.SameMembership(current.Scope))
+		require.Equal(t, "1", current.Scope.Affected[0].After.Version, "rebound onto the candidate")
+	})
 }

@@ -138,7 +138,13 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	}
 	var destination *record.PublicationDestination
 	if request.Destination == record.Published {
-		resolved, err := e.publicationDestination(ctx, request.Publication)
+		// An update onto a contribution with a pull request publishes
+		// where the pull request is, whoever owns its head.
+		var attached *record.PullRequest
+		if target != nil {
+			attached = target.attached
+		}
+		resolved, err := e.publicationDestinationFor(ctx, attached, request.Publication)
 		if err != nil {
 			return BoundPreparation{}, err
 		}
