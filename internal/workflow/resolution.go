@@ -82,18 +82,22 @@ type ResolutionRequest struct {
 	Action    record.Action
 	Selection macports.Selection
 	ChangeID  record.ChangeID
-	Branch    string
+	// Branch selects the contribution tracked on it; with Adopt it is the
+	// branch adoption tracks first.
+	Branch string
 	// Adopt tracks Branch first; with Preview it is tracked in a dry run
 	// and the resolution reads the revision adoption would have recorded.
 	Adopt bool
 	// Squash and KeepBody are adoption's choices.
 	Squash, KeepBody bool
 	// Require refuses a selection with no open contribution rather than
-	// resolving Fresh: a verification continues something or says so.
+	// resolving Fresh.
 	Require bool
 	// Lookup stops after the contribution and the prior job are read:
-	// master is not fetched and the continuation is not checked. A
-	// verification resolves this way.
+	// master is not fetched and the continuation is not checked. An
+	// action that prepares no update, a verification or a correction,
+	// resolves this way whatever the flags: the contribution as recorded,
+	// or the error the records give.
 	Lookup bool
 	// Preview reads and never writes: master is fetched, the pull request
 	// is not refreshed and the continuation is not checked, and nothing
@@ -122,14 +126,17 @@ func (e *Engine) Resolve(ctx context.Context, request ResolutionRequest) (Resolu
 	if request.Adopt {
 		return e.resolveAdoption(ctx, request)
 	}
+	if !updates(request.Action) {
+		return e.resolveTracked(ctx, request)
+	}
 	named := macports.ValidName(request.Selection.Selector)
-	if e.State == nil || !named && request.ChangeID == "" {
+	if e.State == nil || !named && request.ChangeID == "" && request.Branch == "" {
 		return e.resolveFresh(ctx, request, "")
 	}
 	if e.Repository == "" {
 		return Resolution{}, errNoState
 	}
-	selector := ContributionSelector{ChangeID: request.ChangeID}
+	selector := ContributionSelector{ChangeID: request.ChangeID, Branch: request.Branch}
 	if named {
 		selector.Target = request.Selection.Selector
 	}
@@ -184,6 +191,35 @@ func (e *Engine) Resolve(ctx context.Context, request ResolutionRequest) (Resolu
 	}
 	progress.Report(ctx, "Continuing the port's open contribution from its recorded source")
 	progress.VerboseReport(ctx, "Continuing contribution %s from recorded source %s", change.ID, prior.Spec.Source.Commit)
+	return resolution, nil
+}
+
+// updates reports whether the action prepares an update of the port,
+// the actions whose selection can resolve Fresh, Continue, or Onto.
+func updates(action record.Action) bool {
+	return action == record.Bump || action == record.BumpRevision || action == record.RefreshChecksums
+}
+
+// resolveTracked is the contribution as recorded, for an action that
+// prepares no update of its own: what a verification or a correction
+// continues. It reads the records and nothing else, and a selection with
+// no open contribution is the error the records give.
+func (e *Engine) resolveTracked(ctx context.Context, request ResolutionRequest) (Resolution, error) {
+	if e.State == nil || e.Repository == "" {
+		return Resolution{}, errNoState
+	}
+	change, err := e.SelectContribution(ctx, ContributionSelector{Target: request.Selection.Selector, Branch: request.Branch, ChangeID: request.ChangeID})
+	if err != nil {
+		return Resolution{}, err
+	}
+	resolution := Resolution{Kind: Continue, Change: &change, Selection: request.Selection, Intent: request.Intent, Subject: request.Subject, References: request.References, Branch: change.Branch}
+	if change.CurrentRevision != "" {
+		revision, err := e.CurrentRevision(ctx, change)
+		if err != nil {
+			return Resolution{}, err
+		}
+		resolution.Revision, resolution.Source = &revision, revision.Source
+	}
 	return resolution, nil
 }
 

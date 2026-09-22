@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/workflow"
@@ -21,13 +22,14 @@ func TestTargetContinuationDoesNotFallBackToCheckout(t *testing.T) {
 	selected := workflow.ContributionSelector{Target: "fixture"}
 	req := bindRequest(f, "continue")
 	req.Branch = ""
-	req.Continue = &selected
+	req.Continue = continuing(t, f, selected)
 	req.UseRecordedBuild = true
 	_, err := f.engine.BindVerification(t.Context(), req)
 	require.ErrorContains(t, err, "no prepared update branch")
 	candidateJob(t, f, id)
 	f.run(t, id)
 	prepared := f.status(t, id).Jobs[0].Job
+	req.Continue = continuing(t, f, selected)
 	bound, err := f.engine.BindVerification(t.Context(), req)
 	require.NoError(t, err)
 	require.Equal(t, prepared.Prepared.Source, bound.Request.Spec.Source)
@@ -38,18 +40,26 @@ func TestTargetContinuationDoesNotFallBackToCheckout(t *testing.T) {
 	require.Equal(t, prepared.ChangeID, receipt.ChangeID)
 
 	// An unrelated successful job must not become the selected contribution.
-	selected.Target = "untracked"
-	_, err = f.engine.BindVerification(t.Context(), req)
+	_, err = f.engine.Resolve(t.Context(), workflow.ResolutionRequest{Action: record.Verify, Selection: macports.Selection{Selector: "untracked"}})
 	require.ErrorContains(t, err, "no open contribution")
-	selected.Target = "fixture"
 	require.NoError(t, f.store.Update(t.Context(), f.repository, func(ctx context.Context, tx state.Tx) error {
 		return tx.PutChange(ctx, record.Change{ID: "independent", InitiatingTarget: "fixture", Targets: input.Spec.Targets, Disposition: record.ChangeOpen})
 	}))
-	_, err = f.engine.BindVerification(t.Context(), req)
+	_, err = f.engine.Resolve(t.Context(), workflow.ResolutionRequest{Action: record.Verify, Selection: macports.Selection{Selector: "fixture"}})
 	require.ErrorContains(t, err, "multiple open contributions")
 	selected.ChangeID = prepared.ChangeID
+	req.Continue = continuing(t, f, selected)
 	_, err = f.engine.BindVerification(t.Context(), req)
 	require.NoError(t, err)
+}
+
+// continuing resolves the tracked contribution a verification continues.
+func continuing(t *testing.T, f *fixture, selected workflow.ContributionSelector) *workflow.Resolution {
+	t.Helper()
+	resolution, err := f.engine.Resolve(t.Context(), workflow.ResolutionRequest{Action: record.Verify, Selection: macports.Selection{Selector: selected.Target}, Branch: selected.Branch, ChangeID: selected.ChangeID})
+	require.NoError(t, err)
+	require.Equal(t, workflow.Continue, resolution.Kind)
+	return &resolution
 }
 
 func TestTargetContinuationRejectsDirtyCheckoutAndMissingBranch(t *testing.T) {
@@ -65,7 +75,7 @@ func TestTargetContinuationRejectsDirtyCheckoutAndMissingBranch(t *testing.T) {
 	portfile := filepath.Join(f.repo.Root, "devel/fixture/Portfile")
 	require.NoError(t, os.WriteFile(portfile, []byte("version 2\n"), 0600))
 	req := bindRequest(f, "verify")
-	req.Continue = &workflow.ContributionSelector{Target: "fixture"}
+	req.Continue = continuing(t, f, workflow.ContributionSelector{Target: "fixture"})
 	_, err = f.engine.BindVerification(t.Context(), req)
 	require.ErrorContains(t, err, "uncommitted files")
 	req.Continue = nil
@@ -77,7 +87,7 @@ func TestTargetContinuationRejectsDirtyCheckoutAndMissingBranch(t *testing.T) {
 	require.NoError(t, err, "%s", out)
 	out, err = exec.CommandContext(t.Context(), "git", "-C", f.repo.Root, "branch", "-D", branch).CombinedOutput()
 	require.NoError(t, err, "%s", out)
-	req.Continue = &workflow.ContributionSelector{Target: "fixture"}
+	req.Continue = continuing(t, f, workflow.ContributionSelector{Target: "fixture"})
 	_, err = f.engine.BindVerification(t.Context(), req)
 	require.Error(t, err)
 }
@@ -93,7 +103,7 @@ func TestTargetPublicationUsesPreparedRevisionAndRecordedBuild(t *testing.T) {
 	require.Equal(t, prepared.ResultRevision, pub.Branch.ExpectedRevision)
 	require.Equal(t, prepared.Prepared.Source.Commit, pub.Spec.Source.Commit)
 	req := bindRequest(f, "verify-by-target")
-	req.Continue = &workflow.ContributionSelector{Target: "fixture"}
+	req.Continue = continuing(t, f, workflow.ContributionSelector{Target: "fixture"})
 	req.UseRecordedBuild = true
 	bound, err := f.engine.BindVerification(t.Context(), req)
 	require.NoError(t, err)

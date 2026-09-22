@@ -74,12 +74,28 @@ func TestResolveOntoAContributionWithoutAJobOfItsOwn(t *testing.T) {
 	require.Equal(t, record.EditIntent{KeepOldChecksums: true}, resolution.Intent, "an Onto inherits no intent from a job")
 	require.Nil(t, resolution.Master, "an Onto does not fetch master")
 	require.Contains(t, resolution.Detail, "lands as an amendment")
-	// A verification's lookup finds the same contribution as a Continue of
-	// nothing in particular: the change to check the branch against.
-	found, err := f.engine.Resolve(t.Context(), workflow.ResolutionRequest{Action: record.Verify, Selection: macports.Selection{Selector: "fixture"}, Require: true, Lookup: true})
-	require.NoError(t, err)
-	require.Equal(t, workflow.Onto, found.Kind)
-	require.Equal(t, record.ChangeID("change"), found.ChangeID())
+	// A verification resolves the same contribution as recorded: a Continue
+	// with the change and revision to check the captured branch against,
+	// by name, by branch, or by change, and reads nothing else.
+	for _, selection := range []workflow.ResolutionRequest{{Selection: macports.Selection{Selector: "fixture"}}, {Branch: "candidate"}, {ChangeID: "change"}, {Selection: macports.Selection{Selector: "fixture"}, Branch: "candidate"}} {
+		selection.Action = record.Verify
+		found, err := f.engine.Resolve(t.Context(), selection)
+		require.NoError(t, err)
+		require.Equal(t, workflow.Continue, found.Kind)
+		require.Equal(t, record.ChangeID("change"), found.ChangeID())
+		require.Equal(t, "candidate", found.Branch)
+		require.NotNil(t, found.Revision)
+		require.Equal(t, f.source, found.Source)
+		require.Nil(t, found.Master)
+	}
+	_, err = f.engine.Resolve(t.Context(), workflow.ResolutionRequest{Action: record.Verify, Selection: macports.Selection{Selector: "other"}, Branch: "candidate"})
+	require.ErrorContains(t, err, "selector does not match contribution")
+	_, err = f.engine.Resolve(t.Context(), workflow.ResolutionRequest{Action: record.Verify, Branch: "elsewhere"})
+	require.ErrorIs(t, err, state.ErrNotFound)
+	_, err = f.engine.Resolve(t.Context(), workflow.ResolutionRequest{Action: record.Verify})
+	require.ErrorContains(t, err, "select a target, branch, or change")
+	_, err = (&workflow.Engine{Repo: f.repo}).Resolve(t.Context(), workflow.ResolutionRequest{Action: record.Verify, Selection: macports.Selection{Selector: "fixture"}})
+	require.Error(t, err, "a verification needs the records")
 }
 
 func TestResolveContinuesAPriorJobAndInheritsItsChoices(t *testing.T) {

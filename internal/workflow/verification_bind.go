@@ -18,8 +18,10 @@ import (
 
 type VerificationRequest struct {
 	KeepFailed bool
-	// Continue selects tracked work before capturing its committed source.
-	Continue          *ContributionSelector
+	// Continue, when set, is the resolution of the tracked contribution
+	// the verification continues, made under its action; nil captures an
+	// untracked branch or the working tree.
+	Continue          *Resolution
 	UseRecordedBuild  bool
 	TargetBuilds      map[string]record.BuildConfig
 	IncludeDependents bool
@@ -60,10 +62,10 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 	}
 	var continuation *record.Change
 	if request.Continue != nil {
-		change, err := e.SelectContribution(ctx, *request.Continue)
-		if err != nil {
-			return BoundVerification{}, err
+		if request.Continue.Change == nil {
+			return BoundVerification{}, fmt.Errorf("%w: the continued resolution names no contribution", ErrInvalidRequest)
 		}
+		change := *request.Continue.Change
 		if err := contributionPrepared(change); err != nil {
 			return BoundVerification{}, err
 		}

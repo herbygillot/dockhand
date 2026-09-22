@@ -41,25 +41,29 @@ func (s *Services) BindVerification(ctx context.Context, request Verification) (
 	if err != nil {
 		return workflow.BoundVerification{}, err
 	}
-	var continuation *workflow.ContributionSelector
+	var continuation *workflow.Resolution
 	if !request.WorkingTree && !request.Adopt {
-		selected := workflow.ContributionSelector{Target: request.Selection.Selector, Branch: request.Branch, ChangeID: request.ChangeID}
-		if selected.Target == "" && selected.Branch == "" && selected.ChangeID == "" {
-			selected.Branch, err = s.Workflow.Repo.CurrentBranch(ctx)
+		selection := workflow.ResolutionRequest{Action: record.Verify, Selection: request.Selection, Branch: request.Branch, ChangeID: request.ChangeID, Platform: platform}
+		if selection.Selection.Selector == "" && selection.Branch == "" && selection.ChangeID == "" {
+			selection.Branch, err = s.Workflow.Repo.CurrentBranch(ctx)
 			if err != nil {
 				return workflow.BoundVerification{}, err
 			}
 		}
-		continuation = &selected
+		resolution, err := s.Workflow.Resolve(ctx, selection)
+		if err != nil {
+			return workflow.BoundVerification{}, err
+		}
+		continuation = &resolution
 	}
 	// An adopted branch that turns out to be tracked is continued as itself.
 	if !request.WorkingTree && request.Adopt && request.Branch != "" && macports.ValidName(request.Selection.Selector) {
-		change, lookupErr := s.Workflow.SelectContribution(ctx, workflow.ContributionSelector{Branch: request.Branch})
+		resolution, lookupErr := s.Workflow.Resolve(ctx, workflow.ResolutionRequest{Action: record.Verify, Selection: request.Selection, Branch: request.Branch, Platform: platform})
 		if lookupErr != nil && !errors.Is(lookupErr, state.ErrNotFound) {
 			return workflow.BoundVerification{}, lookupErr
 		}
-		if lookupErr == nil && change.InitiatingTarget != "" {
-			continuation = &workflow.ContributionSelector{Target: request.Selection.Selector, Branch: request.Branch}
+		if lookupErr == nil && resolution.Change.InitiatingTarget != "" {
+			continuation = &resolution
 		}
 	}
 	bound, err := s.Workflow.BindVerification(ctx, workflow.VerificationRequest{KeepFailed: request.KeepFailed,
