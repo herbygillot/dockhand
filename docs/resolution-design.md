@@ -406,6 +406,27 @@ that too.
    transaction in the architecture. The 2026-09-16 review's condition
    for the split, that the shared pieces move cleanly, is not met.
 
+## Tightened after the follow-up review, 2026-09-22
+
+The [follow-up review](reviews/2026-09-22-architecture-follow-up.md) read
+the value after step 6 and asked for its contract to be tightened before
+more callers depend on it. Three changes, all landed the same day
+([note](activity/2026-09-22-contribution-revision-findings.md)), and
+they amend what the sections above say:
+
+- `Require`, `Lookup`, and `Offline` are gone. An action that prepares no
+  update, a verification or a correction, resolves to the contribution as
+  recorded whatever else is asked, so the first two were implied by the
+  action, and the third had no caller. `Preview` is the one control.
+- A fifth kind, `Tracked`: the contribution as recorded with its current
+  revision, what a verification or a correction works on. It decides
+  nothing about master or a prior job, and `Continue` means only what
+  step 2 said: a prior job's recorded input and inherited choices. The
+  verification binding takes a `Tracked` resolution and nothing else.
+- Adoption is not a mode of `Resolve`. The caller adopts first, through
+  `app.Adopt`, in a dry run for a preview, and `Engine.ResolveAdopted`
+  reads the result into the Adopt kind. `Resolve` reads and never writes.
+
 ## Risks
 
 - Behavior that lives in the merge of a prior job's intent is covered
