@@ -40,6 +40,15 @@ func newFixture(t *testing.T) *fixture {
 	command.Env = isolatedGitEnv()
 	output, err := command.CombinedOutput()
 	require.NoError(t, err, "git init (Git is required): %v\n%s", err, output)
+	// The engine reads the author from the repository; a fixture names one
+	// rather than leaving Git to guess it from the host, which fails where
+	// the hostname gives no email.
+	for key, value := range map[string]string{"user.name": "Dockhand test", "user.email": "test@example.invalid"} {
+		command := exec.CommandContext(t.Context(), "git", "-C", root, "config", key, value)
+		command.Env = isolatedGitEnv()
+		output, err := command.CombinedOutput()
+		require.NoError(t, err, "%s", output)
+	}
 
 	repo, err := git.Open(t.Context(), root, "")
 	require.NoError(t, err)

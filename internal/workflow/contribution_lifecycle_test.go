@@ -362,9 +362,7 @@ func TestMergeCleanupIsOwedUntilSettled(t *testing.T) {
 	f, hosting, selected := publishedLifecycleFixture(t)
 	hosting.observation.PullRequest.State = record.PullRequestMerged
 	// The fork stays readable for observation; only deleting its ref fails.
-	heads := filepath.Join(hosting.remote, "refs", "heads")
-	require.NoError(t, os.Chmod(heads, 0o555))
-	t.Cleanup(func() { _ = os.Chmod(heads, 0o755) })
+	allowDeletion := refuseRefDeletion(t, hosting.remote)
 	result, err := f.engine.RefreshContribution(t.Context(), selected)
 	require.NoError(t, err)
 	require.Equal(t, record.ChangeMerged, result.Change.Disposition)
@@ -385,7 +383,7 @@ func TestMergeCleanupIsOwedUntilSettled(t *testing.T) {
 	require.Equal(t, "merged; fork branch author/ports:candidate cleanup pending: "+cleanup.Fork.Detail, rows[0].Next)
 
 	// Not due yet: the cycle leaves it alone even though the remote is writable again.
-	require.NoError(t, os.Chmod(heads, 0o755))
+	allowDeletion()
 	_, err = f.engine.Cycle(t.Context(), workflow.Scope{All: true})
 	require.NoError(t, err)
 	stored = loadChange(t, f, "change")
@@ -415,13 +413,11 @@ func TestRefreshOfMergedContributionSettlesOwedCleanupAtOnce(t *testing.T) {
 	t.Parallel()
 	f, hosting, selected := publishedLifecycleFixture(t)
 	hosting.observation.PullRequest.State = record.PullRequestMerged
-	heads := filepath.Join(hosting.remote, "refs", "heads")
-	require.NoError(t, os.Chmod(heads, 0o555))
-	t.Cleanup(func() { _ = os.Chmod(heads, 0o755) })
+	allowDeletion := refuseRefDeletion(t, hosting.remote)
 	result, err := f.engine.RefreshContribution(t.Context(), selected)
 	require.NoError(t, err)
 	require.Equal(t, record.CleanupPending, result.Change.Cleanup.Fork.State)
-	require.NoError(t, os.Chmod(heads, 0o755))
+	allowDeletion()
 	result, err = f.engine.RefreshContribution(t.Context(), selected)
 	require.NoError(t, err)
 	require.Contains(t, result.Detail, "not reopened")
@@ -430,6 +426,19 @@ func TestRefreshOfMergedContributionSettlesOwedCleanupAtOnce(t *testing.T) {
 	remote, err := f.repo.RemoteHead(t.Context(), hosting.remote, "candidate")
 	require.NoError(t, err)
 	require.False(t, remote.Exists)
+}
+
+// refuseRefDeletion makes a bare remote refuse every ref deletion pushed to
+// it, through a pre-receive hook, until the returned function lifts it. A
+// read-only refs directory would do the same for most users, but not for
+// root, which ignores permission bits.
+func refuseRefDeletion(t *testing.T, remote string) func() {
+	t.Helper()
+	hook := filepath.Join(remote, "hooks", "pre-receive")
+	script := "#!/bin/sh\nzero=0000000000000000000000000000000000000000\nwhile read old new ref; do\n\tif [ \"$new\" = \"$zero\" ]; then\n\t\techo \"deleting $ref is refused\" >&2\n\t\texit 1\n\tfi\ndone\n"
+	require.NoError(t, os.MkdirAll(filepath.Dir(hook), 0o755))
+	require.NoError(t, os.WriteFile(hook, []byte(script), 0o755))
+	return func() { require.NoError(t, os.Remove(hook)) }
 }
 
 func loadChange(t *testing.T, f *fixture, id record.ChangeID) record.Change {
