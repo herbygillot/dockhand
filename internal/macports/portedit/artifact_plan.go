@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
-	"maps"
 	"slices"
-	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
@@ -53,11 +51,9 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 		return nil, err
 	}
 	plan := &observedArchivePlan{}
-	covered, inert := map[string]bool{}, map[string]bool{}
-	declared := map[string]bool{}
+	coverage := newArchiveCoverage()
 	protected := map[string]bool{}
 	changed := map[string]bool{}
-	unique := map[string]bool{}
 	progress.DebugReport(ctx, "Observing %d archive contexts", len(profiles))
 	befores, err := input.observe.Observe(ctx, input.data, profiles, true, false)
 	if err != nil {
@@ -125,19 +121,18 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 					return nil, fmt.Errorf("%w: candidate changed checksum literals", ErrFidelity)
 				}
 			}
-			declared[group.ID()] = true
 			if !affected {
 				protected[group.ID()] = true
 			}
 		}
-		maps.Copy(inert, inertChecksumGroups(after.Snapshot.Ports[input.target.Name], binding.Groups))
+		coverage.declare(next, binding.Groups)
 		oldFiles := map[string]distfiles.Artifact{}
 		for _, artifact := range oldBinding.Artifacts {
 			oldFiles[artifact.Group.ID()] = artifact
 		}
 		for _, artifact := range binding.Artifacts {
 			id := artifact.Group.ID()
-			covered[id] = true
+			coverage.cover(artifact)
 			previous, ok := oldFiles[id]
 			if !ok {
 				return nil, fmt.Errorf("%w: candidate changed archive ownership", ErrFidelity)
@@ -153,19 +148,14 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 				return nil, fmt.Errorf("%w: protected artifact location changed", ErrFidelity)
 			}
 			changed[id] = true
-			key := id + "\x00" + artifact.Name + "\x00" + strings.Join(artifact.URLs, "\x00")
-			if !unique[key] {
-				plan.downloads = append(plan.downloads, plannedArchive{artifact: artifact, info: next})
-				unique[key] = true
-			}
+			coverage.download(artifact, next)
 		}
 		plan.contexts = append(plan.contexts, archiveContext{profile: profile, before: before.Snapshot, after: after.Snapshot, binding: binding, affected: affected})
 	}
-	for id := range declared {
-		if !covered[id] && !inert[id] {
-			return nil, fmt.Errorf("%w: checksum declaration %s has no archive in the observed contexts", errProbeInconclusive, id)
-		}
+	if ids := coverage.uncovered(); len(ids) > 0 {
+		return nil, fmt.Errorf("%w: checksum declaration %s has no archive in the observed contexts", errProbeInconclusive, ids[0])
 	}
+	plan.downloads = coverage.downloads
 	for id := range changed {
 		if protected[id] {
 			return nil, fmt.Errorf("%w: checksum declaration %s is shared with a protected archive", ErrFidelity, id)

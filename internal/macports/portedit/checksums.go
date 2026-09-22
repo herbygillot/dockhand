@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
-	"maps"
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/progress"
@@ -37,7 +35,7 @@ func (s *Service) planObservedChecksums(ctx context.Context, request Request, in
 		return nil, err
 	}
 	plan := &observedArchivePlan{}
-	declared, covered, unique, inert := map[string]bool{}, map[string]bool{}, map[string]bool{}, map[string]bool{}
+	coverage := newArchiveCoverage()
 	observations, err := input.observe.Observe(ctx, input.data, profiles, true, false)
 	if err != nil {
 		return nil, fmt.Errorf("%w: observing %v", errProbeInconclusive, err)
@@ -56,25 +54,17 @@ func (s *Service) planObservedChecksums(ctx context.Context, request Request, in
 			return nil, err
 		}
 		info := observed.Snapshot.Ports[input.target.Name]
-		for _, group := range binding.Groups {
-			declared[group.ID()] = true
-		}
-		maps.Copy(inert, inertChecksumGroups(info, binding.Groups))
+		coverage.declare(info, binding.Groups)
 		for _, artifact := range binding.Artifacts {
-			covered[artifact.Group.ID()] = true
-			key := artifact.Group.ID() + "\x00" + artifact.Name + "\x00" + strings.Join(artifact.URLs, "\x00")
-			if !unique[key] {
-				plan.downloads = append(plan.downloads, plannedArchive{artifact: artifact, info: info})
-				unique[key] = true
-			}
+			coverage.cover(artifact)
+			coverage.download(artifact, info)
 		}
 		plan.contexts = append(plan.contexts, archiveContext{profile: profile, before: observed.Snapshot, after: observed.Snapshot, binding: binding})
 	}
-	for id := range declared {
-		if !covered[id] && !inert[id] {
-			return nil, fmt.Errorf("%w: checksum declaration %s has no archive in the observed contexts", errProbeInconclusive, id)
-		}
+	if ids := coverage.uncovered(); len(ids) > 0 {
+		return nil, fmt.Errorf("%w: checksum declaration %s has no archive in the observed contexts", errProbeInconclusive, ids[0])
 	}
+	plan.downloads = coverage.downloads
 	return plan, nil
 }
 
