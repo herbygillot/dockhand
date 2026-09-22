@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/credential"
@@ -173,7 +174,7 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, *runtime,
 	}
 	section(root.PersistentFlags(), sectionPaths, "tree", "prefix", "db", "git", "tart", "go2port", "cargo2port")
 	section(root.PersistentFlags(), sectionOutput, "json", "verbose", "debug")
-	cobra.AddTemplateFunc("flagSections", flagSections)
+	registerTemplateFuncs()
 	root.SetUsageTemplate(usageTemplate)
 	help := root.HelpFunc()
 	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
@@ -236,4 +237,14 @@ func groupCommands(root *cobra.Command) {
 			root.AddCommand(command)
 		}
 	}
+}
+
+// registerTemplateFuncs adds the usage template's functions to cobra's
+// package-wide table once. The table is a plain map, and a root is built
+// per command and per test, in parallel under the test runner, so adding
+// on every construction raced and the runtime stopped the binary.
+var templateFuncs sync.Once
+
+func registerTemplateFuncs() {
+	templateFuncs.Do(func() { cobra.AddTemplateFunc("flagSections", flagSections) })
 }
