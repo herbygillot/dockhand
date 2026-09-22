@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/git/changeset"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
@@ -26,10 +25,6 @@ type CorrectionRequest struct {
 	// neither means the current branch.
 	Target string
 	Branch string
-	// Tree, when set, is a prepared tree that becomes the replacement
-	// commit's contents in place of a checkout capture: an update dockhand
-	// prepared onto the contribution's own revision.
-	Tree record.ObjectID
 	// Squash replaces the branch's commits, however many, with one commit of
 	// the branch's tree on the contribution's base; the subject is the pull
 	// request's title when one is attached. It is how a stacked pull request
@@ -127,14 +122,9 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 	if err := bound.allowsPublication(input.Publication); err != nil {
 		return result, err
 	}
-	if input.Tree != "" {
-		if !git.ValidObjectID(string(input.Tree)) {
-			return result, fmt.Errorf("%w: prepared tree must be a literal object", ErrInvalidRequest)
-		}
-		snapshot.Tree, snapshot.ModifiedPaths, snapshot.UntrackedPaths = input.Tree, nil, nil
-	} else if input.Squash {
-		// The branch's tree as committed, folded onto the base below.
-	} else if input.Action == record.Amend && input.Branch == "" {
+	// A squash takes the branch's tree as committed, folded onto the base
+	// below; an amend of the current branch takes the checkout.
+	if input.Action == record.Amend && input.Branch == "" && !input.Squash {
 		snapshot, err = changeset.CaptureCheckout(ctx, e.Repo)
 		if err != nil {
 			return result, err
