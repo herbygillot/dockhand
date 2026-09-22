@@ -155,6 +155,14 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 		request.Stub, request.SharedRelease = name, true
 		selected = carrier
 	}
+	if selected.Subport == "" {
+		// A main port's release is the Portfile's release: a subport that
+		// shares the main port's version moves with it by construction, the
+		// way atuin-server moves with atuin, and the person reviews the whole
+		// edit. Only a named subport needs --shared-release to move its
+		// siblings.
+		request.SharedRelease = true
+	}
 	info, ok := before.Ports[selected.Name]
 	if !ok {
 		return nil, fmt.Errorf("%w: subport %s was not evaluated", ErrUnsupported, selected.Name)

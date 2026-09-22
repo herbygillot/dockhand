@@ -49,6 +49,8 @@ The 2026-09-21 baseline ([report](activity/2026-09-21-baseline-survey.md)) leave
 
 Local verification of a shared release builds the newest subport by default and every subport with `--all-subports`; the GitHub provider still reports multi-target coverage as unsupported and the pull request workflow builds the siblings. Extend the GitHub provider when a shared release must be proven there before publication.
 
+A main port's bump moves the subports sharing its version without a flag, since the Portfile makes them one release ([note](activity/2026-09-22-main-port-authorizes-shared-release.md)). Holding one such subport back is not a flag's job: a subport that inherits the main port's `version` has no version of its own to keep, and one that must stay behind pins its version in the Portfile, which the release scope already protects.
+
 ## Needs design
 
 ### Review and unattended-publication authority

@@ -69,9 +69,10 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 	if err != nil {
 		return archivePlan{}, err
 	}
-	// The scope is recorded when it holds more than the target: an authorized
-	// shared release, or obsolete followers that moved with the target.
-	if request.SharedRelease || len(scope.Affected) > 1 {
+	// The scope is recorded when it holds more than the target: siblings
+	// sharing the release, or obsolete followers that moved with the target.
+	// A release of one port records none, authorized or not.
+	if len(scope.Affected) > 1 {
 		scope.Input = input.versionInput
 		input.scope = scope
 	}

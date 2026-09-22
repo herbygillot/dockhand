@@ -31,20 +31,22 @@ func (c probeCatalog) ListTags(context.Context) ([]forge.Tag, error) {
 func TestSourceBoundDiscoveryDoesNotRequireABumpOrPermitUnsafeEdits(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
-		body, tag, version string
-		unsafe             bool
+		body, subport, tag, version string
+		unsafe                      bool
 	}{
-		{"set release 12\ngithub.setup owner fixture $release v\nversion [expr {${github.version} * 10 + 7}]", "v13", "137", false},
-		{"github.setup owner fixture 1.2.3 v\nsubport fixture-child {}", "v1.2.4", "1.2.4", true},
+		{"set release 12\ngithub.setup owner fixture $release v\nversion [expr {${github.version} * 10 + 7}]", "", "v13", "137", false},
+		// A named subport's release moves its sibling, the main port, which
+		// an unauthorized release must not do.
+		{"github.setup owner fixture 1.2.3 v\nsubport fixture-child {}", "fixture-child", "v1.2.4", "1.2.4", true},
 	} {
-		service, request, input := probeFixture(t, test.body+`
+		service, request, input := probeFixtureSelecting(t, test.body+`
 options github.tarball_from
 github.tarball_from archive
 livecheck.type regex
 livecheck.url https://github.com/owner/fixture/tags
 livecheck.regex {archive/refs/tags/v([^/]+)\.tar\.gz}
 livecheck.version ${github.version}
-`)
+`, test.subport)
 		probe, err := service.Probe(t.Context(), ProbeSource{Source: request.Source, Workspace: request.Workspace, Selection: request.Selection, Platform: request.Platform})
 		require.NoError(t, err)
 		info := probe.Port()

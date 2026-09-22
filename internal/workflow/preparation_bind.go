@@ -86,6 +86,12 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 		targets = []record.Target{carrier}
 		request.SharedRelease, request.Stub = true, stub
 		progress.Report(ctx, "%s is a stub; editing %s and its sibling subports as one release", stub, carrier.Name)
+	} else if request.Action == record.Bump && targets[0].Subport == "" {
+		// A main port's release is its Portfile's: the subports sharing its
+		// version move with it by construction, and the person reviews the
+		// whole edit. The authorization is recorded with the job, as a
+		// stub's is; only a named subport needs --shared-release.
+		request.SharedRelease = true
 	}
 	if request.ResolveBuild != nil {
 		if request.Build != nil || request.BuildRequirements != nil || request.VerificationProblem != "" || request.Verification != record.VerificationRequired {

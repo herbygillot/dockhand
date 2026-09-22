@@ -17,6 +17,14 @@ import (
 
 func probeFixture(t *testing.T, declaration string) (*Service, Request, *sourceInput) {
 	t.Helper()
+	return probeFixtureSelecting(t, declaration, "")
+}
+
+// probeFixtureSelecting loads the fixture with a named subport selected; a
+// subport's siblings move only under --shared-release, where a main port's
+// move with it.
+func probeFixtureSelecting(t *testing.T, declaration, subport string) (*Service, Request, *sourceInput) {
+	t.Helper()
 	executable, err := exec.LookPath("port-tclsh")
 	if err != nil {
 		t.Skip("native MacPorts evaluator required")
@@ -38,7 +46,7 @@ proc github.setup {owner project raw prefix} {
 }
 ` + declaration + "\nrevision 3\nchecksums sha256 " + strings.Repeat("0", 64) + "\n"
 	require.NoError(t, os.WriteFile(filepath.Join(root, "devel/fixture/Portfile"), []byte(body), 0600))
-	request := Request{Action: record.Bump, Source: record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, Workspace: adopt(t, root), Selection: macports.Selection{Selector: "fixture"}}
+	request := Request{Action: record.Bump, Source: record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, Workspace: adopt(t, root), Selection: macports.Selection{Selector: "fixture", Subport: subport}}
 	service := &Service{Ports: &eval.Evaluator{Executable: executable}}
 	input, err := service.load(t.Context(), &request)
 	require.NoError(t, err)
@@ -76,20 +84,21 @@ version [clock format [clock scan ${github.version} -format %Y-%m-%d -gmt 1] -fo
 func TestVersionProbingRejectsAmbiguityAndSiblingChanges(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
-		name, body, detail string
-		expected           error
+		name, body, subport, detail string
+		expected                    error
 	}{
 		{"ambiguous", `set a 1.2.3
 set b 1.2.3
-if {$a ne "1.2.3"} {github.setup owner fixture $a v} else {github.setup owner fixture $b v}`, "2 version inputs", ErrUnsupported},
-		{"sibling", "github.setup owner fixture 1.2.3 v\nsubport fixture-child {}", "fixture-child", ErrFidelity},
-		{"unchanged evaluated version", "github.setup owner fixture 1.2.3 v\nversion 5", "did not change the evaluated version", ErrUnsupported},
+if {$a ne "1.2.3"} {github.setup owner fixture $a v} else {github.setup owner fixture $b v}`, "", "2 version inputs", ErrUnsupported},
+		// The subport is selected: its sibling, the main port, moves too.
+		{"sibling", "github.setup owner fixture 1.2.3 v\nsubport fixture-child {}", "fixture-child", "shared release also changes fixture", ErrFidelity},
+		{"unchanged evaluated version", "github.setup owner fixture 1.2.3 v\nversion 5", "", "did not change the evaluated version", ErrUnsupported},
 		{"failed probe", `set release 1.2.3
 if {$release ne "1.2.3"} {error "candidate is not evaluable"}
-github.setup owner fixture $release v`, "inconclusive", ErrUnsupported},
+github.setup owner fixture $release v`, "", "inconclusive", ErrUnsupported},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			service, request, input := probeFixture(t, test.body)
+			service, request, input := probeFixtureSelecting(t, test.body, test.subport)
 			carriers, err := service.versionCarriers(t.Context(), request, input)
 			if err == nil {
 				_, _, err = service.probeVersion(t.Context(), request, input, carriers, "1.2.4")

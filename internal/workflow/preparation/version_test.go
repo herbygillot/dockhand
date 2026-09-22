@@ -178,20 +178,24 @@ func TestVersionPreparationRefusesCollateralChangesBeforeDownloading(t *testing.
 	for _, test := range []struct {
 		name, style, extra string
 		expected           error
+		subport            string
 	}{
-		{"dependency", "literal", "if {$version eq {2.0}} {depends_lib port:other}\n", preparation.ErrFidelity},
-		{"sibling", "setup", "subport fixture-child {}\n", preparation.ErrFidelity},
-		{"fetch hook", "literal", "pre-fetch {error custom}\n", preparation.ErrUnsupported},
-		{"conditional hook", "literal", "if {1} { pre-fetch {error custom} }\n", preparation.ErrUnsupported},
-		{"custom hook after Go check", "go-check", "if {1} { pre-fetch {error custom} }\n", preparation.ErrUnsupported},
-		{"post-fetch after Go check", "go-check", "if {1} { post-fetch {error custom} }\n", preparation.ErrUnsupported},
-		{"Go dependency", "go-check", "if {$version eq {2.0}} {depends_lib port:other}\n", preparation.ErrFidelity},
-		{"credentials", "literal", "fetch.password secret-test-value\n", preparation.ErrUnsupported},
-		{"credentials after version edit", "literal", "if {$version eq {2.0}} {fetch.password secret-test-value}\n", preparation.ErrUnsupported},
+		{"dependency", "literal", "if {$version eq {2.0}} {depends_lib port:other}\n", preparation.ErrFidelity, ""},
+		// A named subport moves its siblings, here the main port, only with
+		// --shared-release; a main port's own subports move with it.
+		{"sibling", "setup", "subport fixture-child {}\n", preparation.ErrFidelity, "fixture-child"},
+		{"fetch hook", "literal", "pre-fetch {error custom}\n", preparation.ErrUnsupported, ""},
+		{"conditional hook", "literal", "if {1} { pre-fetch {error custom} }\n", preparation.ErrUnsupported, ""},
+		{"custom hook after Go check", "go-check", "if {1} { pre-fetch {error custom} }\n", preparation.ErrUnsupported, ""},
+		{"post-fetch after Go check", "go-check", "if {1} { post-fetch {error custom} }\n", preparation.ErrUnsupported, ""},
+		{"Go dependency", "go-check", "if {$version eq {2.0}} {depends_lib port:other}\n", preparation.ErrFidelity, ""},
+		{"credentials", "literal", "fetch.password secret-test-value\n", preparation.ErrUnsupported, ""},
+		{"credentials after version edit", "literal", "if {$version eq {2.0}} {fetch.password secret-test-value}\n", preparation.ErrUnsupported, ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var requests atomic.Int64
 			service, request := versionFixture(t, test.style, test.extra, func(w http.ResponseWriter, r *http.Request) { requests.Add(1); fmt.Fprint(w, "archive") })
+			request.Selection.Subport = test.subport
 			result, err := service.Prepare(t.Context(), request)
 			require.ErrorIs(t, err, test.expected)
 			require.Empty(t, result.PreparedTree)

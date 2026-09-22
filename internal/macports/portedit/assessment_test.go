@@ -23,7 +23,9 @@ func TestAssessmentDistinguishesInputsFromCandidateFidelity(t *testing.T) {
 		{"calculation", "github.setup owner fixture 2026-09-07 v\nversion [string map {- {}} ${github.version}]", "2026-09-14", "20260914", CandidateChecked},
 		{"fragment", "set patchNumber 3\nproc release {} {global patchNumber; return 1.2.${patchNumber}}\ngithub.setup owner fixture [release] v", "1.2.4", "1.2.4", CandidateChecked},
 		{"ambiguous", "set a 1.2.3\nset b 1.2.3\nif {$a ne {1.2.3}} {github.setup owner fixture $a v} else {github.setup owner fixture $b v}", "1.2.4", "1.2.4", Unsupported},
-		{"sibling", "github.setup owner fixture 1.2.3 v\nsubport fixture-child {}", "1.2.4", "1.2.4", Unsupported},
+		// A main port's subports share its release by construction; the
+		// candidate is checked with them in scope.
+		{"sibling", "github.setup owner fixture 1.2.3 v\nsubport fixture-child {}", "1.2.4", "1.2.4", CandidateChecked},
 		{"inconclusive", "set release 1.2.3\nif {$release ne {1.2.3}} {error {candidate is not evaluable}}\ngithub.setup owner fixture $release v", "1.2.4", "1.2.4", Unknown},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

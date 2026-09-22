@@ -203,11 +203,15 @@ extract.rename no
 				executable = filepath.Join(t.TempDir(), "absent")
 			}
 			service.DependencyTools = dependency.Tools{Cargo2Port: executable, Go2Port: "absent"}
-			request.SharedRelease = scenario == "shared"
+			// A main-port selection authorizes the siblings sharing its
+			// release; a named subport still needs the flag.
+			if scenario == "shared-unauthorized" {
+				request.Selection.Subport = "fixture-server"
+			}
 			result, err := service.Prepare(t.Context(), request)
 			switch scenario {
 			case "shared-unauthorized":
-				require.ErrorContains(t, err, "shared release also changes fixture-server")
+				require.ErrorContains(t, err, "shared release also changes fixture")
 				require.ErrorContains(t, err, "authorize with bump --shared-release")
 			case "unsupported-context":
 				require.ErrorContains(t, err, "pre-fetch hook 1 ends with `set distfiles changed.tar.gz` rather than return -code error, at Portfile line 46")
