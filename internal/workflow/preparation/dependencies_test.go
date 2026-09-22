@@ -133,7 +133,7 @@ func TestGoDependencyPreparation(t *testing.T) {
 func TestCargoDependencyPreparation(t *testing.T) {
 	t.Parallel()
 	sha := strings.Repeat("b", 64)
-	for _, scenario := range []string{"success", "auxiliary", "added", "removed", "missing", "failed", "partial"} {
+	for _, scenario := range []string{"success", "auxiliary", "added", "removed", "missing", "failed", "partial", "shared", "shared-unauthorized"} {
 		t.Run(scenario, func(t *testing.T) {
 			lock := func(name string) string {
 				result := "version = 4\n[[package]]\nname = \"fixture\"\nversion = \"1.0.0\"\n"
@@ -177,6 +177,11 @@ extract.rename no
 			if oldName != "" {
 				extra += "cargo.crates old 1.2.3 " + sha + "\n"
 			}
+			if strings.HasPrefix(scenario, "shared") {
+				// A buildable subport sharing the version, the checksums, and
+				// the regenerated block, as atuin-server shares atuin's.
+				extra += "subport fixture-server {}\n"
+			}
 			var requests atomic.Int64
 			service, request := versionFixture(t, "setup", extra, func(w http.ResponseWriter, r *http.Request) {
 				requests.Add(1)
@@ -198,8 +203,12 @@ extract.rename no
 				executable = filepath.Join(t.TempDir(), "absent")
 			}
 			service.DependencyTools = dependency.Tools{Cargo2Port: executable, Go2Port: "absent"}
+			request.SharedRelease = scenario == "shared"
 			result, err := service.Prepare(t.Context(), request)
 			switch scenario {
+			case "shared-unauthorized":
+				require.ErrorContains(t, err, "shared release also changes fixture-server")
+				require.ErrorContains(t, err, "authorize with bump --shared-release")
 			case "unsupported-context":
 				require.ErrorContains(t, err, "pre-fetch hook 1 ends with `set distfiles changed.tar.gz` rather than return -code error, at Portfile line 46")
 				require.NotContains(t, err.Error(), "dependency resolution failed")
@@ -223,6 +232,10 @@ extract.rename no
 				if scenario == "auxiliary" {
 					require.Contains(t, string(result.Files[0].After), "pinned-v8.gz sha256 cccc size 4")
 					require.Len(t, result.Downloads, 1)
+				}
+				if scenario == "shared" {
+					require.NotNil(t, result.Scope)
+					require.Len(t, result.Scope.Affected, 2, "the subport moves with the port through the regenerated block")
 				}
 			}
 			if err != nil {

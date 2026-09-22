@@ -244,6 +244,19 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if len(family.Ports) != len(after.Ports) {
 		return Result{}, fmt.Errorf("%w: dependency regeneration changed the port set", ErrFidelity)
 	}
+	// A sibling that shares the release moves with the target: its version,
+	// the options that follow it, its checksums, and the regenerated block
+	// it shares. Every other sibling must be untouched. The scope decides
+	// which is which, and refuses an unauthorized move as the version check
+	// did before the downloads.
+	scope, err := fidelity.ReleaseScope(family, after, input.target.Name, request.SharedRelease)
+	if err != nil {
+		return Result{}, fmt.Errorf("%w: %v", ErrFidelity, err)
+	}
+	affected := map[string]bool{}
+	for _, member := range scope.Affected {
+		affected[member.Target.Name] = true
+	}
 	for name, old := range family.Ports {
 		if name == input.target.Name {
 			continue
@@ -252,10 +265,20 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 		if !ok {
 			return Result{}, fmt.Errorf("%w: sibling port disappeared", ErrFidelity)
 		}
-		if old.Revision != next.Revision {
+		before, now := fidelity.ComparablePort(old, family.Root), fidelity.ComparablePort(next, after.Root)
+		if affected[name] {
+			before.Version = now.Version
+			for _, key := range append([]string{"checksums", dependency.Go, dependency.Cargo, dependency.CargoGit}, macports.VersionFollowers...) {
+				if value, ok := now.Options[key]; ok {
+					before.Options[key] = value
+				} else {
+					delete(before.Options, key)
+				}
+			}
+		} else if old.Revision != next.Revision {
 			final.UnexpectedChanges = append(final.UnexpectedChanges, name+".revision changed")
 		}
-		final.UnexpectedChanges = append(final.UnexpectedChanges, fidelity.Compare(name, fidelity.ComparablePort(old, family.Root), fidelity.ComparablePort(next, after.Root))...)
+		final.UnexpectedChanges = append(final.UnexpectedChanges, fidelity.Compare(name, before, now)...)
 	}
 	if len(final.UnexpectedChanges) > 0 {
 		return Result{}, fmt.Errorf("%w: %v", ErrFidelity, final.UnexpectedChanges)
