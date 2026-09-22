@@ -401,6 +401,20 @@ func TestMirrorBootstrapSeedsAColdCacheWithinItsBracket(t *testing.T) {
 	require.True(t, ok)
 	require.True(t, meta.Full)
 	require.Positive(t, meta.Duration)
+
+	// A mirror that cannot be reached is a seed that was not there: the
+	// index is built in full and the command goes on.
+	unreachable := *f
+	unreachable.config.CacheDirectory = t.TempDir()
+	unreachable.config.Mirror = &Mirror{HTTP: server.Client(), URL: "http://127.0.0.1:1/PortIndex"}
+	_, messages, err = unreachable.stage(record.Source{Commit: record.ObjectID(newer), Tree: record.ObjectID(newerTree)})
+	require.NoError(t, err)
+	require.Contains(t, strings.Join(messages, "\n"), "Mirror index unavailable, indexing in full")
+	require.Contains(t, strings.Join(messages, "\n"), "Generating full PortIndex")
+	meta, ok = readGeneration(filepath.Join(unreachable.environment(), generationsDirectory, newerTree))
+	require.True(t, ok)
+	require.True(t, meta.Full)
+	require.Nil(t, meta.Mirror)
 }
 
 // Index generation lists what the root holds, so a sparse workspace handed

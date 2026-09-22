@@ -6,6 +6,8 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/record"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -38,7 +40,7 @@ func dependencyHelper(t *testing.T, body string) string {
 func TestGoDependencyPreparation(t *testing.T) {
 	t.Parallel()
 	sha := strings.Repeat("a", 64)
-	for _, scenario := range []string{"success", "removed", "missing", "failed", "partial", "override", "patched", "unsupported-context"} {
+	for _, scenario := range []string{"success", "removed", "missing", "failed", "partial", "override", "patched", "local-patch", "unsupported-context"} {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
 			old := "module github.com/owner/fixture\ngo 1.24\nrequire example.com/old v1.0.0\n"
@@ -65,6 +67,12 @@ func TestGoDependencyPreparation(t *testing.T) {
 			if scenario == "patched" {
 				extra += "post-patch { reinplace s/foo/bar/ ${worksrcpath}/go.mod }\n"
 			}
+			if scenario == "local-patch" {
+				// A patch under files/ that leaves the manifest alone: the
+				// policy reads it where the stripped baseline was evaluated,
+				// an overlay, whose filespath names that overlay.
+				extra += "patchfiles fix.patch\n"
+			}
 			if scenario == "unsupported-context" {
 				extra += "if {${os.major} < 23 && ${build_arch} eq \"arm64\"} { pre-fetch { set distfiles changed.tar.gz } }\n"
 			}
@@ -90,6 +98,11 @@ func TestGoDependencyPreparation(t *testing.T) {
 				executable = filepath.Join(t.TempDir(), "absent")
 			}
 			service.DependencyTools = dependency.Tools{Go2Port: executable, Cargo2Port: "absent"}
+			if scenario == "local-patch" {
+				tree, err := service.Repo.EditTree(t.Context(), string(request.Source.Tree), []git.FileEdit{{Path: "devel/fixture/files/fix.patch", After: []byte("--- a/README\n+++ b/README\n@@ -1 +1 @@\n-foo\n+bar\n"), Mode: 0o100644}})
+				require.NoError(t, err)
+				request.Source = record.Source{Tree: record.ObjectID(tree)}
+			}
 			result, err := service.Prepare(t.Context(), request)
 			switch scenario {
 			case "unsupported-context":

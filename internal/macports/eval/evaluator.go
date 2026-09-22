@@ -59,7 +59,7 @@ func (e *Evaluator) start(ctx context.Context, tree macports.Tree) (*rpc.Session
 	if _, err := session.Call(ctx, "eval", readOptions+compatibilityScript+"\n"+fetchCredentialsScript+"\n"+platformScript+"\n"+observationScript+"\n"+evaluatorScript); err != nil {
 		return fail(fmt.Errorf("%w: %w", macports.ErrStartup, err))
 	}
-	reply, err := session.Call(ctx, "initialize", tree.Root())
+	reply, err := session.Call(ctx, "initialize", tree.Root(), tree.Base())
 	if err != nil {
 		return fail(fmt.Errorf("%w: %w", macports.ErrStartup, err))
 	}

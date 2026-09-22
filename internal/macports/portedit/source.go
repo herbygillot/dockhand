@@ -3,6 +3,7 @@ package portedit
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
@@ -58,6 +59,10 @@ type sourceInput struct {
 // projections is the overlay holder an input shares with its derived inputs.
 type projections struct {
 	overlays []*workspace.Workspace
+	// byContents finds the overlay already made for the same Portfile
+	// contents, which a candidate evaluated and then observed asks for
+	// twice.
+	byContents map[[32]byte]*workspace.Workspace
 }
 
 // load binds the request's selection to a disposable workspace. A stub
@@ -300,10 +305,18 @@ func (i *sourceInput) projection(ctx context.Context, contents []byte) (*workspa
 	if bytes.Equal(contents, i.loaded) {
 		return i.ws, nil
 	}
+	key := sha256.Sum256(contents)
+	if overlay, ok := i.projections.byContents[key]; ok {
+		return overlay, nil
+	}
 	overlay, err := i.ws.Overlay(ctx, []git.FileEdit{{Path: i.target.Portfile, After: contents}})
 	if err != nil {
 		return nil, err
 	}
+	if i.projections.byContents == nil {
+		i.projections.byContents = map[[32]byte]*workspace.Workspace{}
+	}
+	i.projections.byContents[key] = overlay
 	i.projections.overlays = append(i.projections.overlays, overlay)
 	return overlay, nil
 }

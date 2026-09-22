@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -194,6 +195,46 @@ func TestOverlayHoldsOnlyTheEditedPortAndResources(t *testing.T) {
 	require.Equal(t, []string{"devel/a", "devel/b"}, overlay.Scope().Ports)
 }
 
+// An overlay that does not edit _resources shares the base's directory
+// through one symlink, and stays that way when it widens; one that edits a
+// shared file gets real entries with the edit in place.
+func TestOverlaySharesResourcesBySymlinkUnlessItEditsThem(t *testing.T) {
+	f := newFixture(t)
+	base, err := workspace.Open(t.Context(), f.repo, f.source())
+	require.NoError(t, err)
+	defer base.Close()
+	require.NoError(t, base.EnsurePort(t.Context(), targetA))
+	overlay, err := base.Overlay(t.Context(), []git.FileEdit{{Path: "devel/a/Portfile", After: []byte("edited\n")}})
+	require.NoError(t, err)
+	defer overlay.Close()
+	link, err := os.Lstat(filepath.Join(overlay.Root(), "_resources"))
+	require.NoError(t, err)
+	require.NotZero(t, link.Mode()&os.ModeSymlink, "_resources is one symlink")
+	target, err := os.Readlink(filepath.Join(overlay.Root(), "_resources"))
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(base.Root(), "_resources"), target)
+	require.True(t, exists(overlay.Root(), "_resources/port1.0/group/fixture-1.0.tcl"), "read through the link")
+	require.NoError(t, overlay.EnsureAll(t.Context()))
+	link, err = os.Lstat(filepath.Join(overlay.Root(), "_resources"))
+	require.NoError(t, err)
+	require.NotZero(t, link.Mode()&os.ModeSymlink, "widening leaves the link alone")
+	require.True(t, exists(overlay.Root(), "devel/b/Portfile"))
+
+	editing, err := base.Overlay(t.Context(), []git.FileEdit{{Path: "_resources/port1.0/group/fixture-1.0.tcl", After: []byte("# edited group\n")}})
+	require.NoError(t, err)
+	defer editing.Close()
+	info, err := os.Lstat(filepath.Join(editing.Root(), "_resources"))
+	require.NoError(t, err)
+	require.True(t, info.IsDir(), "an edit under _resources gets a real directory")
+	data, err := os.ReadFile(filepath.Join(editing.Root(), "_resources/port1.0/group/fixture-1.0.tcl"))
+	require.NoError(t, err)
+	require.Equal(t, "# edited group\n", string(data))
+	data, err = os.ReadFile(filepath.Join(base.Root(), "_resources/port1.0/group/fixture-1.0.tcl"))
+	require.NoError(t, err)
+	require.Equal(t, "# group\n", string(data), "the base keeps its file")
+	require.True(t, exists(editing.Root(), "_resources/port1.0/checks/real.list"), "unedited shared files are linked")
+}
+
 // Ensuring through an overlay widens the base and links what it gained,
 // keeping the overlay's edit.
 func TestEnsureOnAnOverlayLinksWhatTheBaseGained(t *testing.T) {
@@ -302,4 +343,40 @@ func TestRegistrySharesOneWorkspacePerSource(t *testing.T) {
 	require.NoError(t, release())
 	require.NoDirExists(t, alone.Root())
 	require.NoError(t, releaseAgain())
+}
+
+// A modeled observation of an overlay reads its PortGroup through the
+// _resources symlink, which resolves into the base; that is a read of the
+// captured tree, not of host state.
+func TestObservationReadsSharedResourcesThroughTheOverlayLink(t *testing.T) {
+	executable, err := exec.LookPath("port-tclsh")
+	if err != nil {
+		t.Skip("MacPorts Tcl required")
+	}
+	f := newFixture(t)
+	base, err := workspace.Open(t.Context(), f.repo, f.source())
+	require.NoError(t, err)
+	defer base.Close()
+	require.NoError(t, base.EnsurePort(t.Context(), targetA))
+	evaluator := &eval.Evaluator{Executable: executable}
+	platform, err := evaluator.NativePlatform(t.Context())
+	require.NoError(t, err)
+	grouped := "PortSystem 1.0\nPortGroup fixture 1.0\nname a\nversion 2\ncategories devel\nmaster_sites http://example.invalid/\nchecksums sha256 0 size 1\n"
+	overlay, err := base.Overlay(t.Context(), []git.FileEdit{{Path: "devel/a/Portfile", After: []byte(grouped)}})
+	require.NoError(t, err)
+	defer overlay.Close()
+	link, err := os.Lstat(filepath.Join(overlay.Root(), "_resources"))
+	require.NoError(t, err)
+	require.NotZero(t, link.Mode()&os.ModeSymlink)
+	bound, err := overlay.Context(targetA, platform)
+	require.NoError(t, err)
+	modeled := record.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}
+	if modeled == platform {
+		modeled.Version = "23"
+	}
+	observed, err := evaluator.Observe(t.Context(), bound, macports.ObservationRequest{Platform: modeled, Declarations: true, Operands: []string{"os.major"}})
+	require.NoError(t, err)
+	require.Equal(t, "2", observed.Snapshot.Ports["a"].Version)
+	require.Empty(t, observed.Ports["a"].Problems, "the PortGroup read resolves into the base, which is the same captured tree")
+	require.False(t, observed.Ports["a"].ModeledHostAccess)
 }

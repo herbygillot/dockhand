@@ -19,6 +19,8 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	os.Setenv("DOCKHAND_INDEX_CACHE", cache)
+	// A cold cache seeds from the mirror; tests never reach it.
+	os.Setenv("DOCKHAND_INDEX_MIRROR", "http://127.0.0.1:1")
 	// Every fixture repository must ignore the developer's Git configuration;
 	// set once here so fixtures can run in parallel.
 	os.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)

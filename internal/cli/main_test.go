@@ -19,6 +19,8 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	os.Setenv("DOCKHAND_INDEX_CACHE", cache)
+	// A cold cache seeds from the mirror; tests never reach it.
+	os.Setenv("DOCKHAND_INDEX_MIRROR", "http://127.0.0.1:1")
 	code := m.Run()
 	os.RemoveAll(temp)
 	os.Exit(code)

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"net/http"
 	"os"
 	"path/filepath"
 
@@ -22,6 +23,16 @@ func indexCacheDirectory(config Config) (string, error) {
 		return "", err
 	}
 	return filepath.Join(cache, "dockhand", "indexes"), nil
+}
+
+// indexMirror is the mirror a cold cache seeds from, for the commands
+// that go online anyway; assess and outdated pass none and stay offline.
+func indexMirror(config Config) *portindex.Mirror {
+	base := config.IndexMirror
+	if base == "" {
+		base = os.Getenv("DOCKHAND_INDEX_MIRROR")
+	}
+	return &portindex.Mirror{HTTP: http.DefaultClient, Base: base}
 }
 
 func surveyIndex(config Config, indexed bool) (portindex.Config, error) {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
-	"net/http"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -18,11 +17,12 @@ type dependentDiscovery struct {
 	repo       *git.Repository
 	ports      macports.Reader
 	indexCache string
+	mirror     *portindex.Mirror
 	workspaces *workspace.Registry
 }
 
 func (d dependentDiscovery) Discover(ctx context.Context, source record.Source, build record.BuildConfig, roots []record.Target) (verify.Coverage, error) {
-	index, err := tart.SourceIndex(build, d.indexCache, &portindex.Mirror{HTTP: http.DefaultClient})
+	index, err := tart.SourceIndex(build, d.indexCache, d.mirror)
 	if err != nil {
 		return verify.Coverage{}, err
 	}

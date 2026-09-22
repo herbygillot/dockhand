@@ -3,10 +3,13 @@ package cli
 import (
 	"bytes"
 	"github.com/herbygillot/dockhand/internal/git"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -25,6 +28,12 @@ func TestAssessFrozenSourceWithoutStateDownloadsOrCatalogs(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte("dirty user edits"), 0600))
 	scratch := t.TempDir()
 	t.Setenv("TMPDIR", scratch)
+	// The index cache is cold, and an assessment still asks no mirror for
+	// a seed: it stays offline, as the usage guide promises.
+	var mirror atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { mirror.Add(1); w.WriteHeader(404) }))
+	t.Cleanup(server.Close)
+	t.Setenv("DOCKHAND_INDEX_MIRROR", server.URL)
 	for _, version := range []string{"", "2.0", "v2.0"} {
 		args := []string{"assess", "fixture", "--json"}
 		if version != "" {
@@ -47,6 +56,7 @@ func TestAssessFrozenSourceWithoutStateDownloadsOrCatalogs(t *testing.T) {
 		}
 		require.Zero(t, downloads.Load())
 		require.Zero(t, catalogs.Load())
+		require.Zero(t, mirror.Load(), "an assessment never seeds its index from the mirror")
 		require.NoDirExists(t, filepath.Dir(config.DBPath))
 		after, err := repo.ReadRefs(t.Context(), "refs/")
 		require.NoError(t, err)

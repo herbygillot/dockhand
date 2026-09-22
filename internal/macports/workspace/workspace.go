@@ -48,8 +48,11 @@ type Workspace struct {
 	ports     []string
 	all       bool
 	resources bool
-	batch     macports.Batch
-	closed    bool
+	// sharedResources marks an overlay whose _resources is a symlink to
+	// the base's directory rather than entries of its own.
+	sharedResources bool
+	batch           macports.Batch
+	closed          bool
 	// adopted marks a workspace over a directory someone else owns and
 	// filled: the whole tree is present, its entries come from a walk, and
 	// Close leaves the directory.
@@ -393,13 +396,29 @@ func (w *Workspace) Overlay(ctx context.Context, edits []git.FileEdit) (*Workspa
 		return nil, errors.Join(err, os.RemoveAll(directory))
 	}
 	overlay := &Workspace{repo: base.repo, source: base.source, directory: directory, base: base, entries: map[string]git.TreeEntry{}, resources: true}
+	editsResources := false
 	for _, edit := range edits {
 		overlay.edits = append(overlay.edits, edited[edit.Path])
 		if port := portDirectory(edit.Path); port != "" && !slices.Contains(overlay.ports, port) {
 			overlay.ports = append(overlay.ports, port)
 		}
+		editsResources = editsResources || strings.HasPrefix(edit.Path, resources+"/")
 	}
 	slices.Sort(overlay.ports)
+	// _resources is read, never written, by an evaluation, and it is a
+	// hundred and fifty files: an overlay that does not edit it points one
+	// symlink at the base's directory rather than linking every file, which
+	// is what made a candidate evaluation cost thirty milliseconds of
+	// kernel time. An overlay that edits a shared file gets real entries.
+	base.mu.Lock()
+	baseResources := base.resources || base.all
+	base.mu.Unlock()
+	if !editsResources && baseResources {
+		if err := os.Symlink(filepath.Join(base.directory, resources), filepath.Join(directory, resources)); err != nil {
+			return nil, errors.Join(err, os.RemoveAll(directory))
+		}
+		overlay.sharedResources = true
+	}
 	for name, entry := range entries {
 		if !overlay.holds(name) {
 			continue
@@ -453,11 +472,13 @@ func (w *Workspace) place(name string, entry git.TreeEntry, edited map[string]gi
 // everything once widened, _resources when materialized, and the port
 // directories ensured or edited. Callers hold w.mu.
 func (w *Workspace) holds(name string) bool {
+	if strings.HasPrefix(name, resources+"/") {
+		// An overlay sharing the base's _resources through a symlink holds
+		// none of its entries itself, however wide it becomes.
+		return !w.sharedResources && (w.all || w.resources)
+	}
 	if w.all {
 		return true
-	}
-	if strings.HasPrefix(name, resources+"/") {
-		return w.resources
 	}
 	port := portDirectory(name)
 	return port != "" && slices.Contains(w.ports, port)

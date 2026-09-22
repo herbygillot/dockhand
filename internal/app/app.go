@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"maps"
 	"net/http"
@@ -40,8 +39,12 @@ type Config struct {
 	// IndexCacheDirectory overrides the shared PortIndex cache root; empty
 	// selects DOCKHAND_INDEX_CACHE, then the user cache directory.
 	IndexCacheDirectory string
-	Tart                tart.Config
-	GitHub              github.Config
+	// IndexMirror overrides the mirror a cold cache seeds its index from,
+	// as the tarballs directory the platform indexes are named under;
+	// empty selects DOCKHAND_INDEX_MIRROR, then the default mirror.
+	IndexMirror string
+	Tart        tart.Config
+	GitHub      github.Config
 }
 
 type Services struct {
@@ -75,7 +78,7 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		return nil, err
 	}
 
-	ports := portReader(config, repo, &portindex.Mirror{HTTP: http.DefaultClient})
+	ports := portReader(config, repo, indexMirror(config))
 	githubClient := newGitHubClient(config.GitHub)
 	discovery := releaseDiscovery(ports, githubClient, http.DefaultClient)
 	// One workspace per source for the command: Tart staging and dependent
@@ -103,7 +106,7 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		Ports:      ports,
 		Workspaces: workspaces,
 		Preparer:   preparation,
-		Dependents: dependentDiscovery{repo: repo, ports: ports, indexCache: indexCache, workspaces: workspaces},
+		Dependents: dependentDiscovery{repo: repo, ports: ports, indexCache: indexCache, mirror: indexMirror(config), workspaces: workspaces},
 		Releases:   preparation,
 		Provider:   provider,
 		Providers:  map[string]verify.Provider{verify.ProviderTart: provider, verify.ProviderGitHub: githubProvider},

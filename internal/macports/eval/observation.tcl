@@ -11,6 +11,7 @@ namespace eval ::dockhand {
                 variable recording 0
                 proc host_event {cmd} {
                     variable source_root
+                    variable base_root
                     set name [lindex $cmd 0]
                     switch -- $name {
                         exec { return "modeled context depends on a host process executed while evaluating the Portfile" }
@@ -31,7 +32,9 @@ namespace eval ::dockhand {
                         return "modeled context has an unresolved filesystem dependency"
                     }
                     set root [file normalize $source_root]
-                    if {$normalized ne $root && [string first "${root}/" $normalized] != 0} {
+                    set base [file normalize $base_root]
+                    if {$normalized ne $root && [string first "${root}/" $normalized] != 0
+                        && $normalized ne $base && [string first "${base}/" $normalized] != 0} {
                         return "modeled context depends on filesystem state outside the captured ports tree"
                     }
                     # normalize does not resolve a final symlink on all Tcl
@@ -79,6 +82,7 @@ namespace eval ::dockhand {
         $worker eval $::dockhand::platform_script
         $worker eval [list set ::dockhand_platform::operands $::dockhand::operands]
         $worker eval [list set ::dockhand_observation::source_root $::dockhand::source_root]
+        $worker eval [list set ::dockhand_observation::base_root $::dockhand::base_root]
     }
     # overrides is the list of variable and value pairs that make this
     # interpreter describe another platform, built once in Go by

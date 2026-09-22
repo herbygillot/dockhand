@@ -28,6 +28,10 @@ type Mirror struct {
 	HTTP *http.Client
 	// URL overrides the platform's default mirror index.
 	URL string
+	// Base overrides the directory the platform's index is named under,
+	// the mirror's tarballs directory; empty selects the default mirror.
+	// A test points it at a local server, and a person at a nearer mirror.
+	Base string
 	// Margin is subtracted from the mirror's Last-Modified to bracket the
 	// master commit; two hours when unset, since master gains tens of ports
 	// an hour and the mirror's index is minutes behind its build.
@@ -56,7 +60,7 @@ func (c *cache) mirrorSeed(ctx context.Context, repo *git.Repository, commit, tr
 	address := mirror.URL
 	if address == "" {
 		var err error
-		if address, err = DefaultMirrorURL(c.platform); err != nil {
+		if address, err = MirrorURL(mirror.Base, c.platform); err != nil {
 			progress.VerboseReport(ctx, "Mirror index unavailable for bootstrap: %v", err)
 			return "", nil, nil, nil
 		}
@@ -78,7 +82,11 @@ func (c *cache) mirrorSeed(ctx context.Context, repo *git.Repository, commit, tr
 	request.Header.Set("Accept-Encoding", "identity")
 	response, err := fetch.Open(mirror.HTTP, request, maxPortIndexBytes)
 	if err != nil {
-		return "", nil, nil, fmt.Errorf("portindex: fetching the mirror index: %w", err)
+		// The mirror is a seed, not a requirement: a mirror that cannot be
+		// reached, or has no index for this platform, costs the full pass
+		// it would have spared and nothing else.
+		progress.Report(ctx, "Mirror index unavailable, indexing in full: %v", err)
+		return "", nil, nil, nil
 	}
 	defer response.Body.Close()
 	lastModified, err := http.ParseTime(response.Header.Get("Last-Modified"))

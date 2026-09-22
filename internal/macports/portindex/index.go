@@ -58,6 +58,16 @@ type Config struct {
 // os.arch, arm or i386, not by the build architecture a platform record
 // carries, so arm64 maps to arm and x86_64 to i386.
 func DefaultMirrorURL(platform record.Platform) (string, error) {
+	return MirrorURL("", platform)
+}
+
+// DefaultMirrorBase is the tarballs directory of the mirror the index is
+// fetched from when no other is configured.
+const DefaultMirrorBase = "https://ftp.fau.de/macports/release/tarballs"
+
+// MirrorURL is the platform's index under a mirror's tarballs directory,
+// the default mirror's when base is empty.
+func MirrorURL(base string, platform record.Platform) (string, error) {
 	for _, value := range []string{platform.OS, platform.Version, platform.Architecture} {
 		if value == "" || strings.ContainsAny(value, "/\\\x00\r\n\t ") {
 			return "", fmt.Errorf("portindex: complete platform required for mirror")
@@ -67,8 +77,11 @@ func DefaultMirrorURL(platform record.Platform) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("portindex: no mirror index is published for the %s architecture", platform.Architecture)
 	}
+	if base == "" {
+		base = DefaultMirrorBase
+	}
 	profile := strings.Join([]string{platform.OS, platform.Version, arch}, "_")
-	return "https://ftp.fau.de/macports/release/tarballs/PortIndex_" + profile + "/PortIndex", nil
+	return strings.TrimRight(base, "/") + "/PortIndex_" + profile + "/PortIndex", nil
 }
 
 // mirrorArchitectures maps a build architecture to the kernel architecture

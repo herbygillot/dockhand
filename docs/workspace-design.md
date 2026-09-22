@@ -93,9 +93,12 @@ func (w *Workspace) Batch(ctx context.Context, ports macports.BatchReader) (macp
 // reads, however wide the base is; Ensure widens it as it widens a base.
 // Tracked files in scope that the edits do not touch are hardlinked from
 // the base, symlinks are re-created from their tree entries, and edited
-// files are written with their entries' modes. Untracked files in the base
-// directory, the staged index among them, are not part of an overlay. The
-// overlay's git tree is not computed until Commit.
+// files are written with their entries' modes; _resources, read and never
+// written by an evaluation, is one symlink to the base's directory unless
+// an edit touches it, since linking its hundred and fifty files per
+// candidate is what a whole-tree survey's kernel time went to. Untracked
+// files in the base directory, the staged index among them, are not part
+// of an overlay. The overlay's git tree is not computed until Commit.
 func (w *Workspace) Overlay(ctx context.Context, edits []git.FileEdit) (*Workspace, error)
 
 // Commit writes the overlay's edits as git objects over the base tree and

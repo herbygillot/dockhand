@@ -74,7 +74,7 @@ func LocalPatches(info macports.PortInfo, portdir string) error {
 	}
 	relative, err := filepath.Rel(base, resolved)
 	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("%w: patches must be inside the frozen port directory", portfile.ErrUnsupported)
+		return fmt.Errorf("%w: patches must be inside the frozen port directory; filespath %s is outside %s", portfile.ErrUnsupported, resolved, base)
 	}
 	for _, name := range files {
 		if !portfile.Literal(name) || name == "." || name == ".." {

@@ -99,7 +99,10 @@ func dependencyPatches(input *sourceInput, kind string) error {
 	if err := checkHooks(script); err != nil {
 		return err
 	}
-	portdir := input.portdir()
+	// The info was evaluated in a projection, the workspace or an overlay
+	// for a derived baseline, and its filespath names that projection: the
+	// port directory it is checked against is the same projection's.
+	portdir := input.portdirIn(input.before.Root)
 	if err := archives.LocalPatches(input.info, portdir); err != nil {
 		return err
 	}
@@ -140,7 +143,10 @@ func (s *Service) dependencyBase(ctx context.Context, request Request, input *so
 	baseValue.family = &baseValue.before
 	base := &baseValue
 
-	sources, err := archives.Sources(base.info, base.portdir())
+	// The stripped baseline was evaluated in an overlay, and its paths name
+	// that overlay; the sources policy checks them against its port
+	// directory there.
+	sources, err := archives.Sources(base.info, base.portdirIn(base.before.Root))
 	if err != nil {
 		return nil, nil, err
 	}

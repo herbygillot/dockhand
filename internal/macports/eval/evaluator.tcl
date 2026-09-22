@@ -1,6 +1,10 @@
 namespace eval ::dockhand {
-    proc initialize {root} {
+    # base is the directory an overlay's shared files resolve to, the
+    # base workspace whose _resources the overlay links; reads there are
+    # reads of the captured tree. It is the root itself for a base.
+    proc initialize {root {base ""}} {
         variable source_root [file normalize $root]
+        variable base_root [file normalize [expr {$base eq "" ? $root : $base}]]
         package require macports
         check_startup
         if {[catch {mportinit} detail]} { incompatible "initialization failed: $detail" }
