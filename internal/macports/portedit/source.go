@@ -21,48 +21,74 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
-// sourceInput is one editing session: the workspace, the evaluated baseline,
-// the selected and owning targets, and the original Portfile contents. Fields
-// after data are filled in as preparation learns more about the source.
+// session is one editing session: the workspace and its bound tree, the
+// native interpreter every evaluation of the session shares, and the
+// candidate overlays it made, closed together. Every baseline of one
+// preparation, the Portfile as loaded and any derived from it, shares one
+// session, and only the input that opened it closes it.
+type session struct {
+	ws   *workspace.Workspace
+	tree macports.Tree
+	// batch is the one native interpreter the session's evaluations share:
+	// the baseline, every candidate, and the final edit, opened on first
+	// use. Modeled observations never use it; each starts its own
+	// interpreter, since observation setup changes the interpreter it
+	// runs in.
+	batch macports.Batch
+	// loaded is the target's Portfile as the workspace holds it on disk,
+	// the only contents that evaluate there directly.
+	loaded []byte
+	// overlays are the candidate projections the session made; they live
+	// as long as the session does, since evaluated paths such as filespath
+	// name them. byContents finds the overlay already made for the same
+	// contents, which a candidate evaluated and then observed asks for
+	// twice.
+	overlays   []*workspace.Workspace
+	byContents map[[32]byte]*workspace.Workspace
+}
+
+// sourceInput is one baseline of an editing session: the evaluated
+// snapshot, the selected and owning targets, the Portfile contents the
+// edit starts from, and what preparation learns about the source. A
+// derived baseline, the Portfile stripped of its generated declarations
+// or another member of a shared release, is a value of its own that shares
+// the session.
 type sourceInput struct {
+	*session
 	scope        *record.ReleaseScope
 	versionInput record.ReleaseInput
-	ws           *workspace.Workspace
-	tree         macports.Tree
-	// projections holds the candidate overlays this input and the inputs
-	// derived from it make; they live as long as the input does, since
-	// evaluated paths such as filespath name them, and Close removes them
-	// together. A derived input is a copy of this one, so the holder is
-	// shared by pointer: an overlay made through the copy is still closed.
-	projections *projections
-	// session is the one native interpreter the input's evaluations share:
-	// the baseline, every candidate, and the final edit. Modeled
-	// observations never use it; each starts its own interpreter, since
-	// observation setup changes the interpreter it runs in.
-	session macports.Batch
-	before  macports.Snapshot
+	before       macports.Snapshot
 	// family is the baseline across the owning Portfile's every subport,
 	// known at load for a main-port selection and evaluated on demand for a
 	// subport's, by familySnapshot.
 	family          *macports.Snapshot
 	primary, target record.Target
 	info            macports.PortInfo
-	// data is the input's baseline Portfile contents, which a derived
-	// input may replace with a stripped form; loaded is what the workspace
-	// holds on disk, and the only contents that evaluate there directly.
-	data, loaded []byte
-	// observe runs the input's modeled observations; its projections are
-	// this input's overlays.
+	// data is the baseline Portfile contents, which a derived baseline
+	// replaces with a stripped form.
+	data []byte
+	// observe runs the baseline's modeled observations; its projections
+	// are the session's overlays.
 	observe *observe.Session
 }
 
-// projections is the overlay holder an input shares with its derived inputs.
-type projections struct {
-	overlays []*workspace.Workspace
-	// byContents finds the overlay already made for the same Portfile
-	// contents, which a candidate evaluated and then observed asks for
-	// twice.
-	byContents map[[32]byte]*workspace.Workspace
+// derive is the baseline of the same session with other contents: the
+// Portfile stripped of its generated declarations, evaluated as given. The
+// family follows the derived baseline, since it is what the regenerated
+// declarations are compared against, and the release scope and version
+// input found so far carry over.
+func (i *sourceInput) derive(data []byte, before macports.Snapshot) *sourceInput {
+	derived := &sourceInput{session: i.session, scope: i.scope, versionInput: i.versionInput, before: before, primary: i.primary, target: i.target, info: before.Ports[i.target.Name], data: data, observe: i.observe.WithBaseline(data)}
+	derived.family = &derived.before
+	return derived
+}
+
+// forMember is the same baseline seen from another member of the shared
+// release, whose own declarations the archive checks bind.
+func (i *sourceInput) forMember(target record.Target) *sourceInput {
+	member := *i
+	member.target = target
+	return &member
 }
 
 // load binds the request's selection to a disposable workspace. A stub
@@ -78,7 +104,7 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 	if err != nil {
 		return nil, err
 	}
-	input := &sourceInput{ws: ws, tree: tree, projections: &projections{}}
+	input := &sourceInput{session: &session{ws: ws, tree: tree}}
 	defer func() {
 		if err != nil {
 			err = errors.Join(err, input.Close())
@@ -221,44 +247,51 @@ func (i *sourceInput) familySnapshot(ctx context.Context, ports macports.Evaluat
 	return snapshot, nil
 }
 
-// native is the reader for the input's native evaluations: one interpreter
-// session bound to the workspace tree, opened on first use and shared by
-// the baseline, every candidate, and the final edit, so a preparation does
-// not start an interpreter per evaluation. When a session cannot be opened
-// the evaluator itself serves, an interpreter per evaluation.
-func (i *sourceInput) native(ctx context.Context, ports macports.Evaluator) snapshotEvaluator {
-	if i.session != nil {
-		return i.session
+// native is the reader for the session's native evaluations: one
+// interpreter bound to the workspace tree, opened on first use and shared
+// by the baseline, every candidate, and the final edit, so a preparation
+// does not start an interpreter per evaluation. When an interpreter cannot
+// be opened the evaluator itself serves, an interpreter per evaluation.
+func (s *session) native(ctx context.Context, ports macports.Evaluator) snapshotEvaluator {
+	if s.batch != nil {
+		return s.batch
 	}
-	session, err := ports.OpenBatch(ctx, i.tree)
+	batch, err := ports.OpenBatch(ctx, s.tree)
 	if err != nil {
 		progress.DebugReport(ctx, "Evaluating without a shared session: %v", err)
 		return ports
 	}
-	i.session = session
-	return session
+	s.batch = batch
+	return batch
 }
 
-// Close ends the input's shared session, if one was opened, and removes
-// the candidate overlays it made. The workspace itself is the caller's.
+// Close ends the session's interpreter, if one was opened, and removes the
+// candidate overlays it made. The workspace itself is the caller's.
+func (s *session) Close() error {
+	if s == nil {
+		return nil
+	}
+	var err error
+	if s.batch != nil {
+		batch := s.batch
+		s.batch = nil
+		err = batch.Close()
+	}
+	overlays := s.overlays
+	s.overlays, s.byContents = nil, nil
+	for _, overlay := range overlays {
+		err = errors.Join(err, overlay.Close())
+	}
+	return err
+}
+
+// Close ends the session the input opened. A derived baseline shares its
+// session and is not closed on its own.
 func (i *sourceInput) Close() error {
 	if i == nil {
 		return nil
 	}
-	var err error
-	if i.session != nil {
-		session := i.session
-		i.session = nil
-		err = session.Close()
-	}
-	if i.projections != nil {
-		overlays := i.projections.overlays
-		i.projections.overlays = nil
-		for _, overlay := range overlays {
-			err = errors.Join(err, overlay.Close())
-		}
-	}
-	return err
+	return i.session.Close()
 }
 
 // portfile is the selected target's Portfile inside the workspace.
@@ -300,24 +333,30 @@ func (i *sourceInput) contextIn(ws *workspace.Workspace, platform record.Platfor
 
 // projection is the workspace itself for the contents it holds on disk,
 // and an overlay with the contents written over the target's Portfile
-// otherwise. Overlays are kept until the input closes.
+// otherwise. Overlays are kept until the session closes.
 func (i *sourceInput) projection(ctx context.Context, contents []byte) (*workspace.Workspace, error) {
-	if bytes.Equal(contents, i.loaded) {
-		return i.ws, nil
+	return i.session.overlay(ctx, i.target.Portfile, contents)
+}
+
+// overlay is the workspace for the contents it holds, and otherwise the
+// overlay already made for the same contents or a new one.
+func (s *session) overlay(ctx context.Context, path string, contents []byte) (*workspace.Workspace, error) {
+	if bytes.Equal(contents, s.loaded) {
+		return s.ws, nil
 	}
 	key := sha256.Sum256(contents)
-	if overlay, ok := i.projections.byContents[key]; ok {
+	if overlay, ok := s.byContents[key]; ok {
 		return overlay, nil
 	}
-	overlay, err := i.ws.Overlay(ctx, []git.FileEdit{{Path: i.target.Portfile, After: contents}})
+	overlay, err := s.ws.Overlay(ctx, []git.FileEdit{{Path: path, After: contents}})
 	if err != nil {
 		return nil, err
 	}
-	if i.projections.byContents == nil {
-		i.projections.byContents = map[[32]byte]*workspace.Workspace{}
+	if s.byContents == nil {
+		s.byContents = map[[32]byte]*workspace.Workspace{}
 	}
-	i.projections.byContents[key] = overlay
-	i.projections.overlays = append(i.projections.overlays, overlay)
+	s.byContents[key] = overlay
+	s.overlays = append(s.overlays, overlay)
 	return overlay, nil
 }
 

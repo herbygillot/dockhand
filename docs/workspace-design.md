@@ -310,7 +310,10 @@ and the workspace is ready for it when it lands.
    the workspace, the target, the baseline, and the release inputs; the
    derived baseline in `dependencies.go`, today a shallow copy sharing the
    session, becomes its own overlay. Measured on a real bump before and
-   after, and by the assess journal over the tree.
+   after, and by the assess journal over the tree. The derived baseline's
+   half landed 2026-09-22: `session` owns the workspace, the interpreter,
+   and the overlays, and a baseline is a value that shares it explicitly
+   ([note](activity/2026-09-22-contribution-owner-and-editing-session.md)).
 4. `portedit/observe` on top of the workspace: it takes a workspace, a
    target, and a platform, and observes immutable directories.
 5. The registry, adopted by staging and dependent discovery, replacing

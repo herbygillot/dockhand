@@ -17,9 +17,7 @@ func (s *Service) checkSharedArchiveOwners(ctx context.Context, input *sourceInp
 		if member.MetadataOnly || member.Target.Name == input.target.Name {
 			continue
 		}
-		next := *input
-		next.target = member.Target
-		binding, err := s.bindArchives(ctx, &next, contents, observed)
+		binding, err := s.bindArchives(ctx, input.forMember(member.Target), contents, observed)
 		if err != nil {
 			return err
 		}

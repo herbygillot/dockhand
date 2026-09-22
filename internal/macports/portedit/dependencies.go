@@ -132,16 +132,7 @@ func (s *Service) dependencyBase(ctx context.Context, request Request, input *so
 	if err != nil {
 		return nil, nil, err
 	}
-	strippedSnapshot := evaluated.after
-	baseValue := *input
-	baseValue.data, baseValue.before = stripped, strippedSnapshot
-	baseValue.observe = input.observe.WithBaseline(stripped)
-	baseValue.info = strippedSnapshot.Ports[input.target.Name]
-	// The stripped evaluation covers the family, and it is the baseline the
-	// regenerated declarations are compared against, so the family follows
-	// the rebase rather than pointing back at the Portfile as loaded.
-	baseValue.family = &baseValue.before
-	base := &baseValue
+	base := input.derive(stripped, evaluated.after)
 
 	// The stripped baseline was evaluated in an overlay, and its paths name
 	// that overlay; the sources policy checks them against its port
