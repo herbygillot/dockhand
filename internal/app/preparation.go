@@ -6,12 +6,10 @@ import (
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
@@ -27,11 +25,9 @@ type PreviewRequest struct {
 	Version    string
 	Subject    string
 	References []record.Reference
-	// Onto, when set, is the source the update is prepared onto instead of
-	// master: a contribution's revision, or the branch an adoption would
-	// track. Without it, an open contribution for the port is looked up in
-	// the state database when there is one.
-	Onto *record.Source
+	// Adopt names a hand-made branch the preview tracks in a dry run and
+	// prepares onto; nothing is recorded.
+	Adopt string
 }
 
 type Preview struct {
@@ -53,33 +49,44 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 	if err != nil {
 		return Preview{}, err
 	}
-	branch := macports.PortsBranch
-	var source record.Source
-	onto := request.Onto != nil
-	if onto {
-		source = *request.Onto
-	} else if found, tracked, err := openContributionSource(ctx, config, repo, request.Selection.Selector); err != nil {
-		return Preview{}, err
-	} else if found != nil {
-		source, branch, onto = *found, tracked, true
-		progress.Report(ctx, "Preparing the update onto the open contribution's branch %s", tracked)
-	} else if source, err = preparationSource(ctx, repo); err != nil {
+	ports := portReader(config, repo, indexMirror(config))
+	platform, err := ports.NativePlatform(ctx)
+	if err != nil {
 		return Preview{}, err
 	}
-	if request.Action == record.BumpRevision && !onto && strings.TrimSpace(request.Subject) == "" {
-		return Preview{}, fmt.Errorf("bump-revision needs --subject: the reason is what maintainers read, e.g. --subject \"revbump for oniguruma 6.9.10\"")
-	}
-	if onto {
-		if request.Subject, err = workflow.ContributionSubject(ctx, repo, source, request.Subject); err != nil {
+	// The preview resolves as a bump would, reading the records when there
+	// are any and writing nothing. A dry-run adoption needs the store the
+	// way adoption does, so it opens the services as the command would.
+	engine := &workflow.Engine{Repo: repo, Ports: ports}
+	if request.Adopt != "" {
+		services, err := Build(ctx, config)
+		if err != nil {
 			return Preview{}, err
 		}
+		defer services.Close()
+		engine = services.Workflow
+	} else {
+		store, repository, err := openReadOnly(ctx, config, repo)
+		if err != nil {
+			return Preview{}, err
+		}
+		if store != nil {
+			defer store.Close()
+			engine.State, engine.Repository = store, repository
+		}
 	}
-	ports := portReader(config, repo, indexMirror(config))
+	resolution, err := engine.Resolve(ctx, workflow.ResolutionRequest{Action: request.Action, Selection: request.Selection, Branch: request.Adopt, Adopt: request.Adopt != "", Preview: true, Platform: platform, Intent: request.EditIntent, Subject: request.Subject, References: request.References})
+	if err != nil {
+		return Preview{}, err
+	}
+	if request.Action == record.BumpRevision && strings.TrimSpace(resolution.Subject) == "" {
+		return Preview{}, fmt.Errorf("bump-revision needs --subject: the reason is what maintainers read, e.g. --subject \"revbump for oniguruma 6.9.10\"")
+	}
 	githubClient := newGitHubClient(config.GitHub)
 	service := preparation.Service{DependencyTools: config.DependencyTools, Repo: repo, Ports: ports, Upstream: releaseDiscovery(ports, githubClient, http.DefaultClient)}
 	input := preparation.Request{
-		EditIntent: request.EditIntent, Action: request.Action, Source: source,
-		Selection: request.Selection, Version: request.Version, Subject: request.Subject, References: request.References,
+		EditIntent: resolution.Intent, Action: request.Action, Source: resolution.Source,
+		Selection: resolution.Selection, Version: request.Version, Subject: resolution.Subject, References: resolution.References,
 	}
 	if request.Action == record.Bump {
 		release, err := service.ResolveRelease(ctx, input)
@@ -90,50 +97,32 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 	}
 	result, err := service.Prepare(ctx, input)
 	if err != nil {
-		return Preview{Repository: macports.PortsRepositoryURL, Branch: branch, Preparation: result}, err
+		return Preview{Repository: macports.PortsRepositoryURL, Branch: resolution.Branch, Preparation: result}, err
 	}
-	diff, err := repo.DiffTrees(ctx, string(source.Tree), string(result.PreparedTree))
+	diff, err := repo.DiffTrees(ctx, string(resolution.Source.Tree), string(result.PreparedTree))
 	if err != nil {
 		return Preview{}, err
 	}
-	return Preview{Repository: macports.PortsRepositoryURL, Branch: branch, Preparation: result, Diff: string(diff)}, nil
+	return Preview{Repository: macports.PortsRepositoryURL, Branch: resolution.Branch, Preparation: result, Diff: string(diff)}, nil
 }
 
-// openContributionSource finds the open contribution for a port in the state
-// database, when the database exists, and returns its current revision's
-// source and branch; a port with no contribution returns nothing.
-func openContributionSource(ctx context.Context, config Config, repo *git.Repository, selector string) (_ *record.Source, branch string, err error) {
-	if !macports.ValidName(selector) {
-		return nil, "", nil
-	}
-	if _, err := os.Stat(config.DBPath); errors.Is(err, os.ErrNotExist) {
+// openReadOnly opens the state database for reading when it exists and
+// the checkout is registered in it, and returns nothing otherwise: a
+// command that reads records reads what there is and creates none.
+func openReadOnly(ctx context.Context, config Config, repo *git.Repository) (*sqlite.Store, record.RepositoryID, error) {
+	store, err := sqlite.Open(ctx, config.DBPath, sqlite.Options{ReadOnly: true})
+	if errors.Is(err, state.ErrNoDatabase) {
 		return nil, "", nil
 	} else if err != nil {
 		return nil, "", err
 	}
-	store, err := sqlite.Open(ctx, config.DBPath, sqlite.Options{ReadOnly: true})
-	if err != nil {
-		return nil, "", err
-	}
-	defer func() { err = errors.Join(err, store.Close()) }()
 	repository, err := store.FindRepository(ctx, repo.CommonDir)
 	if errors.Is(err, state.ErrNotFound) {
-		return nil, "", nil
+		return nil, "", store.Close()
 	} else if err != nil {
-		return nil, "", err
+		return nil, "", errors.Join(err, store.Close())
 	}
-	engine := &workflow.Engine{State: store, Repository: repository.ID, Repo: repo}
-	change, err := engine.SelectContribution(ctx, workflow.ContributionSelector{Target: selector})
-	if errors.Is(err, state.ErrNotFound) {
-		return nil, "", nil
-	} else if err != nil {
-		return nil, "", err
-	}
-	revision, err := engine.CurrentRevision(ctx, change)
-	if err != nil {
-		return nil, "", err
-	}
-	return &revision.Source, change.Branch, nil
+	return store, repository.ID, nil
 }
 
 // Preparation captures the choices needed to create a new contribution.

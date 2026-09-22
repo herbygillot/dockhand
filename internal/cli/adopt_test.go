@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"github.com/herbygillot/dockhand/internal/app"
 	"strings"
 	"testing"
 	"time"
@@ -73,6 +74,23 @@ func TestPreparationsLandOnAnAdoptedBranchAsAmendments(t *testing.T) {
 	stderr.Reset()
 	require.NoError(t, Run(t.Context(), []string{"adopt", "mine"}, Streams{Out: &out, Err: &stderr}, config), stderr.String())
 	require.Contains(t, out.String(), "fixture (mine): tracked")
+
+	// A preview of a port mid-contribution previews onto the contribution,
+	// as the bump would land, and reads the records without touching them.
+	out.Reset()
+	stderr.Reset()
+	before, _, err := repo.Branch(t.Context(), "mine")
+	require.NoError(t, err)
+	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--dry-run", "--json", "--subject", "rebuild"}, Streams{Out: &out, Err: &stderr}, config), stderr.String())
+	var preview app.Preview
+	decodeResult(t, out.Bytes(), &preview)
+	require.Equal(t, "mine", preview.Branch, "the preview lands where the bump would")
+	require.Contains(t, preview.Diff, " version 1.3", "the edit is previewed on the contribution's Portfile, not master's")
+	require.Contains(t, preview.Diff, "-revision 0\n+revision 1")
+	require.Contains(t, stderr.String(), "lands as an amendment")
+	after, _, err := repo.Branch(t.Context(), "mine")
+	require.NoError(t, err)
+	require.Equal(t, before, after)
 
 	out.Reset()
 	stderr.Reset()

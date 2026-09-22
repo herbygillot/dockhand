@@ -138,20 +138,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 				if len(args) == 2 {
 					request.Version = args[1]
 				}
-				if adopt != "" {
-					// A dry run with --adopt reads the state database to check the
-					// branch is untracked, records nothing, and previews onto it.
-					services, err := r.build(cmd.Context(), r.config)
-					if err != nil {
-						return err
-					}
-					adopted, err := services.Adopt(cmd.Context(), app.AdoptRequest{Branch: adopt, Target: selector, DryRun: true})
-					services.Close()
-					if err != nil {
-						return err
-					}
-					request.Onto = &adopted.Revision.Source
-				}
+				request.Adopt = adopt
 				if !r.json {
 					progress.VerboseReport(cmd.Context(), "Fetching MacPorts master for preview; local commits and working-tree edits are excluded")
 				}
