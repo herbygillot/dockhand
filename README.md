@@ -71,7 +71,7 @@ dockhand abandon jq # stop pursuing this update; the branch and its history are 
 
 `amend --dry-run` and `rebase --dry-run` show what would change first. Both verify and update the pull request the way `bump` does, and take the same stop-early flags below.
 
-Dockhand's branches are ordinary Git branches, and it will build and publish a branch you made yourself: keep the contribution to one commit in one port directory, then `dockhand verify` and `dockhand publish` it.
+Dockhand's branches are ordinary Git branches, and it will build and publish a branch you made yourself: keep the contribution to one commit in one port directory, with shared files under `_resources` allowed beside it, then `dockhand verify` and `dockhand publish` it.
 
 ## Stopping early, or skipping the build
 

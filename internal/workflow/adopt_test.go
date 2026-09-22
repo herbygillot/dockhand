@@ -70,6 +70,56 @@ func TestAdoptRefusesSeveralCommitsAndSeveralDirectories(t *testing.T) {
 	require.ErrorContains(t, err, "one port directory")
 }
 
+// A branch that changes the PortGroup a port loads beside the port is one
+// contribution: the port is inferred from its directory and the shared
+// file comes along; a branch changing only the shared file names no port.
+func TestAdoptAcceptsSharedResourcesBesideThePort(t *testing.T) {
+	t.Parallel()
+	f, _ := manualPublicationFixture(t)
+	sig := git.Signature{Name: "Fixture", Email: "fixture@example.invalid", When: f.now()}
+	blob, err := f.repo.WriteBlob(t.Context(), []byte("version 3\n"))
+	require.NoError(t, err)
+	group, err := f.repo.WriteBlob(t.Context(), []byte("# group, revised\n"))
+	require.NoError(t, err)
+	port, err := f.repo.WriteTree(t.Context(), []git.TreeEntry{{Name: "Portfile", Object: blob, Type: "blob", Mode: 0100644}})
+	require.NoError(t, err)
+	category, err := f.repo.WriteTree(t.Context(), []git.TreeEntry{{Name: "fixture", Object: port, Type: "tree", Mode: 040000}})
+	require.NoError(t, err)
+	groups, err := f.repo.WriteTree(t.Context(), []git.TreeEntry{{Name: "fixture-1.0.tcl", Object: group, Type: "blob", Mode: 0100644}})
+	require.NoError(t, err)
+	port1, err := f.repo.WriteTree(t.Context(), []git.TreeEntry{{Name: "group", Object: groups, Type: "tree", Mode: 040000}})
+	require.NoError(t, err)
+	resources, err := f.repo.WriteTree(t.Context(), []git.TreeEntry{{Name: "port1.0", Object: port1, Type: "tree", Mode: 040000}})
+	require.NoError(t, err)
+	tree, err := f.repo.WriteTree(t.Context(), []git.TreeEntry{{Name: "_resources", Object: resources, Type: "tree", Mode: 040000}, {Name: "devel", Object: category, Type: "tree", Mode: 040000}})
+	require.NoError(t, err)
+	grouped, err := f.repo.WriteCommit(t.Context(), git.Commit{Tree: tree, Parents: []string{string(f.source.Base)}, Message: "fixture: update to 3 with its group", Author: sig, Committer: sig})
+	require.NoError(t, err)
+	require.NoError(t, f.repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/grouped", Desired: git.RefValue{Exists: true, Object: grouped}}}))
+	result, err := f.engine.AdoptContribution(t.Context(), workflow.AdoptRequest{Branch: "grouped", Upstream: f.source.Base, Platform: buildPlatform, DryRun: true})
+	require.NoError(t, err)
+	require.Equal(t, "devel/fixture/Portfile", result.Portfile)
+
+	// The shared file alone, over the base's own ports: no port to adopt.
+	baseTrees, err := f.repo.CommitTrees(t.Context(), []string{string(f.source.Base)})
+	require.NoError(t, err)
+	entries, err := f.repo.ReadTree(t.Context(), baseTrees[string(f.source.Base)])
+	require.NoError(t, err)
+	var kept []git.TreeEntry
+	for _, entry := range entries {
+		if entry.Name != "_resources" {
+			kept = append(kept, entry)
+		}
+	}
+	only, err := f.repo.WriteTree(t.Context(), append(kept, git.TreeEntry{Name: "_resources", Object: resources, Type: "tree", Mode: 040000}))
+	require.NoError(t, err)
+	shared, err := f.repo.WriteCommit(t.Context(), git.Commit{Tree: only, Parents: []string{string(f.source.Base)}, Message: "group only", Author: sig, Committer: sig})
+	require.NoError(t, err)
+	require.NoError(t, f.repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/shared", Desired: git.RefValue{Exists: true, Object: shared}}}))
+	_, err = f.engine.AdoptContribution(t.Context(), workflow.AdoptRequest{Branch: "shared", Upstream: f.source.Base, Platform: buildPlatform, DryRun: true})
+	require.ErrorContains(t, err, "names no port")
+}
+
 func TestAdoptSquashFoldsAStackedBranchAndKeepsTheOriginals(t *testing.T) {
 	t.Parallel()
 	f, _ := manualPublicationFixture(t)

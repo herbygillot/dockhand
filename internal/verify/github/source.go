@@ -51,9 +51,12 @@ func (p *Provider) source(ctx context.Context, request verify.Request) ([]string
 	if len(strings.Split(directory, "/")) != 2 || strings.HasPrefix(directory, ".") || strings.HasPrefix(directory, "_") || path.Base(spec.Target.Portfile) != "Portfile" || len(commit.Paths) == 0 {
 		return nil, fmt.Errorf("github verification: one changed port directory is required")
 	}
+	// Shared files under _resources may change beside the port; nothing
+	// under .github can, so the workflow that runs is still upstream's.
+	scope := changeset.Scope{Directory: directory}
 	for _, name := range commit.Paths {
-		if !strings.HasPrefix(name, directory+"/") {
-			return nil, fmt.Errorf("github verification: change outside the selected port: %s", name)
+		if !scope.Within(name) {
+			return nil, fmt.Errorf("github verification: change outside the selected port and %s: %s", changeset.Resources, name)
 		}
 	}
 	paths, err := p.Repo.AddedOrModifiedPaths(ctx, string(commit.Source.Base), string(spec.Source.Commit))

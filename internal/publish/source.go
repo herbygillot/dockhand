@@ -3,7 +3,6 @@ package publish
 import (
 	"context"
 	"fmt"
-	"io/fs"
 	"path"
 	"strings"
 
@@ -22,22 +21,11 @@ func (s *Service) UntrackedSource(ctx context.Context, source record.Source) (re
 		return record.Source{}, "", fmt.Errorf("%w: %v", ErrPrecondition, err)
 	}
 	source = commit.Source
-	var directory string
-	for _, name := range commit.Paths {
-		parts := strings.Split(name, "/")
-		if !fs.ValidPath(name) || len(parts) < 3 {
-			return record.Source{}, "", fmt.Errorf("%w: %s is outside a port directory", ErrPrecondition, name)
-		}
-		current := path.Join(parts[0], parts[1])
-		if directory != "" && directory != current {
-			return record.Source{}, "", fmt.Errorf("%w: publication currently requires changes in one port directory", ErrPrecondition)
-		}
-		directory = current
+	scope, err := changeset.ScopeOf(commit.Paths)
+	if err != nil {
+		return record.Source{}, "", fmt.Errorf("%w: the contribution %s", ErrPrecondition, strings.TrimPrefix(err.Error(), changeset.ErrScope.Error()+": "))
 	}
-	if directory == "" {
-		return record.Source{}, "", fmt.Errorf("%w: contribution is empty", ErrPrecondition)
-	}
-	return source, path.Join(directory, "Portfile"), nil
+	return source, scope.Portfile(), nil
 }
 
 func (s *Service) SourceContent(ctx context.Context, source record.Source, targets []record.Target) (record.PublicationContent, error) {
@@ -48,13 +36,13 @@ func (s *Service) SourceContent(ctx context.Context, source record.Source, targe
 	if err != nil {
 		return record.PublicationContent{}, fmt.Errorf("%w: %v", ErrPrecondition, err)
 	}
-	directory := path.Dir(targets[0].Portfile) + "/"
+	scope := changeset.Scope{Directory: path.Dir(targets[0].Portfile)}
 	if len(commit.Paths) == 0 {
 		return record.PublicationContent{}, fmt.Errorf("%w: contribution is empty", ErrPrecondition)
 	}
 	for _, name := range commit.Paths {
-		if !strings.HasPrefix(name, directory) {
-			return record.PublicationContent{}, fmt.Errorf("%w: %s is outside the verified port directory", ErrPrecondition, name)
+		if !scope.Within(name) {
+			return record.PublicationContent{}, fmt.Errorf("%w: %s is outside the verified port directory and %s", ErrPrecondition, name, changeset.Resources)
 		}
 	}
 	lines := strings.SplitN(strings.TrimSpace(commit.Message), "\n", 2)

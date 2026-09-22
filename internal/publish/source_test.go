@@ -59,6 +59,23 @@ func TestUntrackedContributionInfersPortFromAuxiliaryFileChanges(t *testing.T) {
 	require.Equal(t, "Explain the correction", content.Body)
 }
 
+// A PortGroup edit beside the port is part of the contribution; the port is
+// still the one directory, and publication carries both.
+func TestUntrackedContributionMayChangeSharedResourcesBesideThePort(t *testing.T) {
+	s, commit := sourceFixture(t)
+	commit(map[string]string{"devel/fixture/Portfile": "version 1", "_resources/port1.0/group/fixture-1.0.tcl": "# group\n"})
+	input := commit(map[string]string{"devel/fixture/Portfile": "version 2", "_resources/port1.0/group/fixture-1.0.tcl": "# group, revised\n"})
+	source, portfile, err := s.UntrackedSource(t.Context(), input)
+	require.NoError(t, err)
+	require.Equal(t, "devel/fixture/Portfile", portfile)
+	content, err := s.SourceContent(t.Context(), source, []record.Target{{Name: "fixture", Portfile: portfile}})
+	require.NoError(t, err)
+	require.Equal(t, "fixture: fix build", content.Title)
+	_, _, err = s.UntrackedSource(t.Context(), commit(map[string]string{"_resources/port1.0/group/fixture-1.0.tcl": "# group, again\n"}))
+	require.ErrorIs(t, err, publish.ErrPrecondition)
+	require.ErrorContains(t, err, "names no port")
+}
+
 func TestUntrackedContributionRefusesUnsupportedScopeAndHistory(t *testing.T) {
 	for _, mode := range []string{"root", "merge", "empty", "two-ports", "outside-port"} {
 		t.Run(mode, func(t *testing.T) {

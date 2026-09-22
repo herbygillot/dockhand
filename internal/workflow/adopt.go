@@ -386,28 +386,18 @@ func (e *Engine) fetchPullRequestHead(ctx context.Context, ref record.PullReques
 }
 
 // contributionPortfile is the one port directory a stacked head changes
-// above its base, as the Portfile path; several directories are refused.
+// above its base, as the Portfile path; shared files under _resources may
+// change beside it, and several port directories are refused.
 func (e *Engine) contributionPortfile(ctx context.Context, source record.Source) (string, error) {
 	delta, err := changeset.Between(ctx, e.Repo, source.Base, source.Tree)
 	if err != nil {
 		return "", err
 	}
-	var directory string
-	for _, name := range delta.Paths {
-		parts := strings.Split(name, "/")
-		if len(parts) < 3 {
-			return "", fmt.Errorf("%w: %s is outside a port directory", ErrInvalidRequest, name)
-		}
-		current := path.Join(parts[0], parts[1])
-		if directory != "" && directory != current {
-			return "", fmt.Errorf("%w: the pull request changes %s and %s; dockhand adopts one port directory", ErrInvalidRequest, directory, current)
-		}
-		directory = current
+	scope, err := changeset.ScopeOf(delta.Paths)
+	if err != nil {
+		return "", fmt.Errorf("%w: the pull request %s above its base; dockhand adopts one port directory", ErrInvalidRequest, scopeWords(err))
 	}
-	if directory == "" {
-		return "", fmt.Errorf("%w: the pull request changes nothing above its base", ErrInvalidRequest)
-	}
-	return path.Join(directory, "Portfile"), nil
+	return scope.Portfile(), nil
 }
 
 // initiatingNameOf is the port a contribution is selected by.

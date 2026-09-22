@@ -94,18 +94,28 @@ func TestInferredVerificationPreservesAndOverridesSubportAndVariants(t *testing.
 	require.Empty(t, bound.Request.Spec.Targets[0].Variants)
 }
 
+// A PortGroup edit beside the tracked port is part of its contribution:
+// the target is still inferred from the port, and nothing asks for an
+// explicit one.
+func TestInferredVerificationAllowsSharedResourcesBesideThePort(t *testing.T) {
+	t.Parallel()
+	f, _, request := inferenceFixture(t)
+	editInferenceBranch(t, f, "_resources/port1.0/group/test-1.0.tcl")
+	bound, err := f.engine.BindVerification(t.Context(), request)
+	require.NoError(t, err)
+	require.Equal(t, "fixture", bound.Request.Spec.Targets[0].Name)
+	require.NotNil(t, bound.Request.Branch.InferredTarget)
+}
+
 func TestInferredVerificationRefusesUnknownAndChangedScope(t *testing.T) {
 	t.Parallel()
-	for _, scenario := range []string{"untracked", "closed", "no-targets", "many-targets", "no-base", "missing-base", "renamed-target", "outside-port", "shared-resource", "neighbor-prefix"} {
+	for _, scenario := range []string{"untracked", "closed", "no-targets", "many-targets", "no-base", "missing-base", "renamed-target", "outside-port", "neighbor-prefix"} {
 		t.Run(scenario, func(t *testing.T) {
 			f, ports, request := inferenceFixture(t)
 			if scenario == "renamed-target" {
 				ports.targetName = "renamed"
-			} else if scenario == "outside-port" || scenario == "shared-resource" || scenario == "neighbor-prefix" {
+			} else if scenario == "outside-port" || scenario == "neighbor-prefix" {
 				name := "devel/other/Portfile"
-				if scenario == "shared-resource" {
-					name = "_resources/port1.0/group/test-1.0.tcl"
-				}
 				if scenario == "neighbor-prefix" {
 					name = "devel/fixture-extra/Portfile"
 				}

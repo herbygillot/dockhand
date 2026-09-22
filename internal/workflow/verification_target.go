@@ -35,11 +35,15 @@ func (e *Engine) inferVerificationTarget(ctx context.Context, source record.Sour
 	if err != nil {
 		return record.Target{}, fmt.Errorf("cannot inspect the tracked contribution's scope; specify a port explicitly: %w", err)
 	}
-	directory := path.Dir(target.Portfile) + "/"
-	for _, name := range delta.Paths {
-		if !strings.HasPrefix(name, directory) {
-			return record.Target{}, fmt.Errorf("%w: %q is outside tracked port %s relative to its recorded base; specify a port explicitly", ErrInvalidRequest, name, target.Portfile)
-		}
+	// The change may touch shared files under _resources beside the
+	// tracked port, a PortGroup the port loads for instance; another port
+	// or anything else needs an explicit port.
+	scope, err := changeset.ScopeOf(delta.Paths)
+	if err != nil {
+		return record.Target{}, fmt.Errorf("%w: the contribution %v relative to its recorded base; specify a port explicitly", ErrInvalidRequest, scopeWords(err))
+	}
+	if scope.Directory != path.Dir(target.Portfile) {
+		return record.Target{}, fmt.Errorf("%w: the contribution changes %s, outside tracked port %s, relative to its recorded base; specify a port explicitly", ErrInvalidRequest, scope.Directory, target.Portfile)
 	}
 	target.Variants = maps.Clone(target.Variants)
 	if len(selection.Variants) > 0 {
@@ -52,4 +56,11 @@ func (e *Engine) inferVerificationTarget(ctx context.Context, source record.Sour
 		target.Subport, target.Name = selection.Subport, selection.Subport
 	}
 	return target, nil
+}
+
+// scopeWords is a scope error as a predicate, "changes devel/a and
+// devel/b; one port directory is supported", for a sentence about the
+// contribution.
+func scopeWords(err error) string {
+	return strings.TrimPrefix(err.Error(), changeset.ErrScope.Error()+": ")
 }
