@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/scratch"
 	"maps"
 	"os"
 	"path/filepath"
@@ -77,7 +78,7 @@ func generateCargo(ctx context.Context, executable string, in Input) (GeneratedB
 			return GeneratedBlocks{}, fmt.Errorf("dependency: crate %s uses an unsupported registry or source", pkg.Name)
 		}
 	}
-	directory, err := os.MkdirTemp("", "dockhand-cargo2port-")
+	directory, err := scratch.Dir("cargo2port-")
 	if err != nil {
 		return GeneratedBlocks{}, err
 	}

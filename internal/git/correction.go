@@ -3,6 +3,7 @@ package git
 import (
 	"context"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/scratch"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,7 +15,7 @@ func (r *Repository) Transplant(ctx context.Context, commit, base string) (strin
 	if !ValidObjectID(commit) || !ValidObjectID(base) {
 		return "", fmt.Errorf("git: literal contribution and base required")
 	}
-	directory, err := os.MkdirTemp("", "dockhand-rebase-")
+	directory, err := scratch.Dir("rebase-")
 	if err != nil {
 		return "", err
 	}
@@ -87,7 +88,7 @@ func (r *Repository) ReplaceContribution(ctx context.Context, branch, previous, 
 			if err != nil {
 				return err
 			}
-			directory, err := os.MkdirTemp("", "dockhand-correction-index-")
+			directory, err := scratch.Dir("correction-index-")
 			if err != nil {
 				return err
 			}

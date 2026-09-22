@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"github.com/herbygillot/dockhand/internal/scratch"
 	"os"
 	"path/filepath"
 	"time"
@@ -171,11 +172,28 @@ func Collect(ctx context.Context, config Config, options CollectOptions) (Collec
 			return result, err
 		}
 	}
-	return result, nil
+	// Run roots of processes that died without cleaning up, told apart by
+	// the lock a live process holds on its root, and the transient
+	// directories of builds before run roots, told apart only by age: an
+	// hour outlives any one operation of theirs, and --older-than governs
+	// retained evidence, which these are not.
+	legacyBefore := time.Now().Add(-legacyAge)
+	stale, err := scratch.Stale(legacyBefore)
+	if !retention.DryRun {
+		stale, err = scratch.Sweep(legacyBefore)
+	}
+	for _, directory := range stale {
+		result.Items = append(result.Items, workflow.CleanupItem{Action: "remove-stale-run-directory", Path: directory, Completed: !retention.DryRun})
+	}
+	return result, err
 }
 
 // checkoutRoot maps a registration's common Git directory to its main
 // checkout; a bare or unusual layout is opened as recorded.
+// legacyAge is how old a transient directory of an earlier build must be
+// before gc removes it.
+const legacyAge = time.Hour
+
 func checkoutRoot(commonDir string) string {
 	if filepath.Base(commonDir) == ".git" {
 		return filepath.Dir(commonDir)

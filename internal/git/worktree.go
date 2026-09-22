@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/subprocess"
 	"hash"
 	"io"
@@ -66,7 +67,7 @@ func (r *Repository) CaptureCheckout(ctx context.Context) (Checkout, error) {
 	if branch != nextBranch || head != nextHead || !bytes.Equal(index, nextIndex) || !bytes.Equal(entries, again) {
 		return Checkout{}, ErrCheckoutChanged
 	}
-	directory, err := os.MkdirTemp("", "dockhand-index-")
+	directory, err := scratch.Dir("index-")
 	if err != nil {
 		return Checkout{}, err
 	}

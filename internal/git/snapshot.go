@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/scratch"
 	"io"
 	"io/fs"
 	"os"
@@ -52,7 +53,7 @@ func (s *Snapshot) Close() error { return os.RemoveAll(s.directory) }
 // Materialize reads raw blobs, avoiding checkout filters and archive attributes.
 // The returned directory is owned by the caller until Close.
 func (r *Repository) Materialize(ctx context.Context, tree string) (_ *Snapshot, err error) {
-	directory, err := os.MkdirTemp("", "dockhand-source-")
+	directory, err := scratch.Dir("source-")
 	if err != nil {
 		return nil, err
 	}

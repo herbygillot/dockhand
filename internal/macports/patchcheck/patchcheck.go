@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/scratch"
 	"io"
 	"os"
 	"os/exec"
@@ -114,7 +115,7 @@ func Check(ctx context.Context, request Request) ([]Result, error) {
 			wanted[path.Join(request.PatchDir, target)] = true
 		}
 	}
-	directory, err := os.MkdirTemp("", "dockhand-patchcheck-")
+	directory, err := scratch.Dir("patchcheck-")
 	if err != nil {
 		return nil, err
 	}

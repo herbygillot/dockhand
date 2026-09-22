@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"github.com/herbygillot/dockhand/internal/scratch"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -63,6 +64,8 @@ patchfiles good.diff stale.diff
 	require.True(t, result.Patches[1].Checked)
 	require.False(t, result.Patches[1].Applies)
 	require.Contains(t, result.Patches[1].Detail, "1 out of 1 hunks failed")
-	matches, _ := filepath.Glob(filepath.Join(os.TempDir(), "dockhand-patchcheck-*"))
+	root, err = scratch.Root()
+	require.NoError(t, err)
+	matches, _ := filepath.Glob(filepath.Join(root, "patchcheck-*"))
 	require.Empty(t, matches, "temporary archives and extractions are removed")
 }

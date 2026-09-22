@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/scratch"
 	"maps"
 	"os"
 	"path"
@@ -61,7 +62,7 @@ func generateGo(ctx context.Context, executable string, in Input) (GeneratedBloc
 	if !safeToken(in.Package) || !safeToken(in.Tag) {
 		return GeneratedBlocks{}, fmt.Errorf("dependency: invalid Go package or tag")
 	}
-	directory, err := os.MkdirTemp("", "dockhand-go2port-")
+	directory, err := scratch.Dir("go2port-")
 	if err != nil {
 		return GeneratedBlocks{}, err
 	}

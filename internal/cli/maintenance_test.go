@@ -192,6 +192,7 @@ func TestMigrationRefusesMissingEmptyForeignAndNewerDatabases(t *testing.T) {
 func TestGCPrunesSharedIndexCacheWithoutProviderSetup(t *testing.T) {
 	root := portsTreeCheckout(t)
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("TMPDIR", t.TempDir()) // gc also sweeps stale scratch there; none is this test's
 	repo, err := git.Open(t.Context(), root, "")
 	require.NoError(t, err)
 	config := app.Config{Repository: root, DBPath: filepath.Join(root, "state.db"), TclExecutable: "/missing/tcl"}
@@ -305,4 +306,58 @@ func TestGCOutsideAPortsTreeReportsNoSweep(t *testing.T) {
 	require.Equal(t, "gc", envelope.Command)
 	require.NotEmpty(t, envelope.Error)
 	require.Nil(t, envelope.Result, "a failed sweep has no result")
+}
+
+// gc removes the run root a dead dockhand process left, told from a live
+// one by its released lock, and the transient directories an earlier
+// build made outside a run root once they are old enough; a preview lists
+// them and removes nothing.
+func TestGCRemovesStaleRunRootsAndLegacyScratch(t *testing.T) {
+	root := portsTreeCheckout(t)
+	t.Setenv("HOME", t.TempDir())
+	repo, err := git.Open(t.Context(), root, "")
+	require.NoError(t, err)
+	config := app.Config{Repository: root, DBPath: filepath.Join(root, "state.db"), TclExecutable: "/missing/tcl"}
+	config.Tart.Executable = "/missing/tart"
+	store, err := sqlite.Open(t.Context(), config.DBPath, sqlite.Options{})
+	require.NoError(t, err)
+	_, err = store.RegisterRepository(t.Context(), repo.CommonDir)
+	require.NoError(t, err)
+	require.NoError(t, store.Close())
+	temp := t.TempDir()
+	t.Setenv("TMPDIR", temp)
+	dead := filepath.Join(temp, "dockhand-run-dead")
+	require.NoError(t, os.MkdirAll(filepath.Join(dead, "workspace-1"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(dead, ".lock"), nil, 0600))
+	legacy := filepath.Join(temp, "dockhand-overlay-1")
+	require.NoError(t, os.MkdirAll(legacy, 0700))
+	old := time.Now().Add(-2 * time.Hour)
+	require.NoError(t, os.Chtimes(legacy, old, old))
+	recent := filepath.Join(temp, "dockhand-overlay-2")
+	require.NoError(t, os.MkdirAll(recent, 0700))
+	for _, dry := range []bool{true, false} {
+		args := []string{"gc", "--json"}
+		if dry {
+			args = append(args, "--dry-run")
+		}
+		var output bytes.Buffer
+		require.NoError(t, cli.Run(t.Context(), args, cli.Streams{Out: &output, Err: &output}, config))
+		var result workflow.RetentionResult
+		decodeResult(t, output.Bytes(), &result)
+		var paths []string
+		for _, item := range result.Items {
+			require.Equal(t, "remove-stale-run-directory", item.Action)
+			require.Equal(t, !dry, item.Completed)
+			paths = append(paths, item.Path)
+		}
+		require.ElementsMatch(t, []string{dead, legacy}, paths)
+		if dry {
+			require.DirExists(t, dead)
+			require.DirExists(t, legacy)
+			continue
+		}
+		require.NoDirExists(t, dead)
+		require.NoDirExists(t, legacy)
+		require.DirExists(t, recent, "a recent legacy directory may still be in use")
+	}
 }

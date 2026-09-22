@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
+	"github.com/herbygillot/dockhand/internal/scratch"
 	"os"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -97,7 +98,7 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 	}
 	store := s.Archives.Store("")
 	if patched(input.info) || moduleModeGo(input.info) {
-		directory, err := os.MkdirTemp("", "dockhand-patchcheck-")
+		directory, err := scratch.Dir("patchcheck-")
 		if err != nil {
 			return Result{}, err
 		}

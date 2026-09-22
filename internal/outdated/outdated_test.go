@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/git"
@@ -57,9 +58,18 @@ func TestObserveKeepsCommittedSourceAndCleansWorkspace(t *testing.T) {
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
 	require.Equal(t, "invalid checkout edits\n", string(data))
+	// Discovery must release its temporary source on unknown results: the
+	// process's run root may stand, holding its lock file and nothing else.
 	files, err := os.ReadDir(scratch)
 	require.NoError(t, err)
-	require.Empty(t, files, "discovery must release its temporary source on unknown results")
+	for _, file := range files {
+		require.True(t, file.IsDir() && strings.HasPrefix(file.Name(), "dockhand-run-"), "left behind: %s", file.Name())
+		inside, err := os.ReadDir(filepath.Join(scratch, file.Name()))
+		require.NoError(t, err)
+		for _, item := range inside {
+			require.Equal(t, ".lock", item.Name(), "left in the run root: %s", item.Name())
+		}
+	}
 }
 
 func TestObserveRejectsInvalidSelectionAndCanceledWorkBeforeDependencies(t *testing.T) {

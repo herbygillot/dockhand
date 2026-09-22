@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
+	"github.com/herbygillot/dockhand/internal/scratch"
 	"maps"
 	"os"
 	"path/filepath"
@@ -162,7 +163,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	}
 	stripped := base.data
 	baseRequest := request
-	directory, err := os.MkdirTemp("", "dockhand-dependencies-")
+	directory, err := scratch.Dir("dependencies-")
 	if err != nil {
 		return Result{}, err
 	}

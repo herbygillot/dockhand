@@ -54,9 +54,24 @@ func TestAssessFrozenSourceWithoutStateDownloadsOrCatalogs(t *testing.T) {
 		data, err := os.ReadFile(path)
 		require.NoError(t, err)
 		require.Equal(t, "dirty user edits", string(data))
-		entries, err := os.ReadDir(scratch)
+		requireNoScratchLeft(t, scratch)
+	}
+}
+
+// requireNoScratchLeft checks that a command left nothing in the temporary
+// directory: the process's run root may stand there, holding its lock
+// file and nothing else.
+func requireNoScratchLeft(t *testing.T, temp string) {
+	t.Helper()
+	entries, err := os.ReadDir(temp)
+	require.NoError(t, err)
+	for _, entry := range entries {
+		require.True(t, entry.IsDir() && strings.HasPrefix(entry.Name(), "dockhand-run-"), "left behind: %s", entry.Name())
+		inside, err := os.ReadDir(filepath.Join(temp, entry.Name()))
 		require.NoError(t, err)
-		require.Empty(t, entries)
+		for _, item := range inside {
+			require.Equal(t, ".lock", item.Name(), "left in the run root: %s", item.Name())
+		}
 	}
 }
 

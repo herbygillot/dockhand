@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/scratch"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,7 +21,7 @@ func editMessage(ctx context.Context, initial string) (string, error) {
 	if editor == "" {
 		editor = "vi"
 	}
-	directory, err := os.MkdirTemp("", "dockhand-message-")
+	directory, err := scratch.Dir("message-")
 	if err != nil {
 		return "", err
 	}

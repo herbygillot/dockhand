@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/scratch"
 	"os"
 	"path"
 	"path/filepath"
@@ -69,7 +70,7 @@ func Open(ctx context.Context, repo *git.Repository, source record.Source) (*Wor
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	directory, err := os.MkdirTemp("", "dockhand-workspace-")
+	directory, err := scratch.Dir("workspace-")
 	if err != nil {
 		return nil, err
 	}
@@ -383,7 +384,7 @@ func (w *Workspace) Overlay(ctx context.Context, edits []git.FileEdit) (*Workspa
 		edit.Before = git.FileState{Exists: true, Blob: entry.Object, Mode: entry.Mode}
 		edited[edit.Path] = edit
 	}
-	directory, err := os.MkdirTemp(filepath.Dir(base.directory), "dockhand-overlay-")
+	directory, err := os.MkdirTemp(filepath.Dir(base.directory), "overlay-")
 	if err != nil {
 		return nil, err
 	}
