@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/workflow/retention"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +18,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
-	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/stretchr/testify/require"
 )
 
@@ -76,7 +76,7 @@ func TestCollectReleasedTartArtifactsWithMultipleProviders(t *testing.T) {
 	require.NoError(t, os.MkdirAll(path, 0700))
 	require.NoError(t, os.WriteFile(filepath.Join(path, "build.log"), []byte("old diagnostics"), 0600))
 	for _, dry := range []bool{true, false} {
-		result, err := app.Collect(t.Context(), config, app.CollectOptions{Retention: workflow.RetentionOptions{OlderThan: 7 * 24 * time.Hour, DryRun: dry}})
+		result, err := app.Collect(t.Context(), config, app.CollectOptions{Retention: retention.Options{OlderThan: 7 * 24 * time.Hour, DryRun: dry}})
 		require.NoError(t, err)
 		require.Len(t, result.Items, 1)
 		require.Equal(t, "prune-artifacts", result.Items[0].Action)

@@ -1,4 +1,4 @@
-package workflow
+package retention
 
 import (
 	"context"
@@ -9,12 +9,13 @@ import (
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
-func (c *cycle) collectLogCaches(ctx context.Context, result *RetentionResult) error {
-	e := c.engine
+// collectLogCaches prunes the providers' re-downloadable log caches of
+// terminal attempts older than the threshold.
+func (c *Collector) collectLogCaches(ctx context.Context, result *Result) error {
 	var after record.JobID
 	for {
 		var jobs []record.Job
-		err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+		err := c.State.View(ctx, c.Repository, func(ctx context.Context, r state.Reader) error {
 			var err error
 			jobs, err = r.CleanupCandidates(ctx, result.Before, after, 64)
 			return err
@@ -24,12 +25,12 @@ func (c *cycle) collectLogCaches(ctx context.Context, result *RetentionResult) e
 		}
 		for _, job := range jobs {
 			var attempts []record.Attempt
-			err = e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+			err = c.State.View(ctx, c.Repository, func(ctx context.Context, r state.Reader) error {
 				current, err := r.Job(ctx, job.ID)
 				if err != nil {
 					return err
 				}
-				if !current.State.Terminal() || current.FinishedAt == nil || current.FinishedAt.After(result.Before) || current.Claim.Live(e.now()) {
+				if !current.State.Terminal() || current.FinishedAt == nil || current.FinishedAt.After(result.Before) || current.Claim.Live(c.Now()) {
 					return nil
 				}
 				attempts, err = r.AttemptsForJob(ctx, current.ID)
@@ -39,18 +40,18 @@ func (c *cycle) collectLogCaches(ctx context.Context, result *RetentionResult) e
 				return err
 			}
 			for _, attempt := range attempts {
-				if !attempt.State.Terminal() || attempt.Claim.Live(e.now()) || attempt.Run.RunID == "" || attempt.Run.Provider != attempt.Spec.Config.Provider || attempt.Evidence != nil && len(attempt.Evidence.Artifacts) > 0 {
+				if !attempt.State.Terminal() || attempt.Claim.Live(c.Now()) || attempt.Run.RunID == "" || attempt.Run.Provider != attempt.Spec.Config.Provider || attempt.Evidence != nil && len(attempt.Evidence.Artifacts) > 0 {
 					continue
 				}
-				pruner, ok := e.verificationProvider(attempt.Run.Provider).(verify.LogCachePruner)
+				pruner, ok := c.Provider(attempt.Run.Provider).(verify.LogCachePruner)
 				if !ok {
 					continue
 				}
-				call, cancel := context.WithTimeout(ctx, c.timeouts.Cleanup)
+				call, cancel := context.WithTimeout(ctx, c.Timeout)
 				found, err := pruner.PruneLogCache(call, attempt.Run, result.Before, result.DryRun)
 				cancel()
 				if err != nil || found {
-					item := CleanupItem{AttemptID: attempt.ID, Action: "prune-log-cache", Completed: err == nil && !result.DryRun}
+					item := Item{AttemptID: attempt.ID, Action: "prune-log-cache", Completed: err == nil && !result.DryRun}
 					switch {
 					case errors.Is(err, verify.ErrCacheBusy):
 						item.Detail = "kept; a download holds the request lock; the next sweep retries"

@@ -3,6 +3,7 @@ package workflow_test
 import (
 	"context"
 	"errors"
+	"github.com/herbygillot/dockhand/internal/workflow/retention"
 	"github.com/herbygillot/dockhand/internal/workflow/view"
 	"os"
 	"os/exec"
@@ -249,7 +250,7 @@ func TestMergeCleanupKeepsCheckedOutBranchesAndGcSweepsLeftovers(t *testing.T) {
 	require.Contains(t, result.Detail, "local branch candidate kept; it is checked out at")
 	require.Contains(t, result.Detail, "fork branch author/ports:candidate deleted")
 	// gc reports the checked-out branch and deletes it once the checkout is gone.
-	collected, err := f.engine.Collect(t.Context(), workflow.RetentionOptions{})
+	collected, err := f.engine.Collect(t.Context(), retention.Options{})
 	require.NoError(t, err)
 	branches := branchItems(collected)
 	require.Len(t, branches, 1)
@@ -260,12 +261,12 @@ func TestMergeCleanupKeepsCheckedOutBranchesAndGcSweepsLeftovers(t *testing.T) {
 	remove.Dir = f.repo.Root
 	out, err = remove.CombinedOutput()
 	require.NoError(t, err, "%s", out)
-	collected, err = f.engine.Collect(t.Context(), workflow.RetentionOptions{DryRun: true})
+	collected, err = f.engine.Collect(t.Context(), retention.Options{DryRun: true})
 	require.NoError(t, err)
 	branches = branchItems(collected)
 	require.Len(t, branches, 1)
 	require.Contains(t, branches[0].Detail, "would delete")
-	collected, err = f.engine.Collect(t.Context(), workflow.RetentionOptions{})
+	collected, err = f.engine.Collect(t.Context(), retention.Options{})
 	require.NoError(t, err)
 	branches = branchItems(collected)
 	require.Len(t, branches, 1)
@@ -275,7 +276,7 @@ func TestMergeCleanupKeepsCheckedOutBranchesAndGcSweepsLeftovers(t *testing.T) {
 	require.False(t, local.Exists)
 	// A leftover branch that moved past the published commit is kept.
 	require.NoError(t, f.repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/candidate", Desired: git.RefValue{Exists: true, Object: string(f.source.Base)}}}))
-	collected, err = f.engine.Collect(t.Context(), workflow.RetentionOptions{})
+	collected, err = f.engine.Collect(t.Context(), retention.Options{})
 	require.NoError(t, err)
 	branches = branchItems(collected)
 	require.Len(t, branches, 1)
@@ -283,8 +284,8 @@ func TestMergeCleanupKeepsCheckedOutBranchesAndGcSweepsLeftovers(t *testing.T) {
 	require.Contains(t, branches[0].Detail, "no longer holds the published commit")
 }
 
-func branchItems(result workflow.RetentionResult) []workflow.CleanupItem {
-	var items []workflow.CleanupItem
+func branchItems(result retention.Result) []retention.Item {
+	var items []retention.Item
 	for _, item := range result.Items {
 		if item.Action == "delete-branch" {
 			items = append(items, item)

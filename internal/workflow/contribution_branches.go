@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
+	"github.com/herbygillot/dockhand/internal/workflow/retention"
 )
 
 // A merged pull request ends a contribution, and its branches are residue:
@@ -64,7 +65,7 @@ func (e *Engine) settleCleanup(ctx context.Context, id record.ChangeID, force bo
 	var notes []string
 	local, fork := false, false
 	if cleanup.Local.State == record.CleanupPending && (force || cleanup.Local.Due(now)) {
-		cleanup.Local = e.deleteLocalBranch(ctx, cleanup.Local, cleanup.Published, now)
+		cleanup.Local = retention.DeleteLocalBranch(ctx, e.Repo, cleanup.Local, cleanup.Published, now)
 		notes = append(notes, "local branch "+cleanup.Local.Name+" "+cleanup.Local.Detail)
 		local = true
 	}
@@ -137,58 +138,13 @@ func (e *Engine) settleDueCleanups(ctx context.Context) {
 	}
 }
 
-// retryLater keeps a side pending after a failed or premature attempt, with
-// the next attempt backed off by the run of failures: 15 minutes, doubling
-// to a cap of eight hours.
-func retryLater(outcome record.CleanupOutcome, detail string, now time.Time) record.CleanupOutcome {
-	outcome.State = record.CleanupPending
-	outcome.Detail = detail
-	if outcome.ConsecutiveFailures < 32 {
-		outcome.ConsecutiveFailures++
-	}
-	delay := 15 * time.Minute << min(outcome.ConsecutiveFailures-1, 5)
-	at := now.Add(delay)
-	outcome.RetryAt = &at
-	return outcome
-}
-
-// cleanupSettled gives a side its final outcome.
-func cleanupSettled(outcome record.CleanupOutcome, state record.CleanupState, detail string) record.CleanupOutcome {
-	outcome.State, outcome.Detail, outcome.RetryAt = state, detail, nil
-	return outcome
-}
-
-func (e *Engine) deleteLocalBranch(ctx context.Context, outcome record.CleanupOutcome, published record.ObjectID, now time.Time) record.CleanupOutcome {
-	branch := outcome.Name
-	checkouts, err := e.Repo.Checkouts(ctx, branch)
-	if err != nil {
-		return retryLater(outcome, "kept: "+err.Error(), now)
-	}
-	if len(checkouts) > 0 {
-		return retryLater(outcome, "kept; it is checked out at "+strings.Join(checkouts, ", "), now)
-	}
-	expected := git.RefValue{Exists: true, Object: string(published)}
-	err = e.Repo.UpdateRefs(ctx, []git.RefChange{{Name: "refs/heads/" + branch, Expected: expected}})
-	var conflict *git.RefConflict
-	switch {
-	case err == nil:
-		return cleanupSettled(outcome, record.CleanupComplete, "deleted")
-	case errors.As(err, &conflict) && !conflict.Actual.Exists:
-		return cleanupSettled(outcome, record.CleanupComplete, "was already gone")
-	case errors.As(err, &conflict):
-		return cleanupSettled(outcome, record.CleanupKept, "kept; it no longer holds the published commit")
-	default:
-		return retryLater(outcome, "kept: "+err.Error(), now)
-	}
-}
-
 func (e *Engine) deleteForkBranch(ctx context.Context, outcome record.CleanupOutcome, pr record.PullRequest, now time.Time) record.CleanupOutcome {
 	if e.Publisher == nil || e.Publisher.Forge == nil {
-		return retryLater(outcome, "kept; no forge is configured", now)
+		return retention.RetryLater(outcome, "kept; no forge is configured", now)
 	}
 	remotes, err := e.Repo.Remotes(ctx)
 	if err != nil {
-		return retryLater(outcome, "kept: "+err.Error(), now)
+		return retention.RetryLater(outcome, "kept: "+err.Error(), now)
 	}
 	pushURL := ""
 	for _, remote := range remotes {
@@ -199,11 +155,11 @@ func (e *Engine) deleteForkBranch(ctx context.Context, outcome record.CleanupOut
 		}
 	}
 	if pushURL == "" {
-		return cleanupSettled(outcome, record.CleanupKept, "kept; no local remote pushes to "+pr.HeadRepository)
+		return retention.Settled(outcome, record.CleanupKept, "kept; no local remote pushes to "+pr.HeadRepository)
 	}
 	timeouts, err := e.Timeouts.defaults()
 	if err != nil {
-		return retryLater(outcome, "kept: "+err.Error(), now)
+		return retention.RetryLater(outcome, "kept: "+err.Error(), now)
 	}
 	call, cancel := context.WithTimeout(ctx, timeouts.Publish)
 	defer cancel()
@@ -211,12 +167,12 @@ func (e *Engine) deleteForkBranch(ctx context.Context, outcome record.CleanupOut
 	var conflict *git.RefConflict
 	switch {
 	case err == nil:
-		return cleanupSettled(outcome, record.CleanupComplete, "deleted")
+		return retention.Settled(outcome, record.CleanupComplete, "deleted")
 	case errors.As(err, &conflict) && !conflict.Actual.Exists:
-		return cleanupSettled(outcome, record.CleanupComplete, "was already gone")
+		return retention.Settled(outcome, record.CleanupComplete, "was already gone")
 	case errors.As(err, &conflict):
-		return cleanupSettled(outcome, record.CleanupKept, "kept; it no longer holds the merged commit")
+		return retention.Settled(outcome, record.CleanupKept, "kept; it no longer holds the merged commit")
 	default:
-		return retryLater(outcome, "kept: "+err.Error(), now)
+		return retention.RetryLater(outcome, "kept: "+err.Error(), now)
 	}
 }

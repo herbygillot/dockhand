@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/workflow/retention"
 	"sync"
 	"testing"
 	"time"
@@ -50,7 +51,7 @@ func TestRetentionUsesSeparateJobAndReleaseAgesAndPreservesHistory(t *testing.T)
 	t.Parallel()
 	f, id := retainedFixture(t)
 	before := f.status(t, id)
-	options := workflow.RetentionOptions{OlderThan: 7 * 24 * time.Hour, DryRun: true}
+	options := retention.Options{OlderThan: 7 * 24 * time.Hour, DryRun: true}
 	result, err := f.engine.Collect(t.Context(), options)
 	require.NoError(t, err)
 	require.Empty(t, result.Items)
@@ -106,7 +107,7 @@ func TestRetentionSkipsLiveWorkClaimsAndExplicitRetention(t *testing.T) {
 		resource.RetainUntil = &future
 		return tx.PutResource(ctx, resource)
 	}))
-	result, err := f.engine.Collect(t.Context(), workflow.RetentionOptions{})
+	result, err := f.engine.Collect(t.Context(), retention.Options{})
 	require.NoError(t, err)
 	require.Empty(t, result.Items)
 	require.NoError(t, f.store.Update(t.Context(), f.repository, func(ctx context.Context, tx state.Tx) error {
@@ -115,11 +116,11 @@ func TestRetentionSkipsLiveWorkClaimsAndExplicitRetention(t *testing.T) {
 		resource.Claim = &record.Claim{Owner: "other", Generation: resource.ClaimGeneration, ExpiresAt: future}
 		return tx.PutResource(ctx, resource)
 	}))
-	result, err = f.engine.Collect(t.Context(), workflow.RetentionOptions{})
+	result, err = f.engine.Collect(t.Context(), retention.Options{})
 	require.NoError(t, err)
 	require.Empty(t, result.Items)
 	f.advance(2 * time.Hour)
-	result, err = f.engine.Collect(t.Context(), workflow.RetentionOptions{})
+	result, err = f.engine.Collect(t.Context(), retention.Options{})
 	require.NoError(t, err)
 	require.True(t, result.Items[0].Completed)
 	// New admitted work remains untouched even with an explicit zero age.
@@ -129,7 +130,7 @@ func TestRetentionSkipsLiveWorkClaimsAndExplicitRetention(t *testing.T) {
 	require.NoError(t, err)
 	f.run(t, receipt.JobID)
 	require.Equal(t, record.AttemptRunning, f.attempt(t, receipt.JobID).State)
-	result, err = f.engine.Collect(t.Context(), workflow.RetentionOptions{})
+	result, err = f.engine.Collect(t.Context(), retention.Options{})
 	require.NoError(t, err)
 	for _, item := range result.Items {
 		require.NotEqual(t, f.status(t, receipt.JobID).Resources[0].ID, item.ResourceID)
@@ -155,7 +156,7 @@ func TestRetentionRetriesFailedEffectsAndLostPruneCheckpoints(t *testing.T) {
 	f.provider.release = func(context.Context, record.ResourceHandle) (verify.ReleaseResult, error) {
 		return verify.ReleaseResult{}, errors.New("delete interrupted")
 	}
-	result, err := f.engine.Collect(t.Context(), workflow.RetentionOptions{})
+	result, err := f.engine.Collect(t.Context(), retention.Options{})
 	require.NoError(t, err)
 	require.False(t, result.Items[0].Completed)
 	require.Contains(t, result.Items[0].Detail, "delete interrupted")
@@ -165,20 +166,20 @@ func TestRetentionRetriesFailedEffectsAndLostPruneCheckpoints(t *testing.T) {
 	f.run(t, id) // The ordinary cycle can finish a release requested by gc.
 	require.Equal(t, record.ResourceReleased, f.status(t, id).Resources[0].State)
 	f.engine.Provider = pruningProvider{f.provider, func(context.Context, record.ResourceHandle) error { return errors.New("files busy") }}
-	result, err = f.engine.Collect(t.Context(), workflow.RetentionOptions{})
+	result, err = f.engine.Collect(t.Context(), retention.Options{})
 	require.NoError(t, err)
 	require.Contains(t, result.Items[0].Detail, "files busy")
 	require.Nil(t, f.status(t, id).Resources[0].ArtifactsPrunedAt)
 	f.engine.Provider = pruningProvider{scriptedProvider: f.provider}
 	f.engine.State = failPruneStore{f.store}
-	_, err = f.engine.Collect(t.Context(), workflow.RetentionOptions{})
+	_, err = f.engine.Collect(t.Context(), retention.Options{})
 	require.ErrorContains(t, err, "lost prune checkpoint")
 	require.Nil(t, f.status(t, id).Resources[0].ArtifactsPrunedAt)
 	reopened, err := sqlite.Open(t.Context(), f.store.Path(), sqlite.Options{})
 	require.NoError(t, err)
 	defer reopened.Close()
 	f.engine.State = reopened
-	result, err = f.engine.Collect(t.Context(), workflow.RetentionOptions{})
+	result, err = f.engine.Collect(t.Context(), retention.Options{})
 	require.NoError(t, err)
 	require.True(t, result.Items[0].Completed)
 	require.NotNil(t, f.status(t, id).Resources[0].ArtifactsPrunedAt)
@@ -197,20 +198,20 @@ func TestCompetingCollectorsUseReleaseClaimAndKeepRepositoryScope(t *testing.T) 
 		return verify.ReleaseResult{Confirmed: true}, nil
 	}
 	done := make(chan error, 1)
-	go func() { _, err := f.engine.Collect(t.Context(), workflow.RetentionOptions{}); done <- err }()
+	go func() { _, err := f.engine.Collect(t.Context(), retention.Options{}); done <- err }()
 	<-entered
 	other, err := sqlite.Open(t.Context(), f.store.Path(), sqlite.Options{})
 	require.NoError(t, err)
 	defer other.Close()
 	engine := *f.engine
 	engine.State = other
-	result, err := engine.Collect(t.Context(), workflow.RetentionOptions{})
+	result, err := engine.Collect(t.Context(), retention.Options{})
 	require.NoError(t, err)
 	require.Empty(t, result.Items)
 	foreign, err := other.RegisterRepository(t.Context(), "/foreign/repository")
 	require.NoError(t, err)
 	engine.Repository = foreign.ID
-	result, err = engine.Collect(t.Context(), workflow.RetentionOptions{})
+	result, err = engine.Collect(t.Context(), retention.Options{})
 	require.NoError(t, err)
 	require.Empty(t, result.Items)
 	release()
@@ -238,14 +239,14 @@ func TestRetentionPaginatesWhileRemovingCandidates(t *testing.T) {
 	require.Len(t, f.status(t, id).Resources, 70)
 	f.engine.Provider = pruningProvider{scriptedProvider: f.provider}
 	f.advance(8 * 24 * time.Hour)
-	result, err := f.engine.Collect(t.Context(), workflow.RetentionOptions{OlderThan: 7 * 24 * time.Hour})
+	result, err := f.engine.Collect(t.Context(), retention.Options{OlderThan: 7 * 24 * time.Hour})
 	require.NoError(t, err)
 	require.Len(t, result.Items, 70)
 	for _, item := range result.Items {
 		require.True(t, item.Completed)
 	}
 	require.Equal(t, 70, f.provider.count("prune"))
-	result, err = f.engine.Collect(t.Context(), workflow.RetentionOptions{})
+	result, err = f.engine.Collect(t.Context(), retention.Options{})
 	require.NoError(t, err)
 	require.Empty(t, result.Items)
 }

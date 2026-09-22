@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/workflow/retention"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,7 +18,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
-	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/stretchr/testify/require"
 )
 
@@ -218,7 +218,7 @@ func TestGCPrunesSharedIndexCacheWithoutProviderSetup(t *testing.T) {
 		}
 		var output bytes.Buffer
 		require.NoError(t, cli.Run(t.Context(), args, cli.Streams{Out: &output, Err: &output}, config))
-		var result workflow.RetentionResult
+		var result retention.Result
 		decodeResult(t, output.Bytes(), &result)
 		require.Len(t, result.Items, 1)
 		require.Equal(t, "prune-index-cache", result.Items[0].Action)
@@ -342,7 +342,7 @@ func TestGCRemovesStaleRunRootsAndLegacyScratch(t *testing.T) {
 		}
 		var output bytes.Buffer
 		require.NoError(t, cli.Run(t.Context(), args, cli.Streams{Out: &output, Err: &output}, config))
-		var result workflow.RetentionResult
+		var result retention.Result
 		decodeResult(t, output.Bytes(), &result)
 		var paths []string
 		for _, item := range result.Items {

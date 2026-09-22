@@ -2,6 +2,7 @@ package github
 
 import (
 	"errors"
+	"github.com/herbygillot/dockhand/internal/workflow/retention"
 	"os"
 	"path/filepath"
 	"testing"
@@ -27,7 +28,7 @@ func TestLogRetentionProtectsActiveJobsAndPreservesEvidenceOffline(t *testing.T)
 	old := time.Now().Add(-30 * 24 * time.Hour)
 	require.NoError(t, os.Chtimes(name, old, old))
 	f.engine.Now = func() time.Time { return time.Now().Add(10 * 24 * time.Hour) }
-	options := workflow.RetentionOptions{OlderThan: 24 * time.Hour}
+	options := retention.Options{OlderThan: 24 * time.Hour}
 	result, err := f.engine.Collect(t.Context(), options)
 	require.NoError(t, err)
 	require.Empty(t, result.Items)

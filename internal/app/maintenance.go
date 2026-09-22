@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/herbygillot/dockhand/internal/scratch"
+	"github.com/herbygillot/dockhand/internal/workflow/retention"
 	"os"
 	"path/filepath"
 	"time"
@@ -49,7 +50,7 @@ func MigrateDatabase(ctx context.Context, config Config) error {
 // registration in the database, including ones whose checkout is gone and
 // could otherwise never release their environments.
 type CollectOptions struct {
-	Retention       workflow.RetentionOptions
+	Retention       retention.Options
 	AllRepositories bool
 }
 
@@ -75,14 +76,14 @@ type DatabaseMigration struct {
 
 // CollectResult is the retention result plus the registrations it covered.
 type CollectResult struct {
-	workflow.RetentionResult
+	retention.Result
 	Registrations []Registration `json:"registrations,omitempty"`
 }
 
 func Collect(ctx context.Context, config Config, options CollectOptions) (CollectResult, error) {
-	retention := options.Retention
-	result := CollectResult{RetentionResult: workflow.RetentionResult{Before: time.Now().UTC().Add(-retention.OlderThan), DryRun: retention.DryRun, Items: []workflow.CleanupItem{}}}
-	if retention.OlderThan < 0 {
+	age := options.Retention
+	result := CollectResult{Result: retention.Result{Before: time.Now().UTC().Add(-age.OlderThan), DryRun: age.DryRun, Items: []retention.Item{}}}
+	if age.OlderThan < 0 {
 		return result, state.ErrInvalid
 	}
 	var registered []record.Repository
@@ -98,7 +99,7 @@ func Collect(ctx context.Context, config Config, options CollectOptions) (Collec
 	} else if err != nil {
 		return result, err
 	}
-	store, err := sqlite.Open(ctx, config.DBPath, sqlite.Options{ReadOnly: retention.DryRun})
+	store, err := sqlite.Open(ctx, config.DBPath, sqlite.Options{ReadOnly: age.DryRun})
 	if err != nil {
 		return result, err
 	}
@@ -134,11 +135,11 @@ func Collect(ctx context.Context, config Config, options CollectOptions) (Collec
 				engine.Repo = repo
 			}
 		}
-		if !retention.DryRun {
+		if !age.DryRun {
 			engine.Providers[verify.ProviderTart] = &tart.Provider{State: store, Repository: repository.ID, Config: config.Tart}
 		}
 		engine.Providers[verify.ProviderGitHub] = &githubverify.Provider{State: store, Repository: repository.ID, Directory: filepath.Join(filepath.Dir(store.Path()), "github-verification")}
-		collected, err := engine.Collect(ctx, retention)
+		collected, err := engine.Collect(ctx, age)
 		result.Before = collected.Before
 		for i := range collected.Items {
 			collected.Items[i].Repository = repository.ID
@@ -164,9 +165,9 @@ func Collect(ctx context.Context, config Config, options CollectOptions) (Collec
 			continue
 		}
 		seen[root] = true
-		items, err := portindex.Collect(ctx, root, result.Before, retention.DryRun)
+		items, err := portindex.Collect(ctx, root, result.Before, age.DryRun)
 		for _, item := range items {
-			result.Items = append(result.Items, workflow.CleanupItem{Action: "prune-index-cache", Path: item.Path, Completed: item.Completed})
+			result.Items = append(result.Items, retention.Item{Action: "prune-index-cache", Path: item.Path, Completed: item.Completed})
 		}
 		if err != nil {
 			return result, err
@@ -179,11 +180,11 @@ func Collect(ctx context.Context, config Config, options CollectOptions) (Collec
 	// retained evidence, which these are not.
 	legacyBefore := time.Now().Add(-legacyAge)
 	stale, err := scratch.Stale(legacyBefore)
-	if !retention.DryRun {
+	if !age.DryRun {
 		stale, err = scratch.Sweep(legacyBefore)
 	}
 	for _, directory := range stale {
-		result.Items = append(result.Items, workflow.CleanupItem{Action: "remove-stale-run-directory", Path: directory, Completed: !retention.DryRun})
+		result.Items = append(result.Items, retention.Item{Action: "remove-stale-run-directory", Path: directory, Completed: !age.DryRun})
 	}
 	return result, err
 }

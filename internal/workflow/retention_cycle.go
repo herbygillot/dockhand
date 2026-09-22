@@ -27,7 +27,7 @@ func (c *cycle) pruneDiagnostics(ctx context.Context, result *CycleResult) error
 		return err
 	}
 	for _, resource := range resources {
-		item, err := c.collectResource(ctx, resource.ID, before, false)
+		item, err := c.collector().CollectResource(ctx, resource.ID, before, false)
 		if err != nil {
 			return err
 		}
