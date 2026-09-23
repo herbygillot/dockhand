@@ -85,6 +85,13 @@ func (w Word) Inner() text.Span {
 	return w.Span
 }
 
+// SwitchWritesVariable reports whether a switch option names a variable the
+// switch writes, as Tcl's -matchvar and -indexvar do: the word after it in
+// Control's controls is that variable.
+func SwitchWritesVariable(option string) bool {
+	return option == "-matchvar" || option == "-indexvar"
+}
+
 // Control separates a control structure's selecting words, its conditions,
 // iteration words, options, patterns, and the value a switch inspects, from
 // the bodies it executes as scripts. Other commands, and an if left waiting
@@ -134,6 +141,15 @@ func (c Command) Control(src []byte) (controls, bodies []Word, ok bool) {
 			i++
 			if literal == "--" {
 				break
+			}
+			// -matchvar and -indexvar name the variable the switch writes;
+			// it is the option's argument, not the value switched on.
+			if SwitchWritesVariable(literal) {
+				if i >= len(words) {
+					return nil, nil, false
+				}
+				controls = append(controls, words[i])
+				i++
 			}
 		}
 		if i >= len(words) {

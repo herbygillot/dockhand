@@ -345,6 +345,14 @@ func switchReason(src []byte, command syntax.Command, defs Definitions, depth in
 	if refused := argumentsReason(src, controls, defs, depth); refused.text != "" {
 		return refused
 	}
+	// A match or index variable is a write, judged as a set of it is.
+	for i := 0; i+1 < len(controls); i++ {
+		if option, _ := controls[i].Literal(src); syntax.SwitchWritesVariable(option) {
+			if refused := variableReason(src, command, controls[i+1]); refused.text != "" {
+				return refused
+			}
+		}
+	}
 	for _, body := range bodies {
 		block, ok := body.BracedScript(src)
 		if !ok {

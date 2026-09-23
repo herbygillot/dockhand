@@ -107,3 +107,21 @@ func TestWordAndCommandPredicates(t *testing.T) {
 	require.Equal(t, "1.3", commands[3].Words[2].Inner().Text(src))
 	require.Equal(t, "a", commands[5].Words[1].Inner().Text(src), "a bare word is its own inner")
 }
+
+// -matchvar and -indexvar each take the variable the switch writes, so the
+// value switched on is the word after it, not the variable.
+func TestControlReadsASwitchVariableAsItsOptionsArgument(t *testing.T) {
+	t.Parallel()
+	src := []byte("switch -regexp -indexvar where -matchvar found -- $s {^a {x}}\nswitch -matchvar\n")
+	script, errs := Parse(src)
+	require.Empty(t, errs)
+	commands := script.Direct()
+	controls, bodies, ok := commands[0].Control(src)
+	require.True(t, ok)
+	require.Equal(t, []string{"-regexp", "-indexvar", "where", "-matchvar", "found", "--", "$s", "^a"}, texts(src, controls))
+	require.Equal(t, []string{"{x}"}, texts(src, bodies))
+	require.True(t, SwitchWritesVariable("-indexvar"))
+	require.False(t, SwitchWritesVariable("-regexp"))
+	_, _, ok = commands[1].Control(src)
+	require.False(t, ok, "an option missing its variable is no control structure")
+}
