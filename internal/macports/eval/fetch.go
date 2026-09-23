@@ -17,7 +17,7 @@ type hookOrigin struct {
 	Line  int
 }
 
-func assessFetch(info macports.PortInfo, procedure, pre, post string, origins []hookOrigin) macports.FetchSemantics {
+func assessFetch(info macports.PortInfo, procedure, pre, post string, origins []hookOrigin, defs definitions) macports.FetchSemantics {
 	result := macports.FetchSemantics{Kind: "custom", Procedure: procedure}
 	if procedure != "portfetch::fetch_main" {
 		result.Problem = "custom fetch procedure " + procedure
@@ -33,7 +33,7 @@ func assessFetch(info macports.PortInfo, procedure, pre, post string, origins []
 		return result
 	}
 	for i, hook := range hooks {
-		guard, rejected, refused := classifyHook(info, hook)
+		guard, rejected, refused := classifyHook(info, hook, defs)
 		if refused.text != "" {
 			var origin hookOrigin
 			if i < len(origins) {
@@ -92,10 +92,13 @@ func (r refusal) where(hook string, origin hookOrigin) string {
 
 // classifyHook recognizes one registered hook by the shape of its first
 // command and says which guard it is, whether it rejects unconditionally,
-// and otherwise why the grammar refused it. A hook that starts with if is
-// read as a conditional rejection; the Go PortGroup's toolchain check by its
-// first line; anything else as an unconditional rejection.
-func classifyHook(info macports.PortInfo, hook string) (guard string, rejected bool, refused refusal) {
+// and otherwise why the grammar refused it. The specific checks come
+// first: the Go PortGroup's toolchain check by its first line. A hook that
+// starts with if is read as a conditional rejection; anything else as a
+// rejection, or as a hook that changes nothing the fetch reads. Commands
+// the grammar's own rules do not name are judged by their effect on the
+// fetch, a procedure by its body as the worker shipped it.
+func classifyHook(info macports.PortInfo, hook string, defs definitions) (guard string, rejected bool, refused refusal) {
 	body, ok := hookBody(hook)
 	if !ok {
 		return "", false, refuse(-1, "is not wrapped as a Base hook")
@@ -111,8 +114,6 @@ func classifyHook(info macports.PortInfo, hook string) (guard string, rejected b
 	}
 	name, _ := commands[0].Name(src)
 	switch {
-	case name == "if":
-		return "only rejects unsupported configurations", false, conditionalReason(src, commands)
 	case commands[0].Is(src, "global", "go.toolchain_unmet"):
 		if domain := info.Options["go.domain"]; domain != "github.com" {
 			if domain == "" {
@@ -121,27 +122,49 @@ func classifyHook(info macports.PortInfo, hook string) (guard string, rejected b
 			return "", false, refuse(-1, "is the Go PortGroup's toolchain check, recognized only when go.domain is github.com; this port's is %s", domain)
 		}
 		return "Go toolchain compatibility guard", false, goToolchainReason(src, commands)
+	case name == "if":
+		if refused := conditionalReason(src, commands, defs); refused.text != "" {
+			return "", false, refused
+		}
+		// A conditional hook that ends by rejecting outright is a rejection.
+		return "only rejects unsupported configurations", isRejection(src, commands[len(commands)-1]), accepted
 	}
-	return "unconditionally rejects this platform", true, rejectionReason(src, commands)
+	if refused := rejectionReason(src, commands, defs); refused.text != "" {
+		return "", false, refused
+	}
+	if isRejection(src, commands[len(commands)-1]) {
+		return "unconditionally rejects this platform", true, accepted
+	}
+	// A hook that opens with a helper and rejects inside an if later is
+	// a conditional rejection all the same.
+	for _, command := range commands {
+		if name, _ := command.Name(src); name == "if" {
+			return "only rejects unsupported configurations", false, accepted
+		}
+	}
+	return "changes nothing the fetch reads", false, accepted
 }
 
 // A rejection-only hook consists of harmless diagnostic arguments followed by
 // an unconditional error return. The registered Base wrapper must also match.
 func rejectionOnly(hook string) bool {
 	src, commands, ok := parseHook(hook)
-	return ok && rejectionReason(src, commands).text == ""
+	return ok && rejectionReason(src, commands, nil).text == "" && isRejection(src, commands[len(commands)-1])
 }
 
-// rejectionReason accepts diagnostics followed by an unconditional error,
-// return -code error or Tcl's error with one plain message, and otherwise
-// names the command that is neither.
-func rejectionReason(src []byte, commands []syntax.Command) refusal {
+// rejectionReason accepts commands that change nothing the fetch reads,
+// diagnostics first among them, followed by an unconditional error,
+// return -code error or Tcl's error with one plain message, or by
+// nothing that rejects at all; otherwise it names the command that does
+// something to the fetch, and what.
+func rejectionReason(src []byte, commands []syntax.Command, defs definitions) refusal {
 	if len(commands) == 0 {
 		return refuse(-1, "is empty")
 	}
 	for i, command := range commands {
 		words := command.Words
-		if i == len(commands)-1 {
+		last := i == len(commands)-1
+		if last {
 			var message *syntax.Word
 			switch {
 			case len(words) >= 3 && len(words) <= 4 && (syntax.Command{Words: words[:3]}).Is(src, "return", "-code", "error"):
@@ -151,13 +174,21 @@ func rejectionReason(src []byte, commands []syntax.Command) refusal {
 			case len(words) == 2 && !words[0].Expand && words[0].Span.Text(src) == "error":
 				message = &words[1]
 			default:
-				return refuse(command.Span.Start, "ends with `%s` rather than return -code error", snippet(src, command.Span))
+				if refused := effectReason(src, command, defs, 0); refused.text != "" {
+					return refuse(command.Span.Start, "ends with `%s` rather than return -code error, which %s", snippet(src, command.Span), refused.text)
+				}
+				continue
 			}
 			if message != nil && !message.Plain() {
 				return refuse(command.Span.Start, "returns a computed message `%s`", snippet(src, message.Span))
 			}
-		} else if len(words) != 2 || words[0].Span.Text(src) != "ui_error" || !words[1].Plain() {
-			return refuse(command.Span.Start, "runs `%s` before rejecting", snippet(src, command.Span))
+			continue
+		}
+		if len(words) == 2 && words[0].Span.Text(src) == "ui_error" && words[1].Plain() {
+			continue
+		}
+		if refused := effectReason(src, command, defs, 0); refused.text != "" {
+			return refuse(command.Span.Start, "runs `%s` before rejecting, which %s", snippet(src, command.Span), refused.text)
 		}
 	}
 	return accepted
@@ -173,10 +204,10 @@ func rejectionReason(src []byte, commands []syntax.Command) refusal {
 // branches that do anything else, are not recognized.
 func conditionalRejection(hook string) bool {
 	src, commands, ok := parseHook(hook)
-	return ok && conditionalReason(src, commands).text == ""
+	return ok && conditionalReason(src, commands, nil).text == ""
 }
 
-func conditionalReason(src []byte, commands []syntax.Command) refusal {
+func conditionalReason(src []byte, commands []syntax.Command, defs definitions) refusal {
 	if len(commands) == 0 {
 		return refuse(-1, "is empty")
 	}
@@ -184,7 +215,15 @@ func conditionalReason(src []byte, commands []syntax.Command) refusal {
 		name, _ := command.Name(src)
 		controls, bodies, ok := command.Control(src)
 		if name != "if" {
-			return refuse(command.Span.Start, "runs `%s` outside an if", snippet(src, command.Span))
+			// A command beside the ifs may reject, or change nothing the
+			// fetch reads; anything else is refused by what it does.
+			if isRejection(src, command) {
+				continue
+			}
+			if refused := effectReason(src, command, defs, 0); refused.text != "" {
+				return refuse(command.Span.Start, "runs `%s` outside an if, which %s", snippet(src, command.Span), refused.text)
+			}
+			continue
 		}
 		if !ok || len(bodies) == 0 {
 			return refuse(command.Span.Start, "has an if the grammar cannot read: `%s`", snippet(src, command.Span))
@@ -197,7 +236,7 @@ func conditionalReason(src []byte, commands []syntax.Command) refusal {
 			if !ok {
 				return refuse(control.Span.Start, "has a condition that is not braced: `%s`", snippet(src, control.Span))
 			}
-			if refused := pureConditionReason(src, braced.Body); refused.text != "" {
+			if refused := pureConditionReason(src, braced.Body, defs); refused.text != "" {
 				return refused
 			}
 		}
@@ -206,7 +245,7 @@ func conditionalReason(src []byte, commands []syntax.Command) refusal {
 			if !ok {
 				return refuse(body.Span.Start, "has a branch that is not braced: `%s`", snippet(src, body.Span))
 			}
-			if refused := branchReason(src, block.Direct()); refused.text != "" {
+			if refused := branchReason(src, block.Direct(), defs); refused.text != "" {
 				return refused
 			}
 		}
@@ -217,13 +256,13 @@ func conditionalReason(src []byte, commands []syntax.Command) refusal {
 // branchReason reads one branch of a conditional rejection: a rejection,
 // or, when it opens with if, a conditional rejection in its own right,
 // whose refusals already say what they stopped at.
-func branchReason(src []byte, commands []syntax.Command) refusal {
+func branchReason(src []byte, commands []syntax.Command, defs definitions) refusal {
 	if len(commands) > 0 {
 		if name, _ := commands[0].Name(src); name == "if" {
-			return conditionalReason(src, commands)
+			return conditionalReason(src, commands, defs)
 		}
 	}
-	if refused := rejectionReason(src, commands); refused.text != "" {
+	if refused := rejectionReason(src, commands, defs); refused.text != "" {
 		return refuse(refused.at, "has a branch that %s", refused.text)
 	}
 	return accepted
@@ -252,10 +291,10 @@ var hostReadCommands = map[string]func(args []string) bool{
 // anything else, an argument the rule does not allow, and a nested
 // substitution are refused.
 func pureCondition(src []byte, body text.Span) bool {
-	return pureConditionReason(src, body).text == ""
+	return pureConditionReason(src, body, nil).text == ""
 }
 
-func pureConditionReason(src []byte, body text.Span) refusal {
+func pureConditionReason(src []byte, body text.Span, defs definitions) refusal {
 	e, errs := syntax.ParseExpr(src, body)
 	if len(errs) != 0 {
 		return refuse(body.Start, "has a condition that does not parse as an expression: `%s`", snippet(src, body))
@@ -284,7 +323,13 @@ func pureConditionReason(src []byte, body text.Span) refusal {
 		args, literal := commands[0].LiteralArgs(src)
 		switch {
 		case !pureConditionCommands[name]:
-			refused = refuse(commands[0].Span.Start, "calls `%s` in its condition: `%s`", name, snippet(src, body))
+			// A call the grammar does not name is judged by its effect: a
+			// read of the host or the records changes nothing the fetch
+			// reads, and is admitted; a write, or a command the grammar
+			// cannot follow, is refused by what it does.
+			if effect := effectReason(src, commands[0], defs, 0); effect.text != "" {
+				refused = refuse(commands[0].Span.Start, "calls `%s` in its condition, which %s: `%s`", name, effect.text, snippet(src, body))
+			}
 		case !literal:
 			refused = refuse(commands[0].Span.Start, "calls `%s` with a computed argument in its condition: `%s`", name, snippet(src, body))
 		}

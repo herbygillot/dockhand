@@ -105,7 +105,48 @@ namespace eval ::dockhand {
             }
             set post [ditem_key $target post]
             llength $post
-            list $procedure $pre $post $origins
+            # The commands the hooks call, with what they are: an option
+            # command with its option, a procedure with its arguments and
+            # body, or a built-in command. The recognizer judges a hook by
+            # what it does, and a procedure by its body, so the bodies of
+            # the procedures a hook reaches are shipped too, five levels
+            # deep and 128 definitions at most. Names are read off the
+            # text as the first word of each command, which finds every
+            # command a hook can call by name and none it computes, and
+            # are resolved in the namespace of the procedure they appear
+            # in, as Tcl resolves them.
+            # The walk runs under apply so its variables are its own: this
+            # script evaluates at the port's global level, where a set of
+            # name or version would rewrite the port.
+            set definitions [apply {{pre} {
+                set definitions {}
+                set seen [dict create]
+                set pending {}
+                foreach body $pre { lappend pending [list $body 0 ::] }
+                while {[llength $pending] > 0 && [dict size $seen] < 128} {
+                    set pending [lassign $pending item]
+                    lassign $item text depth ns
+                    foreach {- name} [regexp -all -inline {(?:^|[\n;\[\{])[ \t]*([A-Za-z_:][A-Za-z0-9_:.-]*)} $text] {
+                        if {[dict exists $seen $name]} continue
+                        dict set seen $name 1
+                        set resolved [namespace eval $ns [list namespace which -command $name]]
+                        if {$resolved eq ""} continue
+                        set alias [interp alias {} [namespace tail $resolved]]
+                        if {[llength $alias] < 2} { set alias [interp alias {} $resolved] }
+                        if {[llength $alias] >= 2 && [string match handle_option* [lindex $alias 0]]} {
+                            lappend definitions [list $name option [lindex $alias 1]]
+                        } elseif {[llength [info procs $resolved]]} {
+                            set definition [list [info args $resolved] [info body $resolved]]
+                            lappend definitions [list $name proc $definition]
+                            if {$depth < 5} { lappend pending [list [info body $resolved] [expr {$depth + 1}] [namespace qualifiers $resolved]] }
+                        } else {
+                            lappend definitions [list $name command {}]
+                        }
+                    }
+                }
+                return $definitions
+            }} $pre]
+            list $procedure $pre $post $origins $definitions
         }]
     }
 }

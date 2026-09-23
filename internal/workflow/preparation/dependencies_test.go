@@ -106,7 +106,7 @@ func TestGoDependencyPreparation(t *testing.T) {
 			result, err := service.Prepare(t.Context(), request)
 			switch scenario {
 			case "unsupported-context":
-				require.ErrorContains(t, err, "pre-fetch hook 1 ends with `set distfiles changed.tar.gz` rather than return -code error, at Portfile line 46")
+				require.ErrorContains(t, err, "pre-fetch hook 1 ends with `set distfiles changed.tar.gz` rather than return -code error, which writes `distfiles`, at Portfile line 46")
 				require.NotContains(t, err.Error(), "dependency resolution failed")
 				require.Zero(t, requests.Load(), "local refusal must precede old-source download and helper")
 			case "missing":
@@ -227,7 +227,7 @@ extract.rename no
 				require.ErrorContains(t, err, "shared release also changes fixture")
 				require.ErrorContains(t, err, "authorize with bump --shared-release")
 			case "unsupported-context":
-				require.ErrorContains(t, err, "pre-fetch hook 1 ends with `set distfiles changed.tar.gz` rather than return -code error, at Portfile line 46")
+				require.ErrorContains(t, err, "pre-fetch hook 1 ends with `set distfiles changed.tar.gz` rather than return -code error, which writes `distfiles`, at Portfile line 46")
 				require.NotContains(t, err.Error(), "dependency resolution failed")
 				require.Zero(t, requests.Load(), "local refusal must precede old-source download and helper")
 			case "missing":

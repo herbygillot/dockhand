@@ -107,8 +107,8 @@ func TestRefusedHookIsPlacedInItsFile(t *testing.T) {
 	t.Parallel()
 	evaluator := liveEvaluator(t)
 	for _, test := range []struct{ name, portfile, group, want string }{
-		{"Portfile", "PortSystem 1.0\nname fixture\nversion 1\ncategories devel\n\npre-fetch {\n    ui_error \"no\"\n    ui_msg \"${name} needs macOS 11\"\n}\n", "", "pre-fetch hook 1 ends with `ui_msg \"${name} needs macOS 11\"` rather than return -code error, at Portfile line 8"},
-		{"PortGroup", "PortSystem 1.0\nPortGroup dockhand-guard 1.0\nname fixture\nversion 1\ncategories devel\n", "# a group\npre-fetch {\n    catch {set result [active_variants R tcltk]}\n    return -code error no\n}\n", "pre-fetch hook 1 runs `catch {set result [active_variants R tcltk]}` before rejecting, in the dockhand-guard-1.0 PortGroup at line 3"},
+		{"Portfile", "PortSystem 1.0\nname fixture\nversion 1\ncategories devel\n\npre-fetch {\n    ui_error \"no\"\n    distfiles-append other.tar.gz\n}\n", "", "pre-fetch hook 1 ends with `distfiles-append other.tar.gz` rather than return -code error, which writes `distfiles`, at Portfile line 8"},
+		{"PortGroup", "PortSystem 1.0\nPortGroup dockhand-guard 1.0\nname fixture\nversion 1\ncategories devel\n", "# a group\nproc dockhand_guard_writer {} {\n    distfiles-append extra.tar.gz\n}\npre-fetch {\n    dockhand_guard_writer\n    return -code error no\n}\n", "pre-fetch hook 1 runs `dockhand_guard_writer` before rejecting, which runs `distfiles-append extra.tar.gz` inside dockhand_guard_writer, which writes `distfiles`, in the dockhand-guard-1.0 PortGroup at line 6"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			tree := fixtureTree(t)
@@ -128,4 +128,28 @@ func TestRefusedHookIsPlacedInItsFile(t *testing.T) {
 			require.NotContains(t, info.Options, "fetch_details")
 		})
 	}
+}
+
+// The worker ships the definitions of the commands a hook calls, from the
+// interpreter that loaded the Portfile: an option command with its option,
+// a procedure with its body. A PortGroup helper that sets build options
+// before the hook rejects is read as changing nothing the fetch reads.
+func TestWorkerShipsTheDefinitionsAHookCalls(t *testing.T) {
+	t.Parallel()
+	evaluator := liveEvaluator(t)
+	tree := fixtureTree(t)
+	putFile(t, tree.Root(), "_resources/port1.0/group/dockhand-guard-1.0.tcl", "proc dockhand_guard_env {} {\n    global dockhand_guard_home\n    set dockhand_guard_home /Library/Java\n    configure.env-append JAVA_HOME=${dockhand_guard_home}\n    dockhand_guard_note\n}\nproc dockhand_guard_note {} {\n    ui_debug \"guard: environment set\"\n}\npre-fetch {\n    dockhand_guard_env\n    if {![file exists ${prefix}/bin/java]} {\n        return -code error \"no java\"\n    }\n}\n")
+	putFile(t, tree.Root(), "devel/fixture/Portfile", "PortSystem 1.0\nPortGroup dockhand-guard 1.0\nname fixture\nversion 1\ncategories devel\n")
+	targets, err := evaluator.Resolve(t.Context(), tree, macports.Selection{Selector: "fixture"})
+	require.NoError(t, err)
+	bound, err := tree.Select(targets[0])
+	require.NoError(t, err)
+	snapshot, err := evaluator.Evaluate(t.Context(), bound)
+	require.NoError(t, err)
+	info := snapshot.Ports["fixture"]
+	require.Empty(t, info.OptionErrors["fetch.archive_compatible"])
+	require.Equal(t, "1", info.Options["fetch.archive_compatible"])
+	require.NotNil(t, info.Fetch)
+	require.Equal(t, "guarded", info.Fetch.Kind)
+	require.Equal(t, []string{"pre-fetch hook 1 only rejects unsupported configurations"}, info.Fetch.Guards)
 }
