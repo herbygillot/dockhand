@@ -13,7 +13,7 @@ func (e *Engine) applyControls(ctx context.Context, scope Scope, controls []reco
 		selected[id] = true
 	}
 	for _, candidate := range controls {
-		err := e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+		err := e.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 			current, err := tx.Control(ctx, candidate.ID)
 			if err != nil {
 				return err

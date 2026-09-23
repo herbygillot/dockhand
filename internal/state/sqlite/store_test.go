@@ -44,7 +44,7 @@ func seed(t *testing.T, s *sqlite.Store, r record.Repository, id string) workflo
 		}
 		return tx.PutRevision(ctx, record.Revision{ID: record.RevisionID(id), ChangeID: record.ChangeID(id), Source: source(), CreatedAt: now})
 	}))
-	e := workflow.Engine{State: s, Repository: r.ID}
+	e := workflow.Engine{State: state.Bind(s, r)}
 	receipt, err := e.Submit(t.Context(), workflow.Request{ID: record.RequestID(id), Spec: record.JobSpec{Action: record.Verify, InputRevision: record.RevisionID(id), Targets: []record.Target{{Name: "fixture", Portfile: "Portfile"}}, Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &record.BuildConfig{Provider: "test", Platform: record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, EnvironmentDigest: "fixture", Tests: record.TestDeclared}}})
 	require.NoError(t, err)
 	return receipt

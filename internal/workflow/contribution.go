@@ -37,7 +37,7 @@ type contribution struct {
 // other job is pending on it, and an attached pull request is open.
 func (e *Engine) bindContribution(ctx context.Context, id record.ChangeID) (contribution, error) {
 	var result contribution
-	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+	err := e.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 		change, err := r.Change(ctx, id)
 		if err != nil {
 			return err

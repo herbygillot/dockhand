@@ -41,12 +41,11 @@ type Result struct {
 // claim or a conflict into a detail rather than an error. Provider routes a
 // persisted provider name.
 type Collector struct {
-	State      state.Store
-	Repository record.RepositoryID
-	Now        func() time.Time
-	Repo       *git.Repository
-	Provider   func(name string) verify.Provider
-	Release    func(ctx context.Context, id record.ResourceID, provider string) (string, error)
+	State    state.Scoped
+	Now      func() time.Time
+	Repo     *git.Repository
+	Provider func(name string) verify.Provider
+	Release  func(ctx context.Context, id record.ResourceID, provider string) (string, error)
 	// Timeout bounds one provider call.
 	Timeout time.Duration
 }
@@ -65,7 +64,7 @@ func (c *Collector) Collect(ctx context.Context, options Options) (Result, error
 	q := state.Query{Limit: 64, CleanupBefore: &result.Before}
 	for {
 		var resources []record.Resource
-		err := c.State.View(ctx, c.Repository, func(ctx context.Context, r state.Reader) error {
+		err := c.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 			var err error
 			resources, err = r.Resources(ctx, q)
 			return err

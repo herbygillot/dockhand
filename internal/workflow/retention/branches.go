@@ -77,7 +77,7 @@ func (c *Collector) collectMergedBranches(ctx context.Context, result *Result, d
 	q := state.Query{Limit: 64}
 	for {
 		var changes []record.Change
-		err := c.State.View(ctx, c.Repository, func(ctx context.Context, r state.Reader) error {
+		err := c.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 			var err error
 			changes, err = r.Changes(ctx, q)
 			return err
@@ -90,7 +90,7 @@ func (c *Collector) collectMergedBranches(ctx context.Context, result *Result, d
 				continue
 			}
 			var published record.Revision
-			err := c.State.View(ctx, c.Repository, func(ctx context.Context, r state.Reader) error {
+			err := c.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 				var err error
 				published, err = r.Revision(ctx, change.PublishedRevision)
 				return err
@@ -135,7 +135,7 @@ func (c *Collector) collectMergedBranches(ctx context.Context, result *Result, d
 // recordLocalCleanup settles the local side of a merged contribution's
 // cleanup after the sweep deleted its branch.
 func (c *Collector) recordLocalCleanup(ctx context.Context, id record.ChangeID) error {
-	return c.State.Update(ctx, c.Repository, func(ctx context.Context, tx state.Tx) error {
+	return c.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 		current, err := tx.Change(ctx, id)
 		if err != nil {
 			return err

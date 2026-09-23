@@ -74,7 +74,7 @@ func TestSQLiteProcessHelper(t *testing.T) {
 		ms, err := strconv.ParseInt(os.Getenv("DOCKHAND_TEST_NOW"), 10, 64)
 		require.NoError(t, err)
 		now := time.UnixMilli(ms).UTC()
-		e := workflow.Engine{State: s, Repository: repository, Provider: processProvider{log: os.Getenv("DOCKHAND_TEST_LOG")}, Now: func() time.Time { return now }}
+		e := workflow.Engine{State: state.Bind(s, record.Repository{ID: repository}), Provider: processProvider{log: os.Getenv("DOCKHAND_TEST_LOG")}, Now: func() time.Time { return now }}
 		_, err = e.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{record.JobID(os.Getenv("DOCKHAND_TEST_JOB"))}})
 		require.NoError(t, err)
 	default:

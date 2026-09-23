@@ -96,11 +96,11 @@ func (e *Engine) status(ctx context.Context, scope Scope, filter StatusFilter) (
 		return Status{}, err
 	}
 	result := EmptyStatus(e.now())
-	result.Repository = e.Repository
+	result.Repository = e.State.Repository().ID
 	if filter != (StatusFilter{}) {
 		result.Filter = &filter
 	}
-	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+	err := e.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 		if err := checkJobs(ctx, r, scope); err != nil {
 			return err
 		}

@@ -90,7 +90,7 @@ func cloneExecution(before execution) execution {
 }
 
 func (e *Engine) updateExecution(ctx context.Context, id record.JobID, fn func(state.Tx, *execution) error) error {
-	return e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+	return e.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 		before, err := loadExecution(ctx, tx, id)
 		if err != nil {
 			return err

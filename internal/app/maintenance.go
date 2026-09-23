@@ -128,7 +128,7 @@ func Collect(ctx context.Context, config Config, options CollectOptions) (Collec
 			registration.CheckoutMissing = true
 		}
 		result.Registrations = append(result.Registrations, registration)
-		engine := workflow.Engine{State: store, Repository: repository.ID, Providers: map[string]verify.Provider{}}
+		engine := workflow.Engine{State: state.Bind(store, repository), Providers: map[string]verify.Provider{}}
 		if !registration.CheckoutMissing {
 			// Branch cleanup needs the checkout; a registration without one still collects resources.
 			if repo, err := git.Open(ctx, checkoutRoot(repository.CommonDir), config.GitExecutable); err == nil {

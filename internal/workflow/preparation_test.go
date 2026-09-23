@@ -212,7 +212,7 @@ func TestPreparationClaimFencesLateResultsAndCancellation(t *testing.T) {
 }
 
 type resultFailureStore struct {
-	state.Store
+	state.Scoped
 	fail   *atomic.Bool
 	before func(record.Job)
 }
@@ -221,8 +221,8 @@ type resultFailureTx struct {
 	store *resultFailureStore
 }
 
-func (s *resultFailureStore) Update(ctx context.Context, repo record.RepositoryID, fn func(context.Context, state.Tx) error) error {
-	return s.Store.Update(ctx, repo, func(ctx context.Context, tx state.Tx) error { return fn(ctx, &resultFailureTx{tx, s}) })
+func (s *resultFailureStore) Update(ctx context.Context, fn func(context.Context, state.Tx) error) error {
+	return s.Scoped.Update(ctx, func(ctx context.Context, tx state.Tx) error { return fn(ctx, &resultFailureTx{tx, s}) })
 }
 func (t *resultFailureTx) PutJob(ctx context.Context, job record.Job) error {
 	if job.ResultRevision != "" {
@@ -245,7 +245,7 @@ func TestInterruptedIntegrationRecoversExactBranchWithoutRepeatingPreparation(t 
 			candidate := candidateJob(t, f, id)
 			var fail atomic.Bool
 			fail.Store(true)
-			f.engine.State = &resultFailureStore{Store: f.store, fail: &fail}
+			f.engine.State = &resultFailureStore{Scoped: f.scoped(), fail: &fail}
 			_, err := f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{id}})
 			require.ErrorContains(t, err, "injected state write failure")
 			pending := f.status(t, id).Jobs[0].Job
@@ -255,7 +255,7 @@ func TestInterruptedIntegrationRecoversExactBranchWithoutRepeatingPreparation(t 
 			ref, err := f.repo.ReadRef(t.Context(), "refs/heads/"+candidate.Prepared.Branch)
 			require.NoError(t, err)
 			require.Equal(t, string(candidate.Prepared.Source.Commit), ref.Object)
-			f.engine.State, f.engine.Preparer = f.store, nil
+			f.engine.State, f.engine.Preparer = f.scoped(), nil
 			if cancelJob {
 				f.cancel(t, id)
 			}
@@ -345,12 +345,12 @@ func TestIntegrationWaiterRechecksStateUnderBranchLock(t *testing.T) {
 	var once sync.Once
 	unblock := func() { once.Do(func() { close(release) }) }
 	defer unblock()
-	f.engine.State = &resultFailureStore{Store: f.store, before: func(record.Job) { close(entered); <-release }}
+	f.engine.State = &resultFailureStore{Scoped: f.scoped(), before: func(record.Job) { close(entered); <-release }}
 	first := startCycle(t.Context(), f.engine, id)
 	receive(t, entered)
 	f.advance(2 * time.Minute)
 	other := *f.engine
-	other.State = f.store
+	other.State = f.scoped()
 	waiting := startCycle(t.Context(), &other, id)
 	unblock()
 	require.NoError(t, receive(t, first).err)

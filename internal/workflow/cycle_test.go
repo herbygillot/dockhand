@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/workflow"
@@ -53,7 +54,7 @@ func TestCycleCapacityAdmissionCompletionAndCleanup(t *testing.T) {
 	t.Cleanup(func() { reopened.Close() })
 	require.NoError(t, err)
 	fresh := *f.engine
-	fresh.State = reopened
+	fresh.State = state.Bind(reopened, f.registration)
 	f.engine = &fresh
 	f.run(t, id)
 	status = f.status(t, id)

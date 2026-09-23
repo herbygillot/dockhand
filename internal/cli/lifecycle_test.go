@@ -36,7 +36,7 @@ func queuedJob(t *testing.T) (app.Config, record.JobID) {
 	commit, tree, err := services.Workflow.Repo.Branch(t.Context(), "candidate")
 	require.NoError(t, err)
 	source := record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree)}
-	require.NoError(t, services.Workflow.State.Update(t.Context(), services.Workflow.Repository, func(ctx context.Context, tx state.Tx) error {
+	require.NoError(t, services.Workflow.State.Update(t.Context(), func(ctx context.Context, tx state.Tx) error {
 		if err := tx.PutChange(ctx, record.Change{ID: "change", Branch: "candidate", CurrentRevision: "revision", Disposition: record.ChangeOpen}); err != nil {
 			return err
 		}

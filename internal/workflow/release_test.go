@@ -68,7 +68,7 @@ func TestVersionBumpCheckpointsReleaseBeforePreparationAndResumesVerification(t 
 				require.NoError(t, err)
 				defer reopened.Close()
 				fresh := *f.engine
-				fresh.State = reopened
+				fresh.State = state.Bind(reopened, f.registration)
 				fresh.Releases = nil
 				f.engine = &fresh
 				candidate := candidateJob(t, f, id)
@@ -103,11 +103,11 @@ func TestVersionBumpCheckpointsReleaseBeforePreparationAndResumesVerification(t 
 	}
 }
 
-type releaseFailureStore struct{ state.Store }
+type releaseFailureStore struct{ state.Scoped }
 type releaseFailureTx struct{ state.Tx }
 
-func (s releaseFailureStore) Update(ctx context.Context, repo record.RepositoryID, fn func(context.Context, state.Tx) error) error {
-	return s.Store.Update(ctx, repo, func(ctx context.Context, tx state.Tx) error { return fn(ctx, releaseFailureTx{tx}) })
+func (s releaseFailureStore) Update(ctx context.Context, fn func(context.Context, state.Tx) error) error {
+	return s.Scoped.Update(ctx, func(ctx context.Context, tx state.Tx) error { return fn(ctx, releaseFailureTx{tx}) })
 }
 
 func (t releaseFailureTx) PutJob(ctx context.Context, job record.Job) error {
@@ -129,7 +129,7 @@ func TestFailedReleaseCheckpointCannotStartPreparation(t *testing.T) {
 		return preparation.Result{}, nil
 	})
 	id := submitPreparation(t, f, req)
-	f.engine.State = releaseFailureStore{f.store}
+	f.engine.State = releaseFailureStore{f.scoped()}
 	_, err := f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{id}})
 	require.ErrorContains(t, err, "injected release checkpoint failure")
 	job := f.status(t, id).Jobs[0].Job
@@ -227,7 +227,7 @@ func TestAlreadyCurrentBumpCompletesWithoutPreparationOrVerification(t *testing.
 			require.NoError(t, err)
 			defer reopened.Close()
 			fresh := *f.engine
-			fresh.State = reopened
+			fresh.State = state.Bind(reopened, f.registration)
 			fresh.Releases = nil
 			f.engine = &fresh
 			require.Empty(t, f.run(t, id).Advanced)
@@ -263,7 +263,7 @@ func TestNoUpdateCheckpointFailureDoesNotReportSuccess(t *testing.T) {
 	release.NoUpdate = true
 	f.engine.Releases = resolveFunc(func(context.Context, preparation.Request) (record.Release, error) { return release, nil })
 	id := submitPreparation(t, f, req)
-	f.engine.State = releaseFailureStore{f.store}
+	f.engine.State = releaseFailureStore{f.scoped()}
 	_, err := f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{id}})
 	require.Error(t, err)
 	job := f.status(t, id).Jobs[0].Job

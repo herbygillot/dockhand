@@ -21,7 +21,7 @@ var (
 	// Cycle reports it as a job problem without discarding the accepted request.
 	errNotImplemented = errors.New("workflow: job execution is not implemented")
 	// errNoState means the engine or its state dependency is missing.
-	errNoState = errors.New("workflow: state store and repository are required")
+	errNoState = errors.New("workflow: a state store bound to the repository is required")
 	// errUnsupportedAction means intake does not yet support the requested action or control.
 	errUnsupportedAction = errors.New("workflow: action intake is not implemented")
 	// ErrRequestConflict means a request ID already identifies different intent.
@@ -49,9 +49,10 @@ var (
 // Configure it before use. Concurrent callers must leave its fields unchanged
 // and provide dependencies and a clock that support concurrent calls.
 type Engine struct {
-	// State is required by every public operation.
-	State      state.Store
-	Repository record.RepositoryID
+	// State, bound to the repository the engine drives, is required by every
+	// operation that reads or writes records; Resolve and a dry-run Adopt run
+	// without it.
+	State state.Scoped
 	// Repo and Ports support explicit branch binding before submission.
 	Repo  *git.Repository
 	Ports macports.Reader
@@ -123,20 +124,23 @@ const (
 	observationsPerCycle = 4
 )
 
-// requireRepository checks that the Git repository the engine drives is the
-// one its state is scoped to; scope words the refusal for the caller.
-func (e *Engine) requireRepository(ctx context.Context, scope string) error {
-	registered, err := e.State.FindRepository(ctx, e.Repo.CommonDir)
-	if err != nil {
-		return err
+// boundRepository reports whether the Git repository the engine drives is
+// the one its state is bound to: the registration's common directory is
+// the repository's own.
+func (e *Engine) boundRepository() bool {
+	return e.Repo != nil && e.State != nil && e.State.Repository().CommonDir == e.Repo.CommonDir
+}
+
+// requireRepository refuses an operation on a Git repository other than
+// the one the engine's state is bound to; scope words the refusal.
+func (e *Engine) requireRepository(scope string) error {
+	if e.boundRepository() {
+		return nil
 	}
-	if registered.ID != e.Repository {
-		if scope == "" {
-			return ErrInvalidRequest
-		}
-		return fmt.Errorf("%w: %s", ErrInvalidRequest, scope)
+	if scope == "" {
+		return ErrInvalidRequest
 	}
-	return nil
+	return fmt.Errorf("%w: %s", ErrInvalidRequest, scope)
 }
 
 // publicationDestinationFor resolves where a publication goes: the attached

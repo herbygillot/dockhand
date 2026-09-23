@@ -210,11 +210,11 @@ func submitPublication(t *testing.T, f *fixture, id string) record.JobID {
 	return receipt.JobID
 }
 
-type alteredPublicationStore struct{ state.Store }
+type alteredPublicationStore struct{ state.Scoped }
 type alteredPublicationTx struct{ state.Tx }
 
-func (s alteredPublicationStore) Update(ctx context.Context, repository record.RepositoryID, fn func(context.Context, state.Tx) error) error {
-	return s.Store.Update(ctx, repository, func(ctx context.Context, tx state.Tx) error {
+func (s alteredPublicationStore) Update(ctx context.Context, fn func(context.Context, state.Tx) error) error {
+	return s.Scoped.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 		return fn(ctx, alteredPublicationTx{Tx: tx})
 	})
 }
@@ -226,7 +226,7 @@ func (tx alteredPublicationTx) PutPublication(ctx context.Context, action record
 func TestWorkflowRejectsPublicationActionOutsideAcceptedIntent(t *testing.T) {
 	t.Parallel()
 	f, hosting := publicationFixture(t)
-	f.engine.State = alteredPublicationStore{Store: f.store}
+	f.engine.State = alteredPublicationStore{Scoped: f.engine.State}
 	id := submitPublication(t, f, "altered-publication")
 	f.run(t, id)
 	status := f.status(t, id)
@@ -262,7 +262,7 @@ func TestPublicationPushesConfirmsAndRetainsAssociationAcrossRestart(t *testing.
 	require.NoError(t, err)
 	defer reopened.Close()
 	engine := *f.engine
-	engine.State = reopened
+	engine.State = state.Bind(reopened, f.registration)
 	f.engine = &engine
 	f.run(t, id)
 	status := f.status(t, id)
@@ -504,7 +504,7 @@ func TestCompetingPublicationDriversUseOneWrite(t *testing.T) {
 	require.NoError(t, err)
 	defer reopened.Close()
 	other := *f.engine
-	other.State = reopened
+	other.State = state.Bind(reopened, f.registration)
 	other.Owner = "other-driver"
 	for range 3 {
 		f.advance(2 * time.Second)
@@ -547,7 +547,7 @@ func TestRateLimitedPublicationResumesAfterDurableRefusal(t *testing.T) {
 	require.NoError(t, err)
 	defer reopened.Close()
 	other := *f.engine
-	other.State, other.Owner, other.RetryDelay = reopened, "other-driver", time.Millisecond
+	other.State, other.Owner, other.RetryDelay = state.Bind(reopened, f.registration), "other-driver", time.Millisecond
 	scope := workflow.Scope{Jobs: []record.JobID{id}}
 	_, err = other.Cycle(t.Context(), scope)
 	require.NoError(t, err)

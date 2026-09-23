@@ -18,7 +18,7 @@ func TestJobStatusFiltersBeforeDecodingAndWithinRepository(t *testing.T) {
 	s := openStore(t, filepath.Join(t.TempDir(), "state.db"))
 	a, b := repository(t, s, "a"), repository(t, s, "b")
 	first, foreign := seed(t, s, a, "first"), seed(t, s, b, "foreign")
-	e := workflow.Engine{State: s, Repository: a.ID}
+	e := workflow.Engine{State: state.Bind(s, a)}
 	bad, err := e.Submit(t.Context(), workflow.Request{ID: "unrelated", Spec: record.JobSpec{
 		Action: record.Verify, Source: source(), Targets: []record.Target{{Name: "fixture", Portfile: "Portfile"}},
 		Destination: record.VerificationComplete, Verification: record.VerificationRequired,

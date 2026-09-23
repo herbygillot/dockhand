@@ -71,7 +71,7 @@ func (e *Engine) AdoptContribution(ctx context.Context, input AdoptRequest) (Ado
 		return result, fmt.Errorf("%w: %q is not a port name", ErrInvalidRequest, input.Target)
 	}
 	if e.State != nil {
-		if err := e.requireRepository(ctx, ""); err != nil {
+		if err := e.requireRepository(""); err != nil {
 			return result, err
 		}
 	}
@@ -102,7 +102,7 @@ func (e *Engine) adoptBranch(ctx context.Context, input AdoptRequest, pullReques
 	}
 	var tracked record.Change
 	if e.State != nil {
-		err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+		err := e.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 			change, err := r.OpenChangeByBranch(ctx, input.Branch)
 			if errors.Is(err, state.ErrNotFound) {
 				return nil
@@ -221,7 +221,7 @@ func (e *Engine) adoptBranch(ctx context.Context, input AdoptRequest, pullReques
 		}
 		return result, nil
 	}
-	err = e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+	err = e.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 		if _, err := tx.OpenChangeByBranch(ctx, input.Branch); err == nil {
 			return fmt.Errorf("%w: branch %s was tracked while adopting", ErrStaleRevision, input.Branch)
 		} else if !errors.Is(err, state.ErrNotFound) {

@@ -64,7 +64,7 @@ func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
 		selection = nil
 	}
 	var controls []record.ControlRequest
-	err = e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+	err = e.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 		if err := checkJobs(ctx, r, scope); err != nil {
 			return err
 		}
@@ -80,7 +80,7 @@ func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
 	}
 	var jobs []record.Job
 	now := e.now()
-	err = e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+	err = e.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 		var err error
 		jobs, err = r.DueJobs(ctx, selection, now, 64)
 		return err
@@ -125,7 +125,7 @@ func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
 	}
 	var resources []record.Resource
 	now = e.now()
-	err = e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+	err = e.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 		var err error
 		resources, err = r.Resources(ctx, state.Query{Jobs: selection, DueBefore: &now, Limit: 64})
 		return err
@@ -149,7 +149,7 @@ func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
 	if err = c.pruneDiagnostics(ctx, &result); err != nil {
 		return result, err
 	}
-	err = e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+	err = e.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 		q := state.Query{Jobs: selection, Pending: true, Limit: 64}
 		for {
 			rs, err := r.Resources(ctx, q)

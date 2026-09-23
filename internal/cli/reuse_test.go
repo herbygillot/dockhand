@@ -80,7 +80,7 @@ func seedCLIVerification(t *testing.T, config app.Config, branch string) time.Ti
 	receipt, err := services.Workflow.Submit(t.Context(), bound.Request)
 	require.NoError(t, err)
 	observed := time.Now().UTC().Truncate(time.Millisecond)
-	require.NoError(t, services.Workflow.State.Update(t.Context(), services.Workflow.Repository, func(ctx context.Context, tx state.Tx) error {
+	require.NoError(t, services.Workflow.State.Update(t.Context(), func(ctx context.Context, tx state.Tx) error {
 		job, err := tx.Job(ctx, receipt.JobID)
 		if err != nil {
 			return err

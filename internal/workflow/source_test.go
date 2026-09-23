@@ -218,7 +218,7 @@ func TestBranchBindingFailureLeavesNoJobAndCleansSnapshot(t *testing.T) {
 	require.Empty(t, status.Jobs)
 	other, err := f.store.RegisterRepository(t.Context(), t.TempDir())
 	require.NoError(t, err)
-	f.engine.Repository = other.ID
+	f.engine.State = state.Bind(f.store, other)
 	_, err = f.engine.BindVerification(t.Context(), bindRequest(f, "wrong-repo"))
 	require.ErrorIs(t, err, workflow.ErrInvalidRequest)
 }
@@ -240,7 +240,7 @@ func TestVerificationBindingAgainstPortsTree(t *testing.T) {
 	ports := &eval.Evaluator{}
 	platform, err := ports.NativePlatform(t.Context())
 	require.NoError(t, err)
-	engine := workflow.Engine{State: store, Repository: registered.ID, Repo: repo, Ports: ports}
+	engine := workflow.Engine{State: state.Bind(store, registered), Repo: repo, Ports: ports}
 	for _, selector := range []string{"jq", "terraform"} {
 		request := workflow.VerificationRequest{ID: record.RequestID("live-" + selector), Branch: branch, Selection: macports.Selection{Selector: selector}, Build: record.BuildConfig{Provider: "fixture", Platform: platform, EnvironmentDigest: "fixture:binding-only", FromSource: true, Tests: record.TestDeclared}}
 		bound, err := engine.BindVerification(t.Context(), request)

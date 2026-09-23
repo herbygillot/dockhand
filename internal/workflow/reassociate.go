@@ -15,11 +15,11 @@ import (
 // Reassociate explicitly replaces a local branch locator, preserving PR identity.
 func (e *Engine) Reassociate(ctx context.Context, id record.ChangeID, branch string, platform record.Platform) (record.Change, error) {
 	var change record.Change
-	if e == nil || e.State == nil || e.Repo == nil || e.Ports == nil || e.Repository == "" {
+	if e == nil || e.State == nil || e.Repo == nil || e.Ports == nil {
 		return change, errNoState
 	}
 	var previous record.Revision
-	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+	err := e.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 		var err error
 		change, err = r.Change(ctx, id)
 		if err != nil {
@@ -71,7 +71,7 @@ func (e *Engine) Reassociate(ctx context.Context, id record.ChangeID, branch str
 		if current.Commit != snapshot.Commit {
 			return ErrStaleRevision
 		}
-		return e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+		return e.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 			latest, err := tx.Change(ctx, id)
 			if err != nil {
 				return err

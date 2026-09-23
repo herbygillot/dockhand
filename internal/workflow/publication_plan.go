@@ -37,7 +37,7 @@ func (c *cycle) planPublication(ctx context.Context, job record.Job) (bool, stri
 		case errors.Is(problem, publish.ErrPrecondition), errors.Is(problem, git.ErrRefConflict), errors.Is(problem, state.ErrConflict), errors.Is(problem, ErrInvalidRequest):
 			outcome = record.JobNeedsAttention
 		}
-		err := e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+		err := e.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 			current, err := tx.Job(ctx, job.ID)
 			if err != nil {
 				return err
@@ -69,7 +69,7 @@ func (c *cycle) planPublication(ctx context.Context, job record.Job) (bool, stri
 	var change record.Change
 	var evidence record.Attempt
 	var associated *record.PullRequest
-	err := e.State.View(call, e.Repository, func(ctx context.Context, r state.Reader) error {
+	err := e.State.View(call, func(ctx context.Context, r state.Reader) error {
 		var err error
 		change, err = r.Change(ctx, job.ChangeID)
 		if err != nil {
@@ -139,7 +139,7 @@ func (c *cycle) planPublication(ctx context.Context, job record.Job) (bool, stri
 	if err = call.Err(); err != nil {
 		return fail(err)
 	}
-	err = e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+	err = e.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 		current, err := tx.Job(ctx, job.ID)
 		if err != nil {
 			return err

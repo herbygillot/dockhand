@@ -32,7 +32,7 @@ func (e *Engine) checkScope(scope Scope) error {
 	if err := validateScope(scope); err != nil {
 		return err
 	}
-	if e == nil || e.State == nil || e.Repository == "" {
+	if e == nil || e.State == nil {
 		return errNoState
 	}
 	return nil

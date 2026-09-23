@@ -14,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/workflow"
@@ -43,7 +44,7 @@ func TestTartDriverProcess(t *testing.T) {
 	repo, err := git.Open(t.Context(), f.Repo, "")
 	require.NoError(t, err)
 	p := &Provider{Config: f.Config, State: store, Repository: f.Repository, Repo: repo}
-	engine := &workflow.Engine{State: store, Repository: f.Repository, Provider: p, WaitInterval: 100 * time.Millisecond, RetryDelay: 100 * time.Millisecond}
+	engine := &workflow.Engine{State: state.Bind(store, record.Repository{ID: f.Repository}), Provider: p, WaitInterval: 100 * time.Millisecond, RetryDelay: 100 * time.Millisecond}
 	scope := workflow.Scope{Jobs: []record.JobID{f.Job}}
 	deadline := time.Now().Add(8 * time.Minute)
 	for time.Now().Before(deadline) {
@@ -145,7 +146,7 @@ destroot {
 	environment, err := provider.describeEnvironment(ctx)
 	require.NoError(t, err)
 	t.Logf("environment %s", environment.Digest)
-	engine := &workflow.Engine{State: store, Repository: repository.ID, Repo: repo, Ports: ports, Provider: provider}
+	engine := &workflow.Engine{State: state.Bind(store, repository), Repo: repo, Ports: ports, Provider: provider}
 	bound, err := engine.BindVerification(ctx, workflow.VerificationRequest{ID: "live", Branch: "candidate", Selection: macports.Selection{Selector: "dockhand-fixture"}, Build: record.BuildConfig{Provider: "tart", Platform: platform, EnvironmentDigest: environment.Digest, CapabilitiesRequired: true, FromSource: true, Tests: record.TestDeclared}})
 	require.NoError(t, err)
 	receipt, err := engine.Submit(ctx, bound.Request)

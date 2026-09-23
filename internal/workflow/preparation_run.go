@@ -26,7 +26,7 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 	var changed bool
 	var detail string
 	budget := c.timeouts.Prepare
-	err := e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+	err := e.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 		job, err := tx.Job(ctx, id)
 		if err != nil {
 			return err
@@ -90,7 +90,7 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 		return changed, "", ctx.Err()
 	}
 	operationErr = errors.Join(operationErr, callCtx.Err())
-	err = e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+	err = e.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 		job, err := tx.Job(ctx, id)
 		if err != nil {
 			return err
@@ -161,11 +161,7 @@ func preparationRequest(job record.Job) preparation.Request {
 
 func (c *cycle) prepareCandidate(ctx context.Context, job record.Job) (record.PreparedChange, error) {
 	e := c.engine
-	registered, err := e.State.FindRepository(ctx, e.Repo.CommonDir)
-	if err != nil {
-		return record.PreparedChange{}, err
-	}
-	if registered.ID != e.Repository {
+	if !e.boundRepository() {
 		return record.PreparedChange{}, fmt.Errorf("workflow: preparation repository mismatch")
 	}
 	target := job.Spec.Targets[0]

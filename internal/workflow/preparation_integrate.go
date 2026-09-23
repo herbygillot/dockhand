@@ -21,7 +21,7 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 	err = e.Repo.WithBranchLock(callCtx, candidate.Prepared.Branch, func(ctx context.Context) error {
 		var selected record.Job
 		var recovering bool
-		err := e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+		err := e.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 			job, err := tx.Job(ctx, candidate.ID)
 			if err != nil {
 				return err
@@ -69,7 +69,7 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 		if confirmed && operationErr == nil {
 			shared = e.sharedFiles(ctx, selected.Prepared.Source)
 		}
-		return e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+		return e.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 			job, err := tx.Job(ctx, selected.ID)
 			if err != nil {
 				return err
@@ -160,11 +160,7 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 
 func (c *cycle) integrateBranch(ctx context.Context, job record.Job, recovering bool) (bool, error) {
 	e := c.engine
-	registered, err := e.State.FindRepository(ctx, e.Repo.CommonDir)
-	if err != nil {
-		return false, err
-	}
-	if registered.ID != e.Repository {
+	if !e.boundRepository() {
 		return false, fmt.Errorf("workflow: integration repository mismatch")
 	}
 	prepared := job.Prepared

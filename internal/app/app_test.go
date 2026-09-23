@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
+	"github.com/herbygillot/dockhand/internal/state/sqlite"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/stretchr/testify/require"
 )
@@ -39,16 +40,16 @@ func TestSharedDatabaseRepositoryRegistration(t *testing.T) {
 		t.Cleanup(func() { s.Close() })
 		services = append(services, s)
 	}
-	require.Equal(t, services[0].Workflow.Repository, services[1].Workflow.Repository)
-	require.NotEqual(t, services[0].Workflow.Repository, services[2].Workflow.Repository)
-	require.NotEqual(t, services[2].Workflow.Repository, services[3].Workflow.Repository)
-	require.NotEqual(t, services[0].Workflow.Repository, services[4].Workflow.Repository)
+	require.Equal(t, services[0].Workflow.State.Repository().ID, services[1].Workflow.State.Repository().ID)
+	require.NotEqual(t, services[0].Workflow.State.Repository().ID, services[2].Workflow.State.Repository().ID)
+	require.NotEqual(t, services[2].Workflow.State.Repository().ID, services[3].Workflow.State.Repository().ID)
+	require.NotEqual(t, services[0].Workflow.State.Repository().ID, services[4].Workflow.State.Repository().ID)
 	for i, s := range services {
 		if i == 1 {
 			continue
 		}
-		require.NoError(t, s.Workflow.State.Update(t.Context(), s.Workflow.Repository, func(ctx context.Context, tx state.Tx) error {
-			return tx.PutChange(ctx, record.Change{ID: record.ChangeID(s.Workflow.Repository), Branch: "same-branch", Disposition: record.ChangeOpen})
+		require.NoError(t, s.Workflow.State.Update(t.Context(), func(ctx context.Context, tx state.Tx) error {
+			return tx.PutChange(ctx, record.Change{ID: record.ChangeID(s.Workflow.State.Repository().ID), Branch: "same-branch", Disposition: record.ChangeOpen})
 		}))
 	}
 	status, err := app.Status(t.Context(), app.Config{Repository: worktree, DBPath: db})
@@ -90,7 +91,10 @@ func TestStatusDoesNotCreateOrRegisterState(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, filtered.Jobs)
 	require.Empty(t, filtered.Repository)
-	_, err = existing.Workflow.State.FindRepository(t.Context(), filepath.Join(other, ".git"))
+	store, err := sqlite.Open(t.Context(), db, sqlite.Options{ReadOnly: true})
+	require.NoError(t, err)
+	defer store.Close()
+	_, err = store.FindRepository(t.Context(), filepath.Join(other, ".git"))
 	require.ErrorIs(t, err, state.ErrNotFound)
 }
 func runGit(t *testing.T, root string, args ...string) {

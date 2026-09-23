@@ -24,13 +24,14 @@ import (
 var buildPlatform = record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
 
 type fixture struct {
-	engine     *workflow.Engine
-	store      *sqlite.Store
-	repository record.RepositoryID
-	repo       *git.Repository
-	provider   *scriptedProvider
-	clock      atomic.Int64
-	source     record.Source
+	engine       *workflow.Engine
+	store        *sqlite.Store
+	repository   record.RepositoryID
+	registration record.Repository
+	repo         *git.Repository
+	provider     *scriptedProvider
+	clock        atomic.Int64
+	source       record.Source
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -57,7 +58,7 @@ func newFixture(t *testing.T) *fixture {
 	t.Cleanup(func() { store.Close() })
 	repository, err := store.RegisterRepository(t.Context(), repo.CommonDir)
 	require.NoError(t, err)
-	f := &fixture{repo: repo, store: store, repository: repository.ID}
+	f := &fixture{repo: repo, store: store, repository: repository.ID, registration: repository}
 
 	f.clock.Store(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).UnixNano())
 	blob, err := repo.WriteBlob(t.Context(), []byte("name fixture\nversion 1.0\n"))
@@ -75,7 +76,7 @@ func newFixture(t *testing.T) *fixture {
 		return tx.PutRevision(ctx, record.Revision{ID: "revision", ChangeID: "change", Source: f.source, CreatedAt: f.now()})
 	}))
 	f.provider = &scriptedProvider{store: store, repository: repository.ID, now: f.now, calls: make(map[string]int)}
-	f.engine = &workflow.Engine{State: store, Repository: repository.ID, Provider: f.provider, Now: f.now, Owner: "driver", Timeouts: workflow.Timeouts{Resolve: 5 * time.Second, Prepare: 5 * time.Second, Provision: 5 * time.Second, Observe: 5 * time.Second, Publish: 5 * time.Second, Cleanup: 5 * time.Second}, LeaseGrace: 55 * time.Second, WaitInterval: time.Second, RetryDelay: time.Second, ObserveInterval: time.Second}
+	f.engine = &workflow.Engine{State: state.Bind(store, repository), Provider: f.provider, Now: f.now, Owner: "driver", Timeouts: workflow.Timeouts{Resolve: 5 * time.Second, Prepare: 5 * time.Second, Provision: 5 * time.Second, Observe: 5 * time.Second, Publish: 5 * time.Second, Cleanup: 5 * time.Second}, LeaseGrace: 55 * time.Second, WaitInterval: time.Second, RetryDelay: time.Second, ObserveInterval: time.Second}
 
 	return f
 }
@@ -252,3 +253,7 @@ func (f *fixture) runAttemptDue(t *testing.T, id record.JobID) workflow.CycleRes
 	}
 	return f.run(t, id)
 }
+
+// scoped is the fixture's store bound to its repository, for a test that
+// wraps or replaces the engine's.
+func (f *fixture) scoped() state.Scoped { return state.Bind(f.store, f.registration) }

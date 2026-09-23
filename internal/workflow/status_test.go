@@ -133,7 +133,7 @@ func TestFilteredStatusReuseDoesNotSelectOriginalJobResources(t *testing.T) {
 }
 
 type statusWriteStore struct {
-	state.Store
+	state.Scoped
 	afterSelection func()
 	views          int
 }
@@ -142,9 +142,9 @@ type statusWriteReader struct {
 	store *statusWriteStore
 }
 
-func (s *statusWriteStore) View(ctx context.Context, repo record.RepositoryID, fn func(context.Context, state.Reader) error) error {
+func (s *statusWriteStore) View(ctx context.Context, fn func(context.Context, state.Reader) error) error {
 	s.views++
-	return s.Store.View(ctx, repo, func(ctx context.Context, r state.Reader) error {
+	return s.Scoped.View(ctx, func(ctx context.Context, r state.Reader) error {
 		return fn(ctx, statusWriteReader{Reader: r, store: s})
 	})
 }
@@ -162,7 +162,7 @@ func TestFilteredStatusSelectionAndDetailsShareSnapshot(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	f.submit(t, "queued")
-	store := &statusWriteStore{Store: f.store, afterSelection: func() {
+	store := &statusWriteStore{Scoped: f.engine.State, afterSelection: func() {
 		require.NoError(t, f.store.Update(t.Context(), f.repository, func(ctx context.Context, tx state.Tx) error {
 			change, err := tx.Change(ctx, "change")
 			if err != nil {

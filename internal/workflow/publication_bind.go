@@ -42,7 +42,7 @@ func (e *Engine) PlanPublication(ctx context.Context, input PublicationRequest) 
 }
 
 func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, authenticate bool) (Request, error) {
-	if e == nil || e.State == nil || e.Repository == "" {
+	if e == nil || e.State == nil {
 		return Request{}, errNoState
 	}
 	if e.Repo == nil || e.Publisher == nil {
@@ -57,7 +57,7 @@ func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, 
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeouts.Publish)
 	defer cancel()
-	if err := e.requireRepository(ctx, ""); err != nil {
+	if err := e.requireRepository(""); err != nil {
 		return Request{}, err
 	}
 	var continuation *record.Change
@@ -95,7 +95,7 @@ func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, 
 	var evidence record.Attempt
 	var associated *record.PullRequest
 	source := snapshot.Source("")
-	err = e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+	err = e.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 		var err error
 		change, err = r.OpenChangeByBranch(ctx, input.Branch)
 		if errors.Is(err, state.ErrNotFound) && continuation == nil {
@@ -149,7 +149,7 @@ func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, 
 	if input.SkipVerify {
 		return e.finishPublicationBind(ctx, input, change, revision, source, snapshot, evidence, associated)
 	}
-	err = e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+	err = e.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 		candidates, err := r.VerificationCandidates(ctx, query)
 		if err != nil {
 			return err

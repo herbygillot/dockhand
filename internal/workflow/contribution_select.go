@@ -79,11 +79,11 @@ func lookupContribution(ctx context.Context, reader state.Reader, selected Contr
 }
 
 func (e *Engine) SelectContribution(ctx context.Context, selected ContributionSelector) (record.Change, error) {
-	if e == nil || e.State == nil || e.Repository == "" {
+	if e == nil || e.State == nil {
 		return record.Change{}, errNoState
 	}
 	var change record.Change
-	err := e.State.View(ctx, e.Repository, func(ctx context.Context, reader state.Reader) error {
+	err := e.State.View(ctx, func(ctx context.Context, reader state.Reader) error {
 		var err error
 		change, err = selectContribution(ctx, reader, selected)
 		return err
@@ -102,7 +102,7 @@ func contributionPrepared(change record.Change) error {
 // contribution; it never chooses a successful historical revision as the source.
 func (e *Engine) contributionBuild(ctx context.Context, change record.Change) (record.JobSpec, error) {
 	var spec record.JobSpec
-	err := e.State.View(ctx, e.Repository, func(ctx context.Context, reader state.Reader) error {
+	err := e.State.View(ctx, func(ctx context.Context, reader state.Reader) error {
 		current, err := reader.Change(ctx, change.ID)
 		if err != nil {
 			return err
@@ -126,7 +126,7 @@ func (e *Engine) contributionBuild(ctx context.Context, change record.Change) (r
 // of the action that is still its current revision or still running, as
 // the resolution reads them.
 func (e *Engine) PreparationInput(ctx context.Context, selector ContributionSelector, action record.Action) (*record.Job, *record.Change, error) {
-	if e == nil || e.State == nil || e.Repository == "" {
+	if e == nil || e.State == nil {
 		return nil, nil, errNoState
 	}
 	return e.preparationInput(ctx, selector, action)
@@ -135,10 +135,10 @@ func (e *Engine) PreparationInput(ctx context.Context, selector ContributionSele
 // CurrentRevision reads the contribution's current revision.
 func (e *Engine) CurrentRevision(ctx context.Context, change record.Change) (record.Revision, error) {
 	var revision record.Revision
-	if e == nil || e.State == nil || e.Repository == "" {
+	if e == nil || e.State == nil {
 		return revision, errNoState
 	}
-	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+	err := e.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 		var err error
 		revision, err = r.Revision(ctx, change.CurrentRevision)
 		return err

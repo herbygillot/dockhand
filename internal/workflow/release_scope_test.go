@@ -44,7 +44,7 @@ func TestSharedReleaseResumesIsolatedCoverageAndGatesPublication(t *testing.T) {
 			require.NoError(t, err)
 			defer reopened.Close()
 			engine := *f.engine
-			engine.State = reopened
+			engine.State = state.Bind(reopened, f.registration)
 			engine.Preparer = nil
 			f.engine = &engine
 			f.provider.observe = func(_ context.Context, run record.ProviderRun) (verify.Observation, error) {

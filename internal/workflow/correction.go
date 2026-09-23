@@ -90,7 +90,7 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 	if input.Action != record.Amend && input.Action != record.Rebase {
 		return result, ErrInvalidRequest
 	}
-	err := e.requireRepository(ctx, "")
+	err := e.requireRepository("")
 	if err != nil {
 		return result, err
 	}

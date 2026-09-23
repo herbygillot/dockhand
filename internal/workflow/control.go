@@ -20,7 +20,7 @@ import (
 // call records intent only. A later Cycle applies it and reconciles any remote
 // cancellation. After an uncertain state commit, retry the original request.
 func (e *Engine) Control(ctx context.Context, request record.ControlRequest) error {
-	if e == nil || e.State == nil || e.Repository == "" {
+	if e == nil || e.State == nil {
 		return errNoState
 	}
 	if request.Kind != record.Cancel {
@@ -37,7 +37,7 @@ func (e *Engine) Control(ctx context.Context, request record.ControlRequest) err
 			return fmt.Errorf("%w: invalid job ID", ErrInvalidRequest)
 		}
 	}
-	return e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+	return e.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 		accepted, err := tx.Request(ctx, request.ID)
 		if err == nil {
 			if accepted.Kind != record.CancelRequest {
@@ -75,14 +75,14 @@ func (e *Engine) BranchScope(ctx context.Context, branch string) (Scope, error) 
 
 // ContributionScope freezes pending jobs without incorporating later submissions.
 func (e *Engine) ContributionScope(ctx context.Context, selected ContributionSelector) (Scope, error) {
-	if e == nil || e.State == nil || e.Repository == "" {
+	if e == nil || e.State == nil {
 		return Scope{}, errNoState
 	}
 	if err := selected.Validate(); err != nil {
 		return Scope{}, err
 	}
 	var scope Scope
-	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+	err := e.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 		change, err := selectContribution(ctx, r, selected)
 		if err != nil {
 			return err
@@ -113,7 +113,7 @@ func (e *Engine) ControlContribution(ctx context.Context, request record.Control
 	if err := selected.Validate(); err != nil {
 		return Scope{}, err
 	}
-	if e == nil || e.State == nil || e.Repository == "" {
+	if e == nil || e.State == nil {
 		return Scope{}, errNoState
 	}
 	if request.Kind != record.Cancel {
@@ -123,7 +123,7 @@ func (e *Engine) ControlContribution(ctx context.Context, request record.Control
 		return Scope{}, fmt.Errorf("%w: branch cancellation requires a request ID and literal branch; selection and timestamps are driver-owned", ErrInvalidRequest)
 	}
 	var scope Scope
-	err := e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+	err := e.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 		accepted, err := tx.Request(ctx, request.ID)
 		if err == nil {
 			if accepted.Kind != record.CancelRequest {

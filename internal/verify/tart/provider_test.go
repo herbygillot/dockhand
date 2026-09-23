@@ -187,7 +187,7 @@ func fixtureRun(t *testing.T, db, home, artifacts, id string, m machine) *testRu
 		return tx.PutRevision(ctx, record.Revision{ID: record.RevisionID(id), ChangeID: record.ChangeID(id), Source: source, CreatedAt: time.Now()})
 	}))
 	p := &Provider{State: store, Repository: repository.ID, Repo: repo, Config: Config{Home: home, Image: "fixture", ArtifactDirectory: artifacts, Capacity: 1, Platform: testPlatform, PortIndexExecutable: fakePortIndex(t)}, backend: m}
-	e := &workflow.Engine{State: store, Repository: repository.ID, Provider: p, WaitInterval: time.Millisecond, RetryDelay: time.Millisecond}
+	e := &workflow.Engine{State: state.Bind(store, repository), Provider: p, WaitInterval: time.Millisecond, RetryDelay: time.Millisecond}
 	config := record.BuildConfig{Provider: "tart", Platform: testPlatform, EnvironmentDigest: "sha256:fixture", CapabilitiesRequired: true, FromSource: true, Tests: record.TestSkip}
 	receipt, err := e.Submit(t.Context(), workflow.Request{ID: record.RequestID(id), Spec: record.JobSpec{Action: record.Verify, InputRevision: record.RevisionID(id), Targets: []record.Target{{Name: "fixture", Portfile: "devel/fixture/Portfile"}}, Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &config}})
 	require.NoError(t, err)
@@ -533,7 +533,7 @@ func TestFrozenProviderChoicesResumeWithoutImageOrCapacityFlags(t *testing.T) {
 func TestStandaloneVerificationAdmissionRequiresNoContributionRevision(t *testing.T) {
 	t.Parallel()
 	f, m := singleRun(t)
-	engine := workflow.Engine{State: f.store, Repository: f.provider.Repository, Provider: capacityProvider{}}
+	engine := workflow.Engine{State: state.Bind(f.store, record.Repository{ID: f.provider.Repository}), Provider: capacityProvider{}}
 	receipt, err := engine.Submit(t.Context(), workflow.Request{ID: "standalone", Spec: record.JobSpec{
 		Action: record.Verify, Source: f.request.Spec.Source, Targets: []record.Target{f.request.Spec.Target},
 		Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &f.request.Spec.Config,

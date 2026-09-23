@@ -54,7 +54,7 @@ type BoundVerification struct {
 // when Branch is supplied, and evaluates an isolated copy. It writes no state.
 // Reuse the returned Request when retrying Submit; binding again selects fresh input.
 func (e *Engine) BindVerification(ctx context.Context, request VerificationRequest) (_ BoundVerification, err error) {
-	if e == nil || e.State == nil || e.Repository == "" {
+	if e == nil || e.State == nil {
 		return BoundVerification{}, errNoState
 	}
 	if e.Repo == nil || e.Ports == nil {
@@ -109,7 +109,7 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 	if request.ResolveBuild != nil {
 		platform = request.Platform
 	}
-	if err := e.requireRepository(ctx, "Git repository does not match workflow scope"); err != nil {
+	if err := e.requireRepository("Git repository does not match workflow scope"); err != nil {
 		return BoundVerification{}, err
 	}
 	working := request.Branch == ""
@@ -134,7 +134,7 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 	var base record.ObjectID
 	var contribution record.Change
 	var scope *record.ReleaseScope
-	err = e.State.View(ctx, e.Repository, func(ctx context.Context, reader state.Reader) error {
+	err = e.State.View(ctx, func(ctx context.Context, reader state.Reader) error {
 		if request.Branch == "" {
 			return nil
 		}

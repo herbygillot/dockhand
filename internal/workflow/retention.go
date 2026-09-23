@@ -31,7 +31,7 @@ func (e *Engine) Collect(ctx context.Context, options retention.Options) (retent
 // repository, provider routing, and the claimed release path.
 func (c *cycle) collector() *retention.Collector {
 	e := c.engine
-	return &retention.Collector{State: e.State, Repository: e.Repository, Now: e.now, Repo: e.Repo, Timeout: c.timeouts.Cleanup,
+	return &retention.Collector{State: e.State, Now: e.now, Repo: e.Repo, Timeout: c.timeouts.Cleanup,
 		Provider: func(name string) verify.Provider { return e.verificationProvider(name) },
 		Release: func(ctx context.Context, id record.ResourceID, provider string) (string, error) {
 			c.checkProvider(ctx, provider)

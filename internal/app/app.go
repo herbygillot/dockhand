@@ -79,7 +79,7 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		store.Close()
 		return nil, err
 	}
-	return assemble(config, repo, store, repository.ID)
+	return assemble(config, repo, store, repository)
 }
 
 // BuildForReading assembles the same services for a command that records
@@ -106,13 +106,13 @@ func checkedPortsTree(ctx context.Context, config Config) (*git.Repository, erro
 }
 
 // assemble wires the services around a store, which a dry run may lack.
-func assemble(config Config, repo *git.Repository, store *sqlite.Store, repository record.RepositoryID) (*Services, error) {
+func assemble(config Config, repo *git.Repository, store *sqlite.Store, repository record.Repository) (*Services, error) {
 	// A nil store must stay a nil interface, not an interface holding one.
-	var engineStore state.Store
+	var engineStore state.Scoped
 	var providerStore state.ProviderStore
 	stateDirectory := filepath.Dir(config.DBPath)
 	if store != nil {
-		engineStore, providerStore, stateDirectory = store, store, filepath.Dir(store.Path())
+		engineStore, providerStore, stateDirectory = state.Bind(store, repository), store, filepath.Dir(store.Path())
 	}
 	closeStore := func() error {
 		if store == nil {
@@ -137,12 +137,11 @@ func assemble(config Config, repo *git.Repository, store *sqlite.Store, reposito
 	if err != nil {
 		return nil, errors.Join(err, closeStore())
 	}
-	provider := &tart.Provider{Config: config.Tart, IndexCache: indexCache, State: providerStore, Repository: repository, Repo: repo, Workspaces: workspaces}
-	githubProvider := &githubverify.Provider{State: providerStore, Repository: repository, Repo: repo, Directory: filepath.Join(stateDirectory, "github-verification"), Client: githubClient}
+	provider := &tart.Provider{Config: config.Tart, IndexCache: indexCache, State: providerStore, Repository: repository.ID, Repo: repo, Workspaces: workspaces}
+	githubProvider := &githubverify.Provider{State: providerStore, Repository: repository.ID, Repo: repo, Directory: filepath.Join(stateDirectory, "github-verification"), Client: githubClient}
 
 	engine := &workflow.Engine{
 		State:      engineStore,
-		Repository: repository,
 		Repo:       repo,
 		Ports:      ports,
 		Workspaces: workspaces,
@@ -211,7 +210,7 @@ func FilteredStatus(ctx context.Context, config Config, filter workflow.StatusFi
 	if err != nil {
 		return workflow.Status{}, err
 	}
-	engine := workflow.Engine{State: store, Repository: repository.ID}
+	engine := workflow.Engine{State: state.Bind(store, repository)}
 	return engine.FilteredStatus(ctx, filter)
 }
 

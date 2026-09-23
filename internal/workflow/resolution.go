@@ -117,7 +117,7 @@ func (e *Engine) Resolve(ctx context.Context, request ResolutionRequest) (Resolu
 	if e.State == nil || !named && request.ChangeID == "" && request.Branch == "" {
 		return e.resolveFresh(ctx, request, "")
 	}
-	if e.Repository == "" {
+	if e.State.Repository().ID == "" {
 		return Resolution{}, errNoState
 	}
 	selector := ContributionSelector{ChangeID: request.ChangeID, Branch: request.Branch}
@@ -170,7 +170,7 @@ func (e *Engine) Resolve(ctx context.Context, request ResolutionRequest) (Resolu
 // works on. It reads the records and nothing else, and a selection with
 // no open contribution is the error the records give.
 func (e *Engine) resolveTracked(ctx context.Context, request ResolutionRequest) (Resolution, error) {
-	if e.State == nil || e.Repository == "" {
+	if e.State == nil {
 		return Resolution{}, errNoState
 	}
 	change, err := e.SelectContribution(ctx, ContributionSelector{Target: request.Selection.Selector, Branch: request.Branch, ChangeID: request.ChangeID})
@@ -289,7 +289,7 @@ func (e *Engine) FetchMaster(ctx context.Context) (record.Source, error) {
 func (e *Engine) preparationInput(ctx context.Context, selector ContributionSelector, action record.Action) (*record.Job, *record.Change, error) {
 	var result *record.Job
 	var contribution *record.Change
-	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+	err := e.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 		change, err := selectContribution(ctx, r, selector)
 		if errors.Is(err, state.ErrNotFound) && selector.ChangeID == "" && selector.Branch == "" {
 			return nil

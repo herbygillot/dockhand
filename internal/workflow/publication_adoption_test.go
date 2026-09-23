@@ -54,7 +54,7 @@ func TestManualPublicationAdoptsAtomicallyAndResumesAfterLostPRResponse(t *testi
 	require.NoError(t, err)
 	defer reopened.Close()
 	other := *f.engine
-	other.State, other.Owner = reopened, "resumed"
+	other.State, other.Owner = state.Bind(reopened, f.registration), "resumed"
 	f.engine = &other
 	f.run(t, receipt.JobID)
 	finished := f.status(t, receipt.JobID)
@@ -106,7 +106,7 @@ func TestManualPublicationCompetingAdmissionsCreateOneContribution(t *testing.T)
 	require.NoError(t, err)
 	defer reopened.Close()
 	other := *f.engine
-	other.State = reopened
+	other.State = state.Bind(reopened, f.registration)
 	engines := []*workflow.Engine{f.engine, &other}
 	var receipts [2]workflow.Receipt
 	var errs [2]error
@@ -202,7 +202,7 @@ func TestManualPublicationRequiresEvidenceForTheWholeTreeAndPort(t *testing.T) {
 			case "foreign-repository":
 				other, err := f.store.RegisterRepository(t.Context(), filepath.Join(t.TempDir(), ".git"))
 				require.NoError(t, err)
-				f.engine.Repository = other.ID
+				f.engine.State = state.Bind(f.store, other)
 			case "two-commits":
 				tree := commitPort(t, f, "scratch", "version 3\n").Tree
 				sig := git.Signature{Name: "Fixture", Email: "fixture@example.invalid", When: f.now()}

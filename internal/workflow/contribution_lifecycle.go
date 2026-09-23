@@ -26,10 +26,10 @@ type ContributionResult struct {
 // remote PR. Pending jobs must settle first; cancellation is a separate intent.
 func (e *Engine) AbandonContribution(ctx context.Context, selected ContributionSelector) (ContributionResult, error) {
 	var result ContributionResult
-	if e == nil || e.State == nil || e.Repository == "" {
+	if e == nil || e.State == nil {
 		return result, errNoState
 	}
-	err := e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+	err := e.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 		change, err := lookupContribution(ctx, tx, selected, false)
 		if err != nil {
 			return err
@@ -65,11 +65,11 @@ func contributionIdle(ctx context.Context, r state.Reader, id record.ChangeID) e
 // conditionally records the observation and disposition. It never reopens local
 // work or follows a different PR found by branch name.
 func (e *Engine) RefreshContribution(ctx context.Context, selected ContributionSelector) (ContributionResult, error) {
-	if e == nil || e.State == nil || e.Repository == "" || e.Repo == nil || e.Publisher == nil || e.Publisher.Forge == nil {
+	if e == nil || e.State == nil || e.Repo == nil || e.Publisher == nil || e.Publisher.Forge == nil {
 		return ContributionResult{}, errNoState
 	}
 	var expected record.Change
-	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+	err := e.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 		var err error
 		expected, err = lookupContribution(ctx, r, selected, false)
 		return err
@@ -88,7 +88,7 @@ func (e *Engine) refreshChange(ctx context.Context, expected record.Change) (Con
 	var result ContributionResult
 	var previous record.PullRequest
 	var published record.Revision
-	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+	err := e.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 		var err error
 		if expected, err = r.Change(ctx, expected.ID); err != nil {
 			return err
@@ -150,7 +150,7 @@ func (e *Engine) refreshChange(ctx context.Context, expected record.Change) (Con
 		pr.HeadRepository = previous.HeadRepository
 	}
 	apply := func(ctx context.Context, localProblem string) error {
-		return e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+		return e.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 			current, err := tx.Change(ctx, expected.ID)
 			if err != nil {
 				return err
@@ -259,7 +259,7 @@ func (e *Engine) settleAndReload(ctx context.Context, result *ContributionResult
 	for _, note := range e.settleCleanup(ctx, result.Change.ID, true) {
 		result.Detail += "; " + note
 	}
-	return e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+	return e.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 		change, err := r.Change(ctx, result.Change.ID)
 		if err != nil {
 			return err
@@ -282,7 +282,7 @@ func (e *Engine) observationInterval() time.Duration {
 func (e *Engine) deferObservation(ctx context.Context, pr record.PullRequest) error {
 	next := e.now().Add(e.observationInterval())
 	pr.ObserveAfter = &next
-	return e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+	return e.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 		return tx.PutPullRequest(ctx, pr)
 	})
 }
@@ -300,7 +300,7 @@ func (e *Engine) observePullRequests(ctx context.Context) {
 		return
 	}
 	var due []record.Change
-	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+	err := e.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 		var err error
 		due, err = r.OpenContributions(ctx, e.now(), observationsPerCycle)
 		return err

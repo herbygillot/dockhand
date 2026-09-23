@@ -77,7 +77,7 @@ func main() {
 		s, err := sqlite.Open(ctx, *worker, sqlite.Options{})
 		must(err)
 		defer s.Close()
-		e := workflow.Engine{State: s, Repository: record.RepositoryID(*repository), Provider: capacityProvider{}, Owner: record.ProcessID(*workerID), Now: func() time.Time { return time.Now().Add(2 * time.Second) }, RetryDelay: time.Nanosecond}
+		e := workflow.Engine{State: state.Bind(s, record.Repository{ID: record.RepositoryID(*repository)}), Provider: capacityProvider{}, Owner: record.ProcessID(*workerID), Now: func() time.Time { return time.Now().Add(2 * time.Second) }, RetryDelay: time.Nanosecond}
 		measure(ctx, *history, *distinct, "concurrent-cycle", *iterations, func() (int, error) {
 			r, err := e.Cycle(ctx, workflow.Scope{Jobs: []record.JobID{"active"}})
 			return len(r.Advanced), err
@@ -166,7 +166,7 @@ func run(ctx context.Context, n int, distinct bool, iterations int) {
 			return tx.PutJob(ctx, job)
 		})
 	}).emit()
-	e := workflow.Engine{State: s, Repository: repo.ID, Provider: capacityProvider{}}
+	e := workflow.Engine{State: state.Bind(s, repo), Provider: capacityProvider{}}
 	measure(ctx, n, distinct, "idle-cycle", iterations, func() (int, error) { r, err := e.Cycle(ctx, workflow.Scope{All: true}); return len(r.Advanced), err }).emit()
 	measure(ctx, n, distinct, "selected-status", iterations, func() (int, error) {
 		_, err := e.Status(ctx, workflow.Scope{Jobs: []record.JobID{"history_00000000"}})

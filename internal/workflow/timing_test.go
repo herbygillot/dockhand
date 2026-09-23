@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/workflow"
@@ -24,7 +25,7 @@ func TestObservationScheduleSurvivesOtherDriversAndCancellationPreemptsIt(t *tes
 	require.NoError(t, err)
 	defer store.Close()
 	other := *f.engine
-	other.State, other.Owner, other.ObserveInterval = store, "other", time.Millisecond
+	other.State, other.Owner, other.ObserveInterval = state.Bind(store, f.registration), "other", time.Millisecond
 	scope := workflow.Scope{Jobs: []record.JobID{id}}
 	f.advance(5 * time.Second)
 	result, err := other.Cycle(t.Context(), scope)
@@ -120,7 +121,7 @@ func TestFailureBackoffSurvivesDriverRestartAndResetsOnSuccess(t *testing.T) {
 	require.NoError(t, err)
 	defer reopened.Close()
 	other := *f.engine
-	other.State, other.Owner = reopened, "restarted-driver"
+	other.State, other.Owner = state.Bind(reopened, f.registration), "restarted-driver"
 	f.advance(time.Second)
 	_, err = other.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{id}})
 	require.NoError(t, err)

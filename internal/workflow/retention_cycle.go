@@ -18,7 +18,7 @@ func (c *cycle) pruneDiagnostics(ctx context.Context, result *CycleResult) error
 	now := e.now()
 	before := now.Add(-diagnosticRetention)
 	var resources []record.Resource
-	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+	err := e.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 		var err error
 		resources, err = r.Resources(ctx, state.Query{PruneBefore: &before, DueBefore: &now, Limit: 8})
 		return err
@@ -36,7 +36,7 @@ func (c *cycle) pruneDiagnostics(ctx context.Context, result *CycleResult) error
 		}
 		// Skip busy, unsupported, or failed candidates until another day so one old
 		// resource cannot starve the bounded batch on every cycle.
-		err = e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+		err = e.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 			current, err := tx.Resource(ctx, resource.ID)
 			if err != nil {
 				return err

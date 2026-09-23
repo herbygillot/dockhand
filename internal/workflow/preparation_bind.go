@@ -45,7 +45,7 @@ type BoundPreparation struct {
 }
 
 func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest) (BoundPreparation, error) {
-	if e == nil || e.State == nil || e.Repository == "" {
+	if e == nil || e.State == nil {
 		return BoundPreparation{}, errNoState
 	}
 	if e.Repo == nil || e.Ports == nil {
@@ -54,7 +54,7 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	if !validToken(string(request.ID)) || !git.ValidBranchName(request.SourceBranch) {
 		return BoundPreparation{}, ErrInvalidRequest
 	}
-	if err := e.requireRepository(ctx, "preparation repository does not match state scope"); err != nil {
+	if err := e.requireRepository("preparation repository does not match state scope"); err != nil {
 		return BoundPreparation{}, err
 	}
 	resolution := request.Resolution

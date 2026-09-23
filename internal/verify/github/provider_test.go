@@ -191,7 +191,7 @@ func setup(t *testing.T) *fixture {
 	p := &Provider{State: store, Repository: repository.ID, Repo: repo, Directory: filepath.Join(t.TempDir(), "coordination"), backend: func(context.Context, string) (actionsAPI, error) { return api, nil }}
 	config, err := buildConfig(record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, Config{WorkflowID: 7, Destination: record.PublicationDestination{Forge: verify.ProviderGitHub, Repository: "macports/macports-ports", HeadRepository: "contributor/macports-ports", BaseBranch: "master", PushURL: remote, BaseURL: remote, LockDirectory: filepath.Join(t.TempDir(), "push-locks")}}, false)
 	require.NoError(t, err)
-	e := &workflow.Engine{State: store, Repository: repository.ID, Repo: repo, Provider: atCapacity{}, Now: f.now, WaitInterval: time.Millisecond, RetryDelay: time.Millisecond, ObserveInterval: time.Millisecond}
+	e := &workflow.Engine{State: state.Bind(store, repository), Repo: repo, Provider: atCapacity{}, Now: f.now, WaitInterval: time.Millisecond, RetryDelay: time.Millisecond, ObserveInterval: time.Millisecond}
 	receipt, err := e.Submit(t.Context(), workflow.Request{ID: "fixture", Spec: record.JobSpec{Action: record.Verify, SourceBranch: "candidate", Source: record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree), Base: record.ObjectID(base)}, Targets: []record.Target{{Name: "fixture", Portfile: "devel/fixture/Portfile"}}, Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &config}})
 	require.NoError(t, err)
 	_, err = e.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{receipt.JobID}})
@@ -682,7 +682,7 @@ func TestPermanentAdmissionFailureSurvivesLostReply(t *testing.T) {
 			repeat, err := restarted.Submit(t.Context(), f.request)
 			require.NoError(t, err)
 			require.Equal(t, recovered.Submission, repeat)
-			require.NoError(t, f.engine.State.View(t.Context(), f.engine.Repository, func(ctx context.Context, r state.Reader) error {
+			require.NoError(t, f.engine.State.View(t.Context(), func(ctx context.Context, r state.Reader) error {
 				submissions, err := r.SubmissionsForAttempt(ctx, f.request.AttemptID)
 				require.NoError(t, err)
 				require.Len(t, submissions, 1)

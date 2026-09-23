@@ -86,7 +86,7 @@ func TestCombinedPublicationKeepsOneJobAndResumesFrozenDestination(t *testing.T)
 			require.NoError(t, err)
 			defer reopened.Close()
 			engine := *f.engine
-			engine.State = reopened
+			engine.State = state.Bind(reopened, engine.State.Repository())
 			engine.Preparer = nil
 			engine.Releases = nil
 			engine.Provider = nil
@@ -221,7 +221,7 @@ func TestCombinedPublicationClaimsPlanningAndRechecksCancellation(t *testing.T) 
 	require.NoError(t, err)
 	defer other.Close()
 	engine := *f.engine
-	engine.State = other
+	engine.State = state.Bind(other, f.registration)
 	require.NoError(t, engine.Control(t.Context(), record.ControlRequest{ID: "cancel-during-plan", Kind: record.Cancel, Jobs: []record.JobID{id}}))
 	_, err = engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{id}})
 	require.NoError(t, err)
@@ -233,11 +233,11 @@ func TestCombinedPublicationClaimsPlanningAndRechecksCancellation(t *testing.T) 
 	require.Zero(t, hosting.writes)
 }
 
-type failPublicationStore struct{ state.Store }
+type failPublicationStore struct{ state.Scoped }
 type failPublicationTx struct{ state.Tx }
 
-func (s failPublicationStore) Update(ctx context.Context, repo record.RepositoryID, fn func(context.Context, state.Tx) error) error {
-	return s.Store.Update(ctx, repo, func(ctx context.Context, tx state.Tx) error { return fn(ctx, failPublicationTx{tx}) })
+func (s failPublicationStore) Update(ctx context.Context, fn func(context.Context, state.Tx) error) error {
+	return s.Scoped.Update(ctx, func(ctx context.Context, tx state.Tx) error { return fn(ctx, failPublicationTx{tx}) })
 }
 func (tx failPublicationTx) PutPublication(context.Context, record.PublicationAction) error {
 	return errors.New("publication checkpoint failed")
@@ -248,7 +248,7 @@ func TestCombinedPublicationCannotPushBeforeCheckpointCommits(t *testing.T) {
 	f, hosting, request := combinedFixture(t, record.BumpRevision)
 	id := prepareCombined(t, f, request)
 	passCombined(t, f, id)
-	f.engine.State = failPublicationStore{f.store}
+	f.engine.State = failPublicationStore{f.scoped()}
 	_, err := f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{id}})
 	require.ErrorContains(t, err, "publication checkpoint failed")
 	require.Empty(t, f.status(t, id).Jobs[0].Publications)
@@ -256,7 +256,7 @@ func TestCombinedPublicationCannotPushBeforeCheckpointCommits(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, head.Exists)
 	require.Zero(t, hosting.writes)
-	f.engine.State = f.store
+	f.engine.State = f.scoped()
 	f.advance(2 * time.Minute)
 	for range 4 {
 		f.run(t, id)

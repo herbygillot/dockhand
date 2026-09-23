@@ -30,7 +30,7 @@ type Continuation struct {
 // moved, is a person's call. An unreachable forge leaves the recorded PR
 // state as the only fact, and the detail says it was not re-checked.
 func (e *Engine) CheckContinuation(ctx context.Context, prior record.Job, master record.Source, platform record.Platform) (Continuation, error) {
-	if e == nil || e.State == nil || e.Repository == "" || e.Repo == nil || e.Ports == nil {
+	if e == nil || e.State == nil || e.Repo == nil || e.Ports == nil {
 		return Continuation{}, errNoState
 	}
 	if len(prior.Spec.Targets) == 0 {
@@ -49,7 +49,7 @@ func (e *Engine) CheckContinuation(ctx context.Context, prior record.Job, master
 
 	var change record.Change
 	var recorded *record.PullRequest
-	if err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+	if err := e.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 		var err error
 		if change, err = lookupContribution(ctx, r, ContributionSelector{ChangeID: prior.ChangeID}, false); err != nil {
 			return err

@@ -138,7 +138,7 @@ type Receipt struct {
 // including a state commit whose outcome is uncertain; retry with the same ID
 // rather than creating a new request.
 func (e *Engine) Submit(ctx context.Context, request Request) (Receipt, error) {
-	if e == nil || e.State == nil || e.Repository == "" {
+	if e == nil || e.State == nil {
 		return Receipt{}, errNoState
 	}
 	if !validToken(string(request.ID)) {
@@ -181,7 +181,7 @@ func (e *Engine) Submit(ctx context.Context, request Request) (Receipt, error) {
 	if err != nil {
 		return Receipt{}, err
 	}
-	err = e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+	err = e.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 		previous, err := tx.Request(ctx, request.ID)
 		if err == nil {
 			if previous.Kind != record.JobRequest || !bytes.Equal(previous.Payload, payload) {

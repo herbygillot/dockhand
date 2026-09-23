@@ -6,6 +6,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
 	"github.com/herbygillot/dockhand/internal/workflow"
 )
@@ -52,7 +53,7 @@ func PreviewCorrection(ctx context.Context, config Config, request workflow.Corr
 		return workflow.BoundCorrection{}, err
 	}
 	ports := portReader(config, repo, indexMirror(config))
-	services := Services{Workflow: &workflow.Engine{State: store, Repository: repository.ID, Repo: repo, Ports: ports}, ports: ports}
+	services := Services{Workflow: &workflow.Engine{State: state.Bind(store, repository), Repo: repo, Ports: ports}, ports: ports}
 	request.Preview = true
 	return services.BindCorrection(ctx, request, "", false)
 }

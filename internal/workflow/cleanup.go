@@ -73,7 +73,7 @@ func (c *cycle) cleanup(ctx context.Context, id record.ResourceID) (string, erro
 	var resource record.Resource
 	var claimed bool
 	var detail string
-	err := e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+	err := e.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 		var err error
 		resource, err = tx.Resource(ctx, id)
 		if err != nil {
@@ -127,7 +127,7 @@ func (c *cycle) cleanup(ctx context.Context, id record.ResourceID) (string, erro
 		callErr = callCtx.Err()
 	}
 	cancel()
-	err = e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+	err = e.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 		current, err := tx.Resource(ctx, id)
 		if err != nil {
 			return err

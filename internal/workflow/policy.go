@@ -21,7 +21,7 @@ func (e *Engine) describePublicationCoverage(ctx context.Context, spec *record.P
 	if spec.ExpectedPR != nil {
 		return nil
 	}
-	return e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+	return e.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 		return policy.DescribeCoverage(ctx, r, spec)
 	})
 }

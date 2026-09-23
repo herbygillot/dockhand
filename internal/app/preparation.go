@@ -77,7 +77,7 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 		}
 		if store != nil {
 			defer store.Close()
-			engine.State, engine.Repository = store, repository
+			engine.State = state.Bind(store, repository)
 		}
 		if resolution, err = engine.Resolve(ctx, selection); err != nil {
 			return Preview{}, err
@@ -113,20 +113,20 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 // openReadOnly opens the state database for reading when it exists and
 // the checkout is registered in it, and returns nothing otherwise: a
 // command that reads records reads what there is and creates none.
-func openReadOnly(ctx context.Context, config Config, repo *git.Repository) (*sqlite.Store, record.RepositoryID, error) {
+func openReadOnly(ctx context.Context, config Config, repo *git.Repository) (*sqlite.Store, record.Repository, error) {
 	store, err := sqlite.Open(ctx, config.DBPath, sqlite.Options{ReadOnly: true})
 	if errors.Is(err, state.ErrNoDatabase) {
-		return nil, "", nil
+		return nil, record.Repository{}, nil
 	} else if err != nil {
-		return nil, "", err
+		return nil, record.Repository{}, err
 	}
 	repository, err := store.FindRepository(ctx, repo.CommonDir)
 	if errors.Is(err, state.ErrNotFound) {
-		return nil, "", store.Close()
+		return nil, record.Repository{}, store.Close()
 	} else if err != nil {
-		return nil, "", errors.Join(err, store.Close())
+		return nil, record.Repository{}, errors.Join(err, store.Close())
 	}
-	return store, repository.ID, nil
+	return store, repository, nil
 }
 
 // Preparation captures the choices needed to create a new contribution.

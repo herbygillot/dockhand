@@ -15,7 +15,7 @@ func (c *Collector) collectLogCaches(ctx context.Context, result *Result) error 
 	var after record.JobID
 	for {
 		var jobs []record.Job
-		err := c.State.View(ctx, c.Repository, func(ctx context.Context, r state.Reader) error {
+		err := c.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 			var err error
 			jobs, err = r.CleanupCandidates(ctx, result.Before, after, 64)
 			return err
@@ -25,7 +25,7 @@ func (c *Collector) collectLogCaches(ctx context.Context, result *Result) error 
 		}
 		for _, job := range jobs {
 			var attempts []record.Attempt
-			err = c.State.View(ctx, c.Repository, func(ctx context.Context, r state.Reader) error {
+			err = c.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 				current, err := r.Job(ctx, job.ID)
 				if err != nil {
 					return err

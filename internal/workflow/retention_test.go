@@ -137,11 +137,11 @@ func TestRetentionSkipsLiveWorkClaimsAndExplicitRetention(t *testing.T) {
 	}
 }
 
-type failPruneStore struct{ state.Store }
+type failPruneStore struct{ state.Scoped }
 type failPruneTx struct{ state.Tx }
 
-func (s failPruneStore) Update(ctx context.Context, repo record.RepositoryID, fn func(context.Context, state.Tx) error) error {
-	return s.Store.Update(ctx, repo, func(ctx context.Context, tx state.Tx) error { return fn(ctx, failPruneTx{tx}) })
+func (s failPruneStore) Update(ctx context.Context, fn func(context.Context, state.Tx) error) error {
+	return s.Scoped.Update(ctx, func(ctx context.Context, tx state.Tx) error { return fn(ctx, failPruneTx{tx}) })
 }
 func (tx failPruneTx) PutResource(ctx context.Context, r record.Resource) error {
 	if r.ArtifactsPrunedAt != nil {
@@ -171,14 +171,14 @@ func TestRetentionRetriesFailedEffectsAndLostPruneCheckpoints(t *testing.T) {
 	require.Contains(t, result.Items[0].Detail, "files busy")
 	require.Nil(t, f.status(t, id).Resources[0].ArtifactsPrunedAt)
 	f.engine.Provider = pruningProvider{scriptedProvider: f.provider}
-	f.engine.State = failPruneStore{f.store}
+	f.engine.State = failPruneStore{f.scoped()}
 	_, err = f.engine.Collect(t.Context(), retention.Options{})
 	require.ErrorContains(t, err, "lost prune checkpoint")
 	require.Nil(t, f.status(t, id).Resources[0].ArtifactsPrunedAt)
 	reopened, err := sqlite.Open(t.Context(), f.store.Path(), sqlite.Options{})
 	require.NoError(t, err)
 	defer reopened.Close()
-	f.engine.State = reopened
+	f.engine.State = state.Bind(reopened, f.registration)
 	result, err = f.engine.Collect(t.Context(), retention.Options{})
 	require.NoError(t, err)
 	require.True(t, result.Items[0].Completed)
@@ -204,13 +204,13 @@ func TestCompetingCollectorsUseReleaseClaimAndKeepRepositoryScope(t *testing.T) 
 	require.NoError(t, err)
 	defer other.Close()
 	engine := *f.engine
-	engine.State = other
+	engine.State = state.Bind(other, f.engine.State.Repository())
 	result, err := engine.Collect(t.Context(), retention.Options{})
 	require.NoError(t, err)
 	require.Empty(t, result.Items)
 	foreign, err := other.RegisterRepository(t.Context(), "/foreign/repository")
 	require.NoError(t, err)
-	engine.Repository = foreign.ID
+	engine.State = state.Bind(other, foreign)
 	result, err = engine.Collect(t.Context(), retention.Options{})
 	require.NoError(t, err)
 	require.Empty(t, result.Items)
@@ -270,7 +270,7 @@ func TestCycleReleasesFailureAndPrunesDiagnosticsAfterRetention(t *testing.T) {
 	require.NoError(t, err)
 	defer other.Close()
 	restarted := *f.engine
-	restarted.State = other
+	restarted.State = state.Bind(other, f.registration)
 	_, err = restarted.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{id}})
 	require.NoError(t, err)
 	after := f.status(t, id)
@@ -357,7 +357,7 @@ func TestKeepFailedSurvivesDriverRestartWithoutChangingEvidenceInputs(t *testing
 	require.NoError(t, err)
 	defer other.Close()
 	restarted := *f.engine
-	restarted.State = other
+	restarted.State = state.Bind(other, f.registration)
 	f.advance(2 * time.Second)
 	f.provider.observe = terminal(f, record.VerdictFailed)
 	_, err = restarted.Cycle(t.Context(), workflow.Scope{All: true})

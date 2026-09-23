@@ -41,6 +41,35 @@ type Store interface {
 	Update(context.Context, record.RepositoryID, func(context.Context, Tx) error) error
 }
 
+// Scoped is a store bound to one registered repository: what every
+// workflow operation reads and writes. The binding is made once, by
+// Bind, so no operation chooses a scope again; the store still refuses
+// an empty registration at each call.
+type Scoped interface {
+	// Repository is the registration the store is bound to.
+	Repository() record.Repository
+	View(context.Context, func(context.Context, Reader) error) error
+	Update(context.Context, func(context.Context, Tx) error) error
+}
+
+// Bind scopes a store to one registered repository.
+func Bind(store Store, repository record.Repository) Scoped {
+	return scoped{store: store, repository: repository}
+}
+
+type scoped struct {
+	store      Store
+	repository record.Repository
+}
+
+func (s scoped) Repository() record.Repository { return s.repository }
+func (s scoped) View(ctx context.Context, fn func(context.Context, Reader) error) error {
+	return s.store.View(ctx, s.repository.ID, fn)
+}
+func (s scoped) Update(ctx context.Context, fn func(context.Context, Tx) error) error {
+	return s.store.Update(ctx, s.repository.ID, fn)
+}
+
 // Query limits record enumeration. Jobs narrows the query within its repository;
 // a nil Jobs slice includes that repository, while an empty non-nil slice is empty.
 // DueBefore selects scheduled work. After is an exclusive ID cursor.

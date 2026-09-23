@@ -43,6 +43,14 @@ type Store interface {
     Update(context.Context, record.RepositoryID, func(context.Context, Tx) error) error
 }
 
+// Scoped is a Store bound to one registration by Bind. The workflow engine
+// and the retention collector hold one and never choose a scope themselves.
+type Scoped interface {
+    Repository() record.Repository
+    View(context.Context, func(context.Context, Reader) error) error
+    Update(context.Context, func(context.Context, Tx) error) error
+}
+
 type Reader interface {
     Job(context.Context, record.JobID) (record.Job, error)
     Attempt(context.Context, record.AttemptID) (record.Attempt, error)
@@ -67,7 +75,7 @@ Errors distinguish absent records, invalid records, conflicts, unavailable stora
 
 ## One database, multiple repositories
 
-`--db PATH` selects the database independently of the invocation's checkout. Its default is `$HOME/.dockhand/state.db`. `app` uses Git to discover and canonicalize the selected checkout's common directory, looks up or registers it as appropriate, and passes the resulting repository ID to workflow operations. The state implementation receives ordinary paths and IDs; it does not discover Git repositories itself.
+`--db PATH` selects the database independently of the invocation's checkout. Its default is `$HOME/.dockhand/state.db`. `app` uses Git to discover and canonicalize the selected checkout's common directory, looks up or registers it as appropriate, binds the store to that registration with `state.Bind`, and hands the bound store to the workflow, which checks that the Git repository it drives is the registration's common directory. The state implementation receives ordinary paths and IDs; it does not discover Git repositories itself.
 
 Linked worktrees share a repository entry. Separate clones have distinct entries even when their remotes match. Worktree paths belong to the invocation; they are not repository identity. A moved common directory requires explicit reassociation in a later workflow, rather than matching it automatically by remote URL.
 

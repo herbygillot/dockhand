@@ -3,6 +3,7 @@ package workflow_test
 import (
 	"context"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/stretchr/testify/require"
@@ -46,7 +47,7 @@ func TestWorkingTreeVerificationFreezesInputAcrossEditsAndDriverRestart(t *testi
 			require.NoError(t, err)
 			defer reopened.Close()
 			f.store = reopened
-			f.engine.State = reopened
+			f.engine.State = state.Bind(reopened, f.registration)
 			status := f.status(t, receipt.JobID)
 			require.Equal(t, source, status.Jobs[0].Job.Spec.Source)
 			require.Equal(t, bound.Request.Spec.Checkout, status.Jobs[0].Job.Spec.Checkout)

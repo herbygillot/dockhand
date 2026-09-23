@@ -59,7 +59,7 @@ func TestCommittedWorkingTreeReusesOriginalEvidenceAfterRestart(t *testing.T) {
 	reopened, err := sqlite.Open(t.Context(), f.store.Path(), sqlite.Options{})
 	require.NoError(t, err)
 	defer reopened.Close()
-	f.engine.State = reopened
+	f.engine.State = state.Bind(reopened, f.registration)
 	input.ID = "committed"
 	input.Branch = "candidate"
 	next, err := f.engine.BindVerification(t.Context(), input)
@@ -134,11 +134,11 @@ func TestReuseMissesAndFreshRequestsProduceNewAttempts(t *testing.T) {
 	}
 }
 
-type reuseFailureStore struct{ state.Store }
+type reuseFailureStore struct{ state.Scoped }
 type reuseFailureTx struct{ state.Tx }
 
-func (s reuseFailureStore) Update(ctx context.Context, repo record.RepositoryID, fn func(context.Context, state.Tx) error) error {
-	return s.Store.Update(ctx, repo, func(ctx context.Context, tx state.Tx) error { return fn(ctx, reuseFailureTx{tx}) })
+func (s reuseFailureStore) Update(ctx context.Context, fn func(context.Context, state.Tx) error) error {
+	return s.Scoped.Update(ctx, func(ctx context.Context, tx state.Tx) error { return fn(ctx, reuseFailureTx{tx}) })
 }
 func (t reuseFailureTx) PutJob(ctx context.Context, job record.Job) error {
 	if job.ReusedAttempt != "" {
@@ -152,18 +152,18 @@ func TestReuseIsAtomicUnderFailedWritesAndCompetingDrivers(t *testing.T) {
 	original := completeVerification(t, f, reuseRequest(f, "original"), record.VerdictPassed)
 	receipt, err := f.engine.Submit(t.Context(), reuseRequest(f, "new"))
 	require.NoError(t, err)
-	f.engine.State = reuseFailureStore{f.store}
+	f.engine.State = reuseFailureStore{f.scoped()}
 	_, err = f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{receipt.JobID}})
 	require.ErrorContains(t, err, "injected reuse write failure")
 	job := f.status(t, receipt.JobID).Jobs[0].Job
 	require.Equal(t, record.JobQueued, job.State)
 	require.Empty(t, job.ReusedAttempt)
-	f.engine.State = f.store
+	f.engine.State = f.scoped()
 	other, err := sqlite.Open(t.Context(), f.store.Path(), sqlite.Options{})
 	require.NoError(t, err)
 	defer other.Close()
 	second := *f.engine
-	second.State = other
+	second.State = state.Bind(other, f.registration)
 	second.Owner = "second"
 	var wg sync.WaitGroup
 	errs := make(chan error, 2)

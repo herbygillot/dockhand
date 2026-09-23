@@ -23,7 +23,7 @@ func (c *cycle) advancePublication(ctx context.Context, id record.JobID) (bool, 
 	var action record.PublicationAction
 	claimed := false
 	rejected := ""
-	err := e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+	err := e.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 		var err error
 		job, err = tx.Job(ctx, id)
 		if err != nil {
@@ -93,7 +93,7 @@ func (c *cycle) advancePublication(ctx context.Context, id record.JobID) (bool, 
 	}
 	// Only failures known to precede a PR request can release this head for a new job.
 	var current record.PublicationAction
-	readErr := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+	readErr := e.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 		var err error
 		current, err = r.PublicationForJob(ctx, id)
 		return err
@@ -116,7 +116,7 @@ func (c *cycle) advancePublication(ctx context.Context, id record.JobID) (bool, 
 
 func (c *cycle) publicationUpdate(ctx context.Context, expected record.Job, fn func(state.Tx, *record.Job, *record.PublicationAction) error) error {
 	e := c.engine
-	return e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+	return e.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 		job, err := tx.Job(ctx, expected.ID)
 		if err != nil {
 			return err

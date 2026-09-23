@@ -21,7 +21,7 @@ func (c *cycle) planDependents(ctx context.Context, id record.JobID) (bool, stri
 	var selected record.Job
 	var revision record.Revision
 	var ready, changed bool
-	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+	err := e.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 		_, err := r.Plan(ctx, id)
 		if errors.Is(err, state.ErrNotFound) {
 			return nil
@@ -35,7 +35,7 @@ func (c *cycle) planDependents(ctx context.Context, id record.JobID) (bool, stri
 	if ready {
 		return c.advanceJob(ctx, id)
 	}
-	err = e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+	err = e.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 		job, err := tx.Job(ctx, id)
 		if err != nil {
 			return err
@@ -96,7 +96,7 @@ func (c *cycle) planDependents(ctx context.Context, id record.JobID) (bool, stri
 		return changed, "", ctx.Err()
 	}
 	var detail string
-	err = e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+	err = e.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 		job, err := tx.Job(ctx, id)
 		if err != nil {
 			return err

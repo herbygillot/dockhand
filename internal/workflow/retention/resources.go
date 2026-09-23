@@ -60,7 +60,7 @@ func (c *Collector) CollectResource(ctx context.Context, id record.ResourceID, b
 		item.Action = Action(resource, attempt, job, before, c.Now())
 		return nil
 	}
-	if err := c.State.View(ctx, c.Repository, read); err != nil {
+	if err := c.State.View(ctx, read); err != nil {
 		return item, err
 	}
 	if dry || item.Action == "" {
@@ -69,7 +69,7 @@ func (c *Collector) CollectResource(ctx context.Context, id record.ResourceID, b
 	if item.Action == "release" {
 		// Persist expiry before calling the engine's claimed, recoverable
 		// release path.
-		err := c.State.Update(ctx, c.Repository, func(ctx context.Context, tx state.Tx) error {
+		err := c.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 			if err := read(ctx, tx); err != nil {
 				return err
 			}
@@ -90,7 +90,7 @@ func (c *Collector) CollectResource(ctx context.Context, id record.ResourceID, b
 		if err != nil {
 			return item, err
 		}
-		err = c.State.View(ctx, c.Repository, func(ctx context.Context, r state.Reader) error {
+		err = c.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 			v, err := r.Resource(ctx, id)
 			item.Completed = err == nil && v.State == record.ResourceReleased
 			return err
@@ -118,7 +118,7 @@ func (c *Collector) CollectResource(ctx context.Context, id record.ResourceID, b
 		item.Detail = err.Error()
 		return item, nil
 	}
-	err = c.State.Update(ctx, c.Repository, func(ctx context.Context, tx state.Tx) error {
+	err = c.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 		current, err := tx.Resource(ctx, id)
 		if err != nil {
 			return err

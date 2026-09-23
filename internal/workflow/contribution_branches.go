@@ -47,7 +47,7 @@ func newBranchCleanup(change record.Change, pr record.PullRequest, published rec
 func (e *Engine) settleCleanup(ctx context.Context, id record.ChangeID, force bool) []string {
 	var change record.Change
 	var pr record.PullRequest
-	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+	err := e.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 		var err error
 		if change, err = r.Change(ctx, id); err != nil {
 			return err
@@ -77,7 +77,7 @@ func (e *Engine) settleCleanup(ctx context.Context, id record.ChangeID, force bo
 	if !local && !fork {
 		return nil
 	}
-	err = e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+	err = e.State.Update(ctx, func(ctx context.Context, tx state.Tx) error {
 		current, err := tx.Change(ctx, id)
 		if err != nil {
 			return err
@@ -110,7 +110,7 @@ func (e *Engine) settleDueCleanups(ctx context.Context) {
 	}
 	now := e.now()
 	var owed []record.Change
-	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+	err := e.State.View(ctx, func(ctx context.Context, r state.Reader) error {
 		var err error
 		owed, err = r.OwedCleanups(ctx, 64)
 		return err

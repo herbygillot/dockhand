@@ -77,7 +77,7 @@ func TestDependentCoverageResumesAndGatesPublication(t *testing.T) {
 			require.NoError(t, err)
 			defer reopened.Close()
 			engine := *f.engine
-			engine.State = reopened
+			engine.State = state.Bind(reopened, f.registration)
 			engine.Dependents = nil
 			f.engine = &engine
 			running := map[string]verify.Request{}
