@@ -88,3 +88,48 @@ func TestUnusualBlocksFallBackToPlainRows(t *testing.T) {
 	require.NotNil(t, layout)
 	require.Equal(t, "cargo.crates_github \\\n    name owner/repo main "+strings.Repeat("a", 40)+" "+strings.Repeat("b", 64), layout.format([][]string{{"name", "owner/repo", "main", strings.Repeat("a", 40), strings.Repeat("b", 64)}}))
 }
+
+// Rows copied byte for byte from the maintained xan Portfile, whose long
+// versions end on the column like the others instead of starting a field.
+const xanBlock = "cargo.crates \\\n" +
+	"    adler2                           2.0.1  320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa \\\n" +
+	"    aho-corasick                     1.1.3  8e60d3430d3a69478ad0993f19238d2df97c507009a52b3c10addcd7f6bcb916 \\\n" +
+	"    bstr                            1.12.0  234113d19d0d7d613b40e86fb654acf958910802bcceab913a4f9e7cda03b1a4 \\\n" +
+	"    encoding-index-simpchinese 1.20141219.5 d87a7194909b9118fc707194baa434a4e3b0fb6a5a757c73c3adb07aa25031f7 \\\n" +
+	"    wasi     0.11.1+wasi-snapshot-preview1  ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
+
+// A long version that ends on the column shows no field start, so it must
+// not become one: xan's 0.61.0 bump pushed 39 changed rows past the column
+// by the width of wasi's version, one space from their hash.
+func TestChangedCrateBlockKeepsRightAlignedVersions(t *testing.T) {
+	t.Parallel()
+	src := []byte("name fixture\nversion 1\n" + xanBlock + "\nlicense MIT\n")
+	values, err := generated(src, Cargo)
+	require.NoError(t, err)
+	plan, err := Inspect(src, map[string]string{Cargo: strings.Join(values, " ")})
+	require.NoError(t, err)
+	stripped, err := plan.Strip(src)
+	require.NoError(t, err)
+	sha := strings.Repeat("c", 64)
+	next := []string{
+		"adler2", "2.0.1", "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa",
+		"aho-corasick", "1.1.4", sha,
+		"binary-heap-plus", "0.5.0", sha,
+		"bstr", "1.12.0", "234113d19d0d7d613b40e86fb654acf958910802bcceab913a4f9e7cda03b1a4",
+		"encoding-index-simpchinese", "1.20141219.5", "d87a7194909b9118fc707194baa434a4e3b0fb6a5a757c73c3adb07aa25031f7",
+		"wasi", "0.11.1+wasi-snapshot-preview1", "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b",
+		"wasip3", "0.4.0+wasi-0.3.0-rc-2026-01-06", sha,
+		"wit-bindgen-rust-macro-extended", "0.51.0", sha,
+	}
+	out, err := plan.Apply(stripped, map[string][]string{Cargo: next})
+	require.NoError(t, err)
+	text := string(out)
+	require.Contains(t, text, "    aho-corasick                     1.1.4  "+sha, "a changed version ends on the column")
+	require.Contains(t, text, "    binary-heap-plus                 0.5.0  "+sha, "a new crate ends on the column")
+	require.Contains(t, text, "    encoding-index-simpchinese 1.20141219.5 d87a7194", "an unchanged row is byte-identical")
+	require.Contains(t, text, "    wasip3  0.4.0+wasi-0.3.0-rc-2026-01-06  "+sha, "a new long version ends on the column too")
+	require.Contains(t, text, "    wit-bindgen-rust-macro-extended 0.51.0  "+sha, "a name past the column keeps the block's smallest gap")
+	regenerated, err := generated(out, Cargo)
+	require.NoError(t, err)
+	require.Equal(t, next, regenerated)
+}

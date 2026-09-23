@@ -24,12 +24,14 @@ type blockLayout struct {
 }
 
 // column describes one token position. A left-aligned column starts at
-// left; a right-aligned one ends at right, never starts before floor, the
-// lowest start ever observed, and keeps its width right-floor when the
-// previous token runs past the field. gap is the smallest separation seen.
+// left. A right-aligned one ends at right; when the block shows where its
+// field begins, bounded, it never starts before floor and keeps its width
+// right-floor when the previous token runs past the field, as cargo2port
+// lays a crate's version out. gap is the smallest separation seen.
 type column struct {
 	left, right, floor int
 	alignRight         bool
+	bounded            bool
 	gap                int
 }
 
@@ -178,8 +180,32 @@ func inferColumns(rows []blockLine) lineLayout {
 		}
 		left, leftCount := mode(lefts)
 		right, rightCount := mode(rights)
-		layout = append(layout, column{left: left, right: right, floor: floor, alignRight: rightCount > leftCount, gap: max(gap, 1)})
+		c := column{left: left, right: right, floor: floor, alignRight: rightCount > leftCount, gap: max(gap, 1)}
+		if c.alignRight {
+			c.floor, c.bounded = fieldStart(rows, i, right, c.gap)
+		}
+		layout = append(layout, c)
 	}
+}
+
+// fieldStart is where a right-aligned field begins, as the block shows it:
+// the start of a token that runs past the field's right edge without the
+// token before it having pushed it there. cargo2port starts a long crate
+// version at its field and lets it run on; a block whose long versions
+// end on the column like the others shows no field start, and its versions
+// only keep their distance from the name.
+func fieldStart(rows []blockLine, i, right, gap int) (int, bool) {
+	start, found := 0, false
+	for _, l := range rows {
+		if i >= len(l.tokens) || i == 0 {
+			continue
+		}
+		pushed := l.starts[i]-(l.starts[i-1]+len(l.tokens[i-1])) <= gap
+		if l.starts[i]+len(l.tokens[i]) > right && !pushed && (!found || l.starts[i] < start) {
+			start, found = l.starts[i], true
+		}
+	}
+	return start, found
 }
 
 func mode(counts map[int]int) (int, int) {
@@ -203,9 +229,11 @@ func (l lineLayout) render(prefix string, tokens []string) string {
 			target := pos + 1
 			if i < len(l) {
 				c := l[i]
-				if c.alignRight {
+				if c.alignRight && c.bounded {
 					end := max(c.right, pos+c.right-c.floor)
 					target = max(c.floor, end-len(token), pos+1)
+				} else if c.alignRight {
+					target = max(c.right-len(token), pos+c.gap)
 				} else {
 					target = max(c.left, pos+c.gap)
 				}
