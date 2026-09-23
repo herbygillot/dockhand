@@ -11,11 +11,11 @@ import (
 	"time"
 )
 
-type GuestCommand func(context.Context, io.Reader, ...string) ([]byte, error)
+type guestCommand func(context.Context, io.Reader, ...string) ([]byte, error)
 
 // CheckGuestTransport checks the command features used by staging and verification.
 // It neither writes guest files nor requires a particular agent build or location.
-func CheckGuestTransport(ctx context.Context, run GuestCommand) error {
+func CheckGuestTransport(ctx context.Context, run guestCommand) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	token := rand.Text() + "\n"
@@ -39,7 +39,7 @@ func CheckGuestTransport(ctx context.Context, run GuestCommand) error {
 
 // ObserveGuestAgentVersion retains diagnostic output when available. An absent
 // --version command or an unfamiliar spelling does not establish incompatibility.
-func ObserveGuestAgentVersion(ctx context.Context, run GuestCommand) (string, error) {
+func ObserveGuestAgentVersion(ctx context.Context, run guestCommand) (string, error) {
 	call, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	output, err := run(call, nil, "/opt/dockhand/bin/tart-guest-agent", "--version")

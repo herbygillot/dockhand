@@ -58,38 +58,6 @@ func (s *Store) FetchFirst(ctx context.Context, info macports.PortInfo, name str
 	return Download{}, err
 }
 
-// Refresh downloads every declared archive and writes their checksums into
-// contents, keeping legacy groups as written when asked.
-func (s *Store) Refresh(ctx context.Context, contents []byte, info macports.PortInfo, sources []Source, keepLegacy bool) ([]byte, string, []Download, error) {
-	if err := CheckChecksumSources(contents, info, sources); err != nil {
-		return nil, "", nil, err
-	}
-	downloads := make([]Download, 0, len(sources))
-	for _, source := range sources {
-		download, err := s.Fetch(ctx, info, source)
-		if err != nil {
-			return nil, "", nil, err
-		}
-		downloads = append(downloads, download)
-	}
-	contents, checksums, err := portfile.ReplaceChecksumsKeeping(contents, info.Options["checksums"], keepLegacy, ChecksumValues(downloads)...)
-	if err != nil {
-		return nil, "", nil, err
-	}
-	return contents, checksums, downloads, nil
-}
-
-// CheckChecksumSources checks that the checksum declaration can be rewritten
-// for every source before any download is spent.
-func CheckChecksumSources(contents []byte, info macports.PortInfo, sources []Source) error {
-	placeholders := make([]portfile.Checksum, len(sources))
-	for i, source := range sources {
-		placeholders[i] = portfile.Checksum{Name: source.Name}
-	}
-	_, _, err := portfile.ReplaceChecksums(contents, info.Options["checksums"], placeholders...)
-	return err
-}
-
 // ChecksumValues is the checksum declaration each download makes.
 func ChecksumValues(downloads []Download) []portfile.Checksum {
 	values := make([]portfile.Checksum, len(downloads))

@@ -16,7 +16,7 @@ func ResolveStub(snapshot Snapshot, selected record.Target) (record.Target, stri
 	if selected.Subport != "" {
 		return selected, ""
 	}
-	newest, _ := StubMembers(snapshot, selected.Name)
+	newest, _ := stubMembers(snapshot, selected.Name)
 	if newest == "" {
 		return selected, ""
 	}
@@ -30,7 +30,7 @@ func ResolveStub(snapshot Snapshot, selected record.Target) (record.Target, stri
 // stub's release all the same.
 func StubOf(snapshot Snapshot, member string) string {
 	for name := range snapshot.Ports {
-		if _, members := StubMembers(snapshot, name); slices.Contains(members, member) {
+		if _, members := stubMembers(snapshot, name); slices.Contains(members, member) {
 			return name
 		}
 	}
@@ -42,7 +42,7 @@ func StubOf(snapshot Snapshot, member string) string {
 // version do, the shape of a python `py-foo` port over its `py3x-foo`
 // subports. It returns the newest such subport, by natural order of the
 // names, and every member. An ordinary port returns "" and nil.
-func StubMembers(snapshot Snapshot, name string) (newest string, members []string) {
+func stubMembers(snapshot Snapshot, name string) (newest string, members []string) {
 	stub, ok := snapshot.Ports[name]
 	if !ok || stub.Options["dockhand.metadata_only"] != "1" || stub.Version == "" {
 		return "", nil
@@ -56,13 +56,13 @@ func StubMembers(snapshot Snapshot, name string) (newest string, members []strin
 	if len(members) == 0 {
 		return "", nil
 	}
-	slices.SortFunc(members, NaturalCompare)
+	slices.SortFunc(members, naturalCompare)
 	return members[len(members)-1], members
 }
 
 // NaturalCompare orders names with embedded numbers by their numeric value,
 // so py314-foo sorts after py39-foo.
-func NaturalCompare(a, b string) int {
+func naturalCompare(a, b string) int {
 	for a != "" && b != "" {
 		ad, bd := leadingDigits(a), leadingDigits(b)
 		if ad > 0 && bd > 0 {

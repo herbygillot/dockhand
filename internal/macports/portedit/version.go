@@ -123,20 +123,11 @@ func (s *Service) applyArchivePlan(ctx context.Context, request Request, input *
 	if plan.viaGit {
 		return s.applyGitVersion(ctx, request, input, plan)
 	}
-	if plan.observed != nil {
-		return s.applyObservedArchives(ctx, request, input, plan, store)
+	if plan.observed == nil {
+		// Every archive plan that is not a Git plan carries its observed
+		// contexts, since the observation runs on every plan; a plan
+		// without them is a programming error, not a path.
+		return result, fmt.Errorf("portedit: archive plan without observed contexts")
 	}
-	contents, versioned, sources := plan.contents, plan.versioned, plan.sources
-	info := versioned.Ports[input.target.Name]
-	contents, checksums, downloads, err := store.Refresh(ctx, contents, info, sources, request.KeepOldChecksums)
-	if err != nil {
-		return result, err
-	}
-	result.Downloads = downloads
-	evaluated, err := s.evaluateEdit(ctx, input, contents)
-	if err != nil {
-		return result, err
-	}
-	final := fidelity.Checksums(versioned, evaluated.after, input.target.Name, checksums)
-	return result, result.commitEdit(input, request, evaluated.edit, final, plan.subject)
+	return s.applyObservedArchives(ctx, request, input, plan, store)
 }

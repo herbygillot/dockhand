@@ -80,7 +80,7 @@ func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, s
 // rate-limit handling apply, sending the given request headers in place of
 // the client's own. served is false for a URL the forge does not serve, and
 // the plain fetch is used instead.
-type Documents interface {
+type documents interface {
 	Document(ctx context.Context, url string, headers http.Header) (body []byte, served bool, err error)
 }
 
@@ -114,7 +114,7 @@ func requestHeaders(port macports.PortInfo, spec portsource.Spec) http.Header {
 // Last-Modified when the plain fetch read them.
 func (s *Service) listing(ctx context.Context, port macports.PortInfo, spec portsource.Spec) ([]byte, http.Header, error) {
 	headers := requestHeaders(port, spec)
-	if documents, ok := s.Catalogs[spec.Forge].(Documents); ok {
+	if documents, ok := s.Catalogs[spec.Forge].(documents); ok {
 		body, served, err := documents.Document(ctx, spec.Livecheck.URL, headers)
 		if served {
 			if err != nil {

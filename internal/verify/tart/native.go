@@ -15,6 +15,12 @@ import (
 )
 
 const guestDirectory = "/var/tmp/dockhand2"
+
+// guestShell fills the guest directory into a shell script written with
+// @guest@ where the directory goes, so the constant is the one place the
+// path is spelled.
+func guestShell(script string) string { return strings.ReplaceAll(script, "@guest@", guestDirectory) }
+
 const guestLabel = "org.dockhand2.build"
 
 type native struct {
@@ -42,17 +48,17 @@ func (n *native) Stage(ctx context.Context, vm, archive string) error {
 		return err
 	}
 	defer file.Close()
-	_, err = n.guest(ctx, vm, file, "sudo", "-n", "/bin/sh", "-c", `set -eu
-[ ! -e /var/tmp/dockhand2 ]
-mkdir -m 755 /var/tmp/dockhand2
-exec /usr/bin/tar xf - -C /var/tmp/dockhand2`)
+	_, err = n.guest(ctx, vm, file, "sudo", "-n", "/bin/sh", "-c", guestShell(`set -eu
+[ ! -e @guest@ ]
+mkdir -m 755 @guest@
+exec /usr/bin/tar xf - -C @guest@`))
 	return err
 }
 func (n *native) Launch(ctx context.Context, vm string) error {
-	_, err := n.guest(ctx, vm, nil, "sudo", "-n", "/bin/sh", "-c", `set -eu
+	_, err := n.guest(ctx, vm, nil, "sudo", "-n", "/bin/sh", "-c", guestShell(`set -eu
 if /bin/launchctl print system/org.dockhand2.build >/dev/null 2>&1; then exit 0; fi
-[ ! -f /var/tmp/dockhand2/result.json ] || exit 0
-exec /bin/launchctl bootstrap system /var/tmp/dockhand2/guest.plist`)
+[ ! -f @guest@/result.json ] || exit 0
+exec /bin/launchctl bootstrap system @guest@/guest.plist`))
 	return err
 }
 func (n *native) Inspect(ctx context.Context, vm string) (guestResult, error) {
@@ -63,18 +69,18 @@ func (n *native) Inspect(ctx context.Context, vm string) (guestResult, error) {
 	if !exists || !running {
 		return guestResult{State: "stopped"}, nil
 	}
-	out, err := n.guest(ctx, vm, nil, "sudo", "-n", "/bin/sh", "-c", `set -eu
-if [ -f /var/tmp/dockhand2/result.json ]; then exec cat /var/tmp/dockhand2/result.json; fi
+	out, err := n.guest(ctx, vm, nil, "sudo", "-n", "/bin/sh", "-c", guestShell(`set -eu
+if [ -f @guest@/result.json ]; then exec cat @guest@/result.json; fi
 if status=$(/bin/launchctl print system/org.dockhand2.build 2>&1); then
   case "$status" in
     *'state = not running'*)
-      if [ -f /var/tmp/dockhand2/result.json ]; then cat /var/tmp/dockhand2/result.json
+      if [ -f @guest@/result.json ]; then cat @guest@/result.json
       else echo '{"State":"runner-exited"}'; fi ;;
     *) echo '{"State":"starting"}' ;;
   esac
 else
   echo '{"State":"not-started"}'
-fi`)
+fi`))
 	if err != nil {
 		return guestResult{}, err
 	}
@@ -106,7 +112,7 @@ fi`)
 }
 func (n *native) Logs(ctx context.Context, vm, path string) error {
 	return atomicfile.Create(path, 0600, func(file *os.File) error {
-		_, err := n.execGuest(ctx, vm, nil, file, "sudo", "-n", "/bin/sh", "-c", "if [ -f /var/tmp/dockhand2/build.log ]; then cat /var/tmp/dockhand2/build.log; fi; cat /var/tmp/dockhand2/runner.log")
+		_, err := n.execGuest(ctx, vm, nil, file, "sudo", "-n", "/bin/sh", "-c", guestShell("if [ -f @guest@/build.log ]; then cat @guest@/build.log; fi; cat @guest@/runner.log"))
 		return err
 	})
 }

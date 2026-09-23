@@ -48,7 +48,7 @@ type Service struct {
 	HTTP            *http.Client
 	Ports           macports.Reader
 	Catalogs        map[portsource.Forge]Catalog
-	Versions        VersionSelector
+	Versions        versionSelector
 	EvaluateVersion func(context.Context, string) (string, error)
 	// EvaluateVersions evaluates several source versions in one pass when the
 	// bound probe supports it; discovery falls back to EvaluateVersion otherwise.
