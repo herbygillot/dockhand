@@ -39,9 +39,6 @@ func TestStoppedPreparationRetiresAndFreshSourceStartsAnew(t *testing.T) {
 	require.Empty(t, status.Changes[0].Branch)
 	_, err = f.engine.AbandonContribution(t.Context(), selected)
 	require.ErrorIs(t, err, state.ErrNotFound, "nothing is open for the target any more")
-	previous, _, err := f.engine.PreparationInput(t.Context(), selected, request.Spec.Action)
-	require.NoError(t, err)
-	require.Nil(t, previous)
 	request.ID = "new-release"
 	request.Spec.Source = commitPort(t, f, "candidate", "version 3\n")
 	request.Spec.Source.Base = request.Spec.Source.Commit

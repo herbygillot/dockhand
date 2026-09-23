@@ -41,6 +41,7 @@ func (p *Provider) ReadLog(ctx context.Context, run record.ProviderRun, offset i
 	return verify.LogChunk{Data: data, Next: offset + int64(len(data))}, err
 }
 func (n *native) ReadLog(ctx context.Context, vm string, offset int64, limit int) ([]byte, error) {
-	script := fmt.Sprintf("if [ -f /var/tmp/dockhand2/build.log ]; then /usr/bin/tail -c +%d /var/tmp/dockhand2/build.log | /usr/bin/head -c %d; fi", offset+1, limit)
+	log := guestDirectory + "/build.log"
+	script := fmt.Sprintf("if [ -f %s ]; then /usr/bin/tail -c +%d %s | /usr/bin/head -c %d; fi", log, offset+1, log, limit)
 	return n.guest(ctx, vm, nil, "sudo", "-n", "/bin/sh", "-c", script)
 }

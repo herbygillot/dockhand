@@ -15,7 +15,7 @@ import (
 
 var errAutomaticUnsupported = errors.New("upstream: automatic selection does not support this source convention")
 
-// VersionSelector orders and captures versions the way MacPorts does: vercmp
+// versionSelector orders and captures versions the way MacPorts does: vercmp
 // for order and its native regex for livecheck captures.
 type versionSelector interface {
 	SelectVersion(context.Context, string, string, []macports.VersionCandidate) (macports.VersionSelection, error)

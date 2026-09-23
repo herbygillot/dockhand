@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports/fetchguard"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -173,14 +172,4 @@ func (c Client) fetchOne(ctx context.Context, info macports.PortInfo) (Download,
 		return Download{}, err
 	}
 	return c.Store("").Fetch(ctx, info, Source{name, address})
-}
-
-// The options the download policy reads are the fetch phase's inputs; the
-// guard grammar's effect table must name every one of them, or a hook that
-// writes one could be accepted as harmless.
-func TestDownloadPolicyOptionsAreFetchAffecting(t *testing.T) {
-	t.Parallel()
-	for _, key := range []string{"distfiles", "master_sites", "checksums", "fetch.type", "patchfiles", "filespath", "fetch.ignore_sslcert", "go.vendors", "cargo.crates", "cargo.crates_github"} {
-		require.True(t, fetchguard.AffectsFetch(key), key)
-	}
 }

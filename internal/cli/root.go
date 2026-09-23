@@ -192,8 +192,7 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, *runtime,
 // helpGroups orders the help screen as the life of a contribution: prepare the
 // machine, look at ports, prepare and revise an update, prove and publish it,
 // follow the accepted work, and clean up afterwards. Commands outside these
-// groups, such as the unimplemented review command, stay under Cobra's
-// "Additional Commands" heading.
+// groups stay under Cobra's "Additional Commands" heading.
 var helpGroups = []struct {
 	id, title string
 	commands  []string

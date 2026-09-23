@@ -66,7 +66,7 @@ proc exec {args} {
  return ""
 }
 `
-			script := prelude + strings.Replace(string(guestScript), "set root /var/tmp/dockhand2", "set root $env(TEST_ROOT)", 1)
+			script := prelude + testGuestScript(t)
 			filename := filepath.Join(root, "guest.tcl")
 			require.NoError(t, os.WriteFile(filename, []byte(script), 0600))
 			command := exec.CommandContext(t.Context(), executable, filename)
@@ -167,7 +167,7 @@ proc exec {args} {
  return ""
 }
 `
-			script := prelude + strings.Replace(string(guestScript), "set root /var/tmp/dockhand2", "set root $env(TEST_ROOT)", 1)
+			script := prelude + testGuestScript(t)
 			filename := filepath.Join(root, "guest.tcl")
 			require.NoError(t, os.WriteFile(filename, []byte(script), 0600))
 			command := exec.CommandContext(t.Context(), executable, filename)
@@ -277,7 +277,7 @@ proc exec {args} {
  return ""
 }
 `
-	script := prelude + strings.Replace(string(guestScript), "set root /var/tmp/dockhand2", "set root $env(TEST_ROOT)", 1)
+	script := prelude + testGuestScript(t)
 	filename := filepath.Join(root, "guest.tcl")
 	require.NoError(t, os.WriteFile(filename, []byte(script), 0600))
 	command := exec.CommandContext(t.Context(), executable, filename)
@@ -303,4 +303,14 @@ proc exec {args} {
 		{URL: "https://a.example/jxrlib-1.4.3.tar.gz", Reason: "The requested URL returned error: 404"},
 		{URL: "https://b.example/jxrlib-1.4.3.tar.gz", Reason: "The requested URL returned error: 403"},
 	}, result.Failure.Fetches)
+}
+
+// testGuestScript is the guest script rooted at the test's directory. The
+// replacement is checked, so a guest directory spelled differently cannot
+// leave the script writing to the real one.
+func testGuestScript(t *testing.T) string {
+	t.Helper()
+	root := "set root " + guestDirectory
+	require.Contains(t, string(guestScript), root)
+	return strings.Replace(string(guestScript), root, "set root $env(TEST_ROOT)", 1)
 }

@@ -222,12 +222,13 @@ func TestControlStructuresAreReadThroughSyntax(t *testing.T) {
 	wrapper := "global {*}[info globals]\n"
 	plain := macports.PortInfo{Options: map[string]string{}}
 	for name, hook := range map[string]string{
-		"switch with a braced list":           wrapper + "switch ${os.major} {\n    10 { return -code error no }\n    default { ui_error fine }\n}\n",
-		"switch with bare arms":               wrapper + "switch -- ${os.major} 10 { return -code error no } default { ui_error fine }\n",
-		"switch falling through":              wrapper + "switch ${os.major} {\n    9 -\n    10 { error no }\n}\n",
-		"foreach with a braced variable list": wrapper + "foreach {a b} {1 2 3 4} { if {$a eq $b} { error no } }\n",
-		"for":                                 wrapper + "for {set i 0} {$i < 3} {incr i} { if {$i == 2} { error no } }\n",
-		"catch with a result variable":        wrapper + "if {[catch {ui_error x} result]} { error no }\n",
+		"switch with a braced list":             wrapper + "switch ${os.major} {\n    10 { return -code error no }\n    default { ui_error fine }\n}\n",
+		"switch with bare arms":                 wrapper + "switch -- ${os.major} 10 { return -code error no } default { ui_error fine }\n",
+		"switch falling through":                wrapper + "switch ${os.major} {\n    9 -\n    10 { error no }\n}\n",
+		"foreach with a braced variable list":   wrapper + "foreach {a b} {1 2 3 4} { if {$a eq $b} { error no } }\n",
+		"for":                                   wrapper + "for {set i 0} {$i < 3} {incr i} { if {$i == 2} { error no } }\n",
+		"catch with a result variable":          wrapper + "if {[catch {ui_error x} result]} { error no }\n",
+		"switch with a harmless match variable": wrapper + "switch -regexp -matchvar found ${os.major} {^1 { error no }}\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			semantics := Assess(plain, "portfetch::fetch_main", "{"+hook+"}", "", nil, nil)
@@ -244,6 +245,12 @@ func TestControlStructuresAreReadThroughSyntax(t *testing.T) {
 		"catch with too many words":     wrapper + "catch {error no} a b c\n",
 		"catch into a fetch input":      wrapper + "catch {ui_error x} distfiles\n",
 		"foreach over a fetch input":    wrapper + "foreach master_sites {a b} { error no }\n",
+		// -indexvar and -matchvar take a variable, which the switch writes;
+		// read as flags, the variable became the value switched on.
+		"switch indexing into a fetch input": wrapper + "switch -regexp -indexvar distfiles ${os.major} {ui_debug {}}\n",
+		"switch matching into a fetch input": wrapper + "switch -regexp -matchvar version ${os.major} {ui_debug {}}\n",
+		"switch into a computed variable":    wrapper + "switch -regexp -matchvar $name ${os.major} {ui_debug {}}\n",
+		"switch option without its variable": wrapper + "switch -matchvar\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			semantics := Assess(plain, "portfetch::fetch_main", "{"+hook+"}", "", nil, nil)
@@ -362,14 +369,13 @@ func rejectionOnly(hook string) bool {
 	return ok && rejectionReason(src, commands, nil).text == "" && isRejection(src, commands[len(commands)-1])
 }
 
-// A conditional rejection consists only of if statements whose conditions
-// read variables and whose every branch is a rejection, or is itself such
-// an if: the perl5 PortGroup's required-variant check, for example, or
-// llvm-10's platform check around a host check. Such a hook can fail the
-// fetch but never change what is fetched. Conditions may call the reads in
-// pureConditionCommands, which the compilers PortGroup's Fortran check and
-// the clang ports' runtime check need; any other command substitution, and
-// branches that do anything else, are not recognized.
+// conditionalRejection reports whether a hook is a conditional rejection:
+// ifs whose branches reject or change nothing the fetch reads, beside
+// commands that change nothing either, as the perl5 PortGroup's
+// required-variant check or llvm-10's platform check around a host check
+// are. Such a hook can fail the fetch but never change what is fetched.
+// Conditions may use the pure queries and host reads, and any other call is
+// judged by its effect on the fetch.
 func conditionalRejection(hook string) bool {
 	src, commands, ok := parseHook(hook)
 	return ok && conditionalReason(src, commands, nil).text == ""

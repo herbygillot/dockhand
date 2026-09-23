@@ -419,3 +419,28 @@ func TestRevisionScopeMembershipIsFixedOnceRecorded(t *testing.T) {
 		return tx.PutRevision(ctx, record.Revision{ID: "same", ChangeID: "change", Previous: "scoped", Source: source(), Scope: one, CreatedAt: now})
 	}))
 }
+
+// Storage enforces record.ValidCancel, the rule intake checks too, and adds
+// what only it requires: a submission time and at least one job.
+func TestPutControlRefusesAMalformedCancel(t *testing.T) {
+	t.Parallel()
+	s := openStore(t, filepath.Join(t.TempDir(), "state.db"))
+	r := repository(t, s, "a")
+	receipt := seed(t, s, r, "job")
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	valid := record.ControlRequest{ID: "cancel", Kind: record.Cancel, Reason: "stop", SubmittedAt: now, Jobs: []record.JobID{receipt.JobID}}
+	for name, change := range map[string]func(*record.ControlRequest){
+		"not a cancel":      func(c *record.ControlRequest) { c.Kind = "" },
+		"no identity":       func(c *record.ControlRequest) { c.ID = "" },
+		"already applied":   func(c *record.ControlRequest) { c.AppliedAt = &now },
+		"a reason not text": func(c *record.ControlRequest) { c.Reason = "\xff" },
+		"no submission":     func(c *record.ControlRequest) { c.SubmittedAt = time.Time{} },
+		"no jobs":           func(c *record.ControlRequest) { c.Jobs = nil },
+	} {
+		request := valid
+		change(&request)
+		err := s.Update(t.Context(), r.ID, func(ctx context.Context, tx state.Tx) error { return tx.PutControl(ctx, request) })
+		require.ErrorIs(t, err, state.ErrInvalid, name)
+	}
+	require.NoError(t, s.Update(t.Context(), r.ID, func(ctx context.Context, tx state.Tx) error { return tx.PutControl(ctx, valid) }))
+}

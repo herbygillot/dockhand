@@ -22,7 +22,7 @@ func trackFixtureBranch(t *testing.T, f *fixture, branch string) {
 	}))
 }
 
-func TestBranchScopeFreezesPendingJobs(t *testing.T) {
+func TestContributionScopeByBranchFreezesPendingJobs(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	trackFixtureBranch(t, f, "candidate")
@@ -42,7 +42,7 @@ func TestBranchScopeFreezesPendingJobs(t *testing.T) {
 	require.ElementsMatch(t, []record.JobID{first, second}, current.Jobs)
 }
 
-func TestControlBranchSelectsAndRecordsAtomically(t *testing.T) {
+func TestControlContributionByBranchSelectsAndRecordsAtomically(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	trackFixtureBranch(t, f, "candidate")

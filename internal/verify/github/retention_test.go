@@ -121,4 +121,24 @@ func TestLogCacheRetentionChecksIdentityAgeAndRequestLock(t *testing.T) {
 	require.FileExists(t, outside)
 }
 
-var _ verify.LogCachePruner = (*Provider)(nil)
+// A cache downloaded before the ledger moved request locks under locks/ has
+// its lock at the old path, and a finished request never takes the new one;
+// the prune finds it there rather than calling the cache absent.
+func TestLogCacheFromBeforeTheLedgerIsPruned(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	f.ready()
+	submission, err := f.provider.Submit(t.Context(), f.request)
+	require.NoError(t, err)
+	_, err = f.provider.ReadLog(t.Context(), submission.Run, 0, 4096)
+	require.NoError(t, err)
+	name := filepath.Join(f.provider.Directory, record.Digest([]byte(f.request.ID))+".log")
+	require.FileExists(t, name)
+	current := ledger.LockPath(f.provider.pool(), f.request.ID)
+	legacy := filelock.Path(f.provider.Directory, string(f.request.ID))
+	require.NoError(t, os.Rename(current, legacy))
+	found, err := f.provider.PruneLogCache(t.Context(), submission.Run, time.Now().Add(time.Second), false)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.NoFileExists(t, name)
+}

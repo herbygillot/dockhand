@@ -3,12 +3,12 @@ package tart
 import (
 	"context"
 	"errors"
+	"github.com/herbygillot/dockhand/internal/verify/ledger"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/stretchr/testify/require"
@@ -38,7 +38,7 @@ func TestPruneRequiresReleaseAndPreservesTerminalIdentity(t *testing.T) {
 	sentinel := filepath.Join(outside, "keep")
 	require.NoError(t, os.WriteFile(sentinel, []byte("diagnostics from another run"), 0600))
 	require.NoError(t, os.Symlink(outside, filepath.Join(directory, "outside")))
-	lockPath := filepath.Join(f.provider.Config.ArtifactDirectory, "locks", record.Digest([]byte(string(f.request.ID)))+".lock")
+	lockPath := ledger.LockPath(poolOf(f.provider.Config), f.request.ID)
 	lockBefore, err := os.Stat(lockPath)
 	require.NoError(t, err)
 	require.NoError(t, f.provider.PruneArtifacts(t.Context(), handle))

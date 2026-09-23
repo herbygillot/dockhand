@@ -37,7 +37,7 @@ func StubOf(snapshot Snapshot, member string) string {
 	return ""
 }
 
-// StubMembers reports whether the named port is a stub whose subports carry
+// stubMembers reports whether the named port is a stub whose subports carry
 // its release: it builds nothing itself while sibling subports at the same
 // version do, the shape of a python `py-foo` port over its `py3x-foo`
 // subports. It returns the newest such subport, by natural order of the
@@ -60,7 +60,7 @@ func stubMembers(snapshot Snapshot, name string) (newest string, members []strin
 	return members[len(members)-1], members
 }
 
-// NaturalCompare orders names with embedded numbers by their numeric value,
+// naturalCompare orders names with embedded numbers by their numeric value,
 // so py314-foo sorts after py39-foo.
 func naturalCompare(a, b string) int {
 	for a != "" && b != "" {

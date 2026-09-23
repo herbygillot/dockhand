@@ -40,7 +40,7 @@ One database can hold work for many repositories. Workflow commands operate on t
 
 The initial command tree uses Cobra v1.10.2, matching v1, with pflag v1.0.10. `--tree` / `-t`, `--prefix` / `-p`, `--git`, `--tart`, `--db`, and `--json` are inherited global flags. Waiting, tracing, publication, verification skipping, and preview flags are registered on the commands that support them. Cobra validates argument counts, unknown commands/flags, and the declared incompatible flag groups before the command handler constructs repository services. Help output remains ordinary text even when `--json` is present.
 
-`dockhand help <command>` and `<command> --help` show generated command help. `usage` is an alias for `help`, including nested paths such as `dockhand usage review accept`. `dockhand completion` generates shell completion scripts through Cobra. Help and completion do not open state or require a Git repository or provider, and create no directories or files. A run command's help prints its flags in sections by kind, Selection, Change, Build, GitHub, and Run, and the global flags as Path and Output; every flag on a run command belongs to one, and nothing is hidden.
+`dockhand help <command>` and `<command> --help` show generated command help. `usage` is an alias for `help`, including nested paths such as `dockhand usage db backup`. `dockhand completion` generates shell completion scripts through Cobra. Help and completion do not open state or require a Git repository or provider, and create no directories or files. A run command's help prints its flags in sections by kind, Selection, Change, Build, GitHub, and Run, and the global flags as Path and Output; every flag on a run command belongs to one, and nothing is hidden.
 
 `status [target]`, `status --active`, and `status --branch <branch>` call the shared workflow projection through read-only SQLite access and render human-readable output or JSON. Verification submission, fixed job- or branch-selected attachment/cancellation, and resident execution now use the shared Go workflow API. Version and revision bumps use the shared driver; previews use the same preparation capability without opening state. Other phase-one command handlers still return explicit not-implemented errors. The broader selector syntax below remains the intended design; the concrete first slice is specified next.
 
@@ -403,7 +403,7 @@ Targets resolve consistently within the selected repository across commands. A f
 
 The default command result says what was handed off, including the job ID and destination. It does not claim that a still-running verification has passed. Attached commands return the outcome of the work they awaited, with failure and needs-attention results distinguishable from successful completion. Keep final output and progress reporting based on the same driver-maintained state.
 
-Review actions use the `review` command family: `dockhand review accept <change>` and `dockhand review dismiss <change>`. Review decisions that alter accepted work are submitted to the state store through the shared workflow API; the driver records and performs their consequences.
+Review actions are planned, not implemented; the design is a `review` command family, `dockhand review accept <change>` and `dockhand review dismiss <change>`. Review decisions that alter accepted work are submitted to the state store through the shared workflow API; the driver records and performs their consequences.
 
 **JSON Output**
 

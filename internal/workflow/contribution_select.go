@@ -122,16 +122,6 @@ func (e *Engine) contributionBuild(ctx context.Context, change record.Change) (r
 	return spec, err
 }
 
-// PreparationInput is the open contribution for a port and the newest job
-// of the action that is still its current revision or still running, as
-// the resolution reads them. It is exported for the test that reads it.
-func (e *Engine) PreparationInput(ctx context.Context, selector ContributionSelector, action record.Action) (*record.Job, *record.Change, error) {
-	if e == nil || e.State == nil {
-		return nil, nil, errNoState
-	}
-	return e.preparationInput(ctx, selector, action)
-}
-
 // CurrentRevision reads the contribution's current revision.
 func (e *Engine) CurrentRevision(ctx context.Context, change record.Change) (record.Revision, error) {
 	var revision record.Revision

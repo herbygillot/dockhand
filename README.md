@@ -111,6 +111,6 @@ mkdir -p "$HOME/.local/bin" && install -m 755 dockhand "$HOME/.local/bin/dockhan
 
 Dockhand keeps its records in one SQLite database, `~/.dockhand/state.db` unless `--db` or `DOCKHAND_DB` says otherwise. `dockhand gc` prunes old build environments and logs, and `dockhand db backup` copies the database.
 
-[`docs/usage.md`](docs/usage.md) covers every command and option, which Portfile shapes can be bumped automatically, credential precedence, and what each build actually runs. [`docs/github-verification.md`](docs/github-verification.md) covers building in your fork, and [`docs/operations.md`](docs/operations.md) the database, backups, and retention. The rest of [`docs/`](docs/) is the design. `review` appears in `--help` but is not implemented yet.
+[`docs/usage.md`](docs/usage.md) covers every command and option, which Portfile shapes can be bumped automatically, credential precedence, and what each build actually runs. [`docs/github-verification.md`](docs/github-verification.md) covers building in your fork, and [`docs/operations.md`](docs/operations.md) the database, backups, and retention. The rest of [`docs/`](docs/) is the design.
 
 Dockhand is developed at [github.com/herbygillot/dockhand](https://github.com/herbygillot/dockhand) and licensed under the [MIT License](LICENSE).

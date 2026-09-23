@@ -1,6 +1,7 @@
 package commitmsg_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
@@ -30,4 +31,27 @@ func TestSubjectSuppliesThePortNameOnce(t *testing.T) {
 	require.ErrorContains(t, err, "one nonempty line")
 	_, err = commitmsg.Subject("py-foo", "two\nlines")
 	require.ErrorContains(t, err, "one nonempty line")
+}
+
+func TestComposeKeepsTheReasonAndOneAttribution(t *testing.T) {
+	t.Parallel()
+	for _, body := range []string{"", "Rebuild dependents", "Rebuild dependents\n\n" + commitmsg.GeneratedBy() + "\n" + commitmsg.GeneratedBy()} {
+		message := commitmsg.Compose("fixture: revbump", body, nil)
+		require.Equal(t, 1, strings.Count(message, commitmsg.GeneratedBy()))
+		require.True(t, strings.HasSuffix(message, "\n\n"+commitmsg.GeneratedBy()+"\n"))
+		require.True(t, strings.HasPrefix(message, "fixture: revbump\n\n"))
+		require.Equal(t, message, commitmsg.Compose("fixture: revbump", body, nil))
+		if body != "" {
+			require.Contains(t, message, "fixture: revbump\n\nRebuild dependents\n\n"+commitmsg.GeneratedBy())
+		}
+	}
+}
+
+func TestComposeCitesReferencesOnceAheadOfTheAttribution(t *testing.T) {
+	t.Parallel()
+	closes := record.Reference{Relation: record.ReferenceCloses, URL: "https://trac.macports.org/ticket/74379"}
+	see := record.Reference{Relation: record.ReferenceSee, URL: "https://trac.macports.org/ticket/74422"}
+	message := commitmsg.Compose("fixture: revbump for simdutf update", "Why it matters\n\nSee: https://trac.macports.org/ticket/74422\n"+commitmsg.GeneratedBy(), []record.Reference{closes, see, closes})
+	require.Equal(t, "fixture: revbump for simdutf update\n\nWhy it matters\n\nSee: https://trac.macports.org/ticket/74422\nCloses: https://trac.macports.org/ticket/74379\n"+commitmsg.GeneratedBy()+"\n", message)
+	require.Equal(t, "fixture: update to 2\n\nCloses: https://trac.macports.org/ticket/74379\n"+commitmsg.GeneratedBy()+"\n", commitmsg.Compose("fixture: update to 2", "", []record.Reference{closes}))
 }

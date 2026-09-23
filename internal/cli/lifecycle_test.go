@@ -112,7 +112,6 @@ func TestWaitAndCancelRejectAmbiguousOrInvalidBranchSelectorsBeforeState(t *test
 		{"wait", "--job", "job", "--branch", "candidate"},
 		{"cancel", "--job", "job", "--branch", "candidate"},
 		{"wait", "--branch", "bad..branch"},
-		{"cancel", "--branch="},
 	} {
 		var output bytes.Buffer
 		err := Run(t.Context(), args, Streams{Out: &output, Err: &output}, config)

@@ -75,7 +75,7 @@ func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, s
 	return result, nil
 }
 
-// Documents is a catalog that fetches a livecheck document from the forge it
+// documents is a catalog that fetches a livecheck document from the forge it
 // serves through its own client, so the user's credentials and the forge's
 // rate-limit handling apply, sending the given request headers in place of
 // the client's own. served is false for a URL the forge does not serve, and

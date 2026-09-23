@@ -9,7 +9,7 @@ import (
 
 func TestAffectsFetchNamesTheFetchPhasesInputs(t *testing.T) {
 	t.Parallel()
-	for _, option := range []string{"distfiles", "distfiles-append", "master_sites-delete", "checksums", "patchfiles", "fetch.type", "fetch.ignore_sslcert", "use_xz", "github.setup", "git.branch", "version", "distname", "worksrcdir", "extract.suffix", "go.vendors", "cargo.crates"} {
+	for _, option := range []string{"distfiles", "distfiles-append", "master_sites-delete", "checksums", "patchfiles", "fetch.type", "fetch.ignore_sslcert", "use_xz", "github.setup", "git.branch", "version", "distname", "worksrcdir", "extract.suffix", "go.vendors", "cargo.crates", "cargo.crates_github", "master_sites", "filespath"} {
 		require.True(t, fetchguard.AffectsFetch(option), option)
 	}
 	for _, option := range []string{"configure.env", "configure.env-append", "build.env-append", "java.home", "java.fallback", "depends_lib", "depends_lib-append", "notes-append", "supported_archs", "known_fail", "test.run", "revision", "long_description", "homepage", "livecheck.regex", "default_variants"} {

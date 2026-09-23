@@ -23,6 +23,20 @@ DOCKHAND_TEST_TART_IMAGE=dockhand-base-tahoe \
 go test -v ./internal/verify/tart -run '^TestRealTartBuildSurvivesSubmittingDriverExit$' -timeout 16m
 ```
 
+## Other opt-in tests
+
+Tests that need MacPorts find `port-tclsh` and `portindex` on `PATH` and skip without them; they run on a Mac, and on Linux with MacPorts Base built there, where the evaluator models a Mac. The rest reach something outside the checkout and run only when named:
+
+| Variable | Test | What it reaches |
+| --- | --- | --- |
+| `DOCKHAND_TEST_MACPORTS_TCLSH` | `macports/eval`, `macports/selection` | a `port-tclsh` other than the one on `PATH` |
+| `DOCKHAND_GUARD_TREE` | `macports/eval` `session_guard_test.go` | a ports tree whose Portfiles the session guard samples |
+| `DOCKHAND_TEST_DEPENDENCY_HELPERS=1` | `macports/dependency` `live_test.go` | the installed `go2port`/`cargo2port` and an upstream Go archive |
+| `DOCKHAND_TEST_PORTS_REPO` | `git` `TestCaptureRealPortsCheckout` | a real macports-ports checkout, read only |
+| `DOCKHAND_TEST_GITHUB_PR`, `DOCKHAND_TEST_GITHUB_TOKEN` | `forge/github` `inspect_live_test.go` | one pull request, `owner/repo#number`, read with that token |
+| `DOCKHAND_TEST_BOOTSTRAP_VM` | `tart/provision` `TestLiveAgentRegistration` | a running disposable VM you own, whose agent it registers |
+| `DOCKHAND_TEST_TART_IMAGE` | `verify/tart` | the acceptance test above |
+
 ## State and service boundaries
 
 SQLite now holds workflow state behind `internal/state` contracts, with `internal/state/sqlite` as the implementation. One database can track multiple repositories; linked worktrees share an entry and separate clones remain distinct. Global `--db PATH` defaults to `$HOME/.dockhand/state.db`. The old lock-directory flags and Git ledger have been removed.
