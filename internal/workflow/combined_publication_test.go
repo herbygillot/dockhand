@@ -30,7 +30,8 @@ func combinedFixture(t *testing.T, action record.Action) (*fixture, *publication
 	require.NoError(t, err, "%s", out)
 	require.NoError(t, f.repo.Push(t.Context(), git.Push{Remote: remote, Branch: "main", Commit: string(request.Spec.Source.Commit)}))
 	hosting := &publicationForge{f: f, remote: remote}
-	f.engine.Publisher = &publish.Service{Repo: f.repo, Forge: hosting, LockDirectory: filepath.Join(t.TempDir(), "locks")}
+	f.engine.Accounts, f.engine.PullRequests = hosting, hosting
+	f.engine.Publisher = &publish.Service{Repo: f.repo, Accounts: hosting, PullRequests: hosting, LockDirectory: filepath.Join(t.TempDir(), "locks")}
 	destination, err := f.engine.Publisher.Destination(t.Context(), publish.Options{})
 	require.NoError(t, err)
 	request.Spec.Action = action

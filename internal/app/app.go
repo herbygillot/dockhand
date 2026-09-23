@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
@@ -55,10 +56,13 @@ type Services struct {
 	Processes *proc.Manager
 	close     func() error
 	// providers is the provider choice the bindings resolve builds with.
-	providers         choice.Providers
-	ports             *selection.Reader
-	providerName      string
-	githubClient      *github.Client
+	providers    choice.Providers
+	ports        *selection.Reader
+	providerName string
+	githubClient *github.Client
+	// accounts is the forge's account and repository contract, for the
+	// checks that need the fork's facts rather than a publication.
+	accounts          forge.Accounts
 	githubDestination publish.Options
 }
 
@@ -140,18 +144,21 @@ func assemble(config Config, repo *git.Repository, store *sqlite.Store, reposito
 	provider := &tart.Provider{Config: config.Tart, IndexCache: indexCache, State: providerStore, Repository: repository.ID, Repo: repo, Workspaces: workspaces}
 	githubProvider := &githubverify.Provider{State: providerStore, Repository: repository.ID, Repo: repo, Directory: filepath.Join(stateDirectory, "github-verification"), Client: githubClient}
 
+	hosting := &forgegithub.Client{Client: githubClient}
 	engine := &workflow.Engine{
-		State:      engineStore,
-		Repo:       repo,
-		Ports:      ports,
-		Workspaces: workspaces,
-		Preparer:   preparation,
-		Dependents: dependentDiscovery{repo: repo, ports: ports, indexCache: indexCache, mirror: indexMirror(config), workspaces: workspaces},
-		Releases:   preparation,
-		Provider:   provider,
-		Providers:  map[string]verify.Provider{verify.ProviderTart: provider, verify.ProviderGitHub: githubProvider},
-		Publisher:  &publish.Service{Repo: repo, Forge: &forgegithub.Client{Client: githubClient}, LockDirectory: filepath.Join(stateDirectory, "publication-locks"), Upstream: macports.PortsRepository},
-		Now:        time.Now,
+		State:        engineStore,
+		Repo:         repo,
+		Ports:        ports,
+		Workspaces:   workspaces,
+		Preparer:     preparation,
+		Dependents:   dependentDiscovery{repo: repo, ports: ports, indexCache: indexCache, mirror: indexMirror(config), workspaces: workspaces},
+		Releases:     preparation,
+		Provider:     provider,
+		Providers:    map[string]verify.Provider{verify.ProviderTart: provider, verify.ProviderGitHub: githubProvider},
+		Accounts:     hosting,
+		PullRequests: hosting,
+		Publisher:    &publish.Service{Repo: repo, Accounts: hosting, PullRequests: hosting, LockDirectory: filepath.Join(stateDirectory, "publication-locks"), Upstream: macports.PortsRepository},
+		Now:          time.Now,
 	}
 	services := &Services{
 		Workflow:          engine,
@@ -160,6 +167,7 @@ func assemble(config Config, repo *git.Repository, store *sqlite.Store, reposito
 		ports:             ports,
 		providerName:      config.VerificationProvider,
 		githubClient:      githubClient,
+		accounts:          hosting,
 		githubDestination: config.VerificationDestination,
 	}
 	services.providers = choice.Providers{Name: config.VerificationProvider, Local: provider, Remote: remoteBuild{services}, TargetImages: maps.Clone(config.TargetImages)}

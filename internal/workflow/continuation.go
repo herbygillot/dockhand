@@ -86,7 +86,7 @@ func (e *Engine) CheckContinuation(ctx context.Context, prior record.Job, master
 	disposition := change.Disposition
 	if recorded != nil {
 		pr = fmt.Sprintf("PR #%d is %s as recorded", recorded.Ref.Number, recorded.State)
-		if e.Publisher == nil || e.Publisher.Forge == nil {
+		if e.Accounts == nil || e.PullRequests == nil {
 			pr += ", not re-checked: no forge is configured"
 		} else if result, err := e.refreshChange(ctx, change); err != nil {
 			pr += fmt.Sprintf(", not re-checked: %v", err)

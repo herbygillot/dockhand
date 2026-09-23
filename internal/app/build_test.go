@@ -51,7 +51,8 @@ func TestGitHubBuildRequiresThePersonalFork(t *testing.T) {
 			}))
 			defer server.Close()
 			client := &github.Client{Config: github.Config{BaseURL: server.URL, Token: "fixture-token"}}
-			services := &Services{githubClient: client, Workflow: &workflow.Engine{Publisher: &publish.Service{Repo: repo, Forge: &forgegithub.Client{Client: client}, LockDirectory: filepath.Join(root, "locks")}}}
+			hosting := &forgegithub.Client{Client: client}
+			services := &Services{githubClient: client, accounts: hosting, Workflow: &workflow.Engine{Publisher: &publish.Service{Repo: repo, Accounts: hosting, PullRequests: hosting, LockDirectory: filepath.Join(root, "locks")}}}
 			config, err := services.githubBuild(t.Context(), record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, false)
 			if test.refused {
 				// The publisher's destination resolution refuses the fork

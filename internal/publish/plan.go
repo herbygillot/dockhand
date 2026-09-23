@@ -15,7 +15,7 @@ import (
 // redirect accepted work. It does not select a contribution or write remotely.
 func (s *Service) Destination(ctx context.Context, options Options) (record.PublicationDestination, error) {
 	var destination record.PublicationDestination
-	if s == nil || s.Repo == nil || s.Forge == nil || !filepath.IsAbs(s.LockDirectory) {
+	if s == nil || s.Repo == nil || s.Accounts == nil || s.PullRequests == nil || !filepath.IsAbs(s.LockDirectory) {
 		return destination, fmt.Errorf("publish: Git, forge, and absolute lock directory are required")
 	}
 	remotes, err := s.Repo.Remotes(ctx)
@@ -26,11 +26,11 @@ func (s *Service) Destination(ctx context.Context, options Options) (record.Publ
 	if err != nil {
 		return destination, err
 	}
-	headName, err := s.Forge.NameFromRemote(push.PushURL)
+	headName, err := s.Accounts.NameFromRemote(push.PushURL)
 	if err != nil {
 		return destination, err
 	}
-	head, err := s.Forge.RepositoryInfo(ctx, headName)
+	head, err := s.Accounts.RepositoryInfo(ctx, headName)
 	if err != nil {
 		return destination, err
 	}
@@ -44,12 +44,12 @@ func (s *Service) Destination(ctx context.Context, options Options) (record.Publ
 		targetName = head.Parent
 	}
 	if upstream.Name != "" {
-		targetName, err = s.Forge.NameFromRemote(upstream.FetchURL)
+		targetName, err = s.Accounts.NameFromRemote(upstream.FetchURL)
 		if err != nil {
 			return destination, err
 		}
 	}
-	target, err := s.Forge.RepositoryInfo(ctx, targetName)
+	target, err := s.Accounts.RepositoryInfo(ctx, targetName)
 	if err != nil {
 		return destination, err
 	}
@@ -57,7 +57,7 @@ func (s *Service) Destination(ctx context.Context, options Options) (record.Publ
 		options.Base = target.DefaultBranch
 	}
 
-	destination = record.PublicationDestination{Forge: s.Forge.Name(), Repository: target.Name, HeadRepository: head.Name, BaseBranch: options.Base, PushURL: push.PushURL, BaseURL: target.CloneURL, LockDirectory: s.LockDirectory, RefreshBody: options.RefreshBody}
+	destination = record.PublicationDestination{Forge: s.Accounts.Name(), Repository: target.Name, HeadRepository: head.Name, BaseBranch: options.Base, PushURL: push.PushURL, BaseURL: target.CloneURL, LockDirectory: s.LockDirectory, RefreshBody: options.RefreshBody}
 	return destination, ValidateDestination(destination)
 }
 
@@ -65,7 +65,7 @@ func (s *Service) Destination(ctx context.Context, options Options) (record.Publ
 // own. Contributions are published from the contributor's fork; a checkout
 // whose selected remote is the upstream repository must name the fork.
 func (s *Service) requireOwnedHead(ctx context.Context, head, remote string, remotes []git.Remote) error {
-	login, err := s.Forge.AuthenticatedUser(ctx)
+	login, err := s.Accounts.AuthenticatedUser(ctx)
 	if err != nil {
 		return err
 	}
@@ -81,7 +81,7 @@ func (s *Service) requireOwnedHead(ctx context.Context, head, remote string, rem
 		if r.Name == remote {
 			continue
 		}
-		name, err := s.Forge.NameFromRemote(r.PushURL)
+		name, err := s.Accounts.NameFromRemote(r.PushURL)
 		if err != nil {
 			continue
 		}
@@ -125,28 +125,28 @@ func (s *Service) Plan(ctx context.Context, change record.Change, source record.
 // remote options do not apply; the pull request has already chosen.
 func (s *Service) DestinationFor(ctx context.Context, pr record.PullRequest, options Options) (record.PublicationDestination, error) {
 	var destination record.PublicationDestination
-	if s == nil || s.Repo == nil || s.Forge == nil || !filepath.IsAbs(s.LockDirectory) {
+	if s == nil || s.Repo == nil || s.Accounts == nil || s.PullRequests == nil || !filepath.IsAbs(s.LockDirectory) {
 		return destination, fmt.Errorf("publish: Git, forge, and absolute lock directory are required")
 	}
-	if pr.Ref.Forge != s.Forge.Name() {
-		return destination, fmt.Errorf("%w: pull request is on %s, not %s", ErrPrecondition, pr.Ref.Forge, s.Forge.Name())
+	if pr.Ref.Forge != s.Accounts.Name() {
+		return destination, fmt.Errorf("%w: pull request is on %s, not %s", ErrPrecondition, pr.Ref.Forge, s.Accounts.Name())
 	}
-	head, err := s.Forge.RepositoryInfo(ctx, pr.HeadRepository)
+	head, err := s.Accounts.RepositoryInfo(ctx, pr.HeadRepository)
 	if err != nil {
 		return destination, err
 	}
-	base, err := s.Forge.RepositoryInfo(ctx, pr.Ref.Repository)
+	base, err := s.Accounts.RepositoryInfo(ctx, pr.Ref.Repository)
 	if err != nil {
 		return destination, err
 	}
-	destination = record.PublicationDestination{Forge: s.Forge.Name(), Repository: pr.Ref.Repository, HeadRepository: pr.HeadRepository, BaseBranch: pr.BaseBranch, PushURL: head.CloneURL, BaseURL: base.CloneURL, LockDirectory: s.LockDirectory, RefreshBody: options.RefreshBody}
+	destination = record.PublicationDestination{Forge: s.Accounts.Name(), Repository: pr.Ref.Repository, HeadRepository: pr.HeadRepository, BaseBranch: pr.BaseBranch, PushURL: head.CloneURL, BaseURL: base.CloneURL, LockDirectory: s.LockDirectory, RefreshBody: options.RefreshBody}
 	return destination, ValidateDestination(destination)
 }
 
 // PlanTo freezes a publication for the verified source at an already accepted destination.
 func (s *Service) PlanTo(ctx context.Context, change record.Change, source record.Source, evidence record.Attempt, associated *record.PullRequest, destination record.PublicationDestination) (record.PublicationSpec, error) {
 	var spec record.PublicationSpec
-	if s == nil || s.Repo == nil || s.Forge == nil || s.Forge.Name() != destination.Forge {
+	if s == nil || s.Repo == nil || s.Accounts == nil || s.PullRequests == nil || s.Accounts.Name() != destination.Forge {
 		return spec, fmt.Errorf("%w: matching publication service required", ErrPrecondition)
 	}
 	if err := ValidateDestination(destination); err != nil {
@@ -219,13 +219,13 @@ func (s *Service) PlanTo(ctx context.Context, change record.Change, source recor
 // only remote that is not the upstream is taken, and publication itself
 // still checks ownership once it authenticates. Ambiguity names the choices.
 func (s *Service) selectRemotes(ctx context.Context, remotes []git.Remote, options Options) (push, upstream git.Remote, login string, err error) {
-	login, loginErr := s.Forge.AuthenticatedUser(ctx)
+	login, loginErr := s.Accounts.AuthenticatedUser(ctx)
 	if loginErr != nil {
 		login = ""
 	}
 	names := map[string]string{}
 	for _, r := range remotes {
-		if name, err := s.Forge.NameFromRemote(r.PushURL); err == nil {
+		if name, err := s.Accounts.NameFromRemote(r.PushURL); err == nil {
 			names[r.Name] = name
 		}
 	}

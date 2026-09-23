@@ -7,26 +7,16 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 var ErrPrecondition = errors.New("publish: precondition failed")
 
-type Forge interface {
-	Name() string
-	Authenticate(context.Context) error
-	AuthenticatedUser(context.Context) (string, error)
-	NameFromRemote(string) (string, error)
-	RepositoryInfo(context.Context, string) (forge.RepositoryInfo, error)
-	Find(context.Context, forge.PullRequestQuery) (forge.PullRequestObservation, error)
-	Observe(context.Context, record.PullRequestRef) (forge.PullRequestObservation, error)
-	Create(context.Context, forge.PullRequestInput) (forge.PullRequestObservation, error)
-	Update(context.Context, forge.PullRequestInput) (forge.PullRequestObservation, error)
-}
-
 type Service struct {
-	Repo          *git.Repository
-	Forge         Forge
+	Repo *git.Repository
+	// Accounts and PullRequests are the forge, by the two contracts it
+	// serves: names and repositories, and the pull requests themselves.
+	Accounts      forge.Accounts
+	PullRequests  forge.PullRequests
 	LockDirectory string
 	// Upstream names the repository contributions target, such as
 	// macports/macports-ports. A remote whose URL names it is the upstream
@@ -46,10 +36,10 @@ type Options struct {
 }
 
 func (s *Service) Preflight(ctx context.Context) error {
-	if s == nil || s.Forge == nil {
+	if s == nil || s.Accounts == nil || s.PullRequests == nil {
 		return fmt.Errorf("%w: forge is unavailable", ErrPrecondition)
 	}
-	if err := s.Forge.Authenticate(ctx); err != nil {
+	if err := s.Accounts.Authenticate(ctx); err != nil {
 		if errors.Is(err, forge.ErrAuthentication) {
 			return fmt.Errorf("%w: %w", ErrPrecondition, err)
 		}

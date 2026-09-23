@@ -11,7 +11,7 @@ import (
 )
 
 func (s *Services) githubBuild(ctx context.Context, platform record.Platform, needsXcode bool) (record.BuildConfig, error) {
-	user, err := s.githubClient.AuthenticatedUser(ctx)
+	user, err := s.accounts.AuthenticatedUser(ctx)
 	if err != nil {
 		return record.BuildConfig{}, err
 	}
@@ -19,7 +19,7 @@ func (s *Services) githubBuild(ctx context.Context, platform record.Platform, ne
 	if err != nil {
 		return record.BuildConfig{}, err
 	}
-	head, err := s.Workflow.Publisher.Forge.RepositoryInfo(ctx, destination.HeadRepository)
+	head, err := s.accounts.RepositoryInfo(ctx, destination.HeadRepository)
 	if err != nil {
 		return record.BuildConfig{}, err
 	}

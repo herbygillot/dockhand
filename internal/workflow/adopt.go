@@ -256,11 +256,10 @@ func (e *Engine) adoptBranch(ctx context.Context, input AdoptRequest, pullReques
 // that name already at the head is reused; one at another commit is refused
 // rather than moved, since it may be the person's.
 func (e *Engine) fetchPullRequestHead(ctx context.Context, ref record.PullRequestRef) (branch string, pr *record.PullRequest, created bool, err error) {
-	if e.Publisher == nil || e.Publisher.Forge == nil {
+	if e.Accounts == nil || e.PullRequests == nil {
 		return "", nil, false, fmt.Errorf("%w: adopting a pull request needs the forge", ErrInvalidRequest)
 	}
-	forge := e.Publisher.Forge
-	observed, err := forge.Observe(ctx, ref)
+	observed, err := e.PullRequests.Observe(ctx, ref)
 	if err != nil {
 		return "", nil, false, err
 	}
@@ -275,13 +274,13 @@ func (e *Engine) fetchPullRequestHead(ctx context.Context, ref record.PullReques
 	if !git.ValidBranchName(pr.HeadBranch) || !git.ValidObjectID(string(pr.RemoteHead)) {
 		return "", nil, false, fmt.Errorf("%w: pull request %d has no usable head", ErrInvalidRequest, ref.Number)
 	}
-	login, _ := forge.AuthenticatedUser(ctx)
+	login, _ := e.Accounts.AuthenticatedUser(ctx)
 	owner, _, _ := strings.Cut(pr.HeadRepository, "/")
 	branch = fmt.Sprintf("pr/%d", ref.Number)
 	if login != "" && strings.EqualFold(owner, login) {
 		branch = pr.HeadBranch
 	}
-	head, err := forge.RepositoryInfo(ctx, pr.HeadRepository)
+	head, err := e.Accounts.RepositoryInfo(ctx, pr.HeadRepository)
 	if err != nil {
 		return "", nil, false, err
 	}

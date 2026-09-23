@@ -62,7 +62,7 @@ func (c *cycle) planPublication(ctx context.Context, job record.Job) (bool, stri
 	if job.CancelRequestedAt != nil {
 		return fail(errPublicationCanceled)
 	}
-	if e.Publisher == nil || e.Publisher.Repo == nil || e.Publisher.Forge == nil {
+	if e.Publisher == nil || e.Repo == nil {
 		return fail(fmt.Errorf("publication service is unavailable"))
 	}
 	revisionID, source := job.EffectiveSource()
@@ -114,7 +114,7 @@ func (c *cycle) planPublication(ctx context.Context, job record.Job) (bool, stri
 	if err != nil {
 		return fail(err)
 	}
-	snapshot, err := changeset.CaptureBranch(call, e.Publisher.Repo, change.Branch)
+	snapshot, err := changeset.CaptureBranch(call, e.Repo, change.Branch)
 	if err != nil {
 		return fail(fmt.Errorf("%w: %v", publish.ErrPrecondition, err))
 	}
@@ -129,7 +129,7 @@ func (c *cycle) planPublication(ctx context.Context, job record.Job) (bool, stri
 		return fail(err)
 	}
 	// Observe the branch again after remote reads; never adopt human edits implicitly.
-	snapshot, err = changeset.CaptureBranch(call, e.Publisher.Repo, change.Branch)
+	snapshot, err = changeset.CaptureBranch(call, e.Repo, change.Branch)
 	if err != nil {
 		return fail(fmt.Errorf("%w: %v", publish.ErrPrecondition, err))
 	}

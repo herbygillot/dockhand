@@ -65,7 +65,7 @@ func contributionIdle(ctx context.Context, r state.Reader, id record.ChangeID) e
 // conditionally records the observation and disposition. It never reopens local
 // work or follows a different PR found by branch name.
 func (e *Engine) RefreshContribution(ctx context.Context, selected ContributionSelector) (ContributionResult, error) {
-	if e == nil || e.State == nil || e.Repo == nil || e.Publisher == nil || e.Publisher.Forge == nil {
+	if e == nil || e.State == nil || e.Repo == nil || e.Accounts == nil || e.PullRequests == nil {
 		return ContributionResult{}, errNoState
 	}
 	var expected record.Change
@@ -108,7 +108,7 @@ func (e *Engine) refreshChange(ctx context.Context, expected record.Change) (Con
 	if err != nil {
 		return result, err
 	}
-	if previous.Ref.Forge != e.Publisher.Forge.Name() {
+	if previous.Ref.Forge != e.Accounts.Name() {
 		return result, fmt.Errorf("workflow: forge %s is unavailable", previous.Ref.Forge)
 	}
 	timeouts, err := e.Timeouts.defaults()
@@ -117,7 +117,7 @@ func (e *Engine) refreshChange(ctx context.Context, expected record.Change) (Con
 	}
 	call, cancel := context.WithTimeout(ctx, timeouts.Observe)
 	defer cancel()
-	observed, err := e.Publisher.Forge.Observe(call, previous.Ref)
+	observed, err := e.PullRequests.Observe(call, previous.Ref)
 	if err != nil {
 		// The last observation stands; the next periodic look waits a
 		// full interval from now, recorded so every driver and a restart
@@ -134,7 +134,7 @@ func (e *Engine) refreshChange(ctx context.Context, expected record.Change) (Con
 	// refresh itself; it changes nothing on the forge.
 	pr.Status = previous.Status
 	statusProblem := ""
-	if inspector, ok := e.Publisher.Forge.(forge.PullRequestInspector); ok && pr.State == record.PullRequestOpen {
+	if inspector, ok := e.PullRequests.(forge.PullRequestInspector); ok && pr.State == record.PullRequestOpen {
 		inspect, cancelInspect := context.WithTimeout(ctx, timeouts.Observe)
 		status, err := inspector.Inspect(inspect, previous.Ref)
 		cancelInspect()
@@ -296,7 +296,7 @@ func (e *Engine) deferObservation(ctx context.Context, pr record.PullRequest) er
 // push the next look out a full interval, and are reported only at the
 // verbose level.
 func (e *Engine) observePullRequests(ctx context.Context) {
-	if e.Publisher == nil || e.Publisher.Forge == nil || e.Repo == nil {
+	if e.Accounts == nil || e.PullRequests == nil || e.Repo == nil {
 		return
 	}
 	var due []record.Change

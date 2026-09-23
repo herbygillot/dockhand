@@ -84,7 +84,7 @@ func destinationFixture(t *testing.T) (*publish.Service, *destinationForge) {
 		"contributor/macports-ports": {Name: "contributor/macports-ports", DefaultBranch: "master", Parent: "macports/macports-ports", CloneURL: fork},
 		"colleague/macports-ports":   {Name: "colleague/macports-ports", DefaultBranch: "master", Parent: "macports/macports-ports", CloneURL: other},
 	}}
-	return &publish.Service{Repo: repo, Forge: hosting, LockDirectory: filepath.Join(t.TempDir(), "locks"), Upstream: "macports/macports-ports"}, hosting
+	return &publish.Service{Repo: repo, Accounts: hosting, PullRequests: hosting, LockDirectory: filepath.Join(t.TempDir(), "locks"), Upstream: "macports/macports-ports"}, hosting
 }
 
 func TestDestinationFindsTheForkAndUpstreamByThemselves(t *testing.T) {

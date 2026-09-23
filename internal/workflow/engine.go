@@ -7,6 +7,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/publish"
@@ -71,6 +72,12 @@ type Engine struct {
 	Providers map[string]verify.Provider
 	// Publisher resolves and executes Git/forge operations outside state transactions.
 	Publisher *publish.Service
+	// Accounts and PullRequests are the forge the contributions live on:
+	// what it knows about names and repositories, and the pull requests it
+	// finds, observes, and writes. Observation and adoption use them here;
+	// publication goes through Publisher, which holds the same forge.
+	Accounts     forge.Accounts
+	PullRequests forge.PullRequests
 	// Now supplies timestamps and lease comparisons, converted to UTC. Nil uses
 	// the system clock. Keep this callback nonblocking; transactions call it.
 	Now func() time.Time

@@ -192,7 +192,8 @@ func publicationFixtureWithTracking(t *testing.T, tracked bool) (*fixture, *publ
 	require.NoError(t, err, "%s", out)
 	require.NoError(t, f.repo.Push(t.Context(), git.Push{Remote: remote, Branch: "main", Commit: base}))
 	provider := &publicationForge{f: f, remote: remote}
-	f.engine.Publisher = &publish.Service{Repo: f.repo, Forge: provider, LockDirectory: filepath.Join(t.TempDir(), "locks")}
+	f.engine.Accounts, f.engine.PullRequests = provider, provider
+	f.engine.Publisher = &publish.Service{Repo: f.repo, Accounts: provider, PullRequests: provider, LockDirectory: filepath.Join(t.TempDir(), "locks")}
 	f.engine.Provider = nil
 	return f, provider
 }

@@ -94,7 +94,7 @@ func TestContinuationReadsMasterAndThePullRequestFirst(t *testing.T) {
 	t.Run("an unreachable forge leaves the recorded state, and says so", func(t *testing.T) {
 		t.Parallel()
 		f, _, prior, master := continuationFixture(t, "2")
-		f.engine.Publisher = nil
+		f.engine.Accounts, f.engine.PullRequests = nil, nil
 		_, err := f.engine.CheckContinuation(t.Context(), prior, master, continuationPlatform)
 		require.ErrorIs(t, err, workflow.ErrContinuation)
 		require.Contains(t, err.Error(), "as recorded, not re-checked")

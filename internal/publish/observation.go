@@ -11,14 +11,14 @@ import (
 )
 
 func (s *Service) Observe(ctx context.Context, spec record.PublicationSpec) (forge.PullRequestObservation, error) {
-	if s.Forge.Name() != spec.Forge {
+	if s.Accounts.Name() != spec.Forge {
 		return forge.PullRequestObservation{}, fmt.Errorf("%w: configured forge differs", ErrPrecondition)
 	}
-	head, err := s.Forge.NameFromRemote(spec.PushURL)
+	head, err := s.Accounts.NameFromRemote(spec.PushURL)
 	if err != nil || !strings.EqualFold(head, spec.HeadRepository) {
 		return forge.PullRequestObservation{}, fmt.Errorf("%w: push URL does not identify the selected head repository", ErrPrecondition)
 	}
-	base, err := s.Forge.NameFromRemote(spec.BaseURL)
+	base, err := s.Accounts.NameFromRemote(spec.BaseURL)
 	if err != nil || !strings.EqualFold(base, spec.Repository) {
 		return forge.PullRequestObservation{}, fmt.Errorf("%w: base URL does not identify the selected target repository", ErrPrecondition)
 	}
@@ -27,9 +27,9 @@ func (s *Service) Observe(ctx context.Context, spec record.PublicationSpec) (for
 	}
 	var observed forge.PullRequestObservation
 	if spec.ExpectedPR != nil {
-		observed, err = s.Forge.Observe(ctx, spec.ExpectedPR.Ref)
+		observed, err = s.PullRequests.Observe(ctx, spec.ExpectedPR.Ref)
 	} else {
-		observed, err = s.Forge.Find(ctx, forge.PullRequestQuery{Repository: spec.Repository, HeadRepository: spec.HeadRepository, HeadBranch: spec.HeadBranch, BaseBranch: spec.BaseBranch})
+		observed, err = s.PullRequests.Find(ctx, forge.PullRequestQuery{Repository: spec.Repository, HeadRepository: spec.HeadRepository, HeadBranch: spec.HeadBranch, BaseBranch: spec.BaseBranch})
 	}
 	if err == nil {
 		err = validateObservation(spec, observed)
@@ -80,7 +80,7 @@ func (s *Service) Write(ctx context.Context, action record.PublicationAction) (f
 	input := forge.PullRequestInput{ActionID: action.ID, Repository: spec.Repository, HeadRepository: spec.HeadRepository, HeadBranch: spec.HeadBranch, BaseBranch: spec.BaseBranch, ExpectedRemoteHead: spec.ExpectedRemoteHead, Desired: spec.Desired}
 	if spec.ExpectedPR != nil {
 		input.ExistingPR = &spec.ExpectedPR.Ref
-		return s.Forge.Update(ctx, input)
+		return s.PullRequests.Update(ctx, input)
 	}
-	return s.Forge.Create(ctx, input)
+	return s.PullRequests.Create(ctx, input)
 }

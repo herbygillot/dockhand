@@ -139,7 +139,7 @@ func (e *Engine) settleDueCleanups(ctx context.Context) {
 }
 
 func (e *Engine) deleteForkBranch(ctx context.Context, outcome record.CleanupOutcome, pr record.PullRequest, now time.Time) record.CleanupOutcome {
-	if e.Publisher == nil || e.Publisher.Forge == nil {
+	if e.Accounts == nil {
 		return retention.RetryLater(outcome, "kept; no forge is configured", now)
 	}
 	remotes, err := e.Repo.Remotes(ctx)
@@ -148,7 +148,7 @@ func (e *Engine) deleteForkBranch(ctx context.Context, outcome record.CleanupOut
 	}
 	pushURL := ""
 	for _, remote := range remotes {
-		name, err := e.Publisher.Forge.NameFromRemote(remote.PushURL)
+		name, err := e.Accounts.NameFromRemote(remote.PushURL)
 		if err == nil && strings.EqualFold(name, pr.HeadRepository) {
 			pushURL = remote.PushURL
 			break

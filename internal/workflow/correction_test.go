@@ -187,7 +187,7 @@ func TestChangedCorrectionBuildsAgain(t *testing.T) {
 func TestCorrectionUpdatesExistingPRAndPreservesHumanBody(t *testing.T) {
 	t.Parallel()
 	f, input := correctionFixture(t)
-	hosting := f.engine.Publisher.Forge.(*publicationForge)
+	hosting := f.engine.PullRequests.(*publicationForge)
 	first := submitPublication(t, f, "first-pr")
 	for range 4 {
 		f.run(t, first)

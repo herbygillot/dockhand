@@ -69,14 +69,14 @@ func (c *cycle) advancePublication(ctx context.Context, id record.JobID) (bool, 
 	if action.ID == "" {
 		return c.planPublication(ctx, job)
 	}
-	if e.Publisher == nil || e.Publisher.Repo == nil || e.Publisher.Forge == nil {
+	if e.Publisher == nil || e.Repo == nil {
 		// Another driver may be configured with a publisher, so this backs off rather than settling.
 		err = c.publicationRetry(ctx, job, failuref("publication service is unavailable"))
 		return true, "publication service is unavailable", err
 	}
 	call, cancel := context.WithTimeout(ctx, c.timeouts.Publish)
 	defer cancel()
-	err = e.Publisher.Repo.WithRemoteBranchLock(call, action.Spec.LockDirectory, action.Spec.Forge, action.Spec.HeadRepository, action.Spec.HeadBranch, func(locked context.Context) error {
+	err = e.Repo.WithRemoteBranchLock(call, action.Spec.LockDirectory, action.Spec.Forge, action.Spec.HeadRepository, action.Spec.HeadBranch, func(locked context.Context) error {
 		if err := c.publicationUpdate(locked, job, func(_ state.Tx, current *record.Job, stored *record.PublicationAction) error {
 			action = *stored
 			return nil
