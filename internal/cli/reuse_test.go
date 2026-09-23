@@ -14,12 +14,12 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/record"
-	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/herbygillot/dockhand/internal/state"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/herbygillot/dockhand/internal/verify"
 	providertart "github.com/herbygillot/dockhand/internal/verify/tart"
+	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/stretchr/testify/require"
 )
 
