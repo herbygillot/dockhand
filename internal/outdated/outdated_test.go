@@ -83,3 +83,20 @@ func TestObserveRejectsInvalidSelectionAndCanceledWorkBeforeDependencies(t *test
 	_, err = service.Observe(t.Context(), outdated.Selection{Ports: []string{"fixture"}})
 	require.ErrorContains(t, err, "required")
 }
+
+func TestOutOfDateKeepsOnlyUpdatesAndCountsTheRest(t *testing.T) {
+	t.Parallel()
+	result := outdated.Result{Ports: []outdated.Port{
+		{Selector: "a", Result: upstream.Result{Assessment: upstream.UpdateAvailable}},
+		{Selector: "b", Result: upstream.Result{Assessment: upstream.Current}},
+		{Selector: "c", Result: upstream.Result{Assessment: upstream.Unknown}},
+		{Selector: "d", Result: upstream.Result{Assessment: upstream.Current}},
+	}}
+	report, hidden := result.OutOfDate()
+	require.Len(t, report.Ports, 1)
+	require.Equal(t, "a", report.Ports[0].Selector)
+	require.Equal(t, outdated.Hidden{Current: 2, Unknown: 1}, hidden)
+	require.Equal(t, "Not listed: 2 current, 1 could not be checked; --all lists them.", hidden.Note())
+	require.Empty(t, outdated.Hidden{}.Note())
+	require.Len(t, result.Ports, 4, "the full result is left as it was")
+}

@@ -25,7 +25,7 @@ func TestOutdatedObservesFrozenSourceWithoutStateOrDownloads(t *testing.T) {
 			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0700))
 			require.NoError(t, os.WriteFile(path, []byte("invalid working tree"), 0600))
 			var stdout, stderr bytes.Buffer
-			require.NoError(t, Run(t.Context(), []string{"outdated", "fixture", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), stderr.String())
+			require.NoError(t, Run(t.Context(), []string{"outdated", "fixture", "--all", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), stderr.String())
 			var result outdated.Result
 			decodeResult(t, stdout.Bytes(), &result)
 			require.Len(t, result.Ports, 1)
@@ -50,7 +50,7 @@ func TestOutdatedObservesFrozenSourceWithoutStateOrDownloads(t *testing.T) {
 func TestOutdatedKeepsUnknownAlongsideSuccessfulObservations(t *testing.T) {
 	config, _, _, _ := automaticCLI(t, "1.0")
 	var stdout, stderr bytes.Buffer
-	err := Run(t.Context(), []string{"outdated", "missing", "fixture", "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
+	err := Run(t.Context(), []string{"outdated", "missing", "fixture", "-a", "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
 	require.ErrorContains(t, err, "unknown")
 	var result outdated.Result
 	decodeResult(t, stdout.Bytes(), &result)
@@ -59,6 +59,39 @@ func TestOutdatedKeepsUnknownAlongsideSuccessfulObservations(t *testing.T) {
 	require.NotEmpty(t, result.Ports[0].Detail)
 	require.Equal(t, upstream.UpdateAvailable, result.Ports[1].Assessment)
 	require.NoDirExists(t, filepath.Dir(config.DBPath))
+}
+
+// Unless asked for every port, outdated lists only the ports with an update,
+// and counts the rest after the list; a port that could not be checked is
+// still an error.
+func TestOutdatedListsOnlyWhatIsOutOfDate(t *testing.T) {
+	config, _, _, _ := automaticCLI(t, "1.0")
+	var stdout, stderr bytes.Buffer
+	err := Run(t.Context(), []string{"outdated", "missing", "fixture"}, Streams{Out: &stdout, Err: &stderr}, config)
+	require.ErrorContains(t, err, "unknown")
+	require.Contains(t, stdout.String(), "fixture: update available")
+	require.NotContains(t, stdout.String(), "missing")
+	require.Contains(t, stderr.String(), "Not listed: 1 could not be checked; --all lists them.")
+	stdout.Reset()
+	stderr.Reset()
+	err = Run(t.Context(), []string{"outdated", "missing", "fixture", "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
+	require.ErrorContains(t, err, "unknown")
+	var result outdated.Result
+	decodeResult(t, stdout.Bytes(), &result)
+	require.Len(t, result.Ports, 1)
+	require.Equal(t, "fixture", result.Ports[0].Selector)
+
+	current, _, _, _ := automaticCLI(t, "2.0")
+	stdout.Reset()
+	stderr.Reset()
+	require.NoError(t, Run(t.Context(), []string{"outdated", "fixture"}, Streams{Out: &stdout, Err: &stderr}, current), stderr.String())
+	require.Equal(t, "No updates available.\n", stdout.String())
+	require.Contains(t, stderr.String(), "Not listed: 1 current; --all lists them.")
+	stdout.Reset()
+	stderr.Reset()
+	require.NoError(t, Run(t.Context(), []string{"outdated", "fixture", "-a"}, Streams{Out: &stdout, Err: &stderr}, current), stderr.String())
+	require.Contains(t, stdout.String(), "fixture: current")
+	require.NotContains(t, stderr.String(), "Not listed")
 }
 
 func TestOutdatedSelectionValidation(t *testing.T) {
@@ -98,9 +131,9 @@ func TestOutdatedIndexedSelectionKeepsSourceAndCoverage(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Dir(dirty), 0700))
 	require.NoError(t, os.WriteFile(dirty, []byte("invalid dirty checkout"), 0600))
 	for _, args := range [][]string{
-		{"outdated", "--maintainer", "contributor@github", "--category", "devel", "--json"},
-		{"outdated", "--maintainer", "owner@example.org", "--json"},
-		{"outdated", "--category", "devel", "--category", "devel", "--json"},
+		{"outdated", "--maintainer", "contributor@github", "--category", "devel", "--all", "--json"},
+		{"outdated", "--maintainer", "owner@example.org", "--all", "--json"},
+		{"outdated", "--category", "devel", "--category", "devel", "--all", "--json"},
 	} {
 		var out, stderr bytes.Buffer
 		err := Run(t.Context(), args, Streams{Out: &out, Err: &stderr}, config)

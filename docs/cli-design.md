@@ -415,13 +415,13 @@ The architecture must support these workflows from phase one, even though their 
 
 | Command | Intended behavior |
 | --- | --- |
-| `outdated <port\|selector>` | Report eligible upstream updates, current ports, and unknown results without creating branches or workflow jobs. |
+| `outdated <port\|selector>` | Report eligible upstream updates without creating branches or workflow jobs; `--all` also lists current ports and unknown results. |
 | `rebase <branch>` | Prepare a new revision of the tracked change on the latest fetched upstream base, then request verification by default. |
 | `amend <branch>` | Incorporate explicitly selected corrective edits into the appropriate logical commit, then request verification by default; `--squash` replaces the branch's commits, however many, with one commit of its tree under the pull request's title, and `--edit` opens the message in the editor first. |
 | `verify --branch <branch>` | Use the existing verification workflow to test the selected committed revision after corrections; plain `verify` includes current-checkout edits. |
 | `publish --branch <branch>` | Use the existing publication workflow to update the associated PR with the selected committed revision and applicable evidence. |
 
-`outdated` shares discovery and version assessment with `bump`. Automatic latest-version bumps already skip current ports, so no separate `--outdated` filter is needed. Unknown results remain visible and do not prevent independent known updates from proceeding.
+`outdated` shares discovery and version assessment with `bump`. Automatic latest-version bumps already skip current ports, so no separate `--outdated` filter is needed. It lists only the ports with an update, as `port outdated` does: a list of current ports is noise to someone looking for work. Unknown results remain visible without `--all`, as a count after the list and as the command's error, and do not prevent independent known updates from proceeding; `--all` lists every selected port with its verdict, and the reason for an unknown one. It is `status --all`'s sense of the word, what is hidden by default; `assess --all` selects the whole tree instead, which `outdated` does not offer.
 
 `rebase` and `amend` follow the same `--to verified`, `--unverified`, and `--detach` conventions. `dockhand amend --branch <branch>` incorporates selected corrections, verifies the resulting revision, and updates the existing PR; `--to verified` stops after verification, which never publishes local corrections by itself. Neither command silently includes unrelated working-tree edits.
 
