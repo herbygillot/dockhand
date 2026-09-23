@@ -51,10 +51,9 @@ type Config struct {
 }
 
 type Services struct {
-	Workflow    *workflow.Engine
-	Processes   *proc.Manager
-	Preparation *preparation.Service
-	close       func() error
+	Workflow  *workflow.Engine
+	Processes *proc.Manager
+	close     func() error
 	// providers is the provider choice the bindings resolve builds with.
 	providers         choice.Providers
 	ports             *selection.Reader
@@ -158,7 +157,6 @@ func assemble(config Config, repo *git.Repository, store *sqlite.Store, reposito
 	services := &Services{
 		Workflow:          engine,
 		Processes:         &proc.Manager{},
-		Preparation:       preparation,
 		close:             func() error { return errors.Join(workspaces.Close(), closeStore()) },
 		ports:             ports,
 		providerName:      config.VerificationProvider,

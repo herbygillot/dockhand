@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"github.com/herbygillot/dockhand/internal/macports/dependency"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -119,7 +118,7 @@ type fakeManifests struct {
 func (f *fakeManifests) Manifest(_ context.Context, _ macports.PortInfo, release record.Release, path string) ([]byte, error) {
 	f.calls = append(f.calls, release.Commit+":"+path)
 	if f.missing {
-		return nil, dependency.ErrManifestMissing
+		return nil, macports.ErrManifestMissing
 	}
 	return []byte(f.manifest), nil
 }

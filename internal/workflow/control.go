@@ -27,7 +27,7 @@ func (e *Engine) Control(ctx context.Context, request record.ControlRequest) err
 	if request.Kind != record.Cancel {
 		return fmt.Errorf("%w: control %s", errUnsupportedAction, request.Kind)
 	}
-	if !validToken(string(request.ID)) || len(request.Jobs) == 0 || request.ChangeID != "" || request.ExpectedRevision != "" || !request.SubmittedAt.IsZero() || request.AppliedAt != nil || !utf8.ValidString(request.Reason) {
+	if !validToken(string(request.ID)) || len(request.Jobs) == 0 || !request.SubmittedAt.IsZero() || request.AppliedAt != nil || !utf8.ValidString(request.Reason) {
 		return fmt.Errorf("%w: cancellation requires a request ID and explicit job IDs; timestamps are driver-owned", ErrInvalidRequest)
 	}
 	request.Jobs = slices.Clone(request.Jobs)
@@ -120,7 +120,7 @@ func (e *Engine) ControlContribution(ctx context.Context, request record.Control
 	if request.Kind != record.Cancel {
 		return Scope{}, fmt.Errorf("%w: control %s", errUnsupportedAction, request.Kind)
 	}
-	if !validToken(string(request.ID)) || len(request.Jobs) != 0 || request.ChangeID != "" || request.ExpectedRevision != "" || !request.SubmittedAt.IsZero() || request.AppliedAt != nil || !utf8.ValidString(request.Reason) {
+	if !validToken(string(request.ID)) || len(request.Jobs) != 0 || !request.SubmittedAt.IsZero() || request.AppliedAt != nil || !utf8.ValidString(request.Reason) {
 		return Scope{}, fmt.Errorf("%w: branch cancellation requires a request ID and literal branch; selection and timestamps are driver-owned", ErrInvalidRequest)
 	}
 	var scope Scope

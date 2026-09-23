@@ -41,11 +41,6 @@ const logo = `     _            _    _                     _
  \__,_|\___/ \___|_|\_\_| |_|\__,_|_| |_|\__,_|
 `
 
-func NewRoot(config app.Config) (*cobra.Command, error) {
-	root, _, err := newRoot(config, app.Build)
-	return root, err
-}
-
 func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, *runtime, error) {
 	if config.DependencyTools.Go2Port == "" {
 		config.DependencyTools.Go2Port = os.Getenv("GO2PORT_BIN")
@@ -171,7 +166,7 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, *runtime,
 	root.AddCommand(runtime.contributionCommands()...)
 	root.AddCommand(runtime.adoptCommand())
 	root.AddCommand(runtime.verifyCommand(), runtime.publishCommand())
-	root.AddCommand(runtime.statusCommand(), runtime.consoleCommand(), runtime.waitCommand(), runtime.cancelCommand(), runtime.serveCommand(), runtime.reviewCommand())
+	root.AddCommand(runtime.statusCommand(), runtime.consoleCommand(), runtime.waitCommand(), runtime.cancelCommand(), runtime.serveCommand())
 	groupCommands(root)
 
 	root.InitDefaultHelpCmd()
@@ -210,7 +205,6 @@ var helpGroups = []struct {
 	{"publish", "Verify and publish:", []string{"verify", "publish"}},
 	{"jobs", "Watch and manage jobs:", []string{"status", "console", "wait", "cancel", "serve", "sync", "abandon"}},
 	{"housekeeping", "Housekeeping:", []string{"gc", "db"}},
-	{"planned", "Planned, not implemented yet:", []string{"review"}},
 }
 
 // Help lists commands in group order, never alphabetically. The setting is a

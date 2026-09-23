@@ -3,6 +3,7 @@ package dependency
 import (
 	"context"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"path"
 	"strings"
 )
@@ -22,7 +23,7 @@ func ConfirmSource(ctx context.Context, kind string, in Input, rename bool) erro
 		return err
 	}
 	if !rename && !GOPATHLayout(in.Worksrcdir) && member != path.Join(in.Worksrcdir, name) {
-		return fmt.Errorf("%w: %s does not contain %s/%s", ErrManifestMissing, member, in.Worksrcdir, name)
+		return fmt.Errorf("%w: %s does not contain %s/%s", macports.ErrManifestMissing, member, in.Worksrcdir, name)
 	}
 	return nil
 }

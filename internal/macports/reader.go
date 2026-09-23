@@ -51,12 +51,6 @@ type Batch interface {
 	Close() error
 }
 
-// NativeReader supplies native platform facts for locally selected source trees.
-type NativeReader interface {
-	Reader
-	NativePlatform(context.Context) (record.Platform, error)
-}
-
 // Evaluator is the reader an edit requires: whole and selected-only
 // evaluation, modeled observation of declarations and reads, and interpreter
 // sessions. Every edit is judged across observed contexts, so a reader that

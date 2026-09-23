@@ -12,7 +12,6 @@ import (
 )
 
 var (
-	ErrVersionInput     = version.ErrInput
 	ErrTagPattern       = portsource.ErrTagPattern
 	ErrReleaseMissing   = errors.New("upstream: requested release was not found in the supplied evidence")
 	ErrReleaseAmbiguous = errors.New("upstream: requested version matches multiple releases")

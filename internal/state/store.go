@@ -51,12 +51,6 @@ type Store interface {
 type Query struct {
 	// Target selects contributions by initiating port name.
 	Target string
-	// Newest orders jobs by acceptance time, for bounded recent-work lookup.
-	Newest bool
-	// WithBuild selects non-publication jobs with a concrete verification configuration.
-	WithBuild bool
-	// Action restricts job lookup to one action.
-	Action record.Action
 	Jobs   []record.JobID
 	// ChangeID selects jobs belonging to one tracked change. Only Jobs uses it.
 	ChangeID  record.ChangeID

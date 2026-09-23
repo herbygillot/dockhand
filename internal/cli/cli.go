@@ -77,7 +77,3 @@ func (r *runtime) emit(result any) error {
 	r.outcome = result
 	return nil
 }
-
-func execute(ctx context.Context, command string, args []string, options Options, streams Streams, services *app.Services) error {
-	return errNotImplemented
-}

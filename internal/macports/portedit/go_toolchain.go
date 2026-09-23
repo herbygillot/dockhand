@@ -111,7 +111,7 @@ func (s *Service) goRequirement(ctx context.Context, request Request, info macpo
 			return "", false, nil
 		}
 		data, err := s.Manifests.Manifest(ctx, info, *request.Release, "go.mod")
-		if errors.Is(err, dependency.ErrManifestMissing) {
+		if errors.Is(err, macports.ErrManifestMissing) {
 			return "", false, nil
 		}
 		if err != nil {
@@ -128,7 +128,7 @@ func (s *Service) goRequirement(ctx context.Context, request Request, info macpo
 			continue
 		}
 		data, _, err := dependency.Manifest(ctx, download.Path, info.Options["worksrcdir"], "go.mod")
-		if errors.Is(err, dependency.ErrManifestMissing) {
+		if errors.Is(err, macports.ErrManifestMissing) {
 			continue
 		}
 		if err != nil {

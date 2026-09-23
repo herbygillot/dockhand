@@ -218,22 +218,15 @@ type ControlKind string
 const (
 	// Cancel requests cancellation of the selected jobs.
 	Cancel ControlKind = "cancel"
-	// ReviewAccept records acceptance of a review decision; execution is not yet implemented.
-	ReviewAccept ControlKind = "review-accept"
-	// ReviewDismiss records dismissal of a review decision; execution is not yet implemented.
-	ReviewDismiss ControlKind = "review-dismiss"
 )
 
-// ControlRequest records idempotent control intent for a driver to apply.
-// Current intake supports Cancel with explicit Jobs; review controls are reserved.
+// ControlRequest records idempotent control intent for a driver to apply:
+// a cancellation of explicit jobs.
 type ControlRequest struct {
-	ID   RequestID
-	Kind ControlKind
-	Jobs []JobID
-	// ChangeID and ExpectedRevision are reserved for revision-bound review controls.
-	ChangeID         ChangeID
-	ExpectedRevision RevisionID
-	Reason           string
+	ID     RequestID
+	Kind   ControlKind
+	Jobs   []JobID
+	Reason string
 	// SubmittedAt is assigned by intake when the request is first recorded.
 	SubmittedAt time.Time
 	// AppliedAt means the driver has applied the intent to all selected jobs

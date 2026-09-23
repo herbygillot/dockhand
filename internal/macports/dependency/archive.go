@@ -13,10 +13,6 @@ import (
 
 const maxManifestBytes = 16 << 20
 
-// ErrManifestMissing is macports.ErrManifestMissing, which the forge reader
-// in upstream reports as well.
-var ErrManifestMissing = macports.ErrManifestMissing
-
 // Manifest reads a regular archive member without extracting files onto the host.
 // GOPATHLayout reports whether worksrcdir is the Go PortGroup's default,
 // gopath/src/<go.package>, a post-extract location rather than an archive
@@ -79,7 +75,7 @@ func Manifest(ctx context.Context, filename, worksrcdir, name string) ([]byte, s
 		selected = member
 	}
 	if selected == "" {
-		return nil, "", fmt.Errorf("%w: source archive has no %s for %s", ErrManifestMissing, name, worksrcdir)
+		return nil, "", fmt.Errorf("%w: source archive has no %s for %s", macports.ErrManifestMissing, name, worksrcdir)
 	}
 	return found[selected], selected, nil
 }

@@ -107,7 +107,7 @@ type Service struct {
 }
 
 // ManifestSource reads one file of a port's source repository at the
-// resolved release. An absent file reports dependency.ErrManifestMissing.
+// resolved release. An absent file reports macports.ErrManifestMissing.
 type ManifestSource interface {
 	Manifest(ctx context.Context, port macports.PortInfo, release record.Release, path string) ([]byte, error)
 }

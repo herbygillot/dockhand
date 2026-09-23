@@ -29,7 +29,7 @@ func (t *transaction) Control(ctx context.Context, id record.RequestID) (record.
 	return v, err
 }
 func (t *transaction) PutControl(ctx context.Context, v record.ControlRequest) error {
-	if v.ID == "" || v.Kind != record.Cancel || v.SubmittedAt.IsZero() || len(v.Jobs) == 0 || v.AppliedAt != nil || v.ChangeID != "" || v.ExpectedRevision != "" {
+	if v.ID == "" || v.Kind != record.Cancel || v.SubmittedAt.IsZero() || len(v.Jobs) == 0 || v.AppliedAt != nil {
 		return state.ErrInvalid
 	}
 	jobs := slices.Clone(v.Jobs)

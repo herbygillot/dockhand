@@ -65,7 +65,7 @@ func selectDependencySource(ctx context.Context, info macports.PortInfo, sources
 			return dependency.Input{}, err
 		}
 		err = dependency.ConfirmSource(ctx, plan.Kind, input, rename)
-		if errors.Is(err, dependency.ErrManifestMissing) {
+		if errors.Is(err, macports.ErrManifestMissing) {
 			continue
 		}
 		if err != nil {

@@ -2,6 +2,7 @@ package eval
 
 import (
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"strings"
 	"testing"
 
@@ -335,4 +336,48 @@ func TestParseDefinitionsReadsTheWorkersList(t *testing.T) {
 		"registry_active":      {kind: "command"},
 	}, defs)
 	require.Nil(t, parseDefinitions("{unbalanced"))
+}
+
+// The recognizer's parts, exercised on their own: each parses a wrapped
+// hook and applies one rule, the way classifyHook does in production.
+// A rejection-only hook consists of harmless diagnostic arguments followed by
+// an unconditional error return. The registered Base wrapper must also match.
+func rejectionOnly(hook string) bool {
+	src, commands, ok := parseHook(hook)
+	return ok && rejectionReason(src, commands, nil).text == "" && isRejection(src, commands[len(commands)-1])
+}
+
+// A conditional rejection consists only of if statements whose conditions
+// read variables and whose every branch is a rejection, or is itself such
+// an if: the perl5 PortGroup's required-variant check, for example, or
+// llvm-10's platform check around a host check. Such a hook can fail the
+// fetch but never change what is fetched. Conditions may call the reads in
+// pureConditionCommands, which the compilers PortGroup's Fortran check and
+// the clang ports' runtime check need; any other command substitution, and
+// branches that do anything else, are not recognized.
+func conditionalRejection(hook string) bool {
+	src, commands, ok := parseHook(hook)
+	return ok && conditionalReason(src, commands, nil).text == ""
+}
+
+// The Go PortGroup's compatibility check does not change the fetched archive.
+// Recognize its structure; different commands or substitutions prevent direct
+// archive fetching. MacPorts still runs this check during verification.
+func goToolchainCheck(hook string) bool {
+	src, commands, ok := parseHook(hook)
+	return ok && goToolchainReason(src, commands).text == ""
+}
+
+// parseHook strips the Base wrapper and parses the body a Portfile wrote.
+func parseHook(hook string) ([]byte, []syntax.Command, bool) {
+	body, ok := hookBody(hook)
+	if !ok {
+		return nil, nil, false
+	}
+	src := []byte(body)
+	script, errs := syntax.Parse(src)
+	if len(errs) != 0 {
+		return nil, nil, false
+	}
+	return src, script.Direct(), true
 }

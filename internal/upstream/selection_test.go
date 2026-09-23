@@ -1,6 +1,7 @@
 package upstream_test
 
 import (
+	"github.com/herbygillot/dockhand/internal/macports/version"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -59,6 +60,6 @@ func TestReleaseSelectionDoesNotGuessPastAmbiguousOrMissingEvidence(t *testing.T
 	require.ErrorIs(t, err, upstream.ErrTagPattern)
 	for _, input := range []string{"", "1 2", "1\n", "-option", string([]byte{0xff})} {
 		_, err := upstream.MatchRelease(input, pattern, nil)
-		require.ErrorIs(t, err, upstream.ErrVersionInput)
+		require.ErrorIs(t, err, version.ErrInput)
 	}
 }

@@ -47,9 +47,6 @@ func NewTree(source record.Source, root string, platform record.Platform) (Tree,
 	return NewTreeOver(source, root, root, platform, nil)
 }
 
-// NewTreeOver describes an overlay of a base projection: a root holding the
-// same tree with some files replaced, evaluated by the session bound to the
-// base. The base of a base is itself.
 // NewTreeOver is the tree of a projection, which brings more of the tree
 // when a consumer asks; a nil projection is a complete materialization.
 func NewTreeOver(source record.Source, root, base string, platform record.Platform, projection Projection) (Tree, error) {

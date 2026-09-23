@@ -29,7 +29,6 @@ func TestHelpGroupsCommandsInContributionOrder(t *testing.T) {
 		"Verify and publish:", "verify", "publish",
 		"Watch and manage jobs:", "status", "console", "wait", "cancel", "serve", "sync", "abandon",
 		"Housekeeping:", "gc", "db",
-		"Planned, not implemented yet:", "review",
 	}
 	position := 0
 	for _, token := range expected {

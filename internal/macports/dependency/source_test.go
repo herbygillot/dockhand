@@ -1,6 +1,7 @@
 package dependency
 
 import (
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/stretchr/testify/require"
 	"testing"
 )
@@ -9,7 +10,7 @@ func TestManifestOwnershipHonorsExtractionDirectory(t *testing.T) {
 	t.Parallel()
 	archive := sourceArchive(t, map[string]string{"other/Cargo.lock": "lock", "actual/subdir/Cargo.lock": "nested"})
 	require.NoError(t, ConfirmSource(t.Context(), Cargo, Input{Archive: archive, Worksrcdir: "actual/subdir"}, false))
-	require.ErrorIs(t, ConfirmSource(t.Context(), Cargo, Input{Archive: archive, Worksrcdir: "missing/subdir"}, false), ErrManifestMissing)
+	require.ErrorIs(t, ConfirmSource(t.Context(), Cargo, Input{Archive: archive, Worksrcdir: "missing/subdir"}, false), macports.ErrManifestMissing)
 	require.NoError(t, ConfirmSource(t.Context(), Cargo, Input{Archive: archive, Worksrcdir: "renamed/subdir"}, true))
 	require.Error(t, ConfirmSource(t.Context(), Cargo, Input{Archive: archive, Worksrcdir: "../actual"}, false))
 }
@@ -27,7 +28,7 @@ func TestGOPATHWorksrcdirFindsTheManifestUnderTheArchiveTopDirectory(t *testing.
 	require.Equal(t, "uni-2.10.0/go.mod", member)
 	require.Equal(t, "module zgo.at/uni/v2\n", string(data))
 	_, _, err = Manifest(t.Context(), archive, in.Worksrcdir, "go.work")
-	require.ErrorIs(t, err, ErrManifestMissing)
+	require.ErrorIs(t, err, macports.ErrManifestMissing)
 
 	two := sourceArchive(t, map[string]string{"a-1/go.mod": "module a\n", "b-1/go.mod": "module b\n"})
 	_, _, err = Manifest(t.Context(), two, in.Worksrcdir, "go.mod")

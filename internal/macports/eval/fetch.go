@@ -145,13 +145,6 @@ func classifyHook(info macports.PortInfo, hook string, defs definitions) (guard 
 	return "changes nothing the fetch reads", false, accepted
 }
 
-// A rejection-only hook consists of harmless diagnostic arguments followed by
-// an unconditional error return. The registered Base wrapper must also match.
-func rejectionOnly(hook string) bool {
-	src, commands, ok := parseHook(hook)
-	return ok && rejectionReason(src, commands, nil).text == "" && isRejection(src, commands[len(commands)-1])
-}
-
 // rejectionReason accepts commands that change nothing the fetch reads,
 // diagnostics first among them, followed by an unconditional error,
 // return -code error or Tcl's error with one plain message, or by
@@ -193,20 +186,6 @@ func rejectionReason(src []byte, commands []syntax.Command, defs definitions) re
 	}
 	return accepted
 }
-
-// A conditional rejection consists only of if statements whose conditions
-// read variables and whose every branch is a rejection, or is itself such
-// an if: the perl5 PortGroup's required-variant check, for example, or
-// llvm-10's platform check around a host check. Such a hook can fail the
-// fetch but never change what is fetched. Conditions may call the reads in
-// pureConditionCommands, which the compilers PortGroup's Fortran check and
-// the clang ports' runtime check need; any other command substitution, and
-// branches that do anything else, are not recognized.
-func conditionalRejection(hook string) bool {
-	src, commands, ok := parseHook(hook)
-	return ok && conditionalReason(src, commands, nil).text == ""
-}
-
 func conditionalReason(src []byte, commands []syntax.Command, defs definitions) refusal {
 	if len(commands) == 0 {
 		return refuse(-1, "is empty")
@@ -348,15 +327,6 @@ func hostRead(src []byte, command syntax.Command, allowed func(args []string) bo
 	}
 	return true, allowed(args)
 }
-
-// The Go PortGroup's compatibility check does not change the fetched archive.
-// Recognize its structure; different commands or substitutions prevent direct
-// archive fetching. MacPorts still runs this check during verification.
-func goToolchainCheck(hook string) bool {
-	src, commands, ok := parseHook(hook)
-	return ok && goToolchainReason(src, commands).text == ""
-}
-
 func goToolchainReason(src []byte, commands []syntax.Command) refusal {
 	const known = "differs from the Go PortGroup's toolchain check as dockhand knows it"
 	if len(commands) != 4 || !commands[0].Is(src, "global", "go.toolchain_unmet") || !commands[1].Is(src, "set", "ceiling", "[go_toolchain.ceiling]") {
@@ -410,20 +380,6 @@ func snippet(src []byte, span text.Span) string {
 		line = line[:57] + "..."
 	}
 	return line
-}
-
-// parseHook strips the Base wrapper and parses the body a Portfile wrote.
-func parseHook(hook string) ([]byte, []syntax.Command, bool) {
-	body, ok := hookBody(hook)
-	if !ok {
-		return nil, nil, false
-	}
-	src := []byte(body)
-	script, errs := syntax.Parse(src)
-	if len(errs) != 0 {
-		return nil, nil, false
-	}
-	return src, script.Direct(), true
 }
 
 // parseOrigins reads the worker's origin list: one entry per hook, each a

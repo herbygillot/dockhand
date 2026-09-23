@@ -27,7 +27,6 @@ type PreparationRequest struct {
 	ID                record.RequestID
 	SourceBranch      string
 	SourceURL         string
-	Selection         macports.Selection
 	Destination       record.Destination
 	Verification      record.VerificationPolicy
 	Build             *record.BuildConfig

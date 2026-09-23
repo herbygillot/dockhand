@@ -69,7 +69,7 @@ func (t *transaction) Jobs(ctx context.Context, q state.Query) ([]record.Job, er
 	if err != nil {
 		return nil, err
 	}
-	if q.Branch != "" && q.ChangeID != "" || q.Newest && q.After != "" || q.DueBefore != nil && q.After != "" {
+	if q.Branch != "" && q.ChangeID != "" || q.DueBefore != nil && q.After != "" {
 		return nil, state.ErrInvalid
 	}
 	clause, args := jobFilter("j.id", q.Jobs)
@@ -98,17 +98,7 @@ func (t *transaction) Jobs(ctx context.Context, q state.Query) ([]record.Job, er
 		sql += " AND j.change_id=?"
 		args = append(args, q.ChangeID)
 	}
-	if q.WithBuild {
-		sql += " AND j.action!='publish' AND json_type(j.options,'$.Build')='object'"
-	}
-	if q.Action != "" {
-		sql += " AND j.action=?"
-		args = append(args, q.Action)
-	}
 	order := "j.id"
-	if q.Newest {
-		order = "j.accepted_at DESC,j.rowid DESC"
-	}
 	if q.DueBefore != nil {
 		sql += " AND j.next_action_at IS NOT NULL AND j.next_action_at<=?"
 		args = append(args, q.DueBefore.UnixMilli())

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/scratch"
 	"maps"
 	"os"
@@ -46,7 +47,7 @@ func generateGo(ctx context.Context, executable string, in Input) (GeneratedBloc
 	}
 	if _, _, err := Manifest(ctx, in.Archive, in.Worksrcdir, "go.work"); err == nil {
 		return GeneratedBlocks{}, fmt.Errorf("dependency: Go workspaces require manual preparation")
-	} else if !errors.Is(err, ErrManifestMissing) {
+	} else if !errors.Is(err, macports.ErrManifestMissing) {
 		return GeneratedBlocks{}, err
 	}
 	mod, err := modfile.Parse("go.mod", data, nil)

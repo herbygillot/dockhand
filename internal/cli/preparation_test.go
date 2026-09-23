@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/version"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -18,7 +19,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/record"
-	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
 	"github.com/stretchr/testify/require"
 )
@@ -39,7 +39,7 @@ func TestBumpParsesOptionalVersionWithoutInitializingState(t *testing.T) {
 		require.NotContains(t, err.Error(), "git ")
 	}
 	var out bytes.Buffer
-	require.ErrorIs(t, Run(t.Context(), []string{"bump", "jq", ""}, Streams{Out: &out, Err: &out}, config), upstream.ErrVersionInput)
+	require.ErrorIs(t, Run(t.Context(), []string{"bump", "jq", ""}, Streams{Out: &out, Err: &out}, config), version.ErrInput)
 	require.ErrorContains(t, Run(t.Context(), []string{"bump", "jq", "2", "--dry-run"}, Streams{Out: &out, Err: &out}, config), "git rev-parse")
 	require.NoDirExists(t, filepath.Dir(config.DBPath))
 }
