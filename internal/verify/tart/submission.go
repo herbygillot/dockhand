@@ -32,8 +32,8 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 	if err != nil {
 		return verify.Submission{}, err
 	}
-	defer o.close()
-	previous, err := o.read(ctx, request.ID)
+	defer o.entry.Close()
+	previous, err := o.entry.Read(ctx)
 	if err == nil {
 		if previous.State == record.ExecutionClosed || previous.State == record.ExecutionReleased && len(previous.Result) == 0 {
 			return verify.Submission{}, errClosed
@@ -93,7 +93,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 	if p.Repo == nil {
 		return verify.Submission{}, fmt.Errorf("tart: source repository is required")
 	}
-	prepared, err := os.MkdirTemp(o.pool.Directory, ".preparing-")
+	prepared, err := os.MkdirTemp(o.entry.Pool.Directory, ".preparing-")
 	if err != nil {
 		return verify.Submission{}, err
 	}
@@ -109,13 +109,13 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 		return verify.Submission{}, err
 	}
 	raw, _ := json.Marshal(data)
-	v := record.ProviderExecution{ID: request.ID, RepositoryID: p.Repository, AttemptID: request.AttemptID, Resource: "dockhand2-" + record.Digest([]byte(o.pool.ID + "/" + string(request.ID)))[:24], Payload: raw, State: record.ExecutionReserved, Occupied: true, CreatedAt: time.Now().UTC().Truncate(time.Millisecond)}
+	v := record.ProviderExecution{ID: request.ID, RepositoryID: p.Repository, AttemptID: request.AttemptID, Resource: "dockhand2-" + record.Digest([]byte(o.entry.Pool.ID + "/" + string(request.ID)))[:24], Payload: raw, State: record.ExecutionReserved, Occupied: true, CreatedAt: time.Now().UTC().Truncate(time.Millisecond)}
 	running, err := o.machine.Running(ctx)
 	if err != nil {
 		return verify.Submission{}, err
 	}
-	err = p.State.ProviderUpdate(ctx, o.pool.ID, func(ctx context.Context, tx state.ProviderTx) error {
-		if err := capacityAvailable(ctx, tx, running, o.pool.Capacity); err != nil {
+	err = o.entry.Update(ctx, func(ctx context.Context, tx state.ProviderTx) error {
+		if err := capacityAvailable(ctx, tx, running, o.entry.Pool.Capacity); err != nil {
 			return err
 		}
 		return tx.PutExecution(ctx, v)
@@ -184,7 +184,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 	}
 	// Once launch intent is admitted, recovery completes the same guest launch.
 	v.State = record.ExecutionAdmitted
-	if err = o.put(ctx, v); err != nil {
+	if err = o.entry.Put(ctx, v); err != nil {
 		return uncertain, err
 	}
 	if err = o.removeInput(v); err != nil {

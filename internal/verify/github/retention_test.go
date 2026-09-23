@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/verify/ledger"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/stretchr/testify/require"
 )
@@ -93,7 +94,7 @@ func TestLogCacheRetentionChecksIdentityAgeAndRequestLock(t *testing.T) {
 	name := filepath.Join(f.provider.Directory, record.Digest([]byte(f.request.ID))+".log")
 	old := cutoff.Add(-time.Hour)
 	require.NoError(t, os.Chtimes(name, old, old))
-	lock, err := filelock.Acquire(t.Context(), filepath.Join(f.provider.Directory, record.Digest([]byte(f.request.ID))+".lock"), filelock.Exclusive)
+	lock, err := filelock.Acquire(t.Context(), ledger.LockPath(f.provider.pool(), f.request.ID), filelock.Exclusive)
 	require.NoError(t, err)
 	found, err = f.provider.PruneLogCache(t.Context(), submission.Run, cutoff, false)
 	require.ErrorIs(t, err, verify.ErrCacheBusy, "a held request lock is reported, not silently skipped")

@@ -11,6 +11,7 @@ import (
 	gh "github.com/google/go-github/v91/github"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/verify/ledger"
 	"github.com/herbygillot/dockhand/internal/version"
 )
 
@@ -143,7 +144,7 @@ func (p *Provider) Observe(ctx context.Context, handle record.ProviderRun) (veri
 // Cancel releases this request's tracking, not the shared remote workflow run.
 // A push-triggered run has no exclusive owner or attempt-specific cancellation API.
 func (p *Provider) Cancel(ctx context.Context, handle record.ProviderRun) error {
-	return p.locked(ctx, handle.RequestID, func(ctx context.Context) error {
+	return p.locked(ctx, handle.RequestID, func(ctx context.Context, e *ledger.Entry) error {
 		_, _, row, err := p.execution(ctx, handle)
 		if err != nil {
 			return err
@@ -152,7 +153,7 @@ func (p *Provider) Cancel(ctx context.Context, handle record.ProviderRun) error 
 			return nil
 		}
 		row.State, row.Occupied = record.ExecutionReleased, false
-		return p.put(ctx, row)
+		return e.Put(ctx, row)
 	})
 }
 

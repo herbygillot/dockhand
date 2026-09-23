@@ -14,6 +14,7 @@ import (
 	gh "github.com/google/go-github/v91/github"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/verify/ledger"
 )
 
 // ReadLog serves completed caches without credentials. Missing caches are built
@@ -23,7 +24,7 @@ func (p *Provider) ReadLog(ctx context.Context, handle record.ProviderRun, offse
 	if offset < 0 || limit <= 0 {
 		return result, fmt.Errorf("github verification: invalid log range")
 	}
-	err := p.locked(ctx, handle.RequestID, func(ctx context.Context) error {
+	err := p.locked(ctx, handle.RequestID, func(ctx context.Context, _ *ledger.Entry) error {
 		saved, selected, row, err := p.execution(ctx, handle)
 		if err != nil {
 			return err
@@ -149,17 +150,9 @@ func writeLogFile(ctx context.Context, path string, write func(*os.File) error) 
 }
 
 func readLogChunk(path string, offset int64, limit int) (verify.LogChunk, error) {
-	result := verify.LogChunk{Next: offset}
-	file, err := os.Open(path)
+	data, next, eof, err := ledger.ReadChunk(path, offset, limit)
 	if err != nil {
-		return result, err
+		return verify.LogChunk{Next: offset}, err
 	}
-	defer file.Close()
-	data := make([]byte, limit)
-	count, err := file.ReadAt(data, offset)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return result, err
-	}
-	result.Data, result.Next, result.Complete = data[:count], offset+int64(count), errors.Is(err, io.EOF)
-	return result, nil
+	return verify.LogChunk{Data: data, Next: next, Complete: eof}, nil
 }

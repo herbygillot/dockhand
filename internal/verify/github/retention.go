@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/verify/ledger"
 )
 
 var _ verify.LogCachePruner = (*Provider)(nil)
@@ -40,7 +41,7 @@ func (p *Provider) PruneLogCache(ctx context.Context, run record.ProviderRun, be
 	// The request lock exists once a log was downloaded; without it there is
 	// no cache to prune. Held, a download is in progress and the cache is
 	// left for the next sweep, which the caller is told.
-	lock, err := filelock.TryExisting(ctx, filelock.Path(p.Directory, string(run.RequestID)), filelock.Exclusive)
+	lock, err := filelock.TryExisting(ctx, ledger.LockPath(pool, run.RequestID), filelock.Exclusive)
 	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}

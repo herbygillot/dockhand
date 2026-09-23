@@ -12,7 +12,6 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v91/github"
-	"github.com/herbygillot/dockhand/internal/filelock"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/git/changeset"
@@ -21,6 +20,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/verify/ledger"
 )
 
 type Provider struct {
@@ -53,42 +53,41 @@ func (p *Provider) Capabilities(context.Context) (verify.Capabilities, error) {
 	return verify.Capabilities{Name: verify.ProviderGitHub, Isolated: true}, nil
 }
 
-func (p *Provider) locked(ctx context.Context, id record.RequestID, fn func(context.Context) error) error {
+// locked runs fn with the request's ledger entry open, so its row is read
+// and written under the request's lock.
+func (p *Provider) locked(ctx context.Context, id record.RequestID, fn func(context.Context, *ledger.Entry) error) error {
 	if p.State == nil || p.Repo == nil || p.Repository == "" || !filepath.IsAbs(p.Directory) || id == "" || p.backend == nil && p.Client == nil {
 		return fmt.Errorf("github verification: state, repository, Actions client, and absolute coordination directory are required")
 	}
-	_, err := p.State.RegisterProviderPool(ctx, record.ProviderPool{ID: verify.ProviderGitHub, Scope: verify.ProviderGitHub, Directory: p.Directory, Capacity: 1})
+	entry, err := p.executions().Open(ctx, p.pool(), id)
 	if err != nil {
 		return err
 	}
-	lock, err := filelock.Acquire(ctx, filelock.Path(p.Directory, string(id)), filelock.Exclusive)
-	if err != nil {
-		return err
-	}
-	defer lock.Close()
-	return fn(ctx)
+	defer entry.Close()
+	return fn(ctx, entry)
 }
 
-func (p *Provider) read(ctx context.Context, id record.RequestID) (record.ProviderExecution, error) {
-	var value record.ProviderExecution
-	err := p.State.ProviderView(ctx, verify.ProviderGitHub, func(ctx context.Context, r state.ProviderReader) error {
-		var err error
-		value, err = r.Execution(ctx, id)
-		if err == nil && value.RepositoryID != p.Repository {
-			return state.ErrConflict
-		}
-		return err
-	})
-	return value, err
+// pool is the one execution pool GitHub verification shares: every driver
+// on the same coordination directory takes turns through it.
+func (p *Provider) pool() record.ProviderPool {
+	return record.ProviderPool{ID: verify.ProviderGitHub, Scope: verify.ProviderGitHub, Directory: p.Directory, Capacity: 1}
 }
-func (p *Provider) put(ctx context.Context, value record.ProviderExecution) error {
-	return p.State.ProviderUpdate(ctx, verify.ProviderGitHub, func(ctx context.Context, tx state.ProviderTx) error { return tx.PutExecution(ctx, value) })
+
+// executions is the provider's ledger: its execution rows for the repository.
+func (p *Provider) executions() ledger.Ledger {
+	return ledger.Ledger{Store: p.State, Repository: p.Repository}
+}
+
+// read is the request's row as it stands, for observation and pruning,
+// which take no lock.
+func (p *Provider) read(ctx context.Context, id record.RequestID) (record.ProviderExecution, error) {
+	return p.executions().Read(ctx, verify.ProviderGitHub, id)
 }
 
 func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.Submission, error) {
 	result := verify.Submission{State: verify.SubmissionUncertain}
-	err := p.locked(ctx, request.ID, func(ctx context.Context) error {
-		row, err := p.read(ctx, request.ID)
+	err := p.locked(ctx, request.ID, func(ctx context.Context, e *ledger.Entry) error {
+		row, err := e.Read(ctx)
 		if err == nil {
 			if row.State == record.ExecutionClosed || row.State == record.ExecutionReleased {
 				result, err = rejectedSubmission(row)
@@ -104,7 +103,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 			if !reflect.DeepEqual(saved.Request, request) {
 				return state.ErrConflict
 			}
-			result, err = p.advance(ctx, row)
+			result, err = p.advance(ctx, e, row)
 			return err
 		}
 		if !errors.Is(err, state.ErrNotFound) {
@@ -116,7 +115,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 			if err != nil {
 				return err
 			}
-			return p.put(ctx, record.ProviderExecution{ID: request.ID, RepositoryID: p.Repository, State: record.ExecutionClosed, Result: raw, CreatedAt: time.Now().UTC().Truncate(time.Millisecond)})
+			return e.Put(ctx, record.ProviderExecution{ID: request.ID, RepositoryID: p.Repository, State: record.ExecutionClosed, Result: raw, CreatedAt: time.Now().UTC().Truncate(time.Millisecond)})
 		}
 		preflightError := func(err error) error {
 			if ctx.Err() != nil {
@@ -182,17 +181,17 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 				return err
 			}
 			row = record.ProviderExecution{ID: request.ID, RepositoryID: p.Repository, AttemptID: request.AttemptID, Payload: raw, Resource: string(request.ID), Occupied: true, State: record.ExecutionReserved, CreatedAt: time.Now().UTC().Truncate(time.Millisecond)}
-			if err = p.put(ctx, row); err != nil {
+			if err = e.Put(ctx, row); err != nil {
 				return err
 			}
-			result, err = p.pushAndFind(ctx, row)
+			result, err = p.pushAndFind(ctx, e, row)
 			return err
 		})
 	})
 	return result, err
 }
 
-func (p *Provider) advance(ctx context.Context, row record.ProviderExecution) (verify.Submission, error) {
+func (p *Provider) advance(ctx context.Context, e *ledger.Entry, row record.ProviderExecution) (verify.Submission, error) {
 	if row.State == record.ExecutionAdmitted || row.State == record.ExecutionReleased {
 		return admitted(row)
 	}
@@ -204,13 +203,13 @@ func (p *Provider) advance(ctx context.Context, row record.ProviderExecution) (v
 	var result verify.Submission
 	err := p.Repo.WithRemoteBranchLock(ctx, d.LockDirectory, d.Forge, d.HeadRepository, saved.Request.Spec.PushBranch(), func(ctx context.Context) error {
 		var err error
-		result, err = p.pushAndFind(ctx, row)
+		result, err = p.pushAndFind(ctx, e, row)
 		return err
 	})
 	return result, err
 }
 
-func (p *Provider) pushAndFind(ctx context.Context, row record.ProviderExecution) (verify.Submission, error) {
+func (p *Provider) pushAndFind(ctx context.Context, e *ledger.Entry, row record.ProviderExecution) (verify.Submission, error) {
 	result := verify.Submission{State: verify.SubmissionUncertain, Detail: "Waiting for the fork workflow run to appear"}
 	var saved payload
 	if err := json.Unmarshal(row.Payload, &saved); err != nil {
@@ -260,7 +259,7 @@ func (p *Provider) pushAndFind(ctx context.Context, row record.ProviderExecution
 			return result, err
 		}
 		row.State, row.Occupied = record.ExecutionAdmitted, false
-		if err := p.put(ctx, row); err != nil {
+		if err := e.Put(ctx, row); err != nil {
 			return result, err
 		}
 		return admitted(row)
@@ -328,12 +327,11 @@ func admitted(row record.ProviderExecution) (verify.Submission, error) {
 
 func (p *Provider) Reconcile(ctx context.Context, id record.RequestID, options verify.ReconcileOptions) (verify.Reconciliation, error) {
 	result := verify.Reconciliation{State: verify.RunUnknown}
-	err := p.locked(ctx, id, func(ctx context.Context) error {
-		row, err := p.read(ctx, id)
+	err := p.locked(ctx, id, func(ctx context.Context, e *ledger.Entry) error {
+		row, err := e.Read(ctx)
 		if errors.Is(err, state.ErrNotFound) {
-			err = p.put(ctx, record.ProviderExecution{ID: id, RepositoryID: p.Repository, State: record.ExecutionClosed, CreatedAt: time.Now().UTC().Truncate(time.Millisecond)})
 			result.State = verify.RequestClosed
-			return err
+			return e.CloseUnknown(ctx, time.Now())
 		}
 		if err != nil {
 			return err
@@ -353,14 +351,14 @@ func (p *Provider) Reconcile(ctx context.Context, id record.RequestID, options v
 			// The request lock fences both in-flight and stale Submit calls. A push
 			// already sent may still run remotely; closing tracking cannot undo it.
 			row.State, row.Occupied = record.ExecutionClosed, false
-			if err := p.put(ctx, row); err != nil {
+			if err := e.Put(ctx, row); err != nil {
 				return err
 			}
 			result.State = verify.RequestClosed
 			result.Submission.Detail = "Stopped GitHub submission tracking; any push already sent may still run in Actions"
 			return nil
 		}
-		result.Submission, err = p.advance(ctx, row)
+		result.Submission, err = p.advance(ctx, e, row)
 		if err == nil && result.Submission.State == verify.Admitted {
 			result.State = verify.RunFound
 		}

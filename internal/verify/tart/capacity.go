@@ -11,8 +11,8 @@ func (o *operation) checkCapacity(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return o.provider.State.ProviderView(ctx, o.pool.ID, func(ctx context.Context, r state.ProviderReader) error {
-		return capacityAvailable(ctx, r, running, o.pool.Capacity)
+	return o.entry.View(ctx, func(ctx context.Context, r state.ProviderReader) error {
+		return capacityAvailable(ctx, r, running, o.entry.Pool.Capacity)
 	})
 }
 

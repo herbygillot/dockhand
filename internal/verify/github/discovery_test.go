@@ -12,6 +12,7 @@ import (
 	gh "github.com/google/go-github/v91/github"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/verify/ledger"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/stretchr/testify/require"
 )
@@ -117,8 +118,8 @@ func TestOldMissingRunHasNoAutomaticFailureDeadline(t *testing.T) {
 	raw, err := json.Marshal(payload{Request: f.request, Config: config, Matrix: []string{"macos-14", "macos-15"}})
 	require.NoError(t, err)
 	created := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	require.NoError(t, f.provider.locked(t.Context(), f.request.ID, func(ctx context.Context) error {
-		return f.provider.put(ctx, record.ProviderExecution{ID: f.request.ID, RepositoryID: f.provider.Repository, AttemptID: f.request.AttemptID, Resource: string(f.request.ID), Payload: raw, State: record.ExecutionReserved, Occupied: true, CreatedAt: created})
+	require.NoError(t, f.provider.locked(t.Context(), f.request.ID, func(ctx context.Context, e *ledger.Entry) error {
+		return e.Put(ctx, record.ProviderExecution{ID: f.request.ID, RepositoryID: f.provider.Repository, AttemptID: f.request.AttemptID, Resource: string(f.request.ID), Payload: raw, State: record.ExecutionReserved, Occupied: true, CreatedAt: created})
 	}))
 	result, err := f.provider.Reconcile(t.Context(), f.request.ID, verify.ReconcileOptions{})
 	require.NoError(t, err)

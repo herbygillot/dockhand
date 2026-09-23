@@ -38,6 +38,7 @@ dockhand2/
       staging/           # Immutable indexed source archives
       tart/              # Concrete Tart verification provider
       github/            # Fork Actions verification and SDK adapter
+      ledger/            # The execution ledger both providers keep: one row per request, under its lock
     atomicfile/          # Durable replacement of small local files
     testsupport/         # Helpers that several packages' tests share
     archive/             # Tar and zip member walks without host extraction
@@ -375,7 +376,7 @@ CLI completion reports the verification outcome directly. Reuse explanations rem
 
 ### Verification execution boundaries
 
-`workflow` keeps planning/reuse, due-attempt selection, and result recording in focused files within the same package. `advanceJob` retains the transaction/claim/provider-call sequence; these helpers introduce neither a second scheduler nor a new state owner. Provider calls remain outside write transactions, and recording still checks the claim before adopting results.
+`workflow` keeps planning/reuse, due-attempt selection, and result recording in focused files within the same package. `advanceJob` retains the transaction/claim/provider-call sequence; these helpers introduce neither a second scheduler nor a new state owner. Provider calls remain outside write transactions, and recording still checks the claim before adopting results. `verify/ledger` is the execution ledger both providers keep in the shared store: one row per request, reserved, admitted, closed, or released, read and written under a per-request lock in the pool's directory, with the repository check and the closed row for a request never seen written once. What a provider answers to a closed or released row, and what it keeps in the row's payload and result, stay the provider's own.
 
 ### Human corrections
 

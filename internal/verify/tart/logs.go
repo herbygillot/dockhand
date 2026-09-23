@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/verify/ledger"
 )
 
 func (p *Provider) ReadLog(ctx context.Context, run record.ProviderRun, offset int64, limit int) (verify.LogChunk, error) {
@@ -20,16 +20,10 @@ func (p *Provider) ReadLog(ctx context.Context, run record.ProviderRun, offset i
 	if err != nil {
 		return verify.LogChunk{}, err
 	}
-	defer o.close()
-	file, err := os.Open(filepath.Join(o.directory(v), "build.log"))
+	defer o.entry.Close()
+	data, next, _, err := ledger.ReadChunk(filepath.Join(o.directory(v), "build.log"), offset, limit)
 	if err == nil {
-		defer file.Close()
-		data := make([]byte, limit)
-		n, e := file.ReadAt(data, offset)
-		if e != nil && !errors.Is(e, io.EOF) {
-			return verify.LogChunk{}, e
-		}
-		return verify.LogChunk{Data: data[:n], Next: offset + int64(n), Complete: len(v.Result) > 0 && n < limit}, nil
+		return verify.LogChunk{Data: data, Next: next, Complete: len(v.Result) > 0 && len(data) < limit}, nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
 		return verify.LogChunk{}, err
@@ -43,7 +37,7 @@ func (p *Provider) ReadLog(ctx context.Context, run record.ProviderRun, offset i
 	if !ok {
 		return verify.LogChunk{}, fmt.Errorf("tart: native log reader unavailable")
 	}
-	data, err := reader.ReadLog(ctx, v.Resource, offset, limit)
+	data, err = reader.ReadLog(ctx, v.Resource, offset, limit)
 	return verify.LogChunk{Data: data, Next: offset + int64(len(data))}, err
 }
 func (n *native) ReadLog(ctx context.Context, vm string, offset int64, limit int) ([]byte, error) {

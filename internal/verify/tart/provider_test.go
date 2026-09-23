@@ -315,8 +315,8 @@ func TestIncompatibleImageIsRecordedAndReleasedBeforeStaging(t *testing.T) {
 
 	o, err := f.provider.begin(t.Context(), f.request.ID)
 	require.NoError(t, err)
-	execution, err := o.read(t.Context(), f.request.ID)
-	o.close()
+	execution, err := o.entry.Read(t.Context())
+	o.entry.Close()
 	require.NoError(t, err)
 	require.False(t, execution.Occupied)
 }
@@ -424,8 +424,8 @@ func TestCancellationDoesNotFreeCapacityUntilStopped(t *testing.T) {
 	require.Error(t, f.provider.Cancel(t.Context(), result.Run))
 	o, err := f.provider.begin(t.Context(), f.request.ID)
 	require.NoError(t, err)
-	v, err := o.read(t.Context(), f.request.ID)
-	o.close()
+	v, err := o.entry.Read(t.Context())
+	o.entry.Close()
 	require.NoError(t, err)
 	require.True(t, v.Occupied)
 	m.stopError = nil

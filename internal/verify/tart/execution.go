@@ -7,10 +7,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/herbygillot/dockhand/internal/filelock"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/verify/ledger"
 )
 
 func (p *Provider) begin(ctx context.Context, id record.RequestID) (*operation, error) {
@@ -37,31 +37,16 @@ func (p *Provider) beginWith(ctx context.Context, id record.RequestID, config Co
 			return nil, e
 		}
 	}
-	pool, err = p.State.RegisterProviderPool(ctx, pool)
+	entry, err := p.executions().Open(ctx, pool, id)
 	if err != nil {
 		return nil, err
 	}
-	lock, err := filelock.Acquire(ctx, filelock.Path(filepath.Join(pool.Directory, "locks"), string(id)), filelock.Exclusive)
-	if err != nil {
-		return nil, err
-	}
-	return &operation{provider: p, config: c, pool: pool, lock: lock, machine: p.machineFor(c, lock)}, nil
+	return &operation{provider: p, config: c, entry: entry, machine: p.machineFor(c, entry.Lock)}, nil
 }
-func (o *operation) close() { _ = o.lock.Close() }
-func (o *operation) read(ctx context.Context, id record.RequestID) (record.ProviderExecution, error) {
-	var v record.ProviderExecution
-	err := o.provider.State.ProviderView(ctx, o.pool.ID, func(ctx context.Context, r state.ProviderReader) error {
-		var err error
-		v, err = r.Execution(ctx, id)
-		return err
-	})
-	if err == nil && v.RepositoryID != o.provider.Repository {
-		return record.ProviderExecution{}, state.ErrConflict
-	}
-	return v, err
-}
-func (o *operation) put(ctx context.Context, v record.ProviderExecution) error {
-	return o.provider.State.ProviderUpdate(ctx, o.pool.ID, func(ctx context.Context, tx state.ProviderTx) error { return tx.PutExecution(ctx, v) })
+
+// executions is the provider's ledger: its execution rows for the repository.
+func (p *Provider) executions() ledger.Ledger {
+	return ledger.Ledger{Store: p.State, Repository: p.Repository}
 }
 func (o *operation) restore(v record.ProviderExecution) (payload, error) {
 	var data payload
@@ -72,11 +57,11 @@ func (o *operation) restore(v record.ProviderExecution) (payload, error) {
 		return data, state.ErrConflict
 	}
 	o.config = data.Config
-	o.machine = o.provider.machineFor(data.Config, o.lock)
+	o.machine = o.provider.machineFor(data.Config, o.entry.Lock)
 	return data, nil
 }
 func (o *operation) directory(v record.ProviderExecution) string {
-	return filepath.Join(o.pool.Directory, v.Resource)
+	return filepath.Join(o.entry.Pool.Directory, v.Resource)
 }
 func submission(v record.ProviderExecution, status verify.SubmissionState) verify.Submission {
 	result := verify.Submission{State: status}
@@ -97,7 +82,7 @@ func (p *Provider) openRun(ctx context.Context, run record.ProviderRun) (*operat
 	if err != nil {
 		return nil, record.ProviderExecution{}, payload{}, err
 	}
-	v, err := o.read(ctx, run.RequestID)
+	v, err := o.entry.Read(ctx)
 	if err == nil && (v.Resource != run.RunID || (v.State != record.ExecutionAdmitted && v.State != record.ExecutionReleased)) {
 		err = state.ErrConflict
 	}
@@ -106,7 +91,7 @@ func (p *Provider) openRun(ctx context.Context, run record.ProviderRun) (*operat
 		data, err = o.restore(v)
 	}
 	if err != nil {
-		o.close()
+		o.entry.Close()
 		return nil, v, data, err
 	}
 	return o, v, data, nil
@@ -143,7 +128,6 @@ type payload struct {
 type operation struct {
 	provider *Provider
 	config   Config
-	pool     record.ProviderPool
-	lock     *os.File
+	entry    *ledger.Entry
 	machine  machine
 }

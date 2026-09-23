@@ -21,7 +21,7 @@ func (p *Provider) Observe(ctx context.Context, run record.ProviderRun) (verify.
 	if err != nil {
 		return verify.Observation{}, err
 	}
-	defer o.close()
+	defer o.entry.Close()
 	return o.observe(ctx, v, data)
 }
 
@@ -122,7 +122,7 @@ func (o *operation) finish(ctx context.Context, v record.ProviderExecution, resu
 	}
 	v.Result = data
 	v.Occupied = false
-	if err = o.put(ctx, v); err != nil {
+	if err = o.entry.Put(ctx, v); err != nil {
 		return verify.Observation{}, err
 	}
 	return result, nil

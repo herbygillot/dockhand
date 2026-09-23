@@ -17,12 +17,10 @@ func (p *Provider) Reconcile(ctx context.Context, id record.RequestID, _ verify.
 	if err != nil {
 		return verify.Reconciliation{}, err
 	}
-	defer o.close()
-	v, err := o.read(ctx, id)
+	defer o.entry.Close()
+	v, err := o.entry.Read(ctx)
 	if errors.Is(err, state.ErrNotFound) {
-		v = record.ProviderExecution{ID: id, RepositoryID: p.Repository, State: record.ExecutionClosed, CreatedAt: time.Now().UTC().Truncate(time.Millisecond)}
-		err = o.put(ctx, v)
-		return verify.Reconciliation{State: verify.RequestClosed}, err
+		return verify.Reconciliation{State: verify.RequestClosed}, o.entry.CloseUnknown(ctx, time.Now())
 	}
 	if err != nil {
 		return verify.Reconciliation{}, err
@@ -47,7 +45,7 @@ func (p *Provider) Reconcile(ctx context.Context, id record.RequestID, _ verify.
 			return verify.Reconciliation{State: verify.RunUnknown}, err
 		}
 		v.State, v.Occupied = record.ExecutionClosed, false
-		if err = o.put(ctx, v); err != nil {
+		if err = o.entry.Put(ctx, v); err != nil {
 			return verify.Reconciliation{State: verify.RunUnknown}, err
 		}
 	}
@@ -59,7 +57,7 @@ func (p *Provider) Cancel(ctx context.Context, run record.ProviderRun) error {
 	if err != nil {
 		return err
 	}
-	defer o.close()
+	defer o.entry.Close()
 	if len(v.Result) > 0 {
 		return nil
 	}
@@ -93,8 +91,8 @@ func (p *Provider) Release(ctx context.Context, handle record.ResourceHandle) (v
 	if err != nil {
 		return verify.ReleaseResult{}, err
 	}
-	defer o.close()
-	v, err := o.read(ctx, record.RequestID(handle.ID))
+	defer o.entry.Close()
+	v, err := o.entry.Read(ctx)
 	if err != nil {
 		return verify.ReleaseResult{}, err
 	}
@@ -119,7 +117,7 @@ func (p *Provider) Release(ctx context.Context, handle record.ResourceHandle) (v
 		}
 	}
 	v.State, v.Occupied = record.ExecutionReleased, false
-	if err = o.put(ctx, v); err != nil {
+	if err = o.entry.Put(ctx, v); err != nil {
 		return verify.ReleaseResult{}, err
 	}
 	return verify.ReleaseResult{Confirmed: true}, nil
