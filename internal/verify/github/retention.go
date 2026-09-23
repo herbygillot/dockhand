@@ -40,8 +40,13 @@ func (p *Provider) PruneLogCache(ctx context.Context, run record.ProviderRun, be
 	}
 	// The request lock exists once a log was downloaded; without it there is
 	// no cache to prune. Held, a download is in progress and the cache is
-	// left for the next sweep, which the caller is told.
+	// left for the next sweep, which the caller is told. A cache downloaded
+	// before the ledger kept its locks under locks/ has its lock beside it,
+	// and nothing takes the new one for a finished request.
 	lock, err := filelock.TryExisting(ctx, ledger.LockPath(pool, run.RequestID), filelock.Exclusive)
+	if errors.Is(err, os.ErrNotExist) {
+		lock, err = filelock.TryExisting(ctx, filelock.Path(p.Directory, string(run.RequestID)), filelock.Exclusive)
+	}
 	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
