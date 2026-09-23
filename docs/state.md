@@ -238,7 +238,7 @@ Publication confirmation records the action, job, PR association, and published 
 
 ## Explicit workflow phase (schema 9)
 
-`jobs.phase` records whether preparation, verification, or publication owns the next transition. It is durable progression state rather than accepted intent. New jobs receive their initial phase during intake. A continuing preparation job advances to verification when branch integration and its result revision commit; a combined job advances to publication when passing or reused evidence commits. Phase movement is monotonic, and terminal jobs retain their last phase for diagnosis.
+`jobs.phase` records whether preparation, verification, or publication owns the next transition. It is durable progression state rather than accepted intent. New jobs receive their initial phase during intake. A continuing preparation job advances to verification when branch integration and its result revision commit; a combined job advances to publication when passing or reused evidence commits. Which phase follows is `record.JobPhase.Next` of the job's spec; the store refuses any other step, so phase movement is monotonic, and terminal jobs retain their last phase for diagnosis.
 
 Migration 9 derives existing phases from the immutable action and destination plus established checkpoints. Bump work without a result revision and branch-ready bump results remain in preparation. Standalone publication and combined jobs with established passing evidence or a publication action enter publication. Other existing jobs enter verification. The ordered migration registry requires contiguous versions and applies every missing migration inside the existing initialization transaction, preventing a new schema step from being omitted from one upgrade path.
 

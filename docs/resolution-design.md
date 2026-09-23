@@ -170,8 +170,8 @@ func (e *Engine) Resolve(ctx context.Context, request ResolutionRequest) (Resolu
 ```
 
 The engine fetches master itself when a resolution needs it, through its
-repository and the ports repository constants, as `app.preparationSource`
-does today; `Offline` is the only control, and it is a refusal, not a
+repository and the ports repository constants, through `Engine.FetchMaster`,
+which adoption calls too; `Offline` is the only control, and it is a refusal, not a
 degradation. The degraded path is a fetch that was attempted and failed.
 
 The steps, in the order `app.BindPreparation` takes them today, with
