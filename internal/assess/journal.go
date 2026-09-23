@@ -92,13 +92,6 @@ func (j *Journal) Has(selector string) bool {
 	return j.done[selector]
 }
 
-// Held is how many ports the journal holds.
-func (j *Journal) Held() int {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	return len(j.done)
-}
-
 // Record appends one assessed port.
 func (j *Journal) Record(port Port) error {
 	j.mu.Lock()

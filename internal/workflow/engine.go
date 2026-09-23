@@ -139,13 +139,6 @@ func (e *Engine) requireRepository(ctx context.Context, scope string) error {
 	return nil
 }
 
-// publicationDestination resolves where a publication would go, after the
-// publisher's preflight, within the publication timeout. It is the intake
-// step every bind that can publish shares.
-func (e *Engine) publicationDestination(ctx context.Context, options publish.Options) (record.PublicationDestination, error) {
-	return e.publicationDestinationFor(ctx, nil, options)
-}
-
 // publicationDestinationFor resolves where a publication goes: the attached
 // pull request's fork and base when there is one, the checkout's remotes
 // otherwise.

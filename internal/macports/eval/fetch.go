@@ -285,15 +285,6 @@ var hostReadCommands = map[string]func(args []string) bool{
 	"info":   func(args []string) bool { return len(args) == 2 && args[0] == "exists" },
 }
 
-// pureCondition accepts a condition whose command substitutions, if any, are
-// all pure variant queries with literal arguments, or host reads with plain
-// arguments. A condition that does not parse as an expression, a call to
-// anything else, an argument the rule does not allow, and a nested
-// substitution are refused.
-func pureCondition(src []byte, body text.Span) bool {
-	return pureConditionReason(src, body, nil).text == ""
-}
-
 func pureConditionReason(src []byte, body text.Span, defs definitions) refusal {
 	e, errs := syntax.ParseExpr(src, body)
 	if len(errs) != 0 {

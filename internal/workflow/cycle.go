@@ -250,9 +250,6 @@ func (c *cycle) providerReady(config record.BuildConfig, submitting bool) error 
 	return nil
 }
 
-// due treats a missing retry time as immediately eligible.
-func due(retry *time.Time, now time.Time) bool { return retry == nil || !retry.After(now) }
-
 // claim advances a record's generation and creates a lease within the caller's
 // transaction. The record must retain that generation after its claim is cleared
 // so that a later claim by the same owner cannot accept an older result.
