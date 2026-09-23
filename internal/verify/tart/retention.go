@@ -33,7 +33,7 @@ func (p *Provider) PruneArtifacts(ctx context.Context, handle record.ResourceHan
 	if v.Resource == "" {
 		return nil
 	}
-	expected := "dockhand2-" + digest([]byte(o.pool.ID + "/" + string(v.ID)))[:24]
+	expected := "dockhand2-" + record.Digest([]byte(o.pool.ID + "/" + string(v.ID)))[:24]
 	if v.Resource != expected {
 		return fmt.Errorf("tart: unexpected resource directory")
 	}
@@ -72,7 +72,7 @@ func (p *Provider) PruneArtifacts(ctx context.Context, handle record.ResourceHan
 // removeInput discards the host transfer copy under the submission lock. The
 // guest owns its staged source after admission; retries never restage it.
 func (o *operation) removeInput(v record.ProviderExecution) error {
-	if v.Resource != "dockhand2-"+digest([]byte(o.pool.ID + "/" + string(v.ID)))[:24] {
+	if v.Resource != "dockhand2-"+record.Digest([]byte(o.pool.ID + "/" + string(v.ID)))[:24] {
 		return fmt.Errorf("tart: unexpected resource directory")
 	}
 	root, err := os.OpenRoot(o.pool.Directory)

@@ -42,10 +42,10 @@ type ChecksumWords struct {
 }
 
 func (c Checksum) modern() []string {
-	values := map[string]string{"rmd160": c.RMD160, "sha256": c.SHA256, "size": strconv.FormatInt(c.Size, 10)}
 	var out []string
 	for _, kind := range ModernChecksumKinds {
-		out = append(out, kind, values[kind])
+		value, _ := c.Value(kind)
+		out = append(out, kind, value)
 	}
 	return out
 }
@@ -96,6 +96,31 @@ var ErrUnsupported = errors.New("portfile: unsupported source edit")
 type Checksum struct {
 	Name, SHA256, RMD160 string
 	// MD5 and SHA1 are written only into a legacy group kept as written.
-	MD5, SHA1 string
+	MD5, SHA1 string `json:",omitempty"`
 	Size      int64
+}
+
+// Value is the checksum's value for one algorithm as a Portfile writes
+// it, and false for a word that names no algorithm. The five it knows are
+// the checksum vocabulary: the modern three and the two legacy digests.
+func (c Checksum) Value(kind string) (string, bool) {
+	switch kind {
+	case "rmd160":
+		return c.RMD160, true
+	case "sha256":
+		return c.SHA256, true
+	case "size":
+		return strconv.FormatInt(c.Size, 10), true
+	case "md5":
+		return c.MD5, true
+	case "sha1":
+		return c.SHA1, true
+	}
+	return "", false
+}
+
+// IsChecksumKind reports whether the word names a checksum algorithm.
+func IsChecksumKind(kind string) bool {
+	_, ok := Checksum{}.Value(kind)
+	return ok
 }

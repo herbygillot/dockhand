@@ -621,7 +621,7 @@ func TestSourcePreparationBeforeReservation(t *testing.T) {
 				require.Zero(t, m.calls["start"])
 				o, err := f.provider.settings()
 				require.NoError(t, err)
-				require.NoError(t, f.store.ProviderView(ctx, "tart_"+digest([]byte(o.Home)), func(ctx context.Context, r state.ProviderReader) error {
+				require.NoError(t, f.store.ProviderView(ctx, "tart_"+record.Digest([]byte(o.Home)), func(ctx context.Context, r state.ProviderReader) error {
 					occupied, err := r.Occupied(ctx)
 					require.NoError(t, err)
 					require.Empty(t, occupied)

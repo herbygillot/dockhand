@@ -22,15 +22,13 @@ import (
 	"golang.org/x/crypto/ripemd160"
 )
 
-// Download is one fetched archive: its hashes, and the path of its kept
-// bytes when the store kept them.
+// Download is one fetched archive: what its bytes hashed to, under the
+// archive's name, and the path of the kept bytes when the store kept them.
 type Download struct {
 	// Path is the kept file, empty when only the hashes were wanted.
-	Path                      string `json:"-"`
-	Name, URL, SHA256, RMD160 string
-	// MD5 and SHA1 serve only a legacy group kept on request.
-	MD5, SHA1 string `json:",omitempty"`
-	Size      int64
+	Path string `json:"-"`
+	URL  string
+	portfile.Checksum
 }
 
 // Source is one declared distfile and the single direct location it is
@@ -218,7 +216,7 @@ func (c Client) download(ctx context.Context, info macports.PortInfo, source Sou
 	if size == 0 {
 		return Download{}, fail(errors.New("the server sent an empty file"))
 	}
-	return Download{Name: name, URL: address, SHA256: fmt.Sprintf("%x", sha.Sum(nil)), RMD160: fmt.Sprintf("%x", rmd.Sum(nil)), MD5: fmt.Sprintf("%x", md.Sum(nil)), SHA1: fmt.Sprintf("%x", sha1sum.Sum(nil)), Size: size}, nil
+	return Download{URL: address, Checksum: portfile.Checksum{Name: name, SHA256: fmt.Sprintf("%x", sha.Sum(nil)), RMD160: fmt.Sprintf("%x", rmd.Sum(nil)), MD5: fmt.Sprintf("%x", md.Sum(nil)), SHA1: fmt.Sprintf("%x", sha1sum.Sum(nil)), Size: size}}, nil
 }
 
 var errHTMLPage = errors.New("the server sent an HTML page instead of the file")

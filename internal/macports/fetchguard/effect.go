@@ -255,33 +255,39 @@ func ifReason(src []byte, command syntax.Command, defs Definitions, depth int) r
 // harmless, and their bodies harmless scripts.
 func loopReason(src []byte, command syntax.Command, defs Definitions, depth int) refusal {
 	name, _ := command.Name(src)
-	words := command.Words
-	var scripts, values []syntax.Word
-	var variables []syntax.Word
+	controls, scripts, ok := command.Control(src)
+	if !ok {
+		return refuse(command.Span.Start, "is a %s the grammar cannot read", name)
+	}
+	// The syntax package separates the words that run as scripts from the
+	// ones that select. Which selecting words a loop binds is the
+	// command's own shape: every other word of a foreach, and a catch's
+	// result variables, which run nothing and so are not controls.
+	var variables, values []syntax.Word
 	switch name {
 	case "foreach":
-		if len(words) < 4 || len(words)%2 != 0 {
+		if len(controls) < 2 || len(controls)%2 != 0 {
 			return refuse(command.Span.Start, "is a %s the grammar cannot read", name)
 		}
-		for i := 1; i+1 < len(words)-1; i += 2 {
-			variables, values = append(variables, words[i]), append(values, words[i+1])
+		for i, control := range controls {
+			if i%2 == 0 {
+				variables = append(variables, control)
+			} else {
+				values = append(values, control)
+			}
 		}
-		scripts = words[len(words)-1:]
 	case "while":
-		if len(words) != 3 {
+		if len(controls) != 1 {
 			return refuse(command.Span.Start, "is a %s the grammar cannot read", name)
 		}
-		values, scripts = words[1:2], words[2:]
+		values = controls
 	case "for":
-		if len(words) != 5 {
-			return refuse(command.Span.Start, "is a %s the grammar cannot read", name)
-		}
-		scripts, values = []syntax.Word{words[1], words[3], words[4]}, words[2:3]
+		values = controls
 	case "catch":
-		if len(words) < 2 || len(words) > 4 {
+		if len(command.Words) > 4 {
 			return refuse(command.Span.Start, "is a %s the grammar cannot read", name)
 		}
-		scripts, variables = words[1:2], words[2:]
+		variables = command.Words[2:]
 	}
 	for _, variable := range variables {
 		names, ok := variable.Literal(src)
@@ -328,50 +334,23 @@ func loopReason(src []byte, command syntax.Command, defs Definitions, depth int)
 	return accepted
 }
 
-// switchReason judges a switch: its options are literal, the string it
-// switches on is a harmless argument, and every body in its braced list of
-// patterns and bodies is a harmless script.
+// switchReason judges a switch: its options, the string it switches on,
+// and its patterns are harmless arguments, and every body is a harmless
+// script. The syntax package reads the arms, braced as one list or bare.
 func switchReason(src []byte, command syntax.Command, defs Definitions, depth int) refusal {
-	words := command.Words[1:]
-	for len(words) > 0 {
-		option, ok := words[0].Literal(src)
-		if !ok || !strings.HasPrefix(option, "-") {
-			break
-		}
-		words = words[1:]
-		if option == "--" {
-			break
-		}
-	}
-	if len(words) != 2 {
-		return refuse(command.Span.Start, "is a switch the grammar cannot read")
-	}
-	if refused := argumentsReason(src, words[:1], defs, depth); refused.text != "" {
-		return refused
-	}
-	// The braced list of patterns and bodies reads as a script whose
-	// commands are pattern-body pairs, however many share a line.
-	block, ok := words[1].BracedScript(src)
+	controls, bodies, ok := command.Control(src)
 	if !ok {
 		return refuse(command.Span.Start, "is a switch the grammar cannot read")
 	}
-	var pairs []syntax.Word
-	for _, entry := range block.Direct() {
-		pairs = append(pairs, entry.Words...)
+	if refused := argumentsReason(src, controls, defs, depth); refused.text != "" {
+		return refused
 	}
-	if len(pairs)%2 != 0 {
-		return refuse(command.Span.Start, "is a switch the grammar cannot read")
-	}
-	for i := 1; i < len(pairs); i += 2 {
-		// A body of "-" falls through to the next; anything else is a script.
-		if literal, ok := pairs[i].Literal(src); ok && literal == "-" {
-			continue
-		}
-		body, ok := pairs[i].BracedScript(src)
+	for _, body := range bodies {
+		block, ok := body.BracedScript(src)
 		if !ok {
-			return refuse(pairs[i].Span.Start, "is a switch the grammar cannot read")
+			return refuse(body.Span.Start, "is a switch the grammar cannot read")
 		}
-		if refused := scriptReason(src, body.Direct(), defs, depth, ""); refused.text != "" {
+		if refused := scriptReason(src, block.Direct(), defs, depth, ""); refused.text != "" {
 			return refused
 		}
 	}

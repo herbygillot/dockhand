@@ -60,7 +60,7 @@ func (p *Provider) PruneLogCache(ctx context.Context, run record.ProviderRun, be
 	if err != nil {
 		return false, err
 	}
-	prefix := digest([]byte(run.RequestID)) + ".log"
+	prefix := record.Digest([]byte(run.RequestID)) + ".log"
 	var remove []string
 	for _, entry := range names {
 		name := entry.Name()

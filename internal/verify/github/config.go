@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -41,7 +40,7 @@ func buildConfig(platform record.Platform, config Config, needsXcode bool) (reco
 		return record.BuildConfig{}, err
 	}
 	// The workflow controls mutable hosted runners. This identifies the recipe, not a VM image.
-	return record.BuildConfig{Provider: verify.ProviderGitHub, Platform: platform, EnvironmentDigest: "workflow:" + digest(raw), VerifierDigest: "github-workflow-v2", ProviderConfig: raw, Tests: record.TestWorkflow, NeedsXcode: needsXcode}, nil
+	return record.BuildConfig{Provider: verify.ProviderGitHub, Platform: platform, EnvironmentDigest: "workflow:" + record.Digest(raw), VerifierDigest: "github-workflow-v2", ProviderConfig: raw, Tests: record.TestWorkflow, NeedsXcode: needsXcode}, nil
 }
 
 func (c Config) validate() error {
@@ -51,8 +50,6 @@ func (c Config) validate() error {
 	}
 	return nil
 }
-
-func digest(raw []byte) string { return fmt.Sprintf("%x", sha256.Sum256(raw)) }
 
 // Configure observes the supported fork workflow and freezes its identity.
 func Configure(ctx context.Context, client *githubapi.Client, platform record.Platform, destination record.PublicationDestination, needsXcode bool) (record.BuildConfig, error) {

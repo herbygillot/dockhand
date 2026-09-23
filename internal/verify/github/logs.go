@@ -32,7 +32,7 @@ func (p *Provider) ReadLog(ctx context.Context, handle record.ProviderRun, offse
 			result.Complete = true
 			return nil
 		}
-		name := filepath.Join(p.Directory, digest([]byte(handle.RequestID))+".log")
+		name := filepath.Join(p.Directory, record.Digest([]byte(handle.RequestID))+".log")
 		if _, err := os.Stat(name); errors.Is(err, os.ErrNotExist) {
 			ready, err := p.cacheLogs(ctx, saved, selected, name)
 			if err != nil || !ready {

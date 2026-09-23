@@ -214,6 +214,45 @@ func TestGrammarExtensionsOnlyAdmitRejections(t *testing.T) {
 	}
 }
 
+// The switch and loop readers take their shape from syntax.Command.Control:
+// a switch's arms may be one braced list or bare words and its patterns are
+// judged as arguments; a loop is refused when the syntax cannot read it.
+func TestControlStructuresAreReadThroughSyntax(t *testing.T) {
+	t.Parallel()
+	wrapper := "global {*}[info globals]\n"
+	plain := macports.PortInfo{Options: map[string]string{}}
+	for name, hook := range map[string]string{
+		"switch with a braced list":           wrapper + "switch ${os.major} {\n    10 { return -code error no }\n    default { ui_error fine }\n}\n",
+		"switch with bare arms":               wrapper + "switch -- ${os.major} 10 { return -code error no } default { ui_error fine }\n",
+		"switch falling through":              wrapper + "switch ${os.major} {\n    9 -\n    10 { error no }\n}\n",
+		"foreach with a braced variable list": wrapper + "foreach {a b} {1 2 3 4} { if {$a eq $b} { error no } }\n",
+		"for":                                 wrapper + "for {set i 0} {$i < 3} {incr i} { if {$i == 2} { error no } }\n",
+		"catch with a result variable":        wrapper + "if {[catch {ui_error x} result]} { error no }\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			semantics := Assess(plain, "portfetch::fetch_main", "{"+hook+"}", "", nil, nil)
+			require.Empty(t, semantics.Problem)
+			require.Equal(t, "guarded", semantics.Kind)
+		})
+	}
+	for name, hook := range map[string]string{
+		"switch pattern that writes":    wrapper + "switch ${os.major} [set distfiles x] { error no }\n",
+		"switch without arms":           wrapper + "switch ${os.major}\n",
+		"switch pattern without a body": wrapper + "switch ${os.major} {10 { error no } 11}\n",
+		"foreach with an unpaired word": wrapper + "foreach a {1 2} b { error no }\n",
+		"while with two conditions":     wrapper + "while {1} {0} { error no }\n",
+		"catch with too many words":     wrapper + "catch {error no} a b c\n",
+		"catch into a fetch input":      wrapper + "catch {ui_error x} distfiles\n",
+		"foreach over a fetch input":    wrapper + "foreach master_sites {a b} { error no }\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			semantics := Assess(plain, "portfetch::fetch_main", "{"+hook+"}", "", nil, nil)
+			require.NotEmpty(t, semantics.Problem)
+			require.Equal(t, "custom", semantics.Kind)
+		})
+	}
+}
+
 // The effect rule: a command the grammar's own rules do not name is judged
 // by what it does to the fetch, a procedure by its body as the worker
 // shipped it. A write to a fetch option is refused wherever it hides; a

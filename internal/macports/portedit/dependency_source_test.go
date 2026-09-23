@@ -9,6 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,7 +25,7 @@ func TestManifestSourceAmbiguityAndAbsence(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, writer.Close())
 		require.NoError(t, f.Close())
-		return archives.Download{Name: name, Path: filename}
+		return archives.Download{Path: filename, Checksum: portfile.Checksum{Name: name}}
 	}
 	info := macports.PortInfo{Options: map[string]string{"worksrcdir": "root", "extract.rename": "no"}}
 	sources := []archives.Source{{Name: "source.tar"}, {Name: "auxiliary.tar"}}

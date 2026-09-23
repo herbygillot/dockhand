@@ -43,7 +43,7 @@ func observedCapabilityIdentity(protocol int, capabilities record.EnvironmentCap
 		Protocol     int
 		Capabilities record.EnvironmentCapabilities
 	}{protocol, capabilities})
-	return "sha256:" + digest(raw)
+	return "sha256:" + record.Digest(raw)
 }
 
 func environmentEvidence(value state.ImageCapabilities) *record.EnvironmentEvidence {

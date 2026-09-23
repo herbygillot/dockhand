@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	gh "github.com/google/go-github/v91/github"
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/stretchr/testify/require"
 )
@@ -38,7 +39,7 @@ func TestLogDownloadsResumeCompletedJobs(t *testing.T) {
 	}
 	_, err = f.provider.ReadLog(t.Context(), submission.Run, 0, 4096)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
-	name := filepath.Join(f.provider.Directory, digest([]byte(f.request.ID))+".log")
+	name := filepath.Join(f.provider.Directory, record.Digest([]byte(f.request.ID))+".log")
 	require.NoFileExists(t, name)
 	require.FileExists(t, jobLogPath(name, 100))
 	require.NoFileExists(t, jobLogPath(name, 101))

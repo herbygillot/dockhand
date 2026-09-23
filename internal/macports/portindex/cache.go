@@ -84,7 +84,7 @@ func openCache(ctx context.Context, c Config, platform record.Platform) (*cache,
 	if err != nil {
 		return nil, err
 	}
-	identity := digest([]byte(strings.Join([]string{cacheLayout, c.Digest, c.Runtime, platform.OS, platform.Version, platform.Architecture, variables}, "\x00")))
+	identity := record.Digest([]byte(strings.Join([]string{cacheLayout, c.Digest, c.Runtime, platform.OS, platform.Version, platform.Architecture, variables}, "\x00")))
 	directory := filepath.Join(c.CacheDirectory, identity)
 	guard, err := filelock.Acquire(ctx, filepath.Join(directory, cacheLockName), filelock.Shared)
 	if err != nil {

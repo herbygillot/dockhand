@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/portfile"
 )
 
 // Store fetches source archives through its client. With a directory it
@@ -59,10 +58,3 @@ func (s *Store) FetchFirst(ctx context.Context, info macports.PortInfo, name str
 }
 
 // ChecksumValues is the checksum declaration each download makes.
-func ChecksumValues(downloads []Download) []portfile.Checksum {
-	values := make([]portfile.Checksum, len(downloads))
-	for i, d := range downloads {
-		values[i] = portfile.Checksum{Name: d.Name, SHA256: d.SHA256, RMD160: d.RMD160, MD5: d.MD5, SHA1: d.SHA1, Size: d.Size}
-	}
-	return values
-}

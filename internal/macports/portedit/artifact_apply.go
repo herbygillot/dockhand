@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
-	"strconv"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -29,7 +28,7 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 		}
 		group := item.artifact.Group
 		if group.Legacy() && !request.KeepOldChecksums && !group.Traced() {
-			edit, values := portfile.RewriteChecksumGroup(plan.contents, group.Pairs, archives.ChecksumValues([]archives.Download{download})[0])
+			edit, values := portfile.RewriteChecksumGroup(plan.contents, group.Pairs, download.Checksum)
 			if _, ok := updates[edit.Span]; !ok {
 				progress.Report(ctx, "Modernizing %s checksums: %s -> %s", item.artifact.Name, strings.Join(group.Kinds, " "), strings.Join(portfile.ModernChecksumKinds, " "))
 			}
@@ -37,9 +36,9 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 				return result, err
 			}
 		} else {
-			values := map[string]string{"sha256": download.SHA256, "rmd160": download.RMD160, "size": strconv.FormatInt(download.Size, 10), "md5": download.MD5, "sha1": download.SHA1}
 			for kind, token := range group.Values {
-				if err := recordChecksumUpdate(updates, token.Span, checksumUpdate{text: values[kind], values: []string{values[kind]}}); err != nil {
+				value, _ := download.Value(kind)
+				if err := recordChecksumUpdate(updates, token.Span, checksumUpdate{text: value, values: []string{value}}); err != nil {
 					return result, err
 				}
 			}

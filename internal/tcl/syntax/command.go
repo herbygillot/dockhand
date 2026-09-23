@@ -93,7 +93,8 @@ func (w Word) Inner() text.Span {
 // A switch's bodies come from inside its braced list when it has one, so
 // they are not among the command's own words, but their spans are the
 // source's like any other. A "-" body falls through to the next and is not
-// a body.
+// a body. A switch with no arms, or with a pattern and no body for it, is
+// the error Tcl makes of it and reads as no control structure.
 func (c Command) Control(src []byte) (controls, bodies []Word, ok bool) {
 	name, _ := c.Name(src)
 	words := c.Words[1:]
@@ -151,6 +152,9 @@ func (c Command) Control(src []byte) (controls, bodies []Word, ok bool) {
 					arms = append(arms, arm.Words...)
 				}
 			}
+		}
+		if len(arms) == 0 || len(arms)%2 != 0 {
+			return nil, nil, false
 		}
 		for j, word := range arms {
 			if j%2 == 0 {

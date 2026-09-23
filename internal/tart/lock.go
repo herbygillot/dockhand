@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/herbygillot/dockhand/internal/filelock"
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // AcquireImageRead keeps an image available as an immutable clone source.
@@ -24,5 +25,5 @@ func AcquireProvisioning(ctx context.Context, home, image string) (*os.File, err
 }
 
 func imageLockPath(home, kind, image string) string {
-	return filepath.Join(home, "dockhand", "locks", kind+"-"+digest([]byte(image))+".lock")
+	return filepath.Join(home, "dockhand", "locks", kind+"-"+record.Digest([]byte(image))+".lock")
 }

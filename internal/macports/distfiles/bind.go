@@ -99,7 +99,7 @@ func Bind(src []byte, path string, info macports.PortInfo, observed macports.Por
 				tokens[i].Owner = fmt.Sprintf("%d/%d", ordinal, i)
 				tokens[i].Span = word.Span
 				tokens[i].Literal = ok && literal == value && !word.Expand
-				if !tokens[i].Literal && !algorithm(value) && digestLike(value) {
+				if !tokens[i].Literal && !portfile.IsChecksumKind(value) && digestLike(value) {
 					if span, ok := portfile.UniqueLiteral(src, value); ok {
 						tokens[i].Span, tokens[i].Literal, tokens[i].Traced = span, true, true
 					}
@@ -126,11 +126,11 @@ func Bind(src []byte, path string, info macports.PortInfo, observed macports.Por
 	named := map[string]bool{}
 	for i := 0; i < len(result.Tokens); {
 		group := Group{Values: map[string]Token{}}
-		if !algorithm(result.Tokens[i].Value) {
+		if !portfile.IsChecksumKind(result.Tokens[i].Value) {
 			group.Name = result.Tokens[i].Value
 			i++
 		}
-		for i < len(result.Tokens) && algorithm(result.Tokens[i].Value) {
+		for i < len(result.Tokens) && portfile.IsChecksumKind(result.Tokens[i].Value) {
 			kind := result.Tokens[i]
 			if !kind.Literal || i+1 >= len(result.Tokens) {
 				return result, fmt.Errorf("%w: calculated checksum algorithm", portfile.ErrUnsupported)
@@ -209,10 +209,6 @@ func digestLike(value string) bool {
 		}
 	}
 	return decimal || hex && len(value) >= 32
-}
-
-func algorithm(value string) bool {
-	return value == "sha256" || value == "rmd160" || value == "size" || value == "md5" || value == "sha1"
 }
 
 func declarationOf(owner string) string { return owner[:strings.IndexByte(owner, '/')] }

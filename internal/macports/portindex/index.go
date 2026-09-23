@@ -31,11 +31,6 @@ const quickIndexName = "PortIndex.quick"
 const runtimeProbeTimeout = 30 * time.Second
 const maxPortIndexBytes = 128 << 20
 
-func digest(data []byte) string {
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
-}
-
 // Config freezes the indexer identity and names the cache shared by every
 // consumer. Runtime is the MacPorts Base the executable loads; ResolveTool
 // probes it because hashing the launcher alone would miss a Base upgrade.

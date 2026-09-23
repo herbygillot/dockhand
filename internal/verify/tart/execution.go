@@ -2,8 +2,6 @@ package tart
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -113,13 +111,15 @@ func (p *Provider) openRun(ctx context.Context, run record.ProviderRun) (*operat
 	}
 	return o, v, data, nil
 }
-func buildDigest(spec record.BuildSpec) string { raw, _ := json.Marshal(spec); return digest(raw) }
-func digest(data []byte) string                { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
+func buildDigest(spec record.BuildSpec) string {
+	raw, _ := json.Marshal(spec)
+	return record.Digest(raw)
+}
 
 // poolOf is the execution pool a resolved configuration shares: every driver
 // on the same Tart home coordinates through it.
 func poolOf(c Config) record.ProviderPool {
-	return record.ProviderPool{ID: "tart_" + digest([]byte(c.Home)), Scope: "tart:" + c.Home, Directory: c.ArtifactDirectory, Capacity: c.Capacity}
+	return record.ProviderPool{ID: "tart_" + record.Digest([]byte(c.Home)), Scope: "tart:" + c.Home, Directory: c.ArtifactDirectory, Capacity: c.Capacity}
 }
 
 // Pool resolves the configuration and names its execution pool, with the

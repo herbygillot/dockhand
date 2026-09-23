@@ -26,11 +26,13 @@ func TestControlSeparatesSelectorsFromBodies(t *testing.T) {
 		"switch -exact -- $s {\n    a -\n    b {p}\n    default {q}\n}\n" +
 		"switch $s a {r} b {m}\n" +
 		"version 1.0\n" +
-		"if {$a} {b} elseif\n")
+		"if {$a} {b} elseif\n" +
+		"switch $s\n" +
+		"switch $s {a {r} b}\n")
 	script, errs := Parse(src)
 	require.Empty(t, errs)
 	commands := script.Direct()
-	require.Len(t, commands, 9)
+	require.Len(t, commands, 11)
 
 	controls, bodies, ok := commands[0].Control(src)
 	require.True(t, ok)
@@ -71,6 +73,10 @@ func TestControlSeparatesSelectorsFromBodies(t *testing.T) {
 	require.False(t, ok, "an ordinary command is not a control")
 	_, _, ok = commands[8].Control(src)
 	require.False(t, ok, "an if still waiting for a condition is not one either")
+	_, _, ok = commands[9].Control(src)
+	require.False(t, ok, "a switch with no arms is Tcl's error, not a control")
+	_, _, ok = commands[10].Control(src)
+	require.False(t, ok, "and so is a pattern with no body")
 }
 
 func TestWordAndCommandPredicates(t *testing.T) {

@@ -55,7 +55,7 @@ type guestResult struct {
 
 // verifierDigest changes with the guest program and its launch protocol.
 func verifierDigest() string {
-	return digest(append([]byte("tart-verification-v2\x00"+host.ExecScript+"\x00"+string(guestPlist("/prefix"))), guestScript...))
+	return record.Digest(append([]byte("tart-verification-v2\x00"+host.ExecScript+"\x00"+string(guestPlist("/prefix"))), guestScript...))
 }
 
 func makeInput(ctx context.Context, repo *git.Repository, workspaces *workspace.Registry, request verify.Request, c Config, indexCache, directory string, client *http.Client) (string, error) {
