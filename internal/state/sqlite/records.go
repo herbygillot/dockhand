@@ -273,6 +273,7 @@ type jobOptions struct {
 	Targets           []record.Target
 	Build             *record.BuildConfig
 	BuildRequirements *record.BuildRequirements `json:",omitempty"`
+	PlatformBuilds    []record.BuildConfig      `json:",omitempty"`
 	Version, Subject  string
 	References        []record.Reference `json:",omitempty"`
 	Preparation       *record.PreparationSpec
@@ -309,6 +310,7 @@ func (t *transaction) Job(ctx context.Context, id record.JobID) (record.Job, err
 	v.Spec.Checkout = options.Checkout
 	v.Spec.FreshVerification = options.FreshVerification
 	v.Spec.TargetBuilds = options.TargetBuilds
+	v.Spec.PlatformBuilds = options.PlatformBuilds
 	v.Spec.IncludeDependents = options.IncludeDependents
 	v.Spec.AllSubports = options.AllSubports
 	v.Spec.KeepFailed = options.KeepFailed
@@ -451,7 +453,7 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 	if err != nil {
 		return err
 	}
-	raw, err := encode(jobOptions{KeepFailed: v.Spec.KeepFailed, EvaluatedVersions: v.Spec.EvaluatedVersions, TargetBuilds: v.Spec.TargetBuilds, IncludeDependents: v.Spec.IncludeDependents, AllSubports: v.Spec.AllSubports, SourceBranch: v.Spec.SourceBranch, Publication: v.Spec.Publication, PublishTo: v.Spec.PublishTo, Targets: v.Spec.Targets, Build: v.Spec.Build, BuildRequirements: v.Spec.BuildRequirements, Version: v.Spec.Version, Subject: v.Spec.Subject, References: v.Spec.References, Preparation: v.Spec.Preparation, Checkout: v.Spec.Checkout, FreshVerification: v.Spec.FreshVerification})
+	raw, err := encode(jobOptions{KeepFailed: v.Spec.KeepFailed, EvaluatedVersions: v.Spec.EvaluatedVersions, TargetBuilds: v.Spec.TargetBuilds, IncludeDependents: v.Spec.IncludeDependents, AllSubports: v.Spec.AllSubports, SourceBranch: v.Spec.SourceBranch, Publication: v.Spec.Publication, PublishTo: v.Spec.PublishTo, Targets: v.Spec.Targets, Build: v.Spec.Build, BuildRequirements: v.Spec.BuildRequirements, PlatformBuilds: v.Spec.PlatformBuilds, Version: v.Spec.Version, Subject: v.Spec.Subject, References: v.Spec.References, Preparation: v.Spec.Preparation, Checkout: v.Spec.Checkout, FreshVerification: v.Spec.FreshVerification})
 	if err != nil {
 		return err
 	}

@@ -80,6 +80,11 @@ type JobSpec struct {
 	// BuildRequirements authorize selection of recorded evidence satisfying
 	// these choices. They do not authorize a new verification execution.
 	BuildRequirements *BuildRequirements `json:",omitempty"`
+	// PlatformBuilds build the same targets again, one build each, on the
+	// further platforms a person named; Build is the first named platform's.
+	// Only a verification names platforms, and the targets are evaluated on
+	// the host's platform whichever platforms they are built on.
+	PlatformBuilds []BuildConfig `json:",omitempty"`
 	// FreshVerification requests execution even when prior evidence applies.
 	// IncludeDependents requests isolated direct-dependent coverage of the selected roots.
 	TargetBuilds      map[string]BuildConfig

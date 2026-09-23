@@ -56,7 +56,9 @@ type Services struct {
 	Processes *proc.Manager
 	close     func() error
 	// providers is the provider choice the bindings resolve builds with.
-	providers    choice.Providers
+	providers choice.Providers
+	// local is the Tart provider, which also says what images are prepared.
+	local        *tart.Provider
 	ports        *selection.Reader
 	providerName string
 	githubClient *github.Client
@@ -168,6 +170,7 @@ func assemble(config Config, repo *git.Repository, store *sqlite.Store, reposito
 		Processes:         &proc.Manager{},
 		close:             func() error { return errors.Join(workspaces.Close(), closeStore()) },
 		ports:             ports,
+		local:             provider,
 		providerName:      config.VerificationProvider,
 		githubClient:      githubClient,
 		accounts:          hosting,

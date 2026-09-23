@@ -16,6 +16,7 @@ import (
 	"maps"
 	"slices"
 
+	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -61,6 +62,9 @@ type Options struct {
 	// requirement on the job, so a prepared branch survives, rather than
 	// failing the binding; a preparation preserves, a verification fails.
 	Preserve bool
+	// Platforms are the build platforms a person named, each built in its
+	// own Tart image; empty builds on the evaluated platform alone.
+	Platforms []record.Platform
 }
 
 // Resolver chooses, for one evaluation, the build the providers can give
@@ -89,7 +93,7 @@ func (p Providers) Resolver(platform record.Platform, options Options) workflow.
 			progress.VerboseReport(ctx, "Verification provider: github (pushes the candidate to your fork)")
 			return workflow.BuildResolution{Build: &config}, nil
 		}
-		if p.Name == verify.ProviderGitHub {
+		if p.Name == verify.ProviderGitHub && len(options.Platforms) == 0 {
 			return remote()
 		}
 		policy := options.Tests
@@ -97,6 +101,9 @@ func (p Providers) Resolver(platform record.Platform, options Options) workflow.
 			policy = record.TestDeclared
 		}
 		local := verify.BuildOptions{Tests: policy, FromSource: options.FromSource, NeedsXcode: needsXcode, HostMacPortsVersion: evaluation.Runtime.BaseVersion}
+		if len(options.Platforms) > 0 {
+			return p.named(ctx, options.Platforms, local)
+		}
 		config, err := p.Local.BuildConfig(ctx, platform, local)
 		if err == nil {
 			targets := map[string]record.BuildConfig{}
@@ -152,4 +159,26 @@ func (p Providers) Resolver(platform record.Platform, options Options) workflow.
 		}
 		return workflow.BuildResolution{}, err
 	}
+}
+
+// named configures a Tart build on each platform a person named, in order.
+// A named platform is a choice of Tart: there is no fallback to GitHub,
+// whose workflow builds on its own runner matrix, and an image that is
+// missing is a refusal naming the setup that prepares it. Whether a target
+// needs full Xcode is the evaluated platform's answer on every platform.
+func (p Providers) named(ctx context.Context, platforms []record.Platform, options verify.BuildOptions) (workflow.BuildResolution, error) {
+	if p.Name == verify.ProviderGitHub || len(p.TargetImages) > 0 {
+		return workflow.BuildResolution{}, fmt.Errorf("build platforms are chosen for local Tart verification without dependents")
+	}
+	options.Named = true
+	builds := make([]record.BuildConfig, 0, len(platforms))
+	for _, platform := range platforms {
+		config, err := p.Local.BuildConfig(ctx, platform, options)
+		if err != nil {
+			return workflow.BuildResolution{}, fmt.Errorf("building on %s: %w", macos.Describe(platform), err)
+		}
+		builds = append(builds, config)
+	}
+	progress.VerboseReport(ctx, "Verification provider: tart on %d platforms; no GitHub verification will be submitted", len(builds))
+	return workflow.BuildResolution{Build: &builds[0], PlatformBuilds: builds[1:]}, nil
 }

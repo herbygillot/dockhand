@@ -131,6 +131,8 @@ type scriptedProvider struct {
 	observe    func(context.Context, record.ProviderRun) (verify.Observation, error)
 	cancel     func(context.Context, record.ProviderRun) error
 	release    func(context.Context, record.ResourceHandle) (verify.ReleaseResult, error)
+	// platforms are the platforms the provider builds on; empty is buildPlatform.
+	platforms []record.Platform
 }
 
 // Every provider operation checks that the workflow has released the state write transaction.
@@ -151,7 +153,11 @@ func (p *scriptedProvider) Capabilities(ctx context.Context) (verify.Capabilitie
 	if err := p.begin(ctx, "capabilities"); err != nil {
 		return verify.Capabilities{}, err
 	}
-	return verify.Capabilities{Name: "scripted", Platforms: []record.Platform{buildPlatform}, Capacity: 1}, nil
+	platforms := p.platforms
+	if len(platforms) == 0 {
+		platforms = []record.Platform{buildPlatform}
+	}
+	return verify.Capabilities{Name: "scripted", Platforms: platforms, Capacity: 1}, nil
 }
 func admitted(id record.RequestID) verify.Submission {
 	return verify.Submission{State: verify.Admitted, Run: record.ProviderRun{Provider: "scripted", RequestID: id, RunID: "run-" + string(id)}, Resources: []record.ResourceHandle{{Provider: "scripted", ID: "vm-" + string(id)}}}

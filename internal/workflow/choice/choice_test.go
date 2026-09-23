@@ -160,3 +160,34 @@ func TestTargetImagesBoundAtIntake(t *testing.T) {
 	_, err = providers.Resolver(platform, choice.Options{Tests: record.TestSkip, Preserve: true})(t.Context(), evaluation)
 	require.Error(t, err, "explicit image choices cannot become unspecified evidence requirements")
 }
+
+// Named platforms each get a Tart build of their own, in the order they were
+// named, and none falls back to GitHub: its workflow builds on runners
+// dockhand does not choose.
+func TestNamedPlatformsBuildInTartOnEach(t *testing.T) {
+	t.Parallel()
+	sonoma := record.Platform{OS: "darwin", Version: "23", Architecture: "arm64"}
+	sequoia := record.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}
+	snapshot := macports.Snapshot{Target: record.Target{Name: "fixture"}, Ports: map[string]macports.PortInfo{"fixture": {Options: map[string]string{"use_xcode": "yes"}}}}
+
+	local, remote := &localBuild{}, &remoteBuild{}
+	resolved, err := choice.Providers{Name: "auto", Local: local, Remote: remote}.Resolver(platform, choice.Options{Platforms: []record.Platform{sequoia, sonoma}})(t.Context(), snapshot)
+	require.NoError(t, err)
+	require.Equal(t, sequoia, resolved.Build.Platform)
+	require.Len(t, resolved.PlatformBuilds, 1)
+	require.Equal(t, sonoma, resolved.PlatformBuilds[0].Platform)
+	require.True(t, resolved.PlatformBuilds[0].NeedsXcode, "the evaluated platform's Xcode answer applies to every platform")
+	require.True(t, local.options.Named, "a named release past the default is deliberate")
+	require.Equal(t, 2, local.calls)
+	require.Zero(t, remote.calls)
+
+	local, remote = &localBuild{err: verify.ErrImageUnavailable}, &remoteBuild{}
+	_, err = choice.Providers{Name: "auto", Local: local, Remote: remote}.Resolver(platform, choice.Options{Platforms: []record.Platform{sonoma}})(t.Context(), snapshot)
+	require.ErrorIs(t, err, verify.ErrImageUnavailable)
+	require.ErrorContains(t, err, "Sonoma")
+	require.Zero(t, remote.calls, "a missing image for a named release is not a reason to try GitHub")
+
+	_, err = choice.Providers{Name: "github", Local: &localBuild{}, Remote: remote}.Resolver(platform, choice.Options{Platforms: []record.Platform{sonoma}})(t.Context(), snapshot)
+	require.ErrorContains(t, err, "local Tart verification")
+	require.Zero(t, remote.calls)
+}

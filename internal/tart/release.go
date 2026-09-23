@@ -63,3 +63,18 @@ func DefaultSource(platform record.Platform) (string, error) {
 	}
 	return "ghcr.io/cirruslabs/macos-" + strings.ToLower(release.Slug) + "-vanilla:latest", nil
 }
+
+// PreparedReleases are the releases a local image serves under setup's
+// names, a command-line-tools or a full-Xcode image, oldest first.
+func PreparedReleases(images []Image) []macos.Release {
+	var prepared []macos.Release
+	for _, release := range macos.Known() {
+		for _, image := range images {
+			if image.Source == "local" && (image.Name == "dockhand-base-"+release.Slug || image.Name == "dockhand-xcode-"+release.Slug) {
+				prepared = append(prepared, release)
+				break
+			}
+		}
+	}
+	return prepared
+}

@@ -29,9 +29,13 @@ type VerificationRequest struct {
 	Fresh             bool
 	ID                record.RequestID
 	// Empty Branch selects the current working tree, including uncommitted edits.
-	Branch       string
-	Selection    macports.Selection
-	Platform     record.Platform
+	Branch    string
+	Selection macports.Selection
+	// Platform is the platform the targets are evaluated on.
+	Platform record.Platform
+	// Platforms are the build platforms a person named, in order; the
+	// resolver builds on exactly these. Empty builds on Platform alone.
+	Platforms    []record.Platform
 	Build        record.BuildConfig
 	ResolveBuild BuildResolver
 }
@@ -39,8 +43,10 @@ type VerificationRequest struct {
 type BuildResolution struct {
 	TargetBuilds map[string]record.BuildConfig
 	Build        *record.BuildConfig
-	Requirements *record.BuildRequirements
-	Problem      string
+	// PlatformBuilds build the same targets on the further named platforms.
+	PlatformBuilds []record.BuildConfig
+	Requirements   *record.BuildRequirements
+	Problem        string
 }
 
 type BuildResolver func(context.Context, macports.Snapshot) (BuildResolution, error)
@@ -75,7 +81,7 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 		continuation = &change
 		request.Branch = change.Branch
 		request.Selection.Selector = ""
-		spec, err := e.contributionBuild(ctx, change)
+		spec, err := e.contributionBuild(ctx, change, request.Platform)
 		if err != nil {
 			return BoundVerification{}, err
 		}
@@ -97,6 +103,9 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 	}
 	if !validToken(string(request.ID)) || (request.Branch != "" && !git.ValidBranchName(request.Branch)) {
 		return BoundVerification{}, ErrInvalidRequest
+	}
+	if len(request.Platforms) != 0 && request.IncludeDependents {
+		return BoundVerification{}, fmt.Errorf("%w: dependent coverage is planned on the evaluated platform alone, and this verification covers dependents; build platforms cannot be named for it yet", ErrInvalidRequest)
 	}
 	if request.ResolveBuild == nil {
 		if err := verify.ValidateConfig(request.Build); err != nil {
@@ -198,6 +207,7 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 	if err != nil {
 		return BoundVerification{}, err
 	}
+	var platformBuilds []record.BuildConfig
 	if request.ResolveBuild != nil {
 		resolved, resolveErr := request.ResolveBuild(ctx, evaluation)
 		if resolveErr != nil {
@@ -211,12 +221,15 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 		}
 		maps.Copy(request.TargetBuilds, resolved.TargetBuilds)
 		request.Build = *resolved.Build
-		if request.Build.Platform != platform {
-			return BoundVerification{}, fmt.Errorf("%w: resolved build platform differs from the evaluated platform", ErrInvalidRequest)
+		platformBuilds = resolved.PlatformBuilds
+		if err := resolvedPlatforms(platform, request.Platforms, request.Build, platformBuilds); err != nil {
+			return BoundVerification{}, err
 		}
 		if err := verify.ValidateConfig(request.Build); err != nil {
 			return BoundVerification{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
 		}
+	} else if len(request.Platforms) != 0 {
+		return BoundVerification{}, fmt.Errorf("%w: named build platforms require a build resolver", ErrInvalidRequest)
 	}
 	if inferred != nil && record.CompareTargets(targets[0], *inferred) != 0 {
 		return BoundVerification{}, fmt.Errorf("%w: tracked target %s no longer matches the evaluated Portfile; specify a port explicitly", ErrInvalidRequest, inferred.Name)
@@ -227,7 +240,7 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 		}
 		request.Fresh = true
 	}
-	spec, err := normalizeSpec(record.JobSpec{KeepFailed: request.KeepFailed, TargetBuilds: request.TargetBuilds, IncludeDependents: request.IncludeDependents, AllSubports: request.AllSubports, Action: record.Verify, SourceBranch: request.Branch, Source: source, Targets: targets, EvaluatedVersions: evaluatedVersions(evaluation, targets), Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &request.Build, Checkout: provenance, FreshVerification: request.Fresh})
+	spec, err := normalizeSpec(record.JobSpec{KeepFailed: request.KeepFailed, TargetBuilds: request.TargetBuilds, IncludeDependents: request.IncludeDependents, AllSubports: request.AllSubports, Action: record.Verify, SourceBranch: request.Branch, Source: source, Targets: targets, EvaluatedVersions: evaluatedVersions(evaluation, targets), Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &request.Build, PlatformBuilds: platformBuilds, Checkout: provenance, FreshVerification: request.Fresh})
 	if err != nil {
 		return BoundVerification{}, err
 	}
@@ -236,6 +249,28 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 		binding = &branch
 	}
 	return BoundVerification{Request: Request{ID: request.ID, Spec: spec, Branch: binding}, Evaluation: evaluation}, nil
+}
+
+// resolvedPlatforms checks that a resolution builds where it was asked to:
+// on the evaluated platform when no platform was named, and otherwise on
+// exactly the named platforms, in the order they were named.
+func resolvedPlatforms(evaluated record.Platform, named []record.Platform, build record.BuildConfig, more []record.BuildConfig) error {
+	if len(named) == 0 {
+		if build.Platform != evaluated || len(more) != 0 {
+			return fmt.Errorf("%w: resolved build platform differs from the evaluated platform", ErrInvalidRequest)
+		}
+		return nil
+	}
+	builds := append([]record.BuildConfig{build}, more...)
+	if len(builds) != len(named) {
+		return fmt.Errorf("%w: resolved builds do not match the named platforms", ErrInvalidRequest)
+	}
+	for i, build := range builds {
+		if build.Platform != named[i] {
+			return fmt.Errorf("%w: resolved builds do not match the named platforms", ErrInvalidRequest)
+		}
+	}
+	return nil
 }
 
 func (e *Engine) bindSnapshot(ctx context.Context, source record.Source, selection macports.Selection, platform record.Platform, untracked []string) (_ []record.Target, _ macports.Snapshot, err error) {

@@ -43,7 +43,9 @@ func ValidateRequirements(requirements record.BuildRequirements) error {
 	return nil
 }
 
-// Plan freezes one provider build question for every accepted verification target.
+// Plan freezes one provider build question for every accepted verification
+// target on every accepted build platform: the targets on Build, then the
+// same targets on each of PlatformBuilds, in order.
 func Plan(job record.Job, revision record.Revision) (record.VerificationPlan, []record.BuildSpec, error) {
 	if job.Spec.Build == nil {
 		if job.Spec.Preparation != nil && job.Spec.Preparation.VerificationProblem != "" {
@@ -51,7 +53,24 @@ func Plan(job record.Job, revision record.Revision) (record.VerificationPlan, []
 		}
 		return record.VerificationPlan{}, nil, fmt.Errorf("verify: no build configuration was selected")
 	}
-	return PlanWithConfig(job, revision, *job.Spec.Build)
+	plan, builds, err := PlanWithConfig(job, revision, *job.Spec.Build)
+	if err != nil || len(job.Spec.PlatformBuilds) == 0 {
+		return plan, builds, err
+	}
+	for _, config := range job.Spec.PlatformBuilds {
+		more, moreBuilds, err := PlanWithConfig(job, revision, config)
+		if err != nil {
+			return record.VerificationPlan{}, nil, err
+		}
+		plan.Targets = append(plan.Targets, more.Targets...)
+		builds = append(builds, moreBuilds...)
+	}
+	// Each target on each platform is its own question, numbered across
+	// the whole plan.
+	for i := range plan.Targets {
+		plan.Targets[i].ID = record.TargetID(fmt.Sprintf("target_%s_%d", job.ID, i+1))
+	}
+	return plan, builds, nil
 }
 
 // PlanWithConfig applies an exact build configuration to every target in the job.

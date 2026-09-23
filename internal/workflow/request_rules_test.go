@@ -94,3 +94,47 @@ func TestActionRulesDecideWhatEachActionAccepts(t *testing.T) {
 	_, err = normalizeSpec(prepared)
 	require.ErrorContains(t, err, "publication destination required")
 }
+
+// Further build platforms belong to a verification alone: local builds of
+// the same targets under the same policies, each on a platform of its own,
+// without dependent coverage, which is planned on one platform.
+func TestPlatformBuildsAreAVerificationsOwn(t *testing.T) {
+	t.Parallel()
+	with := func(action record.Action, change func(*record.JobSpec, *record.BuildConfig)) error {
+		spec := validSpec(action)
+		further := *spec.Build
+		further.Platform.Version = "23"
+		if change != nil {
+			change(&spec, &further)
+		}
+		spec.PlatformBuilds = []record.BuildConfig{further}
+		_, err := normalizeSpec(spec)
+		return err
+	}
+	require.NoError(t, with(record.Verify, nil))
+	require.ErrorContains(t, with(record.Bump, nil), "further build platforms")
+	require.ErrorContains(t, with(record.Verify, func(spec *record.JobSpec, _ *record.BuildConfig) { spec.IncludeDependents = true }), "without dependents")
+	require.ErrorContains(t, with(record.Verify, func(spec *record.JobSpec, further *record.BuildConfig) {
+		spec.Build.Provider, further.Provider = "github", "github"
+	}), "local verification")
+	require.ErrorContains(t, with(record.Verify, func(_ *record.JobSpec, further *record.BuildConfig) { further.Tests = record.TestSkip }), "build policies")
+	require.ErrorContains(t, with(record.Verify, func(_ *record.JobSpec, further *record.BuildConfig) { further.Platform.Version = "25" }), "named twice")
+	require.ErrorContains(t, with(record.Verify, func(_ *record.JobSpec, further *record.BuildConfig) { further.EnvironmentDigest = "" }), "environment digest")
+}
+
+// A resolution builds where it was asked to: on the evaluated platform when
+// nothing was named, and on exactly the named platforms, in order, otherwise.
+func TestResolvedBuildsMatchTheNamedPlatforms(t *testing.T) {
+	t.Parallel()
+	tahoe := record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
+	sonoma := record.Platform{OS: "darwin", Version: "23", Architecture: "arm64"}
+	on := func(platform record.Platform) record.BuildConfig { return record.BuildConfig{Platform: platform} }
+
+	require.NoError(t, resolvedPlatforms(tahoe, nil, on(tahoe), nil))
+	require.Error(t, resolvedPlatforms(tahoe, nil, on(sonoma), nil), "an unnamed build is on the evaluated platform")
+	require.Error(t, resolvedPlatforms(tahoe, nil, on(tahoe), []record.BuildConfig{on(sonoma)}), "and on it alone")
+	require.NoError(t, resolvedPlatforms(tahoe, []record.Platform{sonoma}, on(sonoma), nil), "a named platform need not be the evaluated one")
+	require.NoError(t, resolvedPlatforms(tahoe, []record.Platform{sonoma, tahoe}, on(sonoma), []record.BuildConfig{on(tahoe)}))
+	require.Error(t, resolvedPlatforms(tahoe, []record.Platform{sonoma, tahoe}, on(tahoe), []record.BuildConfig{on(sonoma)}), "in the order named")
+	require.Error(t, resolvedPlatforms(tahoe, []record.Platform{sonoma, tahoe}, on(sonoma), nil), "every named platform is built")
+}

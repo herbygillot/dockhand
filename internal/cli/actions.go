@@ -60,9 +60,10 @@ func (r *runtime) verifyCommand() *cobra.Command {
 	var build buildOptions
 	var variants []string
 	var detach, trace, fresh, allSubports bool
+	var releases []string
 	command := &cobra.Command{
 		Use: "verify [port]", Short: "Verify a prepared contribution or explicit source",
-		Long: "Verify one named port or subport, or a snapshot-relative Portfile. By default, continue the unique open contribution for the target using its committed branch and recorded verification settings. Use --working-tree to capture tracked working-tree contents, including staged additions and deletions. Stage new files with git add to include them. --branch selects a tracked contribution branch; --adopt selects the committed contents of a branch dockhand did not make. Omit the port to use a tracked contribution's single target, including its subport and variant choices. Explicit variants override those choices. Inference requires changes confined to that port relative to its recorded base. The captured snapshot stays fixed while you continue editing. Matching passing evidence is reused unless --fresh is supplied. The command stays through completion; --detach returns once the provider admits the build. Ctrl-C detaches without canceling accepted work.",
+		Long: "Verify one named port or subport, or a snapshot-relative Portfile. By default, continue the unique open contribution for the target using its committed branch and recorded verification settings. Use --working-tree to capture tracked working-tree contents, including staged additions and deletions. Stage new files with git add to include them. --branch selects a tracked contribution branch; --adopt selects the committed contents of a branch dockhand did not make. Omit the port to use a tracked contribution's single target, including its subport and variant choices. Explicit variants override those choices. Inference requires changes confined to that port relative to its recorded base. The captured snapshot stays fixed while you continue editing. Matching passing evidence is reused unless --fresh is supplied. The build runs on this Mac's macOS release; --os names others to build on instead, each in its own prepared Tart image, and every one must pass. The command stays through completion; --detach returns once the provider admits the build. Ctrl-C detaches without canceling accepted work.",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if err := cobra.MaximumNArgs(1)(cmd, args); err != nil {
 				return err
@@ -80,9 +81,20 @@ func (r *runtime) verifyCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if len(releases) > 0 {
+				if cmd.Flags().Changed("image") {
+					return fmt.Errorf("--os builds each release on its prepared image; --image names one image, on one release")
+				}
+				if build.dependents {
+					return fmt.Errorf("--dependents plans dependent coverage on one platform; --os cannot be combined with it yet")
+				}
+			}
 			config, err := build.config(cmd, r.config)
 			if err != nil {
 				return err
+			}
+			if len(releases) > 0 && config.VerificationProvider == verify.ProviderGitHub {
+				return fmt.Errorf("--os selects Tart images; GitHub verification builds on the fork workflow's runner matrix, which dockhand does not choose")
 			}
 			if config.VerificationProvider == verify.ProviderGitHub && (workingTree || fresh) {
 				return fmt.Errorf("GitHub verification requires committed source; --fresh is unsupported, rerun the workflow on GitHub and verify again")
@@ -107,7 +119,7 @@ func (r *runtime) verifyCommand() *cobra.Command {
 			if adopt != "" {
 				source = adopt
 			}
-			bound, err := services.BindVerification(cmd.Context(), app.Verification{KeepFailed: build.keepFailed, AllSubports: allSubports, WorkingTree: workingTree, ChangeID: record.ChangeID(change), UseRecordedBuild: !verificationSettingsChanged(cmd), IncludeDependents: build.dependents, ID: record.RequestID("request_" + rand.Text()), Branch: source, Adopt: adopt != "", Selection: macports.Selection{Selector: selector, Variants: choices}, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource, Fresh: fresh})
+			bound, err := services.BindVerification(cmd.Context(), app.Verification{KeepFailed: build.keepFailed, AllSubports: allSubports, WorkingTree: workingTree, ChangeID: record.ChangeID(change), UseRecordedBuild: !verificationSettingsChanged(cmd), IncludeDependents: build.dependents, ID: record.RequestID("request_" + rand.Text()), Branch: source, Adopt: adopt != "", Selection: macports.Selection{Selector: selector, Variants: choices}, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource, Fresh: fresh, OS: releases})
 			if err != nil {
 				return err
 			}
@@ -140,11 +152,12 @@ func (r *runtime) verifyCommand() *cobra.Command {
 	build.flags(command, r.config)
 	command.Flags().BoolVar(&fresh, "fresh", false, "Run a new build even when previous passing evidence applies")
 	command.Flags().BoolVar(&allSubports, "all-subports", false, "Verify every subport of a shared release locally, not only the initiating one")
+	command.Flags().StringArrayVar(&releases, "os", nil, "Build on this macOS release instead of this Mac's, as setup names it (sonoma or 14); repeatable, and "+app.AvailablePlatforms+" names every release with a prepared image. Tart only")
 	command.Flags().BoolVar(&detach, "detach", false, "Return once the build is admitted; wait or serve finishes it")
 	command.Flags().BoolVar(&trace, "trace", false, "Follow build logs on stderr through completion; implies --debug")
 	command.MarkFlagsMutuallyExclusive("detach", "trace")
 	section(command.Flags(), sectionSelection, "branch", "adopt", "change", "working-tree")
-	section(command.Flags(), sectionBuild, "variant", "fresh", "all-subports")
+	section(command.Flags(), sectionBuild, "variant", "fresh", "all-subports", "os")
 	section(command.Flags(), sectionGitHub, "remote")
 	section(command.Flags(), sectionRun, "detach", "trace")
 	return command

@@ -43,6 +43,8 @@ type actionRule struct {
 	dependents bool
 	// keepFailed may retain a failed local verification environment.
 	keepFailed bool
+	// platforms may build the targets on further platforms a person named.
+	platforms bool
 }
 
 var preparedDestinations = []record.Destination{record.BranchReady, record.VerificationComplete, record.Published}
@@ -53,7 +55,7 @@ var actionRules = map[record.Action]actionRule{
 	record.RefreshChecksums: {destinations: preparedDestinations, dependents: true, keepFailed: true},
 	record.Amend:            {destinations: preparedDestinations, correction: true, dependents: true, keepFailed: true},
 	record.Rebase:           {destinations: preparedDestinations, correction: true, dependents: true, keepFailed: true},
-	record.Verify:           {destinations: []record.Destination{record.VerificationComplete}, fresh: true, checkout: true, dependents: true, keepFailed: true},
+	record.Verify:           {destinations: []record.Destination{record.VerificationComplete}, fresh: true, checkout: true, dependents: true, keepFailed: true, platforms: true},
 	record.Publish:          {destinations: []record.Destination{record.Published}, publication: true},
 }
 
@@ -73,7 +75,7 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 	spec.EvaluatedVersions = maps.Clone(spec.EvaluatedVersions)
 	for _, step := range []specStep{
 		validateEncodings, validateOptions, normalizeTargetBuilds, validateDestination,
-		normalizePublication, normalizeBuild, normalizeRequirements, validateVersion,
+		normalizePublication, normalizeBuild, normalizePlatformBuilds, normalizeRequirements, validateVersion,
 		normalizePreparation, normalizeCheckout, validateSourceSelection, normalizeTargets,
 	} {
 		if err := step(&spec, rule); err != nil {
@@ -232,6 +234,38 @@ func normalizeBuild(spec *record.JobSpec, _ actionRule) error {
 	build := *spec.Build
 	build.ProviderConfig = slices.Clone(build.ProviderConfig)
 	spec.Build = &build
+	return nil
+}
+
+// normalizePlatformBuilds checks the further platforms a verification builds
+// on: each is its own local build of the same targets under the same
+// policies as Build, on a platform no other build names. Dependent coverage
+// is planned on one platform, so it names none.
+func normalizePlatformBuilds(spec *record.JobSpec, rule actionRule) error {
+	if len(spec.PlatformBuilds) == 0 {
+		spec.PlatformBuilds = nil
+		return nil
+	}
+	if !rule.platforms || spec.Build == nil || spec.Build.Provider == verify.ProviderGitHub || spec.IncludeDependents {
+		return fmt.Errorf("%w: further build platforms require a local verification without dependents", ErrInvalidRequest)
+	}
+	seen := map[record.Platform]bool{spec.Build.Platform: true}
+	builds := make([]record.BuildConfig, 0, len(spec.PlatformBuilds))
+	for _, build := range spec.PlatformBuilds {
+		if err := verify.ValidateConfig(build); err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+		}
+		if build.Provider != spec.Build.Provider || build.Tests != spec.Build.Tests || build.FromSource != spec.Build.FromSource {
+			return fmt.Errorf("%w: every build platform shares the provider and build policies", ErrInvalidRequest)
+		}
+		if seen[build.Platform] {
+			return fmt.Errorf("%w: build platform %s %s %s is named twice", ErrInvalidRequest, build.Platform.OS, build.Platform.Version, build.Platform.Architecture)
+		}
+		seen[build.Platform] = true
+		build.ProviderConfig = slices.Clone(build.ProviderConfig)
+		builds = append(builds, build)
+	}
+	spec.PlatformBuilds = builds
 	return nil
 }
 

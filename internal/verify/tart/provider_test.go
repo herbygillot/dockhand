@@ -33,6 +33,7 @@ type fakeMachine struct {
 	results                            map[string]guestResult
 	inspection                         capabilityInspection
 	stageError, launchError, stopError error
+	environmentError                   error
 	stageHook                          func()
 }
 
@@ -71,6 +72,9 @@ func TestBuildConfigSelectsXcodeImageForRequiredTargets(t *testing.T) {
 func (m *fakeMachine) Version(context.Context) (string, error) { return "2.30.0", nil }
 
 func (m *fakeMachine) Environment(context.Context) (Environment, error) {
+	if m.environmentError != nil {
+		return Environment{}, m.environmentError
+	}
 	return Environment{Digest: "sha256:fixture", Platform: testPlatform}, nil
 }
 func (m *fakeMachine) InspectCapabilities(context.Context, string, string) (capabilityInspection, error) {

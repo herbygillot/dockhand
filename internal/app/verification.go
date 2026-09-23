@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/workflow"
+	"github.com/herbygillot/dockhand/internal/workflow/choice"
 )
 
 type Verification struct {
@@ -28,6 +29,10 @@ type Verification struct {
 	Selection  macports.Selection
 	Tests      record.TestPolicy
 	FromSource bool
+	// OS names the macOS releases to build on, by setup's names or major
+	// versions, or AvailablePlatforms for every prepared image; empty builds
+	// on the evaluated platform.
+	OS []string
 }
 
 func (s *Services) BindVerification(ctx context.Context, request Verification) (workflow.BoundVerification, error) {
@@ -37,7 +42,14 @@ func (s *Services) BindVerification(ctx context.Context, request Verification) (
 	if s.providerName == verify.ProviderGitHub {
 		request.Fresh = true
 	}
+	if s.providerName == verify.ProviderGitHub && len(request.OS) > 0 {
+		return workflow.BoundVerification{}, fmt.Errorf("--os selects Tart images; GitHub verification builds on the fork workflow's runner matrix, which dockhand does not choose")
+	}
 	platform, err := s.ports.NativePlatform(ctx)
+	if err != nil {
+		return workflow.BoundVerification{}, err
+	}
+	platforms, err := s.buildPlatforms(ctx, platform, request.OS)
 	if err != nil {
 		return workflow.BoundVerification{}, err
 	}
@@ -67,8 +79,8 @@ func (s *Services) BindVerification(ctx context.Context, request Verification) (
 		}
 	}
 	bound, err := s.Workflow.BindVerification(ctx, workflow.VerificationRequest{KeepFailed: request.KeepFailed,
-		Tracked: continuation, UseRecordedBuild: request.UseRecordedBuild, IncludeDependents: request.IncludeDependents, AllSubports: request.AllSubports, ID: request.ID, Branch: request.Branch, Selection: request.Selection, Platform: platform, Fresh: request.Fresh,
-		ResolveBuild: s.resolver(platform, request.Tests, request.FromSource, false),
+		Tracked: continuation, UseRecordedBuild: request.UseRecordedBuild, IncludeDependents: request.IncludeDependents, AllSubports: request.AllSubports, ID: request.ID, Branch: request.Branch, Selection: request.Selection, Platform: platform, Platforms: platforms, Fresh: request.Fresh,
+		ResolveBuild: s.providers.Resolver(platform, choice.Options{Tests: request.Tests, FromSource: request.FromSource, Platforms: platforms}),
 	})
 	if errors.Is(err, state.ErrNotFound) && request.Branch != "" && !request.Adopt && !request.WorkingTree {
 		return bound, fmt.Errorf("%w; --adopt %s verifies that branch's committed contents", err, request.Branch)

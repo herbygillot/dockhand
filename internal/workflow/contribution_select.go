@@ -99,8 +99,9 @@ func contributionPrepared(change record.Change) error {
 }
 
 // contributionBuild returns the latest accepted verification settings for this
-// contribution; it never chooses a successful historical revision as the source.
-func (e *Engine) contributionBuild(ctx context.Context, change record.Change) (record.JobSpec, error) {
+// contribution that build on the evaluated platform, which zero leaves
+// unchecked; it never chooses a successful historical revision as the source.
+func (e *Engine) contributionBuild(ctx context.Context, change record.Change, platform record.Platform) (record.JobSpec, error) {
 	var spec record.JobSpec
 	err := e.State.View(ctx, func(ctx context.Context, reader state.Reader) error {
 		current, err := reader.Change(ctx, change.ID)
@@ -114,7 +115,13 @@ func (e *Engine) contributionBuild(ctx context.Context, change record.Change) (r
 		if err != nil {
 			return err
 		}
-		if newest, ok := newestJob(history, func(job record.Job) bool { return job.Spec.Action != record.Publish && job.Spec.Build != nil }); ok {
+		// A build on platforms a person named was that verification's
+		// choice, not the contribution's setting: it is not repeated unasked.
+		recorded := func(job record.Job) bool {
+			return job.Spec.Action != record.Publish && job.Spec.Build != nil && len(job.Spec.PlatformBuilds) == 0 &&
+				(platform == (record.Platform{}) || job.Spec.Build.Platform == platform)
+		}
+		if newest, ok := newestJob(history, recorded); ok {
 			spec = newest.Spec
 		}
 		return nil

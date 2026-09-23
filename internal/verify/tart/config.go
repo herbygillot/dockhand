@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -75,7 +76,7 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, op
 		return record.BuildConfig{}, err
 	}
 	if c.Image == "" {
-		if release, rErr := tartvm.ReleaseForPlatform(platform); rErr == nil && tartvm.NewerThanDefault(release) {
+		if release, rErr := tartvm.ReleaseForPlatform(platform); rErr == nil && tartvm.NewerThanDefault(release) && !options.Named {
 			def, _ := tartvm.DefaultRelease()
 			return record.BuildConfig{}, fmt.Errorf("%w: this Mac runs %s, which dockhand does not build on by default; it builds on %s and older. Run dockhand setup --os %s and pass --image to build on %s deliberately, or use --provider github", verify.ErrImageUnavailable, release.Name, def.Name, release.Slug, release.Name)
 		}
@@ -109,8 +110,17 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, op
 	if err != nil {
 		if p.Config.Image == "" {
 			setup := "run dockhand setup"
+			if options.Named {
+				// The release was asked for by name, so setup is asked for it.
+				if release, rErr := tartvm.ReleaseForPlatform(platform); rErr == nil {
+					setup += " --os " + release.Slug
+				}
+			}
 			if options.NeedsXcode {
-				setup = "run dockhand setup --xcode <archive-or-directory>"
+				setup += " --xcode <archive-or-directory>"
+			}
+			if options.Named {
+				return record.BuildConfig{}, fmt.Errorf("tart: image %s is unavailable; %s: %w", c.Image, setup, err)
 			}
 			return record.BuildConfig{}, fmt.Errorf("tart: default image %s is unavailable; %s or select --image: %w", c.Image, setup, err)
 		}
@@ -223,4 +233,19 @@ func (c Config) testTimeout() time.Duration {
 type Environment struct {
 	Digest   string
 	Platform record.Platform
+}
+
+// PreparedReleases are the macOS releases with a local image prepared under
+// setup's names, which a verification asking for every available platform
+// builds on.
+func (p *Provider) PreparedReleases(ctx context.Context) ([]macos.Release, error) {
+	runtime, err := (tartvm.Client{Executable: p.Config.Executable, Home: p.Config.Home}).Resolve()
+	if err != nil {
+		return nil, err
+	}
+	images, err := runtime.Images(ctx, tartvm.RunOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return tartvm.PreparedReleases(images), nil
 }

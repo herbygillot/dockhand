@@ -75,7 +75,7 @@ func (o *buildOptions) config(cmd *cobra.Command, config app.Config) (app.Config
 	// A Tart option is a choice of Tart: auto resolves to it rather than
 	// refusing the option, and never resolves to GitHub from any option.
 	if o.provider == "auto" {
-		for _, name := range []string{"image", "from-source", "variant", "test-timeout", "tests", "working-tree", "fresh"} {
+		for _, name := range []string{"image", "from-source", "variant", "test-timeout", "tests", "working-tree", "fresh", "os"} {
 			if cmd.Flags().Lookup(name) != nil && cmd.Flags().Changed(name) {
 				o.provider = verify.ProviderTart
 			}
@@ -128,7 +128,7 @@ func (o *buildOptions) config(cmd *cobra.Command, config app.Config) (app.Config
 }
 
 func verificationSettingsChanged(cmd *cobra.Command) bool {
-	for _, name := range []string{"provider", "image", "tests", "test-timeout", "from-source", "dependents", "target-image", "remote"} {
+	for _, name := range []string{"provider", "image", "tests", "test-timeout", "from-source", "dependents", "target-image", "remote", "os"} {
 		if cmd.Flags().Changed(name) {
 			return true
 		}
