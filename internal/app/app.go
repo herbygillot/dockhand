@@ -124,7 +124,10 @@ func assemble(config Config, repo *git.Repository, store *sqlite.Store, reposito
 		}
 		return store.Close()
 	}
-	ports := portReader(config, repo, indexMirror(config))
+	ports, err := portReader(config, repo, indexMirror(config))
+	if err != nil {
+		return nil, errors.Join(err, closeStore())
+	}
 	githubClient := newGitHubClient(config.GitHub)
 	discovery := releaseDiscovery(ports, githubClient, http.DefaultClient, config.GitExecutable)
 	// One workspace per source for the command: Tart staging and dependent

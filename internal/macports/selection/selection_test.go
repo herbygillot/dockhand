@@ -59,11 +59,11 @@ func native(t *testing.T) *eval.Evaluator {
 
 func TestNamedPortsUseOwningSnapshotAndPreserveSiblings(t *testing.T) {
 	tree := indexedTree(t, "1.0")
-	reader := &selection.Reader{Evaluator: native(t), Index: func(ctx context.Context, bound macports.Tree) (*portindex.Index, error) {
+	reader := &selection.Reader{Evaluator: native(t), Index: portindex.SourceFunc(func(ctx context.Context, bound macports.Tree) (*portindex.Index, error) {
 		require.Equal(t, tree.Source(), bound.Source())
 		require.Equal(t, tree.Root(), bound.Root())
 		return portindex.Open(bound.Root())
-	}}
+	})}
 	for _, test := range []struct{ name, subport, version string }{{"fixture", "", "1.0"}, {"fixture-1.16", "fixture-1.16", "1.16.2"}, {"py311-fixture", "py311-fixture", "2.0"}} {
 		targets, err := reader.Resolve(t.Context(), tree, macports.Selection{Selector: test.name})
 		require.NoError(t, err)
@@ -81,9 +81,9 @@ func TestNamedPortsUseOwningSnapshotAndPreserveSiblings(t *testing.T) {
 		}
 	}
 	other := indexedTree(t, "3.0")
-	reader.Index = func(_ context.Context, bound macports.Tree) (*portindex.Index, error) {
+	reader.Index = portindex.SourceFunc(func(_ context.Context, bound macports.Tree) (*portindex.Index, error) {
 		return portindex.Open(bound.Root())
-	}
+	})
 	targets, err := reader.Resolve(t.Context(), other, macports.Selection{Selector: "fixture"})
 	require.NoError(t, err)
 	bound, err := other.Select(targets[0])
@@ -95,9 +95,9 @@ func TestNamedPortsUseOwningSnapshotAndPreserveSiblings(t *testing.T) {
 
 func TestMissingOrStaleNamesNeverFallBackToParent(t *testing.T) {
 	tree := indexedTree(t, "1.0")
-	reader := &selection.Reader{Evaluator: native(t), Index: func(_ context.Context, tree macports.Tree) (*portindex.Index, error) {
+	reader := &selection.Reader{Evaluator: native(t), Index: portindex.SourceFunc(func(_ context.Context, tree macports.Tree) (*portindex.Index, error) {
 		return portindex.Open(tree.Root())
-	}}
+	})}
 	_, err := reader.Resolve(t.Context(), tree, macports.Selection{Selector: "fixture-1.17"})
 	require.ErrorIs(t, err, portindex.ErrNotIndexed)
 	body := "name fixture-1.17 portdir sysutils/fixture\n"

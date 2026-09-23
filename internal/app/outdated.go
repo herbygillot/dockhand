@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/outdated"
 )
 
@@ -16,10 +17,18 @@ func Outdated(ctx context.Context, config Config, selection outdated.Selection) 
 	if err != nil {
 		return outdated.Result{}, err
 	}
-	ports := portReader(config, repo, nil)
-	index, err := surveyIndex(config, len(selection.Ports) == 0)
+	ports, err := portReader(config, repo, nil)
 	if err != nil {
 		return outdated.Result{}, err
+	}
+	// A filter selects from the index; explicit names need none.
+	var index portindex.Source
+	if len(selection.Ports) == 0 {
+		recipe, err := surveyIndex(config, true)
+		if err != nil {
+			return outdated.Result{}, err
+		}
+		index = &portindex.Stager{Repo: repo, Config: recipe}
 	}
 	service := outdated.Service{Repo: repo, Ports: ports, Upstream: releaseDiscovery(ports, newGitHubClient(config.GitHub), http.DefaultClient, config.GitExecutable), Index: index}
 	return service.Observe(ctx, selection)

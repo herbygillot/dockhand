@@ -24,7 +24,8 @@ type Request struct {
 	Source            record.Source
 	Target            record.Target
 	Platform          record.Platform
-	Index             portindex.Config
+	// Index supplies the staged index of the tree the archive packs.
+	Index portindex.Source
 }
 
 // Archive stages the frozen tree and index, then atomically installs the archive.
@@ -67,11 +68,15 @@ func Archive(ctx context.Context, repo *git.Repository, workspaces *workspace.Re
 	if err != nil {
 		return err
 	}
-	if err = portindex.Stage(ctx, repo, request.Source, request.Platform, request.Index, into); err != nil {
+	if request.Index == nil {
+		return fmt.Errorf("staging: an index source is required")
+	}
+	index, err := request.Index.Index(ctx, into)
+	if err != nil {
 		return err
 	}
 	for _, target := range append([]record.Target{request.Target}, request.AdditionalTargets...) {
-		if err = requireIndexedTarget(root, target); err != nil {
+		if err = requireIndexedTarget(index, target); err != nil {
 			return err
 		}
 	}
@@ -158,11 +163,7 @@ func packSource(ctx context.Context, root string, payload map[string][]byte, tem
 
 }
 
-func requireIndexedTarget(root string, target record.Target) error {
-	index, err := portindex.Open(root)
-	if err != nil {
-		return err
-	}
+func requireIndexedTarget(index *portindex.Index, target record.Target) error {
 	entry, err := index.Lookup(target.Name)
 	if err != nil {
 		return fmt.Errorf("staging: selected target %s is not indexed: %w", target.Name, err)

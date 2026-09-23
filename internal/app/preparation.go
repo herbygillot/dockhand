@@ -50,7 +50,10 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 	if err != nil {
 		return Preview{}, err
 	}
-	ports := portReader(config, repo, indexMirror(config))
+	ports, err := portReader(config, repo, indexMirror(config))
+	if err != nil {
+		return Preview{}, err
+	}
 	platform, err := ports.NativePlatform(ctx)
 	if err != nil {
 		return Preview{}, err

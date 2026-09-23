@@ -236,7 +236,7 @@ printf 'core 0\n' > "$destination/PortIndex.quick"
 		require.NotEqual(t, root, target.Root())
 		return evaluated(ctx, target)
 	})
-	service := Service{Repo: repo, Ports: reader, Index: portindex.Config{Executable: indexer, CacheDirectory: t.TempDir()}}
+	service := Service{Repo: repo, Ports: reader, Index: &portindex.Stager{Repo: repo, Config: portindex.Config{Executable: indexer, CacheDirectory: t.TempDir()}}}
 	for range 2 {
 		coverage, err := service.Discover(t.Context(), source, platform, []record.Target{{Name: "core", Portfile: "devel/core/Portfile"}})
 		require.NoError(t, err)

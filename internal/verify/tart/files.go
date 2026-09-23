@@ -65,6 +65,6 @@ func makeInput(ctx context.Context, repo *git.Repository, workspaces *workspace.
 	}
 	payload := map[string][]byte{"guest.tcl": guestScript, "input.json": input, "guest.plist": guestPlist(c.GuestPrefix)}
 	path := filepath.Join(directory, "input.tar")
-	err = staging.Archive(ctx, repo, workspaces, staging.Request{AdditionalTargets: request.Spec.Preinstall, Source: request.Spec.Source, Target: request.Spec.Target, Platform: request.Spec.Config.Platform, Index: sourceIndex(c, indexCache, &portindex.Mirror{HTTP: client})}, path, payload, client)
+	err = staging.Archive(ctx, repo, workspaces, staging.Request{AdditionalTargets: request.Spec.Preinstall, Source: request.Spec.Source, Target: request.Spec.Target, Platform: request.Spec.Config.Platform, Index: &portindex.Stager{Repo: repo, Config: sourceIndex(c, indexCache, &portindex.Mirror{HTTP: client})}}, path, payload, client)
 	return path, err
 }

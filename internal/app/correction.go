@@ -52,7 +52,10 @@ func PreviewCorrection(ctx context.Context, config Config, request workflow.Corr
 	if err != nil {
 		return workflow.BoundCorrection{}, err
 	}
-	ports := portReader(config, repo, indexMirror(config))
+	ports, err := portReader(config, repo, indexMirror(config))
+	if err != nil {
+		return workflow.BoundCorrection{}, err
+	}
 	services := Services{Workflow: &workflow.Engine{State: state.Bind(store, repository), Repo: repo, Ports: ports}, ports: ports}
 	request.Preview = true
 	return services.BindCorrection(ctx, request, "", false)

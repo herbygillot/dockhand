@@ -95,7 +95,7 @@ type Service struct {
 	Repo     *git.Repository
 	Ports    macports.NativeEvaluator
 	Upstream *upstream.Service
-	Index    portindex.Config
+	Index    portindex.Source
 	// Workspaces hands out the tree; nil materializes one for this survey.
 	Workspaces *workspace.Registry
 }

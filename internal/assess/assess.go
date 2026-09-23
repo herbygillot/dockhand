@@ -112,7 +112,7 @@ type Service struct {
 	Ports           macports.NativeEvaluator
 	Upstream        *upstream.Service
 	DependencyTools dependency.Tools
-	Index           portindex.Config
+	Index           portindex.Source
 	// Workspaces hands out the tree; nil materializes one for this survey.
 	Workspaces *workspace.Registry
 }

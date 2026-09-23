@@ -17,7 +17,7 @@ import (
 // must stage or open an index belonging to the supplied tree, never the checkout.
 type Reader struct {
 	*eval.Evaluator
-	Index func(context.Context, macports.Tree) (*portindex.Index, error)
+	Index portindex.Source
 }
 
 // FromEntry retains the exact indexed name and its owning Portfile.
@@ -39,7 +39,7 @@ func (r *Reader) Resolve(ctx context.Context, tree macports.Tree, selected macpo
 	if r.Index == nil {
 		return nil, fmt.Errorf("%w: source-bound port index is required", macports.ErrTarget)
 	}
-	index, err := r.Index(ctx, tree)
+	index, err := r.Index.Index(ctx, tree)
 	if err != nil {
 		return nil, err
 	}
