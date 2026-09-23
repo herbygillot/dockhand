@@ -42,7 +42,8 @@ type Tree struct {
 	projected  bool
 }
 
-// NewTree is the tree of a plain, complete materialization.
+// NewTree is the tree of a plain, complete materialization. Production
+// trees come from a workspace; tests build one here.
 func NewTree(source record.Source, root string, platform record.Platform) (Tree, error) {
 	return NewTreeOver(source, root, root, platform, nil)
 }

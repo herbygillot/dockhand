@@ -59,7 +59,7 @@ func native(t *testing.T) *eval.Evaluator {
 
 func TestNamedPortsUseOwningSnapshotAndPreserveSiblings(t *testing.T) {
 	tree := indexedTree(t, "1.0")
-	reader := &selection.Reader{Evaluator: native(t), Index: portindex.SourceFunc(func(ctx context.Context, bound macports.Tree) (*portindex.Index, error) {
+	reader := &selection.Reader{Evaluator: native(t), Index: indexFunc(func(ctx context.Context, bound macports.Tree) (*portindex.Index, error) {
 		require.Equal(t, tree.Source(), bound.Source())
 		require.Equal(t, tree.Root(), bound.Root())
 		return portindex.Open(bound.Root())
@@ -81,7 +81,7 @@ func TestNamedPortsUseOwningSnapshotAndPreserveSiblings(t *testing.T) {
 		}
 	}
 	other := indexedTree(t, "3.0")
-	reader.Index = portindex.SourceFunc(func(_ context.Context, bound macports.Tree) (*portindex.Index, error) {
+	reader.Index = indexFunc(func(_ context.Context, bound macports.Tree) (*portindex.Index, error) {
 		return portindex.Open(bound.Root())
 	})
 	targets, err := reader.Resolve(t.Context(), other, macports.Selection{Selector: "fixture"})
@@ -95,7 +95,7 @@ func TestNamedPortsUseOwningSnapshotAndPreserveSiblings(t *testing.T) {
 
 func TestMissingOrStaleNamesNeverFallBackToParent(t *testing.T) {
 	tree := indexedTree(t, "1.0")
-	reader := &selection.Reader{Evaluator: native(t), Index: portindex.SourceFunc(func(_ context.Context, tree macports.Tree) (*portindex.Index, error) {
+	reader := &selection.Reader{Evaluator: native(t), Index: indexFunc(func(_ context.Context, tree macports.Tree) (*portindex.Index, error) {
 		return portindex.Open(tree.Root())
 	})}
 	_, err := reader.Resolve(t.Context(), tree, macports.Selection{Selector: "fixture-1.17"})
@@ -108,4 +108,11 @@ func TestMissingOrStaleNamesNeverFallBackToParent(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(tree.Root(), "PortIndex"), []byte(fmt.Sprintf("fixture %d\n%s", len(body), body)), 0600))
 	_, err = reader.Resolve(t.Context(), tree, macports.Selection{Selector: "fixture"})
 	require.ErrorIs(t, err, macports.ErrTarget)
+}
+
+// indexFunc is a fixture index source: the test opens what it wrote.
+type indexFunc func(context.Context, macports.Tree) (*portindex.Index, error)
+
+func (f indexFunc) Index(ctx context.Context, tree macports.Tree) (*portindex.Index, error) {
+	return f(ctx, tree)
 }

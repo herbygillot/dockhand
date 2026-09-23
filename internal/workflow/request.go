@@ -17,12 +17,12 @@ import (
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
-// actionRule says what one action accepts: whether it prepares a candidate
-// tree, which destinations it may request, and which optional parts of a
-// spec belong to it. Every rule that used to read "if the action is X" is a
+// actionRule says what one action accepts: which destinations it may
+// request, and which optional parts of a spec belong to it. Whether the
+// action prepares a candidate tree is the record's own rule,
+// Action.Prepares. Every rule that used to read "if the action is X" is a
 // column here, so adding an action is a row, not a search.
 type actionRule struct {
-	prepares     bool
 	destinations []record.Destination
 	// correction requires a correction spec with a captured candidate:
 	// amend and rebase adopt a branch. A preparing action may carry a
@@ -48,11 +48,11 @@ type actionRule struct {
 var preparedDestinations = []record.Destination{record.BranchReady, record.VerificationComplete, record.Published}
 
 var actionRules = map[record.Action]actionRule{
-	record.Bump:             {prepares: true, destinations: preparedDestinations, version: true, shared: true, dependents: true, keepFailed: true},
-	record.BumpRevision:     {prepares: true, destinations: preparedDestinations, dependents: true, keepFailed: true},
-	record.RefreshChecksums: {prepares: true, destinations: preparedDestinations, dependents: true, keepFailed: true},
-	record.Amend:            {prepares: true, destinations: preparedDestinations, correction: true, dependents: true, keepFailed: true},
-	record.Rebase:           {prepares: true, destinations: preparedDestinations, correction: true, dependents: true, keepFailed: true},
+	record.Bump:             {destinations: preparedDestinations, version: true, shared: true, dependents: true, keepFailed: true},
+	record.BumpRevision:     {destinations: preparedDestinations, dependents: true, keepFailed: true},
+	record.RefreshChecksums: {destinations: preparedDestinations, dependents: true, keepFailed: true},
+	record.Amend:            {destinations: preparedDestinations, correction: true, dependents: true, keepFailed: true},
+	record.Rebase:           {destinations: preparedDestinations, correction: true, dependents: true, keepFailed: true},
 	record.Verify:           {destinations: []record.Destination{record.VerificationComplete}, fresh: true, checkout: true, dependents: true, keepFailed: true},
 	record.Publish:          {destinations: []record.Destination{record.Published}, publication: true},
 }
@@ -173,7 +173,7 @@ func validateDestination(spec *record.JobSpec, rule actionRule) error {
 	}
 	if spec.PublishTo != nil {
 		destination := *spec.PublishTo
-		if !rule.prepares || spec.Preparation == nil || spec.Destination != record.Published || spec.Publication != nil || !publicationVerification(spec, spec.Verification == record.VerificationSkipped, false) {
+		if !spec.Action.Prepares() || spec.Preparation == nil || spec.Destination != record.Published || spec.Publication != nil || !publicationVerification(spec, spec.Verification == record.VerificationSkipped, false) {
 			return fmt.Errorf("%w: combined publication requires a preparation job that verifies or explicitly skips verification", ErrInvalidRequest)
 		}
 		if err := publish.ValidateDestination(destination); err != nil {
@@ -181,7 +181,7 @@ func validateDestination(spec *record.JobSpec, rule actionRule) error {
 		}
 		spec.PublishTo = &destination
 	}
-	if rule.prepares && spec.Destination == record.Published && spec.PublishTo == nil {
+	if spec.Action.Prepares() && spec.Destination == record.Published && spec.PublishTo == nil {
 		return fmt.Errorf("%w: publication destination required", ErrInvalidRequest)
 	}
 	return nil
@@ -239,7 +239,7 @@ func normalizeRequirements(spec *record.JobSpec, rule actionRule) error {
 	if spec.BuildRequirements == nil {
 		return nil
 	}
-	if !rule.prepares || spec.Verification != record.VerificationRequired || spec.Destination == record.BranchReady {
+	if !spec.Action.Prepares() || spec.Verification != record.VerificationRequired || spec.Destination == record.BranchReady {
 		return fmt.Errorf("%w: recorded-evidence requirements require a verified preparation job", ErrInvalidRequest)
 	}
 	if err := verify.ValidateRequirements(*spec.BuildRequirements); err != nil {
@@ -266,11 +266,11 @@ func normalizePreparation(spec *record.JobSpec, rule actionRule) error {
 		copy := *correction
 		choices.Correction = &copy
 		captured := copy.Candidate != (record.Source{})
-		if rule.correction != captured || !rule.prepares || !validToken(string(copy.ChangeID)) || !validToken(string(copy.RevisionID)) || !git.ValidBranchName(copy.Branch) || !git.ValidObjectID(string(copy.PreviousHead)) || copy.RemoteHead != "" && !git.ValidObjectID(string(copy.RemoteHead)) || captured && (validateSource(copy.Candidate) != nil || copy.Candidate.Commit == "" || copy.Candidate.Base == "") {
+		if rule.correction != captured || !spec.Action.Prepares() || !validToken(string(copy.ChangeID)) || !validToken(string(copy.RevisionID)) || !git.ValidBranchName(copy.Branch) || !git.ValidObjectID(string(copy.PreviousHead)) || copy.RemoteHead != "" && !git.ValidObjectID(string(copy.RemoteHead)) || captured && (validateSource(copy.Candidate) != nil || copy.Candidate.Commit == "" || copy.Candidate.Base == "") {
 			return ErrInvalidRequest
 		}
 	}
-	if !rule.prepares || spec.InputRevision != "" || spec.Source.Commit == "" || len(spec.Targets) != 1 {
+	if !spec.Action.Prepares() || spec.InputRevision != "" || spec.Source.Commit == "" || len(spec.Targets) != 1 {
 		return fmt.Errorf("%w: preparation requires one committed source target and a branch-ready, verification, or publication destination", ErrInvalidRequest)
 	}
 	if !git.ValidBranchName(choices.SourceBranch) || choices.Author.Name == "" || choices.Author.Email == "" || strings.ContainsAny(choices.Author.Name+choices.Author.Email, "\x00\r\n<>") || !utf8.ValidString(choices.Author.Name+choices.Author.Email) {

@@ -21,6 +21,8 @@ type TokenSource interface {
 	Token(context.Context) (Token, error)
 }
 
+// TokenSourceFunc is a TokenSource written as a function, for tests that
+// script a credential.
 type TokenSourceFunc func(context.Context) (Token, error)
 
 func (f TokenSourceFunc) Token(ctx context.Context) (Token, error) { return f(ctx) }

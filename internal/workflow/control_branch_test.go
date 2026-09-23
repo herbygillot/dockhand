@@ -31,13 +31,13 @@ func TestBranchScopeFreezesPendingJobs(t *testing.T) {
 	f.run(t, settled)
 	first := f.submit(t, "first")
 
-	scope, err := f.engine.BranchScope(t.Context(), "candidate")
+	scope, err := f.engine.ContributionScope(t.Context(), workflow.ContributionSelector{Branch: "candidate"})
 	require.NoError(t, err)
 	require.Equal(t, []record.JobID{first}, scope.Jobs)
 
 	second := f.submit(t, "second")
 	require.Equal(t, []record.JobID{first}, scope.Jobs, "later work must not join an existing attachment")
-	current, err := f.engine.BranchScope(t.Context(), "candidate")
+	current, err := f.engine.ContributionScope(t.Context(), workflow.ContributionSelector{Branch: "candidate"})
 	require.NoError(t, err)
 	require.ElementsMatch(t, []record.JobID{first, second}, current.Jobs)
 }
@@ -50,12 +50,12 @@ func TestControlBranchSelectsAndRecordsAtomically(t *testing.T) {
 	second := f.submit(t, "second")
 	request := record.ControlRequest{ID: "cancel-branch", Kind: record.Cancel, Reason: "stop this contribution"}
 
-	scope, err := f.engine.ControlBranch(t.Context(), request, "candidate")
+	scope, err := f.engine.ControlContribution(t.Context(), request, workflow.ContributionSelector{Branch: "candidate"})
 	require.NoError(t, err)
 	require.ElementsMatch(t, []record.JobID{first, second}, scope.Jobs)
 
 	later := f.submit(t, "later")
-	retry, err := f.engine.ControlBranch(t.Context(), request, "candidate")
+	retry, err := f.engine.ControlContribution(t.Context(), request, workflow.ContributionSelector{Branch: "candidate"})
 	require.NoError(t, err)
 	require.Equal(t, scope, retry, "an idempotent retry must retain the original selection")
 
@@ -81,13 +81,13 @@ func TestBranchSelectionRequiresOpenContributionAndPendingWork(t *testing.T) {
 	f.cancel(t, job)
 	f.run(t, job)
 
-	_, err := f.engine.BranchScope(t.Context(), "candidate")
+	_, err := f.engine.ContributionScope(t.Context(), workflow.ContributionSelector{Branch: "candidate"})
 	require.ErrorIs(t, err, workflow.ErrNoPendingJobs)
-	_, err = f.engine.ControlBranch(t.Context(), record.ControlRequest{ID: "cancel", Kind: record.Cancel}, "candidate")
+	_, err = f.engine.ControlContribution(t.Context(), record.ControlRequest{ID: "cancel", Kind: record.Cancel}, workflow.ContributionSelector{Branch: "candidate"})
 	require.ErrorIs(t, err, workflow.ErrNoPendingJobs)
-	_, err = f.engine.BranchScope(t.Context(), "missing")
+	_, err = f.engine.ContributionScope(t.Context(), workflow.ContributionSelector{Branch: "missing"})
 	require.ErrorIs(t, err, state.ErrNotFound)
-	_, err = f.engine.BranchScope(t.Context(), "bad..branch")
+	_, err = f.engine.ContributionScope(t.Context(), workflow.ContributionSelector{Branch: "bad..branch"})
 	require.ErrorIs(t, err, workflow.ErrInvalidRequest)
 
 	require.NoError(t, f.store.Update(t.Context(), f.repository, func(ctx context.Context, tx state.Tx) error {
@@ -98,6 +98,6 @@ func TestBranchSelectionRequiresOpenContributionAndPendingWork(t *testing.T) {
 		change.Disposition = record.ChangeClosed
 		return tx.PutChange(ctx, change)
 	}))
-	_, err = f.engine.BranchScope(t.Context(), "candidate")
+	_, err = f.engine.ContributionScope(t.Context(), workflow.ContributionSelector{Branch: "candidate"})
 	require.ErrorIs(t, err, state.ErrNotFound)
 }

@@ -151,7 +151,7 @@ func (p *scriptedProvider) Capabilities(ctx context.Context) (verify.Capabilitie
 	if err := p.begin(ctx, "capabilities"); err != nil {
 		return verify.Capabilities{}, err
 	}
-	return verify.Capabilities{Name: "scripted", Platforms: []record.Platform{buildPlatform}, Capacity: 1, Isolated: true}, nil
+	return verify.Capabilities{Name: "scripted", Platforms: []record.Platform{buildPlatform}, Capacity: 1}, nil
 }
 func admitted(id record.RequestID) verify.Submission {
 	return verify.Submission{State: verify.Admitted, Run: record.ProviderRun{Provider: "scripted", RequestID: id, RunID: "run-" + string(id)}, Resources: []record.ResourceHandle{{Provider: "scripted", ID: "vm-" + string(id)}}}

@@ -224,7 +224,7 @@ printf 'fixture 0\n' > "$out/PortIndex.quick"
 type capacityProvider struct{ verify.Provider }
 
 func (capacityProvider) Capabilities(context.Context) (verify.Capabilities, error) {
-	return verify.Capabilities{Name: "tart", Platforms: []record.Platform{testPlatform}, Isolated: true, Capacity: 1}, nil
+	return verify.Capabilities{Name: "tart", Platforms: []record.Platform{testPlatform}, Capacity: 1}, nil
 }
 
 func (capacityProvider) Submit(context.Context, verify.Request) (verify.Submission, error) {

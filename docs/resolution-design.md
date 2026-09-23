@@ -93,8 +93,6 @@ type Resolution struct {
 	// lands on, for Continue, Onto, and Adopt.
 	Change   *record.Change
 	Revision *record.Revision
-	// Prior is the job a Continue inherits from.
-	Prior *record.Job
 	// Selection is the target as the records name it, with the person's
 	// variant choices laid over the recorded ones.
 	Selection macports.Selection

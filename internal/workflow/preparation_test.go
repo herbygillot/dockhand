@@ -16,6 +16,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
@@ -108,9 +109,9 @@ func TestRevisionPreparationCreatesSeparateContributionWithoutProvider(t *testin
 	require.NoFileExists(t, filepath.Join(f.repo.CommonDir, "index"))
 	out, err := exec.CommandContext(t.Context(), "git", "-C", f.repo.Root, "show", "-s", "--format=%P%n%an <%ae>%n%at%n%B", commit).CombinedOutput()
 	require.NoError(t, err)
-	require.Contains(t, string(out), "\n\n"+preparation.GeneratedBy())
+	require.Contains(t, string(out), "\n\n"+commitmsg.GeneratedBy())
 	require.Contains(t, string(out), sourceCommit+"\nAccepted Author <accepted@example.invalid>\n")
-	require.Contains(t, string(out), "fixture: Rebuild dependents\n\n"+preparation.GeneratedBy())
+	require.Contains(t, string(out), "fixture: Rebuild dependents\n\n"+commitmsg.GeneratedBy())
 	require.Len(t, status.Changes, 1)
 	require.Equal(t, req.Spec.Targets, status.Changes[0].Targets)
 	require.Equal(t, job.ResultRevision, status.Changes[0].CurrentRevision)

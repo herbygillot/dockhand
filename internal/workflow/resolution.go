@@ -51,8 +51,6 @@ type Resolution struct {
 	// lands on, for Continue, Onto, Adopt, and Tracked.
 	Change   *record.Change
 	Revision *record.Revision
-	// Prior is the job a Continue inherits from.
-	Prior *record.Job
 	// Selection is the target as the records name it, with the person's
 	// variant choices laid over the recorded ones.
 	Selection macports.Selection
@@ -191,7 +189,7 @@ func (e *Engine) resolveTracked(ctx context.Context, request ResolutionRequest) 
 // continued is a Continue of the prior job: its recorded source and its
 // choices, with the request's laid over.
 func (e *Engine) continued(request ResolutionRequest, prior record.Job, change record.Change) Resolution {
-	resolution := Resolution{Kind: Continue, Source: prior.Spec.Source, Change: &change, Prior: &prior, Intent: request.Intent, Subject: request.Subject, References: request.References, Branch: change.Branch}
+	resolution := Resolution{Kind: Continue, Source: prior.Spec.Source, Change: &change, Intent: request.Intent, Subject: request.Subject, References: request.References, Branch: change.Branch}
 	if prior.Spec.Preparation != nil {
 		resolution.Intent.SharedRelease = request.Intent.SharedRelease || prior.Spec.Preparation.SharedRelease
 		resolution.Intent.KeepOldChecksums = request.Intent.KeepOldChecksums || prior.Spec.Preparation.KeepOldChecksums

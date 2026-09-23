@@ -56,5 +56,3 @@ func (s *Store) FetchFirst(ctx context.Context, info macports.PortInfo, name str
 	}
 	return Download{}, err
 }
-
-// ChecksumValues is the checksum declaration each download makes.

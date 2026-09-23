@@ -76,9 +76,6 @@ type Entry struct {
 	id     record.RequestID
 }
 
-// ID is the request the entry is for.
-func (e *Entry) ID() record.RequestID { return e.id }
-
 // Read is the request's row.
 func (e *Entry) Read(ctx context.Context) (record.ProviderExecution, error) {
 	return e.ledger.Read(ctx, e.Pool.ID, e.id)

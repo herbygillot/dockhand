@@ -303,7 +303,7 @@ An automatic `record.Release` additionally retains `CurrentVersion` and `NoUpdat
 
 `workflow.BindVerification` chooses current-checkout capture when `Branch` is empty and committed binding otherwise. Both inputs share isolated materialization, MacPorts target resolution/evaluation, acceptance, and the existing verification cycle. A dirty source has a tree without a commit; `record.Checkout` separately records branch, observed HEAD, and modified-file count in immutable job options. Tracked contributions retain revision association; standalone and detached verification create no contribution. SQLite's existing options JSON stores this provenance, with no schema migration.
 
-`verify.PlanSingle` and Tart accept tree-only sources. Tart still checks commit/tree agreement whenever a commit is supplied, and always materializes the accepted tree. Guest input, durable provider identity, recovery, and cancellation remain on the existing path. Evidence reuse after later commits and tracked-target inference are implemented; standalone publication can use matching evidence. See the [working-tree report](activity/2026-09-13-working-tree-verification.md).
+`verify.PlanWithConfig` and Tart accept tree-only sources. Tart still checks commit/tree agreement whenever a commit is supplied, and always materializes the accepted tree. Guest input, durable provider identity, recovery, and cancellation remain on the existing path. Evidence reuse after later commits and tracked-target inference are implemented; standalone publication can use matching evidence. See the [working-tree report](activity/2026-09-13-working-tree-verification.md).
 
 
 ## Verification reuse

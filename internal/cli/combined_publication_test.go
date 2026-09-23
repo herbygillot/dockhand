@@ -77,7 +77,7 @@ func TestRevisionBumpPublicationCLIWaitAndResume(t *testing.T) {
 			require.Contains(t, stderr.String(), "fixture: PR https://github.com/author/ports/pull/1 (created)")
 			require.NotContains(t, stderr.String(), "checking the remote before publishing", "the driver's detail stays at -v")
 			assert.Equal(t, 1, forge.writes())
-			all, err := app.Status(t.Context(), config)
+			all, err := app.FilteredStatus(t.Context(), config, workflow.StatusFilter{})
 			require.NoError(t, err)
 			require.Len(t, all.Jobs, 3, "one preparation fixture, one evidence fixture, one combined job")
 			stdout.Reset()

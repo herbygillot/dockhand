@@ -56,7 +56,7 @@ func TestWaitRecordsFailureWithoutSubmittingNewWork(t *testing.T) {
 	decodeResult(t, stdout.Bytes(), &result)
 	require.Equal(t, id, result.Status.Jobs[0].Job.ID)
 	require.Equal(t, record.JobNeedsAttention, result.Status.Jobs[0].Job.State)
-	status, err := app.Status(t.Context(), config)
+	status, err := app.FilteredStatus(t.Context(), config, workflow.StatusFilter{})
 	require.NoError(t, err)
 	require.Len(t, status.Jobs, 1)
 }
@@ -151,7 +151,7 @@ func TestResidentDriverAppliesAcceptedControlAndStopsWithoutNewWork(t *testing.T
 	done := make(chan error, 1)
 	go func() { done <- Run(ctx, []string{"serve", "--json"}, Streams{Out: &stdout, Err: &stderr}, config) }()
 	require.Eventually(t, func() bool {
-		status, err := app.Status(t.Context(), config)
+		status, err := app.FilteredStatus(t.Context(), config, workflow.StatusFilter{})
 		return err == nil && len(status.Jobs) == 1 && status.Jobs[0].Job.State == record.JobCanceled
 	}, 5*time.Second, 20*time.Millisecond)
 	cancel()
@@ -160,7 +160,7 @@ func TestResidentDriverAppliesAcceptedControlAndStopsWithoutNewWork(t *testing.T
 	decodeResult(t, stdout.Bytes(), &result)
 	require.True(t, result.Stopped)
 	require.True(t, result.Interrupted)
-	status, err := app.Status(t.Context(), config)
+	status, err := app.FilteredStatus(t.Context(), config, workflow.StatusFilter{})
 	require.NoError(t, err)
 	require.Len(t, status.Jobs, 1)
 	require.Empty(t, status.Jobs[0].Attempts)

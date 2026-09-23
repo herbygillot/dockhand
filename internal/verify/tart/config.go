@@ -57,7 +57,7 @@ func (p *Provider) Capabilities(ctx context.Context) (verify.Capabilities, error
 	if c.Platform != (record.Platform{}) {
 		platforms = []record.Platform{c.Platform}
 	}
-	return verify.Capabilities{Name: verify.ProviderTart, Platforms: platforms, Isolated: true, Capacity: c.Capacity}, nil
+	return verify.Capabilities{Name: verify.ProviderTart, Platforms: platforms, Capacity: c.Capacity}, nil
 }
 func (p *Provider) BuildConfigForImage(ctx context.Context, platform record.Platform, options verify.BuildOptions, image string) (record.BuildConfig, error) {
 	config := p.Config

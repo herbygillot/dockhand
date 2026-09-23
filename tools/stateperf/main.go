@@ -54,7 +54,7 @@ func measure(ctx context.Context, n int, distinct bool, name string, iterations 
 type capacityProvider struct{ verify.Provider }
 
 func (capacityProvider) Capabilities(context.Context) (verify.Capabilities, error) {
-	return verify.Capabilities{Name: "perf", Platforms: []record.Platform{{OS: "darwin", Version: "25", Architecture: "arm64"}}, Capacity: 1, Isolated: true}, nil
+	return verify.Capabilities{Name: "perf", Platforms: []record.Platform{{OS: "darwin", Version: "25", Architecture: "arm64"}}, Capacity: 1}, nil
 }
 func (capacityProvider) Submit(context.Context, verify.Request) (verify.Submission, error) {
 	return verify.Submission{State: verify.AtCapacity}, nil

@@ -52,7 +52,7 @@ func TestSharedDatabaseRepositoryRegistration(t *testing.T) {
 			return tx.PutChange(ctx, record.Change{ID: record.ChangeID(s.Workflow.State.Repository().ID), Branch: "same-branch", Disposition: record.ChangeOpen})
 		}))
 	}
-	status, err := app.Status(t.Context(), app.Config{Repository: worktree, DBPath: db})
+	status, err := app.FilteredStatus(t.Context(), app.Config{Repository: worktree, DBPath: db}, workflow.StatusFilter{})
 	require.NoError(t, err)
 	require.Len(t, status.Changes, 1)
 }
@@ -62,7 +62,7 @@ func TestStatusDoesNotCreateOrRegisterState(t *testing.T) {
 	runGit(t, root, "init", "--quiet")
 	portsTree(t, root)
 	db := filepath.Join(t.TempDir(), "missing", "state.db")
-	status, err := app.Status(t.Context(), app.Config{Repository: root, DBPath: db})
+	status, err := app.FilteredStatus(t.Context(), app.Config{Repository: root, DBPath: db}, workflow.StatusFilter{})
 	require.NoError(t, err)
 	require.Empty(t, status.Jobs)
 	for _, filter := range []workflow.StatusFilter{{Active: true}, {Branch: "candidate"}, {JobID: "unknown"}} {
@@ -82,7 +82,7 @@ func TestStatusDoesNotCreateOrRegisterState(t *testing.T) {
 	other := t.TempDir()
 	runGit(t, other, "init", "--quiet")
 	portsTree(t, other)
-	status, err = app.Status(t.Context(), app.Config{Repository: other, DBPath: db})
+	status, err = app.FilteredStatus(t.Context(), app.Config{Repository: other, DBPath: db}, workflow.StatusFilter{})
 	require.NoError(t, err)
 	require.Empty(t, status.Repository)
 	_, err = app.FilteredStatus(t.Context(), app.Config{Repository: other, DBPath: db}, workflow.StatusFilter{JobID: "unknown"})

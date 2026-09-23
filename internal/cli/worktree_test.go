@@ -5,6 +5,7 @@ import (
 	"context"
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 	"os"
@@ -57,7 +58,7 @@ func TestVerifyCLISelectsExplicitWorkingTreeOrBranch(t *testing.T) {
 			}
 			err = Run(ctx, args, Streams{Out: &stdout, Err: stderr}, config)
 			require.ErrorIs(t, err, context.Canceled)
-			status, err := app.Status(t.Context(), config)
+			status, err := app.FilteredStatus(t.Context(), config, workflow.StatusFilter{})
 			require.NoError(t, err)
 			require.Len(t, status.Jobs, 1)
 			job := status.Jobs[0].Job

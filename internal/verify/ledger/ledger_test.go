@@ -58,7 +58,6 @@ func TestOpenLocksTheRequestAndReadRefusesAnotherRepository(t *testing.T) {
 
 	entry, err := mine.Open(t.Context(), pool, "request")
 	require.NoError(t, err)
-	require.Equal(t, record.RequestID("request"), entry.ID())
 	require.Equal(t, pool.ID, entry.Pool.ID)
 	_, err = filelock.TryExisting(t.Context(), ledger.LockPath(pool, "request"), filelock.Exclusive)
 	require.ErrorIs(t, err, filelock.ErrBusy, "the request is locked while the entry is open")

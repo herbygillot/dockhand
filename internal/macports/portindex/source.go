@@ -18,13 +18,6 @@ type Source interface {
 	Index(context.Context, macports.Tree) (*Index, error)
 }
 
-// SourceFunc is a Source written as a function, for a test's fixture index.
-type SourceFunc func(context.Context, macports.Tree) (*Index, error)
-
-func (f SourceFunc) Index(ctx context.Context, tree macports.Tree) (*Index, error) {
-	return f(ctx, tree)
-}
-
 // Stager is the Source that stages. It installs a tree's index into the
 // tree's root once, Config resolving the indexer and Repo reading the
 // sources, opens it from there after, and remembers what it staged, so a

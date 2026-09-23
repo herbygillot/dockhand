@@ -158,46 +158,6 @@ func PlanWithConfig(job record.Job, revision record.Revision, config record.Buil
 	return plan, builds, nil
 }
 
-// PlanSingle retains the one-target planning contract used by evidence reuse.
-func PlanSingle(job record.Job, revision record.Revision) (record.VerificationPlan, record.BuildSpec, error) {
-	if err := requireSingle(job, revision); err != nil {
-		return record.VerificationPlan{}, record.BuildSpec{}, err
-	}
-	if job.Spec.Build == nil {
-		if job.Spec.Preparation != nil && job.Spec.Preparation.VerificationProblem != "" {
-			return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: %s; prepared branch is preserved", job.Spec.Preparation.VerificationProblem)
-		}
-		return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: no build configuration was selected")
-	}
-	return planSingleWithConfig(job, revision, *job.Spec.Build)
-}
-
-// planSingleWithConfig creates a one-target plan from an exact configuration
-// selected by accepted requirements and recorded evidence.
-func planSingleWithConfig(job record.Job, revision record.Revision, config record.BuildConfig) (record.VerificationPlan, record.BuildSpec, error) {
-	if err := requireSingle(job, revision); err != nil {
-		return record.VerificationPlan{}, record.BuildSpec{}, err
-	}
-	plan, builds, err := PlanWithConfig(job, revision, config)
-	if err != nil {
-		return record.VerificationPlan{}, record.BuildSpec{}, err
-	}
-	return plan, builds[0], nil
-}
-
-// requireSingle is the one-target planning contract: one job target whose
-// coverage intent the release scope resolves to exactly one member.
-func requireSingle(job record.Job, revision record.Revision) error {
-	targets, err := job.Spec.RequiredTargets(revision.Scope)
-	if err != nil {
-		return err
-	}
-	if len(job.Spec.Targets) != 1 || len(targets) != 1 {
-		return fmt.Errorf("verify: this cycle requires one verification target and an explicit build configuration")
-	}
-	return nil
-}
-
 // correctionOf is the correction a job is making, or nil when it is not one.
 func correctionOf(job record.Job) *record.CorrectionSpec {
 	if job.Spec.Preparation == nil {

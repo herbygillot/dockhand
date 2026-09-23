@@ -84,7 +84,8 @@ func Open(ctx context.Context, repo *git.Repository, source record.Source) (*Wor
 // materialization or a test fixture, so overlays can be made over it. The
 // directory stays the caller's: Close leaves it. Entries come from a walk
 // of the directory, so an overlay's Commit has no blob to check against
-// and is refused; Rescan picks up files added after adoption.
+// and is refused; Rescan picks up files added after adoption. Only tests
+// adopt a directory; production workspaces come from the registry.
 func Adopt(root string, source record.Source) (*Workspace, error) {
 	root, err := filepath.EvalSymlinks(root)
 	if err != nil {

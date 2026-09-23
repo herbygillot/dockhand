@@ -17,7 +17,6 @@ type Capabilities struct {
 	Name string
 	// Empty Platforms defers platform validation to Submit.
 	Platforms []record.Platform
-	Isolated  bool
 	Capacity  int
 }
 

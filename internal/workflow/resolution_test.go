@@ -121,7 +121,6 @@ func TestResolveContinuesAPriorJobAndInheritsItsChoices(t *testing.T) {
 	require.False(t, previewed.Checked)
 	require.Contains(t, previewed.Detail, "not checked in a preview")
 	require.Equal(t, job.Spec.Source, previewed.Source, "the prior job's recorded source")
-	require.Equal(t, job.ID, previewed.Prior.ID)
 	require.Equal(t, "Rebuild dependents", previewed.Subject, "inherited from the prior job")
 	require.Equal(t, job.Spec.Targets[0].Portfile, previewed.Selection.Selector)
 	require.True(t, previewed.Selection.Variants["debug"], "the request's variants lie over the recorded ones")

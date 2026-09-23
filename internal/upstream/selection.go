@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/version"
 	"slices"
-	"strings"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
@@ -29,16 +28,6 @@ type Selection struct {
 	Requested string
 	Candidate Candidate
 	Inferred  bool
-}
-
-// PatternFromCurrent requires one identifiable occurrence of the evaluated
-// version. Explicit PortGroup prefix/suffix metadata can supply a pattern directly.
-func PatternFromCurrent(current, tag string) (TagPattern, error) {
-	if version.Validate(current) != nil || version.Validate(tag) != nil || strings.Count(tag, current) != 1 {
-		return TagPattern{}, ErrTagPattern
-	}
-	prefix, suffix, _ := strings.Cut(tag, current)
-	return TagPattern{Prefix: prefix, Suffix: suffix}, nil
 }
 
 // MatchRelease judges already collected evidence; lookup failures must be

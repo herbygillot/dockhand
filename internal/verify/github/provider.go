@@ -50,7 +50,7 @@ type executionRun struct {
 }
 
 func (p *Provider) Capabilities(context.Context) (verify.Capabilities, error) {
-	return verify.Capabilities{Name: verify.ProviderGitHub, Isolated: true}, nil
+	return verify.Capabilities{Name: verify.ProviderGitHub}, nil
 }
 
 // locked runs fn with the request's ledger entry open, so its row is read

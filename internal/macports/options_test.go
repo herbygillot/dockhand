@@ -19,8 +19,13 @@ func TestOptionListsNameOnlyReadOptions(t *testing.T) {
 	}
 	for _, list := range [][]string{VersionFollowers, LivecheckOptions, LivecheckListingOptions, ForgeOptions("github"), ForgeOptions("gitlab")} {
 		for _, name := range list {
-			require.True(t, KnownOption(name), "%s is named by a rule but never read", name)
+			require.True(t, knownOption(name), "%s is named by a rule but never read", name)
 		}
 	}
-	require.False(t, KnownOption("github.master_sites"))
+	require.False(t, knownOption("github.master_sites"))
+}
+
+// knownOption reports whether an option name is one the evaluator reports.
+func knownOption(name string) bool {
+	return slices.Contains(ReadOptions, name) || slices.Contains(InfoOptions, name) || slices.Contains(ComputedOptions, name)
 }

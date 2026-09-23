@@ -1,7 +1,5 @@
 package macports
 
-import "slices"
-
 // The Portfile options dockhand reads, and the subsets its rules name, in
 // one place: the evaluator is given ReadOptions, so the Tcl side never
 // restates the list; the fidelity check, discovery, and source
@@ -49,9 +47,4 @@ var (
 // reads, for the github or gitlab prefix.
 func ForgeOptions(prefix string) []string {
 	return []string{prefix + ".author", prefix + ".project", prefix + ".version", prefix + ".tag_prefix", prefix + ".tag_suffix", "git.branch"}
-}
-
-// KnownOption reports whether an option name is one the evaluator reports.
-func KnownOption(name string) bool {
-	return slices.Contains(ReadOptions, name) || slices.Contains(InfoOptions, name) || slices.Contains(ComputedOptions, name)
 }

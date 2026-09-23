@@ -14,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/herbygillot/dockhand/internal/state"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -49,7 +50,7 @@ func TestVerifyCLIReusesEvidenceAndFreshFlagIsDurable(t *testing.T) {
 	stdout.Reset()
 	err := Run(ctx, []string{"verify", "fixture", "--adopt", "candidate", "--fresh", "--json", "-v"}, Streams{Out: &stdout, Err: detach}, config)
 	require.ErrorIs(t, err, context.Canceled)
-	status, err := app.Status(t.Context(), config)
+	status, err := app.FilteredStatus(t.Context(), config, workflow.StatusFilter{})
 	require.NoError(t, err)
 	require.Len(t, status.Jobs, 3)
 	fresh := status.Jobs[len(status.Jobs)-1].Job
@@ -92,10 +93,11 @@ func seedCLIVerification(t *testing.T, config app.Config, branch string) time.Ti
 				return err
 			}
 		}
-		plan, build, err := verify.PlanSingle(job, revision)
+		plan, builds, err := verify.PlanWithConfig(job, revision, *job.Spec.Build)
 		if err != nil {
 			return err
 		}
+		build := builds[0]
 		if err := tx.PutPlan(ctx, plan); err != nil {
 			return err
 		}

@@ -24,13 +24,6 @@ func TestRequestedVersionUsesConfirmedTagConvention(t *testing.T) {
 			require.Empty(t, observed[0].Version, "evidence must not be mutated")
 		}
 	}
-	pattern, err := upstream.PatternFromCurrent("1.8.0", "jq-1.8.0")
-	require.NoError(t, err)
-	require.Equal(t, upstream.TagPattern{Prefix: "jq-"}, pattern)
-	for _, values := range [][2]string{{"1.0", "release-current"}, {"1", "v1-build1"}, {"", "v1"}} {
-		_, err := upstream.PatternFromCurrent(values[0], values[1])
-		require.ErrorIs(t, err, upstream.ErrTagPattern)
-	}
 }
 
 func TestReleaseSelectionDoesNotGuessPastAmbiguousOrMissingEvidence(t *testing.T) {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/stretchr/testify/require"
 )
 
@@ -51,7 +52,7 @@ func TestVerifyCLIInfersTrackedBranchAndCurrentCheckout(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 	require.Contains(t, diagnostics.String(), "inferred from tracked contribution")
 	require.Contains(t, diagnostics.String(), "Variants: +debug")
-	status, err := app.Status(t.Context(), config)
+	status, err := app.FilteredStatus(t.Context(), config, workflow.StatusFilter{})
 	require.NoError(t, err)
 	job := status.Jobs[len(status.Jobs)-1].Job
 	require.Equal(t, record.JobQueued, job.State)
@@ -75,7 +76,7 @@ func TestVerifyCLIRejectsUnknownInferenceWithoutAcceptingWork(t *testing.T) {
 	require.Equal(t, 1, envelope.ExitCode)
 	require.Contains(t, envelope.Error, "specify a port explicitly")
 	require.Nil(t, envelope.Result, "a refused command has an envelope with no result")
-	status, err := app.Status(t.Context(), config)
+	status, err := app.FilteredStatus(t.Context(), config, workflow.StatusFilter{})
 	require.NoError(t, err)
 	require.Empty(t, status.Jobs)
 	require.Empty(t, status.Changes)

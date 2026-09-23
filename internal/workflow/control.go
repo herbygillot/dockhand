@@ -67,12 +67,6 @@ func (e *Engine) Control(ctx context.Context, request record.ControlRequest) err
 	})
 }
 
-// BranchScope freezes the queued and active jobs currently associated with one
-// open tracked contribution. Jobs accepted after this read are not added.
-func (e *Engine) BranchScope(ctx context.Context, branch string) (Scope, error) {
-	return e.ContributionScope(ctx, ContributionSelector{Branch: branch})
-}
-
 // ContributionScope freezes pending jobs without incorporating later submissions.
 func (e *Engine) ContributionScope(ctx context.Context, selected ContributionSelector) (Scope, error) {
 	if e == nil || e.State == nil {
@@ -98,13 +92,6 @@ func (e *Engine) ContributionScope(ctx context.Context, selected ContributionSel
 		return nil
 	})
 	return scope, err
-}
-
-// ControlBranch selects a branch's queued and active jobs and records the exact
-// cancellation set in the same transaction. Retrying an accepted request uses
-// its original job set, even when newer work now exists on the branch.
-func (e *Engine) ControlBranch(ctx context.Context, request record.ControlRequest, branch string) (Scope, error) {
-	return e.ControlContribution(ctx, request, ContributionSelector{Branch: branch})
 }
 
 // ControlContribution selects and records cancellation in one transaction.

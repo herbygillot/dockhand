@@ -136,7 +136,7 @@ type processProvider struct {
 }
 
 func (p processProvider) Capabilities(context.Context) (verify.Capabilities, error) {
-	return verify.Capabilities{Name: "test", Platforms: []record.Platform{{OS: "darwin", Version: "25", Architecture: "arm64"}}, Capacity: 1, Isolated: true}, nil
+	return verify.Capabilities{Name: "test", Platforms: []record.Platform{{OS: "darwin", Version: "25", Architecture: "arm64"}}, Capacity: 1}, nil
 }
 func (p processProvider) Submit(ctx context.Context, r verify.Request) (verify.Submission, error) {
 	file, err := os.OpenFile(p.log, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)

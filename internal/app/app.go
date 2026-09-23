@@ -184,10 +184,6 @@ func (s *Services) Close() error {
 	return nil
 }
 
-func Status(ctx context.Context, config Config) (workflow.Status, error) {
-	return FilteredStatus(ctx, config, workflow.StatusFilter{})
-}
-
 func FilteredStatus(ctx context.Context, config Config, filter workflow.StatusFilter) (workflow.Status, error) {
 	if err := filter.Validate(); err != nil {
 		return workflow.Status{}, err
