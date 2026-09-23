@@ -1,4 +1,8 @@
-package eval
+// Package fetchguard reads a port's pre-fetch hooks and decides whether the
+// fetch is standard, guarded by a rejection that changes nothing fetched,
+// or custom. It is static analysis over the hook text and the definitions
+// the observation worker ships, with no interpreter of its own.
+package fetchguard
 
 import (
 	"fmt"
@@ -10,14 +14,14 @@ import (
 	"github.com/herbygillot/dockhand/internal/text"
 )
 
-// hookOrigin says where a pre-fetch hook was written: the Portfile or a
+// Origin says where a pre-fetch hook was written: the Portfile or a
 // PortGroup, and the line its body starts on. Unknown when Label is empty.
-type hookOrigin struct {
+type Origin struct {
 	Label string
 	Line  int
 }
 
-func assessFetch(info macports.PortInfo, procedure, pre, post string, origins []hookOrigin, defs definitions) macports.FetchSemantics {
+func Assess(info macports.PortInfo, procedure, pre, post string, origins []Origin, defs Definitions) macports.FetchSemantics {
 	result := macports.FetchSemantics{Kind: "custom", Procedure: procedure}
 	if procedure != "portfetch::fetch_main" {
 		result.Problem = "custom fetch procedure " + procedure
@@ -35,7 +39,7 @@ func assessFetch(info macports.PortInfo, procedure, pre, post string, origins []
 	for i, hook := range hooks {
 		guard, rejected, refused := classifyHook(info, hook, defs)
 		if refused.text != "" {
-			var origin hookOrigin
+			var origin Origin
 			if i < len(origins) {
 				origin = origins[i]
 			}
@@ -73,7 +77,7 @@ func refuse(at int, format string, args ...any) refusal {
 // the offending command when the hook's origin is known, else nothing. The
 // origin's line is where the trimmed body starts, so leading blank lines of
 // the body do not count.
-func (r refusal) where(hook string, origin hookOrigin) string {
+func (r refusal) where(hook string, origin Origin) string {
 	if origin.Label == "" || origin.Line <= 0 {
 		return ""
 	}
@@ -98,7 +102,7 @@ func (r refusal) where(hook string, origin hookOrigin) string {
 // rejection, or as a hook that changes nothing the fetch reads. Commands
 // the grammar's own rules do not name are judged by their effect on the
 // fetch, a procedure by its body as the worker shipped it.
-func classifyHook(info macports.PortInfo, hook string, defs definitions) (guard string, rejected bool, refused refusal) {
+func classifyHook(info macports.PortInfo, hook string, defs Definitions) (guard string, rejected bool, refused refusal) {
 	body, ok := hookBody(hook)
 	if !ok {
 		return "", false, refuse(-1, "is not wrapped as a Base hook")
@@ -150,7 +154,7 @@ func classifyHook(info macports.PortInfo, hook string, defs definitions) (guard 
 // return -code error or Tcl's error with one plain message, or by
 // nothing that rejects at all; otherwise it names the command that does
 // something to the fetch, and what.
-func rejectionReason(src []byte, commands []syntax.Command, defs definitions) refusal {
+func rejectionReason(src []byte, commands []syntax.Command, defs Definitions) refusal {
 	if len(commands) == 0 {
 		return refuse(-1, "is empty")
 	}
@@ -186,7 +190,7 @@ func rejectionReason(src []byte, commands []syntax.Command, defs definitions) re
 	}
 	return accepted
 }
-func conditionalReason(src []byte, commands []syntax.Command, defs definitions) refusal {
+func conditionalReason(src []byte, commands []syntax.Command, defs Definitions) refusal {
 	if len(commands) == 0 {
 		return refuse(-1, "is empty")
 	}
@@ -235,7 +239,7 @@ func conditionalReason(src []byte, commands []syntax.Command, defs definitions) 
 // branchReason reads one branch of a conditional rejection: a rejection,
 // or, when it opens with if, a conditional rejection in its own right,
 // whose refusals already say what they stopped at.
-func branchReason(src []byte, commands []syntax.Command, defs definitions) refusal {
+func branchReason(src []byte, commands []syntax.Command, defs Definitions) refusal {
 	if len(commands) > 0 {
 		if name, _ := commands[0].Name(src); name == "if" {
 			return conditionalReason(src, commands, defs)
@@ -264,7 +268,7 @@ var hostReadCommands = map[string]func(args []string) bool{
 	"info":   func(args []string) bool { return len(args) == 2 && args[0] == "exists" },
 }
 
-func pureConditionReason(src []byte, body text.Span, defs definitions) refusal {
+func pureConditionReason(src []byte, body text.Span, defs Definitions) refusal {
 	e, errs := syntax.ParseExpr(src, body)
 	if len(errs) != 0 {
 		return refuse(body.Start, "has a condition that does not parse as an expression: `%s`", snippet(src, body))
@@ -382,14 +386,14 @@ func snippet(src []byte, span text.Span) string {
 	return line
 }
 
-// parseOrigins reads the worker's origin list: one entry per hook, each a
+// ParseOrigins reads the worker's origin list: one entry per hook, each a
 // label and a line, or empty when the body was found in no file.
-func parseOrigins(value string) []hookOrigin {
+func ParseOrigins(value string) []Origin {
 	entries, errs := syntax.ListValues(value)
 	if len(errs) != 0 {
 		return nil
 	}
-	origins := make([]hookOrigin, len(entries))
+	origins := make([]Origin, len(entries))
 	for i, entry := range entries {
 		fields, errs := syntax.ListValues(entry)
 		if len(errs) != 0 || len(fields) != 2 {
@@ -399,7 +403,7 @@ func parseOrigins(value string) []hookOrigin {
 		if err != nil || line <= 0 {
 			continue
 		}
-		origins[i] = hookOrigin{Label: fields[0], Line: line}
+		origins[i] = Origin{Label: fields[0], Line: line}
 	}
 	return origins
 }

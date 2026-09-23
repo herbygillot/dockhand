@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"net/http"
 
@@ -22,7 +23,7 @@ type Request = portedit.Request
 type CommitIntent = portedit.CommitIntent
 
 // GeneratedBy is the trailer generated contribution commits end with.
-func GeneratedBy() string { return portedit.GeneratedBy() }
+func GeneratedBy() string { return commitmsg.GeneratedBy() }
 
 var ErrUnsupported = portedit.ErrUnsupported
 var ErrFidelity = portedit.ErrFidelity

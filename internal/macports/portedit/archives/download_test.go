@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/fetchguard"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -180,6 +181,6 @@ func (c Client) fetchOne(ctx context.Context, info macports.PortInfo) (Download,
 func TestDownloadPolicyOptionsAreFetchAffecting(t *testing.T) {
 	t.Parallel()
 	for _, key := range []string{"distfiles", "master_sites", "checksums", "fetch.type", "patchfiles", "filespath", "fetch.ignore_sslcert", "go.vendors", "cargo.crates", "cargo.crates_github"} {
-		require.True(t, macports.AffectsFetch(key), key)
+		require.True(t, fetchguard.AffectsFetch(key), key)
 	}
 }

@@ -2,7 +2,7 @@ package publish
 
 import (
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports/portedit"
+	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"path"
 	"strings"
 	"unicode"
@@ -19,7 +19,7 @@ func publicationBody(content record.PublicationContent, change record.Change, so
 	fmt.Fprintf(&b, "\n#### Description\n\n%s\n", content.Title)
 	var description []string
 	for _, line := range strings.Split(content.Body, "\n") {
-		if !portedit.IsAttribution(line) {
+		if !commitmsg.IsAttribution(line) {
 			description = append(description, line)
 		}
 	}

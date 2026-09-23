@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/fetchguard"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -309,15 +310,15 @@ func decodeMetadata(reply string) (macports.PortInfo, []string, error) {
 			return macports.PortInfo{}, nil, fmt.Errorf("macports: invalid fetch metadata")
 		}
 		values["fetch.archive_compatible"] = "0"
-		var origins []hookOrigin
+		var origins []fetchguard.Origin
 		if len(fields) >= 4 {
-			origins = parseOrigins(fields[3])
+			origins = fetchguard.ParseOrigins(fields[3])
 		}
-		var definitions definitions
+		var definitions fetchguard.Definitions
 		if len(fields) == 5 {
-			definitions = parseDefinitions(fields[4])
+			definitions = fetchguard.ParseDefinitions(fields[4])
 		}
-		assessment := assessFetch(value, fields[0], fields[1], fields[2], origins, definitions)
+		assessment := fetchguard.Assess(value, fields[0], fields[1], fields[2], origins, definitions)
 		value.Fetch = &assessment
 		if assessment.Kind != "custom" {
 			values["fetch.archive_compatible"] = "1"

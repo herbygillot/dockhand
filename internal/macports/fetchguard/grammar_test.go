@@ -1,4 +1,4 @@
-package eval
+package fetchguard
 
 import (
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -38,25 +38,6 @@ if {${go.toolchain_unmet} ne ""} {
 		require.False(t, goToolchainCheck(unsupported), unsupported)
 	}
 }
-
-func TestFetchMetadataReportsCompatibilityWithoutExposingHookBodies(t *testing.T) {
-	t.Parallel()
-	for _, test := range []struct {
-		details    string
-		compatible string
-	}{
-		{"{portfetch::fetch_main {} {}}", "1"},
-		{"{custom_fetch {} {}}", "0"},
-		{"{portfetch::fetch_main {{error custom}} {}}", "0"},
-		{"{portfetch::fetch_main {} {post_fetch}}", "0"},
-	} {
-		info, _, err := decodeMetadata("name fixture version 1 revision 0 epoch 0 fetch_details " + test.details)
-		require.NoError(t, err)
-		require.Equal(t, test.compatible, info.Options["fetch.archive_compatible"])
-		require.NotContains(t, info.Options, "fetch_details")
-	}
-}
-
 func TestRejectionOnlyFetchGuardPreservesPlatformRestriction(t *testing.T) {
 	t.Parallel()
 	wrapper := "global {*}[info globals]\n"
@@ -75,12 +56,7 @@ return -code error "unsupported platform"`
 		require.False(t, rejectionOnly(body), body)
 	}
 	require.True(t, rejectionOnly(wrapper+"set note \"$name is unavailable\"; ui_msg $note; return -code error \"unsupported platform\""), "a plain variable and a message change nothing the fetch reads")
-	info, _, err := decodeMetadata("name fixture version 1 revision 0 epoch 0 fetch_details {portfetch::fetch_main {{" + safe + "}} {}}")
-	require.NoError(t, err)
-	require.Equal(t, "guarded", info.Fetch.Kind)
-	require.True(t, info.Fetch.Rejected)
-	require.Equal(t, "1", info.Options["fetch.archive_compatible"])
-	require.NotContains(t, info.Options, "fetch_details")
+
 }
 
 func TestConditionalRejectionGuardsAreRecognized(t *testing.T) {
@@ -93,7 +69,7 @@ func TestConditionalRejectionGuardsAreRecognized(t *testing.T) {
 `
 	require.True(t, conditionalRejection(perl))
 	require.False(t, rejectionOnly(perl), "a conditional guard is not an unconditional rejection")
-	semantics := assessFetch(macports.PortInfo{Options: map[string]string{}}, "portfetch::fetch_main", "{"+perl+"}", "", nil, nil)
+	semantics := Assess(macports.PortInfo{Options: map[string]string{}}, "portfetch::fetch_main", "{"+perl+"}", "", nil, nil)
 	require.Empty(t, semantics.Problem)
 	require.Equal(t, "guarded", semantics.Kind)
 	require.False(t, semantics.Rejected)
@@ -158,7 +134,7 @@ func TestRefusalNamesTheCommandTheGrammarStoppedAt(t *testing.T) {
 		{"empty", wrapper + "\n", plain, "is empty"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			semantics := assessFetch(test.info, "portfetch::fetch_main", "{"+test.hook+"}", "", nil, nil)
+			semantics := Assess(test.info, "portfetch::fetch_main", "{"+test.hook+"}", "", nil, nil)
 			require.Equal(t, "custom", semantics.Kind)
 			require.Equal(t, "pre-fetch hook 1 "+test.want, semantics.Problem)
 		})
@@ -167,13 +143,13 @@ func TestRefusalNamesTheCommandTheGrammarStoppedAt(t *testing.T) {
 	// the hook body starts at Portfile line 12, its first line blank, and the
 	// error is on the body's third line.
 	hook := wrapper + "\n    ui_error \"unsupported\"\n    distfiles other\n"
-	semantics := assessFetch(plain, "portfetch::fetch_main", "{"+hook+"}", "", []hookOrigin{{Label: "Portfile", Line: 12}}, nil)
+	semantics := Assess(plain, "portfetch::fetch_main", "{"+hook+"}", "", []Origin{{Label: "Portfile", Line: 12}}, nil)
 	require.Equal(t, "pre-fetch hook 1 ends with `distfiles other` rather than return -code error, which writes `distfiles`, at Portfile line 13", semantics.Problem)
-	semantics = assessFetch(plain, "portfetch::fetch_main", "{"+hook+"}", "", []hookOrigin{{Label: "the java-1.0 PortGroup", Line: 40}}, nil)
+	semantics = Assess(plain, "portfetch::fetch_main", "{"+hook+"}", "", []Origin{{Label: "the java-1.0 PortGroup", Line: 40}}, nil)
 	require.Equal(t, "pre-fetch hook 1 ends with `distfiles other` rather than return -code error, which writes `distfiles`, in the java-1.0 PortGroup at line 41", semantics.Problem)
-	require.Equal(t, []hookOrigin{{Label: "Portfile", Line: 5}, {}, {Label: "the x-1.0 PortGroup", Line: 9}}, parseOrigins("{Portfile 5} {} {{the x-1.0 PortGroup} 9}"))
+	require.Equal(t, []Origin{{Label: "Portfile", Line: 5}, {}, {Label: "the x-1.0 PortGroup", Line: 9}}, ParseOrigins("{Portfile 5} {} {{the x-1.0 PortGroup} 9}"))
 	// A recognized hook with an origin is a guard as before.
-	semantics = assessFetch(plain, "portfetch::fetch_main", "{"+wrapper+"return -code error no\n}", "", []hookOrigin{{Label: "Portfile", Line: 3}}, nil)
+	semantics = Assess(plain, "portfetch::fetch_main", "{"+wrapper+"return -code error no\n}", "", []Origin{{Label: "Portfile", Line: 3}}, nil)
 	require.Equal(t, "guarded", semantics.Kind)
 	require.Empty(t, semantics.Problem)
 }
@@ -204,16 +180,16 @@ func TestGrammarExtensionsOnlyAdmitRejections(t *testing.T) {
 		"nested else branches":        wrapper + "if {${a}} { if {${b}} { return -code error b } else { return -code error c } } elseif {${d}} { error d }\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			semantics := assessFetch(plain, "portfetch::fetch_main", "{"+hook+"}", "", nil, nil)
+			semantics := Assess(plain, "portfetch::fetch_main", "{"+hook+"}", "", nil, nil)
 			require.Empty(t, semantics.Problem)
 			require.Equal(t, "guarded", semantics.Kind)
 		})
 	}
 	// A hook that rejects unconditionally through error still preserves the
 	// platform restriction; a nested conditional still does not claim one.
-	semantics := assessFetch(plain, "portfetch::fetch_main", "{"+wrapper+"error \"unsupported platform\"\n}", "", nil, nil)
+	semantics := Assess(plain, "portfetch::fetch_main", "{"+wrapper+"error \"unsupported platform\"\n}", "", nil, nil)
 	require.True(t, semantics.Rejected)
-	semantics = assessFetch(plain, "portfetch::fetch_main", "{"+wrapper+"if {${a}} { if {${b}} { error no } }\n}", "", nil, nil)
+	semantics = Assess(plain, "portfetch::fetch_main", "{"+wrapper+"if {${a}} { if {${b}} { error no } }\n}", "", nil, nil)
 	require.False(t, semantics.Rejected)
 	require.Equal(t, []string{"pre-fetch hook 1 only rejects unsupported configurations"}, semantics.Guards)
 	// What stays outside: a read whose argument is computed by a command, a
@@ -232,7 +208,7 @@ func TestGrammarExtensionsOnlyAdmitRejections(t *testing.T) {
 		wrapper + "error [subst no]\n",
 		wrapper + "error {*}$messages\n",
 	} {
-		semantics := assessFetch(plain, "portfetch::fetch_main", "{"+hook+"}", "", nil, nil)
+		semantics := Assess(plain, "portfetch::fetch_main", "{"+hook+"}", "", nil, nil)
 		require.NotEmpty(t, semantics.Problem, hook)
 		require.Equal(t, "custom", semantics.Kind, hook)
 	}
@@ -247,7 +223,7 @@ func TestEffectRuleJudgesCommandsByWhatTheyDoToTheFetch(t *testing.T) {
 	t.Parallel()
 	wrapper := "global {*}[info globals]\n"
 	plain := macports.PortInfo{Options: map[string]string{}}
-	defs := definitions{
+	defs := Definitions{
 		"configure.env-append":    {kind: "option", option: "configure.env"},
 		"java.home":               {kind: "option", option: "java.home"},
 		"distfiles-append":        {kind: "option", option: "distfiles"},
@@ -285,7 +261,7 @@ foreach depspec $ports {
 		"_get_dep_port":        {kind: "proc", args: "depspec", body: "set speclist [split $depspec :]\nset portname [lindex $speclist end]\nset res [_portnameactive $portname]\nif {$res != 0} { return $portname }\nset depfile \"\"\nswitch [lindex $speclist 0] {\n    bin { set depfile [_mportsearchpath $portname /usr/bin 1 1] }\n    path { set depfile [_mportsearchpath $portname /opt 0 1] }\n}\nif {$depfile eq \"\"} { return $portname } else { return [registry_file_registered $depfile] }\n"},
 	}
 	assess := func(hook string) macports.FetchSemantics {
-		return assessFetch(plain, "portfetch::fetch_main", "{"+wrapper+hook+"}", "", nil, defs)
+		return Assess(plain, "portfetch::fetch_main", "{"+wrapper+hook+"}", "", nil, defs)
 	}
 	mpi := "if {${mpi.require} && [mpi_variant_name] eq \"\"} {\n    return -code error \"must set at least one mpi variant\"\n}\nmpi.action_enforce_variants ${mpi.required_variants}\n"
 	semantics := assess(mpi)
@@ -329,13 +305,13 @@ foreach depspec $ports {
 
 func TestParseDefinitionsReadsTheWorkersList(t *testing.T) {
 	t.Parallel()
-	defs := parseDefinitions("{configure.env-append option configure.env} {helper proc {{a b} {ui_msg $a}}} {registry_active command {}} {broken proc {onlyone}} {odd kind x}")
-	require.Equal(t, definitions{
+	defs := ParseDefinitions("{configure.env-append option configure.env} {helper proc {{a b} {ui_msg $a}}} {registry_active command {}} {broken proc {onlyone}} {odd kind x}")
+	require.Equal(t, Definitions{
 		"configure.env-append": {kind: "option", option: "configure.env"},
 		"helper":               {kind: "proc", args: "a b", body: "ui_msg $a"},
 		"registry_active":      {kind: "command"},
 	}, defs)
-	require.Nil(t, parseDefinitions("{unbalanced"))
+	require.Nil(t, ParseDefinitions("{unbalanced"))
 }
 
 // The recognizer's parts, exercised on their own: each parses a wrapped

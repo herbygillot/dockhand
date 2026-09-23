@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/verify"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -227,12 +228,12 @@ func TestImageAvailabilityErrorsAreSpecific(t *testing.T) {
 			require.Error(t, err)
 			switch kind {
 			case "missing image":
-				require.ErrorIs(t, err, ErrImageUnavailable)
+				require.ErrorIs(t, err, verify.ErrImageUnavailable)
 			case "missing binary":
-				require.ErrorIs(t, err, ErrExecutableUnavailable)
+				require.ErrorIs(t, err, verify.ErrExecutableUnavailable)
 			default:
-				require.NotErrorIs(t, err, ErrImageUnavailable)
-				require.NotErrorIs(t, err, ErrExecutableUnavailable)
+				require.NotErrorIs(t, err, verify.ErrImageUnavailable)
+				require.NotErrorIs(t, err, verify.ErrExecutableUnavailable)
 			}
 		})
 	}

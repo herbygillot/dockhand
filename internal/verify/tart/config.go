@@ -59,14 +59,14 @@ func (p *Provider) Capabilities(ctx context.Context) (verify.Capabilities, error
 	}
 	return verify.Capabilities{Name: verify.ProviderTart, Platforms: platforms, Isolated: true, Capacity: c.Capacity}, nil
 }
-func (p *Provider) BuildConfigForImage(ctx context.Context, platform record.Platform, options BuildOptions, image string) (record.BuildConfig, error) {
+func (p *Provider) BuildConfigForImage(ctx context.Context, platform record.Platform, options verify.BuildOptions, image string) (record.BuildConfig, error) {
 	config := p.Config
 	config.Image = image
 	provider := &Provider{Config: config, State: p.State, Repository: p.Repository, Repo: p.Repo, HTTP: p.HTTP, backend: p.backend}
 	return provider.BuildConfig(ctx, platform, options)
 }
 
-func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, options BuildOptions) (record.BuildConfig, error) {
+func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, options verify.BuildOptions) (record.BuildConfig, error) {
 	if options.Tests == record.TestWorkflow {
 		return record.BuildConfig{}, fmt.Errorf("tart: workflow test policy is unsupported")
 	}
@@ -77,7 +77,7 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, op
 	if c.Image == "" {
 		if release, rErr := tartvm.ReleaseForPlatform(platform); rErr == nil && tartvm.NewerThanDefault(release) {
 			def, _ := tartvm.DefaultRelease()
-			return record.BuildConfig{}, fmt.Errorf("%w: this Mac runs %s, which dockhand does not build on by default; it builds on %s and older. Run dockhand setup --os %s and pass --image to build on %s deliberately, or use --provider github", ErrImageUnavailable, release.Name, def.Name, release.Slug, release.Name)
+			return record.BuildConfig{}, fmt.Errorf("%w: this Mac runs %s, which dockhand does not build on by default; it builds on %s and older. Run dockhand setup --os %s and pass --image to build on %s deliberately, or use --provider github", verify.ErrImageUnavailable, release.Name, def.Name, release.Slug, release.Name)
 		}
 		if options.NeedsXcode {
 			c.Image, err = tartvm.DefaultXcodeImageName(platform)
@@ -123,7 +123,7 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, op
 	if observed {
 		accepted := record.BuildConfig{Provider: verify.ProviderTart, Platform: platform, EnvironmentDigest: environment.Digest, NeedsXcode: options.NeedsXcode, CapabilitiesRequired: true}
 		if problem := capabilityProblem(capabilities, c, accepted); problem != "" {
-			return record.BuildConfig{}, fmt.Errorf("%w: image %s is incompatible: %s", ErrImageUnavailable, c.Image, problem)
+			return record.BuildConfig{}, fmt.Errorf("%w: image %s is incompatible: %s", verify.ErrImageUnavailable, c.Image, problem)
 		}
 		warnMacPortsVersionSkew(ctx, options.HostMacPortsVersion, c.Image, capabilities.Capabilities.MacPortsVersion)
 	}
@@ -223,14 +223,4 @@ func (c Config) testTimeout() time.Duration {
 type Environment struct {
 	Digest   string
 	Platform record.Platform
-}
-
-type BuildOptions struct {
-	Tests      record.TestPolicy
-	FromSource bool
-	NeedsXcode bool
-	// HostMacPortsVersion is the MacPorts Base that evaluated the port on the
-	// host. It selects nothing; the provider warns when the image's observed
-	// Base differs, since host evaluation and guest builds then disagree.
-	HostMacPortsVersion string
 }

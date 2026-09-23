@@ -3,12 +3,12 @@ package workflow
 import (
 	"context"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"maps"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
@@ -157,11 +157,11 @@ func revisedMessage(original, targetName, subject string, references []record.Re
 			name = prefix
 		}
 		var err error
-		if line, err = portedit.Subject(name, subject); err != nil {
+		if line, err = commitmsg.Subject(name, subject); err != nil {
 			return "", err
 		}
 	}
-	return portedit.Rewrite(original, line, references), nil
+	return commitmsg.Rewrite(original, line, references), nil
 }
 
 // revisedScope is the release scope of a revision prepared onto a

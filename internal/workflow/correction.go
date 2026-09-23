@@ -3,11 +3,11 @@ package workflow
 import (
 	"context"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/git/changeset"
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
@@ -169,7 +169,7 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 		// that way, and with the port name supplied when they did not.
 		if _, _, ok := strings.Cut(title, ": "); ok {
 			message = title
-		} else if message, err = portedit.Subject(target.Name, title); err != nil {
+		} else if message, err = commitmsg.Subject(target.Name, title); err != nil {
 			return result, err
 		}
 	}

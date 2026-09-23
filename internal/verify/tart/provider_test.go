@@ -47,7 +47,7 @@ func TestBuildConfigSelectsConventionalNativeImage(t *testing.T) {
 		Config:  Config{Home: home, ArtifactDirectory: t.TempDir(), PortIndexExecutable: fakePortIndex(t)},
 		backend: newMachine(),
 	}
-	config, err := provider.BuildConfig(t.Context(), testPlatform, BuildOptions{Tests: record.TestDeclared})
+	config, err := provider.BuildConfig(t.Context(), testPlatform, verify.BuildOptions{Tests: record.TestDeclared})
 	require.NoError(t, err)
 	var settings Config
 	require.NoError(t, json.Unmarshal(config.ProviderConfig, &settings))
@@ -60,7 +60,7 @@ func TestBuildConfigSelectsConventionalNativeImage(t *testing.T) {
 func TestBuildConfigSelectsXcodeImageForRequiredTargets(t *testing.T) {
 	t.Parallel()
 	provider := &Provider{Config: Config{Home: t.TempDir(), ArtifactDirectory: t.TempDir(), PortIndexExecutable: fakePortIndex(t)}, backend: newMachine()}
-	config, err := provider.BuildConfig(t.Context(), testPlatform, BuildOptions{Tests: record.TestDeclared, NeedsXcode: true})
+	config, err := provider.BuildConfig(t.Context(), testPlatform, verify.BuildOptions{Tests: record.TestDeclared, NeedsXcode: true})
 	require.NoError(t, err)
 	require.True(t, config.NeedsXcode)
 	var settings Config
@@ -309,7 +309,7 @@ func TestIncompatibleImageIsRecordedAndReleasedBeforeStaging(t *testing.T) {
 	require.Equal(t, record.VerdictBlocked, observed.Verdict)
 	require.Contains(t, observed.Detail, "active ports")
 	require.NotNil(t, observed.Environment)
-	_, err = f.provider.BuildConfig(t.Context(), testPlatform, BuildOptions{Tests: record.TestSkip})
+	_, err = f.provider.BuildConfig(t.Context(), testPlatform, verify.BuildOptions{Tests: record.TestSkip})
 	require.ErrorContains(t, err, "image fixture is incompatible")
 	require.Equal(t, 1, machine.calls["capabilities"], "configuration should use the cached rejection")
 
@@ -501,7 +501,7 @@ func TestCancellationPreservesAnAlreadyFinishedGuest(t *testing.T) {
 func TestFrozenProviderChoicesResumeWithoutImageOrCapacityFlags(t *testing.T) {
 	t.Parallel()
 	f, m := singleRun(t)
-	config, err := f.provider.BuildConfig(t.Context(), testPlatform, BuildOptions{Tests: record.TestSkip, FromSource: true})
+	config, err := f.provider.BuildConfig(t.Context(), testPlatform, verify.BuildOptions{Tests: record.TestSkip, FromSource: true})
 	require.NoError(t, err)
 	f.request.Spec.Config = config
 	p := &Provider{State: f.store, Repository: f.provider.Repository, Repo: f.provider.Repo, Config: Config{Home: f.provider.Config.Home, ArtifactDirectory: f.provider.Config.ArtifactDirectory}, backend: m}
@@ -593,7 +593,7 @@ func TestAdmissionProgressPrecedesWorkAndStopsAtFailure(t *testing.T) {
 func TestNamedBuildConfigDoesNotChangeProviderDefault(t *testing.T) {
 	t.Parallel()
 	provider := &Provider{Config: Config{Image: "default-image", Home: t.TempDir(), ArtifactDirectory: t.TempDir(), PortIndexExecutable: fakePortIndex(t)}, backend: newMachine()}
-	config, err := provider.BuildConfigForImage(t.Context(), testPlatform, BuildOptions{Tests: record.TestDeclared}, "dependent-image")
+	config, err := provider.BuildConfigForImage(t.Context(), testPlatform, verify.BuildOptions{Tests: record.TestDeclared}, "dependent-image")
 	require.NoError(t, err)
 	var settings Config
 	require.NoError(t, json.Unmarshal(config.ProviderConfig, &settings))
@@ -672,18 +672,18 @@ func TestBuildConfigWarnsWhenHostAndImageMacPortsDiffer(t *testing.T) {
 	provider := &Provider{Config: Config{Home: filepath.Join(root, "home"), ArtifactDirectory: filepath.Join(root, "artifacts"), PortIndexExecutable: fakePortIndex(t)}, backend: newMachine(), State: store}
 	var messages []string
 	ctx := progress.WithReporter(t.Context(), func(u progress.Update) { messages = append(messages, u.Message) })
-	_, err = provider.BuildConfig(ctx, testPlatform, BuildOptions{Tests: record.TestDeclared, HostMacPortsVersion: "2.11.6"})
+	_, err = provider.BuildConfig(ctx, testPlatform, verify.BuildOptions{Tests: record.TestDeclared, HostMacPortsVersion: "2.11.6"})
 	require.NoError(t, err)
 	require.NotContains(t, strings.Join(messages, "\n"), "Warning", "an unobserved image cannot be compared")
 
 	capabilities := record.EnvironmentCapabilities{Platform: testPlatform, MacPortsPrefix: "/opt/local", MacPortsVersion: "2.12.6", DeveloperTools: record.DeveloperToolsCommandLine}
 	require.NoError(t, store.PutImageCapabilities(t.Context(), state.ImageCapabilities{Provider: verify.ProviderTart, EnvironmentDigest: "sha256:fixture", CapabilityDigest: capabilityIdentity(capabilities), Capabilities: capabilities, ObservedAt: time.Now()}))
 	messages = nil
-	_, err = provider.BuildConfig(ctx, testPlatform, BuildOptions{Tests: record.TestDeclared, HostMacPortsVersion: "2.11.6"})
+	_, err = provider.BuildConfig(ctx, testPlatform, verify.BuildOptions{Tests: record.TestDeclared, HostMacPortsVersion: "2.11.6"})
 	require.NoError(t, err)
 	require.Contains(t, strings.Join(messages, "\n"), "the host evaluates ports with MacPorts 2.11.6, but image dockhand-base-tahoe builds with MacPorts 2.12.6")
 	messages = nil
-	_, err = provider.BuildConfig(ctx, testPlatform, BuildOptions{Tests: record.TestDeclared, HostMacPortsVersion: "2.12.6"})
+	_, err = provider.BuildConfig(ctx, testPlatform, verify.BuildOptions{Tests: record.TestDeclared, HostMacPortsVersion: "2.12.6"})
 	require.NoError(t, err)
 	require.NotContains(t, strings.Join(messages, "\n"), "Warning")
 }

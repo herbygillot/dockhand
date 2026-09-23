@@ -3,6 +3,7 @@ package choice_test
 import (
 	"context"
 	"errors"
+	"github.com/herbygillot/dockhand/internal/verify"
 	"os"
 	"os/exec"
 	"strings"
@@ -11,7 +12,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
-	"github.com/herbygillot/dockhand/internal/verify/tart"
 	"github.com/herbygillot/dockhand/internal/workflow/choice"
 	"github.com/stretchr/testify/require"
 )
@@ -19,16 +19,16 @@ import (
 type localBuild struct {
 	calls   int
 	err     error
-	options tart.BuildOptions
+	options verify.BuildOptions
 }
 
-func (b *localBuild) BuildConfig(_ context.Context, platform record.Platform, options tart.BuildOptions) (record.BuildConfig, error) {
+func (b *localBuild) BuildConfig(_ context.Context, platform record.Platform, options verify.BuildOptions) (record.BuildConfig, error) {
 	b.calls++
 	b.options = options
 	return record.BuildConfig{Provider: "tart", Platform: platform, Tests: options.Tests, NeedsXcode: options.NeedsXcode}, b.err
 }
 
-func (b *localBuild) BuildConfigForImage(ctx context.Context, platform record.Platform, options tart.BuildOptions, image string) (record.BuildConfig, error) {
+func (b *localBuild) BuildConfigForImage(ctx context.Context, platform record.Platform, options verify.BuildOptions, image string) (record.BuildConfig, error) {
 	value, err := b.BuildConfig(ctx, platform, options)
 	value.EnvironmentDigest = image
 	return value, err
@@ -57,11 +57,11 @@ func TestAutomaticProviderSelection(t *testing.T) {
 	}{
 		{name: "local ready", provider: "auto", want: "tart"},
 		{name: "local Xcode ready", provider: "auto", xcode: true, want: "tart"},
-		{name: "no image", provider: "auto", localError: tart.ErrImageUnavailable, want: "github"},
-		{name: "no Xcode image", provider: "auto", localError: tart.ErrImageUnavailable, xcode: true, want: "github"},
-		{name: "no binary", provider: "auto", localError: tart.ErrExecutableUnavailable, want: "github"},
+		{name: "no image", provider: "auto", localError: verify.ErrImageUnavailable, want: "github"},
+		{name: "no Xcode image", provider: "auto", localError: verify.ErrImageUnavailable, xcode: true, want: "github"},
+		{name: "no binary", provider: "auto", localError: verify.ErrExecutableUnavailable, want: "github"},
 		{name: "explicit github", provider: "github", want: "github"},
-		{name: "explicit tart unavailable", provider: "tart", localError: tart.ErrImageUnavailable, problem: true},
+		{name: "explicit tart unavailable", provider: "tart", localError: verify.ErrImageUnavailable, problem: true},
 		{name: "local inspection failed", provider: "auto", localError: os.ErrPermission, problem: true},
 		{name: "another tool missing", provider: "auto", localError: exec.ErrNotFound, problem: true},
 	} {
@@ -94,7 +94,7 @@ func TestAutomaticProviderSelection(t *testing.T) {
 				require.Equal(t, record.TestWorkflow, result.Build.Tests)
 				require.Equal(t, test.xcode, result.Build.NeedsXcode)
 			}
-			if errors.Is(test.localError, tart.ErrImageUnavailable) {
+			if errors.Is(test.localError, verify.ErrImageUnavailable) {
 				require.Contains(t, strings.Join(messages, "\n"), "dockhand setup")
 				if test.xcode {
 					require.Contains(t, strings.Join(messages, "\n"), "--xcode")
@@ -118,7 +118,7 @@ func TestRemoteRefusesLocalPolicies(t *testing.T) {
 	providers := choice.Providers{Name: "github", Local: &localBuild{}, Remote: &remoteBuild{}}
 	_, err := providers.Resolver(platform, choice.Options{})(t.Context(), snapshot)
 	require.ErrorContains(t, err, "select --provider tart for local policies")
-	providers = choice.Providers{Name: "auto", Local: &localBuild{err: tart.ErrImageUnavailable}, Remote: &remoteBuild{}}
+	providers = choice.Providers{Name: "auto", Local: &localBuild{err: verify.ErrImageUnavailable}, Remote: &remoteBuild{}}
 	result, err := providers.Resolver(platform, choice.Options{FromSource: true, Preserve: true})(t.Context(), macports.Snapshot{Target: record.Target{Name: "fixture"}, Ports: map[string]macports.PortInfo{"fixture": {Options: map[string]string{"use_xcode": "no"}}}})
 	require.NoError(t, err)
 	require.Contains(t, result.Problem, "GitHub verification could not be configured")
@@ -131,14 +131,14 @@ func TestRemoteRefusesLocalPolicies(t *testing.T) {
 func TestLocalFailurePreservedOrFailed(t *testing.T) {
 	t.Parallel()
 	snapshot := macports.Snapshot{Target: record.Target{Name: "fixture"}, Ports: map[string]macports.PortInfo{"fixture": {Options: map[string]string{"use_xcode": "yes"}}}}
-	providers := choice.Providers{Name: "tart", Local: &localBuild{err: tart.ErrImageUnavailable}, Remote: &remoteBuild{}}
+	providers := choice.Providers{Name: "tart", Local: &localBuild{err: verify.ErrImageUnavailable}, Remote: &remoteBuild{}}
 	result, err := providers.Resolver(platform, choice.Options{Tests: record.TestSkip, Preserve: true})(t.Context(), snapshot)
 	require.NoError(t, err)
 	require.Nil(t, result.Build)
 	require.Equal(t, &record.BuildRequirements{Provider: "tart", Platform: platform, NeedsXcode: true, CapabilitiesRequired: true, Tests: record.TestSkip}, result.Requirements)
 	require.Contains(t, result.Problem, "no suitable prepared image")
 	_, err = providers.Resolver(platform, choice.Options{})(t.Context(), snapshot)
-	require.ErrorIs(t, err, tart.ErrImageUnavailable)
+	require.ErrorIs(t, err, verify.ErrImageUnavailable)
 }
 
 func TestTargetImagesBoundAtIntake(t *testing.T) {
@@ -156,7 +156,7 @@ func TestTargetImagesBoundAtIntake(t *testing.T) {
 	_, err = providers.Resolver(platform, choice.Options{Tests: record.TestSkip, Preserve: true})(t.Context(), evaluation)
 	require.ErrorContains(t, err, "use --image")
 	providers.TargetImages = map[string]string{"child": "missing"}
-	local.err = tart.ErrImageUnavailable
+	local.err = verify.ErrImageUnavailable
 	_, err = providers.Resolver(platform, choice.Options{Tests: record.TestSkip, Preserve: true})(t.Context(), evaluation)
 	require.Error(t, err, "explicit image choices cannot become unspecified evidence requirements")
 }

@@ -1,9 +1,8 @@
-package eval
+package fetchguard
 
 import (
 	"strings"
 
-	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/text"
 )
@@ -19,16 +18,16 @@ type definition struct {
 	body   string
 }
 
-type definitions map[string]definition
+type Definitions map[string]definition
 
-// parseDefinitions reads the worker's list: one entry per command, a name,
+// ParseDefinitions reads the worker's list: one entry per command, a name,
 // a kind, and the kind's detail.
-func parseDefinitions(value string) definitions {
+func ParseDefinitions(value string) Definitions {
 	entries, errs := syntax.ListValues(value)
 	if len(errs) != 0 {
 		return nil
 	}
-	result := definitions{}
+	result := Definitions{}
 	for _, entry := range entries {
 		fields, errs := syntax.ListValues(entry)
 		if len(errs) != 0 || len(fields) != 3 {
@@ -85,7 +84,7 @@ var variableWriters = map[string]bool{"set": true, "append": true, "lappend": tr
 // refusal when it demonstrably changes nothing the fetch reads, and
 // otherwise why not, worded for the line that names the command. It
 // follows a procedure into its body, and reports what stopped it there.
-func effectReason(src []byte, command syntax.Command, defs definitions, depth int) refusal {
+func effectReason(src []byte, command syntax.Command, defs Definitions, depth int) refusal {
 	name, literal := command.Name(src)
 	if !literal || name == "" {
 		return refuse(command.Span.Start, "is a computed command")
@@ -116,7 +115,7 @@ func effectReason(src []byte, command syntax.Command, defs definitions, depth in
 			return refuse(command.Span.Start, "names a computed option")
 		}
 		if len(words) == 3 || name == "default" {
-			if macports.AffectsFetch(option) {
+			if AffectsFetch(option) {
 				return refuse(command.Span.Start, "writes `%s`", option)
 			}
 		}
@@ -166,7 +165,7 @@ func effectReason(src []byte, command syntax.Command, defs definitions, depth in
 	if definition, ok := defs[name]; ok {
 		switch definition.kind {
 		case "option":
-			if macports.AffectsFetch(definition.option) {
+			if AffectsFetch(definition.option) {
 				return refuse(command.Span.Start, "writes `%s`", definition.option)
 			}
 			return argumentsReason(src, words[1:], defs, depth)
@@ -188,8 +187,8 @@ func effectReason(src []byte, command syntax.Command, defs definitions, depth in
 			return accepted
 		}
 	}
-	if macports.AffectsFetch(name) {
-		return refuse(command.Span.Start, "writes `%s`", macports.OptionName(name))
+	if AffectsFetch(name) {
+		return refuse(command.Span.Start, "writes `%s`", OptionName(name))
 	}
 	if _, known := defs[name]; known || unfollowed[name] {
 		return refuse(command.Span.Start, "is not followed by the grammar")
@@ -205,7 +204,7 @@ var unfollowed = map[string]bool{"exec": true, "system": true, "open": true, "cl
 // scriptReason judges a script inside a procedure or a control body: every
 // command must be a rejection or harmless by effect. A refusal names the
 // command, where it is when inside a procedure, and what it does.
-func scriptReason(src []byte, commands []syntax.Command, defs definitions, depth int, where string) refusal {
+func scriptReason(src []byte, commands []syntax.Command, defs Definitions, depth int, where string) refusal {
 	for _, command := range commands {
 		if isRejection(src, command) {
 			continue
@@ -222,7 +221,7 @@ func scriptReason(src []byte, commands []syntax.Command, defs definitions, depth
 
 // ifReason judges an if by effect: braced conditions whose command calls
 // are harmless, and bodies that are harmless scripts.
-func ifReason(src []byte, command syntax.Command, defs definitions, depth int) refusal {
+func ifReason(src []byte, command syntax.Command, defs Definitions, depth int) refusal {
 	controls, bodies, ok := command.Control(src)
 	if !ok || len(bodies) == 0 {
 		return refuse(command.Span.Start, "has an if the grammar cannot read: `%s`", snippet(src, command.Span))
@@ -254,7 +253,7 @@ func ifReason(src []byte, command syntax.Command, defs definitions, depth int) r
 // loopReason judges foreach, while, for, and catch: their variables must
 // not be ones the fetch reads, their expressions and lists must be
 // harmless, and their bodies harmless scripts.
-func loopReason(src []byte, command syntax.Command, defs definitions, depth int) refusal {
+func loopReason(src []byte, command syntax.Command, defs Definitions, depth int) refusal {
 	name, _ := command.Name(src)
 	words := command.Words
 	var scripts, values []syntax.Word
@@ -298,7 +297,7 @@ func loopReason(src []byte, command syntax.Command, defs definitions, depth int)
 			names = braced.Body.Text(src)
 		}
 		for _, variable := range strings.Fields(names) {
-			if macports.AffectsFetch(variable) {
+			if AffectsFetch(variable) {
 				return refuse(command.Span.Start, "writes `%s`", variable)
 			}
 		}
@@ -332,7 +331,7 @@ func loopReason(src []byte, command syntax.Command, defs definitions, depth int)
 // switchReason judges a switch: its options are literal, the string it
 // switches on is a harmless argument, and every body in its braced list of
 // patterns and bodies is a harmless script.
-func switchReason(src []byte, command syntax.Command, defs definitions, depth int) refusal {
+func switchReason(src []byte, command syntax.Command, defs Definitions, depth int) refusal {
 	words := command.Words[1:]
 	for len(words) > 0 {
 		option, ok := words[0].Literal(src)
@@ -381,7 +380,7 @@ func switchReason(src []byte, command syntax.Command, defs definitions, depth in
 
 // conditionEffectReason judges a braced condition by effect: it must parse
 // as an expression, and every command it substitutes must be harmless.
-func conditionEffectReason(src []byte, body text.Span, defs definitions, depth int) refusal {
+func conditionEffectReason(src []byte, body text.Span, defs Definitions, depth int) refusal {
 	e, errs := syntax.ParseExpr(src, body)
 	if len(errs) != 0 {
 		return refuse(body.Start, "has a condition that does not parse as an expression: `%s`", snippet(src, body))
@@ -410,7 +409,7 @@ func variableReason(src []byte, command syntax.Command, variable syntax.Word) re
 	if !ok {
 		return refuse(command.Span.Start, "writes a computed variable")
 	}
-	if macports.AffectsFetch(name) {
+	if AffectsFetch(name) {
 		return refuse(command.Span.Start, "writes `%s`", name)
 	}
 	return accepted
@@ -419,7 +418,7 @@ func variableReason(src []byte, command syntax.Command, variable syntax.Word) re
 // argumentsReason judges the arguments of a harmless command: text and
 // variable substitutions are fine, and a command substitution is judged
 // by the commands it runs.
-func argumentsReason(src []byte, words []syntax.Word, defs definitions, depth int) refusal {
+func argumentsReason(src []byte, words []syntax.Word, defs Definitions, depth int) refusal {
 	for _, word := range words {
 		if refused := segmentsReason(src, word.Segments, defs, depth); refused.text != "" {
 			return refused
@@ -428,7 +427,7 @@ func argumentsReason(src []byte, words []syntax.Word, defs definitions, depth in
 	return accepted
 }
 
-func segmentsReason(src []byte, segments []syntax.Segment, defs definitions, depth int) refusal {
+func segmentsReason(src []byte, segments []syntax.Segment, defs Definitions, depth int) refusal {
 	for _, segment := range segments {
 		switch value := segment.(type) {
 		case syntax.VarSub:

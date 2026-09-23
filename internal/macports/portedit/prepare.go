@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"strings"
 
@@ -179,7 +180,7 @@ func (r *Result) commitEdit(input *sourceInput, request Request, edit portfile.E
 	if request.Subject != "" {
 		subject = request.Subject
 	}
-	line, err := Subject(name, subject)
+	line, err := commitmsg.Subject(name, subject)
 	if err != nil {
 		return err
 	}

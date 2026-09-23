@@ -20,22 +20,21 @@ import (
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/verify"
-	"github.com/herbygillot/dockhand/internal/verify/tart"
 	"github.com/herbygillot/dockhand/internal/workflow"
 )
 
 // Local configures a build in a prepared Tart image for the platform. It
-// fails with tart.ErrImageUnavailable when no image serves it and with
-// tart.ErrExecutableUnavailable when Tart itself is absent, which under
+// fails with verify.ErrImageUnavailable when no image serves it and with
+// verify.ErrExecutableUnavailable when Tart itself is absent, which under
 // auto are the two reasons to try GitHub instead.
 type Local interface {
-	BuildConfig(context.Context, record.Platform, tart.BuildOptions) (record.BuildConfig, error)
+	BuildConfig(context.Context, record.Platform, verify.BuildOptions) (record.BuildConfig, error)
 }
 
 // LocalImages binds a build to a named image, for a dependent whose
 // image a person chose.
 type LocalImages interface {
-	BuildConfigForImage(context.Context, record.Platform, tart.BuildOptions, string) (record.BuildConfig, error)
+	BuildConfigForImage(context.Context, record.Platform, verify.BuildOptions, string) (record.BuildConfig, error)
 }
 
 // Remote configures a build on GitHub's workflow, pushing the candidate to
@@ -97,7 +96,7 @@ func (p Providers) Resolver(platform record.Platform, options Options) workflow.
 		if policy == "" {
 			policy = record.TestDeclared
 		}
-		local := tart.BuildOptions{Tests: policy, FromSource: options.FromSource, NeedsXcode: needsXcode, HostMacPortsVersion: evaluation.Runtime.BaseVersion}
+		local := verify.BuildOptions{Tests: policy, FromSource: options.FromSource, NeedsXcode: needsXcode, HostMacPortsVersion: evaluation.Runtime.BaseVersion}
 		config, err := p.Local.BuildConfig(ctx, platform, local)
 		if err == nil {
 			targets := map[string]record.BuildConfig{}
@@ -124,13 +123,13 @@ func (p Providers) Resolver(platform record.Platform, options Options) workflow.
 			return workflow.BuildResolution{}, ctx.Err()
 		}
 		if p.Name == "auto" {
-			if errors.Is(err, tart.ErrImageUnavailable) {
+			if errors.Is(err, verify.ErrImageUnavailable) {
 				setup := "dockhand setup"
 				if needsXcode {
 					setup = "dockhand setup --xcode <archive-or-directory>"
 				}
 				progress.Report(ctx, "No suitable prepared Tart image is available; run %s to verify locally. Trying GitHub verification.", setup)
-			} else if errors.Is(err, tart.ErrExecutableUnavailable) {
+			} else if errors.Is(err, verify.ErrExecutableUnavailable) {
 				progress.Report(ctx, "Tart is not available. Trying GitHub verification.")
 			} else {
 				return workflow.BuildResolution{}, err

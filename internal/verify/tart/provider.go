@@ -12,9 +12,6 @@ import (
 )
 
 var errClosed = errors.New("tart: submission is permanently closed")
-var ErrExecutableUnavailable = errors.New("tart: executable is unavailable")
-
-var ErrImageUnavailable = errors.New("tart: no suitable prepared image is available")
 
 var errCapacity = errors.New("tart: pool is at capacity")
 

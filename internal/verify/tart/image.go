@@ -48,12 +48,12 @@ func (n *native) Environment(ctx context.Context) (Environment, error) {
 	if err != nil {
 		var path *os.PathError
 		if errors.Is(err, exec.ErrNotFound) || errors.As(err, &path) && path.Op == "fork/exec" && errors.Is(path.Err, os.ErrNotExist) {
-			return Environment{}, errors.Join(ErrExecutableUnavailable, err)
+			return Environment{}, errors.Join(verify.ErrExecutableUnavailable, err)
 		}
 		return Environment{}, err
 	}
 	if !exists {
-		return Environment{}, fmt.Errorf("%w: %s; run dockhand setup", ErrImageUnavailable, n.config.Image)
+		return Environment{}, fmt.Errorf("%w: %s; run dockhand setup", verify.ErrImageUnavailable, n.config.Image)
 	}
 	if running {
 		return Environment{}, fmt.Errorf("tart: prepared image %s must be stopped", n.config.Image)
