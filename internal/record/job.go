@@ -1,6 +1,9 @@
 package record
 
-import "time"
+import (
+	"time"
+	"unicode/utf8"
+)
 
 // Action identifies the work requested by a job. Defining an action here does
 // not imply that its intake or execution is implemented.
@@ -105,6 +108,14 @@ func (a Action) Prepares() bool {
 	return a == Amend || a == Rebase || a == Bump || a == BumpRevision || a == RefreshChecksums
 }
 
+// Updates reports whether the action prepares an update of the port from
+// master: the actions whose selection can resolve to a fresh, continued,
+// or adopted contribution. A correction prepares onto the contribution it
+// was given instead.
+func (a Action) Updates() bool {
+	return a == Bump || a == BumpRevision || a == RefreshChecksums
+}
+
 // JobState describes progress toward a job's requested destination.
 // A terminal state does not imply that resource cleanup has finished.
 type JobState string
@@ -149,6 +160,37 @@ const (
 	// PhasePublication reconciles the verified revision with its remote destination.
 	PhasePublication JobPhase = "publication"
 )
+
+// Valid reports whether p names a workflow phase.
+func (p JobPhase) Valid() bool {
+	return p == PhasePreparation || p == PhaseVerification || p == PhasePublication
+}
+
+// Next is the phase that follows p for a job with this spec, and false when
+// the job's destination is reached in p. Preparation is followed by
+// verification, or by publication when the author skipped verification on
+// the way to a pull request, or by nothing when a branch was all that was
+// asked for; verification is followed by publication when the job
+// publishes. Storage refuses any other step, and the workflow takes no
+// other.
+func (p JobPhase) Next(spec JobSpec) (JobPhase, bool) {
+	switch p {
+	case PhasePreparation:
+		switch {
+		case spec.Destination == BranchReady:
+			return "", false
+		case spec.Destination == Published && spec.Verification == VerificationSkipped:
+			return PhasePublication, true
+		default:
+			return PhaseVerification, true
+		}
+	case PhaseVerification:
+		if spec.Destination == Published {
+			return PhasePublication, true
+		}
+	}
+	return "", false
+}
 
 // Job tracks one accepted request. The driver owns its progress after intake;
 // follow-up requests receive their own jobs rather than reopening this one.
@@ -232,6 +274,15 @@ type ControlRequest struct {
 	// AppliedAt means the driver has applied the intent to all selected jobs
 	// or found them terminal. It does not confirm that remote cancellation finished.
 	AppliedAt *time.Time
+}
+
+// ValidCancel reports whether the request is a well-formed cancellation:
+// the cancel kind, an ID, a reason that is text, and no applied time, which
+// only the driver records. The jobs and the submission time are checked by
+// the side that supplies them: intake requires the time unset and the jobs
+// as the request names or selects them, and storage requires both set.
+func (r ControlRequest) ValidCancel() bool {
+	return r.Kind == Cancel && r.ID != "" && r.AppliedAt == nil && utf8.ValidString(r.Reason)
 }
 
 // Coverage is the job's verification intent over a shared release: every

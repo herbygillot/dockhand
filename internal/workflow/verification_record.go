@@ -229,8 +229,8 @@ func settleVerification(work *execution, job *record.Job, detail string, now tim
 	if len(coverageProblems) > 0 {
 		job.Detail += "; incomplete coverage: " + strings.Join(coverageProblems, "; ")
 	}
-	if job.State == record.JobCompleted && job.Spec.PublishTo != nil {
-		job.Phase = record.PhasePublication
+	if next, ok := job.Phase.Next(job.Spec); ok && job.State == record.JobCompleted {
+		job.Phase = next
 		job.State, job.FinishedAt, job.Detail = record.JobActive, nil, "Verification passed; publication pending"
 	}
 }

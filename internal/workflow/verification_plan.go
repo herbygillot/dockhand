@@ -93,8 +93,8 @@ func initializeVerification(ctx context.Context, tx state.Reader, work *executio
 	if reused.ID != "" {
 		job.ReusedAttempt = reused.ID
 		finishJob(&job, record.JobCompleted, explanation, now)
-		if job.Spec.PublishTo != nil {
-			job.Phase = record.PhasePublication
+		if next, ok := job.Phase.Next(job.Spec); ok {
+			job.Phase = next
 			job.State, job.FinishedAt, job.Detail = record.JobActive, nil, explanation+"; publication pending"
 		}
 		work.Job, work.Plan = job, &plan

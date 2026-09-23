@@ -5,12 +5,12 @@ import (
 )
 
 func initialPhase(action record.Action) record.JobPhase {
-	switch action {
-	case record.Bump, record.BumpRevision, record.RefreshChecksums, record.Amend, record.Rebase:
+	switch {
+	case action.Prepares():
 		return record.PhasePreparation
-	case record.Verify:
+	case action == record.Verify:
 		return record.PhaseVerification
-	case record.Publish:
+	case action == record.Publish:
 		return record.PhasePublication
 	default:
 		return ""

@@ -133,20 +133,20 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 				finishJob(&job, record.JobCanceled, "Canceled; any integrated branch is preserved", e.now())
 			} else if !confirmed {
 				return fmt.Errorf("%w: branch integration has no conclusive outcome", state.ErrInvalid)
-			} else if job.Spec.Destination == record.BranchReady {
+			} else if next, ok := job.Phase.Next(job.Spec); !ok {
 				finishJob(&job, record.JobCompleted, "Prepared branch "+job.Prepared.Branch, e.now())
 			} else if len(job.Prepared.PatchProblems) > 0 {
 				nextStep, resume := "verification", "verify"
-				if job.Spec.Verification == record.VerificationSkipped {
+				if next == record.PhasePublication {
 					nextStep, resume = "publication", "publish"
 				}
 				finishJob(&job, record.JobNeedsAttention, "Prepared branch "+job.Prepared.Branch+"; "+nextStep+" not started because a patch no longer applies to the new source: "+strings.Join(job.Prepared.PatchProblems, "; ")+". Refresh the patch on the branch, then "+resume+".", e.now())
-			} else if job.Spec.Verification == record.VerificationSkipped {
+			} else if next == record.PhasePublication {
 				// The author asked to publish without a local build.
-				job.Phase = record.PhasePublication
+				job.Phase = next
 				job.State, job.Detail = record.JobActive, "Prepared branch "+job.Prepared.Branch+"; publication pending, verification skipped at the author's request"
 			} else {
-				job.Phase = record.PhaseVerification
+				job.Phase = next
 				job.State, job.Detail = record.JobActive, "Prepared branch "+job.Prepared.Branch+"; verification pending"
 			}
 			return tx.PutJob(ctx, job)

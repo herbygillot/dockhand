@@ -35,7 +35,7 @@ func (s *Services) Adopt(ctx context.Context, request AdoptRequest) (workflow.Ad
 	if err != nil {
 		return workflow.AdoptResult{}, err
 	}
-	master, err := preparationSource(ctx, s.Workflow.Repo)
+	master, err := s.Workflow.FetchMaster(ctx)
 	if err != nil {
 		return workflow.AdoptResult{}, err
 	}

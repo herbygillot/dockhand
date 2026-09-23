@@ -61,9 +61,9 @@ func PlanWithConfig(job record.Job, revision record.Revision, config record.Buil
 	}
 	source := job.Spec.Source
 	expected := job.Spec.InputRevision
-	switch job.Spec.Action {
-	case record.Verify:
-	case record.Bump, record.BumpRevision, record.RefreshChecksums, record.Amend, record.Rebase:
+	switch {
+	case job.Spec.Action == record.Verify:
+	case job.Spec.Action.Prepares():
 		if job.ResultRevision == "" || job.Prepared == nil {
 			return record.VerificationPlan{}, nil, fmt.Errorf("verify: preparation has not produced a revision")
 		}

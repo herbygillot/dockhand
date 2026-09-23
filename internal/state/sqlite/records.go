@@ -349,7 +349,7 @@ func (t *transaction) JobForRequest(ctx context.Context, id record.RequestID) (r
 	return t.Job(ctx, job)
 }
 func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
-	if v.ID == "" || v.RequestID == "" || v.AcceptedAt.IsZero() || jobPhaseOrder(v.Phase) == 0 {
+	if v.ID == "" || v.RequestID == "" || v.AcceptedAt.IsZero() || !v.Phase.Valid() {
 		return state.ErrInvalid
 	}
 	if v.ReusedAttempt != "" {
@@ -396,10 +396,9 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 			return state.ErrConflict
 		}
 		if old.Phase != v.Phase {
-			// A job that skipped verification at the author's request has no
-			// verification phase: it publishes straight from preparation.
-			skipsVerification := old.Phase == record.PhasePreparation && v.Phase == record.PhasePublication && v.Spec.Verification == record.VerificationSkipped && v.Spec.Destination == record.Published
-			if jobPhaseOrder(v.Phase) != jobPhaseOrder(old.Phase)+1 && !skipsVerification || old.State != record.JobActive || v.State != record.JobActive || old.FinishedAt != nil || v.FinishedAt != nil {
+			// The records say which phase follows; a job steps to it while
+			// active and unfinished, and nowhere else.
+			if next, ok := old.Phase.Next(v.Spec); !ok || v.Phase != next || old.State != record.JobActive || v.State != record.JobActive || old.FinishedAt != nil || v.FinishedAt != nil {
 				return state.ErrConflict
 			}
 		}
@@ -478,21 +477,13 @@ func (t *transaction) jobValues(v record.Job, source, options string, owner, unt
 	}
 }
 
-func jobPhaseOrder(phase record.JobPhase) int {
-	switch phase {
-	case record.PhasePreparation:
-		return 1
-	case record.PhaseVerification:
-		return 2
-	case record.PhasePublication:
-		return 3
-	default:
-		return 0
-	}
-}
+// preparingActions spells record.Action.Prepares for SQL: the actions
+// whose cancellation takes effect at once while no branch exists yet.
+const preparingActions = "'bump','bump-revision','refresh-checksums','amend','rebase'"
+
 func (t *transaction) scheduleJob(ctx context.Context, id record.JobID) error {
 	return t.exec(ctx, `UPDATE jobs SET next_action_at=CASE WHEN state NOT IN ('queued','active') THEN NULL
- WHEN action IN ('bump','bump-revision','refresh-checksums','amend','rebase') AND cancel_at IS NOT NULL AND prepared IS NULL THEN 0
+ WHEN action IN (`+preparingActions+`) AND cancel_at IS NOT NULL AND prepared IS NULL THEN 0
  ELSE max(coalesce(claim_until,0),coalesce(retry_at,0),coalesce((SELECT min(CASE WHEN jobs.cancel_at IS NOT NULL AND a.state='queued' THEN coalesce(a.claim_until,0) ELSE a.next_action_at END) FROM attempts a WHERE a.repository_id=jobs.repository_id AND a.job_id=jobs.id),0)) END WHERE repository_id=? AND id=?`, t.repo, id)
 }
 func (t *transaction) Plan(ctx context.Context, id record.JobID) (record.VerificationPlan, error) {

@@ -39,7 +39,7 @@ type Preview struct {
 }
 
 func PreviewPreparation(ctx context.Context, config Config, request PreviewRequest) (Preview, error) {
-	if request.Action != record.BumpRevision && request.Action != record.Bump && request.Action != record.RefreshChecksums {
+	if !request.Action.Updates() {
 		return Preview{}, fmt.Errorf("%w: %s", preparation.ErrNotImplemented, request.Action)
 	}
 	root := config.Repository
@@ -194,14 +194,6 @@ func (s *Services) resolve(ctx context.Context, selection workflow.ResolutionReq
 	}
 	progress.Report(ctx, "%s", adopted.Detail)
 	return s.Workflow.ResolveAdopted(ctx, adopted, selection)
-}
-
-func preparationSource(ctx context.Context, repo *git.Repository) (record.Source, error) {
-	commit, tree, err := repo.FetchBranch(ctx, macports.PortsRepositoryURL, macports.PortsBranch)
-	if err != nil {
-		return record.Source{}, fmt.Errorf("fetching authoritative MacPorts master: %w", err)
-	}
-	return record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree), Base: record.ObjectID(commit)}, nil
 }
 
 // IsUnsupported reports whether a preparation failed because the editor does

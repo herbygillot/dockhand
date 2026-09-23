@@ -203,13 +203,11 @@ func (r *runtime) changeCommands() []*cobra.Command {
 		command.Flags().StringVar(&adopt, "adopt", "", "Track this hand-made branch as the port's contribution first, then prepare the update onto it")
 		command.MarkFlagsMutuallyExclusive("change", "adopt")
 		command.Flags().StringArrayVar(&variants, "variant", nil, "Select a variant, e.g. +debug or --variant=-debug")
-		if spec.action == record.BumpRevision || spec.action == record.Bump || spec.action == record.RefreshChecksums {
-			build.flags(command, r.config)
-			publicationFlags(command, &publication)
-			command.Flags().StringVar(&subject, "subject", "", spec.subject)
-			references.add(command)
-			section(command.Flags(), sectionChange, "subject")
-		}
+		build.flags(command, r.config)
+		publicationFlags(command, &publication)
+		command.Flags().StringVar(&subject, "subject", "", spec.subject)
+		references.add(command)
+		section(command.Flags(), sectionChange, "subject")
 		section(command.Flags(), sectionSelection, "change", "adopt")
 		section(command.Flags(), sectionBuild, "variant")
 		commands = append(commands, command)

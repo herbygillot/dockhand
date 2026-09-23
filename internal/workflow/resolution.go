@@ -110,7 +110,7 @@ func (e *Engine) Resolve(ctx context.Context, request ResolutionRequest) (Resolu
 	if e == nil || e.Repo == nil {
 		return Resolution{}, errNoState
 	}
-	if !updates(request.Action) {
+	if !request.Action.Updates() {
 		return e.resolveTracked(ctx, request)
 	}
 	named := macports.ValidName(request.Selection.Selector)
@@ -137,7 +137,7 @@ func (e *Engine) Resolve(ctx context.Context, request ResolutionRequest) (Resolu
 		return e.resolveOnto(ctx, request, *change)
 	}
 	resolution := e.continued(request, *prior, *change)
-	master, err := e.fetchMaster(ctx)
+	master, err := e.FetchMaster(ctx)
 	if err != nil {
 		// An unreachable master leaves the recorded source as the only
 		// fact, and says so.
@@ -163,12 +163,6 @@ func (e *Engine) Resolve(ctx context.Context, request ResolutionRequest) (Resolu
 	progress.Report(ctx, "Continuing the port's open contribution from its recorded source")
 	progress.VerboseReport(ctx, "Continuing contribution %s from recorded source %s", change.ID, prior.Spec.Source.Commit)
 	return resolution, nil
-}
-
-// updates reports whether the action prepares an update of the port,
-// the actions whose selection can resolve Fresh, Continue, or Onto.
-func updates(action record.Action) bool {
-	return action == record.Bump || action == record.BumpRevision || action == record.RefreshChecksums
 }
 
 // resolveTracked is the contribution as recorded, for an action that
@@ -224,7 +218,7 @@ func (e *Engine) continued(request ResolutionRequest, prior record.Job, change r
 // resolveFresh is a Fresh from master, with the detail that retired a
 // contribution when one did.
 func (e *Engine) resolveFresh(ctx context.Context, request ResolutionRequest, detail string) (Resolution, error) {
-	master, err := e.fetchMaster(ctx)
+	master, err := e.FetchMaster(ctx)
 	if err != nil {
 		return Resolution{}, err
 	}
@@ -273,14 +267,15 @@ func (e *Engine) ResolveAdopted(ctx context.Context, adopted AdoptResult, reques
 	if e == nil || e.Repo == nil {
 		return Resolution{}, errNoState
 	}
-	if !updates(request.Action) {
+	if !request.Action.Updates() {
 		return Resolution{}, fmt.Errorf("%w: %s does not prepare onto an adopted branch", ErrInvalidRequest, request.Action)
 	}
 	return e.onto(ctx, request, Adopt, adopted.Change, adopted.Revision)
 }
 
-// fetchMaster freezes authoritative master.
-func (e *Engine) fetchMaster(ctx context.Context) (record.Source, error) {
+// FetchMaster freezes authoritative master: its commit and tree, and the
+// commit as the base a contribution is measured against.
+func (e *Engine) FetchMaster(ctx context.Context) (record.Source, error) {
 	progress.VerboseReport(ctx, "Fetching MacPorts master")
 	commit, tree, err := e.Repo.FetchBranch(ctx, macports.PortsRepositoryURL, macports.PortsBranch)
 	if err != nil {
