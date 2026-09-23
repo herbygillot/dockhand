@@ -185,6 +185,14 @@ the category/port layout (`ScopeOf`, `Scope.Portfile`), and how to find
 PortGroup users. `components.md` says it interprets no MacPorts paths.
 The code or the document is wrong, and the code is right.
 
+> **Response, 2026-09-23.** Half right. The document's sentence is that
+> `changeset` "does not interpret changed paths as MacPorts targets or
+> decide workflow policy", and the code keeps that: it never names a
+> port. What it does know is the tree's layout, the two-level directory
+> and `_resources`, which is what scoping a change needs. The sentence
+> should say so rather than be read as "knows nothing of MacPorts"; the
+> code stays where it is.
+
 **`cli` repeats its submission tail four times.** Build, submit, report,
 choose a milestone, attach: see `actions.go`, `preparation.go`,
 `correction.go`, and `publication.go`. The copies already differ:
@@ -312,6 +320,10 @@ point their tests at the production entry point:
 never reaches, since `app` always sets `Providers`. The cost of removing
 it is 26 test literals.
 
+> **Response, 2026-09-23.** No production read of `e.Provider` remains
+> at all; the reads a search finds are of resource handles' provider
+> names. The conclusion stands and is stronger than stated.
+
 **Aliases and small leftovers:**
 
 - `upstream.ErrVersionInput` aliases `version.ErrInput`, and
@@ -334,6 +346,9 @@ it is 26 test literals.
   sequential where `assess` uses a pool; it can become a mode of
   `assess`.
 - `selection` (75 lines) earns its place only if contract 5 is made.
+
+> **Response, 2026-09-23.** `macports/selection` is 186 production
+> lines, not 75; the point about contract 5 is unaffected.
 
 `forge/gitlab`, `credential/keychain`, `testsupport`, `proc`, and `tui`
 were checked and stay: each has a production caller or a real boundary.
