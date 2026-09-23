@@ -2,8 +2,11 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/fetch"
 	forgegithub "github.com/herbygillot/dockhand/internal/forge/github"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -95,4 +98,49 @@ func TestRepositoryAndActionsShareCredentialInitialization(t *testing.T) {
 	require.NoError(t, <-done)
 	require.NoError(t, <-done)
 	require.Equal(t, int64(1), credentials.Load())
+}
+
+// The job log is the one download the API only points at; it goes through
+// fetch on the client the provider was given, so a test's own trust store
+// serves it, and a status other than 200 is refused with the status.
+func TestJobLogDownloadsThroughFetchOnTheProvidersClient(t *testing.T) {
+	t.Parallel()
+	logs := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, fetch.UserAgent, r.Header.Get("User-Agent"))
+		require.Empty(t, r.Header.Get("Authorization"), "API credentials are not forwarded to the log host")
+		switch r.URL.Path {
+		case "/logs/11":
+			fmt.Fprint(w, "log line one\nlog line two\n")
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer logs.Close()
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/author/ports/actions/jobs/11/logs":
+			http.Redirect(w, r, logs.URL+"/logs/11", http.StatusFound)
+		case "/repos/author/ports/actions/jobs/12/logs":
+			http.Redirect(w, r, logs.URL+"/logs/12", http.StatusFound)
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL)
+			http.NotFound(w, r)
+		}
+	}))
+	defer api.Close()
+	c := &githubapi.Client{HTTP: logs.Client(), Config: githubapi.Config{BaseURL: api.URL, Token: "fixture-token"}}
+	actions, err := newActions(t.Context(), c, "author/ports")
+	require.NoError(t, err)
+	body, err := actions.JobLog(t.Context(), 11)
+	require.NoError(t, err)
+	data, err := io.ReadAll(body)
+	require.NoError(t, errors.Join(err, body.Close()))
+	require.Equal(t, "log line one\nlog line two\n", string(data))
+	_, err = actions.JobLog(t.Context(), 12)
+	require.ErrorContains(t, err, "500")
+	plain := &githubapi.Client{Config: githubapi.Config{BaseURL: api.URL, Token: "fixture-token"}}
+	actions, err = newActions(t.Context(), plain, "author/ports")
+	require.NoError(t, err)
+	_, err = actions.JobLog(t.Context(), 11)
+	require.Error(t, err, "without the provider's client the test's certificate is not trusted, which is how we know the injected client is the one used")
 }

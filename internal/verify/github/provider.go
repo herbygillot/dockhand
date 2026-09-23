@@ -144,7 +144,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 			return reject(err.Error())
 		}
 		d := config.Destination
-		return p.Repo.WithRemoteBranchLock(ctx, d.LockDirectory, verify.ProviderGitHub, d.HeadRepository, request.Spec.PushBranch(), func(ctx context.Context) error {
+		return p.Repo.WithRemoteBranchLock(ctx, d.LockDirectory, d.Forge, d.HeadRepository, request.Spec.PushBranch(), func(ctx context.Context) error {
 			snapshot, err := changeset.CaptureBranch(ctx, p.Repo, request.Spec.Branch)
 			if err != nil {
 				return preflightError(err)
@@ -202,7 +202,7 @@ func (p *Provider) advance(ctx context.Context, row record.ProviderExecution) (v
 	}
 	d := saved.Config.Destination
 	var result verify.Submission
-	err := p.Repo.WithRemoteBranchLock(ctx, d.LockDirectory, verify.ProviderGitHub, d.HeadRepository, saved.Request.Spec.PushBranch(), func(ctx context.Context) error {
+	err := p.Repo.WithRemoteBranchLock(ctx, d.LockDirectory, d.Forge, d.HeadRepository, saved.Request.Spec.PushBranch(), func(ctx context.Context) error {
 		var err error
 		result, err = p.pushAndFind(ctx, row)
 		return err

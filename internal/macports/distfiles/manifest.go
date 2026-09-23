@@ -43,8 +43,11 @@ func ManifestCandidates(info macports.PortInfo, names []string) ([]string, error
 	if len(result) == 0 {
 		return nil, fmt.Errorf("%w: no extracted dependency source", portfile.ErrUnsupported)
 	}
-	rename := info.Options["extract.rename"]
-	if len(result) > 1 && rename != "no" && rename != "false" && rename != "0" {
+	rename, err := info.Bool("extract.rename")
+	if err != nil {
+		return nil, err
+	}
+	if len(result) > 1 && rename {
 		return nil, fmt.Errorf("%w: multiple extracted sources with extract.rename need manual manifest ownership", portfile.ErrUnsupported)
 	}
 	return result, nil

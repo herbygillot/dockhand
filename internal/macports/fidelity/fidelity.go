@@ -263,7 +263,11 @@ func ReleaseScope(before, after macports.Snapshot, selected string, authorized b
 		if name != before.Target.Name {
 			target.Subport = name
 		}
-		member := record.ReleaseMember{Target: target, Before: macports.ReleaseState(old), After: macports.ReleaseState(next), NeedsXcode: next.Options["use_xcode"] == "yes" || next.Options["use_xcode"] == "true" || next.Options["use_xcode"] == "1", MetadataOnly: next.Options["dockhand.metadata_only"] == "1"}
+		needsXcode, err := next.Bool("use_xcode")
+		if err != nil {
+			return nil, err
+		}
+		member := record.ReleaseMember{Target: target, Before: macports.ReleaseState(old), After: macports.ReleaseState(next), NeedsXcode: needsXcode, MetadataOnly: next.Options["dockhand.metadata_only"] == "1"}
 		if old.Version == next.Version {
 			scope.Protected = append(scope.Protected, member)
 			continue

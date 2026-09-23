@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/fetch"
 	"io"
 	"net/http"
 	"strings"
@@ -21,13 +22,20 @@ func newActions(ctx context.Context, c *githubapi.Client, repository string) (*a
 		return nil, githubapi.RateLimitError(err)
 	}
 	owner, name, _ := strings.Cut(repository, "/")
-	return &actionsClient{service: api.Actions, owner: owner, repository: name}, nil
+	return &actionsClient{service: api.Actions, owner: owner, repository: name, http: c.HTTP}, nil
 }
 
 type actionsClient struct {
 	service           *gh.ActionsService
 	owner, repository string
+	// http downloads what the API only points at, the job logs, with the
+	// client the provider was given.
+	http *http.Client
 }
+
+// maxJobLogBytes bounds one job's log download; GitHub's logs run to
+// megabytes, and a bound is what keeps a runaway one off the disk.
+const maxJobLogBytes = 64 << 20
 
 func (a *actionsClient) Workflow(ctx context.Context, filename string) (*gh.Workflow, error) {
 	value, _, err := a.service.GetWorkflowByFileName(ctx, a.owner, a.repository, filename)
@@ -85,7 +93,9 @@ func (a *actionsClient) Jobs(ctx context.Context, id int64, attempt int) ([]*gh.
 	}
 }
 
-// JobLog follows the SDK-provided download URL without forwarding API credentials.
+// JobLog follows the SDK-provided download URL without forwarding API
+// credentials, through fetch like every other download: bounded, on the
+// provider's client, with the status handled once.
 func (a *actionsClient) JobLog(ctx context.Context, id int64) (io.ReadCloser, error) {
 	location, _, err := a.service.GetWorkflowJobLogs(ctx, a.owner, a.repository, id, 0)
 	if err != nil {
@@ -98,13 +108,10 @@ func (a *actionsClient) JobLog(ctx context.Context, id int64) (io.ReadCloser, er
 	if err != nil {
 		return nil, githubapi.RateLimitError(err)
 	}
-	response, err := http.DefaultClient.Do(request)
+	request.Header.Set("User-Agent", fetch.UserAgent)
+	response, err := fetch.Open(a.http, request, maxJobLogBytes)
 	if err != nil {
-		return nil, githubapi.RateLimitError(err)
-	}
-	if response.StatusCode != http.StatusOK {
-		response.Body.Close()
-		return nil, fmt.Errorf("github: job logs returned %s", response.Status)
+		return nil, fmt.Errorf("github: job logs: %w", err)
 	}
 	return response.Body, nil
 }

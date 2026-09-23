@@ -55,15 +55,27 @@ func (s Snapshot) RequiresXcode() (bool, error) {
 	if !ok {
 		return false, fmt.Errorf("%w: evaluated target %s is missing", ErrTarget, s.Target.Name)
 	}
-	if failure, ok := port.OptionErrors["use_xcode"]; ok {
-		return false, fmt.Errorf("macports: evaluating use_xcode for %s: %s", s.Target.Name, failure)
+	value, err := port.Bool("use_xcode")
+	if err != nil {
+		return false, fmt.Errorf("%w for %s", err, s.Target.Name)
 	}
-	switch strings.ToLower(strings.TrimSpace(port.Options["use_xcode"])) {
+	return value, nil
+}
+
+// Bool reads an evaluated option as Tcl reads a boolean: yes, true, on,
+// and 1 are true, no, false, off, 0, and an unset option are false, in
+// any case, and anything else is an error, as is an option the
+// evaluation could not settle. Every reader of use_xcode and
+// extract.rename goes through it, so no site keeps its own list.
+func (p PortInfo) Bool(option string) (bool, error) {
+	if failure, ok := p.OptionErrors[option]; ok {
+		return false, fmt.Errorf("macports: evaluating %s: %s", option, failure)
+	}
+	switch strings.ToLower(strings.TrimSpace(p.Options[option])) {
 	case "", "0", "false", "no", "off":
 		return false, nil
 	case "1", "true", "yes", "on":
 		return true, nil
-	default:
-		return false, fmt.Errorf("macports: invalid use_xcode value %q for %s", port.Options["use_xcode"], s.Target.Name)
 	}
+	return false, fmt.Errorf("macports: invalid %s value %q", option, p.Options[option])
 }

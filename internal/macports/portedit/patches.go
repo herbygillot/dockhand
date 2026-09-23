@@ -61,9 +61,12 @@ func (s *Service) checkPatches(ctx context.Context, input *sourceInput, result *
 		return nil
 	}
 	pre, _ := syntax.ListValues(info.Options["patch.pre_args"])
-	rename := info.Options["extract.rename"]
+	rename, err := info.Bool("extract.rename")
+	if err != nil {
+		return err
+	}
 	results, err := patchcheck.Check(ctx, patchcheck.Request{
-		Archives: archives, Worksrcdir: filepath.ToSlash(info.Options["worksrcdir"]), Rename: rename == "yes" || rename == "true" || rename == "1",
+		Archives: archives, Worksrcdir: filepath.ToSlash(info.Options["worksrcdir"]), Rename: rename,
 		PatchDir: strings.TrimPrefix(strings.TrimPrefix(dir, "@worksrc@"), "/"), PreArgs: pre, Patches: patches,
 	})
 	if err != nil {

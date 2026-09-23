@@ -60,8 +60,11 @@ func selectDependencySource(ctx context.Context, info macports.PortInfo, sources
 		if err != nil {
 			return dependency.Input{}, err
 		}
-		rename := info.Options["extract.rename"]
-		err = dependency.ConfirmSource(ctx, plan.Kind, input, rename == "yes" || rename == "true" || rename == "1")
+		rename, err := info.Bool("extract.rename")
+		if err != nil {
+			return dependency.Input{}, err
+		}
+		err = dependency.ConfirmSource(ctx, plan.Kind, input, rename)
 		if errors.Is(err, dependency.ErrManifestMissing) {
 			continue
 		}

@@ -31,7 +31,11 @@ func RebindReleaseScope(scope *record.ReleaseScope, snapshot Snapshot) (*record.
 			return nil, fmt.Errorf("macports: shared-release version changed for %s; start a new bump", member.Target.Name)
 		}
 		updated.Affected[i].After = ReleaseState(info)
-		updated.Affected[i].NeedsXcode = info.Options["use_xcode"] == "yes" || info.Options["use_xcode"] == "true" || info.Options["use_xcode"] == "1"
+		needsXcode, err := info.Bool("use_xcode")
+		if err != nil {
+			return nil, err
+		}
+		updated.Affected[i].NeedsXcode = needsXcode
 	}
 	for _, member := range updated.Protected {
 		info, ok := snapshot.Ports[member.Target.Name]
