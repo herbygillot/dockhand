@@ -32,8 +32,10 @@ func TestProductForDarwinDoesNotExtendProvisioning(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 	}
-	_, err := ProductForDarwin(27)
+	_, err := ProductForDarwin(28)
 	require.Error(t, err, "a release the table does not carry")
+	_, err = ProductForDarwin(26)
+	require.Error(t, err, "the Darwin Apple skipped")
 	_, err = ReleaseForDarwin(16)
 	require.Error(t, err)
 }
