@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"fmt"
+	"math"
 	"github.com/herbygillot/dockhand/internal/fetch"
 	"io"
 	"net/http"
@@ -33,8 +34,10 @@ type actionsClient struct {
 	http *http.Client
 }
 
-// maxJobLogBytes bounds one job's log download; GitHub's logs run to
-// megabytes, and a bound is what keeps a runaway one off the disk.
+// maxJobLogBytes is how much of one job's log is kept; GitHub's logs run
+// to megabytes, and a bound is what keeps a runaway one off the disk. A
+// longer log is kept to the bound and says so (cacheJobLog), rather than
+// failing every read.
 const maxJobLogBytes = 64 << 20
 
 func (a *actionsClient) Workflow(ctx context.Context, filename string) (*gh.Workflow, error) {
@@ -94,8 +97,9 @@ func (a *actionsClient) Jobs(ctx context.Context, id int64, attempt int) ([]*gh.
 }
 
 // JobLog follows the SDK-provided download URL without forwarding API
-// credentials, through fetch like every other download: bounded, on the
-// provider's client, with the status handled once.
+// credentials, through fetch like every other download, on the provider's
+// client, with the status handled once. It is not refused by its size: the
+// reader keeps what it bounds, and stops reading there.
 func (a *actionsClient) JobLog(ctx context.Context, id int64) (io.ReadCloser, error) {
 	location, _, err := a.service.GetWorkflowJobLogs(ctx, a.owner, a.repository, id, 0)
 	if err != nil {
@@ -109,7 +113,7 @@ func (a *actionsClient) JobLog(ctx context.Context, id int64) (io.ReadCloser, er
 		return nil, githubapi.RateLimitError(err)
 	}
 	request.Header.Set("User-Agent", fetch.UserAgent)
-	response, err := fetch.Open(a.http, request, maxJobLogBytes)
+	response, err := fetch.Open(a.http, request, math.MaxInt64)
 	if err != nil {
 		return nil, fmt.Errorf("github: job logs: %w", err)
 	}

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/filelock"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
@@ -121,4 +122,36 @@ func TestBranchLockSurvivesDriverExitWhileGitStillRuns(t *testing.T) {
 	ctx2, cancel2 := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel2()
 	require.NoError(t, repo.WithBranchLock(ctx2, "candidate", func(context.Context) error { return nil }))
+}
+
+// Verification's push to a fork branch (verify/github) and publication's
+// (workflow) take one lock, keyed by forge, repository in lower case, and
+// branch, in the lock directory both are given. The key is pinned: a
+// change would let an older and a newer dockhand push to one branch at
+// once.
+func TestRemoteBranchLockKeyIsSharedAndPinned(t *testing.T) {
+	t.Parallel()
+	repo := &git.Repository{}
+	directory := t.TempDir()
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- repo.WithRemoteBranchLock(t.Context(), directory, "github", "Author/Ports", "dockhand/jq-4k2p", func(context.Context) error {
+			close(entered)
+			<-release
+			return nil
+		})
+	}()
+	<-entered
+	require.FileExists(t, filelock.Path(directory, "github:author/ports:dockhand/jq-4k2p"), "the pinned key")
+
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	err := repo.WithRemoteBranchLock(ctx, directory, "github", "author/ports", "dockhand/jq-4k2p", func(context.Context) error { return nil })
+	require.ErrorIs(t, err, context.DeadlineExceeded, "the repository's case does not split the lock")
+	require.NoError(t, repo.WithRemoteBranchLock(t.Context(), directory, "github", "author/ports", "dockhand/other", func(context.Context) error { return nil }), "another branch is another lock")
+
+	close(release)
+	require.NoError(t, <-done)
 }

@@ -135,8 +135,20 @@ func cacheJobLog(ctx context.Context, api actionsAPI, job *gh.WorkflowJob, path 
 		if err != nil {
 			return err
 		}
-		_, copyErr := io.Copy(file, body)
-		return errors.Join(copyErr, body.Close())
+		defer body.Close()
+		// The first maxJobLogBytes are kept; a longer log says where it was
+		// cut and where the whole one is, and the rest is not downloaded.
+		if _, err := io.CopyN(file, body, maxJobLogBytes); err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
+		var more [1]byte
+		if n, _ := io.ReadFull(body, more[:]); n > 0 {
+			_, err = fmt.Fprintf(file, "\n--- log truncated at %d MiB; the whole log is at %s ---\n", maxJobLogBytes>>20, job.GetHTMLURL())
+		}
+		return err
 	})
 }
 

@@ -925,3 +925,44 @@ func TestARunWorthWaitingForIsNotRerun(t *testing.T) {
 		})
 	}
 }
+
+// A job log longer than the 64 MiB kept is kept to it and says so, with
+// where the whole log is, rather than failing every read of the job's log.
+func TestOversizedJobLogIsTruncatedNotFatal(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, int64(64<<20), int64(maxJobLogBytes), "the cap the note and this test name")
+	for _, size := range []int64{maxJobLogBytes, maxJobLogBytes + 5} {
+		api := &fakeActions{}
+		api.jobLog = func(context.Context, int64) (io.ReadCloser, error) {
+			return io.NopCloser(io.LimitReader(repeatReader('x'), size)), nil
+		}
+		job := &gh.WorkflowJob{ID: gh.Ptr(int64(7)), Name: gh.Ptr("build"), Conclusion: gh.Ptr("failure"), HTMLURL: gh.Ptr("https://github.com/author/ports/actions/runs/1/job/7")}
+		path := filepath.Join(t.TempDir(), "job.log")
+		require.NoError(t, cacheJobLog(t.Context(), api, job, path))
+		info, err := os.Stat(path)
+		require.NoError(t, err)
+		header := int64(len("\n--- build (failure) ---\nhttps://github.com/author/ports/actions/runs/1/job/7\n"))
+		note := "\n--- log truncated at 64 MiB; the whole log is at https://github.com/author/ports/actions/runs/1/job/7 ---\n"
+		if size == maxJobLogBytes {
+			require.Equal(t, header+maxJobLogBytes, info.Size(), "a log of exactly the cap is whole")
+			continue
+		}
+		require.Equal(t, header+maxJobLogBytes+int64(len(note)), info.Size())
+		file, err := os.Open(path)
+		require.NoError(t, err)
+		_, err = file.Seek(-int64(len(note)), io.SeekEnd)
+		require.NoError(t, err)
+		tail, err := io.ReadAll(file)
+		require.NoError(t, errors.Join(err, file.Close()))
+		require.Equal(t, note, string(tail))
+	}
+}
+
+type repeatReader byte
+
+func (r repeatReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = byte(r)
+	}
+	return len(p), nil
+}
