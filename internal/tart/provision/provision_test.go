@@ -1,6 +1,7 @@
 package provision
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"encoding/xml"
@@ -20,11 +21,14 @@ var testPlatform = record.Platform{OS: "darwin", Version: "25", Architecture: "a
 
 type fakeMachine struct {
 	images     map[string]image
+	personal   map[string]image
+	hostKeys   map[string]bool
 	events     []string
 	fail       string
 	failures   map[string]error
 	format     string
 	validation validation
+	onValidate func(*validation)
 	manifest   []byte
 }
 
@@ -37,7 +41,11 @@ func newFakeMachine(names ...string) *fakeMachine {
 	for _, name := range names {
 		images[name] = image{Name: name}
 	}
-	return &fakeMachine{images: images, validation: validation{Platform: testPlatform, MacPortsVersion: macports.DefaultBaseVersion, GuestAgentVersion: "development snapshot", CommandLineTools: "26.6"}}
+	keys := map[string]bool{}
+	for _, name := range names {
+		keys[name] = true
+	}
+	return &fakeMachine{images: images, personal: map[string]image{}, hostKeys: keys, validation: validation{Platform: testPlatform, MacPortsVersion: macports.DefaultBaseVersion, GuestAgentVersion: "development snapshot", CommandLineTools: "26.6"}}
 }
 
 func (f *fakeMachine) event(name string) error {
@@ -52,6 +60,38 @@ func (f *fakeMachine) LockSetup(context.Context, string) (io.Closer, error) {
 }
 func (f *fakeMachine) Images(context.Context) (map[string]image, error) {
 	return f.images, f.event("images")
+}
+func (f *fakeMachine) PersonalImages(context.Context) (map[string]image, error) {
+	return f.personal, f.event("personal")
+}
+func (f *fakeMachine) Import(_ context.Context, source, destination string) error {
+	if err := f.event("import:" + source + ":" + destination); err != nil {
+		return err
+	}
+	f.images[destination] = image{Name: destination}
+	return nil
+}
+func (f *fakeMachine) Connect(_ context.Context, name, alias string, bootstrap bool) error {
+	if bootstrap {
+		f.hostKeys[alias] = true
+		return f.event("bootstrap:" + name + ":" + alias)
+	}
+	if !f.hostKeys[alias] {
+		return errors.New("no host keys recorded for " + alias)
+	}
+	return f.event("connect:" + name + ":" + alias)
+}
+func (f *fakeMachine) HostKeysRecorded(image string) bool { return f.hostKeys[image] }
+func (f *fakeMachine) RecordHostKeys(from, to string) error {
+	if !f.hostKeys[from] {
+		return errors.New("no host keys recorded for " + from)
+	}
+	f.hostKeys[to] = true
+	return f.event("keys:" + from + ":" + to)
+}
+func (f *fakeMachine) ForgetHostKeys(image string) error {
+	delete(f.hostKeys, image)
+	return f.event("forget:" + image)
 }
 func (f *fakeMachine) Pull(context.Context, string) error { return f.event("pull") }
 func (f *fakeMachine) Clone(_ context.Context, source, destination string) error {
@@ -90,6 +130,9 @@ func (f *fakeMachine) WriteManifest(_ context.Context, _ string, value []byte) e
 	return f.event("manifest")
 }
 func (f *fakeMachine) Validate(context.Context, string, Config) (validation, error) {
+	if f.onValidate != nil {
+		f.onValidate(&f.validation)
+	}
 	return f.validation, f.event("validate")
 }
 func (f *fakeMachine) Stop(_ context.Context, name string) error {
@@ -303,5 +346,86 @@ func TestToolsOfAnotherGenerationAreReportedAndRefused(t *testing.T) {
 	machine = newFakeMachine()
 	result, err := testProvisioner(machine).Run(t.Context(), Options{})
 	require.NoError(t, err)
+	require.Equal(t, "26.6", result.CommandLineTools)
+}
+
+// A fresh image is reached by bootstrap before anything is installed, and
+// the host keys its candidate presented are recorded under the image and
+// its golden copy, not the candidate's temporary name.
+func TestProvisionRecordsHostKeysUnderTheImage(t *testing.T) {
+	machine := newFakeMachine()
+	_, err := testProvisioner(machine).Run(t.Context(), Options{})
+	require.NoError(t, err)
+	require.Less(t, index(machine.events, "bootstrap:dockhand-base-tahoe-next:dockhand-base-tahoe-next"), index(machine.events, "agent"))
+	require.Contains(t, machine.events, "keys:dockhand-base-tahoe-next:dockhand-base-tahoe")
+	require.Contains(t, machine.events, "keys:dockhand-base-tahoe-next:dockhand-golden-tahoe")
+	require.True(t, machine.hostKeys["dockhand-base-tahoe"])
+	require.True(t, machine.hostKeys["dockhand-golden-tahoe"])
+	require.False(t, machine.hostKeys["dockhand-base-tahoe-next"])
+}
+
+// An existing image checks the way verification reaches a clone, by its
+// recorded host keys and dockhand's key.
+func TestCheckReachesTheCloneByTheImagesKeys(t *testing.T) {
+	machine := newFakeMachine("dockhand-base-tahoe")
+	_, err := testProvisioner(machine).Run(t.Context(), Options{Check: true})
+	require.NoError(t, err)
+	require.Contains(t, machine.events, "connect:dockhand-base-tahoe-check:dockhand-base-tahoe")
+}
+
+// An image made before dockhand reached guests over SSH gets dockhand's key
+// on its next setup, in a candidate adopted like a rebuild, without
+// installing anything again; --check says to run setup instead.
+func TestAnImageWithoutTheKeyIsGivenIt(t *testing.T) {
+	machine := newFakeMachine("dockhand-base-tahoe", "dockhand-golden-tahoe")
+	machine.hostKeys = map[string]bool{}
+	_, err := testProvisioner(machine).Run(t.Context(), Options{Check: true})
+	require.ErrorContains(t, err, "predates dockhand's SSH key; run dockhand setup without --check")
+
+	result, err := testProvisioner(machine).Run(t.Context(), Options{})
+	require.NoError(t, err)
+	require.False(t, result.Reused)
+	require.Contains(t, machine.events, "clone:dockhand-base-tahoe:dockhand-base-tahoe-next")
+	require.Contains(t, machine.events, "bootstrap:dockhand-base-tahoe-next:dockhand-base-tahoe-next")
+	require.Contains(t, machine.events, "adopt:dockhand-base-tahoe-next:dockhand-base-tahoe")
+	require.NotContains(t, machine.events, "pull")
+	require.NotContains(t, machine.events, "macports", "nothing is installed again")
+	require.True(t, machine.hostKeys["dockhand-base-tahoe"])
+	require.True(t, machine.hostKeys["dockhand-golden-tahoe"])
+}
+
+// An image an earlier dockhand made in the person's own Tart home is
+// copied into dockhand's when it still validates, and provisioned afresh
+// when it does not, as a Tahoe image with the macOS 27 tools does.
+func TestAnImageInThePersonsHomeIsImportedWhenItValidates(t *testing.T) {
+	machine := newFakeMachine()
+	machine.personal = map[string]image{"dockhand-base-tahoe": {Name: "dockhand-base-tahoe"}}
+	result, err := testProvisioner(machine).Run(t.Context(), Options{})
+	require.NoError(t, err)
+	require.Equal(t, "26.6", result.CommandLineTools)
+	require.Contains(t, machine.events, "import:dockhand-base-tahoe:dockhand-base-tahoe-next")
+	require.NotContains(t, machine.events, "pull")
+	require.Contains(t, machine.images, "dockhand-base-tahoe")
+
+	machine = newFakeMachine()
+	machine.personal = map[string]image{"dockhand-base-tahoe": {Name: "dockhand-base-tahoe"}}
+	machine.validation.CommandLineTools = "27.0"
+	machine.failures = map[string]error{}
+	var progress bytes.Buffer
+	provisioner := testProvisioner(machine)
+	provisioner.Progress = &progress
+	calls := 0
+	machine.onValidate = func(v *validation) {
+		calls++
+		if calls > 1 {
+			v.CommandLineTools = "26.6"
+		}
+	}
+	result, err = provisioner.Run(t.Context(), Options{})
+	require.NoError(t, err)
+	require.Contains(t, machine.events, "import:dockhand-base-tahoe:dockhand-base-tahoe-next")
+	require.Contains(t, machine.events, "pull", "the unsuitable copy is replaced by a new image")
+	require.Contains(t, progress.String(), "cannot be used")
+	require.Contains(t, progress.String(), "Command Line Tools 27.0")
 	require.Equal(t, "26.6", result.CommandLineTools)
 }

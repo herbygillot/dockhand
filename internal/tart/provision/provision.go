@@ -64,11 +64,23 @@ type validation struct {
 type machine interface {
 	LockSetup(context.Context, string) (io.Closer, error)
 	Images(context.Context) (map[string]image, error)
+	// PersonalImages are the local images in the person's own Tart home,
+	// where an earlier dockhand made its images.
+	PersonalImages(context.Context) (map[string]image, error)
 	Pull(context.Context, string) error
 	Clone(context.Context, string, string) error
+	// Import copies an image of the person's home into dockhand's under
+	// another name, with Tart's export and import.
+	Import(context.Context, string, string) error
 	DiskFormat(context.Context, string) (string, error)
 	Configure(context.Context, string) error
 	Start(context.Context, string) error
+	// Connect reaches a running guest over SSH, trusting it as the image
+	// alias names. Bootstrap uses the image's password, records the host
+	// keys the guest presents under alias, and installs dockhand's key;
+	// without it the guest must present alias's recorded host keys and
+	// accept dockhand's key.
+	Connect(ctx context.Context, name, alias string, bootstrap bool) error
 	BootstrapAgent(context.Context, string) error
 	ReadyAgent(context.Context, string) error
 	EnsureToolchain(context.Context, string) error
@@ -80,6 +92,13 @@ type machine interface {
 	Delete(context.Context, string) error
 	Rename(context.Context, string, string) error
 	Adopt(context.Context, string, string, bool) error
+	// HostKeysRecorded reports whether an image's host keys are recorded,
+	// which an image dockhand reaches with its key has.
+	HostKeysRecorded(string) bool
+	// RecordHostKeys records the host keys recorded under one image under
+	// another as well; ForgetHostKeys removes an image's.
+	RecordHostKeys(from, to string) error
+	ForgetHostKeys(string) error
 }
 
 type Provisioner struct {
@@ -120,19 +139,56 @@ func (p *Provisioner) Run(ctx context.Context, options Options) (Result, error) 
 		if err := machine.Adopt(ctx, golden, config.Image, false); err != nil {
 			return Result{}, err
 		}
+		if machine.HostKeysRecorded(golden) {
+			if err := machine.RecordHostKeys(golden, config.Image); err != nil {
+				return Result{}, err
+			}
+		}
 		images[config.Image] = image{Name: config.Image}
 	}
 	if images[config.Image].Name != "" && !options.Rebuild {
 		if images[config.Image].Running {
 			return Result{}, fmt.Errorf("setup: image %s must be stopped", config.Image)
 		}
+		// An image made before dockhand reached guests over SSH has
+		// neither dockhand's key nor recorded host keys; its next setup
+		// gives it both, in a candidate adopted like a rebuild.
+		if !machine.HostKeysRecorded(config.Image) {
+			if options.Check {
+				return Result{}, fmt.Errorf("setup: image %s predates dockhand's SSH key; run dockhand setup without --check to give it the key", config.Image)
+			}
+			p.say("Giving %s dockhand's SSH key...", config.Image)
+			return p.upgrade(ctx, machine, config, release, golden, false, true)
+		}
 		return p.check(ctx, machine, config, golden, true)
 	}
 	if options.Check {
 		return Result{}, fmt.Errorf("setup: verification image %s does not exist", config.Image)
 	}
+	// An image an earlier dockhand made in the person's own Tart home is
+	// copied into dockhand's rather than provisioned again, when it still
+	// validates; one that does not, such as a Tahoe image with the macOS
+	// 27 tools, is provisioned afresh.
+	if !options.Rebuild && images[config.Image].Name == "" {
+		personal, err := machine.PersonalImages(ctx)
+		if err != nil {
+			return Result{}, err
+		}
+		if found := personal[config.Image]; found.Name != "" && !found.Running {
+			p.say("Copying %s from your Tart home...", config.Image)
+			result, err := p.upgrade(ctx, machine, config, release, golden, true, false)
+			if !errors.Is(err, errUnsuitable) {
+				return result, err
+			}
+			p.say("The copy of %s cannot be used: %v; provisioning a new one.", config.Image, err)
+		}
+	}
 	return p.provision(ctx, machine, config, release, golden, images[config.Image].Name != "")
 }
+
+// errUnsuitable is an existing image that validation found does not match
+// what setup requires of it.
+var errUnsuitable = errors.New("setup: image does not match its profile")
 
 func normalize(config Config) (Config, macos.Release, error) {
 	release, err := tart.ReleaseForPlatform(config.Platform)
@@ -220,6 +276,11 @@ func (p *Provisioner) check(ctx context.Context, machine machine, config Config,
 	if err := machine.Start(ctx, name); err != nil {
 		return Result{}, err
 	}
+	// The clone is reached as verification reaches one, by the image's
+	// recorded host keys and dockhand's key.
+	if err := machine.Connect(ctx, name, config.Image, false); err != nil {
+		return Result{}, err
+	}
 	if err := machine.ReadyAgent(ctx, name); err != nil {
 		return Result{}, err
 	}
@@ -290,6 +351,10 @@ func (p *Provisioner) provision(ctx context.Context, machine machine, config Con
 	if err := machine.Start(ctx, next); err != nil {
 		return Result{}, err
 	}
+	p.say("Installing dockhand's SSH key...")
+	if err := machine.Connect(ctx, next, next, true); err != nil {
+		return Result{}, err
+	}
 	p.say("Installing the Tart guest agent...")
 	if err := machine.BootstrapAgent(ctx, next); err != nil {
 		return Result{}, err
@@ -321,6 +386,71 @@ func (p *Provisioner) provision(ctx context.Context, machine machine, config Con
 	if err := toolsGeneration(checked, release); err != nil {
 		return Result{}, fmt.Errorf("setup: provisioned image %w", err)
 	}
+	return p.finish(ctx, machine, config, golden, next, checked, replacing, &keepNext)
+}
+
+// upgrade gives an existing image what an image made today has, dockhand's
+// SSH key and recorded host keys, in a candidate adopted as a rebuild's is:
+// an image of dockhand's own home made before the key (replacing it), or
+// one copied from the person's home. A candidate that does not validate
+// against the profile is errUnsuitable, and nothing is adopted.
+func (p *Provisioner) upgrade(ctx context.Context, machine machine, config Config, release macos.Release, golden string, imported, replacing bool) (result Result, err error) {
+	next, goldenNext := config.Image+"-next", golden+"-next"
+	if err := discard(ctx, machine, next); err != nil {
+		return Result{}, err
+	}
+	if err := discard(ctx, machine, goldenNext); err != nil {
+		return Result{}, err
+	}
+	if imported {
+		if err := machine.Import(ctx, config.Image, next); err != nil {
+			return Result{}, err
+		}
+	} else if err := machine.Clone(ctx, config.Image, next); err != nil {
+		return Result{}, err
+	}
+	keepNext := false
+	defer func() {
+		if !keepNext {
+			if problem := cleanup(machine, next); problem != nil {
+				err = errors.Join(err, fmt.Errorf("setup: cleaning up %s: %w", next, problem))
+			}
+		}
+	}()
+	if format, err := machine.DiskFormat(ctx, next); err != nil {
+		return Result{}, err
+	} else if format != "raw" {
+		return Result{}, fmt.Errorf("%w: %s has an %s disk, which dockhand declines (openai/tart#1344)", errUnsuitable, config.Image, strings.ToUpper(format))
+	}
+	if err := machine.Start(ctx, next); err != nil {
+		return Result{}, err
+	}
+	if err := machine.Connect(ctx, next, next, true); err != nil {
+		return Result{}, err
+	}
+	if err := machine.ReadyAgent(ctx, next); err != nil {
+		return Result{}, err
+	}
+	checked, err := machine.Validate(ctx, next, config)
+	if err != nil {
+		return Result{}, fmt.Errorf("%w: %w", errUnsuitable, err)
+	}
+	if checked.Platform != config.Platform || checked.MacPortsVersion != config.MacPortsVersion || checked.XcodeVersion != config.XcodeVersion {
+		return Result{}, fmt.Errorf("%w: it has MacPorts %s and Xcode %q on %+v", errUnsuitable, checked.MacPortsVersion, checked.XcodeVersion, checked.Platform)
+	}
+	if err := toolsGeneration(checked, release); err != nil {
+		return Result{}, fmt.Errorf("%w: it %w", errUnsuitable, err)
+	}
+	return p.finish(ctx, machine, config, golden, next, checked, replacing, &keepNext)
+}
+
+// finish records a validated candidate's manifest, keeps a golden copy,
+// adopts the candidate as the image, and records the host keys it
+// presented under the image and the golden copy. Once the golden copy
+// exists, the candidate is proven, and keep says so, so a failed adoption
+// leaves it for the person rather than cleaning it up.
+func (p *Provisioner) finish(ctx context.Context, machine machine, config Config, golden, next string, checked validation, replacing bool, keep *bool) (Result, error) {
+	goldenNext := golden + "-next"
 	manifest, err := json.Marshal(tart.ImageManifest{
 		Protocol: tart.ImageManifestProtocol, Source: config.Source, Platform: config.Platform,
 		MacPortsPrefix: config.GuestPrefix, MacPortsVersion: config.MacPortsVersion,
@@ -338,9 +468,12 @@ func (p *Provisioner) provision(ctx context.Context, machine machine, config Con
 	if err := machine.Clone(ctx, next, goldenNext); err != nil {
 		return Result{}, err
 	}
-	keepNext = true
+	*keep = true
 	if err := machine.Adopt(ctx, next, config.Image, replacing); err != nil {
 		return Result{}, fmt.Errorf("setup: adopting %s failed; proven candidate remains as %s: %w", config.Image, next, err)
+	}
+	if err := machine.RecordHostKeys(next, config.Image); err != nil {
+		return Result{}, err
 	}
 	if err := discard(ctx, machine, golden); err != nil {
 		return Result{}, err
@@ -348,7 +481,13 @@ func (p *Provisioner) provision(ctx context.Context, machine machine, config Con
 	if err := machine.Rename(ctx, goldenNext, golden); err != nil {
 		return Result{}, err
 	}
+	if err := machine.RecordHostKeys(next, golden); err != nil {
+		return Result{}, err
+	}
 	if err := machine.Delete(ctx, next); err != nil {
+		return Result{}, err
+	}
+	if err := machine.ForgetHostKeys(next); err != nil {
 		return Result{}, err
 	}
 	return Result{Image: config.Image, GoldenImage: golden, Source: config.Source, Platform: checked.Platform, MacPortsVersion: checked.MacPortsVersion, GuestAgentVersion: checked.GuestAgentVersion, XcodeVersion: checked.XcodeVersion, CommandLineTools: checked.CommandLineTools}, nil
