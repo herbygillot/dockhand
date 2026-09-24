@@ -3,9 +3,9 @@ package github
 import (
 	"context"
 	"fmt"
-	"math"
 	"github.com/herbygillot/dockhand/internal/fetch"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 
