@@ -129,8 +129,20 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 		if err != nil {
 			return result, err
 		}
-		if snapshot.Branch != branch || snapshot.Head != committed.Head {
-			return result, ErrStaleRevision
+		// Said here, before a job is accepted, rather than found at
+		// integration, which would leave the job needing attention.
+		if snapshot.Branch != branch {
+			return result, fmt.Errorf("%w: amend commits the checkout at %s, which is on %s, not the contribution's branch %s; check out %s there, or name its checkout with --tree", ErrInvalidRequest, e.Repo.Root, snapshot.Branch, branch, branch)
+		}
+		if snapshot.Head != committed.Head {
+			return result, fmt.Errorf("%w: the checkout's HEAD %s is not the branch's %s", ErrStaleRevision, snapshot.Head, committed.Head)
+		}
+		unstaged, err := e.Repo.UnstagedPaths(ctx)
+		if err != nil {
+			return result, err
+		}
+		if len(unstaged) > 0 {
+			return result, fmt.Errorf("%w: amend commits what is staged, and %s has edits that are not: %s; stage the intended amendment with git add first", ErrInvalidRequest, e.Repo.Root, strings.Join(unstaged, ", "))
 		}
 	}
 	target, err := e.inferVerificationTarget(ctx, snapshot.Source(revision.Source.Base), change, macports.Selection{})

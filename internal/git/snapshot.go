@@ -235,6 +235,22 @@ func extractBlobs(ctx context.Context, in *bufio.Reader, root string, entries []
 	return nil
 }
 
+// UnstagedPaths lists the tracked files whose working-tree contents differ
+// from the index: edits not staged.
+func (r *Repository) UnstagedPaths(ctx context.Context) ([]string, error) {
+	out, err := r.output(ctx, "diff", "--name-only", "-z", "--no-renames")
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for _, path := range strings.Split(string(out), "\x00") {
+		if path != "" {
+			paths = append(paths, path)
+		}
+	}
+	return paths, nil
+}
+
 func (r *Repository) CurrentBranch(ctx context.Context) (string, error) {
 	out, err := r.output(ctx, "symbolic-ref", "--quiet", "HEAD")
 	if err != nil {
