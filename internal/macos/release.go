@@ -36,13 +36,15 @@ type Toolchain struct {
 // Mac models it, since MacPorts cannot ask such a host for Apple's compiler.
 var CurrentToolchain = Toolchain{Xcode: "26.3", Clang: "1700.6.4.2"}
 
+// releases is keyed by Darwin major, which is not consecutive: Apple
+// skipped 26, and Golden Gate, macOS 27, is Darwin 27.
 var releases = map[int]Release{
 	21: {Darwin: 21, Product: "12", Name: "Monterey", Slug: "monterey"},
 	22: {Darwin: 22, Product: "13", Name: "Ventura", Slug: "ventura"},
 	23: {Darwin: 23, Product: "14", Name: "Sonoma", Slug: "sonoma"},
 	24: {Darwin: 24, Product: "15", Name: "Sequoia", Slug: "sequoia"},
 	25: {Darwin: 25, Product: "26", Name: "Tahoe", Slug: "tahoe"},
-	26: {Darwin: 26, Product: "27", Name: "Golden Gate", Slug: "golden-gate"},
+	27: {Darwin: 27, Product: "27", Name: "Golden Gate", Slug: "golden-gate"},
 }
 
 // Known lists the releases this table carries, oldest first. It is the one

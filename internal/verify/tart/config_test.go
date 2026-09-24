@@ -24,7 +24,7 @@ func TestBuildConfigDoesNotInitializeRuntimeDirectories(t *testing.T) {
 // is missing asks for setup of that release.
 func TestNamedReleasesAreDeliberate(t *testing.T) {
 	t.Parallel()
-	goldenGate := record.Platform{OS: "darwin", Version: "26", Architecture: "arm64"}
+	goldenGate := record.Platform{OS: "darwin", Version: "27", Architecture: "arm64"}
 	provider := &Provider{Config: Config{Home: t.TempDir(), ArtifactDirectory: t.TempDir(), PortIndexExecutable: fakePortIndex(t)}, backend: newMachine()}
 	_, err := provider.BuildConfig(t.Context(), goldenGate, verify.BuildOptions{Tests: record.TestDeclared})
 	require.ErrorIs(t, err, verify.ErrImageUnavailable)

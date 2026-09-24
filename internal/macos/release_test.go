@@ -27,7 +27,7 @@ func TestParseRelease(t *testing.T) {
 }
 
 func TestProductForDarwinDoesNotExtendProvisioning(t *testing.T) {
-	for darwin, want := range map[int]string{8: "10.4", 16: "10.12", 19: "10.15", 20: "11", 24: "15", 25: "26", 26: "27"} {
+	for darwin, want := range map[int]string{8: "10.4", 16: "10.12", 19: "10.15", 20: "11", 24: "15", 25: "26", 27: "27"} {
 		got, err := ProductForDarwin(darwin)
 		require.NoError(t, err)
 		require.Equal(t, want, got)
@@ -71,9 +71,16 @@ func TestTheTableIsTheOnlyPlaceTheReleaseSetIsWritten(t *testing.T) {
 	}
 }
 
-func TestGoldenGateIsMacOS27OnDarwin26(t *testing.T) {
-	release, err := ReleaseForDarwin(26)
+// A Golden Gate guest reports kernel Darwin 27.0.0: Apple skipped 26, so no
+// release answers to it.
+func TestGoldenGateIsMacOS27OnDarwin27(t *testing.T) {
+	release, err := ReleaseForDarwin(27)
 	require.NoError(t, err)
-	require.Equal(t, Release{Darwin: 26, Product: "27", Name: "Golden Gate", Slug: "golden-gate"}, release)
-	require.Equal(t, "macOS 27 (Golden Gate) arm64", Describe(record.Platform{OS: "darwin", Version: "26", Architecture: "arm64"}))
+	require.Equal(t, Release{Darwin: 27, Product: "27", Name: "Golden Gate", Slug: "golden-gate"}, release)
+	require.Equal(t, "macOS 27 (Golden Gate) arm64", Describe(record.Platform{OS: "darwin", Version: "27", Architecture: "arm64"}))
+	_, err = ReleaseForDarwin(26)
+	require.Error(t, err)
+	_, err = ProductForDarwin(26)
+	require.Error(t, err)
+	require.Equal(t, "darwin 26 arm64", Describe(record.Platform{OS: "darwin", Version: "26", Architecture: "arm64"}))
 }

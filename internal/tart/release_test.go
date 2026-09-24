@@ -27,7 +27,7 @@ func TestImageDefaultsRejectUnsupportedPlatforms(t *testing.T) {
 		{OS: "linux", Version: "25", Architecture: "arm64"},
 		{OS: "darwin", Version: "25", Architecture: "x86_64"},
 		{OS: "darwin", Version: "unknown", Architecture: "arm64"},
-		{OS: "darwin", Version: "27", Architecture: "arm64"},
+		{OS: "darwin", Version: "26", Architecture: "arm64"},
 	} {
 		_, err := DefaultImageName(platform)
 		require.Error(t, err)
@@ -47,7 +47,7 @@ func TestEveryKnownReleaseNamesItsImagesAndSource(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "ghcr.io/cirruslabs/macos-"+release.Slug+"-vanilla:latest", source)
 	}
-	platform := record.Platform{OS: "darwin", Version: "26", Architecture: "arm64"}
+	platform := record.Platform{OS: "darwin", Version: "27", Architecture: "arm64"}
 	source, err := DefaultSource(platform)
 	require.NoError(t, err)
 	require.Equal(t, "ghcr.io/cirruslabs/macos-golden-gate-vanilla:latest", source)
