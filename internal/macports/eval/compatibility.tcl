@@ -8,10 +8,18 @@ namespace eval ::dockhand {
         return -code error "MacPorts Base [base_version]: $detail; check the selected --prefix/port-tclsh installation or update MacPorts Base"
     }
 
+    # check_startup checks what the macports package provides once it is
+    # loaded, before mportinit; check_initialized checks what mportinit
+    # loads. Base master loads Pextlib, and with it vercmp, only in
+    # mportinit, where 2.12 loads it with the package.
     proc check_startup {} {
-        foreach command {::mportinit ::mportopen ::mportinfo ::mportclose ::ditem_key ::vercmp} {
+        foreach command {::mportinit ::mportopen ::mportinfo ::mportclose ::ditem_key} {
             if {![llength [info commands $command]]} { incompatible "required evaluator command $command is missing" }
         }
+    }
+
+    proc check_initialized {} {
+        if {![llength [info commands ::vercmp]]} { incompatible "required evaluator command ::vercmp is missing" }
         if {[catch {expr {[vercmp 1.9 1.10] < 0 && [vercmp 1.10 1.9] > 0 && [vercmp 1.0 1.0] == 0}} ordered] || !$ordered} {
             incompatible "version comparison capability check failed"
         }

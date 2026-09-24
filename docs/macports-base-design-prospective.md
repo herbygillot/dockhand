@@ -393,7 +393,9 @@ the default only if the prototype earns it. The existing
 1. The startup fix and its regression test, **together with a version
    gate**: command checks before `mportinit`, `vercmp` after, and
    preparation and modeled evaluation allowed only on validated released
-   families (2.12.x). Today the only thing stopping Base master from
+   families (2.12.x, and 2.11.x while it stays cheap; done 2026-09-24,
+   with `DOCKHAND_TEST_BASE_ADAPTER=preview` admitting master to the
+   evaluator's tests only). Today the only thing stopping Base master from
    preparing is the startup check failing by accident; fixing it without
    a gate would let master prepare with the eleven known host-access false
    negatives. On 2.12.99 and unknown versions preparation is refused, or

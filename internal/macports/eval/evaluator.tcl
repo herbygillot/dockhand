@@ -1,4 +1,12 @@
 namespace eval ::dockhand {
+    # probe loads the macports package without initializing it and says
+    # which Base it is, so the version can be judged before mportinit
+    # reads the host's configuration.
+    proc probe {} {
+        package require macports
+        return [base_version]
+    }
+
     # base is the directory an overlay's shared files resolve to, the
     # base workspace whose _resources the overlay links; reads there are
     # reads of the captured tree. It is the root itself for a base.
@@ -8,6 +16,7 @@ namespace eval ::dockhand {
         package require macports
         check_startup
         if {[catch {mportinit} detail]} { incompatible "initialization failed: $detail" }
+        check_initialized
         if {$root ne ""} {
             set url "file://[file normalize $root]"
             set ::macports::sources [list [list $url]]
@@ -187,6 +196,7 @@ namespace eval ::dockhand {
         }
     }
 }
+::tclrpc::register probe ::dockhand::probe
 ::tclrpc::register initialize ::dockhand::initialize
 ::tclrpc::register model_platform ::dockhand::model_platform
 ::tclrpc::register metadata ::dockhand::metadata

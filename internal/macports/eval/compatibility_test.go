@@ -26,22 +26,76 @@ func TestRuntimeInspectionAndVersionEvidence(t *testing.T) {
 	require.ErrorIs(t, err, macports.ErrStartup)
 }
 
-func TestStartupChecksCapabilitiesWithoutVersionGate(t *testing.T) {
+// Base master loads vercmp in mportinit, where 2.12 loads it with the
+// package, so the startup checks leave it to the check after mportinit.
+func TestStartupChecksSplitAroundInitialization(t *testing.T) {
 	t.Parallel()
-	for _, mutation := range []string{"proc ::macports::version {} {return 99.0}", "rename ::mportinfo ::saved_mportinfo", "rename ::vercmp ::saved_vercmp; proc ::vercmp {a b} {return 0}"} {
-		t.Run(mutation, func(t *testing.T) {
+	for _, test := range []struct{ name, script, want string }{
+		{"vercmp loaded by mportinit", "rename ::vercmp ::saved_vercmp; try {::dockhand::check_startup} finally {rename ::saved_vercmp ::vercmp}", ""},
+		{"missing mportinfo", "rename ::mportinfo ::saved_mportinfo; ::dockhand::check_startup", "required evaluator command ::mportinfo is missing"},
+		{"missing vercmp", "rename ::vercmp ::saved_vercmp; ::dockhand::check_initialized", "required evaluator command ::vercmp is missing"},
+		{"broken vercmp", "rename ::vercmp ::saved_vercmp; proc ::vercmp {a b} {return 0}; ::dockhand::check_initialized", "version comparison capability check failed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
 			session, runtime, err := liveEvaluator(t).start(t.Context(), macports.Tree{})
 			require.NoError(t, err)
 			defer session.Close()
-			_, err = session.Call(t.Context(), "eval", mutation+"; ::dockhand::check_startup")
-			if mutation == "proc ::macports::version {} {return 99.0}" {
+			_, err = session.Call(t.Context(), "eval", test.script)
+			if test.want == "" {
 				require.NoError(t, err)
-			} else {
-				require.ErrorContains(t, err, "MacPorts Base "+runtime.BaseVersion)
-				require.ErrorContains(t, err, "check the selected --prefix")
+				return
 			}
+			require.ErrorContains(t, err, test.want)
+			require.ErrorContains(t, err, "MacPorts Base "+runtime.BaseVersion)
+			require.ErrorContains(t, err, "check the selected --prefix")
 		})
 	}
+}
+
+// The version is judged from what Base reports before mportinit: released
+// 2.11 and 2.12 by default, a development build only with the preview
+// adapter.
+func TestBaseVersionGate(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct{ version, adapter, want string }{
+		{"2.12.6", "", ""},
+		{"2.12.0", "", ""},
+		{"2.11.6", "", ""},
+		{"2.12.99", "", "2.12.99 is a development build"},
+		{"2.13.99", "", "development build"},
+		{"2.12.99", PreviewAdapter, ""},
+		{"2.12.6", PreviewAdapter, "2.12.6 is a release"},
+		{"2.10.7", "", "older than this dockhand"},
+		{"1.9.2", "", "sudo port selfupdate"},
+		{"2.13.0", "", "newer than this dockhand"},
+		{"3.0.0", "", "status and recorded evidence remain usable"},
+		{"unknown", "", `version "unknown", which this dockhand does not recognize`},
+		{"2.12", "", "does not recognize"},
+		{"2.12.0-beta1", "", "does not recognize"},
+		{"2.12.6", "base212", `unknown MacPorts Base adapter "base212"`},
+	} {
+		t.Run(test.version+"/"+test.adapter, func(t *testing.T) {
+			err := admitBase(test.version, test.adapter)
+			if test.want == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorIs(t, err, macports.ErrStartup)
+			require.ErrorContains(t, err, test.want)
+		})
+	}
+}
+
+// The probe reads the version before mportinit, and it is the one the
+// initialized runtime reports.
+func TestProbeReadsVersionBeforeInitialization(t *testing.T) {
+	t.Parallel()
+	session, runtime, err := liveEvaluator(t).start(t.Context(), macports.Tree{})
+	require.NoError(t, err)
+	defer session.Close()
+	version, err := session.Call(t.Context(), "probe")
+	require.NoError(t, err)
+	require.Equal(t, runtime.BaseVersion, version)
 }
 
 func TestWorkerAndFetchContracts(t *testing.T) {
