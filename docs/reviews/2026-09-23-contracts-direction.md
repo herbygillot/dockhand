@@ -1,11 +1,13 @@
-# 2026-09-23: the contracts review, walked through (in progress)
+# 2026-09-23: the contracts review, walked through
 
-Draft, not checked in. A running record of the walk through the
+The record of the walk through the
 [contracts review](2026-09-23-contracts-review.md) and its
-[inventory](2026-09-23-contracts-inventory.md): where the review is wrong
-against the code, what was decided, what is proposed and waiting, and what
-the walk found along the way. When the walk ends this settles into the
-roadmap as one reconciled item and the design documents it changes.
+[inventory](2026-09-23-contracts-inventory.md), 2026-09-23 and 24: where
+the review is wrong against the code, what was decided, what remains
+open, and what the walk found along the way. The resulting work is the
+[roadmap](../roadmap.md)'s Next queue. Several decisions amend earlier
+ones and say so; the changeset contract is to be consolidated into one
+current design document before its schema changes (decision 44).
 
 ## Corrections to the review
 
