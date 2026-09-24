@@ -173,3 +173,23 @@ func (c Client) fetchOne(ctx context.Context, info macports.PortInfo) (Download,
 	}
 	return c.Store("").Fetch(ctx, info, Source{name, address})
 }
+
+// fetch.ignore_sslcert is read as Tcl reads a boolean: any spelling of
+// false passes, any of true is refused, and so is a value that is none, or
+// one that was never evaluated.
+func TestCheckPolicyReadsIgnoreSSLCertAsTclBoolean(t *testing.T) {
+	t.Parallel()
+	for value, allowed := range map[string]bool{"no": true, "Off": true, "false": true, "0": true, "yes": false, "ON": false, "1": false, "sometimes": false} {
+		info := archiveInfo("https://example.invalid/")
+		info.Options["fetch.ignore_sslcert"] = value
+		err := CheckPolicy(info, t.TempDir())
+		if allowed {
+			require.NoError(t, err, value)
+		} else {
+			require.ErrorIs(t, err, portfile.ErrUnsupported, value)
+		}
+	}
+	info := archiveInfo("https://example.invalid/")
+	delete(info.Options, "fetch.ignore_sslcert")
+	require.ErrorIs(t, CheckPolicy(info, t.TempDir()), portfile.ErrUnsupported, "an unevaluated option is not assumed false")
+}

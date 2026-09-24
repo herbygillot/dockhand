@@ -53,13 +53,12 @@ func readListing(port macports.PortInfo, live *Livecheck) error {
 	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" || parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return fmt.Errorf("%w: livecheck requires an HTTP(S) URL without credentials", ErrUnsupported)
 	}
-	ignore, err := boolean(port.Options["livecheck.ignore_sslcert"])
+	ignore, err := port.Bool("livecheck.ignore_sslcert")
 	if err != nil || ignore {
 		return fmt.Errorf("%w: livecheck.ignore_sslcert must be disabled", ErrUnsupported)
 	}
-	live.Compression, err = boolean(port.Options["livecheck.compression"])
-	if err != nil {
-		return err
+	if live.Compression, err = port.Bool("livecheck.compression"); err != nil {
+		return fmt.Errorf("%w: %v", ErrUnsupported, err)
 	}
 	options, errs := syntax.ListValues(port.Options["livecheck.curloptions"])
 	if len(errs) != 0 {
@@ -78,14 +77,4 @@ func readListing(port macports.PortInfo, live *Livecheck) error {
 		live.Headers[name] = value
 	}
 	return nil
-}
-
-func boolean(value string) (bool, error) {
-	switch strings.ToLower(value) {
-	case "1", "yes", "true", "on":
-		return true, nil
-	case "0", "no", "false", "off":
-		return false, nil
-	}
-	return false, fmt.Errorf("%w: unsupported livecheck boolean", ErrUnsupported)
 }

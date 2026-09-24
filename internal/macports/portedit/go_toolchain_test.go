@@ -161,3 +161,29 @@ git.branch v${version}
 	require.NoError(t, err)
 	require.Contains(t, string(result.Files[0].After), "go.toolchain_min 1.22", "no manifest source leaves the minimum")
 }
+
+// go.offline_build is read as Tcl reads a boolean: false in any spelling is
+// module mode; true, unset, or not a boolean leaves the minimum alone.
+func TestModuleModeReadsOfflineBuildAsTclBoolean(t *testing.T) {
+	t.Parallel()
+	for value, module := range map[string]bool{"no": true, "No": true, "off": true, "0": true, "yes": false, "true": false, "maybe": false} {
+		info := macports.PortInfo{Options: map[string]string{"go.package": "example.com/fixture", "go.offline_build": value}}
+		require.Equal(t, module, moduleModeGo(info), value)
+	}
+	require.False(t, moduleModeGo(macports.PortInfo{Options: map[string]string{"go.package": "example.com/fixture"}}))
+	require.False(t, moduleModeGo(macports.PortInfo{Options: map[string]string{"go.offline_build": "no"}}), "not a Go PortGroup port")
+}
+
+// cargo.update is read as Tcl reads a boolean, and a value that is not one
+// is refused as true would be, since it would rewrite the lockfile.
+func TestCargoUpdateIsReadAsTclBoolean(t *testing.T) {
+	t.Parallel()
+	for value, allowed := range map[string]bool{"": true, "no": true, "Off": true, "false": true, "yes": false, "ON": false, "1": false, "sometimes": false} {
+		err := checkCargoUpdate(macports.PortInfo{Options: map[string]string{"cargo.update": value}})
+		if allowed {
+			require.NoError(t, err, value)
+		} else {
+			require.ErrorContains(t, err, "cargo.update changes the upstream lockfile", value)
+		}
+	}
+}

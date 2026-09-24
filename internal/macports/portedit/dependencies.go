@@ -55,9 +55,21 @@ func inspectDependencies(input *sourceInput) (*dependency.Plan, error) {
 	return plan, nil
 }
 
-func dependencyPatches(input *sourceInput, kind string) error {
-	if value := input.info.Options["cargo.update"]; kind == dependency.Cargo && value != "" && value != "no" && value != "false" && value != "0" {
+// checkCargoUpdate refuses a Cargo port that updates its lockfile. The
+// option is read as Tcl reads a boolean, and a value that is not one is
+// refused as true would be.
+func checkCargoUpdate(info macports.PortInfo) error {
+	if update, err := info.Bool("cargo.update"); err != nil || update {
 		return fmt.Errorf("%w: cargo.update changes the upstream lockfile", ErrUnsupported)
+	}
+	return nil
+}
+
+func dependencyPatches(input *sourceInput, kind string) error {
+	if kind == dependency.Cargo {
+		if err := checkCargoUpdate(input.info); err != nil {
+			return err
+		}
 	}
 	names := []string{"Cargo.lock", "Cargo.toml"}
 	if kind == dependency.Go {

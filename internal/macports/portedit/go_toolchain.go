@@ -23,9 +23,15 @@ import (
 // directive is only an upper bound on what the source needs, so the
 // declared minimum is left alone.
 
-// moduleModeGo reports a Go PortGroup port that builds in module mode.
+// moduleModeGo reports a Go PortGroup port that builds in module mode:
+// go.offline_build set and false, read as Tcl reads a boolean. An unset or
+// unreadable value is not module mode, which leaves the minimum alone.
 func moduleModeGo(info macports.PortInfo) bool {
-	return info.Options["go.package"] != "" && info.Options["go.offline_build"] == "no"
+	if _, set := info.Options["go.offline_build"]; !set || info.Options["go.package"] == "" {
+		return false
+	}
+	offline, err := info.Bool("go.offline_build")
+	return err == nil && !offline
 }
 
 // raiseGoToolchain reads the new release's go.mod, from the kept archive or,

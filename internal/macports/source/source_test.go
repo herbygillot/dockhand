@@ -145,6 +145,8 @@ func TestOverridingLivecheckIsRunAndProvenRatherThanRefused(t *testing.T) {
 		{"other type", func(port *macports.PortInfo) { port.Options["livecheck.type"] = "sourceforge" }, "livecheck.type sourceforge is not a regex livecheck; name the version to update to"},
 		{"custom hooks", func(port *macports.PortInfo) { port.Options["dockhand.livecheck_standard"] = "0" }, "the port's livecheck has custom hooks; name the version to update to"},
 		{"insecure", func(port *macports.PortInfo) { port.Options["livecheck.ignore_sslcert"] = "yes" }, "livecheck.ignore_sslcert must be disabled"},
+		{"insecure as Tcl spells it", func(port *macports.PortInfo) { port.Options["livecheck.ignore_sslcert"] = "On" }, "livecheck.ignore_sslcert must be disabled"},
+		{"compression not a boolean", func(port *macports.PortInfo) { port.Options["livecheck.compression"] = "sometimes" }, `invalid livecheck.compression value "sometimes"`},
 		{"other version", func(port *macports.PortInfo) { port.Options["livecheck.version"] = "9" }, "require a regex livecheck for the evaluated port version"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
