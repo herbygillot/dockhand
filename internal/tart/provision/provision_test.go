@@ -9,6 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"io"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macos"
@@ -27,6 +28,8 @@ type fakeMachine struct {
 	fail       string
 	failures   map[string]error
 	format     string
+	imported   string // the disk format of images Import copies, when set
+	formats    map[string]string
 	validation validation
 	onValidate func(*validation)
 	manifest   []byte
@@ -69,6 +72,12 @@ func (f *fakeMachine) Import(_ context.Context, source, destination string) erro
 		return err
 	}
 	f.images[destination] = image{Name: destination}
+	if f.imported != "" {
+		if f.formats == nil {
+			f.formats = map[string]string{}
+		}
+		f.formats[destination] = f.imported
+	}
 	return nil
 }
 func (f *fakeMachine) Connect(_ context.Context, name, alias string, bootstrap bool) error {
@@ -103,6 +112,9 @@ func (f *fakeMachine) Clone(_ context.Context, source, destination string) error
 }
 func (f *fakeMachine) DiskFormat(_ context.Context, name string) (string, error) {
 	format := f.format
+	if found, ok := f.formats[name]; ok {
+		format = found
+	}
 	if format == "" {
 		format = "raw"
 	}
@@ -149,6 +161,7 @@ func (f *fakeMachine) Delete(_ context.Context, name string) error {
 		return err
 	}
 	delete(f.images, name)
+	delete(f.formats, name)
 	return nil
 }
 func (f *fakeMachine) Rename(_ context.Context, from, to string) error {
@@ -428,4 +441,24 @@ func TestAnImageInThePersonsHomeIsImportedWhenItValidates(t *testing.T) {
 	require.Contains(t, progress.String(), "cannot be used")
 	require.Contains(t, progress.String(), "Command Line Tools 27.0")
 	require.Equal(t, "26.6", result.CommandLineTools)
+}
+
+// A copy from the person's home with an ASIF disk is declined before it
+// runs, as a source is, and the image is provisioned afresh.
+func TestAnImportedASIFImageIsDeclinedBeforeItRuns(t *testing.T) {
+	machine := newFakeMachine()
+	machine.personal = map[string]image{"dockhand-base-tahoe": {Name: "dockhand-base-tahoe"}}
+	machine.imported = "asif"
+	var progress bytes.Buffer
+	provisioner := testProvisioner(machine)
+	provisioner.Progress = &progress
+	_, err := provisioner.Run(t.Context(), Options{})
+	require.NoError(t, err)
+	require.Contains(t, progress.String(), "has an ASIF disk")
+	imported := slices.Index(machine.events, "import:dockhand-base-tahoe:dockhand-base-tahoe-next")
+	pulled := slices.Index(machine.events, "pull")
+	require.True(t, imported >= 0 && pulled > imported, "the copy is tried, then a new image is made")
+	require.NotContains(t, machine.events[imported:pulled], "start", "the ASIF copy never runs")
+	require.Contains(t, machine.events[imported:pulled], "delete:dockhand-base-tahoe-next")
+	require.Contains(t, machine.images, "dockhand-base-tahoe")
 }
