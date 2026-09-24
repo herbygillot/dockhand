@@ -152,7 +152,7 @@ func (r *runtime) verifyCommand() *cobra.Command {
 	build.flags(command, r.config)
 	command.Flags().BoolVar(&fresh, "fresh", false, "Run a new build even when previous passing evidence applies")
 	command.Flags().BoolVar(&allSubports, "all-subports", false, "Verify every subport of a shared release locally, not only the initiating one")
-	command.Flags().StringArrayVar(&releases, "os", nil, "Build on this macOS release instead of this Mac's, as setup names it (sonoma or 14); repeatable, and "+app.AvailablePlatforms+" names every release with a prepared image. Tart only")
+	command.Flags().StringArrayVar(&releases, "os", nil, "Also build on this macOS release, after this Mac's, as setup names it (sonoma or 14); repeatable, and "+app.AvailablePlatforms+" adds every release with a prepared image. Every release must pass. Tart only")
 	command.Flags().BoolVar(&detach, "detach", false, "Return once the build is admitted; wait or serve finishes it")
 	command.Flags().BoolVar(&trace, "trace", false, "Follow build logs on stderr through completion; implies --debug")
 	command.MarkFlagsMutuallyExclusive("detach", "trace")

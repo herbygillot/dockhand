@@ -133,8 +133,9 @@ func TestResolvedBuildsMatchTheNamedPlatforms(t *testing.T) {
 	require.NoError(t, resolvedPlatforms(tahoe, nil, on(tahoe), nil))
 	require.Error(t, resolvedPlatforms(tahoe, nil, on(sonoma), nil), "an unnamed build is on the evaluated platform")
 	require.Error(t, resolvedPlatforms(tahoe, nil, on(tahoe), []record.BuildConfig{on(sonoma)}), "and on it alone")
-	require.NoError(t, resolvedPlatforms(tahoe, []record.Platform{sonoma}, on(sonoma), nil), "a named platform need not be the evaluated one")
-	require.NoError(t, resolvedPlatforms(tahoe, []record.Platform{sonoma, tahoe}, on(sonoma), []record.BuildConfig{on(tahoe)}))
-	require.Error(t, resolvedPlatforms(tahoe, []record.Platform{sonoma, tahoe}, on(tahoe), []record.BuildConfig{on(sonoma)}), "in the order named")
-	require.Error(t, resolvedPlatforms(tahoe, []record.Platform{sonoma, tahoe}, on(sonoma), nil), "every named platform is built")
+	require.Error(t, resolvedPlatforms(tahoe, []record.Platform{sonoma}, on(sonoma), nil), "named platforms add to the evaluated one (decision 4)")
+	require.Error(t, resolvedPlatforms(tahoe, []record.Platform{sonoma, tahoe}, on(sonoma), []record.BuildConfig{on(tahoe)}), "which is built first")
+	require.NoError(t, resolvedPlatforms(tahoe, []record.Platform{tahoe, sonoma}, on(tahoe), []record.BuildConfig{on(sonoma)}))
+	require.Error(t, resolvedPlatforms(tahoe, []record.Platform{tahoe, sonoma}, on(sonoma), []record.BuildConfig{on(tahoe)}), "in the order requested")
+	require.Error(t, resolvedPlatforms(tahoe, []record.Platform{tahoe, sonoma}, on(tahoe), nil), "every requested platform is built")
 }

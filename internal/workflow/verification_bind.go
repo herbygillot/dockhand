@@ -33,8 +33,10 @@ type VerificationRequest struct {
 	Selection macports.Selection
 	// Platform is the platform the targets are evaluated on.
 	Platform record.Platform
-	// Platforms are the build platforms a person named, in order; the
-	// resolver builds on exactly these. Empty builds on Platform alone.
+	// Platforms are the build platforms, in order: Platform first, since
+	// the releases a person names add to the host's (decision 4), then
+	// those named. The resolver builds on exactly these. Empty builds on
+	// Platform alone.
 	Platforms    []record.Platform
 	Build        record.BuildConfig
 	ResolveBuild BuildResolver
@@ -253,13 +255,16 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 
 // resolvedPlatforms checks that a resolution builds where it was asked to:
 // on the evaluated platform when no platform was named, and otherwise on
-// exactly the named platforms, in the order they were named.
+// exactly the requested platforms, in order, the evaluated one first.
 func resolvedPlatforms(evaluated record.Platform, named []record.Platform, build record.BuildConfig, more []record.BuildConfig) error {
 	if len(named) == 0 {
 		if build.Platform != evaluated || len(more) != 0 {
 			return fmt.Errorf("%w: resolved build platform differs from the evaluated platform", ErrInvalidRequest)
 		}
 		return nil
+	}
+	if named[0] != evaluated {
+		return fmt.Errorf("%w: named build platforms add to the evaluated platform, which is built first", ErrInvalidRequest)
 	}
 	builds := append([]record.BuildConfig{build}, more...)
 	if len(builds) != len(named) {

@@ -57,12 +57,12 @@ func TestNamedPlatformsEachBuildAndAllMustPass(t *testing.T) {
 		request := bindRequest(f, "platforms")
 		request.Build = record.BuildConfig{}
 		request.Platform = buildPlatform
-		request.Platforms = []record.Platform{sonomaPlatform, buildPlatform}
-		request.ResolveBuild = namedPlatforms(f, sonomaPlatform, buildPlatform)
+		request.Platforms = []record.Platform{buildPlatform, sonomaPlatform}
+		request.ResolveBuild = namedPlatforms(f, buildPlatform, sonomaPlatform)
 		bound, err := f.engine.BindVerification(t.Context(), request)
 		require.NoError(t, err)
 		require.Equal(t, buildPlatform, bound.Evaluation.Platform, "the targets are evaluated on the host")
-		require.Equal(t, sonomaPlatform, bound.Request.Spec.Build.Platform)
+		require.Equal(t, buildPlatform, bound.Request.Spec.Build.Platform, "and built there first")
 		require.Len(t, bound.Request.Spec.PlatformBuilds, 1)
 
 		receipt, err := f.engine.Submit(t.Context(), bound.Request)
@@ -90,7 +90,7 @@ func TestNamedPlatformsEachBuildAndAllMustPass(t *testing.T) {
 
 		request.Platforms = []record.Platform{sonomaPlatform}
 		_, err = f.engine.BindVerification(t.Context(), request)
-		require.ErrorContains(t, err, "named platforms", "a resolution must build on exactly what was named")
+		require.ErrorContains(t, err, "named build platforms add to the evaluated platform", "the host's release is always built")
 	}
 }
 
@@ -107,11 +107,11 @@ func TestNamedPlatformsAreNotRecordedSettings(t *testing.T) {
 	named.Tracked = continuing(t, f, workflow.ContributionSelector{Target: "fixture"})
 	named.Build = record.BuildConfig{}
 	named.Platform = buildPlatform
-	named.Platforms = []record.Platform{sonomaPlatform}
-	named.ResolveBuild = namedPlatforms(f, sonomaPlatform)
+	named.Platforms = []record.Platform{buildPlatform, sonomaPlatform}
+	named.ResolveBuild = namedPlatforms(f, buildPlatform, sonomaPlatform)
 	bound, err := f.engine.BindVerification(t.Context(), named)
 	require.NoError(t, err)
-	require.Equal(t, sonomaPlatform, bound.Request.Spec.Build.Platform)
+	require.Equal(t, sonomaPlatform, bound.Request.Spec.PlatformBuilds[0].Platform)
 	_, err = f.engine.Submit(t.Context(), bound.Request)
 	require.NoError(t, err)
 
