@@ -661,3 +661,37 @@ func TestUnverifiedPublicationMigrationKeepsCitedEvidenceAndAdmitsNone(t *testin
 	require.NoError(t, err)
 	require.NoError(t, store.Check(t.Context()))
 }
+
+// A Tart pool is its Tart home. When dockhand's home moved, the new home's
+// pool kept the artifact directory of the old one, which schema 24 refused.
+func TestPoolDirectoryMigrationLetsAMovedHomeShareItsDirectory(t *testing.T) {
+	t.Parallel()
+	path, db := versionTenWithWork(t)
+	_, err := db.Exec("BEGIN;" + imageCapabilitiesSchema + generationSchema + sharedRunsSchema + "PRAGMA defer_foreign_keys=OFF;" + retrySchema + contributionSchema + diagnosticPruningSchema + releaseScopeSchema + waitCountSchema + waitKindSchema + branchCleanupSchema + observationScheduleSchema + unverifiedPublicationSchema + keepBodySchema + sharedFilesSchema + "COMMIT;")
+	require.NoError(t, err)
+	var version int
+	require.NoError(t, db.QueryRow("PRAGMA user_version").Scan(&version))
+	require.Equal(t, 24, version)
+	pools, before := migrationRows(t, db, "provider_pools", nil)
+	executions, beforeExecutions := migrationRows(t, db, "provider_executions", nil)
+
+	store, err := Open(t.Context(), path, Options{})
+	require.NoError(t, err)
+	defer store.Close()
+	_, after := migrationRows(t, db, "provider_pools", pools)
+	require.Equal(t, before, after)
+	_, afterExecutions := migrationRows(t, db, "provider_executions", executions)
+	require.Equal(t, beforeExecutions, afterExecutions)
+
+	moved := record.ProviderPool{ID: "moved", Scope: "tart:/moved", Directory: "/fixture/pool", Capacity: 2}
+	_, err = store.RegisterProviderPool(t.Context(), moved)
+	require.NoError(t, err, "a moved home's pool shares the old one's directory")
+	_, err = db.Exec("INSERT INTO provider_pools VALUES('again','tart:/moved','/elsewhere',1)")
+	require.Error(t, err, "a scope is still one pool")
+	rows, err := db.Query("PRAGMA foreign_key_check")
+	require.NoError(t, err)
+	defer rows.Close()
+	require.False(t, rows.Next())
+	require.NoError(t, rows.Err())
+	require.NoError(t, store.Check(t.Context()))
+}

@@ -90,7 +90,15 @@ var keepBodySchema string
 //go:embed migrations/024.sql
 var sharedFilesSchema string
 
-const schemaVersion = 24
+// poolDirectorySchema lets pools share an artifact directory: a Tart pool
+// is its Tart home, and when dockhand's home moved, the new home's pool
+// kept the directory the old one had. Everything a pool writes there is
+// named for the pool or for a request, so pools do not collide.
+//
+//go:embed migrations/025.sql
+var poolDirectorySchema string
+
+const schemaVersion = 25
 const applicationID = 0x44484e44
 
 type Options struct {
@@ -308,6 +316,7 @@ func migrations() []schemaMigration {
 		{version: 22, schema: unverifiedPublicationSchema},
 		{version: 23, schema: keepBodySchema},
 		{version: 24, schema: sharedFilesSchema},
+		{version: 25, apply: migratePoolDirectories},
 	}
 }
 
@@ -396,6 +405,10 @@ func migratePreparation(ctx context.Context, t *transaction) error {
 
 func migrateSharedRuns(ctx context.Context, t *transaction) error {
 	return migrateRebuiltTables(ctx, t, sharedRunsSchema)
+}
+
+func migratePoolDirectories(ctx context.Context, t *transaction) error {
+	return migrateRebuiltTables(ctx, t, poolDirectorySchema)
 }
 
 func migrateRebuiltTables(ctx context.Context, t *transaction, schema string) error {
