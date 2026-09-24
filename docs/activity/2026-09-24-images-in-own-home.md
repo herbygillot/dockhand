@@ -11,6 +11,34 @@ Step 2 of the roadmap's Next: the verification images move into
   `~/.dockhand/ssh` (`testsupport.IsolateHomeKeepingTart`), since they
   isolate `HOME` and would otherwise look for keys that are not there.
 
+- **A quiet tools probe.** `macos.CheckCompiler` asks `xcode-select -p`
+  with its output discarded: on a fresh guest it is expected to fail, and
+  setup streamed its "xcode-select: error: Unable to get active developer
+  directory" into a provision that went on to succeed.
+
+## The migration
+
+`dockhand setup --os <release>` for Monterey, Ventura, Sonoma, and
+Sequoia, and the same with `--xcode ~/Downloads/xcode_archives`, found
+each image missing from dockhand's home and present in `~/.tart`, and
+copied it: `tart export` from the person's home, `tart import` into
+dockhand's as the candidate, a bootstrap connection with the password
+that installed dockhand's key and recorded the host keys, validation
+against the profile, and adoption with a golden copy. Each took about a
+minute; the images in `~/.tart` were only read. The Tahoe Xcode image was
+made fresh (`--rebuild`), on Command Line Tools 26.6 and Xcode 26.6, the
+2.2 GiB archive crossing the channel checked in six seconds; the one in `~/.tart`
+has the macOS 27 tools. `setup --check` then passed for all ten images
+with dockhand's key alone.
+
+| Release | Tools | Xcode image |
+| --- | --- | --- |
+| Monterey | 14.2 | Xcode 14.2 |
+| Ventura | 14.3 | Xcode 15.2 |
+| Sonoma | 16.2 | Xcode 16.2 |
+| Sequoia | 16.4 | Xcode 26.3 |
+| Tahoe | 26.6 | Xcode 26.6 |
+
 ## Proofs
 
 - **Tahoe, provisioned fresh.** `dockhand setup --os tahoe --rebuild`

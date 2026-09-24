@@ -13,7 +13,9 @@ import (
 const XcodeExpansionSpaceGiB = 60
 
 func CheckCompiler(ctx context.Context, run Command) error {
-	if _, err := run(ctx, nil, "/usr/bin/xcode-select", "-p"); err != nil {
+	// Quiet: on a fresh guest this is expected to fail, and a streamed
+	// "xcode-select: error" would read as setup's own failure.
+	if _, err := run(ctx, nil, "/bin/sh", "-c", "/usr/bin/xcode-select -p >/dev/null 2>&1"); err != nil {
 		return fmt.Errorf("guest has no selected command line tools: %w", err)
 	}
 	script := `set -eu

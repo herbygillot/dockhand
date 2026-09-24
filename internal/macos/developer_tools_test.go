@@ -150,7 +150,7 @@ func TestCommandLineToolsInstallTheGenerationsNewestOffer(t *testing.T) {
 	var installedLabel string
 	run := func(_ context.Context, _ io.Reader, args ...string) ([]byte, error) {
 		switch {
-		case args[0] == "/usr/bin/xcode-select" && !compiler:
+		case len(args) > 2 && strings.Contains(args[2], "xcode-select -p") && !compiler:
 			return nil, errors.New("no developer tools")
 		case args[0] == "sudo" && args[len(args)-1] == commandLineToolsMarker:
 			removedMarker = true
