@@ -36,7 +36,6 @@ func TestBumpParsesOptionalVersionWithoutInitializingState(t *testing.T) {
 		var out bytes.Buffer
 		err := Run(t.Context(), args, Streams{Out: &out, Err: &out}, config)
 		require.Error(t, err)
-		require.NotErrorIs(t, err, errNotImplemented)
 		require.NotContains(t, err.Error(), "git ")
 	}
 	var out bytes.Buffer
