@@ -18,8 +18,11 @@ type Keys struct {
 	Directory string
 }
 
-// DefaultKeys is ~/.dockhand/ssh.
+// DefaultKeys is ~/.dockhand/ssh, or DOCKHAND_SSH_DIR.
 func DefaultKeys() (Keys, error) {
+	if directory := os.Getenv("DOCKHAND_SSH_DIR"); directory != "" {
+		return Keys{Directory: directory}, nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return Keys{}, err
