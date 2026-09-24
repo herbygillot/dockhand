@@ -2,6 +2,8 @@
 
 A proposal, written 2026-09-24. None of it is implemented. It asks what dockhand would feel like if it had been designed around **changesets** from its first command, rather than around a single port. It starts from the [contracts review](../reviews/2026-09-23-contracts-review.md), which found that "a contribution is one port directory and one commit" (§3.1) is the largest capability the current design excludes. Today's commands are used only as evidence: what worked, what confused people, and what the exercises taught ([messaging scan](../reviews/2026-09-19-messaging-scan.md), [deno exercise](../reviews/2026-09-16-new-user-deno-exercise.md), [output design](../output.md)). They are not a constraint.
 
+It is written for one maintainer on one Mac, keeping many ports current. Decisions made in review are recorded in [§11](#11-decisions-and-open-questions).
+
 This page covers the experience only: what a contributor types, sees, and can rely on. What it asks of the engine is summarized in [§9](#9-what-this-asks-of-the-engine) and left for a design of its own.
 
 ## Contents
@@ -16,7 +18,7 @@ This page covers the experience only: what a contributor types, sees, and can re
 8. [Reference](#8-reference)
 9. [What this asks of the engine](#9-what-this-asks-of-the-engine)
 10. [From today's commands](#10-from-todays-commands)
-11. [Open questions](#11-open-questions)
+11. [Decisions and open questions](#11-decisions-and-open-questions)
 
 ## 1. The idea on one screen
 
@@ -40,7 +42,7 @@ Work moves through four stages. Every other command supports one of them.
 
 - **Author** commands add or change commits. They run every check that needs no VM (evaluation, lint, checksums, duplicate PRs) and take seconds.
 - **Shape** commands give the history the form MacPorts asks for. They can also repair a branch that doesn't have it, which is most branches a newcomer makes by hand.
-- **Test** puts builds on a **queue**. A **server** works through the queue on this Mac or on another one. Your terminal watches, and can stop watching at any time without stopping anything.
+- **Test** puts builds on a **queue**. A **server** on your Mac works through the queue. Your terminal watches, and can stop watching at any time without stopping anything.
 - **Submit** is the one verb that acts on GitHub for you: it pushes to your fork and opens or updates the pull request. It refuses a changeset that is untested or misshapen unless you tell it otherwise.
 
 The common case stays one line:
@@ -59,7 +61,7 @@ $ dockhand update jq --submit
 6. **Speak the contributor's language.** Output uses port names, versions, pull request numbers, macOS release names, and changeset names. It never shows job or attempt IDs at the default level. Commit subjects are written the way maintainers write them.
 7. **Every refusal carries the way forward.** A refusal names the command that gets past it, or the decision that only you can make. Each refusal has a stable code that `dockhand explain` expands.
 8. **Evidence ticks boxes; people attest.** A PR checklist item is ticked only when dockhand recorded evidence for it. Items only a person can vouch for are asked, and recorded as the person's word.
-9. **Reversible until it's public, careful once it is.** Every history rewrite can be undone with `dockhand undo`. Every push to an existing branch is conditional on what was there before, and the fork is the only remote dockhand writes to.
+9. **Reversible until it's public, careful once it is.** Every history rewrite can be undone with `dockhand undo`. Every push to an existing branch is conditional on what was there before. Dockhand pushes only to your fork, or to a contributor's PR branch when GitHub lets maintainers edit it.
 10. **Humans and scripts alike.** Prompts appear only on a terminal. `--yes` answers them, `--json` gives every command one result document, and a non-terminal run never waits for input.
 11. **Nothing outward-facing without being asked.** Only `submit` pushes and opens pull requests, only `test --on github` pushes to your fork, and commenting on other people's pull requests is a separate, explicit request.
 
@@ -72,14 +74,16 @@ $ dockhand update jq --submit
 | **port** | A port or subport, as MacPorts names it. | `jq`, `py313-ipdb`, `terraform-1.16`. |
 | **test** | Builds of a changeset's ports on one or more macOS releases, at one exact state of the changeset. | By changeset; `--on` picks where. |
 | **queue** | Every requested build, in order, for all your changesets. | `dockhand queue`. |
-| **server** | The process that works through the queue: local, started on demand, or on another Mac reached over SSH. | `local`, or a remote's name (`mini`). |
+| **server** | The process on your Mac that works through the queue. It starts on demand, or runs from login. | There is only one. `dockhand server` manages it. |
 | **PR** | The pull request a changeset became. | `#34901`, or its URL. |
 
 Some words are gone from the user's view: job, attempt, contribution, revision, change ID, evidence, and provider. They remain real in the engine, and `-v` and `--json` show them. At the default level, a person never needs one to type a command.
 
 ### Where changesets live
 
-Each changeset that dockhand creates gets a **sparse worktree** of your ports clone, `~/.dockhand/changesets/<name>` by default. It holds `_resources` and the directories of the ports the changeset touches, and it grows when you edit another port in it. So ten open changesets cost a few megabytes, not ten copies of a 40,000-port tree, and your main checkout stays on whatever you left it on.
+Each changeset that dockhand creates gets a **sparse worktree** of your ports clone. By default it lives in a visible directory beside the clone, `~/src/macports-changesets/<name>`, which `init` offers and `changesets` in the config moves. A worktree holds `_resources` and the directories of the ports the changeset touches, and it grows when you edit another port in it. So ten open changesets cost a few megabytes, not ten copies of a 40,000-port tree, and your main checkout stays on whatever you left it on.
+
+The worktrees are ordinary directories and are meant to be used directly. Open `~/src/macports-changesets` in an editor and every open changeset is there side by side. Edit any file in one and run `dockhand save`, or run `git` in it as you would anywhere. Dockhand removes a changeset's worktree only after its PR merges or you `drop` it, and never while it has unsaved edits.
 
 A branch you made yourself stays where you made it. If you run a dockhand command on it, dockhand offers to track it as a changeset, and its worktree is your checkout.
 
@@ -103,7 +107,7 @@ The six marked ★ are the everyday loop; most contributors rarely need the rest
 | | `create <name \| url>` | Start a new port from a forge URL, a package-registry name, or `--like <port>`, then open it in your editor. |
 | | ★ `edit <port>` | Open the Portfile in your editor. When you close it, run `save`. |
 | | ★ `save` | Fold your worktree edits into each port's commit, with checksums filled in and the subject written for you. |
-| **Shape** | `check [--fix]` | Everything checkable without a VM: commit shape, subjects, lint, checksums, evaluation, and duplicate open PRs. `--fix` applies the safe fixes. `save` and `submit` run it too. |
+| **Shape** | `check [--fix]` | Everything checkable without a VM: commit shape, subjects, lint, checksums, evaluation, and duplicate open PRs. `--fix` applies the safe fixes, and `--review` posts the findings on someone else's PR. `save` and `submit` run it too. |
 | | `tidy` | Rewrite history into one commit per logical change, in dependency order, with the final tree unchanged. |
 | | `undo` | Put back the history from before the last rewrite by `tidy`, `save`, `update`, or `rebase`. |
 | **Test** | ★ `test [<port> [+variant…]]…` | Queue builds of the changeset's ports on the platforms in `--on`. Stays and shows progress; Ctrl-C detaches. |
@@ -116,15 +120,14 @@ The six marked ★ are the everyday loop; most contributors rarely need the rest
 | | `track <branch>` · `fetch <pr>` | Bring a branch you made, or someone's open PR, in as a changeset. |
 | | `rebase` · `rename` · `drop` | Move onto current `master`, rename, or stop pursuing a changeset (its history is kept). |
 | | `path` · `shell` · `open` | Get to a changeset's worktree. |
-| **Discover** | `outdated` | Your ports (or any selection) with newer upstream releases, and whether dockhand can update each by itself. |
+| **Discover** | `outdated` | Your ports (or any selection) with newer upstream releases, and whether dockhand can update each by itself. `update --outdated` acts on the list. |
 | | `info <port>` | One port: versions, maintainers, open changesets and PRs, and what dockhand can automate for it and why. |
 | | `dependents <port>` | What depends on a port, and how (library, build, run). |
 | **Queue and server** | `queue` | The queue across all changesets. Subcommands cancel, retry, and move items. |
 | | `server` | Run, start, stop, install at login, or inspect the local server. |
-| | `remote` | Add, list, and remove build servers on other Macs. |
 | **Setup** | `init` | First-run setup: MacPorts, GitHub login, fork, clone, build images, and config. Safe to rerun. |
 | | `doctor` | Check all of that, and say what to fix. |
-| | `images` | Prepare, list, and rebuild the macOS images builds run in, on this Mac or a remote. |
+| | `images` | Prepare, list, and rebuild the macOS images builds run in. |
 | | `auth` · `config` | GitHub login; settings. |
 | **Housekeeping** | `gc` · `db` · `explain <code>` | Cleanup, database backup and check, and the long form of a refusal. |
 
@@ -147,7 +150,7 @@ Shape         check · tidy · undo
 Test          logs · watch
 Changesets    new · track · fetch · rebase · rename · drop · sync · path · shell · open
 Discover      outdated · info · dependents
-Server        queue · server · remote
+Server        queue · server
 Setup         init · doctor · images · auth · config
 Housekeeping  gc · db · explain
 
@@ -174,6 +177,8 @@ Let's get you ready to contribute to MacPorts.
   Fork         ✓ ada/macports-ports
   Ports tree   ? no clone found. Clone your fork to ~/src/macports-ports? [Y/n] y
                ✓ cloned; macports/macports-ports is the upstream remote
+  Changesets   ? keep changesets beside it, in ~/src/macports-changesets? [Y/n] y
+  Your ports   ✓ 212 ports list @ada as a maintainer
   Builds       ! no build images on this Mac
                  builds will run on GitHub Actions in your fork until you add one:
                  dockhand images add          (macOS 26 Tahoe, ≈ 30 min, 45 GB)
@@ -211,7 +216,7 @@ The live line becomes the result when the build finishes:
     https://github.com/macports/macports-ports/pull/34901
 ```
 
-`dockhand update jq --submit` does both steps in one go. If the port is already current, it says so, creates nothing, and exits 0. Ctrl-C during the build prints `detached; the build continues on server local (dockhand watch jq)` and exits 130. The server finishes the build, and then opens the PR, because `submit` asked for that.
+`dockhand update jq --submit` does both steps in one go. If the port is already current, it says so, creates nothing, and exits 0. Ctrl-C during the build prints `detached; the build continues on the server (dockhand watch jq)` and exits 130. The server finishes the build, and then opens the PR, because `submit` asked for that.
 
 ### 5.3 When dockhand can't edit the Portfile itself
 
@@ -337,7 +342,7 @@ next: dockhand test
 
 ```console
 (poppler-25.09.0) $ dockhand test --on tahoe,sonoma
-poppler-25.09.0 → server local · tahoe, sonoma · 9 ports, in dependency order
+poppler-25.09.0 · tahoe, sonoma · 9 ports, in dependency order
   tahoe    ✓ poppler 6m02s  ✓ gdal 11m40s  ◐ inkscape build 8m…   ○ 6 more
   sonoma   ✓ poppler 6m31s  ◐ gdal build 4m…                      ○ 7 more
   ! libpoppler.152.dylib → libpoppler.153.dylib: the install name changed, so the rebuilds are needed
@@ -440,7 +445,7 @@ Prevention matters more than cure. In a changeset, `save` folds edits into the p
 ```console
 $ dockhand fetch 34905
 pr-34905 · "Update jq" by @newcontrib · 5 commits · jq · maintainers can edit
-  ✓ changeset pr-34905 at ~/.dockhand/changesets/pr-34905
+  ✓ changeset pr-34905 at ~/src/macports-changesets/pr-34905
 
 $ dockhand check pr-34905
   ✗ shape      5 commits for one change to jq (MacPorts asks for one) → dockhand tidy
@@ -458,29 +463,85 @@ $ dockhand tidy pr-34905 --yes && dockhand check pr-34905 --fix && dockhand subm
   ✓ updated #34905: 1 commit
 ```
 
-The other is to explain what needs to change. `dockhand check pr-34905 --markdown` prints the report as review text, with the exact commands the contributor would run. `--comment` posts it after showing it to you and asking.
+The other is to explain what needs to change, which often teaches a newcomer more:
+
+```console
+$ dockhand check pr-34905 --review
+review of #34905, as @ada (write access to macports/macports-ports)
+  summary                  5 commits for one change to jq; MacPorts asks for one per logical change.
+                           To squash them: `dockhand tidy`, or `git rebase -i master`, then push
+                           with `git push --force-with-lease`.
+  commit a1b2c3d           subject "Update jq" should be "jq: update to 1.8.1"
+  textproc/jq/Portfile:7   revision should be 0 after a version update
+? post as: c comment · r request changes · e edit first · n cancel  r
+  ✓ review posted on #34905: changes requested, 1 inline comment
+```
+
+- `--markdown` prints the same text for pasting anywhere.
+- `--comment` posts it as a plain PR comment, which any GitHub account can do.
+- `--review` posts it as a GitHub review, with each finding on the line it's about. The review suggests both dockhand and plain Git, since the contributor may not use dockhand.
+- Requesting changes is offered only when your account has write or triage access to macports/macports-ports, because only then does the review count. Dockhand checks the permission and says why the option is missing when it is.
+- Every post is shown in full and asks before it's sent. When you review the PR again after it changes, dockhand says which earlier findings are resolved instead of repeating them.
 
 Authorship is kept: `tidy` keeps the contributor as the commit's author, and adds you only as committer.
 
-### 5.12 Many ports at once
+### 5.12 Working through your ports
+
+This is what dockhand is mostly for: one maintainer with many ports, keeping them current. Start with the list:
 
 ```console
 $ dockhand outdated --mine
   PORT        NOW       NEWEST    DOCKHAND CAN
-  jq          1.7.1     1.8.1     update
   croc        10.2.4    10.2.5    update
+  fd          10.2.0    10.3.0    update
+  jq          1.7.1     1.8.1     update
+  lazygit     0.54.0    0.55.1    update
   xan         0.52.0    0.53.0    update (cargo2port)
   openjdk21   21.0.8    21.0.9    edit by hand: dockhand edit openjdk21
-4 of 212 ports have newer releases · 3 couldn't be checked (-v says why)
+6 of 212 ports have newer releases · 3 couldn't be checked (-v says why)
+```
 
+Then act on all of it, and let whatever passes go through to a PR:
+
+```console
 $ dockhand update --outdated --mine --submit
-  3 changesets: jq-1.8.1 · croc-10.2.5 · xan-0.53.0
-  (unrelated ports go in separate PRs; --into <changeset> to combine)
-  ✓ queued on server local: 3 tests, then 3 PRs
+6 ports: 5 changesets, 1 left for you (unrelated ports go in separate PRs)
+  ✓ croc-10.2.5      checks pass → test → PR
+  ✓ fd-10.3.0        checks pass → test → PR
+  ✓ jq-1.8.1         checks pass → test → PR
+  ✓ lazygit-0.55.1   checks pass → test → PR
+  ✗ xan-0.53.0       stopped: patch-lto.diff no longer applies (2 hunks)     dockhand edit xan
+  · openjdk21        needs a hand edit                                          dockhand edit openjdk21
+4 changesets are on their way to a PR; you can close this terminal.
 next: dockhand watch
 ```
 
-Unrelated ports get a changeset each by default, since that's what reviewers want. Related ports share one only when you ask, with `--into`, `revbump --dependents-of`, or by working inside a changeset.
+An hour later, everything that passed is waiting on reviewers, and only what didn't pass is on your list:
+
+```console
+$ dockhand
+Needs you
+  ✗ lazygit-0.55.1   build failed on tahoe, caused by this change            dockhand logs lazygit
+  ✗ xan-0.53.0       patch-lto.diff no longer applies (2 hunks)              dockhand edit xan
+  ! openjdk21        21.0.9 is out; needs a hand edit                          dockhand edit openjdk21
+Waiting on others
+  ○ croc-10.2.5      #34902 opened 50m ago, CI ✓
+  ○ fd-10.3.0        #34903 opened 35m ago, CI running
+  ○ jq-1.8.1         #34901 opened 55m ago, CI ✓
+```
+
+Every changeset goes through the same gates on its own. It has to pass `check`, then build and install on the platforms in `test.on`, and only then is the PR opened. One failure stops only its own changeset, never the batch. The server carries each changeset through, so closing the terminal loses nothing, and the one PR per unrelated port that reviewers want comes out naturally.
+
+To make this the standing behavior instead of a flag you remember, set it once:
+
+```toml
+[update]
+then = "submit"      # stop (the default) · test · submit
+```
+
+With that, a plain `dockhand update --outdated --mine`, or `dockhand update jq`, carries every changeset that passes through to a PR. `--stop` on any one run holds it at the local checks. The server can do the whole loop daily without being asked, with `server.updates = "submit"`. It checks your ports for new releases every morning, prepares changesets, and sends whatever passes through to a PR. It opens at most `submit.daily-limit` PRs a day, ten by default, so a release wave doesn't land on reviewers all at once, and the rest wait in the queue for the next day. `server status` says plainly that it is opening PRs on your behalf.
+
+Related ports share a changeset only when you ask for it, with `--into`, `revbump --dependents-of`, or by working inside a changeset.
 
 ### 5.13 After the merge
 
@@ -508,7 +569,7 @@ Needs you
   ! jq-1.8.1          #34901 changes requested by @ryandesign (2h)       dockhand edit jq
   ✗ xan-0.53.0        build failed on sonoma, caused by this change       dockhand logs xan
 In progress
-  ◐ poppler-25.09.0   testing on server local, ≈ 25 min left
+  ◐ poppler-25.09.0   testing, ≈ 25 min left
   ○ croc-10.2.5       queued (3rd), then submit
 Waiting on others
   ○ ripgrep-14.1.2    #34877 open 3 days, CI ✓, no review yet
@@ -516,7 +577,7 @@ Waiting on others
 Recently merged
   ✓ deno-2.5.1        merged yesterday
 
-server local: 2 of 2 VMs busy · 4 of your ports have updates (dockhand outdated --mine)
+server: 2 of 2 VMs busy · 4 of your ports have updates (dockhand outdated --mine)
 ```
 
 The sections are fixed: **Needs you**, **In progress**, **Waiting on others**, and **Recently merged**. Each "needs you" row ends with the command that addresses it. Observations say how old they are when it matters: PR state comes from the server's last look, and the view says so when that was a while ago.
@@ -525,7 +586,7 @@ The sections are fixed: **Needs you**, **In progress**, **Waiting on others**, a
 
 ```console
 $ dockhand status poppler-25.09.0
-poppler-25.09.0 · ~/.dockhand/changesets/poppler-25.09.0 · on master 4c1e2d0 (14 behind)
+poppler-25.09.0 · ~/src/macports-changesets/poppler-25.09.0 · on master 4c1e2d0 (14 behind)
 not submitted · tested at the current state on tahoe; sonoma in progress
 
   COMMIT    PORT                      CHANGE                             TAHOE   SONOMA
@@ -546,7 +607,7 @@ next: wait for sonoma (dockhand watch), then dockhand submit
 `watch` is the live, full-screen form. It observes only: the server does the driving, so opening or closing the view never starts or stops work. That fixes a surprise in today's console, which starts processing, pushes included, as soon as it opens.
 
 ```text
-dockhand · ~/src/macports-ports · server local · 2/2 VMs busy                      14:02
+dockhand · ~/src/macports-ports · server: 2/2 VMs busy                            14:02
 ──────────────────────────────────────────────────────────────────────────────────────
   CHANGESET          PORTS  STATE                                   PR       UPDATED
 ▸ poppler-25.09.0    9      ◐ testing · tahoe 7/9 · sonoma 4/9      –        now
@@ -569,13 +630,15 @@ Each key runs the verb it names, with that verb's authority, and verbs that cost
 
 Today, whichever process is running drives the work. When the last dockhand process exits, nothing moves until another starts. A finished VM's result waits, a `cancel` sits unapplied, and a second terminal sees less than the first ([coordination note](../instance-coordination.md)). The reimagined dockhand has one driver: the **server**. Every other command is a client that submits and observes. That removes the whole class of problems and makes detaching safe by definition.
 
+The server runs on your Mac and works for one person: you. It's built for a maintainer with many ports and one Mac to build them on. It opens no network port and has no accounts. It builds on no other machine except GitHub Actions in your fork, and only when you ask for that with `--on github`.
+
 ### Starting it
 
 Nobody has to think about the server. The first command that needs one starts it, says so once, and it exits after a configurable idle period once the queue is empty:
 
 ```console
 $ dockhand test
-  · starting server local (it stops after 15 minutes with nothing to do)
+  · starting the server (it stops after 15 minutes with nothing to do)
 ```
 
 To keep it running across logins, which is what a Mac that builds all day wants:
@@ -583,11 +646,13 @@ To keep it running across logins, which is what a Mac that builds all day wants:
 ```console
 $ dockhand server install          # a launchd agent; `server uninstall` removes it
 $ dockhand server status
-server local · dockhand 1.0.0 · up 3h12m · pid 4711
+server · dockhand 1.0.0 · up 3h12m · pid 4711
   capacity    2 VMs (2 busy)
   images      tahoe (base, xcode) · sequoia (base) · sonoma (base)
   queue       5 builds (2 running)
-  looking at  3 open PRs, every 5 min · outdated for @ada, daily
+  your ports  212 · checked for new releases daily at 07:00 · new releases become changesets
+              that stop at the local checks (server.updates = "draft")
+  PRs         following 3 open PRs, every 5 min
   notifies    on finished tests and PR changes (macOS notifications)
 ```
 
@@ -599,7 +664,7 @@ When no server can run, as in some CI containers, `--inline` runs the work in th
 
 ```console
 $ dockhand queue
-server local · capacity 2
+server · capacity 2
 
   #  CHANGESET          ON        STATE                             FOR
   1  poppler-25.09.0    tahoe     ◐ pdf2svg build, 7 of 9 done       you, attached
@@ -616,7 +681,7 @@ The queue follows three rules:
 
 - **A queue item is a changeset at one exact state, on one platform.** Ports build inside the item, in dependency order.
 - **The newest state wins.** When a changeset changes, its queued items are replaced. Running items finish, and their results still count for every port whose inputs didn't change.
-- **People first.** Work someone is attached to or submitted comes before work the server started itself, such as testing others' PRs or retesting changesets. Otherwise, changesets take turns, so one big changeset doesn't starve a one-port fix.
+- **You first.** Work you're attached to or asked for comes before work the server started by itself: daily updates, retests, and others' PRs. Otherwise, changesets take turns, so one big changeset doesn't starve a one-port fix, and a morning's thirty updates don't hold up the fix you're waiting on.
 
 ### Where builds run: `--on`
 
@@ -624,34 +689,14 @@ One flag says where a build runs, and replaces today's `--provider`, `--image`, 
 
 | `--on` | Builds on |
 | --- | --- |
-| `host` (default) | The local server, in the image for this Mac's macOS release |
-| `sonoma`, `14`, `tahoe,sonoma` | The local server, in those releases' images |
-| `all` | Every release with a prepared image on that server |
+| `host` (default) | This Mac, in the image for its macOS release |
+| `sonoma`, `14`, `tahoe,sonoma` | This Mac, in those releases' images |
+| `all` | This Mac, in every release that has a prepared image |
 | `github` | GitHub Actions in your fork, running MacPorts' own workflow |
-| `mini:tahoe`, `mini:all` | The remote server named `mini` |
 
-`github` is the MacPorts CI workflow, run on your fork before the PR exists: the runners it has (macOS 14, 15, and 26 today), default variants, `port lint` without `--nitpick`, no trace mode, and only the built-in test phase. Results from it say so. It's the lighter check, and the PR body doesn't claim more than it ran.
+On a Mac that can't run Tart images, `github` is how a changeset gets built before it becomes a PR. It is the MacPorts CI workflow, run on your fork before the PR exists: the runners it has (macOS 14, 15, and 26 today), default variants, `port lint` without `--nitpick`, no trace mode, and only the built-in test phase. Results from it say so. It's the lighter check, and the PR body doesn't claim more than it ran.
 
 The port is evaluated where you are. Each build runs in the image for its release, and results are recorded per release. Whether a port needs full Xcode still picks the image automatically. A fallback is something you state in advance, never something dockhand infers: `--on tahoe --else github`, or `test.else = "github"` in the config. The result says which one served.
-
-### Remote build servers
-
-This is the Mac mini in the closet, or the Linux laptop that authors while a Mac builds. It's the arrangement dockhand's own development already fell into ([handoff](../activity/2026-09-23-handoff-to-macos.md)).
-
-```console
-$ dockhand remote add mini ssh://ada@mini.local
-  ✓ mini: dockhand 1.0.0 · capacity 3 · tahoe, sequoia, sonoma, ventura (arm64)
-  ? build there by default? [y/N] y
-
-$ dockhand test --on mini:all
-poppler-25.09.0 → server mini · tahoe, sequoia, sonoma, ventura · 9 ports
-  · sending 9 commits (38 KB)
-  …
-```
-
-Remotes are reached over SSH, the way Git reaches them, so nothing new listens on the network and SSH keys are the authentication. The client sends only the changeset's commits; the remote has its own ports clone. Logs stream back and results are recorded on both sides.
-
-Publishing stays with you by default. A remote builds and reports, and your next `dockhand` command, or your local server, pushes and opens the PR with your credentials. `dockhand remote trust mini --publish` lets the remote publish without you after a passing test, using a credential you give it explicitly. It's off by default because it moves your GitHub identity to another machine.
 
 ### What the server does besides building
 
@@ -659,9 +704,12 @@ These are all visible in `server status`, and each can be turned off:
 
 - **Follows PRs.** Every few minutes it reads the state, reviews, and CI of your open PRs. It notices merges and cleans up after them, and turns changes into "needs you" rows.
 - **Keeps master fresh.** It fetches `master` so that authoring starts from a recent base, and marks changesets that no longer rebase cleanly.
-- **Checks for updates.** Daily, it runs `outdated` for `--mine` and shows the count in `status`. With `server.draft-updates = true` it goes further and prepares local changesets for them, which nobody submits but you.
+- **Keeps your ports current, as far as you let it.** Every morning it checks your ports for new releases. `server.updates` sets how far it goes:
+  - `list`, the default, shows the count in `status`;
+  - `draft` prepares a changeset for each update and stops at the local checks, so they're waiting for you;
+  - `submit` carries whatever passes through to a PR, at most `submit.daily-limit` a day ([§5.12](#512-working-through-your-ports)).
 - **Tests continuously, if asked.** With `server.retest = true`, every new state of an open changeset is queued for testing, making the server your personal CI.
-- **Tests others' PRs, if asked.** `dockhand server prs add --maintainer @ada` queues tests of new PRs that touch your ports, and `status` shows the results under "PRs on your ports". It never comments on them unless you run `check --comment` yourself, or turn on `--comment` for that rule. Strangers' Portfiles run only inside VMs, and no credentials ever enter the guest.
+- **Tests others' PRs on your ports, if asked.** `dockhand server prs add --maintainer @ada` queues checks and test builds of new PRs that touch ports you maintain, and `status` shows the results under "PRs on your ports", with `check --review` one keystroke away. It posts nothing by itself unless you turn on `--review` for that rule. Then it posts at most one review per PR head, and never requests changes without you. Strangers' Portfiles run only inside VMs, and no credentials ever enter the guest.
 - **Tells you.** A macOS notification when a test finishes or a PR changes state (`server.notify`).
 - **Cleans up.** It prunes old VMs, logs, and worktrees on the same rules `gc` applies, and never touches a changeset that is still open.
 
@@ -692,7 +740,7 @@ The same flag means the same thing on every command that has it.
 | `--on <where>` | Where builds run ([§7](#where-builds-run---on)). |
 | `--else <where>` | Where builds run if the first choice can't take them. |
 | `--into <changeset>`, `--new` | Where authoring lands. |
-| `--submit` | On authoring commands: continue through `submit`. |
+| `--stop`, `--test`, `--submit` | On authoring commands: how far this run goes, overriding `update.then`. |
 | `--fresh` | Build again even when a result already applies. |
 | `--tests declared\|required\|skip` | Declared tests run and are reported (the MacPorts rule, the default); `required` makes them decide; `skip` omits them. |
 | `--all` | Include what is hidden by default (retired changesets, current ports, finished queue items). It never means "the whole tree"; that's `--everything`, on `outdated` and `info` only. |
@@ -700,7 +748,7 @@ The same flag means the same thing on every command that has it.
 | `-v`, `-vv` | Identifiers and background work; then every step. |
 | `-q` | Only results and errors. |
 
-Flags that belong to one command are described with it: `--together` on `revbump`; `--variants` on `test`; `--markdown` and `--comment` on `check`; and `--as-is`, `--no-test`, `--draft`, `--type`, and `--skip-notification` on `submit`.
+Flags that belong to one command are described with it: `--together` on `revbump`; `--variants` on `test`; `--markdown`, `--comment`, and `--review` on `check`; and `--as-is`, `--no-test`, `--draft`, `--type`, and `--skip-notification` on `submit`.
 
 Global: `--tree`, `--prefix`, `--db`, `--config`, `--color never|auto|always`, and `--inline`. Each has an environment variable and a config key, and a flag beats the environment, which beats the config.
 
@@ -782,11 +830,14 @@ A body someone has edited is kept. Only the span dockhand owns, from "Tested on"
 ```toml
 # ~/.config/dockhand/config.toml
 tree = "~/src/macports-ports"
-changesets = "~/.dockhand/changesets"
+changesets = "~/src/macports-changesets"
 maintainer = "{@ada example.org:ada} openmaintainer"
 
+[update]
+then = "stop"              # stop | test | submit: how far a passing changeset goes by itself
+
 [test]
-on = ["host"]              # or ["tahoe", "sonoma"], ["mini:all"], ["github"]
+on = ["host"]              # or ["tahoe", "sonoma"], ["all"], ["github"]
 else = "github"            # optional fallback, stated in advance
 tests = "declared"
 baseline = true            # when a port fails, build it at the base to tell new from pre-existing
@@ -794,15 +845,14 @@ baseline = true            # when a port fails, build it at the base to tell new
 [submit]
 draft = false
 rerequest-review = "ask"   # ask | always | never
+daily-limit = 10           # PRs the server may open by itself in a day
 
 [server]
 idle-exit = "15m"
 notify = true
 retest = false             # test every new state of open changesets
-draft-updates = false      # prepare local changesets for your outdated ports
-
-[remote.mini]
-url = "ssh://ada@mini.local"
+updates = "list"           # list | draft | submit: what the daily release check does
+updates-at = "07:00"
 ```
 
 `dockhand config get/set/edit` manages it. `dockhand config` with no arguments prints the effective settings and where each came from.
@@ -816,7 +866,7 @@ url = "ssh://ada@mini.local"
 - An existing PR body is kept; only dockhand's own section is ever regenerated.
 - Accepted work is durable. Closing a terminal, putting the laptop to sleep, or restarting the server doesn't lose it.
 - A failed or missing build is never presented as a pass. Publishing without one needs `--no-test`, and the PR says so.
-- Dockhand writes to GitHub only through `submit`, `test --on github`, and the review requests and comments you confirm. Everything else only reads.
+- Dockhand writes to GitHub only through `submit`, `test --on github`, and the reviews, comments, and review requests you confirm. The server submits by itself only when `update.then` or `server.updates` says `submit`, and never beyond `submit.daily-limit`. Everything else only reads.
 
 ## 9. What this asks of the engine
 
@@ -834,7 +884,8 @@ The experience above rests on a few engine changes. Most of them are the recomme
 | Build in dependency order from the changeset's tree | One VM per platform builds a changeset's ports in dependency order, as MacPorts CI does | new |
 | "caused by this change" vs "pre-existing" | Baseline builds at the changeset's base, recorded as their own results | new, in the spirit of the failure-attribution principle |
 | "the install name changed" | Compare the built product's install names with the previous binary archive's | new |
-| Remote servers | A versioned client–server protocol that runs over SSH; commits sent as a bundle | new |
+| `then = "submit"`; `server.updates` | An authoring job's destination (stop, test, or submit), frozen at intake as `--to` is today; the daily release check creates ordinary jobs under the same rules, counted against a daily limit | extends today's `--to` |
+| `check --review`, `--comment` | PR review and comment writes in the forge adapter, and a read of the account's permission on macports/macports-ports | new |
 
 Today's durability and evidence rules all carry over: durable intent, idempotent submission, reconciliation before retrying, no guessed fallbacks, and conditional pushes. The reimagining changes what a person types and sees, and adds the multi-port unit. It doesn't loosen any of those rules.
 
@@ -842,7 +893,7 @@ Today's durability and evidence rules all carry over: durable intent, idempotent
 
 | Today | Reimagined | What changed |
 | --- | --- | --- |
-| `bump jq` | `update jq --submit` | Authoring and submitting are separate verbs; `--submit` joins them. |
+| `bump jq` | `update jq --submit`, or `update jq` with `then = "submit"` | Authoring and submitting are separate verbs; `--submit` or the config joins them. |
 | `bump jq --to branch` | `update jq` | Stopping after authoring is the default. |
 | `bump jq --to verified` | `update jq && test jq` | |
 | `bump --unverified` | `submit --no-test` | |
@@ -860,19 +911,22 @@ Today's durability and evidence rules all carry over: durable intent, idempotent
 | `sync` | `sync`, usually automatic | The server follows PRs. |
 | `status`, `console` | `status`, `watch` | `watch` observes and never drives. |
 | `wait`, `cancel` | `watch`, `queue cancel` | |
-| `serve` | `server` | On demand, or at login; local or remote. |
+| `serve` | `server` | On demand, or at login. |
 | `outdated`, `assess` | `outdated`, `info` | `outdated` says what dockhand can automate; `info` says why for one port. |
 | `setup` | `init`, `images` | |
 | `reassociate` | `rename`, or automatic | A changeset follows its branch. |
 | `gc`, `db` | `gc`, `db` | |
 
-## 11. Open questions
+## 11. Decisions and open questions
 
-These are the decisions that would change the design most, with the assumption this draft made for each.
+### Decided, 2026-09-24
 
-1. **How far does "server" reach?** This draft covers a local server and remote build Macs that you own, over SSH. It treats testing other people's PRs as an opt-in feature of the same server. If the intent is a shared build service for several contributors, it needs accounts, fairness between people, and publishing on others' behalf, which is a different design.
-2. **Who may publish from a remote?** Assumed: only the client, unless you explicitly trust a remote with a credential.
-3. **Worktrees or branches?** Assumed: dockhand-made changesets get sparse worktrees, and hand-made branches stay in place. The alternative is branches in your main checkout, switched by dockhand. That's simpler, but it touches the checkout and allows only one changeset at a time.
-4. **Should `update` stop after authoring?** Assumed yes, with `--submit` for the one-liner. Today's default goes straight through to a PR, and the README calls that "the whole tool for most updates". A config key could keep that default for people who want it.
-5. **Should `check --comment` exist?** Posting on another contributor's PR is the one outward-facing act not tied to your own changeset. Assumed: allowed, explicit, and confirmed every time.
-6. **Is "changeset" the word on screen?** Assumed yes. MacPorts contributors also say "branch" and "PR", and the three are nearly interchangeable here. The UI could lead with "PR" once one exists.
+1. **The server stays on your own Mac.** Dockhand is for an individual maintainer working through the ports they maintain, so the server serves one person on one machine. The first draft's remote build servers, reached over SSH, are removed, and a shared service for several contributors is out of scope. Testing others' PRs on your ports stays, as an opt-in feature of the same server.
+2. **Changesets live in sparse worktrees**, in a visible directory beside the ports clone, so that they're easy to open, browse, and edit directly ([§3](#where-changesets-live)).
+3. **`update` stops after the local checks** by default. A maintainer who wants whatever passes to go straight to a PR sets `update.then = "submit"`, or passes `--submit` for one run. `server.updates = "submit"` does the same daily for every port they maintain ([§5.12](#512-working-through-your-ports)).
+4. **Reviewing others' PRs is allowed.** `check --comment` and `check --review` post what `check` found, after showing it and asking. Requesting changes is offered to accounts with write or triage access to macports/macports-ports ([§5.11](#511-a-maintainer-takes-over-a-contributors-pr)).
+
+### Still open
+
+1. **What does "passes" include?** This draft reads "whatever passes local checks goes straight to PR" as: passes `check`, then builds and installs on this Mac. If the intent is to open the PR after `check` alone and let MacPorts CI do the building, that is one more value, `then = "submit-untested"`, whose PRs say that no local build ran.
+2. **Is "changeset" the word on screen?** Assumed yes. MacPorts contributors also say "branch" and "PR", and the three are nearly interchangeable here. The UI could lead with the PR number once one exists.

@@ -44,3 +44,25 @@ The proposal is [`docs/reimagining/terminal-experience.md`](../reimagining/termi
 
 - The roadmap is unchanged; whether and how to adopt any of this is the person's decision.
 - The open questions in §11 of the proposal are for the person: how far the server reaches, publishing from a remote, worktrees or branches, whether `update` stops early, `check --comment`, and "changeset" as the on-screen word.
+
+## Decisions, later the same day
+
+The person answered four of the open questions, and the proposal was revised to match. Its §11 now records the decisions.
+
+- **The server stays on the person's own Mac.** Dockhand is for an individual maintainer working through the ports they maintain.
+  - Removed: remote build servers (`remote add`, `--on mini:…`, `remote trust --publish`, the SSH protocol row in the engine table).
+  - `--on` now names only this Mac's images and `github`.
+  - The server section says the server serves one person and opens no network port.
+  - Testing others' PRs on your ports stays opt-in.
+- **Sparse worktrees, placed where people can reach them.** The default moved from `~/.dockhand/changesets` to a visible `~/src/macports-changesets` beside the clone, which `init` offers. The proposal says the worktrees are meant to be opened and edited directly.
+- **`update` stops after the local checks, with a standing way through.**
+  - `update.then = stop | test | submit` sets how far a passing changeset goes by itself; `--stop`, `--test`, and `--submit` override it for one run.
+  - `server.updates = list | draft | submit` sets what the daily release check does. At `submit`, the server opens at most `submit.daily-limit` PRs a day, so a release wave doesn't swamp reviewers.
+  - Journey 5.12 was rewritten as "Working through your ports": one batch, the passing changesets going through to PRs, and only the failures left on the list.
+- **Reviewing others' PRs is allowed.**
+  - `check --comment` posts the findings as a comment.
+  - `check --review` posts them as a GitHub review, with inline findings and the fix given in both dockhand and plain Git terms.
+  - Requesting changes is offered when the account has write or triage access to macports/macports-ports.
+  - A server rule may post reviews on PRs to your ports, at most one per head, and never requesting changes by itself.
+
+Left open: whether "passes" includes the local build (assumed yes; `then = "submit-untested"` would be the other reading), and whether "changeset" is the on-screen word.
