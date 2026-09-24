@@ -135,6 +135,8 @@ func TestMissingFilesAndLostConnectionsAreNamed(t *testing.T) {
 	g.Address = "unreachable"
 	_, err = g.Command(t.Context(), nil, "/usr/bin/true")
 	require.ErrorIs(t, err, ErrTransport)
+	var exit *exec.ExitError
+	require.False(t, errors.As(err, &exit), "ssh's own status is not the command's")
 	_, err = g.Read(t.Context(), missing, false)
 	require.ErrorIs(t, err, ErrTransport)
 }

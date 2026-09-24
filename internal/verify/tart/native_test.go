@@ -3,6 +3,7 @@ package tart
 import (
 	"archive/tar"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/tart/channel"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/stretchr/testify/require"
@@ -195,21 +197,43 @@ func TestCandidateIndexDerivesFromBaseGenerationInSharedCache(t *testing.T) {
 	require.ElementsMatch(t, []string{string(f.request.Spec.Source.Tree), tree}, trees)
 	require.NoDirExists(t, filepath.Join(config.ArtifactDirectory, "indexes"), "the legacy artifact cache is not written")
 }
-func TestRunningMarkerDoesNotHideExitedGuestRunner(t *testing.T) {
-	t.Parallel()
+
+// sshGuest makes a native whose clone "vm" runs, answers `tart ip`, and is
+// reached by a stand-in ssh that runs each command here, with the guest
+// directory at root/guest, sudo dropped, and launchctl replaced by
+// root/launchctl.
+func sshGuest(t *testing.T, launchctl string) (*native, string) {
+	t.Helper()
 	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "guest"), 0700))
 	executable := filepath.Join(root, "tart")
 	testsupport.WriteExecutable(t, executable, `#!/bin/sh
 case "$1" in
 list) printf '%s\n' '[{"Name":"vm","Source":"local","State":"running"}]' ;;
-exec)
- case "$9" in
-  /bin/launchctl) printf '%s\n' 'state = not running' ;;
-  *) printf '%s\n' '{"State":"running","Protocol":1,"ID":"fixture","Digest":"fixture"}' ;;
- esac ;;
+ip) echo 192.168.64.9 ;;
+*) exit 9 ;;
 esac
 `)
-	n := newNative(Config{Home: root, Executable: executable}, nil, nil, nil)
+	testsupport.WriteExecutable(t, filepath.Join(root, "launchctl"), "#!/bin/sh\n"+launchctl)
+	ssh := filepath.Join(root, "ssh")
+	testsupport.WriteExecutable(t, ssh, `#!/bin/sh
+while [ $# -gt 0 ]; do
+  case "$1" in -F|-o|-O) shift 2 ;; *) break ;; esac
+done
+shift
+command=$(printf '%s' "$1" | sed -e "s#^'sudo' '-n' ##" -e "s#^'/usr/bin/sudo' '-n' ##" -e "s#/var/tmp/dockhand2#`+root+`/guest#g" -e "s#/bin/launchctl#`+root+`/launchctl#g")
+exec /bin/sh -c "$command"
+`)
+	n := newNative(Config{Home: root, Executable: executable, Image: "dockhand-base-fixture"}, nil, nil, nil)
+	n.keys = channel.Keys{Directory: filepath.Join(root, "keys")}
+	n.ssh = ssh
+	return n, root
+}
+
+func TestRunningMarkerDoesNotHideExitedGuestRunner(t *testing.T) {
+	t.Parallel()
+	n, root := sshGuest(t, "echo 'state = not running'\n")
+	require.NoError(t, os.WriteFile(filepath.Join(root, "guest", "result.json"), []byte(`{"State":"running","Protocol":1,"ID":"fixture","Digest":"fixture"}`), 0600))
 	result, err := n.Inspect(t.Context(), "vm")
 	require.NoError(t, err)
 	require.Equal(t, "runner-exited", result.State)
@@ -219,21 +243,14 @@ func TestTerminalResultPublishedBetweenMarkerAndRunnerReadsWins(t *testing.T) {
 	t.Parallel()
 	for _, verdict := range []record.Verdict{record.VerdictPassed, record.VerdictFailed} {
 		t.Run(string(verdict), func(t *testing.T) {
-			root := t.TempDir()
-			executable := filepath.Join(root, "tart")
-			script := `#!/bin/sh
-case "$1" in
-list) printf '%s\n' '[{"Name":"vm","Source":"local","State":"running"}]' ;;
-exec)
- case "$9" in
- /bin/launchctl) printf '%s\n' 'state = not running' ;;
- /bin/cat) printf '%s\n' '{"State":"finished","Verdict":"` + string(verdict) + `","Protocol":1,"ID":"fixture","Digest":"fixture"}' ;;
- *) printf '%s\n' '{"State":"running","Protocol":1,"ID":"fixture","Digest":"fixture"}' ;;
- esac ;;
-esac
-`
-			testsupport.WriteExecutable(t, executable, script)
-			n := newNative(Config{Home: root, Executable: executable}, nil, nil, nil)
+			t.Parallel()
+			// The runner publishes its terminal result while launchctl is
+			// asked whether it still runs.
+			n, root := sshGuest(t, "")
+			finished := filepath.Join(root, "finished.json")
+			require.NoError(t, os.WriteFile(finished, []byte(`{"State":"finished","Verdict":"`+string(verdict)+`","Protocol":1,"ID":"fixture","Digest":"fixture"}`), 0600))
+			testsupport.WriteExecutable(t, filepath.Join(root, "launchctl"), "#!/bin/sh\ncp '"+finished+"' '"+filepath.Join(root, "guest", "result.json")+"'\necho 'state = not running'\n")
+			require.NoError(t, os.WriteFile(filepath.Join(root, "guest", "result.json"), []byte(`{"State":"running","Protocol":1,"ID":"fixture","Digest":"fixture"}`), 0600))
 			result, err := n.Inspect(t.Context(), "vm")
 			require.NoError(t, err)
 			require.Equal(t, "finished", result.State)
@@ -241,6 +258,31 @@ esac
 			require.Equal(t, "fixture", result.ID)
 		})
 	}
+}
+
+// Logs are copied out as checked transfers: the build log, when there is
+// one, then the runner's; a build log still growing is read by ranges.
+func TestLogsAreCopiedOutChecked(t *testing.T) {
+	t.Parallel()
+	n, root := sshGuest(t, "")
+	require.NoError(t, os.WriteFile(filepath.Join(root, "guest", "runner.log"), []byte("runner\n"), 0600))
+	local := filepath.Join(root, "copied.log")
+	require.NoError(t, n.Logs(t.Context(), "vm", local))
+	data, err := os.ReadFile(local)
+	require.NoError(t, err)
+	require.Equal(t, "runner\n", string(data), "no build log yet")
+	chunk, err := n.ReadLog(t.Context(), "vm", 0, 100)
+	require.NoError(t, err)
+	require.Empty(t, chunk, "a build log not yet written reads as nothing")
+
+	require.NoError(t, os.WriteFile(filepath.Join(root, "guest", "build.log"), []byte("building\n"), 0600))
+	require.NoError(t, n.Logs(t.Context(), "vm", local))
+	data, err = os.ReadFile(local)
+	require.NoError(t, err)
+	require.Equal(t, "building\nrunner\n", string(data))
+	chunk, err = n.ReadLog(t.Context(), "vm", 3, 4)
+	require.NoError(t, err)
+	require.Equal(t, "ldin", string(chunk))
 }
 
 func TestTreeOnlyInputArchivesTheFrozenEditAndRejectsMissingObjects(t *testing.T) {
@@ -354,4 +396,32 @@ esac
 	running, err = n.Running(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, []string{"dockhand2-a"}, running)
+}
+
+// A clone Tart would not start because the Mac already runs two macOS VMs
+// fails its wait at once with that reason, from the run's log, rather than
+// waiting for an agent that never answers; reconciliation then closes the
+// request and a later submission tries again, as for capacity.
+func TestReadyNamesTheMacsVMLimit(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	executable := filepath.Join(root, "tart")
+	testsupport.WriteExecutable(t, executable, `#!/bin/sh
+case "$1" in
+list) printf '%s\n' '[{"Name":"vm","Source":"local","State":"stopped"}]' ;;
+*) echo "agent unavailable" >&2; exit 1 ;;
+esac
+`)
+	directory := filepath.Join(root, "run")
+	require.NoError(t, os.MkdirAll(directory, 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(directory, "vm.log"), []byte("The number of VMs exceeds the system limit (other running VMs: someone-else)\n"), 0600))
+	n := newNative(Config{Home: root, Executable: executable, Image: "dockhand-base-fixture"}, nil, nil, nil)
+	err := n.Ready(t.Context(), "vm", directory)
+	require.ErrorIs(t, err, errVMLimit)
+	require.ErrorContains(t, err, "someone-else")
+
+	require.NoError(t, os.WriteFile(filepath.Join(directory, "vm.log"), []byte("fixture boot failure\n"), 0600))
+	err = n.Ready(t.Context(), "vm", directory)
+	require.False(t, errors.Is(err, errVMLimit))
+	require.ErrorContains(t, err, "stopped before its guest agent answered: fixture boot failure")
 }

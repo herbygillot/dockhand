@@ -189,7 +189,7 @@ func classify(address string, result subprocess.Result, err error) error {
 		case missing:
 			return fmt.Errorf("%w: %w", os.ErrNotExist, err)
 		case 255:
-			return fmt.Errorf("%w: %s: %w", ErrTransport, address, err)
+			return fmt.Errorf("%w: %s: %v", ErrTransport, address, err)
 		}
 	}
 	return err

@@ -36,7 +36,7 @@ type machine interface {
 	Running(context.Context) ([]string, error)
 	Clone(context.Context, string, string) error
 	Start(context.Context, string, string) error
-	Ready(context.Context, string) error
+	Ready(context.Context, string, string) error
 	Stage(context.Context, string, string) error
 	Launch(context.Context, string) error
 	Inspect(context.Context, string) (guestResult, error)

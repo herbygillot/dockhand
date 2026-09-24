@@ -2,9 +2,7 @@ package host
 
 import (
 	"context"
-	"io"
 	"os"
-	"time"
 
 	"github.com/herbygillot/dockhand/internal/tart"
 )
@@ -21,10 +19,6 @@ ulimit -S -n "$limit"
 exec "$@"
 `
 
-func (n Machine) guest(ctx context.Context, vm string, input io.Reader, args ...string) ([]byte, error) {
-	return n.Exec(ctx, vm, tart.RunOptions{Input: input}, args...)
-}
-
 // Exec invokes an argv in the guest without interpolating arguments into a shell.
 func (n Machine) Exec(ctx context.Context, vm string, options tart.RunOptions, args ...string) ([]byte, error) {
 	command := []string{"exec"}
@@ -35,21 +29,4 @@ func (n Machine) Exec(ctx context.Context, vm string, options tart.RunOptions, a
 	command = append(command, args...)
 	options.ExtraFiles = append(append([]*os.File{}, options.ExtraFiles...), n.Guard)
 	return n.Client.Run(ctx, options, command...)
-}
-func (n Machine) Ready(ctx context.Context, vm string) error {
-	for {
-		call, cancel := context.WithTimeout(ctx, 3*time.Second)
-		_, err := n.guest(call, vm, nil, "/usr/bin/true")
-		cancel()
-		if err == nil {
-			return CheckGuestTransport(ctx, func(ctx context.Context, input io.Reader, args ...string) ([]byte, error) {
-				return n.guest(ctx, vm, input, args...)
-			})
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(500 * time.Millisecond):
-		}
-	}
 }

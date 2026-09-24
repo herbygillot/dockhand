@@ -159,7 +159,9 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 	if err = o.machine.Start(ctx, v.Resource, directory); err != nil {
 		return uncertain, err
 	}
-	if err = o.machine.Ready(ctx, v.Resource); err != nil {
+	if err = o.machine.Ready(ctx, v.Resource, directory); errors.Is(err, errVMLimit) {
+		return o.withdraw(ctx, v, err)
+	} else if err != nil {
 		return uncertain, err
 	}
 	if !observed {
@@ -203,4 +205,25 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 	}
 	progress.VerboseReport(ctx, "Verification launched")
 	return submission(v, verify.Admitted), nil
+}
+
+// withdraw undoes a reservation whose clone the Mac would not start at its
+// limit of two macOS VMs: the clone is stopped and deleted, and the request
+// released with no result, which closes it to submission with its clone
+// already gone, so reconciliation reports it closed with nothing left and
+// the workflow queues a new submission, waiting as it waits for capacity.
+func (o *operation) withdraw(ctx context.Context, v record.ProviderExecution, cause error) (verify.Submission, error) {
+	uncertain := submission(v, verify.SubmissionUncertain)
+	if err := o.machine.Stop(ctx, v.Resource); err != nil {
+		return uncertain, errors.Join(cause, err)
+	}
+	if err := o.machine.Delete(ctx, v.Resource); err != nil {
+		return uncertain, errors.Join(cause, err)
+	}
+	_ = os.RemoveAll(o.directory(v))
+	v.State, v.Occupied = record.ExecutionReleased, false
+	if err := o.entry.Put(ctx, v); err != nil {
+		return uncertain, errors.Join(cause, err)
+	}
+	return verify.Submission{State: verify.SubmissionUncertain, Detail: "Waiting: " + cause.Error()}, nil
 }

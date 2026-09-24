@@ -46,8 +46,17 @@ type guestLogReader interface {
 	ReadLog(context.Context, string, int64, int) ([]byte, error)
 }
 
+// ReadLog reads the running build's log from offset over SSH, checked
+// against the same bytes hashed again in the guest; a log not yet written
+// reads as nothing.
 func (n *native) ReadLog(ctx context.Context, vm string, offset int64, limit int) ([]byte, error) {
-	log := guestDirectory + "/build.log"
-	script := fmt.Sprintf("if [ -f %s ]; then /usr/bin/tail -c +%d %s | /usr/bin/head -c %d; fi", log, offset+1, log, limit)
-	return n.guest(ctx, vm, nil, "sudo", "-n", "/bin/sh", "-c", script)
+	guest, err := n.reach(ctx, vm)
+	if err != nil {
+		return nil, err
+	}
+	data, err := guest.Range(ctx, guestDirectory+"/build.log", offset, limit, true)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	return data, err
 }

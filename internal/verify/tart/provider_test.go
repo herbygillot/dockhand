@@ -37,6 +37,7 @@ type fakeMachine struct {
 	stageError, launchError, stopError error
 	environmentError                   error
 	listingError                       error
+	readyError                         error
 	stageHook                          func()
 }
 
@@ -118,7 +119,11 @@ func (m *fakeMachine) Start(ctx context.Context, vm, directory string) error {
 	m.running[vm] = true
 	return nil
 }
-func (m *fakeMachine) Ready(context.Context, string) error { return nil }
+func (m *fakeMachine) Ready(context.Context, string, string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.readyError
+}
 func (m *fakeMachine) Stage(ctx context.Context, vm, path string) error {
 	m.mu.Lock()
 	m.calls["stage"]++
@@ -747,4 +752,28 @@ func TestInconsistentGuestResultSettlesAsErroredAndAdvisoryFailuresPass(t *testi
 	released, err := f.provider.Release(t.Context(), result.Resources[0])
 	require.NoError(t, err)
 	require.True(t, released.Confirmed)
+}
+
+// A clone the Mac refuses at its limit of two macOS VMs, started by
+// something neither home shows, is withdrawn: stopped and deleted, and the
+// request closed with nothing provisioned, so reconciliation reports it
+// closed with no resources and the workflow submits again later, waiting
+// as it waits for capacity.
+func TestAClonePastTheMacsVMLimitIsWithdrawn(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	m := newMachine()
+	m.readyError = fmt.Errorf("%w: The number of VMs exceeds the system limit (other running VMs: elsewhere)", errVMLimit)
+	f := fixtureRun(t, filepath.Join(root, "state.db"), root, filepath.Join(root, "artifacts"), "limit", m)
+	result, err := f.provider.Submit(t.Context(), f.request)
+	require.NoError(t, err)
+	require.Equal(t, verify.SubmissionUncertain, result.State)
+	require.Empty(t, result.Resources, "nothing provisioned is left")
+	require.Contains(t, result.Detail, "exceeds the system limit")
+	require.Equal(t, 1, m.calls["delete"])
+	require.Zero(t, m.calls["stage"])
+	reconciled, err := f.provider.Reconcile(t.Context(), f.request.ID, verify.ReconcileOptions{})
+	require.NoError(t, err)
+	require.Equal(t, verify.RequestClosed, reconciled.State)
+	require.Empty(t, reconciled.Submission.Resources)
 }

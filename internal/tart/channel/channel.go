@@ -81,7 +81,10 @@ func (g *Guest) run(ctx context.Context, input io.Reader, stream io.Writer, comb
 	if err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) && exit.ExitCode() == 255 {
-			return result.Output, fmt.Errorf("%w: %s: %w", ErrTransport, g.Address, err)
+			// The exit status is ssh's, not the command's, so it is not
+			// passed on: a caller reading exit statuses as the command's
+			// verdict would take a lost connection for a failed check.
+			return result.Output, fmt.Errorf("%w: %s: %v", ErrTransport, g.Address, err)
 		}
 		return result.Output, err
 	}

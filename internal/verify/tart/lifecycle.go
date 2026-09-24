@@ -49,6 +49,12 @@ func (p *Provider) Reconcile(ctx context.Context, id record.RequestID, _ verify.
 			return verify.Reconciliation{State: verify.RunUnknown}, err
 		}
 	}
+	if v.State == record.ExecutionReleased {
+		// Released with no result: its clone was deleted before a run was
+		// admitted, as a withdrawal at the Mac's VM limit leaves it, so
+		// nothing is left to track.
+		return verify.Reconciliation{State: verify.RequestClosed, Submission: verify.Submission{State: verify.SubmissionUncertain}}, nil
+	}
 	return verify.Reconciliation{State: verify.RequestClosed, Submission: submission(v, verify.SubmissionUncertain)}, nil
 }
 
