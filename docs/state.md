@@ -77,7 +77,7 @@ Errors distinguish absent records, invalid records, conflicts, unavailable stora
 
 `--db PATH` selects the database independently of the invocation's checkout. Its default is `$HOME/.dockhand/state.db`. `app` uses Git to discover and canonicalize the selected checkout's common directory, looks up or registers it as appropriate, binds the store to that registration with `state.Bind`, and hands the bound store to the workflow, which checks that the Git repository it drives is the registration's common directory. The state implementation receives ordinary paths and IDs; it does not discover Git repositories itself.
 
-Linked worktrees share a repository entry. Separate clones have distinct entries even when their remotes match. Worktree paths belong to the invocation; they are not repository identity. A moved common directory requires explicit reassociation in a later workflow, rather than matching it automatically by remote URL.
+Linked worktrees share a repository entry. Separate clones have distinct entries even when their remotes match. Worktree paths belong to the invocation; they are not repository identity. A moved common directory requires explicit reassociation (`dockhand reassociate`), rather than matching it automatically by remote URL.
 
 A reader/transaction is bound to exactly one registered repository. Its lookups, joins, and mutations are scoped to that repository; an ID belonging to another repository is not accessible through that view. IDs are generated globally uniquely, and relationships use repository-qualified foreign keys so a job cannot accidentally acquire another repository's revision or attempt. Reusing a request ID for another repository conflicts with the original receipt.
 
@@ -153,7 +153,7 @@ Explicit branch verification reads an isolated committed snapshot. Existing cont
 
 Revision preparation uses disposable materializations and retries immutable work from recorded input. The job checkpoints its candidate commit/tree/base and destination before integration, with a monotonic integration-started marker. A changed branch after interruption is inspected; ambiguity requires attention. There is no `git_operations` table or promise of atomicity between SQLite and Git.
 
-Keep PRs and publication actions separate when publication is implemented. PR identity persists across repeated publication actions and revisions; intended publication and confirmed forge state remain distinct. Their tables, scheduling, and queries arrive with that executor. Discovery observations, review decisions, branch reassociation commands, and an optional identity-only notes namespace remain later work. No automatic notes configuration is required to open or use the database. Matching port name, version, and revision alone does not establish equivalent verification inputs.
+PRs and publication actions are separate records. PR identity persists across repeated publication actions and revisions; intended publication and confirmed forge state remain distinct. Their tables, scheduling, and queries arrived with the publication executor. Review decisions are recorded with each PR observation, and branch reassociation is `dockhand reassociate`; retained discovery observations and an optional identity-only notes namespace are not implemented. No automatic notes configuration is required to open or use the database. Matching port name, version, and revision alone does not establish equivalent verification inputs.
 
 ## Maintenance and recovery
 

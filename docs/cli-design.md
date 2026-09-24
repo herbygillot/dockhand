@@ -42,7 +42,7 @@ The initial command tree uses Cobra v1.10.2, matching v1, with pflag v1.0.10. `-
 
 `dockhand help <command>` and `<command> --help` show generated command help. `usage` is an alias for `help`, including nested paths such as `dockhand usage db backup`. `dockhand completion` generates shell completion scripts through Cobra. Help and completion do not open state or require a Git repository or provider, and create no directories or files. A run command's help prints its flags in sections by kind, Selection, Change, Build, GitHub, and Run, and the global flags as Path and Output; every flag on a run command belongs to one, and nothing is hidden.
 
-`status [target]`, `status --active`, and `status --branch <branch>` call the shared workflow projection through read-only SQLite access and render human-readable output or JSON. Verification submission, fixed job- or branch-selected attachment/cancellation, and resident execution now use the shared Go workflow API. Version and revision bumps use the shared driver; previews use the same preparation capability without opening state. Other phase-one command handlers still return explicit not-implemented errors. The broader selector syntax below remains the intended design; the concrete first slice is specified next.
+`status [target]`, `status --active`, and `status --branch <branch>` call the shared workflow projection through read-only SQLite access and render human-readable output or JSON. Verification submission, fixed job- or branch-selected attachment/cancellation, and resident execution now use the shared Go workflow API. Version and revision bumps use the shared driver; previews use the same preparation capability without opening state. The broader selector syntax below remains the intended design; the concrete first slice is specified next.
 
 ## Authentication roadmap
 
@@ -321,8 +321,7 @@ dockhand wait [<job_id>] [--branch <branch>]
 # Explicitly cancel outstanding work while preserving the change branch.
 dockhand cancel [<job_id>] [--branch <branch>]
 
-# Run a resident driver that advances accepted work.
-# Ongoing PR monitoring is added in phase two.
+# Run a resident driver that advances accepted work and follows open pull requests.
 dockhand serve
 ```
 
@@ -409,9 +408,9 @@ Review actions are planned, not implemented; the design is a `review` command fa
 
 All commands (except for `help` or `usage`) should be able to output JSON when given a `--json` flag.
 
-## Phase-two discovery and follow-up workflows
+## Discovery and follow-up workflows
 
-The architecture must support these workflows from phase one, even though their command handlers and ongoing monitoring arrive in phase two. The command names below are the proposed interface; exact corrective-edit selection and conflict-resolution syntax remain to be specified.
+These commands are implemented; the table keeps their intended behavior. Interactive conflict resolution is not: a `rebase` whose replay fails leaves a conflict workspace for inspection.
 
 | Command | Intended behavior |
 | --- | --- |
@@ -425,7 +424,7 @@ The architecture must support these workflows from phase one, even though their 
 
 `rebase` and `amend` follow the same `--to verified`, `--unverified`, and `--detach` conventions. `dockhand amend --branch <branch>` incorporates selected corrections, verifies the resulting revision, and updates the existing PR; `--to verified` stops after verification, which never publishes local corrections by itself. Neither command silently includes unrelated working-tree edits.
 
-`status` distinguishes the local revision, evidence applicable to it, the last confirmed published revision, and the latest recorded PR observations. In phase two, `serve` refreshes PR state, remote CI checks, review decisions, and conflict information. Before a field has been observed, it is unknown; an old observation is shown with its age. Observations do not automatically trigger corrective work.
+`status` distinguishes the local revision, evidence applicable to it, the last confirmed published revision, and the latest recorded PR observations. `serve` refreshes PR state, remote CI checks, review decisions, and mergeability as each pull request's next look comes due, and `sync` does so once. Before a field has been observed, it is unknown; an old observation is shown with its age. Observations do not automatically trigger corrective work.
 
 Attachment and `wait` follow the selected job's requested destination. Publishing still completes when the PR is opened or updated, even when the change remains under review. They do not become indefinite waits for PR approval or merge. Later rebase, correction, verification, and publication requests create new jobs associated with the same tracked change.
 

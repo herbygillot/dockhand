@@ -1,6 +1,6 @@
 # Build platforms
 
-Answers item 3.3 of `docs/reviews/2026-09-23-contracts-review.md`, "the host's platform is the only platform", for `verify`.
+Answers item 3.3 of `docs/reviews/2026-09-23-contracts-review.md`, "the host's platform is the only platform", for `verify`. The walkthrough of that review settled more since, in the [direction record](reviews/2026-09-23-contracts-direction.md) (decisions 4–7, 9, 14, 22): the facts table makes per-release Xcode need answerable on a Mac. Where this document and those decisions differ, the decisions supersede it, and the code is being aligned: `--os` adds releases to the host's rather than naming the whole set (decision 4); publication requires every requested release to pass rather than selecting the host's evidence (decision 14); and an unnamed build on a release newer than the default is no longer refused (decision 5).
 
 ## Two platforms, not one
 
@@ -38,4 +38,4 @@ A verification has an **evaluation platform** and one or more **build platforms*
 - **Per-platform Xcode need.** Whether a target needs full Xcode is read from the host evaluation, and applied to every platform. A Portfile that needs Xcode only on some releases is built with the host's answer. A build that lacks what it needs fails visibly in the guest; it does not pass silently. Evaluating on each build platform requires modeling a darwin platform on a darwin host, which the evaluator does only on Linux today.
 - **Preparation.** `bump` and the corrections still prepare and verify for the host. Taking `--os` there means deciding what the prepared branch's recorded build is.
 - **Capacity.** The Tart pool is per Tart home, so all platforms share one capacity, which defaults to two. Apple's license allows two macOS guests at once. More platforms queue; they do not run wider.
-- **Hardware.** A guest newer than its host is generally not supported by Apple's virtualization framework. Setup, not verify, is where that is found out.
+- **Hardware.** Apple's framework refuses to *install* a guest newer than its host from an IPSW, which dockhand never does; a prebuilt newer image runs. On 2026-09-23 Cirrus Labs' macOS 27 (Golden Gate) image booted and provisioned on a Tahoe 26.6.2 host ([direction record](reviews/2026-09-23-contracts-direction.md)). Golden Gate's images use ASIF disks, which dockhand declines until openai/tart#1344 is fixed.
