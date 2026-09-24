@@ -22,6 +22,8 @@ type fakeMachine struct {
 	images     map[string]image
 	events     []string
 	fail       string
+	failures   map[string]error
+	format     string
 	validation validation
 	manifest   []byte
 }
@@ -43,7 +45,7 @@ func (f *fakeMachine) event(name string) error {
 	if f.fail == name {
 		return errors.New("fixture failure")
 	}
-	return nil
+	return f.failures[name]
 }
 func (f *fakeMachine) LockSetup(context.Context, string) (io.Closer, error) {
 	return nopCloser{}, f.event("lock")
@@ -58,6 +60,13 @@ func (f *fakeMachine) Clone(_ context.Context, source, destination string) error
 	}
 	f.images[destination] = image{Name: destination}
 	return nil
+}
+func (f *fakeMachine) DiskFormat(_ context.Context, name string) (string, error) {
+	format := f.format
+	if format == "" {
+		format = "raw"
+	}
+	return format, f.event("format:" + name)
 }
 func (f *fakeMachine) Configure(context.Context, string) error { return f.event("configure") }
 func (f *fakeMachine) Start(_ context.Context, name string) error {
@@ -86,8 +95,11 @@ func (f *fakeMachine) Validate(context.Context, string, Config) (validation, err
 func (f *fakeMachine) Stop(_ context.Context, name string) error {
 	current := f.images[name]
 	current.Running = false
+	if err := f.event("stop:" + name); err != nil {
+		return err
+	}
 	f.images[name] = current
-	return f.event("stop:" + name)
+	return nil
 }
 func (f *fakeMachine) Delete(_ context.Context, name string) error {
 	if err := f.event("delete:" + name); err != nil {
@@ -223,7 +235,11 @@ func TestAgentBootstrapPinsAndChecksTheReleaseAsset(t *testing.T) {
 	require.Contains(t, script, "shasum -a 256 -c")
 	require.NotContains(t, script, "homebrew")
 	var document struct{}
-	require.NoError(t, xml.Unmarshal([]byte(agentPlist("fixture", "--run-agent", "/tmp")), &document))
+	require.NoError(t, xml.Unmarshal([]byte(agentPlist("fixture", "--run-agent", "/tmp", "")), &document))
+	daemon := agentPlist("fixture", "--run-daemon", "/var/empty", agentDaemonLog)
+	require.NoError(t, xml.Unmarshal([]byte(daemon), &document))
+	require.Contains(t, daemon, "<key>StandardErrorPath</key><string>"+agentDaemonLog+"</string>", "the daemon's disk resize is logged")
+	require.Contains(t, script, "<key>StandardOutPath</key><string>"+agentDaemonLog+"</string>")
 }
 
 func TestInterruptedAdoptionDoesNotHidePreviousImageWithGoldenRestore(t *testing.T) {
@@ -232,4 +248,39 @@ func TestInterruptedAdoptionDoesNotHidePreviousImageWithGoldenRestore(t *testing
 	require.ErrorContains(t, err, "previous image is preserved")
 	require.NotContains(t, machine.events, "adopt:dockhand-golden-tahoe:dockhand-base-tahoe")
 	require.Contains(t, machine.images, "dockhand-base-tahoe-previous")
+}
+
+// A source with an ASIF disk is declined while it is a stopped clone, before
+// it ever runs: a running ASIF VM keeps Tart from listing any VM
+// (openai/tart#1344). The clone is cleaned up.
+func TestASIFSourceIsDeclinedBeforeItRuns(t *testing.T) {
+	machine := newFakeMachine()
+	machine.format = "asif"
+	_, err := testProvisioner(machine).Run(t.Context(), Options{})
+	require.ErrorContains(t, err, "has an ASIF disk")
+	require.ErrorContains(t, err, "openai/tart#1344")
+	require.NotContains(t, machine.events, "configure")
+	require.NotContains(t, machine.events, "start")
+	require.Contains(t, machine.events, "delete:dockhand-base-tahoe-next")
+	require.NotContains(t, machine.images, "dockhand-base-tahoe-next")
+}
+
+// A failed setup's cleanup deletes its guest even when stopping it failed,
+// and says what went wrong with either.
+func TestCleanupReportsItsErrorsAndStillDeletes(t *testing.T) {
+	machine := newFakeMachine()
+	machine.fail = "macports"
+	machine.failures = map[string]error{"stop:dockhand-base-tahoe-next": errors.New("fixture stop failure")}
+	_, err := testProvisioner(machine).Run(t.Context(), Options{})
+	require.ErrorContains(t, err, "fixture failure")
+	require.ErrorContains(t, err, "cleaning up dockhand-base-tahoe-next")
+	require.ErrorContains(t, err, "fixture stop failure")
+	require.Contains(t, machine.events, "delete:dockhand-base-tahoe-next")
+
+	machine = newFakeMachine()
+	machine.fail = "macports"
+	machine.failures = map[string]error{"delete:dockhand-base-tahoe-next": errors.New("fixture delete failure")}
+	_, err = testProvisioner(machine).Run(t.Context(), Options{})
+	require.ErrorContains(t, err, "fixture delete failure")
+	require.ErrorContains(t, err, "tart delete dockhand-base-tahoe-next")
 }

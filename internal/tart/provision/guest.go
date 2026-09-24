@@ -29,9 +29,10 @@ func (n *native) ReadyAgent(ctx context.Context, name string) error {
 			})
 		}
 		last = err
-		if done := n.runError(name); done != nil {
+		if run := n.run(name); run != nil {
 			select {
-			case runErr := <-done:
+			case <-run.Done():
+				runErr := run.Err()
 				if runErr == nil {
 					runErr = fmt.Errorf("tart: VM %s stopped before its guest agent became ready", name)
 				}

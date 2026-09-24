@@ -63,7 +63,7 @@ func imageFixture(t *testing.T) string {
 	for _, name := range []string{"config.json", "disk.img", "nvram.bin"} {
 		require.NoError(t, os.WriteFile(filepath.Join(root, "vms", "base", name), []byte("original"), 0600))
 	}
-	testsupport.WriteExecutable(t, filepath.Join(root, "tart"), "#!/bin/sh\nprintf '%s\\n' '[{\"Name\":\"base\",\"Source\":\"local\",\"State\":\"stopped\"}]'\n")
+	testsupport.WriteExecutable(t, filepath.Join(root, "tart"), "#!/bin/sh\n[ \"$1\" != get ] || { printf '%s\\n' '{\"Running\":false,\"State\":\"stopped\",\"DiskFormat\":\"raw\"}'; exit 0; }\nprintf '%s\\n' '[{\"Name\":\"base\",\"Source\":\"local\",\"State\":\"stopped\"}]'\n")
 	return root
 }
 func imageProcess(t *testing.T, root string) *exec.Cmd {

@@ -24,12 +24,14 @@ type RunOptions struct {
 
 // Run invokes one Tart subcommand and returns its captured standard output.
 // Combined captures and optionally streams both output channels in one buffer.
+// The failures dockhand acts on carry ErrListingBlocked, ErrVMMissing, or
+// ErrVMStopped.
 func (c Client) Run(ctx context.Context, options RunOptions, args ...string) ([]byte, error) {
 	if c.Executable == "" || len(args) == 0 {
 		return nil, fmt.Errorf("tart: executable and command are required")
 	}
 	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "tart", Path: c.Executable, Args: args, Env: c.Environment(), Stdin: options.Input, Stdout: options.Output, Combined: options.Combined, ExtraFiles: options.ExtraFiles})
-	return result.Output, err
+	return result.Output, classify(err)
 }
 
 // Environment supplies the host process environment used for this Tart home.

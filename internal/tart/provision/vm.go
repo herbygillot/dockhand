@@ -2,6 +2,7 @@ package provision
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/tart"
+	"github.com/herbygillot/dockhand/internal/tart/host"
 )
 
 func (n *native) LockSetup(ctx context.Context, image string) (io.Closer, error) {
@@ -19,7 +21,7 @@ func (n *native) LockSetup(ctx context.Context, image string) (io.Closer, error)
 }
 
 func (n *native) Images(ctx context.Context) (map[string]image, error) {
-	values, err := (tart.Client{Executable: n.config.Executable, Home: n.config.Home}).Images(ctx, tart.RunOptions{})
+	values, err := n.vm().Images(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -37,6 +39,8 @@ func (n *native) Pull(ctx context.Context, source string) error {
 	return err
 }
 
+// Clone refuses a destination Tart already lists, as host.Machine.Clone
+// does: `tart clone` onto a stopped VM's name replaces it silently.
 func (n *native) Clone(ctx context.Context, source, destination string) error {
 	var guard *os.File
 	var err error
@@ -47,74 +51,86 @@ func (n *native) Clone(ctx context.Context, source, destination string) error {
 		}
 		defer guard.Close()
 	}
+	if exists, _, err := n.vm().LocalVM(ctx, destination); err != nil {
+		return err
+	} else if exists {
+		return fmt.Errorf("tart: refusing to overwrite existing VM %s", destination)
+	}
 	_, err = n.commandWithGuard(ctx, nil, true, guard, "clone", source, destination)
 	return err
 }
 
+func (n *native) DiskFormat(ctx context.Context, name string) (string, error) {
+	return n.vm().DiskFormat(ctx, name)
+}
+
+// Configure sizes a raw-disk guest and frees its recovery partition, so the
+// guest agent can grow the container over the whole 100 GB disk. Editing
+// disk.img on the host is a flagged exception to using only what Tart
+// documents (decision 38): it is the route Tart's FAQ points to, Cirrus's
+// Packer plugin, takes the same way, and it runs only here, on setup's own
+// freshly cloned, stopped VM, whose format `tart get` has said is raw.
 func (n *native) Configure(ctx context.Context, name string) error {
 	cpus := max(1, runtime.NumCPU()/4)
 	memory := max(8192, cpus*2048)
 	if _, err := n.command(ctx, nil, false, "set", name, "--cpu", strconv.Itoa(cpus), "--memory", strconv.Itoa(memory), "--disk-size", "100"); err != nil {
 		return err
 	}
-	if n.config.XcodeArchive == "" {
-		return nil
+	format, err := n.DiskFormat(ctx, name)
+	if err != nil {
+		return err
+	}
+	if format != "raw" {
+		return fmt.Errorf("setup: %s has a %s disk; its storage is prepared only on a raw disk", name, format)
 	}
 	path := filepath.Join(n.config.Home, "vms", name, "disk.img")
 	removed, err := macos.RemoveRecoveryPartition(path)
 	if err != nil {
-		return fmt.Errorf("setup: preparing Xcode image storage: %w", err)
+		return fmt.Errorf("setup: preparing image storage: %w", err)
 	}
 	if removed && n.progress != nil {
-		_, _ = fmt.Fprintln(n.progress, "Freed the guest recovery partition so Xcode can use the enlarged disk.")
+		_, _ = fmt.Fprintln(n.progress, "Freed the guest recovery partition so the guest can use the enlarged disk.")
 	}
 	return nil
 }
 
 func (n *native) Start(ctx context.Context, name string) error {
-	done, err := n.vm().StartForeground(name)
+	run, err := n.vm().StartForeground(name)
 	if err != nil {
 		return err
 	}
 	n.mu.Lock()
-	n.runs[name] = done
+	n.runs[name] = run
 	n.mu.Unlock()
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case err := <-done:
-		return err
+	case <-run.Done():
+		return run.Err()
 	case <-time.After(500 * time.Millisecond):
 		return nil
 	}
 }
 
-func (n *native) runError(name string) <-chan error {
+func (n *native) run(name string) *host.Foreground {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return n.runs[name]
 }
 
+// Stop stops a guest this setup started through its kept `tart run`: `tart
+// stop`, then SIGINT, then SIGKILL. It never asks the listing first, which a
+// running ASIF VM can keep from answering (openai/tart#1344). A VM setup did
+// not start is stopped with `tart stop` alone, "not running" included.
 func (n *native) Stop(ctx context.Context, name string) error {
-	images, err := n.Images(ctx)
-	if err != nil {
-		return err
+	if run := n.run(name); run != nil {
+		return run.Stop(ctx, 10*time.Second)
 	}
-	if current := images[name]; current.Name != "" && current.Running {
-		if _, err := n.command(ctx, nil, false, "stop", name); err != nil {
-			return err
-		}
+	_, err := n.command(ctx, nil, false, "stop", name)
+	if errors.Is(err, tart.ErrVMStopped) || errors.Is(err, tart.ErrVMMissing) {
+		return nil
 	}
-	if done := n.runError(name); done != nil {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-done:
-		case <-time.After(10 * time.Second):
-			return fmt.Errorf("tart: timed out waiting for VM %s to stop", name)
-		}
-	}
-	return nil
+	return err
 }
 
 func (n *native) Delete(ctx context.Context, name string) error {
@@ -122,8 +138,7 @@ func (n *native) Delete(ctx context.Context, name string) error {
 }
 
 func (n *native) Rename(ctx context.Context, from, to string) error {
-	_, err := n.command(ctx, nil, false, "rename", from, to)
-	return err
+	return n.vm().Rename(ctx, from, to)
 }
 
 func (n *native) Adopt(ctx context.Context, source, destination string, replace bool) error {

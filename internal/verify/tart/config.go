@@ -51,7 +51,9 @@ func (p *Provider) Capabilities(ctx context.Context) (verify.Capabilities, error
 		return verify.Capabilities{}, err
 	}
 
-	if _, err = p.machineFor(c, nil).Running(ctx); err != nil {
+	// Listing is how Tart shows it works; a listing a running ASIF VM
+	// blocks shows that too, and submission waits it out.
+	if _, err = p.machineFor(c, nil).Running(ctx); err != nil && !errors.Is(err, tartvm.ErrListingBlocked) {
 		return verify.Capabilities{}, err
 	}
 	var platforms []record.Platform

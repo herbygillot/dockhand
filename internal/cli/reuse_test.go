@@ -64,7 +64,7 @@ func configureReuseImage(t *testing.T, config *app.Config) {
 	config.Tart.Home = t.TempDir()
 	config.Tart.Image = "base"
 	config.Tart.Executable = filepath.Join(t.TempDir(), "tart")
-	testsupport.WriteExecutable(t, config.Tart.Executable, "#!/bin/sh\n[ \"$1\" = list ] || exit 1\nprintf '%s\\n' '[{\"Name\":\"base\",\"Source\":\"local\",\"State\":\"stopped\"}]'\n")
+	testsupport.WriteExecutable(t, config.Tart.Executable, "#!/bin/sh\n[ \"$1\" != get ] || { printf '%s\\n' '{\"Running\":false,\"State\":\"stopped\",\"DiskFormat\":\"raw\"}'; exit 0; }\n[ \"$1\" = list ] || exit 1\nprintf '%s\\n' '[{\"Name\":\"base\",\"Source\":\"local\",\"State\":\"stopped\"}]'\n")
 	image := filepath.Join(config.Tart.Home, "vms", "base")
 	require.NoError(t, os.MkdirAll(image, 0700))
 	for _, name := range []string{"config.json", "disk.img", "nvram.bin"} {

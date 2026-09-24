@@ -3,6 +3,7 @@ package provision
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"io"
@@ -61,6 +62,7 @@ type machine interface {
 	Images(context.Context) (map[string]image, error)
 	Pull(context.Context, string) error
 	Clone(context.Context, string, string) error
+	DiskFormat(context.Context, string) (string, error)
 	Configure(context.Context, string) error
 	Start(context.Context, string) error
 	BootstrapAgent(context.Context, string) error
@@ -197,7 +199,7 @@ func goldenName(image string) string {
 	return image + "-golden"
 }
 
-func (p *Provisioner) check(ctx context.Context, machine machine, config Config, golden string, reused bool) (Result, error) {
+func (p *Provisioner) check(ctx context.Context, machine machine, config Config, golden string, reused bool) (result Result, err error) {
 	name := config.Image + "-check"
 	if err := discard(ctx, machine, name); err != nil {
 		return Result{}, err
@@ -206,7 +208,11 @@ func (p *Provisioner) check(ctx context.Context, machine machine, config Config,
 	if err := machine.Clone(ctx, config.Image, name); err != nil {
 		return Result{}, err
 	}
-	defer cleanup(machine, name)
+	defer func() {
+		if problem := cleanup(machine, name); problem != nil {
+			err = errors.Join(err, fmt.Errorf("setup: cleaning up %s: %w", name, problem))
+		}
+	}()
 	if err := machine.Start(ctx, name); err != nil {
 		return Result{}, err
 	}
@@ -235,7 +241,7 @@ func (p *Provisioner) check(ctx context.Context, machine machine, config Config,
 	return Result{Image: config.Image, GoldenImage: golden, Platform: checked.Platform, MacPortsVersion: checked.MacPortsVersion, GuestAgentVersion: checked.GuestAgentVersion, XcodeVersion: checked.XcodeVersion, Reused: reused}, nil
 }
 
-func (p *Provisioner) provision(ctx context.Context, machine machine, config Config, release macos.Release, golden string, replacing bool) (Result, error) {
+func (p *Provisioner) provision(ctx context.Context, machine machine, config Config, release macos.Release, golden string, replacing bool) (result Result, err error) {
 	next, goldenNext := config.Image+"-next", golden+"-next"
 	if err := discard(ctx, machine, next); err != nil {
 		return Result{}, err
@@ -254,9 +260,21 @@ func (p *Provisioner) provision(ctx context.Context, machine machine, config Con
 	keepNext := false
 	defer func() {
 		if !keepNext {
-			cleanup(machine, next)
+			if problem := cleanup(machine, next); problem != nil {
+				err = errors.Join(err, fmt.Errorf("setup: cleaning up %s: %w", next, problem))
+			}
 		}
 	}()
+	// A running ASIF VM keeps `tart list`, and `tart get` of it, from
+	// answering for as long as it runs, for every VM in the Tart home
+	// (openai/tart#1344), so setup declines one while it is a stopped clone.
+	format, err := machine.DiskFormat(ctx, next)
+	if err != nil {
+		return Result{}, err
+	}
+	if format != "raw" {
+		return Result{}, fmt.Errorf("setup: %s has an %s disk; dockhand declines it until Tart can list its VMs while one runs (openai/tart#1344)", config.Source, strings.ToUpper(format))
+	}
 	if err := machine.Configure(ctx, next); err != nil {
 		return Result{}, err
 	}
@@ -321,7 +339,6 @@ func (p *Provisioner) provision(ctx context.Context, machine machine, config Con
 	if err := machine.Delete(ctx, next); err != nil {
 		return Result{}, err
 	}
-	keepNext = false
 	return Result{Image: config.Image, GoldenImage: golden, Source: config.Source, Platform: checked.Platform, MacPortsVersion: checked.MacPortsVersion, GuestAgentVersion: checked.GuestAgentVersion, XcodeVersion: checked.XcodeVersion}, nil
 }
 
@@ -340,11 +357,18 @@ func discard(ctx context.Context, machine machine, name string) error {
 	return machine.Delete(ctx, name)
 }
 
-func cleanup(machine machine, name string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+// cleanup stops and deletes a failed setup's guest, deleting even when the
+// stop failed, since the stop may have worked after all, and reports what
+// went wrong so a VM left behind is named rather than forgotten.
+func cleanup(machine machine, name string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	_ = machine.Stop(ctx, name)
-	_ = machine.Delete(ctx, name)
+	stopped := machine.Stop(ctx, name)
+	deleted := machine.Delete(ctx, name)
+	if deleted != nil {
+		deleted = fmt.Errorf("%w; delete it with tart delete %s once it has stopped", deleted, name)
+	}
+	return errors.Join(stopped, deleted)
 }
 
 func (p *Provisioner) say(format string, args ...any) {

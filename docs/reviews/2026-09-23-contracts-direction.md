@@ -1214,6 +1214,16 @@ What it means for the table and for setup:
   Guards needed: `tart clone` onto an existing stopped VM's name silently
   replaces it, and `tart rename` works on a running VM, so dockhand
   confirms a target name is absent through `tart list` first.
+- **Listing while an ASIF VM starts makes the start fail (2026-09-24).**
+  A `tart list` issued while a VM with an ASIF disk is starting makes
+  `tart run` exit with `VZErrorDomain Code=1` "The virtual machine failed
+  to start": ten of eleven starts listed within their first seconds
+  failed, and all nine left alone for 15 seconds or more succeeded (Tart
+  2.37.0, Golden Gate clones, Tahoe 26.6.2 host). The listing reads every VM's disk, ASIF ones
+  through `diskutil image info`. Dockhand never starts an ASIF VM, but
+  until it has its own Tart home its listings can break a person's
+  Golden Gate VM as it starts. Not filed upstream
+  ([note](../activity/2026-09-24-tart-official-interfaces.md)).
 - **The recovery partition cannot be removed in the guest.** SIP refuses
   in a normal boot ("an APFS Recovery Physical Store… csrutil disable
   from the Recovery OS"), and every variant was refused. The guest
