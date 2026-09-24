@@ -37,7 +37,7 @@ func newFakeMachine(names ...string) *fakeMachine {
 	for _, name := range names {
 		images[name] = image{Name: name}
 	}
-	return &fakeMachine{images: images, validation: validation{Platform: testPlatform, MacPortsVersion: macports.DefaultBaseVersion, GuestAgentVersion: "development snapshot"}}
+	return &fakeMachine{images: images, validation: validation{Platform: testPlatform, MacPortsVersion: macports.DefaultBaseVersion, GuestAgentVersion: "development snapshot", CommandLineTools: "26.6"}}
 }
 
 func (f *fakeMachine) event(name string) error {
@@ -283,4 +283,25 @@ func TestCleanupReportsItsErrorsAndStillDeletes(t *testing.T) {
 	_, err = testProvisioner(machine).Run(t.Context(), Options{})
 	require.ErrorContains(t, err, "fixture delete failure")
 	require.ErrorContains(t, err, "tart delete dockhand-base-tahoe-next")
+}
+
+// An image carrying Command Line Tools of another generation than its
+// release's, as both Tahoe images carried the macOS 27 tools, is reported
+// by --check and refused by a build (decision 13).
+func TestToolsOfAnotherGenerationAreReportedAndRefused(t *testing.T) {
+	machine := newFakeMachine("dockhand-base-tahoe")
+	machine.validation.CommandLineTools = "27.0"
+	_, err := testProvisioner(machine).Run(t.Context(), Options{Check: true})
+	require.ErrorContains(t, err, "image dockhand-base-tahoe has Command Line Tools 27.0; Tahoe uses generation 26; rerun with --rebuild")
+
+	machine = newFakeMachine()
+	machine.validation.CommandLineTools = "27.0"
+	_, err = testProvisioner(machine).Run(t.Context(), Options{})
+	require.ErrorContains(t, err, "provisioned image has Command Line Tools 27.0; Tahoe uses generation 26")
+	require.NotContains(t, machine.images, "dockhand-base-tahoe")
+
+	machine = newFakeMachine()
+	result, err := testProvisioner(machine).Run(t.Context(), Options{})
+	require.NoError(t, err)
+	require.Equal(t, "26.6", result.CommandLineTools)
 }

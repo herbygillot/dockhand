@@ -9,7 +9,7 @@ import (
 func TestReleaseForDarwin(t *testing.T) {
 	release, err := ReleaseForDarwin(25)
 	require.NoError(t, err)
-	require.Equal(t, Release{Darwin: 25, Product: "26", Name: "Tahoe", Slug: "tahoe"}, release)
+	require.Equal(t, Release{Darwin: 25, Product: "26", Name: "Tahoe", Slug: "tahoe", Tools: 26}, release)
 	_, err = ReleaseForDarwin(0)
 	require.ErrorContains(t, err, "unknown release")
 }
@@ -78,7 +78,7 @@ func TestTheTableIsTheOnlyPlaceTheReleaseSetIsWritten(t *testing.T) {
 func TestGoldenGateIsMacOS27OnDarwin27(t *testing.T) {
 	release, err := ReleaseForDarwin(27)
 	require.NoError(t, err)
-	require.Equal(t, Release{Darwin: 27, Product: "27", Name: "Golden Gate", Slug: "golden-gate"}, release)
+	require.Equal(t, Release{Darwin: 27, Product: "27", Name: "Golden Gate", Slug: "golden-gate", Tools: 27}, release)
 	require.Equal(t, "macOS 27 (Golden Gate) arm64", Describe(record.Platform{OS: "darwin", Version: "27", Architecture: "arm64"}))
 	_, err = ReleaseForDarwin(26)
 	require.Error(t, err)

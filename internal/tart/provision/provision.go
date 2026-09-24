@@ -8,6 +8,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,6 +43,7 @@ type Result struct {
 	MacPortsVersion   string          `json:"macports_version"`
 	GuestAgentVersion string          `json:"guest_agent_version"`
 	XcodeVersion      string          `json:"xcode_version,omitempty"`
+	CommandLineTools  string          `json:"command_line_tools,omitempty"`
 	Reused            bool            `json:"reused"`
 }
 
@@ -55,6 +57,8 @@ type validation struct {
 	MacPortsVersion   string
 	GuestAgentVersion string
 	XcodeVersion      string
+	// CommandLineTools is the installed tools' version, "" for none.
+	CommandLineTools string
 }
 
 type machine interface {
@@ -232,13 +236,18 @@ func (p *Provisioner) check(ctx context.Context, machine machine, config Config,
 	if checked.XcodeVersion != config.XcodeVersion {
 		return Result{}, fmt.Errorf("setup: image has Xcode %s; expected %s; rerun with --rebuild", checked.XcodeVersion, config.XcodeVersion)
 	}
+	if release, err := tart.ReleaseForPlatform(config.Platform); err != nil {
+		return Result{}, err
+	} else if err := toolsGeneration(checked, release); err != nil {
+		return Result{}, fmt.Errorf("setup: image %s %w; rerun with --rebuild", config.Image, err)
+	}
 	if err := machine.Stop(ctx, name); err != nil {
 		return Result{}, err
 	}
 	if err := machine.Delete(ctx, name); err != nil {
 		return Result{}, err
 	}
-	return Result{Image: config.Image, GoldenImage: golden, Platform: checked.Platform, MacPortsVersion: checked.MacPortsVersion, GuestAgentVersion: checked.GuestAgentVersion, XcodeVersion: checked.XcodeVersion, Reused: reused}, nil
+	return Result{Image: config.Image, GoldenImage: golden, Platform: checked.Platform, MacPortsVersion: checked.MacPortsVersion, GuestAgentVersion: checked.GuestAgentVersion, XcodeVersion: checked.XcodeVersion, CommandLineTools: checked.CommandLineTools, Reused: reused}, nil
 }
 
 func (p *Provisioner) provision(ctx context.Context, machine machine, config Config, release macos.Release, golden string, replacing bool) (result Result, err error) {
@@ -309,6 +318,9 @@ func (p *Provisioner) provision(ctx context.Context, machine machine, config Con
 	if checked.Platform != config.Platform || checked.MacPortsVersion != config.MacPortsVersion || checked.XcodeVersion != config.XcodeVersion {
 		return Result{}, fmt.Errorf("setup: provisioned image does not match its requested platform, MacPorts, or Xcode version")
 	}
+	if err := toolsGeneration(checked, release); err != nil {
+		return Result{}, fmt.Errorf("setup: provisioned image %w", err)
+	}
 	manifest, err := json.Marshal(tart.ImageManifest{
 		Protocol: tart.ImageManifestProtocol, Source: config.Source, Platform: config.Platform,
 		MacPortsPrefix: config.GuestPrefix, MacPortsVersion: config.MacPortsVersion,
@@ -339,7 +351,21 @@ func (p *Provisioner) provision(ctx context.Context, machine machine, config Con
 	if err := machine.Delete(ctx, next); err != nil {
 		return Result{}, err
 	}
-	return Result{Image: config.Image, GoldenImage: golden, Source: config.Source, Platform: checked.Platform, MacPortsVersion: checked.MacPortsVersion, GuestAgentVersion: checked.GuestAgentVersion, XcodeVersion: checked.XcodeVersion}, nil
+	return Result{Image: config.Image, GoldenImage: golden, Source: config.Source, Platform: checked.Platform, MacPortsVersion: checked.MacPortsVersion, GuestAgentVersion: checked.GuestAgentVersion, XcodeVersion: checked.XcodeVersion, CommandLineTools: checked.CommandLineTools}, nil
+}
+
+// toolsGeneration refuses an image whose Command Line Tools are not the
+// release's generation (decision 13).
+func toolsGeneration(checked validation, release macos.Release) error {
+	major, _, _ := strings.Cut(checked.CommandLineTools, ".")
+	if checked.CommandLineTools == "" || major != strconv.Itoa(release.Tools) {
+		tools := checked.CommandLineTools
+		if tools == "" {
+			tools = "none"
+		}
+		return fmt.Errorf("has Command Line Tools %s; %s uses generation %d", tools, release.Name, release.Tools)
+	}
+	return nil
 }
 
 func discard(ctx context.Context, machine machine, name string) error {

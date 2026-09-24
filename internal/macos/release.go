@@ -14,6 +14,12 @@ type Release struct {
 	Product string
 	Name    string
 	Slug    string
+	// Tools is the Command Line Tools generation, the major version, setup
+	// installs for this release (decision 13): MacPorts' GitHub CI pin
+	// where CI covers the release, its buildbots elsewhere, read by hand
+	// on 2026-09-23 (docs/reviews/2026-09-23-contracts-direction.md,
+	// "Toolchain facts"). The facts table will hold it.
+	Tools int
 }
 
 // CurrentDarwin is the macOS a host that is not a Mac models unless told
@@ -37,13 +43,16 @@ var CurrentToolchain = Toolchain{Xcode: "26.3", Clang: "1700.6.4.2"}
 
 // releases is keyed by Darwin major, which is not consecutive: Apple
 // skipped 26, and Golden Gate, macOS 27, is Darwin 27.
+// The tools generations: the arm64 buildbots run 14.2 on 12, 14.3.1 on 13,
+// 16.4 on 15, 26.6 on 26, and 27.0 on 27; GitHub CI pins Xcode 16.2 on 14
+// and 26.4 on 26.
 var releases = map[int]Release{
-	21: {Darwin: 21, Product: "12", Name: "Monterey", Slug: "monterey"},
-	22: {Darwin: 22, Product: "13", Name: "Ventura", Slug: "ventura"},
-	23: {Darwin: 23, Product: "14", Name: "Sonoma", Slug: "sonoma"},
-	24: {Darwin: 24, Product: "15", Name: "Sequoia", Slug: "sequoia"},
-	25: {Darwin: 25, Product: "26", Name: "Tahoe", Slug: "tahoe"},
-	27: {Darwin: 27, Product: "27", Name: "Golden Gate", Slug: "golden-gate"},
+	21: {Darwin: 21, Product: "12", Name: "Monterey", Slug: "monterey", Tools: 14},
+	22: {Darwin: 22, Product: "13", Name: "Ventura", Slug: "ventura", Tools: 14},
+	23: {Darwin: 23, Product: "14", Name: "Sonoma", Slug: "sonoma", Tools: 16},
+	24: {Darwin: 24, Product: "15", Name: "Sequoia", Slug: "sequoia", Tools: 16},
+	25: {Darwin: 25, Product: "26", Name: "Tahoe", Slug: "tahoe", Tools: 26},
+	27: {Darwin: 27, Product: "27", Name: "Golden Gate", Slug: "golden-gate", Tools: 27},
 }
 
 // Known lists the releases this table carries, oldest first. It is the one

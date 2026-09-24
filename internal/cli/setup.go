@@ -54,8 +54,11 @@ func (r *runtime) setupCommand() *cobra.Command {
 				verb = "Ready"
 			}
 			xcode := ""
+			if result.CommandLineTools != "" {
+				xcode = ", Command Line Tools " + plain(result.CommandLineTools)
+			}
 			if result.XcodeVersion != "" {
-				xcode = ", Xcode " + plain(result.XcodeVersion)
+				xcode += ", Xcode " + plain(result.XcodeVersion)
 			}
 			if _, err = fmt.Fprintf(cmd.OutOrStdout(), "%s verification image %s (%s, MacPorts %s, guest agent %s%s).\n", verb, plain(result.Image), plain(macos.Describe(result.Platform)), plain(result.MacPortsVersion), plain(result.GuestAgentVersion), xcode); err != nil {
 				return err

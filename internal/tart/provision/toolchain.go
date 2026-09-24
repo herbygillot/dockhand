@@ -8,11 +8,16 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports/installation"
+	"github.com/herbygillot/dockhand/internal/tart"
 )
 
 func (n *native) EnsureToolchain(ctx context.Context, name string) error {
+	release, err := tart.ReleaseForPlatform(n.config.Platform)
+	if err != nil {
+		return err
+	}
 	return n.during(ctx, "Command line tools", func() error {
-		return macos.EnsureCommandLineTools(ctx, n.streamTarget(name))
+		return macos.EnsureCommandLineTools(ctx, n.streamTarget(name), release)
 	})
 }
 
