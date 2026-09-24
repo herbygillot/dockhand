@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/tart"
@@ -63,6 +65,20 @@ func (n Machine) LocalVM(ctx context.Context, name string) (exists, running bool
 
 // Images lists every VM and image Tart has.
 func (n Machine) Images(ctx context.Context) ([]tart.Image, error) { return n.list(ctx) }
+
+// IP is a running VM's address from `tart ip`, waiting up to wait seconds
+// for the VM to take one.
+func (n Machine) IP(ctx context.Context, vm string, wait int) (string, error) {
+	out, err := n.run(ctx, nil, "ip", vm, "--wait", strconv.Itoa(wait))
+	if err != nil {
+		return "", err
+	}
+	address := strings.TrimSpace(string(out))
+	if net.ParseIP(address) == nil {
+		return "", fmt.Errorf("tart: VM %s has no IP address: %q", vm, address)
+	}
+	return address, nil
+}
 
 // DiskFormat reports a VM's disk format, "raw" or "asif", from `tart get`.
 func (n Machine) DiskFormat(ctx context.Context, name string) (string, error) {

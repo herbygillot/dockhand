@@ -44,7 +44,7 @@ The rest reach something outside the checkout and run only when named:
 | `DOCKHAND_TEST_PORTS_REPO` | `git` `TestCaptureRealPortsCheckout` | a real macports-ports checkout, read only |
 | `DOCKHAND_TEST_GITHUB_PR`, `DOCKHAND_TEST_GITHUB_TOKEN` | `forge/github` `inspect_live_test.go` | one pull request, `owner/repo#number`, read with that token |
 | `DOCKHAND_TEST_BOOTSTRAP_VM` | `tart/provision` `TestLiveAgentRegistration` | a running disposable VM you own, whose agent it registers |
-| `DOCKHAND_TEST_TART_IMAGE` | `verify/tart`, `tart/host` `TestLiveTartContracts` | the acceptance test above; Tart's listing, stop, and delete behavior, on a clone of the named raw-disk image |
+| `DOCKHAND_TEST_TART_IMAGE` | `verify/tart`, `tart/host` `TestLiveTartContracts`, `tart/channel` `TestLiveChannel` | the acceptance test above; Tart's listing, stop, and delete behavior, on a clone of the named raw-disk image |
 | `DOCKHAND_TEST_TART_ASIF_SOURCE` | `tart/host` `TestLiveTartASIFBlocksTheListing` | an ASIF image such as Golden Gate's, cloned and run briefly; every Tart listing on the Mac fails while it runs |
 
 ## State and service boundaries

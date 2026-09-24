@@ -26,6 +26,9 @@ type Spec struct {
 	Stdin io.Reader
 	// Stdout receives standard output in addition to the captured copy.
 	Stdout io.Writer
+	// StdoutOnly sends standard output to Stdout alone, uncaptured, for a
+	// stream too large to keep, such as a file being transferred.
+	StdoutOnly bool
 	// Combined captures standard error into the same buffer as standard output.
 	Combined   bool
 	ExtraFiles []*os.File
@@ -84,6 +87,9 @@ func Run(ctx context.Context, spec Spec) (Result, error) {
 		out = io.MultiWriter(spec.Stdout, output)
 	}
 	command.Stdout = out
+	if spec.StdoutOnly && spec.Stdout != nil && !spec.Combined {
+		command.Stdout = spec.Stdout
+	}
 	if spec.Combined {
 		command.Stderr = out
 	} else {
