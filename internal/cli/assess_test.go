@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -16,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/assess"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -130,9 +130,7 @@ func TestAssessHumanOutputExplainsScope(t *testing.T) {
 }
 
 func TestAssessIndexedSelectionKeepsSubportsAndCoverageProblems(t *testing.T) {
-	if _, err := exec.LookPath("portindex"); err != nil {
-		t.Skip("native portindex required")
-	}
+	testsupport.MacPortsTool(t, "portindex")
 	t.Setenv("HOME", t.TempDir())
 	config, repo, downloads, catalogs := automaticCLI(t, "1.0")
 	head, tree, err := repo.Branch(t.Context(), "candidate")

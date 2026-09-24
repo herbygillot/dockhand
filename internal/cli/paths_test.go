@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/spf13/cobra"
@@ -147,8 +148,7 @@ func TestGlobalPrefixReachesPreviewAndDriverConstruction(t *testing.T) {
 	prefix := filepath.Join(working, "MacPorts prefix")
 	require.NoError(t, os.MkdirAll(filepath.Join(prefix, "bin"), 0700))
 	require.NoError(t, os.Symlink(config.TclExecutable, filepath.Join(prefix, "bin", "port-tclsh")))
-	indexer, err := exec.LookPath("portindex")
-	require.NoError(t, err)
+	indexer := testsupport.MacPortsTool(t, "portindex")
 	require.NoError(t, os.Symlink(indexer, filepath.Join(prefix, "bin", "portindex")))
 	config.Repository, config.TclExecutable = "", ""
 	t.Chdir(working)
@@ -161,7 +161,7 @@ func TestGlobalPrefixReachesPreviewAndDriverConstruction(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	err = Run(t.Context(), []string{"bump-revision", "fixture", "--subject", "rebuild", "--dry-run", "--prefix", "missing prefix"}, Streams{Out: &stdout, Err: &stderr}, config)
+	err := Run(t.Context(), []string{"bump-revision", "fixture", "--subject", "rebuild", "--dry-run", "--prefix", "missing prefix"}, Streams{Out: &stdout, Err: &stderr}, config)
 	require.ErrorContains(t, err, filepath.Join(working, "missing prefix", "bin"))
 	require.NoDirExists(t, filepath.Dir(config.DBPath))
 

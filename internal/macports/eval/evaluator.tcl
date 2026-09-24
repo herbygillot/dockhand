@@ -95,7 +95,11 @@ namespace eval ::dockhand {
                     set has_homepage [info exists homepage]
                     if {!$has_homepage} { set livecheck.url {} }
                     set types_dir [getdefaultportresourcepath "port1.0/livecheck"]
-                    set available_types [glob -directory $types_dir -tails -types f *.tcl]
+                    # Tcl 9's glob returns nothing where 8.6 raised an
+                    # error; a tree without checker definitions has no
+                    # effective livecheck on either.
+                    set available_types [glob -nocomplain -directory $types_dir -tails -types f *.tcl]
+                    if {![llength $available_types]} { error "no livecheck types under $types_dir" }
                     set available_types [regsub -all {\.tcl} [join $available_types |] {}]
                     if {${livecheck.type} eq "default"} {
                         if {$has_master_sites} {

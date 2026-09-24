@@ -3,7 +3,6 @@ package portedit
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,10 +25,7 @@ func probeFixture(t *testing.T, declaration string) (*Service, Request, *sourceI
 // move with it.
 func probeFixtureSelecting(t *testing.T, declaration, subport string) (*Service, Request, *sourceInput) {
 	t.Helper()
-	executable, err := exec.LookPath("port-tclsh")
-	if err != nil {
-		t.Skip("native MacPorts evaluator required")
-	}
+	executable := testsupport.MacPortsTclsh(t)
 	root := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "devel/fixture"), 0700))
 	body := `PortSystem 1.0
@@ -47,7 +44,7 @@ proc github.setup {owner project raw prefix} {
 ` + declaration + "\nrevision 3\nchecksums sha256 " + strings.Repeat("0", 64) + "\n"
 	require.NoError(t, os.WriteFile(filepath.Join(root, "devel/fixture/Portfile"), []byte(body), 0600))
 	request := Request{Action: record.Bump, Source: record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, Workspace: adopt(t, root), Selection: macports.Selection{Selector: "fixture", Subport: subport}}
-	service := &Service{Ports: &eval.Evaluator{Executable: executable}}
+	service := &Service{Ports: &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}}
 	input, err := service.load(t.Context(), &request)
 	require.NoError(t, err)
 	return service, request, input

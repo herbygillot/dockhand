@@ -1,21 +1,18 @@
 package eval_test
 
 import (
-	"os/exec"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
 func TestVersionSelectionUsesTclFiltersAndMacPortsOrdering(t *testing.T) {
 	t.Parallel()
-	executable, err := exec.LookPath("port-tclsh")
-	if err != nil {
-		t.Skip("MacPorts is required")
-	}
-	evaluator := eval.Evaluator{Executable: executable}
+	executable := testsupport.MacPortsTclsh(t)
+	evaluator := eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}
 	expression := `{archive/refs/tags/v(1\.[0-9]+)\.tar\.gz}`
 	candidates := []macports.VersionCandidate{{Version: "1.9", MatchText: "https://github.com/o/p/archive/refs/tags/v1.9.tar.gz"}, {Version: "2.0", MatchText: "https://github.com/o/p/archive/refs/tags/v2.0.tar.gz"}, {Version: "1.10", MatchText: "https://github.com/o/p/archive/refs/tags/v1.10.tar.gz"}}
 	result, err := evaluator.SelectVersion(t.Context(), "1.9", expression, candidates)
@@ -40,11 +37,8 @@ func TestVersionSelectionUsesTclFiltersAndMacPortsOrdering(t *testing.T) {
 
 func TestVersionSelectionNormalizesMacPortsComparison(t *testing.T) {
 	t.Parallel()
-	executable, err := exec.LookPath("port-tclsh")
-	if err != nil {
-		t.Skip("MacPorts is required")
-	}
-	evaluator := eval.Evaluator{Executable: executable}
+	executable := testsupport.MacPortsTclsh(t)
+	evaluator := eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}
 	candidates := []macports.VersionCandidate{{Version: "11.5.3", MatchText: "v11.5.3"}}
 	for _, test := range []struct {
 		current string
@@ -61,11 +55,8 @@ func TestVersionSelectionNormalizesMacPortsComparison(t *testing.T) {
 
 func TestExtractVersionsUsesNativeTclAndLineBoundaries(t *testing.T) {
 	t.Parallel()
-	executable, err := exec.LookPath("port-tclsh")
-	if err != nil {
-		t.Skip("MacPorts is required")
-	}
-	evaluator := eval.Evaluator{Executable: executable}
+	executable := testsupport.MacPortsTclsh(t)
+	evaluator := eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}
 	versions, err := evaluator.ExtractVersions(t.Context(), `{\mversion_([[:digit:]]+\.[[:digit:]]+)\M}`, "version_1.9 version_1.10\nversion_1.9 xversion_9.9\n", false)
 	require.NoError(t, err)
 	require.Equal(t, []string{"1.9", "1.10"}, versions)

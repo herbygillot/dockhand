@@ -19,23 +19,33 @@ Tests that stand in for an external tool, a fake `tart`, `git`, `gh`, or `portin
 The opt-in real VM acceptance test requires macOS with a GUI login domain, Tart, a prepared local image with the Tart guest agent, passwordless guest sudo, MacPorts with Tcl JSON support, and no installed ports. It creates a disposable clone and preserves host diagnostics. It proves that one driver process can submit and exit and another process can settle and release the same run:
 
 ```sh
-DOCKHAND_TEST_TART_IMAGE=dockhand-base-tahoe \
+DOCKHAND_TEST_TART_IMAGE=dockhand-base-tahoe DOCKHAND_TEST_MACPORTS_TCLSH=/opt/local/bin/port-tclsh \
 go test -v ./internal/verify/tart -run '^TestRealTartBuildSurvivesSubmittingDriverExit$' -timeout 16m
 ```
 
 ## Other opt-in tests
 
-Tests that need MacPorts find `port-tclsh` and `portindex` on `PATH` and skip without them; they run on a Mac, and on Linux with MacPorts Base built there, where the evaluator models a Mac. The rest reach something outside the checkout and run only when named:
+Tests that need MacPorts run only against the installation `DOCKHAND_TEST_MACPORTS_TCLSH` names, taking `portindex` from beside it, and skip without it: a `PATH` that happens to reach another Base would test that one silently. They run on a Mac, and on Linux with MacPorts Base built there, where the evaluator models a Mac:
+
+```sh
+DOCKHAND_TEST_MACPORTS_TCLSH=/opt/local/bin/port-tclsh make test
+```
+
+The rest reach something outside the checkout and run only when named:
 
 | Variable | Test | What it reaches |
 | --- | --- | --- |
-| `DOCKHAND_TEST_MACPORTS_TCLSH` | `macports/eval`, `macports/selection` | a `port-tclsh` other than the one on `PATH` |
+| `DOCKHAND_TEST_MACPORTS_TCLSH` | every test that evaluates Portfiles or builds an index | the MacPorts installation whose `port-tclsh` it names |
+| `DOCKHAND_TEST_BASE_ADAPTER=preview` | the same | admits a development build of Base, such as master, which the evaluator otherwise refuses; the parent-side host-access regressions skip under it |
+| `DOCKHAND_TEST_TCLSH` | `tcl/rpc` | a `tclsh` other than the one on `PATH`, such as a Tcl 9 `port-tclsh` |
+| `DOCKHAND_TEST_PORTS_TREE` | `macports/eval` `TestPortsThatReadTheHostThroughBaseCompilerQueries` | a macports-ports checkout, read only |
 | `DOCKHAND_GUARD_TREE` | `macports/eval` `session_guard_test.go` | a ports tree whose Portfiles the session guard samples |
 | `DOCKHAND_TEST_DEPENDENCY_HELPERS=1` | `macports/dependency` `live_test.go` | the installed `go2port`/`cargo2port` and an upstream Go archive |
 | `DOCKHAND_TEST_PORTS_REPO` | `git` `TestCaptureRealPortsCheckout` | a real macports-ports checkout, read only |
 | `DOCKHAND_TEST_GITHUB_PR`, `DOCKHAND_TEST_GITHUB_TOKEN` | `forge/github` `inspect_live_test.go` | one pull request, `owner/repo#number`, read with that token |
 | `DOCKHAND_TEST_BOOTSTRAP_VM` | `tart/provision` `TestLiveAgentRegistration` | a running disposable VM you own, whose agent it registers |
-| `DOCKHAND_TEST_TART_IMAGE` | `verify/tart` | the acceptance test above |
+| `DOCKHAND_TEST_TART_IMAGE` | `verify/tart`, `tart/host` `TestLiveTartContracts` | the acceptance test above; Tart's listing, stop, and delete behavior, on a clone of the named raw-disk image |
+| `DOCKHAND_TEST_TART_ASIF_SOURCE` | `tart/host` `TestLiveTartASIFBlocksTheListing` | an ASIF image such as Golden Gate's, cloned and run briefly; every Tart listing on the Mac fails while it runs |
 
 ## State and service boundaries
 

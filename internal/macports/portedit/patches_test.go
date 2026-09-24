@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -17,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,10 +24,7 @@ import (
 // temp directory, which a parallel preparation of another fixture would hold
 // open while running.
 func TestPreparationChecksDeclaredPatchesAgainstTheNewSource(t *testing.T) {
-	executable, err := exec.LookPath("port-tclsh")
-	if err != nil {
-		t.Skip("MacPorts required")
-	}
+	executable := testsupport.MacPortsTclsh(t)
 	var archive bytes.Buffer
 	gz := gzip.NewWriter(&archive)
 	tw := tar.NewWriter(gz)
@@ -52,7 +49,7 @@ master_sites @SITE@/${version}
 checksums sha256 aaaa size 2
 patchfiles good.diff stale.diff
 `, "@SITE@", server.URL)), 0600))
-	s := &Service{Ports: &eval.Evaluator{Executable: executable}, Archives: archives.Client{HTTP: server.Client()}}
+	s := &Service{Ports: &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}, Archives: archives.Client{HTTP: server.Client()}}
 	r := Request{Action: record.Bump, Source: record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, Workspace: adopt(t, root), Selection: macports.Selection{Selector: "fixture"}, Version: "1.2.4", Release: &record.Release{Selection: record.Selection{Requested: "1.2.4"}, Archive: true, Version: "1.2.4"}}
 	result, err := s.Prepare(t.Context(), r)
 	require.NoError(t, err, "a rejected patch is a finding, not a refusal")

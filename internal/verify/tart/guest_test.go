@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,10 +18,7 @@ import (
 // metadata. All file writes stay under the test root; no VM or host port runs.
 func TestGuestBuildsEditedRootBeforeDependent(t *testing.T) {
 	t.Parallel()
-	executable, err := exec.LookPath("port-tclsh")
-	if err != nil {
-		t.Skip("MacPorts Tcl required")
-	}
+	executable := testsupport.MacPortsTclsh(t)
 	for _, failure := range []string{"", "rootport", "external"} {
 		t.Run("failure="+failure, func(t *testing.T) {
 			root := t.TempDir()
@@ -106,10 +104,7 @@ proc exec {args} {
 // makes them decisive; a hung test is stopped at the timeout either way.
 func TestGuestTestPolicyDecidesWhetherTestsAreAdvisory(t *testing.T) {
 	t.Parallel()
-	executable, err := exec.LookPath("port-tclsh")
-	if err != nil {
-		t.Skip("MacPorts Tcl required")
-	}
+	executable := testsupport.MacPortsTclsh(t)
 	for _, tc := range []struct {
 		policy  record.TestPolicy
 		mode    string
@@ -220,10 +215,7 @@ proc exec {args} {
 // another distfile, stay out.
 func TestGuestKeepsMacPortsErrorLinesAndMirrorAttempts(t *testing.T) {
 	t.Parallel()
-	executable, err := exec.LookPath("port-tclsh")
-	if err != nil {
-		t.Skip("MacPorts Tcl required")
-	}
+	executable := testsupport.MacPortsTclsh(t)
 	root := t.TempDir()
 	prefix := filepath.Join(root, "prefix")
 	require.NoError(t, os.MkdirAll(filepath.Join(prefix, "etc/macports"), 0700))

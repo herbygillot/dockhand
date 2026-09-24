@@ -12,6 +12,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,15 +20,7 @@ func liveEvaluator(t *testing.T) *Evaluator {
 	t.Helper()
 	// DOCKHAND_TEST_BASE_ADAPTER=preview runs the suite against a
 	// development build of Base, which the evaluator otherwise refuses.
-	adapter := os.Getenv("DOCKHAND_TEST_BASE_ADAPTER")
-	if executable := os.Getenv("DOCKHAND_TEST_MACPORTS_TCLSH"); executable != "" {
-		return &Evaluator{Executable: executable, Adapter: adapter}
-	}
-	executable, err := exec.LookPath("port-tclsh")
-	if err != nil {
-		t.Skip("MacPorts port-tclsh is required for integration tests")
-	}
-	return &Evaluator{Executable: executable, Adapter: adapter}
+	return &Evaluator{Executable: testsupport.MacPortsTclsh(t), Adapter: testsupport.BaseAdapter()}
 }
 
 func putFile(t *testing.T, root, name, content string) {

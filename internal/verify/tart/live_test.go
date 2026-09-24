@@ -16,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/stretchr/testify/require"
@@ -137,10 +138,10 @@ destroot {
 	defer store.Close()
 	repository, err := store.RegisterRepository(ctx, repo.CommonDir)
 	require.NoError(t, err)
-	ports := &eval.Evaluator{}
+	ports := &eval.Evaluator{Executable: testsupport.MacPortsTclsh(t)}
 	platform, err := ports.NativePlatform(ctx)
 	require.NoError(t, err)
-	config := Config{Image: image, ArtifactDirectory: filepath.Join(directory, "artifacts"), Platform: platform, Capacity: 1}
+	config := Config{Image: image, ArtifactDirectory: filepath.Join(directory, "artifacts"), Platform: platform, Capacity: 1, PortIndexExecutable: testsupport.MacPortsTool(t, "portindex")}
 	provider := &Provider{Config: config, State: store, Repository: repository.ID, Repo: repo}
 	t.Log("hashing prepared VM image")
 	environment, err := provider.describeEnvironment(ctx)

@@ -255,11 +255,8 @@ printf 'core 0\n' > "$destination/PortIndex.quick"
 }
 
 func TestNativeEvaluationSelectsIndexedSubports(t *testing.T) {
-	executable, err := exec.LookPath("port-tclsh")
-	if err != nil {
-		t.Skip("MacPorts port-tclsh is required")
-	}
-	evaluator := &eval.Evaluator{Executable: executable}
+	executable := testsupport.MacPortsTclsh(t)
+	evaluator := &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}
 	native, err := evaluator.NativePlatform(t.Context())
 	require.NoError(t, err)
 	tree, index := fixture(t,

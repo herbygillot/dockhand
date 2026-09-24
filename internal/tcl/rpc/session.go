@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/herbygillot/dockhand/internal/tcl/shell"
 )
@@ -191,6 +192,14 @@ func (s *Session) breakSession(cause error) error {
 }
 
 func (s *Session) roundTrip(op string, args []string) (string, []byte, error) {
+	// The protocol carries UTF-8 text; a Tcl 9 interpreter refuses anything
+	// else, so it is refused here, before it is sent, and the session
+	// stays usable.
+	for i, a := range append([]string{op}, args...) {
+		if !utf8.ValidString(a) {
+			return "", nil, CallError{Msg: fmt.Sprintf("rpc: call argument %d is not valid UTF-8", i)}
+		}
+	}
 	var req bytes.Buffer
 	fmt.Fprintf(&req, "CALL %d\n", 1+len(args))
 	for _, a := range append([]string{op}, args...) {
@@ -235,6 +244,11 @@ func (s *Session) roundTrip(op string, args []string) (string, []byte, error) {
 		body := string(payload[:n])
 		switch fields[1] {
 		case "ok":
+			// Tcl 8.6 encodes a lone surrogate as invalid UTF-8 rather
+			// than refusing it, as Tcl 9 does.
+			if !utf8.ValidString(body) {
+				return "", noise.Bytes(), CallError{Msg: "rpc: reply is not valid UTF-8"}
+			}
 			return body, noise.Bytes(), nil
 		case "err":
 			return "", noise.Bytes(), CallError{Msg: body}

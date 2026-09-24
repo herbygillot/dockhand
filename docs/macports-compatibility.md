@@ -15,7 +15,7 @@ Fetch inspection probes native target/hook registration with an inert temporary 
 | 2.12.6 | Evaluator suite and capability-failure tests on installed Base/Tcl 8.6.17, Darwin 25 arm64. |
 | 2.11.6 | Same evaluator suite on an isolated build from the local `v2.11.6` tag, Tcl 8.6.16, Darwin 25 arm64. Newer host-based credential-selector tests skip; legacy selector tests pass. |
 | 2.12.2–2.12.5, 2.10.7, 2.9.3, 2.8.1 | Earlier source review only; 2.10 and older are refused. |
-| 2.12.99 (master) | Startup and runtime inspection with `DOCKHAND_TEST_BASE_ADAPTER=preview`, Tcl 9.0.4, Darwin 25 arm64; refused otherwise. |
+| 2.12.99 (master) | Every `internal/macports` package, `workflow/preparation`, `upstream`, and `outdated` pass with `DOCKHAND_TEST_BASE_ADAPTER=preview`, Tcl 9.0.4, Darwin 25 arm64, except the parent-side host-access regressions, which skip: master asks compiler and SDK questions in its parent interpreter, unobserved. Refused otherwise. |
 | Other versions | No source-review record; refused unless in the 2.11 or 2.12 family. |
 
 These tests cover synthetic Portfiles, source-bound resources, variants, subports, metadata failures, fetch-hook inspection, credentials, and version comparison. They do not certify every current PortGroup or port build on these Base versions.
@@ -25,6 +25,11 @@ Run the evaluator suite against another isolated installation with:
 ```sh
 DOCKHAND_TEST_MACPORTS_TCLSH=/path/to/prefix/bin/port-tclsh \
   go test ./internal/macports/eval -count=1 -v
+
+# Base master, which the evaluator admits only with the preview adapter:
+DOCKHAND_TEST_BASE_ADAPTER=preview \
+DOCKHAND_TEST_MACPORTS_TCLSH=/opt/macports-master/bin/port-tclsh \
+  go test ./internal/macports/... -count=1
 ```
 
 Select an appropriate compiler/SDK when building the older installation. The implementation continues to share one Tcl adapter; a separate version adapter should be introduced only for a demonstrated contract difference.

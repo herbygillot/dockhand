@@ -5,19 +5,16 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestBindingSeparatesEqualChecksumsAndPreservesAppendOwnership(t *testing.T) {
-	executable, err := exec.LookPath("port-tclsh")
-	if err != nil {
-		t.Skip("MacPorts required")
-	}
+	executable := testsupport.MacPortsTclsh(t)
 	root := t.TempDir()
 	path := filepath.Join(root, "devel/fixture/Portfile")
 	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0700))
@@ -38,7 +35,7 @@ distfiles-append pinned.zip
 	require.NoError(t, os.WriteFile(path, src, 0600))
 	tree, err := macports.NewTree(record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, root, record.Platform{})
 	require.NoError(t, err)
-	e := &eval.Evaluator{Executable: executable}
+	e := &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}
 	targets, err := e.Resolve(t.Context(), tree, macports.Selection{Selector: "fixture"})
 	require.NoError(t, err)
 	bound, err := tree.Select(targets[0])
@@ -58,10 +55,7 @@ distfiles-append pinned.zip
 }
 
 func TestBindingAcceptsLegacyGroupsAndOwnsThemByFirstAlgorithm(t *testing.T) {
-	executable, err := exec.LookPath("port-tclsh")
-	if err != nil {
-		t.Skip("MacPorts required")
-	}
+	executable := testsupport.MacPortsTclsh(t)
 	root := t.TempDir()
 	path := filepath.Join(root, "devel/fixture/Portfile")
 	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0700))
@@ -77,7 +71,7 @@ checksums md5 aaaa \
 	require.NoError(t, os.WriteFile(path, src, 0600))
 	tree, err := macports.NewTree(record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, root, record.Platform{})
 	require.NoError(t, err)
-	e := &eval.Evaluator{Executable: executable}
+	e := &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}
 	targets, err := e.Resolve(t.Context(), tree, macports.Selection{Selector: "fixture"})
 	require.NoError(t, err)
 	bound, err := tree.Select(targets[0])
@@ -100,10 +94,7 @@ checksums md5 aaaa \
 // twice has no owner.
 func TestBindingTracesTableAndArrayValuesToTheirOneLiteral(t *testing.T) {
 	t.Parallel()
-	executable, err := exec.LookPath("port-tclsh")
-	if err != nil {
-		t.Skip("MacPorts required")
-	}
+	executable := testsupport.MacPortsTclsh(t)
 	rmd, sha := strings.Repeat("a", 40), strings.Repeat("b", 64)
 	for _, test := range []struct{ name, body string }{
 		{"array elements", "set rmd160(fixture) " + rmd + "\nset sha256(fixture) " + sha + "\nset size(fixture) 646632\nchecksums rmd160 $rmd160(${subport}) sha256 $sha256(${subport}) size $size(${subport})\n"},
@@ -118,7 +109,7 @@ func TestBindingTracesTableAndArrayValuesToTheirOneLiteral(t *testing.T) {
 			require.NoError(t, os.WriteFile(path, src, 0600))
 			tree, err := macports.NewTree(record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, root, record.Platform{})
 			require.NoError(t, err)
-			e := &eval.Evaluator{Executable: executable}
+			e := &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}
 			targets, err := e.Resolve(t.Context(), tree, macports.Selection{Selector: "fixture"})
 			require.NoError(t, err)
 			bound, err := tree.Select(targets[0])

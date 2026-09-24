@@ -12,16 +12,14 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/herbygillot/dockhand/internal/workflow/preparation"
 	"github.com/stretchr/testify/require"
 )
 
 func preparationFixture(t *testing.T, body string) (*preparation.Service, preparation.Request) {
 	t.Helper()
-	executable, err := exec.LookPath("port-tclsh")
-	if err != nil {
-		t.Skip("MacPorts port-tclsh is required for preparation integration tests")
-	}
+	executable := testsupport.MacPortsTclsh(t)
 	root := t.TempDir()
 	fixtureGit(t, root, "init", "--quiet", "-b", "candidate")
 	for name, data := range map[string]string{
@@ -38,7 +36,7 @@ func preparationFixture(t *testing.T, body string) (*preparation.Service, prepar
 	require.NoError(t, err)
 	commit, tree, err := repo.Branch(t.Context(), "candidate")
 	require.NoError(t, err)
-	return &preparation.Service{Repo: repo, Ports: &eval.Evaluator{Executable: executable}}, preparation.Request{
+	return &preparation.Service{Repo: repo, Ports: &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}}, preparation.Request{
 		Action: record.BumpRevision, Source: record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree)}, Selection: macports.Selection{Selector: "fixture"}, Subject: "rebuild against updated dependency",
 	}
 }

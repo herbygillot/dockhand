@@ -2,7 +2,6 @@ package portindex
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -41,10 +40,7 @@ func TestResolveToolProbesRuntimeOnlyForTclLaunchers(t *testing.T) {
 	_, err = ResolveTool(t.Context(), Config{Executable: stub, Digest: "sha256:other"})
 	require.ErrorContains(t, err, "executable changed")
 
-	executable, err := exec.LookPath("portindex")
-	if err != nil {
-		t.Skip("MacPorts portindex is required for the runtime probe")
-	}
+	executable := testsupport.MacPortsTool(t, "portindex")
 	config, err = ResolveTool(t.Context(), Config{Executable: executable})
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(config.Runtime, "macports-"), config.Runtime)
@@ -52,10 +48,7 @@ func TestResolveToolProbesRuntimeOnlyForTclLaunchers(t *testing.T) {
 
 func TestPortIndexUsesPortGroupsFromFrozenSource(t *testing.T) {
 	t.Parallel()
-	executable, err := exec.LookPath("portindex")
-	if err != nil {
-		t.Skip("MacPorts portindex is required for integration test")
-	}
+	executable := testsupport.MacPortsTool(t, "portindex")
 	root := t.TempDir()
 	put := func(name, contents string) {
 		path := filepath.Join(root, filepath.FromSlash(name))
@@ -97,10 +90,7 @@ func TestSharedPortGroupChangesRequireFullIndex(t *testing.T) {
 
 func TestIncrementalIndexAllowsOnlyExistingUnrelatedOmissions(t *testing.T) {
 	t.Parallel()
-	executable, err := exec.LookPath("portindex")
-	if err != nil {
-		t.Skip("MacPorts portindex is required")
-	}
+	executable := testsupport.MacPortsTool(t, "portindex")
 	root := t.TempDir()
 	put := func(name, contents string) {
 		file := filepath.Join(root, filepath.FromSlash(name))
