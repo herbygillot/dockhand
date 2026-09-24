@@ -22,6 +22,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
 	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/verify/ledger"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/stretchr/testify/require"
 )
@@ -272,9 +273,8 @@ func TestConcurrentSubmitAndClosedRequest(t *testing.T) {
 	require.Equal(t, verify.RequestClosed, closed.State)
 	request := f.request
 	request.ID = "never-submitted"
-	result, err := f.provider.Submit(t.Context(), request)
-	require.NoError(t, err)
-	require.Equal(t, verify.Unsupported, result.State)
+	_, err = f.provider.Submit(t.Context(), request)
+	require.ErrorIs(t, err, ledger.ErrClosed, "a closed request refuses as Tart's does, and reconciliation settles it")
 	changed := f.request
 	changed.Spec.Target.Name = "other"
 	_, err = f.provider.Submit(t.Context(), changed)
@@ -445,9 +445,8 @@ func TestCancellationFencesUncertainPush(t *testing.T) {
 			require.Equal(t, record.ExecutionClosed, row.State)
 			require.False(t, row.Occupied)
 			f.api.err, f.api.runsErr = nil, nil
-			stale, err := restarted.Submit(t.Context(), f.request)
-			require.NoError(t, err)
-			require.Equal(t, verify.Unsupported, stale.State)
+			_, err = restarted.Submit(t.Context(), f.request)
+			require.ErrorIs(t, err, ledger.ErrClosed, "a stale submit is refused, and pushes nothing")
 			after, err := f.provider.Repo.RemoteHead(t.Context(), f.remote, "candidate")
 			require.NoError(t, err)
 			require.Equal(t, head, after)
@@ -486,9 +485,12 @@ func TestCancellationDetachesOnlyItsOwnTracking(t *testing.T) {
 	logs, err := restarted.ReadLog(t.Context(), first.Run, 0, 4096)
 	require.NoError(t, err)
 	require.True(t, logs.Complete)
+	// A stale submit gets the admission it would find by reconciling, the
+	// same run, which observes as canceled; it starts nothing.
 	stale, err := restarted.Submit(t.Context(), f.request)
 	require.NoError(t, err)
-	require.Equal(t, verify.Unsupported, stale.State)
+	require.Equal(t, verify.Admitted, stale.State)
+	require.Equal(t, first.Run, stale.Run)
 	// A driver that lost the cancellation response can recover the same handle.
 	recovered, err := restarted.Reconcile(t.Context(), f.request.ID, verify.ReconcileOptions{CancelRequested: true})
 	require.NoError(t, err)

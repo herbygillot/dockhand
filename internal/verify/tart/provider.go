@@ -11,7 +11,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/state"
 )
 
-var errClosed = errors.New("tart: submission is permanently closed")
 
 var errCapacity = errors.New("tart: pool is at capacity")
 

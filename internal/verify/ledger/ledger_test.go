@@ -124,3 +124,23 @@ func TestReadChunkReportsTheEnd(t *testing.T) {
 	require.ErrorIs(t, err, os.ErrNotExist)
 	require.Equal(t, int64(3), next, "a failed read leaves the offset where it was")
 }
+
+// One rule decides which rows refuse a later Submit, for every provider: a
+// closed row, and a row released before it produced a result. A row
+// released with a result finished its run.
+func TestSubmissionClosedIsOneRule(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		row    record.ProviderExecution
+		closed bool
+	}{
+		{record.ProviderExecution{State: record.ExecutionClosed}, true},
+		{record.ProviderExecution{State: record.ExecutionClosed, Result: []byte(`{"Detail":"rejected"}`)}, true},
+		{record.ProviderExecution{State: record.ExecutionReleased}, true},
+		{record.ProviderExecution{State: record.ExecutionReleased, Result: []byte(`{}`)}, false},
+		{record.ProviderExecution{State: record.ExecutionAdmitted}, false},
+		{record.ProviderExecution{State: record.ExecutionReserved}, false},
+	} {
+		require.Equal(t, test.closed, ledger.SubmissionClosed(test.row), "%+v", test.row)
+	}
+}

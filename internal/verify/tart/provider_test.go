@@ -21,6 +21,7 @@ import (
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/verify/ledger"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/stretchr/testify/require"
 )
@@ -266,7 +267,7 @@ func TestAdmissionIsIdempotentAndClosesUnknownIDs(t *testing.T) {
 	late := f.request
 	late.ID = "late"
 	_, err = f.provider.Submit(t.Context(), late)
-	require.ErrorIs(t, err, errClosed)
+	require.ErrorIs(t, err, ledger.ErrClosed)
 	require.Equal(t, 1, m.calls["clone"])
 }
 
@@ -397,7 +398,7 @@ func TestCapacityCountsReservationsAcrossRepositoriesAndExternalVMs(t *testing.T
 	require.Equal(t, verify.RequestClosed, reconciliation.State)
 	require.Len(t, reconciliation.Submission.Resources, 1)
 	_, err = a.provider.Submit(t.Context(), a.request)
-	require.ErrorIs(t, err, errClosed)
+	require.ErrorIs(t, err, ledger.ErrClosed)
 	m.stageError = nil
 	result, err = b.provider.Submit(t.Context(), b.request)
 	require.NoError(t, err)

@@ -89,12 +89,13 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 	err := p.locked(ctx, request.ID, func(ctx context.Context, e *ledger.Entry) error {
 		row, err := e.Read(ctx)
 		if err == nil {
-			if row.State == record.ExecutionClosed || row.State == record.ExecutionReleased {
-				result, err = rejectedSubmission(row)
-				if result.State == "" {
-					result = verify.Submission{State: verify.Unsupported, Detail: "GitHub submission is permanently closed"}
+			if ledger.SubmissionClosed(row) {
+				// A rejection recorded at the first submit is answered
+				// again; anything else closed refuses.
+				if result, err = rejectedSubmission(row); err != nil || result.State != "" {
+					return err
 				}
-				return err
+				return fmt.Errorf("github verification: %w", ledger.ErrClosed)
 			}
 			var saved payload
 			if err := json.Unmarshal(row.Payload, &saved); err != nil {

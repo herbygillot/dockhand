@@ -3,9 +3,9 @@
 // released, scoped to one repository and one pool, and edited under a
 // per-request file lock so that drivers in different processes take
 // turns. The rule it exists to keep is that a request the ledger has
-// closed refuses every later submit; what a provider answers when it
-// refuses is the provider's own, as is everything in the row's payload
-// and result.
+// closed refuses every later submit, with ErrClosed, whichever provider
+// keeps it (SubmissionClosed); everything in the row's payload and result
+// is the provider's own.
 package ledger
 
 import (
@@ -95,6 +95,24 @@ func (e *Entry) View(ctx context.Context, fn func(context.Context, state.Provide
 // precondition over other rows.
 func (e *Entry) Update(ctx context.Context, fn func(context.Context, state.ProviderTx) error) error {
 	return e.ledger.Store.ProviderUpdate(ctx, e.Pool.ID, fn)
+}
+
+// ErrClosed refuses a Submit of a request closed to further submission.
+// The workflow's reconciliation, which reports the request closed, settles
+// the attempt; a Submit that answered with a verdict instead would record
+// one for a build that never ran.
+var ErrClosed = errors.New("verify: the request is closed to further submission")
+
+// SubmissionClosed reports whether a request's row refuses a later Submit:
+// reconciliation closed it, or it was released with nothing recorded, as a
+// cancellation before admission leaves it. A row released with a result,
+// the run Tart finished or the run GitHub admitted, keeps its run: a
+// repeated Submit is answered with that admission, as Reconcile finds it,
+// and starts nothing. A provider that records a definitive rejection on
+// the closed row answers with it again, which is the same answer, not a
+// new one.
+func SubmissionClosed(v record.ProviderExecution) bool {
+	return v.State == record.ExecutionClosed || v.State == record.ExecutionReleased && len(v.Result) == 0
 }
 
 // CloseUnknown records the closed row for a request the ledger has never
