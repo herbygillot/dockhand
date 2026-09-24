@@ -185,7 +185,7 @@ func (c *cycle) prepareCandidate(ctx context.Context, job record.Job) (record.Pr
 	if correction != nil && result.PreparedTree == job.Spec.Source.Tree {
 		return record.PreparedChange{}, errNothingToAmend
 	}
-	if !result.Scope.Valid() || result.Scope != nil && !choices.SharedRelease {
+	if !result.Scope.Valid() || result.Scope.NeedsSharedRelease(target.Name) && !choices.SharedRelease {
 		return record.PreparedChange{}, fmt.Errorf("workflow: unapproved shared-release scope")
 	}
 	if len(result.Commits) != 1 {
