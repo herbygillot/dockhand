@@ -66,3 +66,22 @@ The person answered four of the open questions, and the proposal was revised to 
   - A server rule may post reviews on PRs to your ports, at most one per head, and never requesting changes by itself.
 
 Left open: whether "passes" includes the local build (assumed yes; `then = "submit-untested"` would be the other reading), and whether "changeset" is the on-screen word.
+
+## Providers, and the word on screen
+
+The person decided that "passes" is a verdict from whatever builds the branch, and that providers stay a concept: a local build in an installed prefix, a VM, a GitHub Actions run, or another method. They were open to "branch" instead of "changeset" on screen, asked for a recommendation, and invited pushback.
+
+- **Providers are a first-class noun again.**
+  - §7 now defines "passes": every provider in `test.on` passes the branch under MacPorts' rule.
+  - There are four kinds: `tart`, `prefix`, `github`, and `command`, the last with a request-file and result-file contract.
+  - `--on <provider>[:<releases>]` selects them, and a bare release name means Tart.
+  - Each provider declares what its evidence establishes, and the PR body, the checklist, and `then = "submit"` read that declaration.
+  - `images` becomes `provider`, and `init`, `server status`, `queue`, the config, and the engine and migration tables follow.
+- **"Branch" on screen**, with *changeset* kept as the design and engine term. A branch is what contributors create and push. Also, the MacPorts guide itself tells contributors to link one commit from Trac as `[changeset:<hash>/macports-ports]` (`guide/xml/project.xml`, read from the guide's source on GitHub), so to MacPorts people "changeset" means a single commit.
+  - Every on-screen use was renamed, and the places where "changeset" meant "tracked" were reworded.
+  - The worktree directory is now `~/src/macports-branches`, and its config key is `worktrees`.
+- **Pushback, recorded in §11:**
+  - Unattended PRs are not the recommended default: `server.updates = "test"` plus a new `submit --passing` morning review, which flags upstream license, build-file, and dependency changes from the archives dockhand already fetched.
+  - Your everyday `/opt/local` is an opt-in provider. The default `prefix` is a separate, user-owned installation, because the everyday prefix gets overwritten and needs root.
+  - The `command` kind covers other methods; there is no plugin API.
+  - One provider's pass never stands in for another's.
