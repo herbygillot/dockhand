@@ -11,7 +11,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/state"
 )
 
-
 var errCapacity = errors.New("tart: pool is at capacity")
 
 type Provider struct {
