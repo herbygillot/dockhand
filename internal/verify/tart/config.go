@@ -78,10 +78,6 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, op
 		return record.BuildConfig{}, err
 	}
 	if c.Image == "" {
-		if release, rErr := tartvm.ReleaseForPlatform(platform); rErr == nil && tartvm.NewerThanDefault(release) && !options.Named {
-			def, _ := tartvm.DefaultRelease()
-			return record.BuildConfig{}, fmt.Errorf("%w: this Mac runs %s, which dockhand does not build on by default; it builds on %s and older. Run dockhand setup --os %s and pass --image to build on %s deliberately, or use --provider github", verify.ErrImageUnavailable, release.Name, def.Name, release.Slug, release.Name)
-		}
 		if options.NeedsXcode {
 			c.Image, err = tartvm.DefaultXcodeImageName(platform)
 		} else {

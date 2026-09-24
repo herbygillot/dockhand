@@ -16,11 +16,10 @@ type Release struct {
 	Slug    string
 }
 
-// CurrentDarwin is the newest macOS dockhand works on without being asked.
-// It is deliberately not the newest release the table carries: MacPorts adds a
-// macOS to its own CI well after Apple ships it, so a pull request is built and
-// judged on this release or older. A Tart build uses it unless told otherwise,
-// and a host that is not a Mac models it.
+// CurrentDarwin is the macOS a host that is not a Mac models unless told
+// otherwise. It is deliberately not the newest release the table carries:
+// MacPorts adds a macOS to its own CI well after Apple ships it. A Mac
+// describes, and Tart builds on, its own release.
 const CurrentDarwin = 25
 
 // Toolchain is a release of Apple's Command Line Tools as MacPorts sees it:
