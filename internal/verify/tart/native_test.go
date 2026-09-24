@@ -320,3 +320,38 @@ printf '%s\n' '[{"Name":"base","Source":"local","State":"stopped"}]'
 	require.ErrorContains(t, err, "base has an ASIF disk")
 	require.ErrorContains(t, err, "openai/tart#1344")
 }
+
+// The Mac allows two running macOS VMs, whoever started them, so the VMs
+// running in the person's own Tart home count too, read from their
+// listing; a listing a running ASIF VM blocks counts as that VM, and a
+// home that does not exist counts none.
+func TestRunningCountsThePersonsVMs(t *testing.T) {
+	root := t.TempDir()
+	own, personal := filepath.Join(root, "own"), filepath.Join(root, "personal")
+	require.NoError(t, os.MkdirAll(filepath.Join(personal, "vms"), 0700))
+	executable := filepath.Join(root, "tart")
+	testsupport.WriteExecutable(t, executable, `#!/bin/sh
+[ "$1" = list ] || exit 9
+case "$TART_HOME" in
+  */own) printf '%s\n' '[{"Name":"dockhand2-a","Source":"local","State":"running"},{"Name":"dockhand-base-tahoe","Source":"local","State":"stopped"}]' ;;
+  */personal)
+    if [ -f "$TART_HOME/blocked" ]; then echo '"image info --plist x" failed with exit code 1: Error: Failed to retrieve info for disk image: The operation couldn’t be completed. Resource temporarily unavailable' >&2; exit 1; fi
+    printf '%s\n' '[{"Name":"my-vm","Source":"local","State":"running"},{"Name":"other","Source":"local","State":"stopped"}]' ;;
+esac
+`)
+	t.Setenv("TART_HOME", personal)
+	n := newNative(Config{Home: own, Executable: executable}, nil, nil, nil)
+	running, err := n.Running(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []string{"dockhand2-a", "personal:my-vm"}, running)
+
+	require.NoError(t, os.WriteFile(filepath.Join(personal, "blocked"), nil, 0600))
+	running, err = n.Running(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []string{"dockhand2-a", personalBlocked}, running)
+
+	t.Setenv("TART_HOME", filepath.Join(root, "absent"))
+	running, err = n.Running(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []string{"dockhand2-a"}, running)
+}

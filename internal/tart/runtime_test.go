@@ -14,7 +14,7 @@ func TestRuntimeResolvesAliasesWithoutCreatingDirectories(t *testing.T) {
 	require.NoError(t, os.Mkdir(real, 0700))
 	alias := filepath.Join(root, "alias")
 	require.NoError(t, os.Symlink(real, alias))
-	t.Setenv("TART_HOME", filepath.Join(alias, "new", "home"))
+	t.Setenv("DOCKHAND_TART_HOME", filepath.Join(alias, "new", "home"))
 	fromEnv, err := (Client{}).Resolve()
 	require.NoError(t, err)
 	explicit, err := (Client{Executable: "custom-tart", Home: filepath.Join(real, "new", "home")}).Resolve()
@@ -29,16 +29,26 @@ func TestRuntimeResolvesAliasesWithoutCreatingDirectories(t *testing.T) {
 	require.Equal(t, fromEnv, after, "identity must remain stable after initialization")
 }
 
-func TestRuntimeDefaultsToUserHome(t *testing.T) {
+// Dockhand's Tart home is its own, whatever the person's TART_HOME says;
+// the person's is read only for counting and migration.
+func TestRuntimeDefaultsToDockhandsOwnHome(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("HOME", root)
-	t.Setenv("TART_HOME", "")
+	t.Setenv("DOCKHAND_TART_HOME", "")
+	t.Setenv("TART_HOME", filepath.Join(root, "persons"))
 	c, err := (Client{}).Resolve()
 	require.NoError(t, err)
 	home, err := filepath.EvalSymlinks(root)
 	require.NoError(t, err)
-	require.Equal(t, filepath.Join(home, ".tart"), c.Home)
+	require.Equal(t, filepath.Join(home, ".dockhand", "tart"), c.Home)
 	require.NoDirExists(t, c.Home)
+	personal, err := PersonalHome()
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(home, "persons"), personal)
+	t.Setenv("TART_HOME", "")
+	personal, err = PersonalHome()
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(home, ".tart"), personal)
 }
 
 func TestDirectoryResolutionRejectsBrokenLinksAndFiles(t *testing.T) {

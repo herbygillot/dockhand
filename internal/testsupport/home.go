@@ -19,11 +19,15 @@ func IsolateHome() func() {
 }
 
 // IsolateHomeKeepingTart is IsolateHome for packages with opt-in live Tart
-// tests: it first sets TART_HOME, unless set, to the person's Tart home, so
-// those tests still find their images.
+// tests: it first pins dockhand's Tart home, DOCKHAND_TART_HOME, and the
+// person's, TART_HOME, unless set, to the real ones, so those tests still
+// find their images.
 func IsolateHomeKeepingTart() func() {
-	if os.Getenv("TART_HOME") == "" {
-		if home, err := os.UserHomeDir(); err == nil {
+	if home, err := os.UserHomeDir(); err == nil {
+		if os.Getenv("DOCKHAND_TART_HOME") == "" {
+			os.Setenv("DOCKHAND_TART_HOME", filepath.Join(home, ".dockhand", "tart"))
+		}
+		if os.Getenv("TART_HOME") == "" {
 			os.Setenv("TART_HOME", filepath.Join(home, ".tart"))
 		}
 	}

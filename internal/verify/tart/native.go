@@ -3,9 +3,12 @@ package tart
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macos"
@@ -33,6 +36,43 @@ type native struct {
 func newNative(config Config, guard *os.File, images *imageCache, cache state.ImageCache) *native {
 	return &native{Machine: host.Machine{Client: tartvm.Client{Executable: config.Executable, Home: config.Home}, Guard: guard}, config: config, images: images, cache: cache}
 }
+
+// personalBlocked stands for the person's VMs when a running one with an
+// ASIF disk keeps their Tart home from listing (openai/tart#1344): at least
+// that one is running.
+const personalBlocked = "personal: a running VM with an ASIF disk"
+
+// Running is every running VM that counts toward the Mac's limit of two
+// running macOS VMs: dockhand's own, and the person's, from a listing of
+// their Tart home that takes and changes nothing there. A personal
+// listing a running ASIF VM blocks counts as that one VM; a personal home
+// that does not exist counts none.
+func (n *native) Running(ctx context.Context) ([]string, error) {
+	own, err := n.Machine.Running(ctx)
+	if err != nil {
+		return nil, err
+	}
+	personal, err := tartvm.PersonalHome()
+	if err != nil || personal == n.Client.Home {
+		return own, nil
+	}
+	if _, err := os.Stat(filepath.Join(personal, "vms")); err != nil {
+		return own, nil
+	}
+	theirs := host.Machine{Client: tartvm.Client{Executable: n.Client.Executable, Home: personal}}
+	names, err := theirs.Running(ctx)
+	switch {
+	case errors.Is(err, tartvm.ErrListingBlocked):
+		return append(own, personalBlocked), nil
+	case err != nil:
+		return nil, fmt.Errorf("tart: counting the VMs running in %s: %w", personal, err)
+	}
+	for _, name := range names {
+		own = append(own, "personal:"+name)
+	}
+	return own, nil
+}
+
 func (n *native) guest(ctx context.Context, vm string, input io.Reader, args ...string) ([]byte, error) {
 	return n.Exec(ctx, vm, tartvm.RunOptions{Input: input}, args...)
 }
