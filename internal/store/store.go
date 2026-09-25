@@ -86,6 +86,14 @@ type Reader interface {
 	Lease(resource string) (model.Lease, error)
 	// Events lists events after a sequence number, oldest first.
 	Events(after int64, limit int) ([]model.Event, error)
+
+	// Edits lists a branch's authoring records, oldest first.
+	Edits(branch model.BranchID) ([]model.Edit, error)
+	Checkpoint(number int) (model.Checkpoint, error)
+	// Checkpoints lists a branch's checkpoints, oldest first.
+	Checkpoints(branch model.BranchID) ([]model.Checkpoint, error)
+	// Acceptances lists what was accepted for one commit of a branch.
+	Acceptances(branch model.BranchID, commit model.ObjectID) ([]model.Acceptance, error)
 }
 
 // Tx reads and writes records within a transaction.
@@ -131,6 +139,16 @@ type Tx interface {
 
 	// AppendEvent adds an event to the journal and returns its sequence.
 	AppendEvent(event model.Event) (int64, error)
+
+	AddEdit(edit model.Edit) error
+	// AddCheckpoint records a checkpoint; its Number must be
+	// NextCheckpointNumber's.
+	AddCheckpoint(checkpoint model.Checkpoint) error
+	NextCheckpointNumber() (int, error)
+	// MarkRestored records a checkpoint's restore, once.
+	MarkRestored(checkpoint model.Checkpoint) error
+	// AddAcceptance records an acceptance; repeating one changes nothing.
+	AddAcceptance(acceptance model.Acceptance) error
 }
 
 // NewID returns a random identifier with a readable prefix, such as

@@ -48,7 +48,7 @@ The principles and the direction record's standing decisions are the specificati
    3. `init`, `start` (sparse worktrees), `adopt`, and `path`. **Done 2026-09-25** ([note](activity/2026-09-25-init-start-adopt-path.md)); `adopt --pr`, renamed-branch reconciliation, and `--json` are still to come.
    4. `update` and `checksums` over the existing preparation code, editing files without committing. **Done 2026-09-25** ([note](activity/2026-09-25-update-and-checksums.md)), proven against a stand-in preparer; the first real run needs a Mac with MacPorts. The stealth-update report and `dist_subdir` (v3 §6.5), the hand-edit hint when a port can't be updated by itself (§6.3), `revbump`, `create`, `edit`, and `--submit` are still to come.
    5. `check`: snapshot capture; the plan with changed scope, CI eligibility per platform, `--only`/`--also`, and prerequisites; one Tart guest per release in MacPorts CI's order (11, 22), with checkpoints and the verifier protocol version; infrastructure retries (30); and `--replace` (29).
-   6. `tidy`: unambiguous plans, `--squash`, checkpoints, and `restore`.
+   6. `tidy`: unambiguous plans, `--squash`, checkpoints, and `restore`. **Done 2026-09-25, ahead of part 5** ([note](activity/2026-09-25-tidy.md)), since `check` needs a Mac and this doesn't; changing the grouping from the terminal and saved plans (`--out`, `--apply`) are still to come.
    7. `submit`: the preview, conditional pushes, the PR body in the template's sections, and `--accept` (21) and `--draft`.
    8. `status` with the attention list, and `queue`, `wait`, `cancel`, and `serve`/`serve --install`.
 

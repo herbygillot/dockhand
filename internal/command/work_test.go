@@ -38,6 +38,8 @@ func newWorld(t *testing.T) world {
 	gitRun(t, w.upstream, "commit", "-q", "-m", "init")
 	require.NoError(t, os.MkdirAll(filepath.Dir(w.clone), 0o755))
 	gitRun(t, root, "clone", "-q", w.upstream, w.clone)
+	require.NoError(t, os.MkdirAll(w.home, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(w.home, ".gitconfig"), []byte("[user]\n\tname = Ada\n\temail = ada@example.org\n"), 0o644))
 	t.Setenv("HOME", w.home)
 	t.Setenv("DOCKHAND_UPSTREAM", w.upstream)
 	t.Setenv("DOCKHAND_DB", "")

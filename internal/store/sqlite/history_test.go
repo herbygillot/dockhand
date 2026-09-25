@@ -1,0 +1,104 @@
+package sqlite
+
+import (
+	"database/sql"
+	"fmt"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/store"
+)
+
+func TestASchemaOneDatabaseIsUpgraded(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dockhand.db")
+	db, err := sql.Open("sqlite", "file:"+path)
+	require.NoError(t, err)
+	_, err = db.Exec(schemas[0] + fmt.Sprintf("PRAGMA application_id=%d; PRAGMA user_version=1;", applicationID))
+	require.NoError(t, err)
+	_, err = db.Exec("INSERT INTO repositories VALUES('repo_1', '/src/macports-ports/.git', 0)")
+	require.NoError(t, err)
+	_, err = db.Exec("INSERT INTO branches(repository_id, id, name, base, worktree, managed, title, state, created_at) VALUES('repo_1','br_1','dockhand/jq-4k2p','base','/w',1,'','open',1)")
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	s, err := Open(t.Context(), path, Options{})
+	require.NoError(t, err)
+	defer s.Close()
+	require.NoError(t, s.View(t.Context(), "repo_1", func(r store.Reader) error {
+		b, err := r.Branch("br_1")
+		require.NoError(t, err, "the branch survives the upgrade")
+		require.Equal(t, "dockhand/jq-4k2p", b.Name)
+		edits, err := r.Edits("br_1")
+		require.NoError(t, err)
+		require.Empty(t, edits)
+		return nil
+	}))
+	var version int
+	require.NoError(t, s.db.QueryRow("PRAGMA user_version").Scan(&version))
+	require.Equal(t, schemaVersion, version)
+}
+
+func TestEditsCheckpointsAndAcceptances(t *testing.T) {
+	f := open(t)
+	b := f.branch("br_1", "dockhand/jq-4k2p")
+	b.PullRequest = &model.PullRequest{Repository: "macports/macports-ports", Number: 34901, Head: "ada/macports-ports:dockhand/jq-4k2p", Pushed: "abc", Body: "body", Draft: true}
+	edit := model.Edit{ID: "ed_1", Branch: b.ID, Kind: model.EditUpdate, Port: "jq", Directory: "textproc/jq", Subject: "jq: update to 1.8.1",
+		Files: []model.EditedFile{{Path: "textproc/jq/Portfile", Before: "b1", After: "b2"}}, At: at}
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		if err := tx.AddBranch(b); err != nil {
+			return err
+		}
+		return tx.AddEdit(edit)
+	}))
+	require.ErrorIs(t, f.update(t, func(tx store.Tx) error {
+		bad := edit
+		bad.ID, bad.Files = "ed_2", []model.EditedFile{{Path: "textproc/jq/Portfile", Before: "b2", After: "b2"}}
+		return tx.AddEdit(bad)
+	}), model.ErrInvalid, "an edit that changed nothing is refused")
+
+	checkpoint := model.Checkpoint{Number: 1, Branch: b.ID, Before: "old", After: "new", At: at}
+	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.AddCheckpoint(checkpoint) }))
+	require.ErrorIs(t, f.update(t, func(tx store.Tx) error {
+		again := checkpoint
+		return tx.AddCheckpoint(again)
+	}), store.ErrConflict, "numbers are the next one")
+	restored := at.Add(time.Hour)
+	checkpoint.RestoredAt = &restored
+	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.MarkRestored(checkpoint) }))
+	require.Error(t, f.update(t, func(tx store.Tx) error { return tx.MarkRestored(checkpoint) }), "a checkpoint is restored once")
+
+	accepted := model.Acceptance{Branch: b.ID, Commit: "c1", Port: "harbor-cli", At: at}
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		if err := tx.AddAcceptance(accepted); err != nil {
+			return err
+		}
+		return tx.AddAcceptance(accepted)
+	}))
+
+	require.NoError(t, f.store.View(t.Context(), f.repo, func(r store.Reader) error {
+		got, err := r.Branch(b.ID)
+		require.NoError(t, err)
+		require.Equal(t, b.PullRequest, got.PullRequest)
+		edits, err := r.Edits(b.ID)
+		require.NoError(t, err)
+		require.Equal(t, []model.Edit{edit}, edits)
+		c, err := r.Checkpoint(1)
+		require.NoError(t, err)
+		require.Equal(t, "tidy-1", c.Name())
+		require.Equal(t, restored, *c.RestoredAt)
+		all, err := r.Checkpoints(b.ID)
+		require.NoError(t, err)
+		require.Len(t, all, 1)
+		list, err := r.Acceptances(b.ID, "c1")
+		require.NoError(t, err)
+		require.Equal(t, []model.Acceptance{accepted}, list)
+		none, err := r.Acceptances(b.ID, "c2")
+		require.NoError(t, err)
+		require.Empty(t, none, "an acceptance holds for its commit only")
+		return nil
+	}))
+}

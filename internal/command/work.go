@@ -216,7 +216,11 @@ func plural(n int, noun string) string {
 // without an answer is an empty answer, which takes the default.
 func ask(streams Streams, question string) (string, error) {
 	fmt.Fprint(streams.Err, question)
-	line, err := bufio.NewReader(streams.In).ReadString('\n')
+	lines := streams.lines
+	if lines == nil {
+		lines = bufio.NewReader(streams.In)
+	}
+	line, err := lines.ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
 		return "", err
 	}

@@ -138,16 +138,63 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		return Update{}, err
 	}
 	update.Applied = true
+	edit, err := e.editRecord(ctx, worktree, branch, request, update, result)
+	if err != nil {
+		return update, err
+	}
 	change := "refreshed checksums"
 	if request.Action == record.Bump {
 		change = fmt.Sprintf("%s → %s", update.Before, update.After)
 	}
 	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: "branch.edit", Level: model.LevelInfo,
+		if err := tx.AddEdit(edit); err != nil {
+			return err
+		}
+		_, err := tx.AppendEvent(model.Event{At: edit.At, Branch: branch.ID, Kind: "branch.edit", Level: model.LevelInfo,
 			Message: fmt.Sprintf("%s: %s (%s)", update.Port, change, listPaths(update.Files))})
 		return err
 	})
 	return update, err
+}
+
+// editRecord is what tidy later reads: each file's blob before and after,
+// and the subject the edit carries.
+func (e *Engine) editRecord(ctx context.Context, worktree *git.Repository, branch model.Branch, request UpdateRequest, update Update, result preparation.Result) (model.Edit, error) {
+	edit := model.Edit{ID: model.EditID(store.NewID("ed")), Branch: branch.ID, Kind: model.EditUpdate, Port: update.Port, Subject: update.Subject, At: e.now()}
+	if request.Action == record.RefreshChecksums {
+		edit.Kind = model.EditChecksums
+	}
+	edit.Directory = portDirectory(result.Files[0].Path)
+	if result.Target.Portfile != "" {
+		edit.Directory = path.Dir(result.Target.Portfile)
+	}
+	if edit.Subject == "" {
+		edit.Subject = update.Port + ": update to " + update.After.Version
+		if edit.Kind == model.EditChecksums {
+			edit.Subject = update.Port + ": update checksums"
+		}
+	}
+	for _, file := range result.Files {
+		recorded := model.EditedFile{Path: file.Path, Before: model.ObjectID(file.Before.Blob)}
+		if !file.Delete {
+			blob, err := worktree.BlobID(ctx, file.After)
+			if err != nil {
+				return model.Edit{}, err
+			}
+			recorded.After = model.ObjectID(blob)
+		}
+		edit.Files = append(edit.Files, recorded)
+	}
+	return edit, nil
+}
+
+// portDirectory is the <category>/<port> a path is under, or its directory
+// when it is not in one.
+func portDirectory(file string) string {
+	if parts := strings.SplitN(file, "/", 3); len(parts) == 3 {
+		return parts[0] + "/" + parts[1]
+	}
+	return path.Dir(file)
 }
 
 // describe reads what the preparation found.
@@ -201,10 +248,7 @@ func expandFor(ctx context.Context, worktree *git.Repository, files []string) er
 	}
 	var missing []string
 	for _, file := range files {
-		directory := path.Dir(file)
-		if parts := strings.SplitN(file, "/", 3); len(parts) == 3 {
-			directory = parts[0] + "/" + parts[1]
-		}
+		directory := portDirectory(file)
 		if directory == "." || slices.Contains(missing, directory) {
 			continue
 		}

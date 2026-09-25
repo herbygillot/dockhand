@@ -1,6 +1,7 @@
 package command
 
 import (
+	"bufio"
 	"context"
 	"io"
 	"os"
@@ -17,6 +18,9 @@ type Streams struct {
 	Err io.Writer
 	// interactive stands in for a terminal in tests.
 	interactive bool
+	// lines reads answers from In; one reader for the whole command, so
+	// input it buffered for one question is there for the next.
+	lines *bufio.Reader
 }
 
 // terminal reports whether the input is an interactive terminal, the only
@@ -40,6 +44,9 @@ roadmap's step 5. Until then, the working tool is v2, tagged v2-final:
 // Run executes the command line in args.
 func Run(ctx context.Context, args []string, streams Streams) error {
 	var settings settings
+	if streams.lines == nil && streams.In != nil {
+		streams.lines = bufio.NewReader(streams.In)
+	}
 	root := &cobra.Command{
 		Use:           "dockhand",
 		Short:         "Author, check, and submit changes to MacPorts ports",
@@ -70,6 +77,20 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 		checksumsCommand(&settings, streams),
 	} {
 		command.GroupID = "author"
+		root.AddCommand(command)
+	}
+	root.AddGroup(&cobra.Group{ID: "review", Title: "Prepare for review:"})
+	for _, command := range []*cobra.Command{
+		tidyCommand(&settings, streams),
+	} {
+		command.GroupID = "review"
+		root.AddCommand(command)
+	}
+	root.AddGroup(&cobra.Group{ID: "occasional", Title: "Occasional:"})
+	for _, command := range []*cobra.Command{
+		restoreCommand(&settings, streams),
+	} {
+		command.GroupID = "occasional"
 		root.AddCommand(command)
 	}
 	root.SetArgs(args)

@@ -119,6 +119,14 @@ func TestUpdateEditsWorkingFilesAndCommitsNothing(t *testing.T) {
 		require.Equal(t, "branch.edit", last.Kind)
 		require.Equal(t, branch.ID, last.Branch)
 		require.Equal(t, "jq: 1.7.1 → 1.8.1 (textproc/jq/Portfile)", last.Message)
+		edits, err := r.Edits(branch.ID)
+		require.NoError(t, err)
+		require.Len(t, edits, 1)
+		require.Equal(t, model.EditUpdate, edits[0].Kind)
+		require.Equal(t, "textproc/jq", edits[0].Directory)
+		require.Equal(t, "jq: update to 1.8.1", edits[0].Subject)
+		require.Equal(t, run(t, branch.Worktree, "rev-parse", "HEAD:textproc/jq/Portfile"), string(edits[0].Files[0].Before))
+		require.Equal(t, run(t, branch.Worktree, "hash-object", "textproc/jq/Portfile"), string(edits[0].Files[0].After))
 		return nil
 	}))
 }

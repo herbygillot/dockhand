@@ -24,6 +24,12 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	os.Setenv("TMPDIR", temp)
+	// Commits tidy writes need an identity, whatever the machine has.
+	identity := filepath.Join(temp, "gitconfig")
+	if err := os.WriteFile(identity, []byte("[user]\n\tname = Test\n\temail = test@example.org\n"), 0o644); err != nil {
+		panic(err)
+	}
+	os.Setenv("GIT_CONFIG_GLOBAL", identity)
 	code := m.Run()
 	os.RemoveAll(temp)
 	os.Exit(code)

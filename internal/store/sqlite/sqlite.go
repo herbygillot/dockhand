@@ -13,7 +13,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
-	_ "embed"
+	"embed"
 	"errors"
 	"fmt"
 	"net/url"
@@ -28,13 +28,25 @@ import (
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
-//go:embed schema/001.sql
-var schema001 string
+// schemas are the schema's versions in order; schemas[n-1] takes a
+// database from version n-1 to n. A new database gets them all.
+//
+//go:embed schema/*.sql
+var schemaFiles embed.FS
 
-// schemaVersion is the newest schema this build writes. There are no
-// migrations yet: v3 starts fresh, and the first released schema is where
-// migrations begin.
-const schemaVersion = 1
+var schemas = func() []string {
+	var all []string
+	for n := 1; ; n++ {
+		data, err := schemaFiles.ReadFile(fmt.Sprintf("schema/%03d.sql", n))
+		if err != nil {
+			return all
+		}
+		all = append(all, string(data))
+	}
+}()
+
+// schemaVersion is the newest schema this build writes.
+var schemaVersion = len(schemas)
 
 // applicationID marks a dockhand v3 database ("DHN3"). v2's databases carry
 // 0x44484e44 ("DHND") and are refused by name.
@@ -140,6 +152,8 @@ func (s *Store) initialize(ctx context.Context) error {
 		switch {
 		case app == applicationID && version == schemaVersion:
 			return nil
+		case app == applicationID && version > 0 && version < schemaVersion:
+			return t.migrate(ctx, version)
 		case app == applicationID && version > schemaVersion:
 			return fmt.Errorf("%w: %s has schema %d, newer than this dockhand supports (%d); use a newer build", store.ErrSchema, s.path, version, schemaVersion)
 		case app == v2ApplicationID:
@@ -153,9 +167,22 @@ func (s *Store) initialize(ctx context.Context) error {
 		if tables != 0 {
 			return fmt.Errorf("%w: %s holds tables but is not a dockhand database", store.ErrSchema, s.path)
 		}
-		_, err := t.conn.ExecContext(ctx, schema001+fmt.Sprintf("PRAGMA application_id=%d; PRAGMA user_version=%d;", applicationID, schemaVersion))
-		return storageError(err)
+		if _, err := t.conn.ExecContext(ctx, fmt.Sprintf("PRAGMA application_id=%d;", applicationID)); err != nil {
+			return storageError(err)
+		}
+		return t.migrate(ctx, 0)
 	})
+}
+
+// migrate brings the schema from version up to schemaVersion, within the
+// caller's transaction.
+func (t *tx) migrate(ctx context.Context, version int) error {
+	for n := version; n < schemaVersion; n++ {
+		if _, err := t.conn.ExecContext(ctx, schemas[n]+fmt.Sprintf("PRAGMA user_version=%d;", n+1)); err != nil {
+			return fmt.Errorf("schema %d: %w", n+1, storageError(err))
+		}
+	}
+	return nil
 }
 
 // Register records the repository for a Git common directory.

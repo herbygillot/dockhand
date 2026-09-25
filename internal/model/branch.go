@@ -57,6 +57,13 @@ type PullRequest struct {
 	Number     int
 	// Head is the head repository and branch, such as ada/macports-ports:dockhand/jq-4k2p.
 	Head string
+	// Pushed is the commit dockhand last pushed to the head branch. A push
+	// that finds anything else there stops, since someone else pushed.
+	Pushed ObjectID
+	// Body is the description dockhand last wrote, so a person's edits to
+	// it are recognized and kept.
+	Body  string
+	Draft bool
 }
 
 // Branch is the unit of work.
