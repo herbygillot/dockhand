@@ -60,7 +60,7 @@ The principles and the direction record's standing decisions are the specificati
    - normalized records;
    - `base212`, and a master preview identified by commit (39).
 7. **Documentation for v3.** Once step 5's path works end to end, for a one-port update and a two-directory branch on Tart, the README, `usage.md`, `cli-design.md`, `architecture.md`, `components.md`, and `state.md` are rewritten for v3 or retired.
-8. **The oracle** (former step 7). It is unchanged, built incrementally with its ledger of unresolved observations, and takes in the sparse workspace's rule (35).
+8. **The oracle** (former step 7). It is unchanged, built incrementally with its ledger of unresolved observations, and takes in the sparse workspace's rule (35). **Local Mac work:** it needs MacPorts Base and a survey for every phase, and the modelling data it draws on is on the Mac. It was scoped on 2026-09-25 into six phases, with five decisions left for the Mac session ([scope](oracle.md)).
 9. **Reuse and archives** (former step 8, decisions 28 and 44). Per-target reuse by recorded observations, negative ones included. Each build records its input identity and the digest of every archive it consumed. Environment identity is by origin (32). Archives count as ready for dependents only once they are durably transferred and checked.
 10. **v3 completeness.** In roughly this order:
    - the `tidy` regrouping with its reviewed plans, and `tidy --plan/--apply` (**done 2026-09-25**, [note](activity/2026-09-25-tidy-regrouping-and-saved-plans.md));
