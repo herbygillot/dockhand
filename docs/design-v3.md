@@ -497,7 +497,7 @@ jq-4k2p     jq 1.7.1 → 1.8.1 · tart:tahoe ✓ · Portfile +3 −4
 
 `submit --passing` lists each branch whose check passed for exactly what would be submitted: a committed tree, with no edits left out. It shows each one's submission preview in brief. The `!` lines compare the old and new upstream archives, which dockhand already fetched for the checksums, looking for changed license files, build files, and declared dependencies. Those are what a reviewer would ask about, and what a passing build can't catch.
 
-`serve` can do the morning's preparation by itself with `serve.updates = "check"`. It then finds new releases of your ports, creates and tidies a branch for each, and checks them, so `submit --passing` is all that's left. By default it never submits. `serve --submit-passing` goes one step further ([§11](#11-serve-the-queue-and-instance-coordination)).
+`serve` can do the morning's preparation by itself with `serve.for_outdated = "check"`. It then finds new releases of your ports, creates and tidies a branch for each, and checks them, so `submit --passing` is all that's left. By default it never submits. `serve --submit-passing` goes one step further ([§11](#11-serve-the-queue-and-instance-coordination)).
 
 ### 6.13 After the merge
 
@@ -703,7 +703,7 @@ serve: running (pid 4711, up 3h) · tart 2 of 2 VMs · prefix idle · github idl
 RUN        BRANCH        SOURCE       ON           STATE      DETAIL
 check-42   libharbor-2   snapshot 5   tart:tahoe   running    harbor-viewer: build
 check-43   jq-update     commit 7e3f  tart:tahoe   queued     waiting for a VM
-check-44   croc-7hq2     commit a1b0  tart:tahoe   queued     from serve.updates
+check-44   croc-7hq2     commit a1b0  tart:tahoe   queued     from serve.for_outdated
 ```
 
 The queue holds immutable check requests. Editing a branch after it was queued never changes what the request means. A newer snapshot of the same branch doesn't cancel an older queued run; it's listed beside it, and `cancel <run>` is explicit. People come first: work someone is attached to, or submitted by hand, runs ahead of work `serve` started by itself. Branches otherwise take turns, and each provider has its own capacity. `queue pause` stops admissions while running checks finish, and `queue resume` restarts them.
@@ -712,13 +712,13 @@ What `serve` does besides running checks (each can be turned off, and all show i
 
 - **Follows PRs.** Every few minutes it reads state, reviews, and CI for your open PRs, and turns changes into attention rows.
 - **Keeps `master` fresh** for `start`, and marks branches that no longer rebase cleanly.
-- **Finds updates** (`serve.updates`):
+- **Handles your outdated ports** (`serve.for_outdated`):
   - `list`, the default: counts new releases of your ports in `status`.
   - `draft`: creates and tidies a branch for each new release.
   - `check`: also checks each one, so the morning is `submit --passing`.
 
   None of these submits by default.
-- **Submits what passed, only when started with `--submit-passing`.** By default `serve` only builds and tests. With the flag, and with `serve.updates = "check"`, it opens a PR for each branch it prepared whose check passed. `serve.submit_passing = true` in the config turns it on for every `serve`, and `--no-submit-passing` turns it off for one run. Either way, `serve` says at startup, and in `queue`, that it opens PRs for passing updates. Guardrails:
+- **Submits what passed, only when started with `--submit-passing`.** By default `serve` only builds and tests. With the flag, and with `serve.for_outdated = "check"`, it opens a PR for each branch it prepared whose check passed. `serve.submit_passing = true` in the config turns it on for every `serve`, and `--no-submit-passing` turns it off for one run. Either way, `serve` says at startup, and in `queue`, that it opens PRs for passing updates. Guardrails:
   - **Scope.** Only the branches `serve` itself created from new releases. Your own branches are submitted by you, with `submit`, `submit --check`, or `submit --passing`.
   - **What passed.** The check must have passed on the exact committed tree being submitted, under the publication rule in §3, with no acknowledgements needed. A branch that needs `--accept` waits for a person.
   - **Held for a look.** A branch with any `!` finding from the upstream comparison, such as a changed license file, new declared dependencies, or changed build files, or any commit-rule warning, is not submitted. It lands on the attention list instead.
@@ -770,8 +770,8 @@ baseline = false
 rerequest_review = "ask"
 
 [serve]
-updates = "list"          # list | draft | check
-updates_at = "07:00"
+for_outdated = "list"     # list | draft | check: what serve does for your outdated ports
+outdated_at = "07:00"     # when it looks for new releases each day
 submit_passing = false    # open PRs for the updates serve prepared that pass (§11)
 submit_limit = 10         # at most this many a day
 notify = true

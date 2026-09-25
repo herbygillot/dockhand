@@ -72,7 +72,7 @@ The principles and the direction record's standing decisions are the specificati
     - `outdated --mine` feeding `update --outdated --mine`, which previews how it splits the work;
     - the upstream archive comparison (license, build files, declared dependencies);
     - `submit --passing`;
-    - `serve.updates` (list, draft, check);
+    - `serve.for_outdated` (list, draft, check);
     - `serve --submit-passing` and its config key, with the guardrails in v3 §11;
     - PR following and notifications.
 11. **Tart on other macOS releases** (former step 10, decisions 4–7 and 14). `--os` becomes `--on tart:<releases>`, and each release's Xcode need comes from the facts table.
