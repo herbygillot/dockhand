@@ -45,7 +45,7 @@ The principles and the direction record's standing decisions are the specificati
    Delivered in this order, each with its tests:
    1. The schema and `model`, including per-target checkpoints under one guest-execution owner (44). **Done 2026-09-25** ([model](activity/2026-09-25-model.md), [store](activity/2026-09-25-store.md)).
    2. `coord`: sessions with pid and start-time liveness and a heartbeat; fenced leases; one `serve` leader with standbys; controls applied by whoever can; the event journal (v3 §11). **Primitives done 2026-09-25** ([note](activity/2026-09-25-coord.md)); the foreground rules for `check` without `serve` come with `check` in part 5, which is where they have a request to run. The macOS process-start reader still has to be proven on a Mac.
-   3. `init`, `start` (sparse worktrees), `adopt`, and `path`.
+   3. `init`, `start` (sparse worktrees), `adopt`, and `path`. **Done 2026-09-25** ([note](activity/2026-09-25-init-start-adopt-path.md)); `adopt --pr`, renamed-branch reconciliation, and `--json` are still to come.
    4. `update` and `checksums` over the existing preparation code, editing files without committing.
    5. `check`: snapshot capture; the plan with changed scope, CI eligibility per platform, `--only`/`--also`, and prerequisites; one Tart guest per release in MacPorts CI's order (11, 22), with checkpoints and the verifier protocol version; infrastructure retries (30); and `--replace` (29).
    6. `tidy`: unambiguous plans, `--squash`, checkpoints, and `restore`.

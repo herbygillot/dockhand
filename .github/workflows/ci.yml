@@ -28,6 +28,9 @@ jobs:
       - name: Test
         run: make test
 
+      - name: Format
+        run: make fmt-check
+
       - name: Vet
         run: make vet
 

@@ -19,7 +19,7 @@ ifneq ($(strip $(VERSION)),)
 GO_LDFLAGS += -X github.com/herbygillot/dockhand/internal/version.Version=$(strip $(VERSION))
 endif
 
-.PHONY: build test test-race vet deadcode vendor vendor-check clean
+.PHONY: build test test-race vet fmt-check deadcode vendor vendor-check clean
 
 build:
 	$(GO) build $(if $(strip $(GO_LDFLAGS)),-ldflags "$(GO_LDFLAGS)") -o "$(BINARY)" ./cmd/dockhand
@@ -32,6 +32,11 @@ test-race:
 
 vet:
 	$(GO) vet ./...
+
+# Fail when a Go file outside vendor is not gofmt-formatted, naming it.
+fmt-check:
+	@files=$$(gofmt -l $$(git ls-files '*.go' | grep -v '^vendor/')); \
+	if [ -n "$$files" ]; then echo "not gofmt-formatted:" >&2; echo "$$files" >&2; exit 1; fi
 
 # Whole-program reachability including tests; see docs/reviews/2026-09-17-exported-surface-audit.md.
 # A tool run by version is fetched as a module of its own, which the vendor mode forbids.

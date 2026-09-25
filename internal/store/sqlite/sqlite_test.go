@@ -286,7 +286,9 @@ func TestExecutionsAndCheckpoints(t *testing.T) {
 	require.NoError(t, f.update(t, func(tx store.Tx) error {
 		return tx.RecordResult(result("harbor-cli", model.OutcomeFailed, model.PhaseInstall))
 	}))
-	require.ErrorIs(t, f.update(t, func(tx store.Tx) error { return tx.RecordResult(result("libharbor", model.OutcomeFailed, model.PhaseTest)) }), store.ErrConflict, "a verdict is final")
+	require.ErrorIs(t, f.update(t, func(tx store.Tx) error {
+		return tx.RecordResult(result("libharbor", model.OutcomeFailed, model.PhaseTest))
+	}), store.ErrConflict, "a verdict is final")
 	require.ErrorIs(t, f.update(t, func(tx store.Tx) error { return tx.RecordResult(result("harbor-viewer", model.OutcomePassed, "")) }), model.ErrInvalid, "a target outside the plan")
 
 	// The schema keeps the rule even if Go code went around the store.

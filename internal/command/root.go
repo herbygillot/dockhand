@@ -3,6 +3,7 @@ package command
 import (
 	"context"
 	"io"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -16,15 +17,24 @@ type Streams struct {
 	Err io.Writer
 }
 
-const rebuilding = `dockhand is being rebuilt as v3 (docs/design-v3.md). The v3 commands
-arrive with the roadmap's step 5. Until then, the working tool is v2,
-tagged v2-final:
+// terminal reports whether the input is an interactive terminal, the only
+// place a command may ask a question. /dev/null is a character device too,
+// so this asks the terminal driver rather than the file's mode.
+func (s Streams) terminal() bool {
+	file, ok := s.In.(*os.File)
+	return ok && isTerminal(file.Fd())
+}
+
+const rebuilding = `dockhand is being rebuilt as v3 (docs/design-v3.md). The commands below
+are the first of it; checking and submitting arrive with the rest of the
+roadmap's step 5. Until then, the working tool is v2, tagged v2-final:
 
   git worktree add ../dockhand-v2 v2-final
   make -C ../dockhand-v2 build BINARY="$HOME/.local/bin/dockhand-v2"`
 
 // Run executes the command line in args.
 func Run(ctx context.Context, args []string, streams Streams) error {
+	var settings settings
 	root := &cobra.Command{
 		Use:           "dockhand",
 		Short:         "Author, check, and submit changes to MacPorts ports",
@@ -38,6 +48,17 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 		},
 	}
 	root.SetVersionTemplate("dockhand {{.Version}}\n")
+	settings.flags(root)
+	root.AddGroup(&cobra.Group{ID: "work", Title: "Start or enter work:"})
+	for _, command := range []*cobra.Command{
+		initCommand(&settings, streams),
+		startCommand(&settings, streams),
+		adoptCommand(&settings, streams),
+		pathCommand(&settings, streams),
+	} {
+		command.GroupID = "work"
+		root.AddCommand(command)
+	}
 	root.SetArgs(args)
 	root.SetIn(streams.In)
 	root.SetOut(streams.Out)
