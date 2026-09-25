@@ -64,7 +64,10 @@ type fixture struct {
 // then moves upstream master on, so a stale local master is detectable.
 func setup(t *testing.T) fixture {
 	t.Helper()
-	root := t.TempDir()
+	// Git reports resolved paths; on macOS the temporary directory is
+	// reached through /var, a link to /private/var.
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
 	f := fixture{upstream: filepath.Join(root, "upstream"), clone: filepath.Join(root, "src", "macports-ports")}
 	require.NoError(t, os.MkdirAll(f.upstream, 0o755))
 	run(t, f.upstream, "init", "-q")

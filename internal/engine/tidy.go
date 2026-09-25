@@ -64,8 +64,8 @@ type TidyPlan struct {
 	// Base and Head are commits; Final is the tree the series ends at,
 	// the working files as they were captured, and BaseTree the base's.
 	Base, Head, Final, BaseTree string
-	History           []git.HistoryCommit
-	Groups            []TidyGroup
+	History                     []git.HistoryCommit
+	Groups                      []TidyGroup
 	// Keep is true when the history already has a good shape and nothing
 	// is uncommitted.
 	Keep bool

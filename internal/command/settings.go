@@ -83,11 +83,19 @@ func tilde(path string) string {
 	if err != nil || home == "" {
 		return path
 	}
-	if path == home {
-		return "~"
+	// Git reports resolved paths, so a home reached through a symbolic
+	// link is matched in its resolved form too.
+	homes := []string{home}
+	if resolved, err := filepath.EvalSymlinks(home); err == nil && resolved != home {
+		homes = append(homes, resolved)
 	}
-	if rest, ok := strings.CutPrefix(path, home+string(filepath.Separator)); ok {
-		return "~/" + rest
+	for _, home := range homes {
+		if path == home {
+			return "~"
+		}
+		if rest, ok := strings.CutPrefix(path, home+string(filepath.Separator)); ok {
+			return "~/" + rest
+		}
 	}
 	return path
 }

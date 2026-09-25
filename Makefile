@@ -35,7 +35,7 @@ vet:
 
 # Fail when a Go file outside vendor is not gofmt-formatted, naming it.
 fmt-check:
-	@files=$$(gofmt -l $$(git ls-files '*.go' | grep -v '^vendor/')); \
+	@files=$$(gofmt -l $$(git ls-files --cached --others --exclude-standard '*.go' | grep -v '^vendor/')); \
 	if [ -n "$$files" ]; then echo "not gofmt-formatted:" >&2; echo "$$files" >&2; exit 1; fi
 
 # Whole-program reachability including tests; see docs/reviews/2026-09-17-exported-surface-audit.md.

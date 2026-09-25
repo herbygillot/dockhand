@@ -26,7 +26,10 @@ type world struct{ home, upstream, clone string }
 
 func newWorld(t *testing.T) world {
 	t.Helper()
-	root := t.TempDir()
+	// Git reports resolved paths; on macOS the temporary directory is
+	// reached through /var, a link to /private/var.
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
 	w := world{home: filepath.Join(root, "home"), upstream: filepath.Join(root, "upstream")}
 	w.clone = filepath.Join(w.home, "src", "macports-ports")
 	for name, content := range map[string]string{"_resources/port1.0/group/github-1.0.tcl": "# group\n", "textproc/jq/Portfile": "name jq\n"} {
