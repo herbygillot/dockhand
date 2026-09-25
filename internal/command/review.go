@@ -106,55 +106,9 @@ commits, and its files are as they were when it was saved.`,
 				return nil
 			}
 			// A squash with its message given, or a grouping chosen, is the
-			// person's own explicit plan, so it needs no review; --yes never
-			// resolves anything else.
-			explicit := squash && message != "" || group != ""
-			if explicit || !streams.terminal() || yes && proposal.Unambiguous() {
-				if !explicit && !proposal.Unambiguous() {
-					return errors.New("this plan needs review before it is applied: run dockhand tidy on a terminal, or make one commit with --squash --message \"port: what changed\"")
-				}
-				return applyTidy(ctx, e, streams, proposal)
-			}
-			for {
-				answer, err := ask(streams, "Review diff [d] · Change groups [g] · Edit message [e] · Apply [a] · Cancel [q]\n> ")
-				if err != nil {
-					return err
-				}
-				switch strings.ToLower(answer) {
-				case "d":
-					diff, err := e.Repo.DiffTrees(ctx, proposal.BaseTree, proposal.Final)
-					if err != nil {
-						return err
-					}
-					fmt.Fprint(out, string(diff))
-				case "g":
-					spec, err := ask(streams, "Commits in order, joining any to combine with + (such as 2 1+3): ")
-					if err != nil {
-						return err
-					}
-					regrouped, err := proposal.Regroup(spec, author)
-					if err != nil {
-						fmt.Fprintf(streams.Err, "Not changed: %v\n", err)
-						continue
-					}
-					proposal = regrouped
-					writeTidyPlan(out, proposal)
-				case "e":
-					if err := editSubjects(streams, &proposal); err != nil {
-						return err
-					}
-					writeTidyPlan(out, proposal)
-				case "a":
-					if blocking := proposal.Blocking(); len(blocking) > 0 {
-						fmt.Fprintf(streams.Err, "Not yet: %s\n", strings.Join(blocking, "; "))
-						continue
-					}
-					return applyTidy(ctx, e, streams, proposal)
-				case "q", "":
-					fmt.Fprintln(out, "Nothing changed.")
-					return nil
-				}
-			}
+			// person's own explicit plan, so it needs no review.
+			_, err = decideTidy(ctx, e, streams, proposal, squash && message != "" || group != "", yes, author)
+			return err
 		},
 	}
 	cmd.Flags().StringVar(&selector, "branch", "", "tidy this tracked branch")
@@ -171,6 +125,60 @@ commits, and its files are as they were when it was saved.`,
 	cmd.MarkFlagsMutuallyExclusive("apply", "branch")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "apply a plan made only of dockhand's own edits without asking")
 	return cmd
+}
+
+// decideTidy applies a tidy plan, or on a terminal reviews it first. An
+// explicit plan, the person's own, applies as given; without a terminal,
+// or with --yes, a plan made only of dockhand's own edits applies too,
+// and anything else needs review. It reports whether the plan applied.
+func decideTidy(ctx context.Context, e *engine.Engine, streams Streams, proposal engine.TidyPlan, explicit, yes bool, author string) (bool, error) {
+	out := streams.Out
+	if explicit || !streams.terminal() || yes && proposal.Unambiguous() {
+		if !explicit && !proposal.Unambiguous() {
+			return false, errors.New("this plan needs review before it is applied: run dockhand tidy on a terminal, or make one commit with --squash --message \"port: what changed\"")
+		}
+		return true, applyTidy(ctx, e, streams, proposal)
+	}
+	for {
+		answer, err := ask(streams, "Review diff [d] · Change groups [g] · Edit message [e] · Apply [a] · Cancel [q]\n> ")
+		if err != nil {
+			return false, err
+		}
+		switch strings.ToLower(answer) {
+		case "d":
+			diff, err := e.Repo.DiffTrees(ctx, proposal.BaseTree, proposal.Final)
+			if err != nil {
+				return false, err
+			}
+			fmt.Fprint(out, string(diff))
+		case "g":
+			spec, err := ask(streams, "Commits in order, joining any to combine with + (such as 2 1+3): ")
+			if err != nil {
+				return false, err
+			}
+			regrouped, err := proposal.Regroup(spec, author)
+			if err != nil {
+				fmt.Fprintf(streams.Err, "Not changed: %v\n", err)
+				continue
+			}
+			proposal = regrouped
+			writeTidyPlan(out, proposal)
+		case "e":
+			if err := editSubjects(streams, &proposal); err != nil {
+				return false, err
+			}
+			writeTidyPlan(out, proposal)
+		case "a":
+			if blocking := proposal.Blocking(); len(blocking) > 0 {
+				fmt.Fprintf(streams.Err, "Not yet: %s\n", strings.Join(blocking, "; "))
+				continue
+			}
+			return true, applyTidy(ctx, e, streams, proposal)
+		case "q", "":
+			fmt.Fprintln(out, "Nothing changed.")
+			return false, nil
+		}
+	}
 }
 
 func describeWork(plan engine.TidyPlan) string {

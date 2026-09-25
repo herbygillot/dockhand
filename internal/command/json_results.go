@@ -40,6 +40,26 @@ type updateJSON struct {
 	Diff      string        `json:"diff,omitempty"`
 	// Revbumped are the dependents --revbump-dependents bumped, or would.
 	Revbumped []string `json:"revbumped,omitempty"`
+	// Stealth is a checksum refresh's stealth update.
+	Stealth *stealthJSON `json:"stealth,omitempty"`
+}
+
+type stealthJSON struct {
+	Distfiles  []stealthDistfileJSON `json:"distfiles"`
+	DistSubdir string                `json:"dist_subdir,omitempty"`
+	Problem    string                `json:"problem,omitempty"`
+}
+
+type stealthDistfileJSON struct {
+	Name string       `json:"name"`
+	Was  checksumJSON `json:"was"`
+	Now  checksumJSON `json:"now"`
+}
+
+type checksumJSON struct {
+	RMD160 string `json:"rmd160,omitempty"`
+	SHA256 string `json:"sha256,omitempty"`
+	Size   int64  `json:"size,omitempty"`
 }
 
 func updateView(branch model.Branch, started bool, update engine.Update, plan bool) updateJSON {
@@ -48,6 +68,13 @@ func updateView(branch model.Branch, started bool, update engine.Update, plan bo
 		Current: update.Current, Applied: update.Applied, Files: nonNil(update.Files), Distfiles: update.Distfiles, Subject: update.Subject, Patches: nonNil(update.PatchProblems)}
 	if plan {
 		view.Diff = update.Diff
+	}
+	if stealth := update.Stealth; stealth != nil {
+		view.Stealth = &stealthJSON{DistSubdir: stealth.DistSubdir, Problem: stealth.Problem, Distfiles: []stealthDistfileJSON{}}
+		for _, d := range stealth.Distfiles {
+			view.Stealth.Distfiles = append(view.Stealth.Distfiles, stealthDistfileJSON{Name: d.Name,
+				Was: checksumJSON{d.Was.RMD160, d.Was.SHA256, d.Was.Size}, Now: checksumJSON{d.Now.RMD160, d.Now.SHA256, d.Now.Size}})
+		}
 	}
 	return view
 }

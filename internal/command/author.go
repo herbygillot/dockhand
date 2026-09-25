@@ -5,12 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/preparation"
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
@@ -61,9 +64,17 @@ reviewer would ask about, and what a passing build can't catch.
 --outdated updates every named port, or with --mine every port you
 maintain, that has a newer release: one branch each, from fresh master,
 each update committed as one commit. It shows how it splits the work before
-starting anything; --check also queues a check of each.`,
+starting anything; --check also queues a check of each.
+
+--submit goes on to tidy the edit, check it, and submit exactly that
+commit once the check passes: tidy, then submit --check, each previewed.
+Without a terminal, the tidy applies only when it is made of dockhand's own
+edits alone.`,
 		Args: cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if linked.submit && (batch.outdated || plan) {
+				return errors.New("--submit goes with one port's update, not --plan or --outdated")
+			}
 			if batch.outdated {
 				return updateOutdated(cmd.Context(), s, streams, args, batch)
 			}
@@ -80,11 +91,16 @@ starting anything; --check also queues a check of each.`,
 			if len(args) == 2 {
 				request.Version = args[1]
 			}
-			return author(cmd.Context(), s, streams, where, "update", request, linked)
+			branch, update, err := author(cmd.Context(), s, streams, where, "update", request, linked)
+			if err != nil || !linked.submit || !update.Applied {
+				return err
+			}
+			return tidyAndSubmit(cmd.Context(), s, streams, branch)
 		},
 	}
 	where.flags(cmd)
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the edit and change nothing")
+	cmd.Flags().BoolVar(&linked.submit, "submit", false, "then tidy it, check it, and submit it once the check passes")
 	cmd.Flags().BoolVar(&keepOld, "keep-old-checksums", false, "refresh legacy md5 or sha1 checksums in place rather than rewriting them as rmd160, sha256, and size")
 	cmd.Flags().BoolVar(&shared, "shared-release", false, "move every subport that shares the port's release")
 	cmd.Flags().BoolVar(&linked.revbump, "revbump-dependents", false, "also bump the revision of the ports that link it directly")
@@ -106,12 +122,19 @@ func checksumsCommand(s *settings, streams Streams) *cobra.Command {
 their checksums, in the branch's working files: what to run after editing
 the version by hand. Nothing is committed.
 
+A distfile that changed upstream under the same name, in a Portfile the
+branch has not changed, is a stealth update: it says so, shows the checksums
+before and after, and sets dist_subdir ${name}/${version}_1, the MacPorts
+guide's recipe, so mirrors keep both archives. Whether it needs a revision
+bump is yours to decide.
+
 The branch is --branch, else the one checked out here; --new starts one.
 --plan shows the edit and changes nothing.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			request := engine.UpdateRequest{Action: record.RefreshChecksums, Port: args[0], KeepOldChecksums: keepOld, Plan: plan}
-			return author(cmd.Context(), s, streams, where, "checksums", request, linkedOptions{})
+			_, _, err := author(cmd.Context(), s, streams, where, "checksums", request, linkedOptions{})
+			return err
 		},
 	}
 	where.flags(cmd)
@@ -120,25 +143,60 @@ The branch is --branch, else the one checked out here; --new starts one.
 	return cmd
 }
 
-// linkedOptions are update's --revbump-dependents and --except.
-type linkedOptions struct {
-	revbump bool
-	except  []string
-}
-
-// author finds the branch, makes the edit, and reports it.
-func author(ctx context.Context, s *settings, streams Streams, where branchChoice, purpose string, request engine.UpdateRequest, linked linkedOptions) error {
-	if where.new && request.Plan {
-		return fmt.Errorf("--plan changes nothing, so it starts no branch; plan in an existing one with --branch, or drop --plan")
-	}
+// tidyAndSubmit is the rest of update --submit: tidy the branch, then
+// submit --check, each previewed as its own command previews it.
+func tidyAndSubmit(ctx context.Context, s *settings, streams Streams, branch model.Branch) error {
 	e, err := s.open(ctx)
 	if err != nil {
 		return err
 	}
 	defer e.Close()
-	branch, started, err := chooseBranch(ctx, e, streams, where, request.Port, purpose)
+	out := streams.Out
+	proposal, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: branch})
 	if err != nil {
 		return err
+	}
+	if !proposal.Keep {
+		fmt.Fprintf(out, "\n%s · tidying %s\n", branch.ShortName(), describeWork(proposal))
+		writeTidyPlan(out, proposal)
+		applied, err := decideTidy(ctx, e, streams, proposal, false, false, "")
+		if err != nil {
+			return fmt.Errorf("%w; nothing was checked or submitted", err)
+		}
+		if !applied {
+			fmt.Fprintln(out, "Nothing was checked or submitted.")
+			return nil
+		}
+	}
+	if branch, err = e.Resolve(ctx, branch.ShortName()); err != nil {
+		return err
+	}
+	fmt.Fprintln(out)
+	return submitChecked(ctx, s, e, streams, engine.SubmitRequest{Branch: branch}, nil)
+}
+
+// linkedOptions are update's --revbump-dependents and --except, and
+// --submit, which goes on from the edit.
+type linkedOptions struct {
+	revbump bool
+	except  []string
+	submit  bool
+}
+
+// author finds the branch, makes the edit, and reports it.
+func author(ctx context.Context, s *settings, streams Streams, where branchChoice, purpose string, request engine.UpdateRequest, linked linkedOptions) (branch model.Branch, update engine.Update, err error) {
+	if where.new && request.Plan {
+		return model.Branch{}, engine.Update{}, fmt.Errorf("--plan changes nothing, so it starts no branch; plan in an existing one with --branch, or drop --plan")
+	}
+	e, err := s.open(ctx)
+	if err != nil {
+		return branch, update, err
+	}
+	defer e.Close()
+	var started bool
+	branch, started, err = chooseBranch(ctx, e, streams, where, request.Port, purpose)
+	if err != nil {
+		return branch, update, err
 	}
 	out := streams.Out
 	if started {
@@ -146,12 +204,15 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	}
 	fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), tilde(branch.Worktree))
 	request.Branch = branch
-	update, err := e.Update(ctx, request)
+	update, err = e.Update(ctx, request)
+	if errors.Is(err, preparation.ErrUnsupported) {
+		return branch, update, byHand(err, request, branch, started)
+	}
 	if err != nil {
 		if started {
-			return fmt.Errorf("%w\nKept: %s, with nothing changed", err, branch.Name)
+			return branch, update, fmt.Errorf("%w\nKept: %s, with nothing changed", err, branch.Name)
 		}
-		return err
+		return branch, update, err
 	}
 	result := updateView(branch, started, update, request.Plan)
 	streams.emit(result)
@@ -161,10 +222,13 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		} else {
 			fmt.Fprintf(out, "%s %s's checksums are current; nothing to change.\n", update.Port, update.After)
 		}
-		return nil
+		return branch, update, nil
 	}
 	if request.Action == record.Bump {
 		fmt.Fprintf(out, "%s: %s → %s%s\n", update.Port, update.Before, update.After, releaseLabel(update.Release))
+	} else if update.Stealth != nil {
+		fmt.Fprintf(out, "%s %s · the distfile changed upstream without a new name (stealth update)\n", update.Port, update.After)
+		writeStealth(out, update.Stealth)
 	} else {
 		fmt.Fprintf(out, "%s %s\n", update.Port, update.After)
 	}
@@ -176,9 +240,9 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		if linked.revbump {
 			result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.except, true)
 			streams.emit(result)
-			return err
+			return branch, update, err
 		}
-		return nil
+		return branch, update, nil
 	}
 	what := "Updated version and checksums"
 	if request.Action == record.RefreshChecksums {
@@ -190,19 +254,88 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	if update.Before.Revision != 0 && update.After.Revision == 0 {
 		what += "; revision reset to 0"
 	}
+	if stealth := update.Stealth; stealth != nil && stealth.DistSubdir != "" {
+		what += " and dist_subdir " + stealth.DistSubdir + ", so mirrors keep both archives"
+	}
 	fmt.Fprintf(out, "%s.\nChanged: %s\n", what, strings.Join(update.Files, ", "))
+	if stealth := update.Stealth; stealth != nil {
+		if stealth.Problem != "" {
+			fmt.Fprintf(out, "! dist_subdir was not set: %s. Set it yourself, so mirrors keep both archives; the MacPorts guide's recipe is dist_subdir ${name}/${version}_1\n", stealth.Problem)
+		}
+		fmt.Fprintln(out, "Inspect the source change before deciding whether it needs a revision bump.")
+	}
 	writeUpstream(out, update.Upstream)
 	for _, problem := range update.PatchProblems {
 		fmt.Fprintf(out, "! patch %s\n", problem)
 	}
 	if linked.revbump {
 		if result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.except, false); err != nil {
-			return err
+			return branch, update, err
 		}
 		streams.emit(result)
 	}
-	fmt.Fprintln(out, "Next: review it with git diff, then commit it")
-	return nil
+	if !linked.submit {
+		fmt.Fprintln(out, "Next: review it with git diff, then commit it")
+	}
+	return branch, update, nil
+}
+
+// byHand says that dockhand can't make the edit by itself, why, and how
+// to make it by hand (Design v3 §6.3).
+func byHand(err error, request engine.UpdateRequest, branch model.Branch, started bool) error {
+	reason := strings.TrimPrefix(err.Error(), preparation.ErrUnsupported.Error()+": ")
+	kept := "the branch, unchanged"
+	if started {
+		kept = branch.Name + ", with nothing changed"
+	}
+	switch request.Action {
+	case record.RefreshChecksums:
+		return fmt.Errorf("can't refresh %s's checksums by itself: %s\nKept: %s.\nWrite them yourself, as port checksum %s reports them:\n  dockhand edit %s",
+			request.Port, reason, kept, request.Port, request.Port)
+	}
+	return fmt.Errorf("can't update %s by itself: %s\nKept: %s.\nEdit the version yourself; dockhand checksums %s then fills in the rest:\n  dockhand edit %s",
+		request.Port, reason, kept, request.Port, request.Port)
+}
+
+// writeStealth shows each changed archive's checksums, before and after.
+func writeStealth(out io.Writer, stealth *engine.Stealth) {
+	for _, distfile := range stealth.Distfiles {
+		if len(stealth.Distfiles) > 1 {
+			fmt.Fprintf(out, "  %s\n", distfile.Name)
+		}
+		fmt.Fprintf(out, "  was   %s\n  now   %s\n", checksumWords(distfile.Was), checksumWords(distfile.Now))
+	}
+}
+
+// checksumWords is a checksum as a person compares it: sha256, shortened,
+// and the size, else rmd160.
+func checksumWords(sum portfile.Checksum) string {
+	short := func(hash string) string {
+		if len(hash) <= 10 {
+			return hash
+		}
+		return hash[:4] + "…" + hash[len(hash)-4:]
+	}
+	var words []string
+	switch {
+	case sum.SHA256 != "":
+		words = append(words, "sha256 "+short(sum.SHA256))
+	case sum.RMD160 != "":
+		words = append(words, "rmd160 "+short(sum.RMD160))
+	}
+	if sum.Size != 0 {
+		words = append(words, "size "+thousands(sum.Size))
+	}
+	return strings.Join(words, "   ")
+}
+
+// thousands writes a number with commas: 7,114,508.
+func thousands(n int64) string {
+	digits := strconv.FormatInt(n, 10)
+	for i := len(digits) - 3; i > 0; i -= 3 {
+		digits = digits[:i] + "," + digits[i:]
+	}
+	return digits
 }
 
 // revbumpLinked bumps the revision of the ports that link an updated one

@@ -82,6 +82,8 @@ type Update struct {
 	// Upstream is what comparing the old and new upstream archives found,
 	// when the update compared them.
 	Upstream *model.UpstreamComparison
+	// Stealth is a checksum refresh's stealth update, when it found one.
+	Stealth *Stealth
 }
 
 // Update edits a port's files in the branch's worktree, as the worktree
@@ -142,7 +144,18 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	if err != nil {
 		return Update{}, err
 	}
+	var stealth *Stealth
+	if request.Action == record.RefreshChecksums && len(result.Files) > 0 {
+		port := result.Target.Name
+		if port == "" {
+			port = request.Port
+		}
+		if stealth, err = e.stealth(ctx, worktree, branch, captured, port, &result); err != nil {
+			return Update{}, err
+		}
+	}
 	update := describe(branch, request.Port, result)
+	update.Stealth = stealth
 	if compare && len(result.Files) > 0 {
 		update.Upstream = compareUpstream(ctx, result)
 	}
