@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -155,4 +156,55 @@ func TestAPlanThatCannotEvaluateIsUnresolved(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, plan.Runnable())
 	require.Contains(t, plan.Unresolved[0].Reason, "dependency cycle: harbor-cli → libharbor → harbor-cli")
+}
+
+// A revision bump of a port whose shared code changed on the branch is
+// substantive, so a failure the shared code causes can't be accepted as
+// "cause not established" (Design v3 §3: revision-only "shared code
+// included"). From the 2026-09-25 implementation review. The source
+// settles who loads a PortGroup, through other PortGroups too; what it
+// can't settle counts as substantive.
+func TestChangedSharedCodeIsSubstantive(t *testing.T) {
+	f := setup(t)
+	write(t, f.upstream, map[string]string{
+		"textproc/jq/Portfile":                           "PortGroup github 1.0\nname jq\nversion 1.7.1\nrevision 0\n",
+		"_resources/port1.0/group/github-1.0.tcl":        "PortGroup legacysupport 1.1\n",
+		"_resources/port1.0/group/legacysupport-1.1.tcl": "# legacy support\n",
+	})
+	run(t, f.upstream, "add", "-A")
+	run(t, f.upstream, "commit", "-q", "-m", "jq: load group")
+	e := f.open(t)
+	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}}
+	for i, c := range []struct {
+		why   string
+		files map[string]string
+		kind  model.TargetKind
+	}{
+		{"a revision bump alone", nil, model.RevisionOnly},
+		{"a PortGroup jq doesn't load", map[string]string{"_resources/port1.0/group/qt5-1.0.tcl": "# changed\n"}, model.RevisionOnly},
+		{"a PortGroup jq loads", map[string]string{"_resources/port1.0/group/github-1.0.tcl": "PortGroup legacysupport 1.1\npost-destroot { error {fails here} }\n"}, model.Substantive},
+		{"a PortGroup jq loads through another", map[string]string{"_resources/port1.0/group/legacysupport-1.1.tcl": "# changed\n"}, model.Substantive},
+		{"shared code Base reads for every port", map[string]string{"_resources/port1.0/compilers/clang_compilers.tcl": "# changed\n"}, model.Substantive},
+		{"a PortGroup line the source doesn't spell", map[string]string{
+			"textproc/jq/Portfile":                 "PortGroup ${group} 1.0\nname jq\nversion 1.7.1\nrevision 1\n",
+			"_resources/port1.0/group/qt5-1.0.tcl": "# changed\n",
+		}, model.Substantive},
+	} {
+		branch, err := e.Start(t.Context(), StartRequest{Name: fmt.Sprintf("shared-%d", i)})
+		require.NoError(t, err)
+		run(t, branch.Worktree, "sparse-checkout", "add", "_resources")
+		files := map[string]string{"textproc/jq/Portfile": "PortGroup github 1.0\nname jq\nversion 1.7.1\nrevision 1\n"}
+		for path, text := range c.files {
+			files[path] = text
+		}
+		write(t, branch.Worktree, files)
+		run(t, branch.Worktree, "add", "-A") // new files are captured once tracked
+		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
+		require.NoError(t, err)
+		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}})
+		require.NoError(t, err)
+		require.Len(t, plan.Targets, 1, c.why)
+		require.Equal(t, c.kind, plan.Targets[0].Kind, c.why)
+		require.Equal(t, c.kind == model.RevisionOnly, Acceptable(plan.Targets[0]), c.why)
+	}
 }

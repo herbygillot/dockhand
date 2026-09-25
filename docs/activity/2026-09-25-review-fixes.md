@@ -49,3 +49,39 @@ extended:
 
 `TestCheckPlanNamesWhatOnlyLeftOut` covers the plan's line, and
 `TestPlanValidation` refuses a target both planned and omitted.
+
+## 2. Changed shared code is substantive
+
+A port whose own diff was `revision 0` to `revision 1` was classed
+revision-only even when a PortGroup it loads had changed on the branch,
+so a failure the PortGroup caused could be `--accept`ed as "cause not
+established" (§3: revision-only "shared code included").
+
+`targetKind` now also asks `loadsChangedSharedCode`, which settles the
+question from the source and answers yes to anything it can't settle:
+
+- **Outside `port1.0/group`.** A change elsewhere under `_resources` reaches
+  every port, since Base itself reads those files: the compiler lists and
+  the mirror sites.
+- **A changed PortGroup** reaches the ports that load it, directly or
+  through another PortGroup, following the `PortGroup` lines of the
+  Portfile and of each group it loads, at the branch's tree.
+- **Unknowns.** A `PortGroup` line that doesn't spell its name and version
+  literally, a group file the tree lacks, or a file that names
+  `_resources` itself counts as loading the change.
+
+A blanket "any `_resources` change" rule was tried first. It broke two
+existing tests that rightly keep a revision bump revision-only when the
+changed PortGroup is one the port never loads, so its dependents aren't
+in question for `impact`.
+
+`TestChangedSharedCodeIsSubstantive` covers six cases:
+
+- a revision bump alone;
+- a PortGroup the port doesn't load;
+- one it loads, which is the review's probe;
+- one it loads through another group;
+- the compiler lists;
+- a PortGroup line the source doesn't spell literally.
+
+Revision-only, and so acceptable, only in the first two.

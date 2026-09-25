@@ -176,14 +176,18 @@ func ineligible(port macports.PortInfo, platform model.Platform) string {
 var revisionDeclaration = regexp.MustCompile(`^\s*revision\s+\S+\s*$`)
 
 // targetKind proves a directory's change revision-only from its source:
-// nothing under files/ changed, and the Portfile is identical once its
-// revision lines are set aside. Anything else is substantive.
+// nothing under files/ changed, no shared code it loads changed, and the
+// Portfile is identical once its revision lines are set aside. Anything
+// else is substantive (Design v3 §3).
 func (e *Engine) targetKind(ctx context.Context, before, after, directory string, changed []string) (model.TargetKind, error) {
 	portfile := directory + "/Portfile"
 	for _, path := range changed {
 		if strings.HasPrefix(path, directory+"/") && path != portfile {
 			return model.Substantive, nil
 		}
+	}
+	if e.loadsChangedSharedCode(ctx, after, portfile, changed) {
+		return model.Substantive, nil
 	}
 	old, oldText, err := e.Repo.File(ctx, before, portfile)
 	if err != nil || !old.Exists {
@@ -200,6 +204,67 @@ func (e *Engine) targetKind(ctx context.Context, before, after, directory string
 		return model.RevisionOnly, nil
 	}
 	return model.Substantive, nil
+}
+
+var (
+	groupFile = regexp.MustCompile(`^_resources/port1\.0/group/([^/]+)\.tcl$`)
+	portGroup = regexp.MustCompile(`\bPortGroup\b(.*)`)
+	literal   = regexp.MustCompile(`^[A-Za-z0-9_.+-]+$`)
+)
+
+// loadsChangedSharedCode reports whether changed shared code under
+// _resources can reach a Portfile, as its source says, answering yes to
+// anything the source can't settle. A change outside port1.0/group reaches
+// every port, since Base itself reads those files: the compiler lists and
+// the mirror sites. A changed PortGroup reaches the ports that load it,
+// directly or through another PortGroup. A PortGroup line that doesn't
+// spell its name and version literally, or a file that names _resources
+// itself, could load anything.
+func (e *Engine) loadsChangedSharedCode(ctx context.Context, tree, portfile string, changed []string) bool {
+	groups := map[string]bool{}
+	for _, path := range changed {
+		if m := groupFile.FindStringSubmatch(path); m != nil {
+			groups[m[1]] = true
+		} else if strings.HasPrefix(path, "_resources/") {
+			return true
+		}
+	}
+	if len(groups) == 0 {
+		return false
+	}
+	queue, seen := []string{portfile}, map[string]bool{portfile: true}
+	for len(queue) > 0 {
+		file, text, err := e.Repo.File(ctx, tree, queue[0])
+		queue = queue[1:]
+		if err != nil || !file.Exists {
+			return true
+		}
+		for _, line := range strings.Split(string(text), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "#") {
+				continue
+			}
+			if strings.Contains(line, "_resources") {
+				return true
+			}
+			m := portGroup.FindStringSubmatch(line)
+			if m == nil {
+				continue
+			}
+			fields := strings.Fields(strings.TrimRight(m[1], "}; "))
+			if len(fields) < 2 || !literal.MatchString(fields[0]) || !literal.MatchString(fields[1]) {
+				return true
+			}
+			name := fields[0] + "-" + fields[1]
+			if groups[name] {
+				return true
+			}
+			if next := "_resources/port1.0/group/" + name + ".tcl"; !seen[next] {
+				seen[next] = true
+				queue = append(queue, next)
+			}
+		}
+	}
+	return false
 }
 
 // narrow keeps the named changed targets and adds back the changed
