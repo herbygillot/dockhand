@@ -59,13 +59,13 @@ func (t *tx) Edits(branch model.BranchID) ([]model.Edit, error) {
 	return edits, storageError(rows.Err())
 }
 
-const checkpointColumns = "number, kind, branch_id, before_head, after_head, at, restored_at"
+const checkpointColumns = "number, kind, branch_id, before_head, after_head, index_tree, at, restored_at"
 
 func scanCheckpoint(row interface{ Scan(...any) error }) (model.Checkpoint, error) {
 	var c model.Checkpoint
 	var at int64
 	var restored sql.NullInt64
-	if err := row.Scan(&c.Number, &c.Kind, &c.Branch, &c.Before, &c.After, &at, &restored); err != nil {
+	if err := row.Scan(&c.Number, &c.Kind, &c.Branch, &c.Before, &c.After, &c.Index, &at, &restored); err != nil {
 		return model.Checkpoint{}, storageError(err)
 	}
 	c.At, c.RestoredAt = fromMillis(at), fromNullable(restored)
@@ -89,8 +89,8 @@ func (t *tx) AddCheckpoint(c model.Checkpoint) error {
 	if c.Number != next {
 		return fmt.Errorf("%w: checkpoint %d is not the next, %d", store.ErrConflict, c.Number, next)
 	}
-	_, err = t.exec("INSERT INTO checkpoints(repository_id, "+checkpointColumns+") VALUES(?,?,?,?,?,?,?,?)",
-		t.repo, c.Number, c.Kind, c.Branch, c.Before, c.After, millis(c.At), nullableMillis(c.RestoredAt))
+	_, err = t.exec("INSERT INTO checkpoints(repository_id, "+checkpointColumns+") VALUES(?,?,?,?,?,?,?,?,?)",
+		t.repo, c.Number, c.Kind, c.Branch, c.Before, c.After, c.Index, millis(c.At), nullableMillis(c.RestoredAt))
 	return err
 }
 

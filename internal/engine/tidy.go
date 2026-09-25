@@ -64,8 +64,12 @@ type TidyPlan struct {
 	// Base and Head are commits; Final is the tree the series ends at,
 	// the working files as they were captured, and BaseTree the base's.
 	Base, Head, Final, BaseTree string
-	History                     []git.HistoryCommit
-	Groups                      []TidyGroup
+	// Index is the index's tree when the plan was made. Applying refuses
+	// if it has changed, since something was staged that the plan never
+	// saw, and the checkpoint keeps it (Design v3 §8).
+	Index   string
+	History []git.HistoryCommit
+	Groups  []TidyGroup
 	// Keep is true when the history already has a good shape and nothing
 	// is uncommitted.
 	Keep bool
@@ -112,6 +116,10 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 	if err != nil {
 		return TidyPlan{}, err
 	}
+	index, err := worktree.IndexTree(ctx)
+	if err != nil {
+		return TidyPlan{}, err
+	}
 	base := string(branch.Base)
 	if above, err := worktree.IsAncestor(ctx, base, head); err != nil {
 		return TidyPlan{}, err
@@ -131,7 +139,7 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 	if err != nil {
 		return TidyPlan{}, err
 	}
-	plan := TidyPlan{Branch: branch, Worktree: branch.Worktree, Base: base, Head: head, Final: final, BaseTree: trees[base], History: history}
+	plan := TidyPlan{Branch: branch, Worktree: branch.Worktree, Base: base, Head: head, Final: final, BaseTree: trees[base], History: history, Index: index}
 	changed, err := worktree.ChangedPaths(ctx, trees[base], final)
 	if err != nil {
 		return TidyPlan{}, err
@@ -587,11 +595,24 @@ func (e *Engine) ApplyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 	if head != plan.Head || final != plan.Final || string(current.Base) != plan.Base {
 		return TidyResult{}, fmt.Errorf("%w; run dockhand tidy again", ErrStalePlan)
 	}
+	index, err := worktree.IndexTree(ctx)
+	if err != nil {
+		return TidyResult{}, err
+	}
+	if plan.Index != "" && index != plan.Index {
+		return TidyResult{}, fmt.Errorf("%w: something was staged since the plan was made; run dockhand tidy again", ErrStalePlan)
+	}
 	committer, err := worktree.Author(ctx)
 	if err != nil {
 		return TidyResult{}, err
 	}
 	committer.When = e.now()
+	// The index is kept, reachable, before anything moves: it can hold
+	// staged content neither the old head nor the working files have.
+	keptIndex, err := worktree.WriteCommit(ctx, git.Commit{Tree: index, Parents: []string{plan.Head}, Message: "dockhand: the index before tidy\n", Author: committer, Committer: committer})
+	if err != nil {
+		return TidyResult{}, err
+	}
 	trees, err := worktree.CommitTrees(ctx, []string{plan.Base})
 	if err != nil {
 		return TidyResult{}, err
@@ -621,9 +642,10 @@ func (e *Engine) ApplyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 		if err != nil {
 			return err
 		}
-		checkpoint = model.Checkpoint{Number: number, Kind: model.CheckpointTidy, Branch: plan.Branch.ID, Before: model.ObjectID(plan.Head), After: model.ObjectID(parent), At: e.now()}
+		checkpoint = model.Checkpoint{Number: number, Kind: model.CheckpointTidy, Branch: plan.Branch.ID, Before: model.ObjectID(plan.Head), After: model.ObjectID(parent), Index: model.ObjectID(index), At: e.now()}
 		if err := worktree.UpdateRefs(ctx, []git.RefChange{
 			{Name: checkpoint.Ref(), Desired: git.RefValue{Exists: true, Object: plan.Head}},
+			{Name: checkpoint.IndexRef(), Desired: git.RefValue{Exists: true, Object: keptIndex}},
 			{Name: ref, Expected: git.RefValue{Exists: true, Object: plan.Head}, Desired: git.RefValue{Exists: true, Object: parent}},
 		}); err != nil {
 			return fmt.Errorf("%w; nothing was changed: %w", ErrStalePlan, err)
@@ -641,6 +663,7 @@ func (e *Engine) ApplyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 			err = errors.Join(err, worktree.UpdateRefs(context.WithoutCancel(ctx), []git.RefChange{
 				{Name: ref, Expected: git.RefValue{Exists: true, Object: parent}, Desired: git.RefValue{Exists: true, Object: plan.Head}},
 				{Name: checkpoint.Ref(), Expected: git.RefValue{Exists: true, Object: plan.Head}},
+				{Name: checkpoint.IndexRef(), Expected: git.RefValue{Exists: true, Object: keptIndex}},
 			}))
 		}
 		return TidyResult{}, err
@@ -652,8 +675,9 @@ func (e *Engine) ApplyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 	return result, nil
 }
 
-// Restore puts a branch's history back as a checkpoint kept it, when the
-// branch is still where the tidy or rebase that made it left it. The working files are not
+// Restore puts a branch's history back as a checkpoint kept it, and the
+// index as it kept that, when the branch and its index are still where
+// the tidy or rebase that made it left them. The working files are not
 // touched, so edits tidy had committed read as uncommitted again.
 func (e *Engine) Restore(ctx context.Context, name string) (model.Checkpoint, model.Branch, error) {
 	kind, digits, _ := strings.Cut(name, "-")
@@ -691,11 +715,30 @@ func (e *Engine) Restore(ctx context.Context, name string) (model.Checkpoint, mo
 		return checkpoint, branch, fmt.Errorf("%s has moved on since %s (it is at %s, not %s); restoring would discard that work, so nothing was changed",
 			branch.Name, name, short(model.ObjectID(head)), short(checkpoint.After))
 	}
+	if checkpoint.Index != "" {
+		// The rewrite left the index at its new head's tree; anything
+		// else is staged work that restoring would replace.
+		index, err := worktree.IndexTree(ctx)
+		if err != nil {
+			return checkpoint, branch, err
+		}
+		trees, err := worktree.CommitTrees(ctx, []string{string(checkpoint.After)})
+		if err != nil {
+			return checkpoint, branch, err
+		}
+		if index != trees[string(checkpoint.After)] {
+			return checkpoint, branch, fmt.Errorf("something was staged in %s since %s; restoring the index would replace it, so nothing was changed. Commit it, or set it aside (git stash), first", branch.Name, name)
+		}
+	}
 	if err := worktree.UpdateRefs(ctx, []git.RefChange{{Name: "refs/heads/" + branch.Name,
 		Expected: git.RefValue{Exists: true, Object: string(checkpoint.After)}, Desired: git.RefValue{Exists: true, Object: string(checkpoint.Before)}}}); err != nil {
 		return checkpoint, branch, err
 	}
-	if err := worktree.ResetIndex(ctx); err != nil {
+	if checkpoint.Index != "" {
+		if err := worktree.SetIndex(ctx, string(checkpoint.Index)); err != nil {
+			return checkpoint, branch, err
+		}
+	} else if err := worktree.ResetIndex(ctx); err != nil {
 		return checkpoint, branch, err
 	}
 	restored := e.now()

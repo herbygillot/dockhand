@@ -85,3 +85,41 @@ in question for `impact`.
 - a PortGroup line the source doesn't spell literally.
 
 Revision-only, and so acceptable, only in the first two.
+
+## 3. A tidy checkpoint keeps the index
+
+A checkpoint recorded only the old and new heads. Tidy reset the index to
+the new head, and `restore` reset it to the old one. So an index holding a
+staged version that was in neither head nor the working files lost it for
+good, though §8 has the checkpoint save "any captured index or working
+state".
+
+- **Recorded and kept.** Tidy writes the index's tree before anything
+  moves, and records it as the checkpoint's `Index` in a new
+  `index_tree` column (schema 9). It keeps the tree reachable under
+  `refs/dockhand/checkpoints/<name>-index`, a commit of it on the old
+  head. `clean` removes that ref with the checkpoint's own.
+- **Restored, after checking for newer work.** `restore` refuses if
+  anything was staged since the tidy (the index is no longer the new
+  head's tree), and otherwise puts the recorded index back. A checkpoint
+  without one, such as a rebase's, which only runs with nothing
+  uncommitted, resets the index as before.
+- **Sparse-safe.** `git.SetIndex` restores the index entry by entry, from
+  a `diff-tree` of the current index against the recorded one, through
+  `update-index --index-info`. A wholesale `read-tree` drops the
+  skip-worktree bits of a sparse worktree, so every port outside it read
+  as deleted. The existing restore test caught that, and a throwaway
+  repository confirmed it before the fix.
+- **Saved plans.** A tidy plan records the index's tree when it is made,
+  including in a saved plan's optional `index` field. Applying it, or
+  loading a saved one, refuses if something was staged since, as it
+  already refused new commits or edited files.
+
+Tests:
+
+- `TestRestorePutsTheStagedVersionBack` is the review's probe, extended:
+  the ref keeps the index, restore refuses over newer staged work, then
+  restores the staged version with the working files untouched.
+- `TestSetIndexRestoresARecordedIndexInASparseCheckout`.
+- `TestASavedPlanAppliesUntilTheBranchMoves` now also stages something
+  after the plan.

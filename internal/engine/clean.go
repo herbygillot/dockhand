@@ -362,7 +362,7 @@ func (e *Engine) ApplyClean(ctx context.Context, plans []CleanBranch) ([]CleanBr
 }
 
 // dropRefs removes the refs dockhand kept for a merged branch: its
-// checkpoints and its snapshots' commits.
+// checkpoints, with the indexes they kept, and its snapshots' commits.
 func (e *Engine) dropRefs(ctx context.Context, branch model.Branch) error {
 	var names []string
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
@@ -371,7 +371,7 @@ func (e *Engine) dropRefs(ctx context.Context, branch model.Branch) error {
 			return err
 		}
 		for _, checkpoint := range checkpoints {
-			names = append(names, checkpoint.Ref())
+			names = append(names, checkpoint.Ref(), checkpoint.IndexRef())
 		}
 		revisions, err := r.Revisions(branch.ID)
 		for _, revision := range revisions {

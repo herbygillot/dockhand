@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -118,6 +119,45 @@ func (r *Repository) ComposeTree(ctx context.Context, onto, from string, paths [
 	}
 	out, err := r.run(ctx, nil, env, "write-tree")
 	return objectResult(out, err)
+}
+
+// SetIndex makes the index hold a tree and leaves the working files as
+// they are: what restores an index recorded earlier. It rewrites only the
+// entries that differ, so a sparse checkout's entries outside its paths
+// keep the skip-worktree bits a wholesale read-tree would drop, which
+// would make every port outside them read as deleted.
+func (r *Repository) SetIndex(ctx context.Context, tree string) error {
+	if !ValidObjectID(tree) {
+		return fmt.Errorf("git: a literal tree is required")
+	}
+	current, err := r.IndexTree(ctx)
+	if err != nil {
+		return err
+	}
+	out, err := r.output(ctx, "diff-tree", "-r", "-z", "--no-renames", current, tree)
+	if err != nil {
+		return err
+	}
+	// Each change is ":<old mode> <new mode> <old id> <new id> <status>",
+	// then its path, NUL-terminated.
+	fields := strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00")
+	var info bytes.Buffer
+	for i := 0; i+1 < len(fields); i += 2 {
+		change := strings.Fields(strings.TrimPrefix(fields[i], ":"))
+		if len(change) != 5 {
+			return fmt.Errorf("git: unreadable change %q", fields[i])
+		}
+		mode, object := change[1], change[3]
+		if strings.HasPrefix(change[4], "D") {
+			mode, object = "0", strings.Repeat("0", len(object))
+		}
+		fmt.Fprintf(&info, "%s %s\t%s\x00", mode, object, fields[i+1])
+	}
+	if info.Len() == 0 {
+		return nil
+	}
+	_, err = r.run(ctx, info.Bytes(), nil, "update-index", "-z", "--index-info")
+	return err
 }
 
 // ResetIndex makes the index match HEAD and leaves the working files as

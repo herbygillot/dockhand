@@ -193,3 +193,37 @@ func TestTidyRefusesAMerge(t *testing.T) {
 	_, err = e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
 	require.ErrorContains(t, err, "never flattens a merge")
 }
+
+// A tidy checkpoint keeps the index it replaced, which can hold a staged
+// version neither the old head nor the working files have, and restore
+// puts it back, unless something was staged since (Design v3 §8). From
+// the 2026-09-25 implementation review.
+func TestRestorePutsTheStagedVersionBack(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch := committedUpdate(t, e)
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# staged version\n"})
+	run(t, branch.Worktree, "add", "textproc/jq/Portfile")
+	staged := run(t, branch.Worktree, "show", ":textproc/jq/Portfile")
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# working version\n"})
+
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch, Squash: true, Message: "jq: update to 1.8.1"})
+	require.NoError(t, err)
+	tidied, err := e.ApplyTidy(t.Context(), plan)
+	require.NoError(t, err)
+	require.NotEmpty(t, tidied.Checkpoint.Index)
+	require.NotEqual(t, staged, run(t, branch.Worktree, "show", ":textproc/jq/Portfile"), "tidy leaves the index at its new head")
+	require.Equal(t, string(tidied.Checkpoint.Index), run(t, branch.Worktree, "rev-parse", tidied.Checkpoint.IndexRef()+"^{tree}"), "a ref keeps it reachable")
+
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# staged after tidy\n"})
+	run(t, branch.Worktree, "add", "textproc/jq/Portfile")
+	_, _, err = e.Restore(t.Context(), tidied.Checkpoint.Name())
+	require.ErrorContains(t, err, "something was staged in dockhand/jq-update since "+tidied.Checkpoint.Name())
+	run(t, branch.Worktree, "reset", "-q")
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# working version\n"})
+
+	_, _, err = e.Restore(t.Context(), tidied.Checkpoint.Name())
+	require.NoError(t, err)
+	require.Equal(t, staged, run(t, branch.Worktree, "show", ":textproc/jq/Portfile"))
+	require.Equal(t, "name jq\nversion 1.8.1\n# working version\n", read(t, filepath.Join(branch.Worktree, "textproc/jq/Portfile")), "the working files are untouched")
+}

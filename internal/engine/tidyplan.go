@@ -125,11 +125,14 @@ const TidyPlanVersion = 1
 // made. Messages and authors may be edited in the file; the paths are
 // checked against the branch when it is applied.
 type savedTidyPlan struct {
-	Version int           `json:"version"`
-	Branch  string        `json:"branch"`
-	Base    string        `json:"base"`
-	Head    string        `json:"head"`
-	Working string        `json:"working_tree"`
+	Version int    `json:"version"`
+	Branch  string `json:"branch"`
+	Base    string `json:"base"`
+	Head    string `json:"head"`
+	Working string `json:"working_tree"`
+	// Index is the index's tree when the plan was made; absent from plans
+	// saved before it was recorded.
+	Index   string        `json:"index,omitempty"`
 	Commits []savedCommit `json:"commits"`
 }
 
@@ -154,7 +157,7 @@ func (p TidyPlan) Save() ([]byte, error) {
 	if p.Keep || len(p.Groups) == 0 {
 		return nil, errors.New("the plan changes nothing")
 	}
-	saved := savedTidyPlan{Version: TidyPlanVersion, Branch: p.Branch.Name, Base: p.Base, Head: p.Head, Working: p.Final}
+	saved := savedTidyPlan{Version: TidyPlanVersion, Branch: p.Branch.Name, Base: p.Base, Head: p.Head, Working: p.Final, Index: p.Index}
 	for _, group := range p.Groups {
 		commit := savedCommit{Message: group.Message, Author: savedAuthor(group.Author), Paths: group.Paths, Working: group.Working, Notes: group.Notes}
 		for _, combined := range group.Combines {
@@ -199,6 +202,15 @@ func (e *Engine) LoadTidyPlan(ctx context.Context, data []byte) (TidyPlan, error
 	case final != saved.Working:
 		return TidyPlan{}, fmt.Errorf("%w: its files were edited; make a new plan with dockhand tidy --plan --out", ErrStalePlan)
 	}
+	if saved.Index != "" {
+		index, err := worktree.IndexTree(ctx)
+		if err != nil {
+			return TidyPlan{}, err
+		}
+		if index != saved.Index {
+			return TidyPlan{}, fmt.Errorf("%w: something was staged since it was made; make a new plan with dockhand tidy --plan --out", ErrStalePlan)
+		}
+	}
 	history, err := worktree.History(ctx, saved.Base, head)
 	if err != nil {
 		return TidyPlan{}, err
@@ -207,7 +219,7 @@ func (e *Engine) LoadTidyPlan(ctx context.Context, data []byte) (TidyPlan, error
 	if err != nil {
 		return TidyPlan{}, err
 	}
-	plan := TidyPlan{Branch: branch, Worktree: branch.Worktree, Base: saved.Base, Head: head, Final: final, BaseTree: trees[saved.Base], History: history}
+	plan := TidyPlan{Branch: branch, Worktree: branch.Worktree, Base: saved.Base, Head: head, Final: final, BaseTree: trees[saved.Base], History: history, Index: saved.Index}
 	changed, err := worktree.ChangedPaths(ctx, plan.BaseTree, final)
 	if err != nil {
 		return TidyPlan{}, err

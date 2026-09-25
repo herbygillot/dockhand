@@ -117,8 +117,13 @@ type Checkpoint struct {
 	Branch BranchID
 	// Before is the branch head it replaced, and After the one it wrote.
 	Before, After ObjectID
-	At            time.Time
-	RestoredAt    *time.Time
+	// Index is the tree the index held before the rewrite, which can hold
+	// staged content neither Before nor the working files have. IndexRef
+	// keeps it reachable. Empty when nothing was recorded, as for a
+	// rebase, which only runs with nothing uncommitted.
+	Index      ObjectID
+	At         time.Time
+	RestoredAt *time.Time
 }
 
 // Name is what people type: tidy-3, or rebase-4.
@@ -126,6 +131,10 @@ func (c Checkpoint) Name() string { return fmt.Sprintf("%s-%d", c.Kind, c.Number
 
 // Ref is the Git ref that keeps the old history.
 func (c Checkpoint) Ref() string { return "refs/dockhand/checkpoints/" + c.Name() }
+
+// IndexRef is the Git ref that keeps the replaced index: a commit of its
+// tree on Before.
+func (c Checkpoint) IndexRef() string { return c.Ref() + "-index" }
 
 // Validate checks the rules every stored checkpoint keeps.
 func (c Checkpoint) Validate() error {

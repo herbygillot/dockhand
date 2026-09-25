@@ -111,6 +111,16 @@ func TestASavedPlanAppliesUntilTheBranchMoves(t *testing.T) {
 	require.ErrorContains(t, err, "its files were edited")
 	write(t, plan.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\n# harbor 3\n"})
 
+	// Staging something the plan never saw makes it stale too, since
+	// applying would reset the index.
+	write(t, plan.Worktree, map[string]string{"textproc/jq/Portfile": "staged after the plan\n"})
+	run(t, plan.Worktree, "add", "textproc/jq/Portfile")
+	write(t, plan.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\n# harbor 3\n"})
+	_, err = e.LoadTidyPlan(t.Context(), edited)
+	require.ErrorIs(t, err, ErrStalePlan)
+	require.ErrorContains(t, err, "something was staged since it was made")
+	run(t, plan.Worktree, "read-tree", plan.Index)
+
 	loaded, err = e.LoadTidyPlan(t.Context(), edited)
 	require.NoError(t, err)
 	_, err = e.ApplyTidy(t.Context(), loaded)
