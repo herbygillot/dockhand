@@ -1,0 +1,107 @@
+diff --git a/internal/engine/review_regressions_test.go b/internal/engine/review_regressions_test.go
+new file mode 100644
+--- /dev/null
++++ b/internal/engine/review_regressions_test.go
+@@ -0,0 +1,102 @@
++package engine
++
++import (
++	"context"
++	"testing"
++
++	"github.com/herbygillot/dockhand/internal/macports"
++	"github.com/herbygillot/dockhand/internal/model"
++	"github.com/stretchr/testify/require"
++)
++
++func TestReviewNarrowCheckDoesNotAuthorizeUncheckedChangedPort(t *testing.T) {
++	f := setup(t)
++	e, _ := f.withPreparer(t)
++	f.withFork(t, e)
++	branch := committedUpdate(t, e)
++	run(t, branch.Worktree, "sparse-checkout", "add", "devel/libharbor")
++	write(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
++	run(t, branch.Worktree, "commit", "-q", "-am", "libharbor: update to 3")
++	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{
++		"textproc/jq": {port("jq")}, "devel/libharbor": {port("libharbor")},
++	}}
++	e.Providers = map[string]Provider{"command": &scriptedProvider{}}
++	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureHead})
++	require.NoError(t, err)
++	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}, Only: []string{"jq"}})
++	require.NoError(t, err)
++	queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
++	require.NoError(t, err)
++	completed, err := e.Drive(t.Context(), session(t, e), queued.ID)
++	require.NoError(t, err)
++	require.Equal(t, model.RunPassed, completed.State)
++	submission, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq, libharbor: update"})
++	require.NoError(t, err)
++	t.Logf("changed ports=%v; checked targets=%v; blocking=%v", submission.Ports, names(submission.Evidence.Plan.Targets), submission.Blocking)
++	require.NotEmpty(t, submission.Blocking, "libharbor is changed and has never been checked")
++}
++
++func TestReviewSharedBuildCodeIsSubstantive(t *testing.T) {
++	f := setup(t)
++	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "PortGroup github 1.0\nname jq\nversion 1.7.1\nrevision 0\n"})
++	run(t, f.upstream, "commit", "-q", "-am", "jq: load group")
++	e := f.open(t)
++	branch, err := e.Start(t.Context(), StartRequest{Name: "shared-code", Here: true})
++	require.NoError(t, err)
++	write(t, branch.Worktree, map[string]string{
++		"textproc/jq/Portfile":                    "PortGroup github 1.0\nname jq\nversion 1.7.1\nrevision 1\n",
++		"_resources/port1.0/group/github-1.0.tcl": "post-destroot { error {changed build hook fails here} }\n",
++	})
++	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}}
++	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
++	require.NoError(t, err)
++	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}})
++	require.NoError(t, err)
++	require.Len(t, plan.Targets, 1)
++	t.Logf("target=%s kind=%s acceptable=%v", plan.Targets[0].Target.Name, plan.Targets[0].Kind, Acceptable(plan.Targets[0]))
++	require.Equal(t, model.Substantive, plan.Targets[0].Kind)
++}
++
++func TestReviewTidyRestorePreservesStagedContents(t *testing.T) {
++	f := setup(t)
++	e, _ := f.withPreparer(t)
++	branch := committedUpdate(t, e)
++	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# staged version\n"})
++	run(t, branch.Worktree, "add", "textproc/jq/Portfile")
++	before := run(t, branch.Worktree, "show", ":textproc/jq/Portfile")
++	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# working version\n"})
++	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch, Squash: true, Message: "jq: update to 1.8.1"})
++	require.NoError(t, err)
++	tidied, err := e.ApplyTidy(t.Context(), plan)
++	require.NoError(t, err)
++	_, _, err = e.Restore(t.Context(), tidied.Checkpoint.Name())
++	require.NoError(t, err)
++	after := run(t, branch.Worktree, "show", ":textproc/jq/Portfile")
++	t.Logf("index before=%q; index restored=%q", before, after)
++	require.Equal(t, before, after, "restore must recover the staged version too")
++}
++
++type reviewPlatformPorts struct{ fakePorts }
++
++func (p reviewPlatformPorts) Ports(ctx context.Context, source model.Source, directory string, platform model.Platform) ([]macports.PortInfo, error) {
++	ports, err := p.fakePorts.Ports(ctx, source, directory, platform)
++	if directory == "graphics/harbor-viewer" {
++		if platform.Architecture == "arm64" {
++			return []macports.PortInfo{port("harbor-viewer")}, nil
++		}
++		return []macports.PortInfo{port("harbor-viewer", "libharbor")}, nil
++	}
++	return ports, err
++}
++
++func TestReviewLaterPlatformKeepsChangedPrerequisite(t *testing.T) {
++	f := setup(t)
++	e := f.open(t)
++	revision := harborBranch(t, e)
++	e.PortReader = reviewPlatformPorts{harborPorts()}
++	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm, tahoeX86}, Only: []string{"harbor-viewer"}})
++	require.NoError(t, err)
++	t.Logf("targets=%v", names(plan.Targets))
++	_, included := plan.Target("libharbor")
++	require.True(t, included, "x86_64's changed prerequisite must not be lost because arm64 was evaluated first")
++}
