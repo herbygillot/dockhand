@@ -15,6 +15,8 @@ const (
 	EditUpdate    EditKind = "update"
 	EditChecksums EditKind = "checksums"
 	EditRevbump   EditKind = "revbump"
+	// EditCreate is a new port's first Portfile.
+	EditCreate EditKind = "create"
 )
 
 // EditedFile is one file an authoring command wrote: its blob before and
@@ -80,7 +82,7 @@ func (e Edit) Validate() error {
 	switch {
 	case e.ID == "" || e.Branch == "":
 		return invalid("edit %q has no ID or branch", e.ID)
-	case e.Kind != EditUpdate && e.Kind != EditChecksums && e.Kind != EditRevbump:
+	case e.Kind != EditUpdate && e.Kind != EditChecksums && e.Kind != EditRevbump && e.Kind != EditCreate:
 		return invalid("edit %s has unknown kind %q", e.ID, e.Kind)
 	case e.Port == "" || e.Directory == "" || e.Subject == "":
 		return invalid("edit %s has no port, directory, or subject", e.ID)

@@ -244,3 +244,38 @@ func (r *Repository) DiffDirectories(ctx context.Context, root string) ([]byte, 
 	}
 	return result.Output, err
 }
+
+// ExistingPaths are those of the paths the tree holds, as files or
+// directories, found in one listing.
+func (r *Repository) ExistingPaths(ctx context.Context, tree string, paths []string) ([]string, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	for _, name := range paths {
+		if !snapshotPath(name) {
+			return nil, fmt.Errorf("git: invalid path %q", name)
+		}
+	}
+	out, err := r.output(ctx, append([]string{"ls-tree", "--name-only", "-z", tree, "--"}, paths...)...)
+	if err != nil {
+		return nil, err
+	}
+	var found []string
+	for _, name := range strings.Split(string(out), "\x00") {
+		if name != "" {
+			found = append(found, name)
+		}
+	}
+	return found, nil
+}
+
+// Add stages new files in a worktree, so the next capture includes them.
+func (r *Repository) Add(ctx context.Context, paths ...string) error {
+	for _, name := range paths {
+		if !snapshotPath(name) {
+			return fmt.Errorf("git: invalid path %q", name)
+		}
+	}
+	_, err := r.output(ctx, append([]string{"add", "--sparse", "--"}, paths...)...)
+	return err
+}

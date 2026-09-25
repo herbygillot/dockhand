@@ -70,6 +70,8 @@ type Engine struct {
 	// ArchiveFetcher fetches the archives a Portfile declares, for diff
 	// --archive; MacPorts' evaluator when nil.
 	ArchiveFetcher ArchiveFetcher
+	// ProjectReader observes upstream projects for create; GitHub when nil.
+	ProjectReader ProjectReader
 	// Providers are where checks build, by name.
 	Providers map[string]Provider
 	ports     *selection.Reader

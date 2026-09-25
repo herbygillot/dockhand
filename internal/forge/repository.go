@@ -57,3 +57,17 @@ type Documents interface {
 type FileRepository interface {
 	File(ctx context.Context, commit, path string, limit int64) ([]byte, error)
 }
+
+// Description is what a forge says about a repository: its one-line
+// description, its homepage, and the license it detected, as an SPDX
+// identifier.
+type Description struct {
+	Description string
+	Homepage    string
+	License     string
+}
+
+// DescribedRepository reports a repository's description.
+type DescribedRepository interface {
+	Describe(context.Context) (Description, error)
+}

@@ -117,6 +117,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 		updateCommand(&settings, streams),
 		checksumsCommand(&settings, streams),
 		revbumpCommand(&settings, streams),
+		createCommand(&settings, streams),
 		editCommand(&settings, streams),
 	} {
 		command.GroupID = "author"
@@ -178,7 +179,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	for _, command := range root.Commands() {
 		switch command.Name() {
 		case "status", "path", "diff", "impact", "check", "retry", "wait", "queue", "config",
-			"start", "adopt", "update", "checksums", "revbump", "edit", "tidy", "submit", "rebase", "review",
+			"start", "adopt", "update", "checksums", "revbump", "create", "edit", "tidy", "submit", "rebase", "review",
 			"cancel", "logs", "restore", "archive", "clean", "explain", "outdated":
 			supportsJSON(command)
 		}

@@ -398,10 +398,18 @@ func fromEdits(ctx context.Context, repo *git.Repository, baseTree, final, direc
 			return false, "", nil
 		}
 	}
+	// A new port's subject names it new, and an update's names the
+	// version, whatever edits followed them.
 	subject := mine[len(mine)-1].Subject
-	for _, edit := range slices.Backward(mine) {
-		if edit.Kind == model.EditUpdate {
-			subject = edit.Subject
+	found := false
+	for _, kind := range []model.EditKind{model.EditCreate, model.EditUpdate} {
+		for _, edit := range slices.Backward(mine) {
+			if edit.Kind == kind {
+				subject, found = edit.Subject, true
+				break
+			}
+		}
+		if found {
 			break
 		}
 	}
