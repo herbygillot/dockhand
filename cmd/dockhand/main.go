@@ -21,7 +21,13 @@ func main() {
 		err = closeErr
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		code := command.ExitCode(err)
+		if ctx.Err() != nil && code == 1 {
+			code = 130
+		}
+		if err.Error() != "" {
+			fmt.Fprintln(os.Stderr, err)
+		}
+		os.Exit(code)
 	}
 }

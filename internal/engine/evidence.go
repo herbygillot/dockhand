@@ -77,40 +77,8 @@ func (e *Engine) EvidenceFor(ctx context.Context, branch model.BranchID, tree mo
 			if err != nil {
 				return err
 			}
-			executions, err := r.Executions(run.ID)
-			if err != nil {
+			if evidence, err = runEvidence(r, run, plan); err != nil {
 				return err
-			}
-			// The last attempt in each environment is its result.
-			latest := map[model.Environment]model.GuestExecution{}
-			for _, execution := range executions {
-				if current, ok := latest[execution.Environment]; !ok || execution.Attempt > current.Attempt {
-					latest[execution.Environment] = execution
-				}
-			}
-			results := map[model.Environment]map[model.TargetID]model.TargetResult{}
-			for environment, execution := range latest {
-				list, err := r.Results(execution.ID)
-				if err != nil {
-					return err
-				}
-				results[environment] = map[model.TargetID]model.TargetResult{}
-				for _, result := range list {
-					results[environment][result.Target] = result
-				}
-			}
-			evidence = Evidence{Run: run, Plan: plan}
-			for _, target := range plan.Targets {
-				te := TargetEvidence{Target: target, Passed: true}
-				for _, environment := range plan.Environments {
-					result, ok := results[environment][target.ID]
-					if !ok {
-						result = model.TargetResult{Target: target.ID, Outcome: model.OutcomeNotRun}
-					}
-					te.Outcomes = append(te.Outcomes, result)
-					te.Passed = te.Passed && result.Outcome == model.OutcomePassed
-				}
-				evidence.Targets = append(evidence.Targets, te)
 			}
 			found = true
 			return nil
@@ -144,4 +112,12 @@ func kindWords(target model.PlanTarget) string {
 		return "revision bump only"
 	}
 	return "changed"
+}
+
+// Excluded reports whether the plan leaves a target out on a platform,
+// where it is not built and not required to pass.
+func Excluded(plan model.Plan, target model.PlanTarget, platform model.Platform) bool {
+	return slices.ContainsFunc(plan.Exclusions, func(x model.Exclusion) bool {
+		return x.Target.Name == target.Target.Name && x.Platform == platform
+	})
 }

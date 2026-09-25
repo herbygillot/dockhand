@@ -76,3 +76,19 @@ func TestPathFollowsTheEnvironment(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "/elsewhere/config.toml", path)
 }
+
+func TestCheckAndProviderSettings(t *testing.T) {
+	f, err := parse("config.toml", "[check]\non = [\"command\"]\ntests = \"required\"\n\n[providers.command]\nrun = \"~/bin/build-ports\"\n")
+	require.NoError(t, err)
+	require.Equal(t, []string{"command"}, f.Check.On)
+	require.Equal(t, "required", f.Check.Tests)
+	require.Equal(t, "~/bin/build-ports", f.Providers.Command.Run)
+	require.Equal(t, "command", f.Providers.Command.Name)
+
+	_, err = parse("config.toml", "[check]\ntests = \"sometimes\"\n")
+	require.ErrorContains(t, err, "check.tests")
+	_, err = parse("config.toml", "[providers.command]\nname = \"box\"\n")
+	require.ErrorContains(t, err, "providers.command.run")
+	_, err = parse("config.toml", "[providers.prefix]\npath = \"x\"\n")
+	require.ErrorContains(t, err, "unknown setting providers.prefix.path")
+}

@@ -35,13 +35,10 @@ func (e *Engine) preparer() (Preparer, error) {
 	if e.Preparer != nil {
 		return e.Preparer, nil
 	}
-	cache, err := IndexCache()
+	ports, err := e.selectionReader()
 	if err != nil {
 		return nil, err
 	}
-	native := &eval.Evaluator{Executable: e.options.Tclsh}
-	index := portindex.Config{CacheDirectory: cache, Mirror: &portindex.Mirror{HTTP: http.DefaultClient, Base: os.Getenv("DOCKHAND_INDEX_MIRROR")}}
-	ports := &selection.Reader{Evaluator: native, Index: &portindex.Stager{Repo: e.Repo, Config: index, NativePlatform: native.NativePlatform, WithoutBase: true}}
 	client := &github.Client{HTTP: http.DefaultClient, Credentials: github.SystemCredentials{Store: keychain.Store{}, Key: github.CredentialKey}}
 	discovery := &upstream.Service{
 		Ports: ports, HTTP: http.DefaultClient, Versions: ports,
@@ -52,6 +49,22 @@ func (e *Engine) preparer() (Preparer, error) {
 	}
 	e.Preparer = &preparation.Service{Repo: e.Repo, Ports: ports, Upstream: discovery, HTTP: http.DefaultClient, Workspaces: &workspace.Registry{}}
 	return e.Preparer, nil
+}
+
+// selectionReader is MacPorts' own evaluator, resolving port names
+// against an index staged for each source tree.
+func (e *Engine) selectionReader() (*selection.Reader, error) {
+	if e.ports != nil {
+		return e.ports, nil
+	}
+	cache, err := IndexCache()
+	if err != nil {
+		return nil, err
+	}
+	native := &eval.Evaluator{Executable: e.options.Tclsh}
+	index := portindex.Config{CacheDirectory: cache, Mirror: &portindex.Mirror{HTTP: http.DefaultClient, Base: os.Getenv("DOCKHAND_INDEX_MIRROR")}}
+	e.ports = &selection.Reader{Evaluator: native, Index: &portindex.Stager{Repo: e.Repo, Config: index, NativePlatform: native.NativePlatform, WithoutBase: true}}
+	return e.ports, nil
 }
 
 // IndexCache is where port indexes are kept: $DOCKHAND_INDEX_CACHE, else

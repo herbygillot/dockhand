@@ -15,6 +15,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/selection"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/store/sqlite"
@@ -45,6 +46,9 @@ type Options struct {
 	Tclsh string
 	// Now defaults to time.Now.
 	Now func() time.Time
+	// Poll is how often a driver looks for a cancel request; a second when
+	// zero.
+	Poll time.Duration
 }
 
 // Engine is bound to one ports checkout and its registered repository.
@@ -55,8 +59,13 @@ type Engine struct {
 	// Preparer edits ports; MacPorts' own evaluator when nil.
 	Preparer Preparer
 	// Forge publishes; GitHub when nil.
-	Forge   Forge
-	options Options
+	Forge Forge
+	// PortReader reads ports for plans; MacPorts' own evaluator when nil.
+	PortReader PortReader
+	// Providers are where checks build, by name.
+	Providers map[string]Provider
+	ports     *selection.Reader
+	options   Options
 }
 
 // Open checks that Tree is inside a ports checkout, opens the store, and

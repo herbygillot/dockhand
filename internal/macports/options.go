@@ -19,7 +19,7 @@ var ReadOptions = []string{
 	"github.author", "github.project", "github.version", "github.tag_prefix", "github.tag_suffix", "github.tarball_from",
 	"gitlab.author", "gitlab.project", "gitlab.version", "gitlab.tag_prefix", "gitlab.tag_suffix", "gitlab.instance",
 	"git.url", "git.branch",
-	"use_xcode", "replaced_by",
+	"use_xcode", "replaced_by", "known_fail", "supported_archs",
 }
 
 // InfoOptions are the mportinfo keys dockhand's rules name; the evaluator

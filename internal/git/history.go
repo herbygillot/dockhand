@@ -150,3 +150,27 @@ func (r *Repository) FileBlobs(ctx context.Context, tree string, paths []string)
 	}
 	return blobs, nil
 }
+
+// Bundle writes a Git bundle at path holding commit under ref, less what
+// the excluded commits already hold: a receiver needs those first.
+func (r *Repository) Bundle(ctx context.Context, path, ref, commit string, exclude ...string) error {
+	if !ValidRefName(ref) || !strings.HasPrefix(ref, "refs/") || !ValidObjectID(commit) {
+		return fmt.Errorf("git: invalid bundle ref %q or commit %q", ref, commit)
+	}
+	current, err := r.ReadRef(ctx, ref)
+	if err != nil {
+		return err
+	}
+	if err := r.UpdateRefs(ctx, []RefChange{{Name: ref, Expected: current, Desired: RefValue{Exists: true, Object: commit}}}); err != nil {
+		return err
+	}
+	args := []string{"bundle", "create", "--quiet", path, ref}
+	for _, commit := range exclude {
+		if !ValidObjectID(commit) {
+			return fmt.Errorf("git: invalid excluded commit %q", commit)
+		}
+		args = append(args, "^"+commit)
+	}
+	_, err = r.output(ctx, args...)
+	return err
+}

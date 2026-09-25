@@ -187,6 +187,23 @@ func TestControlsAreAppliedByWhoeverCan(t *testing.T) {
 	require.Equal(t, canceller.ID(), lease.Holder, "with no one attending, the canceller applies it")
 }
 
+func TestHolderNamesOnlyALiveHolder(t *testing.T) {
+	f := setup(t)
+	a, b := f.session(t, 100, model.SessionServe), f.session(t, 200, model.SessionForeground)
+	holder, err := b.Holder(t.Context(), LeaderResource)
+	require.NoError(t, err)
+	require.Nil(t, holder, "no one leads")
+	_, err = a.Lead(t.Context())
+	require.NoError(t, err)
+	holder, err = b.Holder(t.Context(), LeaderResource)
+	require.NoError(t, err)
+	require.Equal(t, a.ID(), holder.ID)
+	f.procs.kill(100)
+	holder, err = b.Holder(t.Context(), LeaderResource)
+	require.NoError(t, err)
+	require.Nil(t, holder, "a dead leader leads nothing")
+}
+
 func TestTailDeliversTheJournalInOrder(t *testing.T) {
 	f := setup(t)
 	s := f.session(t, 100, model.SessionServe)

@@ -293,6 +293,32 @@ func (s *Session) TakeIfUnattended(ctx context.Context, resource string) (lease 
 	return lease, nil, err
 }
 
+// Holder reports the live session holding a resource, without taking it:
+// nil when no one holds it, or its holder is dead.
+func (s *Session) Holder(ctx context.Context, resource string) (*model.Session, error) {
+	var holder *model.Session
+	err := s.c.Store.View(ctx, s.c.Repository, func(r store.Reader) error {
+		lease, err := r.Lease(resource)
+		if errors.Is(err, store.ErrNotFound) || err == nil && lease.Holder == "" {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		other, err := r.Session(lease.Holder)
+		if err != nil {
+			return err
+		}
+		verdict, err := s.Judge(other)
+		if err != nil || verdict.Dead {
+			return err
+		}
+		holder = &other
+		return nil
+	})
+	return holder, err
+}
+
 // Emit appends an event from this session within a transaction, stamping
 // its session and time.
 func (s *Session) Emit(tx store.Tx, event model.Event) (int64, error) {

@@ -198,16 +198,16 @@ func (t *tx) AddPlan(p model.Plan) error {
 	return err
 }
 
-const runColumns = "id, number, branch_id, revision_id, plan_id, origin, state, detail, created_at, finished_at"
+const runColumns = "id, number, branch_id, revision_id, plan_id, origin, state, detail, created_at, finished_at, cancel_requested_at"
 
 func scanRun(row interface{ Scan(...any) error }) (model.Run, error) {
 	var r model.Run
 	var created int64
-	var finished sql.NullInt64
-	if err := row.Scan(&r.ID, &r.Number, &r.Branch, &r.Revision, &r.Plan, &r.Origin, &r.State, &r.Detail, &created, &finished); err != nil {
+	var finished, cancel sql.NullInt64
+	if err := row.Scan(&r.ID, &r.Number, &r.Branch, &r.Revision, &r.Plan, &r.Origin, &r.State, &r.Detail, &created, &finished, &cancel); err != nil {
 		return model.Run{}, storageError(err)
 	}
-	r.CreatedAt, r.FinishedAt = fromMillis(created), fromNullable(finished)
+	r.CreatedAt, r.FinishedAt, r.CancelRequested = fromMillis(created), fromNullable(finished), fromNullable(cancel)
 	return r, nil
 }
 
@@ -287,8 +287,8 @@ func (t *tx) AddRun(r model.Run) error {
 	case !plan.Runnable():
 		return fmt.Errorf("%w: run %s's plan has unresolved targets or none at all", model.ErrInvalid, r.ID)
 	}
-	_, err = t.exec("INSERT INTO runs(repository_id, "+runColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-		t.repo, r.ID, r.Number, r.Branch, r.Revision, r.Plan, r.Origin, r.State, r.Detail, millis(r.CreatedAt), nullableMillis(r.FinishedAt))
+	_, err = t.exec("INSERT INTO runs(repository_id, "+runColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+		t.repo, r.ID, r.Number, r.Branch, r.Revision, r.Plan, r.Origin, r.State, r.Detail, millis(r.CreatedAt), nullableMillis(r.FinishedAt), nullableMillis(r.CancelRequested))
 	return err
 }
 
@@ -306,8 +306,11 @@ func (t *tx) UpdateRun(r model.Run) error {
 	if current.State != r.State && !current.State.CanBecome(r.State) {
 		return fmt.Errorf("%w: run %s cannot go from %s to %s", store.ErrConflict, r.ID, current.State, r.State)
 	}
-	return t.update("run "+string(r.ID), "UPDATE runs SET state=?, detail=?, finished_at=? WHERE repository_id=? AND id=?",
-		r.State, r.Detail, nullableMillis(r.FinishedAt), t.repo, r.ID)
+	if current.CancelRequested != nil && (r.CancelRequested == nil || !r.CancelRequested.Equal(*current.CancelRequested)) {
+		return fmt.Errorf("%w: run %s's cancel request stands once made", store.ErrConflict, r.ID)
+	}
+	return t.update("run "+string(r.ID), "UPDATE runs SET state=?, detail=?, finished_at=?, cancel_requested_at=? WHERE repository_id=? AND id=?",
+		r.State, r.Detail, nullableMillis(r.FinishedAt), nullableMillis(r.CancelRequested), t.repo, r.ID)
 }
 
 const executionColumns = "id, run_id, provider, platform_os, platform_version, platform_architecture, attempt, state, detail, provider_ref, created_at, finished_at"

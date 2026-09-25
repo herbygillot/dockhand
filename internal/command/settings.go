@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/provider/script"
 )
 
 // settings are the global selections. Each comes from its flag, then its
@@ -18,6 +19,8 @@ type settings struct {
 	tree     string
 	database string
 	git      string
+	// file is the configuration file, as read when the engine opened.
+	file config.File
 }
 
 func (s *settings) flags(root *cobra.Command) {
@@ -66,19 +69,33 @@ func (s *settings) options() (engine.Options, config.File, string, error) {
 }
 
 func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
-	options, _, _, err := s.options()
+	options, file, _, err := s.options()
 	if err != nil {
 		return nil, err
 	}
 	e, err := engine.Open(ctx, options)
-	if err == nil && testPreparer != nil {
+	if err != nil {
+		return nil, err
+	}
+	s.file = file
+	e.Providers = map[string]engine.Provider{}
+	if command := file.Providers.Command; command != nil {
+		e.Providers["command"] = &script.Provider{Run: command.Run, Label: command.Name, Repo: e.Repo}
+	}
+	if testPreparer != nil {
 		e.Preparer = testPreparer(e)
 	}
-	if err == nil && testForge != nil {
+	if testForge != nil {
 		e.Forge = testForge(e)
 	}
-	return e, err
+	if testPortReader != nil {
+		e.PortReader = testPortReader
+	}
+	return e, nil
 }
+
+// testPortReader, when set, stands in for MacPorts' evaluator in plans.
+var testPortReader engine.PortReader
 
 // tilde abbreviates the home directory in a path shown to a person.
 func tilde(path string) string {

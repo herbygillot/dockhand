@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/atomicfile"
 )
@@ -147,4 +148,64 @@ func (r *Repository) ApplyToWorkingFiles(ctx context.Context, edits []FileEdit) 
 		}
 	}
 	return nil
+}
+
+// IndexTree writes the index as it stands into a tree, as a commit would
+// record it. Nothing but objects is written.
+func (r *Repository) IndexTree(ctx context.Context) (string, error) {
+	out, err := r.output(ctx, "write-tree")
+	return objectResult(out, err)
+}
+
+// Untracked lists files in the checkout that Git neither tracks nor
+// ignores.
+func (r *Repository) Untracked(ctx context.Context) ([]string, error) {
+	out, err := r.output(ctx, "ls-files", "-z", "--others", "--exclude-standard")
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for path := range strings.SplitSeq(string(out), "\x00") {
+		if path != "" {
+			paths = append(paths, path)
+		}
+	}
+	return paths, nil
+}
+
+// Conflicts lists paths with unresolved merge conflicts.
+func (r *Repository) Conflicts(ctx context.Context) ([]string, error) {
+	out, err := r.output(ctx, "diff", "--name-only", "-z", "--diff-filter=U")
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for path := range strings.SplitSeq(string(out), "\x00") {
+		if path != "" {
+			paths = append(paths, path)
+		}
+	}
+	return paths, nil
+}
+
+// WithFiles is tree with the named working files added as they are on
+// disk, for untracked files a capture includes. Each must be a regular
+// file.
+func (r *Repository) WithFiles(ctx context.Context, tree string, paths []string) (string, error) {
+	var edits []FileEdit
+	for _, name := range paths {
+		before, _, err := r.File(ctx, tree, name)
+		if err != nil {
+			return "", err
+		}
+		data, mode, present, err := r.readWorking(name)
+		if err != nil {
+			return "", err
+		}
+		if !present {
+			return "", fmt.Errorf("%w: %s does not exist", ErrWorkingFile, name)
+		}
+		edits = append(edits, FileEdit{Path: name, Before: before, After: data, Mode: mode})
+	}
+	return r.EditTree(ctx, tree, edits)
 }

@@ -29,6 +29,28 @@ type File struct {
 	// Worktrees is the directory managed branches' worktrees live in, with
 	// a leading ~ expanded.
 	Worktrees string `toml:"worktrees"`
+	Check     Check  `toml:"check"`
+	Providers struct {
+		Command *CommandProvider `toml:"command"`
+	} `toml:"providers"`
+}
+
+// Check holds check's defaults.
+type Check struct {
+	// On are the providers every check must pass on, such as
+	// "tart:tahoe" or "command"; all of them, never one of them.
+	On []string `toml:"on"`
+	// Tests is declared, required, or skip.
+	Tests string `toml:"tests"`
+}
+
+// CommandProvider is a person's own build script (Design v3 §7): it is
+// given a request file and writes a result file.
+type CommandProvider struct {
+	// Run is the command, given the request file's path as its argument.
+	Run string `toml:"run"`
+	// Name labels its results: "reported by <name>".
+	Name string `toml:"name"`
 }
 
 // Path is the configuration file to use: $DOCKHAND_CONFIG, or
@@ -77,6 +99,19 @@ func parse(path, text string) (File, error) {
 	}
 	if f.Worktrees, err = expandHome(f.Worktrees); err != nil {
 		return File{}, fmt.Errorf("%s: worktrees: %w", path, err)
+	}
+	switch f.Check.Tests {
+	case "", "declared", "required", "skip":
+	default:
+		return File{}, fmt.Errorf("%s: check.tests: %q is not declared, required, or skip", path, f.Check.Tests)
+	}
+	if command := f.Providers.Command; command != nil {
+		if strings.TrimSpace(command.Run) == "" {
+			return File{}, fmt.Errorf("%s: providers.command.run: the command to run is required", path)
+		}
+		if command.Name == "" {
+			command.Name = "command"
+		}
 	}
 	return f, nil
 }

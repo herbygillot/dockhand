@@ -108,7 +108,11 @@ func ownedSections(facts bodyFacts) string {
 		fmt.Fprintln(&b)
 		for _, target := range evidence.Targets {
 			fmt.Fprintf(&b, "| %s |", target.Target.Target.Name)
-			for _, result := range target.Outcomes {
+			for i, result := range target.Outcomes {
+				if Excluded(evidence.Plan, target.Target, evidence.Plan.Environments[i].Platform) {
+					fmt.Fprint(&b, " — excluded |")
+					continue
+				}
 				fmt.Fprintf(&b, " %s |", outcomeWords(result, slices.Contains(facts.Accepted, target.Target.Target.Name)))
 			}
 			fmt.Fprintln(&b)

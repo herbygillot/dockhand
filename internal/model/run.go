@@ -62,6 +62,9 @@ type Run struct {
 	CreatedAt time.Time
 	// FinishedAt is set when the run reaches a terminal state.
 	FinishedAt *time.Time
+	// CancelRequested is when someone asked for the run to stop; whoever
+	// holds the run applies it.
+	CancelRequested *time.Time
 }
 
 // Name is how people refer to a run.

@@ -79,6 +79,13 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 		command.GroupID = "author"
 		root.AddCommand(command)
 	}
+	root.AddGroup(&cobra.Group{ID: "check", Title: "Check:"})
+	for _, command := range []*cobra.Command{
+		checkCommand(&settings, streams),
+	} {
+		command.GroupID = "check"
+		root.AddCommand(command)
+	}
 	root.AddGroup(&cobra.Group{ID: "review", Title: "Prepare for review:"})
 	for _, command := range []*cobra.Command{
 		tidyCommand(&settings, streams),
