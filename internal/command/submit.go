@@ -234,21 +234,11 @@ func submitChecked(ctx context.Context, s *settings, e *engine.Engine, streams S
 // out, and not yet on its pull request, asking about each (Design v3
 // §6.12).
 func submitPassing(ctx context.Context, e *engine.Engine, streams Streams, request engine.SubmitRequest, rerequest string) error {
-	statuses, err := e.Status(ctx)
+	passing, err := e.PassingBranches(ctx)
 	if err != nil {
 		return err
 	}
-	var ready []engine.BranchStatus
-	others := 0
-	for _, status := range statuses {
-		switch {
-		case status.Missing || status.Commits == 0 || status.Latest == nil || status.Pushed():
-		case status.Latest.State == model.RunPassed && status.Current && len(status.Edited) == 0:
-			ready = append(ready, status)
-		default:
-			others++
-		}
-	}
+	ready, others := passing.Ready, passing.Others
 	out := streams.Out
 	line := plural(len(ready), "branch") + " passed their checks"
 	if len(ready) == 1 {

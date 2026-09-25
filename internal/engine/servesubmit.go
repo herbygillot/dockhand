@@ -19,26 +19,57 @@ type ServeCandidate struct {
 	Held []string
 }
 
+// Passing is the open branches with checked work not yet on a pull
+// request, sorted by whether it may be submitted as passing.
+type Passing struct {
+	// Ready are those whose latest check passed for exactly their
+	// committed files, with nothing edited since.
+	Ready []BranchStatus
+	// Others counts those whose latest check didn't pass, or whose files
+	// have changed since it ran.
+	Others int
+}
+
+// PassingBranches is the one definition of a branch that passed and is
+// ready to submit, for submit --passing and for serve: it has commits and
+// a finished check, its pull request doesn't already have its head, and
+// that check passed for exactly its committed files.
+func (e *Engine) PassingBranches(ctx context.Context) (Passing, error) {
+	statuses, err := e.Status(ctx)
+	if err != nil {
+		return Passing{}, err
+	}
+	var passing Passing
+	for _, status := range statuses {
+		switch {
+		case status.Missing || status.Commits == 0 || status.Latest == nil || status.Pushed():
+		case status.Latest.State == model.RunPassed && status.Current && len(status.Edited) == 0:
+			passing.Ready = append(passing.Ready, status)
+		default:
+			passing.Others++
+		}
+	}
+	return passing, nil
+}
+
 // ServeNote closes the description of a pull request serve opens by
 // itself.
 const ServeNote = "Opened by `dockhand serve` for an update it prepared and checked, without a person's review."
 
-// ServeCandidates are the open branches serve itself started, with no
-// pull request yet, whose latest check passed for exactly their committed
-// files. Each is planned as submit would plan it, and held when anything
-// asks for a person: a publication rule the check doesn't meet without an
-// acknowledgement, a finding in the upstream comparison, or a commit-rule
-// finding.
+// ServeCandidates are the passing branches (PassingBranches) serve itself
+// started, with no pull request yet. Each is planned as submit would plan
+// it, and held when anything asks for a person: a publication rule the
+// check doesn't meet without an acknowledgement, a finding in the
+// upstream comparison, or a commit-rule finding.
 func (e *Engine) ServeCandidates(ctx context.Context) ([]ServeCandidate, error) {
-	statuses, err := e.Status(ctx)
+	passing, err := e.PassingBranches(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var candidates []ServeCandidate
-	for _, status := range statuses {
+	for _, status := range passing.Ready {
 		branch := status.Branch
-		if branch.Origin != model.OriginServe || branch.PullRequest != nil || status.Missing || status.Commits == 0 ||
-			status.Latest == nil || status.Latest.State != model.RunPassed || !status.Current || len(status.Edited) > 0 {
+		if branch.Origin != model.OriginServe || branch.PullRequest != nil {
 			continue
 		}
 		plan, err := e.PlanSubmit(ctx, SubmitRequest{Branch: branch})

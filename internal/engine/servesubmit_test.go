@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -68,4 +70,32 @@ func TestServeHoldsAnUpdateWhoseUpstreamChangedItsLicense(t *testing.T) {
 	require.Equal(t, []string{"upstream's LICENSE changed; the Portfile's license line may need to follow"}, candidates[0].Held)
 	_, err = e.SubmitForServe(t.Context(), candidates[0])
 	require.ErrorContains(t, err, "is held for a look: upstream's LICENSE changed")
+}
+
+// submit --passing and serve read one definition of a passing branch:
+// editing a passed branch takes it out of both.
+func TestPassingIsOneDefinitionForSubmitAndServe(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := servePrepared(t, e)
+	committedUpdate(t, e) // checked by nobody, so neither passing nor not
+
+	passing, err := e.PassingBranches(t.Context())
+	require.NoError(t, err)
+	require.Len(t, passing.Ready, 1)
+	require.Equal(t, branch.ID, passing.Ready[0].Branch.ID)
+	require.Zero(t, passing.Others)
+
+	portfile := filepath.Join(branch.Worktree, "textproc", "jq", "Portfile")
+	data, err := os.ReadFile(portfile)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(portfile, append(data, "# edited after the check\n"...), 0o644))
+	passing, err = e.PassingBranches(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, passing.Ready)
+	require.Equal(t, 1, passing.Others, "its check no longer covers its files")
+	candidates, err := e.ServeCandidates(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, candidates, "and serve submits it no more than submit --passing would")
 }
