@@ -10,7 +10,7 @@ The initial targets are existing Terraform/Helm release-series subports, Deno's 
 - `macports/portedit` selects candidate edits, establishes the affected and protected sets, and validates the complete plan.
 - `macports/distfiles` owns artifact/checksum associations, stable declaration identities, and precise digest spans. Native fetch interpretation stays at the evaluator boundary; HTTP transfers stay in `fetch`.
 - `upstream` owns discovery and release selection. Explicit-version preparation must not require a recognized forge source. Discovery, complete preparation, and actual builds remain separate capabilities.
-- `workflow/preparation` owns disposable workspace lifetime and storing the completed tree. Tcl and checksum policy do not move into workflow.
+- `preparation` owns disposable workspace lifetime and storing the completed tree. Tcl and checksum policy do not move into workflow.
 
 Concrete evaluator dependencies belong in application wiring. Capabilities consume small interfaces, not evaluator constructors. Keep shared types in `macports` to prevent dependencies from cycling through the concrete implementation. No aliases or forwarding constructor are retained in the parent package.
 
