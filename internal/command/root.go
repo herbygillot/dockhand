@@ -55,8 +55,15 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args:          cobra.NoArgs,
+		// With no command, a ports checkout shows its status (Design v3
+		// §10); anywhere else, the help.
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return cmd.Help()
+			e, err := settings.open(cmd.Context())
+			if err != nil {
+				return cmd.Help()
+			}
+			defer e.Close()
+			return showStatus(cmd.Context(), e, streams, nil, false, false, "")
 		},
 	}
 	root.SetVersionTemplate("dockhand {{.Version}}\n")
@@ -79,9 +86,17 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 		command.GroupID = "author"
 		root.AddCommand(command)
 	}
+	root.AddGroup(&cobra.Group{ID: "understand", Title: "Understand:"})
+	for _, command := range []*cobra.Command{
+		statusCommand(&settings, streams),
+	} {
+		command.GroupID = "understand"
+		root.AddCommand(command)
+	}
 	root.AddGroup(&cobra.Group{ID: "check", Title: "Check:"})
 	for _, command := range []*cobra.Command{
 		checkCommand(&settings, streams),
+		logsCommand(&settings, streams),
 	} {
 		command.GroupID = "check"
 		root.AddCommand(command)
@@ -92,6 +107,15 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 		submitCommand(&settings, streams),
 	} {
 		command.GroupID = "review"
+		root.AddCommand(command)
+	}
+	root.AddGroup(&cobra.Group{ID: "queue", Title: "Keep work moving:"})
+	for _, command := range []*cobra.Command{
+		queueCommand(&settings, streams),
+		waitCommand(&settings, streams),
+		cancelCommand(&settings, streams),
+	} {
+		command.GroupID = "queue"
 		root.AddCommand(command)
 	}
 	root.AddGroup(&cobra.Group{ID: "occasional", Title: "Occasional:"})

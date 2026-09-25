@@ -41,7 +41,7 @@ exactly what you have; tidy never changes a file.
 A plan made only of dockhand's own edits applies without review, which is
 what a script gets. Anything else is shown for review first, on a terminal.
 --squash --message "port: what changed" makes one commit of the whole
-branch. Before rewriting, tidy keeps the old history as a checkpoint that
+branch, applied as given, since the message is yours. Before rewriting, tidy keeps the old history as a checkpoint that
 dockhand restore brings back.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -73,8 +73,11 @@ dockhand restore brings back.`,
 			if plan {
 				return nil
 			}
-			if !streams.terminal() || yes && proposal.Unambiguous() {
-				if !proposal.Unambiguous() {
+			// A squash with its message given is the person's own explicit
+			// plan, so it needs no review; --yes never resolves anything else.
+			explicit := squash && message != ""
+			if explicit || !streams.terminal() || yes && proposal.Unambiguous() {
+				if !explicit && !proposal.Unambiguous() {
 					return errors.New("this plan needs review before it is applied: run dockhand tidy on a terminal, or make one commit with --squash --message \"port: what changed\"")
 				}
 				return applyTidy(ctx, e, streams, proposal)
