@@ -45,15 +45,21 @@ type Finding struct {
 	Message string
 }
 
+// String is the finding as a line, ending with its code in brackets, what
+// dockhand explain takes.
 func (f Finding) String() string {
 	at := f.Where
 	if f.Commit != "" {
 		at = "commit " + short(f.Commit)
 	}
-	if at == "" {
-		return f.Severity.Mark() + " " + f.Message
+	code := ""
+	if f.Code != "" {
+		code = " [" + f.Code + "]"
 	}
-	return fmt.Sprintf("%s %s: %s", f.Severity.Mark(), at, f.Message)
+	if at == "" {
+		return f.Severity.Mark() + " " + f.Message + code
+	}
+	return fmt.Sprintf("%s %s: %s%s", f.Severity.Mark(), at, f.Message, code)
 }
 
 // Errors reports whether any finding is an error.

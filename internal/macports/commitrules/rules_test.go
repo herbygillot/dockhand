@@ -33,7 +33,7 @@ func TestTheMessageRules(t *testing.T) {
 	})
 	require.Equal(t, []string{"subject-port", "subject-vague", "follow-up", "subject-length", "body-wrap", "ticket-url", "merge"}, codes(findings))
 	require.True(t, Errors(findings))
-	require.Equal(t, `✗ commit a1: subject "Update jq" should start with the port it changes: "jq: …"`, findings[0].String())
+	require.Equal(t, `✗ commit a1: subject "Update jq" should start with the port it changes: "jq: …" [subject-port]`, findings[0].String())
 }
 
 func TestAFollowUpNeedsAnEarlierCommitToTheSamePort(t *testing.T) {
@@ -51,5 +51,5 @@ func TestRevisionAfterAnUpdate(t *testing.T) {
 		{Path: "net/croc/Portfile", Before: "version 10.2.4\nrevision 0\n", After: "version 10.2.4\nrevision 1\n"},
 	})
 	require.Len(t, findings, 1)
-	require.Equal(t, "✗ textproc/jq/Portfile:3: revision is 1 after a version update; MacPorts expects 0", findings[0].String())
+	require.Equal(t, "✗ textproc/jq/Portfile:3: revision is 1 after a version update; MacPorts expects 0 [revision-after-update]", findings[0].String())
 }

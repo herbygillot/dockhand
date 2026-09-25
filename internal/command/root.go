@@ -166,6 +166,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 		restoreCommand(&settings, streams),
 		archiveCommand(&settings, streams),
 		cleanCommand(&settings, streams),
+		explainCommand(streams),
 	} {
 		command.GroupID = "occasional"
 		root.AddCommand(command)
