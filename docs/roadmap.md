@@ -15,7 +15,12 @@ Settled 2026-09-25 from [Design v3](design-v3.md), whose §14 maps the direction
 - `record`, `state`, and `state/sqlite`
 - `app` and `proc`
 
-It is built in new packages beside them, and v2's are deleted in step 6. The domain packages carry over as they are: `macports/*`, `tcl`, `git`, `verify/tart`, `verify/github`, `verify/ledger`, `verify/staging`, `tart`, `upstream`, `forge`, `github`, `fetch`, `credential`, `archive`, `macos`, and the small utilities. They change only through the domain steps below, or where a v3 interface needs them to. The v3 database is new (`~/.dockhand/dockhand.db`) and has no migration from v2. Breaking changes are expected until v3 is released.
+v2's top layer is deleted at the start of the rebuild, not kept alongside it (the person's decision, 2026-09-25), because keeping it compiling would mean reshaping the shared packages twice. The last v2 commit is tagged `v2-final`, and building that tag gives a working `dockhand-v2` for real bumps in the meantime. Its `state.db` and v3's `dockhand.db` never touch.
+
+The domain packages carry over: `macports/*`, `tcl`, `git`, `tart`, `upstream`, `forge`, `github`, `fetch`, `credential`, `archive`, `macos`, and the small utilities. Two adjustments come with them:
+
+- **They import v2's `record` for shared vocabulary.** Types such as `Platform`, `ObjectID`, `Source`, `Target`, `BuildConfig`, `Release`, `Digest`, and `Reference` move to a vocabulary package of their own.
+- **The providers (`verify/tart`, `verify/github`, `verify/staging`, `verify/ledger`) are reshaped.** They are built on v2's per-target `Attempt`, `BuildSpec`, and `ProviderExecution` records, plus v2's `state` provider store. They are reshaped to v3's guest execution with per-target checkpoints, keeping their idempotency and reconciliation rules. The v3 database is new (`~/.dockhand/dockhand.db`) and has no migration from v2. Breaking changes are expected until v3 is released.
 
 v2's hard-won rules are ported as acceptance tests, not rediscovered:
 
@@ -28,8 +33,9 @@ The principles and the direction record's standing decisions are the specificati
 
 1. **Defects: done 2026-09-24** ([summary](activity/2026-09-24-step-1-defects.md)).
 2. **Design v3: done 2026-09-25** ([design](design-v3.md), [note](activity/2026-09-25-design-v3.md)). This is the consolidated contract that decision 44 and the former step 3 asked for.
-3. **The guest channel.** This step is unchanged. Dockhand gets its own Tart home, and images move with `tart export` and `tart import` (42). SSH through `/usr/bin/ssh` is the only guest channel, multiplexed, with files over SFTP or `ssh … cat`. Every transfer is checked by size and sha256, each image's host keys are recorded at setup, and dockhand has its own key pair (38, 42, 43). The Tahoe images are rebuilt on the 26 tools generation (13), and setup is proven end to end.
-4. **The v3 core: the narrow, complete branch path.** New packages:
+3. **The guest channel.** This step is unchanged, and it comes before the freeze, so `v2-final` (the tool to use until v3 works) gets the SSH channel and the reshaped providers inherit it. Dockhand gets its own Tart home, and images move with `tart export` and `tart import` (42). SSH through `/usr/bin/ssh` is the only guest channel, multiplexed, with files over SFTP or `ssh … cat`. Every transfer is checked by size and sha256, each image's host keys are recorded at setup, and dockhand has its own key pair (38, 42, 43). The Tahoe images are rebuilt on the 26 tools generation (13), and setup is proven end to end.
+4. **Freeze v2 and clear the ground.** Tag `v2-final`. Move the shared vocabulary out of `record`, and turn `progress` into the reporter interface that the event journal will implement. Then delete v2's `cli`, `tui`, `workflow`, `app`, `proc`, `state`, and the workflow half of `record`. `publish`'s PR-body renderer and `outdated`/`assess`'s discovery logic move to where v3 uses them. The binary becomes v3's `command` skeleton, and `make test` stays green on what remains.
+5. **The v3 core: the narrow, complete branch path.** New packages:
    - `model`: branch, revision (commit or snapshot), verification plan, run, guest execution, target result;
    - `store` and `store/sqlite`: the fresh schema;
    - `coord`: sessions, fenced leases, the event journal;
@@ -46,17 +52,17 @@ The principles and the direction record's standing decisions are the specificati
    7. `submit`: the preview, conditional pushes, the PR body in the template's sections, and `--accept` (21) and `--draft`.
    8. `status` with the attention list, and `queue`, `wait`, `cancel`, and `serve`/`serve --install`.
 
-   Evidence is invalidated whole-tree at first. The acceptance cases are Design v3 §17's, together with decision 44's.
-5. **Host-independence foundations and the Base adapter boundary** (former steps 4 and 5). These are unchanged and can proceed alongside step 4:
+   The reshaped providers land in part 5 (`check`). Evidence is invalidated whole-tree at first. The acceptance cases are Design v3 §17's, together with decision 44's.
+6. **Host-independence foundations and the Base adapter boundary** (former steps 4 and 5). These are unchanged and can proceed alongside step 5:
    - the facts table and its harvesters (9–13);
    - the evaluator's clean launch environment (16);
    - the environment contract and a disposable `portdbpath`;
    - normalized records;
    - `base212`, and a master preview identified by commit (39).
-6. **Switch over.** Once step 4's path works end to end for a one-port update and a two-directory branch on Tart, v3's `command` becomes the `dockhand` binary. v2's top-layer packages are deleted, and the README, `usage.md`, `cli-design.md`, `architecture.md`, `components.md`, and `state.md` are rewritten for v3 or retired.
-7. **The oracle** (former step 7). It is unchanged, built incrementally with its ledger of unresolved observations, and takes in the sparse workspace's rule (35).
-8. **Reuse and archives** (former step 8, decisions 28 and 44). Per-target reuse by recorded observations, negative ones included. Each build records its input identity and the digest of every archive it consumed. Environment identity is by origin (32). Archives count as ready for dependents only once they are durably transferred and checked.
-9. **v3 completeness.** In roughly this order:
+7. **Documentation for v3.** Once step 5's path works end to end, for a one-port update and a two-directory branch on Tart, the README, `usage.md`, `cli-design.md`, `architecture.md`, `components.md`, and `state.md` are rewritten for v3 or retired.
+8. **The oracle** (former step 7). It is unchanged, built incrementally with its ledger of unresolved observations, and takes in the sparse workspace's rule (35).
+9. **Reuse and archives** (former step 8, decisions 28 and 44). Per-target reuse by recorded observations, negative ones included. Each build records its input identity and the digest of every archive it consumed. Environment identity is by origin (32). Archives count as ready for dependents only once they are durably transferred and checked.
+10. **v3 completeness.** In roughly this order:
    - the `tidy` regrouping with its reviewed plans, and `tidy --plan/--apply`;
    - `--revbump-dependents`, multi-port `revbump`, and `--except` (27);
    - `impact`, `diff`, and `diff --archive`;
@@ -68,15 +74,15 @@ The principles and the direction record's standing decisions are the specificati
    - the configuration file (15);
    - `submit --check`;
    - `explain` codes.
-10. **The maintainer loop.**
+11. **The maintainer loop.**
     - `outdated --mine` feeding `update --outdated --mine`, which previews how it splits the work;
     - the upstream archive comparison (license, build files, declared dependencies);
     - `submit --passing`;
     - `serve.for_outdated` (list, draft, check);
     - `serve --submit-passing` and its config key, with the guardrails in v3 §11;
     - PR following and notifications.
-11. **Tart on other macOS releases** (former step 10, decisions 4–7 and 14). `--os` becomes `--on tart:<releases>`, and each release's Xcode need comes from the facts table.
-12. **Preparation coverage** (former step 11). This step is unchanged:
+12. **Tart on other macOS releases** (former step 10, decisions 4–7 and 14). `--os` becomes `--on tart:<releases>`, and each release's Xcode need comes from the facts table.
+13. **Preparation coverage** (former step 11). This step is unchanged:
     - files added and deleted by preparation (40);
     - an outcome for the 441 ports with nothing to fetch;
     - literal segments of composed versions;
