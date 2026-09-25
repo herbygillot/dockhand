@@ -22,6 +22,8 @@ type Forge interface {
 	Create(ctx context.Context, input forge.PullRequestInput) (forge.PullRequestObservation, error)
 	Update(ctx context.Context, input forge.PullRequestInput) (forge.PullRequestObservation, error)
 	OpenPullRequests(ctx context.Context, repository, port string) ([]forge.PullRequestSummary, error)
+	// Inspect reports a pull request's reviews and checks.
+	Inspect(ctx context.Context, ref record.PullRequestRef) (record.PullRequestStatus, error)
 }
 
 // forge is the engine's Forge: the one it was given, or GitHub with the

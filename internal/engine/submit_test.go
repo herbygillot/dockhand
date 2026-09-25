@@ -28,6 +28,8 @@ type fakeForge struct {
 	others   []forge.PullRequestSummary
 	created  []forge.PullRequestInput
 	updated  []forge.PullRequestInput
+	// statuses are what Inspect reports, by number.
+	statuses map[int]record.PullRequestStatus
 }
 
 func (f *fakeForge) AuthenticatedUser(context.Context) (string, error) { return "ada", nil }
@@ -96,6 +98,14 @@ func (f *fakeForge) Update(_ context.Context, input forge.PullRequestInput) (for
 
 func (f *fakeForge) OpenPullRequests(context.Context, string, string) ([]forge.PullRequestSummary, error) {
 	return f.others, nil
+}
+
+func (f *fakeForge) Inspect(_ context.Context, ref record.PullRequestRef) (record.PullRequestStatus, error) {
+	status, ok := f.statuses[ref.Number]
+	if !ok {
+		return record.PullRequestStatus{Review: "none"}, nil
+	}
+	return status, nil
 }
 
 // withFork gives the clone a fork remote and the engine a fake GitHub.

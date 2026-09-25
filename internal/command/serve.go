@@ -26,6 +26,9 @@ import (
 // servePoll is how often serve looks for work and a standby for the leader.
 var servePoll = 2 * time.Second
 
+// serveRefresh is how often serve reads your pull requests from GitHub.
+var serveRefresh = 5 * time.Minute
+
 func serveCommand(s *settings, streams Streams) *cobra.Command {
 	var drain, install, uninstall bool
 	cmd := &cobra.Command{
@@ -36,7 +39,9 @@ ones as they are queued. One serve leads; a second stands by and takes over
 if the leader dies. Stopping serve leaves the check it was running for the
 next serve, which picks it up where it stopped; finished results are kept.
 
-serve only checks: it opens no pull requests.
+serve only checks: it opens no pull requests. It also reads your open pull
+requests every few minutes, so status shows their reviews and CI, and a
+merged one marks its branch merged.
 
 --drain runs what is queued now and exits. --install makes serve a launchd
 agent that starts at login and restarts if it stops; --uninstall removes it.`,
@@ -88,7 +93,11 @@ func serve(ctx context.Context, e *engine.Engine, out io.Writer, drain bool) err
 		providers = []string{"none set up; checks will need attention"}
 	}
 	fmt.Fprintf(out, "serve: leading (pid %d) · builds on %s · opens no pull requests; it only checks\n", os.Getpid(), strings.Join(providers, ", "))
+	followed := &follower{e: e, out: out, reported: map[string]bool{}}
 	for ctx.Err() == nil {
+		if !drain {
+			followed.maybe(ctx)
+		}
 		// A leader judged dead by a standby has lost the lease; it stops
 		// rather than drive work twice.
 		if err := session.Fenced(ctx, *lease, func(store.Tx) error { return nil }); err != nil {
@@ -140,6 +149,42 @@ func serve(ctx context.Context, e *engine.Engine, out io.Writer, drain bool) err
 	}
 	fmt.Fprintln(out, "serve: stopped")
 	return nil
+}
+
+// follower reads the pull requests every serveRefresh, reporting what
+// changed, and each problem once until it changes.
+type follower struct {
+	e        *engine.Engine
+	out      io.Writer
+	last     time.Time
+	reported map[string]bool
+}
+
+func (f *follower) maybe(ctx context.Context) {
+	if !f.last.IsZero() && time.Since(f.last) < serveRefresh {
+		return
+	}
+	f.last = time.Now()
+	refreshed, err := f.e.RefreshPullRequests(ctx)
+	problems := map[string]bool{}
+	report := func(problem string) {
+		problems[problem] = true
+		if !f.reported[problem] {
+			fmt.Fprintln(f.out, problem)
+		}
+	}
+	if err != nil {
+		report(fmt.Sprintf("serve: could not read pull requests: %v", err))
+	}
+	for _, r := range refreshed {
+		if r.Err != nil {
+			report(fmt.Sprintf("serve: could not read %s's #%d: %v", r.Branch.ShortName(), r.Branch.PullRequest.Number, r.Err))
+		}
+		for _, change := range r.Changes {
+			fmt.Fprintf(f.out, "%s: %s\n", r.Branch.ShortName(), change)
+		}
+	}
+	f.reported = problems
 }
 
 // lead takes the lead, or stands by until the leader goes. A drain with

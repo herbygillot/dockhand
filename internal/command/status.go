@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -17,7 +18,7 @@ import (
 )
 
 func statusCommand(s *settings, streams Streams) *cobra.Command {
-	var attentionOnly, all bool
+	var attentionOnly, all, refresh bool
 	var port string
 	cmd := &cobra.Command{
 		Use:   "status [branch]",
@@ -29,7 +30,8 @@ worktree, or naming one, it shows that branch in detail.
 
 --attention prints only what needs you, for a prompt or a script, and exits
 3 when anything does. --port finds every branch touching a port. --all
-includes merged and archived branches.`,
+includes merged and archived branches. --refresh reads your pull requests
+from GitHub first; serve does that every few minutes.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := s.open(cmd.Context())
@@ -37,9 +39,13 @@ includes merged and archived branches.`,
 				return err
 			}
 			defer e.Close()
+			if refresh {
+				refreshPullRequests(cmd.Context(), e, streams.Err)
+			}
 			return showStatus(cmd.Context(), e, streams, args, attentionOnly, all, port)
 		},
 	}
+	cmd.Flags().BoolVar(&refresh, "refresh", false, "read your pull requests' state, reviews, and CI from GitHub first")
 	cmd.Flags().BoolVar(&attentionOnly, "attention", false, "print only what needs you; exit 3 when anything does")
 	cmd.Flags().BoolVar(&all, "all", false, "include merged, closed, and archived branches")
 	cmd.Flags().StringVar(&port, "port", "", "only the branches touching this port")
@@ -112,6 +118,9 @@ func attentionFor(s engine.BranchStatus) []attention {
 	if s.Missing {
 		return row("!", "its Git branch is gone", "git branch "+s.Branch.Name+" <commit>")
 	}
+	if rows := pullRequestAttention(s); len(rows) > 0 {
+		return rows
+	}
 	if s.Latest == nil || !s.Current || len(s.Active) > 0 {
 		if s.Latest != nil && !s.Current && s.Latest.State == model.RunPassed && len(s.Active) == 0 {
 			return row("!", engine.Describe(*s.LatestRevision)+" passed; the files have changed since", "dockhand check --branch "+name)
@@ -143,6 +152,44 @@ func attentionFor(s engine.BranchStatus) []attention {
 		}
 	}
 	return nil
+}
+
+// pullRequestAttention is what the forge's last reading asks of you:
+// someone else's push, requested changes, or failing CI.
+func pullRequestAttention(s engine.BranchStatus) []attention {
+	pr := s.Branch.PullRequest
+	if pr == nil || pr.Observed == nil || pr.Observed.State != "open" {
+		return nil
+	}
+	name, age := s.Branch.ShortName(), " ("+ago(pr.Observed.At)+")"
+	next := "dockhand status " + name
+	if ports := s.Scope.PortNames(); len(ports) > 0 {
+		next = "dockhand edit " + ports[0]
+	}
+	switch {
+	case s.SomeoneElsePushed():
+		return []attention{{mark: "!", branch: name, what: fmt.Sprintf("someone else pushed to #%d%s", pr.Number, age), next: "dockhand submit --branch " + name + " (it shows the comparison)"}}
+	case pr.Observed.Review == "changes-requested":
+		return []attention{{mark: "!", branch: name, what: fmt.Sprintf("#%d changes requested%s", pr.Number, age), next: next}}
+	case pr.Observed.Checks == "failing":
+		return []attention{{mark: "✗", branch: name, what: fmt.Sprintf("#%d MacPorts CI failing: %s%s", pr.Number, strings.Join(s.Failing(), ", "), age),
+			next: fmt.Sprintf("open https://github.com/%s/pull/%d/checks", pr.Repository, pr.Number)}}
+	}
+	return nil
+}
+
+// ago says how old an observation is, roughly.
+func ago(at time.Time) string {
+	elapsed := time.Since(at)
+	switch {
+	case elapsed < time.Minute:
+		return "just now"
+	case elapsed < time.Hour:
+		return fmt.Sprintf("%dm ago", int(elapsed.Minutes()))
+	case elapsed < 48*time.Hour:
+		return fmt.Sprintf("%dh ago", int(elapsed.Hours()))
+	}
+	return fmt.Sprintf("%dd ago", int(elapsed.Hours()/24))
 }
 
 func writeAttention(out io.Writer, rows []attention) {
@@ -205,6 +252,24 @@ func prWords(s engine.BranchStatus) string {
 	words := fmt.Sprintf("#%d", pr.Number)
 	if pr.Draft {
 		words += " draft"
+	}
+	if observed := pr.Observed; observed != nil {
+		switch {
+		case observed.State != "open":
+			words += " " + observed.State
+		case observed.Review == "changes-requested":
+			words += " changes requested"
+		case observed.Review == "approved":
+			words += " approved"
+		}
+		switch observed.Checks {
+		case "passing":
+			words += ", CI ✓"
+		case "failing":
+			words += ", CI ✗"
+		case "pending":
+			words += ", CI …"
+		}
 	}
 	if !s.Pushed() {
 		words += ", not pushed"
@@ -274,4 +339,22 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, branch mod
 		fmt.Fprintf(out, "Next: %s\n", row.next)
 	}
 	return nil
+}
+
+// refreshPullRequests reads the pull requests and says what changed, and
+// what could not be read.
+func refreshPullRequests(ctx context.Context, e *engine.Engine, out io.Writer) {
+	refreshed, err := e.RefreshPullRequests(ctx)
+	if err != nil {
+		fmt.Fprintf(out, "Could not read pull requests: %v\n", err)
+		return
+	}
+	for _, r := range refreshed {
+		if r.Err != nil {
+			fmt.Fprintf(out, "%s: could not read #%d: %v\n", r.Branch.ShortName(), r.Branch.PullRequest.Number, r.Err)
+		}
+		for _, change := range r.Changes {
+			fmt.Fprintf(out, "%s: %s\n", r.Branch.ShortName(), change)
+		}
+	}
 }

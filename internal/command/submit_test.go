@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -21,6 +22,7 @@ type fakeGitHub struct {
 	upstream, fork string
 	prs            []record.PullRequest
 	drafts         []bool
+	status         record.PullRequestStatus
 }
 
 func (g *fakeGitHub) AuthenticatedUser(context.Context) (string, error) { return "ada", nil }
@@ -55,6 +57,10 @@ func (g *fakeGitHub) Update(_ context.Context, input forge.PullRequestInput) (fo
 	pr.Title, pr.Body = input.Desired.Title, input.Desired.Body
 	return forge.PullRequestObservation{Found: true, PullRequest: *pr}, nil
 }
+func (g *fakeGitHub) Inspect(context.Context, record.PullRequestRef) (record.PullRequestStatus, error) {
+	return g.status, nil
+}
+
 func (g *fakeGitHub) OpenPullRequests(context.Context, string, string) ([]forge.PullRequestSummary, error) {
 	return []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}, nil
 }
@@ -116,4 +122,46 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 	require.Contains(t, body, "- [ ] checked that there aren't other open [pull requests](https://github.com/macports/macports-ports/pulls) for the same change? (open for the same ports: #34777)")
 	require.Contains(t, stdout.String(), body, "the preview showed the description")
 	require.Equal(t, gitRun(t, dir, "rev-parse", "HEAD"), gitRun(t, g.fork, "rev-parse", "dockhand/jq-update"))
+}
+
+func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	g := withGitHub(t, w)
+	_, _, err := dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "src", "macports-branches", "jq-update"))
+	_, _, err = dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "tidy")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+
+	g.status = record.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, Checks: record.CheckSummary{Total: 2, Passed: 2}}
+	t.Setenv("MACPORTS_TREE", w.clone)
+	out, errs, err := dockhand(t, "status", "--refresh")
+	require.NoError(t, err)
+	require.Contains(t, errs, "jq-update: #34901: changes requested\n")
+	require.Contains(t, out, "Needs you\n  ! jq-update  #34901 changes requested (just now)  dockhand edit jq\n")
+	require.Contains(t, out, "#34901 changes requested, CI ✓")
+
+	// serve reads them by itself.
+	g.status = record.PullRequestStatus{Review: "none", Checks: record.CheckSummary{Total: 2, Passed: 1, Failed: 1, Failing: []string{"macOS 26"}}}
+	poll := servePoll
+	t.Cleanup(func() { servePoll = poll })
+	servePoll = 20 * time.Millisecond
+	ctx, stop := context.WithCancel(t.Context())
+	var served syncBuffer
+	done := make(chan error)
+	go func() {
+		done <- Run(ctx, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+	}()
+	require.Eventually(t, func() bool { return strings.Contains(served.String(), "jq-update: #34901: CI failing\n") }, 5*time.Second, 10*time.Millisecond)
+	stop()
+	require.NoError(t, <-done)
+	out, _, err = dockhand(t, "status", "--attention")
+	require.Equal(t, 3, ExitCode(err))
+	require.Contains(t, out, "✗ jq-update  #34901 MacPorts CI failing: macOS 26")
 }
