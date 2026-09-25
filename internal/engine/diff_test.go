@@ -124,3 +124,25 @@ func dependentNames(dependents []Dependent) []string {
 	}
 	return names
 }
+
+func TestLinkedPortsAreLibraryDependentsOncePerDirectory(t *testing.T) {
+	f := setup(t)
+	harborMaster(t, f)
+	e := f.open(t)
+	e.PortReader = harborPorts()
+	branch, err := e.Start(t.Context(), StartRequest{Name: "libharbor-3", Here: true})
+	require.NoError(t, err)
+
+	linked, err := e.LinkedPorts(t.Context(), branch, "libharbor", nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{"harbor-cli", "harbor-viewer"}, dependentNames(linked.Bump), "harbor-viewer-legacy shares harbor-viewer's directory")
+
+	write(t, branch.Worktree, map[string]string{"devel/harbor-cli/Portfile": "name harbor-cli\nrevision 1\n"})
+	linked, err = e.LinkedPorts(t.Context(), branch, "libharbor", []string{"harbor-viewer"})
+	require.NoError(t, err)
+	require.Empty(t, linked.Bump)
+	require.Equal(t, []string{"harbor-cli"}, dependentNames(linked.Changed))
+	require.Equal(t, []string{"harbor-viewer"}, linked.Excepted)
+	_, err = e.LinkedPorts(t.Context(), branch, "libharbor", []string{"harbor-tools"})
+	require.ErrorContains(t, err, "--except harbor-tools: it is not a library dependent of libharbor")
+}

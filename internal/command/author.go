@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -36,6 +37,7 @@ func (c *branchChoice) flags(cmd *cobra.Command) {
 func updateCommand(s *settings, streams Streams) *cobra.Command {
 	var where branchChoice
 	var plan, keepOld, shared bool
+	var linked linkedOptions
 	cmd := &cobra.Command{
 		Use:   "update <port> [version]",
 		Short: "Update a port to a newer release",
@@ -43,20 +45,31 @@ func updateCommand(s *settings, streams Streams) *cobra.Command {
 in its checksums, in the branch's working files. Nothing is committed.
 
 The branch is --branch, else the one checked out here; --new starts one.
---plan shows the edit and changes nothing.`,
+--plan shows the edit and changes nothing.
+
+--revbump-dependents also bumps the revision of every port that links the
+updated one directly, its library dependents in the port index at the
+branch's base, so users rebuild them; tidy commits each as "<port>: rebuild
+for <updated> <version>". --except leaves a dependent out. --plan lists them
+first.`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(linked.except) > 0 && !linked.revbump {
+				return errors.New("--except takes a port out of --revbump-dependents; add --revbump-dependents")
+			}
 			request := engine.UpdateRequest{Action: record.Bump, Port: args[0], KeepOldChecksums: keepOld, SharedRelease: shared, Plan: plan}
 			if len(args) == 2 {
 				request.Version = args[1]
 			}
-			return author(cmd.Context(), s, streams, where, "update", request)
+			return author(cmd.Context(), s, streams, where, "update", request, linked)
 		},
 	}
 	where.flags(cmd)
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the edit and change nothing")
 	cmd.Flags().BoolVar(&keepOld, "keep-old-checksums", false, "refresh legacy md5 or sha1 checksums in place rather than rewriting them as rmd160, sha256, and size")
 	cmd.Flags().BoolVar(&shared, "shared-release", false, "move every subport that shares the port's release")
+	cmd.Flags().BoolVar(&linked.revbump, "revbump-dependents", false, "also bump the revision of the ports that link it directly")
+	cmd.Flags().StringSliceVar(&linked.except, "except", nil, "leave this dependent out of --revbump-dependents")
 	return cmd
 }
 
@@ -75,7 +88,7 @@ The branch is --branch, else the one checked out here; --new starts one.
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			request := engine.UpdateRequest{Action: record.RefreshChecksums, Port: args[0], KeepOldChecksums: keepOld, Plan: plan}
-			return author(cmd.Context(), s, streams, where, "checksums", request)
+			return author(cmd.Context(), s, streams, where, "checksums", request, linkedOptions{})
 		},
 	}
 	where.flags(cmd)
@@ -84,8 +97,14 @@ The branch is --branch, else the one checked out here; --new starts one.
 	return cmd
 }
 
+// linkedOptions are update's --revbump-dependents and --except.
+type linkedOptions struct {
+	revbump bool
+	except  []string
+}
+
 // author finds the branch, makes the edit, and reports it.
-func author(ctx context.Context, s *settings, streams Streams, where branchChoice, purpose string, request engine.UpdateRequest) error {
+func author(ctx context.Context, s *settings, streams Streams, where branchChoice, purpose string, request engine.UpdateRequest, linked linkedOptions) error {
 	if where.new && request.Plan {
 		return fmt.Errorf("--plan changes nothing, so it starts no branch; plan in an existing one with --branch, or drop --plan")
 	}
@@ -129,6 +148,9 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		if !strings.HasSuffix(update.Diff, "\n") {
 			fmt.Fprintln(out)
 		}
+		if linked.revbump {
+			return revbumpLinked(ctx, e, out, branch, update, linked.except, true)
+		}
 		return nil
 	}
 	what := "Updated version and checksums"
@@ -145,7 +167,43 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	for _, problem := range update.PatchProblems {
 		fmt.Fprintf(out, "! patch %s\n", problem)
 	}
+	if linked.revbump {
+		if err := revbumpLinked(ctx, e, out, branch, update, linked.except, false); err != nil {
+			return err
+		}
+	}
 	fmt.Fprintln(out, "Next: review it with git diff, then commit it")
+	return nil
+}
+
+// revbumpLinked bumps the revision of the ports that link an updated one
+// directly, or with plan lists them.
+func revbumpLinked(ctx context.Context, e *engine.Engine, out io.Writer, branch model.Branch, update engine.Update, except []string, plan bool) error {
+	linked, err := e.LinkedPorts(ctx, branch, update.Port, except)
+	if err != nil {
+		return err
+	}
+	var names []string
+	for _, dependent := range linked.Bump {
+		names = append(names, dependent.Name)
+	}
+	fmt.Fprintf(out, "Direct library dependents, from the index at %s:\n  %s\n", engine.Short(linked.Base), orNone(strings.Join(names, "  ")))
+	for _, dependent := range linked.Changed {
+		fmt.Fprintf(out, "  · %s: the branch already changes it, so it is left as it is\n", dependent.Name)
+	}
+	if len(linked.Excepted) > 0 {
+		fmt.Fprintf(out, "  · left out with --except: %s\n", strings.Join(linked.Excepted, ", "))
+	}
+	if plan || len(linked.Bump) == 0 {
+		return nil
+	}
+	subject := fmt.Sprintf("rebuild for %s %s", update.Port, update.After.Version)
+	for _, dependent := range linked.Bump {
+		if _, err := e.Update(ctx, engine.UpdateRequest{Branch: branch, Action: record.BumpRevision, Port: dependent.Name, Subject: subject}); err != nil {
+			return fmt.Errorf("revision-bumping %s: %w; the ports before it are bumped", dependent.Name, err)
+		}
+	}
+	fmt.Fprintf(out, "Revision bumped %s; subject \"<port>: %s\" recorded for tidy.\n", plural(len(linked.Bump), "port"), subject)
 	return nil
 }
 

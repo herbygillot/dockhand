@@ -64,7 +64,7 @@ The principles and the direction record's standing decisions are the specificati
 9. **Reuse and archives** (former step 8, decisions 28 and 44). Per-target reuse by recorded observations, negative ones included. Each build records its input identity and the digest of every archive it consumed. Environment identity is by origin (32). Archives count as ready for dependents only once they are durably transferred and checked.
 10. **v3 completeness.** In roughly this order:
    - the `tidy` regrouping with its reviewed plans, and `tidy --plan/--apply` (**done 2026-09-25**, [note](activity/2026-09-25-tidy-regrouping-and-saved-plans.md));
-   - `--revbump-dependents`, multi-port `revbump`, and `--except` (27). **Multi-port `revbump` done 2026-09-25** ([note](activity/2026-09-25-branch-verbs.md)), with `edit`, `retry`, and `rebase`;
+   - `--revbump-dependents`, multi-port `revbump`, and `--except` (27). **Done 2026-09-25**: multi-port `revbump` ([note](activity/2026-09-25-branch-verbs.md)), with `edit`, `retry`, and `rebase`, then `update --revbump-dependents` and `--except` ([note](activity/2026-09-25-revbump-dependents.md));
    - `impact`, `diff`, and `diff --archive` (**`impact` and `diff` done 2026-09-25**, [note](activity/2026-09-25-diff-and-impact.md));
    - `create` from a URL;
    - `review`, with `--comment` and `--review`;

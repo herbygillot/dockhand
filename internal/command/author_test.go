@@ -172,3 +172,44 @@ func TestAnUntrackedBranchHereIsTheirsToAdopt(t *testing.T) {
 	_, _, err := dockhand(t, "update", "jq")
 	require.ErrorContains(t, err, "mine is not tracked; dockhand adopt tracks it")
 }
+
+func TestUpdateRevbumpsTheLibraryDependents(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	for _, port := range []string{"yq", "jo"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(w.upstream, "textproc", port), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(w.upstream, "textproc", port, "Portfile"), []byte("name "+port+"\nversion 1\n"), 0o644))
+	}
+	gitRun(t, w.upstream, "add", "-A")
+	gitRun(t, w.upstream, "commit", "-q", "-m", "yq and jo")
+	withBumper(t)
+	testDependentReader = jqDependents{}
+	t.Cleanup(func() { testDependentReader = nil })
+	_, _, err := dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.home, "src", "macports-branches", "jq-update")
+	t.Setenv("MACPORTS_TREE", dir)
+
+	_, _, err = dockhand(t, "update", "jq", "--except", "yq")
+	require.ErrorContains(t, err, "add --revbump-dependents")
+	_, _, err = dockhand(t, "update", "jq", "--revbump-dependents", "--except", "jo", "--plan")
+	require.ErrorContains(t, err, "--except jo: it is not a library dependent of jq")
+
+	out, _, err := dockhand(t, "update", "jq", "--revbump-dependents", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "Direct library dependents, from the index at ")
+	require.Contains(t, out, ":\n  yq\n", "jo only builds with jq")
+	require.NoFileExists(t, filepath.Join(dir, "textproc/yq/Portfile"), "a plan bumps nothing")
+
+	out, _, err = dockhand(t, "update", "jq", "--revbump-dependents")
+	require.NoError(t, err)
+	require.Contains(t, out, "Revision bumped 1 port; subject \"<port>: rebuild for jq 1.8.1\" recorded for tidy.\n")
+	yq, err := os.ReadFile(filepath.Join(dir, "textproc/yq/Portfile"))
+	require.NoError(t, err)
+	require.Equal(t, "name yq\nversion 1\nrevision 1\n", string(yq))
+	require.NoFileExists(t, filepath.Join(dir, "textproc/jo/Portfile"))
+
+	out, _, err = dockhand(t, "update", "jq", "2.0", "--revbump-dependents")
+	require.NoError(t, err)
+	require.Contains(t, out, "  · yq: the branch already changes it, so it is left as it is\n")
+}

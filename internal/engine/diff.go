@@ -218,3 +218,68 @@ func (e *Engine) dependents(ctx context.Context, source model.Source, directorie
 	}
 	return reader.Dependents(ctx, source, directories)
 }
+
+// LinkedPorts is what update --revbump-dependents would bump for a port:
+// its direct library dependents in the port index at the branch's base
+// (Design v3 §6.7), one per directory, less the directories of the ports
+// excepted and those the branch already changes.
+type LinkedPorts struct {
+	Base model.ObjectID
+	// Bump are the dependents to revision-bump, in name order.
+	Bump []Dependent
+	// Changed are dependents the branch already changes, left alone.
+	Changed []Dependent
+	// Excepted are the dependents --except took out.
+	Excepted []string
+}
+
+// LinkedPorts reads a port's direct library dependents for a branch.
+func (e *Engine) LinkedPorts(ctx context.Context, branch model.Branch, port string, except []string) (LinkedPorts, error) {
+	linked := LinkedPorts{Base: branch.Base}
+	status, err := e.BranchStatus(ctx, branch)
+	if err != nil {
+		return linked, err
+	}
+	trees, err := e.Repo.CommitTrees(ctx, []string{string(branch.Base)})
+	if err != nil {
+		return linked, err
+	}
+	directory, err := e.findDirectory(ctx, trees[string(branch.Base)], port)
+	if err != nil {
+		return linked, err
+	}
+	source := model.Source{Commit: branch.Base, Base: branch.Base, Tree: model.ObjectID(trees[string(branch.Base)])}
+	dependents, err := e.dependents(ctx, source, []string{directory})
+	if err != nil {
+		return linked, fmt.Errorf("reading %s's dependents: %w", port, err)
+	}
+	for _, name := range except {
+		if !slices.ContainsFunc(dependents, func(d Dependent) bool { return d.Name == name && slices.Contains(d.Phases, "library") }) {
+			return linked, fmt.Errorf("--except %s: it is not a library dependent of %s", name, port)
+		}
+	}
+	// Leaving a port out leaves its directory alone, subports and all, since
+	// they may share its revision.
+	excepted := map[string]bool{}
+	for _, dependent := range dependents {
+		if slices.Contains(except, dependent.Name) {
+			excepted[dependent.Directory] = true
+		}
+	}
+	seen := map[string]bool{}
+	for _, dependent := range dependents {
+		switch {
+		case !slices.Contains(dependent.Phases, "library") || seen[dependent.Directory]:
+		case excepted[dependent.Directory]:
+			if slices.Contains(except, dependent.Name) {
+				linked.Excepted = append(linked.Excepted, dependent.Name)
+			}
+		case slices.Contains(status.Scope.Ports, dependent.Directory):
+			linked.Changed = append(linked.Changed, dependent)
+		default:
+			seen[dependent.Directory] = true
+			linked.Bump = append(linked.Bump, dependent)
+		}
+	}
+	return linked, nil
+}
