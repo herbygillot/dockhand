@@ -134,13 +134,19 @@ have no uncommitted changes to tracked files.`,
 }
 
 func adoptCommand(s *settings, streams Streams) *cobra.Command {
-	return &cobra.Command{
+	var pr int
+	cmd := &cobra.Command{
 		Use:   "adopt [branch]",
 		Short: "Track a branch you made, as it stands",
 		Long: `Tracks an existing branch, the one checked out here unless named, without
 moving or rewriting anything. Its base is where it leaves MacPorts' master,
 fetched just now. A tracked branch you renamed with Git is recognized, by
-its worktree or its pull request's last push, and keeps its record.`,
+its worktree or its pull request's last push, and keeps its record.
+
+--pr <number> brings someone's macports-ports pull request into a branch of
+its own, pr-<number>, to inspect and work on. It assumes no permission to
+push to their branch: submit pushes there only when they let maintainers
+edit and you have write access, and never rewrites their description.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := s.open(cmd.Context())
@@ -148,6 +154,12 @@ its worktree or its pull request's last push, and keeps its record.`,
 				return err
 			}
 			defer e.Close()
+			if pr > 0 {
+				if len(args) > 0 {
+					return errors.New("--pr names the pull request; adopt takes a branch or --pr, not both")
+				}
+				return adoptPullRequest(cmd.Context(), e, streams, pr)
+			}
 			request := engine.AdoptRequest{}
 			if len(args) == 1 {
 				request.Branch = args[0]
@@ -175,6 +187,28 @@ its worktree or its pull request's last push, and keeps its record.`,
 			return nil
 		},
 	}
+	cmd.Flags().IntVar(&pr, "pr", 0, "bring someone's pull request, by number, into a branch of its own")
+	return cmd
+}
+
+func adoptPullRequest(ctx context.Context, e *engine.Engine, streams Streams, number int) error {
+	adoption, err := e.AdoptPullRequest(ctx, number)
+	if err != nil {
+		return err
+	}
+	streams.emit(map[string]any{"branch": branchRef(adoption.Branch), "already": adoption.Already, "number": number, "title": adoption.Title,
+		"author": adoption.Author, "commits": adoption.Commits, "ports": nonNil(adoption.Scope.PortNames()), "maintainers_can_edit": adoption.MaintainerCanModify})
+	if adoption.Already {
+		fmt.Fprintf(streams.Out, "#%d is already tracked, as %s.\n", number, adoption.Branch.ShortName())
+		return nil
+	}
+	edits := "maintainers can edit"
+	if !adoption.MaintainerCanModify {
+		edits = "maintainers can't push to it; suggest changes with dockhand review " + fmt.Sprint(number)
+	}
+	fmt.Fprintf(streams.Out, "Adopted %s: %q by @%s, %s%s; %s.\nDirectory: %s\n", adoption.Branch.ShortName(), adoption.Title, adoption.Author,
+		plural(adoption.Commits, "commit"), describeScope(adoption.Scope), edits, tilde(adoption.Branch.Worktree))
+	return nil
 }
 
 func pathCommand(s *settings, streams Streams) *cobra.Command {

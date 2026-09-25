@@ -82,6 +82,9 @@ type SubmitPlan struct {
 	// CheckNeeded is true when a PendingCheck plan has no check for its
 	// files yet.
 	CheckNeeded bool
+	// Theirs is true for a pull request someone else opened: submit only
+	// pushes to it, and never rewrites its title or description.
+	Theirs bool
 
 	facts bodyFacts
 }
@@ -267,8 +270,10 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan) error {
 	return nil
 }
 
-// destination finds your fork, the pull request already open for the
-// branch, and the fork's branch as it stands.
+// destination finds where submit pushes: your fork, or for a pull request
+// someone else opened, their branch, when GitHub lets you push to it; the
+// pull request already open for the branch; and the fork's branch as it
+// stands.
 func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan *SubmitPlan) error {
 	f := e.forge()
 	login, err := f.AuthenticatedUser(ctx)
@@ -279,35 +284,43 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 	if err != nil {
 		return err
 	}
-	var candidates []string
-	var chosen git.Remote
-	for _, remote := range remotes {
-		name, err := f.NameFromRemote(remote.PushURL)
-		if err != nil || strings.EqualFold(name, UpstreamRepository) {
-			continue
+	remoteName := ""
+	if theirs := theirRepository(plan.Branch, login); theirs != "" {
+		plan.HeadRepository, plan.Theirs = theirs, true
+		if remoteName, plan.PushURL, err = e.theirRemote(ctx, remotes, theirs); err != nil {
+			return err
 		}
-		owner, _, _ := strings.Cut(name, "/")
-		if plan.Request.Remote != "" && remote.Name == plan.Request.Remote || plan.Request.Remote == "" && strings.EqualFold(owner, login) {
-			candidates = append(candidates, remote.Name+" ("+name+")")
-			chosen, plan.HeadRepository = remote, name
+	} else {
+		var candidates []string
+		var chosen git.Remote
+		for _, remote := range remotes {
+			name, err := f.NameFromRemote(remote.PushURL)
+			if err != nil || strings.EqualFold(name, UpstreamRepository) {
+				continue
+			}
+			owner, _, _ := strings.Cut(name, "/")
+			if plan.Request.Remote != "" && remote.Name == plan.Request.Remote || plan.Request.Remote == "" && strings.EqualFold(owner, login) {
+				candidates = append(candidates, remote.Name+" ("+name+")")
+				chosen, plan.HeadRepository = remote, name
+			}
 		}
+		switch {
+		case len(candidates) == 0 && plan.Request.Remote != "":
+			return fmt.Errorf("there is no remote %s that pushes to a GitHub repository other than %s", plan.Request.Remote, UpstreamRepository)
+		case len(candidates) == 0:
+			return fmt.Errorf("no Git remote pushes to a fork of %s that %s owns; fork it on GitHub, then git remote add fork https://github.com/%s/macports-ports.git", UpstreamRepository, login, login)
+		case len(candidates) > 1:
+			return fmt.Errorf("several remotes push to your forks: %s; choose one with --remote", strings.Join(candidates, ", "))
+		}
+		info, err := f.RepositoryInfo(ctx, plan.HeadRepository)
+		if err != nil {
+			return err
+		}
+		if !strings.EqualFold(info.Parent, UpstreamRepository) {
+			return fmt.Errorf("%s is not a fork of %s; dockhand pushes only to your fork", plan.HeadRepository, UpstreamRepository)
+		}
+		remoteName, plan.PushURL = chosen.Name, chosen.PushURL
 	}
-	switch {
-	case len(candidates) == 0 && plan.Request.Remote != "":
-		return fmt.Errorf("there is no remote %s that pushes to a GitHub repository other than %s", plan.Request.Remote, UpstreamRepository)
-	case len(candidates) == 0:
-		return fmt.Errorf("no Git remote pushes to a fork of %s that %s owns; fork it on GitHub, then git remote add fork https://github.com/%s/macports-ports.git", UpstreamRepository, login, login)
-	case len(candidates) > 1:
-		return fmt.Errorf("several remotes push to your forks: %s; choose one with --remote", strings.Join(candidates, ", "))
-	}
-	info, err := f.RepositoryInfo(ctx, plan.HeadRepository)
-	if err != nil {
-		return err
-	}
-	if !strings.EqualFold(info.Parent, UpstreamRepository) {
-		return fmt.Errorf("%s is not a fork of %s; dockhand pushes only to your fork", plan.HeadRepository, UpstreamRepository)
-	}
-	plan.PushURL = chosen.PushURL
 	if plan.RemoteHead, err = worktree.RemoteHead(ctx, plan.PushURL, plan.RemoteBranch()); err != nil {
 		return err
 	}
@@ -333,9 +346,65 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 		return fmt.Errorf("#%d is %s; start a new branch for further work (dockhand start)", pr.Ref.Number, pr.State)
 	}
 	plan.Existing = &observed
+	if theirRepository(plan.Branch, login) != "" {
+		if err := e.mayPushTheirs(ctx, plan, login, pr); err != nil {
+			return err
+		}
+	}
 	if last := plan.Branch.PullRequest; last != nil && last.Pushed != "" && pr.RemoteHead != last.Pushed && string(pr.RemoteHead) != plan.Commit {
 		plan.Blocking = append(plan.Blocking, fmt.Sprintf("someone else pushed to #%d: it is at %s, and dockhand last pushed %s. Fetch it (git fetch %s %s) and compare before submitting again; nothing will be pushed over it",
-			pr.Ref.Number, short(pr.RemoteHead), short(last.Pushed), chosen.Name, plan.RemoteBranch()))
+			pr.Ref.Number, short(pr.RemoteHead), short(last.Pushed), remoteName, plan.RemoteBranch()))
+	}
+	return nil
+}
+
+// theirRepository is the head repository of a branch's pull request when
+// someone other than login opened it from their own repository; empty
+// for your own.
+func theirRepository(branch model.Branch, login string) string {
+	pr := branch.PullRequest
+	if pr == nil {
+		return ""
+	}
+	repository, _, _ := strings.Cut(pr.Head, ":")
+	owner, _, _ := strings.Cut(repository, "/")
+	if repository == "" || strings.EqualFold(owner, login) {
+		return ""
+	}
+	return repository
+}
+
+// theirRemote is how to push to someone's repository: a remote that
+// already pushes there, else their repository's GitHub address in the
+// form your remotes use.
+func (e *Engine) theirRemote(ctx context.Context, remotes []git.Remote, repository string) (string, string, error) {
+	ssh := false
+	for _, remote := range remotes {
+		if name, err := e.forge().NameFromRemote(remote.PushURL); err == nil && strings.EqualFold(name, repository) {
+			return remote.Name, remote.PushURL, nil
+		}
+		ssh = ssh || strings.HasPrefix(remote.PushURL, "git@github.com:") || strings.HasPrefix(remote.PushURL, "ssh://")
+	}
+	if ssh {
+		return "git@github.com:" + repository, "git@github.com:" + repository + ".git", nil
+	}
+	return "https://github.com/" + repository, "https://github.com/" + repository + ".git", nil
+}
+
+// mayPushTheirs checks that GitHub lets you push to someone's pull
+// request: they allow maintainers to edit it, and you have write access
+// to MacPorts' repository. Otherwise the plan says what stands in the way.
+func (e *Engine) mayPushTheirs(ctx context.Context, plan *SubmitPlan, login string, pr record.PullRequest) error {
+	if !pr.MaintainerCanModify {
+		plan.Blocking = append(plan.Blocking, fmt.Sprintf("@%s's #%d doesn't let maintainers push to %s; suggest your changes in a review (dockhand review %d), or ask them to allow edits", pr.Author, pr.Ref.Number, plan.Head(), pr.Ref.Number))
+		return nil
+	}
+	permission, err := e.forge().Permission(ctx, UpstreamRepository, login)
+	if err != nil {
+		return fmt.Errorf("reading your access to %s: %w", UpstreamRepository, err)
+	}
+	if !slices.Contains([]string{"admin", "maintain", "write"}, permission) {
+		plan.Blocking = append(plan.Blocking, fmt.Sprintf("pushing to @%s's %s needs write access to %s, and you have %s; suggest your changes in a review (dockhand review %d)", pr.Author, plan.Head(), UpstreamRepository, permission, pr.Ref.Number))
 	}
 	return nil
 }
@@ -430,7 +499,7 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, e
 		ref := plan.Existing.PullRequest.Ref
 		input.ExistingPR = &ref
 		observed = *plan.Existing
-		if plan.Title != plan.Existing.PullRequest.Title || plan.Body != plan.Existing.PullRequest.Body {
+		if !plan.Theirs && (plan.Title != plan.Existing.PullRequest.Title || plan.Body != plan.Existing.PullRequest.Body) {
 			observed, err = e.forge().Update(ctx, input)
 		}
 	}
@@ -443,6 +512,10 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, e
 		if err != nil {
 			return err
 		}
+		body := plan.Body
+		if plan.Theirs {
+			body = plan.Existing.PullRequest.Body
+		}
 		draft := plan.Request.Draft
 		if branch.PullRequest != nil && plan.Existing != nil {
 			draft = branch.PullRequest.Draft
@@ -452,7 +525,7 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, e
 			seen = branch.PullRequest.Observed
 		}
 		branch.PullRequest = &model.PullRequest{Repository: plan.Repository, Number: observed.PullRequest.Ref.Number, Head: plan.Head(),
-			Pushed: model.ObjectID(plan.Commit), Body: plan.Body, Draft: draft, Observed: seen}
+			Pushed: model.ObjectID(plan.Commit), Body: body, Draft: draft, Observed: seen}
 		if plan.Request.Title != "" {
 			branch.Title = plan.Request.Title
 		}

@@ -8,8 +8,10 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -369,4 +371,97 @@ func (e *Engine) Branch(ctx context.Context, id model.BranchID) (model.Branch, e
 		return err
 	})
 	return branch, err
+}
+
+// PullRequestAdoption is what adopt --pr did.
+type PullRequestAdoption struct {
+	Adoption
+	Title  string
+	Author string
+	// MaintainerCanModify is whether its author lets maintainers push to
+	// its branch.
+	MaintainerCanModify bool
+}
+
+// AdoptPullRequest brings someone's pull request of MacPorts' repository
+// into a branch of its own, pr-<number>, in a sparse worktree, to inspect
+// and work on (Design v3 §6.11). Its head is recorded as the last push, so
+// a push by its author since then is noticed; it assumes no permission to
+// push to their branch, which submit checks.
+func (e *Engine) AdoptPullRequest(ctx context.Context, number int) (PullRequestAdoption, error) {
+	var adoption PullRequestAdoption
+	ref := record.PullRequestRef{Forge: forge.GitHub, Repository: UpstreamRepository, Number: number}
+	observed, err := e.forge().Observe(ctx, ref)
+	if err != nil {
+		return adoption, fmt.Errorf("reading #%d: %w", number, err)
+	}
+	pr := observed.PullRequest
+	adoption.Title, adoption.Author, adoption.MaintainerCanModify = pr.Title, pr.Author, pr.MaintainerCanModify
+	if pr.State != record.PullRequestOpen {
+		return adoption, fmt.Errorf("#%d is %s; only an open pull request can be worked on", number, pr.State)
+	}
+	var tracked []model.Branch
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		tracked, err = r.Branches(store.BranchFilter{})
+		return err
+	}); err != nil {
+		return adoption, err
+	}
+	for _, branch := range tracked {
+		if branch.PullRequest != nil && branch.PullRequest.Repository == UpstreamRepository && branch.PullRequest.Number == number {
+			adoption.Branch, adoption.Already = branch, true
+			return adoption, nil
+		}
+	}
+	name := fmt.Sprintf("pr-%d", number)
+	if _, _, err := e.Repo.Branch(ctx, name); err == nil {
+		return adoption, fmt.Errorf("%w: %s; remove it or rename it, then adopt again", git.ErrBranchExists, name)
+	}
+	directory := e.worktreeDirectory(name)
+	if exists(directory) {
+		return adoption, fmt.Errorf("%s already exists; remove it, then adopt again", directory)
+	}
+	head, err := e.Repo.FetchPullRequest(ctx, e.Upstream(), number)
+	if err != nil {
+		return adoption, fmt.Errorf("fetching #%d: %w", number, err)
+	}
+	master, err := e.fetchMaster(ctx)
+	if err != nil {
+		return adoption, err
+	}
+	base, err := e.Repo.MergeBase(ctx, head, string(master))
+	if err != nil {
+		return adoption, fmt.Errorf("#%d shares no history with master: %w", number, err)
+	}
+	if adoption.Commits, err = e.Repo.CountCommits(ctx, base, head); err != nil {
+		return adoption, err
+	}
+	paths, err := e.Repo.ChangedPaths(ctx, base, head)
+	if err != nil {
+		return adoption, err
+	}
+	adoption.Scope = ScopeOf(paths)
+	if err := e.Repo.CreateBranch(ctx, name, head); err != nil {
+		return adoption, err
+	}
+	if err := e.Repo.AddSparseWorktree(ctx, directory, name, append([]string{"_resources"}, adoption.Scope.Ports...)); err != nil {
+		return adoption, errors.Join(err, e.Repo.DeleteBranch(context.WithoutCancel(ctx), name, head))
+	}
+	adoption.Branch = model.Branch{
+		ID: model.BranchID(store.NewID("br")), Repository: e.Repository, Name: name, Base: model.ObjectID(base), Worktree: directory, Managed: true,
+		Title: pr.Title, State: model.BranchOpen, CreatedAt: e.now(),
+		PullRequest: &model.PullRequest{Repository: UpstreamRepository, Number: number, Head: pr.HeadRepository + ":" + pr.HeadBranch, Pushed: model.ObjectID(head), Body: pr.Body},
+	}
+	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		if err := tx.AddBranch(adoption.Branch); err != nil {
+			return err
+		}
+		_, err := tx.AppendEvent(model.Event{At: adoption.Branch.CreatedAt, Branch: adoption.Branch.ID, Kind: "branch.adopt", Level: model.LevelInfo,
+			Message: fmt.Sprintf("adopted #%d by @%s as %s", number, pr.Author, name)})
+		return err
+	})
+	if err != nil {
+		err = errors.Join(err, e.Repo.RemoveWorktree(context.WithoutCancel(ctx), directory), e.Repo.DeleteBranch(context.WithoutCancel(ctx), name, head))
+	}
+	return adoption, err
 }

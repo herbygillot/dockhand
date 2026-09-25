@@ -44,7 +44,11 @@ type PullRequest struct {
 	RemoteHead ObjectID
 	Title      string
 	Body       string
-	ObservedAt time.Time
+	// Author is who opened it, and MaintainerCanModify whether they let
+	// the repository's maintainers push to its head branch.
+	Author              string `json:",omitempty"`
+	MaintainerCanModify bool   `json:",omitempty"`
+	ObservedAt          time.Time
 	// ObserveAfter is the earliest time a processing cycle looks at the PR
 	// again; nil means at the next opportunity. It is recorded with each
 	// observation, so separate drivers share one throttle and a restart

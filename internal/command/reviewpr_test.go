@@ -47,3 +47,25 @@ func TestReviewShowsThenPostsOnlyWhenAsked(t *testing.T) {
 	_, _, err = dockhand(t, "review", "34905", "--request-changes")
 	require.ErrorContains(t, err, "requesting changes is left to people with write or triage access")
 }
+
+func TestAdoptSomeonesPullRequest(t *testing.T) {
+	w := newWorld(t)
+	g := withGitHub(t, w)
+	gitRun(t, w.upstream, "switch", "-q", "-c", "contrib")
+	require.NoError(t, os.WriteFile(filepath.Join(w.upstream, "textproc/jq/Portfile"), []byte("name jq\n# docs\n"), 0o644))
+	gitRun(t, w.upstream, "commit", "-q", "-am", "jq: document the options")
+	gitRun(t, w.upstream, "update-ref", "refs/pull/34905/head", "contrib")
+	gitRun(t, w.upstream, "switch", "-q", "master")
+	g.theirs = map[int]record.PullRequest{34905: {Ref: record.PullRequestRef{Forge: "github", Repository: "macports/macports-ports", Number: 34905},
+		HeadRepository: "newcontrib/macports-ports", HeadBranch: "patch-1", Title: "jq: document the options", State: record.PullRequestOpen, Author: "newcontrib", MaintainerCanModify: true}}
+
+	_, _, err := dockhand(t, "adopt", "x", "--pr", "34905")
+	require.ErrorContains(t, err, "adopt takes a branch or --pr, not both")
+	out, _, err := dockhand(t, "adopt", "--pr", "34905")
+	require.NoError(t, err)
+	require.Equal(t, "Adopted pr-34905: \"jq: document the options\" by @newcontrib, 1 commit, changing jq; maintainers can edit.\nDirectory: ~/src/macports-branches/pr-34905\n", out)
+	require.FileExists(t, filepath.Join(w.home, "src", "macports-branches", "pr-34905", "textproc/jq/Portfile"))
+	out, _, err = dockhand(t, "adopt", "--pr", "34905")
+	require.NoError(t, err)
+	require.Equal(t, "#34905 is already tracked, as pr-34905.\n", out)
+}

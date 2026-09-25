@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -75,4 +76,54 @@ func findingCodes(findings []commitrules.Finding) []string {
 		codes = append(codes, finding.Code)
 	}
 	return codes
+}
+
+func TestAdoptSomeonesPullRequestAndPushOnlyWhereGitHubAllows(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	contribution(t, f, fake)
+	theirs := filepath.Join(filepath.Dir(f.upstream), "newcontrib.git")
+	run(t, filepath.Dir(f.upstream), "clone", "-q", "--bare", f.upstream, theirs)
+	run(t, theirs, "branch", "-f", "patch-1", "contrib")
+	run(t, f.clone, "remote", "add", "newcontrib", theirs)
+	fake.repos = map[string]string{"newcontrib/macports-ports": theirs}
+	pr := fake.prs[34905]
+	pr.Author = "newcontrib"
+
+	adopted, err := e.AdoptPullRequest(t.Context(), 34905)
+	require.NoError(t, err)
+	require.Equal(t, "pr-34905", adopted.Branch.Name)
+	require.Equal(t, 2, adopted.Commits)
+	require.Equal(t, []string{"jq"}, adopted.Scope.PortNames())
+	require.Equal(t, "newcontrib", adopted.Author)
+	require.FileExists(t, filepath.Join(adopted.Branch.Worktree, "textproc/jq/Portfile"))
+	require.Equal(t, run(t, theirs, "rev-parse", "patch-1"), string(adopted.Branch.PullRequest.Pushed))
+	again, err := e.AdoptPullRequest(t.Context(), 34905)
+	require.NoError(t, err)
+	require.True(t, again.Already)
+
+	write(t, adopted.Branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nrevision 0\n# docs\n"})
+	run(t, adopted.Branch.Worktree, "commit", "-q", "-am", "jq: reset revision")
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: adopted.Branch, NoCheck: true})
+	require.NoError(t, err)
+	require.Equal(t, "newcontrib/macports-ports:patch-1", plan.Head())
+	require.Contains(t, plan.Blocking[0], "@newcontrib's #34905 doesn't let maintainers push to newcontrib/macports-ports:patch-1")
+
+	pr.MaintainerCanModify = true
+	fake.permission = "read"
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: adopted.Branch, NoCheck: true})
+	require.NoError(t, err)
+	require.Contains(t, plan.Blocking[0], "needs write access to macports/macports-ports, and you have read")
+
+	fake.permission = "write"
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: adopted.Branch, NoCheck: true})
+	require.NoError(t, err)
+	require.Empty(t, plan.Blocking)
+	require.True(t, plan.Theirs)
+	_, err = e.ApplySubmit(t.Context(), plan)
+	require.NoError(t, err)
+	require.Equal(t, run(t, adopted.Branch.Worktree, "rev-parse", "HEAD"), run(t, theirs, "rev-parse", "patch-1"), "pushed to their branch")
+	require.Empty(t, fake.updated, "their title and description are theirs")
+	require.Empty(t, fake.created)
 }

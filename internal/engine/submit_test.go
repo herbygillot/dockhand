@@ -29,6 +29,8 @@ type fakeForge struct {
 	created  []forge.PullRequestInput
 	updated  []forge.PullRequestInput
 	readied  []int
+	// repos are other people's repositories, by name, as local paths.
+	repos map[string]string
 	// permission is the role Permission reports; reviews are those posted.
 	permission  string
 	reviews     []forge.ReviewInput
@@ -40,6 +42,11 @@ type fakeForge struct {
 func (f *fakeForge) AuthenticatedUser(context.Context) (string, error) { return "ada", nil }
 
 func (f *fakeForge) NameFromRemote(url string) (string, error) {
+	for name, path := range f.repos {
+		if path == url {
+			return name, nil
+		}
+	}
 	switch url {
 	case f.upstream:
 		return UpstreamRepository, nil
@@ -65,6 +72,9 @@ func (f *fakeForge) head(branch string) record.ObjectID {
 func (f *fakeForge) observe(pr *record.PullRequest) forge.PullRequestObservation {
 	copied := *pr
 	copied.RemoteHead = f.head(pr.HeadBranch)
+	if path, ok := f.repos[pr.HeadRepository]; ok {
+		copied.RemoteHead = record.ObjectID(run(f.t, path, "for-each-ref", "--format=%(objectname)", "refs/heads/"+pr.HeadBranch))
+	}
 	return forge.PullRequestObservation{Found: true, PullRequest: copied}
 }
 
