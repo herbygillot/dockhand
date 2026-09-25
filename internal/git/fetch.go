@@ -44,3 +44,24 @@ func (r *Repository) FetchBranch(ctx context.Context, remote, branch string) (co
 	}
 	return value.Object, trees[value.Object], nil
 }
+
+// FetchPullRequest fetches a GitHub pull request's head from remote into
+// refs/dockhand/reviews/<number>, where it stays for the next review, and
+// returns its commit.
+func (r *Repository) FetchPullRequest(ctx context.Context, remote string, number int) (string, error) {
+	if !validRemoteURL(remote) || number <= 0 {
+		return "", fmt.Errorf("git: invalid fetch source")
+	}
+	ref := fmt.Sprintf("refs/dockhand/reviews/%d", number)
+	if _, err := r.output(ctx, "fetch", "--no-tags", "--no-write-fetch-head", "--no-auto-maintenance", "--recurse-submodules=no", "--refmap=", "--", remote, fmt.Sprintf("+refs/pull/%d/head:%s", number, ref)); err != nil {
+		return "", err
+	}
+	value, err := r.ReadRef(ctx, ref)
+	if err != nil {
+		return "", err
+	}
+	if !value.Exists {
+		return "", fmt.Errorf("git: fetching pull request %d left no head", number)
+	}
+	return value.Object, nil
+}

@@ -3,6 +3,7 @@ package sqlite
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/herbygillot/dockhand/internal/model"
@@ -135,4 +136,40 @@ func (t *tx) Acceptances(branch model.BranchID, commit model.ObjectID) ([]model.
 		accepted = append(accepted, a)
 	}
 	return accepted, storageError(rows.Err())
+}
+
+func (t *tx) AddReview(r model.Review) error {
+	if err := r.Validate(); err != nil {
+		return err
+	}
+	findings := r.Findings
+	if findings == nil {
+		findings = []model.ReviewFinding{}
+	}
+	data, err := json.Marshal(findings)
+	if err != nil {
+		return err
+	}
+	_, err = t.exec("INSERT INTO reviews(repository_id, pr_repository, number, head, findings, posted, at) VALUES(?,?,?,?,?,?,?)",
+		t.repo, r.Repository, r.Number, r.Head, string(data), r.Posted, millis(r.At))
+	return err
+}
+
+func (t *tx) LastReview(repository string, number int) (model.Review, error) {
+	r := model.Review{Repository: repository, Number: number}
+	var findings string
+	var at int64
+	err := t.conn.QueryRowContext(t.ctx, "SELECT head, findings, posted, at FROM reviews WHERE repository_id=? AND pr_repository=? AND number=? ORDER BY at DESC, rowid DESC LIMIT 1",
+		t.repo, repository, number).Scan(&r.Head, &findings, &r.Posted, &at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return r, fmt.Errorf("%w: no review of %s#%d", store.ErrNotFound, repository, number)
+	}
+	if err != nil {
+		return r, storageError(err)
+	}
+	r.At = fromMillis(at)
+	if err := json.Unmarshal([]byte(findings), &r.Findings); err != nil {
+		return r, fmt.Errorf("review of %s#%d: %w", repository, number, err)
+	}
+	return r, nil
 }

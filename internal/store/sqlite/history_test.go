@@ -139,3 +139,31 @@ func TestUpgradingKeepsRecordedEdits(t *testing.T) {
 		return nil
 	}))
 }
+
+func TestReviewsAreKeptNewestFirst(t *testing.T) {
+	f := open(t)
+	first := model.Review{Repository: "macports/macports-ports", Number: 34905, Head: "h1", At: at,
+		Findings: []model.ReviewFinding{{Code: "follow-up", Severity: "error", Message: "squash it"}}, Posted: "request-changes"}
+	second := model.Review{Repository: "macports/macports-ports", Number: 34905, Head: "h2", At: at.Add(time.Hour)}
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		_, err := tx.LastReview("macports/macports-ports", 34905)
+		require.ErrorIs(t, err, store.ErrNotFound)
+		if err := tx.AddReview(first); err != nil {
+			return err
+		}
+		last, err := tx.LastReview("macports/macports-ports", 34905)
+		require.NoError(t, err)
+		require.Equal(t, first, last)
+		if err := tx.AddReview(second); err != nil {
+			return err
+		}
+		last, err = tx.LastReview("macports/macports-ports", 34905)
+		require.NoError(t, err)
+		require.Equal(t, model.ObjectID("h2"), last.Head)
+		require.Empty(t, last.Findings)
+		return nil
+	}))
+	require.ErrorIs(t, f.update(t, func(tx store.Tx) error {
+		return tx.AddReview(model.Review{Repository: "macports/macports-ports", Number: 1, Head: "h", At: at, Posted: "approve"})
+	}), model.ErrInvalid)
+}

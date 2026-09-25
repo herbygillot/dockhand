@@ -26,6 +26,10 @@ type Forge interface {
 	Inspect(ctx context.Context, ref record.PullRequestRef) (record.PullRequestStatus, error)
 	// MarkReady takes a draft out of draft.
 	MarkReady(ctx context.Context, ref record.PullRequestRef) (forge.PullRequestObservation, error)
+	// Permission is a person's role on a repository.
+	Permission(ctx context.Context, repository, login string) (string, error)
+	// PostReview posts a review on a pull request.
+	PostReview(ctx context.Context, input forge.ReviewInput) (string, error)
 }
 
 // forge is the engine's Forge: the one it was given, or GitHub with the

@@ -94,6 +94,9 @@ type Reader interface {
 	Checkpoints(branch model.BranchID) ([]model.Checkpoint, error)
 	// Acceptances lists what was accepted for one commit of a branch.
 	Acceptances(branch model.BranchID, commit model.ObjectID) ([]model.Acceptance, error)
+	// LastReview is the newest review of a pull request; ErrNotFound when
+	// there is none.
+	LastReview(repository string, number int) (model.Review, error)
 }
 
 // Tx reads and writes records within a transaction.
@@ -149,6 +152,8 @@ type Tx interface {
 	MarkRestored(checkpoint model.Checkpoint) error
 	// AddAcceptance records an acceptance; repeating one changes nothing.
 	AddAcceptance(acceptance model.Acceptance) error
+	// AddReview records a review of a pull request.
+	AddReview(review model.Review) error
 }
 
 // NewID returns a random identifier with a readable prefix, such as

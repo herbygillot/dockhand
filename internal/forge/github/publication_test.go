@@ -318,3 +318,31 @@ func TestMarkReadyTakesADraftOutOfDraft(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, mutations, "a pull request already ready is left alone")
 }
+
+func TestPermissionAndPostReview(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/upstream/ports/collaborators/ada/permission":
+			fmt.Fprint(w, `{"permission": "write", "role_name": "triage"}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/upstream/ports/pulls/3/reviews":
+			var payload map[string]any
+			assert.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+			assert.Equal(t, "REQUEST_CHANGES", payload["event"])
+			assert.Equal(t, strings.Repeat("a", 40), payload["commit_id"])
+			assert.Equal(t, "squash, please", payload["body"])
+			assert.Equal(t, []any{map[string]any{"path": "textproc/jq/Portfile", "line": float64(7), "side": "RIGHT", "body": "revision should be 0"}}, payload["comments"])
+			fmt.Fprint(w, `{"id": 1, "html_url": "https://github.com/upstream/ports/pull/3#pullrequestreview-1"}`)
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL, Token: "fixture-token"}}}
+	role, err := client.Permission(t.Context(), "upstream/ports", "ada")
+	require.NoError(t, err)
+	require.Equal(t, "triage", role)
+	url, err := client.PostReview(t.Context(), forge.ReviewInput{Ref: record.PullRequestRef{Forge: forge.GitHub, Repository: "upstream/ports", Number: 3}, Commit: strings.Repeat("a", 40),
+		RequestChanges: true, Body: "squash, please", Comments: []forge.ReviewComment{{Path: "textproc/jq/Portfile", Line: 7, Body: "revision should be 0"}}})
+	require.NoError(t, err)
+	require.Equal(t, "https://github.com/upstream/ports/pull/3#pullrequestreview-1", url)
+}

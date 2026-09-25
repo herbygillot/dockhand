@@ -67,7 +67,7 @@ The principles and the direction record's standing decisions are the specificati
    - `--revbump-dependents`, multi-port `revbump`, and `--except` (27). **Done 2026-09-25**: multi-port `revbump` ([note](activity/2026-09-25-branch-verbs.md)), with `edit`, `retry`, and `rebase`, then `update --revbump-dependents` and `--except` ([note](activity/2026-09-25-revbump-dependents.md));
    - `impact`, `diff`, and `diff --archive` (**`impact` and `diff` done 2026-09-25**, [note](activity/2026-09-25-diff-and-impact.md));
    - `create` from a URL;
-   - `review`, with `--comment` and `--review`;
+   - `review`, with `--comment` and `--review` (**done 2026-09-25** as `--comment` and `--request-changes`, [note](activity/2026-09-25-review.md));
    - the `github`, `prefix`, and `command` providers (**`command` done 2026-09-25**, [note](activity/2026-09-25-check.md));
    - `watch` (**done 2026-09-25**, [note](activity/2026-09-25-watch.md));
    - `archive`, `clean`, and automatic cleanup (36) (**`archive` and `clean --merged` done 2026-09-25**, [note](activity/2026-09-25-clean.md));

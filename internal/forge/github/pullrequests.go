@@ -212,3 +212,51 @@ func (c *Client) MarkReady(ctx context.Context, ref record.PullRequestRef) (forg
 	}
 	return pullRequestObservation(row, ref.Repository)
 }
+
+// Permission is a person's role on a repository: admin, maintain, write,
+// triage, read, or none.
+func (c *Client) Permission(ctx context.Context, repository, login string) (string, error) {
+	if !githubapi.ValidRepositoryName(repository) || login == "" {
+		return "", fmt.Errorf("github: invalid permission query")
+	}
+	client, err := c.AuthenticatedAPI(ctx)
+	if err != nil {
+		return "", githubapi.RateLimitError(err)
+	}
+	owner, repo, _ := strings.Cut(repository, "/")
+	level, _, err := client.Repositories.GetPermissionLevel(ctx, owner, repo, login)
+	if err != nil {
+		return "", githubapi.RateLimitError(err)
+	}
+	if role := level.GetRoleName(); role != "" {
+		return role, nil
+	}
+	return level.GetPermission(), nil
+}
+
+// PostReview posts a review on a pull request at the commit it reviewed,
+// and returns the review's address.
+func (c *Client) PostReview(ctx context.Context, input forge.ReviewInput) (string, error) {
+	ref := input.Ref
+	if ref.Forge != forge.GitHub || !githubapi.ValidRepositoryName(ref.Repository) || ref.Number <= 0 || input.Body == "" || !git.ValidObjectID(input.Commit) {
+		return "", fmt.Errorf("%w: invalid review", forge.ErrRejected)
+	}
+	client, err := c.AuthenticatedAPI(ctx)
+	if err != nil {
+		return "", githubapi.RateLimitError(err)
+	}
+	event := "COMMENT"
+	if input.RequestChanges {
+		event = "REQUEST_CHANGES"
+	}
+	request := &gh.PullRequestReviewRequest{CommitID: &input.Commit, Body: &input.Body, Event: &event}
+	for _, comment := range input.Comments {
+		request.Comments = append(request.Comments, &gh.DraftReviewComment{Path: new(comment.Path), Line: new(comment.Line), Side: new("RIGHT"), Body: new(comment.Body)})
+	}
+	owner, repo, _ := strings.Cut(ref.Repository, "/")
+	review, response, err := client.PullRequests.CreateReview(ctx, owner, repo, ref.Number, request)
+	if err := publicationError(response, err); err != nil {
+		return "", githubapi.RateLimitError(err)
+	}
+	return review.GetHTMLURL(), nil
+}

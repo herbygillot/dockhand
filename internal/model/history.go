@@ -123,3 +123,38 @@ func (a Acceptance) Validate() error {
 	}
 	return nil
 }
+
+// Review is one review dockhand made of a pull request: what it found at
+// which head, and whether it was posted (Design v3 §6.11). The next review
+// of the same pull request reads it to say which findings are resolved.
+type Review struct {
+	// Repository is the pull request's base repository, such as
+	// macports/macports-ports.
+	Repository string
+	Number     int
+	Head       ObjectID
+	Findings   []ReviewFinding
+	// Posted is how it was posted: "comment", "request-changes", or ""
+	// when it was not.
+	Posted string
+	At     time.Time
+}
+
+// ReviewFinding is one finding of a review, as it was reported.
+type ReviewFinding struct {
+	Code     string `json:"code"`
+	Severity string `json:"severity"`
+	Where    string `json:"where,omitempty"`
+	Message  string `json:"message"`
+}
+
+// Validate checks the rules every stored review keeps.
+func (r Review) Validate() error {
+	switch {
+	case r.Repository == "" || r.Number <= 0 || r.Head == "" || r.At.IsZero():
+		return invalid("review of %s#%d is incomplete", r.Repository, r.Number)
+	case r.Posted != "" && r.Posted != "comment" && r.Posted != "request-changes":
+		return invalid("review of %s#%d was posted as %q", r.Repository, r.Number, r.Posted)
+	}
+	return nil
+}

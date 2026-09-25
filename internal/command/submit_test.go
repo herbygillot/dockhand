@@ -24,7 +24,10 @@ type fakeGitHub struct {
 	prs            []record.PullRequest
 	drafts         []bool
 	readied        []int
-	status         record.PullRequestStatus
+	reviews        []forge.ReviewInput
+	// theirs are other people's pull requests, by number.
+	theirs map[int]record.PullRequest
+	status record.PullRequestStatus
 }
 
 func (g *fakeGitHub) AuthenticatedUser(context.Context) (string, error) { return "ada", nil }
@@ -44,6 +47,9 @@ func (g *fakeGitHub) Find(context.Context, forge.PullRequestQuery) (forge.PullRe
 	return forge.PullRequestObservation{}, nil
 }
 func (g *fakeGitHub) Observe(_ context.Context, ref record.PullRequestRef) (forge.PullRequestObservation, error) {
+	if pr, ok := g.theirs[ref.Number]; ok {
+		return forge.PullRequestObservation{Found: true, PullRequest: pr}, nil
+	}
 	return forge.PullRequestObservation{Found: true, PullRequest: g.prs[ref.Number-34901]}, nil
 }
 func (g *fakeGitHub) Create(_ context.Context, input forge.PullRequestInput) (forge.PullRequestObservation, error) {
@@ -62,6 +68,15 @@ func (g *fakeGitHub) Update(_ context.Context, input forge.PullRequestInput) (fo
 func (g *fakeGitHub) MarkReady(_ context.Context, ref record.PullRequestRef) (forge.PullRequestObservation, error) {
 	g.readied = append(g.readied, ref.Number)
 	return g.Observe(context.Background(), ref)
+}
+
+func (g *fakeGitHub) Permission(context.Context, string, string) (string, error) {
+	return "read", nil
+}
+
+func (g *fakeGitHub) PostReview(_ context.Context, input forge.ReviewInput) (string, error) {
+	g.reviews = append(g.reviews, input)
+	return fmt.Sprintf("https://github.com/%s/pull/%d#pullrequestreview-%d", input.Ref.Repository, input.Ref.Number, len(g.reviews)), nil
 }
 
 func (g *fakeGitHub) Inspect(context.Context, record.PullRequestRef) (record.PullRequestStatus, error) {

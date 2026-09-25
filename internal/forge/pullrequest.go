@@ -63,3 +63,22 @@ type PullRequestSummary struct {
 
 type PullRequestQuery struct{ Repository, HeadRepository, HeadBranch, BaseBranch string }
 type RepositoryInfo struct{ Name, DefaultBranch, Parent, CloneURL string }
+
+// ReviewComment is a review's comment on one line of a changed file.
+type ReviewComment struct {
+	Path string
+	Line int
+	Body string
+}
+
+// ReviewInput is a review to post on a pull request, at the commit it
+// reviewed.
+type ReviewInput struct {
+	Ref    record.PullRequestRef
+	Commit string
+	// RequestChanges posts it as a request for changes; otherwise it is a
+	// comment.
+	RequestChanges bool
+	Body           string
+	Comments       []ReviewComment
+}

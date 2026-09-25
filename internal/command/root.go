@@ -146,6 +146,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 		tidyCommand(&settings, streams),
 		submitCommand(&settings, streams),
 		rebaseCommand(&settings, streams),
+		reviewCommand(&settings, streams),
 	} {
 		command.GroupID = "review"
 		root.AddCommand(command)

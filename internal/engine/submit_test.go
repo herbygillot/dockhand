@@ -29,6 +29,9 @@ type fakeForge struct {
 	created  []forge.PullRequestInput
 	updated  []forge.PullRequestInput
 	readied  []int
+	// permission is the role Permission reports; reviews are those posted.
+	permission string
+	reviews    []forge.ReviewInput
 	// statuses are what Inspect reports, by number.
 	statuses map[int]record.PullRequestStatus
 }
@@ -104,6 +107,15 @@ func (f *fakeForge) OpenPullRequests(context.Context, string, string) ([]forge.P
 func (f *fakeForge) MarkReady(_ context.Context, ref record.PullRequestRef) (forge.PullRequestObservation, error) {
 	f.readied = append(f.readied, ref.Number)
 	return f.observe(f.prs[ref.Number]), nil
+}
+
+func (f *fakeForge) Permission(context.Context, string, string) (string, error) {
+	return f.permission, nil
+}
+
+func (f *fakeForge) PostReview(_ context.Context, input forge.ReviewInput) (string, error) {
+	f.reviews = append(f.reviews, input)
+	return fmt.Sprintf("%s#pullrequestreview-%d", input.Ref.URL, len(f.reviews)), nil
 }
 
 func (f *fakeForge) Inspect(_ context.Context, ref record.PullRequestRef) (record.PullRequestStatus, error) {
