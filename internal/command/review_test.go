@@ -69,3 +69,45 @@ func TestTidyAsksAboutAPersonsCommits(t *testing.T) {
 	_, _, err = dockhand(t, "tidy", "--message", "x")
 	require.ErrorContains(t, err, "add --squash")
 }
+
+func TestTidyRegroupsAndAppliesASavedPlan(t *testing.T) {
+	w := newWorld(t)
+	gitRun(t, w.clone, "switch", "-q", "-c", "harbor")
+	require.NoError(t, os.WriteFile(filepath.Join(w.clone, "_resources/port1.0/group/github-1.0.tcl"), []byte("# group, for harbor\n"), 0o644))
+	gitRun(t, w.clone, "commit", "-q", "-am", "github-1.0: follow harbor's releases")
+	require.NoError(t, os.WriteFile(filepath.Join(w.clone, "textproc/jq/Portfile"), []byte("name jq\n# harbor\n"), 0o644))
+	gitRun(t, w.clone, "commit", "-q", "-am", "jq: note harbor")
+	require.NoError(t, os.WriteFile(filepath.Join(w.clone, "textproc/jq/Portfile"), []byte("name jq\n# harbor, uncommitted\n"), 0o644))
+	_, _, err := dockhand(t, "adopt")
+	require.NoError(t, err)
+
+	file := filepath.Join(t.TempDir(), "plan.json")
+	_, _, err = dockhand(t, "tidy", "--out", file)
+	require.ErrorContains(t, err, "add --plan")
+	out, _, err := dockhand(t, "tidy", "--plan", "--group", "2 1", "--out", file)
+	require.NoError(t, err)
+	require.Contains(t, out, "  1  jq: note harbor\n")
+	require.Contains(t, out, "  2  github-1.0: follow harbor's releases\n")
+	require.Contains(t, out, "Saved the plan to "+file+".")
+	require.Equal(t, "jq: note harbor", gitRun(t, w.clone, "log", "-1", "--format=%s"), "saving changes nothing")
+
+	out, _, err = dockhand(t, "tidy", "--apply", file)
+	require.NoError(t, err)
+	require.Contains(t, out, "harbor · the plan saved in "+file+"\n")
+	require.Contains(t, out, "Created 2 commits.")
+	require.Equal(t, "github-1.0: follow harbor's releases\njq: note harbor", gitRun(t, w.clone, "log", "-2", "--format=%s"))
+	_, _, err = dockhand(t, "tidy", "--apply", file)
+	require.ErrorContains(t, err, "it has new commits")
+
+	_, _, err = dockhand(t, "restore", "tidy-1")
+	require.NoError(t, err)
+	var buffer, errs bytes.Buffer
+	err = Run(t.Context(), []string{"tidy"}, Streams{In: strings.NewReader("g\n1+3\ng\n1+2\na\n"), Out: &buffer, Err: &errs, interactive: true})
+	require.NoError(t, err)
+	require.Contains(t, errs.String(), "Review diff [d] · Change groups [g] · Edit message [e] · Apply [a] · Cancel [q]")
+	require.Contains(t, errs.String(), `Not changed: "3" is not one of the commits, 1 to 2`)
+	require.Contains(t, buffer.String(), "combines commits 1, 2; message from commit 1, so check it says what all of them do")
+	require.Contains(t, buffer.String(), "Created 1 commit.")
+	require.Equal(t, "github-1.0: follow harbor's releases", gitRun(t, w.clone, "log", "-1", "--format=%s"))
+	require.Equal(t, "_resources/port1.0/group/github-1.0.tcl\ntextproc/jq/Portfile", gitRun(t, w.clone, "show", "--format=", "--name-only", "HEAD"))
+}

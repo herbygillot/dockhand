@@ -572,7 +572,11 @@ func (e *Engine) ApplyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 	if err != nil {
 		return TidyResult{}, err
 	}
-	if head != plan.Head || final != plan.Final {
+	current, err := e.Branch(ctx, plan.Branch.ID)
+	if err != nil {
+		return TidyResult{}, err
+	}
+	if head != plan.Head || final != plan.Final || string(current.Base) != plan.Base {
 		return TidyResult{}, fmt.Errorf("%w; run dockhand tidy again", ErrStalePlan)
 	}
 	committer, err := worktree.Author(ctx)
