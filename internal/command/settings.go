@@ -74,6 +74,9 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 	if err == nil && testPreparer != nil {
 		e.Preparer = testPreparer(e)
 	}
+	if err == nil && testForge != nil {
+		e.Forge = testForge(e)
+	}
 	return e, err
 }
 

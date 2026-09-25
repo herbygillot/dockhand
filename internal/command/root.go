@@ -35,7 +35,7 @@ func (s Streams) terminal() bool {
 }
 
 const rebuilding = `dockhand is being rebuilt as v3 (docs/design-v3.md). The commands below
-are the first of it; checking and submitting arrive with the rest of the
+are the first of it; check, status, and serve arrive with the rest of the
 roadmap's step 5. Until then, the working tool is v2, tagged v2-final:
 
   git worktree add ../dockhand-v2 v2-final
@@ -82,6 +82,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	root.AddGroup(&cobra.Group{ID: "review", Title: "Prepare for review:"})
 	for _, command := range []*cobra.Command{
 		tidyCommand(&settings, streams),
+		submitCommand(&settings, streams),
 	} {
 		command.GroupID = "review"
 		root.AddCommand(command)

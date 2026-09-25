@@ -101,7 +101,7 @@ func (c *Client) Create(ctx context.Context, input forge.PullRequestInput) (forg
 	headOwner, headRepo, _ := strings.Cut(input.HeadRepository, "/")
 	row, response, err := client.PullRequests.Create(ctx, owner, repo, gh.CreatePullRequest{
 		Title: &input.Desired.Title, Body: &input.Desired.Body, Head: headOwner + ":" + input.HeadBranch,
-		HeadRepo: &headRepo, Base: input.BaseBranch, MaintainerCanModify: new(true),
+		HeadRepo: &headRepo, Base: input.BaseBranch, MaintainerCanModify: new(true), Draft: &input.Draft,
 	})
 	if err := publicationError(response, err); err != nil {
 		return forge.PullRequestObservation{}, githubapi.RateLimitError(err)
@@ -128,4 +128,45 @@ func (c *Client) Update(ctx context.Context, input forge.PullRequestInput) (forg
 		return forge.PullRequestObservation{}, fmt.Errorf("github: response identifies another pull request")
 	}
 	return pullRequestObservation(row, input.Repository)
+}
+
+// OpenPullRequests finds a repository's open pull requests whose titles
+// name a port the way a MacPorts subject does, "port:" or "port,".
+func (c *Client) OpenPullRequests(ctx context.Context, repository, port string) ([]forge.PullRequestSummary, error) {
+	if !githubapi.ValidRepositoryName(repository) || port == "" || strings.ContainsAny(port, "\" \t\r\n") {
+		return nil, fmt.Errorf("github: invalid pull-request search")
+	}
+	client, err := c.API(ctx)
+	if err != nil {
+		return nil, githubapi.RateLimitError(err)
+	}
+	query := fmt.Sprintf("repo:%s is:pr is:open in:title %q", repository, port)
+	result, _, err := client.Search.Issues(ctx, query, &gh.SearchOptions{ListOptions: gh.ListOptions{PerPage: 50}})
+	if err != nil {
+		return nil, githubapi.RateLimitError(err)
+	}
+	var found []forge.PullRequestSummary
+	for _, issue := range result.Issues {
+		title := issue.GetTitle()
+		if !issue.IsPullRequest() || !namesPort(title, port) {
+			continue
+		}
+		found = append(found, forge.PullRequestSummary{Number: issue.GetNumber(), Title: title, URL: issue.GetHTMLURL()})
+	}
+	return found, nil
+}
+
+// namesPort reports whether a title begins with a port list, "a, b: …",
+// that includes the port.
+func namesPort(title, port string) bool {
+	prefix, _, ok := strings.Cut(title, ":")
+	if !ok {
+		return false
+	}
+	for name := range strings.SplitSeq(prefix, ",") {
+		if strings.TrimSpace(name) == port {
+			return true
+		}
+	}
+	return false
 }

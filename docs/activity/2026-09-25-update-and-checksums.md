@@ -64,7 +64,7 @@ The real preparer is assembled on first use from v2's parts, as `v2-final:intern
   - `--new`, `--branch`, and their conflict;
   - an untracked branch.
 - **Git tests** cover capture (staged, unstaged, deleted, and executable files, with the index left alone) and the check-everything-first write.
-- `go test ./...`, the race runs, `go vet` (Linux and `GOOS=darwin`), `make vendor-check`, and `make fmt-check` pass.
+- `go test ./...`, the race runs, `go vet` (Linux and `GOOS=darwin`), `make vendor-check`, and `make fmt-check` pass. *Correction, later the same day*: they passed on Linux only. CI runs on macOS, where the engine and command tests failed from this commit on, over temporary paths reached through a link; see the [submit note](2026-09-25-submit.md).
 
 **Not proven here:** a real update. This container has no MacPorts, so `dockhand update <port>` against a real ports tree needs a run on a Mac.
 

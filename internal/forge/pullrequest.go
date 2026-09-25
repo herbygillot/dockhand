@@ -50,6 +50,15 @@ type PullRequestInput struct {
 	ExistingPR         *record.PullRequestRef
 	ExpectedRemoteHead record.ExpectedHead
 	Desired            record.PublicationContent
+	// Draft opens a new pull request as a draft.
+	Draft bool
+}
+
+// PullRequestSummary is an open pull request found by a search.
+type PullRequestSummary struct {
+	Number int
+	Title  string
+	URL    string
 }
 
 type PullRequestQuery struct{ Repository, HeadRepository, HeadBranch, BaseBranch string }

@@ -17,6 +17,10 @@ import (
 // command opens.
 var testPreparer func(*engine.Engine) engine.Preparer
 
+// testForge, when set, stands in for GitHub in every engine a command
+// opens.
+var testForge func(*engine.Engine) engine.Forge
+
 // branchChoice is the branch an authoring command was pointed at.
 type branchChoice struct {
 	branch string

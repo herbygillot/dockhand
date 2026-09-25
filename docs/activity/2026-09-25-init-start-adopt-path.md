@@ -40,7 +40,7 @@ Roadmap step 5, part 3: v3's first working commands (Design v3 §4, §6.1–6.2,
 
 ## Tests
 
-The engine and command tests run against a local upstream standing in for macports/macports-ports and a clone of it, with upstream moved on after the clone, so a branch provably starts from fresh master rather than the clone's stale one. They cover every refusal above, cleanup after a failed worktree and after a failed fetch, `--here` with tracked and untracked changes, adoption with the CI scope rule, resolution from inside a sparse worktree, remote detection by URL form, and the configuration file's rules. `go test ./...`, the race runs, `go vet` (Linux and `GOOS=darwin`), `make vendor-check`, and `make fmt-check` pass.
+The engine and command tests run against a local upstream standing in for macports/macports-ports and a clone of it, with upstream moved on after the clone, so a branch provably starts from fresh master rather than the clone's stale one. They cover every refusal above, cleanup after a failed worktree and after a failed fetch, `--here` with tracked and untracked changes, adoption with the CI scope rule, resolution from inside a sparse worktree, remote detection by URL form, and the configuration file's rules. `go test ./...`, the race runs, `go vet` (Linux and `GOOS=darwin`), `make vendor-check`, and `make fmt-check` pass. *Correction, later the same day*: they passed on Linux only. CI runs on macOS, where the engine and command tests failed from this commit on, over temporary paths reached through a link; see the [submit note](2026-09-25-submit.md).
 
 ## Still to come in this part of the design
 

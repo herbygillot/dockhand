@@ -54,7 +54,9 @@ type Engine struct {
 	Repository model.RepositoryID
 	// Preparer edits ports; MacPorts' own evaluator when nil.
 	Preparer Preparer
-	options  Options
+	// Forge publishes; GitHub when nil.
+	Forge   Forge
+	options Options
 }
 
 // Open checks that Tree is inside a ports checkout, opens the store, and
