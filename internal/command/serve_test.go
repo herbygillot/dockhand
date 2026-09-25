@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // syncBuffer is a buffer two goroutines may share.
@@ -131,4 +133,58 @@ func TestServeInstallsALaunchdAgent(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "Removed the serve agent")
 	require.NoFileExists(t, filepath.Join(w.home, "Library", "LaunchAgents", AgentLabel+".plist"))
+}
+
+func TestServeCleansUpAfterAMergeOnceADay(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	g := withGitHub(t, w)
+	poll := servePoll
+	t.Cleanup(func() { servePoll = poll })
+	servePoll = 20 * time.Millisecond
+	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
+	_, _, err := dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.home, "src", "macports-branches", "jq-update")
+	t.Setenv("MACPORTS_TREE", dir)
+	_, _, err = dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "tidy")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	g.prs[0].State = record.PullRequestMerged
+	t.Setenv("MACPORTS_TREE", w.clone)
+	_, _, err = dockhand(t, "status", "--refresh")
+	require.NoError(t, err)
+
+	serveFor := func(until string) string {
+		ctx, stop := context.WithCancel(t.Context())
+		var served syncBuffer
+		done := make(chan error)
+		go func() {
+			done <- Run(ctx, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+		}()
+		require.Eventually(t, func() bool { return strings.Contains(served.String(), until) }, 5*time.Second, 10*time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
+		stop()
+		require.NoError(t, <-done)
+		return served.String()
+	}
+
+	require.NoError(t, os.MkdirAll(filepath.Join(w.home, ".dockhand"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(w.home, ".dockhand", "config.toml"), []byte("[cleanup]\nautomatic = false\n"), 0o644))
+	out := serveFor("serve: leading")
+	require.NotContains(t, out, "cleaned up", "turned off")
+	require.DirExists(t, dir)
+
+	require.NoError(t, os.Remove(filepath.Join(w.home, ".dockhand", "config.toml")))
+	out = serveFor("jq-update: cleaned up after the merge: removed worktree ")
+	require.Contains(t, out, ", branch dockhand/jq-update, ada/macports-ports:dockhand/jq-update\n")
+	require.NoDirExists(t, dir)
+	require.FileExists(t, filepath.Join(w.home, ".dockhand", "cleanup.stamp"))
+
+	out = serveFor("serve: leading")
+	require.NotContains(t, out, "cleaned up", "once a day")
 }

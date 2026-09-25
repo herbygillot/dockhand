@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -91,4 +92,24 @@ func TestCheckAndProviderSettings(t *testing.T) {
 	require.ErrorContains(t, err, "providers.command.run")
 	_, err = parse("config.toml", "[providers.prefix]\npath = \"x\"\n")
 	require.ErrorContains(t, err, "unknown setting providers.prefix.path")
+}
+
+func TestCleanupSettings(t *testing.T) {
+	f, err := parse("config.toml", "")
+	require.NoError(t, err)
+	require.True(t, f.Cleanup.On())
+	require.Equal(t, DefaultCleanupAfter, f.Cleanup.Age())
+
+	f, err = parse("config.toml", "[cleanup]\nautomatic = false\nafter = \"3d\"\n")
+	require.NoError(t, err)
+	require.False(t, f.Cleanup.On())
+	require.Equal(t, 72*time.Hour, f.Cleanup.Age())
+	f, err = parse("config.toml", "[cleanup]\nafter = \"36h\"\n")
+	require.NoError(t, err)
+	require.Equal(t, 36*time.Hour, f.Cleanup.Age())
+
+	for _, bad := range []string{"0d", "soon", "-1h"} {
+		_, err = parse("config.toml", "[cleanup]\nafter = \""+bad+"\"\n")
+		require.ErrorContains(t, err, "cleanup.after", bad)
+	}
 }

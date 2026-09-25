@@ -5,9 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -84,6 +87,7 @@ func (e *Engine) planCleanBranch(ctx context.Context, branch model.Branch) (Clea
 		}
 	}
 
+	worktreeKept := false
 	if branch.Managed && exists(branch.Worktree) {
 		step := CleanStep{What: "worktree " + branch.Worktree, kind: "worktree", path: branch.Worktree}
 		if beyond != "" {
@@ -93,6 +97,7 @@ func (e *Engine) planCleanBranch(ctx context.Context, branch model.Branch) (Clea
 		} else if dirty != "" {
 			step.Kept = dirty
 		}
+		worktreeKept = step.Kept != ""
 		plan.Steps = append(plan.Steps, step)
 	}
 	if hasBranch {
@@ -100,6 +105,8 @@ func (e *Engine) planCleanBranch(ctx context.Context, branch model.Branch) (Clea
 		switch {
 		case beyond != "":
 			step.Kept = beyond
+		case worktreeKept:
+			step.Kept = "the worktree it is checked out in is kept"
 		case !branch.Managed && branch.Worktree != "":
 			if current, err := e.Repo.CurrentBranch(ctx); err == nil && current == branch.Name {
 				step.Kept = "it is checked out in your checkout; switch away first"
@@ -194,6 +201,11 @@ func (e *Engine) ApplyClean(ctx context.Context, plans []CleanBranch) ([]CleanBr
 					_ = os.Remove(step.path)
 				}
 			case "branch":
+				// A worktree found dirty while clean ran keeps its branch.
+				if slices.ContainsFunc(plan.Steps, func(s CleanStep) bool { return s.kind == "worktree" && s.Kept != "" }) {
+					step.Kept = "the worktree it is checked out in is kept"
+					continue
+				}
 				err = e.Repo.DeleteBranch(ctx, plan.Branch.Name, step.expected)
 			case "fork":
 				_, name, _ := strings.Cut(plan.Branch.PullRequest.Head, ":")
@@ -271,4 +283,67 @@ func (e *Engine) dropRefs(ctx context.Context, branch model.Branch) error {
 		return nil
 	}
 	return e.Repo.UpdateRefs(ctx, changes)
+}
+
+// CleanupReport is what one automatic cleanup removed.
+type CleanupReport struct {
+	// Branches are the merged branches it cleaned, and what it kept.
+	Branches []CleanBranch
+	// Indexes are the port index generations it removed.
+	Indexes []string
+}
+
+// Removed counts what it removed.
+func (r CleanupReport) Removed() int {
+	n := len(r.Indexes)
+	for _, branch := range r.Branches {
+		for _, step := range branch.Steps {
+			if step.Done {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+// Cleanup is decision 36's automatic cleanup, which serve runs at most
+// once a day: what clean --merged would remove, less anything it would
+// keep, and port index generations unused for longer than after. Open
+// branches, and work of anyone's own, are never touched.
+func (e *Engine) Cleanup(ctx context.Context, after time.Duration) (CleanupReport, error) {
+	var report CleanupReport
+	plans, err := e.PlanClean(ctx)
+	if err != nil {
+		return report, err
+	}
+	var removable []CleanBranch
+	for _, plan := range plans {
+		if slices.ContainsFunc(plan.Steps, func(s CleanStep) bool { return s.Kept == "" }) {
+			removable = append(removable, plan)
+		}
+	}
+	if report.Branches, err = e.ApplyClean(ctx, removable); err != nil {
+		return report, err
+	}
+	cache, err := IndexCache()
+	if err != nil {
+		return report, err
+	}
+	removed, err := portindex.Collect(ctx, cache, e.now().Add(-after), false)
+	for _, item := range removed {
+		if item.Completed {
+			report.Indexes = append(report.Indexes, item.Path)
+		}
+	}
+	if err != nil {
+		return report, fmt.Errorf("cleaning the port index cache: %w", err)
+	}
+	if len(report.Indexes) > 0 {
+		err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+			_, err := tx.AppendEvent(model.Event{At: e.now(), Kind: "cleanup", Level: model.LevelInfo,
+				Message: fmt.Sprintf("removed %s unused for %s", plural(len(report.Indexes), "port index generation"), after)})
+			return err
+		})
+	}
+	return report, err
 }

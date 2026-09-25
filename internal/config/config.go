@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
@@ -33,6 +34,48 @@ type File struct {
 	Providers struct {
 		Command *CommandProvider `toml:"command"`
 	} `toml:"providers"`
+	Cleanup Cleanup `toml:"cleanup"`
+}
+
+// Cleanup is decision 36's automatic cleanup, which serve runs at most
+// once a day.
+type Cleanup struct {
+	// Automatic turns it off when false; it is on when unset.
+	Automatic *bool `toml:"automatic"`
+	// After is how long something goes unused before it is removed, such
+	// as "7d" or "36h"; 7 days when unset.
+	After string `toml:"after"`
+}
+
+// DefaultCleanupAfter is how long cleanup waits when after is unset.
+const DefaultCleanupAfter = 7 * 24 * time.Hour
+
+// On reports whether automatic cleanup runs.
+func (c Cleanup) On() bool { return c.Automatic == nil || *c.Automatic }
+
+// Age is after as a duration.
+func (c Cleanup) Age() time.Duration {
+	age, err := parseAge(c.After)
+	if err != nil || c.After == "" {
+		return DefaultCleanupAfter
+	}
+	return age
+}
+
+// parseAge reads a duration that may count days, such as "7d".
+func parseAge(value string) (time.Duration, error) {
+	if days, ok := strings.CutSuffix(value, "d"); ok {
+		n, err := strconv.Atoi(days)
+		if err != nil || n <= 0 {
+			return 0, fmt.Errorf("%q is not a number of days, such as 7d", value)
+		}
+		return time.Duration(n) * 24 * time.Hour, nil
+	}
+	age, err := time.ParseDuration(value)
+	if err != nil || age <= 0 {
+		return 0, fmt.Errorf("%q is not a duration, such as 7d or 36h", value)
+	}
+	return age, nil
 }
 
 // Check holds check's defaults.
@@ -104,6 +147,11 @@ func parse(path, text string) (File, error) {
 	case "", "declared", "required", "skip":
 	default:
 		return File{}, fmt.Errorf("%s: check.tests: %q is not declared, required, or skip", path, f.Check.Tests)
+	}
+	if f.Cleanup.After != "" {
+		if _, err := parseAge(f.Cleanup.After); err != nil {
+			return File{}, fmt.Errorf("%s: cleanup.after: %w", path, err)
+		}
 	}
 	if command := f.Providers.Command; command != nil {
 		if strings.TrimSpace(command.Run) == "" {

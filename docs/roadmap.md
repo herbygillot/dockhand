@@ -70,8 +70,8 @@ The principles and the direction record's standing decisions are the specificati
    - `review`, with `--comment` and `--review` (**done 2026-09-25** as `--comment` and `--request-changes`, [note](activity/2026-09-25-review.md));
    - the `github`, `prefix`, and `command` providers (**`command` done 2026-09-25**, [note](activity/2026-09-25-check.md));
    - `watch` (**done 2026-09-25**, [note](activity/2026-09-25-watch.md));
-   - `archive`, `clean`, and automatic cleanup (36) (**`archive` and `clean --merged` done 2026-09-25**, [note](activity/2026-09-25-clean.md));
-   - the configuration file (15) (**`worktrees`, `[check]`, and `[providers.command]` read and checked**);
+   - `archive`, `clean`, and automatic cleanup (36) (**done 2026-09-25**: `archive`, `clean --merged` ([note](activity/2026-09-25-clean.md)), and automatic cleanup in `serve` ([note](activity/2026-09-25-automatic-cleanup.md)); cleaning closed or archived branches waits until a removed worktree can be checked out again);
+   - the configuration file (15) (**`worktrees`, `[check]`, `[providers.command]`, and `[cleanup]` read and checked**);
    - `submit --check` (**done 2026-09-25**, [note](activity/2026-09-25-submit-check-passing-ready.md));
    - `explain` codes (**done 2026-09-25** for the rules dockhand checks, [note](activity/2026-09-25-explain.md)).
 11. **The maintainer loop.**

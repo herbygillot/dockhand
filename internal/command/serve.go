@@ -17,6 +17,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -56,7 +57,7 @@ agent that starts at login and restarts if it stops; --uninstall removes it.`,
 				return err
 			}
 			defer e.Close()
-			err = serve(ctx, e, streams.Out, drain)
+			err = serve(ctx, e, streams.Out, drain, s.file.Cleanup)
 			// Being stopped is how serve ends, not a failure.
 			if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
 				fmt.Fprintln(streams.Out, "serve: stopped")
@@ -72,7 +73,7 @@ agent that starts at login and restarts if it stops; --uninstall removes it.`,
 	return cmd
 }
 
-func serve(ctx context.Context, e *engine.Engine, out io.Writer, drain bool) error {
+func serve(ctx context.Context, e *engine.Engine, out io.Writer, drain bool, cleanup config.Cleanup) error {
 	session, err := startSession(ctx, e, model.SessionServe)
 	if err != nil {
 		return err
@@ -94,6 +95,7 @@ func serve(ctx context.Context, e *engine.Engine, out io.Writer, drain bool) err
 	}
 	fmt.Fprintf(out, "serve: leading (pid %d) · builds on %s · opens no pull requests; it only checks\n", os.Getpid(), strings.Join(providers, ", "))
 	followed := &follower{e: e, out: out, reported: map[string]bool{}}
+	cleaned := &cleaner{e: e, out: out, settings: cleanup}
 	for ctx.Err() == nil {
 		if !drain {
 			followed.maybe(ctx)
@@ -111,6 +113,10 @@ func serve(ctx context.Context, e *engine.Engine, out io.Writer, drain bool) err
 			return err
 		}
 		if !found {
+			// Cleanup waits for a quiet moment, so it never delays a check.
+			if !drain {
+				cleaned.maybe(ctx)
+			}
 			if drain {
 				fmt.Fprintln(out, "serve: the queue is empty")
 				return nil
@@ -185,6 +191,58 @@ func (f *follower) maybe(ctx context.Context) {
 		}
 	}
 	f.reported = problems
+}
+
+// serveCleanup is how often serve runs automatic cleanup (decision 36).
+var serveCleanup = 24 * time.Hour
+
+// cleaner runs automatic cleanup at most once per serveCleanup for the
+// database, whichever serve runs it: the last run is the time of a stamp
+// file beside the database.
+type cleaner struct {
+	e        *engine.Engine
+	out      io.Writer
+	settings config.Cleanup
+	failed   string
+}
+
+func (c *cleaner) maybe(ctx context.Context) {
+	if !c.settings.On() {
+		return
+	}
+	stamp := filepath.Join(filepath.Dir(c.e.LogDirectory()), "cleanup.stamp")
+	if info, err := os.Stat(stamp); err == nil && time.Since(info.ModTime()) < serveCleanup {
+		return
+	}
+	// The stamp goes first, so a cleanup that fails is not retried every
+	// few seconds; it is tried again the next day, and its problem is
+	// reported once until it changes.
+	if err := os.WriteFile(stamp, nil, 0o644); err != nil {
+		return
+	}
+	now := time.Now()
+	_ = os.Chtimes(stamp, now, now)
+	report, err := c.e.Cleanup(ctx, c.settings.Age())
+	if err != nil {
+		if problem := fmt.Sprintf("serve: cleanup: %v", err); problem != c.failed {
+			fmt.Fprintln(c.out, problem)
+			c.failed = problem
+		}
+	}
+	for _, branch := range report.Branches {
+		var removed []string
+		for _, step := range branch.Steps {
+			if step.Done {
+				removed = append(removed, step.What)
+			}
+		}
+		if len(removed) > 0 {
+			fmt.Fprintf(c.out, "%s: cleaned up after the merge: removed %s\n", branch.Branch.ShortName(), strings.Join(removed, ", "))
+		}
+	}
+	if len(report.Indexes) > 0 {
+		fmt.Fprintf(c.out, "serve: removed %s unused for %s\n", plural(len(report.Indexes), "port index generation"), c.settings.Age())
+	}
 }
 
 // lead takes the lead, or stands by until the leader goes. A drain with
