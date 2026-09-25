@@ -67,14 +67,14 @@ Shortcuts combine these explicitly, and each command means the same thing at eve
 4. **History follows logical changes.** Grouping by port is `tidy`'s suggestion, never a rule. MacPorts asks for commits minimized "ideally with one commit per logical change", and for follow-ups to be squashed.
 5. **Coverage and evidence are named.** Results say which targets, on which provider and release, at which snapshot or commit. Nothing says just "verified".
 6. **One driver at a time, and observers see everything.** `serve` drives the queue. Without it, a command runs its own request in the foreground and says so. Detaching from `serve`'s work is always safe.
-7. **Publishing is always a person's decision.** Either the decision is about an exact revision (`submit`, `submit --check`, `submit --passing`), or it's a standing one the person gave `serve` when starting it (`serve --submit-passing`). A passing check never publishes on its own authority.
+7. **Publishing is always a person's decision.** Either the decision is about an exact revision (`submit`, `submit --check`, `submit --passing`), or it's a standing one the person gave `serve` (`serve --submit-passing`, or `serve.submit_passing` in the config). A passing check never publishes on its own authority.
 8. **Speak MacPorts.** Commit subjects, the PR body, and the checks follow the MacPorts guide, the commit-message wiki, the PR template, and CI's actual behavior.
 9. **Every refusal carries the way forward.** It names the obstacle, what was kept, and one concrete next command.
 10. **Git works without dockhand.** Dockhand's records enrich branches rather than owning them. Both workspace styles, managed worktrees and your own checkout, have the same capabilities.
 
 ## 3. The model
 
-This section is the consolidated contract. The code's `record.Change` becomes the branch record. Existing contributions migrate as one-directory branches, and nothing is discarded.
+This section is the consolidated contract. The v3 layers are rebuilt with a fresh database (`~/.dockhand/dockhand.db`) and no migration from v2. A v2 `state.db` is left on disk untouched and never read. Breaking changes to commands, records, and files are expected until v3 is released.
 
 ### The nouns
 
@@ -718,7 +718,7 @@ What `serve` does besides running checks (each can be turned off, and all show i
   - `check`: also checks each one, so the morning is `submit --passing`.
 
   None of these submits by default.
-- **Submits what passed, only when started with `--submit-passing`.** By default `serve` only builds and tests. With the flag, and with `serve.updates = "check"`, it opens a PR for each branch it prepared whose check passed. The flag applies to that `serve` process only: `serve --install --submit-passing` records it in the launchd agent, and `serve --install` without it takes it away. Guardrails:
+- **Submits what passed, only when started with `--submit-passing`.** By default `serve` only builds and tests. With the flag, and with `serve.updates = "check"`, it opens a PR for each branch it prepared whose check passed. `serve.submit_passing = true` in the config turns it on for every `serve`, and `--no-submit-passing` turns it off for one run. Either way, `serve` says at startup, and in `queue`, that it opens PRs for passing updates. Guardrails:
   - **Scope.** Only the branches `serve` itself created from new releases. Your own branches are submitted by you, with `submit`, `submit --check`, or `submit --passing`.
   - **What passed.** The check must have passed on the exact committed tree being submitted, under the publication rule in §3, with no acknowledgements needed. A branch that needs `--accept` waits for a person.
   - **Held for a look.** A branch with any `!` finding from the upstream comparison, such as a changed license file, new declared dependencies, or changed build files, or any commit-rule warning, is not submitted. It lands on the attention list instead.
@@ -772,7 +772,8 @@ rerequest_review = "ask"
 [serve]
 updates = "list"          # list | draft | check
 updates_at = "07:00"
-submit_limit = 10         # used only by serve --submit-passing
+submit_passing = false    # open PRs for the updates serve prepared that pass (§11)
+submit_limit = 10         # at most this many a day
 notify = true
 
 [providers.prefix]
@@ -783,7 +784,7 @@ path = "~/.dockhand/prefix"
 
 - Nothing is pushed to `macports/macports-ports`. Pushes go to your fork, or to a contributor's PR branch after checking that GitHub allows it.
 - Every push to an existing branch is conditional on the head last observed there. An intervening push stops with a comparison.
-- No publication happens without a person's decision: `submit` binding an exact revision, `submit --check` whose binding is the command itself, or `serve --submit-passing`, started by the person and limited to the branches `serve` prepared that passed with nothing held.
+- No publication happens without a person's decision: `submit` binding an exact revision, `submit --check` whose binding is the command itself, or `serve --submit-passing` (or its config key), which the person turned on and which is limited to the branches `serve` prepared that passed with nothing held.
 - `tidy` never changes the final tree. Every rewrite keeps a checkpoint that `restore` can bring back.
 - A result names its snapshot or commit, targets, providers, and releases. An old result never reads as current.
 - A failed substantive target is never published except as a draft, or with `--no-check`, which the PR discloses.
@@ -812,7 +813,7 @@ Changed by v3:
 
 1. **Codex's `submit --allow-incomplete` isn't adopted for substantive targets.** A ready-for-review PR whose own update fails to build spends a reviewer's time on something the author already knows is broken. Decision 21's line stays: revision-only targets and extras can be accepted, and a failing substantive change goes out as a draft.
 2. **`update.then`, from the earlier draft, is dropped.** A config key that makes `update` publish on some machines breaks "each command means the same thing everywhere". `--submit` is explicit, cheap, and enough for the maintainer who wants passing work to go straight to a PR.
-3. **`serve --submit-passing` is opt-in and guarded, not a setting.** A standing authority to publish belongs to the process the person started, where they can see it and stop it. A config key would quietly carry that authority to every future `serve`. The guardrails keep what the morning look was for: anything the upstream comparison flags (a license change, new dependencies, changed build files) waits for a person, because a passing build can't catch those.
+3. **`serve --submit-passing` is opt-in and guarded.** It is off by default, and it can be a flag or a config key (the person's decision). The guardrails keep what the morning look was for: anything the upstream comparison flags (a license change, new dependencies, changed build files) waits for a person, since a passing build can't catch those. Because a config key carries the authority to every future `serve`, `serve` announces it every time it starts.
 4. **`create`, not `new`, for a new port.** With `start` creating branches, `new` would read as "new branch" as easily as "new port".
 5. **`review` is its own verb.** Posting on someone else's PR is the one outward act that isn't about your own branch. It shouldn't hide behind a flag on `check`.
 6. **No socket service yet.** On one Mac, sessions plus a journal in the database give observers everything the socket would, with no protocol to version and no daemon lifecycle to get wrong. Revisit if journal polling shows up in measurements, or if something that isn't a dockhand process needs to submit work.
@@ -868,4 +869,5 @@ The acceptance cases from decision 44 stand for the engine:
 - An added optional file invalidates reuse.
 - A revision bump with a hook edit is substantive.
 - A guest lost during its third target keeps the first two results.
-- A migrated one-port contribution doesn't claim coverage of newly derived siblings.
+
+Decision 44's migration case is dropped, since v3 starts from a fresh database.
