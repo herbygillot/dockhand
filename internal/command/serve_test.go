@@ -52,15 +52,13 @@ func checkedBranch(t *testing.T) world {
 
 func TestServeDrainsTheQueue(t *testing.T) {
 	checkedBranch(t)
-	for range 2 {
-		_, _, err := dockhand(t, "check", "-d")
-		require.NoError(t, err)
-	}
+	_, _, err := dockhand(t, "check", "-d")
+	require.NoError(t, err)
 	out, _, err := dockhand(t, "serve", "--drain")
 	require.NoError(t, err)
 	require.Contains(t, out, "serve: leading (pid ")
 	require.Contains(t, out, "builds on command · opens no pull requests; it only checks\n")
-	require.Contains(t, out, "check-1 jq-update: running\ncheck-1 jq-update: passed\ncheck-2 jq-update: running\ncheck-2 jq-update: passed\nserve: the queue is empty\n")
+	require.Contains(t, out, "check-1 jq-update: running\ncheck-1 jq-update: passed\nserve: the queue is empty\n")
 	out, _, err = dockhand(t, "queue")
 	require.NoError(t, err)
 	require.Equal(t, "serve: not running · queue: empty\n", out)

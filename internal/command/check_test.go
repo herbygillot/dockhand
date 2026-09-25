@@ -79,7 +79,10 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	require.Contains(t, out, "check-2 queued; nothing is running it: dockhand serve\n")
 
 	withScript(t, w, "failed")
-	out, _, err = dockhand(t, "check")
+	_, _, err = dockhand(t, "check")
+	require.ErrorContains(t, err, "check-2 is already queued for these files; dockhand wait check-2 follows it", "one check of a branch at a time")
+	out, _, err = dockhand(t, "check", "--replace")
+	require.Contains(t, out, "Stopped check-2; what it finished is kept.\ncheck-3 replaces check-2.\n")
 	require.Equal(t, 2, ExitCode(err), "a failed check exits 2")
 	require.ErrorContains(t, err, "check-3 failed for snapshot 1: jq did not pass. Logs: dockhand logs check-3")
 	require.Contains(t, out, "  jq  ✗ failed at install\n")

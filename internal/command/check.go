@@ -20,7 +20,7 @@ import (
 
 func checkCommand(s *settings, streams Streams) *cobra.Command {
 	var selector, tests string
-	var plan, head, staged, workingTree, enqueue, baseline bool
+	var plan, head, staged, workingTree, enqueue, baseline, replace bool
 	var include, only, also, on []string
 	cmd := &cobra.Command{
 		Use:   "check",
@@ -38,6 +38,10 @@ be built and changes nothing.
 Without dockhand serve, the check runs here and says so; Ctrl-C stops it
 and keeps what finished. With serve running, it is handed to serve and
 followed here; Ctrl-C then only stops following. -d queues it and returns.
+
+One check of a branch runs at a time: while one is queued or running,
+check refuses, and --replace stops it, keeping what it finished, and checks
+the files now, on what --on names (decision 29: switching is explicit).
 
 --baseline builds the ports that failed in the branch's latest check, or
 the --only ones, at the master the branch starts from, and reports each
@@ -95,9 +99,16 @@ more. With check.baseline = true, a failed check runs one by itself.`,
 			if plan {
 				return nil
 			}
+			replaced, err := replaceActive(ctx, e, streams, branch, capture.Revision, replace)
+			if err != nil {
+				return err
+			}
 			run, err := e.Enqueue(ctx, branch, proposed, model.OriginPerson)
 			if err != nil {
 				return err
+			}
+			if len(replaced) > 0 {
+				fmt.Fprintf(streams.Out, "%s replaces %s.\n", run.Name(), strings.Join(replaced, ", "))
 			}
 			err = runQueued(ctx, e, run, streams, enqueue)
 			// check.baseline runs a baseline of what failed, by itself.
@@ -121,6 +132,7 @@ more. With check.baseline = true, a failed check runs one by itself.`,
 	cmd.Flags().StringArrayVar(&on, "on", nil, "where to build; repeat for several, all of which must pass (default check.on)")
 	cmd.Flags().StringVar(&tests, "tests", "", "declared (advisory), required, or skip")
 	cmd.Flags().BoolVarP(&enqueue, "enqueue", "d", false, "queue the check and return")
+	cmd.Flags().BoolVar(&replace, "replace", false, "stop the branch's queued or running check, keeping what it finished, and check this instead")
 	cmd.Flags().BoolVar(&baseline, "baseline", false, "build what failed in the latest check, or --only ports, at the branch's base")
 	cmd.MarkFlagsMutuallyExclusive("baseline", "plan")
 	cmd.MarkFlagsMutuallyExclusive("baseline", "also")
@@ -548,4 +560,58 @@ func baselineWords(base, branch model.TargetResult, check string) string {
 		return fmt.Sprintf("✗ fails at the base, at %s, and builds on the branch (%s).", base.Phase, check)
 	}
 	return fmt.Sprintf("✗ fails at the base too, at %s. Both results are kept; the cause isn't established.", base.Phase)
+}
+
+// replaceActive refuses a second check of a branch while one is queued or
+// running, unless replace says to stop it (decision 29). A running check is
+// stopped only after asking, on a terminal; without one, --replace is the
+// consent. Finished results are kept. It returns the runs it stopped.
+func replaceActive(ctx context.Context, e *engine.Engine, streams Streams, branch model.Branch, revision model.Revision, replace bool) ([]string, error) {
+	runs, err := e.Runs(ctx, store.RunFilter{Branch: branch.ID, States: []model.RunState{model.RunQueued, model.RunRunning}})
+	if err != nil {
+		return nil, err
+	}
+	runs = slices.DeleteFunc(runs, func(run model.Run) bool { return run.BaselineOf != "" })
+	if len(runs) == 0 {
+		return nil, nil
+	}
+	current := runs[0]
+	if !replace {
+		if current.Revision == revision.ID {
+			return nil, fmt.Errorf("%s is already %s for these files; dockhand wait %s follows it", current.Name(), current.State, current.Name())
+		}
+		checking, err := e.Revision(ctx, current.Revision)
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("%s is %s for %s; --replace stops it, keeping what it finished, and checks %s instead", current.Name(), current.State, engine.Describe(checking), engine.Describe(revision))
+	}
+	session, err := startSession(ctx, e, model.SessionForeground)
+	if err != nil {
+		return nil, err
+	}
+	defer session.End(context.WithoutCancel(ctx))
+	var stopped []string
+	for _, run := range runs {
+		if run.State == model.RunRunning && streams.terminal() {
+			ok, err := confirm(streams, fmt.Sprintf("? stop %s, which is running? [y/N] ", run.Name()))
+			if err != nil {
+				return stopped, err
+			}
+			if !ok {
+				return stopped, fmt.Errorf("%s keeps running; nothing new was queued", run.Name())
+			}
+		}
+		run, err = e.RequestCancel(ctx, session, run.ID)
+		if err != nil {
+			return stopped, err
+		}
+		if run.State == model.RunCanceled {
+			fmt.Fprintf(streams.Out, "Stopped %s; what it finished is kept.\n", run.Name())
+		} else {
+			fmt.Fprintf(streams.Out, "%s: stop requested; the process running it stops it at its next step.\n", run.Name())
+		}
+		stopped = append(stopped, run.Name())
+	}
+	return stopped, nil
 }
