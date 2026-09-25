@@ -15,12 +15,17 @@ type Streams struct {
 	In  io.Reader
 	Out io.Writer
 	Err io.Writer
+	// interactive stands in for a terminal in tests.
+	interactive bool
 }
 
 // terminal reports whether the input is an interactive terminal, the only
 // place a command may ask a question. /dev/null is a character device too,
 // so this asks the terminal driver rather than the file's mode.
 func (s Streams) terminal() bool {
+	if s.interactive {
+		return true
+	}
 	file, ok := s.In.(*os.File)
 	return ok && isTerminal(file.Fd())
 }
@@ -57,6 +62,14 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 		pathCommand(&settings, streams),
 	} {
 		command.GroupID = "work"
+		root.AddCommand(command)
+	}
+	root.AddGroup(&cobra.Group{ID: "author", Title: "Author:"})
+	for _, command := range []*cobra.Command{
+		updateCommand(&settings, streams),
+		checksumsCommand(&settings, streams),
+	} {
+		command.GroupID = "author"
 		root.AddCommand(command)
 	}
 	root.SetArgs(args)

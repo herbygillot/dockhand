@@ -27,6 +27,10 @@ type TokenSourceFunc func(context.Context) (Token, error)
 
 func (f TokenSourceFunc) Token(ctx context.Context) (Token, error) { return f(ctx) }
 
+// CredentialKey is where dockhand keeps its GitHub login in the system
+// credential store.
+var CredentialKey = credential.Key{Service: "github.com/herbygillot/dockhand", Account: "github.com"}
+
 type SystemCredentials struct {
 	Store credential.Store
 	Key   credential.Key

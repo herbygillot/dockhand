@@ -57,7 +57,7 @@ func (e *Engine) Start(ctx context.Context, request StartRequest) (model.Branch,
 	} else if !errors.Is(err, git.ErrBranchMissing) {
 		return model.Branch{}, err
 	}
-	directory := filepath.Join(e.Worktrees(), strings.TrimPrefix(name, model.BranchPrefix))
+	directory := e.worktreeDirectory(name)
 	var previous string
 	if request.Here {
 		changes, err := e.Repo.TrackedChanges(ctx)
@@ -118,6 +118,11 @@ func (e *Engine) Start(ctx context.Context, request StartRequest) (model.Branch,
 		return model.Branch{}, errors.Join(err, undo())
 	}
 	return branch, nil
+}
+
+// worktreeDirectory is where a branch's managed worktree goes.
+func (e *Engine) worktreeDirectory(name string) string {
+	return filepath.Join(e.Worktrees(), strings.TrimPrefix(name, model.BranchPrefix))
 }
 
 // AdoptRequest asks to track an existing branch.

@@ -61,6 +61,7 @@ func (s *settings) options() (engine.Options, config.File, string, error) {
 		// DOCKHAND_UPSTREAM fetches master from a mirror or, in tests, a
 		// local repository.
 		Upstream: os.Getenv("DOCKHAND_UPSTREAM"),
+		Tclsh:    portTclsh(),
 	}, file, configPath, nil
 }
 
@@ -69,7 +70,11 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	return engine.Open(ctx, options)
+	e, err := engine.Open(ctx, options)
+	if err == nil && testPreparer != nil {
+		e.Preparer = testPreparer(e)
+	}
+	return e, err
 }
 
 // tilde abbreviates the home directory in a path shown to a person.

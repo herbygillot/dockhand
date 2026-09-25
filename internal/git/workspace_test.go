@@ -140,7 +140,7 @@ func TestTrackedChangesAndSwitch(t *testing.T) {
 	gitIn(t, repo.Root, "mv", "README.md", "README")
 	changes, err = repo.TrackedChanges(t.Context())
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"textproc/jq/Portfile", "README"}, changes)
+	require.ElementsMatch(t, []string{"textproc/jq/Portfile", "README", "README.md"}, changes, "a rename lists both paths")
 
 	gitIn(t, repo.Root, "reset", "-q", "--hard")
 	require.NoError(t, repo.Switch(t.Context(), "dockhand/here"))
@@ -148,4 +148,57 @@ func TestTrackedChangesAndSwitch(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "dockhand/here", branch)
 	require.Error(t, repo.Switch(t.Context(), "dockhand/absent"))
+}
+
+func TestWorkingTreeCapturesTrackedFilesAsTheyAreOnDisk(t *testing.T) {
+	repo, head := portsCheckout(t)
+	portfile := filepath.Join(repo.Root, "textproc/jq/Portfile")
+	require.NoError(t, os.WriteFile(portfile, []byte("name jq\nversion 2\n"), 0o644))
+	require.NoError(t, os.Chmod(portfile, 0o755))
+	require.NoError(t, os.Remove(filepath.Join(repo.Root, "devel/libharbor/Portfile")))
+	require.NoError(t, os.MkdirAll(filepath.Join(repo.Root, "textproc/rift"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(repo.Root, "textproc/rift/Portfile"), []byte("name rift\n"), 0o644))
+	gitIn(t, repo.Root, "add", "textproc/rift/Portfile")
+	require.NoError(t, os.WriteFile(filepath.Join(repo.Root, "untracked.txt"), []byte("x"), 0o644))
+
+	commit, tree, err := repo.WorkingTree(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, head, commit)
+	changed, err := repo.ChangedPaths(t.Context(), head, tree)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"textproc/jq/Portfile", "devel/libharbor/Portfile", "textproc/rift/Portfile"}, changed)
+	state, data, err := repo.File(t.Context(), tree, "textproc/jq/Portfile")
+	require.NoError(t, err)
+	require.Equal(t, "name jq\nversion 2\n", string(data))
+	require.Equal(t, uint32(0o100755), state.Mode)
+	require.Contains(t, gitIn(t, repo.Root, "status", "--porcelain"), " M textproc/jq/Portfile", "the index is untouched")
+}
+
+func TestApplyToWorkingFilesChecksEveryFileFirst(t *testing.T) {
+	repo, _ := portsCheckout(t)
+	_, tree, err := repo.WorkingTree(t.Context())
+	require.NoError(t, err)
+	jq, _, err := repo.File(t.Context(), tree, "textproc/jq/Portfile")
+	require.NoError(t, err)
+	harbor, _, err := repo.File(t.Context(), tree, "devel/libharbor/Portfile")
+	require.NoError(t, err)
+	edits := []git.FileEdit{
+		{Path: "textproc/jq/Portfile", Before: jq, After: []byte("name jq\nversion 3\n"), Mode: jq.Mode},
+		{Path: "devel/libharbor/Portfile", Before: harbor, After: []byte("name libharbor\nversion 2\n"), Mode: harbor.Mode},
+	}
+
+	// Someone edits libharbor after the edits were prepared.
+	require.NoError(t, os.WriteFile(filepath.Join(repo.Root, "devel/libharbor/Portfile"), []byte("mine\n"), 0o644))
+	err = repo.ApplyToWorkingFiles(t.Context(), edits)
+	require.ErrorIs(t, err, git.ErrWorkingFile)
+	data, err := os.ReadFile(filepath.Join(repo.Root, "textproc/jq/Portfile"))
+	require.NoError(t, err)
+	require.Equal(t, "name jq\n", string(data), "no file is written when any has changed")
+
+	require.NoError(t, os.WriteFile(filepath.Join(repo.Root, "devel/libharbor/Portfile"), []byte("name libharbor\n"), 0o644))
+	require.NoError(t, repo.ApplyToWorkingFiles(t.Context(), edits))
+	data, err = os.ReadFile(filepath.Join(repo.Root, "textproc/jq/Portfile"))
+	require.NoError(t, err)
+	require.Equal(t, "name jq\nversion 3\n", string(data))
+	require.Contains(t, gitIn(t, repo.Root, "status", "--porcelain"), "M devel/libharbor/Portfile")
 }

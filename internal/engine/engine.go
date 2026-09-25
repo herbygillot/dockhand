@@ -40,6 +40,9 @@ type Options struct {
 	Worktrees string
 	// Upstream is the URL master is fetched from; UpstreamURL when empty.
 	Upstream string
+	// Tclsh is MacPorts' port-tclsh, which evaluates Portfiles; found on
+	// PATH when empty.
+	Tclsh string
 	// Now defaults to time.Now.
 	Now func() time.Time
 }
@@ -49,7 +52,9 @@ type Engine struct {
 	Repo       *git.Repository
 	Store      store.Store
 	Repository model.RepositoryID
-	options    Options
+	// Preparer edits ports; MacPorts' own evaluator when nil.
+	Preparer Preparer
+	options  Options
 }
 
 // Open checks that Tree is inside a ports checkout, opens the store, and

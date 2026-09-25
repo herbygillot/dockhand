@@ -109,8 +109,8 @@ func (r *Repository) RemoveWorktree(ctx context.Context, directory string) error
 }
 
 // TrackedChanges lists tracked paths whose index or working contents differ
-// from HEAD: the work a branch switch could displace. Untracked files are
-// not listed.
+// from HEAD: the work a branch switch could displace. A rename lists both
+// its paths. Untracked files are not listed.
 func (r *Repository) TrackedChanges(ctx context.Context) ([]string, error) {
 	out, err := r.output(ctx, "status", "--porcelain=v1", "-z", "--untracked-files=no", "--ignore-submodules=none")
 	if err != nil {
@@ -124,9 +124,13 @@ func (r *Repository) TrackedChanges(ctx context.Context) ([]string, error) {
 			continue
 		}
 		paths = append(paths, entry[3:])
-		// A rename or copy is followed by its source path.
-		if entry[0] == 'R' || entry[0] == 'C' {
+		// A rename or copy is followed by its source path, which a rename
+		// deletes.
+		if (entry[0] == 'R' || entry[0] == 'C') && i+1 < len(fields) {
 			i++
+			if entry[0] == 'R' && fields[i] != "" {
+				paths = append(paths, fields[i])
+			}
 		}
 	}
 	return paths, nil

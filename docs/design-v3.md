@@ -296,7 +296,7 @@ A handwritten Portfile is just as much a first-class path. `check` builds it the
 
 ```console
 $ dockhand checksums croc --new
-croc-checksums · ~/src/macports-branches/croc-checksums
+croc-7hq2 · ~/src/macports-branches/croc-7hq2
 croc 10.2.4 · the distfile changed upstream without a new name (stealth update)
   was   sha256 1f3a…c2d9   size 7,114,391
   now   sha256 9b0c…77e1   size 7,114,508
