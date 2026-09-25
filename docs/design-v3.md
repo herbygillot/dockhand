@@ -67,7 +67,7 @@ Shortcuts combine these explicitly, and each command means the same thing at eve
 4. **History follows logical changes.** Grouping by port is `tidy`'s suggestion, never a rule. MacPorts asks for commits minimized "ideally with one commit per logical change", and for follow-ups to be squashed.
 5. **Coverage and evidence are named.** Results say which targets, on which provider and release, at which snapshot or commit. Nothing says just "verified".
 6. **One driver at a time, and observers see everything.** `serve` drives the queue. Without it, a command runs its own request in the foreground and says so. Detaching from `serve`'s work is always safe.
-7. **Publishing is always a person's decision about an exact revision.** No server, schedule, or passing check publishes by itself.
+7. **Publishing is always a person's decision.** Either the decision is about an exact revision (`submit`, `submit --check`, `submit --passing`), or it's a standing one the person gave `serve` when starting it (`serve --submit-passing`). A passing check never publishes on its own authority.
 8. **Speak MacPorts.** Commit subjects, the PR body, and the checks follow the MacPorts guide, the commit-message wiki, the PR template, and CI's actual behavior.
 9. **Every refusal carries the way forward.** It names the obstacle, what was kept, and one concrete next command.
 10. **Git works without dockhand.** Dockhand's records enrich branches rather than owning them. Both workspace styles, managed worktrees and your own checkout, have the same capabilities.
@@ -497,7 +497,7 @@ jq-4k2p     jq 1.7.1 → 1.8.1 · tart:tahoe ✓ · Portfile +3 −4
 
 `submit --passing` lists each branch whose check passed for exactly what would be submitted: a committed tree, with no edits left out. It shows each one's submission preview in brief. The `!` lines compare the old and new upstream archives, which dockhand already fetched for the checksums, looking for changed license files, build files, and declared dependencies. Those are what a reviewer would ask about, and what a passing build can't catch.
 
-`serve` can do the morning's preparation by itself with `serve.updates = "check"`. It then finds new releases of your ports, creates and tidies a branch for each, and checks them, so `submit --passing` is all that's left. It never submits ([§11](#11-serve-the-queue-and-instance-coordination)).
+`serve` can do the morning's preparation by itself with `serve.updates = "check"`. It then finds new releases of your ports, creates and tidies a branch for each, and checks them, so `submit --passing` is all that's left. By default it never submits. `serve --submit-passing` goes one step further ([§11](#11-serve-the-queue-and-instance-coordination)).
 
 ### 6.13 After the merge
 
@@ -683,6 +683,7 @@ dockhand serve                 # drive the queue in this terminal until interrup
 dockhand serve --install       # a launchd agent: starts now and at every login
 dockhand serve --uninstall
 dockhand serve --drain         # run what is queued now, then exit
+dockhand serve --submit-passing   # also open PRs for the branches it prepared that pass (see below)
 ```
 
 | Situation | Behavior |
@@ -716,7 +717,13 @@ What `serve` does besides running checks (each can be turned off, and all show i
   - `draft`: creates and tidies a branch for each new release.
   - `check`: also checks each one, so the morning is `submit --passing`.
 
-  There is no setting that submits.
+  None of these submits by default.
+- **Submits what passed, only when started with `--submit-passing`.** By default `serve` only builds and tests. With the flag, and with `serve.updates = "check"`, it opens a PR for each branch it prepared whose check passed. The flag applies to that `serve` process only: `serve --install --submit-passing` records it in the launchd agent, and `serve --install` without it takes it away. Guardrails:
+  - **Scope.** Only the branches `serve` itself created from new releases. Your own branches are submitted by you, with `submit`, `submit --check`, or `submit --passing`.
+  - **What passed.** The check must have passed on the exact committed tree being submitted, under the publication rule in §3, with no acknowledgements needed. A branch that needs `--accept` waits for a person.
+  - **Held for a look.** A branch with any `!` finding from the upstream comparison, such as a changed license file, new declared dependencies, or changed build files, or any commit-rule warning, is not submitted. It lands on the attention list instead.
+  - **A daily limit.** At most `serve.submit_limit` PRs a day (10 by default). The rest wait for the next day, so a release wave doesn't land on reviewers all at once.
+  - **Visibility.** `queue` and `status` say "serve opens PRs for passing updates". Every PR it opens appears on the attention list as "opened by serve", and the PR body says that it was submitted without a person's review.
 - **Cleans up** on decision 36's schedule.
 - **Notifies** through macOS notifications, when a check finishes or a PR changes (`serve.notify`).
 
@@ -765,6 +772,7 @@ rerequest_review = "ask"
 [serve]
 updates = "list"          # list | draft | check
 updates_at = "07:00"
+submit_limit = 10         # used only by serve --submit-passing
 notify = true
 
 [providers.prefix]
@@ -775,7 +783,7 @@ path = "~/.dockhand/prefix"
 
 - Nothing is pushed to `macports/macports-ports`. Pushes go to your fork, or to a contributor's PR branch after checking that GitHub allows it.
 - Every push to an existing branch is conditional on the head last observed there. An intervening push stops with a comparison.
-- No publication happens without a person's `submit` binding an exact revision. That includes `serve`, a schedule, and `submit --check`, whose binding is the command itself.
+- No publication happens without a person's decision: `submit` binding an exact revision, `submit --check` whose binding is the command itself, or `serve --submit-passing`, started by the person and limited to the branches `serve` prepared that passed with nothing held.
 - `tidy` never changes the final tree. Every rewrite keeps a checkpoint that `restore` can bring back.
 - A result names its snapshot or commit, targets, providers, and releases. An old result never reads as current.
 - A failed substantive target is never published except as a draft, or with `--no-check`, which the PR discloses.
@@ -798,13 +806,13 @@ Changed by v3:
 | 21 (`publish --accept-failure`) | Becomes `submit --accept <port>`. |
 | 37 (`--branch-name`) | `start <name>` names the branch. Unnamed branches keep decision 37's `dockhand/<first port>-<ID>`. |
 | Vocabulary of 44 | "Changeset" becomes **branch**. A revision is a commit or a **snapshot**. **Run** is added. |
-| The roadmap's "review and unattended-publication authority" | Settled: `review` posts only on confirmation; `serve` never publishes; `submit --check` and `--passing` are a person's binding. |
+| The roadmap's "review and unattended-publication authority" | Settled: `review` posts only on confirmation; `serve` publishes only when started with `--submit-passing`, within §11's guardrails; `submit --check` and `--passing` are a person's binding. |
 
 ## 15. Where v3 pushes back
 
 1. **Codex's `submit --allow-incomplete` isn't adopted for substantive targets.** A ready-for-review PR whose own update fails to build spends a reviewer's time on something the author already knows is broken. Decision 21's line stays: revision-only targets and extras can be accepted, and a failing substantive change goes out as a draft.
 2. **`update.then`, from the earlier draft, is dropped.** A config key that makes `update` publish on some machines breaks "each command means the same thing everywhere". `--submit` is explicit, cheap, and enough for the maintainer who wants passing work to go straight to a PR.
-3. **`serve` has no submitting level.** The earlier draft allowed one, with a daily limit. A passing build can't see a license change, a new dependency, or a compromised release, and the look that catches them takes seconds with `submit --passing`.
+3. **`serve --submit-passing` is opt-in and guarded, not a setting.** A standing authority to publish belongs to the process the person started, where they can see it and stop it. A config key would quietly carry that authority to every future `serve`. The guardrails keep what the morning look was for: anything the upstream comparison flags (a license change, new dependencies, changed build files) waits for a person, because a passing build can't catch those.
 4. **`create`, not `new`, for a new port.** With `start` creating branches, `new` would read as "new branch" as easily as "new port".
 5. **`review` is its own verb.** Posting on someone else's PR is the one outward act that isn't about your own branch. It shouldn't hide behind a flag on `check`.
 6. **No socket service yet.** On one Mac, sessions plus a journal in the database give observers everything the socket would, with no protocol to version and no daemon lifecycle to get wrong. Revisit if journal polling shows up in measurements, or if something that isn't a dockhand process needs to submit work.
