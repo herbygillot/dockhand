@@ -288,3 +288,14 @@ func listPaths(paths []string) string {
 	}
 	return strings.Join(paths, ", ")
 }
+
+// Branch reads a tracked branch by its ID.
+func (e *Engine) Branch(ctx context.Context, id model.BranchID) (model.Branch, error) {
+	var branch model.Branch
+	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		branch, err = r.Branch(id)
+		return err
+	})
+	return branch, err
+}

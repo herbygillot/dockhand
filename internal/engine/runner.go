@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/coord"
@@ -120,12 +121,24 @@ func (e *Engine) finishCanceled(ctx context.Context, session *coord.Session, lea
 // applied at the next step. Canceling ctx stops the run the same way and
 // keeps what finished.
 func (e *Engine) Drive(ctx context.Context, session *coord.Session, id model.RunID) (model.Run, error) {
+	return e.drive(ctx, session, id, false)
+}
+
+// Resume drives a run as Drive does, except that when ctx ends without a
+// cancel request, the run is left running for the next driver: serve
+// stopping, or its Mac restarting, loses nothing (Design v3 §11). The
+// execution it interrupted counts as one attempt.
+func (e *Engine) Resume(ctx context.Context, session *coord.Session, id model.RunID) (model.Run, error) {
+	return e.drive(ctx, session, id, true)
+}
+
+func (e *Engine) drive(ctx context.Context, session *coord.Session, id model.RunID, resumable bool) (model.Run, error) {
 	lease, err := session.Acquire(ctx, RunResource(id))
 	if err != nil {
 		return model.Run{}, err
 	}
 	defer session.Release(context.WithoutCancel(ctx), lease)
-	d := &driver{e: e, session: session, lease: lease}
+	d := &driver{e: e, session: session, lease: lease, resumable: resumable}
 	return d.drive(ctx, id)
 }
 
@@ -135,6 +148,11 @@ type driver struct {
 	lease   model.Lease
 	run     model.Run
 	plan    model.Plan
+	// resumable leaves a run whose driver stopped running, for the next.
+	resumable bool
+	// canceled records that a cancel request, not the driver stopping,
+	// ended the run.
+	canceled atomic.Bool
 	// problems are why the run needs a person's attention.
 	problems []string
 }
@@ -208,11 +226,18 @@ func (d *driver) drive(ctx context.Context, id model.RunID) (model.Run, error) {
 		}
 	}
 	if running.Err() != nil {
+		if d.stopped() {
+			return e.Run(context.WithoutCancel(ctx), id)
+		}
 		// An interrupt cancels ctx too; the run is still settled.
 		return e.finishCanceled(context.WithoutCancel(ctx), d.session, d.lease, id)
 	}
 	return d.finish(context.WithoutCancel(ctx))
 }
+
+// stopped reports that the driver itself is stopping, with no cancel
+// request, in a driver that leaves such runs for the next one.
+func (d *driver) stopped() bool { return d.resumable && !d.canceled.Load() }
 
 // watchCancel polls the run for a cancel request.
 func (d *driver) watchCancel(ctx context.Context, stop context.CancelFunc) {
@@ -226,6 +251,7 @@ func (d *driver) watchCancel(ctx context.Context, stop context.CancelFunc) {
 			_ = d.e.Store.View(ctx, d.e.Repository, func(r store.Reader) error {
 				run, err := r.Run(d.run.ID)
 				if err == nil && run.CancelRequested != nil {
+					d.canceled.Store(true)
 					stop()
 				}
 				return nil
@@ -310,6 +336,8 @@ func (d *driver) environment(ctx context.Context, provider Provider, environment
 		err := provider.Execute(ctx, job, build)
 		build.blockRemaining(remaining)
 		switch {
+		case ctx.Err() != nil && d.stopped():
+			return d.endExecution(ctx, execution, model.ExecutionInfrastructure, "interrupted: the process driving it stopped")
 		case ctx.Err() != nil:
 			return d.endExecution(ctx, execution, model.ExecutionCanceled, "canceled")
 		case err != nil:
@@ -595,4 +623,39 @@ func (e *Engine) Revision(ctx context.Context, id model.RevisionID) (model.Revis
 		return err
 	})
 	return revision, err
+}
+
+// Next is the run serve drives next (Design v3 §11): a run left running by
+// a driver that is gone, then queued runs a person asked for, then serve's
+// own, oldest first. Runs a live session holds are someone else's.
+func (e *Engine) Next(ctx context.Context, session *coord.Session) (model.Run, bool, error) {
+	runs, err := e.Runs(ctx, store.RunFilter{States: []model.RunState{model.RunQueued, model.RunRunning}})
+	if err != nil {
+		return model.Run{}, false, err
+	}
+	rank := func(run model.Run) int {
+		switch {
+		case run.State == model.RunRunning:
+			return 0
+		case run.Origin == model.OriginPerson:
+			return 1
+		}
+		return 2
+	}
+	slices.SortStableFunc(runs, func(a, b model.Run) int {
+		if ra, rb := rank(a), rank(b); ra != rb {
+			return ra - rb
+		}
+		return a.Number - b.Number
+	})
+	for _, run := range runs {
+		holder, err := session.Holder(ctx, RunResource(run.ID))
+		if err != nil {
+			return model.Run{}, false, err
+		}
+		if holder == nil {
+			return run, true, nil
+		}
+	}
+	return model.Run{}, false, nil
 }

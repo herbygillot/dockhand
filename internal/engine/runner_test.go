@@ -236,3 +236,70 @@ func mustPlan(t *testing.T, e *Engine, run model.Run) model.Plan {
 	plan.ID = model.PlanID(store.NewID("plan"))
 	return plan
 }
+
+func TestAStoppedServeLeavesTheRunForTheNext(t *testing.T) {
+	f := setup(t)
+	f.options.Poll = 10 * time.Millisecond
+	e := f.open(t)
+	provider := &scriptedProvider{wait: true}
+	e.Providers = map[string]Provider{"command": provider}
+	queued := queuedHarborRun(t, e, tahoeArm)
+	first := session(t, e)
+
+	ctx, stop := context.WithCancel(t.Context())
+	done := make(chan model.Run)
+	go func() {
+		run, err := e.Resume(ctx, first, queued.ID)
+		require.NoError(t, err)
+		done <- run
+	}()
+	require.Eventually(t, func() bool {
+		provider.mu.Lock()
+		defer provider.mu.Unlock()
+		return len(provider.jobs) == 1
+	}, 5*time.Second, 10*time.Millisecond)
+	stop()
+	run := <-done
+	require.Equal(t, model.RunRunning, run.State, "serve stopping cancels nothing")
+
+	second := session(t, e)
+	next, found, err := e.Next(t.Context(), second)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, queued.ID, next.ID, "a run whose driver is gone comes first")
+	provider.mu.Lock()
+	provider.wait = false
+	provider.mu.Unlock()
+	run, err = e.Resume(t.Context(), second, queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, run.State)
+	require.Len(t, provider.jobs, 2)
+	require.Equal(t, 2, provider.jobs[1].Execution.Attempt, "the interrupted execution counts as an attempt")
+}
+
+func TestServeTakesPeoplesChecksFirst(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	e.Providers = map[string]Provider{"command": &scriptedProvider{}}
+	first := queuedHarborRun(t, e, tahoeArm)
+	branch, err := e.Branch(t.Context(), first.Branch)
+	require.NoError(t, err)
+	byServe, err := e.Enqueue(t.Context(), branch, mustPlan(t, e, first), model.OriginServe)
+	require.NoError(t, err)
+	byPerson, err := e.Enqueue(t.Context(), branch, mustPlan(t, e, first), model.OriginPerson)
+	require.NoError(t, err)
+
+	s := session(t, e)
+	var order []int
+	for {
+		next, found, err := e.Next(t.Context(), s)
+		require.NoError(t, err)
+		if !found {
+			break
+		}
+		order = append(order, next.Number)
+		_, err = e.Resume(t.Context(), s, next.ID)
+		require.NoError(t, err)
+	}
+	require.Equal(t, []int{first.Number, byPerson.Number, byServe.Number}, order)
+}

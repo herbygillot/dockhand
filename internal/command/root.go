@@ -34,9 +34,10 @@ func (s Streams) terminal() bool {
 	return ok && isTerminal(file.Fd())
 }
 
-const rebuilding = `dockhand is being rebuilt as v3 (docs/design-v3.md). The commands below
-are the first of it; check, status, and serve arrive with the rest of the
-roadmap's step 5. Until then, the working tool is v2, tagged v2-final:
+const rebuilding = `dockhand is being rebuilt as v3 (docs/design-v3.md). The whole loop is here,
+but check builds only on your own script (docs/command-provider.md) until the
+Tart provider lands, and the real MacPorts paths are still to be proven on a
+Mac. Until then, the working tool is v2, tagged v2-final:
 
   git worktree add ../dockhand-v2 v2-final
   make -C ../dockhand-v2 build BINARY="$HOME/.local/bin/dockhand-v2"`
@@ -114,6 +115,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 		queueCommand(&settings, streams),
 		waitCommand(&settings, streams),
 		cancelCommand(&settings, streams),
+		serveCommand(&settings, streams),
 	} {
 		command.GroupID = "queue"
 		root.AddCommand(command)

@@ -272,7 +272,15 @@ func follow(ctx context.Context, e *engine.Engine, session *coord.Session, run m
 	}()
 	var err error
 	if drive {
-		run, err = e.Drive(ctx, session, run.ID)
+		var driven model.Run
+		driven, err = e.Drive(ctx, session, run.ID)
+		// A serve that started meanwhile may have taken the run; then it
+		// is followed instead.
+		if held := new(coord.HeldError); errors.As(err, &held) {
+			fmt.Fprintf(streams.Err, "%s was taken by serve (pid %d); following it.\n", run.Name(), held.Holder.PID)
+			driven, err = waitFor(ctx, e, run.ID)
+		}
+		run = driven
 	} else {
 		run, err = waitFor(ctx, e, run.ID)
 	}
