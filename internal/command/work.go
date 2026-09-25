@@ -2,6 +2,7 @@ package command
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/github"
 )
 
 func initCommand(s *settings, streams Streams) *cobra.Command {
@@ -86,6 +88,7 @@ setup; those come when something needs them.`,
 			} else {
 				fmt.Fprintf(out, "  Authoring    ! port-tclsh is not on PATH or in /opt/local/bin; install MacPorts to update ports\n")
 			}
+			fmt.Fprintf(out, "  Publishing   %s\n", publishing(cmd.Context()))
 			fmt.Fprintf(out, "  Records      %s\n\n", tilde(options.Database))
 			fmt.Fprintln(out, "Next: dockhand start <name>")
 			return nil
@@ -246,4 +249,16 @@ func portTclsh() string {
 		return path
 	}
 	return ""
+}
+
+// publishing says where submit's GitHub login would come from, without
+// asking GitHub.
+func publishing(ctx context.Context) string {
+	if name := overridingToken(); name != "" {
+		return "✓ GitHub token from " + name
+	}
+	if _, err := authStore.Get(ctx, github.CredentialKey); err == nil {
+		return "✓ GitHub login in the Keychain"
+	}
+	return "· not set up: dockhand auth login, when you're ready to submit"
 }

@@ -16,15 +16,15 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
-// github stands in for GitHub: the fork is a local bare repository.
-type github struct {
+// fakeGitHub stands in for GitHub: the fork is a local bare repository.
+type fakeGitHub struct {
 	upstream, fork string
 	prs            []record.PullRequest
 	drafts         []bool
 }
 
-func (g *github) AuthenticatedUser(context.Context) (string, error) { return "ada", nil }
-func (g *github) NameFromRemote(url string) (string, error) {
+func (g *fakeGitHub) AuthenticatedUser(context.Context) (string, error) { return "ada", nil }
+func (g *fakeGitHub) NameFromRemote(url string) (string, error) {
 	switch url {
 	case g.upstream:
 		return engine.UpstreamRepository, nil
@@ -33,16 +33,16 @@ func (g *github) NameFromRemote(url string) (string, error) {
 	}
 	return "", errors.New("not GitHub")
 }
-func (g *github) RepositoryInfo(_ context.Context, name string) (forge.RepositoryInfo, error) {
+func (g *fakeGitHub) RepositoryInfo(_ context.Context, name string) (forge.RepositoryInfo, error) {
 	return forge.RepositoryInfo{Name: name, Parent: engine.UpstreamRepository}, nil
 }
-func (g *github) Find(context.Context, forge.PullRequestQuery) (forge.PullRequestObservation, error) {
+func (g *fakeGitHub) Find(context.Context, forge.PullRequestQuery) (forge.PullRequestObservation, error) {
 	return forge.PullRequestObservation{}, nil
 }
-func (g *github) Observe(_ context.Context, ref record.PullRequestRef) (forge.PullRequestObservation, error) {
+func (g *fakeGitHub) Observe(_ context.Context, ref record.PullRequestRef) (forge.PullRequestObservation, error) {
 	return forge.PullRequestObservation{Found: true, PullRequest: g.prs[ref.Number-34901]}, nil
 }
-func (g *github) Create(_ context.Context, input forge.PullRequestInput) (forge.PullRequestObservation, error) {
+func (g *fakeGitHub) Create(_ context.Context, input forge.PullRequestInput) (forge.PullRequestObservation, error) {
 	number := 34901 + len(g.prs)
 	pr := record.PullRequest{Ref: record.PullRequestRef{Repository: input.Repository, Number: number, URL: fmt.Sprintf("https://github.com/%s/pull/%d", input.Repository, number)},
 		State: record.PullRequestOpen, Title: input.Desired.Title, Body: input.Desired.Body, RemoteHead: input.Desired.Head}
@@ -50,20 +50,20 @@ func (g *github) Create(_ context.Context, input forge.PullRequestInput) (forge.
 	g.drafts = append(g.drafts, input.Draft)
 	return forge.PullRequestObservation{Found: true, PullRequest: pr}, nil
 }
-func (g *github) Update(_ context.Context, input forge.PullRequestInput) (forge.PullRequestObservation, error) {
+func (g *fakeGitHub) Update(_ context.Context, input forge.PullRequestInput) (forge.PullRequestObservation, error) {
 	pr := &g.prs[input.ExistingPR.Number-34901]
 	pr.Title, pr.Body = input.Desired.Title, input.Desired.Body
 	return forge.PullRequestObservation{Found: true, PullRequest: *pr}, nil
 }
-func (g *github) OpenPullRequests(context.Context, string, string) ([]forge.PullRequestSummary, error) {
+func (g *fakeGitHub) OpenPullRequests(context.Context, string, string) ([]forge.PullRequestSummary, error) {
 	return []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}, nil
 }
 
-func withGitHub(t *testing.T, w world) *github {
+func withGitHub(t *testing.T, w world) *fakeGitHub {
 	fork := filepath.Join(filepath.Dir(w.upstream), "fork.git")
 	gitRun(t, filepath.Dir(w.upstream), "clone", "-q", "--bare", w.upstream, fork)
 	gitRun(t, w.clone, "remote", "add", "fork", fork)
-	g := &github{upstream: w.upstream, fork: fork}
+	g := &fakeGitHub{upstream: w.upstream, fork: fork}
 	testForge = func(*engine.Engine) engine.Forge { return g }
 	t.Cleanup(func() { testForge = nil })
 	return g

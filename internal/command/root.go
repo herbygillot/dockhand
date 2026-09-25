@@ -126,6 +126,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	}
 	root.AddGroup(&cobra.Group{ID: "occasional", Title: "Occasional:"})
 	for _, command := range []*cobra.Command{
+		authCommand(streams),
 		restoreCommand(&settings, streams),
 		archiveCommand(&settings, streams),
 	} {
