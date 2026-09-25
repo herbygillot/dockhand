@@ -380,7 +380,7 @@ func TestSubmitFollowsThePublicationRule(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, plan.Blocking)
 	require.Contains(t, plan.Body, "macOS 26 arm64\nDeveloper tools not recorded · tart: built in a clean VM\n")
-	require.Contains(t, plan.Body, "| jq | ✓ |\n| harbor-viewer | ✗ failed, accepted: cause not established |\n")
+	require.Contains(t, plan.Body, "| jq | ✓ |\n| harbor-viewer | ✗ failed at install, accepted: cause not established |\n")
 	require.Contains(t, plan.Body, "- [x] tried a full install with `sudo port -vst install`? (dockhand builds from source as MacPorts CI does, without trace mode)")
 	require.Contains(t, plan.Body, "- [x] tried existing tests with `sudo port test`?")
 	_, err = e.ApplySubmit(t.Context(), plan)

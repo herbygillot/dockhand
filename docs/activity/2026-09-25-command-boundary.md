@@ -82,3 +82,37 @@ test with both named.
   now. Design v3 §11 makes the database the only coordination medium; the
   stamps could be journal events, and what the leader says about itself
   part of its session.
+
+## A rendering package: not yet
+
+The person then asked whether rendering should get its own package, as
+v2 had `progress` and `tui`, and left the call to the implementer. The
+answer was no, for now:
+
+- **Formatting is `command`'s job.** About 1,300 of its lines are
+  functions that only format, and more output is written inline where
+  each command runs. Moving the formatting out would mean restructuring
+  every command to build a result value first. Nothing wrong with the
+  output today asks for that.
+- **`tui` would be a cycle.** `watch`'s live view runs typed commands back
+  through the command tree, so a `tui` package would import `command`, or
+  need callbacks to reach it. It is 305 lines.
+- **`progress` is taken.** It is still a live domain package: portedit,
+  the forge, and v2's providers report through it.
+
+What v2's rendering actually got wrong was one fact worded in several
+places. That had started again: a target's result read "✓ (tests failed,
+advisory)" in the pull request and "✓ built; tests failed (advisory)" on
+the terminal, neither Design v3 §7's "build passed; tests failed
+(advisory)", and only the terminal said what "blocked" meant.
+`engine.TargetWords` is now the one wording, for the pull request's table,
+`check`'s results, and `status`, in §7's words: "not run" and "could not
+evaluate" instead of the raw outcomes, and an accepted failure keeps its
+phase ("✗ failed at install, accepted: cause not established").
+`TestTargetWordsAreDesignV3s` holds them.
+
+Worth a package when there is a second front end, such as a menu bar app
+or a client of a serve socket; when `watch` becomes a full-screen
+application with state of its own; or when the terminal and JSON
+renderings of one result start to disagree, which one view value with
+two renderers would prevent.

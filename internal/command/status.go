@@ -362,7 +362,7 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, branch mod
 			var cells []string
 			for i, result := range target.Outcomes {
 				environment := status.Evidence.Plan.Environments[i]
-				cells = append(cells, environmentWords(environment)+" "+resultWords(status.Evidence.Plan, target.Target, environment, result))
+				cells = append(cells, environmentWords(environment)+" "+engine.TargetWords(status.Evidence.Plan, target.Target, environment, result, false))
 			}
 			fmt.Fprintf(out, "           %s  %s\n", target.Target.Target.Name, strings.Join(cells, "   "))
 		}

@@ -109,11 +109,7 @@ func ownedSections(facts bodyFacts) string {
 		for _, target := range evidence.Targets {
 			fmt.Fprintf(&b, "| %s |", target.Target.Target.Name)
 			for i, result := range target.Outcomes {
-				if Excluded(evidence.Plan, target.Target, evidence.Plan.Environments[i].Platform) {
-					fmt.Fprint(&b, " — excluded |")
-					continue
-				}
-				fmt.Fprintf(&b, " %s |", outcomeWords(result, slices.Contains(facts.Accepted, target.Target.Target.Name)))
+				fmt.Fprintf(&b, " %s |", TargetWords(evidence.Plan, target.Target, evidence.Plan.Environments[i], result, slices.Contains(facts.Accepted, target.Target.Target.Name)))
 			}
 			fmt.Fprintln(&b)
 		}
@@ -201,20 +197,6 @@ func providerWords(provider string) string {
 		return "github: MacPorts' CI workflow in the author's fork"
 	}
 	return provider + ": built by the author's own command"
-}
-
-func outcomeWords(result model.TargetResult, accepted bool) string {
-	switch {
-	case result.Outcome == model.OutcomePassed && result.Tests == model.TestsFailed:
-		return "✓ (tests failed, advisory)"
-	case result.Outcome == model.OutcomePassed:
-		return "✓"
-	case accepted:
-		return fmt.Sprintf("✗ %s, accepted: cause not established", result.Outcome)
-	case result.Outcome == model.OutcomeFailed && result.Phase != "":
-		return "✗ failed at " + string(result.Phase)
-	}
-	return "✗ " + string(result.Outcome)
 }
 
 // allBuilt reports whether every target passed or was accepted.

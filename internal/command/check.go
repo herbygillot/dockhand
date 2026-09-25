@@ -386,7 +386,7 @@ func report(ctx context.Context, e *engine.Engine, run model.Run, streams Stream
 		var cells []string
 		for i, result := range target.Outcomes {
 			environment := evidence.Plan.Environments[i]
-			cell := resultWords(evidence.Plan, target.Target, environment, result)
+			cell := engine.TargetWords(evidence.Plan, target.Target, environment, result, false)
 			if len(evidence.Plan.Environments) > 1 {
 				cell = environmentWords(environment) + " " + cell
 			}
@@ -409,24 +409,6 @@ func report(ctx context.Context, e *engine.Engine, run model.Run, streams Stream
 		return exitf(130, "%s stopped; finished results are kept", run.Name())
 	}
 	return exitf(3, "%s needs attention: %s", run.Name(), run.Detail)
-}
-
-func resultWords(plan model.Plan, target model.PlanTarget, environment model.Environment, result model.TargetResult) string {
-	if engine.Excluded(plan, target, environment.Platform) {
-		return "— excluded"
-	}
-	switch result.Outcome {
-	case model.OutcomePassed:
-		if result.Tests == model.TestsFailed {
-			return "✓ built; tests failed (advisory)"
-		}
-		return "✓"
-	case model.OutcomeFailed:
-		return "✗ failed at " + string(result.Phase)
-	case model.OutcomeBlocked:
-		return "✗ blocked by a failed dependency"
-	}
-	return "· " + string(result.Outcome)
 }
 
 // checkResult is a run's --json result, without its targets' results.
