@@ -400,6 +400,12 @@ func TestEventsAreAJournal(t *testing.T) {
 		require.Len(t, tail, 2, "an observer reads what came after the last event it saw")
 		require.Equal(t, "guest.clone", tail[0].Kind)
 		require.Equal(t, model.LevelInfo, tail[0].Level)
+		counted, err := r.CountEvents("guest.clone", at)
+		require.NoError(t, err)
+		require.Equal(t, 1, counted)
+		counted, err = r.CountEvents("guest.clone", at.Add(2*time.Second))
+		require.NoError(t, err)
+		require.Zero(t, counted, "only what was journaled since")
 		return nil
 	}))
 }

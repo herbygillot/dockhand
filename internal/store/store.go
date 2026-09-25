@@ -18,6 +18,7 @@ import (
 	"encoding/base32"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/model"
 )
@@ -86,6 +87,8 @@ type Reader interface {
 	Lease(resource string) (model.Lease, error)
 	// Events lists events after a sequence number, oldest first.
 	Events(after int64, limit int) ([]model.Event, error)
+	// CountEvents counts the events of a kind journaled at or after a time.
+	CountEvents(kind string, since time.Time) (int, error)
 
 	// Edits lists a branch's authoring records, oldest first.
 	Edits(branch model.BranchID) ([]model.Edit, error)

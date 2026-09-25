@@ -125,7 +125,7 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 		}
 		table.Flush()
 	}
-	if found, ok := readOutdated(e); ok && len(found.Outdated) > 0 {
+	if found, ok := e.LastOutdatedLook(); ok && len(found.Outdated) > 0 {
 		fmt.Fprintf(out, "\nYour ports: %s newer releases, as serve found %s (dockhand update --outdated --mine)\n", plural(len(found.Outdated), "port")+map[bool]string{true: " has", false: " have"}[len(found.Outdated) == 1], ago(found.CheckedAt))
 	}
 	fmt.Fprintf(out, "\n%s\n", serveLine(ctx, e))
@@ -316,7 +316,7 @@ func serveLine(ctx context.Context, e *engine.Engine) string {
 		defer session.End(context.WithoutCancel(ctx))
 		if leader, err := session.Holder(ctx, coord.LeaderResource); err == nil && leader != nil {
 			line = fmt.Sprintf("serve: running (pid %d)", leader.PID)
-			if leading, ok := readServing(e); ok && leading.PID == leader.PID && leading.SubmitPassing {
+			if leading, ok := e.LastServing(); ok && leading.PID == leader.PID && leading.SubmitPassing {
 				line += " · opens PRs for passing updates"
 			}
 		}

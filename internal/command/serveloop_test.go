@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/store"
 )
 
 func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
@@ -100,8 +102,19 @@ func TestServeSubmitsNoMoreThanTheDailyLimit(t *testing.T) {
 	data, err := os.ReadFile(config)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(config, append([]byte("maintainer = \"@ada\"\n"), append(data, []byte("\n[serve]\nfor_outdated = \"check\"\nsubmit_passing = true\nsubmit_limit = 1\nnotify = false\n")...)...), 0o644))
-	// One pull request was opened earlier today, by an earlier serve.
-	require.NoError(t, os.WriteFile(filepath.Join(w.home, ".dockhand", "submitted.json"), []byte(`{"day": "2026-09-25", "count": 1}`), 0o644))
+	// One pull request was opened earlier today, by an earlier serve, and
+	// one yesterday, which today's limit doesn't count.
+	e, err := (&settings{}).open(t.Context())
+	require.NoError(t, err)
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		for _, at := range []time.Time{morning.Add(-25 * time.Hour), morning.Add(-time.Hour)} {
+			if _, err := tx.AppendEvent(model.Event{At: at, Kind: engine.ServeSubmitKind, Message: "serve opened a pull request"}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	require.NoError(t, e.Close())
 
 	ctx, stop := context.WithCancel(t.Context())
 	var served syncBuffer

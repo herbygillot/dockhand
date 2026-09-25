@@ -53,6 +53,16 @@ func TestServeSubmitsOnlyWhatPassedWithNothingToLookAt(t *testing.T) {
 	again, err := e.ServeCandidates(t.Context())
 	require.NoError(t, err)
 	require.Empty(t, again, "a branch with a pull request is done")
+
+	// serve.submit_limit counts from the journal, so it holds across
+	// restarts, and a new day starts a new count.
+	now := e.now()
+	opened, err := e.servedToday(t.Context(), now)
+	require.NoError(t, err)
+	require.Equal(t, 1, opened)
+	opened, err = e.servedToday(t.Context(), now.AddDate(0, 0, 1))
+	require.NoError(t, err)
+	require.Zero(t, opened)
 }
 
 func TestServeHoldsAnUpdateWhoseUpstreamChangedItsLicense(t *testing.T) {

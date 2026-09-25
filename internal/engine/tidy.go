@@ -715,5 +715,10 @@ func plural(n int, noun string) string {
 	if n == 1 {
 		return "1 " + noun
 	}
+	for _, ending := range []string{"s", "x", "ch", "sh"} {
+		if strings.HasSuffix(noun, ending) {
+			return fmt.Sprintf("%d %ses", n, noun)
+		}
+	}
 	return fmt.Sprintf("%d %ss", n, noun)
 }

@@ -154,6 +154,12 @@ func (t *tx) AppendEvent(e model.Event) (int64, error) {
 	return sequence, storageError(err)
 }
 
+func (t *tx) CountEvents(kind string, since time.Time) (int, error) {
+	var count int
+	err := t.conn.QueryRowContext(t.ctx, "SELECT count(*) FROM events WHERE repository_id=? AND kind=? AND at>=?", t.repo, kind, millis(since)).Scan(&count)
+	return count, storageError(err)
+}
+
 func (t *tx) Events(after int64, limit int) ([]model.Event, error) {
 	if limit <= 0 {
 		limit = 1000
