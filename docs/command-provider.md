@@ -49,6 +49,7 @@ The file is `request.json` in a directory of its own. Its path is also given as 
   ```
 
   For uncommitted work, `commit` is a commit dockhand made of the snapshot's files on top of `base`.
+  For a baseline (`check --baseline`), `commit` is `base` itself, and the bundle holds it less its parent; the same fetch works.
 - **`targets`** are in dependency order. Build them in this order.
   - `subport`, when present, is the subport to build from the Portfile.
   - `kind` is `substantive`, `revision-only`, or `unchanged`. `role` is `changed`, `also`, or `prerequisite`.

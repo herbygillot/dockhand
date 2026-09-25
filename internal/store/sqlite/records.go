@@ -209,13 +209,13 @@ func (t *tx) AddPlan(p model.Plan) error {
 	return err
 }
 
-const runColumns = "id, number, branch_id, revision_id, plan_id, origin, state, detail, created_at, finished_at, cancel_requested_at"
+const runColumns = "id, number, branch_id, revision_id, plan_id, origin, state, detail, created_at, finished_at, cancel_requested_at, baseline_of"
 
 func scanRun(row interface{ Scan(...any) error }) (model.Run, error) {
 	var r model.Run
 	var created int64
 	var finished, cancel sql.NullInt64
-	if err := row.Scan(&r.ID, &r.Number, &r.Branch, &r.Revision, &r.Plan, &r.Origin, &r.State, &r.Detail, &created, &finished, &cancel); err != nil {
+	if err := row.Scan(&r.ID, &r.Number, &r.Branch, &r.Revision, &r.Plan, &r.Origin, &r.State, &r.Detail, &created, &finished, &cancel, &r.BaselineOf); err != nil {
 		return model.Run{}, storageError(err)
 	}
 	r.CreatedAt, r.FinishedAt, r.CancelRequested = fromMillis(created), fromNullable(finished), fromNullable(cancel)
@@ -298,8 +298,8 @@ func (t *tx) AddRun(r model.Run) error {
 	case !plan.Runnable():
 		return fmt.Errorf("%w: run %s's plan has unresolved targets or none at all", model.ErrInvalid, r.ID)
 	}
-	_, err = t.exec("INSERT INTO runs(repository_id, "+runColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-		t.repo, r.ID, r.Number, r.Branch, r.Revision, r.Plan, r.Origin, r.State, r.Detail, millis(r.CreatedAt), nullableMillis(r.FinishedAt), nullableMillis(r.CancelRequested))
+	_, err = t.exec("INSERT INTO runs(repository_id, "+runColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		t.repo, r.ID, r.Number, r.Branch, r.Revision, r.Plan, r.Origin, r.State, r.Detail, millis(r.CreatedAt), nullableMillis(r.FinishedAt), nullableMillis(r.CancelRequested), r.BaselineOf)
 	return err
 }
 
@@ -311,7 +311,7 @@ func (t *tx) UpdateRun(r model.Run) error {
 	if err != nil {
 		return err
 	}
-	if current.Number != r.Number || current.Branch != r.Branch || current.Revision != r.Revision || current.Plan != r.Plan || current.Origin != r.Origin {
+	if current.Number != r.Number || current.Branch != r.Branch || current.Revision != r.Revision || current.Plan != r.Plan || current.Origin != r.Origin || current.BaselineOf != r.BaselineOf {
 		return fmt.Errorf("%w: run %s's request is immutable", store.ErrConflict, r.ID)
 	}
 	if current.State != r.State && !current.State.CanBecome(r.State) {

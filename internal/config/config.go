@@ -97,6 +97,8 @@ type Check struct {
 	On []string `toml:"on"`
 	// Tests is declared, required, or skip.
 	Tests string `toml:"tests"`
+	// Baseline runs a baseline of what failed after a check fails.
+	Baseline bool `toml:"baseline"`
 }
 
 // CommandProvider is a person's own build script (Design v3 §7): it is

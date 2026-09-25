@@ -70,7 +70,9 @@ func (e *Engine) EvidenceFor(ctx context.Context, branch model.BranchID, tree mo
 			return err
 		}
 		for _, run := range runs {
-			if !matching[run.Revision] {
+			// A baseline is evidence about another run, never the
+			// branch's own check.
+			if !matching[run.Revision] || run.BaselineOf != "" {
 				continue
 			}
 			plan, err := r.Plan(run.Plan)

@@ -20,7 +20,7 @@ import (
 
 func checkCommand(s *settings, streams Streams) *cobra.Command {
 	var selector, tests string
-	var plan, head, staged, workingTree, enqueue bool
+	var plan, head, staged, workingTree, enqueue, baseline bool
 	var include, only, also, on []string
 	cmd := &cobra.Command{
 		Use:   "check",
@@ -37,7 +37,12 @@ be built and changes nothing.
 
 Without dockhand serve, the check runs here and says so; Ctrl-C stops it
 and keeps what finished. With serve running, it is handed to serve and
-followed here; Ctrl-C then only stops following. -d queues it and returns.`,
+followed here; Ctrl-C then only stops following. -d queues it and returns.
+
+--baseline builds the ports that failed in the branch's latest check, or
+the --only ones, at the master the branch starts from, and reports each
+beside the branch's result. It says what happened in each run and nothing
+more. With check.baseline = true, a failed check runs one by itself.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
@@ -49,6 +54,9 @@ followed here; Ctrl-C then only stops following. -d queues it and returns.`,
 			branch, err := workingBranch(ctx, e, selector)
 			if err != nil {
 				return err
+			}
+			if baseline {
+				return runBaseline(ctx, e, streams, branch, only, enqueue)
 			}
 			mode, err := captureMode(ctx, e, branch, selector, head, staged, workingTree)
 			if err != nil {
@@ -91,7 +99,15 @@ followed here; Ctrl-C then only stops following. -d queues it and returns.`,
 			if err != nil {
 				return err
 			}
-			return runQueued(ctx, e, run, streams, enqueue)
+			err = runQueued(ctx, e, run, streams, enqueue)
+			// check.baseline runs a baseline of what failed, by itself.
+			if exit := new(ExitError); errors.As(err, &exit) && exit.Code == 2 && s.file.Check.Baseline && !enqueue {
+				fmt.Fprintf(streams.Out, "\n%s failed; check.baseline builds what failed at the base:\n", run.Name())
+				if baselineErr := runBaseline(ctx, e, streams, branch, nil, false); baselineErr != nil {
+					fmt.Fprintf(streams.Err, "baseline: %v\n", baselineErr)
+				}
+			}
+			return err
 		},
 	}
 	cmd.Flags().StringVar(&selector, "branch", "", "check this tracked branch")
@@ -105,6 +121,9 @@ followed here; Ctrl-C then only stops following. -d queues it and returns.`,
 	cmd.Flags().StringArrayVar(&on, "on", nil, "where to build; repeat for several, all of which must pass (default check.on)")
 	cmd.Flags().StringVar(&tests, "tests", "", "declared (advisory), required, or skip")
 	cmd.Flags().BoolVarP(&enqueue, "enqueue", "d", false, "queue the check and return")
+	cmd.Flags().BoolVar(&baseline, "baseline", false, "build what failed in the latest check, or --only ports, at the branch's base")
+	cmd.MarkFlagsMutuallyExclusive("baseline", "plan")
+	cmd.MarkFlagsMutuallyExclusive("baseline", "also")
 	cmd.MarkFlagsMutuallyExclusive("head", "staged", "working-tree")
 	return cmd
 }
@@ -356,6 +375,9 @@ func waitFor(ctx context.Context, e *engine.Engine, id model.RunID) (model.Run, 
 // report prints a finished run's results and returns the exit its outcome
 // calls for.
 func report(ctx context.Context, e *engine.Engine, run model.Run, streams Streams) error {
+	if run.BaselineOf != "" {
+		return reportBaseline(ctx, e, run, streams)
+	}
 	out := streams.Out
 	evidence, err := e.RunEvidence(ctx, run.ID)
 	if err != nil {
@@ -442,4 +464,88 @@ func checkResult(ctx context.Context, e *engine.Engine, run model.Run) (checkJSO
 	revisionResult, planResult, runResult := revisionView(revision), planView(plan), runView(run)
 	result.Branch, result.Revision, result.Plan, result.Run = branch.ShortName(), &revisionResult, &planResult, &runResult
 	return result, nil
+}
+
+// runBaseline plans a baseline of the branch's latest check and runs it,
+// here or through serve.
+func runBaseline(ctx context.Context, e *engine.Engine, streams Streams, branch model.Branch, only []string, enqueue bool) error {
+	baseline, err := e.PlanBaseline(ctx, branch, only)
+	if err != nil {
+		return err
+	}
+	var names []string
+	for _, target := range baseline.Plan.Targets {
+		names = append(names, string(target.ID))
+	}
+	fmt.Fprintf(streams.Out, "%s · baseline of %s: %s at master %s\n", branch.ShortName(), baseline.Of.Name(), strings.Join(names, ", "), engine.Short(branch.Base))
+	if len(baseline.New) > 0 {
+		fmt.Fprintf(streams.Out, "  · left out: %s, which the branch adds, so master has nothing to compare\n", strings.Join(baseline.New, ", "))
+	}
+	run, err := e.EnqueueBaseline(ctx, branch, baseline, model.OriginPerson)
+	if err != nil {
+		return err
+	}
+	return runQueued(ctx, e, run, streams, enqueue)
+}
+
+// reportBaseline sets each port's result at the base beside its result in
+// the check the baseline looks into. It says what happened in each run and
+// nothing more: a baseline never establishes a cause, and never fails.
+func reportBaseline(ctx context.Context, e *engine.Engine, run model.Run, streams Streams) error {
+	out := streams.Out
+	base, err := e.RunEvidence(ctx, run.ID)
+	if err != nil {
+		return err
+	}
+	branch, err := e.RunEvidence(ctx, run.BaselineOf)
+	if err != nil {
+		return err
+	}
+	revision, err := e.Revision(ctx, run.Revision)
+	if err != nil {
+		return err
+	}
+	if streams.json() {
+		result, err := checkResult(ctx, e, run)
+		if err != nil {
+			return err
+		}
+		result.Targets = evidenceView(base)
+		streams.emit(result)
+	}
+	fmt.Fprintln(out)
+	for _, target := range base.Targets {
+		i := slices.IndexFunc(branch.Targets, func(t engine.TargetEvidence) bool { return t.Target.ID == target.Target.ID })
+		for n, result := range target.Outcomes {
+			environment := base.Plan.Environments[n]
+			fmt.Fprintf(out, "%s at master %s · %s\n", target.Target.ID, engine.Short(revision.Source.Commit), environmentWords(environment))
+			theirs := model.TargetResult{Outcome: model.OutcomeNotRun}
+			if i >= 0 && n < len(branch.Targets[i].Outcomes) {
+				theirs = branch.Targets[i].Outcomes[n]
+			}
+			fmt.Fprintf(out, "  %s\n", baselineWords(result, theirs, branch.Run.Name()))
+		}
+	}
+	switch run.State {
+	case model.RunCanceled:
+		return exitf(130, "%s stopped; finished results are kept", run.Name())
+	case model.RunAttention:
+		return exitf(3, "%s needs attention: %s", run.Name(), run.Detail)
+	}
+	return nil
+}
+
+func baselineWords(base, branch model.TargetResult, check string) string {
+	passed := func(r model.TargetResult) bool { return r.Outcome == model.OutcomePassed }
+	switch {
+	case base.Outcome != model.OutcomePassed && base.Outcome != model.OutcomeFailed:
+		return fmt.Sprintf("· not built at the base (%s)", base.Outcome)
+	case passed(base) && passed(branch):
+		return "✓ builds at the base, as it does on the branch."
+	case passed(base):
+		return fmt.Sprintf("✓ builds at the base. This branch's result differs (%s); the cause isn't established.", check)
+	case passed(branch):
+		return fmt.Sprintf("✗ fails at the base, at %s, and builds on the branch (%s).", base.Phase, check)
+	}
+	return fmt.Sprintf("✗ fails at the base too, at %s. Both results are kept; the cause isn't established.", base.Phase)
 }

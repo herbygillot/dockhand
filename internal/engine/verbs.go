@@ -94,7 +94,7 @@ func (e *Engine) Retry(ctx context.Context, previous model.Run) (model.Run, erro
 		if err != nil {
 			return err
 		}
-		run = model.Run{ID: model.RunID(store.NewID("run")), Branch: previous.Branch, Revision: previous.Revision, Plan: previous.Plan, Number: number, Origin: model.OriginPerson, State: model.RunQueued, CreatedAt: e.now()}
+		run = model.Run{ID: model.RunID(store.NewID("run")), Branch: previous.Branch, Revision: previous.Revision, Plan: previous.Plan, Number: number, Origin: model.OriginPerson, State: model.RunQueued, CreatedAt: e.now(), BaselineOf: previous.BaselineOf}
 		if err := tx.AddRun(run); err != nil {
 			return err
 		}

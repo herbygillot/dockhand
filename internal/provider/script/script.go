@@ -98,7 +98,17 @@ func (p *Provider) Execute(ctx context.Context, job engine.Job, build engine.Bui
 		request.Targets = append(request.Targets, t)
 	}
 	build.Progress("bundling the revision")
-	if err := p.Repo.Bundle(ctx, request.Bundle, request.Ref, request.Commit, request.Base); err != nil {
+	// A baseline builds the base itself; git refuses an empty bundle, so it
+	// holds the base less its parent, which the receiver has too.
+	exclude := request.Base
+	if request.Commit == request.Base {
+		parent, err := p.Repo.Resolve(ctx, request.Base+"^")
+		if err != nil {
+			return fmt.Errorf("%w: bundling the base: %w", engine.ErrInfrastructure, err)
+		}
+		exclude = parent
+	}
+	if err := p.Repo.Bundle(ctx, request.Bundle, request.Ref, request.Commit, exclude); err != nil {
 		return fmt.Errorf("%w: bundling the revision: %w", engine.ErrInfrastructure, err)
 	}
 	requestPath := filepath.Join(job.Directory, "request.json")

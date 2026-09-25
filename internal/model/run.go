@@ -65,6 +65,10 @@ type Run struct {
 	// CancelRequested is when someone asked for the run to stop; whoever
 	// holds the run applies it.
 	CancelRequested *time.Time
+	// BaselineOf is the run whose failed ports a baseline run builds at the
+	// branch's base; empty for the branch's own checks. A baseline is
+	// evidence about that run, never the branch's check.
+	BaselineOf RunID
 }
 
 // Name is how people refer to a run.

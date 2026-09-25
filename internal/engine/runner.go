@@ -22,6 +22,10 @@ func RunResource(id model.RunID) string { return "run:" + string(id) }
 // Enqueue records a check request: its plan and a queued run. The request
 // is immutable from here; editing the branch never changes what it means.
 func (e *Engine) Enqueue(ctx context.Context, branch model.Branch, plan model.Plan, origin model.Origin) (model.Run, error) {
+	return e.enqueue(ctx, branch, plan, origin, "")
+}
+
+func (e *Engine) enqueue(ctx context.Context, branch model.Branch, plan model.Plan, origin model.Origin, baselineOf model.RunID) (model.Run, error) {
 	var run model.Run
 	err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 		if err := tx.AddPlan(plan); err != nil {
@@ -31,7 +35,7 @@ func (e *Engine) Enqueue(ctx context.Context, branch model.Branch, plan model.Pl
 		if err != nil {
 			return err
 		}
-		run = model.Run{ID: model.RunID(store.NewID("run")), Branch: branch.ID, Revision: plan.Revision, Plan: plan.ID, Number: number, Origin: origin, State: model.RunQueued, CreatedAt: e.now()}
+		run = model.Run{ID: model.RunID(store.NewID("run")), Branch: branch.ID, Revision: plan.Revision, Plan: plan.ID, Number: number, Origin: origin, State: model.RunQueued, CreatedAt: e.now(), BaselineOf: baselineOf}
 		if err := tx.AddRun(run); err != nil {
 			return err
 		}

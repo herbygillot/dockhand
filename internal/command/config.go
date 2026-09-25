@@ -41,6 +41,11 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			add("maintainer", file.Maintainer, "(none; create asks for it)")
 			add("check.on", strings.Join(file.Check.On, ", "), "command, when [providers.command] is set up")
 			add("check.tests", file.Check.Tests, "declared")
+			baselineValue := ""
+			if file.Check.Baseline {
+				baselineValue = "true"
+			}
+			add("check.baseline", baselineValue, "false")
 			add("submit.rerequest_review", file.Submit.RerequestReview, "ask")
 			automatic := ""
 			if file.Cleanup.Automatic != nil {
