@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/tart"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
@@ -68,9 +69,9 @@ func TestLiveAgentRegistration(t *testing.T) {
 	if name == "" {
 		t.Skip("set DOCKHAND_TEST_BOOTSTRAP_VM to an owned running disposable VM")
 	}
-	home, err := os.UserHomeDir()
+	runtime, err := (tart.Client{}).Resolve()
 	require.NoError(t, err)
-	n := newNative(Config{Executable: "tart", Home: filepath.Join(home, ".tart")}, os.Stdout)
+	n := newNative(Config{Executable: runtime.Executable, Home: runtime.Home}, os.Stdout)
 	require.NoError(t, n.BootstrapAgent(t.Context(), name))
 	require.NoError(t, n.ReadyAgent(t.Context(), name))
 	require.NoError(t, n.BootstrapAgent(t.Context(), name))

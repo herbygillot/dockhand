@@ -28,6 +28,10 @@ type Evaluator struct {
 	// runs on a host that is not a Mac; zero selects DefaultModel. A Mac
 	// always describes itself.
 	Model record.Platform
+	// Adapter selects how Base is treated: empty admits the released
+	// families this dockhand supports, and PreviewAdapter a development
+	// build instead. No command sets it; the evaluator's tests do.
+	Adapter string
 }
 
 // DefaultModel is the platform a host that is not a Mac models unless told
@@ -70,6 +74,13 @@ func (e *Evaluator) start(ctx context.Context, tree macports.Tree) (*rpc.Session
 	readOptions := "namespace eval ::dockhand {}\nset ::dockhand::read_options [list " + strings.Join(macports.ReadOptions, " ") + "]\n"
 	if _, err := session.Call(ctx, "eval", readOptions+compatibilityScript+"\n"+fetchCredentialsScript+"\n"+platformScript+"\n"+observationScript+"\n"+evaluatorScript); err != nil {
 		return fail(fmt.Errorf("%w: %w", macports.ErrStartup, err))
+	}
+	version, err := session.Call(ctx, "probe")
+	if err != nil {
+		return fail(fmt.Errorf("%w: %w", macports.ErrStartup, err))
+	}
+	if err := admitBase(version, e.Adapter); err != nil {
+		return fail(err)
 	}
 	reply, err := session.Call(ctx, "initialize", tree.Root(), tree.Base())
 	if err != nil {

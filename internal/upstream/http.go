@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/herbygillot/dockhand/internal/fetch"
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -75,15 +76,6 @@ func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, s
 	return result, nil
 }
 
-// documents is a catalog that fetches a livecheck document from the forge it
-// serves through its own client, so the user's credentials and the forge's
-// rate-limit handling apply, sending the given request headers in place of
-// the client's own. served is false for a URL the forge does not serve, and
-// the plain fetch is used instead.
-type documents interface {
-	Document(ctx context.Context, url string, headers http.Header) (body []byte, served bool, err error)
-}
-
 // requestHeaders are the headers Base's curl fetch sends for a livecheck:
 // its user agent, Accept */*, the Portfile's curl options, and no compression
 // when the Portfile turns it off. The user agent names MacPorts and libcurl
@@ -114,7 +106,7 @@ func requestHeaders(port macports.PortInfo, spec portsource.Spec) http.Header {
 // Last-Modified when the plain fetch read them.
 func (s *Service) listing(ctx context.Context, port macports.PortInfo, spec portsource.Spec) ([]byte, http.Header, error) {
 	headers := requestHeaders(port, spec)
-	if documents, ok := s.Catalogs[spec.Forge].(documents); ok {
+	if documents, ok := s.Catalogs[spec.Forge].(forge.Documents); ok {
 		body, served, err := documents.Document(ctx, spec.Livecheck.URL, headers)
 		if served {
 			if err != nil {

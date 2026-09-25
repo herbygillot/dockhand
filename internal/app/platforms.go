@@ -14,12 +14,18 @@ import (
 // prepared local image.
 const AvailablePlatforms = "available"
 
-// buildPlatforms are the platforms a verification was asked to build on, by
-// setup's release names or major versions, or AvailablePlatforms for every
-// release a local image serves. Each keeps the evaluated platform's
-// operating system and architecture, as setup does, and a release named
-// twice is built once, where it was first named.
+// buildPlatforms are the platforms a verification was asked to build on:
+// the evaluated platform, the host's release, first, and then the releases
+// --os added by setup's release names or major versions, or
+// AvailablePlatforms for every release a local image serves (decision 4).
+// Each keeps the evaluated platform's operating system and architecture,
+// as setup does, and a release named twice, or the host's named, is built
+// once. Nothing named builds on the evaluated platform alone, and returns
+// none.
 func (s *Services) buildPlatforms(ctx context.Context, evaluated record.Platform, names []string) ([]record.Platform, error) {
+	if len(names) == 0 {
+		return nil, nil
+	}
 	var releases []macos.Release
 	for _, name := range names {
 		if name != AvailablePlatforms {
@@ -42,7 +48,7 @@ func (s *Services) buildPlatforms(ctx context.Context, evaluated record.Platform
 		}
 		releases = append(releases, prepared...)
 	}
-	var platforms []record.Platform
+	platforms := []record.Platform{evaluated}
 	for _, release := range releases {
 		platform := record.Platform{OS: evaluated.OS, Version: strconv.Itoa(release.Darwin), Architecture: evaluated.Architecture}
 		if !slices.Contains(platforms, platform) {

@@ -112,9 +112,12 @@ if {${subport} eq ${name}} {
 	require.Len(t, result.Scope.Affected, 2)
 	require.Equal(t, "fixture", result.Scope.Affected[0].Target.Name)
 	require.True(t, result.Scope.Affected[0].MetadataOnly, "an obsolete port builds nothing")
+	require.True(t, result.Scope.Affected[0].Follower, "the scope records why it moved")
 	require.Equal(t, "1.2.4", result.Scope.Affected[0].After.Version)
 	require.Equal(t, "fixture-1", result.Scope.Affected[1].Target.Name)
+	require.False(t, result.Scope.Affected[1].Follower)
 	require.Len(t, result.Scope.BuildTargets(), 1, "only the subport is verified")
+	require.False(t, result.Scope.NeedsSharedRelease("fixture-1"), "the workflow accepts what the editor moved without authorization")
 
 	// A main port at a different version is not a follower and is left alone.
 	s, r, _ = archiveFixture(t, strings.Replace(portfile, "replaced_by fixture-1\n version 1.2.3", "replaced_by fixture-1\n version 1.1.0", 1))

@@ -11,15 +11,13 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/outdated"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/stretchr/testify/require"
 )
 
 func TestObserveKeepsCommittedSourceAndCleansWorkspace(t *testing.T) {
-	executable, err := exec.LookPath("port-tclsh")
-	if err != nil {
-		t.Skip("MacPorts port-tclsh is required")
-	}
+	executable := testsupport.MacPortsTclsh(t)
 	root := t.TempDir()
 	path := filepath.Join(root, "devel", "fixture", "Portfile")
 	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0700))
@@ -39,7 +37,7 @@ func TestObserveKeepsCommittedSourceAndCleansWorkspace(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte("invalid checkout edits\n"), 0600))
 	scratch := t.TempDir()
 	t.Setenv("TMPDIR", scratch)
-	ports := &eval.Evaluator{Executable: executable}
+	ports := &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}
 	service := outdated.Service{Repo: repo, Ports: ports, Upstream: &upstream.Service{Ports: ports, Versions: ports}}
 	result, err := service.Observe(t.Context(), outdated.Selection{Ports: []string{"missing", "fixture", "fixture"}})
 	require.NoError(t, err)

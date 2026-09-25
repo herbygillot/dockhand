@@ -3,7 +3,6 @@ package provision
 import (
 	"bytes"
 	"context"
-	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -26,13 +25,13 @@ func TestAgentReadinessReportsCancellationAndLastProbe(t *testing.T) {
 
 func TestAgentReadinessDetectsVMExit(t *testing.T) {
 	script := filepath.Join(t.TempDir(), "tart")
-	testsupport.WriteExecutable(t, script, "#!/bin/sh\nexit 1\n")
+	testsupport.WriteExecutable(t, script, "#!/bin/sh\n[ \"$1\" != run ] || echo 'fixture VM exited' >&2\nexit 1\n")
 	n := newNative(Config{Executable: script}, nil)
-	done := make(chan error, 1)
-	failure := errors.New("fixture VM exited")
-	done <- failure
-	n.runs["candidate"] = done
-	require.ErrorIs(t, n.ReadyAgent(t.Context(), "candidate"), failure)
+	run, err := n.vm().StartForeground("candidate")
+	require.NoError(t, err)
+	<-run.Done()
+	n.runs["candidate"] = run
+	require.ErrorContains(t, n.ReadyAgent(t.Context(), "candidate"), "fixture VM exited")
 }
 
 func TestProvisioningGuestTransportPreservesStreamingAndFailure(t *testing.T) {

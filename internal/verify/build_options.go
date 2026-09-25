@@ -19,9 +19,8 @@ type BuildOptions struct {
 	// host. It selects nothing; the provider warns when the image's observed
 	// Base differs, since host evaluation and guest builds then disagree.
 	HostMacPortsVersion string
-	// Named is a platform a person asked for by name, so a release past the
-	// one a provider builds on unasked is a deliberate choice rather than a
-	// host that upgraded.
+	// Named is a platform a person asked for by name, so a refusal for its
+	// missing image names the setup of that release.
 	Named bool
 }
 

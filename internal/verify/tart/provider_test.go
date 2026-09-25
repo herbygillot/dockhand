@@ -18,8 +18,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
+	tartvm "github.com/herbygillot/dockhand/internal/tart"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/verify/ledger"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/stretchr/testify/require"
 )
@@ -34,6 +36,7 @@ type fakeMachine struct {
 	inspection                         capabilityInspection
 	stageError, launchError, stopError error
 	environmentError                   error
+	listingError                       error
 	stageHook                          func()
 }
 
@@ -91,6 +94,9 @@ func (m *fakeMachine) InspectCapabilities(context.Context, string, string) (capa
 func (m *fakeMachine) Running(context.Context) ([]string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.listingError != nil {
+		return nil, m.listingError
+	}
 	var names []string
 	for vm, yes := range m.running {
 		if yes {
@@ -261,7 +267,7 @@ func TestAdmissionIsIdempotentAndClosesUnknownIDs(t *testing.T) {
 	late := f.request
 	late.ID = "late"
 	_, err = f.provider.Submit(t.Context(), late)
-	require.ErrorIs(t, err, errClosed)
+	require.ErrorIs(t, err, ledger.ErrClosed)
 	require.Equal(t, 1, m.calls["clone"])
 }
 
@@ -344,6 +350,29 @@ func TestReconcileAdoptsAnIncompatibleImageResultAfterStopFailure(t *testing.T) 
 	require.Equal(t, record.VerdictBlocked, observed.Verdict)
 	require.Contains(t, observed.Detail, "active ports")
 }
+
+// While a running ASIF VM keeps Tart from listing its VMs, capacity cannot
+// be counted, so a submission waits as it waits for capacity, saying why,
+// and Tart still counts as available.
+func TestBlockedListingWaitsLikeCapacity(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	m := newMachine()
+	m.listingError = fmt.Errorf("%w: fixture", tartvm.ErrListingBlocked)
+	f := fixtureRun(t, filepath.Join(root, "state.db"), root, filepath.Join(root, "artifacts"), "a", m)
+	_, err := f.provider.Capabilities(t.Context())
+	require.NoError(t, err)
+	result, err := f.provider.Submit(t.Context(), f.request)
+	require.NoError(t, err)
+	require.Equal(t, verify.AtCapacity, result.State)
+	require.Contains(t, result.Detail, "openai/tart#1344")
+	require.Empty(t, m.calls)
+	m.listingError = nil
+	result, err = f.provider.Submit(t.Context(), f.request)
+	require.NoError(t, err)
+	require.Equal(t, verify.Admitted, result.State)
+}
+
 func TestCapacityCountsReservationsAcrossRepositoriesAndExternalVMs(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -369,7 +398,7 @@ func TestCapacityCountsReservationsAcrossRepositoriesAndExternalVMs(t *testing.T
 	require.Equal(t, verify.RequestClosed, reconciliation.State)
 	require.Len(t, reconciliation.Submission.Resources, 1)
 	_, err = a.provider.Submit(t.Context(), a.request)
-	require.ErrorIs(t, err, errClosed)
+	require.ErrorIs(t, err, ledger.ErrClosed)
 	m.stageError = nil
 	result, err = b.provider.Submit(t.Context(), b.request)
 	require.NoError(t, err)

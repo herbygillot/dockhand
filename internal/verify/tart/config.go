@@ -51,7 +51,9 @@ func (p *Provider) Capabilities(ctx context.Context) (verify.Capabilities, error
 		return verify.Capabilities{}, err
 	}
 
-	if _, err = p.machineFor(c, nil).Running(ctx); err != nil {
+	// Listing is how Tart shows it works; a listing a running ASIF VM
+	// blocks shows that too, and submission waits it out.
+	if _, err = p.machineFor(c, nil).Running(ctx); err != nil && !errors.Is(err, tartvm.ErrListingBlocked) {
 		return verify.Capabilities{}, err
 	}
 	var platforms []record.Platform
@@ -76,10 +78,6 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, op
 		return record.BuildConfig{}, err
 	}
 	if c.Image == "" {
-		if release, rErr := tartvm.ReleaseForPlatform(platform); rErr == nil && tartvm.NewerThanDefault(release) && !options.Named {
-			def, _ := tartvm.DefaultRelease()
-			return record.BuildConfig{}, fmt.Errorf("%w: this Mac runs %s, which dockhand does not build on by default; it builds on %s and older. Run dockhand setup --os %s and pass --image to build on %s deliberately, or use --provider github", verify.ErrImageUnavailable, release.Name, def.Name, release.Slug, release.Name)
-		}
 		if options.NeedsXcode {
 			c.Image, err = tartvm.DefaultXcodeImageName(platform)
 		} else {

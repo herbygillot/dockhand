@@ -248,3 +248,38 @@ func TestPublicationEvidenceChecksTheCitedAttemptOrItsAbsence(t *testing.T) {
 	wrongPhase.Phase = record.PhaseVerification
 	require.ErrorContains(t, PublicationEvidence(ctx, r, wrongPhase, record.PublicationSpec{EvidenceAttempt: "attempt_1"}), "requires publication phase")
 }
+
+// A verification asked to build on several macOS releases is proven only
+// when every one passed (decision 14): the host's passing attempt no longer
+// publishes a job whose other release failed.
+func TestPublicationCoverageRequiresEveryRequestedRelease(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	sonoma := config
+	sonoma.Platform = record.Platform{OS: "darwin", Version: "23", Architecture: "arm64"}
+	hostBuild, sonomaBuild := build(), build()
+	sonomaBuild.Config = sonoma
+	owner := record.Job{ID: "job_1", Spec: record.JobSpec{Targets: []record.Target{target}, Build: &config, PlatformBuilds: []record.BuildConfig{sonoma}}}
+	plan := record.VerificationPlan{JobID: "job_1", Targets: []record.VerificationTarget{{ID: "t1", Port: target, Root: true, Build: &hostBuild}, {ID: "t2", Port: target, Root: true, Build: &sonomaBuild}}}
+	root := passing("attempt_1", "job_1")
+	root.TargetID = "t1"
+	other := failing("attempt_2", "job_1")
+	other.TargetID, other.Spec = "t2", sonomaBuild
+	r := reader{jobs: map[record.JobID]record.Job{"job_1": owner}, attempts: map[record.AttemptID]record.Attempt{"attempt_1": root, "attempt_2": other}, plans: map[record.JobID]record.VerificationPlan{"job_1": plan}}
+	r.candidates = func(query state.VerificationQuery) []record.Attempt {
+		var found []record.Attempt
+		for _, attempt := range r.attempts {
+			if record.CompareTargets(attempt.Spec.Target, query.Target) == 0 {
+				found = append(found, attempt)
+			}
+		}
+		return found
+	}
+	err := PublicationCoverage(ctx, r, root)
+	require.ErrorIs(t, err, publish.ErrPrecondition)
+	require.ErrorContains(t, err, "jq has not passed")
+
+	other.Evidence = &record.Evidence{Verdict: record.VerdictPassed, ObservedAt: observed}
+	r.attempts["attempt_2"] = other
+	require.NoError(t, PublicationCoverage(ctx, r, root))
+}

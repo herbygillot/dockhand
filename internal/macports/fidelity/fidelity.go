@@ -272,8 +272,8 @@ func ReleaseScope(before, after macports.Snapshot, selected string, authorized b
 			scope.Protected = append(scope.Protected, member)
 			continue
 		}
-		follower := followsObsolete(name, selected, old, next, oldRoot, nextRoot)
-		if name != selected && !authorized && !follower {
+		member.Follower = followsObsolete(name, selected, old, next, oldRoot, nextRoot)
+		if member.NeedsAuthorization(selected) && !authorized {
 			return nil, fmt.Errorf("%w: shared release also changes %s; inspect with assess --shared-release --version and authorize with bump --shared-release", ErrMismatch, name)
 		}
 		if old.Version != oldRoot.Version || next.Version != nextRoot.Version {

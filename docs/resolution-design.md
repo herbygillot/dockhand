@@ -302,10 +302,11 @@ resolution removes the translation that mattered without it.
 
 ## What must not change
 
-- The state database is never created or written by a dry run, except
-  that `--dry-run --adopt` builds the services and so creates the
-  database today, an inconsistency the roadmap carries; this design does
-  not widen it.
+- The state database is never created or written by a dry run, without
+  exception. `--dry-run --adopt` once built the writable services and so
+  created it; since 2026-09-22 it builds for reading (`cli/adopt.go`,
+  `app.BuildForReading`), and the CLI tests assert no database appears
+  ([note](activity/2026-09-22-smaller-items-triaged.md)).
 - The lines tests assert: "Continuing the port's open contribution",
   "selector does not match contribution", "lands as an amendment",
   "fetching authoritative MacPorts master", "no open contribution for"
@@ -323,8 +324,11 @@ resolution removes the translation that mattered without it.
 - The revision-bump subject rule: a subject is required unless the update
   goes onto a contribution, which then supplies its own. The resolution
   carries the subject; the rule reads the kind.
-- One open contribution per port; a second branch adopted for a port with
-  one is refused as today.
+- Dockhand creates at most one open contribution per port: a bump
+  continues it, and `adopt` refuses a second branch for it. The store
+  does not enforce this, so duplicates stay representable, and selection
+  names them and asks for `--change` or `--branch`, as the target
+  workflow asks.
 
 ## Validation
 
@@ -360,9 +364,9 @@ record of what and why.
    is step 1.
 
 The pass also lengthened the list of what must not change, above, and
-noted that the promise "a dry run touches no database" is already broken
-by `--dry-run --adopt`, which builds the services; the roadmap carries
-that too.
+noted that the promise "a dry run touches no database" was then broken
+by `--dry-run --adopt`, which built the writable services; that was
+fixed on 2026-09-22.
 
 ## Sequence
 

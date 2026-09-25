@@ -27,6 +27,33 @@ type ReleaseMember struct {
 	Target        Target
 	Before, After ReleaseState
 	MetadataOnly  bool
+	// Follower marks an obsolete port replaced by the initiating target that
+	// carries its version and builds nothing, such as the kubectl stub
+	// replaced by kubectl-1.37. It has no source of its own to get wrong, so
+	// it moves with the target without shared-release authorization.
+	Follower bool `json:",omitempty"`
+}
+
+// NeedsAuthorization reports whether moving this member takes shared-release
+// authorization: every member but the initiating target does, except an
+// obsolete follower. It is the one rule the editor, the workflow, and the
+// preview apply.
+func (m ReleaseMember) NeedsAuthorization(initiating string) bool {
+	return m.Target.Name != initiating && !m.Follower
+}
+
+// NeedsSharedRelease reports whether the scope moves any member that needs
+// shared-release authorization.
+func (s *ReleaseScope) NeedsSharedRelease(initiating string) bool {
+	if s == nil {
+		return false
+	}
+	for _, m := range s.Affected {
+		if m.NeedsAuthorization(initiating) {
+			return true
+		}
+	}
+	return false
 }
 
 // ReleaseState is the metadata preserved for scope checks after human edits.

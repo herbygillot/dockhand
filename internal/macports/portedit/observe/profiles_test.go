@@ -22,6 +22,26 @@ if {${build_arch} eq "arm64"} {distfiles a} else {distfiles b}`), native)
 	require.ErrorIs(t, err, ErrInconclusive)
 }
 
+// A boundary at Golden Gate reaches for Darwin 26, which Apple skipped; its
+// neighbors on either side are the releases that exist.
+func TestProfilesSkipTheDarwinThatNeverShipped(t *testing.T) {
+	t.Parallel()
+	native := record.Platform{OS: "darwin", Version: "27", Architecture: "arm64"}
+	profiles, err := observationProfiles([]byte(`if {${os.major} >= 27} {version 1} else {version 0}`), native)
+	require.NoError(t, err)
+	require.Contains(t, profiles, record.Platform{OS: "darwin", Version: "27", Architecture: "x86_64"})
+	for _, profile := range profiles {
+		require.NotEqual(t, "26", profile.Version)
+	}
+	profiles, err = observationProfiles([]byte(`if {${os.major} >= 26} {version 1} else {version 0}`), native)
+	require.NoError(t, err)
+	require.Contains(t, profiles, record.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"})
+	require.Contains(t, profiles, record.Platform{OS: "darwin", Version: "27", Architecture: "x86_64"})
+	for _, profile := range profiles {
+		require.NotEqual(t, "26", profile.Version)
+	}
+}
+
 func TestProfilesRefuseUnresolvedReadsAlongsideKnownBoundaries(t *testing.T) {
 	t.Parallel()
 	native := record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}

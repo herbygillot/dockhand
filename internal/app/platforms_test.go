@@ -10,9 +10,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A release is named as setup names it, keeps the evaluated platform's
+// --os adds releases to the host's, which is built first (decision 4). A
+// release is named as setup names it, keeps the evaluated platform's
 // operating system and architecture, and is built once however often it is
-// named; available names what the local images serve.
+// named, the host's included; available names what the local images serve.
 func TestBuildPlatformsNameReleasesAndPreparedImages(t *testing.T) {
 	t.Parallel()
 	directory := t.TempDir()
@@ -26,11 +27,11 @@ func TestBuildPlatformsNameReleasesAndPreparedImages(t *testing.T) {
 
 	platforms, err := services.buildPlatforms(t.Context(), host, []string{"sequoia", "14", "Sonoma"})
 	require.NoError(t, err)
-	require.Equal(t, []record.Platform{on("24"), on("23")}, platforms)
+	require.Equal(t, []record.Platform{host, on("24"), on("23")}, platforms)
 
 	platforms, err = services.buildPlatforms(t.Context(), host, []string{"tahoe", AvailablePlatforms})
 	require.NoError(t, err)
-	require.Equal(t, []record.Platform{on("25"), on("23"), on("24")}, platforms)
+	require.Equal(t, []record.Platform{host, on("23"), on("24")}, platforms)
 
 	platforms, err = services.buildPlatforms(t.Context(), host, nil)
 	require.NoError(t, err)

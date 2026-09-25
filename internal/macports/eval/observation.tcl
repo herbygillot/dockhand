@@ -129,7 +129,9 @@ namespace eval ::dockhand {
             set problems [lsort -unique $problems]
             set host_access [expr {[llength $problems] > 0}]
         }
-        if {[catch {$worker eval {
+        if {[catch {
+            load_fetch_target $worker
+            $worker eval {
             apply {{} {
                 set ::ports_fetch_no-mirrors yes
                 set urls {}

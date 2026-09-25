@@ -155,3 +155,42 @@ func TestSharedReleaseRootOnlyCoveragePublishes(t *testing.T) {
 	require.Contains(t, body, "The initiating subport of this shared release passed verification locally.")
 	require.Contains(t, body, "Not built locally: fixture-sibling. The pull request workflow builds every subport.")
 }
+
+// A bump of a named subport moves an obsolete follower, the kubectl stub
+// that kubectl-1.37 replaces, without --shared-release: the editor lets it
+// move, and the workflow judges the recorded scope by the same predicate,
+// where it once refused every recorded scope it had not authorized. A
+// sibling with a source of its own still needs the authorization.
+func TestNamedSubportBumpMovesItsObsoleteFollowerWithoutAuthorization(t *testing.T) {
+	t.Parallel()
+	for _, follower := range []bool{true, false} {
+		t.Run(map[bool]string{true: "follower", false: "sibling"}[follower], func(t *testing.T) {
+			t.Parallel()
+			f, _, request := combinedFixture(t, record.Bump)
+			request.Spec.Preparation.SharedRelease = false
+			original := f.engine.Preparer
+			subport := request.Spec.Targets[0]
+			stub := subport
+			stub.Name, stub.Subport = "fixture-stub", ""
+			scope := &record.ReleaseScope{Input: record.ReleaseInput{Portfile: subport.Portfile, Before: "1", After: "2"}, Affected: []record.ReleaseMember{{Target: subport}, {Target: stub, MetadataOnly: true, Follower: follower}}}
+			f.engine.Preparer = prepareFunc(func(ctx context.Context, r preparation.Request) (preparation.Result, error) {
+				require.False(t, r.SharedRelease)
+				result, err := original.Prepare(ctx, r)
+				result.Scope = scope
+				return result, err
+			})
+			id := submitPreparation(t, f, request)
+			f.run(t, id)
+			f.run(t, id)
+			job := f.status(t, id).Jobs[0].Job
+			if !follower {
+				require.Equal(t, record.JobNeedsAttention, job.State)
+				require.Contains(t, job.Detail, "unapproved shared-release scope")
+				return
+			}
+			require.NotEqual(t, record.JobNeedsAttention, job.State, job.Detail)
+			require.NotNil(t, job.Prepared)
+			require.Equal(t, scope, job.Prepared.Scope)
+		})
+	}
+}

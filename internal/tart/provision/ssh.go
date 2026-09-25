@@ -128,8 +128,8 @@ func closeSSHOnCancellation(ctx context.Context, client *ssh.Client) func() {
 	return func() { close(done) }
 }
 
-func waitSSH(ctx context.Context, host string) error {
-	ctx, cancel := context.WithTimeout(ctx, 4*time.Minute)
+func waitSSH(parent context.Context, host string) error {
+	ctx, cancel := context.WithTimeout(parent, 4*time.Minute)
 	defer cancel()
 	var last error
 	for attempt := 0; attempt < 120; attempt++ {
@@ -140,7 +140,13 @@ func waitSSH(ctx context.Context, host string) error {
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			if parent.Err() != nil {
+				return parent.Err()
+			}
+			// A dial macOS blocks for want of Local Network permission for
+			// the app that launched dockhand fails the same way, which is
+			// why setup is moving to /usr/bin/ssh (roadmap step 2).
+			return fmt.Errorf("guest at %s did not accept SSH within 4 minutes: %w; last attempt: %v; if the guest is up, the app running dockhand may lack macOS's Local Network permission", host, ctx.Err(), last)
 		case <-time.After(2 * time.Second):
 		}
 	}

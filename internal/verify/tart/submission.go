@@ -13,7 +13,9 @@ import (
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
+	tartvm "github.com/herbygillot/dockhand/internal/tart"
 	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/verify/ledger"
 )
 
 func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.Submission, error) {
@@ -35,8 +37,8 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 	defer o.entry.Close()
 	previous, err := o.entry.Read(ctx)
 	if err == nil {
-		if previous.State == record.ExecutionClosed || previous.State == record.ExecutionReleased && len(previous.Result) == 0 {
-			return verify.Submission{}, errClosed
+		if ledger.SubmissionClosed(previous) {
+			return verify.Submission{}, fmt.Errorf("tart: %w", ledger.ErrClosed)
 		}
 		data, e := o.restore(previous)
 		if e != nil {
@@ -87,6 +89,8 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 	}
 	if err := o.checkCapacity(ctx); errors.Is(err, errCapacity) {
 		return verify.Submission{State: verify.AtCapacity}, nil
+	} else if errors.Is(err, tartvm.ErrListingBlocked) {
+		return verify.Submission{State: verify.AtCapacity, Detail: listingBlocked}, nil
 	} else if err != nil {
 		return verify.Submission{}, err
 	}
@@ -111,6 +115,9 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 	raw, _ := json.Marshal(data)
 	v := record.ProviderExecution{ID: request.ID, RepositoryID: p.Repository, AttemptID: request.AttemptID, Resource: "dockhand2-" + record.Digest([]byte(o.entry.Pool.ID + "/" + string(request.ID)))[:24], Payload: raw, State: record.ExecutionReserved, Occupied: true, CreatedAt: time.Now().UTC().Truncate(time.Millisecond)}
 	running, err := o.machine.Running(ctx)
+	if errors.Is(err, tartvm.ErrListingBlocked) {
+		return verify.Submission{State: verify.AtCapacity, Detail: listingBlocked}, nil
+	}
 	if err != nil {
 		return verify.Submission{}, err
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -29,14 +30,12 @@ type indexFixture struct {
 
 func newIndexFixture(t *testing.T) *indexFixture {
 	t.Helper()
-	executable, err := exec.LookPath("portindex")
-	if err != nil {
-		t.Skip("MacPorts portindex is required")
-	}
+	executable := testsupport.MacPortsTool(t, "portindex")
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	f := &indexFixture{t: t, root: t.TempDir(), config: Config{Executable: executable, CacheDirectory: t.TempDir()}}
 	f.run("init", "-q", "-b", "main")
+	var err error
 	f.repo, err = git.Open(t.Context(), f.root, "")
 	require.NoError(t, err)
 	return f

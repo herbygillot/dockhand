@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -263,16 +264,13 @@ func TestEnsureOnAnOverlayLinksWhatTheBaseGained(t *testing.T) {
 // An overlay evaluates in the session bound to its base, with the
 // overlay's files, and the snapshot names the overlay's root.
 func TestAnOverlayEvaluatesInTheBaseSession(t *testing.T) {
-	executable, err := exec.LookPath("port-tclsh")
-	if err != nil {
-		t.Skip("MacPorts Tcl required")
-	}
+	executable := testsupport.MacPortsTclsh(t)
 	f := newFixture(t)
 	base, err := workspace.Open(t.Context(), f.repo, f.source())
 	require.NoError(t, err)
 	defer base.Close()
 	require.NoError(t, base.EnsurePort(t.Context(), targetA))
-	evaluator := &eval.Evaluator{Executable: executable}
+	evaluator := &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}
 	batch, err := base.Batch(t.Context(), evaluator)
 	require.NoError(t, err)
 	again, err := base.Batch(t.Context(), evaluator)
@@ -352,16 +350,13 @@ func TestRegistrySharesOneWorkspacePerSource(t *testing.T) {
 // _resources symlink, which resolves into the base; that is a read of the
 // captured tree, not of host state.
 func TestObservationReadsSharedResourcesThroughTheOverlayLink(t *testing.T) {
-	executable, err := exec.LookPath("port-tclsh")
-	if err != nil {
-		t.Skip("MacPorts Tcl required")
-	}
+	executable := testsupport.MacPortsTclsh(t)
 	f := newFixture(t)
 	base, err := workspace.Open(t.Context(), f.repo, f.source())
 	require.NoError(t, err)
 	defer base.Close()
 	require.NoError(t, base.EnsurePort(t.Context(), targetA))
-	evaluator := &eval.Evaluator{Executable: executable}
+	evaluator := &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}
 	platform, err := evaluator.NativePlatform(t.Context())
 	require.NoError(t, err)
 	grouped := "PortSystem 1.0\nPortGroup fixture 1.0\nname a\nversion 2\ncategories devel\nmaster_sites http://example.invalid/\nchecksums sha256 0 size 1\n"

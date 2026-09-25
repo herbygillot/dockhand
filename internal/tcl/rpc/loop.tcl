@@ -6,8 +6,16 @@ namespace eval ::tclrpc {
         dict set ops $name $cmd
     }
 
+    # reply frames a result. Tcl 9 refuses to encode a string that is not
+    # Unicode, such as a lone surrogate, where 8.6 wrote invalid UTF-8; the
+    # refusal becomes the call's error rather than ending the loop.
     proc reply {status payload} {
-        set bytes [encoding convertto utf-8 $payload]
+        if {[catch {encoding convertto utf-8 $payload} bytes]} {
+            set status err
+            if {[catch {encoding convertto utf-8 "reply is not encodable as UTF-8: $bytes"} bytes]} {
+                set bytes "reply is not encodable as UTF-8"
+            }
+        }
         puts stdout "TCLRPC1 $status [string length $bytes]"
         puts -nonewline stdout $bytes
         puts stdout ""
@@ -22,10 +30,23 @@ namespace eval ::tclrpc {
             if {![string match "CALL *" $header]} continue
             set n [lindex $header 1]
             set argv {}
+            set undecodable 0
+            # Every argument is read, so the stream stays framed, before an
+            # undecodable one refuses the call: Tcl 9 refuses invalid UTF-8
+            # that 8.6 decoded leniently.
             for {set i 0} {$i < $n} {incr i} {
                 gets stdin len
-                lappend argv [encoding convertfrom utf-8 [read stdin $len]]
+                set raw [read stdin $len]
                 read stdin 1
+                if {[catch {encoding convertfrom utf-8 $raw} value]} {
+                    set undecodable 1
+                } else {
+                    lappend argv $value
+                }
+            }
+            if {$undecodable} {
+                reply err "call argument is not valid UTF-8"
+                continue
             }
             if {[llength $argv] == 0} {
                 reply err "empty call"

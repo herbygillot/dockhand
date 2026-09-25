@@ -4,6 +4,8 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -19,6 +21,66 @@ func (e *Evaluator) Inspect(ctx context.Context) (macports.Runtime, error) {
 		return macports.Runtime{}, err
 	}
 	return runtime, session.Close()
+}
+
+// PreviewAdapter is the Evaluator.Adapter that admits a development build
+// of MacPorts Base, which reports an x.y.99 version. It is for developing
+// dockhand against Base master: master asks the host questions from its
+// parent interpreter that this dockhand does not observe, so preparation
+// with it would be judged on answers dockhand never saw.
+const PreviewAdapter = "preview"
+
+// supportedFamilies are the released Base families this dockhand
+// evaluates Portfiles with, oldest first.
+var supportedFamilies = [][2]int{{2, 11}, {2, 12}}
+
+// admitBase judges the version Base reports once its package is loaded,
+// before mportinit reads the host's configuration. Released versions of a
+// supported family are admitted by default; a development build only when
+// adapter is PreviewAdapter, and nothing else is; the startup checks run
+// either way.
+func admitBase(version, adapter string) error {
+	supported := make([]string, len(supportedFamilies))
+	for i, family := range supportedFamilies {
+		supported[i] = fmt.Sprintf("%d.%d", family[0], family[1])
+	}
+	releases := "released MacPorts Base " + strings.Join(supported, " and ")
+	if adapter != "" && adapter != PreviewAdapter {
+		return fmt.Errorf("%w: unknown MacPorts Base adapter %q; the one adapter that can be selected is %q", macports.ErrStartup, adapter, PreviewAdapter)
+	}
+	unrecognized := fmt.Errorf("%w: MacPorts Base reports version %q, which this dockhand does not recognize; it evaluates Portfiles with %s; check the selected --prefix/port-tclsh installation", macports.ErrStartup, version, releases)
+	parts := strings.Split(version, ".")
+	if len(parts) != 3 {
+		return unrecognized
+	}
+	var numbers [3]int
+	for i, part := range parts {
+		number, err := strconv.Atoi(part)
+		if err != nil || number < 0 {
+			return unrecognized
+		}
+		numbers[i] = number
+	}
+	family := [2]int{numbers[0], numbers[1]}
+	development := numbers[2] >= 90
+	if development {
+		if adapter == PreviewAdapter {
+			return nil
+		}
+		return fmt.Errorf("%w: MacPorts Base %s is a development build; this dockhand evaluates Portfiles with %s, since a development Base can ask the host questions this dockhand does not observe; choose a released installation with --prefix", macports.ErrStartup, version, releases)
+	}
+	if adapter == PreviewAdapter {
+		return fmt.Errorf("%w: the %s adapter is for development builds of MacPorts Base, and %s is a release", macports.ErrStartup, PreviewAdapter, version)
+	}
+	for _, supported := range supportedFamilies {
+		if family == supported {
+			return nil
+		}
+	}
+	if oldest := supportedFamilies[0]; family[0] < oldest[0] || family[0] == oldest[0] && family[1] < oldest[1] {
+		return fmt.Errorf("%w: MacPorts Base %s is older than this dockhand evaluates Portfiles with (%s); update it with `sudo port selfupdate`, or choose another installation with --prefix", macports.ErrStartup, version, releases)
+	}
+	return fmt.Errorf("%w: MacPorts Base %s is newer than this dockhand evaluates Portfiles with (%s); commands that evaluate Portfiles are unavailable until dockhand supports it, while status and recorded evidence remain usable", macports.ErrStartup, version, releases)
 }
 
 func decodeRuntime(reply string) (macports.Runtime, error) {

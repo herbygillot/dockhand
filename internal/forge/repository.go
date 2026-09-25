@@ -3,6 +3,7 @@ package forge
 import (
 	"context"
 	"errors"
+	"net/http"
 	"time"
 )
 
@@ -39,6 +40,15 @@ type Repository interface {
 
 type ReleaseRepository interface {
 	Releases(context.Context) ([]Release, error)
+}
+
+// Documents is a forge client that fetches a livecheck document from the
+// forge it serves through its own client, so the user's credentials and the
+// forge's rate-limit handling apply, sending the given request headers in
+// place of the client's own. served is false for a URL the forge does not
+// serve, and the plain fetch is used instead.
+type Documents interface {
+	Document(ctx context.Context, url string, headers http.Header) (body []byte, served bool, err error)
 }
 
 // FileRepository reads one file of the repository at a commit, for

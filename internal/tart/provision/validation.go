@@ -47,6 +47,10 @@ func (n *native) Validate(ctx context.Context, name string, config Config) (vali
 	if err := macos.CheckCompiler(ctx, n.target(name)); err != nil {
 		return validation{}, err
 	}
+	tools, err := macos.CommandLineToolsVersion(ctx, n.target(name))
+	if err != nil {
+		return validation{}, err
+	}
 	xcodeVersion, err := n.validateXcode(ctx, name, config)
 	if err != nil {
 		return validation{}, err
@@ -57,7 +61,7 @@ func (n *native) Validate(ctx context.Context, name string, config Config) (vali
 	if err != nil {
 		return validation{}, err
 	}
-	return validation{Platform: facts.Platform, MacPortsVersion: facts.Version, GuestAgentVersion: agentVersion, XcodeVersion: xcodeVersion}, nil
+	return validation{Platform: facts.Platform, MacPortsVersion: facts.Version, GuestAgentVersion: agentVersion, XcodeVersion: xcodeVersion, CommandLineTools: tools}, nil
 }
 
 func (n *native) validateXcode(ctx context.Context, name string, config Config) (string, error) {

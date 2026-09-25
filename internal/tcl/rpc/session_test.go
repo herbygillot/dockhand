@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -15,11 +16,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// process starts the tclsh on PATH, or DOCKHAND_TEST_TCLSH, which can name
+// a Tcl 9 shell such as Base master's port-tclsh.
 func process(t *testing.T) *shell.Proc {
 	t.Helper()
-	path, err := exec.LookPath("tclsh")
-	if err != nil {
-		t.Skip("tclsh is required for protocol integration tests")
+	path := os.Getenv("DOCKHAND_TEST_TCLSH")
+	if path == "" {
+		var err error
+		if path, err = exec.LookPath("tclsh"); err != nil {
+			t.Skip("tclsh is required for protocol integration tests")
+		}
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	t.Cleanup(cancel)
@@ -173,4 +179,50 @@ func TestHandshakeTimeoutIncludesLoadingScripts(t *testing.T) {
 	require.NoError(t, ctx.Err(), "handshake must end before the process lifetime deadline")
 	_, done := p.Err()
 	require.True(t, done)
+}
+
+// Text that is not UTF-8 is refused as a call's error, on either side, and
+// the session survives: Tcl 9 refuses to decode invalid UTF-8 or to encode a
+// lone surrogate, which ended the loop, and Tcl 8.6 wrote the surrogate as
+// invalid UTF-8.
+func TestTextThatIsNotUTF8FailsTheCallNotTheSession(t *testing.T) {
+	s, _ := session(t, rpc.WithInit("proc echo {value} {return $value}; ::tclrpc::register echo echo"))
+	var callError rpc.CallError
+	_, err := s.Call(t.Context(), "echo", "caf\xe9")
+	require.ErrorAs(t, err, &callError)
+	require.Contains(t, callError.Msg, "not valid UTF-8")
+	_, err = s.Call(t.Context(), "eval", "format %c 0xD800")
+	require.ErrorAs(t, err, &callError)
+	require.Contains(t, callError.Msg, "UTF-8")
+	output, err := s.Call(t.Context(), "echo", "é")
+	require.NoError(t, err)
+	require.Equal(t, "é", output)
+}
+
+// The loop itself refuses an argument it cannot decode, after reading every
+// argument so the stream stays framed, and answers the next call. Go never
+// sends one; this writes the frames by hand.
+func TestLoopRefusesUndecodableArgumentsAndKeepsServing(t *testing.T) {
+	path := os.Getenv("DOCKHAND_TEST_TCLSH")
+	if path == "" {
+		var err error
+		if path, err = exec.LookPath("tclsh"); err != nil {
+			t.Skip("tclsh is required for protocol integration tests")
+		}
+	}
+	script := "source loop.tcl\nproc echo {value} {return $value}\n::tclrpc::register echo echo\n::tclrpc::loop\n"
+	command := exec.CommandContext(t.Context(), path)
+	command.Stdin = strings.NewReader(script + "CALL 2\n4\necho\n4\ncaf\xe9\nCALL 2\n4\necho\n2\nok\n")
+	output, err := command.Output()
+	require.NoError(t, err)
+	replies := string(output)
+	probe := exec.CommandContext(t.Context(), path)
+	probe.Stdin = strings.NewReader("puts [info tclversion]\n")
+	tclVersion, err := probe.Output()
+	require.NoError(t, err)
+	if strings.HasPrefix(string(tclVersion), "9.") {
+		require.Contains(t, replies, "TCLRPC1 err", "Tcl 9 refuses the bytes")
+		require.Contains(t, replies, "call argument is not valid UTF-8")
+	}
+	require.Contains(t, replies, "TCLRPC1 ok 2\nok\n", "the next call is answered")
 }

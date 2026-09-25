@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/selection"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -46,15 +46,7 @@ foreach py {311 312} {subport py${py}-fixture {version 2.0}}
 
 func native(t *testing.T) *eval.Evaluator {
 	t.Helper()
-	executable := os.Getenv("DOCKHAND_TEST_MACPORTS_TCLSH")
-	if executable == "" {
-		var err error
-		executable, err = exec.LookPath("port-tclsh")
-		if err != nil {
-			t.Skip("native MacPorts required")
-		}
-	}
-	return &eval.Evaluator{Executable: executable}
+	return &eval.Evaluator{Executable: testsupport.MacPortsTclsh(t), Adapter: testsupport.BaseAdapter()}
 }
 
 func TestNamedPortsUseOwningSnapshotAndPreserveSiblings(t *testing.T) {

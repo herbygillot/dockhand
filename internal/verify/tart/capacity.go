@@ -6,6 +6,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/state"
 )
 
+// listingBlocked is the wait a submission reports while a running VM with an
+// ASIF disk keeps Tart from listing, and so from counting, its VMs.
+const listingBlocked = "Waiting for Tart: a running VM with an ASIF disk keeps it from listing its VMs until that VM stops (openai/tart#1344)"
+
 func (o *operation) checkCapacity(ctx context.Context) error {
 	running, err := o.machine.Running(ctx)
 	if err != nil {

@@ -2,7 +2,9 @@ package workflow_test
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -292,4 +294,38 @@ func TestVerificationAfterRenameKeepsThePRHeadAsItsRemoteBranch(t *testing.T) {
 	require.Equal(t, "renamed", attempt.Spec.Branch, "the local locator captures the commit")
 	require.Equal(t, "candidate", attempt.Spec.RemoteBranch, "the fork branch stays the PR head")
 	require.Equal(t, "candidate", attempt.Spec.PushBranch())
+}
+
+// An amend of the checkout refuses, before any job is accepted, a checkout
+// on another branch and edits that are not staged: found at integration,
+// either left an accepted job needing attention.
+func TestAmendOfTheCheckoutRefusesAWrongBranchOrUnstagedEdits(t *testing.T) {
+	t.Parallel()
+	f, input := correctionFixture(t)
+	input.Branch, input.Target = "", "fixture"
+	git := func(args ...string) {
+		t.Helper()
+		out, err := exec.CommandContext(t.Context(), "git", append([]string{"-C", f.repo.Root}, args...)...).CombinedOutput()
+		require.NoError(t, err, "%s", out)
+	}
+	git("checkout", "-q", "-b", "elsewhere", "candidate")
+	_, err := f.engine.BindCorrection(t.Context(), input)
+	require.ErrorIs(t, err, workflow.ErrInvalidRequest)
+	require.ErrorContains(t, err, "which is on elsewhere, not the contribution's branch candidate")
+
+	git("checkout", "-q", "candidate")
+	portfile := filepath.Join(f.repo.Root, "devel/fixture/Portfile")
+	require.NoError(t, os.WriteFile(portfile, []byte("version 3\n"), 0600))
+	_, err = f.engine.BindCorrection(t.Context(), input)
+	require.ErrorIs(t, err, workflow.ErrInvalidRequest)
+	require.ErrorContains(t, err, "edits that are not: devel/fixture/Portfile; stage the intended amendment")
+
+	git("add", "devel/fixture/Portfile")
+	_, err = f.engine.BindCorrection(t.Context(), input)
+	require.NoError(t, err)
+	status, err := f.engine.Status(t.Context(), workflow.Scope{All: true})
+	require.NoError(t, err)
+	for _, job := range status.Jobs {
+		require.NotEqual(t, record.JobNeedsAttention, job.Job.State, "no job was accepted and left needing attention")
+	}
 }

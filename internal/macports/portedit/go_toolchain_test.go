@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,6 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,10 +25,7 @@ import (
 // a Go-PortGroup-shaped port with the given extra declarations.
 func goModFixture(t *testing.T, manifest, extra string) (*Service, Request) {
 	t.Helper()
-	executable, err := exec.LookPath("port-tclsh")
-	if err != nil {
-		t.Skip("MacPorts required")
-	}
+	executable := testsupport.MacPortsTclsh(t)
 	var archive bytes.Buffer
 	gz := gzip.NewWriter(&archive)
 	tw := tar.NewWriter(gz)
@@ -52,7 +49,7 @@ worksrcdir gopath/src/example.com/fixture
 master_sites @SITE@/${version}
 checksums sha256 aaaa size 2
 `+extra, "@SITE@", server.URL)), 0600))
-	s := &Service{Ports: &eval.Evaluator{Executable: executable}, Archives: archives.Client{HTTP: server.Client()}}
+	s := &Service{Ports: &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}, Archives: archives.Client{HTTP: server.Client()}}
 	r := Request{Action: record.Bump, Source: record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, Workspace: adopt(t, root), Selection: macports.Selection{Selector: "fixture"}, Version: "1.2.4", Release: &record.Release{Selection: record.Selection{Requested: "1.2.4"}, Archive: true, Version: "1.2.4"}}
 	return s, r
 }
@@ -163,4 +160,30 @@ git.branch v${version}
 	result, err = s.Prepare(t.Context(), r)
 	require.NoError(t, err)
 	require.Contains(t, string(result.Files[0].After), "go.toolchain_min 1.22", "no manifest source leaves the minimum")
+}
+
+// go.offline_build is read as Tcl reads a boolean: false in any spelling is
+// module mode; true, unset, or not a boolean leaves the minimum alone.
+func TestModuleModeReadsOfflineBuildAsTclBoolean(t *testing.T) {
+	t.Parallel()
+	for value, module := range map[string]bool{"no": true, "No": true, "off": true, "0": true, "yes": false, "true": false, "maybe": false} {
+		info := macports.PortInfo{Options: map[string]string{"go.package": "example.com/fixture", "go.offline_build": value}}
+		require.Equal(t, module, moduleModeGo(info), value)
+	}
+	require.False(t, moduleModeGo(macports.PortInfo{Options: map[string]string{"go.package": "example.com/fixture"}}))
+	require.False(t, moduleModeGo(macports.PortInfo{Options: map[string]string{"go.offline_build": "no"}}), "not a Go PortGroup port")
+}
+
+// cargo.update is read as Tcl reads a boolean, and a value that is not one
+// is refused as true would be, since it would rewrite the lockfile.
+func TestCargoUpdateIsReadAsTclBoolean(t *testing.T) {
+	t.Parallel()
+	for value, allowed := range map[string]bool{"": true, "no": true, "Off": true, "false": true, "yes": false, "ON": false, "1": false, "sometimes": false} {
+		err := checkCargoUpdate(macports.PortInfo{Options: map[string]string{"cargo.update": value}})
+		if allowed {
+			require.NoError(t, err, value)
+		} else {
+			require.ErrorContains(t, err, "cargo.update changes the upstream lockfile", value)
+		}
+	}
 }

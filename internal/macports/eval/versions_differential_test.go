@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,14 +23,20 @@ import (
 // one difference allowed.
 func TestVersionsMirrorBaseLivecheckMatching(t *testing.T) {
 	t.Parallel()
-	executable, err := exec.LookPath("port-tclsh")
-	if err != nil {
-		t.Skip("MacPorts Tcl required")
-	}
+	executable := testsupport.MacPortsTclsh(t)
+	// Base 2.12 keeps livecheck's matching loop in portlivecheck.tcl;
+	// master moved the code the target runs to portlivecheck_run.tcl.
 	prefix := filepath.Dir(filepath.Dir(executable))
-	base := filepath.Join(prefix, "libexec/macports/lib/port1.0/portlivecheck.tcl")
-	if _, err := os.Stat(base); err != nil {
-		t.Skipf("Base's livecheck is not at %s", base)
+	var base string
+	for _, name := range []string{"portlivecheck_run.tcl", "portlivecheck.tcl"} {
+		candidate := filepath.Join(prefix, "libexec/macports/lib/port1.0", name)
+		if _, err := os.Stat(candidate); err == nil {
+			base = candidate
+			break
+		}
+	}
+	if base == "" {
+		t.Skipf("Base's livecheck is not under %s", prefix)
 	}
 	corpus, err := filepath.Abs("testdata/livecheck")
 	require.NoError(t, err)
@@ -68,7 +75,10 @@ source [file join $env(TEST_ROOT) versions.tcl]
 set fd [open $env(TEST_BASE) r]; set text [read $fd]; close $fd
 set needle "if \{\$\{livecheck.type\} eq \"regexm\"\} \{"
 set begin [string first $needle $text]
+# 2.12 ends the loop by closing $chan; master reads $tempfd and leaves it
+# open, so its loop ends where the no-match report begins.
 set end [string first "close \$chan" $text $begin]
+if {$end < 0} {set end [string first "if \{!\$foundmatch\}" $text $begin]}
 if {$begin < 0 || $end < 0} {error "Base's livecheck matching loop was not found in $env(TEST_BASE)"}
 set block [string range $text $begin [expr {$end - 1}]]
 proc ui_debug {args} {}
@@ -86,6 +96,7 @@ foreach example $examples {
     if {![dict get $example Traps]} {
         set updated -1; set foundmatch 0; set updated_version 0
         set chan [open $path r]
+        set tempfd $chan
         eval $block
         close $chan
         if {$foundmatch} {set base $updated_version}

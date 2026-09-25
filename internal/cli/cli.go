@@ -12,8 +12,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/app"
 )
 
-var errNotImplemented = errors.New("dockhand v2: command workflows are not wired yet")
-
 type Streams struct {
 	In  io.Reader
 	Out io.Writer

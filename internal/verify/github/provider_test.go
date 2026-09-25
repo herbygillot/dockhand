@@ -22,6 +22,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
 	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/verify/ledger"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/stretchr/testify/require"
 )
@@ -272,9 +273,8 @@ func TestConcurrentSubmitAndClosedRequest(t *testing.T) {
 	require.Equal(t, verify.RequestClosed, closed.State)
 	request := f.request
 	request.ID = "never-submitted"
-	result, err := f.provider.Submit(t.Context(), request)
-	require.NoError(t, err)
-	require.Equal(t, verify.Unsupported, result.State)
+	_, err = f.provider.Submit(t.Context(), request)
+	require.ErrorIs(t, err, ledger.ErrClosed, "a closed request refuses as Tart's does, and reconciliation settles it")
 	changed := f.request
 	changed.Spec.Target.Name = "other"
 	_, err = f.provider.Submit(t.Context(), changed)
@@ -445,9 +445,8 @@ func TestCancellationFencesUncertainPush(t *testing.T) {
 			require.Equal(t, record.ExecutionClosed, row.State)
 			require.False(t, row.Occupied)
 			f.api.err, f.api.runsErr = nil, nil
-			stale, err := restarted.Submit(t.Context(), f.request)
-			require.NoError(t, err)
-			require.Equal(t, verify.Unsupported, stale.State)
+			_, err = restarted.Submit(t.Context(), f.request)
+			require.ErrorIs(t, err, ledger.ErrClosed, "a stale submit is refused, and pushes nothing")
 			after, err := f.provider.Repo.RemoteHead(t.Context(), f.remote, "candidate")
 			require.NoError(t, err)
 			require.Equal(t, head, after)
@@ -486,9 +485,12 @@ func TestCancellationDetachesOnlyItsOwnTracking(t *testing.T) {
 	logs, err := restarted.ReadLog(t.Context(), first.Run, 0, 4096)
 	require.NoError(t, err)
 	require.True(t, logs.Complete)
+	// A stale submit gets the admission it would find by reconciling, the
+	// same run, which observes as canceled; it starts nothing.
 	stale, err := restarted.Submit(t.Context(), f.request)
 	require.NoError(t, err)
-	require.Equal(t, verify.Unsupported, stale.State)
+	require.Equal(t, verify.Admitted, stale.State)
+	require.Equal(t, first.Run, stale.Run)
 	// A driver that lost the cancellation response can recover the same handle.
 	recovered, err := restarted.Reconcile(t.Context(), f.request.ID, verify.ReconcileOptions{CancelRequested: true})
 	require.NoError(t, err)
@@ -922,4 +924,45 @@ func TestARunWorthWaitingForIsNotRerun(t *testing.T) {
 			require.Zero(t, f.api.reruns)
 		})
 	}
+}
+
+// A job log longer than the 64 MiB kept is kept to it and says so, with
+// where the whole log is, rather than failing every read of the job's log.
+func TestOversizedJobLogIsTruncatedNotFatal(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, int64(64<<20), int64(maxJobLogBytes), "the cap the note and this test name")
+	for _, size := range []int64{maxJobLogBytes, maxJobLogBytes + 5} {
+		api := &fakeActions{}
+		api.jobLog = func(context.Context, int64) (io.ReadCloser, error) {
+			return io.NopCloser(io.LimitReader(repeatReader('x'), size)), nil
+		}
+		job := &gh.WorkflowJob{ID: gh.Ptr(int64(7)), Name: gh.Ptr("build"), Conclusion: gh.Ptr("failure"), HTMLURL: gh.Ptr("https://github.com/author/ports/actions/runs/1/job/7")}
+		path := filepath.Join(t.TempDir(), "job.log")
+		require.NoError(t, cacheJobLog(t.Context(), api, job, path))
+		info, err := os.Stat(path)
+		require.NoError(t, err)
+		header := int64(len("\n--- build (failure) ---\nhttps://github.com/author/ports/actions/runs/1/job/7\n"))
+		note := "\n--- log truncated at 64 MiB; the whole log is at https://github.com/author/ports/actions/runs/1/job/7 ---\n"
+		if size == maxJobLogBytes {
+			require.Equal(t, header+maxJobLogBytes, info.Size(), "a log of exactly the cap is whole")
+			continue
+		}
+		require.Equal(t, header+maxJobLogBytes+int64(len(note)), info.Size())
+		file, err := os.Open(path)
+		require.NoError(t, err)
+		_, err = file.Seek(-int64(len(note)), io.SeekEnd)
+		require.NoError(t, err)
+		tail, err := io.ReadAll(file)
+		require.NoError(t, errors.Join(err, file.Close()))
+		require.Equal(t, note, string(tail))
+	}
+}
+
+type repeatReader byte
+
+func (r repeatReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = byte(r)
+	}
+	return len(p), nil
 }

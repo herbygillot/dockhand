@@ -15,14 +15,32 @@ func TestSharedReleaseSummaryNamesWhatWasNotBuiltLocally(t *testing.T) {
 	scope := &record.ReleaseScope{Affected: []record.ReleaseMember{{Target: stub, MetadataOnly: true}, {Target: older}, {Target: newest}}}
 	plan := record.VerificationPlan{Targets: []record.VerificationTarget{{ID: "t1", Port: newest, Root: true}}}
 	attempts := []record.Attempt{{TargetID: "t1", Spec: record.BuildSpec{Target: newest, Config: record.BuildConfig{Tests: record.TestDeclared}}, Evidence: &record.Evidence{Verdict: record.VerdictPassed}}}
-	summary := SharedReleaseSummary(plan, attempts, scope)
+	summary := SharedReleaseSummary(plan, attempts, scope, false)
 	require.Contains(t, summary, "The initiating subport of this shared release passed verification locally.")
 	require.Contains(t, summary, "- py314-requests: passed")
 	require.Contains(t, summary, "Not built locally: py313-requests. The pull request workflow builds every subport.")
 	require.NotContains(t, summary, "py-requests", "a metadata-only stub is not something to build")
 	plan.Targets = append(plan.Targets, record.VerificationTarget{ID: "t2", Port: older})
 	attempts = append(attempts, record.Attempt{TargetID: "t2", Spec: record.BuildSpec{Target: older, Config: record.BuildConfig{Tests: record.TestDeclared}}, Evidence: &record.Evidence{Verdict: record.VerdictPassed}})
-	summary = SharedReleaseSummary(plan, attempts, scope)
+	summary = SharedReleaseSummary(plan, attempts, scope, false)
 	require.Contains(t, summary, "All buildable subports in this shared release passed verification.")
 	require.NotContains(t, summary, "Not built locally")
+}
+
+// Every requested macOS release had to pass, so the pull request lists each
+// release's result by name.
+func TestPlatformSummaryNamesEachRelease(t *testing.T) {
+	t.Parallel()
+	jq := record.Target{Name: "jq", Portfile: "sysutils/jq/Portfile"}
+	tahoe := record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
+	sonoma := record.Platform{OS: "darwin", Version: "23", Architecture: "arm64"}
+	plan := record.VerificationPlan{Targets: []record.VerificationTarget{{ID: "t1", Port: jq, Root: true}, {ID: "t2", Port: jq, Root: true}}}
+	attempts := []record.Attempt{
+		{TargetID: "t1", Spec: record.BuildSpec{Target: jq, Config: record.BuildConfig{Platform: tahoe, Tests: record.TestDeclared}}, Evidence: &record.Evidence{Verdict: record.VerdictPassed}},
+		{TargetID: "t2", Spec: record.BuildSpec{Target: jq, Config: record.BuildConfig{Platform: sonoma, Tests: record.TestDeclared}}, Evidence: &record.Evidence{Verdict: record.VerdictPassed}},
+	}
+	summary := PlatformSummary(plan, attempts)
+	require.Contains(t, summary, "###### Verification on each macOS release")
+	require.Contains(t, summary, "- jq on macOS 26 (Tahoe) arm64: passed")
+	require.Contains(t, summary, "- jq on macOS 14 (Sonoma) arm64: passed")
 }

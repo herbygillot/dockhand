@@ -15,6 +15,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"github.com/herbygillot/dockhand/internal/macos"
+	"github.com/herbygillot/dockhand/internal/tart"
 )
 
 func (n Machine) launchctl(ctx context.Context, args ...string) error {
@@ -87,7 +88,7 @@ func (n Machine) Stop(ctx context.Context, vm string) error {
 			return nil
 		}
 		if running {
-			if _, err = n.run(ctx, nil, "stop", vm); err != nil {
+			if _, err = n.run(ctx, nil, "stop", vm); err != nil && !errors.Is(err, tart.ErrVMStopped) {
 				return err
 			}
 		}

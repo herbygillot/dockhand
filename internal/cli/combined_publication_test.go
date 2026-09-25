@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/git"
@@ -225,4 +226,76 @@ func TestSkipVerifyWithNoPublishStopsAtTheBranch(t *testing.T) {
 		err := runFixture(t.Context(), args, Streams{Out: &stdout, Err: &stderr}, config)
 		require.Error(t, err, "%v", args)
 	}
+}
+
+// publish --adopt tracks a hand-made branch only when it publishes it: a
+// dry run plans with the recorded evidence and records, pushes, and writes
+// nothing; a refused authentication accepts no job; and the real run
+// publishes on the evidence already recorded, with no new build.
+func TestPublishCLIAdoptsManualBranchOnlyAfterDryRun(t *testing.T) {
+	t.Parallel()
+	config, repo, source := preparationCLI(t)
+	configureReuseImage(t, &config)
+	// A branch dockhand did not make: one commit on master editing the port.
+	_, tree, err := repo.Branch(t.Context(), "master")
+	require.NoError(t, err)
+	before, _, err := repo.File(t.Context(), tree, "devel/fixture/Portfile")
+	require.NoError(t, err)
+	edited, err := repo.EditTree(t.Context(), tree, []git.FileEdit{{Path: "devel/fixture/Portfile", Before: before, After: []byte("PortSystem 1.0\nname fixture\nversion 1.3\nrevision 0\ncategories devel\n"), Mode: before.Mode}})
+	require.NoError(t, err)
+	sig := git.Signature{Name: "Fixture", Email: "fixture@example.invalid", When: time.Now()}
+	manual, err := repo.WriteCommit(t.Context(), git.Commit{Tree: edited, Parents: []string{source}, Message: "fixture: update to 1.3", Author: sig, Committer: sig})
+	require.NoError(t, err)
+	require.NoError(t, repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/manual", Desired: git.RefValue{Exists: true, Object: manual}}}))
+	seedCLIVerification(t, config, "manual")
+	config.Tart.Image = ""
+	config.VerificationProvider = "tart"
+	forge := publicationCLI(t, &config, repo, source)
+	pushed := func() bool {
+		t.Helper()
+		out, err := exec.CommandContext(t.Context(), config.GitExecutable, "ls-remote", "https://github.com/author/ports.git", "refs/heads/manual").CombinedOutput()
+		require.NoError(t, err, "%s", out)
+		return strings.TrimSpace(string(out)) != ""
+	}
+	jobs := func() int {
+		t.Helper()
+		status, err := app.FilteredStatus(t.Context(), config, workflow.StatusFilter{})
+		require.NoError(t, err)
+		for _, change := range status.Changes {
+			require.NotEqual(t, "manual", change.Branch, "the hand-made branch is not tracked before it publishes")
+		}
+		return len(status.Jobs)
+	}
+	require.Equal(t, 1, jobs(), "the recorded verification")
+
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, runFixture(t.Context(), []string{"publish", "--adopt", "manual", "--remote", "contribution", "--base", "main", "--dry-run", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	var plan record.JobSpec
+	decodeResult(t, stdout.Bytes(), &plan)
+	require.Equal(t, record.ObjectID(manual), plan.Publication.Desired.Head)
+	require.Zero(t, forge.writes())
+	require.Equal(t, 1, jobs(), "a dry run accepts no publication")
+	require.False(t, pushed())
+
+	token := config.GitHub.Token
+	config.GitHub.Token = ""
+	stdout.Reset()
+	stderr.Reset()
+	err = runFixture(t.Context(), []string{"publish", "--adopt", "manual", "--remote", "contribution", "--base", "main", "--detach", "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
+	require.ErrorIs(t, err, github.ErrAuthentication)
+	require.Equal(t, 1, jobs(), "a refused authentication accepts no publication")
+	require.False(t, pushed())
+
+	config.GitHub.Token = token
+	stdout.Reset()
+	stderr.Reset()
+	require.NoError(t, runFixture(t.Context(), []string{"publish", "--adopt", "manual", "--remote", "contribution", "--base", "main", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	var result ActionResult
+	decodeResult(t, stdout.Bytes(), &result)
+	require.Len(t, result.Status.Jobs, 1)
+	require.Equal(t, record.JobCompleted, result.Status.Jobs[0].Job.State)
+	require.Equal(t, "https://github.com/author/ports/pull/1", result.Status.PullRequests[0].Ref.URL)
+	require.Equal(t, 1, forge.writes())
+	require.Empty(t, result.Status.Jobs[0].Attempts, "published on the recorded evidence")
+	require.True(t, pushed())
 }

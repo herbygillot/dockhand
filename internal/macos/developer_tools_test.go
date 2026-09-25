@@ -80,13 +80,93 @@ func TestInspectionRejectsMalformedXcodeVersion(t *testing.T) {
 func TestCanceledToolchainCheckDoesNotInstallAnything(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	calls := 0
-	err := EnsureCommandLineTools(ctx, func(context.Context, io.Reader, ...string) ([]byte, error) {
+	tahoe, err := ReleaseForDarwin(25)
+	require.NoError(t, err)
+	err = EnsureCommandLineTools(ctx, func(context.Context, io.Reader, ...string) ([]byte, error) {
 		calls++
 		cancel()
 		return nil, ctx.Err()
-	})
+	}, tahoe)
 	require.ErrorIs(t, err, context.Canceled)
 	require.Equal(t, 1, calls)
+}
+
+// Setup installs the newest tools of the release's generation, never the
+// newest offered: sorting the offers gave the Tahoe images the macOS 27
+// tools (decision 13). Labels are Software Update's, old and new forms.
+func TestCommandLineToolsLabelKeepsTheReleasesGeneration(t *testing.T) {
+	tahoe, err := ReleaseForDarwin(25)
+	require.NoError(t, err)
+	offered := []string{"Command Line Tools for Xcode 27.0-27.0", "Command Line Tools for Xcode 26.6-26.6", "Command Line Tools for Xcode 26.10-26.10", "Command Line Tools for Xcode 26.4-26.4"}
+	label, err := CommandLineToolsLabel(offered, tahoe)
+	require.NoError(t, err)
+	require.Equal(t, "Command Line Tools for Xcode 26.10-26.10", label, "versions compare numerically")
+
+	monterey, err := ReleaseForDarwin(21)
+	require.NoError(t, err)
+	label, err = CommandLineToolsLabel([]string{"Command Line Tools for Xcode-14.2", "Command Line Tools for Xcode-13.4", "Command Line Tools (macOS Monterey version 12.3) for Xcode-14.0"}, monterey)
+	require.NoError(t, err)
+	require.Equal(t, "Command Line Tools for Xcode-14.2", label)
+
+	_, err = CommandLineToolsLabel([]string{"Command Line Tools for Xcode 27.0-27.0"}, tahoe)
+	require.ErrorContains(t, err, "offers no Command Line Tools 26, the generation Tahoe uses; offered: Command Line Tools for Xcode 27.0-27.0")
+	_, err = CommandLineToolsLabel(nil, tahoe)
+	require.ErrorContains(t, err, "offered: none")
+}
+
+// The tools already in a guest are held to the release's generation too,
+// read from their package receipt.
+func TestInstalledToolsOfAnotherGenerationAreRefused(t *testing.T) {
+	tahoe, err := ReleaseForDarwin(25)
+	require.NoError(t, err)
+	receipt := "package-id: com.apple.pkg.CLTools_Executables\nversion: 27.0.0.0.1.1757719676\nvolume: /\n"
+	var installed bool
+	run := func(_ context.Context, _ io.Reader, args ...string) ([]byte, error) {
+		if len(args) > 2 && strings.Contains(args[2], "pkgutil") {
+			return []byte(receipt), nil
+		}
+		if len(args) > 2 && strings.Contains(args[2], "softwareupdate --install") {
+			installed = true
+		}
+		return nil, nil
+	}
+	err = EnsureCommandLineTools(t.Context(), run, tahoe)
+	require.ErrorContains(t, err, "guest has Command Line Tools 27.0; Tahoe uses generation 26")
+	require.False(t, installed)
+	receipt = "version: 26.6.0.0.1.1757719676\n"
+	require.NoError(t, EnsureCommandLineTools(t.Context(), run, tahoe))
+	version, err := CommandLineToolsVersion(t.Context(), run)
+	require.NoError(t, err)
+	require.Equal(t, "26.6", version)
+}
+
+// Without a compiler, setup lists the offers with the marker that makes
+// Software Update offer the tools, installs the generation's newest, and
+// removes the marker.
+func TestCommandLineToolsInstallTheGenerationsNewestOffer(t *testing.T) {
+	tahoe, err := ReleaseForDarwin(25)
+	require.NoError(t, err)
+	var compiler, removedMarker bool
+	var installedLabel string
+	run := func(_ context.Context, _ io.Reader, args ...string) ([]byte, error) {
+		switch {
+		case args[0] == "/usr/bin/xcode-select" && !compiler:
+			return nil, errors.New("no developer tools")
+		case args[0] == "sudo" && args[len(args)-1] == commandLineToolsMarker:
+			removedMarker = true
+		case len(args) > 3 && strings.Contains(args[2], "softwareupdate --list"):
+			require.Equal(t, commandLineToolsMarker, args[4])
+			return []byte("Command Line Tools for Xcode 27.0-27.0\nCommand Line Tools for Xcode 26.6-26.6\n"), nil
+		case len(args) > 3 && strings.Contains(args[2], "softwareupdate --install"):
+			installedLabel, compiler = args[4], true
+		case len(args) > 2 && strings.Contains(args[2], "pkgutil"):
+			return []byte("version: 26.6.0.0.1.1757719676\n"), nil
+		}
+		return nil, nil
+	}
+	require.NoError(t, EnsureCommandLineTools(t.Context(), run, tahoe))
+	require.Equal(t, "Command Line Tools for Xcode 26.6-26.6", installedLabel)
+	require.True(t, removedMarker)
 }
 
 func TestInstallXcodePassesArchiveAsArgument(t *testing.T) {

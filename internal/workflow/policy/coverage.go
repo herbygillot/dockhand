@@ -31,7 +31,10 @@ func PublicationCoverage(ctx context.Context, r state.Reader, root record.Attemp
 	if len(required) > 0 && required[0] != nil {
 		scope = required[0]
 	}
-	if !owner.Spec.IncludeDependents {
+	// Every release a verification was asked to build on must pass, as
+	// every dependent must (decision 14), so a job with further platform
+	// builds is proven by its whole plan, never by the root alone.
+	if !owner.Spec.IncludeDependents && len(owner.Spec.PlatformBuilds) == 0 {
 		if scope == nil {
 			return nil
 		}
@@ -141,7 +144,8 @@ func DescribeCoverage(ctx context.Context, r state.Reader, spec *record.Publicat
 			}
 			scope = revision.Scope
 		}
-		if !owner.Spec.IncludeDependents && scope == nil {
+		platforms := len(owner.Spec.PlatformBuilds) > 0
+		if !owner.Spec.IncludeDependents && scope == nil && !platforms {
 			return nil
 		}
 		if err := PublicationCoverage(ctx, r, root); err != nil {
@@ -155,10 +159,13 @@ func DescribeCoverage(ctx context.Context, r state.Reader, spec *record.Publicat
 		if err != nil {
 			return err
 		}
-		if scope != nil && !owner.Spec.IncludeDependents {
-			spec.Desired.Body += publish.SharedReleaseSummary(plan, attempts, scope)
-		} else {
+		switch {
+		case scope != nil && !owner.Spec.IncludeDependents:
+			spec.Desired.Body += publish.SharedReleaseSummary(plan, attempts, scope, platforms)
+		case owner.Spec.IncludeDependents:
 			spec.Desired.Body += publish.CoverageSummary(plan, attempts)
+		default:
+			spec.Desired.Body += publish.PlatformSummary(plan, attempts)
 		}
 		return nil
 	}

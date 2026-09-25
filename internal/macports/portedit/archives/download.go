@@ -289,7 +289,11 @@ func CheckPolicy(info macports.PortInfo, portdir string) error {
 			return fmt.Errorf("%w: cannot evaluate %s", portfile.ErrUnsupported, key)
 		}
 	}
-	if info.Options["fetch.type"] != "standard" || info.Options["fetch.archive_compatible"] != "1" || info.Options["fetch.ignore_sslcert"] != "no" || info.Options["go.vendors"] != "" || info.Options["cargo.crates"] != "" || info.Options["cargo.crates_github"] != "" {
+	// fetch.ignore_sslcert is read as Tcl reads a boolean, and must have
+	// been evaluated and be false.
+	_, evaluated := info.Options["fetch.ignore_sslcert"]
+	ignoreCertificate, err := info.Bool("fetch.ignore_sslcert")
+	if info.Options["fetch.type"] != "standard" || info.Options["fetch.archive_compatible"] != "1" || !evaluated || err != nil || ignoreCertificate || info.Options["go.vendors"] != "" || info.Options["cargo.crates"] != "" || info.Options["cargo.crates_github"] != "" {
 		return fmt.Errorf("%w: fetch customization or vendored source requires a dedicated preparer", portfile.ErrUnsupported)
 	}
 	if err := LocalPatches(info, portdir); err != nil {

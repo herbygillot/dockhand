@@ -8,10 +8,18 @@ namespace eval ::dockhand {
         return -code error "MacPorts Base [base_version]: $detail; check the selected --prefix/port-tclsh installation or update MacPorts Base"
     }
 
+    # check_startup checks what the macports package provides once it is
+    # loaded, before mportinit; check_initialized checks what mportinit
+    # loads. Base master loads Pextlib, and with it vercmp, only in
+    # mportinit, where 2.12 loads it with the package.
     proc check_startup {} {
-        foreach command {::mportinit ::mportopen ::mportinfo ::mportclose ::ditem_key ::vercmp} {
+        foreach command {::mportinit ::mportopen ::mportinfo ::mportclose ::ditem_key} {
             if {![llength [info commands $command]]} { incompatible "required evaluator command $command is missing" }
         }
+    }
+
+    proc check_initialized {} {
+        if {![llength [info commands ::vercmp]]} { incompatible "required evaluator command ::vercmp is missing" }
         if {[catch {expr {[vercmp 1.9 1.10] < 0 && [vercmp 1.10 1.9] > 0 && [vercmp 1.0 1.0] == 0}} ordered] || !$ordered} {
             incompatible "version comparison capability check failed"
         }
@@ -61,8 +69,22 @@ namespace eval ::dockhand {
         }}}
     }
 
+    # load_fetch_target loads the fetch target's code in a port's worker,
+    # as Base's own fetch does before it runs: master defines the fetch
+    # procedure, checkfiles, and assemble_url only in portfetch_run, which
+    # portutil::target_load requires (portfetch.tcl:142, portutil.tcl:975).
+    # 2.12 has no target_load and defines them with the port.
+    proc load_fetch_target {worker} {
+        $worker eval {
+            if {[info exists org.macports.fetch] && [llength [info commands portutil::target_load]]} {
+                portutil::target_load ${org.macports.fetch}
+            }
+        }
+    }
+
     proc fetch_details {worker} {
         check_fetch_registration $worker
+        load_fetch_target $worker
         return [$worker eval {
             if {![info exists org.macports.fetch]} { error "fetch target record is unavailable" }
             set target ${org.macports.fetch}

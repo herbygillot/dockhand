@@ -59,6 +59,11 @@ type adoptionMachine struct {
 }
 
 func (m adoptionMachine) Clone(ctx context.Context, source, destination string) error {
+	if exists, _, err := m.vm().LocalVM(ctx, destination); err != nil {
+		return err
+	} else if exists {
+		return fmt.Errorf("tart: refusing to overwrite existing VM %s", destination)
+	}
 	_, err := m.commandWithGuard(ctx, nil, true, m.guard, "clone", source, destination)
 	return err
 }

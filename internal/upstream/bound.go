@@ -21,6 +21,13 @@ type Discovery struct {
 	port    macports.PortInfo
 }
 
+// BatchVersionProbe is a VersionProbe that also evaluates many candidates
+// in one interpreter, which a catalog of hundreds of releases needs; Bind
+// adopts it when the probe offers it.
+type BatchVersionProbe interface {
+	EvaluateVersions(context.Context, []string) ([]string, error)
+}
+
 func (s *Service) Bind(probe VersionProbe) (*Discovery, error) {
 	if s == nil || probe == nil {
 		return nil, fmt.Errorf("upstream: service and source version probe are required")
@@ -28,9 +35,7 @@ func (s *Service) Bind(probe VersionProbe) (*Discovery, error) {
 	bound := *s
 	bound.EvaluateVersion = probe.EvaluateVersion
 	bound.EvaluateVersions = nil
-	if batch, ok := probe.(interface {
-		EvaluateVersions(context.Context, []string) ([]string, error)
-	}); ok {
+	if batch, ok := probe.(BatchVersionProbe); ok {
 		bound.EvaluateVersions = batch.EvaluateVersions
 	}
 	return &Discovery{service: bound, port: probe.Port()}, nil

@@ -27,6 +27,7 @@ func TestImageDigestTracksContentDespiteRestoredModificationTime(t *testing.T) {
 	}
 	executable := filepath.Join(root, "tart")
 	testsupport.WriteExecutable(t, executable, `#!/bin/sh
+[ "$1" != get ] || { printf '%s\n' '{"Running":false,"State":"stopped","DiskFormat":"raw"}'; exit 0; }
 printf '%s\n' '[{"Name":"base","Source":"local","State":"stopped"}]'
 `)
 	p := &Provider{Config: Config{Home: root, Image: "base", ArtifactDirectory: filepath.Join(root, "artifacts"), Executable: executable, Platform: testPlatform}}
@@ -300,4 +301,22 @@ func TestRecordedVerifierIdentityRejectsChangedExecutionCode(t *testing.T) {
 	result, err = f.provider.Submit(t.Context(), f.request)
 	require.NoError(t, err)
 	require.Equal(t, verify.Admitted, result.State)
+}
+
+// An image with an ASIF disk is refused before anything clones it: a clone
+// that runs would keep Tart from listing every VM (openai/tart#1344).
+func TestASIFImageIsRefusedBeforeVerification(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	executable := filepath.Join(root, "tart")
+	testsupport.WriteExecutable(t, executable, `#!/bin/sh
+[ "$1" != get ] || { printf '%s\n' '{"Running":false,"State":"stopped","DiskFormat":"asif"}'; exit 0; }
+[ "$1" = list ] || exit 9
+printf '%s\n' '[{"Name":"base","Source":"local","State":"stopped"}]'
+`)
+	p := &Provider{Config: Config{Home: root, Image: "base", ArtifactDirectory: filepath.Join(root, "artifacts"), Executable: executable, Platform: testPlatform}}
+	_, err := p.describeEnvironment(t.Context())
+	require.ErrorIs(t, err, verify.ErrImageUnavailable)
+	require.ErrorContains(t, err, "base has an ASIF disk")
+	require.ErrorContains(t, err, "openai/tart#1344")
 }

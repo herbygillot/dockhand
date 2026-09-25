@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"github.com/herbygillot/dockhand/internal/git"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/outdated"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/stretchr/testify/require"
 )
@@ -106,9 +106,7 @@ func TestOutdatedSelectionValidation(t *testing.T) {
 }
 
 func TestOutdatedIndexedSelectionKeepsSourceAndCoverage(t *testing.T) {
-	if _, err := exec.LookPath("portindex"); err != nil {
-		t.Skip("MacPorts portindex required")
-	}
+	testsupport.MacPortsTool(t, "portindex")
 	t.Setenv("HOME", t.TempDir())
 	config, repo, downloads, _ := automaticCLI(t, "1.0")
 	head, tree, err := repo.Branch(t.Context(), "candidate")
@@ -161,9 +159,7 @@ func TestOutdatedIndexedSelectionKeepsSourceAndCoverage(t *testing.T) {
 }
 
 func TestOutdatedEmptySelectionAndDuplicatePorts(t *testing.T) {
-	if _, err := exec.LookPath("portindex"); err != nil {
-		t.Skip("MacPorts portindex required")
-	}
+	testsupport.MacPortsTool(t, "portindex")
 	t.Setenv("HOME", t.TempDir())
 	config, _, downloads, catalogs := automaticCLI(t, "1.0")
 	var out, stderr bytes.Buffer

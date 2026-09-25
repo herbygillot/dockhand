@@ -58,6 +58,15 @@ func (n *native) Environment(ctx context.Context) (Environment, error) {
 	if running {
 		return Environment{}, fmt.Errorf("tart: prepared image %s must be stopped", n.config.Image)
 	}
+	// Setup declines ASIF images; one made another way is declined here,
+	// before a clone of it runs and keeps Tart from listing any VM.
+	format, err := n.DiskFormat(ctx, n.config.Image)
+	if err != nil {
+		return Environment{}, err
+	}
+	if format != "raw" {
+		return Environment{}, fmt.Errorf("%w: %s has an %s disk, which dockhand declines until Tart can list its VMs while one runs (openai/tart#1344)", verify.ErrImageUnavailable, n.config.Image, strings.ToUpper(format))
+	}
 	names := []string{"config.json", "disk.img", "nvram.bin"}
 	stamp := func() (string, error) {
 		var text strings.Builder

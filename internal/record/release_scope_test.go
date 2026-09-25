@@ -1,6 +1,7 @@
 package record
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -32,4 +33,26 @@ func TestRequiredTargetsFollowTheCoverageIntent(t *testing.T) {
 	targets, err = JobSpec{Targets: []Target{a}}.RequiredTargets(nil)
 	require.NoError(t, err)
 	require.Equal(t, []Target{a}, targets, "without a scope the job's own targets are required")
+}
+
+// Shared-release authorization is needed for any member but the initiating
+// target, unless the member is an obsolete follower; an old record without
+// the flag decodes as needing it.
+func TestSharedReleaseAuthorizationExemptsOnlyFollowers(t *testing.T) {
+	t.Parallel()
+	subport := Target{Name: "kubectl-1.37", Portfile: "sysutils/kubectl/Portfile", Subport: "kubectl-1.37"}
+	stub := Target{Name: "kubectl", Portfile: subport.Portfile}
+	sibling := Target{Name: "kubectl-1.36", Portfile: subport.Portfile, Subport: "kubectl-1.36"}
+	var none *ReleaseScope
+	require.False(t, none.NeedsSharedRelease(subport.Name))
+	scope := &ReleaseScope{Input: ReleaseInput{Portfile: subport.Portfile}, Affected: []ReleaseMember{{Target: subport}, {Target: stub, MetadataOnly: true, Follower: true}}}
+	require.False(t, scope.NeedsSharedRelease(subport.Name))
+	scope.Affected = append(scope.Affected, ReleaseMember{Target: sibling})
+	require.True(t, scope.NeedsSharedRelease(subport.Name))
+	var decoded ReleaseMember
+	require.NoError(t, json.Unmarshal([]byte(`{"Target":{"Name":"kubectl"},"MetadataOnly":true}`), &decoded))
+	require.True(t, decoded.NeedsAuthorization(subport.Name))
+	encoded, err := json.Marshal(ReleaseMember{Target: subport})
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "Follower", "records without followers encode as before")
 }

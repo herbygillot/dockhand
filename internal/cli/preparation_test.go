@@ -19,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
 	"github.com/stretchr/testify/require"
 )
@@ -35,7 +36,6 @@ func TestBumpParsesOptionalVersionWithoutInitializingState(t *testing.T) {
 		var out bytes.Buffer
 		err := Run(t.Context(), args, Streams{Out: &out, Err: &out}, config)
 		require.Error(t, err)
-		require.NotErrorIs(t, err, errNotImplemented)
 		require.NotContains(t, err.Error(), "git ")
 	}
 	var out bytes.Buffer
@@ -84,10 +84,7 @@ func TestRevisionPreviewCLIUsesCommittedSourceWithoutStateOrProvider(t *testing.
 
 func preparationCLI(t *testing.T) (app.Config, *git.Repository, string) {
 	t.Helper()
-	executable, err := exec.LookPath("port-tclsh")
-	if err != nil {
-		t.Skip("MacPorts port-tclsh is required for CLI integration test")
-	}
+	executable := testsupport.MacPortsTclsh(t)
 	root := t.TempDir()
 	output, err := exec.CommandContext(t.Context(), "git", "init", "--quiet", "-b", "candidate", root).CombinedOutput()
 	require.NoError(t, err, "%s", output)
@@ -105,7 +102,8 @@ func preparationCLI(t *testing.T) (app.Config, *git.Repository, string) {
 	commit, err := repo.WriteCommit(t.Context(), git.Commit{Tree: tree, Message: "fixture", Author: sig, Committer: sig})
 	require.NoError(t, err)
 	require.NoError(t, repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/candidate", Desired: git.RefValue{Exists: true, Object: commit}}}))
-	config := app.Config{Repository: root, DBPath: filepath.Join(t.TempDir(), "absent", "state.db"), TclExecutable: executable}
+	// The installation named, never PATH's: its prefix supplies portindex.
+	config := app.Config{Repository: root, DBPath: filepath.Join(t.TempDir(), "absent", "state.db"), TclExecutable: executable, MacPortsPrefix: filepath.Dir(filepath.Dir(executable))}
 	require.NoError(t, repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/master", Desired: git.RefValue{Exists: true, Object: commit}}}))
 	for _, setting := range [][2]string{{"user.name", "Fixture"}, {"user.email", "fixture@example.invalid"}, {"url." + root + ".insteadOf", "https://github.com/macports/macports-ports.git"}} {
 		output, err = exec.CommandContext(t.Context(), "git", "-C", root, "config", setting[0], setting[1]).CombinedOutput()

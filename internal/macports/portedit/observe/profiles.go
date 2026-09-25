@@ -2,6 +2,7 @@ package observe
 
 import (
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
@@ -261,9 +262,11 @@ func profilesForBoundaries(majors map[int]bool, archDependent bool, native recor
 			}
 		}
 	}
+	// A boundary's neighbors can be a Darwin that never shipped, 26 among
+	// them, since the numbers are not consecutive; no Mac describes one.
 	var versions []int
 	for major := range majors {
-		if major <= current {
+		if _, err := macos.ProductForDarwin(major); err == nil && major <= current {
 			versions = append(versions, major)
 		}
 	}

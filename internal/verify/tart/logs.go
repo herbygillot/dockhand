@@ -31,15 +31,21 @@ func (p *Provider) ReadLog(ctx context.Context, run record.ProviderRun, offset i
 	if len(v.Result) > 0 {
 		return verify.LogChunk{}, verify.ErrLogUnavailable
 	}
-	reader, ok := o.machine.(interface {
-		ReadLog(context.Context, string, int64, int) ([]byte, error)
-	})
+	reader, ok := o.machine.(guestLogReader)
 	if !ok {
 		return verify.LogChunk{}, fmt.Errorf("tart: native log reader unavailable")
 	}
 	data, err = reader.ReadLog(ctx, v.Resource, offset, limit)
 	return verify.LogChunk{Data: data, Next: offset + int64(len(data))}, err
 }
+
+// guestLogReader is a machine that reads a running guest's build log,
+// which the provider's ReadLog falls back on before the result is copied
+// out.
+type guestLogReader interface {
+	ReadLog(context.Context, string, int64, int) ([]byte, error)
+}
+
 func (n *native) ReadLog(ctx context.Context, vm string, offset int64, limit int) ([]byte, error) {
 	log := guestDirectory + "/build.log"
 	script := fmt.Sprintf("if [ -f %s ]; then /usr/bin/tail -c +%d %s | /usr/bin/head -c %d; fi", log, offset+1, log, limit)

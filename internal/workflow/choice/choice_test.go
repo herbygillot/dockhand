@@ -177,7 +177,7 @@ func TestNamedPlatformsBuildInTartOnEach(t *testing.T) {
 	require.Len(t, resolved.PlatformBuilds, 1)
 	require.Equal(t, sonoma, resolved.PlatformBuilds[0].Platform)
 	require.True(t, resolved.PlatformBuilds[0].NeedsXcode, "the evaluated platform's Xcode answer applies to every platform")
-	require.True(t, local.options.Named, "a named release past the default is deliberate")
+	require.True(t, local.options.Named, "a missing image's refusal names the setup of the named release")
 	require.Equal(t, 2, local.calls)
 	require.Zero(t, remote.calls)
 

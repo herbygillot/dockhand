@@ -9,7 +9,14 @@ func agentURL() string {
 	return "https://github.com/openai/tart-guest-agent/releases/download/v" + tart.GuestAgentRelease + "/tart-guest-agent-darwin-all.tar.gz"
 }
 
-func agentPlist(label, mode, directory string) string {
+// agentPlist describes one of the guest agent's services. A log path, when
+// given, keeps what the service says: the daemon grows the guest's disk
+// with --resize-disk, and without a log its failures were silent.
+func agentPlist(label, mode, directory, log string) string {
+	logging := ""
+	if log != "" {
+		logging = fmt.Sprintf("<key>StandardOutPath</key><string>%s</string><key>StandardErrorPath</key><string>%s</string>\n", log, log)
+	}
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -17,14 +24,18 @@ func agentPlist(label, mode, directory string) string {
 <key>ProgramArguments</key><array><string>%s</string><string>%s</string></array>
 <key>EnvironmentVariables</key><dict><key>PATH</key><string>/opt/local/bin:/opt/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
 <key>WorkingDirectory</key><string>%s</string>
-<key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
+%s<key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
 </dict></plist>
-`, label, tart.GuestAgentPath, mode, directory)
+`, label, tart.GuestAgentPath, mode, directory, logging)
 }
 
+// agentDaemonLog is where the guest agent's daemon, and its disk resize,
+// log inside the guest.
+const agentDaemonLog = "/var/log/tart-guest-daemon.log"
+
 func agentInstallScript() string {
-	daemon := agentPlist("org.cirruslabs.tart-guest-daemon", "--run-daemon", "/var/empty")
-	agent := agentPlist("org.cirruslabs.tart-guest-agent", "--run-agent", "/Users/admin")
+	daemon := agentPlist("org.cirruslabs.tart-guest-daemon", "--run-daemon", "/var/empty", agentDaemonLog)
+	agent := agentPlist("org.cirruslabs.tart-guest-agent", "--run-agent", "/Users/admin", "")
 	return fmt.Sprintf(`set -eu
 archive=/tmp/tart-guest-agent.tar.gz
 /usr/bin/curl -fsSL -o "$archive" %s
