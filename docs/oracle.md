@@ -29,14 +29,25 @@ It records each answer with its source. A refusal goes into a ledger
 outside the Portfile's control flow, which `catch` can't erase, and it
 makes the context inconclusive rather than guessed.
 
-It replaces four mechanisms:
+It replaces four mechanisms (located on the Mac, 2026-09-25):
 
-- the platform variables overridden after init (`platform.tcl`);
-- the execution traces that record only with a Portfile frame on the
-  stack (`observation.tcl`);
-- the Linux model's stand-in `file`;
-- the hook grammar's own program list. Hooks stay judged statically
-  (decision 17), but the grammar and the dispatcher share one table.
+- **Platform overrides.** The platform variables overridden after init:
+  `::macports::override_vars`, applied in `observation.tcl`
+  (`observation_setup`) and `evaluator.tcl` (`model_platform`) from
+  `macports.PlatformVariables`. `platform.tcl` is not this: it is the
+  operand capture that profiles need, and it stays, or moves into the
+  dispatcher.
+- **Execution traces.** The traces in `observation.tcl` that record only
+  with a Portfile frame on the stack, and only after `PortSystem`.
+- **The stand-in `file`.** The Linux model's stand-in `file` in
+  `evaluator.tcl` (`model_worker`), with `ModelVariables`, used only off a
+  Mac.
+- **The hook grammar's tables.** Hooks stay judged statically (decision
+  17). The grammar has no program list: it refuses `exec` and `system`
+  outright, and admits commands by table (`fetchguard`'s
+  `hostReadCommands`, `harmlessBuiltins`, `fileReads`). Phase 2's
+  allowlist of read-only programs becomes a new table the two share, not
+  one taken over from the grammar.
 
 ## Why v3 needs it
 
