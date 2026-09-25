@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 // PlanID identifies a frozen verification plan.
 type PlanID string
@@ -87,9 +90,16 @@ type Plan struct {
 	// Environments are all required: several mean every one must pass.
 	Environments []Environment
 	// Targets are in dependency order.
-	Targets    []PlanTarget
-	Exclusions []Exclusion
-	Unresolved []Unresolved
+	Targets []PlanTarget
+	// Dependencies are each environment's dependencies among Targets, in
+	// Environments' order. A target's DependsOn is their union, which sets
+	// the one build order and what --only must add back; a guest blocks a
+	// target only on what it needs on its own platform (DependsOnIn).
+	// Empty for plans made before they were kept, where DependsOn serves
+	// every environment.
+	Dependencies []map[TargetID][]TargetID `json:",omitempty"`
+	Exclusions   []Exclusion
+	Unresolved   []Unresolved
 	// Omitted are the changed targets --only left out. The check doesn't
 	// build them, but submission still requires them: a narrowed check
 	// never shrinks what submit requires (Design v3 §7).
@@ -104,6 +114,15 @@ type Plan struct {
 // Runnable reports whether the plan may be checked: nothing is unresolved
 // and there is something to build somewhere.
 func (p Plan) Runnable() bool { return len(p.Unresolved) == 0 && len(p.Targets) > 0 }
+
+// DependsOnIn is what a target needs built first in one environment.
+func (p Plan) DependsOnIn(environment Environment, id TargetID) []TargetID {
+	if i := slices.Index(p.Environments, environment); i >= 0 && i < len(p.Dependencies) {
+		return p.Dependencies[i][id]
+	}
+	target, _ := p.Target(id)
+	return target.DependsOn
+}
 
 // Target finds a plan target by ID.
 func (p Plan) Target(id TargetID) (PlanTarget, bool) {
@@ -164,6 +183,19 @@ func (p Plan) Validate() error {
 			}
 		}
 		seen[target.ID] = true
+	}
+	if len(p.Dependencies) > 0 && len(p.Dependencies) != len(p.Environments) {
+		return invalid("plan %s has dependencies for %d environments, not %d", p.ID, len(p.Dependencies), len(p.Environments))
+	}
+	for _, dependencies := range p.Dependencies {
+		for id, needs := range dependencies {
+			target, ok := p.Target(id)
+			for _, need := range needs {
+				if !ok || !slices.Contains(target.DependsOn, need) {
+					return invalid("plan %s target %s needs %s on one platform but not in its DependsOn", p.ID, id, need)
+				}
+			}
+		}
 	}
 	for _, target := range p.Omitted {
 		if target.ID == "" || seen[target.ID] || target.Role != Changed {

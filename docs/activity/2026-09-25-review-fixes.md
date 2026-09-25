@@ -123,3 +123,48 @@ Tests:
 - `TestSetIndexRestoresARecordedIndexInASparseCheckout`.
 - `TestASavedPlanAppliesUntilTheBranchMoves` now also stages something
   after the plan.
+
+## 4. Each platform keeps its own dependencies
+
+The planner evaluated each environment, but once it had seen a port it
+skipped that port's dependencies in later environments. Every
+environment inherited the first one's graph. With arm64 first,
+`--only harbor-viewer` lost the changed libharbor that x86_64's
+harbor-viewer links, and reversing the environments changed the plan.
+
+- **Kept per platform.** The plan records `Dependencies`, each
+  environment's graph among its targets, in the environments' order, when
+  it has more than one environment. `Plan.DependsOnIn` answers for one
+  environment, falling back to `DependsOn` for plans made before.
+- **The union for the whole plan.** A target's `DependsOn` stays the union
+  across platforms. That is right for what `--only` must add back, since
+  the plan's targets are the same in every guest, and for the one build
+  order, which then satisfies each platform's.
+- **Each platform's own for a guest.** The runner blocks a target only on
+  what it needs on its own platform. The jobs providers receive carry that
+  platform's dependencies, not the union. The baseline plan carries them
+  over.
+- **Cycles only across platforms.** A cycle that exists only in the union,
+  such as A needing B on arm64 and B needing A on x86_64, leaves the plan
+  unresolved with its own message, "dependency cycle across platforms,
+  which no one platform has … check each platform on its own (--on)",
+  rather than guessing an order.
+
+`TestEachPlatformKeepsItsOwnDependencies` covers:
+
+- **Order-independent.** `--only harbor-viewer` keeps libharbor with
+  either environment first.
+- **Blocking.** libharbor failing leaves arm64's harbor-viewer built and
+  x86_64's blocked.
+- **Jobs.** Each job carries its own platform's dependencies.
+- **Cycles.** The cross-platform cycle is refused.
+
+`TestPlanValidation` refuses dependencies for the wrong number of
+environments, or one outside a target's `DependsOn`.
+
+## Validation
+
+The review's four probes, run against the tree after the fixes, all
+pass. They are kept as the regression tests above, in the tree's own
+words. `make test`, `make vet`, `make fmt-check`, `make lint` (0
+issues), and `make vendor-check` pass on the Mac.

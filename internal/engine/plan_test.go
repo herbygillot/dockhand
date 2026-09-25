@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/store"
 )
 
 // fakePorts stands in for MacPorts' evaluator: each directory's ports, and
@@ -207,4 +209,78 @@ func TestChangedSharedCodeIsSubstantive(t *testing.T) {
 		require.Equal(t, c.kind, plan.Targets[0].Kind, c.why)
 		require.Equal(t, c.kind == model.RevisionOnly, Acceptable(plan.Targets[0]), c.why)
 	}
+}
+
+// harborByPlatform is harborPorts, with harbor-viewer linking libharbor
+// only on x86_64, and, when crossed, libharbor and harbor-cli needing
+// each other on different platforms.
+type harborByPlatform struct {
+	fakePorts
+	crossed bool
+}
+
+func (p harborByPlatform) Ports(ctx context.Context, source model.Source, directory string, platform model.Platform) ([]macports.PortInfo, error) {
+	x86 := platform.Architecture == "x86_64"
+	switch {
+	case directory == "graphics/harbor-viewer" && !x86:
+		return []macports.PortInfo{port("harbor-viewer")}, nil
+	case directory == "graphics/harbor-viewer":
+		return []macports.PortInfo{port("harbor-viewer", "libharbor")}, nil
+	case p.crossed && directory == "devel/libharbor" && !x86:
+		return []macports.PortInfo{port("libharbor", "harbor-cli")}, nil
+	case p.crossed && directory == "devel/harbor-cli" && x86:
+		return []macports.PortInfo{port("harbor-cli", "libharbor")}, nil
+	case p.crossed && directory == "devel/harbor-cli":
+		return []macports.PortInfo{port("harbor-cli")}, nil
+	}
+	return p.fakePorts.Ports(ctx, source, directory, platform)
+}
+
+// Each platform keeps its own dependencies: --only adds back a changed
+// prerequisite any platform needs, whichever was evaluated first, and a
+// guest blocks a target only on what it needs on its own platform. From
+// the 2026-09-25 implementation review.
+func TestEachPlatformKeepsItsOwnDependencies(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	revision := harborBranch(t, e)
+	e.PortReader = harborByPlatform{fakePorts: harborPorts()}
+
+	for _, environments := range [][]model.Environment{{tahoeArm, tahoeX86}, {tahoeX86, tahoeArm}} {
+		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: environments, Only: []string{"harbor-viewer"}})
+		require.NoError(t, err)
+		library, included := plan.Target("libharbor")
+		require.True(t, included, "x86_64 needs the changed library, whichever platform comes first")
+		require.Equal(t, model.Prerequisite, library.Role)
+		require.Empty(t, plan.DependsOnIn(tahoeArm, "harbor-viewer"))
+		require.Equal(t, []model.TargetID{"libharbor"}, plan.DependsOnIn(tahoeX86, "harbor-viewer"))
+	}
+
+	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm, tahoeX86}})
+	require.NoError(t, err)
+	var branch model.Branch
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		branch, err = r.Branch(revision.Branch)
+		return err
+	}))
+	provider := &scriptedProvider{outcomes: map[model.TargetID]model.Outcome{"libharbor": model.OutcomeFailed}}
+	e.Providers = map[string]Provider{"command": provider}
+	queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
+	require.NoError(t, err)
+	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	got := outcomes(t, e, run)
+	require.Equal(t, model.OutcomePassed, got["harbor-viewer@arm64"], "arm64's harbor-viewer doesn't link libharbor, so its failure doesn't block it")
+	require.Equal(t, model.OutcomeBlocked, got["harbor-viewer@x86_64"])
+	for _, job := range provider.jobs {
+		i := slices.IndexFunc(job.Targets, func(target model.PlanTarget) bool { return target.ID == "harbor-viewer" })
+		require.GreaterOrEqual(t, i, 0)
+		require.Equal(t, plan.DependsOnIn(job.Environment, "harbor-viewer"), job.Targets[i].DependsOn, "a provider sees its own platform's dependencies")
+	}
+
+	e.PortReader = harborByPlatform{fakePorts: harborPorts(), crossed: true}
+	crossed, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm, tahoeX86}})
+	require.NoError(t, err)
+	require.Len(t, crossed.Unresolved, 1)
+	require.Contains(t, crossed.Unresolved[0].Reason, "dependency cycle across platforms, which no one platform has")
 }

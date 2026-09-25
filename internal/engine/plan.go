@@ -61,15 +61,20 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	}
 	scope := ScopeOf(changed)
 
+	// Each environment is evaluated for itself, and so are its
+	// dependencies: a port may need a changed library on one platform and
+	// not another.
 	type candidate struct {
 		target model.PlanTarget
-		deps   []string
+		// deps are the port's dependencies in each environment, in the
+		// plan's order.
+		deps [][]string
 	}
 	var candidates []candidate
-	seen := map[string]bool{}
+	index := map[string]int{}
 	excluded := map[string]int{}
 	add := func(directory string, kind model.TargetKind, role model.TargetRole) {
-		for _, environment := range plan.Environments {
+		for e, environment := range plan.Environments {
 			ports, err := reader.Ports(ctx, revision.Source, directory, environment.Platform)
 			if err != nil {
 				plan.Unresolved = append(plan.Unresolved, model.Unresolved{Target: model.Target{Name: directoryName(directory), Portfile: directory + "/Portfile"}, Reason: err.Error()})
@@ -84,15 +89,17 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 					plan.Exclusions = append(plan.Exclusions, model.Exclusion{Target: target, Platform: environment.Platform, Reason: reason})
 					excluded[port.Name]++
 				}
-				if seen[port.Name] {
-					continue
-				}
-				seen[port.Name] = true
 				var deps []string
 				for _, dependency := range port.Dependencies {
 					deps = append(deps, dependency.Port)
 				}
-				candidates = append(candidates, candidate{target: model.PlanTarget{ID: model.TargetID(port.Name), Target: target, Directory: directory, Kind: kind, Role: role}, deps: deps})
+				at, ok := index[port.Name]
+				if !ok {
+					at = len(candidates)
+					index[port.Name] = at
+					candidates = append(candidates, candidate{target: model.PlanTarget{ID: model.TargetID(port.Name), Target: target, Directory: directory, Kind: kind, Role: role}, deps: make([][]string, len(plan.Environments))})
+				}
+				candidates[at].deps[e] = deps
 			}
 		}
 	}
@@ -125,10 +132,21 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	for _, c := range candidates {
 		names[string(c.target.ID)] = true
 	}
+	needs := make([]map[model.TargetID][]model.TargetID, len(plan.Environments))
+	for e := range needs {
+		needs[e] = map[model.TargetID][]model.TargetID{}
+	}
 	for i := range candidates {
-		for _, dep := range candidates[i].deps {
-			if names[dep] && dep != string(candidates[i].target.ID) && !slices.Contains(candidates[i].target.DependsOn, model.TargetID(dep)) {
-				candidates[i].target.DependsOn = append(candidates[i].target.DependsOn, model.TargetID(dep))
+		id := candidates[i].target.ID
+		for e, deps := range candidates[i].deps {
+			for _, dep := range deps {
+				if !names[dep] || dep == string(id) || slices.Contains(needs[e][id], model.TargetID(dep)) {
+					continue
+				}
+				needs[e][id] = append(needs[e][id], model.TargetID(dep))
+				if !slices.Contains(candidates[i].target.DependsOn, model.TargetID(dep)) {
+					candidates[i].target.DependsOn = append(candidates[i].target.DependsOn, model.TargetID(dep))
+				}
 			}
 		}
 	}
@@ -144,11 +162,43 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	}
 	ordered, cycle := dependencyOrder(targets)
 	if cycle != nil {
-		plan.Unresolved = append(plan.Unresolved, model.Unresolved{Target: model.Target{Name: cycle[0]}, Reason: "dependency cycle: " + strings.Join(cycle, " → ")})
+		reason := "dependency cycle: " + strings.Join(cycle, " → ")
+		if !slices.ContainsFunc(needs, func(n map[model.TargetID][]model.TargetID) bool { return hasCycle(targets, n) }) {
+			reason = "dependency cycle across platforms, which no one platform has: " + strings.Join(cycle, " → ") + "; check each platform on its own (--on)"
+		}
+		plan.Unresolved = append(plan.Unresolved, model.Unresolved{Target: model.Target{Name: cycle[0]}, Reason: reason})
 		return plan, nil
 	}
 	plan.Targets = ordered
+	// Each environment's dependencies, among what the plan builds.
+	if len(plan.Environments) > 1 {
+		planned := map[model.TargetID]bool{}
+		for _, target := range ordered {
+			planned[target.ID] = true
+		}
+		plan.Dependencies = make([]map[model.TargetID][]model.TargetID, len(needs))
+		for e, n := range needs {
+			plan.Dependencies[e] = map[model.TargetID][]model.TargetID{}
+			for id, deps := range n {
+				if kept := slices.DeleteFunc(slices.Clone(deps), func(d model.TargetID) bool { return !planned[d] }); planned[id] && len(kept) > 0 {
+					plan.Dependencies[e][id] = kept
+				}
+			}
+		}
+	}
 	return plan, plan.Validate()
+}
+
+// hasCycle reports whether one environment's dependencies among targets
+// form a cycle.
+func hasCycle(targets []model.PlanTarget, needs map[model.TargetID][]model.TargetID) bool {
+	own := make([]model.PlanTarget, len(targets))
+	for i, target := range targets {
+		target.DependsOn = needs[target.ID]
+		own[i] = target
+	}
+	_, cycle := dependencyOrder(own)
+	return cycle != nil
 }
 
 func directoryName(directory string) string {

@@ -95,8 +95,22 @@ func (e *Engine) PlanBaseline(ctx context.Context, branch model.Branch, ports []
 	for _, target := range targets {
 		also = append(also, string(target.ID))
 	}
+	// Each environment's dependencies carry over, among the targets kept.
+	var dependencies []map[model.TargetID][]model.TargetID
+	for _, needs := range baseline.OfPlan.Dependencies {
+		kept := map[model.TargetID][]model.TargetID{}
+		for id, deps := range needs {
+			if !slices.Contains(also, string(id)) {
+				continue
+			}
+			if deps = slices.DeleteFunc(slices.Clone(deps), func(d model.TargetID) bool { return !slices.Contains(also, string(d)) }); len(deps) > 0 {
+				kept[id] = deps
+			}
+		}
+		dependencies = append(dependencies, kept)
+	}
 	baseline.Plan = model.Plan{ID: model.PlanID(store.NewID("plan")), Revision: baseline.Revision.ID, Environments: baseline.OfPlan.Environments,
-		Targets: targets, Also: also, Tests: baseline.OfPlan.Tests, CreatedAt: e.now()}
+		Targets: targets, Dependencies: dependencies, Also: also, Tests: baseline.OfPlan.Tests, CreatedAt: e.now()}
 	return baseline, baseline.Plan.Validate()
 }
 

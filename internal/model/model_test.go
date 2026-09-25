@@ -108,6 +108,13 @@ func TestPlanValidation(t *testing.T) {
 		"no directory":                   func(p *Plan) { p.Targets[0].Directory = "" },
 		"omitted and planned":            func(p *Plan) { p.Omitted[0].ID = "harbor-cli" },
 		"omitted but not changed":        func(p *Plan) { p.Omitted[0].Role = Also },
+		"dependencies for too few environments": func(p *Plan) {
+			p.Environments = append(p.Environments, Environment{Provider: "github"})
+			p.Dependencies = []map[TargetID][]TargetID{{}}
+		},
+		"a platform's dependency outside DependsOn": func(p *Plan) {
+			p.Dependencies = []map[TargetID][]TargetID{{"libharbor": {"harbor-cli"}}}
+		},
 	} {
 		p := plan()
 		p.Targets = append([]PlanTarget(nil), p.Targets...)

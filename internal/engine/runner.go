@@ -309,6 +309,9 @@ func (d *driver) environment(ctx context.Context, provider Provider, environment
 				continue
 			}
 			if result, ok := results[target.ID]; !ok || !result.Outcome.Complete() {
+				// A provider sees what the target needs on its own
+				// platform, not every platform's union.
+				target.DependsOn = d.plan.DependsOnIn(environment, target.ID)
 				remaining = append(remaining, target)
 			}
 		}
@@ -426,11 +429,10 @@ type build struct {
 func (b *build) Canceled() bool { return b.ctx.Err() != nil && !b.d.stopped() }
 
 func (b *build) Blocked(target model.TargetID) (model.TargetID, bool) {
-	planned, ok := b.d.plan.Target(target)
-	if !ok {
+	if _, ok := b.d.plan.Target(target); !ok {
 		return "", false
 	}
-	for _, dep := range planned.DependsOn {
+	for _, dep := range b.d.plan.DependsOnIn(b.execution.Environment, target) {
 		if result, ok := b.results[dep]; ok && result.Outcome != model.OutcomePassed {
 			return dep, true
 		}
