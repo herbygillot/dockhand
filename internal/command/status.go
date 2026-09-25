@@ -138,7 +138,7 @@ func attentionFor(s engine.BranchStatus) []attention {
 		return []attention{{mark: mark, branch: name, what: what, next: next}}
 	}
 	if s.Missing {
-		return row("!", "its Git branch is gone", "git branch "+s.Branch.Name+" <commit>")
+		return row("!", "its Git branch is gone", "dockhand adopt <new name>, if you renamed it")
 	}
 	if rows := pullRequestAttention(s); len(rows) > 0 {
 		return rows

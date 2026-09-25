@@ -109,7 +109,19 @@ func (p *SubmitPlan) Describe(body string) {
 }
 
 // Head is the fork's head as "owner/repo:branch".
-func (p SubmitPlan) Head() string { return p.HeadRepository + ":" + p.Branch.Name }
+func (p SubmitPlan) Head() string { return p.HeadRepository + ":" + p.RemoteBranch() }
+
+// RemoteBranch is the fork's branch submit pushes to: the one the pull
+// request was opened from, which renaming the local branch does not move
+// (a pull request's head can't change), else the branch's own name.
+func (p SubmitPlan) RemoteBranch() string {
+	if pr := p.Branch.PullRequest; pr != nil {
+		if _, name, ok := strings.Cut(pr.Head, ":"); ok && name != "" {
+			return name
+		}
+	}
+	return p.Branch.Name
+}
 
 // PlanSubmit works out what submit would push and publish, and why it
 // may not, changing nothing.
@@ -296,7 +308,7 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 		return fmt.Errorf("%s is not a fork of %s; dockhand pushes only to your fork", plan.HeadRepository, UpstreamRepository)
 	}
 	plan.PushURL = chosen.PushURL
-	if plan.RemoteHead, err = worktree.RemoteHead(ctx, plan.PushURL, plan.Branch.Name); err != nil {
+	if plan.RemoteHead, err = worktree.RemoteHead(ctx, plan.PushURL, plan.RemoteBranch()); err != nil {
 		return err
 	}
 	if plan.RemoteHead.Exists && plan.RemoteHead.Object != plan.Commit {
@@ -308,7 +320,7 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 	if pr := plan.Branch.PullRequest; pr != nil {
 		observed, err = f.Observe(ctx, record.PullRequestRef{Forge: forge.GitHub, Repository: pr.Repository, Number: pr.Number})
 	} else {
-		observed, err = f.Find(ctx, forge.PullRequestQuery{Repository: UpstreamRepository, HeadRepository: plan.HeadRepository, HeadBranch: plan.Branch.Name, BaseBranch: UpstreamBranch})
+		observed, err = f.Find(ctx, forge.PullRequestQuery{Repository: UpstreamRepository, HeadRepository: plan.HeadRepository, HeadBranch: plan.RemoteBranch(), BaseBranch: UpstreamBranch})
 	}
 	if err != nil {
 		return err
@@ -323,7 +335,7 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 	plan.Existing = &observed
 	if last := plan.Branch.PullRequest; last != nil && last.Pushed != "" && pr.RemoteHead != last.Pushed && string(pr.RemoteHead) != plan.Commit {
 		plan.Blocking = append(plan.Blocking, fmt.Sprintf("someone else pushed to #%d: it is at %s, and dockhand last pushed %s. Fetch it (git fetch %s %s) and compare before submitting again; nothing will be pushed over it",
-			pr.Ref.Number, short(pr.RemoteHead), short(last.Pushed), chosen.Name, plan.Branch.Name))
+			pr.Ref.Number, short(pr.RemoteHead), short(last.Pushed), chosen.Name, plan.RemoteBranch()))
 	}
 	return nil
 }
@@ -399,16 +411,16 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, e
 	}
 	var result Submitted
 	if !plan.RemoteHead.Exists || plan.RemoteHead.Object != plan.Commit {
-		if err := worktree.Push(ctx, git.Push{Remote: plan.PushURL, Branch: plan.Branch.Name, Commit: plan.Commit, ExpectedRemote: plan.RemoteHead}); err != nil {
+		if err := worktree.Push(ctx, git.Push{Remote: plan.PushURL, Branch: plan.RemoteBranch(), Commit: plan.Commit, ExpectedRemote: plan.RemoteHead}); err != nil {
 			var conflict *git.RefConflict
 			if errors.As(err, &conflict) {
-				return Submitted{}, fmt.Errorf("%w: %s changed on %s since submit looked; nothing was pushed", ErrStaleSubmit, plan.Branch.Name, plan.HeadRepository)
+				return Submitted{}, fmt.Errorf("%w: %s changed on %s since submit looked; nothing was pushed", ErrStaleSubmit, plan.RemoteBranch(), plan.HeadRepository)
 			}
 			return Submitted{}, err
 		}
 		result.Pushed = true
 	}
-	input := forge.PullRequestInput{Repository: plan.Repository, BaseBranch: UpstreamBranch, HeadBranch: plan.Branch.Name, HeadRepository: plan.HeadRepository,
+	input := forge.PullRequestInput{Repository: plan.Repository, BaseBranch: UpstreamBranch, HeadBranch: plan.RemoteBranch(), HeadRepository: plan.HeadRepository,
 		Desired: record.PublicationContent{Head: record.ObjectID(plan.Commit), Title: plan.Title, Body: plan.Body}, Draft: plan.Request.Draft}
 	var observed forge.PullRequestObservation
 	if plan.Existing == nil {

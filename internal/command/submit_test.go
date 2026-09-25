@@ -339,3 +339,34 @@ func TestSubmitAsksTheReviewersBack(t *testing.T) {
 	require.NotContains(t, out, "ryandesign")
 	require.Equal(t, []string{"ryandesign"}, g.rerequested, "never asks")
 }
+
+func TestAdoptRecognizesARenamedBranch(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	withGitHub(t, w)
+	_, _, err := dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.home, "src", "macports-branches", "jq-update")
+	t.Setenv("MACPORTS_TREE", dir)
+	_, _, err = dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "tidy")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+
+	gitRun(t, dir, "branch", "-m", "jq-1.8")
+	t.Setenv("MACPORTS_TREE", w.clone)
+	out, _, err := dockhand(t, "status", "--attention")
+	require.Equal(t, 3, ExitCode(err))
+	require.Contains(t, out, "! jq-update  its Git branch is gone  dockhand adopt <new name>, if you renamed it")
+
+	t.Setenv("MACPORTS_TREE", dir)
+	out, _, err = dockhand(t, "adopt")
+	require.NoError(t, err)
+	require.Equal(t, "Recognized jq-1.8 as dockhand/jq-update, renamed with Git: its record, checks, and history carry over.\n#34901's head can't move, so submit keeps pushing to ada/macports-ports:dockhand/jq-update.\n", out)
+	out, _, err = dockhand(t, "status")
+	require.NoError(t, err)
+	require.Contains(t, out, "#34901")
+}

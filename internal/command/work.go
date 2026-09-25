@@ -139,7 +139,8 @@ func adoptCommand(s *settings, streams Streams) *cobra.Command {
 		Short: "Track a branch you made, as it stands",
 		Long: `Tracks an existing branch, the one checked out here unless named, without
 moving or rewriting anything. Its base is where it leaves MacPorts' master,
-fetched just now.`,
+fetched just now. A tracked branch you renamed with Git is recognized, by
+its worktree or its pull request's last push, and keeps its record.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := s.open(cmd.Context())
@@ -155,9 +156,16 @@ fetched just now.`,
 			if err != nil {
 				return err
 			}
-			streams.emit(map[string]any{"branch": branchRef(adoption.Branch), "already": adoption.Already, "commits": adoption.Commits, "ports": nonNil(adoption.Scope.PortNames())})
+			streams.emit(map[string]any{"branch": branchRef(adoption.Branch), "already": adoption.Already, "renamed_from": adoption.Renamed, "commits": adoption.Commits, "ports": nonNil(adoption.Scope.PortNames())})
 			if adoption.Already {
 				fmt.Fprintf(streams.Out, "%s is already tracked.\n", adoption.Branch.Name)
+				return nil
+			}
+			if adoption.Renamed != "" {
+				fmt.Fprintf(streams.Out, "Recognized %s as %s, renamed with Git: its record, checks, and history carry over.\n", adoption.Branch.Name, adoption.Renamed)
+				if pr := adoption.Branch.PullRequest; pr != nil {
+					fmt.Fprintf(streams.Out, "#%d's head can't move, so submit keeps pushing to %s.\n", pr.Number, pr.Head)
+				}
 				return nil
 			}
 			fmt.Fprintf(streams.Out, "Adopted %s: %s above master %s%s.\n", adoption.Branch.Name, plural(adoption.Commits, "commit"), engine.Short(adoption.Branch.Base), describeScope(adoption.Scope))

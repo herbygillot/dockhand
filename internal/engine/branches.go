@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/git"
@@ -137,6 +138,9 @@ type Adoption struct {
 	Branch model.Branch
 	// Already is true when the branch was tracked before.
 	Already bool
+	// Renamed is the name a tracked branch had before it was renamed with
+	// Git; adopting it under its new name kept its record.
+	Renamed string
 	// Commits counts the commits above master.
 	Commits int
 	Scope   Scope
@@ -178,6 +182,29 @@ func (e *Engine) Adopt(ctx context.Context, request AdoptRequest) (Adoption, err
 	if err != nil || adoption.Already {
 		return adoption, err
 	}
+	if renamed, ok, err := e.renamedFrom(ctx, name, head); err != nil || ok {
+		if err != nil {
+			return adoption, err
+		}
+		adoption.Renamed = renamed.Name
+		renamed.Name = name
+		if checkouts, err := e.Repo.Checkouts(ctx, name); err == nil && len(checkouts) > 0 {
+			renamed.Worktree = checkouts[0]
+		}
+		if adoption.Commits, err = e.Repo.CountCommits(ctx, string(renamed.Base), head); err != nil {
+			return adoption, err
+		}
+		err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+			if err := tx.UpdateBranch(renamed); err != nil {
+				return err
+			}
+			_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: renamed.ID, Kind: "branch.rename", Level: model.LevelInfo,
+				Message: fmt.Sprintf("%s was renamed %s with Git; its record carries over", adoption.Renamed, name)})
+			return err
+		})
+		adoption.Branch = renamed
+		return adoption, err
+	}
 
 	master, err := e.fetchMaster(ctx)
 	if err != nil {
@@ -216,6 +243,50 @@ func (e *Engine) Adopt(ctx context.Context, request AdoptRequest) (Adoption, err
 		return err
 	})
 	return adoption, err
+}
+
+// renamedFrom finds the tracked branch a Git branch was renamed from: one
+// whose own Git branch is gone, and whose worktree now has this branch
+// checked out, or whose last push to its pull request this branch
+// contains. Two such branches are too many to guess between.
+func (e *Engine) renamedFrom(ctx context.Context, name, head string) (model.Branch, bool, error) {
+	var tracked []model.Branch
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		tracked, err = r.Branches(store.BranchFilter{States: []model.BranchState{model.BranchOpen, model.BranchArchived, model.BranchClosed}})
+		return err
+	}); err != nil {
+		return model.Branch{}, false, err
+	}
+	checkouts, err := e.Repo.Checkouts(ctx, name)
+	if err != nil {
+		return model.Branch{}, false, err
+	}
+	var found []model.Branch
+	for _, branch := range tracked {
+		if _, _, err := e.Repo.Branch(ctx, branch.Name); !errors.Is(err, git.ErrBranchMissing) {
+			continue
+		}
+		sameWorktree := branch.Worktree != "" && slices.Contains(checkouts, branch.Worktree)
+		containsPush := false
+		if pr := branch.PullRequest; pr != nil && pr.Pushed != "" {
+			containsPush, _ = e.Repo.IsAncestor(ctx, string(pr.Pushed), head)
+		}
+		if sameWorktree || containsPush {
+			found = append(found, branch)
+		}
+	}
+	switch len(found) {
+	case 0:
+		return model.Branch{}, false, nil
+	case 1:
+		return found[0], true, nil
+	}
+	var names []string
+	for _, branch := range found {
+		names = append(names, branch.Name)
+	}
+	return model.Branch{}, false, fmt.Errorf("%s could be %s, each renamed with Git; dockhand can't tell which, so it tracks neither", name, strings.Join(names, " or "))
 }
 
 // Resolve finds a tracked branch by the name a person typed: the Git name,
