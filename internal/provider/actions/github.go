@@ -2,6 +2,7 @@ package actions
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -78,6 +79,19 @@ func (g GitHub) Rerun(ctx context.Context, repository string, id int64) error {
 		return err
 	}
 	_, err = service.RerunFailedJobsByID(ctx, owner, name, id)
+	return githubapi.RateLimitError(err)
+}
+
+func (g GitHub) Cancel(ctx context.Context, repository string, id int64) error {
+	service, owner, name, err := g.service(ctx, repository)
+	if err != nil {
+		return err
+	}
+	_, err = service.CancelWorkflowRunByID(ctx, owner, name, id)
+	// GitHub answers 202: the run will stop.
+	if accepted := new(gh.AcceptedError); errors.As(err, &accepted) {
+		return nil
+	}
 	return githubapi.RateLimitError(err)
 }
 

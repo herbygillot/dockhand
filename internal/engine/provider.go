@@ -53,4 +53,9 @@ type Build interface {
 	Record(result model.TargetResult) error
 	// Progress reports a step to whoever is watching.
 	Progress(message string)
+	// Canceled reports, once the context is done, that the run was
+	// canceled or interrupted for good, rather than its driver stopping
+	// with the run left for the next one: only then does a provider stop
+	// work it started elsewhere.
+	Canceled() bool
 }

@@ -32,5 +32,5 @@ Design v3 §7: `--on github` builds with MacPorts' own workflow, in your fork. T
 
 ## Left for later
 
-- `clean` doesn't yet remove `dockhand-check/` branches from your fork.
-- Cancelling a check doesn't cancel the GitHub run.
+- `clean` doesn't yet remove `dockhand-check/` branches from your fork. (Done the same day, [note](2026-09-25-github-clean-and-cancel.md).)
+- Cancelling a check doesn't cancel the GitHub run. (Done the same day, same note.)

@@ -423,6 +423,8 @@ type build struct {
 	results   map[model.TargetID]model.TargetResult
 }
 
+func (b *build) Canceled() bool { return b.ctx.Err() != nil && !b.d.stopped() }
+
 func (b *build) Blocked(target model.TargetID) (model.TargetID, bool) {
 	planned, ok := b.d.plan.Target(target)
 	if !ok {

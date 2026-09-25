@@ -28,8 +28,13 @@ type CleanStep struct {
 	kind     string
 	path     string
 	remote   string
+	name     string
 	expected string
 }
+
+// CheckBranchPrefix names the branches the github provider pushes to your
+// fork, one per commit it checks.
+const CheckBranchPrefix = "dockhand-check/"
 
 // CleanBranch is what clean would do for one merged branch.
 type CleanBranch struct {
@@ -136,8 +141,84 @@ func (e *Engine) planCleanBranch(ctx context.Context, branch model.Branch) (Clea
 		if step.What != "" {
 			plan.Steps = append(plan.Steps, step)
 		}
+		checks, err := e.planCleanChecks(ctx, branch, repository)
+		if err != nil {
+			return plan, err
+		}
+		plan.Steps = append(plan.Steps, checks...)
 	}
 	return plan, nil
+}
+
+// planCleanChecks finds the branches the github provider pushed to your
+// fork for the branch's checks, one per commit checked, each removed only
+// while it still holds that commit.
+func (e *Engine) planCleanChecks(ctx context.Context, branch model.Branch, repository string) ([]CleanStep, error) {
+	var revisions []model.Revision
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		runs, err := r.Runs(store.RunFilter{Branch: branch.ID})
+		if err != nil {
+			return err
+		}
+		for _, run := range runs {
+			plan, err := r.Plan(run.Plan)
+			if err != nil {
+				return err
+			}
+			if !slices.ContainsFunc(plan.Environments, func(e model.Environment) bool { return e.Provider == "github" }) {
+				continue
+			}
+			revision, err := r.Revision(run.Revision)
+			if err != nil {
+				return err
+			}
+			revisions = append(revisions, revision)
+		}
+		return nil
+	}); err != nil || len(revisions) == 0 {
+		return nil, err
+	}
+	remote, remoteErr := e.remoteFor(ctx, repository)
+	var steps []CleanStep
+	seen := map[string]bool{}
+	for _, revision := range revisions {
+		commit := string(revision.Source.Commit)
+		if revision.Kind == model.RevisionSnapshot {
+			// A snapshot's commit is kept under refs/dockhand/revisions
+			// while checks use it; without it, nothing was pushed.
+			value, err := e.Repo.ReadRef(ctx, "refs/dockhand/revisions/"+string(revision.ID))
+			if err != nil {
+				return nil, err
+			}
+			if !value.Exists {
+				continue
+			}
+			commit = value.Object
+		}
+		if len(commit) < 12 || seen[commit] {
+			continue
+		}
+		seen[commit] = true
+		name := CheckBranchPrefix + commit[:12]
+		step := CleanStep{What: repository + ":" + name, kind: "check", name: name, expected: commit}
+		if remoteErr != nil {
+			step.Kept = remoteErr.Error()
+			steps = append(steps, step)
+			continue
+		}
+		step.remote = remote
+		value, err := e.Repo.RemoteHead(ctx, remote, name)
+		switch {
+		case err != nil:
+			step.Kept = "it could not be read: " + err.Error()
+		case !value.Exists:
+			continue
+		case value.Object != commit:
+			step.Kept = "it has moved since the check"
+		}
+		steps = append(steps, step)
+	}
+	return steps, nil
 }
 
 // dirty says why a worktree holds work of its own: uncommitted edits to
@@ -210,6 +291,8 @@ func (e *Engine) ApplyClean(ctx context.Context, plans []CleanBranch) ([]CleanBr
 			case "fork":
 				_, name, _ := strings.Cut(plan.Branch.PullRequest.Head, ":")
 				err = e.Repo.DeleteRemoteBranch(ctx, step.remote, name, git.RefValue{Exists: true, Object: step.expected})
+			case "check":
+				err = e.Repo.DeleteRemoteBranch(ctx, step.remote, step.name, git.RefValue{Exists: true, Object: step.expected})
 			}
 			if err != nil {
 				var conflict *git.RefConflict

@@ -28,8 +28,9 @@ import (
 // ports on push.
 const Workflow = "main.yml"
 
-// BranchPrefix names the branches the provider pushes to your fork.
-const BranchPrefix = "dockhand-check/"
+// BranchPrefix names the branches the provider pushes to your fork; clean
+// removes a merged branch's.
+const BranchPrefix = engine.CheckBranchPrefix
 
 // Run is one run of the workflow, at its latest attempt.
 type Run struct {
@@ -55,6 +56,8 @@ type API interface {
 	Run(ctx context.Context, repository string, id int64) (Run, error)
 	// Rerun runs the run's unsuccessful jobs again, as a new attempt.
 	Rerun(ctx context.Context, repository string, id int64) error
+	// Cancel stops a run that has not finished.
+	Cancel(ctx context.Context, repository string, id int64) error
 	Jobs(ctx context.Context, repository string, id int64, attempt int) ([]RunnerJob, error)
 	JobLog(ctx context.Context, repository string, job int64) ([]byte, error)
 }
@@ -134,6 +137,15 @@ func (p *Provider) Execute(ctx context.Context, job engine.Job, build engine.Bui
 			return err
 		}
 	}
+	// A canceled check cancels its run; a driver that is only stopping
+	// leaves it, for the next driver to find again.
+	defer func() {
+		if ctx.Err() != nil && build.Canceled() && run.Status != "completed" {
+			stopping, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			defer cancel()
+			_ = p.API.Cancel(stopping, fork.Repository, run.ID)
+		}
+	}()
 	// A run that stopped short of building, or whose failure an earlier
 	// attempt found no port to blame for, runs again rather than being read
 	// again.

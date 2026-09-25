@@ -30,4 +30,6 @@ on = ["github"]   # makes it check's default
 
 A run that was cancelled, timed out, or never started building is run again (only its failed jobs) instead of being read. So is a run that failed without naming a port, once: it counts as trouble with the environment, and a later attempt reruns it. A port's own failure is a verdict and is not retried.
 
+`dockhand cancel` (or `check --replace`) cancels the run on GitHub too. A `serve` that stops leaves the run going, and the next `serve` picks it up again. Once a branch is merged, `clean` removes its `dockhand-check/` branches from your fork, as long as each still holds the commit that was checked.
+
 The workflow builds only what the commit changes. A port that `--also` adds but the commit doesn't change isn't built there. Its result stays "not run", and the check says why.

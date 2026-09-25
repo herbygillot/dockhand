@@ -7,10 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/provider/actions"
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // fakeActions stands in for GitHub Actions in your fork: a push of a
@@ -24,6 +26,10 @@ type fakeActions struct {
 	run        *actions.Run
 	looks      int
 	reruns     int
+	canceled   int
+	// hold keeps the run in progress, calling hold at each look, until
+	// it returns false.
+	hold func() bool
 }
 
 func (f *fakeActions) pushed(branch, commit string) bool {
@@ -47,6 +53,10 @@ func (f *fakeActions) Run(_ context.Context, _ string, id int64) (actions.Run, e
 	case "queued":
 		f.run.Status = "in_progress"
 	case "in_progress":
+		if f.hold != nil && f.hold() {
+			time.Sleep(10 * time.Millisecond)
+			break
+		}
 		f.run.Status, f.run.Conclusion = "completed", f.conclusion[f.run.Attempt-1]
 	}
 	return *f.run, nil
@@ -56,6 +66,12 @@ func (f *fakeActions) Rerun(_ context.Context, _ string, id int64) error {
 	f.reruns++
 	f.run.Attempt++
 	f.run.Status, f.run.Conclusion = "queued", ""
+	return nil
+}
+
+func (f *fakeActions) Cancel(_ context.Context, repository string, id int64) error {
+	f.canceled++
+	f.run.Status, f.run.Conclusion = "completed", "cancelled"
 	return nil
 }
 
@@ -89,7 +105,7 @@ func built(port string, testsFail bool) string {
 }
 
 // githubBranch starts jq-update with an update of jq, ready to check.
-func githubBranch(t *testing.T) *fakeActions {
+func githubBranch(t *testing.T) (*fakeActions, world) {
 	t.Helper()
 	w := newWorld(t)
 	versioned(t, w)
@@ -104,11 +120,11 @@ func githubBranch(t *testing.T) *fakeActions {
 	g := withGitHub(t, w)
 	f := &fakeActions{fork: g.fork}
 	withActions(t, f)
-	return f
+	return f, w
 }
 
 func TestGitHubBuildsWithMacPortsWorkflowInYourFork(t *testing.T) {
-	f := githubBranch(t)
+	f, _ := githubBranch(t)
 	f.logs = []map[string]string{{"build (macos-14)": built("jq", false), "build (macos-15)": built("jq", true)}}
 	f.conclusion = []string{"success"}
 
@@ -136,7 +152,7 @@ func TestGitHubBuildsWithMacPortsWorkflowInYourFork(t *testing.T) {
 }
 
 func TestGitHubRunsAFailureNoPortExplainsAgain(t *testing.T) {
-	f := githubBranch(t)
+	f, _ := githubBranch(t)
 	// The first attempt dies before listing a port; the rerun builds jq.
 	f.logs = []map[string]string{{"build (macos-14)": "2026-09-25T10:00:00.0Z ##[error]bootstrap failed\n"}, {"build (macos-14)": built("jq", false)}}
 	f.conclusion = []string{"failure", "success"}
@@ -150,7 +166,7 @@ func TestGitHubRunsAFailureNoPortExplainsAgain(t *testing.T) {
 }
 
 func TestGitHubReadsAFailedPortsPhase(t *testing.T) {
-	f := githubBranch(t)
+	f, _ := githubBranch(t)
 	f.logs = []map[string]string{{"build (macos-14)": built("jq", false), "build (macos-15)": "2026-09-25T10:00:01.0Z ##[group]Listing subports\n2026-09-25T10:00:01.1Z jq\n2026-09-25T10:00:01.2Z ##[endgroup]\n2026-09-25T10:04:00.0Z ##[error]Failed to install jq\n"}}
 	f.conclusion = []string{"failure"}
 
@@ -158,4 +174,50 @@ func TestGitHubReadsAFailedPortsPhase(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, errs, "github: jq failed at install")
 	require.Equal(t, 0, f.reruns)
+}
+
+func TestCancelingAGitHubCheckCancelsItsRun(t *testing.T) {
+	f, _ := githubBranch(t)
+	f.logs = []map[string]string{{"build (macos-14)": built("jq", false)}}
+	f.conclusion = []string{"success"}
+	asked := false
+	f.hold = func() bool {
+		if !asked {
+			asked = true
+			_, _, err := dockhand(t, "cancel", "check-1")
+			require.NoError(t, err)
+		}
+		return true
+	}
+
+	_, errs, err := dockhand(t, "check", "--on", "github")
+	require.Error(t, err, errs)
+	require.Equal(t, 1, f.canceled)
+}
+
+func TestCleanRemovesTheCheckBranchesInYourFork(t *testing.T) {
+	f, w := githubBranch(t)
+	f.logs = []map[string]string{{"build (macos-14)": built("jq", false)}}
+	f.conclusion = []string{"success"}
+	_, errs, err := dockhand(t, "check", "--on", "github")
+	require.NoError(t, err, errs)
+	checked := strings.TrimSpace(gitRun(t, f.fork, "for-each-ref", "--format=%(refname:short)", "refs/heads/dockhand-check/"))
+	require.NotEmpty(t, checked)
+
+	_, _, err = dockhand(t, "tidy")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	g := testForge(nil).(*fakeGitHub)
+	g.prs[0].State = record.PullRequestMerged
+	t.Setenv("MACPORTS_TREE", w.clone)
+	_, _, err = dockhand(t, "status", "--refresh")
+	require.NoError(t, err)
+
+	out, _, err := dockhand(t, "clean")
+	require.NoError(t, err)
+	require.Contains(t, out, "  remove   ada/macports-ports:"+checked+"\n")
+	_, _, err = dockhand(t, "clean", "--yes")
+	require.NoError(t, err)
+	require.Empty(t, strings.TrimSpace(gitRun(t, f.fork, "for-each-ref", "refs/heads/dockhand-check/")))
 }
