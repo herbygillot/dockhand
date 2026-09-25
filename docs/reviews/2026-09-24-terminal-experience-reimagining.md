@@ -1,5 +1,8 @@
 # Dockhand reimagined: a terminal workspace for MacPorts contributions
 
+> **Adopted, 2026-09-25, as the spine of [Design v3](../design-v3.md)**, with the changes listed in its §14 and §15.
+
+
 2026-09-24. Independent product proposal, not an accepted contract or an
 implementation plan. Prepared after reading the contracts review, its direction
 record, the changeset roadmap review, and the earlier new-user exercise.

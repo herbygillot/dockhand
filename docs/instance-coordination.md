@@ -1,5 +1,8 @@
 # Instance Coordination
 
+> **Settled, 2026-09-25, in [Design v3 §11](design-v3.md#11-serve-the-queue-and-instance-coordination)**: sessions with pid-and-start-time liveness, fenced leases, one `serve` leader with standbys, controls applied by whoever can, and an event journal in the database. The socket service (option 1) stays unbuilt. The discussion below is kept as its record.
+
+
 A design discussion from 2026-09-18, recorded before any of it is built. Nothing here is implemented; the [roadmap](roadmap.md) lists it under work that needs design.
 
 ## The idea

@@ -1,5 +1,8 @@
 # Dockhand, reimagined: the terminal experience
 
+> **Superseded, 2026-09-25, by [Design v3](../design-v3.md)**, which takes the Codex proposal as its spine and carries over this draft's MacPorts specifics, `create` from a URL, `submit --passing`, and the attention list. Kept as the record of how the design got there.
+
+
 A proposal, written 2026-09-24. None of it is implemented. It asks what dockhand would feel like if it had been designed around **changesets** from its first command, rather than around a single port. It starts from the [contracts review](../reviews/2026-09-23-contracts-review.md), which found that "a contribution is one port directory and one commit" (§3.1) is the largest capability the current design excludes. Today's commands are used only as evidence: what worked, what confused people, and what the exercises taught ([messaging scan](../reviews/2026-09-19-messaging-scan.md), [deno exercise](../reviews/2026-09-16-new-user-deno-exercise.md), [output design](../output.md)). They are not a constraint.
 
 It is written for one maintainer on one Mac, keeping many ports current. Decisions made in review are recorded in [§11](#11-decisions-and-open-questions).
