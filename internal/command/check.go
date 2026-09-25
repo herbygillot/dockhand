@@ -242,6 +242,13 @@ func writePlan(out io.Writer, plan model.Plan) {
 	if len(extra) > 0 {
 		fmt.Fprintf(out, "Also        %s\n", strings.Join(extra, ", "))
 	}
+	if len(plan.Omitted) > 0 {
+		var omitted []string
+		for _, target := range plan.Omitted {
+			omitted = append(omitted, target.Target.Name)
+		}
+		fmt.Fprintf(out, "Left out    %s, by --only; submit still needs them checked\n", strings.Join(omitted, ", "))
+	}
 	var on []string
 	for _, environment := range plan.Environments {
 		on = append(on, environmentWords(environment))

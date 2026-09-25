@@ -138,7 +138,7 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 		targets = append(targets, c.target)
 	}
 	if len(request.Only) > 0 {
-		if targets, err = narrow(targets, request.Only); err != nil {
+		if targets, plan.Omitted, err = narrow(targets, request.Only); err != nil {
 			return plan, err
 		}
 	}
@@ -203,8 +203,9 @@ func (e *Engine) targetKind(ctx context.Context, before, after, directory string
 }
 
 // narrow keeps the named changed targets and adds back the changed
-// prerequisites they need, marked as such.
-func narrow(targets []model.PlanTarget, only []string) ([]model.PlanTarget, error) {
+// prerequisites they need, marked as such. It returns the changed targets
+// it left out, which submission still requires.
+func narrow(targets []model.PlanTarget, only []string) (narrowed, omitted []model.PlanTarget, err error) {
 	byID := map[model.TargetID]model.PlanTarget{}
 	for _, target := range targets {
 		byID[target.ID] = target
@@ -222,17 +223,18 @@ func narrow(targets []model.PlanTarget, only []string) ([]model.PlanTarget, erro
 	for _, name := range only {
 		target, ok := byID[model.TargetID(name)]
 		if !ok || target.Role != model.Changed {
-			return nil, fmt.Errorf("--only %s: the branch does not change it; --also builds an unchanged port", name)
+			return nil, nil, fmt.Errorf("--only %s: the branch does not change it; --also builds an unchanged port", name)
 		}
 		keep[target.ID] = model.Changed
 	}
 	for _, name := range only {
 		visit(model.TargetID(name))
 	}
-	var narrowed []model.PlanTarget
 	for _, target := range targets {
 		role, ok := keep[target.ID]
 		if !ok && target.Role != model.Also {
+			target.DependsOn = nil
+			omitted = append(omitted, target)
 			continue
 		}
 		if ok {
@@ -240,7 +242,7 @@ func narrow(targets []model.PlanTarget, only []string) ([]model.PlanTarget, erro
 		}
 		narrowed = append(narrowed, target)
 	}
-	return narrowed, nil
+	return narrowed, omitted, nil
 }
 
 // dependencyOrder puts each target after the targets it depends on,

@@ -33,7 +33,8 @@ type Passing struct {
 // PassingBranches is the one definition of a branch that passed and is
 // ready to submit, for submit --passing and for serve: it has commits and
 // a finished check, its pull request doesn't already have its head, and
-// that check passed for exactly its committed files.
+// the checks of exactly its committed files built every changed target
+// and passed, whatever --only narrowed.
 func (e *Engine) PassingBranches(ctx context.Context) (Passing, error) {
 	statuses, err := e.Status(ctx)
 	if err != nil {
@@ -43,7 +44,7 @@ func (e *Engine) PassingBranches(ctx context.Context) (Passing, error) {
 	for _, status := range statuses {
 		switch {
 		case status.Missing || status.Commits == 0 || status.Latest == nil || status.Pushed():
-		case status.Latest.State == model.RunPassed && status.Current && len(status.Edited) == 0:
+		case status.Latest.State == model.RunPassed && status.Current && len(status.Edited) == 0 && status.Evidence != nil && len(status.Evidence.Failed()) == 0:
 			passing.Ready = append(passing.Ready, status)
 		default:
 			passing.Others++

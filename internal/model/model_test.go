@@ -84,7 +84,8 @@ func plan() Plan {
 			{ID: "harbor-cli", Target: Target{Name: "harbor-cli"}, Directory: "devel/harbor-cli", Kind: RevisionOnly, Role: Changed, DependsOn: []TargetID{"libharbor"}},
 			{ID: "harbor-tools", Target: Target{Name: "harbor-tools"}, Directory: "devel/harbor-tools", Kind: Unchanged, Role: Also, DependsOn: []TargetID{"libharbor"}},
 		},
-		Only: []string{"harbor-cli"}, Also: []string{"harbor-tools"},
+		Omitted: []PlanTarget{{ID: "harbor-viewer", Target: Target{Name: "harbor-viewer"}, Directory: "graphics/harbor-viewer", Kind: Substantive, Role: Changed}},
+		Only:    []string{"harbor-cli"}, Also: []string{"harbor-tools"},
 	}
 }
 
@@ -105,9 +106,12 @@ func TestPlanValidation(t *testing.T) {
 		"no environment":                 func(p *Plan) { p.Environments = nil },
 		"unknown test policy":            func(p *Plan) { p.Tests = "sometimes" },
 		"no directory":                   func(p *Plan) { p.Targets[0].Directory = "" },
+		"omitted and planned":            func(p *Plan) { p.Omitted[0].ID = "harbor-cli" },
+		"omitted but not changed":        func(p *Plan) { p.Omitted[0].Role = Also },
 	} {
 		p := plan()
 		p.Targets = append([]PlanTarget(nil), p.Targets...)
+		p.Omitted = append([]PlanTarget(nil), p.Omitted...)
 		p.Environments = append([]Environment(nil), p.Environments...)
 		change(&p)
 		require.ErrorIs(t, p.Validate(), ErrInvalid, name)

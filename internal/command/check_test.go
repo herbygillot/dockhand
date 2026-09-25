@@ -1,6 +1,7 @@
 package command
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -86,4 +87,17 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	require.Equal(t, 2, ExitCode(err), "a failed check exits 2")
 	require.ErrorContains(t, err, "check-3 failed for snapshot 1: jq did not pass. Logs: dockhand logs check-3")
 	require.Contains(t, out, "  jq  ✗ failed at install\n")
+}
+
+// A narrowed plan says what --only left out, and that submit still needs
+// it checked (Design v3 §7).
+func TestCheckPlanNamesWhatOnlyLeftOut(t *testing.T) {
+	var out bytes.Buffer
+	writePlan(&out, model.Plan{
+		Environments: []model.Environment{{Provider: "command"}},
+		Targets:      []model.PlanTarget{{ID: "jq", Target: model.Target{Name: "jq"}, Kind: model.Substantive, Role: model.Changed}},
+		Omitted:      []model.PlanTarget{{ID: "libharbor", Target: model.Target{Name: "libharbor"}, Kind: model.Substantive, Role: model.Changed}},
+		Tests:        model.TestsDeclared,
+	})
+	require.Contains(t, out.String(), "Changed     jq\nLeft out    libharbor, by --only; submit still needs them checked\n")
 }

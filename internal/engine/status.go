@@ -140,11 +140,11 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 		}
 		status.LatestRevision = &revision
 		status.Current = string(revision.Source.Tree) == status.Tree && revision.Source.Base == branch.Base
-		plan, err := r.Plan(status.Latest.Plan)
+		checks, err := treeRuns(r, branch.ID, revision.Source.Tree)
 		if err != nil {
 			return err
 		}
-		evidence, err := runEvidence(r, *status.Latest, plan)
+		evidence, err := treeEvidence(r, *status.Latest, checks)
 		status.Evidence = &evidence
 		return err
 	})

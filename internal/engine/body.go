@@ -113,7 +113,15 @@ func ownedSections(facts bodyFacts) string {
 			}
 			fmt.Fprintln(&b)
 		}
-		fmt.Fprintf(&b, "\nChecked by dockhand %s.\n", evidence.Run.Name())
+		checked := evidence.Run.Name()
+		if len(evidence.Earlier) > 0 {
+			var earlier []string
+			for _, run := range evidence.Earlier {
+				earlier = append(earlier, run.Name())
+			}
+			checked += ", with results from " + strings.Join(earlier, " and ") + " for the same files"
+		}
+		fmt.Fprintf(&b, "\nChecked by dockhand %s.\n", checked)
 	}
 	fmt.Fprintf(&b, "\n%s\n\nHave you\n\n", verificationHeading)
 	built := evidence != nil && !facts.NoCheck && allBuilt(*evidence, facts.Accepted)

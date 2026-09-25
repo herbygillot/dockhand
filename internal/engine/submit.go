@@ -250,6 +250,8 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan) error {
 			return fmt.Errorf("--accept %s: %s checked no port %s", port, evidence.Run.Name(), port)
 		case evidence.Targets[i].Passed:
 			return fmt.Errorf("--accept %s: it passed in %s; there is nothing to accept", port, evidence.Run.Name())
+		case evidence.Targets[i].Unchecked && evidence.Targets[i].Target.Role != model.Also:
+			return fmt.Errorf("--accept %s: no check of these files built it, so there is no failure to accept; dockhand check builds it", port)
 		case !Acceptable(evidence.Targets[i].Target):
 			return fmt.Errorf("--accept %s: %s is a changed port, and a changed port that fails is shared as a draft (--draft), never accepted", port, port)
 		}

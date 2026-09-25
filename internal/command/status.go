@@ -170,7 +170,15 @@ func attentionFor(s engine.BranchStatus) []attention {
 	case model.RunAttention:
 		return row("!", run.Name()+" needs attention: "+run.Detail, "dockhand logs "+run.Name())
 	case model.RunPassed:
+		var unchecked []string
+		for _, target := range s.Evidence.Unchecked() {
+			if target.Target.Role != model.Also {
+				unchecked = append(unchecked, target.Target.Target.Name)
+			}
+		}
 		switch {
+		case len(unchecked) > 0:
+			return row("!", fmt.Sprintf("%s passed, but no check of these files built %s", run.Name(), strings.Join(unchecked, ", ")), "dockhand check --branch "+name)
 		case len(s.Edited) > 0:
 			return row("·", engine.Describe(*s.LatestRevision)+" passed; commit it for review", "dockhand tidy --branch "+name)
 		case s.Branch.PullRequest == nil && len(s.Held) > 0:

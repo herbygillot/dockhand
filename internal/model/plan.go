@@ -90,6 +90,10 @@ type Plan struct {
 	Targets    []PlanTarget
 	Exclusions []Exclusion
 	Unresolved []Unresolved
+	// Omitted are the changed targets --only left out. The check doesn't
+	// build them, but submission still requires them: a narrowed check
+	// never shrinks what submit requires (Design v3 §7).
+	Omitted []PlanTarget `json:",omitempty"`
 	// Only and Also record the selection as given, for status and the PR.
 	Only      []string
 	Also      []string
@@ -158,6 +162,12 @@ func (p Plan) Validate() error {
 			if !seen[dependency] {
 				return invalid("plan %s target %s depends on %s, which does not come before it", p.ID, target.ID, dependency)
 			}
+		}
+		seen[target.ID] = true
+	}
+	for _, target := range p.Omitted {
+		if target.ID == "" || seen[target.ID] || target.Role != Changed {
+			return invalid("plan %s omits %q, which is planned, repeated, or not a changed target", p.ID, target.ID)
 		}
 		seen[target.ID] = true
 	}
