@@ -51,7 +51,9 @@ func TestCleanTakesAnArchivedBranchsWorktreeAndPathBringsItBack(t *testing.T) {
 
 	out, _, err = dockhand(t, "path", "jq-update")
 	require.NoError(t, err)
-	require.Equal(t, dir+"\n", strings.Replace(out, "/private", "", 1))
+	// macOS's temporary directories are under /private, which one side may
+	// name and the other not.
+	require.Equal(t, strings.TrimPrefix(dir, "/private")+"\n", strings.TrimPrefix(out, "/private"))
 	data, err := os.ReadFile(filepath.Join(dir, "textproc/jq/Portfile"))
 	require.NoError(t, err)
 	require.Equal(t, "name jq\nversion 1.8.1\n", string(data), "checked out again, sparse over the ports it changes")
