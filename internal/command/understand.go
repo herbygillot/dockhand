@@ -42,6 +42,7 @@ of the ports tree. --stat lists the changed files instead of the patch.`,
 			if err != nil {
 				return err
 			}
+			streams.emit(diffView(diff, !stat))
 			writeDiffSummary(streams.Out, diff)
 			if len(diff.Files) == 0 {
 				if len(args) > 0 {
@@ -154,6 +155,7 @@ some against the branch.`,
 			if err != nil {
 				return err
 			}
+			streams.emit(impactView(impact))
 			writeImpact(streams.Out, impact)
 			return nil
 		},

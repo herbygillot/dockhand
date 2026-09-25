@@ -33,6 +33,17 @@ func queueCommand(s *settings, streams Streams) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if streams.json() {
+				result := queueJSON{Serve: serveLine(ctx, e), Runs: []queuedRunJSON{}}
+				for i := len(runs) - 1; i >= 0; i-- {
+					queued, err := checkResult(ctx, e, runs[i])
+					if err != nil {
+						return err
+					}
+					result.Runs = append(result.Runs, queuedRunJSON{runJSON: *queued.Run, Branch: queued.Branch, Revision: queued.Revision.Description, Environments: queued.Plan.Environments})
+				}
+				streams.emit(result)
+			}
 			fmt.Fprintln(streams.Out, serveLine(ctx, e))
 			if len(runs) == 0 {
 				return nil
@@ -102,7 +113,7 @@ serve, the check runs here, as a foreground check would.`,
 				return err
 			}
 			if run.State.Terminal() {
-				return report(ctx, e, run, streams.Out)
+				return report(ctx, e, run, streams)
 			}
 			session, err := startSession(ctx, e, model.SessionForeground)
 			if err != nil {

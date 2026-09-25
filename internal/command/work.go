@@ -188,6 +188,7 @@ path <branch>)" or an editor. Without a name, the branch checked out here.`,
 			if err != nil {
 				return err
 			}
+			streams.emit(map[string]string{"path": path})
 			fmt.Fprintln(streams.Out, path)
 			return nil
 		},

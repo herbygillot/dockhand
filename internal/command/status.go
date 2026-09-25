@@ -53,16 +53,27 @@ from GitHub first; serve does that every few minutes.`,
 }
 
 func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []string, attentionOnly, all bool, port string) error {
+	one := func(branch model.Branch) error {
+		if streams.json() {
+			status, err := e.BranchStatus(ctx, branch)
+			if err != nil {
+				return err
+			}
+			view := branchView(status)
+			streams.emit(statusJSON{Attention: attentionView(attentionFor(status)), Branches: []branchJSON{view}})
+		}
+		return showBranch(ctx, e, streams.Out, branch)
+	}
 	if len(args) == 1 {
 		branch, err := e.Resolve(ctx, args[0])
 		if err != nil {
 			return err
 		}
-		return showBranch(ctx, e, streams.Out, branch)
+		return one(branch)
 	}
 	if !attentionOnly && !all && port == "" {
 		if branch, err := e.Current(ctx); err == nil {
-			return showBranch(ctx, e, streams.Out, branch)
+			return one(branch)
 		}
 	}
 	states := []model.BranchState{model.BranchOpen}
@@ -81,6 +92,17 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 		rows = append(rows, attentionFor(status)...)
 	}
 	out := streams.Out
+	if streams.json() {
+		result := statusJSON{Attention: attentionView(rows)}
+		if !attentionOnly {
+			result.Branches = []branchJSON{}
+			for _, status := range statuses {
+				result.Branches = append(result.Branches, branchView(status))
+			}
+			result.Serve = serveLine(ctx, e)
+		}
+		streams.emit(result)
+	}
 	if attentionOnly {
 		writeAttention(out, rows)
 		if len(rows) > 0 {

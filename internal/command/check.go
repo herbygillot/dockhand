@@ -79,6 +79,8 @@ followed here; Ctrl-C then only stops following. -d queues it and returns.`,
 				fmt.Fprintf(out, "Left out, not tracked: %s (--include adds one)\n", strings.Join(capture.Untracked, ", "))
 			}
 			writePlan(out, proposed)
+			revision, planned := revisionView(capture.Revision), planView(proposed)
+			streams.emit(checkJSON{Branch: branch.ShortName(), Revision: &revision, Plan: &planned, Targets: []targetJSON{}})
 			if !proposed.Runnable() {
 				return errors.New("nothing was checked: the plan is unresolved")
 			}
@@ -119,6 +121,13 @@ func runQueued(ctx context.Context, e *engine.Engine, run model.Run, streams Str
 	leader, err := session.Holder(ctx, coord.LeaderResource)
 	if err != nil {
 		return err
+	}
+	if enqueue && streams.json() {
+		result, err := checkResult(ctx, e, run)
+		if err != nil {
+			return err
+		}
+		streams.emit(result)
 	}
 	switch {
 	case enqueue && leader == nil:
@@ -297,7 +306,7 @@ func follow(ctx context.Context, e *engine.Engine, session *coord.Session, run m
 	if err != nil {
 		return err
 	}
-	return report(context.WithoutCancel(ctx), e, run, streams.Out)
+	return report(context.WithoutCancel(ctx), e, run, streams)
 }
 
 // journal prints a run's progress events as they are appended.
@@ -346,10 +355,19 @@ func waitFor(ctx context.Context, e *engine.Engine, id model.RunID) (model.Run, 
 
 // report prints a finished run's results and returns the exit its outcome
 // calls for.
-func report(ctx context.Context, e *engine.Engine, run model.Run, out io.Writer) error {
+func report(ctx context.Context, e *engine.Engine, run model.Run, streams Streams) error {
+	out := streams.Out
 	evidence, err := e.RunEvidence(ctx, run.ID)
 	if err != nil {
 		return err
+	}
+	if streams.json() {
+		result, err := checkResult(ctx, e, run)
+		if err != nil {
+			return err
+		}
+		result.Targets = evidenceView(evidence)
+		streams.emit(result)
 	}
 	width := 0
 	for _, target := range evidence.Targets {
@@ -401,4 +419,27 @@ func resultWords(plan model.Plan, target model.PlanTarget, environment model.Env
 		return "✗ blocked by a failed dependency"
 	}
 	return "· " + string(result.Outcome)
+}
+
+// checkResult is a run's --json result, without its targets' results.
+func checkResult(ctx context.Context, e *engine.Engine, run model.Run) (checkJSON, error) {
+	result := checkJSON{Targets: []targetJSON{}}
+	branch, err := e.Branch(ctx, run.Branch)
+	if err != nil {
+		return result, err
+	}
+	revision, err := e.Revision(ctx, run.Revision)
+	if err != nil {
+		return result, err
+	}
+	var plan model.Plan
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		plan, err = r.Plan(run.Plan)
+		return err
+	}); err != nil {
+		return result, err
+	}
+	revisionResult, planResult, runResult := revisionView(revision), planView(plan), runView(run)
+	result.Branch, result.Revision, result.Plan, result.Run = branch.ShortName(), &revisionResult, &planResult, &runResult
+	return result, nil
 }
