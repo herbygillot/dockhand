@@ -188,7 +188,7 @@ func setup(t *testing.T) *fixture {
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
 	repository, err := store.RegisterRepository(t.Context(), repo.CommonDir)
 	require.NoError(t, err)
-	api := &fakeActions{flow: &gh.Workflow{ID: gh.Ptr(int64(7)), Path: gh.Ptr(macports.PortsWorkflowPath), State: gh.Ptr("active")}}
+	api := &fakeActions{flow: &gh.Workflow{ID: new(int64(7)), Path: new(macports.PortsWorkflowPath), State: new("active")}}
 	p := &Provider{State: store, Repository: repository.ID, Repo: repo, Directory: filepath.Join(t.TempDir(), "coordination"), backend: func(context.Context, string) (actionsAPI, error) { return api, nil }}
 	config, err := buildConfig(record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, Config{WorkflowID: 7, Destination: record.PublicationDestination{Forge: verify.ProviderGitHub, Repository: "macports/macports-ports", HeadRepository: "contributor/macports-ports", BaseBranch: "master", PushURL: remote, BaseURL: remote, LockDirectory: filepath.Join(t.TempDir(), "push-locks")}}, false)
 	require.NoError(t, err)
@@ -208,10 +208,10 @@ func setup(t *testing.T) *fixture {
 }
 
 func (f *fixture) ready() {
-	f.api.run = &gh.WorkflowRun{ID: gh.Ptr(int64(10)), RunAttempt: gh.Ptr(1), WorkflowID: gh.Ptr(int64(7)), HeadSHA: gh.Ptr(string(f.request.Spec.Source.Commit)), HeadBranch: gh.Ptr("candidate"), Path: gh.Ptr(macports.PortsWorkflowPath), Event: gh.Ptr("push"), Status: gh.Ptr("completed"), Conclusion: gh.Ptr("success"), HTMLURL: gh.Ptr("https://github.com/contributor/macports-ports/actions/runs/10"), Repository: &gh.Repository{FullName: gh.Ptr("contributor/macports-ports")}, HeadRepository: &gh.Repository{FullName: gh.Ptr("contributor/macports-ports")}}
+	f.api.run = &gh.WorkflowRun{ID: new(int64(10)), RunAttempt: new(1), WorkflowID: new(int64(7)), HeadSHA: new(string(f.request.Spec.Source.Commit)), HeadBranch: new("candidate"), Path: new(macports.PortsWorkflowPath), Event: new("push"), Status: new("completed"), Conclusion: new("success"), HTMLURL: new("https://github.com/contributor/macports-ports/actions/runs/10"), Repository: &gh.Repository{FullName: new("contributor/macports-ports")}, HeadRepository: &gh.Repository{FullName: new("contributor/macports-ports")}}
 	f.api.runs = []*gh.WorkflowRun{f.api.run}
 	for i, name := range []string{"macos-14", "macos-15"} {
-		f.api.jobs = append(f.api.jobs, &gh.WorkflowJob{ID: gh.Ptr(int64(i + 100)), RunID: gh.Ptr(int64(10)), RunAttempt: gh.Ptr(int64(1)), HeadSHA: gh.Ptr(string(f.request.Spec.Source.Commit)), Name: gh.Ptr(name), Status: gh.Ptr("completed"), Conclusion: gh.Ptr("success"), HTMLURL: gh.Ptr("https://github.com/contributor/macports-ports/actions/runs/10/job")})
+		f.api.jobs = append(f.api.jobs, &gh.WorkflowJob{ID: new(int64(i + 100)), RunID: new(int64(10)), RunAttempt: new(int64(1)), HeadSHA: new(string(f.request.Spec.Source.Commit)), Name: new(name), Status: new("completed"), Conclusion: new("success"), HTMLURL: new("https://github.com/contributor/macports-ports/actions/runs/10/job")})
 	}
 }
 
@@ -291,17 +291,17 @@ func TestNegativeEvidenceAndPinnedRunAttempt(t *testing.T) {
 		conclusion string
 		verdict    record.Verdict
 	}{{"failure", record.VerdictFailed}, {"cancelled", record.VerdictCanceled}, {"timed_out", record.VerdictErrored}, {"skipped", record.VerdictBlocked}} {
-		f.api.run.Conclusion = gh.Ptr(tc.conclusion)
+		f.api.run.Conclusion = new(tc.conclusion)
 		observed, err := f.provider.Observe(t.Context(), submitted.Run)
 		require.NoError(t, err)
 		require.Equal(t, tc.verdict, observed.Verdict)
 	}
-	f.api.run.Conclusion = gh.Ptr("success")
+	f.api.run.Conclusion = new("success")
 	f.api.jobs = f.api.jobs[:1]
 	observed, err := f.provider.Observe(t.Context(), submitted.Run)
 	require.NoError(t, err)
 	require.Equal(t, record.VerdictBlocked, observed.Verdict)
-	f.api.run.RunAttempt = gh.Ptr(2)
+	f.api.run.RunAttempt = new(2)
 	_, err = f.provider.Observe(t.Context(), submitted.Run)
 	require.ErrorContains(t, err, "wrong run attempt")
 	require.NoError(t, f.provider.Cancel(t.Context(), submitted.Run))
@@ -314,7 +314,7 @@ func TestSubmissionRefusalsDoNotPush(t *testing.T) {
 			f := setup(t)
 			switch kind {
 			case "disabled":
-				f.api.flow.State = gh.Ptr("disabled_manually")
+				f.api.flow.State = new("disabled_manually")
 			case "wrong tree":
 				f.request.Spec.Source.Tree = f.request.Spec.Source.Commit
 			case "variants":
@@ -458,7 +458,7 @@ func TestCancellationDetachesOnlyItsOwnTracking(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	f.ready()
-	f.api.run.Status, f.api.run.Conclusion = gh.Ptr("in_progress"), nil
+	f.api.run.Status, f.api.run.Conclusion = new("in_progress"), nil
 	first, err := f.provider.Submit(t.Context(), f.request)
 	require.NoError(t, err)
 	otherRequest := f.request
@@ -497,7 +497,7 @@ func TestCancellationDetachesOnlyItsOwnTracking(t *testing.T) {
 	require.Equal(t, verify.RunFound, recovered.State)
 	require.Equal(t, first.Run, recovered.Submission.Run)
 	f.api.err = nil
-	f.api.run.Status, f.api.run.Conclusion = gh.Ptr("completed"), gh.Ptr("success")
+	f.api.run.Status, f.api.run.Conclusion = new("completed"), new("success")
 	observed, err = restarted.Observe(t.Context(), other.Run)
 	require.NoError(t, err)
 	require.Equal(t, record.VerdictPassed, observed.Verdict)
@@ -507,7 +507,7 @@ func TestDriverCancellationDetachesGitHubRun(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	f.ready()
-	f.api.run.Status, f.api.run.Conclusion = gh.Ptr("in_progress"), nil
+	f.api.run.Status, f.api.run.Conclusion = new("in_progress"), nil
 	f.settle(t, func() bool {
 		_, err := f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
 		require.NoError(t, err)
@@ -588,7 +588,7 @@ func TestIndependentJobsShareRunAndCancelSeparately(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	f.ready()
-	f.api.run.Status, f.api.run.Conclusion = gh.Ptr("in_progress"), nil
+	f.api.run.Status, f.api.run.Conclusion = new("in_progress"), nil
 	status, err := f.engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
 	require.NoError(t, err)
 	spec := status.Jobs[0].Job.Spec
@@ -625,7 +625,7 @@ func TestIndependentJobsShareRunAndCancelSeparately(t *testing.T) {
 		}
 		return canceled
 	})
-	f.api.run.Status, f.api.run.Conclusion = gh.Ptr("completed"), gh.Ptr("success")
+	f.api.run.Status, f.api.run.Conclusion = new("completed"), new("success")
 	f.settle(t, func() bool {
 		_, err := f.engine.Cycle(t.Context(), scope)
 		require.NoError(t, err)
@@ -737,7 +737,7 @@ func TestDriverProgressFollowsGitHubRun(t *testing.T) {
 	f.ready()
 	f.api.run.Conclusion = nil
 	for _, phase := range []string{"queued", "in_progress"} {
-		f.api.run.Status = gh.Ptr(phase)
+		f.api.run.Status = new(phase)
 		f.settle(t, func() bool {
 			_, err := f.engine.Cycle(t.Context(), scope)
 			require.NoError(t, err)
@@ -777,9 +777,9 @@ func TestUnpredictedWorkflowIsJudgedByTheRunItProduced(t *testing.T) {
 	f.ready()
 	f.api.jobs = nil
 	for i, name := range []string{"build (macos-14)", "build (macos-15)", "build (macos-26)"} {
-		f.api.jobs = append(f.api.jobs, &gh.WorkflowJob{ID: gh.Ptr(int64(i + 100)), RunID: gh.Ptr(int64(10)), RunAttempt: gh.Ptr(int64(1)), HeadSHA: gh.Ptr(string(f.request.Spec.Source.Commit)),
-			Name: gh.Ptr(name), Status: gh.Ptr("completed"), Conclusion: gh.Ptr("success"), Labels: []string{strings.TrimSuffix(strings.TrimPrefix(name, "build ("), ")")},
-			HTMLURL: gh.Ptr("https://github.com/contributor/macports-ports/actions/runs/10/job")})
+		f.api.jobs = append(f.api.jobs, &gh.WorkflowJob{ID: new(int64(i + 100)), RunID: new(int64(10)), RunAttempt: new(int64(1)), HeadSHA: new(string(f.request.Spec.Source.Commit)),
+			Name: new(name), Status: new("completed"), Conclusion: new("success"), Labels: []string{strings.TrimSuffix(strings.TrimPrefix(name, "build ("), ")")},
+			HTMLURL: new("https://github.com/contributor/macports-ports/actions/runs/10/job")})
 	}
 	submitted, err := f.provider.Submit(t.Context(), f.request)
 	require.NoError(t, err)
@@ -844,13 +844,13 @@ func TestAFinishedFailureIsRunAgainRatherThanAdopted(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	f.ready()
-	f.api.run.Conclusion = gh.Ptr("failure")
+	f.api.run.Conclusion = new("failure")
 	// GitHub answers a rerun by adding an attempt to the same run.
 	f.api.onRerun = func() {
-		f.api.run.RunAttempt = gh.Ptr(2)
-		f.api.run.Status, f.api.run.Conclusion = gh.Ptr("in_progress"), nil
+		f.api.run.RunAttempt = new(2)
+		f.api.run.Status, f.api.run.Conclusion = new("in_progress"), nil
 		for _, job := range f.api.jobs {
-			job.RunAttempt = gh.Ptr(int64(2))
+			job.RunAttempt = new(int64(2))
 		}
 	}
 	submitted, err := f.provider.Submit(t.Context(), f.request)
@@ -860,7 +860,7 @@ func TestAFinishedFailureIsRunAgainRatherThanAdopted(t *testing.T) {
 	require.Equal(t, "10:2", submitted.Run.RunID, "the new attempt is what this request observes")
 
 	// The old attempt is untouched, so a job that watched it keeps its verdict.
-	f.api.run.Status, f.api.run.Conclusion = gh.Ptr("completed"), gh.Ptr("success")
+	f.api.run.Status, f.api.run.Conclusion = new("completed"), new("success")
 	observed, err := f.provider.Observe(t.Context(), submitted.Run)
 	require.NoError(t, err)
 	require.Equal(t, record.VerdictPassed, observed.Verdict)
@@ -883,7 +883,7 @@ func TestARequestAsksForOneRerun(t *testing.T) {
 			t.Parallel()
 			f := setup(t)
 			f.ready()
-			f.api.run.Conclusion = gh.Ptr("failure")
+			f.api.run.Conclusion = new("failure")
 			tc.arrange(f)
 			submitted, err := f.provider.Submit(t.Context(), f.request)
 			require.NoError(t, err)
@@ -913,11 +913,11 @@ func TestARunWorthWaitingForIsNotRerun(t *testing.T) {
 			t.Parallel()
 			f := setup(t)
 			f.ready()
-			f.api.run.Status = gh.Ptr(tc.status)
+			f.api.run.Status = new(tc.status)
 			if tc.conclusion == "" {
 				f.api.run.Conclusion = nil
 			} else {
-				f.api.run.Conclusion = gh.Ptr(tc.conclusion)
+				f.api.run.Conclusion = new(tc.conclusion)
 			}
 			_, err := f.provider.Submit(t.Context(), f.request)
 			require.NoError(t, err)
@@ -936,7 +936,7 @@ func TestOversizedJobLogIsTruncatedNotFatal(t *testing.T) {
 		api.jobLog = func(context.Context, int64) (io.ReadCloser, error) {
 			return io.NopCloser(io.LimitReader(repeatReader('x'), size)), nil
 		}
-		job := &gh.WorkflowJob{ID: gh.Ptr(int64(7)), Name: gh.Ptr("build"), Conclusion: gh.Ptr("failure"), HTMLURL: gh.Ptr("https://github.com/author/ports/actions/runs/1/job/7")}
+		job := &gh.WorkflowJob{ID: new(int64(7)), Name: new("build"), Conclusion: new("failure"), HTMLURL: new("https://github.com/author/ports/actions/runs/1/job/7")}
 		path := filepath.Join(t.TempDir(), "job.log")
 		require.NoError(t, cacheJobLog(t.Context(), api, job, path))
 		info, err := os.Stat(path)

@@ -1,0 +1,39 @@
+version: "2"
+
+linters:
+  # The standard set: errcheck, govet, ineffassign, staticcheck, unused.
+  default: standard
+  settings:
+    errcheck:
+      # Ending a session or releasing a lease is best effort: the lease
+      # expires and a dead session's pid is noticed, and the caller is
+      # already returning another error or nothing. Quitting an FTP
+      # connection whose download is done is the same.
+      exclude-functions:
+        - (*github.com/herbygillot/dockhand/internal/coord.Session).End
+        - (*github.com/herbygillot/dockhand/internal/coord.Session).Release
+        - (*github.com/jlaffaye/ftp.ServerConn).Quit
+    govet:
+      # inline reports //go:fix inline directives it cannot apply, which
+      # is a note for gopls, not a defect.
+      disable:
+        - inline
+    staticcheck:
+      # Bugs and deprecations, not taste: the quick fixes (QF) and the
+      # style checks (ST) are off.
+      checks:
+        - all
+        - -QF*
+        - -ST*
+  exclusions:
+    # std-error-handling leaves unchecked the errors Go code customarily
+    # drops: Close, Flush, os.Remove(All), and the print family, whose
+    # calls here write to a terminal or a strings.Builder.
+    presets:
+      - std-error-handling
+    rules:
+      # A test's fake servers and helper processes drop what fails: the
+      # test fails on what the code under test does with it.
+      - path: _test\.go
+        linters:
+          - errcheck

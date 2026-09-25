@@ -14,9 +14,9 @@ func TestEditRevbumpRetryRebaseAndArchive(t *testing.T) {
 	withBumper(t)
 	withScript(t, w, "passed")
 
-	out, _, err := dockhand(t, "revbump", "jq")
+	_, _, err := dockhand(t, "revbump", "jq")
 	require.ErrorContains(t, err, "revbump needs the reason as --subject")
-	out, _, err = dockhand(t, "revbump", "jq", "--subject", "rebuild for oniguruma 6.9.10")
+	out, _, err := dockhand(t, "revbump", "jq", "--subject", "rebuild for oniguruma 6.9.10")
 	require.NoError(t, err, "outside any branch, revbump starts one")
 	require.Regexp(t, `^Started dockhand/jq-[a-z0-9]{4} from master `, out)
 	require.Contains(t, out, "· 1 port\n  jq  revision 0 → 1\nRecorded the subject for tidy: \"<port>: rebuild for oniguruma 6.9.10\"\n")
@@ -39,7 +39,7 @@ func TestEditRevbumpRetryRebaseAndArchive(t *testing.T) {
 	require.Contains(t, errs, "check-2 runs here")
 	require.Contains(t, out, "Passed for snapshot 1.")
 
-	out, _, err = dockhand(t, "rebase")
+	_, _, err = dockhand(t, "rebase")
 	require.ErrorContains(t, err, "has uncommitted edits")
 	_, _, err = dockhand(t, "tidy", "--squash", "--message", "jq: note the build")
 	require.NoError(t, err)

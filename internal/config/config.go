@@ -84,7 +84,8 @@ func (s Serve) Mode() string {
 func (s Serve) Time() (hour, minute int) {
 	hour, minute = 7, 0
 	if s.OutdatedAt != "" {
-		fmt.Sscanf(s.OutdatedAt, "%d:%d", &hour, &minute)
+		// Load checked the form, so there is nothing to report here.
+		_, _ = fmt.Sscanf(s.OutdatedAt, "%d:%d", &hour, &minute)
 	}
 	return hour, minute
 }

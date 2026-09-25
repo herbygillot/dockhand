@@ -9,7 +9,6 @@ import (
 	"sync"
 	"testing"
 
-	gh "github.com/google/go-github/v91/github"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/stretchr/testify/require"
@@ -99,9 +98,9 @@ func TestLogIdentityMismatchDoesNotDownload(t *testing.T) {
 			require.NoError(t, err)
 			switch mismatch {
 			case "run":
-				f.api.run.ID = gh.Ptr(int64(11))
+				f.api.run.ID = new(int64(11))
 			case "job":
-				f.api.jobs[1].RunID = gh.Ptr(int64(11))
+				f.api.jobs[1].RunID = new(int64(11))
 			case "duplicate job":
 				f.api.jobs[1].ID = f.api.jobs[0].ID
 			}

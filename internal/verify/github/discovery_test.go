@@ -35,10 +35,10 @@ func TestMissingRunWorkflowDiagnostics(t *testing.T) {
 			require.Equal(t, verify.SubmissionUncertain, initial.State)
 			row, err := f.provider.read(t.Context(), f.request.ID)
 			require.NoError(t, err)
-			f.api.flow.State = gh.Ptr(tc.state)
-			f.api.flow.HTMLURL = gh.Ptr("https://github.com/contributor/macports-ports/actions/workflows/main.yml")
+			f.api.flow.State = new(tc.state)
+			f.api.flow.HTMLURL = new("https://github.com/contributor/macports-ports/actions/workflows/main.yml")
 			if tc.replaced {
-				f.api.flow.ID = gh.Ptr(int64(8))
+				f.api.flow.ID = new(int64(8))
 			}
 			var api actionsAPI = f.api
 			if tc.missing {

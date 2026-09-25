@@ -17,7 +17,6 @@ type archivePlan struct {
 	result    Result
 	contents  []byte
 	versioned macports.Snapshot
-	sources   []archives.Source
 	// viaGit marks a git-fetched port's plan, which downloads nothing;
 	// branch is where git.branch must land, empty when the tag is unknown.
 	viaGit bool

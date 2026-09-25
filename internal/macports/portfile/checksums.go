@@ -5,15 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/text"
 )
-
-type checksumPair struct {
-	kind  string
-	words ChecksumWords
-	value syntax.Word
-}
 
 // ModernChecksumKinds is the layout MacPorts writes today, in the order
 // `port checksum` suggests it.

@@ -248,7 +248,9 @@ func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files
 			selected.Selection.Subport = selected.Name
 		}
 		probe, problem := editor.Probe(ctx, portedit.ProbeSource{SharedRelease: request.SharedRelease, Source: files.Source, Workspace: projection, Selection: selected.Selection, Platform: platform})
-		defer probe.Close()
+		if problem == nil {
+			defer probe.Close()
+		}
 		if problem == nil && selected.Name != "" {
 			problem = indexAgreement(selected.Name, probe.Port().Name, probe.Stub())
 		}

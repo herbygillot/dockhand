@@ -83,7 +83,6 @@ func (e *Engine) CheckContinuation(ctx context.Context, prior record.Job, master
 
 	// The pull request, observed when it can be.
 	pr := "no PR is recorded"
-	disposition := change.Disposition
 	if recorded != nil {
 		pr = fmt.Sprintf("PR #%d is %s as recorded", recorded.Ref.Number, recorded.State)
 		if e.Accounts == nil || e.PullRequests == nil {
@@ -91,7 +90,7 @@ func (e *Engine) CheckContinuation(ctx context.Context, prior record.Job, master
 		} else if result, err := e.refreshChange(ctx, change); err != nil {
 			pr += fmt.Sprintf(", not re-checked: %v", err)
 		} else {
-			disposition = result.Change.Disposition
+			disposition := result.Change.Disposition
 			pr = fmt.Sprintf("PR #%d is %s", result.PullRequest.Ref.Number, result.PullRequest.State)
 			if disposition == record.ChangeMerged {
 				return Continuation{Fresh: true, Detail: fmt.Sprintf("%s; contribution retired; %s; a new update starts from master", pr, master_)}, nil

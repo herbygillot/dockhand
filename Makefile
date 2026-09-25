@@ -19,7 +19,7 @@ ifneq ($(strip $(VERSION)),)
 GO_LDFLAGS += -X github.com/herbygillot/dockhand/internal/version.Version=$(strip $(VERSION))
 endif
 
-.PHONY: build test test-race vet fmt-check deadcode vendor vendor-check clean
+.PHONY: build test test-race vet lint fmt-check deadcode vendor vendor-check clean
 
 build:
 	$(GO) build $(if $(strip $(GO_LDFLAGS)),-ldflags "$(GO_LDFLAGS)") -o "$(BINARY)" ./cmd/dockhand
@@ -32,6 +32,13 @@ test-race:
 
 vet:
 	$(GO) vet ./...
+
+# golangci-lint, pinned, with .golangci.yml. Run by version like deadcode, and
+# built with this module's Go (GOTOOLCHAIN), which it must be at least as new
+# as; left alone, go run would build it with the older Go its own go.mod asks.
+GOLANGCI_LINT ?= github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
+lint:
+	GOFLAGS= GOTOOLCHAIN=$$($(GO) env GOVERSION) $(GO) run $(GOLANGCI_LINT) run ./...
 
 # Fail when a Go file outside vendor is not gofmt-formatted, naming it.
 fmt-check:
