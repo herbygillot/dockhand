@@ -14,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/provider/actions"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/version"
 )
@@ -91,6 +92,7 @@ more. With check.baseline = true, a failed check runs one by itself.`,
 				fmt.Fprintf(out, "Left out, not tracked: %s (--include adds one)\n", strings.Join(capture.Untracked, ", "))
 			}
 			writePlan(out, proposed)
+			writePushes(out, proposed)
 			revision, planned := revisionView(capture.Revision), planView(proposed)
 			streams.emit(checkJSON{Branch: branch.ShortName(), Revision: &revision, Plan: &planned, Targets: []targetJSON{}})
 			if !proposed.Runnable() {
@@ -216,19 +218,22 @@ func environmentsFor(e *engine.Engine, values []string) ([]model.Environment, er
 		if _, ok := e.Providers["command"]; ok {
 			return []model.Environment{{Provider: "command"}}, nil
 		}
-		return nil, errors.New("a check needs somewhere to build, and none is set up. Set up your own script as [providers.command] run = \"...\" in ~/.dockhand/config.toml; tart, prefix, and github arrive with the rest of v3")
+		return nil, errors.New(`a check needs somewhere to build: --on github builds with MacPorts' own workflow in your fork, and --on command with your own script, set up as [providers.command] run = "..." in ~/.dockhand/config.toml; [check] on = ["github"] makes one the default. tart and prefix arrive with the rest of v3`)
 	}
 	var environments []model.Environment
 	for _, value := range values {
 		name, releases, _ := strings.Cut(value, ":")
 		if _, ok := e.Providers[name]; !ok {
 			switch name {
-			case "tart", "prefix", "github":
+			case "tart", "prefix":
 				return nil, fmt.Errorf("--on %s: the %s provider is not in v3 yet; use your own script (--on command) meanwhile", value, name)
 			}
 			return nil, fmt.Errorf("--on %s: no provider %q is set up", value, name)
 		}
-		if releases != "" {
+		switch {
+		case releases != "" && name == "github":
+			return nil, fmt.Errorf("--on %s: the github provider builds on the runners MacPorts' workflow names, so it takes no releases", value)
+		case releases != "":
 			return nil, fmt.Errorf("--on %s: the command provider builds wherever its script does, so it takes no releases", value)
 		}
 		environment := model.Environment{Provider: name}
@@ -237,6 +242,14 @@ func environmentsFor(e *engine.Engine, values []string) ([]model.Environment, er
 		}
 	}
 	return environments, nil
+}
+
+// writePushes says where a check pushes: "only checking" never hides a
+// write to your fork (Design v3 §9).
+func writePushes(out io.Writer, plan model.Plan) {
+	if slices.ContainsFunc(plan.Environments, func(e model.Environment) bool { return e.Provider == "github" }) {
+		fmt.Fprintf(out, "Pushes      the revision to a %s branch of your fork, where MacPorts' workflow builds it\n", actions.BranchPrefix)
+	}
 }
 
 func writePlan(out io.Writer, plan model.Plan) {

@@ -57,7 +57,7 @@ func TestServeDrainsTheQueue(t *testing.T) {
 	out, _, err := dockhand(t, "serve", "--drain")
 	require.NoError(t, err)
 	require.Contains(t, out, "serve: leading (pid ")
-	require.Contains(t, out, "builds on command · opens no pull requests; it only checks\n")
+	require.Contains(t, out, "builds on command, github · opens no pull requests; it only checks\n")
 	require.Contains(t, out, "check-1 jq-update: running\ncheck-1 jq-update: passed\nserve: the queue is empty\n")
 	out, _, err = dockhand(t, "queue")
 	require.NoError(t, err)

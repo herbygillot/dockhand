@@ -198,6 +198,7 @@ func submitChecked(ctx context.Context, s *settings, e *engine.Engine, streams S
 		}
 		fmt.Fprintf(streams.Out, "\n%s · checking %s, then submitting it if it passes\n", plan.Branch.ShortName(), engine.Describe(capture.Revision))
 		writePlan(streams.Out, proposed)
+		writePushes(streams.Out, proposed)
 		if !proposed.Runnable() {
 			return errors.New("nothing was checked or submitted: the plan is unresolved")
 		}

@@ -59,6 +59,7 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			} else {
 				add("providers.command", "", "(not set up)")
 			}
+			add("providers.github.remote", file.Providers.GitHub.Remote, "the one remote pushing to your fork")
 			streams.emit(map[string]any{"file": path, "database": options.Database, "settings": all})
 			fmt.Fprintf(streams.Out, "File      %s\nDatabase  %s\n\n", tilde(path), tilde(options.Database))
 			width := 0

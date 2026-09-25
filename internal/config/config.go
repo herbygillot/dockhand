@@ -38,6 +38,7 @@ type File struct {
 	Serve      Serve  `toml:"serve"`
 	Providers  struct {
 		Command *CommandProvider `toml:"command"`
+		GitHub  GitHubProvider   `toml:"github"`
 	} `toml:"providers"`
 	Cleanup Cleanup `toml:"cleanup"`
 }
@@ -160,6 +161,13 @@ type CommandProvider struct {
 	Run string `toml:"run"`
 	// Name labels its results: "reported by <name>".
 	Name string `toml:"name"`
+}
+
+// GitHubProvider builds with MacPorts' own workflow in your fork.
+type GitHubProvider struct {
+	// Remote is the Git remote that pushes to your fork, when more than
+	// one pushes to a fork you own.
+	Remote string `toml:"remote"`
 }
 
 // Path is the configuration file to use: $DOCKHAND_CONFIG, or

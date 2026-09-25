@@ -5,11 +5,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/provider/actions"
 	"github.com/herbygillot/dockhand/internal/provider/script"
 )
 
@@ -82,6 +84,13 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 	if command := file.Providers.Command; command != nil {
 		e.Providers["command"] = &script.Provider{Run: command.Run, Label: command.Name, Repo: e.Repo}
 	}
+	remote := file.Providers.GitHub.Remote
+	github := &actions.Provider{Repo: e.Repo, Fork: func(ctx context.Context) (engine.Fork, error) { return e.Fork(ctx, remote) },
+		API: actions.GitHub{Client: authAPI(authStore)}}
+	if testActions != nil {
+		github.API, github.Sleep = testActions, func(ctx context.Context, _ time.Duration) error { return ctx.Err() }
+	}
+	e.Providers["github"] = github
 	if testPreparer != nil {
 		e.Preparer = testPreparer(e)
 	}
@@ -99,6 +108,9 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 	}
 	return e, nil
 }
+
+// testActions, when set, stands in for GitHub Actions.
+var testActions actions.API
 
 // testPortReader, when set, stands in for MacPorts' evaluator in plans.
 var testPortReader engine.PortReader
