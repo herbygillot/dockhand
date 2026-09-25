@@ -14,23 +14,29 @@ import (
 // Times are stored in milliseconds, so a record read back carries its times
 // truncated to the millisecond.
 
-const branchColumns = "id, name, base, worktree, managed, title, state, pr_repository, pr_number, pr_head, pr_pushed, pr_body, pr_draft, created_at"
+const branchColumns = "id, name, base, worktree, managed, title, state, pr_repository, pr_number, pr_head, pr_pushed, pr_body, pr_draft, pr_observed, created_at"
 
 func (t *tx) scanBranch(row interface{ Scan(...any) error }) (model.Branch, error) {
 	var b model.Branch
 	var managed int
 	var prRepository, prHead sql.NullString
 	var prNumber sql.NullInt64
-	var prPushed, prBody string
+	var prPushed, prBody, prObserved string
 	var prDraft int
 	var created int64
-	if err := row.Scan(&b.ID, &b.Name, &b.Base, &b.Worktree, &managed, &b.Title, &b.State, &prRepository, &prNumber, &prHead, &prPushed, &prBody, &prDraft, &created); err != nil {
+	if err := row.Scan(&b.ID, &b.Name, &b.Base, &b.Worktree, &managed, &b.Title, &b.State, &prRepository, &prNumber, &prHead, &prPushed, &prBody, &prDraft, &prObserved, &created); err != nil {
 		return model.Branch{}, storageError(err)
 	}
 	b.Repository, b.Managed, b.CreatedAt = t.repo, managed == 1, fromMillis(created)
 	if prNumber.Valid {
 		b.PullRequest = &model.PullRequest{Repository: prRepository.String, Number: int(prNumber.Int64), Head: prHead.String,
 			Pushed: model.ObjectID(prPushed), Body: prBody, Draft: prDraft == 1}
+		if prObserved != "" {
+			b.PullRequest.Observed = &model.PullRequestObservation{}
+			if err := json.Unmarshal([]byte(prObserved), b.PullRequest.Observed); err != nil {
+				return model.Branch{}, fmt.Errorf("%w: branch %s's pull request observation: %w", store.ErrUnavailable, b.ID, err)
+			}
+		}
 	}
 	return b, nil
 }
@@ -74,11 +80,16 @@ func (t *tx) checkRepository(repository model.RepositoryID) error {
 	return nil
 }
 
-func pullRequestColumns(pr *model.PullRequest) (any, any, any, string, string, int) {
+func pullRequestColumns(pr *model.PullRequest) (any, any, any, string, string, int, string) {
 	if pr == nil {
-		return nil, nil, nil, "", "", 0
+		return nil, nil, nil, "", "", 0, ""
 	}
-	return pr.Repository, pr.Number, pr.Head, string(pr.Pushed), pr.Body, boolInt(pr.Draft)
+	observed := ""
+	if pr.Observed != nil {
+		data, _ := json.Marshal(pr.Observed)
+		observed = string(data)
+	}
+	return pr.Repository, pr.Number, pr.Head, string(pr.Pushed), pr.Body, boolInt(pr.Draft), observed
 }
 
 func (t *tx) AddBranch(b model.Branch) error {
@@ -88,9 +99,9 @@ func (t *tx) AddBranch(b model.Branch) error {
 	if err := t.checkRepository(b.Repository); err != nil {
 		return err
 	}
-	repository, number, head, pushed, body, draft := pullRequestColumns(b.PullRequest)
-	_, err := t.exec("INSERT INTO branches(repository_id, "+branchColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		t.repo, b.ID, b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, millis(b.CreatedAt))
+	repository, number, head, pushed, body, draft, observed := pullRequestColumns(b.PullRequest)
+	_, err := t.exec("INSERT INTO branches(repository_id, "+branchColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		t.repo, b.ID, b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, millis(b.CreatedAt))
 	return err
 }
 
@@ -111,9 +122,9 @@ func (t *tx) UpdateBranch(b model.Branch) error {
 	if !current.CreatedAt.Equal(b.CreatedAt) {
 		return fmt.Errorf("%w: branch %s's creation time is fixed", store.ErrConflict, b.ID)
 	}
-	repository, number, head, pushed, body, draft := pullRequestColumns(b.PullRequest)
-	return t.update("branch "+string(b.ID), "UPDATE branches SET name=?, base=?, worktree=?, managed=?, title=?, state=?, pr_repository=?, pr_number=?, pr_head=?, pr_pushed=?, pr_body=?, pr_draft=? WHERE repository_id=? AND id=?",
-		b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, t.repo, b.ID)
+	repository, number, head, pushed, body, draft, observed := pullRequestColumns(b.PullRequest)
+	return t.update("branch "+string(b.ID), "UPDATE branches SET name=?, base=?, worktree=?, managed=?, title=?, state=?, pr_repository=?, pr_number=?, pr_head=?, pr_pushed=?, pr_body=?, pr_draft=?, pr_observed=? WHERE repository_id=? AND id=?",
+		b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, t.repo, b.ID)
 }
 
 const revisionColumns = "id, branch_id, kind, snapshot, commit_id, tree_id, base_id, head_id, created_at"

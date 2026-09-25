@@ -14,6 +14,7 @@ type EditKind string
 const (
 	EditUpdate    EditKind = "update"
 	EditChecksums EditKind = "checksums"
+	EditRevbump   EditKind = "revbump"
 )
 
 // EditedFile is one file an authoring command wrote: its blob before and
@@ -46,7 +47,7 @@ func (e Edit) Validate() error {
 	switch {
 	case e.ID == "" || e.Branch == "":
 		return invalid("edit %q has no ID or branch", e.ID)
-	case e.Kind != EditUpdate && e.Kind != EditChecksums:
+	case e.Kind != EditUpdate && e.Kind != EditChecksums && e.Kind != EditRevbump:
 		return invalid("edit %s has unknown kind %q", e.ID, e.Kind)
 	case e.Port == "" || e.Directory == "" || e.Subject == "":
 		return invalid("edit %s has no port, directory, or subject", e.ID)
@@ -63,21 +64,30 @@ func (e Edit) Validate() error {
 	return nil
 }
 
-// Checkpoint keeps a branch's history from before tidy rewrote it, for
-// restore. Its Git ref, refs/dockhand/checkpoints/<name>, keeps the old
-// commits reachable.
+// CheckpointKind names what rewrote the history a checkpoint keeps.
+type CheckpointKind string
+
+const (
+	CheckpointTidy   CheckpointKind = "tidy"
+	CheckpointRebase CheckpointKind = "rebase"
+)
+
+// Checkpoint keeps a branch's history from before tidy or rebase rewrote
+// it, for restore. Its Git ref, refs/dockhand/checkpoints/<name>, keeps
+// the old commits reachable.
 type Checkpoint struct {
-	// Number counts a repository's checkpoints from 1.
+	// Number counts a repository's checkpoints from 1, whatever their kind.
 	Number int
+	Kind   CheckpointKind
 	Branch BranchID
-	// Before is the branch head tidy replaced, and After the one it wrote.
+	// Before is the branch head it replaced, and After the one it wrote.
 	Before, After ObjectID
 	At            time.Time
 	RestoredAt    *time.Time
 }
 
-// Name is what people type: tidy-3.
-func (c Checkpoint) Name() string { return fmt.Sprintf("tidy-%d", c.Number) }
+// Name is what people type: tidy-3, or rebase-4.
+func (c Checkpoint) Name() string { return fmt.Sprintf("%s-%d", c.Kind, c.Number) }
 
 // Ref is the Git ref that keeps the old history.
 func (c Checkpoint) Ref() string { return "refs/dockhand/checkpoints/" + c.Name() }
@@ -87,6 +97,8 @@ func (c Checkpoint) Validate() error {
 	switch {
 	case c.Number <= 0 || c.Branch == "":
 		return invalid("checkpoint %d has no number or branch", c.Number)
+	case c.Kind != CheckpointTidy && c.Kind != CheckpointRebase:
+		return invalid("checkpoint %d has unknown kind %q", c.Number, c.Kind)
 	case c.Before == "" || c.After == "":
 		return invalid("checkpoint %s has no heads", c.Name())
 	case c.At.IsZero():

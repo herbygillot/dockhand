@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -18,7 +19,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
-var versionLine = regexp.MustCompile(`(?m)^version (\S+)$`)
+var (
+	versionLine  = regexp.MustCompile(`(?m)^version (\S+)$`)
+	revisionLine = regexp.MustCompile(`(?m)^revision (\S+)$`)
+)
 
 // fakePreparer edits a Portfile's version line, and adds a checksums line
 // on a refresh, in the tree it is given, the way the real one returns its
@@ -48,20 +52,33 @@ func (p *fakePreparer) Prepare(ctx context.Context, r preparation.Request) (prep
 	}
 	old := versionLine.FindSubmatch(data)[1]
 	next, after := string(old), string(data)
-	if r.Action == record.Bump {
+	revision, nextRevision := 0, 0
+	if m := revisionLine.FindSubmatch(data); m != nil {
+		revision, _ = strconv.Atoi(string(m[1]))
+	}
+	nextRevision = revision
+	switch {
+	case r.Action == record.Bump:
 		next = r.Release.Version
 		after = versionLine.ReplaceAllString(after, "version "+next)
-	} else if !regexp.MustCompile(`(?m)^checksums `).MatchString(after) {
+	case r.Action == record.BumpRevision:
+		nextRevision = revision + 1
+		if revisionLine.MatchString(after) {
+			after = revisionLine.ReplaceAllString(after, "revision "+strconv.Itoa(nextRevision))
+		} else {
+			after += "revision 1\n"
+		}
+	case !regexp.MustCompile(`(?m)^checksums `).MatchString(after):
 		after += "checksums sha256 0000\n"
 	}
 	if p.during != nil {
 		p.during()
 	}
-	snapshot := func(version string) macports.Snapshot {
-		return macports.Snapshot{Ports: map[string]macports.PortInfo{r.Selection.Selector: {Name: r.Selection.Selector, Version: version}}}
+	snapshot := func(version string, revision int) macports.Snapshot {
+		return macports.Snapshot{Ports: map[string]macports.PortInfo{r.Selection.Selector: {Name: r.Selection.Selector, Version: version, Revision: revision}}}
 	}
 	result := preparation.Result{Target: record.Target{Name: r.Selection.Selector, Portfile: name}, Release: r.Release, PreparedTree: r.Source.Tree,
-		Fidelity: []portedit.Fidelity{{Before: snapshot(string(old)), After: snapshot(next)}}}
+		Fidelity: []portedit.Fidelity{{Before: snapshot(string(old), revision), After: snapshot(next, nextRevision)}}}
 	if after == string(data) {
 		return result, nil
 	}
@@ -72,6 +89,9 @@ func (p *fakePreparer) Prepare(ctx context.Context, r preparation.Request) (prep
 	}
 	result.Files, result.PreparedTree = []git.FileEdit{edit}, record.ObjectID(tree)
 	result.Commits = []preparation.CommitIntent{{Subject: r.Selection.Selector + ": update to " + next}}
+	if r.Action == record.BumpRevision {
+		result.Commits[0].Subject = r.Selection.Selector + ": " + r.Subject
+	}
 	return result, nil
 }
 
@@ -196,7 +216,7 @@ func TestUpdateNeedsTheBranchCheckedOut(t *testing.T) {
 
 	_, err = e.Update(t.Context(), UpdateRequest{Branch: model.Branch{Name: "dockhand/elsewhere"}, Action: record.Bump, Port: "jq"})
 	require.ErrorContains(t, err, "not checked out anywhere")
-	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: record.BumpRevision, Port: "jq"})
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: record.Action("publish"), Port: "jq"})
 	require.ErrorContains(t, err, "not an update")
 }
 

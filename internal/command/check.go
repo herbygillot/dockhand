@@ -89,28 +89,7 @@ followed here; Ctrl-C then only stops following. -d queues it and returns.`,
 			if err != nil {
 				return err
 			}
-			session, err := startSession(ctx, e, model.SessionForeground)
-			if err != nil {
-				return err
-			}
-			defer session.End(context.WithoutCancel(ctx))
-			leader, err := session.Holder(ctx, coord.LeaderResource)
-			if err != nil {
-				return err
-			}
-			switch {
-			case enqueue && leader == nil:
-				fmt.Fprintf(out, "%s queued; nothing is running it: dockhand serve\n", run.Name())
-				return nil
-			case enqueue:
-				fmt.Fprintf(out, "%s queued; serve (pid %d) runs it. dockhand wait %s follows it.\n", run.Name(), leader.PID, run.Name())
-				return nil
-			case leader != nil:
-				fmt.Fprintf(streams.Err, "%s handed to serve (pid %d); following it. Ctrl-C stops following, not the check.\n", run.Name(), leader.PID)
-				return follow(ctx, e, session, run, streams, false)
-			}
-			fmt.Fprintf(streams.Err, "%s runs here, since no dockhand serve is running. Ctrl-C stops it and keeps what finished.\n", run.Name())
-			return follow(ctx, e, session, run, streams, true)
+			return runQueued(ctx, e, run, streams, enqueue)
 		},
 	}
 	cmd.Flags().StringVar(&selector, "branch", "", "check this tracked branch")
@@ -126,6 +105,34 @@ followed here; Ctrl-C then only stops following. -d queues it and returns.`,
 	cmd.Flags().BoolVarP(&enqueue, "enqueue", "d", false, "queue the check and return")
 	cmd.MarkFlagsMutuallyExclusive("head", "staged", "working-tree")
 	return cmd
+}
+
+// runQueued sees a queued run through (Design v3 §11): handed to serve and
+// followed when serve leads, otherwise run here; with enqueue, only
+// queued, saying whether anything will run it.
+func runQueued(ctx context.Context, e *engine.Engine, run model.Run, streams Streams, enqueue bool) error {
+	session, err := startSession(ctx, e, model.SessionForeground)
+	if err != nil {
+		return err
+	}
+	defer session.End(context.WithoutCancel(ctx))
+	leader, err := session.Holder(ctx, coord.LeaderResource)
+	if err != nil {
+		return err
+	}
+	switch {
+	case enqueue && leader == nil:
+		fmt.Fprintf(streams.Out, "%s queued; nothing is running it: dockhand serve\n", run.Name())
+		return nil
+	case enqueue:
+		fmt.Fprintf(streams.Out, "%s queued; serve (pid %d) runs it. dockhand wait %s follows it.\n", run.Name(), leader.PID, run.Name())
+		return nil
+	case leader != nil:
+		fmt.Fprintf(streams.Err, "%s handed to serve (pid %d); following it. Ctrl-C stops following, not the check.\n", run.Name(), leader.PID)
+		return follow(ctx, e, session, run, streams, false)
+	}
+	fmt.Fprintf(streams.Err, "%s runs here, since no dockhand serve is running. Ctrl-C stops it and keeps what finished.\n", run.Name())
+	return follow(ctx, e, session, run, streams, true)
 }
 
 func firstNonEmpty(values ...[]string) []string {

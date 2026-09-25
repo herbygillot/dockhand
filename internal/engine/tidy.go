@@ -609,7 +609,7 @@ func (e *Engine) ApplyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 		if err != nil {
 			return err
 		}
-		checkpoint = model.Checkpoint{Number: number, Branch: plan.Branch.ID, Before: model.ObjectID(plan.Head), After: model.ObjectID(parent), At: e.now()}
+		checkpoint = model.Checkpoint{Number: number, Kind: model.CheckpointTidy, Branch: plan.Branch.ID, Before: model.ObjectID(plan.Head), After: model.ObjectID(parent), At: e.now()}
 		if err := worktree.UpdateRefs(ctx, []git.RefChange{
 			{Name: checkpoint.Ref(), Desired: git.RefValue{Exists: true, Object: plan.Head}},
 			{Name: ref, Expected: git.RefValue{Exists: true, Object: plan.Head}, Desired: git.RefValue{Exists: true, Object: parent}},
@@ -640,21 +640,23 @@ func (e *Engine) ApplyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 	return result, nil
 }
 
-// Restore puts a branch's history back as a tidy checkpoint kept it, when
-// the branch is still where that tidy left it. The working files are not
+// Restore puts a branch's history back as a checkpoint kept it, when the
+// branch is still where the tidy or rebase that made it left it. The working files are not
 // touched, so edits tidy had committed read as uncommitted again.
 func (e *Engine) Restore(ctx context.Context, name string) (model.Checkpoint, model.Branch, error) {
-	number, err := strconv.Atoi(strings.TrimPrefix(name, "tidy-"))
-	if err != nil || !strings.HasPrefix(name, "tidy-") {
+	kind, digits, _ := strings.Cut(name, "-")
+	number, err := strconv.Atoi(digits)
+	if err != nil || kind != string(model.CheckpointTidy) && kind != string(model.CheckpointRebase) {
 		return model.Checkpoint{}, model.Branch{}, fmt.Errorf("%q is not a checkpoint name, such as tidy-3", name)
 	}
 	var checkpoint model.Checkpoint
 	var branch model.Branch
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		if checkpoint, err = r.Checkpoint(number); err != nil {
-			if errors.Is(err, store.ErrNotFound) {
-				return fmt.Errorf("there is no checkpoint %s", name)
-			}
+		checkpoint, err = r.Checkpoint(number)
+		if errors.Is(err, store.ErrNotFound) || err == nil && string(checkpoint.Kind) != kind {
+			return fmt.Errorf("there is no checkpoint %s", name)
+		}
+		if err != nil {
 			return err
 		}
 		branch, err = r.Branch(checkpoint.Branch)

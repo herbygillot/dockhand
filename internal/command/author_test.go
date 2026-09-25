@@ -43,22 +43,30 @@ func (b bumper) Prepare(ctx context.Context, r preparation.Request) (preparation
 		old = string(m[1])
 	}
 	next, after := old, string(data)
-	if r.Action == record.Bump {
+	revision := 0
+	switch {
+	case r.Action == record.Bump:
 		next = r.Release.Version
 		after = line.ReplaceAllString(after, "version "+next)
-	} else if !strings.Contains(after, "checksums") {
+	case r.Action == record.BumpRevision:
+		revision = 1
+		after += "revision 1\n"
+	case !strings.Contains(after, "checksums"):
 		after += "checksums sha256 0000\n"
 	}
-	port := func(v string) macports.Snapshot {
-		return macports.Snapshot{Ports: map[string]macports.PortInfo{"jq": {Version: v}}}
+	port := func(v string, revision int) macports.Snapshot {
+		return macports.Snapshot{Ports: map[string]macports.PortInfo{"jq": {Version: v, Revision: revision}}}
 	}
-	result := preparation.Result{Target: record.Target{Name: "jq"}, Release: r.Release, PreparedTree: r.Source.Tree, Fidelity: []portedit.Fidelity{{Before: port(old), After: port(next)}}}
+	result := preparation.Result{Target: record.Target{Name: "jq"}, Release: r.Release, PreparedTree: r.Source.Tree, Fidelity: []portedit.Fidelity{{Before: port(old, 0), After: port(next, revision)}}}
 	if after == string(data) {
 		return result, nil
 	}
 	edit := git.FileEdit{Path: name, Before: before, After: []byte(after), Mode: before.Mode}
 	tree, err := b.repo.EditTree(ctx, string(r.Source.Tree), []git.FileEdit{edit})
 	result.Files, result.PreparedTree = []git.FileEdit{edit}, record.ObjectID(tree)
+	if r.Action == record.BumpRevision {
+		result.Commits = []preparation.CommitIntent{{Subject: "jq: " + r.Subject}}
+	}
 	return result, err
 }
 

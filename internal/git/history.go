@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -173,4 +174,28 @@ func (r *Repository) Bundle(ctx context.Context, path, ref, commit string, exclu
 	}
 	_, err = r.output(ctx, args...)
 	return err
+}
+
+// ErrRebaseConflict reports a rebase that stopped on conflicts; the
+// checkout was put back as it was.
+var ErrRebaseConflict = errors.New("git: the rebase stopped on conflicts")
+
+// Rebase replays the commits branch has above upstream onto onto, in this
+// checkout, which must have branch checked out. A rebase that stops on
+// conflicts is aborted, leaving everything as it was, and the error names
+// the conflicting files.
+func (r *Repository) Rebase(ctx context.Context, onto, upstream, branch string) error {
+	if !ValidObjectID(onto) || !ValidObjectID(upstream) || !ValidBranchName(branch) {
+		return fmt.Errorf("git: invalid rebase of %q onto %q", branch, onto)
+	}
+	_, err := r.output(ctx, "rebase", "--quiet", "--no-autosquash", "--no-update-refs", "--onto", onto, upstream, branch)
+	if err == nil {
+		return nil
+	}
+	conflicts, conflictErr := r.Conflicts(context.WithoutCancel(ctx))
+	_, abortErr := r.output(context.WithoutCancel(ctx), "rebase", "--abort")
+	if conflictErr == nil && len(conflicts) > 0 {
+		return errors.Join(fmt.Errorf("%w in %s", ErrRebaseConflict, strings.Join(conflicts, ", ")), abortErr)
+	}
+	return errors.Join(err, abortErr)
 }

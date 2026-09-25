@@ -83,6 +83,8 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	for _, command := range []*cobra.Command{
 		updateCommand(&settings, streams),
 		checksumsCommand(&settings, streams),
+		revbumpCommand(&settings, streams),
+		editCommand(&settings, streams),
 	} {
 		command.GroupID = "author"
 		root.AddCommand(command)
@@ -98,6 +100,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	for _, command := range []*cobra.Command{
 		checkCommand(&settings, streams),
 		logsCommand(&settings, streams),
+		retryCommand(&settings, streams),
 	} {
 		command.GroupID = "check"
 		root.AddCommand(command)
@@ -106,6 +109,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	for _, command := range []*cobra.Command{
 		tidyCommand(&settings, streams),
 		submitCommand(&settings, streams),
+		rebaseCommand(&settings, streams),
 	} {
 		command.GroupID = "review"
 		root.AddCommand(command)
@@ -123,6 +127,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	root.AddGroup(&cobra.Group{ID: "occasional", Title: "Occasional:"})
 	for _, command := range []*cobra.Command{
 		restoreCommand(&settings, streams),
+		archiveCommand(&settings, streams),
 	} {
 		command.GroupID = "occasional"
 		root.AddCommand(command)

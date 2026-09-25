@@ -64,6 +64,24 @@ type PullRequest struct {
 	// it are recognized and kept.
 	Body  string
 	Draft bool
+	// Observed is what the forge last reported about it; nil until then.
+	Observed *PullRequestObservation `json:",omitempty"`
+}
+
+// PullRequestObservation is a pull request as the forge last reported it.
+type PullRequestObservation struct {
+	// State is open, closed, or merged.
+	State string
+	Draft bool `json:",omitempty"`
+	// Review is approved, changes-requested, or none.
+	Review string
+	// Checks is passing, failing, pending, or none; Failing names the
+	// checks that concluded unsuccessfully.
+	Checks  string
+	Failing []string `json:",omitempty"`
+	// Head is the commit the pull request was at.
+	Head ObjectID
+	At   time.Time
 }
 
 // Branch is the unit of work.

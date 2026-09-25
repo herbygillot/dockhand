@@ -31,6 +31,9 @@ type UpdateRequest struct {
 	KeepOldChecksums bool
 	// SharedRelease moves every subport that shares the port's release.
 	SharedRelease bool
+	// Subject is the reason for a revision bump, the commit subject after
+	// the port's name: "rebuild for poppler 25.09.0".
+	Subject string
 	// Plan prepares the edit and changes nothing.
 	Plan bool
 }
@@ -77,7 +80,13 @@ type Update struct {
 // from there. The edit is prepared from a capture of the tracked files, and
 // written only if none of the files it touches changed in the meantime.
 func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, error) {
-	if request.Action != record.Bump && request.Action != record.RefreshChecksums {
+	switch request.Action {
+	case record.Bump, record.RefreshChecksums:
+	case record.BumpRevision:
+		if strings.TrimSpace(request.Subject) == "" {
+			return Update{}, errors.New("a revision bump needs its reason as the subject, such as --subject \"rebuild for poppler 25.09.0\"")
+		}
+	default:
 		return Update{}, fmt.Errorf("engine: %s is not an update", request.Action)
 	}
 	if !macports.ValidName(request.Port) {
@@ -102,6 +111,7 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		Source:     record.Source{Tree: record.ObjectID(captured), Base: record.ObjectID(branch.Base)},
 		Selection:  macports.Selection{Selector: request.Port},
 		Version:    request.Version,
+		Subject:    request.Subject,
 	}
 	if request.Action == record.Bump {
 		release, err := preparer.ResolveRelease(ctx, input)
@@ -143,8 +153,11 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		return update, err
 	}
 	change := "refreshed checksums"
-	if request.Action == record.Bump {
+	switch request.Action {
+	case record.Bump:
 		change = fmt.Sprintf("%s → %s", update.Before, update.After)
+	case record.BumpRevision:
+		change = fmt.Sprintf("revision %d → %d", update.Before.Revision, update.After.Revision)
 	}
 	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 		if err := tx.AddEdit(edit); err != nil {
@@ -161,17 +174,24 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 // and the subject the edit carries.
 func (e *Engine) editRecord(ctx context.Context, worktree *git.Repository, branch model.Branch, request UpdateRequest, update Update, result preparation.Result) (model.Edit, error) {
 	edit := model.Edit{ID: model.EditID(store.NewID("ed")), Branch: branch.ID, Kind: model.EditUpdate, Port: update.Port, Subject: update.Subject, At: e.now()}
-	if request.Action == record.RefreshChecksums {
+	switch request.Action {
+	case record.RefreshChecksums:
 		edit.Kind = model.EditChecksums
+	case record.BumpRevision:
+		edit.Kind = model.EditRevbump
 	}
 	edit.Directory = portDirectory(result.Files[0].Path)
 	if result.Target.Portfile != "" {
 		edit.Directory = path.Dir(result.Target.Portfile)
 	}
 	if edit.Subject == "" {
-		edit.Subject = update.Port + ": update to " + update.After.Version
-		if edit.Kind == model.EditChecksums {
+		switch edit.Kind {
+		case model.EditChecksums:
 			edit.Subject = update.Port + ": update checksums"
+		case model.EditRevbump:
+			edit.Subject = update.Port + ": " + strings.TrimSpace(request.Subject)
+		default:
+			edit.Subject = update.Port + ": update to " + update.After.Version
 		}
 	}
 	for _, file := range result.Files {
