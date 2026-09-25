@@ -65,14 +65,14 @@ func TestAStealthUpdateSaysSoAndKeepsBothArchives(t *testing.T) {
 	require.Contains(t, out, "jq 1.7.1 · the distfile changed upstream without a new name (stealth update)\n"+
 		"  was   sha256 1f3a…c2d9   size 7,114,391\n"+
 		"  now   sha256 9b0c…77e1   size 7,114,508\n"+
-		"Updated checksums (1 distfile) and dist_subdir jq/1.7.1_1, so mirrors keep both archives.\n"+
+		"Updated checksums (1 distfile), revision 0 → 1, and dist_subdir jq/1.7.1_1, so mirrors keep both archives.\n"+
 		"Changed: textproc/jq/Portfile\n"+
-		"Inspect the source change before deciding whether it needs a revision bump.\n")
+		"The source changed, so the revision is bumped; --no-revbump leaves it, for a change that needs no rebuild.\n")
 	dir := regexp.MustCompile(`· (\S+)\n`).FindStringSubmatch(out)[1]
 	home, _ := os.UserHomeDir()
 	data, err := os.ReadFile(filepath.Join(home, dir[2:], "textproc/jq/Portfile"))
 	require.NoError(t, err)
-	require.Contains(t, string(data), "size 7114508\ndist_subdir         ${name}/${version}_1\n")
+	require.Equal(t, "name                jq\nversion             1.7.1\nrevision            1\nchecksums           sha256 "+newSHA+" size 7114508\ndist_subdir         ${name}/${version}_${revision}\n", string(data))
 
 	// A version edited by hand first is not a stealth update.
 	t.Setenv("MACPORTS_TREE", filepath.Join(home, dir[2:]))
@@ -126,4 +126,40 @@ func TestUpdateSubmitTidiesChecksAndSubmits(t *testing.T) {
 	require.Contains(t, out, "checking commit ")
 	require.Contains(t, out, "Opened #34901")
 	require.Len(t, g.prs, 1)
+}
+
+func TestAStealthUpdateWithoutARevbumpNumbersTheDirectory(t *testing.T) {
+	w := newWorld(t)
+	require.NoError(t, os.WriteFile(filepath.Join(w.upstream, "textproc/jq/Portfile"), []byte("name                jq\nversion             1.7.1\nchecksums           sha256 "+oldSHA+" size 7114391\n"), 0o644))
+	gitRun(t, w.upstream, "commit", "-q", "-am", "jq: 1.7.1")
+	testPreparer = func(e *engine.Engine) engine.Preparer { return rechecksummer{repo: e.Repo} }
+	t.Cleanup(func() { testPreparer = nil })
+
+	out, _, err := dockhand(t, "checksums", "jq", "--new", "--no-revbump")
+	require.NoError(t, err)
+	require.Contains(t, out, "Updated checksums (1 distfile) and dist_subdir jq/1.7.1_1, so mirrors keep both archives.\n"+
+		"Changed: textproc/jq/Portfile\n"+
+		"Inspect the source change before deciding whether it needs a revision bump.\n")
+	dir := regexp.MustCompile(`· (\S+)\n`).FindStringSubmatch(out)[1]
+	home, _ := os.UserHomeDir()
+	data, err := os.ReadFile(filepath.Join(home, dir[2:], "textproc/jq/Portfile"))
+	require.NoError(t, err)
+	require.Contains(t, string(data), "size 7114508\ndist_subdir         ${name}/${version}_1\n")
+	require.NotContains(t, string(data), "revision")
+}
+
+func TestANewVersionRemovesTheStealthDistSubdir(t *testing.T) {
+	w := newWorld(t)
+	require.NoError(t, os.WriteFile(filepath.Join(w.upstream, "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\ndist_subdir         ${name}/${version}_${revision}\nrevision 1\n"), 0o644))
+	gitRun(t, w.upstream, "commit", "-q", "-am", "jq: 1.7.1")
+	withBumper(t)
+
+	out, _, err := dockhand(t, "update", "jq", "--new")
+	require.NoError(t, err)
+	require.Contains(t, out, "Removed dist_subdir: a stealth update set it for the old version, and the new version's archive has a name of its own.\n")
+	dir := regexp.MustCompile(`· (\S+)\n`).FindStringSubmatch(out)[1]
+	home, _ := os.UserHomeDir()
+	data, err := os.ReadFile(filepath.Join(home, dir[2:], "textproc/jq/Portfile"))
+	require.NoError(t, err)
+	require.Equal(t, "name jq\nversion 1.8.1\nrevision 1\n", string(data))
 }

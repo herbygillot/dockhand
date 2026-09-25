@@ -114,7 +114,7 @@ edits alone.`,
 
 func checksumsCommand(s *settings, streams Streams) *cobra.Command {
 	var where branchChoice
-	var plan, keepOld bool
+	var plan, keepOld, keepRevision bool
 	cmd := &cobra.Command{
 		Use:   "checksums <port>",
 		Short: "Refresh a port's checksums for the version it names",
@@ -124,15 +124,17 @@ the version by hand. Nothing is committed.
 
 A distfile that changed upstream under the same name, in a Portfile the
 branch has not changed, is a stealth update: it says so, shows the checksums
-before and after, and sets dist_subdir ${name}/${version}_1, the MacPorts
-guide's recipe, so mirrors keep both archives. Whether it needs a revision
-bump is yours to decide.
+before and after, bumps the revision, since the source changed, and sets
+dist_subdir ${name}/${version}_${revision}, so mirrors keep both archives.
+--no-revbump leaves the revision, for a change that needs no rebuild, and
+numbers the directory instead: ${name}/${version}_1, the MacPorts guide's
+recipe. A later version update removes either.
 
 The branch is --branch, else the one checked out here; --new starts one.
 --plan shows the edit and changes nothing.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			request := engine.UpdateRequest{Action: record.RefreshChecksums, Port: args[0], KeepOldChecksums: keepOld, Plan: plan}
+			request := engine.UpdateRequest{Action: record.RefreshChecksums, Port: args[0], KeepOldChecksums: keepOld, KeepRevision: keepRevision, Plan: plan}
 			_, _, err := author(cmd.Context(), s, streams, where, "checksums", request, linkedOptions{})
 			return err
 		},
@@ -140,6 +142,7 @@ The branch is --branch, else the one checked out here; --new starts one.
 	where.flags(cmd)
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the edit and change nothing")
 	cmd.Flags().BoolVar(&keepOld, "keep-old-checksums", false, "refresh legacy md5 or sha1 checksums in place rather than rewriting them as rmd160, sha256, and size")
+	cmd.Flags().BoolVar(&keepRevision, "no-revbump", false, "for a stealth update, leave the revision as it is")
 	return cmd
 }
 
@@ -227,7 +230,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	if request.Action == record.Bump {
 		fmt.Fprintf(out, "%s: %s → %s%s\n", update.Port, update.Before, update.After, releaseLabel(update.Release))
 	} else if update.Stealth != nil {
-		fmt.Fprintf(out, "%s %s · the distfile changed upstream without a new name (stealth update)\n", update.Port, update.After)
+		fmt.Fprintf(out, "%s %s · the distfile changed upstream without a new name (stealth update)\n", update.Port, update.Before)
 		writeStealth(out, update.Stealth)
 	} else {
 		fmt.Fprintf(out, "%s %s\n", update.Port, update.After)
@@ -254,15 +257,37 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	if update.Before.Revision != 0 && update.After.Revision == 0 {
 		what += "; revision reset to 0"
 	}
-	if stealth := update.Stealth; stealth != nil && stealth.DistSubdir != "" {
-		what += " and dist_subdir " + stealth.DistSubdir + ", so mirrors keep both archives"
+	if stealth := update.Stealth; stealth != nil {
+		var also []string
+		if stealth.Revbumped {
+			also = append(also, fmt.Sprintf("revision %d → %d", update.Before.Revision, update.After.Revision))
+		}
+		if stealth.DistSubdir != "" {
+			also = append(also, "dist_subdir "+stealth.DistSubdir+", so mirrors keep both archives")
+		}
+		switch len(also) {
+		case 1:
+			what += " and " + also[0]
+		case 2:
+			what += ", " + also[0] + ", and " + also[1]
+		}
 	}
 	fmt.Fprintf(out, "%s.\nChanged: %s\n", what, strings.Join(update.Files, ", "))
 	if stealth := update.Stealth; stealth != nil {
-		if stealth.Problem != "" {
-			fmt.Fprintf(out, "! dist_subdir was not set: %s. Set it yourself, so mirrors keep both archives; the MacPorts guide's recipe is dist_subdir ${name}/${version}_1\n", stealth.Problem)
+		if stealth.RevbumpProblem != "" {
+			fmt.Fprintf(out, "! the revision was not bumped: %s. Bump it yourself if the change needs a rebuild.\n", stealth.RevbumpProblem)
 		}
-		fmt.Fprintln(out, "Inspect the source change before deciding whether it needs a revision bump.")
+		if stealth.Problem != "" {
+			fmt.Fprintf(out, "! dist_subdir was not set: %s. Set it yourself, so mirrors keep both archives: dist_subdir ${name}/${version}_${revision} with a revision bump, else ${name}/${version}_1\n", stealth.Problem)
+		}
+		if stealth.Revbumped {
+			fmt.Fprintln(out, "The source changed, so the revision is bumped; --no-revbump leaves it, for a change that needs no rebuild.")
+		} else if stealth.RevbumpProblem == "" {
+			fmt.Fprintln(out, "Inspect the source change before deciding whether it needs a revision bump.")
+		}
+	}
+	if update.DistSubdirRemoved {
+		fmt.Fprintln(out, "Removed dist_subdir: a stealth update set it for the old version, and the new version's archive has a name of its own.")
 	}
 	writeUpstream(out, update.Upstream)
 	for _, problem := range update.PatchProblems {

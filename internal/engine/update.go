@@ -39,6 +39,9 @@ type UpdateRequest struct {
 	Subject string
 	// Plan prepares the edit and changes nothing.
 	Plan bool
+	// KeepRevision leaves the revision of a stealth update as it is, for a
+	// change that needs no rebuild.
+	KeepRevision bool
 	// CompareUpstream fetches the current version's archives beside the
 	// new ones and compares them, for a version update (Design v3 §6.12).
 	CompareUpstream bool
@@ -84,6 +87,9 @@ type Update struct {
 	Upstream *model.UpstreamComparison
 	// Stealth is a checksum refresh's stealth update, when it found one.
 	Stealth *Stealth
+	// DistSubdirRemoved is true when a version update removed the
+	// dist_subdir an earlier stealth update set.
+	DistSubdirRemoved bool
 }
 
 // Update edits a port's files in the branch's worktree, as the worktree
@@ -150,12 +156,24 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		if port == "" {
 			port = request.Port
 		}
-		if stealth, err = e.stealth(ctx, worktree, branch, captured, port, &result); err != nil {
+		if stealth, err = e.stealth(ctx, worktree, branch, captured, port, request.KeepRevision, &result); err != nil {
+			return Update{}, err
+		}
+	}
+	removed := false
+	if request.Action == record.Bump && len(result.Files) > 0 {
+		if removed, err = dropStealthDistSubdir(ctx, worktree, captured, &result); err != nil {
 			return Update{}, err
 		}
 	}
 	update := describe(branch, request.Port, result)
-	update.Stealth = stealth
+	update.Stealth, update.DistSubdirRemoved = stealth, removed
+	if stealth != nil {
+		update.Subject = update.Port + ": update checksums after a stealth update"
+		if stealth.Revbumped {
+			update.After.Revision++
+		}
+	}
 	if compare && len(result.Files) > 0 {
 		update.Upstream = compareUpstream(ctx, result)
 	}

@@ -16,6 +16,10 @@ import (
 // upstream without a new name.
 type Stealth struct {
 	Distfiles []StealthDistfile
+	// Revbumped is true when the revision was bumped, since the source
+	// changed; RevbumpProblem says why it could not be, when asked.
+	Revbumped      bool
+	RevbumpProblem string
 	// DistSubdir is where mirrors now keep the new archive, as evaluated,
 	// such as croc/10.2.4_1; empty when it was not set, and Problem says
 	// why.
@@ -32,21 +36,16 @@ type StealthDistfile struct {
 // stealth finds a stealth update in a checksum refresh: an archive whose
 // contents changed under the same name, in a Portfile the branch has not
 // changed since its base. A Portfile edited by hand first, as for a new
-// version, is not one. For a stealth update it sets dist_subdir in the
-// prepared Portfile, the MacPorts guide's recipe, so mirrors keep both
-// archives, and rewrites the prepared tree to match.
-func (e *Engine) stealth(ctx context.Context, worktree *git.Repository, branch model.Branch, captured string, port string, result *preparation.Result) (*Stealth, error) {
-	index := -1
-	for i, file := range result.Files {
-		if strings.HasSuffix(file.Path, "/Portfile") && (result.Target.Portfile == "" || file.Path == result.Target.Portfile) && !file.Delete {
-			index = i
-			break
-		}
-	}
-	if index < 0 || len(result.Fidelity) == 0 || len(result.Downloads) == 0 {
+// version, is not one. For a stealth update it bumps the revision, since
+// the source changed, unless keepRevision; then sets dist_subdir in the
+// prepared Portfile so mirrors keep both archives: following the revision
+// when it was bumped, numbered when not. It rewrites the prepared tree to
+// match.
+func (e *Engine) stealth(ctx context.Context, worktree *git.Repository, branch model.Branch, captured string, port string, keepRevision bool, result *preparation.Result) (*Stealth, error) {
+	edit := preparedPortfile(result)
+	if edit == nil || len(result.Fidelity) == 0 || len(result.Downloads) == 0 {
 		return nil, nil
 	}
-	edit := &result.Files[index]
 	trees, err := worktree.CommitTrees(ctx, []string{string(branch.Base)})
 	if err != nil {
 		return nil, err
@@ -72,20 +71,72 @@ func (e *Engine) stealth(ctx context.Context, worktree *git.Repository, branch m
 	if len(found.Distfiles) == 0 {
 		return nil, nil
 	}
-	after, n, err := portfile.StealthDistSubdir(edit.After)
+	evaluated := result.Fidelity[len(result.Fidelity)-1].After.Ports[port]
+	revision := evaluated.Revision
+	if !keepRevision {
+		bumped, err := portfile.BumpRevision(edit.After, "", revision)
+		if err != nil {
+			found.RevbumpProblem = unsupportedReason(err)
+		} else {
+			edit.After, found.Revbumped = bumped, true
+			revision++
+		}
+	}
+	after, form, err := portfile.StealthDistSubdir(edit.After, found.Revbumped)
 	if err != nil {
-		found.Problem = strings.TrimPrefix(err.Error(), portfile.ErrUnsupported.Error()+": ")
-		return &found, nil
+		found.Problem = unsupportedReason(err)
+	} else {
+		edit.After = after
+		n := form.Counter
+		if form.ByRevision {
+			n = revision
+		}
+		found.DistSubdir = fmt.Sprintf("%s/%s_%d", port, evaluated.Version, n)
+	}
+	if found.Revbumped || found.DistSubdir != "" {
+		if err := rewritePrepared(ctx, worktree, captured, result); err != nil {
+			return nil, err
+		}
+	}
+	return &found, nil
+}
+
+// dropStealthDistSubdir removes a stealth update's dist_subdir when an
+// update moves to a new version, whose archive has a name of its own.
+func dropStealthDistSubdir(ctx context.Context, worktree *git.Repository, captured string, result *preparation.Result) (bool, error) {
+	edit := preparedPortfile(result)
+	if edit == nil {
+		return false, nil
+	}
+	after, removed, err := portfile.RemoveStealthDistSubdir(edit.After)
+	if err != nil || !removed {
+		return false, nil
 	}
 	edit.After = after
-	tree, err := worktree.EditTree(ctx, captured, result.Files)
-	if err != nil {
-		return nil, err
+	return true, rewritePrepared(ctx, worktree, captured, result)
+}
+
+// preparedPortfile is the prepared edit of the target's Portfile.
+func preparedPortfile(result *preparation.Result) *git.FileEdit {
+	for i, file := range result.Files {
+		if strings.HasSuffix(file.Path, "/Portfile") && (result.Target.Portfile == "" || file.Path == result.Target.Portfile) && !file.Delete {
+			return &result.Files[i]
+		}
 	}
-	result.PreparedTree = model.ObjectID(tree)
-	version := result.Fidelity[len(result.Fidelity)-1].After.Ports[port].Version
-	found.DistSubdir = fmt.Sprintf("%s/%s_%d", port, version, n)
-	return &found, nil
+	return nil
+}
+
+// rewritePrepared makes the prepared tree hold the edits as they now are.
+func rewritePrepared(ctx context.Context, worktree *git.Repository, captured string, result *preparation.Result) error {
+	tree, err := worktree.EditTree(ctx, captured, result.Files)
+	if err == nil {
+		result.PreparedTree = model.ObjectID(tree)
+	}
+	return err
+}
+
+func unsupportedReason(err error) string {
+	return strings.TrimPrefix(err.Error(), portfile.ErrUnsupported.Error()+": ")
 }
 
 // declaredChecksums reads an evaluated checksums option, by distfile:

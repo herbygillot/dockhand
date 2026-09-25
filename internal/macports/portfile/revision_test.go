@@ -14,10 +14,16 @@ func TestRevisionEditPreservesSurroundingSourceAndScope(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(got), "revision   7 ; # retain comment")
 	require.Contains(t, string(got), "    revision 4\r\n")
-	for _, source := range []string{"version 1", "version 1\n", "# no explicit revision\r\nversion 1\r\n"} {
+	for source, want := range map[string]string{
+		"version 1": "version 1\nrevision 1",
+		"name  jq\nversion  1.8.1\n\nchecksums x\n":                        "name  jq\nversion  1.8.1\nrevision 1\n\nchecksums x\n",
+		"name                jq\nversion             1.8.1\nlicense MIT\n": "name                jq\nversion             1.8.1\nrevision            1\nlicense MIT\n",
+		"# no explicit revision\r\nversion 1\r\n":                          "# no explicit revision\r\nversion 1\r\nrevision 1\r\n",
+		"github.setup jqlang jq 1.8.1\n":                                   "github.setup jqlang jq 1.8.1\n\nrevision                1\n",
+	} {
 		got, err := BumpRevision([]byte(source), "", 0)
 		require.NoError(t, err)
-		require.Contains(t, string(got), "revision                1")
+		require.Equal(t, want, string(got), source)
 	}
 	for _, source := range []string{"revision [expr {1+1}]", "revision $current", "revision 1\nrevision 2", "revision 3", "revision {"} {
 		_, err := BumpRevision([]byte(source), "", 2)

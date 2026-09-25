@@ -301,11 +301,11 @@ croc 10.2.4 · the distfile changed upstream without a new name (stealth update)
   was   sha256 1f3a…c2d9   size 7,114,391
   now   sha256 9b0c…77e1   size 7,114,508
   inside the archive: 1 file differs, go.sum (+2 −2)   (dockhand diff --archive for all of it)
-Updated checksums and dist_subdir croc/10.2.4_1, so mirrors keep both archives.
-Inspect the source change before deciding whether it needs a revision bump.
+Updated checksums, revision 0 → 1, and dist_subdir croc/10.2.4_1, so mirrors keep both archives.
+The source changed, so the revision is bumped; --no-revbump leaves it, for a change that needs no rebuild.
 ```
 
-The `dist_subdir` recipe is the MacPorts guide's. Dockhand calls out the stealth update and shows what changed inside the archive, but leaves the question of a revision bump to you.
+The source changed, so by default the revision is bumped and `dist_subdir` follows it: `${name}/${version}_${revision}`. Each stealth update then gets a directory of its own, with no count to keep. `--no-revbump` leaves the revision alone, for a re-rolled tarball whose contents didn't really change. It then numbers the directory instead, `${name}/${version}_1`, which is the MacPorts guide's recipe. Following the revision without a bump would put the new archive where the old one is. A `dist_subdir` already numbered keeps counting, even with a bump: `_${revision}` at revision 1 would be the `_1` the earlier archive is already in. A later version update removes either form, since the new archive has a name of its own. (Revised 2026-09-25, [note](activity/2026-09-25-stealth-revbump.md).)
 
 ### 6.6 Revision bumps
 

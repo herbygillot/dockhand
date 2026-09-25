@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/text"
@@ -74,9 +75,33 @@ func BumpRevision(src []byte, subport string, current int) ([]byte, error) {
 	if bytes.Contains(src, []byte("\r\n")) {
 		newline = "\r\n"
 	}
+	// A new revision line goes after the version, as MacPorts writes it,
+	// aligned with it; failing that, at the end.
+	if subport == "" {
+		if version, ok := lastCommand(src, script, "version"); ok && len(version.Words) > 1 {
+			lineStart := bytes.LastIndexByte(src[:version.Span.Start], '\n') + 1
+			width := max(version.Words[1].Span.Start-lineStart, len("revision")+1)
+			line := "revision" + strings.Repeat(" ", width-len("revision")) + next
+			return text.Apply(src, []text.Edit{{Span: text.Span{Start: version.Span.End, End: version.Span.End}, New: []byte(newline + line)}})
+		}
+	}
 	insert := newline + "revision                " + next + newline
 	if subport != "" {
 		insert = newline + "    revision            " + next + newline
 	}
 	return text.Apply(src, []text.Edit{{Span: text.Span{Start: script.Span.End, End: script.Span.End}, New: []byte(insert)}})
+}
+
+// lastCommand is the last top-level command of the name.
+func lastCommand(src []byte, script *syntax.Script, name string) (syntax.Command, bool) {
+	var found syntax.Command
+	ok := false
+	for _, item := range script.Items {
+		if cmd, isCommand := item.(syntax.Command); isCommand {
+			if got, _ := cmd.Name(src); got == name {
+				found, ok = cmd, true
+			}
+		}
+	}
+	return found, ok
 }

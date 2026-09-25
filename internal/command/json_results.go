@@ -45,9 +45,11 @@ type updateJSON struct {
 }
 
 type stealthJSON struct {
-	Distfiles  []stealthDistfileJSON `json:"distfiles"`
-	DistSubdir string                `json:"dist_subdir,omitempty"`
-	Problem    string                `json:"problem,omitempty"`
+	Distfiles      []stealthDistfileJSON `json:"distfiles"`
+	Revbumped      bool                  `json:"revbumped"`
+	RevbumpProblem string                `json:"revbump_problem,omitempty"`
+	DistSubdir     string                `json:"dist_subdir,omitempty"`
+	Problem        string                `json:"problem,omitempty"`
 }
 
 type stealthDistfileJSON struct {
@@ -70,7 +72,7 @@ func updateView(branch model.Branch, started bool, update engine.Update, plan bo
 		view.Diff = update.Diff
 	}
 	if stealth := update.Stealth; stealth != nil {
-		view.Stealth = &stealthJSON{DistSubdir: stealth.DistSubdir, Problem: stealth.Problem, Distfiles: []stealthDistfileJSON{}}
+		view.Stealth = &stealthJSON{Revbumped: stealth.Revbumped, RevbumpProblem: stealth.RevbumpProblem, DistSubdir: stealth.DistSubdir, Problem: stealth.Problem, Distfiles: []stealthDistfileJSON{}}
 		for _, d := range stealth.Distfiles {
 			view.Stealth.Distfiles = append(view.Stealth.Distfiles, stealthDistfileJSON{Name: d.Name,
 				Was: checksumJSON{d.Was.RMD160, d.Was.SHA256, d.Was.Size}, Now: checksumJSON{d.Now.RMD160, d.Now.SHA256, d.Now.Size}})
