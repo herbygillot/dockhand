@@ -49,18 +49,30 @@ type CleanBranch struct {
 // only while it still holds the merged commit. A dirty worktree, and work
 // that went on past the merge, are kept. The branch's record stays, so it
 // is still searchable.
-func (e *Engine) PlanClean(ctx context.Context) ([]CleanBranch, error) {
-	var merged []model.Branch
+//
+// Closed and archived branches, when asked for, lose only their worktree:
+// their work isn't merged, so the Git branch, the fork's branch, and
+// dockhand's checkpoints stay, and the worktree is checked out again when
+// it is next needed.
+func (e *Engine) PlanClean(ctx context.Context, states ...model.BranchState) ([]CleanBranch, error) {
+	if len(states) == 0 {
+		states = []model.BranchState{model.BranchMerged}
+	}
+	var branches []model.Branch
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		var err error
-		merged, err = r.Branches(store.BranchFilter{States: []model.BranchState{model.BranchMerged}})
+		branches, err = r.Branches(store.BranchFilter{States: states})
 		return err
 	}); err != nil {
 		return nil, err
 	}
 	var plans []CleanBranch
-	for _, branch := range merged {
-		plan, err := e.planCleanBranch(ctx, branch)
+	for _, branch := range branches {
+		planner := e.planCleanBranch
+		if branch.State != model.BranchMerged {
+			planner = e.planCleanWorktree
+		}
+		plan, err := planner(ctx, branch)
 		if err != nil {
 			return nil, err
 		}
@@ -221,6 +233,23 @@ func (e *Engine) planCleanChecks(ctx context.Context, branch model.Branch, repos
 	return steps, nil
 }
 
+// planCleanWorktree plans removing an unmerged branch's worktree, and
+// nothing else, unless it holds work of its own.
+func (e *Engine) planCleanWorktree(ctx context.Context, branch model.Branch) (CleanBranch, error) {
+	plan := CleanBranch{Branch: branch}
+	if !branch.Managed || !exists(branch.Worktree) {
+		return plan, nil
+	}
+	step := CleanStep{What: "worktree " + branch.Worktree, kind: "worktree", path: branch.Worktree}
+	dirty, err := e.dirty(ctx, branch.Worktree)
+	if err != nil {
+		return plan, err
+	}
+	step.Kept = dirty
+	plan.Steps = append(plan.Steps, step)
+	return plan, nil
+}
+
 // dirty says why a worktree holds work of its own: uncommitted edits to
 // tracked files, or untracked files.
 func (e *Engine) dirty(ctx context.Context, directory string) (string, error) {
@@ -312,9 +341,9 @@ func (e *Engine) ApplyClean(ctx context.Context, plans []CleanBranch) ([]CleanBr
 			}
 			everything = everything && step.Done
 		}
-		// Checkpoints and snapshots go only with everything else: kept work
-		// may still want a restore.
-		if everything {
+		// Checkpoints and snapshots go only with everything else, and only
+		// for merged work: kept work may still want a restore.
+		if everything && plan.Branch.State == model.BranchMerged {
 			if err := e.dropRefs(ctx, plan.Branch); err != nil {
 				return plans, err
 			}

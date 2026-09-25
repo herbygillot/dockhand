@@ -145,3 +145,10 @@ func (r *Repository) Switch(ctx context.Context, branch string) error {
 	_, err := r.output(ctx, "switch", "--no-guess", "--quiet", branch)
 	return err
 }
+
+// PruneWorktrees forgets worktrees whose directories are gone, so their
+// branches can be checked out again.
+func (r *Repository) PruneWorktrees(ctx context.Context) error {
+	_, err := r.output(ctx, "worktree", "prune")
+	return err
+}

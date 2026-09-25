@@ -287,9 +287,16 @@ func TestPathAndResolve(t *testing.T) {
 	_, err = e.Path(t.Context(), "parked")
 	require.ErrorContains(t, err, "not checked out anywhere")
 
+	// A removed worktree is checked out again; with its Git branch gone
+	// too, there is nothing to check out.
 	require.NoError(t, e.Repo.RemoveWorktree(context.Background(), branch.Worktree))
+	path, err = e.Path(t.Context(), "jq-update")
+	require.NoError(t, err)
+	require.DirExists(t, path)
+	require.NoError(t, e.Repo.RemoveWorktree(context.Background(), branch.Worktree))
+	run(t, f.clone, "branch", "-D", branch.Name)
 	_, err = e.Path(t.Context(), "jq-update")
-	require.ErrorContains(t, err, "is gone")
+	require.ErrorContains(t, err, "is gone, and so is its Git branch")
 }
 
 func TestUpstreamRemoteIsFoundByURL(t *testing.T) {

@@ -297,8 +297,8 @@ func (e *Engine) worktree(ctx context.Context, branch model.Branch) (*git.Reposi
 	if branch.Worktree == "" {
 		return nil, fmt.Errorf("%s is not checked out anywhere; check it out with git switch %s", branch.Name, branch.Name)
 	}
-	if !exists(branch.Worktree) {
-		return nil, fmt.Errorf("%s's worktree %s is gone", branch.Name, branch.Worktree)
+	if err := e.checkOutAgain(ctx, branch); err != nil {
+		return nil, err
 	}
 	worktree, err := git.Open(ctx, branch.Worktree, e.options.Git)
 	if err != nil {

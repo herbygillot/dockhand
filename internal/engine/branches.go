@@ -344,10 +344,44 @@ func (e *Engine) Path(ctx context.Context, selector string) (string, error) {
 	if branch.Worktree == "" {
 		return "", fmt.Errorf("%s is not checked out anywhere; check it out with git switch %s", branch.Name, branch.Name)
 	}
-	if !exists(branch.Worktree) {
-		return "", fmt.Errorf("%s's worktree %s is gone", branch.Name, branch.Worktree)
+	if err := e.checkOutAgain(ctx, branch); err != nil {
+		return "", err
 	}
 	return branch.Worktree, nil
+}
+
+// checkOutAgain recreates a managed branch's worktree that clean removed,
+// or that went missing, as start makes one: sparse, holding _resources
+// and the ports the branch changes. A worktree that is there is left alone.
+func (e *Engine) checkOutAgain(ctx context.Context, branch model.Branch) error {
+	if exists(branch.Worktree) {
+		return nil
+	}
+	if !branch.Managed {
+		return fmt.Errorf("%s's worktree %s is gone", branch.Name, branch.Worktree)
+	}
+	head, _, err := e.Repo.Branch(ctx, branch.Name)
+	if errors.Is(err, git.ErrBranchMissing) {
+		return fmt.Errorf("%s's worktree %s is gone, and so is its Git branch", branch.Name, branch.Worktree)
+	}
+	if err != nil {
+		return err
+	}
+	changed, err := e.Repo.ChangedPaths(ctx, string(branch.Base), head)
+	if err != nil {
+		return err
+	}
+	if err := e.Repo.PruneWorktrees(ctx); err != nil {
+		return err
+	}
+	if err := e.Repo.AddSparseWorktree(ctx, branch.Worktree, branch.Name, append([]string{"_resources"}, ScopeOf(changed).Ports...)); err != nil {
+		return fmt.Errorf("checking %s out again in %s: %w", branch.Name, branch.Worktree, err)
+	}
+	return e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: "branch.worktree", Level: model.LevelInfo,
+			Message: "checked out again in " + branch.Worktree})
+		return err
+	})
 }
 
 func short(id model.ObjectID) string {
