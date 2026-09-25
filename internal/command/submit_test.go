@@ -165,3 +165,39 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	require.Equal(t, 3, ExitCode(err))
 	require.Contains(t, out, "✗ jq-update  #34901 MacPorts CI failing: macOS 26")
 }
+
+func TestCleanAfterTheMerge(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	g := withGitHub(t, w)
+	_, _, err := dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.home, "src", "macports-branches", "jq-update")
+	t.Setenv("MACPORTS_TREE", dir)
+	_, _, err = dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "tidy")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	g.prs[0].State = record.PullRequestMerged
+	t.Setenv("MACPORTS_TREE", w.clone)
+	_, errs, err := dockhand(t, "status", "--refresh")
+	require.NoError(t, err)
+	require.Contains(t, errs, "jq-update: #34901 is merged")
+
+	out, _, err := dockhand(t, "clean", "--merged")
+	require.NoError(t, err)
+	require.Contains(t, out, "jq-update (#34901, merged at ")
+	require.Contains(t, out, "  remove   worktree ~/src/macports-branches/jq-update\n  remove   branch dockhand/jq-update\n  remove   ada/macports-ports:dockhand/jq-update\nNothing was removed; --yes removes these.\n")
+	require.DirExists(t, dir)
+
+	out, _, err = dockhand(t, "clean", "--yes")
+	require.NoError(t, err)
+	require.Contains(t, out, "  removed  worktree ~/src/macports-branches/jq-update\n")
+	require.NoDirExists(t, dir)
+	out, _, err = dockhand(t, "clean")
+	require.NoError(t, err)
+	require.Equal(t, "Nothing to remove.\n", out)
+}
