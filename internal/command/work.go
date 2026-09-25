@@ -119,6 +119,7 @@ have no uncommitted changes to tracked files.`,
 			if err != nil {
 				return err
 			}
+			streams.emit(map[string]any{"branch": branchRef(branch)})
 			if here {
 				fmt.Fprintf(streams.Out, "Created %s from master %s (fetched just now) in this checkout, and switched to it.\n", branch.Name, engine.Short(branch.Base))
 				return nil
@@ -154,6 +155,7 @@ fetched just now.`,
 			if err != nil {
 				return err
 			}
+			streams.emit(map[string]any{"branch": branchRef(adoption.Branch), "already": adoption.Already, "commits": adoption.Commits, "ports": nonNil(adoption.Scope.PortNames())})
 			if adoption.Already {
 				fmt.Fprintf(streams.Out, "%s is already tracked.\n", adoption.Branch.Name)
 				return nil

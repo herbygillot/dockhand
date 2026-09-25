@@ -130,6 +130,8 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		}
 		return err
 	}
+	result := updateView(branch, started, update, request.Plan)
+	streams.emit(result)
 	if update.Current {
 		if request.Action == record.Bump {
 			fmt.Fprintf(out, "%s is already at %s; nothing to change.\n", update.Port, update.After)
@@ -149,7 +151,9 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 			fmt.Fprintln(out)
 		}
 		if linked.revbump {
-			return revbumpLinked(ctx, e, out, branch, update, linked.except, true)
+			result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.except, true)
+			streams.emit(result)
+			return err
 		}
 		return nil
 	}
@@ -168,9 +172,10 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		fmt.Fprintf(out, "! patch %s\n", problem)
 	}
 	if linked.revbump {
-		if err := revbumpLinked(ctx, e, out, branch, update, linked.except, false); err != nil {
+		if result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.except, false); err != nil {
 			return err
 		}
+		streams.emit(result)
 	}
 	fmt.Fprintln(out, "Next: review it with git diff, then commit it")
 	return nil
@@ -178,10 +183,10 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 
 // revbumpLinked bumps the revision of the ports that link an updated one
 // directly, or with plan lists them.
-func revbumpLinked(ctx context.Context, e *engine.Engine, out io.Writer, branch model.Branch, update engine.Update, except []string, plan bool) error {
+func revbumpLinked(ctx context.Context, e *engine.Engine, out io.Writer, branch model.Branch, update engine.Update, except []string, plan bool) ([]string, error) {
 	linked, err := e.LinkedPorts(ctx, branch, update.Port, except)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var names []string
 	for _, dependent := range linked.Bump {
@@ -195,16 +200,16 @@ func revbumpLinked(ctx context.Context, e *engine.Engine, out io.Writer, branch 
 		fmt.Fprintf(out, "  · left out with --except: %s\n", strings.Join(linked.Excepted, ", "))
 	}
 	if plan || len(linked.Bump) == 0 {
-		return nil
+		return nonNil(names), nil
 	}
 	subject := fmt.Sprintf("rebuild for %s %s", update.Port, update.After.Version)
 	for _, dependent := range linked.Bump {
 		if _, err := e.Update(ctx, engine.UpdateRequest{Branch: branch, Action: record.BumpRevision, Port: dependent.Name, Subject: subject}); err != nil {
-			return fmt.Errorf("revision-bumping %s: %w; the ports before it are bumped", dependent.Name, err)
+			return nil, fmt.Errorf("revision-bumping %s: %w; the ports before it are bumped", dependent.Name, err)
 		}
 	}
 	fmt.Fprintf(out, "Revision bumped %s; subject \"<port>: %s\" recorded for tidy.\n", plural(len(linked.Bump), "port"), subject)
-	return nil
+	return names, nil
 }
 
 func releaseLabel(release *record.Release) string {

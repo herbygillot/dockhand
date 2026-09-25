@@ -35,6 +35,7 @@ cancel stops a check. None means another.`,
 			if err != nil {
 				return err
 			}
+			streams.emit(map[string]any{"branches": cleanView(plans), "applied": false})
 			removable := writeClean(streams.Out, plans, false)
 			if removable == 0 {
 				fmt.Fprintln(streams.Out, "Nothing to remove.")
@@ -52,6 +53,7 @@ cancel stops a check. None means another.`,
 				}
 			}
 			done, err := e.ApplyClean(ctx, plans)
+			streams.emit(map[string]any{"branches": cleanView(done), "applied": true})
 			fmt.Fprintln(streams.Out)
 			writeClean(streams.Out, done, true)
 			return err

@@ -65,6 +65,7 @@ GitHub is kept.`,
 			if err != nil {
 				return err
 			}
+			streams.emit(submitView(plan))
 			writeSubmitPlan(streams.Out, plan)
 			if len(plan.Blocking) > 0 {
 				return errors.New("nothing was submitted")
@@ -429,6 +430,9 @@ func applySubmit(ctx context.Context, e *engine.Engine, streams Streams, plan en
 		return err
 	}
 	pr := submitted.PullRequest
+	result := submitView(plan)
+	result.PullRequest = &submittedJSON{Number: pr.Ref.Number, URL: pr.Ref.URL, Created: submitted.Created, Pushed: submitted.Pushed, Draft: plan.Request.Draft}
+	streams.emit(result)
 	switch {
 	case submitted.Created && plan.Request.Draft:
 		fmt.Fprintf(streams.Out, "Opened draft #%d  %s\n", pr.Ref.Number, pr.Ref.URL)

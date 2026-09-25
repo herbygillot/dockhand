@@ -82,6 +82,7 @@ commits, and its files are as they were when it was saved.`,
 					return fmt.Errorf("--group: %w", err)
 				}
 			}
+			streams.emit(tidyView(proposal))
 			out := streams.Out
 			fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), describeWork(proposal))
 			if proposal.Keep {
@@ -281,6 +282,7 @@ func applySaved(ctx context.Context, e *engine.Engine, streams Streams, file str
 	if err != nil {
 		return fmt.Errorf("%s: %w", file, err)
 	}
+	streams.emit(tidyView(proposal))
 	fmt.Fprintf(streams.Out, "%s · the plan saved in %s\n", proposal.Branch.ShortName(), file)
 	writeTidyPlan(streams.Out, proposal)
 	if blocking := proposal.Blocking(); len(blocking) > 0 {
@@ -294,6 +296,9 @@ func applyTidy(ctx context.Context, e *engine.Engine, streams Streams, plan engi
 	if err != nil {
 		return err
 	}
+	applied := tidyView(plan)
+	applied.Applied = &tidyAppliedJSON{Checkpoint: result.Checkpoint.Name(), Commits: result.Commits}
+	streams.emit(applied)
 	name := result.Checkpoint.Name()
 	fmt.Fprintf(streams.Out, "Created %s. The files are unchanged.\nCheckpoint %s keeps the old history (dockhand restore %s).\n", plural(len(result.Commits), "commit"), name, name)
 	if plan.Branch.PullRequest != nil && len(plan.History) > 0 {
@@ -320,6 +325,7 @@ not touched: edits that tidy committed read as uncommitted again.`,
 			if err != nil {
 				return err
 			}
+			streams.emit(map[string]any{"checkpoint": checkpoint.Name(), "branch": branch.ShortName(), "head": checkpoint.Before})
 			fmt.Fprintf(streams.Out, "Restored %s to its history before %s (%s). The files are unchanged.\n", branch.Name, checkpoint.Name(), engine.Short(checkpoint.Before))
 			return nil
 		},

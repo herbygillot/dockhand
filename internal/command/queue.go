@@ -166,6 +166,7 @@ func cancelCommand(s *settings, streams Streams) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			streams.emit(map[string]any{"run": runView(run), "canceled": run.State == model.RunCanceled})
 			if run.State == model.RunCanceled {
 				fmt.Fprintf(streams.Out, "%s canceled; finished results are kept.\n", run.Name())
 				return nil
@@ -198,6 +199,7 @@ func logsCommand(s *settings, streams Streams) *cobra.Command {
 				return err
 			}
 			if port == "" {
+				streams.emit(logsView(logs))
 				return writeLogs(streams.Out, logs)
 			}
 			var found string
@@ -218,6 +220,7 @@ func logsCommand(s *settings, streams Streams) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			streams.emit(map[string]any{"run": runView(run), "port": port, "log": found, "text": string(data)})
 			_, err = streams.Out.Write(data)
 			return err
 		},

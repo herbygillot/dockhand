@@ -46,6 +46,7 @@ The branch is --branch, else the one checked out here; --new starts one.`,
 				return err
 			}
 			portfile := filepath.Join(branch.Worktree, filepath.FromSlash(directory), "Portfile")
+			streams.emit(map[string]any{"branch": branchRef(branch), "started": started, "directory": directory, "portfile": portfile})
 			editor := firstOf(os.Getenv("VISUAL"), os.Getenv("EDITOR"))
 			if !streams.terminal() || editor == "" {
 				fmt.Fprintln(streams.Out, portfile)
@@ -102,11 +103,14 @@ branch is started, since a rebuild has its own reason.`,
 			for _, port := range args {
 				width = max(width, len(port))
 			}
+			result := revbumpJSON{Branch: branchRef(branch), Started: started, Subject: strings.TrimSpace(subject), Applied: !plan, Ports: []revbumpedJSON{}}
+			defer func() { streams.emit(result) }()
 			for _, port := range args {
 				update, err := e.Update(ctx, engine.UpdateRequest{Branch: branch, Action: record.BumpRevision, Port: port, Subject: subject, Plan: plan})
 				if err != nil {
 					return fmt.Errorf("%s: %w", port, err)
 				}
+				result.Ports = append(result.Ports, revbumpedJSON{Port: update.Port, Before: update.Before.Revision, After: update.After.Revision})
 				fmt.Fprintf(out, "  %-*s  revision %d → %d\n", width, update.Port, update.Before.Revision, update.After.Revision)
 				if plan {
 					fmt.Fprint(out, update.Diff)
@@ -208,6 +212,11 @@ rebase that conflicts is abandoned with the branch as it was.`,
 			if err != nil {
 				return err
 			}
+			result := map[string]any{"branch": branch.ShortName(), "from": rebased.From, "to": rebased.To, "up_to_date": rebased.UpToDate, "commits": rebased.Commits}
+			if rebased.Checkpoint != nil {
+				result["checkpoint"] = rebased.Checkpoint.Name()
+			}
+			streams.emit(result)
 			if rebased.UpToDate {
 				fmt.Fprintf(streams.Out, "%s already starts from master %s (fetched just now).\n", branch.ShortName(), engine.Short(rebased.To))
 				return nil
@@ -253,6 +262,7 @@ its pull request; status --all still shows it. --undo brings it back.`,
 			if err != nil {
 				return err
 			}
+			streams.emit(map[string]any{"branch": branch.ShortName(), "state": branch.State})
 			if undo {
 				fmt.Fprintf(streams.Out, "%s is back among your open branches.\n", branch.ShortName())
 				return nil

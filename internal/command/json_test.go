@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // decoded is a --json envelope, read back loosely.
@@ -110,14 +112,82 @@ func TestJSONEnvelopes(t *testing.T) {
 	require.Equal(t, "failed", dig(t, failed.Result, "targets", 0, "results", 0, "outcome"))
 	require.Equal(t, "install", dig(t, failed.Result, "targets", 0, "results", 0, "phase"))
 
-	refused, err := jsonOf(t, "tidy")
+	refused, err := jsonOf(t, "watch")
 	require.Error(t, err)
 	require.Equal(t, 1, refused.ExitCode)
-	require.Equal(t, "--json isn't available for dockhand tidy yet; its output is text only", *refused.Error)
+	require.Equal(t, "--json isn't available for dockhand watch yet; its output is text only", *refused.Error)
 	require.Nil(t, refused.Result)
-	require.Equal(t, "jq: 1.7.1", gitRun(t, w.clone, "log", "-1", "--format=%s", "dockhand/jq-update"), "and it did nothing")
 
 	unknown, err := jsonOf(t, "status", "--no-such-flag")
 	require.Error(t, err)
 	require.Contains(t, *unknown.Error, "unknown flag: --no-such-flag")
+}
+
+func TestJSONForTheWholeLoop(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	g := withGitHub(t, w)
+	withScript(t, w, "passed")
+
+	started, err := jsonOf(t, "start", "jq-update")
+	require.NoError(t, err)
+	require.Equal(t, "dockhand/jq-update", dig(t, started.Result, "branch", "git_branch"))
+	t.Setenv("MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
+
+	planned, err := jsonOf(t, "update", "jq", "--plan")
+	require.NoError(t, err)
+	require.Equal(t, false, planned.Result["applied"])
+	require.Contains(t, planned.Result["diff"], "+version 1.8.1")
+	updated, err := jsonOf(t, "update", "jq")
+	require.NoError(t, err)
+	require.Equal(t, "1.7.1", dig(t, updated.Result, "before", "version"))
+	require.Equal(t, "1.8.1", dig(t, updated.Result, "after", "version"))
+	require.Equal(t, []any{"textproc/jq/Portfile"}, updated.Result["files"])
+
+	_, err = jsonOf(t, "check")
+	require.NoError(t, err)
+	logs, err := jsonOf(t, "logs", "check-1")
+	require.NoError(t, err)
+	require.Equal(t, "passed", dig(t, logs.Result, "executions", 0, "results", 0, "outcome"))
+
+	tidyPlan, err := jsonOf(t, "tidy", "--plan")
+	require.NoError(t, err)
+	require.Equal(t, true, tidyPlan.Result["unambiguous"])
+	require.Equal(t, "jq: update to 1.8.1", dig(t, tidyPlan.Result, "commits", 0, "subject"))
+	require.Nil(t, tidyPlan.Result["applied"])
+	tidied, err := jsonOf(t, "tidy")
+	require.NoError(t, err)
+	require.Equal(t, "tidy-1", dig(t, tidied.Result, "applied", "checkpoint"))
+
+	refused, err := jsonOf(t, "submit")
+	require.Error(t, err, "a --json command line never asks, so submit needs --yes")
+	require.Contains(t, *refused.Error, "--yes submits exactly what is shown")
+	require.Equal(t, "jq: update to 1.8.1", refused.Result["title"], "the preview is the result")
+	require.Nil(t, refused.Result["pull_request"])
+	submitted, err := jsonOf(t, "submit", "--yes")
+	require.NoError(t, err)
+	require.Equal(t, float64(34901), dig(t, submitted.Result, "pull_request", "number"))
+	require.Equal(t, true, dig(t, submitted.Result, "pull_request", "created"))
+	require.Len(t, g.prs, 1)
+
+	explained, err := jsonOf(t, "explain", "merge")
+	require.NoError(t, err)
+	require.Equal(t, "https://guide.macports.org/#project.github", dig(t, explained.Result, "sources", 0, "url"))
+
+	g.prs[0].State = record.PullRequestMerged
+	t.Setenv("MACPORTS_TREE", w.clone)
+	_, _, err = dockhand(t, "status", "--refresh")
+	require.NoError(t, err)
+	preview, err := jsonOf(t, "clean")
+	require.NoError(t, err)
+	require.Equal(t, false, preview.Result["applied"])
+	require.Equal(t, false, dig(t, preview.Result, "branches", 0, "steps", 0, "removed"))
+	cleaned, err := jsonOf(t, "clean", "--yes")
+	require.NoError(t, err)
+	require.Equal(t, true, dig(t, cleaned.Result, "branches", 0, "steps", 0, "removed"))
+
+	notJSON, err := jsonOf(t, "serve", "--drain")
+	require.Error(t, err)
+	require.Equal(t, "--json isn't available for dockhand serve yet; its output is text only", *notJSON.Error)
 }

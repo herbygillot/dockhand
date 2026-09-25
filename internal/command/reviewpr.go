@@ -44,6 +44,7 @@ access. --markdown prints the text, for pasting.`,
 				return err
 			}
 			body := report.Markdown()
+			streams.emit(reviewView(report))
 			if markdown {
 				fmt.Fprint(streams.Out, body)
 				return e.RecordReview(ctx, report, "")
@@ -100,6 +101,12 @@ func postReview(ctx context.Context, e *engine.Engine, streams Streams, report e
 	if err != nil {
 		return err
 	}
+	result := reviewView(report)
+	result.Body, result.Posted, result.PostedURL = body, "comment", url
+	if requestChanges {
+		result.Posted = "request-changes"
+	}
+	streams.emit(result)
 	how := "a comment"
 	if requestChanges {
 		how = "changes requested"
