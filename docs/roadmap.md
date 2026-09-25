@@ -69,7 +69,7 @@ The principles and the direction record's standing decisions are the specificati
    - `create` from a URL;
    - `review`, with `--comment` and `--review`;
    - the `github`, `prefix`, and `command` providers (**`command` done 2026-09-25**, [note](activity/2026-09-25-check.md));
-   - `watch`;
+   - `watch` (**done 2026-09-25**, [note](activity/2026-09-25-watch.md));
    - `archive`, `clean`, and automatic cleanup (36) (**`archive` and `clean --merged` done 2026-09-25**, [note](activity/2026-09-25-clean.md));
    - the configuration file (15) (**`worktrees`, `[check]`, and `[providers.command]` read and checked**);
    - `submit --check`;

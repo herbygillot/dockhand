@@ -94,6 +94,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 		statusCommand(&settings, streams),
 		diffCommand(&settings, streams),
 		impactCommand(&settings, streams),
+		watchCommand(&settings, streams),
 	} {
 		command.GroupID = "understand"
 		root.AddCommand(command)
