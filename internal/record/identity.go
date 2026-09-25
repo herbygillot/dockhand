@@ -1,5 +1,7 @@
 package record
 
+import "github.com/herbygillot/dockhand/internal/model"
+
 // ChangeID identifies a contribution across branch rewrites and jobs.
 type ChangeID string
 
@@ -30,5 +32,5 @@ type TargetID string
 // ProcessID identifies a driver claim owner independently of its operating-system PID.
 type ProcessID string
 
-// ObjectID is a full Git object identifier for a commit, tree, or blob.
-type ObjectID string
+// ObjectID is a full Git object identifier; see model.ObjectID.
+type ObjectID = model.ObjectID

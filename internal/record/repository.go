@@ -1,8 +1,13 @@
 package record
 
-import "time"
+import (
+	"time"
 
-type RepositoryID string
+	"github.com/herbygillot/dockhand/internal/model"
+)
+
+// RepositoryID identifies a registered repository; see model.RepositoryID.
+type RepositoryID = model.RepositoryID
 
 type Repository struct {
 	ID        RepositoryID
