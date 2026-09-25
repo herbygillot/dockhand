@@ -127,6 +127,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 		statusCommand(&settings, streams),
 		diffCommand(&settings, streams),
 		impactCommand(&settings, streams),
+		outdatedCommand(&settings, streams),
 		watchCommand(&settings, streams),
 	} {
 		command.GroupID = "understand"
@@ -178,7 +179,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 		switch command.Name() {
 		case "status", "path", "diff", "impact", "check", "retry", "wait", "queue", "config",
 			"start", "adopt", "update", "checksums", "revbump", "edit", "tidy", "submit", "rebase", "review",
-			"cancel", "logs", "restore", "archive", "clean", "explain":
+			"cancel", "logs", "restore", "archive", "clean", "explain", "outdated":
 			supportsJSON(command)
 		}
 	}

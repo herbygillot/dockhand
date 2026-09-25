@@ -97,7 +97,10 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 		return plan.result, err
 	}
 	store := s.Archives.Store("")
-	if patched(input.info) || moduleModeGo(input.info) {
+	switch {
+	case request.KeepArchives != "":
+		store = s.Archives.Store(request.KeepArchives)
+	case patched(input.info) || moduleModeGo(input.info):
 		directory, err := scratch.Dir("patchcheck-")
 		if err != nil {
 			return Result{}, err
@@ -108,6 +111,9 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 	result, err := s.applyArchivePlan(ctx, request, input, plan, store)
 	if err != nil {
 		return result, err
+	}
+	if request.KeepArchives != "" {
+		result.Previous, result.PreviousProblem = s.previousArchives(ctx, input, store)
 	}
 	if err := s.raiseGoToolchain(ctx, request, input, &result); err != nil {
 		return result, err
@@ -130,4 +136,23 @@ func (s *Service) applyArchivePlan(ctx context.Context, request Request, input *
 		return result, fmt.Errorf("portedit: archive plan without observed contexts")
 	}
 	return s.applyObservedArchives(ctx, request, input, plan, store)
+}
+
+// previousArchives fetches the current version's archives, for comparing
+// with the new ones. Not getting them is a problem to report, never a
+// reason to refuse the update.
+func (s *Service) previousArchives(ctx context.Context, input *sourceInput, store *archives.Store) ([]archives.Download, string) {
+	sources, err := archives.Sources(input.info, input.portdirIn(input.before.Root))
+	if err != nil {
+		return nil, err.Error()
+	}
+	var kept []archives.Download
+	for _, source := range sources {
+		download, err := store.Fetch(ctx, input.info, source)
+		if err != nil {
+			return kept, fmt.Sprintf("fetching %s: %v", source.Name, err)
+		}
+		kept = append(kept, download)
+	}
+	return kept, ""
 }

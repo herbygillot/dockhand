@@ -40,6 +40,39 @@ type Edit struct {
 	Subject string
 	Files   []EditedFile
 	At      time.Time
+	// Upstream is what comparing the old and new upstream archives found,
+	// for an update that compared them; nil when it did not.
+	Upstream *UpstreamComparison
+}
+
+// UpstreamComparison is what an update's upstream archives showed.
+type UpstreamComparison struct {
+	Changes []UpstreamChange `json:"changes"`
+	// Problem says why the archives could not be compared.
+	Problem string `json:"problem,omitempty"`
+}
+
+// Held reports whether anything found holds the update for a person's
+// look before serve may submit it.
+func (c *UpstreamComparison) Held() bool {
+	if c == nil {
+		return false
+	}
+	for _, change := range c.Changes {
+		if change.Hold {
+			return true
+		}
+	}
+	return false
+}
+
+// UpstreamChange is one difference between the archives: a license file,
+// a build file, or a declared dependency.
+type UpstreamChange struct {
+	Kind    string `json:"kind"`
+	Path    string `json:"path"`
+	Message string `json:"message"`
+	Hold    bool   `json:"hold"`
 }
 
 // Validate checks the rules every stored edit keeps.

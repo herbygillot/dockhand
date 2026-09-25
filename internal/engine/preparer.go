@@ -39,16 +39,20 @@ func (e *Engine) preparer() (Preparer, error) {
 	if err != nil {
 		return nil, err
 	}
+	e.Preparer = &preparation.Service{Repo: e.Repo, Ports: ports, Upstream: e.discovery(ports), HTTP: http.DefaultClient, Workspaces: &workspace.Registry{}}
+	return e.Preparer, nil
+}
+
+// discovery finds ports' newest releases upstream, on GitHub and GitLab.
+func (e *Engine) discovery(ports *selection.Reader) *upstream.Service {
 	client := &github.Client{HTTP: http.DefaultClient, Credentials: github.SystemCredentials{Store: keychain.Store{}, Key: github.CredentialKey}}
-	discovery := &upstream.Service{
+	return &upstream.Service{
 		Ports: ports, HTTP: http.DefaultClient, Versions: ports,
 		Catalogs: map[portsource.Forge]upstream.Catalog{
 			portsource.GitHub: &forgegithub.Client{Client: client, GitExecutable: e.options.Git},
 			portsource.GitLab: &forgegitlab.Client{HTTP: http.DefaultClient},
 		},
 	}
-	e.Preparer = &preparation.Service{Repo: e.Repo, Ports: ports, Upstream: discovery, HTTP: http.DefaultClient, Workspaces: &workspace.Registry{}}
-	return e.Preparer, nil
 }
 
 // selectionReader is MacPorts' own evaluator, resolving port names

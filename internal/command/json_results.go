@@ -236,3 +236,43 @@ func logsView(logs engine.RunLogs) logsJSON {
 	}
 	return view
 }
+
+type outdatedPortJSON struct {
+	Port     string `json:"port"`
+	Current  string `json:"current"`
+	Newest   string `json:"newest"`
+	Outdated bool   `json:"outdated"`
+	Problem  string `json:"problem,omitempty"`
+}
+
+func outdatedView(report engine.OutdatedReport) map[string]any {
+	ports := []outdatedPortJSON{}
+	for _, port := range report.Ports {
+		ports = append(ports, outdatedPortJSON{Port: port.Port, Current: port.Current, Newest: port.Newest, Outdated: port.Outdated, Problem: port.Problem})
+	}
+	return map[string]any{"master": report.Master, "ports": ports}
+}
+
+type preparedJSON struct {
+	Port     string                    `json:"port"`
+	Branch   string                    `json:"branch"`
+	Before   string                    `json:"before"`
+	After    string                    `json:"after"`
+	Tidied   bool                      `json:"tidied"`
+	Run      string                    `json:"run,omitempty"`
+	Problem  string                    `json:"problem,omitempty"`
+	Upstream *model.UpstreamComparison `json:"upstream,omitempty"`
+}
+
+func preparedView(prepared []engine.PreparedUpdate) map[string]any {
+	views := []preparedJSON{}
+	for _, done := range prepared {
+		view := preparedJSON{Port: done.Planned.Port.Port, Branch: engine.BranchName(done.Planned.Name), Before: done.Update.Before.String(), After: done.Update.After.String(),
+			Tidied: done.Tidied, Problem: done.Problem, Upstream: done.Update.Upstream}
+		if done.Run != nil {
+			view.Run = done.Run.Name()
+		}
+		views = append(views, view)
+	}
+	return map[string]any{"prepared": views}
+}

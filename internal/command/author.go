@@ -38,6 +38,7 @@ func updateCommand(s *settings, streams Streams) *cobra.Command {
 	var where branchChoice
 	var plan, keepOld, shared bool
 	var linked linkedOptions
+	var batch outdatedOptions
 	cmd := &cobra.Command{
 		Use:   "update <port> [version]",
 		Short: "Update a port to a newer release",
@@ -51,13 +52,31 @@ The branch is --branch, else the one checked out here; --new starts one.
 updated one directly, its library dependents in the port index at the
 branch's base, so users rebuild them; tidy commits each as "<port>: rebuild
 for <updated> <version>". --except leaves a dependent out. --plan lists them
-first.`,
-		Args: cobra.RangeArgs(1, 2),
+first.
+
+The old and new versions' archives are compared, and a changed license
+file, a changed build file, or a new declared dependency is reported: what a
+reviewer would ask about, and what a passing build can't catch.
+
+--outdated updates every named port, or with --mine every port you
+maintain, that has a newer release: one branch each, from fresh master,
+each update committed as one commit. It shows how it splits the work before
+starting anything; --check also queues a check of each.`,
+		Args: cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if batch.outdated {
+				return updateOutdated(cmd.Context(), s, streams, args, batch)
+			}
+			if batch.mine || batch.check {
+				return errors.New("--mine and --check go with --outdated")
+			}
+			if len(args) == 0 {
+				return errors.New("name the port to update, or update your outdated ports with --outdated --mine")
+			}
 			if len(linked.except) > 0 && !linked.revbump {
 				return errors.New("--except takes a port out of --revbump-dependents; add --revbump-dependents")
 			}
-			request := engine.UpdateRequest{Action: record.Bump, Port: args[0], KeepOldChecksums: keepOld, SharedRelease: shared, Plan: plan}
+			request := engine.UpdateRequest{Action: record.Bump, Port: args[0], KeepOldChecksums: keepOld, SharedRelease: shared, Plan: plan, CompareUpstream: true}
 			if len(args) == 2 {
 				request.Version = args[1]
 			}
@@ -70,6 +89,10 @@ first.`,
 	cmd.Flags().BoolVar(&shared, "shared-release", false, "move every subport that shares the port's release")
 	cmd.Flags().BoolVar(&linked.revbump, "revbump-dependents", false, "also bump the revision of the ports that link it directly")
 	cmd.Flags().StringSliceVar(&linked.except, "except", nil, "leave this dependent out of --revbump-dependents")
+	cmd.Flags().BoolVar(&batch.outdated, "outdated", false, "update every named port, or with --mine yours, that has a newer release")
+	cmd.Flags().BoolVar(&batch.mine, "mine", false, "with --outdated, the ports whose maintainers line names you (config maintainer)")
+	cmd.Flags().BoolVar(&batch.check, "check", false, "with --outdated, also queue a check of each")
+	cmd.Flags().BoolVarP(&batch.yes, "yes", "y", false, "with --outdated, start without asking")
 	return cmd
 }
 
@@ -168,6 +191,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		what += "; revision reset to 0"
 	}
 	fmt.Fprintf(out, "%s.\nChanged: %s\n", what, strings.Join(update.Files, ", "))
+	writeUpstream(out, update.Upstream)
 	for _, problem := range update.PatchProblems {
 		fmt.Fprintf(out, "! patch %s\n", problem)
 	}
@@ -324,4 +348,27 @@ func startFor(ctx context.Context, e *engine.Engine, port string) (model.Branch,
 func startNamed(ctx context.Context, e *engine.Engine, name string) (model.Branch, bool, error) {
 	branch, err := e.Start(ctx, engine.StartRequest{Name: name})
 	return branch, err == nil, err
+}
+
+// writeUpstream reports what comparing the upstream archives found.
+func writeUpstream(out io.Writer, comparison *model.UpstreamComparison) {
+	switch {
+	case comparison == nil:
+	case comparison.Problem != "":
+		fmt.Fprintf(out, "Upstream archives not compared: %s\n", comparison.Problem)
+	case len(comparison.Changes) == 0:
+		fmt.Fprintln(out, "Upstream archives compared: no license, build file, or dependency changes.")
+	default:
+		fmt.Fprintln(out, "Upstream archives compared:")
+		for _, change := range comparison.Changes {
+			fmt.Fprintf(out, "  %s\n", upstreamWords(change))
+		}
+	}
+}
+
+func upstreamWords(change model.UpstreamChange) string {
+	if change.Hold {
+		return "! " + change.Message
+	}
+	return "· " + change.Message
 }

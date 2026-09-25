@@ -75,9 +75,9 @@ The principles and the direction record's standing decisions are the specificati
    - `submit --check` (**done 2026-09-25**, [note](activity/2026-09-25-submit-check-passing-ready.md));
    - `explain` codes (**done 2026-09-25** for the rules dockhand checks, [note](activity/2026-09-25-explain.md)).
 11. **The maintainer loop.**
-    - `outdated --mine` feeding `update --outdated --mine`, which previews how it splits the work;
-    - the upstream archive comparison (license, build files, declared dependencies);
-    - `submit --passing`;
+    - `outdated --mine` feeding `update --outdated --mine`, which previews how it splits the work (**done 2026-09-25**, [note](activity/2026-09-25-outdated-and-upstream-comparison.md));
+    - the upstream archive comparison (license, build files, declared dependencies) (**done 2026-09-25**, same note);
+    - `submit --passing` (**done 2026-09-25**, [note](activity/2026-09-25-submit-check-passing-ready.md));
     - `serve.for_outdated` (list, draft, check);
     - `serve --submit-passing` and its config key, with the guardrails in v3 §11;
     - PR following and notifications.

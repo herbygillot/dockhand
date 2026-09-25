@@ -75,10 +75,16 @@ func (w *Workspace) Close() error { return w.release() }
 // names need no index source, only a filter does; with one, explicit names
 // that share a Portfile are grouped.
 func Open(ctx context.Context, repo *git.Repository, workspaces *workspace.Registry, platform record.Platform, index portindex.Source, selection Selection) (_ *Workspace, err error) {
+	return OpenAt(ctx, repo, "HEAD", workspaces, platform, index, selection)
+}
+
+// OpenAt is Open for a named revision, such as a freshly fetched master,
+// rather than HEAD.
+func OpenAt(ctx context.Context, repo *git.Repository, revision string, workspaces *workspace.Registry, platform record.Platform, index portindex.Source, selection Selection) (_ *Workspace, err error) {
 	if err := selection.Validate(); err != nil {
 		return nil, err
 	}
-	commit, err := repo.Resolve(ctx, "HEAD^{commit}")
+	commit, err := repo.Resolve(ctx, revision+"^{commit}")
 	if err != nil {
 		return nil, err
 	}

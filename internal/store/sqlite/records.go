@@ -14,7 +14,7 @@ import (
 // Times are stored in milliseconds, so a record read back carries its times
 // truncated to the millisecond.
 
-const branchColumns = "id, name, base, worktree, managed, title, state, pr_repository, pr_number, pr_head, pr_pushed, pr_body, pr_draft, pr_observed, created_at"
+const branchColumns = "id, name, base, worktree, managed, title, state, pr_repository, pr_number, pr_head, pr_pushed, pr_body, pr_draft, pr_observed, created_at, origin"
 
 func (t *tx) scanBranch(row interface{ Scan(...any) error }) (model.Branch, error) {
 	var b model.Branch
@@ -24,7 +24,7 @@ func (t *tx) scanBranch(row interface{ Scan(...any) error }) (model.Branch, erro
 	var prPushed, prBody, prObserved string
 	var prDraft int
 	var created int64
-	if err := row.Scan(&b.ID, &b.Name, &b.Base, &b.Worktree, &managed, &b.Title, &b.State, &prRepository, &prNumber, &prHead, &prPushed, &prBody, &prDraft, &prObserved, &created); err != nil {
+	if err := row.Scan(&b.ID, &b.Name, &b.Base, &b.Worktree, &managed, &b.Title, &b.State, &prRepository, &prNumber, &prHead, &prPushed, &prBody, &prDraft, &prObserved, &created, &b.Origin); err != nil {
 		return model.Branch{}, storageError(err)
 	}
 	b.Repository, b.Managed, b.CreatedAt = t.repo, managed == 1, fromMillis(created)
@@ -99,9 +99,12 @@ func (t *tx) AddBranch(b model.Branch) error {
 	if err := t.checkRepository(b.Repository); err != nil {
 		return err
 	}
+	if b.Origin == "" {
+		b.Origin = model.OriginPerson
+	}
 	repository, number, head, pushed, body, draft, observed := pullRequestColumns(b.PullRequest)
-	_, err := t.exec("INSERT INTO branches(repository_id, "+branchColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		t.repo, b.ID, b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, millis(b.CreatedAt))
+	_, err := t.exec("INSERT INTO branches(repository_id, "+branchColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		t.repo, b.ID, b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, millis(b.CreatedAt), b.Origin)
 	return err
 }
 

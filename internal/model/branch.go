@@ -104,6 +104,9 @@ type Branch struct {
 	State       BranchState
 	PullRequest *PullRequest
 	CreatedAt   time.Time
+	// Origin is who started it: a person, or serve for your outdated
+	// ports. serve submits only its own (Design v3 §11).
+	Origin Origin
 }
 
 // Validate checks the rules every stored branch keeps.

@@ -18,13 +18,21 @@ func (t *tx) AddEdit(e model.Edit) error {
 	if err != nil {
 		return err
 	}
-	_, err = t.exec("INSERT INTO edits(repository_id, id, branch_id, kind, port, directory, subject, files, at) VALUES(?,?,?,?,?,?,?,?,?)",
-		t.repo, e.ID, e.Branch, e.Kind, e.Port, e.Directory, e.Subject, string(files), millis(e.At))
+	upstream := ""
+	if e.Upstream != nil {
+		data, err := json.Marshal(e.Upstream)
+		if err != nil {
+			return err
+		}
+		upstream = string(data)
+	}
+	_, err = t.exec("INSERT INTO edits(repository_id, id, branch_id, kind, port, directory, subject, files, at, upstream) VALUES(?,?,?,?,?,?,?,?,?,?)",
+		t.repo, e.ID, e.Branch, e.Kind, e.Port, e.Directory, e.Subject, string(files), millis(e.At), upstream)
 	return err
 }
 
 func (t *tx) Edits(branch model.BranchID) ([]model.Edit, error) {
-	rows, err := t.conn.QueryContext(t.ctx, "SELECT id, branch_id, kind, port, directory, subject, files, at FROM edits WHERE repository_id=? AND branch_id=? ORDER BY at, rowid", t.repo, branch)
+	rows, err := t.conn.QueryContext(t.ctx, "SELECT id, branch_id, kind, port, directory, subject, files, at, upstream FROM edits WHERE repository_id=? AND branch_id=? ORDER BY at, rowid", t.repo, branch)
 	if err != nil {
 		return nil, storageError(err)
 	}
@@ -32,10 +40,15 @@ func (t *tx) Edits(branch model.BranchID) ([]model.Edit, error) {
 	var edits []model.Edit
 	for rows.Next() {
 		var e model.Edit
-		var files string
+		var files, upstream string
 		var at int64
-		if err := rows.Scan(&e.ID, &e.Branch, &e.Kind, &e.Port, &e.Directory, &e.Subject, &files, &at); err != nil {
+		if err := rows.Scan(&e.ID, &e.Branch, &e.Kind, &e.Port, &e.Directory, &e.Subject, &files, &at, &upstream); err != nil {
 			return nil, storageError(err)
+		}
+		if upstream != "" {
+			if err := json.Unmarshal([]byte(upstream), &e.Upstream); err != nil {
+				return nil, fmt.Errorf("%w: edit %s: %w", store.ErrUnavailable, e.ID, err)
+			}
 		}
 		if err := json.Unmarshal([]byte(files), &e.Files); err != nil {
 			return nil, fmt.Errorf("%w: edit %s: %w", store.ErrUnavailable, e.ID, err)

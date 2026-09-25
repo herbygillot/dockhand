@@ -53,6 +53,10 @@ type Request struct {
 	// References are the tickets the commit cites.
 	References []record.Reference
 	Release    *record.Release
+	// KeepArchives is a directory, the caller's, where a version update
+	// keeps the new archives and also fetches the current version's, so
+	// the two can be compared; empty keeps neither.
+	KeepArchives string
 }
 
 // Fidelity is the comparison report for one evaluated edit.
@@ -83,6 +87,10 @@ type Result struct {
 	Prepared  macports.Snapshot `json:"-"`
 	Release   *record.Release
 	Downloads []archives.Download
+	// Previous are the current version's archives, fetched only when
+	// KeepArchives asked, and PreviousProblem why they could not be.
+	Previous        []archives.Download `json:"-"`
+	PreviousProblem string              `json:",omitempty"`
 	// Patches reports whether each declared patch file still applies to the
 	// candidate source; a rejected patch is a finding, not a refusal.
 	Patches []patchcheck.Result `json:",omitempty"`

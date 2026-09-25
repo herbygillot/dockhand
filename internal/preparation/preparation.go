@@ -39,7 +39,11 @@ type Result struct {
 	Prepared  macports.Snapshot `json:"-"`
 	Release   *record.Release
 	Downloads []archives.Download
-	Patches   []patchcheck.Result `json:",omitempty"`
+	// Previous are the current version's archives, kept beside the new
+	// ones when Request.KeepArchives asked, and PreviousProblem why not.
+	Previous        []archives.Download `json:"-"`
+	PreviousProblem string              `json:",omitempty"`
+	Patches         []patchcheck.Result `json:",omitempty"`
 }
 
 // PatchProblems names the declared patches that no longer apply to the candidate source.
@@ -150,7 +154,7 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 		}
 	}
 	edited, err := s.editor().Prepare(ctx, request)
-	result := Result{Scope: edited.Scope, Coverage: edited.Coverage, Base: edited.Base, Target: edited.Target, Fidelity: edited.Fidelity, Prepared: edited.Prepared, Release: edited.Release, Downloads: edited.Downloads, Patches: edited.Patches}
+	result := Result{Scope: edited.Scope, Coverage: edited.Coverage, Base: edited.Base, Target: edited.Target, Fidelity: edited.Fidelity, Prepared: edited.Prepared, Release: edited.Release, Downloads: edited.Downloads, Previous: edited.Previous, PreviousProblem: edited.PreviousProblem, Patches: edited.Patches}
 	if err != nil {
 		return result, err
 	}

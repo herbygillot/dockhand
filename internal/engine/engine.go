@@ -64,6 +64,9 @@ type Engine struct {
 	PortReader PortReader
 	// DependentReader finds dependents for impact; the port index when nil.
 	DependentReader DependentReader
+	// OutdatedReader finds newer releases for outdated; MacPorts' evaluator
+	// and upstream discovery when nil.
+	OutdatedReader OutdatedReader
 	// Providers are where checks build, by name.
 	Providers map[string]Provider
 	ports     *selection.Reader

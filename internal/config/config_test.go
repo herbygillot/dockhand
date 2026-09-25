@@ -129,3 +129,10 @@ func TestMaintainerAndSubmitSettings(t *testing.T) {
 	_, err = parse("config.toml", "[submit]\nrerequest_review = \"sometimes\"\n")
 	require.ErrorContains(t, err, "submit.rerequest_review")
 }
+
+func TestMaintainersAreTheIdentitiesNamed(t *testing.T) {
+	f, err := parse("config.toml", "maintainer = \"{@ada example.org:ada} openmaintainer\"\n")
+	require.NoError(t, err)
+	require.Equal(t, []string{"@ada", "example.org:ada"}, f.Maintainers())
+	require.Empty(t, File{}.Maintainers())
+}

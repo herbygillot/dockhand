@@ -34,6 +34,8 @@ type StartRequest struct {
 	// Here creates the branch in the person's own checkout, not a managed
 	// worktree.
 	Here bool
+	// Origin is who starts it; a person unless serve does.
+	Origin model.Origin
 }
 
 // Start creates a branch from freshly fetched master, in a sparse managed
@@ -108,7 +110,10 @@ func (e *Engine) Start(ctx context.Context, request StartRequest) (model.Branch,
 
 	branch := model.Branch{
 		ID: model.BranchID(store.NewID("br")), Repository: e.Repository, Name: name, Base: base,
-		Worktree: directory, Managed: !request.Here, State: model.BranchOpen, CreatedAt: e.now(),
+		Worktree: directory, Managed: !request.Here, State: model.BranchOpen, CreatedAt: e.now(), Origin: request.Origin,
+	}
+	if branch.Origin == "" {
+		branch.Origin = model.OriginPerson
 	}
 	if err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 		if err := tx.AddBranch(branch); err != nil {

@@ -42,7 +42,7 @@ func (f fixture) update(t *testing.T, fn func(store.Tx) error) error {
 }
 
 func (f fixture) branch(id model.BranchID, name string) model.Branch {
-	return model.Branch{ID: id, Repository: f.repo, Name: name, Base: "base", Worktree: "/w/" + name, Managed: true, State: model.BranchOpen, CreatedAt: at}
+	return model.Branch{ID: id, Repository: f.repo, Name: name, Base: "base", Worktree: "/w/" + name, Managed: true, State: model.BranchOpen, CreatedAt: at, Origin: model.OriginPerson}
 }
 
 // seed records a branch, a snapshot revision, and a plan with two targets,

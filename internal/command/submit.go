@@ -285,6 +285,11 @@ func submitPassing(ctx context.Context, e *engine.Engine, streams Streams, reque
 			continue
 		}
 		fmt.Fprintf(out, "\n%s  %s · %s · %s\n", status.Branch.ShortName(), plan.Title, checkWords(plan), pullRequestWords(plan))
+		if changes, err := e.UpstreamFindings(ctx, status.Branch); err == nil {
+			for _, change := range changes {
+				fmt.Fprintf(out, "            %s\n", upstreamWords(change))
+			}
+		}
 		if len(plan.Blocking) > 0 {
 			for _, blocking := range plan.Blocking {
 				fmt.Fprintf(out, "  ✗ %s\n", blocking)

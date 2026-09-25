@@ -167,3 +167,34 @@ func TestReviewsAreKeptNewestFirst(t *testing.T) {
 		return tx.AddReview(model.Review{Repository: "macports/macports-ports", Number: 1, Head: "h", At: at, Posted: "approve"})
 	}), model.ErrInvalid)
 }
+
+func TestAnEditKeepsItsUpstreamComparisonAndABranchItsOrigin(t *testing.T) {
+	f := open(t)
+	b := f.branch("br_1", "dockhand/croc-7hq2")
+	b.Origin = model.OriginServe
+	compared := &model.UpstreamComparison{Changes: []model.UpstreamChange{{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed", Hold: true}}}
+	edit := model.Edit{ID: "ed_1", Branch: b.ID, Kind: model.EditUpdate, Port: "croc", Directory: "net/croc", Subject: "croc: update to 10.2.5",
+		Files: []model.EditedFile{{Path: "net/croc/Portfile", Before: "b1", After: "b2"}}, At: at, Upstream: compared}
+	plain := edit
+	plain.ID, plain.Upstream = "ed_2", nil
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		if err := tx.AddBranch(b); err != nil {
+			return err
+		}
+		if err := tx.AddEdit(edit); err != nil {
+			return err
+		}
+		return tx.AddEdit(plain)
+	}))
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		stored, err := tx.Branch(b.ID)
+		require.NoError(t, err)
+		require.Equal(t, model.OriginServe, stored.Origin)
+		edits, err := tx.Edits(b.ID)
+		require.NoError(t, err)
+		require.Equal(t, compared, edits[0].Upstream)
+		require.True(t, edits[0].Upstream.Held())
+		require.Nil(t, edits[1].Upstream, "an edit that compared nothing says so")
+		return nil
+	}))
+}

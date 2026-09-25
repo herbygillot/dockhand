@@ -98,6 +98,8 @@ type Service struct {
 	Index    portindex.Source
 	// Workspaces hands out the tree; nil materializes one for this survey.
 	Workspaces *workspace.Registry
+	// Commit is the revision surveyed; HEAD when empty.
+	Commit string
 }
 
 // Observe captures local HEAD and assesses every selected port independently.
@@ -117,7 +119,11 @@ func (s *Service) Observe(ctx context.Context, selection Selection) (_ Result, e
 	if err != nil {
 		return Result{}, err
 	}
-	files, err := survey.Open(ctx, s.Repo, s.Workspaces, platform, s.Index, selection)
+	revision := s.Commit
+	if revision == "" {
+		revision = "HEAD"
+	}
+	files, err := survey.OpenAt(ctx, s.Repo, revision, s.Workspaces, platform, s.Index, selection)
 	if err != nil {
 		return Result{}, err
 	}

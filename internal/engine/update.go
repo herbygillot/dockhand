@@ -5,15 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"os"
 	"path"
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/archive"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -36,6 +39,9 @@ type UpdateRequest struct {
 	Subject string
 	// Plan prepares the edit and changes nothing.
 	Plan bool
+	// CompareUpstream fetches the current version's archives beside the
+	// new ones and compares them, for a version update (Design v3 §6.12).
+	CompareUpstream bool
 }
 
 // PortVersion is a port's version and revision.
@@ -73,6 +79,9 @@ type Update struct {
 	Current bool
 	// Applied is true when the working files were written.
 	Applied bool
+	// Upstream is what comparing the old and new upstream archives found,
+	// when the update compared them.
+	Upstream *model.UpstreamComparison
 }
 
 // Update edits a port's files in the branch's worktree, as the worktree
@@ -120,11 +129,23 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		}
 		input.Release = &release
 	}
+	compare := request.CompareUpstream && request.Action == record.Bump
+	if compare {
+		directory, err := scratch.Dir("upstream-")
+		if err != nil {
+			return Update{}, err
+		}
+		defer os.RemoveAll(directory)
+		input.KeepArchives = directory
+	}
 	result, err := preparer.Prepare(ctx, input)
 	if err != nil {
 		return Update{}, err
 	}
 	update := describe(branch, request.Port, result)
+	if compare && len(result.Files) > 0 {
+		update.Upstream = compareUpstream(ctx, result)
+	}
 	if len(result.Files) == 0 {
 		update.Current = true
 		return update, nil
@@ -173,7 +194,7 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 // editRecord is what tidy later reads: each file's blob before and after,
 // and the subject the edit carries.
 func (e *Engine) editRecord(ctx context.Context, worktree *git.Repository, branch model.Branch, request UpdateRequest, update Update, result preparation.Result) (model.Edit, error) {
-	edit := model.Edit{ID: model.EditID(store.NewID("ed")), Branch: branch.ID, Kind: model.EditUpdate, Port: update.Port, Subject: update.Subject, At: e.now()}
+	edit := model.Edit{ID: model.EditID(store.NewID("ed")), Branch: branch.ID, Kind: model.EditUpdate, Port: update.Port, Subject: update.Subject, At: e.now(), Upstream: update.Upstream}
 	switch request.Action {
 	case record.RefreshChecksums:
 		edit.Kind = model.EditChecksums
@@ -344,4 +365,38 @@ func shortID() string {
 		id[i] = alphabet[rand.IntN(len(alphabet))]
 	}
 	return string(id)
+}
+
+// compareUpstream compares the current version's archives with the new
+// version's, one distfile with the same one. Not being able to compare is
+// reported, never a reason to refuse the update.
+func compareUpstream(ctx context.Context, result preparation.Result) *model.UpstreamComparison {
+	comparison := &model.UpstreamComparison{Changes: []model.UpstreamChange{}}
+	switch {
+	case result.PreviousProblem != "":
+		comparison.Problem = "the current version's archives could not be fetched: " + result.PreviousProblem
+		return comparison
+	case len(result.Downloads) == 0:
+		// A port fetched with git has no archives, so nothing to compare.
+		return nil
+	case len(result.Previous) != len(result.Downloads):
+		comparison.Problem = fmt.Sprintf("the versions have %d and %d distfiles, so they can't be paired", len(result.Previous), len(result.Downloads))
+		return comparison
+	}
+	for i, now := range result.Downloads {
+		old := result.Previous[i]
+		if old.Path == "" || now.Path == "" {
+			comparison.Problem = "the archives were not kept to compare"
+			return comparison
+		}
+		changes, err := archive.Compare(ctx, old.Path, now.Path)
+		if err != nil {
+			comparison.Problem = err.Error()
+			return comparison
+		}
+		for _, change := range changes {
+			comparison.Changes = append(comparison.Changes, model.UpstreamChange{Kind: change.Kind, Path: change.Path, Message: change.Message, Hold: change.Hold})
+		}
+	}
+	return comparison
 }

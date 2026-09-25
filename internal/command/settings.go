@@ -94,6 +94,9 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 	if testDependentReader != nil {
 		e.DependentReader = testDependentReader
 	}
+	if testOutdatedReader != nil {
+		e.OutdatedReader = testOutdatedReader
+	}
 	return e, nil
 }
 
@@ -102,6 +105,9 @@ var testPortReader engine.PortReader
 
 // testDependentReader, when set, stands in for the port index in impact.
 var testDependentReader engine.DependentReader
+
+// testOutdatedReader, when set, stands in for upstream discovery.
+var testOutdatedReader engine.OutdatedReader
 
 // tilde abbreviates the home directory in a path shown to a person.
 func tilde(path string) string {

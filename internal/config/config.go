@@ -186,6 +186,21 @@ func parse(path, text string) (File, error) {
 	return f, nil
 }
 
+// Maintainers are the identities the maintainer line names, the way the
+// port index's maintainers field carries them: @ada, example.org:ada. The
+// class words openmaintainer and nomaintainer name no one.
+func (f File) Maintainers() []string {
+	var identities []string
+	for _, field := range strings.Fields(f.Maintainer) {
+		field = strings.Trim(field, "{}")
+		if field == "" || field == "openmaintainer" || field == "nomaintainer" {
+			continue
+		}
+		identities = append(identities, field)
+	}
+	return identities
+}
+
 // checkMaintainer checks a maintainers line the way MacPorts writes one:
 // entries separated by spaces, each a braced group of a GitHub handle and
 // an obfuscated address, such as {@ada example.org:ada}, or a bare

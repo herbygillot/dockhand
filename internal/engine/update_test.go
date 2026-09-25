@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"os"
 	"path/filepath"
@@ -13,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -28,11 +31,15 @@ var (
 // on a refresh, in the tree it is given, the way the real one returns its
 // edits: file edits with preconditions, and the edited tree.
 type fakePreparer struct {
+	t        *testing.T
 	repo     *git.Repository
 	version  string
 	requests []preparation.Request
 	// during runs while the edit is prepared.
 	during func()
+	// upstream are the old and new versions' archive contents, kept as
+	// tarballs when an update asks to compare them.
+	upstream [2]map[string]string
 }
 
 func (p *fakePreparer) ResolveRelease(_ context.Context, r preparation.Request) (record.Release, error) {
@@ -92,12 +99,35 @@ func (p *fakePreparer) Prepare(ctx context.Context, r preparation.Request) (prep
 	if r.Action == record.BumpRevision {
 		result.Commits[0].Subject = r.Selection.Selector + ": " + r.Subject
 	}
+	if r.KeepArchives != "" && p.upstream[0] != nil {
+		result.Previous = []archives.Download{{Path: writeTarball(p.t, r.KeepArchives, "old", p.upstream[0])}}
+		result.Downloads = []archives.Download{{Path: writeTarball(p.t, r.KeepArchives, "new", p.upstream[1])}}
+	}
 	return result, nil
+}
+
+// writeTarball writes files under one top directory, as a release archive
+// has them.
+func writeTarball(t *testing.T, directory, top string, files map[string]string) string {
+	name := filepath.Join(directory, top+".tar.gz")
+	out, err := os.Create(name)
+	require.NoError(t, err)
+	gz := gzip.NewWriter(out)
+	tw := tar.NewWriter(gz)
+	for path, content := range files {
+		require.NoError(t, tw.WriteHeader(&tar.Header{Name: top + "/" + path, Mode: 0o644, Size: int64(len(content)), Typeflag: tar.TypeReg}))
+		_, err := tw.Write([]byte(content))
+		require.NoError(t, err)
+	}
+	require.NoError(t, tw.Close())
+	require.NoError(t, gz.Close())
+	require.NoError(t, out.Close())
+	return name
 }
 
 func (f fixture) withPreparer(t *testing.T) (*Engine, *fakePreparer) {
 	e := f.open(t)
-	p := &fakePreparer{repo: e.Repo, version: "1.8.1"}
+	p := &fakePreparer{t: t, repo: e.Repo, version: "1.8.1"}
 	e.Preparer = p
 	return e, p
 }
@@ -243,4 +273,38 @@ func TestBranchesChangingAndFreeNames(t *testing.T) {
 	name, err := e.FreeName(t.Context(), "jq")
 	require.NoError(t, err)
 	require.Regexp(t, `^jq-[a-z0-9]{4}$`, name)
+}
+
+func TestAnUpdateComparesTheUpstreamArchives(t *testing.T) {
+	f := setup(t)
+	e, p := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
+	require.NoError(t, err)
+	p.upstream = [2]map[string]string{
+		{"COPYING": "MIT\n", "go.mod": "module jq\n"},
+		{"COPYING": "GPL\n", "go.mod": "module jq\n\nrequire golang.org/x/net v0.44.0\n"},
+	}
+	update, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: record.Bump, Port: "jq", CompareUpstream: true})
+	require.NoError(t, err)
+	require.True(t, update.Upstream.Held())
+	require.Equal(t, []string{
+		"upstream's COPYING changed; the Portfile's license line may need to follow",
+		"upstream: go.mod adds golang.org/x/net v0.44.0",
+	}, []string{update.Upstream.Changes[0].Message, update.Upstream.Changes[1].Message})
+	require.NoDirExists(t, p.requests[0].KeepArchives, "the archives go when the update is done")
+
+	var edits []model.Edit
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		edits, err = r.Edits(branch.ID)
+		return err
+	}))
+	require.Equal(t, update.Upstream, edits[0].Upstream, "the edit keeps what was found")
+
+	p.upstream = [2]map[string]string{}
+	other, err := e.Start(t.Context(), StartRequest{Name: "jq-two"})
+	require.NoError(t, err)
+	quiet, err := e.Update(t.Context(), UpdateRequest{Branch: other, Action: record.Bump, Port: "jq", CompareUpstream: true})
+	require.NoError(t, err)
+	require.Nil(t, quiet.Upstream, "no archives, nothing compared")
+	require.False(t, quiet.Upstream.Held())
 }
