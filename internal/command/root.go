@@ -92,6 +92,8 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	root.AddGroup(&cobra.Group{ID: "understand", Title: "Understand:"})
 	for _, command := range []*cobra.Command{
 		statusCommand(&settings, streams),
+		diffCommand(&settings, streams),
+		impactCommand(&settings, streams),
 	} {
 		command.GroupID = "understand"
 		root.AddCommand(command)

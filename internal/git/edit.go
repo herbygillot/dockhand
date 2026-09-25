@@ -184,7 +184,9 @@ func (r *Repository) editTree(ctx context.Context, tree string, edits []FileEdit
 	return r.WriteTree(ctx, entries)
 }
 
-func (r *Repository) DiffTrees(ctx context.Context, before, after string) ([]byte, error) {
+// DiffTrees is the patch from one tree to another, narrowed to paths when
+// any are given.
+func (r *Repository) DiffTrees(ctx context.Context, before, after string, paths ...string) ([]byte, error) {
 	types, err := r.objectTypes(ctx, []string{before, after})
 	if err != nil {
 		return nil, err
@@ -192,7 +194,8 @@ func (r *Repository) DiffTrees(ctx context.Context, before, after string) ([]byt
 	if types[before] != "tree" || types[after] != "tree" {
 		return nil, fmt.Errorf("git: diff inputs must be trees")
 	}
-	return r.output(ctx, "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-color", "--binary", "--src-prefix=a/", "--dst-prefix=b/", before, after, "--")
+	args := []string{"diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-color", "--binary", "--src-prefix=a/", "--dst-prefix=b/", before, after, "--"}
+	return r.output(ctx, append(args, paths...)...)
 }
 
 // ChangedPaths compares immutable commits or trees without rename folding, so

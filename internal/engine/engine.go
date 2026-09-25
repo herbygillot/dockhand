@@ -62,6 +62,8 @@ type Engine struct {
 	Forge Forge
 	// PortReader reads ports for plans; MacPorts' own evaluator when nil.
 	PortReader PortReader
+	// DependentReader finds dependents for impact; the port index when nil.
+	DependentReader DependentReader
 	// Providers are where checks build, by name.
 	Providers map[string]Provider
 	ports     *selection.Reader

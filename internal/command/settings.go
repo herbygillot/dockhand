@@ -91,11 +91,17 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 	if testPortReader != nil {
 		e.PortReader = testPortReader
 	}
+	if testDependentReader != nil {
+		e.DependentReader = testDependentReader
+	}
 	return e, nil
 }
 
 // testPortReader, when set, stands in for MacPorts' evaluator in plans.
 var testPortReader engine.PortReader
+
+// testDependentReader, when set, stands in for the port index in impact.
+var testDependentReader engine.DependentReader
 
 // tilde abbreviates the home directory in a path shown to a person.
 func tilde(path string) string {

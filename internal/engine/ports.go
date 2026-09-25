@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/selection"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -101,4 +102,67 @@ func (p *evaluatedPorts) Directory(ctx context.Context, source model.Source, nam
 		return "", fmt.Errorf("no port %s in this tree", name)
 	}
 	return path.Dir(targets[0].Portfile), nil
+}
+
+// dependencyPhases words the index's reverse-dependency fields.
+var dependencyPhases = map[string]string{portindex.DependsBuild: "build", portindex.DependsLib: "library", portindex.DependsRun: "runtime"}
+
+// Dependents reads the direct dependents of the directories' ports from
+// the port index of the source.
+func (p *evaluatedPorts) Dependents(ctx context.Context, source model.Source, directories []string) (_ []Dependent, err error) {
+	files, done, err := p.workspaces.Acquire(ctx, p.repo, source)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { err = errors.Join(err, done()) }()
+	tree, err := files.Tree(model.Platform{})
+	if err != nil {
+		return nil, err
+	}
+	index, err := p.ports.Index.Index(ctx, tree)
+	if err != nil {
+		return nil, fmt.Errorf("reading the port index: %w", err)
+	}
+	var changed []string
+	if err := index.Each(func(entry portindex.Entry) bool {
+		if slices.Contains(directories, entry.Portdir) {
+			changed = append(changed, entry.Name)
+		}
+		return true
+	}); err != nil {
+		return nil, err
+	}
+	reverse, err := index.ReverseDependencies()
+	if err != nil {
+		return nil, err
+	}
+	byName := map[string]*Dependent{}
+	var dependents []*Dependent
+	for _, name := range changed {
+		for _, edge := range reverse.ByPort[strings.ToLower(name)] {
+			if slices.Contains(directories, edge.Portdir) {
+				continue
+			}
+			dependent := byName[edge.Name]
+			if dependent == nil {
+				dependent = &Dependent{Name: edge.Name, Directory: edge.Portdir}
+				byName[edge.Name] = dependent
+				dependents = append(dependents, dependent)
+			}
+			if !slices.Contains(dependent.On, name) {
+				dependent.On = append(dependent.On, name)
+			}
+			for _, field := range edge.Fields {
+				if phase := dependencyPhases[field]; phase != "" && !slices.Contains(dependent.Phases, phase) {
+					dependent.Phases = append(dependent.Phases, phase)
+				}
+			}
+		}
+	}
+	all := make([]Dependent, len(dependents))
+	for i, dependent := range dependents {
+		all[i] = *dependent
+	}
+	slices.SortFunc(all, func(a, b Dependent) int { return strings.Compare(a.Name, b.Name) })
+	return all, nil
 }
