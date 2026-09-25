@@ -2,12 +2,14 @@ package engine
 
 import (
 	"context"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -145,4 +147,36 @@ func TestLinkedPortsAreLibraryDependentsOncePerDirectory(t *testing.T) {
 	require.Equal(t, []string{"harbor-viewer"}, linked.Excepted)
 	_, err = e.LinkedPorts(t.Context(), branch, "libharbor", []string{"harbor-tools"})
 	require.ErrorContains(t, err, "--except harbor-tools: it is not a library dependent of libharbor")
+}
+
+// update --revbump-dependents is one engine operation: it bumps each
+// linked port with the subject tidy uses, and a plan bumps nothing.
+func TestRevbumpLinkedBumpsEachLinkedPortForTidy(t *testing.T) {
+	f := setup(t)
+	write(t, f.upstream, map[string]string{"textproc/yq/Portfile": "name yq\nversion 1\n", "textproc/gojq/Portfile": "name gojq\nversion 1\n"})
+	run(t, f.upstream, "add", "-A")
+	run(t, f.upstream, "commit", "-q", "-m", "yq and gojq")
+	e, _ := f.withPreparer(t)
+	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{
+		"textproc/jq": {port("jq")}, "textproc/yq": {port("yq", "jq")}, "textproc/gojq": {port("gojq", "jq")},
+	}}
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
+	require.NoError(t, err)
+	update := Update{Port: "jq", After: PortVersion{Version: "1.8.1"}}
+
+	planned, err := e.RevbumpLinked(t.Context(), branch, update, nil, true)
+	require.NoError(t, err)
+	require.Equal(t, []string{"gojq", "yq"}, dependentNames(planned.Bump))
+	require.Empty(t, planned.Bumped)
+	require.Equal(t, "rebuild for jq 1.8.1", planned.Subject)
+	require.NoFileExists(t, filepath.Join(branch.Worktree, "textproc/yq/Portfile"), "a plan bumps nothing")
+
+	done, err := e.RevbumpLinked(t.Context(), branch, update, []string{"gojq"}, false)
+	require.NoError(t, err)
+	require.Equal(t, []string{"yq"}, done.Bumped)
+	require.Equal(t, []string{"gojq"}, done.Excepted)
+	require.Equal(t, "name yq\nversion 1\nrevision 1\n", read(t, filepath.Join(branch.Worktree, "textproc/yq/Portfile")))
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Equal(t, "yq: rebuild for jq 1.8.1", plan.Groups[0].Subject())
 }

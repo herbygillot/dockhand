@@ -364,34 +364,31 @@ func thousands(n int64) string {
 	return digits
 }
 
-// revbumpLinked bumps the revision of the ports that link an updated one
-// directly, or with plan lists them.
+// revbumpLinked has the engine bump the revision of the ports that link
+// an updated one directly, or with plan list them, and says what it did.
 func revbumpLinked(ctx context.Context, e *engine.Engine, out io.Writer, branch model.Branch, update engine.Update, except []string, plan bool) ([]string, error) {
-	linked, err := e.LinkedPorts(ctx, branch, update.Port, except)
-	if err != nil {
+	done, err := e.RevbumpLinked(ctx, branch, update, except, plan)
+	if err != nil && len(done.Bump)+len(done.Changed)+len(done.Excepted) == 0 {
 		return nil, err
 	}
 	var names []string
-	for _, dependent := range linked.Bump {
+	for _, dependent := range done.Bump {
 		names = append(names, dependent.Name)
 	}
-	fmt.Fprintf(out, "Direct library dependents, from the index at %s:\n  %s\n", engine.Short(linked.Base), orNone(strings.Join(names, "  ")))
-	for _, dependent := range linked.Changed {
+	fmt.Fprintf(out, "Direct library dependents, from the index at %s:\n  %s\n", engine.Short(done.Base), orNone(strings.Join(names, "  ")))
+	for _, dependent := range done.Changed {
 		fmt.Fprintf(out, "  · %s: the branch already changes it, so it is left as it is\n", dependent.Name)
 	}
-	if len(linked.Excepted) > 0 {
-		fmt.Fprintf(out, "  · left out with --except: %s\n", strings.Join(linked.Excepted, ", "))
+	if len(done.Excepted) > 0 {
+		fmt.Fprintf(out, "  · left out with --except: %s\n", strings.Join(done.Excepted, ", "))
 	}
-	if plan || len(linked.Bump) == 0 {
+	if err != nil {
+		return nil, err
+	}
+	if plan || len(done.Bump) == 0 {
 		return nonNil(names), nil
 	}
-	subject := fmt.Sprintf("rebuild for %s %s", update.Port, update.After.Version)
-	for _, dependent := range linked.Bump {
-		if _, err := e.Update(ctx, engine.UpdateRequest{Branch: branch, Action: record.BumpRevision, Port: dependent.Name, Subject: subject}); err != nil {
-			return nil, fmt.Errorf("revision-bumping %s: %w; the ports before it are bumped", dependent.Name, err)
-		}
-	}
-	fmt.Fprintf(out, "Revision bumped %s; subject \"<port>: %s\" recorded for tidy.\n", plural(len(linked.Bump), "port"), subject)
+	fmt.Fprintf(out, "Revision bumped %s; subject \"<port>: %s\" recorded for tidy.\n", plural(len(done.Bumped), "port"), done.Subject)
 	return names, nil
 }
 

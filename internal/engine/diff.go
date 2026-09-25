@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // PortDiff is how a branch changes one port directory.
@@ -282,4 +283,35 @@ func (e *Engine) LinkedPorts(ctx context.Context, branch model.Branch, port stri
 		}
 	}
 	return linked, nil
+}
+
+// LinkedRevbump is what update --revbump-dependents did for an updated
+// port, or with a plan would do.
+type LinkedRevbump struct {
+	LinkedPorts
+	// Subject is the commit subject recorded for tidy, after each port's
+	// name: "rebuild for <port> <version>".
+	Subject string
+	// Bumped are the dependents whose revision was bumped, in order; none
+	// for a plan.
+	Bumped []string
+}
+
+// RevbumpLinked bumps the revision of the ports that link an updated one
+// directly (LinkedPorts), or with plan only finds them. It stops at the
+// first port it can't bump, naming it; the ports before it stay bumped,
+// as edits in the branch's files.
+func (e *Engine) RevbumpLinked(ctx context.Context, branch model.Branch, update Update, except []string, plan bool) (LinkedRevbump, error) {
+	linked, err := e.LinkedPorts(ctx, branch, update.Port, except)
+	result := LinkedRevbump{LinkedPorts: linked, Subject: fmt.Sprintf("rebuild for %s %s", update.Port, update.After.Version)}
+	if err != nil || plan {
+		return result, err
+	}
+	for _, dependent := range linked.Bump {
+		if _, err := e.Update(ctx, UpdateRequest{Branch: branch, Action: record.BumpRevision, Port: dependent.Name, Subject: result.Subject}); err != nil {
+			return result, fmt.Errorf("revision-bumping %s: %w; the ports before it are bumped", dependent.Name, err)
+		}
+		result.Bumped = append(result.Bumped, dependent.Name)
+	}
+	return result, nil
 }
