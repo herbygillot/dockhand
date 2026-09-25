@@ -35,6 +35,7 @@ type File struct {
 	Maintainer string `toml:"maintainer"`
 	Check      Check  `toml:"check"`
 	Submit     Submit `toml:"submit"`
+	Serve      Serve  `toml:"serve"`
 	Providers  struct {
 		Command *CommandProvider `toml:"command"`
 	} `toml:"providers"`
@@ -48,6 +49,57 @@ type Submit struct {
 	// never ask them to review again.
 	RerequestReview string `toml:"rerequest_review"`
 }
+
+// Serve is what serve does besides running checks (Design v3 §11).
+type Serve struct {
+	// ForOutdated is what serve does with your outdated ports each day:
+	// list (the default) counts them for status, draft prepares a branch
+	// for each, and check also checks each.
+	ForOutdated string `toml:"for_outdated"`
+	// OutdatedAt is when, each day, serve looks for new releases, as
+	// "07:00" in local time; 07:00 when unset.
+	OutdatedAt string `toml:"outdated_at"`
+	// SubmitPassing opens pull requests for the updates serve prepared
+	// that pass, within §11's guardrails; serve --submit-passing and
+	// --no-submit-passing override it for one run.
+	SubmitPassing bool `toml:"submit_passing"`
+	// SubmitLimit is the most pull requests serve opens a day; 10 when
+	// unset.
+	SubmitLimit int `toml:"submit_limit"`
+	// Notify posts macOS notifications when a check finishes or a pull
+	// request changes; on when unset.
+	Notify *bool `toml:"notify"`
+}
+
+// Mode is for_outdated, list when unset.
+func (s Serve) Mode() string {
+	if s.ForOutdated == "" {
+		return "list"
+	}
+	return s.ForOutdated
+}
+
+// Time is outdated_at as hours and minutes.
+func (s Serve) Time() (hour, minute int) {
+	hour, minute = 7, 0
+	if s.OutdatedAt != "" {
+		fmt.Sscanf(s.OutdatedAt, "%d:%d", &hour, &minute)
+	}
+	return hour, minute
+}
+
+// Limit is submit_limit, 10 when unset.
+func (s Serve) Limit() int {
+	if s.SubmitLimit <= 0 {
+		return 10
+	}
+	return s.SubmitLimit
+}
+
+// Notifies reports whether serve posts notifications.
+func (s Serve) Notifies() bool { return s.Notify == nil || *s.Notify }
+
+var clockTime = regexp.MustCompile(`^([01]?[0-9]|2[0-3]):[0-5][0-9]$`)
 
 // Cleanup is decision 36's automatic cleanup, which serve runs at most
 // once a day.
@@ -161,6 +213,17 @@ func parse(path, text string) (File, error) {
 	case "", "declared", "required", "skip":
 	default:
 		return File{}, fmt.Errorf("%s: check.tests: %q is not declared, required, or skip", path, f.Check.Tests)
+	}
+	switch f.Serve.ForOutdated {
+	case "", "list", "draft", "check":
+	default:
+		return File{}, fmt.Errorf("%s: serve.for_outdated: %q is not list, draft, or check", path, f.Serve.ForOutdated)
+	}
+	if f.Serve.OutdatedAt != "" && !clockTime.MatchString(f.Serve.OutdatedAt) {
+		return File{}, fmt.Errorf("%s: serve.outdated_at: %q is not a time of day, such as \"07:00\"", path, f.Serve.OutdatedAt)
+	}
+	if f.Serve.SubmitLimit < 0 {
+		return File{}, fmt.Errorf("%s: serve.submit_limit: %d is not a number of pull requests", path, f.Serve.SubmitLimit)
 	}
 	switch f.Submit.RerequestReview {
 	case "", "ask", "always", "never":

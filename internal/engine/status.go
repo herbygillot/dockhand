@@ -35,6 +35,9 @@ type BranchStatus struct {
 	Current bool
 	// LatestRevision is what Latest checked.
 	LatestRevision *model.Revision
+	// Held are the upstream comparison's findings that hold a branch serve
+	// prepared for a person's look.
+	Held []string
 }
 
 // Pushed reports whether the pull request has the branch's head.
@@ -101,6 +104,17 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 		return status, err
 	}
 	status.Scope = ScopeOf(changed)
+	if branch.Origin == model.OriginServe {
+		changes, err := e.UpstreamFindings(ctx, branch)
+		if err != nil {
+			return status, err
+		}
+		for _, change := range changes {
+			if change.Hold {
+				status.Held = append(status.Held, change.Message)
+			}
+		}
+	}
 
 	err = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		runs, err := r.Runs(store.RunFilter{Branch: branch.ID})

@@ -31,7 +31,7 @@ var servePoll = 2 * time.Second
 var serveRefresh = 5 * time.Minute
 
 func serveCommand(s *settings, streams Streams) *cobra.Command {
-	var drain, install, uninstall bool
+	var drain, install, uninstall, submitPassing, noSubmitPassing bool
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Run queued checks, and keep running them",
@@ -40,9 +40,20 @@ ones as they are queued. One serve leads; a second stands by and takes over
 if the leader dies. Stopping serve leaves the check it was running for the
 next serve, which picks it up where it stopped; finished results are kept.
 
-serve only checks: it opens no pull requests. It also reads your open pull
-requests every few minutes, so status shows their reviews and CI, and a
-merged one marks its branch merged.
+serve checks, and by default opens no pull requests. It also reads your
+open pull requests every few minutes, so status shows their reviews and CI,
+and a merged one marks its branch merged, and it cleans up once a day.
+
+Once a day, at serve.outdated_at, it looks for new releases of your ports
+(the config's maintainer), as serve.for_outdated says: list counts them for
+status; draft prepares a branch for each; check also checks each.
+
+--submit-passing, or serve.submit_passing, also opens a pull request for
+each branch serve prepared whose check passed, at most serve.submit_limit a
+day, and never one with an upstream or commit-rule finding, or one needing
+--accept: those wait on the attention list. --no-submit-passing turns it
+off for one run. serve.notify posts macOS notifications as checks finish and
+pull requests change.
 
 --drain runs what is queued now and exits. --install makes serve a launchd
 agent that starts at login and restarts if it stops; --uninstall removes it.`,
@@ -57,7 +68,8 @@ agent that starts at login and restarts if it stops; --uninstall removes it.`,
 				return err
 			}
 			defer e.Close()
-			err = serve(ctx, e, streams.Out, drain, s.file.Cleanup)
+			options := serveOptions{file: s.file, submitPassing: (s.file.Serve.SubmitPassing || submitPassing) && !noSubmitPassing}
+			err = serve(ctx, e, streams.Out, drain, options)
 			// Being stopped is how serve ends, not a failure.
 			if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
 				fmt.Fprintln(streams.Out, "serve: stopped")
@@ -69,11 +81,21 @@ agent that starts at login and restarts if it stops; --uninstall removes it.`,
 	cmd.Flags().BoolVar(&drain, "drain", false, "run what is queued now, then exit")
 	cmd.Flags().BoolVar(&install, "install", false, "install serve as a launchd agent that starts at login")
 	cmd.Flags().BoolVar(&uninstall, "uninstall", false, "remove the launchd agent")
+	cmd.Flags().BoolVar(&submitPassing, "submit-passing", false, "open pull requests for the updates serve prepared that pass (Design v3 §11's guardrails)")
+	cmd.Flags().BoolVar(&noSubmitPassing, "no-submit-passing", false, "for this run, open none, whatever serve.submit_passing says")
 	cmd.MarkFlagsMutuallyExclusive("install", "uninstall", "drain")
+	cmd.MarkFlagsMutuallyExclusive("submit-passing", "no-submit-passing")
 	return cmd
 }
 
-func serve(ctx context.Context, e *engine.Engine, out io.Writer, drain bool, cleanup config.Cleanup) error {
+// serveOptions are serve's settings: the configuration file, and whether
+// this run opens pull requests for passing updates.
+type serveOptions struct {
+	file          config.File
+	submitPassing bool
+}
+
+func serve(ctx context.Context, e *engine.Engine, out io.Writer, drain bool, options serveOptions) error {
 	session, err := startSession(ctx, e, model.SessionServe)
 	if err != nil {
 		return err
@@ -93,12 +115,24 @@ func serve(ctx context.Context, e *engine.Engine, out io.Writer, drain bool, cle
 	if len(providers) == 0 {
 		providers = []string{"none set up; checks will need attention"}
 	}
-	fmt.Fprintf(out, "serve: leading (pid %d) · builds on %s · opens no pull requests; it only checks\n", os.Getpid(), strings.Join(providers, ", "))
-	followed := &follower{e: e, out: out, reported: map[string]bool{}}
-	cleaned := &cleaner{e: e, out: out, settings: cleanup}
+	publishing := "opens no pull requests; it only checks"
+	if options.submitPassing {
+		publishing = fmt.Sprintf("opens PRs for passing updates it prepared, at most %d a day", options.file.Serve.Limit())
+	}
+	fmt.Fprintf(out, "serve: leading (pid %d) · builds on %s · %s\n", os.Getpid(), strings.Join(providers, ", "), publishing)
+	writeServing(e, options.submitPassing)
+	notice := &notifier{on: options.file.Serve.Notifies()}
+	followed := &follower{e: e, out: out, reported: map[string]bool{}, notice: notice}
+	cleaned := &cleaner{e: e, out: out, settings: options.file.Cleanup}
+	scanned := &outdatedScanner{e: e, out: out, file: options.file, notice: notice}
+	submitter := &passingSubmitter{e: e, out: out, limit: options.file.Serve.Limit(), notice: notice}
 	for ctx.Err() == nil {
 		if !drain {
 			followed.maybe(ctx)
+			scanned.maybe(ctx)
+			if options.submitPassing {
+				submitter.maybe(ctx)
+			}
 		}
 		// A leader judged dead by a standby has lost the lease; it stops
 		// rather than drive work twice.
@@ -147,11 +181,14 @@ func serve(ctx context.Context, e *engine.Engine, out io.Writer, drain bool, cle
 			fmt.Fprintf(out, "%s: left running for the next serve\n", run.Name())
 			break
 		}
-		fmt.Fprintf(out, "%s %s: %s", run.Name(), branch.ShortName(), run.State)
+		line := fmt.Sprintf("%s %s: %s", run.Name(), branch.ShortName(), run.State)
 		if run.Detail != "" && run.State != model.RunPassed {
-			fmt.Fprintf(out, ": %s", run.Detail)
+			line += ": " + run.Detail
 		}
-		fmt.Fprintln(out)
+		fmt.Fprintln(out, line)
+		notice.post(branch.ShortName(), line)
+		// A check that passed may be what the submitter waits for.
+		submitter.last = time.Time{}
 	}
 	fmt.Fprintln(out, "serve: stopped")
 	return nil
@@ -164,6 +201,7 @@ type follower struct {
 	out      io.Writer
 	last     time.Time
 	reported map[string]bool
+	notice   *notifier
 }
 
 func (f *follower) maybe(ctx context.Context) {
@@ -188,6 +226,7 @@ func (f *follower) maybe(ctx context.Context) {
 		}
 		for _, change := range r.Changes {
 			fmt.Fprintf(f.out, "%s: %s\n", r.Branch.ShortName(), change)
+			f.notice.post(r.Branch.ShortName(), change)
 		}
 	}
 	f.reported = problems

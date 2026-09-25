@@ -125,6 +125,9 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 		}
 		table.Flush()
 	}
+	if found, ok := readOutdated(e); ok && len(found.Outdated) > 0 {
+		fmt.Fprintf(out, "\nYour ports: %s newer releases, as serve found %s (dockhand update --outdated --mine)\n", plural(len(found.Outdated), "port")+map[bool]string{true: " has", false: " have"}[len(found.Outdated) == 1], ago(found.CheckedAt))
+	}
 	fmt.Fprintf(out, "\n%s\n", serveLine(ctx, e))
 	return nil
 }
@@ -142,6 +145,9 @@ func attentionFor(s engine.BranchStatus) []attention {
 	}
 	if rows := pullRequestAttention(s); len(rows) > 0 {
 		return rows
+	}
+	if pr := s.Branch.PullRequest; pr != nil && s.Branch.Origin == model.OriginServe && (pr.Observed == nil || pr.Observed.State == "open") {
+		return row("·", fmt.Sprintf("#%d opened by serve, without a person's review", pr.Number), "dockhand status "+name)
 	}
 	if s.Latest == nil || !s.Current || len(s.Active) > 0 {
 		if s.Latest != nil && !s.Current && s.Latest.State == model.RunPassed && len(s.Active) == 0 {
@@ -167,6 +173,8 @@ func attentionFor(s engine.BranchStatus) []attention {
 		switch {
 		case len(s.Edited) > 0:
 			return row("·", engine.Describe(*s.LatestRevision)+" passed; commit it for review", "dockhand tidy --branch "+name)
+		case s.Branch.PullRequest == nil && len(s.Held) > 0:
+			return row("!", "passed; held for a look: "+s.Held[0], "dockhand submit --branch "+name)
 		case s.Branch.PullRequest == nil:
 			return row("·", "passed; waiting for you to submit", "dockhand submit --branch "+name)
 		case !s.Pushed():
@@ -308,6 +316,9 @@ func serveLine(ctx context.Context, e *engine.Engine) string {
 		defer session.End(context.WithoutCancel(ctx))
 		if leader, err := session.Holder(ctx, coord.LeaderResource); err == nil && leader != nil {
 			line = fmt.Sprintf("serve: running (pid %d)", leader.PID)
+			if leading, ok := readServing(e); ok && leading.PID == leader.PID && leading.SubmitPassing {
+				line += " · opens PRs for passing updates"
+			}
 		}
 	}
 	switch len(queued) {

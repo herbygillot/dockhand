@@ -136,3 +136,27 @@ func TestMaintainersAreTheIdentitiesNamed(t *testing.T) {
 	require.Equal(t, []string{"@ada", "example.org:ada"}, f.Maintainers())
 	require.Empty(t, File{}.Maintainers())
 }
+
+func TestServeSettings(t *testing.T) {
+	f, err := parse("config.toml", "")
+	require.NoError(t, err)
+	require.Equal(t, "list", f.Serve.Mode())
+	hour, minute := f.Serve.Time()
+	require.Equal(t, [2]int{7, 0}, [2]int{hour, minute})
+	require.Equal(t, 10, f.Serve.Limit())
+	require.True(t, f.Serve.Notifies())
+
+	f, err = parse("config.toml", "[serve]\nfor_outdated = \"check\"\noutdated_at = \"6:30\"\nsubmit_passing = true\nsubmit_limit = 3\nnotify = false\n")
+	require.NoError(t, err)
+	require.Equal(t, "check", f.Serve.Mode())
+	hour, minute = f.Serve.Time()
+	require.Equal(t, [2]int{6, 30}, [2]int{hour, minute})
+	require.True(t, f.Serve.SubmitPassing)
+	require.Equal(t, 3, f.Serve.Limit())
+	require.False(t, f.Serve.Notifies())
+
+	for setting, bad := range map[string]string{"for_outdated": `"often"`, "outdated_at": `"25:00"`, "submit_limit": "-1"} {
+		_, err = parse("config.toml", "[serve]\n"+setting+" = "+bad+"\n")
+		require.ErrorContains(t, err, "serve."+setting)
+	}
+}

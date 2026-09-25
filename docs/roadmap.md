@@ -78,9 +78,9 @@ The principles and the direction record's standing decisions are the specificati
     - `outdated --mine` feeding `update --outdated --mine`, which previews how it splits the work (**done 2026-09-25**, [note](activity/2026-09-25-outdated-and-upstream-comparison.md));
     - the upstream archive comparison (license, build files, declared dependencies) (**done 2026-09-25**, same note);
     - `submit --passing` (**done 2026-09-25**, [note](activity/2026-09-25-submit-check-passing-ready.md));
-    - `serve.for_outdated` (list, draft, check);
-    - `serve --submit-passing` and its config key, with the guardrails in v3 §11;
-    - PR following and notifications.
+    - `serve.for_outdated` (list, draft, check) (**done 2026-09-25**, [note](activity/2026-09-25-serve-maintainer-loop.md));
+    - `serve --submit-passing` and its config key, with the guardrails in v3 §11 (**done 2026-09-25**, same note);
+    - PR following and notifications (**done 2026-09-25**: [following](activity/2026-09-25-follow-pull-requests.md), and notifications in the same note).
 12. **Tart on other macOS releases** (former step 10, decisions 4–7 and 14). `--os` becomes `--on tart:<releases>`, and each release's Xcode need comes from the facts table.
 13. **Preparation coverage** (former step 11). This step is unchanged:
     - files added and deleted by preparation (40);
