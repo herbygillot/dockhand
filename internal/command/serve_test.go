@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,7 +58,7 @@ func TestServeDrainsTheQueue(t *testing.T) {
 	out, _, err := dockhand(t, "serve", "--drain")
 	require.NoError(t, err)
 	require.Contains(t, out, "serve: leading (pid ")
-	require.Contains(t, out, "builds on command, github · opens no pull requests; it only checks\n")
+	require.Contains(t, out, "builds on command (1 at a time), github (2 at a time) · opens no pull requests; it only checks\n")
 	require.Contains(t, out, "check-1 jq-update: running\ncheck-1 jq-update: passed\nserve: the queue is empty\n")
 	out, _, err = dockhand(t, "queue")
 	require.NoError(t, err)
@@ -185,4 +186,73 @@ func TestServeCleansUpAfterAMergeOnceADay(t *testing.T) {
 
 	out = serveFor("serve: leading")
 	require.NotContains(t, out, "cleaned up", "once a day")
+}
+
+func TestServeRunsChecksUpToEachProvidersCapacity(t *testing.T) {
+	w := checkedBranch(t)
+	// The script holds each check until the go file appears, saying which
+	// ones started.
+	script := filepath.Join(w.home, "bin", "build-ports")
+	require.NoError(t, os.WriteFile(script, []byte(`#!/bin/sh
+dir=$(dirname "$1")
+run=$(basename "$(dirname "$dir")")
+: > "$HOME/started-$run"
+while [ ! -f "$HOME/go" ]; do sleep 0.02; done
+cat > "$dir/result.json" <<JSON
+{"version": 1, "targets": [{"id": "jq", "outcome": "passed"}]}
+JSON
+`), 0o755))
+	configure := func(capacity int) {
+		require.NoError(t, os.WriteFile(filepath.Join(w.home, ".dockhand", "config.toml"),
+			[]byte(fmt.Sprintf("[providers.command]\nrun = \"~/bin/build-ports\"\ncapacity = %d\n", capacity)), 0o644))
+	}
+	_, _, err := dockhand(t, "check", "-d")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "start", "jq-other")
+	require.NoError(t, err)
+	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "src", "macports-branches", "jq-other"))
+	_, _, err = dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "check", "-d")
+	require.NoError(t, err)
+
+	started := func(run string) bool {
+		_, err := os.Stat(filepath.Join(w.home, "started-"+run))
+		return err == nil
+	}
+	serveUntil := func(capacity int, check func()) string {
+		configure(capacity)
+		var served syncBuffer
+		done := make(chan error)
+		go func() {
+			done <- Run(t.Context(), []string{"serve", "--drain"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
+		}()
+		check()
+		require.NoError(t, os.WriteFile(filepath.Join(w.home, "go"), nil, 0o644))
+		require.NoError(t, <-done)
+		return served.String()
+	}
+
+	out := serveUntil(2, func() {
+		require.Eventually(t, func() bool { return started("check-1") && started("check-2") }, 5*time.Second, 10*time.Millisecond,
+			"with capacity 2, both checks run at once")
+	})
+	require.Contains(t, out, "builds on command (2 at a time)")
+	require.Contains(t, out, "check-1 jq-update: passed\n")
+	require.Contains(t, out, "check-2 jq-other: passed\n")
+
+	// With capacity 1, the second waits for the first.
+	for _, name := range []string{"go", "started-check-1", "started-check-2"} {
+		require.NoError(t, os.Remove(filepath.Join(w.home, name)))
+	}
+	_, _, err = dockhand(t, "check", "-d")
+	require.NoError(t, err)
+	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "src", "macports-branches", "jq-update"))
+	_, _, err = dockhand(t, "check", "-d")
+	require.NoError(t, err)
+	serveUntil(1, func() {
+		require.Eventually(t, func() bool { return started("check-3") || started("check-4") }, 5*time.Second, 10*time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
+		require.False(t, started("check-3") && started("check-4"), "with capacity 1, one check at a time")
+	})
 }

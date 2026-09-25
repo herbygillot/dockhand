@@ -37,6 +37,8 @@ type Forge interface {
 // forge is the engine's Forge: the one it was given, or GitHub with the
 // login from the system keychain (or GH_TOKEN), assembled on first use.
 func (e *Engine) forge() Forge {
+	e.lazy.Lock()
+	defer e.lazy.Unlock()
 	if e.Forge == nil {
 		client := &github.Client{HTTP: http.DefaultClient, Credentials: github.SystemCredentials{Store: keychain.Store{}, Key: github.CredentialKey}}
 		e.Forge = &forgegithub.Client{Client: client, GitExecutable: e.options.Git}

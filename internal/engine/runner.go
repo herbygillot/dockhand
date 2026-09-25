@@ -635,9 +635,21 @@ func (e *Engine) Revision(ctx context.Context, id model.RevisionID) (model.Revis
 // a driver that is gone, then queued runs a person asked for, then serve's
 // own, oldest first. Runs a live session holds are someone else's.
 func (e *Engine) Next(ctx context.Context, session *coord.Session) (model.Run, bool, error) {
+	candidates, err := e.Candidates(ctx, session)
+	if err != nil || len(candidates) == 0 {
+		return model.Run{}, false, err
+	}
+	return candidates[0], true, nil
+}
+
+// Candidates are the runs serve could drive, in the order Next takes them:
+// a run left running by a driver that is gone, then queued runs a person
+// asked for, then serve's own, oldest first. Runs a live session holds,
+// this one included, are left out.
+func (e *Engine) Candidates(ctx context.Context, session *coord.Session) ([]model.Run, error) {
 	runs, err := e.Runs(ctx, store.RunFilter{States: []model.RunState{model.RunQueued, model.RunRunning}})
 	if err != nil {
-		return model.Run{}, false, err
+		return nil, err
 	}
 	rank := func(run model.Run) int {
 		switch {
@@ -654,14 +666,33 @@ func (e *Engine) Next(ctx context.Context, session *coord.Session) (model.Run, b
 		}
 		return a.Number - b.Number
 	})
+	var candidates []model.Run
 	for _, run := range runs {
 		holder, err := session.Holder(ctx, RunResource(run.ID))
 		if err != nil {
-			return model.Run{}, false, err
+			return nil, err
 		}
 		if holder == nil {
-			return run, true, nil
+			candidates = append(candidates, run)
 		}
 	}
-	return model.Run{}, false, nil
+	return candidates, nil
+}
+
+// RunProviders are the providers a run's plan builds on, each once.
+func (e *Engine) RunProviders(ctx context.Context, run model.Run) ([]string, error) {
+	var providers []string
+	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		plan, err := r.Plan(run.Plan)
+		if err != nil {
+			return err
+		}
+		for _, environment := range plan.Environments {
+			if !slices.Contains(providers, environment.Provider) {
+				providers = append(providers, environment.Provider)
+			}
+		}
+		return nil
+	})
+	return providers, err
 }

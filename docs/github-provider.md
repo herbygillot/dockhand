@@ -13,6 +13,7 @@ If more than one remote pushes to a fork you own, name one in `~/.dockhand/confi
 ```toml
 [providers.github]
 remote = "fork"
+capacity = 2      # how many checks serve runs on it at once; 2 when unset
 
 [check]
 on = ["github"]   # makes it check's default

@@ -162,6 +162,8 @@ type CommandProvider struct {
 	Run string `toml:"run"`
 	// Name labels its results: "reported by <name>".
 	Name string `toml:"name"`
+	// Capacity is how many checks serve runs on it at once; 1 when unset.
+	Capacity int `toml:"capacity"`
 }
 
 // GitHubProvider builds with MacPorts' own workflow in your fork.
@@ -169,6 +171,26 @@ type GitHubProvider struct {
 	// Remote is the Git remote that pushes to your fork, when more than
 	// one pushes to a fork you own.
 	Remote string `toml:"remote"`
+	// Capacity is how many checks serve runs on it at once; 2 when unset.
+	// Each run takes one runner per macOS release MacPorts' workflow
+	// builds on, and GitHub queues what a plan's limits won't start.
+	Capacity int `toml:"capacity"`
+}
+
+// Capacity is how many checks serve runs on a provider at once.
+func (f File) Capacity(provider string) int {
+	switch provider {
+	case "command":
+		if f.Providers.Command != nil && f.Providers.Command.Capacity > 0 {
+			return f.Providers.Command.Capacity
+		}
+	case "github":
+		if f.Providers.GitHub.Capacity > 0 {
+			return f.Providers.GitHub.Capacity
+		}
+		return 2
+	}
+	return 1
 }
 
 // Path is the configuration file to use: $DOCKHAND_CONFIG, or
@@ -247,7 +269,13 @@ func parse(path, text string) (File, error) {
 			return File{}, fmt.Errorf("%s: cleanup.after: %w", path, err)
 		}
 	}
+	if f.Providers.GitHub.Capacity < 0 {
+		return File{}, fmt.Errorf("%s: providers.github.capacity: %d is not a number of checks", path, f.Providers.GitHub.Capacity)
+	}
 	if command := f.Providers.Command; command != nil {
+		if command.Capacity < 0 {
+			return File{}, fmt.Errorf("%s: providers.command.capacity: %d is not a number of checks", path, command.Capacity)
+		}
 		if strings.TrimSpace(command.Run) == "" {
 			return File{}, fmt.Errorf("%s: providers.command.run: the command to run is required", path)
 		}

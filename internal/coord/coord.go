@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/model"
@@ -90,7 +91,11 @@ func (c *Coordinator) hungAfter() time.Duration {
 
 // Session is this process's session.
 type Session struct {
-	c      *Coordinator
+	c  *Coordinator
+	id model.SessionID
+	// mu guards record and lastBeat, which the heartbeat updates while
+	// the runs the session drives read them.
+	mu     sync.Mutex
 	record model.Session
 	// lastBeat is when this process last recorded its heartbeat, by its
 	// own clock; a long gap means it was asleep and must not judge peers.
@@ -125,24 +130,30 @@ func (c *Coordinator) StartFor(ctx context.Context, p Process, kind model.Sessio
 	if err != nil {
 		return nil, err
 	}
-	return &Session{c: c, record: record, lastBeat: now}, nil
+	return &Session{c: c, id: record.ID, record: record, lastBeat: now}, nil
 }
 
 // Record is the session as last written.
-func (s *Session) Record() model.Session { return s.record }
+func (s *Session) Record() model.Session {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.record
+}
 
 // ID is the session's identity.
-func (s *Session) ID() model.SessionID { return s.record.ID }
+func (s *Session) ID() model.SessionID { return s.id }
 
 // Beat records that the session is alive.
 func (s *Session) Beat(ctx context.Context) error {
 	now := s.c.now()
-	next := s.record
+	next := s.Record()
 	next.HeartbeatAt = now
 	if err := s.c.Store.Update(ctx, s.c.Repository, func(tx store.Tx) error { return tx.UpdateSession(next) }); err != nil {
 		return err
 	}
+	s.mu.Lock()
 	s.record, s.lastBeat = next, now
+	s.mu.Unlock()
 	return nil
 }
 
@@ -166,7 +177,7 @@ func (s *Session) KeepAlive(ctx context.Context) error {
 // take, since an ended session is dead to every judge.
 func (s *Session) End(ctx context.Context) error {
 	now := s.c.now()
-	next := s.record
+	next := s.Record()
 	next.HeartbeatAt, next.EndedAt = now, &now
 	err := s.c.Store.Update(ctx, s.c.Repository, func(tx store.Tx) error {
 		if err := tx.UpdateSession(next); err != nil {
@@ -176,7 +187,9 @@ func (s *Session) End(ctx context.Context) error {
 		return err
 	})
 	if err == nil {
+		s.mu.Lock()
 		s.record = next
+		s.mu.Unlock()
 	}
 	return err
 }
@@ -184,6 +197,8 @@ func (s *Session) End(ctx context.Context) error {
 // awake reports whether this session has beaten recently by its own clock.
 // A process that was asleep, with its peers, judges no one until it beats.
 func (s *Session) awake(now time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return now.Sub(s.lastBeat) <= 2*s.c.heartbeat()
 }
 
@@ -197,7 +212,7 @@ type Verdict struct {
 // or replaced, or, when this session is awake to see it, silent for longer
 // than HungAfter.
 func (s *Session) Judge(other model.Session) (Verdict, error) {
-	if other.ID == s.record.ID {
+	if other.ID == s.id {
 		return Verdict{}, nil
 	}
 	if other.EndedAt != nil {
@@ -235,7 +250,7 @@ func (s *Session) acquire(tx store.Tx, resource string) (model.Lease, error) {
 		return model.Lease{}, err
 	}
 	reason := ""
-	if current.Holder != "" && current.Holder != s.record.ID {
+	if current.Holder != "" && current.Holder != s.id {
 		holder, err := tx.Session(current.Holder)
 		if err != nil {
 			return model.Lease{}, err
@@ -249,11 +264,11 @@ func (s *Session) acquire(tx store.Tx, resource string) (model.Lease, error) {
 		}
 		reason = fmt.Sprintf("; taken from session %s: %s", holder.ID, verdict.Reason)
 	}
-	lease, err := tx.AcquireLease(resource, s.record.ID)
+	lease, err := tx.AcquireLease(resource, s.id)
 	if err != nil {
 		return model.Lease{}, err
 	}
-	_, err = tx.AppendEvent(model.Event{At: s.c.now(), Session: s.record.ID, Kind: "lease.acquire", Level: model.LevelDebug,
+	_, err = tx.AppendEvent(model.Event{At: s.c.now(), Session: s.id, Kind: "lease.acquire", Level: model.LevelDebug,
 		Message: fmt.Sprintf("%s acquired (generation %d)%s", resource, lease.Generation, reason)})
 	return lease, err
 }
@@ -322,7 +337,7 @@ func (s *Session) Holder(ctx context.Context, resource string) (*model.Session, 
 // Emit appends an event from this session within a transaction, stamping
 // its session and time.
 func (s *Session) Emit(tx store.Tx, event model.Event) (int64, error) {
-	event.Session, event.At = s.record.ID, s.c.now()
+	event.Session, event.At = s.id, s.c.now()
 	return tx.AppendEvent(event)
 }
 

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
@@ -76,6 +77,9 @@ type Engine struct {
 	Providers map[string]Provider
 	ports     *selection.Reader
 	options   Options
+	// lazy guards what the engine assembles on first use and serve's
+	// concurrent runs share, the forge among them.
+	lazy sync.Mutex
 }
 
 // Open checks that Tree is inside a ports checkout, opens the store, and

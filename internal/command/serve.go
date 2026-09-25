@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -107,91 +108,181 @@ func serve(ctx context.Context, e *engine.Engine, out io.Writer, drain bool, opt
 	}
 	defer session.Release(context.WithoutCancel(ctx), *lease)
 
+	out = &lockedWriter{w: out}
+	capacity := map[string]int{}
 	var providers []string
 	for name := range e.Providers {
 		providers = append(providers, name)
 	}
 	slices.Sort(providers)
-	if len(providers) == 0 {
-		providers = []string{"none set up; checks will need attention"}
+	var described []string
+	for _, name := range providers {
+		capacity[name] = options.file.Capacity(name)
+		described = append(described, fmt.Sprintf("%s (%d at a time)", name, capacity[name]))
+	}
+	if len(described) == 0 {
+		described = []string{"none set up; checks will need attention"}
 	}
 	publishing := "opens no pull requests; it only checks"
 	if options.submitPassing {
 		publishing = fmt.Sprintf("opens PRs for passing updates it prepared, at most %d a day", options.file.Serve.Limit())
 	}
-	fmt.Fprintf(out, "serve: leading (pid %d) · builds on %s · %s\n", os.Getpid(), strings.Join(providers, ", "), publishing)
+	fmt.Fprintf(out, "serve: leading (pid %d) · builds on %s · %s\n", os.Getpid(), strings.Join(described, ", "), publishing)
 	writeServing(e, options.submitPassing)
 	notice := &notifier{on: options.file.Serve.Notifies()}
 	followed := &follower{e: e, out: out, reported: map[string]bool{}, notice: notice}
 	cleaned := &cleaner{e: e, out: out, settings: options.file.Cleanup}
 	scanned := &outdatedScanner{e: e, out: out, file: options.file, notice: notice}
 	submitter := &passingSubmitter{e: e, out: out, limit: options.file.Serve.Limit(), notice: notice}
-	for ctx.Err() == nil {
-		if !drain {
-			followed.maybe(ctx)
-			scanned.maybe(ctx)
-			if options.submitPassing {
-				submitter.maybe(ctx)
-			}
-		}
-		// A leader judged dead by a standby has lost the lease; it stops
-		// rather than drive work twice.
-		if err := session.Fenced(ctx, *lease, func(store.Tx) error { return nil }); err != nil {
-			if errors.Is(err, store.ErrStale) {
-				return errors.New("serve: another serve took over the lead; stopping")
-			}
-			return err
-		}
-		run, found, err := e.Next(ctx, session)
-		if err != nil {
-			return err
-		}
-		if !found {
-			// Cleanup waits for a quiet moment, so it never delays a check.
-			if !drain {
-				cleaned.maybe(ctx)
-			}
-			if drain {
-				fmt.Fprintln(out, "serve: the queue is empty")
-				return nil
-			}
-			select {
-			case <-ctx.Done():
-			case <-time.After(servePoll):
-			}
-			continue
-		}
-		branch, err := e.Branch(ctx, run.Branch)
-		if err != nil {
-			return err
+
+	// Runs are driven concurrently, each provider up to its capacity. A
+	// run takes a slot on every provider its plan builds on, for as long
+	// as it runs; one that can't have them all waits, and the runs after
+	// it that can go ahead.
+	running, stop := context.WithCancel(ctx)
+	defer stop()
+	inUse := map[string]int{}
+	inFlight := map[model.RunID]bool{}
+	type finished struct {
+		run       model.Run
+		branch    model.Branch
+		providers []string
+		err       error
+	}
+	done := make(chan finished)
+	var failure error
+	launch := func(run model.Run, branch model.Branch, needs []string) {
+		inFlight[run.ID] = true
+		for _, name := range needs {
+			inUse[name]++
 		}
 		verb := "running"
 		if run.State == model.RunRunning {
 			verb = "resuming"
 		}
 		fmt.Fprintf(out, "%s %s: %s\n", run.Name(), branch.ShortName(), verb)
-		run, err = e.Resume(ctx, session, run.ID)
-		if held := new(coord.HeldError); errors.As(err, &held) {
-			continue
+		go func() {
+			result, err := e.Resume(running, session, run.ID)
+			if result.ID == "" {
+				result = run
+			}
+			done <- finished{run: result, branch: branch, providers: needs, err: err}
+		}()
+	}
+	settle := func(f finished) {
+		delete(inFlight, f.run.ID)
+		for _, name := range f.providers {
+			inUse[name]--
 		}
-		if err != nil {
-			return err
+		if held := new(coord.HeldError); errors.As(f.err, &held) {
+			return
 		}
-		if !run.State.Terminal() {
-			fmt.Fprintf(out, "%s: left running for the next serve\n", run.Name())
-			break
+		if f.err != nil {
+			if failure == nil && running.Err() == nil {
+				failure = f.err
+				stop()
+			}
+			return
 		}
-		line := fmt.Sprintf("%s %s: %s", run.Name(), branch.ShortName(), run.State)
-		if run.Detail != "" && run.State != model.RunPassed {
-			line += ": " + run.Detail
+		if !f.run.State.Terminal() {
+			fmt.Fprintf(out, "%s: left running for the next serve\n", f.run.Name())
+			return
+		}
+		line := fmt.Sprintf("%s %s: %s", f.run.Name(), f.branch.ShortName(), f.run.State)
+		if f.run.Detail != "" && f.run.State != model.RunPassed {
+			line += ": " + f.run.Detail
 		}
 		fmt.Fprintln(out, line)
-		notice.post(branch.ShortName(), line)
+		notice.post(f.branch.ShortName(), line)
 		// A check that passed may be what the submitter waits for.
 		submitter.last = time.Time{}
 	}
+	for running.Err() == nil {
+		if !drain {
+			followed.maybe(running)
+			scanned.maybe(running)
+			if options.submitPassing {
+				submitter.maybe(running)
+			}
+		}
+		// A leader judged dead by a standby has lost the lease; it stops
+		// rather than drive work twice.
+		if err := session.Fenced(running, *lease, func(store.Tx) error { return nil }); err != nil {
+			if errors.Is(err, store.ErrStale) {
+				failure = errors.New("serve: another serve took over the lead; stopping")
+			} else if running.Err() == nil {
+				failure = err
+			}
+			break
+		}
+		candidates, err := e.Candidates(running, session)
+		if err != nil {
+			if running.Err() == nil {
+				failure = err
+			}
+			break
+		}
+		waiting := false
+		for _, run := range candidates {
+			if inFlight[run.ID] {
+				continue
+			}
+			needs, err := e.RunProviders(running, run)
+			if err != nil {
+				failure = err
+				break
+			}
+			if slices.ContainsFunc(needs, func(name string) bool { return inUse[name] >= max(capacity[name], 1) }) {
+				waiting = true
+				continue
+			}
+			branch, err := e.Branch(running, run.Branch)
+			if err != nil {
+				failure = err
+				break
+			}
+			launch(run, branch, needs)
+		}
+		if failure != nil {
+			break
+		}
+		if len(inFlight) == 0 && !waiting {
+			// Cleanup waits for a quiet moment, so it never delays a check.
+			if drain {
+				fmt.Fprintln(out, "serve: the queue is empty")
+				return nil
+			}
+			cleaned.maybe(running)
+		}
+		select {
+		case <-running.Done():
+		case f := <-done:
+			settle(f)
+		case <-time.After(servePoll):
+		}
+	}
+	// Runs still going stop with serve, and are left for the next one.
+	stop()
+	for len(inFlight) > 0 {
+		settle(<-done)
+	}
+	if failure != nil {
+		return failure
+	}
 	fmt.Fprintln(out, "serve: stopped")
 	return nil
+}
+
+// lockedWriter lets serve's concurrent runs write their lines whole.
+type lockedWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func (l *lockedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
 }
 
 // follower reads the pull requests every serveRefresh, reporting what
