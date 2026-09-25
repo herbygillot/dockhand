@@ -1,6 +1,5 @@
-// Command dockhand prepares, verifies, and publishes MacPorts contributions.
+// Command dockhand authors, checks, and submits changes to MacPorts ports.
 //
-// It connects process signals and standard streams to the CLI, then maps the
-// command result to an exit status. Application construction and workflow
-// execution are delegated to the internal packages.
+// It connects process signals and standard streams to the command line in
+// internal/command, then maps the result to an exit status.
 package main

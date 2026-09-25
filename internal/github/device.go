@@ -17,6 +17,12 @@ type DeviceFlow struct {
 	APIBaseURL string
 }
 
+// DefaultOAuthClientID is the public client ID of dockhand's GitHub OAuth
+// application, which has the device flow enabled. No client secret exists.
+// The Makefile's GITHUB_OAUTH_CLIENT_ID replaces it at link time for
+// development and alternate registrations.
+var DefaultOAuthClientID = "Ov23lixRrrqO0uEzU2GA"
+
 func (f *DeviceFlow) Authorize(ctx context.Context, clientID string, present func(credential.DeviceAuthorization) error) (credential.Value, error) {
 	if f == nil || strings.TrimSpace(clientID) == "" || strings.ContainsAny(clientID, " \t\r\n") {
 		return credential.Value{}, fmt.Errorf("github: OAuth client ID is required")
