@@ -65,20 +65,15 @@ func queueCommand(s *settings, streams Streams) *cobra.Command {
 }
 
 func queueRow(ctx context.Context, e *engine.Engine, run model.Run) (string, error) {
-	var branch model.Branch
-	var revision model.Revision
-	var plan model.Plan
-	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		var err error
-		if branch, err = r.Branch(run.Branch); err != nil {
-			return err
-		}
-		if revision, err = r.Revision(run.Revision); err != nil {
-			return err
-		}
-		plan, err = r.Plan(run.Plan)
-		return err
-	})
+	branch, err := e.Branch(ctx, run.Branch)
+	if err != nil {
+		return "", err
+	}
+	revision, err := e.Revision(ctx, run.Revision)
+	if err != nil {
+		return "", err
+	}
+	plan, err := e.Plan(ctx, run.Plan)
 	if err != nil {
 		return "", err
 	}

@@ -67,7 +67,7 @@ more. With check.baseline = true, a failed check runs one by itself.`,
 			if err != nil {
 				return err
 			}
-			environments, err := environmentsFor(e, firstNonEmpty(on, s.file.Check.On))
+			environments, err := e.Environments(firstNonEmpty(on, s.file.Check.On))
 			if err != nil {
 				return err
 			}
@@ -212,38 +212,6 @@ func captureMode(ctx context.Context, e *engine.Engine, branch model.Branch, sel
 	return engine.CaptureHead, nil
 }
 
-// environmentsFor turns --on values into environments.
-func environmentsFor(e *engine.Engine, values []string) ([]model.Environment, error) {
-	if len(values) == 0 {
-		if _, ok := e.Providers["command"]; ok {
-			return []model.Environment{{Provider: "command"}}, nil
-		}
-		return nil, errors.New(`a check needs somewhere to build: --on github builds with MacPorts' own workflow in your fork, and --on command with your own script, set up as [providers.command] run = "..." in ~/.dockhand/config.toml; [check] on = ["github"] makes one the default. tart and prefix arrive with the rest of v3`)
-	}
-	var environments []model.Environment
-	for _, value := range values {
-		name, releases, _ := strings.Cut(value, ":")
-		if _, ok := e.Providers[name]; !ok {
-			switch name {
-			case "tart", "prefix":
-				return nil, fmt.Errorf("--on %s: the %s provider is not in v3 yet; use your own script (--on command) meanwhile", value, name)
-			}
-			return nil, fmt.Errorf("--on %s: no provider %q is set up", value, name)
-		}
-		switch {
-		case releases != "" && name == "github":
-			return nil, fmt.Errorf("--on %s: the github provider builds on the runners MacPorts' workflow names, so it takes no releases", value)
-		case releases != "":
-			return nil, fmt.Errorf("--on %s: the command provider builds wherever its script does, so it takes no releases", value)
-		}
-		environment := model.Environment{Provider: name}
-		if !slices.Contains(environments, environment) {
-			environments = append(environments, environment)
-		}
-	}
-	return environments, nil
-}
-
 // writePushes says where a check pushes: "only checking" never hides a
 // write to your fork (Design v3 §9).
 func writePushes(out io.Writer, plan model.Plan) {
@@ -362,24 +330,17 @@ type journal struct {
 }
 
 func (j *journal) show(ctx context.Context) {
-	_ = j.e.Store.View(ctx, j.e.Repository, func(r store.Reader) error {
-		for {
-			events, err := r.Events(j.last, 500)
-			if err != nil || len(events) == 0 {
-				return err
-			}
-			for _, event := range events {
-				j.last = event.Sequence
-				if event.Run != j.run {
-					continue
-				}
-				switch event.Kind {
-				case "progress", "target.result", "execution.retry", "execution.state":
-					fmt.Fprintf(j.out, "  %s\n", event.Message)
-				}
-			}
+	events, _ := j.e.Events(ctx, j.last)
+	for _, event := range events {
+		j.last = event.Sequence
+		if event.Run != j.run {
+			continue
 		}
-	})
+		switch event.Kind {
+		case "progress", "target.result", "execution.retry", "execution.state":
+			fmt.Fprintf(j.out, "  %s\n", event.Message)
+		}
+	}
 }
 
 // waitFor polls a run until it ends or ctx does.
@@ -479,11 +440,8 @@ func checkResult(ctx context.Context, e *engine.Engine, run model.Run) (checkJSO
 	if err != nil {
 		return result, err
 	}
-	var plan model.Plan
-	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		plan, err = r.Plan(run.Plan)
-		return err
-	}); err != nil {
+	plan, err := e.Plan(ctx, run.Plan)
+	if err != nil {
 		return result, err
 	}
 	revisionResult, planResult, runResult := revisionView(revision), planView(plan), runView(run)

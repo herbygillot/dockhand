@@ -184,7 +184,7 @@ func submitChecked(ctx context.Context, s *settings, e *engine.Engine, streams S
 		request.TestedBinaries, request.TestedVariants = plan.Request.TestedBinaries, plan.Request.TestedVariants
 	}
 	if plan.CheckNeeded {
-		environments, err := environmentsFor(e, firstNonEmpty(on, s.file.Check.On))
+		environments, err := e.Environments(firstNonEmpty(on, s.file.Check.On))
 		if err != nil {
 			return err
 		}

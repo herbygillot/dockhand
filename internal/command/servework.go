@@ -99,7 +99,7 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	}
 	options := engine.PrepareOptions{Origin: model.OriginServe, Check: mode == "check", Tests: model.TestPolicy(o.file.Check.Tests)}
 	if options.Check {
-		if options.Environments, err = environmentsFor(o.e, o.file.Check.On); err != nil {
+		if options.Environments, err = o.e.Environments(o.file.Check.On); err != nil {
 			report(fmt.Sprintf("serve: serve.for_outdated = \"check\": %v", err))
 			options.Check = false
 		}

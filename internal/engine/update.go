@@ -60,6 +60,11 @@ func (v PortVersion) String() string {
 	return fmt.Sprintf("%s_%d", v.Version, v.Revision)
 }
 
+// ErrUnsupported is an edit dockhand can't make by itself, such as a
+// version it can't find in the Portfile; the error says why, after the
+// sentinel's own words.
+var ErrUnsupported = preparation.ErrUnsupported
+
 // Update reports an update or checksum refresh.
 type Update struct {
 	Branch model.Branch

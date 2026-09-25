@@ -3,6 +3,9 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/model"
 )
@@ -58,4 +61,38 @@ type Build interface {
 	// with the run left for the next one: only then does a provider stop
 	// work it started elsewhere.
 	Canceled() bool
+}
+
+// Environments turns --on values, or check.on's, into the environments a
+// check builds in: each a provider that is set up, with the releases it
+// can take. With none, the command provider when it is set up.
+func (e *Engine) Environments(on []string) ([]model.Environment, error) {
+	if len(on) == 0 {
+		if _, ok := e.Providers["command"]; ok {
+			return []model.Environment{{Provider: "command"}}, nil
+		}
+		return nil, errors.New(`a check needs somewhere to build: --on github builds with MacPorts' own workflow in your fork, and --on command with your own script, set up as [providers.command] run = "..." in ~/.dockhand/config.toml; [check] on = ["github"] makes one the default. tart and prefix arrive with the rest of v3`)
+	}
+	var environments []model.Environment
+	for _, value := range on {
+		name, releases, _ := strings.Cut(value, ":")
+		if _, ok := e.Providers[name]; !ok {
+			switch name {
+			case "tart", "prefix":
+				return nil, fmt.Errorf("--on %s: the %s provider is not in v3 yet; use your own script (--on command) meanwhile", value, name)
+			}
+			return nil, fmt.Errorf("--on %s: no provider %q is set up", value, name)
+		}
+		switch {
+		case releases != "" && name == "github":
+			return nil, fmt.Errorf("--on %s: the github provider builds on the runners MacPorts' workflow names, so it takes no releases", value)
+		case releases != "":
+			return nil, fmt.Errorf("--on %s: the command provider builds wherever its script does, so it takes no releases", value)
+		}
+		environment := model.Environment{Provider: name}
+		if !slices.Contains(environments, environment) {
+			environments = append(environments, environment)
+		}
+	}
+	return environments, nil
 }

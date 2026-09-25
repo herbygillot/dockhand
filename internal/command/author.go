@@ -13,7 +13,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/preparation"
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
@@ -208,7 +207,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), tilde(branch.Worktree))
 	request.Branch = branch
 	update, err = e.Update(ctx, request)
-	if errors.Is(err, preparation.ErrUnsupported) {
+	if errors.Is(err, engine.ErrUnsupported) {
 		return branch, update, byHand(err, request, branch, started)
 	}
 	if err != nil {
@@ -309,7 +308,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 // byHand says that dockhand can't make the edit by itself, why, and how
 // to make it by hand (Design v3 §6.3).
 func byHand(err error, request engine.UpdateRequest, branch model.Branch, started bool) error {
-	reason := strings.TrimPrefix(err.Error(), preparation.ErrUnsupported.Error()+": ")
+	reason := strings.TrimPrefix(err.Error(), engine.ErrUnsupported.Error()+": ")
 	kept := "the branch, unchanged"
 	if started {
 		kept = branch.Name + ", with nothing changed"

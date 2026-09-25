@@ -631,6 +631,34 @@ func (e *Engine) Revision(ctx context.Context, id model.RevisionID) (model.Revis
 	return revision, err
 }
 
+// Plan reads a verification plan.
+func (e *Engine) Plan(ctx context.Context, id model.PlanID) (model.Plan, error) {
+	var plan model.Plan
+	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		plan, err = r.Plan(id)
+		return err
+	})
+	return plan, err
+}
+
+// Events reads the journal past a sequence number, oldest first: what
+// observers tail (Design v3 §11).
+func (e *Engine) Events(ctx context.Context, after int64) ([]model.Event, error) {
+	var events []model.Event
+	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		for {
+			batch, err := r.Events(after, 500)
+			if err != nil || len(batch) == 0 {
+				return err
+			}
+			events = append(events, batch...)
+			after = batch[len(batch)-1].Sequence
+		}
+	})
+	return events, err
+}
+
 // Next is the run serve drives next (Design v3 §11): a run left running by
 // a driver that is gone, then queued runs a person asked for, then serve's
 // own, oldest first. Runs a live session holds are someone else's.

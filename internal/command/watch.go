@@ -85,21 +85,14 @@ type journalCursor struct {
 }
 
 func (c *journalCursor) next(ctx context.Context) ([]model.Event, error) {
+	events, err := c.e.Events(ctx, c.last)
 	var news []model.Event
-	err := c.e.Store.View(ctx, c.e.Repository, func(r store.Reader) error {
-		for {
-			events, err := r.Events(c.last, 500)
-			if err != nil || len(events) == 0 {
-				return err
-			}
-			for _, event := range events {
-				c.last = event.Sequence
-				if event.Level == model.LevelInfo {
-					news = append(news, event)
-				}
-			}
+	for _, event := range events {
+		c.last = event.Sequence
+		if event.Level == model.LevelInfo {
+			news = append(news, event)
 		}
-	})
+	}
 	return news, err
 }
 
