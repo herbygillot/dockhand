@@ -170,3 +170,45 @@ func namesPort(title, port string) bool {
 	}
 	return false
 }
+
+// readyMutation takes a draft out of draft; GitHub's REST API can't.
+const readyMutation = `mutation($id: ID!) { markPullRequestReadyForReview(input: {pullRequestId: $id}) { pullRequest { isDraft } } }`
+
+// MarkReady takes a draft pull request out of draft, so it is ready for
+// review, and reports it as it then is. One already ready is left alone.
+func (c *Client) MarkReady(ctx context.Context, ref record.PullRequestRef) (forge.PullRequestObservation, error) {
+	if ref.Forge != forge.GitHub || !githubapi.ValidRepositoryName(ref.Repository) || ref.Number <= 0 {
+		return forge.PullRequestObservation{}, fmt.Errorf("github: invalid pull-request reference")
+	}
+	client, err := c.AuthenticatedAPI(ctx)
+	if err != nil {
+		return forge.PullRequestObservation{}, githubapi.RateLimitError(err)
+	}
+	owner, repo, _ := strings.Cut(ref.Repository, "/")
+	row, _, err := client.PullRequests.Get(ctx, owner, repo, ref.Number)
+	if err != nil {
+		return forge.PullRequestObservation{}, githubapi.RateLimitError(err)
+	}
+	if row.GetNumber() != ref.Number {
+		return forge.PullRequestObservation{}, fmt.Errorf("github: response identifies another pull request")
+	}
+	if row.GetDraft() {
+		request, err := client.NewRequest(ctx, "POST", "graphql", map[string]any{"query": readyMutation, "variables": map[string]any{"id": row.GetNodeID()}})
+		if err != nil {
+			return forge.PullRequestObservation{}, err
+		}
+		var result struct {
+			Errors []struct{ Message string }
+		}
+		if _, err := client.Do(request, &result); err != nil {
+			return forge.PullRequestObservation{}, githubapi.RateLimitError(err)
+		}
+		if len(result.Errors) > 0 {
+			return forge.PullRequestObservation{}, fmt.Errorf("github: marking #%d ready: %s", ref.Number, result.Errors[0].Message)
+		}
+		if row, _, err = client.PullRequests.Get(ctx, owner, repo, ref.Number); err != nil {
+			return forge.PullRequestObservation{}, githubapi.RateLimitError(err)
+		}
+	}
+	return pullRequestObservation(row, ref.Repository)
+}

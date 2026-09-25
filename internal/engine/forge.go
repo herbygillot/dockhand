@@ -24,6 +24,8 @@ type Forge interface {
 	OpenPullRequests(ctx context.Context, repository, port string) ([]forge.PullRequestSummary, error)
 	// Inspect reports a pull request's reviews and checks.
 	Inspect(ctx context.Context, ref record.PullRequestRef) (record.PullRequestStatus, error)
+	// MarkReady takes a draft out of draft.
+	MarkReady(ctx context.Context, ref record.PullRequestRef) (forge.PullRequestObservation, error)
 }
 
 // forge is the engine's Forge: the one it was given, or GitHub with the

@@ -29,6 +29,9 @@ type SubmitRequest struct {
 	Draft bool
 	// NoCheck submits without any check; the description says so.
 	NoCheck bool
+	// PendingCheck previews a submission whose check is still to run, for
+	// submit --check: having none yet does not stop it.
+	PendingCheck bool
 	// Accept acknowledges failed revision-only targets or extras by port.
 	Accept []string
 	// Title replaces the branch's title, and the pull request's.
@@ -76,6 +79,9 @@ type SubmitPlan struct {
 	SearchProblem string
 	// Blocking is what stops the submission.
 	Blocking []string
+	// CheckNeeded is true when a PendingCheck plan has no check for its
+	// files yet.
+	CheckNeeded bool
 
 	facts bodyFacts
 }
@@ -212,6 +218,10 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan) error {
 		return err
 	}
 	if !found {
+		if request.PendingCheck {
+			plan.CheckNeeded = true
+			return nil
+		}
 		if !request.Draft {
 			plan.Blocking = append(plan.Blocking, "no check has finished for this commit's files; run dockhand check first, submit a draft with --draft, or submit without a check with --no-check, which the pull request states")
 		}
@@ -425,8 +435,12 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, e
 		if branch.PullRequest != nil && plan.Existing != nil {
 			draft = branch.PullRequest.Draft
 		}
+		var seen *model.PullRequestObservation
+		if branch.PullRequest != nil && branch.PullRequest.Number == observed.PullRequest.Ref.Number {
+			seen = branch.PullRequest.Observed
+		}
 		branch.PullRequest = &model.PullRequest{Repository: plan.Repository, Number: observed.PullRequest.Ref.Number, Head: plan.Head(),
-			Pushed: model.ObjectID(plan.Commit), Body: plan.Body, Draft: draft}
+			Pushed: model.ObjectID(plan.Commit), Body: plan.Body, Draft: draft, Observed: seen}
 		if plan.Request.Title != "" {
 			branch.Title = plan.Request.Title
 		}
@@ -447,4 +461,38 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, e
 		return err
 	})
 	return result, err
+}
+
+// Ready takes a branch's draft pull request out of draft, so it is ready
+// for review (Design v3 §9's submit --ready).
+func (e *Engine) Ready(ctx context.Context, branch model.Branch) (model.Branch, error) {
+	branch, err := e.Branch(ctx, branch.ID)
+	if err != nil {
+		return branch, err
+	}
+	pr := branch.PullRequest
+	if pr == nil {
+		return branch, fmt.Errorf("%s has no pull request yet; dockhand submit opens one", branch.Name)
+	}
+	if _, err := e.forge().MarkReady(ctx, record.PullRequestRef{Forge: forge.GitHub, Repository: pr.Repository, Number: pr.Number}); err != nil {
+		return branch, fmt.Errorf("marking #%d ready for review: %w", pr.Number, err)
+	}
+	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		current, err := tx.Branch(branch.ID)
+		if err != nil {
+			return err
+		}
+		current.PullRequest.Draft = false
+		if current.PullRequest.Observed != nil {
+			current.PullRequest.Observed.Draft = false
+		}
+		if err := tx.UpdateBranch(current); err != nil {
+			return err
+		}
+		branch = current
+		_, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: "branch.ready", Level: model.LevelInfo,
+			Message: fmt.Sprintf("marked #%d ready for review", pr.Number)})
+		return err
+	})
+	return branch, err
 }

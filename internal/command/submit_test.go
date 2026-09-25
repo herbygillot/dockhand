@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -22,6 +23,7 @@ type fakeGitHub struct {
 	upstream, fork string
 	prs            []record.PullRequest
 	drafts         []bool
+	readied        []int
 	status         record.PullRequestStatus
 }
 
@@ -57,6 +59,11 @@ func (g *fakeGitHub) Update(_ context.Context, input forge.PullRequestInput) (fo
 	pr.Title, pr.Body = input.Desired.Title, input.Desired.Body
 	return forge.PullRequestObservation{Found: true, PullRequest: *pr}, nil
 }
+func (g *fakeGitHub) MarkReady(_ context.Context, ref record.PullRequestRef) (forge.PullRequestObservation, error) {
+	g.readied = append(g.readied, ref.Number)
+	return g.Observe(context.Background(), ref)
+}
+
 func (g *fakeGitHub) Inspect(context.Context, record.PullRequestRef) (record.PullRequestStatus, error) {
 	return g.status, nil
 }
@@ -200,4 +207,62 @@ func TestCleanAfterTheMerge(t *testing.T) {
 	out, _, err = dockhand(t, "clean")
 	require.NoError(t, err)
 	require.Equal(t, "Nothing to remove.\n", out)
+}
+
+func TestSubmitCheckPassingAndReady(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	g := withGitHub(t, w)
+	withScript(t, w, "failed")
+	_, _, err := dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.home, "src", "macports-branches", "jq-update")
+	t.Setenv("MACPORTS_TREE", dir)
+	_, _, err = dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "tidy")
+	require.NoError(t, err)
+
+	out, _, err := dockhand(t, "submit", "--check")
+	require.Equal(t, 2, ExitCode(err))
+	require.ErrorContains(t, err, "; nothing was submitted")
+	require.Contains(t, out, "  Checks   runs now; submit follows only if it passes (--check)\n")
+	require.Contains(t, out, "jq-update · checking commit ")
+	require.Empty(t, g.prs, "a failed check submits nothing")
+
+	withScript(t, w, "passed")
+	_, _, err = dockhand(t, "check")
+	require.NoError(t, err)
+	out, _, err = dockhand(t, "submit", "--passing")
+	require.ErrorContains(t, err, "--passing asks about each branch, so it needs a terminal")
+	require.Contains(t, out, "1 branch passed its check\n  jq-update\n")
+
+	var stdout, errs bytes.Buffer
+	err = Run(t.Context(), []string{"submit", "--passing"}, Streams{In: strings.NewReader("y\nn\nd\ny\n"), Out: &stdout, Err: &errs, interactive: true})
+	require.NoError(t, err)
+	require.Contains(t, stdout.String(), "For every branch submitted now:\n")
+	require.Contains(t, stdout.String(), "jq-update  jq: update to 1.8.1 · passed on command")
+	require.Contains(t, stdout.String(), "+version 1.8.1", "d showed the diff")
+	require.Contains(t, stdout.String(), "Opened #34901")
+	require.Contains(t, stdout.String(), "Submitted 1 of 1.\n")
+	require.Contains(t, g.prs[0].Body, "- [x] tested basic functionality of all binary files?")
+	require.Contains(t, g.prs[0].Body, "- [ ] checked that the Portfile's most important [variants]")
+
+	out, _, err = dockhand(t, "submit", "--passing")
+	require.NoError(t, err)
+	require.Equal(t, "0 branches passed their checks\n", out, "a pushed branch is done")
+
+	out, _, err = dockhand(t, "submit", "--ready", "--yes")
+	require.NoError(t, err)
+	require.Contains(t, out, "Marked #34901 ready for review.\n")
+	require.Equal(t, []int{34901}, g.readied)
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n# reviewed\n"), 0o644))
+	gitRun(t, dir, "commit", "-q", "-am", "jq: note the review")
+	out, _, err = dockhand(t, "submit", "--check")
+	require.NoError(t, err)
+	require.Contains(t, out, "Passed for commit ")
+	require.Contains(t, out, "Updated #34901: pushed up to ")
+	require.Equal(t, gitRun(t, dir, "rev-parse", "HEAD"), gitRun(t, g.fork, "rev-parse", "dockhand/jq-update"))
 }

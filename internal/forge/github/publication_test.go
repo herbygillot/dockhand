@@ -283,3 +283,38 @@ func TestObserveTerminalPRFromDeletedFork(t *testing.T) {
 		require.Equal(t, "candidate", result.PullRequest.HeadBranch)
 	}
 }
+
+func TestMarkReadyTakesADraftOutOfDraft(t *testing.T) {
+	draft := true
+	var mutations int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/upstream/ports/pulls/3":
+			row := prJSON()
+			row["draft"], row["node_id"] = draft, "PR_node3"
+			json.NewEncoder(w).Encode(row)
+		case r.Method == http.MethodPost && r.URL.Path == "/graphql":
+			var payload struct {
+				Query     string
+				Variables map[string]any
+			}
+			assert.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+			assert.Contains(t, payload.Query, "markPullRequestReadyForReview")
+			assert.Equal(t, "PR_node3", payload.Variables["id"])
+			mutations++
+			draft = false
+			fmt.Fprint(w, `{"data": {"markPullRequestReadyForReview": {"pullRequest": {"isDraft": false}}}}`)
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL, Token: "fixture-token"}}}
+	ref := record.PullRequestRef{Forge: forge.GitHub, Repository: "upstream/ports", Number: 3}
+	_, err := client.MarkReady(t.Context(), ref)
+	require.NoError(t, err)
+	require.Equal(t, 1, mutations)
+	_, err = client.MarkReady(t.Context(), ref)
+	require.NoError(t, err)
+	require.Equal(t, 1, mutations, "a pull request already ready is left alone")
+}

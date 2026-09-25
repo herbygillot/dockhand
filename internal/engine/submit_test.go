@@ -28,6 +28,7 @@ type fakeForge struct {
 	others   []forge.PullRequestSummary
 	created  []forge.PullRequestInput
 	updated  []forge.PullRequestInput
+	readied  []int
 	// statuses are what Inspect reports, by number.
 	statuses map[int]record.PullRequestStatus
 }
@@ -98,6 +99,11 @@ func (f *fakeForge) Update(_ context.Context, input forge.PullRequestInput) (for
 
 func (f *fakeForge) OpenPullRequests(context.Context, string, string) ([]forge.PullRequestSummary, error) {
 	return f.others, nil
+}
+
+func (f *fakeForge) MarkReady(_ context.Context, ref record.PullRequestRef) (forge.PullRequestObservation, error) {
+	f.readied = append(f.readied, ref.Number)
+	return f.observe(f.prs[ref.Number]), nil
 }
 
 func (f *fakeForge) Inspect(_ context.Context, ref record.PullRequestRef) (record.PullRequestStatus, error) {
