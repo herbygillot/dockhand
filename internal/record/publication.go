@@ -68,8 +68,11 @@ type PullRequestStatus struct {
 	Review           string
 	Approvals        int `json:",omitempty"`
 	ChangesRequested int `json:",omitempty"`
-	Checks           CheckSummary
-	ObservedAt       time.Time
+	// ChangesRequestedBy are the logins whose latest review requests
+	// changes, sorted.
+	ChangesRequestedBy []string `json:",omitempty"`
+	Checks             CheckSummary
+	ObservedAt         time.Time
 }
 
 // CheckSummary counts the checks and statuses reported for a PR head.

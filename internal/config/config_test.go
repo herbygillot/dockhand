@@ -113,3 +113,19 @@ func TestCleanupSettings(t *testing.T) {
 		require.ErrorContains(t, err, "cleanup.after", bad)
 	}
 }
+
+func TestMaintainerAndSubmitSettings(t *testing.T) {
+	f, err := parse("config.toml", "maintainer = \"{@ada example.org:ada} openmaintainer\"\n\n[submit]\nrerequest_review = \"always\"\n")
+	require.NoError(t, err)
+	require.Equal(t, "{@ada example.org:ada} openmaintainer", f.Maintainer)
+	require.Equal(t, "always", f.Submit.RerequestReview)
+	_, err = parse("config.toml", "maintainer = \"ada@example.org\"\n")
+	require.NoError(t, err)
+
+	for _, bad := range []string{"{@ada example.org:ada", "@ada}", "{a {b}}", "a}b"} {
+		_, err = parse("config.toml", "maintainer = \""+bad+"\"\n")
+		require.ErrorContains(t, err, "maintainer:", bad)
+	}
+	_, err = parse("config.toml", "[submit]\nrerequest_review = \"sometimes\"\n")
+	require.ErrorContains(t, err, "submit.rerequest_review")
+}

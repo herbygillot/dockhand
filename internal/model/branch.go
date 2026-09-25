@@ -75,6 +75,9 @@ type PullRequestObservation struct {
 	Draft bool `json:",omitempty"`
 	// Review is approved, changes-requested, or none.
 	Review string
+	// ChangesRequestedBy are the reviewers whose latest review asks for
+	// changes.
+	ChangesRequestedBy []string `json:",omitempty"`
 	// Checks is passing, failing, pending, or none; Failing names the
 	// checks that concluded unsuccessfully.
 	Checks  string

@@ -63,7 +63,7 @@ func (e *Engine) refresh(ctx context.Context, branch model.Branch) (Refreshed, e
 		if err != nil {
 			return refreshed, err
 		}
-		next.Draft, next.Review, next.Failing = status.Draft, status.Review, status.Checks.Failing
+		next.Draft, next.Review, next.Failing, next.ChangesRequestedBy = status.Draft, status.Review, status.Checks.Failing, status.ChangesRequestedBy
 		switch checks := status.Checks; {
 		case checks.Failed > 0:
 			next.Checks = "failing"

@@ -30,8 +30,9 @@ type fakeForge struct {
 	updated  []forge.PullRequestInput
 	readied  []int
 	// permission is the role Permission reports; reviews are those posted.
-	permission string
-	reviews    []forge.ReviewInput
+	permission  string
+	reviews     []forge.ReviewInput
+	rerequested []string
 	// statuses are what Inspect reports, by number.
 	statuses map[int]record.PullRequestStatus
 }
@@ -116,6 +117,11 @@ func (f *fakeForge) Permission(context.Context, string, string) (string, error) 
 func (f *fakeForge) PostReview(_ context.Context, input forge.ReviewInput) (string, error) {
 	f.reviews = append(f.reviews, input)
 	return fmt.Sprintf("%s#pullrequestreview-%d", input.Ref.URL, len(f.reviews)), nil
+}
+
+func (f *fakeForge) RequestReviewers(_ context.Context, _ record.PullRequestRef, logins []string) error {
+	f.rerequested = append(f.rerequested, logins...)
+	return nil
 }
 
 func (f *fakeForge) Inspect(_ context.Context, ref record.PullRequestRef) (record.PullRequestStatus, error) {

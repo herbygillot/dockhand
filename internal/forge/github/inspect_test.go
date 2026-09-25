@@ -1,6 +1,7 @@
 package github_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge/github"
 	githubapi "github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -42,4 +44,37 @@ func TestInspectSummarizesMergeabilityReviewsAndChecks(t *testing.T) {
 	require.Equal(t, "mergeable: no (dirty); review: approved; checks: 1 passed, 2 failed, 1 pending of 4 (failing: Build ports (macos-14), buildbot/ports-13)", status.Summary())
 	_, err = client.Inspect(t.Context(), record.PullRequestRef{Forge: "gitlab", Repository: "x/y", Number: 1})
 	require.Error(t, err)
+}
+
+func TestInspectNamesWhoRequestedChangesAndReviewCanBeRequestedAgain(t *testing.T) {
+	head := strings.Repeat("a", 40)
+	var requested []any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/pulls/7/requested_reviewers"):
+			var payload map[string]any
+			assert.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+			requested = payload["reviewers"].([]any)
+			fmt.Fprint(w, `{"number":7}`)
+		case strings.HasSuffix(r.URL.Path, "/pulls/7/reviews"):
+			fmt.Fprint(w, `[{"state":"CHANGES_REQUESTED","user":{"login":"ryandesign"}},{"state":"CHANGES_REQUESTED","user":{"login":"herbygillot"}},{"state":"APPROVED","user":{"login":"carol"}}]`)
+		case strings.HasSuffix(r.URL.Path, "/pulls/7"):
+			fmt.Fprintf(w, `{"number":7,"state":"open","head":{"sha":%q}}`, head)
+		case strings.HasSuffix(r.URL.Path, "/check-runs"):
+			fmt.Fprint(w, `{"total_count":0,"check_runs":[]}`)
+		case strings.HasSuffix(r.URL.Path, "/status"):
+			fmt.Fprint(w, `{"state":"success","statuses":[]}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL, Token: "fixture-token"}}}
+	ref := record.PullRequestRef{Forge: forge.GitHub, Repository: "macports/macports-ports", Number: 7}
+	status, err := client.Inspect(t.Context(), ref)
+	require.NoError(t, err)
+	require.Equal(t, "changes-requested", status.Review)
+	require.Equal(t, []string{"herbygillot", "ryandesign"}, status.ChangesRequestedBy)
+	require.NoError(t, client.RequestReviewers(t.Context(), ref, status.ChangesRequestedBy))
+	require.Equal(t, []any{"herbygillot", "ryandesign"}, requested)
 }

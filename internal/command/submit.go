@@ -53,7 +53,7 @@ GitHub is kept.`,
 			defer e.Close()
 			request.TestedBinaries, request.TestedVariants = testedBinaries, testedVariants
 			if passing {
-				return submitPassing(ctx, e, streams, request)
+				return submitPassing(ctx, e, streams, request, s.file.Submit.RerequestReview)
 			}
 			if request.Branch, err = workingBranch(ctx, e, selector); err != nil {
 				return err
@@ -73,7 +73,7 @@ GitHub is kept.`,
 				if !yes {
 					return errors.New("nothing was submitted: without a terminal, --yes submits exactly what is shown")
 				}
-				return finishSubmit(ctx, e, streams, plan, ready)
+				return finishSubmit(ctx, e, streams, plan, ready, s.file.Submit.RerequestReview)
 			}
 			if err := askTested(streams, &plan); err != nil {
 				return err
@@ -94,7 +94,7 @@ GitHub is kept.`,
 					}
 					plan.Describe(edited)
 				case "s":
-					return finishSubmit(ctx, e, streams, plan, ready)
+					return finishSubmit(ctx, e, streams, plan, ready, s.file.Submit.RerequestReview)
 				case "q", "":
 					fmt.Fprintln(streams.Out, "Nothing was submitted.")
 					return nil
@@ -147,8 +147,8 @@ func askTested(streams Streams, plan *engine.SubmitPlan) error {
 
 // finishSubmit applies a plan, then takes its pull request out of draft
 // when --ready asked.
-func finishSubmit(ctx context.Context, e *engine.Engine, streams Streams, plan engine.SubmitPlan, ready bool) error {
-	if err := applySubmit(ctx, e, streams, plan); err != nil {
+func finishSubmit(ctx context.Context, e *engine.Engine, streams Streams, plan engine.SubmitPlan, ready bool, rerequest string) error {
+	if err := applySubmit(ctx, e, streams, plan, rerequest); err != nil {
 		return err
 	}
 	if !ready {
@@ -224,14 +224,14 @@ func submitChecked(ctx context.Context, s *settings, e *engine.Engine, streams S
 		return errors.New("nothing was submitted")
 	}
 	fmt.Fprintln(streams.Out)
-	return applySubmit(ctx, e, streams, plan)
+	return applySubmit(ctx, e, streams, plan, s.file.Submit.RerequestReview)
 }
 
 // submitPassing goes through every open branch whose latest check passed
 // for exactly what it would submit, a committed tree with nothing left
 // out, and not yet on its pull request, asking about each (Design v3
 // §6.12).
-func submitPassing(ctx context.Context, e *engine.Engine, streams Streams, request engine.SubmitRequest) error {
+func submitPassing(ctx context.Context, e *engine.Engine, streams Streams, request engine.SubmitRequest, rerequest string) error {
 	statuses, err := e.Status(ctx)
 	if err != nil {
 		return err
@@ -304,7 +304,7 @@ func submitPassing(ctx context.Context, e *engine.Engine, streams Streams, reque
 				fmt.Fprint(out, string(diff.Patch))
 				continue
 			case "y", "yes":
-				if err := applySubmit(ctx, e, streams, plan); err != nil {
+				if err := applySubmit(ctx, e, streams, plan, rerequest); err != nil {
 					fmt.Fprintf(out, "  ✗ %v\n", err)
 				} else {
 					submitted++
@@ -420,7 +420,10 @@ func pullRequestWords(plan engine.SubmitPlan) string {
 	return words
 }
 
-func applySubmit(ctx context.Context, e *engine.Engine, streams Streams, plan engine.SubmitPlan) error {
+// applySubmit submits a plan and reports it. After pushing to a pull
+// request whose reviewers requested changes, it asks them to review again
+// as rerequest says: ask (the default), always, or never.
+func applySubmit(ctx context.Context, e *engine.Engine, streams Streams, plan engine.SubmitPlan, rerequest string) error {
 	submitted, err := e.ApplySubmit(ctx, plan)
 	if err != nil {
 		return err
@@ -438,6 +441,28 @@ func applySubmit(ctx context.Context, e *engine.Engine, streams Streams, plan en
 	default:
 		fmt.Fprintf(streams.Out, "Updated #%d's title and description\n", pr.Ref.Number)
 	}
+	observed := plan.Branch.PullRequest
+	if !submitted.Pushed || submitted.Created || observed == nil || observed.Observed == nil || len(observed.Observed.ChangesRequestedBy) == 0 || rerequest == "never" {
+		return nil
+	}
+	who := "@" + strings.Join(observed.Observed.ChangesRequestedBy, ", @")
+	if rerequest != "always" {
+		if !streams.terminal() {
+			fmt.Fprintf(streams.Out, "%s requested changes; ask them to review again on GitHub, or set submit.rerequest_review = \"always\"\n", who)
+			return nil
+		}
+		answer, err := ask(streams, fmt.Sprintf("? ask %s to review again? [Y/n] ", who))
+		if err != nil {
+			return err
+		}
+		if strings.EqualFold(answer, "n") || strings.EqualFold(answer, "no") {
+			return nil
+		}
+	}
+	if _, err := e.RequestReview(ctx, plan.Branch); err != nil {
+		return err
+	}
+	fmt.Fprintf(streams.Out, "Asked %s to review again.\n", who)
 	return nil
 }
 

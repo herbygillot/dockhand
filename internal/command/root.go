@@ -168,6 +168,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 		archiveCommand(&settings, streams),
 		cleanCommand(&settings, streams),
 		explainCommand(streams),
+		configCommand(&settings, streams),
 	} {
 		command.GroupID = "occasional"
 		root.AddCommand(command)
@@ -175,7 +176,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	// The commands whose results --json reports; any other refuses it.
 	for _, command := range root.Commands() {
 		switch command.Name() {
-		case "status", "path", "diff", "impact", "check", "retry", "wait", "queue":
+		case "status", "path", "diff", "impact", "check", "retry", "wait", "queue", "config":
 			supportsJSON(command)
 		}
 	}

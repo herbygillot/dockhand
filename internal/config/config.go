@@ -30,11 +30,23 @@ type File struct {
 	// Worktrees is the directory managed branches' worktrees live in, with
 	// a leading ~ expanded.
 	Worktrees string `toml:"worktrees"`
-	Check     Check  `toml:"check"`
-	Providers struct {
+	// Maintainer is you as a Portfile's maintainers line names you, such
+	// as "{@ada example.org:ada} openmaintainer".
+	Maintainer string `toml:"maintainer"`
+	Check      Check  `toml:"check"`
+	Submit     Submit `toml:"submit"`
+	Providers  struct {
 		Command *CommandProvider `toml:"command"`
 	} `toml:"providers"`
 	Cleanup Cleanup `toml:"cleanup"`
+}
+
+// Submit holds submit's defaults.
+type Submit struct {
+	// RerequestReview is what submit does after pushing to a pull request
+	// whose reviewers requested changes: ask (the default), always, or
+	// never ask them to review again.
+	RerequestReview string `toml:"rerequest_review"`
 }
 
 // Cleanup is decision 36's automatic cleanup, which serve runs at most
@@ -148,6 +160,14 @@ func parse(path, text string) (File, error) {
 	default:
 		return File{}, fmt.Errorf("%s: check.tests: %q is not declared, required, or skip", path, f.Check.Tests)
 	}
+	switch f.Submit.RerequestReview {
+	case "", "ask", "always", "never":
+	default:
+		return File{}, fmt.Errorf("%s: submit.rerequest_review: %q is not ask, always, or never", path, f.Submit.RerequestReview)
+	}
+	if err := checkMaintainer(f.Maintainer); err != nil {
+		return File{}, fmt.Errorf("%s: maintainer: %w", path, err)
+	}
 	if f.Cleanup.After != "" {
 		if _, err := parseAge(f.Cleanup.After); err != nil {
 			return File{}, fmt.Errorf("%s: cleanup.after: %w", path, err)
@@ -162,6 +182,45 @@ func parse(path, text string) (File, error) {
 		}
 	}
 	return f, nil
+}
+
+// checkMaintainer checks a maintainers line the way MacPorts writes one:
+// entries separated by spaces, each a braced group of a GitHub handle and
+// an obfuscated address, such as {@ada example.org:ada}, or a bare
+// address, handle, openmaintainer, or nomaintainer.
+func checkMaintainer(line string) error {
+	if line == "" {
+		return nil
+	}
+	depth, entries := 0, 0
+	for _, field := range strings.Fields(line) {
+		opening := strings.HasPrefix(field, "{")
+		closing := strings.HasSuffix(field, "}")
+		switch {
+		case opening && depth > 0:
+			return fmt.Errorf("%q opens a group inside another", line)
+		case opening:
+			depth++
+		case depth == 0 && strings.ContainsAny(field, "{}"):
+			return fmt.Errorf("%q has a stray brace", line)
+		}
+		if closing {
+			if depth == 0 {
+				return fmt.Errorf("%q closes a group it never opened", line)
+			}
+			depth--
+		}
+		if depth == 0 {
+			entries++
+		}
+	}
+	if depth != 0 {
+		return fmt.Errorf("%q leaves a group open", line)
+	}
+	if entries == 0 {
+		return fmt.Errorf("%q names no one", line)
+	}
+	return nil
 }
 
 func expandHome(path string) (string, error) {

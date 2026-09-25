@@ -496,3 +496,22 @@ func (e *Engine) Ready(ctx context.Context, branch model.Branch) (model.Branch, 
 	})
 	return branch, err
 }
+
+// RequestReview asks the reviewers who requested changes on a branch's
+// pull request, as GitHub last reported them, to review it again.
+func (e *Engine) RequestReview(ctx context.Context, branch model.Branch) ([]string, error) {
+	pr := branch.PullRequest
+	if pr == nil || pr.Observed == nil || len(pr.Observed.ChangesRequestedBy) == 0 {
+		return nil, nil
+	}
+	logins := pr.Observed.ChangesRequestedBy
+	if err := e.forge().RequestReviewers(ctx, record.PullRequestRef{Forge: forge.GitHub, Repository: pr.Repository, Number: pr.Number}, logins); err != nil {
+		return nil, fmt.Errorf("asking %s to review #%d again: %w", strings.Join(logins, ", "), pr.Number, err)
+	}
+	err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: "branch.rerequest", Level: model.LevelInfo,
+			Message: fmt.Sprintf("asked %s to review #%d again", "@"+strings.Join(logins, ", @"), pr.Number)})
+		return err
+	})
+	return logins, err
+}

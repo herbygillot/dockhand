@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -25,6 +26,7 @@ type fakeGitHub struct {
 	drafts         []bool
 	readied        []int
 	reviews        []forge.ReviewInput
+	rerequested    []string
 	// theirs are other people's pull requests, by number.
 	theirs map[int]record.PullRequest
 	status record.PullRequestStatus
@@ -50,19 +52,24 @@ func (g *fakeGitHub) Observe(_ context.Context, ref record.PullRequestRef) (forg
 	if pr, ok := g.theirs[ref.Number]; ok {
 		return forge.PullRequestObservation{Found: true, PullRequest: pr}, nil
 	}
-	return forge.PullRequestObservation{Found: true, PullRequest: g.prs[ref.Number-34901]}, nil
+	pr := g.prs[ref.Number-34901]
+	// GitHub reports the head the fork's branch is at, whoever pushed it.
+	if out, err := exec.Command("git", "-C", g.fork, "for-each-ref", "--format=%(objectname)", "refs/heads/"+pr.HeadBranch).Output(); err == nil && len(bytes.TrimSpace(out)) > 0 {
+		pr.RemoteHead = record.ObjectID(bytes.TrimSpace(out))
+	}
+	return forge.PullRequestObservation{Found: true, PullRequest: pr}, nil
 }
 func (g *fakeGitHub) Create(_ context.Context, input forge.PullRequestInput) (forge.PullRequestObservation, error) {
 	number := 34901 + len(g.prs)
 	pr := record.PullRequest{Ref: record.PullRequestRef{Repository: input.Repository, Number: number, URL: fmt.Sprintf("https://github.com/%s/pull/%d", input.Repository, number)},
-		State: record.PullRequestOpen, Title: input.Desired.Title, Body: input.Desired.Body, RemoteHead: input.Desired.Head}
+		HeadBranch: input.HeadBranch, State: record.PullRequestOpen, Title: input.Desired.Title, Body: input.Desired.Body, RemoteHead: input.Desired.Head}
 	g.prs = append(g.prs, pr)
 	g.drafts = append(g.drafts, input.Draft)
 	return forge.PullRequestObservation{Found: true, PullRequest: pr}, nil
 }
 func (g *fakeGitHub) Update(_ context.Context, input forge.PullRequestInput) (forge.PullRequestObservation, error) {
 	pr := &g.prs[input.ExistingPR.Number-34901]
-	pr.Title, pr.Body = input.Desired.Title, input.Desired.Body
+	pr.Title, pr.Body, pr.RemoteHead = input.Desired.Title, input.Desired.Body, input.Desired.Head
 	return forge.PullRequestObservation{Found: true, PullRequest: *pr}, nil
 }
 func (g *fakeGitHub) MarkReady(_ context.Context, ref record.PullRequestRef) (forge.PullRequestObservation, error) {
@@ -77,6 +84,11 @@ func (g *fakeGitHub) Permission(context.Context, string, string) (string, error)
 func (g *fakeGitHub) PostReview(_ context.Context, input forge.ReviewInput) (string, error) {
 	g.reviews = append(g.reviews, input)
 	return fmt.Sprintf("https://github.com/%s/pull/%d#pullrequestreview-%d", input.Ref.Repository, input.Ref.Number, len(g.reviews)), nil
+}
+
+func (g *fakeGitHub) RequestReviewers(_ context.Context, _ record.PullRequestRef, logins []string) error {
+	g.rerequested = append(g.rerequested, logins...)
+	return nil
 }
 
 func (g *fakeGitHub) Inspect(context.Context, record.PullRequestRef) (record.PullRequestStatus, error) {
@@ -280,4 +292,50 @@ func TestSubmitCheckPassingAndReady(t *testing.T) {
 	require.Contains(t, out, "Passed for commit ")
 	require.Contains(t, out, "Updated #34901: pushed up to ")
 	require.Equal(t, gitRun(t, dir, "rev-parse", "HEAD"), gitRun(t, g.fork, "rev-parse", "dockhand/jq-update"))
+}
+
+func TestSubmitAsksTheReviewersBack(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	g := withGitHub(t, w)
+	_, _, err := dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.home, "src", "macports-branches", "jq-update")
+	t.Setenv("MACPORTS_TREE", dir)
+	_, _, err = dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "tidy")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	g.status = record.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, ChangesRequestedBy: []string{"ryandesign"}}
+	_, _, err = dockhand(t, "status", "--refresh")
+	require.NoError(t, err)
+
+	fix := func(line string) {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n"+line+"\n"), 0o644))
+		gitRun(t, dir, "commit", "-q", "-am", "jq: "+line)
+	}
+	fix("# drop the patch")
+	out, _, err := dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err, out)
+	require.Contains(t, out, "@ryandesign requested changes; ask them to review again on GitHub, or set submit.rerequest_review = \"always\"\n")
+	require.Empty(t, g.rerequested)
+
+	fix("# and the docs")
+	var stdout, errs bytes.Buffer
+	err = Run(t.Context(), []string{"submit", "--no-check", "--tested-binaries"}, Streams{In: strings.NewReader("s\n\n"), Out: &stdout, Err: &errs, interactive: true})
+	require.NoError(t, err, stdout.String())
+	require.Contains(t, errs.String(), "? ask @ryandesign to review again? [Y/n] ")
+	require.Contains(t, stdout.String(), "Asked @ryandesign to review again.\n")
+	require.Equal(t, []string{"ryandesign"}, g.rerequested)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(w.home, ".dockhand"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(w.home, ".dockhand", "config.toml"), []byte("[submit]\nrerequest_review = \"never\"\n"), 0o644))
+	fix("# once more")
+	out, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	require.NotContains(t, out, "ryandesign")
+	require.Equal(t, []string{"ryandesign"}, g.rerequested, "never asks")
 }

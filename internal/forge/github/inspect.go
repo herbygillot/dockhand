@@ -50,13 +50,15 @@ func (c *Client) Inspect(ctx context.Context, ref record.PullRequestRef) (record
 			delete(latest, review.GetUser().GetLogin())
 		}
 	}
-	for _, state := range latest {
+	for login, state := range latest {
 		if state == "APPROVED" {
 			status.Approvals++
 		} else {
 			status.ChangesRequested++
+			status.ChangesRequestedBy = append(status.ChangesRequestedBy, login)
 		}
 	}
+	slices.Sort(status.ChangesRequestedBy)
 	switch {
 	case status.ChangesRequested > 0:
 		status.Review = "changes-requested"

@@ -30,6 +30,8 @@ type Forge interface {
 	Permission(ctx context.Context, repository, login string) (string, error)
 	// PostReview posts a review on a pull request.
 	PostReview(ctx context.Context, input forge.ReviewInput) (string, error)
+	// RequestReviewers asks people to review a pull request again.
+	RequestReviewers(ctx context.Context, ref record.PullRequestRef, logins []string) error
 }
 
 // forge is the engine's Forge: the one it was given, or GitHub with the

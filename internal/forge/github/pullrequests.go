@@ -260,3 +260,18 @@ func (c *Client) PostReview(ctx context.Context, input forge.ReviewInput) (strin
 	}
 	return review.GetHTMLURL(), nil
 }
+
+// RequestReviewers asks people to review a pull request again, as GitHub's
+// "re-request review" does.
+func (c *Client) RequestReviewers(ctx context.Context, ref record.PullRequestRef, logins []string) error {
+	if ref.Forge != forge.GitHub || !githubapi.ValidRepositoryName(ref.Repository) || ref.Number <= 0 || len(logins) == 0 {
+		return fmt.Errorf("%w: invalid review request", forge.ErrRejected)
+	}
+	client, err := c.AuthenticatedAPI(ctx)
+	if err != nil {
+		return githubapi.RateLimitError(err)
+	}
+	owner, repo, _ := strings.Cut(ref.Repository, "/")
+	_, response, err := client.PullRequests.RequestReviewers(ctx, owner, repo, ref.Number, gh.ReviewersRequest{Reviewers: logins})
+	return githubapi.RateLimitError(publicationError(response, err))
+}
