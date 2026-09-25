@@ -1,6 +1,7 @@
 package command
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -15,7 +16,7 @@ import (
 
 func diffCommand(s *settings, streams Streams) *cobra.Command {
 	var selector string
-	var stat bool
+	var stat, archives bool
 	cmd := &cobra.Command{
 		Use:   "diff [<path>...]",
 		Short: "Show the branch's change from master, edits included",
@@ -26,7 +27,14 @@ ports CI would build, each changed or revision only, and what CI builds
 nothing for.
 
 Paths narrow the diff; they are taken from where you are, or from the top
-of the ports tree. --stat lists the changed files instead of the patch.`,
+of the ports tree. --stat lists the changed files instead of the patch.
+
+--archive [<port>...] compares what the ports' source archives hold
+instead: the archives the base declares with the ones the branch declares
+now, file by file, less each archive's versioned top directory. Each is
+checked against its Portfile's checksums; when upstream no longer serves an
+archive as declared, as after a stealth update, the old one comes from
+MacPorts' distfiles mirror.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			e, err := s.open(ctx)
@@ -37,6 +45,9 @@ of the ports tree. --stat lists the changed files instead of the patch.`,
 			branch, err := workingBranch(ctx, e, selector)
 			if err != nil {
 				return err
+			}
+			if archives {
+				return diffArchives(ctx, e, streams, branch, args, stat)
 			}
 			diff, err := e.Diff(ctx, branch, treePaths(branch, args))
 			if err != nil {
@@ -63,7 +74,92 @@ of the ports tree. --stat lists the changed files instead of the patch.`,
 	}
 	cmd.Flags().StringVar(&selector, "branch", "", "show this tracked branch")
 	cmd.Flags().BoolVar(&stat, "stat", false, "list the changed files, not the patch")
+	cmd.Flags().BoolVar(&archives, "archive", false, "compare what the ports' source archives hold, not the Portfiles")
 	return cmd
+}
+
+// diffArchives shows how the ports' source archives changed inside.
+func diffArchives(ctx context.Context, e *engine.Engine, streams Streams, branch model.Branch, ports []string, stat bool) error {
+	diffs, err := e.ArchiveDiff(ctx, branch, ports)
+	if err != nil {
+		return err
+	}
+	var views []archiveDiffJSON
+	for _, diff := range diffs {
+		view := archiveDiffJSON{Directory: diff.Directory, Old: diff.Old, New: diff.New, OldFromMirror: diff.OldFromMirror, Same: diff.Same,
+			Changed: diff.Changed, Added: diff.Added, Removed: diff.Removed, Problem: diff.Problem}
+		if !stat {
+			view.Patch = string(diff.Patch)
+		}
+		views = append(views, view)
+	}
+	streams.emit(map[string]any{"branch": branchRef(branch), "archives": nonNil(views)})
+	out := streams.Out
+	if len(diffs) == 0 {
+		fmt.Fprintln(out, "No changed port has archives to compare.")
+		return nil
+	}
+	for i, diff := range diffs {
+		if i > 0 {
+			fmt.Fprintln(out)
+		}
+		switch {
+		case diff.Problem != "":
+			fmt.Fprintf(out, "%s · not compared: %s\n", diff.Directory, diff.Problem)
+			continue
+		case diff.Old == "":
+			fmt.Fprintf(out, "%s · %s is a new archive\n", diff.Directory, diff.New)
+			continue
+		case diff.New == "":
+			fmt.Fprintf(out, "%s · %s is no longer fetched\n", diff.Directory, diff.Old)
+			continue
+		}
+		names := diff.Old
+		if diff.New != diff.Old {
+			names += " → " + diff.New
+		}
+		if diff.Same {
+			fmt.Fprintf(out, "%s · %s: identical\n", diff.Directory, names)
+			continue
+		}
+		var counts []string
+		for _, count := range []struct {
+			n    int
+			what string
+		}{{diff.Changed, "changed"}, {diff.Added, "added"}, {diff.Removed, "removed"}} {
+			if count.n > 0 {
+				counts = append(counts, fmt.Sprintf("%d %s", count.n, count.what))
+			}
+		}
+		summary := "the same files, byte for byte"
+		if len(counts) > 0 {
+			summary = plural(diff.Changed+diff.Added+diff.Removed, "file") + " differ: " + strings.Join(counts, ", ")
+		}
+		fmt.Fprintf(out, "%s · %s: %s\n", diff.Directory, names, summary)
+		if diff.OldFromMirror {
+			fmt.Fprintf(out, "  the old %s is MacPorts' mirror's copy: upstream now serves other contents under its name\n", diff.Old)
+		}
+		if !stat && len(diff.Patch) > 0 {
+			fmt.Fprintln(out)
+			if _, err := out.Write(diff.Patch); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+type archiveDiffJSON struct {
+	Directory     string `json:"directory"`
+	Old           string `json:"old,omitempty"`
+	New           string `json:"new,omitempty"`
+	OldFromMirror bool   `json:"old_from_mirror,omitempty"`
+	Same          bool   `json:"same"`
+	Changed       int    `json:"changed"`
+	Added         int    `json:"added"`
+	Removed       int    `json:"removed"`
+	Patch         string `json:"patch,omitempty"`
+	Problem       string `json:"problem,omitempty"`
 }
 
 // treePaths takes paths a person typed from where they are, when that is

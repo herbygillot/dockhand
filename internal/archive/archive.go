@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"bufio"
+	"bytes"
 	"compress/bzip2"
 	"compress/gzip"
 	"context"
@@ -11,7 +12,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path"
+	"path/filepath"
 	"strings"
 )
 
@@ -39,9 +42,9 @@ func (m Member) Clean() (string, bool) {
 	return clean, true
 }
 
-// Walk calls fn for every member in order. Gzip and bzip2 tar streams and
-// zip files are recognized by their leading bytes; anything else is read as
-// a plain tar stream.
+// Walk calls fn for every member in order. Gzip, bzip2, xz, zstd, and lzip
+// tar streams and zip files are recognized by their leading bytes; anything
+// else is read as a plain tar stream.
 func Walk(ctx context.Context, filename string, fn func(Member) error) error {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -88,6 +91,25 @@ func Walk(ctx context.Context, filename string, fn func(Member) error) error {
 		input = gz
 	} else if len(header) >= 3 && string(header[:3]) == "BZh" {
 		input = bzip2.NewReader(reader)
+	} else if tool := decompressor(reader); tool != "" {
+		// xz, zstd, and lzip have no reader in Go's library; the system's
+		// own tool decompresses, and the members are read here as always.
+		command := exec.CommandContext(ctx, tool, "-dc")
+		command.Stdin = reader
+		var stderr strings.Builder
+		command.Stderr = &stderr
+		out, err := command.StdoutPipe()
+		if err != nil {
+			return err
+		}
+		if err := command.Start(); err != nil {
+			return fmt.Errorf("archive: reading %s needs %s: %w", path.Base(filename), tool, err)
+		}
+		defer func() {
+			_ = out.Close()
+			_ = command.Wait()
+		}()
+		input = out
 	}
 	limited := &io.LimitedReader{R: input, N: scanLimit}
 	tr := tar.NewReader(limited)
@@ -109,4 +131,72 @@ func Walk(ctx context.Context, filename string, fn func(Member) error) error {
 			return err
 		}
 	}
+}
+
+// decompressor is the system tool for a stream Go's library can't read.
+func decompressor(reader *bufio.Reader) string {
+	header, _ := reader.Peek(6)
+	switch {
+	case bytes.HasPrefix(header, []byte{0xfd, '7', 'z', 'X', 'Z', 0x00}):
+		return "xz"
+	case bytes.HasPrefix(header, []byte{0x28, 0xb5, 0x2f, 0xfd}):
+		return "zstd"
+	case bytes.HasPrefix(header, []byte("LZIP")):
+		return "lzip"
+	}
+	return ""
+}
+
+// Extract writes an archive's regular files under a directory, less the one
+// top directory every member shares, if they share one, which names the
+// version. Links and other special members are left out, and a member
+// whose path would leave the directory is refused. It returns how many
+// files it wrote.
+func Extract(ctx context.Context, filename, directory string) (int, error) {
+	top := ""
+	shared := true
+	if err := Walk(ctx, filename, func(member Member) error {
+		name, ok := member.Clean()
+		if !ok {
+			return nil
+		}
+		first, _, _ := strings.Cut(name, "/")
+		switch {
+		case top == "":
+			top = first
+		case first != top:
+			shared = false
+		}
+		return nil
+	}); err != nil {
+		return 0, err
+	}
+	written := 0
+	err := Walk(ctx, filename, func(member Member) error {
+		name, ok := member.Clean()
+		if !ok {
+			return fmt.Errorf("archive: %s has a member outside it: %s", path.Base(filename), member.Name)
+		}
+		if shared && top != "" {
+			name = strings.TrimPrefix(strings.TrimPrefix(name, top), "/")
+		}
+		if !member.Regular || name == "" {
+			return nil
+		}
+		target := filepath.Join(directory, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		file, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(file, member.Body)
+		if closeErr := file.Close(); err == nil {
+			err = closeErr
+		}
+		written++
+		return err
+	})
+	return written, err
 }

@@ -67,6 +67,9 @@ type Engine struct {
 	// OutdatedReader finds newer releases for outdated; MacPorts' evaluator
 	// and upstream discovery when nil.
 	OutdatedReader OutdatedReader
+	// ArchiveFetcher fetches the archives a Portfile declares, for diff
+	// --archive; MacPorts' evaluator when nil.
+	ArchiveFetcher ArchiveFetcher
 	// Providers are where checks build, by name.
 	Providers map[string]Provider
 	ports     *selection.Reader

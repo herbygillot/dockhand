@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
 	"slices"
 	"strings"
+
+	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
 var ErrFilePrecondition = errors.New("git: file precondition does not match")
@@ -226,4 +229,18 @@ func (r *Repository) changedPaths(ctx context.Context, before, after string, opt
 		return nil, fmt.Errorf("git: unterminated changed path")
 	}
 	return strings.Split(string(out[:len(out)-1]), "\x00"), nil
+}
+
+// DiffDirectories is the patch from root/a to root/b, two directories
+// outside any repository, as git diff --no-index makes it: a/ and b/ paths,
+// and binary files named, not encoded.
+func (r *Repository) DiffDirectories(ctx context.Context, root string) ([]byte, error) {
+	command := r.command(ctx, nil, "diff", "--no-index", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-color", "--src-prefix=", "--dst-prefix=", "--", "a", "b")
+	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "git", Command: "diff", Path: command.Path, Args: command.Args[1:], Dir: root, Env: command.Env, WaitDelay: command.WaitDelay})
+	// git diff --no-index exits 1 when the directories differ.
+	var exit *exec.ExitError
+	if err != nil && errors.As(err, &exit) && exit.ExitCode() == 1 {
+		return result.Output, nil
+	}
+	return result.Output, err
 }

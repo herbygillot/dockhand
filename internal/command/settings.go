@@ -106,8 +106,14 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 	if testOutdatedReader != nil {
 		e.OutdatedReader = testOutdatedReader
 	}
+	if testArchiveFetcher != nil {
+		e.ArchiveFetcher = testArchiveFetcher(e)
+	}
 	return e, nil
 }
+
+// testArchiveFetcher, when set, stands in for fetching archives.
+var testArchiveFetcher func(*engine.Engine) engine.ArchiveFetcher
 
 // testActions, when set, stands in for GitHub Actions.
 var testActions actions.API

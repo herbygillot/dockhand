@@ -65,7 +65,7 @@ The principles and the direction record's standing decisions are the specificati
 10. **v3 completeness.** In roughly this order:
    - the `tidy` regrouping with its reviewed plans, and `tidy --plan/--apply` (**done 2026-09-25**, [note](activity/2026-09-25-tidy-regrouping-and-saved-plans.md));
    - `--revbump-dependents`, multi-port `revbump`, and `--except` (27). **Done 2026-09-25**: multi-port `revbump` ([note](activity/2026-09-25-branch-verbs.md)), with `edit`, `retry`, and `rebase`, then `update --revbump-dependents` and `--except` ([note](activity/2026-09-25-revbump-dependents.md));
-   - `impact`, `diff`, and `diff --archive` (**`impact` and `diff` done 2026-09-25**, [note](activity/2026-09-25-diff-and-impact.md));
+   - `impact`, `diff`, and `diff --archive` (**done 2026-09-25**: `impact` and `diff` ([note](activity/2026-09-25-diff-and-impact.md)), then `diff --archive` ([note](activity/2026-09-25-diff-archive.md)));
    - `create` from a URL;
    - `review`, with `--comment` and `--review` (**done 2026-09-25** as `--comment` and `--request-changes`, [note](activity/2026-09-25-review.md));
    - the `github`, `prefix`, and `command` providers (**`command` done 2026-09-25**, [note](activity/2026-09-25-check.md); **`github` done 2026-09-25**, [note](activity/2026-09-25-github-provider.md));
