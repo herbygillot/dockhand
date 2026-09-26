@@ -213,10 +213,13 @@ model.
   Portfile.
 
 The facts table is different: it is stored data, and goes stale on
-Apple's schedule rather than the tree's. Each row carries the image it
-was harvested from, by digest and date. `setup` re-probes an image
-whenever it rebuilds one, as it did for Tahoe on 2026-09-25, and a row
-whose image has changed since is stale, not trusted.
+Apple's schedule rather than the tree's. Each row records the image or
+builder it was harvested from, the date, and the MacPorts version that
+read it. The table is checked in and shared, so a row can't name a
+person's image by digest: staleness is found by drift instead. A guest's
+facts are compared with its row (decision 10), and the table is
+harvested again when Apple ships new tools or setup rebuilds an image,
+as it did for Tahoe on 2026-09-25 ([harvesters](../tools/facts/README.md)).
 
 ### What the registry is asked
 
