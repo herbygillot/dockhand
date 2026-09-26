@@ -155,6 +155,77 @@ func (p *Provider) hostRelease() (int, error) {
 // Tools alone.
 func baseImage(release macos.Release) string { return "dockhand-base-" + release.Slug }
 
+// image is the image a release's targets build in, one for the release
+// (decision 23): its Xcode image when any of them needs Xcode and there is
+// one, and its base image otherwise. Xcode is an add-on, so without its
+// image the targets that need it are skipped, with the command that makes
+// it; they're never tried with the Command Line Tools alone. A port that
+// doesn't ask for Xcode builds with the tools in the Xcode image too.
+func (p *Provider) image(ctx context.Context, m machine, release macos.Release, targets []model.PlanTarget, environment model.Environment) (string, []engine.Skip, error) {
+	var needs []model.PlanTarget
+	for _, target := range targets {
+		if target.NeedsXcodeOn(environment.Platform) {
+			needs = append(needs, target)
+		}
+	}
+	if len(needs) == 0 {
+		return baseImage(release), nil, nil
+	}
+	images, err := m.Images(ctx)
+	if err != nil {
+		return "", nil, fmt.Errorf("listing dockhand's Tart images: %w", err)
+	}
+	if slices.Contains(images, xcodeImage(release)) {
+		return xcodeImage(release), nil, nil
+	}
+	var skips []engine.Skip
+	for _, target := range needs {
+		skips = append(skips, engine.Skip{Target: target.ID, Environment: environment, Reason: "needs Xcode",
+			Remedy: fmt.Sprintf("there's no Xcode image for macOS %s (%s); dockhand providers setup tart %s --xcode <Xcode .xip, or a folder of them> makes one", release.Product, release.Name, release.Slug)})
+	}
+	return baseImage(release), skips, nil
+}
+
+// Skips are the targets that need Xcode on the environment's release when
+// it has no Xcode image.
+func (p *Provider) Skips(ctx context.Context, plan model.Plan, environment model.Environment) ([]engine.Skip, error) {
+	release, err := tartvm.ReleaseForPlatform(environment.Platform)
+	if err != nil {
+		return nil, err
+	}
+	m, err := p.vms()
+	if err != nil {
+		return nil, err
+	}
+	targets := slices.DeleteFunc(slices.Clone(plan.Targets), func(target model.PlanTarget) bool {
+		return engine.Excluded(plan, target, environment.Platform)
+	})
+	_, skips, err := p.image(ctx, m, release, targets, environment)
+	return skips, err
+}
+
+// skipTarget records a target the release won't build as not run, with a
+// log that says why and what would let it be built.
+func skipTarget(job engine.Job, build engine.Build, release macos.Release, skip engine.Skip) error {
+	text := fmt.Sprintf("%s wasn't built on macOS %s (%s): %s.\n", skip.Target, release.Product, release.Name, skip.Reason)
+	if skip.Remedy != "" {
+		text += strings.ToUpper(skip.Remedy[:1]) + skip.Remedy[1:] + ".\n"
+	}
+	log := filepath.Join(job.Directory, "skipped-"+string(skip.Target)+".log")
+	if err := os.WriteFile(log, []byte(text), 0o644); err != nil {
+		return err
+	}
+	if err := build.Record(model.TargetResult{Target: skip.Target, Outcome: model.OutcomeNotRun, Tests: model.TestsNone, Detail: skip.Reason, Log: log}); err != nil {
+		return err
+	}
+	message := string(skip.Target) + ": not built: " + skip.Reason
+	if skip.Remedy != "" {
+		message += "; " + skip.Remedy
+	}
+	build.Progress(message)
+	return nil
+}
+
 // guestInput is the guest program's input.
 type guestInput struct {
 	Protocol    int            `json:"protocol"`
@@ -209,9 +280,19 @@ func (p *Provider) Execute(ctx context.Context, job engine.Job, build engine.Bui
 	if err != nil {
 		return err
 	}
-	image := baseImage(release)
 	if err := os.MkdirAll(job.Directory, 0o755); err != nil {
 		return err
+	}
+	image, skips, err := p.image(ctx, m, release, job.Targets, job.Environment)
+	if err != nil {
+		return fmt.Errorf("%w: %w", engine.ErrInfrastructure, err)
+	}
+	skipped := map[model.TargetID]bool{}
+	for _, skip := range engine.SkipDependents(job.Plan, job.Environment, job.Targets, skips) {
+		if err := skipTarget(job, build, release, skip); err != nil {
+			return err
+		}
+		skipped[skip.Target] = true
 	}
 	prefix := clonePrefix(string(job.Run.ID), release.Slug)
 	vm := vmName(prefix, job.Execution.Attempt)
@@ -224,6 +305,9 @@ func (p *Provider) Execute(ctx context.Context, job engine.Job, build engine.Bui
 		input.Tests = string(model.TestsDeclared)
 	}
 	for _, target := range job.Targets {
+		if skipped[target.ID] {
+			continue
+		}
 		name := target.Target.Name
 		if target.Target.Subport != "" {
 			name = target.Target.Subport
@@ -234,6 +318,11 @@ func (p *Provider) Execute(ctx context.Context, job engine.Job, build engine.Bui
 		}
 		_, t.Blocked = build.Blocked(target.ID)
 		input.Targets = append(input.Targets, t)
+	}
+	// With nothing to build, no VM starts; the runner records what's
+	// blocked.
+	if !slices.ContainsFunc(input.Targets, func(t guestTarget) bool { return !t.Blocked }) {
+		return nil
 	}
 
 	build.Progress("staging the revision for " + release.Name)

@@ -352,13 +352,15 @@ The five the scope left open, as settled on 2026-09-25:
 
 Isolation, not among the five, is settled as best effort, above.
 
-## Open questions
+**Which profile a modelled context is**, settled on 2026-09-26: the
+tools profile, dockhand's base images'. Xcode is an add-on, as it was in
+v2: a release's Xcode image is made only when asked for. A port whose
+`use_xcode` is yes in a release's context builds only in that release's
+Xcode image. Without the image, a check on Tart doesn't build it, and
+says which command makes the image
+([note](activity/2026-09-26-xcode-add-on.md)).
 
-- **Which profile a modelled context is.** Phase 5 models the tools
-  profile, dockhand's base images'. MacPorts' builders all have Xcode.
-  The profile changes 15 Portfiles' local patch files and which contexts
-  some guards refuse, but nothing a checksum bump edits at
-  `abd9fff84df` ([note](activity/2026-09-26-oracle-phase-5.md#which-profile)).
+## Open questions
 
 - **Which variants `with-deps` installs.** CI installs a dependency with
   its default variants, and so does the model. Whether the person should

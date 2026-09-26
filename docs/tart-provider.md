@@ -51,8 +51,34 @@ disposable clone instead and left as it is. `--check` only checks, and
 passes. An image `v2-final`'s `setup` made in `~/.tart` is copied in, when
 it still passes, rather than made again.
 
-`dockhand providers` shows which releases have images, and whether the
-other providers are ready. `init` shows the same.
+`dockhand providers` shows which releases have images, with Xcode or not,
+and whether the other providers are ready. `init` shows the same.
+
+## Xcode
+
+Xcode is an add-on. A release's checks need only its base image, with the
+Command Line Tools. A port needs Xcode on a release when MacPorts, reading
+it for that release, says so (`use_xcode`): it asks for Xcode, or builds
+with `xcodebuild`. Such a port builds only in the release's Xcode image,
+`dockhand-xcode-<release>`.
+`dockhand providers setup tart tahoe --xcode <Xcode .xip, or a folder of them>`
+makes Tahoe's, with the newest Xcode Tahoe runs, in up to 65 GB of disk.
+Xcode comes from Apple, as a `.xip` from developer.apple.com.
+
+When a release's check has a port that needs Xcode, and the release has
+an Xcode image, all of the release's ports build in it. A port that
+doesn't ask for Xcode still builds with the Command Line Tools there, as
+MacPorts' builders do (decision 23). Without the image:
+
+- **The port isn't built**, not even tried with the tools alone.
+  `check --plan` says so before the check, with the command that makes
+  the image. The result says "not run: needs Xcode".
+- **What depends on it isn't built either**, rather than built against an
+  old build of it. Its result says "not run: needs <port>, which isn't
+  built".
+- **The check needs attention rather than failing**, since nothing failed.
+  `submit` still needs those ports checked, in the Xcode image, or on
+  `--on github`, whose runners have Xcode.
 
 ## Settings
 

@@ -1,6 +1,7 @@
 package command
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -11,7 +12,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/macos"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/provider/tart"
 )
 
@@ -47,11 +50,11 @@ func release(t *testing.T, name string) macos.Release {
 func TestProvidersWithoutTart(t *testing.T) {
 	out, _, err := dockhand(t, "providers")
 	require.NoError(t, err)
-	require.Equal(t, "tart     · needs Tart: brew install cirruslabs/cli/tart, then dockhand providers setup tart\n"+
+	require.Equal(t, "tart     · needs Tart: sudo port install tart, then dockhand providers setup tart\n"+
 		"github   · needs a GitHub login and your fork's Actions enabled\n", out)
 
 	_, _, err = dockhand(t, "providers", "setup", "tart")
-	require.ErrorContains(t, err, "Tart isn't installed: brew install cirruslabs/cli/tart")
+	require.ErrorContains(t, err, "Tart isn't installed: sudo port install tart")
 }
 
 func TestProvidersShowTheImages(t *testing.T) {
@@ -71,6 +74,11 @@ func TestProvidersShowTheImages(t *testing.T) {
 	out, _, err = dockhand(t, "providers")
 	require.NoError(t, err)
 	require.Contains(t, out, "tart     ✓ images for macOS 14, 15, 26\n")
+
+	images.status.Xcode = []macos.Release{release(t, "tahoe")}
+	out, _, err = dockhand(t, "providers")
+	require.NoError(t, err)
+	require.Contains(t, out, "tart     ✓ images for macOS 14, 15, 26, with Xcode for 26\n")
 
 	images.err = errors.New("listing dockhand's Tart images: tart list failed")
 	out, _, err = dockhand(t, "providers")
@@ -104,10 +112,16 @@ func TestSetupTart(t *testing.T) {
 	require.Equal(t, tart.SetupOptions{Check: true}, images.asked[1], "no release is this Mac's")
 	require.Contains(t, out, "Ready: dockhand-base-sonoma, macOS 14 (Sonoma) with Command Line Tools 16.2.0.0.1.1733547573 and MacPorts "+tart.DefaultMacPorts+", checked in a disposable clone.\n")
 
+	images.result = tart.SetupResult{Image: "dockhand-xcode-tahoe", Release: release(t, "tahoe"), MacPorts: tart.DefaultMacPorts, CommandLineTools: "26.6", Xcode: "26.1"}
+	out, _, err = dockhand(t, "providers", "setup", "tart", "tahoe", "--xcode", "/Volumes/Xcodes")
+	require.NoError(t, err)
+	require.Equal(t, tart.SetupOptions{Release: "tahoe", Xcode: "/Volumes/Xcodes"}, images.asked[2])
+	require.Contains(t, out, "Made dockhand-xcode-tahoe: macOS 26 (Tahoe) with Xcode 26.1, Command Line Tools 26.6, and MacPorts "+tart.DefaultMacPorts+".\n")
+
 	images.err = errors.New("setup: image dockhand-base-sonoma failed validation")
 	_, _, err = dockhand(t, "providers", "setup", "tart", "--rebuild")
 	require.ErrorContains(t, err, "failed validation")
-	require.Equal(t, tart.SetupOptions{Rebuild: true}, images.asked[2])
+	require.Equal(t, tart.SetupOptions{Rebuild: true}, images.asked[3])
 }
 
 func TestInitShowsTheProviders(t *testing.T) {
@@ -119,4 +133,27 @@ func TestInitShowsTheProviders(t *testing.T) {
 	require.Contains(t, out, "  Providers    tart     · not set up: dockhand providers setup tart   (macOS 26, up to 60 GB)\n"+
 		"               github   · needs a GitHub login and your fork's Actions enabled\n"+
 		"  Publishing   ")
+}
+
+// fakeSkipper stands in for Tart without an Xcode image.
+type fakeSkipper struct{}
+
+func (fakeSkipper) Name() string                                            { return "tart" }
+func (fakeSkipper) Execute(context.Context, engine.Job, engine.Build) error { return nil }
+func (fakeSkipper) Skips(_ context.Context, plan model.Plan, environment model.Environment) ([]engine.Skip, error) {
+	return []engine.Skip{{Target: "libharbor", Environment: environment, Reason: "needs Xcode", Remedy: "there's no Xcode image for macOS 26 (Tahoe); dockhand providers setup tart tahoe --xcode <Xcode .xip, or a folder of them> makes one"}}, nil
+}
+
+// The plan says before a check what won't be built, why, and what would
+// let it, with what depends on it.
+func TestThePlanSaysWhatWontBeBuilt(t *testing.T) {
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	plan := model.Plan{Environments: []model.Environment{tahoe}, Targets: []model.PlanTarget{
+		{ID: "libharbor", Target: model.Target{Name: "libharbor"}},
+		{ID: "harbor-cli", Target: model.Target{Name: "harbor-cli"}, DependsOn: []model.TargetID{"libharbor"}},
+	}}
+	var out bytes.Buffer
+	writeSkips(t.Context(), &out, &engine.Engine{Providers: map[string]engine.Provider{"tart": fakeSkipper{}}}, plan)
+	require.Equal(t, "Not built   libharbor on tart macOS 26 (Tahoe) arm64: needs Xcode; there's no Xcode image for macOS 26 (Tahoe); dockhand providers setup tart tahoe --xcode <Xcode .xip, or a folder of them> makes one\n"+
+		"Not built   harbor-cli on tart macOS 26 (Tahoe) arm64: needs libharbor, which isn't built\n", out.String())
 }

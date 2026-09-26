@@ -409,7 +409,7 @@ func (t *tx) UpdateExecution(e model.GuestExecution) error {
 }
 
 func (t *tx) Results(execution model.ExecutionID) ([]model.TargetResult, error) {
-	rows, err := t.conn.QueryContext(t.ctx, "SELECT execution_id, target_id, outcome, phase, tests, log, inputs, recorded_at FROM results WHERE repository_id=? AND execution_id=? ORDER BY recorded_at, rowid", t.repo, execution)
+	rows, err := t.conn.QueryContext(t.ctx, "SELECT execution_id, target_id, outcome, phase, tests, log, inputs, detail, recorded_at FROM results WHERE repository_id=? AND execution_id=? ORDER BY recorded_at, rowid", t.repo, execution)
 	if err != nil {
 		return nil, storageError(err)
 	}
@@ -418,7 +418,7 @@ func (t *tx) Results(execution model.ExecutionID) ([]model.TargetResult, error) 
 	for rows.Next() {
 		var r model.TargetResult
 		var recorded int64
-		if err := rows.Scan(&r.Execution, &r.Target, &r.Outcome, &r.Phase, &r.Tests, &r.Log, &r.Inputs, &recorded); err != nil {
+		if err := rows.Scan(&r.Execution, &r.Target, &r.Outcome, &r.Phase, &r.Tests, &r.Log, &r.Inputs, &r.Detail, &recorded); err != nil {
 			return nil, storageError(err)
 		}
 		r.RecordedAt = fromMillis(recorded)
@@ -450,8 +450,8 @@ func (t *tx) RecordResult(r model.TargetResult) error {
 	err = t.conn.QueryRowContext(t.ctx, "SELECT outcome FROM results WHERE repository_id=? AND execution_id=? AND target_id=?", t.repo, r.Execution, r.Target).Scan(&existing.Outcome)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		_, err = t.exec("INSERT INTO results(repository_id, execution_id, target_id, outcome, phase, tests, log, inputs, recorded_at) VALUES(?,?,?,?,?,?,?,?,?)",
-			t.repo, r.Execution, r.Target, r.Outcome, r.Phase, r.Tests, r.Log, r.Inputs, millis(r.RecordedAt))
+		_, err = t.exec("INSERT INTO results(repository_id, execution_id, target_id, outcome, phase, tests, log, inputs, detail, recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+			t.repo, r.Execution, r.Target, r.Outcome, r.Phase, r.Tests, r.Log, r.Inputs, r.Detail, millis(r.RecordedAt))
 		return err
 	case err != nil:
 		return storageError(err)
@@ -460,8 +460,8 @@ func (t *tx) RecordResult(r model.TargetResult) error {
 	if !existing.ReplacedBy(r) {
 		return fmt.Errorf("%w: %s's result in execution %s is %s and cannot become %s", store.ErrConflict, r.Target, r.Execution, existing.Outcome, r.Outcome)
 	}
-	_, err = t.exec("UPDATE results SET outcome=?, phase=?, tests=?, log=?, inputs=?, recorded_at=? WHERE repository_id=? AND execution_id=? AND target_id=?",
-		r.Outcome, r.Phase, r.Tests, r.Log, r.Inputs, millis(r.RecordedAt), t.repo, r.Execution, r.Target)
+	_, err = t.exec("UPDATE results SET outcome=?, phase=?, tests=?, log=?, inputs=?, detail=?, recorded_at=? WHERE repository_id=? AND execution_id=? AND target_id=?",
+		r.Outcome, r.Phase, r.Tests, r.Log, r.Inputs, r.Detail, millis(r.RecordedAt), t.repo, r.Execution, r.Target)
 	return err
 }
 

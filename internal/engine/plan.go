@@ -93,6 +93,13 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 				for _, dependency := range port.Dependencies {
 					deps = append(deps, dependency.Port)
 				}
+				// Whether it needs Xcode is the release's own answer: a
+				// modelled one's is the tools profile's (decision 7).
+				needsXcode, err := port.Bool("use_xcode")
+				if err != nil {
+					plan.Unresolved = append(plan.Unresolved, model.Unresolved{Target: target, Reason: err.Error()})
+					return
+				}
 				at, ok := index[port.Name]
 				if !ok {
 					at = len(candidates)
@@ -100,6 +107,9 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 					candidates = append(candidates, candidate{target: model.PlanTarget{ID: model.TargetID(port.Name), Target: target, Directory: directory, Kind: kind, Role: role}, deps: make([][]string, len(plan.Environments))})
 				}
 				candidates[at].deps[e] = deps
+				if needsXcode && !candidates[at].target.NeedsXcodeOn(environment.Platform) {
+					candidates[at].target.NeedsXcode = append(candidates[at].target.NeedsXcode, environment.Platform)
+				}
 			}
 		}
 	}

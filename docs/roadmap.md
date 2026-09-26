@@ -96,7 +96,7 @@ The principles and the direction record's standing decisions are the specificati
     - `serve.for_outdated` (list, draft, check) (**done 2026-09-25**, [note](activity/2026-09-25-serve-maintainer-loop.md));
     - `serve --submit-passing` and its config key, with the guardrails in v3 §11 (**done 2026-09-25**, same note);
     - PR following and notifications (**done 2026-09-25**: [following](activity/2026-09-25-follow-pull-requests.md), and notifications in the same note).
-12. **Tart on other macOS releases** (former step 10, decisions 4–7 and 14). `--os` becomes `--on tart:<releases>`, and each release's Xcode need comes from the facts table.
+12. **Tart on other macOS releases** (former step 10, decisions 4–7 and 14). `--os` becomes `--on tart:<releases>`, and each release's Xcode need comes from the facts table. **Done 2026-09-26** ([note](activity/2026-09-26-xcode-add-on.md)). `--on tart:<releases>` came with the Tart provider, but its plan refused any release but the Mac's own until the planner modelled the others the same day. Xcode is an add-on image, settled the same day. The plan reads each release's `use_xcode` in the tools profile. A release builds in its Xcode image when a port needs it. Without the image, that port and what depends on it aren't built, and the check names the command that makes the image.
 13. **Preparation coverage** (former step 11). This step is unchanged:
     - files added and deleted by preparation (40);
     - an outcome for the 441 ports with nothing to fetch;

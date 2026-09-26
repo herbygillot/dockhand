@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -53,14 +54,24 @@ func (p *Provider) Status(ctx context.Context) (Status, error) {
 // xcodeImage is the image setup makes for a release with Xcode as well.
 func xcodeImage(release macos.Release) string { return "dockhand-xcode-" + release.Slug }
 
-// goldenImage is the copy setup keeps of a release's base image, and
-// restores it from.
-func goldenImage(release macos.Release) string { return "dockhand-golden-" + release.Slug }
+// goldenImage is the copy setup keeps of a release's base or Xcode image,
+// and restores it from.
+// It is named as the provisioner names it.
+func goldenImage(image string) string {
+	if slug, ok := strings.CutPrefix(image, "dockhand-base-"); ok {
+		return "dockhand-golden-" + slug
+	}
+	return strings.Replace(image, "dockhand-", "dockhand-golden-", 1)
+}
 
-// SetupDisk is the most disk a release's image takes to make: the image,
-// up to 29 GB for Tahoe, and the vanilla image it starts from, 28 GB. The
-// golden copy shares the image's blocks.
+// SetupDisk is the most disk a release's base image takes to make: the
+// image, up to 29 GB for Tahoe, and the vanilla image it starts from, 28 GB.
+// The golden copy shares the image's blocks.
 const SetupDisk = "60 GB"
+
+// XcodeDisk is the same for an Xcode image, up to 34 GB for Monterey's,
+// and the vanilla image when the base image didn't download it first.
+const XcodeDisk = "65 GB"
 
 // SetupOptions choose what setup makes.
 type SetupOptions struct {
@@ -73,6 +84,10 @@ type SetupOptions struct {
 	// MacPortsVersion is the MacPorts the image installs; DefaultMacPorts
 	// when empty.
 	MacPortsVersion string
+	// Xcode is an Xcode .xip, or a folder of them, for the release's Xcode
+	// image, an add-on beside its base image; the newest the release runs
+	// is chosen.
+	Xcode string
 }
 
 // DefaultMacPorts is the MacPorts an image installs unless asked for
@@ -85,14 +100,17 @@ type SetupResult struct {
 	Release          macos.Release
 	MacPorts         string
 	CommandLineTools string
+	// Xcode is the Xcode image's Xcode version; empty for a base image.
+	Xcode string
 	// Reused is an image that was already there and passed its checks.
 	Reused bool
 }
 
 // Setup makes a release's base image with dockhand's provisioner: from
 // Cirrus Labs' vanilla macOS image, with the Command Line Tools of the
-// release's pinned generation and MacPorts. It keeps a golden copy that a
-// lost image is restored from. An image that exists is checked in a
+// release's pinned generation and MacPorts. With an Xcode archive it makes
+// the release's Xcode image instead, the same with Xcode too. It keeps a
+// golden copy that a lost image is restored from. An image that exists is checked in a
 // disposable clone instead, and left as it is. Progress is written to
 // progress as it goes.
 func (p *Provider) Setup(ctx context.Context, options SetupOptions, progress io.Writer) (SetupResult, error) {
@@ -114,12 +132,16 @@ func (p *Provider) Setup(ctx context.Context, options SetupOptions, progress io.
 		if err != nil {
 			return SetupResult{}, fmt.Errorf("listing dockhand's Tart images: %w", err)
 		}
-		if options.Rebuild || !slices.Contains(images, baseImage(release)) && !slices.Contains(images, goldenImage(release)) {
-			fmt.Fprintf(progress, "Making %s for macOS %s (%s), which takes up to %s of disk.\n", baseImage(release), release.Product, release.Name, SetupDisk)
+		image, disk := baseImage(release), SetupDisk
+		if options.Xcode != "" {
+			image, disk = xcodeImage(release), XcodeDisk
+		}
+		if options.Rebuild || !slices.Contains(images, image) && !slices.Contains(images, goldenImage(image)) {
+			fmt.Fprintf(progress, "Making %s for macOS %s (%s), which takes up to %s of disk.\n", image, release.Product, release.Name, disk)
 		}
 	}
 	provisioner := provision.Provisioner{Progress: progress, Config: provision.Config{
-		Executable: p.Tart.Executable, Home: p.Tart.Home, MacPortsVersion: options.MacPortsVersion,
+		Executable: p.Tart.Executable, Home: p.Tart.Home, MacPortsVersion: options.MacPortsVersion, Xcode: options.Xcode,
 		Platform: model.Platform{OS: "darwin", Version: strconv.Itoa(release.Darwin), Architecture: "arm64"},
 	}}
 	result, err := provisioner.Run(ctx, provision.Options{Check: options.Check, Rebuild: options.Rebuild})
@@ -127,7 +149,7 @@ func (p *Provider) Setup(ctx context.Context, options SetupOptions, progress io.
 		return SetupResult{}, err
 	}
 	return SetupResult{Image: result.Image, Release: release, MacPorts: result.MacPortsVersion,
-		CommandLineTools: result.CommandLineTools, Reused: result.Reused}, nil
+		CommandLineTools: result.CommandLineTools, Xcode: result.XcodeVersion, Reused: result.Reused}, nil
 }
 
 // release is the release named, by name or product version, or this Mac's

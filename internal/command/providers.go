@@ -33,8 +33,8 @@ func images() tartImages {
 	return &tart.Provider{}
 }
 
-// installTart is Tart's documented installation.
-const installTart = "brew install cirruslabs/cli/tart"
+// installTart installs Tart from MacPorts.
+const installTart = "sudo port install tart"
 
 func providersCommand(s *settings, streams Streams) *cobra.Command {
 	cmd := &cobra.Command{
@@ -79,6 +79,11 @@ Line Tools of the release's pinned generation and MacPorts. Making one
 downloads the vanilla image the first time and takes up to ` + tart.SetupDisk + ` of disk.
 A golden copy is kept beside it, and a lost image is restored from it.
 
+Xcode is an add-on. --xcode, given an Xcode .xip from Apple or a folder of
+them, makes dockhand-xcode-<release> instead, the same with the newest Xcode
+the release runs, in up to ` + tart.XcodeDisk + ` more. A check builds a port that needs
+Xcode only there; without it, the port isn't built, and the check says so.
+
 When the image exists, setup checks it in a disposable clone and leaves it
 as it is. --rebuild makes a replacement, and keeps the old one until the
 new one has passed.`,
@@ -97,6 +102,9 @@ new one has passed.`,
 			}
 			release := fmt.Sprintf("macOS %s (%s)", result.Release.Product, result.Release.Name)
 			made := fmt.Sprintf("%s with Command Line Tools %s and MacPorts %s", release, result.CommandLineTools, result.MacPorts)
+			if result.Xcode != "" {
+				made = fmt.Sprintf("%s with Xcode %s, Command Line Tools %s, and MacPorts %s", release, result.Xcode, result.CommandLineTools, result.MacPorts)
+			}
 			if result.Reused {
 				fmt.Fprintf(streams.Out, "Ready: %s, %s, checked in a disposable clone.\n", result.Image, made)
 			} else {
@@ -115,6 +123,7 @@ new one has passed.`,
 	cmd.Flags().BoolVar(&options.Check, "check", false, "check the image in a disposable clone, making nothing")
 	cmd.Flags().BoolVar(&options.Rebuild, "rebuild", false, "make a replacement even when the image exists")
 	cmd.Flags().StringVar(&options.MacPortsVersion, "macports-version", "", "the MacPorts the image installs (default "+tart.DefaultMacPorts+")")
+	cmd.Flags().StringVar(&options.Xcode, "xcode", "", "make the release's Xcode image, from an Xcode .xip or a folder of them")
 	return cmd
 }
 
@@ -160,6 +169,13 @@ func tartReadiness(ctx context.Context) string {
 		hasHost = hasHost || release.Darwin == status.Host.Darwin
 	}
 	line := "✓ images for macOS " + strings.Join(releases, ", ")
+	if len(status.Xcode) > 0 {
+		var xcode []string
+		for _, release := range status.Xcode {
+			xcode = append(xcode, release.Product)
+		}
+		line += ", with Xcode for " + strings.Join(xcode, ", ")
+	}
 	if host != "" && !hasHost {
 		line += "; none for this Mac's " + host + ": dockhand providers setup tart"
 	}

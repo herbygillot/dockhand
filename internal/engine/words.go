@@ -29,6 +29,9 @@ func TargetWords(plan model.Plan, target model.PlanTarget, environment model.Env
 	case model.OutcomeUnevaluated:
 		words = "✗ could not evaluate"
 	case model.OutcomeNotRun:
+		if result.Detail != "" {
+			return "· not run: " + result.Detail
+		}
 		return "· not run"
 	default:
 		return "· " + string(result.Outcome)

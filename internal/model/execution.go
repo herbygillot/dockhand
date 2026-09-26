@@ -139,6 +139,9 @@ type TargetResult struct {
 	Tests TestOutcome
 	// Log locates the target's log beside the database.
 	Log string
+	// Detail is why a target wasn't run, in a few words, when the
+	// provider knows: "needs Xcode".
+	Detail string
 	// Inputs identifies what the build read, for reuse (decision 28); empty
 	// until recorded inputs are built.
 	Inputs     string

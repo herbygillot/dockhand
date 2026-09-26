@@ -389,6 +389,14 @@ func (d *driver) finish(ctx context.Context) (model.Run, error) {
 				if !slices.Contains(failed, name) {
 					failed = append(failed, name)
 				}
+			case model.OutcomeNotRun:
+				// A provider that said why didn't build it; the rest
+				// didn't finish.
+				if result.Detail != "" {
+					d.problems = append(d.problems, fmt.Sprintf("%s not run on %s: %s", name, describeEnvironment(d.plan.Environments[i]), result.Detail))
+				} else if !slices.Contains(incomplete, name) {
+					incomplete = append(incomplete, name)
+				}
 			default:
 				if !slices.Contains(incomplete, name) {
 					incomplete = append(incomplete, name)

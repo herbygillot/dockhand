@@ -143,6 +143,8 @@ type targetJSON struct {
 	Kind      string   `json:"kind"`
 	Role      string   `json:"role"`
 	DependsOn []string `json:"depends_on,omitempty"`
+	// NeedsXcode are the platforms where the target needs Xcode.
+	NeedsXcode []environmentJSON `json:"needs_xcode,omitempty"`
 	// Results are the target's outcome in each environment, in the plan's
 	// order; empty in a plan that has not run.
 	Results []resultJSON `json:"results,omitempty"`
@@ -155,6 +157,8 @@ type resultJSON struct {
 	Tests    string `json:"tests,omitempty"`
 	Excluded bool   `json:"excluded,omitempty"`
 	Log      string `json:"log,omitempty"`
+	// Detail is why a target wasn't run, when its provider said.
+	Detail string `json:"detail,omitempty"`
 }
 
 type planJSON struct {
@@ -195,6 +199,9 @@ func targetView(target model.PlanTarget) targetJSON {
 	for _, dependency := range target.DependsOn {
 		view.DependsOn = append(view.DependsOn, string(dependency))
 	}
+	for _, platform := range target.NeedsXcode {
+		view.NeedsXcode = append(view.NeedsXcode, environmentView(model.Environment{Platform: platform}))
+	}
 	return view
 }
 
@@ -206,7 +213,7 @@ func evidenceView(evidence engine.Evidence) []targetJSON {
 		passed := target.Passed
 		view.Passed = &passed
 		for i, result := range target.Outcomes {
-			view.Results = append(view.Results, resultJSON{Outcome: string(result.Outcome), Phase: string(result.Phase), Tests: string(result.Tests), Log: result.Log,
+			view.Results = append(view.Results, resultJSON{Outcome: string(result.Outcome), Phase: string(result.Phase), Tests: string(result.Tests), Log: result.Log, Detail: result.Detail,
 				Excluded: engine.Excluded(evidence.Plan, target.Target, evidence.Plan.Environments[i].Platform)})
 		}
 		targets = append(targets, view)

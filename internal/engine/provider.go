@@ -73,6 +73,74 @@ type ReleaseProvider interface {
 	Platforms(ctx context.Context, releases string) ([]model.Platform, error)
 }
 
+// A Skipper is a provider that won't build some targets in an environment,
+// and can say so before a check starts, as Tart won't build a target that
+// needs Xcode on a release with no Xcode image. It records each as not run,
+// with the Skip's reason as the result's detail, and so what depends on it
+// (SkipDependents).
+type Skipper interface {
+	Provider
+	Skips(ctx context.Context, plan model.Plan, environment model.Environment) ([]Skip, error)
+}
+
+// Skip is a target a provider won't build in an environment.
+type Skip struct {
+	Target      model.TargetID
+	Environment model.Environment
+	// Reason is why, in a few words: "needs Xcode". Remedy, when there is
+	// one, is what would let it be built.
+	Reason, Remedy string
+	// Because names the target a dependent needs, which isn't built; the
+	// provider's own skips have none.
+	Because model.TargetID
+}
+
+// Skips are the targets a plan's providers won't build, and what depends
+// on them in each environment, for the plan to show before the check
+// starts. The provider decides again when it builds.
+func (e *Engine) Skips(ctx context.Context, plan model.Plan) ([]Skip, error) {
+	var skips []Skip
+	for _, environment := range plan.Environments {
+		skipper, ok := e.Providers[environment.Provider].(Skipper)
+		if !ok {
+			continue
+		}
+		own, err := skipper.Skips(ctx, plan, environment)
+		if err != nil {
+			return nil, err
+		}
+		skips = append(skips, SkipDependents(plan, environment, plan.Targets, own)...)
+	}
+	return skips, nil
+}
+
+// SkipDependents adds to a provider's skips in an environment the targets
+// that depend on them, directly or not, each not run for the one it needs:
+// it is neither built against an old build of that target nor counted as
+// failed.
+func SkipDependents(plan model.Plan, environment model.Environment, targets []model.PlanTarget, own []Skip) []Skip {
+	skips := slices.Clone(own)
+	skipped := map[model.TargetID]bool{}
+	for _, skip := range own {
+		skipped[skip.Target] = true
+	}
+	// Targets are in dependency order, so a dependency is settled before
+	// its dependents.
+	for _, target := range targets {
+		if skipped[target.ID] || Excluded(plan, target, environment.Platform) {
+			continue
+		}
+		for _, dependency := range plan.DependsOnIn(environment, target.ID) {
+			if skipped[dependency] {
+				skipped[target.ID] = true
+				skips = append(skips, Skip{Target: target.ID, Environment: environment, Reason: "needs " + string(dependency) + ", which isn't built", Because: dependency})
+				break
+			}
+		}
+	}
+	return skips
+}
+
 // Environments turns --on values, or check.on's, into the environments a
 // check builds in: each a provider that is set up, with the releases it
 // can take, and a bare release name meaning Tart. With none, the command

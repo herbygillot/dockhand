@@ -67,7 +67,11 @@ current design document before its schema changes (decision 44).
 6. **An `--os` release with no provisioned image is refused with the
    missing image named and the command to provision it**:
    `dockhand setup --os <slug>`, with `--xcode` when that release's
-   evaluation of the port needs full Xcode.
+   evaluation of the port needs full Xcode. *Amended 2026-09-26*: Xcode
+   is an add-on, so only a release without its base image is refused. A
+   port that needs Xcode on a release without its Xcode image isn't
+   built, and the check names the command that makes the image
+   ([note](../activity/2026-09-26-xcode-add-on.md)).
 7. **A build on a release other than the host's needs the evaluation
    platform and the build platform recorded separately** in the accepted
    spec. The build platform must fall inside what preparation covered,

@@ -7,6 +7,7 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -36,6 +37,17 @@ type evaluatedPorts struct {
 	repo       *git.Repository
 	ports      *selection.Reader
 	workspaces *workspace.Registry
+	// native is the release MacPorts runs as here, read once.
+	native     model.Platform
+	nativeOnce sync.Once
+	nativeErr  error
+}
+
+// nativePlatform is the release MacPorts describes on this host: the Mac's
+// own, or on another host the one its sessions model.
+func (p *evaluatedPorts) nativePlatform(ctx context.Context) (model.Platform, error) {
+	p.nativeOnce.Do(func() { p.native, p.nativeErr = p.ports.NativePlatform(ctx) })
+	return p.native, p.nativeErr
 }
 
 func (p *evaluatedPorts) Ports(ctx context.Context, source model.Source, directory string, platform model.Platform) (_ []macports.PortInfo, err error) {
@@ -47,7 +59,20 @@ func (p *evaluatedPorts) Ports(ctx context.Context, source model.Source, directo
 	if err := files.EnsurePort(ctx, model.Target{Portfile: directory + "/Portfile"}); err != nil {
 		return nil, err
 	}
-	tree, err := files.Tree(platform)
+	// MacPorts runs as this Mac's release. Another release is modelled in
+	// its session, as the oracle's contexts are, its developer tools from
+	// the facts table (decision 7); the directory's main port is found
+	// natively, and its subports come from the modelled evaluation.
+	native, err := p.nativePlatform(ctx)
+	if err != nil {
+		return nil, err
+	}
+	session := platform
+	modelled := platform != (model.Platform{}) && platform != native
+	if modelled {
+		session = model.Platform{}
+	}
+	tree, err := files.Tree(session)
 	if err != nil {
 		return nil, err
 	}
@@ -58,11 +83,18 @@ func (p *evaluatedPorts) Ports(ctx context.Context, source model.Source, directo
 	if len(targets) == 0 {
 		return nil, fmt.Errorf("evaluating %s: it defines no port", directory)
 	}
-	bound, err := files.Context(targets[0], platform)
+	bound, err := files.Context(targets[0], session)
 	if err != nil {
 		return nil, err
 	}
-	snapshot, err := p.ports.Evaluate(ctx, bound)
+	var snapshot macports.Snapshot
+	if modelled {
+		var observation macports.Observation
+		observation, err = p.ports.Observe(ctx, bound, macports.ObservationRequest{Platform: platform})
+		snapshot = observation.Snapshot
+	} else {
+		snapshot, err = p.ports.Evaluate(ctx, bound)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("evaluating %s: %w", directory, err)
 	}

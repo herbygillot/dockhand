@@ -36,7 +36,7 @@ func TestStatusListsReleasesWithImages(t *testing.T) {
 func TestSetupNamesItsCost(t *testing.T) {
 	t.Parallel()
 	mac := newMac()
-	mac.images = []string{"dockhand-base-tahoe", "dockhand-golden-sonoma"}
+	mac.images = []string{"dockhand-base-tahoe", "dockhand-golden-sonoma", "dockhand-golden-xcode-ventura"}
 	p := testProvider(mac)
 	// The provisioner finds no Tart, so it stops after the listing.
 	p.Tart = tartvm.Client{Executable: "/nonexistent/tart", Home: t.TempDir()}
@@ -52,13 +52,19 @@ func TestSetupNamesItsCost(t *testing.T) {
 		{}:                                false, // this Mac's, which exists
 		{Release: "sonoma"}:               false, // restored from its golden copy
 		{Release: "sequoia", Check: true}: false,
+		{Release: "tahoe", Xcode: "/x"}:   true, // its Xcode image, beside the base
+		{Release: "ventura", Xcode: "/x"}: false,
 	} {
 		var progress bytes.Buffer
 		_, err := p.Setup(t.Context(), options, &progress)
 		require.Error(t, err, "%+v", options)
+		image, disk := "dockhand-base-", "60 GB"
+		if options.Xcode != "" {
+			image, disk = "dockhand-xcode-", "65 GB"
+		}
 		if costly {
-			require.Contains(t, progress.String(), "Making dockhand-base-"+options.Release+" for macOS ", "%+v", options)
-			require.Contains(t, progress.String(), "takes up to 60 GB of disk", "%+v", options)
+			require.Contains(t, progress.String(), "Making "+image+options.Release+" for macOS ", "%+v", options)
+			require.Contains(t, progress.String(), "takes up to "+disk+" of disk", "%+v", options)
 		} else {
 			require.NotContains(t, progress.String(), "Making", "%+v", options)
 		}

@@ -92,6 +92,7 @@ more. With check.baseline = true, a failed check runs one by itself.`,
 				fmt.Fprintf(out, "Left out, not tracked: %s (--include adds one)\n", strings.Join(capture.Untracked, ", "))
 			}
 			writePlan(out, proposed)
+			writeSkips(ctx, out, e, proposed)
 			writePushes(out, proposed)
 			revision, planned := revisionView(capture.Revision), planView(proposed)
 			streams.emit(checkJSON{Branch: branch.ShortName(), Revision: &revision, Plan: &planned, Targets: []targetJSON{}})
@@ -266,6 +267,27 @@ func writePlan(out io.Writer, plan model.Plan) {
 	}
 	for _, unresolved := range plan.Unresolved {
 		fmt.Fprintf(out, "✗ %s can't be planned: %s\n", unresolved.Target.Name, unresolved.Reason)
+	}
+}
+
+// writeSkips says what a provider won't build and what would let it,
+// before the check starts: Tart, a target that needs Xcode on a release
+// with no Xcode image, and what depends on it.
+func writeSkips(ctx context.Context, out io.Writer, e *engine.Engine, plan model.Plan) {
+	if !plan.Runnable() {
+		return
+	}
+	skips, err := e.Skips(ctx, plan)
+	if err != nil {
+		fmt.Fprintf(out, "! can't tell yet what won't be built: %v\n", err)
+		return
+	}
+	for _, skip := range skips {
+		line := fmt.Sprintf("Not built   %s on %s: %s", skip.Target, environmentWords(skip.Environment), skip.Reason)
+		if skip.Remedy != "" {
+			line += "; " + skip.Remedy
+		}
+		fmt.Fprintln(out, line)
 	}
 }
 
