@@ -12,7 +12,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/provider/tart"
@@ -135,25 +134,25 @@ func TestInitShowsTheProviders(t *testing.T) {
 		"  Publishing   ")
 }
 
-// fakeSkipper stands in for Tart without an Xcode image.
-type fakeSkipper struct{}
-
-func (fakeSkipper) Name() string                                            { return "tart" }
-func (fakeSkipper) Execute(context.Context, engine.Job, engine.Build) error { return nil }
-func (fakeSkipper) Skips(_ context.Context, plan model.Plan, environment model.Environment) ([]engine.Skip, error) {
-	return []engine.Skip{{Target: "libharbor", Environment: environment, Reason: "needs Xcode", Remedy: "there's no Xcode image for macOS 26 (Tahoe); dockhand providers setup tart tahoe --xcode <Xcode .xip, or a folder of them> makes one"}}, nil
-}
-
-// The plan says before a check what won't be built, why, and what would
-// let it, with what depends on it.
+// The plan says before a check what an environment can't build, what it
+// needs, and, once for the environment, what would give it that.
 func TestThePlanSaysWhatWontBeBuilt(t *testing.T) {
-	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
-	plan := model.Plan{Environments: []model.Environment{tahoe}, Targets: []model.PlanTarget{
-		{ID: "libharbor", Target: model.Target{Name: "libharbor"}},
-		{ID: "harbor-cli", Target: model.Target{Name: "harbor-cli"}, DependsOn: []model.TargetID{"libharbor"}},
-	}}
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsCommandLine}
+	plan := model.Plan{Environments: []model.Environment{tahoe}, Tests: model.TestsDeclared,
+		Targets: []model.PlanTarget{
+			{ID: "libharbor", Target: model.Target{Name: "libharbor"}},
+			{ID: "harbor-cli", Target: model.Target{Name: "harbor-cli"}, DependsOn: []model.TargetID{"libharbor"}},
+		},
+		Unmet: []model.Unmet{
+			{Target: "libharbor", Environment: tahoe, Needs: model.RequiresXcode},
+			{Target: "harbor-cli", Environment: tahoe, Needs: model.RequiresXcode, Through: "libharbor"},
+		}}
 	var out bytes.Buffer
-	writeSkips(t.Context(), &out, &engine.Engine{Providers: map[string]engine.Provider{"tart": fakeSkipper{}}}, plan)
-	require.Equal(t, "Not built   libharbor on tart macOS 26 (Tahoe) arm64: needs Xcode; there's no Xcode image for macOS 26 (Tahoe); dockhand providers setup tart tahoe --xcode <Xcode .xip, or a folder of them> makes one\n"+
-		"Not built   harbor-cli on tart macOS 26 (Tahoe) arm64: needs libharbor, which isn't built\n", out.String())
+	writePlan(&out, plan, func(model.Unmet) string { return "make an Xcode image" })
+	require.Contains(t, out.String(), "Provider    tart macOS 26 (Tahoe) arm64 with the Command Line Tools · tests declared\n")
+	require.Contains(t, out.String(), "Not built   libharbor on tart macOS 26 (Tahoe) arm64 with the Command Line Tools: needs Xcode\n"+
+		"Not built   harbor-cli on tart macOS 26 (Tahoe) arm64 with the Command Line Tools: needs Xcode, through libharbor\n"+
+		"            make an Xcode image\n")
+	require.False(t, plan.Runnable())
+	require.Equal(t, "nothing in it can be built where it asks; see Not built", unrunnable(plan))
 }

@@ -98,6 +98,6 @@ func TestCheckPlanNamesWhatOnlyLeftOut(t *testing.T) {
 		Targets:      []model.PlanTarget{{ID: "jq", Target: model.Target{Name: "jq"}, Kind: model.Substantive, Role: model.Changed}},
 		Omitted:      []model.PlanTarget{{ID: "libharbor", Target: model.Target{Name: "libharbor"}, Kind: model.Substantive, Role: model.Changed}},
 		Tests:        model.TestsDeclared,
-	})
+	}, nil)
 	require.Contains(t, out.String(), "Changed     jq\nLeft out    libharbor, by --only; submit still needs them checked\n")
 }

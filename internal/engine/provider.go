@@ -68,77 +68,27 @@ type Build interface {
 // release --on <provider>:<releases> selects is an environment of its own.
 type ReleaseProvider interface {
 	Provider
-	// Platforms are the platforms the releases select: the provider's
-	// default with none, as Tart builds on the Mac's own release.
-	Platforms(ctx context.Context, releases string) ([]model.Platform, error)
+	// Environments are the environments the releases select: the
+	// provider's default with none, as Tart builds on the Mac's own
+	// release. Each states its developer tools where the provider knows
+	// them.
+	Environments(ctx context.Context, releases string) ([]model.Environment, error)
 }
 
-// A Skipper is a provider that won't build some targets in an environment,
-// and can say so before a check starts, as Tart won't build a target that
-// needs Xcode on a release with no Xcode image. It records each as not run,
-// with the Skip's reason as the result's detail, and so what depends on it
-// (SkipDependents).
-type Skipper interface {
+// A Remedier is a provider that can say how to give an environment what an
+// unmet target needs: Tart, the command that makes a release's Xcode image.
+type Remedier interface {
 	Provider
-	Skips(ctx context.Context, plan model.Plan, environment model.Environment) ([]Skip, error)
+	Remedy(unmet model.Unmet) string
 }
 
-// Skip is a target a provider won't build in an environment.
-type Skip struct {
-	Target      model.TargetID
-	Environment model.Environment
-	// Reason is why, in a few words: "needs Xcode". Remedy, when there is
-	// one, is what would let it be built.
-	Reason, Remedy string
-	// Because names the target a dependent needs, which isn't built; the
-	// provider's own skips have none.
-	Because model.TargetID
-}
-
-// Skips are the targets a plan's providers won't build, and what depends
-// on them in each environment, for the plan to show before the check
-// starts. The provider decides again when it builds.
-func (e *Engine) Skips(ctx context.Context, plan model.Plan) ([]Skip, error) {
-	var skips []Skip
-	for _, environment := range plan.Environments {
-		skipper, ok := e.Providers[environment.Provider].(Skipper)
-		if !ok {
-			continue
-		}
-		own, err := skipper.Skips(ctx, plan, environment)
-		if err != nil {
-			return nil, err
-		}
-		skips = append(skips, SkipDependents(plan, environment, plan.Targets, own)...)
+// Remedy is how to give an environment what an unmet target needs, when
+// its provider can say.
+func (e *Engine) Remedy(unmet model.Unmet) string {
+	if remedier, ok := e.Providers[unmet.Environment.Provider].(Remedier); ok {
+		return remedier.Remedy(unmet)
 	}
-	return skips, nil
-}
-
-// SkipDependents adds to a provider's skips in an environment the targets
-// that depend on them, directly or not, each not run for the one it needs:
-// it is neither built against an old build of that target nor counted as
-// failed.
-func SkipDependents(plan model.Plan, environment model.Environment, targets []model.PlanTarget, own []Skip) []Skip {
-	skips := slices.Clone(own)
-	skipped := map[model.TargetID]bool{}
-	for _, skip := range own {
-		skipped[skip.Target] = true
-	}
-	// Targets are in dependency order, so a dependency is settled before
-	// its dependents.
-	for _, target := range targets {
-		if skipped[target.ID] || Excluded(plan, target, environment.Platform) {
-			continue
-		}
-		for _, dependency := range plan.DependsOnIn(environment, target.ID) {
-			if skipped[dependency] {
-				skipped[target.ID] = true
-				skips = append(skips, Skip{Target: target.ID, Environment: environment, Reason: "needs " + string(dependency) + ", which isn't built", Because: dependency})
-				break
-			}
-		}
-	}
-	return skips
+	return ""
 }
 
 // Environments turns --on values, or check.on's, into the environments a
@@ -151,8 +101,8 @@ func (e *Engine) Environments(ctx context.Context, on []string) ([]model.Environ
 			return []model.Environment{{Provider: "command"}}, nil
 		}
 		if tart, ok := e.Providers["tart"].(ReleaseProvider); ok {
-			if platforms, err := tart.Platforms(ctx, ""); err == nil {
-				return []model.Environment{{Provider: "tart", Platform: platforms[0]}}, nil
+			if environments, err := tart.Environments(ctx, ""); err == nil {
+				return environments[:1], nil
 			}
 		}
 		return nil, errors.New(`a check needs somewhere to build: --on tart builds in a Tart image of this Mac's macOS, --on github with MacPorts' own workflow in your fork, and --on command with your own script, set up as [providers.command] run = "..." in ~/.dockhand/config.toml; [check] on = ["tart"] makes one the default`)
@@ -181,12 +131,12 @@ func (e *Engine) Environments(ctx context.Context, on []string) ([]model.Environ
 			return nil, fmt.Errorf("--on %s: no provider %q is set up", value, name)
 		}
 		if releaser, ok := provider.(ReleaseProvider); ok {
-			platforms, err := releaser.Platforms(ctx, releases)
+			found, err := releaser.Environments(ctx, releases)
 			if err != nil {
 				return nil, err
 			}
-			for _, platform := range platforms {
-				add(model.Environment{Provider: name, Platform: platform})
+			for _, environment := range found {
+				add(environment)
 			}
 			continue
 		}

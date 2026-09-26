@@ -69,9 +69,10 @@ current design document before its schema changes (decision 44).
    `dockhand setup --os <slug>`, with `--xcode` when that release's
    evaluation of the port needs full Xcode. *Amended 2026-09-26*: Xcode
    is an add-on, so only a release without its base image is refused. A
-   port that needs Xcode on a release without its Xcode image isn't
-   built, and the check names the command that makes the image
-   ([note](../activity/2026-09-26-xcode-add-on.md)).
+   port that needs Xcode, itself or through a prerequisite, on a release
+   without its Xcode image is unmet: it isn't built, and the check names
+   the command that makes the image
+   ([note](../activity/2026-09-26-xcode-unmet.md)).
 7. **A build on a release other than the host's needs the evaluation
    platform and the build platform recorded separately** in the accepted
    spec. The build platform must fall inside what preparation covered,
@@ -393,7 +394,9 @@ current design document before its schema changes (decision 44).
     else the plain one (the harvest showed `use_xcode` stays 0 on the
     Xcode images for ports that do not ask, so they build with the
     Command Line Tools either way); `--image` overrides for the whole
-    changeset. *Amended by 44*: `--only` never excludes a changed
+    changeset. *Amended 2026-09-26*: the Xcode image whenever the release
+    has one, else the plain one
+    ([note](../activity/2026-09-26-xcode-unmet.md)). *Amended by 44*: `--only` never excludes a changed
     prerequisite of what it selects.
 24. **A changeset keeps its title.** A `--title` given at any step
     (`bump`, `adopt`, adding a port with `--change`) is kept and used at

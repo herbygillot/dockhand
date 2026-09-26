@@ -57,28 +57,38 @@ and whether the other providers are ready. `init` shows the same.
 ## Xcode
 
 Xcode is an add-on. A release's checks need only its base image, with the
-Command Line Tools. A port needs Xcode on a release when MacPorts, reading
-it for that release, says so (`use_xcode`): it asks for Xcode, or builds
-with `xcodebuild`. Such a port builds only in the release's Xcode image,
-`dockhand-xcode-<release>`.
+Command Line Tools.
 `dockhand providers setup tart tahoe --xcode <Xcode .xip, or a folder of them>`
-makes Tahoe's, with the newest Xcode Tahoe runs, in up to 65 GB of disk.
-Xcode comes from Apple, as a `.xip` from developer.apple.com.
+makes Tahoe's Xcode image, `dockhand-xcode-tahoe`, with the newest Xcode
+Tahoe runs, in up to 65 GB of disk. Xcode comes from Apple, as a `.xip`
+from developer.apple.com.
 
-When a release's check has a port that needs Xcode, and the release has
-an Xcode image, all of the release's ports build in it. A port that
-doesn't ask for Xcode still builds with the Command Line Tools there, as
-MacPorts' builders do (decision 23). Without the image:
+**With its Xcode image, a release builds there, every port with Xcode.**
+MacPorts' builders have Xcode too, and a port that doesn't ask for it
+still builds with the Command Line Tools. The plan's Provider line says
+which it is: "tart macOS 26 (Tahoe) arm64 with Xcode".
 
-- **The port isn't built**, not even tried with the tools alone.
-  `check --plan` says so before the check, with the command that makes
-  the image. The result says "not run: needs Xcode".
-- **What depends on it isn't built either**, rather than built against an
-  old build of it. Its result says "not run: needs <port>, which isn't
-  built".
-- **The check needs attention rather than failing**, since nothing failed.
-  `submit` still needs those ports checked, in the Xcode image, or on
-  `--on github`, whose runners have Xcode.
+**Without it, a release builds with the Command Line Tools alone**, and
+doesn't build what needs Xcode:
+
+- a port that needs Xcode itself, when MacPorts, reading it for that
+  release, says so (`use_xcode`): it asks for Xcode, or builds with
+  `xcodebuild`;
+- a port whose prerequisite needs it: a changed port the check builds
+  before it, from source.
+
+Such a port is **unmet**. `check --plan` says so before the check, with the
+command that makes the Xcode image, and the result says "not built: needs
+Xcode" (", through libharbor" when a prerequisite needs it). It is never
+tried. Nothing failed, so the check needs attention rather than failing,
+and a check with nothing it can build doesn't start. `submit` still needs
+those ports checked, with Xcode, or on `--on github`, whose runners have
+it.
+
+Unchanged dependencies are installed from MacPorts' binary archives, which
+need no Xcode. When one has no archive and needs Xcode, MacPorts itself
+refuses to build it in the guest. The target then fails at install, with
+MacPorts' reason.
 
 ## Settings
 

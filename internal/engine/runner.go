@@ -306,7 +306,7 @@ func (d *driver) environment(ctx context.Context, provider Provider, environment
 		}
 		var remaining []model.PlanTarget
 		for _, target := range d.plan.Targets {
-			if Excluded(d.plan, target, environment.Platform) {
+			if _, unmet := d.plan.UnmetIn(environment, target.ID); unmet || Excluded(d.plan, target, environment.Platform) {
 				continue
 			}
 			if result, ok := results[target.ID]; !ok || !result.Outcome.Complete() {
@@ -389,14 +389,13 @@ func (d *driver) finish(ctx context.Context) (model.Run, error) {
 				if !slices.Contains(failed, name) {
 					failed = append(failed, name)
 				}
-			case model.OutcomeNotRun:
-				// A provider that said why didn't build it; the rest
-				// didn't finish.
-				if result.Detail != "" {
-					d.problems = append(d.problems, fmt.Sprintf("%s not run on %s: %s", name, describeEnvironment(d.plan.Environments[i]), result.Detail))
-				} else if !slices.Contains(incomplete, name) {
-					incomplete = append(incomplete, name)
+			case model.OutcomeUnmet:
+				unmet, _ := d.plan.UnmetIn(d.plan.Environments[i], target.Target.ID)
+				problem := fmt.Sprintf("%s isn't built on %s: it %s", name, describeEnvironment(d.plan.Environments[i]), UnmetWords(unmet))
+				if remedy := d.e.Remedy(unmet); remedy != "" {
+					problem += "; " + remedy
 				}
+				d.problems = append(d.problems, problem)
 			default:
 				if !slices.Contains(incomplete, name) {
 					incomplete = append(incomplete, name)
@@ -553,6 +552,11 @@ func runEvidence(r store.Reader, run model.Run, plan model.Plan) (Evidence, erro
 				te.Outcomes = append(te.Outcomes, model.TargetResult{Target: target.ID, Outcome: model.OutcomeNotRun})
 				continue
 			}
+			if _, unmet := plan.UnmetIn(environment, target.ID); unmet {
+				te.Outcomes = append(te.Outcomes, model.TargetResult{Target: target.ID, Outcome: model.OutcomeUnmet})
+				te.Passed = false
+				continue
+			}
 			result, ok := merged[environment][target.ID]
 			if !ok {
 				result = model.TargetResult{Target: target.ID, Outcome: model.OutcomeNotRun}
@@ -604,8 +608,19 @@ func describeEnvironment(environment model.Environment) string {
 
 // DescribeEnvironment words where a check builds for a person: the provider,
 // and the release it builds on by its macOS name, "tart macOS 26 (Tahoe)
-// arm64", or its raw platform where the release is unknown.
+// arm64", or its raw platform where the release is unknown, with its
+// developer tools where the provider states them.
 func DescribeEnvironment(environment model.Environment) string {
+	switch environment.DeveloperTools {
+	case model.DeveloperToolsXcode:
+		return describePlace(environment) + " with Xcode"
+	case model.DeveloperToolsCommandLine:
+		return describePlace(environment) + " with the Command Line Tools"
+	}
+	return describePlace(environment)
+}
+
+func describePlace(environment model.Environment) string {
 	platform := environment.Platform
 	if platform.Version == "" && platform.Architecture == "" {
 		return environment.Provider

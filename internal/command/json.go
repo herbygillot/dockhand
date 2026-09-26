@@ -126,14 +126,16 @@ func revisionView(revision model.Revision) revisionJSON {
 }
 
 type environmentJSON struct {
-	Provider     string `json:"provider"`
-	OS           string `json:"os,omitempty"`
-	Version      string `json:"version,omitempty"`
-	Architecture string `json:"architecture,omitempty"`
+	Provider       string `json:"provider"`
+	OS             string `json:"os,omitempty"`
+	Version        string `json:"version,omitempty"`
+	Architecture   string `json:"architecture,omitempty"`
+	DeveloperTools string `json:"developer_tools,omitempty"`
 }
 
 func environmentView(environment model.Environment) environmentJSON {
-	return environmentJSON{Provider: environment.Provider, OS: environment.Platform.OS, Version: environment.Platform.Version, Architecture: environment.Platform.Architecture}
+	return environmentJSON{Provider: environment.Provider, OS: environment.Platform.OS, Version: environment.Platform.Version, Architecture: environment.Platform.Architecture,
+		DeveloperTools: string(environment.DeveloperTools)}
 }
 
 type targetJSON struct {
@@ -157,8 +159,6 @@ type resultJSON struct {
 	Tests    string `json:"tests,omitempty"`
 	Excluded bool   `json:"excluded,omitempty"`
 	Log      string `json:"log,omitempty"`
-	// Detail is why a target wasn't run, when its provider said.
-	Detail string `json:"detail,omitempty"`
 }
 
 type planJSON struct {
@@ -167,7 +167,16 @@ type planJSON struct {
 	Tests        string            `json:"tests"`
 	Targets      []targetJSON      `json:"targets"`
 	Exclusions   []exclusionJSON   `json:"exclusions"`
+	Unmet        []unmetJSON       `json:"unmet"`
 	Unresolved   []exclusionJSON   `json:"unresolved"`
+}
+
+// unmetJSON is a target an environment can't build, and what it needs.
+type unmetJSON struct {
+	Target      string          `json:"target"`
+	Environment environmentJSON `json:"environment"`
+	Needs       string          `json:"needs"`
+	Through     string          `json:"through,omitempty"`
 }
 
 type exclusionJSON struct {
@@ -177,7 +186,7 @@ type exclusionJSON struct {
 }
 
 func planView(plan model.Plan) planJSON {
-	view := planJSON{ID: string(plan.ID), Tests: string(plan.Tests), Environments: []environmentJSON{}, Targets: []targetJSON{}, Exclusions: []exclusionJSON{}, Unresolved: []exclusionJSON{}}
+	view := planJSON{ID: string(plan.ID), Tests: string(plan.Tests), Environments: []environmentJSON{}, Targets: []targetJSON{}, Exclusions: []exclusionJSON{}, Unmet: []unmetJSON{}, Unresolved: []exclusionJSON{}}
 	for _, environment := range plan.Environments {
 		view.Environments = append(view.Environments, environmentView(environment))
 	}
@@ -187,6 +196,9 @@ func planView(plan model.Plan) planJSON {
 	for _, exclusion := range plan.Exclusions {
 		platform := environmentView(model.Environment{Platform: exclusion.Platform})
 		view.Exclusions = append(view.Exclusions, exclusionJSON{Target: exclusion.Target.Name, Platform: &platform, Reason: exclusion.Reason})
+	}
+	for _, unmet := range plan.Unmet {
+		view.Unmet = append(view.Unmet, unmetJSON{Target: string(unmet.Target), Environment: environmentView(unmet.Environment), Needs: string(unmet.Needs), Through: string(unmet.Through)})
 	}
 	for _, unresolved := range plan.Unresolved {
 		view.Unresolved = append(view.Unresolved, exclusionJSON{Target: unresolved.Target.Name, Reason: unresolved.Reason})
@@ -213,7 +225,7 @@ func evidenceView(evidence engine.Evidence) []targetJSON {
 		passed := target.Passed
 		view.Passed = &passed
 		for i, result := range target.Outcomes {
-			view.Results = append(view.Results, resultJSON{Outcome: string(result.Outcome), Phase: string(result.Phase), Tests: string(result.Tests), Log: result.Log, Detail: result.Detail,
+			view.Results = append(view.Results, resultJSON{Outcome: string(result.Outcome), Phase: string(result.Phase), Tests: string(result.Tests), Log: result.Log,
 				Excluded: engine.Excluded(evidence.Plan, target.Target, evidence.Plan.Environments[i].Platform)})
 		}
 		targets = append(targets, view)

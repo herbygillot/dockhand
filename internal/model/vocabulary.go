@@ -39,6 +39,16 @@ type Platform struct {
 	Architecture string
 }
 
+// DeveloperTools are the compilers and SDKs a build environment offers.
+type DeveloperTools string
+
+const (
+	// DeveloperToolsCommandLine is the Command Line Tools alone.
+	DeveloperToolsCommandLine DeveloperTools = "command-line-tools"
+	// DeveloperToolsXcode is Xcode, with the Command Line Tools beside it.
+	DeveloperToolsXcode DeveloperTools = "xcode"
+)
+
 // Target selects a port, optional subport, and variant choices within a Source.
 type Target struct {
 	Name string

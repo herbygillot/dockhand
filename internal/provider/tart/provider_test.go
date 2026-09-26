@@ -337,26 +337,29 @@ func TestDriftFromTheFactsTableIsReported(t *testing.T) {
 }
 
 // --on tart builds on the Mac's own release, tart:all on every release
-// with an image, and named releases on those; a release without an image
-// is refused with the command that makes one (decision 6).
-func TestPlatformsAreReleasesWithImages(t *testing.T) {
+// with an image, and named releases on those; a release without its base
+// image is refused with the command that makes one (decision 6). Xcode is
+// an add-on: a release with its Xcode image builds with Xcode, and one
+// without it with the Command Line Tools alone.
+func TestEnvironmentsAreReleasesWithImages(t *testing.T) {
 	t.Parallel()
 	mac := newMac()
-	mac.images = []string{"dockhand-base-tahoe", "dockhand-base-sonoma", "dockhand-xcode-sequoia"}
+	mac.images = []string{"dockhand-base-tahoe", "dockhand-xcode-tahoe", "dockhand-base-sonoma", "dockhand-xcode-sequoia"}
 	p := testProvider(mac)
-	sonoma := model.Platform{OS: "darwin", Version: "23", Architecture: "arm64"}
-	for releases, want := range map[string][]model.Platform{
-		"":            {tahoe},
-		"all":         {sonoma, tahoe},
-		"sonoma,26":   {sonoma, tahoe},
-		"tahoe,tahoe": {tahoe},
+	withXcode := model.Environment{Provider: "tart", Platform: tahoe, DeveloperTools: model.DeveloperToolsXcode}
+	sonoma := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "23", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsCommandLine}
+	for releases, want := range map[string][]model.Environment{
+		"":            {withXcode},
+		"all":         {sonoma, withXcode},
+		"sonoma,26":   {sonoma, withXcode},
+		"tahoe,tahoe": {withXcode},
 	} {
-		got, err := p.Platforms(t.Context(), releases)
+		got, err := p.Environments(t.Context(), releases)
 		require.NoError(t, err, releases)
 		require.Equal(t, want, got, releases)
 	}
-	_, err := p.Platforms(t.Context(), "sequoia")
-	require.ErrorContains(t, err, "no Tart image for macOS 15 (Sequoia): dockhand providers setup tart sequoia makes dockhand-base-sequoia")
-	_, err = p.Platforms(t.Context(), "leopard")
+	_, err := p.Environments(t.Context(), "sequoia")
+	require.ErrorContains(t, err, "no Tart image for macOS 15 (Sequoia): dockhand providers setup tart sequoia makes dockhand-base-sequoia", "an Xcode image is an add-on to the base image")
+	_, err = p.Environments(t.Context(), "leopard")
 	require.ErrorContains(t, err, "unknown release")
 }

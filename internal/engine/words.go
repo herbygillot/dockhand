@@ -12,6 +12,9 @@ func TargetWords(plan model.Plan, target model.PlanTarget, environment model.Env
 	if Excluded(plan, target, environment.Platform) {
 		return "— excluded"
 	}
+	if unmet, ok := plan.UnmetIn(environment, target.ID); ok {
+		return "· not built: " + UnmetWords(unmet)
+	}
 	var words string
 	switch result.Outcome {
 	case model.OutcomePassed:
@@ -29,15 +32,22 @@ func TargetWords(plan model.Plan, target model.PlanTarget, environment model.Env
 	case model.OutcomeUnevaluated:
 		words = "✗ could not evaluate"
 	case model.OutcomeNotRun:
-		if result.Detail != "" {
-			return "· not run: " + result.Detail
-		}
 		return "· not run"
 	default:
 		return "· " + string(result.Outcome)
 	}
 	if accepted {
 		words += ", accepted: cause not established"
+	}
+	return words
+}
+
+// UnmetWords say what an unmet target needs: "needs Xcode", or "needs
+// Xcode, through libharbor" when a prerequisite is what needs it.
+func UnmetWords(unmet model.Unmet) string {
+	words := "needs " + string(unmet.Needs)
+	if unmet.Through != "" {
+		words += ", through " + string(unmet.Through)
 	}
 	return words
 }

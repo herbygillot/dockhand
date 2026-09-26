@@ -201,7 +201,7 @@ func (e *Evidence) settle() {
 				continue
 			}
 			target.Passed = target.Passed && result.Outcome == model.OutcomePassed
-			target.Unchecked = target.Unchecked || result.Outcome == model.OutcomeNotRun
+			target.Unchecked = target.Unchecked || result.Outcome == model.OutcomeNotRun || result.Outcome == model.OutcomeUnmet
 		}
 	}
 }
@@ -213,7 +213,11 @@ func publicationProblems(evidence Evidence, accepted []string) []string {
 	var problems []string
 	for _, target := range evidence.Failed() {
 		name := target.Target.Target.Name
+		unmet, needs := evidence.unmet(target)
 		switch {
+		case needs && target.Target.Role != model.Also:
+			problems = append(problems, fmt.Sprintf("%s %s, which %s hasn't; a check with %s there builds it, or share the branch as a draft (--draft)",
+				name, UnmetWords(unmet), DescribeEnvironment(unmet.Environment), unmet.Needs))
 		case target.Unchecked && target.Target.Role != model.Also:
 			problems = append(problems, fmt.Sprintf("%s is changed, and no check of these files built it everywhere it's required; dockhand check builds it, or share the branch as a draft (--draft)", name))
 		case !Acceptable(target.Target):
@@ -223,6 +227,17 @@ func publicationProblems(evidence Evidence, accepted []string) []string {
 		}
 	}
 	return problems
+}
+
+// unmet is the first environment that can't build a target, when one
+// can't, and it has no result from an earlier check there either.
+func (e Evidence) unmet(target TargetEvidence) (model.Unmet, bool) {
+	for i, result := range target.Outcomes {
+		if result.Outcome == model.OutcomeUnmet {
+			return e.Plan.UnmetIn(e.Plan.Environments[i], target.Target.ID)
+		}
+	}
+	return model.Unmet{}, false
 }
 
 func kindWords(target model.PlanTarget) string {
@@ -238,7 +253,5 @@ func kindWords(target model.PlanTarget) string {
 // Excluded reports whether the plan leaves a target out on a platform,
 // where it is not built and not required to pass.
 func Excluded(plan model.Plan, target model.PlanTarget, platform model.Platform) bool {
-	return slices.ContainsFunc(plan.Exclusions, func(x model.Exclusion) bool {
-		return x.Target.Name == target.Target.Name && x.Platform == platform
-	})
+	return plan.Excludes(target, platform)
 }

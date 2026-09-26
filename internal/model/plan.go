@@ -89,6 +89,34 @@ const (
 type Environment struct {
 	Provider string
 	Platform Platform
+	// DeveloperTools are what builds there have, when the provider states
+	// them: Tart's release image, with Xcode when the release has an
+	// Xcode image, else the Command Line Tools alone. Unstated for a
+	// provider whose builders have their own.
+	DeveloperTools DeveloperTools `json:",omitempty"`
+}
+
+// Requirement is something a target needs of the environment it builds
+// in, beyond what every environment has.
+type Requirement string
+
+// RequiresXcode is Xcode, not only the Command Line Tools.
+const RequiresXcode Requirement = "Xcode"
+
+// Unmet is a target an environment can't build, because the environment
+// lacks what the target needs: Xcode, where there are only the Command
+// Line Tools. The target needs it itself, or through a prerequisite: a
+// changed port the plan builds before it, from source, never from an
+// archive. Unlike an exclusion, which MacPorts CI makes too, the target
+// still needs a check somewhere that has what it needs. Unlike a failure,
+// it says nothing about the port.
+type Unmet struct {
+	Target      TargetID
+	Environment Environment
+	Needs       Requirement
+	// Through is the prerequisite that needs it; empty when the target
+	// needs it itself.
+	Through TargetID `json:",omitempty"`
 }
 
 // Plan freezes what a check of one revision covers.
@@ -107,7 +135,10 @@ type Plan struct {
 	// every environment.
 	Dependencies []map[TargetID][]TargetID `json:",omitempty"`
 	Exclusions   []Exclusion
-	Unresolved   []Unresolved
+	// Unmet are the targets an environment can't build, decided when the
+	// check is accepted; they're never sent to its provider.
+	Unmet      []Unmet `json:",omitempty"`
+	Unresolved []Unresolved
 	// Omitted are the changed targets --only left out. The check doesn't
 	// build them, but submission still requires them: a narrowed check
 	// never shrinks what submit requires (Design v3 §7).
@@ -121,7 +152,37 @@ type Plan struct {
 
 // Runnable reports whether the plan may be checked: nothing is unresolved
 // and there is something to build somewhere.
-func (p Plan) Runnable() bool { return len(p.Unresolved) == 0 && len(p.Targets) > 0 }
+func (p Plan) Runnable() bool {
+	if len(p.Unresolved) > 0 {
+		return false
+	}
+	for _, target := range p.Targets {
+		for _, environment := range p.Environments {
+			if _, unmet := p.UnmetIn(environment, target.ID); !unmet && !p.Excludes(target, environment.Platform) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// Excludes reports whether the plan leaves a target out on a platform,
+// where it is not built and not required to pass.
+func (p Plan) Excludes(target PlanTarget, platform Platform) bool {
+	return slices.ContainsFunc(p.Exclusions, func(x Exclusion) bool {
+		return x.Target.Name == target.Target.Name && x.Platform == platform
+	})
+}
+
+// UnmetIn is why an environment can't build a target, when it can't.
+func (p Plan) UnmetIn(environment Environment, id TargetID) (Unmet, bool) {
+	for _, unmet := range p.Unmet {
+		if unmet.Target == id && unmet.Environment == environment {
+			return unmet, true
+		}
+	}
+	return Unmet{}, false
+}
 
 // DependsOnIn is what a target needs built first in one environment.
 func (p Plan) DependsOnIn(environment Environment, id TargetID) []TargetID {

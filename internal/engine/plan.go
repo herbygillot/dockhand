@@ -196,7 +196,46 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 			}
 		}
 	}
+	// Each environment's own dependencies decide what it can't build.
+	plan.Unmet = unmetNeeds(plan)
 	return plan, plan.Validate()
+}
+
+// unmetNeeds are the targets an environment can't build (Plan.Unmet). With
+// the Command Line Tools alone, that is a target that needs Xcode, and one
+// whose prerequisite does: the plan builds a changed prerequisite from
+// source before its dependents, never from an archive, so what it needs,
+// they need. An environment whose tools are Xcode, or unstated, builds
+// them all.
+func unmetNeeds(plan model.Plan) []model.Unmet {
+	var unmet []model.Unmet
+	for _, environment := range plan.Environments {
+		if environment.DeveloperTools != model.DeveloperToolsCommandLine {
+			continue
+		}
+		// cause is, for each target that needs Xcode, the one that
+		// needs it itself. Targets are in dependency order, so a
+		// prerequisite is settled before its dependents.
+		cause := map[model.TargetID]model.TargetID{}
+		for _, target := range plan.Targets {
+			if plan.Excludes(target, environment.Platform) {
+				continue
+			}
+			if target.NeedsXcodeOn(environment.Platform) {
+				cause[target.ID] = target.ID
+				unmet = append(unmet, model.Unmet{Target: target.ID, Environment: environment, Needs: model.RequiresXcode})
+				continue
+			}
+			for _, prerequisite := range plan.DependsOnIn(environment, target.ID) {
+				if through, ok := cause[prerequisite]; ok {
+					cause[target.ID] = through
+					unmet = append(unmet, model.Unmet{Target: target.ID, Environment: environment, Needs: model.RequiresXcode, Through: through})
+					break
+				}
+			}
+		}
+	}
+	return unmet
 }
 
 // hasCycle reports whether one environment's dependencies among targets

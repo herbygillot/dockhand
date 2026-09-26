@@ -91,13 +91,12 @@ more. With check.baseline = true, a failed check runs one by itself.`,
 			if len(capture.Untracked) > 0 {
 				fmt.Fprintf(out, "Left out, not tracked: %s (--include adds one)\n", strings.Join(capture.Untracked, ", "))
 			}
-			writePlan(out, proposed)
-			writeSkips(ctx, out, e, proposed)
+			writePlan(out, proposed, e.Remedy)
 			writePushes(out, proposed)
 			revision, planned := revisionView(capture.Revision), planView(proposed)
 			streams.emit(checkJSON{Branch: branch.ShortName(), Revision: &revision, Plan: &planned, Targets: []targetJSON{}})
 			if !proposed.Runnable() {
-				return errors.New("nothing was checked: the plan is unresolved")
+				return errors.New("nothing was checked: " + unrunnable(proposed))
 			}
 			if plan {
 				return nil
@@ -221,7 +220,17 @@ func writePushes(out io.Writer, plan model.Plan) {
 	}
 }
 
-func writePlan(out io.Writer, plan model.Plan) {
+// unrunnable says why a plan can't be checked.
+func unrunnable(plan model.Plan) string {
+	if len(plan.Unresolved) > 0 {
+		return "the plan is unresolved"
+	}
+	return "nothing in it can be built where it asks; see Not built"
+}
+
+// writePlan shows a plan, with remedy saying how to give an environment
+// what a target it can't build needs.
+func writePlan(out io.Writer, plan model.Plan, remedy func(model.Unmet) string) {
 	var changed, extra []string
 	for _, target := range plan.Targets {
 		name := target.Target.Name
@@ -265,29 +274,17 @@ func writePlan(out io.Writer, plan model.Plan) {
 	for _, exclusion := range plan.Exclusions {
 		fmt.Fprintf(out, "Excluded    %s: %s\n", exclusion.Target.Name, exclusion.Reason)
 	}
+	// Each environment's remedy follows its last target it can't build.
+	for i, unmet := range plan.Unmet {
+		fmt.Fprintf(out, "Not built   %s on %s: %s\n", unmet.Target, environmentWords(unmet.Environment), engine.UnmetWords(unmet))
+		if last := i == len(plan.Unmet)-1 || plan.Unmet[i+1].Environment != unmet.Environment; last && remedy != nil {
+			if words := remedy(unmet); words != "" {
+				fmt.Fprintf(out, "            %s\n", words)
+			}
+		}
+	}
 	for _, unresolved := range plan.Unresolved {
 		fmt.Fprintf(out, "✗ %s can't be planned: %s\n", unresolved.Target.Name, unresolved.Reason)
-	}
-}
-
-// writeSkips says what a provider won't build and what would let it,
-// before the check starts: Tart, a target that needs Xcode on a release
-// with no Xcode image, and what depends on it.
-func writeSkips(ctx context.Context, out io.Writer, e *engine.Engine, plan model.Plan) {
-	if !plan.Runnable() {
-		return
-	}
-	skips, err := e.Skips(ctx, plan)
-	if err != nil {
-		fmt.Fprintf(out, "! can't tell yet what won't be built: %v\n", err)
-		return
-	}
-	for _, skip := range skips {
-		line := fmt.Sprintf("Not built   %s on %s: %s", skip.Target, environmentWords(skip.Environment), skip.Reason)
-		if skip.Remedy != "" {
-			line += "; " + skip.Remedy
-		}
-		fmt.Fprintln(out, line)
 	}
 }
 

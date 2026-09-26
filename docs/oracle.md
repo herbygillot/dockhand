@@ -354,11 +354,12 @@ Isolation, not among the five, is settled as best effort, above.
 
 **Which profile a modelled context is**, settled on 2026-09-26: the
 tools profile, dockhand's base images'. Xcode is an add-on, as it was in
-v2: a release's Xcode image is made only when asked for. A port whose
-`use_xcode` is yes in a release's context builds only in that release's
-Xcode image. Without the image, a check on Tart doesn't build it, and
-says which command makes the image
-([note](activity/2026-09-26-xcode-add-on.md)).
+v2: a release's Xcode image is made only when asked for, and a release
+that has one builds there. Without it, a check on Tart doesn't build a
+port whose `use_xcode` is yes in the release's context, or whose
+prerequisite's is. It says which command makes the image
+([note](activity/2026-09-26-xcode-add-on.md),
+[then](activity/2026-09-26-xcode-unmet.md)).
 
 ## Open questions
 

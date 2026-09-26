@@ -3,6 +3,8 @@ package record
 import (
 	"encoding/json"
 	"time"
+
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // TestPolicy specifies which port tests a verification attempt should run.
@@ -58,11 +60,11 @@ type BuildRequirements struct {
 }
 
 // DeveloperTools identifies the selected compiler and SDK profile in a build environment.
-type DeveloperTools string
+type DeveloperTools = model.DeveloperTools
 
 const (
-	DeveloperToolsCommandLine DeveloperTools = "command-line-tools"
-	DeveloperToolsXcode       DeveloperTools = "xcode"
+	DeveloperToolsCommandLine = model.DeveloperToolsCommandLine
+	DeveloperToolsXcode       = model.DeveloperToolsXcode
 )
 
 // EnvironmentCapabilities records the properties observed inside an admitted

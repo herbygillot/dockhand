@@ -197,11 +197,10 @@ func submitChecked(ctx context.Context, s *settings, e *engine.Engine, streams S
 			return err
 		}
 		fmt.Fprintf(streams.Out, "\n%s · checking %s, then submitting it if it passes\n", plan.Branch.ShortName(), engine.Describe(capture.Revision))
-		writePlan(streams.Out, proposed)
-		writeSkips(ctx, streams.Out, e, proposed)
+		writePlan(streams.Out, proposed, e.Remedy)
 		writePushes(streams.Out, proposed)
 		if !proposed.Runnable() {
-			return errors.New("nothing was checked or submitted: the plan is unresolved")
+			return errors.New("nothing was checked or submitted: " + unrunnable(proposed))
 		}
 		run, err := e.Enqueue(ctx, plan.Branch, proposed, model.OriginPerson)
 		if err != nil {

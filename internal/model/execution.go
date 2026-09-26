@@ -97,6 +97,12 @@ const (
 	OutcomeNotRun Outcome = "not-run"
 	// OutcomeUnevaluated is a target the guest could not evaluate.
 	OutcomeUnevaluated Outcome = "unevaluated"
+	// OutcomeUnmet is a target its environment can't build, because it
+	// lacks what the target needs (Plan.Unmet). The plan decides it when
+	// the check is accepted, and no provider records it. It says nothing
+	// about the port, and the target still needs a check somewhere that
+	// has what it needs.
+	OutcomeUnmet Outcome = "unmet"
 )
 
 // Complete reports whether the outcome is a verdict a retry keeps rather
@@ -139,9 +145,6 @@ type TargetResult struct {
 	Tests TestOutcome
 	// Log locates the target's log beside the database.
 	Log string
-	// Detail is why a target wasn't run, in a few words, when the
-	// provider knows: "needs Xcode".
-	Detail string
 	// Inputs identifies what the build read, for reuse (decision 28); empty
 	// until recorded inputs are built.
 	Inputs     string
