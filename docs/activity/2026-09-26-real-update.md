@@ -23,7 +23,19 @@ fixed here, each with a test.
 | trufflehog | 3.97.6 | 3.97.9 |
 
 It took two minutes, 96 CPU seconds, for five ports, and as long again
-when repeated. That is noted to measure, not yet explained.
+when repeated. Measured afterwards:
+
+- **Not the index or the evaluator.** One port at an unchanged master took
+  35 seconds, 28 of them CPU, with no new index generation. Planning
+  evaluates broot in half a second, and plain MacPorts in 0.08.
+- **The cost is upstream discovery.** It has MacPorts evaluate the
+  Portfile once for every candidate release tag, to learn the version each
+  would give. broot has hundreds of tags, and each evaluation carries its
+  555-crate list, so its `tclsh` spent about 24 CPU seconds.
+- **The likely fix** is to evaluate candidates newest first and stop at
+  the first acceptable one. It's recorded here to do on its own, with its
+  own tests. Each run also fetches the newest master, and MacPorts' master
+  moves every few minutes, so a new index generation is built most times.
 
 ## Fixed
 
@@ -57,3 +69,33 @@ update tidied into one commit named in MacPorts' style ("broot: update to
   wouldn't run it against the person's fork. `submit --plan` now shows the
   preview and changes nothing, here or on GitHub. It refuses `--check`,
   `--passing`, `--yes`, and `--ready`.
+
+## Checks
+
+Each branch's commit was checked on Tart, on Tahoe with Xcode, in a fresh
+clone of `dockhand-xcode-tahoe`:
+
+| Port | Result | Time |
+|---|---|---|
+| miller | passed | 2 min |
+| trufflehog | passed | 3 min |
+| prometheus | passed | 5 min |
+| broot | passed | 6 min |
+| nushell | passed | 17 min |
+
+Each built from source:
+
+- **miller:** its logs show go-1.27 from a binary archive, 33 modules
+  downloaded, and `go build ./cmd/mlr`.
+- **nushell:** 1,732 crates compiled, and cargo's release build took 4½
+  minutes.
+
+No clone was left behind.
+
+## Submission: not done, waiting on the person
+
+The session's permission rules stopped `submit` from running against the
+person's fork. A fork remote had been added to the scratch clone for the
+preview, and was removed. The branches, commits, and passing checks are in
+the scratch clone and database, ready for the person to decide how to
+submit.
