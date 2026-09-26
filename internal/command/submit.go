@@ -421,10 +421,22 @@ func pullRequestWords(plan engine.SubmitPlan) string {
 	if pr := plan.Branch.PullRequest; pr != nil && pr.Draft && !plan.Request.Draft {
 		words += ", a draft: mark it ready for review on GitHub when it is"
 	}
-	if plan.BodyKept {
+	switch {
+	case plan.BodyKept:
 		words += "; its description is yours, and stays as it is"
+	case sameText(plan.Body, plan.Existing.PullRequest.Body):
+		words += "; its description is current"
+	default:
+		words += "; refreshes its description from Tested on down"
 	}
 	return words
+}
+
+// sameText compares descriptions as GitHub keeps them, whose editor may
+// change line endings.
+func sameText(a, b string) bool {
+	clean := func(text string) string { return strings.TrimSpace(strings.ReplaceAll(text, "\r\n", "\n")) }
+	return clean(a) == clean(b)
 }
 
 // applySubmit submits a plan and reports it. After pushing to a pull

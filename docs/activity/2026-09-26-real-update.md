@@ -116,3 +116,10 @@ submit.
   - A release dockhand doesn't know is described as "Darwin 30", not
     "macOS 30". The submit test's "Tahoe" fixture had used Darwin 26, and
     passed only because of that same mix-up; it now uses Darwin 25.
+- **Submit's preview didn't say whether a resubmission changes the
+  description.** Refreshing miller's pull request said only "updates
+  #34951", so what would change had to be compared by hand. The PR line now
+  says one of:
+  - "its description is current";
+  - "refreshes its description from Tested on down";
+  - "its description is yours, and stays as it is", as before.

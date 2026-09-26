@@ -320,6 +320,13 @@ func TestSubmitAsksTheReviewersBack(t *testing.T) {
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
+	// The preview says whether submitting again changes the description.
+	out, _, err := dockhand(t, "submit", "--no-check", "--plan")
+	require.NoError(t, err)
+	require.Regexp(t, `  PR       updates #\d+; its description is current\n`, out)
+	out, _, err = dockhand(t, "submit", "--no-check", "--plan", "--tested-binaries")
+	require.NoError(t, err)
+	require.Regexp(t, `  PR       updates #\d+; refreshes its description from Tested on down\n`, out)
 	g.status = record.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, ChangesRequestedBy: []string{"ryandesign"}}
 	_, _, err = dockhand(t, "status", "--refresh")
 	require.NoError(t, err)
@@ -329,7 +336,7 @@ func TestSubmitAsksTheReviewersBack(t *testing.T) {
 		gitRun(t, dir, "commit", "-q", "-am", "jq: "+line)
 	}
 	fix("# drop the patch")
-	out, _, err := dockhand(t, "submit", "--no-check", "--yes")
+	out, _, err = dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err, out)
 	require.Contains(t, out, "@ryandesign requested changes; ask them to review again on GitHub, or set submit.rerequest_review = \"always\"\n")
 	require.Empty(t, g.rerequested)
