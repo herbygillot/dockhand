@@ -35,6 +35,13 @@ and what it cost:
 Wall time depends on what else the Mac is doing, so compare costs only
 between runs made under similar load.
 
+Flags come before the journals: Go's flag parsing stops at the first
+argument that isn't one, so `-compare -top 30 before.jsonl after.jsonl`.
+
+`-ledger <file>` writes the dispatcher's ledger for each port and
+evaluation context: every call the oracle's dispatcher passed, counted
+by command, `file` subcommand, and where the answer came from.
+
 `-port`, `-category`, `-maintainer`, and `-not-maintainer` survey a
 selection. `-parallel` sets how many Portfiles are assessed at once
 (8 by default, as before). `-cpuprofile` profiles the survey itself.

@@ -42,9 +42,21 @@ type OperandObservation struct {
 	Frames []SourceFrame
 }
 
+// LedgerEntry counts the calls a worker's dispatcher passed for one
+// command, and file subcommand, by where the answer came from: pure path
+// arithmetic, the captured tree, a process, a relative path, a directory
+// enumeration, or the host (docs/oracle.md, phase 1).
+type LedgerEntry struct {
+	Command, Subcommand, Source string
+	Count                       int
+}
+
 type PortObservation struct {
 	// HostAccess records external evaluation inputs even in the native context.
-	HostAccess        bool
+	HostAccess bool
+	// Ledger is every call the dispatcher passed while the port was
+	// evaluated, counted; in shadow mode it judges nothing.
+	Ledger            []LedgerEntry
 	Operands          []OperandObservation
 	ModeledHostAccess bool
 	Declarations      []Declaration

@@ -105,3 +105,37 @@ func TestPortsThatReadTheHostThroughBaseCompilerQueries(t *testing.T) {
 		})
 	}
 }
+
+// Phase 1's dispatcher passes every call through and counts it by where
+// its answer came from, judging nothing (docs/oracle.md): a read inside
+// the captured tree, a host read, pure path arithmetic, and a process.
+func TestTheDispatcherCountsEveryCallByItsSource(t *testing.T) {
+	t.Parallel()
+	e := liveEvaluator(t)
+	tree := fixtureTree(t)
+	putFile(t, tree.Root(), "devel/ledger/files/patch", "patch\n")
+	putFile(t, tree.Root(), "devel/ledger/Portfile", "PortSystem 1.0\nname ledger\nversion 1\n"+
+		"set here [file exists [file join ${filespath} patch]]\nset there [file exists /usr/bin/true]\nset who [exec /usr/bin/true]\n")
+	targets, err := e.Resolve(t.Context(), tree, macports.Selection{Selector: "ledger"})
+	require.NoError(t, err)
+	bound, err := tree.Select(targets[0])
+	require.NoError(t, err)
+	var reported []LedgerReport
+	e.Ledger = func(report LedgerReport) { reported = append(reported, report) }
+	got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Declarations: true})
+	require.NoError(t, err)
+	require.Len(t, reported, 1, "a survey hears each observed port's ledger")
+	require.Equal(t, "ledger", reported[0].Port)
+	require.Equal(t, got.Ports["ledger"].Ledger, reported[0].Entries)
+	counted := map[string]int{}
+	for _, entry := range got.Ports["ledger"].Ledger {
+		counted[strings.TrimSpace(entry.Command+" "+entry.Subcommand)+" "+entry.Source] += entry.Count
+	}
+	require.GreaterOrEqual(t, counted["file exists tree"], 1, "%v", counted)
+	require.GreaterOrEqual(t, counted["file exists host"], 1, "%v", counted)
+	require.GreaterOrEqual(t, counted["file join pure"], 1, "%v", counted)
+	require.GreaterOrEqual(t, counted["exec process"], 1, "%v", counted)
+	require.GreaterOrEqual(t, counted["source tree"], 1, "the Portfile itself: %v", counted)
+	require.GreaterOrEqual(t, counted["source base"], 1, "Base's own port1.0 is Base's, not the host's: %v", counted)
+	require.True(t, got.Ports["ledger"].HostAccess, "the host read is still an event")
+}

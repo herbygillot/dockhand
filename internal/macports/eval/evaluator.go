@@ -32,6 +32,21 @@ type Evaluator struct {
 	// families this dockhand supports, and PreviewAdapter a development
 	// build instead. No command sets it; the evaluator's tests do.
 	Adapter string
+	// Ledger, when set, receives each observed port's ledger: every call
+	// the dispatcher passed while the port was evaluated, counted by source
+	// (docs/oracle.md, phase 1). Surveys set it to measure what evaluation
+	// reads. Evaluations run concurrently, so it must be safe to call from
+	// several goroutines.
+	Ledger func(LedgerReport)
+}
+
+// LedgerReport is one port's ledger in one evaluation context.
+type LedgerReport struct {
+	Portfile string
+	Port     string
+	Platform record.Platform
+	Modeled  bool
+	Entries  []macports.LedgerEntry
 }
 
 // DefaultModel is the platform a host that is not a Mac models unless told
@@ -156,7 +171,13 @@ func (e *Evaluator) evaluate(ctx context.Context, source macports.Context, reque
 		return macports.Observation{}, err
 	}
 	defer func() { err = errors.Join(err, session.Close()) }()
-	return evaluateIn(ctx, session, runtime, checked, source, request, selectedOnly)
+	observation, err := evaluateIn(ctx, session, runtime, checked, source, request, selectedOnly)
+	if err == nil && e.Ledger != nil {
+		for name, port := range observation.Ports {
+			e.Ledger(LedgerReport{Portfile: source.Target().Portfile, Port: name, Platform: observation.Snapshot.Platform, Modeled: observation.Modeled, Entries: port.Ledger})
+		}
+	}
+	return observation, err
 }
 
 // Session keeps one MacPorts interpreter for repeated evaluations of the same

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime/pprof"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -71,6 +72,7 @@ func survey() (err error) {
 	go2port := flag.String("go2port", firstOf(os.Getenv("GO2PORT_BIN"), lookPath("go2port")), "go2port, for Go dependency blocks")
 	cargo2port := flag.String("cargo2port", firstOf(os.Getenv("CARGO2PORT_BIN"), lookPath("cargo2port")), "cargo2port, for Cargo dependency blocks")
 	cpuProfile := flag.String("cpuprofile", "", "write a CPU profile of the survey itself")
+	ledgerPath := flag.String("ledger", "", "write each observed port's dispatcher ledger to this file, one JSON line per port and context")
 	verbose := flag.Bool("v", false, "report the work behind the scenes")
 	compare := flag.Bool("compare", false, "compare two journals, the baseline and the new one, given as arguments")
 	top := flag.Int("top", 15, "with -compare, how many of each kind of change to list")
@@ -144,6 +146,20 @@ func survey() (err error) {
 		}
 	}
 	native := &eval.Evaluator{Executable: tclsh}
+	if *ledgerPath != "" {
+		file, err := os.Create(*ledgerPath)
+		if err != nil {
+			return err
+		}
+		defer func() { err = errors.Join(err, file.Close()) }()
+		var mu sync.Mutex
+		encoder := json.NewEncoder(file)
+		native.Ledger = func(report eval.LedgerReport) {
+			mu.Lock()
+			defer mu.Unlock()
+			_ = encoder.Encode(report)
+		}
+	}
 	index := portindex.Config{CacheDirectory: cache, Executable: portindexBin}
 	service := assess.Service{
 		Repo:            repo,

@@ -21,7 +21,7 @@ func (e *Evaluator) Observe(ctx context.Context, source macports.Context, reques
 func decodeObservation(value string) (macports.PortObservation, error) {
 	var out macports.PortObservation
 	fields, errs := syntax.ListValues(value)
-	if len(errs) > 0 || len(fields) != 6 {
+	if len(errs) > 0 || len(fields) != 7 {
 		return out, fmt.Errorf("macports: invalid observation")
 	}
 	events, errs := syntax.ListValues(fields[0])
@@ -85,6 +85,18 @@ func decodeObservation(value string) (macports.PortObservation, error) {
 	}
 	out.ModeledHostAccess, _ = strconv.ParseBool(fields[3])
 	out.HostAccess, _ = strconv.ParseBool(fields[5])
+	ledger, errs := syntax.ListValues(fields[6])
+	if len(errs) > 0 || len(ledger)%2 != 0 {
+		return out, fmt.Errorf("macports: invalid ledger")
+	}
+	for i := 0; i < len(ledger); i += 2 {
+		key, errs := syntax.ListValues(ledger[i])
+		count, err := strconv.Atoi(ledger[i+1])
+		if len(errs) > 0 || len(key) != 3 || err != nil {
+			return out, fmt.Errorf("macports: invalid ledger entry")
+		}
+		out.Ledger = append(out.Ledger, macports.LedgerEntry{Command: key[0], Subcommand: key[1], Source: key[2], Count: count})
+	}
 	return out, nil
 }
 
