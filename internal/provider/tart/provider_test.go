@@ -144,6 +144,14 @@ type fakeBuild struct {
 	blocked  map[model.TargetID]bool
 	results  []model.TargetResult
 	progress []string
+	observed []model.Observed
+}
+
+func (b *fakeBuild) Observe(observed model.Observed) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.observed = append(b.observed, observed)
+	return nil
 }
 
 func (b *fakeBuild) Blocked(target model.TargetID) (model.TargetID, bool) {
@@ -323,12 +331,12 @@ func TestDriftFromTheFactsTableIsReported(t *testing.T) {
 	t.Parallel()
 	facts, ok := macos.Table().Lookup(25, "arm64", macos.ProfileTools)
 	require.True(t, ok)
-	mac := newMac(guestResults{State: "finished", Environment: map[string]string{"tools": "27.0.0.0.1788430756"}})
+	mac := newMac(guestResults{State: "finished", Environment: map[string]string{"macos": "26.6.2", "build": "25G71", "architecture": "arm64", "tools": "27.0.0.0.1788430756"}})
 	build := &fakeBuild{}
 	require.NoError(t, testProvider(mac).Execute(t.Context(), tartJob(t, 1), build))
 	require.Contains(t, build.progress, "drift: the guest has Command Line Tools 27.0.0.0.1788430756; the facts table has "+facts.Tools+", from "+facts.Source.From+" on "+facts.Source.Date)
 
-	mac = newMac(guestResults{State: "finished", Environment: map[string]string{"tools": facts.Tools}})
+	mac = newMac(guestResults{State: "finished", Environment: map[string]string{"macos": "26.6.2", "tools": facts.Tools}})
 	build = &fakeBuild{}
 	require.NoError(t, testProvider(mac).Execute(t.Context(), tartJob(t, 1), build))
 	for _, message := range build.progress {
@@ -341,11 +349,13 @@ func TestDriftFromTheFactsTableIsReported(t *testing.T) {
 	require.True(t, ok)
 	job := tartJob(t, 1)
 	job.Environment.DeveloperTools = model.DeveloperToolsXcode
-	mac = newMac(guestResults{State: "finished", Environment: map[string]string{"tools": xcode.Tools, "xcode": "26.1"}})
+	mac = newMac(guestResults{State: "finished", Environment: map[string]string{"macos": "26.6.2", "build": "25G71", "architecture": "arm64", "tools": xcode.Tools, "xcode": "26.1", "xcode_build": "17B55"}})
 	mac.images = append(mac.images, "dockhand-xcode-tahoe")
 	build = &fakeBuild{}
 	require.NoError(t, testProvider(mac).Execute(t.Context(), job, build))
 	require.Contains(t, build.progress, "drift: the guest has Xcode 26.1; the facts table has "+xcode.Xcode+", from "+xcode.Source.From+" on "+xcode.Source.Date)
+	require.Equal(t, []model.Observed{{MacOS: "26.6.2", Build: "25G71", Architecture: "arm64", Xcode: "26.1", XcodeBuild: "17B55", Tools: xcode.Tools}}, build.observed,
+		"what the guest reported is kept, for the pull request's Tested on")
 }
 
 // --on tart builds on the Mac's own release, tart:all on every release

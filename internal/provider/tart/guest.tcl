@@ -203,9 +203,14 @@ try {
     if {[regexp -line {^version: (.+)$} [fact /usr/sbin/pkgutil --pkg-info=com.apple.pkg.CLTools_Executables] -> tools]} {
         dict set environment tools $tools
     }
-    # Xcode's version, in an image with Xcode; xcodebuild refuses without it.
-    if {[regexp -line {^Xcode (\S+)$} [fact /usr/bin/xcodebuild -version] -> xcode]} {
+    # Xcode's version and build, in an image with Xcode; xcodebuild
+    # refuses without it.
+    set xcodebuild [fact /usr/bin/xcodebuild -version]
+    if {[regexp -line {^Xcode (\S+)$} $xcodebuild -> xcode]} {
         dict set environment xcode $xcode
+    }
+    if {[regexp -line {^Build version (\S+)$} $xcodebuild -> xcodeBuild]} {
+        dict set environment xcode_build $xcodeBuild
     }
     dict set environment macports [fact $port version]
     if {![info exists foreignManagers]} { set foreignManagers {/opt/homebrew /usr/local/Homebrew /usr/local/Cellar /sw /opt/pkg} }

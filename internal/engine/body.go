@@ -92,14 +92,16 @@ func ownedSections(facts bodyFacts) string {
 	case evidence == nil:
 		fmt.Fprintln(&b, "No local check has finished for this commit yet. This is a draft, so MacPorts CI starts early.")
 	default:
-		for _, environment := range evidence.Plan.Environments {
-			platform := environment.Platform
-			fmt.Fprintf(&b, "%s %s %s\n", platformName(platform.OS), platform.Version, platform.Architecture)
-			fmt.Fprintf(&b, "Developer tools not recorded · %s\n\n", providerWords(environment.Provider))
+		for i, environment := range evidence.Plan.Environments {
+			var observed model.Observed
+			if i < len(evidence.Observed) {
+				observed = evidence.Observed[i]
+			}
+			b.WriteString(testedOn(environment, observed))
 		}
 		fmt.Fprint(&b, "| Port |")
 		for _, environment := range evidence.Plan.Environments {
-			fmt.Fprintf(&b, " %s %s %s |", environment.Provider, environment.Platform.Version, environment.Platform.Architecture)
+			fmt.Fprintf(&b, " %s |", cell(DescribeEnvironment(environment)))
 		}
 		fmt.Fprint(&b, "\n| --- |")
 		for range evidence.Plan.Environments {
@@ -188,11 +190,49 @@ func citesTickets(commits []git.HistoryCommit) bool {
 	})
 }
 
-func platformName(os string) string {
-	if os == "darwin" || os == "" {
-		return "macOS"
+// testedOn is one environment's lines under Tested on, as MacPorts'
+// template has them: the macOS version, build, and architecture, then
+// Xcode's version and build or the Command Line Tools', as the environment
+// reported them, then who built it. What it didn't report is said by the
+// release's name and the tools the environment stated, and never by the
+// Darwin version, which isn't macOS's.
+func testedOn(environment model.Environment, observed model.Observed) string {
+	var b strings.Builder
+	platform := environment.Platform
+	switch {
+	case observed.MacOS != "":
+		fmt.Fprintln(&b, strings.Join(nonEmpty("macOS", observed.MacOS, observed.Build, firstOf(observed.Architecture, platform.Architecture)), " "))
+	case platform != (model.Platform{}):
+		fmt.Fprintln(&b, strings.TrimPrefix(describePlace(model.Environment{Platform: platform}), " "))
 	}
-	return os
+	var tools string
+	switch {
+	case observed.Xcode != "":
+		tools = strings.Join(nonEmpty("Xcode", observed.Xcode, observed.XcodeBuild), " ")
+	case observed.Tools != "":
+		tools = "Command Line Tools " + observed.Tools
+	case environment.DeveloperTools == model.DeveloperToolsXcode:
+		tools = "Xcode, its version not recorded"
+	case environment.DeveloperTools == model.DeveloperToolsCommandLine:
+		tools = "Command Line Tools, their version not recorded"
+	default:
+		tools = "Developer tools not recorded"
+	}
+	fmt.Fprintf(&b, "%s · %s\n\n", tools, providerWords(environment.Provider))
+	return b.String()
+}
+
+func nonEmpty(values ...string) []string {
+	return slices.DeleteFunc(values, func(value string) bool { return value == "" })
+}
+
+func firstOf(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func providerWords(provider string) string {

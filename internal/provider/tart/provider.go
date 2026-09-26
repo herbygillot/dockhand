@@ -464,10 +464,13 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job engine.
 		if results.Protocol != Protocol {
 			return fmt.Errorf("%w: the guest program wrote protocol %d results; this dockhand reads %d", engine.ErrInfrastructure, results.Protocol, Protocol)
 		}
-		if !drift && results.Environment["tools"] != "" {
+		if !drift && results.Environment["macos"] != "" {
 			drift = true
 			if message := driftReport(release, job.Environment.DeveloperTools, results.Environment); message != "" {
 				build.Progress(message)
+			}
+			if err := build.Observe(observed(results.Environment)); err != nil {
+				return err
 			}
 		}
 		for ; recorded < len(results.Targets); recorded++ {
@@ -552,6 +555,13 @@ func (p *Provider) record(ctx context.Context, g guest, job engine.Job, build en
 		build.Progress(got.ID + ": " + got.Detail)
 	}
 	return nil
+}
+
+// observed is what the guest reported about itself, for the pull request's
+// Tested on.
+func observed(environment map[string]string) model.Observed {
+	return model.Observed{MacOS: environment["macos"], Build: environment["build"], Architecture: environment["architecture"],
+		Xcode: environment["xcode"], XcodeBuild: environment["xcode_build"], Tools: environment["tools"]}
 }
 
 // driftReport compares the guest's tools with the facts table's row for

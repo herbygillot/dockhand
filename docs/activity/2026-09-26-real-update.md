@@ -99,3 +99,20 @@ person's fork. A fork remote had been added to the scratch clone for the
 preview, and was removed. The branches, commits, and passing checks are in
 the scratch clone and database, ready for the person to decide how to
 submit.
+- **The pull request's Tested on read "macOS 25 arm64".** That is Tahoe's
+  Darwin version, 25, presented as macOS's. It also said "Developer tools
+  not recorded", though the guest had read its macOS, Xcode, and tools.
+  This was caught in miller's preview, before anything was submitted.
+  - What an environment reports about itself is now kept with its
+    execution (`model.Observed`, schema 12, never overwritten once
+    reported), through a new `Build.Observe`.
+  - The Tart guest also records Xcode's build.
+  - Tested on now states it in the template's form: "macOS 26.6.2 25G71
+    arm64", then "Xcode 26.6 17F42", then who built it. Without a report,
+    it names the release ("macOS 26 (Tahoe) arm64") and the tools the
+    environment stated.
+  - The table's columns, and submit's preview, use the same words as
+    everywhere else: "tart macOS 26 (Tahoe) arm64 with Xcode".
+  - A release dockhand doesn't know is described as "Darwin 30", not
+    "macOS 30". The submit test's "Tahoe" fixture had used Darwin 26, and
+    passed only because of that same mix-up; it now uses Darwin 25.

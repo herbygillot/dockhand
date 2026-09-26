@@ -55,8 +55,29 @@ type GuestExecution struct {
 	// ProviderRef is the provider's own name for the environment: a VM
 	// clone, a workflow run.
 	ProviderRef string
-	CreatedAt   time.Time
-	FinishedAt  *time.Time
+	// Observed is what the environment reported about itself, when its
+	// provider can say; once reported, it stays.
+	Observed   Observed
+	CreatedAt  time.Time
+	FinishedAt *time.Time
+}
+
+// Observed is what a build environment reported about itself, in the words
+// MacPorts' pull request template asks for under Tested on: the macOS
+// product and build versions, the architecture, and the developer tools'
+// versions. A field is empty where the environment didn't say.
+type Observed struct {
+	// MacOS and Build are sw_vers's product and build versions, 26.6.2
+	// and 25G71.
+	MacOS string `json:"macos,omitempty"`
+	Build string `json:"build,omitempty"`
+	// Architecture is the machine's, arm64.
+	Architecture string `json:"architecture,omitempty"`
+	// Xcode and XcodeBuild are xcodebuild -version's, where there is
+	// Xcode; Tools is the Command Line Tools package's version.
+	Xcode      string `json:"xcode,omitempty"`
+	XcodeBuild string `json:"xcode_build,omitempty"`
+	Tools      string `json:"tools,omitempty"`
 }
 
 // Validate checks the rules every stored execution keeps.

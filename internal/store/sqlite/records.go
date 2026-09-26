@@ -327,15 +327,21 @@ func (t *tx) UpdateRun(r model.Run) error {
 		r.State, r.Detail, nullableMillis(r.FinishedAt), nullableMillis(r.CancelRequested), t.repo, r.ID)
 }
 
-const executionColumns = "id, run_id, provider, platform_os, platform_version, platform_architecture, developer_tools, attempt, state, detail, provider_ref, created_at, finished_at"
+const executionColumns = "id, run_id, provider, platform_os, platform_version, platform_architecture, developer_tools, attempt, state, detail, provider_ref, observed, created_at, finished_at"
 
 func scanExecution(row interface{ Scan(...any) error }) (model.GuestExecution, error) {
 	var e model.GuestExecution
 	var created int64
 	var finished sql.NullInt64
+	var observed string
 	p := &e.Environment.Platform
-	if err := row.Scan(&e.ID, &e.Run, &e.Environment.Provider, &p.OS, &p.Version, &p.Architecture, &e.Environment.DeveloperTools, &e.Attempt, &e.State, &e.Detail, &e.ProviderRef, &created, &finished); err != nil {
+	if err := row.Scan(&e.ID, &e.Run, &e.Environment.Provider, &p.OS, &p.Version, &p.Architecture, &e.Environment.DeveloperTools, &e.Attempt, &e.State, &e.Detail, &e.ProviderRef, &observed, &created, &finished); err != nil {
 		return model.GuestExecution{}, storageError(err)
+	}
+	if observed != "" {
+		if err := json.Unmarshal([]byte(observed), &e.Observed); err != nil {
+			return model.GuestExecution{}, fmt.Errorf("%w: execution %s's observed environment: %w", store.ErrUnavailable, e.ID, err)
+		}
 	}
 	e.CreatedAt, e.FinishedAt = fromMillis(created), fromNullable(finished)
 	return e, nil
@@ -385,9 +391,23 @@ func (t *tx) AddExecution(e model.GuestExecution) error {
 		return fmt.Errorf("%w: execution %s's environment is not in run %s's plan", model.ErrInvalid, e.ID, run.ID)
 	}
 	p := e.Environment.Platform
-	_, err = t.exec("INSERT INTO executions(repository_id, "+executionColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		t.repo, e.ID, e.Run, e.Environment.Provider, p.OS, p.Version, p.Architecture, e.Environment.DeveloperTools, e.Attempt, e.State, e.Detail, e.ProviderRef, millis(e.CreatedAt), nullableMillis(e.FinishedAt))
+	observed, err := observedJSON(e.Observed)
+	if err != nil {
+		return err
+	}
+	_, err = t.exec("INSERT INTO executions(repository_id, "+executionColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		t.repo, e.ID, e.Run, e.Environment.Provider, p.OS, p.Version, p.Architecture, e.Environment.DeveloperTools, e.Attempt, e.State, e.Detail, e.ProviderRef, observed, millis(e.CreatedAt), nullableMillis(e.FinishedAt))
 	return err
+}
+
+// observedJSON is an observed environment as stored: empty when nothing
+// was reported.
+func observedJSON(observed model.Observed) (string, error) {
+	if observed == (model.Observed{}) {
+		return "", nil
+	}
+	data, err := json.Marshal(observed)
+	return string(data), err
 }
 
 func (t *tx) UpdateExecution(e model.GuestExecution) error {
@@ -404,8 +424,14 @@ func (t *tx) UpdateExecution(e model.GuestExecution) error {
 	if current.State != e.State && !current.State.CanBecome(e.State) {
 		return fmt.Errorf("%w: execution %s cannot go from %s to %s", store.ErrConflict, e.ID, current.State, e.State)
 	}
-	return t.update("execution "+string(e.ID), "UPDATE executions SET state=?, detail=?, provider_ref=?, finished_at=? WHERE repository_id=? AND id=?",
-		e.State, e.Detail, e.ProviderRef, nullableMillis(e.FinishedAt), t.repo, e.ID)
+	// What the environment reported stays, whatever a later update of the
+	// execution carries.
+	observed, err := observedJSON(e.Observed)
+	if err != nil {
+		return err
+	}
+	return t.update("execution "+string(e.ID), "UPDATE executions SET state=?, detail=?, provider_ref=?, observed=CASE WHEN ?='' THEN observed ELSE ? END, finished_at=? WHERE repository_id=? AND id=?",
+		e.State, e.Detail, e.ProviderRef, observed, observed, nullableMillis(e.FinishedAt), t.repo, e.ID)
 }
 
 func (t *tx) Results(execution model.ExecutionID) ([]model.TargetResult, error) {

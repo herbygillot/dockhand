@@ -470,6 +470,11 @@ func (b *build) Record(result model.TargetResult) error {
 	return err
 }
 
+func (b *build) Observe(observed model.Observed) error {
+	b.execution.Observed = observed
+	return b.d.fenced(b.ctx, func(tx store.Tx) error { return tx.UpdateExecution(b.execution) })
+}
+
 func (b *build) Progress(message string) {
 	b.d.emit(b.ctx, "progress", describeEnvironment(b.execution.Environment)+": "+message)
 }
@@ -538,7 +543,15 @@ func runEvidence(r store.Reader, run model.Run, plan model.Plan) (Evidence, erro
 	for _, execution := range executions {
 		byEnvironment[execution.Environment] = append(byEnvironment[execution.Environment], execution)
 	}
-	evidence := Evidence{Run: run, Plan: plan}
+	evidence := Evidence{Run: run, Plan: plan, Observed: make([]model.Observed, len(plan.Environments))}
+	for i, environment := range plan.Environments {
+		// The latest attempt that said anything is the one that built.
+		for _, execution := range byEnvironment[environment] {
+			if execution.Observed != (model.Observed{}) {
+				evidence.Observed[i] = execution.Observed
+			}
+		}
+	}
 	merged := map[model.Environment]map[model.TargetID]model.TargetResult{}
 	for environment, list := range byEnvironment {
 		if merged[environment], err = mergedResults(r, list); err != nil {
@@ -628,9 +641,11 @@ func describePlace(environment model.Environment) string {
 	if platform.OS == "" {
 		platform.OS = "darwin"
 	}
+	// A release macos doesn't know keeps its Darwin version, which isn't
+	// macOS's: Darwin 25 is macOS 26.
 	described := macos.Describe(platform)
-	if platform.Version != "" && platform.OS == "darwin" && strings.HasPrefix(described, "darwin ") {
-		described = platformName(platform.OS) + strings.TrimPrefix(described, "darwin")
+	if rest, ok := strings.CutPrefix(described, "darwin "); ok {
+		described = "Darwin " + rest
 	}
 	return environment.Provider + " " + described
 }

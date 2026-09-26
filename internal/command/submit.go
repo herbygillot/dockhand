@@ -383,7 +383,7 @@ func checkWords(plan engine.SubmitPlan) string {
 	}
 	var environments []string
 	for _, environment := range evidence.Plan.Environments {
-		environments = append(environments, fmt.Sprintf("%s %s %s", environment.Provider, environment.Platform.Version, environment.Platform.Architecture))
+		environments = append(environments, engine.DescribeEnvironment(environment))
 	}
 	failed := evidence.Failed()
 	if len(failed) == 0 {

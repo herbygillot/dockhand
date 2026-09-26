@@ -34,6 +34,9 @@ type Evidence struct {
 	// Run didn't build. A result holds for its tree, so a narrowed check
 	// after a full one keeps the full one's results.
 	Earlier []model.Run
+	// Observed is what each of the plan's environments reported about
+	// itself in Run, in the plan's order; empty where it said nothing.
+	Observed []model.Observed
 }
 
 // Unchecked lists the targets no check of the files built everywhere they
