@@ -52,7 +52,7 @@ func generate(tartDirs []string, buildbot, out string) error {
 			rows = append(rows, buildbotRow(builder))
 		}
 	}
-	table := macos.FactsTable{Generated: time.Now().UTC().Format(time.DateOnly), Facts: newest(rows)}
+	table := macos.FactsTable{Generated: time.Now().UTC().Format(time.DateOnly), Facts: newest(rows), Generations: generations(rows)}
 	if err := table.Check(); err != nil {
 		return err
 	}
@@ -161,4 +161,23 @@ func buildbotRow(builder builderFacts) macos.Facts {
 		SDK:     h.SDK,
 		Source:  macos.Source{Kind: macos.SourceBuildbot, From: fmt.Sprintf("%s build %d", builder.Builder, builder.Build), Date: builder.Started, MacPorts: h.MacPorts},
 	}
+}
+
+// generations are the tools generation setup installs for each release
+// (decision 13): the major version of the tools MacPorts' arm64 builder
+// for the release runs, since setup builds arm64 images.
+func generations(rows []macos.Facts) []macos.Generation {
+	var found []macos.Generation
+	for _, row := range rows {
+		if row.Source.Kind != macos.SourceBuildbot || row.Architecture != "arm64" || row.Tools == "none" {
+			continue
+		}
+		major, err := strconv.Atoi(strings.SplitN(row.Tools, ".", 2)[0])
+		if err != nil {
+			continue
+		}
+		found = append(found, macos.Generation{Darwin: row.Darwin, Tools: major, Source: row.Source})
+	}
+	slices.SortFunc(found, func(a, b macos.Generation) int { return a.Darwin - b.Darwin })
+	return slices.CompactFunc(found, func(a, b macos.Generation) bool { return a.Darwin == b.Darwin })
 }

@@ -62,7 +62,7 @@ The principles and the direction record's standing decisions are the specificati
 
    The reshaped providers land in part 5 (`check`). Evidence is invalidated whole-tree at first. The acceptance cases are Design v3 §17's, together with decision 44's.
 6. **Host-independence foundations and the Base adapter boundary** (former steps 4 and 5). These are unchanged and can proceed alongside step 5:
-   - the facts table and its harvesters (9–13). **The table and its harvesters: done 2026-09-26** ([note](activity/2026-09-26-facts-table.md)); setup's pinned tools generation (13) and the verification drift report (10) have yet to read from it;
+   - the facts table and its harvesters (9–13). **The table and its harvesters: done 2026-09-26** ([note](activity/2026-09-26-facts-table.md)), and **setup's pinned tools generation read from it** ([note](activity/2026-09-26-tools-generations.md)); the verification drift report (10) comes with the v3 Tart provider;
    - the evaluator's clean launch environment (16);
    - the environment contract and a disposable `portdbpath`;
    - normalized records;

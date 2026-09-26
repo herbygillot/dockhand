@@ -67,3 +67,20 @@ func TestTheNewestHarvestOfARowWins(t *testing.T) {
 	buildbot := macos.Facts{Darwin: 25, Architecture: "arm64", Profile: macos.ProfileXcode, Tools: "26.6", Source: macos.Source{Kind: macos.SourceBuildbot, From: "ports-26_arm64-builder build 1", Date: "2026-09-26"}}
 	require.Equal(t, []macos.Facts{newer, buildbot}, newest([]macos.Facts{older, buildbot, newer}))
 }
+
+func TestAGenerationIsWhatTheArm64BuilderRuns(t *testing.T) {
+	row := func(darwin int, arch, tools string, kind string) macos.Facts {
+		return macos.Facts{Darwin: darwin, Architecture: arch, Profile: macos.ProfileXcode, Tools: tools, Source: macos.Source{Kind: kind, From: "x", Date: "2026-09-26"}}
+	}
+	got := generations([]macos.Facts{
+		row(24, "x86_64", "26.0.0.0.1.1757719676", macos.SourceBuildbot),
+		row(24, "arm64", "16.4.0.0.1.1747106510", macos.SourceBuildbot),
+		row(25, "arm64", "27.0.0.0.1788430756", macos.SourceTart),
+		row(25, "arm64", "26.6.0.0.1781586589", macos.SourceBuildbot),
+		row(19, "x86_64", "none", macos.SourceBuildbot),
+	})
+	require.Len(t, got, 2)
+	require.Equal(t, 24, got[0].Darwin)
+	require.Equal(t, 16, got[0].Tools, "the arm64 builder's, not the Intel one's")
+	require.Equal(t, 26, got[1].Tools, "the builder's, not an image's")
+}

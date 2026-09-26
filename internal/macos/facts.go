@@ -74,10 +74,34 @@ const (
 	SourceBuildbot = "buildbot"
 )
 
+// Generation is the Command Line Tools generation, the major version,
+// setup installs for a release (decision 13): what MacPorts' arm64 builder
+// for the release runs, with its source. Where MacPorts' GitHub CI pins
+// Xcode for a release, the pin is checked against it by hand when the
+// table is regenerated (tools/facts/README.md); dockhand doesn't parse the
+// CI script.
+type Generation struct {
+	Darwin int    `json:"darwin"`
+	Tools  int    `json:"tools"`
+	Source Source `json:"source"`
+}
+
 // FactsTable is the whole table, as facts.json holds it.
 type FactsTable struct {
-	Generated string  `json:"generated"`
-	Facts     []Facts `json:"facts"`
+	Generated   string       `json:"generated"`
+	Facts       []Facts      `json:"facts"`
+	Generations []Generation `json:"generations"`
+}
+
+// Generation is the tools generation setup installs for a release, and
+// whether the table has one.
+func (t FactsTable) Generation(darwin int) (int, bool) {
+	for _, generation := range t.Generations {
+		if generation.Darwin == darwin {
+			return generation.Tools, true
+		}
+	}
+	return 0, false
 }
 
 //go:embed facts.json
@@ -141,6 +165,18 @@ func (t FactsTable) Check() error {
 		case facts.Clang != "" && strings.Trim(facts.Clang, "0123456789.") != "":
 			return fmt.Errorf("macos: %s: clang %q is not a build number", where, facts.Clang)
 		}
+	}
+	seen := map[int]bool{}
+	for _, generation := range t.Generations {
+		switch {
+		case generation.Tools <= 0 || generation.Darwin < 8:
+			return fmt.Errorf("macos: generation for darwin %d: no release or tools", generation.Darwin)
+		case seen[generation.Darwin]:
+			return fmt.Errorf("macos: generation for darwin %d: given twice", generation.Darwin)
+		case generation.Source.From == "" || generation.Source.Date == "":
+			return fmt.Errorf("macos: generation for darwin %d: the source and its date are required", generation.Darwin)
+		}
+		seen[generation.Darwin] = true
 	}
 	return nil
 }

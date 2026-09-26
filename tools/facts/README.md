@@ -42,6 +42,19 @@ wins (`macos.FactsTable.Lookup`) and the buildbot's row stays as a
 cross-check. Darwin 8 and 9 have no builder, and Base's own tables are
 not read yet.
 
+## The tools generation setup installs
+
+The table also holds each release's Command Line Tools generation, the
+major version setup installs (decision 13): what MacPorts' arm64 builder
+for the release runs, since setup builds arm64 images. `macos.Release`'s
+`Tools` is read from it. Where MacPorts' GitHub CI pins Xcode, check by
+hand when regenerating that the pin is of the same generation. Look for
+`xcode-select --switch` in `.github/workflows/bootstrap.sh` in
+macports-ports; dockhand doesn't parse it. On 2026-09-26, at
+`abd9fff84df`, CI pinned Xcode 16.2 on Darwin 23 and 26.4 on Darwin 25,
+generations 16 and 26, as the builders run. If a pin ever disagrees, it
+should win, which the generator can't yet express: that is when to teach it.
+
 ## Staleness
 
 The table is shared, so its rows can't name a person's images by digest.

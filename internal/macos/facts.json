@@ -615,5 +615,77 @@
         "macports": "2.12.6"
       }
     }
+  ],
+  "generations": [
+    {
+      "darwin": 20,
+      "tools": 13,
+      "source": {
+        "kind": "buildbot",
+        "from": "ports-11_arm64-builder build 141766",
+        "date": "2026-08-07",
+        "macports": "2.12.5"
+      }
+    },
+    {
+      "darwin": 21,
+      "tools": 14,
+      "source": {
+        "kind": "buildbot",
+        "from": "ports-12_arm64-builder build 174304",
+        "date": "2026-09-26",
+        "macports": "2.12.6"
+      }
+    },
+    {
+      "darwin": 22,
+      "tools": 14,
+      "source": {
+        "kind": "buildbot",
+        "from": "ports-13_arm64-builder build 112003",
+        "date": "2026-09-26",
+        "macports": "2.12.6"
+      }
+    },
+    {
+      "darwin": 23,
+      "tools": 16,
+      "source": {
+        "kind": "buildbot",
+        "from": "ports-14_arm64-builder build 86552",
+        "date": "2026-09-26",
+        "macports": "2.12.6"
+      }
+    },
+    {
+      "darwin": 24,
+      "tools": 16,
+      "source": {
+        "kind": "buildbot",
+        "from": "ports-15_arm64-builder build 51780",
+        "date": "2026-09-26",
+        "macports": "2.12.6"
+      }
+    },
+    {
+      "darwin": 25,
+      "tools": 26,
+      "source": {
+        "kind": "buildbot",
+        "from": "ports-26_arm64-builder build 43555",
+        "date": "2026-09-26",
+        "macports": "2.12.6"
+      }
+    },
+    {
+      "darwin": 27,
+      "tools": 27,
+      "source": {
+        "kind": "buildbot",
+        "from": "ports-27_arm64-builder build 14163",
+        "date": "2026-09-26",
+        "macports": "2.12.6"
+      }
+    }
   ]
 }

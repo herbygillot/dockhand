@@ -1,6 +1,8 @@
 package macos
 
 import (
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -45,5 +47,30 @@ func TestCheckRefusesAnUnsoundRow(t *testing.T) {
 		bad := good
 		change(&bad)
 		require.Error(t, FactsTable{Facts: []Facts{bad}}.Check(), "%+v", bad)
+	}
+	generation := Generation{Darwin: 25, Tools: 26, Source: Source{Kind: SourceBuildbot, From: "ports-26_arm64-builder build 1", Date: "2026-09-26"}}
+	require.NoError(t, FactsTable{Generations: []Generation{generation}}.Check())
+	require.Error(t, FactsTable{Generations: []Generation{generation, generation}}.Check(), "a release has one generation")
+	unsourced := generation
+	unsourced.Source.Date = ""
+	require.Error(t, FactsTable{Generations: []Generation{unsourced}}.Check())
+}
+
+// Every release setup builds has a tools generation in the table, the one
+// its arm64 builder runs, and dockhand's images carry that generation: a
+// row whose tools are of another generation is an image setup didn't pin,
+// as the Tahoe images were before 2026-09-25.
+func TestEveryReleaseHasItsToolsGenerationAndTheImagesKeepIt(t *testing.T) {
+	for _, release := range Known() {
+		require.NotZero(t, release.Tools, "Darwin %d has a tools generation", release.Darwin)
+	}
+	for _, facts := range Table().Facts {
+		if facts.Source.Kind != SourceTart || facts.Tools == "none" {
+			continue
+		}
+		generation, ok := Table().Generation(facts.Darwin)
+		require.True(t, ok, facts.Source.From)
+		major, _, _ := strings.Cut(facts.Tools, ".")
+		require.Equal(t, strconv.Itoa(generation), major, "%s has tools %s, of generation %d", facts.Source.From, facts.Tools, generation)
 	}
 }
