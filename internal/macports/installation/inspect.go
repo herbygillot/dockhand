@@ -51,9 +51,8 @@ func Inspect(ctx context.Context, command macos.Command, prefix string) (Facts, 
 	if err != nil {
 		return result, err
 	}
-	fields := strings.Fields(string(version))
-	if len(fields) >= 2 && fields[0] == "Version:" {
-		result.Version = fields[1]
+	if parsed, ok := ParseVersion(version); ok {
+		result.Version = parsed
 	} else if version != nil {
 		result.Problems = append(result.Problems, "MacPorts returned an unrecognized version: "+strings.TrimSpace(string(version)))
 	}
@@ -77,7 +76,7 @@ func Inspect(ctx context.Context, command macos.Command, prefix string) (Facts, 
 		}
 		result.Problems = append(result.Problems, "MacPorts platform evaluation failed: "+err.Error())
 	} else {
-		fields = strings.Fields(string(out))
+		fields := strings.Fields(string(out))
 		if len(fields) == 3 {
 			result.Platform = record.Platform{OS: fields[0], Version: fields[1], Architecture: fields[2]}
 		} else {
@@ -90,4 +89,13 @@ func Inspect(ctx context.Context, command macos.Command, prefix string) (Facts, 
 func CheckTclPackages(ctx context.Context, command macos.Command, prefix string) error {
 	_, err := command(ctx, strings.NewReader("package require json\npackage require json::write\n"), filepath.Join(prefix, "bin", macports.TclShell))
 	return err
+}
+
+// ParseVersion reads the version from the output of port version.
+func ParseVersion(out []byte) (string, bool) {
+	fields := strings.Fields(string(out))
+	if len(fields) >= 2 && fields[0] == "Version:" {
+		return fields[1], true
+	}
+	return "", false
 }

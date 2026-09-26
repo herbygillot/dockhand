@@ -88,6 +88,13 @@ setup; those come when something needs them.`,
 			} else {
 				fmt.Fprintf(out, "  Authoring    ! port-tclsh is not on PATH or in /opt/local/bin; install MacPorts to update ports\n")
 			}
+			for i, line := range providerLines(cmd.Context(), file) {
+				label := ""
+				if i == 0 {
+					label = "Providers"
+				}
+				fmt.Fprintf(out, "  %-12s %s\n", label, line)
+			}
 			fmt.Fprintf(out, "  Publishing   %s\n", publishing(cmd.Context()))
 			fmt.Fprintf(out, "  Records      %s\n\n", tilde(options.Database))
 			fmt.Fprintln(out, "Next: dockhand start <name>")

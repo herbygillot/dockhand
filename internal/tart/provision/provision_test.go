@@ -393,7 +393,7 @@ func TestAnImageWithoutTheKeyIsGivenIt(t *testing.T) {
 	machine := newFakeMachine("dockhand-base-tahoe", "dockhand-golden-tahoe")
 	machine.hostKeys = map[string]bool{}
 	_, err := testProvisioner(machine).Run(t.Context(), Options{Check: true})
-	require.ErrorContains(t, err, "predates dockhand's SSH key; run dockhand setup without --check")
+	require.ErrorContains(t, err, "predates dockhand's SSH key; run dockhand providers setup tart without --check")
 
 	result, err := testProvisioner(machine).Run(t.Context(), Options{})
 	require.NoError(t, err)

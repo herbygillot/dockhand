@@ -43,8 +43,8 @@ func (s Streams) terminal() bool {
 }
 
 const rebuilding = `dockhand is being rebuilt as v3 (docs/design-v3.md). The whole loop is here,
-and check builds in dockhand's Tart images (docs/tart-provider.md) or on your
-own script (docs/command-provider.md), but v3 can't make Tart images yet, and
+and check builds in dockhand's Tart images, which providers setup tart makes
+(docs/tart-provider.md), or on your own script (docs/command-provider.md), but
 the real MacPorts paths are still being proven on a Mac. Until then, the
 working tool is v2, tagged v2-final:
 
@@ -166,6 +166,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	}
 	root.AddGroup(&cobra.Group{ID: "occasional", Title: "Occasional:"})
 	for _, command := range []*cobra.Command{
+		providersCommand(&settings, streams),
 		authCommand(streams),
 		restoreCommand(&settings, streams),
 		archiveCommand(&settings, streams),

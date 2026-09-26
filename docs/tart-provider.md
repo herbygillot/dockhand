@@ -41,9 +41,18 @@ generation (from the [facts table](../tools/facts/README.md)), and
 MacPorts. A check naming a release without an image stops before it starts,
 naming the image it needs.
 
-v3 can't make images yet: `dockhand providers setup tart <release>` is the
-command that will, and it comes next. `v2-final`'s `setup` makes its images
-in `~/.tart`, which v3 doesn't read.
+`dockhand providers setup tart` makes this Mac's release's image, and
+`dockhand providers setup tart sonoma` makes Sonoma's. It starts from Cirrus
+Labs' vanilla macOS image, downloaded the first time, and takes up to 60 GB
+of disk. A golden copy is kept beside each image, sharing its blocks, and a
+lost image is restored from it. An image that exists is checked in a
+disposable clone instead and left as it is. `--check` only checks, and
+`--rebuild` makes a replacement, keeping the old image until the new one
+passes. An image `v2-final`'s `setup` made in `~/.tart` is copied in, when
+it still passes, rather than made again.
+
+`dockhand providers` shows which releases have images, and whether the
+other providers are ready. `init` shows the same.
 
 ## Settings
 
