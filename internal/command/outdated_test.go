@@ -57,6 +57,13 @@ func TestOutdatedThenUpdateOutdated(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "couldn't check: no forge could be found for it")
 
+	// --outdated takes any number of ports, and --plan starts none.
+	out, _, err = dockhand(t, "update", "--outdated", "--plan", "jq", "lost", "gawk")
+	require.NoError(t, err)
+	require.Equal(t, []string{"jq", "lost", "gawk"}, reader.asked[len(reader.asked)-1].Ports)
+	require.Contains(t, out, "Will start 1 branch, one per port (unrelated ports go in separate PRs):\n  dockhand/jq-")
+	require.Contains(t, out, "Nothing was started (--plan).\n")
+
 	out, _, err = dockhand(t, "update", "--outdated", "--mine", "--check")
 	require.ErrorContains(t, err, "without a terminal, --yes starts what is shown")
 	require.Contains(t, out, "Will start 1 branch, one per port (unrelated ports go in separate PRs):\n  dockhand/jq-")

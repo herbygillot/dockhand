@@ -17,6 +17,8 @@ import (
 // outdatedOptions are update's --outdated, --mine, --check, and --yes.
 type outdatedOptions struct {
 	outdated, mine, check, yes bool
+	// plan shows how the work splits and starts nothing.
+	plan bool
 }
 
 // outdatedRequest is what --mine and the ports named choose.
@@ -157,6 +159,10 @@ func updateOutdated(ctx context.Context, s *settings, streams Streams, args []st
 	}
 	fmt.Fprintf(out, "Will start %s, one per port (unrelated ports go in separate PRs):\n  %s\n", plural(len(plan.Updates), "branch"), strings.Join(names, " · "))
 	writeSkipped(out, plan)
+	if options.plan {
+		fmt.Fprintln(out, "Nothing was started (--plan).")
+		return nil
+	}
 	if !options.yes {
 		if !streams.terminal() {
 			return errors.New("nothing was started: without a terminal, --yes starts what is shown")

@@ -69,12 +69,20 @@ starting anything; --check also queues a check of each.
 commit once the check passes: tidy, then submit --check, each previewed.
 Without a terminal, the tidy applies only when it is made of dockhand's own
 edits alone.`,
-		Args: cobra.RangeArgs(0, 2),
+		// --outdated takes any number of ports; one port's update takes
+		// the port and, optionally, its version.
+		Args: func(cmd *cobra.Command, args []string) error {
+			if batch.outdated {
+				return nil
+			}
+			return cobra.RangeArgs(0, 2)(cmd, args)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if linked.submit && (batch.outdated || plan) {
 				return errors.New("--submit goes with one port's update, not --plan or --outdated")
 			}
 			if batch.outdated {
+				batch.plan = plan
 				return updateOutdated(cmd.Context(), s, streams, args, batch)
 			}
 			if batch.mine || batch.check {
