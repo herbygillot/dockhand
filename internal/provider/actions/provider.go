@@ -137,6 +137,11 @@ func (p *Provider) Execute(ctx context.Context, job engine.Job, build engine.Bui
 			return err
 		}
 	}
+	// The workflow run's URL is how the pull request names this run, and
+	// how dockhand logs finds it.
+	if err := build.Refer(run.URL); err != nil {
+		return err
+	}
 	// A canceled check cancels its run; a driver that is only stopping
 	// leaves it, for the next driver to find again.
 	defer func() {

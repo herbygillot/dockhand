@@ -145,6 +145,14 @@ type fakeBuild struct {
 	results  []model.TargetResult
 	progress []string
 	observed []model.Observed
+	refs     []string
+}
+
+func (b *fakeBuild) Refer(ref string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.refs = append(b.refs, ref)
+	return nil
 }
 
 func (b *fakeBuild) Observe(observed model.Observed) error {
@@ -231,6 +239,7 @@ func TestTheProviderRecordsEachTargetAsTheGuestFinishesIt(t *testing.T) {
 
 	vm := "dockhand-check-run-7-tahoe-1"
 	require.Equal(t, []string{"clone dockhand-base-tahoe " + vm, "start " + vm, "reach " + vm + " as dockhand-base-tahoe", "delete " + vm}, mac.events)
+	require.Equal(t, []string{vm}, build.refs, "the clone is the provider's own name for the run")
 	require.True(t, mac.run.stopped)
 	require.Equal(t, "harbor-cli", mac.guest.input.Targets[1].Name, "a subport is built by its own name")
 	require.Equal(t, []string{"libharbor"}, mac.guest.input.Targets[1].DependsOn)

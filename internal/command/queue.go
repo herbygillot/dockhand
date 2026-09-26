@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
@@ -175,9 +177,13 @@ func cancelCommand(s *settings, streams Streams) *cobra.Command {
 func logsCommand(s *settings, streams Streams) *cobra.Command {
 	var port string
 	cmd := &cobra.Command{
-		Use:   "logs <run>",
+		Use:   "logs <check or provider run>",
 		Short: "Show where a check's logs are, or one port's log",
-		Args:  cobra.ExactArgs(1),
+		Long: `Shows a check's provider runs, check-42's, and where each port's log is, or
+one provider run's alone, by the ID a pull request's Tested on names,
+tart_7y62p4sigena6xlr, or by its provider's own reference, such as a workflow
+run's URL. --port prints one port's log.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			e, err := s.open(ctx)
@@ -185,13 +191,16 @@ func logsCommand(s *settings, streams Streams) *cobra.Command {
 				return err
 			}
 			defer e.Close()
-			run, err := e.RunNamed(ctx, args[0])
+			run, only, err := checkOrRun(ctx, e, args[0])
 			if err != nil {
 				return err
 			}
 			logs, err := e.Logs(ctx, run.ID)
 			if err != nil {
 				return err
+			}
+			if only != "" {
+				logs.Executions = slices.DeleteFunc(logs.Executions, func(execution engine.ExecutionLogs) bool { return execution.Execution.ID != only })
 			}
 			if port == "" {
 				streams.emit(logsView(logs))
@@ -224,6 +233,24 @@ func logsCommand(s *settings, streams Streams) *cobra.Command {
 	return cmd
 }
 
+// checkName is a check's name, check-42 or 42.
+var checkName = regexp.MustCompile(`^(check-)?[0-9]+$`)
+
+// checkOrRun is the check a name means, check-42, or the provider run it
+// means, with the run's check.
+func checkOrRun(ctx context.Context, e *engine.Engine, name string) (model.Run, model.ExecutionID, error) {
+	run, err := e.RunNamed(ctx, name)
+	if err == nil || checkName.MatchString(name) {
+		return run, "", err
+	}
+	execution, runErr := e.ExecutionNamed(ctx, name)
+	if runErr != nil {
+		return model.Run{}, "", fmt.Errorf("%s is neither a check, such as check-42, nor a provider run, such as tart_7y62p4sigena6xlr or a workflow run's URL", name)
+	}
+	run, err = e.Run(ctx, execution.Run)
+	return run, execution.ID, err
+}
+
 func writeLogs(out io.Writer, logs engine.RunLogs) error {
 	fmt.Fprintf(out, "%s · %s", logs.Run.Name(), logs.Run.State)
 	if logs.Run.Detail != "" {
@@ -232,11 +259,14 @@ func writeLogs(out io.Writer, logs engine.RunLogs) error {
 	fmt.Fprintln(out)
 	for _, execution := range logs.Executions {
 		x := execution.Execution
-		fmt.Fprintf(out, "  %s, attempt %d: %s", environmentWords(x.Environment), x.Attempt, x.State)
+		fmt.Fprintf(out, "  %s, attempt %d, run %s: %s", environmentWords(x.Environment), x.Attempt, x.ID, x.State)
 		if x.Detail != "" {
 			fmt.Fprintf(out, " (%s)", x.Detail)
 		}
 		fmt.Fprintln(out)
+		if x.ProviderRef != "" {
+			fmt.Fprintf(out, "    %s\n", x.ProviderRef)
+		}
 		for _, result := range execution.Results {
 			line := fmt.Sprintf("    %s %s", result.Target, result.Outcome)
 			if result.Phase != "" {

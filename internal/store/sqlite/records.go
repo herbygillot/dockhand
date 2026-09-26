@@ -351,8 +351,21 @@ func (t *tx) execution(id model.ExecutionID) (model.GuestExecution, error) {
 	return scanExecution(t.conn.QueryRowContext(t.ctx, "SELECT "+executionColumns+" FROM executions WHERE repository_id=? AND id=?", t.repo, id))
 }
 
+func (t *tx) Execution(id model.ExecutionID) (model.GuestExecution, error) { return t.execution(id) }
+
+func (t *tx) ExecutionsReferred(ref string) ([]model.GuestExecution, error) {
+	if ref == "" {
+		return nil, nil
+	}
+	return t.executions("SELECT "+executionColumns+" FROM executions WHERE repository_id=? AND provider_ref=? ORDER BY created_at, rowid", t.repo, ref)
+}
+
 func (t *tx) Executions(run model.RunID) ([]model.GuestExecution, error) {
-	rows, err := t.conn.QueryContext(t.ctx, "SELECT "+executionColumns+" FROM executions WHERE repository_id=? AND run_id=? ORDER BY created_at, rowid", t.repo, run)
+	return t.executions("SELECT "+executionColumns+" FROM executions WHERE repository_id=? AND run_id=? ORDER BY created_at, rowid", t.repo, run)
+}
+
+func (t *tx) executions(query string, args ...any) ([]model.GuestExecution, error) {
+	rows, err := t.conn.QueryContext(t.ctx, query, args...)
 	if err != nil {
 		return nil, storageError(err)
 	}

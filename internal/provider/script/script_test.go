@@ -48,7 +48,7 @@ func (p ports) Directory(context.Context, model.Source, string) (string, error) 
 }
 
 // checked runs a check of an edit to jq with the given script.
-func checked(t *testing.T, body string) (model.Run, string) {
+func checked(t *testing.T, body string) (model.Run, string, *engine.Engine) {
 	t.Helper()
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
@@ -82,7 +82,7 @@ func checked(t *testing.T, body string) (model.Run, string) {
 	finished, err := e.Drive(t.Context(), session, queued.ID)
 	require.NoError(t, err)
 
-	return finished, filepath.Join(e.LogDirectory(), finished.Name(), "command-1")
+	return finished, filepath.Join(e.LogDirectory(), finished.Name(), "command-1"), e
 }
 
 func TestTheScriptGetsTheRevisionAndReportsEachTarget(t *testing.T) {
@@ -93,12 +93,12 @@ clone=$(mktemp -d)
 git clone -q --no-checkout "$(sed -n 's/.*"bundle": "\(.*\)".*/\1/p' "$1")" "$clone" 2>"$dir/clone.err" || true
 echo started > "$dir/build.log"
 cat > "$dir/result.json" <<'JSON'
-{"version": 1, "targets": [
+{"version": 1, "reference": "https://ci.example.org/builds/42", "targets": [
   {"id": "jq", "outcome": "passed", "tests": "failed", "log": "jq.log"},
   {"id": "jq-docs", "outcome": "failed", "phase": "install"}
 ]}
 JSON`
-	run, dir := checked(t, build)
+	run, dir, e := checked(t, build)
 	require.Equal(t, model.RunFailed, run.State, run.Detail)
 	require.Equal(t, "jq-docs did not pass", run.Detail)
 
@@ -108,6 +108,11 @@ JSON`
 	require.NoError(t, json.Unmarshal(data, &request))
 	require.Equal(t, script.Version, request.Version)
 	require.Equal(t, "check-1", request.Run)
+	require.Regexp(t, `^command_[a-z0-9]{16}$`, request.Execution, "the provider run's ID, to label the script's own logs")
+	// The script's own name for the run is recorded, and finds it.
+	execution, err := e.ExecutionNamed(t.Context(), "https://ci.example.org/builds/42")
+	require.NoError(t, err)
+	require.Equal(t, model.ExecutionID(request.Execution), execution.ID)
 	require.Equal(t, "declared", request.Tests)
 	require.Len(t, request.Targets, 2)
 	require.Equal(t, "jq-docs", request.Targets[1].Subport)
@@ -129,7 +134,7 @@ JSON`
 }
 
 func TestNoResultFileIsInfrastructureTrouble(t *testing.T) {
-	run, dir := checked(t, `echo "the build box is unreachable" >&2; exit 3`)
+	run, dir, _ := checked(t, `echo "the build box is unreachable" >&2; exit 3`)
 	require.Equal(t, model.RunAttention, run.State)
 	require.Contains(t, run.Detail, "failed 3 times")
 	log, err := os.ReadFile(filepath.Join(dir, "command.log"))

@@ -3,6 +3,7 @@ package command
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -96,7 +97,17 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 
 	out, _, err = dockhand(t, "logs", "check-3")
 	require.NoError(t, err)
-	require.Contains(t, out, "check-3 · passed: passed\n  command, attempt 1: finished\n    jq passed  ~/.dockhand/logs/check-3/command-1/command.log\n")
+	require.Regexp(t, `check-3 · passed: passed\n  command, attempt 1, run command_[a-z0-9]{16}: finished\n    jq passed  ~/\.dockhand/logs/check-3/command-1/command\.log\n`, out)
+	// A provider run's ID finds its evidence too.
+	id := regexp.MustCompile(`command_[a-z0-9]{16}`).FindString(out)
+	out, _, err = dockhand(t, "logs", id)
+	require.NoError(t, err)
+	require.Contains(t, out, "check-3 · passed: passed\n  command, attempt 1, run "+id+": finished\n")
+	out, _, err = dockhand(t, "logs", id, "--port", "jq")
+	require.NoError(t, err)
+	require.Contains(t, out, "building from ")
+	_, _, err = dockhand(t, "logs", "tart_nosuchrunatall1")
+	require.ErrorContains(t, err, "tart_nosuchrunatall1 is neither a check, such as check-42, nor a provider run")
 	out, _, err = dockhand(t, "logs", "check-3", "--port", "jq")
 	require.NoError(t, err)
 	require.Contains(t, out, "building from ")

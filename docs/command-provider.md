@@ -27,6 +27,7 @@ The file is `request.json` in a directory of its own. Its path is also given as 
   "version": 1,
   "run": "check-3",
   "attempt": 1,
+  "execution": "command_7y62p4sigena6xlr",
   "bundle": "/…/logs/check-3/command-1/source.bundle",
   "ref": "refs/dockhand/check/check-3",
   "commit": "7e3f1a2…",
@@ -51,6 +52,9 @@ The file is `request.json` in a directory of its own. Its path is also given as 
 
   For uncommitted work, `commit` is a commit dockhand made of the snapshot's files on top of `base`.
   For a baseline (`check --baseline`), `commit` is `base` itself, and the bundle holds it less its parent; the same fetch works.
+- **`execution`** is this provider run's ID. The pull request's Tested on
+  names it, and `dockhand logs command_7y62p4sigena6xlr` shows its
+  evidence. Label your own logs with it to tie them together.
 - **`targets`** are in dependency order. Build them in this order.
   - `subport`, when present, is the subport to build from the Portfile.
   - `kind` is `substantive`, `revision-only`, or `unchanged`. `role` is `changed`, `also`, or `prerequisite`.
@@ -77,5 +81,9 @@ Write the result file at the `result` path:
   - A `failed` target names the `phase` it stopped at: `lint`, `fetch`, `checksum`, `install`, or `test`.
   - A target left out of the file was not run.
 - **`tests`** is `passed`, `failed`, `timed-out`, `none`, or `skipped`. `none` is the default.
+- **`reference`**, optional, is your own name for the run, such as your CI's
+  URL for it. Dockhand records it, and `dockhand logs` finds the run by it.
+  A pull request names it instead of dockhand's ID when it's an `https://`
+  link anyone can follow.
 - **`log`** is a log file for the target. A relative path is read from the request's directory. The default is `command.log`.
 - **Blocked dependents.** When a target fails, every target that depends on it is recorded as blocked, whatever the script reports for it. An old build of a dependency never stands in for the one this branch changes.

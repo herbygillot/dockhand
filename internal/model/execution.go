@@ -41,9 +41,10 @@ func (s ExecutionState) CanBecome(next ExecutionState) bool {
 	return false
 }
 
-// GuestExecution is the one owner of a provider environment for a run, on
-// one environment and attempt. Its targets' results are checkpointed
-// beneath it as each finishes.
+// GuestExecution is one provider run: the one owner of a provider
+// environment for a run, on one environment and attempt. Its targets'
+// results are checkpointed beneath it as each finishes. Its ID is unique,
+// and named for its provider, tart_7y62p4sigena6xlr.
 type GuestExecution struct {
 	ID          ExecutionID
 	Run         RunID

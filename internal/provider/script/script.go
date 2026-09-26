@@ -28,6 +28,9 @@ type Request struct {
 	Version int    `json:"version"`
 	Run     string `json:"run"`
 	Attempt int    `json:"attempt"`
+	// Execution is this provider run's ID, command_7y62p4sigena6xlr, which
+	// the pull request names and dockhand logs finds it by.
+	Execution string `json:"execution"`
 	// Bundle holds Commit under Ref, less what Base already holds: fetch
 	// Base (MacPorts' master has it) before fetching the bundle.
 	Bundle   string         `json:"bundle"`
@@ -59,6 +62,10 @@ type Target struct {
 type Result struct {
 	Version int            `json:"version"`
 	Targets []TargetResult `json:"targets"`
+	// Reference is the script's own name for the run, such as its CI's
+	// URL, which dockhand records, and a pull request names when it's a
+	// link.
+	Reference string `json:"reference,omitempty"`
 }
 
 // TargetResult is one target's outcome: passed, failed (with the phase it
@@ -85,7 +92,7 @@ func (p *Provider) Execute(ctx context.Context, job engine.Job, build engine.Bui
 	if err := os.MkdirAll(job.Directory, 0o755); err != nil {
 		return err
 	}
-	request := Request{Version: Version, Run: job.Run.Name(), Attempt: job.Execution.Attempt,
+	request := Request{Version: Version, Run: job.Run.Name(), Attempt: job.Execution.Attempt, Execution: string(job.Execution.ID),
 		Bundle: filepath.Join(job.Directory, "source.bundle"), Ref: "refs/dockhand/check/" + job.Run.Name(),
 		Commit: job.Commit, Base: string(job.Revision.Source.Base), Platform: job.Environment.Platform, Tests: string(job.Plan.Tests),
 		Result: filepath.Join(job.Directory, "result.json"), Logs: job.Directory}
@@ -150,6 +157,11 @@ func (p *Provider) Execute(ctx context.Context, job engine.Job, build engine.Bui
 	}
 	if result.Version != Version {
 		return fmt.Errorf("%w: %s wrote a version %d result file, %s; dockhand reads version %d", engine.ErrInfrastructure, p.Label, result.Version, request.Result, Version)
+	}
+	if result.Reference != "" {
+		if err := build.Refer(result.Reference); err != nil {
+			return err
+		}
 	}
 	reported := map[string]TargetResult{}
 	for _, target := range result.Targets {

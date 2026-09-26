@@ -239,6 +239,10 @@ type logsJSON struct {
 }
 
 type executionLogsJSON struct {
+	// ID is the provider run's, tart_7y62p4sigena6xlr, and Reference its
+	// provider's own name for it: a VM clone, a workflow run's URL.
+	ID          string          `json:"id"`
+	Reference   string          `json:"reference,omitempty"`
 	Environment environmentJSON `json:"environment"`
 	Attempt     int             `json:"attempt"`
 	State       string          `json:"state"`
@@ -257,7 +261,7 @@ func logsView(logs engine.RunLogs) logsJSON {
 	view := logsJSON{Run: runView(logs.Run), Executions: []executionLogsJSON{}}
 	for _, execution := range logs.Executions {
 		x := execution.Execution
-		entry := executionLogsJSON{Environment: environmentView(x.Environment), Attempt: x.Attempt, State: string(x.State), Detail: x.Detail, Results: []resultLogJSON{}}
+		entry := executionLogsJSON{ID: string(x.ID), Reference: x.ProviderRef, Environment: environmentView(x.Environment), Attempt: x.Attempt, State: string(x.State), Detail: x.Detail, Results: []resultLogJSON{}}
 		for _, result := range execution.Results {
 			entry.Results = append(entry.Results, resultLogJSON{Target: string(result.Target), Outcome: string(result.Outcome), Phase: string(result.Phase), Log: result.Log})
 		}

@@ -34,9 +34,39 @@ type Evidence struct {
 	// Run didn't build. A result holds for its tree, so a narrowed check
 	// after a full one keeps the full one's results.
 	Earlier []model.Run
-	// Observed is what each of the plan's environments reported about
-	// itself in Run, in the plan's order; empty where it said nothing.
-	Observed []model.Observed
+	// Executions are the provider runs the results came from, Run's and
+	// Earlier's, by ID.
+	Executions map[model.ExecutionID]model.GuestExecution
+}
+
+// Runs are the provider runs behind one environment's results, in the
+// plan's order of environments, oldest first: usually one, or an earlier
+// attempt's too when it finished some targets, or an earlier check's.
+func (e Evidence) Runs(environment int) []model.GuestExecution {
+	var runs []model.GuestExecution
+	for _, target := range e.Targets {
+		if environment >= len(target.Outcomes) {
+			continue
+		}
+		execution, ok := e.Executions[target.Outcomes[environment].Execution]
+		if ok && !slices.ContainsFunc(runs, func(run model.GuestExecution) bool { return run.ID == execution.ID }) {
+			runs = append(runs, execution)
+		}
+	}
+	slices.SortStableFunc(runs, func(a, b model.GuestExecution) int { return a.CreatedAt.Compare(b.CreatedAt) })
+	return runs
+}
+
+// Observed is what an environment reported about itself in the latest of
+// its runs that said anything; empty where none did.
+func (e Evidence) Observed(environment int) model.Observed {
+	var observed model.Observed
+	for _, run := range e.Runs(environment) {
+		if run.Observed != (model.Observed{}) {
+			observed = run.Observed
+		}
+	}
+	return observed
 }
 
 // Unchecked lists the targets no check of the files built everywhere they
@@ -185,6 +215,12 @@ func (e *Evidence) fill(earlier Evidence) bool {
 			}
 			if found := earlier.Targets[k].Outcomes[j]; found.Outcome != model.OutcomeNotRun {
 				target.Outcomes[i] = found
+				if execution, ok := earlier.Executions[found.Execution]; ok {
+					if e.Executions == nil {
+						e.Executions = map[model.ExecutionID]model.GuestExecution{}
+					}
+					e.Executions[execution.ID] = execution
+				}
 				took = true
 			}
 		}

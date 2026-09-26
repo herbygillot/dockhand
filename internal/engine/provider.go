@@ -60,6 +60,9 @@ type Build interface {
 	// Observe records what the environment reported about itself, for
 	// the pull request's Tested on.
 	Observe(observed model.Observed) error
+	// Refer records the provider's own name for this run: a workflow
+	// run's URL, a VM clone's name. dockhand logs finds the run by it.
+	Refer(ref string) error
 	// Canceled reports, once the context is done, that the run was
 	// canceled or interrupted for good, rather than its driver stopping
 	// with the run left for the next one: only then does a provider stop

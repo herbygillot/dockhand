@@ -109,6 +109,16 @@ when two are already running.
 
 ## What it reports
 
+Every provider run, one attempt in one release, has a unique ID named for
+its provider, `tart_7y62p4sigena6xlr`:
+
+- the check's progress shows it ("attempt 1 of 3 on tart macOS 26 (Tahoe)
+  arm64 with Xcode, run tart_7y62p4sigena6xlr");
+- a pull request's Tested on names it, beside the macOS, Xcode, and tools
+  the guest reported;
+- `dockhand logs tart_7y62p4sigena6xlr` shows that run's evidence, and its
+  VM clone's name.
+
 Each target's log is copied into the check's log directory (`dockhand
 logs`). When the guest's Command Line Tools, or its Xcode in an Xcode
 image, differ from the facts table's row the plan was read with, the

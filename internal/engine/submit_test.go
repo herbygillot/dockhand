@@ -324,7 +324,7 @@ func checked(t *testing.T, e *Engine, branch model.Branch, jq, viewer model.Outc
 			state = model.RunFailed
 		}
 		runRecord := model.Run{ID: model.RunID(store.NewID("run")), Branch: branch.ID, Revision: revision.ID, Plan: plan.ID, Number: number, Origin: model.OriginPerson, State: model.RunQueued, CreatedAt: at}
-		execution := model.GuestExecution{ID: model.ExecutionID(store.NewID("ex")), Run: runRecord.ID, Environment: tahoe, Attempt: 1, State: model.ExecutionWaiting, CreatedAt: at,
+		execution := model.GuestExecution{ID: model.ExecutionID(store.NewID("tart")), Run: runRecord.ID, Environment: tahoe, Attempt: 1, State: model.ExecutionWaiting, CreatedAt: at,
 			Observed: model.Observed{MacOS: "26.6.2", Build: "25G71", Architecture: "arm64", Xcode: "26.6", XcodeBuild: "17F42", Tools: "26.6.0.0.1781586589"}}
 		for _, step := range []func() error{
 			func() error { return tx.AddRevision(revision) },
@@ -380,8 +380,8 @@ func TestSubmitFollowsThePublicationRule(t *testing.T) {
 	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{"harbor-viewer"}})
 	require.NoError(t, err)
 	require.Empty(t, plan.Blocking)
-	require.Contains(t, plan.Body, "###### Tested on\n\nmacOS 26.6.2 25G71 arm64\nXcode 26.6 17F42 · tart: built in a clean VM\n\n| Port | tart macOS 26 (Tahoe) arm64 with Xcode |\n",
-		"what the guest reported, in the template's words")
+	require.Regexp(t, `###### Tested on\n\nmacOS 26\.6\.2 25G71 arm64\nXcode 26\.6 17F42 · tart: built in a clean VM, run tart_[a-z0-9]{16}\n\n\| Port \| tart macOS 26 \(Tahoe\) arm64 with Xcode \|\n`, plan.Body,
+		"what the guest reported, in the template's words, and the run it was in")
 	require.Contains(t, plan.Body, "| jq | ✓ |\n| harbor-viewer | ✗ failed at install, accepted: cause not established |\n")
 	require.Contains(t, plan.Body, "- [x] tried a full install with `sudo port -vst install`? (dockhand builds from source as MacPorts CI does, without trace mode)")
 	require.Contains(t, plan.Body, "- [x] tried existing tests with `sudo port test`?")

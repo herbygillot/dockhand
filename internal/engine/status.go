@@ -186,6 +186,33 @@ func (e *Engine) RunNamed(ctx context.Context, name string) (model.Run, error) {
 	return run, err
 }
 
+// ExecutionNamed finds a provider run by its ID, tart_7y62p4sigena6xlr, or
+// by its provider's own reference for it, such as a workflow run's URL:
+// the latest, when a provider reused one.
+func (e *Engine) ExecutionNamed(ctx context.Context, name string) (model.GuestExecution, error) {
+	var found model.GuestExecution
+	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		execution, err := r.Execution(model.ExecutionID(name))
+		if err == nil {
+			found = execution
+			return nil
+		}
+		if !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
+		referred, err := r.ExecutionsReferred(name)
+		if err != nil {
+			return err
+		}
+		if len(referred) == 0 {
+			return errors.New("there is no provider run " + name)
+		}
+		found = referred[len(referred)-1]
+		return nil
+	})
+	return found, err
+}
+
 func parseNumber(text, prefix string) (int, bool) {
 	if len(text) <= len(prefix) || text[:len(prefix)] != prefix {
 		return 0, false

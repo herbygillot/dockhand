@@ -323,7 +323,10 @@ func (d *driver) environment(ctx context.Context, provider Provider, environment
 			d.problems = append(d.problems, fmt.Sprintf("%s failed %d times for reasons of its own; see dockhand logs %s", describeEnvironment(environment), attempt, d.run.Name()))
 			return nil
 		}
-		execution := model.GuestExecution{ID: model.ExecutionID(store.NewID("ex")), Run: d.run.ID, Environment: environment, Attempt: attempt + 1, State: model.ExecutionWaiting, CreatedAt: e.now()}
+		// A provider run's ID is unique, and named for its provider:
+		// tart_7y62p4sigena6xlr. The pull request names it, and dockhand
+		// logs finds its evidence by it.
+		execution := model.GuestExecution{ID: model.ExecutionID(store.NewID(environment.Provider)), Run: d.run.ID, Environment: environment, Attempt: attempt + 1, State: model.ExecutionWaiting, CreatedAt: e.now()}
 		if err := d.fenced(ctx, func(tx store.Tx) error {
 			if err := tx.AddExecution(execution); err != nil {
 				return err
@@ -333,7 +336,7 @@ func (d *driver) environment(ctx context.Context, provider Provider, environment
 				return err
 			}
 			_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: "execution.state", Level: model.LevelInfo,
-				Message: fmt.Sprintf("%s: attempt %d of %d on %s", d.run.Name(), execution.Attempt, model.MaxAttempts, describeEnvironment(environment))})
+				Message: fmt.Sprintf("%s: attempt %d of %d on %s, run %s", d.run.Name(), execution.Attempt, model.MaxAttempts, describeEnvironment(environment), execution.ID)})
 			return err
 		}); err != nil {
 			return err
@@ -343,6 +346,8 @@ func (d *driver) environment(ctx context.Context, provider Provider, environment
 			Directory: filepath.Join(e.LogDirectory(), d.run.Name(), fmt.Sprintf("%s-%d", environmentSlug(environment), execution.Attempt))}
 		err := provider.Execute(ctx, job, build)
 		build.blockRemaining(remaining)
+		// The build's copy holds what the provider reported.
+		execution = build.execution
 		switch {
 		case ctx.Err() != nil && d.stopped():
 			return d.endExecution(ctx, execution, model.ExecutionInfrastructure, "interrupted: the process driving it stopped")
@@ -470,6 +475,11 @@ func (b *build) Record(result model.TargetResult) error {
 	return err
 }
 
+func (b *build) Refer(ref string) error {
+	b.execution.ProviderRef = ref
+	return b.d.fenced(b.ctx, func(tx store.Tx) error { return tx.UpdateExecution(b.execution) })
+}
+
 func (b *build) Observe(observed model.Observed) error {
 	b.execution.Observed = observed
 	return b.d.fenced(b.ctx, func(tx store.Tx) error { return tx.UpdateExecution(b.execution) })
@@ -543,14 +553,9 @@ func runEvidence(r store.Reader, run model.Run, plan model.Plan) (Evidence, erro
 	for _, execution := range executions {
 		byEnvironment[execution.Environment] = append(byEnvironment[execution.Environment], execution)
 	}
-	evidence := Evidence{Run: run, Plan: plan, Observed: make([]model.Observed, len(plan.Environments))}
-	for i, environment := range plan.Environments {
-		// The latest attempt that said anything is the one that built.
-		for _, execution := range byEnvironment[environment] {
-			if execution.Observed != (model.Observed{}) {
-				evidence.Observed[i] = execution.Observed
-			}
-		}
+	evidence := Evidence{Run: run, Plan: plan, Executions: map[model.ExecutionID]model.GuestExecution{}}
+	for _, execution := range executions {
+		evidence.Executions[execution.ID] = execution
 	}
 	merged := map[model.Environment]map[model.TargetID]model.TargetResult{}
 	for environment, list := range byEnvironment {

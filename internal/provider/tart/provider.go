@@ -287,6 +287,9 @@ func (p *Provider) Execute(ctx context.Context, job engine.Job, build engine.Bui
 	if err := m.Clone(ctx, image, vm); err != nil {
 		return fmt.Errorf("%w: cloning %s: %w", engine.ErrInfrastructure, image, err)
 	}
+	if err := build.Refer(vm); err != nil {
+		return err
+	}
 	defer func() {
 		if deleteErr := m.Delete(cleanup, vm); deleteErr != nil && err == nil {
 			build.Progress("deleting " + vm + ": " + deleteErr.Error())

@@ -79,6 +79,11 @@ type Reader interface {
 	RunNumbered(number int) (model.Run, error)
 	Runs(filter RunFilter) ([]model.Run, error)
 	Executions(run model.RunID) ([]model.GuestExecution, error)
+	// Execution reads one provider run by its ID.
+	Execution(id model.ExecutionID) (model.GuestExecution, error)
+	// ExecutionsReferred are the provider runs whose provider knows them by
+	// ref, such as a workflow run's URL, oldest first.
+	ExecutionsReferred(ref string) ([]model.GuestExecution, error)
 	Results(execution model.ExecutionID) ([]model.TargetResult, error)
 
 	Session(id model.SessionID) (model.Session, error)
