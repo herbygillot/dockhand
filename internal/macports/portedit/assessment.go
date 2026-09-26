@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -57,6 +58,8 @@ func Problem(check string, err error) Finding {
 		status, code = Blocked, "missing-helper"
 	case errors.Is(err, errProbeInconclusive):
 		code = "probe-inconclusive"
+	case errors.Is(err, macports.ErrRefused):
+		code = "effect-refused"
 	case errors.Is(err, portsource.ErrTagPattern):
 		code = "tag-pattern-unknown"
 	case errors.Is(err, ErrFidelity):

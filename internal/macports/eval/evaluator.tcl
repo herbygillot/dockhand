@@ -17,6 +17,10 @@ namespace eval ::dockhand {
         check_startup
         if {[catch {mportinit} detail]} { incompatible "initialization failed: $detail" }
         check_initialized
+        # The dispatcher goes into every worker first, before the model
+        # and observation add theirs: leave traces run in the order they
+        # were added.
+        trace add execution ::macports::worker_init leave ::dockhand::guard_worker
         if {$root ne ""} {
             set url "file://[file normalize $root]"
             set ::macports::sources [list [list $url]]
@@ -62,10 +66,16 @@ namespace eval ::dockhand {
         }} $model_tools]
     }
 
+    # metadata reports a port that attempted a refused effect by its
+    # refusals alone, dockhand.refused, whether or not it opened.
     proc metadata {portdir subport args} {
+        variable refusals {}
         set opts {}
         if {$subport ne ""} { lappend opts subport $subport }
-        set handle [mportopen "file://$portdir" $opts $args]
+        if {[catch {mportopen "file://$portdir" $opts $args} handle options]} {
+            if {[llength $refusals]} { return [dict create dockhand.refused $refusals] }
+            return -options $options $handle
+        }
         try {
             if {[catch {dict create {*}[mportinfo $handle]} out]} { incompatible "metadata dictionary could not be read" }
             set worker [ditem_key $handle workername]
@@ -194,6 +204,7 @@ namespace eval ::dockhand {
             dict set out fetch.has_credentials $credentials
             dict set out option_errors $failures
             if {$::dockhand::observing} { dict set out dockhand.observation [observation_details $worker] }
+            if {[llength $refusals]} { return [dict create dockhand.refused $refusals] }
             return $out
         } finally {
             mportclose $handle

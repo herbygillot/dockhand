@@ -61,6 +61,9 @@ var evaluatorScript string
 //go:embed fetch_credentials.tcl
 var fetchCredentialsScript string
 
+//go:embed dispatcher.tcl
+var dispatcherScript string
+
 func (e *Evaluator) start(ctx context.Context, tree macports.Tree) (*rpc.Session, macports.Runtime, error) {
 	executable := e.Executable
 	if executable == "" {
@@ -86,8 +89,9 @@ func (e *Evaluator) start(ctx context.Context, tree macports.Tree) (*rpc.Session
 		_ = session.Close()
 		return nil, macports.Runtime{}, err
 	}
-	readOptions := "namespace eval ::dockhand {}\nset ::dockhand::read_options [list " + strings.Join(macports.ReadOptions, " ") + "]\n"
-	if _, err := session.Call(ctx, "eval", readOptions+compatibilityScript+"\n"+fetchCredentialsScript+"\n"+platformScript+"\n"+observationScript+"\n"+evaluatorScript); err != nil {
+	tables := "namespace eval ::dockhand {}\nset ::dockhand::read_options [list " + strings.Join(macports.ReadOptions, " ") + "]\n" +
+		"set ::dockhand::host_programs [list " + macports.TclHostPrograms(macports.HostPrograms) + "]\n"
+	if _, err := session.Call(ctx, "eval", tables+compatibilityScript+"\n"+fetchCredentialsScript+"\n"+platformScript+"\n"+dispatcherScript+"\n"+observationScript+"\n"+evaluatorScript); err != nil {
 		return fail(fmt.Errorf("%w: %w", macports.ErrStartup, err))
 	}
 	version, err := session.Call(ctx, "probe")
@@ -326,6 +330,9 @@ func decodeMetadata(reply string) (macports.PortInfo, []string, error) {
 	if len(errs) != 0 {
 		return macports.PortInfo{}, nil, fmt.Errorf("macports: invalid metadata: %v", errs)
 	}
+	if refused, ok := values["dockhand.refused"]; ok {
+		return macports.PortInfo{}, nil, decodeRefusals(refused)
+	}
 	value := macports.PortInfo{Name: values["name"], Version: values["version"], Options: values}
 	failures, errs := syntax.DictValues(values["option_errors"])
 	if len(errs) != 0 {
@@ -396,3 +403,25 @@ func decodeMetadata(reply string) (macports.PortInfo, []string, error) {
 }
 
 var _ macports.Reader = (*Evaluator)(nil)
+
+// decodeRefusals is the error for an evaluation that attempted effects the
+// dispatcher refused, each named with why and where.
+func decodeRefusals(value string) error {
+	refusals, errs := syntax.ListValues(value)
+	if len(errs) != 0 || len(refusals) == 0 {
+		return fmt.Errorf("%w: invalid refusals", macports.ErrRefused)
+	}
+	var described []string
+	for _, refusal := range refusals {
+		fields, errs := syntax.ListValues(refusal)
+		if len(errs) != 0 || len(fields) != 3 {
+			return fmt.Errorf("%w: invalid refusal", macports.ErrRefused)
+		}
+		line := fmt.Sprintf("`%s` %s", fields[0], fields[1])
+		if fields[2] != "" {
+			line += " (" + fields[2] + ")"
+		}
+		described = append(described, line)
+	}
+	return fmt.Errorf("%w: %s", macports.ErrRefused, strings.Join(described, "; "))
+}

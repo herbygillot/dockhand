@@ -14,6 +14,10 @@ var (
 	ErrStartup  = errors.New("macports: evaluator startup failed")
 	ErrPlatform = errors.New("macports: evaluation requires the native platform")
 	ErrTarget   = errors.New("macports: target could not be resolved")
+	// ErrRefused is an evaluation that attempted an effect the evaluator
+	// refuses: a write, the network, or a program not in HostPrograms.
+	// Its result is not trusted, whatever the Portfile did with the refusal.
+	ErrRefused = errors.New("macports: evaluation attempted a refused effect")
 )
 
 type Selection struct {

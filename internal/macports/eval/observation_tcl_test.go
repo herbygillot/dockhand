@@ -29,10 +29,11 @@ func tclSession(t *testing.T) (macports.Tree, func(script string) string) {
 	}
 }
 
-// observedWorker is a plain child interpreter set up the way observe_worker
-// sets up a MacPorts worker: the recording namespace, the platform script,
-// and the source root, with the option commands the trace attaches to
-// stubbed. Sourcing a file named Portfile in it is what makes its reads
+// observedWorker is a plain child interpreter set up the way guard_worker
+// and observe_worker set up a MacPorts worker, in the order worker_init's
+// traces run them: the dispatcher, the recording namespace, the platform
+// script, and the source root, with the option commands the traces attach
+// to stubbed. Sourcing a file named Portfile in it is what makes its reads
 // owned, as a Portfile's reads are.
 func observedWorker(t *testing.T, tcl func(string) string) {
 	t.Helper()
@@ -43,6 +44,7 @@ w eval {
     proc option {name} { return "" }
 }
 set ::dockhand::operands {}
+::dockhand::guard_worker {::macports::worker_init w} 0 {} leave
 ::dockhand::observe_worker {::macports::worker_init w} 0 {} leave`)
 }
 
