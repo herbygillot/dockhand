@@ -1,6 +1,7 @@
 package macports_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macos"
@@ -35,24 +36,101 @@ func TestPlatformVariablesFollowMacPortsBase(t *testing.T) {
 	}
 }
 
-// A host that is not a Mac describes the platform and a Mac with the current
-// Command Line Tools and no Xcode, whose clang answers for both places Base
-// looks for it, as one list of pairs override_vars accepts.
-func TestModelVariablesAddTheCommandLineTools(t *testing.T) {
+// A modelled context's developer tools come from the facts table, in the
+// Command Line Tools profile: an image's row where there is one, else a
+// buildbot's made tools-only, with what it doesn't tell from an image with
+// the same tools package, and the host where no source tells.
+func TestToolchainComesFromTheFactsTable(t *testing.T) {
+	t.Parallel()
+	image, ok := macos.Table().Lookup(25, "arm64", macos.ProfileTools)
+	require.True(t, ok)
+	got, err := macports.Toolchain(record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"})
+	require.NoError(t, err)
+	require.False(t, got.Derived)
+	require.Equal(t, "none", got.Xcode)
+	require.Equal(t, image.Tools, got.Tools)
+	require.Equal(t, macports.CommandLineTools, got.DeveloperDir)
+	require.Equal(t, image.Clang, got.Clang)
+	require.Equal(t, image.SDKs, got.SDKs)
+	require.False(t, got.XCSelect)
+
+	builder, ok := macos.Table().Lookup(25, "x86_64", macos.ProfileXcode)
+	require.True(t, ok)
+	require.Equal(t, image.Tools, builder.Tools, "the harvest found the same tools package on both")
+	got, err = macports.Toolchain(record.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"})
+	require.NoError(t, err)
+	require.True(t, got.Derived)
+	require.Equal(t, "none", got.Xcode, "a buildbot's Xcode row is modelled without Xcode")
+	require.Equal(t, builder.Tools, got.Tools)
+	require.Equal(t, macports.CommandLineTools, got.DeveloperDir)
+	require.Equal(t, image.Clang, got.Clang, "the arm64 image with the same tools gives clang")
+	require.Equal(t, image.SDKs, got.SDKs)
+
+	got, err = macports.Toolchain(record.Platform{OS: "darwin", Version: "19", Architecture: "x86_64"})
+	require.NoError(t, err)
+	require.Equal(t, "none", got.Tools, "the 10.15 builder carries no tools")
+	require.NotEqual(t, "none", got.Xcode, "so it is modelled as it is, with Xcode")
+	require.Equal(t, macports.XcodeDeveloper, got.DeveloperDir)
+	require.True(t, got.XCSelect, "libxcselect is a file before macOS 11")
+
+	_, err = macports.Toolchain(record.Platform{OS: "darwin", Version: "9", Architecture: "x86_64"})
+	require.ErrorIs(t, err, macports.ErrNoToolchain)
+}
+
+// ModelVariables is PlatformVariables with the modelled tools, as one list
+// of pairs override_vars accepts, whose caches answer for clang and
+// /usr/bin's shims; a platform the table has no row for is described alone.
+func TestModelVariablesAddTheModelledTools(t *testing.T) {
 	t.Parallel()
 	platform := record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
 	base, err := macports.PlatformVariables(platform)
 	require.NoError(t, err)
+	tools, err := macports.Toolchain(platform)
+	require.NoError(t, err)
 	got, err := macports.ModelVariables(platform)
 	require.NoError(t, err)
-	tools := macos.CurrentToolchain
-	require.Equal(t, base+" developer_dir /Library/Developer/CommandLineTools xcodeversion none xcodecltversion "+tools.Xcode+
-		" compiler_version_cache {versions {/Library/Developer/CommandLineTools {/usr/bin/clang "+tools.Clang+" /Library/Developer/CommandLineTools/usr/bin/clang "+tools.Clang+"}}}", got)
-	pairs, errs := syntax.ListValues(got)
+	pairs, errs := syntax.DictValues(got)
 	require.Empty(t, errs)
-	require.Zero(t, len(pairs)%2)
+	require.True(t, strings.HasPrefix(got, base+" "))
+	require.Equal(t, macports.CommandLineTools, pairs["developer_dir"])
+	require.Equal(t, "none", pairs["xcodeversion"])
+	require.Equal(t, tools.Tools, pairs["xcodecltversion"])
+	require.Equal(t, "26", pairs["macosx_sdk_version"])
+	require.Equal(t, "versions {/Library/Developer/CommandLineTools {/usr/bin/clang "+tools.Clang+" /Library/Developer/CommandLineTools/usr/bin/clang "+tools.Clang+"}}", pairs["compiler_version_cache"])
+	paths, errs := syntax.DictValues(pairs["tool_path_cache"])
+	require.Empty(t, errs)
+	require.Equal(t, "/usr/bin/clang++", paths["clang++"])
+	require.Equal(t, "", paths["llvm-gcc-4.2"])
+
+	old := record.Platform{OS: "darwin", Version: "9", Architecture: "x86_64"}
+	described, err := macports.PlatformVariables(old)
+	require.NoError(t, err)
+	got, err = macports.ModelVariables(old)
+	require.NoError(t, err)
+	require.Equal(t, described, got, "a release without facts is described alone")
+	answers, err := macports.ToolchainAnswers(old)
+	require.NoError(t, err)
+	require.Empty(t, answers)
+
 	_, err = macports.ModelVariables(record.Platform{OS: "linux", Version: "6", Architecture: "x86_64"})
 	require.ErrorContains(t, err, "unsupported modeled platform")
+}
+
+func TestToolchainAnswersNameTheSDKsAndTheirLinks(t *testing.T) {
+	t.Parallel()
+	got, err := macports.ToolchainAnswers(record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"})
+	require.NoError(t, err)
+	answers, errs := syntax.DictValues(got)
+	require.Empty(t, errs)
+	require.Equal(t, "25", answers["darwin"])
+	require.Equal(t, "1", answers["tools"])
+	require.Equal(t, "0", answers["xcode"])
+	require.Equal(t, "0", answers["xcselect"])
+	sdks, errs := syntax.ListValues(answers["sdks"])
+	require.Empty(t, errs)
+	require.Contains(t, sdks, "MacOSX26.sdk")
+	require.Contains(t, sdks, "MacOSX.sdk")
+	require.NotContains(t, sdks, "->")
 }
 
 func TestRuntimeIsModeledWhenItDescribesAnotherHost(t *testing.T) {

@@ -316,7 +316,7 @@ ports), compared with the one before.
 | 3 | Workspace rule (decision 35): a read inside the tree materialises on demand, and a read outside it is refused. | No | Evaluation reports the complete set of files it read. |
 | 4 | **Done.** Installation `fresh`: an empty registry, the prefix holding only Base and its skeleton, programs looked up along MacPorts' `PATH` as a fresh prefix has them. The ledger records each question's subject. | Yes: 62 ports conclusive that weren't; dependencies in 2,830 contexts; no fetch field | Every changed result is explained ([note](activity/2026-09-26-oracle-phase-4.md)). |
 | 4b | `with-deps`, if a survey shows a registry answer reaching what a bump edits. At `abd9fff84df` none does. | Only where fetch depends on what is installed | The moved ports are covered, or inconclusive for the fields affected. |
-| 5 | Toolchain from the facts table (step 6): Xcode and Command Line Tools versions, developer directory, compilers, and SDKs per release, each row tied to its image. Replaces `ModelVariables`. Adds the two-outcome `java_home` answer (decision 18). | Yes, in modelled contexts | The 180 Java ports come in, confirmed by the survey. |
+| 5 | **Done.** Toolchain from the facts table (step 6): Xcode and Command Line Tools versions, developer directory, compilers, and SDKs per release, in the tools profile. Replaces `ModelVariables`' fixed toolchain and the stand-in `file`. | Yes, in modelled contexts: 6 ports conclusive; fetch fields in 58 contexts of 19 Portfiles | Every changed result is explained ([note](activity/2026-09-26-oracle-phase-5.md)). |
 | 6 | Bootstrap under the environment contract: `mportinit`'s `sw_vers`, `sysctl`, `xcodebuild`, its own `macports.conf`, a disposable `portdbpath`, and a `HOME` dockhand owns. May belong to step 6. | Possibly | — |
 
 Out of scope:
@@ -352,6 +352,12 @@ The five the scope left open, as settled on 2026-09-25:
 Isolation, not among the five, is settled as best effort, above.
 
 ## Open questions
+
+- **Which profile a modelled context is.** Phase 5 models the tools
+  profile, dockhand's base images'. MacPorts' builders all have Xcode.
+  The profile changes 15 Portfiles' local patch files and which contexts
+  some guards refuse, but nothing a checksum bump edits at
+  `abd9fff84df` ([note](activity/2026-09-26-oracle-phase-5.md#which-profile)).
 
 - **Which variants `with-deps` installs.** CI installs a dependency with
   its default variants, and so does the model. Whether the person should

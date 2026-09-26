@@ -28,19 +28,6 @@ type Release struct {
 // describes, and Tart builds on, its own release.
 const CurrentDarwin = 25
 
-// Toolchain is a release of Apple's Command Line Tools as MacPorts sees it:
-// the Xcode version the tools carry and the build number of their clang,
-// which is what a Portfile's compiler requirements are compared with.
-type Toolchain struct {
-	Xcode string
-	Clang string
-}
-
-// CurrentToolchain is the Command Line Tools of the current release: those for
-// Xcode 26.3, whose Apple clang reports clang-1700.6.4.2. A host that is not a
-// Mac models it, since MacPorts cannot ask such a host for Apple's compiler.
-var CurrentToolchain = Toolchain{Xcode: "26.3", Clang: "1700.6.4.2"}
-
 // releases is keyed by Darwin major, which is not consecutive: Apple
 // skipped 26, and Golden Gate, macOS 27, is Darwin 27.
 // The tools generations: the arm64 buildbots run 14.2 on 12, 14.3.1 on 13,

@@ -259,8 +259,8 @@ namespace eval ::dockhand {
                     return $i
                 }
                 # dispatch is every hidden command's alias: a refusal, else
-                # the fresh installation's answer where it has one, else
-                # the host's, counted in the ledger by command, file
+                # the modelled toolchain's answer or the fresh
+                # installation's where they have one, else the host's, counted in the ledger by command, file
                 # subcommand, source, and subject, the port or program a
                 # question of the installation is about.
                 proc dispatch {name args} {
@@ -274,6 +274,13 @@ namespace eval ::dockhand {
                     }
                     variable ledger
                     set subcommand [expr {$name eq "file" ? [lindex $args 0] : ""}]
+                    set answer [modelled $name $args]
+                    if {$answer ne ""} {
+                        lassign $answer subject code result options
+                        dict incr ledger [list $name $subcommand table $subject]
+                        dict set options -level 1
+                        return -options $options $result
+                    }
                     set answer [fresh $name $args]
                     if {$answer eq "" && ($name eq "exec" || ($name eq "open" && [string index [lindex $args 0] 0] eq "|"))} {
                         set answer [run $name $args]
@@ -288,7 +295,12 @@ namespace eval ::dockhand {
                         dict set options -level 1
                         return -options $options $result
                     }
-                    dict incr ledger [list $name $subcommand [source_of $name $args] ""]
+                    # In a modelled context, the host answering is a gap in
+                    # the model, host-in-model (docs/oracle.md, decision 1).
+                    set source [source_of $name $args]
+                    variable toolchain
+                    if {$source eq "host" && [dict size $toolchain]} { set source host-in-model }
+                    dict incr ledger [list $name $subcommand $source ""]
                     variable ready
                     if {$ready} { ::dockhand_observation::host 2 [list $name {*}$args] }
                     # file stat and lstat set an array in their caller's frame.
@@ -328,6 +340,7 @@ namespace eval ::dockhand {
             }
         }
         install_fresh $worker
+        install_toolchain $worker
         $worker eval {
             ::dockhand_dispatcher::guard [list exec file open glob findBinary binaryInPath \
                 {*}$::dockhand_dispatcher::registry_reads {*}[dict keys $::dockhand_dispatcher::outright]]

@@ -47,42 +47,42 @@ func TestModeledObservationTracksHostFilesAtAccessTime(t *testing.T) {
 }
 
 // A port that reads the compiler Base picks for it, as gpsd reads
-// configure.cxx with use_xcode yes, reads the host: Base asks the host's
-// toolchain which compilers exist. 2.12 asks in the port's worker, where
-// the observation sees it; Base master asks in its parent interpreter
-// (portlib.tcl), where it does not, so eleven real ports looked
-// host-independent on master. The preview adapter must close that gap
-// before master prepares (Base design, step 5).
-func TestCompilerDependentFetchInputReadsTheHost(t *testing.T) {
+// configure.cxx with use_xcode yes, reads what Base asks the toolchain:
+// which compilers exist. In a modelled context the facts table answers
+// (docs/oracle.md, phase 5), so the port reads no host state and the
+// compiler is the modelled release's. A release the table has no row for,
+// Darwin 9, which no buildbot builds, is answered by the host as before,
+// and the host read is seen.
+func TestCompilerDependentFetchInputComesFromTheTable(t *testing.T) {
 	t.Parallel()
 	e := liveEvaluator(t)
+	tree := fixtureTree(t)
+	putFile(t, tree.Root(), "devel/host/Portfile", "PortSystem 1.0\nname host\nversion 1\nuse_xcode yes\ndistfiles host-[file tail ${configure.cxx}].tar.gz\n")
+	bound, err := tree.Select(record.Target{Name: "host", Portfile: "devel/host/Portfile"})
+	require.NoError(t, err)
+	got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: record.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
+	require.NoError(t, err)
+	require.False(t, got.Ports["host"].ModeledHostAccess, "%v", got.Ports["host"].Problems)
+	require.Equal(t, "host-clang++.tar.gz", got.Snapshot.Ports["host"].Options["distfiles"])
 	if e.Adapter == PreviewAdapter {
 		t.Skip("known gap on Base master: compiler and SDK queries run in the parent interpreter, unobserved (Base design, step 5)")
 	}
-	tree := fixtureTree(t)
-	putFile(t, tree.Root(), "devel/host/Portfile", "PortSystem 1.0\nname host\nversion 1\nuse_xcode yes\ndistfiles host-[file tail ${configure.cxx}].tar.gz\n")
-	targets, err := e.Resolve(t.Context(), tree, macports.Selection{Selector: "host"})
-	require.NoError(t, err)
-	bound, err := tree.Select(targets[0])
-	require.NoError(t, err)
-	got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: record.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
+	got, err = e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: record.Platform{OS: "darwin", Version: "9", Architecture: "x86_64"}, Declarations: true})
 	require.NoError(t, err)
 	require.True(t, got.Ports["host"].ModeledHostAccess, "%v", got.Ports["host"].Problems)
 }
 
-// The eleven ports the 2026-09-24 baseline found reading the host on 2.12.6
-// and not, as observed, on Base master, in a modeled Darwin 22 x86_64
-// context. DOCKHAND_TEST_PORTS_TREE names a macports-ports checkout.
-func TestPortsThatReadTheHostThroughBaseCompilerQueries(t *testing.T) {
+// Eleven ports the 2026-09-24 baseline found reading the host through
+// Base's compiler queries, in a modelled Darwin 22 x86_64 context, now
+// read the facts table instead. DOCKHAND_TEST_PORTS_TREE names a
+// macports-ports checkout.
+func TestPortsThatAskBaseForCompilersReadTheTable(t *testing.T) {
 	t.Parallel()
 	root := os.Getenv("DOCKHAND_TEST_PORTS_TREE")
 	if root == "" {
 		t.Skip("set DOCKHAND_TEST_PORTS_TREE to a macports-ports checkout")
 	}
 	e := liveEvaluator(t)
-	if e.Adapter == PreviewAdapter {
-		t.Skip("known gap on Base master: compiler and SDK queries run in the parent interpreter, unobserved (Base design, step 5)")
-	}
 	tree, err := macports.NewTree(record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, root, record.Platform{})
 	require.NoError(t, err)
 	for _, port := range []struct{ directory, name string }{
@@ -101,7 +101,7 @@ func TestPortsThatReadTheHostThroughBaseCompilerQueries(t *testing.T) {
 			require.NoError(t, err)
 			got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: record.Platform{OS: "darwin", Version: "22", Architecture: "x86_64"}, Declarations: true})
 			require.NoError(t, err)
-			require.True(t, got.Ports[port.name].ModeledHostAccess, "%v", got.Ports[port.name].Problems)
+			require.False(t, got.Ports[port.name].ModeledHostAccess, "%v", got.Ports[port.name].Problems)
 		})
 	}
 }

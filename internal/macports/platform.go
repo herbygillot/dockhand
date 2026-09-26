@@ -1,6 +1,7 @@
 package macports
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -75,27 +76,173 @@ func PlatformVariables(platform record.Platform) (string, error) {
 }
 
 // CommandLineTools is where the Command Line Tools live on a Mac, the
-// developer directory a modeled Mac reports.
+// developer directory a modelled Mac reports.
 const CommandLineTools = "/Library/Developer/CommandLineTools"
 
-// ModelVariables is PlatformVariables for an interpreter or indexer on a host
-// that is not a Mac, which has no Apple toolchain for MacPorts to ask about:
-// it also describes a Mac with the current Command Line Tools and no Xcode,
-// and answers MacPorts' question of which Apple clang the tools' compiler is,
-// at /usr/bin/clang or in the tools' own directory, with their build, through
-// the compiler cache MacPorts consults before running a compiler. A Mac never
-// needs this: its own tools answer for every platform it models.
+// XcodeDeveloper is Xcode's developer directory, where xcode-select points
+// on a Mac with Xcode and no Command Line Tools.
+const XcodeDeveloper = "/Applications/Xcode.app/Contents/Developer"
+
+// ModelledToolchain is what a modelled context's developer tools are
+// (docs/oracle.md, phase 5): the facts table's row for its release and
+// architecture in the Command Line Tools profile, dockhand's base images'.
+// Where the table has only a buildbot's row, which is Xcode's, it is that
+// builder's tools without Xcode, and a release whose builders carry no
+// tools is modelled as they are, with Xcode. What a row doesn't tell, an
+// image with the same tools package does. A field still empty is one no
+// source tells, which the host answers, as it did for everything before
+// the table.
+type ModelledToolchain struct {
+	Darwin int
+	// Xcode, Tools, DeveloperDir, and SDK are Base's xcodeversion,
+	// xcodecltversion, developer_dir, and macosx_sdk_version.
+	Xcode, Tools, DeveloperDir, SDK string
+	// Clang is the tools' clang's build number.
+	Clang string
+	// SDKs are the SDKs in the tools, by name.
+	SDKs []string
+	// XCSelect is whether /usr/lib/libxcselect.dylib exists.
+	XCSelect bool
+	// Source is the row the toolchain came from, and Derived whether it
+	// was a buildbot's Xcode row made the tools profile.
+	Source  macos.Source
+	Derived bool
+}
+
+// ErrNoToolchain is a platform the facts table has no row for, such as
+// Darwin 8 and 9, which no buildbot builds.
+var ErrNoToolchain = errors.New("macports: the facts table has no toolchain")
+
+// Toolchain is a modelled platform's developer tools, from the facts table.
+func Toolchain(platform record.Platform) (ModelledToolchain, error) {
+	if _, err := PlatformVariables(platform); err != nil {
+		return ModelledToolchain{}, err
+	}
+	darwin, _ := strconv.Atoi(platform.Version)
+	table := macos.Table()
+	facts, ok := table.Lookup(darwin, platform.Architecture, macos.ProfileTools)
+	derived := false
+	if !ok {
+		if facts, ok = table.Lookup(darwin, platform.Architecture, macos.ProfileXcode); !ok {
+			return ModelledToolchain{}, fmt.Errorf("%w for %s", ErrNoToolchain, macos.Describe(platform))
+		}
+		derived = true
+		if facts.Tools != "none" {
+			facts.Xcode, facts.DeveloperDir = "none", CommandLineTools
+		}
+	}
+	if facts.Tools != "none" && (facts.Clang == "" || len(facts.SDKs) == 0) {
+		for _, other := range table.Facts {
+			if other.Tools != facts.Tools || other.Source.Kind != macos.SourceTart {
+				continue
+			}
+			if facts.Clang == "" {
+				facts.Clang = other.Clang
+			}
+			if len(facts.SDKs) == 0 {
+				facts.SDKs = other.SDKs
+			}
+		}
+	}
+	if facts.DeveloperDir == "" {
+		facts.DeveloperDir = CommandLineTools
+		if facts.Tools == "none" {
+			facts.DeveloperDir = XcodeDeveloper
+		}
+	}
+	// libxcselect.dylib is a file from OS X 10.9 until macOS 11, which moved
+	// system libraries into the dyld cache.
+	xcselect := darwin >= 13 && darwin < 20
+	if facts.XCSelect != nil {
+		xcselect = *facts.XCSelect
+	}
+	return ModelledToolchain{Darwin: darwin, Xcode: facts.Xcode, Tools: facts.Tools, DeveloperDir: facts.DeveloperDir, SDK: facts.SDK,
+		Clang: facts.Clang, SDKs: facts.SDKs, XCSelect: xcselect, Source: facts.Source, Derived: derived}, nil
+}
+
+// shims are the programs /usr/bin holds for the developer tools from OS X
+// 10.9 on, which Base's get_tool_path finds there; the old compilers it
+// also asks for are in none of them.
+var shims = []string{"clang", "clang++", "cc", "c++", "gcc", "g++", "cpp"}
+var gone = []string{"llvm-gcc-4.2", "llvm-g++-4.2", "gcc-4.2", "g++-4.2"}
+
+// ModelVariables is PlatformVariables for a modelled context: the platform,
+// and its developer tools from the facts table (Toolchain). They are Xcode's
+// version or none, the tools', the developer directory, and the SDK Base
+// asks for. The tools' clang answers through the compiler cache Base
+// consults before running a compiler, at /usr/bin/clang and in the tools'
+// own directory. /usr/bin's shims answer through the cache get_tool_path
+// consults. A host that is not a Mac models every context this way, and a
+// Mac every context but its own. A platform the table has no row for is
+// described alone, and the host answers for its tools, host-in-model.
 func ModelVariables(platform record.Platform) (string, error) {
 	pairs, err := PlatformVariables(platform)
 	if err != nil {
 		return "", err
 	}
-	tools := macos.CurrentToolchain
-	compilers := "/usr/bin/clang " + tools.Clang + " " + CommandLineTools + "/usr/bin/clang " + tools.Clang
-	return strings.Join([]string{pairs,
-		"developer_dir", CommandLineTools,
-		"xcodeversion", "none",
-		"xcodecltversion", tools.Xcode,
-		"compiler_version_cache", "{versions {" + CommandLineTools + " {" + compilers + "}}}",
+	tools, err := Toolchain(platform)
+	if errors.Is(err, ErrNoToolchain) {
+		return pairs, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	variables := []string{pairs, "developer_dir", tools.DeveloperDir, "xcodeversion", tools.Xcode, "xcodecltversion", tools.Tools}
+	if tools.SDK != "" {
+		variables = append(variables, "macosx_sdk_version", tools.SDK)
+	}
+	// Both caches are always replaced, emptied where the table doesn't
+	// tell, so neither the host's nor another modelled platform's answers.
+	compilers := ""
+	if tools.Clang != "" {
+		compilers = "versions {" + tools.DeveloperDir + " {/usr/bin/clang " + tools.Clang + " " + CommandLineTools + "/usr/bin/clang " + tools.Clang + "}}"
+	}
+	variables = append(variables, "compiler_version_cache", "{"+compilers+"}")
+	var paths []string
+	if tools.Darwin >= 13 && tools.Tools != "none" {
+		for _, tool := range shims {
+			paths = append(paths, tool, "/usr/bin/"+tool)
+		}
+		for _, tool := range gone {
+			paths = append(paths, tool, "{}")
+		}
+	}
+	variables = append(variables, "tool_path_cache", "{"+strings.Join(paths, " ")+"}")
+	return strings.Join(variables, " "), nil
+}
+
+// ToolchainAnswers is what a modelled context's worker answers about the
+// developer tools' files, as the Tcl dictionary the evaluator's dispatcher
+// reads: whether the tools and Xcode are there, libxcselect, and the
+// tools' SDKs, an empty list where no source tells. It is empty for a
+// platform the table has no row for.
+func ToolchainAnswers(platform record.Platform) (string, error) {
+	tools, err := Toolchain(platform)
+	if errors.Is(err, ErrNoToolchain) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	var sdks []string
+	for _, sdk := range tools.SDKs {
+		name, target, _ := strings.Cut(sdk, " -> ")
+		sdks = append(sdks, name)
+		if target != "" {
+			sdks = append(sdks, target)
+		}
+	}
+	flag := func(b bool) string {
+		if b {
+			return "1"
+		}
+		return "0"
+	}
+	return strings.Join([]string{
+		"darwin", strconv.Itoa(tools.Darwin),
+		"tools", flag(tools.Tools != "none"),
+		"xcode", flag(tools.Xcode != "none"),
+		"xcselect", flag(tools.XCSelect),
+		"sdks", "{" + strings.Join(sdks, " ") + "}",
 	}, " "), nil
 }

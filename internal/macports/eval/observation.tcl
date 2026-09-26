@@ -131,12 +131,15 @@ namespace eval ::dockhand {
     # interpreter describe another platform, built once in Go by
     # macports.PlatformVariables, the same list a generated index gets;
     # empty observes the native platform.
-    proc observation_setup {overrides trace_declarations operands_to_observe} {
+    proc observation_setup {overrides trace_declarations operands_to_observe toolchain} {
         # Validate before recording anything, so a refused platform leaves
         # the session as it was.
-        if {[llength $overrides] % 2 != 0} {
+        if {[llength $overrides] % 2 != 0 || [llength $toolchain] % 2 != 0} {
             error "unsupported modeled platform"
         }
+        # A modelled context's developer tools are the facts table's; the
+        # Mac's own context's are its own.
+        set ::dockhand::toolchain $toolchain
         variable operands $operands_to_observe
         variable observing 1
         variable declarations $trace_declarations

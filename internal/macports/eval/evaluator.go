@@ -67,6 +67,9 @@ var dispatcherScript string
 //go:embed installation.tcl
 var installationScript string
 
+//go:embed toolchain.tcl
+var toolchainScript string
+
 func (e *Evaluator) start(ctx context.Context, tree macports.Tree) (*rpc.Session, macports.Runtime, error) {
 	executable := e.Executable
 	if executable == "" {
@@ -94,7 +97,7 @@ func (e *Evaluator) start(ctx context.Context, tree macports.Tree) (*rpc.Session
 	}
 	tables := "namespace eval ::dockhand {}\nset ::dockhand::read_options [list " + strings.Join(macports.ReadOptions, " ") + "]\n" +
 		"set ::dockhand::host_programs [list " + macports.TclHostPrograms(macports.HostPrograms) + "]\n"
-	if _, err := session.Call(ctx, "eval", tables+compatibilityScript+"\n"+fetchCredentialsScript+"\n"+platformScript+"\n"+dispatcherScript+"\n"+installationScript+"\n"+observationScript+"\n"+evaluatorScript); err != nil {
+	if _, err := session.Call(ctx, "eval", tables+compatibilityScript+"\n"+fetchCredentialsScript+"\n"+platformScript+"\n"+dispatcherScript+"\n"+installationScript+"\n"+toolchainScript+"\n"+observationScript+"\n"+evaluatorScript); err != nil {
 		return fail(fmt.Errorf("%w: %w", macports.ErrStartup, err))
 	}
 	version, err := session.Call(ctx, "probe")
@@ -136,7 +139,16 @@ func (e *Evaluator) model(ctx context.Context, session *rpc.Session, runtime mac
 	if err != nil {
 		return runtime, fmt.Errorf("%w: %w", macports.ErrPlatform, err)
 	}
-	reply, err := session.Call(ctx, "model_platform", overrides, macports.CommandLineTools)
+	// The session's own context is modelled throughout, so its tools must
+	// be in the facts table.
+	if _, err := macports.Toolchain(model); err != nil {
+		return runtime, fmt.Errorf("%w: %w", macports.ErrPlatform, err)
+	}
+	toolchain, err := macports.ToolchainAnswers(model)
+	if err != nil {
+		return runtime, fmt.Errorf("%w: %w", macports.ErrPlatform, err)
+	}
+	reply, err := session.Call(ctx, "model_platform", overrides, toolchain)
 	if err != nil {
 		return runtime, fmt.Errorf("%w: %w", macports.ErrStartup, err)
 	}
@@ -248,14 +260,32 @@ func evaluateIn(ctx context.Context, session *rpc.Session, runtime macports.Runt
 				return macports.Observation{}, fmt.Errorf("macports: invalid observation operand %q", operand)
 			}
 		}
-		overrides := ""
+		// A context other than the Mac's own is modelled, its developer
+		// tools from the facts table; a session that models every context
+		// models its own too.
+		overrides, toolchain := "", ""
+		modelled := runtime.Platform
 		if request.Platform != (record.Platform{}) && request.Platform != runtime.Platform {
 			var err error
-			if overrides, err = macports.PlatformVariables(request.Platform); err != nil {
+			if overrides, err = macports.ModelVariables(request.Platform); err != nil {
 				return macports.Observation{}, err
 			}
+			modelled = request.Platform
 		}
-		if _, err := session.Call(ctx, "observation_setup", overrides, strconv.FormatBool(request.Declarations), strings.Join(request.Operands, " ")); err != nil {
+		if overrides != "" || runtime.Modeled() {
+			var err error
+			if toolchain, err = macports.ToolchainAnswers(modelled); err != nil {
+				return macports.Observation{}, err
+			}
+			// A platform the table has no row for keeps the session's
+			// modelled tools, where the session models its own.
+			if toolchain == "" && runtime.Modeled() {
+				if toolchain, err = macports.ToolchainAnswers(runtime.Platform); err != nil {
+					return macports.Observation{}, err
+				}
+			}
+		}
+		if _, err := session.Call(ctx, "observation_setup", overrides, strconv.FormatBool(request.Declarations), strings.Join(request.Operands, " "), toolchain); err != nil {
 			return macports.Observation{}, err
 		}
 	}
