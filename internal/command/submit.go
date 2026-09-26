@@ -19,7 +19,7 @@ import (
 func submitCommand(s *settings, streams Streams) *cobra.Command {
 	var selector string
 	var request engine.SubmitRequest
-	var yes, testedBinaries, testedVariants, check, passing, ready bool
+	var yes, testedBinaries, testedVariants, check, passing, ready, preview bool
 	var on []string
 	cmd := &cobra.Command{
 		Use:   "submit",
@@ -42,7 +42,9 @@ commit passes as submit requires.
 
 Every push is conditional on the fork's branch being where submit last saw
 it, so nobody else's push is ever overwritten. A description you edited on
-GitHub is kept.`,
+GitHub is kept.
+
+--plan shows the preview and changes nothing, here or on GitHub.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
@@ -52,6 +54,9 @@ GitHub is kept.`,
 			}
 			defer e.Close()
 			request.TestedBinaries, request.TestedVariants = testedBinaries, testedVariants
+			if preview && (check || passing || yes || ready) {
+				return errors.New("--plan previews one branch's submission; it goes without --check, --passing, --yes, and --ready (dockhand check --plan previews a check)")
+			}
 			if passing {
 				return submitPassing(ctx, e, streams, request, s.file.Submit.RerequestReview)
 			}
@@ -69,6 +74,10 @@ GitHub is kept.`,
 			writeSubmitPlan(streams.Out, plan)
 			if len(plan.Blocking) > 0 {
 				return errors.New("nothing was submitted")
+			}
+			if preview {
+				fmt.Fprintln(streams.Out, "Nothing was submitted (--plan).")
+				return nil
 			}
 			if !streams.terminal() {
 				if !yes {
@@ -104,6 +113,7 @@ GitHub is kept.`,
 		},
 	}
 	cmd.Flags().StringVar(&selector, "branch", "", "submit this tracked branch")
+	cmd.Flags().BoolVar(&preview, "plan", false, "show what would be pushed and opened, and change nothing")
 	cmd.Flags().BoolVar(&request.Head, "head", false, "submit the committed head, leaving uncommitted edits out")
 	cmd.Flags().BoolVar(&request.Draft, "draft", false, "open the pull request as a draft, which unfinished or failing checks allow")
 	cmd.Flags().BoolVar(&request.NoCheck, "no-check", false, "submit without a check; the pull request says no local build ran")

@@ -143,6 +143,17 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 	require.Contains(t, out, "  PR       opens a new one\n")
 	require.Empty(t, g.prs)
 
+	// --plan is the preview on its own: it succeeds, and pushes and
+	// opens nothing.
+	out, _, err = dockhand(t, "submit", "--no-check", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "jq-update · ready to submit\n")
+	require.Contains(t, out, "Nothing was submitted (--plan).\n")
+	require.Empty(t, g.prs)
+	require.Empty(t, gitRun(t, g.fork, "branch", "--list", "dockhand/jq-update"), "nothing was pushed")
+	_, _, err = dockhand(t, "submit", "--plan", "--check")
+	require.ErrorContains(t, err, "--plan previews one branch's submission")
+
 	var stdout, errs bytes.Buffer
 	err = Run(t.Context(), []string{"submit", "--draft"}, Streams{In: strings.NewReader("y\n\np\ns\n"), Out: &stdout, Err: &errs, interactive: true})
 	require.NoError(t, err)
