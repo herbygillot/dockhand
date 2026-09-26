@@ -444,7 +444,28 @@ exec /bin/launchctl bootstrap system "$2/guest.plist"`, "dockhand", input, guest
 func (p *Provider) follow(ctx context.Context, g guest, started run, job engine.Job, build engine.Build, release macos.Release) error {
 	recorded := 0
 	failures := 0
-	drift := false
+	observed := false
+	// take takes in what the guest has written: what it reported about
+	// itself, once, and each target's result not yet recorded. Every read
+	// goes through it, the last one too, since the guest writes its
+	// facts only with its first result.
+	take := func(results guestResults) error {
+		if !observed && results.Environment["macos"] != "" {
+			observed = true
+			if message := driftReport(release, job.Environment.DeveloperTools, results.Environment); message != "" {
+				build.Progress(message)
+			}
+			if err := build.Observe(reported(results.Environment)); err != nil {
+				return err
+			}
+		}
+		for ; recorded < len(results.Targets); recorded++ {
+			if err := p.record(ctx, g, job, build, results.Targets[recorded]); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -467,19 +488,8 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job engine.
 		if results.Protocol != Protocol {
 			return fmt.Errorf("%w: the guest program wrote protocol %d results; this dockhand reads %d", engine.ErrInfrastructure, results.Protocol, Protocol)
 		}
-		if !drift && results.Environment["macos"] != "" {
-			drift = true
-			if message := driftReport(release, job.Environment.DeveloperTools, results.Environment); message != "" {
-				build.Progress(message)
-			}
-			if err := build.Observe(observed(results.Environment)); err != nil {
-				return err
-			}
-		}
-		for ; recorded < len(results.Targets); recorded++ {
-			if err := p.record(ctx, g, job, build, results.Targets[recorded]); err != nil {
-				return err
-			}
+		if err := take(results); err != nil {
+			return err
 		}
 		switch results.State {
 		case "finished":
@@ -490,12 +500,7 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job engine.
 		if gone, err := stopped(ctx, g); err == nil && gone {
 			// It may have written its last results after the read above.
 			if last, err := p.read(ctx, g); err == nil && last.State == "finished" {
-				for ; recorded < len(last.Targets); recorded++ {
-					if err := p.record(ctx, g, job, build, last.Targets[recorded]); err != nil {
-						return err
-					}
-				}
-				return nil
+				return take(last)
 			}
 			log, _ := g.Read(ctx, guestRoot+"/runner.log", true)
 			return fmt.Errorf("%w: the guest program stopped before it finished: %s", engine.ErrInfrastructure, strings.TrimSpace(tail(string(log), 400)))
@@ -560,9 +565,9 @@ func (p *Provider) record(ctx context.Context, g guest, job engine.Job, build en
 	return nil
 }
 
-// observed is what the guest reported about itself, for the pull request's
+// reported is what the guest reported about itself, for the pull request's
 // Tested on.
-func observed(environment map[string]string) model.Observed {
+func reported(environment map[string]string) model.Observed {
 	return model.Observed{MacOS: environment["macos"], Build: environment["build"], Architecture: environment["architecture"],
 		Xcode: environment["xcode"], XcodeBuild: environment["xcode_build"], Tools: environment["tools"]}
 }

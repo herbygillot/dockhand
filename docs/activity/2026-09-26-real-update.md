@@ -123,3 +123,14 @@ submit.
   - "its description is current";
   - "refreshes its description from Tested on down";
   - "its description is yours, and stays as it is", as before.
+- **prometheus's recheck lost what its guest reported.** Its preview read
+  "Xcode, its version not recorded", while trufflehog's, just before, had
+  it all.
+  - The guest wrote its facts only with its first result, and a
+    single-target check writes that just before "finished".
+  - When the provider read "running" and then found the program already
+    gone, it read the last results and recorded the targets, but not the
+    facts. prometheus finished in that window, and trufflehog didn't.
+  - Every read now goes through one path, the last one included.
+  - The guest also writes its facts as soon as it has gathered them.
+  - A test reproduces the window, and fails on the old code.

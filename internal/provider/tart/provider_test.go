@@ -394,3 +394,22 @@ func TestEnvironmentsAreReleasesWithImages(t *testing.T) {
 	_, err = p.Environments(t.Context(), "leopard")
 	require.ErrorContains(t, err, "unknown release")
 }
+
+// A guest that finishes between a read and the look at whether it's still
+// running is read once more; what it reported about itself is kept then
+// too, since it writes that only with its first result. From prometheus's
+// check, whose pull request had lost its macOS and Xcode.
+func TestWhatAGuestReportedIsKeptWhenItFinishesBetweenReads(t *testing.T) {
+	t.Parallel()
+	passed := guestResult{ID: "libharbor", Outcome: "passed", Log: "target-1.log"}
+	mac := newMac(
+		guestResults{State: "running"},
+		guestResults{State: "finished", Environment: map[string]string{"macos": "26.6.2", "build": "25G83", "architecture": "arm64", "xcode": "26.6", "xcode_build": "17F113"},
+			Targets: []guestResult{passed, {ID: "harbor-cli", Outcome: "passed", Log: "target-2.log"}}},
+	)
+	mac.guest.exited = true
+	build := &fakeBuild{}
+	require.NoError(t, testProvider(mac).Execute(t.Context(), tartJob(t, 1), build))
+	require.Len(t, build.results, 2)
+	require.Equal(t, []model.Observed{{MacOS: "26.6.2", Build: "25G83", Architecture: "arm64", Xcode: "26.6", XcodeBuild: "17F113"}}, build.observed)
+}

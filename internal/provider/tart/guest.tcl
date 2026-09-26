@@ -232,6 +232,9 @@ try {
     save errored $message
     exit 1
 }
+# What the guest found about itself is written now, not only with the
+# first result, so it is read however soon the program ends.
+save running
 set index 0
 foreach target [dict get $input targets] {
     incr index
