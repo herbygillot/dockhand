@@ -64,6 +64,9 @@ var fetchCredentialsScript string
 //go:embed dispatcher.tcl
 var dispatcherScript string
 
+//go:embed installation.tcl
+var installationScript string
+
 func (e *Evaluator) start(ctx context.Context, tree macports.Tree) (*rpc.Session, macports.Runtime, error) {
 	executable := e.Executable
 	if executable == "" {
@@ -91,7 +94,7 @@ func (e *Evaluator) start(ctx context.Context, tree macports.Tree) (*rpc.Session
 	}
 	tables := "namespace eval ::dockhand {}\nset ::dockhand::read_options [list " + strings.Join(macports.ReadOptions, " ") + "]\n" +
 		"set ::dockhand::host_programs [list " + macports.TclHostPrograms(macports.HostPrograms) + "]\n"
-	if _, err := session.Call(ctx, "eval", tables+compatibilityScript+"\n"+fetchCredentialsScript+"\n"+platformScript+"\n"+dispatcherScript+"\n"+observationScript+"\n"+evaluatorScript); err != nil {
+	if _, err := session.Call(ctx, "eval", tables+compatibilityScript+"\n"+fetchCredentialsScript+"\n"+platformScript+"\n"+dispatcherScript+"\n"+installationScript+"\n"+observationScript+"\n"+evaluatorScript); err != nil {
 		return fail(fmt.Errorf("%w: %w", macports.ErrStartup, err))
 	}
 	version, err := session.Call(ctx, "probe")

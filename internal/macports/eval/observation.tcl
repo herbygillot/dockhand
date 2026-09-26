@@ -97,7 +97,7 @@ namespace eval ::dockhand {
                     if {$recording} { return }
                     variable ::dockhand_dispatcher::ledger
                     set cmd [lreplace $cmd 0 0 source]
-                    dict incr ledger [list source "" [::dockhand_dispatcher::source_of source [lrange $cmd 1 end]]]
+                    dict incr ledger [list source "" [::dockhand_dispatcher::source_of source [lrange $cmd 1 end]] ""]
                     if {[string match */Portfile [lindex $cmd end]]} {
                         variable portfiles
                         incr portfiles

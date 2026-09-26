@@ -44,10 +44,14 @@ type OperandObservation struct {
 
 // LedgerEntry counts the calls a worker's dispatcher passed for one
 // command, and file subcommand, by where the answer came from: pure path
-// arithmetic, the captured tree, a process, a relative path, a directory
-// enumeration, or the host (docs/oracle.md, phase 1).
+// arithmetic, the captured tree, Base's own library, a process, a relative
+// path, a directory enumeration, the host (docs/oracle.md, phase 1), or
+// the fresh installation (phase 4). Subject is what a question of the
+// installation was about: the port a registry question names, or the
+// program a lookup or exec looked for.
 type LedgerEntry struct {
 	Command, Subcommand, Source string
+	Subject                     string `json:",omitempty"`
 	Count                       int
 }
 

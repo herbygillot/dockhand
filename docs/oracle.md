@@ -255,7 +255,8 @@ The questions are of four kinds:
   `Emacs.app` locations.
 
 Phase 4's ledger records each question's subject, so every survey keeps
-this list current.
+this list current. Its first survey found 93 subjects, asked by 897
+subports.
 
 ### Isolation: best effort
 
@@ -310,8 +311,8 @@ ports), compared with the one before.
 | 1 | **Done.** Dispatcher in shadow mode: hide and alias, pass the host's answers through, count each call by its source. It replaces the trace-based observation. | 13 ports, a correction | The survey matches the baseline but for 13 ports whose host reads the old traces could not see ([note](activity/2026-09-25-oracle-phase-1.md)); the cost equals the traces'. |
 | 2 | **Done.** Effects refused: writes, network, and unlisted programs, at the dispatcher in every worker, with a table of about 20 programs that only report (`macports.HostPrograms`), there for the hook grammar too. Each refusal is kept in the parent, out of `catch`'s reach, and the evaluation isn't trusted. A first comparison with a fresh Tart guest, on a sample, waits for the v3 Tart provider. | No, at this commit | No port attempts an effect that would take place ([note](activity/2026-09-25-oracle-phase-2.md)); the guest comparison's differences are explained. |
 | 3 | Workspace rule (decision 35): a read inside the tree materialises on demand, and a read outside it is refused. | No | Evaluation reports the complete set of files it read. |
-| 4 | Installation `fresh`: an empty registry, prefix files absent, `PATH` as MacPorts' build environment. The ledger records each registry question's subject. A pass answering "installed" sizes `with-deps`. | Yes, in native contexts (`qt5_version_info` alone touches 836 subports) | Every changed result is explained. |
-| 4b | `with-deps`, if phase 4's pass shows checksum-relevant results moving. | Only where fetch depends on what is installed | The moved ports are covered, or inconclusive for the fields affected. |
+| 4 | **Done.** Installation `fresh`: an empty registry, the prefix holding only Base and its skeleton, programs looked up along MacPorts' `PATH` as a fresh prefix has them. The ledger records each question's subject. | Yes: 62 ports conclusive that weren't; dependencies in 2,830 contexts; no fetch field | Every changed result is explained ([note](activity/2026-09-26-oracle-phase-4.md)). |
+| 4b | `with-deps`, if a survey shows a registry answer reaching what a bump edits. At `abd9fff84df` none does. | Only where fetch depends on what is installed | The moved ports are covered, or inconclusive for the fields affected. |
 | 5 | Toolchain from the facts table (step 6): Xcode and Command Line Tools versions, developer directory, compilers, and SDKs per release, each row tied to its image. Replaces `ModelVariables`. Adds the two-outcome `java_home` answer (decision 18). | Yes, in modelled contexts | The 180 Java ports come in, confirmed by the survey. |
 | 6 | Bootstrap under the environment contract: `mportinit`'s `sw_vers`, `sysctl`, `xcodebuild`, its own `macports.conf`, a disposable `portdbpath`, and a `HOME` dockhand owns. May belong to step 6. | Possibly | — |
 

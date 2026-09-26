@@ -92,10 +92,10 @@ func decodeObservation(value string) (macports.PortObservation, error) {
 	for i := 0; i < len(ledger); i += 2 {
 		key, errs := syntax.ListValues(ledger[i])
 		count, err := strconv.Atoi(ledger[i+1])
-		if len(errs) > 0 || len(key) != 3 || err != nil {
+		if len(errs) > 0 || len(key) != 4 || err != nil {
 			return out, fmt.Errorf("macports: invalid ledger entry")
 		}
-		out.Ledger = append(out.Ledger, macports.LedgerEntry{Command: key[0], Subcommand: key[1], Source: key[2], Count: count})
+		out.Ledger = append(out.Ledger, macports.LedgerEntry{Command: key[0], Subcommand: key[1], Source: key[2], Subject: key[3], Count: count})
 	}
 	return out, nil
 }

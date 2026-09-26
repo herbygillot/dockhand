@@ -147,22 +147,26 @@ namespace eval ::dockhand {
                     }
                     return 0
                 }
-                # pipeline judges a command line in exec's syntax: every
-                # program in it admitted, output only to /dev/null or a
-                # channel, and nothing left running in the background.
-                proc pipeline {words} {
-                    while {[lindex $words 0] in {-ignorestderr -keepnewline --}} {
-                        set words [lassign $words switch]
-                        if {$switch eq "--"} { break }
+                # parse reads a command line as exec does: the words of each
+                # stage of its pipeline, by index, its redirections, each an
+                # operator and its target, and whether it runs in the
+                # background.
+                proc parse {words} {
+                    set i 0
+                    while {[lindex $words $i] in {-ignorestderr -keepnewline --}} {
+                        incr i
+                        if {[lindex $words $i-1] eq "--"} { break }
                     }
-                    if {[lindex $words end] eq "&"} { return "leaves a process running" }
-                    set commands {}
-                    set command {}
-                    for {set i 0} {$i < [llength $words]} {incr i} {
+                    set background [expr {[lindex $words end] eq "&"}]
+                    set last [expr {[llength $words] - 1 - $background}]
+                    set stages {}
+                    set stage {}
+                    set redirections {}
+                    for {} {$i <= $last} {incr i} {
                         set word [lindex $words $i]
                         if {$word in {| |&}} {
-                            lappend commands $command
-                            set command {}
+                            lappend stages $stage
+                            set stage {}
                             continue
                         }
                         set operator ""
@@ -173,18 +177,29 @@ namespace eval ::dockhand {
                             }
                         }
                         if {$operator eq ""} {
-                            lappend command $word
+                            lappend stage $i
                             continue
                         }
-                        if {$operator eq "2>@1"} { continue }
                         set target [string range $word [string length $operator] end]
-                        if {$target eq ""} { set target [lindex $words [incr i]] }
+                        if {$target eq "" && $operator ne "2>@1"} { set target [lindex $words [incr i]] }
+                        lappend redirections [list $operator $target]
+                    }
+                    lappend stages $stage
+                    return [list $stages $redirections $background]
+                }
+                # pipeline judges a command line in exec's syntax: every
+                # program in it admitted, output only to /dev/null or a
+                # channel, and nothing left running in the background.
+                proc pipeline {words} {
+                    lassign [parse $words] stages redirections background
+                    if {$background} { return "leaves a process running" }
+                    foreach redirection $redirections {
+                        lassign $redirection operator target
                         if {$operator in {> 2> >& >> 2>> >>&} && $target ne "/dev/null"} { return "writes $target" }
                     }
-                    lappend commands $command
-                    foreach command $commands {
-                        if {[llength $command] == 0} { continue }
-                        set reason [program $command]
+                    foreach stage $stages {
+                        if {[llength $stage] == 0} { continue }
+                        set reason [program [lmap i $stage {lindex $words $i}]]
                         if {$reason ne ""} { return $reason }
                     }
                     return ""
@@ -195,9 +210,10 @@ namespace eval ::dockhand {
                     variable programs
                     # A program that isn't there runs nothing: exec fails
                     # as it would have, as the ruby PortGroup's query of a
-                    # ruby not installed does, and falls back.
+                    # ruby not installed does, and falls back. There is
+                    # what the fresh installation has (installation.tcl).
                     set path [lindex $command 0]
-                    if {[string index $path 0] eq "/" && ![interp invokehidden {} file executable $path]} { return "" }
+                    if {[lindex [locate $path] 1] eq ""} { return "" }
                     set name [lindex [split $path /] end]
                     set arguments [lrange $command 1 end]
                     foreach entry $programs {
@@ -242,21 +258,54 @@ namespace eval ::dockhand {
                     }
                     return $i
                 }
+                # dispatch is every hidden command's alias: a refusal, else
+                # the fresh installation's answer where it has one, else
+                # the host's, counted in the ledger by command, file
+                # subcommand, source, and subject, the port or program a
+                # question of the installation is about.
                 proc dispatch {name args} {
                     variable recording
-                    if {!$recording} {
-                        set reason [refusal $name $args]
-                        if {$reason ne ""} {
-                            set command [string range [list $name {*}$args] 0 199]
-                            interp invokehidden {} dockhand_refused $command $reason [where]
-                            return -code error -errorcode {DOCKHAND REFUSED} "dockhand refused `$command`: it $reason"
-                        }
-                        variable ledger
-                        dict incr ledger [list $name [expr {$name eq "file" ? [lindex $args 0] : ""}] [source_of $name $args]]
-                        variable ready
-                        if {$ready} { ::dockhand_observation::host 2 [list $name {*}$args] }
+                    if {$recording} { return [interp invokehidden {} $name {*}$args] }
+                    set reason [refusal $name $args]
+                    if {$reason ne ""} {
+                        set command [string range [list $name {*}$args] 0 199]
+                        interp invokehidden {} dockhand_refused $command $reason [where]
+                        return -code error -errorcode {DOCKHAND REFUSED} "dockhand refused `$command`: it $reason"
                     }
+                    variable ledger
+                    set subcommand [expr {$name eq "file" ? [lindex $args 0] : ""}]
+                    set answer [fresh $name $args]
+                    if {$answer eq "" && ($name eq "exec" || ($name eq "open" && [string index [lindex $args 0] 0] eq "|"))} {
+                        set answer [run $name $args]
+                        if {[lindex $answer 0] eq "run"} {
+                            set args [lindex $answer 1]
+                            set answer ""
+                        }
+                    }
+                    if {$answer ne ""} {
+                        lassign $answer subject code result options
+                        dict incr ledger [list $name $subcommand fresh $subject]
+                        dict set options -level 1
+                        return -options $options $result
+                    }
+                    dict incr ledger [list $name $subcommand [source_of $name $args] ""]
+                    variable ready
+                    if {$ready} { ::dockhand_observation::host 2 [list $name {*}$args] }
+                    # file stat and lstat set an array in their caller's frame.
+                    if {$subcommand in {stat lstat}} { return [uplevel 1 [list interp invokehidden {} $name {*}$args]] }
                     return [interp invokehidden {} $name {*}$args]
+                }
+                # run is how exec, or open of a pipe, runs from the fresh
+                # installation: run and the words to run, or its answer
+                # that a program isn't there.
+                proc run {name arguments} {
+                    set words [expr {$name eq "exec" ? $arguments : [string range [lindex $arguments 0] 1 end]}]
+                    lassign [programs $words] words missing
+                    if {$missing ne ""} {
+                        return [list $missing 1 "couldn't execute \"$missing\": no such file or directory" {-code 1 -errorcode {POSIX ENOENT {no such file or directory}}}]
+                    }
+                    if {$name eq "open"} { return [list run [lreplace $arguments 0 0 |$words]] }
+                    return [list run $words]
                 }
                 # guard hides the commands of names the worker has and
                 # hasn't hidden yet, and aliases them to dispatch.
@@ -276,9 +325,13 @@ namespace eval ::dockhand {
                     variable outright
                     guard [dict keys $outright]
                 }
-                guard [list exec file open glob {*}[dict keys $outright]]
-                trace add execution ::PortSystem leave ::dockhand_dispatcher::loaded
             }
+        }
+        install_fresh $worker
+        $worker eval {
+            ::dockhand_dispatcher::guard [list exec file open glob findBinary binaryInPath \
+                {*}$::dockhand_dispatcher::registry_reads {*}[dict keys $::dockhand_dispatcher::outright]]
+            trace add execution ::PortSystem leave ::dockhand_dispatcher::loaded
         }
         $worker eval [list set ::dockhand_dispatcher::programs $::dockhand::host_programs]
         $worker eval [list set ::dockhand_dispatcher::source_root $::dockhand::source_root]
