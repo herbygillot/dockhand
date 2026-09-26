@@ -3,6 +3,7 @@ package fetchguard
 import (
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/text"
 )
@@ -85,17 +86,38 @@ var variableWriters = map[string]bool{"set": true, "append": true, "lappend": tr
 // otherwise why not, worded for the line that names the command. It
 // follows a procedure into its body, and reports what stopped it there.
 func effectReason(src []byte, command syntax.Command, defs Definitions, depth int) refusal {
-	name, literal := command.Name(src)
-	if !literal || name == "" {
-		return refuse(command.Span.Start, "is a computed command")
-	}
 	words := command.Words
 	for _, word := range words {
 		if word.Expand {
 			return refuse(command.Span.Start, "expands `%s`", snippet(src, word.Span))
 		}
 	}
+	name, literal := command.Name(src)
+	if !literal || name == "" {
+		// A computed name is judged by the family its fixed prefix names,
+		// where every member of the family is harmless: the Java
+		// PortGroup's depends_${deptype}-append writes a dependency, which
+		// no fetch reads (decision 18).
+		if len(words) > 0 && computedFamily(src, words[0]) == "depends_" {
+			return argumentsReason(src, words, defs, depth)
+		}
+		return refuse(command.Span.Start, "is a computed command")
+	}
 	switch name {
+	case "exec":
+		// A hook may run a program that only reports, by the rules the
+		// evaluator's dispatcher runs it by (macports.HostPrograms,
+		// decision 18). What it prints lands where the word around the
+		// exec is judged, a plain variable the fetch doesn't read.
+		var line []macports.Argument
+		for _, word := range words[1:] {
+			text, plain := plainText(src, word)
+			line = append(line, macports.Argument{Text: text, Literal: plain})
+		}
+		if reason := macports.CommandLineRefusal(line); reason != "" {
+			return refuse(command.Span.Start, "%s", reason)
+		}
+		return argumentsReason(src, words[1:], defs, depth)
 	case "if":
 		return ifReason(src, command, defs, depth)
 	case "foreach", "while", "for", "catch":
@@ -197,9 +219,10 @@ func effectReason(src []byte, command syntax.Command, defs Definitions, depth in
 }
 
 // unfollowed are the commands the grammar refuses on sight: they run
-// programs, read and write files, evaluate text as code, or reshape the
-// interpreter, and what they do cannot be read off a hook.
-var unfollowed = map[string]bool{"exec": true, "system": true, "open": true, "close": true, "cd": true, "source": true, "eval": true, "uplevel": true, "subst": true, "namespace": true, "proc": true, "rename": true, "interp": true, "reinplace": true, "xinstall": true, "delete": true, "copy": true, "move": true, "ln": true, "touch": true, "file": true, "exit": true, "after": true, "vwait": true, "socket": true, "fconfigure": true, "read": true, "gets": true, "seek": true, "glob": true, "pwd": true, "set_option": true, "default": true, "option": true, "options": true, "variant": true, "default_variants": true, "PortGroup": true, "platform": true}
+// programs other than exec's that only report, read and write files,
+// evaluate text as code, or reshape the interpreter, and what they do
+// cannot be read off a hook.
+var unfollowed = map[string]bool{"system": true, "open": true, "close": true, "cd": true, "source": true, "eval": true, "uplevel": true, "subst": true, "namespace": true, "proc": true, "rename": true, "interp": true, "reinplace": true, "xinstall": true, "delete": true, "copy": true, "move": true, "ln": true, "touch": true, "file": true, "exit": true, "after": true, "vwait": true, "socket": true, "fconfigure": true, "read": true, "gets": true, "seek": true, "glob": true, "pwd": true, "set_option": true, "default": true, "option": true, "options": true, "variant": true, "default_variants": true, "PortGroup": true, "platform": true}
 
 // scriptReason judges a script inside a procedure or a control body: every
 // command must be a rejection or harmless by effect. A refusal names the
@@ -455,4 +478,43 @@ func isRejection(src []byte, command syntax.Command) bool {
 		return true
 	}
 	return false
+}
+
+// plainText is a word's text where it substitutes nothing: bare, braced,
+// or quoted around literal text.
+func plainText(src []byte, word syntax.Word) (string, bool) {
+	if text, ok := word.Literal(src); ok {
+		return text, true
+	}
+	if len(word.Segments) != 1 {
+		return "", false
+	}
+	switch segment := word.Segments[0].(type) {
+	case syntax.Braced:
+		return segment.Body.Text(src), true
+	case syntax.Quoted:
+		var text strings.Builder
+		for _, inner := range segment.Segments {
+			literal, ok := inner.(syntax.Literal)
+			if !ok {
+				return "", false
+			}
+			text.WriteString(literal.Span.Text(src))
+		}
+		return text.String(), true
+	}
+	return "", false
+}
+
+// computedFamily is the fixed prefix of a computed command name, the text
+// before its first substitution.
+func computedFamily(src []byte, word syntax.Word) string {
+	if len(word.Segments) < 2 {
+		return ""
+	}
+	literal, ok := word.Segments[0].(syntax.Literal)
+	if !ok {
+		return ""
+	}
+	return literal.Span.Text(src)
 }

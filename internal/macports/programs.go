@@ -2,6 +2,7 @@ package macports
 
 import (
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -9,8 +10,8 @@ import (
 // The programs evaluation may run are kept in one place, as the options it
 // reads are: the evaluator's dispatcher is given HostPrograms and refuses
 // every other program a Portfile or Base runs while a port is evaluated
-// (docs/oracle.md, phase 2). The hook grammar refuses exec outright today;
-// if it comes to admit programs, this is the table it shares.
+// (docs/oracle.md, phase 2), and the pre-fetch hook grammar admits a hook's
+// exec of them by the same rules (CommandLineRefusal).
 
 // ProgramForm says how a host program's arguments are judged.
 type ProgramForm string
@@ -146,4 +147,168 @@ func tclList(elements ...string) string {
 		quoted[i] = "{" + element + "}"
 	}
 	return strings.Join(quoted, " ")
+}
+
+// Argument is one word of a command line as source text shows it: its
+// text where it is literal, or a substitution whose value can't be known
+// until it runs.
+type Argument struct {
+	Text    string
+	Literal bool
+}
+
+// CommandLineRefusal judges a command line in exec's syntax against
+// HostPrograms, as the evaluator's dispatcher does when it runs, for code
+// that is judged before it runs, such as a pre-fetch hook: every program
+// of the pipeline admitted, output only to /dev/null or a channel, and
+// nothing left in the background. It is empty for an admitted line, and
+// otherwise says why not. A substituted word is admitted only as the value
+// an option takes, never as a program, an option, or a redirection.
+func CommandLineRefusal(words []Argument) string {
+	i := 0
+	for i < len(words) && words[i].Literal && slices.Contains([]string{"-ignorestderr", "-keepnewline", "--"}, words[i].Text) {
+		i++
+		if words[i-1].Text == "--" {
+			break
+		}
+	}
+	words = words[i:]
+	if len(words) > 0 && words[len(words)-1].Literal && words[len(words)-1].Text == "&" {
+		return "leaves a process running"
+	}
+	var stage []Argument
+	judge := func() string {
+		if len(stage) == 0 {
+			return ""
+		}
+		return programRefusal(stage)
+	}
+	for i := 0; i < len(words); i++ {
+		word := words[i]
+		if word.Literal && (word.Text == "|" || word.Text == "|&") {
+			if reason := judge(); reason != "" {
+				return reason
+			}
+			stage = nil
+			continue
+		}
+		operator := ""
+		if word.Literal {
+			for _, candidate := range []string{"2>@1", ">&@", "2>@", ">@", "<@", "<<", "<", ">>&", "2>>", ">>", ">&", "2>", ">"} {
+				if strings.HasPrefix(word.Text, candidate) {
+					operator = candidate
+					break
+				}
+			}
+		}
+		if operator == "" {
+			stage = append(stage, word)
+			continue
+		}
+		if operator == "2>@1" {
+			continue
+		}
+		target := Argument{Text: strings.TrimPrefix(word.Text, operator), Literal: true}
+		if target.Text == "" {
+			i++
+			if i >= len(words) {
+				return "redirects to nothing"
+			}
+			target = words[i]
+		}
+		switch operator {
+		case ">", "2>", ">&", ">>", "2>>", ">>&":
+			if !target.Literal {
+				return "writes to a computed file"
+			}
+			if target.Text != "/dev/null" {
+				return "writes " + target.Text
+			}
+		}
+	}
+	return judge()
+}
+
+func programRefusal(command []Argument) string {
+	if !command[0].Literal {
+		return "runs a computed program"
+	}
+	name := command[0].Text[strings.LastIndexByte(command[0].Text, '/')+1:]
+	arguments := command[1:]
+	for _, program := range HostPrograms {
+		if !matches(program.Name, name) {
+			continue
+		}
+		for _, pattern := range program.Refused {
+			for _, argument := range arguments {
+				if argument.Literal && matches(pattern, argument.Text) {
+					return "runs " + name + " with " + argument.Text
+				}
+			}
+		}
+		rest := arguments[admitted(program.Options, arguments):]
+		switch program.Form {
+		case FormAny:
+			for _, argument := range rest {
+				if !argument.Literal {
+					return "runs " + name + " with a computed argument"
+				}
+			}
+			return ""
+		case FormWrapper:
+			if len(rest) > 0 {
+				return programRefusal(rest)
+			}
+			return ""
+		case FormSubcommand:
+			if len(rest) > 0 && rest[0].Literal && slices.Contains(program.Subcommands, rest[0].Text) {
+				// After the subcommand, a computed word could be one the
+				// program refuses.
+				for _, argument := range rest[1:] {
+					if !argument.Literal && len(program.Refused) > 0 {
+						return "runs " + name + " with a computed argument"
+					}
+				}
+				return ""
+			}
+			if len(rest) > 0 && rest[0].Literal {
+				return "runs " + name + " " + rest[0].Text
+			}
+			return "runs " + name + " without a subcommand it admits"
+		}
+		if len(rest) > 0 {
+			if !rest[0].Literal {
+				return "runs " + name + " with a computed argument"
+			}
+			return "runs " + name + " with " + rest[0].Text
+		}
+		return ""
+	}
+	return "runs " + name + ", which is not known to only report"
+}
+
+// admitted is how many of arguments, from the first, options admit with
+// the values each takes, whatever they are; a computed word where an
+// option would be stops it.
+func admitted(options []ProgramOption, arguments []Argument) int {
+	i := 0
+	for i < len(arguments) && arguments[i].Literal {
+		next := i
+		for _, option := range options {
+			if matches(option.Pattern, arguments[i].Text) {
+				next = i + 1 + option.Values
+				break
+			}
+		}
+		if next == i {
+			break
+		}
+		i = min(next, len(arguments))
+	}
+	return i
+}
+
+func matches(pattern, text string) bool {
+	matched, err := regexp.MatchString("^(?:"+pattern+")$", text)
+	return err == nil && matched
 }

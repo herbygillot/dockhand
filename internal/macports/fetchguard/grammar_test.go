@@ -85,7 +85,7 @@ func TestConditionalRejectionGuardsAreRecognized(t *testing.T) {
 	require.True(t, conditionalRejection(wrapper+`if {[variant_isset a] && (${x} || [variant_exists b]) && ${y} eq {}} { return -code error "no" }`+"\n"), "grouping and braced text are part of the grammar")
 	require.False(t, conditionalRejection(wrapper+`if {[variant_isset a] ? 1 : 0} { return -code error "no" }`+"\n"), "a form the parser does not model is refused")
 	for _, body := range []string{
-		wrapper + `if {[exec uname] eq "Darwin"} { return -code error "no" }` + "\n",
+		wrapper + `if {[exec /usr/bin/touch marker] eq ""} { return -code error "no" }` + "\n",
 		wrapper + `if {[variant_isset $which]} { return -code error "no" }` + "\n",
 		wrapper + `if {[variant_isset [lindex $x 0]]} { return -code error "no" }` + "\n",
 		wrapper + `if {[fortran_variant_name] eq "" ]} { return -code error "no" }` + "\n",
@@ -97,6 +97,7 @@ func TestConditionalRejectionGuardsAreRecognized(t *testing.T) {
 		require.False(t, conditionalRejection(body), body)
 	}
 	require.True(t, conditionalRejection(wrapper+`if {${a}} { return -code error "no" }; set x 1`+"\n"), "a plain variable beside the ifs changes nothing the fetch reads")
+	require.True(t, conditionalRejection(wrapper+`if {[exec uname -m] eq "i386"} { return -code error "no" }`+"\n"), "a program that only reports may decide a rejection (decision 18)")
 }
 
 // A refusal names the first command or condition the grammar stopped at, so
@@ -298,6 +299,7 @@ foreach depspec $ports {
 		"java::java_set_env":   {kind: "proc", args: "", body: "set java_home [java::find_java_home]\nconfigure.env-append JAVA_HOME=${java_home}\njava.home ${java_home}\n"},
 		"java::find_java_home": {kind: "proc", args: "", body: "if {[catch {exec /usr/libexec/java_home -V} result]} { return \"\" }\nreturn $result\n"},
 		"helper_writes":        {kind: "proc", args: "", body: "distfiles-append extra.tar.gz\n"},
+		"helper_runs":          {kind: "proc", args: "", body: "exec /usr/bin/touch marker\n"},
 		"deep1":                {kind: "proc", args: "", body: "deep2\n"},
 		"deep2":                {kind: "proc", args: "", body: "deep3\n"},
 		"deep3":                {kind: "proc", args: "", body: "deep4\n"},
@@ -317,7 +319,10 @@ foreach depspec $ports {
 	require.Equal(t, []string{"pre-fetch hook 1 only rejects unsupported configurations"}, semantics.Guards)
 	for name, test := range map[string]struct{ hook, want string }{
 		"an option outside the fetch before rejecting": {"configure.env-append X=1\nreturn -code error no\n", ""},
-		"a procedure that writes environment":          {"java::java_set_env\nreturn -code error no\n", "runs `java::java_set_env` before rejecting, which runs `set java_home [java::find_java_home]` inside java::java_set_env, which runs `java::find_java_home`, which runs `if {[catch {exec /usr/libexec/java_home -V} result]} { re...` inside java::find_java_home, which runs `exec /usr/libexec/java_home -V`, which is not followed by the grammar"},
+		"a procedure that writes environment":          {"java::java_set_env\nreturn -code error no\n", ""},
+		"a program that acts, in a procedure":          {"helper_runs\nreturn -code error no\n", "runs `helper_runs` before rejecting, which runs `exec /usr/bin/touch marker` inside helper_runs, which runs touch, which is not known to only report"},
+		"a dependency named by a variable":             {"depends_${deptype}-append port:openjdk17\nreturn -code error no\n", ""},
+		"another option named by a variable":           {"${which}-append x\nreturn -code error no\n", "runs `${which}-append x` before rejecting, which is a computed command"},
 		"a fetch option before rejecting":              {"distfiles-append extra.tar.gz\nreturn -code error no\n", "runs `distfiles-append extra.tar.gz` before rejecting, which writes `distfiles`"},
 		"a procedure that writes a fetch option":       {"helper_writes\nreturn -code error no\n", "runs `helper_writes` before rejecting, which runs `distfiles-append extra.tar.gz` inside helper_writes, which writes `distfiles`"},
 		"an unknown procedure":                         {"mystery\nreturn -code error no\n", "runs `mystery` before rejecting, which is unknown to the grammar"},
