@@ -72,7 +72,10 @@ func TestANarrowedCheckNeverShrinksWhatSubmitRequires(t *testing.T) {
 	require.Len(t, submission.Evidence.Earlier, 1, "the first narrowed check adds nothing")
 	require.Equal(t, full.ID, submission.Evidence.Earlier[0].ID)
 	require.NotEqual(t, narrowed.ID, full.ID)
-	require.Contains(t, submission.Body, "Checked by dockhand "+again.Name()+", with results from "+full.Name()+" for the same files.")
+	// Tested on names both checks, each beside the run it had.
+	require.Regexp(t, `\(Run IDs: command_[a-z0-9]{16} - checked in check-\d+; command_[a-z0-9]{16} - checked in check-\d+\)`, submission.Body)
+	require.Contains(t, submission.Body, " - checked in "+again.Name())
+	require.Contains(t, submission.Body, " - checked in "+full.Name())
 	passing, err = e.PassingBranches(t.Context())
 	require.NoError(t, err)
 	require.Len(t, passing.Ready, 1)

@@ -57,6 +57,15 @@ func (e Evidence) Runs(environment int) []model.GuestExecution {
 	return runs
 }
 
+// Checks name the checks the evidence's runs were in, check-11, by ID.
+func (e Evidence) Checks() map[model.RunID]string {
+	checks := map[model.RunID]string{e.Run.ID: e.Run.Name()}
+	for _, run := range e.Earlier {
+		checks[run.ID] = run.Name()
+	}
+	return checks
+}
+
 // Observed is what an environment reported about itself in the latest of
 // its runs that said anything; empty where none did.
 func (e Evidence) Observed(environment int) model.Observed {

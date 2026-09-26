@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/version"
 )
 
 // The MacPorts pull request template's headings
@@ -92,8 +93,9 @@ func ownedSections(facts bodyFacts) string {
 	case evidence == nil:
 		fmt.Fprintln(&b, "No local check has finished for this commit yet. This is a draft, so MacPorts CI starts early.")
 	default:
+		checks := evidence.Checks()
 		for i, environment := range evidence.Plan.Environments {
-			b.WriteString(testedOn(environment, evidence.Observed(i), evidence.Runs(i)))
+			b.WriteString(testedOn(environment, evidence.Observed(i), evidence.Runs(i), checks))
 		}
 		fmt.Fprint(&b, "| Port |")
 		for _, environment := range evidence.Plan.Environments {
@@ -111,15 +113,6 @@ func ownedSections(facts bodyFacts) string {
 			}
 			fmt.Fprintln(&b)
 		}
-		checked := evidence.Run.Name()
-		if len(evidence.Earlier) > 0 {
-			var earlier []string
-			for _, run := range evidence.Earlier {
-				earlier = append(earlier, run.Name())
-			}
-			checked += ", with results from " + strings.Join(earlier, " and ") + " for the same files"
-		}
-		fmt.Fprintf(&b, "\nChecked by dockhand %s.\n", checked)
 	}
 	fmt.Fprintf(&b, "\n%s\n\nHave you\n\n", verificationHeading)
 	built := evidence != nil && !facts.NoCheck && allBuilt(*evidence, facts.Accepted)
@@ -153,7 +146,18 @@ func ownedSections(facts bodyFacts) string {
 	if facts.SkipNotification {
 		fmt.Fprint(&b, "\n[skip notification]\n")
 	}
+	fmt.Fprintf(&b, "\n%s\n", signature(version.Current().Tag()))
 	return b.String()
+}
+
+// signature is the description's last line, naming dockhand and its
+// version, or dockhand alone when the build doesn't know its version.
+func signature(tag string) string {
+	line := "Submitted by [dockhand](" + version.ProjectURL + ")"
+	if tag = strings.TrimSpace(tag); tag != "" {
+		line += " ver. " + tag
+	}
+	return line
 }
 
 func tick(done bool) string {
@@ -189,10 +193,10 @@ func citesTickets(commits []git.HistoryCommit) bool {
 // testedOn is one environment's lines under Tested on, as MacPorts'
 // template has them: the macOS version, build, and architecture, then
 // Xcode's version and build or the Command Line Tools', as the environment
-// reported them, then who built it, and in which runs. What it didn't
-// report is said by the release's name and the tools the environment
-// stated, and never by the Darwin version, which isn't macOS's.
-func testedOn(environment model.Environment, observed model.Observed, runs []model.GuestExecution) string {
+// reported them, then who built it, and in which runs of which checks. What
+// it didn't report is said by the release's name and the tools the
+// environment stated, and never by the Darwin version, which isn't macOS's.
+func testedOn(environment model.Environment, observed model.Observed, runs []model.GuestExecution, checks map[model.RunID]string) string {
 	var b strings.Builder
 	platform := environment.Platform
 	switch {
@@ -214,32 +218,36 @@ func testedOn(environment model.Environment, observed model.Observed, runs []mod
 	default:
 		tools = "Developer tools not recorded"
 	}
-	fmt.Fprintf(&b, "%s · %s%s\n\n", tools, providerWords(environment.Provider), runWords(runs))
+	fmt.Fprintf(&b, "%s · %s%s\n\n", tools, providerWords(environment.Provider), runWords(runs, checks))
 	return b.String()
 }
 
-// runWords name the provider runs behind an environment's results: its
-// provider's own reference where it's a link anyone can follow, such as a
-// workflow run's URL, and dockhand's ID for the run otherwise, which the
-// author's dockhand logs finds the evidence by.
-func runWords(runs []model.GuestExecution) string {
-	var names []string
+// runWords name the provider runs behind an environment's results, each
+// with the check it was in: "(Run ID: tart_7y62p4sigena6xlr - checked in
+// check-11)". A run is named by its provider's own reference where that is
+// a link anyone can follow, such as a workflow run's URL, and by dockhand's
+// ID otherwise, which the author's dockhand logs finds the evidence by.
+func runWords(runs []model.GuestExecution, checks map[model.RunID]string) string {
+	var named []string
 	for _, run := range runs {
 		name := string(run.ID)
 		if strings.HasPrefix(run.ProviderRef, "https://") {
 			name = run.ProviderRef
 		}
-		if !slices.Contains(names, name) {
-			names = append(names, name)
+		if check := checks[run.Run]; check != "" {
+			name += " - checked in " + check
+		}
+		if !slices.Contains(named, name) {
+			named = append(named, name)
 		}
 	}
-	switch len(names) {
+	switch len(named) {
 	case 0:
 		return ""
 	case 1:
-		return ", run " + names[0]
+		return " (Run ID: " + named[0] + ")"
 	}
-	return ", runs " + strings.Join(names, " and ")
+	return " (Run IDs: " + strings.Join(named, "; ") + ")"
 }
 
 func nonEmpty(values ...string) []string {

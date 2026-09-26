@@ -69,3 +69,31 @@ bits), but it was internal and never shown.
   - a name that is neither a check nor a provider run.
 - **The command provider:** the request's `execution`, and a result's
   `reference` finding its run.
+
+## Then: the person's wording
+
+The person settled how a run reads in the pull request:
+
+- **Each run names its check.** "Xcode 26.6 17F113 · tart: built in a
+  clean VM (Run ID: tart_b7x7ddf53ukr6wbn - checked in check-11)". Runs
+  from two attempts or checks read "(Run IDs: … - checked in check-10;
+  … - checked in check-11)".
+- **"Checked by dockhand check-N" goes.** Each run line names its check
+  now, the earlier checks' included.
+- **A last line** closes the description: "Submitted by
+  [dockhand](https://github.com/herbygillot/dockhand) ver. <version>".
+  - The version is the trailer form commit messages already use
+    (`version.Current().Tag()`).
+  - The link is written `[dockhand](url)`, since the `(dockhand)[url]`
+    asked for would show as brackets on GitHub.
+  - It sits in the part of the description dockhand refreshes, so a later
+    submit updates the version.
+- **It renders with anything missing.** The person asked that the
+  description still render when this information is missing, whatever the
+  reason. Each gap has its own test:
+  - a macOS version without its build, or Xcode without its build, drops
+    only what's missing;
+  - an unreported environment is named by its release and stated tools;
+  - a run whose check isn't known gives its ID alone, and no runs leave
+    the parentheses out;
+  - a build that doesn't know its version signs without "ver.".
