@@ -92,6 +92,19 @@ func TestCheckAndProviderSettings(t *testing.T) {
 	require.ErrorContains(t, err, "providers.command.run")
 	_, err = parse("config.toml", "[providers.prefix]\npath = \"x\"\n")
 	require.ErrorContains(t, err, "unknown setting providers.prefix.path")
+
+	f, err = parse("config.toml", "[providers.tart]\ncapacity = 2\ntest_timeout = \"45m\"\n")
+	require.NoError(t, err)
+	require.Equal(t, 2, f.Capacity("tart"))
+	require.Equal(t, 45*time.Minute, f.Providers.Tart.Timeout())
+	f, err = parse("config.toml", "")
+	require.NoError(t, err)
+	require.Equal(t, 1, f.Capacity("tart"), "macOS runs two VMs, the person's own among them")
+	require.Zero(t, f.Providers.Tart.Timeout())
+	_, err = parse("config.toml", "[providers.tart]\ntest_timeout = \"soon\"\n")
+	require.ErrorContains(t, err, "providers.tart.test_timeout")
+	_, err = parse("config.toml", "[providers.tart]\ncapacity = -1\n")
+	require.ErrorContains(t, err, "providers.tart.capacity")
 }
 
 func TestCleanupSettings(t *testing.T) {

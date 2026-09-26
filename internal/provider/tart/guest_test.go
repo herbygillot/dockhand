@@ -1,0 +1,194 @@
+package tart
+
+import (
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/testsupport"
+)
+
+// fakePort stands for MacPorts' port in a guest: it records each command,
+// has nothing installed, prints each target's dependencies from DEPS
+// ("name=dep ..."), and fails the phases FAIL names ("phase:port ...").
+const fakePort = `#!/bin/sh
+echo "$*" >> "$PORT_LOG"
+case "$*" in
+  *"-q installed"*) exit 0 ;;
+  *"echo depof:"*)
+    for entry in $DEPS; do
+      case "$*" in *"depof:${entry%%=*}") echo "${entry#*=}" ;; esac
+    done
+    exit 0 ;;
+esac
+for entry in $FAIL; do
+  phase=${entry%%:*}; port=${entry#*:}
+  case "$*" in
+    *" $phase "*"subport=$port"*|*" $phase "*"subport=$port "*) echo "Error: Failed to $phase $port: it broke"; exit 1 ;;
+  esac
+done
+exit 0
+`
+
+// guestRun runs the shipped guest program on input, in a scratch root with
+// the fake port, and returns its results and the commands port was given.
+func guestRun(t *testing.T, input guestInput, env ...string) (guestResults, []string) {
+	t.Helper()
+	executable := testsupport.MacPortsTclsh(t)
+	root := t.TempDir()
+	prefix := filepath.Join(root, "prefix")
+	require.NoError(t, os.MkdirAll(filepath.Join(prefix, "bin"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(prefix, "etc", "macports"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(prefix, "bin", "port"), []byte(fakePort), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "ports"), 0o755))
+	if !strings.Contains(strings.Join(env, " "), "NO_INDEX=1") {
+		require.NoError(t, os.WriteFile(filepath.Join(root, "ports", "PortIndex"), nil, 0o644))
+	}
+	input.Protocol, input.Prefix = Protocol, prefix
+	input.Platform = model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
+	if input.TestTimeout == 0 {
+		input.TestTimeout = 60
+	}
+	data, err := json.Marshal(input)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(root, "input.json"), data, 0o644))
+	// MacPorts itself is stood in for: the platform, and which ports
+	// declare tests.
+	prelude := `
+package provide macports 1.0
+namespace eval macports {variable os_platform darwin; variable os_major 25; variable build_arch arm64}
+proc mportinit {} {}
+proc declares_tests {portdir name variants} { return [expr {$name in $::env(TESTED)}] }
+set foreignManagers {}
+`
+	script := filepath.Join(root, "guest.tcl")
+	require.NoError(t, os.WriteFile(script, append([]byte(prelude), guestProgram...), 0o644))
+	command := exec.CommandContext(t.Context(), executable, script)
+	portLog := filepath.Join(root, "port.log")
+	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "PORT_LOG="+portLog, "TESTED=", "DEPS=", "FAIL="), env...)
+	output, _ := command.CombinedOutput()
+	data, err = os.ReadFile(filepath.Join(root, "results.json"))
+	require.NoError(t, err, "%s", output)
+	var results guestResults
+	require.NoError(t, json.Unmarshal(data, &results), "%s", data)
+	commands, _ := os.ReadFile(portLog)
+	var lines []string
+	for _, line := range strings.Split(strings.TrimSpace(string(commands)), "\n") {
+		if line != "" {
+			// The port directory is the scratch root's; the tail is enough.
+			lines = append(lines, strings.ReplaceAll(line, filepath.Join(root, "ports")+"/", ""))
+		}
+	}
+	return results, lines
+}
+
+func twoTargets(tests string) guestInput {
+	return guestInput{Run: "check-1", Attempt: 1, Tests: tests, Targets: []guestTarget{
+		{ID: "libharbor", Name: "libharbor", Portfile: "devel/libharbor/Portfile"},
+		{ID: "harbor-cli", Name: "harbor-cli", Portfile: "devel/harbor-cli/Portfile", DependsOn: []string{"libharbor"}},
+	}}
+}
+
+// Each target is linted, its dependencies installed, and then fetched,
+// checksummed, and installed, as MacPorts CI does, with its declared tests
+// after; the results say so target by target.
+func TestTheGuestBuildsEachTargetInCIsOrder(t *testing.T) {
+	t.Parallel()
+	results, commands := guestRun(t, twoTargets("declared"), "TESTED=libharbor", "DEPS=libharbor=zlib harbor-cli=libharbor")
+	require.Equal(t, "finished", results.State, results.Detail)
+	require.Equal(t, []guestResult{
+		{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "target-1.log"},
+		{ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "target-2.log"},
+	}, results.Targets)
+	require.Equal(t, "arm64", results.Environment["architecture"])
+	var libharbor []string
+	for _, command := range commands {
+		if strings.Contains(command, "devel/libharbor") || strings.Contains(command, "depof:libharbor") {
+			libharbor = append(libharbor, command)
+		}
+	}
+	require.Equal(t, []string{
+		"-N -D devel/libharbor lint subport=libharbor",
+		"-q echo depof:libharbor",
+		"-N -D devel/libharbor -d fetch subport=libharbor",
+		"-N -D devel/libharbor -d checksum subport=libharbor",
+		"-N -D devel/libharbor -dkn install --unrequested subport=libharbor",
+		"-N -D devel/libharbor -d test subport=libharbor",
+	}, keep(libharbor, func(c string) bool { return !strings.Contains(c, "installed") }))
+	require.Contains(t, commands, "-N -d install --unrequested zlib", "a target's dependencies are installed first")
+	require.Contains(t, commands, "-N -d install --unrequested libharbor", "the dependent's changed dependency is among them")
+}
+
+// A target that fails stops at its phase, and a target that needs it is
+// blocked rather than built against an old build of it.
+func TestAFailedTargetBlocksWhatNeedsIt(t *testing.T) {
+	t.Parallel()
+	results, commands := guestRun(t, twoTargets("declared"), "FAIL=fetch:libharbor")
+	require.Equal(t, "finished", results.State)
+	require.Equal(t, "failed", results.Targets[0].Outcome)
+	require.Equal(t, "fetch", results.Targets[0].Phase)
+	require.Equal(t, "Failed to fetch libharbor: it broke", results.Targets[0].Detail)
+	require.Equal(t, "blocked", results.Targets[1].Outcome)
+	for _, command := range commands {
+		require.NotContains(t, command, "subport=harbor-cli", "the blocked target isn't built")
+	}
+}
+
+// Declared tests are advisory: a failure is reported, and the target still
+// passes. Required tests decide.
+func TestTestsAreAdvisoryUnlessRequired(t *testing.T) {
+	t.Parallel()
+	results, _ := guestRun(t, twoTargets("declared"), "TESTED=libharbor", "FAIL=test:libharbor")
+	require.Equal(t, "passed", results.Targets[0].Outcome)
+	require.Equal(t, "failed", results.Targets[0].Tests)
+	require.Equal(t, "passed", results.Targets[1].Outcome, "an advisory test failure blocks nothing")
+	results, _ = guestRun(t, twoTargets("required"), "TESTED=libharbor", "FAIL=test:libharbor")
+	require.Equal(t, "failed", results.Targets[0].Outcome)
+	require.Equal(t, "test", results.Targets[0].Phase)
+	require.Equal(t, "blocked", results.Targets[1].Outcome)
+	results, commands := guestRun(t, twoTargets("skip"), "TESTED=libharbor")
+	require.Equal(t, "skipped", results.Targets[0].Tests)
+	for _, command := range commands {
+		require.NotContains(t, command, " test ")
+	}
+}
+
+// A target an earlier attempt already found blocked is reported blocked
+// without being built.
+func TestATargetBlockedBeforeIsNotBuilt(t *testing.T) {
+	t.Parallel()
+	input := twoTargets("declared")
+	input.Targets = input.Targets[1:]
+	input.Targets[0].Blocked = true
+	results, commands := guestRun(t, input)
+	require.Equal(t, []guestResult{{ID: "harbor-cli", Outcome: "blocked", Tests: "none", Log: "target-1.log"}}, results.Targets)
+	for _, command := range commands {
+		require.NotContains(t, command, "subport=", "only the guest's setup ran port")
+	}
+}
+
+// A guest that can't set up, here a staged tree without its index, says
+// so and builds nothing: trouble with the environment, not a result.
+func TestAGuestThatCannotSetUpSaysSo(t *testing.T) {
+	t.Parallel()
+	results, _ := guestRun(t, twoTargets("declared"), "NO_INDEX=1")
+	require.Equal(t, "errored", results.State)
+	require.Contains(t, results.Detail, "no PortIndex")
+	require.Empty(t, results.Targets)
+}
+
+func keep(items []string, wanted func(string) bool) []string {
+	var kept []string
+	for _, item := range items {
+		if wanted(item) {
+			kept = append(kept, item)
+		}
+	}
+	return kept
+}

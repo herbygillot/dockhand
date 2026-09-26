@@ -30,6 +30,7 @@ var commandImports = map[string]string{
 	"internal/macports/commitrules": "vocabulary in engine results, and explain's text",
 	"internal/provider/actions":     "composition: the github provider",
 	"internal/provider/script":      "composition: the command provider",
+	"internal/provider/tart":        "composition: the tart provider",
 	"internal/github":               "composition and auth: GitHub's client and login",
 	"internal/credential":           "auth: where the login is kept",
 	"internal/credential/keychain":  "auth: the macOS Keychain",

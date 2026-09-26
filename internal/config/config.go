@@ -39,6 +39,7 @@ type File struct {
 	Providers  struct {
 		Command *CommandProvider `toml:"command"`
 		GitHub  GitHubProvider   `toml:"github"`
+		Tart    TartProvider     `toml:"tart"`
 	} `toml:"providers"`
 	Cleanup Cleanup `toml:"cleanup"`
 }
@@ -177,6 +178,23 @@ type GitHubProvider struct {
 	Capacity int `toml:"capacity"`
 }
 
+// TartProvider builds in dockhand's Tart images, one fresh clone per
+// release and attempt.
+type TartProvider struct {
+	// Capacity is how many checks serve runs on it at once; 1 when unset,
+	// since macOS runs two VMs at most, the person's own among them.
+	Capacity int `toml:"capacity"`
+	// TestTimeout bounds a target's tests, as a duration such as "45m";
+	// 30 minutes when unset.
+	TestTimeout string `toml:"test_timeout"`
+}
+
+// Timeout is the test timeout the configuration sets, or zero.
+func (t TartProvider) Timeout() time.Duration {
+	timeout, _ := time.ParseDuration(t.TestTimeout)
+	return timeout
+}
+
 // Capacity is how many checks serve runs on a provider at once.
 func (f File) Capacity(provider string) int {
 	switch provider {
@@ -189,6 +207,10 @@ func (f File) Capacity(provider string) int {
 			return f.Providers.GitHub.Capacity
 		}
 		return 2
+	case "tart":
+		if f.Providers.Tart.Capacity > 0 {
+			return f.Providers.Tart.Capacity
+		}
 	}
 	return 1
 }
@@ -271,6 +293,14 @@ func parse(path, text string) (File, error) {
 	}
 	if f.Providers.GitHub.Capacity < 0 {
 		return File{}, fmt.Errorf("%s: providers.github.capacity: %d is not a number of checks", path, f.Providers.GitHub.Capacity)
+	}
+	if f.Providers.Tart.Capacity < 0 {
+		return File{}, fmt.Errorf("%s: providers.tart.capacity: %d is not a number of checks", path, f.Providers.Tart.Capacity)
+	}
+	if timeout := f.Providers.Tart.TestTimeout; timeout != "" {
+		if d, err := time.ParseDuration(timeout); err != nil || d <= 0 {
+			return File{}, fmt.Errorf("%s: providers.tart.test_timeout: %q is not a duration such as \"45m\"", path, timeout)
+		}
 	}
 	if command := f.Providers.Command; command != nil {
 		if command.Capacity < 0 {

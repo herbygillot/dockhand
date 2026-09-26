@@ -66,7 +66,7 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "jq-update · captured working files as snapshot 1\nChanged     jq\nProvider    command · tests declared\n", out)
 	_, _, err = dockhand(t, "check", "--on", "tart:tahoe")
-	require.ErrorContains(t, err, "the tart provider is not in v3 yet")
+	require.ErrorContains(t, err, "Tart isn't installed here")
 
 	out, errs, err := dockhand(t, "check")
 	require.NoError(t, err)

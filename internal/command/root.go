@@ -43,9 +43,10 @@ func (s Streams) terminal() bool {
 }
 
 const rebuilding = `dockhand is being rebuilt as v3 (docs/design-v3.md). The whole loop is here,
-but check builds only on your own script (docs/command-provider.md) until the
-Tart provider lands, and the real MacPorts paths are still to be proven on a
-Mac. Until then, the working tool is v2, tagged v2-final:
+and check builds in dockhand's Tart images (docs/tart-provider.md) or on your
+own script (docs/command-provider.md), but v3 can't make Tart images yet, and
+the real MacPorts paths are still being proven on a Mac. Until then, the
+working tool is v2, tagged v2-final:
 
   git worktree add ../dockhand-v2 v2-final
   make -C ../dockhand-v2 build BINARY="$HOME/.local/bin/dockhand-v2"`

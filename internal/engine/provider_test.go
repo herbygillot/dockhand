@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -13,22 +15,57 @@ import (
 // when there is one.
 func TestEnvironmentsAreTheProvidersOnNames(t *testing.T) {
 	e := &Engine{Providers: map[string]Provider{"command": &scriptedProvider{}, "github": &scriptedProvider{}}}
-	environments, err := e.Environments(nil)
+	environments, err := e.Environments(t.Context(), nil)
 	require.NoError(t, err)
 	require.Equal(t, []model.Environment{{Provider: "command"}}, environments)
-	environments, err = e.Environments([]string{"github", "command", "github"})
+	environments, err = e.Environments(t.Context(), []string{"github", "command", "github"})
 	require.NoError(t, err)
 	require.Equal(t, []model.Environment{{Provider: "github"}, {Provider: "command"}}, environments)
 
 	for on, refusal := range map[string]string{
-		"tart:sonoma": "the tart provider is not in v3 yet",
+		"tart:sonoma": "Tart isn't installed here",
 		"nosuch":      `no provider "nosuch" is set up`,
 		"github:15":   "the github provider builds on the runners MacPorts' workflow names",
 		"command:15":  "the command provider builds wherever its script does",
 	} {
-		_, err := e.Environments([]string{on})
+		_, err := e.Environments(t.Context(), []string{on})
 		require.ErrorContains(t, err, refusal, on)
 	}
-	_, err = (&Engine{}).Environments(nil)
+	_, err = (&Engine{}).Environments(t.Context(), nil)
 	require.ErrorContains(t, err, "a check needs somewhere to build")
+}
+
+// releasing stands for Tart: it builds on the releases named, the Mac's
+// own by default.
+type releasing struct{ scriptedProvider }
+
+func (*releasing) Platforms(ctx context.Context, releases string) ([]model.Platform, error) {
+	if releases == "" {
+		releases = "25"
+	}
+	var platforms []model.Platform
+	for _, release := range strings.Split(releases, ",") {
+		version := map[string]string{"sonoma": "23", "tahoe": "25", "26": "25", "25": "25"}[release]
+		platforms = append(platforms, model.Platform{OS: "darwin", Version: version, Architecture: "arm64"})
+	}
+	return platforms, nil
+}
+
+// A provider that takes releases makes an environment of each, a bare
+// release name means Tart, and Tart on the Mac's release is the default
+// when no command provider is set up.
+func TestEnvironmentsOfAProviderThatTakesReleases(t *testing.T) {
+	e := &Engine{Providers: map[string]Provider{"tart": &releasing{}, "github": &scriptedProvider{}}}
+	sonoma := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "23", Architecture: "arm64"}}
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	environments, err := e.Environments(t.Context(), []string{"tart:sonoma,tahoe", "github", "tahoe"})
+	require.NoError(t, err)
+	require.Equal(t, []model.Environment{sonoma, tahoe, {Provider: "github"}}, environments, "the bare release is the tart:tahoe already named")
+	environments, err = e.Environments(t.Context(), nil)
+	require.NoError(t, err)
+	require.Equal(t, []model.Environment{tahoe}, environments)
+	e.Providers["command"] = &scriptedProvider{}
+	environments, err = e.Environments(t.Context(), nil)
+	require.NoError(t, err)
+	require.Equal(t, []model.Environment{{Provider: "command"}}, environments, "a command provider someone set up comes first")
 }

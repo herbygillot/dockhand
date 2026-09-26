@@ -71,6 +71,16 @@ func (e *Engine) selectionReader() (*selection.Reader, error) {
 	return e.ports, nil
 }
 
+// PortIndex is how the engine stages a tree's port index for a platform,
+// which a provider that ships the tree to a builder ships with it.
+func (e *Engine) PortIndex() (portindex.Source, error) {
+	ports, err := e.selectionReader()
+	if err != nil {
+		return nil, err
+	}
+	return ports.Index, nil
+}
+
 // IndexCache is where port indexes are kept: $DOCKHAND_INDEX_CACHE, else
 // dockhand/indexes in the user's cache directory. It is disposable.
 func IndexCache() (string, error) {

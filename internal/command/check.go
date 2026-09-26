@@ -67,7 +67,7 @@ more. With check.baseline = true, a failed check runs one by itself.`,
 			if err != nil {
 				return err
 			}
-			environments, err := e.Environments(firstNonEmpty(on, s.file.Check.On))
+			environments, err := e.Environments(ctx, firstNonEmpty(on, s.file.Check.On))
 			if err != nil {
 				return err
 			}
@@ -270,11 +270,7 @@ func writePlan(out io.Writer, plan model.Plan) {
 }
 
 func environmentWords(environment model.Environment) string {
-	words := environment.Provider
-	if p := environment.Platform; p.Version != "" || p.Architecture != "" {
-		words += strings.TrimRight(" macOS "+p.Version+" "+p.Architecture, " ")
-	}
-	return words
+	return engine.DescribeEnvironment(environment)
 }
 
 // startSession records this process's session and keeps its heartbeat.

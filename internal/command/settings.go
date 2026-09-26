@@ -3,6 +3,7 @@ package command
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/provider/actions"
 	"github.com/herbygillot/dockhand/internal/provider/script"
+	"github.com/herbygillot/dockhand/internal/provider/tart"
 )
 
 // settings are the global selections. Each comes from its flag, then its
@@ -91,6 +93,15 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 		github.API, github.Sleep = testActions, func(ctx context.Context, _ time.Duration) error { return ctx.Err() }
 	}
 	e.Providers["github"] = github
+	// Tart builds wherever Tart is installed; its images are checked when a
+	// check names a release.
+	if _, err := lookTart("tart"); err == nil || testTart != nil {
+		provider := &tart.Provider{Repo: e.Repo, Index: e.PortIndex, TestTimeout: file.Providers.Tart.Timeout()}
+		if testTart != nil {
+			testTart(provider)
+		}
+		e.Providers["tart"] = provider
+	}
 	if testPreparer != nil {
 		e.Preparer = testPreparer(e)
 	}
@@ -117,6 +128,14 @@ var testArchiveFetcher func(*engine.Engine) engine.ArchiveFetcher
 
 // testActions, when set, stands in for GitHub Actions.
 var testActions actions.API
+
+// testTart, when set, registers the Tart provider whether or not Tart is
+// installed, and adjusts it for a test.
+var testTart func(*tart.Provider)
+
+// lookTart finds Tart; the tests find none, so they don't depend on the
+// machine they run on.
+var lookTart = exec.LookPath
 
 // testPortReader, when set, stands in for MacPorts' evaluator in plans.
 var testPortReader engine.PortReader

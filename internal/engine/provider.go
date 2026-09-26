@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -63,36 +64,78 @@ type Build interface {
 	Canceled() bool
 }
 
+// A ReleaseProvider builds on releases a person names, as Tart does: each
+// release --on <provider>:<releases> selects is an environment of its own.
+type ReleaseProvider interface {
+	Provider
+	// Platforms are the platforms the releases select: the provider's
+	// default with none, as Tart builds on the Mac's own release.
+	Platforms(ctx context.Context, releases string) ([]model.Platform, error)
+}
+
 // Environments turns --on values, or check.on's, into the environments a
 // check builds in: each a provider that is set up, with the releases it
-// can take. With none, the command provider when it is set up.
-func (e *Engine) Environments(on []string) ([]model.Environment, error) {
+// can take, and a bare release name meaning Tart. With none, the command
+// provider when it is set up, and otherwise Tart on this Mac's release.
+func (e *Engine) Environments(ctx context.Context, on []string) ([]model.Environment, error) {
 	if len(on) == 0 {
 		if _, ok := e.Providers["command"]; ok {
 			return []model.Environment{{Provider: "command"}}, nil
 		}
-		return nil, errors.New(`a check needs somewhere to build: --on github builds with MacPorts' own workflow in your fork, and --on command with your own script, set up as [providers.command] run = "..." in ~/.dockhand/config.toml; [check] on = ["github"] makes one the default. tart and prefix arrive with the rest of v3`)
+		if tart, ok := e.Providers["tart"].(ReleaseProvider); ok {
+			if platforms, err := tart.Platforms(ctx, ""); err == nil {
+				return []model.Environment{{Provider: "tart", Platform: platforms[0]}}, nil
+			}
+		}
+		return nil, errors.New(`a check needs somewhere to build: --on tart builds in a Tart image of this Mac's macOS, --on github with MacPorts' own workflow in your fork, and --on command with your own script, set up as [providers.command] run = "..." in ~/.dockhand/config.toml; [check] on = ["tart"] makes one the default`)
 	}
 	var environments []model.Environment
+	add := func(environment model.Environment) {
+		if !slices.Contains(environments, environment) {
+			environments = append(environments, environment)
+		}
+	}
 	for _, value := range on {
 		name, releases, _ := strings.Cut(value, ":")
 		if _, ok := e.Providers[name]; !ok {
+			if _, isRelease := e.Providers["tart"]; isRelease && releases == "" && knownRelease(name) {
+				name, releases = "tart", name
+			}
+		}
+		provider, ok := e.Providers[name]
+		if !ok {
 			switch name {
-			case "tart", "prefix":
-				return nil, fmt.Errorf("--on %s: the %s provider is not in v3 yet; use your own script (--on command) meanwhile", value, name)
+			case "tart":
+				return nil, fmt.Errorf("--on %s: Tart isn't installed here; MacPorts' tart port installs it", value)
+			case "prefix":
+				return nil, fmt.Errorf("--on %s: the prefix provider is not in v3 yet; use Tart or your own script (--on command) meanwhile", value)
 			}
 			return nil, fmt.Errorf("--on %s: no provider %q is set up", value, name)
+		}
+		if releaser, ok := provider.(ReleaseProvider); ok {
+			platforms, err := releaser.Platforms(ctx, releases)
+			if err != nil {
+				return nil, err
+			}
+			for _, platform := range platforms {
+				add(model.Environment{Provider: name, Platform: platform})
+			}
+			continue
 		}
 		switch {
 		case releases != "" && name == "github":
 			return nil, fmt.Errorf("--on %s: the github provider builds on the runners MacPorts' workflow names, so it takes no releases", value)
 		case releases != "":
-			return nil, fmt.Errorf("--on %s: the command provider builds wherever its script does, so it takes no releases", value)
+			return nil, fmt.Errorf("--on %s: the %s provider builds wherever its script does, so it takes no releases", value, name)
 		}
-		environment := model.Environment{Provider: name}
-		if !slices.Contains(environments, environment) {
-			environments = append(environments, environment)
-		}
+		add(model.Environment{Provider: name})
 	}
 	return environments, nil
+}
+
+// knownRelease reports whether a name is a macOS release, by name or
+// product version.
+func knownRelease(name string) bool {
+	_, err := macos.ParseRelease(name)
+	return err == nil
 }

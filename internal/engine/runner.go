@@ -12,6 +12,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -590,15 +591,25 @@ func (e *Engine) LogDirectory() string {
 }
 
 func describeEnvironment(environment model.Environment) string {
-	parts := []string{environment.Provider}
+	return DescribeEnvironment(environment)
+}
+
+// DescribeEnvironment words where a check builds for a person: the provider,
+// and the release it builds on by its macOS name, "tart macOS 26 (Tahoe)
+// arm64", or its raw platform where the release is unknown.
+func DescribeEnvironment(environment model.Environment) string {
 	platform := environment.Platform
-	if platform.Version != "" {
-		parts = append(parts, platformName(platform.OS)+" "+platform.Version)
+	if platform.Version == "" && platform.Architecture == "" {
+		return environment.Provider
 	}
-	if platform.Architecture != "" {
-		parts = append(parts, platform.Architecture)
+	if platform.OS == "" {
+		platform.OS = "darwin"
 	}
-	return strings.Join(parts, " ")
+	described := macos.Describe(platform)
+	if platform.Version != "" && platform.OS == "darwin" && strings.HasPrefix(described, "darwin ") {
+		described = platformName(platform.OS) + strings.TrimPrefix(described, "darwin")
+	}
+	return environment.Provider + " " + described
 }
 
 func environmentSlug(environment model.Environment) string {

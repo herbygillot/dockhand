@@ -466,7 +466,7 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	}
 	prepare := PrepareOptions{Origin: model.OriginServe, Check: settings.Mode == "check", Tests: settings.Tests}
 	if prepare.Check {
-		if prepare.Environments, err = e.Environments(settings.On); err != nil {
+		if prepare.Environments, err = e.Environments(ctx, settings.On); err != nil {
 			report(fmt.Sprintf("serve: serve.for_outdated = \"check\": %v", err))
 			prepare.Check = false
 		}

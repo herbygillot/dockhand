@@ -2,6 +2,7 @@ package command
 
 import (
 	"os"
+	"os/exec"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -16,6 +17,7 @@ func TestMain(m *testing.M) {
 	for _, name := range []string{"MACPORTS_TREE", "DOCKHAND_DB", "DOCKHAND_CONFIG", "DOCKHAND_UPSTREAM", "DOCKHAND_GITHUB_CLIENT_ID", "GH_TOKEN", "GITHUB_TOKEN"} {
 		os.Unsetenv(name)
 	}
+	lookTart = func(string) (string, error) { return "", exec.ErrNotFound }
 	cleanup := testsupport.IsolateHome()
 	code := m.Run()
 	cleanup()

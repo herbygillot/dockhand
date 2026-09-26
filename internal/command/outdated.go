@@ -133,7 +133,7 @@ func updateOutdated(ctx context.Context, s *settings, streams Streams, args []st
 	}
 	var environments []model.Environment
 	if options.check {
-		if environments, err = e.Environments(s.file.Check.On); err != nil {
+		if environments, err = e.Environments(ctx, s.file.Check.On); err != nil {
 			return err
 		}
 	}
