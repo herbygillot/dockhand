@@ -117,9 +117,9 @@ func TestObservationSetupRefusesUnsupportedPlatforms(t *testing.T) {
 	require.Equal(t, "unsupported modeled platform", reply)
 	require.Equal(t, "0", tcl("set ::dockhand::modeled"), "a refused setup leaves the session unmodeled")
 	platform := record.Platform{OS: "darwin", Version: "21", Architecture: "x86_64"}
-	overrides, err := macports.ModelVariables(platform)
+	overrides, err := macports.ModelVariables(platform, "")
 	require.NoError(t, err)
-	toolchain, err := macports.ToolchainAnswers(platform)
+	toolchain, err := macports.ToolchainAnswers(platform, "")
 	require.NoError(t, err)
 	tcl("::dockhand::observation_setup {" + overrides + "} 1 {} {" + toolchain + "}")
 	require.Equal(t, "1", tcl("set ::dockhand::modeled"))

@@ -19,8 +19,8 @@ type xcodeOnArm struct {
 	broken bool
 }
 
-func (p xcodeOnArm) Ports(ctx context.Context, source model.Source, directory string, platform model.Platform) ([]macports.PortInfo, error) {
-	ports, err := p.fakePorts.Ports(ctx, source, directory, platform)
+func (p xcodeOnArm) Ports(ctx context.Context, source model.Source, directory string, environment model.Environment) ([]macports.PortInfo, error) {
+	ports, err := p.fakePorts.Ports(ctx, source, directory, environment)
 	if err != nil {
 		return nil, err
 	}
@@ -31,7 +31,7 @@ func (p xcodeOnArm) Ports(ctx context.Context, source model.Source, directory st
 			options[key] = value
 		}
 		switch {
-		case ports[i].Name == "libharbor" && platform.Architecture == "arm64":
+		case ports[i].Name == "libharbor" && environment.Platform.Architecture == "arm64":
 			options["use_xcode"] = "yes"
 		case ports[i].Name == "harbor-tools" && p.broken:
 			options["use_xcode"] = "sometimes"
@@ -64,7 +64,7 @@ func TestATargetThatNeedsXcodeIsUnmetWithoutIt(t *testing.T) {
 	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{armTools, x86Xcode}})
 	require.NoError(t, err)
 	library, _ := plan.Target("libharbor")
-	require.Equal(t, []model.Platform{tahoeArm.Platform}, library.NeedsXcode)
+	require.Equal(t, []model.Environment{armTools}, library.NeedsXcode)
 	viewer, _ := plan.Target("harbor-viewer")
 	require.Empty(t, viewer.NeedsXcode, "its prerequisite needs Xcode; it doesn't itself")
 	require.Equal(t, []model.Unmet{

@@ -50,7 +50,7 @@ func (p *evaluatedPorts) nativePlatform(ctx context.Context) (model.Platform, er
 	return p.native, p.nativeErr
 }
 
-func (p *evaluatedPorts) Ports(ctx context.Context, source model.Source, directory string, platform model.Platform) (_ []macports.PortInfo, err error) {
+func (p *evaluatedPorts) Ports(ctx context.Context, source model.Source, directory string, environment model.Environment) (_ []macports.PortInfo, err error) {
 	files, done, err := p.workspaces.Acquire(ctx, p.repo, source)
 	if err != nil {
 		return nil, err
@@ -61,16 +61,22 @@ func (p *evaluatedPorts) Ports(ctx context.Context, source model.Source, directo
 	}
 	// MacPorts runs as this Mac's release. Another release is modelled in
 	// its session, as the oracle's contexts are, its developer tools from
-	// the facts table (decision 7); the directory's main port is found
-	// natively, and its subports come from the modelled evaluation.
+	// the facts table (decision 7), and so is this Mac's own where the
+	// environment states its tools, which needn't be this Mac's. The
+	// directory's main port is found natively, and its subports come from
+	// the modelled evaluation.
 	native, err := p.nativePlatform(ctx)
 	if err != nil {
 		return nil, err
 	}
+	platform := environment.Platform
 	session := platform
-	modelled := platform != (model.Platform{}) && platform != native
+	modelled := platform != (model.Platform{}) && platform != native || environment.DeveloperTools != ""
 	if modelled {
 		session = model.Platform{}
+		if platform == (model.Platform{}) {
+			platform = native
+		}
 	}
 	tree, err := files.Tree(session)
 	if err != nil {
@@ -90,7 +96,7 @@ func (p *evaluatedPorts) Ports(ctx context.Context, source model.Source, directo
 	var snapshot macports.Snapshot
 	if modelled {
 		var observation macports.Observation
-		observation, err = p.ports.Observe(ctx, bound, macports.ObservationRequest{Platform: platform})
+		observation, err = p.ports.Observe(ctx, bound, macports.ObservationRequest{Platform: platform, DeveloperTools: environment.DeveloperTools})
 		snapshot = observation.Snapshot
 	} else {
 		snapshot, err = p.ports.Evaluate(ctx, bound)

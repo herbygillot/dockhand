@@ -359,7 +359,10 @@ that has one builds there. Without it, a check on Tart doesn't build a
 port whose `use_xcode` is yes in the release's context, or whose
 prerequisite's is. It says which command makes the image
 ([note](activity/2026-09-26-xcode-add-on.md),
-[then](activity/2026-09-26-xcode-unmet.md)).
+[then](activity/2026-09-26-xcode-unmet.md)). A context with Xcode is
+modelled in the Xcode profile, and one whose tools are stated is modelled
+on the Mac's own release too
+([note](activity/2026-09-26-plan-with-the-build-tools.md)).
 
 ## Open questions
 

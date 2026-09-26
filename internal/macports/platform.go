@@ -113,13 +113,18 @@ type ModelledToolchain struct {
 // Darwin 8 and 9, which no buildbot builds.
 var ErrNoToolchain = errors.New("macports: the facts table has no toolchain")
 
-// Toolchain is a modelled platform's developer tools, from the facts table.
-func Toolchain(platform record.Platform) (ModelledToolchain, error) {
+// Toolchain is a modelled platform's developer tools, from the facts table:
+// the Command Line Tools profile unless the context has Xcode, as a Tart
+// release with its Xcode image and MacPorts' builders do.
+func Toolchain(platform record.Platform, developer record.DeveloperTools) (ModelledToolchain, error) {
 	if _, err := PlatformVariables(platform); err != nil {
 		return ModelledToolchain{}, err
 	}
 	darwin, _ := strconv.Atoi(platform.Version)
 	table := macos.Table()
+	if developer == record.DeveloperToolsXcode {
+		return xcodeToolchain(table, darwin, platform)
+	}
 	facts, ok := table.Lookup(darwin, platform.Architecture, macos.ProfileTools)
 	derived := false
 	if !ok {
@@ -131,18 +136,8 @@ func Toolchain(platform record.Platform) (ModelledToolchain, error) {
 			facts.Xcode, facts.DeveloperDir = "none", CommandLineTools
 		}
 	}
-	if facts.Tools != "none" && (facts.Clang == "" || len(facts.SDKs) == 0) {
-		for _, other := range table.Facts {
-			if other.Tools != facts.Tools || other.Source.Kind != macos.SourceTart {
-				continue
-			}
-			if facts.Clang == "" {
-				facts.Clang = other.Clang
-			}
-			if len(facts.SDKs) == 0 {
-				facts.SDKs = other.SDKs
-			}
-		}
+	if facts.Tools != "none" {
+		fill(table, &facts)
 	}
 	if facts.DeveloperDir == "" {
 		facts.DeveloperDir = CommandLineTools
@@ -150,6 +145,44 @@ func Toolchain(platform record.Platform) (ModelledToolchain, error) {
 			facts.DeveloperDir = XcodeDeveloper
 		}
 	}
+	return modelled(darwin, facts, derived), nil
+}
+
+// xcodeToolchain is a platform's tools in the Xcode profile: the facts
+// table's Xcode row, a Tart Xcode image's where there is one, else a
+// buildbot's. Xcode's developer directory is xcode-select's choice there.
+func xcodeToolchain(table macos.FactsTable, darwin int, platform record.Platform) (ModelledToolchain, error) {
+	facts, ok := table.Lookup(darwin, platform.Architecture, macos.ProfileXcode)
+	if !ok || facts.Xcode == "none" {
+		return ModelledToolchain{}, fmt.Errorf("%w with Xcode for %s", ErrNoToolchain, macos.Describe(platform))
+	}
+	fill(table, &facts)
+	if facts.DeveloperDir == "" {
+		facts.DeveloperDir = XcodeDeveloper
+	}
+	return modelled(darwin, facts, false), nil
+}
+
+// fill takes what a row doesn't tell, its clang and SDKs, from a Tart
+// image's row with the same Xcode and tools.
+func fill(table macos.FactsTable, facts *macos.Facts) {
+	if facts.Clang != "" && len(facts.SDKs) > 0 {
+		return
+	}
+	for _, other := range table.Facts {
+		if other.Tools != facts.Tools || other.Xcode != facts.Xcode || other.Source.Kind != macos.SourceTart {
+			continue
+		}
+		if facts.Clang == "" {
+			facts.Clang = other.Clang
+		}
+		if len(facts.SDKs) == 0 {
+			facts.SDKs = other.SDKs
+		}
+	}
+}
+
+func modelled(darwin int, facts macos.Facts, derived bool) ModelledToolchain {
 	// libxcselect.dylib is a file from OS X 10.9 until macOS 11, which moved
 	// system libraries into the dyld cache.
 	xcselect := darwin >= 13 && darwin < 20
@@ -157,7 +190,7 @@ func Toolchain(platform record.Platform) (ModelledToolchain, error) {
 		xcselect = *facts.XCSelect
 	}
 	return ModelledToolchain{Darwin: darwin, Xcode: facts.Xcode, Tools: facts.Tools, DeveloperDir: facts.DeveloperDir, SDK: facts.SDK,
-		Clang: facts.Clang, SDKs: facts.SDKs, XCSelect: xcselect, Source: facts.Source, Derived: derived}, nil
+		Clang: facts.Clang, SDKs: facts.SDKs, XCSelect: xcselect, Source: facts.Source, Derived: derived}
 }
 
 // shims are the programs /usr/bin holds for the developer tools from OS X
@@ -175,12 +208,12 @@ var gone = []string{"llvm-gcc-4.2", "llvm-g++-4.2", "gcc-4.2", "g++-4.2"}
 // consults. A host that is not a Mac models every context this way, and a
 // Mac every context but its own. A platform the table has no row for is
 // described alone, and the host answers for its tools, host-in-model.
-func ModelVariables(platform record.Platform) (string, error) {
+func ModelVariables(platform record.Platform, developer record.DeveloperTools) (string, error) {
 	pairs, err := PlatformVariables(platform)
 	if err != nil {
 		return "", err
 	}
-	tools, err := Toolchain(platform)
+	tools, err := Toolchain(platform, developer)
 	if errors.Is(err, ErrNoToolchain) {
 		return pairs, nil
 	}
@@ -199,7 +232,7 @@ func ModelVariables(platform record.Platform) (string, error) {
 	}
 	variables = append(variables, "compiler_version_cache", "{"+compilers+"}")
 	var paths []string
-	if tools.Darwin >= 13 && tools.Tools != "none" {
+	if tools.Darwin >= 13 && (tools.Tools != "none" || tools.Xcode != "none") {
 		for _, tool := range shims {
 			paths = append(paths, tool, "/usr/bin/"+tool)
 		}
@@ -216,8 +249,8 @@ func ModelVariables(platform record.Platform) (string, error) {
 // reads: whether the tools and Xcode are there, libxcselect, and the
 // tools' SDKs, an empty list where no source tells. It is empty for a
 // platform the table has no row for.
-func ToolchainAnswers(platform record.Platform) (string, error) {
-	tools, err := Toolchain(platform)
+func ToolchainAnswers(platform record.Platform, developer record.DeveloperTools) (string, error) {
+	tools, err := Toolchain(platform, developer)
 	if errors.Is(err, ErrNoToolchain) {
 		return "", nil
 	}

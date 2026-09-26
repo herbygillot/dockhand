@@ -21,7 +21,7 @@ type fakePorts struct {
 	broken      map[string]bool
 }
 
-func (f fakePorts) Ports(_ context.Context, _ model.Source, directory string, platform model.Platform) ([]macports.PortInfo, error) {
+func (f fakePorts) Ports(_ context.Context, _ model.Source, directory string, environment model.Environment) ([]macports.PortInfo, error) {
 	if f.broken[directory] {
 		return nil, errors.New("Portfile error: can't read \"foo\": no such variable")
 	}
@@ -219,8 +219,8 @@ type harborByPlatform struct {
 	crossed bool
 }
 
-func (p harborByPlatform) Ports(ctx context.Context, source model.Source, directory string, platform model.Platform) ([]macports.PortInfo, error) {
-	x86 := platform.Architecture == "x86_64"
+func (p harborByPlatform) Ports(ctx context.Context, source model.Source, directory string, environment model.Environment) ([]macports.PortInfo, error) {
+	x86 := environment.Platform.Architecture == "x86_64"
 	switch {
 	case directory == "graphics/harbor-viewer" && !x86:
 		return []macports.PortInfo{port("harbor-viewer")}, nil
@@ -233,7 +233,7 @@ func (p harborByPlatform) Ports(ctx context.Context, source model.Source, direct
 	case p.crossed && directory == "devel/harbor-cli":
 		return []macports.PortInfo{port("harbor-cli")}, nil
 	}
-	return p.fakePorts.Ports(ctx, source, directory, platform)
+	return p.fakePorts.Ports(ctx, source, directory, environment)
 }
 
 // Each platform keeps its own dependencies: --only adds back a changed

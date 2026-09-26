@@ -357,8 +357,9 @@ func buildPortIndex(ctx context.Context, c Config, platform record.Platform, sou
 		// architecture and so answer every ${os.arch} test wrongly.
 		describe := macports.PlatformVariables
 		if goruntime.GOOS != "darwin" {
-			// A host that is not a Mac models the Mac's toolchain as well.
-			describe = macports.ModelVariables
+			// A host that is not a Mac models the Mac's toolchain as well,
+			// in the Command Line Tools profile.
+			describe = func(platform record.Platform) (string, error) { return macports.ModelVariables(platform, "") }
 		}
 		overrides, err := describe(platform)
 		if err != nil {

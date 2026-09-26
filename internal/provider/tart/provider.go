@@ -466,7 +466,7 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job engine.
 		}
 		if !drift && results.Environment["tools"] != "" {
 			drift = true
-			if message := driftReport(release, results.Environment); message != "" {
+			if message := driftReport(release, job.Environment.DeveloperTools, results.Environment); message != "" {
 				build.Progress(message)
 			}
 		}
@@ -555,16 +555,29 @@ func (p *Provider) record(ctx context.Context, g guest, job engine.Job, build en
 }
 
 // driftReport compares the guest's tools with the facts table's row for
-// its release (decision 10): a difference is reported, never judged.
-func driftReport(release macos.Release, environment map[string]string) string {
-	facts, ok := macos.Table().Lookup(release.Darwin, "arm64", macos.ProfileTools)
+// its release and profile (decision 10), which is what its plan was read
+// with: a difference is reported, never judged. An image with Xcode is
+// compared with the Xcode row, Xcode's version as well.
+func driftReport(release macos.Release, developer model.DeveloperTools, environment map[string]string) string {
+	profile := macos.ProfileTools
+	if developer == model.DeveloperToolsXcode {
+		profile = macos.ProfileXcode
+	}
+	facts, ok := macos.Table().Lookup(release.Darwin, "arm64", profile)
 	if !ok {
 		return ""
 	}
-	if tools := environment["tools"]; tools != "" && tools != facts.Tools {
-		return fmt.Sprintf("drift: the guest has Command Line Tools %s; the facts table has %s, from %s on %s", tools, facts.Tools, facts.Source.From, facts.Source.Date)
+	var differences []string
+	if xcode := environment["xcode"]; profile == macos.ProfileXcode && xcode != "" && xcode != facts.Xcode {
+		differences = append(differences, fmt.Sprintf("Xcode %s; the facts table has %s", xcode, facts.Xcode))
 	}
-	return ""
+	if tools := environment["tools"]; tools != "" && tools != facts.Tools {
+		differences = append(differences, fmt.Sprintf("Command Line Tools %s; the facts table has %s", tools, facts.Tools))
+	}
+	if len(differences) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("drift: the guest has %s, from %s on %s", strings.Join(differences, ", and "), facts.Source.From, facts.Source.Date)
 }
 
 func tail(text string, n int) string {

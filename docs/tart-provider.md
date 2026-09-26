@@ -68,6 +68,12 @@ MacPorts' builders have Xcode too, and a port that doesn't ask for it
 still builds with the Command Line Tools. The plan's Provider line says
 which it is: "tart macOS 26 (Tahoe) arm64 with Xcode".
 
+**A release is planned with the tools it builds with.** It's modelled
+from the facts table's row for them, this Mac's own release too, so a
+Portfile that chooses by Xcode's version plans as it builds. When the
+image's Xcode or tools differ from that row, say after setup with a newer
+`.xip`, the check reports the drift.
+
 **Without it, a release builds with the Command Line Tools alone**, and
 doesn't build what needs Xcode:
 
@@ -104,6 +110,7 @@ when two are already running.
 ## What it reports
 
 Each target's log is copied into the check's log directory (`dockhand
-logs`). When the guest's Command Line Tools differ from the facts table's
-row for its release, the check says so as a drift report, which never
-changes a result (decision 10).
+logs`). When the guest's Command Line Tools, or its Xcode in an Xcode
+image, differ from the facts table's row the plan was read with, the
+check says so as a drift report, which never changes a result
+(decision 10).

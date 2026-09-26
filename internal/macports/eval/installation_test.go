@@ -181,7 +181,7 @@ func TestAModelledContextTakesItsToolsFromTheTable(t *testing.T) {
 		{record.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}, "1400.0.29.202", "MacOSX12.sdk"},
 		{record.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"}, "2100.1.1.101", "MacOSX26.sdk"},
 	} {
-		tools, err := macports.Toolchain(c.platform)
+		tools, err := macports.Toolchain(c.platform, "")
 		require.NoError(t, err)
 		require.Equal(t, c.clang, tools.Clang, "the table, as this test expects it")
 		got, port := observedDescription(t, c.platform, lines)

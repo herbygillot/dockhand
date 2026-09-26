@@ -135,16 +135,16 @@ func (e *Evaluator) model(ctx context.Context, session *rpc.Session, runtime mac
 	if model == (record.Platform{}) {
 		model = DefaultModel()
 	}
-	overrides, err := macports.ModelVariables(model)
+	overrides, err := macports.ModelVariables(model, "")
 	if err != nil {
 		return runtime, fmt.Errorf("%w: %w", macports.ErrPlatform, err)
 	}
 	// The session's own context is modelled throughout, so its tools must
 	// be in the facts table.
-	if _, err := macports.Toolchain(model); err != nil {
+	if _, err := macports.Toolchain(model, ""); err != nil {
 		return runtime, fmt.Errorf("%w: %w", macports.ErrPlatform, err)
 	}
-	toolchain, err := macports.ToolchainAnswers(model)
+	toolchain, err := macports.ToolchainAnswers(model, "")
 	if err != nil {
 		return runtime, fmt.Errorf("%w: %w", macports.ErrPlatform, err)
 	}
@@ -261,26 +261,29 @@ func evaluateIn(ctx context.Context, session *rpc.Session, runtime macports.Runt
 			}
 		}
 		// A context other than the Mac's own is modelled, its developer
-		// tools from the facts table; a session that models every context
+		// tools from the facts table, and so is the Mac's own when the
+		// request states its tools; a session that models every context
 		// models its own too.
 		overrides, toolchain := "", ""
 		modelled := runtime.Platform
-		if request.Platform != (record.Platform{}) && request.Platform != runtime.Platform {
+		if modelsContext(runtime, request) {
+			if request.Platform != (record.Platform{}) {
+				modelled = request.Platform
+			}
 			var err error
-			if overrides, err = macports.ModelVariables(request.Platform); err != nil {
+			if overrides, err = macports.ModelVariables(modelled, request.DeveloperTools); err != nil {
 				return macports.Observation{}, err
 			}
-			modelled = request.Platform
 		}
 		if overrides != "" || runtime.Modeled() {
 			var err error
-			if toolchain, err = macports.ToolchainAnswers(modelled); err != nil {
+			if toolchain, err = macports.ToolchainAnswers(modelled, request.DeveloperTools); err != nil {
 				return macports.Observation{}, err
 			}
 			// A platform the table has no row for keeps the session's
 			// modelled tools, where the session models its own.
 			if toolchain == "" && runtime.Modeled() {
-				if toolchain, err = macports.ToolchainAnswers(runtime.Platform); err != nil {
+				if toolchain, err = macports.ToolchainAnswers(runtime.Platform, ""); err != nil {
 					return macports.Observation{}, err
 				}
 			}
@@ -328,12 +331,18 @@ func evaluateIn(ctx context.Context, session *rpc.Session, runtime macports.Runt
 		}
 	}
 	snapshot := macports.Snapshot{Source: source.Source(), Target: source.Target(), Platform: runtime.Platform, Runtime: runtime, Ports: ports, Root: source.Root(), ObservedAt: time.Now().UTC()}
-	other := request != nil && request.Platform != (record.Platform{}) && request.Platform != runtime.Platform
-	if other {
+	other := request != nil && modelsContext(runtime, request)
+	if other && request.Platform != (record.Platform{}) {
 		snapshot.Platform = request.Platform
 	}
 	// A runtime that models its own platform models every context.
 	return macports.Observation{Snapshot: snapshot, Modeled: other || runtime.Modeled(), Ports: observations}, nil
+}
+
+// modelsContext reports whether a request's context is modelled rather
+// than the session's own: another platform, or stated developer tools.
+func modelsContext(runtime macports.Runtime, request *macports.ObservationRequest) bool {
+	return request.Platform != (record.Platform{}) && request.Platform != runtime.Platform || request.DeveloperTools != ""
 }
 
 func evaluateOne(ctx context.Context, session *rpc.Session, source macports.Context, subport string) (macports.PortInfo, []string, error) {

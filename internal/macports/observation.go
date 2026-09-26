@@ -9,8 +9,12 @@ import (
 // ObservationRequest explicitly selects modeled metadata. It never changes the
 // native platform used by Reader.Evaluate or establishes build evidence.
 type ObservationRequest struct {
-	Platform     record.Platform
-	Declarations bool
+	Platform record.Platform
+	// DeveloperTools, when stated, model the context with those tools from
+	// the facts table, the Mac's own platform too: the Command Line Tools
+	// alone, or Xcode.
+	DeveloperTools record.DeveloperTools
+	Declarations   bool
 	// SelectedOnly omits sibling metadata; it is not suitable for final fidelity.
 	SelectedOnly bool
 	// Operands selects scalar or option values needed to resolve platform boundaries.

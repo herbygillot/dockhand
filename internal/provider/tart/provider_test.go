@@ -334,6 +334,18 @@ func TestDriftFromTheFactsTableIsReported(t *testing.T) {
 	for _, message := range build.progress {
 		require.NotContains(t, message, "drift")
 	}
+
+	// An image with Xcode is compared with the Xcode row, which its plan
+	// was read with.
+	xcode, ok := macos.Table().Lookup(25, "arm64", macos.ProfileXcode)
+	require.True(t, ok)
+	job := tartJob(t, 1)
+	job.Environment.DeveloperTools = model.DeveloperToolsXcode
+	mac = newMac(guestResults{State: "finished", Environment: map[string]string{"tools": xcode.Tools, "xcode": "26.1"}})
+	mac.images = append(mac.images, "dockhand-xcode-tahoe")
+	build = &fakeBuild{}
+	require.NoError(t, testProvider(mac).Execute(t.Context(), job, build))
+	require.Contains(t, build.progress, "drift: the guest has Xcode 26.1; the facts table has "+xcode.Xcode+", from "+xcode.Source.From+" on "+xcode.Source.Date)
 }
 
 // --on tart builds on the Mac's own release, tart:all on every release

@@ -49,14 +49,15 @@ type PlanTarget struct {
 	Role      TargetRole
 	// DependsOn lists the plan's targets this one needs built first.
 	DependsOn []TargetID
-	// NeedsXcode are the platforms where the target needs Xcode, not only
-	// the Command Line Tools: its use_xcode there, as MacPorts decides it.
-	NeedsXcode []Platform `json:",omitempty"`
+	// NeedsXcode are the environments where the target needs Xcode, not
+	// only the Command Line Tools: its use_xcode there, as MacPorts decides
+	// it with the environment's tools.
+	NeedsXcode []Environment `json:",omitempty"`
 }
 
-// NeedsXcodeOn reports whether the target needs Xcode on a platform.
-func (t PlanTarget) NeedsXcodeOn(platform Platform) bool {
-	return slices.Contains(t.NeedsXcode, platform)
+// NeedsXcodeIn reports whether the target needs Xcode in an environment.
+func (t PlanTarget) NeedsXcodeIn(environment Environment) bool {
+	return slices.Contains(t.NeedsXcode, environment)
 }
 
 // Exclusion is a changed target the plan does not build on one platform,

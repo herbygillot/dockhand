@@ -31,7 +31,7 @@ func git(t *testing.T, dir string, args ...string) string {
 
 type ports map[string][]string
 
-func (p ports) Ports(_ context.Context, _ model.Source, directory string, _ model.Platform) ([]macports.PortInfo, error) {
+func (p ports) Ports(_ context.Context, _ model.Source, directory string, _ model.Environment) ([]macports.PortInfo, error) {
 	names, ok := p[directory]
 	if !ok {
 		return nil, errors.New("no Portfile")

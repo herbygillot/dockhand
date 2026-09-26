@@ -16,7 +16,9 @@ import (
 // on a platform, main port first, and the directory that defines a port by
 // name. MacPorts' own evaluator is the real one.
 type PortReader interface {
-	Ports(ctx context.Context, source model.Source, directory string, platform model.Platform) ([]macports.PortInfo, error)
+	// Ports reads a directory as it reads in an environment: on its
+	// platform, with its developer tools where it states them.
+	Ports(ctx context.Context, source model.Source, directory string, environment model.Environment) ([]macports.PortInfo, error)
 	Directory(ctx context.Context, source model.Source, name string) (string, error)
 }
 
@@ -75,7 +77,7 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	excluded := map[string]int{}
 	add := func(directory string, kind model.TargetKind, role model.TargetRole) {
 		for e, environment := range plan.Environments {
-			ports, err := reader.Ports(ctx, revision.Source, directory, environment.Platform)
+			ports, err := reader.Ports(ctx, revision.Source, directory, environment)
 			if err != nil {
 				plan.Unresolved = append(plan.Unresolved, model.Unresolved{Target: model.Target{Name: directoryName(directory), Portfile: directory + "/Portfile"}, Reason: err.Error()})
 				return
@@ -93,8 +95,8 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 				for _, dependency := range port.Dependencies {
 					deps = append(deps, dependency.Port)
 				}
-				// Whether it needs Xcode is the release's own answer: a
-				// modelled one's is the tools profile's (decision 7).
+				// Whether it needs Xcode is the environment's own answer,
+				// with its tools (decision 7).
 				needsXcode, err := port.Bool("use_xcode")
 				if err != nil {
 					plan.Unresolved = append(plan.Unresolved, model.Unresolved{Target: target, Reason: err.Error()})
@@ -107,8 +109,8 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 					candidates = append(candidates, candidate{target: model.PlanTarget{ID: model.TargetID(port.Name), Target: target, Directory: directory, Kind: kind, Role: role}, deps: make([][]string, len(plan.Environments))})
 				}
 				candidates[at].deps[e] = deps
-				if needsXcode && !candidates[at].target.NeedsXcodeOn(environment.Platform) {
-					candidates[at].target.NeedsXcode = append(candidates[at].target.NeedsXcode, environment.Platform)
+				if needsXcode && !candidates[at].target.NeedsXcodeIn(environment) {
+					candidates[at].target.NeedsXcode = append(candidates[at].target.NeedsXcode, environment)
 				}
 			}
 		}
@@ -221,7 +223,7 @@ func unmetNeeds(plan model.Plan) []model.Unmet {
 			if plan.Excludes(target, environment.Platform) {
 				continue
 			}
-			if target.NeedsXcodeOn(environment.Platform) {
+			if target.NeedsXcodeIn(environment) {
 				cause[target.ID] = target.ID
 				unmet = append(unmet, model.Unmet{Target: target.ID, Environment: environment, Needs: model.RequiresXcode})
 				continue

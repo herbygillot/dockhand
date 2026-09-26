@@ -145,7 +145,7 @@ type targetJSON struct {
 	Kind      string   `json:"kind"`
 	Role      string   `json:"role"`
 	DependsOn []string `json:"depends_on,omitempty"`
-	// NeedsXcode are the platforms where the target needs Xcode.
+	// NeedsXcode are the environments where the target needs Xcode.
 	NeedsXcode []environmentJSON `json:"needs_xcode,omitempty"`
 	// Results are the target's outcome in each environment, in the plan's
 	// order; empty in a plan that has not run.
@@ -211,8 +211,8 @@ func targetView(target model.PlanTarget) targetJSON {
 	for _, dependency := range target.DependsOn {
 		view.DependsOn = append(view.DependsOn, string(dependency))
 	}
-	for _, platform := range target.NeedsXcode {
-		view.NeedsXcode = append(view.NeedsXcode, environmentView(model.Environment{Platform: platform}))
+	for _, environment := range target.NeedsXcode {
+		view.NeedsXcode = append(view.NeedsXcode, environmentView(environment))
 	}
 	return view
 }
