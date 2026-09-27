@@ -85,6 +85,9 @@ type Reader interface {
 	// ref, such as a workflow run's URL, oldest first.
 	ExecutionsReferred(ref string) ([]model.GuestExecution, error)
 	Results(execution model.ExecutionID) ([]model.TargetResult, error)
+	// Inputs reads what a build read by its key (model.TargetInputs.Key);
+	// ErrNotFound when none was recorded.
+	Inputs(key string) (model.TargetInputs, error)
 
 	Session(id model.SessionID) (model.Session, error)
 	// Sessions lists sessions that have not ended.
@@ -132,8 +135,12 @@ type Tx interface {
 	AddExecution(execution model.GuestExecution) error
 	UpdateExecution(execution model.GuestExecution) error
 	// RecordResult writes a target's checkpoint, refusing to replace a
-	// complete verdict (model.TargetResult.ReplacedBy).
+	// complete verdict (model.TargetResult.ReplacedBy). Inputs it names
+	// must be recorded first.
 	RecordResult(result model.TargetResult) error
+	// RecordInputs keeps what a build read, once for every build that
+	// read the same, and returns its key.
+	RecordInputs(inputs model.TargetInputs) (string, error)
 
 	AddSession(session model.Session) error
 	UpdateSession(session model.Session) error

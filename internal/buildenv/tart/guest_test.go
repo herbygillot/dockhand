@@ -1,6 +1,8 @@
 package tart
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -15,12 +17,27 @@ import (
 )
 
 // fakePort stands for MacPorts' port in a guest: it records each command,
-// has nothing installed, prints each target's dependencies from DEPS
-// ("name=dep ..."), and fails the phases FAIL names ("phase:port ...").
+// has the ports ACTIVE lists active ("  name @spec (active)" lines), prints
+// each target's dependencies from DEPS ("name=dep ..."), and fails the
+// phases FAIL names ("phase:port ..."). A port's archive is ARCHIVES/<name>,
+// and its directory devel/<name>, but for UNRESOLVED, which port can't
+// resolve.
 const fakePort = `#!/bin/sh
 echo "$*" >> "$PORT_LOG"
 case "$*" in
+  *"-q installed active"*) printf '%b' "$ACTIVE"; exit 0 ;;
   *"-q installed"*) exit 0 ;;
+  "-q location "*)
+    shift 2
+    while [ $# -gt 0 ]; do echo "$ARCHIVES/$1"; shift 2; done
+    exit 0 ;;
+  "-q dir "*)
+    shift 2
+    for name in "$@"; do
+      if [ "$name" = "$UNRESOLVED" ]; then echo "Error: Port $name not found" >&2; exit 1; fi
+      echo "$DOCKHAND_GUEST_ROOT/ports/devel/$name"
+    done
+    exit 0 ;;
   *"echo depof:"*)
     for entry in $DEPS; do
       case "$*" in *"depof:${entry%%=*}") echo "${entry#*=}" ;; esac
@@ -71,7 +88,7 @@ set foreignManagers {}
 	require.NoError(t, os.WriteFile(script, append([]byte(prelude), guestProgram...), 0o644))
 	command := exec.CommandContext(t.Context(), executable, script)
 	portLog := filepath.Join(root, "port.log")
-	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "PORT_LOG="+portLog, "TESTED=", "DEPS=", "FAIL="), env...)
+	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "PORT_LOG="+portLog, "TESTED=", "DEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED="), env...)
 	output, _ := command.CombinedOutput()
 	data, err = os.ReadFile(filepath.Join(root, "results.json"))
 	require.NoError(t, err, "%s", output)
@@ -103,8 +120,8 @@ func TestTheGuestBuildsEachTargetInCIsOrder(t *testing.T) {
 	results, commands := guestRun(t, twoTargets("declared"), "TESTED=libharbor", "DEPS=libharbor=zlib harbor-cli=libharbor")
 	require.Equal(t, "finished", results.State, results.Detail)
 	require.Equal(t, []guestResult{
-		{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "target-1.log"},
-		{ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "target-2.log"},
+		{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "target-1.log", Active: []guestPort{}},
+		{ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "target-2.log", Active: []guestPort{}},
 	}, results.Targets)
 	require.Equal(t, "arm64", results.Environment["architecture"])
 	var libharbor []string
@@ -123,6 +140,35 @@ func TestTheGuestBuildsEachTargetInCIsOrder(t *testing.T) {
 	}, keep(libharbor, func(c string) bool { return !strings.Contains(c, "installed") }))
 	require.Contains(t, commands, "-N -d install --unrequested zlib", "a target's dependencies are installed first")
 	require.Contains(t, commands, "-N -d install --unrequested libharbor", "the dependent's changed dependency is among them")
+}
+
+// Each verdict comes with what its build read (decision 28): the ports
+// active as it built, other than itself, each with where its name resolves
+// and its archive's digest, and the target's own archive's digest. A port
+// kept as a directory has no digest, and a name port can't resolve has no
+// directory.
+func TestAVerdictRecordsThePortsActiveAsItBuilt(t *testing.T) {
+	t.Parallel()
+	archives := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(archives, "zlib"), []byte("zlib's archive"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(archives, "libharbor"), []byte("libharbor's archive"), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(archives, "xz"), 0o755))
+	active := `  zlib @1.3.2_0 (active)\n  xz @5.8.1_0+universal (active)\n  gone @1.0_0 (active)\n  libharbor @3_0 (active)\n`
+	input := guestInput{Run: "check-1", Attempt: 1, Tests: "skip", Targets: []guestTarget{{ID: "libharbor", Name: "libharbor", Portfile: "devel/libharbor/Portfile"}}}
+	results, commands := guestRun(t, input, "ACTIVE="+active, "ARCHIVES="+archives, "UNRESOLVED=gone")
+	require.Equal(t, "finished", results.State, results.Detail)
+	digest := func(data string) string {
+		sum := sha256.Sum256([]byte(data))
+		return "sha256:" + hex.EncodeToString(sum[:])
+	}
+	require.Equal(t, []guestPort{
+		{Name: "zlib", Spec: "@1.3.2_0", Directory: "devel/zlib", Archive: digest("zlib's archive")},
+		{Name: "xz", Spec: "@5.8.1_0+universal", Directory: "devel/xz"},
+		{Name: "gone", Spec: "@1.0_0"},
+	}, results.Targets[0].Active)
+	require.Equal(t, digest("libharbor's archive"), results.Targets[0].Archive)
+	require.Contains(t, commands, "-q location zlib @1.3.2_0 xz @5.8.1_0+universal gone @1.0_0", "asked once for all of them")
+	require.Contains(t, commands, "-q dir gone", "asked alone once the list failed")
 }
 
 // A target that fails stops at its phase, and a target that needs it is

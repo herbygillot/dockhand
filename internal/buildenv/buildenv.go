@@ -64,6 +64,11 @@ type Build interface {
 	Blocked(target model.TargetID) (model.TargetID, bool)
 	// Record checkpoints one target's result. A complete verdict is final.
 	Record(result model.TargetResult) error
+	// Consumed reports the ports that were active as a target built,
+	// other than the target, before its Record: they are inputs of its
+	// build, which its result keeps (decision 28). A provider that can't
+	// see them doesn't call it, and the result's inputs are unknown.
+	Consumed(target model.TargetID, active []model.ActivePort)
 	// Progress reports a step to whoever is watching.
 	Progress(message string)
 	// Observe records what the environment reported about itself, for

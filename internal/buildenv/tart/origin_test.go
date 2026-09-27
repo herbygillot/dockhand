@@ -41,7 +41,7 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 }
 
 // guestPin is the digest of the guest program VerifierProtocol 1 covers.
-const guestPin = "c190f4b5715b5e2ff6469d9bac85884d81f0448b69a944363e45ab063f787e95"
+const guestPin = "eac0d2064d15cc9b2c7b2104ff29411544a587451fecd9e8208cf2b75bae71e5"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this

@@ -171,9 +171,13 @@ type TargetResult struct {
 	Tests TestOutcome
 	// Log locates the target's log beside the database.
 	Log string
-	// Inputs identifies what the build read, for reuse (decision 28); empty
-	// until recorded inputs are built.
-	Inputs     string
+	// Inputs is the key of what the build read (TargetInputs), for reuse
+	// (decision 28); empty where the provider couldn't say.
+	Inputs string
+	// Archive is the digest of the archive the build made, sha256:<hex>;
+	// empty where the environment kept none, or the target wasn't
+	// installed.
+	Archive    string
 	RecordedAt time.Time
 }
 

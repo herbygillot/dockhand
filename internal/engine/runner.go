@@ -16,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/reuse"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -348,7 +349,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 		}); err != nil {
 			return err
 		}
-		build := &build{d: d, ctx: ctx, execution: execution, results: results}
+		build := &build{d: d, ctx: ctx, execution: execution, tree: revision.Source.Tree, results: results, inputs: map[model.TargetID]model.TargetInputs{}}
 		job := buildenv.Job{Run: d.run, Execution: execution, Revision: revision, Plan: d.plan, Environment: environment, Targets: remaining, Commit: commit,
 			Directory: filepath.Join(e.LogDirectory(), d.run.Name(), fmt.Sprintf("%s-%d", environmentSlug(environment), execution.Attempt))}
 		err := provider.Execute(ctx, job, build)
@@ -443,7 +444,12 @@ type build struct {
 	d         *driver
 	ctx       context.Context
 	execution model.GuestExecution
-	results   map[model.TargetID]model.TargetResult
+	// tree is the revision's, which the build reads.
+	tree    model.ObjectID
+	results map[model.TargetID]model.TargetResult
+	// inputs are what each target's build read, as the provider reported
+	// them (Consumed), until its result is recorded.
+	inputs map[model.TargetID]model.TargetInputs
 }
 
 func (b *build) Canceled() bool { return b.ctx.Err() != nil && !b.d.stopped() }
@@ -460,13 +466,37 @@ func (b *build) Blocked(target model.TargetID) (model.TargetID, bool) {
 	return "", false
 }
 
+// Consumed completes what the provider saw with the revision's trees
+// (reuse.Inputs). Inputs that can't be read are left unknown, and a
+// result stands without them.
+func (b *build) Consumed(target model.TargetID, active []model.ActivePort) {
+	planned, ok := b.d.plan.Target(target)
+	if !ok {
+		return
+	}
+	inputs, err := reuse.Inputs(b.ctx, b.d.e.Repo, b.tree, b.execution.Identity, planned, active)
+	if err != nil {
+		b.Progress(fmt.Sprintf("%s: what its build read wasn't recorded: %v", target, err))
+		return
+	}
+	b.inputs[target] = inputs
+}
+
 func (b *build) Record(result model.TargetResult) error {
 	result = b.d.plan.Tests.Judge(result)
 	result.Execution = b.execution.ID
 	if result.RecordedAt.IsZero() {
 		result.RecordedAt = b.d.e.now()
 	}
+	inputs, read := b.inputs[result.Target]
 	err := b.d.fenced(b.ctx, func(tx store.Tx) error {
+		if read {
+			key, err := tx.RecordInputs(inputs)
+			if err != nil {
+				return err
+			}
+			result.Inputs = key
+		}
 		if err := tx.RecordResult(result); err != nil {
 			return err
 		}
@@ -479,6 +509,7 @@ func (b *build) Record(result model.TargetResult) error {
 	})
 	if err == nil {
 		b.results[result.Target] = result
+		delete(b.inputs, result.Target)
 	}
 	return err
 }

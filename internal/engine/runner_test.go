@@ -26,7 +26,9 @@ type scriptedProvider struct {
 	partial bool
 	// wait holds the build until its context ends.
 	wait bool
-	jobs []buildenv.Job
+	// active are reported as the ports active as each target built.
+	active []model.ActivePort
+	jobs   []buildenv.Job
 }
 
 func (p *scriptedProvider) Name() string { return "command" }
@@ -58,6 +60,10 @@ func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build 
 		result := model.TargetResult{Target: target.ID, Outcome: outcome, Tests: model.TestsNone}
 		if outcome == model.OutcomeFailed {
 			result.Phase = model.PhaseInstall
+		}
+		if p.active != nil {
+			build.Consumed(target.ID, p.active)
+			result.Archive = "sha256:" + string(target.ID)
 		}
 		if err := build.Record(result); err != nil {
 			return err
@@ -142,6 +148,53 @@ func TestARunPassesAndIsEvidence(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, found)
 	require.Empty(t, evidence.Failed(), "an excluded target is not required to pass")
+}
+
+// What a provider saw active as a target built is kept with its result,
+// each directory by the revision's tree, and the environment by its
+// identity as the execution began (decision 28).
+func TestAResultKeepsWhatItsBuildRead(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	tools := model.ActivePort{Name: "harbor-tools", Spec: "@1_0", Directory: "graphics/harbor-tools", Archive: "sha256:aa"}
+	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{tools}}, identity: "origin a"}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	queued := queuedHarborRun(t, e, tahoeArm)
+	checked, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, checked.State, checked.Detail)
+
+	var revision model.Revision
+	var results []model.TargetResult
+	var inputs model.TargetInputs
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		if revision, err = r.Revision(checked.Revision); err != nil {
+			return err
+		}
+		executions, err := r.Executions(checked.ID)
+		if err != nil {
+			return err
+		}
+		if results, err = r.Results(executions[0].ID); err != nil {
+			return err
+		}
+		inputs, err = r.Inputs(results[0].Inputs)
+		return err
+	}))
+	for _, result := range results {
+		require.NotEmpty(t, result.Inputs, "%s's build read something", result.Target)
+		require.Equal(t, "sha256:"+string(result.Target), result.Archive)
+	}
+	tree := func(path string) model.ObjectID {
+		return model.ObjectID(run(t, e.Repo.Root, "rev-parse", string(revision.Source.Tree)+":"+path))
+	}
+	require.Equal(t, "origin a", inputs.Environment)
+	require.NotEmpty(t, inputs.Directory)
+	require.Equal(t, tree(inputs.Directory), inputs.Tree, "the target's directory by the revision's tree")
+	tools.Tree = tree("graphics/harbor-tools")
+	require.Equal(t, []model.ActivePort{tools}, inputs.Active, "and each active port's")
+	require.Equal(t, tree("_resources"), inputs.Resources)
+	require.True(t, inputs.Complete())
 }
 
 func TestAFailedDependencyBlocksAndInfrastructureIsRetried(t *testing.T) {

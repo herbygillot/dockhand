@@ -375,6 +375,47 @@ func TestExecutionsAndCheckpoints(t *testing.T) {
 	}))
 }
 
+// A result names what its build read by key, and the record is kept once
+// for every build that read the same (decision 28).
+func TestAResultKeepsWhatItsBuildRead(t *testing.T) {
+	f := open(t)
+	b, r, p := f.seed(t)
+	run := f.run(t, b, r, p)
+	execution := model.GuestExecution{ID: "ex_1", Run: run.ID, Environment: tahoe, Attempt: 1, State: model.ExecutionWaiting, CreatedAt: at}
+	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.AddExecution(execution) }))
+	inputs := model.NewTargetInputs("source sha256:a; setup 2", "devel/libharbor", "1111111111111111111111111111111111111111", "2222222222222222222222222222222222222222", nil,
+		[]model.ActivePort{{Name: "zlib", Spec: "@1.3.2_0", Directory: "archivers/zlib", Tree: "3333333333333333333333333333333333333333", Archive: "sha256:44"}})
+
+	missing := model.TargetResult{Execution: execution.ID, Target: "libharbor", Outcome: model.OutcomePassed, Tests: model.TestsNone, Inputs: inputs.Key(), RecordedAt: at}
+	require.ErrorIs(t, f.update(t, func(tx store.Tx) error { return tx.RecordResult(missing) }), store.ErrNotFound, "inputs are recorded before the result naming them")
+
+	var keys []string
+	for range 2 {
+		require.NoError(t, f.update(t, func(tx store.Tx) error {
+			key, err := tx.RecordInputs(inputs)
+			keys = append(keys, key)
+			return err
+		}))
+	}
+	require.Equal(t, []string{inputs.Key(), inputs.Key()}, keys, "recorded once, by content")
+	built := missing
+	built.Archive = "sha256:55"
+	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.RecordResult(built) }))
+
+	require.NoError(t, f.store.View(t.Context(), f.repo, func(rd store.Reader) error {
+		results, err := rd.Results(execution.ID)
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+		require.Equal(t, "sha256:55", results[0].Archive)
+		read, err := rd.Inputs(results[0].Inputs)
+		require.NoError(t, err)
+		require.Equal(t, inputs, read)
+		_, err = rd.Inputs("sha256:none")
+		require.ErrorIs(t, err, store.ErrNotFound)
+		return nil
+	}))
+}
+
 func session(f fixture, id model.SessionID, kind model.SessionKind) model.Session {
 	return model.Session{ID: id, Repository: f.repo, Kind: kind, PID: 4711, ProcessStart: "linux:12345", Version: "test", StartedAt: at, HeartbeatAt: at}
 }

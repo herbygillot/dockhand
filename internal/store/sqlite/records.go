@@ -529,7 +529,7 @@ func (t *tx) UpdateExecution(e model.GuestExecution) error {
 }
 
 func (t *tx) Results(execution model.ExecutionID) ([]model.TargetResult, error) {
-	rows, err := t.conn.QueryContext(t.ctx, "SELECT execution_id, target_id, outcome, phase, tests, log, inputs, recorded_at FROM results WHERE repository_id=? AND execution_id=? ORDER BY recorded_at, rowid", t.repo, execution)
+	rows, err := t.conn.QueryContext(t.ctx, "SELECT execution_id, target_id, outcome, phase, tests, log, inputs, archive, recorded_at FROM results WHERE repository_id=? AND execution_id=? ORDER BY recorded_at, rowid", t.repo, execution)
 	if err != nil {
 		return nil, storageError(err)
 	}
@@ -538,7 +538,7 @@ func (t *tx) Results(execution model.ExecutionID) ([]model.TargetResult, error) 
 	for rows.Next() {
 		var r model.TargetResult
 		var recorded int64
-		if err := rows.Scan(&r.Execution, &r.Target, &r.Outcome, &r.Phase, &r.Tests, &r.Log, &r.Inputs, &recorded); err != nil {
+		if err := rows.Scan(&r.Execution, &r.Target, &r.Outcome, &r.Phase, &r.Tests, &r.Log, &r.Inputs, &r.Archive, &recorded); err != nil {
 			return nil, storageError(err)
 		}
 		r.RecordedAt = fromMillis(recorded)
@@ -566,12 +566,17 @@ func (t *tx) RecordResult(r model.TargetResult) error {
 	if _, ok := plan.Target(r.Target); !ok {
 		return fmt.Errorf("%w: target %s is not in run %s's plan", model.ErrInvalid, r.Target, run.ID)
 	}
+	if r.Inputs != "" {
+		if _, err := t.Inputs(r.Inputs); err != nil {
+			return fmt.Errorf("%s's result names inputs %s: %w", r.Target, r.Inputs, err)
+		}
+	}
 	var existing model.TargetResult
 	err = t.conn.QueryRowContext(t.ctx, "SELECT outcome FROM results WHERE repository_id=? AND execution_id=? AND target_id=?", t.repo, r.Execution, r.Target).Scan(&existing.Outcome)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		_, err = t.exec("INSERT INTO results(repository_id, execution_id, target_id, outcome, phase, tests, log, inputs, recorded_at) VALUES(?,?,?,?,?,?,?,?,?)",
-			t.repo, r.Execution, r.Target, r.Outcome, r.Phase, r.Tests, r.Log, r.Inputs, millis(r.RecordedAt))
+		_, err = t.exec("INSERT INTO results(repository_id, execution_id, target_id, outcome, phase, tests, log, inputs, archive, recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+			t.repo, r.Execution, r.Target, r.Outcome, r.Phase, r.Tests, r.Log, r.Inputs, r.Archive, millis(r.RecordedAt))
 		return err
 	case err != nil:
 		return storageError(err)
@@ -580,9 +585,31 @@ func (t *tx) RecordResult(r model.TargetResult) error {
 	if !existing.ReplacedBy(r) {
 		return fmt.Errorf("%w: %s's result in execution %s is %s and cannot become %s", store.ErrConflict, r.Target, r.Execution, existing.Outcome, r.Outcome)
 	}
-	_, err = t.exec("UPDATE results SET outcome=?, phase=?, tests=?, log=?, inputs=?, recorded_at=? WHERE repository_id=? AND execution_id=? AND target_id=?",
-		r.Outcome, r.Phase, r.Tests, r.Log, r.Inputs, millis(r.RecordedAt), t.repo, r.Execution, r.Target)
+	_, err = t.exec("UPDATE results SET outcome=?, phase=?, tests=?, log=?, inputs=?, archive=?, recorded_at=? WHERE repository_id=? AND execution_id=? AND target_id=?",
+		r.Outcome, r.Phase, r.Tests, r.Log, r.Inputs, r.Archive, millis(r.RecordedAt), t.repo, r.Execution, r.Target)
 	return err
+}
+
+func (t *tx) Inputs(key string) (model.TargetInputs, error) {
+	var record string
+	if err := t.conn.QueryRowContext(t.ctx, "SELECT record FROM inputs WHERE repository_id=? AND key=?", t.repo, key).Scan(&record); err != nil {
+		return model.TargetInputs{}, storageError(err)
+	}
+	var inputs model.TargetInputs
+	if err := json.Unmarshal([]byte(record), &inputs); err != nil {
+		return model.TargetInputs{}, fmt.Errorf("%w: inputs %s: %w", store.ErrUnavailable, key, err)
+	}
+	return inputs, nil
+}
+
+func (t *tx) RecordInputs(inputs model.TargetInputs) (string, error) {
+	record, err := json.Marshal(inputs)
+	if err != nil {
+		return "", err
+	}
+	key := inputs.Key()
+	_, err = t.exec("INSERT INTO inputs(repository_id, key, record) VALUES(?,?,?) ON CONFLICT DO NOTHING", t.repo, key, string(record))
+	return key, err
 }
 
 func placeholders(n int) string { return strings.TrimSuffix(strings.Repeat("?,", n), ",") }

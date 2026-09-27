@@ -295,6 +295,19 @@ type guestResult struct {
 	Tests   string `json:"tests"`
 	Log     string `json:"log"`
 	Detail  string `json:"detail"`
+	// Active are the ports that were active as the target built; absent
+	// where the guest didn't record them, and empty where there were none.
+	Active []guestPort `json:"active"`
+	// Archive is the digest of the target's own archive.
+	Archive string `json:"archive"`
+}
+
+// guestPort is a port active as a target built, as the guest saw it.
+type guestPort struct {
+	Name      string `json:"name"`
+	Spec      string `json:"spec"`
+	Directory string `json:"directory"`
+	Archive   string `json:"archive"`
 }
 
 // Execute builds the job's targets in a fresh clone of the release's image.
@@ -633,6 +646,14 @@ func (p *Provider) record(ctx context.Context, g guest, job buildenv.Job, build 
 			result.Log = local
 		}
 	}
+	if got.Active != nil {
+		active := make([]model.ActivePort, len(got.Active))
+		for i, port := range got.Active {
+			active[i] = model.ActivePort{Name: port.Name, Spec: port.Spec, Directory: port.Directory, Archive: port.Archive}
+		}
+		build.Consumed(target.ID, active)
+	}
+	result.Archive = got.Archive
 	if err := build.Record(result); err != nil {
 		return err
 	}

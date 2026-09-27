@@ -20,13 +20,27 @@ set port $prefix/bin/port
 set results {}
 set environment [dict create]
 
-# save writes the results so far, replacing the file whole.
+# save writes the results so far, replacing the file whole. A result's
+# fields are strings, but for the ports active as it built, a list of
+# them.
 proc save {state {detail ""}} {
     global root input results environment
     set targets {}
     foreach result $results {
         set fields {}
-        dict for {key value} $result { lappend fields $key [json::write string $value] }
+        dict for {key value} $result {
+            if {$key eq "active"} {
+                set ports {}
+                foreach entry $value {
+                    set object {}
+                    dict for {name field} $entry { lappend object $name [json::write string $field] }
+                    lappend ports [json::write object {*}$object]
+                }
+                lappend fields $key [json::write array {*}$ports]
+            } else {
+                lappend fields $key [json::write string $value]
+            }
+        }
         lappend targets [json::write object {*}$fields]
     }
     set facts {}
@@ -107,6 +121,72 @@ proc why {log message} {
     }
     if {[llength $errors]} { return [join [lrange $errors end-2 end] "; "] }
     return $message
+}
+
+# digests remembers each archive's digest: the same archive is active for
+# many targets.
+set digests [dict create]
+
+# digest is an archive's digest, sha256:<hex>, or nothing for a directory,
+# which an image that keeps no archives has in its place.
+proc digest {path} {
+    global digests
+    if {![dict exists $digests $path]} {
+        set sum ""
+        if {[file isfile $path] && [regexp {^([0-9a-f]{64})\s} [fact /usr/bin/shasum -a 256 $path] -> hex]} {
+            set sum sha256:$hex
+        }
+        dict set digests $path $sum
+    }
+    return [dict get $digests $path]
+}
+
+# consumed is what a target's build read beyond its own directory
+# (decision 28): the ports active as it built, other than itself, each
+# with its version, revision, and variants, where its name resolves in the
+# ports tree, and its archive's digest. The target's own archive's digest
+# comes with them, where it is active. Each is asked of port once for all
+# the ports.
+proc consumed {name} {
+    global port root
+    set ports {}
+    set specs {}
+    set own ""
+    foreach line [split [fact $port -q installed active] \n] {
+        if {![regexp {^\s*(\S+) (@\S+) \(active\)$} $line -> other spec]} { continue }
+        if {[string equal -nocase $other $name]} {
+            set own [list $other $spec]
+        } else {
+            lappend ports $other
+            lappend specs $other $spec
+        }
+    }
+    set inputs [dict create active {}]
+    if {$own ne ""} {
+        dict set inputs archive [digest [fact $port -q location {*}$own]]
+    }
+    if {![llength $ports]} { return $inputs }
+    set locations [split [fact $port -q location {*}$specs] \n]
+    if {[llength $locations] != [llength $ports]} {
+        error "port location named [llength $locations] archives for [llength $ports] ports"
+    }
+    # A name port can't resolve fails the whole list; each is then asked
+    # alone, and one that fails resolves nowhere.
+    set directories [split [fact $port -q dir {*}$ports] \n]
+    if {[llength $directories] != [llength $ports]} {
+        set directories [lmap other $ports {fact $port -q dir $other}]
+    }
+    set trees [list $root/ports/ [file normalize $root/ports]/]
+    set active {}
+    foreach other $ports {_ spec} $specs location $locations directory $directories {
+        set relative ""
+        foreach tree $trees {
+            if {[string first $tree $directory] == 0} { set relative [string range $directory [string length $tree] end] }
+        }
+        lappend active [dict create name $other spec $spec directory $relative archive [digest [string trim $location]]]
+    }
+    dict set inputs active $active
+    return $inputs
 }
 
 # build builds one target, returning its result.
@@ -241,6 +321,17 @@ foreach target [dict get $input targets] {
     if {[catch {build $index $target} result]} {
         save errored "building [dict get $target id]: $result"
         exit 1
+    }
+    # What a verdict's build read is recorded with it; a verdict stands
+    # without it, its inputs unknown.
+    if {[dict get $result outcome] in {passed failed}} {
+        if {[catch {consumed [dict get $target name]} inputs]} {
+            set log [open $root/[dict get $result log] a]
+            puts $log "dockhand: what this build read wasn't recorded: $inputs"
+            close $log
+        } else {
+            set result [dict merge $result $inputs]
+        }
     }
     lappend results $result
     save running

@@ -202,3 +202,19 @@ func TestApplyToWorkingFilesChecksEveryFileFirst(t *testing.T) {
 	require.Equal(t, "name jq\nversion 3\n", string(data))
 	require.Contains(t, gitIn(t, repo.Root, "status", "--porcelain"), "M devel/libharbor/Portfile")
 }
+
+// A directory is named by its tree, as a file is by its blob; a path the
+// tree lacks, or holds as the other kind, is absent.
+func TestDirectoriesNameTheirTrees(t *testing.T) {
+	repo, head := portsCheckout(t)
+	tree := gitIn(t, repo.Root, "rev-parse", head+"^{tree}")
+	directories, err := repo.Directories(t.Context(), tree, []string{"_resources", "devel/libharbor", "textproc/missing", "README.md"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{
+		"_resources":      gitIn(t, repo.Root, "rev-parse", head+":_resources"),
+		"devel/libharbor": gitIn(t, repo.Root, "rev-parse", head+":devel/libharbor"),
+	}, directories)
+	blobs, err := repo.FileBlobs(t.Context(), tree, []string{"README.md", "devel/libharbor"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"README.md": gitIn(t, repo.Root, "rev-parse", head+":README.md")}, blobs)
+}

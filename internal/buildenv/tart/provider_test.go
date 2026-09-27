@@ -146,6 +146,7 @@ func (g *fakeGuest) Close(context.Context) {}
 type fakeBuild struct {
 	mu       sync.Mutex
 	blocked  map[model.TargetID]bool
+	consumed map[model.TargetID][]model.ActivePort
 	results  []model.TargetResult
 	progress []string
 	observed []model.Observed
@@ -164,6 +165,15 @@ func (b *fakeBuild) Observe(observed model.Observed) error {
 	defer b.mu.Unlock()
 	b.observed = append(b.observed, observed)
 	return nil
+}
+
+func (b *fakeBuild) Consumed(target model.TargetID, active []model.ActivePort) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.consumed == nil {
+		b.consumed = map[model.TargetID][]model.ActivePort{}
+	}
+	b.consumed[target] = active
 }
 
 func (b *fakeBuild) Blocked(target model.TargetID) (model.TargetID, bool) {
@@ -222,8 +232,9 @@ func newMac(results ...guestResults) *fakeMac {
 // log copied out, and the clone is deleted after.
 func TestTheProviderRecordsEachTargetAsTheGuestFinishesIt(t *testing.T) {
 	t.Parallel()
-	libharbor := guestResult{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "target-1.log"}
-	cli := guestResult{ID: "harbor-cli", Outcome: "failed", Phase: "install", Log: "target-2.log", Detail: "Failed to install harbor-cli"}
+	libharbor := guestResult{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "target-1.log", Active: []guestPort{}, Archive: "sha256:11"}
+	cli := guestResult{ID: "harbor-cli", Outcome: "failed", Phase: "install", Log: "target-2.log", Detail: "Failed to install harbor-cli",
+		Active: []guestPort{{Name: "libharbor", Spec: "@3_0", Directory: "devel/libharbor", Archive: "sha256:11"}}}
 	mac := newMac(
 		guestResults{State: "running"},
 		guestResults{State: "running", Targets: []guestResult{libharbor}},
@@ -234,12 +245,16 @@ func TestTheProviderRecordsEachTargetAsTheGuestFinishesIt(t *testing.T) {
 	require.NoError(t, testProvider(mac).Execute(t.Context(), job, build))
 
 	require.Len(t, build.results, 2)
-	require.Equal(t, model.TargetResult{Target: "libharbor", Outcome: model.OutcomePassed, Tests: model.TestsPassed, Log: filepath.Join(job.Directory, "target-1.log")}, build.results[0])
+	require.Equal(t, model.TargetResult{Target: "libharbor", Outcome: model.OutcomePassed, Tests: model.TestsPassed, Log: filepath.Join(job.Directory, "target-1.log"), Archive: "sha256:11"}, build.results[0])
 	require.Equal(t, model.TargetResult{Target: "harbor-cli", Outcome: model.OutcomeFailed, Phase: model.PhaseInstall, Tests: model.TestsNone, Log: filepath.Join(job.Directory, "target-2.log")}, build.results[1])
 	log, err := os.ReadFile(filepath.Join(job.Directory, "target-1.log"))
 	require.NoError(t, err)
 	require.Equal(t, "built libharbor", string(log))
 	require.Contains(t, build.progress, "harbor-cli: Failed to install harbor-cli")
+	require.Equal(t, map[model.TargetID][]model.ActivePort{
+		"libharbor":  {},
+		"harbor-cli": {{Name: "libharbor", Spec: "@3_0", Directory: "devel/libharbor", Archive: "sha256:11"}},
+	}, build.consumed, "what each build read, the guest's none included")
 
 	vm := "dockhand-check-run-7-tahoe-1"
 	require.Equal(t, []string{"clone dockhand-base-tahoe " + vm, "start " + vm, "reach " + vm + " as dockhand-base-tahoe", "delete " + vm}, mac.events)

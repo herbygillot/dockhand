@@ -163,6 +163,12 @@ its provider, `tart_7y62p4sigena6xlr`:
 - `dockhand logs tart_7y62p4sigena6xlr` shows that run's evidence, and its
   VM clone's name.
 
+Each target's result keeps what its build read: the ports active as it
+built, each with its version, variants, directory, and archive's digest,
+and the digest of the archive the build made. The guest asks `port` for
+them once per target, after its verdict. They are what a later check will
+compare to reuse the result (decision 28).
+
 Each target's log is copied into the check's log directory (`dockhand
 logs`). When the guest's Command Line Tools, or its Xcode in an Xcode
 image, differ from the facts table's row the plan was read with, the

@@ -193,12 +193,24 @@ func (r *Repository) MoveCheckout(ctx context.Context, from, to string) error {
 	return err
 }
 
-// FileBlobs maps each of paths that tree holds to its object ID; a path
-// the tree lacks is absent from the map.
+// FileBlobs maps each of paths that tree holds as a file to its object
+// ID; a path the tree lacks is absent from the map.
 func (r *Repository) FileBlobs(ctx context.Context, tree string, paths []string) (map[string]string, error) {
-	blobs := map[string]string{}
+	return r.pathObjects(ctx, tree, paths, "blob")
+}
+
+// Directories maps each of paths that tree holds as a directory to its
+// tree's object ID; a path the tree lacks is absent from the map.
+func (r *Repository) Directories(ctx context.Context, tree string, paths []string) (map[string]string, error) {
+	return r.pathObjects(ctx, tree, paths, "tree")
+}
+
+// pathObjects maps each of paths that tree holds as an object of kind to
+// its ID.
+func (r *Repository) pathObjects(ctx context.Context, tree string, paths []string, kind string) (map[string]string, error) {
+	objects := map[string]string{}
 	if len(paths) == 0 {
-		return blobs, nil
+		return objects, nil
 	}
 	if !ValidObjectID(tree) {
 		return nil, fmt.Errorf("git: a literal tree is required")
@@ -210,11 +222,11 @@ func (r *Repository) FileBlobs(ctx context.Context, tree string, paths []string)
 	for entry := range strings.SplitSeq(string(out), "\x00") {
 		meta, name, ok := strings.Cut(entry, "\t")
 		fields := strings.Fields(meta)
-		if ok && len(fields) == 3 && fields[1] == "blob" {
-			blobs[name] = fields[2]
+		if ok && len(fields) == 3 && fields[1] == kind {
+			objects[name] = fields[2]
 		}
 	}
-	return blobs, nil
+	return objects, nil
 }
 
 // Bundle writes a Git bundle at path holding commit under ref, less what

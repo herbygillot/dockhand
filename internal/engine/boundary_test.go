@@ -23,6 +23,7 @@ var engineImports = map[string]string{
 	"internal/buildenv":            "the contract the providers meet; the command layer composes them",
 	"internal/git":                 "the checkout, captures, and history",
 	"internal/history":             "tidy, rebase, and restore as complete transitions",
+	"internal/reuse":               "what each target's build read, for reuse",
 	"internal/macos":               "macOS releases, for environments and their words",
 	"internal/scratch":             "temporary directories for archives and preparation",
 	"internal/version":             "its own version, in the pull request",

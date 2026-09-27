@@ -56,6 +56,38 @@ So setup now sets `portimage_mode directory_and_archive` in the image's `macport
 
 That changes what an image holds, so `tart.SetupProtocol` is 2. Its pin now covers `macports/installation` as well as `tart/provision`: the MacPorts installer is provisioning code, and the first pin left it out.
 
+## What each build read
+
+Each result now names what its build read (decision 28), as far as dockhand can name it (`model.TargetInputs`):
+- the environment, by its identity as the execution began;
+- the target's directory, and `_resources`, each by its tree in the revision. All of `_resources` counts as read until evaluation records what it sources;
+- the variants asked for;
+- every port active as it built, other than itself: its name, and its version, revision, and variants as MacPorts names them (`@1.88.0_3+no_single`). Each comes with where its name resolved in the ports tree and that directory's tree, and its archive's digest.
+
+The result also keeps the digest of the archive its build made, for dependents to be installed from later.
+
+**The guest sees; the host names by content.** After each verdict, the guest asks `port` once for the whole active set:
+- `port -q installed active` lists the active ports;
+- `port -q location` names each one's archive, which the guest digests with `shasum`, once per archive per run;
+- `port -q dir` gives where each name resolves.
+
+All three are `port`'s documented actions. Given the whole active set, each answers in order in about 0.2 s on this Mac's 396 active ports. `dir` fails the whole list for a name it can't resolve, so the guest then asks name by name, and a name that fails resolves nowhere. A build whose inputs can't be read keeps its verdict, with its inputs unknown and a line in its log saying so. Recording adds no step to how ports are built or judged, so `VerifierProtocol` stays 1, re-pinned.
+
+The provider passes what the guest saw through `buildenv.Build.Consumed`. The runner completes it with the revision's trees (`reuse.Inputs`, with `git.Repository.Directories`); a tree is always the revision's, never the provider's. It records the inputs with the result, in one transaction.
+
+**Stored once by content** (schema 16): an `inputs` table keyed by the digest of the record, which the result names; a result can't name inputs that weren't recorded. Inputs are complete when the environment, both trees, and every active port's tree and archive are known (`TargetInputs.Complete`). Only complete inputs will stand for another build's.
+
+**What stays unknown.** The github and command providers don't report active ports yet, so their results have no inputs. On a protocol-1 image, which keeps no archives, the active ports have no digests, so the inputs are incomplete.
+
+**Checked live** on a scratch branch bumping jq, checked in a clone of the Tahoe Xcode image. That image was made before this change: setup protocol 1, with no origin recorded. check-22 passed, and jq's result names inputs that hold:
+- the environment's identity, empty, as the image has no origin record;
+- `sysutils/jq` and `_resources` by the revision's trees;
+- one active port, oniguruma6 `@6.9.10_0`, resolved to `devel/oniguruma6` in the staged tree, `/var` against `/private/var` notwithstanding, with its tree and its archive's digest.
+
+jq's own archive digest is empty. Its log shows why. In `directory` mode MacPorts builds a port into an image directory and never writes an archive (`portinstall.tcl`: "only the extracted dir should be kept"). oniguruma6 came from packages.macports.org as a `.tbz2`, and the registry still names that file. Under `directory_and_archive`, install writes the archive, and activation keeps it beside the directory. So the image's setting is what gives a target its own archive, as setup protocol 2 now does. That part is unchecked live: it needs a new image, which is the person's to make.
+
+**Where it lives.** `internal/reuse` is new, and holds `Inputs`. The reuse decision will move there, and `Counts` with it, rather than grow in the engine (item 4).
+
 ## Still to do in item 6
 
 - **Recorded inputs per port:** each build records its input identity and the archives it consumed.
