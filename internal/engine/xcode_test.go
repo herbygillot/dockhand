@@ -99,7 +99,7 @@ func TestATargetThatNeedsXcodeIsUnmetWithoutIt(t *testing.T) {
 	require.NoError(t, err)
 	for _, target := range evidence.Targets {
 		if target.Target.ID == "harbor-cli" {
-			require.Equal(t, "· not built: needs Xcode, through libharbor", TargetWords(plan, target.Target, armTools, target.Outcomes[0], false))
+			require.Equal(t, "· not built: needs Xcode, through libharbor", evidence.Words(target, 0, false))
 		}
 	}
 	evidence.settle()

@@ -244,6 +244,10 @@ func stoppedShort(conclusion string) bool {
 	return false
 }
 
+// RunsOwnTests says the workflow runs a port's declared tests whatever the
+// check's policy: it is MacPorts' own, and dockhand doesn't change it.
+func (p *Provider) RunsOwnTests() bool { return true }
+
 // runner is one job's log, read.
 type runner struct {
 	job   RunnerJob

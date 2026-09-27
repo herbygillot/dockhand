@@ -455,6 +455,7 @@ func (b *build) Blocked(target model.TargetID) (model.TargetID, bool) {
 }
 
 func (b *build) Record(result model.TargetResult) error {
+	result = Judge(b.d.plan.Tests, result)
 	result.Execution = b.execution.ID
 	if result.RecordedAt.IsZero() {
 		result.RecordedAt = b.d.e.now()
@@ -554,7 +555,7 @@ func runEvidence(r store.Reader, run model.Run, plan model.Plan) (Evidence, erro
 	for _, execution := range executions {
 		byEnvironment[execution.Environment] = append(byEnvironment[execution.Environment], execution)
 	}
-	evidence := Evidence{Run: run, Plan: plan, Executions: map[model.ExecutionID]model.GuestExecution{}}
+	evidence := Evidence{Run: run, Plan: plan, Executions: map[model.ExecutionID]model.GuestExecution{}, policies: map[model.RunID]model.TestPolicy{run.ID: plan.Tests}}
 	for _, execution := range executions {
 		evidence.Executions[execution.ID] = execution
 	}

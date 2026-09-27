@@ -2,13 +2,18 @@ package engine
 
 import "github.com/herbygillot/dockhand/internal/model"
 
-// TargetWords is how one target's result in one environment reads, on the
+// targetWords is how one target's result in one environment reads, on the
 // terminal and in the pull request alike, so the two never word one result
 // differently (Design v3 §7): excluded there by the plan, passed, passed
-// with its tests failing (advisory), failed at a phase, blocked by a
-// failed changed dependency, not run, or could not evaluate. Accepted
-// marks a failure submit --accept acknowledged.
-func TargetWords(plan model.Plan, target model.PlanTarget, environment model.Environment, result model.TargetResult, accepted bool) string {
+// with its tests failing or timing out where they didn't count, failed at
+// a phase, blocked by a failed changed dependency, not run, or could not
+// evaluate. Reading says how the tests counted, "advisory" when empty
+// (Evidence.testsReading). Accepted marks a failure submit --accept
+// acknowledged.
+func targetWords(plan model.Plan, target model.PlanTarget, environment model.Environment, result model.TargetResult, reading string, accepted bool) string {
+	if reading == "" {
+		reading = "advisory"
+	}
 	if Excluded(plan, target, environment.Platform) {
 		return "— excluded"
 	}
@@ -18,14 +23,20 @@ func TargetWords(plan model.Plan, target model.PlanTarget, environment model.Env
 	var words string
 	switch result.Outcome {
 	case model.OutcomePassed:
-		if result.Tests == model.TestsFailed {
-			return "✓ build passed; tests failed (advisory)"
+		switch result.Tests {
+		case model.TestsFailed:
+			return "✓ build passed; tests failed (" + reading + ")"
+		case model.TestsTimedOut:
+			return "✓ build passed; tests timed out (" + reading + ")"
 		}
 		return "✓"
 	case model.OutcomeFailed:
 		words = "✗ failed"
 		if result.Phase != "" {
 			words += " at " + string(result.Phase)
+		}
+		if result.Phase == model.PhaseTest && result.Tests == model.TestsTimedOut {
+			words += ": tests timed out"
 		}
 	case model.OutcomeBlocked:
 		words = "✗ blocked by a failed changed dependency"

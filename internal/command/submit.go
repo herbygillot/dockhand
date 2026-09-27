@@ -207,7 +207,7 @@ func submitChecked(ctx context.Context, s *settings, e *engine.Engine, streams S
 			return err
 		}
 		fmt.Fprintf(streams.Out, "\n%s · checking %s, then submitting it if it passes\n", plan.Branch.ShortName(), engine.Describe(capture.Revision))
-		writePlan(streams.Out, proposed, e.Remedy)
+		writePlan(streams.Out, proposed, e.PolicyNotes(proposed), e.Remedy)
 		writePushes(streams.Out, proposed)
 		if !proposed.Runnable() {
 			return errors.New("nothing was checked or submitted: " + unrunnable(proposed))

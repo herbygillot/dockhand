@@ -92,7 +92,7 @@ more. With check.baseline = true, a failed check runs one by itself.`,
 			if len(capture.Untracked) > 0 {
 				fmt.Fprintf(out, "Left out, not tracked: %s (--include adds one)\n", strings.Join(capture.Untracked, ", "))
 			}
-			writePlan(out, proposed, e.Remedy)
+			writePlan(out, proposed, e.PolicyNotes(proposed), e.Remedy)
 			writePushes(out, proposed)
 			revision, planned := revisionView(capture.Revision), planView(proposed)
 			streams.emit(checkJSON{Branch: branch.ShortName(), Revision: &revision, Plan: &planned, Targets: []targetJSON{}})
@@ -231,7 +231,7 @@ func unrunnable(plan model.Plan) string {
 
 // writePlan shows a plan, with remedy saying how to give an environment
 // what a target it can't build needs.
-func writePlan(out io.Writer, plan model.Plan, remedy func(model.Unmet) string) {
+func writePlan(out io.Writer, plan model.Plan, notes []string, remedy func(model.Unmet) string) {
 	var changed, extra []string
 	for _, target := range plan.Targets {
 		name := target.Target.Name
@@ -265,6 +265,9 @@ func writePlan(out io.Writer, plan model.Plan, remedy func(model.Unmet) string) 
 		on = append(on, environmentWords(environment))
 	}
 	fmt.Fprintf(out, "Provider    %s · tests %s\n", strings.Join(on, "; "), plan.Tests)
+	for _, note := range notes {
+		fmt.Fprintf(out, "            %s\n", note)
+	}
 	if len(plan.Targets) > 1 {
 		var order []string
 		for _, target := range plan.Targets {
@@ -433,8 +436,8 @@ func writeResults(out io.Writer, indent string, evidence engine.Evidence, where 
 		}
 		for _, target := range evidence.Targets {
 			var cells []string
-			for i, result := range target.Outcomes {
-				cell := engine.TargetWords(evidence.Plan, target.Target, environments[i], result, false)
+			for i := range target.Outcomes {
+				cell := evidence.Words(target, i, false)
 				if where {
 					cell = environmentWords(environments[i]) + " " + cell
 				}
@@ -452,8 +455,8 @@ func writeResults(out io.Writer, indent string, evidence engine.Evidence, where 
 	fmt.Fprintln(grid)
 	for _, target := range evidence.Targets {
 		fmt.Fprintf(grid, "%s%s", indent, target.Target.Target.Name)
-		for i, result := range target.Outcomes {
-			fmt.Fprintf(grid, "\t%s", engine.TargetWords(evidence.Plan, target.Target, environments[i], result, false))
+		for i := range target.Outcomes {
+			fmt.Fprintf(grid, "\t%s", evidence.Words(target, i, false))
 		}
 		fmt.Fprintln(grid)
 	}

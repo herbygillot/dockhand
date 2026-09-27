@@ -37,6 +37,43 @@ type Evidence struct {
 	// Executions are the provider runs the results came from, Run's and
 	// Earlier's, by ID.
 	Executions map[model.ExecutionID]model.GuestExecution
+	// policies are the test policies Run's and Earlier's results were
+	// judged under, by check.
+	policies map[model.RunID]model.TestPolicy
+}
+
+// Words is how one target's result in one environment reads, on the
+// terminal and in the pull request alike (TargetWords). A result's tests
+// read under the policy of the check that built it: when that check is an
+// earlier one whose policy differs from this evidence's own, it is named,
+// "tests failed (advisory, check-3)", so a later check with --tests
+// required never makes an earlier advisory result read as required.
+func (e Evidence) Words(target TargetEvidence, environment int, accepted bool) string {
+	result := target.Outcomes[environment]
+	return targetWords(e.Plan, target.Target, e.Plan.Environments[environment], result, e.testsReading(result), accepted)
+}
+
+// testsReading says how a result's tests count: "advisory", "not counted,
+// --tests skip", and the earlier check it came from when that check's
+// policy differs from this evidence's.
+func (e Evidence) testsReading(result model.TargetResult) string {
+	policy, run := e.Plan.Tests, e.Run.ID
+	if execution, ok := e.Executions[result.Execution]; ok {
+		run = execution.Run
+		if found, ok := e.policies[run]; ok {
+			policy = found
+		}
+	}
+	words := "advisory"
+	if policy == model.TestsSkip {
+		words = "not counted, --tests skip"
+	}
+	if run != e.Run.ID && policy != e.Plan.Tests {
+		if name, ok := e.Checks()[run]; ok {
+			words += ", " + name
+		}
+	}
+	return words
 }
 
 // Runs are the provider runs behind one environment's results, in the
@@ -229,6 +266,12 @@ func (e *Evidence) fill(earlier Evidence) bool {
 						e.Executions = map[model.ExecutionID]model.GuestExecution{}
 					}
 					e.Executions[execution.ID] = execution
+					if policy, ok := earlier.policies[execution.Run]; ok {
+						if e.policies == nil {
+							e.policies = map[model.RunID]model.TestPolicy{}
+						}
+						e.policies[execution.Run] = policy
+					}
 				}
 				took = true
 			}

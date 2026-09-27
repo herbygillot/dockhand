@@ -108,8 +108,8 @@ func ownedSections(facts bodyFacts) string {
 		fmt.Fprintln(&b)
 		for _, target := range evidence.Targets {
 			fmt.Fprintf(&b, "| %s |", target.Target.Target.Name)
-			for i, result := range target.Outcomes {
-				fmt.Fprintf(&b, " %s |", TargetWords(evidence.Plan, target.Target, evidence.Plan.Environments[i], result, slices.Contains(facts.Accepted, target.Target.Target.Name)))
+			for i := range target.Outcomes {
+				fmt.Fprintf(&b, " %s |", evidence.Words(target, i, slices.Contains(facts.Accepted, target.Target.Target.Name)))
 			}
 			fmt.Fprintln(&b)
 		}
@@ -291,7 +291,8 @@ func testsDeclared(evidence *Evidence) bool {
 	}
 	for _, target := range evidence.Targets {
 		for _, result := range target.Outcomes {
-			if result.Tests == model.TestsPassed || result.Tests == model.TestsFailed {
+			switch result.Tests {
+			case model.TestsPassed, model.TestsFailed, model.TestsTimedOut:
 				return true
 			}
 		}
@@ -302,7 +303,7 @@ func testsDeclared(evidence *Evidence) bool {
 func testsPassed(evidence Evidence) bool {
 	for _, target := range evidence.Targets {
 		for _, result := range target.Outcomes {
-			if result.Tests == model.TestsFailed {
+			if result.Tests == model.TestsFailed || result.Tests == model.TestsTimedOut {
 				return false
 			}
 		}

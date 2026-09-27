@@ -226,3 +226,20 @@ func TestCleanRemovesTheCheckBranchesInYourFork(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, strings.TrimSpace(gitRun(t, f.fork, "for-each-ref", "refs/heads/dockhand-check/")))
 }
+
+// MacPorts' workflow reports a port whose build passed and whose tests
+// failed; under --tests required that fails the check, as it does on
+// Tart. Under --tests skip the plan says the workflow's tests still run.
+// (The architecture review of 2026-09-27, finding 1.)
+func TestRequiredTestsFailACheckOnGitHub(t *testing.T) {
+	f, _ := githubBranch(t)
+	f.logs = []map[string]string{{"build (macos-14)": built("jq", false), "build (macos-15)": built("jq", true)}}
+	f.conclusion = []string{"success"}
+	out, _, err := dockhand(t, "check", "--on", "github", "--tests", "required")
+	require.Error(t, err, "a failing test fails a check that requires tests")
+	require.Contains(t, out, "  jq  ✗ failed at test\n")
+
+	out, _, err = dockhand(t, "check", "--on", "github", "--tests", "skip", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "Provider    github · tests skip\n            github runs its workflow's own tests; with --tests skip they run there, and don't count\n")
+}

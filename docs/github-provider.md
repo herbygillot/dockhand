@@ -27,7 +27,7 @@ on = ["github"]   # makes it check's default
 4. It reads each log's markers for each port: the subport listing, `port lint` errors, failed dependencies and installs, and the install and test groups.
    - A port passes only if it passed on every runner.
    - If it failed on any runner, it failed at that runner's phase.
-   - Test failures are advisory, as in MacPorts' CI, unless `--tests required`.
+   - Test failures are advisory, as in MacPorts' CI, unless `--tests required`, which dockhand applies to the workflow's reported results as it does to Tart's. The workflow runs its own tests whatever the policy, so `--tests skip` only stops them counting.
 
 A run that was cancelled, timed out, or never started building is run again (only its failed jobs) instead of being read. So is a run that failed without naming a port, once: it counts as trouble with the environment, and a later attempt reruns it. A port's own failure is a verdict and is not retried.
 

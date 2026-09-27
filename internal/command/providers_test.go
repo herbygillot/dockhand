@@ -148,7 +148,7 @@ func TestThePlanSaysWhatWontBeBuilt(t *testing.T) {
 			{Target: "harbor-cli", Environment: tahoe, Needs: model.RequiresXcode, Through: "libharbor"},
 		}}
 	var out bytes.Buffer
-	writePlan(&out, plan, func(model.Unmet) string { return "make an Xcode image" })
+	writePlan(&out, plan, nil, func(model.Unmet) string { return "make an Xcode image" })
 	require.Contains(t, out.String(), "Provider    tart macOS 26 (Tahoe) arm64 with the Command Line Tools · tests declared\n")
 	require.Contains(t, out.String(), "Not built   libharbor on tart macOS 26 (Tahoe) arm64 with the Command Line Tools: needs Xcode\n"+
 		"Not built   harbor-cli on tart macOS 26 (Tahoe) arm64 with the Command Line Tools: needs Xcode, through libharbor\n"+

@@ -71,3 +71,16 @@ func TestEnvironmentHeadingsAreShort(t *testing.T) {
 	require.Equal(t, "github", EnvironmentHeading(github, []model.Environment{tahoe, github}))
 	require.Equal(t, "Darwin 30", EnvironmentHeading(unknown, []model.Environment{unknown}))
 }
+
+// Timed-out tests ran and didn't pass: the checklist doesn't claim the
+// existing tests were tried, and the table says they timed out. (The
+// architecture review of 2026-09-27, finding 1.)
+func TestTimedOutTestsAreNotPassing(t *testing.T) {
+	evidence := Evidence{Plan: model.Plan{Environments: []model.Environment{{Provider: "command"}}}, Targets: []TargetEvidence{
+		{Target: model.PlanTarget{ID: "jq", Target: model.Target{Name: "jq"}}, Passed: true, Outcomes: []model.TargetResult{{Outcome: model.OutcomePassed, Tests: model.TestsPassed}}},
+		{Target: model.PlanTarget{ID: "libharbor", Target: model.Target{Name: "libharbor"}}, Passed: true, Outcomes: []model.TargetResult{{Outcome: model.OutcomePassed, Tests: model.TestsTimedOut}}},
+	}}
+	body := ownedSections(bodyFacts{Evidence: &evidence})
+	require.Contains(t, body, "- [ ] tried existing tests")
+	require.Contains(t, body, "| libharbor | ✓ build passed; tests timed out (advisory) |")
+}
