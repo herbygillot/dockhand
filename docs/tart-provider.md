@@ -100,12 +100,38 @@ one made before dockhand recorded origins, keeps its results as before.
 Xcode is an add-on. A release's checks need only its base image, with the
 Command Line Tools.
 `dockhand providers setup tart tahoe --xcode <Xcode .xip, or a folder of them>`
-makes Tahoe's Xcode image, `dockhand-xcode-tahoe`, with the newest Xcode
-Tahoe runs, in up to 65 GB of disk. Xcode comes from Apple, as a `.xip`
-from developer.apple.com. Only releases count, never a beta or a release
-candidate, and never an Xcode older than the release's own tools
-generation, which lacks its SDK: Golden Gate takes Xcode 27, and setup
-refuses rather than give it 26.6.
+makes Tahoe's Xcode image, `dockhand-xcode-tahoe`, in up to 65 GB of disk.
+Xcode comes from Apple, as a `.xip` from developer.apple.com.
+
+**An Xcode image has the Xcode MacPorts' arm64 buildbot for the release
+runs,** so a port that needs Xcode builds as MacPorts builds its packages.
+The facts table records each builder's Xcode from its logs. `dockhand
+config` lists each release's:
+
+| Release | Xcode |
+| --- | --- |
+| Monterey | 14.0.1 |
+| Ventura | 14.3.1 |
+| Sonoma | 15.4 |
+| Sequoia | 16.4 |
+| Tahoe | 26.6 |
+| Golden Gate | 27.0 |
+
+Setup takes the archive of exactly that version, `Xcode_26.6.xip` or its
+`_Apple_silicon` or `_Universal` form, never a newer one in its place,
+nor a beta or a release candidate. Without it, setup says which Xcode to
+download. The Xcode must still run on the release. `providers.tart.xcode`
+names another Xcode for a release, such as the 16.2 MacPorts' GitHub CI
+pins on Sonoma:
+
+```toml
+[providers.tart.xcode]
+sonoma = "16.2"
+```
+
+The buildbots' Xcode changes when their administrators upgrade it. The
+facts table follows when it is regenerated (`tools/facts`), and a check
+reports where a guest's Xcode differs from it.
 
 **With its Xcode image, a release builds there, every port with Xcode.**
 MacPorts' builders have Xcode too, and a port that doesn't ask for it
@@ -146,6 +172,9 @@ MacPorts' reason.
 [providers.tart]
 capacity = 1          # checks serve runs at once; 1 when unset
 test_timeout = "45m"  # a target's tests; 30 minutes when unset
+
+[providers.tart.xcode]  # a release's Xcode image, by name or number
+tahoe = "26.6"          # what MacPorts' arm64 buildbot runs when unset
 ```
 
 macOS runs two VMs at most, yours among them, so a check waits for a slot

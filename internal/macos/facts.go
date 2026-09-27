@@ -104,6 +104,20 @@ func (t FactsTable) Generation(darwin int) (int, bool) {
 	return 0, false
 }
 
+// BuilderXcode is the Xcode MacPorts' arm64 builder for a release runs,
+// from its buildbot row, and whether the table has one. A release's Xcode
+// image installs it unless the configuration names another, so ports that
+// need Xcode are built there as MacPorts builds its packages.
+func (t FactsTable) BuilderXcode(darwin int) (string, bool) {
+	for _, facts := range t.Facts {
+		if facts.Darwin == darwin && facts.Architecture == "arm64" && facts.Profile == ProfileXcode && facts.Source.Kind == SourceBuildbot &&
+			facts.Xcode != "" && facts.Xcode != "none" {
+			return facts.Xcode, true
+		}
+	}
+	return "", false
+}
+
 //go:embed facts.json
 var factsJSON []byte
 

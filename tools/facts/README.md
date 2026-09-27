@@ -42,6 +42,15 @@ wins (`macos.FactsTable.Lookup`) and the buildbot's row stays as a
 cross-check. Darwin 8 and 9 have no builder, and Base's own tables are
 not read yet.
 
+## The Xcode setup installs
+
+Each release's Xcode image installs the Xcode its arm64 builder runs, the
+buildbot row's Xcode (`macos.FactsTable.BuilderXcode`), unless
+`providers.tart.xcode` names another. The Tart rows don't count for this,
+since they describe dockhand's own images. Regenerating the table moves an
+Xcode image to whatever Xcode the builder has been upgraded to, the next
+time the image is made.
+
 ## The tools generation setup installs
 
 The table also holds each release's Command Line Tools generation, the

@@ -60,12 +60,12 @@ command, your own script, when the configuration file names one.`,
 		Short: "Set up a provider",
 		Args:  cobra.NoArgs,
 	}
-	setup.AddCommand(setupTartCommand(streams))
+	setup.AddCommand(setupTartCommand(s, streams))
 	cmd.AddCommand(setup)
 	return cmd
 }
 
-func setupTartCommand(streams Streams) *cobra.Command {
+func setupTartCommand(s *settings, streams Streams) *cobra.Command {
 	var options tart.SetupOptions
 	cmd := &cobra.Command{
 		Use:   "tart [release]",
@@ -80,10 +80,13 @@ downloads the vanilla image the first time and takes up to ` + tart.SetupDisk + 
 A golden copy is kept beside it, and a lost image is restored from it.
 
 Xcode is an add-on. --xcode, given an Xcode .xip from Apple or a folder of
-them, makes dockhand-xcode-<release> instead, the same with the newest Xcode
-the release runs, never a beta nor one older than the release's own tools,
-in up to ` + tart.XcodeDisk + ` more. A check builds a port that needs
-Xcode only there; without it, the port isn't built, and the check says so.
+them, makes dockhand-xcode-<release> instead, the same with Xcode too, in
+up to ` + tart.XcodeDisk + ` more. Its Xcode is the one MacPorts' arm64
+buildbot for the release runs, so ports are built as MacPorts builds its
+packages; providers.tart.xcode in the configuration names another for a
+release. The archive of that version is required, never a newer one in its
+place, nor a beta. A check builds a port that needs Xcode only there;
+without it, the port isn't built, and the check says so.
 
 When the image exists, setup checks it in a disposable clone and leaves it
 as it is. --rebuild makes a replacement, and keeps the old one until the
@@ -93,6 +96,11 @@ new one has passed.`,
 			if len(args) == 1 {
 				options.Release = args[0]
 			}
+			_, file, _, err := s.options()
+			if err != nil {
+				return err
+			}
+			options.Xcodes = file.Providers.Tart.Xcode
 			images := images()
 			if images == nil {
 				return fmt.Errorf("checks build in Tart VMs, and Tart isn't installed: %s", installTart)

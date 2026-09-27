@@ -18,6 +18,11 @@ type Release struct {
 	// MacPorts' arm64 builder for the release runs. It is zero for a
 	// release the table has no generation for.
 	Tools int
+	// Xcode is the Xcode MacPorts' arm64 builder for the release runs,
+	// from the facts table: what its Xcode image installs unless the
+	// configuration names another. Empty for a release the table has no
+	// builder for.
+	Xcode string
 }
 
 // CurrentDarwin is the macOS a host that is not a Mac models unless told
@@ -28,8 +33,8 @@ const CurrentDarwin = 25
 
 // releases is keyed by Darwin major, which is not consecutive: Apple
 // skipped 26, and Golden Gate, macOS 27, is Darwin 27. Each release's
-// tools generation comes from the facts table.
-var releases = withGenerations(map[int]Release{
+// tools generation and Xcode come from the facts table.
+var releases = withBuilders(map[int]Release{
 	21: {Darwin: 21, Product: "12", Name: "Monterey", Slug: "monterey"},
 	22: {Darwin: 22, Product: "13", Name: "Ventura", Slug: "ventura"},
 	23: {Darwin: 23, Product: "14", Name: "Sonoma", Slug: "sonoma"},
@@ -38,9 +43,12 @@ var releases = withGenerations(map[int]Release{
 	27: {Darwin: 27, Product: "27", Name: "Golden Gate", Slug: "golden-gate"},
 })
 
-func withGenerations(releases map[int]Release) map[int]Release {
+// withBuilders gives each release what MacPorts' arm64 builder for it
+// runs: its tools generation, and its Xcode.
+func withBuilders(releases map[int]Release) map[int]Release {
 	for darwin, release := range releases {
 		release.Tools, _ = Table().Generation(darwin)
+		release.Xcode, _ = Table().BuilderXcode(darwin)
 		releases[darwin] = release
 	}
 	return releases

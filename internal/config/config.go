@@ -178,6 +178,9 @@ type GitHubProvider struct {
 	Capacity int `toml:"capacity"`
 }
 
+// xcodeVersion is an Xcode version as Apple numbers it: 26.6, 14.0.1, 27.
+var xcodeVersion = regexp.MustCompile(`^[0-9]+(\.[0-9]+)*$`)
+
 // TartProvider builds in dockhand's Tart images, one fresh clone per
 // release and attempt.
 type TartProvider struct {
@@ -187,6 +190,10 @@ type TartProvider struct {
 	// TestTimeout bounds a target's tests, as a duration such as "45m";
 	// 30 minutes when unset.
 	TestTimeout string `toml:"test_timeout"`
+	// Xcode is the Xcode each release's Xcode image installs, by release
+	// name or number: tahoe = "26.6". A release it doesn't name gets what
+	// MacPorts' arm64 builder for the release runs.
+	Xcode map[string]string `toml:"xcode"`
 }
 
 // Timeout is the test timeout the configuration sets, or zero.
@@ -300,6 +307,11 @@ func parse(path, text string) (File, error) {
 	if timeout := f.Providers.Tart.TestTimeout; timeout != "" {
 		if d, err := time.ParseDuration(timeout); err != nil || d <= 0 {
 			return File{}, fmt.Errorf("%s: providers.tart.test_timeout: %q is not a duration such as \"45m\"", path, timeout)
+		}
+	}
+	for release, version := range f.Providers.Tart.Xcode {
+		if !xcodeVersion.MatchString(version) {
+			return File{}, fmt.Errorf("%s: providers.tart.xcode.%s: %q is not an Xcode version such as \"26.6\"", path, release, version)
 		}
 	}
 	if command := f.Providers.Command; command != nil {

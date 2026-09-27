@@ -16,7 +16,7 @@ import (
 
 // setupPin is the digest of the provisioning code tart.SetupProtocol 3
 // covers: this package's, and the MacPorts installation it runs.
-const setupPin = "e3401ddbc6901c5dd2d44bbb0aeff16e56a712c31b75159f7dd4bbf7a7ea3f8e"
+const setupPin = "680e1c3894fdb26caa193208d9fe6e7bfcfa8c355324a6c3e2e73e40e1888b67"
 
 // What setup puts in an image is identified by tart.SetupProtocol, which
 // evidence's reuse compares (decision 28). A change to the provisioning

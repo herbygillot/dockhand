@@ -25,9 +25,13 @@ type Config struct {
 	MacPortsVersion string
 	GuestPrefix     string
 	Platform        model.Platform
-	Xcode           string
-	XcodeArchive    string
-	XcodeVersion    string
+	// Xcode is an Xcode archive, or a folder of them, for an Xcode image.
+	Xcode        string
+	XcodeArchive string
+	// XcodeVersion is the Xcode an Xcode image installs, its archive
+	// chosen by it: what MacPorts' arm64 builder for the release runs
+	// when empty (macos.Release.Xcode).
+	XcodeVersion string
 }
 
 type Options struct {
@@ -244,7 +248,10 @@ func normalize(config Config) (Config, macos.Release, error) {
 	}
 	config.Executable, config.Home = runtime.Executable, runtime.Home
 	if config.Xcode != "" {
-		config.XcodeArchive, config.XcodeVersion, err = macos.SelectXcode(config.Xcode, release)
+		if config.XcodeVersion == "" {
+			config.XcodeVersion = release.Xcode
+		}
+		config.XcodeArchive, config.XcodeVersion, err = macos.SelectXcode(config.Xcode, release, config.XcodeVersion)
 		if err != nil {
 			return config, release, err
 		}

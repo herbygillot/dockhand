@@ -14,15 +14,24 @@ type xcodeArchive struct {
 	Preference int
 }
 
-// SelectXcode chooses the Xcode archive a release's Xcode image installs:
-// the archive at path, or the newest release archive in the folder at path
-// that fits the release. An Xcode fits when it runs there, below the
-// release's upper bound, and is no older than the release's own tools
-// generation (Tools, from the facts table): an older Xcode lacks the
-// release's SDK, so Golden Gate, generation 27, never gets Xcode 26.6.
-// Newer generations fit, as Sequoia's Xcode 26 does over its tools' 16.
-// Betas and release candidates are never chosen.
-func SelectXcode(path string, release Release) (string, string, error) {
+// SelectXcode chooses the archive of an Xcode version for a release's
+// Xcode image: the archive at path, or the one of that version in the
+// folder at path, Apple silicon's before the universal one. The version is
+// the one MacPorts' arm64 builder for the release runs (Release.Xcode)
+// unless the configuration names another, so an Xcode image matches where
+// MacPorts builds its packages, whatever newer Xcode the folder holds. It
+// must run on the release, below the release's upper bound. Betas and
+// release candidates are never chosen.
+func SelectXcode(path string, release Release, version string) (string, string, error) {
+	if version == "" {
+		return "", "", fmt.Errorf("macos: no Xcode is set for %s: MacPorts has no arm64 builder for it that the facts table knows; name one in providers.tart.xcode", release.Name)
+	}
+	if _, ok := numericVersion(version); !ok {
+		return "", "", fmt.Errorf("macos: Xcode %q for %s is not a version such as 26.6", version, release.Name)
+	}
+	if bound := xcodeUpperBound(release.Darwin); bound != "" && compareNumericVersion(version, bound) >= 0 {
+		return "", "", fmt.Errorf("macos: Xcode %s doesn't run on %s; Xcode must be below %s", version, release.Name, bound)
+	}
 	path, err := filepath.Abs(path)
 	if err != nil {
 		return "", "", err
@@ -55,36 +64,14 @@ func SelectXcode(path string, release Release) (string, string, error) {
 	} else {
 		return "", "", fmt.Errorf("macos: Xcode path must be a regular .xip file or directory")
 	}
-	if len(candidates) == 0 {
-		return "", "", fmt.Errorf("macos: no release Xcode archives found in %s", path)
-	}
-	bound := xcodeUpperBound(release.Darwin)
-	floor := ""
-	if release.Tools > 0 {
-		floor = strconv.Itoa(release.Tools)
-	}
 	var selected xcodeArchive
 	for _, candidate := range candidates {
-		if bound != "" && compareNumericVersion(candidate.Version, bound) >= 0 {
-			continue
-		}
-		if floor != "" && compareNumericVersion(candidate.Version, floor) < 0 {
-			continue
-		}
-		comparison := compareNumericVersion(candidate.Version, selected.Version)
-		if selected.Path == "" || comparison > 0 || comparison == 0 && candidate.Preference > selected.Preference {
+		if SameXcode(candidate.Version, version) && (selected.Path == "" || candidate.Preference > selected.Preference) {
 			selected = candidate
 		}
 	}
 	if selected.Path == "" {
-		var limits []string
-		if floor != "" {
-			limits = append(limits, "at least "+floor)
-		}
-		if bound != "" {
-			limits = append(limits, "below "+bound)
-		}
-		return "", "", fmt.Errorf("macos: no Xcode archive fits %s; Xcode must be %s", release.Name, strings.Join(limits, " and "))
+		return "", "", fmt.Errorf("macos: %s's Xcode is %s, and %s has no archive of it (Xcode_%s.xip); download Xcode %s from https://developer.apple.com/download/all/", release.Name, version, path, version, version)
 	}
 	return selected.Path, selected.Version, nil
 }

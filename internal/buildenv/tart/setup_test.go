@@ -46,15 +46,19 @@ func TestSetupNamesItsCost(t *testing.T) {
 	_, err = p.Setup(t.Context(), SetupOptions{Release: "leopard"}, nil)
 	require.ErrorContains(t, err, "unknown release")
 
-	for options, costly := range map[SetupOptions]bool{
-		{Release: "sequoia"}:              true,
-		{Release: "tahoe", Rebuild: true}: true,
-		{}:                                false, // this Mac's, which exists
-		{Release: "sonoma"}:               false, // restored from its golden copy
-		{Release: "sequoia", Check: true}: false,
-		{Release: "tahoe", Xcode: "/x"}:   true, // its Xcode image, beside the base
-		{Release: "ventura", Xcode: "/x"}: false,
+	for _, test := range []struct {
+		options SetupOptions
+		costly  bool
+	}{
+		{SetupOptions{Release: "sequoia"}, true},
+		{SetupOptions{Release: "tahoe", Rebuild: true}, true},
+		{SetupOptions{}, false},                  // this Mac's, which exists
+		{SetupOptions{Release: "sonoma"}, false}, // restored from its golden copy
+		{SetupOptions{Release: "sequoia", Check: true}, false},
+		{SetupOptions{Release: "tahoe", Xcode: "/x"}, true}, // its Xcode image, beside the base
+		{SetupOptions{Release: "ventura", Xcode: "/x"}, false},
 	} {
+		options, costly := test.options, test.costly
 		var progress bytes.Buffer
 		_, err := p.Setup(t.Context(), options, &progress)
 		require.Error(t, err, "%+v", options)
@@ -69,4 +73,22 @@ func TestSetupNamesItsCost(t *testing.T) {
 			require.NotContains(t, progress.String(), "Making", "%+v", options)
 		}
 	}
+}
+
+// A release's Xcode image installs what MacPorts' arm64 buildbot for it
+// runs, unless the configuration names another for it, by name or number;
+// a name that is no release is refused rather than ignored.
+func TestAnXcodeImageFollowsMacPortsBuildbots(t *testing.T) {
+	t.Parallel()
+	sonoma, err := macos.ParseRelease("sonoma")
+	require.NoError(t, err)
+	require.Equal(t, "15.4", sonoma.Xcode, "what ports-14_arm64-builder runs")
+	version, err := XcodeFor(sonoma, nil)
+	require.NoError(t, err)
+	require.Equal(t, "15.4", version)
+	version, err = XcodeFor(sonoma, map[string]string{"14": "16.2", "tahoe": "26.4"})
+	require.NoError(t, err)
+	require.Equal(t, "16.2", version, "the configuration's, by release number")
+	_, err = XcodeFor(sonoma, map[string]string{"leopard": "3.1"})
+	require.ErrorContains(t, err, "providers.tart.xcode")
 }

@@ -137,6 +137,7 @@ These are taken when their area is next touched, or between items.
   - A failed build, install, or test of a port the base has names the command.
   - A baseline is always dockhand's own build. MacPorts' buildbot history is never used as one, nor shown beside one, which withdraws decision 20's labeled hint.
   - Baseline results stay in the check's output. Carrying them into the pull request can come back if it's wanted.
+- **Xcode images follow MacPorts' buildbots** (2026-09-27, [note](activity/2026-09-27-xcode-follows-the-buildbots.md)). A release's Xcode image has the Xcode its arm64 buildbot runs, from the facts table, as its Command Line Tools already follow the builder (decision 13). `providers.tart.xcode` in the configuration names another for a release. It replaces "the newest Xcode the release runs", which gave every release but Golden Gate a newer Xcode than MacPorts builds with.
 
 ## Later
 

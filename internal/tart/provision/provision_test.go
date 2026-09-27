@@ -279,15 +279,16 @@ func TestXcodeProfileInstallsXcodeBeforeMacPorts(t *testing.T) {
 }
 
 // An archive named for its major version alone, Xcode_27.xip, installs the
-// Xcode that calls itself 27.0; that is the Xcode asked for, and the image
-// records what it reports.
+// Xcode that calls itself 27.0; that is the Xcode asked for, here by the
+// configuration over the Tahoe builder's 26.6, and the image records what
+// it reports.
 func TestAnXcodeNamedForItsMajorVersionIsTheOneInstalled(t *testing.T) {
 	directory := t.TempDir()
 	require.NoError(t, os.WriteFile(directory+"/Xcode_27.xip", nil, 0o600))
 	machine := newFakeMachine()
 	machine.installsAs = "27.0"
 	provisioner := testProvisioner(t, machine)
-	provisioner.Config.Xcode = directory
+	provisioner.Config.Xcode, provisioner.Config.XcodeVersion = directory, "27.0"
 	result, err := provisioner.Run(t.Context(), Options{})
 	require.NoError(t, err)
 	require.Equal(t, "27.0", result.XcodeVersion)
@@ -295,7 +296,7 @@ func TestAnXcodeNamedForItsMajorVersionIsTheOneInstalled(t *testing.T) {
 	machine = newFakeMachine()
 	machine.installsAs = "26.6"
 	provisioner = testProvisioner(t, machine)
-	provisioner.Config.Xcode = directory
+	provisioner.Config.Xcode, provisioner.Config.XcodeVersion = directory, "27.0"
 	_, err = provisioner.Run(t.Context(), Options{})
 	require.ErrorContains(t, err, `Xcode "26.6"`, "a different Xcode is still refused")
 }

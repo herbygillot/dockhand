@@ -8,76 +8,74 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSelectXcodeChoosesNewestCompatibleArchive(t *testing.T) {
+// A release's Xcode image installs the Xcode it asks for, its archive
+// found by version, Apple silicon's before the universal one: never a newer
+// one in its place, nor a beta.
+func TestSelectXcodeChoosesTheArchiveOfTheVersionAskedFor(t *testing.T) {
 	directory := t.TempDir()
-	archives := []string{
-		"Xcode_14.2.xip",
-		"Xcode_15.2.xip",
+	for _, name := range []string{
+		"Xcode_15.4.xip",
 		"Xcode_16.2.xip",
 		"Xcode_26.3_Universal.xip",
 		"Xcode_26.3_Apple_silicon.xip",
 		"Xcode_26.6_Apple_silicon.xip",
-		"Xcode_27_beta.xip",
-	}
-	for _, name := range archives {
+		"Xcode_27.xip",
+		"Xcode_27.1_beta.xip",
+	} {
 		require.NoError(t, os.WriteFile(filepath.Join(directory, name), nil, 0o600))
 	}
-	tests := []struct {
-		darwin  int
+	for _, test := range []struct {
+		release Release
 		version string
 		name    string
 	}{
-		{21, "14.2", "Xcode_14.2.xip"},
-		{22, "15.2", "Xcode_15.2.xip"},
-		{23, "16.2", "Xcode_16.2.xip"},
-		{24, "26.3", "Xcode_26.3_Apple_silicon.xip"},
-		{25, "26.6", "Xcode_26.6_Apple_silicon.xip"},
-	}
-	for _, test := range tests {
-		path, version, err := SelectXcode(directory, Release{Darwin: test.darwin, Name: "fixture"})
-		require.NoError(t, err)
-		require.Equal(t, test.version, version)
+		{Release{Darwin: 23, Name: "Sonoma", Tools: 16}, "15.4", "Xcode_15.4.xip"},
+		{Release{Darwin: 24, Name: "Sequoia"}, "26.3", "Xcode_26.3_Apple_silicon.xip"},
+		{Release{Darwin: 25, Name: "Tahoe"}, "26.6", "Xcode_26.6_Apple_silicon.xip"},
+		{Release{Darwin: 27, Name: "Golden Gate"}, "27.0", "Xcode_27.xip"},
+	} {
+		path, version, err := SelectXcode(directory, test.release, test.version)
+		require.NoError(t, err, test.release.Name)
+		require.True(t, SameXcode(test.version, version))
 		require.Equal(t, test.name, filepath.Base(path))
 	}
+	_, _, err := SelectXcode(directory, Release{Darwin: 24, Name: "Sequoia"}, "16.4")
+	require.ErrorContains(t, err, "Sequoia's Xcode is 16.4, and ")
+	require.ErrorContains(t, err, "has no archive of it (Xcode_16.4.xip); download Xcode 16.4 from https://developer.apple.com/download/all/")
+	_, _, err = SelectXcode(directory, Release{Darwin: 27, Name: "Golden Gate"}, "27.1")
+	require.ErrorContains(t, err, "no archive of it", "a beta is never chosen")
 }
 
-func TestSelectXcodeChecksAnExplicitArchiveForCompatibility(t *testing.T) {
+// An explicit archive is taken only as the version asked for, and a
+// version is refused where it doesn't run, or where none is known.
+func TestSelectXcodeChecksTheVersionAskedFor(t *testing.T) {
 	archive := filepath.Join(t.TempDir(), "Xcode_16.2.xip")
 	require.NoError(t, os.WriteFile(archive, nil, 0o600))
-	path, version, err := SelectXcode(archive, Release{Darwin: 23, Name: "Sonoma"})
+	path, version, err := SelectXcode(archive, Release{Darwin: 23, Name: "Sonoma"}, "16.2")
 	require.NoError(t, err)
 	expected, err := filepath.EvalSymlinks(archive)
 	require.NoError(t, err)
 	require.Equal(t, expected, path)
 	require.Equal(t, "16.2", version)
-	_, _, err = SelectXcode(archive, Release{Darwin: 21, Name: "Monterey"})
-	require.ErrorContains(t, err, "Xcode must be below 14.3")
+	_, _, err = SelectXcode(archive, Release{Darwin: 23, Name: "Sonoma"}, "15.4")
+	require.ErrorContains(t, err, "Sonoma's Xcode is 15.4")
+	_, _, err = SelectXcode(archive, Release{Darwin: 21, Name: "Monterey"}, "16.2")
+	require.ErrorContains(t, err, "Xcode 16.2 doesn't run on Monterey; Xcode must be below 14.3")
+	_, _, err = SelectXcode(archive, Release{Darwin: 30, Name: "Future"}, "")
+	require.ErrorContains(t, err, "no Xcode is set for Future")
+	_, _, err = SelectXcode(archive, Release{Darwin: 23, Name: "Sonoma"}, "16.2-beta")
+	require.ErrorContains(t, err, "is not a version")
 }
 
-// A release's Xcode is no older than its own tools generation, which has
-// its SDK: Golden Gate, generation 27, takes Xcode 27 over 26.6, and is
-// refused rather than given 26.6 when there is no 27. A beta never counts.
-func TestSelectXcodeIsNoOlderThanTheReleasesGeneration(t *testing.T) {
-	directory := t.TempDir()
-	for _, name := range []string{"Xcode_26.3_Apple_silicon.xip", "Xcode_26.6_Apple_silicon.xip", "Xcode_27.1_beta.xip", "Xcode_27.xip"} {
-		require.NoError(t, os.WriteFile(filepath.Join(directory, name), nil, 0o600))
+// Each release carries the Xcode MacPorts' arm64 buildbot for it runs,
+// from the facts table, as it carries its tools generation.
+func TestEachReleaseCarriesItsBuildersXcode(t *testing.T) {
+	for _, release := range Known() {
+		facts, ok := Table().BuilderXcode(release.Darwin)
+		require.True(t, ok, release.Name)
+		require.Equal(t, facts, release.Xcode, release.Name)
+		require.NotEqual(t, "none", release.Xcode, release.Name)
 	}
-	goldenGate := Release{Darwin: 27, Name: "Golden Gate", Tools: 27}
-	path, version, err := SelectXcode(directory, goldenGate)
-	require.NoError(t, err)
-	require.Equal(t, "27", version)
-	require.Equal(t, "Xcode_27.xip", filepath.Base(path))
-
-	require.NoError(t, os.Remove(filepath.Join(directory, "Xcode_27.xip")))
-	_, _, err = SelectXcode(directory, goldenGate)
-	require.ErrorContains(t, err, "no Xcode archive fits Golden Gate; Xcode must be at least 27")
-	_, _, err = SelectXcode(filepath.Join(directory, "Xcode_26.6_Apple_silicon.xip"), goldenGate)
-	require.ErrorContains(t, err, "Xcode must be at least 27")
-
-	path, version, err = SelectXcode(directory, Release{Darwin: 24, Name: "Sequoia", Tools: 16})
-	require.NoError(t, err, "a newer generation fits, below the release's bound")
-	require.Equal(t, "26.3", version)
-	require.Equal(t, "Xcode_26.3_Apple_silicon.xip", filepath.Base(path))
 }
 
 // An archive's version is the installed Xcode's, however it is spelled:

@@ -85,9 +85,12 @@ type SetupOptions struct {
 	// when empty.
 	MacPortsVersion string
 	// Xcode is an Xcode .xip, or a folder of them, for the release's Xcode
-	// image, an add-on beside its base image; the newest the release runs
-	// is chosen.
+	// image, an add-on beside its base image.
 	Xcode string
+	// Xcodes are the configuration's Xcode for each release it names
+	// (providers.tart.xcode), by release name or number. A release it
+	// doesn't name gets what MacPorts' arm64 builder for it runs.
+	Xcodes map[string]string
 }
 
 // DefaultMacPorts is the MacPorts an image installs unless asked for
@@ -140,8 +143,12 @@ func (p *Provider) Setup(ctx context.Context, options SetupOptions, progress io.
 			fmt.Fprintf(progress, "Making %s for macOS %s (%s), which takes up to %s of disk.\n", image, release.Product, release.Name, disk)
 		}
 	}
+	xcode, err := XcodeFor(release, options.Xcodes)
+	if err != nil {
+		return SetupResult{}, err
+	}
 	provisioner := provision.Provisioner{Progress: progress, Config: provision.Config{
-		Executable: p.Tart.Executable, Home: p.Tart.Home, MacPortsVersion: options.MacPortsVersion, Xcode: options.Xcode,
+		Executable: p.Tart.Executable, Home: p.Tart.Home, MacPortsVersion: options.MacPortsVersion, Xcode: options.Xcode, XcodeVersion: xcode,
 		Platform: model.Platform{OS: "darwin", Version: strconv.Itoa(release.Darwin), Architecture: "arm64"},
 	}}
 	result, err := provisioner.Run(ctx, provision.Options{Check: options.Check, Rebuild: options.Rebuild})
@@ -150,6 +157,51 @@ func (p *Provider) Setup(ctx context.Context, options SetupOptions, progress io.
 	}
 	return SetupResult{Image: result.Image, Release: release, MacPorts: result.MacPortsVersion,
 		CommandLineTools: result.CommandLineTools, Xcode: result.XcodeVersion, Reused: result.Reused}, nil
+}
+
+// XcodeFor is the Xcode a release's Xcode image installs: the one the
+// configuration names for it (providers.tart.xcode), else what MacPorts'
+// arm64 builder for the release runs (macos.Release.Xcode). A name the
+// configuration uses that is no release is refused, rather than ignored.
+func XcodeFor(release macos.Release, configured map[string]string) (string, error) {
+	xcode, err := xcodeFor(release, configured)
+	return xcode.Version, err
+}
+
+// ReleaseXcode is the Xcode a release's Xcode image installs, and whether
+// the configuration named it rather than MacPorts' builder.
+type ReleaseXcode struct {
+	Release    macos.Release
+	Version    string
+	Configured bool
+}
+
+// Xcodes is each release's Xcode, as XcodeFor chooses it, oldest release
+// first.
+func Xcodes(configured map[string]string) ([]ReleaseXcode, error) {
+	var xcodes []ReleaseXcode
+	for _, release := range macos.Known() {
+		xcode, err := xcodeFor(release, configured)
+		if err != nil {
+			return nil, err
+		}
+		xcodes = append(xcodes, xcode)
+	}
+	return xcodes, nil
+}
+
+func xcodeFor(release macos.Release, configured map[string]string) (ReleaseXcode, error) {
+	xcode := ReleaseXcode{Release: release, Version: release.Xcode}
+	for name, value := range configured {
+		named, err := macos.ParseRelease(name)
+		if err != nil {
+			return ReleaseXcode{}, fmt.Errorf("providers.tart.xcode: %w", err)
+		}
+		if named.Darwin == release.Darwin {
+			xcode.Version, xcode.Configured = value, true
+		}
+	}
+	return xcode, nil
 }
 
 // release is the release named, by name or product version, or this Mac's

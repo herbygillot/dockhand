@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/herbygillot/dockhand/internal/buildenv/tart"
 )
 
 // configSetting is one line of dockhand config: a key, its value, and
@@ -69,6 +71,22 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			add("serve.notify", notify, "true")
 			add("providers.tart.capacity", positive(file.Providers.Tart.Capacity), "1")
 			add("providers.tart.test_timeout", file.Providers.Tart.TestTimeout, "30m")
+			// Each release's Xcode image installs what MacPorts' arm64
+			// buildbot for it runs, unless the file names another.
+			xcodes, err := tart.Xcodes(file.Providers.Tart.Xcode)
+			if err != nil {
+				return err
+			}
+			for _, xcode := range xcodes {
+				configured, builder := "", "(none: MacPorts has no arm64 buildbot for it that dockhand knows)"
+				if xcode.Configured {
+					configured = xcode.Version
+				}
+				if xcode.Release.Xcode != "" {
+					builder = xcode.Release.Xcode + ", as MacPorts' arm64 buildbot runs"
+				}
+				add("providers.tart.xcode."+xcode.Release.Slug, configured, builder)
+			}
 			if command := file.Providers.Command; command != nil {
 				add("providers.command.run", command.Run, "")
 				add("providers.command.name", command.Name, "command")
