@@ -1,6 +1,6 @@
 # State store design
 
-This document describes the initial SQLite implementation, following the [architecture](architecture.md), [component structure](components.md), and [CLI design](cli-design.md). The Git ledger and lock-directory implementation have been removed. `internal/state` and `internal/state/sqlite` now serve intake, status, cancellation, and multi-target verification cycles. Global `--db` is wired; see the [implementation report](activity/2026-09-12-sqlite-state.md) for scope and validation.
+This document describes the initial SQLite implementation, following the [architecture](architecture.md), [component structure](components.md), and [CLI design](cli-design.md). The Git ledger and lock-directory implementation have been removed. `internal/state` and `internal/state/sqlite` now serve intake, status, cancellation, and multi-target verification cycles. Global `--db` is wired; see the [implementation report](../activity/2026-09-12-sqlite-state.md) for scope and validation.
 
 ## First slice
 
@@ -87,7 +87,7 @@ For this slice, a change has one local repository and one branch association, st
 
 ## Minimal data model
 
-The following summarizes the [initial schema](../internal/state/sqlite/migrations/001.sql) and its ordered migrations, currently through schema 13. Domain IDs are text, timestamps are UTC integer milliseconds, missing values are NULL, and state values have explicit constraints. Each repository-owned table carries `repository_id`; composite foreign keys preserve that scope. Sources, revisions, accepted inputs, and submission identities are immutable through the write API. Lifecycle fields are updated explicitly.
+The following summarizes the [initial schema](../../internal/state/sqlite/migrations/001.sql) and its ordered migrations, currently through schema 13. Domain IDs are text, timestamps are UTC integer milliseconds, missing values are NULL, and state values have explicit constraints. Each repository-owned table carries `repository_id`; composite foreign keys preserve that scope. Sources, revisions, accepted inputs, and submission identities are immutable through the write API. Lifecycle fields are updated explicitly.
 
 | Table | Main data | Why it is needed now |
 | --- | --- | --- |
@@ -171,7 +171,7 @@ No automatic import of the experimental Git ledger or deletion of its refs is re
 
 Validation should cover two processes claiming the same work, atomic claim/state rollback, stale results, uncertain submission reconciliation, cancellation, and cleanup independent of job completion. Add two unrelated repositories and two clones of the same remote to one database; prove same-named branches and scoped queries cannot collide, cross-repository relationships are rejected, and linked worktrees share registration. Exercise concurrent registration and schema initialization, context cancellation, read-only status on missing state, and flag/help behavior.
 
-The [SQLite performance report](performance/2026-09-12-sqlite-state.md) records representative history-size and multi-driver measurements. A claim or result write must access only its affected records and indexes, without whole-database decoding or source scans. A backend contract test suite should exercise real transactions; an in-memory fake alone cannot establish cross-process behavior. No source code or tests from v1 need to be copied for this migration.
+The [SQLite performance report](../performance/2026-09-12-sqlite-state.md) records representative history-size and multi-driver measurements. A claim or result write must access only its affected records and indexes, without whole-database decoding or source scans. A backend contract test suite should exercise real transactions; an in-memory fake alone cannot establish cross-process behavior. No source code or tests from v1 need to be copied for this migration.
 
 ## Tart provider persistence
 

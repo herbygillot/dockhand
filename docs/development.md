@@ -16,11 +16,12 @@ Tests that stand in for an external tool, a fake `tart`, `git`, `gh`, or `portin
 
 ## Real VM acceptance test
 
-The opt-in real VM acceptance test requires macOS with a GUI login domain, Tart, a prepared local image with the Tart guest agent, passwordless guest sudo, MacPorts with Tcl JSON support, and no installed ports. It creates a disposable clone and preserves host diagnostics. It proves that one driver process can submit and exit and another process can settle and release the same run:
+The opt-in acceptance test builds two ports of a real ports tree in a real clone of dockhand's Tahoe image, `dockhand-base-tahoe`, in dockhand's Tart home: `tree`, with no dependencies, and `pv`, whose dependency the guest installs first. It needs a Mac with that image, made by `dockhand providers setup tart tahoe`, and a free VM slot, and it takes several minutes. It checks that both pass, that each left a log, and that the clone is deleted:
 
 ```sh
-DOCKHAND_TEST_TART_IMAGE=dockhand-base-tahoe DOCKHAND_TEST_MACPORTS_TCLSH=/opt/local/bin/port-tclsh \
-go test -v ./internal/verify/tart -run '^TestRealTartBuildSurvivesSubmittingDriverExit$' -timeout 16m
+DOCKHAND_TEST_TART_LIVE=1 DOCKHAND_TEST_PORTS_TREE=~/Source/macports-ports \
+DOCKHAND_TEST_MACPORTS_TCLSH=/opt/local/bin/port-tclsh \
+go test -v ./internal/provider/tart -run '^TestLiveCheckInATahoeGuest$' -timeout 30m
 ```
 
 ## Other opt-in tests
@@ -44,17 +45,12 @@ The rest reach something outside the checkout and run only when named:
 | `DOCKHAND_TEST_PORTS_REPO` | `git` `TestCaptureRealPortsCheckout` | a real macports-ports checkout, read only |
 | `DOCKHAND_TEST_GITHUB_PR`, `DOCKHAND_TEST_GITHUB_TOKEN` | `forge/github` `inspect_live_test.go` | one pull request, `owner/repo#number`, read with that token |
 | `DOCKHAND_TEST_BOOTSTRAP_VM` | `tart/provision` `TestLiveAgentRegistration` | a running disposable VM you own, whose agent it registers |
-| `DOCKHAND_TEST_TART_IMAGE` | `verify/tart`, `tart/host` `TestLiveTartContracts`, `tart/channel` `TestLiveChannel` | the acceptance test above; Tart's listing, stop, and delete behavior, on a clone of the named raw-disk image |
+| `DOCKHAND_TEST_TART_LIVE` | `provider/tart` `TestLiveCheckInATahoeGuest` | the acceptance test above, with `DOCKHAND_TEST_PORTS_TREE` |
+| `DOCKHAND_TEST_TART_IMAGE` | `tart/host` `TestLiveTartContracts`, `tart/channel` `TestLiveChannel` | Tart's listing, stop, and delete behavior, and the guest channel, on a clone of the named raw-disk image |
 | `DOCKHAND_TEST_TART_ASIF_SOURCE` | `tart/host` `TestLiveTartASIFBlocksTheListing` | an ASIF image such as Golden Gate's, cloned and run briefly; every Tart listing on the Mac fails while it runs |
 
 ## State and service boundaries
 
-SQLite now holds workflow state behind `internal/state` contracts, with `internal/state/sqlite` as the implementation. One database can track multiple repositories; linked worktrees share an entry and separate clones remain distinct. Global `--db PATH` defaults to `$HOME/.dockhand/state.db`. The old lock-directory flags and Git ledger have been removed.
+v3 keeps its records in SQLite behind the `internal/store` contract, with `internal/store/sqlite` as the implementation, in `~/.dockhand/dockhand.db` unless `--db` or `DOCKHAND_DB` says otherwise. The schema is `internal/store/sqlite/schema/NNN.sql`, applied in order and only forward: a change to it is a new file, never an edit to one already released. One database holds several ports checkouts, and every read and write names the one it is for. v2's `state.db` is never read.
 
-Writable service construction creates the selected database and its parent directory when needed. `dockhand status [job_id]` reads recorded state without initializing missing state or contacting providers. Use `--active` for queued/active work, `--branch <branch>` for a recorded contribution, and `--json` for structured output. `--active` may combine with either selector. Help, completion generation, and preparation previews do not open a database. Publication preflight reads recorded verification and initializes/migrates state through normal service construction. No config-directory setting or lock-file flag is present.
-
-Cobra v1.10.2 supplies command help and shell completion; `usage` remains an alias for `help`. Verification submission, attachment, cancellation, and driver residency are wired. Other action handlers remain under construction. Use `workflow.Engine.BindVerification` to capture the current checkout or resolve an explicitly named local branch, inspect the evaluated metadata, then pass its returned request to `Submit`. Binding evaluates an isolated immutable tree; subports are explicitly selectable, and the initial evaluator requires the native MacPorts platform. Configure `tart.Provider` with the shared state store, repository, prepared local image, platform, and artifact directory. `DescribeEnvironment` returns the image digest to include in the accepted build configuration. The existing cycle consumes that job through the provider. `app.Build` supplies these dependencies and defaults artifacts to `artifacts/tart` beside the database.
-
-## Implementation status
-
-Version and revision preparation, native MacPorts source evaluation, Tart verification, GitHub publication, authentication, and image setup are implemented. The workflow scheduler supports multiple isolated verification attempts, and `macports/dependents` discovers candidate downstream coverage against frozen source. Connecting discovery to durable verification planning remains work in progress. Automatic version selection supports eligible GitHub and GitLab sources. Unimplemented operations return explicit errors or recorded needs-attention outcomes.
+Help and completion open no database. [`architecture.md`](architecture.md) maps the packages, and [the roadmap](roadmap.md) says what is being built.

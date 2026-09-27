@@ -3,7 +3,7 @@
 Date: 2026-09-19. Reviewed the clean working tree at `65518c3`. This is a
 whole-tree organization pass rather than a focused follow-up: the question asked
 was whether fast change has left the package structure lopsided. It has not, in
-the large. The shape that [components.md](../components.md) describes is the
+the large. The shape that [components.md](../v2/components.md) describes is the
 shape the code has, and the two places where it has drifted are both cases of a
 migration that was started and not finished. These observations are proposals
 for triage, not accepted implementation work.
@@ -26,7 +26,7 @@ hub-and-spoke shape: the phase families (`verification_*`, `publication_*`,
 `preparation_*`, `contribution_*`, `retention*`, `control*`) make roughly 150
 references into the shared spine of `engine.go`, `cycle.go`, and the intake files,
 and roughly 33 to each other. No file exceeds 365 lines. That is the structure
-[components.md](../components.md) argues for — "scheduling, claims, transitions,
+[components.md](../v2/components.md) argues for — "scheduling, claims, transitions,
 retries, and recovery stay together because they jointly determine whether work
 may advance" — and it is holding rather than eroding. `macports/portedit` shows
 the same shape, with every edit kind converging on `prepare` and `source`.
@@ -38,7 +38,7 @@ it owns one genuinely large responsibility, not because it is a bucket.
 
 This is the real drift, and it is user-visible.
 
-[output.md](../output.md) agreed on 2026-09-17 that the engine gains "one
+[output.md](../v2/output.md) agreed on 2026-09-17 that the engine gains "one
 projection over its existing reader, used by the plain output, the JSON result,
 and the table alike, so all three say the same thing", and that "the 'next'
 derivation moves out of the CLI's progress formatting and beside this projection."
@@ -71,7 +71,7 @@ identifier-level detail the projection deliberately omits — finishes the
 migration output.md described and removes the duplicate `jobPort` by
 construction.
 
-Note also that [components.md](../components.md) still describes `view/` as
+Note also that [components.md](../v2/components.md) still describes `view/` as
 "records only". It has not been records-only since it was created; it is the
 phrasebook, by the later decision in output.md. Whichever way this is settled,
 the two documents should not keep disagreeing.
@@ -107,7 +107,7 @@ implementation" across the then-44 packages. All eight packages created since
 comment in their implementation file instead. Nothing is undocumented; the
 convention simply stopped being applied on 2026-09-16.
 
-The package map block in [components.md](../components.md) has not kept up with
+The package map block in [components.md](../v2/components.md) has not kept up with
 the tree. `macports/dependency`, `macports/distfiles`, and `tui` are described in
 the prose but absent from the map; `internal/version` appears in neither. The map
 is the first thing a reader consults, and it is now the least current part of the

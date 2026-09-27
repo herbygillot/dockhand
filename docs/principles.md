@@ -1,6 +1,6 @@
 # Principles
 
-These principles preserve useful decisions from the first Dockhand and guide the new implementation. [Architecture](architecture.md) describes their internal application; [CLI design](cli-design.md) defines the command behavior. They establish responsibilities without prescribing a package for every concept.
+These principles preserve useful decisions from the first Dockhand and guide the new implementation. [Design v3](design-v3.md) applies them, and [architecture](architecture.md) maps that onto the code. They establish responsibilities without prescribing a package for every concept.
 
 ## Evaluate through MacPorts; edit source text precisely
 
@@ -50,7 +50,7 @@ Action invocations and explicit persistent mode (`dockhand serve`) use the same 
 
 ## Keep authoritative state and recoverable effects
 
-Store durable workflow metadata in SQLite behind backend-independent state contracts. One database can hold multiple repositories, with explicit repository scope for reads, relationships, and claims. Linked worktrees share repository identity; separate clones remain distinct. Git stores source, while database records preserve source identity and evidence. Missing source requires an availability decision, never silent replacement with a moving branch tip. The [state design](state.md) defines the initial boundary.
+Store durable workflow metadata in SQLite behind backend-independent state contracts. One database can hold multiple repositories, with explicit repository scope for reads, relationships, and claims. Linked worktrees share repository identity; separate clones remain distinct. Git stores source, while database records preserve source identity and evidence. Missing source requires an availability decision, never silent replacement with a moving branch tip. [Architecture](architecture.md#the-records) lists the records v3 keeps; v2's [state design](v2/state.md) drew the first boundary.
 
 Record accepted work and provider/publication intent before executing it. Use short transactions that acquire claims and update related state atomically, then check the current claim and state when recording results. Recovery reconciles uncertain provider or forge actions before retrying. Interrupted Git work is inspected or reported as needing attention; it does not require a generic operation journal or atomic Git/database commit. Neither a lock nor a recorded intention alone guarantees that an external action happens only once.
 

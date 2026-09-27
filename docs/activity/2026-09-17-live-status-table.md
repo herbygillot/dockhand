@@ -1,6 +1,6 @@
 # Interface pass, step 5: the live status table
 
-Per the [output design](../output.md), `status` on a terminal is now a live table built with Bubble Tea (`internal/tui`).
+Per the [output design](../v2/output.md), `status` on a terminal is now a live table built with Bubble Tea (`internal/tui`).
 
 ## What it does
 

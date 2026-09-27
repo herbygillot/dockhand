@@ -1,6 +1,6 @@
 # Interface pass, step 4: the contribution projection
 
-Per the [output design](../output.md), `status` is now contribution-centric.
+Per the [output design](../v2/output.md), `status` is now contribution-centric.
 
 ## The projection
 

@@ -1,6 +1,6 @@
 # Dockhand Design v3
 
-Accepted direction, 2026-09-25. Nothing in it is implemented yet. [The roadmap](roadmap.md) orders the work.
+Accepted direction, 2026-09-25, and built on `main` since. [The roadmap](roadmap.md) says what remains, [architecture](architecture.md) where each part lives in the code, and [usage](usage.md) how to use it.
 
 ## Sources and status
 

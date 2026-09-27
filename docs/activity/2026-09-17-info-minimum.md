@@ -1,6 +1,6 @@
 # Interface pass, step 3: the per-command minimum
 
-Per the [output design](../output.md), the info level now prints only what a person needs to follow a command; the full record moved behind `-v`.
+Per the [output design](../v2/output.md), the info level now prints only what a person needs to follow a command; the full record moved behind `-v`.
 
 ## Action results
 

@@ -8,12 +8,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestBareDockhandSaysWhereTheWorkingToolIs(t *testing.T) {
+// Outside a ports checkout, dockhand alone says how to begin.
+func TestBareDockhandSaysHowToStart(t *testing.T) {
 	var out bytes.Buffer
 	err := Run(t.Context(), nil, Streams{In: strings.NewReader(""), Out: &out, Err: &out})
 	require.NoError(t, err)
-	require.Contains(t, out.String(), "v2-final")
-	require.Contains(t, out.String(), "docs/design-v3.md")
+	require.Contains(t, out.String(), "dockhand init sets up")
+	require.Contains(t, out.String(), "docs/usage.md is the guide")
+	require.NotContains(t, out.String(), "v2-final")
 }
 
 func TestVersionNamesTheBuild(t *testing.T) {

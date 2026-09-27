@@ -12,7 +12,7 @@ The section numbers below identify capabilities, not the current queue. Follow t
 
 ## Prerequisite: target resolution and contribution continuity
 
-The [target workflow plan](target-workflow.md) supersedes the earlier name-resolution-only prerequisite. This prerequisite is implemented: source-bound name resolution replaces public `--subport`; verify/publish continue the selected contribution; contribution identity precedes preparation; outcomes distinguish standalone builds from updates; and native HTTP livecheck supports automatic Terraform discovery.
+The [target workflow plan](v2/target-workflow.md) supersedes the earlier name-resolution-only prerequisite. This prerequisite is implemented: source-bound name resolution replaces public `--subport`; verify/publish continue the selected contribution; contribution identity precedes preparation; outcomes distinguish standalone builds from updates; and native HTTP livecheck supports automatic Terraform discovery.
 
 The intended ordinary commands are `dockhand bump terraform-1.16`, `dockhand verify terraform-1.16`, and `dockhand publish terraform-1.16`. An explicit version remains available; `--branch` is an override, not a required handoff. Internal subport identity and exact source/evidence binding remain necessary. The plan defines manual checkout selection, retry and ambiguity behavior, package placement, and migration/concurrency tests.
 

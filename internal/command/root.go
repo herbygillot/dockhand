@@ -42,14 +42,17 @@ func (s Streams) terminal() bool {
 	return ok && isTerminal(file.Fd())
 }
 
-const rebuilding = `dockhand is being rebuilt as v3 (docs/design-v3.md). The whole loop is here,
-and check builds in dockhand's Tart images, which providers setup tart makes
-(docs/tart-provider.md), or on your own script (docs/command-provider.md), but
-the real MacPorts paths are still being proven on a Mac. Until then, the
-working tool is v2, tagged v2-final:
+// gettingStarted is the main help's introduction: how to begin, and where
+// the guide is.
+const gettingStarted = `In your ports checkout, dockhand init sets up, and dockhand providers setup
+tart makes a clean macOS image for checks to build in. Then:
 
-  git worktree add ../dockhand-v2 v2-final
-  make -C ../dockhand-v2 build BINARY="$HOME/.local/bin/dockhand-v2"`
+  dockhand update <port> --new    a branch with the port at its newest release
+  dockhand check                  build what the branch changes
+  dockhand tidy                   shape its commits for review
+  dockhand submit                 open the pull request from your fork
+
+docs/usage.md is the guide, and dockhand status shows where things are.`
 
 // Run executes the command line in args.
 func Run(ctx context.Context, args []string, streams Streams) error {
@@ -65,7 +68,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	root := &cobra.Command{
 		Use:           "dockhand",
 		Short:         "Author, check, and submit changes to MacPorts ports",
-		Long:          "Author, check, and submit changes to MacPorts ports.\n\n" + rebuilding,
+		Long:          "Author, check, and submit changes to MacPorts ports.\n\n" + gettingStarted,
 		Version:       version.Current().String(),
 		SilenceUsage:  true,
 		SilenceErrors: true,

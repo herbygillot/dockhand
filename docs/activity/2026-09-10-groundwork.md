@@ -101,4 +101,4 @@ Inventory: 43 Go files (34 newly authored and 9 imported), plus the imported Tcl
 
 ## Follow-up: invocation-owned driver execution
 
-Removed `Config.DriverExecutable`, `proc.Manager.Executable`, and `proc.Manager.Ensure`. See [driver execution](../architecture.md#driver-execution) for the current model; it supersedes the earlier startup references in this report.
+Removed `Config.DriverExecutable`, `proc.Manager.Executable`, and `proc.Manager.Ensure`. See [driver execution](../v2/architecture.md#driver-execution) for the current model; it supersedes the earlier startup references in this report.

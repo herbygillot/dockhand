@@ -1,6 +1,6 @@
 # One target through the contribution workflow
 
-Status: stages 0–5 implemented, 2026-09-16; see the [integrated validation report](activity/2026-09-16-target-workflow-validation.md). Stage 6 describes the subsequent broader-coverage roadmap; it is not part of the completed ordinary-workflow milestone. This milestone supersedes the earlier name-resolution-only prerequisite in [bump coverage](bump-coverage.md). The [roadmap](roadmap.md) remains the queue; this document specifies the work and its acceptance criteria.
+Status: stages 0–5 implemented, 2026-09-16; see the [integrated validation report](../activity/2026-09-16-target-workflow-validation.md). Stage 6 describes the subsequent broader-coverage roadmap; it is not part of the completed ordinary-workflow milestone. This milestone supersedes the earlier name-resolution-only prerequisite in [bump coverage](../bump-coverage.md). The [roadmap](../roadmap.md) remains the queue; this document specifies the work and its acceptance criteria.
 
 ## Problem and intended experience
 
@@ -95,13 +95,13 @@ Acceptance: unordered links, numeric ordering, duplicate links, prereleases, oth
 
 ### 5. Complete the preparation reliability slice
 
-Return to stage 1 of [bump coverage](bump-coverage.md): distinguish rejection-only fetch guards, preserve unsupported-platform restrictions, and plan all required contexts before dependency archive transfers/helper execution. Wasmer remains the concrete acceptance case. Use the new contribution lifecycle and truthful outcome rendering to carry any remaining preparation/build failure without losing the selected update.
+Return to stage 1 of [bump coverage](../bump-coverage.md): distinguish rejection-only fetch guards, preserve unsupported-platform restrictions, and plan all required contexts before dependency archive transfers/helper execution. Wasmer remains the concrete acceptance case. Use the new contribution lifecycle and truthful outcome rendering to carry any remaining preparation/build failure without losing the selected update.
 
 This work does not depend on shared-subport releases. Keep it a separate change from target selection and discovery so a passing Terraform path does not imply Wasmer coverage. Run explicit and automatic Terraform controls, gh/Deno/Helm archive controls, and a supported-platform Wasmer preparation/verification exercise. Publication regression tests are required; a live PR is a final exercise when there is a suitable actual update and the user has authorized it.
 
 ### 6. Broaden scope after the ordinary workflow holds
 
-The remaining bump-coverage capabilities are platform observations, complete shared-release subport scope, and manifest-bearing archives alongside pinned auxiliary files. Their implementation order, and contribution lifecycle/cleanup work now preceding them, are maintained in the [roadmap](roadmap.md). Downstream dependency verification is already a separate coverage plan: preserve isolated builds and require every required result before publication. Do not confuse dependents with targets whose source declarations changed.
+The remaining bump-coverage capabilities are platform observations, complete shared-release subport scope, and manifest-bearing archives alongside pinned auxiliary files. Their implementation order, and contribution lifecycle/cleanup work now preceding them, are maintained in the [roadmap](../roadmap.md). Downstream dependency verification is already a separate coverage plan: preserve isolated builds and require every required result before publication. Do not confuse dependents with targets whose source declarations changed.
 
 Shared releases add changed targets/revisions under the same contribution; they do not require exposing child jobs as the user's primary handle. Initially only the initiating target selects the contribution by name. If related targets later become aliases, add them explicitly with ambiguity rules; do not treat every dependent as a contribution alias. Baseline comparison for unrelated downstream failures and automatic dependent revision bumps remain separate roadmap work.
 

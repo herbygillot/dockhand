@@ -1,263 +1,322 @@
-# Using Dockhand
+# Using dockhand
 
-Detailed command behavior and operational choices for the current prerelease. For database backups, restoration, and resource retention, see [state operations](operations.md).
+This is the guide to dockhand v3: how its commands fit together, and the choices each one leaves you. `dockhand <command> --help` is the reference for any one command, and `dockhand config` shows every setting in effect. [Design v3](design-v3.md) gives the reasons. The v2 guide is kept in [`v2/usage.md`](v2/usage.md), for the tag `v2-final`.
 
-## Tools and checkout selection
+## Setting up
 
-Select a ports checkout with `--tree` / `-t` or `MACPORTS_TREE`; otherwise Dockhand uses the current directory. Whichever it is, every command that works on a checkout, including `status`, `wait`, `gc`, and the bumps, first checks that it is a ports tree, with at least one `<category>/<port>/Portfile` in the working tree or on the checked-out branch, and refuses anything else, such as dockhand's own repository, before touching the state database or fetching into it. Only `setup`, `auth`, and `db` need no ports tree. Select the local MacPorts installation with `--prefix` / `-p` or `MACPORTS_PREFIX`; otherwise it finds `port-tclsh` on `PATH`. That installation evaluates ports on the host; the verification image always builds with MacPorts at `/opt/local` and the Base release `setup` installed, independent of the host prefix. When the two Base releases differ, `setup` says so when it provisions or checks the image, and a bump or verify says so when it selects an image whose MacPorts has been observed; the work proceeds, since neither release is wrong on its own. Select Git with `--git` or `GIT_BIN`, and Tart with `--tart` or `TART_BIN`; otherwise Dockhand finds each executable on `PATH`. Select the state database with `--db` or `DOCKHAND_DB`; otherwise it is `~/.dockhand/state.db`. `DOCKHAND_INDEX_CACHE` relocates the shared PortIndex cache, which otherwise lives under the user cache directory as `dockhand/indexes`. Flags override the environment.
-
-## GitHub authentication
-
-Authorize Dockhand for GitHub publication without installing `gh`:
+In your clone of `macports/macports-ports`, the one with your fork as a remote:
 
 ```sh
-dockhand auth login
+dockhand init
 ```
 
-Dockhand includes the public client ID for its registered OAuth application. Login opens GitHub's device page, requests `public_repo`, validates the selected account, and stores the token in macOS Keychain. `--client-id` or `DOCKHAND_GITHUB_CLIENT_ID` overrides the registered application for development, and `--no-browser` prints the URL for manual opening. No client secret is present or required. Login uses neither the ports tree nor the workflow database.
+`init` registers the checkout and finds its remote for `macports/macports-ports`, whatever it is called. It also chooses where branch worktrees go: a `macports-branches` directory beside the clone, unless `--worktrees <dir>` or the configuration's `worktrees` names another. Running it again is safe. It needs no GitHub login and no build setup; those come when a command needs them.
 
-An existing authenticated GitHub CLI login, `GH_TOKEN`, or `GITHUB_TOKEN` also works. Git push authentication is configured separately through Git. The publication section below describes credential precedence and remote selection.
+Every command works on one ports checkout: `--tree` (`-t`), else `$MACPORTS_TREE`, else the directory you are in. Inside a branch's worktree, that is the checkout it belongs to.
 
-`dockhand auth status` checks the selected credential against GitHub and reports its source and account. Rejections name the source and how to replace it; Dockhand does not try another identity after rejection. `dockhand auth login` replaces the saved Keychain credential. If `GH_TOKEN` or `GITHUB_TOKEN` is set, login explains that the environment credential still takes precedence.
+### Somewhere to build
 
-`dockhand auth logout` removes only Dockhand's Keychain entry; an absent entry is already logged out. It does not revoke the token on GitHub or modify environment variables or `gh` credentials. A later invocation may therefore select an environment token or the GitHub CLI login. Run `dockhand auth status` to check. Both commands work without a ports checkout or database; `--json` reports source/account/status or removal outcome without a token.
-
-
-## Prepare verification images
-
-Prepare the native host's conventional verification image before the first build:
+`dockhand providers` lists the places a check can build and whether each is ready. The usual first step is a Tart image of this Mac's macOS:
 
 ```sh
-dockhand setup
-dockhand setup --check
-dockhand setup --capacity 3
-dockhand setup --rebuild
-dockhand setup --xcode ~/Downloads/xcode_archives
+sudo port install tart
+dockhand providers setup tart
 ```
 
-Setup pulls the matching vanilla Cirrus Labs macOS image, installs the pinned Tart guest agent, Apple's Command Line Tools when needed, and MacPorts, validates the result, and adopts it only after the checks pass. An existing image is validated in a disposable clone. `--rebuild` prepares a replacement while the current image remains available. A retained golden image can restore a missing image. A missing image that an earlier dockhand made in your own Tart home is copied from there with `tart export` and `tart import`, and given dockhand's SSH key, when it still validates; your copy is only read, and yours to delete. An image made before dockhand used SSH keys is given one by the next `setup` without `--check`, which `--check` asks for. The default profile supports arm64 macOS hosts from Monterey through Tahoe, `/opt/local`, and the Command Line Tools. `--xcode` selects the newest compatible release archive from a directory, or accepts one explicit `.xip`, and provisions a separate full-Xcode image such as `dockhand-xcode-tahoe`. Setup uses neither the ports checkout nor SQLite, but it uses the local MacPorts installation to determine the native platform.
+See [Providers](#providers) for the others and for more releases.
 
-Long Xcode uploads/expansion and Command Line Tools installation report elapsed progress. SSH connection/handshake and guest-agent readiness have bounded waits; failures retain the last useful diagnostic. A failed disposable Xcode installation leaves its expansion workspace for the provisioner to remove with the VM, rather than spending minutes recursively deleting it inside the guest.
+### A GitHub login
 
-During replacement, the stopped old image is temporarily named `<image>-previous`. A failed clone restores it automatically, including after cancellation. If the process is interrupted before restoration, setup reports the preserved name instead of silently restoring a different golden image. When the destination is missing, use `tart rename <image>-previous <image>`, then run `dockhand setup --check` with the matching OS/profile options. If both names exist, preserve the previous image until the replacement has passed an independent check; setup refuses another rebuild while that recovery image remains.
+`submit`, the github provider, and `status --refresh` need to act as you on GitHub. Dockhand takes the first of these it finds:
 
-The default local image name follows the native release, such as `dockhand-base-tahoe`; an Xcode profile uses `dockhand-xcode-tahoe` and its own golden image. Verification and bump commands evaluate `use_xcode` and select the matching default image when `--image` is omitted. An explicit `--image` still takes precedence. `--source` and `--macports-version` override setup inputs. Per-image read/write locks in `~/.dockhand/tart-locks` allow concurrent verification clones while preventing setup from replacing their source image. A separate per-image setup lock prevents competing provisioners, including processes that selected different SQLite databases.
+1. `GH_TOKEN`, then `GITHUB_TOKEN`;
+2. its own login, from `dockhand auth login`, kept in the macOS Keychain. The login is a one-time code in the browser, asking for the `public_repo` scope;
+3. the GitHub CLI's login, through `gh auth token`.
 
-Dockhand keeps its images and VMs in a Tart home of its own, `~/.dockhand/tart` (`DOCKHAND_TART_HOME` names another), so your own VMs stay out of its way; your `TART_HOME`, or `~/.tart`, is only read, to count the VMs you have running, since a Mac runs two macOS VMs at most, whoever started them. A VM of yours whose ASIF disk keeps Tart from listing counts as one. Dockhand reaches its guests over SSH with a key of its own, and holds each guest to the host keys setup recorded for its image; both live in `~/.dockhand/ssh` (`DOCKHAND_SSH_DIR` names another). Host keys are recorded by image name, so a second Tart home needs its own SSH directory. All cooperating drivers using the same Tart home must use the same DB, capacity, and artifact directory. A separate DB does not coordinate the shared execution pool. Base images are hashed by contents. Digests persist in SQLite across invocations and repositories; unchanged file metadata permits reuse. A new or changed image still needs a full hash. `setup --capacity N` records the shared pool limit, initially two; every run reads the record, and a driver already running keeps the limit it started with until it restarts.
+`dockhand auth status` says which account that is, and `dockhand auth logout` removes dockhand's own login.
 
-## Adopt a pull request
+### The configuration file
 
-A pull request someone opened by hand, yours or a contributor's, comes in by number or URL:
+Settings live in `~/.dockhand/config.toml`, or the file `$DOCKHAND_CONFIG` names. Nothing in it is required, and an unknown key is refused by name. A flag comes before the environment, and the environment before the file. [All the settings](#settings) are listed at the end of this page. Two are worth setting early:
+
+```toml
+maintainer = "{@you example.org:you} openmaintainer"   # your maintainers line, for --mine and create
+
+[check]
+on = ["tart:sequoia,tahoe"]   # where checks build unless --on says otherwise
+```
+
+## Branches
+
+All work happens on branches. A branch is an ordinary Git branch of the ports tree, named `dockhand/<name>`, with a base on MacPorts' master and at most one pull request. Dockhand keeps a record of each one it tracks.
+
+- **`start <name>`** creates `dockhand/<name>` from master, fetched just now, in a worktree of its own. `--here` creates it in this checkout instead, which must have no uncommitted changes to tracked files.
+- **`update`, `checksums`, `create`, and `edit` with `--new`** start a branch named after the port, such as `dockhand/jq-4f2a`. `revbump` starts one by itself unless `--branch` names one or you are in one, since a rebuild has its own reason.
+- **`adopt [branch]`** tracks a branch you made yourself, as it stands. Its base is where it leaves master.
+- **`adopt --pr <number>`** brings someone's pull request into a branch of its own, `pr-<number>`, to look at and work on. Dockhand assumes no permission to push to their branch: `submit` pushes there only when they let maintainers edit and you have write access, and it never rewrites their description.
+
+A branch's worktree is sparse: it holds `_resources` and the ports the branch changes. `edit <port>` brings another port's directory in. `dockhand path <branch>` prints the worktree's directory, for `cd "$(dockhand path jq-4f2a)"` or an editor. The `dockhand/` prefix is optional wherever a branch is named.
+
+A command finds its branch from `--branch`, else the branch checked out where it runs. An authoring command run on master, with neither, asks on a terminal: it offers the open branches that already change the port, or a new one. Without a terminal it refuses, and names the choices. A branch you made yourself and haven't adopted is refused, with a pointer to `adopt`. A branch you rename with Git keeps its record, recognized by its worktree or its pull request's last push.
+
+## Changing ports
+
+These commands change the branch's working files and commit nothing, unless `update --outdated` or `--submit` asks them to go on. Each remembers what it did, so `tidy` can later write the commit subject a MacPorts reviewer expects. `--plan` shows the edit and changes nothing.
+
+### update
 
 ```sh
-dockhand adopt --pr 34812                        # your own fork: the PR's branch, with the PR attached
-dockhand amend jump --squash                     # fold its commits into one under the PR title, build, update the PR
-dockhand adopt --pr 34792 --keep-body            # someone else's: fetched as pr/34792; verify it, leave its description alone
-dockhand verify whisper
+dockhand update jq --new           # the newest release, in a new branch
+dockhand update jq 1.8.1           # a version you name, in the branch checked out here
+dockhand update jq --new --plan    # what would change, from master, starting nothing
 ```
 
-A head of several commits is adopted as it stands, and `amend <port> --squash` folds them into one commit under the pull request's title, verifies it, and updates the pull request; `--edit` opens the message in your editor first, and `--subject` and `--closes` apply as always. That is the whole answer for a contributor whose pull request has grown commits they do not know how to squash. A body without a Tested on section gains one when dockhand next updates the pull request, unless the contribution was adopted with `--keep-body`. A pull request from someone else's fork is pushed to like your own when GitHub allows it, which it does for a maintainer of macports-ports when the pull request permits edits by maintainers, and refuses otherwise; the evaluation of their Portfile happens on your machine, and the judgement is yours.
+`update` finds the newest release the Portfile's own rules accept, from the project's GitHub or GitLab tags and releases, or its livecheck. It moves the version, resets the revision, and fills in checksums. For a Go or Rust port whose Portfile lists its dependencies, it regenerates the list with `go2port` or `cargo2port`. `--shared-release` moves every subport sharing the port's release, and `--keep-old-checksums` refreshes legacy md5 or sha1 checksums in place rather than rewriting them as rmd160, sha256, and size.
 
-## Verify, follow, and cancel work
+It then compares the old and new source archives, and reports what a passing build can't catch: a changed license file, a changed build file, a new declared dependency. `dockhand diff --archive jq` shows the same comparison file by file.
 
-Verify current edits or committed branch contents, then reattach by port, branch, or the job ID that `-v` prints:
+`--revbump-dependents` also bumps the revision of every port that links the updated one directly, found in the port index at the branch's base, so users rebuild them. `--except <port>` leaves one out. `tidy` commits each as "<port>: rebuild for <updated> <version>".
+
+`--submit` goes on to tidy, check, and submit, previewing each step, and submits exactly that commit once its check passes.
+
+### Many ports at once
 
 ```sh
-dockhand adopt update-jq                          # track a branch made by hand; then verify jq
-dockhand verify jq --working-tree --image dockhand-base-tahoe
-dockhand verify jq --adopt update-jq --image dockhand-base-tahoe --detach
-dockhand wait --job <job_id> --trace
-# Or resume every pending job already associated with a contribution:
-dockhand wait --branch update-jq
-# From that branch, the selector may be omitted:
-dockhand wait
-# Or submit and stay attached in one invocation:
-dockhand verify jq --adopt update-jq --image dockhand-base-tahoe
-# A tracked contribution supplies the target when it is omitted:
-dockhand verify --adopt update-jq --image dockhand-base-tahoe
-
-dockhand cancel --job <job_id> --wait
-dockhand cancel --branch update-jq --wait
-dockhand serve
+dockhand outdated --mine                   # your ports with newer releases
+dockhand update --outdated --mine          # one branch each, from fresh master
+dockhand update --outdated jq yq fzf       # the ones named
 ```
 
-`verify <target>` continues the unique open contribution in this repository using its committed branch and recorded build settings. `--working-tree` explicitly captures tracked checkout contents, including staged additions and deletions, without changing the index or branch. Stage new files to include them. `--branch` selects a tracked contribution branch; `--adopt` selects committed manual work. A branch you prepared by hand comes in through `adopt <branch>`: one commit above master, one port directory, the port inferred from it unless you name one. Once tracked, verify, publish, amend, rebase, and status select it by port name, and the branch stays where it is under its own name. This is the way in for a Portfile dockhand refuses to edit, and the refusal says so; `--squash` folds a branch of several commits into one, keeping the originals under `refs/dockhand/adopted/<branch>`. A `bump`, `bump-revision`, or `checksums` on a port whose contribution is such a branch is prepared onto the branch itself and lands as an amendment, keeping the commit's message, which is how a port that exists only on its branch, a new port, gets its version and checksums moved by dockhand; `--adopt <branch>` on those commands tracks the branch first. Port and subport names are single target arguments; variants use repeated `--variant` choices.
+`outdated` looks up each port named, or with `--mine` each port whose maintainers line names you (the `maintainer` setting), at master as fetched now. It lists those with newer releases, and counts the rest; `--all` lists every port, and why any couldn't be checked. `update --outdated` makes one branch per port, each update committed as one commit. It shows how it will split the work before it starts, asks unless `-y`, and with `--check` queues a check of each.
 
-`status` prints one row per port, its current contribution with earlier ones folded underneath: port, change, phase, state, what comes next, and the PR; `-v` prints the full record with identifiers, and `--json` carries both. `console` opens the live table, which processes the repository's work while it is open: the header says `(processing)`, the driver loop runs beside the table with its reports in the message strip, and the snapshot is reread every two seconds so rows move as work advances. The arrow keys select a row and Enter expands its branch, identifiers, PR, log, and history. `b`, `v`, `p`, `s`, `c`, and `a` run `bump` (again, continuing the contribution), `verify`, `publish`, `sync`, `cancel`, and `abandon` on the selected contribution, exactly as the commands would; bump, verify, and publish detach as soon as the work is accepted, since the table's own processing carries it on, and bump, verify, publish, cancel, and abandon ask first. `o` opens the PR and `l` the failed build's log. Retired contributions, merged, closed, or abandoned, and finished standalone verifications are hidden until `h` shows them, and the header counts them. `console --watch` opens the table without processing, for when `serve` is doing the driving; `status` prints the snapshot once and processes nothing, and `--all` includes the retired rows in any of these. Quitting the table stops its processing; accepted work stays recorded for the next `console`, `wait`, or `serve`. Use `status <target>`, `wait <target>`, or `cancel <target>` for that contribution, and `--job <id>` for one particular job. `--change <id>` or `--branch <branch>` disambiguates multiple contributions. Wait/cancel freeze the pending jobs at selection; later submissions do not join. Failed preparation remains visible but cannot be verified or published until it produces a branch. A dirty checkout of the contribution branch requires explicit working-tree capture or an amendment.
-
-Omit the port on a tracked branch to infer its single target and variants. Named continuation inherits recorded variants; explicit variant flags override them. Manual untracked branches and detached working-tree snapshots require an explicit target.
-
-Matching passing verification is reused when the complete source tree, target, variants, image, verifier implementation, and build settings agree. You can verify edits, commit the same contents, and verify that branch without another build. Status cites the original attempt. Use `verify --fresh` to require a new execution; reattaching with `wait` preserves the existing decision. Older results without a recorded verifier identity require a fresh build before they can be reused.
-
-A verification builds on this Mac's macOS release. `--os` adds other releases to build on as well, as `setup --os` names them (`sonoma` or `14`); repeat it for several, and `--os available` adds every release with a prepared `dockhand-base-<release>` or `dockhand-xcode-<release>` image. This Mac's release is always built, first. Each release builds in its own image, all of them share the Tart capacity, and the verification passes only when every release passes; each release's result is recorded as that release's evidence, and publishing it requires every release to have passed, with the pull request listing each. The port is still evaluated on the host, so its targets, variants, and full-Xcode need are the host's. `--os` is Tart's: it is refused with `--provider github`, whose workflow builds on the fork's runner matrix, with `--image`, which names one release's image, and with `--dependents`, which is planned on one platform. It applies to that verification only; a later `verify` without it builds on the host again. See [build platforms](build-platforms.md).
+### checksums
 
 ```sh
-dockhand verify jq --os sonoma --os sequoia
-dockhand verify jq --os available --fresh
+dockhand checksums jq
 ```
 
-Tart stages a platform-specific PortIndex generated from the frozen source instead of rebuilding the complete index inside every VM. Every consumer shares one cache of completed generations, keyed by source tree and indexing environment, in the system user cache under `dockhand/indexes`. A contribution's candidate derives from the generation of its recorded base; a new upstream master derives from the previous one; discovery, dependent selection, and staging reuse whatever generation already matches. Only the first tree in a new environment needs a full pass, and changes under `_resources` still require one. For a cache with no usable generation, the commands that already reach the network, `bump`, `verify`, the corrections, and dependent discovery, seed the first generation from the MacPorts mirror's PortIndex instead: the index's `Last-Modified` less a two-hour margin brackets a master commit the mirror's snapshot cannot predate, every path changed from that commit to the target tree is re-indexed, and the generation records the mirror's URL, `Last-Modified`, the bracketing commit, and the margin, and is never strict, since the mirror's indexer and Base are not the local ones. A target commit older than the mirror's index, or shared resources changed since the bracket, index in full as before. `assess` and `outdated` never use the mirror and make no network request for the index. Every generation records how long its indexer ran. The local `portindex` is selected through `--prefix` / `MACPORTS_PREFIX`, or from `PATH`; its content identity is frozen with the accepted provider settings, and the MacPorts Base it loads is part of the cache identity. A cold cache seeds its first generation from the MacPorts mirror's index for the platform; `DOCKHAND_INDEX_MIRROR` names another mirror's tarballs directory, a mirror that cannot be reached or has no index for the platform costs only the full build it would have spared, and `assess` and `outdated` never ask a mirror, since they stay offline.
+This is what to run after editing a version by hand: it fetches the distfiles the Portfile names and writes their checksums. A distfile that changed upstream under the same name, in a Portfile the branch hasn't touched, is a stealth update. Dockhand says so and shows the checksums before and after. Since the source changed, it bumps the revision and sets `dist_subdir ${name}/${version}_${revision}`, so mirrors keep both archives. `--no-revbump` leaves the revision, for a change that needs no rebuild, and numbers the directory `${name}/${version}_1` instead. A later version update removes either.
 
-Verification stays attached through completion; `--trace` also streams logs. With `--detach` it remains attached only while capacity is unavailable and returns at admission or a conclusive outcome. Ctrl-C detaches without canceling accepted work; `serve` runs until interrupted and must be invoked separately for each repository. If nobody is running cycles for an admitted job, its VM can continue and occupy capacity until a later cycle collects its outcome. `wait` resumes a fixed job selection; it never submits another verification. With `--json`, every command writes one envelope to stdout, `{"command", "exit_code", "error", "result"}`, where `exit_code` repeats the process exit code, `error` is empty on success, and `result` is the command's typed result or null when the command was refused; progress reports become one JSON object per line on stderr with `level`, `scope`, and `message`. Without `--json`, results go to stdout and progress to stderr at the info level; `-v` adds identifiers and the work behind the scenes, `-vv` or `--debug` adds every sub-operation, and `--trace` implies debug plus the guest log stream. At the info level an action's result is one short block per job: the port, the version move or the kind of change, its state, the branch, one verdict line per platform with the failing phase and log location, and the pull request; `-v` prints the full record with identifiers instead. Exit codes are 0 for the requested milestone, 2 for failed work, 3 for needs-attention, 130 for interruption/canceled work, and 1 for other errors. Confirmed cancellation is successful for `cancel --wait`.
-
-## End a contribution or sync its PR
+### revbump
 
 ```sh
-dockhand sync jq
-dockhand abandon terraform-1.16
-# Inspect an older contribution after starting a newer one:
-dockhand sync --change <change_id>
+dockhand revbump gdal inkscape --subject "rebuild for poppler 25.09.0" --branch poppler-25.09
 ```
 
-`sync` reads the associated PR from GitHub and records its open, closed, or merged state. A merged PR ends the contribution, and what it leaves behind, the local branch and the head branch on your fork, is recorded as owed in the same transaction that records the merge; `sync` then deletes each, only while it still holds the published commit. A branch that has moved is kept and the reason recorded; one that is checked out, or whose deletion failed because the fork could not be reached, stays owed with a retry time, and a processing cycle takes it up when due, an explicit `sync` of the merged contribution at once. `status` says which: "merged; branches cleaned" only once both are settled, otherwise what is still owed or was kept and why. A closed PR keeps its branch, since the work may resume. `gc` also deletes local branches of merged contributions that were kept at the time, and settles the obligation when it does. While it is open, `sync` also records whether GitHub considers it mergeable, what reviewers decided, and how its checks stand, naming failing checks; `status` shows that line until the next refresh. Dockhand only reports it. It retires a closed or merged contribution only when no job is pending and the published revision still matches both the PR head and the local branch. Newer revisions, moved branches, and dirty checkouts stay open with an explanation. A deleted local branch or deleted fork does not prevent recognizing a matching completed PR. Plain `status` continues to read recorded state without contacting GitHub, but a processing cycle, which the live table and `serve` run, looks at each open contribution's PR about every five minutes on a best-effort basis, on a schedule recorded with the PR so drivers in other processes and a restarted one share it, and does what `sync` does, including retiring a merged contribution and settling its branch cleanup; when GitHub cannot be reached the last observation stands and nothing changes.
+`revbump` increases each port's revision and records the reason as its commit subject, "<port>: <reason>". A revision shared by several subports is bumped for all of them.
 
-`abandon` explicitly ends local pursuit, including failed preparation that never made a branch. Wait for or cancel pending jobs first. It preserves branches, evidence, and any remote PR; it does not close the PR. A subsequent `bump <target>` starts a new contribution with freshly fetched source and a newly discovered release. Canceling a job alone preserves the contribution for retry.
-
-Both commands accept a unique open port/subport target, `--branch`, or the current branch when the selector is omitted. Use `--change` for an exact contribution, including historical work. Refreshing a reopened PR never reopens a retired local contribution or redirects newer work.
-
-`--keep-failed` keeps a failed local verification VM for investigation. The default releases it after collecting the result and logs. This is a per-job choice: `wait` preserves it, while a new verification uses its own flag. Logs remain available after VM release; see [routine cleanup](operations.md#routine-cleanup).
-
-## Prepare version updates
-
-Preview or prepare a version update from freshly fetched `master` in `macports/macports-ports`. Local branches and uncommitted edits are excluded; a failed fetch stops the request without falling back to stale source:
-
-A port with an open contribution is continued from that contribution's recorded source, but only after master and its PR have been read: a merged PR retires the contribution and a new update starts from master; a port master already carries, or that someone else moved, stops and says what it found; a PR closed without merging is not re-proposed. If master cannot be fetched there, the contribution is continued as recorded and the output says master was not checked.
+### create
 
 ```sh
-dockhand bump jq --dry-run
-dockhand bump jq --to verified                 # build, then stop before the PR
-dockhand bump jq --unverified                # open the PR without building; the PR says so
-dockhand bump jq --to branch   # prepare the branch and stop
-dockhand bump jq --image dockhand-base-tahoe --to verified
-dockhand bump jq 1.8.1 --dry-run
+dockhand create https://github.com/owner/project --new --category devel
 ```
 
-`--to` names where the command stops: `branch` prepares only, `verified` builds and stops before the PR, and `pr`, the default, builds and opens or updates it. `--unverified` opens the PR without a build, and the PR body says so. `--provider` is `auto` everywhere: a prepared Tart image, otherwise GitHub; any Tart option such as `--image` or `--tests` selects Tart, and nothing but `--provider github` selects GitHub while an image is available.
+`create` reads a GitHub project, its latest release, and the build files at that release, and writes a new port's Portfile. It uses the github PortGroup, and cargo, golang, cmake, meson, or python as the project's files say. A Rust project's `cargo.crates` come from its `Cargo.lock`, and the checksums are filled in. What it guessed is marked with a `# dockhand: unconfirmed` comment: the license from GitHub's detection, the long description, and the category unless `--category` names it. The maintainer is your `maintainer` setting, else `nomaintainer`, marked. `--name` names the port when the project's name isn't right for it. The new Portfile is staged, so the next check includes it.
 
-Omitting the version selects the newest eligible GitHub or GitLab version: stable releases for a port on a stable version, and prereleases as well for a port already on one, such as a `-devel` subport, using supported evaluated livecheck metadata and native MacPorts ordering. Discovery uses repository tags by default; `github.tarball_from releases` selects published GitHub releases instead. A port whose maintainer overrides the livecheck, with GitHub's `releases/latest` for instance, has that livecheck run as `port livecheck` runs it and its answer proven to exist as a tag, and as a published release in releases mode, before it is selected; a version the forge does not have is refused naming the missing tag, and a port with `livecheck.type none` asks for an explicit version. Already-current ports complete without creating a branch or starting verification. Unknown or incomplete discovery requires attention. Explicit versions also support the evaluated upstream tag prefix. The editor handles supported literal `version`, `github.setup`, `gitlab.setup`, and GitHub-backed `go.setup` sources, including the Go PortGroup’s toolchain pre-check, the version arguments of `perl5.setup`, `R.setup`, and `ruby.setup`, and one direct archive with literal checksums; see the [CLI design](cli-design.md) for limits. A version is edited in the spelling the source uses, which is `livecheck.version` when the Portfile evaluates one: a perl module version such as `0.58` is written into `perl5.setup` and the port version MacPorts derives from it, `0.580.0`, is what the release records and the commit names. CPAN's `regexm` livecheck is read like the line-oriented `regex` one. A `p5-` or `rb-` stub bumps the way a `py-` stub does, through its newest versioned subport as one shared release. A port fetched with git (`fetch.type git`) is bumped through its version alone: nothing is downloaded, the evaluated `git.branch` must land on the resolved tag, a literal commit pin is moved to the resolved commit, and the build's clone is the fetch. A git-fetched module-mode Go port has its `go.toolchain_min` compared against the repository's `go.mod` at the resolved commit, read from the forge, since it downloads no archive. A git-fetched port that also declares checksums, or a generated Go or Cargo dependency block, is refused. Verification uses available dependency binaries by default; `--from-source` opts into building the dependency stack from source.
+### edit
 
-`dockhand bump py-foo` bumps a python stub the way its commits are written: the newest `py3x-foo` subport carries the edit, every subport moves as one shared release, the branch and commit keep the `py-foo` name, and only the newest subport is built locally, the pull request workflow building the rest; `--all-subports` builds them all locally, on `bump` and on `verify`. An obsolete main port that is `replaced_by` the subport being bumped and carries that subport's version as its own literal, the shape of the terraform Portfile, moves with the bump and appears as a metadata-only member of the release scope. Bumping a main port moves the subports that share its version, `atuin-server` with `atuin`, and the release scope lists them; bumping a named subport touches nothing else in the Portfile without `--shared-release`.
+`edit <port>` opens a port's Portfile in `$VISUAL` or `$EDITOR`, bringing its directory into a sparse worktree first. Without a terminal or an editor, it prints the path. Any other editing is yours to do in the worktree, with any tool; dockhand reads the files as they are.
 
-## Prepare and publish together
+## Seeing where things are
 
-A plain bump prepares, verifies, and publishes as one durable job, staying in the foreground until the PR is confirmed:
+- **`status`** shows each open branch, with its ports, its work, its latest check, and its pull request each in a column. Above them is a list of what needs you, each row ending with the command that moves it forward. Inside a worktree, or naming a branch, it shows that branch in detail. `--attention` prints only what needs you and exits 3 when anything does, for a prompt or a script. `--port <port>` finds every branch touching a port, `--all` includes merged, closed, and archived branches, and `--refresh` reads your pull requests from GitHub first. Run in a ports checkout with no command, dockhand shows status.
+- **`watch`** is status kept current as `serve` works. On a terminal, a line such as `c <branch>` checks a branch, `l` shows its latest logs, `t` tidies it, and `s` submits it, each with its usual confirmations. `--plain` prints events as lines instead, for scrollback, SSH, and screen readers.
+- **`diff`** shows what the branch changes from its base, edits included, which is what a check captures and a pull request shows. It lists first the ports CI would build, each marked changed or revision-only. `--stat` lists the files, and `--archive [<port>...]` compares the source archives instead.
+- **`impact`** lists the ports the branch changes, the ports that depend on them directly, and the shared files it changes with the ports that load them. They are candidates to look at, not proof of anything: `check --also` builds some of them against the branch.
+
+## Checking
 
 ```sh
-dockhand bump jq
-dockhand bump jq --image dockhand-base-tahoe
-dockhand bump-revision jq --subject "revbump for oniguruma 6.9.10" --trace
-dockhand bump jq --detach       # submit, return at admission; wait or serve finishes it
+dockhand check                   # the working files, where check.on says
+dockhand check --on tahoe        # on this release's Tart image
+dockhand check --plan            # what would be built, building nothing
 ```
 
-The destination is captured before acceptance. The driver verifies the prepared revision, then pushes it and confirms the PR. `--image` may be omitted after `setup`; Dockhand selects the matching default image. Automatic provider selection prefers a suitable Tart image and falls back to GitHub when unavailable. An explicit Tart request can reuse applicable evidence; otherwise missing build configuration preserves the prepared branch for a later verification run. With `--detach`, the command returns at build admission or evidence reuse; `wait <port>` or `serve` continues the same job. `--unverified` prepares the branch and opens the PR without building it, because you asked; the PR body says the change was not built locally and that the MacPorts workflow is its only check, and `status` shows it as published unverified. `--to verified` stops after the build, and `--to branch` stops at the prepared branch. Already-current automatic bumps complete without a PR. Failed verification preserves the local branch for correction and a later explicit `verify`/`publish`.
+A check builds every port the branch changes by MacPorts CI's rule. A change to a Portfile or under `files/` marks its directory, and every subport of a marked directory is a target, less those replaced, known to fail, or unsupported on the platform. Targets build in dependency order. In each environment, every target is linted, then fetched, checksummed, installed, and tested in turn, with exactly its dependencies active. Declared tests are advisory, as they are in MacPorts CI. `--tests required` makes them count, and `--tests skip` leaves them out; `check.tests` sets the default.
 
-`--subject` is what follows the port name in the commit subject, and the pull request title; `bump` defaults to "update to <version>" and `checksums` to "refresh checksums", while a revision bump requires one, since the reason is what maintainers write there. Give only what follows the name: dockhand writes `jq: ` itself and refuses a subject that already carries it. `--closes 74379` and `--see 74422` cite Trac tickets as `Closes:` and `See:` trailers in the form the pull request template asks for, the full ticket URL; both repeat, and a URL is taken as given.
+Results are per target and per environment:
 
-## Publish an existing branch
+| Result | Meaning |
+| --- | --- |
+| passed | linted, fetched, checksummed, and installed; its tests count only when required |
+| failed | one of those failed; the log says which |
+| blocked | a changed port it needs failed, so it wasn't built |
+| unmet | the environment can't build it, such as a port needing Xcode where there is none |
 
-Publish a tracked update with `publish <target>`. You can also publish a contribution, including a branch created with ordinary Git commands, after verifying and committing its contents:
+**What it captures.** By default, the tracked files as they are on disk, committed or not, as a numbered snapshot. `--staged` checks the index, and `--head` the committed tip. `--working-tree` checks the working files of a `--branch` checked out elsewhere, and `--include <file>` adds an untracked file without staging it.
+
+**What it builds.** `--only <port>` narrows the check to some of the changed ports, and adds back the changed ports they need. `--also <port>` builds unchanged ports against the branch, such as the dependents `impact` lists.
+
+**Where it builds.** `--on` names where, and every one named must pass; repeat it for several. Without it, `check.on` decides, and without that, your command provider if you have one, else Tart on this Mac's release. The forms are:
+
+| `--on` | Builds on |
+| --- | --- |
+| `tart` | this Mac's release |
+| `tart:tahoe`, `tart:sequoia,tahoe`, `tart:all` | those releases' images, or every image you have |
+| `tahoe`, `15` | shorthand for `tart:` that release |
+| `github` | MacPorts' workflow in your fork |
+| `command` | your own script |
+
+With several releases, `check` shows the results as a grid, one column per release.
+
+**Running it.** With no `serve` running, the check runs in the foreground and says so. Ctrl-C stops it, keeping what finished. With `serve` running, the check is handed to serve and followed here, and Ctrl-C only stops following. `-d` queues it and returns.
+
+One check of a branch runs at a time. While one is queued or running, `check` refuses, and `--replace` stops it, keeping what it finished, and checks the files as they are now.
+
+### After a check
+
+- **`logs check-12`** lists the check's provider runs and where each port's log is; `--port jq` prints one. `logs tart_7y62p4sigena6xlr` looks up one provider run by the ID a pull request names, or by the provider's own reference, such as a workflow run's URL.
+- **`retry check-12`** queues the same check again: the same files, plan, and environments, whatever the branch holds now.
+- **`check --baseline`** builds the ports that failed in the branch's latest check, or the `--only` ones, at the master the branch starts from, and reports each beside the branch's result. It shows whether master fails the same way, and nothing more. With `check.baseline = true`, a failed check runs one by itself.
+- **`queue`** lists the checks queued and running, **`wait check-12`** follows one until it ends, and **`cancel check-12`** stops one, keeping what finished.
+
+## Providers
+
+### tart
+
+Each check clones one of dockhand's images for each release and attempt, and deletes the clone afterwards ([details](tart-provider.md)). The images live in `~/.dockhand/tart`, or `$DOCKHAND_TART_HOME`, apart from your own Tart VMs.
 
 ```sh
-dockhand publish --adopt update-jq --dry-run
-dockhand publish --adopt update-jq
+dockhand providers setup tart               # this Mac's release
+dockhand providers setup tart sequoia       # another; names like tahoe or numbers like 15
+dockhand providers setup tart --xcode ~/Downloads/Xcode_26.xip   # the Xcode add-on for this Mac's release
+dockhand providers setup tart --check       # check the image in a disposable clone
+dockhand providers setup tart --rebuild     # a replacement, keeping the old one until the new one passes
 ```
 
-Without a selector, publication uses the current branch, which must be tracked; `--branch` selects a tracked contribution branch, and `--adopt` names a branch dockhand did not make, whose committed contents become a tracked contribution when publication is accepted. The first path requires one contribution commit, changes confined to one verified port directory, and passing evidence for its complete tree and target. It uses that result's recorded image, verifier, platform, variants, and build settings; no image flag or new build is needed. Missing or failed evidence requires an explicit `verify` first. An existing PR keeps its body, since the description may be a maintainer's and the checklist a reviewer's; `--update-body` rewrites only the environment section from this verification, which is what goes stale when the template changes or newer evidence supersedes it. A user-created branch is adopted only when publication is accepted; `--dry-run` accepts no job and creates no contribution.
+An image starts from Cirrus Labs' vanilla macOS image, and holds the Command Line Tools of the release's pinned generation and MacPorts: the release dockhand pins, unless `--macports-version` names another. Making one downloads the vanilla image the first time and takes up to 60 GB of disk. A golden copy is kept beside it, and a lost image is restored from it.
 
-Dockhand works out the remotes from their URLs and your login: the remote whose URL names `macports/macports-ports` is the upstream whatever it is called, and the remote pushing to a fork your GitHub login owns is where contributions go. `--remote` and `--upstream` override that, and Dockhand asks for `--remote` only when the choice is ambiguous: two owned forks, or several non-upstream remotes while logged out. The PR target comes from the upstream remote, then the fork parent, then the push repository, and `--base` overrides the base branch.
+Xcode is an add-on. `--xcode`, given an Xcode `.xip` from Apple or a folder of them, makes `dockhand-xcode-<release>`: the same image with the newest Xcode the release runs, in up to 65 GB more. When a release has one, checks on it use it. A port that needs Xcode, itself or through a changed prerequisite, is built only there; without it, the port is unmet, not failed, and the check says to add the image.
 
-Publication stays attached through remote confirmation; `--detach` returns after driver pickup or an earlier terminal outcome. Resume accepted work with `wait`, or run `serve`; Ctrl-C detaches. A lost PR response is reconciled by observation without repeating the write. If the outcome cannot be established, the job stays pending and reserves that remote branch. Cancellation cannot undo an already issued PR request. Missing-verification scheduling for standalone `publish`, rebase/amend commands, and post-publication monitoring remain future work.
+macOS runs at most two VMs at once, your own among them, so `serve` runs one Tart check at a time unless `providers.tart.capacity` says otherwise. `providers.tart.test_timeout` bounds each target's tests, 30 minutes by default.
 
-Image inspection and fingerprinting, capacity reservation, VM startup, guest checks, source materialization, index preparation, and source transfer print stage messages on stderr. Full PortIndex generation is explicitly identified and timed; a cache hit does not claim a new generation. These messages work without `--trace` and leave JSON stdout intact. `--trace` additionally streams the build log. Stage messages describe work performed by the attached process; they are not stored progress events from other drivers.
+### github
 
-## Upgrade an older state database
+`--on github` builds with MacPorts' own CI workflow in your fork's GitHub Actions, the way a pull request is built ([details](github-provider.md)). It needs the GitHub login, a remote that pushes to your fork, and Actions enabled on the fork, which GitHub turns off for new forks.
 
-If `status` reports that the database schema needs migration, run:
+### command
+
+Your own script, for a build box or a VM you manage. Dockhand gives it a request file and reads back a result file. It can't vouch for how the script built, so results read "reported by <name>" ([details](command-provider.md)).
+
+```toml
+[providers.command]
+run = "~/bin/build-ports"
+name = "buildbox"
+```
+
+## Shaping the commits
 
 ```sh
-dockhand db migrate
-dockhand status
+dockhand tidy
 ```
 
-Use the same `--db PATH` on both commands when selecting a nondefault database. Migration updates the schema for every repository in that database without running jobs, accessing a ports checkout, or starting verification. An already-current schema succeeds. Missing, empty, unrelated, and newer databases are refused. To keep an old-schema snapshot first, run `dockhand db backup <new-backup-file>` with the same `--db PATH`; backup and integrity checks support older schemas without upgrading them.
+`tidy` proposes the commits a reviewer should see: by default one per port directory, with the subject dockhand's commands recorded or the one your own commits give, and every uncommitted edit included. The files come out exactly as you have them; tidy never changes a file.
 
-## Refresh existing distfile checksums
+On a terminal, tidy shows the proposal and lets you review the diff, change the groups, edit the messages, and apply it. `-y` applies a plan made only of dockhand's own edits without asking, and that is also the only plan tidy applies without a terminal; anything else needs review. `--squash --message "port: what changed"` makes one commit of the whole branch, applied as given, since the message is yours. `--group "2 1+3"` rearranges the proposal: commit 2 first, then one commit of 1 and 3. `--author "Name <email>"` attributes a commit that combines several people's. `--plan --out plan.toml` saves the plan, whose messages you can edit, and `--apply plan.toml` applies it if the branch hasn't changed since.
 
-`dockhand checksums jq --dry-run` previews checksum changes for the current MacPorts master without changing the port's version or revision. Omit `--dry-run` to prepare, verify, and publish through the normal verified publication path; `--to verified` stops after verification. `--no-verify` stops at the prepared branch. If the checksums already match, the job completes without creating a branch or PR.
+Before rewriting, tidy keeps the old history as a checkpoint, such as `tidy-3`. `dockhand restore tidy-3` puts it back when nothing has been committed since; the files aren't touched, so edits tidy committed read as uncommitted again. `rebase` keeps one the same way.
 
-The command uses the same direct archive association, HTTP or anonymous FTP transfer, checksum replacement, and evaluation checks as version updates. Named and multiple archives are supported. A checksum group still written with `md5` or `sha1`, or without `sha256`, is rewritten as `rmd160`, `sha256`, and `size` in the Portfile's own column alignment the first time dockhand synces it, by this command or by a version bump; a group already made of current algorithms keeps its layout and order. Refreshing a legacy block whose archive is unchanged therefore still produces a commit: the modernized declarations. `--keep-old-checksums`, on `bump` and `checksums`, keeps a legacy block's algorithms and layout instead and refreshes every value it names, `md5` and `sha1` included; a bump that continues an open contribution keeps the choice its preparation was made with. Customized fetch hooks, authenticated downloads, and generated Go/Cargo dependency blocks require manual preparation; this command does not regenerate those blocks or turn a changed upstream archive into a trusted release automatically.
+Tidy writes commits by MacPorts' rules, and `submit` checks them: a subject naming the port, short and specific; a body wrapped at 72; tickets as full URLs; no merge or follow-up commits; the revision reset when the version changes. Each finding ends with a code in brackets, and `dockhand explain <code>` says what the rule asks and where MacPorts asks it.
 
-## Verify direct dependents
+## Submitting
 
 ```sh
-dockhand bump jq --dependents
-dockhand verify jq --adopt my-update --dependents --trace
+dockhand submit --plan     # the preview: commits, destination, title, checks, and rule findings
+dockhand submit
 ```
 
-`--dependents` also works with `bump-revision` and `checksums`. It requires local Tart verification and cannot be combined with `--provider github`, `--unverified`, or `--dry-run`. Discovery selects the roots plus their direct build, library, and runtime dependents from the frozen source index. Reverse dependencies are not expanded transitively. The reverse index uses default-variant metadata, so it is not exhaustive coverage of every possible variant combination. Root variants are retained; downstream ports use their default variants.
+`submit` pushes the branch's committed head to your fork and opens its pull request against `macports/macports-ports`, or updates the one it has. The preview also lists any other open pull requests for the same ports.
 
-Each target has an isolated guest. Before a downstream build, Dockhand builds and installs the requested roots from the same frozen tree. Ordinary dependency binaries remain available unless `--from-source` was requested. Conflicts between downstream targets therefore do not require them to coexist in one guest. Root/dependent conflicts remain real build failures and are reported.
+The committed files must have passed a check, for every changed port in every environment. Because a check builds the files rather than the commits, a check before `tidy` covers the commits `tidy` makes.
 
-The default image is retained for the cohort. Override individual dependent ports with repeatable `--target-image port=image`, for example:
+- `--accept <port>` acknowledges a failed extra from `--also` or a failed revision-only port. The pull request says the cause wasn't established.
+- `--draft` opens a draft, which unfinished or failing checks allow, and `--ready` takes it out of draft once its commit passes.
+- `--no-check` submits without a check, and the pull request says no local build ran.
+- `--check` checks the committed head first and submits exactly that commit once it passes; running it is the decision. `--on` says where.
+- `--passing` goes through every branch whose check passed for exactly what it would submit, asking about each.
+- `--head` submits the committed head, leaving uncommitted edits out.
+
+Every push is conditional on your fork's branch being where submit last saw it, so nobody else's push is ever overwritten. A description you edited on GitHub is kept. The title is the commit subject unless `--title` says otherwise, and an existing pull request is never retitled unless you pass `--title`.
+
+The description follows MacPorts' pull request template. `--type` fills in its Type (bugfix, enhancement, security fix), `--tested-variants` and `--tested-binaries` tick its checkboxes, and `--skip-notification` keeps maintainers from being mentioned. *Tested on* says what each environment was, from what the guest reported: the macOS version and build, the architecture, and the Xcode or Command Line Tools version. Each line ends with how it was built and the ID of each provider run, such as `tart: built in a clean VM (Run ID: tart_7y62p4sigena6xlr - checked in check-12)`. The last line names the dockhand that submitted it. Anything that wasn't recorded is left out rather than guessed.
+
+### After review
+
+`status --refresh`, or `serve` every few minutes, reads your pull requests' state, reviews, and CI. To answer a review, edit the branch, check it, tidy, and submit again; the pull request is updated. When reviewers asked for changes, submit then asks whether to request their review again; `submit.rerequest_review` can make that `always` or `never`. `rebase` replays the branch onto fresh master when it needs that, keeping a checkpoint; a rebase that conflicts is abandoned, leaving the branch as it was.
+
+When a pull request is merged, its branch is marked merged. `dockhand review <pr>` applies the same commit rules to anyone's pull request. It posts nothing unless you say so: `--comment`, `--request-changes`, or `--markdown` to print the text for pasting.
+
+## serve
 
 ```sh
-dockhand verify root --dependents --image dockhand-base-tahoe \
-  --target-image downstream=dockhand-xcode-tahoe
+dockhand serve               # in a terminal of its own
+dockhand serve --install     # as a launchd agent that starts at login
+dockhand serve --drain       # run what is queued now, then exit
 ```
 
-Use exact dependent names, including subport names; use `--image` for the root. Image identities and settings are frozen at intake and survive restart. Overrides must use the same OS/architecture and build policies as the root; this is not a platform matrix. A name outside the discovered cohort stops planning before builds start. Each target's full-Xcode requirement, including its root prerequisite, is checked. Missing tooling does not trigger an unrequested GitHub build or disappear from coverage.
+`serve` runs queued checks, people's before its own, and keeps running new ones as they are queued. One serve leads. A second stands by and takes over if the leader dies. Stopping serve leaves the check it was running for the next serve, which picks it up where it stopped.
 
-`status` and `--json` retain each planned target, selection reasons, discovery problems, and attempts. Missing index entries or unread dependency fields mean incomplete coverage even if runnable targets pass. A build log can identify a failing dependency outside the cohort, but Dockhand does not call it unrelated without a baseline comparison. A failed step records the package and phase MacPorts named and MacPorts' own error lines as the failure's detail, rather than the runner's exit message; a distfile that failed to fetch also records every mirror MacPorts tried for it with the reason each gave, which `status` lists under the attempt.
+Between checks it:
 
-Publication requires every requested target to pass and no discovery gaps. A later standalone `publish` using the cohort's root result enforces the same requirement. New PR bodies list the isolated coverage. This option does not authorize edits or revision bumps to downstream ports. Artifact sharing is not implemented; each guest builds its own root prerequisite.
+- reads your open pull requests every few minutes, so `status` shows their reviews and CI, and marks a merged one's branch merged;
+- once a day, at `serve.outdated_at`, looks for new releases of your ports and does what `serve.for_outdated` says: `list` counts them for status, `draft` prepares a branch for each, and `check` also checks each;
+- once a day, unless `cleanup.automatic = false`, removes what `clean --merged` would, and port indexes unused for `cleanup.after`;
+- posts macOS notifications as checks finish and pull requests change. They are posted through AppleScript, so macOS credits them to Script Editor, and clicking one opens it. `serve.notify = false` turns them off, and `--no-notify` turns them off for one run.
 
-## Correct an existing contribution
+Serve opens no pull requests by default. With `--submit-passing`, or `serve.submit_passing = true`, it opens one for each branch it prepared whose check passed, at most `serve.submit_limit` a day. It never opens one with an upstream or commit-rule finding, or one needing `--accept`; those wait on the attention list, and the pull request says serve opened it without a person's review. `--no-submit-passing` turns it off for one run.
 
-Ordinary Git edits remain supported. The managed commands squash the contribution to one commit and use the existing verification/publication lifecycle:
+`--install` runs the agent with the flags given beside it, such as `--no-notify`, and `--uninstall` removes it.
 
-```sh
-git switch dockhand/bump/example-...
-# Edit the Portfile or patches, then stage the intended contents.
-git add path/to/port/Portfile
-dockhand amend --dry-run
-dockhand amend
+## Cleaning up
 
-# Rebase without changing files in an occupied contribution checkout.
-git switch master
-dockhand amend example
-dockhand rebase --branch dockhand/bump/example-...
+- **`clean`**, which is `clean --merged`, removes a merged branch's worktree, local branch, and fork branch, each only while it still holds the merged commit. A worktree with edits or untracked files, and work that went on past the merge, are kept.
+- **`clean --closed`** and **`clean --archived`** take only the worktrees of branches whose pull request closed unmerged, or that you archived. Their work isn't merged, so the branches and checkpoints stay, and `path` or any command that needs the worktree checks it out again.
+- **`archive [branch]`** hides a branch from status without touching anything; `status --all` still shows it, and `archive --undo` brings it back.
 
-# After explicitly renaming a local branch:
-dockhand reassociate change_... --branch new-local-name
-```
+`clean` shows what it would remove first. On a terminal it asks, and a script passes `--yes`. A branch's record always stays, so `status --all` still finds it. Check logs in `~/.dockhand/logs` are kept.
 
-`amend` defaults to the current tracked checkout; a target, or `--branch`, selects the contribution instead. Checked-out amendments require matching staged and working contents, or a checkout clean at the previous commit, which moves forward with the branch the way a fast-forward would; Dockhand does not stage files or reset the checkout otherwise. Switch away before rebasing, including in linked worktrees. Rebase fetches MacPorts master, preserves one contribution commit, and leaves a conflict workspace for inspection if replay fails. Both commands retain the original contribution message; `--subject` replaces what follows the port name in its subject, and `--closes` and `--see` add the ticket trailers it does not already carry. A rewrite that leaves the tree unchanged reuses the evidence that tree has, so citing a forgotten ticket costs no build. They verify the replacement and accept the usual provider and `--dependents` options. With `--to verified`, they stop after verification; `--detach` returns once the correction is accepted.
+## Scripting
 
-An existing PR retains its remote branch and body after local reassociation. Unexpected remote changes require reconciliation. `publish` still requires applicable verification; managed `amend` and `rebase` authorize both steps by default, and `--to verified` stops them after verification.
+- **`--json`** writes one envelope on standard output when the command ends: `{"version": 1, "command": "...", "exit_code": 0, "error": null, "result": {...}}`.
+- **Exit codes:** 0 for success, 1 for an error, 2 for a failed check, 3 when something needs attention (`status --attention`), and 130 for an interrupt.
+- **Without a terminal**, nothing is asked. A command that would ask refuses and says what it needs, or proceeds where `-y` is given. `tidy` applies only a plan made of dockhand's own edits, or one you give it.
 
-## Discover upstream updates
+## Settings
 
-```sh
-dockhand outdated jq croc
-dockhand outdated category/port --json
-dockhand outdated --maintainer herbygillot@github
-dockhand outdated --maintainer @herbygillot --category devel --json
-dockhand outdated --maintainer openmaintainer --not-maintainer @herbygillot   # open ports that are not mine
-dockhand outdated --maintainer @herbygillot --all   # every port of mine, current ones included
-dockhand assess --maintainer nomaintainer --category sysutils
-```
+`dockhand config` lists each of these with its value and whether it came from the file.
 
-This reads committed local `HEAD` and checks each selected port using the same GitHub/GitLab catalogs, livechecks, and calculated-version probing as bump. A livecheck is taken exactly as `port livecheck` would resolve it: the evaluator applies the tree's own checker definitions under `_resources/port1.0/livecheck`, so a `pypi`, `sourceforge`, or defaulted type becomes the URL and regex it stands for, and dockhand supports whatever comes down to a regex without custom hooks. A python stub's subports borrow the stub's livecheck, since MacPorts disables theirs when they share its version. Only the ports with an update available are listed; the ports that are current, and any that could not be checked, are counted on the line after, and `--all` (`-a`) lists them with their verdicts and the reason a check failed. A port that could not be checked makes the command exit with an error either way. It excludes working-tree edits and does not fetch MacPorts master, initialize a database, download source archives, create branches/jobs, or grant publication authority. Update the checkout first if you want newer MacPorts definitions.
+| Key | Default | What it does |
+| --- | --- | --- |
+| `worktrees` | `macports-branches` beside the clone | where branch worktrees go |
+| `maintainer` | none | your maintainers line, for `--mine`, serve's daily look, and `create` |
+| `check.on` | command if set up, else Tart on this Mac's release | where checks build |
+| `check.tests` | `declared` | `declared` (advisory), `required`, or `skip` |
+| `check.baseline` | `false` | run a baseline after a failed check |
+| `submit.rerequest_review` | `ask` | after pushing to a pull request with changes requested: `ask`, `always`, or `never` |
+| `cleanup.automatic` | `true` | serve's daily cleanup |
+| `cleanup.after` | `7d` | how long a port index goes unused before cleanup removes it |
+| `serve.for_outdated` | `list` | `list`, `draft`, or `check` |
+| `serve.outdated_at` | `07:00` | when serve looks for new releases, in local time |
+| `serve.submit_passing` | `false` | open pull requests for serve's passing updates |
+| `serve.submit_limit` | `10` | the most pull requests serve opens a day |
+| `serve.notify` | `true` | macOS notifications |
+| `providers.tart.capacity` | `1` | Tart checks serve runs at once |
+| `providers.tart.test_timeout` | `30m` | the bound on one target's tests |
+| `providers.github.remote` | the one remote pushing to your fork | which remote, when several push to forks you own |
+| `providers.github.capacity` | `2` | github checks serve runs at once |
+| `providers.command.run` | none | your build command, given the request file's path |
+| `providers.command.name` | `command` | how its results are labelled |
+| `providers.command.capacity` | `1` | command checks serve runs at once |
 
-Results distinguish `current`, `update-available`, and `unknown`. Unsupported ports and incomplete observations stay visible alongside successful results; any unknown result produces a nonzero exit status. An available update by itself is successful discovery. Automatic bump intake and unattended publication policy remain separate work.
+### Environment
 
-Use explicit port arguments or metadata selectors. `--maintainer` takes a handle, an email, or the class words `openmaintainer` and `nomaintainer`; `--not-maintainer` leaves out ports you maintain, with filters or with `--all`. Repeat `--maintainer` or `--category` for alternatives within that field; combining the two fields selects their intersection. Matching is exact and case-insensitive. Maintainers accept `@handle`, Repology's `handle@github`, email addresses, and MacPorts' `domain:user` form. Categories match every indexed category, not just the Portfile directory. These selectors do not expand workflow or publication authority.
-
-Metadata selection requires the host MacPorts `portindex` (`--prefix` selects its installation). Dockhand generates an index from the captured local HEAD in the same shared cache that verification uses, keyed by source tree, platform, and indexer identity, in the system user cache under `dockhand/indexes`. The first pass in a new indexing environment takes several minutes; later trees update incrementally from the newest cached generation. It does not use the checkout's possibly stale PortIndex, fetch master, or initialize SQLite.
-
-Unindexed Portfiles, missing subports, and unread selection metadata remain explicit unknowns: their membership cannot be established. Selected subports currently report unknown because version probing supports primary ports only. Unsupported upstreams and individual catalog failures remain visible alongside successful results. Any unknown makes the command exit unsuccessfully after printing results; an empty, complete selection reports no matches successfully.
-
-
-## Host MacPorts diagnostics
-
-`setup` reports the host MacPorts Base and Tcl versions, evaluator startup checks, and available source-review evidence; `setup --json` includes `host_macports`. Dockhand checks actual interfaces on use. Missing metadata capabilities stop evaluation, while unknown fetch layouts or hooks stop automatic archive preparation with a specific explanation. An unfamiliar Base version is not rejected solely by its version. See [compatibility evidence](macports-compatibility.md) for the tested scope.
+| Variable | What it does |
+| --- | --- |
+| `MACPORTS_TREE` | the ports checkout, when `--tree` isn't given |
+| `DOCKHAND_DB` | the database, when `--db` isn't given; `~/.dockhand/dockhand.db` otherwise |
+| `DOCKHAND_CONFIG` | the configuration file |
+| `GIT_BIN` | the Git executable, when `--git` isn't given |
+| `GH_TOKEN`, `GITHUB_TOKEN` | a GitHub token, ahead of any saved login |
+| `DOCKHAND_TART_HOME` | where dockhand's Tart images are; `~/.dockhand/tart` otherwise |
+| `DOCKHAND_INDEX_CACHE` | where port indexes are cached; `dockhand/indexes` in your cache directory otherwise |
+| `DOCKHAND_GITHUB_CLIENT_ID` | the OAuth application `auth login` uses |

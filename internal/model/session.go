@@ -82,7 +82,8 @@ type Event struct {
 	Message string
 }
 
-// EventLevel is the output level at which an event is shown (docs/output.md).
+// EventLevel is the output level at which an event is shown, as v2 defined
+// them (docs/v2/output.md).
 type EventLevel string
 
 const (

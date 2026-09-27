@@ -16,7 +16,7 @@ by call site — `portedit/patches.go` reports at info only when a patch was
 rejected and at verbose when everything applied, and
 `workflow/contribution_lifecycle.go` reports at info only when a contribution's
 disposition actually changed. That is the contract in
-[output.md](../output.md) being applied deliberately, not by habit.
+[output.md](../v2/output.md) being applied deliberately, not by habit.
 
 Three findings are real defects. The rest are consistency drift.
 
@@ -95,7 +95,7 @@ zero-items sentence specifically that needs `callErr == nil`.
 
 ## 3. `gc --json` returns a result object on failure
 
-[output.md](../output.md) states that `result` is "typed per command and null on
+[output.md](../v2/output.md) states that `result` is "typed per command and null on
 failure". Every command observed honors this except `gc`:
 
 ```

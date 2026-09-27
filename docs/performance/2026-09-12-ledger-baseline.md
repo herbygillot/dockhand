@@ -16,7 +16,7 @@ The fixtures contain one change, revision, request index, verification plan, att
 
 Fixed-size samples reset to the same ledger snapshot, remove newly added pins, warm-read the snapshot, and run Go GC before timing. Source objects and the initial state are generated outside timing. Most successful cases have three or five repetitions; the costly 1,000-source workflow case has one. These are exploratory warm-cache measurements, not tail-latency guarantees. Go GC before sampling also affects reusable buffer pools; allocation totals are not steady-state or peak-memory measurements. The machine was not reserved exclusively for benchmarking.
 
-[Reproduction guide](/Users/herby/Source/dockhand2/tools/ledgerperf/README.md) · [Full results](/Users/herby/Source/dockhand2/docs/performance/2026-09-12/summary.csv) · [Diagnostic phases](/Users/herby/Source/dockhand2/docs/performance/2026-09-12/phases.csv)
+[Reproduction guide](../../tools/ledgerperf/README.md) · [Full results](2026-09-12/summary.csv) · [Diagnostic phases](2026-09-12/phases.csv)
 
 ## Small ledger operations
 
@@ -33,7 +33,7 @@ The update changes one existing job's detail. A no-op transaction with 1,000 dis
 
 Reads and status do not perform source-pin validation. At 10,000 jobs sharing a source, all-jobs status took 242 ms. The current snapshot was **33.5 MB of JSON**. A read allocated about 182 MB in the parent Go process and a small update allocated about **481 MB**. Those are cumulative allocations during an operation, not resident or peak memory, and exclude child-process memory. Whole-state processing is still a material cost after source validation is addressed.
 
-![Ledger latency](/Users/herby/Source/dockhand2/docs/performance/2026-09-12/ledger-latency.png)
+![Ledger latency](2026-09-12/ledger-latency.png)
 
 ## Where a write spends its time
 
@@ -126,7 +126,7 @@ Real successive edits, with no resetting, showed a separate storage effect:
 
 These totals sum regular-file lengths under the Git directory; they are not allocated filesystem blocks or bytes written to disk. Each experiment ended with 309 Git objects, and packing retained all 309. Both retained two source pins throughout. Git delta compression substantially reduced storage for similar snapshots, while the application still serialized and wrote a whole snapshot per edit. Source churn and long-term pin retention require a separate retention decision; this short fixed-source growth experiment cannot establish their eventual storage bound.
 
-![Ledger storage](/Users/herby/Source/dockhand2/docs/performance/2026-09-12/ledger-storage.png)
+![Ledger storage](2026-09-12/ledger-storage.png)
 
 ## Implications
 

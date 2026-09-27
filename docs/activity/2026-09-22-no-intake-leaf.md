@@ -40,7 +40,7 @@ snapshot binding, a plan through the publisher, a transaction with the
 pull request and a message. The resolution made the lookup alike, which
 was its job; it did not make the middles alike, and nothing will.
 
-**The name is taken.** The [architecture](../architecture.md) uses
+**The name is taken.** The [architecture](../v2/architecture.md) uses
 "intake" for the submit transaction, the durable acceptance under one
 state transaction. A package by that name holding the bindings but not
 `Submit` would contradict the vocabulary it defines.

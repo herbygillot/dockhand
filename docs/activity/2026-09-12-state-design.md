@@ -15,7 +15,7 @@ Designed the next persistence slice around the existing intake, status, single-t
 
 ## Documentation and provenance
 
-Authored [state.md](../state.md), including illustrative contracts, a logical schema, query and claim rules, repository isolation, SQLite lifecycle, and migration checks. Updated [architecture](../architecture.md), [components](../components.md), [CLI design](../cli-design.md), [principles](../principles.md), and [README](../../README.md) to distinguish the new design from the existing implementation. Historical activity and performance reports remain unchanged.
+Authored [state.md](../v2/state.md), including illustrative contracts, a logical schema, query and claim rules, repository isolation, SQLite lifecycle, and migration checks. Updated [architecture](../v2/architecture.md), [components](../v2/components.md), [CLI design](../v2/cli-design.md), [principles](../principles.md), and [README](../../README.md) to distinguish the new design from the existing implementation. Historical activity and performance reports remain unchanged.
 
 The design draws on the current v2 records and verification lifecycle and the storage/performance discussions. No v1 source, comments, or tests were copied. No Go code or dependencies were changed.
 

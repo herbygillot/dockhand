@@ -2,7 +2,7 @@
 
 Prepared September 10, 2026 against commit `1710985`, following the synchronous bump-to-PR and asynchronous verification reviews. This is a plan; it does not enact the migration. Breaking internal APIs, command behavior, and persisted-state formats are permitted. The intended result is a smaller set of authoritative decisions that is straightforward to understand and change.
 
-The companion [CLI proposal](/Users/herby/Source/project-dockhand/docs/cli-proposal.md) specifies the proposed commands and defaults, including `publish`, consistent attachment, and `ci --drain` replacing the public one-pass command. These are design proposals, not changes to the installed CLI.
+The companion [CLI proposal](../../../project-dockhand/docs/cli-proposal.md) specifies the proposed commands and defaults, including `publish`, consistent attachment, and `ci --drain` replacing the public one-pass command. These are design proposals, not changes to the installed CLI.
 
 **The architecture to implement**
 

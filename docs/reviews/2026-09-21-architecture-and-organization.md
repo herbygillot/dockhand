@@ -31,7 +31,7 @@ declared, ten of them in `state` and eight in `macports`, so the seams are
 explicit. The two dependency-contract tests, `verify`'s and `assess`'s, were
 joined by `cli`'s on 2026-09-20 and all three pass. No package has a cycle, and
 no edge added in the last week runs against the layering described in
-[components.md](../components.md) except the two the 2026-09-20 structural check
+[components.md](../v2/components.md) except the two the 2026-09-20 structural check
 found and fixed.
 
 **`macports` did not explode.** The root is the vocabulary package and has moved
@@ -101,7 +101,7 @@ what a root should hold. Its 1,644 lines are not. `BindPreparation` is 99 lines
 and `prepareOnto` 76; between them they look up the open contribution, fetch
 master, run the continuation check, resolve the release, prepare onto an
 existing change, and bind a correction. That is intake orchestration, and it
-lives outside `workflow`, which [components.md](../components.md) says accepts
+lives outside `workflow`, which [components.md](../v2/components.md) says accepts
 requests and binds their inputs. The 2026-09-17 architecture review deferred an
 intake-and-driver split of `workflow` until its rules stopped moving; intake
 grew in `app` instead.
