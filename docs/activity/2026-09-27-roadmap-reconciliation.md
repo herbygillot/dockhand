@@ -65,3 +65,14 @@ This session's open ends are among the smaller items:
 - **Finding 5's rank.** Per-runner GitHub evidence is a smaller item, since GitHub isn't the default provider. The port reader's evaluation report goes to item 6, where reuse needs it.
 - **Finding 6's scope.** It shrinks to the JSON gap and the chosen release's provenance.
 - **The reuse probe.** It waits on decision D1, where the recommendation is per-port reporting rather than blocking.
+
+## Baselines, decided afterwards
+
+Talking through baselines, the person decided three things:
+
+- **MacPorts' buildbot history is not baseline data**, not even as a labeled hint. Its API lists each builder's latest build of a port by time, not by the version built, and its builders run full Xcode. This withdraws what decision 20 allowed.
+- **Baselines stay optional and off by default,** as they already were.
+- **A failed port points to the baseline command.** The failed check says which command builds it at the base. It does so only when a baseline can answer something: a port the base has, which failed while building, installing, or testing. It doesn't for lint, fetch, and checksum failures, which come from the branch's own edits, nor for a port the branch adds.
+
+The decision is recorded in design-v3.md §6.8 and the roadmap's Decided section. The hint joins Next item 1, beside the two baseline fixes. Rebuilding only in the environments where a port failed joins item 2. Carrying baseline results into the pull request is dropped: the person runs a baseline by choice, and reads its result there.
+

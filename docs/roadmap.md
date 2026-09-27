@@ -32,6 +32,7 @@ In order. Each item lands in its own commits with an activity note, and a review
    - **A baseline is planned the way a check is.**
      - It starts from the base of the check it explains, not the branch's current base after a rebase.
      - It keeps each environment's exclusions, and what an environment can't meet: a port that needs Xcode isn't sent to a Command Line Tools image.
+   - **A failed check names the baseline command when one can help.** That is when the port exists at the base and failed while building, installing, or testing. The check says, for example, "To see whether harbor-viewer fails at master 4c1e2d0 too: dockhand check --baseline". There is no line for a lint, fetch, or checksum failure, nor for a port the branch adds (the decision below).
    - **A checkpoint records the branch's base, and `restore` puts it back.** After `rebase` then `restore`, the base stays at the newer master today, and the next `tidy` fails.
    - **`update --json` carries the upstream archive comparison** its text already shows.
 
@@ -43,6 +44,7 @@ In order. Each item lands in its own commits with an activity note, and a review
      - what each port needs there, such as Xcode;
      - its dependency graph and its build order.
    - **What stays branch-wide.** The branch's changed scope and the person's `--only`/`--also` selection stay apart from those.
+   - **A baseline rebuilds a port only in the environments where it failed.**
    - **Each environment builds in its own order.** That retires today's refusal, where dependencies that run opposite ways on two releases make a cycle in the combined graph.
    - **One predicate says which recorded results count toward a submission:** matching selection, environment, and test policy. Checks and baselines are then planned through the same path, which item 1 begins.
 
@@ -133,6 +135,14 @@ These are taken when their area is next touched, or between items.
   - *The review's probe:* block the submission.
 - **D2. Tools or Xcode profile.** Should modelled contexts use the Xcode profile, as MacPorts' builders do, or the tools profile they use now? This has been open since oracle phase 5, and changes nothing an update edits today.
 - **D3. Tahoe's Xcode.** Tahoe's Xcode has no upper bound, so a `--rebuild` of its Xcode image would now choose Xcode 27, by the rule that gives Sequoia 26.3. Should Tahoe stay on 26?
+
+### Decided
+
+- **Baselines** (2026-09-27).
+  - They stay optional and off by default: `--baseline`, or `check.baseline = true`.
+  - A failed build, install, or test of a port the base has names the command.
+  - A baseline is always dockhand's own build. MacPorts' buildbot history is never used as one, nor shown beside one, which withdraws decision 20's labeled hint.
+  - Baseline results stay in the check's output. Carrying them into the pull request can come back if it's wanted.
 
 ## Later
 

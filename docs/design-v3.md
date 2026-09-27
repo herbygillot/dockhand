@@ -365,7 +365,13 @@ harbor-viewer at master 4c1e2d0 (libharbor 1.9) · tart macOS 26 arm64
   ✓ builds at the base. This branch's result differs; the cause isn't established.
 ```
 
-A baseline reports what happened in each run and nothing more. It is opt-in: `--baseline`, or `check.baseline = true`. You fix the failure, then check again:
+A baseline reports what happened in each run and nothing more. It is off by default: `--baseline` runs one, and `check.baseline = true` runs one after every failed check.
+
+When a port fails while building, installing, or testing, and the base has it, the failed check names the command that builds it at the base. It doesn't for a lint, fetch, or checksum failure, which comes from the branch's own edit, nor for a port the branch adds.
+
+A baseline is always dockhand's own build. MacPorts' buildbot history is never used as one, nor shown beside one. That is the person's decision of 2026-09-27, which withdraws the labeled hint decision 20 allowed.
+
+You fix the failure, then check again:
 
 ```console
 $ dockhand edit harbor-viewer          # add files/patch-libharbor-2.diff, list it in patchfiles
