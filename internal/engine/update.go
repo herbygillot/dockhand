@@ -262,7 +262,8 @@ func (e *Engine) updateSource(ctx context.Context, request UpdateRequest) (*git.
 // editRecord is what tidy later reads: each file's blob before and after,
 // and the subject the edit carries.
 func (e *Engine) editRecord(ctx context.Context, worktree *git.Repository, branch model.Branch, request UpdateRequest, update Update, result preparation.Result) (model.Edit, error) {
-	edit := model.Edit{ID: model.EditID(store.NewID("ed")), Branch: branch.ID, Kind: request.Action, Port: update.Port, Subject: update.Subject, At: e.now(), Upstream: update.Upstream}
+	edit := model.Edit{ID: model.EditID(store.NewID("ed")), Branch: branch.ID, Kind: request.Action, Port: update.Port, Subject: update.Subject, At: e.now(),
+		Upstream: update.Upstream, Release: update.Release}
 	edit.Directory = portDirectory(result.Files[0].Path)
 	if result.Target.Portfile != "" {
 		edit.Directory = path.Dir(result.Target.Portfile)

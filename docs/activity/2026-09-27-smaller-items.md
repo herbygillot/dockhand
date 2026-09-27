@@ -46,3 +46,13 @@ Now:
 - A comparer that can't keep one, or can't start it, is used as before.
 
 The evaluator's one-call methods are thin wrappers over a session, so every comparison runs the same code. `TestAPortsComparisonsShareOneInterpreter` counts one interpreter, closed, for a discovery of several comparisons, and none started alone.
+
+## An update's release outlives its process
+
+The architecture review found the release an update chose, with its tag and upstream commit, only in the update's own response. The stored edit didn't have it, so nothing after the update could say where a version came from.
+
+- An update's edit now keeps its `model.Release` (schema 18, `edits.release`): forge, repository, tag, and upstream commit, or that it came from the port's distfiles.
+- `BranchStatus.Releases` reads each port's latest back.
+- `dockhand status <branch>` shows it: "Release  jq 1.8.1, GitHub tag jq-1.8.1 of jqlang/jq at 1a2b3c4". The branch's `--json` lists it under `releases`.
+
+`TestAnUpdatesReleaseIsKept` is the review's update, reload, and tidy/status test. Each `dockhand` command is its own process, so status reads the release back from the store, before tidy and after. The review's fuller report, with affected members, findings, and commit intent, waits until something reads it, as the roadmap said.

@@ -408,6 +408,9 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, branch mod
 	}
 	fmt.Fprintf(out, "  Ports    %s\n", ports)
 	fmt.Fprintf(out, "  Work     %s above master %s\n", workWords(status), engine.Short(branch.Base))
+	for _, found := range status.Releases {
+		fmt.Fprintf(out, "  Release  %s\n", releaseWords(found.Port, found.Release))
+	}
 	if len(status.Edited) > 0 {
 		fmt.Fprintf(out, "  Edited   %s\n", strings.Join(status.Edited, ", "))
 	}

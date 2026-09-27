@@ -426,6 +426,25 @@ func releaseLabel(release *model.Release) string {
 	return ""
 }
 
+// releaseWords says where an update's version came from, for status: "jq
+// 1.8.1, GitHub tag jq-1.8.1 of jqlang/jq at 1a2b3c4".
+func releaseWords(port string, release model.Release) string {
+	words := port + " " + release.Version
+	switch {
+	case release.Tag != "":
+		words += ", " + strings.TrimSuffix(strings.TrimPrefix(releaseLabel(&release), "   ("), ")")
+		if release.Repository != "" {
+			words += " of " + release.Repository
+		}
+		if release.Commit != "" {
+			words += " at " + engine.Short(model.ObjectID(release.Commit))
+		}
+	case release.Archive:
+		words += ", from its distfiles"
+	}
+	return words
+}
+
 // chooseBranch is the branch an authoring command works in: --branch, a
 // new one with --new, or the one checked out here. With none of those, a
 // terminal is asked, and a script is told the choices.

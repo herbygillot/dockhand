@@ -28,7 +28,7 @@ func (b bumper) ResolveRelease(_ context.Context, r preparation.Request) (model.
 	if version == "" {
 		version = "1.8.1"
 	}
-	return model.Release{Version: version, Forge: "github", Tag: "jq-" + version}, nil
+	return model.Release{Version: version, Forge: "github", Repository: "jqlang/jq", Tag: "jq-" + version, Commit: "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b"}, nil
 }
 
 func (b bumper) Prepare(ctx context.Context, r preparation.Request) (preparation.Result, error) {
@@ -221,4 +221,37 @@ func TestUpdateRevbumpsTheLibraryDependents(t *testing.T) {
 	out, _, err = dockhand(t, "update", "jq", "2.0", "--revbump-dependents")
 	require.NoError(t, err)
 	require.Contains(t, out, "  · yq: the branch already changes it, so it is left as it is\n")
+}
+
+// Where an update found its version outlives the update's process: each
+// command reads it back from the store, status before tidy and after, and
+// its JSON too. From the architecture review of 2026-09-27, which found the
+// chosen release's tag and upstream commit gone once update returned.
+func TestAnUpdatesReleaseIsKept(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	_, _, err := dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "src", "macports-branches", "jq-update"))
+	_, _, err = dockhand(t, "update", "jq")
+	require.NoError(t, err)
+
+	const line = "  Release  jq 1.8.1, GitHub tag jq-1.8.1 of jqlang/jq at 1a2b3c4\n"
+	out, _, err := dockhand(t, "status", "jq-update")
+	require.NoError(t, err)
+	require.Contains(t, out, line)
+	_, _, err = dockhand(t, "tidy")
+	require.NoError(t, err)
+	out, _, err = dockhand(t, "status", "jq-update")
+	require.NoError(t, err)
+	require.Contains(t, out, line, "committing the edit keeps where it came from")
+
+	status, err := jsonOf(t, "status")
+	require.NoError(t, err)
+	release := dig(t, status.Result, "branches", 0, "releases", 0)
+	require.Equal(t, "jq", dig(t, release, "port"))
+	require.Equal(t, "jq-1.8.1", dig(t, release, "tag"))
+	require.Equal(t, "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b", dig(t, release, "commit"))
+	require.Equal(t, "jqlang/jq", dig(t, release, "repository"))
 }

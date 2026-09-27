@@ -51,6 +51,10 @@ type Edit struct {
 	// Upstream is what comparing the old and new upstream archives found,
 	// for an update that compared them; nil when it did not.
 	Upstream *UpstreamComparison
+	// Release is the release an update chose, as it was found: its forge,
+	// repository, tag, and upstream commit, or its distfiles. Nil for
+	// other edits.
+	Release *Release `json:",omitempty"`
 }
 
 // UpstreamComparison is what an update's upstream archives showed.

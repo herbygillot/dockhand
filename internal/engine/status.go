@@ -42,6 +42,15 @@ type BranchStatus struct {
 	// Stopped is the active run recorded as running that no live process
 	// drives, once JudgeStopped has looked; nil otherwise.
 	Stopped *model.Run
+	// Releases are the releases the branch's updates chose, each port's
+	// latest, in the order the ports were first updated.
+	Releases []PortRelease
+}
+
+// PortRelease is the release an update chose for a port.
+type PortRelease struct {
+	Port    string
+	Release model.Release
 }
 
 // Stopped reports whether a run recorded as running has no live process
@@ -151,6 +160,21 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 
 	var checks []model.Run
 	err = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		edits, err := r.Edits(branch.ID)
+		if err != nil {
+			return err
+		}
+		for _, edit := range edits {
+			if edit.Release == nil {
+				continue
+			}
+			found := PortRelease{Port: edit.Port, Release: *edit.Release}
+			if i := slices.IndexFunc(status.Releases, func(r PortRelease) bool { return r.Port == edit.Port }); i >= 0 {
+				status.Releases[i] = found
+			} else {
+				status.Releases = append(status.Releases, found)
+			}
+		}
 		runs, err := r.Runs(store.RunFilter{Branch: branch.ID})
 		if err != nil {
 			return err

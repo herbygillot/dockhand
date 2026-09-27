@@ -308,19 +308,21 @@ type latestJSON struct {
 }
 
 type branchJSON struct {
-	Name        string           `json:"name"`
-	GitBranch   string           `json:"git_branch"`
-	ID          string           `json:"id"`
-	State       string           `json:"state"`
-	Worktree    string           `json:"worktree"`
-	Managed     bool             `json:"managed"`
-	Base        string           `json:"base"`
-	Head        string           `json:"head,omitempty"`
-	Missing     bool             `json:"missing,omitempty"`
-	Commits     int              `json:"commits"`
-	Edited      []string         `json:"edited"`
-	Directories []string         `json:"directories"`
-	Ports       []string         `json:"ports"`
+	Name        string   `json:"name"`
+	GitBranch   string   `json:"git_branch"`
+	ID          string   `json:"id"`
+	State       string   `json:"state"`
+	Worktree    string   `json:"worktree"`
+	Managed     bool     `json:"managed"`
+	Base        string   `json:"base"`
+	Head        string   `json:"head,omitempty"`
+	Missing     bool     `json:"missing,omitempty"`
+	Commits     int      `json:"commits"`
+	Edited      []string `json:"edited"`
+	Directories []string `json:"directories"`
+	Ports       []string `json:"ports"`
+	// Releases are where the branch's updates found their versions.
+	Releases    []releaseJSON    `json:"releases"`
 	Latest      *latestJSON      `json:"latest_check"`
 	Active      []runJSON        `json:"active_checks"`
 	PullRequest *pullRequestJSON `json:"pull_request"`
@@ -330,7 +332,12 @@ func branchView(status engine.BranchStatus) branchJSON {
 	branch := status.Branch
 	view := branchJSON{Name: branch.ShortName(), GitBranch: branch.Name, ID: string(branch.ID), State: string(branch.State), Worktree: branch.Worktree, Managed: branch.Managed,
 		Base: string(branch.Base), Head: status.Head, Missing: status.Missing, Commits: status.Commits,
-		Edited: nonNil(status.Edited), Directories: nonNil(status.Scope.Ports), Ports: nonNil(status.Scope.PortNames()), Active: []runJSON{}}
+		Edited: nonNil(status.Edited), Directories: nonNil(status.Scope.Ports), Ports: nonNil(status.Scope.PortNames()), Active: []runJSON{}, Releases: []releaseJSON{}}
+	for _, found := range status.Releases {
+		release := found.Release
+		view.Releases = append(view.Releases, releaseJSON{Port: found.Port, Version: release.Version, Forge: release.Forge, Repository: release.Repository,
+			Tag: release.Tag, Commit: release.Commit, Distfiles: release.Archive})
+	}
 	for _, run := range status.Active {
 		active := runView(run)
 		active.Stopped = status.Stopped != nil && status.Stopped.ID == run.ID
@@ -352,6 +359,18 @@ func branchView(status engine.BranchStatus) branchJSON {
 		}
 	}
 	return view
+}
+
+// releaseJSON is where an update found its version: a forge's tag at an
+// upstream commit, or the port's distfiles.
+type releaseJSON struct {
+	Port       string `json:"port"`
+	Version    string `json:"version"`
+	Forge      string `json:"forge,omitempty"`
+	Repository string `json:"repository,omitempty"`
+	Tag        string `json:"tag,omitempty"`
+	Commit     string `json:"commit,omitempty"`
+	Distfiles  bool   `json:"distfiles,omitempty"`
 }
 
 type attentionJSON struct {

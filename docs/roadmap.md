@@ -111,7 +111,6 @@ These are taken when their area is next touched, or between items.
 
 - **Tart checks of several releases in parallel,** within the Mac's two VMs.
 - **Per-runner evidence for the github provider.** Its runners, one per macOS release, fold into one result today. Each should keep its release, result, and log.
-- **Stored edits keep the chosen release's provenance,** its tag and upstream commit, with an update, reload, and `tidy`/`status` test. A fuller report waits until something reads it.
 - **Tart workarounds to retire as Tart releases fixes:**
   - the retry of a listing that raced a delete ([openai/tart#1353](https://github.com/openai/tart/issues/1353));
   - trusting a delete only by the VM's absence (#1345, merged, unreleased);

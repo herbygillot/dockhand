@@ -48,7 +48,8 @@ func TestEditsCheckpointsAndAcceptances(t *testing.T) {
 	b.PullRequest = &model.PullRequest{Repository: "macports/macports-ports", Number: 34901, Head: "ada/macports-ports:dockhand/jq-4k2p", Pushed: "abc", Body: "body", Draft: true,
 		Observed: &model.PullRequestObservation{State: "open", Review: "changes-requested", Checks: "failing", Failing: []string{"macOS 15"}, Head: "abc", At: at}}
 	edit := model.Edit{ID: "ed_1", Branch: b.ID, Kind: model.EditUpdate, Port: "jq", Directory: "textproc/jq", Subject: "jq: update to 1.8.1",
-		Files: []model.EditedFile{{Path: "textproc/jq/Portfile", Before: "b1", After: "b2"}}, At: at}
+		Files: []model.EditedFile{{Path: "textproc/jq/Portfile", Before: "b1", After: "b2"}}, At: at,
+		Release: &model.Release{Version: "1.8.1", Forge: "github", Repository: "jqlang/jq", Tag: "jq-1.8.1", Commit: "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b"}}
 	require.NoError(t, f.update(t, func(tx store.Tx) error {
 		if err := tx.AddBranch(b); err != nil {
 			return err
