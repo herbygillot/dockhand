@@ -23,20 +23,6 @@ func ResolveStub(snapshot Snapshot, selected record.Target) (record.Target, stri
 	return record.Target{Name: newest, Portfile: selected.Portfile, Subport: newest, Variants: selected.Variants}, selected.Name
 }
 
-// StubOf is the stub whose release the named subport carries: the port in
-// the snapshot that is a stub with the subport among its members, or ""
-// when the subport belongs to no stub. An update that names a carrier, as
-// one onto a contribution names the contribution's target, edits the
-// stub's release all the same.
-func StubOf(snapshot Snapshot, member string) string {
-	for name := range snapshot.Ports {
-		if _, members := stubMembers(snapshot, name); slices.Contains(members, member) {
-			return name
-		}
-	}
-	return ""
-}
-
 // stubMembers reports whether the named port is a stub whose subports carry
 // its release: it builds nothing itself while sibling subports at the same
 // version do, the shape of a python `py-foo` port over its `py3x-foo`

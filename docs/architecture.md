@@ -88,4 +88,6 @@ Several dockhand processes can share one database: a foreground `check`, a `serv
 
 ## Not in the binary
 
-A few v2 packages are still in the tree, though nothing the binary uses imports them: `state`, `workflow`, `verify` (apart from `verify/staging`), `publish`, `assess`, `git/changeset`, and `macports/dependents`. Two tools still do: `tools/survey` runs on `assess`, and `tools/stateperf` on `state` and `workflow`. And `record`, v2's vocabulary, is still imported by about two dozen live packages. The [roadmap](roadmap.md) orders their retirement (Next, item 5). `go list -deps ./cmd/dockhand` lists what the binary is made of.
+v2's packages were deleted on 2026-09-27: `workflow`, `state`, `publish`, `verify`, `git/changeset`, and `macports/dependents`. Commit `1cbcdf8b65` is the last with their code, and [v2](v2/README.md) keeps their documents. What v3 still used of them moved: `verify/staging` to `buildenv/staging`, and `assess` into `tools/survey`. What remains is `record`, v2's vocabulary, which v3 packages still import until its live types move to their owners (roadmap, item 5).
+
+Everything else in the tree is in the binary or a tool, apart from `testsupport`, which tests share. `go list -deps ./cmd/dockhand` lists what the binary is made of.

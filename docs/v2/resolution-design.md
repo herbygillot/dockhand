@@ -1,8 +1,8 @@
 # Contribution resolution design
 
 Status: specified 2026-09-22, not implemented. Written after the
-[second architecture review](reviews/2026-09-22-architecture-and-organization.md)
-and its [reconciliation](activity/2026-09-22-review-reconciliation.md),
+[second architecture review](../reviews/2026-09-22-architecture-and-organization.md)
+and its [reconciliation](../activity/2026-09-22-review-reconciliation.md),
 and after a pressure test of the `app` plan by a second reviewer on a
 different model. A second pass by that reviewer attacked this document
 scenario by scenario, every bump, revision bump, checksums, and verify
@@ -306,7 +306,7 @@ resolution removes the translation that mattered without it.
   exception. `--dry-run --adopt` once built the writable services and so
   created it; since 2026-09-22 it builds for reading (`cli/adopt.go`,
   `app.BuildForReading`), and the CLI tests assert no database appears
-  ([note](activity/2026-09-22-smaller-items-triaged.md)).
+  ([note](../activity/2026-09-22-smaller-items-triaged.md)).
 - The lines tests assert: "Continuing the port's open contribution",
   "selector does not match contribution", "lands as an amendment",
   "fetching authoritative MacPorts master", "no open contribution for"
@@ -372,7 +372,7 @@ fixed on 2026-09-22.
 
 1. Provider choice out of `app`: `buildResolver` behind interfaces for
    the two providers, in a policy package `app` wires. Landed 2026-09-22
-   as `workflow/choice` ([note](activity/2026-09-22-provider-choice.md)).
+   as `workflow/choice` ([note](../activity/2026-09-22-provider-choice.md)).
 2. The `Resolution` value and `Engine.Resolve` in `workflow`, with the
    four kinds, the degraded path, the offline refusal, and the no-store
    path each under test, and `PreparationInput` folded in. No consumer
@@ -390,7 +390,7 @@ fixed on 2026-09-22.
    implied for it.
 6. `BindCorrection` reuses step 3's lookup for its contribution. Landed
    2026-09-22; the five landings are in one
-   [note](activity/2026-09-22-resolution-landed.md).
+   [note](../activity/2026-09-22-resolution-landed.md).
 7. Then, and only then, the question whether the four bindings and
    `Resolve` lift into `workflow/intake` as a leaf that takes the store,
    the repository, the evaluator, and the forge as values and hands the
@@ -398,7 +398,7 @@ fixed on 2026-09-22.
    making only if the value has made the bindings alike enough that the
    package boundary is obvious; it is not this design's precondition.
    Answered no on 2026-09-22, from the code after step 6
-   ([note](activity/2026-09-22-no-intake-leaf.md)): the set is 2,223
+   ([note](../activity/2026-09-22-no-intake-leaf.md)): the set is 2,223
    lines that call nine engine helpers, one of them the pull request
    refresh that writes state and reaches the forge, and that the
    acceptance side calls back into for the request type, the branch
@@ -410,10 +410,10 @@ fixed on 2026-09-22.
 
 ## Tightened after the follow-up review, 2026-09-22
 
-The [follow-up review](reviews/2026-09-22-architecture-follow-up.md) read
+The [follow-up review](../reviews/2026-09-22-architecture-follow-up.md) read
 the value after step 6 and asked for its contract to be tightened before
 more callers depend on it. Three changes, all landed the same day
-([note](activity/2026-09-22-contribution-revision-findings.md)), and
+([note](../activity/2026-09-22-contribution-revision-findings.md)), and
 they amend what the sections above say:
 
 - `Require`, `Lookup`, and `Offline` are gone. An action that prepares no

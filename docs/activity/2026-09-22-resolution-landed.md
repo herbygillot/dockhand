@@ -1,6 +1,6 @@
 # 2026-09-22: the resolution landed
 
-Steps 2 through 6 of the [resolution design](../resolution-design.md)'s
+Steps 2 through 6 of the [resolution design](../v2/resolution-design.md)'s
 sequence, in five commits after [provider choice](2026-09-22-provider-choice.md)
 went first. What a selection means for an action is now one value,
 `workflow.Resolution`, computed once by `Engine.Resolve` and consumed by

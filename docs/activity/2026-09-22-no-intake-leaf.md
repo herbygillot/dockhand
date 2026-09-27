@@ -1,6 +1,6 @@
 # 2026-09-22: no intake leaf
 
-The [resolution design](../resolution-design.md)'s seventh step asked,
+The [resolution design](../v2/resolution-design.md)'s seventh step asked,
 once the value had landed, whether the four bindings and `Resolve` lift
 into `workflow/intake` as a leaf that takes the store, the repository,
 the evaluator, and the forge as values and hands the engine a finished

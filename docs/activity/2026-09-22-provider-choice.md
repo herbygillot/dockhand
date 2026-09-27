@@ -1,6 +1,6 @@
 # 2026-09-22: provider choice out of app
 
-Step 1 of the [resolution design](../resolution-design.md)'s sequence.
+Step 1 of the [resolution design](../v2/resolution-design.md)'s sequence.
 `app.buildResolver` was 111 lines of verification policy: the provider a
 person named, or under auto Tart when a prepared image serves the
 platform and GitHub's workflow when none does; GitHub refusing a local
