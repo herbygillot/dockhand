@@ -7,15 +7,15 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/provider"
 )
 
 // Remedy is how to give an environment what an unmet target needs, when
 // its provider can say.
 func (e *Engine) Remedy(unmet model.Unmet) string {
-	if remedier, ok := e.Providers[unmet.Environment.Provider].(provider.Remedier); ok {
+	if remedier, ok := e.Providers[unmet.Environment.Provider].(buildenv.Remedier); ok {
 		return remedier.Remedy(unmet)
 	}
 	return ""
@@ -30,7 +30,7 @@ func (e *Engine) Environments(ctx context.Context, on []string) ([]model.Environ
 		if _, ok := e.Providers["command"]; ok {
 			return []model.Environment{{Provider: "command"}}, nil
 		}
-		if tart, ok := e.Providers["tart"].(provider.ReleaseProvider); ok {
+		if tart, ok := e.Providers["tart"].(buildenv.ReleaseProvider); ok {
 			if environments, err := tart.Environments(ctx, ""); err == nil {
 				return environments[:1], nil
 			}
@@ -50,7 +50,7 @@ func (e *Engine) Environments(ctx context.Context, on []string) ([]model.Environ
 				name, releases = "tart", name
 			}
 		}
-		named, ok := e.Providers[name]
+		provider, ok := e.Providers[name]
 		if !ok {
 			switch name {
 			case "tart":
@@ -60,7 +60,7 @@ func (e *Engine) Environments(ctx context.Context, on []string) ([]model.Environ
 			}
 			return nil, fmt.Errorf("--on %s: no provider %q is set up", value, name)
 		}
-		if releaser, ok := named.(provider.ReleaseProvider); ok {
+		if releaser, ok := provider.(buildenv.ReleaseProvider); ok {
 			found, err := releaser.Environments(ctx, releases)
 			if err != nil {
 				return nil, err

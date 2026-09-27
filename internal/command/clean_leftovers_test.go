@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/provider"
 )
 
 // leavingBuilder passes every target, names its environment on the
@@ -22,7 +22,7 @@ type leavingBuilder struct {
 
 func (p *leavingBuilder) Name() string { return "command" }
 
-func (p *leavingBuilder) Execute(_ context.Context, job provider.Job, build provider.Build) error {
+func (p *leavingBuilder) Execute(_ context.Context, job buildenv.Job, build buildenv.Build) error {
 	ref := "vm-" + string(job.Execution.ID)
 	if err := build.Refer(ref); err != nil {
 		return err
@@ -38,12 +38,12 @@ func (p *leavingBuilder) Execute(_ context.Context, job provider.Job, build prov
 	return nil
 }
 
-func (p *leavingBuilder) Leftovers(context.Context) ([]provider.Leftover, error) {
+func (p *leavingBuilder) Leftovers(context.Context) ([]buildenv.Leftover, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	var found []provider.Leftover
+	var found []buildenv.Leftover
 	for _, ref := range append(slices.Clone(p.left), "vm-elsewhere") {
-		found = append(found, provider.Leftover{Ref: ref, What: "VM " + ref})
+		found = append(found, buildenv.Leftover{Ref: ref, What: "VM " + ref})
 	}
 	return found, nil
 }

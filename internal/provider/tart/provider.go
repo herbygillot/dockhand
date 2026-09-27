@@ -22,13 +22,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/provider"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
 	"github.com/herbygillot/dockhand/internal/tart/channel"
 	"github.com/herbygillot/dockhand/internal/verify/staging"
@@ -63,7 +63,7 @@ type Provider struct {
 	workspaces workspace.Registry
 	// machine replaces the Mac's VMs in tests, and stager the staging.
 	machine machine
-	stager  func(ctx context.Context, job provider.Job, input guestInput, archive string) error
+	stager  func(ctx context.Context, job buildenv.Job, input guestInput, archive string) error
 	// host is this Mac's Darwin release; the kernel's when zero.
 	host int
 }
@@ -89,9 +89,9 @@ func (p *Provider) vms() (machine, error) {
 // The Tart provider builds on the releases a person names, says how to
 // give a release Xcode, and removes the clones a stopped check left.
 var (
-	_ provider.ReleaseProvider  = (*Provider)(nil)
-	_ provider.Remedier         = (*Provider)(nil)
-	_ provider.LeftoverProvider = (*Provider)(nil)
+	_ buildenv.ReleaseProvider  = (*Provider)(nil)
+	_ buildenv.Remedier         = (*Provider)(nil)
+	_ buildenv.LeftoverProvider = (*Provider)(nil)
 )
 
 // Environments are the releases --on tart:<releases> selects, each with its
@@ -193,7 +193,7 @@ func (p *Provider) Remedy(unmet model.Unmet) string {
 // earlier one's, so a clone found here is in use or was left by a process
 // that died; the engine tells which by the clone's check. The images checks
 // clone from, and anything else in the home, are never listed.
-func (p *Provider) Leftovers(ctx context.Context) ([]provider.Leftover, error) {
+func (p *Provider) Leftovers(ctx context.Context) ([]buildenv.Leftover, error) {
 	m, err := p.vms()
 	if err != nil {
 		return nil, err
@@ -202,10 +202,10 @@ func (p *Provider) Leftovers(ctx context.Context) ([]provider.Leftover, error) {
 	if err != nil {
 		return nil, err
 	}
-	var clones []provider.Leftover
+	var clones []buildenv.Leftover
 	for _, name := range images {
 		if strings.HasPrefix(name, clonePrefixAll) {
-			clones = append(clones, provider.Leftover{Ref: name, What: "Tart clone " + name})
+			clones = append(clones, buildenv.Leftover{Ref: name, What: "Tart clone " + name})
 		}
 	}
 	return clones, nil
@@ -272,10 +272,10 @@ type guestResult struct {
 // Execute builds the job's targets in a fresh clone of the release's image.
 // Trouble with the VM or the guest is an infrastructure error, which the
 // runner tries again; a target that fails to build is a result.
-func (p *Provider) Execute(ctx context.Context, job provider.Job, build provider.Build) (err error) {
+func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv.Build) (err error) {
 	m, err := p.vms()
 	if err != nil {
-		return fmt.Errorf("%w: %w", provider.ErrInfrastructure, err)
+		return fmt.Errorf("%w: %w", buildenv.ErrInfrastructure, err)
 	}
 	release, err := tartvm.ReleaseForPlatform(job.Environment.Platform)
 	if err != nil {
@@ -337,7 +337,7 @@ func (p *Provider) Execute(ctx context.Context, job provider.Job, build provider
 		return err
 	}
 	if err := m.Clone(ctx, image, vm); err != nil {
-		return fmt.Errorf("%w: cloning %s: %w", provider.ErrInfrastructure, image, err)
+		return fmt.Errorf("%w: cloning %s: %w", buildenv.ErrInfrastructure, image, err)
 	}
 	defer func() {
 		if deleteErr := m.Delete(cleanup, vm); deleteErr != nil && err == nil {
@@ -346,7 +346,7 @@ func (p *Provider) Execute(ctx context.Context, job provider.Job, build provider
 	}()
 	started, err := m.Start(vm)
 	if err != nil {
-		return fmt.Errorf("%w: starting %s: %w", provider.ErrInfrastructure, vm, err)
+		return fmt.Errorf("%w: starting %s: %w", buildenv.ErrInfrastructure, vm, err)
 	}
 	defer func() { _ = started.Stop(cleanup, time.Minute) }()
 	g, err := m.Reach(ctx, vm, image)
@@ -390,7 +390,7 @@ func (p *Provider) trouble(ctx context.Context, doing string, err error) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	return fmt.Errorf("%w: %s: %w", provider.ErrInfrastructure, doing, err)
+	return fmt.Errorf("%w: %s: %w", buildenv.ErrInfrastructure, doing, err)
 }
 
 // sweep stops and deletes the clones earlier attempts of this run and
@@ -416,7 +416,7 @@ func (p *Provider) sweep(ctx context.Context, m machine, prefix string, attempt 
 
 // slot waits until the Mac has room for another VM: it runs two at most,
 // whoever started them.
-func (p *Provider) slot(ctx context.Context, m machine, build provider.Build) error {
+func (p *Provider) slot(ctx context.Context, m machine, build buildenv.Build) error {
 	told := false
 	for {
 		running, err := m.Running(ctx)
@@ -440,7 +440,7 @@ func (p *Provider) slot(ctx context.Context, m machine, build provider.Build) er
 
 // stage packs the revision's tree, its port index for the release, and
 // the guest program and its input into one archive.
-func (p *Provider) stage(ctx context.Context, job provider.Job, input guestInput, archive string) error {
+func (p *Provider) stage(ctx context.Context, job buildenv.Job, input guestInput, archive string) error {
 	if len(job.Targets) == 0 {
 		return errors.New("no targets")
 	}
@@ -490,7 +490,7 @@ exec /bin/launchctl bootstrap system "$2/guest.plist"`, "dockhand", input, guest
 // as it appears with its log, until the program finishes. A program that
 // stops without finishing, a VM that stops, or a guest that can't be read
 // for a minute is infrastructure trouble; what was recorded stays.
-func (p *Provider) follow(ctx context.Context, g guest, started run, job provider.Job, build provider.Build, release macos.Release) error {
+func (p *Provider) follow(ctx context.Context, g guest, started run, job buildenv.Job, build buildenv.Build, release macos.Release) error {
 	recorded := 0
 	failures := 0
 	observed := false
@@ -520,7 +520,7 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job provide
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-started.Done():
-			return fmt.Errorf("%w: the VM stopped: %v", provider.ErrInfrastructure, started.Err())
+			return fmt.Errorf("%w: the VM stopped: %v", buildenv.ErrInfrastructure, started.Err())
 		case <-time.After(p.poll()):
 		}
 		results, err := p.read(ctx, g)
@@ -529,13 +529,13 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job provide
 				return ctx.Err()
 			}
 			if failures++; time.Duration(failures)*p.poll() >= time.Minute {
-				return fmt.Errorf("%w: reading the guest's results: %w", provider.ErrInfrastructure, err)
+				return fmt.Errorf("%w: reading the guest's results: %w", buildenv.ErrInfrastructure, err)
 			}
 			continue
 		}
 		failures = 0
 		if results.Protocol != Protocol {
-			return fmt.Errorf("%w: the guest program wrote protocol %d results; this dockhand reads %d", provider.ErrInfrastructure, results.Protocol, Protocol)
+			return fmt.Errorf("%w: the guest program wrote protocol %d results; this dockhand reads %d", buildenv.ErrInfrastructure, results.Protocol, Protocol)
 		}
 		if err := take(results); err != nil {
 			return err
@@ -544,7 +544,7 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job provide
 		case "finished":
 			return nil
 		case "errored":
-			return fmt.Errorf("%w: the guest: %s", provider.ErrInfrastructure, results.Detail)
+			return fmt.Errorf("%w: the guest: %s", buildenv.ErrInfrastructure, results.Detail)
 		}
 		if gone, err := stopped(ctx, g); err == nil && gone {
 			// It may have written its last results after the read above.
@@ -552,7 +552,7 @@ func (p *Provider) follow(ctx context.Context, g guest, started run, job provide
 				return take(last)
 			}
 			log, _ := g.Read(ctx, guestRoot+"/runner.log", true)
-			return fmt.Errorf("%w: the guest program stopped before it finished: %s", provider.ErrInfrastructure, strings.TrimSpace(tail(string(log), 400)))
+			return fmt.Errorf("%w: the guest program stopped before it finished: %s", buildenv.ErrInfrastructure, strings.TrimSpace(tail(string(log), 400)))
 		}
 	}
 }
@@ -576,8 +576,8 @@ func stopped(ctx context.Context, g guest) (bool, error) {
 }
 
 // record copies a target's log out of the guest and records its result.
-func (p *Provider) record(ctx context.Context, g guest, job provider.Job, build provider.Build, got guestResult) error {
-	var target provider.Target
+func (p *Provider) record(ctx context.Context, g guest, job buildenv.Job, build buildenv.Build, got guestResult) error {
+	var target buildenv.Target
 	found := false
 	for _, t := range job.Targets {
 		if string(t.ID) == got.ID {
@@ -585,13 +585,13 @@ func (p *Provider) record(ctx context.Context, g guest, job provider.Job, build 
 		}
 	}
 	if !found {
-		return fmt.Errorf("%w: the guest reported %q, which this job didn't ask for", provider.ErrInfrastructure, got.ID)
+		return fmt.Errorf("%w: the guest reported %q, which this job didn't ask for", buildenv.ErrInfrastructure, got.ID)
 	}
 	result := model.TargetResult{Target: target.ID, Outcome: model.Outcome(got.Outcome), Phase: model.Phase(got.Phase), Tests: model.TestOutcome(got.Tests)}
 	switch result.Outcome {
 	case model.OutcomePassed, model.OutcomeFailed, model.OutcomeBlocked:
 	default:
-		return fmt.Errorf("%w: the guest reported %s %q", provider.ErrInfrastructure, got.ID, got.Outcome)
+		return fmt.Errorf("%w: the guest reported %s %q", buildenv.ErrInfrastructure, got.ID, got.Outcome)
 	}
 	if result.Outcome != model.OutcomeFailed {
 		result.Phase = ""

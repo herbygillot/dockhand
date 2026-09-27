@@ -10,9 +10,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
-	"github.com/herbygillot/dockhand/internal/provider"
 	"github.com/herbygillot/dockhand/internal/provider/actions"
 	"github.com/herbygillot/dockhand/internal/provider/script"
 	"github.com/herbygillot/dockhand/internal/provider/tart"
@@ -83,12 +83,12 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 		return nil, err
 	}
 	s.file = file
-	e.Providers = map[string]provider.Provider{}
+	e.Providers = map[string]buildenv.Provider{}
 	if command := file.Providers.Command; command != nil {
 		e.Providers["command"] = &script.Provider{Run: command.Run, Label: command.Name, Repo: e.Repo}
 	}
 	remote := file.Providers.GitHub.Remote
-	github := &actions.Provider{Repo: e.Repo, Fork: func(ctx context.Context) (provider.Fork, error) { return e.Fork(ctx, remote) },
+	github := &actions.Provider{Repo: e.Repo, Fork: func(ctx context.Context) (buildenv.Fork, error) { return e.Fork(ctx, remote) },
 		API: actions.GitHub{Client: authAPI(authStore)}}
 	if testActions != nil {
 		github.API, github.Sleep = testActions, func(ctx context.Context, _ time.Duration) error { return ctx.Err() }
@@ -135,7 +135,7 @@ var testActions actions.API
 
 // testLeftovers, when set, is a provider with environments left behind,
 // registered under its name in place of whichever the configuration made.
-var testLeftovers provider.LeftoverProvider
+var testLeftovers buildenv.LeftoverProvider
 
 // testTart, when set, registers the Tart provider whether or not Tart is
 // installed, and adjusts it for a test.

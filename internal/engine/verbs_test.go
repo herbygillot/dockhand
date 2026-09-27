@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/provider"
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
@@ -114,7 +114,7 @@ func TestARebaseThatConflictsChangesNothing(t *testing.T) {
 func TestRetryAndArchive(t *testing.T) {
 	f := setup(t)
 	e := f.open(t)
-	e.Providers = map[string]provider.Provider{"command": &scriptedProvider{}}
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
 	queued := queuedHarborRun(t, e, tahoeArm)
 	_, err := e.Retry(t.Context(), queued)
 	require.ErrorContains(t, err, "is still queued")

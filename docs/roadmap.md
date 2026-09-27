@@ -54,7 +54,7 @@ In order. Each item lands in its own commits with an activity note, and a review
    It departs from this roadmap's "no durable operation record": the next command can only finish a stopped change if its intent was recorded first. The prepared checkpoint is that record, one state column rather than a workflow engine.
 
 4. **Seams in the engine.** Done 2026-09-27, but for what waits on item 6 ([note](activity/2026-09-27-engine-seams.md)):
-   - the provider contract is `internal/provider`, which the providers import instead of `engine`, and a test keeps them off the engine;
+   - the provider contract is `internal/buildenv`, which the providers import instead of `engine`, and a test keeps them off the engine;
    - a boundary test names every package `engine` may import, with why, and fails on one unlisted or no longer imported;
    - history's transitions are `internal/history`, with the verbs left in the engine;
    - the test-policy judge is `model.TestPolicy.Judge`.

@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/provider"
 )
 
 // A result reads under the policy of the check that built it. One that
@@ -37,7 +37,7 @@ func TestAResultReadsUnderItsOwnChecksPolicy(t *testing.T) {
 type advisoryHarbor struct{}
 
 func (*advisoryHarbor) Name() string { return "command" }
-func (*advisoryHarbor) Execute(_ context.Context, job provider.Job, build provider.Build) error {
+func (*advisoryHarbor) Execute(_ context.Context, job buildenv.Job, build buildenv.Build) error {
 	for _, target := range job.Targets {
 		tests := model.TestsPassed
 		if target.ID == "libharbor" {
@@ -60,7 +60,7 @@ func TestAnEarlierAdvisoryResultKeepsItsPolicy(t *testing.T) {
 	e, _ := f.withPreparer(t)
 	f.withFork(t, e)
 	branch := twoPortBranch(t, e)
-	e.Providers = map[string]provider.Provider{"command": &advisoryHarbor{}}
+	e.Providers = map[string]buildenv.Provider{"command": &advisoryHarbor{}}
 	checkHead(t, e, branch)
 	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureHead})
 	require.NoError(t, err)

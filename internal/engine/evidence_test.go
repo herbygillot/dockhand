@@ -5,9 +5,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/provider"
 )
 
 // A branch changing jq and libharbor, committed, and checkable with the
@@ -21,7 +21,7 @@ func twoPortBranch(t *testing.T, e *Engine) model.Branch {
 	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{
 		"textproc/jq": {port("jq")}, "devel/libharbor": {port("libharbor")},
 	}}
-	e.Providers = map[string]provider.Provider{"command": &scriptedProvider{}}
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
 	return branch
 }
 

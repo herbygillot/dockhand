@@ -20,7 +20,7 @@ var engineImports = map[string]string{
 	"internal/store":               "the store's contract",
 	"internal/store/sqlite":        "the store, opened with the engine",
 	"internal/coord":               "sessions and leases for runs and serve",
-	"internal/provider":            "the contract the providers meet; the command layer composes them",
+	"internal/buildenv":            "the contract the providers meet; the command layer composes them",
 	"internal/git":                 "the checkout, captures, and history",
 	"internal/history":             "tidy, rebase, and restore as complete transitions",
 	"internal/macos":               "macOS releases, for environments and their words",

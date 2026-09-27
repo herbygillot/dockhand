@@ -19,9 +19,9 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/atomicfile"
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/provider"
 )
 
 // Workflow is MacPorts' workflow, the one that builds a branch's changed
@@ -30,7 +30,7 @@ const Workflow = "main.yml"
 
 // BranchPrefix names the branches the provider pushes to your fork; clean
 // removes a merged branch's.
-const BranchPrefix = provider.CheckBranchPrefix
+const BranchPrefix = buildenv.CheckBranchPrefix
 
 // Run is one run of the workflow, at its latest attempt.
 type Run struct {
@@ -66,7 +66,7 @@ type API interface {
 type Provider struct {
 	Repo *git.Repository
 	// Fork finds your fork and the remote that pushes to it.
-	Fork func(ctx context.Context) (provider.Fork, error)
+	Fork func(ctx context.Context) (buildenv.Fork, error)
 	API  API
 	// Poll is how often it asks after the run; Appear, how long it waits
 	// for GitHub to start one. Zero means 30 seconds and 10 minutes.
@@ -91,7 +91,7 @@ func (p *Provider) sleep(ctx context.Context, d time.Duration) error {
 	}
 }
 
-func (p *Provider) Execute(ctx context.Context, job provider.Job, build provider.Build) error {
+func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv.Build) error {
 	if err := os.MkdirAll(job.Directory, 0o755); err != nil {
 		return err
 	}
@@ -104,17 +104,17 @@ func (p *Provider) Execute(ctx context.Context, job provider.Job, build provider
 	}
 	fork, err := p.Fork(ctx)
 	if err != nil {
-		return fmt.Errorf("%w: %w", provider.ErrInfrastructure, err)
+		return fmt.Errorf("%w: %w", buildenv.ErrInfrastructure, err)
 	}
 	branch := BranchPrefix + job.Commit[:12]
 	head, err := p.Repo.RemoteHead(ctx, fork.PushURL, branch)
 	if err != nil {
-		return fmt.Errorf("%w: reading %s on %s: %w", provider.ErrInfrastructure, branch, fork.Repository, err)
+		return fmt.Errorf("%w: reading %s on %s: %w", buildenv.ErrInfrastructure, branch, fork.Repository, err)
 	}
 	if head != (git.RefValue{Exists: true, Object: job.Commit}) {
 		build.Progress(fmt.Sprintf("pushing to %s on %s", branch, fork.Repository))
 		if err := p.Repo.Push(ctx, git.Push{Remote: fork.PushURL, Branch: branch, Commit: job.Commit, ExpectedRemote: head}); err != nil {
-			return fmt.Errorf("%w: pushing to %s: %w", provider.ErrInfrastructure, fork.Repository, err)
+			return fmt.Errorf("%w: pushing to %s: %w", buildenv.ErrInfrastructure, fork.Repository, err)
 		}
 	}
 
@@ -123,7 +123,7 @@ func (p *Provider) Execute(ctx context.Context, job provider.Job, build provider
 	for waited := time.Duration(0); ; waited += poll {
 		runs, err := p.API.Runs(ctx, fork.Repository, branch, job.Commit)
 		if err != nil {
-			return fmt.Errorf("%w: finding the workflow's run: %w", provider.ErrInfrastructure, err)
+			return fmt.Errorf("%w: finding the workflow's run: %w", buildenv.ErrInfrastructure, err)
 		}
 		if len(runs) > 0 {
 			run = slices.MaxFunc(runs, func(a, b Run) int { return int(a.ID - b.ID) })
@@ -131,7 +131,7 @@ func (p *Provider) Execute(ctx context.Context, job provider.Job, build provider
 		}
 		if waited >= appear {
 			return fmt.Errorf("%w: GitHub started no run of %s on %s after %s; are Actions enabled for your fork? (https://github.com/%s/actions)",
-				provider.ErrInfrastructure, Workflow, branch, appear, fork.Repository)
+				buildenv.ErrInfrastructure, Workflow, branch, appear, fork.Repository)
 		}
 		if err := p.sleep(ctx, poll); err != nil {
 			return err
@@ -157,7 +157,7 @@ func (p *Provider) Execute(ctx context.Context, job provider.Job, build provider
 	if run.Status == "completed" && (stoppedShort(run.Conclusion) || job.Execution.Attempt > 1 && run.Conclusion != "success") {
 		build.Progress(fmt.Sprintf("running %s's unsuccessful jobs again", run.URL))
 		if err := p.API.Rerun(ctx, fork.Repository, run.ID); err != nil {
-			return fmt.Errorf("%w: running %s again: %w", provider.ErrInfrastructure, run.URL, err)
+			return fmt.Errorf("%w: running %s again: %w", buildenv.ErrInfrastructure, run.URL, err)
 		}
 		previous := run.Attempt
 		for run.Attempt == previous {
@@ -165,7 +165,7 @@ func (p *Provider) Execute(ctx context.Context, job provider.Job, build provider
 				return err
 			}
 			if run, err = p.API.Run(ctx, fork.Repository, run.ID); err != nil {
-				return fmt.Errorf("%w: %w", provider.ErrInfrastructure, err)
+				return fmt.Errorf("%w: %w", buildenv.ErrInfrastructure, err)
 			}
 		}
 	}
@@ -179,14 +179,14 @@ func (p *Provider) Execute(ctx context.Context, job provider.Job, build provider
 			return err
 		}
 		if run, err = p.API.Run(ctx, fork.Repository, run.ID); err != nil {
-			return fmt.Errorf("%w: %w", provider.ErrInfrastructure, err)
+			return fmt.Errorf("%w: %w", buildenv.ErrInfrastructure, err)
 		}
 	}
 	build.Progress(fmt.Sprintf("%s: %s; reading the logs", run.URL, run.Conclusion))
 
 	jobs, err := p.API.Jobs(ctx, fork.Repository, run.ID, run.Attempt)
 	if err != nil {
-		return fmt.Errorf("%w: listing %s's jobs: %w", provider.ErrInfrastructure, run.URL, err)
+		return fmt.Errorf("%w: listing %s's jobs: %w", buildenv.ErrInfrastructure, run.URL, err)
 	}
 	var runners []runner
 	for _, j := range jobs {
@@ -195,7 +195,7 @@ func (p *Provider) Execute(ctx context.Context, job provider.Job, build provider
 		}
 		log, err := p.API.JobLog(ctx, fork.Repository, j.ID)
 		if err != nil {
-			return fmt.Errorf("%w: reading %s's log: %w", provider.ErrInfrastructure, j.Name, err)
+			return fmt.Errorf("%w: reading %s's log: %w", buildenv.ErrInfrastructure, j.Name, err)
 		}
 		path := filepath.Join(job.Directory, logName(j.Name))
 		if err := atomicfile.Write(path, log, 0o644); err != nil {
@@ -230,7 +230,7 @@ func (p *Provider) Execute(ctx context.Context, job provider.Job, build provider
 		build.Progress(fmt.Sprintf("the workflow did not build %s; it builds only the ports a commit changes", strings.Join(unbuilt, ", ")))
 	}
 	if recorded == 0 && run.Conclusion != "success" {
-		return fmt.Errorf("%w: %s ended %s without building a port; see %s", provider.ErrInfrastructure, run.URL, run.Conclusion, job.Directory)
+		return fmt.Errorf("%w: %s ended %s without building a port; see %s", buildenv.ErrInfrastructure, run.URL, run.Conclusion, job.Directory)
 	}
 	return nil
 }
@@ -248,7 +248,7 @@ func stoppedShort(conclusion string) bool {
 // check's policy: it is MacPorts' own, and dockhand doesn't change it.
 func (p *Provider) RunsOwnTests() bool { return true }
 
-var _ provider.OwnTestsProvider = (*Provider)(nil)
+var _ buildenv.OwnTestsProvider = (*Provider)(nil)
 
 // runner is one job's log, read.
 type runner struct {

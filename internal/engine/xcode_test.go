@@ -6,9 +6,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/provider"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -77,8 +77,8 @@ func TestATargetThatNeedsXcodeIsUnmetWithoutIt(t *testing.T) {
 	require.Empty(t, x86Plan.Unmet, "x86_64 has Xcode")
 	require.True(t, plan.Runnable())
 
-	builder := &remedied{}
-	e.Providers = map[string]provider.Provider{"command": builder}
+	provider := &remedied{}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
 	var branch model.Branch
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
 		branch, err = r.Branch(revision.Branch)
@@ -88,7 +88,7 @@ func TestATargetThatNeedsXcodeIsUnmetWithoutIt(t *testing.T) {
 	require.NoError(t, err)
 	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
 	require.NoError(t, err)
-	for _, job := range builder.jobs {
+	for _, job := range provider.jobs {
 		require.Equal(t, x86Xcode, job.Environment, "arm64 has nothing it can build, so no job")
 	}
 	got := outcomes(t, e, run)

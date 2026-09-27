@@ -7,9 +7,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/provider"
 )
 
 // servePrepared has serve prepare and check jq's update, and returns the
@@ -18,7 +18,7 @@ func servePrepared(t *testing.T, e *Engine) model.Branch {
 	t.Helper()
 	e.OutdatedReader = &newReleases{}
 	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}}
-	e.Providers = map[string]provider.Provider{"command": &scriptedProvider{}}
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
 	report, err := e.Outdated(t.Context(), OutdatedRequest{Maintainers: []string{"@ada"}})
 	require.NoError(t, err)
 	plan, err := e.PlanOutdated(t.Context(), report)

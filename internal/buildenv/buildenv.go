@@ -1,10 +1,11 @@
-// Package provider is the contract between the engine and the providers a
-// check builds with (Design v3 §7): tart, github, and a person's own
-// command. A provider is given a Job, one guest execution's work, and
-// reports what happened through a Build; what else it can do, it says by
-// the interfaces it implements. Providers import this package and model,
-// never the engine, which composes them.
-package provider
+// Package buildenv is the contract between the engine and the providers
+// of build environments a check builds in (Design v3 §7): tart, github,
+// and a person's own command, in internal/provider. A provider is given a
+// Job, one guest execution's work, and reports what happened through a
+// Build; what else it can do, it says by the interfaces it implements.
+// Providers import this package and model, never the engine, which
+// drives them; the command layer composes them.
+package buildenv
 
 import (
 	"context"

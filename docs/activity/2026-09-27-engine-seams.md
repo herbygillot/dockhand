@@ -48,3 +48,13 @@ Moving them now would move them twice. The roadmap says so under item 4, and the
 ## The roadmap
 
 Item 4 is marked done but for planning and the counting rule, which item 6 now takes out of the engine as it changes them.
+
+## The contract is renamed buildenv
+
+The person pointed out that providers provide build services, and chose `internal/buildenv` from the alternatives: `build`, `executor`, `builder`, `worker`, and keeping `provider`.
+
+- **Why not `build`?** Its `Build` interface would read `build.Build`. Providers' `build` parameters would hide the package inside the functions that need it, and the engine has a `build` type of its own.
+- **What `buildenv` says.** It names what a provider hands the engine, a build environment, which `model.Environment` already is. It collides with nothing.
+- **What moved.** The contract is `internal/buildenv`: `buildenv.Provider`, `Job`, `Target`, `Build`, `ErrInfrastructure`, the capabilities, `Leftover`, `Fork`, and `CheckBranchPrefix`. Its boundary test moved with it, and checks the providers in `../provider`.
+- **The providers stay in `internal/provider/`,** since "provider" is still the word people use: `--on`, `dockhand providers`, and `[providers.command]`.
+- **The engine's locals are `provider` again,** as they were before item 4, now that the package doesn't have that name.

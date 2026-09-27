@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/provider"
 )
 
 // PolicyNotes say where a plan's test policy can't be carried out as
@@ -21,7 +21,7 @@ func (e *Engine) PolicyNotes(plan model.Plan) []string {
 			continue
 		}
 		seen = append(seen, name)
-		if own, ok := e.Providers[name].(provider.OwnTestsProvider); ok && own.RunsOwnTests() {
+		if provider, ok := e.Providers[name].(buildenv.OwnTestsProvider); ok && provider.RunsOwnTests() {
 			notes = append(notes, fmt.Sprintf("%s runs its workflow's own tests; with --tests skip they run there, and don't count", name))
 		}
 	}

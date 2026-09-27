@@ -1,4 +1,4 @@
-package provider
+package buildenv
 
 import (
 	"go/parser"
@@ -13,8 +13,9 @@ import (
 )
 
 // providerImports are packages a provider must not import, each with why.
-// A provider is composed by the command layer and driven by the engine,
-// and meets them only through this package's contract.
+// A provider, in internal/provider, is composed by the command layer and
+// driven by the engine, and meets them only through this package's
+// contract.
 var providerImports = map[string]string{
 	"internal/engine":  "the engine drives providers; a provider meets it through this contract",
 	"internal/command": "the command layer composes providers",
@@ -27,7 +28,8 @@ const module = "github.com/herbygillot/dockhand/"
 // A provider imports the contract, never the engine that drives it (the
 // architecture review of 2026-09-27, finding 4). Its tests may.
 func TestProvidersMeetTheEngineThroughTheContract(t *testing.T) {
-	directories, err := os.ReadDir(".")
+	const providers = "../provider"
+	directories, err := os.ReadDir(providers)
 	require.NoError(t, err)
 	files := token.NewFileSet()
 	checked := 0
@@ -35,10 +37,10 @@ func TestProvidersMeetTheEngineThroughTheContract(t *testing.T) {
 		if !directory.IsDir() {
 			continue
 		}
-		entries, err := os.ReadDir(directory.Name())
+		entries, err := os.ReadDir(filepath.Join(providers, directory.Name()))
 		require.NoError(t, err)
 		for _, entry := range entries {
-			name := filepath.Join(directory.Name(), entry.Name())
+			name := filepath.Join(providers, directory.Name(), entry.Name())
 			if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 				continue
 			}

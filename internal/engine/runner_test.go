@@ -9,9 +9,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/provider"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -26,12 +26,12 @@ type scriptedProvider struct {
 	partial bool
 	// wait holds the build until its context ends.
 	wait bool
-	jobs []provider.Job
+	jobs []buildenv.Job
 }
 
 func (p *scriptedProvider) Name() string { return "command" }
 
-func (p *scriptedProvider) Execute(ctx context.Context, job provider.Job, build provider.Build) error {
+func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build buildenv.Build) error {
 	p.mu.Lock()
 	p.jobs = append(p.jobs, job)
 	failing := p.failures > 0
@@ -115,21 +115,21 @@ func outcomes(t *testing.T, e *Engine, run model.Run) map[string]model.Outcome {
 func TestARunPassesAndIsEvidence(t *testing.T) {
 	f := setup(t)
 	e := f.open(t)
-	builder := &scriptedProvider{}
-	e.Providers = map[string]provider.Provider{"command": builder}
+	provider := &scriptedProvider{}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
 	queued := queuedHarborRun(t, e, tahoeArm, tahoeX86)
 	require.Equal(t, "check-1", queued.Name())
 
 	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
 	require.NoError(t, err)
 	require.Equal(t, model.RunPassed, run.State, run.Detail)
-	require.Len(t, builder.jobs, 2, "one execution per environment")
+	require.Len(t, provider.jobs, 2, "one execution per environment")
 	var armTargets []model.TargetID
-	for _, target := range builder.jobs[0].Targets {
+	for _, target := range provider.jobs[0].Targets {
 		armTargets = append(armTargets, target.ID)
 	}
 	require.NotContains(t, armTargets, model.TargetID("harbor-viewer-legacy"), "excluded where supported_archs rules it out")
-	require.NotEmpty(t, builder.jobs[0].Commit)
+	require.NotEmpty(t, provider.jobs[0].Commit)
 	require.Equal(t, model.OutcomeNotRun, outcomes(t, e, run)["harbor-viewer-legacy@arm64"])
 	require.Equal(t, model.OutcomePassed, outcomes(t, e, run)["harbor-viewer-legacy@x86_64"])
 
@@ -147,15 +147,15 @@ func TestARunPassesAndIsEvidence(t *testing.T) {
 func TestAFailedDependencyBlocksAndInfrastructureIsRetried(t *testing.T) {
 	f := setup(t)
 	e := f.open(t)
-	builder := &scriptedProvider{outcomes: map[model.TargetID]model.Outcome{"harbor-cli": model.OutcomeFailed}, failures: 1, partial: true}
-	e.Providers = map[string]provider.Provider{"command": builder}
+	provider := &scriptedProvider{outcomes: map[model.TargetID]model.Outcome{"harbor-cli": model.OutcomeFailed}, failures: 1, partial: true}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
 	queued := queuedHarborRun(t, e, tahoeArm)
 
 	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
 	require.NoError(t, err)
 	require.Equal(t, model.RunFailed, run.State)
-	require.Len(t, builder.jobs, 2, "the stopped VM is tried again")
-	require.Len(t, builder.jobs[1].Targets, len(builder.jobs[0].Targets)-1, "libharbor's verdict from the first attempt stands")
+	require.Len(t, provider.jobs, 2, "the stopped VM is tried again")
+	require.Len(t, provider.jobs[1].Targets, len(provider.jobs[0].Targets)-1, "libharbor's verdict from the first attempt stands")
 	got := outcomes(t, e, run)
 	require.Equal(t, model.OutcomePassed, got["libharbor@arm64"])
 	require.Equal(t, model.OutcomeFailed, got["harbor-cli@arm64"])
@@ -166,12 +166,12 @@ func TestAFailedDependencyBlocksAndInfrastructureIsRetried(t *testing.T) {
 func TestADependencyFailureBlocksWithoutARetry(t *testing.T) {
 	f := setup(t)
 	e := f.open(t)
-	builder := &scriptedProvider{outcomes: map[model.TargetID]model.Outcome{"libharbor": model.OutcomeFailed}, failures: 1, partial: true}
-	e.Providers = map[string]provider.Provider{"command": builder}
+	provider := &scriptedProvider{outcomes: map[model.TargetID]model.Outcome{"libharbor": model.OutcomeFailed}, failures: 1, partial: true}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
 	queued := queuedHarborRun(t, e, tahoeArm)
 	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
 	require.NoError(t, err)
-	require.Len(t, builder.jobs, 1, "everything after the failure is blocked, so nothing is left to try")
+	require.Len(t, provider.jobs, 1, "everything after the failure is blocked, so nothing is left to try")
 	got := outcomes(t, e, run)
 	require.Equal(t, model.OutcomeBlocked, got["harbor-cli@arm64"])
 	require.Equal(t, model.OutcomeBlocked, got["harbor-viewer@arm64"])
@@ -180,14 +180,14 @@ func TestADependencyFailureBlocksWithoutARetry(t *testing.T) {
 func TestRepeatedInfrastructureTroubleNeedsAttention(t *testing.T) {
 	f := setup(t)
 	e := f.open(t)
-	builder := &scriptedProvider{failures: 99}
-	e.Providers = map[string]provider.Provider{"command": builder}
+	provider := &scriptedProvider{failures: 99}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
 	queued := queuedHarborRun(t, e, tahoeArm, model.Environment{Provider: "tart"})
 
 	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
 	require.NoError(t, err)
 	require.Equal(t, model.RunAttention, run.State)
-	require.Len(t, builder.jobs, model.MaxAttempts)
+	require.Len(t, provider.jobs, model.MaxAttempts)
 	require.Contains(t, run.Detail, "no provider \"tart\" is set up here")
 	require.Contains(t, run.Detail, "failed 3 times")
 }
@@ -196,8 +196,8 @@ func TestACancelIsAppliedByWhoeverHoldsTheRun(t *testing.T) {
 	f := setup(t)
 	f.options.Poll = 10 * time.Millisecond
 	e := f.open(t)
-	builder := &scriptedProvider{wait: true}
-	e.Providers = map[string]provider.Provider{"command": builder}
+	provider := &scriptedProvider{wait: true}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
 	queued := queuedHarborRun(t, e, tahoeArm)
 	runner, canceller := session(t, e), session(t, e)
 
@@ -208,9 +208,9 @@ func TestACancelIsAppliedByWhoeverHoldsTheRun(t *testing.T) {
 		done <- run
 	}()
 	require.Eventually(t, func() bool {
-		builder.mu.Lock()
-		defer builder.mu.Unlock()
-		return len(builder.jobs) == 1
+		provider.mu.Lock()
+		defer provider.mu.Unlock()
+		return len(provider.jobs) == 1
 	}, 5*time.Second, 10*time.Millisecond)
 	run, err := e.RequestCancel(t.Context(), canceller, queued.ID)
 	require.NoError(t, err)
@@ -242,8 +242,8 @@ func TestAStoppedServeLeavesTheRunForTheNext(t *testing.T) {
 	f := setup(t)
 	f.options.Poll = 10 * time.Millisecond
 	e := f.open(t)
-	builder := &scriptedProvider{wait: true}
-	e.Providers = map[string]provider.Provider{"command": builder}
+	provider := &scriptedProvider{wait: true}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
 	queued := queuedHarborRun(t, e, tahoeArm)
 	first := session(t, e)
 
@@ -255,9 +255,9 @@ func TestAStoppedServeLeavesTheRunForTheNext(t *testing.T) {
 		done <- run
 	}()
 	require.Eventually(t, func() bool {
-		builder.mu.Lock()
-		defer builder.mu.Unlock()
-		return len(builder.jobs) == 1
+		provider.mu.Lock()
+		defer provider.mu.Unlock()
+		return len(provider.jobs) == 1
 	}, 5*time.Second, 10*time.Millisecond)
 	stop()
 	run := <-done
@@ -268,20 +268,20 @@ func TestAStoppedServeLeavesTheRunForTheNext(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, found)
 	require.Equal(t, queued.ID, next.ID, "a run whose driver is gone comes first")
-	builder.mu.Lock()
-	builder.wait = false
-	builder.mu.Unlock()
+	provider.mu.Lock()
+	provider.wait = false
+	provider.mu.Unlock()
 	run, err = e.Resume(t.Context(), second, queued.ID)
 	require.NoError(t, err)
 	require.Equal(t, model.RunPassed, run.State)
-	require.Len(t, builder.jobs, 2)
-	require.Equal(t, 2, builder.jobs[1].Execution.Attempt, "the interrupted execution counts as an attempt")
+	require.Len(t, provider.jobs, 2)
+	require.Equal(t, 2, provider.jobs[1].Execution.Attempt, "the interrupted execution counts as an attempt")
 }
 
 func TestServeTakesPeoplesChecksFirst(t *testing.T) {
 	f := setup(t)
 	e := f.open(t)
-	e.Providers = map[string]provider.Provider{"command": &scriptedProvider{}}
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
 	first := queuedHarborRun(t, e, tahoeArm)
 	branch, err := e.Branch(t.Context(), first.Branch)
 	require.NoError(t, err)

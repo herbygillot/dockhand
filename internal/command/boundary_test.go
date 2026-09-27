@@ -28,7 +28,7 @@ var commandImports = map[string]string{
 	"internal/record":               "vocabulary in engine results",
 	"internal/macports/portfile":    "vocabulary in engine results",
 	"internal/macports/commitrules": "vocabulary in engine results, and explain's text",
-	"internal/provider":             "composition: the contract the providers it composes meet",
+	"internal/buildenv":             "composition: the contract the providers it composes meet",
 	"internal/provider/actions":     "composition: the github provider",
 	"internal/provider/script":      "composition: the command provider",
 	"internal/provider/tart":        "composition: the tart provider",
