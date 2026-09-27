@@ -62,6 +62,7 @@ The providers implement `engine.Provider`:
 ## Shaping, submitting, and following
 
 - **`engine/tidy.go`, `engine/tidyplan.go`** propose the commits a reviewer should see, one per port directory by default, and apply them without changing a file. Commit messages come from `macports/commitmsg`, and `macports/commitrules` checks them against what MacPorts asks.
+- **`engine/history.go`** makes `tidy`, `rebase` (`engine/verbs.go`), and `restore` complete transitions. Each holds the branch's lock (`git.WithBranchLock`); a tidy or rebase records its checkpoint as prepared, makes its Git change, and settles the checkpoint, and the next of them on the branch finishes what a stopped one left. A rebase replays its commits with `git.Replay` before anything moves.
 - **`engine/submit.go`, `engine/body.go`, `engine/forge.go`** push to your fork conditionally, never over someone else's push, and open or update the pull request with MacPorts' template filled in. GitHub access is `forge/github` over the shared client in `github`, with the login from `credential/keychain`, `GH_TOKEN`, or the GitHub CLI.
 - **`engine/follow.go`** reads your pull requests' state, reviews, and CI. **`engine/review.go`** applies the commit rules to anyone's pull request. **`engine/clean.go`** removes what merged branches leave, and what checks whose process died left in providers (`LeftoverProvider`), under the check's lease.
 - **`engine/status.go`** gathers each branch's status: its commits, edits, scope, latest check, and pull request.

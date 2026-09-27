@@ -156,7 +156,10 @@ type Tx interface {
 	// NextCheckpointNumber's.
 	AddCheckpoint(checkpoint model.Checkpoint) error
 	NextCheckpointNumber() (int, error)
-	// MarkRestored records a checkpoint's restore, once.
+	// SettleCheckpoint records a prepared checkpoint as applied or
+	// abandoned, once.
+	SettleCheckpoint(checkpoint model.Checkpoint) error
+	// MarkRestored records an applied checkpoint's restore, once.
 	MarkRestored(checkpoint model.Checkpoint) error
 	// AddAcceptance records an acceptance; repeating one changes nothing.
 	AddAcceptance(acceptance model.Acceptance) error

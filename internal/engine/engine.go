@@ -77,6 +77,9 @@ type Engine struct {
 	Providers map[string]Provider
 	ports     *selection.Reader
 	options   Options
+	// stopAt stops a history change at a step, as if the process ended
+	// there: tests set it (historyStep).
+	stopAt func(step string) error
 	// lazy guards what the engine assembles on first use and serve's
 	// concurrent runs share, the forge among them.
 	lazy sync.Mutex

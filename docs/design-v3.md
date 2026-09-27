@@ -591,6 +591,18 @@ Tidy guarantees:
 - Before applying, it saves a named checkpoint of the old refs and any captured index or working state. `dockhand restore <checkpoint>` restores it, after checking for newer work.
 - Merges are never flattened without a specific, reviewed choice.
 
+### History changes as complete transitions
+
+`tidy`, `rebase`, and `restore` each change a branch's history as one transition:
+
+- **The branch's lock.** Each holds a per-branch lock throughout, so no other dockhand changes that history meanwhile. The lock is a file lock the operating system releases when its holder ends, and the Git commands it runs hold it with it.
+- **Nothing moves until the new commits exist.** A tidy composes its commits, and a rebase replays the branch's commits onto master with Git's merge machinery (`git merge-tree`), before any ref moves. A rebase that conflicts changes nothing.
+- **The checkpoint is recorded first.** A tidy or rebase records its checkpoint as *prepared*, with the head it replaces and the one it writes, then makes its Git change, guarded by compare-and-swap, then settles the checkpoint as *applied*, or *abandoned* when the change couldn't be made. A restore makes its change, then records it. No transaction calls Git.
+- **An uncertain commit is read back.** A commit whose outcome the store can't know is read back before anything more is done. A Git change once made is never undone.
+- **A stopped process is finished by the next one.** The next `tidy`, `rebase`, or `restore` of the branch settles what a stopped one left, from what Git shows. A prepared checkpoint whose change was made, the branch at or past the head it wrote, is applied. One whose change wasn't is abandoned, and the refs it made are removed. A restore that stopped before recording itself, the branch back at the checkpoint's old head, is recorded, and a rebase's base goes back with it.
+
+This is the checkpoint doing the work of an operation record, rather than a general workflow engine.
+
 ### The commit rules
 
 `tidy` writes subjects by these rules. `submit`'s preview and `review` apply them, and `dockhand explain <code>` quotes the MacPorts source behind each.

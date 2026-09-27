@@ -59,13 +59,13 @@ func (t *tx) Edits(branch model.BranchID) ([]model.Edit, error) {
 	return edits, storageError(rows.Err())
 }
 
-const checkpointColumns = "number, kind, branch_id, before_head, after_head, base_before, base_after, index_tree, at, restored_at"
+const checkpointColumns = "number, kind, state, branch_id, before_head, after_head, base_before, base_after, index_tree, at, restored_at"
 
 func scanCheckpoint(row interface{ Scan(...any) error }) (model.Checkpoint, error) {
 	var c model.Checkpoint
 	var at int64
 	var restored sql.NullInt64
-	if err := row.Scan(&c.Number, &c.Kind, &c.Branch, &c.Before, &c.After, &c.BaseBefore, &c.BaseAfter, &c.Index, &at, &restored); err != nil {
+	if err := row.Scan(&c.Number, &c.Kind, &c.State, &c.Branch, &c.Before, &c.After, &c.BaseBefore, &c.BaseAfter, &c.Index, &at, &restored); err != nil {
 		return model.Checkpoint{}, storageError(err)
 	}
 	c.At, c.RestoredAt = fromMillis(at), fromNullable(restored)
@@ -89,8 +89,8 @@ func (t *tx) AddCheckpoint(c model.Checkpoint) error {
 	if c.Number != next {
 		return fmt.Errorf("%w: checkpoint %d is not the next, %d", store.ErrConflict, c.Number, next)
 	}
-	_, err = t.exec("INSERT INTO checkpoints(repository_id, "+checkpointColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-		t.repo, c.Number, c.Kind, c.Branch, c.Before, c.After, c.BaseBefore, c.BaseAfter, c.Index, millis(c.At), nullableMillis(c.RestoredAt))
+	_, err = t.exec("INSERT INTO checkpoints(repository_id, "+checkpointColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+		t.repo, c.Number, c.Kind, c.State, c.Branch, c.Before, c.After, c.BaseBefore, c.BaseAfter, c.Index, millis(c.At), nullableMillis(c.RestoredAt))
 	return err
 }
 
@@ -115,11 +115,19 @@ func (t *tx) Checkpoints(branch model.BranchID) ([]model.Checkpoint, error) {
 	return checkpoints, storageError(rows.Err())
 }
 
+func (t *tx) SettleCheckpoint(c model.Checkpoint) error {
+	if c.State != model.CheckpointApplied && c.State != model.CheckpointAbandoned {
+		return fmt.Errorf("%w: checkpoint %s can't settle as %s", model.ErrInvalid, c.Name(), c.State)
+	}
+	return t.update("checkpoint "+c.Name(), "UPDATE checkpoints SET state=? WHERE repository_id=? AND number=? AND state='prepared'",
+		c.State, t.repo, c.Number)
+}
+
 func (t *tx) MarkRestored(c model.Checkpoint) error {
 	if c.RestoredAt == nil {
 		return fmt.Errorf("%w: checkpoint %s has no restore time", model.ErrInvalid, c.Name())
 	}
-	return t.update("checkpoint "+c.Name(), "UPDATE checkpoints SET restored_at=? WHERE repository_id=? AND number=? AND restored_at IS NULL",
+	return t.update("checkpoint "+c.Name(), "UPDATE checkpoints SET restored_at=? WHERE repository_id=? AND number=? AND state='applied' AND restored_at IS NULL",
 		millis(*c.RestoredAt), t.repo, c.Number)
 }
 

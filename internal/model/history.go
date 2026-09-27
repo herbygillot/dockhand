@@ -107,13 +107,28 @@ const (
 	CheckpointRebase CheckpointKind = "rebase"
 )
 
+// CheckpointState is how far the change a checkpoint keeps has come.
+type CheckpointState string
+
+const (
+	// CheckpointPrepared is recorded before its Git change is made.
+	CheckpointPrepared CheckpointState = "prepared"
+	// CheckpointApplied is a change made: the branch holds After.
+	CheckpointApplied CheckpointState = "applied"
+	// CheckpointAbandoned is a change that wasn't made; nothing restores it.
+	CheckpointAbandoned CheckpointState = "abandoned"
+)
+
 // Checkpoint keeps a branch's history from before tidy or rebase rewrote
 // it, for restore. Its Git ref, refs/dockhand/checkpoints/<name>, keeps
-// the old commits reachable.
+// the old commits reachable. It is recorded, prepared, before the change
+// it keeps is made, and settled, applied or abandoned, after, so a process
+// that stops between them leaves a checkpoint the next one can finish.
 type Checkpoint struct {
 	// Number counts a repository's checkpoints from 1, whatever their kind.
 	Number int
 	Kind   CheckpointKind
+	State  CheckpointState
 	Branch BranchID
 	// Before is the branch head it replaced, and After the one it wrote.
 	Before, After ObjectID
@@ -147,6 +162,10 @@ func (c Checkpoint) Validate() error {
 		return invalid("checkpoint %d has no number or branch", c.Number)
 	case c.Kind != CheckpointTidy && c.Kind != CheckpointRebase:
 		return invalid("checkpoint %d has unknown kind %q", c.Number, c.Kind)
+	case c.State != CheckpointPrepared && c.State != CheckpointApplied && c.State != CheckpointAbandoned:
+		return invalid("checkpoint %s has unknown state %q", c.Name(), c.State)
+	case c.RestoredAt != nil && c.State != CheckpointApplied:
+		return invalid("checkpoint %s is restored, but %s", c.Name(), c.State)
 	case c.Before == "" || c.After == "":
 		return invalid("checkpoint %s has no heads", c.Name())
 	case c.BaseBefore == "" || c.BaseAfter == "":

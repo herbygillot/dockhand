@@ -580,6 +580,18 @@ func (e *Engine) ApplyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 	if blocking := plan.Blocking(); len(blocking) > 0 {
 		return TidyResult{}, fmt.Errorf("the plan can't be applied yet: %s", strings.Join(blocking, "; "))
 	}
+	var result TidyResult
+	err := e.withHistory(ctx, plan.Branch, func(ctx context.Context) error {
+		var err error
+		result, err = e.applyTidy(ctx, plan)
+		return err
+	})
+	return result, err
+}
+
+// applyTidy makes a tidy's commits and moves the branch to them, holding
+// the branch's history lock (withHistory).
+func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, error) {
 	worktree, err := e.worktree(ctx, plan.Branch)
 	if err != nil {
 		return TidyResult{}, err
@@ -632,46 +644,34 @@ func (e *Engine) ApplyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 		return TidyResult{}, fmt.Errorf("engine: the tidied commits end at tree %s, not the working files' %s; nothing was changed", tree, plan.Final)
 	}
 
-	// The checkpoint's number is taken, and the refs moved, inside one
-	// transaction, so two tidies cannot claim the same checkpoint.
-	var checkpoint model.Checkpoint
-	ref := "refs/heads/" + plan.Branch.Name
-	moved := false
-	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-		number, err := tx.NextCheckpointNumber()
-		if err != nil {
-			return err
-		}
-		checkpoint = model.Checkpoint{Number: number, Kind: model.CheckpointTidy, Branch: plan.Branch.ID, Before: model.ObjectID(plan.Head), After: model.ObjectID(parent),
-			BaseBefore: model.ObjectID(plan.Base), BaseAfter: model.ObjectID(plan.Base), Index: model.ObjectID(index), At: e.now()}
-		if err := worktree.UpdateRefs(ctx, []git.RefChange{
-			{Name: checkpoint.Ref(), Desired: git.RefValue{Exists: true, Object: plan.Head}},
-			{Name: checkpoint.IndexRef(), Desired: git.RefValue{Exists: true, Object: keptIndex}},
-			{Name: ref, Expected: git.RefValue{Exists: true, Object: plan.Head}, Desired: git.RefValue{Exists: true, Object: parent}},
-		}); err != nil {
-			return fmt.Errorf("%w; nothing was changed: %w", ErrStalePlan, err)
-		}
-		moved = true
-		if err := tx.AddCheckpoint(checkpoint); err != nil {
-			return err
-		}
-		_, err = tx.AppendEvent(model.Event{At: checkpoint.At, Branch: plan.Branch.ID, Kind: "branch.tidy", Level: model.LevelInfo,
-			Message: fmt.Sprintf("tidied %s into %s (checkpoint %s)", plural(len(plan.History), "commit"), plural(len(result.Commits), "commit"), checkpoint.Name())})
-		return err
-	})
-	if err != nil {
-		if moved {
-			err = errors.Join(err, worktree.UpdateRefs(context.WithoutCancel(ctx), []git.RefChange{
-				{Name: ref, Expected: git.RefValue{Exists: true, Object: parent}, Desired: git.RefValue{Exists: true, Object: plan.Head}},
-				{Name: checkpoint.Ref(), Expected: git.RefValue{Exists: true, Object: plan.Head}},
-				{Name: checkpoint.IndexRef(), Expected: git.RefValue{Exists: true, Object: keptIndex}},
-			}))
-		}
+	// The checkpoint is recorded before the branch moves, the refs move
+	// together, and the checkpoint is settled after.
+	checkpoint := model.Checkpoint{Kind: model.CheckpointTidy, Branch: plan.Branch.ID, Before: model.ObjectID(plan.Head), After: model.ObjectID(parent),
+		BaseBefore: model.ObjectID(plan.Base), BaseAfter: model.ObjectID(plan.Base), Index: model.ObjectID(index), At: e.now()}
+	if err := e.prepareCheckpoint(ctx, &checkpoint); err != nil {
 		return TidyResult{}, err
 	}
+	if err := e.historyStep("prepared"); err != nil {
+		return TidyResult{}, err
+	}
+	if err := worktree.UpdateRefs(ctx, []git.RefChange{
+		{Name: checkpoint.Ref(), Desired: git.RefValue{Exists: true, Object: plan.Head}},
+		{Name: checkpoint.IndexRef(), Desired: git.RefValue{Exists: true, Object: keptIndex}},
+		{Name: "refs/heads/" + plan.Branch.Name, Expected: git.RefValue{Exists: true, Object: plan.Head}, Desired: git.RefValue{Exists: true, Object: parent}},
+	}); err != nil {
+		return TidyResult{}, errors.Join(fmt.Errorf("%w; nothing was changed: %w", ErrStalePlan, err), e.settleCheckpoint(ctx, checkpoint, model.CheckpointAbandoned, ""))
+	}
+	checkpoint.State = model.CheckpointApplied
 	result.Checkpoint = checkpoint
+	if err := e.historyStep("moved"); err != nil {
+		return result, err
+	}
 	if err := worktree.ResetIndex(ctx); err != nil {
 		return result, fmt.Errorf("the commits are made, but resetting the index failed: %w; git reset brings it in line", err)
+	}
+	message := fmt.Sprintf("tidied %s into %s (checkpoint %s)", plural(len(plan.History), "commit"), plural(len(result.Commits), "commit"), checkpoint.Name())
+	if err := e.settleCheckpoint(ctx, checkpoint, model.CheckpointApplied, message); err != nil {
+		return result, unfinished("the commits are made", err)
 	}
 	return result, nil
 }
@@ -686,12 +686,31 @@ func (e *Engine) ApplyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 func (e *Engine) Restore(ctx context.Context, name string) (model.Checkpoint, model.Branch, error) {
 	kind, digits, _ := strings.Cut(name, "-")
 	number, err := strconv.Atoi(digits)
-	if err != nil || kind != string(model.CheckpointTidy) && kind != string(model.CheckpointRebase) {
+	if err != nil || !named(kind) {
 		return model.Checkpoint{}, model.Branch{}, fmt.Errorf("%q is not a checkpoint name, such as tidy-3", name)
 	}
+	checkpoint, branch, err := e.checkpointNamed(ctx, name, kind, number)
+	if err != nil {
+		return checkpoint, branch, err
+	}
+	err = e.withHistory(ctx, branch, func(ctx context.Context) error {
+		// What a stopped dockhand left is settled now; read it again.
+		if checkpoint, branch, err = e.checkpointNamed(ctx, name, kind, number); err != nil {
+			return err
+		}
+		checkpoint, branch, err = e.restore(ctx, checkpoint, branch)
+		return err
+	})
+	return checkpoint, branch, err
+}
+
+// checkpointNamed reads a checkpoint by its name's kind and number, and
+// its branch.
+func (e *Engine) checkpointNamed(ctx context.Context, name, kind string, number int) (model.Checkpoint, model.Branch, error) {
 	var checkpoint model.Checkpoint
 	var branch model.Branch
-	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
 		checkpoint, err = r.Checkpoint(number)
 		if errors.Is(err, store.ErrNotFound) || err == nil && string(checkpoint.Kind) != kind {
 			return fmt.Errorf("there is no checkpoint %s", name)
@@ -701,10 +720,21 @@ func (e *Engine) Restore(ctx context.Context, name string) (model.Checkpoint, mo
 		}
 		branch, err = r.Branch(checkpoint.Branch)
 		return err
-	}); err != nil {
-		return model.Checkpoint{}, model.Branch{}, err
-	}
-	if checkpoint.RestoredAt != nil {
+	})
+	return checkpoint, branch, err
+}
+
+// restore puts a checkpoint's history back, holding the branch's history
+// lock (withHistory), and returns the checkpoint and branch as they are
+// after.
+func (e *Engine) restore(ctx context.Context, checkpoint model.Checkpoint, branch model.Branch) (model.Checkpoint, model.Branch, error) {
+	name := checkpoint.Name()
+	switch {
+	case checkpoint.State == model.CheckpointAbandoned:
+		return checkpoint, branch, fmt.Errorf("%s was never made: dockhand stopped before its change, so there is nothing to restore", name)
+	case checkpoint.State != model.CheckpointApplied:
+		return checkpoint, branch, fmt.Errorf("%s isn't finished: %s isn't checked out as a branch, so dockhand can't tell whether its change was made", name, branch.Name)
+	case checkpoint.RestoredAt != nil:
 		return checkpoint, branch, fmt.Errorf("%s was already restored", name)
 	}
 	worktree, err := e.worktree(ctx, branch)
@@ -754,31 +784,16 @@ func (e *Engine) Restore(ctx context.Context, name string) (model.Checkpoint, mo
 			return checkpoint, branch, err
 		}
 	}
+	if err := e.historyStep("moved"); err != nil {
+		return checkpoint, branch, err
+	}
 	restored := e.now()
 	checkpoint.RestoredAt = &restored
-	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-		if err := tx.MarkRestored(checkpoint); err != nil {
-			return err
-		}
-		message := fmt.Sprintf("restored %s's history from %s", branch.Name, name)
-		current, err := tx.Branch(branch.ID)
-		if err != nil {
-			return err
-		}
-		// The history put back starts from the master it started from
-		// then, whatever the branch's base is now.
-		if checkpoint.BaseBefore != "" && current.Base != checkpoint.BaseBefore {
-			message += fmt.Sprintf(", back onto master %s", short(checkpoint.BaseBefore))
-			current.Base = checkpoint.BaseBefore
-			if err := tx.UpdateBranch(current); err != nil {
-				return err
-			}
-		}
-		branch = current
-		_, err = tx.AppendEvent(model.Event{At: restored, Branch: branch.ID, Kind: "branch.restore", Level: model.LevelInfo, Message: message})
-		return err
-	})
-	return checkpoint, branch, err
+	after, err := e.recordRestore(ctx, checkpoint, fmt.Sprintf("restored %s's history from %s", branch.Name, name))
+	if err != nil {
+		return checkpoint, branch, unfinished("the history is restored", err)
+	}
+	return checkpoint, after, nil
 }
 
 func plural(n int, noun string) string {

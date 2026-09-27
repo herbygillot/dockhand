@@ -223,6 +223,8 @@ On a terminal, tidy shows the proposal and lets you review the diff, change the 
 
 Before rewriting, tidy keeps the old history as a checkpoint, such as `tidy-3`. `dockhand restore tidy-3` puts it back when nothing has been committed since; the files aren't touched, so edits tidy committed read as uncommitted again. `rebase` keeps one the same way, such as `rebase-4`. Restoring it puts back the files as they were before the rebase, and the master the branch started from, so master's newer files don't read as the branch's edits; a change to one of those files stops it. A rebase checkpoint made before dockhand kept the base puts back the history and files, and says the branch still counts from the newer master until the next `rebase`.
 
+One `tidy`, `rebase`, or `restore` of a branch runs at a time; another waits. If one is stopped part-way, killed or lost with its terminal, the next of them on that branch finishes it from what Git shows: a change that was made is recorded, and one that wasn't is dropped, so `restore` of it says it was never made.
+
 Tidy writes commits by MacPorts' rules, and `submit` checks them: a subject naming the port, short and specific; a body wrapped at 72; tickets as full URLs; no merge or follow-up commits; the revision reset when the version changes. Each finding ends with a code in brackets, and `dockhand explain <code>` says what the rule asks and where MacPorts asks it.
 
 ## Submitting
@@ -249,7 +251,7 @@ The description follows MacPorts' pull request template. `--type` fills in its T
 
 ### After review
 
-`status --refresh`, or `serve` every few minutes, reads your pull requests' state, reviews, and CI. To answer a review, edit the branch, check it, tidy, and submit again; the pull request is updated. When reviewers asked for changes, submit then asks whether to request their review again; `submit.rerequest_review` can make that `always` or `never`. `rebase` replays the branch onto fresh master when it needs that, keeping a checkpoint; a rebase that conflicts is abandoned, leaving the branch as it was.
+`status --refresh`, or `serve` every few minutes, reads your pull requests' state, reviews, and CI. To answer a review, edit the branch, check it, tidy, and submit again; the pull request is updated. When reviewers asked for changes, submit then asks whether to request their review again; `submit.rerequest_review` can make that `always` or `never`. `rebase` replays the branch onto fresh master when it needs that, keeping a checkpoint. It makes the replayed commits before moving anything, so a rebase that conflicts leaves the branch as it was, and names the files. A branch with a merge commit is rebased by hand.
 
 When a pull request is merged, its branch is marked merged. `dockhand review <pr>` applies the same commit rules to anyone's pull request. It posts nothing unless you say so: `--comment`, `--request-changes`, or `--markdown` to print the text for pasting.
 
