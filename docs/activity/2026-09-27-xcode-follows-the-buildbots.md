@@ -63,3 +63,9 @@ Each archive, `Xcode-14.0.1+14A400.xip`, `Xcode-14.3.1+14E300c.xip`, `Xcode-15.4
 ## Archives to download for parity
 
 Tahoe's (`Xcode_26.6_Apple_silicon.xip`) and Golden Gate's (`Xcode_27.xip`) are in `~/Downloads/xcode_archives`. Monterey, Ventura, Sonoma, and Sequoia need Xcode 14.0.1, 14.3.1, 15.4, and 16.4, from developer.apple.com.
+
+## The images, made again, and the table after them
+
+All twelve images were made again with setup protocol 3 by a delegated run. Each Xcode image has its buildbot's Xcode: Monterey 14.0.1, Ventura 14.3.1, Sonoma 15.4, Sequoia 16.4, Tahoe 26.6, and Golden Gate 27.0. check-24, in Tahoe's Xcode image, recorded the environment's identity ("…; setup 3; …; xcode 26.6; verifier 1"), and kept jq's own archive, which MacPorts now writes: "Creating jq-1.8.2_1.darwin_25.arm64.tbz2".
+
+The facts table was regenerated from the new images and the buildbots' logs (`tools/facts`). The Tart rows for Monterey, Ventura, Sonoma, and Sequoia now name the Xcode their buildbots run: 14.0.1, 14.3.1, 15.4, and 16.4, where they had named 14.2, 15.2, 16.2, and 26.3. Nothing else changed but the rows' sources and dates. Without this, the planner, which prefers a Tart row, would have read ports against the old Xcode, and every check would have reported drift.

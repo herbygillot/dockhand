@@ -11,8 +11,8 @@
       "sdk": "10.6",
       "source": {
         "kind": "buildbot",
-        "from": "ports-10.6_i386-builder build 247831",
-        "date": "2026-09-26",
+        "from": "ports-10.6_i386-builder build 248338",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -26,8 +26,8 @@
       "sdk": "10.6",
       "source": {
         "kind": "buildbot",
-        "from": "ports-10.6_x86_64-builder build 284655",
-        "date": "2026-09-26",
+        "from": "ports-10.6_x86_64-builder build 285165",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -41,8 +41,8 @@
       "sdk": "10.7",
       "source": {
         "kind": "buildbot",
-        "from": "ports-10.7_x86_64-builder build 266589",
-        "date": "2026-09-26",
+        "from": "ports-10.7_x86_64-builder build 267482",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -56,8 +56,8 @@
       "sdk": "10.8",
       "source": {
         "kind": "buildbot",
-        "from": "ports-10.8_x86_64-builder build 250874",
-        "date": "2026-09-24",
+        "from": "ports-10.8_x86_64-builder build 250971",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -71,8 +71,8 @@
       "sdk": "10.9",
       "source": {
         "kind": "buildbot",
-        "from": "ports-10.9_x86_64-builder build 353283",
-        "date": "2026-09-26",
+        "from": "ports-10.9_x86_64-builder build 354777",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -86,8 +86,8 @@
       "sdk": "10.10",
       "source": {
         "kind": "buildbot",
-        "from": "ports-10.10_x86_64-builder build 343581",
-        "date": "2026-09-26",
+        "from": "ports-10.10_x86_64-builder build 344056",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -101,8 +101,8 @@
       "sdk": "10.11",
       "source": {
         "kind": "buildbot",
-        "from": "ports-10.11_x86_64-builder build 333630",
-        "date": "2026-09-26",
+        "from": "ports-10.11_x86_64-builder build 334066",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -116,8 +116,8 @@
       "sdk": "10.12",
       "source": {
         "kind": "buildbot",
-        "from": "ports-10.12_x86_64-builder build 344659",
-        "date": "2026-09-26",
+        "from": "ports-10.12_x86_64-builder build 345474",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -131,8 +131,8 @@
       "sdk": "10.13",
       "source": {
         "kind": "buildbot",
-        "from": "ports-10.13_x86_64-builder build 298337",
-        "date": "2026-09-26",
+        "from": "ports-10.13_x86_64-builder build 298658",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -146,8 +146,8 @@
       "sdk": "10.14",
       "source": {
         "kind": "buildbot",
-        "from": "ports-10.14_x86_64-builder build 270870",
-        "date": "2026-09-26",
+        "from": "ports-10.14_x86_64-builder build 271251",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -161,8 +161,8 @@
       "sdk": "10.15",
       "source": {
         "kind": "buildbot",
-        "from": "ports-10.15_x86_64-builder build 246985",
-        "date": "2026-09-26",
+        "from": "ports-10.15_x86_64-builder build 247255",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -191,8 +191,8 @@
       "sdk": "11",
       "source": {
         "kind": "buildbot",
-        "from": "ports-11_x86_64-builder build 221100",
-        "date": "2026-09-26",
+        "from": "ports-11_x86_64-builder build 221670",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -233,8 +233,8 @@
       "sdk": "12",
       "source": {
         "kind": "buildbot",
-        "from": "ports-12_arm64-builder build 174304",
-        "date": "2026-09-26",
+        "from": "ports-12_arm64-builder build 174581",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -243,7 +243,7 @@
       "architecture": "arm64",
       "profile": "xcode",
       "macos": "12.7.6",
-      "xcode": "14.2",
+      "xcode": "14.0.1",
       "tools": "14.2.0.0.1.1668646533",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
       "sdks": [
@@ -275,8 +275,8 @@
       "sdk": "12",
       "source": {
         "kind": "buildbot",
-        "from": "ports-12_x86_64-builder build 167660",
-        "date": "2026-09-26",
+        "from": "ports-12_x86_64-builder build 167943",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -315,8 +315,8 @@
       "sdk": "13",
       "source": {
         "kind": "buildbot",
-        "from": "ports-13_arm64-builder build 112003",
-        "date": "2026-09-26",
+        "from": "ports-13_arm64-builder build 112706",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -325,7 +325,7 @@
       "architecture": "arm64",
       "profile": "xcode",
       "macos": "13.7.4",
-      "xcode": "15.2",
+      "xcode": "14.3.1",
       "tools": "14.3.1.0.1.1683849156",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
       "sdks": [
@@ -395,8 +395,8 @@
       "sdk": "14",
       "source": {
         "kind": "buildbot",
-        "from": "ports-14_arm64-builder build 86552",
-        "date": "2026-09-26",
+        "from": "ports-14_arm64-builder build 86902",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -405,7 +405,7 @@
       "architecture": "arm64",
       "profile": "xcode",
       "macos": "14.8.7",
-      "xcode": "16.2",
+      "xcode": "15.4",
       "tools": "16.2.0.0.1.1733547573",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
       "sdks": [
@@ -475,8 +475,8 @@
       "sdk": "15",
       "source": {
         "kind": "buildbot",
-        "from": "ports-15_arm64-builder build 51780",
-        "date": "2026-09-26",
+        "from": "ports-15_arm64-builder build 52095",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -485,7 +485,7 @@
       "architecture": "arm64",
       "profile": "xcode",
       "macos": "15.7.7",
-      "xcode": "26.3",
+      "xcode": "16.4",
       "tools": "16.4.0.0.1.1747106510",
       "developer_dir": "/Applications/Xcode.app/Contents/Developer",
       "sdks": [
@@ -515,8 +515,8 @@
       "sdk": "15",
       "source": {
         "kind": "buildbot",
-        "from": "ports-15_x86_64-builder build 67456",
-        "date": "2026-09-26",
+        "from": "ports-15_x86_64-builder build 67543",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -555,8 +555,8 @@
       "sdk": "26",
       "source": {
         "kind": "buildbot",
-        "from": "ports-26_arm64-builder build 43555",
-        "date": "2026-09-26",
+        "from": "ports-26_arm64-builder build 44429",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -595,8 +595,8 @@
       "sdk": "26",
       "source": {
         "kind": "buildbot",
-        "from": "ports-26_x86_64-builder build 4132",
-        "date": "2026-09-26",
+        "from": "ports-26_x86_64-builder build 5287",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -635,8 +635,8 @@
       "sdk": "27",
       "source": {
         "kind": "buildbot",
-        "from": "ports-27_arm64-builder build 14163",
-        "date": "2026-09-26",
+        "from": "ports-27_arm64-builder build 14459",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -682,8 +682,8 @@
       "tools": 14,
       "source": {
         "kind": "buildbot",
-        "from": "ports-12_arm64-builder build 174304",
-        "date": "2026-09-26",
+        "from": "ports-12_arm64-builder build 174581",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -692,8 +692,8 @@
       "tools": 14,
       "source": {
         "kind": "buildbot",
-        "from": "ports-13_arm64-builder build 112003",
-        "date": "2026-09-26",
+        "from": "ports-13_arm64-builder build 112706",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -702,8 +702,8 @@
       "tools": 16,
       "source": {
         "kind": "buildbot",
-        "from": "ports-14_arm64-builder build 86552",
-        "date": "2026-09-26",
+        "from": "ports-14_arm64-builder build 86902",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -712,8 +712,8 @@
       "tools": 16,
       "source": {
         "kind": "buildbot",
-        "from": "ports-15_arm64-builder build 51780",
-        "date": "2026-09-26",
+        "from": "ports-15_arm64-builder build 52095",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -722,8 +722,8 @@
       "tools": 26,
       "source": {
         "kind": "buildbot",
-        "from": "ports-26_arm64-builder build 43555",
-        "date": "2026-09-26",
+        "from": "ports-26_arm64-builder build 44429",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -732,8 +732,8 @@
       "tools": 27,
       "source": {
         "kind": "buildbot",
-        "from": "ports-27_arm64-builder build 14163",
-        "date": "2026-09-26",
+        "from": "ports-27_arm64-builder build 14459",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     }
