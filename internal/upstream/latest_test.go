@@ -468,3 +468,49 @@ func TestOverridingLivecheckSelectsThroughTheCatalog(t *testing.T) {
 	require.NoError(t, err, "an explicit version needs no livecheck")
 	require.Equal(t, "v1.10", release.Tag)
 }
+
+// Only the newest tags are evaluated: the newest capture, and the next,
+// which checks that the Portfile's versions follow its captures there. A
+// port with many tags is evaluated twice. From broot, whose hundreds of
+// tags cost 24 seconds of evaluation each time outdated looked.
+func TestAutomaticSelectionEvaluatesOnlyTheNewestTags(t *testing.T) {
+	t.Parallel()
+	var tags []forge.Tag
+	for minor := 1; minor <= 60; minor++ {
+		tags = append(tags, forge.Tag{Name: fmt.Sprintf("v1.%d", minor)})
+	}
+	c := &catalog{tags: tags}
+	service := automaticService(t, c)
+	port := automaticPort()
+	port.Options["github.tarball_from"] = "archive"
+	var evaluated []string
+	service.EvaluateVersion = func(_ context.Context, source string) (string, error) {
+		evaluated = append(evaluated, source)
+		return source, nil
+	}
+	result, err := service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, "v1.60", result.Release.Tag)
+	require.ElementsMatch(t, []string{"1.60", "1.59"}, evaluated)
+}
+
+// A Portfile whose versions don't follow its captures, where the newest two
+// show it, has every tag evaluated, and the newest version wins as before.
+func TestAutomaticSelectionEvaluatesEveryTagWhenVersionsDontFollowTags(t *testing.T) {
+	t.Parallel()
+	c := &catalog{tags: []forge.Tag{{Name: "v2.0"}, {Name: "v3.0"}, {Name: "v4.0"}, {Name: "v5.0"}}}
+	service := automaticService(t, c)
+	port := automaticPort()
+	port.Options["github.tarball_from"] = "archive"
+	versions := map[string]string{"5.0": "1.1", "4.0": "5.0", "3.0": "2.2", "2.0": "9.0"}
+	var evaluated []string
+	service.EvaluateVersion = func(_ context.Context, source string) (string, error) {
+		evaluated = append(evaluated, source)
+		return versions[source], nil
+	}
+	result, err := service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, "v2.0", result.Release.Tag)
+	require.Equal(t, "9.0", result.Release.Version)
+	require.ElementsMatch(t, []string{"5.0", "4.0", "3.0", "2.0"}, evaluated, "each once")
+}

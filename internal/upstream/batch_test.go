@@ -42,7 +42,7 @@ func TestBoundDiscoveryEvaluatesCandidatesInOneBatch(t *testing.T) {
 	require.Equal(t, "1.11", result.CandidateVersion)
 	require.Equal(t, 1, probe.batches)
 	require.Zero(t, probe.single)
-	require.ElementsMatch(t, []string{"1.9", "1.10", "1.11"}, probe.values)
+	require.ElementsMatch(t, []string{"1.11", "1.10"}, probe.values, "the newest captures and the next; 1.9 can't be the newest")
 }
 
 func TestBoundDiscoveryFallsBackToSingleEvaluation(t *testing.T) {

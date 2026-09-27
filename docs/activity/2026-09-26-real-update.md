@@ -139,3 +139,35 @@ submit.
   So Finder's `.DS_Store` files stamped a `+dirty` version into the
   pull requests' signature, until they were built from a clean worktree.
   `.gitignore` now ignores `.DS_Store`.
+
+## `outdated` evaluates only the newest tags
+
+Discovery from tags had MacPorts evaluate the Portfile once for every
+eligible tag, to learn the version each would give. That is correct,
+since a Portfile computes its version from the tag in Tcl, but it costs
+one evaluation per tag.
+
+Now the tags are grouped by their captured version, newest first, by
+MacPorts' own `vercmp`:
+
+- **The newest group is evaluated, and the next.** That checks, at the one
+  place it decides the answer, that the Portfile's versions follow its
+  captures, as stripping a prefix or swapping separators does.
+- **If the next group ties or leads**, every tag is evaluated as before,
+  so a Portfile that orders its versions otherwise gets the same answer.
+- **Consistent with the other paths.** Discovery from a livecheck or a
+  listing already chose from the captures and evaluated only the winner.
+- **What's given up:** a failed evaluation still surfaces, but only for
+  tags that are evaluated. A tag that can't be the newest is never tried.
+
+Tests:
+
+- sixty tags evaluated twice;
+- a Portfile whose versions run against its tags, below the top two:
+  every tag evaluated, each once, and the true newest chosen;
+- the existing ordering, tie, and batch tests.
+
+Measured: `outdated` for broot, nushell, and miller, all current, took 12½
+seconds, 3 of them CPU. Before, broot alone took 35 seconds, 28 of them CPU.
+By then all five pull requests had been merged, so master had the new
+versions and every port read "current".

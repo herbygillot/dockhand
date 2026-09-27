@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -102,26 +103,24 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 	if err != nil {
 		return result, err
 	}
-	var evaluated []macports.VersionCandidate
-	var selectedTags []string
-	var pending []int
+	var eligibleCandidates []macports.VersionCandidate
+	var eligibleTags []string
 	for _, index := range eligible.Indices {
 		if index < 0 || index >= len(candidates) {
 			return result, fmt.Errorf("upstream: invalid filter result")
 		}
 		candidate := candidates[index]
+		candidate.Version = ""
 		if candidate.CaptureVersion == spec.SourceVersion {
 			candidate.Version = port.Version
-		} else {
-			pending = append(pending, len(evaluated))
 		}
-		evaluated = append(evaluated, candidate)
-		selectedTags = append(selectedTags, tags[index])
+		eligibleCandidates = append(eligibleCandidates, candidate)
+		eligibleTags = append(eligibleTags, tags[index])
 	}
-	if err := s.evaluateCandidates(ctx, evaluated, selectedTags, pending); err != nil {
+	candidates, tags, err = s.evaluateNewest(ctx, spec.Livecheck.Regex, eligibleCandidates, eligibleTags)
+	if err != nil {
 		return result, err
 	}
-	candidates, tags = evaluated, selectedTags
 	index, comparison, err := s.newest(ctx, port.Version, spec.Livecheck.Regex, candidates, "the port's livecheck filter", "a tag")
 	if err != nil {
 		return result, err
@@ -146,6 +145,98 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 	result.finish(release, port.Version, "Selected "+tag.Name+" from "+catalog, " among "+catalog)
 	result.Evidence = []Observation{{Source: string(spec.Forge) + "-" + string(spec.Catalog), Version: release.Version, URL: evidenceURL, ObservedAt: result.ObservedAt}}
 	return result, nil
+}
+
+// evaluateNewest evaluates only the candidates that can be the newest, and
+// returns them. A Portfile turns a tag's captured version into the port's
+// version in the captures' own order, as stripping a prefix or swapping
+// separators does, so the newest capture is the newest version. Discovery
+// from a livecheck or a listing already relies on that, and evaluates only
+// the one it selects. Here the newest captures are evaluated, and so are
+// the next newest, which checks that order at the one place it decides the
+// answer: a tie between the two, or the next newest ahead, and every
+// candidate is evaluated, as a Portfile that orders its versions otherwise
+// needs. A port with hundreds of tags is evaluated twice, not hundreds of
+// times, and a candidate that can't be the newest is never evaluated.
+func (s *Service) evaluateNewest(ctx context.Context, expression string, candidates []macports.VersionCandidate, tags []string) ([]macports.VersionCandidate, []string, error) {
+	remaining := make([]int, len(candidates))
+	for i := range remaining {
+		remaining[i] = i
+	}
+	var groups [][]int
+	for len(groups) < 2 && len(remaining) > 0 {
+		group, err := s.newestCaptures(ctx, expression, candidates, remaining)
+		if err != nil {
+			return nil, nil, err
+		}
+		groups = append(groups, group)
+		remaining = slices.DeleteFunc(remaining, func(index int) bool { return slices.Contains(group, index) })
+	}
+	chosen := slices.Concat(groups...)
+	if err := s.evaluateCandidates(ctx, candidates, tags, unevaluated(candidates, chosen)); err != nil {
+		return nil, nil, err
+	}
+	if len(groups) == 2 {
+		evaluated := subset(candidates, chosen)
+		newest, err := s.Versions.SelectVersion(ctx, "0", expression, evaluated)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, i := range newest.Indices {
+			if i < 0 || i >= len(chosen) {
+				return nil, nil, fmt.Errorf("upstream: invalid version selection")
+			}
+			if !slices.Contains(groups[0], chosen[i]) {
+				// The versions don't follow the captures here: every
+				// candidate decides.
+				all := slices.Concat(chosen, remaining)
+				if err := s.evaluateCandidates(ctx, candidates, tags, unevaluated(candidates, all)); err != nil {
+					return nil, nil, err
+				}
+				chosen = all
+				break
+			}
+		}
+	}
+	return subset(candidates, chosen), subset(tags, chosen), nil
+}
+
+// newestCaptures are the candidates among remaining whose captured versions
+// tie for newest, by MacPorts' vercmp.
+func (s *Service) newestCaptures(ctx context.Context, expression string, candidates []macports.VersionCandidate, remaining []int) ([]int, error) {
+	captures := make([]macports.VersionCandidate, len(remaining))
+	for i, index := range remaining {
+		captures[i] = macports.VersionCandidate{Version: candidates[index].CaptureVersion, MatchText: candidates[index].MatchText, CaptureVersion: candidates[index].CaptureVersion}
+	}
+	selection, err := s.Versions.SelectVersion(ctx, "0", expression, captures)
+	if err != nil {
+		return nil, err
+	}
+	if len(selection.Indices) == 0 {
+		return nil, fmt.Errorf("upstream: no newest capture among %d candidates", len(remaining))
+	}
+	var group []int
+	for _, i := range selection.Indices {
+		if i < 0 || i >= len(remaining) {
+			return nil, fmt.Errorf("upstream: invalid version selection")
+		}
+		group = append(group, remaining[i])
+	}
+	return group, nil
+}
+
+// unevaluated are the indices among chosen whose version isn't known yet.
+func unevaluated(candidates []macports.VersionCandidate, chosen []int) []int {
+	return slices.DeleteFunc(slices.Clone(chosen), func(index int) bool { return candidates[index].Version != "" })
+}
+
+// subset is the items at the indices, in their order.
+func subset[T any](items []T, indices []int) []T {
+	picked := make([]T, 0, len(indices))
+	for _, index := range indices {
+		picked = append(picked, items[index])
+	}
+	return picked
 }
 
 // evaluateCandidates fills the evaluated version of every pending candidate,
