@@ -2,6 +2,7 @@ package command
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -37,9 +38,9 @@ it is refused by name. Flags, then the environment, come before the file.`,
 				}
 				all = append(all, configSetting{Key: key, Value: value, Source: source})
 			}
-			add("worktrees", tildeOrEmpty(file.Worktrees), "~/src/macports-branches, beside the clone")
+			add("worktrees", tildeOrEmpty(file.Worktrees), "macports-branches, beside the clone")
 			add("maintainer", file.Maintainer, "(none; create asks for it)")
-			add("check.on", strings.Join(file.Check.On, ", "), "command, when [providers.command] is set up")
+			add("check.on", strings.Join(file.Check.On, ", "), "command when [providers.command] is set up, else Tart on this Mac's release")
 			add("check.tests", file.Check.Tests, "declared")
 			baselineValue := ""
 			if file.Check.Baseline {
@@ -53,13 +54,30 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			}
 			add("cleanup.automatic", automatic, "true")
 			add("cleanup.after", file.Cleanup.After, "7d")
+			add("serve.for_outdated", file.Serve.ForOutdated, "list")
+			add("serve.outdated_at", file.Serve.OutdatedAt, "07:00")
+			submitPassing := ""
+			if file.Serve.SubmitPassing {
+				submitPassing = "true"
+			}
+			add("serve.submit_passing", submitPassing, "false")
+			add("serve.submit_limit", positive(file.Serve.SubmitLimit), "10")
+			notify := ""
+			if file.Serve.Notify != nil {
+				notify = fmt.Sprint(*file.Serve.Notify)
+			}
+			add("serve.notify", notify, "true")
+			add("providers.tart.capacity", positive(file.Providers.Tart.Capacity), "1")
+			add("providers.tart.test_timeout", file.Providers.Tart.TestTimeout, "30m")
 			if command := file.Providers.Command; command != nil {
 				add("providers.command.run", command.Run, "")
 				add("providers.command.name", command.Name, "command")
+				add("providers.command.capacity", positive(command.Capacity), "1")
 			} else {
 				add("providers.command", "", "(not set up)")
 			}
 			add("providers.github.remote", file.Providers.GitHub.Remote, "the one remote pushing to your fork")
+			add("providers.github.capacity", positive(file.Providers.GitHub.Capacity), "2")
 			streams.emit(map[string]any{"file": path, "database": options.Database, "settings": all})
 			fmt.Fprintf(streams.Out, "File      %s\nDatabase  %s\n\n", tilde(path), tilde(options.Database))
 			width := 0
@@ -76,6 +94,14 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			return nil
 		},
 	}
+}
+
+// positive is a count the file sets, or empty for its default.
+func positive(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return strconv.Itoa(n)
 }
 
 func tildeOrEmpty(path string) string {
