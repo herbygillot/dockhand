@@ -246,8 +246,8 @@ func Checksums(before, after macports.Snapshot, selected, checksums string) Repo
 
 // ReleaseScope partitions sibling ports into those a release changes and those
 // it must protect, refusing independent releases and unauthorized siblings.
-func ReleaseScope(before, after macports.Snapshot, selected string, authorized bool) (*model.ReleaseScope, error) {
-	scope := &model.ReleaseScope{}
+func ReleaseScope(before, after macports.Snapshot, selected string, authorized bool) (*macports.ReleaseScope, error) {
+	scope := &macports.ReleaseScope{}
 	oldRoot, nextRoot := before.Ports[selected], after.Ports[selected]
 	if len(before.Ports) != len(after.Ports) {
 		return nil, fmt.Errorf("%w: release changes the port set", ErrMismatch)
@@ -267,7 +267,7 @@ func ReleaseScope(before, after macports.Snapshot, selected string, authorized b
 		if err != nil {
 			return nil, err
 		}
-		member := model.ReleaseMember{Target: target, Before: macports.ReleaseState(old), After: macports.ReleaseState(next), NeedsXcode: needsXcode, MetadataOnly: next.Options["dockhand.metadata_only"] == "1"}
+		member := macports.ReleaseMember{Target: target, Before: macports.ReleaseStateOf(old), After: macports.ReleaseStateOf(next), NeedsXcode: needsXcode, MetadataOnly: next.Options["dockhand.metadata_only"] == "1"}
 		if old.Version == next.Version {
 			scope.Protected = append(scope.Protected, member)
 			continue
@@ -289,8 +289,8 @@ func ReleaseScope(before, after macports.Snapshot, selected string, authorized b
 		}
 		scope.Affected = append(scope.Affected, member)
 	}
-	slices.SortFunc(scope.Affected, func(a, b model.ReleaseMember) int { return model.CompareTargets(a.Target, b.Target) })
-	slices.SortFunc(scope.Protected, func(a, b model.ReleaseMember) int { return model.CompareTargets(a.Target, b.Target) })
+	slices.SortFunc(scope.Affected, func(a, b macports.ReleaseMember) int { return model.CompareTargets(a.Target, b.Target) })
+	slices.SortFunc(scope.Protected, func(a, b macports.ReleaseMember) int { return model.CompareTargets(a.Target, b.Target) })
 	return scope, nil
 }
 
@@ -339,7 +339,7 @@ func ScopedVersion(shared bool, before, after macports.Snapshot, selected string
 }
 
 // ScopedChecksums applies Checksums across the affected members of a scope.
-func ScopedChecksums(scope *model.ReleaseScope, before, after macports.Snapshot, selected, checksums string) Report {
+func ScopedChecksums(scope *macports.ReleaseScope, before, after macports.Snapshot, selected, checksums string) Report {
 	if scope == nil {
 		return Checksums(before, after, selected, checksums)
 	}

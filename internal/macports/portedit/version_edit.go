@@ -214,7 +214,7 @@ func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator,
 			continue
 		}
 		selected, snapshot = contents, after
-		input.versionInput = model.ReleaseInput{Portfile: input.target.Portfile, Offset: edit.carrier.candidate.Span.Start, Before: edit.carrier.candidate.Value, After: edit.value}
+		input.versionInput = macports.ReleaseInput{Portfile: input.target.Portfile, Offset: edit.carrier.candidate.Span.Start, Before: edit.carrier.candidate.Value, After: edit.value}
 		matches++
 	}
 	if matches == 0 {

@@ -26,7 +26,7 @@ var ErrFidelity = portedit.ErrFidelity
 var ErrNotImplemented = portedit.ErrNotImplemented
 
 type Result struct {
-	Scope        *model.ReleaseScope        `json:",omitempty"`
+	Scope        *macports.ReleaseScope     `json:",omitempty"`
 	Coverage     []portedit.ContextCoverage `json:",omitempty"`
 	Base         model.Source
 	Target       model.Target
@@ -105,7 +105,7 @@ func (s *Service) ResolveRelease(ctx context.Context, request Request) (_ model.
 	}
 	defer func() { err = errors.Join(err, done()) }()
 	request.Workspace = files
-	if request.Action != model.Bump {
+	if request.Action != model.EditUpdate {
 		return model.Release{}, fmt.Errorf("%w: release resolution requires a bump action", ErrNotImplemented)
 	}
 	probe, err := s.editor().Probe(ctx, probeSource(request))
@@ -137,7 +137,7 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	defer func() { err = errors.Join(err, done()) }()
 	request.Workspace = files
 	var original macports.PortInfo
-	if request.Action == model.Bump {
+	if request.Action == model.EditUpdate {
 		if s.Upstream == nil {
 			return Result{}, fmt.Errorf("preparation: upstream source checker required")
 		}
@@ -158,7 +158,7 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	if err != nil {
 		return result, err
 	}
-	if request.Action == model.Bump {
+	if request.Action == model.EditUpdate {
 		if err := s.Upstream.Check(ctx, original, *request.Release); err != nil {
 			return result, err
 		}

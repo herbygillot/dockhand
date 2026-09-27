@@ -38,7 +38,7 @@ type Request struct {
 	// recorded on the job: a Stub already resolved there is honored rather
 	// than resolved again.
 	model.EditIntent
-	Action model.UpdateAction
+	Action model.EditKind
 	Source model.Source
 	// Workspace is the projection of the source the edit reads and never
 	// writes; every candidate is an overlay of it. It is the caller's to
@@ -72,8 +72,8 @@ type ContextCoverage struct {
 }
 
 type Result struct {
-	Scope    *model.ReleaseScope `json:",omitempty"`
-	Coverage []ContextCoverage   `json:",omitempty"`
+	Scope    *macports.ReleaseScope `json:",omitempty"`
+	Coverage []ContextCoverage      `json:",omitempty"`
 	Base     model.Source
 	Target   model.Target
 	Files    []portfile.Edit
@@ -133,10 +133,10 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 		return Result{}, err
 	}
 	defer func() { err = errors.Join(err, input.Close()) }()
-	if request.Action == model.Bump {
+	if request.Action == model.EditUpdate {
 		return s.prepareVersion(ctx, request, input)
 	}
-	if request.Action == model.RefreshChecksums {
+	if request.Action == model.EditChecksums {
 		return s.prepareChecksums(ctx, request, input)
 	}
 	revised, err := portfile.BumpRevision(input.data, input.target.Subport, input.info.Revision)
@@ -157,16 +157,16 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 }
 
 func (request Request) Validate() error {
-	if request.Action != model.BumpRevision && request.Action != model.Bump && request.Action != model.RefreshChecksums {
+	if request.Action != model.EditRevbump && request.Action != model.EditUpdate && request.Action != model.EditChecksums {
 		return fmt.Errorf("%w: %s", ErrNotImplemented, request.Action)
 	}
-	if request.Action == model.Bump && request.Release == nil {
+	if request.Action == model.EditUpdate && request.Release == nil {
 		return fmt.Errorf("portedit: a resolved release is required")
 	}
-	if request.Action != model.Bump && request.Version != "" {
+	if request.Action != model.EditUpdate && request.Version != "" {
 		return fmt.Errorf("portedit: an explicit version applies only to bump")
 	}
-	if request.Action == model.BumpRevision && strings.TrimSpace(request.Subject) == "" {
+	if request.Action == model.EditRevbump && strings.TrimSpace(request.Subject) == "" {
 		return fmt.Errorf("portedit: a revision bump needs a subject saying why")
 	}
 	return nil

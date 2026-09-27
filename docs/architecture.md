@@ -89,7 +89,8 @@ Several dockhand processes can share one database: a foreground `check`, a `serv
 ## Not in the binary
 
 v2's packages were deleted on 2026-09-27: `workflow`, `state`, `publish`, `verify`, `git/changeset`, and `macports/dependents`. Commit `1cbcdf8b65` is the last with their code, and [v2](v2/README.md) keeps their documents. What v3 still used of them moved: `verify/staging` to `buildenv/staging`, and `assess` into `tools/survey`. `record`, v2's vocabulary, went last. The types v3 used moved to their owners, and the rest went with it:
-- to `model`: a release and how it was chosen, an update's action and intent, and a release's scope;
+- to `model`: a release and how it was chosen, and an update's intent. What an update does is `model.EditKind`, the kind its edit records;
+- to `macports`: a release's scope, beside the code that computes and rebinds it;
 - to `forge`: a pull request, its reference, state, and status;
 - to `macports/commitmsg`: a commit's ticket references.
 

@@ -117,7 +117,7 @@ pre-fetch {
 	tree, err := service.Repo.EditTree(t.Context(), string(request.Source.Tree), edits)
 	require.NoError(t, err)
 	request.Source = model.Source{Tree: model.ObjectID(tree)}
-	request.Action = model.Bump
+	request.Action = model.EditUpdate
 	request.Subject = "" // the revision fixture's reason; a bump takes the editor's default
 	request.Version = "2.0"
 	resolver := releaseTagFunc(func(_ context.Context, repo, name string) (forge.Tag, error) {

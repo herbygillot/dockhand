@@ -37,7 +37,7 @@ func preparationFixture(t *testing.T, body string) (*preparation.Service, prepar
 	commit, tree, err := repo.Branch(t.Context(), "candidate")
 	require.NoError(t, err)
 	return &preparation.Service{Repo: repo, Ports: &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}}, preparation.Request{
-		Action: model.BumpRevision, Source: model.Source{Commit: model.ObjectID(commit), Tree: model.ObjectID(tree)}, Selection: macports.Selection{Selector: "fixture"}, Subject: "rebuild against updated dependency",
+		Action: model.EditRevbump, Source: model.Source{Commit: model.ObjectID(commit), Tree: model.ObjectID(tree)}, Selection: macports.Selection{Selector: "fixture"}, Subject: "rebuild against updated dependency",
 	}
 }
 
@@ -146,7 +146,7 @@ func TestPreparationRejectsInconsistentSourceAndCancellation(t *testing.T) {
 	request.Source.Tree = model.ObjectID(strings.Repeat("a", 40))
 	_, err := service.Prepare(t.Context(), request)
 	require.ErrorContains(t, err, "source commit and tree disagree")
-	request.Action = model.Bump
+	request.Action = model.EditUpdate
 	_, err = service.Prepare(t.Context(), request)
 	require.ErrorContains(t, err, "resolved release is required")
 	ctx, cancel := context.WithCancel(t.Context())

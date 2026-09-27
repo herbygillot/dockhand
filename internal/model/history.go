@@ -8,14 +8,20 @@ import (
 // EditID identifies an authoring command's record.
 type EditID string
 
-// EditKind is what an authoring command did.
+// EditKind is what an authoring command does: what an update asks the
+// editor for, and what its edit records.
 type EditKind string
 
 const (
-	EditUpdate    EditKind = "update"
+	// EditUpdate moves a port to a new version, with its source metadata.
+	EditUpdate EditKind = "update"
+	// EditChecksums refreshes a port's distfile checksums for its source.
 	EditChecksums EditKind = "checksums"
-	EditRevbump   EditKind = "revbump"
-	// EditCreate is a new port's first Portfile.
+	// EditRevbump increments a port's revision without changing its
+	// version.
+	EditRevbump EditKind = "revbump"
+	// EditCreate is a new port's first Portfile, which create writes; the
+	// editor is never asked for it.
 	EditCreate EditKind = "create"
 )
 

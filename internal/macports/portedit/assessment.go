@@ -14,9 +14,9 @@ import (
 
 // Assessment describes preparation evidence, not whether a port will build.
 type Assessment struct {
-	Scope          *model.ReleaseScope `json:",omitempty"`
-	Coverage       []ContextCoverage   `json:",omitempty"`
-	Contexts       []model.Platform    `json:",omitempty"`
+	Scope          *macports.ReleaseScope `json:",omitempty"`
+	Coverage       []ContextCoverage      `json:",omitempty"`
+	Contexts       []model.Platform       `json:",omitempty"`
 	Outcome        string
 	CurrentVersion string
 	Portfile       string

@@ -22,9 +22,10 @@ import (
 // UpdateRequest asks to edit one port's files in a branch's worktree.
 type UpdateRequest struct {
 	Branch model.Branch
-	// Action is model.Bump, a new version, or model.RefreshChecksums,
-	// the checksums of the version the Portfile names.
-	Action model.UpdateAction
+	// Action is model.EditUpdate, a new version; model.EditChecksums, the
+	// checksums of the version the Portfile names; or model.EditRevbump, a
+	// new revision. The edit it records is of the same kind.
+	Action model.EditKind
 	Port   string
 	// Version is the release a bump moves to; the newest when empty.
 	Version string
@@ -108,8 +109,8 @@ type Update struct {
 // written only if none of the files it touches changed in the meantime.
 func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, error) {
 	switch request.Action {
-	case model.Bump, model.RefreshChecksums:
-	case model.BumpRevision:
+	case model.EditUpdate, model.EditChecksums:
+	case model.EditRevbump:
 		if strings.TrimSpace(request.Subject) == "" {
 			return Update{}, errors.New("a revision bump needs its reason as the subject, such as --subject \"rebuild for poppler 25.09.0\"")
 		}
@@ -136,14 +137,14 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		Version:    request.Version,
 		Subject:    request.Subject,
 	}
-	if request.Action == model.Bump {
+	if request.Action == model.EditUpdate {
 		release, err := preparer.ResolveRelease(ctx, input)
 		if err != nil {
 			return Update{}, err
 		}
 		input.Release = &release
 	}
-	compare := request.CompareUpstream && request.Action == model.Bump
+	compare := request.CompareUpstream && request.Action == model.EditUpdate
 	if compare {
 		directory, err := scratch.Dir("upstream-")
 		if err != nil {
@@ -157,7 +158,7 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		return Update{}, err
 	}
 	var stealth *Stealth
-	if request.Action == model.RefreshChecksums && len(result.Files) > 0 {
+	if request.Action == model.EditChecksums && len(result.Files) > 0 {
 		port := result.Target.Name
 		if port == "" {
 			port = request.Port
@@ -167,7 +168,7 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		}
 	}
 	removed := false
-	if request.Action == model.Bump && len(result.Files) > 0 {
+	if request.Action == model.EditUpdate && len(result.Files) > 0 {
 		if removed, err = dropStealthDistSubdir(ctx, worktree, captured, &result); err != nil {
 			return Update{}, err
 		}
@@ -213,9 +214,9 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	}
 	change := "refreshed checksums"
 	switch request.Action {
-	case model.Bump:
+	case model.EditUpdate:
 		change = fmt.Sprintf("%s → %s", update.Before, update.After)
-	case model.BumpRevision:
+	case model.EditRevbump:
 		change = fmt.Sprintf("revision %d → %d", update.Before.Revision, update.After.Revision)
 	}
 	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
@@ -234,7 +235,7 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 // now, read through the clone, since a plan only reads.
 func (e *Engine) updateSource(ctx context.Context, request UpdateRequest) (*git.Repository, string, model.ObjectID, error) {
 	if request.FromMaster {
-		if !request.Plan || request.Action != model.Bump {
+		if !request.Plan || request.Action != model.EditUpdate {
 			return nil, "", "", errors.New("engine: only a version update is planned from master; start a branch for anything else")
 		}
 		master, err := e.fetchMaster(ctx)
@@ -261,13 +262,7 @@ func (e *Engine) updateSource(ctx context.Context, request UpdateRequest) (*git.
 // editRecord is what tidy later reads: each file's blob before and after,
 // and the subject the edit carries.
 func (e *Engine) editRecord(ctx context.Context, worktree *git.Repository, branch model.Branch, request UpdateRequest, update Update, result preparation.Result) (model.Edit, error) {
-	edit := model.Edit{ID: model.EditID(store.NewID("ed")), Branch: branch.ID, Kind: model.EditUpdate, Port: update.Port, Subject: update.Subject, At: e.now(), Upstream: update.Upstream}
-	switch request.Action {
-	case model.RefreshChecksums:
-		edit.Kind = model.EditChecksums
-	case model.BumpRevision:
-		edit.Kind = model.EditRevbump
-	}
+	edit := model.Edit{ID: model.EditID(store.NewID("ed")), Branch: branch.ID, Kind: request.Action, Port: update.Port, Subject: update.Subject, At: e.now(), Upstream: update.Upstream}
 	edit.Directory = portDirectory(result.Files[0].Path)
 	if result.Target.Portfile != "" {
 		edit.Directory = path.Dir(result.Target.Portfile)

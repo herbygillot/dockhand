@@ -19,7 +19,7 @@ func TestRebindReleaseScopePreservesMembershipAndPins(t *testing.T) {
 		return PortInfo{Name: name, Version: version, Options: map[string]string{"checksums": "sha256 aaaa", "distfiles": "source.tar.gz", "master_sites": "https://example.invalid/source"}}
 	}
 	snapshot := Snapshot{Ports: map[string]PortInfo{"root": info("root", "2"), "sibling": info("sibling", "2"), "pinned": info("pinned", "1")}}
-	scope := &model.ReleaseScope{Input: model.ReleaseInput{Portfile: root.Portfile}, Affected: []model.ReleaseMember{{Target: root, After: ReleaseState(snapshot.Ports[root.Name])}, {Target: sibling, After: ReleaseState(snapshot.Ports[sibling.Name])}}, Protected: []model.ReleaseMember{{Target: pin, After: ReleaseState(snapshot.Ports[pin.Name])}}}
+	scope := &ReleaseScope{Input: ReleaseInput{Portfile: root.Portfile}, Affected: []ReleaseMember{{Target: root, After: ReleaseStateOf(snapshot.Ports[root.Name])}, {Target: sibling, After: ReleaseStateOf(snapshot.Ports[sibling.Name])}}, Protected: []ReleaseMember{{Target: pin, After: ReleaseStateOf(snapshot.Ports[pin.Name])}}}
 	updated, err := RebindReleaseScope(scope, snapshot)
 	require.NoError(t, err)
 	require.Equal(t, members(scope), members(updated), "rebinding keeps the members")
@@ -39,9 +39,9 @@ func TestRebindReleaseScopePreservesMembershipAndPins(t *testing.T) {
 }
 
 // members names a scope's affected and protected ports, in order.
-func members(scope *model.ReleaseScope) [2][]string {
+func members(scope *ReleaseScope) [2][]string {
 	var names [2][]string
-	for i, group := range [][]model.ReleaseMember{scope.Affected, scope.Protected} {
+	for i, group := range [][]ReleaseMember{scope.Affected, scope.Protected} {
 		for _, member := range group {
 			names[i] = append(names[i], member.Target.Name)
 		}

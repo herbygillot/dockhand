@@ -173,7 +173,7 @@ func committedUpdate(t *testing.T, e *Engine) model.Branch {
 	t.Helper()
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
 	require.NoError(t, err)
-	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.Bump, Port: "jq"})
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
 	require.NoError(t, err)
 	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
 	require.NoError(t, err)
@@ -296,7 +296,7 @@ func TestSubmitNeedsCommittedWorkAndYourFork(t *testing.T) {
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
 	require.NoError(t, err)
-	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.Bump, Port: "jq"})
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
 	require.NoError(t, err)
 	fake := &fakeForge{t: t, upstream: f.upstream, prs: map[int]*forge.PullRequest{}}
 	e.Forge = fake

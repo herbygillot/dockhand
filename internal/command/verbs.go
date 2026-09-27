@@ -105,7 +105,7 @@ branch is started, since a rebuild has its own reason.`,
 			result := revbumpJSON{Branch: branchRef(branch), Started: started, Subject: strings.TrimSpace(subject), Applied: !plan, Ports: []revbumpedJSON{}}
 			defer func() { streams.emit(result) }()
 			for _, port := range args {
-				update, err := e.Update(ctx, engine.UpdateRequest{Branch: branch, Action: model.BumpRevision, Port: port, Subject: subject, Plan: plan})
+				update, err := e.Update(ctx, engine.UpdateRequest{Branch: branch, Action: model.EditRevbump, Port: port, Subject: subject, Plan: plan})
 				if err != nil {
 					return fmt.Errorf("%s: %w", port, err)
 				}

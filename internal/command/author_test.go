@@ -45,10 +45,10 @@ func (b bumper) Prepare(ctx context.Context, r preparation.Request) (preparation
 	next, after := old, string(data)
 	revision := 0
 	switch {
-	case r.Action == model.Bump:
+	case r.Action == model.EditUpdate:
 		next = r.Release.Version
 		after = line.ReplaceAllString(after, "version "+next)
-	case r.Action == model.BumpRevision:
+	case r.Action == model.EditRevbump:
 		revision = 1
 		after += "revision 1\n"
 	case !strings.Contains(after, "checksums"):
@@ -64,7 +64,7 @@ func (b bumper) Prepare(ctx context.Context, r preparation.Request) (preparation
 	edit := git.FileEdit{Path: name, Before: before, After: []byte(after), Mode: before.Mode}
 	tree, err := b.repo.EditTree(ctx, string(r.Source.Tree), []git.FileEdit{edit})
 	result.Files, result.PreparedTree = []git.FileEdit{edit}, model.ObjectID(tree)
-	if r.Action == model.BumpRevision {
+	if r.Action == model.EditRevbump {
 		result.Commits = []preparation.CommitIntent{{Subject: "jq: " + r.Subject}}
 	}
 	return result, err

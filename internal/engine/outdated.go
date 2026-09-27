@@ -202,7 +202,7 @@ func (e *Engine) prepareOne(ctx context.Context, planned PlannedUpdate, options 
 		return done
 	}
 	done.Branch = branch
-	if done.Update, err = e.Update(ctx, UpdateRequest{Branch: branch, Action: model.Bump, Port: planned.Port.Port, Version: planned.Port.Newest, CompareUpstream: true}); err != nil {
+	if done.Update, err = e.Update(ctx, UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: planned.Port.Port, Version: planned.Port.Newest, CompareUpstream: true}); err != nil {
 		done.Problem = err.Error()
 		return done
 	}

@@ -2,14 +2,13 @@ package macports
 
 import (
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/model"
 	"slices"
 )
 
 // RebindReleaseScope preserves the accepted target set after corrective edits.
 // Corrections may change affected source metadata, but may not silently enlarge
 // the release or alter a protected sibling's source identity.
-func RebindReleaseScope(scope *model.ReleaseScope, snapshot Snapshot) (*model.ReleaseScope, error) {
+func RebindReleaseScope(scope *ReleaseScope, snapshot Snapshot) (*ReleaseScope, error) {
 	if scope == nil {
 		return nil, nil
 	}
@@ -29,7 +28,7 @@ func RebindReleaseScope(scope *model.ReleaseScope, snapshot Snapshot) (*model.Re
 		if info.Version != member.After.Version || info.Epoch != member.After.Epoch {
 			return nil, fmt.Errorf("macports: shared-release version changed for %s; start a new bump", member.Target.Name)
 		}
-		updated.Affected[i].After = ReleaseState(info)
+		updated.Affected[i].After = ReleaseStateOf(info)
 		needsXcode, err := info.Bool("use_xcode")
 		if err != nil {
 			return nil, err
@@ -38,14 +37,15 @@ func RebindReleaseScope(scope *model.ReleaseScope, snapshot Snapshot) (*model.Re
 	}
 	for _, member := range updated.Protected {
 		info, ok := snapshot.Ports[member.Target.Name]
-		if !ok || ReleaseState(info) != member.After {
+		if !ok || ReleaseStateOf(info) != member.After {
 			return nil, fmt.Errorf("macports: protected sibling %s changed source identity", member.Target.Name)
 		}
 	}
 	return &updated, nil
 }
 
-// ReleaseState records the evaluated version and archive identity for a scope member.
-func ReleaseState(p PortInfo) model.ReleaseState {
-	return model.ReleaseState{MasterSites: p.Options["master_sites"], Worksrcdir: p.Options["worksrcdir"], Epoch: p.Epoch, Version: p.Version, Revision: p.Revision, Tag: p.Options["git.branch"], Distfiles: p.Options["distfiles"], Checksums: p.Options["checksums"]}
+// ReleaseStateOf records the evaluated version and archive identity for a
+// scope member.
+func ReleaseStateOf(p PortInfo) ReleaseState {
+	return ReleaseState{MasterSites: p.Options["master_sites"], Worksrcdir: p.Options["worksrcdir"], Epoch: p.Epoch, Version: p.Version, Revision: p.Revision, Tag: p.Options["git.branch"], Distfiles: p.Options["distfiles"], Checksums: p.Options["checksums"]}
 }

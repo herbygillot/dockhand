@@ -55,8 +55,8 @@ type session struct {
 // the session.
 type sourceInput struct {
 	*session
-	scope        *model.ReleaseScope
-	versionInput model.ReleaseInput
+	scope        *macports.ReleaseScope
+	versionInput macports.ReleaseInput
 	before       macports.Snapshot
 	// family is the baseline across the owning Portfile's every subport,
 	// known at load for a main-port selection and evaluated on demand for a

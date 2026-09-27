@@ -93,7 +93,7 @@ edits alone.`,
 			if len(linked.except) > 0 && !linked.revbump {
 				return errors.New("--except takes a port out of --revbump-dependents; add --revbump-dependents")
 			}
-			request := engine.UpdateRequest{Action: model.Bump, Port: args[0], KeepOldChecksums: keepOld, SharedRelease: shared, Plan: plan, CompareUpstream: true}
+			request := engine.UpdateRequest{Action: model.EditUpdate, Port: args[0], KeepOldChecksums: keepOld, SharedRelease: shared, Plan: plan, CompareUpstream: true}
 			if len(args) == 2 {
 				request.Version = args[1]
 			}
@@ -140,7 +140,7 @@ The branch is --branch, else the one checked out here; --new starts one.
 --plan shows the edit and changes nothing.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			request := engine.UpdateRequest{Action: model.RefreshChecksums, Port: args[0], KeepOldChecksums: keepOld, KeepRevision: keepRevision, Plan: plan}
+			request := engine.UpdateRequest{Action: model.EditChecksums, Port: args[0], KeepOldChecksums: keepOld, KeepRevision: keepRevision, Plan: plan}
 			_, _, err := author(cmd.Context(), s, streams, where, "checksums", request, linkedOptions{})
 			return err
 		},
@@ -197,7 +197,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	// A version update's plan with --new is a look before starting a
 	// branch, against master as fetched now; anything else needs one.
 	fromMaster := where.new && request.Plan
-	if fromMaster && request.Action != model.Bump {
+	if fromMaster && request.Action != model.EditUpdate {
 		return model.Branch{}, engine.Update{}, fmt.Errorf("--plan changes nothing, so it starts no branch; plan in an existing one with --branch, or drop --plan")
 	}
 	e, err := s.open(ctx)
@@ -235,14 +235,14 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	result := updateView(branch, started, update, request.Plan)
 	streams.emit(result)
 	if update.Current {
-		if request.Action == model.Bump {
+		if request.Action == model.EditUpdate {
 			fmt.Fprintf(out, "%s is already at %s; nothing to change.\n", update.Port, update.After)
 		} else {
 			fmt.Fprintf(out, "%s %s's checksums are current; nothing to change.\n", update.Port, update.After)
 		}
 		return branch, update, nil
 	}
-	if request.Action == model.Bump {
+	if request.Action == model.EditUpdate {
 		fmt.Fprintf(out, "%s: %s → %s%s\n", update.Port, update.Before, update.After, releaseLabel(update.Release))
 	} else if update.Stealth != nil {
 		fmt.Fprintf(out, "%s %s · the distfile changed upstream without a new name (stealth update)\n", update.Port, update.Before)
@@ -263,7 +263,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		return branch, update, nil
 	}
 	what := "Updated version and checksums"
-	if request.Action == model.RefreshChecksums {
+	if request.Action == model.EditChecksums {
 		what = "Updated checksums"
 	}
 	if update.Distfiles > 0 {
@@ -330,7 +330,7 @@ func byHand(err error, request engine.UpdateRequest, branch model.Branch, starte
 		kept = branch.Name + ", with nothing changed"
 	}
 	switch request.Action {
-	case model.RefreshChecksums:
+	case model.EditChecksums:
 		return fmt.Errorf("can't refresh %s's checksums by itself: %s\nKept: %s.\nWrite them yourself, as port checksum %s reports them:\n  dockhand edit %s",
 			request.Port, reason, kept, request.Port, request.Port)
 	}

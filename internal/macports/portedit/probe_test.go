@@ -43,7 +43,7 @@ proc github.setup {owner project raw prefix} {
 }
 ` + declaration + "\nrevision 3\nchecksums sha256 " + strings.Repeat("0", 64) + "\n"
 	require.NoError(t, os.WriteFile(filepath.Join(root, "devel/fixture/Portfile"), []byte(body), 0600))
-	request := Request{Action: model.Bump, Source: model.Source{Tree: model.ObjectID(strings.Repeat("a", 40))}, Workspace: adopt(t, root), Selection: macports.Selection{Selector: "fixture", Subport: subport}}
+	request := Request{Action: model.EditUpdate, Source: model.Source{Tree: model.ObjectID(strings.Repeat("a", 40))}, Workspace: adopt(t, root), Selection: macports.Selection{Selector: "fixture", Subport: subport}}
 	service := &Service{Ports: &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}}
 	input, err := service.load(t.Context(), &request)
 	require.NoError(t, err)

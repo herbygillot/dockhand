@@ -26,7 +26,7 @@ func TestPortInfoBoolReadsTclBooleansOneWay(t *testing.T) {
 	needs, err := snapshot.RequiresXcode()
 	require.NoError(t, err)
 	require.True(t, needs)
-	rebound, err := macports.RebindReleaseScope(&model.ReleaseScope{Input: model.ReleaseInput{Portfile: "devel/fixture/Portfile"}, Affected: []model.ReleaseMember{{Target: model.Target{Name: "fixture", Portfile: "devel/fixture/Portfile"}, After: model.ReleaseState{Version: "1"}}}}, macports.Snapshot{Ports: map[string]macports.PortInfo{"fixture": {Version: "1", Options: map[string]string{"use_xcode": "on"}}}})
+	rebound, err := macports.RebindReleaseScope(&macports.ReleaseScope{Input: macports.ReleaseInput{Portfile: "devel/fixture/Portfile"}, Affected: []macports.ReleaseMember{{Target: model.Target{Name: "fixture", Portfile: "devel/fixture/Portfile"}, After: macports.ReleaseState{Version: "1"}}}}, macports.Snapshot{Ports: map[string]macports.PortInfo{"fixture": {Version: "1", Options: map[string]string{"use_xcode": "on"}}}})
 	require.NoError(t, err)
 	require.True(t, rebound.Affected[0].NeedsXcode, "use_xcode on is recorded on the scope, as the snapshot reads it")
 }

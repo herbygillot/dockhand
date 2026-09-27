@@ -36,7 +36,7 @@ func archiveFixture(t *testing.T, body string) (*Service, Request, *[]string) {
 	src := "PortSystem 1.0\nname fixture\ncategories devel\n" + strings.ReplaceAll(body, "@SITE@", server.URL) + "\n"
 	require.NoError(t, os.WriteFile(path, []byte(src), 0600))
 	s := &Service{Ports: &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}, Archives: archives.Client{HTTP: server.Client()}}
-	r := Request{Action: model.Bump, Source: model.Source{Tree: model.ObjectID(strings.Repeat("a", 40))}, Workspace: adopt(t, root), Selection: macports.Selection{Selector: "fixture"}, Version: "1.2.4", Release: &model.Release{ReleaseSelection: model.ReleaseSelection{Requested: "1.2.4"}, Archive: true, Version: "1.2.4"}}
+	r := Request{Action: model.EditUpdate, Source: model.Source{Tree: model.ObjectID(strings.Repeat("a", 40))}, Workspace: adopt(t, root), Selection: macports.Selection{Selector: "fixture"}, Version: "1.2.4", Release: &model.Release{ReleaseSelection: model.ReleaseSelection{Requested: "1.2.4"}, Archive: true, Version: "1.2.4"}}
 	return s, r, &requested
 }
 
