@@ -10,7 +10,7 @@ In your clone of `macports/macports-ports`, the one with your fork as a remote:
 dockhand init
 ```
 
-`init` registers the checkout and finds its remote for `macports/macports-ports`, whatever it is called. It also chooses where branch worktrees go: a `macports-branches` directory beside the clone, unless `--worktrees <dir>` or the configuration's `worktrees` names another. Running it again is safe. It needs no GitHub login and no build setup; those come when a command needs them.
+`init` first checks the Git dockhand runs, `git` on `PATH` or `$GIT_BIN`, and refuses one older than 2.40, which `rebase` needs; macOS's own Git is new enough on current releases, and `sudo port install git` gets one otherwise. It then registers the checkout and finds its remote for `macports/macports-ports`, whatever it is called. It also chooses where branch worktrees go: a `macports-branches` directory beside the clone, unless `--worktrees <dir>` or the configuration's `worktrees` names another. Running it again is safe. It needs no GitHub login and no build setup; those come when a command needs them.
 
 Every command works on one ports checkout: `--tree` (`-t`), else `$MACPORTS_TREE`, else the directory you are in. Inside a branch's worktree, that is the checkout it belongs to.
 

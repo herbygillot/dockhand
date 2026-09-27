@@ -270,7 +270,7 @@ func (r *Repository) Replay(ctx context.Context, onto, upstream, head string, co
 		out, status, err := r.runStatus(ctx, "merge-tree", "--write-tree", "--name-only", "-z", "--no-messages", "--merge-base", commit.Parents[0], parent, commit.ID)
 		if err != nil {
 			if status == 129 {
-				return "", fmt.Errorf("git: replaying commits needs Git 2.40 or newer: %w", err)
+				return "", fmt.Errorf("git: replaying commits needs Git %s or newer: %w", MinimumVersion, err)
 			}
 			return "", err
 		}

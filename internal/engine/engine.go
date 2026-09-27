@@ -144,6 +144,24 @@ func (e *Engine) Worktrees() string {
 // ErrNotPortsTree reports a directory that is not a MacPorts ports checkout.
 var ErrNotPortsTree = errors.New("not a MacPorts ports tree")
 
+// GitVersion reads the version of the Git dockhand runs, options.Git or
+// git on PATH, and refuses one older than dockhand works with
+// (git.MinimumVersion), saying how to get a newer one.
+func GitVersion(ctx context.Context, options Options) (git.Version, error) {
+	executable := options.Git
+	if executable == "" {
+		executable = "git"
+	}
+	version, err := git.ExecutableVersion(ctx, executable)
+	if err != nil {
+		return version, fmt.Errorf("dockhand runs Git, and %s can't be run: %w; install Git, such as with: sudo port install git", executable, err)
+	}
+	if !version.AtLeast(git.MinimumVersion) {
+		return version, fmt.Errorf("dockhand needs Git %s or newer, and %s is %s; install a newer one, such as with: sudo port install git, or name one with GIT_BIN", git.MinimumVersion, version.Path, version)
+	}
+	return version, nil
+}
+
 // OpenPortsTree opens the checkout containing dir and refuses anything that
 // is not a ports tree: at least one <category>/<port>/Portfile in the
 // working tree, or, for a sparse checkout, on one of its local branches.

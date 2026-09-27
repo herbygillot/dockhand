@@ -26,10 +26,18 @@ func initCommand(s *settings, streams Streams) *cobra.Command {
 		Long: `Registers this ports checkout, finds its remote for macports/macports-ports,
 and chooses where branch worktrees go: beside the clone unless --worktrees or
 the configuration file says otherwise. It needs no GitHub login and no build
-setup; those come when something needs them.`,
+setup; those come when something needs them.
+
+It first checks the Git dockhand runs, git on PATH or $GIT_BIN, and refuses
+one older than 2.40, which rebase needs.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			options, file, configPath, err := s.options()
+			if err != nil {
+				return err
+			}
+			// A Git too old is refused before anything is recorded.
+			gitVersion, err := engine.GitVersion(cmd.Context(), options)
 			if err != nil {
 				return err
 			}
@@ -82,6 +90,7 @@ setup; those come when something needs them.`,
 			if chosen == "" {
 				chosen = e.DefaultWorktrees()
 			}
+			fmt.Fprintf(out, "  Git          ✓ %s at %s\n", gitVersion, tilde(gitVersion.Path))
 			fmt.Fprintf(out, "  Branches     worktrees in %s\n", tilde(chosen))
 			if tclsh := portTclsh(); tclsh != "" {
 				fmt.Fprintf(out, "  Authoring    ✓ MacPorts at %s\n", tilde(filepath.Dir(filepath.Dir(tclsh))))

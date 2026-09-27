@@ -91,7 +91,7 @@ dockhand submit --passing                 # go through the ones that passed
 
 - **macOS on Apple silicon** to build in Tart. Any Mac can prepare changes and check them on GitHub Actions or your own script.
 - **MacPorts.** Dockhand reads Portfiles through MacPorts' own Tcl interpreter, so it sees what `port` sees.
-- **Git, and a clone of your fork** of `macports/macports-ports` that Git can push to. Dockhand finds the upstream remote whatever it is called, and your fork by your GitHub login.
+- **Git 2.40 or newer, and a clone of your fork** of `macports/macports-ports` that Git can push to. `init` checks the Git it runs: `git` on `PATH`, or `$GIT_BIN`. Dockhand finds the upstream remote whatever it is called, and your fork by your GitHub login.
 - **A GitHub login** for `submit`: `dockhand auth login`, `GH_TOKEN` or `GITHUB_TOKEN`, or the GitHub CLI's.
 - **`go2port` or `cargo2port`**, from MacPorts, only for Go and Rust ports whose Portfile lists its dependencies.
 

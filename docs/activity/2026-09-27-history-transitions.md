@@ -52,3 +52,13 @@ Tests:
 - a tidy that waits for the branch's lock, and changes nothing when it gives up;
 - the store's checkpoint states: settling once, and restoring only an applied checkpoint;
 - the recovery tests fail with the recovery step disabled, checked by hand once.
+
+## init checks for Git 2.40
+
+The person asked that setup check for the Git rebase now needs. `dockhand init` is dockhand's setup; `providers setup tart` makes images and never runs the host's Git.
+
+- **`git.ExecutableVersion`** runs the Git dockhand runs, and reads what `git version` says, whoever built it: "2.54.0 (Apple Git-157)", "2.40.0.rc1", "2.45.2.windows.1". **`git.MinimumVersion`** is 2.40, and `Replay`'s error names it.
+- **`engine.GitVersion`** refuses an older one, naming its path and saying how to get another: "dockhand needs Git 2.40 or newer, and /usr/bin/git is 2.39.5; install a newer one, such as with: sudo port install git, or name one with GIT_BIN". The command layer may not import `git`, so the decision is the engine's.
+- **`init`** checks it before anything is recorded, and lists it first: "Git ✓ 2.54.0 at /opt/local/bin/git". `init --help`, the usage guide, and the README say so.
+
+Tests: versions as several builds of Git report them, compared with the minimum; `init` showing its Git; and `init` refusing a Git that says 2.39.5, with nothing recorded.

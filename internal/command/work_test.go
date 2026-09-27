@@ -63,6 +63,7 @@ func TestInitStartPathAndAdopt(t *testing.T) {
 	out, _, err := dockhand(t, "init")
 	require.NoError(t, err)
 	require.Contains(t, out, "Using ~/src/macports-ports; it has no remote for macports/macports-ports")
+	require.Regexp(t, `\n  Git          ✓ \d+\.\d+\.\d+ at \S+/git\n`, out)
 	require.Contains(t, out, "worktrees in ~/src/macports-branches")
 	require.Contains(t, out, "Records      ~/.dockhand/dockhand.db")
 	_, err = os.Stat(filepath.Join(w.home, ".dockhand", "config.toml"))
@@ -126,4 +127,17 @@ func TestAnEndedInputTakesTheDefault(t *testing.T) {
 	answer, err := ask(Streams{In: strings.NewReader(""), Err: &bytes.Buffer{}}, "Keep? [Y/n] ")
 	require.NoError(t, err)
 	require.Empty(t, answer)
+}
+
+// init refuses a Git older than dockhand works with, before recording
+// anything, and says how to get a newer one.
+func TestInitRefusesAnOldGit(t *testing.T) {
+	w := newWorld(t)
+	old := filepath.Join(w.home, "bin", "git")
+	require.NoError(t, os.MkdirAll(filepath.Dir(old), 0o755))
+	require.NoError(t, os.WriteFile(old, []byte("#!/bin/sh\necho 'git version 2.39.5 (Apple Git-154)'\n"), 0o755))
+	t.Setenv("GIT_BIN", old)
+	_, _, err := dockhand(t, "init")
+	require.EqualError(t, err, "dockhand needs Git 2.40 or newer, and "+old+" is 2.39.5; install a newer one, such as with: sudo port install git, or name one with GIT_BIN")
+	require.NoFileExists(t, filepath.Join(w.home, ".dockhand", "dockhand.db"), "nothing was recorded")
 }
