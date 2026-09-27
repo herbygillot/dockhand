@@ -27,6 +27,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/installation"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -657,7 +658,7 @@ func (p *Provider) record(ctx context.Context, g guest, job buildenv.Job, build 
 		}
 		build.Consumed(target.ID, active)
 	}
-	result.Archive = got.Archive
+	result.Archive, result.Detail = got.Archive, got.Detail
 	if err := build.Record(result); err != nil {
 		return err
 	}
@@ -670,8 +671,11 @@ func (p *Provider) record(ctx context.Context, g guest, job buildenv.Job, build 
 // reported is what the guest reported about itself, for the pull request's
 // Tested on.
 func reported(environment map[string]string) model.Observed {
+	// The guest records port version's own words, "Version: 2.12.6".
+	macports, _ := installation.ParseVersion([]byte(environment["macports"]))
 	return model.Observed{MacOS: environment["macos"], Build: environment["build"], Architecture: environment["architecture"],
-		Xcode: environment["xcode"], XcodeBuild: environment["xcode_build"], Tools: environment["tools"]}
+		Xcode: environment["xcode"], XcodeBuild: environment["xcode_build"], Tools: environment["tools"],
+		DeveloperDir: environment["developer_dir"], MacPorts: macports}
 }
 
 // driftReport compares the guest's tools with the facts table's row for

@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -27,6 +29,9 @@ func TestTestedOnSaysWhatTheEnvironmentWas(t *testing.T) {
 		{"reported, with Xcode", model.Environment{Provider: "tart", Platform: tahoe, DeveloperTools: model.DeveloperToolsXcode},
 			model.Observed{MacOS: "26.6.2", Build: "25G71", Architecture: "arm64", Xcode: "26.6", XcodeBuild: "17F42", Tools: "26.6.0.0.1781586589"}, tart,
 			"macOS 26.6.2 25G71 arm64\nXcode 26.6 17F42 · tart: built in a clean VM (Run ID: tart_7y62p4sigena6xlr - checked in check-11)\n\n"},
+		{"reported, with its MacPorts", model.Environment{Provider: "tart", Platform: tahoe, DeveloperTools: model.DeveloperToolsXcode},
+			model.Observed{MacOS: "26.6.2", Build: "25G71", Architecture: "arm64", Xcode: "26.6", XcodeBuild: "17F42", MacPorts: "2.12.6"}, tart,
+			"macOS 26.6.2 25G71 arm64\nXcode 26.6 17F42 · MacPorts 2.12.6 · tart: built in a clean VM (Run ID: tart_7y62p4sigena6xlr - checked in check-11)\n\n"},
 		{"reported, with the tools", model.Environment{Provider: "tart", Platform: tahoe, DeveloperTools: model.DeveloperToolsCommandLine},
 			model.Observed{MacOS: "26.6.2", Build: "25G71", Architecture: "arm64", Tools: "26.6.0.0.1781586589"},
 			append([]model.GuestExecution{{ID: "tart_b3kq9wz0m1xv4ce7", Run: "run_ten"}}, tart...),
@@ -83,4 +88,43 @@ func TestTimedOutTestsAreNotPassing(t *testing.T) {
 	body := ownedSections(bodyFacts{Evidence: &evidence})
 	require.Contains(t, body, "- [ ] tried existing tests")
 	require.Contains(t, body, "| libharbor | ✓ build passed; tests timed out (advisory) |")
+}
+
+// An environment's report names the runs that made it: where results came
+// from runs that found the environment otherwise, each report is its own,
+// with its own runs. From the architecture review of 2026-09-27, which
+// found the latest report standing for every run.
+func TestEachReportNamesTheRunsThatMadeIt(t *testing.T) {
+	at := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	older := model.Observed{MacOS: "26.6.1", Xcode: "26.6", MacPorts: "2.12.5"}
+	newer := model.Observed{MacOS: "26.6.2", Xcode: "26.6", MacPorts: "2.12.6"}
+	runs := map[model.ExecutionID]model.GuestExecution{
+		"tart_a": {ID: "tart_a", Run: "run_ten", Observed: older, CreatedAt: at},
+		"tart_b": {ID: "tart_b", Run: "run_eleven", Observed: newer, CreatedAt: at.Add(time.Hour)},
+		"tart_c": {ID: "tart_c", Run: "run_eleven", CreatedAt: at.Add(2 * time.Hour)},
+	}
+	evidence := func(executions ...model.ExecutionID) Evidence {
+		e := Evidence{Plan: model.Plan{Environments: []model.Environment{{Provider: "tart"}}}, Executions: map[model.ExecutionID]model.GuestExecution{}}
+		for i, id := range executions {
+			e.Executions[id] = runs[id]
+			e.Targets = append(e.Targets, TargetEvidence{Target: model.PlanTarget{ID: model.TargetID(fmt.Sprint("port", i))},
+				Outcomes: []model.TargetResult{{Execution: id, Outcome: model.OutcomePassed}}})
+		}
+		return e
+	}
+	observations := evidence("tart_a", "tart_b").Observations(0)
+	require.Len(t, observations, 2, "they found the environment otherwise")
+	require.Equal(t, older, observations[0].Observed)
+	require.Equal(t, model.ExecutionID("tart_a"), observations[0].Runs[0].ID)
+	require.Equal(t, newer, observations[1].Observed)
+
+	observations = evidence("tart_b", "tart_c").Observations(0)
+	require.Len(t, observations, 1, "a run that said nothing joins the one report")
+	require.Equal(t, newer, observations[0].Observed)
+	require.Len(t, observations[0].Runs, 2)
+
+	observations = evidence("tart_a", "tart_b", "tart_c").Observations(0)
+	require.Len(t, observations, 3, "and stands alone beside two")
+	require.Equal(t, model.Observed{}, observations[2].Observed)
+	require.Empty(t, evidence().Observations(0))
 }

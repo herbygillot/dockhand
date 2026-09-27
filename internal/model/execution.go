@@ -83,6 +83,10 @@ type Observed struct {
 	Xcode      string `json:"xcode,omitempty"`
 	XcodeBuild string `json:"xcode_build,omitempty"`
 	Tools      string `json:"tools,omitempty"`
+	// DeveloperDir is xcode-select's, the developer tools MacPorts uses.
+	DeveloperDir string `json:"developer_dir,omitempty"`
+	// MacPorts is the MacPorts that built the ports, 2.12.6.
+	MacPorts string `json:"macports,omitempty"`
 }
 
 // Validate checks the rules every stored execution keeps.
@@ -171,6 +175,10 @@ type TargetResult struct {
 	Tests TestOutcome
 	// Log locates the target's log beside the database.
 	Log string
+	// Detail is why the target stopped, in its provider's words, where the
+	// provider says: MacPorts' last errors for a failed target, or the
+	// changed dependency that blocked one.
+	Detail string
 	// Inputs is the key of what the build read (TargetInputs), for reuse
 	// (decision 28); empty where the provider couldn't say.
 	Inputs string

@@ -288,6 +288,9 @@ func writeLogs(out io.Writer, logs engine.RunLogs) error {
 			if result.Phase != "" {
 				line += " at " + string(result.Phase)
 			}
+			if result.Detail != "" {
+				line += ": " + result.Detail
+			}
 			if result.Log != "" {
 				line += "  " + tilde(result.Log)
 			}

@@ -112,16 +112,42 @@ func (e Evidence) Checks() map[model.RunID]string {
 	return checks
 }
 
-// Observed is what an environment reported about itself in the latest of
-// its runs that said anything; empty where none did.
-func (e Evidence) Observed(environment int) model.Observed {
-	var observed model.Observed
+// Observation is what an environment reported about itself, with the
+// provider runs that reported it.
+type Observation struct {
+	Observed model.Observed
+	Runs     []model.GuestExecution
+}
+
+// Observations are what an environment's runs reported, each report with
+// the runs that made it, oldest first: one where they agree, and one each
+// where results came from runs that found the environment otherwise, such
+// as an earlier check's with other tools. A run that reported nothing
+// joins them where there is one report, rather than stand alone.
+func (e Evidence) Observations(environment int) []Observation {
+	var observations []Observation
+	var silent []model.GuestExecution
 	for _, run := range e.Runs(environment) {
-		if run.Observed != (model.Observed{}) {
-			observed = run.Observed
+		if run.Observed == (model.Observed{}) {
+			silent = append(silent, run)
+			continue
 		}
+		i := slices.IndexFunc(observations, func(o Observation) bool { return o.Observed == run.Observed })
+		if i < 0 {
+			observations = append(observations, Observation{Observed: run.Observed})
+			i = len(observations) - 1
+		}
+		observations[i].Runs = append(observations[i].Runs, run)
 	}
-	return observed
+	switch {
+	case len(silent) == 0:
+	case len(observations) == 1:
+		observations[0].Runs = append(silent, observations[0].Runs...)
+		slices.SortStableFunc(observations[0].Runs, func(a, b model.GuestExecution) int { return a.CreatedAt.Compare(b.CreatedAt) })
+	default:
+		observations = append(observations, Observation{Runs: silent})
+	}
+	return observations
 }
 
 // Unchecked lists the targets no check of the files built everywhere they

@@ -204,10 +204,16 @@ its provider, `tart_7y62p4sigena6xlr`:
 
 - the check's progress shows it ("attempt 1 of 3 on tart macOS 26 (Tahoe)
   arm64 with Xcode, run tart_7y62p4sigena6xlr");
-- a pull request's Tested on names it, beside the macOS, Xcode, and tools
-  the guest reported;
+- a pull request's Tested on names it, beside the macOS, Xcode, tools, and
+  MacPorts the guest reported. Where a port's results came from runs that
+  found the release otherwise, such as an earlier check's with other
+  tools, each report is its own line, naming its runs;
 - `dockhand logs tart_7y62p4sigena6xlr` shows that run's evidence, and its
   VM clone's name.
+
+A failed or blocked target's result keeps why it stopped, in the guest's
+words: MacPorts' last errors, or the changed dependency that didn't pass.
+`dockhand logs` shows it beside the outcome, and `--json` as `detail`.
 
 Each target's result keeps what its build read: the ports active as it
 built, each with its version, variants, directory, and archive's digest,

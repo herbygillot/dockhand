@@ -400,6 +400,7 @@ func TestAResultKeepsWhatItsBuildRead(t *testing.T) {
 	require.Equal(t, []string{inputs.Key(), inputs.Key()}, keys, "recorded once, by content")
 	built := missing
 	built.Archive = "sha256:55"
+	built.Detail = "a dependency failed to install: zlib"
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.RecordResult(built) }))
 
 	require.NoError(t, f.store.View(t.Context(), f.repo, func(rd store.Reader) error {
@@ -407,6 +408,7 @@ func TestAResultKeepsWhatItsBuildRead(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, results, 1)
 		require.Equal(t, "sha256:55", results[0].Archive)
+		require.Equal(t, "a dependency failed to install: zlib", results[0].Detail)
 		read, err := rd.Inputs(results[0].Inputs)
 		require.NoError(t, err)
 		require.Equal(t, inputs, read)

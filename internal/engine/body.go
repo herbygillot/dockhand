@@ -95,7 +95,13 @@ func ownedSections(facts bodyFacts) string {
 	default:
 		checks := evidence.Checks()
 		for i, environment := range evidence.Plan.Environments {
-			b.WriteString(testedOn(environment, evidence.Observed(i), evidence.Runs(i), checks))
+			observations := evidence.Observations(i)
+			if len(observations) == 0 {
+				observations = []Observation{{}}
+			}
+			for _, observation := range observations {
+				b.WriteString(testedOn(environment, observation.Observed, observation.Runs, checks))
+			}
 		}
 		fmt.Fprint(&b, "| Port |")
 		for _, environment := range evidence.Plan.Environments {
@@ -217,6 +223,9 @@ func testedOn(environment model.Environment, observed model.Observed, runs []mod
 		tools = "Command Line Tools, their version not recorded"
 	default:
 		tools = "Developer tools not recorded"
+	}
+	if observed.MacPorts != "" {
+		tools += " · MacPorts " + observed.MacPorts
 	}
 	fmt.Fprintf(&b, "%s · %s%s\n\n", tools, providerWords(environment.Provider), runWords(runs, checks))
 	return b.String()

@@ -246,7 +246,8 @@ func TestTheProviderRecordsEachTargetAsTheGuestFinishesIt(t *testing.T) {
 
 	require.Len(t, build.results, 2)
 	require.Equal(t, model.TargetResult{Target: "libharbor", Outcome: model.OutcomePassed, Tests: model.TestsPassed, Log: filepath.Join(job.Directory, "target-1.log"), Archive: "sha256:11"}, build.results[0])
-	require.Equal(t, model.TargetResult{Target: "harbor-cli", Outcome: model.OutcomeFailed, Phase: model.PhaseInstall, Tests: model.TestsNone, Log: filepath.Join(job.Directory, "target-2.log")}, build.results[1])
+	require.Equal(t, model.TargetResult{Target: "harbor-cli", Outcome: model.OutcomeFailed, Phase: model.PhaseInstall, Tests: model.TestsNone, Log: filepath.Join(job.Directory, "target-2.log"),
+		Detail: "Failed to install harbor-cli"}, build.results[1], "the guest's detail is the result's")
 	log, err := os.ReadFile(filepath.Join(job.Directory, "target-1.log"))
 	require.NoError(t, err)
 	require.Equal(t, "built libharbor", string(log))
@@ -460,12 +461,14 @@ func TestWhatAGuestReportedIsKeptWhenItFinishesBetweenReads(t *testing.T) {
 	passed := guestResult{ID: "libharbor", Outcome: "passed", Log: "target-1.log"}
 	mac := newMac(
 		guestResults{State: "running"},
-		guestResults{State: "finished", Environment: map[string]string{"macos": "26.6.2", "build": "25G83", "architecture": "arm64", "xcode": "26.6", "xcode_build": "17F113"},
+		guestResults{State: "finished", Environment: map[string]string{"macos": "26.6.2", "build": "25G83", "architecture": "arm64", "xcode": "26.6", "xcode_build": "17F113",
+			"developer_dir": "/Applications/Xcode.app/Contents/Developer", "macports": "Version: 2.12.6"},
 			Targets: []guestResult{passed, {ID: "harbor-cli", Outcome: "passed", Log: "target-2.log"}}},
 	)
 	mac.guest.exited = true
 	build := &fakeBuild{}
 	require.NoError(t, testProvider(mac).Execute(t.Context(), tartJob(t, 1), build))
 	require.Len(t, build.results, 2)
-	require.Equal(t, []model.Observed{{MacOS: "26.6.2", Build: "25G83", Architecture: "arm64", Xcode: "26.6", XcodeBuild: "17F113"}}, build.observed)
+	require.Equal(t, []model.Observed{{MacOS: "26.6.2", Build: "25G83", Architecture: "arm64", Xcode: "26.6", XcodeBuild: "17F113",
+		DeveloperDir: "/Applications/Xcode.app/Contents/Developer", MacPorts: "2.12.6"}}, build.observed, "port version's words read as its version")
 }
