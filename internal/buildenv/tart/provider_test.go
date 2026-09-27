@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/macos"
@@ -25,14 +26,19 @@ import (
 // fakeMac stands for the Mac's Tart: its images, what runs, and a guest
 // whose results a test scripts.
 type fakeMac struct {
-	mu       sync.Mutex
-	images   []string
-	cached   []tartvm.Image
-	cloneErr error
-	running  []int // counts Running reports, one per call, the last repeating
-	events   []string
-	guest    *fakeGuest
-	run      *fakeRun
+	mu     sync.Mutex
+	images []string
+	cached []tartvm.Image
+	// live counts the VMs it starts until they stop, on top of base, the
+	// person's own, rather than reading running's script; peak is the
+	// most of its own it ran at once.
+	live           bool
+	base, up, peak int
+	cloneErr       error
+	running        []int // counts Running reports, one per call, the last repeating
+	events         []string
+	guest          *fakeGuest
+	run            *fakeRun
 }
 
 func (m *fakeMac) log(event string) {
@@ -48,6 +54,9 @@ func (m *fakeMac) Images(context.Context) ([]string, error) {
 func (m *fakeMac) Running(context.Context) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.live {
+		return m.base + m.up, nil
+	}
 	if len(m.running) == 0 {
 		return 0, nil
 	}
@@ -59,6 +68,11 @@ func (m *fakeMac) Running(context.Context) (int, error) {
 }
 func (m *fakeMac) Clone(_ context.Context, image, vm string) error {
 	m.log("clone " + image + " " + vm)
+	if m.live {
+		// Cloning takes a moment, as Tart's does, in which another release
+		// could take the same slot were starts not taken in turn.
+		time.Sleep(20 * time.Millisecond)
+	}
 	if m.cloneErr != nil {
 		return m.cloneErr
 	}
@@ -69,7 +83,32 @@ func (m *fakeMac) Clone(_ context.Context, image, vm string) error {
 }
 func (m *fakeMac) Start(vm string) (run, error) {
 	m.log("start " + vm)
+	if m.live {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		m.up++
+		m.peak = max(m.peak, m.up)
+		return &liveRun{mac: m, done: make(chan struct{})}, nil
+	}
 	return m.run, nil
+}
+
+// liveRun is a VM a live fakeMac counts until it stops.
+type liveRun struct {
+	mac  *fakeMac
+	done chan struct{}
+	once sync.Once
+}
+
+func (r *liveRun) Done() <-chan struct{} { return r.done }
+func (r *liveRun) Err() error            { return nil }
+func (r *liveRun) Stop(context.Context, time.Duration) error {
+	r.once.Do(func() {
+		r.mac.mu.Lock()
+		r.mac.up--
+		r.mac.mu.Unlock()
+	})
+	return nil
 }
 func (m *fakeMac) Stop(_ context.Context, vm string) error { m.log("stop " + vm); return nil }
 func (m *fakeMac) Delete(_ context.Context, vm string) error {
@@ -507,4 +546,29 @@ func TestTheCacheKeepsWhatIsUsed(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"ghcr.io/cirruslabs/macos-sonoma-vanilla@sha256:aaaa"}, removed)
 	require.Equal(t, []string{"delete cached ghcr.io/cirruslabs/macos-sonoma-vanilla@sha256:aaaa"}, mac.events)
+}
+
+// Releases checked together start their VMs one at a time, each once the
+// last is listed as running, so they never both take a slot the Mac has
+// only one of: here the person's own VM holds the other.
+func TestReleasesTakeTheMacsSlotsInTurn(t *testing.T) {
+	t.Parallel()
+	mac := newMac(guestResults{State: "finished"})
+	mac.images = append(mac.images, "dockhand-base-sonoma")
+	mac.live, mac.base = true, 1
+	p := testProvider(mac)
+	sonoma := model.Platform{OS: "darwin", Version: "23", Architecture: "arm64"}
+	builds := []*fakeBuild{{}, {}}
+	var group errgroup.Group
+	for i, platform := range []model.Platform{tahoe, sonoma} {
+		job := tartJob(t, 1)
+		job.Environment.Platform = platform
+		group.Go(func() error { return p.Execute(t.Context(), job, builds[i]) })
+	}
+	require.NoError(t, group.Wait())
+	require.Equal(t, 1, mac.peak, "one slot was free, so the releases took it in turn")
+	waited := slices.ContainsFunc(append(builds[0].progress, builds[1].progress...), func(line string) bool {
+		return strings.HasPrefix(line, "waiting for the Mac's VMs: 2 are running")
+	})
+	require.True(t, waited, "the second waited for the first's VM")
 }

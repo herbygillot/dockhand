@@ -157,7 +157,7 @@ Results are per target and per environment:
 | `github` | MacPorts' workflow in your fork |
 | `command` | your own script |
 
-With several releases, `check` shows the results as a grid, one column per release.
+With several releases, `check` builds two at a time, as many as macOS runs VMs, and shows the results as a grid, one column per release. A check on several providers, such as `--on tahoe --on github`, builds on each at once.
 
 **Running it.** With no `serve` running, the check runs in the foreground and says so. Ctrl-C stops it, keeping what finished. With `serve` running, the check is handed to serve and followed here, and Ctrl-C only stops following. `-d` queues it and returns.
 

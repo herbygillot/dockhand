@@ -195,7 +195,9 @@ tahoe = "26.6"          # what MacPorts' arm64 buildbot runs when unset
 ```
 
 macOS runs two VMs at most, yours among them, so a check waits for a slot
-when two are already running.
+when two are already running. A check of several releases builds two of
+them at once. Their VMs start one at a time, each once the last is
+running, so when your own VM holds one slot they take the other in turn.
 
 ## What it reports
 

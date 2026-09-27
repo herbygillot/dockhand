@@ -20,6 +20,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
@@ -73,6 +74,8 @@ type Provider struct {
 	stager  func(ctx context.Context, job buildenv.Job, input guestInput, archive string) error
 	// host is this Mac's Darwin release; the kernel's when zero.
 	host int
+	// starting lets one clone start at a time (start).
+	starting sync.Mutex
 	// xcodes stands in for xcodes in tests.
 	xcodes string
 }
@@ -101,6 +104,7 @@ func (p *Provider) vms() (machine, error) {
 var (
 	_ buildenv.IdentityProvider = (*Provider)(nil)
 	_ buildenv.CacheProvider    = (*Provider)(nil)
+	_ buildenv.ParallelProvider = (*Provider)(nil)
 	_ buildenv.ReleaseProvider  = (*Provider)(nil)
 	_ buildenv.Remedier         = (*Provider)(nil)
 	_ buildenv.LeftoverProvider = (*Provider)(nil)
@@ -410,26 +414,16 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		return fmt.Errorf("staging the revision: %w", err)
 	}
 
-	if err := p.slot(ctx, m, build); err != nil {
-		return err
+	cloned, started, err := p.start(ctx, m, build, image, vm)
+	if cloned {
+		defer func() {
+			if deleteErr := m.Delete(cleanup, vm); deleteErr != nil && err == nil {
+				build.Progress("deleting " + vm + ": " + deleteErr.Error())
+			}
+		}()
 	}
-	build.Progress("starting " + vm + " from " + image)
-	// The clone is named on the execution before it exists, so one this
-	// process leaves when it dies is always a known check's (Leftovers).
-	if err := build.Refer(vm); err != nil {
-		return err
-	}
-	if err := m.Clone(ctx, image, vm); err != nil {
-		return fmt.Errorf("%w: cloning %s: %w", buildenv.ErrInfrastructure, image, err)
-	}
-	defer func() {
-		if deleteErr := m.Delete(cleanup, vm); deleteErr != nil && err == nil {
-			build.Progress("deleting " + vm + ": " + deleteErr.Error())
-		}
-	}()
-	started, err := m.Start(vm)
 	if err != nil {
-		return fmt.Errorf("%w: starting %s: %w", buildenv.ErrInfrastructure, vm, err)
+		return err
 	}
 	defer func() { _ = started.Stop(cleanup, time.Minute) }()
 	g, err := m.Reach(ctx, vm, image)
@@ -497,17 +491,61 @@ func (p *Provider) sweep(ctx context.Context, m machine, prefix string, attempt 
 	}
 }
 
+// start takes a slot on the Mac, then clones the image and starts the
+// clone, one start at a time in this process, and until the clone is
+// listed as running: releases checked together would otherwise each see a
+// slot free before either's VM runs. It says whether it cloned, for the
+// caller to delete what it made.
+func (p *Provider) start(ctx context.Context, m machine, build buildenv.Build, image, vm string) (cloned bool, started run, err error) {
+	p.starting.Lock()
+	defer p.starting.Unlock()
+	before, err := p.slot(ctx, m, build)
+	if err != nil {
+		return false, nil, err
+	}
+	build.Progress("starting " + vm + " from " + image)
+	// The clone is named on the execution before it exists, so one this
+	// process leaves when it dies is always a known check's (Leftovers).
+	if err := build.Refer(vm); err != nil {
+		return false, nil, err
+	}
+	if err := m.Clone(ctx, image, vm); err != nil {
+		return false, nil, fmt.Errorf("%w: cloning %s: %w", buildenv.ErrInfrastructure, image, err)
+	}
+	if started, err = m.Start(vm); err != nil {
+		return true, nil, fmt.Errorf("%w: starting %s: %w", buildenv.ErrInfrastructure, vm, err)
+	}
+	// The next start counts this VM once Tart lists it, which takes a
+	// moment; it waits that long at most.
+	for range 30 {
+		if running, err := m.Running(ctx); err != nil || running > before {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return true, started, nil
+		case <-time.After(min(p.poll(), time.Second)):
+		}
+	}
+	return true, started, nil
+}
+
+// Parallel is how many releases one check builds at once: the Mac runs two
+// VMs at most (buildenv.ParallelProvider). One that finds the other slot
+// taken, by the person's own VM or another check's, waits for it.
+func (p *Provider) Parallel() int { return 2 }
+
 // slot waits until the Mac has room for another VM: it runs two at most,
-// whoever started them.
-func (p *Provider) slot(ctx context.Context, m machine, build buildenv.Build) error {
+// whoever started them. It says how many were running then.
+func (p *Provider) slot(ctx context.Context, m machine, build buildenv.Build) (int, error) {
 	told := false
 	for {
 		running, err := m.Running(ctx)
 		if err != nil {
-			return p.trouble(ctx, "counting the Mac's running VMs", err)
+			return 0, p.trouble(ctx, "counting the Mac's running VMs", err)
 		}
 		if running < 2 {
-			return nil
+			return running, nil
 		}
 		if !told {
 			build.Progress(fmt.Sprintf("waiting for the Mac's VMs: %d are running, and macOS runs two at most", running))
@@ -515,7 +553,7 @@ func (p *Provider) slot(ctx context.Context, m machine, build buildenv.Build) er
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return 0, ctx.Err()
 		case <-time.After(3 * p.poll()):
 		}
 	}

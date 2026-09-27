@@ -139,6 +139,15 @@ type LeftoverProvider interface {
 	RemoveLeftover(ctx context.Context, ref string) error
 }
 
+// A ParallelProvider can build several of one check's environments at once,
+// as Tart builds two releases in the Mac's two VMs. The runner builds at
+// most Parallel of its environments together; a provider that isn't one
+// builds its environments one at a time.
+type ParallelProvider interface {
+	Provider
+	Parallel() int
+}
+
 // A CacheProvider keeps downloads its environments are made from, as Tart
 // keeps the vanilla images it pulled for dockhand, and removes those unused
 // for a while (decision 36).

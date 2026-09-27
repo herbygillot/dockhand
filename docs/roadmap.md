@@ -109,7 +109,6 @@ These need MacPorts Base, whole-tree surveys, or VMs, so they run as the Mac all
 
 These are taken when their area is next touched, or between items.
 
-- **Tart checks of several releases in parallel,** within the Mac's two VMs.
 - **Tart workarounds to retire as Tart releases fixes:**
   - the retry of a listing that raced a delete ([openai/tart#1353](https://github.com/openai/tart/issues/1353));
   - trusting a delete only by the VM's absence (#1345, fixed by #1350 on 2026-09-26, hours after 2.39.0 was tagged: unreleased as of 2026-09-27);

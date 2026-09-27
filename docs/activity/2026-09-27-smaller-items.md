@@ -119,3 +119,17 @@ Nothing is retired yet.
 Fifty-four links in historical documents pointed at files since deleted: v2's packages, and the paths v3 renamed. Most were in the reviews, which cite code by line. Each now points at the code as the document saw it: a GitHub permalink at the commit that added the document, where the file existed then, which it did for all 54. So a review's `provider.go#L94` still lands on the line it meant, rather than on the file's last version.
 
 One more `](url)` stays: it is inside backticks, an example of link syntax.
+
+## Several releases at once
+
+A check of `tart:all` built its six releases one after another, and a check on Tart and github waited for one before starting the other. The runner now builds a check's environments together, where their providers can:
+- **Each provider,** at most as many at once as it says (`buildenv.ParallelProvider`), in the plan's order. Tart says two, the Mac's VMs. A provider that doesn't say builds one at a time, in the plan's order as before.
+- **Different providers' side by side,** so github's run and Tart's releases overlap.
+
+Environments are taken from each provider's list by worker loops rather than racing for a slot, so the order stays the plan's. An error from one ends the others, as it ended the drive before. The driver's problems, now noted from several environments, are guarded (`driver.problem`).
+
+**Tart's VM slots.** Two releases starting together could each see a slot free before either VM ran, and so take one slot twice, where the person's own VM holds the other. The provider now starts its VMs one at a time (`Provider.start`): from the slot check, through the clone and start, until Tart lists the new VM as running, at most 30 polls.
+
+**Tests.**
+- `TestEnvironmentsBuildTogetherWhereTheProviderCan`: each of two environments waits for the other to begin, which it never would one at a time.
+- `TestReleasesTakeTheMacsSlotsInTurn`: a live fake Mac counts VMs until they stop, and with one slot free the two releases peak at one VM and one waits. With the start lock removed it failed five times in five, and with it passes five in five under the race detector.

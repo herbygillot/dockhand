@@ -8,8 +8,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/coord"
@@ -161,8 +164,17 @@ type driver struct {
 	// canceled records that a cancel request, not the driver stopping,
 	// ended the run.
 	canceled atomic.Bool
-	// problems are why the run needs a person's attention.
+	// problems are why the run needs a person's attention; mu guards them
+	// while environments build together.
 	problems []string
+	mu       sync.Mutex
+}
+
+// problem notes why the run needs a person's attention.
+func (d *driver) problem(problem string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.problems = append(d.problems, problem)
 }
 
 func (d *driver) fenced(ctx context.Context, fn func(store.Tx) error) error {
@@ -220,18 +232,46 @@ func (d *driver) drive(ctx context.Context, id model.RunID) (model.Run, error) {
 	if err != nil {
 		return d.run, err
 	}
+	// Environments build together where their providers can: each
+	// provider's at most as many at once as it says (ParallelProvider), in
+	// the plan's order, one at a time otherwise; different providers' side
+	// by side.
+	var names []string
+	queues := map[string][]model.Environment{}
 	for _, environment := range d.plan.Environments {
-		if running.Err() != nil {
-			break
-		}
-		provider, ok := e.Providers[environment.Provider]
-		if !ok {
-			d.problems = append(d.problems, fmt.Sprintf("no provider %q is set up here", environment.Provider))
+		if _, ok := e.Providers[environment.Provider]; !ok {
+			d.problem(fmt.Sprintf("no provider %q is set up here", environment.Provider))
 			continue
 		}
-		if err := d.environment(running, provider, environment, revision, commit); err != nil {
-			return d.run, err
+		if _, ok := queues[environment.Provider]; !ok {
+			names = append(names, environment.Provider)
 		}
+		queues[environment.Provider] = append(queues[environment.Provider], environment)
+	}
+	group, together := errgroup.WithContext(running)
+	for _, name := range names {
+		provider, queue := e.Providers[name], queues[name]
+		workers := 1
+		if parallel, ok := provider.(buildenv.ParallelProvider); ok && parallel.Parallel() > 1 {
+			workers = parallel.Parallel()
+		}
+		var next atomic.Int64
+		for range min(workers, len(queue)) {
+			group.Go(func() error {
+				for {
+					i := int(next.Add(1)) - 1
+					if i >= len(queue) || together.Err() != nil {
+						return nil
+					}
+					if err := d.environment(together, provider, queue[i], revision, commit); err != nil {
+						return err
+					}
+				}
+			})
+		}
+	}
+	if err := group.Wait(); err != nil {
+		return d.run, err
 	}
 	if running.Err() != nil {
 		if d.stopped() {
@@ -324,7 +364,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			return nil
 		}
 		if attempt >= model.MaxAttempts {
-			d.problems = append(d.problems, fmt.Sprintf("%s failed %d times for reasons of its own; see dockhand logs %s", describeEnvironment(environment), attempt, d.run.Name()))
+			d.problem(fmt.Sprintf("%s failed %d times for reasons of its own; see dockhand logs %s", describeEnvironment(environment), attempt, d.run.Name()))
 			return nil
 		}
 		// A provider run's ID is unique, and named for its provider:

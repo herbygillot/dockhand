@@ -357,3 +357,44 @@ func TestServeTakesPeoplesChecksFirst(t *testing.T) {
 	}
 	require.Equal(t, []int{first.Number, byPerson.Number, byServe.Number}, order)
 }
+
+// together is a scripted provider that builds two environments at once,
+// as Tart builds two releases in the Mac's two VMs: each build waits until
+// the other has begun, which it never would one at a time.
+type together struct {
+	scriptedProvider
+	begun sync.WaitGroup
+}
+
+func (p *together) Parallel() int { return 2 }
+
+func (p *together) Execute(ctx context.Context, job buildenv.Job, build buildenv.Build) error {
+	p.begun.Done()
+	waited := make(chan struct{})
+	go func() { p.begun.Wait(); close(waited) }()
+	select {
+	case <-waited:
+	case <-time.After(10 * time.Second):
+		return errors.New("the other environment never began: they built one at a time")
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return p.scriptedProvider.Execute(ctx, job, build)
+}
+
+// A check's environments build together where their provider can, each
+// with its own execution and results.
+func TestEnvironmentsBuildTogetherWhereTheProviderCan(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	provider := &together{}
+	provider.begun.Add(2)
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	queued := queuedHarborRun(t, e, tahoeArm, tahoeX86)
+	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, run.State, run.Detail)
+	require.Len(t, provider.jobs, 2)
+	require.Equal(t, model.OutcomePassed, outcomes(t, e, run)["libharbor@arm64"])
+	require.Equal(t, model.OutcomePassed, outcomes(t, e, run)["libharbor@x86_64"])
+}
