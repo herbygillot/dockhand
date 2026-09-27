@@ -44,3 +44,7 @@ Per-environment planning, and the rule for which results count (`engine.Counts`)
 - reuse keys results by what each build consumed, which replaces the rule.
 
 Moving them now would move them twice. The roadmap says so under item 4, and they move with item 6.
+
+## The roadmap
+
+Item 4 is marked done but for planning and the counting rule, which item 6 now takes out of the engine as it changes them.

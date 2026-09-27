@@ -53,11 +53,15 @@ In order. Each item lands in its own commits with an activity note, and a review
 
    It departs from this roadmap's "no durable operation record": the next command can only finish a stopped change if its intent was recorded first. The prepared checkpoint is that record, one state column rather than a workflow engine.
 
-4. **Seams in the engine.**
-   - **The provider contract moves first.** `Job`, `Build`, and `Fork` move to a leaf package that providers import instead of `engine`; all three providers import `engine` today. This is cheap, and it removes the upward dependency that would otherwise tangle the next moves.
-   - **Then the pieces fixed in items 1 to 3 move out** behind the `Engine` facade: the test-policy judge, per-environment planning, and history. Each moves once it is fixed and stable, not before.
-   - **A boundary test limits what `engine` itself may import**, as the command boundary test limits `command`.
-   - **Not split:** `command`, whose size is its job, `portedit`, which already delegates, and the CLI verbs into packages of their own.
+4. **Seams in the engine.** Done 2026-09-27, but for what waits on item 6 ([note](activity/2026-09-27-engine-seams.md)):
+   - the provider contract is `internal/provider`, which the providers import instead of `engine`, and a test keeps them off the engine;
+   - a boundary test names every package `engine` may import, with why, and fails on one unlisted or no longer imported;
+   - history's transitions are `internal/history`, with the verbs left in the engine;
+   - the test-policy judge is `model.TestPolicy.Judge`.
+
+   **Per-environment planning and the rule for which results count stay in the engine until item 6,** which changes both: the planner's input becomes the port reader's evaluation report, and reuse keys results by what each build consumed. They move with it, once.
+
+   **Not split:** `command`, whose size is its job, `portedit`, which already delegates, and the CLI verbs into packages of their own.
 
 5. **Retire v2.** The binary uses none of v2's orchestration, but some of it is still live:
    - about two dozen live packages import `record`;
@@ -73,7 +77,7 @@ In order. Each item lands in its own commits with an activity note, and a review
    - **A dependency check refuses new imports of the retired packages.**
    - **Then the deletion:** `workflow`, `state`, `publish`, `verify` apart from staging, `git/changeset`, and `macports/dependents`. Their timing-sensitive tests go with them ([note](activity/2026-09-27-golden-gate-images.md#found-not-done)).
 
-6. **Reuse and archives** (decisions 28 and 44; the previous step 9). This builds on item 2's predicate.
+6. **Reuse and archives** (decisions 28 and 44; the previous step 9). This builds on item 2's predicate, and takes planning and that predicate out of the engine as it changes them (item 4).
    - **Per-target reuse** by recorded observations, negative ones included.
    - **What each build records:** its input identity and the digest of every archive it consumed.
    - **Environment identity by origin** (32).
