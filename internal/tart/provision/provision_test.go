@@ -599,3 +599,15 @@ func TestSetupRecordsTheImagesOrigin(t *testing.T) {
 	require.True(t, found)
 	require.Empty(t, recorded.Origin())
 }
+
+// An Xcode version without an Xcode archive is refused before anything is
+// made: a base image has no Xcode, and validating one as if it had failed
+// every base image setup protocol 3's first build made.
+func TestABaseImageIsNeverAskedForXcode(t *testing.T) {
+	machine := newFakeMachine()
+	provisioner := testProvisioner(t, machine)
+	provisioner.Config.XcodeVersion = "26.6"
+	_, err := provisioner.Run(t.Context(), Options{})
+	require.ErrorContains(t, err, "Xcode 26.6 was asked for without an Xcode archive")
+	require.Empty(t, machine.events)
+}

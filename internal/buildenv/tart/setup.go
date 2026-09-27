@@ -143,20 +143,33 @@ func (p *Provider) Setup(ctx context.Context, options SetupOptions, progress io.
 			fmt.Fprintf(progress, "Making %s for macOS %s (%s), which takes up to %s of disk.\n", image, release.Product, release.Name, disk)
 		}
 	}
-	xcode, err := XcodeFor(release, options.Xcodes)
+	config, err := p.provisionConfig(release, options)
 	if err != nil {
 		return SetupResult{}, err
 	}
-	provisioner := provision.Provisioner{Progress: progress, Config: provision.Config{
-		Executable: p.Tart.Executable, Home: p.Tart.Home, MacPortsVersion: options.MacPortsVersion, Xcode: options.Xcode, XcodeVersion: xcode,
-		Platform: model.Platform{OS: "darwin", Version: strconv.Itoa(release.Darwin), Architecture: "arm64"},
-	}}
+	provisioner := provision.Provisioner{Progress: progress, Config: config}
 	result, err := provisioner.Run(ctx, provision.Options{Check: options.Check, Rebuild: options.Rebuild})
 	if err != nil {
 		return SetupResult{}, err
 	}
 	return SetupResult{Image: result.Image, Release: release, MacPorts: result.MacPortsVersion,
 		CommandLineTools: result.CommandLineTools, Xcode: result.XcodeVersion, Reused: result.Reused}, nil
+}
+
+// provisionConfig is what the provisioner makes for a release: its base
+// image, or with an Xcode archive its Xcode image, with the Xcode XcodeFor
+// chooses. A base image has no Xcode.
+func (p *Provider) provisionConfig(release macos.Release, options SetupOptions) (provision.Config, error) {
+	config := provision.Config{
+		Executable: p.Tart.Executable, Home: p.Tart.Home, MacPortsVersion: options.MacPortsVersion, Xcode: options.Xcode,
+		Platform: model.Platform{OS: "darwin", Version: strconv.Itoa(release.Darwin), Architecture: "arm64"},
+	}
+	if options.Xcode == "" {
+		return config, nil
+	}
+	xcode, err := XcodeFor(release, options.Xcodes)
+	config.XcodeVersion = xcode
+	return config, err
 }
 
 // XcodeFor is the Xcode a release's Xcode image installs: the one the

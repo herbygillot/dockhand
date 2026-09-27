@@ -247,6 +247,9 @@ func normalize(config Config) (Config, macos.Release, error) {
 		return config, release, err
 	}
 	config.Executable, config.Home = runtime.Executable, runtime.Home
+	if config.Xcode == "" && config.XcodeVersion != "" {
+		return config, release, fmt.Errorf("setup: Xcode %s was asked for without an Xcode archive; a base image has no Xcode", config.XcodeVersion)
+	}
 	if config.Xcode != "" {
 		if config.XcodeVersion == "" {
 			config.XcodeVersion = release.Xcode

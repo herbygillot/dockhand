@@ -92,3 +92,22 @@ func TestAnXcodeImageFollowsMacPortsBuildbots(t *testing.T) {
 	_, err = XcodeFor(sonoma, map[string]string{"leopard": "3.1"})
 	require.ErrorContains(t, err, "providers.tart.xcode")
 }
+
+// A base image has no Xcode, whatever each release's Xcode is; an Xcode
+// image has the one XcodeFor chooses.
+func TestOnlyAnXcodeImageAsksForXcode(t *testing.T) {
+	t.Parallel()
+	p := testProvider(newMac())
+	tahoe, err := macos.ParseRelease("tahoe")
+	require.NoError(t, err)
+	base, err := p.provisionConfig(tahoe, SetupOptions{Xcodes: map[string]string{"tahoe": "26.4"}})
+	require.NoError(t, err)
+	require.Empty(t, base.XcodeVersion)
+	require.Empty(t, base.Xcode)
+	xcode, err := p.provisionConfig(tahoe, SetupOptions{Xcode: "/archives"})
+	require.NoError(t, err)
+	require.Equal(t, "26.6", xcode.XcodeVersion)
+	configured, err := p.provisionConfig(tahoe, SetupOptions{Xcode: "/archives", Xcodes: map[string]string{"26": "26.4"}})
+	require.NoError(t, err)
+	require.Equal(t, "26.4", configured.XcodeVersion)
+}
