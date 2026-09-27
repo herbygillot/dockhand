@@ -62,7 +62,7 @@ first-platform-only dependency defects as if they were still unfixed.
 
 ### 1. [P1, reproduced] Test policy has no single owner from provider to publication
 
-Sources: [Actions execution and verdict](../../internal/provider/actions/provider.go#L94),
+Sources: [Actions execution and verdict](https://github.com/herbygillot/dockhand/blob/5bb6b4895e/internal/provider/actions/provider.go#L94),
 [result recording](../../internal/engine/runner.go#L457),
 [evidence merging](../../internal/engine/evidence.go#L208),
 [result wording](../../internal/engine/words.go#L12), and
@@ -256,10 +256,10 @@ regeneration; its size alone does not justify another breakup.
 
 ### 5. [P2, lossy contract] Provider execution is not always one observed environment
 
-Sources: [Actions runner aggregation](../../internal/provider/actions/provider.go#L188),
+Sources: [Actions runner aggregation](https://github.com/herbygillot/dockhand/blob/5bb6b4895e/internal/provider/actions/provider.go#L188),
 [GuestExecution and TargetResult](../../internal/model/execution.go#L48),
-[Tart's guest facts](../../internal/provider/tart/guest.tcl#L194),
-[Tart result conversion](../../internal/provider/tart/provider.go#L571), and
+[Tart's guest facts](https://github.com/herbygillot/dockhand/blob/5bb6b4895e/internal/provider/tart/guest.tcl#L194),
+[Tart result conversion](https://github.com/herbygillot/dockhand/blob/5bb6b4895e/internal/provider/tart/provider.go#L571), and
 [Evidence.Observed](../../internal/engine/evidence.go#L71).
 
 The execution model fits a Tart clone well. A GitHub workflow execution actually
@@ -333,10 +333,10 @@ not just separate tests of the editor and CLI renderer.
 
 ### 7. [Structural priority] Complete the vocabulary migration before removing the old engine
 
-Sources: [record aliases](../../internal/record/source.go#L9),
+Sources: [record aliases](https://github.com/herbygillot/dockhand/blob/5bb6b4895e/internal/record/source.go#L9),
 [model vocabulary](../../internal/model/vocabulary.go),
 [forge input](../../internal/forge/pullrequest.go#L42),
-[staging](../../internal/verify/staging/archive.go), and
+[staging](https://github.com/herbygillot/dockhand/blob/5bb6b4895e/internal/verify/staging/archive.go), and
 [roadmap](../roadmap.md).
 
 There are two different situations in the v2 remainder:
@@ -377,8 +377,8 @@ packages. The existing command-layer import test shows a suitable precedent.
 ### 8. [P3, duplication] Image naming and capabilities should have one descriptor
 
 Sources: [shared Tart release helpers](../../internal/tart/release.go#L28),
-[v3 provider naming](../../internal/provider/tart/provider.go#L161),
-[setup naming](../../internal/provider/tart/setup.go#L55), and
+[v3 provider naming](https://github.com/herbygillot/dockhand/blob/5bb6b4895e/internal/provider/tart/provider.go#L161),
+[setup naming](https://github.com/herbygillot/dockhand/blob/5bb6b4895e/internal/provider/tart/setup.go#L55), and
 [provisioner naming](../../internal/tart/provision/provision.go#L255).
 
 Base/Xcode image names already have helpers in `internal/tart`, but the v3

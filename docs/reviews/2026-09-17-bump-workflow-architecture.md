@@ -52,11 +52,11 @@ the targets to verify.
 
 Stub handling makes the missing abstraction visible:
 
-- [`workflow.BindPreparation`](../../internal/workflow/preparation_bind.go)
+- [`workflow.BindPreparation`](https://github.com/herbygillot/dockhand/blob/1247975cc4/internal/workflow/preparation_bind.go)
   redirects a stub selection to its newest versioned subport.
 - [`portedit.Service.load`](../../internal/macports/portedit/source.go) also
   redirects the selection and borrows the stub's livecheck metadata.
-- [`preparationRequest`](../../internal/workflow/preparation_run.go) deliberately
+- [`preparationRequest`](https://github.com/herbygillot/dockhand/blob/1247975cc4/internal/workflow/preparation_run.go) deliberately
   selects the stub again so that this behavior happens again during preparation.
 
 Introduce a small `BumpSelection` value that records these roles explicitly.
@@ -85,7 +85,7 @@ Consequently, callers need to know which earlier operation populated which
 fields. The clearest example is obtaining the authoritative final snapshot from
 the last diagnostic report: both
 [`prepareDependencyVersion`](../../internal/macports/portedit/dependencies.go)
-and the [Git adapter](../../internal/workflow/preparation/preparation.go) use
+and the [Git adapter](https://github.com/herbygillot/dockhand/blob/1247975cc4/internal/workflow/preparation/preparation.go) use
 `Fidelity[len(Fidelity)-1].After`.
 
 Distinguish three responsibilities:
@@ -110,9 +110,9 @@ plan should make those boundaries easier to see.
 
 ## 3. Give platform and context analysis its own responsibility boundary
 
-[`profiles.go`](../../internal/macports/portedit/profiles.go),
-[`unmodeled.go`](../../internal/macports/portedit/unmodeled.go), and
-[`platform_observations.go`](../../internal/macports/portedit/platform_observations.go)
+[`profiles.go`](https://github.com/herbygillot/dockhand/blob/1247975cc4/internal/macports/portedit/profiles.go),
+[`unmodeled.go`](https://github.com/herbygillot/dockhand/blob/1247975cc4/internal/macports/portedit/unmodeled.go), and
+[`platform_observations.go`](https://github.com/herbygillot/dockhand/blob/1247975cc4/internal/macports/portedit/platform_observations.go)
 collectively form a substantial analysis subsystem. They understand Tcl control
 structures, variable propagation, platform boundaries, host inputs, and which
 uses can affect source declarations.
@@ -142,7 +142,7 @@ alone is not the problem, but these responsibilities have different reasons to
 change.
 
 The cleanest extraction is
-[`contribution_view.go`](../../internal/workflow/contribution_view.go). It groups
+[`contribution_view.go`](https://github.com/herbygillot/dockhand/blob/1247975cc4/internal/workflow/contribution_view.go). It groups
 history, chooses display wording, describes macOS versions, and generates
 suggested CLI commands. That is a shared presentation model, already consumed by
 both CLI and TUI.
@@ -153,7 +153,7 @@ explain it. This should preserve the existing consistency between plain output,
 JSON, and the live table.
 
 Afterward, consider separate intake and driver objects within `workflow`.
-[`Engine`](../../internal/workflow/engine.go) currently exposes dependencies for
+[`Engine`](https://github.com/herbygillot/dockhand/blob/1247975cc4/internal/workflow/engine.go) currently exposes dependencies for
 both. Smaller objects would make required capabilities clearer without requiring
 an immediate package split.
 
@@ -166,7 +166,7 @@ its additional indirection against those differences.
 
 The responsibility of `workflow/preparation` is sensible, but its public boundary
 is blurred by the
-[`Request = portedit.Request` alias](../../internal/workflow/preparation/preparation.go).
+[`Request = portedit.Request` alias](https://github.com/herbygillot/dockhand/blob/1247975cc4/internal/workflow/preparation/preparation.go).
 
 That exposes `Root` to workflow callers even though the adapter creates the
 workspace itself. It also carries commit naming and message concerns down into
@@ -181,14 +181,14 @@ There is also an inexpensive simplification here: workflow requires exactly one
 commit, while the result exposes `[]CommitIntent`. A singular commit intent would
 express the current invariant directly.
 
-Keep [`normalizeSpec`](../../internal/workflow/request.go) as the central
+Keep [`normalizeSpec`](https://github.com/herbygillot/dockhand/blob/1247975cc4/internal/workflow/request.go) as the central
 acceptance gate. It owns useful cross-checks between action, destination, and
 verification policy. Clarifying the adapter's types does not require distributing
 those cross-checks among several per-action validators.
 
 ## 6. Keep release facts separate from verification coverage policy
 
-[`ReleaseScope`](../../internal/record/release_scope.go) is a useful record of
+[`ReleaseScope`](https://github.com/herbygillot/dockhand/blob/1247975cc4/internal/record/release_scope.go) is a useful record of
 affected and protected members. Its `RequiredTargets` method, however, takes an
 entire `JobSpec` and decides whether verification requires the initiating target
 or every buildable member.

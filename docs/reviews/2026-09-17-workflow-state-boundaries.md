@@ -12,20 +12,20 @@ next concepts are smaller contracts around that model. Five seams stand out.
 ## 1. Persist branch cleanup separately from contribution retirement
 
 This is the clearest current recovery gap.
-[`refreshChange`](../../internal/workflow/contribution_lifecycle.go) commits the
+[`refreshChange`](https://github.com/herbygillot/dockhand/blob/9bdba6f03f/internal/workflow/contribution_lifecycle.go) commits the
 merged disposition before calling
-[`retireBranches`](../../internal/workflow/contribution_branches.go). Cleanup
+[`retireBranches`](https://github.com/herbygillot/dockhand/blob/9bdba6f03f/internal/workflow/contribution_branches.go). Cleanup
 returns human-readable notes, which are appended to the command result rather
 than stored as retryable obligations.
 
 If the process exits after retirement, or remote deletion fails, the contribution
 is already merged. Periodic PR observation selects only open contributions, and
 an explicit refresh of an already-retired contribution returns before the cleanup
-path. [`collectMergedBranches`](../../internal/workflow/retention_branches.go)
+path. [`collectMergedBranches`](https://github.com/herbygillot/dockhand/blob/9bdba6f03f/internal/workflow/retention_branches.go)
 does recover local leftovers, but explicitly excludes fork branches.
 
 The presentation also maps every merged contribution to "merged; branches cleaned"
-in [`contribution_view.go`](../../internal/workflow/contribution_view.go), even
+in [`contribution_view.go`](https://github.com/herbygillot/dockhand/blob/9bdba6f03f/internal/workflow/contribution_view.go), even
 when deletion was skipped or failed. Retirement therefore does not establish the
 cleanup fact displayed to the user.
 
@@ -41,10 +41,10 @@ contribution from completed housekeeping.
 
 ## 2. Give PR observation a scheduler with explicit ownership
 
-[`observePullRequests`](../../internal/workflow/contribution_lifecycle.go) scans
+[`observePullRequests`](https://github.com/herbygillot/dockhand/blob/9bdba6f03f/internal/workflow/contribution_lifecycle.go) scans
 all contributions, filters open ones in memory, and limits work to four
 contributions per cycle. Its interval is maintained in the package-global
-[`lastObserved` map](../../internal/workflow/engine.go).
+[`lastObserved` map](https://github.com/herbygillot/dockhand/blob/9bdba6f03f/internal/workflow/engine.go).
 
 This schedule is process-local: separate drivers can poll the same PR, and a
 restart loses the throttle. Explicit refresh does not update that map. The limit
@@ -64,12 +64,12 @@ poll into a user-visible job.
 
 ## 3. Replace the catch-all query with contracts matching its operations
 
-[`state.Query`](../../internal/state/store.go) serves jobs, changes, revisions,
+[`state.Query`](https://github.com/herbygillot/dockhand/blob/9bdba6f03f/internal/state/store.go) serves jobs, changes, revisions,
 resources, and controls. Fields have entity-specific meanings; some combinations
 are rejected and other fields are ignored by particular implementations.
 
 Pagination exposes the ambiguity. In
-[`sqlite.Jobs`](../../internal/state/sqlite/query.go), `After` filters by ID, but
+[`sqlite.Jobs`](https://github.com/herbygillot/dockhand/blob/9bdba6f03f/internal/state/sqlite/query.go), `After` filters by ID, but
 `DueBefore` changes ordering to `(next_action_at, id)`. Due resource queries have
 the same mismatch. A caller paging a due-ordered result by the last ID can skip
 records: an early-due `z` followed by a later-due `a` cannot be traversed with
@@ -86,7 +86,7 @@ query builder or ORM is needed.
 
 ## 4. Make ownership and writes explicit in the execution working set
 
-[`execution.go`](../../internal/workflow/execution.go) loads a job, its revision,
+[`execution.go`](https://github.com/herbygillot/dockhand/blob/9bdba6f03f/internal/workflow/execution.go) loads a job, its revision,
 all attempts, current submissions, and resources into one working set.
 `cloneExecution` copies the maps and their struct values, but leaves nested
 pointers, slices, and maps shared. `updateExecution` uses `reflect.DeepEqual`
@@ -114,10 +114,10 @@ Two paths load more than their immediate task needs:
   transaction even when advancing one attempt. Cohort settlement needs aggregate
   information, but a provider observation does not necessarily need all sibling
   resource payloads.
-- [`workflow.status`](../../internal/workflow/status.go) assembles complete job
+- [`workflow.status`](https://github.com/herbygillot/dockhand/blob/9bdba6f03f/internal/workflow/status.go) assembles complete job
   history and related records. The live table's default polling interval is two
-  seconds in [`tui/status.go`](../../internal/tui/status.go), and its
-  [poll callback](../../internal/cli/status.go) requests that status projection.
+  seconds in [`tui/status.go`](https://github.com/herbygillot/dockhand/blob/9bdba6f03f/internal/tui/status.go), and its
+  [poll callback](https://github.com/herbygillot/dockhand/blob/9bdba6f03f/internal/cli/status.go) requests that status projection.
 
 The backend first selects IDs and then reads each record individually, so both
 history size and cohort size can multiply query work. This is a structural scaling
@@ -130,7 +130,7 @@ cohort completion facts, preserving atomic settlement. Batch record retrieval
 inside the backend where measurements show it matters; callers should not need
 to manage SQL joins.
 
-Extend the existing [state performance probe](../../tools/stateperf/README.md)
+Extend the existing [state performance probe](https://github.com/herbygillot/dockhand/blob/9bdba6f03f/tools/stateperf/README.md)
 with large verification cohorts and full live-status reads. Its current documented
 cases emphasize historical database size, selected-job status, and contending
 drivers. These extra cases would establish whether narrower working sets are worth

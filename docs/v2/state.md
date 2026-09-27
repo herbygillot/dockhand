@@ -87,7 +87,7 @@ For this slice, a change has one local repository and one branch association, st
 
 ## Minimal data model
 
-The following summarizes the [initial schema](../../internal/state/sqlite/migrations/001.sql) and its ordered migrations, currently through schema 13. Domain IDs are text, timestamps are UTC integer milliseconds, missing values are NULL, and state values have explicit constraints. Each repository-owned table carries `repository_id`; composite foreign keys preserve that scope. Sources, revisions, accepted inputs, and submission identities are immutable through the write API. Lifecycle fields are updated explicitly.
+The following summarizes the [initial schema](https://github.com/herbygillot/dockhand/blob/2e1e313e85/internal/state/sqlite/migrations/001.sql) and its ordered migrations, currently through schema 13. Domain IDs are text, timestamps are UTC integer milliseconds, missing values are NULL, and state values have explicit constraints. Each repository-owned table carries `repository_id`; composite foreign keys preserve that scope. Sources, revisions, accepted inputs, and submission identities are immutable through the write API. Lifecycle fields are updated explicitly.
 
 | Table | Main data | Why it is needed now |
 | --- | --- | --- |

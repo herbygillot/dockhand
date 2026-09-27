@@ -4,7 +4,7 @@ The final probe recorded 960 operation samples with zero errors. Updating one jo
 
 ## Method
 
-The [probe](../../tools/stateperf/README.md) seeds completed jobs, attempts, passing evidence, admitted submissions, and released resources. Shared-source fixtures reuse one revision; distinct-source fixtures give each historical job its own source/revision. IDs are synthetic: these measurements exercise SQLite and workflow progression, without Git, real providers, network traffic, or VM builds. Fixture creation and store opening are excluded from operation timings.
+The [probe](https://github.com/herbygillot/dockhand/blob/cb547be2b2/tools/stateperf/README.md) seeds completed jobs, attempts, passing evidence, admitted submissions, and released resources. Shared-source fixtures reuse one revision; distinct-source fixtures give each historical job its own source/revision. IDs are synthetic: these measurements exercise SQLite and workflow progression, without Git, real providers, network traffic, or VM builds. Fixture creation and store opening are excluded from operation timings.
 
 Each ordinary case has 20 samples. The concurrent case starts four child processes with 20 cycles each against the same database and active job, measured after opening. A cycle can lose eligibility to another driver; raw results distinguish advancement from successful no-op passes. The provider reports capacity waiting, preserving the same submission identity. WAL and full commit durability use normal backend defaults.
 

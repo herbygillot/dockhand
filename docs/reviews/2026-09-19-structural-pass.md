@@ -42,20 +42,20 @@ This is the real drift, and it is user-visible.
 projection over its existing reader, used by the plain output, the JSON result,
 and the table alike, so all three say the same thing", and that "the 'next'
 derivation moves out of the CLI's progress formatting and beside this projection."
-[`workflow/view`](../../internal/workflow/view/contribution.go) was built and
+[`workflow/view`](https://github.com/herbygillot/dockhand/blob/8ca5d5bc07/internal/workflow/view/contribution.go) was built and
 `status` was moved onto it. The CLI's own derivation was never retired.
 
 Action commands take a different path. `dockhand bump`, `verify`, and `publish`
-render through [`renderSummary`](../../internal/cli/summary.go), which derives its
+render through [`renderSummary`](https://github.com/herbygillot/dockhand/blob/8ca5d5bc07/internal/cli/summary.go), which derives its
 own words in `jobHeadline`, `jobState`, `versionMove`, `pullRequestLine`, and
 `pendingGuidance`. `dockhand status` renders through
-[`renderContributions`](../../internal/cli/status.go), which consumes
+[`renderContributions`](https://github.com/herbygillot/dockhand/blob/8ca5d5bc07/internal/cli/status.go), which consumes
 `view.Contribution` fields. Two vocabularies now describe the same records, and
 they have already diverged:
 
 - An active verification job with attempts queued for capacity is
-  "waiting for capacity" to `status` ([`activeState`](../../internal/workflow/view/contribution.go)),
-  and plainly "verifying" to `verify` ([`jobState`](../../internal/cli/summary.go)).
+  "waiting for capacity" to `status` ([`activeState`](https://github.com/herbygillot/dockhand/blob/8ca5d5bc07/internal/workflow/view/contribution.go)),
+  and plainly "verifying" to `verify` ([`jobState`](https://github.com/herbygillot/dockhand/blob/8ca5d5bc07/internal/cli/summary.go)).
   A running attempt is "building on <platform>" to one and "verifying" to the other.
 - A preparation job past its edit is "integrating branch" to `status` and
   "preparing" to `bump`.
@@ -78,7 +78,7 @@ the two documents should not keep disagreeing.
 
 ## 2. The TUI owns command-tree knowledge it cannot be checked against
 
-[`verbArgs`](../../internal/tui/status.go) builds argument vectors — `"--change"`,
+[`verbArgs`](https://github.com/herbygillot/dockhand/blob/8ca5d5bc07/internal/tui/status.go) builds argument vectors — `"--change"`,
 `"--job"`, `"--detach"`, and the verb names — and a switch in `verb` decides which
 verbs need confirmation. `internal/cli` imports `internal/tui`, so `tui` cannot
 import `cli`, and these spellings are strings on both sides with nothing tying
@@ -86,7 +86,7 @@ them together.
 
 The authority model here is right and worth preserving: `Options.Run` re-enters
 the command tree in-process, so a keypress has exactly the authority of the
-command, as [`liveStatus`](../../internal/cli/status.go) documents. The weakness
+command, as [`liveStatus`](https://github.com/herbygillot/dockhand/blob/8ca5d5bc07/internal/cli/status.go) documents. The weakness
 is only that renaming a flag in `cli` breaks the table silently, with no compile
 error and no test that would notice.
 

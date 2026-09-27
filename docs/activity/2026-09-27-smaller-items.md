@@ -113,3 +113,9 @@ Checked against openai/tart on 2026-09-27, with Tart 2.39.0 installed:
 - **#1345,** a delete of a running VM said "does not exist". It was fixed by #1350, merged on 2026-09-26, hours after 2.39.0 was tagged: commit 8ac52501 is one ahead of the tag. The absence check stays until a release carries it.
 
 Nothing is retired yet.
+
+## Links into deleted code
+
+Fifty-four links in historical documents pointed at files since deleted: v2's packages, and the paths v3 renamed. Most were in the reviews, which cite code by line. Each now points at the code as the document saw it: a GitHub permalink at the commit that added the document, where the file existed then, which it did for all 54. So a review's `provider.go#L94` still lands on the line it meant, rather than on the file's last version.
+
+One more `](url)` stays: it is inside backticks, an example of link syntax.

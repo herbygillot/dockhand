@@ -15,7 +15,7 @@ transaction, and `BindCorrection` read the same four in another, in the
 same order, with the same checks, and then each made its own correction
 spec, its own publication destination, and its own keep-body guard.
 
-`contribution` in [contribution.go](../../internal/workflow/contribution.go)
+`contribution` in [contribution.go](https://github.com/herbygillot/dockhand/blob/2211307d9d/internal/workflow/contribution.go)
 is the one owner now: the change, its current revision, its attached
 pull request, and the remote head a replacement expects, bound by
 `bindContribution` with the preconditions integration rechecks. It

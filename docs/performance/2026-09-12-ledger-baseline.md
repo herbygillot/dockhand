@@ -16,7 +16,7 @@ The fixtures contain one change, revision, request index, verification plan, att
 
 Fixed-size samples reset to the same ledger snapshot, remove newly added pins, warm-read the snapshot, and run Go GC before timing. Source objects and the initial state are generated outside timing. Most successful cases have three or five repetitions; the costly 1,000-source workflow case has one. These are exploratory warm-cache measurements, not tail-latency guarantees. Go GC before sampling also affects reusable buffer pools; allocation totals are not steady-state or peak-memory measurements. The machine was not reserved exclusively for benchmarking.
 
-[Reproduction guide](../../tools/ledgerperf/README.md) · [Full results](2026-09-12/summary.csv) · [Diagnostic phases](2026-09-12/phases.csv)
+[Reproduction guide](https://github.com/herbygillot/dockhand/blob/c27a53091e/tools/ledgerperf/README.md) · [Full results](2026-09-12/summary.csv) · [Diagnostic phases](2026-09-12/phases.csv)
 
 ## Small ledger operations
 

@@ -22,7 +22,7 @@ Three findings are real defects. The rest are consistency drift.
 
 ## 1. "Using GitHub verification." is printed before the fallback is known to work
 
-[`app/build.go`](../../internal/app/build.go) reports at **info**, then attempts
+[`app/build.go`](https://github.com/herbygillot/dockhand/blob/9bca3a6a32/internal/app/build.go) reports at **info**, then attempts
 the fallback:
 
 ```go
@@ -35,7 +35,7 @@ if githubErr != nil && preserve && ctx.Err() == nil {
 ```
 
 `githubBuild` reaches
-[`Services.githubBuild`](../../internal/app/github_verification.go), which fails
+[`Services.githubBuild`](https://github.com/herbygillot/dockhand/blob/9bca3a6a32/internal/app/github_verification.go), which fails
 when there is no GitHub credential, no resolvable fork destination, no
 repository info, or a remote that is not the person's own fork of
 macports-ports. The message has already claimed the outcome.
@@ -53,7 +53,7 @@ and then "GitHub verification could not be configured: …" — two contradictor
 sentences about one decision. The second message, `"Tart is not available; using
 GitHub verification."`, has the same shape.
 
-Scope is the bump family only. [`cli/build.go`](../../internal/cli/build.go)
+Scope is the bump family only. [`cli/build.go`](https://github.com/herbygillot/dockhand/blob/9bca3a6a32/internal/cli/build.go)
 pins the provider to Tart whenever `--image`, `--capacity`, `--from-source`,
 `--variant`, `--test-timeout`, or a non-workflow `--tests` is given, and
 `verify` defaults to `tart` rather than `auto`, so `auto` only survives to this
@@ -66,7 +66,7 @@ statement can contradict.
 
 ## 2. `gc` prints "No eligible cleanup." when nothing was examined
 
-[`cli/maintenance.go`](../../internal/cli/maintenance.go) renders the result
+[`cli/maintenance.go`](https://github.com/herbygillot/dockhand/blob/9bca3a6a32/internal/cli/maintenance.go) renders the result
 before checking the call's error:
 
 ```go
@@ -115,9 +115,9 @@ this failure as a successful empty sweep.
 `setup`, `auth`, and `gc` output.md specifically says "their existing
 summaries, trimmed of identifiers". Four sites print them at info:
 
-- [`app/preparation.go`](../../internal/app/preparation.go): `"Continuing
+- [`app/preparation.go`](https://github.com/herbygillot/dockhand/blob/9bca3a6a32/internal/app/preparation.go): `"Continuing
   contribution %s from recorded source %s"` prints a `ChangeID` and a commit SHA.
-- [`cli/maintenance.go`](../../internal/cli/maintenance.go): `gc` prints
+- [`cli/maintenance.go`](https://github.com/herbygillot/dockhand/blob/9bca3a6a32/internal/cli/maintenance.go): `gc` prints
   `Registration <RepositoryID>: <path>`, and each cleanup line's target is a
   `ResourceID` or `AttemptID` unless a path is available.
 - [`macports/portindex/cache.go`](../../internal/macports/portindex/cache.go)
@@ -127,7 +127,7 @@ summaries, trimmed of identifiers". Four sites print them at info:
   but the hash identifies nothing a person can act on.
 
 One tension is worth deciding rather than fixing.
-[`view.PortSelector`](../../internal/workflow/view/contribution.go) returns
+[`view.PortSelector`](https://github.com/herbygillot/dockhand/blob/9bca3a6a32/internal/workflow/view/contribution.go) returns
 `--job <ID>` for a job with no targets, and `pendingGuidance` uses it at info to
 build a runnable `dockhand wait …`. There is no way to tell someone how to
 resume standalone work without naming the job, so either the rule admits an
@@ -137,7 +137,7 @@ reads as if the port were named after a UUID.
 
 ## 5. `-v` changes what `status` does, not just what it shows
 
-[`cli/status.go`](../../internal/cli/status.go) orders the branches so that the
+[`cli/status.go`](https://github.com/herbygillot/dockhand/blob/9bca3a6a32/internal/cli/status.go) orders the branches so that the
 verbose check returns first:
 
 ```go
@@ -163,7 +163,7 @@ select the detailed rendering without taking the processing path away.
 ## 6. `--trace` does more than its flag help says
 
 The flag reads "Follow build logs on stderr through completion". In
-[`cli/progress.go`](../../internal/cli/progress.go) it also forces the level to
+[`cli/progress.go`](https://github.com/herbygillot/dockhand/blob/9bca3a6a32/internal/cli/progress.go) it also forces the level to
 `progress.Debug`, which is what output.md describes ("`--trace` means debug plus
 the guest's own log stream"). The behavior is right and the design doc agrees
 with it; only the flag's own help understates it, so a person reaching for build
@@ -222,7 +222,7 @@ re-litigate them.
 - **`--skip-verify` PR disclosure.** The PR body states "The author asked
   dockhand to publish this change without verification (`--skip-verify`)" — an
   intent claim on a public pull request. It is reachable only through
-  `input.SkipVerify`: [`publication_bind.go`](../../internal/workflow/publication_bind.go)
+  `input.SkipVerify`: [`publication_bind.go`](https://github.com/herbygillot/dockhand/blob/9bca3a6a32/internal/workflow/publication_bind.go)
   refuses with "verify the committed contribution before publishing" when
   verification is required and no candidate exists, so a zero evidence attempt
   cannot arrive any other way.
