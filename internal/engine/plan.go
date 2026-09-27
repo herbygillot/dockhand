@@ -75,6 +75,8 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	var candidates []candidate
 	index := map[string]int{}
 	excluded := map[string]int{}
+	// defined records which environments' evaluations defined each port.
+	defined := map[string][]bool{}
 	add := func(directory string, kind model.TargetKind, role model.TargetRole) {
 		for e, environment := range plan.Environments {
 			ports, err := reader.Ports(ctx, revision.Source, directory, environment)
@@ -83,6 +85,10 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 				return
 			}
 			for i, port := range ports {
+				if defined[port.Name] == nil {
+					defined[port.Name] = make([]bool, len(plan.Environments))
+				}
+				defined[port.Name][e] = true
 				target := model.Target{Name: port.Name, Portfile: directory + "/Portfile"}
 				if i > 0 {
 					target.Subport = port.Name
@@ -134,6 +140,19 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	}
 	if len(plan.Unresolved) > 0 {
 		return plan, nil
+	}
+
+	// A port one environment's evaluation didn't define isn't built there,
+	// whichever other environment defined it: a subport that exists on one
+	// release or architecture only is excluded on the rest.
+	for _, c := range candidates {
+		id := string(c.target.ID)
+		for e, environment := range plan.Environments {
+			if !defined[id][e] {
+				plan.Exclusions = append(plan.Exclusions, model.Exclusion{Target: c.target.Target, Platform: environment.Platform, Reason: "not defined on " + platformWords(environment.Platform)})
+				excluded[id]++
+			}
+		}
 	}
 
 	// A target excluded on every release is not built at all.

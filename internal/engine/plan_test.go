@@ -284,3 +284,35 @@ func TestEachPlatformKeepsItsOwnDependencies(t *testing.T) {
 	require.Len(t, crossed.Unresolved, 1)
 	require.Contains(t, crossed.Unresolved[0].Reason, "dependency cycle across platforms, which no one platform has")
 }
+
+// armOnlyViewer defines an Intel subport of harbor-viewer only where the
+// evaluation is on x86_64, as a Portfile's platform conditions can.
+type armOnlyViewer struct{ fakePorts }
+
+func (p armOnlyViewer) Ports(ctx context.Context, source model.Source, directory string, environment model.Environment) ([]macports.PortInfo, error) {
+	ports, err := p.fakePorts.Ports(ctx, source, directory, environment)
+	if err == nil && directory == "graphics/harbor-viewer" {
+		ports = []macports.PortInfo{port("harbor-viewer")}
+		if environment.Platform.Architecture == "x86_64" {
+			ports = append(ports, port("harbor-viewer-intel"))
+		}
+	}
+	return ports, err
+}
+
+// A port one environment's evaluation didn't define isn't built there,
+// whichever environment defined it. (The architecture review of
+// 2026-09-27, finding 2.)
+func TestAPortAnEnvironmentDoesNotDefineIsNotBuiltThere(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	revision := harborBranch(t, e)
+	e.PortReader = armOnlyViewer{harborPorts()}
+	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm, tahoeX86}})
+	require.NoError(t, err)
+	target, ok := plan.Target("harbor-viewer-intel")
+	require.True(t, ok, "built where it is defined")
+	require.True(t, plan.Excludes(target, tahoeArm.Platform), "not where it isn't")
+	require.False(t, plan.Excludes(target, tahoeX86.Platform))
+	require.Contains(t, plan.Exclusions, model.Exclusion{Target: target.Target, Platform: tahoeArm.Platform, Reason: "not defined on macOS 26 arm64"})
+}

@@ -669,6 +669,15 @@ func EnvironmentHeading(environment model.Environment, all []model.Environment) 
 	return strings.Join(parts, " ")
 }
 
+// platformWords name a platform's release and architecture, macOS 26
+// arm64, or its release alone where the architecture isn't known.
+func platformWords(platform model.Platform) string {
+	if platform.Architecture == "" {
+		return releaseWords(platform)
+	}
+	return releaseWords(platform) + " " + platform.Architecture
+}
+
 // releaseWords name a platform's release: macOS 26, or Darwin 30 where the
 // release is unknown, whose Darwin version isn't macOS's.
 func releaseWords(platform model.Platform) string {

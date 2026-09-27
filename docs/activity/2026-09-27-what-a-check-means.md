@@ -28,3 +28,9 @@ Tests:
 - GitHub's required tests failing a check through the real Actions adapter with its fixtures, and its `--tests skip` note in the plan;
 - the checklist and table with timed-out tests;
 - an earlier advisory result standing after a required check of another port, without blocking the submission, with its check named in the pull request.
+
+## A port an environment doesn't define isn't built there
+
+- **Before.** The planner evaluates each environment separately, but only recorded an exclusion for a port the evaluation returned and ruled out. A subport that one release or architecture's evaluation never defined still went into the union of targets, and so into every environment's job.
+- **Now.** A port an environment didn't define gets an exclusion there, with the platform in its reason: "not defined on macOS 26 arm64". The plan lists it as `Excluded`, the job leaves it out, and the evidence doesn't require it there. A port defined nowhere is still not planned. The full per-environment plan is roadmap item 2; this closes the defect in the current representation.
+- **Test:** the review's probe, with a reader that defines an Intel subport only on x86_64. It's planned there, and excluded on arm64 with that reason.
