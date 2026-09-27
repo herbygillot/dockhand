@@ -112,9 +112,8 @@ These are taken when their area is next touched, or between items.
 - **Tart checks of several releases in parallel,** within the Mac's two VMs.
 - **Tart workarounds to retire as Tart releases fixes:**
   - the retry of a listing that raced a delete ([openai/tart#1353](https://github.com/openai/tart/issues/1353));
-  - trusting a delete only by the VM's absence (#1345, merged, unreleased);
+  - trusting a delete only by the VM's absence (#1345, fixed by #1350 on 2026-09-26, hours after 2.39.0 was tagged: unreleased as of 2026-09-27);
   - guests reached over SSH, never `tart exec` (#1346); setup's agent readiness probe is the last `tart exec`, and could move to SSH.
-- **The process-start reader's pid-reuse case, proven on a Mac.** A killed process was judged dead on 2026-09-27 ([note](activity/2026-09-27-stopped-checks.md)).
 - **Links into deleted v2 code.** 53 links in historical documents point at files deleted with v2; they could point at commit `1cbcdf8b65`, the last with that code.
 - **A flake to watch.** `TestTidyAsksWhatItCannotKnow` once failed in its cleanup with a directory not empty ([note](activity/2026-09-27-stopped-checks.md#seen-once-not-explained)).
 

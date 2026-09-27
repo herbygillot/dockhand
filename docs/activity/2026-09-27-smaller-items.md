@@ -97,3 +97,19 @@ So the Tart provider judges digests alone (`PruneCache`). It deletes one unused 
 - `min_free` parsing and refusals.
 
 The executable in a command test is the test binary, so the tests replace the spawner.
+
+## The pid-reuse case, proven on a Mac
+
+A session is known by its PID and its process's start time, so a PID the kernel hands to another process isn't taken for the one recorded (`coord.System.Alive`). The unit test altered a start string; this was the real case, once, by hand:
+- a `/bin/cat` was started, and its PID, 86355, recorded with its start, `darwin:1790548660.14297`;
+- it was ended, and more were spawned until macOS gave out 86355 again: after 98,072 spawns in 2 minutes 54 seconds, as macOS numbers processes in order and wraps;
+- the new process had started `darwin:1790548834.309875`, and `Alive` judged the recorded one dead.
+
+## Tart's fixes, checked
+
+Checked against openai/tart on 2026-09-27, with Tart 2.39.0 installed:
+- **#1353,** a listing that races a delete: still open, so the retry stays.
+- **#1346,** `tart exec` after the control socket fails: still open, so guests stay on SSH.
+- **#1345,** a delete of a running VM said "does not exist". It was fixed by #1350, merged on 2026-09-26, hours after 2.39.0 was tagged: commit 8ac52501 is one ahead of the tag. The absence check stays until a release carries it.
+
+Nothing is retired yet.
