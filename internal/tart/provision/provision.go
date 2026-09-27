@@ -73,6 +73,9 @@ type machine interface {
 	// another name, with Tart's export and import.
 	Import(context.Context, string, string) error
 	DiskFormat(context.Context, string) (string, error)
+	// ASIFReady refuses a Tart too old to list its VMs while an ASIF VM
+	// runs.
+	ASIFReady(context.Context) error
 	Configure(context.Context, string) error
 	Start(context.Context, string) error
 	// Connect reaches a running guest over SSH, trusting it as the image
@@ -311,6 +314,29 @@ func (p *Provisioner) check(ctx context.Context, machine machine, config Config,
 	return Result{Image: config.Image, GoldenImage: golden, Platform: checked.Platform, MacPortsVersion: checked.MacPortsVersion, GuestAgentVersion: checked.GuestAgentVersion, XcodeVersion: checked.XcodeVersion, CommandLineTools: checked.CommandLineTools, Reused: reused}, nil
 }
 
+// errDisk marks a disk setup can't use: a format it doesn't prepare, or
+// ASIF with a Tart too old for it.
+var errDisk = errors.New("it can't be used")
+
+// diskUsable checks a stopped clone's disk format, raw, or ASIF with a Tart
+// that handles it, so a clone setup can't use never runs.
+func diskUsable(ctx context.Context, machine machine, name string) error {
+	format, err := machine.DiskFormat(ctx, name)
+	if err != nil {
+		return err
+	}
+	switch format {
+	case "raw":
+		return nil
+	case "asif":
+		if err := machine.ASIFReady(ctx); err != nil {
+			return fmt.Errorf("%w: it has an ASIF disk: %w", errDisk, err)
+		}
+		return nil
+	}
+	return fmt.Errorf("%w: it has a %s disk, which dockhand doesn't prepare", errDisk, format)
+}
+
 func (p *Provisioner) provision(ctx context.Context, machine machine, config Config, release macos.Release, golden string, replacing bool) (result Result, err error) {
 	next, goldenNext := config.Image+"-next", golden+"-next"
 	if err := discard(ctx, machine, next); err != nil {
@@ -335,15 +361,11 @@ func (p *Provisioner) provision(ctx context.Context, machine machine, config Con
 			}
 		}
 	}()
-	// A running ASIF VM keeps `tart list`, and `tart get` of it, from
-	// answering for as long as it runs, for every VM in the Tart home
-	// (openai/tart#1344), so setup declines one while it is a stopped clone.
-	format, err := machine.DiskFormat(ctx, next)
-	if err != nil {
-		return Result{}, err
-	}
-	if format != "raw" {
-		return Result{}, fmt.Errorf("setup: %s has an %s disk; dockhand declines it until Tart can list its VMs while one runs (openai/tart#1344)", config.Source, strings.ToUpper(format))
+	// Golden Gate's images have ASIF disks, which only a Tart that lists
+	// its VMs while one runs can use (openai/tart#1344); the source is
+	// checked while it is a stopped clone, before it ever runs.
+	if err := diskUsable(ctx, machine, next); err != nil {
+		return Result{}, fmt.Errorf("setup: %s: %w", config.Source, err)
 	}
 	if err := machine.Configure(ctx, next); err != nil {
 		return Result{}, err
@@ -417,10 +439,11 @@ func (p *Provisioner) upgrade(ctx context.Context, machine machine, config Confi
 			}
 		}
 	}()
-	if format, err := machine.DiskFormat(ctx, next); err != nil {
+	if err := diskUsable(ctx, machine, next); err != nil {
+		if errors.Is(err, errDisk) {
+			return Result{}, fmt.Errorf("%w: %s: %w", errUnsuitable, config.Image, err)
+		}
 		return Result{}, err
-	} else if format != "raw" {
-		return Result{}, fmt.Errorf("%w: %s has an %s disk, which dockhand declines (openai/tart#1344)", errUnsuitable, config.Image, strings.ToUpper(format))
 	}
 	if err := machine.Start(ctx, next); err != nil {
 		return Result{}, err

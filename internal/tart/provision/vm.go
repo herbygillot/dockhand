@@ -64,24 +64,64 @@ func (n *native) DiskFormat(ctx context.Context, name string) (string, error) {
 	return n.vm().DiskFormat(ctx, name)
 }
 
-// Configure sizes a raw-disk guest and frees its recovery partition, so the
-// guest agent can grow the container over the whole 100 GB disk. Editing
-// disk.img on the host is a flagged exception to using only what Tart
-// documents (decision 38): it is the route Tart's FAQ points to, Cirrus's
-// Packer plugin, takes the same way, and it runs only here, on setup's own
-// freshly cloned, stopped VM, whose format `tart get` has said is raw.
-func (n *native) Configure(ctx context.Context, name string) error {
-	cpus := max(1, runtime.NumCPU()/4)
-	memory := max(8192, cpus*2048)
-	if _, err := n.command(ctx, nil, false, "set", name, "--cpu", strconv.Itoa(cpus), "--memory", strconv.Itoa(memory), "--disk-size", "100"); err != nil {
+// ASIFReady refuses a Tart older than tart.ASIFVersion, which can't list
+// its VMs while one with an ASIF disk runs.
+func (n *native) ASIFReady(ctx context.Context) error {
+	version, err := n.vm().Version(ctx)
+	if err != nil {
 		return err
 	}
+	if !tart.HandlesASIF(version) {
+		return fmt.Errorf("Tart %s can't list its VMs while one with an ASIF disk runs (openai/tart#1344); 2.39.0 and newer can: sudo port upgrade tart", version)
+	}
+	return nil
+}
+
+// Disk sizes, in GB, that setup gives a guest.
+//
+// A raw disk is 100 GB, its recovery partition then freed so the guest
+// agent can grow the container over the whole disk.
+//
+// An ASIF disk, Golden Gate's, is grown by Tart itself (`diskutil image
+// resize`), which grows the main container and moves the recovery partition
+// to the new end, so nothing is edited on the host. The partition keeps
+// 5.4 GB, and macOS 27 keeps more in Preboot: 100 GB left a Golden Gate
+// guest 55 GB free, short of the 60 an Xcode image stages its archive in,
+// and 125 GB left 79 GB free. ASIF is sparse, so the larger size takes no
+// host disk until the guest writes to it.
+const (
+	rawDiskGB  = 100
+	asifDiskGB = 125
+)
+
+// Configure sizes a guest's CPUs, memory, and disk. On a raw disk it then
+// frees the recovery partition, so the guest agent can grow the container
+// over the whole disk. Editing disk.img on the host is a flagged exception
+// to using only what Tart documents (decision 38): it is the route Tart's
+// FAQ points to, Cirrus's Packer plugin, takes the same way, and it runs
+// only here, on setup's own freshly cloned, stopped VM, whose format
+// `tart get` has said is raw. An ASIF disk needs no edit (asifDiskGB).
+func (n *native) Configure(ctx context.Context, name string) error {
 	format, err := n.DiskFormat(ctx, name)
 	if err != nil {
 		return err
 	}
-	if format != "raw" {
-		return fmt.Errorf("setup: %s has a %s disk; its storage is prepared only on a raw disk", name, format)
+	var disk int
+	switch format {
+	case "raw":
+		disk = rawDiskGB
+	case "asif":
+		disk = asifDiskGB
+	default:
+		return fmt.Errorf("setup: %s has a %s disk, which dockhand doesn't prepare", name, format)
+	}
+	cpus := max(1, runtime.NumCPU()/4)
+	memory := max(8192, cpus*2048)
+	if _, err := n.command(ctx, nil, false, "set", name, "--cpu", strconv.Itoa(cpus), "--memory", strconv.Itoa(memory), "--disk-size", strconv.Itoa(disk)); err != nil {
+		return err
+	}
+	if format == "asif" {
+		return nil
 	}
 	path := filepath.Join(n.config.Home, "vms", name, "disk.img")
 	removed, err := macos.RemoveRecoveryPartition(path)

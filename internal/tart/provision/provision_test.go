@@ -29,6 +29,7 @@ type fakeMachine struct {
 	failures   map[string]error
 	format     string
 	imported   string // the disk format of images Import copies, when set
+	oldTart    bool   // Tart is older than tart.ASIFVersion
 	formats    map[string]string
 	validation validation
 	onValidate func(*validation)
@@ -119,6 +120,12 @@ func (f *fakeMachine) DiskFormat(_ context.Context, name string) (string, error)
 		format = "raw"
 	}
 	return format, f.event("format:" + name)
+}
+func (f *fakeMachine) ASIFReady(context.Context) error {
+	if f.oldTart {
+		return errors.New("Tart 2.37.0 can't list its VMs while one with an ASIF disk runs (openai/tart#1344)")
+	}
+	return nil
 }
 func (f *fakeMachine) Configure(context.Context, string) error { return f.event("configure") }
 func (f *fakeMachine) Start(_ context.Context, name string) error {
@@ -306,19 +313,30 @@ func TestInterruptedAdoptionDoesNotHidePreviousImageWithGoldenRestore(t *testing
 	require.Contains(t, machine.images, "dockhand-base-tahoe-previous")
 }
 
-// A source with an ASIF disk is declined while it is a stopped clone, before
-// it ever runs: a running ASIF VM keeps Tart from listing any VM
-// (openai/tart#1344). The clone is cleaned up.
-func TestASIFSourceIsDeclinedBeforeItRuns(t *testing.T) {
+// A source with an ASIF disk, as Golden Gate's is, is provisioned with a
+// Tart that lists its VMs while one runs. With an older Tart it is declined
+// while it is a stopped clone, before it ever runs, since a running ASIF VM
+// keeps that Tart from listing any VM (openai/tart#1344), and the clone is
+// cleaned up.
+func TestAnASIFSourceNeedsATartThatHandlesIt(t *testing.T) {
 	machine := newFakeMachine()
 	machine.format = "asif"
+	machine.oldTart = true
 	_, err := testProvisioner(machine).Run(t.Context(), Options{})
-	require.ErrorContains(t, err, "has an ASIF disk")
+	require.ErrorContains(t, err, "it has an ASIF disk")
 	require.ErrorContains(t, err, "openai/tart#1344")
 	require.NotContains(t, machine.events, "configure")
 	require.NotContains(t, machine.events, "start")
 	require.Contains(t, machine.events, "delete:dockhand-base-tahoe-next")
 	require.NotContains(t, machine.images, "dockhand-base-tahoe-next")
+
+	machine = newFakeMachine()
+	machine.format = "asif"
+	result, err := testProvisioner(machine).Run(t.Context(), Options{})
+	require.NoError(t, err)
+	require.Equal(t, "dockhand-base-tahoe", result.Image)
+	require.Contains(t, machine.events, "configure")
+	require.Contains(t, machine.images, "dockhand-base-tahoe")
 }
 
 // A failed setup's cleanup deletes its guest even when stopping it failed,
@@ -443,12 +461,27 @@ func TestAnImageInThePersonsHomeIsImportedWhenItValidates(t *testing.T) {
 	require.Equal(t, "26.6", result.CommandLineTools)
 }
 
-// A copy from the person's home with an ASIF disk is declined before it
-// runs, as a source is, and the image is provisioned afresh.
-func TestAnImportedASIFImageIsDeclinedBeforeItRuns(t *testing.T) {
+// With a Tart that handles it, a copy from the person's home with an ASIF
+// disk is used, as a raw one is, and nothing is pulled.
+func TestAnImportedASIFImageIsUsedOnACurrentTart(t *testing.T) {
 	machine := newFakeMachine()
 	machine.personal = map[string]image{"dockhand-base-tahoe": {Name: "dockhand-base-tahoe"}}
 	machine.imported = "asif"
+	_, err := testProvisioner(machine).Run(t.Context(), Options{})
+	require.NoError(t, err)
+	require.Contains(t, machine.events, "import:dockhand-base-tahoe:dockhand-base-tahoe-next")
+	require.NotContains(t, machine.events, "pull")
+	require.Contains(t, machine.images, "dockhand-base-tahoe")
+}
+
+// A copy from the person's home with an ASIF disk is declined before it
+// runs when Tart is too old for it, as a source is, and the image is
+// provisioned afresh.
+func TestAnImportedASIFImageIsDeclinedBeforeItRunsOnAnOldTart(t *testing.T) {
+	machine := newFakeMachine()
+	machine.personal = map[string]image{"dockhand-base-tahoe": {Name: "dockhand-base-tahoe"}}
+	machine.imported = "asif"
+	machine.oldTart = true
 	var progress bytes.Buffer
 	provisioner := testProvisioner(machine)
 	provisioner.Progress = &progress

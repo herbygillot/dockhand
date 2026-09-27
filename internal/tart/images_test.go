@@ -2,8 +2,11 @@ package tart
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
@@ -79,4 +82,67 @@ esac
 	_, err = client.Run(t.Context(), RunOptions{}, "delete", "running")
 	require.Error(t, err)
 	require.False(t, errors.Is(err, ErrVMMissing))
+}
+
+// Golden Gate's ASIF images need a Tart that lists its VMs while one runs.
+func TestHandlesASIFFromTheVersionTartPrints(t *testing.T) {
+	for version, handles := range map[string]bool{
+		"2.39.0": true, "2.39.0\n": true, "2.39.1": true, "2.40.0": true, "3.0.0": true, "2.39.0-3-g27d3e2c": true,
+		"2.38.0": false, "2.37.0": false, "1.99.9": false, "2.39": false, "": false, "unknown": false,
+	} {
+		require.Equal(t, handles, HandlesASIF(version), version)
+	}
+}
+
+// Tart 2.39.0 lists a running ASIF VM, Golden Gate's, with its disk
+// capacity null, and describes it with its format; neither is refused.
+func TestListingReadsTart239WhileAnASIFVMRuns(t *testing.T) {
+	executable := filepath.Join(t.TempDir(), "tart")
+	testsupport.WriteExecutable(t, executable, `#!/bin/sh
+case "$*" in
+ "list --format json") printf '%s' '[{"State":"running","Disk":null,"Accessed":"2026-09-27T05:54:21Z","Size":35,"Name":"gg","Source":"local","Running":true}]' ;;
+ "get gg --format json") printf '%s' '{"Display":"1024x768","Memory":8192,"State":"running","OS":"darwin","Running":true,"Size":"35.805","CPU":4,"Disk":null,"DiskFormat":"asif"}' ;;
+ *) exit 9 ;;
+esac
+`)
+	client := Client{Executable: executable}
+	images, err := client.Images(t.Context(), RunOptions{})
+	require.NoError(t, err)
+	require.Equal(t, []Image{{Name: "gg", Source: "local", Running: true}}, images)
+	vm, err := client.Get(t.Context(), RunOptions{}, "gg")
+	require.NoError(t, err)
+	require.Equal(t, VM{Running: true, DiskFormat: "asif"}, vm)
+}
+
+// A listing that raced a delete is listed again, and answers once the
+// delete is done; one that never answers says why.
+func TestARacedListingIsListedAgain(t *testing.T) {
+	pause := listingPause
+	t.Cleanup(func() { listingPause = pause })
+	listingPause = time.Millisecond
+	dir := t.TempDir()
+	executable, count, races := filepath.Join(dir, "tart"), filepath.Join(dir, "count"), filepath.Join(dir, "races")
+	testsupport.WriteExecutable(t, executable, `#!/bin/sh
+echo x >> `+count+`
+if [ "$(wc -l < `+count+`)" -le "$(cat `+races+`)" ]; then
+  echo 'Error: The file “config.json” couldn’t be opened because there is no such file.' >&2; exit 1
+fi
+printf '%s' '[{"Name":"dockhand-base-tahoe","Source":"local","Running":false}]'
+`)
+	require.NoError(t, os.WriteFile(races, []byte("2"), 0o644))
+	client := Client{Executable: executable}
+	images, err := client.Images(t.Context(), RunOptions{})
+	require.NoError(t, err)
+	require.Equal(t, []Image{{Name: "dockhand-base-tahoe", Source: "local"}}, images)
+	calls, err := os.ReadFile(count)
+	require.NoError(t, err)
+	require.Equal(t, 3, strings.Count(string(calls), "x"), "two raced listings, then the answer")
+
+	require.NoError(t, os.Remove(count))
+	require.NoError(t, os.WriteFile(races, []byte("99"), 0o644))
+	_, err = client.Images(t.Context(), RunOptions{})
+	require.ErrorIs(t, err, ErrListingRaced)
+	calls, err = os.ReadFile(count)
+	require.NoError(t, err)
+	require.Equal(t, listingAttempts, strings.Count(string(calls), "x"))
 }

@@ -53,6 +53,16 @@ disposable clone instead and left as it is. `--check` only checks, and
 passes. An image `v2-final`'s `setup` made in `~/.tart` is copied in, when
 it still passes, rather than made again.
 
+Golden Gate's images, macOS 27, have ASIF disks where earlier releases'
+are raw. They need Tart 2.39.0 or newer, the first to list its VMs while
+one with an ASIF disk runs (openai/tart#1344); setup refuses them on an
+older Tart before the clone ever runs. An ASIF disk is grown by Tart
+itself, which moves the guest's recovery partition to the new end, so
+nothing on the host is edited. It is given 125 GB rather than 100, since
+the recovery partition stays and macOS 27 keeps more of the disk: a 125 GB
+Golden Gate guest has about 79 GB free. ASIF is sparse, so the extra size
+takes no host disk until it is written.
+
 `dockhand providers` shows which releases have images, with Xcode or not,
 and whether the other providers are ready. `init` shows the same.
 

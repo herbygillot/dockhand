@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-26",
+  "generated": "2026-09-27",
   "facts": [
     {
       "darwin": 10,
@@ -219,7 +219,7 @@
       "source": {
         "kind": "tart",
         "from": "dockhand-base-monterey",
-        "date": "2026-09-26",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -261,7 +261,7 @@
       "source": {
         "kind": "tart",
         "from": "dockhand-xcode-monterey",
-        "date": "2026-09-26",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -301,7 +301,7 @@
       "source": {
         "kind": "tart",
         "from": "dockhand-base-ventura",
-        "date": "2026-09-26",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -341,7 +341,7 @@
       "source": {
         "kind": "tart",
         "from": "dockhand-xcode-ventura",
-        "date": "2026-09-26",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -381,7 +381,7 @@
       "source": {
         "kind": "tart",
         "from": "dockhand-base-sonoma",
-        "date": "2026-09-26",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -421,7 +421,7 @@
       "source": {
         "kind": "tart",
         "from": "dockhand-xcode-sonoma",
-        "date": "2026-09-26",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -461,7 +461,7 @@
       "source": {
         "kind": "tart",
         "from": "dockhand-base-sequoia",
-        "date": "2026-09-26",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -501,7 +501,7 @@
       "source": {
         "kind": "tart",
         "from": "dockhand-xcode-sequoia",
-        "date": "2026-09-26",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -541,7 +541,7 @@
       "source": {
         "kind": "tart",
         "from": "dockhand-base-tahoe",
-        "date": "2026-09-26",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -581,7 +581,7 @@
       "source": {
         "kind": "tart",
         "from": "dockhand-xcode-tahoe",
-        "date": "2026-09-26",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },
@@ -597,6 +597,31 @@
         "kind": "buildbot",
         "from": "ports-26_x86_64-builder build 4132",
         "date": "2026-09-26",
+        "macports": "2.12.6"
+      }
+    },
+    {
+      "darwin": 27,
+      "architecture": "arm64",
+      "profile": "clt",
+      "macos": "27.0",
+      "xcode": "none",
+      "tools": "27.0.0.0.1788430756",
+      "developer_dir": "/Library/Developer/CommandLineTools",
+      "sdks": [
+        "MacOSX.sdk -\u003e MacOSX27.0.sdk",
+        "MacOSX26.5.sdk",
+        "MacOSX26.sdk -\u003e MacOSX26.5.sdk",
+        "MacOSX27.0.sdk",
+        "MacOSX27.sdk -\u003e MacOSX27.0.sdk"
+      ],
+      "sdk": "27",
+      "clang": "2100.3.34.2",
+      "xcselect": false,
+      "source": {
+        "kind": "tart",
+        "from": "dockhand-base-golden-gate",
+        "date": "2026-09-27",
         "macports": "2.12.6"
       }
     },

@@ -3,6 +3,7 @@ package provision
 import (
 	"bytes"
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -60,4 +61,30 @@ exit 7
 	require.Contains(t, progress.String(), "diagnostic")
 	_, err = n.guest(t.Context(), "unreached", nil, "/usr/bin/true")
 	require.ErrorContains(t, err, "unreached has not been reached over SSH")
+}
+
+// Configure gives an ASIF disk, Golden Gate's, more room than a raw one and
+// leaves it to Tart's own resize, which moves the recovery partition; it
+// edits nothing on the host. A disk it doesn't know is refused before
+// anything is set.
+func TestConfigureSizesAnASIFDiskAndEditsNothing(t *testing.T) {
+	dir := t.TempDir()
+	calls := filepath.Join(dir, "calls")
+	script := filepath.Join(dir, "tart")
+	format := filepath.Join(dir, "format")
+	testsupport.WriteExecutable(t, script, "#!/bin/sh\necho \"$*\" >> "+calls+"\nif [ \"$1\" = get ]; then printf '{\"Running\":false,\"State\":\"stopped\",\"DiskFormat\":\"%s\"}' \"$(cat "+format+")\"; fi\n")
+	require.NoError(t, os.WriteFile(format, []byte("asif"), 0o644))
+	n := newNative(Config{Executable: script, Home: dir}, nil)
+	require.NoError(t, n.Configure(t.Context(), "dockhand-base-golden-gate-next"))
+	recorded, err := os.ReadFile(calls)
+	require.NoError(t, err)
+	require.Contains(t, string(recorded), "--disk-size 125\n")
+	require.NoFileExists(t, filepath.Join(dir, "vms", "dockhand-base-golden-gate-next", "disk.img"), "nothing on the host is touched")
+
+	require.NoError(t, os.WriteFile(format, []byte("qcow"), 0o644))
+	require.NoError(t, os.Remove(calls))
+	require.ErrorContains(t, n.Configure(t.Context(), "odd-next"), "has a qcow disk, which dockhand doesn't prepare")
+	recorded, err = os.ReadFile(calls)
+	require.NoError(t, err)
+	require.NotContains(t, string(recorded), "set ", "nothing is set on a disk it refuses")
 }

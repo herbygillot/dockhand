@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/subprocess"
 )
@@ -21,6 +23,50 @@ import (
 // for as long as it runs (openai/tart#1344). It clears when the VM stops, so
 // callers wait it out as they wait for capacity.
 var ErrListingBlocked = errors.New("tart: a running VM with an ASIF disk keeps Tart from listing its VMs until it stops (openai/tart#1344)")
+
+// ASIFVersion is the first Tart that lists its VMs while one with an ASIF
+// disk runs, as Golden Gate's images have (openai/tart#1344, fixed by #1349
+// in 2.39.0). With it, a listing in an ASIF VM's first seconds no longer
+// fails that VM's start either: eleven of eleven starts listed through
+// their first ten seconds succeeded on 2.39.0, where ten of eleven failed
+// on 2.37.0.
+var ASIFVersion = []int{2, 39, 0}
+
+// HandlesASIF reports whether a Tart version, as `tart --version` prints
+// it, is ASIFVersion or newer.
+func HandlesASIF(version string) bool {
+	fields := strings.FieldsFunc(strings.TrimSpace(version), func(r rune) bool { return r == '.' || r == '-' || r == '+' || r == ' ' })
+	for i, minimum := range ASIFVersion {
+		if i >= len(fields) {
+			return false
+		}
+		n, err := strconv.Atoi(fields[i])
+		if err != nil {
+			return false
+		}
+		if n != minimum {
+			return n > minimum
+		}
+	}
+	return true
+}
+
+// ErrListingRaced reports a listing that failed because a VM went while
+// Tart listed: it checks each VM's directory is whole, then reads its
+// config.json again to size it, so a VM another process deletes in between
+// fails the whole listing ("The file “config.json” couldn’t be opened
+// because there is no such file"). It happened to two of eleven images
+// probed two at a time on 2026-09-27, on Tart 2.39.0, and the code is the
+// same in 2.37.0. Listing again, once the delete is done, answers.
+var ErrListingRaced = errors.New("tart: a VM went while Tart listed its VMs")
+
+// listingAttempts bounds how often Images lists again after a raced
+// listing, and listingPause how long it waits between: a delete takes well
+// under a second.
+var (
+	listingAttempts = 5
+	listingPause    = 500 * time.Millisecond
+)
 
 // ErrVMMissing reports a VM Tart does not have.
 var ErrVMMissing = errors.New("tart: VM does not exist")
@@ -43,6 +89,14 @@ type VM struct {
 
 func (c Client) Images(ctx context.Context, options RunOptions) ([]Image, error) {
 	output, err := c.Run(ctx, options, "list", "--format", "json")
+	for attempt := 1; errors.Is(err, ErrListingRaced) && attempt < listingAttempts; attempt++ {
+		select {
+		case <-ctx.Done():
+			return nil, errors.Join(err, ctx.Err())
+		case <-time.After(listingPause):
+		}
+		output, err = c.Run(ctx, options, "list", "--format", "json")
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -97,6 +151,8 @@ func classify(err error) error {
 	switch {
 	case strings.Contains(failure.Stderr, "image info") && strings.Contains(failure.Stderr, "Resource temporarily unavailable"):
 		return fmt.Errorf("%w: %w", ErrListingBlocked, err)
+	case failure.Command == "list" && strings.Contains(failure.Stderr, "because there is no such file"):
+		return fmt.Errorf("%w: %w", ErrListingRaced, err)
 	case failure.Command != "delete" && strings.Contains(failure.Stderr, "does not exist"):
 		return fmt.Errorf("%w: %w", ErrVMMissing, err)
 	case failure.Command == "stop" && strings.Contains(failure.Stderr, "is not running"):

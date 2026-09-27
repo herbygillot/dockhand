@@ -121,15 +121,21 @@ func TestLiveTartContracts(t *testing.T) {
 	require.False(t, exists)
 }
 
-// A running VM with an ASIF disk keeps `tart list`, and `tart get` of it,
-// from answering until it stops (openai/tart#1344). Run with
-// DOCKHAND_TEST_TART_ASIF_SOURCE naming an ASIF image, e.g.
-// ghcr.io/cirruslabs/macos-golden-gate-vanilla:latest once pulled. While it
-// runs, every listing on the machine fails, so it is kept short.
-func TestLiveTartASIFBlocksTheListing(t *testing.T) {
+// A VM with an ASIF disk, as Golden Gate's images have, starts while Tart
+// lists its VMs, and `tart list` and `tart get` answer while it runs. Before
+// Tart 2.39.0 neither held (openai/tart#1344): a running ASIF VM kept every
+// listing from answering, and a listing in its first seconds failed its
+// start. Run with DOCKHAND_TEST_TART_ASIF_SOURCE naming an ASIF image, e.g.
+// ghcr.io/cirruslabs/macos-golden-gate-vanilla:latest once pulled.
+func TestLiveTartListsWhileAnASIFVMRuns(t *testing.T) {
 	m, source := liveMachine(t, "DOCKHAND_TEST_TART_ASIF_SOURCE")
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
 	defer cancel()
+	version, err := m.Version(ctx)
+	require.NoError(t, err)
+	if !tart.HandlesASIF(version) {
+		t.Skipf("Tart %s is older than the one that lists its VMs while an ASIF VM runs", version)
+	}
 	name := scratchName(t)
 	var run *Foreground
 	require.NoError(t, m.Clone(ctx, source, name))
@@ -138,26 +144,25 @@ func TestLiveTartASIFBlocksTheListing(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "asif", format)
 
-	// Nothing touches the VM while it starts: a listing reads every VM's
-	// disk, and one issued while an ASIF VM starts makes that start fail
-	// with "The virtual machine failed to start" (found 2026-09-24). The
-	// start is past opening its disk well within the wait.
 	run, err = m.StartForeground(name)
 	require.NoError(t, err)
+	for range 10 {
+		_, err = m.Images(ctx)
+		require.NoError(t, err, "a listing while the ASIF VM starts")
+		time.Sleep(time.Second)
+	}
 	select {
 	case <-run.Done():
 		t.Fatalf("tart run %s exited: %v", name, run.Err())
-	case <-ctx.Done():
-		t.Fatal(ctx.Err())
-	case <-time.After(20 * time.Second):
+	case <-time.After(10 * time.Second):
 	}
-	_, err = m.Images(ctx)
-	require.ErrorIs(t, err, tart.ErrListingBlocked, "if Tart fixed openai/tart#1344, dockhand can stop declining ASIF images")
-	_, err = m.DiskFormat(ctx, name)
-	require.ErrorIs(t, err, tart.ErrListingBlocked)
+	exists, running, err := m.LocalVM(ctx, name)
+	require.NoError(t, err)
+	require.True(t, exists && running, "it started, and is listed running")
+	format, err = m.DiskFormat(ctx, name)
+	require.NoError(t, err, "tart get answers while it runs")
+	require.Equal(t, "asif", format)
 
 	require.NoError(t, run.Stop(ctx, 30*time.Second))
 	run = nil
-	_, err = m.Images(ctx)
-	require.NoError(t, err, "the listing answers again once the VM stops")
 }

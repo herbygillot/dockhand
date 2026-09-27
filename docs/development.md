@@ -47,7 +47,7 @@ The rest reach something outside the checkout and run only when named:
 | `DOCKHAND_TEST_BOOTSTRAP_VM` | `tart/provision` `TestLiveAgentRegistration` | a running disposable VM you own, whose agent it registers |
 | `DOCKHAND_TEST_TART_LIVE` | `provider/tart` `TestLiveCheckInATahoeGuest` | the acceptance test above, with `DOCKHAND_TEST_PORTS_TREE` |
 | `DOCKHAND_TEST_TART_IMAGE` | `tart/host` `TestLiveTartContracts`, `tart/channel` `TestLiveChannel` | Tart's listing, stop, and delete behavior, and the guest channel, on a clone of the named raw-disk image |
-| `DOCKHAND_TEST_TART_ASIF_SOURCE` | `tart/host` `TestLiveTartASIFBlocksTheListing` | an ASIF image such as Golden Gate's, cloned and run briefly; every Tart listing on the Mac fails while it runs |
+| `DOCKHAND_TEST_TART_ASIF_SOURCE` | `tart/host` `TestLiveTartListsWhileAnASIFVMRuns` | an ASIF image such as Golden Gate's, cloned and run briefly while Tart lists its VMs; it needs Tart 2.39.0 or newer, and skips on an older one |
 
 ## State and service boundaries
 
