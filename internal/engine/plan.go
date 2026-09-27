@@ -70,20 +70,22 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	}
 	scope := ScopeOf(changed)
 
-	// Each environment is evaluated for itself, and so are its
-	// dependencies: a port may need a changed library on one platform and
-	// not another.
-	type candidate struct {
-		target model.PlanTarget
-		// deps are the port's dependencies in each environment, in the
-		// plan's order.
-		deps [][]string
+	// Each environment evaluates the ports for itself: a port may be
+	// defined, eligible, need Xcode, or need a changed library on one
+	// platform and not another.
+	type evaluation struct {
+		defined    map[model.TargetID]bool
+		ineligible map[model.TargetID]string
+		deps       map[model.TargetID][]model.TargetID
+		xcode      map[model.TargetID]bool
 	}
-	var candidates []candidate
-	index := map[string]int{}
-	excluded := map[string]int{}
-	// defined records which environments' evaluations defined each port.
-	defined := map[string][]bool{}
+	evaluations := make([]evaluation, len(plan.Environments))
+	for i := range evaluations {
+		evaluations[i] = evaluation{defined: map[model.TargetID]bool{}, ineligible: map[model.TargetID]string{}, deps: map[model.TargetID][]model.TargetID{}, xcode: map[model.TargetID]bool{}}
+	}
+	// candidates are every port some environment defined, as the branch
+	// sees it, in the order the scope and --also name them.
+	var candidates []model.PlanTarget
 	add := func(directory string, kind model.TargetKind, role model.TargetRole) {
 		for e, environment := range plan.Environments {
 			ports, err := reader.Ports(ctx, revision.Source, directory, environment)
@@ -95,21 +97,10 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 				if role == model.Also && request.alone && !slices.Contains(request.Also, port.Name) {
 					continue
 				}
-				if defined[port.Name] == nil {
-					defined[port.Name] = make([]bool, len(plan.Environments))
-				}
-				defined[port.Name][e] = true
+				id := model.TargetID(port.Name)
 				target := model.Target{Name: port.Name, Portfile: directory + "/Portfile"}
 				if i > 0 {
 					target.Subport = port.Name
-				}
-				if reason := ineligible(port, environment.Platform); reason != "" {
-					plan.Exclusions = append(plan.Exclusions, model.Exclusion{Target: target, Platform: environment.Platform, Reason: reason})
-					excluded[port.Name]++
-				}
-				var deps []string
-				for _, dependency := range port.Dependencies {
-					deps = append(deps, dependency.Port)
 				}
 				// Whether it needs Xcode is the environment's own answer,
 				// with its tools (decision 7).
@@ -118,16 +109,18 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 					plan.Unresolved = append(plan.Unresolved, model.Unresolved{Target: target, Reason: err.Error()})
 					return
 				}
-				at, ok := index[port.Name]
-				if !ok {
-					at = len(candidates)
-					index[port.Name] = at
-					candidates = append(candidates, candidate{target: model.PlanTarget{ID: model.TargetID(port.Name), Target: target, Directory: directory, Kind: kind, Role: role}, deps: make([][]string, len(plan.Environments))})
+				if !slices.ContainsFunc(candidates, func(c model.PlanTarget) bool { return c.ID == id }) {
+					candidates = append(candidates, model.PlanTarget{ID: id, Target: target, Directory: directory, Kind: kind, Role: role})
 				}
-				candidates[at].deps[e] = deps
-				if needsXcode && !candidates[at].target.NeedsXcodeIn(environment) {
-					candidates[at].target.NeedsXcode = append(candidates[at].target.NeedsXcode, environment)
+				evaluated := evaluations[e]
+				evaluated.defined[id] = true
+				if reason := ineligible(port, environment.Platform); reason != "" {
+					evaluated.ineligible[id] = reason
 				}
+				for _, dependency := range port.Dependencies {
+					evaluated.deps[id] = append(evaluated.deps[id], model.TargetID(dependency.Port))
+				}
+				evaluated.xcode[id] = needsXcode
 			}
 		}
 	}
@@ -161,133 +154,156 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 		return plan, nil
 	}
 
-	// A port one environment's evaluation didn't define isn't built there,
-	// whichever other environment defined it: a subport that exists on one
-	// release or architecture only is excluded on the rest.
-	for _, c := range candidates {
-		id := string(c.target.ID)
-		for e, environment := range plan.Environments {
-			if !defined[id][e] {
-				plan.Exclusions = append(plan.Exclusions, model.Exclusion{Target: c.target.Target, Platform: environment.Platform, Reason: "not defined on " + platformWords(environment.Platform)})
-				excluded[id]++
+	// What each environment rules out, and why: a port its evaluation
+	// didn't define, whichever other environment defined it, and a port
+	// MacPorts CI would exclude there.
+	reasons := make([]map[model.TargetID]string, len(plan.Environments))
+	for e := range plan.Environments {
+		reasons[e] = map[model.TargetID]string{}
+		for _, c := range candidates {
+			switch {
+			case !evaluations[e].defined[c.ID]:
+				reasons[e][c.ID] = "not defined there"
+			case evaluations[e].ineligible[c.ID] != "":
+				reasons[e][c.ID] = evaluations[e].ineligible[c.ID]
 			}
 		}
 	}
-
-	// A target excluded on every release is not built at all.
-	candidates = slices.DeleteFunc(candidates, func(c candidate) bool {
-		return excluded[string(c.target.ID)] == len(plan.Environments)
+	// A target ruled out everywhere is not built at all.
+	built := slices.DeleteFunc(slices.Clone(candidates), func(c model.PlanTarget) bool {
+		return !slices.ContainsFunc(reasons, func(ruled map[model.TargetID]string) bool { return ruled[c.ID] == "" })
 	})
-	names := map[string]bool{}
-	for _, c := range candidates {
-		names[string(c.target.ID)] = true
+	builtAnywhere := func(id model.TargetID) bool {
+		return slices.ContainsFunc(built, func(c model.PlanTarget) bool { return c.ID == id })
 	}
+	// What each target needs built first in each environment: the targets
+	// built there that it depends on there. Their union, over every
+	// environment, is what --only adds back.
 	needs := make([]map[model.TargetID][]model.TargetID, len(plan.Environments))
-	for e := range needs {
+	union := map[model.TargetID][]model.TargetID{}
+	for e := range plan.Environments {
 		needs[e] = map[model.TargetID][]model.TargetID{}
-	}
-	for i := range candidates {
-		id := candidates[i].target.ID
-		for e, deps := range candidates[i].deps {
-			for _, dep := range deps {
-				if !names[dep] || dep == string(id) || slices.Contains(needs[e][id], model.TargetID(dep)) {
+		for _, c := range built {
+			if reasons[e][c.ID] != "" {
+				continue
+			}
+			for _, dep := range evaluations[e].deps[c.ID] {
+				if dep == c.ID || !builtAnywhere(dep) || reasons[e][dep] != "" || slices.Contains(needs[e][c.ID], dep) {
 					continue
 				}
-				needs[e][id] = append(needs[e][id], model.TargetID(dep))
-				if !slices.Contains(candidates[i].target.DependsOn, model.TargetID(dep)) {
-					candidates[i].target.DependsOn = append(candidates[i].target.DependsOn, model.TargetID(dep))
+				needs[e][c.ID] = append(needs[e][c.ID], dep)
+				if !slices.Contains(union[c.ID], dep) {
+					union[c.ID] = append(union[c.ID], dep)
 				}
 			}
 		}
 	}
-
-	var targets []model.PlanTarget
-	for _, c := range candidates {
-		targets = append(targets, c.target)
-	}
+	targets := built
 	if len(request.Only) > 0 {
-		if targets, plan.Omitted, err = narrow(targets, request.Only); err != nil {
+		if targets, plan.Omitted, err = narrow(built, union, request.Only); err != nil {
 			return plan, err
 		}
 	}
-	ordered, cycle := dependencyOrder(targets)
-	if cycle != nil {
-		reason := "dependency cycle: " + strings.Join(cycle, " → ")
-		if !slices.ContainsFunc(needs, func(n map[model.TargetID][]model.TargetID) bool { return hasCycle(targets, n) }) {
-			reason = "dependency cycle across platforms, which no one platform has: " + strings.Join(cycle, " → ") + "; check each platform on its own (--on)"
+
+	// Each environment's plan: what it builds, in its own dependency
+	// order, so dependencies that run opposite ways on two releases are
+	// no cycle; what those need there; and what it rules out, the targets
+	// --only left out included, since submit requires them wherever they
+	// aren't.
+	for e, environment := range plan.Environments {
+		planned := model.EnvironmentPlan{Environment: environment}
+		var members []model.TargetID
+		for _, target := range targets {
+			if reasons[e][target.ID] == "" {
+				members = append(members, target.ID)
+			}
 		}
-		plan.Unresolved = append(plan.Unresolved, model.Unresolved{Target: model.Target{Name: cycle[0]}, Reason: reason})
-		return plan, nil
-	}
-	plan.Targets = ordered
-	// Each environment's dependencies, among what the plan builds.
-	if len(plan.Environments) > 1 {
-		planned := map[model.TargetID]bool{}
-		for _, target := range ordered {
-			planned[target.ID] = true
-		}
-		plan.Dependencies = make([]map[model.TargetID][]model.TargetID, len(needs))
-		for e, n := range needs {
-			plan.Dependencies[e] = map[model.TargetID][]model.TargetID{}
-			for id, deps := range n {
-				if kept := slices.DeleteFunc(slices.Clone(deps), func(d model.TargetID) bool { return !planned[d] }); planned[id] && len(kept) > 0 {
-					plan.Dependencies[e][id] = kept
+		dependencies := map[model.TargetID][]model.TargetID{}
+		for _, id := range members {
+			for _, dep := range needs[e][id] {
+				if slices.Contains(members, dep) {
+					dependencies[id] = append(dependencies[id], dep)
 				}
 			}
 		}
+		order, cycle := dependencyOrder(members, dependencies)
+		if cycle != nil {
+			plan.Unresolved = append(plan.Unresolved, model.Unresolved{Target: model.Target{Name: cycle[0]},
+				Reason: fmt.Sprintf("dependency cycle on %s: %s", describeEnvironment(environment), strings.Join(cycle, " → "))})
+			continue
+		}
+		planned.Order = order
+		if len(dependencies) > 0 {
+			planned.Dependencies = dependencies
+		}
+		for _, id := range order {
+			if evaluations[e].xcode[id] {
+				planned.NeedsXcode = append(planned.NeedsXcode, id)
+			}
+		}
+		for _, c := range candidates {
+			if reason := reasons[e][c.ID]; reason != "" {
+				planned.Exclusions = append(planned.Exclusions, model.Exclusion{Target: c.Target, Reason: reason})
+			}
+		}
+		// What it needs there decides what it can't build.
+		planned.Unmet = unmetNeeds(planned)
+		plan.Builds = append(plan.Builds, planned)
 	}
-	// Each environment's own dependencies decide what it can't build.
-	plan.Unmet = unmetNeeds(plan)
+	if len(plan.Unresolved) > 0 {
+		return plan, nil
+	}
+	// The plan's own list is the environments' orders, merged: the first
+	// environment's, and what each other one adds, after what comes before
+	// it there.
+	var order []model.TargetID
+	for _, planned := range plan.Builds {
+		at := 0
+		for _, id := range planned.Order {
+			if i := slices.Index(order, id); i >= 0 {
+				at = i + 1
+				continue
+			}
+			order = slices.Insert(order, at, id)
+			at++
+		}
+	}
+	for _, id := range order {
+		plan.Targets = append(plan.Targets, targets[slices.IndexFunc(targets, func(t model.PlanTarget) bool { return t.ID == id })])
+	}
 	return plan, plan.Validate()
 }
 
-// unmetNeeds are the targets an environment can't build (Plan.Unmet). With
-// the Command Line Tools alone, that is a target that needs Xcode, and one
-// whose prerequisite does: the plan builds a changed prerequisite from
-// source before its dependents, never from an archive, so what it needs,
-// they need. An environment whose tools are Xcode, or unstated, builds
-// them all.
-func unmetNeeds(plan model.Plan) []model.Unmet {
+// unmetNeeds are the targets an environment can't build. With the Command
+// Line Tools alone, that is a target that needs Xcode, and one whose
+// prerequisite does: the plan builds a changed prerequisite from source
+// before its dependents, never from an archive, so what it needs, they
+// need. An environment whose tools are Xcode, or unstated, builds them
+// all.
+func unmetNeeds(planned model.EnvironmentPlan) []model.Unmet {
+	if planned.Environment.DeveloperTools != model.DeveloperToolsCommandLine {
+		return nil
+	}
 	var unmet []model.Unmet
-	for _, environment := range plan.Environments {
-		if environment.DeveloperTools != model.DeveloperToolsCommandLine {
+	// cause is, for each target that needs Xcode, the one that needs it
+	// itself. The order puts a prerequisite before its dependents, so it
+	// is settled first.
+	cause := map[model.TargetID]model.TargetID{}
+	for _, id := range planned.Order {
+		if slices.Contains(planned.NeedsXcode, id) {
+			cause[id] = id
+			unmet = append(unmet, model.Unmet{Target: id, Environment: planned.Environment, Needs: model.RequiresXcode})
 			continue
 		}
-		// cause is, for each target that needs Xcode, the one that
-		// needs it itself. Targets are in dependency order, so a
-		// prerequisite is settled before its dependents.
-		cause := map[model.TargetID]model.TargetID{}
-		for _, target := range plan.Targets {
-			if plan.Excludes(target, environment.Platform) {
-				continue
-			}
-			if target.NeedsXcodeIn(environment) {
-				cause[target.ID] = target.ID
-				unmet = append(unmet, model.Unmet{Target: target.ID, Environment: environment, Needs: model.RequiresXcode})
-				continue
-			}
-			for _, prerequisite := range plan.DependsOnIn(environment, target.ID) {
-				if through, ok := cause[prerequisite]; ok {
-					cause[target.ID] = through
-					unmet = append(unmet, model.Unmet{Target: target.ID, Environment: environment, Needs: model.RequiresXcode, Through: through})
-					break
-				}
+		for _, prerequisite := range planned.Dependencies[id] {
+			if through, ok := cause[prerequisite]; ok {
+				cause[id] = through
+				unmet = append(unmet, model.Unmet{Target: id, Environment: planned.Environment, Needs: model.RequiresXcode, Through: through})
+				break
 			}
 		}
 	}
 	return unmet
-}
-
-// hasCycle reports whether one environment's dependencies among targets
-// form a cycle.
-func hasCycle(targets []model.PlanTarget, needs map[model.TargetID][]model.TargetID) bool {
-	own := make([]model.PlanTarget, len(targets))
-	for i, target := range targets {
-		target.DependsOn = needs[target.ID]
-		own[i] = target
-	}
-	_, cycle := dependencyOrder(own)
-	return cycle != nil
 }
 
 func directoryName(directory string) string {
@@ -407,9 +423,9 @@ func (e *Engine) loadsChangedSharedCode(ctx context.Context, tree, portfile stri
 }
 
 // narrow keeps the named changed targets and adds back the changed
-// prerequisites they need, marked as such. It returns the changed targets
-// it left out, which submission still requires.
-func narrow(targets []model.PlanTarget, only []string) (narrowed, omitted []model.PlanTarget, err error) {
+// prerequisites they need in any environment, marked as such. It returns
+// the changed targets it left out, which submission still requires.
+func narrow(targets []model.PlanTarget, needs map[model.TargetID][]model.TargetID, only []string) (narrowed, omitted []model.PlanTarget, err error) {
 	byID := map[model.TargetID]model.PlanTarget{}
 	for _, target := range targets {
 		byID[target.ID] = target
@@ -417,7 +433,7 @@ func narrow(targets []model.PlanTarget, only []string) (narrowed, omitted []mode
 	keep := map[model.TargetID]model.TargetRole{}
 	var visit func(id model.TargetID)
 	visit = func(id model.TargetID) {
-		for _, dep := range byID[id].DependsOn {
+		for _, dep := range needs[id] {
 			if _, ok := keep[dep]; !ok && byID[dep].Role == model.Changed {
 				keep[dep] = model.Prerequisite
 				visit(dep)
@@ -437,7 +453,6 @@ func narrow(targets []model.PlanTarget, only []string) (narrowed, omitted []mode
 	for _, target := range targets {
 		role, ok := keep[target.ID]
 		if !ok && target.Role != model.Also {
-			target.DependsOn = nil
 			omitted = append(omitted, target)
 			continue
 		}
@@ -449,46 +464,40 @@ func narrow(targets []model.PlanTarget, only []string) (narrowed, omitted []mode
 	return narrowed, omitted, nil
 }
 
-// dependencyOrder puts each target after the targets it depends on,
-// otherwise keeping the given order as closely as it can: the first ready
-// target is always placed next. It returns a cycle when there is one.
-func dependencyOrder(targets []model.PlanTarget) ([]model.PlanTarget, []string) {
-	byID := map[model.TargetID]model.PlanTarget{}
-	for _, target := range targets {
-		byID[target.ID] = target
-	}
+// dependencyOrder puts each target after the targets it needs, otherwise
+// keeping the given order as closely as it can: the first ready target is
+// always placed next. It returns a cycle when there is one.
+func dependencyOrder(ids []model.TargetID, needs map[model.TargetID][]model.TargetID) ([]model.TargetID, []string) {
 	placed := map[model.TargetID]bool{}
-	ready := func(target model.PlanTarget) bool {
-		for _, dep := range target.DependsOn {
-			if _, present := byID[dep]; present && !placed[dep] {
+	ready := func(id model.TargetID) bool {
+		for _, dep := range needs[id] {
+			if !placed[dep] {
 				return false
 			}
 		}
 		return true
 	}
-	var ordered []model.PlanTarget
-	for len(ordered) < len(targets) {
-		next := slices.IndexFunc(targets, func(t model.PlanTarget) bool { return !placed[t.ID] && ready(t) })
+	var ordered []model.TargetID
+	for len(ordered) < len(ids) {
+		next := slices.IndexFunc(ids, func(id model.TargetID) bool { return !placed[id] && ready(id) })
 		if next < 0 {
-			return nil, cycleFrom(targets, byID, placed)
+			return nil, cycleFrom(ids, needs, placed)
 		}
-		target := targets[next]
-		target.DependsOn = slices.DeleteFunc(slices.Clone(target.DependsOn), func(d model.TargetID) bool { _, present := byID[d]; return !present })
-		ordered = append(ordered, target)
-		placed[target.ID] = true
+		ordered = append(ordered, ids[next])
+		placed[ids[next]] = true
 	}
 	return ordered, nil
 }
 
 // cycleFrom follows unplaced dependencies from the first unplaced target
 // until one repeats, and returns that loop.
-func cycleFrom(targets []model.PlanTarget, byID map[model.TargetID]model.PlanTarget, placed map[model.TargetID]bool) []string {
-	at := targets[slices.IndexFunc(targets, func(t model.PlanTarget) bool { return !placed[t.ID] })].ID
+func cycleFrom(ids []model.TargetID, needs map[model.TargetID][]model.TargetID, placed map[model.TargetID]bool) []string {
+	at := ids[slices.IndexFunc(ids, func(id model.TargetID) bool { return !placed[id] })]
 	var path []model.TargetID
 	for !slices.Contains(path, at) {
 		path = append(path, at)
-		for _, dep := range byID[at].DependsOn {
-			if _, present := byID[dep]; present && !placed[dep] {
+		for _, dep := range needs[at] {
+			if !placed[dep] {
 				at = dep
 				break
 			}

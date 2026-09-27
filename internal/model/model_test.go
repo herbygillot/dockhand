@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -75,14 +76,31 @@ func TestRevisionKinds(t *testing.T) {
 	require.False(t, commit.SameTree(otherBase), "the same files on another base are another candidate")
 }
 
+var (
+	arm   = Environment{Provider: "tart", Platform: Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	intel = Environment{Provider: "tart", Platform: Platform{OS: "darwin", Version: "25", Architecture: "x86_64"}, DeveloperTools: DeveloperToolsCommandLine}
+)
+
+// plan builds harbor-cli and harbor-tools on libharbor, each environment
+// in its own order: on arm64, harbor-tools doesn't need libharbor, and
+// comes first.
 func plan() Plan {
 	return Plan{
 		ID: "p1", Revision: "v1", Tests: TestsDeclared, CreatedAt: at,
-		Environments: []Environment{{Provider: "tart", Platform: Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}},
+		Environments: []Environment{arm, intel},
 		Targets: []PlanTarget{
+			{ID: "harbor-tools", Target: Target{Name: "harbor-tools"}, Directory: "devel/harbor-tools", Kind: Unchanged, Role: Also},
 			{ID: "libharbor", Target: Target{Name: "libharbor"}, Directory: "devel/libharbor", Kind: Substantive, Role: Prerequisite},
-			{ID: "harbor-cli", Target: Target{Name: "harbor-cli"}, Directory: "devel/harbor-cli", Kind: RevisionOnly, Role: Changed, DependsOn: []TargetID{"libharbor"}},
-			{ID: "harbor-tools", Target: Target{Name: "harbor-tools"}, Directory: "devel/harbor-tools", Kind: Unchanged, Role: Also, DependsOn: []TargetID{"libharbor"}},
+			{ID: "harbor-cli", Target: Target{Name: "harbor-cli"}, Directory: "devel/harbor-cli", Kind: RevisionOnly, Role: Changed},
+		},
+		Builds: []EnvironmentPlan{
+			{Environment: arm, Order: []TargetID{"harbor-tools", "libharbor", "harbor-cli"},
+				Dependencies: map[TargetID][]TargetID{"harbor-cli": {"libharbor"}}},
+			{Environment: intel, Order: []TargetID{"libharbor", "harbor-cli", "harbor-tools"},
+				Dependencies: map[TargetID][]TargetID{"harbor-cli": {"libharbor"}, "harbor-tools": {"libharbor"}},
+				NeedsXcode:   []TargetID{"harbor-tools"},
+				Unmet:        []Unmet{{Target: "harbor-tools", Environment: intel, Needs: RequiresXcode}},
+				Exclusions:   []Exclusion{{Target: Target{Name: "harbor-viewer"}, Reason: "supported_archs arm64 only"}}},
 		},
 		Omitted: []PlanTarget{{ID: "harbor-viewer", Target: Target{Name: "harbor-viewer"}, Directory: "graphics/harbor-viewer", Kind: Substantive, Role: Changed}},
 		Only:    []string{"harbor-cli"}, Also: []string{"harbor-tools"},
@@ -96,30 +114,52 @@ func TestPlanValidation(t *testing.T) {
 	target, ok := p.Target("harbor-cli")
 	require.True(t, ok)
 	require.Equal(t, RevisionOnly, target.Kind)
+	require.Empty(t, p.DependsOnIn(arm, "harbor-tools"))
+	require.Equal(t, []TargetID{"libharbor"}, p.DependsOnIn(intel, "harbor-tools"))
+	require.True(t, p.NeedsXcodeIn(intel, "harbor-tools"))
+	_, unmet := p.UnmetIn(intel, "harbor-tools")
+	require.True(t, unmet)
+	omitted := p.Omitted[0]
+	require.True(t, p.Excludes(omitted, intel))
+	require.False(t, p.Excludes(omitted, arm), "required on arm64, though this check doesn't build it")
 
 	for name, change := range map[string]func(*Plan){
-		"dependency after its dependent": func(p *Plan) { p.Targets[0], p.Targets[1] = p.Targets[1], p.Targets[0] },
-		"extra with a changed kind":      func(p *Plan) { p.Targets[2].Kind = Substantive },
-		"changed but unchanged kind":     func(p *Plan) { p.Targets[1].Kind = Unchanged },
-		"repeated target":                func(p *Plan) { p.Targets[2].ID = "harbor-cli" },
+		"dependency after its dependent":   func(p *Plan) { p.Builds[1].Order = []TargetID{"harbor-cli", "libharbor", "harbor-tools"} },
+		"a dependency not built there":     func(p *Plan) { p.Builds[0].Dependencies = map[TargetID][]TargetID{"harbor-cli": {"harbor-viewer"}} },
+		"dependencies of what isn't built": func(p *Plan) { p.Builds[0].Dependencies = map[TargetID][]TargetID{"harbor-viewer": nil} },
+		"built twice":                      func(p *Plan) { p.Builds[0].Order = append(p.Builds[0].Order, "libharbor") },
+		"built but not a target":           func(p *Plan) { p.Builds[0].Order = append(p.Builds[0].Order, "harbor-viewer") },
+		"a target built nowhere":           func(p *Plan) { p.Builds[0].Order, p.Builds[1].Order = p.Builds[0].Order[1:], p.Builds[1].Order[:2] },
+		"unmet but not built": func(p *Plan) {
+			p.Builds[0].Unmet = []Unmet{{Target: "harbor-viewer", Environment: arm, Needs: RequiresXcode}}
+		},
+		"unmet in another environment": func(p *Plan) { p.Builds[1].Unmet[0].Environment = arm },
+		"needs Xcode but not built":    func(p *Plan) { p.Builds[0].NeedsXcode = []TargetID{"harbor-viewer"} },
+		"built and excluded": func(p *Plan) {
+			p.Builds[0].Exclusions = []Exclusion{{Target: Target{Name: "libharbor"}, Reason: "known_fail"}}
+		},
+		"no plan for an environment":     func(p *Plan) { p.Builds = p.Builds[:1] },
+		"a plan for another environment": func(p *Plan) { p.Builds[1].Environment.Provider = "github" },
+		"two plans for one environment":  func(p *Plan) { p.Builds[1].Environment = arm },
+		"extra with a changed kind":      func(p *Plan) { p.Targets[0].Kind = Substantive },
+		"changed but unchanged kind":     func(p *Plan) { p.Targets[2].Kind = Unchanged },
+		"repeated target":                func(p *Plan) { p.Targets[0].ID = "harbor-cli" },
 		"repeated environment":           func(p *Plan) { p.Environments = append(p.Environments, p.Environments[0]) },
 		"no environment":                 func(p *Plan) { p.Environments = nil },
 		"unknown test policy":            func(p *Plan) { p.Tests = "sometimes" },
-		"no directory":                   func(p *Plan) { p.Targets[0].Directory = "" },
+		"no directory":                   func(p *Plan) { p.Targets[1].Directory = "" },
 		"omitted and planned":            func(p *Plan) { p.Omitted[0].ID = "harbor-cli" },
 		"omitted but not changed":        func(p *Plan) { p.Omitted[0].Role = Also },
-		"dependencies for too few environments": func(p *Plan) {
-			p.Environments = append(p.Environments, Environment{Provider: "github"})
-			p.Dependencies = []map[TargetID][]TargetID{{}}
-		},
-		"a platform's dependency outside DependsOn": func(p *Plan) {
-			p.Dependencies = []map[TargetID][]TargetID{{"libharbor": {"harbor-cli"}}}
-		},
 	} {
 		p := plan()
-		p.Targets = append([]PlanTarget(nil), p.Targets...)
-		p.Omitted = append([]PlanTarget(nil), p.Omitted...)
-		p.Environments = append([]Environment(nil), p.Environments...)
+		p.Targets = slices.Clone(p.Targets)
+		p.Omitted = slices.Clone(p.Omitted)
+		p.Environments = slices.Clone(p.Environments)
+		p.Builds = slices.Clone(p.Builds)
+		for i := range p.Builds {
+			p.Builds[i].Order = slices.Clone(p.Builds[i].Order)
+			p.Builds[i].Unmet = slices.Clone(p.Builds[i].Unmet)
+		}
 		change(&p)
 		require.ErrorIs(t, p.Validate(), ErrInvalid, name)
 	}
@@ -128,6 +168,15 @@ func TestPlanValidation(t *testing.T) {
 	unresolved.Unresolved = []Unresolved{{Target: Target{Name: "harbor-viewer"}, Reason: "evaluation failed"}}
 	require.NoError(t, unresolved.Validate(), "an unresolved plan is a valid record")
 	require.False(t, unresolved.Runnable(), "but it cannot be checked")
+	unmetEverywhere := plan()
+	unmetEverywhere.Builds = []EnvironmentPlan{unmetEverywhere.Builds[1]}
+	unmetEverywhere.Environments = []Environment{intel}
+	unmetEverywhere.Targets = unmetEverywhere.Targets[2:]
+	unmetEverywhere.Builds[0].Order = []TargetID{"harbor-cli"}
+	unmetEverywhere.Builds[0].Dependencies, unmetEverywhere.Builds[0].NeedsXcode = nil, []TargetID{"harbor-cli"}
+	unmetEverywhere.Builds[0].Unmet = []Unmet{{Target: "harbor-cli", Environment: intel, Needs: RequiresXcode}}
+	require.NoError(t, unmetEverywhere.Validate())
+	require.False(t, unmetEverywhere.Runnable(), "nothing it plans can be built")
 }
 
 func TestRunStates(t *testing.T) {

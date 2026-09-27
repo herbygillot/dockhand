@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -168,10 +169,22 @@ type planJSON struct {
 	ID           string            `json:"id"`
 	Environments []environmentJSON `json:"environments"`
 	Tests        string            `json:"tests"`
-	Targets      []targetJSON      `json:"targets"`
-	Exclusions   []exclusionJSON   `json:"exclusions"`
-	Unmet        []unmetJSON       `json:"unmet"`
-	Unresolved   []exclusionJSON   `json:"unresolved"`
+	// Targets are the plan's, each with its dependencies in any
+	// environment and the environments where it needs Xcode.
+	Targets []targetJSON `json:"targets"`
+	// Builds are each environment's own order and dependencies.
+	Builds     []buildJSON     `json:"builds"`
+	Exclusions []exclusionJSON `json:"exclusions"`
+	Unmet      []unmetJSON     `json:"unmet"`
+	Unresolved []exclusionJSON `json:"unresolved"`
+}
+
+// buildJSON is what a plan builds in one environment, in its order, and
+// what each target needs built first there.
+type buildJSON struct {
+	Environment environmentJSON     `json:"environment"`
+	Order       []string            `json:"order"`
+	DependsOn   map[string][]string `json:"depends_on,omitempty"`
 }
 
 // unmetJSON is a target an environment can't build, and what it needs.
@@ -183,7 +196,8 @@ type unmetJSON struct {
 }
 
 type exclusionJSON struct {
-	Target   string           `json:"target"`
+	Target string `json:"target"`
+	// Platform is the environment the target is excluded in.
 	Platform *environmentJSON `json:"platform,omitempty"`
 	Reason   string           `json:"reason"`
 }
@@ -194,14 +208,28 @@ func planView(plan model.Plan) planJSON {
 		view.Environments = append(view.Environments, environmentView(environment))
 	}
 	for _, target := range plan.Targets {
-		view.Targets = append(view.Targets, targetView(target))
+		view.Targets = append(view.Targets, targetView(plan, target))
 	}
-	for _, exclusion := range plan.Exclusions {
-		platform := environmentView(model.Environment{Platform: exclusion.Platform})
-		view.Exclusions = append(view.Exclusions, exclusionJSON{Target: exclusion.Target.Name, Platform: &platform, Reason: exclusion.Reason})
-	}
-	for _, unmet := range plan.Unmet {
-		view.Unmet = append(view.Unmet, unmetJSON{Target: string(unmet.Target), Environment: environmentView(unmet.Environment), Needs: string(unmet.Needs), Through: string(unmet.Through)})
+	view.Builds = []buildJSON{}
+	for _, planned := range plan.Builds {
+		environment := environmentView(planned.Environment)
+		build := buildJSON{Environment: environment, Order: []string{}}
+		for _, id := range planned.Order {
+			build.Order = append(build.Order, string(id))
+			for _, dependency := range planned.Dependencies[id] {
+				if build.DependsOn == nil {
+					build.DependsOn = map[string][]string{}
+				}
+				build.DependsOn[string(id)] = append(build.DependsOn[string(id)], string(dependency))
+			}
+		}
+		view.Builds = append(view.Builds, build)
+		for _, exclusion := range planned.Exclusions {
+			view.Exclusions = append(view.Exclusions, exclusionJSON{Target: exclusion.Target.Name, Platform: &environment, Reason: exclusion.Reason})
+		}
+		for _, unmet := range planned.Unmet {
+			view.Unmet = append(view.Unmet, unmetJSON{Target: string(unmet.Target), Environment: environment, Needs: string(unmet.Needs), Through: string(unmet.Through)})
+		}
 	}
 	for _, unresolved := range plan.Unresolved {
 		view.Unresolved = append(view.Unresolved, exclusionJSON{Target: unresolved.Target.Name, Reason: unresolved.Reason})
@@ -209,13 +237,17 @@ func planView(plan model.Plan) planJSON {
 	return view
 }
 
-func targetView(target model.PlanTarget) targetJSON {
+func targetView(plan model.Plan, target model.PlanTarget) targetJSON {
 	view := targetJSON{Name: string(target.ID), Portfile: target.Target.Portfile, Subport: target.Target.Subport, Kind: string(target.Kind), Role: string(target.Role)}
-	for _, dependency := range target.DependsOn {
-		view.DependsOn = append(view.DependsOn, string(dependency))
-	}
-	for _, environment := range target.NeedsXcode {
-		view.NeedsXcode = append(view.NeedsXcode, environmentView(environment))
+	for _, environment := range plan.Environments {
+		for _, dependency := range plan.DependsOnIn(environment, target.ID) {
+			if !slices.Contains(view.DependsOn, string(dependency)) {
+				view.DependsOn = append(view.DependsOn, string(dependency))
+			}
+		}
+		if plan.NeedsXcodeIn(environment, target.ID) {
+			view.NeedsXcode = append(view.NeedsXcode, environmentView(environment))
+		}
 	}
 	return view
 }
@@ -224,12 +256,12 @@ func targetView(target model.PlanTarget) targetJSON {
 func evidenceView(evidence engine.Evidence) []targetJSON {
 	targets := []targetJSON{}
 	for _, target := range evidence.Targets {
-		view := targetView(target.Target)
+		view := targetView(evidence.Plan, target.Target)
 		passed := target.Passed
 		view.Passed = &passed
 		for i, result := range target.Outcomes {
 			view.Results = append(view.Results, resultJSON{Outcome: string(result.Outcome), Phase: string(result.Phase), Tests: string(result.Tests), Log: result.Log,
-				Excluded: engine.Excluded(evidence.Plan, target.Target, evidence.Plan.Environments[i].Platform)})
+				Excluded: engine.Excluded(evidence.Plan, target.Target, evidence.Plan.Environments[i])})
 		}
 		targets = append(targets, view)
 	}

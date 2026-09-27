@@ -63,15 +63,17 @@ func TestATargetThatNeedsXcodeIsUnmetWithoutIt(t *testing.T) {
 
 	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{armTools, x86Xcode}})
 	require.NoError(t, err)
-	library, _ := plan.Target("libharbor")
-	require.Equal(t, []model.Environment{armTools}, library.NeedsXcode)
-	viewer, _ := plan.Target("harbor-viewer")
-	require.Empty(t, viewer.NeedsXcode, "its prerequisite needs Xcode; it doesn't itself")
+	require.True(t, plan.NeedsXcodeIn(armTools, "libharbor"))
+	require.False(t, plan.NeedsXcodeIn(x86Xcode, "libharbor"))
+	require.False(t, plan.NeedsXcodeIn(armTools, "harbor-viewer"), "its prerequisite needs Xcode; it doesn't itself")
+	armPlan, _ := plan.In(armTools)
+	x86Plan, _ := plan.In(x86Xcode)
 	require.Equal(t, []model.Unmet{
 		{Target: "libharbor", Environment: armTools, Needs: model.RequiresXcode},
 		{Target: "harbor-cli", Environment: armTools, Needs: model.RequiresXcode, Through: "libharbor"},
 		{Target: "harbor-viewer", Environment: armTools, Needs: model.RequiresXcode, Through: "libharbor"},
-	}, plan.Unmet, "harbor-viewer-legacy is excluded on arm64; x86_64 has Xcode")
+	}, armPlan.Unmet, "harbor-viewer-legacy is excluded on arm64")
+	require.Empty(t, x86Plan.Unmet, "x86_64 has Xcode")
 	require.True(t, plan.Runnable())
 
 	provider := &remedied{}

@@ -80,3 +80,25 @@ func TestANarrowedCheckNeverShrinksWhatSubmitRequires(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, passing.Ready, 1)
 }
+
+// One rule says whether a check's result stands for a target in an
+// environment: the check ran in that whole environment, and planned the
+// target there. (The architecture review of 2026-09-27, finding 1.)
+func TestAResultCountsWhereItsCheckPlannedTheTarget(t *testing.T) {
+	arm := tahoeArm
+	arm.DeveloperTools = model.DeveloperToolsCommandLine
+	xcode := arm
+	xcode.DeveloperTools = model.DeveloperToolsXcode
+	recorded := model.Plan{Environments: []model.Environment{arm, tahoeX86},
+		Builds: []model.EnvironmentPlan{
+			{Environment: arm, Order: []model.TargetID{"libharbor", "harbor-cli"}, Unmet: []model.Unmet{{Target: "harbor-cli", Environment: arm, Needs: model.RequiresXcode}},
+				Exclusions: []model.Exclusion{{Target: model.Target{Name: "harbor-intel"}, Reason: "not defined there"}}},
+			{Environment: tahoeX86, Order: []model.TargetID{"libharbor", "harbor-intel"}},
+		}}
+	require.True(t, Counts(recorded, "libharbor", arm))
+	require.True(t, Counts(recorded, "harbor-cli", arm), "what it found there stands, an unmet need too")
+	require.False(t, Counts(recorded, "harbor-intel", arm), "excluded there")
+	require.True(t, Counts(recorded, "harbor-intel", tahoeX86))
+	require.False(t, Counts(recorded, "harbor-cli", tahoeX86), "not planned there: --only left it out")
+	require.False(t, Counts(recorded, "libharbor", xcode), "the same release with other tools is another environment")
+}

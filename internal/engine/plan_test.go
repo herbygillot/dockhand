@@ -120,11 +120,21 @@ func TestPlanFollowsCIsScopeOrderAndEligibility(t *testing.T) {
 		"harbor-viewer-legacy:substantive:changed",
 		"harbor-tools:unchanged:also",
 	}, names(plan.Targets), "dependencies first, subports kept, replaced ports gone")
-	require.Equal(t, []model.TargetID{"libharbor", "harbor-cli"}, plan.Targets[2].DependsOn)
+	for _, environment := range []model.Environment{tahoeArm, tahoeX86} {
+		require.Equal(t, []model.TargetID{"libharbor", "harbor-cli"}, plan.DependsOnIn(environment, "harbor-viewer"))
+	}
 	require.Equal(t, "harbor-viewer-legacy", plan.Targets[3].Target.Subport)
-	require.Len(t, plan.Exclusions, 3)
-	require.True(t, Excluded(plan, plan.Targets[3], tahoeArm.Platform), "x86_64 only")
-	require.False(t, Excluded(plan, plan.Targets[3], tahoeX86.Platform))
+	armPlan, _ := plan.In(tahoeArm)
+	x86Plan, _ := plan.In(tahoeX86)
+	require.Equal(t, []model.Exclusion{
+		{Target: model.Target{Name: "harbor-cli-old", Portfile: "devel/harbor-cli/Portfile", Subport: "harbor-cli-old"}, Reason: "replaced by harbor-cli"},
+		{Target: model.Target{Name: "harbor-viewer-legacy", Portfile: "graphics/harbor-viewer/Portfile", Subport: "harbor-viewer-legacy"}, Reason: "supported_archs x86_64 only"},
+	}, armPlan.Exclusions)
+	require.Equal(t, []model.Exclusion{
+		{Target: model.Target{Name: "harbor-cli-old", Portfile: "devel/harbor-cli/Portfile", Subport: "harbor-cli-old"}, Reason: "replaced by harbor-cli"},
+	}, x86Plan.Exclusions, "a port excluded everywhere is excluded in each environment, and not planned")
+	require.True(t, Excluded(plan, plan.Targets[3], tahoeArm), "x86_64 only")
+	require.False(t, Excluded(plan, plan.Targets[3], tahoeX86))
 
 	narrowed, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}, Only: []string{"harbor-viewer"}})
 	require.NoError(t, err)
@@ -157,7 +167,7 @@ func TestAPlanThatCannotEvaluateIsUnresolved(t *testing.T) {
 	plan, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}})
 	require.NoError(t, err)
 	require.False(t, plan.Runnable())
-	require.Contains(t, plan.Unresolved[0].Reason, "dependency cycle: harbor-cli → libharbor → harbor-cli")
+	require.Equal(t, "dependency cycle on command macOS 26 (Tahoe) arm64: harbor-cli → libharbor → harbor-cli", plan.Unresolved[0].Reason)
 }
 
 // A revision bump of a port whose shared code changed on the branch is
@@ -273,16 +283,37 @@ func TestEachPlatformKeepsItsOwnDependencies(t *testing.T) {
 	require.Equal(t, model.OutcomePassed, got["harbor-viewer@arm64"], "arm64's harbor-viewer doesn't link libharbor, so its failure doesn't block it")
 	require.Equal(t, model.OutcomeBlocked, got["harbor-viewer@x86_64"])
 	for _, job := range provider.jobs {
-		i := slices.IndexFunc(job.Targets, func(target model.PlanTarget) bool { return target.ID == "harbor-viewer" })
+		i := slices.IndexFunc(job.Targets, func(target JobTarget) bool { return target.ID == "harbor-viewer" })
 		require.GreaterOrEqual(t, i, 0)
 		require.Equal(t, plan.DependsOnIn(job.Environment, "harbor-viewer"), job.Targets[i].DependsOn, "a provider sees its own platform's dependencies")
 	}
 
+	// Dependencies that run opposite ways on two platforms are no cycle:
+	// each builds in its own order.
 	e.PortReader = harborByPlatform{fakePorts: harborPorts(), crossed: true}
 	crossed, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm, tahoeX86}})
 	require.NoError(t, err)
-	require.Len(t, crossed.Unresolved, 1)
-	require.Contains(t, crossed.Unresolved[0].Reason, "dependency cycle across platforms, which no one platform has")
+	require.Empty(t, crossed.Unresolved)
+	armPlan, _ := crossed.In(tahoeArm)
+	x86Plan, _ := crossed.In(tahoeX86)
+	require.Equal(t, []model.TargetID{"harbor-cli", "libharbor", "harbor-viewer"}, slices.DeleteFunc(slices.Clone(armPlan.Order), func(id model.TargetID) bool { return id == "harbor-tools" }))
+	require.Equal(t, []model.TargetID{"libharbor", "harbor-cli", "harbor-viewer"}, slices.DeleteFunc(slices.Clone(x86Plan.Order), func(id model.TargetID) bool { return id == "harbor-tools" }))
+	crossed.ID, crossed.Revision = model.PlanID(store.NewID("plan")), revision.ID
+	provider = &scriptedProvider{}
+	e.Providers = map[string]Provider{"command": provider}
+	queued, err = e.Enqueue(t.Context(), branch, crossed, model.OriginPerson)
+	require.NoError(t, err)
+	run, err = e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, run.State)
+	for _, job := range provider.jobs {
+		var order []model.TargetID
+		for _, target := range job.Targets {
+			order = append(order, target.ID)
+		}
+		planned, _ := crossed.In(job.Environment)
+		require.Equal(t, planned.Order, order, "each provider builds in its own environment's order")
+	}
 }
 
 // armOnlyViewer defines an Intel subport of harbor-viewer only where the
@@ -312,7 +343,8 @@ func TestAPortAnEnvironmentDoesNotDefineIsNotBuiltThere(t *testing.T) {
 	require.NoError(t, err)
 	target, ok := plan.Target("harbor-viewer-intel")
 	require.True(t, ok, "built where it is defined")
-	require.True(t, plan.Excludes(target, tahoeArm.Platform), "not where it isn't")
-	require.False(t, plan.Excludes(target, tahoeX86.Platform))
-	require.Contains(t, plan.Exclusions, model.Exclusion{Target: target.Target, Platform: tahoeArm.Platform, Reason: "not defined on macOS 26 arm64"})
+	require.True(t, plan.Excludes(target, tahoeArm), "not where it isn't")
+	require.False(t, plan.Excludes(target, tahoeX86))
+	exclusion, _ := plan.ExclusionIn(tahoeArm, "harbor-viewer-intel")
+	require.Equal(t, "not defined there", exclusion.Reason)
 }

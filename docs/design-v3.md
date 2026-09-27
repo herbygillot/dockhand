@@ -96,12 +96,14 @@ On screen, a person needs only branch, port, check, run, provider, and PR. The o
 - **Target kinds.** A target is **revision-only** only when its Portfile diff touches nothing but `revision` declarations (shared code included) and nothing under `files/` changed. This is proven from the source, never from evaluated metadata alone. Anything unknown counts as substantive.
 - **The plan keeps four things apart:**
   - the changed scope;
-  - CI eligibility per platform, with the reason for every exclusion;
+  - CI eligibility per environment, with the reason for every exclusion;
   - the selected coverage (`--only`, `--also`);
   - the prerequisites that coverage needs.
 
+  The scope and the selection are the branch's. Everything else is each environment's own plan, from its own evaluation of the ports: what it builds, in its own dependency order, what each target needs there, such as Xcode, and why it doesn't build the rest. A port an environment doesn't define is excluded there, whichever other environment defines it. Dependencies that run opposite ways on two releases are no cycle, since each builds in its own order.
+
   A changed prerequisite is always included, so `--only appB` still builds the changed `libA` it depends on, and `appB` is blocked if `libA` fails. An old binary is never substituted. A target whose evaluation fails leaves the plan unresolved; it is never dropped as ineligible.
-- **Execution.** Each provider and release gets one guest execution. It follows MacPorts CI's order: lint every target, then for each target in dependency order, activate exactly its dependencies, fetch, checksum, install, and test (advisory). Each target's result is checkpointed as it finishes. A target whose changed dependency failed is **blocked**, not failed. Infrastructure failures are retried; verdicts never are (decision 30).
+- **Execution.** Each provider and release gets one guest execution. It follows MacPorts CI's order: lint every target, then for each target in the environment's dependency order, activate exactly its dependencies, fetch, checksum, install, and test (advisory). Each target's result is checkpointed as it finishes. A target whose changed dependency failed is **blocked**, not failed. Infrastructure failures are retried; verdicts never are (decision 30).
 - **Evidence.** A result is reused per target when every recorded input still matches: the observations evaluation made, negative ones included, and the digest of every archive it consumed (decisions 28 and 44). Until that lands, reuse is whole-tree.
 - **Publication rule.** Every selected substantive target must pass. A failed revision-only target, or a failed extra from `--also`, can be acknowledged with `--accept <port>`, which is recorded and shown in the PR as "cause not established". A baseline is evidence and never unblocks publication by itself.
 - **Identity and names.** A branch dockhand creates is named `dockhand/<name>`, where `start <name>` supplies the name. Without one, it's `dockhand/<first port>-<short ID>`, per decision 37. The name is never changed once a PR exists. A branch renamed with Git keeps its identity through `adopt`'s reconciliation.

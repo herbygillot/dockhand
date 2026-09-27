@@ -36,15 +36,22 @@ type Job struct {
 	Revision    model.Revision
 	Plan        model.Plan
 	Environment model.Environment
-	// Targets are the plan's targets still without a complete verdict,
-	// in order.
-	Targets []model.PlanTarget
+	// Targets are the plan's targets still without a complete verdict
+	// here, in this environment's order.
+	Targets []JobTarget
 	// Commit holds the revision's files: the commit itself, or for a
 	// snapshot a commit made of its tree on the base, which only the
 	// provider sees.
 	Commit string
 	// Directory is where the execution may keep files, such as logs.
 	Directory string
+}
+
+// JobTarget is one target of a job, with what it needs built first in the
+// job's environment.
+type JobTarget struct {
+	model.PlanTarget
+	DependsOn []model.TargetID
 }
 
 // Build is how a provider learns what to skip and records what happened.

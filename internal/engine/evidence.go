@@ -232,7 +232,7 @@ func treeEvidence(r store.Reader, primary model.Run, runs []model.Run) (Evidence
 func (e Evidence) missing() bool {
 	for _, target := range e.Targets {
 		for i, result := range target.Outcomes {
-			if result.Outcome == model.OutcomeNotRun && !Excluded(e.Plan, target.Target, e.Plan.Environments[i].Platform) {
+			if result.Outcome == model.OutcomeNotRun && !Excluded(e.Plan, target.Target, e.Plan.Environments[i]) {
 				return true
 			}
 		}
@@ -240,8 +240,22 @@ func (e Evidence) missing() bool {
 	return false
 }
 
-// fill takes an earlier check's results for what this evidence lacks, in
-// the same environment, and reports whether it took any.
+// Counts is the one rule for whether a check's result stands for a target
+// in an environment, among checks of the same files (treeRuns): the check
+// ran in that environment, the whole environment, its developer tools
+// included, and its plan had the target in that environment's order. What
+// it found there stands, an unmet need included. Nothing else about the
+// check's selection matters: from the same files, a target builds the same
+// whichever ports were selected with it. Nor does its test policy: a
+// result keeps the policy of the check that recorded it, and reads under
+// it (decision D1, Evidence.Words).
+func Counts(recorded model.Plan, id model.TargetID, environment model.Environment) bool {
+	planned, ok := recorded.In(environment)
+	return ok && planned.Builds(id)
+}
+
+// fill takes an earlier check's results for what this evidence lacks,
+// where they count (Counts), and reports whether it took any.
 func (e *Evidence) fill(earlier Evidence) bool {
 	took := false
 	for t := range e.Targets {
@@ -252,13 +266,10 @@ func (e *Evidence) fill(earlier Evidence) bool {
 		}
 		for i, result := range target.Outcomes {
 			environment := e.Plan.Environments[i]
-			if result.Outcome != model.OutcomeNotRun || Excluded(e.Plan, target.Target, environment.Platform) {
+			if result.Outcome != model.OutcomeNotRun || Excluded(e.Plan, target.Target, environment) || !Counts(earlier.Plan, target.Target.ID, environment) {
 				continue
 			}
 			j := slices.Index(earlier.Plan.Environments, environment)
-			if j < 0 || Excluded(earlier.Plan, earlier.Targets[k].Target, environment.Platform) {
-				continue
-			}
 			if found := earlier.Targets[k].Outcomes[j]; found.Outcome != model.OutcomeNotRun {
 				target.Outcomes[i] = found
 				if execution, ok := earlier.Executions[found.Execution]; ok {
@@ -288,7 +299,7 @@ func (e *Evidence) settle() {
 		target := &e.Targets[t]
 		target.Passed, target.Unchecked = true, false
 		for i, result := range target.Outcomes {
-			if Excluded(e.Plan, target.Target, e.Plan.Environments[i].Platform) {
+			if Excluded(e.Plan, target.Target, e.Plan.Environments[i]) {
 				continue
 			}
 			target.Passed = target.Passed && result.Outcome == model.OutcomePassed
@@ -341,8 +352,8 @@ func kindWords(target model.PlanTarget) string {
 	return "changed"
 }
 
-// Excluded reports whether the plan leaves a target out on a platform,
+// Excluded reports whether the plan leaves a target out in an environment,
 // where it is not built and not required to pass.
-func Excluded(plan model.Plan, target model.PlanTarget, platform model.Platform) bool {
-	return plan.Excludes(target, platform)
+func Excluded(plan model.Plan, target model.PlanTarget, environment model.Environment) bool {
+	return plan.Excludes(target, environment)
 }

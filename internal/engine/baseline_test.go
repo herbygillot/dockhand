@@ -37,16 +37,18 @@ func TestABaselineKeepsEachEnvironmentsRequirements(t *testing.T) {
 	require.Equal(t, revision.Source.Base, baseline.Revision.Source.Commit)
 	require.Equal(t, []string{"libharbor:unchanged:also", "harbor-viewer:unchanged:also", "harbor-viewer-legacy:unchanged:also"}, names(baseline.Plan.Targets),
 		"not harbor-viewer's other subports, nor the ports it depends on")
-	library, _ := baseline.Plan.Target("libharbor")
-	require.True(t, library.NeedsXcodeIn(arm))
+	require.True(t, baseline.Plan.NeedsXcodeIn(arm, "libharbor"))
 	_, unmet := baseline.Plan.UnmetIn(arm, "libharbor")
 	require.True(t, unmet, "unmet where there is no Xcode, not sent there")
 	_, unmet = baseline.Plan.UnmetIn(intel, "libharbor")
 	require.False(t, unmet)
 	_, unmet = baseline.Plan.UnmetIn(arm, "harbor-viewer")
 	require.True(t, unmet, "not built against master's libharbor there")
-	require.Equal(t, []model.Exclusion{{Target: model.Target{Name: "harbor-viewer-legacy", Portfile: "graphics/harbor-viewer/Portfile", Subport: "harbor-viewer-legacy"}, Platform: arm.Platform, Reason: "supported_archs x86_64 only"}},
-		baseline.Plan.Exclusions, "excluded once where it's unsupported, and built where it is, though its directory was named twice")
+	armPlan, _ := baseline.Plan.In(arm)
+	intelPlan, _ := baseline.Plan.In(intel)
+	require.Equal(t, []model.Exclusion{{Target: model.Target{Name: "harbor-viewer-legacy", Portfile: "graphics/harbor-viewer/Portfile", Subport: "harbor-viewer-legacy"}, Reason: "supported_archs x86_64 only"}},
+		armPlan.Exclusions, "excluded once where it's unsupported, though its directory was named twice")
+	require.Empty(t, intelPlan.Exclusions, "and built where it is")
 }
 
 // A baseline explains a check, so it builds at the base that check

@@ -275,27 +275,85 @@ func writePlan(out io.Writer, plan model.Plan, notes []string, remedy func(model
 	for _, note := range notes {
 		fmt.Fprintf(out, "            %s\n", note)
 	}
-	if len(plan.Targets) > 1 {
-		var order []string
-		for _, target := range plan.Targets {
-			order = append(order, target.Target.Name)
-		}
-		fmt.Fprintf(out, "Order       %s\n", strings.Join(order, " → "))
-	}
-	for _, exclusion := range plan.Exclusions {
-		fmt.Fprintf(out, "Excluded    %s: %s\n", exclusion.Target.Name, exclusion.Reason)
-	}
+	writeOrder(out, plan)
+	writeExclusions(out, plan)
 	// Each environment's remedy follows its last target it can't build.
-	for i, unmet := range plan.Unmet {
-		fmt.Fprintf(out, "Not built   %s on %s: %s\n", unmet.Target, environmentWords(unmet.Environment), engine.UnmetWords(unmet))
-		if last := i == len(plan.Unmet)-1 || plan.Unmet[i+1].Environment != unmet.Environment; last && remedy != nil {
-			if words := remedy(unmet); words != "" {
-				fmt.Fprintf(out, "            %s\n", words)
+	for _, planned := range plan.Builds {
+		for i, unmet := range planned.Unmet {
+			fmt.Fprintf(out, "Not built   %s on %s: %s\n", unmet.Target, environmentWords(unmet.Environment), engine.UnmetWords(unmet))
+			if i == len(planned.Unmet)-1 && remedy != nil {
+				if words := remedy(unmet); words != "" {
+					fmt.Fprintf(out, "            %s\n", words)
+				}
 			}
 		}
 	}
 	for _, unresolved := range plan.Unresolved {
 		fmt.Fprintf(out, "✗ %s can't be planned: %s\n", unresolved.Target.Name, unresolved.Reason)
+	}
+}
+
+// writeOrder shows the order the plan builds in: one line where every
+// environment builds in the plan's order, and a line for each where
+// their dependencies put them in different orders.
+func writeOrder(out io.Writer, plan model.Plan) {
+	if len(plan.Targets) < 2 {
+		return
+	}
+	names := func(ids []model.TargetID) string {
+		var words []string
+		for _, id := range ids {
+			words = append(words, string(id))
+		}
+		return strings.Join(words, " → ")
+	}
+	var order []model.TargetID
+	for _, target := range plan.Targets {
+		order = append(order, target.ID)
+	}
+	agree := true
+	for _, planned := range plan.Builds {
+		own := slices.DeleteFunc(slices.Clone(order), func(id model.TargetID) bool { return !planned.Builds(id) })
+		agree = agree && slices.Equal(own, planned.Order)
+	}
+	if agree {
+		fmt.Fprintf(out, "Order       %s\n", names(order))
+		return
+	}
+	for i, planned := range plan.Builds {
+		label := "Order      "
+		if i > 0 {
+			label = "           "
+		}
+		fmt.Fprintf(out, "%s on %s: %s\n", label, environmentWords(planned.Environment), names(planned.Order))
+	}
+}
+
+// writeExclusions shows what the plan doesn't build where, and why: once
+// for a port every environment excludes for the same reason, and with the
+// environments where only some do.
+func writeExclusions(out io.Writer, plan model.Plan) {
+	type excluded struct {
+		name, reason string
+		where        []string
+	}
+	var all []excluded
+	for _, planned := range plan.Builds {
+		for _, exclusion := range planned.Exclusions {
+			i := slices.IndexFunc(all, func(x excluded) bool { return x.name == exclusion.Target.Name && x.reason == exclusion.Reason })
+			if i < 0 {
+				all = append(all, excluded{name: exclusion.Target.Name, reason: exclusion.Reason})
+				i = len(all) - 1
+			}
+			all[i].where = append(all[i].where, environmentWords(planned.Environment))
+		}
+	}
+	for _, x := range all {
+		if len(x.where) == len(plan.Builds) {
+			fmt.Fprintf(out, "Excluded    %s: %s\n", x.name, x.reason)
+			continue
+		}
+		fmt.Fprintf(out, "Excluded    %s on %s: %s\n", x.name, strings.Join(x.where, "; "), x.reason)
 	}
 }
 

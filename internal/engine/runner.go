@@ -305,16 +305,17 @@ func (d *driver) environment(ctx context.Context, provider Provider, environment
 				}
 			}
 		}
-		var remaining []model.PlanTarget
-		for _, target := range d.plan.Targets {
-			if _, unmet := d.plan.UnmetIn(environment, target.ID); unmet || Excluded(d.plan, target, environment.Platform) {
+		// What is left to build here, in this environment's own order,
+		// each target with what it needs built first here.
+		planned, _ := d.plan.In(environment)
+		var remaining []JobTarget
+		for _, id := range planned.Order {
+			if _, unmet := d.plan.UnmetIn(environment, id); unmet {
 				continue
 			}
-			if result, ok := results[target.ID]; !ok || !result.Outcome.Complete() {
-				// A provider sees what the target needs on its own
-				// platform, not every platform's union.
-				target.DependsOn = d.plan.DependsOnIn(environment, target.ID)
-				remaining = append(remaining, target)
+			if result, ok := results[id]; !ok || !result.Outcome.Complete() {
+				target, _ := d.plan.Target(id)
+				remaining = append(remaining, JobTarget{PlanTarget: target, DependsOn: planned.Dependencies[id]})
 			}
 		}
 		if len(remaining) == 0 {
@@ -385,7 +386,7 @@ func (d *driver) finish(ctx context.Context) (model.Run, error) {
 	var failed, incomplete []string
 	for _, target := range evidence.Targets {
 		for i, result := range target.Outcomes {
-			if Excluded(d.plan, target.Target, d.plan.Environments[i].Platform) {
+			if Excluded(d.plan, target.Target, d.plan.Environments[i]) {
 				continue
 			}
 			name := string(target.Target.ID)
@@ -493,7 +494,7 @@ func (b *build) Progress(message string) {
 
 // blockRemaining records as blocked the targets a provider left without a
 // result whose changed dependency did not pass.
-func (b *build) blockRemaining(targets []model.PlanTarget) {
+func (b *build) blockRemaining(targets []JobTarget) {
 	for _, target := range targets {
 		if _, ok := b.results[target.ID]; ok {
 			continue
@@ -568,7 +569,7 @@ func runEvidence(r store.Reader, run model.Run, plan model.Plan) (Evidence, erro
 	for _, target := range plan.Targets {
 		te := TargetEvidence{Target: target, Passed: true}
 		for _, environment := range plan.Environments {
-			if Excluded(plan, target, environment.Platform) {
+			if Excluded(plan, target, environment) {
 				te.Outcomes = append(te.Outcomes, model.TargetResult{Target: target.ID, Outcome: model.OutcomeNotRun})
 				continue
 			}
@@ -667,15 +668,6 @@ func EnvironmentHeading(environment model.Environment, all []model.Environment) 
 		parts = append(parts, platform.Architecture)
 	}
 	return strings.Join(parts, " ")
-}
-
-// platformWords name a platform's release and architecture, macOS 26
-// arm64, or its release alone where the architecture isn't known.
-func platformWords(platform model.Platform) string {
-	if platform.Architecture == "" {
-		return releaseWords(platform)
-	}
-	return releaseWords(platform) + " " + platform.Architecture
 }
 
 // releaseWords name a platform's release: macOS 26, or Darwin 30 where the

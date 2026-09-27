@@ -191,9 +191,9 @@ func tartJob(t *testing.T, attempt int) engine.Job {
 		Plan:        model.Plan{Tests: model.TestsDeclared},
 		Environment: model.Environment{Provider: "tart", Platform: tahoe},
 		Directory:   t.TempDir(),
-		Targets: []model.PlanTarget{
-			{ID: "libharbor", Target: model.Target{Name: "libharbor", Portfile: "devel/libharbor/Portfile"}},
-			{ID: "harbor-cli", Target: model.Target{Name: "harbor", Subport: "harbor-cli", Portfile: "devel/harbor/Portfile"}, DependsOn: []model.TargetID{"libharbor"}},
+		Targets: []engine.JobTarget{
+			{PlanTarget: model.PlanTarget{ID: "libharbor", Target: model.Target{Name: "libharbor", Portfile: "devel/libharbor/Portfile"}}},
+			{PlanTarget: model.PlanTarget{ID: "harbor-cli", Target: model.Target{Name: "harbor", Subport: "harbor-cli", Portfile: "devel/harbor/Portfile"}}, DependsOn: []model.TargetID{"libharbor"}},
 		},
 	}
 }

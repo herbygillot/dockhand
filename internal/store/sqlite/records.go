@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/model"
@@ -192,9 +193,89 @@ func (t *tx) Plan(id model.PlanID) (model.Plan, error) {
 	if err := t.conn.QueryRowContext(t.ctx, "SELECT body FROM plans WHERE repository_id=? AND id=?", t.repo, id).Scan(&body); err != nil {
 		return model.Plan{}, storageError(err)
 	}
-	var p model.Plan
-	if err := json.Unmarshal([]byte(body), &p); err != nil {
+	p, err := decodePlan([]byte(body))
+	if err != nil {
 		return model.Plan{}, fmt.Errorf("%w: plan %s: %w", store.ErrUnavailable, id, err)
+	}
+	return p, nil
+}
+
+// legacyPlan is what a plan recorded before each environment had its own
+// held beside its targets: one target list for every environment, each
+// target with its dependencies in any of them and where it needs Xcode;
+// each environment's dependencies by position; and exclusions by platform.
+type legacyPlan struct {
+	Targets []struct {
+		ID         model.TargetID
+		DependsOn  []model.TargetID
+		NeedsXcode []model.Environment
+	}
+	Dependencies []map[model.TargetID][]model.TargetID
+	Exclusions   []struct {
+		Target   model.Target
+		Platform model.Platform
+		Reason   string
+	}
+	Unmet []model.Unmet
+}
+
+// decodePlan reads a plan's body, one recorded before environments had
+// plans of their own included: each environment's plan is what the old
+// form said about it. Its order is the one order every environment
+// shared, less what it excluded there.
+func decodePlan(body []byte) (model.Plan, error) {
+	var p model.Plan
+	if err := json.Unmarshal(body, &p); err != nil {
+		return model.Plan{}, err
+	}
+	if p.Builds != nil {
+		return p, nil
+	}
+	var legacy legacyPlan
+	if err := json.Unmarshal(body, &legacy); err != nil {
+		return model.Plan{}, err
+	}
+	for e, environment := range p.Environments {
+		build := model.EnvironmentPlan{Environment: environment}
+		excluded := map[string]bool{}
+		for _, exclusion := range legacy.Exclusions {
+			if exclusion.Platform == environment.Platform {
+				build.Exclusions = append(build.Exclusions, model.Exclusion{Target: exclusion.Target, Reason: exclusion.Reason})
+				excluded[exclusion.Target.Name] = true
+			}
+		}
+		for _, target := range legacy.Targets {
+			if !excluded[string(target.ID)] {
+				build.Order = append(build.Order, target.ID)
+			}
+		}
+		for _, target := range legacy.Targets {
+			if excluded[string(target.ID)] {
+				continue
+			}
+			// Before per-environment dependencies were kept, a target's
+			// dependencies served every environment.
+			needs := target.DependsOn
+			if len(legacy.Dependencies) == len(p.Environments) {
+				needs = legacy.Dependencies[e][target.ID]
+			}
+			needs = slices.DeleteFunc(slices.Clone(needs), func(need model.TargetID) bool { return !slices.Contains(build.Order, need) })
+			if len(needs) > 0 {
+				if build.Dependencies == nil {
+					build.Dependencies = map[model.TargetID][]model.TargetID{}
+				}
+				build.Dependencies[target.ID] = needs
+			}
+			if slices.Contains(target.NeedsXcode, environment) {
+				build.NeedsXcode = append(build.NeedsXcode, target.ID)
+			}
+		}
+		for _, unmet := range legacy.Unmet {
+			if unmet.Environment == environment {
+				build.Unmet = append(build.Unmet, unmet)
+			}
+		}
+		p.Builds = append(p.Builds, build)
 	}
 	return p, nil
 }

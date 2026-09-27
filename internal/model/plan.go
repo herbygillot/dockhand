@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"slices"
 	"time"
 )
@@ -39,7 +40,9 @@ const (
 	Prerequisite TargetRole = "prerequisite"
 )
 
-// PlanTarget is one target the plan builds.
+// PlanTarget is one target of a plan, as the branch sees it: which port,
+// where, and why the plan has it. What it needs in an environment, and
+// whether it is built there, is that environment's (EnvironmentPlan).
 type PlanTarget struct {
 	ID     TargetID
 	Target Target
@@ -47,25 +50,14 @@ type PlanTarget struct {
 	Directory string
 	Kind      TargetKind
 	Role      TargetRole
-	// DependsOn lists the plan's targets this one needs built first.
-	DependsOn []TargetID
-	// NeedsXcode are the environments where the target needs Xcode, not
-	// only the Command Line Tools: its use_xcode there, as MacPorts decides
-	// it with the environment's tools.
-	NeedsXcode []Environment `json:",omitempty"`
 }
 
-// NeedsXcodeIn reports whether the target needs Xcode in an environment.
-func (t PlanTarget) NeedsXcodeIn(environment Environment) bool {
-	return slices.Contains(t.NeedsXcode, environment)
-}
-
-// Exclusion is a changed target the plan does not build on one platform,
-// with the reason, as MacPorts CI would exclude it.
+// Exclusion is a port a plan doesn't build in one environment, and needn't
+// pass there, with the reason: as MacPorts CI would exclude it, or because
+// the environment's evaluation doesn't define it.
 type Exclusion struct {
-	Target   Target
-	Platform Platform
-	Reason   string
+	Target Target
+	Reason string
 }
 
 // Unresolved is a changed target whose evaluation failed. A plan with one
@@ -120,29 +112,56 @@ type Unmet struct {
 	Through TargetID `json:",omitempty"`
 }
 
-// Plan freezes what a check of one revision covers.
+// EnvironmentPlan is what a check builds in one environment, from that
+// environment's own evaluation of the ports: which of the plan's targets
+// it builds, in its own dependency order, what they need there, and why it
+// doesn't build the rest.
+type EnvironmentPlan struct {
+	Environment Environment
+	// Order is the plan's targets built here, in this environment's own
+	// dependency order. Unmet ones are in it: they are planned here, and
+	// never sent to its provider.
+	Order []TargetID
+	// Dependencies are what each target in Order needs built first here,
+	// among Order.
+	Dependencies map[TargetID][]TargetID `json:",omitempty"`
+	// NeedsXcode are the targets in Order that need Xcode here, not only
+	// the Command Line Tools: their use_xcode, as MacPorts decides it with
+	// the environment's tools.
+	NeedsXcode []TargetID `json:",omitempty"`
+	// Unmet are the targets in Order this environment can't build, decided
+	// when the check is accepted.
+	Unmet []Unmet `json:",omitempty"`
+	// Exclusions are the ports the plan doesn't build here, and that
+	// needn't pass here, those --only left out included.
+	Exclusions []Exclusion `json:",omitempty"`
+}
+
+// Builds reports whether the environment's plan has the target in its
+// order: built here, or planned here and unmet.
+func (p EnvironmentPlan) Builds(id TargetID) bool { return slices.Contains(p.Order, id) }
+
+// Plan freezes what a check of one revision covers. What the branch
+// changes and what the person selected are the plan's own: Targets,
+// Omitted, Only, and Also. What each environment builds, in what order,
+// and why not the rest, is that environment's plan, in Builds.
 type Plan struct {
 	ID       PlanID
 	Revision RevisionID
 	// Environments are all required: several mean every one must pass.
 	Environments []Environment
-	// Targets are in dependency order.
+	// Targets are what the check builds in some environment, in the
+	// environments' orders merged: the first environment's, and what each
+	// other one adds, after what comes before it there.
 	Targets []PlanTarget
-	// Dependencies are each environment's dependencies among Targets, in
-	// Environments' order. A target's DependsOn is their union, which sets
-	// the one build order and what --only must add back; a guest blocks a
-	// target only on what it needs on its own platform (DependsOnIn).
-	// Empty for plans made before they were kept, where DependsOn serves
-	// every environment.
-	Dependencies []map[TargetID][]TargetID `json:",omitempty"`
-	Exclusions   []Exclusion
-	// Unmet are the targets an environment can't build, decided when the
-	// check is accepted; they're never sent to its provider.
-	Unmet      []Unmet `json:",omitempty"`
+	// Builds are each environment's own plan, one for each of
+	// Environments, found by the whole environment.
+	Builds     []EnvironmentPlan
 	Unresolved []Unresolved
 	// Omitted are the changed targets --only left out. The check doesn't
-	// build them, but submission still requires them: a narrowed check
-	// never shrinks what submit requires (Design v3 §7).
+	// build them, but submission still requires them wherever they aren't
+	// excluded: a narrowed check never shrinks what submit requires
+	// (Design v3 §7).
 	Omitted []PlanTarget `json:",omitempty"`
 	// Only and Also record the selection as given, for status and the PR.
 	Only      []string
@@ -151,15 +170,25 @@ type Plan struct {
 	CreatedAt time.Time
 }
 
+// In is an environment's plan.
+func (p Plan) In(environment Environment) (EnvironmentPlan, bool) {
+	for _, build := range p.Builds {
+		if build.Environment == environment {
+			return build, true
+		}
+	}
+	return EnvironmentPlan{}, false
+}
+
 // Runnable reports whether the plan may be checked: nothing is unresolved
 // and there is something to build somewhere.
 func (p Plan) Runnable() bool {
 	if len(p.Unresolved) > 0 {
 		return false
 	}
-	for _, target := range p.Targets {
-		for _, environment := range p.Environments {
-			if _, unmet := p.UnmetIn(environment, target.ID); !unmet && !p.Excludes(target, environment.Platform) {
+	for _, build := range p.Builds {
+		for _, id := range build.Order {
+			if _, unmet := p.UnmetIn(build.Environment, id); !unmet {
 				return true
 			}
 		}
@@ -167,18 +196,29 @@ func (p Plan) Runnable() bool {
 	return false
 }
 
-// Excludes reports whether the plan leaves a target out on a platform,
+// Excludes reports whether the plan leaves a target out in an environment,
 // where it is not built and not required to pass.
-func (p Plan) Excludes(target PlanTarget, platform Platform) bool {
-	return slices.ContainsFunc(p.Exclusions, func(x Exclusion) bool {
-		return x.Target.Name == target.Target.Name && x.Platform == platform
-	})
+func (p Plan) Excludes(target PlanTarget, environment Environment) bool {
+	_, excluded := p.ExclusionIn(environment, target.Target.Name)
+	return excluded
+}
+
+// ExclusionIn is why an environment doesn't build a port, when it doesn't.
+func (p Plan) ExclusionIn(environment Environment, name string) (Exclusion, bool) {
+	build, _ := p.In(environment)
+	for _, exclusion := range build.Exclusions {
+		if exclusion.Target.Name == name {
+			return exclusion, true
+		}
+	}
+	return Exclusion{}, false
 }
 
 // UnmetIn is why an environment can't build a target, when it can't.
 func (p Plan) UnmetIn(environment Environment, id TargetID) (Unmet, bool) {
-	for _, unmet := range p.Unmet {
-		if unmet.Target == id && unmet.Environment == environment {
+	build, _ := p.In(environment)
+	for _, unmet := range build.Unmet {
+		if unmet.Target == id {
 			return unmet, true
 		}
 	}
@@ -187,11 +227,14 @@ func (p Plan) UnmetIn(environment Environment, id TargetID) (Unmet, bool) {
 
 // DependsOnIn is what a target needs built first in one environment.
 func (p Plan) DependsOnIn(environment Environment, id TargetID) []TargetID {
-	if i := slices.Index(p.Environments, environment); i >= 0 && i < len(p.Dependencies) {
-		return p.Dependencies[i][id]
-	}
-	target, _ := p.Target(id)
-	return target.DependsOn
+	build, _ := p.In(environment)
+	return build.Dependencies[id]
+}
+
+// NeedsXcodeIn reports whether a target needs Xcode in an environment.
+func (p Plan) NeedsXcodeIn(environment Environment, id TargetID) bool {
+	build, _ := p.In(environment)
+	return slices.Contains(build.NeedsXcode, id)
 }
 
 // Target finds a plan target by ID.
@@ -205,7 +248,8 @@ func (p Plan) Target(id TargetID) (PlanTarget, bool) {
 }
 
 // Validate checks the plan's structure: unique targets, kinds that fit
-// roles, and dependencies that come earlier in the order.
+// roles, one plan for each environment, and in each, an order that builds
+// only the plan's targets, each after what it needs there.
 func (p Plan) Validate() error {
 	switch {
 	case p.ID == "" || p.Revision == "":
@@ -247,31 +291,73 @@ func (p Plan) Validate() error {
 		default:
 			return invalid("plan %s target %s has unknown role %q", p.ID, target.ID, target.Role)
 		}
-		for _, dependency := range target.DependsOn {
-			if !seen[dependency] {
-				return invalid("plan %s target %s depends on %s, which does not come before it", p.ID, target.ID, dependency)
-			}
-		}
 		seen[target.ID] = true
-	}
-	if len(p.Dependencies) > 0 && len(p.Dependencies) != len(p.Environments) {
-		return invalid("plan %s has dependencies for %d environments, not %d", p.ID, len(p.Dependencies), len(p.Environments))
-	}
-	for _, dependencies := range p.Dependencies {
-		for id, needs := range dependencies {
-			target, ok := p.Target(id)
-			for _, need := range needs {
-				if !ok || !slices.Contains(target.DependsOn, need) {
-					return invalid("plan %s target %s needs %s on one platform but not in its DependsOn", p.ID, id, need)
-				}
-			}
-		}
 	}
 	for _, target := range p.Omitted {
 		if target.ID == "" || seen[target.ID] || target.Role != Changed {
 			return invalid("plan %s omits %q, which is planned, repeated, or not a changed target", p.ID, target.ID)
 		}
 		seen[target.ID] = true
+	}
+	if len(p.Builds) != len(p.Environments) {
+		return invalid("plan %s has plans for %d environments, not %d", p.ID, len(p.Builds), len(p.Environments))
+	}
+	built := map[TargetID]bool{}
+	for _, build := range p.Builds {
+		if !environments[build.Environment] {
+			return invalid("plan %s has a plan for an environment it doesn't name, or two for one", p.ID)
+		}
+		environments[build.Environment] = false
+		if err := build.validate(p); err != nil {
+			return err
+		}
+		for _, id := range build.Order {
+			built[id] = true
+		}
+	}
+	for _, target := range p.Targets {
+		if !built[target.ID] {
+			return invalid("plan %s target %s is built in no environment", p.ID, target.ID)
+		}
+	}
+	return nil
+}
+
+// validate checks one environment's plan against the plan it is part of.
+func (b EnvironmentPlan) validate(p Plan) error {
+	platform := b.Environment.Platform
+	where := fmt.Sprintf("%s on %s %s %s %s", p.ID, b.Environment.Provider, platform.OS, platform.Version, platform.Architecture)
+	earlier := map[TargetID]bool{}
+	for _, id := range b.Order {
+		if _, ok := p.Target(id); !ok || earlier[id] {
+			return invalid("plan %s builds %s, which isn't its target or comes twice", where, id)
+		}
+		for _, need := range b.Dependencies[id] {
+			if !earlier[need] {
+				return invalid("plan %s target %s needs %s, which is not built before it there", where, id, need)
+			}
+		}
+		earlier[id] = true
+	}
+	for id := range b.Dependencies {
+		if !earlier[id] {
+			return invalid("plan %s has dependencies for %s, which it doesn't build", where, id)
+		}
+	}
+	for _, id := range b.NeedsXcode {
+		if !earlier[id] {
+			return invalid("plan %s says %s needs Xcode, and doesn't build it", where, id)
+		}
+	}
+	for _, unmet := range b.Unmet {
+		if !earlier[unmet.Target] || unmet.Environment != b.Environment {
+			return invalid("plan %s can't meet %s, which it doesn't build", where, unmet.Target)
+		}
+	}
+	for _, exclusion := range b.Exclusions {
+		if earlier[TargetID(exclusion.Target.Name)] {
+			return invalid("plan %s both builds and excludes %s", where, exclusion.Target.Name)
+		}
 	}
 	return nil
 }

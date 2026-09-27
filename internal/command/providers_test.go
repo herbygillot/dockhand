@@ -141,12 +141,15 @@ func TestThePlanSaysWhatWontBeBuilt(t *testing.T) {
 	plan := model.Plan{Environments: []model.Environment{tahoe}, Tests: model.TestsDeclared,
 		Targets: []model.PlanTarget{
 			{ID: "libharbor", Target: model.Target{Name: "libharbor"}},
-			{ID: "harbor-cli", Target: model.Target{Name: "harbor-cli"}, DependsOn: []model.TargetID{"libharbor"}},
+			{ID: "harbor-cli", Target: model.Target{Name: "harbor-cli"}},
 		},
-		Unmet: []model.Unmet{
-			{Target: "libharbor", Environment: tahoe, Needs: model.RequiresXcode},
-			{Target: "harbor-cli", Environment: tahoe, Needs: model.RequiresXcode, Through: "libharbor"},
-		}}
+		Builds: []model.EnvironmentPlan{{Environment: tahoe, Order: []model.TargetID{"libharbor", "harbor-cli"},
+			Dependencies: map[model.TargetID][]model.TargetID{"harbor-cli": {"libharbor"}},
+			NeedsXcode:   []model.TargetID{"libharbor"},
+			Unmet: []model.Unmet{
+				{Target: "libharbor", Environment: tahoe, Needs: model.RequiresXcode},
+				{Target: "harbor-cli", Environment: tahoe, Needs: model.RequiresXcode, Through: "libharbor"},
+			}}}}
 	var out bytes.Buffer
 	writePlan(&out, plan, nil, func(model.Unmet) string { return "make an Xcode image" })
 	require.Contains(t, out.String(), "Provider    tart macOS 26 (Tahoe) arm64 with the Command Line Tools · tests declared\n")

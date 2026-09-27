@@ -63,6 +63,8 @@ func TestJSONEnvelopes(t *testing.T) {
 	require.Nil(t, planned.Error)
 	require.Equal(t, "jq", dig(t, planned.Result, "plan", "targets", 0, "name"))
 	require.Equal(t, "substantive", dig(t, planned.Result, "plan", "targets", 0, "kind"))
+	require.Equal(t, "command", dig(t, planned.Result, "plan", "builds", 0, "environment", "provider"))
+	require.Equal(t, []any{"jq"}, dig(t, planned.Result, "plan", "builds", 0, "order"), "each environment's own order")
 	require.Equal(t, "snapshot 1", dig(t, planned.Result, "revision", "description"))
 	require.Nil(t, planned.Result["run"])
 

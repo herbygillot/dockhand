@@ -314,7 +314,8 @@ func checked(t *testing.T, e *Engine, branch model.Branch, jq, viewer model.Outc
 			Targets: []model.PlanTarget{
 				{ID: "jq", Target: model.Target{Name: "jq"}, Directory: "textproc/jq", Kind: model.Substantive, Role: model.Changed},
 				{ID: "harbor-viewer", Target: model.Target{Name: "harbor-viewer"}, Directory: "graphics/harbor-viewer", Kind: model.Unchanged, Role: model.Also},
-			}}
+			},
+			Builds: []model.EnvironmentPlan{{Environment: tahoe, Order: []model.TargetID{"jq", "harbor-viewer"}}}}
 		number, err := tx.NextRunNumber()
 		if err != nil {
 			return err

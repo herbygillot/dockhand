@@ -55,9 +55,10 @@ if {${xcodeversion} eq "none"} {
 	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{monterey, sequoia}})
 	require.NoError(t, err)
 	require.Empty(t, plan.Unresolved)
-	target, ok := plan.Target("xdemo")
+	_, ok := plan.Target("xdemo")
 	require.True(t, ok)
-	require.Equal(t, []model.Environment{monterey}, target.NeedsXcode)
+	require.True(t, plan.NeedsXcodeIn(monterey, "xdemo"))
+	require.False(t, plan.NeedsXcodeIn(sequoia, "xdemo"))
 
 	for _, version := range []string{"25", "24"} {
 		tools := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: version, Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsCommandLine}

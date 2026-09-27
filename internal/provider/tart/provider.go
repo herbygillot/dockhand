@@ -569,7 +569,7 @@ func stopped(ctx context.Context, g guest) (bool, error) {
 
 // record copies a target's log out of the guest and records its result.
 func (p *Provider) record(ctx context.Context, g guest, job engine.Job, build engine.Build, got guestResult) error {
-	var target model.PlanTarget
+	var target engine.JobTarget
 	found := false
 	for _, t := range job.Targets {
 		if string(t.ID) == got.ID {

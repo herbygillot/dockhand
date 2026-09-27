@@ -132,3 +132,35 @@ func TestResultsOnSeveralReleasesAreAGrid(t *testing.T) {
 	writeResults(&out, "  ", evidence, true)
 	require.Equal(t, "  flatbuffers  tart macOS 26 (Tahoe) arm64 ✓\n", out.String())
 }
+
+// Where environments build in different orders, the plan shows each one's;
+// a port excluded everywhere for one reason shows once, and one excluded
+// in some environments names them.
+func TestCheckPlanShowsEachEnvironmentsOrder(t *testing.T) {
+	arm := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	intel := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"}}
+	target := func(name string) model.PlanTarget {
+		return model.PlanTarget{ID: model.TargetID(name), Target: model.Target{Name: name}, Kind: model.Substantive, Role: model.Changed}
+	}
+	old := model.Exclusion{Target: model.Target{Name: "harbor-cli-old"}, Reason: "replaced by harbor-cli"}
+	plan := model.Plan{Environments: []model.Environment{arm, intel}, Tests: model.TestsDeclared,
+		Targets: []model.PlanTarget{target("harbor-cli"), target("libharbor"), target("harbor-intel")},
+		Builds: []model.EnvironmentPlan{
+			{Environment: arm, Order: []model.TargetID{"harbor-cli", "libharbor"}, Dependencies: map[model.TargetID][]model.TargetID{"libharbor": {"harbor-cli"}},
+				Exclusions: []model.Exclusion{old, {Target: model.Target{Name: "harbor-intel"}, Reason: "not defined there"}}},
+			{Environment: intel, Order: []model.TargetID{"libharbor", "harbor-cli", "harbor-intel"}, Dependencies: map[model.TargetID][]model.TargetID{"harbor-cli": {"libharbor"}},
+				Exclusions: []model.Exclusion{old}},
+		}}
+	var out bytes.Buffer
+	writePlan(&out, plan, nil, nil)
+	require.Contains(t, out.String(), "Order       on tart macOS 26 (Tahoe) arm64: harbor-cli → libharbor\n"+
+		"            on tart macOS 26 (Tahoe) x86_64: libharbor → harbor-cli → harbor-intel\n"+
+		"Excluded    harbor-cli-old: replaced by harbor-cli\n"+
+		"Excluded    harbor-intel on tart macOS 26 (Tahoe) arm64: not defined there\n")
+
+	plan.Builds[0].Order, plan.Builds[0].Dependencies = []model.TargetID{"libharbor", "harbor-cli"}, map[model.TargetID][]model.TargetID{"harbor-cli": {"libharbor"}}
+	plan.Targets = []model.PlanTarget{target("libharbor"), target("harbor-cli"), target("harbor-intel")}
+	out.Reset()
+	writePlan(&out, plan, nil, nil)
+	require.Contains(t, out.String(), "Order       libharbor → harbor-cli → harbor-intel\n", "where they agree, one line")
+}

@@ -41,9 +41,9 @@ func TestLiveCheckInATahoeGuest(t *testing.T) {
 		Environment: model.Environment{Provider: "tart", Platform: tahoe},
 		Commit:      commit,
 		Directory:   t.TempDir(),
-		Targets: []model.PlanTarget{
-			{ID: "tree", Target: model.Target{Name: "tree", Portfile: "sysutils/tree/Portfile"}},
-			{ID: "pv", Target: model.Target{Name: "pv", Portfile: "sysutils/pv/Portfile"}},
+		Targets: []engine.JobTarget{
+			{PlanTarget: model.PlanTarget{ID: "tree", Target: model.Target{Name: "tree", Portfile: "sysutils/tree/Portfile"}}},
+			{PlanTarget: model.PlanTarget{ID: "pv", Target: model.Target{Name: "pv", Portfile: "sysutils/pv/Portfile"}}},
 		},
 	}
 	build := &fakeBuild{}

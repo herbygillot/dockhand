@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -54,8 +55,10 @@ func (f fixture) seed(t *testing.T) (model.Branch, model.Revision, model.Plan) {
 	p := model.Plan{ID: "plan_1", Revision: r.ID, Tests: model.TestsDeclared, CreatedAt: at, Environments: []model.Environment{tahoe},
 		Targets: []model.PlanTarget{
 			{ID: "libharbor", Target: model.Target{Name: "libharbor", Variants: map[string]bool{"docs": false}}, Directory: "devel/libharbor", Kind: model.Substantive, Role: model.Changed},
-			{ID: "harbor-cli", Target: model.Target{Name: "harbor-cli"}, Directory: "devel/harbor-cli", Kind: model.RevisionOnly, Role: model.Changed, DependsOn: []model.TargetID{"libharbor"}},
-		}}
+			{ID: "harbor-cli", Target: model.Target{Name: "harbor-cli"}, Directory: "devel/harbor-cli", Kind: model.RevisionOnly, Role: model.Changed},
+		},
+		Builds: []model.EnvironmentPlan{{Environment: tahoe, Order: []model.TargetID{"libharbor", "harbor-cli"},
+			Dependencies: map[model.TargetID][]model.TargetID{"harbor-cli": {"libharbor"}}}}}
 	require.NoError(t, f.update(t, func(tx store.Tx) error {
 		if err := tx.AddBranch(b); err != nil {
 			return err
@@ -216,6 +219,62 @@ func TestPlansRoundTrip(t *testing.T) {
 		require.Equal(t, p, got)
 		return nil
 	}))
+}
+
+// A plan recorded before each environment had its own reads as one: each
+// environment's plan is what the old form said about it.
+func TestAPlanRecordedBeforeEnvironmentPlansReadsAsOne(t *testing.T) {
+	f := open(t)
+	_, r, _ := f.seed(t)
+	intel := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"}, DeveloperTools: model.DeveloperToolsCommandLine}
+	arm, _ := json.Marshal(tahoe)
+	x86, _ := json.Marshal(intel)
+	// Two environments: libharbor needs Xcode on x86_64, which has none,
+	// harbor-viewer links libharbor only there, and harbor-cli is arm64's
+	// alone.
+	body := `{"ID": "plan_old", "Revision": "` + string(r.ID) + `", "Environments": [` + string(arm) + `, ` + string(x86) + `],
+		"Targets": [
+			{"ID": "libharbor", "Target": {"Name": "libharbor"}, "Directory": "devel/libharbor", "Kind": "substantive", "Role": "changed", "NeedsXcode": [` + string(x86) + `]},
+			{"ID": "harbor-cli", "Target": {"Name": "harbor-cli"}, "Directory": "devel/harbor-cli", "Kind": "substantive", "Role": "changed"},
+			{"ID": "harbor-viewer", "Target": {"Name": "harbor-viewer"}, "Directory": "graphics/harbor-viewer", "Kind": "substantive", "Role": "changed", "DependsOn": ["libharbor"]}],
+		"Dependencies": [{}, {"harbor-viewer": ["libharbor"]}],
+		"Exclusions": [{"Target": {"Name": "harbor-cli"}, "Platform": {"OS": "darwin", "Version": "25", "Architecture": "x86_64"}, "Reason": "supported_archs arm64 only"}],
+		"Unmet": [{"Target": "libharbor", "Environment": ` + string(x86) + `, "Needs": "Xcode"},
+			{"Target": "harbor-viewer", "Environment": ` + string(x86) + `, "Needs": "Xcode", "Through": "libharbor"}],
+		"Tests": "declared", "CreatedAt": "2026-09-25T12:00:00Z"}`
+	db, err := sql.Open("sqlite", f.path)
+	require.NoError(t, err)
+	_, err = db.ExecContext(t.Context(), "INSERT INTO plans(repository_id, id, revision_id, body, created_at) VALUES(?,?,?,?,?)", f.repo, "plan_old", r.ID, body, millis(at))
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	require.NoError(t, f.store.View(t.Context(), f.repo, func(rd store.Reader) error {
+		got, err := rd.Plan("plan_old")
+		require.NoError(t, err)
+		require.NoError(t, got.Validate())
+		require.Equal(t, []model.EnvironmentPlan{
+			{Environment: tahoe, Order: []model.TargetID{"libharbor", "harbor-cli", "harbor-viewer"}},
+			{Environment: intel, Order: []model.TargetID{"libharbor", "harbor-viewer"},
+				Dependencies: map[model.TargetID][]model.TargetID{"harbor-viewer": {"libharbor"}},
+				NeedsXcode:   []model.TargetID{"libharbor"},
+				Unmet: []model.Unmet{{Target: "libharbor", Environment: intel, Needs: model.RequiresXcode},
+					{Target: "harbor-viewer", Environment: intel, Needs: model.RequiresXcode, Through: "libharbor"}},
+				Exclusions: []model.Exclusion{{Target: model.Target{Name: "harbor-cli"}, Reason: "supported_archs arm64 only"}}},
+		}, got.Builds)
+		return nil
+	}))
+
+	// One environment, before its dependencies were kept apart: a
+	// target's dependencies were its environment's.
+	single := `{"ID": "plan_one", "Revision": "` + string(r.ID) + `", "Environments": [` + string(arm) + `],
+		"Targets": [
+			{"ID": "libharbor", "Target": {"Name": "libharbor"}, "Directory": "devel/libharbor", "Kind": "substantive", "Role": "changed"},
+			{"ID": "harbor-cli", "Target": {"Name": "harbor-cli"}, "Directory": "devel/harbor-cli", "Kind": "substantive", "Role": "changed", "DependsOn": ["libharbor"]}],
+		"Tests": "declared", "CreatedAt": "2026-09-25T12:00:00Z"}`
+	got, err := decodePlan([]byte(single))
+	require.NoError(t, err)
+	require.Equal(t, []model.EnvironmentPlan{{Environment: tahoe, Order: []model.TargetID{"libharbor", "harbor-cli"},
+		Dependencies: map[model.TargetID][]model.TargetID{"harbor-cli": {"libharbor"}}}}, got.Builds)
 }
 
 func TestRunsAreNumberedImmutableAndMoveForward(t *testing.T) {

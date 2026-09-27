@@ -14,7 +14,7 @@ func targetWords(plan model.Plan, target model.PlanTarget, environment model.Env
 	if reading == "" {
 		reading = "advisory"
 	}
-	if Excluded(plan, target, environment.Platform) {
+	if Excluded(plan, target, environment) {
 		return "— excluded"
 	}
 	if unmet, ok := plan.UnmetIn(environment, target.ID); ok {
