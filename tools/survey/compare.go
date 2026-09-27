@@ -13,7 +13,7 @@ import (
 )
 
 // assessed is the part of a journal line a comparison reads. It is its own
-// type, not assess.Port, so journals written by older builds still load.
+// type, not Port, so journals written by older builds still load.
 type assessed struct {
 	Selector string
 	Outcome  string

@@ -16,7 +16,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/herbygillot/dockhand/internal/assess"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
@@ -67,7 +66,7 @@ func survey() (err error) {
 	journalPath := flag.String("journal", "", "journal to write, one JSON line per port; a rerun with the same file continues it")
 	prefix := flag.String("prefix", "", "MacPorts prefix whose port-tclsh and portindex evaluate; the ones on PATH when empty")
 	gitBin := flag.String("git", "", "git executable; git on PATH when empty")
-	parallel := flag.Int("parallel", assess.Concurrency, "Portfiles assessed at once")
+	parallel := flag.Int("parallel", Concurrency, "Portfiles assessed at once")
 	indexCache := flag.String("index-cache", "", "port index cache; $DOCKHAND_INDEX_CACHE, else dockhand/indexes in the user cache directory")
 	go2port := flag.String("go2port", firstOf(os.Getenv("GO2PORT_BIN"), lookPath("go2port")), "go2port, for Go dependency blocks")
 	cargo2port := flag.String("cargo2port", firstOf(os.Getenv("CARGO2PORT_BIN"), lookPath("cargo2port")), "cargo2port, for Cargo dependency blocks")
@@ -91,7 +90,7 @@ func survey() (err error) {
 	if *journalPath == "" {
 		return errors.New("-journal is required, so a long survey can be continued")
 	}
-	request := assess.Request{}
+	request := Request{}
 	request.Selection.Ports, request.Selection.Maintainers, request.Selection.NotMaintainers, request.Selection.Categories = ports, maintainers, notMaintainers, categories
 	request.Selection.All = len(ports)+len(maintainers)+len(categories) == 0
 	if err := request.Validate(); err != nil {
@@ -161,22 +160,22 @@ func survey() (err error) {
 		}
 	}
 	index := portindex.Config{CacheDirectory: cache, Executable: portindexBin}
-	service := assess.Service{
+	service := Service{
 		Repo:            repo,
 		Ports:           &selection.Reader{Evaluator: native, Index: &portindex.Stager{Repo: repo, Config: index, NativePlatform: native.NativePlatform, WithoutBase: true}},
 		Index:           &portindex.Stager{Repo: repo, Config: index},
 		DependencyTools: dependency.Tools{Go2Port: *go2port, Cargo2Port: *cargo2port},
 	}
-	assess.Concurrency = max(*parallel, 1)
-	journal, err := assess.OpenJournal(*journalPath)
+	Concurrency = max(*parallel, 1)
+	journal, err := OpenJournal(*journalPath)
 	if err != nil {
 		return err
 	}
 	defer func() { err = errors.Join(err, journal.Close()) }()
 	request.Journal = journal
 
-	record := run{Tree: root, Tclsh: tclsh, Portindex: portindexBin, Base: baseVersion(tclsh), Parallel: assess.Concurrency, Started: time.Now(), LoadAtStart: loadAverage()}
-	fmt.Fprintf(os.Stderr, "Surveying %s with %s (%s), %d Portfiles at a time; load %s\n", root, tclsh, record.Base, assess.Concurrency, record.LoadAtStart)
+	record := run{Tree: root, Tclsh: tclsh, Portindex: portindexBin, Base: baseVersion(tclsh), Parallel: Concurrency, Started: time.Now(), LoadAtStart: loadAverage()}
+	fmt.Fprintf(os.Stderr, "Surveying %s with %s (%s), %d Portfiles at a time; load %s\n", root, tclsh, record.Base, Concurrency, record.LoadAtStart)
 	result, err := service.Assess(ctx, request)
 	if err != nil {
 		return err

@@ -8,5 +8,6 @@
 // so its runs compare directly with the baselines kept in
 // ~/.dockhand/surveys, and it records how the run was made and how long
 // it took beside the journal. It is independent of the dockhand CLI and
-// of any database.
+// of any database. The assessment itself (Service) and its journal were
+// v2's assess package, and live here now that only the survey uses them.
 package main

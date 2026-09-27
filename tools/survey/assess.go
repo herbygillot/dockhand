@@ -1,4 +1,4 @@
-package assess
+package main
 
 import (
 	"runtime"
@@ -16,7 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
-	"github.com/herbygillot/dockhand/internal/macports/survey"
+	portsurvey "github.com/herbygillot/dockhand/internal/macports/survey"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -26,7 +26,7 @@ import (
 // Request selects local ports and optionally one exact upstream release.
 type Request struct {
 	SharedRelease bool
-	Selection     survey.Selection
+	Selection     portsurvey.Selection
 	Version       string
 	Subport       string
 	// Journal, when set, receives each port as it finishes and names the
@@ -131,7 +131,7 @@ func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err er
 	if err != nil {
 		return Result{}, err
 	}
-	files, err := survey.Open(ctx, s.Repo, s.Workspaces, platform, s.Index, request.Selection)
+	files, err := portsurvey.Open(ctx, s.Repo, s.Workspaces, platform, s.Index, request.Selection)
 	if err != nil {
 		return Result{}, err
 	}
@@ -235,7 +235,7 @@ var Concurrency = min(8, max(2, runtime.NumCPU()))
 
 // assessOne assesses one selected port: its probe, the optional release
 // resolution, and the assessment itself.
-func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files *survey.Workspace, projection *workspace.Workspace, platform record.Platform, request Request, selected survey.Port) (Port, error) {
+func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files *portsurvey.Workspace, projection *workspace.Workspace, platform record.Platform, request Request, selected portsurvey.Port) (Port, error) {
 	if err := ctx.Err(); err != nil {
 		return Port{}, err
 	}

@@ -1,4 +1,4 @@
-package assess
+package main
 
 import (
 	"bufio"
