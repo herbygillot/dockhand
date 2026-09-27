@@ -233,3 +233,32 @@ func TestTargetResultCheckpoints(t *testing.T) {
 	require.False(t, result(OutcomeNotRun, "").ReplacedBy(other), "a retry records under its own execution")
 	require.True(t, errors.Is(invalid("x"), ErrInvalid))
 }
+
+// The build decides unless the policy requires tests; then tests that
+// failed or timed out fail a port that built, at the test phase. A port
+// with no tests passes under any policy, and a failure stays a failure.
+func TestJudgeAppliesTheTestPolicy(t *testing.T) {
+	built := func(tests TestOutcome) TargetResult {
+		return TargetResult{Target: "jq", Outcome: OutcomePassed, Tests: tests}
+	}
+	for _, c := range []struct {
+		policy  TestPolicy
+		result  TargetResult
+		outcome Outcome
+		phase   Phase
+	}{
+		{TestsDeclared, built(TestsFailed), OutcomePassed, ""},
+		{TestsDeclared, built(TestsTimedOut), OutcomePassed, ""},
+		{TestsSkip, built(TestsFailed), OutcomePassed, ""},
+		{TestsRequired, built(TestsPassed), OutcomePassed, ""},
+		{TestsRequired, built(TestsNone), OutcomePassed, ""},
+		{TestsRequired, built(TestsFailed), OutcomeFailed, PhaseTest},
+		{TestsRequired, built(TestsTimedOut), OutcomeFailed, PhaseTest},
+		{TestsRequired, TargetResult{Target: "jq", Outcome: OutcomeFailed, Phase: PhaseInstall}, OutcomeFailed, PhaseInstall},
+	} {
+		judged := c.policy.Judge(c.result)
+		require.Equal(t, c.outcome, judged.Outcome, "%s %s", c.policy, c.result.Tests)
+		require.Equal(t, c.phase, judged.Phase, "%s %s", c.policy, c.result.Tests)
+		require.Equal(t, c.result.Tests, judged.Tests, "the tests' own outcome is kept")
+	}
+}

@@ -457,7 +457,7 @@ func (b *build) Blocked(target model.TargetID) (model.TargetID, bool) {
 }
 
 func (b *build) Record(result model.TargetResult) error {
-	result = Judge(b.d.plan.Tests, result)
+	result = b.d.plan.Tests.Judge(result)
 	result.Execution = b.execution.ID
 	if result.RecordedAt.IsZero() {
 		result.RecordedAt = b.d.e.now()

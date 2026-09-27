@@ -10,35 +10,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/provider"
 )
 
-// The build decides unless the policy requires tests; then tests that
-// failed or timed out fail a port that built, at the test phase. A port
-// with no tests passes under any policy, and a failure stays a failure.
-func TestJudgeAppliesTheTestPolicy(t *testing.T) {
-	built := func(tests model.TestOutcome) model.TargetResult {
-		return model.TargetResult{Target: "jq", Outcome: model.OutcomePassed, Tests: tests}
-	}
-	for _, c := range []struct {
-		policy  model.TestPolicy
-		result  model.TargetResult
-		outcome model.Outcome
-		phase   model.Phase
-	}{
-		{model.TestsDeclared, built(model.TestsFailed), model.OutcomePassed, ""},
-		{model.TestsDeclared, built(model.TestsTimedOut), model.OutcomePassed, ""},
-		{model.TestsSkip, built(model.TestsFailed), model.OutcomePassed, ""},
-		{model.TestsRequired, built(model.TestsPassed), model.OutcomePassed, ""},
-		{model.TestsRequired, built(model.TestsNone), model.OutcomePassed, ""},
-		{model.TestsRequired, built(model.TestsFailed), model.OutcomeFailed, model.PhaseTest},
-		{model.TestsRequired, built(model.TestsTimedOut), model.OutcomeFailed, model.PhaseTest},
-		{model.TestsRequired, model.TargetResult{Target: "jq", Outcome: model.OutcomeFailed, Phase: model.PhaseInstall}, model.OutcomeFailed, model.PhaseInstall},
-	} {
-		judged := Judge(c.policy, c.result)
-		require.Equal(t, c.outcome, judged.Outcome, "%s %s", c.policy, c.result.Tests)
-		require.Equal(t, c.phase, judged.Phase, "%s %s", c.policy, c.result.Tests)
-		require.Equal(t, c.result.Tests, judged.Tests, "the tests' own outcome is kept")
-	}
-}
-
 // A result reads under the policy of the check that built it. One that
 // came from an earlier check whose policy differs from the evidence's own
 // names that check, so an advisory failure never reads as required.
