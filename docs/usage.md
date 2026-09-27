@@ -271,7 +271,7 @@ Between checks it:
 
 - reads your open pull requests every few minutes, so `status` shows their reviews and CI, and marks a merged one's branch merged;
 - once a day, at `serve.outdated_at`, looks for new releases of your ports and does what `serve.for_outdated` says: `list` counts them for status, `draft` prepares a branch for each, and `check` also checks each;
-- once a day, unless `cleanup.automatic = false`, removes what `clean --merged` would, what checks whose process died left behind, and port indexes unused for `cleanup.after`;
+- once a day, unless `cleanup.automatic = false`, cleans up automatically, as below;
 - posts macOS notifications as checks finish and pull requests change. They are posted through AppleScript, so macOS credits them to Script Editor, and clicking one opens it. `serve.notify = false` turns them off, and `--no-notify` turns them off for one run.
 
 Serve opens no pull requests by default. With `--submit-passing`, or `serve.submit_passing = true`, it opens one for each branch it prepared whose check passed, at most `serve.submit_limit` a day. It never opens one with an upstream or commit-rule finding, or one needing `--accept`; those wait on the attention list, and the pull request says serve opened it without a person's review. `--no-submit-passing` turns it off for one run.
@@ -286,6 +286,14 @@ Serve opens no pull requests by default. With `--submit-passing`, or `serve.subm
 - **`archive [branch]`** hides a branch from status without touching anything; `status --all` still shows it, and `archive --undo` brings it back.
 
 `clean` shows what it would remove first. On a terminal it asks, and a script passes `--yes`. A branch's record always stays, so `status --all` still finds it. Check logs in `~/.dockhand/logs` are kept.
+
+**Automatic cleanup.** Once a day, dockhand cleans up by itself, unless `cleanup.automatic = false`. It removes:
+- what `clean --merged` would;
+- what checks whose process died left behind;
+- port indexes unused for `cleanup.after`;
+- the vanilla images Tart pulled for `providers setup tart`, once unused for 30 days. Each is deleted from dockhand's own Tart home with `tart delete`, never `tart prune`, and the next setup of its release downloads it again.
+
+`serve` runs it. Without serve, a command starts it in the background once its own work is done, and doesn't wait for it; what it removed goes to `cleanup.log` beside the database. When free space where the database or Tart's images are falls below `cleanup.min_free`, it runs at once, and says so, at most once an hour.
 
 ## Scripting
 
@@ -305,8 +313,9 @@ Serve opens no pull requests by default. With `--submit-passing`, or `serve.subm
 | `check.tests` | `declared` | `declared` (advisory), `required`, or `skip` |
 | `check.baseline` | `false` | run a baseline after a failed check |
 | `submit.rerequest_review` | `ask` | after pushing to a pull request with changes requested: `ask`, `always`, or `never` |
-| `cleanup.automatic` | `true` | serve's daily cleanup |
+| `cleanup.automatic` | `true` | the daily automatic cleanup |
 | `cleanup.after` | `7d` | how long a port index goes unused before cleanup removes it |
+| `cleanup.min_free` | `30GB` | the free space below which cleanup runs at once |
 | `serve.for_outdated` | `list` | `list`, `draft`, or `check` |
 | `serve.outdated_at` | `07:00` | when serve looks for new releases, in local time |
 | `serve.submit_passing` | `false` | open pull requests for serve's passing updates |

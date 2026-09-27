@@ -69,3 +69,31 @@ Now each result keeps its runners' parts (`TargetResult.Builders`, schema 19), a
 - **No verdict yet,** as before, while a runner hasn't reached the listing (`ListsSubports`), or listed the port and never reached it, and when no runner built it.
 
 `dockhand logs` shows each runner's part under a result ("build (macos-15) passed  …/build-macos-15.log", or "didn't build it"). `--json` has them as `builders`. For Tart, a run is one builder, and results carry none.
+
+## Cleanup as decision 36 has it
+
+v3's automatic cleanup ran only under `serve`, had no floor for free space, and left the vanilla images Tart pulled in its cache for good. Rebuilding every image today pulled each release's, 25 to 50 GB apiece.
+
+**Tart's cache.** Tart's source settles how its cache works (`VMStorageOCI.delete`, `gc`):
+- a `:latest` entry is a link to a digest entry;
+- `tart delete` of either removes it, then collects a digest nothing links to any more, unless it was pulled by digest;
+- a link left broken is removed.
+
+Its listing gives each entry's access time, and that time moves on the digest that is opened, not on the tag that named it. dockhand's own listing shows it: Tahoe's `:latest` was last touched 72 hours ago, its digest an hour ago by today's rebuild.
+
+So the Tart provider judges digests alone (`PruneCache`). It deletes one unused for 30 days (`engine.CacheUnused`), by name, and trusts the delete only by its absence from the listing (`host.Machine.DeleteCached`). Tart takes its tags with it. A tag, a running image, and an entry Tart gives no time for are kept. It is a new capability, `buildenv.CacheProvider`, which also says where the cache is.
+
+**When it runs.** `engine.CleanupDue` decides for every process, from files and providers alone, so a command asks after closing the database:
+- a day since the last pass (the stamp beside the database, as serve's was);
+- or, at most once an hour, less than `cleanup.min_free`, 30 GB by default, free where the database or a provider's cache is.
+
+`serve` asks it on each loop. Any other command, once its own work is done, starts `dockhand clean --automatic` detached, in a session of its own, writing to `cleanup.log`, and returns without waiting. The child asks again before it runs, since another process may have run it meanwhile, and stamps first. A command that finds space short says so on standard error.
+
+**Tests.**
+- The due check, day and space alike, with the hour's pause.
+- A pass pruning a provider's cache.
+- Tart's pruning rules, against listings with tags, running images, and missing times.
+- A command starting the pass once, `clean --automatic` running it, and the setting turning it off.
+- `min_free` parsing and refusals.
+
+The executable in a command test is the test binary, so the tests replace the spawner.

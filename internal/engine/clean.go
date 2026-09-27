@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -511,11 +512,14 @@ type CleanupReport struct {
 	Leftovers []Leftover
 	// Indexes are the port index generations it removed.
 	Indexes []string
+	// Caches are what it removed from providers' caches, such as the
+	// vanilla images Tart pulled.
+	Caches []string
 }
 
 // Removed counts what it removed.
 func (r CleanupReport) Removed() int {
-	n := len(r.Indexes)
+	n := len(r.Indexes) + len(r.Caches)
 	for _, leftover := range r.Leftovers {
 		if leftover.Done {
 			n++
@@ -577,6 +581,92 @@ func (e *Engine) Cleanup(ctx context.Context, session *coord.Session, after time
 				Message: fmt.Sprintf("removed %s unused for %s", plural(len(report.Indexes), "port index generation"), after)})
 			return err
 		})
+		if err != nil {
+			return report, err
+		}
+	}
+	// What providers keep to make environments from goes once unused for
+	// CacheUnused, as the vanilla images Tart pulled do.
+	for _, name := range slices.Sorted(maps.Keys(e.Providers)) {
+		provider, ok := e.Providers[name].(buildenv.CacheProvider)
+		if !ok {
+			continue
+		}
+		removed, err := provider.PruneCache(ctx, CacheUnused)
+		report.Caches = append(report.Caches, removed...)
+		if err != nil {
+			return report, fmt.Errorf("cleaning %s's cache: %w", name, err)
+		}
+	}
+	if len(report.Caches) > 0 {
+		err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+			_, err := tx.AppendEvent(model.Event{At: e.now(), Kind: "cleanup", Level: model.LevelInfo,
+				Message: fmt.Sprintf("removed %s unused for %s: %s", plural(len(report.Caches), "cached image"), CacheUnused, strings.Join(report.Caches, ", "))})
+			return err
+		})
 	}
 	return report, err
 }
+
+// CacheUnused is how long something a provider keeps to make environments
+// from, such as a vanilla image Tart pulled, goes unused before cleanup
+// removes it (decision 36).
+const CacheUnused = 30 * 24 * time.Hour
+
+// CleanupEvery is how often automatic cleanup runs, whichever process runs
+// it: serve, or one a command starts once its own work is done (decision
+// 36).
+const CleanupEvery = 24 * time.Hour
+
+// cleanupStamp is the file whose time is the last automatic cleanup's,
+// beside the database.
+func (e *Engine) cleanupStamp() string { return e.serveFile("cleanup.stamp") }
+
+// CleanupDue says whether automatic cleanup is due, and why: every since
+// the last, or, at most once in LowSpacePause, less than minFree free where
+// the database or a provider's cache is; zero minFree watches no space. It
+// reads files and the providers alone, never the database, so a command
+// asks after closing it.
+func (e *Engine) CleanupDue(every time.Duration, minFree uint64) (bool, string) {
+	since := every
+	if info, err := os.Stat(e.cleanupStamp()); err == nil {
+		since = e.now().Sub(info.ModTime())
+	}
+	if since >= every {
+		return true, fmt.Sprintf("%s since the last", every)
+	}
+	if minFree == 0 || since < LowSpacePause {
+		return false, ""
+	}
+	places := []string{filepath.Dir(e.LogDirectory())}
+	for _, name := range slices.Sorted(maps.Keys(e.Providers)) {
+		if provider, ok := e.Providers[name].(buildenv.CacheProvider); ok {
+			if storage, err := provider.Storage(); err == nil && storage != "" {
+				places = append(places, storage)
+			}
+		}
+	}
+	for _, place := range places {
+		if free, ok := freeSpace(place); ok && free < minFree {
+			return true, fmt.Sprintf("only %s free where %s is, under %s", gigabytes(free), place, gigabytes(minFree))
+		}
+	}
+	return false, ""
+}
+
+// LowSpacePause is how long cleanup waits after a pass before free space
+// that is still short runs it again.
+const LowSpacePause = time.Hour
+
+// StampCleanup marks automatic cleanup as run now. It is stamped before it
+// runs, so one that fails isn't tried again at once.
+func (e *Engine) StampCleanup() error {
+	stamp := e.cleanupStamp()
+	if err := os.WriteFile(stamp, nil, 0o644); err != nil {
+		return err
+	}
+	now := e.now()
+	return os.Chtimes(stamp, now, now)
+}
+
+func gigabytes(n uint64) string { return fmt.Sprintf("%.0f GB", float64(n)/(1<<30)) }

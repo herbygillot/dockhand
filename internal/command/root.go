@@ -207,6 +207,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	root.SetOut(streams.Out)
 	root.SetErr(streams.Err)
 	err := root.ExecuteContext(ctx)
+	settings.cleanupAfter(streams, mode.command)
 	if !mode.json {
 		return err
 	}

@@ -7,15 +7,17 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
 func cleanCommand(s *settings, streams Streams) *cobra.Command {
-	var merged, closed, archived, yes bool
+	var merged, closed, archived, yes, automatic bool
 	cmd := &cobra.Command{
 		Use:   "clean [--merged] [--closed] [--archived]",
 		Short: "Remove what merged branches leave behind",
@@ -48,6 +50,9 @@ cancel stops a check. None means another.`,
 				return err
 			}
 			defer e.Close()
+			if automatic {
+				return cleanAutomatically(ctx, e, streams, s.file)
+			}
 			var states []model.BranchState
 			if merged && (cmd.Flags().Changed("merged") || !closed && !archived) {
 				states = append(states, model.BranchMerged)
@@ -104,7 +109,56 @@ cancel stops a check. None means another.`,
 	cmd.Flags().BoolVar(&closed, "closed", false, "branches whose pull request closed unmerged: their worktree only")
 	cmd.Flags().BoolVar(&archived, "archived", false, "archived branches: their worktree only")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "remove without asking")
+	cmd.Flags().BoolVar(&automatic, "automatic", false, "run automatic cleanup's pass, when it is due, as a command starts it once its work is done")
+	_ = cmd.Flags().MarkHidden("automatic")
 	return cmd
+}
+
+// cleanAutomatically is decision 36's automatic pass, as a command starts it
+// apart from itself once its own work is done: it runs when still due,
+// since another process may have run it meanwhile, stamping first so a
+// pass that fails isn't tried again at once, and says what it removed.
+func cleanAutomatically(ctx context.Context, e *engine.Engine, streams Streams, file config.File) error {
+	due, why := e.CleanupDue(engine.CleanupEvery, file.Cleanup.Free())
+	if !due {
+		return nil
+	}
+	if err := e.StampCleanup(); err != nil {
+		return err
+	}
+	session, err := startSession(ctx, e, model.SessionForeground)
+	if err != nil {
+		return err
+	}
+	defer session.End(context.WithoutCancel(ctx))
+	fmt.Fprintf(streams.Out, "%s cleaning up: %s\n", time.Now().Format(time.RFC3339), why)
+	report, err := e.Cleanup(ctx, session, file.Cleanup.Age())
+	for _, name := range report.Caches {
+		fmt.Fprintf(streams.Out, "  removed %s from Tart's cache, unused for %s\n", name, engine.CacheUnused)
+	}
+	fmt.Fprintf(streams.Out, "  removed %s\n", plural(report.Removed(), "item"))
+	return err
+}
+
+// cleanupAfter starts automatic cleanup apart from this process once a
+// command's own work is done, when it is due (decision 36): a day since the
+// last, or free space short, which it says. The command doesn't wait for
+// it. serve cleans up itself, and clean is cleaning.
+func (s *settings) cleanupAfter(streams Streams, command string) {
+	e := s.opened
+	if e == nil || !s.file.Cleanup.On() || command == "clean" || command == "serve" {
+		return
+	}
+	due, why := e.CleanupDue(engine.CleanupEvery, s.file.Cleanup.Free())
+	if !due {
+		return
+	}
+	if strings.HasPrefix(why, "only ") {
+		fmt.Fprintf(streams.Err, "Cleaning up in the background: %s.\n", why)
+	}
+	if err := startCleanup(s.openedWith); err != nil {
+		fmt.Fprintf(streams.Err, "Couldn't start cleaning up in the background: %v\n", err)
+	}
 }
 
 // writeClean lists what clean would do, or did, and counts what it would

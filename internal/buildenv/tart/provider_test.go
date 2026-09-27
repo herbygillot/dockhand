@@ -18,6 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
+	tartvm "github.com/herbygillot/dockhand/internal/tart"
 	"github.com/herbygillot/dockhand/internal/tart/channel"
 )
 
@@ -26,6 +27,7 @@ import (
 type fakeMac struct {
 	mu       sync.Mutex
 	images   []string
+	cached   []tartvm.Image
 	cloneErr error
 	running  []int // counts Running reports, one per call, the last repeating
 	events   []string
@@ -74,6 +76,18 @@ func (m *fakeMac) Delete(_ context.Context, vm string) error {
 	m.log("delete " + vm)
 	m.mu.Lock()
 	m.images = slices.DeleteFunc(m.images, func(name string) bool { return name == vm })
+	m.mu.Unlock()
+	return nil
+}
+func (m *fakeMac) Cached(context.Context) ([]tartvm.Image, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.cached), nil
+}
+func (m *fakeMac) DeleteCached(_ context.Context, name string) error {
+	m.log("delete cached " + name)
+	m.mu.Lock()
+	m.cached = slices.DeleteFunc(m.cached, func(image tartvm.Image) bool { return image.Name == name })
 	m.mu.Unlock()
 	return nil
 }
@@ -471,4 +485,26 @@ func TestWhatAGuestReportedIsKeptWhenItFinishesBetweenReads(t *testing.T) {
 	require.Len(t, build.results, 2)
 	require.Equal(t, []model.Observed{{MacOS: "26.6.2", Build: "25G83", Architecture: "arm64", Xcode: "26.6", XcodeBuild: "17F113",
 		DeveloperDir: "/Applications/Xcode.app/Contents/Developer", MacPorts: "2.12.6"}}, build.observed, "port version's words read as its version")
+}
+
+// Cleanup deletes the vanilla images Tart pulled that have gone unused for
+// longer than it's told, judging digests alone: Tart marks the digest it
+// opens, not the tag that named it. A tag, a running image, and one Tart
+// gives no time for are kept (decision 36).
+func TestTheCacheKeepsWhatIsUsed(t *testing.T) {
+	t.Parallel()
+	mac := newMac()
+	old, recent := time.Now().Add(-40*24*time.Hour), time.Now().Add(-time.Hour)
+	mac.cached = []tartvm.Image{
+		{Name: "ghcr.io/cirruslabs/macos-sonoma-vanilla:latest", Source: "OCI", Accessed: old},
+		{Name: "ghcr.io/cirruslabs/macos-sonoma-vanilla@sha256:aaaa", Source: "OCI", Accessed: old},
+		{Name: "ghcr.io/cirruslabs/macos-tahoe-vanilla:latest", Source: "OCI", Accessed: old},
+		{Name: "ghcr.io/cirruslabs/macos-tahoe-vanilla@sha256:bbbb", Source: "OCI", Accessed: recent},
+		{Name: "ghcr.io/cirruslabs/macos-sequoia-vanilla@sha256:cccc", Source: "OCI"},
+		{Name: "ghcr.io/cirruslabs/macos-ventura-vanilla@sha256:dddd", Source: "OCI", Accessed: old, Running: true},
+	}
+	removed, err := testProvider(mac).PruneCache(t.Context(), 30*24*time.Hour)
+	require.NoError(t, err)
+	require.Equal(t, []string{"ghcr.io/cirruslabs/macos-sonoma-vanilla@sha256:aaaa"}, removed)
+	require.Equal(t, []string{"delete cached ghcr.io/cirruslabs/macos-sonoma-vanilla@sha256:aaaa"}, mac.events)
 }

@@ -100,6 +100,7 @@ func (p *Provider) vms() (machine, error) {
 // clones a stopped check left.
 var (
 	_ buildenv.IdentityProvider = (*Provider)(nil)
+	_ buildenv.CacheProvider    = (*Provider)(nil)
 	_ buildenv.ReleaseProvider  = (*Provider)(nil)
 	_ buildenv.Remedier         = (*Provider)(nil)
 	_ buildenv.LeftoverProvider = (*Provider)(nil)
@@ -209,6 +210,42 @@ func (p *Provider) Identity(_ context.Context, environment model.Environment) (s
 		return "", err
 	}
 	return fmt.Sprintf("%s; verifier %d", manifest.Origin(), VerifierProtocol), nil
+}
+
+// Storage is dockhand's Tart home, where Tart keeps the vanilla images
+// setup pulled (buildenv.CacheProvider).
+func (p *Provider) Storage() (string, error) {
+	runtime, err := p.Tart.Resolve()
+	return runtime.Home, err
+}
+
+// PruneCache deletes the vanilla images Tart pulled for dockhand that have
+// gone unused for longer than unused, one by one, never with tart prune
+// (decision 36). Only digests are judged: Tart marks the digest it opens,
+// not the tag that named it, so a tag's own time says nothing of its use,
+// and deleting a digest takes its tags with it. One Tart gives no time
+// for, or that is running, is kept.
+func (p *Provider) PruneCache(ctx context.Context, unused time.Duration) ([]string, error) {
+	m, err := p.vms()
+	if err != nil {
+		return nil, err
+	}
+	cached, err := m.Cached(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cutoff := time.Now().Add(-unused)
+	var removed []string
+	for _, image := range cached {
+		if !strings.Contains(image.Name, "@sha256:") || image.Running || image.Accessed.IsZero() || image.Accessed.After(cutoff) {
+			continue
+		}
+		if err := m.DeleteCached(ctx, image.Name); err != nil {
+			return removed, fmt.Errorf("deleting %s from Tart's cache: %w", image.Name, err)
+		}
+		removed = append(removed, image.Name)
+	}
+	return removed, nil
 }
 
 // Remedy is the command that gives a release what an unmet target needs:

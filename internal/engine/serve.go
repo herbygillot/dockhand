@@ -35,6 +35,9 @@ type ServeOptions struct {
 	// gone unused for CleanupAge.
 	Cleanup    bool
 	CleanupAge time.Duration
+	// MinFree is the free space below which cleanup runs at once rather
+	// than waiting for its day; zero watches none.
+	MinFree uint64
 	// Say receives serve's lines, one at a time; Notify, what is worth a
 	// notification. Either may be nil.
 	Say    func(line string)
@@ -95,7 +98,7 @@ func newServer(e *Engine, options ServeOptions) *server {
 		options.Refresh = 5 * time.Minute
 	}
 	if options.CleanupEvery <= 0 {
-		options.CleanupEvery = 24 * time.Hour
+		options.CleanupEvery = CleanupEvery
 	}
 	if options.Now == nil {
 		options.Now = time.Now
@@ -362,24 +365,28 @@ func (c *cleaner) maybe(ctx context.Context) {
 	if !c.s.options.Cleanup {
 		return
 	}
-	stamp := c.s.e.serveFile("cleanup.stamp")
-	if info, err := os.Stat(stamp); err == nil && time.Since(info.ModTime()) < c.s.options.CleanupEvery {
+	due, why := c.s.e.CleanupDue(c.s.options.CleanupEvery, c.s.options.MinFree)
+	if !due {
 		return
 	}
 	// The stamp goes first, so a cleanup that fails is not retried every
 	// few seconds; it is tried again the next day, and its problem is
 	// reported once until it changes.
-	if err := os.WriteFile(stamp, nil, 0o644); err != nil {
+	if err := c.s.e.StampCleanup(); err != nil {
 		return
 	}
-	now := time.Now()
-	_ = os.Chtimes(stamp, now, now)
+	if strings.HasPrefix(why, "only ") {
+		c.s.say("cleaning up now: %s", why)
+	}
 	report, err := c.s.e.Cleanup(ctx, c.session, c.s.options.CleanupAge)
 	if err != nil {
 		if problem := fmt.Sprintf("serve: cleanup: %v", err); problem != c.failed {
 			c.s.say("%s", problem)
 			c.failed = problem
 		}
+	}
+	for _, name := range report.Caches {
+		c.s.say("removed %s from Tart's cache, unused for %s", name, CacheUnused)
 	}
 	for _, branch := range report.Branches {
 		var removed []string

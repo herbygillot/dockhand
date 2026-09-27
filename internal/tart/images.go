@@ -79,6 +79,9 @@ type Image struct {
 	Name    string
 	Source  string
 	Running bool
+	// Accessed is when Tart last opened it, as its listing says; zero
+	// where the listing doesn't say.
+	Accessed time.Time
 }
 
 // VM is what `tart get` says of one VM.
@@ -104,6 +107,7 @@ func (c Client) Images(ctx context.Context, options RunOptions) ([]Image, error)
 	var rows []struct {
 		Name, Source, State *string
 		Running             *bool
+		Accessed            string
 	}
 	if err := json.Unmarshal(output, &rows); err != nil {
 		return nil, fmt.Errorf("tart: invalid image listing: %w", err)
@@ -114,7 +118,8 @@ func (c Client) Images(ctx context.Context, options RunOptions) ([]Image, error)
 			return nil, fmt.Errorf("tart: invalid image listing: an entry lacks Name, Source, or Running and State, which dockhand reads")
 		}
 		running := row.Running != nil && *row.Running || row.State != nil && *row.State == "running"
-		result = append(result, Image{Name: *row.Name, Source: *row.Source, Running: running})
+		accessed, _ := time.Parse(time.RFC3339, row.Accessed)
+		result = append(result, Image{Name: *row.Name, Source: *row.Source, Running: running, Accessed: accessed})
 	}
 	return result, nil
 }

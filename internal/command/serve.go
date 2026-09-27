@@ -132,6 +132,7 @@ func serveOptions(e *engine.Engine, file config.File, out io.Writer, drain, subm
 		Poll:         servePoll,
 		Refresh:      serveRefresh,
 		CleanupEvery: serveCleanup,
+		MinFree:      file.Cleanup.Free(),
 		Now:          serveNow,
 	}
 	if notify {

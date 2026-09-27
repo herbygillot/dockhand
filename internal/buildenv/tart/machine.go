@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -28,6 +29,10 @@ type machine interface {
 	// Stop stops a VM by name, one an earlier process started.
 	Stop(ctx context.Context, vm string) error
 	Delete(ctx context.Context, vm string) error
+	// Cached are the images Tart pulled into dockhand's Tart home, and
+	// DeleteCached removes one by name.
+	Cached(ctx context.Context) ([]tartvm.Image, error)
+	DeleteCached(ctx context.Context, name string) error
 	// Reach is the guest of a running clone over SSH, held to the host keys
 	// recorded for the image it was cloned from.
 	Reach(ctx context.Context, vm, image string) (guest, error)
@@ -69,6 +74,14 @@ func (n *native) Images(ctx context.Context) ([]string, error) {
 		names = append(names, image.Name)
 	}
 	return names, nil
+}
+
+func (n *native) Cached(ctx context.Context) ([]tartvm.Image, error) {
+	images, err := n.Machine.Images(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(images, func(image tartvm.Image) bool { return image.Source != "OCI" }), nil
 }
 
 // Running counts dockhand's running VMs and the person's, from a listing

@@ -112,6 +112,41 @@ type Cleanup struct {
 	// After is how long something goes unused before it is removed, such
 	// as "7d" or "36h"; 7 days when unset.
 	After string `toml:"after"`
+	// MinFree is the free space, such as "30GB", below which cleanup runs
+	// at once rather than waiting for its day; 30 GB when unset.
+	MinFree string `toml:"min_free"`
+}
+
+// DefaultMinFree is the free space cleanup keeps when min_free is unset.
+const DefaultMinFree = 30 << 30
+
+// Free is min_free in bytes.
+func (c Cleanup) Free() uint64 {
+	free, err := parseSize(c.MinFree)
+	if err != nil || c.MinFree == "" {
+		return DefaultMinFree
+	}
+	return free
+}
+
+// parseSize reads a size in gigabytes or terabytes, such as "30GB", "30G",
+// or "1TB".
+func parseSize(value string) (uint64, error) {
+	number := strings.TrimSpace(strings.ToUpper(value))
+	unit := uint64(1 << 30)
+	switch {
+	case strings.HasSuffix(number, "TB"), strings.HasSuffix(number, "T"):
+		unit = 1 << 40
+	case strings.HasSuffix(number, "GB"), strings.HasSuffix(number, "G"):
+	default:
+		return 0, fmt.Errorf("%q is not a size such as 30GB", value)
+	}
+	number = strings.TrimSpace(strings.TrimRight(number, "TGB"))
+	n, err := strconv.ParseUint(number, 10, 64)
+	if err != nil || n == 0 {
+		return 0, fmt.Errorf("%q is not a size such as 30GB", value)
+	}
+	return n * unit, nil
 }
 
 // DefaultCleanupAfter is how long cleanup waits when after is unset.
@@ -296,6 +331,11 @@ func parse(path, text string) (File, error) {
 	if f.Cleanup.After != "" {
 		if _, err := parseAge(f.Cleanup.After); err != nil {
 			return File{}, fmt.Errorf("%s: cleanup.after: %w", path, err)
+		}
+	}
+	if f.Cleanup.MinFree != "" {
+		if _, err := parseSize(f.Cleanup.MinFree); err != nil {
+			return File{}, fmt.Errorf("%s: cleanup.min_free: %w", path, err)
 		}
 	}
 	if f.Providers.GitHub.Capacity < 0 {

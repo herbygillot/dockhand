@@ -10,6 +10,7 @@ package buildenv
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/model"
 )
@@ -136,6 +137,19 @@ type LeftoverProvider interface {
 	// RemoveLeftover removes one, and refuses anything it didn't make for
 	// a check.
 	RemoveLeftover(ctx context.Context, ref string) error
+}
+
+// A CacheProvider keeps downloads its environments are made from, as Tart
+// keeps the vanilla images it pulled for dockhand, and removes those unused
+// for a while (decision 36).
+type CacheProvider interface {
+	Provider
+	// Storage is where the cache is, whose volume's free space cleanup
+	// watches.
+	Storage() (string, error)
+	// PruneCache removes what has gone unused for longer than unused, and
+	// says what it removed.
+	PruneCache(ctx context.Context, unused time.Duration) ([]string, error)
 }
 
 // Leftover is an environment a provider made for a check that is still

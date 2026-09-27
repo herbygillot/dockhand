@@ -115,7 +115,6 @@ These are taken when their area is next touched, or between items.
   - trusting a delete only by the VM's absence (#1345, merged, unreleased);
   - guests reached over SSH, never `tart exec` (#1346); setup's agent readiness probe is the last `tart exec`, and could move to SSH.
 - **The process-start reader's pid-reuse case, proven on a Mac.** A killed process was judged dead on 2026-09-27 ([note](activity/2026-09-27-stopped-checks.md)).
-- **Cleanup as decision 36 has it.** Today it runs only under `serve`. It should also run after a command's own work, at most once a day. It should run a pass at once when free space falls below `cleanup.min_free`, 30 GB. And it should delete the vanilla images dockhand pulled into Tart's cache after 30 days unused, one by one with `tart delete <reference>`, never `tart prune`. Rebuilding every image on 2026-09-27 pulled each release's vanilla image, 25 to 50 GB each, and a newer `:latest` leaves the old one behind.
 - **Links into deleted v2 code.** 53 links in historical documents point at files deleted with v2; they could point at commit `1cbcdf8b65`, the last with that code.
 - **A flake to watch.** `TestTidyAsksWhatItCannotKnow` once failed in its cleanup with a directory not empty ([note](activity/2026-09-27-stopped-checks.md#seen-once-not-explained)).
 

@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -18,6 +19,8 @@ func TestMain(m *testing.M) {
 		os.Unsetenv(name)
 	}
 	lookTart = func(string) (string, error) { return "", exec.ErrNotFound }
+	// The executable is the test binary, which isn't dockhand.
+	startCleanup = func(engine.Options) error { return nil }
 	cleanup := testsupport.IsolateHome()
 	code := m.Run()
 	cleanup()

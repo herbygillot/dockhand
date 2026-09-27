@@ -26,6 +26,10 @@ type settings struct {
 	git      string
 	// file is the configuration file, as read when the engine opened.
 	file config.File
+	// opened is the engine a command opened, and openedWith what it opened
+	// with, for the cleanup that follows the command's work.
+	opened     *engine.Engine
+	openedWith engine.Options
 }
 
 func (s *settings) flags(root *cobra.Command) {
@@ -82,7 +86,7 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.file = file
+	s.file, s.opened, s.openedWith = file, e, options
 	e.Providers = map[string]buildenv.Provider{}
 	if command := file.Providers.Command; command != nil {
 		e.Providers["command"] = &script.Provider{Run: command.Run, Label: command.Name, Repo: e.Repo}

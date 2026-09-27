@@ -125,6 +125,17 @@ func TestCleanupSettings(t *testing.T) {
 		_, err = parse("config.toml", "[cleanup]\nafter = \""+bad+"\"\n")
 		require.ErrorContains(t, err, "cleanup.after", bad)
 	}
+
+	require.Equal(t, uint64(30<<30), f.Cleanup.Free(), "30 GB when unset")
+	for value, bytes := range map[string]uint64{"50GB": 50 << 30, "12g": 12 << 30, "1TB": 1 << 40, " 2 T ": 2 << 40} {
+		f, err = parse("config.toml", "[cleanup]\nmin_free = \""+value+"\"\n")
+		require.NoError(t, err, value)
+		require.Equal(t, bytes, f.Cleanup.Free(), value)
+	}
+	for _, bad := range []string{"30", "0GB", "lots", "30MB", "-5GB"} {
+		_, err = parse("config.toml", "[cleanup]\nmin_free = \""+bad+"\"\n")
+		require.ErrorContains(t, err, "cleanup.min_free", bad)
+	}
 }
 
 func TestMaintainerAndSubmitSettings(t *testing.T) {

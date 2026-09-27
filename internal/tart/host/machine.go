@@ -66,6 +66,37 @@ func (n Machine) LocalVM(ctx context.Context, name string) (exists, running bool
 // Images lists every VM and image Tart has.
 func (n Machine) Images(ctx context.Context) ([]tart.Image, error) { return n.list(ctx) }
 
+// DeleteCached removes an image Tart pulled into its cache, by name, as
+// `tart delete` does, which then collects what nothing refers to any more:
+// a digest's tags go with it. The delete is trusted only by the name's
+// absence from the listing afterwards.
+func (n Machine) DeleteCached(ctx context.Context, name string) error {
+	cached := func() (bool, error) {
+		images, err := n.list(ctx)
+		if err != nil {
+			return false, err
+		}
+		for _, image := range images {
+			if image.Name == name && image.Source == "OCI" {
+				return true, nil
+			}
+		}
+		return false, nil
+	}
+	exists, err := cached()
+	if err != nil || !exists {
+		return err
+	}
+	_, deleted := n.run(ctx, nil, "delete", name)
+	if exists, err = cached(); err != nil {
+		return errors.Join(deleted, err)
+	}
+	if exists {
+		return errors.Join(fmt.Errorf("tart: cached image %s is still listed after delete", name), deleted)
+	}
+	return nil
+}
+
 // IP is a running VM's address from `tart ip`, waiting up to wait seconds
 // for the VM to take one.
 func (n Machine) IP(ctx context.Context, vm string, wait int) (string, error) {
