@@ -15,7 +15,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -23,9 +22,9 @@ import (
 // UpdateRequest asks to edit one port's files in a branch's worktree.
 type UpdateRequest struct {
 	Branch model.Branch
-	// Action is record.Bump, a new version, or record.RefreshChecksums,
+	// Action is model.Bump, a new version, or model.RefreshChecksums,
 	// the checksums of the version the Portfile names.
-	Action record.Action
+	Action model.UpdateAction
 	Port   string
 	// Version is the release a bump moves to; the newest when empty.
 	Version string
@@ -78,7 +77,7 @@ type Update struct {
 	Port          string
 	Before, After PortVersion
 	// Release is where a bump found its version.
-	Release *record.Release
+	Release *model.Release
 	// Files are the paths the edit changes, sorted.
 	Files []string
 	// Diff is the edit as a patch.
@@ -109,8 +108,8 @@ type Update struct {
 // written only if none of the files it touches changed in the meantime.
 func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, error) {
 	switch request.Action {
-	case record.Bump, record.RefreshChecksums:
-	case record.BumpRevision:
+	case model.Bump, model.RefreshChecksums:
+	case model.BumpRevision:
 		if strings.TrimSpace(request.Subject) == "" {
 			return Update{}, errors.New("a revision bump needs its reason as the subject, such as --subject \"rebuild for poppler 25.09.0\"")
 		}
@@ -130,21 +129,21 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		return Update{}, err
 	}
 	input := preparation.Request{
-		EditIntent: record.EditIntent{SharedRelease: request.SharedRelease, KeepOldChecksums: request.KeepOldChecksums},
+		EditIntent: model.EditIntent{SharedRelease: request.SharedRelease, KeepOldChecksums: request.KeepOldChecksums},
 		Action:     request.Action,
-		Source:     record.Source{Tree: record.ObjectID(captured), Base: record.ObjectID(base)},
+		Source:     model.Source{Tree: model.ObjectID(captured), Base: model.ObjectID(base)},
 		Selection:  macports.Selection{Selector: request.Port},
 		Version:    request.Version,
 		Subject:    request.Subject,
 	}
-	if request.Action == record.Bump {
+	if request.Action == model.Bump {
 		release, err := preparer.ResolveRelease(ctx, input)
 		if err != nil {
 			return Update{}, err
 		}
 		input.Release = &release
 	}
-	compare := request.CompareUpstream && request.Action == record.Bump
+	compare := request.CompareUpstream && request.Action == model.Bump
 	if compare {
 		directory, err := scratch.Dir("upstream-")
 		if err != nil {
@@ -158,7 +157,7 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		return Update{}, err
 	}
 	var stealth *Stealth
-	if request.Action == record.RefreshChecksums && len(result.Files) > 0 {
+	if request.Action == model.RefreshChecksums && len(result.Files) > 0 {
 		port := result.Target.Name
 		if port == "" {
 			port = request.Port
@@ -168,7 +167,7 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		}
 	}
 	removed := false
-	if request.Action == record.Bump && len(result.Files) > 0 {
+	if request.Action == model.Bump && len(result.Files) > 0 {
 		if removed, err = dropStealthDistSubdir(ctx, worktree, captured, &result); err != nil {
 			return Update{}, err
 		}
@@ -214,9 +213,9 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	}
 	change := "refreshed checksums"
 	switch request.Action {
-	case record.Bump:
+	case model.Bump:
 		change = fmt.Sprintf("%s → %s", update.Before, update.After)
-	case record.BumpRevision:
+	case model.BumpRevision:
 		change = fmt.Sprintf("revision %d → %d", update.Before.Revision, update.After.Revision)
 	}
 	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
@@ -235,7 +234,7 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 // now, read through the clone, since a plan only reads.
 func (e *Engine) updateSource(ctx context.Context, request UpdateRequest) (*git.Repository, string, model.ObjectID, error) {
 	if request.FromMaster {
-		if !request.Plan || request.Action != record.Bump {
+		if !request.Plan || request.Action != model.Bump {
 			return nil, "", "", errors.New("engine: only a version update is planned from master; start a branch for anything else")
 		}
 		master, err := e.fetchMaster(ctx)
@@ -264,9 +263,9 @@ func (e *Engine) updateSource(ctx context.Context, request UpdateRequest) (*git.
 func (e *Engine) editRecord(ctx context.Context, worktree *git.Repository, branch model.Branch, request UpdateRequest, update Update, result preparation.Result) (model.Edit, error) {
 	edit := model.Edit{ID: model.EditID(store.NewID("ed")), Branch: branch.ID, Kind: model.EditUpdate, Port: update.Port, Subject: update.Subject, At: e.now(), Upstream: update.Upstream}
 	switch request.Action {
-	case record.RefreshChecksums:
+	case model.RefreshChecksums:
 		edit.Kind = model.EditChecksums
-	case record.BumpRevision:
+	case model.BumpRevision:
 		edit.Kind = model.EditRevbump
 	}
 	edit.Directory = portDirectory(result.Files[0].Path)

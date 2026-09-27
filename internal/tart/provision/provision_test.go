@@ -7,18 +7,18 @@ import (
 	"encoding/xml"
 	"errors"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/model"
 	"io"
 	"os"
 	"slices"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macos"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/tart"
 	"github.com/stretchr/testify/require"
 )
 
-var testPlatform = record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
+var testPlatform = model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
 
 type fakeMachine struct {
 	images     map[string]image

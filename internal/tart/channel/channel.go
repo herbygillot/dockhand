@@ -18,7 +18,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
@@ -176,7 +176,7 @@ func controlPath(address, image string) (string, error) {
 	if !info.IsDir() || info.Mode().Perm() != 0700 {
 		return "", fmt.Errorf("channel: %s must be a private directory", directory)
 	}
-	return filepath.Join(directory, record.Digest([]byte(address + "\x00" + image))[:16]), nil
+	return filepath.Join(directory, model.Digest([]byte(address + "\x00" + image))[:16]), nil
 }
 
 // Close ends the shared connection to the guest, if one is open.

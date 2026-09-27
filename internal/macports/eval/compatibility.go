@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
@@ -101,11 +101,11 @@ func decodeRuntime(reply string) (macports.Runtime, error) {
 }
 
 // decodePlatform reads the interpreter's os_platform, os_major, and
-// build_arch, the three a record.Platform holds.
-func decodePlatform(reply string) (record.Platform, error) {
+// build_arch, the three a model.Platform holds.
+func decodePlatform(reply string) (model.Platform, error) {
 	values, failures := syntax.ListValues(reply)
 	if len(failures) > 0 || len(values) != 3 || values[0] == "" || values[1] == "" || values[2] == "" {
-		return record.Platform{}, fmt.Errorf("%w: incomplete platform reply", macports.ErrStartup)
+		return model.Platform{}, fmt.Errorf("%w: incomplete platform reply", macports.ErrStartup)
 	}
-	return record.Platform{OS: values[0], Version: values[1], Architecture: values[2]}, nil
+	return model.Platform{OS: values[0], Version: values[1], Architecture: values[2]}, nil
 }

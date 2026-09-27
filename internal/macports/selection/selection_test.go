@@ -12,7 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/selection"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
@@ -39,7 +39,7 @@ foreach py {311 312} {subport py${py}-fixture {version 2.0}}
 		fmt.Fprintf(&index, "%s %d\n%s", name, len(body), body)
 	}
 	require.NoError(t, os.WriteFile(filepath.Join(root, "PortIndex"), []byte(index.String()), 0600))
-	tree, err := macports.NewTree(record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, root, record.Platform{})
+	tree, err := macports.NewTree(model.Source{Tree: model.ObjectID(strings.Repeat("a", 40))}, root, model.Platform{})
 	require.NoError(t, err)
 	return tree
 }

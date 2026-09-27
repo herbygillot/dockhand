@@ -1,14 +1,14 @@
 package macports
 
 import (
+	"github.com/herbygillot/dockhand/internal/model"
 	"testing"
 
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/stretchr/testify/require"
 )
 
 func TestRebindReleaseScopePreservesMembershipAndPins(t *testing.T) {
-	root := record.Target{Name: "root", Portfile: "devel/root/Portfile"}
+	root := model.Target{Name: "root", Portfile: "devel/root/Portfile"}
 	sibling := root
 	sibling.Name = "sibling"
 	sibling.Subport = sibling.Name
@@ -19,10 +19,10 @@ func TestRebindReleaseScopePreservesMembershipAndPins(t *testing.T) {
 		return PortInfo{Name: name, Version: version, Options: map[string]string{"checksums": "sha256 aaaa", "distfiles": "source.tar.gz", "master_sites": "https://example.invalid/source"}}
 	}
 	snapshot := Snapshot{Ports: map[string]PortInfo{"root": info("root", "2"), "sibling": info("sibling", "2"), "pinned": info("pinned", "1")}}
-	scope := &record.ReleaseScope{Input: record.ReleaseInput{Portfile: root.Portfile}, Affected: []record.ReleaseMember{{Target: root, After: ReleaseState(snapshot.Ports[root.Name])}, {Target: sibling, After: ReleaseState(snapshot.Ports[sibling.Name])}}, Protected: []record.ReleaseMember{{Target: pin, After: ReleaseState(snapshot.Ports[pin.Name])}}}
+	scope := &model.ReleaseScope{Input: model.ReleaseInput{Portfile: root.Portfile}, Affected: []model.ReleaseMember{{Target: root, After: ReleaseState(snapshot.Ports[root.Name])}, {Target: sibling, After: ReleaseState(snapshot.Ports[sibling.Name])}}, Protected: []model.ReleaseMember{{Target: pin, After: ReleaseState(snapshot.Ports[pin.Name])}}}
 	updated, err := RebindReleaseScope(scope, snapshot)
 	require.NoError(t, err)
-	require.True(t, scope.SameMembership(updated))
+	require.Equal(t, members(scope), members(updated), "rebinding keeps the members")
 	snapshot.Ports["sibling"].Options["checksums"] = "sha256 bbbb"
 	updated, err = RebindReleaseScope(scope, snapshot)
 	require.NoError(t, err)
@@ -35,5 +35,16 @@ func TestRebindReleaseScopePreservesMembershipAndPins(t *testing.T) {
 	_, err = RebindReleaseScope(scope, snapshot)
 	require.ErrorContains(t, err, "target set")
 	updated.Affected = updated.Affected[:1]
-	require.False(t, scope.SameMembership(updated))
+	require.NotEqual(t, members(scope), members(updated))
+}
+
+// members names a scope's affected and protected ports, in order.
+func members(scope *model.ReleaseScope) [2][]string {
+	var names [2][]string
+	for i, group := range [][]model.ReleaseMember{scope.Affected, scope.Protected} {
+		for _, member := range group {
+			names[i] = append(names[i], member.Target.Name)
+		}
+	}
+	return names
 }

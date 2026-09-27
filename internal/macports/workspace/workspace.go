@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/scratch"
 	"os"
 	"path"
@@ -14,7 +15,6 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // The shared resources every evaluation reads: PortGroups, livecheck and
@@ -38,7 +38,7 @@ func (s Scope) Holds(directory string) bool {
 // replaces the edited ones.
 type Workspace struct {
 	repo      *git.Repository
-	source    record.Source
+	source    model.Source
 	directory string
 	base      *Workspace
 	edits     []git.FileEdit
@@ -61,7 +61,7 @@ type Workspace struct {
 
 // Open claims a directory for the tree, creates it, and materializes
 // nothing into it.
-func Open(ctx context.Context, repo *git.Repository, source record.Source) (*Workspace, error) {
+func Open(ctx context.Context, repo *git.Repository, source model.Source) (*Workspace, error) {
 	if repo == nil || !git.ValidObjectID(string(source.Tree)) {
 		return nil, fmt.Errorf("workspace: a repository and a source tree are required")
 	}
@@ -86,7 +86,7 @@ func Open(ctx context.Context, repo *git.Repository, source record.Source) (*Wor
 // of the directory, so an overlay's Commit has no blob to check against
 // and is refused; Rescan picks up files added after adoption. Only tests
 // adopt a directory; production workspaces come from the registry.
-func Adopt(root string, source record.Source) (*Workspace, error) {
+func Adopt(root string, source model.Source) (*Workspace, error) {
 	root, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		return nil, err
@@ -156,8 +156,8 @@ func (w *Workspace) scan() error {
 	return nil
 }
 
-func (w *Workspace) Source() record.Source { return w.source }
-func (w *Workspace) Root() string          { return w.directory }
+func (w *Workspace) Source() model.Source { return w.source }
+func (w *Workspace) Root() string         { return w.directory }
 
 // Base is the workspace an overlay was made from; a base returns itself.
 func (w *Workspace) Base() *Workspace {
@@ -183,7 +183,7 @@ func (w *Workspace) Whole() bool {
 
 // EnsurePort materializes _resources and the target's port directory,
 // including its files/ tree. It is idempotent and cheap when present.
-func (w *Workspace) EnsurePort(ctx context.Context, target record.Target) error {
+func (w *Workspace) EnsurePort(ctx context.Context, target model.Target) error {
 	directory := path.Dir(target.Portfile)
 	if strings.Count(directory, "/") != 1 || !fsValid(directory) {
 		return fmt.Errorf("workspace: %q is not a category/port/Portfile target", target.Portfile)
@@ -263,12 +263,12 @@ func (w *Workspace) ensure(ctx context.Context, directories []string) error {
 }
 
 // Tree is the evaluator's view of the root; an overlay's names its base.
-func (w *Workspace) Tree(platform record.Platform) (macports.Tree, error) {
+func (w *Workspace) Tree(platform model.Platform) (macports.Tree, error) {
 	return macports.NewTreeOver(w.source, w.directory, w.Base().directory, platform, w)
 }
 
 // Context selects a target in the tree.
-func (w *Workspace) Context(target record.Target, platform record.Platform) (macports.Context, error) {
+func (w *Workspace) Context(target model.Target, platform model.Platform) (macports.Context, error) {
 	tree, err := w.Tree(platform)
 	if err != nil {
 		return macports.Context{}, err
@@ -288,7 +288,7 @@ func (w *Workspace) Batch(ctx context.Context, ports macports.BatchReader) (macp
 	if base.batch != nil {
 		return base.batch, nil
 	}
-	tree, err := base.Tree(record.Platform{})
+	tree, err := base.Tree(model.Platform{})
 	if err != nil {
 		return nil, err
 	}
@@ -477,18 +477,18 @@ func (w *Workspace) Edits() []git.FileEdit { return slices.Clone(w.edits) }
 // Commit writes the overlay's edits as git objects over the base tree and
 // returns the source whose tree they make. The overlay's files are, by
 // construction, that tree's projection over the overlay's scope.
-func (w *Workspace) Commit(ctx context.Context) (record.Source, error) {
+func (w *Workspace) Commit(ctx context.Context) (model.Source, error) {
 	if w.base == nil {
 		return w.source, nil
 	}
 	if w.repo == nil {
-		return record.Source{}, fmt.Errorf("workspace: an overlay of an adopted directory has no repository to commit to")
+		return model.Source{}, fmt.Errorf("workspace: an overlay of an adopted directory has no repository to commit to")
 	}
 	tree, err := w.repo.EditTree(ctx, string(w.source.Tree), w.edits)
 	if err != nil {
-		return record.Source{}, err
+		return model.Source{}, err
 	}
-	return record.Source{Tree: record.ObjectID(tree), Base: w.source.Base}, nil
+	return model.Source{Tree: model.ObjectID(tree), Base: w.source.Base}, nil
 }
 
 // Close closes the session, then removes the directory. Overlays close

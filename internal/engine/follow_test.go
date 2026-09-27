@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 func TestPullRequestsAreFollowed(t *testing.T) {
@@ -21,8 +21,8 @@ func TestPullRequestsAreFollowed(t *testing.T) {
 	require.NoError(t, err)
 	number := submitted.PullRequest.Ref.Number
 
-	fake.statuses = map[int]record.PullRequestStatus{number: {Review: "changes-requested", ChangesRequested: 1,
-		Checks: record.CheckSummary{Total: 3, Passed: 2, Failed: 1, Failing: []string{"macOS 15"}}}}
+	fake.statuses = map[int]forge.PullRequestStatus{number: {Review: "changes-requested", ChangesRequested: 1,
+		Checks: forge.CheckSummary{Total: 3, Passed: 2, Failed: 1, Failing: []string{"macOS 15"}}}}
 	refreshed, err := e.RefreshPullRequests(t.Context())
 	require.NoError(t, err)
 	require.Len(t, refreshed, 1)
@@ -53,7 +53,7 @@ func TestPullRequestsAreFollowed(t *testing.T) {
 	require.True(t, statuses[0].SomeoneElsePushed())
 
 	// And it is merged.
-	fake.prs[number].State = record.PullRequestMerged
+	fake.prs[number].State = forge.PullRequestMerged
 	refreshed, err = e.RefreshPullRequests(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, []string{"#34901 is merged"}, refreshed[0].Changes)

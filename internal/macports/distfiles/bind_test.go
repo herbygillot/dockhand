@@ -4,7 +4,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 	"os"
@@ -33,7 +33,7 @@ checksums-append pinned.zip sha256 bbbb size 3
 distfiles-append pinned.zip
 `)
 	require.NoError(t, os.WriteFile(path, src, 0600))
-	tree, err := macports.NewTree(record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, root, record.Platform{})
+	tree, err := macports.NewTree(model.Source{Tree: model.ObjectID(strings.Repeat("a", 40))}, root, model.Platform{})
 	require.NoError(t, err)
 	e := &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}
 	targets, err := e.Resolve(t.Context(), tree, macports.Selection{Selector: "fixture"})
@@ -42,7 +42,7 @@ distfiles-append pinned.zip
 	require.NoError(t, err)
 	var bindings []distfiles.Binding
 	for _, arch := range []string{"arm64", "x86_64"} {
-		observed, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: record.Platform{OS: "darwin", Version: "25", Architecture: arch}, Declarations: true})
+		observed, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "25", Architecture: arch}, Declarations: true})
 		require.NoError(t, err)
 		binding, err := distfiles.Bind(src, path, observed.Snapshot.Ports["fixture"], observed.Ports["fixture"])
 		require.NoError(t, err)
@@ -69,14 +69,14 @@ checksums md5 aaaa \
     rmd160 cccc
 `)
 	require.NoError(t, os.WriteFile(path, src, 0600))
-	tree, err := macports.NewTree(record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, root, record.Platform{})
+	tree, err := macports.NewTree(model.Source{Tree: model.ObjectID(strings.Repeat("a", 40))}, root, model.Platform{})
 	require.NoError(t, err)
 	e := &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}
 	targets, err := e.Resolve(t.Context(), tree, macports.Selection{Selector: "fixture"})
 	require.NoError(t, err)
 	bound, err := tree.Select(targets[0])
 	require.NoError(t, err)
-	observed, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, Declarations: true})
+	observed, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, Declarations: true})
 	require.NoError(t, err)
 	binding, err := distfiles.Bind(src, path, observed.Snapshot.Ports["fixture"], observed.Ports["fixture"])
 	require.NoError(t, err)
@@ -107,14 +107,14 @@ func TestBindingTracesTableAndArrayValuesToTheirOneLiteral(t *testing.T) {
 			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0700))
 			src := []byte("PortSystem 1.0\nname fixture\nversion 1\nmaster_sites https://example.invalid/$version\ndistfiles fixture.zip\n" + test.body)
 			require.NoError(t, os.WriteFile(path, src, 0600))
-			tree, err := macports.NewTree(record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, root, record.Platform{})
+			tree, err := macports.NewTree(model.Source{Tree: model.ObjectID(strings.Repeat("a", 40))}, root, model.Platform{})
 			require.NoError(t, err)
 			e := &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}
 			targets, err := e.Resolve(t.Context(), tree, macports.Selection{Selector: "fixture"})
 			require.NoError(t, err)
 			bound, err := tree.Select(targets[0])
 			require.NoError(t, err)
-			observed, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, Declarations: true})
+			observed, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, Declarations: true})
 			require.NoError(t, err)
 			binding, err := distfiles.Bind(src, path, observed.Snapshot.Ports["fixture"], observed.Ports["fixture"])
 			require.NoError(t, err)

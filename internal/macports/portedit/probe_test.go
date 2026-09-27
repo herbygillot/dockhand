@@ -10,7 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
@@ -43,7 +43,7 @@ proc github.setup {owner project raw prefix} {
 }
 ` + declaration + "\nrevision 3\nchecksums sha256 " + strings.Repeat("0", 64) + "\n"
 	require.NoError(t, os.WriteFile(filepath.Join(root, "devel/fixture/Portfile"), []byte(body), 0600))
-	request := Request{Action: record.Bump, Source: record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, Workspace: adopt(t, root), Selection: macports.Selection{Selector: "fixture", Subport: subport}}
+	request := Request{Action: model.Bump, Source: model.Source{Tree: model.ObjectID(strings.Repeat("a", 40))}, Workspace: adopt(t, root), Selection: macports.Selection{Selector: "fixture", Subport: subport}}
 	service := &Service{Ports: &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}}
 	input, err := service.load(t.Context(), &request)
 	require.NoError(t, err)
@@ -121,7 +121,7 @@ func TestProbeCancellation(t *testing.T) {
 // directory stays the test's.
 func adopt(t *testing.T, root string) *workspace.Workspace {
 	t.Helper()
-	ws, err := workspace.Adopt(root, record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))})
+	ws, err := workspace.Adopt(root, model.Source{Tree: model.ObjectID(strings.Repeat("a", 40))})
 	require.NoError(t, err)
 	t.Cleanup(func() { ws.Close() })
 	return ws

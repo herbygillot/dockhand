@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
@@ -53,7 +53,7 @@ subport fixture-child {
     revision 7
 }
 `)
-	tree, err := macports.NewTree(record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, root, record.Platform{})
+	tree, err := macports.NewTree(model.Source{Tree: model.ObjectID(strings.Repeat("a", 40))}, root, model.Platform{})
 	require.NoError(t, err)
 	return tree
 }
@@ -165,11 +165,11 @@ func TestEvaluationRejectsPlatformMismatchAndCancellation(t *testing.T) {
 	t.Parallel()
 	evaluator := liveEvaluator(t)
 	tree := fixtureTree(t)
-	tree, err := macports.NewTree(tree.Source(), tree.Root(), record.Platform{OS: "darwin", Version: "1", Architecture: "arm64"})
+	tree, err := macports.NewTree(tree.Source(), tree.Root(), model.Platform{OS: "darwin", Version: "1", Architecture: "arm64"})
 	require.NoError(t, err)
 	_, err = evaluator.Resolve(t.Context(), tree, macports.Selection{Selector: "fixture"})
 	require.ErrorIs(t, err, macports.ErrPlatform)
-	tree, err = macports.NewTree(tree.Source(), tree.Root(), record.Platform{})
+	tree, err = macports.NewTree(tree.Source(), tree.Root(), model.Platform{})
 	require.NoError(t, err)
 	putFile(t, tree.Root(), "devel/hang/Portfile", "PortSystem 1.0\nname hang\nversion 1\nafter 30000\n")
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
@@ -336,7 +336,7 @@ compiler.blacklist-append {clang < 1300}
 		require.NotContains(t, dependency.Port, "clang", "Apple's clang is the compiler")
 	}
 	require.Equal(t, "0", port.Options["use_xcode"])
-	older := &Evaluator{Executable: e.Executable, Model: record.Platform{OS: "darwin", Version: "23", Architecture: "x86_64"}}
+	older := &Evaluator{Executable: e.Executable, Model: model.Platform{OS: "darwin", Version: "23", Architecture: "x86_64"}}
 	chosen, err := older.NativePlatform(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, older.Model, chosen)

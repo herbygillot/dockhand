@@ -4,12 +4,12 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/stretchr/testify/require"
 )
 
 func snapshot(ports map[string]macports.PortInfo) macports.Snapshot {
-	return macports.Snapshot{Target: record.Target{Name: "main", Portfile: "devel/main/Portfile"}, Platform: record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, Ports: ports}
+	return macports.Snapshot{Target: model.Target{Name: "main", Portfile: "devel/main/Portfile"}, Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, Ports: ports}
 }
 
 func TestEquivalentNormalizesRelocatedWorkspaces(t *testing.T) {
@@ -67,9 +67,9 @@ func TestVersionAllowsAHomepageThatFollowsTheVersion(t *testing.T) {
 	after := snapshot(map[string]macports.PortInfo{
 		"main": {Name: "main", Version: "0.230.0", Revision: 0, Options: map[string]string{"checksums": "sha256 bbbb", "homepage": "https://metacpan.org/release/List-Uniq-0.23"}},
 	})
-	report := ScopedVersion(false, before, after, "main", record.Release{Version: "0.230.0"}, "sha256 bbbb")
+	report := ScopedVersion(false, before, after, "main", model.Release{Version: "0.230.0"}, "sha256 bbbb")
 	require.Empty(t, report.UnexpectedChanges)
 	after.Ports["main"].Options["description"] = "changed"
-	report = ScopedVersion(false, before, after, "main", record.Release{Version: "0.230.0"}, "sha256 bbbb")
+	report = ScopedVersion(false, before, after, "main", model.Release{Version: "0.230.0"}, "sha256 bbbb")
 	require.NotEmpty(t, report.UnexpectedChanges, "other metadata still may not move")
 }

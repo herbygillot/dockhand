@@ -7,7 +7,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/git"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -101,7 +101,7 @@ func TestGoDependencyPreparation(t *testing.T) {
 			if scenario == "local-patch" {
 				tree, err := service.Repo.EditTree(t.Context(), string(request.Source.Tree), []git.FileEdit{{Path: "devel/fixture/files/fix.patch", After: []byte("--- a/README\n+++ b/README\n@@ -1 +1 @@\n-foo\n+bar\n"), Mode: 0o100644}})
 				require.NoError(t, err)
-				request.Source = record.Source{Tree: record.ObjectID(tree)}
+				request.Source = model.Source{Tree: model.ObjectID(tree)}
 			}
 			result, err := service.Prepare(t.Context(), request)
 			switch scenario {

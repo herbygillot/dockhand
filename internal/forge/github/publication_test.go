@@ -13,7 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/github"
 	githubapi "github.com/herbygillot/dockhand/internal/github"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -56,9 +56,9 @@ func TestPullRequestsMapQueriesContentAndObservations(t *testing.T) {
 	require.True(t, found.Found)
 	observed, err := client.Observe(t.Context(), found.PullRequest.Ref)
 	require.NoError(t, err)
-	require.Equal(t, record.PullRequestOpen, observed.PullRequest.State)
+	require.Equal(t, forge.PullRequestOpen, observed.PullRequest.State)
 	require.Equal(t, "https://github.com/upstream/ports/pull/3", observed.PullRequest.Ref.URL)
-	input := forge.PullRequestInput{Repository: query.Repository, HeadRepository: query.HeadRepository, HeadBranch: query.HeadBranch, BaseBranch: query.BaseBranch, Desired: record.PublicationContent{Head: record.ObjectID(strings.Repeat("a", 40)), Title: "port: update", Body: "details"}}
+	input := forge.PullRequestInput{Repository: query.Repository, HeadRepository: query.HeadRepository, HeadBranch: query.HeadBranch, BaseBranch: query.BaseBranch, Desired: forge.PullRequestContent{Head: model.ObjectID(strings.Repeat("a", 40)), Title: "port: update", Body: "details"}}
 	_, err = client.Create(t.Context(), input)
 	require.NoError(t, err)
 	input.ExistingPR = &found.PullRequest.Ref
@@ -102,10 +102,10 @@ func TestGitHubPRLookupRejectsAmbiguousAndIncompleteObservations(t *testing.T) {
 				require.False(t, observed.Found)
 			case "closed":
 				require.NoError(t, err)
-				require.Equal(t, record.PullRequestClosed, observed.PullRequest.State)
+				require.Equal(t, forge.PullRequestClosed, observed.PullRequest.State)
 			case "merged":
 				require.NoError(t, err)
-				require.Equal(t, record.PullRequestMerged, observed.PullRequest.State)
+				require.Equal(t, forge.PullRequestMerged, observed.PullRequest.State)
 			default:
 				require.Error(t, err)
 			}
@@ -124,7 +124,7 @@ func TestGitHubWritesDistinguishRejectionFromUnknownOutcomesAndDoNotRedirect(t *
 			}))
 			defer server.Close()
 			client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL, Token: "fixture-token"}}}
-			_, err := client.Create(t.Context(), forge.PullRequestInput{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main", Desired: record.PublicationContent{Title: "update"}})
+			_, err := client.Create(t.Context(), forge.PullRequestInput{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main", Desired: forge.PullRequestContent{Title: "update"}})
 			require.Error(t, err)
 			require.Equal(t, 1, calls)
 			if status == 403 || status == 422 {
@@ -225,7 +225,7 @@ func TestRepositoryInfoUsesTheReturnedCloneURL(t *testing.T) {
 
 func TestCanceledPublicationWriteRemainsUncertain(t *testing.T) {
 	client := &github.Client{Client: &githubapi.Client{HTTP: &http.Client{Transport: transportFunc(func(*http.Request) (*http.Response, error) { return nil, context.Canceled })}, Config: githubapi.Config{Token: "fixture-token"}}}
-	_, err := client.Create(t.Context(), forge.PullRequestInput{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main", Desired: record.PublicationContent{Title: "update"}})
+	_, err := client.Create(t.Context(), forge.PullRequestInput{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main", Desired: forge.PullRequestContent{Title: "update"}})
 	require.ErrorIs(t, err, context.Canceled)
 	require.NotErrorIs(t, err, forge.ErrRejected)
 }
@@ -251,7 +251,7 @@ func TestRateLimitedWritesRemainDistinctFromPermissionRejections(t *testing.T) {
 				}))
 				defer server.Close()
 				client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL, Token: "fixture-token"}}}
-				_, err := client.Create(t.Context(), forge.PullRequestInput{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main", Desired: record.PublicationContent{Title: "update"}})
+				_, err := client.Create(t.Context(), forge.PullRequestInput{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main", Desired: forge.PullRequestContent{Title: "update"}})
 				var limited *forge.RateLimitError
 				require.ErrorAs(t, err, &limited)
 				require.NotErrorIs(t, err, forge.ErrRejected)
@@ -271,12 +271,12 @@ func TestObserveTerminalPRFromDeletedFork(t *testing.T) {
 		row["head"].(map[string]any)["repo"] = nil
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(row) }))
 		client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL, Token: "fixture-token"}}}
-		result, err := client.Observe(t.Context(), record.PullRequestRef{Forge: forge.GitHub, Repository: "upstream/ports", Number: 3})
+		result, err := client.Observe(t.Context(), forge.PullRequestRef{Forge: forge.GitHub, Repository: "upstream/ports", Number: 3})
 		server.Close()
 		require.NoError(t, err)
-		expected := record.PullRequestClosed
+		expected := forge.PullRequestClosed
 		if merged {
-			expected = record.PullRequestMerged
+			expected = forge.PullRequestMerged
 		}
 		require.Equal(t, expected, result.PullRequest.State)
 		require.Empty(t, result.PullRequest.HeadRepository)
@@ -310,7 +310,7 @@ func TestMarkReadyTakesADraftOutOfDraft(t *testing.T) {
 	}))
 	defer server.Close()
 	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL, Token: "fixture-token"}}}
-	ref := record.PullRequestRef{Forge: forge.GitHub, Repository: "upstream/ports", Number: 3}
+	ref := forge.PullRequestRef{Forge: forge.GitHub, Repository: "upstream/ports", Number: 3}
 	_, err := client.MarkReady(t.Context(), ref)
 	require.NoError(t, err)
 	require.Equal(t, 1, mutations)
@@ -341,7 +341,7 @@ func TestPermissionAndPostReview(t *testing.T) {
 	role, err := client.Permission(t.Context(), "upstream/ports", "ada")
 	require.NoError(t, err)
 	require.Equal(t, "triage", role)
-	url, err := client.PostReview(t.Context(), forge.ReviewInput{Ref: record.PullRequestRef{Forge: forge.GitHub, Repository: "upstream/ports", Number: 3}, Commit: strings.Repeat("a", 40),
+	url, err := client.PostReview(t.Context(), forge.ReviewInput{Ref: forge.PullRequestRef{Forge: forge.GitHub, Repository: "upstream/ports", Number: 3}, Commit: strings.Repeat("a", 40),
 		RequestChanges: true, Body: "squash, please", Comments: []forge.ReviewComment{{Path: "textproc/jq/Portfile", Line: 7, Body: "revision should be 0"}}})
 	require.NoError(t, err)
 	require.Equal(t, "https://github.com/upstream/ports/pull/3#pullrequestreview-1", url)

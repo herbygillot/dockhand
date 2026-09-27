@@ -40,7 +40,13 @@ if {${subport} eq "fixture"} {distfiles; fetch {}; use_configure no; build {}}
 			require.NoError(t, err)
 			require.Len(t, *requests, 1)
 			require.Len(t, result.Scope.Affected, 3)
-			require.Len(t, result.Scope.BuildTargets(), 2)
+			built := 0
+			for _, member := range result.Scope.Affected {
+				if !member.MetadataOnly {
+					built++
+				}
+			}
+			require.Equal(t, 2, built, "the metadata-only parent is in scope but not built")
 			require.Len(t, result.Scope.Protected, 1)
 			require.Equal(t, "fixture-pinned", result.Scope.Protected[0].Target.Name)
 			require.Equal(t, "1.2.3", result.Scope.Input.Before)
@@ -116,8 +122,10 @@ if {${subport} eq ${name}} {
 	require.Equal(t, "1.2.4", result.Scope.Affected[0].After.Version)
 	require.Equal(t, "fixture-1", result.Scope.Affected[1].Target.Name)
 	require.False(t, result.Scope.Affected[1].Follower)
-	require.Len(t, result.Scope.BuildTargets(), 1, "only the subport is verified")
-	require.False(t, result.Scope.NeedsSharedRelease("fixture-1"), "the workflow accepts what the editor moved without authorization")
+	require.False(t, result.Scope.Affected[1].MetadataOnly, "only the subport is built")
+	for _, member := range result.Scope.Affected {
+		require.False(t, member.NeedsAuthorization("fixture-1"), "what the editor moved needs no shared-release authorization")
+	}
 
 	// A main port at a different version is not a follower and is left alone.
 	s, r, _ = archiveFixture(t, strings.Replace(portfile, "replaced_by fixture-1\n version 1.2.3", "replaced_by fixture-1\n version 1.1.0", 1))

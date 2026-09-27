@@ -1,13 +1,13 @@
 package portedit
 
 import (
+	"github.com/herbygillot/dockhand/internal/model"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,7 +19,7 @@ master_sites @SITE@/${version}
 checksums arm.zip sha256 aaaa size 2 intel.zip sha256 bbbb size 3
 if {${build_arch} eq "arm64"} {distfiles arm.zip} else {distfiles intel.zip}
 `)
-	r.Action, r.Version, r.Release = record.RefreshChecksums, "", nil
+	r.Action, r.Version, r.Release = model.RefreshChecksums, "", nil
 	result, err := s.Prepare(t.Context(), r)
 	require.NoError(t, err)
 	require.Len(t, result.Downloads, 2)
@@ -62,7 +62,7 @@ checksums           md5     aaaa \
                     rmd160  cccc
 `
 	s, r, _ := archiveFixture(t, body)
-	r.Action, r.Version, r.Release = record.RefreshChecksums, "", nil
+	r.Action, r.Version, r.Release = model.RefreshChecksums, "", nil
 	result, err := s.Prepare(t.Context(), r)
 	require.NoError(t, err)
 	require.Len(t, result.Commits, 1)
@@ -104,7 +104,7 @@ checksums           md5     aaaa \
                     sha1    bbbb \
                     rmd160  cccc
 `)
-	r.Action, r.Version, r.Release, r.KeepOldChecksums = record.RefreshChecksums, "", nil, true
+	r.Action, r.Version, r.Release, r.KeepOldChecksums = model.RefreshChecksums, "", nil, true
 	result, err := s.Prepare(t.Context(), r)
 	require.NoError(t, err)
 	require.Len(t, result.Commits, 1)
@@ -139,7 +139,7 @@ checksums           rmd160  [lindex [lindex ${info} 0] 0] \
                     sha256  [lindex [lindex ${info} 0] 1] \
                     size    [lindex [lindex ${info} 0] 2]
 `)
-	r.Action, r.Version, r.Release = record.RefreshChecksums, "", nil
+	r.Action, r.Version, r.Release = model.RefreshChecksums, "", nil
 	result, err := s.Prepare(t.Context(), r)
 	require.NoError(t, err)
 	require.Len(t, result.Commits, 1)

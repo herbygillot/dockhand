@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/version"
+	"github.com/herbygillot/dockhand/internal/model"
 	"path"
 
 	"github.com/herbygillot/dockhand/internal/git"
@@ -19,7 +20,6 @@ import (
 	portsurvey "github.com/herbygillot/dockhand/internal/macports/survey"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/progress"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
@@ -51,7 +51,7 @@ func (r Request) Validate() error {
 }
 
 type Result struct {
-	Source record.Source
+	Source model.Source
 	Ports  []Port
 	// Skipped counts the selected ports the journal already held.
 	Skipped int `json:",omitempty"`
@@ -203,7 +203,7 @@ var Concurrency = min(8, max(2, runtime.NumCPU()))
 
 // assessOne assesses one selected port: its probe, the optional release
 // resolution, and the assessment itself.
-func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files *portsurvey.Workspace, projection *workspace.Workspace, platform record.Platform, request Request, selected portsurvey.Port) (Port, error) {
+func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files *portsurvey.Workspace, projection *workspace.Workspace, platform model.Platform, request Request, selected portsurvey.Port) (Port, error) {
 	if err := ctx.Err(); err != nil {
 		return Port{}, err
 	}
@@ -226,7 +226,7 @@ func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files
 			item.Findings = []portedit.Finding{portedit.Problem("evaluation", problem)}
 			item.Summarize()
 		} else {
-			var release *record.Release
+			var release *model.Release
 			var resolutionErr error
 			if request.Version != "" {
 				bound, bindErr := s.Upstream.Bind(probe)

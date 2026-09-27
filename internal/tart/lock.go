@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/herbygillot/dockhand/internal/filelock"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // AcquireImageRead keeps an image available as an immutable clone source.
@@ -29,7 +29,7 @@ func acquire(ctx context.Context, home, kind, image string, mode filelock.Mode) 
 	if err != nil {
 		return nil, err
 	}
-	return filelock.Acquire(ctx, filepath.Join(directory, kind+"-"+record.Digest([]byte(image))+".lock"), mode)
+	return filelock.Acquire(ctx, filepath.Join(directory, kind+"-"+model.Digest([]byte(image))+".lock"), mode)
 }
 
 // LockDirectory is where dockhand's locks on one Tart home's images live:
@@ -46,5 +46,5 @@ func LockDirectory(home string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(user, ".dockhand", "tart-locks", record.Digest([]byte(home))), nil
+	return filepath.Join(user, ".dockhand", "tart-locks", model.Digest([]byte(home))), nil
 }

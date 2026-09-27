@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
+	"github.com/herbygillot/dockhand/internal/model"
 	"maps"
 	"os"
 	"path/filepath"
@@ -18,7 +19,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/progress"
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // session is one editing session: the workspace and its bound tree, the
@@ -55,14 +55,14 @@ type session struct {
 // the session.
 type sourceInput struct {
 	*session
-	scope        *record.ReleaseScope
-	versionInput record.ReleaseInput
+	scope        *model.ReleaseScope
+	versionInput model.ReleaseInput
 	before       macports.Snapshot
 	// family is the baseline across the owning Portfile's every subport,
 	// known at load for a main-port selection and evaluated on demand for a
 	// subport's, by familySnapshot.
 	family          *macports.Snapshot
-	primary, target record.Target
+	primary, target model.Target
 	info            macports.PortInfo
 	// data is the baseline Portfile contents, which a derived baseline
 	// replaces with a stripped form.
@@ -85,7 +85,7 @@ func (i *sourceInput) derive(data []byte, before macports.Snapshot) *sourceInput
 
 // forMember is the same baseline seen from another member of the shared
 // release, whose own declarations the archive checks bind.
-func (i *sourceInput) forMember(target record.Target) *sourceInput {
+func (i *sourceInput) forMember(target model.Target) *sourceInput {
 	member := *i
 	member.target = target
 	return &member
@@ -115,7 +115,7 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 	// through the index, which widens the workspace itself when it must
 	// generate one.
 	if directory := selectedDirectory(request.Selection.Selector); directory != "" {
-		if err := ws.EnsurePort(ctx, record.Target{Portfile: directory + "/Portfile"}); err != nil {
+		if err := ws.EnsurePort(ctx, model.Target{Portfile: directory + "/Portfile"}); err != nil {
 			return nil, err
 		}
 	}
@@ -318,12 +318,12 @@ func (i *sourceInput) portfileIn(root string) string {
 
 // context binds the workspace to the owning Portfile, or to the selected
 // subport alone for counterfactual probes.
-func (i *sourceInput) context(platform record.Platform, selectedOnly bool) (macports.Context, error) {
+func (i *sourceInput) context(platform model.Platform, selectedOnly bool) (macports.Context, error) {
 	return i.contextIn(i.ws, platform, selectedOnly)
 }
 
 // contextIn binds a projection, the workspace or one of its overlays.
-func (i *sourceInput) contextIn(ws *workspace.Workspace, platform record.Platform, selectedOnly bool) (macports.Context, error) {
+func (i *sourceInput) contextIn(ws *workspace.Workspace, platform model.Platform, selectedOnly bool) (macports.Context, error) {
 	target := i.primary
 	if selectedOnly {
 		target = i.target
@@ -403,7 +403,7 @@ func (s *Service) evaluateContents(ctx context.Context, reader snapshotEvaluator
 		err = fidelity.CheckSnapshot(after, bound)
 	}
 	// Probe snapshots describe uncommitted contents, not the immutable base tree.
-	after.Source = record.Source{}
+	after.Source = model.Source{}
 	result.after = after
 	return result, err
 }

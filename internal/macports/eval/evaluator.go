@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/fetchguard"
+	"github.com/herbygillot/dockhand/internal/model"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -15,7 +16,6 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/tcl/rpc"
 	"github.com/herbygillot/dockhand/internal/tcl/shell"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
@@ -27,7 +27,7 @@ type Evaluator struct {
 	// Model is the macOS an interpreter describes as its own when MacPorts
 	// runs on a host that is not a Mac; zero selects DefaultModel. A Mac
 	// always describes itself.
-	Model record.Platform
+	Model model.Platform
 	// Adapter selects how Base is treated: empty admits the released
 	// families this dockhand supports, and PreviewAdapter a development
 	// build instead. No command sets it; the evaluator's tests do.
@@ -44,15 +44,15 @@ type Evaluator struct {
 type LedgerReport struct {
 	Portfile string
 	Port     string
-	Platform record.Platform
+	Platform model.Platform
 	Modeled  bool
 	Entries  []macports.LedgerEntry
 }
 
 // DefaultModel is the platform a host that is not a Mac models unless told
 // otherwise: the current macOS on Apple silicon.
-func DefaultModel() record.Platform {
-	return record.Platform{OS: "darwin", Version: strconv.Itoa(macos.CurrentDarwin), Architecture: "arm64"}
+func DefaultModel() model.Platform {
+	return model.Platform{OS: "darwin", Version: strconv.Itoa(macos.CurrentDarwin), Architecture: "arm64"}
 }
 
 //go:embed evaluator.tcl
@@ -120,7 +120,7 @@ func (e *Evaluator) start(ctx context.Context, tree macports.Tree) (*rpc.Session
 			return fail(err)
 		}
 	}
-	if tree.Platform() != (record.Platform{}) && tree.Platform() != runtime.Platform {
+	if tree.Platform() != (model.Platform{}) && tree.Platform() != runtime.Platform {
 		return fail(fmt.Errorf("%w: MacPorts Base %s; requested %+v; native %+v", macports.ErrPlatform, runtime.BaseVersion, tree.Platform(), runtime.Platform))
 	}
 	return session, runtime, nil
@@ -131,20 +131,20 @@ func (e *Evaluator) start(ctx context.Context, tree macports.Tree) (*rpc.Session
 // given, and reads the platform back from the interpreter rather than
 // assuming the override took.
 func (e *Evaluator) model(ctx context.Context, session *rpc.Session, runtime macports.Runtime) (macports.Runtime, error) {
-	model := e.Model
-	if model == (record.Platform{}) {
-		model = DefaultModel()
+	platform := e.Model
+	if platform == (model.Platform{}) {
+		platform = DefaultModel()
 	}
-	overrides, err := macports.ModelVariables(model, "")
+	overrides, err := macports.ModelVariables(platform, "")
 	if err != nil {
 		return runtime, fmt.Errorf("%w: %w", macports.ErrPlatform, err)
 	}
 	// The session's own context is modelled throughout, so its tools must
 	// be in the facts table.
-	if _, err := macports.Toolchain(model, ""); err != nil {
+	if _, err := macports.Toolchain(platform, ""); err != nil {
 		return runtime, fmt.Errorf("%w: %w", macports.ErrPlatform, err)
 	}
-	toolchain, err := macports.ToolchainAnswers(model, "")
+	toolchain, err := macports.ToolchainAnswers(platform, "")
 	if err != nil {
 		return runtime, fmt.Errorf("%w: %w", macports.ErrPlatform, err)
 	}
@@ -156,14 +156,14 @@ func (e *Evaluator) model(ctx context.Context, session *rpc.Session, runtime mac
 	if err != nil {
 		return runtime, err
 	}
-	if described != model {
-		return runtime, fmt.Errorf("%w: MacPorts Base %s on %+v describes %+v, not the modeled %+v", macports.ErrPlatform, runtime.BaseVersion, runtime.Platform, described, model)
+	if described != platform {
+		return runtime, fmt.Errorf("%w: MacPorts Base %s on %+v describes %+v, not the modeled %+v", macports.ErrPlatform, runtime.BaseVersion, runtime.Platform, described, platform)
 	}
-	runtime.Host, runtime.Platform = runtime.Platform, model
+	runtime.Host, runtime.Platform = runtime.Platform, platform
 	return runtime, nil
 }
 
-func (e *Evaluator) NativePlatform(ctx context.Context) (record.Platform, error) {
+func (e *Evaluator) NativePlatform(ctx context.Context) (model.Platform, error) {
 	runtime, err := e.Inspect(ctx)
 	return runtime.Platform, err
 }
@@ -267,7 +267,7 @@ func evaluateIn(ctx context.Context, session *rpc.Session, runtime macports.Runt
 		overrides, toolchain := "", ""
 		modelled := runtime.Platform
 		if modelsContext(runtime, request) {
-			if request.Platform != (record.Platform{}) {
+			if request.Platform != (model.Platform{}) {
 				modelled = request.Platform
 			}
 			var err error
@@ -332,7 +332,7 @@ func evaluateIn(ctx context.Context, session *rpc.Session, runtime macports.Runt
 	}
 	snapshot := macports.Snapshot{Source: source.Source(), Target: source.Target(), Platform: runtime.Platform, Runtime: runtime, Ports: ports, Root: source.Root(), ObservedAt: time.Now().UTC()}
 	other := request != nil && modelsContext(runtime, request)
-	if other && request.Platform != (record.Platform{}) {
+	if other && request.Platform != (model.Platform{}) {
 		snapshot.Platform = request.Platform
 	}
 	// A runtime that models its own platform models every context.
@@ -342,7 +342,7 @@ func evaluateIn(ctx context.Context, session *rpc.Session, runtime macports.Runt
 // modelsContext reports whether a request's context is modelled rather
 // than the session's own: another platform, or stated developer tools.
 func modelsContext(runtime macports.Runtime, request *macports.ObservationRequest) bool {
-	return request.Platform != (record.Platform{}) && request.Platform != runtime.Platform || request.DeveloperTools != ""
+	return request.Platform != (model.Platform{}) && request.Platform != runtime.Platform || request.DeveloperTools != ""
 }
 
 func evaluateOne(ctx context.Context, session *rpc.Session, source macports.Context, subport string) (macports.PortInfo, []string, error) {

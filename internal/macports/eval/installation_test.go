@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
@@ -150,12 +150,12 @@ func TestFileStatSetsItsCallersArray(t *testing.T) {
 
 // observedDescription observes lines in a platform's context, leaving a Tcl
 // list in results that the port's description carries out.
-func observedDescription(t *testing.T, platform record.Platform, lines string) ([]string, macports.PortObservation) {
+func observedDescription(t *testing.T, platform model.Platform, lines string) ([]string, macports.PortObservation) {
 	t.Helper()
 	e := liveEvaluator(t)
 	tree := fixtureTree(t)
 	putFile(t, tree.Root(), "devel/effects/Portfile", "PortSystem 1.0\nname effects\nversion 1\nset results {}\n"+lines+"\ndescription {*}$results\n")
-	bound, err := tree.Select(record.Target{Name: "effects", Portfile: "devel/effects/Portfile"})
+	bound, err := tree.Select(model.Target{Name: "effects", Portfile: "devel/effects/Portfile"})
 	require.NoError(t, err)
 	got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Declarations: true, Platform: platform})
 	require.NoError(t, err)
@@ -174,12 +174,12 @@ func TestAModelledContextTakesItsToolsFromTheTable(t *testing.T) {
 		"lappend results [file executable /Library/Developer/CommandLineTools/usr/bin/make] [file exists /usr/lib/libxcselect.dylib] [file exists /Applications/Xcode.app]",
 	}, "\n")
 	for _, c := range []struct {
-		platform record.Platform
+		platform model.Platform
 		clang    string
 		sdk      string
 	}{
-		{record.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}, "1400.0.29.202", "MacOSX12.sdk"},
-		{record.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"}, "2100.1.1.101", "MacOSX26.sdk"},
+		{model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}, "1400.0.29.202", "MacOSX12.sdk"},
+		{model.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"}, "2100.1.1.101", "MacOSX26.sdk"},
 	} {
 		tools, err := macports.Toolchain(c.platform, "")
 		require.NoError(t, err)

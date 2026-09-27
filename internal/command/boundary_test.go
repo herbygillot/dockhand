@@ -21,11 +21,8 @@ var commandImports = map[string]string{
 	"internal/coord":   "the command's own session, and who leads",
 	"internal/version": "the command's own version",
 	"internal/store":   "filter types for engine queries; records are read and written through the engine",
-	// Vocabulary the engine's results carry, until it moves to a package
-	// of its own (roadmap, Next): the kind of edit, a release, a
-	// checksum, and a commit-rule finding, whose explanations explain
-	// prints.
-	"internal/record":               "vocabulary in engine results",
+	// Vocabulary the engine's results carry beyond model's: a checksum,
+	// and a commit-rule finding, whose explanations explain prints.
 	"internal/macports/portfile":    "vocabulary in engine results",
 	"internal/macports/commitrules": "vocabulary in engine results, and explain's text",
 	"internal/buildenv":             "composition: the contract the providers it composes meet",

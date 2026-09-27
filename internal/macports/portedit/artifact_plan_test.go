@@ -5,7 +5,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 	"net/http"
@@ -36,7 +36,7 @@ func archiveFixture(t *testing.T, body string) (*Service, Request, *[]string) {
 	src := "PortSystem 1.0\nname fixture\ncategories devel\n" + strings.ReplaceAll(body, "@SITE@", server.URL) + "\n"
 	require.NoError(t, os.WriteFile(path, []byte(src), 0600))
 	s := &Service{Ports: &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}, Archives: archives.Client{HTTP: server.Client()}}
-	r := Request{Action: record.Bump, Source: record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, Workspace: adopt(t, root), Selection: macports.Selection{Selector: "fixture"}, Version: "1.2.4", Release: &record.Release{Selection: record.Selection{Requested: "1.2.4"}, Archive: true, Version: "1.2.4"}}
+	r := Request{Action: model.Bump, Source: model.Source{Tree: model.ObjectID(strings.Repeat("a", 40))}, Workspace: adopt(t, root), Selection: macports.Selection{Selector: "fixture"}, Version: "1.2.4", Release: &model.Release{ReleaseSelection: model.ReleaseSelection{Requested: "1.2.4"}, Archive: true, Version: "1.2.4"}}
 	return s, r, &requested
 }
 
@@ -196,7 +196,7 @@ distfiles fixture.tar.gz
 checksums sha256 aaaa size 2
 `)
 	r.Version = "1.3"
-	r.Release = &record.Release{Selection: record.Selection{Requested: "1.3"}, Archive: true, Version: "1.300", SourceVersion: "1.3"}
+	r.Release = &model.Release{ReleaseSelection: model.ReleaseSelection{Requested: "1.3"}, Archive: true, Version: "1.300", SourceVersion: "1.3"}
 	result, err := s.Prepare(t.Context(), r)
 	require.NoError(t, err)
 	require.Equal(t, []string{"/1.3/fixture.tar.gz"}, *requests)
@@ -205,7 +205,7 @@ checksums sha256 aaaa size 2
 	require.Contains(t, after, "version ${modver}00")
 	require.Contains(t, after, "revision 0")
 	require.Equal(t, "1.300", result.Release.Version)
-	r.Release = &record.Release{Selection: record.Selection{Requested: "1.3"}, Archive: true, Version: "1.3"}
+	r.Release = &model.Release{ReleaseSelection: model.ReleaseSelection{Requested: "1.3"}, Archive: true, Version: "1.3"}
 	_, err = s.Prepare(t.Context(), r)
 	require.Error(t, err, "a release whose version is not what the spelling evaluates to is refused")
 }

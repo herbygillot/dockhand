@@ -12,7 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 var errAutomaticUnsupported = errors.New("upstream: automatic selection does not support this source convention")
@@ -172,7 +172,7 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 	if spec.Catalog == portsource.Releases {
 		catalog = "published releases"
 	}
-	release := record.Release{Selection: record.Selection{CurrentVersion: port.Version, NoUpdate: comparison <= 0}, Version: candidates[index].Version, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: tag.Name, Commit: tag.Commit, ObservedAt: result.ObservedAt}
+	release := model.Release{ReleaseSelection: model.ReleaseSelection{CurrentVersion: port.Version, NoUpdate: comparison <= 0}, Version: candidates[index].Version, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: tag.Name, Commit: tag.Commit, ObservedAt: result.ObservedAt}
 	result.finish(release, port.Version, "Selected "+tag.Name+" from "+catalog, " among "+catalog)
 	if len(setAside) > 0 {
 		result.Detail += fmt.Sprintf("; set aside %s, older than %s though it compares newer", strings.Join(setAside, ", "), current)

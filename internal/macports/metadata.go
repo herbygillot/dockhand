@@ -2,10 +2,9 @@ package macports
 
 import (
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/model"
 	"strings"
 	"time"
-
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 type Dependency struct {
@@ -37,9 +36,9 @@ type PortInfo struct {
 
 type Snapshot struct {
 	Runtime    Runtime
-	Source     record.Source
-	Target     record.Target
-	Platform   record.Platform
+	Source     model.Source
+	Target     model.Target
+	Platform   model.Platform
 	Ports      map[string]PortInfo
 	ObservedAt time.Time
 	// Root is the directory the evaluation ran in, which option values

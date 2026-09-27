@@ -7,7 +7,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // Source supplies the index of a tree: staged into the tree's root when it
@@ -33,7 +33,7 @@ type Stager struct {
 	Config Config
 	// NativePlatform supplies the platform for a tree that names none; nil
 	// refuses such a tree.
-	NativePlatform func(context.Context) (record.Platform, error)
+	NativePlatform func(context.Context) (model.Platform, error)
 	WithoutBase    bool
 
 	mu     sync.Mutex

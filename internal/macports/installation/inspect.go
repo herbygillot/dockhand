@@ -5,18 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/model"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macos"
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 type Facts struct {
 	Prefix      string
 	Version     string
-	Platform    record.Platform
+	Platform    model.Platform
 	ActivePorts []string
 	Problems    []string
 }
@@ -78,7 +78,7 @@ func Inspect(ctx context.Context, command macos.Command, prefix string) (Facts, 
 	} else {
 		fields := strings.Fields(string(out))
 		if len(fields) == 3 {
-			result.Platform = record.Platform{OS: fields[0], Version: fields[1], Architecture: fields[2]}
+			result.Platform = model.Platform{OS: fields[0], Version: fields[1], Architecture: fields[2]}
 		} else {
 			result.Problems = append(result.Problems, "MacPorts returned an unrecognized platform: "+strings.TrimSpace(string(out)))
 		}

@@ -1,13 +1,13 @@
 package eval
 
 import (
-	"github.com/herbygillot/dockhand/internal/record"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/stretchr/testify/require"
 )
@@ -116,7 +116,7 @@ func TestObservationSetupRefusesUnsupportedPlatforms(t *testing.T) {
 	reply := tcl("catch {::dockhand::observation_setup {os_major 21 os_arch} 0 {} {}} message; set message")
 	require.Equal(t, "unsupported modeled platform", reply)
 	require.Equal(t, "0", tcl("set ::dockhand::modeled"), "a refused setup leaves the session unmodeled")
-	platform := record.Platform{OS: "darwin", Version: "21", Architecture: "x86_64"}
+	platform := model.Platform{OS: "darwin", Version: "21", Architecture: "x86_64"}
 	overrides, err := macports.ModelVariables(platform, "")
 	require.NoError(t, err)
 	toolchain, err := macports.ToolchainAnswers(platform, "")

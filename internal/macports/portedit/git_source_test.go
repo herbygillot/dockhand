@@ -1,15 +1,15 @@
 package portedit
 
 import (
+	"github.com/herbygillot/dockhand/internal/model"
 	"strings"
 	"testing"
 
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/stretchr/testify/require"
 )
 
-func gitRelease(commit string) *record.Release {
-	return &record.Release{Selection: record.Selection{Requested: "1.2.4", CurrentVersion: "1.2.3"}, Version: "1.2.4", Tag: "v1.2.4", Commit: commit}
+func gitRelease(commit string) *model.Release {
+	return &model.Release{ReleaseSelection: model.ReleaseSelection{Requested: "1.2.4", CurrentVersion: "1.2.3"}, Version: "1.2.4", Tag: "v1.2.4", Commit: commit}
 }
 
 // A port fetched with git bumps through its version alone: nothing is

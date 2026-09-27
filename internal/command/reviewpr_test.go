@@ -2,14 +2,13 @@ package command
 
 import (
 	"bytes"
+	"github.com/herbygillot/dockhand/internal/forge"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 func TestReviewShowsThenPostsOnlyWhenAsked(t *testing.T) {
@@ -20,7 +19,7 @@ func TestReviewShowsThenPostsOnlyWhenAsked(t *testing.T) {
 	gitRun(t, w.upstream, "commit", "-q", "-am", "Update jq docs")
 	gitRun(t, w.upstream, "update-ref", "refs/pull/34905/head", "contrib")
 	gitRun(t, w.upstream, "switch", "-q", "master")
-	g.theirs = map[int]record.PullRequest{34905: {Ref: record.PullRequestRef{Forge: "github", Repository: "macports/macports-ports", Number: 34905, URL: "https://github.com/macports/macports-ports/pull/34905"}, Title: "Update jq docs", State: record.PullRequestOpen}}
+	g.theirs = map[int]forge.PullRequest{34905: {Ref: forge.PullRequestRef{Forge: "github", Repository: "macports/macports-ports", Number: 34905, URL: "https://github.com/macports/macports-ports/pull/34905"}, Title: "Update jq docs", State: forge.PullRequestOpen}}
 
 	_, _, err := dockhand(t, "review", "x")
 	require.ErrorContains(t, err, `"x" is not a pull request number`)
@@ -56,8 +55,8 @@ func TestAdoptSomeonesPullRequest(t *testing.T) {
 	gitRun(t, w.upstream, "commit", "-q", "-am", "jq: document the options")
 	gitRun(t, w.upstream, "update-ref", "refs/pull/34905/head", "contrib")
 	gitRun(t, w.upstream, "switch", "-q", "master")
-	g.theirs = map[int]record.PullRequest{34905: {Ref: record.PullRequestRef{Forge: "github", Repository: "macports/macports-ports", Number: 34905},
-		HeadRepository: "newcontrib/macports-ports", HeadBranch: "patch-1", Title: "jq: document the options", State: record.PullRequestOpen, Author: "newcontrib", MaintainerCanModify: true}}
+	g.theirs = map[int]forge.PullRequest{34905: {Ref: forge.PullRequestRef{Forge: "github", Repository: "macports/macports-ports", Number: 34905},
+		HeadRepository: "newcontrib/macports-ports", HeadBranch: "patch-1", Title: "jq: document the options", State: forge.PullRequestOpen, Author: "newcontrib", MaintainerCanModify: true}}
 
 	_, _, err := dockhand(t, "adopt", "x", "--pr", "34905")
 	require.ErrorContains(t, err, "adopt takes a branch or --pr, not both")

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/subprocess"
 	"io"
 	"io/fs"
@@ -23,7 +24,6 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/progress"
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 const portIndexName = "PortIndex"
@@ -52,7 +52,7 @@ type Config struct {
 // The mirror names an index by the kernel architecture MacPorts reports as
 // os.arch, arm or i386, not by the build architecture a platform record
 // carries, so arm64 maps to arm and x86_64 to i386.
-func DefaultMirrorURL(platform record.Platform) (string, error) {
+func DefaultMirrorURL(platform model.Platform) (string, error) {
 	return MirrorURL("", platform)
 }
 
@@ -62,7 +62,7 @@ const DefaultMirrorBase = "https://ftp.fau.de/macports/release/tarballs"
 
 // MirrorURL is the platform's index under a mirror's tarballs directory,
 // the default mirror's when base is empty.
-func MirrorURL(base string, platform record.Platform) (string, error) {
+func MirrorURL(base string, platform model.Platform) (string, error) {
 	for _, value := range []string{platform.OS, platform.Version, platform.Architecture} {
 		if value == "" || strings.ContainsAny(value, "/\\\x00\r\n\t ") {
 			return "", fmt.Errorf("portindex: complete platform required for mirror")
@@ -191,7 +191,7 @@ func indexerEnvironment(configuration string) []string {
 // materialized source root. Completed generations are shared by every consumer
 // naming the same tree and indexing environment; a contribution's candidate
 // derives from the generation of its recorded base.
-func Stage(ctx context.Context, repo *git.Repository, source record.Source, platform record.Platform, c Config, into macports.Tree) error {
+func Stage(ctx context.Context, repo *git.Repository, source model.Source, platform model.Platform, c Config, into macports.Tree) error {
 	root, projection := into.Root(), into.Projection()
 	resolved, err := ResolveTool(ctx, c)
 	if err != nil {
@@ -236,7 +236,7 @@ func Stage(ctx context.Context, repo *git.Repository, source record.Source, plat
 	return install(entry, root)
 }
 
-func sourceBaseTree(ctx context.Context, repo *git.Repository, source record.Source) (string, error) {
+func sourceBaseTree(ctx context.Context, repo *git.Repository, source model.Source) (string, error) {
 	if source.Base == "" {
 		return "", nil
 	}
@@ -297,7 +297,7 @@ func sameFile(source, destination string) bool {
 // the seed's entries are reused and the changed port directories are reindexed.
 // The guard, when present, is inherited by the indexer so the generation lock
 // outlives a parent that exits mid-build.
-func buildPortIndex(ctx context.Context, c Config, platform record.Platform, sourceRoot string, projection macports.Projection, destination, seed string, changed []string, strict bool, guard *os.File, meta generation) (err error) {
+func buildPortIndex(ctx context.Context, c Config, platform model.Platform, sourceRoot string, projection macports.Projection, destination, seed string, changed []string, strict bool, guard *os.File, meta generation) (err error) {
 	short := meta.Tree
 	if len(short) > 12 {
 		short = short[:12]
@@ -359,7 +359,7 @@ func buildPortIndex(ctx context.Context, c Config, platform record.Platform, sou
 		if goruntime.GOOS != "darwin" {
 			// A host that is not a Mac models the Mac's toolchain as well,
 			// in the Command Line Tools profile.
-			describe = func(platform record.Platform) (string, error) { return macports.ModelVariables(platform, "") }
+			describe = func(platform model.Platform) (string, error) { return macports.ModelVariables(platform, "") }
 		}
 		overrides, err := describe(platform)
 		if err != nil {

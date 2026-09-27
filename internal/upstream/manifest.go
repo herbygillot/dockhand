@@ -7,7 +7,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // manifestLimit bounds a manifest read from a forge; go.mod is small.
@@ -17,7 +17,7 @@ const manifestLimit = 1 << 20
 // release's commit, for a git-fetched port that downloads no archive to
 // read it from. An absent file reports macports.ErrManifestMissing, as
 // the archive read does.
-func (s *Service) Manifest(ctx context.Context, port macports.PortInfo, release record.Release, path string) ([]byte, error) {
+func (s *Service) Manifest(ctx context.Context, port macports.PortInfo, release model.Release, path string) ([]byte, error) {
 	if release.Forge == "" || release.Commit == "" {
 		return nil, fmt.Errorf("upstream: a forge release with a commit is required to read %s", path)
 	}

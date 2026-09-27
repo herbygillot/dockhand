@@ -8,7 +8,6 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 func TestEditExpandsTheWorktreeToThePort(t *testing.T) {
@@ -30,9 +29,9 @@ func TestRevbumpRecordsItsReasonForTidy(t *testing.T) {
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "poppler-25.09"})
 	require.NoError(t, err)
-	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: record.BumpRevision, Port: "jq"})
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.BumpRevision, Port: "jq"})
 	require.ErrorContains(t, err, "needs its reason as the subject")
-	update, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: record.BumpRevision, Port: "jq", Subject: "rebuild for oniguruma 6.9.10"})
+	update, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.BumpRevision, Port: "jq", Subject: "rebuild for oniguruma 6.9.10"})
 	require.NoError(t, err)
 	require.Equal(t, 0, update.Before.Revision)
 	require.Equal(t, 1, update.After.Revision)

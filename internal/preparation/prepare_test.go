@@ -11,8 +11,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
@@ -37,7 +37,7 @@ func preparationFixture(t *testing.T, body string) (*preparation.Service, prepar
 	commit, tree, err := repo.Branch(t.Context(), "candidate")
 	require.NoError(t, err)
 	return &preparation.Service{Repo: repo, Ports: &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}}, preparation.Request{
-		Action: record.BumpRevision, Source: record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree)}, Selection: macports.Selection{Selector: "fixture"}, Subject: "rebuild against updated dependency",
+		Action: model.BumpRevision, Source: model.Source{Commit: model.ObjectID(commit), Tree: model.ObjectID(tree)}, Selection: macports.Selection{Selector: "fixture"}, Subject: "rebuild against updated dependency",
 	}
 }
 
@@ -143,10 +143,10 @@ func TestPreparationDeclinesUnintendedEvaluationAndUnsupportedExpressions(t *tes
 func TestPreparationRejectsInconsistentSourceAndCancellation(t *testing.T) {
 	t.Parallel()
 	service, request := preparationFixture(t, "revision 0\n")
-	request.Source.Tree = record.ObjectID(strings.Repeat("a", 40))
+	request.Source.Tree = model.ObjectID(strings.Repeat("a", 40))
 	_, err := service.Prepare(t.Context(), request)
 	require.ErrorContains(t, err, "source commit and tree disagree")
-	request.Action = record.Bump
+	request.Action = model.Bump
 	_, err = service.Prepare(t.Context(), request)
 	require.ErrorContains(t, err, "resolved release is required")
 	ctx, cancel := context.WithCancel(t.Context())

@@ -3,12 +3,12 @@ package installation
 import (
 	"context"
 	"errors"
+	"github.com/herbygillot/dockhand/internal/model"
 	"io"
 	"os/exec"
 	"strings"
 	"testing"
 
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,7 +35,7 @@ func TestInspectReportsFactsWithoutEnforcingImagePolicy(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 3, calls)
 	require.Equal(t, "2.12.6", facts.Version)
-	require.Equal(t, record.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}, facts.Platform)
+	require.Equal(t, model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}, facts.Platform)
 	require.Equal(t, []string{"fixture @1.0_0 (active)"}, facts.ActivePorts)
 	require.Empty(t, facts.Problems)
 }
@@ -63,5 +63,5 @@ func TestInspectRejectsMalformedFacts(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, facts.Problems, 2)
 	require.Empty(t, facts.Version)
-	require.Equal(t, record.Platform{}, facts.Platform)
+	require.Equal(t, model.Platform{}, facts.Platform)
 }

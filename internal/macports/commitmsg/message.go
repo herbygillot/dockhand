@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/version"
 )
 
@@ -58,10 +57,10 @@ func Subject(name, subject string) (string, error) {
 // Compose renders a subject, an optional body, and the trailer block: the
 // references, then the attribution. Attribution and reference lines already
 // in the body move into the block, so a message carries each once.
-func Compose(subject, body string, references []record.Reference) string {
+func Compose(subject, body string, references []Reference) string {
 	var kept, trailers []string
 	seen := map[string]bool{}
-	cite := func(reference record.Reference) {
+	cite := func(reference Reference) {
 		if line := reference.Trailer(); !seen[line] {
 			seen[line] = true
 			trailers = append(trailers, line)
@@ -71,7 +70,7 @@ func Compose(subject, body string, references []record.Reference) string {
 		if IsAttribution(line) {
 			continue
 		}
-		if reference, ok := record.ParseReferenceTrailer(line); ok {
+		if reference, ok := ParseReferenceTrailer(line); ok {
 			cite(reference)
 			continue
 		}
@@ -92,14 +91,14 @@ func Compose(subject, body string, references []record.Reference) string {
 // given and adds the references it does not already cite, placing them with
 // the trailers ahead of dockhand's attribution or, when the message has
 // none, as a final paragraph. Nothing else in the message changes.
-func Rewrite(message, subject string, references []record.Reference) string {
+func Rewrite(message, subject string, references []Reference) string {
 	lines := strings.Split(strings.TrimRight(message, "\n"), "\n")
 	if subject != "" {
 		lines[0] = subject
 	}
 	seen := map[string]bool{}
 	for _, line := range lines {
-		if reference, ok := record.ParseReferenceTrailer(line); ok {
+		if reference, ok := ParseReferenceTrailer(line); ok {
 			seen[reference.Trailer()] = true
 		}
 	}
@@ -134,5 +133,5 @@ func lastParagraph(lines []string) []string {
 }
 
 func citesTickets(lines []string) bool {
-	return slices.ContainsFunc(lines, func(line string) bool { _, ok := record.ParseReferenceTrailer(line); return ok })
+	return slices.ContainsFunc(lines, func(line string) bool { _, ok := ParseReferenceTrailer(line); return ok })
 }

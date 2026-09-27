@@ -1,7 +1,7 @@
 package macos
 
 import (
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/stretchr/testify/require"
 	"testing"
 )
@@ -41,10 +41,10 @@ func TestProductForDarwinDoesNotExtendProvisioning(t *testing.T) {
 }
 
 func TestDescribeWordsDarwinAsMacOS(t *testing.T) {
-	require.Equal(t, "macOS 26 (Tahoe) arm64", Describe(record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}))
-	require.Equal(t, "macOS 15 (Sequoia)", Describe(record.Platform{OS: "darwin", Version: "24"}))
-	require.Equal(t, "darwin 99 arm64", Describe(record.Platform{OS: "darwin", Version: "99", Architecture: "arm64"}), "an unknown release keeps the raw fields")
-	require.Equal(t, "linux 6", Describe(record.Platform{OS: "linux", Version: "6"}))
+	require.Equal(t, "macOS 26 (Tahoe) arm64", Describe(model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}))
+	require.Equal(t, "macOS 15 (Sequoia)", Describe(model.Platform{OS: "darwin", Version: "24"}))
+	require.Equal(t, "darwin 99 arm64", Describe(model.Platform{OS: "darwin", Version: "99", Architecture: "arm64"}), "an unknown release keeps the raw fields")
+	require.Equal(t, "linux 6", Describe(model.Platform{OS: "linux", Version: "6"}))
 }
 
 // The table is the one place the release set is written. Everything that names
@@ -79,10 +79,10 @@ func TestGoldenGateIsMacOS27OnDarwin27(t *testing.T) {
 	release, err := ReleaseForDarwin(27)
 	require.NoError(t, err)
 	require.Equal(t, Release{Darwin: 27, Product: "27", Name: "Golden Gate", Slug: "golden-gate", Tools: 27}, release)
-	require.Equal(t, "macOS 27 (Golden Gate) arm64", Describe(record.Platform{OS: "darwin", Version: "27", Architecture: "arm64"}))
+	require.Equal(t, "macOS 27 (Golden Gate) arm64", Describe(model.Platform{OS: "darwin", Version: "27", Architecture: "arm64"}))
 	_, err = ReleaseForDarwin(26)
 	require.Error(t, err)
 	_, err = ProductForDarwin(26)
 	require.Error(t, err)
-	require.Equal(t, "darwin 26 arm64", Describe(record.Platform{OS: "darwin", Version: "26", Architecture: "arm64"}))
+	require.Equal(t, "darwin 26 arm64", Describe(model.Platform{OS: "darwin", Version: "26", Architecture: "arm64"}))
 }

@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/preparation"
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // decoded is a --json envelope, read back loosely.
@@ -181,7 +181,7 @@ func TestJSONForTheWholeLoop(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "https://guide.macports.org/#project.github", dig(t, explained.Result, "sources", 0, "url"))
 
-	g.prs[0].State = record.PullRequestMerged
+	g.prs[0].State = forge.PullRequestMerged
 	t.Setenv("MACPORTS_TREE", w.clone)
 	_, _, err = dockhand(t, "status", "--refresh")
 	require.NoError(t, err)

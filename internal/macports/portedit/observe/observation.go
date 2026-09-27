@@ -11,7 +11,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 type key struct {
@@ -24,7 +24,7 @@ type key struct {
 // interpreter, so the observations run concurrently on an immutable
 // projection; results keep the profiles' order. Baseline observations come from and go
 // to the session's cache like single observations do.
-func (s *Session) Observe(ctx context.Context, contents []byte, profiles []record.Platform, declarations, selectedOnly bool) ([]macports.Observation, error) {
+func (s *Session) Observe(ctx context.Context, contents []byte, profiles []model.Platform, declarations, selectedOnly bool) ([]macports.Observation, error) {
 	observer := s.Ports
 	results := make([]macports.Observation, len(profiles))
 	requests := make([]macports.ObservationRequest, len(profiles))
@@ -70,7 +70,7 @@ func (s *Session) Observe(ctx context.Context, contents []byte, profiles []recor
 			if err != nil {
 				return fmt.Errorf("%+v: %w", profiles[i], err)
 			}
-			observed.Snapshot.Source = record.Source{}
+			observed.Snapshot.Source = model.Source{}
 			results[i] = observed
 			return nil
 		})
@@ -124,7 +124,7 @@ func (s *Session) One(ctx context.Context, contents []byte, profile macports.Obs
 		return macports.Observation{}, err
 	}
 	observed, err := observer.Observe(ctx, bound, profile)
-	observed.Snapshot.Source = record.Source{}
+	observed.Snapshot.Source = model.Source{}
 	if err == nil && baseline {
 		if s.cache == nil {
 			s.cache = make(map[key]macports.Observation)

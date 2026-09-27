@@ -9,29 +9,28 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	githubapi "github.com/herbygillot/dockhand/internal/github"
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // Inspect reports mergeability, the latest review from each reviewer, check
 // runs, and commit statuses for the pull request's current head. It reads
 // only; nothing here reruns, comments, or merges.
-func (c *Client) Inspect(ctx context.Context, ref record.PullRequestRef) (record.PullRequestStatus, error) {
+func (c *Client) Inspect(ctx context.Context, ref forge.PullRequestRef) (forge.PullRequestStatus, error) {
 	if ref.Forge != forge.GitHub || !githubapi.ValidRepositoryName(ref.Repository) || ref.Number <= 0 {
-		return record.PullRequestStatus{}, fmt.Errorf("github: invalid pull-request reference")
+		return forge.PullRequestStatus{}, fmt.Errorf("github: invalid pull-request reference")
 	}
 	client, err := c.API(ctx)
 	if err != nil {
-		return record.PullRequestStatus{}, githubapi.RateLimitError(err)
+		return forge.PullRequestStatus{}, githubapi.RateLimitError(err)
 	}
 	owner, repo, _ := strings.Cut(ref.Repository, "/")
 	row, _, err := client.PullRequests.Get(ctx, owner, repo, ref.Number)
 	if err != nil {
-		return record.PullRequestStatus{}, githubapi.RateLimitError(err)
+		return forge.PullRequestStatus{}, githubapi.RateLimitError(err)
 	}
 	if row.GetNumber() != ref.Number || row.Head == nil || row.Head.GetSHA() == "" {
-		return record.PullRequestStatus{}, fmt.Errorf("github: response identifies another pull request")
+		return forge.PullRequestStatus{}, fmt.Errorf("github: response identifies another pull request")
 	}
-	status := record.PullRequestStatus{Draft: row.GetDraft(), Mergeable: "unknown", MergeableDetail: row.GetMergeableState(), Review: "none", ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}
+	status := forge.PullRequestStatus{Draft: row.GetDraft(), Mergeable: "unknown", MergeableDetail: row.GetMergeableState(), Review: "none", ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}
 	if row.Mergeable != nil {
 		status.Mergeable = map[bool]string{true: "yes", false: "no"}[*row.Mergeable]
 	}
@@ -41,7 +40,7 @@ func (c *Client) Inspect(ctx context.Context, ref record.PullRequestRef) (record
 	latest := map[string]string{}
 	for review, err := range client.PullRequests.ListReviewsIter(ctx, owner, repo, ref.Number, nil) {
 		if err != nil {
-			return record.PullRequestStatus{}, githubapi.RateLimitError(err)
+			return forge.PullRequestStatus{}, githubapi.RateLimitError(err)
 		}
 		switch review.GetState() {
 		case "APPROVED", "CHANGES_REQUESTED":
@@ -68,7 +67,7 @@ func (c *Client) Inspect(ctx context.Context, ref record.PullRequestRef) (record
 	head := row.Head.GetSHA()
 	for run, err := range client.Checks.ListCheckRunsForRefIter(ctx, owner, repo, head, nil) {
 		if err != nil {
-			return record.PullRequestStatus{}, githubapi.RateLimitError(err)
+			return forge.PullRequestStatus{}, githubapi.RateLimitError(err)
 		}
 		status.Checks.Total++
 		switch {
@@ -83,7 +82,7 @@ func (c *Client) Inspect(ctx context.Context, ref record.PullRequestRef) (record
 	}
 	combined, _, err := client.Repositories.GetCombinedStatus(ctx, owner, repo, head, nil)
 	if err != nil {
-		return record.PullRequestStatus{}, githubapi.RateLimitError(err)
+		return forge.PullRequestStatus{}, githubapi.RateLimitError(err)
 	}
 	for _, item := range combined.Statuses {
 		status.Checks.Total++

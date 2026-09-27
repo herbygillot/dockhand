@@ -12,7 +12,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -310,7 +309,7 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 
 	var observed forge.PullRequestObservation
 	if pr := plan.Branch.PullRequest; pr != nil {
-		observed, err = f.Observe(ctx, record.PullRequestRef{Forge: forge.GitHub, Repository: pr.Repository, Number: pr.Number})
+		observed, err = f.Observe(ctx, forge.PullRequestRef{Forge: forge.GitHub, Repository: pr.Repository, Number: pr.Number})
 	} else {
 		observed, err = f.Find(ctx, forge.PullRequestQuery{Repository: UpstreamRepository, HeadRepository: plan.HeadRepository, HeadBranch: plan.RemoteBranch(), BaseBranch: UpstreamBranch})
 	}
@@ -321,7 +320,7 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 		return nil
 	}
 	pr := observed.PullRequest
-	if pr.State != record.PullRequestOpen {
+	if pr.State != forge.PullRequestOpen {
 		return fmt.Errorf("#%d is %s; start a new branch for further work (dockhand start)", pr.Ref.Number, pr.State)
 	}
 	plan.Existing = &observed
@@ -373,7 +372,7 @@ func (e *Engine) theirRemote(ctx context.Context, remotes []git.Remote, reposito
 // mayPushTheirs checks that GitHub lets you push to someone's pull
 // request: they allow maintainers to edit it, and you have write access
 // to MacPorts' repository. Otherwise the plan says what stands in the way.
-func (e *Engine) mayPushTheirs(ctx context.Context, plan *SubmitPlan, login string, pr record.PullRequest) error {
+func (e *Engine) mayPushTheirs(ctx context.Context, plan *SubmitPlan, login string, pr forge.PullRequest) error {
 	if !pr.MaintainerCanModify {
 		plan.Blocking = append(plan.Blocking, fmt.Sprintf("@%s's #%d doesn't let maintainers push to %s; suggest your changes in a review (dockhand review %d), or ask them to allow edits", pr.Author, pr.Ref.Number, plan.Head(), pr.Ref.Number))
 		return nil
@@ -435,7 +434,7 @@ func (e *Engine) searchOthers(ctx context.Context, plan *SubmitPlan) {
 
 // Submitted is what submit did.
 type Submitted struct {
-	PullRequest record.PullRequest
+	PullRequest forge.PullRequest
 	Created     bool
 	Pushed      bool
 }
@@ -471,7 +470,7 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, e
 		result.Pushed = true
 	}
 	input := forge.PullRequestInput{Repository: plan.Repository, BaseBranch: UpstreamBranch, HeadBranch: plan.RemoteBranch(), HeadRepository: plan.HeadRepository,
-		Desired: record.PublicationContent{Head: record.ObjectID(plan.Commit), Title: plan.Title, Body: plan.Body}, Draft: plan.Request.Draft}
+		Desired: forge.PullRequestContent{Head: model.ObjectID(plan.Commit), Title: plan.Title, Body: plan.Body}, Draft: plan.Request.Draft}
 	var observed forge.PullRequestObservation
 	if plan.Existing == nil {
 		observed, err = e.forge().Create(ctx, input)
@@ -542,7 +541,7 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, e
 // again; with none, the failure stands.
 func (e *Engine) createdAnyway(ctx context.Context, plan SubmitPlan, failed error) (forge.PullRequestObservation, error) {
 	found, err := e.forge().Find(ctx, forge.PullRequestQuery{Repository: UpstreamRepository, HeadRepository: plan.HeadRepository, HeadBranch: plan.RemoteBranch(), BaseBranch: UpstreamBranch})
-	if err != nil || !found.Found || found.PullRequest.State != record.PullRequestOpen {
+	if err != nil || !found.Found || found.PullRequest.State != forge.PullRequestOpen {
 		return forge.PullRequestObservation{}, failed
 	}
 	return found, nil
@@ -559,7 +558,7 @@ func (e *Engine) Ready(ctx context.Context, branch model.Branch) (model.Branch, 
 	if pr == nil {
 		return branch, fmt.Errorf("%s has no pull request yet; dockhand submit opens one", branch.Name)
 	}
-	if _, err := e.forge().MarkReady(ctx, record.PullRequestRef{Forge: forge.GitHub, Repository: pr.Repository, Number: pr.Number}); err != nil {
+	if _, err := e.forge().MarkReady(ctx, forge.PullRequestRef{Forge: forge.GitHub, Repository: pr.Repository, Number: pr.Number}); err != nil {
 		return branch, fmt.Errorf("marking #%d ready for review: %w", pr.Number, err)
 	}
 	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
@@ -590,7 +589,7 @@ func (e *Engine) RequestReview(ctx context.Context, branch model.Branch) ([]stri
 		return nil, nil
 	}
 	logins := pr.Observed.ChangesRequestedBy
-	if err := e.forge().RequestReviewers(ctx, record.PullRequestRef{Forge: forge.GitHub, Repository: pr.Repository, Number: pr.Number}, logins); err != nil {
+	if err := e.forge().RequestReviewers(ctx, forge.PullRequestRef{Forge: forge.GitHub, Repository: pr.Repository, Number: pr.Number}, logins); err != nil {
 		return nil, fmt.Errorf("asking %s to review #%d again: %w", strings.Join(logins, ", "), pr.Number, err)
 	}
 	err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {

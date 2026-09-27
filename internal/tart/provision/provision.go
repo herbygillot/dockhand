@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/model"
 	"io"
 	"regexp"
 	"strconv"
@@ -13,7 +14,6 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/macos"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/tart"
 )
 
@@ -24,7 +24,7 @@ type Config struct {
 	Source          string
 	MacPortsVersion string
 	GuestPrefix     string
-	Platform        record.Platform
+	Platform        model.Platform
 	Xcode           string
 	XcodeArchive    string
 	XcodeVersion    string
@@ -36,15 +36,15 @@ type Options struct {
 }
 
 type Result struct {
-	Image             string          `json:"image"`
-	GoldenImage       string          `json:"golden_image,omitempty"`
-	Source            string          `json:"source,omitempty"`
-	Platform          record.Platform `json:"platform"`
-	MacPortsVersion   string          `json:"macports_version"`
-	GuestAgentVersion string          `json:"guest_agent_version"`
-	XcodeVersion      string          `json:"xcode_version,omitempty"`
-	CommandLineTools  string          `json:"command_line_tools,omitempty"`
-	Reused            bool            `json:"reused"`
+	Image             string         `json:"image"`
+	GoldenImage       string         `json:"golden_image,omitempty"`
+	Source            string         `json:"source,omitempty"`
+	Platform          model.Platform `json:"platform"`
+	MacPortsVersion   string         `json:"macports_version"`
+	GuestAgentVersion string         `json:"guest_agent_version"`
+	XcodeVersion      string         `json:"xcode_version,omitempty"`
+	CommandLineTools  string         `json:"command_line_tools,omitempty"`
+	Reused            bool           `json:"reused"`
 }
 
 type image struct {
@@ -53,7 +53,7 @@ type image struct {
 }
 
 type validation struct {
-	Platform          record.Platform
+	Platform          model.Platform
 	MacPortsVersion   string
 	GuestAgentVersion string
 	XcodeVersion      string

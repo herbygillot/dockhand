@@ -6,10 +6,10 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macos"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
-func ReleaseForPlatform(platform record.Platform) (macos.Release, error) {
+func ReleaseForPlatform(platform model.Platform) (macos.Release, error) {
 	if platform.OS != "darwin" || platform.Architecture != "arm64" {
 		return macos.Release{}, fmt.Errorf("tart: unsupported setup platform %s %s", platform.OS, platform.Architecture)
 	}
@@ -25,7 +25,7 @@ func ReleaseForPlatform(platform record.Platform) (macos.Release, error) {
 }
 
 // DefaultImageName returns the conventional command-line-tools image name.
-func DefaultImageName(platform record.Platform) (string, error) {
+func DefaultImageName(platform model.Platform) (string, error) {
 	release, err := ReleaseForPlatform(platform)
 	if err != nil {
 		return "", err
@@ -34,7 +34,7 @@ func DefaultImageName(platform record.Platform) (string, error) {
 }
 
 // DefaultXcodeImageName returns the conventional full-Xcode image name.
-func DefaultXcodeImageName(platform record.Platform) (string, error) {
+func DefaultXcodeImageName(platform model.Platform) (string, error) {
 	release, err := ReleaseForPlatform(platform)
 	if err != nil {
 		return "", err
@@ -43,7 +43,7 @@ func DefaultXcodeImageName(platform record.Platform) (string, error) {
 }
 
 // DefaultSource returns the vanilla OCI image used to provision a platform.
-func DefaultSource(platform record.Platform) (string, error) {
+func DefaultSource(platform model.Platform) (string, error) {
 	release, err := ReleaseForPlatform(platform)
 	if err != nil {
 		return "", err

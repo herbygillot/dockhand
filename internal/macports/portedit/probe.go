@@ -9,19 +9,19 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // ProbeSource selects a port in a workspace. Probing evaluates candidates
 // as overlays of the workspace and never writes into it; it does not fetch
 // archives.
 type ProbeSource struct {
-	record.EditIntent
-	Source    record.Source
+	model.EditIntent
+	Source    model.Source
 	Workspace *workspace.Workspace
 	Selection macports.Selection
-	Platform  record.Platform
+	Platform  model.Platform
 }
 
 // VersionProbe binds source metadata and candidate evaluation to one workspace.
@@ -125,7 +125,7 @@ func (p *VersionProbe) EvaluateVersions(ctx context.Context, values []string) ([
 }
 
 // CheckRelease applies the stricter edit-fidelity checks after release selection.
-func (p *VersionProbe) CheckRelease(ctx context.Context, release record.Release) error {
+func (p *VersionProbe) CheckRelease(ctx context.Context, release model.Release) error {
 	if release.NoUpdate {
 		return nil
 	}

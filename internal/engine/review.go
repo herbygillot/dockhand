@@ -12,7 +12,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -20,9 +19,9 @@ import (
 // (Design v3 §6.11): its commits and Portfiles against §8's rules, and
 // which findings of the last review are resolved.
 type ReviewReport struct {
-	Ref   record.PullRequestRef
+	Ref   forge.PullRequestRef
 	Title string
-	State record.PullRequestState
+	State forge.PullRequestState
 	// Login is who would post it, and Permission their role on the
 	// repository: admin, maintain, write, triage, read, or none.
 	Login, Permission string
@@ -61,7 +60,7 @@ func (r ReviewReport) Summary() string {
 // head, applies the commit rules to its commits and Portfiles, and
 // compares the findings with the last review's. It posts nothing.
 func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
-	ref := record.PullRequestRef{Forge: forge.GitHub, Repository: UpstreamRepository, Number: number}
+	ref := forge.PullRequestRef{Forge: forge.GitHub, Repository: UpstreamRepository, Number: number}
 	report := ReviewReport{Ref: ref}
 	f := e.forge()
 	observed, err := f.Observe(ctx, ref)

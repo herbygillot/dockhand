@@ -10,7 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	githubapi "github.com/herbygillot/dockhand/internal/github"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 func pullRequestObservation(r *gh.PullRequest, repository string) (forge.PullRequestObservation, error) {
@@ -18,18 +18,18 @@ func pullRequestObservation(r *gh.PullRequest, repository string) (forge.PullReq
 	if r == nil || r.Head == nil || r.Base == nil || r.GetNumber() <= 0 || (r.Head.Repo == nil && r.GetState() != "closed") || r.Base.Repo == nil || !strings.EqualFold(r.Base.Repo.GetFullName(), repository) || (r.Head.Repo != nil && !githubapi.ValidRepositoryName(r.Head.Repo.GetFullName())) || !git.ValidBranchName(r.Head.GetRef()) || !git.ValidBranchName(r.Base.GetRef()) || !git.ValidObjectID(r.Head.GetSHA()) || (r.GetState() != "open" && r.GetState() != "closed") || r.GetTitle() == "" || r.GetHTMLURL() == "" {
 		return forge.PullRequestObservation{}, fmt.Errorf("github: invalid pull-request observation")
 	}
-	state := record.PullRequestOpen
+	state := forge.PullRequestOpen
 	if r.GetState() == "closed" {
-		state = record.PullRequestClosed
+		state = forge.PullRequestClosed
 	}
 	if r.MergedAt != nil {
-		state = record.PullRequestMerged
+		state = forge.PullRequestMerged
 	}
 	body := ""
 	if r.Body != nil {
 		body = *r.Body
 	}
-	return forge.PullRequestObservation{Found: true, ObservedAt: at, PullRequest: record.PullRequest{Ref: record.PullRequestRef{Forge: forge.GitHub, Repository: repository, Number: r.GetNumber(), URL: r.GetHTMLURL()}, HeadRepository: r.Head.Repo.GetFullName(), HeadBranch: r.Head.GetRef(), BaseBranch: r.Base.GetRef(), State: state, RemoteHead: record.ObjectID(r.Head.GetSHA()), Title: r.GetTitle(), Body: body, Author: r.GetUser().GetLogin(), MaintainerCanModify: r.GetMaintainerCanModify(), ObservedAt: at}}, nil
+	return forge.PullRequestObservation{Found: true, ObservedAt: at, PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Forge: forge.GitHub, Repository: repository, Number: r.GetNumber(), URL: r.GetHTMLURL()}, HeadRepository: r.Head.Repo.GetFullName(), HeadBranch: r.Head.GetRef(), BaseBranch: r.Base.GetRef(), State: state, RemoteHead: model.ObjectID(r.Head.GetSHA()), Title: r.GetTitle(), Body: body, Author: r.GetUser().GetLogin(), MaintainerCanModify: r.GetMaintainerCanModify(), ObservedAt: at}}, nil
 }
 
 func validQuery(q forge.PullRequestQuery) bool {
@@ -70,7 +70,7 @@ func (c *Client) Find(ctx context.Context, q forge.PullRequestQuery) (forge.Pull
 	return found, nil
 }
 
-func (c *Client) Observe(ctx context.Context, ref record.PullRequestRef) (forge.PullRequestObservation, error) {
+func (c *Client) Observe(ctx context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error) {
 	if ref.Forge != forge.GitHub || !githubapi.ValidRepositoryName(ref.Repository) || ref.Number <= 0 {
 		return forge.PullRequestObservation{}, fmt.Errorf("github: invalid pull-request reference")
 	}
@@ -176,7 +176,7 @@ const readyMutation = `mutation($id: ID!) { markPullRequestReadyForReview(input:
 
 // MarkReady takes a draft pull request out of draft, so it is ready for
 // review, and reports it as it then is. One already ready is left alone.
-func (c *Client) MarkReady(ctx context.Context, ref record.PullRequestRef) (forge.PullRequestObservation, error) {
+func (c *Client) MarkReady(ctx context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error) {
 	if ref.Forge != forge.GitHub || !githubapi.ValidRepositoryName(ref.Repository) || ref.Number <= 0 {
 		return forge.PullRequestObservation{}, fmt.Errorf("github: invalid pull-request reference")
 	}
@@ -263,7 +263,7 @@ func (c *Client) PostReview(ctx context.Context, input forge.ReviewInput) (strin
 
 // RequestReviewers asks people to review a pull request again, as GitHub's
 // "re-request review" does.
-func (c *Client) RequestReviewers(ctx context.Context, ref record.PullRequestRef, logins []string) error {
+func (c *Client) RequestReviewers(ctx context.Context, ref forge.PullRequestRef, logins []string) error {
 	if ref.Forge != forge.GitHub || !githubapi.ValidRepositoryName(ref.Repository) || ref.Number <= 0 || len(logins) == 0 {
 		return fmt.Errorf("%w: invalid review request", forge.ErrRejected)
 	}

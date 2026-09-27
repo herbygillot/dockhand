@@ -16,13 +16,13 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/survey"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
 // Result retains the frozen source and independent observations for selected ports.
 type Result struct {
-	Source record.Source
+	Source model.Source
 	Ports  []Port
 }
 
@@ -190,7 +190,7 @@ func (s *Service) concurrency() int {
 
 // observeOne looks up one selected port's newest release. A problem with
 // the port is its result; only releasing its probe can fail the survey.
-func (s *Service) observeOne(ctx context.Context, editor *portedit.Service, files *survey.Workspace, platform record.Platform, selected survey.Port) (Port, error) {
+func (s *Service) observeOne(ctx context.Context, editor *portedit.Service, files *survey.Workspace, platform model.Platform, selected survey.Port) (Port, error) {
 	item := Port{Selector: selected.Label, Result: upstream.Result{Assessment: upstream.Unknown, ObservedAt: time.Now().UTC()}}
 	probe, problem := editor.Probe(ctx, portedit.ProbeSource{Source: files.Source, Workspace: files.Projection, Selection: selected.Selection, Platform: platform})
 	if problem == nil && selected.Name != "" {

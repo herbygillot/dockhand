@@ -12,7 +12,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	forgegithub "github.com/herbygillot/dockhand/internal/forge/github"
 	"github.com/herbygillot/dockhand/internal/github"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -116,7 +115,7 @@ func TestAuthenticationFailsBeforeWritesAndDoesNotLeakCredentials(t *testing.T) 
 		err := client.Authenticate(t.Context())
 		require.ErrorIs(t, err, github.ErrAuthentication)
 		require.Zero(t, requests)
-		_, err = (&forgegithub.Client{Client: client}).Create(t.Context(), forge.PullRequestInput{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main", Desired: record.PublicationContent{Title: "update"}})
+		_, err = (&forgegithub.Client{Client: client}).Create(t.Context(), forge.PullRequestInput{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main", Desired: forge.PullRequestContent{Title: "update"}})
 		require.ErrorIs(t, err, github.ErrAuthentication)
 		require.Zero(t, requests)
 	})
@@ -183,7 +182,7 @@ func TestRejectedCredentialsIdentifySourceWithoutFallback(t *testing.T) {
 			if source == github.SourceKeychain {
 				require.NoFileExists(t, marker)
 			}
-			_, err := (&forgegithub.Client{Client: client}).Create(t.Context(), forge.PullRequestInput{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main", Desired: record.PublicationContent{Title: "update"}})
+			_, err := (&forgegithub.Client{Client: client}).Create(t.Context(), forge.PullRequestInput{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main", Desired: forge.PullRequestContent{Title: "update"}})
 			require.ErrorIs(t, err, forge.ErrRejected)
 			require.ErrorIs(t, err, forge.ErrAuthentication)
 			require.NotContains(t, err.Error(), secret)

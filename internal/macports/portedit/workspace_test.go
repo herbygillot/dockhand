@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/stretchr/testify/require"
 )
 
@@ -13,17 +13,17 @@ func TestSourceInputPathsFollowTheSelectedTarget(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	ws := adopt(t, root)
-	input := &sourceInput{session: &session{ws: ws}, target: record.Target{Portfile: "devel/fixture/Portfile"}}
+	input := &sourceInput{session: &session{ws: ws}, target: model.Target{Portfile: "devel/fixture/Portfile"}}
 	require.Equal(t, filepath.Join(ws.Root(), "devel", "fixture", "Portfile"), input.portfile())
 	require.Equal(t, filepath.Join(ws.Root(), "devel", "fixture"), input.portdir())
-	other := input.forMember(record.Target{Portfile: "devel/sibling/Portfile"})
+	other := input.forMember(model.Target{Portfile: "devel/sibling/Portfile"})
 	require.Equal(t, filepath.Join(ws.Root(), "devel", "sibling"), other.portdir(), "another member's view resolves its own paths in the same session")
 	require.Same(t, input.session, other.session)
 }
 
 func TestCommitEditRecordsFilesAndFidelityBeforeJudging(t *testing.T) {
 	t.Parallel()
-	input := &sourceInput{session: &session{}, target: record.Target{Name: "fixture", Portfile: "devel/fixture/Portfile"}}
+	input := &sourceInput{session: &session{}, target: model.Target{Name: "fixture", Portfile: "devel/fixture/Portfile"}}
 	request := Request{Subject: "because"}
 	edit := portfile.Edit{Path: "devel/fixture/Portfile", After: []byte("new")}
 	var result Result

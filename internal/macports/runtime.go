@@ -1,6 +1,8 @@
 package macports
 
-import "github.com/herbygillot/dockhand/internal/record"
+import (
+	"github.com/herbygillot/dockhand/internal/model"
+)
 
 // Runtime describes the installation observed by this evaluator session.
 // SourceReviewed records historical inspection, not runtime certification.
@@ -8,10 +10,10 @@ import "github.com/herbygillot/dockhand/internal/record"
 type Runtime struct {
 	// Platform is what the interpreter describes to a Portfile: the host's
 	// own on a Mac, and a modeled macOS elsewhere.
-	Platform record.Platform
+	Platform model.Platform
 	// Host is the platform MacPorts itself runs on when it differs from
 	// Platform, and zero when the interpreter describes its own host.
-	Host           record.Platform
+	Host           model.Platform
 	BaseVersion    string
 	TclVersion     string
 	SourceReviewed bool
@@ -21,4 +23,4 @@ type Runtime struct {
 // runs on a host that is not the platform it describes, so what a Portfile
 // reads from the host is not what a Mac would answer, and nothing it builds
 // would be evidence.
-func (r Runtime) Modeled() bool { return r.Host != (record.Platform{}) }
+func (r Runtime) Modeled() bool { return r.Host != (model.Platform{}) }

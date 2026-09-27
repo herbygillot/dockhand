@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // VersionProbe evaluates a source version against one captured Portfile.
@@ -43,6 +43,6 @@ func (s *Service) Bind(probe VersionProbe) (*Discovery, error) {
 func (d *Discovery) Discover(ctx context.Context) (Result, error) {
 	return d.service.DiscoverPort(ctx, d.port)
 }
-func (d *Discovery) Resolve(ctx context.Context, requested string) (record.Release, error) {
+func (d *Discovery) Resolve(ctx context.Context, requested string) (model.Release, error) {
 	return d.service.Resolve(ctx, d.port, requested)
 }

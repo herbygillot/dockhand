@@ -14,7 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, spec portsource.Spec) (result Result, err error) {
@@ -67,7 +67,7 @@ func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, s
 		evaluated = port.Version
 	}
 	digest := sha256.Sum256(page)
-	release := record.Release{Selection: record.Selection{CurrentVersion: port.Version, NoUpdate: comparison <= 0}, Archive: true, Version: evaluated, ObservedAt: result.ObservedAt, Listing: &record.ReleaseListing{URL: spec.Livecheck.URL, ETag: validators.Get("ETag"), LastModified: validators.Get("Last-Modified"), SHA256: hex.EncodeToString(digest[:])}}
+	release := model.Release{ReleaseSelection: model.ReleaseSelection{CurrentVersion: port.Version, NoUpdate: comparison <= 0}, Archive: true, Version: evaluated, ObservedAt: result.ObservedAt, Listing: &model.ReleaseListing{URL: spec.Livecheck.URL, ETag: validators.Get("ETag"), LastModified: validators.Get("Last-Modified"), SHA256: hex.EncodeToString(digest[:])}}
 	if version != evaluated {
 		release.SourceVersion = version
 	}

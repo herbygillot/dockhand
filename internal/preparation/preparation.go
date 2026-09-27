@@ -14,7 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
@@ -26,18 +26,18 @@ var ErrFidelity = portedit.ErrFidelity
 var ErrNotImplemented = portedit.ErrNotImplemented
 
 type Result struct {
-	Scope        *record.ReleaseScope       `json:",omitempty"`
+	Scope        *model.ReleaseScope        `json:",omitempty"`
 	Coverage     []portedit.ContextCoverage `json:",omitempty"`
-	Base         record.Source
-	Target       record.Target
-	PreparedTree record.ObjectID
+	Base         model.Source
+	Target       model.Target
+	PreparedTree model.ObjectID
 	Files        []git.FileEdit
 	Commits      []CommitIntent
 	Fidelity     []portedit.Fidelity
 	// Prepared is the evaluated snapshot of the prepared tree, bound to
 	// its committed source identity once the candidate tree is written.
 	Prepared  macports.Snapshot `json:"-"`
-	Release   *record.Release
+	Release   *model.Release
 	Downloads []archives.Download
 	// Previous are the current version's archives, kept beside the new
 	// ones when Request.KeepArchives asked, and PreviousProblem why not.
@@ -98,28 +98,28 @@ func (s *Service) open(ctx context.Context, request Request) (*workspace.Workspa
 	}
 	return s.Workspaces.Acquire(ctx, s.Repo, request.Source)
 }
-func (s *Service) ResolveRelease(ctx context.Context, request Request) (_ record.Release, err error) {
+func (s *Service) ResolveRelease(ctx context.Context, request Request) (_ model.Release, err error) {
 	files, done, err := s.open(ctx, request)
 	if err != nil {
-		return record.Release{}, err
+		return model.Release{}, err
 	}
 	defer func() { err = errors.Join(err, done()) }()
 	request.Workspace = files
-	if request.Action != record.Bump {
-		return record.Release{}, fmt.Errorf("%w: release resolution requires a bump action", ErrNotImplemented)
+	if request.Action != model.Bump {
+		return model.Release{}, fmt.Errorf("%w: release resolution requires a bump action", ErrNotImplemented)
 	}
 	probe, err := s.editor().Probe(ctx, probeSource(request))
 	if err != nil {
-		return record.Release{}, err
+		return model.Release{}, err
 	}
 	defer func() { err = errors.Join(err, probe.Close()) }()
 	discovery, err := s.Upstream.Bind(probe)
 	if err != nil {
-		return record.Release{}, err
+		return model.Release{}, err
 	}
 	release, err := discovery.Resolve(ctx, request.Version)
 	if err != nil {
-		return record.Release{}, err
+		return model.Release{}, err
 	}
 	return release, probe.CheckRelease(ctx, release)
 }
@@ -137,7 +137,7 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	defer func() { err = errors.Join(err, done()) }()
 	request.Workspace = files
 	var original macports.PortInfo
-	if request.Action == record.Bump {
+	if request.Action == model.Bump {
 		if s.Upstream == nil {
 			return Result{}, fmt.Errorf("preparation: upstream source checker required")
 		}
@@ -158,7 +158,7 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	if err != nil {
 		return result, err
 	}
-	if request.Action == record.Bump {
+	if request.Action == model.Bump {
 		if err := s.Upstream.Check(ctx, original, *request.Release); err != nil {
 			return result, err
 		}
@@ -183,7 +183,7 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	// projection of its own tree holding the target's directory, to prove
 	// the stored tree evaluates as the prepared overlay did.
 	expected := result.Prepared
-	source := record.Source{Tree: record.ObjectID(tree), Base: request.Source.Base}
+	source := model.Source{Tree: model.ObjectID(tree), Base: request.Source.Base}
 	candidate, err := workspace.Open(ctx, s.Repo, source)
 	if err != nil {
 		return result, err
@@ -210,7 +210,7 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	// records it as evidence.
 	result.Prepared = snapshot
 	result.Fidelity[len(result.Fidelity)-1].After = snapshot
-	result.PreparedTree = record.ObjectID(tree)
+	result.PreparedTree = model.ObjectID(tree)
 	return result, nil
 }
 

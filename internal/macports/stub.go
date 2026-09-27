@@ -1,18 +1,17 @@
 package macports
 
 import (
+	"github.com/herbygillot/dockhand/internal/model"
 	"slices"
 	"strconv"
 	"strings"
-
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // ResolveStub resolves a bump's selection once, for binding and editing
 // alike: a stub selection is redirected to the newest subport that carries
 // its release and the stub's name is returned beside it; any other
 // selection comes back unchanged with an empty name.
-func ResolveStub(snapshot Snapshot, selected record.Target) (record.Target, string) {
+func ResolveStub(snapshot Snapshot, selected model.Target) (model.Target, string) {
 	if selected.Subport != "" {
 		return selected, ""
 	}
@@ -20,7 +19,7 @@ func ResolveStub(snapshot Snapshot, selected record.Target) (record.Target, stri
 	if newest == "" {
 		return selected, ""
 	}
-	return record.Target{Name: newest, Portfile: selected.Portfile, Subport: newest, Variants: selected.Variants}, selected.Name
+	return model.Target{Name: newest, Portfile: selected.Portfile, Subport: newest, Variants: selected.Variants}, selected.Name
 }
 
 // stubMembers reports whether the named port is a stub whose subports carry

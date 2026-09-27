@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,7 +17,7 @@ func TestStagerStagesOnceAndOpensAfter(t *testing.T) {
 	f := newIndexFixture(t)
 	f.put("devel/working/Portfile", workingPortfile)
 	_, tree := f.commit()
-	source := record.Source{Tree: record.ObjectID(tree)}
+	source := model.Source{Tree: model.ObjectID(tree)}
 	snapshot, err := f.repo.Materialize(t.Context(), tree)
 	require.NoError(t, err)
 	t.Cleanup(func() { snapshot.Close() })
@@ -47,7 +47,7 @@ func TestStagerStagesOnceAndOpensAfter(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, strings.Join(messages, "\n"), "Using cached PortIndex for source "+tree[:12])
 
-	unplaced, err := macports.NewTree(source, snapshot.Root, record.Platform{})
+	unplaced, err := macports.NewTree(source, snapshot.Root, model.Platform{})
 	require.NoError(t, err)
 	_, err = (&Stager{Repo: f.repo, Config: f.config}).Index(ctx, unplaced)
 	require.ErrorContains(t, err, "names no platform")

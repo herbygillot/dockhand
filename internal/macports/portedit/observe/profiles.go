@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"slices"
 	"strconv"
@@ -243,14 +243,14 @@ func addBoundary(majors map[int]bool, n int) error {
 	return nil
 }
 
-func profilesForBoundaries(majors map[int]bool, archDependent bool, native record.Platform) ([]record.Platform, error) {
-	result := []record.Platform{native}
+func profilesForBoundaries(majors map[int]bool, archDependent bool, native model.Platform) ([]model.Platform, error) {
+	result := []model.Platform{native}
 	if native.OS != "darwin" && (archDependent || len(majors) > 0) {
 		return nil, fmt.Errorf("%w: alternate platforms require Darwin modeling", ErrInconclusive)
 	}
 	current, _ := strconv.Atoi(native.Version)
 	appendProfile := func(major int, arch string) {
-		p := record.Platform{OS: native.OS, Version: strconv.Itoa(major), Architecture: arch}
+		p := model.Platform{OS: native.OS, Version: strconv.Itoa(major), Architecture: arch}
 		if !slices.Contains(result, p) {
 			result = append(result, p)
 		}

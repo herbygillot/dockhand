@@ -16,20 +16,20 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // fakeGitHub stands in for GitHub: the fork is a local bare repository.
 type fakeGitHub struct {
 	upstream, fork string
-	prs            []record.PullRequest
+	prs            []forge.PullRequest
 	drafts         []bool
 	readied        []int
 	reviews        []forge.ReviewInput
 	rerequested    []string
 	// theirs are other people's pull requests, by number.
-	theirs map[int]record.PullRequest
-	status record.PullRequestStatus
+	theirs map[int]forge.PullRequest
+	status forge.PullRequestStatus
 }
 
 func (g *fakeGitHub) AuthenticatedUser(context.Context) (string, error) { return "ada", nil }
@@ -48,21 +48,21 @@ func (g *fakeGitHub) RepositoryInfo(_ context.Context, name string) (forge.Repos
 func (g *fakeGitHub) Find(context.Context, forge.PullRequestQuery) (forge.PullRequestObservation, error) {
 	return forge.PullRequestObservation{}, nil
 }
-func (g *fakeGitHub) Observe(_ context.Context, ref record.PullRequestRef) (forge.PullRequestObservation, error) {
+func (g *fakeGitHub) Observe(_ context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error) {
 	if pr, ok := g.theirs[ref.Number]; ok {
 		return forge.PullRequestObservation{Found: true, PullRequest: pr}, nil
 	}
 	pr := g.prs[ref.Number-34901]
 	// GitHub reports the head the fork's branch is at, whoever pushed it.
 	if out, err := exec.Command("git", "-C", g.fork, "for-each-ref", "--format=%(objectname)", "refs/heads/"+pr.HeadBranch).Output(); err == nil && len(bytes.TrimSpace(out)) > 0 {
-		pr.RemoteHead = record.ObjectID(bytes.TrimSpace(out))
+		pr.RemoteHead = model.ObjectID(bytes.TrimSpace(out))
 	}
 	return forge.PullRequestObservation{Found: true, PullRequest: pr}, nil
 }
 func (g *fakeGitHub) Create(_ context.Context, input forge.PullRequestInput) (forge.PullRequestObservation, error) {
 	number := 34901 + len(g.prs)
-	pr := record.PullRequest{Ref: record.PullRequestRef{Repository: input.Repository, Number: number, URL: fmt.Sprintf("https://github.com/%s/pull/%d", input.Repository, number)},
-		HeadBranch: input.HeadBranch, State: record.PullRequestOpen, Title: input.Desired.Title, Body: input.Desired.Body, RemoteHead: input.Desired.Head}
+	pr := forge.PullRequest{Ref: forge.PullRequestRef{Repository: input.Repository, Number: number, URL: fmt.Sprintf("https://github.com/%s/pull/%d", input.Repository, number)},
+		HeadBranch: input.HeadBranch, State: forge.PullRequestOpen, Title: input.Desired.Title, Body: input.Desired.Body, RemoteHead: input.Desired.Head}
 	g.prs = append(g.prs, pr)
 	g.drafts = append(g.drafts, input.Draft)
 	return forge.PullRequestObservation{Found: true, PullRequest: pr}, nil
@@ -72,7 +72,7 @@ func (g *fakeGitHub) Update(_ context.Context, input forge.PullRequestInput) (fo
 	pr.Title, pr.Body, pr.RemoteHead = input.Desired.Title, input.Desired.Body, input.Desired.Head
 	return forge.PullRequestObservation{Found: true, PullRequest: *pr}, nil
 }
-func (g *fakeGitHub) MarkReady(_ context.Context, ref record.PullRequestRef) (forge.PullRequestObservation, error) {
+func (g *fakeGitHub) MarkReady(_ context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error) {
 	g.readied = append(g.readied, ref.Number)
 	return g.Observe(context.Background(), ref)
 }
@@ -86,12 +86,12 @@ func (g *fakeGitHub) PostReview(_ context.Context, input forge.ReviewInput) (str
 	return fmt.Sprintf("https://github.com/%s/pull/%d#pullrequestreview-%d", input.Ref.Repository, input.Ref.Number, len(g.reviews)), nil
 }
 
-func (g *fakeGitHub) RequestReviewers(_ context.Context, _ record.PullRequestRef, logins []string) error {
+func (g *fakeGitHub) RequestReviewers(_ context.Context, _ forge.PullRequestRef, logins []string) error {
 	g.rerequested = append(g.rerequested, logins...)
 	return nil
 }
 
-func (g *fakeGitHub) Inspect(context.Context, record.PullRequestRef) (record.PullRequestStatus, error) {
+func (g *fakeGitHub) Inspect(context.Context, forge.PullRequestRef) (forge.PullRequestStatus, error) {
 	return g.status, nil
 }
 
@@ -184,7 +184,7 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
 
-	g.status = record.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, Checks: record.CheckSummary{Total: 2, Passed: 2}}
+	g.status = forge.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, Checks: forge.CheckSummary{Total: 2, Passed: 2}}
 	t.Setenv("MACPORTS_TREE", w.clone)
 	out, errs, err := dockhand(t, "status", "--refresh")
 	require.NoError(t, err)
@@ -193,7 +193,7 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	require.Contains(t, out, "#34901 changes requested, CI ✓")
 
 	// serve reads them by itself.
-	g.status = record.PullRequestStatus{Review: "none", Checks: record.CheckSummary{Total: 2, Passed: 1, Failed: 1, Failing: []string{"macOS 26"}}}
+	g.status = forge.PullRequestStatus{Review: "none", Checks: forge.CheckSummary{Total: 2, Passed: 1, Failed: 1, Failing: []string{"macOS 26"}}}
 	poll := servePoll
 	t.Cleanup(func() { servePoll = poll })
 	servePoll = 20 * time.Millisecond
@@ -226,7 +226,7 @@ func TestCleanAfterTheMerge(t *testing.T) {
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
-	g.prs[0].State = record.PullRequestMerged
+	g.prs[0].State = forge.PullRequestMerged
 	t.Setenv("MACPORTS_TREE", w.clone)
 	_, errs, err := dockhand(t, "status", "--refresh")
 	require.NoError(t, err)
@@ -327,7 +327,7 @@ func TestSubmitAsksTheReviewersBack(t *testing.T) {
 	out, _, err = dockhand(t, "submit", "--no-check", "--plan", "--tested-binaries")
 	require.NoError(t, err)
 	require.Regexp(t, `  PR       updates #\d+; refreshes its description from Tested on down\n`, out)
-	g.status = record.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, ChangesRequestedBy: []string{"ryandesign"}}
+	g.status = forge.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, ChangesRequestedBy: []string{"ryandesign"}}
 	_, _, err = dockhand(t, "status", "--refresh")
 	require.NoError(t, err)
 

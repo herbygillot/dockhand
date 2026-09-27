@@ -10,7 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 type Assessment string
@@ -35,7 +35,7 @@ type Observation struct {
 }
 
 type Result struct {
-	Release          *record.Release
+	Release          *model.Release
 	CurrentVersion   string
 	CandidateVersion string
 	Assessment       Assessment

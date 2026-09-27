@@ -15,8 +15,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/selection"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
@@ -24,7 +24,7 @@ import (
 // moves to, and prepares the edited tree. preparation.Service is the real
 // one; tests substitute their own.
 type Preparer interface {
-	ResolveRelease(ctx context.Context, request preparation.Request) (record.Release, error)
+	ResolveRelease(ctx context.Context, request preparation.Request) (model.Release, error)
 	Prepare(ctx context.Context, request preparation.Request) (preparation.Result, error)
 }
 

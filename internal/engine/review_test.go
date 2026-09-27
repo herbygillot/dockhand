@@ -8,7 +8,6 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // contribution puts someone's pull request #34905 on the upstream: an
@@ -22,8 +21,8 @@ func contribution(t *testing.T, f fixture, fake *fakeForge) {
 	commitAs(t, f.upstream, "New newcontrib@example.org", "jq: fix typo")
 	run(t, f.upstream, "update-ref", "refs/pull/34905/head", "contrib")
 	run(t, f.upstream, "switch", "-q", "master")
-	fake.prs[34905] = &record.PullRequest{Ref: record.PullRequestRef{Forge: forge.GitHub, Repository: UpstreamRepository, Number: 34905, URL: "https://github.com/macports/macports-ports/pull/34905"},
-		HeadRepository: "newcontrib/macports-ports", HeadBranch: "patch-1", State: record.PullRequestOpen, Title: "Update jq"}
+	fake.prs[34905] = &forge.PullRequest{Ref: forge.PullRequestRef{Forge: forge.GitHub, Repository: UpstreamRepository, Number: 34905, URL: "https://github.com/macports/macports-ports/pull/34905"},
+		HeadRepository: "newcontrib/macports-ports", HeadBranch: "patch-1", State: forge.PullRequestOpen, Title: "Update jq"}
 }
 
 func TestReviewAppliesTheRulesAndRemembersWhatItFound(t *testing.T) {

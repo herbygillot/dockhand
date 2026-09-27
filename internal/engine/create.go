@@ -19,7 +19,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/newport"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -203,7 +202,7 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 
 	created := Created{Port: name, Directory: directory, Project: project, Version: version, Build: build, Crates: len(spec.Crates),
 		Category: spec.Category, Unconfirmed: spec.Unconfirmed()}
-	update, err := e.Update(ctx, UpdateRequest{Branch: request.Branch, Action: record.RefreshChecksums, Port: name})
+	update, err := e.Update(ctx, UpdateRequest{Branch: request.Branch, Action: model.RefreshChecksums, Port: name})
 	switch {
 	case ctx.Err() != nil:
 		return created, ctx.Err()

@@ -15,8 +15,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
@@ -50,7 +50,7 @@ master_sites @SITE@/${version}
 checksums sha256 aaaa size 2
 `+extra, "@SITE@", server.URL)), 0600))
 	s := &Service{Ports: &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}, Archives: archives.Client{HTTP: server.Client()}}
-	r := Request{Action: record.Bump, Source: record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, Workspace: adopt(t, root), Selection: macports.Selection{Selector: "fixture"}, Version: "1.2.4", Release: &record.Release{Selection: record.Selection{Requested: "1.2.4"}, Archive: true, Version: "1.2.4"}}
+	r := Request{Action: model.Bump, Source: model.Source{Tree: model.ObjectID(strings.Repeat("a", 40))}, Workspace: adopt(t, root), Selection: macports.Selection{Selector: "fixture"}, Version: "1.2.4", Release: &model.Release{ReleaseSelection: model.ReleaseSelection{Requested: "1.2.4"}, Archive: true, Version: "1.2.4"}}
 	return s, r
 }
 
@@ -112,7 +112,7 @@ type fakeManifests struct {
 	calls    []string
 }
 
-func (f *fakeManifests) Manifest(_ context.Context, _ macports.PortInfo, release record.Release, path string) ([]byte, error) {
+func (f *fakeManifests) Manifest(_ context.Context, _ macports.PortInfo, release model.Release, path string) ([]byte, error) {
 	f.calls = append(f.calls, release.Commit+":"+path)
 	if f.missing {
 		return nil, macports.ErrManifestMissing

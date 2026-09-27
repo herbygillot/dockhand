@@ -13,8 +13,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/stretchr/testify/require"
 )
@@ -116,8 +116,8 @@ pre-fetch {
 	}
 	tree, err := service.Repo.EditTree(t.Context(), string(request.Source.Tree), edits)
 	require.NoError(t, err)
-	request.Source = record.Source{Tree: record.ObjectID(tree)}
-	request.Action = record.Bump
+	request.Source = model.Source{Tree: model.ObjectID(tree)}
+	request.Action = model.Bump
 	request.Subject = "" // the revision fixture's reason; a bump takes the editor's default
 	request.Version = "2.0"
 	resolver := releaseTagFunc(func(_ context.Context, repo, name string) (forge.Tag, error) {
@@ -127,7 +127,7 @@ pre-fetch {
 		return forge.Tag{Name: name, Commit: strings.Repeat("a", 40)}, nil
 	})
 	service.Upstream = &upstream.Service{Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: resolver, portsource.GitLab: resolver}}
-	release := record.Release{Selection: record.Selection{Requested: "2.0"}, Version: "2.0", Forge: "github", Instance: "https://github.com", Repository: "owner/fixture", Tag: "v2.0", Commit: strings.Repeat("a", 40)}
+	release := model.Release{ReleaseSelection: model.ReleaseSelection{Requested: "2.0"}, Version: "2.0", Forge: "github", Instance: "https://github.com", Repository: "owner/fixture", Tag: "v2.0", Commit: strings.Repeat("a", 40)}
 	if style == "gitlab-setup" {
 		release.Forge = "gitlab"
 		release.Instance = "https://gitlab.example"
@@ -235,7 +235,7 @@ func TestVersionPreparationNamedAndMultipleArchives(t *testing.T) {
 			}
 			tree, err := service.Repo.EditTree(t.Context(), string(request.Source.Tree), []git.FileEdit{{Path: "devel/fixture/Portfile", Before: before, After: []byte(contents), Mode: before.Mode}})
 			require.NoError(t, err)
-			request.Source = record.Source{Tree: record.ObjectID(tree)}
+			request.Source = model.Source{Tree: model.ObjectID(tree)}
 			result, err := service.Prepare(t.Context(), request)
 			require.NoError(t, err)
 			count := 1
@@ -259,7 +259,7 @@ func TestGitLabPreparationPreservesFrozenLocalPatch(t *testing.T) {
 	service, request := versionFixture(t, "gitlab-setup", "patchfiles fix.patch\n", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "source archive") })
 	tree, err := service.Repo.EditTree(t.Context(), string(request.Source.Tree), []git.FileEdit{{Path: "devel/fixture/files/fix.patch", After: []byte("fixture local patch\n"), Mode: 0o100644}})
 	require.NoError(t, err)
-	request.Source = record.Source{Tree: record.ObjectID(tree)}
+	request.Source = model.Source{Tree: model.ObjectID(tree)}
 	result, err := service.Prepare(t.Context(), request)
 	require.NoError(t, err)
 	require.Len(t, result.Files, 1)
@@ -283,7 +283,7 @@ func TestCalendarPreparationEvaluatesPreservedTransformation(t *testing.T) {
 			}
 			tree, err := service.Repo.EditTree(t.Context(), string(request.Source.Tree), []git.FileEdit{{Path: "devel/fixture/Portfile", Before: before, After: []byte(text), Mode: before.Mode}})
 			require.NoError(t, err)
-			request.Source = record.Source{Tree: record.ObjectID(tree)}
+			request.Source = model.Source{Tree: model.ObjectID(tree)}
 			request.Version = "2026-09-14"
 			catalog := releaseTagFunc(func(_ context.Context, _, tag string) (forge.Tag, error) {
 				if tag != "v2026-09-14" {

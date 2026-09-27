@@ -2,15 +2,14 @@ package macports
 
 import (
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/model"
 	"slices"
-
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // RebindReleaseScope preserves the accepted target set after corrective edits.
 // Corrections may change affected source metadata, but may not silently enlarge
 // the release or alter a protected sibling's source identity.
-func RebindReleaseScope(scope *record.ReleaseScope, snapshot Snapshot) (*record.ReleaseScope, error) {
+func RebindReleaseScope(scope *model.ReleaseScope, snapshot Snapshot) (*model.ReleaseScope, error) {
 	if scope == nil {
 		return nil, nil
 	}
@@ -47,6 +46,6 @@ func RebindReleaseScope(scope *record.ReleaseScope, snapshot Snapshot) (*record.
 }
 
 // ReleaseState records the evaluated version and archive identity for a scope member.
-func ReleaseState(p PortInfo) record.ReleaseState {
-	return record.ReleaseState{MasterSites: p.Options["master_sites"], Worksrcdir: p.Options["worksrcdir"], Epoch: p.Epoch, Version: p.Version, Revision: p.Revision, Tag: p.Options["git.branch"], Distfiles: p.Options["distfiles"], Checksums: p.Options["checksums"]}
+func ReleaseState(p PortInfo) model.ReleaseState {
+	return model.ReleaseState{MasterSites: p.Options["master_sites"], Worksrcdir: p.Options["worksrcdir"], Epoch: p.Epoch, Version: p.Version, Revision: p.Revision, Tag: p.Options["git.branch"], Distfiles: p.Options["distfiles"], Checksums: p.Options["checksums"]}
 }

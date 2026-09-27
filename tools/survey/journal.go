@@ -5,11 +5,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/model"
 	"io"
 	"os"
 	"sync"
-
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // Journal appends one JSON line per assessed port to a file as each port
@@ -22,15 +21,15 @@ type Journal struct {
 	path   string
 	file   *os.File
 	mu     sync.Mutex
-	source *record.Source
+	source *model.Source
 	done   map[string]bool
 }
 
 // journalLine is what any line of the file can carry: the source, on the
 // first line, or an assessed port, on every other.
 type journalLine struct {
-	Source   *record.Source `json:",omitempty"`
-	Selector string         `json:",omitempty"`
+	Source   *model.Source `json:",omitempty"`
+	Selector string        `json:",omitempty"`
 }
 
 // OpenJournal opens or creates the file and reads what it already holds.
@@ -72,7 +71,7 @@ func OpenJournal(path string) (*Journal, error) {
 
 // Begin ties the journal to the source being assessed: a new file records
 // it, and a file written against another commit is refused.
-func (j *Journal) Begin(source record.Source) error {
+func (j *Journal) Begin(source model.Source) error {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if j.source != nil {

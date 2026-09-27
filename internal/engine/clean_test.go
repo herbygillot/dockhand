@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // mergedBranch submits an update and has GitHub merge it.
@@ -24,7 +24,7 @@ func mergedBranch(t *testing.T) (fixture, *Engine, *fakeForge, model.Branch) {
 	require.NoError(t, err)
 	submitted, err := e.ApplySubmit(t.Context(), plan)
 	require.NoError(t, err)
-	fake.prs[submitted.PullRequest.Ref.Number].State = record.PullRequestMerged
+	fake.prs[submitted.PullRequest.Ref.Number].State = forge.PullRequestMerged
 	refreshed, err := e.RefreshPullRequests(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, model.BranchMerged, refreshed[0].Branch.State)

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
+	"github.com/herbygillot/dockhand/internal/model"
 	"io"
 	"io/fs"
 	"net/http"
@@ -16,14 +17,13 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/progress"
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 type Request struct {
-	AdditionalTargets []record.Target
-	Source            record.Source
-	Target            record.Target
-	Platform          record.Platform
+	AdditionalTargets []model.Target
+	Source            model.Source
+	Target            model.Target
+	Platform          model.Platform
 	// Index supplies the staged index of the tree the archive packs.
 	Index portindex.Source
 }
@@ -75,7 +75,7 @@ func Archive(ctx context.Context, repo *git.Repository, workspaces *workspace.Re
 	if err != nil {
 		return err
 	}
-	for _, target := range append([]record.Target{request.Target}, request.AdditionalTargets...) {
+	for _, target := range append([]model.Target{request.Target}, request.AdditionalTargets...) {
 		if err = requireIndexedTarget(index, target); err != nil {
 			return err
 		}
@@ -163,7 +163,7 @@ func packSource(ctx context.Context, root string, payload map[string][]byte, tem
 
 }
 
-func requireIndexedTarget(index *portindex.Index, target record.Target) error {
+func requireIndexedTarget(index *portindex.Index, target model.Target) error {
 	entry, err := index.Lookup(target.Name)
 	if err != nil {
 		return fmt.Errorf("staging: selected target %s is not indexed: %w", target.Name, err)

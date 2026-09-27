@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/stretchr/testify/require"
 )
 
@@ -39,7 +39,7 @@ func TestModeledObservationTracksHostFilesAtAccessTime(t *testing.T) {
 			require.NoError(t, err)
 			bound, err := tree.Select(targets[0])
 			require.NoError(t, err)
-			got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: record.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
+			got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
 			require.NoError(t, err)
 			require.Equal(t, operation != "captured-open" && operation != "captured-source", got.Ports["host"].ModeledHostAccess, "%v", got.Ports["host"].Problems)
 		})
@@ -58,16 +58,16 @@ func TestCompilerDependentFetchInputComesFromTheTable(t *testing.T) {
 	e := liveEvaluator(t)
 	tree := fixtureTree(t)
 	putFile(t, tree.Root(), "devel/host/Portfile", "PortSystem 1.0\nname host\nversion 1\nuse_xcode yes\ndistfiles host-[file tail ${configure.cxx}].tar.gz\n")
-	bound, err := tree.Select(record.Target{Name: "host", Portfile: "devel/host/Portfile"})
+	bound, err := tree.Select(model.Target{Name: "host", Portfile: "devel/host/Portfile"})
 	require.NoError(t, err)
-	got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: record.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
+	got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
 	require.NoError(t, err)
 	require.False(t, got.Ports["host"].ModeledHostAccess, "%v", got.Ports["host"].Problems)
 	require.Equal(t, "host-clang++.tar.gz", got.Snapshot.Ports["host"].Options["distfiles"])
 	if e.Adapter == PreviewAdapter {
 		t.Skip("known gap on Base master: compiler and SDK queries run in the parent interpreter, unobserved (Base design, step 5)")
 	}
-	got, err = e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: record.Platform{OS: "darwin", Version: "9", Architecture: "x86_64"}, Declarations: true})
+	got, err = e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "9", Architecture: "x86_64"}, Declarations: true})
 	require.NoError(t, err)
 	require.True(t, got.Ports["host"].ModeledHostAccess, "%v", got.Ports["host"].Problems)
 }
@@ -83,7 +83,7 @@ func TestPortsThatAskBaseForCompilersReadTheTable(t *testing.T) {
 		t.Skip("set DOCKHAND_TEST_PORTS_TREE to a macports-ports checkout")
 	}
 	e := liveEvaluator(t)
-	tree, err := macports.NewTree(record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, root, record.Platform{})
+	tree, err := macports.NewTree(model.Source{Tree: model.ObjectID(strings.Repeat("a", 40))}, root, model.Platform{})
 	require.NoError(t, err)
 	for _, port := range []struct{ directory, name string }{
 		{"aqua/qt4-mac", "qt4-mac"}, {"aqua/qt64", "qt64-qtwebengine"}, {"aqua/qt64", "qt64-qtwebengine-docs"},
@@ -99,7 +99,7 @@ func TestPortsThatAskBaseForCompilersReadTheTable(t *testing.T) {
 			require.NoError(t, err)
 			bound, err := tree.Select(targets[0])
 			require.NoError(t, err)
-			got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: record.Platform{OS: "darwin", Version: "22", Architecture: "x86_64"}, Declarations: true})
+			got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "22", Architecture: "x86_64"}, Declarations: true})
 			require.NoError(t, err)
 			require.False(t, got.Ports[port.name].ModeledHostAccess, "%v", got.Ports[port.name].Problems)
 		})

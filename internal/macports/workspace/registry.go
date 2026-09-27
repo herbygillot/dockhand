@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/herbygillot/dockhand/internal/git"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // Registry hands out one workspace per source within a process and closes
@@ -22,7 +22,7 @@ type Registry struct {
 
 type holdingKey struct {
 	repo   string
-	source record.Source
+	source model.Source
 }
 
 type holding struct {
@@ -34,7 +34,7 @@ type holding struct {
 // and the release that gives it back. The workspace holds whatever scope
 // earlier holders ensured; a holder that needs more ensures it. It is
 // closed when the last holder releases it, or when the registry closes.
-func (r *Registry) Acquire(ctx context.Context, repo *git.Repository, source record.Source) (*Workspace, func() error, error) {
+func (r *Registry) Acquire(ctx context.Context, repo *git.Repository, source model.Source) (*Workspace, func() error, error) {
 	if r == nil {
 		w, err := Open(ctx, repo, source)
 		if err != nil {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
+	"github.com/herbygillot/dockhand/internal/model"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -12,7 +13,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/progress"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/text"
 )
 
@@ -58,7 +58,7 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 		// Every archive still matches its declared checksums; there is nothing to commit.
 		return result, nil
 	}
-	finalProfiles := make([]record.Platform, len(plan.observed.contexts))
+	finalProfiles := make([]model.Platform, len(plan.observed.contexts))
 	for i, frame := range plan.observed.contexts {
 		finalProfiles[i] = frame.profile
 	}

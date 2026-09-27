@@ -7,7 +7,6 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -48,7 +47,7 @@ func (e *Engine) RefreshPullRequests(ctx context.Context) ([]Refreshed, error) {
 func (e *Engine) refresh(ctx context.Context, branch model.Branch) (Refreshed, error) {
 	refreshed := Refreshed{Branch: branch}
 	pr := branch.PullRequest
-	ref := record.PullRequestRef{Forge: forge.GitHub, Repository: pr.Repository, Number: pr.Number}
+	ref := forge.PullRequestRef{Forge: forge.GitHub, Repository: pr.Repository, Number: pr.Number}
 	observed, err := e.forge().Observe(ctx, ref)
 	if err != nil {
 		return refreshed, err
@@ -58,7 +57,7 @@ func (e *Engine) refresh(ctx context.Context, branch model.Branch) (Refreshed, e
 	}
 	now := observed.PullRequest
 	next := model.PullRequestObservation{State: string(now.State), Head: model.ObjectID(now.RemoteHead), Review: "none", Checks: "none", At: e.now()}
-	if now.State == record.PullRequestOpen {
+	if now.State == forge.PullRequestOpen {
 		status, err := e.forge().Inspect(ctx, ref)
 		if err != nil {
 			return refreshed, err
@@ -80,7 +79,7 @@ func (e *Engine) refresh(ctx context.Context, branch model.Branch) (Refreshed, e
 	if previous.State != next.State {
 		refreshed.Changes = append(refreshed.Changes, fmt.Sprintf("#%d is %s", pr.Number, next.State))
 	}
-	if next.State == string(record.PullRequestOpen) {
+	if next.State == string(forge.PullRequestOpen) {
 		if previous.Review != next.Review && next.Review != "none" {
 			refreshed.Changes = append(refreshed.Changes, fmt.Sprintf("#%d: %s", pr.Number, reviewWords(next.Review)))
 		}
@@ -96,11 +95,11 @@ func (e *Engine) refresh(ctx context.Context, branch model.Branch) (Refreshed, e
 		current.PullRequest.Observed = &next
 		current.PullRequest.Draft = next.Draft
 		switch {
-		case next.State == string(record.PullRequestMerged) && current.State.CanBecome(model.BranchMerged):
+		case next.State == string(forge.PullRequestMerged) && current.State.CanBecome(model.BranchMerged):
 			current.State = model.BranchMerged
-		case next.State == string(record.PullRequestClosed) && current.State == model.BranchOpen:
+		case next.State == string(forge.PullRequestClosed) && current.State == model.BranchOpen:
 			current.State = model.BranchClosed
-		case next.State == string(record.PullRequestOpen) && current.State == model.BranchClosed:
+		case next.State == string(forge.PullRequestOpen) && current.State == model.BranchClosed:
 			current.State = model.BranchOpen
 		}
 		if err := tx.UpdateBranch(current); err != nil {

@@ -9,7 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/version"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // The selection core shared by every automatic path. A catalog of tags, a
@@ -140,7 +140,7 @@ func (s *Service) sameCommitTag(ctx context.Context, repository forge.Repository
 
 // classified records the release's stability and whether it takes the port
 // out of stable. Explicit selections are never refused on this basis.
-func classified(release record.Release, current string) record.Release {
+func classified(release model.Release, current string) model.Release {
 	release.Stability = string(version.Classify(release.Version))
 	release.LeavesStable = version.LeavesStable(current, release.Version)
 	return release
@@ -148,7 +148,7 @@ func classified(release record.Release, current string) record.Release {
 
 // finish records the chosen release on the result with its assessment.
 // selected words an update; among names the catalog for the current case.
-func (result *Result) finish(release record.Release, current string, selected, among string) {
+func (result *Result) finish(release model.Release, current string, selected, among string) {
 	release = classified(release, current)
 	result.Release = &release
 	result.CandidateVersion = release.Version

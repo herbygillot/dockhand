@@ -17,7 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/forge"
 )
 
 // syncBuffer is a buffer two goroutines may share.
@@ -166,7 +166,7 @@ func TestServeCleansUpAfterAMergeOnceADay(t *testing.T) {
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
-	g.prs[0].State = record.PullRequestMerged
+	g.prs[0].State = forge.PullRequestMerged
 	t.Setenv("MACPORTS_TREE", w.clone)
 	_, _, err = dockhand(t, "status", "--refresh")
 	require.NoError(t, err)

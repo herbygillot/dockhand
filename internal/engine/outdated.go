@@ -9,7 +9,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/outdated"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
@@ -30,7 +29,7 @@ type OutdatedPort struct {
 	Outdated bool
 	// Problem says why the port could not be checked.
 	Problem string
-	Release *record.Release
+	Release *model.Release
 }
 
 // OutdatedReader finds ports' newest releases at a commit of master.
@@ -203,7 +202,7 @@ func (e *Engine) prepareOne(ctx context.Context, planned PlannedUpdate, options 
 		return done
 	}
 	done.Branch = branch
-	if done.Update, err = e.Update(ctx, UpdateRequest{Branch: branch, Action: record.Bump, Port: planned.Port.Port, Version: planned.Port.Newest, CompareUpstream: true}); err != nil {
+	if done.Update, err = e.Update(ctx, UpdateRequest{Branch: branch, Action: model.Bump, Port: planned.Port.Port, Version: planned.Port.Newest, CompareUpstream: true}); err != nil {
 		done.Problem = err.Error()
 		return done
 	}

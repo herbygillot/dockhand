@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
+	"github.com/herbygillot/dockhand/internal/model"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -15,7 +16,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 var (
@@ -29,7 +29,7 @@ type CommitIntent struct {
 	Subject string
 	Body    string
 	// References are cited in the trailer block, ahead of the attribution.
-	References []record.Reference
+	References []commitmsg.Reference
 	Paths      []string
 }
 
@@ -37,22 +37,22 @@ type Request struct {
 	// EditIntent is the person's choices for the edit, as bound or as
 	// recorded on the job: a Stub already resolved there is honored rather
 	// than resolved again.
-	record.EditIntent
-	Action record.Action
-	Source record.Source
+	model.EditIntent
+	Action model.UpdateAction
+	Source model.Source
 	// Workspace is the projection of the source the edit reads and never
 	// writes; every candidate is an overlay of it. It is the caller's to
 	// open and close, and it outlives every probe made from it.
 	Workspace *workspace.Workspace
 	Selection macports.Selection
-	Platform  record.Platform
+	Platform  model.Platform
 	Version   string
 	// Subject is the commit subject after the port name; empty takes the
 	// editor's default for the action, and a revision bump has none.
 	Subject string
 	// References are the tickets the commit cites.
-	References []record.Reference
-	Release    *record.Release
+	References []commitmsg.Reference
+	Release    *model.Release
 	// KeepArchives is a directory, the caller's, where a version update
 	// keeps the new archives and also fetches the current version's, so
 	// the two can be compared; empty keeps neither.
@@ -66,16 +66,16 @@ type Fidelity = fidelity.Report
 // kind records a build; verification providers establish build results.
 type ContextCoverage struct {
 	Fetch    *macports.FetchSemantics `json:",omitempty"`
-	Platform record.Platform
+	Platform model.Platform
 	Modeled  bool
 	Affected bool
 }
 
 type Result struct {
-	Scope    *record.ReleaseScope `json:",omitempty"`
-	Coverage []ContextCoverage    `json:",omitempty"`
-	Base     record.Source
-	Target   record.Target
+	Scope    *model.ReleaseScope `json:",omitempty"`
+	Coverage []ContextCoverage   `json:",omitempty"`
+	Base     model.Source
+	Target   model.Target
 	Files    []portfile.Edit
 	Commits  []CommitIntent
 	Fidelity []Fidelity
@@ -85,7 +85,7 @@ type Result struct {
 	// each fidelity report, so it is the last report's snapshot without
 	// any reader having to know that.
 	Prepared  macports.Snapshot `json:"-"`
-	Release   *record.Release
+	Release   *model.Release
 	Downloads []archives.Download
 	// Previous are the current version's archives, fetched only when
 	// KeepArchives asked, and PreviousProblem why they could not be.
@@ -118,7 +118,7 @@ type Service struct {
 // ManifestSource reads one file of a port's source repository at the
 // resolved release. An absent file reports macports.ErrManifestMissing.
 type ManifestSource interface {
-	Manifest(ctx context.Context, port macports.PortInfo, release record.Release, path string) ([]byte, error)
+	Manifest(ctx context.Context, port macports.PortInfo, release model.Release, path string) ([]byte, error)
 }
 
 func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err error) {
@@ -133,10 +133,10 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 		return Result{}, err
 	}
 	defer func() { err = errors.Join(err, input.Close()) }()
-	if request.Action == record.Bump {
+	if request.Action == model.Bump {
 		return s.prepareVersion(ctx, request, input)
 	}
-	if request.Action == record.RefreshChecksums {
+	if request.Action == model.RefreshChecksums {
 		return s.prepareChecksums(ctx, request, input)
 	}
 	revised, err := portfile.BumpRevision(input.data, input.target.Subport, input.info.Revision)
@@ -157,16 +157,16 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 }
 
 func (request Request) Validate() error {
-	if request.Action != record.BumpRevision && request.Action != record.Bump && request.Action != record.RefreshChecksums {
+	if request.Action != model.BumpRevision && request.Action != model.Bump && request.Action != model.RefreshChecksums {
 		return fmt.Errorf("%w: %s", ErrNotImplemented, request.Action)
 	}
-	if request.Action == record.Bump && request.Release == nil {
+	if request.Action == model.Bump && request.Release == nil {
 		return fmt.Errorf("portedit: a resolved release is required")
 	}
-	if request.Action != record.Bump && request.Version != "" {
+	if request.Action != model.Bump && request.Version != "" {
 		return fmt.Errorf("portedit: an explicit version applies only to bump")
 	}
-	if request.Action == record.BumpRevision && strings.TrimSpace(request.Subject) == "" {
+	if request.Action == model.BumpRevision && strings.TrimSpace(request.Subject) == "" {
 		return fmt.Errorf("portedit: a revision bump needs a subject saying why")
 	}
 	return nil

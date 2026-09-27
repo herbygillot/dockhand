@@ -16,8 +16,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 const (
@@ -29,8 +29,8 @@ const (
 // serves jq-1.7.1.tar.gz with other contents.
 type rechecksummer struct{ repo *git.Repository }
 
-func (rechecksummer) ResolveRelease(context.Context, preparation.Request) (record.Release, error) {
-	return record.Release{}, nil
+func (rechecksummer) ResolveRelease(context.Context, preparation.Request) (model.Release, error) {
+	return model.Release{}, nil
 }
 
 func (r rechecksummer) Prepare(ctx context.Context, request preparation.Request) (preparation.Result, error) {
@@ -48,7 +48,7 @@ func (r rechecksummer) Prepare(ctx context.Context, request preparation.Request)
 	}
 	edit := git.FileEdit{Path: name, Before: before, After: []byte(after), Mode: before.Mode}
 	tree, err := r.repo.EditTree(ctx, string(request.Source.Tree), []git.FileEdit{edit})
-	return preparation.Result{Target: record.Target{Name: "jq", Portfile: name}, PreparedTree: record.ObjectID(tree), Files: []git.FileEdit{edit},
+	return preparation.Result{Target: model.Target{Name: "jq", Portfile: name}, PreparedTree: model.ObjectID(tree), Files: []git.FileEdit{edit},
 		Fidelity:  []portedit.Fidelity{{Before: port(declared[len("checksums "):]), After: port("")}},
 		Downloads: []archives.Download{{Checksum: portfile.Checksum{Name: "jq-" + version + ".tar.gz", SHA256: newSHA, Size: 7114508}}}}, err
 }
@@ -86,8 +86,8 @@ func TestAStealthUpdateSaysSoAndKeepsBothArchives(t *testing.T) {
 // refuser stands in for MacPorts with a Portfile dockhand won't edit.
 type refuser struct{}
 
-func (refuser) ResolveRelease(context.Context, preparation.Request) (record.Release, error) {
-	return record.Release{Version: "1.8.1"}, nil
+func (refuser) ResolveRelease(context.Context, preparation.Request) (model.Release, error) {
+	return model.Release{Version: "1.8.1"}, nil
 }
 
 func (refuser) Prepare(context.Context, preparation.Request) (preparation.Result, error) {

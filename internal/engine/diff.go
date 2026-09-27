@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // PortDiff is how a branch changes one port directory.
@@ -312,7 +311,7 @@ func (e *Engine) RevbumpLinked(ctx context.Context, branch model.Branch, update 
 		return result, err
 	}
 	for _, dependent := range linked.Bump {
-		if _, err := e.Update(ctx, UpdateRequest{Branch: branch, Action: record.BumpRevision, Port: dependent.Name, Subject: result.Subject}); err != nil {
+		if _, err := e.Update(ctx, UpdateRequest{Branch: branch, Action: model.BumpRevision, Port: dependent.Name, Subject: result.Subject}); err != nil {
 			return result, fmt.Errorf("revision-bumping %s: %w; the ports before it are bumped", dependent.Name, err)
 		}
 		result.Bumped = append(result.Bumped, dependent.Name)

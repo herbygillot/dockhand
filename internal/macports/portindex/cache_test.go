@@ -3,6 +3,7 @@ package portindex
 import (
 	"context"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/model"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,7 +17,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/progress"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
@@ -71,7 +71,7 @@ func (f *indexFixture) commit() (commit, tree string) {
 
 // stage materializes the source tree privately and stages its index there,
 // returning the opened index and the progress messages.
-func (f *indexFixture) stage(source record.Source) (*Index, []string, error) {
+func (f *indexFixture) stage(source model.Source) (*Index, []string, error) {
 	f.t.Helper()
 	snapshot, err := f.repo.Materialize(f.t.Context(), string(source.Tree))
 	require.NoError(f.t, err)
@@ -122,7 +122,7 @@ func TestStageSharesOneGenerationAcrossConsumers(t *testing.T) {
 	f := newIndexFixture(t)
 	f.put("devel/working/Portfile", workingPortfile)
 	_, tree := f.commit()
-	source := record.Source{Tree: record.ObjectID(tree)}
+	source := model.Source{Tree: model.ObjectID(tree)}
 	index, messages, err := f.stage(source)
 	require.NoError(t, err)
 	requireVersion(t, index, "working", "1")
@@ -154,7 +154,7 @@ func TestCandidateDerivesFromBaseAndLaterMasterAdvancesIncrementally(t *testing.
 	base, baseTree := f.commit()
 	f.put("devel/working/Portfile", strings.Replace(workingPortfile, "version 1", "version 2", 1))
 	candidate, candidateTree := f.commit()
-	source := record.Source{Commit: record.ObjectID(candidate), Tree: record.ObjectID(candidateTree), Base: record.ObjectID(base)}
+	source := model.Source{Commit: model.ObjectID(candidate), Tree: model.ObjectID(candidateTree), Base: model.ObjectID(base)}
 
 	index, messages, err := f.stage(source)
 	require.NoError(t, err)
@@ -185,7 +185,7 @@ func TestCandidateDerivesFromBaseAndLaterMasterAdvancesIncrementally(t *testing.
 	f.run("checkout", "-q", base)
 	f.put("devel/other/Portfile", "PortSystem 1.0\nname other\nversion 3\ncategories devel\n")
 	_, masterTree := f.commit()
-	index, messages, err = f.stage(record.Source{Tree: record.ObjectID(masterTree)})
+	index, messages, err = f.stage(model.Source{Tree: model.ObjectID(masterTree)})
 	require.NoError(t, err)
 	requireVersion(t, index, "other", "3")
 	requireVersion(t, index, "working", "1")
@@ -202,7 +202,7 @@ func TestStrictRequestsDoNotReusePartialGenerations(t *testing.T) {
 	base, _ := f.commit()
 	f.put("devel/broken/Portfile", "PortSystem 1.0\nerror {changed failure}\n")
 	commit, tree := f.commit()
-	source := record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree)}
+	source := model.Source{Commit: model.ObjectID(commit), Tree: model.ObjectID(tree)}
 	index, _, err := f.stage(source)
 	require.NoError(t, err)
 	_, err = index.Lookup("working")
@@ -210,7 +210,7 @@ func TestStrictRequestsDoNotReusePartialGenerations(t *testing.T) {
 	_, err = index.Lookup("broken")
 	require.ErrorIs(t, err, ErrNotIndexed)
 
-	source.Base = record.ObjectID(base)
+	source.Base = model.ObjectID(base)
 	_, _, err = f.stage(source)
 	require.Error(t, err, "a partial index must not hide a changed-port failure from a contribution")
 	meta, ok := readGeneration(filepath.Join(f.environment(), generationsDirectory, tree))
@@ -226,7 +226,7 @@ func TestStageReusesTreeDiffsAndInvalidatesSharedResources(t *testing.T) {
 	stage := func(wantFull bool, check func(*Index)) {
 		t.Helper()
 		_, tree := f.commit()
-		index, messages, err := f.stage(record.Source{Tree: record.ObjectID(tree)})
+		index, messages, err := f.stage(model.Source{Tree: model.ObjectID(tree)})
 		require.NoError(t, err)
 		joined := strings.Join(messages, "\n")
 		if wantFull {
@@ -255,7 +255,7 @@ func TestConcurrentStagersShareOneBuild(t *testing.T) {
 	f := newIndexFixture(t)
 	f.put("devel/working/Portfile", workingPortfile)
 	_, tree := f.commit()
-	source := record.Source{Tree: record.ObjectID(tree)}
+	source := model.Source{Tree: model.ObjectID(tree)}
 	var mu sync.Mutex
 	var messages []string
 	ctx := progress.WithReporter(context.Background(), func(update progress.Update) {
@@ -315,7 +315,7 @@ func TestMirrorBootstrapSeedsAColdCacheWithinItsBracket(t *testing.T) {
 	f.put("devel/working/Portfile", workingPortfile)
 	f.put("devel/other/Portfile", "PortSystem 1.0\nname other\nversion 1\ncategories devel\n")
 	older, olderTree := f.commitAt(start)
-	_, _, err := f.stage(record.Source{Commit: record.ObjectID(older), Tree: record.ObjectID(olderTree)})
+	_, _, err := f.stage(model.Source{Commit: model.ObjectID(older), Tree: model.ObjectID(olderTree)})
 	require.NoError(t, err)
 	mirrored, err := os.ReadFile(filepath.Join(f.environment(), generationsDirectory, olderTree, portIndexName))
 	require.NoError(t, err)
@@ -335,7 +335,7 @@ func TestMirrorBootstrapSeedsAColdCacheWithinItsBracket(t *testing.T) {
 	cold := *f
 	cold.config.CacheDirectory = t.TempDir()
 	cold.config.Mirror = &Mirror{HTTP: server.Client(), URL: server.URL + "/PortIndex"}
-	index, messages, err := cold.stage(record.Source{Commit: record.ObjectID(newer), Tree: record.ObjectID(newerTree)})
+	index, messages, err := cold.stage(model.Source{Commit: model.ObjectID(newer), Tree: model.ObjectID(newerTree)})
 	require.NoError(t, err)
 	requireVersion(t, index, "working", "2")
 	requireVersion(t, index, "new", "1")
@@ -365,7 +365,7 @@ func TestMirrorBootstrapSeedsAColdCacheWithinItsBracket(t *testing.T) {
 	f.run("add", "-A", ".")
 	candidateTree := f.run("write-tree")
 	require.NotEqual(t, newerTree, candidateTree)
-	index, _, err = cold.stage(record.Source{Tree: record.ObjectID(candidateTree), Base: record.ObjectID(newer)})
+	index, _, err = cold.stage(model.Source{Tree: model.ObjectID(candidateTree), Base: model.ObjectID(newer)})
 	require.NoError(t, err)
 	requireVersion(t, index, "working", "3")
 	meta, ok = readGeneration(filepath.Join(cold.environment(), generationsDirectory, candidateTree))
@@ -380,7 +380,7 @@ func TestMirrorBootstrapSeedsAColdCacheWithinItsBracket(t *testing.T) {
 	stale := *f
 	stale.config.CacheDirectory = t.TempDir()
 	stale.config.Mirror = cold.config.Mirror
-	_, messages, err = stale.stage(record.Source{Commit: record.ObjectID(older), Tree: record.ObjectID(olderTree)})
+	_, messages, err = stale.stage(model.Source{Commit: model.ObjectID(older), Tree: model.ObjectID(olderTree)})
 	require.NoError(t, err)
 	require.Contains(t, strings.Join(messages, "\n"), "predates the mirror index")
 	require.Contains(t, strings.Join(messages, "\n"), "Generating full PortIndex")
@@ -392,7 +392,7 @@ func TestMirrorBootstrapSeedsAColdCacheWithinItsBracket(t *testing.T) {
 	resourced := *f
 	resourced.config.CacheDirectory = t.TempDir()
 	resourced.config.Mirror = cold.config.Mirror
-	_, messages, err = resourced.stage(record.Source{Commit: record.ObjectID(grouped), Tree: record.ObjectID(groupedTree)})
+	_, messages, err = resourced.stage(model.Source{Commit: model.ObjectID(grouped), Tree: model.ObjectID(groupedTree)})
 	require.NoError(t, err)
 	require.Contains(t, strings.Join(messages, "\n"), "Shared resources changed since the mirror index's bracket "+older[:12])
 	require.Contains(t, strings.Join(messages, "\n"), "Generating full PortIndex")
@@ -402,7 +402,7 @@ func TestMirrorBootstrapSeedsAColdCacheWithinItsBracket(t *testing.T) {
 	offline := *f
 	offline.config.CacheDirectory = t.TempDir()
 	offline.config.Mirror = nil
-	_, messages, err = offline.stage(record.Source{Commit: record.ObjectID(newer), Tree: record.ObjectID(newerTree)})
+	_, messages, err = offline.stage(model.Source{Commit: model.ObjectID(newer), Tree: model.ObjectID(newerTree)})
 	require.NoError(t, err)
 	require.Contains(t, strings.Join(messages, "\n"), "Generating full PortIndex")
 	require.Equal(t, 3, requests)
@@ -416,7 +416,7 @@ func TestMirrorBootstrapSeedsAColdCacheWithinItsBracket(t *testing.T) {
 	unreachable := *f
 	unreachable.config.CacheDirectory = t.TempDir()
 	unreachable.config.Mirror = &Mirror{HTTP: server.Client(), URL: "http://127.0.0.1:1/PortIndex"}
-	_, messages, err = unreachable.stage(record.Source{Commit: record.ObjectID(newer), Tree: record.ObjectID(newerTree)})
+	_, messages, err = unreachable.stage(model.Source{Commit: model.ObjectID(newer), Tree: model.ObjectID(newerTree)})
 	require.NoError(t, err)
 	require.Contains(t, strings.Join(messages, "\n"), "Mirror index unavailable, indexing in full")
 	require.Contains(t, strings.Join(messages, "\n"), "Generating full PortIndex")
@@ -434,11 +434,11 @@ func TestIndexGenerationWidensASparseWorkspace(t *testing.T) {
 	f.put("devel/working/Portfile", workingPortfile)
 	f.put("devel/other/Portfile", "PortSystem 1.0\nname other\nversion 1\ncategories devel\n")
 	commit, tree := f.commit()
-	source := record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree)}
+	source := model.Source{Commit: model.ObjectID(commit), Tree: model.ObjectID(tree)}
 	ws, err := workspace.Open(t.Context(), f.repo, source)
 	require.NoError(t, err)
 	defer ws.Close()
-	require.NoError(t, ws.EnsurePort(t.Context(), record.Target{Name: "working", Portfile: "devel/working/Portfile"}))
+	require.NoError(t, ws.EnsurePort(t.Context(), model.Target{Name: "working", Portfile: "devel/working/Portfile"}))
 	require.False(t, ws.Scope().All)
 	into, err := ws.Tree(testPlatform)
 	require.NoError(t, err)

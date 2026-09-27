@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -32,9 +31,9 @@ func TestTidyCommitsAnUpdateUnambiguouslyAndRestoreUndoesIt(t *testing.T) {
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
 	require.NoError(t, err)
-	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: record.Bump, Port: "jq"})
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.Bump, Port: "jq"})
 	require.NoError(t, err)
-	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: record.RefreshChecksums, Port: "jq"})
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.RefreshChecksums, Port: "jq"})
 	require.NoError(t, err)
 
 	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
@@ -117,7 +116,7 @@ func TestTidyKeepsAGoodHistoryAndOrdersSeveralPorts(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, plan.Keep, "two good commits are left alone")
 
-	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: record.Bump, Port: "jq"})
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.Bump, Port: "jq"})
 	require.NoError(t, err)
 	plan, err = e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
 	require.NoError(t, err)

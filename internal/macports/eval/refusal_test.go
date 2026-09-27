@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // evaluateLines evaluates a port whose Portfile runs lines after its name
@@ -20,7 +20,7 @@ func evaluateLines(t *testing.T, lines string, observed bool) (macports.Observat
 	putFile(t, tree.Root(), "devel/effects/Portfile", "PortSystem 1.0\nname effects\nversion 1\n"+lines+"\n")
 	// The target is named, not resolved: resolving evaluates the port,
 	// which a refusal would stop first.
-	bound, err := tree.Select(record.Target{Name: "effects", Portfile: "devel/effects/Portfile"})
+	bound, err := tree.Select(model.Target{Name: "effects", Portfile: "devel/effects/Portfile"})
 	require.NoError(t, err)
 	if observed {
 		return e.Observe(t.Context(), bound, macports.ObservationRequest{Declarations: true})

@@ -2,11 +2,10 @@ package macos
 
 import (
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/model"
 	"slices"
 	"strconv"
 	"strings"
-
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 type Release struct {
@@ -97,7 +96,7 @@ func ProductForDarwin(darwin int) (string, error) {
 
 // Describe words a platform for a person unambiguously, "macOS 26 (Tahoe)
 // arm64" for darwin 25, and keeps the raw fields when the release is unknown.
-func Describe(platform record.Platform) string {
+func Describe(platform model.Platform) string {
 	parts := []string{platform.OS, platform.Version}
 	if platform.OS == "darwin" {
 		if major, err := strconv.Atoi(platform.Version); err == nil {

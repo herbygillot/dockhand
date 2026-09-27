@@ -10,7 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // Reader adds snapshot-relative indexed names to the native evaluator. Index
@@ -29,7 +29,7 @@ func FromEntry(entry portindex.Entry, variants map[string]bool) macports.Selecti
 	return selected
 }
 
-func (r *Reader) Resolve(ctx context.Context, tree macports.Tree, selected macports.Selection) ([]record.Target, error) {
+func (r *Reader) Resolve(ctx context.Context, tree macports.Tree, selected macports.Selection) ([]model.Target, error) {
 	if err := selected.Validate(); err != nil {
 		return nil, err
 	}
@@ -59,7 +59,7 @@ func (r *Reader) Resolve(ctx context.Context, tree macports.Tree, selected macpo
 	}
 	// The index named the port's directory; a sparse workspace brings it
 	// before the evaluator reads it.
-	if err := tree.Projection().EnsurePort(ctx, record.Target{Portfile: bound.Selector}); err != nil {
+	if err := tree.Projection().EnsurePort(ctx, model.Target{Portfile: bound.Selector}); err != nil {
 		return nil, err
 	}
 	targets, err := r.Evaluator.Resolve(ctx, tree, bound)

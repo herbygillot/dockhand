@@ -47,9 +47,6 @@ var engineImports = map[string]string{
 	"internal/macports/newport":           "new Portfiles, for create",
 	"internal/macports/commitmsg":         "commit messages, for tidy",
 	"internal/macports/commitrules":       "the commit rules, for tidy, submit, and review",
-	// v2's vocabulary, until its live types move to their owners (roadmap
-	// item 5).
-	"internal/record": "v2's vocabulary in edits and releases, until item 5 moves it",
 }
 
 // The engine imports what it decides with, and nothing that drives it or

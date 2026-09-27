@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/model"
 	"os"
 	"path/filepath"
 	"sort"
@@ -16,7 +17,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/filelock"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/progress"
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 const (
@@ -48,11 +48,11 @@ type generation struct {
 }
 
 type environment struct {
-	Layout     string          `json:"layout"`
-	Executable string          `json:"executable"`
-	Digest     string          `json:"digest"`
-	Runtime    string          `json:"runtime,omitempty"`
-	Platform   record.Platform `json:"platform"`
+	Layout     string         `json:"layout"`
+	Executable string         `json:"executable"`
+	Digest     string         `json:"digest"`
+	Runtime    string         `json:"runtime,omitempty"`
+	Platform   model.Platform `json:"platform"`
 	// Variables is what the indexer was told the platform looks like.
 	Variables string `json:"variables,omitempty"`
 }
@@ -62,13 +62,13 @@ type environment struct {
 // builders of one generation serialize on that generation's own lock.
 type cache struct {
 	config    Config
-	platform  record.Platform
+	platform  model.Platform
 	variables string
 	directory string
 	guard     *os.File
 }
 
-func openCache(ctx context.Context, c Config, platform record.Platform) (*cache, error) {
+func openCache(ctx context.Context, c Config, platform model.Platform) (*cache, error) {
 	for _, value := range []string{platform.OS, platform.Version, platform.Architecture} {
 		if value == "" || strings.ContainsAny(value, "/\\\x00\r\n\t ") {
 			return nil, fmt.Errorf("portindex: complete platform required for indexing")
@@ -84,7 +84,7 @@ func openCache(ctx context.Context, c Config, platform record.Platform) (*cache,
 	if err != nil {
 		return nil, err
 	}
-	identity := record.Digest([]byte(strings.Join([]string{cacheLayout, c.Digest, c.Runtime, platform.OS, platform.Version, platform.Architecture, variables}, "\x00")))
+	identity := model.Digest([]byte(strings.Join([]string{cacheLayout, c.Digest, c.Runtime, platform.OS, platform.Version, platform.Architecture, variables}, "\x00")))
 	directory := filepath.Join(c.CacheDirectory, identity)
 	guard, err := filelock.Acquire(ctx, filepath.Join(directory, cacheLockName), filelock.Shared)
 	if err != nil {

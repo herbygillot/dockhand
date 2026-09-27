@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
+	"github.com/herbygillot/dockhand/internal/model"
 	"maps"
 	"math/big"
 	"regexp"
@@ -15,7 +16,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 type carrier struct {
@@ -196,7 +196,7 @@ func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator,
 				continue
 			}
 		}
-		desired := record.Release{Version: next.Version, Forge: string(spec.Forge)}
+		desired := model.Release{Version: next.Version, Forge: string(spec.Forge)}
 		if spec.Forge != "" {
 			desired.Tag = spec.Pattern.Tag(sourceVersion)
 		}
@@ -214,7 +214,7 @@ func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator,
 			continue
 		}
 		selected, snapshot = contents, after
-		input.versionInput = record.ReleaseInput{Portfile: input.target.Portfile, Offset: edit.carrier.candidate.Span.Start, Before: edit.carrier.candidate.Value, After: edit.value}
+		input.versionInput = model.ReleaseInput{Portfile: input.target.Portfile, Offset: edit.carrier.candidate.Span.Start, Before: edit.carrier.candidate.Value, After: edit.value}
 		matches++
 	}
 	if matches == 0 {

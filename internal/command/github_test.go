@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv/ghactions"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/forge"
 )
 
 // fakeActions stands in for GitHub Actions in your fork: a push of a
@@ -214,7 +214,7 @@ func TestCleanRemovesTheCheckBranchesInYourFork(t *testing.T) {
 	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
 	g := testForge(nil).(*fakeGitHub)
-	g.prs[0].State = record.PullRequestMerged
+	g.prs[0].State = forge.PullRequestMerged
 	t.Setenv("MACPORTS_TREE", w.clone)
 	_, _, err = dockhand(t, "status", "--refresh")
 	require.NoError(t, err)

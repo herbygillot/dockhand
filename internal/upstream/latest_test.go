@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/record"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/stretchr/testify/require"
@@ -351,7 +351,7 @@ func TestManifestReadsTheReleaseCommit(t *testing.T) {
 	}}
 	service := automaticService(t, c)
 	port := automaticPort()
-	release := record.Release{Version: "2.0", Forge: "github", Instance: "https://github.com", Repository: "owner/project", Tag: "v2.0", Commit: commit}
+	release := model.Release{Version: "2.0", Forge: "github", Instance: "https://github.com", Repository: "owner/project", Tag: "v2.0", Commit: commit}
 	data, err := service.Manifest(t.Context(), port, release, "go.mod")
 	require.NoError(t, err)
 	require.Equal(t, "go 1.25\n", string(data))
@@ -361,7 +361,7 @@ func TestManifestReadsTheReleaseCommit(t *testing.T) {
 	other.Repository = "owner/other"
 	_, err = service.Manifest(t.Context(), port, other, "go.mod")
 	require.Error(t, err, "the release must name this port's repository")
-	_, err = service.Manifest(t.Context(), port, record.Release{Archive: true, Version: "2.0"}, "go.mod")
+	_, err = service.Manifest(t.Context(), port, model.Release{Archive: true, Version: "2.0"}, "go.mod")
 	require.Error(t, err, "an archive release has no commit to read at")
 }
 

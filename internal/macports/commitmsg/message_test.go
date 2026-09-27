@@ -5,19 +5,18 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/stretchr/testify/require"
 )
 
 func TestRewriteTouchesOnlyTheSubjectAndTheTrailers(t *testing.T) {
 	t.Parallel()
-	closes := record.Reference{Relation: record.ReferenceCloses, URL: "https://trac.macports.org/ticket/74379"}
+	closes := commitmsg.Reference{Relation: commitmsg.ReferenceCloses, URL: "https://trac.macports.org/ticket/74379"}
 	generated := "fixture: update to 2\n\nDetails\n\n" + commitmsg.GeneratedBy() + "\n"
-	require.Equal(t, "fixture: update to 2.1\n\nDetails\n\nCloses: https://trac.macports.org/ticket/74379\n"+commitmsg.GeneratedBy(), commitmsg.Rewrite(generated, "fixture: update to 2.1", []record.Reference{closes}))
+	require.Equal(t, "fixture: update to 2.1\n\nDetails\n\nCloses: https://trac.macports.org/ticket/74379\n"+commitmsg.GeneratedBy(), commitmsg.Rewrite(generated, "fixture: update to 2.1", []commitmsg.Reference{closes}))
 	require.Equal(t, "fixture: update to 2\n\nDetails\n\n"+commitmsg.GeneratedBy(), commitmsg.Rewrite(generated, "", nil), "nothing asked, nothing changed")
 	human := "fixture: fix build\n\nSigned-off-by: Someone <someone@example.invalid>\nCloses: https://trac.macports.org/ticket/74379"
-	require.Equal(t, human+"\nSee: https://trac.macports.org/ticket/1", commitmsg.Rewrite(human, "", []record.Reference{closes, {Relation: record.ReferenceSee, URL: "https://trac.macports.org/ticket/1"}}), "a cited ticket is not cited twice; a new one joins the final paragraph")
-	require.Equal(t, "fixture: fix build\n\nCloses: https://trac.macports.org/ticket/74379", commitmsg.Rewrite("fixture: fix build", "", []record.Reference{closes}), "a subject-only message gains a trailer paragraph")
+	require.Equal(t, human+"\nSee: https://trac.macports.org/ticket/1", commitmsg.Rewrite(human, "", []commitmsg.Reference{closes, {Relation: commitmsg.ReferenceSee, URL: "https://trac.macports.org/ticket/1"}}), "a cited ticket is not cited twice; a new one joins the final paragraph")
+	require.Equal(t, "fixture: fix build\n\nCloses: https://trac.macports.org/ticket/74379", commitmsg.Rewrite("fixture: fix build", "", []commitmsg.Reference{closes}), "a subject-only message gains a trailer paragraph")
 }
 
 func TestSubjectSuppliesThePortNameOnce(t *testing.T) {
@@ -49,9 +48,9 @@ func TestComposeKeepsTheReasonAndOneAttribution(t *testing.T) {
 
 func TestComposeCitesReferencesOnceAheadOfTheAttribution(t *testing.T) {
 	t.Parallel()
-	closes := record.Reference{Relation: record.ReferenceCloses, URL: "https://trac.macports.org/ticket/74379"}
-	see := record.Reference{Relation: record.ReferenceSee, URL: "https://trac.macports.org/ticket/74422"}
-	message := commitmsg.Compose("fixture: revbump for simdutf update", "Why it matters\n\nSee: https://trac.macports.org/ticket/74422\n"+commitmsg.GeneratedBy(), []record.Reference{closes, see, closes})
+	closes := commitmsg.Reference{Relation: commitmsg.ReferenceCloses, URL: "https://trac.macports.org/ticket/74379"}
+	see := commitmsg.Reference{Relation: commitmsg.ReferenceSee, URL: "https://trac.macports.org/ticket/74422"}
+	message := commitmsg.Compose("fixture: revbump for simdutf update", "Why it matters\n\nSee: https://trac.macports.org/ticket/74422\n"+commitmsg.GeneratedBy(), []commitmsg.Reference{closes, see, closes})
 	require.Equal(t, "fixture: revbump for simdutf update\n\nWhy it matters\n\nSee: https://trac.macports.org/ticket/74422\nCloses: https://trac.macports.org/ticket/74379\n"+commitmsg.GeneratedBy()+"\n", message)
-	require.Equal(t, "fixture: update to 2\n\nCloses: https://trac.macports.org/ticket/74379\n"+commitmsg.GeneratedBy()+"\n", commitmsg.Compose("fixture: update to 2", "", []record.Reference{closes}))
+	require.Equal(t, "fixture: update to 2\n\nCloses: https://trac.macports.org/ticket/74379\n"+commitmsg.GeneratedBy()+"\n", commitmsg.Compose("fixture: update to 2", "", []commitmsg.Reference{closes}))
 }

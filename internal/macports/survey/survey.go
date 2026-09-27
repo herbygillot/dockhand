@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
+	"github.com/herbygillot/dockhand/internal/model"
 	"path"
 	"strings"
 
@@ -13,7 +14,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	portselection "github.com/herbygillot/dockhand/internal/macports/selection"
 	"github.com/herbygillot/dockhand/internal/progress"
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // Selection chooses explicit ports, exact maintainer/category filters, or all ports.
@@ -59,7 +59,7 @@ type Port struct {
 // Workspace holds the whole tree at HEAD until Close. Probes overlay its
 // Projection for their candidates and never write into it.
 type Workspace struct {
-	Source   record.Source
+	Source   model.Source
 	Root     string
 	Ports    []Port
 	Problems []portindex.SelectionProblem
@@ -74,13 +74,13 @@ func (w *Workspace) Close() error { return w.release() }
 // index. The tree comes from the registry when one is given. Explicit
 // names need no index source, only a filter does; with one, explicit names
 // that share a Portfile are grouped.
-func Open(ctx context.Context, repo *git.Repository, workspaces *workspace.Registry, platform record.Platform, index portindex.Source, selection Selection) (_ *Workspace, err error) {
+func Open(ctx context.Context, repo *git.Repository, workspaces *workspace.Registry, platform model.Platform, index portindex.Source, selection Selection) (_ *Workspace, err error) {
 	return OpenAt(ctx, repo, "HEAD", workspaces, platform, index, selection)
 }
 
 // OpenAt is Open for a named revision, such as a freshly fetched master,
 // rather than HEAD.
-func OpenAt(ctx context.Context, repo *git.Repository, revision string, workspaces *workspace.Registry, platform record.Platform, index portindex.Source, selection Selection) (_ *Workspace, err error) {
+func OpenAt(ctx context.Context, repo *git.Repository, revision string, workspaces *workspace.Registry, platform model.Platform, index portindex.Source, selection Selection) (_ *Workspace, err error) {
 	if err := selection.Validate(); err != nil {
 		return nil, err
 	}
@@ -92,7 +92,7 @@ func OpenAt(ctx context.Context, repo *git.Repository, revision string, workspac
 	if err != nil {
 		return nil, err
 	}
-	source := record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(trees[commit])}
+	source := model.Source{Commit: model.ObjectID(commit), Tree: model.ObjectID(trees[commit])}
 	files, release, err := workspaces.Acquire(ctx, repo, source)
 	if err != nil {
 		return nil, err

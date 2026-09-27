@@ -8,21 +8,21 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/text"
 )
 
 // Assessment describes preparation evidence, not whether a port will build.
 type Assessment struct {
-	Scope          *record.ReleaseScope `json:",omitempty"`
-	Coverage       []ContextCoverage    `json:",omitempty"`
-	Contexts       []record.Platform    `json:",omitempty"`
+	Scope          *model.ReleaseScope `json:",omitempty"`
+	Coverage       []ContextCoverage   `json:",omitempty"`
+	Contexts       []model.Platform    `json:",omitempty"`
 	Outcome        string
 	CurrentVersion string
 	Portfile       string
 	Inputs         []VersionInput
 	Findings       []Finding
-	Release        *record.Release `json:",omitempty"`
+	Release        *model.Release `json:",omitempty"`
 }
 
 // VersionInput locates a literal candidate in the original committed Portfile.
@@ -94,7 +94,7 @@ func (a *Assessment) Summarize() {
 
 // Assess checks declarations and optional candidate fidelity without downloading
 // archives or executing dependency generators. It restores each temporary edit.
-func (p *VersionProbe) Assess(ctx context.Context, release *record.Release) (Assessment, error) {
+func (p *VersionProbe) Assess(ctx context.Context, release *model.Release) (Assessment, error) {
 	if err := ctx.Err(); err != nil {
 		return Assessment{}, err
 	}

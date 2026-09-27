@@ -11,12 +11,12 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // Resolve accepts a snapshot-relative port directory/Portfile or a unique
 // directory name. A subport is selected explicitly within that Portfile.
-func (e *Evaluator) Resolve(ctx context.Context, tree macports.Tree, selection macports.Selection) (_ []record.Target, err error) {
+func (e *Evaluator) Resolve(ctx context.Context, tree macports.Tree, selection macports.Selection) (_ []model.Target, err error) {
 	if err := selection.Validate(); err != nil {
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func (e *Evaluator) Resolve(ctx context.Context, tree macports.Tree, selection m
 	if len(candidates) != 1 {
 		return nil, fmt.Errorf("%w: %q matched %d port directories; specify category/port", macports.ErrTarget, selector, len(candidates))
 	}
-	provisional := record.Target{Name: path.Base(path.Dir(candidates[0])), Portfile: candidates[0], Subport: selection.Subport, Variants: maps.Clone(selection.Variants)}
+	provisional := model.Target{Name: path.Base(path.Dir(candidates[0])), Portfile: candidates[0], Subport: selection.Subport, Variants: maps.Clone(selection.Variants)}
 	bound, err := tree.Select(provisional)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", macports.ErrTarget, err)
@@ -87,5 +87,5 @@ func (e *Evaluator) Resolve(ctx context.Context, tree macports.Tree, selection m
 		return nil, fmt.Errorf("%w: requested %s, evaluated %s", macports.ErrTarget, selection.Subport, info.Name)
 	}
 	provisional.Name = info.Name
-	return []record.Target{provisional}, nil
+	return []model.Target{provisional}, nil
 }

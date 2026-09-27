@@ -16,8 +16,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // riftProject stands in for GitHub: a Rust project with one crate.
@@ -37,8 +37,8 @@ checksum = "86fdf8605db99b54d3cd748a44c6d04df638eb5dafb219b135d0149bd0db01f6"
 // checksummer stands in for MacPorts filling in a new port's checksums.
 type checksummer struct{ repo *git.Repository }
 
-func (checksummer) ResolveRelease(context.Context, preparation.Request) (record.Release, error) {
-	return record.Release{}, nil
+func (checksummer) ResolveRelease(context.Context, preparation.Request) (model.Release, error) {
+	return model.Release{}, nil
 }
 
 func (c checksummer) Prepare(ctx context.Context, request preparation.Request) (preparation.Result, error) {
@@ -51,7 +51,7 @@ func (c checksummer) Prepare(ctx context.Context, request preparation.Request) (
 	edit := git.FileEdit{Path: name, Before: before, After: []byte(after), Mode: before.Mode}
 	tree, err := c.repo.EditTree(ctx, string(request.Source.Tree), []git.FileEdit{edit})
 	port := macports.Snapshot{Ports: map[string]macports.PortInfo{"rift": {Name: "rift", Version: "0.4.2"}}}
-	return preparation.Result{Target: record.Target{Name: "rift", Portfile: name}, PreparedTree: record.ObjectID(tree), Files: []git.FileEdit{edit},
+	return preparation.Result{Target: model.Target{Name: "rift", Portfile: name}, PreparedTree: model.ObjectID(tree), Files: []git.FileEdit{edit},
 		Fidelity:  []portedit.Fidelity{{Before: port, After: port}},
 		Downloads: []archives.Download{{Checksum: portfile.Checksum{Name: "rift-0.4.2.tar.gz", SHA256: "bbbb", Size: 4096}}}}, err
 }

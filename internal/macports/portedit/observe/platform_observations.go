@@ -9,14 +9,14 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // Profiles closes over the platform boundaries seen in the baseline and
 // candidate metadata, observing operands until no boundary is new. The
 // source scan also covers declarations in branches that have not executed.
 // The operands it finds are what later declaration observations request.
-func (s *Session) Profiles(ctx context.Context, candidate []byte) ([]record.Platform, error) {
+func (s *Session) Profiles(ctx context.Context, candidate []byte) ([]model.Platform, error) {
 	needs, err := scanPlatformNeeds(s.Baseline)
 	if err != nil {
 		return nil, err
@@ -51,7 +51,7 @@ func (s *Session) Profiles(ctx context.Context, candidate []byte) ([]record.Plat
 		return profiles, err
 	}
 	values := map[string]int{}
-	visited := map[record.Platform]bool{}
+	visited := map[model.Platform]bool{}
 	for {
 		for _, profile := range profiles {
 			if visited[profile] {

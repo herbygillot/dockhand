@@ -6,7 +6,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // ErrInconclusive means an observation could not settle what a modeled
@@ -24,10 +24,10 @@ type Session struct {
 	Ports macports.Observer
 	// Primary is the owning Portfile's target and Target the selected one;
 	// a selected-only observation binds the latter.
-	Primary, Target record.Target
+	Primary, Target model.Target
 	// Native is the platform the baseline evaluated on: what a modeled
 	// context is bound with, and the native profile boundaries build on.
-	Native record.Platform
+	Native model.Platform
 	// Baseline is the contents whose declaration observations are cached.
 	Baseline []byte
 	// Project maps contents to the projection they are observed in: the

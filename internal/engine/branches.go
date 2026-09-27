@@ -11,7 +11,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -429,14 +428,14 @@ type PullRequestAdoption struct {
 // push to their branch, which submit checks.
 func (e *Engine) AdoptPullRequest(ctx context.Context, number int) (PullRequestAdoption, error) {
 	var adoption PullRequestAdoption
-	ref := record.PullRequestRef{Forge: forge.GitHub, Repository: UpstreamRepository, Number: number}
+	ref := forge.PullRequestRef{Forge: forge.GitHub, Repository: UpstreamRepository, Number: number}
 	observed, err := e.forge().Observe(ctx, ref)
 	if err != nil {
 		return adoption, fmt.Errorf("reading #%d: %w", number, err)
 	}
 	pr := observed.PullRequest
 	adoption.Title, adoption.Author, adoption.MaintainerCanModify = pr.Title, pr.Author, pr.MaintainerCanModify
-	if pr.State != record.PullRequestOpen {
+	if pr.State != forge.PullRequestOpen {
 		return adoption, fmt.Errorf("#%d is %s; only an open pull request can be worked on", number, pr.State)
 	}
 	var tracked []model.Branch

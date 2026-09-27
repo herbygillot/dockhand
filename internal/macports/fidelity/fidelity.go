@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
@@ -153,7 +153,7 @@ func Equivalent(expected, actual macports.Snapshot) error {
 
 // Version expects the selected port to move to the release, its revision to
 // reset, and its source declarations and checksums to change, and nothing else.
-func version(before, after macports.Snapshot, selected string, release record.Release, checksums string) Report {
+func version(before, after macports.Snapshot, selected string, release model.Release, checksums string) Report {
 	result := Report{Before: before, After: after, ExpectedChanges: []string{selected + ".version -> " + release.Version, selected + ".revision -> 0", selected + ".distfiles and checksums"}, UnexpectedChanges: []string{}}
 	names := map[string]bool{}
 	for name := range before.Ports {
@@ -204,7 +204,7 @@ func version(before, after macports.Snapshot, selected string, release record.Re
 // version moves, the revision resets, nothing is downloaded, and git.branch
 // lands on branch, the resolved tag or the resolved commit. An empty branch
 // leaves git.branch unchecked, for a source whose tag is not known.
-func GitVersion(shared bool, before, after macports.Snapshot, selected string, release record.Release, branch string) Report {
+func GitVersion(shared bool, before, after macports.Snapshot, selected string, release model.Release, branch string) Report {
 	release.Tag = branch
 	report := ScopedVersion(shared, before, after, selected, release, "")
 	for i, change := range report.ExpectedChanges {
@@ -246,8 +246,8 @@ func Checksums(before, after macports.Snapshot, selected, checksums string) Repo
 
 // ReleaseScope partitions sibling ports into those a release changes and those
 // it must protect, refusing independent releases and unauthorized siblings.
-func ReleaseScope(before, after macports.Snapshot, selected string, authorized bool) (*record.ReleaseScope, error) {
-	scope := &record.ReleaseScope{}
+func ReleaseScope(before, after macports.Snapshot, selected string, authorized bool) (*model.ReleaseScope, error) {
+	scope := &model.ReleaseScope{}
 	oldRoot, nextRoot := before.Ports[selected], after.Ports[selected]
 	if len(before.Ports) != len(after.Ports) {
 		return nil, fmt.Errorf("%w: release changes the port set", ErrMismatch)
@@ -267,7 +267,7 @@ func ReleaseScope(before, after macports.Snapshot, selected string, authorized b
 		if err != nil {
 			return nil, err
 		}
-		member := record.ReleaseMember{Target: target, Before: macports.ReleaseState(old), After: macports.ReleaseState(next), NeedsXcode: needsXcode, MetadataOnly: next.Options["dockhand.metadata_only"] == "1"}
+		member := model.ReleaseMember{Target: target, Before: macports.ReleaseState(old), After: macports.ReleaseState(next), NeedsXcode: needsXcode, MetadataOnly: next.Options["dockhand.metadata_only"] == "1"}
 		if old.Version == next.Version {
 			scope.Protected = append(scope.Protected, member)
 			continue
@@ -289,8 +289,8 @@ func ReleaseScope(before, after macports.Snapshot, selected string, authorized b
 		}
 		scope.Affected = append(scope.Affected, member)
 	}
-	slices.SortFunc(scope.Affected, func(a, b record.ReleaseMember) int { return record.CompareTargets(a.Target, b.Target) })
-	slices.SortFunc(scope.Protected, func(a, b record.ReleaseMember) int { return record.CompareTargets(a.Target, b.Target) })
+	slices.SortFunc(scope.Affected, func(a, b model.ReleaseMember) int { return model.CompareTargets(a.Target, b.Target) })
+	slices.SortFunc(scope.Protected, func(a, b model.ReleaseMember) int { return model.CompareTargets(a.Target, b.Target) })
 	return scope, nil
 }
 
@@ -306,7 +306,7 @@ func followsObsolete(name, selected string, old, next, oldRoot, nextRoot macport
 // ScopedVersion applies Version to every affected member of a release and
 // Equivalent to the rest. Without shared authorization the affected members
 // are the selected port and its obsolete followers.
-func ScopedVersion(shared bool, before, after macports.Snapshot, selected string, release record.Release, checksums string) Report {
+func ScopedVersion(shared bool, before, after macports.Snapshot, selected string, release model.Release, checksums string) Report {
 	scope, err := ReleaseScope(before, after, selected, shared)
 	if err != nil {
 		return Report{Before: before, After: after, UnexpectedChanges: []string{err.Error()}}
@@ -339,7 +339,7 @@ func ScopedVersion(shared bool, before, after macports.Snapshot, selected string
 }
 
 // ScopedChecksums applies Checksums across the affected members of a scope.
-func ScopedChecksums(scope *record.ReleaseScope, before, after macports.Snapshot, selected, checksums string) Report {
+func ScopedChecksums(scope *model.ReleaseScope, before, after macports.Snapshot, selected, checksums string) Report {
 	if scope == nil {
 		return Checksums(before, after, selected, checksums)
 	}

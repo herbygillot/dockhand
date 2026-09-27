@@ -2,18 +2,17 @@ package macports
 
 import (
 	"context"
-
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // ObservationRequest explicitly selects modeled metadata. It never changes the
 // native platform used by Reader.Evaluate or establishes build evidence.
 type ObservationRequest struct {
-	Platform record.Platform
+	Platform model.Platform
 	// DeveloperTools, when stated, model the context with those tools from
 	// the facts table, the Mac's own platform too: the Command Line Tools
 	// alone, or Xcode.
-	DeveloperTools record.DeveloperTools
+	DeveloperTools model.DeveloperTools
 	Declarations   bool
 	// SelectedOnly omits sibling metadata; it is not suitable for final fidelity.
 	SelectedOnly bool

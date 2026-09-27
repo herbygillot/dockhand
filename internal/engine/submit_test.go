@@ -13,7 +13,6 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -23,7 +22,7 @@ type fakeForge struct {
 	t        *testing.T
 	upstream string
 	fork     string
-	prs      map[int]*record.PullRequest
+	prs      map[int]*forge.PullRequest
 	next     int
 	others   []forge.PullRequestSummary
 	created  []forge.PullRequestInput
@@ -36,7 +35,7 @@ type fakeForge struct {
 	reviews     []forge.ReviewInput
 	rerequested []string
 	// statuses are what Inspect reports, by number.
-	statuses map[int]record.PullRequestStatus
+	statuses map[int]forge.PullRequestStatus
 	// createFails fails the next Create: after opening the pull request,
 	// as a reply lost on the way back, when lost is set, or before.
 	createFails, lost bool
@@ -67,16 +66,16 @@ func (f *fakeForge) RepositoryInfo(_ context.Context, name string) (forge.Reposi
 }
 
 // head is what GitHub reports as the pull request's head: the fork's branch.
-func (f *fakeForge) head(branch string) record.ObjectID {
+func (f *fakeForge) head(branch string) model.ObjectID {
 	out := run(f.t, f.fork, "for-each-ref", "--format=%(objectname)", "refs/heads/"+branch)
-	return record.ObjectID(out)
+	return model.ObjectID(out)
 }
 
-func (f *fakeForge) observe(pr *record.PullRequest) forge.PullRequestObservation {
+func (f *fakeForge) observe(pr *forge.PullRequest) forge.PullRequestObservation {
 	copied := *pr
 	copied.RemoteHead = f.head(pr.HeadBranch)
 	if path, ok := f.repos[pr.HeadRepository]; ok {
-		copied.RemoteHead = record.ObjectID(run(f.t, path, "for-each-ref", "--format=%(objectname)", "refs/heads/"+pr.HeadBranch))
+		copied.RemoteHead = model.ObjectID(run(f.t, path, "for-each-ref", "--format=%(objectname)", "refs/heads/"+pr.HeadBranch))
 	}
 	return forge.PullRequestObservation{Found: true, PullRequest: copied}
 }
@@ -90,7 +89,7 @@ func (f *fakeForge) Find(_ context.Context, q forge.PullRequestQuery) (forge.Pul
 	return forge.PullRequestObservation{}, nil
 }
 
-func (f *fakeForge) Observe(_ context.Context, ref record.PullRequestRef) (forge.PullRequestObservation, error) {
+func (f *fakeForge) Observe(_ context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error) {
 	pr, ok := f.prs[ref.Number]
 	if !ok {
 		return forge.PullRequestObservation{}, forge.ErrNotFound
@@ -105,15 +104,15 @@ func (f *fakeForge) Create(_ context.Context, input forge.PullRequestInput) (for
 	}
 	// GitHub refuses a second pull request from one head to one base.
 	for _, pr := range f.prs {
-		if pr.HeadRepository == input.HeadRepository && pr.HeadBranch == input.HeadBranch && pr.BaseBranch == input.BaseBranch && pr.State == record.PullRequestOpen {
+		if pr.HeadRepository == input.HeadRepository && pr.HeadBranch == input.HeadBranch && pr.BaseBranch == input.BaseBranch && pr.State == forge.PullRequestOpen {
 			return forge.PullRequestObservation{}, fmt.Errorf("%w: a pull request already exists for %s:%s", forge.ErrRejected, input.HeadRepository, input.HeadBranch)
 		}
 	}
 	f.created = append(f.created, input)
 	f.next++
 	number := 34900 + f.next
-	f.prs[number] = &record.PullRequest{Ref: record.PullRequestRef{Forge: forge.GitHub, Repository: input.Repository, Number: number, URL: fmt.Sprintf("https://github.com/%s/pull/%d", input.Repository, number)},
-		HeadRepository: input.HeadRepository, HeadBranch: input.HeadBranch, BaseBranch: input.BaseBranch, State: record.PullRequestOpen, Title: input.Desired.Title, Body: input.Desired.Body}
+	f.prs[number] = &forge.PullRequest{Ref: forge.PullRequestRef{Forge: forge.GitHub, Repository: input.Repository, Number: number, URL: fmt.Sprintf("https://github.com/%s/pull/%d", input.Repository, number)},
+		HeadRepository: input.HeadRepository, HeadBranch: input.HeadBranch, BaseBranch: input.BaseBranch, State: forge.PullRequestOpen, Title: input.Desired.Title, Body: input.Desired.Body}
 	if f.createFails {
 		f.createFails = false
 		return forge.PullRequestObservation{}, errors.New("github: connection reset after the request was sent")
@@ -132,7 +131,7 @@ func (f *fakeForge) OpenPullRequests(context.Context, string, string) ([]forge.P
 	return f.others, nil
 }
 
-func (f *fakeForge) MarkReady(_ context.Context, ref record.PullRequestRef) (forge.PullRequestObservation, error) {
+func (f *fakeForge) MarkReady(_ context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error) {
 	f.readied = append(f.readied, ref.Number)
 	return f.observe(f.prs[ref.Number]), nil
 }
@@ -146,15 +145,15 @@ func (f *fakeForge) PostReview(_ context.Context, input forge.ReviewInput) (stri
 	return fmt.Sprintf("%s#pullrequestreview-%d", input.Ref.URL, len(f.reviews)), nil
 }
 
-func (f *fakeForge) RequestReviewers(_ context.Context, _ record.PullRequestRef, logins []string) error {
+func (f *fakeForge) RequestReviewers(_ context.Context, _ forge.PullRequestRef, logins []string) error {
 	f.rerequested = append(f.rerequested, logins...)
 	return nil
 }
 
-func (f *fakeForge) Inspect(_ context.Context, ref record.PullRequestRef) (record.PullRequestStatus, error) {
+func (f *fakeForge) Inspect(_ context.Context, ref forge.PullRequestRef) (forge.PullRequestStatus, error) {
 	status, ok := f.statuses[ref.Number]
 	if !ok {
-		return record.PullRequestStatus{Review: "none"}, nil
+		return forge.PullRequestStatus{Review: "none"}, nil
 	}
 	return status, nil
 }
@@ -164,7 +163,7 @@ func (f fixture) withFork(t *testing.T, e *Engine) *fakeForge {
 	fork := filepath.Join(filepath.Dir(f.upstream), "fork.git")
 	run(t, filepath.Dir(f.upstream), "clone", "-q", "--bare", f.upstream, fork)
 	run(t, f.clone, "remote", "add", "fork", fork)
-	fake := &fakeForge{t: t, upstream: f.upstream, fork: fork, prs: map[int]*record.PullRequest{}}
+	fake := &fakeForge{t: t, upstream: f.upstream, fork: fork, prs: map[int]*forge.PullRequest{}}
 	e.Forge = fake
 	return fake
 }
@@ -174,7 +173,7 @@ func committedUpdate(t *testing.T, e *Engine) model.Branch {
 	t.Helper()
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
 	require.NoError(t, err)
-	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: record.Bump, Port: "jq"})
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.Bump, Port: "jq"})
 	require.NoError(t, err)
 	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
 	require.NoError(t, err)
@@ -216,7 +215,7 @@ func TestSubmitWithoutACheckSaysSoAndOpensThePullRequest(t *testing.T) {
 	require.True(t, submitted.Pushed)
 	require.Equal(t, 34901, submitted.PullRequest.Ref.Number)
 	head := run(t, branch.Worktree, "rev-parse", "HEAD")
-	require.Equal(t, record.ObjectID(head), fake.head("dockhand/jq-update"), "the fork has the commit")
+	require.Equal(t, model.ObjectID(head), fake.head("dockhand/jq-update"), "the fork has the commit")
 
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
 		recorded, err := r.Branch(branch.ID)
@@ -258,7 +257,7 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, fake.created, 1)
 	require.Empty(t, fake.updated, "the push is the update; the title and description had nothing new")
-	require.Equal(t, record.ObjectID(run(t, branch.Worktree, "rev-parse", "HEAD")), fake.head("dockhand/jq-update"))
+	require.Equal(t, model.ObjectID(run(t, branch.Worktree, "rev-parse", "HEAD")), fake.head("dockhand/jq-update"))
 
 	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Title: "jq: update to 1.8.1, reviewed"})
 	require.NoError(t, err)
@@ -297,9 +296,9 @@ func TestSubmitNeedsCommittedWorkAndYourFork(t *testing.T) {
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
 	require.NoError(t, err)
-	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: record.Bump, Port: "jq"})
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.Bump, Port: "jq"})
 	require.NoError(t, err)
-	fake := &fakeForge{t: t, upstream: f.upstream, prs: map[int]*record.PullRequest{}}
+	fake := &fakeForge{t: t, upstream: f.upstream, prs: map[int]*forge.PullRequest{}}
 	e.Forge = fake
 
 	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})

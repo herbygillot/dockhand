@@ -2,7 +2,7 @@ package observe
 
 import (
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/stretchr/testify/require"
 	"slices"
 	"testing"
@@ -10,14 +10,14 @@ import (
 
 func TestProfilesIncludeBoundaryAndArchitectureWithoutImpossibleOldARM(t *testing.T) {
 	t.Parallel()
-	native := record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
+	native := model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
 	profiles, err := observationProfiles([]byte(`if {${os.major} >= 17} {version 1} else {version 0}
 if {${build_arch} eq "arm64"} {distfiles a} else {distfiles b}`), native)
 	require.NoError(t, err)
 	require.Equal(t, native, profiles[0])
-	require.Contains(t, profiles, record.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"})
-	require.Contains(t, profiles, record.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"})
-	require.NotContains(t, profiles, record.Platform{OS: "darwin", Version: "16", Architecture: "arm64"})
+	require.Contains(t, profiles, model.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"})
+	require.Contains(t, profiles, model.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"})
+	require.NotContains(t, profiles, model.Platform{OS: "darwin", Version: "16", Architecture: "arm64"})
 	_, err = observationProfiles([]byte(`if {${os.major} >= $minimum} {version 1}`), native)
 	require.ErrorIs(t, err, ErrInconclusive)
 }
@@ -26,17 +26,17 @@ if {${build_arch} eq "arm64"} {distfiles a} else {distfiles b}`), native)
 // neighbors on either side are the releases that exist.
 func TestProfilesSkipTheDarwinThatNeverShipped(t *testing.T) {
 	t.Parallel()
-	native := record.Platform{OS: "darwin", Version: "27", Architecture: "arm64"}
+	native := model.Platform{OS: "darwin", Version: "27", Architecture: "arm64"}
 	profiles, err := observationProfiles([]byte(`if {${os.major} >= 27} {version 1} else {version 0}`), native)
 	require.NoError(t, err)
-	require.Contains(t, profiles, record.Platform{OS: "darwin", Version: "27", Architecture: "x86_64"})
+	require.Contains(t, profiles, model.Platform{OS: "darwin", Version: "27", Architecture: "x86_64"})
 	for _, profile := range profiles {
 		require.NotEqual(t, "26", profile.Version)
 	}
 	profiles, err = observationProfiles([]byte(`if {${os.major} >= 26} {version 1} else {version 0}`), native)
 	require.NoError(t, err)
-	require.Contains(t, profiles, record.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"})
-	require.Contains(t, profiles, record.Platform{OS: "darwin", Version: "27", Architecture: "x86_64"})
+	require.Contains(t, profiles, model.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"})
+	require.Contains(t, profiles, model.Platform{OS: "darwin", Version: "27", Architecture: "x86_64"})
 	for _, profile := range profiles {
 		require.NotEqual(t, "26", profile.Version)
 	}
@@ -44,7 +44,7 @@ func TestProfilesSkipTheDarwinThatNeverShipped(t *testing.T) {
 
 func TestProfilesRefuseUnresolvedReadsAlongsideKnownBoundaries(t *testing.T) {
 	t.Parallel()
-	native := record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
+	native := model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
 	for _, source := range []string{
 		`set major ${os.major}; if {$major >= 17} {version 1}`,
 		`if {${os.major} >= 17 && ${os.major} < $limit} {version 1}`,
@@ -62,7 +62,7 @@ func TestProfilesRefuseUnresolvedReadsAlongsideKnownBoundaries(t *testing.T) {
 
 func TestUnmodeledReadsAreGapsOnlyWhereTheyCanSelectSources(t *testing.T) {
 	t.Parallel()
-	native := record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
+	native := model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
 	for _, source := range []string{
 		`configure.env-append MACOSX_DEPLOYMENT_TARGET=${macosx_deployment_target}`,
 		`if {${os.platform} eq "darwin" && [vercmp ${macosx_deployment_target} >= 15.0]} {
@@ -95,7 +95,7 @@ func TestUnmodeledReadsAreGapsOnlyWhereTheyCanSelectSources(t *testing.T) {
 		t.Run(source, func(t *testing.T) {
 			profiles, err := observationProfiles([]byte(source), native)
 			require.NoError(t, err)
-			require.Equal(t, []record.Platform{native}, profiles)
+			require.Equal(t, []model.Platform{native}, profiles)
 		})
 	}
 	for _, source := range []string{
@@ -134,7 +134,7 @@ func contextBoundaries(src []byte) (map[int]bool, bool, error) {
 
 // observationProfiles includes the host, relevant architecture choices, and
 // both sides of literal Darwin conditions. Unmodeled expressions are gaps.
-func observationProfiles(src []byte, native record.Platform) ([]record.Platform, error) {
+func observationProfiles(src []byte, native model.Platform) ([]model.Platform, error) {
 	majors, archDependent, err := contextBoundaries(src)
 	if err != nil {
 		return nil, err

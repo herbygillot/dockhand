@@ -18,7 +18,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -42,12 +41,12 @@ type fakePreparer struct {
 	upstream [2]map[string]string
 }
 
-func (p *fakePreparer) ResolveRelease(_ context.Context, r preparation.Request) (record.Release, error) {
+func (p *fakePreparer) ResolveRelease(_ context.Context, r preparation.Request) (model.Release, error) {
 	version := p.version
 	if r.Version != "" {
 		version = r.Version
 	}
-	return record.Release{Version: version, Forge: "github", Tag: "jq-" + version}, nil
+	return model.Release{Version: version, Forge: "github", Tag: "jq-" + version}, nil
 }
 
 func (p *fakePreparer) Prepare(ctx context.Context, r preparation.Request) (preparation.Result, error) {
@@ -65,10 +64,10 @@ func (p *fakePreparer) Prepare(ctx context.Context, r preparation.Request) (prep
 	}
 	nextRevision = revision
 	switch {
-	case r.Action == record.Bump:
+	case r.Action == model.Bump:
 		next = r.Release.Version
 		after = versionLine.ReplaceAllString(after, "version "+next)
-	case r.Action == record.BumpRevision:
+	case r.Action == model.BumpRevision:
 		nextRevision = revision + 1
 		if revisionLine.MatchString(after) {
 			after = revisionLine.ReplaceAllString(after, "revision "+strconv.Itoa(nextRevision))
@@ -84,7 +83,7 @@ func (p *fakePreparer) Prepare(ctx context.Context, r preparation.Request) (prep
 	snapshot := func(version string, revision int) macports.Snapshot {
 		return macports.Snapshot{Ports: map[string]macports.PortInfo{r.Selection.Selector: {Name: r.Selection.Selector, Version: version, Revision: revision}}}
 	}
-	result := preparation.Result{Target: record.Target{Name: r.Selection.Selector, Portfile: name}, Release: r.Release, PreparedTree: r.Source.Tree,
+	result := preparation.Result{Target: model.Target{Name: r.Selection.Selector, Portfile: name}, Release: r.Release, PreparedTree: r.Source.Tree,
 		Fidelity: []portedit.Fidelity{{Before: snapshot(string(old), revision), After: snapshot(next, nextRevision)}}}
 	if after == string(data) {
 		return result, nil
@@ -94,9 +93,9 @@ func (p *fakePreparer) Prepare(ctx context.Context, r preparation.Request) (prep
 	if err != nil {
 		return preparation.Result{}, err
 	}
-	result.Files, result.PreparedTree = []git.FileEdit{edit}, record.ObjectID(tree)
+	result.Files, result.PreparedTree = []git.FileEdit{edit}, model.ObjectID(tree)
 	result.Commits = []preparation.CommitIntent{{Subject: r.Selection.Selector + ": update to " + next}}
-	if r.Action == record.BumpRevision {
+	if r.Action == model.BumpRevision {
 		result.Commits[0].Subject = r.Selection.Selector + ": " + r.Subject
 	}
 	if r.KeepArchives != "" && p.upstream[0] != nil {
@@ -147,7 +146,7 @@ func TestUpdateEditsWorkingFilesAndCommitsNothing(t *testing.T) {
 	portfile := filepath.Join(branch.Worktree, "textproc/jq/Portfile")
 	require.NoFileExists(t, portfile, "the sparse worktree starts with _resources only")
 
-	update, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: record.Bump, Port: "jq"})
+	update, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.Bump, Port: "jq"})
 	require.NoError(t, err)
 	require.True(t, update.Applied)
 	require.Equal(t, "jq", update.Port)
@@ -189,18 +188,18 @@ func TestUpdateStartsFromTheWorkingFilesAsTheyAre(t *testing.T) {
 	portfile := filepath.Join(branch.Worktree, "textproc/jq/Portfile")
 	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\n# my note\n"})
 
-	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: record.Bump, Port: "jq", Version: "1.8.0"})
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.Bump, Port: "jq", Version: "1.8.0"})
 	require.NoError(t, err)
 	require.Equal(t, "name jq\nversion 1.8.0\n# my note\n", read(t, portfile), "an uncommitted edit is kept")
-	require.Equal(t, record.ObjectID(branch.Base), p.requests[0].Source.Base)
+	require.Equal(t, model.ObjectID(branch.Base), p.requests[0].Source.Base)
 	require.Equal(t, "1.8.0", p.requests[0].Version)
 
-	checksums, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: record.RefreshChecksums, Port: "jq"})
+	checksums, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.RefreshChecksums, Port: "jq"})
 	require.NoError(t, err)
 	require.True(t, checksums.Applied)
 	require.Equal(t, "name jq\nversion 1.8.0\n# my note\nchecksums sha256 0000\n", read(t, portfile))
 
-	again, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: record.RefreshChecksums, Port: "jq"})
+	again, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.RefreshChecksums, Port: "jq"})
 	require.NoError(t, err)
 	require.True(t, again.Current, "nothing left to change")
 	require.False(t, again.Applied)
@@ -211,7 +210,7 @@ func TestAPlannedUpdateChangesNothing(t *testing.T) {
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
 	require.NoError(t, err)
-	update, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: record.Bump, Port: "jq", Plan: true})
+	update, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.Bump, Port: "jq", Plan: true})
 	require.NoError(t, err)
 	require.False(t, update.Applied)
 	require.Contains(t, update.Diff, "-version 1.7.1\n+version 1.8.1")
@@ -229,7 +228,7 @@ func TestAnUpdateWritesNothingOverAFileThatChanged(t *testing.T) {
 		write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.2\n"})
 	}
 
-	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: record.Bump, Port: "jq"})
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.Bump, Port: "jq"})
 	require.ErrorIs(t, err, git.ErrWorkingFile)
 	require.ErrorContains(t, err, "nothing was written")
 	require.Equal(t, "name jq\nversion 1.7.2\n", read(t, portfile), "the person's edit stands")
@@ -241,12 +240,12 @@ func TestUpdateNeedsTheBranchCheckedOut(t *testing.T) {
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
 	require.NoError(t, err)
 	run(t, branch.Worktree, "switch", "-q", "--detach")
-	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: record.Bump, Port: "jq"})
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.Bump, Port: "jq"})
 	require.ErrorContains(t, err, "is not checked out in")
 
-	_, err = e.Update(t.Context(), UpdateRequest{Branch: model.Branch{Name: "dockhand/elsewhere"}, Action: record.Bump, Port: "jq"})
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: model.Branch{Name: "dockhand/elsewhere"}, Action: model.Bump, Port: "jq"})
 	require.ErrorContains(t, err, "not checked out anywhere")
-	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: record.Action("publish"), Port: "jq"})
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.UpdateAction("publish"), Port: "jq"})
 	require.ErrorContains(t, err, "not an update")
 }
 
@@ -259,7 +258,7 @@ func TestBranchesChangingAndFreeNames(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, changing, "uncommitted work changes nothing yet")
 
-	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: record.Bump, Port: "jq"})
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.Bump, Port: "jq"})
 	require.NoError(t, err)
 	run(t, branch.Worktree, "commit", "-q", "-am", "jq: update to 1.8.1")
 	changing, err = e.BranchesChanging(t.Context(), "jq")
@@ -284,7 +283,7 @@ func TestAnUpdateComparesTheUpstreamArchives(t *testing.T) {
 		{"COPYING": "MIT\n", "go.mod": "module jq\n"},
 		{"COPYING": "GPL\n", "go.mod": "module jq\n\nrequire golang.org/x/net v0.44.0\n"},
 	}
-	update, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: record.Bump, Port: "jq", CompareUpstream: true})
+	update, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.Bump, Port: "jq", CompareUpstream: true})
 	require.NoError(t, err)
 	require.True(t, update.Upstream.Held())
 	require.Equal(t, []string{
@@ -303,7 +302,7 @@ func TestAnUpdateComparesTheUpstreamArchives(t *testing.T) {
 	p.upstream = [2]map[string]string{}
 	other, err := e.Start(t.Context(), StartRequest{Name: "jq-two"})
 	require.NoError(t, err)
-	quiet, err := e.Update(t.Context(), UpdateRequest{Branch: other, Action: record.Bump, Port: "jq", CompareUpstream: true})
+	quiet, err := e.Update(t.Context(), UpdateRequest{Branch: other, Action: model.Bump, Port: "jq", CompareUpstream: true})
 	require.NoError(t, err)
 	require.Nil(t, quiet.Upstream, "no archives, nothing compared")
 	require.False(t, quiet.Upstream.Held())

@@ -4,10 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/model"
 	"io/fs"
 	"strings"
-
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 var (
@@ -33,7 +32,7 @@ type Selection struct {
 // so the target it returns can be evaluated where it was resolved.
 type Reader interface {
 	Evaluate(context.Context, Context) (Snapshot, error)
-	Resolve(context.Context, Tree, Selection) ([]record.Target, error)
+	Resolve(context.Context, Tree, Selection) ([]model.Target, error)
 }
 
 // SelectedReader evaluates only the selected port for counterfactual probes.
@@ -69,7 +68,7 @@ type Evaluator interface {
 // NativeEvaluator is an Evaluator that also reports the native platform.
 type NativeEvaluator interface {
 	Evaluator
-	NativePlatform(context.Context) (record.Platform, error)
+	NativePlatform(context.Context) (model.Platform, error)
 }
 
 // Validate checks selector syntax before filesystem or evaluator access.

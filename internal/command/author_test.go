@@ -15,20 +15,20 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // bumper stands in for MacPorts: a bump rewrites the version line, and a
 // checksum refresh adds a checksums line.
 type bumper struct{ repo *git.Repository }
 
-func (b bumper) ResolveRelease(_ context.Context, r preparation.Request) (record.Release, error) {
+func (b bumper) ResolveRelease(_ context.Context, r preparation.Request) (model.Release, error) {
 	version := r.Version
 	if version == "" {
 		version = "1.8.1"
 	}
-	return record.Release{Version: version, Forge: "github", Tag: "jq-" + version}, nil
+	return model.Release{Version: version, Forge: "github", Tag: "jq-" + version}, nil
 }
 
 func (b bumper) Prepare(ctx context.Context, r preparation.Request) (preparation.Result, error) {
@@ -45,10 +45,10 @@ func (b bumper) Prepare(ctx context.Context, r preparation.Request) (preparation
 	next, after := old, string(data)
 	revision := 0
 	switch {
-	case r.Action == record.Bump:
+	case r.Action == model.Bump:
 		next = r.Release.Version
 		after = line.ReplaceAllString(after, "version "+next)
-	case r.Action == record.BumpRevision:
+	case r.Action == model.BumpRevision:
 		revision = 1
 		after += "revision 1\n"
 	case !strings.Contains(after, "checksums"):
@@ -57,14 +57,14 @@ func (b bumper) Prepare(ctx context.Context, r preparation.Request) (preparation
 	port := func(v string, revision int) macports.Snapshot {
 		return macports.Snapshot{Ports: map[string]macports.PortInfo{"jq": {Version: v, Revision: revision}}}
 	}
-	result := preparation.Result{Target: record.Target{Name: "jq"}, Release: r.Release, PreparedTree: r.Source.Tree, Fidelity: []portedit.Fidelity{{Before: port(old, 0), After: port(next, revision)}}}
+	result := preparation.Result{Target: model.Target{Name: "jq"}, Release: r.Release, PreparedTree: r.Source.Tree, Fidelity: []portedit.Fidelity{{Before: port(old, 0), After: port(next, revision)}}}
 	if after == string(data) {
 		return result, nil
 	}
 	edit := git.FileEdit{Path: name, Before: before, After: []byte(after), Mode: before.Mode}
 	tree, err := b.repo.EditTree(ctx, string(r.Source.Tree), []git.FileEdit{edit})
-	result.Files, result.PreparedTree = []git.FileEdit{edit}, record.ObjectID(tree)
-	if r.Action == record.BumpRevision {
+	result.Files, result.PreparedTree = []git.FileEdit{edit}, model.ObjectID(tree)
+	if r.Action == model.BumpRevision {
 		result.Commits = []preparation.CommitIntent{{Subject: "jq: " + r.Subject}}
 	}
 	return result, err

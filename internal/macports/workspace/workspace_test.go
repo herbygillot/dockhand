@@ -12,7 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
@@ -61,14 +61,14 @@ func (f *fixture) put(name, text string) {
 	require.NoError(f.t, os.WriteFile(file, []byte(text), 0600))
 }
 
-func (f *fixture) source() record.Source {
+func (f *fixture) source() model.Source {
 	commit := f.run("rev-parse", "HEAD")
-	return record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(f.run("rev-parse", "HEAD^{tree}"))}
+	return model.Source{Commit: model.ObjectID(commit), Tree: model.ObjectID(f.run("rev-parse", "HEAD^{tree}"))}
 }
 
 var (
-	targetA = record.Target{Name: "a", Portfile: "devel/a/Portfile"}
-	targetB = record.Target{Name: "b", Portfile: "devel/b/Portfile"}
+	targetA = model.Target{Name: "a", Portfile: "devel/a/Portfile"}
+	targetB = model.Target{Name: "b", Portfile: "devel/b/Portfile"}
 )
 
 func exists(root, name string) bool {
@@ -96,7 +96,7 @@ func TestEnsurePortMaterializesOnlyThePortAndSharedResources(t *testing.T) {
 	require.False(t, w.Whole())
 	require.True(t, w.Scope().Holds("devel/a"))
 	require.False(t, w.Scope().Holds("devel/b"))
-	tree, err := w.Tree(record.Platform{})
+	tree, err := w.Tree(model.Platform{})
 	require.NoError(t, err)
 	require.True(t, tree.Projected(), "the tree carries its projection")
 	require.False(t, tree.Projection().Whole())
@@ -107,11 +107,11 @@ func TestEnsurePortMaterializesOnlyThePortAndSharedResources(t *testing.T) {
 	require.NoError(t, w.EnsureAll(t.Context()))
 	require.True(t, w.Scope().All)
 	require.NoError(t, w.EnsureAll(t.Context()))
-	require.ErrorContains(t, w.EnsurePort(t.Context(), record.Target{Name: "x", Portfile: "Portfile"}), "category/port/Portfile")
+	require.ErrorContains(t, w.EnsurePort(t.Context(), model.Target{Name: "x", Portfile: "Portfile"}), "category/port/Portfile")
 	root := w.Root()
 	require.NoError(t, w.Close())
 	require.False(t, exists(root, "devel/a/Portfile"), "Close removes the directory")
-	plain, err := macports.NewTree(f.source(), f.root, record.Platform{})
+	plain, err := macports.NewTree(f.source(), f.root, model.Platform{})
 	require.NoError(t, err)
 	require.False(t, plain.Projected(), "a plain directory projects nothing")
 	require.True(t, plain.Projection().Whole())
@@ -150,7 +150,7 @@ func TestOverlaySharesTrackedFilesAndReplacesTheEdited(t *testing.T) {
 	require.False(t, exists(overlay.Root(), "PortIndex"), "untracked files are not part of an overlay")
 	require.Equal(t, base.Scope(), overlay.Scope())
 	require.Same(t, base, overlay.Base())
-	tree, err := overlay.Tree(record.Platform{})
+	tree, err := overlay.Tree(model.Platform{})
 	require.NoError(t, err)
 	require.Equal(t, base.Root(), tree.Base())
 	require.Equal(t, overlay.Root(), tree.Root())
@@ -323,7 +323,7 @@ func TestRegistrySharesOneWorkspacePerSource(t *testing.T) {
 	require.NoError(t, err)
 	require.Same(t, first, second, "one workspace per source")
 	require.True(t, second.Scope().Holds("devel/a"), "the scope the first holder ensured")
-	other, releaseOther, err := registry.Acquire(t.Context(), f.repo, record.Source{Tree: f.source().Tree, Base: "0000000000000000000000000000000000000001"})
+	other, releaseOther, err := registry.Acquire(t.Context(), f.repo, model.Source{Tree: f.source().Tree, Base: "0000000000000000000000000000000000000001"})
 	require.NoError(t, err)
 	require.NotSame(t, first, other, "a different source identity is a different workspace")
 	require.NoError(t, releaseFirst())
@@ -368,7 +368,7 @@ func TestObservationReadsSharedResourcesThroughTheOverlayLink(t *testing.T) {
 	require.NotZero(t, link.Mode()&os.ModeSymlink)
 	bound, err := overlay.Context(targetA, platform)
 	require.NoError(t, err)
-	modeled := record.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}
+	modeled := model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}
 	if modeled == platform {
 		modeled.Version = "23"
 	}

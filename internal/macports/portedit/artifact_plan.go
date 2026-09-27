@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
+	"github.com/herbygillot/dockhand/internal/model"
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -11,11 +12,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
 	"github.com/herbygillot/dockhand/internal/progress"
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 type archiveContext struct {
-	profile       record.Platform
+	profile       model.Platform
 	before, after macports.Snapshot
 	binding       distfiles.Binding
 	affected      bool

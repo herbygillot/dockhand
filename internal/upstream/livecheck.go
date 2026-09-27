@@ -10,7 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // discoverOverridden runs the maintainer's own livecheck the way Base would
@@ -94,7 +94,7 @@ func (s *Service) discoverOverridden(ctx context.Context, port macports.PortInfo
 		}
 	}
 	result.ObservedAt = time.Now().UTC().Truncate(time.Millisecond)
-	release := record.Release{Selection: record.Selection{CurrentVersion: port.Version, NoUpdate: comparison <= 0}, Version: evaluated, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: tag.Name, Commit: tag.Commit, ObservedAt: result.ObservedAt}
+	release := model.Release{ReleaseSelection: model.ReleaseSelection{CurrentVersion: port.Version, NoUpdate: comparison <= 0}, Version: evaluated, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: tag.Name, Commit: tag.Commit, ObservedAt: result.ObservedAt}
 	result.finish(release, port.Version, "Selected "+tag.Name+" from the port's livecheck", " by the port's livecheck")
 	result.Evidence = []Observation{{Source: string(spec.Forge) + "-livecheck", Version: version, URL: spec.Livecheck.URL, ObservedAt: result.ObservedAt}}
 	return result, nil

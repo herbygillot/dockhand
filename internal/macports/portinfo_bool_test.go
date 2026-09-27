@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,11 +22,11 @@ func TestPortInfoBoolReadsTclBooleansOneWay(t *testing.T) {
 	require.ErrorContains(t, err, `invalid use_xcode value "maybe"`)
 	_, err = (macports.PortInfo{OptionErrors: map[string]string{"extract.rename": "no such variable"}}).Bool("extract.rename")
 	require.ErrorContains(t, err, "evaluating extract.rename: no such variable")
-	snapshot := macports.Snapshot{Target: record.Target{Name: "fixture"}, Ports: map[string]macports.PortInfo{"fixture": {Options: map[string]string{"use_xcode": "on"}}}}
+	snapshot := macports.Snapshot{Target: model.Target{Name: "fixture"}, Ports: map[string]macports.PortInfo{"fixture": {Options: map[string]string{"use_xcode": "on"}}}}
 	needs, err := snapshot.RequiresXcode()
 	require.NoError(t, err)
 	require.True(t, needs)
-	rebound, err := macports.RebindReleaseScope(&record.ReleaseScope{Input: record.ReleaseInput{Portfile: "devel/fixture/Portfile"}, Affected: []record.ReleaseMember{{Target: record.Target{Name: "fixture", Portfile: "devel/fixture/Portfile"}, After: record.ReleaseState{Version: "1"}}}}, macports.Snapshot{Ports: map[string]macports.PortInfo{"fixture": {Version: "1", Options: map[string]string{"use_xcode": "on"}}}})
+	rebound, err := macports.RebindReleaseScope(&model.ReleaseScope{Input: model.ReleaseInput{Portfile: "devel/fixture/Portfile"}, Affected: []model.ReleaseMember{{Target: model.Target{Name: "fixture", Portfile: "devel/fixture/Portfile"}, After: model.ReleaseState{Version: "1"}}}}, macports.Snapshot{Ports: map[string]macports.PortInfo{"fixture": {Version: "1", Options: map[string]string{"use_xcode": "on"}}}})
 	require.NoError(t, err)
 	require.True(t, rebound.Affected[0].NeedsXcode, "use_xcode on is recorded on the scope, as the snapshot reads it")
 }

@@ -11,7 +11,6 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge/github"
 	githubapi "github.com/herbygillot/dockhand/internal/github"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -34,15 +33,15 @@ func TestInspectSummarizesMergeabilityReviewsAndChecks(t *testing.T) {
 	}))
 	defer server.Close()
 	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}}}
-	status, err := client.Inspect(t.Context(), record.PullRequestRef{Forge: forge.GitHub, Repository: "macports/macports-ports", Number: 7})
+	status, err := client.Inspect(t.Context(), forge.PullRequestRef{Forge: forge.GitHub, Repository: "macports/macports-ports", Number: 7})
 	require.NoError(t, err)
 	require.Equal(t, "no", status.Mergeable)
 	require.Equal(t, "dirty", status.MergeableDetail)
 	require.Equal(t, "approved", status.Review, "the latest review per reviewer counts, and dismissed reviews do not")
 	require.Equal(t, 1, status.Approvals)
-	require.Equal(t, record.CheckSummary{Total: 4, Passed: 1, Failed: 2, Pending: 1, Failing: []string{"Build ports (macos-14)", "buildbot/ports-13"}}, status.Checks)
+	require.Equal(t, forge.CheckSummary{Total: 4, Passed: 1, Failed: 2, Pending: 1, Failing: []string{"Build ports (macos-14)", "buildbot/ports-13"}}, status.Checks)
 	require.Equal(t, "mergeable: no (dirty); review: approved; checks: 1 passed, 2 failed, 1 pending of 4 (failing: Build ports (macos-14), buildbot/ports-13)", status.Summary())
-	_, err = client.Inspect(t.Context(), record.PullRequestRef{Forge: "gitlab", Repository: "x/y", Number: 1})
+	_, err = client.Inspect(t.Context(), forge.PullRequestRef{Forge: "gitlab", Repository: "x/y", Number: 1})
 	require.Error(t, err)
 }
 
@@ -70,7 +69,7 @@ func TestInspectNamesWhoRequestedChangesAndReviewCanBeRequestedAgain(t *testing.
 	}))
 	defer server.Close()
 	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL, Token: "fixture-token"}}}
-	ref := record.PullRequestRef{Forge: forge.GitHub, Repository: "macports/macports-ports", Number: 7}
+	ref := forge.PullRequestRef{Forge: forge.GitHub, Repository: "macports/macports-ports", Number: 7}
 	status, err := client.Inspect(t.Context(), ref)
 	require.NoError(t, err)
 	require.Equal(t, "changes-requested", status.Review)

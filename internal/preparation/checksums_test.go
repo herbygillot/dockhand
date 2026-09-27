@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,7 +26,7 @@ func TestRefreshChecksumsPreservesVersionsAndCanBeCurrent(t *testing.T) {
 				declarations = "distfiles source.tar.gz extra.tar.gz\nchecksums source.tar.gz sha256 " + strings.Repeat("0", 64) + " size 0 extra.tar.gz sha256 " + strings.Repeat("0", 64) + " size 0\n"
 			}
 			service, request := preparationFixture(t, "revision 4\nmaster_sites "+server.URL+"/\n"+declarations)
-			request.Action = record.RefreshChecksums
+			request.Action = model.RefreshChecksums
 			request.Subject = ""
 			result, err := service.Prepare(t.Context(), request)
 			require.NoError(t, err)
@@ -37,7 +37,7 @@ func TestRefreshChecksumsPreservesVersionsAndCanBeCurrent(t *testing.T) {
 			require.Equal(t, "7.2", final.Version)
 			require.Equal(t, 4, final.Revision)
 			require.Equal(t, int64(len(result.Downloads)), reads.Load())
-			request.Source = record.Source{Tree: result.PreparedTree}
+			request.Source = model.Source{Tree: result.PreparedTree}
 			again, err := service.Prepare(t.Context(), request)
 			require.NoError(t, err)
 			require.Equal(t, result.PreparedTree, again.PreparedTree)
@@ -53,7 +53,7 @@ func TestRefreshChecksumsRejectsCustomFetchBeforeDownload(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { reads.Add(1) }))
 	defer server.Close()
 	service, request := preparationFixture(t, "master_sites "+server.URL+"/\ndistfiles source.tar.gz\nchecksums sha256 "+strings.Repeat("0", 64)+"\npre-fetch { set distfiles other.tar.gz }\n")
-	request.Action, request.Subject = record.RefreshChecksums, ""
+	request.Action, request.Subject = model.RefreshChecksums, ""
 	result, err := service.Prepare(t.Context(), request)
 	require.ErrorIs(t, err, preparation.ErrUnsupported)
 	require.Empty(t, result.Commits)

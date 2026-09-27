@@ -3,7 +3,7 @@ package eval
 import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/stretchr/testify/require"
 	"path/filepath"
 	"testing"
@@ -34,7 +34,7 @@ if {${build_arch} eq "arm64"} { distfiles a.zip:release } else { distfiles b.zip
 	require.NoError(t, err)
 	native, err := e.Evaluate(t.Context(), bound)
 	require.NoError(t, err)
-	got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: record.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
+	got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
 	require.NoError(t, err)
 	require.True(t, got.Modeled)
 	require.Equal(t, native.Runtime, got.Snapshot.Runtime)
@@ -100,7 +100,7 @@ set host_value [exec /usr/bin/true]
 	require.NoError(t, err)
 	bound, err := tree.Select(targets[0])
 	require.NoError(t, err)
-	o, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: record.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
+	o, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
 	require.NoError(t, err)
 	require.True(t, o.Ports["host"].ModeledHostAccess)
 	require.NotEmpty(t, o.Ports["host"].Problems)

@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/stretchr/testify/require"
 )
 
@@ -39,7 +39,7 @@ func TestSharedSessionEvaluatesLikeFreshInterpreters(t *testing.T) {
 		require.NoError(t, err)
 		selections = append(selections, macports.Selection{Selector: filepath.ToSlash(relative)})
 	}
-	corpus, err := macports.NewTree(record.Source{Tree: record.ObjectID(tree.Source().Tree)}, root, record.Platform{})
+	corpus, err := macports.NewTree(model.Source{Tree: model.ObjectID(tree.Source().Tree)}, root, model.Platform{})
 	require.NoError(t, err)
 	compareSessions(t, evaluator, corpus, selections)
 }
