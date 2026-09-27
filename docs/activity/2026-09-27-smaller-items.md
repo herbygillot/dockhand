@@ -35,3 +35,14 @@ The architecture review of 2026-09-27 found three reductions where Tart's result
 ## `outdated` shows its progress
 
 A large `--mine` was minutes of silence: 1,076 ports took three. `outdated.Service` now tells an optional `Progress` how many ports are looked up: once before the first, and after each, in order, never two calls at once. The engine's `OutdatedRequest` carries it, and `outdated` and `update --outdated` draw one line on standard error, "Looking up each port's newest release: 312 of 1,076", redrawn in place and cleared at the end. That happens only when standard error is a terminal, and never with `--json` (`Streams.errTerminal`). Serve's daily look passes none.
+
+## One interpreter per port for its version comparisons
+
+Each `SelectVersion` and `ExtractVersions` started MacPorts' `tclsh` and loaded the version script, about 43 ms each on this Mac, measured with five comparisons. A port's discovery makes several, so a 1,076-port `--mine` spent minutes of process time starting interpreters.
+
+Now:
+- The evaluator offers a `VersionSession` (`macports.VersionSessions`), one interpreter kept for the calls.
+- `upstream.Service` opens one per port, for `DiscoverPort` and `Resolve`, and closes it after (`withVersionSession`).
+- A comparer that can't keep one, or can't start it, is used as before.
+
+The evaluator's one-call methods are thin wrappers over a session, so every comparison runs the same code. `TestAPortsComparisonsShareOneInterpreter` counts one interpreter, closed, for a discovery of several comparisons, and none started alone.

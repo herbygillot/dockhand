@@ -607,3 +607,58 @@ func TestAnOldTagThatComparesNewerIsSetAside(t *testing.T) {
 	require.Equal(t, "v2024.09.01", result.Release.Tag)
 	require.Contains(t, result.Detail, "set aside v20200408")
 }
+
+// countedVersions is MacPorts' comparer, counting the interpreters a port's
+// discovery starts and the calls it makes outside them.
+type countedVersions struct {
+	*eval.Evaluator
+	sessions, closed, shared, alone int
+}
+
+func (c *countedVersions) SelectVersion(ctx context.Context, current, expression string, candidates []macports.VersionCandidate) (macports.VersionSelection, error) {
+	c.alone++
+	return c.Evaluator.SelectVersion(ctx, current, expression, candidates)
+}
+
+func (c *countedVersions) ExtractVersions(ctx context.Context, expression, page string, multiline bool) ([]string, error) {
+	c.alone++
+	return c.Evaluator.ExtractVersions(ctx, expression, page, multiline)
+}
+
+func (c *countedVersions) VersionSession(ctx context.Context) (macports.VersionSession, error) {
+	c.sessions++
+	session, err := c.Evaluator.VersionSession(ctx)
+	return &countedSession{VersionSession: session, counts: c}, err
+}
+
+type countedSession struct {
+	macports.VersionSession
+	counts *countedVersions
+}
+
+func (s *countedSession) SelectVersion(ctx context.Context, current, expression string, candidates []macports.VersionCandidate) (macports.VersionSelection, error) {
+	s.counts.shared++
+	return s.VersionSession.SelectVersion(ctx, current, expression, candidates)
+}
+
+func (s *countedSession) Close() error {
+	s.counts.closed++
+	return s.VersionSession.Close()
+}
+
+// A port's discovery compares its versions in one interpreter, rather than
+// starting MacPorts' tclsh for each comparison, and closes it after.
+func TestAPortsComparisonsShareOneInterpreter(t *testing.T) {
+	t.Parallel()
+	c := &catalog{releases: []forge.Release{{Tag: "v1.9"}, {Tag: "v1.10"}, {Tag: "v2.0", Prerelease: true}}, tags: []forge.Tag{{Name: "v1.9"}, {Name: "v1.10"}, {Name: "v2.0"}}}
+	service := automaticService(t, c)
+	counted := &countedVersions{Evaluator: service.Versions.(*eval.Evaluator)}
+	service.Versions = counted
+	result, err := service.DiscoverPort(t.Context(), automaticPort())
+	require.NoError(t, err)
+	require.Equal(t, "1.10", result.CandidateVersion)
+	require.Equal(t, 1, counted.sessions)
+	require.Equal(t, 1, counted.closed)
+	require.GreaterOrEqual(t, counted.shared, 2, "several comparisons, in the one interpreter")
+	require.Zero(t, counted.alone, "none started one of its own")
+}

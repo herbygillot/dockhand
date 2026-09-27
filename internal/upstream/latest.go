@@ -24,7 +24,36 @@ type versionSelector interface {
 	ExtractVersions(context.Context, string, string, bool) ([]string, error)
 }
 
+// DiscoverPort finds a port's newest release upstream. Its version
+// comparisons share one interpreter where the comparer can keep one.
 func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (result Result, err error) {
+	err = s.withVersionSession(ctx, func(s *Service) error {
+		result, err = s.discoverPort(ctx, port)
+		return err
+	})
+	return result, err
+}
+
+// withVersionSession calls fn with the service's version comparisons in
+// one interpreter, where its comparer can keep one
+// (macports.VersionSessions): a port's discovery makes several, and each
+// would otherwise start MacPorts' tclsh anew. A comparer that can't keep
+// one, or can't start it now, is used as it is.
+func (s *Service) withVersionSession(ctx context.Context, fn func(*Service) error) error {
+	opener, ok := s.Versions.(macports.VersionSessions)
+	if !ok {
+		return fn(s)
+	}
+	session, err := opener.VersionSession(ctx)
+	if err != nil {
+		return fn(s)
+	}
+	local := *s
+	local.Versions = session
+	return errors.Join(fn(&local), session.Close())
+}
+
+func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (result Result, err error) {
 	result = Result{CurrentVersion: port.Version, Assessment: Unknown, ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}
 	defer func() {
 		if err != nil {

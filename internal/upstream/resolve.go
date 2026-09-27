@@ -16,7 +16,15 @@ import (
 
 var ErrSourceChanged = errors.New("upstream: selected tag now identifies different source")
 
-func (s *Service) Resolve(ctx context.Context, port macports.PortInfo, requested string) (model.Release, error) {
+func (s *Service) Resolve(ctx context.Context, port macports.PortInfo, requested string) (release model.Release, err error) {
+	err = s.withVersionSession(ctx, func(s *Service) error {
+		release, err = s.resolve(ctx, port, requested)
+		return err
+	})
+	return release, err
+}
+
+func (s *Service) resolve(ctx context.Context, port macports.PortInfo, requested string) (model.Release, error) {
 	if requested == "" {
 		result, err := s.DiscoverPort(ctx, port)
 		if err != nil {
