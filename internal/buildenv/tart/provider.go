@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/buildenv/staging"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -31,7 +32,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
 	"github.com/herbygillot/dockhand/internal/tart/channel"
-	"github.com/herbygillot/dockhand/internal/verify/staging"
 )
 
 // Protocol is the guest program's input and results format.

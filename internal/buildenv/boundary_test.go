@@ -13,9 +13,9 @@ import (
 )
 
 // providerImports are packages a provider must not import, each with why.
-// A provider, in a directory beneath this one, is composed by the command
-// layer and driven by the engine, and meets them only through this
-// package's contract.
+// A provider, in a directory beneath this one beside what providers share
+// (staging), is composed by the command layer and driven by the engine,
+// and meets them only through this package's contract.
 var providerImports = map[string]string{
 	"internal/engine":  "the engine drives providers; a provider meets it through this contract",
 	"internal/command": "the command layer composes providers",

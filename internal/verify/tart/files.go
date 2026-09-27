@@ -13,11 +13,11 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/herbygillot/dockhand/internal/buildenv/staging"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/tart/host"
 	"github.com/herbygillot/dockhand/internal/verify"
-	"github.com/herbygillot/dockhand/internal/verify/staging"
 )
 
 func safeToken(s string) bool {

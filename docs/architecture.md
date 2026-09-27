@@ -44,7 +44,7 @@ internal/model         the records' vocabulary; imports nothing from dockhand
 
 The providers implement `buildenv.Provider`, the contract in `internal/buildenv` for providers of build environments, and live beneath it: the `Job` a provider is given, the `Build` it records through, `ErrInfrastructure`, and the capabilities the engine looks for (`ReleaseProvider`, `Remedier`, `OwnTestsProvider`, `LeftoverProvider`). A provider imports the contract and `model`, never the engine; the command layer composes them, and a test holds that line.
 
-- **`buildenv/tart`** clones a prepared image for each release and attempt, and deletes the clone afterwards. It stages the revision's tree and a port index into the guest (`verify/staging`), reaches the guest over SSH (`tart/channel`), and runs `guest.tcl` there, in MacPorts CI's order. `tart/host` controls the VMs, and `tart/provision` makes and checks the images `providers setup tart` builds. [Tart provider](tart-provider.md).
+- **`buildenv/tart`** clones a prepared image for each release and attempt, and deletes the clone afterwards. It stages the revision's tree and a port index into the guest (`buildenv/staging`), reaches the guest over SSH (`tart/channel`), and runs `guest.tcl` there, in MacPorts CI's order. `tart/host` controls the VMs, and `tart/provision` makes and checks the images `providers setup tart` builds. [Tart provider](tart-provider.md).
 - **`buildenv/ghactions`** pushes the revision's commit to your fork and reads MacPorts' own workflow run. [github provider](github-provider.md).
 - **`buildenv/script`** hands a request file to your command and reads its result file. [command provider](command-provider.md).
 
