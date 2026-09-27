@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/config"
+	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
@@ -124,13 +127,22 @@ func TestServeInstallsALaunchdAgent(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(plist), "<string>serve</string>\n    <string>--tree</string>\n    <string>"+w.clone+"</string>\n")
 	require.Contains(t, string(plist), "<key>KeepAlive</key>\n  <true/>")
+	require.NotContains(t, string(plist), "--no-notify")
 	require.Len(t, calls, 2)
 	require.Equal(t, "bootout", calls[0][0])
 	require.Equal(t, "bootstrap", calls[1][0])
+	// Flags given beside --install shape the agent's runs.
+	_, _, err = dockhand(t, "serve", "--install", "--no-notify", "--submit-passing")
+	require.NoError(t, err)
+	plist, err = os.ReadFile(filepath.Join(w.home, "Library", "LaunchAgents", AgentLabel+".plist"))
+	require.NoError(t, err)
+	require.Contains(t, string(plist), "<string>"+filepath.Join(w.home, ".dockhand", "dockhand.db")+"</string>\n    <string>--no-notify</string>\n    <string>--submit-passing</string>\n  </array>")
+	calls = nil
 
 	out, _, err = dockhand(t, "serve", "--uninstall")
 	require.NoError(t, err)
 	require.Contains(t, out, "Removed the serve agent")
+	require.Len(t, calls, 1, "uninstall only boots it out")
 	require.NoFileExists(t, filepath.Join(w.home, "Library", "LaunchAgents", AgentLabel+".plist"))
 }
 
@@ -255,4 +267,15 @@ JSON
 		time.Sleep(200 * time.Millisecond)
 		require.False(t, started("check-3") && started("check-4"), "with capacity 1, one check at a time")
 	})
+}
+
+// serve.notify turns notifications on, the default, or off; --no-notify
+// turns them off for one run.
+func TestNotificationsCanBeTurnedOff(t *testing.T) {
+	e := &engine.Engine{Providers: map[string]engine.Provider{}}
+	require.NotNil(t, serveOptions(e, config.File{}, io.Discard, false, false, true).Notify)
+	require.Nil(t, serveOptions(e, config.File{}, io.Discard, false, false, false).Notify)
+	off := false
+	file := config.File{Serve: config.Serve{Notify: &off}}
+	require.False(t, file.Serve.Notifies())
 }

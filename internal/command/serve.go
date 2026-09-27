@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -34,7 +35,7 @@ var serveCleanup = 24 * time.Hour
 var serveNow = time.Now
 
 func serveCommand(s *settings, streams Streams) *cobra.Command {
-	var drain, install, uninstall, submitPassing, noSubmitPassing bool
+	var drain, install, uninstall, submitPassing, noSubmitPassing, noNotify bool
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Run queued checks, and keep running them",
@@ -55,16 +56,29 @@ status; draft prepares a branch for each; check also checks each.
 each branch serve prepared whose check passed, at most serve.submit_limit a
 day, and never one with an upstream or commit-rule finding, or one needing
 --accept: those wait on the attention list. --no-submit-passing turns it
-off for one run. serve.notify posts macOS notifications as checks finish and
-pull requests change.
+off for one run.
+
+serve.notify posts macOS notifications as checks finish and pull requests
+change; --no-notify turns them off for one run. They are posted through
+AppleScript, so macOS credits them to Script Editor, and clicking one opens
+it.
 
 --drain runs what is queued now and exits. --install makes serve a launchd
-agent that starts at login and restarts if it stops; --uninstall removes it.`,
+agent that starts at login and restarts if it stops, and runs it with the
+flags given beside --install, such as --no-notify; --uninstall removes it.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			if install || uninstall {
-				return serveAgent(ctx, s, streams, install)
+				// The agent runs serve as this command line would.
+				var flags []string
+				for flag, set := range map[string]bool{"--submit-passing": submitPassing, "--no-submit-passing": noSubmitPassing, "--no-notify": noNotify} {
+					if set {
+						flags = append(flags, flag)
+					}
+				}
+				slices.Sort(flags)
+				return serveAgent(ctx, s, streams, install, flags)
 			}
 			e, err := s.open(ctx)
 			if err != nil {
@@ -76,7 +90,7 @@ agent that starts at login and restarts if it stops; --uninstall removes it.`,
 				return err
 			}
 			defer session.End(context.WithoutCancel(ctx))
-			err = e.Serve(ctx, session, serveOptions(e, s.file, streams.Out, drain, (s.file.Serve.SubmitPassing || submitPassing) && !noSubmitPassing))
+			err = e.Serve(ctx, session, serveOptions(e, s.file, streams.Out, drain, (s.file.Serve.SubmitPassing || submitPassing) && !noSubmitPassing, s.file.Serve.Notifies() && !noNotify))
 			// Being stopped is how serve ends, not a failure.
 			if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
 				fmt.Fprintln(streams.Out, "serve: stopped")
@@ -90,6 +104,7 @@ agent that starts at login and restarts if it stops; --uninstall removes it.`,
 	cmd.Flags().BoolVar(&uninstall, "uninstall", false, "remove the launchd agent")
 	cmd.Flags().BoolVar(&submitPassing, "submit-passing", false, "open pull requests for the updates serve prepared that pass (Design v3 §11's guardrails)")
 	cmd.Flags().BoolVar(&noSubmitPassing, "no-submit-passing", false, "for this run, open none, whatever serve.submit_passing says")
+	cmd.Flags().BoolVar(&noNotify, "no-notify", false, "for this run, post no macOS notifications, whatever serve.notify says")
 	cmd.MarkFlagsMutuallyExclusive("install", "uninstall", "drain")
 	cmd.MarkFlagsMutuallyExclusive("submit-passing", "no-submit-passing")
 	return cmd
@@ -97,8 +112,8 @@ agent that starts at login and restarts if it stops; --uninstall removes it.`,
 
 // serveOptions turns the configuration and flags into what serve does,
 // its lines going to out and its notices to macOS notifications when
-// serve.notify allows.
-func serveOptions(e *engine.Engine, file config.File, out io.Writer, drain, submitPassing bool) engine.ServeOptions {
+// notify, serve.notify less --no-notify, allows.
+func serveOptions(e *engine.Engine, file config.File, out io.Writer, drain, submitPassing, notify bool) engine.ServeOptions {
 	capacity := map[string]int{}
 	for name := range e.Providers {
 		capacity[name] = file.Capacity(name)
@@ -119,11 +134,15 @@ func serveOptions(e *engine.Engine, file config.File, out io.Writer, drain, subm
 		CleanupEvery: serveCleanup,
 		Now:          serveNow,
 	}
-	if file.Serve.Notifies() {
+	if notify {
 		options.Notify = func(title, text string) { _ = postNotification(title, text) }
 	}
 	return options
 }
+
+// notificationTimeout bounds posting one notification, so an osascript
+// that never returns is stopped rather than left running.
+const notificationTimeout = 10 * time.Second
 
 // postNotification shows a notification; tests stand in for it.
 var postNotification = func(title, text string) error {
@@ -131,7 +150,9 @@ var postNotification = func(title, text string) error {
 		return nil
 	}
 	quote := func(value string) string { return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(value) + `"` }
-	return exec.Command("osascript", "-e", "display notification "+quote(text)+" with title "+quote("dockhand · "+title)).Run()
+	ctx, cancel := context.WithTimeout(context.Background(), notificationTimeout)
+	defer cancel()
+	return exec.CommandContext(ctx, "osascript", "-e", "display notification "+quote(text)+" with title "+quote("dockhand · "+title)).Run()
 }
 
 // AgentLabel names serve's launchd agent.
@@ -149,7 +170,7 @@ var launchctl = func(ctx context.Context, args ...string) error {
 // agentOS is the operating system serve --install targets; tests set it.
 var agentOS = runtime.GOOS
 
-func serveAgent(ctx context.Context, s *settings, streams Streams, install bool) error {
+func serveAgent(ctx context.Context, s *settings, streams Streams, install bool, flags []string) error {
 	if agentOS != "darwin" {
 		return errors.New("serve --install makes a launchd agent, which is macOS's; elsewhere, run dockhand serve under your own service manager")
 	}
@@ -186,7 +207,7 @@ func serveAgent(ctx context.Context, s *settings, streams Streams, install bool)
 		return err
 	}
 	logs := filepath.Join(filepath.Dir(options.Database), "logs", "serve.log")
-	data, err := agentPlist(executable, tree, options.Database, os.Getenv("PATH"), logs)
+	data, err := agentPlist(executable, tree, options.Database, os.Getenv("PATH"), logs, flags)
 	if err != nil {
 		return err
 	}
@@ -208,7 +229,7 @@ func serveAgent(ctx context.Context, s *settings, streams Streams, install bool)
 // agentPlist is the launchd property list that runs serve for one ports
 // checkout and database. launchd's PATH is minimal, so the installing
 // shell's PATH is kept, for git and MacPorts.
-func agentPlist(executable, tree, database, path, log string) ([]byte, error) {
+func agentPlist(executable, tree, database, path, log string, flags []string) ([]byte, error) {
 	var b bytes.Buffer
 	b.WriteString(xml.Header)
 	b.WriteString(`<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">` + "\n")
@@ -228,7 +249,7 @@ func agentPlist(executable, tree, database, path, log string) ([]byte, error) {
 	}
 	key("ProgramArguments")
 	b.WriteString("  <array>\n")
-	for _, arg := range []string{executable, "serve", "--tree", tree, "--db", database} {
+	for _, arg := range append([]string{executable, "serve", "--tree", tree, "--db", database}, flags...) {
 		if err := str("    ", arg); err != nil {
 			return nil, err
 		}
