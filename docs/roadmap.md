@@ -25,18 +25,17 @@ The weak point the review found is the information passed between steps. Several
 
 In order. Each item lands in its own commits with an activity note, and a review's probe becomes a regression test when its item fixes what it probes. The order is the implementer's to re-settle as work lands.
 
-1. **What a check means, from provider to pull request.** These are defects, fixed in place before anything moves.
-   - **One judge for test policy.** Providers report what happened, the build's outcome and the tests' outcome, and one function in the engine decides the verdict under the plan's policy. Today Tart's guest program applies `--tests required` and the github provider never reads it, so `check --on github --tests required` passes a port whose tests failed. A provider that can't honor a policy says so: GitHub's workflow runs its own tests and can't skip them.
-   - **Timed-out tests read as timed out.** Today they show as ✓ in the results and the pull request's table, and tick "tried existing tests" in its checklist.
-   - **A port absent from one environment's evaluation isn't built there.** A subport that one release or architecture doesn't define is excluded there, with the reason, rather than inherited from another environment.
-   - **A baseline is planned the way a check is.**
-     - It starts from the base of the check it explains, not the branch's current base after a rebase.
-     - It keeps each environment's exclusions, and what an environment can't meet: a port that needs Xcode isn't sent to a Command Line Tools image.
-   - **A failed check names the baseline command when one can help.** That is when the port exists at the base and failed while building, installing, or testing. The check says, for example, "To see whether harbor-viewer fails at master 4c1e2d0 too: dockhand check --baseline". There is no line for a lint, fetch, or checksum failure, nor for a port the branch adds (the decision below).
-   - **A checkpoint records the branch's base, and `restore` puts it back.** After `rebase` then `restore`, the base stays at the newer master today, and the next `tidy` fails.
-   - **`update --json` carries the upstream archive comparison** its text already shows.
+1. **What a check means, from provider to pull request.** Done 2026-09-27, in six commits ([note](activity/2026-09-27-what-a-check-means.md)):
+   - one judge applies the test policy whichever provider built, and timed-out tests read as timed out;
+   - a port an environment doesn't define isn't built there;
+   - a baseline is planned the way a check is, at the base of the check it explains, and builds only the ports it names;
+   - a failed check names the baseline command when one can help;
+   - a checkpoint records the branch's base, and restoring a rebase puts back its base and its files;
+   - `update --json` carries the upstream archive comparison.
 
-   The review's seven probes are the tests: `GitHubHonorsRequiredTests`, `TimedOutTestsAreNotPassing`, `AbsentSubportIsNotBuilt`, `BaselineKeepsEnvironmentRequirements`, `BaselineUsesCheckedBase`, `RestoreRestoresBase`, and `ReuseHonorsTestPolicy`. The last one's expected answer waits on decision D1.
+   The review's seven probes are regression tests, with `ReuseHonorsTestPolicy` rewritten for D1. Two defects the review didn't name turned up and were fixed with them:
+   - restoring a rebase left master's newer files as the branch's uncommitted edits;
+   - naming two subports of one directory, with `--also` or in a baseline, counted the directory's exclusions twice.
 
 2. **One plan per environment.**
    - **What a plan holds for each environment.** An environment's plan holds, keyed by the whole environment rather than by position:
@@ -48,7 +47,7 @@ In order. Each item lands in its own commits with an activity note, and a review
    - **Each environment builds in its own order.** That retires today's refusal, where dependencies that run opposite ways on two releases make a cycle in the combined graph.
    - **One predicate says which recorded results count toward a submission:** matching selection, environment, and test policy. Checks and baselines are then planned through the same path, which item 1 begins.
 
-3. **History changes as complete transitions.** This covers `tidy`, `rebase`, and `restore`, and the review's reproduced base bug is fixed in item 1.
+3. **History changes as complete transitions.** This covers `tidy`, `rebase`, and `restore`, and the review's reproduced base bug is fixed in item 1. A rebase now records its checkpoint and the branch's new base in one transaction; restore still changes Git, then records.
    - **A per-branch lock.** Tidy and rebase move Git refs inside a database transaction today, using it as a lock, against the store's own rule that transactions never touch Git. A per-branch lock takes that job instead.
    - **Git first, then the record.** Git's changes go first, guarded by compare-and-swap as they are now, then the record.
    - **An unknown commit is read before it is undone.** A commit the store reports as uncertain is read back before anything is undone. Today tidy undoes its refs on any error, including a commit that may have landed.
@@ -130,14 +129,12 @@ These are taken when their area is next touched, or between items.
 
 ## Decisions for the person
 
-- **D1. Results checked under different test policies.** A branch's ports may have passed under different test policies: advisory in one check, `--tests required` in a later check of only some of them. What should `submit` do?
-  - *Recommended:* each result keeps the policy it was checked under, and the pull request reports it per port. A later required-tests check of some ports doesn't bind the others retroactively.
-  - *The review's probe:* block the submission.
 - **D2. Tools or Xcode profile.** Should modelled contexts use the Xcode profile, as MacPorts' builders do, or the tools profile they use now? This has been open since oracle phase 5, and changes nothing an update edits today.
 - **D3. Tahoe's Xcode.** Tahoe's Xcode has no upper bound, so a `--rebuild` of its Xcode image would now choose Xcode 27, by the rule that gives Sequoia 26.3. Should Tahoe stay on 26?
 
 ### Decided
 
+- **D1. Results checked under different test policies** (2026-09-27). Each result keeps the policy it was checked under, and reads under it, naming its check where that differs: "tests failed (advisory, check-3)". A later `--tests required` check of some ports doesn't bind the others, nor block the submission. The review's probe expected a block.
 - **Baselines** (2026-09-27).
   - They stay optional and off by default: `--baseline`, or `check.baseline = true`.
   - A failed build, install, or test of a port the base has names the command.
@@ -186,6 +183,6 @@ Changed:
 - **Finding 4's timing.** Extraction comes after each piece is fixed, apart from the provider contract, which goes first.
 - **Finding 5 is ranked lower.** GitHub isn't the default provider, so per-runner evidence is a smaller item. The port reader's report joins item 6, where reuse needs it.
 - **Finding 6 is narrowed.** It shrinks to the JSON gap and the release's provenance, until something reads more.
-- **Finding 1's reuse probe waits on D1.**
+- **Finding 1's reuse probe was rewritten for D1.** It expected a block; the person decided each result keeps its own check's policy.
 
 **Earlier reviews** were triaged in the previous roadmap, which records what each contributed and what was declined ([v2/roadmap.md](v2/roadmap.md#review-triage-and-validation)).

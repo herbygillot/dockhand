@@ -102,3 +102,7 @@ Tests:
 Tests:
 - `update --json` with archives that couldn't be fetched carries the problem;
 - the whole loop's `update --json`, which has no archives, carries none.
+
+## The roadmap
+
+Item 1 is marked done, with the two defects the review didn't name. D1 moves to Decided. Item 3 says what this work already changed about history: a rebase records its checkpoint and base in one transaction, and restore still changes Git before its record.
