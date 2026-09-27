@@ -1,11 +1,13 @@
 package command
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -126,6 +128,44 @@ func TestUpdateSubmitTidiesChecksAndSubmits(t *testing.T) {
 	require.Contains(t, out, "checking commit ")
 	require.Contains(t, out, "Opened #34901")
 	require.Len(t, g.prs, 1)
+}
+
+// update --submit passes on what submit --check takes, and settles where
+// to check before it edits anything. On a terminal, --yes applies a tidy of
+// dockhand's own edit without asking.
+func TestUpdateSubmitPassesOnWhereAndWhatWasTested(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	withScript(t, w, "passed")
+	g := withGitHub(t, w)
+
+	_, _, err := dockhand(t, "update", "jq", "--new", "--on", "command")
+	require.EqualError(t, err, "--on, --tested-binaries, and --tested-variants go with --submit")
+	_, _, err = dockhand(t, "update", "jq", "--new", "--yes")
+	require.EqualError(t, err, "--yes goes with --outdated or --submit")
+
+	_, _, err = dockhand(t, "update", "jq", "--new", "--submit", "--on", "nowhere")
+	require.EqualError(t, err, `--on nowhere: no provider "nowhere" is set up; nothing was changed`)
+	require.Empty(t, gitRun(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
+
+	terminal := func(args ...string) (string, string) {
+		var out, errs bytes.Buffer
+		err := Run(t.Context(), args, Streams{In: strings.NewReader(""), Out: &out, Err: &errs, interactive: true})
+		require.NoError(t, err, errs.String())
+		return out.String(), errs.String()
+	}
+	out, prompts := terminal("update", "jq", "--new", "--submit", "--on", "command")
+	require.Contains(t, prompts, "Apply [a]", "without --yes, a terminal reviews the tidy")
+	require.Contains(t, out, "Nothing was checked or submitted.")
+
+	out, prompts = terminal("update", "jq", "--new", "--submit", "--yes", "--on", "command", "--tested-binaries")
+	require.NotContains(t, prompts, "Apply [a]")
+	require.NotContains(t, prompts, "Did you test", "the flag answered the template's questions")
+	require.Contains(t, out, "Opened #34901")
+	require.Len(t, g.prs, 1)
+	require.Contains(t, g.prs[0].Body, "- [x] tested basic functionality of all binary files?")
+	require.Contains(t, g.prs[0].Body, "- [ ] checked that the Portfile's most important [variants]")
 }
 
 func TestAStealthUpdateWithoutARevbumpNumbersTheDirectory(t *testing.T) {

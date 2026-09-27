@@ -67,7 +67,10 @@ starting anything; --check also queues a check of each.
 --submit goes on to tidy the edit, check it, and submit exactly that
 commit once the check passes: tidy, then submit --check, each previewed.
 Without a terminal, the tidy applies only when it is made of dockhand's own
-edits alone.`,
+edits alone; --yes applies such a tidy on a terminal too, without asking.
+--on says where to check, and --tested-binaries and --tested-variants tick
+the pull request's checkboxes, as they do for submit. Where to check is
+settled before anything is edited.`,
 		// --outdated takes any number of ports; one port's update takes
 		// the port and, optionally, its version.
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -80,12 +83,18 @@ edits alone.`,
 			if linked.submit && (batch.outdated || plan) {
 				return errors.New("--submit goes with one port's update, not --plan or --outdated")
 			}
+			if !linked.submit && (len(linked.on) > 0 || linked.testedBinaries || linked.testedVariants) {
+				return errors.New("--on, --tested-binaries, and --tested-variants go with --submit")
+			}
 			if batch.outdated {
 				batch.plan = plan
 				return updateOutdated(cmd.Context(), s, streams, args, batch)
 			}
 			if batch.mine || batch.check {
 				return errors.New("--mine and --check go with --outdated")
+			}
+			if batch.yes && !linked.submit {
+				return errors.New("--yes goes with --outdated or --submit")
 			}
 			if len(args) == 0 {
 				return errors.New("name the port to update, or update your outdated ports with --outdated --mine")
@@ -97,16 +106,25 @@ edits alone.`,
 			if len(args) == 2 {
 				request.Version = args[1]
 			}
+			if linked.submit {
+				if err := checkWhere(cmd.Context(), s, linked.on); err != nil {
+					return fmt.Errorf("%w; nothing was changed", err)
+				}
+				linked.yes = batch.yes
+			}
 			branch, update, err := author(cmd.Context(), s, streams, where, "update", request, linked)
 			if err != nil || !linked.submit || !update.Applied {
 				return err
 			}
-			return tidyAndSubmit(cmd.Context(), s, streams, branch)
+			return tidyAndSubmit(cmd.Context(), s, streams, branch, linked)
 		},
 	}
 	where.flags(cmd)
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the edit and change nothing")
 	cmd.Flags().BoolVar(&linked.submit, "submit", false, "then tidy it, check it, and submit it once the check passes")
+	cmd.Flags().StringArrayVar(&linked.on, "on", nil, "with --submit, where to check (default check.on)")
+	cmd.Flags().BoolVar(&linked.testedBinaries, "tested-binaries", false, "with --submit, state that you tested the basic functionality of all binary files")
+	cmd.Flags().BoolVar(&linked.testedVariants, "tested-variants", false, "with --submit, state that you checked the most important variants")
 	cmd.Flags().BoolVar(&keepOld, "keep-old-checksums", false, "refresh legacy md5 or sha1 checksums in place rather than rewriting them as rmd160, sha256, and size")
 	cmd.Flags().BoolVar(&shared, "shared-release", false, "move every subport that shares the port's release")
 	cmd.Flags().BoolVar(&linked.revbump, "revbump-dependents", false, "also bump the revision of the ports that link it directly")
@@ -114,7 +132,7 @@ edits alone.`,
 	cmd.Flags().BoolVar(&batch.outdated, "outdated", false, "update every named port, or with --mine yours, that has a newer release")
 	cmd.Flags().BoolVar(&batch.mine, "mine", false, "with --outdated, the ports whose maintainers line names you (config maintainer)")
 	cmd.Flags().BoolVar(&batch.check, "check", false, "with --outdated, also queue a check of each")
-	cmd.Flags().BoolVarP(&batch.yes, "yes", "y", false, "with --outdated, start without asking")
+	cmd.Flags().BoolVarP(&batch.yes, "yes", "y", false, "with --outdated, start without asking; with --submit, apply a tidy of dockhand's own edits without asking")
 	return cmd
 }
 
@@ -152,9 +170,21 @@ The branch is --branch, else the one checked out here; --new starts one.
 	return cmd
 }
 
+// checkWhere resolves where update --submit will check, before the edit,
+// so a mistaken --on changes nothing.
+func checkWhere(ctx context.Context, s *settings, on []string) error {
+	e, err := s.open(ctx)
+	if err != nil {
+		return err
+	}
+	defer e.Close()
+	_, err = e.Environments(ctx, firstNonEmpty(on, s.file.Check.On))
+	return err
+}
+
 // tidyAndSubmit is the rest of update --submit: tidy the branch, then
 // submit --check, each previewed as its own command previews it.
-func tidyAndSubmit(ctx context.Context, s *settings, streams Streams, branch model.Branch) error {
+func tidyAndSubmit(ctx context.Context, s *settings, streams Streams, branch model.Branch, linked linkedOptions) error {
 	e, err := s.open(ctx)
 	if err != nil {
 		return err
@@ -168,7 +198,7 @@ func tidyAndSubmit(ctx context.Context, s *settings, streams Streams, branch mod
 	if !proposal.Keep {
 		fmt.Fprintf(out, "\n%s · tidying %s\n", branch.ShortName(), describeWork(proposal))
 		writeTidyPlan(out, proposal)
-		applied, err := decideTidy(ctx, e, streams, proposal, false, false, "")
+		applied, err := decideTidy(ctx, e, streams, proposal, false, linked.yes, "")
 		if err != nil {
 			return fmt.Errorf("%w; nothing was checked or submitted", err)
 		}
@@ -181,15 +211,21 @@ func tidyAndSubmit(ctx context.Context, s *settings, streams Streams, branch mod
 		return err
 	}
 	fmt.Fprintln(out)
-	return submitChecked(ctx, s, e, streams, engine.SubmitRequest{Branch: branch}, nil)
+	request := engine.SubmitRequest{Branch: branch, TestedBinaries: linked.testedBinaries, TestedVariants: linked.testedVariants}
+	return submitChecked(ctx, s, e, streams, request, linked.on)
 }
 
 // linkedOptions are update's --revbump-dependents and --except, and
-// --submit, which goes on from the edit.
+// --submit, which goes on from the edit, with what it passes on: submit
+// --check's --on, --tested-binaries, and --tested-variants, and --yes, which
+// applies an unambiguous tidy without asking.
 type linkedOptions struct {
-	revbump bool
-	except  []string
-	submit  bool
+	revbump                        bool
+	except                         []string
+	submit                         bool
+	on                             []string
+	testedBinaries, testedVariants bool
+	yes                            bool
 }
 
 // author finds the branch, makes the edit, and reports it.

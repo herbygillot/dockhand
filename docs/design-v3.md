@@ -259,7 +259,7 @@ The same thing as one explicit line, for someone who knows what they want:
 dockhand update jq --new --submit
 ```
 
-`--submit` means tidy the new branch's single authoring edit, check it, and submit that exact commit once the check passes. It is the combination of three commands, spelled out, and it previews all three. Without a terminal, the tidy and submit previews are skipped only when the plan is unambiguous (§8), and `--yes` never resolves an ambiguous plan. A plain `submit` never tidies or checks by itself.
+`--submit` means tidy the new branch's single authoring edit, check it, and submit that exact commit once the check passes. It is the combination of three commands, spelled out, and it previews all three. Without a terminal, the tidy and submit previews are skipped only when the plan is unambiguous (§8), and `--yes` never resolves an ambiguous plan. On a terminal, `--yes` skips the tidy's review of an unambiguous plan. `--on`, `--tested-binaries`, and `--tested-variants` are passed to the check and the pull request as `submit --check` takes them, and where to check is settled before the edit, so a mistaken `--on` changes nothing. A plain `submit` never tidies or checks by itself.
 
 ### 6.3 When dockhand can't edit the Portfile
 

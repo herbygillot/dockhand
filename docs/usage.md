@@ -77,7 +77,7 @@ It then compares the old and new source archives, and reports what a passing bui
 
 `--revbump-dependents` also bumps the revision of every port that links the updated one directly, found in the port index at the branch's base, so users rebuild them. `--except <port>` leaves one out. `tidy` commits each as "<port>: rebuild for <updated> <version>".
 
-`--submit` goes on to tidy, check, and submit, previewing each step, and submits exactly that commit once its check passes.
+`--submit` goes on to tidy, check, and submit, previewing each step, and submits exactly that commit once its check passes. It takes submit's `--on`, `--tested-binaries`, and `--tested-variants`, and settles where to check before it edits anything. On a terminal the tidy asks for review; `--yes` applies it without asking when it is dockhand's own edit alone, as it does without a terminal.
 
 ### Many ports at once
 
