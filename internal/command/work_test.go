@@ -64,7 +64,7 @@ func TestInitStartPathAndAdopt(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "Using ~/src/macports-ports; it has no remote for macports/macports-ports")
 	require.Regexp(t, `\n  Git          ✓ \d+\.\d+\.\d+ at \S+/git\n`, out)
-	require.Contains(t, out, "worktrees in ~/src/macports-branches")
+	require.Contains(t, out, "worktrees in ~/Source/macports-branches")
 	require.Contains(t, out, "Records      ~/.dockhand/dockhand.db")
 	_, err = os.Stat(filepath.Join(w.home, ".dockhand", "config.toml"))
 	require.ErrorIs(t, err, os.ErrNotExist, "the default needs no configuration file")
@@ -72,12 +72,12 @@ func TestInitStartPathAndAdopt(t *testing.T) {
 	out, _, err = dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
 	require.Contains(t, out, "Created dockhand/jq-update from master ")
-	require.Contains(t, out, "Directory: ~/src/macports-branches/jq-update")
+	require.Contains(t, out, "Directory: ~/Source/macports-branches/jq-update")
 	require.Contains(t, out, `Next: cd "$(dockhand path jq-update)"`)
 
 	out, _, err = dockhand(t, "path", "jq-update")
 	require.NoError(t, err)
-	require.Equal(t, filepath.Join(w.home, "src", "macports-branches", "jq-update")+"\n", out, "path prints only the path")
+	require.Equal(t, filepath.Join(w.home, "Source", "macports-branches", "jq-update")+"\n", out, "path prints only the path")
 
 	gitRun(t, w.clone, "switch", "-q", "-c", "update-jq")
 	require.NoError(t, os.WriteFile(filepath.Join(w.clone, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n"), 0o644))

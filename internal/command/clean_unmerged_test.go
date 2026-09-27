@@ -15,7 +15,7 @@ func TestCleanTakesAnArchivedBranchsWorktreeAndPathBringsItBack(t *testing.T) {
 	withBumper(t)
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	dir := filepath.Join(w.home, "src", "macports-branches", "jq-update")
+	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
 	t.Setenv("MACPORTS_TREE", dir)
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
@@ -35,13 +35,13 @@ func TestCleanTakesAnArchivedBranchsWorktreeAndPathBringsItBack(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("mine\n"), 0o644))
 	out, _, err = dockhand(t, "clean", "--archived", "--yes")
 	require.NoError(t, err)
-	require.Contains(t, out, "jq-update (archived)\n  keep     worktree ~/src/macports-branches/jq-update: it has untracked files: notes.txt\n")
+	require.Contains(t, out, "jq-update (archived)\n  keep     worktree ~/Source/macports-branches/jq-update: it has untracked files: notes.txt\n")
 	require.DirExists(t, dir)
 	require.NoError(t, os.Remove(filepath.Join(dir, "notes.txt")))
 
 	out, _, err = dockhand(t, "clean", "--archived")
 	require.NoError(t, err)
-	require.Equal(t, "jq-update (archived)\n  remove   worktree ~/src/macports-branches/jq-update\n"+
+	require.Equal(t, "jq-update (archived)\n  remove   worktree ~/Source/macports-branches/jq-update\n"+
 		"  keep     branch dockhand/jq-update: dockhand path jq-update checks it out again\n"+
 		"Nothing was removed; --yes removes these.\n", out)
 	_, _, err = dockhand(t, "clean", "--archived", "--yes")

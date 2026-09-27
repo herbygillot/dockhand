@@ -87,19 +87,19 @@ func TestUpdateInTheBranchCheckedOutHere(t *testing.T) {
 	withBumper(t)
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	dir := filepath.Join(w.home, "src", "macports-branches", "jq-update")
+	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
 	t.Setenv("MACPORTS_TREE", dir)
 
 	out, _, err := dockhand(t, "update", "jq", "--plan")
 	require.NoError(t, err)
-	require.Contains(t, out, "jq-update · ~/src/macports-branches/jq-update\n")
+	require.Contains(t, out, "jq-update · ~/Source/macports-branches/jq-update\n")
 	require.Contains(t, out, "jq: 1.7.1 → 1.8.1   (GitHub tag jq-1.8.1)\nPlan, nothing changed:\n\n")
 	require.Contains(t, out, "+version 1.8.1")
 	require.NoFileExists(t, filepath.Join(dir, "textproc/jq/Portfile"))
 
 	out, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
-	require.Equal(t, "jq-update · ~/src/macports-branches/jq-update\n"+
+	require.Equal(t, "jq-update · ~/Source/macports-branches/jq-update\n"+
 		"jq: 1.7.1 → 1.8.1   (GitHub tag jq-1.8.1)\n"+
 		"Updated version and checksums.\n"+
 		"Changed: textproc/jq/Portfile\n"+
@@ -132,8 +132,8 @@ func TestUpdateWithoutABranchAsksOrSaysHow(t *testing.T) {
 	started := regexp.MustCompile(`Started dockhand/(jq-[a-z0-9]{4}) from master `).FindStringSubmatch(out.String())
 	require.NotNil(t, started, out.String())
 	name := started[1]
-	require.Contains(t, out.String(), name+" · ~/src/macports-branches/"+name+"\n")
-	gitRun(t, filepath.Join(w.home, "src", "macports-branches", name), "commit", "-q", "-am", "jq: update to 1.8.1")
+	require.Contains(t, out.String(), name+" · ~/Source/macports-branches/"+name+"\n")
+	gitRun(t, filepath.Join(w.home, "Source", "macports-branches", name), "commit", "-q", "-am", "jq: update to 1.8.1")
 
 	_, _, err = dockhand(t, "update", "jq")
 	require.ErrorContains(t, err, "jq is changed in "+name+"; name it with --branch "+name+", or start another with --new")
@@ -196,7 +196,7 @@ func TestUpdateRevbumpsTheLibraryDependents(t *testing.T) {
 	t.Cleanup(func() { testDependentReader = nil })
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	dir := filepath.Join(w.home, "src", "macports-branches", "jq-update")
+	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
 	t.Setenv("MACPORTS_TREE", dir)
 
 	_, _, err = dockhand(t, "update", "jq", "--except", "yq")
@@ -233,7 +233,7 @@ func TestAnUpdatesReleaseIsKept(t *testing.T) {
 	withBumper(t)
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "src", "macports-branches", "jq-update"))
+	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 

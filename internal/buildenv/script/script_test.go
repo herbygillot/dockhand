@@ -64,7 +64,7 @@ func checked(t *testing.T, body string) (model.Run, string, *engine.Engine) {
 	git(t, upstream, "commit", "-q", "-m", "init")
 	git(t, root, "clone", "-q", upstream, clone)
 
-	e, err := engine.Open(t.Context(), engine.Options{Tree: clone, Database: filepath.Join(root, "db", "dockhand.db"), Upstream: upstream})
+	e, err := engine.Open(t.Context(), engine.Options{Tree: clone, Database: filepath.Join(root, "db", "dockhand.db"), Upstream: upstream, Worktrees: filepath.Join(root, "worktrees")})
 	require.NoError(t, err)
 	t.Cleanup(func() { e.Close() })
 	branch, err := e.Start(t.Context(), engine.StartRequest{Name: "jq-update", Here: true})

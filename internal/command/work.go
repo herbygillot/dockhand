@@ -24,8 +24,8 @@ func initCommand(s *settings, streams Streams) *cobra.Command {
 		Use:   "init",
 		Short: "Set up dockhand for this ports checkout; safe to rerun",
 		Long: `Registers this ports checkout, finds its remote for macports/macports-ports,
-and chooses where branch worktrees go: beside the clone unless --worktrees or
-the configuration file says otherwise. It needs no GitHub login and no build
+and chooses where branch worktrees go: ~/Source/macports-branches unless
+--worktrees or the configuration file says otherwise. It needs no GitHub login and no build
 setup; those come when something needs them.
 
 It first checks the Git dockhand runs, git on PATH or $GIT_BIN, and refuses
@@ -65,7 +65,7 @@ one older than 2.40, which rebase needs.`,
 					return err
 				}
 			case chosen == "" && streams.terminal() && !yes:
-				answer, err := ask(streams, fmt.Sprintf("Keep branch worktrees beside this clone, in %s? [Y/n] ", tilde(e.DefaultWorktrees())))
+				answer, err := ask(streams, fmt.Sprintf("Keep branch worktrees in %s? [Y/n] ", tilde(e.DefaultWorktrees())))
 				if err != nil {
 					return err
 				}

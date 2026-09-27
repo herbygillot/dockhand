@@ -31,7 +31,7 @@ dockhand providers setup tart     # make a clean macOS image to build in; once, 
 dockhand auth login               # a browser login to GitHub, for submit
 ```
 
-`init` finds the remote for `macports/macports-ports` and puts branch worktrees in a `macports-branches` directory beside your clone, unless you say otherwise. Your own checkout is left alone: each branch gets a sparse worktree of its own, holding only `_resources` and the ports it changes.
+`init` finds the remote for `macports/macports-ports` and puts branch worktrees in `~/Source/macports-branches`, unless you say otherwise. Your own checkout is left alone: each branch gets a sparse worktree of its own, holding only `_resources` and the ports it changes.
 
 ## An update, start to finish
 

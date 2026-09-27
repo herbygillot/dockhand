@@ -81,7 +81,10 @@ func setup(t *testing.T) fixture {
 	run(t, root, "clone", "-q", f.upstream, f.clone)
 	write(t, f.upstream, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 2\n"})
 	run(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 2")
-	f.options = Options{Tree: f.clone, Database: filepath.Join(root, "home", ".dockhand", "dockhand.db"), Upstream: f.upstream, Now: func() time.Time { return at }}
+	// The worktrees are the fixture's own, never the person's
+	// ~/Source/macports-branches, which the default is.
+	f.options = Options{Tree: f.clone, Database: filepath.Join(root, "home", ".dockhand", "dockhand.db"), Upstream: f.upstream, Now: func() time.Time { return at },
+		Worktrees: filepath.Join(root, "src", "macports-branches")}
 	return f
 }
 

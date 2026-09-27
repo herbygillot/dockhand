@@ -49,7 +49,7 @@ func checkedBranch(t *testing.T) world {
 	servePoll = 20 * time.Millisecond
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "src", "macports-branches", "jq-update"))
+	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	return w
@@ -158,7 +158,7 @@ func TestServeCleansUpAfterAMergeOnceADay(t *testing.T) {
 	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	dir := filepath.Join(w.home, "src", "macports-branches", "jq-update")
+	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
 	t.Setenv("MACPORTS_TREE", dir)
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
@@ -223,7 +223,7 @@ JSON
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "start", "jq-other")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "src", "macports-branches", "jq-other"))
+	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-other"))
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "check", "-d")
@@ -260,7 +260,7 @@ JSON
 	}
 	_, _, err = dockhand(t, "check", "-d")
 	require.NoError(t, err)
-	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "src", "macports-branches", "jq-update"))
+	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
 	_, _, err = dockhand(t, "check", "-d")
 	require.NoError(t, err)
 	serveUntil(1, func() {

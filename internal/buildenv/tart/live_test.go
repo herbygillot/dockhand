@@ -26,7 +26,7 @@ func TestLiveCheckInATahoeGuest(t *testing.T) {
 	if tree == "" {
 		t.Skip("set DOCKHAND_TEST_PORTS_TREE to a macports-ports checkout")
 	}
-	e, err := engine.Open(t.Context(), engine.Options{Tree: tree, Database: filepath.Join(t.TempDir(), "dockhand.db"), Tclsh: testsupport.MacPortsTclsh(t)})
+	e, err := engine.Open(t.Context(), engine.Options{Tree: tree, Database: filepath.Join(t.TempDir(), "dockhand.db"), Tclsh: testsupport.MacPortsTclsh(t), Worktrees: filepath.Join(t.TempDir(), "worktrees")})
 	require.NoError(t, err)
 	defer e.Close()
 	commit, err := e.Repo.Resolve(t.Context(), "HEAD")

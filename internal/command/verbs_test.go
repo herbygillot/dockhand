@@ -24,7 +24,7 @@ func TestEditRevbumpRetryRebaseAndArchive(t *testing.T) {
 
 	_, _, err = dockhand(t, "start", "notes")
 	require.NoError(t, err)
-	dir := filepath.Join(w.home, "src", "macports-branches", "notes")
+	dir := filepath.Join(w.home, "Source", "macports-branches", "notes")
 	t.Setenv("MACPORTS_TREE", dir)
 	out, _, err = dockhand(t, "edit", "jq")
 	require.NoError(t, err, "without a terminal, edit prints the Portfile")

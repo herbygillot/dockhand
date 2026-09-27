@@ -39,7 +39,7 @@ type Options struct {
 	// Database is the store's path.
 	Database string
 	// Worktrees is the directory managed worktrees live in; when empty,
-	// macports-branches beside the clone.
+	// ~/Source/macports-branches (DefaultWorktrees).
 	Worktrees string
 	// Upstream is the URL master is fetched from; UpstreamURL when empty.
 	Upstream string
@@ -128,10 +128,16 @@ func (e *Engine) Upstream() string {
 // was opened in.
 func (e *Engine) Clone() string { return filepath.Dir(e.Repo.CommonDir) }
 
-// DefaultWorktrees is the directory beside the clone that managed
-// worktrees go in unless configured otherwise.
+// DefaultWorktrees is where managed worktrees go unless configured
+// otherwise: ~/Source/macports-branches, wherever the clone is, so a
+// person's branches are in one place they know. Without a home directory,
+// they go beside the clone.
 func (e *Engine) DefaultWorktrees() string {
-	return filepath.Join(filepath.Dir(e.Clone()), "macports-branches")
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return filepath.Join(filepath.Dir(e.Clone()), "macports-branches")
+	}
+	return filepath.Join(home, "Source", "macports-branches")
 }
 
 // Worktrees is where managed worktrees go.

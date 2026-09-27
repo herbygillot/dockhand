@@ -84,7 +84,7 @@ Several dockhand processes can share one database: a foreground `check`, a `serv
 | `~/.dockhand/ssh/` | the key the host uses to reach its guests |
 | the user cache directory, `dockhand/indexes` (`$DOCKHAND_INDEX_CACHE`) | port indexes, keyed by source tree; disposable |
 | one run root under the system temporary directory | a process's short-lived workspaces, removed when it exits (`scratch`) |
-| `macports-branches` beside the clone | branch worktrees, unless `worktrees` says otherwise |
+| `~/Source/macports-branches` | branch worktrees, unless `worktrees` says otherwise |
 
 ## Not in the binary
 

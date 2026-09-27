@@ -139,7 +139,7 @@ A script gets an error that names `--branch jq-update` and `--new`.
 
 ### Where branches live
 
-- **Managed worktrees.** `dockhand start <name>` creates a branch from freshly fetched `master` in a **sparse worktree**, a directory beside your clone by default (`~/src/macports-branches/<name>`, set by `worktrees` in the config). A sparse worktree holds `_resources` plus the directories of the ports the branch touches, and grows when you `edit` another port. It's a normal Git worktree that any editor can open. `dockhand path <name>` prints its path. Dockhand can't change the parent shell's directory and doesn't pretend to.
+- **Managed worktrees.** `dockhand start <name>` creates a branch from freshly fetched `master` in a **sparse worktree**, in `~/Source/macports-branches/<name>` by default, wherever the clone is (set by `worktrees` in the config). A sparse worktree holds `_resources` plus the directories of the ports the branch touches, and grows when you `edit` another port. It's a normal Git worktree that any editor can open. `dockhand path <name>` prints its path. Dockhand can't change the parent shell's directory and doesn't pretend to.
 - **Your own checkout.** `dockhand start <name> --here` creates the branch in the checkout you're in. `dockhand adopt` tracks the branch you're already on, as it is. Adopting never moves or rewrites anything. `start --here` refuses to displace uncommitted work, and says how to keep it.
 
 Both styles get the same editing, checking, tidying, and submitting.
@@ -195,7 +195,7 @@ Using this ports repository; upstream is macports/macports-ports.
 
   Authoring    ✓ ready (MacPorts 2.12.6 at /opt/local)
   Your ports   ✓ 212 ports list @ada as a maintainer
-  Branches     ? keep worktrees beside this clone, in ~/src/macports-branches? [Y/n] y
+  Branches     ? keep branch worktrees in ~/Source/macports-branches? [Y/n] y
   Providers    tart    · not set up: dockhand providers setup tart   (macOS 26, ≈ 30 min, 45 GB)
                github  · needs a GitHub login and your fork's Actions enabled
                prefix  · optional: dockhand providers setup prefix
@@ -211,12 +211,12 @@ Next: dockhand start <name>, or dockhand outdated --mine
 ```console
 $ dockhand start jq-update
 Created dockhand/jq-update from master 4c1e2d0 (fetched just now)
-Directory: ~/src/macports-branches/jq-update
+Directory: ~/Source/macports-branches/jq-update
 Next: cd "$(dockhand path jq-update)"
 
 $ cd "$(dockhand path jq-update)"
 $ dockhand update jq
-jq-update · ~/src/macports-branches/jq-update
+jq-update · ~/Source/macports-branches/jq-update
 jq: 1.7.1 → 1.8.1   (GitHub tag jq-1.8.1)
 Updated version and checksums (1 distfile); revision reset to 0.
 Changed: textproc/jq/Portfile
@@ -265,7 +265,7 @@ dockhand update jq --new --submit
 
 ```console
 $ dockhand update openjdk21
-openjdk21-update · ~/src/macports-branches/openjdk21-update
+openjdk21-update · ~/Source/macports-branches/openjdk21-update
 ✗ can't update openjdk21 by itself [hook-exec]
   java/openjdk21/Portfile:48: its pre-fetch hook runs `exec`, and dockhand won't guess what that changes.
   Kept: the branch, unchanged.
@@ -298,7 +298,7 @@ A handwritten Portfile is just as much a first-class path. `check` builds it the
 
 ```console
 $ dockhand checksums croc --new
-croc-7hq2 · ~/src/macports-branches/croc-7hq2
+croc-7hq2 · ~/Source/macports-branches/croc-7hq2
 croc 10.2.4 · the distfile changed upstream without a new name (stealth update)
   was   sha256 1f3a…c2d9   size 7,114,391
   now   sha256 9b0c…77e1   size 7,114,508
@@ -442,7 +442,7 @@ $ dockhand check && dockhand tidy && dockhand submit
 ```console
 $ dockhand adopt --pr 34905
 Adopted pr-34905: "Update jq" by @newcontrib, 6 commits, jq; maintainers can edit.
-Directory: ~/src/macports-branches/pr-34905
+Directory: ~/Source/macports-branches/pr-34905
 ```
 
 Adopting someone else's PR lets you inspect it and work on it locally. It doesn't assume permission to push to their branch. `submit` names that destination and checks your access before pushing anything.
@@ -782,7 +782,7 @@ A socket-based client and service, the note's option 1, stays unbuilt. The reaso
 - **Configuration.** Settings live in `~/.dockhand/config.toml` (decision 15). Precedence is flags, then environment, then the file. An unknown key is refused by name. Values freeze into accepted work.
 
 ```toml
-worktrees = "~/src/macports-branches"
+worktrees = "~/Source/macports-branches"
 maintainer = "{@ada example.org:ada} openmaintainer"
 
 [check]

@@ -16,7 +16,7 @@ func TestTidyAppliesDockhandsOwnEditsAndRestoreUndoesIt(t *testing.T) {
 	withBumper(t)
 	_, _, err := dockhand(t, "start", "jq-update")
 	require.NoError(t, err)
-	dir := filepath.Join(w.home, "src", "macports-branches", "jq-update")
+	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
 	t.Setenv("MACPORTS_TREE", dir)
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)

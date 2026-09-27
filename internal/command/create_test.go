@@ -79,7 +79,7 @@ func TestCreateWritesANewPortFromItsProject(t *testing.T) {
 		`Next: dockhand edit rift, then dockhand check\n$`, out)
 
 	branch := regexp.MustCompile(`dockhand/(rift-[a-z0-9]{4})`).FindStringSubmatch(out)[1]
-	dir := filepath.Join(w.home, "src", "macports-branches", branch)
+	dir := filepath.Join(w.home, "Source", "macports-branches", branch)
 	data, err := os.ReadFile(filepath.Join(dir, "textproc/rift/Portfile"))
 	require.NoError(t, err)
 	require.Contains(t, string(data), "github.setup        rift-dev rift 0.4.2 v\n")
