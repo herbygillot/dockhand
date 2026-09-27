@@ -1,6 +1,7 @@
 package command
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -210,10 +211,11 @@ func githubReadiness(ctx context.Context) string {
 	return "· needs a GitHub login and your fork's Actions enabled"
 }
 
-// offerXcode downloads the Xcode setup is missing with xcodes, when the
-// person at the terminal agrees. xcodes signs in to Apple with their Apple
-// ID, which dockhand never sees; without xcodes, or a terminal, setup says
-// what to download, and how xcodes would.
+// offerXcode downloads the Xcode setup is missing with xcodes. At a
+// terminal it asks first, and xcodes asks there for the person's Apple ID
+// when it needs it; dockhand never sees it. Without one it downloads, as
+// setup downloads a vanilla image, with the sign-in xcodes keeps, and
+// shows what xcodes said when it fails.
 func offerXcode(ctx context.Context, images tartImages, streams Streams, missing *tart.MissingXcode) error {
 	_, installed := images.Xcodes()
 	switch {
@@ -221,21 +223,46 @@ func offerXcode(ctx context.Context, images tartImages, streams Streams, missing
 		return missing
 	case !installed:
 		return fmt.Errorf("%w; or install xcodes (sudo port install xcodes), and setup downloads it with your Apple ID", missing)
-	case !streams.terminal():
-		return fmt.Errorf("%w; or run setup at a terminal, and xcodes downloads it with your Apple ID", missing)
 	}
 	fmt.Fprintf(streams.Out, "%s's Xcode is %s, and %s has no archive of it.\n", missing.Release.Name, missing.Version, missing.Folder)
-	download, err := confirm(streams, fmt.Sprintf("Download Xcode %s with xcodes, signing in with your Apple ID? [y/N] ", missing.Version))
-	if err != nil {
-		return err
-	}
-	if !download {
-		return missing
-	}
-	path, err := images.DownloadXcode(ctx, missing, streams.In, streams.Out, streams.Err)
-	if err != nil {
-		return err
+	var path string
+	var err error
+	if streams.terminal() {
+		download, err := confirm(streams, fmt.Sprintf("Download Xcode %s with xcodes, signing in with your Apple ID? [y/N] ", missing.Version))
+		if err != nil {
+			return err
+		}
+		if !download {
+			return missing
+		}
+		path, err = images.DownloadXcode(ctx, missing, streams.In, streams.Out, streams.Err)
+		if err != nil {
+			return err
+		}
+	} else {
+		fmt.Fprintf(streams.Out, "Downloading Xcode %s with xcodes...\n", missing.Version)
+		var said bytes.Buffer
+		path, err = images.DownloadXcode(ctx, missing, nil, &said, &said)
+		if errors.Is(err, tart.ErrXcodes) {
+			return fmt.Errorf("%w; xcodes said:\n%s\nIf it needs you to sign in, run it once at a terminal: xcodes download %s --directory %s",
+				err, lastLines(said.String(), 10), missing.Version, missing.Folder)
+		}
+		if err != nil {
+			return err
+		}
 	}
 	fmt.Fprintf(streams.Out, "Downloaded %s, signed by Apple.\n", filepath.Base(path))
 	return nil
+}
+
+// lastLines is the end of a program's output, its progress redrawn with
+// carriage returns counted as lines.
+func lastLines(output string, n int) string {
+	var lines []string
+	for line := range strings.SplitSeq(strings.ReplaceAll(output, "\r", "\n"), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			lines = append(lines, "  "+line)
+		}
+	}
+	return strings.Join(lines[max(0, len(lines)-n):], "\n")
 }

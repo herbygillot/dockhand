@@ -49,6 +49,17 @@ xcodes names its downloads `Xcode-15.4.0+15F31d.xip`, and setup finds that name 
 
 `xcodes download` has no choice between Apple silicon's and the universal archive. Setup takes either.
 
+**Run live, 2026-09-27.** The person signed in once, downloading 16.4 at a terminal. Then 14.0.1, 14.3.1, and 15.4 were downloaded from a shell with no terminal at all:
+- **The sign-in holds.** xcodes keeps the Apple ID in `configuration.json` under `~/Library/Application Support/com.robotsandpencils.xcodes`, the password in the Keychain, and its session under `~/Library/HTTPStorages/xcodes`. No prompt came.
+- **Signed out,** it fails at once, exit 1, writing nothing: "Apple ID: Missing username or a password. Please try again."
+- **Without a terminal it prints nothing until the end**, then "(1/1) Downloading Xcode 14.0.1+14A400" and "Xcode 14.0.1 has been downloaded to …/Xcode-14.0.1+14A400.xip".
+- **A download builds in the system's temporary folder** (`CFNetworkDownload_….tmp`), and the archive is moved into `--directory` only when complete.
+- **7.5 GB took about 4 minutes**, without aria2.
+
+Each archive, `Xcode-14.0.1+14A400.xip`, `Xcode-14.3.1+14E300c.xip`, `Xcode-15.4.0+15F31d.xip`, and `Xcode-16.4.0+16F6.xip`, is "signed Apple Software", and setup's selection finds it for its release.
+
+**So setup downloads without a terminal too**, at the person's word. It announces the download, keeps xcodes' output, and on failure shows its last lines with how to sign in once at a terminal. It never reads meaning into what xcodes printed. At a terminal it still asks first, and xcodes signs in there when its session has lapsed.
+
 ## Archives to download for parity
 
 Tahoe's (`Xcode_26.6_Apple_silicon.xip`) and Golden Gate's (`Xcode_27.xip`) are in `~/Downloads/xcode_archives`. Monterey, Ventura, Sonoma, and Sequoia need Xcode 14.0.1, 14.3.1, 15.4, and 16.4, from developer.apple.com.

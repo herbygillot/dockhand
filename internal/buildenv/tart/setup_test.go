@@ -145,6 +145,15 @@ echo "asked for $2" >&2
 	require.Equal(t, path, checked, "checked as Apple's")
 	require.Equal(t, "asked for 15.4\n", errs.String(), "xcodes talks to the person directly")
 
+	failing := filepath.Join(t.TempDir(), "xcodes")
+	testsupport.WriteExecutable(t, failing, "#!/bin/sh\necho 'Apple ID: Missing username or a password. Please try again.'\nexit 1\n")
+	p.xcodes = failing
+	errs.Reset()
+	_, err = p.DownloadXcode(t.Context(), missing, strings.NewReader(""), &errs, &errs)
+	require.ErrorIs(t, err, ErrXcodes)
+	require.Contains(t, errs.String(), "Missing username or a password", "xcodes says why itself")
+
+	p.xcodes = xcodes
 	p.checkSignature = func(context.Context, string) error { return errors.New("not Apple's") }
 	_, err = p.DownloadXcode(t.Context(), missing, strings.NewReader(""), &out, &errs)
 	require.ErrorContains(t, err, "not Apple's")

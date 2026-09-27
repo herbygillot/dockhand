@@ -189,9 +189,15 @@ func (p *Provider) Xcodes() (string, bool) {
 	return path, err == nil
 }
 
+// ErrXcodes is xcodes failing to download an Xcode, which says why in its
+// own output: most often, that it needs the person to sign in.
+var ErrXcodes = errors.New("xcodes couldn't download it")
+
 // DownloadXcode downloads the Xcode setup is missing with xcodes, into the
-// folder setup looked in, the person answering its sign-in at the
-// terminal, and checks the archive is Apple's before setup takes it.
+// folder setup looked in, and checks the archive is Apple's before setup
+// takes it. At a terminal, the person answers xcodes' sign-in there;
+// without one, xcodes uses the sign-in it keeps, and fails at once when it
+// has none.
 func (p *Provider) DownloadXcode(ctx context.Context, missing *MissingXcode, in io.Reader, out, errs io.Writer) (string, error) {
 	xcodes, ok := p.Xcodes()
 	switch {
@@ -203,7 +209,7 @@ func (p *Provider) DownloadXcode(ctx context.Context, missing *MissingXcode, in 
 	command := exec.CommandContext(ctx, xcodes, "download", missing.Version, "--directory", missing.Folder)
 	command.Stdin, command.Stdout, command.Stderr = in, out, errs
 	if err := command.Run(); err != nil {
-		return "", fmt.Errorf("xcodes download %s: %w", missing.Version, err)
+		return "", fmt.Errorf("%w: xcodes download %s: %w", ErrXcodes, missing.Version, err)
 	}
 	path, _, err := macos.SelectXcode(missing.Folder, missing.Release, missing.Version)
 	if err != nil {

@@ -123,10 +123,13 @@ nor a beta or a release candidate. Without it, setup says which Xcode to
 download.
 
 With [xcodes](https://github.com/XcodesOrg/xcodes) installed (`sudo port
-install xcodes`), setup at a terminal offers to download the missing
-Xcode into the folder. xcodes asks for your Apple ID, and two-factor
-code, itself, and keeps the password in your Keychain; dockhand never sees
-them. Setup takes the archive only once `pkgutil --check-signature` says
+install xcodes`), setup downloads the missing Xcode into the folder. At a
+terminal it asks first, and xcodes asks there for your Apple ID and
+two-factor code when it needs them. It keeps the password in your
+Keychain and its session, and dockhand never sees them. Without a
+terminal, setup downloads with the sign-in xcodes kept, and when xcodes
+fails, as it does at once when it has none, setup shows what xcodes said
+and how to sign in once at a terminal. Setup takes the archive only once `pkgutil --check-signature` says
 it is Apple's, and it finds xcodes' names, `Xcode-15.4.0+15F31d.xip`, as
 it finds Apple's. xcodes signs in through Apple's own sign-in, which
 Apple doesn't document for other programs, so it can stop working when

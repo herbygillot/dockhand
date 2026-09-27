@@ -30,12 +30,18 @@ type fakeImages struct {
 	// asked for.
 	xcodes     bool
 	downloaded []string
+	// failure is what xcodes says as it fails, when it does.
+	failure string
 }
 
 func (f *fakeImages) Xcodes() (string, bool) { return "/opt/local/bin/xcodes", f.xcodes }
 
-func (f *fakeImages) DownloadXcode(_ context.Context, missing *tart.MissingXcode, _ io.Reader, _, _ io.Writer) (string, error) {
+func (f *fakeImages) DownloadXcode(_ context.Context, missing *tart.MissingXcode, _ io.Reader, out, _ io.Writer) (string, error) {
 	f.downloaded = append(f.downloaded, missing.Version)
+	if f.failure != "" {
+		fmt.Fprint(out, f.failure)
+		return "", fmt.Errorf("%w: xcodes download %s: exit status 1", tart.ErrXcodes, missing.Version)
+	}
 	return filepath.Join(missing.Folder, "Xcode-"+missing.Version+".0+15F31d.xip"), nil
 }
 
@@ -204,11 +210,24 @@ func TestSetupOffersToDownloadAMissingXcode(t *testing.T) {
 	require.ErrorContains(t, err, "Sonoma's Xcode is 15.4", "declined")
 	require.Empty(t, images.downloaded)
 
+	// Without a terminal, setup downloads with the sign-in xcodes keeps,
+	// and shows what xcodes said when it can't.
 	images.errs = []error{missing}
+	out2, _, err := dockhand(t, "providers", "setup", "tart", "sonoma", "--xcode", "/Volumes/Xcodes")
+	require.NoError(t, err)
+	require.Equal(t, []string{"15.4"}, images.downloaded)
+	require.Contains(t, out2, "Downloading Xcode 15.4 with xcodes...\n")
+	require.Contains(t, out2, "Downloaded Xcode-15.4.0+15F31d.xip, signed by Apple.\n")
+
+	images.errs, images.downloaded = []error{missing}, nil
+	images.failure = "Apple ID: Missing username or a password. Please try again.\n"
 	_, _, err = dockhand(t, "providers", "setup", "tart", "sonoma", "--xcode", "/Volumes/Xcodes")
-	require.ErrorContains(t, err, "download Xcode 15.4 from https://developer.apple.com/download/all/; or run setup at a terminal, and xcodes downloads it with your Apple ID")
-	images.errs, images.xcodes = []error{missing}, false
+	require.ErrorIs(t, err, tart.ErrXcodes)
+	require.ErrorContains(t, err, "xcodes said:\n  Apple ID: Missing username or a password. Please try again.\n")
+	require.ErrorContains(t, err, "If it needs you to sign in, run it once at a terminal: xcodes download 15.4 --directory /Volumes/Xcodes")
+
+	images.errs, images.xcodes, images.failure = []error{missing}, false, ""
 	_, _, err = dockhand(t, "providers", "setup", "tart", "sonoma", "--xcode", "/Volumes/Xcodes")
-	require.ErrorContains(t, err, "; or install xcodes (sudo port install xcodes), and setup downloads it with your Apple ID")
-	require.Empty(t, images.downloaded, "nothing is downloaded without asking")
+	require.ErrorContains(t, err, "download Xcode 15.4 from https://developer.apple.com/download/all/; or install xcodes (sudo port install xcodes), and setup downloads it with your Apple ID")
+	require.Len(t, images.downloaded, 1, "only what xcodes was asked for")
 }
