@@ -35,6 +35,11 @@ func queueCommand(s *settings, streams Streams) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			session, err := observe(ctx, e)
+			if err != nil {
+				return err
+			}
+			defer session.End(context.WithoutCancel(ctx))
 			if streams.json() {
 				result := queueJSON{Serve: serveLine(ctx, e), Runs: []queuedRunJSON{}}
 				for i := len(runs) - 1; i >= 0; i-- {
@@ -42,7 +47,11 @@ func queueCommand(s *settings, streams Streams) *cobra.Command {
 					if err != nil {
 						return err
 					}
-					result.Runs = append(result.Runs, queuedRunJSON{runJSON: *queued.Run, Branch: queued.Branch, Revision: queued.Revision.Description, Environments: queued.Plan.Environments})
+					row := queuedRunJSON{runJSON: *queued.Run, Branch: queued.Branch, Revision: queued.Revision.Description, Environments: queued.Plan.Environments}
+					if row.Stopped, err = engine.Stopped(ctx, session, runs[i]); err != nil {
+						return err
+					}
+					result.Runs = append(result.Runs, row)
 				}
 				streams.emit(result)
 			}
@@ -55,7 +64,7 @@ func queueCommand(s *settings, streams Streams) *cobra.Command {
 			fmt.Fprintln(table, "RUN\tBRANCH\tSOURCE\tON\tSTATE\tDETAIL")
 			for i := len(runs) - 1; i >= 0; i-- {
 				run := runs[i]
-				row, err := queueRow(ctx, e, run)
+				row, err := queueRow(ctx, e, session, run)
 				if err != nil {
 					return err
 				}
@@ -66,7 +75,7 @@ func queueCommand(s *settings, streams Streams) *cobra.Command {
 	}
 }
 
-func queueRow(ctx context.Context, e *engine.Engine, run model.Run) (string, error) {
+func queueRow(ctx context.Context, e *engine.Engine, session *coord.Session, run model.Run) (string, error) {
 	branch, err := e.Branch(ctx, run.Branch)
 	if err != nil {
 		return "", err
@@ -83,11 +92,18 @@ func queueRow(ctx context.Context, e *engine.Engine, run model.Run) (string, err
 	for _, environment := range plan.Environments {
 		on = append(on, environmentWords(environment))
 	}
-	detail := run.Detail
+	state, detail := string(run.State), run.Detail
 	if run.Origin == model.OriginServe && detail == "" {
 		detail = "started by serve"
 	}
-	return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s", run.Name(), branch.ShortName(), engine.Describe(revision), strings.Join(on, ", "), run.State, detail), nil
+	stopped, err := engine.Stopped(ctx, session, run)
+	if err != nil {
+		return "", err
+	}
+	if stopped {
+		state, detail = "stopped", "the process running it ended; dockhand wait "+run.Name()+" resumes it, cancel ends it"
+	}
+	return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s", run.Name(), branch.ShortName(), engine.Describe(revision), strings.Join(on, ", "), state, detail), nil
 }
 
 func waitCommand(s *settings, streams Streams) *cobra.Command {

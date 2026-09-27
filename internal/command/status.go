@@ -55,7 +55,7 @@ from GitHub first; serve does that every few minutes.`,
 func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []string, attentionOnly, all bool, port string) error {
 	one := func(branch model.Branch) error {
 		if streams.json() {
-			status, err := e.BranchStatus(ctx, branch)
+			status, err := judgedStatus(ctx, e, branch)
 			if err != nil {
 				return err
 			}
@@ -82,6 +82,9 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 	}
 	statuses, err := e.Status(ctx, states...)
 	if err != nil {
+		return err
+	}
+	if err := judgeStopped(ctx, e, statuses); err != nil {
 		return err
 	}
 	if port != "" {
@@ -135,6 +138,28 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 // attention is one row of what needs you, with the command that moves it.
 type attention struct{ mark, branch, what, next string }
 
+// judgeStopped marks the statuses whose check stopped when the process
+// running it ended, which only a session can judge.
+func judgeStopped(ctx context.Context, e *engine.Engine, statuses []engine.BranchStatus) error {
+	session, err := observe(ctx, e)
+	if err != nil {
+		return err
+	}
+	defer session.End(context.WithoutCancel(ctx))
+	return engine.JudgeStopped(ctx, session, statuses)
+}
+
+// judgedStatus is one branch's status, with a stopped check marked.
+func judgedStatus(ctx context.Context, e *engine.Engine, branch model.Branch) (engine.BranchStatus, error) {
+	status, err := e.BranchStatus(ctx, branch)
+	if err != nil {
+		return status, err
+	}
+	statuses := []engine.BranchStatus{status}
+	err = judgeStopped(ctx, e, statuses)
+	return statuses[0], err
+}
+
 func attentionFor(s engine.BranchStatus) []attention {
 	name := s.Branch.ShortName()
 	row := func(mark, what, next string) []attention {
@@ -142,6 +167,9 @@ func attentionFor(s engine.BranchStatus) []attention {
 	}
 	if s.Missing {
 		return row("!", "its Git branch is gone", "dockhand adopt <new name>, if you renamed it")
+	}
+	if run := s.Stopped; run != nil {
+		return row("!", run.Name()+" stopped: the process running it ended; dockhand cancel "+run.Name()+" ends it", "dockhand wait "+run.Name())
 	}
 	if rows := pullRequestAttention(s); len(rows) > 0 {
 		return rows
@@ -255,6 +283,9 @@ func workWords(s engine.BranchStatus) string {
 // checkState is the checks column: what is running, else what the latest
 // check says about the files as they are now.
 func checkState(s engine.BranchStatus) string {
+	if s.Stopped != nil {
+		return fmt.Sprintf("stopped (%s)", s.Stopped.Name())
+	}
 	if len(s.Active) > 0 {
 		run := s.Active[len(s.Active)-1]
 		return fmt.Sprintf("%s (%s)", run.State, run.Name())
@@ -319,6 +350,7 @@ func prWords(s engine.BranchStatus) string {
 func serveLine(ctx context.Context, e *engine.Engine) string {
 	queued, _ := e.Runs(ctx, store.RunFilter{States: []model.RunState{model.RunQueued, model.RunRunning}})
 	line := "serve: not running"
+	stopped := 0
 	session, err := observe(ctx, e)
 	if err == nil {
 		defer session.End(context.WithoutCancel(ctx))
@@ -328,10 +360,17 @@ func serveLine(ctx context.Context, e *engine.Engine) string {
 				line += " · opens PRs for passing updates"
 			}
 		}
+		for _, run := range queued {
+			if ok, err := engine.Stopped(ctx, session, run); err == nil && ok {
+				stopped++
+			}
+		}
 	}
-	switch len(queued) {
-	case 0:
+	switch {
+	case len(queued) == 0:
 		return line + " · queue: empty"
+	case stopped > 0:
+		return line + fmt.Sprintf(" · queue: %s, %d stopped", plural(len(queued), "run"), stopped)
 	}
 	return line + " · queue: " + plural(len(queued), "run")
 }
@@ -343,7 +382,7 @@ func observe(ctx context.Context, e *engine.Engine) (*coord.Session, error) {
 }
 
 func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, branch model.Branch) error {
-	status, err := e.BranchStatus(ctx, branch)
+	status, err := judgedStatus(ctx, e, branch)
 	if err != nil {
 		return err
 	}

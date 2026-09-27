@@ -106,6 +106,9 @@ type runJSON struct {
 	Origin     string     `json:"origin"`
 	CreatedAt  time.Time  `json:"created_at"`
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	// Stopped is true for a run recorded as running that no live process
+	// drives; the state says running, as the record does.
+	Stopped bool `json:"stopped,omitempty"`
 }
 
 func runView(run model.Run) runJSON {
@@ -290,7 +293,9 @@ func branchView(status engine.BranchStatus) branchJSON {
 		Base: string(branch.Base), Head: status.Head, Missing: status.Missing, Commits: status.Commits,
 		Edited: nonNil(status.Edited), Directories: nonNil(status.Scope.Ports), Ports: nonNil(status.Scope.PortNames()), Active: []runJSON{}}
 	for _, run := range status.Active {
-		view.Active = append(view.Active, runView(run))
+		active := runView(run)
+		active.Stopped = status.Stopped != nil && status.Stopped.ID == run.ID
+		view.Active = append(view.Active, active)
 	}
 	if status.Latest != nil && status.LatestRevision != nil {
 		latest := latestJSON{Run: runView(*status.Latest), Revision: revisionView(*status.LatestRevision), Current: status.Current, Targets: []targetJSON{}}

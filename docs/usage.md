@@ -161,6 +161,8 @@ With several releases, `check` shows the results as a grid, one column per relea
 
 **Running it.** With no `serve` running, the check runs in the foreground and says so. Ctrl-C stops it, keeping what finished. With `serve` running, the check is handed to serve and followed here, and Ctrl-C only stops following. `-d` queues it and returns.
 
+A check whose process dies without settling it, killed or lost with its terminal, is shown as **stopped** by `status` and `queue`. `dockhand wait` resumes it where it stopped, and so does the next `serve`; `dockhand cancel` ends it. `clean` removes the clone it left, once nothing runs it.
+
 One check of a branch runs at a time. While one is queued or running, `check` refuses, and `--replace` stops it, keeping what it finished, and checks the files as they are now.
 
 ### After a check

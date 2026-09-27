@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 
+	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -38,6 +39,38 @@ type BranchStatus struct {
 	// Held are the upstream comparison's findings that hold a branch serve
 	// prepared for a person's look.
 	Held []string
+	// Stopped is the active run recorded as running that no live process
+	// drives, once JudgeStopped has looked; nil otherwise.
+	Stopped *model.Run
+}
+
+// Stopped reports whether a run recorded as running has no live process
+// driving it: the process running it ended without settling it, as a
+// killed foreground check does. It is resumable: the next serve takes it
+// up where it stopped, and so does dockhand wait; cancel ends it. Judging
+// who is alive takes a session.
+func Stopped(ctx context.Context, session *coord.Session, run model.Run) (bool, error) {
+	if run.State != model.RunRunning {
+		return false, nil
+	}
+	holder, err := session.Holder(ctx, RunResource(run.ID))
+	return err == nil && holder == nil, err
+}
+
+// JudgeStopped marks the statuses whose active run has stopped.
+func JudgeStopped(ctx context.Context, session *coord.Session, statuses []BranchStatus) error {
+	for i := range statuses {
+		for _, run := range statuses[i].Active {
+			stopped, err := Stopped(ctx, session, run)
+			if err != nil {
+				return err
+			}
+			if stopped {
+				statuses[i].Stopped = &run
+			}
+		}
+	}
+	return nil
 }
 
 // Pushed reports whether the pull request has the branch's head.
