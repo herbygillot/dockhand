@@ -1,8 +1,10 @@
 package macos
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -71,13 +73,53 @@ func SelectXcode(path string, release Release, version string) (string, string, 
 		}
 	}
 	if selected.Path == "" {
-		return "", "", fmt.Errorf("macos: %s's Xcode is %s, and %s has no archive of it (Xcode_%s.xip); download Xcode %s from https://developer.apple.com/download/all/", release.Name, version, path, version, version)
+		missing := &MissingXcode{Release: release, Version: version, Path: path}
+		if info.IsDir() {
+			missing.Folder = path
+		}
+		return "", "", missing
 	}
 	return selected.Path, selected.Version, nil
 }
 
+// MissingXcode is an Xcode a release's image needs whose archive isn't
+// where setup was pointed.
+type MissingXcode struct {
+	Release Release
+	Version string
+	// Path is where setup looked, and Folder the same when it is a folder
+	// an archive can be downloaded into.
+	Path, Folder string
+}
+
+func (e *MissingXcode) Error() string {
+	return fmt.Sprintf("macos: %s's Xcode is %s, and %s has no archive of it (Xcode_%s.xip); download Xcode %s from https://developer.apple.com/download/all/",
+		e.Release.Name, e.Version, e.Path, e.Version, e.Version)
+}
+
+// CheckXcodeSignature checks an Xcode archive is Apple's, as pkgutil
+// --check-signature says: "signed Apple Software".
+func CheckXcodeSignature(ctx context.Context, path string) error {
+	out, err := exec.CommandContext(ctx, "/usr/sbin/pkgutil", "--check-signature", path).CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "Status: signed Apple Software") {
+		return fmt.Errorf("macos: %s isn't signed by Apple: %s", path, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// parseXcodeArchive reads an Xcode archive's version from its name, as
+// Apple names it, Xcode_16.4.xip, or as xcodes does, Xcode-16.4.0+16F6.xip.
 func parseXcodeArchive(path string) (xcodeArchive, bool) {
 	name := filepath.Base(path)
+	if value, ok := strings.CutPrefix(name, "Xcode-"); ok {
+		value, ok = strings.CutSuffix(value, ".xip")
+		// A prerelease's version isn't numeric, and is never taken.
+		value, _, _ = strings.Cut(value, "+")
+		if _, numeric := numericVersion(value); !ok || !numeric {
+			return xcodeArchive{}, false
+		}
+		return xcodeArchive{Path: path, Version: value, Preference: 1}, true
+	}
 	value, ok := strings.CutPrefix(name, "Xcode_")
 	if !ok {
 		return xcodeArchive{}, false

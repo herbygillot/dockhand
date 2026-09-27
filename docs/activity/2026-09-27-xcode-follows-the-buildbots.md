@@ -31,6 +31,24 @@ The buildbot column is the facts table's, from each builder's install-port logs 
 
 An image's origin already names its Xcode, so a changed Xcode is a changed identity. The setup protocol is unchanged, re-pinned.
 
+## xcodes downloads what's missing
+
+The person chose [xcodes](https://github.com/XcodesOrg/xcodes) (MIT, active, in MacPorts as `devel/xcodes`) to fetch the archives. Other options were weighed first:
+- **Handing the download to the browser:** no credentials in dockhand, but a click per archive, and Apple doesn't document the file URLs.
+- **ipsw:** Go, but its sign-in code is in `internal/` packages, which another program can't import.
+- **fastlane's xcode-install:** abandoned for xcodes.
+
+**How setup uses it.** When the builder's Xcode is missing from the folder, setup at a terminal asks, then:
+- runs `xcodes download <version> --directory <folder>` on the person's terminal, where xcodes asks for the Apple ID and two-factor code itself and keeps the password in the Keychain;
+- takes the archive only once `pkgutil --check-signature` says "signed Apple Software";
+- runs setup again.
+
+xcodes names its downloads `Xcode-15.4.0+15F31d.xip`, and setup finds that name as it finds Apple's. A prerelease's name, `Xcode-27.1.0-beta.2+…`, isn't numeric and is never taken. Without a terminal or without xcodes, setup's error names the Xcode to download, and how xcodes would.
+
+**The exception, recorded as a decision.** dockhand calls only xcodes' documented command. xcodes itself signs in through Apple's sign-in and download endpoints, which Apple doesn't document for other programs, so it breaks for a time whenever Apple changes them. Setup then fails loudly, and the archive can still be downloaded by hand.
+
+`xcodes download` has no choice between Apple silicon's and the universal archive. Setup takes either.
+
 ## Archives to download for parity
 
 Tahoe's (`Xcode_26.6_Apple_silicon.xip`) and Golden Gate's (`Xcode_27.xip`) are in `~/Downloads/xcode_archives`. Monterey, Ventura, Sonoma, and Sequoia need Xcode 14.0.1, 14.3.1, 15.4, and 16.4, from developer.apple.com.

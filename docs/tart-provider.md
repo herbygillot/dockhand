@@ -120,7 +120,17 @@ config` lists each release's:
 Setup takes the archive of exactly that version, `Xcode_26.6.xip` or its
 `_Apple_silicon` or `_Universal` form, never a newer one in its place,
 nor a beta or a release candidate. Without it, setup says which Xcode to
-download. The Xcode must still run on the release. `providers.tart.xcode`
+download.
+
+With [xcodes](https://github.com/XcodesOrg/xcodes) installed (`sudo port
+install xcodes`), setup at a terminal offers to download the missing
+Xcode into the folder. xcodes asks for your Apple ID, and two-factor
+code, itself, and keeps the password in your Keychain; dockhand never sees
+them. Setup takes the archive only once `pkgutil --check-signature` says
+it is Apple's, and it finds xcodes' names, `Xcode-15.4.0+15F31d.xip`, as
+it finds Apple's. xcodes signs in through Apple's own sign-in, which
+Apple doesn't document for other programs, so it can stop working when
+Apple changes it; then download the archive from Apple by hand. The Xcode must still run on the release. `providers.tart.xcode`
 names another Xcode for a release, such as the 16.2 MacPorts' GitHub CI
 pins on Sonoma:
 

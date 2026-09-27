@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -23,6 +24,19 @@ type fakeImages struct {
 	result tart.SetupResult
 	err    error
 	asked  []tart.SetupOptions
+	// errs are Setup's errors, one per call, before err.
+	errs []error
+	// xcodes is whether xcodes is installed, and downloaded what it was
+	// asked for.
+	xcodes     bool
+	downloaded []string
+}
+
+func (f *fakeImages) Xcodes() (string, bool) { return "/opt/local/bin/xcodes", f.xcodes }
+
+func (f *fakeImages) DownloadXcode(_ context.Context, missing *tart.MissingXcode, _ io.Reader, _, _ io.Writer) (string, error) {
+	f.downloaded = append(f.downloaded, missing.Version)
+	return filepath.Join(missing.Folder, "Xcode-"+missing.Version+".0+15F31d.xip"), nil
 }
 
 func (f *fakeImages) Status(context.Context) (tart.Status, error) { return f.status, f.err }
@@ -30,6 +44,11 @@ func (f *fakeImages) Status(context.Context) (tart.Status, error) { return f.sta
 func (f *fakeImages) Setup(_ context.Context, options tart.SetupOptions, progress io.Writer) (tart.SetupResult, error) {
 	f.asked = append(f.asked, options)
 	fmt.Fprintln(progress, "Checking Tart images for Sonoma...")
+	if len(f.errs) > 0 {
+		err := f.errs[0]
+		f.errs = f.errs[1:]
+		return tart.SetupResult{}, err
+	}
 	return f.result, f.err
 }
 
@@ -158,4 +177,38 @@ func TestThePlanSaysWhatWontBeBuilt(t *testing.T) {
 		"            make an Xcode image\n")
 	require.False(t, plan.Runnable())
 	require.Equal(t, "nothing in it can be built where it asks; see Not built", unrunnable(plan))
+}
+
+// A missing Xcode is downloaded with xcodes when the person at the
+// terminal agrees, and setup runs again; without a terminal, or without
+// xcodes, setup says what to download and how xcodes would.
+func TestSetupOffersToDownloadAMissingXcode(t *testing.T) {
+	newWorld(t)
+	missing := &tart.MissingXcode{Release: release(t, "sonoma"), Version: "15.4", Path: "/Volumes/Xcodes", Folder: "/Volumes/Xcodes"}
+	images := &fakeImages{xcodes: true, errs: []error{missing}, result: tart.SetupResult{Image: "dockhand-xcode-sonoma", Release: release(t, "sonoma"),
+		MacPorts: tart.DefaultMacPorts, CommandLineTools: "16.2", Xcode: "15.4"}}
+	useImages(t, images)
+	var out, errs bytes.Buffer
+	err := Run(t.Context(), []string{"providers", "setup", "tart", "sonoma", "--xcode", "/Volumes/Xcodes"}, Streams{In: strings.NewReader("y\n"), Out: &out, Err: &errs, interactive: true})
+	require.NoError(t, err, errs.String())
+	require.Equal(t, []string{"15.4"}, images.downloaded)
+	require.Len(t, images.asked, 2, "setup runs again once it's downloaded")
+	require.Contains(t, out.String(), "Sonoma's Xcode is 15.4, and /Volumes/Xcodes has no archive of it.\n")
+	require.Contains(t, errs.String(), "Download Xcode 15.4 with xcodes, signing in with your Apple ID? [y/N] ")
+	require.Contains(t, out.String(), "Downloaded Xcode-15.4.0+15F31d.xip, signed by Apple.\n")
+	require.Contains(t, out.String(), "Made dockhand-xcode-sonoma: macOS 14 (Sonoma) with Xcode 15.4")
+
+	images.errs, images.downloaded = []error{missing}, nil
+	out.Reset()
+	err = Run(t.Context(), []string{"providers", "setup", "tart", "sonoma", "--xcode", "/Volumes/Xcodes"}, Streams{In: strings.NewReader("n\n"), Out: &out, Err: &errs, interactive: true})
+	require.ErrorContains(t, err, "Sonoma's Xcode is 15.4", "declined")
+	require.Empty(t, images.downloaded)
+
+	images.errs = []error{missing}
+	_, _, err = dockhand(t, "providers", "setup", "tart", "sonoma", "--xcode", "/Volumes/Xcodes")
+	require.ErrorContains(t, err, "download Xcode 15.4 from https://developer.apple.com/download/all/; or run setup at a terminal, and xcodes downloads it with your Apple ID")
+	images.errs, images.xcodes = []error{missing}, false
+	_, _, err = dockhand(t, "providers", "setup", "tart", "sonoma", "--xcode", "/Volumes/Xcodes")
+	require.ErrorContains(t, err, "; or install xcodes (sudo port install xcodes), and setup downloads it with your Apple ID")
+	require.Empty(t, images.downloaded, "nothing is downloaded without asking")
 }

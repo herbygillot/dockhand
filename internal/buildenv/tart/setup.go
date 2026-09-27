@@ -172,6 +172,50 @@ func (p *Provider) provisionConfig(release macos.Release, options SetupOptions) 
 	return config, err
 }
 
+// MissingXcode is an Xcode a release's image needs whose archive setup
+// wasn't given.
+type MissingXcode = macos.MissingXcode
+
+// Xcodes is where the xcodes command is, when it's installed: it downloads
+// Xcode from Apple with the person's Apple ID, which dockhand never sees.
+// It signs in through Apple's own sign-in, which Apple doesn't document
+// for other programs: an exception to depending only on documented
+// interfaces, which the person chose (docs/roadmap.md).
+func (p *Provider) Xcodes() (string, bool) {
+	if p.xcodes != "" {
+		return p.xcodes, true
+	}
+	path, err := exec.LookPath("xcodes")
+	return path, err == nil
+}
+
+// DownloadXcode downloads the Xcode setup is missing with xcodes, into the
+// folder setup looked in, the person answering its sign-in at the
+// terminal, and checks the archive is Apple's before setup takes it.
+func (p *Provider) DownloadXcode(ctx context.Context, missing *MissingXcode, in io.Reader, out, errs io.Writer) (string, error) {
+	xcodes, ok := p.Xcodes()
+	switch {
+	case !ok:
+		return "", errors.New("xcodes isn't installed: sudo port install xcodes")
+	case missing.Folder == "":
+		return "", fmt.Errorf("%s is one archive, not a folder to download Xcode %s into", missing.Path, missing.Version)
+	}
+	command := exec.CommandContext(ctx, xcodes, "download", missing.Version, "--directory", missing.Folder)
+	command.Stdin, command.Stdout, command.Stderr = in, out, errs
+	if err := command.Run(); err != nil {
+		return "", fmt.Errorf("xcodes download %s: %w", missing.Version, err)
+	}
+	path, _, err := macos.SelectXcode(missing.Folder, missing.Release, missing.Version)
+	if err != nil {
+		return "", fmt.Errorf("xcodes finished, and still: %w", err)
+	}
+	check := p.checkSignature
+	if check == nil {
+		check = macos.CheckXcodeSignature
+	}
+	return path, check(ctx, path)
+}
+
 // XcodeFor is the Xcode a release's Xcode image installs: the one the
 // configuration names for it (providers.tart.xcode), else what MacPorts'
 // arm64 builder for the release runs (macos.Release.Xcode). A name the

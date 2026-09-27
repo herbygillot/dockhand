@@ -90,8 +90,38 @@ func TestSameXcodeComparesNumbers(t *testing.T) {
 }
 
 func TestParseXcodeArchiveRejectsPrereleasesAndOtherFiles(t *testing.T) {
-	for _, name := range []string{"Xcode_26.6_beta_2.xip", "Xcode_26.6_Release_Candidate.xip", "Xcode.app", "notes.txt"} {
+	for _, name := range []string{"Xcode_26.6_beta_2.xip", "Xcode_26.6_Release_Candidate.xip", "Xcode.app", "notes.txt",
+		"Xcode-27.1.0-beta.2+27B5024e.xip", "Xcode-26.6.0+17F113.xip.aria2"} {
 		_, ok := parseXcodeArchive(name)
 		require.False(t, ok, name)
 	}
+}
+
+// xcodes names what it downloads by its full version and build, and setup
+// finds it as it finds Apple's names; a missing Xcode says where it was
+// looked for, and whether an archive can be downloaded there.
+func TestAnXcodesDownloadIsFound(t *testing.T) {
+	directory := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(directory, "Xcode-15.4.0+15F31d.xip"), nil, 0o600))
+	sonoma := Release{Darwin: 23, Name: "Sonoma"}
+	path, version, err := SelectXcode(directory, sonoma, "15.4")
+	require.NoError(t, err)
+	require.Equal(t, "Xcode-15.4.0+15F31d.xip", filepath.Base(path))
+	require.Equal(t, "15.4.0", version)
+
+	_, _, err = SelectXcode(directory, Release{Darwin: 24, Name: "Sequoia"}, "16.4")
+	var missing *MissingXcode
+	require.ErrorAs(t, err, &missing)
+	require.Equal(t, "16.4", missing.Version)
+	require.NotEmpty(t, missing.Folder, "a folder can take a download")
+	_, _, err = SelectXcode(path, sonoma, "16.2")
+	require.ErrorAs(t, err, &missing)
+	require.Empty(t, missing.Folder, "a single archive can't")
+}
+
+// Only Apple's signature passes.
+func TestAnArchiveNotSignedByAppleIsRefused(t *testing.T) {
+	archive := filepath.Join(t.TempDir(), "Xcode_26.6.xip")
+	require.NoError(t, os.WriteFile(archive, []byte("not an archive"), 0o600))
+	require.ErrorContains(t, CheckXcodeSignature(t.Context(), archive), "isn't signed by Apple")
 }

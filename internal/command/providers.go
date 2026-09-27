@@ -2,8 +2,10 @@ package command
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -17,6 +19,8 @@ import (
 type tartImages interface {
 	Status(ctx context.Context) (tart.Status, error)
 	Setup(ctx context.Context, options tart.SetupOptions, progress io.Writer) (tart.SetupResult, error)
+	Xcodes() (string, bool)
+	DownloadXcode(ctx context.Context, missing *tart.MissingXcode, in io.Reader, out, errs io.Writer) (string, error)
 }
 
 // testTartImages, when set, stands in for dockhand's Tart images.
@@ -106,6 +110,11 @@ new one has passed.`,
 				return fmt.Errorf("checks build in Tart VMs, and Tart isn't installed: %s", installTart)
 			}
 			result, err := images.Setup(cmd.Context(), options, streams.Out)
+			if missing := (*tart.MissingXcode)(nil); errors.As(err, &missing) {
+				if err = offerXcode(cmd.Context(), images, streams, missing); err == nil {
+					result, err = images.Setup(cmd.Context(), options, streams.Out)
+				}
+			}
 			if err != nil {
 				return err
 			}
@@ -199,4 +208,34 @@ func githubReadiness(ctx context.Context) string {
 		return "✓ with your GitHub login; your fork's Actions must be enabled"
 	}
 	return "· needs a GitHub login and your fork's Actions enabled"
+}
+
+// offerXcode downloads the Xcode setup is missing with xcodes, when the
+// person at the terminal agrees. xcodes signs in to Apple with their Apple
+// ID, which dockhand never sees; without xcodes, or a terminal, setup says
+// what to download, and how xcodes would.
+func offerXcode(ctx context.Context, images tartImages, streams Streams, missing *tart.MissingXcode) error {
+	_, installed := images.Xcodes()
+	switch {
+	case missing.Folder == "":
+		return missing
+	case !installed:
+		return fmt.Errorf("%w; or install xcodes (sudo port install xcodes), and setup downloads it with your Apple ID", missing)
+	case !streams.terminal():
+		return fmt.Errorf("%w; or run setup at a terminal, and xcodes downloads it with your Apple ID", missing)
+	}
+	fmt.Fprintf(streams.Out, "%s's Xcode is %s, and %s has no archive of it.\n", missing.Release.Name, missing.Version, missing.Folder)
+	download, err := confirm(streams, fmt.Sprintf("Download Xcode %s with xcodes, signing in with your Apple ID? [y/N] ", missing.Version))
+	if err != nil {
+		return err
+	}
+	if !download {
+		return missing
+	}
+	path, err := images.DownloadXcode(ctx, missing, streams.In, streams.Out, streams.Err)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(streams.Out, "Downloaded %s, signed by Apple.\n", filepath.Base(path))
+	return nil
 }

@@ -2,12 +2,17 @@ package tart
 
 import (
 	"bytes"
+	"context"
+	"errors"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macos"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // Status lists the releases with a base image, and with an Xcode one,
@@ -110,4 +115,40 @@ func TestOnlyAnXcodeImageAsksForXcode(t *testing.T) {
 	configured, err := p.provisionConfig(tahoe, SetupOptions{Xcode: "/archives", Xcodes: map[string]string{"26": "26.4"}})
 	require.NoError(t, err)
 	require.Equal(t, "26.4", configured.XcodeVersion)
+}
+
+// xcodes downloads what setup is missing into the folder setup looked in,
+// and the archive is taken only as Apple's.
+func TestXcodesDownloadsTheMissingXcode(t *testing.T) {
+	t.Parallel()
+	folder := t.TempDir()
+	xcodes := filepath.Join(t.TempDir(), "xcodes")
+	testsupport.WriteExecutable(t, xcodes, `#!/bin/sh
+[ "$1" = download ] && [ "$3" = --directory ] || exit 2
+echo "asked for $2" >&2
+: > "$4/Xcode-$2.0+15F31d.xip"
+`)
+	checked := ""
+	p := testProvider(newMac())
+	p.xcodes = xcodes
+	p.checkSignature = func(_ context.Context, path string) error { checked = path; return nil }
+	sonoma, err := macos.ParseRelease("sonoma")
+	require.NoError(t, err)
+	_, _, err = macos.SelectXcode(folder, sonoma, "15.4")
+	var missing *MissingXcode
+	require.ErrorAs(t, err, &missing)
+
+	var out, errs bytes.Buffer
+	path, err := p.DownloadXcode(t.Context(), missing, strings.NewReader(""), &out, &errs)
+	require.NoError(t, err)
+	require.Equal(t, "Xcode-15.4.0+15F31d.xip", filepath.Base(path))
+	require.Equal(t, path, checked, "checked as Apple's")
+	require.Equal(t, "asked for 15.4\n", errs.String(), "xcodes talks to the person directly")
+
+	p.checkSignature = func(context.Context, string) error { return errors.New("not Apple's") }
+	_, err = p.DownloadXcode(t.Context(), missing, strings.NewReader(""), &out, &errs)
+	require.ErrorContains(t, err, "not Apple's")
+	missing.Folder = ""
+	_, err = p.DownloadXcode(t.Context(), missing, strings.NewReader(""), &out, &errs)
+	require.ErrorContains(t, err, "is one archive, not a folder")
 }
