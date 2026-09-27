@@ -171,6 +171,7 @@ One check of a branch runs at a time. While one is queued or running, `check` re
 - **`retry check-12`** queues the same check again: the same files, plan, and environments, whatever the branch holds now.
 - **`check --baseline`** builds the ports that failed at install or test in the branch's latest check, or the `--only` ones, at the master that check started from, and reports each beside the branch's result. It shows whether master fails the same way, and nothing more.
   - It is planned as a check would be, from master's own Portfiles in each of the check's environments, so a port master builds only with Xcode is unmet where there is none. It builds the ports it names, not the rest of their subports.
+  - It rebuilds each port only in the environments where it failed, and reports it there. A port named with `--only` that failed nowhere is rebuilt everywhere the check built it.
   - A port that failed only before building, at lint, fetch, or checksum, is left out unless `--only` names it: those failures come from the branch's own Portfile and distfiles. So is a port the branch adds, since master has nothing to compare.
   - A failed check points to it when a baseline can answer something, naming the ports and the master: `To see whether jq fails at master 1a2b3c4 too: dockhand check --baseline --branch jq-update`.
   - Baselines are off by default. With `check.baseline = true`, a failed check runs the one it points to by itself.

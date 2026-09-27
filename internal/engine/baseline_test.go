@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -144,4 +145,61 @@ func TestOnlyTheNewestFailedCheckPointsToABaseline(t *testing.T) {
 	require.Equal(t, []string{"libharbor:unchanged:also"}, names(baseline.Plan.Targets))
 	_, err = e.PlanBaseline(t.Context(), branch, []string{"jq"})
 	require.ErrorContains(t, err, "--only jq: "+latest.Name()+" did not build it")
+}
+
+// failsOn fails one target at install in one environment, and passes
+// everything else.
+type failsOn struct {
+	environment model.Environment
+	target      model.TargetID
+}
+
+func (failsOn) Name() string { return "command" }
+
+func (p failsOn) Execute(_ context.Context, job Job, build Build) error {
+	for _, target := range job.Targets {
+		result := model.TargetResult{Target: target.ID, Outcome: model.OutcomePassed, Tests: model.TestsNone}
+		if target.ID == p.target && job.Environment == p.environment {
+			result.Outcome, result.Phase = model.OutcomeFailed, model.PhaseInstall
+		}
+		if err := build.Record(result); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// A baseline rebuilds a port only in the environments where it failed; a
+// port named that failed nowhere, in every one the check built it in.
+// (Roadmap item 2.)
+func TestABaselineRebuildsAPortOnlyWhereItFailed(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch := twoPortBranch(t, e)
+	e.Providers = map[string]Provider{"command": failsOn{environment: tahoeX86, target: "jq"}}
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureHead})
+	require.NoError(t, err)
+	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm, tahoeX86}})
+	require.NoError(t, err)
+	queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
+	require.NoError(t, err)
+	checked, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunFailed, checked.State)
+
+	baseline, err := e.PlanBaseline(t.Context(), branch, nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{"jq:unchanged:also"}, names(baseline.Plan.Targets))
+	armPlan, _ := baseline.Plan.In(tahoeArm)
+	x86Plan, _ := baseline.Plan.In(tahoeX86)
+	require.Empty(t, armPlan.Order)
+	require.Equal(t, []model.Exclusion{{Target: model.Target{Name: "jq", Portfile: "textproc/jq/Portfile"}, Reason: checked.Name() + " didn't fail it there"}}, armPlan.Exclusions)
+	require.Equal(t, []model.TargetID{"jq"}, x86Plan.Order)
+
+	named, err := e.PlanBaseline(t.Context(), branch, []string{"libharbor"})
+	require.NoError(t, err)
+	for _, environment := range []model.Environment{tahoeArm, tahoeX86} {
+		planned, _ := named.Plan.In(environment)
+		require.Equal(t, []model.TargetID{"libharbor"}, planned.Order, "it failed nowhere, so everywhere the check built it")
+	}
 }

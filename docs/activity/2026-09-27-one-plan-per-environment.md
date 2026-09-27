@@ -40,3 +40,17 @@ Tests:
 - a cycle in one environment, named;
 - the rule for which results count;
 - the plan preview's orders and exclusions, and the plan JSON's `builds`.
+
+## A baseline rebuilds a port only where it failed
+
+- **Before.** A baseline built each port in every environment of the check it explains, including where the port had passed.
+- **Now.** `PlanBaseline` asks the planner to build each port only in some environments (`PlanRequest.where`), and the rest of that environment's plan excludes it with the reason (`rebuildWhere`):
+  - where the check failed it at install or test, and elsewhere "check-4 didn't fail it there";
+  - for a port named with `--only` that failed nowhere, everywhere the check built it, and elsewhere "check-4 didn't build it there".
+
+  Master's own reasons come first: a port master doesn't define, or rules out, in an environment says so.
+- **The report** (`writeBaselineResults`) sets a port beside the branch's result only where the baseline rebuilt it. Where the check failed it but master doesn't build it, it says why: "· not built at the base: replaced by other". Elsewhere there is nothing to compare, and it says nothing. The branch's result is found by environment, not by position.
+
+Tests:
+- a check failing a port on one of two releases, whose baseline rebuilds it on that one alone, and a named port that failed nowhere rebuilt on both;
+- the report on two releases: a port rebuilt on one, and one master doesn't build where the check failed it.

@@ -623,18 +623,7 @@ func reportBaseline(ctx context.Context, e *engine.Engine, run model.Run, stream
 		streams.emit(result)
 	}
 	fmt.Fprintln(out)
-	for _, target := range base.Targets {
-		i := slices.IndexFunc(branch.Targets, func(t engine.TargetEvidence) bool { return t.Target.ID == target.Target.ID })
-		for n, result := range target.Outcomes {
-			environment := base.Plan.Environments[n]
-			fmt.Fprintf(out, "%s at master %s · %s\n", target.Target.ID, engine.Short(revision.Source.Commit), environmentWords(environment))
-			theirs := model.TargetResult{Outcome: model.OutcomeNotRun}
-			if i >= 0 && n < len(branch.Targets[i].Outcomes) {
-				theirs = branch.Targets[i].Outcomes[n]
-			}
-			fmt.Fprintf(out, "  %s\n", baselineWords(result, theirs, branch.Run.Name()))
-		}
-	}
+	writeBaselineResults(out, base, branch, engine.Short(revision.Source.Commit))
 	switch run.State {
 	case model.RunCanceled:
 		return exitf(130, "%s stopped; finished results are kept", run.Name())
@@ -642,6 +631,33 @@ func reportBaseline(ctx context.Context, e *engine.Engine, run model.Run, stream
 		return exitf(3, "%s needs attention: %s", run.Name(), run.Detail)
 	}
 	return nil
+}
+
+// writeBaselineResults sets each port's result at the base beside the
+// branch's, in each environment where the baseline built it, and where
+// the check failed it but master doesn't build it. A baseline rebuilds a
+// port only where it failed, so elsewhere there is nothing to set beside.
+func writeBaselineResults(out io.Writer, base, branch engine.Evidence, master string) {
+	for _, target := range base.Targets {
+		i := slices.IndexFunc(branch.Targets, func(t engine.TargetEvidence) bool { return t.Target.ID == target.Target.ID })
+		for n, result := range target.Outcomes {
+			environment := base.Plan.Environments[n]
+			theirs := model.TargetResult{Outcome: model.OutcomeNotRun}
+			if j := slices.Index(branch.Plan.Environments, environment); i >= 0 && j >= 0 {
+				theirs = branch.Targets[i].Outcomes[j]
+			}
+			planned, _ := base.Plan.In(environment)
+			if !planned.Builds(target.Target.ID) && theirs.Outcome != model.OutcomeFailed {
+				continue
+			}
+			fmt.Fprintf(out, "%s at master %s · %s\n", target.Target.ID, master, environmentWords(environment))
+			if exclusion, excluded := base.Plan.ExclusionIn(environment, target.Target.Target.Name); excluded {
+				fmt.Fprintf(out, "  · not built at the base: %s\n", exclusion.Reason)
+				continue
+			}
+			fmt.Fprintf(out, "  %s\n", baselineWords(result, theirs, branch.Run.Name()))
+		}
+	}
 }
 
 func baselineWords(base, branch model.TargetResult, check string) string {

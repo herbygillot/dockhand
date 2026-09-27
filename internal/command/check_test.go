@@ -164,3 +164,33 @@ func TestCheckPlanShowsEachEnvironmentsOrder(t *testing.T) {
 	writePlan(&out, plan, nil, nil)
 	require.Contains(t, out.String(), "Order       libharbor → harbor-cli → harbor-intel\n", "where they agree, one line")
 }
+
+// A baseline's report sets each port beside the branch's result where the
+// baseline rebuilt it, and says why where the check failed it and master
+// doesn't build it; elsewhere it says nothing.
+func TestBaselineResultsShowWhereItRebuilt(t *testing.T) {
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	sequoia := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}}
+	jq := model.PlanTarget{ID: "jq", Target: model.Target{Name: "jq"}}
+	gone := model.PlanTarget{ID: "gone", Target: model.Target{Name: "gone"}}
+	passed := model.TargetResult{Outcome: model.OutcomePassed}
+	failed := model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseInstall}
+	notRun := model.TargetResult{Outcome: model.OutcomeNotRun}
+	branch := engine.Evidence{Run: model.Run{Number: 4}, Plan: model.Plan{Environments: []model.Environment{tahoe, sequoia}}, Targets: []engine.TargetEvidence{
+		{Target: jq, Outcomes: []model.TargetResult{passed, failed}},
+		{Target: gone, Outcomes: []model.TargetResult{failed, passed}},
+	}}
+	base := engine.Evidence{Plan: model.Plan{Environments: []model.Environment{tahoe, sequoia}, Builds: []model.EnvironmentPlan{
+		{Environment: tahoe, Exclusions: []model.Exclusion{{Target: jq.Target, Reason: "check-4 didn't fail it there"}, {Target: gone.Target, Reason: "replaced by other"}}},
+		{Environment: sequoia, Order: []model.TargetID{"jq"}, Exclusions: []model.Exclusion{{Target: gone.Target, Reason: "check-4 didn't fail it there"}}},
+	}}, Targets: []engine.TargetEvidence{
+		{Target: jq, Outcomes: []model.TargetResult{notRun, failed}},
+		{Target: gone, Outcomes: []model.TargetResult{notRun, notRun}},
+	}}
+	var out bytes.Buffer
+	writeBaselineResults(&out, base, branch, "1a2b3c4")
+	require.Equal(t, "jq at master 1a2b3c4 · tart macOS 15 (Sequoia) arm64\n"+
+		"  ✗ fails at the base too, at install. Both results are kept; the cause isn't established.\n"+
+		"gone at master 1a2b3c4 · tart macOS 26 (Tahoe) arm64\n"+
+		"  · not built at the base: replaced by other\n", out.String())
+}

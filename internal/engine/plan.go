@@ -39,6 +39,15 @@ type PlanRequest struct {
 	// alone builds only the Also ports named, not the rest of their
 	// directories' subports, as a baseline does.
 	alone bool
+	// where builds Also ports only in some environments, as a baseline
+	// rebuilds a port only where it failed; elsewhere they are left out.
+	where map[string]rebuild
+}
+
+// rebuild is where a port is built, and why not elsewhere.
+type rebuild struct {
+	environments []model.Environment
+	elsewhere    string
 }
 
 // PlanCheck works out the targets of a check (Design v3 §3): every subport
@@ -161,11 +170,14 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	for e := range plan.Environments {
 		reasons[e] = map[model.TargetID]string{}
 		for _, c := range candidates {
+			asked, limited := request.where[string(c.ID)]
 			switch {
 			case !evaluations[e].defined[c.ID]:
 				reasons[e][c.ID] = "not defined there"
 			case evaluations[e].ineligible[c.ID] != "":
 				reasons[e][c.ID] = evaluations[e].ineligible[c.ID]
+			case limited && !slices.Contains(asked.environments, plan.Environments[e]):
+				reasons[e][c.ID] = asked.elsewhere
 			}
 		}
 	}

@@ -33,11 +33,12 @@ type Baseline struct {
 
 // PlanBaseline plans a baseline of the branch's newest finished check: of
 // the ports named, or else of the ports that failed in it at install or
-// test (BaselineWorthy). It is planned the way a check is, from the base
-// that check started from, not the branch's base since a rebase: the
-// base's own Portfiles are evaluated in each environment, so its
-// exclusions, dependencies, and needs are the base's, and a port that
-// needs Xcode is unmet where there is none, not sent there.
+// test (BaselineWorthy), each rebuilt only where it failed (rebuildWhere).
+// It is planned the way a check is, from the base that check started
+// from, not the branch's base since a rebase: the base's own Portfiles are
+// evaluated in each environment, so its exclusions, dependencies, and
+// needs are the base's, and a port that needs Xcode is unmet where there
+// is none, not sent there.
 func (e *Engine) PlanBaseline(ctx context.Context, branch model.Branch, ports []string) (Baseline, error) {
 	var baseline Baseline
 	var checked model.Revision
@@ -80,9 +81,11 @@ func (e *Engine) PlanBaseline(ctx context.Context, branch model.Branch, ports []
 	baseline.New = added
 	var also []string
 	directories := map[string]string{}
+	where := map[string]rebuild{}
 	for _, target := range targets {
 		also = append(also, string(target.ID))
 		directories[string(target.ID)] = target.Directory
+		where[string(target.ID)] = rebuildWhere(evidence, target.ID)
 	}
 	if len(also) == 0 {
 		return baseline, fmt.Errorf("%s: master %s has none of them, so there is nothing to compare", strings.Join(baseline.New, ", "), short(base))
@@ -90,7 +93,8 @@ func (e *Engine) PlanBaseline(ctx context.Context, branch model.Branch, ports []
 	if baseline.Revision, err = e.baseRevision(ctx, branch, base, baseTree); err != nil {
 		return baseline, err
 	}
-	baseline.Plan, err = e.PlanCheck(ctx, PlanRequest{Revision: baseline.Revision, Environments: baseline.OfPlan.Environments, Also: also, Tests: baseline.OfPlan.Tests, directories: directories, alone: true})
+	baseline.Plan, err = e.PlanCheck(ctx, PlanRequest{Revision: baseline.Revision, Environments: baseline.OfPlan.Environments, Also: also, Tests: baseline.OfPlan.Tests,
+		directories: directories, alone: true, where: where})
 	if err != nil {
 		return baseline, err
 	}
@@ -146,6 +150,27 @@ func (e *Engine) BaselineCandidates(ctx context.Context, run model.Run) ([]strin
 		ports = append(ports, string(target.ID))
 	}
 	return ports, checked.Source.Base, nil
+}
+
+// rebuildWhere is where a baseline rebuilds a port: the environments where
+// the check failed it at install or test, or, for one named that failed
+// nowhere there, every environment the check built it in.
+func rebuildWhere(evidence Evidence, id model.TargetID) rebuild {
+	i := slices.IndexFunc(evidence.Targets, func(target TargetEvidence) bool { return target.Target.ID == id })
+	var failed, built []model.Environment
+	for n, result := range evidence.Targets[i].Outcomes {
+		environment := evidence.Plan.Environments[n]
+		if planned, ok := evidence.Plan.In(environment); ok && planned.Builds(id) {
+			built = append(built, environment)
+		}
+		if result.Outcome == model.OutcomeFailed && (result.Phase == model.PhaseInstall || result.Phase == model.PhaseTest) {
+			failed = append(failed, environment)
+		}
+	}
+	if len(failed) > 0 {
+		return rebuild{environments: failed, elsewhere: evidence.Run.Name() + " didn't fail it there"}
+	}
+	return rebuild{environments: built, elsewhere: evidence.Run.Name() + " didn't build it there"}
 }
 
 // latestCheck is a branch's newest finished check, not a baseline: the
