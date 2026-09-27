@@ -83,6 +83,25 @@ func (r *Repository) run(ctx context.Context, input []byte, env []string, args .
 	return result.Output, nil
 }
 
+// runStatus runs a git command whose exit status 1 is an answer, not a
+// failure, as merge-tree's is for a conflict: it returns the output and
+// status for 0 and 1, and an error, with the status, for anything else.
+func (r *Repository) runStatus(ctx context.Context, args ...string) ([]byte, int, error) {
+	command := r.command(ctx, nil, args...)
+	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "git", Command: args[0], Path: command.Path, Args: command.Args[1:], Dir: command.Dir, Env: command.Env, ExtraFiles: command.ExtraFiles, WaitDelay: command.WaitDelay})
+	if err == nil {
+		return result.Output, 0, nil
+	}
+	var exit interface{ ExitCode() int }
+	if errors.As(err, &exit) {
+		if exit.ExitCode() == 1 && ctx.Err() == nil {
+			return result.Output, 1, nil
+		}
+		return nil, exit.ExitCode(), err
+	}
+	return nil, -1, err
+}
+
 func repositoryEnv() []string {
 	blocked := map[string]bool{
 		"GIT_DIR": true, "GIT_WORK_TREE": true, "GIT_COMMON_DIR": true,

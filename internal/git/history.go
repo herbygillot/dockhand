@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -243,6 +244,65 @@ func (r *Repository) Bundle(ctx context.Context, path, ref, commit string, exclu
 // ErrRebaseConflict reports a rebase that stopped on conflicts; the
 // checkout was put back as it was.
 var ErrRebaseConflict = errors.New("git: the rebase stopped on conflicts")
+
+// Replay replays the commits head has above upstream onto onto, as git
+// rebase does, without touching a checkout or a ref, and returns the
+// replayed head. Each commit's change is merged onto the replayed commit
+// before it (git merge-tree, with the commit's parent as the merge base),
+// and committed with its own author, date, and message, and the committer
+// given. A commit whose change onto already has is dropped, as git rebase
+// drops it; one that was empty to begin with is kept. A conflict is
+// ErrRebaseConflict, naming the files, with nothing written that anything
+// refers to. A merge commit is refused. It needs Git 2.40 or newer.
+func (r *Repository) Replay(ctx context.Context, onto, upstream, head string, committer Signature) (string, error) {
+	if !ValidObjectID(onto) || !ValidObjectID(upstream) || !ValidObjectID(head) {
+		return "", fmt.Errorf("git: invalid replay of %q onto %q", head, onto)
+	}
+	history, err := r.History(ctx, upstream, head)
+	if err != nil {
+		return "", err
+	}
+	parent := onto
+	for _, commit := range history {
+		if commit.Merge() || len(commit.Parents) == 0 {
+			return "", fmt.Errorf("git: %.12s is a merge commit, which dockhand doesn't replay; rebase it by hand with git rebase", commit.ID)
+		}
+		out, status, err := r.runStatus(ctx, "merge-tree", "--write-tree", "--name-only", "-z", "--no-messages", "--merge-base", commit.Parents[0], parent, commit.ID)
+		if err != nil {
+			if status == 129 {
+				return "", fmt.Errorf("git: replaying commits needs Git 2.40 or newer: %w", err)
+			}
+			return "", err
+		}
+		fields := strings.Split(strings.TrimRight(string(out), "\x00"), "\x00")
+		tree := fields[0]
+		if status == 1 {
+			var paths []string
+			for _, path := range fields[1:] {
+				if path != "" && !slices.Contains(paths, path) {
+					paths = append(paths, path)
+				}
+			}
+			return "", fmt.Errorf("%w in %s", ErrRebaseConflict, strings.Join(paths, ", "))
+		}
+		if !ValidObjectID(tree) {
+			return "", fmt.Errorf("git: merge-tree returned %q", tree)
+		}
+		trees, err := r.CommitTrees(ctx, []string{parent, commit.Parents[0]})
+		if err != nil {
+			return "", err
+		}
+		// A change onto already has leaves nothing to commit; a commit
+		// that changed nothing to begin with is kept as it was.
+		if tree == trees[parent] && commit.Tree != trees[commit.Parents[0]] {
+			continue
+		}
+		if parent, err = r.WriteCommit(ctx, Commit{Tree: tree, Parents: []string{parent}, Message: commit.Message, Author: commit.Author, Committer: committer}); err != nil {
+			return "", err
+		}
+	}
+	return parent, nil
+}
 
 // Rebase replays the commits branch has above upstream onto onto, in this
 // checkout, which must have branch checked out. A rebase that stops on
