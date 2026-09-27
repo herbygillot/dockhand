@@ -22,6 +22,7 @@ var engineImports = map[string]string{
 	"internal/coord":               "sessions and leases for runs and serve",
 	"internal/provider":            "the contract the providers meet; the command layer composes them",
 	"internal/git":                 "the checkout, captures, and history",
+	"internal/history":             "tidy, rebase, and restore as complete transitions",
 	"internal/macos":               "macOS releases, for environments and their words",
 	"internal/scratch":             "temporary directories for archives and preparation",
 	"internal/version":             "its own version, in the pull request",

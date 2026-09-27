@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/history"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -120,7 +121,7 @@ type Rebased struct {
 // abandoned with the branch as it was.
 func (e *Engine) Rebase(ctx context.Context, branch model.Branch) (Rebased, error) {
 	var result Rebased
-	err := e.withHistory(ctx, branch, func(ctx context.Context) error {
+	err := e.history().With(ctx, branch, func(ctx context.Context) error {
 		var err error
 		result, err = e.rebase(ctx, branch)
 		return err
@@ -162,7 +163,7 @@ func (e *Engine) rebase(ctx context.Context, branch model.Branch) (Rebased, erro
 		return Rebased{}, err
 	} else if base == string(master) {
 		result.UpToDate = true
-		return result, e.Store.Update(ctx, e.Repository, func(tx store.Tx) error { return e.setBase(tx, current.ID, master, "") })
+		return result, e.Store.Update(ctx, e.Repository, func(tx store.Tx) error { return e.history().SetBase(tx, current.ID, master, "") })
 	}
 	if result.Commits, err = worktree.CountCommits(ctx, string(current.Base), head); err != nil {
 		return Rebased{}, err
@@ -184,27 +185,27 @@ func (e *Engine) rebase(ctx context.Context, branch model.Branch) (Rebased, erro
 	// old history reachable before the branch leaves it, and the checkout
 	// moves with the branch, as git reset --keep moves them.
 	checkpoint := model.Checkpoint{Kind: model.CheckpointRebase, Branch: current.ID, Before: model.ObjectID(head), After: model.ObjectID(rebased), BaseBefore: current.Base, BaseAfter: master, At: e.now()}
-	if err := e.prepareCheckpoint(ctx, &checkpoint); err != nil {
+	if err := e.history().Prepare(ctx, &checkpoint); err != nil {
 		return Rebased{}, err
 	}
-	if err := e.historyStep("prepared"); err != nil {
+	if err := e.history().Step("prepared"); err != nil {
 		return Rebased{}, err
 	}
 	kept := git.RefChange{Name: checkpoint.Ref(), Desired: git.RefValue{Exists: true, Object: head}}
 	if err := worktree.UpdateRefs(ctx, []git.RefChange{kept}); err != nil {
-		return Rebased{}, errors.Join(err, e.settleCheckpoint(ctx, checkpoint, model.CheckpointAbandoned, ""))
+		return Rebased{}, errors.Join(err, e.history().Settle(ctx, checkpoint, model.CheckpointAbandoned, ""))
 	}
 	if err := worktree.MoveCheckout(ctx, head, rebased); err != nil {
 		undone := worktree.UpdateRefs(context.WithoutCancel(ctx), []git.RefChange{{Name: kept.Name, Expected: kept.Desired}})
-		return Rebased{}, errors.Join(fmt.Errorf("%s is as it was: %w", current.ShortName(), err), undone, e.settleCheckpoint(ctx, checkpoint, model.CheckpointAbandoned, ""))
+		return Rebased{}, errors.Join(fmt.Errorf("%s is as it was: %w", current.ShortName(), err), undone, e.history().Settle(ctx, checkpoint, model.CheckpointAbandoned, ""))
 	}
 	checkpoint.State = model.CheckpointApplied
 	result.Checkpoint = &checkpoint
-	if err := e.historyStep("moved"); err != nil {
+	if err := e.history().Step("moved"); err != nil {
 		return result, err
 	}
-	if err := e.settleCheckpoint(ctx, checkpoint, model.CheckpointApplied, ""); err != nil {
-		return result, unfinished("the rebase is done", err)
+	if err := e.history().Settle(ctx, checkpoint, model.CheckpointApplied, ""); err != nil {
+		return result, history.Unfinished("the rebase is done", err)
 	}
 	return result, nil
 }

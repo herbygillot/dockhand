@@ -41,7 +41,7 @@ func updated(t *testing.T, e *Engine) (model.Branch, TidyPlan) {
 
 func checkpointNumbered(t *testing.T, e *Engine, number int) model.Checkpoint {
 	t.Helper()
-	checkpoint, found := e.readCheckpoint(t.Context(), number)
+	checkpoint, found := e.history().Read(t.Context(), number)
 	require.True(t, found)
 	return checkpoint
 }
@@ -227,7 +227,7 @@ func TestAnUncertainCommitIsReadBack(t *testing.T) {
 		{"the checkpoint didn't land", prepared, false, func(t *testing.T, e *Engine, branch model.Branch, result TidyResult, err error) {
 			require.ErrorContains(t, err, "recording the checkpoint failed, so nothing was changed")
 			require.Equal(t, string(branch.Base), run(t, branch.Worktree, "rev-parse", "HEAD"))
-			_, found := e.readCheckpoint(t.Context(), 1)
+			_, found := e.history().Read(t.Context(), 1)
 			require.False(t, found)
 		}},
 		{"its settling landed", applied, true, func(t *testing.T, e *Engine, branch model.Branch, result TidyResult, err error) {
@@ -274,7 +274,7 @@ func TestAHistoryChangeWaitsForTheBranchsLock(t *testing.T) {
 	_, err := e.ApplyTidy(waiting, plan)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	require.Equal(t, string(branch.Base), run(t, branch.Worktree, "rev-parse", "HEAD"))
-	_, found := e.readCheckpoint(t.Context(), 1)
+	_, found := e.history().Read(t.Context(), 1)
 	require.False(t, found)
 	close(release)
 	require.NoError(t, <-done)
