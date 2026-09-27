@@ -52,12 +52,13 @@ func HandlesASIF(version string) bool {
 }
 
 // ErrListingRaced reports a listing that failed because a VM went while
-// Tart listed: it checks each VM's directory is whole, then reads its
-// config.json again to size it, so a VM another process deletes in between
-// fails the whole listing ("The file “config.json” couldn’t be opened
-// because there is no such file"). It happened to two of eleven images
-// probed two at a time on 2026-09-27, on Tart 2.39.0, and the code is the
-// same in 2.37.0. Listing again, once the delete is done, answers.
+// Tart listed (openai/tart#1353): it checks each VM's directory is whole,
+// then reads its config.json again to size it, so a VM another process
+// deletes in between fails the whole listing ("The file “config.json”
+// couldn’t be opened because there is no such file"). It happened to four
+// of eleven images probed two at a time on 2026-09-27, on Tart 2.39.0, and
+// the code is the same in 2.37.0. Listing again, once the delete is done,
+// answers.
 var ErrListingRaced = errors.New("tart: a VM went while Tart listed its VMs")
 
 // listingAttempts bounds how often Images lists again after a raced

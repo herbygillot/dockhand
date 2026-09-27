@@ -46,7 +46,7 @@ The first probe of the eleven images failed four of them with Tart's own "The fi
 
 Tart's `list` checks each VM's directory is whole, then reads its `config.json` again to size it. A VM another process deletes in between fails the whole listing. The code is the same in 2.37.0, so the race is old; two probes running at once met it.
 
-Dockhand lists while something else deletes in several places: a check waiting for a VM slot while another check's clone goes, `clean`, setup, the harvester. So `tart.Client.Images` now names the failure and lists again, up to five times, half a second apart. The second full probe went through without a failure. It is a Tart bug worth reporting upstream; nothing was filed, pending the person's word.
+Dockhand lists while something else deletes in several places: a check waiting for a VM slot while another check's clone goes, `clean`, setup, the harvester. So `tart.Client.Images` now names the failure and lists again, up to five times, half a second apart. The second full probe went through without a failure. The bug was reproduced without a VM booted, with 122 of 398 listings failing while another loop deleted VMs. It was filed upstream, with the person's approval, as [openai/tart#1353](https://github.com/openai/tart/issues/1353).
 
 ## Tests
 
