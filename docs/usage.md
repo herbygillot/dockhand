@@ -260,7 +260,7 @@ Between checks it:
 
 - reads your open pull requests every few minutes, so `status` shows their reviews and CI, and marks a merged one's branch merged;
 - once a day, at `serve.outdated_at`, looks for new releases of your ports and does what `serve.for_outdated` says: `list` counts them for status, `draft` prepares a branch for each, and `check` also checks each;
-- once a day, unless `cleanup.automatic = false`, removes what `clean --merged` would, and port indexes unused for `cleanup.after`;
+- once a day, unless `cleanup.automatic = false`, removes what `clean --merged` would, what checks whose process died left behind, and port indexes unused for `cleanup.after`;
 - posts macOS notifications as checks finish and pull requests change. They are posted through AppleScript, so macOS credits them to Script Editor, and clicking one opens it. `serve.notify = false` turns them off, and `--no-notify` turns them off for one run.
 
 Serve opens no pull requests by default. With `--submit-passing`, or `serve.submit_passing = true`, it opens one for each branch it prepared whose check passed, at most `serve.submit_limit` a day. It never opens one with an upstream or commit-rule finding, or one needing `--accept`; those wait on the attention list, and the pull request says serve opened it without a person's review. `--no-submit-passing` turns it off for one run.
@@ -271,6 +271,7 @@ Serve opens no pull requests by default. With `--submit-passing`, or `serve.subm
 
 - **`clean`**, which is `clean --merged`, removes a merged branch's worktree, local branch, and fork branch, each only while it still holds the merged commit. A worktree with edits or untracked files, and work that went on past the merge, are kept.
 - **`clean --closed`** and **`clean --archived`** take only the worktrees of branches whose pull request closed unmerged, or that you archived. Their work isn't merged, so the branches and checkpoints stay, and `path` or any command that needs the worktree checks it out again.
+- **What checks left behind.** A check deletes its Tart clone when it ends, and a later attempt of the same check deletes an earlier one's. A check whose process dies with no later attempt leaves its clone behind, sometimes still running and holding one of the Mac's two VM slots. Whichever branches it cleans, `clean` lists these clones too, and removes one once no process is running its check, stopping it first. It keeps a clone no check of this checkout made, since another database may be using it, and it never touches the images checks clone from.
 - **`archive [branch]`** hides a branch from status without touching anything; `status --all` still shows it, and `archive --undo` brings it back.
 
 `clean` shows what it would remove first. On a terminal it asks, and a script passes `--yes`. A branch's record always stays, so `status --all` still finds it. Check logs in `~/.dockhand/logs` are kept.

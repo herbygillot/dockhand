@@ -153,6 +153,11 @@ func vmName(prefix string, attempt int) string {
 	return fmt.Sprintf("%s-%d", prefix, attempt)
 }
 
+// clonePrefixAll begins the name of every check's clone, and of nothing
+// else in dockhand's Tart home: images are dockhand-base-, dockhand-xcode-,
+// and dockhand-golden-.
+const clonePrefixAll = "dockhand-check-"
+
 // clonePrefix names every attempt's clone for one run and release.
 func clonePrefix(run, release string) string {
 	safe := strings.Map(func(r rune) rune {
@@ -161,5 +166,5 @@ func clonePrefix(run, release string) string {
 		}
 		return '-'
 	}, run)
-	return "dockhand-check-" + safe + "-" + release
+	return clonePrefixAll + safe + "-" + release
 }

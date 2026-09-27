@@ -1,6 +1,7 @@
 package command
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -28,6 +29,13 @@ was closed without merging, or that were archived, and nothing else: their
 work isn't merged, so the Git branch, your fork's branch, and the
 checkpoints stay, and dockhand path or any command that needs the worktree
 checks it out again. A worktree with edits or untracked files is kept.
+
+Whichever branches it cleans, it also removes what checks left in their
+providers when the process running them died: a Tart clone, which a check
+deletes when it ends, and a later attempt of the same check when it starts.
+One is removed only when a check of this checkout made it and no process
+is running that check; one no check of this checkout made is kept, since
+another database may be using it.
 
 It shows what it would remove first; on a terminal it asks, and a script
 passes --yes. archive hides a branch; clean removes a merged one's files;
@@ -57,8 +65,17 @@ cancel stops a check. None means another.`,
 			if err != nil {
 				return err
 			}
-			streams.emit(map[string]any{"branches": cleanView(plans), "applied": false})
-			removable := writeClean(streams.Out, plans, false)
+			session, err := startSession(ctx, e, model.SessionForeground)
+			if err != nil {
+				return err
+			}
+			defer session.End(context.WithoutCancel(ctx))
+			leftovers, err := e.PlanLeftovers(ctx, session)
+			if err != nil {
+				return err
+			}
+			streams.emit(map[string]any{"branches": cleanView(plans), "leftovers": leftoversView(leftovers), "applied": false})
+			removable := writeClean(streams.Out, plans, false) + writeLeftovers(streams.Out, leftovers, false)
 			if removable == 0 {
 				fmt.Fprintln(streams.Out, "Nothing to remove.")
 				return nil
@@ -75,10 +92,12 @@ cancel stops a check. None means another.`,
 				}
 			}
 			done, err := e.ApplyClean(ctx, plans)
-			streams.emit(map[string]any{"branches": cleanView(done), "applied": true})
+			removed, leftoverErr := e.RemoveLeftovers(ctx, session, leftovers)
+			streams.emit(map[string]any{"branches": cleanView(done), "leftovers": leftoversView(removed), "applied": true})
 			fmt.Fprintln(streams.Out)
 			writeClean(streams.Out, done, true)
-			return err
+			writeLeftovers(streams.Out, removed, true)
+			return errors.Join(err, leftoverErr)
 		},
 	}
 	cmd.Flags().BoolVar(&merged, "merged", true, "merged branches: their worktree, local branch, and fork branch")
@@ -117,6 +136,28 @@ func writeClean(out io.Writer, plans []engine.CleanBranch, done bool) int {
 		}
 		if plan.Branch.State != model.BranchMerged && slices.ContainsFunc(plan.Steps, func(s engine.CleanStep) bool { return s.Kept == "" }) {
 			fmt.Fprintf(out, "  keep     branch %s: dockhand path %s checks it out again\n", plan.Branch.Name, plan.Branch.ShortName())
+		}
+	}
+	return count
+}
+
+// writeLeftovers lists what checks left in providers, what clean does with
+// each, or did, and counts what it would remove.
+func writeLeftovers(out io.Writer, leftovers []engine.Leftover, done bool) int {
+	if len(leftovers) == 0 {
+		return 0
+	}
+	fmt.Fprintln(out, "Left by checks")
+	count := 0
+	for _, leftover := range leftovers {
+		switch {
+		case leftover.Kept != "":
+			fmt.Fprintf(out, "  keep     %s: %s\n", leftover.What, leftover.Kept)
+		case done && leftover.Done:
+			fmt.Fprintf(out, "  removed  %s, left by %s\n", leftover.What, leftover.Run.Name())
+		default:
+			fmt.Fprintf(out, "  remove   %s, left by %s\n", leftover.What, leftover.Run.Name())
+			count++
 		}
 	}
 	return count

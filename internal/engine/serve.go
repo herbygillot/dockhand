@@ -171,7 +171,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	s.say("serve: leading (pid %d) · builds on %s · %s", os.Getpid(), strings.Join(described, ", "), publishing)
 	e.announceServing(options.SubmitPassing)
 	followed := &follower{s: s, reported: map[string]bool{}}
-	cleaned := &cleaner{s: s}
+	cleaned := &cleaner{s: s, session: session}
 	scanned := &outdatedScanner{s: s}
 	submitter := &passingSubmitter{s: s, held: map[model.BranchID]string{}}
 
@@ -353,8 +353,9 @@ func (f *follower) maybe(ctx context.Context) {
 // database, whichever serve runs it: the last run is the time of a stamp
 // file beside the database.
 type cleaner struct {
-	s      *server
-	failed string
+	s       *server
+	session *coord.Session
+	failed  string
 }
 
 func (c *cleaner) maybe(ctx context.Context) {
@@ -373,7 +374,7 @@ func (c *cleaner) maybe(ctx context.Context) {
 	}
 	now := time.Now()
 	_ = os.Chtimes(stamp, now, now)
-	report, err := c.s.e.Cleanup(ctx, c.s.options.CleanupAge)
+	report, err := c.s.e.Cleanup(ctx, c.session, c.s.options.CleanupAge)
 	if err != nil {
 		if problem := fmt.Sprintf("serve: cleanup: %v", err); problem != c.failed {
 			c.s.say("%s", problem)
@@ -389,6 +390,11 @@ func (c *cleaner) maybe(ctx context.Context) {
 		}
 		if len(removed) > 0 {
 			c.s.say("%s: cleaned up after the merge: removed %s", branch.Branch.ShortName(), strings.Join(removed, ", "))
+		}
+	}
+	for _, leftover := range report.Leftovers {
+		if leftover.Done {
+			c.s.say("%s: removed %s, left when its process ended", leftover.Run.Name(), leftover.What)
 		}
 	}
 	if len(report.Indexes) > 0 {

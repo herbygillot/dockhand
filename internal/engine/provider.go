@@ -88,6 +88,21 @@ type Remedier interface {
 	Remedy(unmet model.Unmet) string
 }
 
+// A LeftoverProvider makes environments that can outlast the process that
+// made them, as a Tart clone does when the process checking in it dies and
+// no later attempt of its run comes to remove it. It lists them, each by
+// the reference its execution recorded, and removes one the engine has
+// found no process using (PlanLeftovers).
+type LeftoverProvider interface {
+	Provider
+	// Leftovers are the environments it made that are still there, with
+	// Ref and What set.
+	Leftovers(ctx context.Context) ([]Leftover, error)
+	// RemoveLeftover removes one, and refuses anything it didn't make for
+	// a check.
+	RemoveLeftover(ctx context.Context, ref string) error
+}
+
 // Remedy is how to give an environment what an unmet target needs, when
 // its provider can say.
 func (e *Engine) Remedy(unmet model.Unmet) string {

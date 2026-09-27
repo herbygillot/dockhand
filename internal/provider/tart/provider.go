@@ -180,6 +180,45 @@ func (p *Provider) Remedy(unmet model.Unmet) string {
 	return fmt.Sprintf("dockhand providers setup tart %s --xcode <Xcode .xip, or a folder of them> makes macOS %s's Xcode image", release.Slug, release.Product)
 }
 
+// Leftovers are the check clones in dockhand's Tart home. An attempt
+// deletes its clone when it ends, and a run's next attempt deletes an
+// earlier one's, so a clone found here is in use or was left by a process
+// that died; the engine tells which by the clone's check. The images checks
+// clone from, and anything else in the home, are never listed.
+func (p *Provider) Leftovers(ctx context.Context) ([]engine.Leftover, error) {
+	m, err := p.vms()
+	if err != nil {
+		return nil, err
+	}
+	images, err := m.Images(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var clones []engine.Leftover
+	for _, name := range images {
+		if strings.HasPrefix(name, clonePrefixAll) {
+			clones = append(clones, engine.Leftover{Ref: name, What: "Tart clone " + name})
+		}
+	}
+	return clones, nil
+}
+
+// RemoveLeftover stops and deletes one check clone. Any other name is
+// refused, so no image a check clones from is ever touched.
+func (p *Provider) RemoveLeftover(ctx context.Context, ref string) error {
+	if !strings.HasPrefix(ref, clonePrefixAll) {
+		return fmt.Errorf("%s is not a check's clone; only those are removed", ref)
+	}
+	m, err := p.vms()
+	if err != nil {
+		return err
+	}
+	if err := m.Stop(ctx, ref); err != nil {
+		return err
+	}
+	return m.Delete(ctx, ref)
+}
+
 // guestInput is the guest program's input.
 type guestInput struct {
 	Protocol    int            `json:"protocol"`
@@ -284,11 +323,13 @@ func (p *Provider) Execute(ctx context.Context, job engine.Job, build engine.Bui
 		return err
 	}
 	build.Progress("starting " + vm + " from " + image)
-	if err := m.Clone(ctx, image, vm); err != nil {
-		return fmt.Errorf("%w: cloning %s: %w", engine.ErrInfrastructure, image, err)
-	}
+	// The clone is named on the execution before it exists, so one this
+	// process leaves when it dies is always a known check's (Leftovers).
 	if err := build.Refer(vm); err != nil {
 		return err
+	}
+	if err := m.Clone(ctx, image, vm); err != nil {
+		return fmt.Errorf("%w: cloning %s: %w", engine.ErrInfrastructure, image, err)
 	}
 	defer func() {
 		if deleteErr := m.Delete(cleanup, vm); deleteErr != nil && err == nil {

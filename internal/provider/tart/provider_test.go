@@ -24,12 +24,13 @@ import (
 // fakeMac stands for the Mac's Tart: its images, what runs, and a guest
 // whose results a test scripts.
 type fakeMac struct {
-	mu      sync.Mutex
-	images  []string
-	running []int // counts Running reports, one per call, the last repeating
-	events  []string
-	guest   *fakeGuest
-	run     *fakeRun
+	mu       sync.Mutex
+	images   []string
+	cloneErr error
+	running  []int // counts Running reports, one per call, the last repeating
+	events   []string
+	guest    *fakeGuest
+	run      *fakeRun
 }
 
 func (m *fakeMac) log(event string) {
@@ -56,6 +57,9 @@ func (m *fakeMac) Running(context.Context) (int, error) {
 }
 func (m *fakeMac) Clone(_ context.Context, image, vm string) error {
 	m.log("clone " + image + " " + vm)
+	if m.cloneErr != nil {
+		return m.cloneErr
+	}
 	m.mu.Lock()
 	m.images = append(m.images, vm)
 	m.mu.Unlock()
@@ -308,6 +312,43 @@ func TestAnAttemptSweepsAndWaitsForRoom(t *testing.T) {
 	require.Contains(t, mac.images, "dockhand-check-run-7-sonoma-1")
 	require.Contains(t, mac.images, "dockhand-check-run-8-tahoe-1")
 	require.Contains(t, build.progress, "waiting for the Mac's VMs: 2 are running, and macOS runs two at most")
+}
+
+// The clone is named on the execution before it is made, so a process
+// that dies while cloning leaves a clone clean can trace to its check.
+func TestTheCloneIsNamedBeforeItIsMade(t *testing.T) {
+	t.Parallel()
+	mac := newMac(guestResults{State: "finished"})
+	mac.cloneErr = errors.New("tart clone failed")
+	build := &fakeBuild{}
+	err := testProvider(mac).Execute(t.Context(), tartJob(t, 1), build)
+	require.ErrorIs(t, err, engine.ErrInfrastructure)
+	require.Equal(t, []string{"dockhand-check-run-7-tahoe-1"}, build.refs)
+}
+
+// The leftovers are the check clones in dockhand's Tart home and nothing
+// else, and removing one stops it first. The images checks clone from
+// can't be removed this way, whatever is asked.
+func TestLeftoversAreOnlyCheckClones(t *testing.T) {
+	t.Parallel()
+	mac := newMac()
+	mac.images = []string{"dockhand-base-tahoe", "dockhand-golden-tahoe", "dockhand-xcode-tahoe", "dockhand-golden-xcode-tahoe",
+		"dockhand-base-tahoe-check", "ghcr.io/cirruslabs/macos-tahoe-vanilla:latest", "dockhand-check-run-7-tahoe-1", "dockhand-check-run-8-sonoma-2"}
+	p := testProvider(mac)
+	leftovers, err := p.Leftovers(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []engine.Leftover{
+		{Ref: "dockhand-check-run-7-tahoe-1", What: "Tart clone dockhand-check-run-7-tahoe-1"},
+		{Ref: "dockhand-check-run-8-sonoma-2", What: "Tart clone dockhand-check-run-8-sonoma-2"},
+	}, leftovers)
+
+	require.NoError(t, p.RemoveLeftover(t.Context(), "dockhand-check-run-7-tahoe-1"))
+	require.Equal(t, []string{"stop dockhand-check-run-7-tahoe-1", "delete dockhand-check-run-7-tahoe-1"}, mac.events)
+	for _, image := range []string{"dockhand-base-tahoe", "dockhand-golden-tahoe", "dockhand-xcode-tahoe", "dockhand-base-tahoe-check"} {
+		require.ErrorContains(t, p.RemoveLeftover(t.Context(), image), "is not a check's clone", image)
+	}
+	require.Len(t, mac.events, 2, "nothing else was stopped or deleted")
+	require.Contains(t, mac.images, "dockhand-base-tahoe")
 }
 
 // A canceled check stops, and its clone goes.

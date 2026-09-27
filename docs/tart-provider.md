@@ -2,7 +2,9 @@
 
 `check --on tart` builds in a fresh clone of one of dockhand's Tart images,
 one clone for each macOS release and attempt, deleted afterwards (Design v3
-§7). It follows MacPorts CI's order (decisions 11 and 22). For each target,
+§7). A clone left by a process that died is deleted by the check's next
+attempt, or else by `dockhand clean` or serve's daily cleanup, once no
+process runs its check. It follows MacPorts CI's order (decisions 11 and 22). For each target,
 in dependency order:
 
 1. everything installed is deactivated;

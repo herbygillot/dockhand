@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -397,10 +399,122 @@ func (e *Engine) dropRefs(ctx context.Context, branch model.Branch) error {
 	return e.Repo.UpdateRefs(ctx, changes)
 }
 
+// Leftover is an environment a provider made for a check that is still
+// there, such as a Tart clone, and what clean does with it.
+type Leftover struct {
+	// Provider made it; Ref is its name for it, as the check's execution
+	// recorded it; What says it for a person, "Tart clone dockhand-…".
+	Provider string
+	Ref      string
+	What     string
+	// Run is the check it was made for, when one of this checkout's.
+	Run *model.Run
+	// Kept says why it stays; empty when it would be removed.
+	Kept string
+	// Done is true once it was removed.
+	Done bool
+}
+
+// PlanLeftovers finds what providers left of checks, and which clean may
+// remove. A provider removes its environment when the attempt using it
+// ends, and a run's next attempt removes an earlier one's, so what is left
+// was either in use or made by a process that died with no later attempt
+// to follow. An environment is removed only when a check of this checkout
+// made it and no live process drives that check: any later attempt makes
+// its own. One whose check is running is kept, and so is one no check of
+// this checkout made, since another checkout's database may be using it.
+func (e *Engine) PlanLeftovers(ctx context.Context, session *coord.Session) ([]Leftover, error) {
+	var all []Leftover
+	for _, name := range slices.Sorted(maps.Keys(e.Providers)) {
+		provider, ok := e.Providers[name].(LeftoverProvider)
+		if !ok {
+			continue
+		}
+		found, err := provider.Leftovers(ctx)
+		if err != nil {
+			return all, fmt.Errorf("listing what %s checks left: %w", name, err)
+		}
+		for _, leftover := range found {
+			leftover.Provider = name
+			if err := e.judgeLeftover(ctx, session, &leftover); err != nil {
+				return all, err
+			}
+			all = append(all, leftover)
+		}
+	}
+	return all, nil
+}
+
+func (e *Engine) judgeLeftover(ctx context.Context, session *coord.Session, leftover *Leftover) error {
+	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		executions, err := r.ExecutionsReferred(leftover.Ref)
+		if err != nil || len(executions) == 0 {
+			return err
+		}
+		run, err := r.Run(executions[len(executions)-1].Run)
+		leftover.Run = &run
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	if leftover.Run == nil {
+		leftover.Kept = "no check of this checkout made it"
+		return nil
+	}
+	holder, err := session.Holder(ctx, RunResource(leftover.Run.ID))
+	if holder != nil {
+		leftover.Kept = leftover.Run.Name() + " is running"
+	}
+	return err
+}
+
+// RemoveLeftovers removes what PlanLeftovers found removable. Each goes
+// under its check's lease, so no process takes the check up while its
+// environment is removed; one a process took up since is kept.
+func (e *Engine) RemoveLeftovers(ctx context.Context, session *coord.Session, leftovers []Leftover) ([]Leftover, error) {
+	var problems []error
+	for i := range leftovers {
+		leftover := &leftovers[i]
+		provider, ok := e.Providers[leftover.Provider].(LeftoverProvider)
+		if leftover.Kept != "" || leftover.Run == nil || !ok {
+			continue
+		}
+		lease, holder, err := session.TakeIfUnattended(ctx, RunResource(leftover.Run.ID))
+		if err != nil {
+			problems = append(problems, err)
+			continue
+		}
+		if holder != nil {
+			leftover.Kept = leftover.Run.Name() + " is running"
+			continue
+		}
+		err = provider.RemoveLeftover(ctx, leftover.Ref)
+		if releaseErr := session.Release(context.WithoutCancel(ctx), lease); err == nil {
+			err = releaseErr
+		}
+		if err != nil {
+			problems = append(problems, fmt.Errorf("removing %s: %w", leftover.What, err))
+			continue
+		}
+		leftover.Done = true
+		if err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+			_, err := session.Emit(tx, model.Event{At: e.now(), Branch: leftover.Run.Branch, Run: leftover.Run.ID, Kind: "cleanup", Level: model.LevelInfo,
+				Message: fmt.Sprintf("removed %s, left by %s", leftover.What, leftover.Run.Name())})
+			return err
+		}); err != nil {
+			problems = append(problems, err)
+		}
+	}
+	return leftovers, errors.Join(problems...)
+}
+
 // CleanupReport is what one automatic cleanup removed.
 type CleanupReport struct {
 	// Branches are the merged branches it cleaned, and what it kept.
 	Branches []CleanBranch
+	// Leftovers are what checks left in providers, and what it removed.
+	Leftovers []Leftover
 	// Indexes are the port index generations it removed.
 	Indexes []string
 }
@@ -408,6 +522,11 @@ type CleanupReport struct {
 // Removed counts what it removed.
 func (r CleanupReport) Removed() int {
 	n := len(r.Indexes)
+	for _, leftover := range r.Leftovers {
+		if leftover.Done {
+			n++
+		}
+	}
 	for _, branch := range r.Branches {
 		for _, step := range branch.Steps {
 			if step.Done {
@@ -420,9 +539,10 @@ func (r CleanupReport) Removed() int {
 
 // Cleanup is decision 36's automatic cleanup, which serve runs at most
 // once a day: what clean --merged would remove, less anything it would
-// keep, and port index generations unused for longer than after. Open
-// branches, and work of anyone's own, are never touched.
-func (e *Engine) Cleanup(ctx context.Context, after time.Duration) (CleanupReport, error) {
+// keep, what checks whose process died left in providers, and port index
+// generations unused for longer than after. Open branches, and work of
+// anyone's own, are never touched.
+func (e *Engine) Cleanup(ctx context.Context, session *coord.Session, after time.Duration) (CleanupReport, error) {
 	var report CleanupReport
 	plans, err := e.PlanClean(ctx)
 	if err != nil {
@@ -435,6 +555,13 @@ func (e *Engine) Cleanup(ctx context.Context, after time.Duration) (CleanupRepor
 		}
 	}
 	if report.Branches, err = e.ApplyClean(ctx, removable); err != nil {
+		return report, err
+	}
+	leftovers, err := e.PlanLeftovers(ctx, session)
+	if err != nil {
+		return report, err
+	}
+	if report.Leftovers, err = e.RemoveLeftovers(ctx, session, leftovers); err != nil {
 		return report, err
 	}
 	cache, err := IndexCache()

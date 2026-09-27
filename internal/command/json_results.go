@@ -196,6 +196,27 @@ type cleanBranchJSON struct {
 	Steps  []cleanStepJSON `json:"steps"`
 }
 
+type leftoverJSON struct {
+	Provider string `json:"provider"`
+	Ref      string `json:"ref"`
+	What     string `json:"what"`
+	Check    string `json:"check,omitempty"`
+	Kept     string `json:"kept,omitempty"`
+	Removed  bool   `json:"removed"`
+}
+
+func leftoversView(leftovers []engine.Leftover) []leftoverJSON {
+	views := []leftoverJSON{}
+	for _, leftover := range leftovers {
+		view := leftoverJSON{Provider: leftover.Provider, Ref: leftover.Ref, What: leftover.What, Kept: leftover.Kept, Removed: leftover.Done}
+		if leftover.Run != nil {
+			view.Check = leftover.Run.Name()
+		}
+		views = append(views, view)
+	}
+	return views
+}
+
 func cleanView(plans []engine.CleanBranch) []cleanBranchJSON {
 	views := []cleanBranchJSON{}
 	for _, plan := range plans {

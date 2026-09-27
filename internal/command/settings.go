@@ -102,6 +102,9 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 		}
 		e.Providers["tart"] = provider
 	}
+	if testLeftovers != nil {
+		e.Providers[testLeftovers.Name()] = testLeftovers
+	}
 	if testPreparer != nil {
 		e.Preparer = testPreparer(e)
 	}
@@ -128,6 +131,10 @@ var testArchiveFetcher func(*engine.Engine) engine.ArchiveFetcher
 
 // testActions, when set, stands in for GitHub Actions.
 var testActions actions.API
+
+// testLeftovers, when set, is a provider with environments left behind,
+// registered under its name in place of whichever the configuration made.
+var testLeftovers engine.LeftoverProvider
 
 // testTart, when set, registers the Tart provider whether or not Tart is
 // installed, and adjusts it for a test.

@@ -105,7 +105,7 @@ func TestCleanupRemovesWhatCleanWouldAndOldIndexes(t *testing.T) {
 	require.NoError(t, os.Chtimes(old, at.Add(-30*24*time.Hour), at.Add(-30*24*time.Hour)))
 	require.NoError(t, os.Chtimes(fresh, at, at))
 
-	report, err := e.Cleanup(t.Context(), 7*24*time.Hour)
+	report, err := e.Cleanup(t.Context(), session(t, e), 7*24*time.Hour)
 	require.NoError(t, err)
 	require.Equal(t, []string{old}, report.Indexes)
 	require.NoDirExists(t, old)
@@ -120,7 +120,7 @@ func TestCleanupRemovesWhatCleanWouldAndOldIndexes(t *testing.T) {
 	require.FileExists(t, filepath.Join(branch.Worktree, "notes.txt"), "work of its own is kept")
 	require.Empty(t, fake.head("dockhand/jq-update"))
 
-	again, err := e.Cleanup(t.Context(), 7*24*time.Hour)
+	again, err := e.Cleanup(t.Context(), session(t, e), 7*24*time.Hour)
 	require.NoError(t, err)
 	require.Zero(t, again.Removed(), "what is kept stays kept")
 }
