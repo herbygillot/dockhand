@@ -295,6 +295,20 @@ func writeLogs(out io.Writer, logs engine.RunLogs) error {
 				line += "  " + tilde(result.Log)
 			}
 			fmt.Fprintln(out, line)
+			// A result with several builders shows each one's part.
+			for _, part := range result.Builders {
+				line := fmt.Sprintf("      %s %s", part.Builder, part.Outcome)
+				if part.Outcome == model.OutcomeNotRun {
+					line = fmt.Sprintf("      %s didn't build it", part.Builder)
+				}
+				if part.Phase != "" {
+					line += " at " + string(part.Phase)
+				}
+				if part.Log != "" {
+					line += "  " + tilde(part.Log)
+				}
+				fmt.Fprintln(out, line)
+			}
 		}
 	}
 	return nil

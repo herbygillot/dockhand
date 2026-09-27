@@ -149,6 +149,7 @@ func TestGitHubBuildsWithMacPortsWorkflowInYourFork(t *testing.T) {
 	logs, _, err := dockhand(t, "logs", "check-1")
 	require.NoError(t, err)
 	require.Contains(t, logs, "build-macos-15.log")
+	require.Regexp(t, `\n      build \(macos-15\) passed  \S+build-macos-15\.log\n`, logs, "each runner's part, under the port's result")
 	// The workflow run's URL is how the run is named, and found.
 	require.Contains(t, logs, "\n    https://github.com/ada/macports-ports/actions/runs/7\n")
 	logs, _, err = dockhand(t, "logs", "https://github.com/ada/macports-ports/actions/runs/7")

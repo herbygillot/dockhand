@@ -58,3 +58,11 @@ func TestTheWorkflowsMarkersSayWhatHappened(t *testing.T) {
 	o, _ = (&Built{Listed: true}).Outcome()
 	require.Equal(t, model.OutcomeNotRun, o, "listed but never reached")
 }
+
+// A runner that listed the subports can say which it didn't build; one that
+// stopped before listing can't.
+func TestARunnerListsItsSubportsOrStoppedFirst(t *testing.T) {
+	require.True(t, ListsSubports([]byte(runnerLog)))
+	require.True(t, ListsSubports([]byte("::group::Listing subports\n::endgroup::\n")), "listing none is listing")
+	require.False(t, ListsSubports([]byte("2026-09-25T10:00:00.0000000Z ##[group]Run set -eu\n2026-09-25T10:00:05.0000000Z ##[error]Process completed with exit code 1.\n")))
+}

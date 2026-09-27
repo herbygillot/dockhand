@@ -401,6 +401,7 @@ func TestAResultKeepsWhatItsBuildRead(t *testing.T) {
 	built := missing
 	built.Archive = "sha256:55"
 	built.Detail = "a dependency failed to install: zlib"
+	built.Builders = []model.BuilderResult{{Builder: "macos-14", Outcome: model.OutcomeNotRun}, {Builder: "macos-15", Outcome: model.OutcomePassed, Tests: model.TestsPassed, Log: "15.log"}}
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.RecordResult(built) }))
 
 	require.NoError(t, f.store.View(t.Context(), f.repo, func(rd store.Reader) error {
@@ -409,6 +410,7 @@ func TestAResultKeepsWhatItsBuildRead(t *testing.T) {
 		require.Len(t, results, 1)
 		require.Equal(t, "sha256:55", results[0].Archive)
 		require.Equal(t, "a dependency failed to install: zlib", results[0].Detail)
+		require.Equal(t, built.Builders, results[0].Builders)
 		read, err := rd.Inputs(results[0].Inputs)
 		require.NoError(t, err)
 		require.Equal(t, inputs, read)

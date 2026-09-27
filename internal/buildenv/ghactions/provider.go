@@ -201,7 +201,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		if err := atomicfile.Write(path, log, 0o644); err != nil {
 			return err
 		}
-		runners = append(runners, runner{job: j, log: path, built: ReadLog(log)})
+		runners = append(runners, runner{job: j, log: path, built: ReadLog(log), listing: ListsSubports(log)})
 	}
 
 	recorded := 0
@@ -255,32 +255,53 @@ type runner struct {
 	job   RunnerJob
 	log   string
 	built map[string]*Built
+	// listing is true when the log shows the workflow listing the
+	// subports it would build, which a runner that stopped first doesn't.
+	listing bool
 }
 
-// verdict is a port's result across the runners: failed if it failed on
-// any, at the first such runner's phase; passed if it passed on every
-// runner, with the log of the first whose tests failed, else the first's.
-// A port a runner listed but never reached has no verdict yet.
+// verdict is a port's result across the runners, with each runner's part
+// (the architecture review of 2026-09-27: the runners had been folded into
+// one result, and which built what was lost). A runner that listed the
+// subports without this one didn't build it, as the workflow leaves a
+// port off a macOS it doesn't support, and its part is not run. Of the
+// runners that built it, the port failed if it failed on any, at the first
+// such runner's phase, with that runner named; and passed if it passed on
+// all of them, with the log of the first whose tests failed, else the
+// first's. There is no verdict yet while a runner hasn't listed the
+// subports, or listed the port and never reached it, nor when none built
+// it.
 func verdict(name string, runners []runner) (model.TargetResult, bool) {
-	if len(runners) == 0 {
-		return model.TargetResult{}, false
-	}
+	var parts []model.BuilderResult
+	var failed *model.BuilderResult
 	result := model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsNone}
 	for _, r := range runners {
+		if !r.listing {
+			return model.TargetResult{}, false
+		}
+		part := model.BuilderResult{Builder: r.job.Name, Outcome: model.OutcomeNotRun}
 		built := r.built[name]
-		if built == nil {
-			return model.TargetResult{}, false
+		if built == nil || !built.Listed {
+			parts = append(parts, part)
+			continue
 		}
-		outcome, phase := built.Outcome()
+		part.Outcome, part.Phase = built.Outcome()
+		part.Tests, part.Log = built.Tests(), r.log
+		parts = append(parts, part)
 		switch {
-		case outcome == model.OutcomeFailed:
-			return model.TargetResult{Outcome: outcome, Phase: phase, Tests: built.Tests(), Log: r.log}, true
-		case outcome != model.OutcomePassed:
+		case part.Outcome == model.OutcomeFailed:
+			if failed == nil {
+				failed = &parts[len(parts)-1]
+			}
+			continue
+		case part.Outcome != model.OutcomePassed:
 			return model.TargetResult{}, false
 		}
-		switch built.Tests() {
+		switch part.Tests {
 		case model.TestsFailed:
-			result.Tests, result.Log = model.TestsFailed, r.log
+			if result.Tests != model.TestsFailed {
+				result.Tests, result.Log = model.TestsFailed, r.log
+			}
 		case model.TestsPassed:
 			if result.Tests == model.TestsNone {
 				result.Tests = model.TestsPassed
@@ -290,6 +311,14 @@ func verdict(name string, runners []runner) (model.TargetResult, bool) {
 			result.Log = r.log
 		}
 	}
+	built := slices.ContainsFunc(parts, func(part model.BuilderResult) bool { return part.Outcome != model.OutcomeNotRun })
+	switch {
+	case !built:
+		return model.TargetResult{}, false
+	case failed != nil:
+		result = model.TargetResult{Outcome: model.OutcomeFailed, Phase: failed.Phase, Tests: failed.Tests, Log: failed.Log, Detail: "on " + failed.Builder}
+	}
+	result.Builders = parts
 	return result, true
 }
 

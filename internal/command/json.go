@@ -164,6 +164,9 @@ type resultJSON struct {
 	Excluded bool   `json:"excluded,omitempty"`
 	// Detail is why the target stopped, in its provider's words.
 	Detail string `json:"detail,omitempty"`
+	// Builders are each builder's part, where the provider's run has
+	// several, as MacPorts' workflow has a runner for each macOS release.
+	Builders []builderJSON `json:"builders,omitempty"`
 	// Remade is true where a result was recorded before its environment
 	// was made again, and so no longer stands for it: the outcome reads
 	// not_run.
@@ -268,6 +271,7 @@ func evidenceView(evidence engine.Evidence) []targetJSON {
 		for i, result := range target.Outcomes {
 			environment := evidence.Plan.Environments[i]
 			view.Results = append(view.Results, resultJSON{Outcome: string(result.Outcome), Phase: string(result.Phase), Tests: string(result.Tests), Log: result.Log, Detail: result.Detail,
+				Builders: builderViews(result.Builders),
 				Excluded: engine.Excluded(evidence.Plan, target.Target, environment), Remade: slices.Contains(target.Remade, environment)})
 		}
 		targets = append(targets, view)
@@ -359,6 +363,23 @@ func branchView(status engine.BranchStatus) branchJSON {
 		}
 	}
 	return view
+}
+
+// builderJSON is one builder's part of a result.
+type builderJSON struct {
+	Builder string `json:"builder"`
+	Outcome string `json:"outcome"`
+	Phase   string `json:"phase,omitempty"`
+	Tests   string `json:"tests,omitempty"`
+	Log     string `json:"log,omitempty"`
+}
+
+func builderViews(parts []model.BuilderResult) []builderJSON {
+	var views []builderJSON
+	for _, part := range parts {
+		views = append(views, builderJSON{Builder: part.Builder, Outcome: string(part.Outcome), Phase: string(part.Phase), Tests: string(part.Tests), Log: part.Log})
+	}
+	return views
 }
 
 // releaseJSON is where an update found its version: a forge's tag at an

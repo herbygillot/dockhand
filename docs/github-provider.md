@@ -25,8 +25,10 @@ on = ["github"]   # makes it check's default
 2. The workflow runs on that push, as it does for every branch but master. Dockhand waits up to 10 minutes for GitHub to start the run. If none starts, it says so and names your fork's Actions page.
 3. It waits for the run to finish, then saves each runner's log beside the check's other logs (`dockhand logs check-N`).
 4. It reads each log's markers for each port: the subport listing, `port lint` errors, failed dependencies and installs, and the install and test groups.
-   - A port passes only if it passed on every runner.
-   - If it failed on any runner, it failed at that runner's phase.
+   - A port passes only if it passed on every runner that built it.
+   - If it failed on any runner, it failed at that runner's phase, and the result names the runner.
+   - A runner that listed its subports without the port didn't build it, as the workflow leaves a port off a macOS it doesn't support. The others decide.
+   - Each runner's part is kept with the result: `dockhand logs check-N` shows it under the port, and `--json` as `builders`.
    - Test failures are advisory, as in MacPorts' CI, unless `--tests required`, which dockhand applies to the workflow's reported results as it does to Tart's. The workflow runs its own tests whatever the policy, so `--tests skip` only stops them counting.
 
 A run that was cancelled, timed out, or never started building is run again (only its failed jobs) instead of being read. So is a run that failed without naming a port, once: it counts as trouble with the environment, and a later attempt reruns it. A port's own failure is a verdict and is not retried.

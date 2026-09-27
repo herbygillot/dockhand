@@ -52,6 +52,20 @@ func (b Built) Tests() model.TestOutcome {
 	return model.TestsNone
 }
 
+// ListsSubports reports whether a job's log shows the workflow listing the
+// subports it would build: a runner that stopped before then can't say
+// which ports it would have built.
+func ListsSubports(log []byte) bool {
+	scanner := bufio.NewScanner(bytes.NewReader(log))
+	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	for scanner.Scan() {
+		if line := timestamp.ReplaceAllString(scanner.Text(), ""); line == "##[group]Listing subports" || line == "::group::Listing subports" {
+			return true
+		}
+	}
+	return false
+}
+
 // GitHub's job logs begin each line with a timestamp.
 var timestamp = regexp.MustCompile(`^\d{4}-\d\d-\d\dT[0-9:.]+Z `)
 

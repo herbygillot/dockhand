@@ -56,3 +56,16 @@ The architecture review found the release an update chose, with its tag and upst
 - `dockhand status <branch>` shows it: "Release  jq 1.8.1, GitHub tag jq-1.8.1 of jqlang/jq at 1a2b3c4". The branch's `--json` lists it under `releases`.
 
 `TestAnUpdatesReleaseIsKept` is the review's update, reload, and tidy/status test. Each `dockhand` command is its own process, so status reads the release back from the store, before tidy and after. The review's fuller report, with affected members, findings, and commit intent, waits until something reads it, as the roadmap said.
+
+## The github provider keeps each runner's part
+
+MacPorts' workflow runs a job per macOS release, and dockhand folded them into one result with one log, so which runner built what was lost. Worse, a port one runner didn't list got no verdict at all, and the check ended "did not finish". The workflow leaves a port off a macOS it doesn't support.
+
+Now each result keeps its runners' parts (`TargetResult.Builders`, schema 19), and the verdict is derived from them:
+- **Each part** has its runner, outcome, phase, tests, and log.
+- **Failed** where any runner that built it failed, at the first one's phase, with the result's detail naming it: "on macos-15".
+- **Passed** where every runner that built it passed.
+- **Not built there:** a runner that listed the subports without the port. Its part is not run, and the rest decide.
+- **No verdict yet,** as before, while a runner hasn't reached the listing (`ListsSubports`), or listed the port and never reached it, and when no runner built it.
+
+`dockhand logs` shows each runner's part under a result ("build (macos-15) passed  …/build-macos-15.log", or "didn't build it"). `--json` has them as `builders`. For Tart, a run is one builder, and results carry none.

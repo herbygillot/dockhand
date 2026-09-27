@@ -179,6 +179,10 @@ type TargetResult struct {
 	// provider says: MacPorts' last errors for a failed target, or the
 	// changed dependency that blocked one.
 	Detail string
+	// Builders are the parts of the result, where the provider's run has
+	// several builders, as MacPorts' workflow has a runner for each macOS
+	// release; the result is theirs together. Empty for one builder.
+	Builders []BuilderResult
 	// Inputs is the key of what the build read (TargetInputs), for reuse
 	// (decision 28); empty where the provider couldn't say.
 	Inputs string
@@ -187,6 +191,17 @@ type TargetResult struct {
 	// installed.
 	Archive    string
 	RecordedAt time.Time
+}
+
+// BuilderResult is one builder's part of a result: a runner's outcome,
+// phase, tests, and log. A runner that didn't build the port, as MacPorts'
+// workflow leaves a port off a macOS it doesn't support, is not run.
+type BuilderResult struct {
+	Builder string
+	Outcome Outcome
+	Phase   Phase       `json:",omitempty"`
+	Tests   TestOutcome `json:",omitempty"`
+	Log     string      `json:",omitempty"`
 }
 
 // Validate checks the rules every stored result keeps.
