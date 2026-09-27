@@ -10,7 +10,9 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macos"
@@ -190,13 +192,23 @@ func (f *fakeMachine) Adopt(ctx context.Context, source, destination string, rep
 	return adopt(ctx, f, source, destination, replace)
 }
 
-func testProvisioner(machine *fakeMachine) *Provisioner {
-	return &Provisioner{Config: Config{Platform: testPlatform, Home: "/tmp/tart"}, backend: machine}
+// testDigest is what the test registry says every source names.
+const testDigest = "sha256:eeec54bfe1f076e27786c5d92b89187a05b1d109b5071eb2dcdf02d596e34640"
+
+// testProvisioner provisions with a fake machine and registry, and a home
+// of the test's own, so setup's record of an image lands there.
+func testProvisioner(t *testing.T, machine *fakeMachine) *Provisioner {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	home := filepath.Join(t.TempDir(), "tart")
+	require.NoError(t, os.MkdirAll(home, 0o700))
+	return &Provisioner{Config: Config{Platform: testPlatform, Home: home}, backend: machine,
+		Digest: func(context.Context, string) (string, error) { return testDigest, nil }}
 }
 
 func TestExistingDefaultImageIsValidatedInDisposableClone(t *testing.T) {
 	machine := newFakeMachine("dockhand-base-tahoe")
-	result, err := testProvisioner(machine).Run(t.Context(), Options{})
+	result, err := testProvisioner(t, machine).Run(t.Context(), Options{})
 	require.NoError(t, err)
 	require.True(t, result.Reused)
 	require.Equal(t, "dockhand-base-tahoe", result.Image)
@@ -207,7 +219,7 @@ func TestExistingDefaultImageIsValidatedInDisposableClone(t *testing.T) {
 
 func TestMissingImageIsProvisionedAndAdoptedAfterValidation(t *testing.T) {
 	machine := newFakeMachine()
-	result, err := testProvisioner(machine).Run(t.Context(), Options{})
+	result, err := testProvisioner(t, machine).Run(t.Context(), Options{})
 	require.NoError(t, err)
 	require.False(t, result.Reused)
 	require.Contains(t, machine.images, "dockhand-base-tahoe")
@@ -225,7 +237,7 @@ func TestMissingImageIsProvisionedAndAdoptedAfterValidation(t *testing.T) {
 func TestManifestRecordsObservedGuestAgentVersion(t *testing.T) {
 	machine := newFakeMachine()
 	machine.validation.GuestAgentVersion = tart.GuestAgentRelease + "-cb39b12"
-	result, err := testProvisioner(machine).Run(t.Context(), Options{})
+	result, err := testProvisioner(t, machine).Run(t.Context(), Options{})
 	require.NoError(t, err)
 	var manifest tart.ImageManifest
 	require.NoError(t, json.Unmarshal(machine.manifest, &manifest))
@@ -239,7 +251,7 @@ func TestXcodeProfileInstallsXcodeBeforeMacPorts(t *testing.T) {
 	archive := directory + "/Xcode_26.6_Apple_silicon.xip"
 	require.NoError(t, os.WriteFile(archive, nil, 0o600))
 	machine := newFakeMachine()
-	provisioner := testProvisioner(machine)
+	provisioner := testProvisioner(t, machine)
 	provisioner.Config.Xcode = directory
 	result, err := provisioner.Run(t.Context(), Options{})
 	require.NoError(t, err)
@@ -258,7 +270,7 @@ func TestAnXcodeNamedForItsMajorVersionIsTheOneInstalled(t *testing.T) {
 	require.NoError(t, os.WriteFile(directory+"/Xcode_27.xip", nil, 0o600))
 	machine := newFakeMachine()
 	machine.installsAs = "27.0"
-	provisioner := testProvisioner(machine)
+	provisioner := testProvisioner(t, machine)
 	provisioner.Config.Xcode = directory
 	result, err := provisioner.Run(t.Context(), Options{})
 	require.NoError(t, err)
@@ -266,7 +278,7 @@ func TestAnXcodeNamedForItsMajorVersionIsTheOneInstalled(t *testing.T) {
 
 	machine = newFakeMachine()
 	machine.installsAs = "26.6"
-	provisioner = testProvisioner(machine)
+	provisioner = testProvisioner(t, machine)
 	provisioner.Config.Xcode = directory
 	_, err = provisioner.Run(t.Context(), Options{})
 	require.ErrorContains(t, err, `Xcode "26.6"`, "a different Xcode is still refused")
@@ -285,7 +297,7 @@ func TestConventionalImageNamesRequireTheirMatchingProfile(t *testing.T) {
 func TestFailedRebuildPreservesExistingImages(t *testing.T) {
 	machine := newFakeMachine("dockhand-base-tahoe", "dockhand-golden-tahoe")
 	machine.fail = "macports"
-	_, err := testProvisioner(machine).Run(t.Context(), Options{Rebuild: true})
+	_, err := testProvisioner(t, machine).Run(t.Context(), Options{Rebuild: true})
 	require.ErrorContains(t, err, "fixture failure")
 	require.Contains(t, machine.images, "dockhand-base-tahoe")
 	require.Contains(t, machine.images, "dockhand-golden-tahoe")
@@ -295,7 +307,7 @@ func TestFailedRebuildPreservesExistingImages(t *testing.T) {
 func TestFailedAdoptionRetainsProvenCandidate(t *testing.T) {
 	machine := newFakeMachine("dockhand-base-tahoe", "dockhand-golden-tahoe")
 	machine.fail = "adopt:dockhand-base-tahoe-next:dockhand-base-tahoe"
-	_, err := testProvisioner(machine).Run(t.Context(), Options{Rebuild: true})
+	_, err := testProvisioner(t, machine).Run(t.Context(), Options{Rebuild: true})
 	require.ErrorContains(t, err, "proven candidate remains")
 	require.Contains(t, machine.images, "dockhand-base-tahoe-next")
 	require.Contains(t, machine.images, "dockhand-base-tahoe")
@@ -303,7 +315,7 @@ func TestFailedAdoptionRetainsProvenCandidate(t *testing.T) {
 
 func TestCheckRefusesMissingImage(t *testing.T) {
 	machine := newFakeMachine()
-	_, err := testProvisioner(machine).Run(t.Context(), Options{Check: true})
+	_, err := testProvisioner(t, machine).Run(t.Context(), Options{Check: true})
 	require.ErrorContains(t, err, "does not exist")
 	require.NotContains(t, machine.events, "pull")
 }
@@ -333,7 +345,7 @@ func TestAgentBootstrapPinsAndChecksTheReleaseAsset(t *testing.T) {
 
 func TestInterruptedAdoptionDoesNotHidePreviousImageWithGoldenRestore(t *testing.T) {
 	machine := newFakeMachine("dockhand-base-tahoe-previous", "dockhand-golden-tahoe")
-	_, err := testProvisioner(machine).Run(t.Context(), Options{})
+	_, err := testProvisioner(t, machine).Run(t.Context(), Options{})
 	require.ErrorContains(t, err, "previous image is preserved")
 	require.NotContains(t, machine.events, "adopt:dockhand-golden-tahoe:dockhand-base-tahoe")
 	require.Contains(t, machine.images, "dockhand-base-tahoe-previous")
@@ -348,7 +360,7 @@ func TestAnASIFSourceNeedsATartThatHandlesIt(t *testing.T) {
 	machine := newFakeMachine()
 	machine.format = "asif"
 	machine.oldTart = true
-	_, err := testProvisioner(machine).Run(t.Context(), Options{})
+	_, err := testProvisioner(t, machine).Run(t.Context(), Options{})
 	require.ErrorContains(t, err, "it has an ASIF disk")
 	require.ErrorContains(t, err, "openai/tart#1344")
 	require.NotContains(t, machine.events, "configure")
@@ -358,7 +370,7 @@ func TestAnASIFSourceNeedsATartThatHandlesIt(t *testing.T) {
 
 	machine = newFakeMachine()
 	machine.format = "asif"
-	result, err := testProvisioner(machine).Run(t.Context(), Options{})
+	result, err := testProvisioner(t, machine).Run(t.Context(), Options{})
 	require.NoError(t, err)
 	require.Equal(t, "dockhand-base-tahoe", result.Image)
 	require.Contains(t, machine.events, "configure")
@@ -371,7 +383,7 @@ func TestCleanupReportsItsErrorsAndStillDeletes(t *testing.T) {
 	machine := newFakeMachine()
 	machine.fail = "macports"
 	machine.failures = map[string]error{"stop:dockhand-base-tahoe-next": errors.New("fixture stop failure")}
-	_, err := testProvisioner(machine).Run(t.Context(), Options{})
+	_, err := testProvisioner(t, machine).Run(t.Context(), Options{})
 	require.ErrorContains(t, err, "fixture failure")
 	require.ErrorContains(t, err, "cleaning up dockhand-base-tahoe-next")
 	require.ErrorContains(t, err, "fixture stop failure")
@@ -380,7 +392,7 @@ func TestCleanupReportsItsErrorsAndStillDeletes(t *testing.T) {
 	machine = newFakeMachine()
 	machine.fail = "macports"
 	machine.failures = map[string]error{"delete:dockhand-base-tahoe-next": errors.New("fixture delete failure")}
-	_, err = testProvisioner(machine).Run(t.Context(), Options{})
+	_, err = testProvisioner(t, machine).Run(t.Context(), Options{})
 	require.ErrorContains(t, err, "fixture delete failure")
 	require.ErrorContains(t, err, "tart delete dockhand-base-tahoe-next")
 }
@@ -391,17 +403,17 @@ func TestCleanupReportsItsErrorsAndStillDeletes(t *testing.T) {
 func TestToolsOfAnotherGenerationAreReportedAndRefused(t *testing.T) {
 	machine := newFakeMachine("dockhand-base-tahoe")
 	machine.validation.CommandLineTools = "27.0"
-	_, err := testProvisioner(machine).Run(t.Context(), Options{Check: true})
+	_, err := testProvisioner(t, machine).Run(t.Context(), Options{Check: true})
 	require.ErrorContains(t, err, "image dockhand-base-tahoe has Command Line Tools 27.0; Tahoe uses generation 26; rerun with --rebuild")
 
 	machine = newFakeMachine()
 	machine.validation.CommandLineTools = "27.0"
-	_, err = testProvisioner(machine).Run(t.Context(), Options{})
+	_, err = testProvisioner(t, machine).Run(t.Context(), Options{})
 	require.ErrorContains(t, err, "provisioned image has Command Line Tools 27.0; Tahoe uses generation 26")
 	require.NotContains(t, machine.images, "dockhand-base-tahoe")
 
 	machine = newFakeMachine()
-	result, err := testProvisioner(machine).Run(t.Context(), Options{})
+	result, err := testProvisioner(t, machine).Run(t.Context(), Options{})
 	require.NoError(t, err)
 	require.Equal(t, "26.6", result.CommandLineTools)
 }
@@ -411,7 +423,7 @@ func TestToolsOfAnotherGenerationAreReportedAndRefused(t *testing.T) {
 // its golden copy, not the candidate's temporary name.
 func TestProvisionRecordsHostKeysUnderTheImage(t *testing.T) {
 	machine := newFakeMachine()
-	_, err := testProvisioner(machine).Run(t.Context(), Options{})
+	_, err := testProvisioner(t, machine).Run(t.Context(), Options{})
 	require.NoError(t, err)
 	require.Less(t, index(machine.events, "bootstrap:dockhand-base-tahoe-next:dockhand-base-tahoe-next"), index(machine.events, "agent"))
 	require.Contains(t, machine.events, "keys:dockhand-base-tahoe-next:dockhand-base-tahoe")
@@ -425,7 +437,7 @@ func TestProvisionRecordsHostKeysUnderTheImage(t *testing.T) {
 // recorded host keys and dockhand's key.
 func TestCheckReachesTheCloneByTheImagesKeys(t *testing.T) {
 	machine := newFakeMachine("dockhand-base-tahoe")
-	_, err := testProvisioner(machine).Run(t.Context(), Options{Check: true})
+	_, err := testProvisioner(t, machine).Run(t.Context(), Options{Check: true})
 	require.NoError(t, err)
 	require.Contains(t, machine.events, "connect:dockhand-base-tahoe-check:dockhand-base-tahoe")
 }
@@ -436,10 +448,10 @@ func TestCheckReachesTheCloneByTheImagesKeys(t *testing.T) {
 func TestAnImageWithoutTheKeyIsGivenIt(t *testing.T) {
 	machine := newFakeMachine("dockhand-base-tahoe", "dockhand-golden-tahoe")
 	machine.hostKeys = map[string]bool{}
-	_, err := testProvisioner(machine).Run(t.Context(), Options{Check: true})
+	_, err := testProvisioner(t, machine).Run(t.Context(), Options{Check: true})
 	require.ErrorContains(t, err, "predates dockhand's SSH key; run dockhand providers setup tart without --check")
 
-	result, err := testProvisioner(machine).Run(t.Context(), Options{})
+	result, err := testProvisioner(t, machine).Run(t.Context(), Options{})
 	require.NoError(t, err)
 	require.False(t, result.Reused)
 	require.Contains(t, machine.events, "clone:dockhand-base-tahoe:dockhand-base-tahoe-next")
@@ -457,7 +469,7 @@ func TestAnImageWithoutTheKeyIsGivenIt(t *testing.T) {
 func TestAnImageInThePersonsHomeIsImportedWhenItValidates(t *testing.T) {
 	machine := newFakeMachine()
 	machine.personal = map[string]image{"dockhand-base-tahoe": {Name: "dockhand-base-tahoe"}}
-	result, err := testProvisioner(machine).Run(t.Context(), Options{})
+	result, err := testProvisioner(t, machine).Run(t.Context(), Options{})
 	require.NoError(t, err)
 	require.Equal(t, "26.6", result.CommandLineTools)
 	require.Contains(t, machine.events, "import:dockhand-base-tahoe:dockhand-base-tahoe-next")
@@ -469,7 +481,7 @@ func TestAnImageInThePersonsHomeIsImportedWhenItValidates(t *testing.T) {
 	machine.validation.CommandLineTools = "27.0"
 	machine.failures = map[string]error{}
 	var progress bytes.Buffer
-	provisioner := testProvisioner(machine)
+	provisioner := testProvisioner(t, machine)
 	provisioner.Progress = &progress
 	calls := 0
 	machine.onValidate = func(v *validation) {
@@ -493,7 +505,7 @@ func TestAnImportedASIFImageIsUsedOnACurrentTart(t *testing.T) {
 	machine := newFakeMachine()
 	machine.personal = map[string]image{"dockhand-base-tahoe": {Name: "dockhand-base-tahoe"}}
 	machine.imported = "asif"
-	_, err := testProvisioner(machine).Run(t.Context(), Options{})
+	_, err := testProvisioner(t, machine).Run(t.Context(), Options{})
 	require.NoError(t, err)
 	require.Contains(t, machine.events, "import:dockhand-base-tahoe:dockhand-base-tahoe-next")
 	require.NotContains(t, machine.events, "pull")
@@ -509,7 +521,7 @@ func TestAnImportedASIFImageIsDeclinedBeforeItRunsOnAnOldTart(t *testing.T) {
 	machine.imported = "asif"
 	machine.oldTart = true
 	var progress bytes.Buffer
-	provisioner := testProvisioner(machine)
+	provisioner := testProvisioner(t, machine)
 	provisioner.Progress = &progress
 	_, err := provisioner.Run(t.Context(), Options{})
 	require.NoError(t, err)
@@ -520,4 +532,53 @@ func TestAnImportedASIFImageIsDeclinedBeforeItRunsOnAnOldTart(t *testing.T) {
 	require.NotContains(t, machine.events[imported:pulled], "start", "the ASIF copy never runs")
 	require.Contains(t, machine.events[imported:pulled], "delete:dockhand-base-tahoe-next")
 	require.Contains(t, machine.images, "dockhand-base-tahoe")
+}
+
+// Setup pins its source by what the registry says the tag names on either
+// side of the pull, records that and what it put in the image in the
+// image's manifest, and keeps the manifest on the host too, where the
+// engine reads the image's origin. A tag that moved during the pull is
+// refused; one the registry won't name leaves the origin unknown.
+func TestSetupRecordsTheImagesOrigin(t *testing.T) {
+	machine := newFakeMachine()
+	provisioner := testProvisioner(t, machine)
+	result, err := provisioner.Run(t.Context(), Options{})
+	require.NoError(t, err)
+	require.Equal(t, testDigest, result.SourceDigest)
+	var manifest tart.ImageManifest
+	require.NoError(t, json.Unmarshal(machine.manifest, &manifest))
+	require.Equal(t, testDigest, manifest.SourceDigest)
+	require.Equal(t, tart.SetupProtocol, manifest.SetupProtocol)
+	require.Equal(t, machine.validation.CommandLineTools, manifest.CommandLineTools)
+	recorded, found, err := tart.ReadImageRecord(provisioner.Config.Home, "dockhand-base-tahoe")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, manifest, recorded, "the host's record is the manifest in the image")
+	require.NotEmpty(t, recorded.Origin())
+
+	moved := newFakeMachine()
+	provisioner = testProvisioner(t, moved)
+	answers := []string{testDigest, "sha256:" + strings.Repeat("0", 63) + "1"}
+	provisioner.Digest = func(context.Context, string) (string, error) {
+		answer := answers[0]
+		answers = answers[1:]
+		return answer, nil
+	}
+	_, err = provisioner.Run(t.Context(), Options{})
+	require.ErrorContains(t, err, "while it was pulled; run setup again")
+	require.NotContains(t, moved.images, "dockhand-base-tahoe")
+
+	unnamed := newFakeMachine()
+	var progress bytes.Buffer
+	provisioner = testProvisioner(t, unnamed)
+	provisioner.Progress = &progress
+	provisioner.Digest = func(context.Context, string) (string, error) { return "", tart.ErrNoDigest }
+	result, err = provisioner.Run(t.Context(), Options{})
+	require.NoError(t, err, "the image is made all the same")
+	require.Empty(t, result.SourceDigest)
+	require.Contains(t, progress.String(), "this image's origin is unknown")
+	recorded, found, err = tart.ReadImageRecord(provisioner.Config.Home, "dockhand-base-tahoe")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Empty(t, recorded.Origin())
 }

@@ -39,6 +39,7 @@ type Result struct {
 	Image             string         `json:"image"`
 	GoldenImage       string         `json:"golden_image,omitempty"`
 	Source            string         `json:"source,omitempty"`
+	SourceDigest      string         `json:"source_digest,omitempty"`
 	Platform          model.Platform `json:"platform"`
 	MacPortsVersion   string         `json:"macports_version"`
 	GuestAgentVersion string         `json:"guest_agent_version"`
@@ -107,7 +108,42 @@ type machine interface {
 type Provisioner struct {
 	Config   Config
 	Progress io.Writer
-	backend  machine
+	// Digest reads what a source names at its registry; the OCI
+	// distribution API's answer (tart.Registry) when nil.
+	Digest  func(ctx context.Context, source string) (string, error)
+	backend machine
+}
+
+// sourceDigest is what a source names at its registry.
+func (p *Provisioner) sourceDigest(ctx context.Context, source string) (string, error) {
+	if p.Digest != nil {
+		return p.Digest(ctx, source)
+	}
+	return tart.Registry{}.Digest(ctx, source)
+}
+
+// pull pulls a source, and returns what it named then: what the registry
+// said on either side of the pull, when it said the same both times. A tag
+// that moved meanwhile is refused; one the registry won't name is pulled
+// all the same, and the image's origin is unknown.
+func (p *Provisioner) pull(ctx context.Context, machine machine, source string) (string, error) {
+	before, unknown := p.sourceDigest(ctx, source)
+	if err := machine.Pull(ctx, source); err != nil {
+		return "", err
+	}
+	if unknown == nil {
+		after, err := p.sourceDigest(ctx, source)
+		switch {
+		case err != nil:
+			unknown = err
+		case after != before:
+			return "", fmt.Errorf("setup: %s moved from %s to %s while it was pulled; run setup again", source, before, after)
+		default:
+			return before, nil
+		}
+	}
+	p.say("Couldn't read what %s names (%v): this image's origin is unknown, so evidence from checks in it isn't told apart from another image's.", source, unknown)
+	return "", nil
 }
 
 func (p *Provisioner) Run(ctx context.Context, options Options) (Result, error) {
@@ -346,7 +382,8 @@ func (p *Provisioner) provision(ctx context.Context, machine machine, config Con
 		return Result{}, err
 	}
 	p.say("Pulling %s...", config.Source)
-	if err := machine.Pull(ctx, config.Source); err != nil {
+	digest, err := p.pull(ctx, machine, config.Source)
+	if err != nil {
 		return Result{}, err
 	}
 	p.say("Preparing %s...", next)
@@ -409,7 +446,7 @@ func (p *Provisioner) provision(ctx context.Context, machine machine, config Con
 	if err := toolsGeneration(checked, release); err != nil {
 		return Result{}, fmt.Errorf("setup: provisioned image %w", err)
 	}
-	return p.finish(ctx, machine, config, golden, next, checked, replacing, &keepNext)
+	return p.finish(ctx, machine, config, golden, next, digest, checked, replacing, &keepNext)
 }
 
 // upgrade gives an existing image what an image made today has, dockhand's
@@ -465,21 +502,26 @@ func (p *Provisioner) upgrade(ctx context.Context, machine machine, config Confi
 	if err := toolsGeneration(checked, release); err != nil {
 		return Result{}, fmt.Errorf("%w: it %w", errUnsuitable, err)
 	}
-	return p.finish(ctx, machine, config, golden, next, checked, replacing, &keepNext)
+	return p.finish(ctx, machine, config, golden, next, "", checked, replacing, &keepNext)
 }
 
 // finish records a validated candidate's manifest, keeps a golden copy,
 // adopts the candidate as the image, and records the host keys it
 // presented under the image and the golden copy. Once the golden copy
 // exists, the candidate is proven, and keep says so, so a failed adoption
-// leaves it for the person rather than cleaning it up.
-func (p *Provisioner) finish(ctx context.Context, machine machine, config Config, golden, next string, checked validation, replacing bool, keep *bool) (Result, error) {
+// leaves it for the person rather than cleaning it up. The manifest is
+// recorded on the host too, once the image is adopted, where the engine
+// reads the image's origin without starting it; digest is what its source
+// named when it was pulled, empty when that isn't known.
+func (p *Provisioner) finish(ctx context.Context, machine machine, config Config, golden, next, digest string, checked validation, replacing bool, keep *bool) (Result, error) {
 	goldenNext := golden + "-next"
-	manifest, err := json.Marshal(tart.ImageManifest{
-		Protocol: tart.ImageManifestProtocol, Source: config.Source, Platform: config.Platform,
+	declared := tart.ImageManifest{
+		Protocol: tart.ImageManifestProtocol, Source: config.Source, SourceDigest: digest, Platform: config.Platform,
 		MacPortsPrefix: config.GuestPrefix, MacPortsVersion: config.MacPortsVersion,
 		GuestAgentVersion: checked.GuestAgentVersion, XcodeVersion: checked.XcodeVersion,
-	})
+		CommandLineTools: checked.CommandLineTools, SetupProtocol: tart.SetupProtocol,
+	}
+	manifest, err := json.Marshal(declared)
 	if err != nil {
 		return Result{}, err
 	}
@@ -514,7 +556,10 @@ func (p *Provisioner) finish(ctx context.Context, machine machine, config Config
 	if err := machine.ForgetHostKeys(next); err != nil {
 		return Result{}, err
 	}
-	return Result{Image: config.Image, GoldenImage: golden, Source: config.Source, Platform: checked.Platform, MacPortsVersion: checked.MacPortsVersion, GuestAgentVersion: checked.GuestAgentVersion, XcodeVersion: checked.XcodeVersion, CommandLineTools: checked.CommandLineTools}, nil
+	if err := tart.WriteImageRecord(config.Home, config.Image, declared); err != nil {
+		p.say("Couldn't record %s's origin on this Mac (%v): evidence from checks in it isn't told apart from another image's.", config.Image, err)
+	}
+	return Result{Image: config.Image, GoldenImage: golden, Source: config.Source, SourceDigest: digest, Platform: checked.Platform, MacPortsVersion: checked.MacPortsVersion, GuestAgentVersion: checked.GuestAgentVersion, XcodeVersion: checked.XcodeVersion, CommandLineTools: checked.CommandLineTools}, nil
 }
 
 // toolsGeneration refuses an image whose Command Line Tools are not the
