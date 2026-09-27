@@ -45,12 +45,13 @@ In order. Each item lands in its own commits with an activity note, and a review
    - a baseline rebuilds a port only where it failed;
    - plans recorded in the old form read as per-environment plans.
 
-3. **History changes as complete transitions.** This covers `tidy`, `rebase`, and `restore`, and the review's reproduced base bug is fixed in item 1. A rebase now records its checkpoint and the branch's new base in one transaction; restore still changes Git, then records.
-   - **A per-branch lock.** Tidy and rebase move Git refs inside a database transaction today, using it as a lock, against the store's own rule that transactions never touch Git. A per-branch lock takes that job instead.
-   - **Git first, then the record.** Git's changes go first, guarded by compare-and-swap as they are now, then the record.
-   - **An unknown commit is read before it is undone.** A commit the store reports as uncertain is read back before anything is undone. Today tidy undoes its refs on any error, including a commit that may have landed.
-   - **A crash is recoverable.** A crash between the Git change and the record leaves a state the next command recognizes and finishes.
-   - **Tests restart it and make the commit uncertain.** This does not bring back v2's general workflow engine.
+3. **History changes as complete transitions.** Done 2026-09-27 ([note](activity/2026-09-27-history-transitions.md)):
+   - `tidy`, `rebase`, and `restore` hold the branch's lock throughout, and no transaction calls Git;
+   - a tidy or rebase records its checkpoint as prepared, makes its Git change, and settles it; the next history change on the branch finishes what a stopped one left, from what Git shows;
+   - an uncertain commit is read back, and a Git change once made is never undone;
+   - a rebase replays its commits before anything moves (`git.Replay`).
+
+   It departs from this roadmap's "no durable operation record": the next command can only finish a stopped change if its intent was recorded first. The prepared checkpoint is that record, one state column rather than a workflow engine.
 
 4. **Seams in the engine.**
    - **The provider contract moves first.** `Job`, `Build`, and `Fork` move to a leaf package that providers import instead of `engine`; all three providers import `engine` today. This is cheap, and it removes the upward dependency that would otherwise tangle the next moves.
@@ -177,7 +178,7 @@ Taken:
 - **Finding 8,** as a smaller item.
 
 Changed:
-- **Finding 3's remedy.** A "durable operation record" is heavier than needed. A per-branch lock, Git first, and reading an uncertain commit back cover it.
+- **Finding 3's remedy.** A general operation record is heavier than needed: the checkpoint, recorded as prepared before the Git change, is the record, beside a per-branch lock and reading an uncertain commit back. (Settled while building item 3; the roadmap first said no record at all, which couldn't make a stopped change recoverable.)
 - **Finding 4's timing.** Extraction comes after each piece is fixed, apart from the provider contract, which goes first.
 - **Finding 5 is ranked lower.** GitHub isn't the default provider, so per-runner evidence is a smaller item. The port reader's report joins item 6, where reuse needs it.
 - **Finding 6 is narrowed.** It shrinks to the JSON gap and the release's provenance, until something reads more.
