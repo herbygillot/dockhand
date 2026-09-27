@@ -24,31 +24,57 @@ func ReleaseForPlatform(platform model.Platform) (macos.Release, error) {
 	return release, nil
 }
 
-// DefaultImageName returns the conventional command-line-tools image name.
-func DefaultImageName(platform model.Platform) (string, error) {
-	release, err := ReleaseForPlatform(platform)
-	if err != nil {
-		return "", err
-	}
-	return "dockhand-base-" + release.Slug, nil
+// Prepared is one of dockhand's images: a release's, with a profile's
+// developer tools, the Command Line Tools alone or Xcode beside them. Setup
+// makes it from the release's vanilla image and keeps a golden copy beside
+// it, which a lost image is restored from; checks clone it. Its names are
+// spelled here alone.
+type Prepared struct {
+	Release macos.Release
+	Profile macos.Profile
 }
 
-// DefaultXcodeImageName returns the conventional full-Xcode image name.
-func DefaultXcodeImageName(platform model.Platform) (string, error) {
-	release, err := ReleaseForPlatform(platform)
-	if err != nil {
-		return "", err
+// Name is the image's name: dockhand-base-tahoe, or dockhand-xcode-tahoe.
+func (p Prepared) Name() string {
+	if p.Profile == macos.ProfileXcode {
+		return "dockhand-xcode-" + p.Release.Slug
 	}
-	return "dockhand-xcode-" + release.Slug, nil
+	return "dockhand-base-" + p.Release.Slug
 }
 
-// DefaultSource returns the vanilla OCI image used to provision a platform.
-func DefaultSource(platform model.Platform) (string, error) {
-	release, err := ReleaseForPlatform(platform)
-	if err != nil {
-		return "", err
+// Golden is its golden copy's name: dockhand-golden-tahoe, or
+// dockhand-golden-xcode-tahoe.
+func (p Prepared) Golden() string {
+	if p.Profile == macos.ProfileXcode {
+		return "dockhand-golden-xcode-" + p.Release.Slug
 	}
-	return "ghcr.io/cirruslabs/macos-" + strings.ToLower(release.Slug) + "-vanilla:latest", nil
+	return "dockhand-golden-" + p.Release.Slug
+}
+
+// Source is the vanilla image setup starts it from, Cirrus Labs'.
+func (p Prepared) Source() string {
+	return "ghcr.io/cirruslabs/macos-" + strings.ToLower(p.Release.Slug) + "-vanilla:latest"
+}
+
+// ParsePrepared reads an image's name as one of dockhand's images.
+func ParsePrepared(name string) (Prepared, bool) {
+	for _, release := range macos.Known() {
+		for _, profile := range []macos.Profile{macos.ProfileTools, macos.ProfileXcode} {
+			if prepared := (Prepared{Release: release, Profile: profile}); prepared.Name() == name {
+				return prepared, true
+			}
+		}
+	}
+	return Prepared{}, false
+}
+
+// GoldenName is an image's golden copy: a prepared image's own, and
+// <name>-golden for an image under another name.
+func GoldenName(image string) string {
+	if prepared, ok := ParsePrepared(image); ok {
+		return prepared.Golden()
+	}
+	return image + "-golden"
 }
 
 // PreparedReleases are the releases a local image serves under setup's
@@ -57,7 +83,8 @@ func PreparedReleases(images []Image) []macos.Release {
 	var prepared []macos.Release
 	for _, release := range macos.Known() {
 		for _, image := range images {
-			if image.Source == "local" && (image.Name == "dockhand-base-"+release.Slug || image.Name == "dockhand-xcode-"+release.Slug) {
+			if image.Source == "local" && (image.Name == (Prepared{Release: release, Profile: macos.ProfileTools}).Name() ||
+				image.Name == (Prepared{Release: release, Profile: macos.ProfileXcode}).Name()) {
 				prepared = append(prepared, release)
 				break
 			}

@@ -187,7 +187,7 @@ func (p *Provisioner) Run(ctx context.Context, options Options) (Result, error) 
 	if err != nil {
 		return Result{}, err
 	}
-	golden := goldenName(config.Image)
+	golden := tart.GoldenName(config.Image)
 	previous := config.Image + "-previous"
 	if images[config.Image].Name == "" && images[previous].Name != "" {
 		return Result{}, fmt.Errorf("setup: interrupted image replacement; previous image is preserved as %s; restore it to %s with tart rename before retrying", previous, config.Image)
@@ -273,21 +273,15 @@ func normalize(config Config) (Config, macos.Release, error) {
 			return config, release, err
 		}
 	}
+	prepared := tart.Prepared{Release: release, Profile: macos.ProfileTools}
+	if config.XcodeArchive != "" {
+		prepared.Profile = macos.ProfileXcode
+	}
 	if config.Image == "" {
-		if config.XcodeArchive != "" {
-			config.Image, err = tart.DefaultXcodeImageName(config.Platform)
-		} else {
-			config.Image, err = tart.DefaultImageName(config.Platform)
-		}
-		if err != nil {
-			return config, release, err
-		}
+		config.Image = prepared.Name()
 	}
 	if config.Source == "" {
-		config.Source, err = tart.DefaultSource(config.Platform)
-		if err != nil {
-			return config, release, err
-		}
+		config.Source = prepared.Source()
 	}
 	if config.MacPortsVersion == "" {
 		config.MacPortsVersion = macports.DefaultBaseVersion
@@ -301,11 +295,12 @@ func normalize(config Config) (Config, macos.Release, error) {
 	if config.GuestPrefix != macports.DefaultPrefix {
 		return config, release, fmt.Errorf("setup: the MacPorts package installer requires guest prefix /opt/local")
 	}
-	if config.XcodeArchive != "" && strings.HasPrefix(config.Image, "dockhand-base-") {
+	// An image under one of dockhand's names holds what that name says.
+	if named, ok := tart.ParsePrepared(config.Image); ok && named.Profile != prepared.Profile {
+		if named.Profile == macos.ProfileXcode {
+			return config, release, fmt.Errorf("setup: Xcode image %s requires --xcode", config.Image)
+		}
 		return config, release, fmt.Errorf("setup: Xcode profiles cannot replace the conventional base image; omit --image or select a distinct image")
-	}
-	if config.XcodeArchive == "" && strings.HasPrefix(config.Image, "dockhand-xcode-") {
-		return config, release, fmt.Errorf("setup: Xcode image %s requires --xcode", config.Image)
 	}
 	return config, release, nil
 }
@@ -314,16 +309,6 @@ var versionPattern = regexp.MustCompile(`^[0-9]+(?:\.[0-9]+)+$`)
 
 func safeName(value string) bool {
 	return value != "" && !strings.HasPrefix(value, "-") && !strings.ContainsAny(value, "/\\:\x00\r\n\t ")
-}
-
-func goldenName(image string) string {
-	if suffix, ok := strings.CutPrefix(image, "dockhand-base-"); ok {
-		return "dockhand-golden-" + suffix
-	}
-	if suffix, ok := strings.CutPrefix(image, "dockhand-xcode-"); ok {
-		return "dockhand-golden-xcode-" + suffix
-	}
-	return image + "-golden"
 }
 
 func (p *Provisioner) check(ctx context.Context, machine machine, config Config, golden string, reused bool) (result Result, err error) {

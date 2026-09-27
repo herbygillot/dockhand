@@ -176,7 +176,9 @@ func (p *Provider) hostRelease() (int, error) {
 
 // baseImage is the image setup makes for a release, with the Command Line
 // Tools alone.
-func baseImage(release macos.Release) string { return "dockhand-base-" + release.Slug }
+func baseImage(release macos.Release) string {
+	return tartvm.Prepared{Release: release, Profile: macos.ProfileTools}.Name()
+}
 
 // image is the image an environment builds in (decision 23, amended): the
 // release's Xcode image when the environment has Xcode, and its base image

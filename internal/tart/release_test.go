@@ -1,7 +1,6 @@
 package tart
 
 import (
-	"strconv"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macos"
@@ -9,48 +8,52 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNativePlatformSelectsConventionalImageAndVanillaSource(t *testing.T) {
-	platform := model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
-	image, err := DefaultImageName(platform)
+// A release's images, their golden copies, and their source are named by
+// one descriptor, from the release table's slug, so a release added there
+// is provisionable without touching this package; and a name reads back as
+// the image it names. The Golden Gate source is the one Cirrus Labs
+// publishes.
+func TestEveryKnownReleaseNamesItsImagesAndSource(t *testing.T) {
+	for _, release := range macos.Known() {
+		base := Prepared{Release: release, Profile: macos.ProfileTools}
+		xcode := Prepared{Release: release, Profile: macos.ProfileXcode}
+		require.Equal(t, "dockhand-base-"+release.Slug, base.Name())
+		require.Equal(t, "dockhand-golden-"+release.Slug, base.Golden())
+		require.Equal(t, "dockhand-xcode-"+release.Slug, xcode.Name())
+		require.Equal(t, "dockhand-golden-xcode-"+release.Slug, xcode.Golden())
+		require.Equal(t, "ghcr.io/cirruslabs/macos-"+release.Slug+"-vanilla:latest", base.Source())
+		require.Equal(t, base.Source(), xcode.Source())
+		for _, prepared := range []Prepared{base, xcode} {
+			read, ok := ParsePrepared(prepared.Name())
+			require.True(t, ok)
+			require.Equal(t, prepared, read)
+			require.Equal(t, prepared.Golden(), GoldenName(prepared.Name()))
+		}
+	}
+	goldenGate, err := macos.ParseRelease("golden-gate")
 	require.NoError(t, err)
-	require.Equal(t, "dockhand-base-tahoe", image)
-	xcodeImage, err := DefaultXcodeImageName(platform)
-	require.NoError(t, err)
-	require.Equal(t, "dockhand-xcode-tahoe", xcodeImage)
-	source, err := DefaultSource(platform)
-	require.NoError(t, err)
-	require.Equal(t, "ghcr.io/cirruslabs/macos-tahoe-vanilla:latest", source)
+	require.Equal(t, "ghcr.io/cirruslabs/macos-golden-gate-vanilla:latest", Prepared{Release: goldenGate}.Source())
+	for _, name := range []string{"my-ventura", "dockhand-base-leopard", "dockhand-golden-tahoe", "dockhand-base-tahoe-next"} {
+		_, ok := ParsePrepared(name)
+		require.False(t, ok, name)
+	}
+	require.Equal(t, "my-ventura-golden", GoldenName("my-ventura"))
 }
 
-func TestImageDefaultsRejectUnsupportedPlatforms(t *testing.T) {
+// A platform names a release only where Tart can make its image: arm64,
+// on a release the table knows.
+func TestOnlyAKnownArm64ReleaseIsProvisionable(t *testing.T) {
+	_, err := ReleaseForPlatform(model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"})
+	require.NoError(t, err)
 	for _, platform := range []model.Platform{
 		{OS: "linux", Version: "25", Architecture: "arm64"},
 		{OS: "darwin", Version: "25", Architecture: "x86_64"},
 		{OS: "darwin", Version: "unknown", Architecture: "arm64"},
 		{OS: "darwin", Version: "26", Architecture: "arm64"},
 	} {
-		_, err := DefaultImageName(platform)
+		_, err := ReleaseForPlatform(platform)
 		require.Error(t, err)
 	}
-}
-
-// Image and vanilla-source names are spelled from the release table's slug, so
-// a release added there is provisionable without touching this package. The
-// Golden Gate source name is the one Cirrus Labs publishes.
-func TestEveryKnownReleaseNamesItsImagesAndSource(t *testing.T) {
-	for _, release := range macos.Known() {
-		platform := model.Platform{OS: "darwin", Version: strconv.Itoa(release.Darwin), Architecture: "arm64"}
-		image, err := DefaultImageName(platform)
-		require.NoError(t, err, release.Name)
-		require.Equal(t, "dockhand-base-"+release.Slug, image)
-		source, err := DefaultSource(platform)
-		require.NoError(t, err)
-		require.Equal(t, "ghcr.io/cirruslabs/macos-"+release.Slug+"-vanilla:latest", source)
-	}
-	platform := model.Platform{OS: "darwin", Version: "27", Architecture: "arm64"}
-	source, err := DefaultSource(platform)
-	require.NoError(t, err)
-	require.Equal(t, "ghcr.io/cirruslabs/macos-golden-gate-vanilla:latest", source)
 }
 
 // The releases a local image serves are read from setup's image names, a

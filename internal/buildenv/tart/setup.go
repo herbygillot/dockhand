@@ -9,12 +9,12 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
-	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/installation"
 	"github.com/herbygillot/dockhand/internal/model"
+	tartvm "github.com/herbygillot/dockhand/internal/tart"
 	"github.com/herbygillot/dockhand/internal/tart/provision"
 )
 
@@ -52,16 +52,8 @@ func (p *Provider) Status(ctx context.Context) (Status, error) {
 }
 
 // xcodeImage is the image setup makes for a release with Xcode as well.
-func xcodeImage(release macos.Release) string { return "dockhand-xcode-" + release.Slug }
-
-// goldenImage is the copy setup keeps of a release's base or Xcode image,
-// and restores it from.
-// It is named as the provisioner names it.
-func goldenImage(image string) string {
-	if slug, ok := strings.CutPrefix(image, "dockhand-base-"); ok {
-		return "dockhand-golden-" + slug
-	}
-	return strings.Replace(image, "dockhand-", "dockhand-golden-", 1)
+func xcodeImage(release macos.Release) string {
+	return tartvm.Prepared{Release: release, Profile: macos.ProfileXcode}.Name()
 }
 
 // SetupDisk is the most disk a release's base image takes to make: the
@@ -139,7 +131,7 @@ func (p *Provider) Setup(ctx context.Context, options SetupOptions, progress io.
 		if options.Xcode != "" {
 			image, disk = xcodeImage(release), XcodeDisk
 		}
-		if options.Rebuild || !slices.Contains(images, image) && !slices.Contains(images, goldenImage(image)) {
+		if options.Rebuild || !slices.Contains(images, image) && !slices.Contains(images, tartvm.GoldenName(image)) {
 			fmt.Fprintf(progress, "Making %s for macOS %s (%s), which takes up to %s of disk.\n", image, release.Product, release.Name, disk)
 		}
 	}

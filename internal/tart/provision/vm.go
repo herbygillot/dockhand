@@ -44,7 +44,7 @@ func (n *native) Pull(ctx context.Context, source string) error {
 func (n *native) Clone(ctx context.Context, source, destination string) error {
 	var guard *os.File
 	var err error
-	if source == n.config.Image || source == goldenName(n.config.Image) {
+	if source == n.config.Image || source == tart.GoldenName(n.config.Image) {
 		guard, err = tart.AcquireImageRead(ctx, n.config.Home, source)
 		if err != nil {
 			return err

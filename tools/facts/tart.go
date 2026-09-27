@@ -57,7 +57,7 @@ func harvestTart(ctx context.Context, executable, out string, parallel int, imag
 			return err
 		}
 		for _, image := range listed {
-			if strings.HasPrefix(image.Name, "dockhand-base-") || strings.HasPrefix(image.Name, "dockhand-xcode-") {
+			if _, prepared := tart.ParsePrepared(image.Name); prepared {
 				images = append(images, image.Name)
 			}
 		}

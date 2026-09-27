@@ -109,7 +109,6 @@ These need MacPorts Base, whole-tree surveys, or VMs, so they run as the Mac all
 
 These are taken when their area is next touched, or between items.
 
-- **One image descriptor.** Base, Xcode, and golden image names are built in four places; one descriptor in `internal/tart` gives the release, profile, prepared name, golden name, and source.
 - **`outdated` shows progress** while it runs. It is three minutes of silence over 1,076 ports.
 - **One interpreter per port for `vercmp`,** rather than a new `tclsh` for each of about five comparisons.
 - **Tart checks of several releases in parallel,** within the Mac's two VMs.
