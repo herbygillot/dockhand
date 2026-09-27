@@ -249,3 +249,36 @@ Noted on the way:
 - **`submit`'s preview** lists both commits in the description's table,
   and both ports on both releases under Tested on. It rightly stops
   until the person gives a title, since the branch changes two ports.
+
+## Old tags that compare newer are set aside
+
+`outdated --mine` found three probable false positives. Their tags show why:
+
+- **dolt** has a stray `v040.15`, a mistyped `v0.40.15`, and `vercmp`
+  reads 40 as newer than 1.81.4;
+- **bat-extras** has old undotted date tags (`v20200408`) from before
+  `v2024.08.24`, and 20200408 beats 2024;
+- **certgraph** has an odd `v20220513.20220514.0` beside `v0.1.2`.
+
+**The guard is time:** a newer release never predates the one the port
+has.
+
+- When the chosen tag's commit was made before the commit of the tag the
+  port follows now, the tag is set aside and the next newest is chosen.
+  The result says so: "set aside v20200408, older than v2024.08.24 though
+  it compares newer".
+- A new tag on the same commit is still newer.
+- Where a forge can't date commits, or the port's own tag isn't there,
+  the guard stands aside rather than blocking.
+- **Commit dates** come from a new optional `forge.DatedRepository`: the
+  committer's date, from GitHub's and GitLab's commit APIs.
+- **It costs API calls only when an update is found:** the two tags, and
+  their commits.
+
+**Tests:** a bat-extras-like history reads current, with the old tag set
+aside, and a genuinely newer release beyond it is still found. It fails
+with the guard disabled.
+
+**Live, against GitHub:**
+- bat-extras and certgraph are current;
+- dolt is 1.81.4 → 2.3.5, its real latest release, from 2026-09-16.

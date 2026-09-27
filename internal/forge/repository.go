@@ -58,6 +58,12 @@ type FileRepository interface {
 	File(ctx context.Context, commit, path string, limit int64) ([]byte, error)
 }
 
+// DatedRepository reports when a commit was made, its committer's date, so
+// discovery can tell an old tag from a new one however it is spelled.
+type DatedRepository interface {
+	CommitTime(ctx context.Context, commit string) (time.Time, error)
+}
+
 // Description is what a forge says about a repository: its one-line
 // description, its homepage, and the license it detected, as an SPDX
 // identifier.

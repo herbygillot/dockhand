@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -33,6 +34,12 @@ type catalog struct {
 	document     func(url string) ([]byte, bool, error)
 	documents    []string
 	agent        string
+	// dates are commits' times; a commit without one is undated.
+	dates map[string]time.Time
+}
+
+func (c *catalog) CommitTime(_ context.Context, commit string) (time.Time, error) {
+	return c.dates[commit], nil
 }
 
 func (c *catalog) Document(_ context.Context, url string, headers http.Header) ([]byte, bool, error) {
@@ -559,4 +566,44 @@ func TestTiedTagsAtOneCommitTakeTheLatestStyle(t *testing.T) {
 			require.Equal(t, test.want, result.Release.Tag)
 		})
 	}
+}
+
+// A tag that compares newer than the port's own but was made before it is
+// an old tag oddly spelled, as bat-extras' v20200408 is beside v2024.08.24,
+// and is set aside, saying so. A newer release beyond it is still found.
+func TestAnOldTagThatComparesNewerIsSetAside(t *testing.T) {
+	t.Parallel()
+	day := func(date string) time.Time {
+		at, err := time.Parse(time.DateOnly, date)
+		require.NoError(t, err)
+		return at
+	}
+	commits := map[string]string{"v20200408": "1", "v2024.08.24": "2", "v2024.7.10": "3", "v2024.09.01": "4"}
+	commit := func(tag string) string { return strings.Repeat(commits[tag], 40) }
+	c := &catalog{tags: []forge.Tag{{Name: "v20200408"}, {Name: "v2024.08.24"}, {Name: "v2024.7.10"}}}
+	service := automaticService(t, c)
+	c.tag = tagFunc(func(_ context.Context, _ string, name string) (forge.Tag, error) {
+		return forge.Tag{Name: name, Commit: commit(name)}, nil
+	})
+	c.dates = map[string]time.Time{commit("v20200408"): day("2020-04-08"), commit("v2024.08.24"): day("2024-08-24"), commit("v2024.7.10"): day("2024-07-10")}
+	port := automaticPort()
+	port.Options["github.tarball_from"] = "archive"
+	port.Version = "2024.08.24"
+	port.Options["version"] = port.Version
+	port.Options["github.version"] = port.Version
+	port.Options["git.branch"] = "v2024.08.24"
+	port.Options["livecheck.version"] = port.Version
+	service.EvaluateVersion = identityVersion
+	result, err := service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, upstream.Current, result.Assessment)
+	require.Contains(t, result.Detail, "set aside v20200408, older than v2024.08.24 though it compares newer")
+
+	c.tags = append(c.tags, forge.Tag{Name: "v2024.09.01"})
+	c.dates[commit("v2024.09.01")] = day("2024-09-01")
+	result, err = service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, upstream.UpdateAvailable, result.Assessment)
+	require.Equal(t, "v2024.09.01", result.Release.Tag)
+	require.Contains(t, result.Detail, "set aside v20200408")
 }

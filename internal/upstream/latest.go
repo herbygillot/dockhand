@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -117,23 +118,43 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 		eligibleCandidates = append(eligibleCandidates, candidate)
 		eligibleTags = append(eligibleTags, tags[index])
 	}
-	candidates, tags, err = s.evaluateNewest(ctx, spec.Livecheck.Regex, eligibleCandidates, eligibleTags)
-	if err != nil {
-		return result, err
-	}
-	tied, comparison, err := s.newestTied(ctx, port.Version, spec.Livecheck.Regex, candidates, "the port's livecheck filter")
-	if err != nil {
-		return result, err
-	}
-	index := tied[0]
-	if len(tied) > 1 {
-		settled := false
-		if index, settled, err = s.sameCommitTag(ctx, repository, spec.Livecheck.Regex, tags, tied, eligibleCandidates, eligibleTags, spec.Pattern.Tag(spec.SourceVersion)); err != nil {
+	// A tag that compares newer but predates the port's own release is an
+	// old one oddly spelled, and is set aside for the next newest.
+	current := spec.Pattern.Tag(spec.SourceVersion)
+	var setAside []string
+	var index, comparison int
+	for {
+		pool, poolTags := withoutTags(eligibleCandidates, eligibleTags, setAside)
+		candidates, tags, err = s.evaluateNewest(ctx, spec.Livecheck.Regex, pool, poolTags)
+		if err != nil {
 			return result, err
 		}
-		if !settled {
-			return result, ambiguousNewest("the port's livecheck filter", "a tag")
+		var tied []int
+		tied, comparison, err = s.newestTied(ctx, port.Version, spec.Livecheck.Regex, candidates, "the port's livecheck filter")
+		if err != nil {
+			return result, err
 		}
+		index = tied[0]
+		if len(tied) > 1 {
+			settled := false
+			if index, settled, err = s.sameCommitTag(ctx, repository, spec.Livecheck.Regex, tags, tied, pool, poolTags, current); err != nil {
+				return result, err
+			}
+			if !settled {
+				return result, ambiguousNewest("the port's livecheck filter", "a tag")
+			}
+		}
+		if comparison <= 0 {
+			break
+		}
+		older, err := predates(ctx, repository, tags[index], current)
+		if err != nil {
+			return result, err
+		}
+		if !older {
+			break
+		}
+		setAside = append(setAside, tags[index])
 	}
 	tag, err := repository.Tag(ctx, tags[index])
 	if err != nil {
@@ -153,8 +174,61 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 	}
 	release := record.Release{Selection: record.Selection{CurrentVersion: port.Version, NoUpdate: comparison <= 0}, Version: candidates[index].Version, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: tag.Name, Commit: tag.Commit, ObservedAt: result.ObservedAt}
 	result.finish(release, port.Version, "Selected "+tag.Name+" from "+catalog, " among "+catalog)
+	if len(setAside) > 0 {
+		result.Detail += fmt.Sprintf("; set aside %s, older than %s though it compares newer", strings.Join(setAside, ", "), current)
+	}
 	result.Evidence = []Observation{{Source: string(spec.Forge) + "-" + string(spec.Catalog), Version: release.Version, URL: evidenceURL, ObservedAt: result.ObservedAt}}
 	return result, nil
+}
+
+// withoutTags are the candidates and their tags, less those set aside.
+func withoutTags(candidates []macports.VersionCandidate, tags, setAside []string) ([]macports.VersionCandidate, []string) {
+	var keptCandidates []macports.VersionCandidate
+	var keptTags []string
+	for i, tag := range tags {
+		if !slices.Contains(setAside, tag) {
+			keptCandidates = append(keptCandidates, candidates[i])
+			keptTags = append(keptTags, tag)
+		}
+	}
+	return keptCandidates, keptTags
+}
+
+// predates reports whether a tag's commit was made before the commit of the
+// tag the port follows now: an old tag spelled so that it compares newer,
+// such as dolt's v040.15, a mistyped v0.40.15, beside v1.81.4, or
+// bat-extras' v20200408 beside v2024.08.24. A newer release never
+// predates the current one; a new tag on the same commit is newer. It
+// can't tell, and says no, where the forge can't date commits or the
+// port's own tag isn't there.
+func predates(ctx context.Context, repository forge.Repository, candidate, current string) (bool, error) {
+	dated, ok := repository.(forge.DatedRepository)
+	if !ok || current == "" || candidate == current {
+		return false, nil
+	}
+	own, err := repository.Tag(ctx, current)
+	if errors.Is(err, forge.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	other, err := repository.Tag(ctx, candidate)
+	if err != nil {
+		return false, err
+	}
+	if other.Commit == own.Commit {
+		return false, nil
+	}
+	ownTime, err := dated.CommitTime(ctx, own.Commit)
+	if err != nil {
+		return false, err
+	}
+	otherTime, err := dated.CommitTime(ctx, other.Commit)
+	if err != nil {
+		return false, err
+	}
+	return otherTime.Before(ownTime), nil
 }
 
 // evaluateNewest evaluates only the candidates that can be the newest, and
