@@ -92,6 +92,10 @@ type machine interface {
 	InstallMacPorts(context.Context, string, Config, macos.Release) error
 	WriteManifest(context.Context, string, []byte) error
 	Validate(context.Context, string, Config) (validation, error)
+	// Flush has the guest write what it holds in memory to its disk
+	// before it is stopped: `tart stop` ends a guest that doesn't shut
+	// down in time, and what it hadn't written is lost.
+	Flush(context.Context, string) error
 	Stop(context.Context, string) error
 	Delete(context.Context, string) error
 	Rename(context.Context, string, string) error
@@ -526,6 +530,11 @@ func (p *Provisioner) finish(ctx context.Context, machine machine, config Config
 		return Result{}, err
 	}
 	if err := machine.WriteManifest(ctx, next, manifest); err != nil {
+		return Result{}, err
+	}
+	// What setup wrote last, the manifest and MacPorts' configuration
+	// among it, is on the guest's disk before the guest is stopped.
+	if err := machine.Flush(ctx, next); err != nil {
 		return Result{}, err
 	}
 	if err := machine.Stop(ctx, next); err != nil {

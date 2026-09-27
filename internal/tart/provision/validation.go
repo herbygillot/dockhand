@@ -20,6 +20,11 @@ func (n *native) WriteManifest(ctx context.Context, name string, manifest []byte
 	return err
 }
 
+func (n *native) Flush(ctx context.Context, name string) error {
+	_, err := n.guest(ctx, name, nil, "sudo", "-n", "/bin/sync")
+	return err
+}
+
 func (n *native) Validate(ctx context.Context, name string, config Config) (validation, error) {
 	if _, err := n.guest(ctx, name, nil, "sudo", "-n", "/usr/bin/true"); err != nil {
 		return validation{}, fmt.Errorf("passwordless sudo is unavailable: %w", err)

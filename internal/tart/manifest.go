@@ -33,8 +33,10 @@ const ImageManifestProtocol = 3
 // changes what an image holds, which ends reuse of evidence from images
 // made before (decision 28); a test pins the provisioning it covers, and
 // fails until it is raised or, for a change of wording only, re-pinned.
-// 2 keeps each port's archive (installation.KeepArchives).
-const SetupProtocol = 2
+// 2 keeps each port's archive (installation.KeepArchives); 3 flushes the
+// guest before stopping it, so what setup wrote last is kept, which 2's
+// images lost, that setting among it.
+const SetupProtocol = 3
 
 // ImageManifest describes the environment declared by a provisioned image.
 type ImageManifest struct {

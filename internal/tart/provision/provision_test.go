@@ -160,6 +160,9 @@ func (f *fakeMachine) Validate(context.Context, string, Config) (validation, err
 	}
 	return f.validation, f.event("validate")
 }
+func (f *fakeMachine) Flush(_ context.Context, name string) error {
+	return f.event("flush:" + name)
+}
 func (f *fakeMachine) Stop(_ context.Context, name string) error {
 	current := f.images[name]
 	current.Running = false
@@ -244,6 +247,19 @@ func TestManifestRecordsObservedGuestAgentVersion(t *testing.T) {
 	require.Equal(t, machine.validation.GuestAgentVersion, manifest.GuestAgentVersion)
 	require.Equal(t, result.GuestAgentVersion, manifest.GuestAgentVersion)
 	require.Less(t, index(machine.events, "validate"), index(machine.events, "manifest"))
+}
+
+// What setup writes last reaches the guest's disk before the guest is
+// stopped: a write left in memory is lost when `tart stop` ends a guest
+// that doesn't shut down in time, as MacPorts' configuration and the
+// manifest were from every image setup protocol 2 made.
+func TestTheGuestIsFlushedBeforeItIsStopped(t *testing.T) {
+	machine := newFakeMachine()
+	_, err := testProvisioner(t, machine).Run(t.Context(), Options{})
+	require.NoError(t, err)
+	next := "dockhand-base-tahoe-next"
+	require.Less(t, index(machine.events, "manifest"), index(machine.events, "flush:"+next))
+	require.Equal(t, index(machine.events, "flush:"+next)+1, index(machine.events, "stop:"+next), "nothing is written between")
 }
 
 func TestXcodeProfileInstallsXcodeBeforeMacPorts(t *testing.T) {

@@ -88,6 +88,22 @@ jq's own archive digest is empty. Its log shows why. In `directory` mode MacPort
 
 **Where it lives.** `internal/reuse` is new, and holds `Inputs`. The reuse decision will move there, and `Counts` with it, rather than grow in the engine (item 4).
 
+## Setup lost what it wrote last
+
+The images rebuilt with setup protocol 2 didn't keep archives. check-23, in the rebuilt Tahoe Xcode image, recorded the environment's identity and oniguruma6's archive, but jq's own archive was still empty, and jq's log showed MacPorts in `directory` mode. A clone of the rebuilt base image showed why:
+- its `macports.conf` was byte for byte the default, last written by MacPorts' installer at 20:17:53;
+- `/opt/dockhand/image.json`, the manifest setup writes into the guest after that, wasn't there at all.
+
+`KeepArchives`' script, run by hand in the clone, appends the setting. So setup had written both, and they were lost.
+
+The cause is how setup stops the guest. After the manifest, it runs `tart stop`, which asks the guest to shut down and ends it when it doesn't in time. What the guest still held in memory never reached its disk. A throwaway clone showed it plainly:
+- a file written just before `tart stop` was gone at the next boot;
+- the same write followed by `sudo sync` survived.
+
+Nothing reads the in-guest manifest, so its loss went unnoticed from the start.
+
+Setup now flushes the guest (`sync`) right before stopping it (`Flush`), and a test holds the order. That changes what an image holds, so the setup protocol is 3. Protocol 2's images have origin records but no archives, and are to be made again.
+
 ## Still to do in item 6
 
 - **Recorded inputs per port:** each build records its input identity and the archives it consumed.

@@ -14,9 +14,9 @@ import (
 	"github.com/herbygillot/dockhand/internal/tart"
 )
 
-// setupPin is the digest of the provisioning code tart.SetupProtocol 2
+// setupPin is the digest of the provisioning code tart.SetupProtocol 3
 // covers: this package's, and the MacPorts installation it runs.
-const setupPin = "ae7c74001b7a699af6bea0d1888fb974dd4fa38e75ce14e9e6ae458ac3a4948b"
+const setupPin = "e3401ddbc6901c5dd2d44bbb0aeff16e56a712c31b75159f7dd4bbf7a7ea3f8e"
 
 // What setup puts in an image is identified by tart.SetupProtocol, which
 // evidence's reuse compares (decision 28). A change to the provisioning
@@ -43,6 +43,6 @@ func TestTheSetupProtocolCoversTheProvisioningCode(t *testing.T) {
 		digest.Write(data)
 	}
 	pin := hex.EncodeToString(digest.Sum(nil))
-	require.Equal(t, 2, tart.SetupProtocol)
+	require.Equal(t, 3, tart.SetupProtocol)
 	require.Equal(t, setupPin, pin, "the provisioning code changed: raise tart.SetupProtocol if images made now hold something else, or update setupPin if not")
 }
