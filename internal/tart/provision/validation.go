@@ -81,7 +81,7 @@ func (n *native) validateXcode(ctx context.Context, name string, config Config) 
 	if tools.Directory != "/Applications/Xcode.app/Contents/Developer" {
 		return "", fmt.Errorf("Xcode image selects unexpected developer directory %s", tools.Directory)
 	}
-	if tools.XcodeVersion != config.XcodeVersion {
+	if !macos.SameXcode(tools.XcodeVersion, config.XcodeVersion) {
 		return "", fmt.Errorf("image has Xcode %s; expected %s", tools.XcodeVersion, config.XcodeVersion)
 	}
 	return tools.XcodeVersion, nil

@@ -54,6 +54,43 @@ func TestSelectXcodeChecksAnExplicitArchiveForCompatibility(t *testing.T) {
 	require.ErrorContains(t, err, "Xcode must be below 14.3")
 }
 
+// A release's Xcode is no older than its own tools generation, which has
+// its SDK: Golden Gate, generation 27, takes Xcode 27 over 26.6, and is
+// refused rather than given 26.6 when there is no 27. A beta never counts.
+func TestSelectXcodeIsNoOlderThanTheReleasesGeneration(t *testing.T) {
+	directory := t.TempDir()
+	for _, name := range []string{"Xcode_26.3_Apple_silicon.xip", "Xcode_26.6_Apple_silicon.xip", "Xcode_27.1_beta.xip", "Xcode_27.xip"} {
+		require.NoError(t, os.WriteFile(filepath.Join(directory, name), nil, 0o600))
+	}
+	goldenGate := Release{Darwin: 27, Name: "Golden Gate", Tools: 27}
+	path, version, err := SelectXcode(directory, goldenGate)
+	require.NoError(t, err)
+	require.Equal(t, "27", version)
+	require.Equal(t, "Xcode_27.xip", filepath.Base(path))
+
+	require.NoError(t, os.Remove(filepath.Join(directory, "Xcode_27.xip")))
+	_, _, err = SelectXcode(directory, goldenGate)
+	require.ErrorContains(t, err, "no Xcode archive fits Golden Gate; Xcode must be at least 27")
+	_, _, err = SelectXcode(filepath.Join(directory, "Xcode_26.6_Apple_silicon.xip"), goldenGate)
+	require.ErrorContains(t, err, "Xcode must be at least 27")
+
+	path, version, err = SelectXcode(directory, Release{Darwin: 24, Name: "Sequoia", Tools: 16})
+	require.NoError(t, err, "a newer generation fits, below the release's bound")
+	require.Equal(t, "26.3", version)
+	require.Equal(t, "Xcode_26.3_Apple_silicon.xip", filepath.Base(path))
+}
+
+// An archive's version is the installed Xcode's, however it is spelled:
+// Xcode_27.xip installs the Xcode that calls itself 27.0.
+func TestSameXcodeComparesNumbers(t *testing.T) {
+	require.True(t, SameXcode("27", "27.0"))
+	require.True(t, SameXcode("26.6", "26.6.0"))
+	require.False(t, SameXcode("26.6", "26.6.1"))
+	require.False(t, SameXcode("27", "26.6"))
+	require.False(t, SameXcode("27", "27_beta"), "a version that isn't numeric matches only itself")
+	require.True(t, SameXcode("", ""))
+}
+
 func TestParseXcodeArchiveRejectsPrereleasesAndOtherFiles(t *testing.T) {
 	for _, name := range []string{"Xcode_26.6_beta_2.xip", "Xcode_26.6_Release_Candidate.xip", "Xcode.app", "notes.txt"} {
 		_, ok := parseXcodeArchive(name)

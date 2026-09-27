@@ -73,7 +73,10 @@ Command Line Tools.
 `dockhand providers setup tart tahoe --xcode <Xcode .xip, or a folder of them>`
 makes Tahoe's Xcode image, `dockhand-xcode-tahoe`, with the newest Xcode
 Tahoe runs, in up to 65 GB of disk. Xcode comes from Apple, as a `.xip`
-from developer.apple.com.
+from developer.apple.com. Only releases count, never a beta or a release
+candidate, and never an Xcode older than the release's own tools
+generation, which lacks its SDK: Golden Gate takes Xcode 27, and setup
+refuses rather than give it 26.6.
 
 **With its Xcode image, a release builds there, every port with Xcode.**
 MacPorts' builders have Xcode too, and a port that doesn't ask for it

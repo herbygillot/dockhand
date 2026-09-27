@@ -297,7 +297,7 @@ func (p *Provisioner) check(ctx context.Context, machine machine, config Config,
 	if checked.MacPortsVersion != config.MacPortsVersion {
 		return Result{}, fmt.Errorf("setup: image has MacPorts %s; expected %s; rerun with --rebuild", checked.MacPortsVersion, config.MacPortsVersion)
 	}
-	if checked.XcodeVersion != config.XcodeVersion {
+	if !macos.SameXcode(checked.XcodeVersion, config.XcodeVersion) {
 		return Result{}, fmt.Errorf("setup: image has Xcode %s; expected %s; rerun with --rebuild", checked.XcodeVersion, config.XcodeVersion)
 	}
 	if release, err := tart.ReleaseForPlatform(config.Platform); err != nil {
@@ -402,8 +402,9 @@ func (p *Provisioner) provision(ctx context.Context, machine machine, config Con
 	if err != nil {
 		return Result{}, err
 	}
-	if checked.Platform != config.Platform || checked.MacPortsVersion != config.MacPortsVersion || checked.XcodeVersion != config.XcodeVersion {
-		return Result{}, fmt.Errorf("setup: provisioned image does not match its requested platform, MacPorts, or Xcode version")
+	if checked.Platform != config.Platform || checked.MacPortsVersion != config.MacPortsVersion || !macos.SameXcode(checked.XcodeVersion, config.XcodeVersion) {
+		return Result{}, fmt.Errorf("setup: provisioned image has MacPorts %s and Xcode %q on %+v; asked for MacPorts %s and Xcode %q on %+v",
+			checked.MacPortsVersion, checked.XcodeVersion, checked.Platform, config.MacPortsVersion, config.XcodeVersion, config.Platform)
 	}
 	if err := toolsGeneration(checked, release); err != nil {
 		return Result{}, fmt.Errorf("setup: provisioned image %w", err)
@@ -458,7 +459,7 @@ func (p *Provisioner) upgrade(ctx context.Context, machine machine, config Confi
 	if err != nil {
 		return Result{}, fmt.Errorf("%w: %w", errUnsuitable, err)
 	}
-	if checked.Platform != config.Platform || checked.MacPortsVersion != config.MacPortsVersion || checked.XcodeVersion != config.XcodeVersion {
+	if checked.Platform != config.Platform || checked.MacPortsVersion != config.MacPortsVersion || !macos.SameXcode(checked.XcodeVersion, config.XcodeVersion) {
 		return Result{}, fmt.Errorf("%w: it has MacPorts %s and Xcode %q on %+v", errUnsuitable, checked.MacPortsVersion, checked.XcodeVersion, checked.Platform)
 	}
 	if err := toolsGeneration(checked, release); err != nil {

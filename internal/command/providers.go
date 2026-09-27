@@ -81,7 +81,8 @@ A golden copy is kept beside it, and a lost image is restored from it.
 
 Xcode is an add-on. --xcode, given an Xcode .xip from Apple or a folder of
 them, makes dockhand-xcode-<release> instead, the same with the newest Xcode
-the release runs, in up to ` + tart.XcodeDisk + ` more. A check builds a port that needs
+the release runs, never a beta nor one older than the release's own tools,
+in up to ` + tart.XcodeDisk + ` more. A check builds a port that needs
 Xcode only there; without it, the port isn't built, and the check says so.
 
 When the image exists, setup checks it in a disposable clone and leaves it

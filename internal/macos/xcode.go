@@ -14,6 +14,14 @@ type xcodeArchive struct {
 	Preference int
 }
 
+// SelectXcode chooses the Xcode archive a release's Xcode image installs:
+// the archive at path, or the newest release archive in the folder at path
+// that fits the release. An Xcode fits when it runs there, below the
+// release's upper bound, and is no older than the release's own tools
+// generation (Tools, from the facts table): an older Xcode lacks the
+// release's SDK, so Golden Gate, generation 27, never gets Xcode 26.6.
+// Newer generations fit, as Sequoia's Xcode 26 does over its tools' 16.
+// Betas and release candidates are never chosen.
 func SelectXcode(path string, release Release) (string, string, error) {
 	path, err := filepath.Abs(path)
 	if err != nil {
@@ -51,9 +59,16 @@ func SelectXcode(path string, release Release) (string, string, error) {
 		return "", "", fmt.Errorf("macos: no release Xcode archives found in %s", path)
 	}
 	bound := xcodeUpperBound(release.Darwin)
+	floor := ""
+	if release.Tools > 0 {
+		floor = strconv.Itoa(release.Tools)
+	}
 	var selected xcodeArchive
 	for _, candidate := range candidates {
 		if bound != "" && compareNumericVersion(candidate.Version, bound) >= 0 {
+			continue
+		}
+		if floor != "" && compareNumericVersion(candidate.Version, floor) < 0 {
 			continue
 		}
 		comparison := compareNumericVersion(candidate.Version, selected.Version)
@@ -62,7 +77,14 @@ func SelectXcode(path string, release Release) (string, string, error) {
 		}
 	}
 	if selected.Path == "" {
-		return "", "", fmt.Errorf("macos: no Xcode archive can run on %s; Xcode must be below %s", release.Name, bound)
+		var limits []string
+		if floor != "" {
+			limits = append(limits, "at least "+floor)
+		}
+		if bound != "" {
+			limits = append(limits, "below "+bound)
+		}
+		return "", "", fmt.Errorf("macos: no Xcode archive fits %s; Xcode must be %s", release.Name, strings.Join(limits, " and "))
 	}
 	return selected.Path, selected.Version, nil
 }
@@ -133,6 +155,18 @@ func compareNumericVersion(left, right string) int {
 		}
 	}
 	return 0
+}
+
+// SameXcode reports whether two Xcode versions are one: Xcode_27.xip's 27
+// is the 27.0 the installed Xcode reports. A version that isn't numeric
+// matches only itself.
+func SameXcode(a, b string) bool {
+	_, okA := numericVersion(a)
+	_, okB := numericVersion(b)
+	if !okA || !okB {
+		return a == b
+	}
+	return compareNumericVersion(a, b) == 0
 }
 
 func xcodeUpperBound(darwin int) string {

@@ -639,6 +639,31 @@
         "date": "2026-09-26",
         "macports": "2.12.6"
       }
+    },
+    {
+      "darwin": 27,
+      "architecture": "arm64",
+      "profile": "xcode",
+      "macos": "27.0",
+      "xcode": "27.0",
+      "tools": "27.0.0.0.1788430756",
+      "developer_dir": "/Applications/Xcode.app/Contents/Developer",
+      "sdks": [
+        "MacOSX.sdk -\u003e MacOSX27.0.sdk",
+        "MacOSX26.5.sdk",
+        "MacOSX26.sdk -\u003e MacOSX26.5.sdk",
+        "MacOSX27.0.sdk",
+        "MacOSX27.sdk -\u003e MacOSX27.0.sdk"
+      ],
+      "sdk": "27",
+      "clang": "2100.3.34.2",
+      "xcselect": false,
+      "source": {
+        "kind": "tart",
+        "from": "dockhand-xcode-golden-gate",
+        "date": "2026-09-27",
+        "macports": "2.12.6"
+      }
     }
   ],
   "generations": [

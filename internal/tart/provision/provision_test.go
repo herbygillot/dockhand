@@ -30,6 +30,7 @@ type fakeMachine struct {
 	format     string
 	imported   string // the disk format of images Import copies, when set
 	oldTart    bool   // Tart is older than tart.ASIFVersion
+	installsAs string // the version the installed Xcode reports, when not the archive's
 	formats    map[string]string
 	validation validation
 	onValidate func(*validation)
@@ -139,6 +140,9 @@ func (f *fakeMachine) EnsureToolchain(context.Context, string) error {
 }
 func (f *fakeMachine) InstallXcode(_ context.Context, _ string, config Config) error {
 	f.validation.XcodeVersion = config.XcodeVersion
+	if f.installsAs != "" {
+		f.validation.XcodeVersion = f.installsAs
+	}
 	return f.event("xcode")
 }
 func (f *fakeMachine) InstallMacPorts(context.Context, string, Config, macos.Release) error {
@@ -244,6 +248,28 @@ func TestXcodeProfileInstallsXcodeBeforeMacPorts(t *testing.T) {
 	require.Equal(t, "26.6", result.XcodeVersion)
 	require.Less(t, index(machine.events, "toolchain"), index(machine.events, "xcode"))
 	require.Less(t, index(machine.events, "xcode"), index(machine.events, "macports"))
+}
+
+// An archive named for its major version alone, Xcode_27.xip, installs the
+// Xcode that calls itself 27.0; that is the Xcode asked for, and the image
+// records what it reports.
+func TestAnXcodeNamedForItsMajorVersionIsTheOneInstalled(t *testing.T) {
+	directory := t.TempDir()
+	require.NoError(t, os.WriteFile(directory+"/Xcode_27.xip", nil, 0o600))
+	machine := newFakeMachine()
+	machine.installsAs = "27.0"
+	provisioner := testProvisioner(machine)
+	provisioner.Config.Xcode = directory
+	result, err := provisioner.Run(t.Context(), Options{})
+	require.NoError(t, err)
+	require.Equal(t, "27.0", result.XcodeVersion)
+
+	machine = newFakeMachine()
+	machine.installsAs = "26.6"
+	provisioner = testProvisioner(machine)
+	provisioner.Config.Xcode = directory
+	_, err = provisioner.Run(t.Context(), Options{})
+	require.ErrorContains(t, err, `Xcode "26.6"`, "a different Xcode is still refused")
 }
 
 func TestConventionalImageNamesRequireTheirMatchingProfile(t *testing.T) {

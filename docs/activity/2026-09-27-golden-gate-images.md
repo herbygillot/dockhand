@@ -59,5 +59,20 @@ Dockhand lists while something else deletes in several places: a check waiting f
 
 ## Left
 
-- **The Xcode add-on for Golden Gate** needs an Xcode 27 archive. `providers setup tart golden-gate --xcode <.xip>` should then work, with 79 GB free for its 60, but it hasn't been run.
 - **#1345** is fixed upstream but unreleased, and **#1346** is still open. The guards for both stay: a delete is trusted only by the VM's absence, and checks reach guests over SSH. Setup's agent readiness probe is the one `tart exec` left.
+
+## The Xcode image, with Xcode 27.0
+
+The person added Xcode archives. The first, `Xcode_27.1_beta.xip`, isn't one setup takes: it reads the version from the file name, "27.1_beta" doesn't parse, and betas are never chosen. Given the folder, though, setup would have given Golden Gate Xcode 26.6, the newest release archive there. It stops each release at the newest Xcode that runs, but had no lower limit. The person chose Xcode 27.0, the release MacPorts' Darwin 27 builder runs, and added `Xcode_27.xip`.
+
+- **A release's Xcode is no older than its own tools generation** (`SelectXcode`, from the facts table's generation). An older Xcode lacks the release's SDK, so Golden Gate, generation 27, takes Xcode 27 and is refused rather than given 26.6. A strict equality would have been wrong: Ventura's image has Xcode 15.2 over tools 14, and Sequoia's 26.3 over 16, each the newest Xcode its release runs. Every existing image passes the floor.
+- **An archive named for its major version** set off three string comparisons in setup. `Xcode_27.xip` says 27, and the installed Xcode says 27.0, so validation refused it, "image has Xcode 27.0; expected 27". Setup then refused it again at two more places that compared the same versions. `macos.SameXcode` compares them as numbers, so 27 is 27.0 while 26.6 is still not 26.6.1. A version that isn't numeric matches only itself, rather than counting as equal. The message that said only "does not match its requested platform, MacPorts, or Xcode version" now names both sides. The test machine's `InstallXcode` had echoed back the version it was asked for, which is how the tests missed it. It can now report the installed Xcode's own spelling.
+- **`dockhand providers setup tart golden-gate --xcode ~/Downloads/xcode_archives`** took 11 minutes 56 seconds on its third run. It made `dockhand-xcode-golden-gate` with Xcode 27.0, the Command Line Tools 27.0, and MacPorts 2.12.6: 125 GB, 47 GB on the host. The two runs before it installed Xcode and failed at the comparisons, cleaning up after themselves.
+- **A check of `tree` on Golden Gate** now builds "with Xcode", in the new image, and passed in 2 minutes 46 seconds with the port index cached.
+- **The facts table**, regenerated from a probe of all twelve images, gained one row: Darwin 27, arm64, the Xcode profile. It has Xcode 27.0, tools 27.0.0.0.1788430756, SDK 27, and clang 2100.3.34.2, which agrees with MacPorts' own Darwin 27 builder's row. The other rows came out unchanged. The probe took 10 minutes 27 seconds, where the one before took 2 minutes 38; it was waiting on Ventura's Xcode image, which it probed last.
+
+### Found, not done
+
+- **An Xcode archive's signature isn't checked.** Setup expands it in the guest with `xip --expand`, which says "signing certificate was “Software Update” (validation not attempted)". On the host, `pkgutil --check-signature` says `Xcode_27.xip` is "signed Apple Software". Refusing an archive that isn't would be a cheap guard for every release's Xcode image, not only Golden Gate's.
+- **Tahoe's Xcode has no upper bound.** A `--rebuild` of Tahoe's Xcode image, given this folder, would choose Xcode 27, by the rule that gives Sequoia 26.3: the newest Xcode the release runs. Whether Xcode 27 runs on macOS 26 is Apple's to say; nothing rebuilds the image unless asked.
+- **v2's `internal/workflow` tests are timing-sensitive.** Four failed in a full `make test` run right after the twelve-image probe, and again in one run of the package alone. Their failures were `git cat-file: context deadline exceeded` and missing results. Three later runs of the same code passed, and so did the next full run. Nothing in the binary uses the package, and it goes with the other v2 packages.
