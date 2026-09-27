@@ -109,7 +109,6 @@ These need MacPorts Base, whole-tree surveys, or VMs, so they run as the Mac all
 
 These are taken when their area is next touched, or between items.
 
-- **`outdated` shows progress** while it runs. It is three minutes of silence over 1,076 ports.
 - **One interpreter per port for `vercmp`,** rather than a new `tclsh` for each of about five comparisons.
 - **Tart checks of several releases in parallel,** within the Mac's two VMs.
 - **Per-runner evidence for the github provider.** Its runners, one per macOS release, fold into one result today. Each should keep its release, result, and log.

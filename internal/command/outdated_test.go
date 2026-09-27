@@ -20,6 +20,11 @@ type jqIsOutdated struct{ asked []engine.OutdatedRequest }
 
 func (j *jqIsOutdated) Outdated(_ context.Context, _ model.ObjectID, request engine.OutdatedRequest) ([]engine.OutdatedPort, error) {
 	j.asked = append(j.asked, request)
+	if request.Progress != nil {
+		for done := range 3 {
+			request.Progress(done, 2)
+		}
+	}
 	return []engine.OutdatedPort{
 		{Port: "jq", Current: "1.7.1", Newest: "1.8.1", Outdated: true},
 		{Port: "lost", Problem: "no forge could be found for it"},
@@ -87,4 +92,22 @@ func TestOutdatedThenUpdateOutdated(t *testing.T) {
 	require.ErrorContains(t, err, "--mine and --check go with --outdated")
 	_, _, err = dockhand(t, "update")
 	require.ErrorContains(t, err, "name the port to update, or update your outdated ports with --outdated --mine")
+}
+
+// At a terminal, outdated shows how many ports are looked up on a line it
+// redraws, and clears it once they all are; elsewhere it shows nothing.
+func TestOutdatedShowsItsProgressAtATerminal(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	reader := withOutdated(t)
+	var out, errs bytes.Buffer
+	err := Run(t.Context(), []string{"outdated", "jq", "lost"}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs, interactive: true})
+	require.NoError(t, err)
+	require.Equal(t, "\r\033[KLooking up each port's newest release: 0 of 2\r\033[KLooking up each port's newest release: 1 of 2\r\033[K", errs.String())
+	require.NotContains(t, out.String(), "Looking up")
+
+	_, errOut, err := dockhand(t, "outdated", "jq", "lost")
+	require.NoError(t, err)
+	require.NotContains(t, errOut, "Looking up")
+	require.Nil(t, reader.asked[1].Progress, "no terminal, no progress")
 }

@@ -93,10 +93,13 @@ func TestObserveLooksUpPortsTogetherInOrder(t *testing.T) {
 	require.NoError(t, err)
 	t.Setenv("TMPDIR", t.TempDir())
 	ports := &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}
-	service := outdated.Service{Repo: repo, Ports: ports, Upstream: &upstream.Service{Ports: ports, Versions: ports}, Concurrency: 3}
+	var progress [][2]int
+	service := outdated.Service{Repo: repo, Ports: ports, Upstream: &upstream.Service{Ports: ports, Versions: ports}, Concurrency: 3,
+		Progress: func(done, total int) { progress = append(progress, [2]int{done, total}) }}
 	asked := []string{"gamma", "epsilon", "alpha", "delta", "beta"}
 	result, err := service.Observe(t.Context(), outdated.Selection{Ports: asked})
 	require.NoError(t, err)
+	require.Equal(t, [][2]int{{0, 5}, {1, 5}, {2, 5}, {3, 5}, {4, 5}, {5, 5}}, progress, "heard before the first, and after each, in order")
 	var selectors, versions []string
 	for _, port := range result.Ports {
 		selectors = append(selectors, port.Selector)

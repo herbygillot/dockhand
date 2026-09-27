@@ -27,6 +27,19 @@ type Streams struct {
 	mode *outputMode
 }
 
+// errTerminal reports whether errors and progress go to a terminal, where
+// a line can be redrawn; a --json command line's never do.
+func (s Streams) errTerminal() bool {
+	if s.json() {
+		return false
+	}
+	if s.interactive {
+		return true
+	}
+	file, ok := s.Err.(*os.File)
+	return ok && isTerminal(file.Fd())
+}
+
 // terminal reports whether the input is an interactive terminal, the only
 // place a command may ask a question. /dev/null is a character device too,
 // so this asks the terminal driver rather than the file's mode.

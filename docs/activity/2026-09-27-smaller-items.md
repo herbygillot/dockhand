@@ -31,3 +31,7 @@ The architecture review of 2026-09-27 found three reductions where Tart's result
 - one line where they agree, as before;
 - one each, naming its runs, where they don't;
 - a run that reported nothing joins the one report where there is one, and otherwise stands as its own.
+
+## `outdated` shows its progress
+
+A large `--mine` was minutes of silence: 1,076 ports took three. `outdated.Service` now tells an optional `Progress` how many ports are looked up: once before the first, and after each, in order, never two calls at once. The engine's `OutdatedRequest` carries it, and `outdated` and `update --outdated` draw one line on standard error, "Looking up each port's newest release: 312 of 1,076", redrawn in place and cleared at the end. That happens only when standard error is a terminal, and never with `--json` (`Streams.errTerminal`). Serve's daily look passes none.

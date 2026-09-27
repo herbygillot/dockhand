@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -106,6 +107,9 @@ type Service struct {
 	// Concurrency is how many ports are looked up at once; Concurrency
 	// when zero.
 	Concurrency int
+	// Progress, when set, hears how many of the ports are looked up: once
+	// before the first, and after each, in order, never two at once.
+	Progress func(done, total int)
 }
 
 // Observe captures local HEAD and assesses every selected port independently.
@@ -148,6 +152,20 @@ func (s *Service) Observe(ctx context.Context, selection Selection) (_ Result, e
 	// many ports are looked up at once.
 	observed := make([]Port, len(files.Ports))
 	done := make([]bool, len(files.Ports))
+	var progress sync.Mutex
+	finished := 0
+	report := func(port bool) {
+		if s.Progress == nil {
+			return
+		}
+		progress.Lock()
+		defer progress.Unlock()
+		if port {
+			finished++
+		}
+		s.Progress(finished, len(files.Ports))
+	}
+	report(false)
 	group, gctx := errgroup.WithContext(ctx)
 	group.SetLimit(s.concurrency())
 	for i, selected := range files.Ports {
@@ -160,6 +178,7 @@ func (s *Service) Observe(ctx context.Context, selection Selection) (_ Result, e
 				return err
 			}
 			done[i] = true
+			report(true)
 			return nil
 		})
 	}

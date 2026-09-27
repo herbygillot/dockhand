@@ -22,8 +22,8 @@ type outdatedOptions struct {
 }
 
 // outdatedRequest is what --mine and the ports named choose.
-func outdatedRequest(s *settings, ports []string, mine bool) (engine.OutdatedRequest, error) {
-	request := engine.OutdatedRequest{Ports: ports}
+func outdatedRequest(s *settings, streams Streams, ports []string, mine bool) (engine.OutdatedRequest, error) {
+	request := engine.OutdatedRequest{Ports: ports, Progress: lookupProgress(streams)}
 	if !mine {
 		if len(ports) == 0 {
 			return request, errors.New("name ports, or choose yours with --mine")
@@ -57,7 +57,7 @@ update --outdated --mine starts on them.`,
 				return err
 			}
 			defer e.Close()
-			request, err := outdatedRequest(s, args, mine)
+			request, err := outdatedRequest(s, streams, args, mine)
 			if err != nil {
 				return err
 			}
@@ -129,7 +129,7 @@ func updateOutdated(ctx context.Context, s *settings, streams Streams, args []st
 		return err
 	}
 	defer e.Close()
-	request, err := outdatedRequest(s, args, options.mine)
+	request, err := outdatedRequest(s, streams, args, options.mine)
 	if err != nil {
 		return err
 	}
@@ -224,4 +224,20 @@ func writePrepared(ctx context.Context, e *engine.Engine, out io.Writer, prepare
 		return &ExitError{Code: 3}
 	}
 	return nil
+}
+
+// lookupProgress shows, on a terminal, how many ports' newest releases are
+// looked up, on one line it redraws and clears when they all are: a large
+// --mine takes minutes. Elsewhere, and for --json, it shows nothing.
+func lookupProgress(streams Streams) func(done, total int) {
+	if !streams.errTerminal() {
+		return nil
+	}
+	return func(done, total int) {
+		if done == total {
+			fmt.Fprint(streams.Err, "\r\033[K")
+			return
+		}
+		fmt.Fprintf(streams.Err, "\r\033[KLooking up each port's newest release: %d of %d", done, total)
+	}
 }

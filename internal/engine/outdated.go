@@ -18,6 +18,9 @@ import (
 type OutdatedRequest struct {
 	Ports       []string
 	Maintainers []string
+	// Progress, when set, hears how many of the ports are looked up, as
+	// the lookups finish.
+	Progress func(done, total int)
 }
 
 // OutdatedPort is one port as its upstream stands.
@@ -85,7 +88,7 @@ type surveyedPorts struct {
 
 func (s *surveyedPorts) Outdated(ctx context.Context, commit model.ObjectID, request OutdatedRequest) ([]OutdatedPort, error) {
 	service := *s.service
-	service.Commit = string(commit)
+	service.Commit, service.Progress = string(commit), request.Progress
 	result, err := service.Observe(ctx, outdated.Selection{Ports: request.Ports, Maintainers: request.Maintainers})
 	var ports []OutdatedPort
 	for _, port := range result.Ports {
