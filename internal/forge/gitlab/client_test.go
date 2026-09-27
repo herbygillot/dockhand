@@ -31,9 +31,12 @@ func TestRepositoryMapsInstancePathIntoGitLabProjectIdentity(t *testing.T) {
 	require.Equal(t, "/api/v4/projects/tpo%2Fcore%2Fproject/repository/tags/v2%2E0", escapedPath)
 }
 
+// Every page is read, each asking for GitLab's largest, 100 tags.
 func TestRepositoryReadsEveryGitLabTagPage(t *testing.T) {
 	commits := []string{strings.Repeat("a", 40), strings.Repeat("b", 40)}
+	var sizes []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sizes = append(sizes, r.URL.Query().Get("per_page"))
 		page := r.URL.Query().Get("page")
 		index := 0
 		if page == "2" {
@@ -50,6 +53,7 @@ func TestRepositoryReadsEveryGitLabTagPage(t *testing.T) {
 	tags, err := repository.ListTags(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, []forge.Tag{{Name: "v1.0", Commit: commits[0]}, {Name: "v2.0", Commit: commits[1]}}, tags)
+	require.Equal(t, []string{"100", "100"}, sizes)
 }
 
 func TestRepositoryRejectsDuplicateGitLabTags(t *testing.T) {

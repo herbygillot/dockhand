@@ -140,40 +140,26 @@ func (s *Service) Observe(ctx context.Context, selection Selection) (_ Result, e
 		result.Ports = append(result.Ports, Port{Selector: problem.Port, Result: upstream.Result{Assessment: upstream.Unknown, ObservedAt: time.Now().UTC(), Detail: problem.Detail}})
 	}
 	// Ports are looked up concurrently, and the results keep the
-	// selection's order. Probing a candidate version writes it into the
-	// port's own Portfile in the shared projection, so ports that share a
-	// Portfile, subports of one port, go one after another; only distinct
-	// Portfiles overlap. Most of a port's time is spent waiting on its
-	// upstream, and GitHub's requests are paced for the whole process
-	// (internal/github), however many ports are looked up at once.
-	var order []string
-	byPortfile := map[string][]int{}
-	for i, selected := range files.Ports {
-		key := selected.Portfile
-		if key == "" {
-			key = selected.Selection.Selector
-		}
-		if _, seen := byPortfile[key]; !seen {
-			order = append(order, key)
-		}
-		byPortfile[key] = append(byPortfile[key], i)
-	}
+	// selection's order. Each has its own probe and interpreters, and
+	// evaluates candidate versions in overlays of the shared projection,
+	// never in it, so subports of one Portfile overlap like any others. Most
+	// of a port's time is spent waiting on its upstream, and GitHub's
+	// requests are paced for the whole process (internal/github), however
+	// many ports are looked up at once.
 	observed := make([]Port, len(files.Ports))
 	done := make([]bool, len(files.Ports))
 	group, gctx := errgroup.WithContext(ctx)
 	group.SetLimit(s.concurrency())
-	for _, key := range order {
+	for i, selected := range files.Ports {
 		group.Go(func() error {
-			for _, i := range byPortfile[key] {
-				if err := gctx.Err(); err != nil {
-					return err
-				}
-				var err error
-				if observed[i], err = s.observeOne(gctx, editor, files, platform, files.Ports[i]); err != nil {
-					return err
-				}
-				done[i] = true
+			if err := gctx.Err(); err != nil {
+				return err
 			}
+			var err error
+			if observed[i], err = s.observeOne(gctx, editor, files, platform, selected); err != nil {
+				return err
+			}
+			done[i] = true
 			return nil
 		})
 	}
@@ -207,8 +193,8 @@ func (s *Service) concurrency() int {
 func (s *Service) observeOne(ctx context.Context, editor *portedit.Service, files *survey.Workspace, platform record.Platform, selected survey.Port) (Port, error) {
 	item := Port{Selector: selected.Label, Result: upstream.Result{Assessment: upstream.Unknown, ObservedAt: time.Now().UTC()}}
 	probe, problem := editor.Probe(ctx, portedit.ProbeSource{Source: files.Source, Workspace: files.Projection, Selection: selected.Selection, Platform: platform})
-	if problem == nil && selected.Name != "" && probe.Port().Name != selected.Name {
-		problem = fmt.Errorf("indexed subport %s: upstream version probing currently supports the primary port %s", selected.Name, probe.Port().Name)
+	if problem == nil && selected.Name != "" {
+		problem = probe.Agrees(selected.Name)
 	}
 	if problem == nil {
 		var bound *upstream.Discovery

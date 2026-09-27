@@ -36,6 +36,10 @@ func (r *repository) Tag(ctx context.Context, name string) (forge.Tag, error) {
 	return tag, nil
 }
 
+// pageSize is how many tags a page of the listing holds: the most GitLab's
+// API gives, where it would give 20 unasked.
+const pageSize = 100
+
 func (r *repository) ListTags(ctx context.Context) ([]forge.Tag, error) {
 	client, err := r.api()
 	if err != nil {
@@ -48,7 +52,7 @@ func (r *repository) ListTags(ctx context.Context) ([]forge.Tag, error) {
 		if page != nil {
 			options = append(options, page)
 		}
-		return client.Tags.ListTags(r.project, nil, options...)
+		return client.Tags.ListTags(r.project, &sdk.ListTagsOptions{ListOptions: sdk.ListOptions{PerPage: pageSize}}, options...)
 	}) {
 		if err != nil {
 			return nil, fmt.Errorf("gitlab: listing tags: %w", err)

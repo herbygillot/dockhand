@@ -11,6 +11,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
+	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/outdated"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/herbygillot/dockhand/internal/upstream"
@@ -103,6 +104,60 @@ func TestObserveLooksUpPortsTogetherInOrder(t *testing.T) {
 	}
 	require.Equal(t, asked, selectors)
 	require.Equal(t, []string{"1.2", "1.4", "1.0", "1.3", "1.1"}, versions)
+}
+
+// Selected by maintainer, through the port index, a stub is looked up
+// through the subport carrying its release, as when it is named. The index
+// names the stub, fixture, and the probe evaluates fixture-314; that is the
+// redirection, not a port the index didn't name. outdated --mine once
+// reported every such port, the person's Python ports, helm, and kubectl,
+// as one it couldn't check.
+func TestObserveByMaintainerFollowsAStub(t *testing.T) {
+	executable := testsupport.MacPortsTclsh(t)
+	root := t.TempDir()
+	path := filepath.Join(root, "devel", "fixture", "Portfile")
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0700))
+	require.NoError(t, os.WriteFile(path, []byte(`PortSystem 1.0
+name fixture
+version 1.2.3
+revision 0
+categories devel
+maintainers {example.org:ada @ada}
+distname shared-${version}
+master_sites https://example.invalid/${version}
+checksums sha256 aaaa size 2
+livecheck.type none
+subport fixture-313 {}
+subport fixture-314 {}
+if {${subport} eq ${name}} {
+ distfiles
+ fetch {}
+ use_configure no
+ build {}
+}
+`), 0600))
+	for _, args := range [][]string{{"init", "-q"}, {"add", "."}, {"-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture"}} {
+		command := exec.CommandContext(t.Context(), "git", args...)
+		command.Dir = root
+		output, err := command.CombinedOutput()
+		require.NoError(t, err, "%s", output)
+	}
+	repo, err := git.Open(t.Context(), root, "")
+	require.NoError(t, err)
+	t.Setenv("TMPDIR", t.TempDir())
+	ports := &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}
+	index := &portindex.Stager{Repo: repo, Config: portindex.Config{Executable: testsupport.MacPortsTool(t, "portindex"), CacheDirectory: t.TempDir()}, NativePlatform: ports.NativePlatform}
+	service := outdated.Service{Repo: repo, Ports: ports, Upstream: &upstream.Service{Ports: ports, Versions: ports}, Index: index}
+	result, err := service.Observe(t.Context(), outdated.Selection{Maintainers: []string{"ada@example.org"}})
+	require.NoError(t, err)
+	found := map[string]outdated.Port{}
+	for _, port := range result.Ports {
+		found[port.Selector] = port
+	}
+	require.Contains(t, found, "fixture")
+	stub := found["fixture"]
+	require.NotContains(t, stub.Detail, "indexed subport", "the stub's redirection is not a disagreement")
+	require.Equal(t, "1.2.3", stub.CurrentVersion, "it was evaluated, through fixture-314")
 }
 
 func TestObserveRejectsInvalidSelectionAndCanceledWorkBeforeDependencies(t *testing.T) {

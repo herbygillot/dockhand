@@ -42,11 +42,22 @@ func (s *Service) Probe(ctx context.Context, source ProbeSource) (*VersionProbe,
 	return &VersionProbe{editor: s, request: request, input: input}, nil
 }
 
-// Stub names the port the selection was made under when that port was a stub
-// and the probe redirected to the subport carrying its release, and is empty
-// otherwise. A caller holding an indexed name can tell a redirection from a
-// port that evaluated as something else.
-func (p *VersionProbe) Stub() string { return p.request.Stub }
+// Agrees checks that the probe evaluated the port an index named, for a
+// caller that selected ports by their indexed names. A stub is the one
+// legitimate difference: the index names the stub, py-black, and the probe
+// redirects to the subport carrying its release, py313-black, so that is
+// the port evaluated. Any other difference means evaluation settled on a
+// port the index didn't name, which isn't one the caller can vouch for.
+func (p *VersionProbe) Agrees(indexed string) error {
+	return indexAgreement(indexed, p.input.info.Name, p.request.Stub)
+}
+
+func indexAgreement(indexed, evaluated, stub string) error {
+	if indexed == evaluated || (stub != "" && stub == indexed) {
+		return nil
+	}
+	return fmt.Errorf("%w: indexed subport %s; evaluation selected a different port %s", ErrUnsupported, indexed, evaluated)
+}
 
 func (p *VersionProbe) Port() macports.PortInfo {
 	info := p.input.info
