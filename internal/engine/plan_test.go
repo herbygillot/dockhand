@@ -11,6 +11,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/provider"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -273,8 +274,8 @@ func TestEachPlatformKeepsItsOwnDependencies(t *testing.T) {
 		branch, err = r.Branch(revision.Branch)
 		return err
 	}))
-	provider := &scriptedProvider{outcomes: map[model.TargetID]model.Outcome{"libharbor": model.OutcomeFailed}}
-	e.Providers = map[string]Provider{"command": provider}
+	builder := &scriptedProvider{outcomes: map[model.TargetID]model.Outcome{"libharbor": model.OutcomeFailed}}
+	e.Providers = map[string]provider.Provider{"command": builder}
 	queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
 	require.NoError(t, err)
 	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
@@ -282,8 +283,8 @@ func TestEachPlatformKeepsItsOwnDependencies(t *testing.T) {
 	got := outcomes(t, e, run)
 	require.Equal(t, model.OutcomePassed, got["harbor-viewer@arm64"], "arm64's harbor-viewer doesn't link libharbor, so its failure doesn't block it")
 	require.Equal(t, model.OutcomeBlocked, got["harbor-viewer@x86_64"])
-	for _, job := range provider.jobs {
-		i := slices.IndexFunc(job.Targets, func(target JobTarget) bool { return target.ID == "harbor-viewer" })
+	for _, job := range builder.jobs {
+		i := slices.IndexFunc(job.Targets, func(target provider.Target) bool { return target.ID == "harbor-viewer" })
 		require.GreaterOrEqual(t, i, 0)
 		require.Equal(t, plan.DependsOnIn(job.Environment, "harbor-viewer"), job.Targets[i].DependsOn, "a provider sees its own platform's dependencies")
 	}
@@ -299,14 +300,14 @@ func TestEachPlatformKeepsItsOwnDependencies(t *testing.T) {
 	require.Equal(t, []model.TargetID{"harbor-cli", "libharbor", "harbor-viewer"}, slices.DeleteFunc(slices.Clone(armPlan.Order), func(id model.TargetID) bool { return id == "harbor-tools" }))
 	require.Equal(t, []model.TargetID{"libharbor", "harbor-cli", "harbor-viewer"}, slices.DeleteFunc(slices.Clone(x86Plan.Order), func(id model.TargetID) bool { return id == "harbor-tools" }))
 	crossed.ID, crossed.Revision = model.PlanID(store.NewID("plan")), revision.ID
-	provider = &scriptedProvider{}
-	e.Providers = map[string]Provider{"command": provider}
+	builder = &scriptedProvider{}
+	e.Providers = map[string]provider.Provider{"command": builder}
 	queued, err = e.Enqueue(t.Context(), branch, crossed, model.OriginPerson)
 	require.NoError(t, err)
 	run, err = e.Drive(t.Context(), session(t, e), queued.ID)
 	require.NoError(t, err)
 	require.Equal(t, model.RunPassed, run.State)
-	for _, job := range provider.jobs {
+	for _, job := range builder.jobs {
 		var order []model.TargetID
 		for _, target := range job.Targets {
 			order = append(order, target.ID)

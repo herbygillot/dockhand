@@ -9,6 +9,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/provider"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -33,7 +34,7 @@ func TestLiveCheckInATahoeGuest(t *testing.T) {
 	treeID, err := e.Repo.Resolve(t.Context(), "HEAD^{tree}")
 	require.NoError(t, err)
 	p := &Provider{Repo: e.Repo, Index: e.PortIndex}
-	job := engine.Job{
+	job := provider.Job{
 		Run:         model.Run{ID: "run_live", Number: 1},
 		Execution:   model.GuestExecution{ID: "ex_live", Attempt: 1},
 		Revision:    model.Revision{Source: model.Source{Commit: model.ObjectID(commit), Tree: model.ObjectID(treeID), Base: model.ObjectID(commit)}},
@@ -41,7 +42,7 @@ func TestLiveCheckInATahoeGuest(t *testing.T) {
 		Environment: model.Environment{Provider: "tart", Platform: tahoe},
 		Commit:      commit,
 		Directory:   t.TempDir(),
-		Targets: []engine.JobTarget{
+		Targets: []provider.Target{
 			{PlanTarget: model.PlanTarget{ID: "tree", Target: model.Target{Name: "tree", Portfile: "sysutils/tree/Portfile"}}},
 			{PlanTarget: model.PlanTarget{ID: "pv", Target: model.Target{Name: "pv", Portfile: "sysutils/pv/Portfile"}}},
 		},

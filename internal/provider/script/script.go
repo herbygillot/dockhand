@@ -15,9 +15,9 @@ import (
 	"path/filepath"
 
 	"github.com/herbygillot/dockhand/internal/atomicfile"
-	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/provider"
 )
 
 // Version is the request and result files' format.
@@ -88,7 +88,9 @@ type Provider struct {
 
 func (p *Provider) Name() string { return "command" }
 
-func (p *Provider) Execute(ctx context.Context, job engine.Job, build engine.Build) error {
+var _ provider.Provider = (*Provider)(nil)
+
+func (p *Provider) Execute(ctx context.Context, job provider.Job, build provider.Build) error {
 	if err := os.MkdirAll(job.Directory, 0o755); err != nil {
 		return err
 	}
@@ -111,12 +113,12 @@ func (p *Provider) Execute(ctx context.Context, job engine.Job, build engine.Bui
 	if request.Commit == request.Base {
 		parent, err := p.Repo.Resolve(ctx, request.Base+"^")
 		if err != nil {
-			return fmt.Errorf("%w: bundling the base: %w", engine.ErrInfrastructure, err)
+			return fmt.Errorf("%w: bundling the base: %w", provider.ErrInfrastructure, err)
 		}
 		exclude = parent
 	}
 	if err := p.Repo.Bundle(ctx, request.Bundle, request.Ref, request.Commit, exclude); err != nil {
-		return fmt.Errorf("%w: bundling the revision: %w", engine.ErrInfrastructure, err)
+		return fmt.Errorf("%w: bundling the revision: %w", provider.ErrInfrastructure, err)
 	}
 	requestPath := filepath.Join(job.Directory, "request.json")
 	data, err := json.MarshalIndent(request, "", "  ")
@@ -146,17 +148,17 @@ func (p *Provider) Execute(ctx context.Context, job engine.Job, build engine.Bui
 
 	data, err = os.ReadFile(request.Result)
 	if errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("%w: %s wrote no result file (%v); see %s", engine.ErrInfrastructure, p.Label, runErr, logPath)
+		return fmt.Errorf("%w: %s wrote no result file (%v); see %s", provider.ErrInfrastructure, p.Label, runErr, logPath)
 	}
 	if err != nil {
 		return err
 	}
 	var result Result
 	if err := json.Unmarshal(data, &result); err != nil {
-		return fmt.Errorf("%w: %s wrote an unreadable result file, %s: %w", engine.ErrInfrastructure, p.Label, request.Result, err)
+		return fmt.Errorf("%w: %s wrote an unreadable result file, %s: %w", provider.ErrInfrastructure, p.Label, request.Result, err)
 	}
 	if result.Version != Version {
-		return fmt.Errorf("%w: %s wrote a version %d result file, %s; dockhand reads version %d", engine.ErrInfrastructure, p.Label, result.Version, request.Result, Version)
+		return fmt.Errorf("%w: %s wrote a version %d result file, %s; dockhand reads version %d", provider.ErrInfrastructure, p.Label, result.Version, request.Result, Version)
 	}
 	if result.Reference != "" {
 		if err := build.Refer(result.Reference); err != nil {
@@ -186,7 +188,7 @@ func (p *Provider) Execute(ctx context.Context, job engine.Job, build engine.Bui
 		}
 		recorded, err := convert(target.ID, got, logPath)
 		if err != nil {
-			return fmt.Errorf("%w: %s: %w", engine.ErrInfrastructure, p.Label, err)
+			return fmt.Errorf("%w: %s: %w", provider.ErrInfrastructure, p.Label, err)
 		}
 		if err := build.Record(recorded); err != nil {
 			return err

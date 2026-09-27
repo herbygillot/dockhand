@@ -18,6 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/selection"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/provider"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/store/sqlite"
 )
@@ -74,7 +75,7 @@ type Engine struct {
 	// ProjectReader observes upstream projects for create; GitHub when nil.
 	ProjectReader ProjectReader
 	// Providers are where checks build, by name.
-	Providers map[string]Provider
+	Providers map[string]provider.Provider
 	ports     *selection.Reader
 	options   Options
 	// stopAt stops a history change at a step, as if the process ended

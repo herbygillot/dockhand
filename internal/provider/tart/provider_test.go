@@ -15,9 +15,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/provider"
 	"github.com/herbygillot/dockhand/internal/tart/channel"
 )
 
@@ -184,14 +184,14 @@ func (b *fakeBuild) Canceled() bool { return false }
 
 var tahoe = model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
 
-func tartJob(t *testing.T, attempt int) engine.Job {
-	return engine.Job{
+func tartJob(t *testing.T, attempt int) provider.Job {
+	return provider.Job{
 		Run:         model.Run{ID: "run_7", Number: 3},
 		Execution:   model.GuestExecution{ID: "ex_1", Attempt: attempt},
 		Plan:        model.Plan{Tests: model.TestsDeclared},
 		Environment: model.Environment{Provider: "tart", Platform: tahoe},
 		Directory:   t.TempDir(),
-		Targets: []engine.JobTarget{
+		Targets: []provider.Target{
 			{PlanTarget: model.PlanTarget{ID: "libharbor", Target: model.Target{Name: "libharbor", Portfile: "devel/libharbor/Portfile"}}},
 			{PlanTarget: model.PlanTarget{ID: "harbor-cli", Target: model.Target{Name: "harbor", Subport: "harbor-cli", Portfile: "devel/harbor/Portfile"}}, DependsOn: []model.TargetID{"libharbor"}},
 		},
@@ -201,7 +201,7 @@ func tartJob(t *testing.T, attempt int) engine.Job {
 // testProvider builds on a fake Mac, staging only the guest's input.
 func testProvider(mac *fakeMac) *Provider {
 	return &Provider{machine: mac, Poll: time.Millisecond, host: 25,
-		stager: func(_ context.Context, _ engine.Job, input guestInput, archive string) error {
+		stager: func(_ context.Context, _ provider.Job, input guestInput, archive string) error {
 			data, err := json.Marshal(input)
 			if err != nil {
 				return err
@@ -284,7 +284,7 @@ func TestGuestTroubleIsInfrastructure(t *testing.T) {
 			}
 			build := &fakeBuild{}
 			err := testProvider(test.mac).Execute(t.Context(), tartJob(t, 1), build)
-			require.ErrorIs(t, err, engine.ErrInfrastructure)
+			require.ErrorIs(t, err, provider.ErrInfrastructure)
 			require.ErrorContains(t, err, test.want)
 			if name != "protocol" {
 				require.Len(t, build.results, 1, "what the guest finished stays recorded")
@@ -295,7 +295,7 @@ func TestGuestTroubleIsInfrastructure(t *testing.T) {
 	mac := newMac(guestResults{State: "running"})
 	close(mac.run.done)
 	err := testProvider(mac).Execute(t.Context(), tartJob(t, 1), &fakeBuild{})
-	require.ErrorIs(t, err, engine.ErrInfrastructure)
+	require.ErrorIs(t, err, provider.ErrInfrastructure)
 	require.ErrorContains(t, err, "the VM stopped")
 }
 
@@ -322,7 +322,7 @@ func TestTheCloneIsNamedBeforeItIsMade(t *testing.T) {
 	mac.cloneErr = errors.New("tart clone failed")
 	build := &fakeBuild{}
 	err := testProvider(mac).Execute(t.Context(), tartJob(t, 1), build)
-	require.ErrorIs(t, err, engine.ErrInfrastructure)
+	require.ErrorIs(t, err, provider.ErrInfrastructure)
 	require.Equal(t, []string{"dockhand-check-run-7-tahoe-1"}, build.refs)
 }
 
@@ -337,7 +337,7 @@ func TestLeftoversAreOnlyCheckClones(t *testing.T) {
 	p := testProvider(mac)
 	leftovers, err := p.Leftovers(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, []engine.Leftover{
+	require.Equal(t, []provider.Leftover{
 		{Ref: "dockhand-check-run-7-tahoe-1", What: "Tart clone dockhand-check-run-7-tahoe-1"},
 		{Ref: "dockhand-check-run-8-sonoma-2", What: "Tart clone dockhand-check-run-8-sonoma-2"},
 	}, leftovers)

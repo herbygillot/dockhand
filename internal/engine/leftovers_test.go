@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/provider"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -24,7 +25,7 @@ type leavingProvider struct {
 
 func (p *leavingProvider) Name() string { return "command" }
 
-func (p *leavingProvider) Execute(_ context.Context, job Job, build Build) error {
+func (p *leavingProvider) Execute(_ context.Context, job provider.Job, build provider.Build) error {
 	ref := "clone-" + string(job.Execution.ID)
 	if err := build.Refer(ref); err != nil {
 		return err
@@ -40,12 +41,12 @@ func (p *leavingProvider) Execute(_ context.Context, job Job, build Build) error
 	return nil
 }
 
-func (p *leavingProvider) Leftovers(context.Context) ([]Leftover, error) {
+func (p *leavingProvider) Leftovers(context.Context) ([]provider.Leftover, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	var found []Leftover
+	var found []provider.Leftover
 	for _, ref := range append(slices.Clone(p.left), "clone-elsewhere") {
-		found = append(found, Leftover{Ref: ref, What: "clone " + ref})
+		found = append(found, provider.Leftover{Ref: ref, What: "clone " + ref})
 	}
 	return found, nil
 }
@@ -64,14 +65,14 @@ func (p *leavingProvider) RemoveLeftover(_ context.Context, ref string) error {
 func TestLeftoversGoOnlyWhenNoProcessDrivesTheirCheck(t *testing.T) {
 	f := setup(t)
 	e := f.open(t)
-	provider := &leavingProvider{}
-	e.Providers = map[string]Provider{"command": provider}
+	builder := &leavingProvider{}
+	e.Providers = map[string]provider.Provider{"command": builder}
 	queued := queuedHarborRun(t, e, tahoeArm)
 	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
 	require.NoError(t, err)
 	require.Equal(t, model.RunPassed, run.State, run.Detail)
-	require.Len(t, provider.left, 1)
-	clone := provider.left[0]
+	require.Len(t, builder.left, 1)
+	clone := builder.left[0]
 
 	cleaner := session(t, e)
 	plan, err := e.PlanLeftovers(t.Context(), cleaner)
@@ -93,7 +94,7 @@ func TestLeftoversGoOnlyWhenNoProcessDrivesTheirCheck(t *testing.T) {
 	require.NoError(t, err)
 	done, err := e.RemoveLeftovers(t.Context(), cleaner, plan)
 	require.NoError(t, err)
-	require.Empty(t, provider.removed)
+	require.Empty(t, builder.removed)
 	for _, leftover := range done {
 		if leftover.Ref == clone {
 			require.Equal(t, "check-1 is running", leftover.Kept)
@@ -112,7 +113,7 @@ func TestLeftoversGoOnlyWhenNoProcessDrivesTheirCheck(t *testing.T) {
 	require.NoError(t, err)
 	done, err = e.RemoveLeftovers(t.Context(), cleaner, plan)
 	require.NoError(t, err)
-	require.Equal(t, []string{clone}, provider.removed, "only the check's own, never another's")
+	require.Equal(t, []string{clone}, builder.removed, "only the check's own, never another's")
 	removed := slices.IndexFunc(done, func(l Leftover) bool { return l.Ref == clone })
 	require.True(t, done[removed].Done)
 
@@ -131,15 +132,15 @@ func TestCleanupRemovesWhatChecksLeft(t *testing.T) {
 	f := setup(t)
 	e := f.open(t)
 	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
-	provider := &leavingProvider{}
-	e.Providers = map[string]Provider{"command": provider}
+	builder := &leavingProvider{}
+	e.Providers = map[string]provider.Provider{"command": builder}
 	queued := queuedHarborRun(t, e, tahoeArm)
 	_, err := e.Drive(t.Context(), session(t, e), queued.ID)
 	require.NoError(t, err)
-	clone := provider.left[0]
+	clone := builder.left[0]
 
 	report, err := e.Cleanup(t.Context(), session(t, e), 7*24*time.Hour)
 	require.NoError(t, err)
-	require.Equal(t, []string{clone}, provider.removed)
+	require.Equal(t, []string{clone}, builder.removed)
 	require.Equal(t, 1, report.Removed(), "the clone, and not the one no check of this checkout made")
 }

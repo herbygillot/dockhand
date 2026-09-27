@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/provider"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -579,33 +580,24 @@ func (e *Engine) RequestReview(ctx context.Context, branch model.Branch) ([]stri
 	return logins, err
 }
 
-// Fork is your fork of MacPorts' repository, and the Git remote that
-// pushes to it.
-type Fork struct {
-	// Repository is its GitHub name, such as ada/macports-ports.
-	Repository string
-	Remote     string
-	PushURL    string
-}
-
 // Fork finds your fork: the one Git remote that pushes to a fork of
 // MacPorts' repository your GitHub login owns, or the remote named.
-func (e *Engine) Fork(ctx context.Context, remote string) (Fork, error) {
+func (e *Engine) Fork(ctx context.Context, remote string) (provider.Fork, error) {
 	login, err := e.forge().AuthenticatedUser(ctx)
 	if err != nil {
-		return Fork{}, fmt.Errorf("finding your fork needs your GitHub login: %w", err)
+		return provider.Fork{}, fmt.Errorf("finding your fork needs your GitHub login: %w", err)
 	}
 	remotes, err := e.Repo.Remotes(ctx)
 	if err != nil {
-		return Fork{}, err
+		return provider.Fork{}, err
 	}
 	return e.fork(ctx, remotes, login, remote)
 }
 
-func (e *Engine) fork(ctx context.Context, remotes []git.Remote, login, named string) (Fork, error) {
+func (e *Engine) fork(ctx context.Context, remotes []git.Remote, login, named string) (provider.Fork, error) {
 	f := e.forge()
 	var candidates []string
-	var fork Fork
+	var fork provider.Fork
 	for _, remote := range remotes {
 		name, err := f.NameFromRemote(remote.PushURL)
 		if err != nil || strings.EqualFold(name, UpstreamRepository) {
@@ -614,23 +606,23 @@ func (e *Engine) fork(ctx context.Context, remotes []git.Remote, login, named st
 		owner, _, _ := strings.Cut(name, "/")
 		if named != "" && remote.Name == named || named == "" && strings.EqualFold(owner, login) {
 			candidates = append(candidates, remote.Name+" ("+name+")")
-			fork = Fork{Repository: name, Remote: remote.Name, PushURL: remote.PushURL}
+			fork = provider.Fork{Repository: name, Remote: remote.Name, PushURL: remote.PushURL}
 		}
 	}
 	switch {
 	case len(candidates) == 0 && named != "":
-		return Fork{}, fmt.Errorf("there is no remote %s that pushes to a GitHub repository other than %s", named, UpstreamRepository)
+		return provider.Fork{}, fmt.Errorf("there is no remote %s that pushes to a GitHub repository other than %s", named, UpstreamRepository)
 	case len(candidates) == 0:
-		return Fork{}, fmt.Errorf("no Git remote pushes to a fork of %s that %s owns; fork it on GitHub, then git remote add fork https://github.com/%s/macports-ports.git", UpstreamRepository, login, login)
+		return provider.Fork{}, fmt.Errorf("no Git remote pushes to a fork of %s that %s owns; fork it on GitHub, then git remote add fork https://github.com/%s/macports-ports.git", UpstreamRepository, login, login)
 	case len(candidates) > 1:
-		return Fork{}, fmt.Errorf("several remotes push to your forks: %s; choose one with --remote", strings.Join(candidates, ", "))
+		return provider.Fork{}, fmt.Errorf("several remotes push to your forks: %s; choose one with --remote", strings.Join(candidates, ", "))
 	}
 	info, err := f.RepositoryInfo(ctx, fork.Repository)
 	if err != nil {
-		return Fork{}, err
+		return provider.Fork{}, err
 	}
 	if !strings.EqualFold(info.Parent, UpstreamRepository) {
-		return Fork{}, fmt.Errorf("%s is not a fork of %s; dockhand pushes only to your fork", fork.Repository, UpstreamRepository)
+		return provider.Fork{}, fmt.Errorf("%s is not a fork of %s; dockhand pushes only to your fork", fork.Repository, UpstreamRepository)
 	}
 	return fork, nil
 }

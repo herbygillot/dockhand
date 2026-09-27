@@ -14,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/provider"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -33,10 +34,6 @@ type CleanStep struct {
 	name     string
 	expected string
 }
-
-// CheckBranchPrefix names the branches the github provider pushes to your
-// fork, one per commit it checks.
-const CheckBranchPrefix = "dockhand-check/"
 
 // CleanBranch is what clean would do for one merged branch.
 type CleanBranch struct {
@@ -213,7 +210,7 @@ func (e *Engine) planCleanChecks(ctx context.Context, branch model.Branch, repos
 			continue
 		}
 		seen[commit] = true
-		name := CheckBranchPrefix + commit[:12]
+		name := provider.CheckBranchPrefix + commit[:12]
 		step := CleanStep{What: repository + ":" + name, kind: "check", name: name, expected: commit}
 		if remoteErr != nil {
 			step.Kept = remoteErr.Error()
@@ -402,11 +399,7 @@ func (e *Engine) dropRefs(ctx context.Context, branch model.Branch) error {
 // Leftover is an environment a provider made for a check that is still
 // there, such as a Tart clone, and what clean does with it.
 type Leftover struct {
-	// Provider made it; Ref is its name for it, as the check's execution
-	// recorded it; What says it for a person, "Tart clone dockhand-…".
-	Provider string
-	Ref      string
-	What     string
+	provider.Leftover
 	// Run is the check it was made for, when one of this checkout's.
 	Run *model.Run
 	// Kept says why it stays; empty when it would be removed.
@@ -426,16 +419,17 @@ type Leftover struct {
 func (e *Engine) PlanLeftovers(ctx context.Context, session *coord.Session) ([]Leftover, error) {
 	var all []Leftover
 	for _, name := range slices.Sorted(maps.Keys(e.Providers)) {
-		provider, ok := e.Providers[name].(LeftoverProvider)
+		lister, ok := e.Providers[name].(provider.LeftoverProvider)
 		if !ok {
 			continue
 		}
-		found, err := provider.Leftovers(ctx)
+		found, err := lister.Leftovers(ctx)
 		if err != nil {
 			return all, fmt.Errorf("listing what %s checks left: %w", name, err)
 		}
-		for _, leftover := range found {
-			leftover.Provider = name
+		for _, reported := range found {
+			reported.Provider = name
+			leftover := Leftover{Leftover: reported}
 			if err := e.judgeLeftover(ctx, session, &leftover); err != nil {
 				return all, err
 			}
@@ -476,7 +470,7 @@ func (e *Engine) RemoveLeftovers(ctx context.Context, session *coord.Session, le
 	var problems []error
 	for i := range leftovers {
 		leftover := &leftovers[i]
-		provider, ok := e.Providers[leftover.Provider].(LeftoverProvider)
+		remover, ok := e.Providers[leftover.Provider].(provider.LeftoverProvider)
 		if leftover.Kept != "" || leftover.Run == nil || !ok {
 			continue
 		}
@@ -489,7 +483,7 @@ func (e *Engine) RemoveLeftovers(ctx context.Context, session *coord.Session, le
 			leftover.Kept = leftover.Run.Name() + " is running"
 			continue
 		}
-		err = provider.RemoveLeftover(ctx, leftover.Ref)
+		err = remover.RemoveLeftover(ctx, leftover.Ref)
 		if releaseErr := session.Release(context.WithoutCancel(ctx), lease); err == nil {
 			err = releaseErr
 		}

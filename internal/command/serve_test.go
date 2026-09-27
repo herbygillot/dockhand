@@ -16,6 +16,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/provider"
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
@@ -272,7 +273,7 @@ JSON
 // serve.notify turns notifications on, the default, or off; --no-notify
 // turns them off for one run.
 func TestNotificationsCanBeTurnedOff(t *testing.T) {
-	e := &engine.Engine{Providers: map[string]engine.Provider{}}
+	e := &engine.Engine{Providers: map[string]provider.Provider{}}
 	require.NotNil(t, serveOptions(e, config.File{}, io.Discard, false, false, true).Notify)
 	require.Nil(t, serveOptions(e, config.File{}, io.Discard, false, false, false).Notify)
 	off := false

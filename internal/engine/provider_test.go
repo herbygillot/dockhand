@@ -8,13 +8,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/provider"
 )
 
 // --on names providers that are set up, each once, with releases only
 // where the provider can build on them; with none, the command provider
 // when there is one.
 func TestEnvironmentsAreTheProvidersOnNames(t *testing.T) {
-	e := &Engine{Providers: map[string]Provider{"command": &scriptedProvider{}, "github": &scriptedProvider{}}}
+	e := &Engine{Providers: map[string]provider.Provider{"command": &scriptedProvider{}, "github": &scriptedProvider{}}}
 	environments, err := e.Environments(t.Context(), nil)
 	require.NoError(t, err)
 	require.Equal(t, []model.Environment{{Provider: "command"}}, environments)
@@ -59,7 +60,7 @@ func (*releasing) Environments(ctx context.Context, releases string) ([]model.En
 // release name means Tart, and Tart on the Mac's release is the default
 // when no command provider is set up.
 func TestEnvironmentsOfAProviderThatTakesReleases(t *testing.T) {
-	e := &Engine{Providers: map[string]Provider{"tart": &releasing{}, "github": &scriptedProvider{}}}
+	e := &Engine{Providers: map[string]provider.Provider{"tart": &releasing{}, "github": &scriptedProvider{}}}
 	sonoma := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "23", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsCommandLine}
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
 	environments, err := e.Environments(t.Context(), []string{"tart:sonoma,tahoe", "github", "tahoe"})

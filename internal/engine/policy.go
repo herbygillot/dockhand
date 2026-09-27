@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/provider"
 )
 
 // Judge decides a target's recorded outcome from what its provider
@@ -29,15 +30,6 @@ func Judge(policy model.TestPolicy, result model.TargetResult) model.TargetResul
 	return result
 }
 
-// An OwnTestsProvider runs a port's declared tests whatever a check's
-// policy, as GitHub's workflow does: it is MacPorts' own, and dockhand
-// doesn't change it. Under --tests skip, the tests still run there and
-// don't count.
-type OwnTestsProvider interface {
-	Provider
-	RunsOwnTests() bool
-}
-
 // PolicyNotes say where a plan's test policy can't be carried out as
 // asked, for the plan's preview and its check's heading.
 func (e *Engine) PolicyNotes(plan model.Plan) []string {
@@ -51,7 +43,7 @@ func (e *Engine) PolicyNotes(plan model.Plan) []string {
 			continue
 		}
 		seen = append(seen, name)
-		if provider, ok := e.Providers[name].(OwnTestsProvider); ok && provider.RunsOwnTests() {
+		if own, ok := e.Providers[name].(provider.OwnTestsProvider); ok && own.RunsOwnTests() {
 			notes = append(notes, fmt.Sprintf("%s runs its workflow's own tests; with --tests skip they run there, and don't count", name))
 		}
 	}

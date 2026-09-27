@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/provider"
 )
 
 // The build decides unless the policy requires tests; then tests that
@@ -65,7 +66,7 @@ func TestAResultReadsUnderItsOwnChecksPolicy(t *testing.T) {
 type advisoryHarbor struct{}
 
 func (*advisoryHarbor) Name() string { return "command" }
-func (*advisoryHarbor) Execute(_ context.Context, job Job, build Build) error {
+func (*advisoryHarbor) Execute(_ context.Context, job provider.Job, build provider.Build) error {
 	for _, target := range job.Targets {
 		tests := model.TestsPassed
 		if target.ID == "libharbor" {
@@ -88,7 +89,7 @@ func TestAnEarlierAdvisoryResultKeepsItsPolicy(t *testing.T) {
 	e, _ := f.withPreparer(t)
 	f.withFork(t, e)
 	branch := twoPortBranch(t, e)
-	e.Providers = map[string]Provider{"command": &advisoryHarbor{}}
+	e.Providers = map[string]provider.Provider{"command": &advisoryHarbor{}}
 	checkHead(t, e, branch)
 	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureHead})
 	require.NoError(t, err)

@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/provider"
 )
 
 // A baseline is planned the way a check is, from the base's own Portfiles
@@ -27,7 +28,7 @@ func TestABaselineKeepsEachEnvironmentsRequirements(t *testing.T) {
 	require.NoError(t, err)
 	branch, err := e.Branch(t.Context(), revision.Branch)
 	require.NoError(t, err)
-	e.Providers = map[string]Provider{"command": &scriptedProvider{}}
+	e.Providers = map[string]provider.Provider{"command": &scriptedProvider{}}
 	queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
 	require.NoError(t, err)
 	_, err = e.Drive(t.Context(), session(t, e), queued.ID)
@@ -112,7 +113,7 @@ func TestOnlyTheNewestFailedCheckPointsToABaseline(t *testing.T) {
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch := twoPortBranch(t, e)
-	e.Providers = map[string]Provider{"command": &scriptedProvider{outcomes: map[model.TargetID]model.Outcome{"jq": model.OutcomeFailed, "libharbor": model.OutcomeFailed}}}
+	e.Providers = map[string]provider.Provider{"command": &scriptedProvider{outcomes: map[model.TargetID]model.Outcome{"jq": model.OutcomeFailed, "libharbor": model.OutcomeFailed}}}
 	check := func(only ...string) model.Run {
 		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureHead})
 		require.NoError(t, err)
@@ -156,7 +157,7 @@ type failsOn struct {
 
 func (failsOn) Name() string { return "command" }
 
-func (p failsOn) Execute(_ context.Context, job Job, build Build) error {
+func (p failsOn) Execute(_ context.Context, job provider.Job, build provider.Build) error {
 	for _, target := range job.Targets {
 		result := model.TargetResult{Target: target.ID, Outcome: model.OutcomePassed, Tests: model.TestsNone}
 		if target.ID == p.target && job.Environment == p.environment {
@@ -176,7 +177,7 @@ func TestABaselineRebuildsAPortOnlyWhereItFailed(t *testing.T) {
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch := twoPortBranch(t, e)
-	e.Providers = map[string]Provider{"command": failsOn{environment: tahoeX86, target: "jq"}}
+	e.Providers = map[string]provider.Provider{"command": failsOn{environment: tahoeX86, target: "jq"}}
 	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureHead})
 	require.NoError(t, err)
 	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm, tahoeX86}})

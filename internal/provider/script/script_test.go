@@ -17,6 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/provider"
 	"github.com/herbygillot/dockhand/internal/provider/script"
 )
 
@@ -72,7 +73,7 @@ func checked(t *testing.T, body string) (model.Run, string, *engine.Engine) {
 	capture, err := e.Capture(t.Context(), engine.CaptureRequest{Branch: branch})
 	require.NoError(t, err)
 	e.PortReader = ports{"textproc/jq": {"jq", "jq-docs"}}
-	e.Providers = map[string]engine.Provider{"command": &script.Provider{Run: run, Label: "my build box", Repo: e.Repo}}
+	e.Providers = map[string]provider.Provider{"command": &script.Provider{Run: run, Label: "my build box", Repo: e.Repo}}
 	plan, err := e.PlanCheck(t.Context(), engine.PlanRequest{Revision: capture.Revision, Environments: []model.Environment{{Provider: "command"}}})
 	require.NoError(t, err)
 	queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)

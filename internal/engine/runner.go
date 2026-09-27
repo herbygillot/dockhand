@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/provider"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -222,12 +223,12 @@ func (d *driver) drive(ctx context.Context, id model.RunID) (model.Run, error) {
 		if running.Err() != nil {
 			break
 		}
-		provider, ok := e.Providers[environment.Provider]
+		builder, ok := e.Providers[environment.Provider]
 		if !ok {
 			d.problems = append(d.problems, fmt.Sprintf("no provider %q is set up here", environment.Provider))
 			continue
 		}
-		if err := d.environment(running, provider, environment, revision, commit); err != nil {
+		if err := d.environment(running, builder, environment, revision, commit); err != nil {
 			return d.run, err
 		}
 	}
@@ -274,7 +275,7 @@ func (e *Engine) pollInterval() time.Duration {
 }
 
 // environment runs the guest executions one environment needs.
-func (d *driver) environment(ctx context.Context, provider Provider, environment model.Environment, revision model.Revision, commit string) error {
+func (d *driver) environment(ctx context.Context, builder provider.Provider, environment model.Environment, revision model.Revision, commit string) error {
 	e := d.e
 	for {
 		var executions []model.GuestExecution
@@ -308,14 +309,14 @@ func (d *driver) environment(ctx context.Context, provider Provider, environment
 		// What is left to build here, in this environment's own order,
 		// each target with what it needs built first here.
 		planned, _ := d.plan.In(environment)
-		var remaining []JobTarget
+		var remaining []provider.Target
 		for _, id := range planned.Order {
 			if _, unmet := d.plan.UnmetIn(environment, id); unmet {
 				continue
 			}
 			if result, ok := results[id]; !ok || !result.Outcome.Complete() {
 				target, _ := d.plan.Target(id)
-				remaining = append(remaining, JobTarget{PlanTarget: target, DependsOn: planned.Dependencies[id]})
+				remaining = append(remaining, provider.Target{PlanTarget: target, DependsOn: planned.Dependencies[id]})
 			}
 		}
 		if len(remaining) == 0 {
@@ -344,9 +345,9 @@ func (d *driver) environment(ctx context.Context, provider Provider, environment
 			return err
 		}
 		build := &build{d: d, ctx: ctx, execution: execution, results: results}
-		job := Job{Run: d.run, Execution: execution, Revision: revision, Plan: d.plan, Environment: environment, Targets: remaining, Commit: commit,
+		job := provider.Job{Run: d.run, Execution: execution, Revision: revision, Plan: d.plan, Environment: environment, Targets: remaining, Commit: commit,
 			Directory: filepath.Join(e.LogDirectory(), d.run.Name(), fmt.Sprintf("%s-%d", environmentSlug(environment), execution.Attempt))}
-		err := provider.Execute(ctx, job, build)
+		err := builder.Execute(ctx, job, build)
 		build.blockRemaining(remaining)
 		// The build's copy holds what the provider reported.
 		execution = build.execution
@@ -494,7 +495,7 @@ func (b *build) Progress(message string) {
 
 // blockRemaining records as blocked the targets a provider left without a
 // result whose changed dependency did not pass.
-func (b *build) blockRemaining(targets []JobTarget) {
+func (b *build) blockRemaining(targets []provider.Target) {
 	for _, target := range targets {
 		if _, ok := b.results[target.ID]; ok {
 			continue
