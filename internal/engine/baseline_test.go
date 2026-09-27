@@ -99,3 +99,47 @@ func TestABaselineTakesPortsThatFailedWhileBuilding(t *testing.T) {
 	require.Equal(t, []string{"installs", "tests", "both"}, worthy)
 	require.Equal(t, []string{"lints", "fetches"}, skipped)
 }
+
+// A failed check points to a baseline of what it could explain, and only
+// the branch's newest check does, the one check --baseline looks into. A
+// check's own results are what it explains, as its report shows them: a
+// port its --only left out isn't among them, whatever an earlier check of
+// the same files found.
+func TestOnlyTheNewestFailedCheckPointsToABaseline(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch := twoPortBranch(t, e)
+	e.Providers = map[string]Provider{"command": &scriptedProvider{outcomes: map[model.TargetID]model.Outcome{"jq": model.OutcomeFailed, "libharbor": model.OutcomeFailed}}}
+	check := func(only ...string) model.Run {
+		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureHead})
+		require.NoError(t, err)
+		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}, Only: only})
+		require.NoError(t, err)
+		queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
+		require.NoError(t, err)
+		completed, err := e.Drive(t.Context(), session(t, e), queued.ID)
+		require.NoError(t, err)
+		require.Equal(t, model.RunFailed, completed.State)
+		return completed
+	}
+	first := check()
+	ports, base, err := e.BaselineCandidates(t.Context(), first)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"jq", "libharbor"}, ports)
+	require.Equal(t, branch.Base, base)
+
+	latest := check("libharbor")
+	ports, _, err = e.BaselineCandidates(t.Context(), first)
+	require.NoError(t, err)
+	require.Empty(t, ports, "check-1 is no longer the newest")
+	ports, _, err = e.BaselineCandidates(t.Context(), latest)
+	require.NoError(t, err)
+	require.Equal(t, []string{"libharbor"}, ports)
+
+	baseline, err := e.PlanBaseline(t.Context(), branch, nil)
+	require.NoError(t, err)
+	require.Equal(t, latest.ID, baseline.Of.ID)
+	require.Equal(t, []string{"libharbor:unchanged:also"}, names(baseline.Plan.Targets))
+	_, err = e.PlanBaseline(t.Context(), branch, []string{"jq"})
+	require.ErrorContains(t, err, "--only jq: "+latest.Name()+" did not build it")
+}

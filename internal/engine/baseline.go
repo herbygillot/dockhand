@@ -33,24 +33,20 @@ type Baseline struct {
 
 // PlanBaseline plans a baseline of the branch's newest finished check: of
 // the ports named, or else of the ports that failed in it at install or
-// test (BaselineWorthy). It is planned the way a check
-// is, from the base that check started from, not the branch's base since
-// a rebase: the base's own Portfiles are evaluated in each environment, so
-// its exclusions, dependencies, and needs are the base's, and a port that
+// test (BaselineWorthy). It is planned the way a check is, from the base
+// that check started from, not the branch's base since a rebase: the
+// base's own Portfiles are evaluated in each environment, so its
+// exclusions, dependencies, and needs are the base's, and a port that
 // needs Xcode is unmet where there is none, not sent there.
 func (e *Engine) PlanBaseline(ctx context.Context, branch model.Branch, ports []string) (Baseline, error) {
 	var baseline Baseline
 	var checked model.Revision
+	var found bool
 	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		runs, err := r.Runs(store.RunFilter{Branch: branch.ID, States: []model.RunState{model.RunPassed, model.RunFailed, model.RunAttention}})
-		if err != nil {
+		var err error
+		if baseline.Of, found, err = latestCheck(r, branch.ID); err != nil || !found {
 			return err
 		}
-		i := slices.IndexFunc(runs, func(run model.Run) bool { return run.BaselineOf == "" })
-		if i < 0 {
-			return fmt.Errorf("%s has no finished check to compare with; run dockhand check first", branch.ShortName())
-		}
-		baseline.Of = runs[i]
 		if baseline.OfPlan, err = r.Plan(baseline.Of.Plan); err != nil {
 			return err
 		}
@@ -60,11 +56,14 @@ func (e *Engine) PlanBaseline(ctx context.Context, branch model.Branch, ports []
 	if err != nil {
 		return baseline, err
 	}
+	if !found {
+		return baseline, fmt.Errorf("%s has no finished check to compare with; run dockhand check first", branch.ShortName())
+	}
+	evidence, err := e.RunEvidence(ctx, baseline.Of.ID)
+	if err != nil {
+		return baseline, err
+	}
 	if len(ports) == 0 {
-		evidence, err := e.RunEvidence(ctx, baseline.Of.ID)
-		if err != nil {
-			return baseline, err
-		}
 		ports, baseline.Skipped = BaselineWorthy(evidence)
 		if len(ports) == 0 {
 			if len(baseline.Skipped) > 0 {
@@ -74,28 +73,16 @@ func (e *Engine) PlanBaseline(ctx context.Context, branch model.Branch, ports []
 		}
 	}
 	base := checked.Source.Base
-	trees, err := e.Repo.CommitTrees(ctx, []string{string(base)})
+	targets, added, baseTree, err := e.atBase(ctx, base, evidence, ports)
 	if err != nil {
 		return baseline, err
 	}
-	baseTree := trees[string(base)]
+	baseline.New = added
 	var also []string
 	directories := map[string]string{}
-	for _, name := range ports {
-		target, ok := baseline.OfPlan.Target(model.TargetID(name))
-		if !ok {
-			return baseline, fmt.Errorf("--only %s: %s did not build it", name, baseline.Of.Name())
-		}
-		state, _, err := e.Repo.File(ctx, baseTree, target.Target.Portfile)
-		if err != nil {
-			return baseline, err
-		}
-		if !state.Exists {
-			baseline.New = append(baseline.New, name)
-			continue
-		}
-		also = append(also, name)
-		directories[name] = target.Directory
+	for _, target := range targets {
+		also = append(also, string(target.ID))
+		directories[string(target.ID)] = target.Directory
 	}
 	if len(also) == 0 {
 		return baseline, fmt.Errorf("%s: master %s has none of them, so there is nothing to compare", strings.Join(baseline.New, ", "), short(base))
@@ -118,6 +105,88 @@ func (e *Engine) PlanBaseline(ctx context.Context, branch model.Branch, ports []
 		return baseline, fmt.Errorf("master %s builds none of %s anywhere this check built", short(base), strings.Join(also, ", "))
 	}
 	return baseline, nil
+}
+
+// BaselineCandidates are what check --baseline would build after a failed
+// check, for the check to point to it: the ports that failed at install or
+// test (BaselineWorthy) that master has, and the base the check started
+// from, where it would build them. There are none unless the check failed
+// and is its branch's newest finished one, the one --baseline looks into.
+func (e *Engine) BaselineCandidates(ctx context.Context, run model.Run) ([]string, model.ObjectID, error) {
+	if run.State != model.RunFailed || run.BaselineOf != "" {
+		return nil, "", nil
+	}
+	var latest model.Run
+	var checked model.Revision
+	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		if latest, _, err = latestCheck(r, run.Branch); err != nil || latest.ID != run.ID {
+			return err
+		}
+		checked, err = r.Revision(run.Revision)
+		return err
+	})
+	if err != nil || latest.ID != run.ID {
+		return nil, "", err
+	}
+	evidence, err := e.RunEvidence(ctx, run.ID)
+	if err != nil {
+		return nil, "", err
+	}
+	worthy, _ := BaselineWorthy(evidence)
+	if len(worthy) == 0 {
+		return nil, "", nil
+	}
+	targets, _, _, err := e.atBase(ctx, checked.Source.Base, evidence, worthy)
+	if err != nil || len(targets) == 0 {
+		return nil, "", err
+	}
+	var ports []string
+	for _, target := range targets {
+		ports = append(ports, string(target.ID))
+	}
+	return ports, checked.Source.Base, nil
+}
+
+// latestCheck is a branch's newest finished check, not a baseline: the
+// one a baseline looks into.
+func latestCheck(r store.Reader, branch model.BranchID) (model.Run, bool, error) {
+	runs, err := r.Runs(store.RunFilter{Branch: branch, States: []model.RunState{model.RunPassed, model.RunFailed, model.RunAttention}})
+	if err != nil {
+		return model.Run{}, false, err
+	}
+	i := slices.IndexFunc(runs, func(run model.Run) bool { return run.BaselineOf == "" })
+	if i < 0 {
+		return model.Run{}, false, nil
+	}
+	return runs[i], true, nil
+}
+
+// atBase sorts ports a check built into those whose Portfile master has
+// at base, and those the branch adds, with base's tree.
+func (e *Engine) atBase(ctx context.Context, base model.ObjectID, evidence Evidence, names []string) (have []model.PlanTarget, added []string, tree string, err error) {
+	trees, err := e.Repo.CommitTrees(ctx, []string{string(base)})
+	if err != nil {
+		return nil, nil, "", err
+	}
+	tree = trees[string(base)]
+	for _, name := range names {
+		i := slices.IndexFunc(evidence.Targets, func(target TargetEvidence) bool { return target.Target.ID == model.TargetID(name) })
+		if i < 0 {
+			return nil, nil, "", fmt.Errorf("--only %s: %s did not build it", name, evidence.Run.Name())
+		}
+		target := evidence.Targets[i].Target
+		state, _, err := e.Repo.File(ctx, tree, target.Target.Portfile)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		if !state.Exists {
+			added = append(added, name)
+			continue
+		}
+		have = append(have, target)
+	}
+	return have, added, tree, nil
 }
 
 // BaselineWorthy sorts a check's failed ports into those a baseline can

@@ -9,15 +9,15 @@ import (
 )
 
 // withOutcomeScript configures a command provider that reports jq as
-// ~/outcome says, so a test can change what the next build does.
+// ~/outcome says, "passed", or "failed" and the phase, install unless
+// named, so a test can change what the next build does.
 func withOutcomeScript(t *testing.T, w world, config string) func(string) {
 	t.Helper()
 	script := filepath.Join(w.home, "bin", "build-ports")
 	require.NoError(t, os.MkdirAll(filepath.Dir(script), 0o755))
 	require.NoError(t, os.WriteFile(script, []byte(`#!/bin/sh
-outcome=$(cat "$HOME/outcome")
-phase=""
-[ "$outcome" = failed ] && phase=', "phase": "install"'
+read -r outcome phase < "$HOME/outcome"
+[ "$outcome" = failed ] && phase=", \"phase\": \"${phase:-install}\""
 cat > "$(dirname "$1")/result.json" <<JSON
 {"version": 1, "targets": [{"id": "jq", "outcome": "$outcome"$phase}]}
 JSON
@@ -50,11 +50,13 @@ func TestBaselineComparesWithTheBase(t *testing.T) {
 	_, _, err = dockhand(t, "check", "--baseline")
 	require.ErrorContains(t, err, "nothing failed in check-1, so there is nothing to compare; name ports with --only")
 
+	// A failed check points to the baseline.
 	next("failed")
-	_, _, err = dockhand(t, "check")
+	out, _, err := dockhand(t, "check")
 	require.Equal(t, 2, ExitCode(err))
+	require.Regexp(t, "\n\nTo see whether jq fails at master [0-9a-f]{7} too: dockhand check --baseline --branch jq-update\n$", out)
 	next("passed")
-	out, _, err := dockhand(t, "check", "--baseline")
+	out, _, err = dockhand(t, "check", "--baseline")
 	require.NoError(t, err, "a baseline is evidence, and never fails")
 	require.Contains(t, out, "jq-update · baseline of check-2: jq at master ")
 	require.Contains(t, out, "jq at master ")
@@ -72,6 +74,23 @@ func TestBaselineComparesWithTheBase(t *testing.T) {
 	next("failed")
 	out, _, err = dockhand(t, "check")
 	require.Equal(t, 2, ExitCode(err))
-	require.Contains(t, out, "check-4 failed; check.baseline builds what failed at the base:\n")
+	require.Contains(t, out, "dockhand check --baseline --branch jq-update\ncheck.baseline runs it now:\njq-update · baseline of check-4: jq at master ")
 	require.Contains(t, out, "  ✗ fails at the base too, at install. Both results are kept; the cause isn't established.\n")
+
+	// A port that failed before building is the branch's own doing: no
+	// hint, and check.baseline doesn't run.
+	next("failed fetch")
+	out, _, err = dockhand(t, "check")
+	require.Equal(t, 2, ExitCode(err))
+	require.Contains(t, out, "  jq  ✗ failed at fetch\n")
+	require.NotContains(t, out, "--baseline")
+	require.NotContains(t, out, "check.baseline")
+	_, _, err = dockhand(t, "check", "--baseline")
+	require.ErrorContains(t, err, "jq failed only before building, at lint, fetch, or checksum, which master can't speak to; --only builds them there anyway")
+
+	// Only the branch's newest check points to it, the one --baseline
+	// looks into.
+	out, _, err = dockhand(t, "wait", "check-4")
+	require.Equal(t, 2, ExitCode(err))
+	require.NotContains(t, out, "--baseline")
 }

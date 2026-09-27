@@ -56,3 +56,21 @@ Tests:
 - the review's probes, as a baseline that keeps each environment's Xcode needs and builds only the ports named, with an exclusion counted once for a directory named twice;
 - a baseline after a rebase that builds at the checked base;
 - which failed ports a baseline takes.
+
+## A failed check points to the baseline
+
+The person decided that baselines stay off by default, and that a failed check says which command builds its ports at master (design-v3.md §6.8).
+
+- **The hint.** A failed check ends with `To see whether jq fails at master 1a2b3c4 too: dockhand check --baseline --branch jq-update`. It names the ports and the master the check started from. It names the branch as `status`'s hints do, since `wait` reports a check from anywhere.
+- **When it appears.** Only when a baseline can answer something (`engine.BaselineCandidates`):
+  - for a port that failed at install or test (`BaselineWorthy`), not only at lint, fetch, or checksum;
+  - for a port master has at that base, not one the branch adds;
+  - when the check is the branch's newest finished one, the one `--baseline` looks into. `wait` on an older check doesn't point to it.
+- **`check.baseline = true`** runs the baseline the check pointed to, after "check.baseline runs it now:", and none when it pointed to none. Before, it ran one after any failure, and printed PlanBaseline's error when nothing qualified.
+- **A shared lookup.** `PlanBaseline` and `BaselineCandidates` share `latestCheck` and `atBase`, so what the hint names is what `--baseline` builds. The ports are found among the check's own results.
+
+Tests:
+- the hint after a failed check, and `check.baseline` running it after the hint;
+- no hint, and no automatic baseline, for a port that failed at fetch, whose `--baseline` names why;
+- no hint from `wait` on a check that is no longer the newest;
+- the candidates of a full check and of a narrowed one after it, and a baseline of the narrowed one.

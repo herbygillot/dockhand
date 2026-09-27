@@ -48,8 +48,9 @@ the files now, on what --on names (decision 29: switching is explicit).
 --baseline builds the ports that failed at install or test in the branch's
 latest check, or the --only ones, at the master that check started from,
 planned there as a check would be, and reports each beside the branch's
-result. It says what happened in each run and nothing more. With
-check.baseline = true, a failed check runs one by itself.`,
+result. It says what happened in each run and nothing more. A failed check
+points to it when a baseline can answer something; with check.baseline =
+true, it runs that baseline by itself.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
@@ -115,11 +116,16 @@ check.baseline = true, a failed check runs one by itself.`,
 				fmt.Fprintf(streams.Out, "%s replaces %s.\n", run.Name(), strings.Join(replaced, ", "))
 			}
 			err = runQueued(ctx, e, run, streams, enqueue)
-			// check.baseline runs a baseline of what failed, by itself.
+			// check.baseline runs the baseline the failed check pointed to,
+			// by itself, when it pointed to one. The report has said why
+			// if it couldn't tell.
 			if exit := new(ExitError); errors.As(err, &exit) && exit.Code == 2 && s.file.Check.Baseline && !enqueue {
-				fmt.Fprintf(streams.Out, "\n%s failed; check.baseline builds what failed at the base:\n", run.Name())
-				if baselineErr := runBaseline(ctx, e, streams, branch, nil, false); baselineErr != nil {
-					fmt.Fprintf(streams.Err, "baseline: %v\n", baselineErr)
+				finished, _ := e.RunNamed(ctx, run.Name())
+				if ports, _, _ := e.BaselineCandidates(ctx, finished); len(ports) > 0 {
+					fmt.Fprintln(streams.Out, "check.baseline runs it now:")
+					if baselineErr := runBaseline(ctx, e, streams, branch, nil, false); baselineErr != nil {
+						fmt.Fprintf(streams.Err, "baseline: %v\n", baselineErr)
+					}
 				}
 			}
 			return err
@@ -416,11 +422,35 @@ func report(ctx context.Context, e *engine.Engine, run model.Run, streams Stream
 		fmt.Fprintf(out, "Passed for %s.\n", engine.Describe(revision))
 		return nil
 	case model.RunFailed:
+		if err := hintBaseline(ctx, e, out, run); err != nil {
+			fmt.Fprintf(streams.Err, "baseline: %v\n", err)
+		}
 		return exitf(2, "%s failed for %s: %s. Logs: dockhand logs %s", run.Name(), engine.Describe(revision), run.Detail, run.Name())
 	case model.RunCanceled:
 		return exitf(130, "%s stopped; finished results are kept", run.Name())
 	}
 	return exitf(3, "%s needs attention: %s", run.Name(), run.Detail)
+}
+
+// hintBaseline points a failed check to check --baseline when a baseline
+// can say something about what failed: whether master fails the same way
+// (Design v3 §6.8). That is a port master has that failed at install or
+// test; a lint, fetch, or checksum failure is the branch's own.
+func hintBaseline(ctx context.Context, e *engine.Engine, out io.Writer, run model.Run) error {
+	ports, base, err := e.BaselineCandidates(ctx, run)
+	if err != nil || len(ports) == 0 {
+		return err
+	}
+	branch, err := e.Branch(ctx, run.Branch)
+	if err != nil {
+		return err
+	}
+	fails := "fails"
+	if len(ports) > 1 {
+		fails = "fail"
+	}
+	fmt.Fprintf(out, "To see whether %s %s at master %s too: dockhand check --baseline --branch %s\n", strings.Join(ports, ", "), fails, engine.Short(base), branch.ShortName())
+	return nil
 }
 
 // writeResults shows each target's result, indented. On one environment
