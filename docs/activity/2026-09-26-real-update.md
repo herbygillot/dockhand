@@ -134,3 +134,8 @@ submit.
   - Every read now goes through one path, the last one included.
   - The guest also writes its facts as soon as it has gathered them.
   - A test reproduces the window, and fails on the old code.
+- **`.DS_Store` made every build "dirty".** Go marks a build modified
+  when `git status --porcelain` shows anything, untracked files included.
+  So Finder's `.DS_Store` files stamped a `+dirty` version into the
+  pull requests' signature, until they were built from a clean worktree.
+  `.gitignore` now ignores `.DS_Store`.
