@@ -37,6 +37,9 @@ type fakeForge struct {
 	rerequested []string
 	// statuses are what Inspect reports, by number.
 	statuses map[int]record.PullRequestStatus
+	// createFails fails the next Create: after opening the pull request,
+	// as a reply lost on the way back, when lost is set, or before.
+	createFails, lost bool
 }
 
 func (f *fakeForge) AuthenticatedUser(context.Context) (string, error) { return "ada", nil }
@@ -96,11 +99,25 @@ func (f *fakeForge) Observe(_ context.Context, ref record.PullRequestRef) (forge
 }
 
 func (f *fakeForge) Create(_ context.Context, input forge.PullRequestInput) (forge.PullRequestObservation, error) {
+	if f.createFails && !f.lost {
+		f.createFails = false
+		return forge.PullRequestObservation{}, errors.New("github: connection reset before the request was sent")
+	}
+	// GitHub refuses a second pull request from one head to one base.
+	for _, pr := range f.prs {
+		if pr.HeadRepository == input.HeadRepository && pr.HeadBranch == input.HeadBranch && pr.BaseBranch == input.BaseBranch && pr.State == record.PullRequestOpen {
+			return forge.PullRequestObservation{}, fmt.Errorf("%w: a pull request already exists for %s:%s", forge.ErrRejected, input.HeadRepository, input.HeadBranch)
+		}
+	}
 	f.created = append(f.created, input)
 	f.next++
 	number := 34900 + f.next
 	f.prs[number] = &record.PullRequest{Ref: record.PullRequestRef{Forge: forge.GitHub, Repository: input.Repository, Number: number, URL: fmt.Sprintf("https://github.com/%s/pull/%d", input.Repository, number)},
 		HeadRepository: input.HeadRepository, HeadBranch: input.HeadBranch, BaseBranch: input.BaseBranch, State: record.PullRequestOpen, Title: input.Desired.Title, Body: input.Desired.Body}
+	if f.createFails {
+		f.createFails = false
+		return forge.PullRequestObservation{}, errors.New("github: connection reset after the request was sent")
+	}
 	return f.observe(f.prs[number]), nil
 }
 

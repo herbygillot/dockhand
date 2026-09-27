@@ -459,6 +459,8 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, e
 	}
 	var result Submitted
 	if !plan.RemoteHead.Exists || plan.RemoteHead.Object != plan.Commit {
+		// A fork's branch that holds the commit already, as a submit
+		// racing this one leaves it, is pushed (git.Push).
 		if err := worktree.Push(ctx, git.Push{Remote: plan.PushURL, Branch: plan.RemoteBranch(), Commit: plan.Commit, ExpectedRemote: plan.RemoteHead}); err != nil {
 			var conflict *git.RefConflict
 			if errors.As(err, &conflict) {
@@ -474,6 +476,9 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, e
 	if plan.Existing == nil {
 		observed, err = e.forge().Create(ctx, input)
 		result.Created = true
+		if err != nil {
+			observed, err = e.createdAnyway(ctx, plan, err)
+		}
 	} else {
 		ref := plan.Existing.PullRequest.Ref
 		input.ExistingPR = &ref
@@ -524,7 +529,23 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, e
 			Message: fmt.Sprintf("%s #%d with %s", verb, observed.PullRequest.Ref.Number, short(model.ObjectID(plan.Commit)))})
 		return err
 	})
-	return result, err
+	if err != nil {
+		return result, fmt.Errorf("#%d is open with %s, but recording it failed: %w; dockhand submit again finds it and records it", observed.PullRequest.Ref.Number, short(model.ObjectID(plan.Commit)), err)
+	}
+	return result, nil
+}
+
+// createdAnyway reads back whether a pull request is open for the fork's
+// branch after creating one failed: the reply may have been lost after
+// GitHub opened it, or GitHub refused one because a submit racing this
+// one opened it first. One found is this branch's, and is not written
+// again; with none, the failure stands.
+func (e *Engine) createdAnyway(ctx context.Context, plan SubmitPlan, failed error) (forge.PullRequestObservation, error) {
+	found, err := e.forge().Find(ctx, forge.PullRequestQuery{Repository: UpstreamRepository, HeadRepository: plan.HeadRepository, HeadBranch: plan.RemoteBranch(), BaseBranch: UpstreamBranch})
+	if err != nil || !found.Found || found.PullRequest.State != record.PullRequestOpen {
+		return forge.PullRequestObservation{}, failed
+	}
+	return found, nil
 }
 
 // Ready takes a branch's draft pull request out of draft, so it is ready
