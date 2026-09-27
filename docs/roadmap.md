@@ -63,19 +63,13 @@ In order. Each item lands in its own commits with an activity note, and a review
 
    **Not split:** `command`, whose size is its job, `portedit`, which already delegates, and the CLI verbs into packages of their own.
 
-5. **Retire v2.** The binary uses none of v2's orchestration, but some of it is still live:
-   - about two dozen live packages import `record`;
-   - the Tart provider imports `verify/staging`;
-   - `tools/survey`, the oracle's survey, runs on `assess`;
-   - `tools/stateperf` runs on `state` and `workflow`.
+5. **Retire v2.** Done 2026-09-27 ([note](activity/2026-09-27-retire-v2.md)):
+   - v2's recovery promises for publishing are v3 tests, and the one v3 lacked is built: a pull request is read back when opening it fails, so a lost reply or two racing submits end with one;
+   - `tools/stateperf` is retired, `verify/staging` is `buildenv/staging`, and `assess` is part of `tools/survey`;
+   - `workflow`, `state`, `publish`, `verify`, `git/changeset`, and `macports/dependents` are deleted, 35,477 lines, with the functions only they called;
+   - `record`'s live types moved to `model`, `forge`, and `macports/commitmsg`, and `record` is deleted.
 
-   The previous roadmap's "remove the v2 packages" missed the last three. So, in order:
-   - **v2's recovery promises, as v3 tests.** A pull request whose creation reply was lost is found and updated, not opened twice; submit already looks for one on the head branch, untested. A push is refused when the fork's branch moved. A person's edited description is kept. Anything v3 lacks is built then.
-   - **`record`'s live types move to their owners.** They go to `model` and `forge`, with a small neutral release contract where a move would make a cycle. Retired records are not moved into `model`. `forge.PullRequestInput` loses the v2-only fields v3 never sets.
-   - **`verify/staging` moves to a neutral home.**
-   - **`assess` moves under `tools/survey`, or stays on purpose.** `tools/stateperf` is retired.
-   - **A dependency check refuses new imports of the retired packages.**
-   - **Then the deletion:** `workflow`, `state`, `publish`, `verify` apart from staging, `git/changeset`, and `macports/dependents`. Their timing-sensitive tests go with them ([note](activity/2026-09-27-golden-gate-images.md#found-not-done)).
+   The order changed from the one planned: settling the three things outside v2 that used it let v2 go whole, before `record` moved. The planned check against new imports of retired packages was then moot.
 
 6. **Reuse and archives** (decisions 28 and 44; the previous step 9). This builds on item 2's predicate, and takes planning and that predicate out of the engine as it changes them (item 4).
    - **Per-target reuse** by recorded observations, negative ones included.
