@@ -119,23 +119,27 @@ config` lists each release's:
 
 Setup takes the archive of exactly that version, `Xcode_26.6.xip` or its
 `_Apple_silicon` or `_Universal` form, never a newer one in its place,
-nor a beta or a release candidate. Without it, setup says which Xcode to
-download.
+nor a beta or a release candidate. The Xcode must still run on the
+release. Setup takes an archive only once `pkgutil --check-signature`
+says it is Apple's, since the guest's `xip --expand` doesn't check.
+Without the archive, setup says which Xcode to download.
 
 With [xcodes](https://github.com/XcodesOrg/xcodes) installed (`sudo port
-install xcodes`), setup downloads the missing Xcode into the folder. At a
-terminal it asks first, and xcodes asks there for your Apple ID and
-two-factor code when it needs them. It keeps the password in your
-Keychain and its session, and dockhand never sees them. Without a
-terminal, setup downloads with the sign-in xcodes kept, and when xcodes
-fails, as it does at once when it has none, setup shows what xcodes said
-and how to sign in once at a terminal. Setup takes the archive only once `pkgutil --check-signature` says
-it is Apple's, and it finds xcodes' names, `Xcode-15.4.0+15F31d.xip`, as
-it finds Apple's. xcodes signs in through Apple's own sign-in, which
-Apple doesn't document for other programs, so it can stop working when
-Apple changes it; then download the archive from Apple by hand. The Xcode must still run on the release. `providers.tart.xcode`
-names another Xcode for a release, such as the 16.2 MacPorts' GitHub CI
-pins on Sonoma:
+install xcodes`), setup downloads the missing Xcode into the folder, and
+finds xcodes' names, `Xcode-15.4.0+15F31d.xip`, as it finds Apple's:
+- **At a terminal,** setup asks first. xcodes asks there for your Apple ID
+  and two-factor code when it needs them, and keeps the password in your
+  Keychain and its session; dockhand never sees them.
+- **Without a terminal,** setup downloads with the sign-in xcodes kept.
+  When xcodes fails, as it does at once when it has none, setup shows
+  what xcodes said and how to sign in once at a terminal.
+
+xcodes signs in through Apple's own sign-in, which Apple doesn't document
+for other programs, so it can stop working when Apple changes it; then
+download the archive from Apple by hand.
+
+`providers.tart.xcode` names another Xcode for a release, such as the
+16.2 MacPorts' GitHub CI pins on Sonoma:
 
 ```toml
 [providers.tart.xcode]

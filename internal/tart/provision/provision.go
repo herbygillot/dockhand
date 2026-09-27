@@ -118,8 +118,11 @@ type Provisioner struct {
 	Progress io.Writer
 	// Digest reads what a source names at its registry; the OCI
 	// distribution API's answer (tart.Registry) when nil.
-	Digest  func(ctx context.Context, source string) (string, error)
-	backend machine
+	Digest func(ctx context.Context, source string) (string, error)
+	// Signature checks an Xcode archive is Apple's; pkgutil's answer
+	// (macos.CheckXcodeSignature) when nil.
+	Signature func(ctx context.Context, path string) error
+	backend   machine
 }
 
 // sourceDigest is what a source names at its registry.
@@ -158,6 +161,17 @@ func (p *Provisioner) Run(ctx context.Context, options Options) (Result, error) 
 	config, release, err := normalize(p.Config)
 	if err != nil {
 		return Result{}, err
+	}
+	// An Xcode archive is Apple's before it goes near an image: the
+	// guest's xip --expand doesn't check its signature.
+	if config.XcodeArchive != "" {
+		signature := p.Signature
+		if signature == nil {
+			signature = macos.CheckXcodeSignature
+		}
+		if err := signature(ctx, config.XcodeArchive); err != nil {
+			return Result{}, fmt.Errorf("setup: %w", err)
+		}
 	}
 	machine := p.backend
 	if machine == nil {

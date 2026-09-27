@@ -72,10 +72,8 @@ type Provider struct {
 	stager  func(ctx context.Context, job buildenv.Job, input guestInput, archive string) error
 	// host is this Mac's Darwin release; the kernel's when zero.
 	host int
-	// xcodes and checkSignature stand in for xcodes and Apple's signature
-	// check in tests.
-	xcodes         string
-	checkSignature func(ctx context.Context, path string) error
+	// xcodes stands in for xcodes in tests.
+	xcodes string
 }
 
 func (p *Provider) Name() string { return "tart" }

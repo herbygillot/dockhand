@@ -2,8 +2,6 @@ package tart
 
 import (
 	"bytes"
-	"context"
-	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -118,7 +116,7 @@ func TestOnlyAnXcodeImageAsksForXcode(t *testing.T) {
 }
 
 // xcodes downloads what setup is missing into the folder setup looked in,
-// and the archive is taken only as Apple's.
+// where setup finds it; a failure is xcodes', and says why.
 func TestXcodesDownloadsTheMissingXcode(t *testing.T) {
 	t.Parallel()
 	folder := t.TempDir()
@@ -128,10 +126,8 @@ func TestXcodesDownloadsTheMissingXcode(t *testing.T) {
 echo "asked for $2" >&2
 : > "$4/Xcode-$2.0+15F31d.xip"
 `)
-	checked := ""
 	p := testProvider(newMac())
 	p.xcodes = xcodes
-	p.checkSignature = func(_ context.Context, path string) error { checked = path; return nil }
 	sonoma, err := macos.ParseRelease("sonoma")
 	require.NoError(t, err)
 	_, _, err = macos.SelectXcode(folder, sonoma, "15.4")
@@ -142,7 +138,6 @@ echo "asked for $2" >&2
 	path, err := p.DownloadXcode(t.Context(), missing, strings.NewReader(""), &out, &errs)
 	require.NoError(t, err)
 	require.Equal(t, "Xcode-15.4.0+15F31d.xip", filepath.Base(path))
-	require.Equal(t, path, checked, "checked as Apple's")
 	require.Equal(t, "asked for 15.4\n", errs.String(), "xcodes talks to the person directly")
 
 	failing := filepath.Join(t.TempDir(), "xcodes")
@@ -153,10 +148,6 @@ echo "asked for $2" >&2
 	require.ErrorIs(t, err, ErrXcodes)
 	require.Contains(t, errs.String(), "Missing username or a password", "xcodes says why itself")
 
-	p.xcodes = xcodes
-	p.checkSignature = func(context.Context, string) error { return errors.New("not Apple's") }
-	_, err = p.DownloadXcode(t.Context(), missing, strings.NewReader(""), &out, &errs)
-	require.ErrorContains(t, err, "not Apple's")
 	missing.Folder = ""
 	_, err = p.DownloadXcode(t.Context(), missing, strings.NewReader(""), &out, &errs)
 	require.ErrorContains(t, err, "is one archive, not a folder")

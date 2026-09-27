@@ -206,7 +206,8 @@ func testProvisioner(t *testing.T, machine *fakeMachine) *Provisioner {
 	home := filepath.Join(t.TempDir(), "tart")
 	require.NoError(t, os.MkdirAll(home, 0o700))
 	return &Provisioner{Config: Config{Platform: testPlatform, Home: home}, backend: machine,
-		Digest: func(context.Context, string) (string, error) { return testDigest, nil }}
+		Digest:    func(context.Context, string) (string, error) { return testDigest, nil },
+		Signature: func(context.Context, string) error { return nil }}
 }
 
 func TestExistingDefaultImageIsValidatedInDisposableClone(t *testing.T) {
@@ -610,4 +611,23 @@ func TestABaseImageIsNeverAskedForXcode(t *testing.T) {
 	_, err := provisioner.Run(t.Context(), Options{})
 	require.ErrorContains(t, err, "Xcode 26.6 was asked for without an Xcode archive")
 	require.Empty(t, machine.events)
+}
+
+// An Xcode archive that isn't Apple's is refused before anything is made:
+// the guest's xip --expand doesn't check signatures.
+func TestAnXcodeArchiveMustBeApples(t *testing.T) {
+	directory := t.TempDir()
+	require.NoError(t, os.WriteFile(directory+"/Xcode_26.6_Apple_silicon.xip", nil, 0o600))
+	machine := newFakeMachine()
+	provisioner := testProvisioner(t, machine)
+	provisioner.Config.Xcode = directory
+	checked := ""
+	provisioner.Signature = func(_ context.Context, path string) error {
+		checked = path
+		return errors.New("macos: it isn't signed by Apple")
+	}
+	_, err := provisioner.Run(t.Context(), Options{})
+	require.ErrorContains(t, err, "setup: macos: it isn't signed by Apple")
+	require.Equal(t, "Xcode_26.6_Apple_silicon.xip", filepath.Base(checked))
+	require.Empty(t, machine.events, "nothing is made")
 }

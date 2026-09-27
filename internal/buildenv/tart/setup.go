@@ -194,8 +194,8 @@ func (p *Provider) Xcodes() (string, bool) {
 var ErrXcodes = errors.New("xcodes couldn't download it")
 
 // DownloadXcode downloads the Xcode setup is missing with xcodes, into the
-// folder setup looked in, and checks the archive is Apple's before setup
-// takes it. At a terminal, the person answers xcodes' sign-in there;
+// folder setup looked in, where setup finds it and checks it is Apple's
+// before taking it. At a terminal, the person answers xcodes' sign-in there;
 // without one, xcodes uses the sign-in it keeps, and fails at once when it
 // has none.
 func (p *Provider) DownloadXcode(ctx context.Context, missing *MissingXcode, in io.Reader, out, errs io.Writer) (string, error) {
@@ -215,11 +215,7 @@ func (p *Provider) DownloadXcode(ctx context.Context, missing *MissingXcode, in 
 	if err != nil {
 		return "", fmt.Errorf("xcodes finished, and still: %w", err)
 	}
-	check := p.checkSignature
-	if check == nil {
-		check = macos.CheckXcodeSignature
-	}
-	return path, check(ctx, path)
+	return path, nil
 }
 
 // XcodeFor is the Xcode a release's Xcode image installs: the one the

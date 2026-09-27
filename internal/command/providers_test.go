@@ -201,7 +201,7 @@ func TestSetupOffersToDownloadAMissingXcode(t *testing.T) {
 	require.Len(t, images.asked, 2, "setup runs again once it's downloaded")
 	require.Contains(t, out.String(), "Sonoma's Xcode is 15.4, and /Volumes/Xcodes has no archive of it.\n")
 	require.Contains(t, errs.String(), "Download Xcode 15.4 with xcodes, signing in with your Apple ID? [y/N] ")
-	require.Contains(t, out.String(), "Downloaded Xcode-15.4.0+15F31d.xip, signed by Apple.\n")
+	require.Contains(t, out.String(), "Downloaded Xcode-15.4.0+15F31d.xip.\n")
 	require.Contains(t, out.String(), "Made dockhand-xcode-sonoma: macOS 14 (Sonoma) with Xcode 15.4")
 
 	images.errs, images.downloaded = []error{missing}, nil
@@ -217,7 +217,7 @@ func TestSetupOffersToDownloadAMissingXcode(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"15.4"}, images.downloaded)
 	require.Contains(t, out2, "Downloading Xcode 15.4 with xcodes...\n")
-	require.Contains(t, out2, "Downloaded Xcode-15.4.0+15F31d.xip, signed by Apple.\n")
+	require.Contains(t, out2, "Downloaded Xcode-15.4.0+15F31d.xip.\n")
 
 	images.errs, images.downloaded = []error{missing}, nil
 	images.failure = "Apple ID: Missing username or a password. Please try again.\n"

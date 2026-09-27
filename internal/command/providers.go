@@ -251,7 +251,7 @@ func offerXcode(ctx context.Context, images tartImages, streams Streams, missing
 			return err
 		}
 	}
-	fmt.Fprintf(streams.Out, "Downloaded %s, signed by Apple.\n", filepath.Base(path))
+	fmt.Fprintf(streams.Out, "Downloaded %s.\n", filepath.Base(path))
 	return nil
 }
 
