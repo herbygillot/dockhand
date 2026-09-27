@@ -168,6 +168,30 @@ func (r *Repository) ResetIndex(ctx context.Context) error {
 	return err
 }
 
+// MoveCheckout moves the branch this checkout has out, from commit from to
+// commit to, with its index and working files, as git reset --keep does:
+// the files that differ between the two are rewritten, within the
+// checkout's sparse paths, and a local change to one of them, or an
+// untracked file in the way, stops it with nothing changed. It is what
+// undoes a rebase, whose files are the rebased commit's.
+func (r *Repository) MoveCheckout(ctx context.Context, from, to string) error {
+	if !ValidObjectID(from) || !ValidObjectID(to) {
+		return fmt.Errorf("git: literal commits are required")
+	}
+	branch, head, err := r.checkoutHead(ctx)
+	if err != nil {
+		return err
+	}
+	if branch == "" {
+		return fmt.Errorf("git: no branch is checked out")
+	}
+	if head != from {
+		return fmt.Errorf("git: the checkout is at %s, not %s", head, from)
+	}
+	_, err = r.output(ctx, "reset", "--quiet", "--keep", to)
+	return err
+}
+
 // FileBlobs maps each of paths that tree holds to its object ID; a path
 // the tree lacks is absent from the map.
 func (r *Repository) FileBlobs(ctx context.Context, tree string, paths []string) (map[string]string, error) {

@@ -642,7 +642,8 @@ func (e *Engine) ApplyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 		if err != nil {
 			return err
 		}
-		checkpoint = model.Checkpoint{Number: number, Kind: model.CheckpointTidy, Branch: plan.Branch.ID, Before: model.ObjectID(plan.Head), After: model.ObjectID(parent), Index: model.ObjectID(index), At: e.now()}
+		checkpoint = model.Checkpoint{Number: number, Kind: model.CheckpointTidy, Branch: plan.Branch.ID, Before: model.ObjectID(plan.Head), After: model.ObjectID(parent),
+			BaseBefore: model.ObjectID(plan.Base), BaseAfter: model.ObjectID(plan.Base), Index: model.ObjectID(index), At: e.now()}
 		if err := worktree.UpdateRefs(ctx, []git.RefChange{
 			{Name: checkpoint.Ref(), Desired: git.RefValue{Exists: true, Object: plan.Head}},
 			{Name: checkpoint.IndexRef(), Desired: git.RefValue{Exists: true, Object: keptIndex}},
@@ -675,10 +676,13 @@ func (e *Engine) ApplyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 	return result, nil
 }
 
-// Restore puts a branch's history back as a checkpoint kept it, and the
-// index as it kept that, when the branch and its index are still where
-// the tidy or rebase that made it left them. The working files are not
-// touched, so edits tidy had committed read as uncommitted again.
+// Restore puts a branch's history back as a checkpoint kept it, when the
+// branch and its index are still where the tidy or rebase that made it
+// left them. A tidy's puts the index back as it kept that, and leaves the
+// working files alone, so edits tidy had committed read as uncommitted
+// again. A rebase's puts back the files too, as they were before it, and
+// the master the branch started from, in the transaction that marks it
+// restored.
 func (e *Engine) Restore(ctx context.Context, name string) (model.Checkpoint, model.Branch, error) {
 	kind, digits, _ := strings.Cut(name, "-")
 	number, err := strconv.Atoi(digits)
@@ -730,16 +734,25 @@ func (e *Engine) Restore(ctx context.Context, name string) (model.Checkpoint, mo
 			return checkpoint, branch, fmt.Errorf("something was staged in %s since %s; restoring the index would replace it, so nothing was changed. Commit it, or set it aside (git stash), first", branch.Name, name)
 		}
 	}
-	if err := worktree.UpdateRefs(ctx, []git.RefChange{{Name: "refs/heads/" + branch.Name,
-		Expected: git.RefValue{Exists: true, Object: string(checkpoint.After)}, Desired: git.RefValue{Exists: true, Object: string(checkpoint.Before)}}}); err != nil {
-		return checkpoint, branch, err
-	}
-	if checkpoint.Index != "" {
-		if err := worktree.SetIndex(ctx, string(checkpoint.Index)); err != nil {
+	if checkpoint.Kind == model.CheckpointRebase {
+		// A rebase ran with nothing uncommitted and left the files as the
+		// rebased commit has them. They go back with the history, or
+		// master's newer files would read as the branch's own edits.
+		if err := worktree.MoveCheckout(ctx, string(checkpoint.After), string(checkpoint.Before)); err != nil {
+			return checkpoint, branch, fmt.Errorf("restoring %s puts back master's older files too, and a change to one of them stops it, so nothing was changed. Commit it (dockhand tidy), or set it aside, first: %w", name, err)
+		}
+	} else {
+		if err := worktree.UpdateRefs(ctx, []git.RefChange{{Name: "refs/heads/" + branch.Name,
+			Expected: git.RefValue{Exists: true, Object: string(checkpoint.After)}, Desired: git.RefValue{Exists: true, Object: string(checkpoint.Before)}}}); err != nil {
 			return checkpoint, branch, err
 		}
-	} else if err := worktree.ResetIndex(ctx); err != nil {
-		return checkpoint, branch, err
+		if checkpoint.Index != "" {
+			if err := worktree.SetIndex(ctx, string(checkpoint.Index)); err != nil {
+				return checkpoint, branch, err
+			}
+		} else if err := worktree.ResetIndex(ctx); err != nil {
+			return checkpoint, branch, err
+		}
 	}
 	restored := e.now()
 	checkpoint.RestoredAt = &restored
@@ -747,8 +760,22 @@ func (e *Engine) Restore(ctx context.Context, name string) (model.Checkpoint, mo
 		if err := tx.MarkRestored(checkpoint); err != nil {
 			return err
 		}
-		_, err := tx.AppendEvent(model.Event{At: restored, Branch: branch.ID, Kind: "branch.restore", Level: model.LevelInfo,
-			Message: fmt.Sprintf("restored %s's history from %s", branch.Name, name)})
+		message := fmt.Sprintf("restored %s's history from %s", branch.Name, name)
+		current, err := tx.Branch(branch.ID)
+		if err != nil {
+			return err
+		}
+		// The history put back starts from the master it started from
+		// then, whatever the branch's base is now.
+		if checkpoint.BaseBefore != "" && current.Base != checkpoint.BaseBefore {
+			message += fmt.Sprintf(", back onto master %s", short(checkpoint.BaseBefore))
+			current.Base = checkpoint.BaseBefore
+			if err := tx.UpdateBranch(current); err != nil {
+				return err
+			}
+		}
+		branch = current
+		_, err = tx.AppendEvent(model.Event{At: restored, Branch: branch.ID, Kind: "branch.restore", Level: model.LevelInfo, Message: message})
 		return err
 	})
 	return checkpoint, branch, err

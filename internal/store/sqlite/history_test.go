@@ -61,7 +61,7 @@ func TestEditsCheckpointsAndAcceptances(t *testing.T) {
 		return tx.AddEdit(bad)
 	}), model.ErrInvalid, "an edit that changed nothing is refused")
 
-	checkpoint := model.Checkpoint{Number: 1, Kind: model.CheckpointTidy, Branch: b.ID, Before: "old", After: "new", At: at}
+	checkpoint := model.Checkpoint{Number: 1, Kind: model.CheckpointTidy, Branch: b.ID, Before: "old", After: "new", BaseBefore: "m1", BaseAfter: "m1", At: at}
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.AddCheckpoint(checkpoint) }))
 	require.ErrorIs(t, f.update(t, func(tx store.Tx) error {
 		again := checkpoint
@@ -72,8 +72,11 @@ func TestEditsCheckpointsAndAcceptances(t *testing.T) {
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.MarkRestored(checkpoint) }))
 	require.Error(t, f.update(t, func(tx store.Tx) error { return tx.MarkRestored(checkpoint) }), "a checkpoint is restored once")
 	require.NoError(t, f.update(t, func(tx store.Tx) error {
-		return tx.AddCheckpoint(model.Checkpoint{Number: 2, Kind: model.CheckpointRebase, Branch: b.ID, Before: "new", After: "rebased", At: at})
+		return tx.AddCheckpoint(model.Checkpoint{Number: 2, Kind: model.CheckpointRebase, Branch: b.ID, Before: "new", After: "rebased", BaseBefore: "m1", BaseAfter: "m2", At: at})
 	}), "kinds share one numbering")
+	require.ErrorIs(t, f.update(t, func(tx store.Tx) error {
+		return tx.AddCheckpoint(model.Checkpoint{Number: 3, Kind: model.CheckpointTidy, Branch: b.ID, Before: "rebased", After: "tidied", BaseBefore: "m2", BaseAfter: "m3", At: at})
+	}), model.ErrInvalid, "a tidy doesn't move the base")
 
 	accepted := model.Acceptance{Branch: b.ID, Commit: "c1", Port: "harbor-cli", At: at}
 	require.NoError(t, f.update(t, func(tx store.Tx) error {
@@ -98,6 +101,7 @@ func TestEditsCheckpointsAndAcceptances(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, all, 2)
 		require.Equal(t, "rebase-2", all[1].Name())
+		require.Equal(t, [2]model.ObjectID{"m1", "m2"}, [2]model.ObjectID{all[1].BaseBefore, all[1].BaseAfter}, "a checkpoint keeps the base before and after")
 		list, err := r.Acceptances(b.ID, "c1")
 		require.NoError(t, err)
 		require.Equal(t, []model.Acceptance{accepted}, list)

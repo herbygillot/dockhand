@@ -117,6 +117,10 @@ type Checkpoint struct {
 	Branch BranchID
 	// Before is the branch head it replaced, and After the one it wrote.
 	Before, After ObjectID
+	// BaseBefore and BaseAfter are the master the branch started from
+	// before and after: a rebase moves it, and a tidy doesn't. Empty for
+	// checkpoints recorded before they were kept.
+	BaseBefore, BaseAfter ObjectID
 	// Index is the tree the index held before the rewrite, which can hold
 	// staged content neither Before nor the working files have. IndexRef
 	// keeps it reachable. Empty when nothing was recorded, as for a
@@ -145,6 +149,10 @@ func (c Checkpoint) Validate() error {
 		return invalid("checkpoint %d has unknown kind %q", c.Number, c.Kind)
 	case c.Before == "" || c.After == "":
 		return invalid("checkpoint %s has no heads", c.Name())
+	case c.BaseBefore == "" || c.BaseAfter == "":
+		return invalid("checkpoint %s has no base", c.Name())
+	case c.Kind == CheckpointTidy && c.BaseBefore != c.BaseAfter:
+		return invalid("checkpoint %s moved the base, which a tidy doesn't", c.Name())
 	case c.At.IsZero():
 		return invalid("checkpoint %s has no time", c.Name())
 	}

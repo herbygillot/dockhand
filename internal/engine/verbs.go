@@ -143,7 +143,7 @@ func (e *Engine) Rebase(ctx context.Context, branch model.Branch) (Rebased, erro
 		return Rebased{}, err
 	} else if base == string(master) {
 		result.UpToDate = true
-		return result, e.setBase(ctx, branch, master, "")
+		return result, e.Store.Update(ctx, e.Repository, func(tx store.Tx) error { return e.setBase(tx, branch, master, "") })
 	}
 	if result.Commits, err = worktree.CountCommits(ctx, string(branch.Base), head); err != nil {
 		return Rebased{}, err
@@ -158,7 +158,9 @@ func (e *Engine) Rebase(ctx context.Context, branch model.Branch) (Rebased, erro
 	if err != nil {
 		return Rebased{}, err
 	}
-	checkpoint := model.Checkpoint{Kind: model.CheckpointRebase, Branch: branch.ID, Before: model.ObjectID(head), After: model.ObjectID(rebased), At: e.now()}
+	// The checkpoint and the branch's new base are recorded together, so
+	// the checkpoint's base is always the branch's.
+	checkpoint := model.Checkpoint{Kind: model.CheckpointRebase, Branch: branch.ID, Before: model.ObjectID(head), After: model.ObjectID(rebased), BaseBefore: branch.Base, BaseAfter: master, At: e.now()}
 	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 		if checkpoint.Number, err = tx.NextCheckpointNumber(); err != nil {
 			return err
@@ -166,33 +168,35 @@ func (e *Engine) Rebase(ctx context.Context, branch model.Branch) (Rebased, erro
 		if err := worktree.UpdateRefs(ctx, []git.RefChange{{Name: checkpoint.Ref(), Desired: git.RefValue{Exists: true, Object: head}}}); err != nil {
 			return err
 		}
-		return tx.AddCheckpoint(checkpoint)
+		if err := tx.AddCheckpoint(checkpoint); err != nil {
+			return err
+		}
+		return e.setBase(tx, branch, master, checkpoint.Name())
 	})
 	if err != nil {
-		return Rebased{}, fmt.Errorf("the rebase is done, but its checkpoint was not recorded: %w", err)
+		return Rebased{}, fmt.Errorf("the rebase is done, but neither its checkpoint nor its new base was recorded: %w", err)
 	}
 	result.Checkpoint = &checkpoint
-	return result, e.setBase(ctx, branch, master, checkpoint.Name())
+	return result, nil
 }
 
-func (e *Engine) setBase(ctx context.Context, branch model.Branch, base model.ObjectID, checkpoint string) error {
-	return e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-		current, err := tx.Branch(branch.ID)
-		if err != nil {
-			return err
-		}
-		previous := current.Base
-		current.Base = base
-		if err := tx.UpdateBranch(current); err != nil {
-			return err
-		}
-		message := fmt.Sprintf("rebased %s from master %s onto %s", branch.Name, short(previous), short(base))
-		if checkpoint != "" {
-			message += " (checkpoint " + checkpoint + ")"
-		}
-		_, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: "branch.rebase", Level: model.LevelInfo, Message: message})
+// setBase records a branch's new base, and the rebase that moved it.
+func (e *Engine) setBase(tx store.Tx, branch model.Branch, base model.ObjectID, checkpoint string) error {
+	current, err := tx.Branch(branch.ID)
+	if err != nil {
 		return err
-	})
+	}
+	previous := current.Base
+	current.Base = base
+	if err := tx.UpdateBranch(current); err != nil {
+		return err
+	}
+	message := fmt.Sprintf("rebased %s from master %s onto %s", branch.Name, short(previous), short(base))
+	if checkpoint != "" {
+		message += " (checkpoint " + checkpoint + ")"
+	}
+	_, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: "branch.rebase", Level: model.LevelInfo, Message: message})
+	return err
 }
 
 // Archive hides a branch from status without touching its files, its Git

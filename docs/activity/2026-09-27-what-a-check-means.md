@@ -74,3 +74,22 @@ Tests:
 - no hint, and no automatic baseline, for a port that failed at fetch, whose `--baseline` names why;
 - no hint from `wait` on a check that is no longer the newest;
 - the candidates of a full check and of a narrowed one after it, and a baseline of the narrowed one.
+
+## Restoring a rebase puts back its base and files
+
+- **Before.** A rebase moved the branch's base, but its checkpoint kept only the heads, so `restore rebase-4` put the history back and left the base at the newer master. The review's probe showed the result: the next tidy failed with "is not above its base".
+- **Something the review missed.** Restore never touches the working files, which is right for a tidy, whose files are the person's edits. A rebase's files are the rebased commit's, though. After restoring one, master's newer files read as the branch's uncommitted edits: a check would build those ports as changed, and a tidy would commit master's changes into the branch. Restoring only the base would have made checks worse, since they'd count the difference from the older master.
+- **Now:**
+  - **A checkpoint keeps the base before and after** (schema 13, `base_before` and `base_after`). A rebase records the master it moved from and to; a tidy records the base twice, since it doesn't move it. `Checkpoint.Validate` requires both, equal for a tidy.
+  - **A rebase records its checkpoint and the branch's new base in one transaction,** so the two can't disagree. Before, a separate transaction set the base afterwards. Where Git changes happen relative to the transaction is roadmap item 3.
+  - **Restoring a rebase moves the checkout back:** the branch, index, and files, from the rebased head to the old one (`git.MoveCheckout`, which runs `git reset --keep`). It follows the sparse checkout. A local change to a file it would put back, or an untracked file in the way, stops it and changes nothing.
+  - **Then it sets the branch's base back** to the checkpoint's `BaseBefore`, in the transaction that marks the checkpoint restored.
+  - **A rebase checkpoint made before schema 13** has no base. Restoring it puts back the history and files, and says the branch still counts from the newer master until `dockhand rebase` puts its commits there.
+  - **Output.** `restore` says "Restored dockhand/notes to its history and files before rebase-2 (1a2b3c4), on master 5d6e7f8 again." A tidy's restore reads as before. `--json` adds the branch's base.
+
+Tests:
+- the review's probe, extended: after a rebase and its restore, the head, the base, and a clean worktree, and a tidy that plans;
+- a local change to a file the restore would put back stops it, changing nothing;
+- `MoveCheckout` in a sparse checkout: it moves the branch and files back, keeps a change to a file it doesn't move, leaves paths outside the checkout outside, and refuses a conflicting local change or a checkout at another commit;
+- the store keeps a checkpoint's base, and refuses a tidy that moves it;
+- `restore` of a current rebase checkpoint and of one without a base.

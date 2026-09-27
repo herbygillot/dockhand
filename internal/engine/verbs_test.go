@@ -67,9 +67,26 @@ func TestRebaseMovesTheBranchOntoFreshMaster(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, rebased.To, current.Base, "the branch's base moves with it")
 
+	require.Equal(t, rebased.From, rebased.Checkpoint.BaseBefore)
+	require.Equal(t, rebased.To, rebased.Checkpoint.BaseAfter)
+
+	// Restoring puts back the history, the files, and the base together.
+	// (The architecture review of 2026-09-27, finding 3.)
+	write(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "mine\n"})
 	_, _, err = e.Restore(t.Context(), "rebase-1")
+	require.ErrorContains(t, err, "restoring rebase-1 puts back master's older files too, and a change to one of them stops it, so nothing was changed")
+	require.Equal(t, string(rebased.Checkpoint.After), run(t, branch.Worktree, "rev-parse", "HEAD"))
+	run(t, branch.Worktree, "checkout", "--", "devel/libharbor/Portfile")
+	_, restored, err := e.Restore(t.Context(), "rebase-1")
 	require.NoError(t, err)
 	require.Equal(t, string(rebased.Checkpoint.Before), run(t, branch.Worktree, "rev-parse", "HEAD"))
+	require.Empty(t, run(t, branch.Worktree, "status", "--porcelain"), "master's newer files don't read as the branch's edits")
+	require.Equal(t, rebased.From, restored.Base)
+	current, err = e.Resolve(t.Context(), "jq-update")
+	require.NoError(t, err)
+	require.Equal(t, rebased.From, current.Base, "the history put back starts from the master it started from")
+	_, err = e.PlanTidy(t.Context(), TidyRequest{Branch: current})
+	require.NoError(t, err, "not: is not above its base")
 }
 
 func TestARebaseThatConflictsChangesNothing(t *testing.T) {
