@@ -42,6 +42,25 @@ type updateJSON struct {
 	Revbumped []string `json:"revbumped,omitempty"`
 	// Stealth is a checksum refresh's stealth update.
 	Stealth *stealthJSON `json:"stealth,omitempty"`
+	// Upstream is what comparing the old and new upstream archives found,
+	// as update prints it; absent when they weren't compared.
+	Upstream *upstreamJSON `json:"upstream,omitempty"`
+}
+
+type upstreamJSON struct {
+	Changes []upstreamChangeJSON `json:"changes"`
+	// Problem says why the archives could not be compared.
+	Problem string `json:"problem,omitempty"`
+	// Held is whether a change holds the update for a person's look
+	// before serve may submit it.
+	Held bool `json:"held"`
+}
+
+type upstreamChangeJSON struct {
+	Kind    string `json:"kind"`
+	Path    string `json:"path"`
+	Message string `json:"message"`
+	Hold    bool   `json:"hold"`
 }
 
 type stealthJSON struct {
@@ -70,6 +89,12 @@ func updateView(branch model.Branch, started bool, update engine.Update, plan bo
 		Current: update.Current, Applied: update.Applied, Files: nonNil(update.Files), Distfiles: update.Distfiles, Subject: update.Subject, Patches: nonNil(update.PatchProblems)}
 	if plan {
 		view.Diff = update.Diff
+	}
+	if upstream := update.Upstream; upstream != nil {
+		view.Upstream = &upstreamJSON{Changes: []upstreamChangeJSON{}, Problem: upstream.Problem, Held: upstream.Held()}
+		for _, change := range upstream.Changes {
+			view.Upstream.Changes = append(view.Upstream.Changes, upstreamChangeJSON{Kind: change.Kind, Path: change.Path, Message: change.Message, Hold: change.Hold})
+		}
 	}
 	if stealth := update.Stealth; stealth != nil {
 		view.Stealth = &stealthJSON{Revbumped: stealth.Revbumped, RevbumpProblem: stealth.RevbumpProblem, DistSubdir: stealth.DistSubdir, Problem: stealth.Problem, Distfiles: []stealthDistfileJSON{}}

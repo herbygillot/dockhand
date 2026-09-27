@@ -73,7 +73,7 @@ dockhand update jq --new --plan    # what would change, from master, starting no
 
 `update` finds the newest release the Portfile's own rules accept, from the project's GitHub or GitLab tags and releases, or its livecheck. It moves the version, resets the revision, and fills in checksums. For a Go or Rust port whose Portfile lists its dependencies, it regenerates the list with `go2port` or `cargo2port`. `--shared-release` moves every subport sharing the port's release, and `--keep-old-checksums` refreshes legacy md5 or sha1 checksums in place rather than rewriting them as rmd160, sha256, and size.
 
-It then compares the old and new source archives, and reports what a passing build can't catch: a changed license file, a changed build file, a new declared dependency. `dockhand diff --archive jq` shows the same comparison file by file.
+It then compares the old and new source archives, and reports what a passing build can't catch: a changed license file, a changed build file, a new declared dependency. `dockhand diff --archive jq` shows the same comparison file by file. With `--json`, the result's `upstream` holds it: each change, why the archives couldn't be compared if they couldn't, and whether a change holds the update for a look before `serve` submits it. It is absent for a port with no archives, such as one fetched with Git.
 
 `--revbump-dependents` also bumps the revision of every port that links the updated one directly, found in the port index at the branch's base, so users rebuild them. `--except <port>` leaves one out. `tidy` commits each as "<port>: rebuild for <updated> <version>".
 

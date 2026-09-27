@@ -93,3 +93,12 @@ Tests:
 - `MoveCheckout` in a sparse checkout: it moves the branch and files back, keeps a change to a file it doesn't move, leaves paths outside the checkout outside, and refuses a conflicting local change or a checkout at another commit;
 - the store keeps a checkpoint's base, and refuses a tidy that moves it;
 - `restore` of a current rebase checkpoint and of one without a base.
+
+## update --json carries the upstream comparison
+
+- **Before.** `update` printed what comparing the old and new source archives found, and stored it with the edit, but `update --json` left it out. A script driving updates couldn't see a changed license or a new dependency.
+- **Now.** The result has `upstream`: its `changes`, each with `kind`, `path`, `message`, and `hold`; a `problem` when the archives couldn't be compared; and `held`, whether any change holds the update for a look before `serve` submits it. It is absent when nothing was compared, as for a port fetched with Git. The view has its own types, like the command's other results, so the stored form can change without changing the scripting contract.
+
+Tests:
+- `update --json` with archives that couldn't be fetched carries the problem;
+- the whole loop's `update --json`, which has no archives, carries none.

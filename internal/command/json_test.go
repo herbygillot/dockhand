@@ -1,11 +1,14 @@
 package command
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/preparation"
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
@@ -144,6 +147,7 @@ func TestJSONForTheWholeLoop(t *testing.T) {
 	require.Equal(t, "1.7.1", dig(t, updated.Result, "before", "version"))
 	require.Equal(t, "1.8.1", dig(t, updated.Result, "after", "version"))
 	require.Equal(t, []any{"textproc/jq/Portfile"}, updated.Result["files"])
+	require.NotContains(t, updated.Result, "upstream", "a port with no archives to compare")
 
 	_, err = jsonOf(t, "check")
 	require.NoError(t, err)
@@ -190,4 +194,30 @@ func TestJSONForTheWholeLoop(t *testing.T) {
 	notJSON, err := jsonOf(t, "serve", "--drain")
 	require.Error(t, err)
 	require.Equal(t, "--json isn't available for dockhand serve yet; its output is text only", *notJSON.Error)
+}
+
+// unfetchedPrevious is the bumper, where the current version's archives
+// couldn't be fetched to compare with the new one's.
+type unfetchedPrevious struct{ bumper }
+
+func (b unfetchedPrevious) Prepare(ctx context.Context, r preparation.Request) (preparation.Result, error) {
+	result, err := b.bumper.Prepare(ctx, r)
+	result.PreviousProblem = "HTTP 404"
+	return result, err
+}
+
+// update --json carries what comparing the upstream archives found, as
+// update prints it. (The architecture review of 2026-09-27, finding 6.)
+func TestUpdateJSONCarriesTheUpstreamComparison(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	testPreparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{bumper{repo: e.Repo}} }
+	t.Cleanup(func() { testPreparer = nil })
+	started, err := jsonOf(t, "start", "jq-update")
+	require.NoError(t, err)
+	t.Setenv("MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
+
+	updated, err := jsonOf(t, "update", "jq")
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{"changes": []any{}, "problem": "the current version's archives could not be fetched: HTTP 404", "held": false}, updated.Result["upstream"])
 }
