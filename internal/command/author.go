@@ -195,7 +195,10 @@ type linkedOptions struct {
 
 // author finds the branch, makes the edit, and reports it.
 func author(ctx context.Context, s *settings, streams Streams, where branchChoice, purpose string, request engine.UpdateRequest, linked linkedOptions) (branch model.Branch, update engine.Update, err error) {
-	if where.new && request.Plan {
+	// A version update's plan with --new is a look before starting a
+	// branch, against master as fetched now; anything else needs one.
+	fromMaster := where.new && request.Plan
+	if fromMaster && request.Action != record.Bump {
 		return model.Branch{}, engine.Update{}, fmt.Errorf("--plan changes nothing, so it starts no branch; plan in an existing one with --branch, or drop --plan")
 	}
 	e, err := s.open(ctx)
@@ -204,17 +207,23 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	}
 	defer e.Close()
 	var started bool
-	branch, started, err = chooseBranch(ctx, e, streams, where, request.Port, purpose)
-	if err != nil {
-		return branch, update, err
-	}
 	out := streams.Out
-	if started {
-		fmt.Fprintf(out, "Started %s from master %s (fetched just now)\n", branch.Name, engine.Short(branch.Base))
+	if !fromMaster {
+		if branch, started, err = chooseBranch(ctx, e, streams, where, request.Port, purpose); err != nil {
+			return branch, update, err
+		}
+		if started {
+			fmt.Fprintf(out, "Started %s from master %s (fetched just now)\n", branch.Name, engine.Short(branch.Base))
+		}
+		fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), tilde(branch.Worktree))
 	}
-	fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), tilde(branch.Worktree))
-	request.Branch = branch
+	request.Branch, request.FromMaster = branch, fromMaster
 	update, err = e.Update(ctx, request)
+	if fromMaster && err == nil {
+		fmt.Fprintf(out, "Planned on master %s (fetched just now); --new without --plan starts the branch\n", engine.Short(update.Base))
+		// The dependents are the index's at the master planned on.
+		branch.Base = update.Base
+	}
 	if errors.Is(err, engine.ErrUnsupported) {
 		return branch, update, byHand(err, request, branch, started)
 	}

@@ -39,6 +39,9 @@ type UpdateRequest struct {
 	Subject string
 	// Plan prepares the edit and changes nothing.
 	Plan bool
+	// FromMaster plans against master as fetched now, with no branch: a
+	// look before starting one. It goes only with Plan.
+	FromMaster bool
 	// KeepRevision leaves the revision of a stealth update as it is, for a
 	// change that needs no rebuild.
 	KeepRevision bool
@@ -68,6 +71,9 @@ var ErrUnsupported = preparation.ErrUnsupported
 // Update reports an update or checksum refresh.
 type Update struct {
 	Branch model.Branch
+	// Base is the commit the update was prepared on: the branch's base, or
+	// master as fetched for a plan from master.
+	Base model.ObjectID
 	// Port is the name the Portfile evaluates to.
 	Port          string
 	Before, After PortVersion
@@ -115,13 +121,9 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		return Update{}, fmt.Errorf("%q is not a port name", request.Port)
 	}
 	branch := request.Branch
-	worktree, err := e.worktree(ctx, branch)
+	worktree, captured, base, err := e.updateSource(ctx, request)
 	if err != nil {
 		return Update{}, err
-	}
-	_, captured, err := worktree.WorkingTree(ctx)
-	if err != nil {
-		return Update{}, fmt.Errorf("reading %s's working files: %w", branch.Worktree, err)
 	}
 	preparer, err := e.preparer()
 	if err != nil {
@@ -130,7 +132,7 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	input := preparation.Request{
 		EditIntent: record.EditIntent{SharedRelease: request.SharedRelease, KeepOldChecksums: request.KeepOldChecksums},
 		Action:     request.Action,
-		Source:     record.Source{Tree: record.ObjectID(captured), Base: record.ObjectID(branch.Base)},
+		Source:     record.Source{Tree: record.ObjectID(captured), Base: record.ObjectID(base)},
 		Selection:  macports.Selection{Selector: request.Port},
 		Version:    request.Version,
 		Subject:    request.Subject,
@@ -172,6 +174,7 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		}
 	}
 	update := describe(branch, request.Port, result)
+	update.Base = base
 	update.Stealth, update.DistSubdirRemoved = stealth, removed
 	if stealth != nil {
 		update.Subject = update.Port + ": update checksums after a stealth update"
@@ -225,6 +228,35 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		return err
 	})
 	return update, err
+}
+
+// updateSource is what an update is prepared from: the branch's working
+// files on its base, or for a plan from master, master's tree as fetched
+// now, read through the clone, since a plan only reads.
+func (e *Engine) updateSource(ctx context.Context, request UpdateRequest) (*git.Repository, string, model.ObjectID, error) {
+	if request.FromMaster {
+		if !request.Plan || request.Action != record.Bump {
+			return nil, "", "", errors.New("engine: only a version update is planned from master; start a branch for anything else")
+		}
+		master, err := e.fetchMaster(ctx)
+		if err != nil {
+			return nil, "", "", err
+		}
+		trees, err := e.Repo.CommitTrees(ctx, []string{string(master)})
+		if err != nil {
+			return nil, "", "", err
+		}
+		return e.Repo, trees[string(master)], master, nil
+	}
+	worktree, err := e.worktree(ctx, request.Branch)
+	if err != nil {
+		return nil, "", "", err
+	}
+	_, captured, err := worktree.WorkingTree(ctx)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("reading %s's working files: %w", request.Branch.Worktree, err)
+	}
+	return worktree, captured, request.Branch.Base, nil
 }
 
 // editRecord is what tidy later reads: each file's blob before and after,

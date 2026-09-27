@@ -282,3 +282,19 @@ with the guard disabled.
 **Live, against GitHub:**
 - bat-extras and certgraph are current;
 - dolt is 1.81.4 → 2.3.5, its real latest release, from 2026-09-16.
+
+## `update --new --plan` looks before starting a branch
+
+It refused ("--plan changes nothing, so it starts no branch"), though
+previewing an update before starting work is the natural first step.
+
+- **A version update's plan with `--new`** is now prepared on master as
+  fetched now, through the clone, since a plan only reads, and starts no
+  branch. It says so: "Planned on master 444d8ea (fetched just now);
+  --new without --plan starts the branch".
+- **`--revbump-dependents`** lists the dependents from the index at that
+  master. With no branch, none is "already changed by the branch".
+- **Checksum refreshes and revision bumps still need a branch.** A
+  stealth-update check compares against the branch's base.
+- **Live:** `update dolt --new --plan` showed 1.81.4_1 → 2.3.5 on master
+  `444d8ea`, and no branch was made.

@@ -237,9 +237,13 @@ type LinkedPorts struct {
 // LinkedPorts reads a port's direct library dependents for a branch.
 func (e *Engine) LinkedPorts(ctx context.Context, branch model.Branch, port string, except []string) (LinkedPorts, error) {
 	linked := LinkedPorts{Base: branch.Base}
-	status, err := e.BranchStatus(ctx, branch)
-	if err != nil {
-		return linked, err
+	// A look from master, before any branch, changes no ports yet.
+	var status BranchStatus
+	if branch.ID != "" {
+		var err error
+		if status, err = e.BranchStatus(ctx, branch); err != nil {
+			return linked, err
+		}
 	}
 	trees, err := e.Repo.CommitTrees(ctx, []string{string(branch.Base)})
 	if err != nil {

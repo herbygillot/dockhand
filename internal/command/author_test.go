@@ -159,7 +159,16 @@ func TestUpdateWithoutABranchAsksOrSaysHow(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out.String(), "jq: 1.9 → 2.0")
 
-	_, _, err = dockhand(t, "update", "jq", "--new", "--plan")
+	// --new with --plan is a look before starting a branch, on master as
+	// fetched now; it starts none.
+	before := gitRun(t, w.clone, "branch", "--list", "dockhand/*")
+	planned, _, err := dockhand(t, "update", "jq", "--new", "--plan")
+	require.NoError(t, err)
+	require.Regexp(t, `Planned on master [0-9a-f]+ \(fetched just now\); --new without --plan starts the branch\n`, planned)
+	require.Contains(t, planned, "Plan, nothing changed:")
+	require.NotContains(t, planned, "Started ")
+	require.Equal(t, before, gitRun(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
+	_, _, err = dockhand(t, "checksums", "jq", "--new", "--plan")
 	require.ErrorContains(t, err, "starts no branch")
 	_, _, err = dockhand(t, "update", "jq", "--new", "--branch", name)
 	require.ErrorContains(t, err, "none of the others can be")
