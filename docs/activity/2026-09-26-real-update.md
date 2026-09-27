@@ -198,3 +198,54 @@ style.
   4. Otherwise, as before, dockhand asks for the tag.
 - **Tests:** dots lately, dashes lately, both lately so the port's own
   style, and two releases refused.
+
+## The two-port branch: flatbuffers and libsigmf
+
+`outdated --mine` over all the person's ports took 25½ minutes, 6 of them
+CPU:
+
+| Checked | Outdated | Current | Couldn't check |
+|---|---|---|---|
+| 1,076 | 180 | 729 | 167 |
+
+Most that couldn't be checked use a Portfile convention automatic
+discovery doesn't take. Crossing the outdated ports with the port index's
+dependencies found three pairs:
+
+- **netdata and libuv**, but libuv has 20 dependents and is far behind;
+- **vapoursynth and av1an**, but av1an's Portfile notes it broke on
+  vapoursynth 73;
+- **flatbuffers, 24.3.25 → 25.12.19, whose one library dependent is
+  libsigmf.** libsigmf regenerates its flatbuffers headers at build time,
+  so a flatbuffers release can break it. This was chosen.
+
+The path:
+
+- **`update flatbuffers --revbump-dependents`** updated the version and
+  checksums and bumped libsigmf's revision. It warned that upstream's
+  `CMakeLists.txt` had changed.
+- **`tidy`** made two commits: "flatbuffers: update to 25.12.19" and
+  "libsigmf: rebuild for flatbuffers 25.12.19".
+
+Noted on the way:
+
+- **The five merged commits carry a `+dirty` Generated-By trailer.** That
+  is `…-583124970cca+dirty`, from the morning's build, when `.DS_Store`
+  made every build dirty. It is permanent in MacPorts' history, and
+  harmless.
+- **This branch's commits were remade instead.** `restore tidy-6`, then
+  `tidy` again with a clean build, gave `…-8d7a84811772` with no
+  `+dirty`.
+- **`update --new --plan` refuses,** since a plan starts no branch.
+  Previewing an update before starting work is natural, so it should plan
+  against fresh master instead. To do.
+- **Probable false positives among the outdated:** dolt → `040.15`,
+  bat-extras → `20200408`, and certgraph → `20220513.20220514.0`. Old,
+  oddly spelled tags win on `vercmp`'s numbers. To do.
+- **`check --on tart:tahoe,sequoia` passed all four builds** (check-17):
+  flatbuffers, then libsigmf, on each release. libsigmf's log shows
+  flatbuffers 25.12.19, built earlier in the same guest, activated before
+  libsigmf was built against it.
+- **`submit`'s preview** lists both commits in the description's table,
+  and both ports on both releases under Tested on. It rightly stops
+  until the person gives a title, since the branch changes two ports.
