@@ -1,0 +1,181 @@
+diff --git a/internal/engine/architecture_review_test.go b/internal/engine/architecture_review_test.go
+new file mode 100644
+--- /dev/null
++++ b/internal/engine/architecture_review_test.go
+@@ -0,0 +1,153 @@
++package engine
++
++import (
++	"context"
++	"testing"
++
++	"github.com/stretchr/testify/require"
++
++	"github.com/herbygillot/dockhand/internal/macports"
++	"github.com/herbygillot/dockhand/internal/model"
++)
++
++// These probes assert the desired contract, and intentionally fail on
++// e8e62eb4. They belong to the review artifact, not the production suite.
++func TestArchitectureReviewRestoreRestoresBase(t *testing.T) {
++	f := setup(t)
++	e, _ := f.withPreparer(t)
++	branch := committedUpdate(t, e)
++	before := branch.Base
++	write(t, f.upstream, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
++	run(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 3")
++	rebased, err := e.Rebase(t.Context(), branch)
++	require.NoError(t, err)
++	_, _, err = e.Restore(t.Context(), rebased.Checkpoint.Name())
++	require.NoError(t, err)
++	current, err := e.Branch(t.Context(), branch.ID)
++	require.NoError(t, err)
++	if current.Base != before {
++		t.Errorf("restored head but base=%s; want original base=%s", current.Base, before)
++	}
++	_, err = e.PlanTidy(t.Context(), TidyRequest{Branch: current})
++	require.NoError(t, err, "a restored branch must remain usable by tidy")
++}
++
++type reviewAbsentSubport struct{ fakePorts }
++
++func (p reviewAbsentSubport) Ports(ctx context.Context, source model.Source, directory string, environment model.Environment) ([]macports.PortInfo, error) {
++	ports, err := p.fakePorts.Ports(ctx, source, directory, environment)
++	if err == nil && directory == "graphics/harbor-viewer" {
++		ports = []macports.PortInfo{port("harbor-viewer")}
++		if environment.Platform.Architecture == "x86_64" {
++			ports = append(ports, port("harbor-viewer-intel"))
++		}
++	}
++	return ports, err
++}
++
++func TestArchitectureReviewAbsentSubportIsNotBuilt(t *testing.T) {
++	f := setup(t)
++	e := f.open(t)
++	revision := harborBranch(t, e)
++	e.PortReader = reviewAbsentSubport{harborPorts()}
++	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm, tahoeX86}})
++	require.NoError(t, err)
++	target, ok := plan.Target("harbor-viewer-intel")
++	require.True(t, ok)
++	require.True(t, plan.Excludes(target, tahoeArm.Platform), "the arm64 evaluation did not define this subport, but its job will receive it")
++}
++
++func TestArchitectureReviewBaselineKeepsEnvironmentRequirements(t *testing.T) {
++	f := setup(t)
++	e := f.open(t)
++	revision := harborBranch(t, e)
++	e.PortReader = xcodeOnArm{fakePorts: harborPorts()}
++	arm := tahoeArm
++	arm.DeveloperTools = model.DeveloperToolsCommandLine
++	intel := tahoeX86
++	intel.DeveloperTools = model.DeveloperToolsXcode
++	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{arm, intel}})
++	require.NoError(t, err)
++	branch, err := e.Branch(t.Context(), revision.Branch)
++	require.NoError(t, err)
++	e.Providers = map[string]Provider{"command": &scriptedProvider{}}
++	queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
++	require.NoError(t, err)
++	_, err = e.Drive(t.Context(), session(t, e), queued.ID)
++	require.NoError(t, err)
++	baseline, err := e.PlanBaseline(t.Context(), branch, []string{"libharbor"})
++	require.NoError(t, err)
++	target, ok := baseline.Plan.Target("libharbor")
++	require.True(t, ok)
++	require.True(t, target.NeedsXcodeIn(arm), "the target still retains its Xcode requirement")
++	_, unmet := baseline.Plan.UnmetIn(arm, target.ID)
++	require.True(t, unmet, "baseline drops the plan's unmet decision and sends this target to CLT")
++}
++
++func TestArchitectureReviewBaselineUsesCheckedBase(t *testing.T) {
++	f := setup(t)
++	e, _ := f.withPreparer(t)
++	branch := twoPortBranch(t, e)
++	checkedBase := branch.Base
++	checkHead(t, e, branch)
++	write(t, f.upstream, map[string]string{"devel/other/Portfile": "name other\nversion 1\n"})
++	run(t, f.upstream, "add", "devel/other/Portfile")
++	run(t, f.upstream, "commit", "-q", "-m", "other: new port")
++	_, err := e.Rebase(t.Context(), branch)
++	require.NoError(t, err)
++	current, err := e.Branch(t.Context(), branch.ID)
++	require.NoError(t, err)
++	baseline, err := e.PlanBaseline(t.Context(), current, []string{"jq"})
++	require.NoError(t, err)
++	require.Equal(t, checkedBase, baseline.Revision.Source.Commit, "a baseline of an old check must use that check's frozen base")
++}
++
++type reviewTestProvider struct{}
++
++func (*reviewTestProvider) Name() string { return "command" }
++func (*reviewTestProvider) Execute(_ context.Context, job Job, build Build) error {
++	for _, target := range job.Targets {
++		tests := model.TestsPassed
++		if job.Plan.Tests == model.TestsDeclared && target.ID == "libharbor" {
++			tests = model.TestsFailed // legitimate passing build under advisory policy
++		}
++		if err := build.Record(model.TargetResult{Target: target.ID, Outcome: model.OutcomePassed, Tests: tests}); err != nil {
++			return err
++		}
++	}
++	return nil
++}
++
++func TestArchitectureReviewReuseHonorsTestPolicy(t *testing.T) {
++	f := setup(t)
++	e, _ := f.withPreparer(t)
++	f.withFork(t, e)
++	branch := twoPortBranch(t, e)
++	e.Providers = map[string]Provider{"command": &reviewTestProvider{}}
++	checkHead(t, e, branch) // libharbor's build passes with failing advisory tests
++	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureHead})
++	require.NoError(t, err)
++	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}, Only: []string{"jq"}, Tests: model.TestsRequired})
++	require.NoError(t, err)
++	queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
++	require.NoError(t, err)
++	_, err = e.Drive(t.Context(), session(t, e), queued.ID)
++	require.NoError(t, err)
++	submission, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq, libharbor: update"})
++	require.NoError(t, err)
++	for _, target := range submission.Evidence.Targets {
++		if target.Target.ID == "libharbor" {
++			t.Logf("required plan: libharbor passed=%v tests=%s blockers=%v", target.Passed, target.Outcomes[0].Tests, submission.Blocking)
++		}
++	}
++	require.NotEmpty(t, submission.Blocking, "earlier failing advisory tests cannot satisfy a required-tests plan")
++}
++
++func TestArchitectureReviewTimedOutTestsAreNotPassing(t *testing.T) {
++	evidence := Evidence{Plan: model.Plan{Environments: []model.Environment{tahoeArm}}, Targets: []TargetEvidence{
++		{Target: model.PlanTarget{ID: "jq", Target: model.Target{Name: "jq"}}, Passed: true, Outcomes: []model.TargetResult{{Outcome: model.OutcomePassed, Tests: model.TestsPassed}}},
++		{Target: model.PlanTarget{ID: "libharbor", Target: model.Target{Name: "libharbor"}}, Passed: true, Outcomes: []model.TargetResult{{Outcome: model.OutcomePassed, Tests: model.TestsTimedOut}}},
++	}}
++	body := ownedSections(bodyFacts{Evidence: &evidence})
++	require.NotContains(t, body, "- [x] tried existing tests", "the PR checklist must not tick tests as passing when one timed out")
++}
+diff --git a/internal/command/architecture_review_test.go b/internal/command/architecture_review_test.go
+new file mode 100644
+--- /dev/null
++++ b/internal/command/architecture_review_test.go
+@@ -0,0 +1,18 @@
++package command
++
++import (
++	"testing"
++
++	"github.com/stretchr/testify/require"
++)
++
++// No network or real fork: githubBranch uses the existing synthetic Git
++// repository and Actions API fixtures.
++func TestArchitectureReviewGitHubHonorsRequiredTests(t *testing.T) {
++	f, _ := githubBranch(t)
++	f.logs = []map[string]string{{"build (macos-14)": built("jq", false), "build (macos-15)": built("jq", true)}}
++	f.conclusion = []string{"success"}
++	out, errs, err := dockhand(t, "check", "--on", "github", "--tests", "required")
++	t.Log(out, errs)
++	require.Error(t, err, "a failing test must fail a check explicitly requiring tests")
++}
