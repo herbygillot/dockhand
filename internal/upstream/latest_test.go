@@ -514,3 +514,49 @@ func TestAutomaticSelectionEvaluatesEveryTagWhenVersionsDontFollowTags(t *testin
 	require.Equal(t, "9.0", result.Release.Version)
 	require.ElementsMatch(t, []string{"5.0", "4.0", "3.0", "2.0"}, evaluated, "each once")
 }
+
+// Tags tied for the newest version at one commit are one release, tagged
+// in two styles: the style the project's releases use lately wins, then the
+// style of the tag the port follows now. Tags at different commits are
+// different releases, and still need naming.
+func TestTiedTagsAtOneCommitTakeTheLatestStyle(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name    string
+		history []string
+		commits map[string]string
+		want    string
+		refused bool
+	}{
+		{"dots lately", []string{"v1.1"}, nil, "v1.2", false},
+		{"dashes lately", []string{"v1-1", "v1.0"}, nil, "v1-2", false},
+		{"both lately, so the port's own", []string{"v1.1", "v1-1"}, nil, "v1.2", false},
+		{"two releases", []string{"v1.1"}, map[string]string{"v1-2": strings.Repeat("b", 40)}, "", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tags := []forge.Tag{{Name: "v1.2"}, {Name: "v1-2"}}
+			for _, name := range test.history {
+				tags = append(tags, forge.Tag{Name: name})
+			}
+			c := &catalog{tags: tags}
+			service := automaticService(t, c)
+			c.tag = tagFunc(func(_ context.Context, _ string, name string) (forge.Tag, error) {
+				commit := strings.Repeat("a", 40)
+				if other, ok := test.commits[name]; ok {
+					commit = other
+				}
+				return forge.Tag{Name: name, Commit: commit}, nil
+			})
+			port := automaticPort()
+			port.Options["github.tarball_from"] = "archive"
+			service.EvaluateVersion = identityVersion
+			result, err := service.DiscoverPort(t.Context(), port)
+			if test.refused {
+				require.ErrorIs(t, err, upstream.ErrReleaseAmbiguous)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, test.want, result.Release.Tag)
+		})
+	}
+}

@@ -121,9 +121,19 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 	if err != nil {
 		return result, err
 	}
-	index, comparison, err := s.newest(ctx, port.Version, spec.Livecheck.Regex, candidates, "the port's livecheck filter", "a tag")
+	tied, comparison, err := s.newestTied(ctx, port.Version, spec.Livecheck.Regex, candidates, "the port's livecheck filter")
 	if err != nil {
 		return result, err
+	}
+	index := tied[0]
+	if len(tied) > 1 {
+		settled := false
+		if index, settled, err = s.sameCommitTag(ctx, repository, spec.Livecheck.Regex, tags, tied, eligibleCandidates, eligibleTags, spec.Pattern.Tag(spec.SourceVersion)); err != nil {
+			return result, err
+		}
+		if !settled {
+			return result, ambiguousNewest("the port's livecheck filter", "a tag")
+		}
 	}
 	tag, err := repository.Tag(ctx, tags[index])
 	if err != nil {

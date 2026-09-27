@@ -171,3 +171,30 @@ Measured: `outdated` for broot, nushell, and miller, all current, took 12½
 seconds, 3 of them CPU. Before, broot alone took 35 seconds, 28 of them CPU.
 By then all five pull requests had been merged, so master had the new
 versions and every port read "current".
+
+## Tied tags at one commit
+
+The person settled what discovery does when two tags tie as the newest
+version: if both point at one commit, take the tag in the most recent tag
+style.
+
+- **Where ties come from.** A port's tag pattern fixes its prefix and
+  suffix, so a tie comes from spellings MacPorts' `vercmp` counts equal:
+  - `1.2` and `1-2`;
+  - `1.02` and `1.2`;
+  - for a port with no fixed prefix whose Portfile strips a `v`, `v1.2`
+    and `1.2`.
+- **A tag's style** is its spelling apart from its numbers: `v1.2` is
+  `v#.#`, and `1-2` is `#-#`. Tags carry no dates, so "most recent" is
+  read from the releases.
+- **The rule, in order:**
+  1. Tied tags at different commits are different releases, and still
+     need naming.
+  2. At one commit, the project's other tags are read from the newest
+     version down. The first release tagged in just one of the tied
+     styles decides.
+  3. If none does, because every release is tagged both ways, the style
+     of the tag the port follows now decides.
+  4. Otherwise, as before, dockhand asks for the tag.
+- **Tests:** dots lately, dashes lately, both lately so the port's own
+  style, and two releases refused.

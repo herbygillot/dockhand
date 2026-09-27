@@ -3,7 +3,10 @@ package upstream
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"slices"
 
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -41,21 +44,98 @@ func followsPrereleases(current string) bool { return version.Classify(current) 
 // port's livecheck expression, compared against the current version.
 // noun and hint word the two failure modes for the caller's catalog.
 func (s *Service) newest(ctx context.Context, current, expression string, candidates []macports.VersionCandidate, noun, hint string) (int, int, error) {
-	selection, err := s.Versions.SelectVersion(ctx, current, expression, candidates)
+	tied, comparison, err := s.newestTied(ctx, current, expression, candidates, noun)
 	if err != nil {
 		return 0, 0, err
 	}
+	if len(tied) != 1 {
+		return 0, 0, ambiguousNewest(noun, hint)
+	}
+	return tied[0], comparison, nil
+}
+
+// newestTied is every candidate tied for newest, compared against the
+// current version.
+func (s *Service) newestTied(ctx context.Context, current, expression string, candidates []macports.VersionCandidate, noun string) ([]int, int, error) {
+	selection, err := s.Versions.SelectVersion(ctx, current, expression, candidates)
+	if err != nil {
+		return nil, 0, err
+	}
 	if len(selection.Indices) == 0 {
-		return 0, 0, fmt.Errorf("%w: no eligible version matches %s", ErrReleaseMissing, noun)
+		return nil, 0, fmt.Errorf("%w: no eligible version matches %s", ErrReleaseMissing, noun)
 	}
-	if len(selection.Indices) != 1 {
-		return 0, 0, fmt.Errorf("%w: multiple %s compare equal as the newest version; specify %s explicitly", ErrReleaseAmbiguous, noun, hint)
+	for _, index := range selection.Indices {
+		if index < 0 || index >= len(candidates) || selection.Comparison < -1 || selection.Comparison > 1 {
+			return nil, 0, fmt.Errorf("upstream: invalid version selection")
+		}
 	}
-	index := selection.Indices[0]
-	if index < 0 || index >= len(candidates) || selection.Comparison < -1 || selection.Comparison > 1 {
-		return 0, 0, fmt.Errorf("upstream: invalid version selection")
+	return selection.Indices, selection.Comparison, nil
+}
+
+func ambiguousNewest(noun, hint string) error {
+	return fmt.Errorf("%w: multiple %s compare equal as the newest version; specify %s explicitly", ErrReleaseAmbiguous, noun, hint)
+}
+
+// tagStyle is how a tag is spelled, apart from its numbers: v1.2 is v#.#,
+// 1-2 is #-#, release-2026.09 is release-#.#.
+func tagStyle(tag string) string {
+	return digits.ReplaceAllString(tag, "#")
+}
+
+var digits = regexp.MustCompile(`[0-9]+`)
+
+// sameCommitTag settles tags tied for the newest version that are one
+// release: all at one commit, spelled in different styles, as a project
+// changing its tag style tags a release both ways. The style the project's
+// releases use lately wins: its other tags are read from the newest down,
+// and the first release tagged in just one of the tied styles decides.
+// When none does, the style of the tag the port follows now does. Tags at
+// different commits are different releases, and are never guessed
+// between.
+func (s *Service) sameCommitTag(ctx context.Context, repository forge.Repository, expression string, tags []string, tied []int, history []macports.VersionCandidate, historyTags []string, current string) (int, bool, error) {
+	commit := ""
+	styles := map[string]int{}
+	for _, index := range tied {
+		tag, err := repository.Tag(ctx, tags[index])
+		if err != nil {
+			return 0, false, err
+		}
+		if commit != "" && tag.Commit != commit {
+			return 0, false, nil
+		}
+		commit = tag.Commit
+		style := tagStyle(tags[index])
+		if _, repeated := styles[style]; repeated {
+			return 0, false, nil
+		}
+		styles[style] = index
 	}
-	return index, selection.Comparison, nil
+	var remaining []int
+	for i, tag := range historyTags {
+		if !slices.ContainsFunc(tied, func(index int) bool { return tags[index] == tag }) {
+			remaining = append(remaining, i)
+		}
+	}
+	for len(remaining) > 0 {
+		group, err := s.newestCaptures(ctx, expression, history, remaining)
+		if err != nil {
+			return 0, false, err
+		}
+		var found []string
+		for _, i := range group {
+			if style := tagStyle(historyTags[i]); !slices.Contains(found, style) {
+				if _, ok := styles[style]; ok {
+					found = append(found, style)
+				}
+			}
+		}
+		if len(found) == 1 {
+			return styles[found[0]], true, nil
+		}
+		remaining = slices.DeleteFunc(remaining, func(i int) bool { return slices.Contains(group, i) })
+	}
+	index, ok := styles[tagStyle(current)]
+	return index, ok, nil
 }
 
 // classified records the release's stability and whether it takes the port
