@@ -1,0 +1,58 @@
+package tart
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/model"
+	tartvm "github.com/herbygillot/dockhand/internal/tart"
+)
+
+// An environment's identity is its image's origin, as setup recorded it on
+// the host, with the guest program's protocol; an image setup recorded no
+// origin of has none.
+func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	home := filepath.Join(t.TempDir(), "tart")
+	require.NoError(t, os.MkdirAll(home, 0o700))
+	provider := &Provider{Tart: tartvm.Client{Home: home}}
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsCommandLine}
+	identity, err := provider.Identity(t.Context(), tahoe)
+	require.NoError(t, err)
+	require.Empty(t, identity, "no record")
+
+	manifest := tartvm.ImageManifest{Protocol: tartvm.ImageManifestProtocol, Source: "ghcr.io/cirruslabs/macos-tahoe-vanilla:latest",
+		SourceDigest: "sha256:eeec54bfe1f076e27786c5d92b89187a05b1d109b5071eb2dcdf02d596e34640", MacPortsVersion: "2.12.6", CommandLineTools: "26.6", SetupProtocol: tartvm.SetupProtocol}
+	require.NoError(t, tartvm.WriteImageRecord(home, "dockhand-base-tahoe", manifest))
+	identity, err = provider.Identity(t.Context(), tahoe)
+	require.NoError(t, err)
+	require.Equal(t, manifest.Origin()+"; verifier 1", identity)
+
+	xcode := tahoe
+	xcode.DeveloperTools = model.DeveloperToolsXcode
+	identity, err = provider.Identity(t.Context(), xcode)
+	require.NoError(t, err)
+	require.Empty(t, identity, "the Xcode image is another image, and has no record")
+}
+
+// guestPin is the digest of the guest program VerifierProtocol 1 covers.
+const guestPin = "c190f4b5715b5e2ff6469d9bac85884d81f0448b69a944363e45ab063f787e95"
+
+// How the guest program builds is identified by VerifierProtocol, part of
+// an environment's origin (decision 28). A change to guest.tcl fails this
+// test until its author decides: raise the protocol, when the change
+// alters how ports are built or judged, which ends reuse of evidence the
+// program recorded before; or, for a change of wording only, update the
+// pin.
+func TestTheVerifierProtocolCoversTheGuestProgram(t *testing.T) {
+	data, err := os.ReadFile("guest.tcl")
+	require.NoError(t, err)
+	sum := sha256.Sum256(data)
+	require.Equal(t, 1, VerifierProtocol)
+	require.Equal(t, guestPin, hex.EncodeToString(sum[:]), "guest.tcl changed: raise VerifierProtocol if ports are built or judged otherwise, or update guestPin if not")
+}

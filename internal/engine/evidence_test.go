@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -82,6 +84,67 @@ func TestANarrowedCheckNeverShrinksWhatSubmitRequires(t *testing.T) {
 	require.Len(t, passing.Ready, 1)
 }
 
+// identified is a scripted provider that says what its environments are
+// now (buildenv.IdentityProvider).
+type identified struct {
+	scriptedProvider
+	identity string
+}
+
+func (p *identified) Identity(context.Context, model.Environment) (string, error) {
+	return p.identity, nil
+}
+
+// A result stands for the environment it ran in only while it is that
+// environment: made again from another source, or with other tools, it is
+// another, and what was built in it is built again (decision 28). Where
+// the provider can't say what it is now, the result stands, as it did
+// before environments had identities.
+func TestAResultStandsOnlyWhileItsEnvironmentDoes(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := twoPortBranch(t, e)
+	provider := &identified{identity: "source sha256:a; setup 1"}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	blocking := func() string {
+		t.Helper()
+		submission, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq, libharbor: update"})
+		require.NoError(t, err)
+		return strings.Join(submission.Blocking, "\n")
+	}
+
+	checkHead(t, e, branch)
+	require.Empty(t, blocking())
+	evidence, _, err := e.EvidenceFor(t.Context(), branch.ID, model.ObjectID(run(t, branch.Worktree, "rev-parse", "HEAD^{tree}")))
+	require.NoError(t, err)
+	require.NotEmpty(t, evidence.Executions)
+	for _, execution := range evidence.Executions {
+		require.Equal(t, "source sha256:a; setup 1", execution.Identity, "recorded as the execution began")
+	}
+
+	provider.identity = ""
+	require.Empty(t, blocking(), "an environment that can't say what it is now is taken as it was")
+
+	provider.identity = "source sha256:b; setup 1"
+	remade := blocking()
+	require.Contains(t, remade, "jq was checked in "+DescribeEnvironment(tahoeArm)+" before it was made again")
+	require.Contains(t, remade, "libharbor was checked in")
+	passing, err := e.PassingBranches(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, passing.Ready, "submit --passing and serve don't count it as passing")
+
+	// A narrowed check in the environment as it is now builds what it
+	// selects; what it left out still needs building there, whichever
+	// check built it before.
+	checkHead(t, e, branch, "jq")
+	remade = blocking()
+	require.NotContains(t, remade, "jq")
+	require.Contains(t, remade, "libharbor was checked in "+DescribeEnvironment(tahoeArm)+" before it was made again")
+	checkHead(t, e, branch, "libharbor")
+	require.Empty(t, blocking(), "the two narrowed checks together stand for the environment as it is now")
+}
+
 // One rule says whether a check's result stands for a target in an
 // environment: the check ran in that whole environment, and planned the
 // target there. (The architecture review of 2026-09-27, finding 1.)
@@ -96,10 +159,22 @@ func TestAResultCountsWhereItsCheckPlannedTheTarget(t *testing.T) {
 				Exclusions: []model.Exclusion{{Target: model.Target{Name: "harbor-intel"}, Reason: "not defined there"}}},
 			{Environment: tahoeX86, Order: []model.TargetID{"libharbor", "harbor-intel"}},
 		}}
-	require.True(t, Counts(recorded, "libharbor", arm))
-	require.True(t, Counts(recorded, "harbor-cli", arm), "what it found there stands, an unmet need too")
-	require.False(t, Counts(recorded, "harbor-intel", arm), "excluded there")
-	require.True(t, Counts(recorded, "harbor-intel", tahoeX86))
-	require.False(t, Counts(recorded, "harbor-cli", tahoeX86), "not planned there: --only left it out")
-	require.False(t, Counts(recorded, "libharbor", xcode), "the same release with other tools is another environment")
+	in := func(environment model.Environment) model.GuestExecution {
+		return model.GuestExecution{ID: "execution", Environment: environment, Identity: "origin a"}
+	}
+	require.True(t, Counts(recorded, in(arm), "libharbor", "origin a"))
+	require.True(t, Counts(recorded, in(arm), "harbor-cli", "origin a"), "what it found there stands, an unmet need too")
+	require.False(t, Counts(recorded, in(arm), "harbor-intel", "origin a"), "excluded there")
+	require.True(t, Counts(recorded, in(tahoeX86), "harbor-intel", "origin a"))
+	require.False(t, Counts(recorded, in(tahoeX86), "harbor-cli", "origin a"), "not planned there: --only left it out")
+	require.False(t, Counts(recorded, in(xcode), "libharbor", "origin a"), "the same release with other tools is another environment")
+
+	// And the environment is still the one it ran in: made from the same
+	// source, with the same tools, set up and verified the same way.
+	require.False(t, Counts(recorded, in(arm), "libharbor", "origin b"), "remade since")
+	require.True(t, Counts(recorded, in(arm), "libharbor", ""), "its identity now is unknown")
+	legacy := in(arm)
+	legacy.Identity = ""
+	require.False(t, Counts(recorded, legacy, "libharbor", "origin a"), "it ran before identities were recorded, and the environment has been made since")
+	require.True(t, Counts(recorded, model.GuestExecution{Environment: arm}, "libharbor", "origin b"), "no execution ran it: planning found it unmet")
 }

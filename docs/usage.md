@@ -193,6 +193,8 @@ dockhand providers setup tart --rebuild     # a replacement, keeping the old one
 
 An image starts from Cirrus Labs' vanilla macOS image, and holds the Command Line Tools of the release's pinned generation and MacPorts: the release dockhand pins, unless `--macports-version` names another. Making one downloads the vanilla image the first time and takes up to 60 GB of disk. A golden copy is kept beside it, and a lost image is restored from it. Golden Gate, macOS 27, needs Tart 2.39.0 or newer, since its images have ASIF disks, which older Tart can't list while they run; setup says so before it starts anything.
 
+Setup records what each image was made from: the vanilla image by digest, and the tools and MacPorts it installed. A check's results stand for the image it ran in. Once an image is made again from a newer vanilla image, or with other tools, what passed in the old one no longer counts, and `status` names the ports to check again. Rebuilding from the same source with the same tools keeps them.
+
 Xcode is an add-on. `--xcode`, given an Xcode `.xip` from Apple or a folder of them, makes `dockhand-xcode-<release>`: the same image with the newest Xcode the release runs, in up to 65 GB more. Betas are never chosen, nor an Xcode older than the release's own tools generation, which lacks its SDK. When a release has one, checks on it use it. A port that needs Xcode, itself or through a changed prerequisite, is built only there; without it, the port is unmet, not failed, and the check says to add the image.
 
 macOS runs at most two VMs at once, your own among them, so `serve` runs one Tart check at a time unless `providers.tart.capacity` says otherwise. `providers.tart.test_timeout` bounds each target's tests, 30 minutes by default.

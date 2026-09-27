@@ -106,6 +106,19 @@ type OwnTestsProvider interface {
 	RunsOwnTests() bool
 }
 
+// An IdentityProvider says what an environment is made from and with: its
+// identity by origin (decision 28), such as a Tart image's source by
+// digest, the setup that made it, its tools and MacPorts, and the guest
+// program's protocol. An environment of the same identity builds a port as
+// another did, so its results stand for it; one of another doesn't. It is
+// the environment as it is now, read without starting anything; empty when
+// the provider can't say, as for an image made before origins were
+// recorded.
+type IdentityProvider interface {
+	Provider
+	Identity(ctx context.Context, environment model.Environment) (string, error)
+}
+
 // A LeftoverProvider makes environments that can outlast the process that
 // made them, as a Tart clone does when the process checking in it dies and
 // no later attempt of its run comes to remove it. It lists them, each by

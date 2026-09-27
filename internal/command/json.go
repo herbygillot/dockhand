@@ -162,7 +162,11 @@ type resultJSON struct {
 	Phase    string `json:"phase,omitempty"`
 	Tests    string `json:"tests,omitempty"`
 	Excluded bool   `json:"excluded,omitempty"`
-	Log      string `json:"log,omitempty"`
+	// Remade is true where a result was recorded before its environment
+	// was made again, and so no longer stands for it: the outcome reads
+	// not_run.
+	Remade bool   `json:"remade,omitempty"`
+	Log    string `json:"log,omitempty"`
 }
 
 type planJSON struct {
@@ -260,8 +264,9 @@ func evidenceView(evidence engine.Evidence) []targetJSON {
 		passed := target.Passed
 		view.Passed = &passed
 		for i, result := range target.Outcomes {
+			environment := evidence.Plan.Environments[i]
 			view.Results = append(view.Results, resultJSON{Outcome: string(result.Outcome), Phase: string(result.Phase), Tests: string(result.Tests), Log: result.Log,
-				Excluded: engine.Excluded(evidence.Plan, target.Target, evidence.Plan.Environments[i])})
+				Excluded: engine.Excluded(evidence.Plan, target.Target, environment), Remade: slices.Contains(target.Remade, environment)})
 		}
 		targets = append(targets, view)
 	}

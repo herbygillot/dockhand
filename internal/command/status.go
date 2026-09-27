@@ -198,13 +198,21 @@ func attentionFor(s engine.BranchStatus) []attention {
 	case model.RunAttention:
 		return row("!", run.Name()+" needs attention: "+run.Detail, "dockhand logs "+run.Name())
 	case model.RunPassed:
-		var unchecked []string
+		var unchecked, remade []string
+		var environment model.Environment
 		for _, target := range s.Evidence.Unchecked() {
-			if target.Target.Role != model.Also {
+			switch {
+			case target.Target.Role == model.Also:
+			case len(target.Remade) > 0:
+				remade = append(remade, target.Target.Target.Name)
+				environment = target.Remade[0]
+			default:
 				unchecked = append(unchecked, target.Target.Target.Name)
 			}
 		}
 		switch {
+		case len(remade) > 0:
+			return row("!", fmt.Sprintf("%s passed, but %s has been made again since, from another source or with other tools; %s must be built there again", run.Name(), environmentWords(environment), strings.Join(remade, ", ")), "dockhand check --branch "+name)
 		case len(unchecked) > 0:
 			return row("!", fmt.Sprintf("%s passed, but no check of these files built %s", run.Name(), strings.Join(unchecked, ", ")), "dockhand check --branch "+name)
 		case len(s.Edited) > 0:

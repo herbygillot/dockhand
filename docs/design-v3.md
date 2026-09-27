@@ -566,6 +566,8 @@ Tests are advisory, as in MacPorts CI: "build passed; tests failed (advisory)" i
 
 Independent targets continue past a failure. Interruptions, infrastructure trouble, and a failed build are distinct outcomes. The result says which snapshot or commit it covers, and `status` says when the current work has moved on: "passed for snapshot 3; the files have changed since".
 
+A result stands for the environment it ran in, and an environment has an identity by origin (decision 28). For Tart, that is the vanilla image's digest, the MacPorts, Command Line Tools, and Xcode setup installed, and the versions of setup's steps and of the guest program that verifies each port. Each provider run records it as it begins. An image made again from another source, or with other tools, is another environment. Its earlier results stop counting, and `status` says so: "check-3 passed, but tart macOS 26 (Tahoe) arm64 with Xcode has been made again since, from another source or with other tools; jq must be built there again". Where a provider can't say what an environment is, a result stands as it was.
+
 ## 8. Tidy, and what MacPorts asks of commits
 
 `tidy` answers the question: **what should a reviewer see as the separate changes in this branch?**

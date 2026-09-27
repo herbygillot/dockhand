@@ -58,7 +58,11 @@ type GuestExecution struct {
 	ProviderRef string
 	// Observed is what the environment reported about itself, when its
 	// provider can say; once reported, it stays.
-	Observed   Observed
+	Observed Observed
+	// Identity is the environment's identity by origin when the execution
+	// began (buildenv.IdentityProvider): what it was made from and with.
+	// Empty where its provider can't say.
+	Identity   string
 	CreatedAt  time.Time
 	FinishedAt *time.Time
 }

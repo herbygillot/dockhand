@@ -149,6 +149,7 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 		}
 	}
 
+	var checks []model.Run
 	err = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		runs, err := r.Runs(store.RunFilter{Branch: branch.ID})
 		if err != nil {
@@ -173,14 +174,14 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 		}
 		status.LatestRevision = &revision
 		status.Current = string(revision.Source.Tree) == status.Tree && revision.Source.Base == branch.Base
-		checks, err := treeRuns(r, branch.ID, revision.Source.Tree)
-		if err != nil {
-			return err
-		}
-		evidence, err := treeEvidence(r, *status.Latest, checks)
-		status.Evidence = &evidence
+		checks, err = treeRuns(r, branch.ID, revision.Source.Tree)
 		return err
 	})
+	if err != nil || status.Latest == nil {
+		return status, err
+	}
+	evidence, err := e.evidenceNow(ctx, *status.Latest, checks)
+	status.Evidence = &evidence
 	return status, err
 }
 

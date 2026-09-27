@@ -37,6 +37,12 @@ import (
 // Protocol is the guest program's input and results format.
 const Protocol = 1
 
+// VerifierProtocol identifies how the guest program builds: part of an
+// environment's origin, so raising it ends reuse of evidence the program
+// recorded before (decision 28). A test pins guest.tcl, and fails until a
+// change to it raises this or, for a change of wording only, re-pins.
+const VerifierProtocol = 1
+
 // guestRoot is where the guest program and the staged tree live in a clone.
 const guestRoot = "/var/tmp/dockhand-check"
 
@@ -86,9 +92,11 @@ func (p *Provider) vms() (machine, error) {
 	return p.machine, nil
 }
 
-// The Tart provider builds on the releases a person names, says how to
-// give a release Xcode, and removes the clones a stopped check left.
+// The Tart provider builds on the releases a person names, says what each
+// image is made from, says how to give a release Xcode, and removes the
+// clones a stopped check left.
 var (
+	_ buildenv.IdentityProvider = (*Provider)(nil)
 	_ buildenv.ReleaseProvider  = (*Provider)(nil)
 	_ buildenv.Remedier         = (*Provider)(nil)
 	_ buildenv.LeftoverProvider = (*Provider)(nil)
@@ -176,6 +184,26 @@ func image(release macos.Release, environment model.Environment) string {
 		return xcodeImage(release)
 	}
 	return baseImage(release)
+}
+
+// Identity is an environment's identity by origin
+// (buildenv.IdentityProvider): its image's origin, as setup recorded it,
+// and the guest program's protocol. Empty for an image setup recorded no
+// origin of.
+func (p *Provider) Identity(_ context.Context, environment model.Environment) (string, error) {
+	release, err := tartvm.ReleaseForPlatform(environment.Platform)
+	if err != nil {
+		return "", err
+	}
+	runtime, err := p.Tart.Resolve()
+	if err != nil {
+		return "", err
+	}
+	manifest, found, err := tartvm.ReadImageRecord(runtime.Home, image(release, environment))
+	if err != nil || !found || manifest.Origin() == "" {
+		return "", err
+	}
+	return fmt.Sprintf("%s; verifier %d", manifest.Origin(), VerifierProtocol), nil
 }
 
 // Remedy is the command that gives a release what an unmet target needs:

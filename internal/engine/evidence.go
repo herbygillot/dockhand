@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -18,9 +19,14 @@ type TargetEvidence struct {
 	Outcomes []model.TargetResult
 	Passed   bool
 	// Unchecked is true when no check of the files built the target in an
-	// environment it is required in: --only left it out, or the check
-	// stopped before it.
+	// environment it is required in: --only left it out, the check stopped
+	// before it, or the environment has been made again since.
 	Unchecked bool
+	// Remade are the environments where the target's result was recorded
+	// before the environment was made again, from another source or with
+	// other tools: another environment, whose results don't stand for it
+	// (Counts).
+	Remade []model.Environment
 }
 
 // Evidence is what the finished checks of a tree established, judged
@@ -40,6 +46,9 @@ type Evidence struct {
 	// policies are the test policies Run's and Earlier's results were
 	// judged under, by check.
 	policies map[model.RunID]model.TestPolicy
+	// now are the environments' identities as they are now, which the
+	// results' own are compared with (Counts).
+	now identities
 }
 
 // Words is how one target's result in one environment reads, on the
@@ -149,18 +158,59 @@ func Acceptable(target model.PlanTarget) bool {
 // snapshot or commit was checked, because a check builds files, not
 // history. It reports false when no finished check covers the tree.
 func (e *Engine) EvidenceFor(ctx context.Context, branch model.BranchID, tree model.ObjectID) (Evidence, bool, error) {
-	var evidence Evidence
-	found := false
-	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		runs, err := treeRuns(r, branch, tree)
-		if err != nil || len(runs) == 0 {
-			return err
+	var runs []model.Run
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		runs, err = treeRuns(r, branch, tree)
+		return err
+	}); err != nil || len(runs) == 0 {
+		return Evidence{}, false, err
+	}
+	evidence, err := e.evidenceNow(ctx, runs[0], runs)
+	return evidence, err == nil, err
+}
+
+// identities are environments' identities by origin now, as their
+// providers say (buildenv.IdentityProvider); empty, or absent, for one
+// whose provider can't say.
+type identities map[model.Environment]string
+
+// identitiesNow asks each environment's provider what it is now. It is
+// asked outside any transaction, since a transaction never calls a
+// provider; one that can't say leaves the environment's identity unknown.
+func (e *Engine) identitiesNow(ctx context.Context, environments []model.Environment) identities {
+	now := identities{}
+	for _, environment := range environments {
+		provider, ok := e.Providers[environment.Provider].(buildenv.IdentityProvider)
+		if !ok {
+			continue
 		}
-		evidence, err = treeEvidence(r, runs[0], runs)
-		found = err == nil
+		if identity, err := provider.Identity(ctx, environment); err == nil {
+			now[environment] = identity
+		}
+	}
+	return now
+}
+
+// evidenceNow is treeEvidence as it stands now: the environments' current
+// identities are read first, then the evidence judged by them.
+func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []model.Run) (Evidence, error) {
+	var environments []model.Environment
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		plan, err := r.Plan(primary.Plan)
+		environments = plan.Environments
+		return err
+	}); err != nil {
+		return Evidence{}, err
+	}
+	now := e.identitiesNow(ctx, environments)
+	var evidence Evidence
+	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		evidence, err = treeEvidence(r, primary, runs, now)
 		return err
 	})
-	return evidence, found, err
+	return evidence, err
 }
 
 // treeRuns lists a branch's finished checks of a tree, newest first. A
@@ -190,8 +240,9 @@ func treeRuns(r store.Reader, branch model.BranchID, tree model.ObjectID) ([]mod
 // plan required, the changed targets --only left out included, with the
 // gaps filled from earlier checks of the same files, newest first. What
 // no check built is unchecked (Design v3 §7: a narrowed check never
-// quietly shrinks what submit requires).
-func treeEvidence(r store.Reader, primary model.Run, runs []model.Run) (Evidence, error) {
+// quietly shrinks what submit requires). A result recorded in an
+// environment that is another now, by its identity, doesn't count (Counts).
+func treeEvidence(r store.Reader, primary model.Run, runs []model.Run, now identities) (Evidence, error) {
 	plan, err := r.Plan(primary.Plan)
 	if err != nil {
 		return Evidence{}, err
@@ -200,6 +251,8 @@ func treeEvidence(r store.Reader, primary model.Run, runs []model.Run) (Evidence
 	if err != nil {
 		return Evidence{}, err
 	}
+	evidence.now = now
+	evidence.dropRemade()
 	for _, target := range plan.Omitted {
 		te := TargetEvidence{Target: target}
 		for range plan.Environments {
@@ -241,17 +294,56 @@ func (e Evidence) missing() bool {
 }
 
 // Counts is the one rule for whether a check's result stands for a target
-// in an environment, among checks of the same files (treeRuns): the check
-// ran in that environment, the whole environment, its developer tools
-// included, and its plan had the target in that environment's order. What
-// it found there stands, an unmet need included. Nothing else about the
-// check's selection matters: from the same files, a target builds the same
-// whichever ports were selected with it. Nor does its test policy: a
-// result keeps the policy of the check that recorded it, and reads under
-// it (decision D1, Evidence.Words).
-func Counts(recorded model.Plan, id model.TargetID, environment model.Environment) bool {
-	planned, ok := recorded.In(environment)
-	return ok && planned.Builds(id)
+// in an environment, among checks of the same files (treeRuns):
+//   - the check ran in that environment, the whole environment, its
+//     developer tools included, and its plan had the target in that
+//     environment's order. What it found there stands, an unmet need
+//     included;
+//   - the environment is the one there is now: its identity when the
+//     execution began (recorded) is its identity now, where its provider
+//     says what that is (decision 28). An image made again from another
+//     source, or with other tools, is another environment.
+//
+// Nothing else about the check's selection matters: from the same files,
+// a target builds the same whichever ports were selected with it. Nor does
+// its test policy: a result keeps the policy of the check that recorded it,
+// and reads under it (decision D1, Evidence.Words).
+func Counts(recorded model.Plan, execution model.GuestExecution, id model.TargetID, now string) bool {
+	planned, ok := recorded.In(execution.Environment)
+	return ok && planned.Builds(id) && current(execution, now)
+}
+
+// current reports whether an execution ran in the environment there is
+// now, by its identity. One whose provider can't say what it is now is
+// taken as it was, and so is a result no execution recorded, such as an
+// unmet need, which is the plan's.
+func current(execution model.GuestExecution, now string) bool {
+	return execution.ID == "" || now == "" || execution.Identity == now
+}
+
+// dropRemade drops the results recorded in an environment that is another
+// now, by its identity, and notes where: they are the environment's as it
+// was, which no longer stands for it.
+func (e *Evidence) dropRemade() {
+	for t := range e.Targets {
+		target := &e.Targets[t]
+		for i, result := range target.Outcomes {
+			execution, ok := e.Executions[result.Execution]
+			if !ok || current(execution, e.now[execution.Environment]) {
+				continue
+			}
+			target.Outcomes[i] = model.TargetResult{Target: result.Target, Outcome: model.OutcomeNotRun}
+			target.remade(execution.Environment)
+		}
+	}
+}
+
+// remade notes an environment where the target's result was recorded
+// before the environment was made again.
+func (t *TargetEvidence) remade(environment model.Environment) {
+	if !slices.Contains(t.Remade, environment) {
+		t.Remade = append(t.Remade, environment)
+	}
 }
 
 // fill takes an earlier check's results for what this evidence lacks,
@@ -266,26 +358,39 @@ func (e *Evidence) fill(earlier Evidence) bool {
 		}
 		for i, result := range target.Outcomes {
 			environment := e.Plan.Environments[i]
-			if result.Outcome != model.OutcomeNotRun || Excluded(e.Plan, target.Target, environment) || !Counts(earlier.Plan, target.Target.ID, environment) {
+			if result.Outcome != model.OutcomeNotRun || Excluded(e.Plan, target.Target, environment) {
 				continue
 			}
 			j := slices.Index(earlier.Plan.Environments, environment)
-			if found := earlier.Targets[k].Outcomes[j]; found.Outcome != model.OutcomeNotRun {
-				target.Outcomes[i] = found
-				if execution, ok := earlier.Executions[found.Execution]; ok {
-					if e.Executions == nil {
-						e.Executions = map[model.ExecutionID]model.GuestExecution{}
-					}
-					e.Executions[execution.ID] = execution
-					if policy, ok := earlier.policies[execution.Run]; ok {
-						if e.policies == nil {
-							e.policies = map[model.RunID]model.TestPolicy{}
-						}
-						e.policies[execution.Run] = policy
-					}
-				}
-				took = true
+			if j < 0 {
+				continue
 			}
+			found := earlier.Targets[k].Outcomes[j]
+			execution, recorded := earlier.Executions[found.Execution]
+			if !recorded {
+				// An unmet result is the plan's, with no execution behind it.
+				execution = model.GuestExecution{Environment: environment}
+			}
+			if found.Outcome == model.OutcomeNotRun || !Counts(earlier.Plan, execution, target.Target.ID, e.now[environment]) {
+				if found.Outcome != model.OutcomeNotRun && !current(execution, e.now[environment]) {
+					target.remade(environment)
+				}
+				continue
+			}
+			target.Outcomes[i] = found
+			if recorded {
+				if e.Executions == nil {
+					e.Executions = map[model.ExecutionID]model.GuestExecution{}
+				}
+				e.Executions[execution.ID] = execution
+				if policy, ok := earlier.policies[execution.Run]; ok {
+					if e.policies == nil {
+						e.policies = map[model.RunID]model.TestPolicy{}
+					}
+					e.policies[execution.Run] = policy
+				}
+			}
+			took = true
 		}
 	}
 	return took
@@ -293,10 +398,15 @@ func (e *Evidence) fill(earlier Evidence) bool {
 
 // settle works out each target's verdict from its outcomes: passed where
 // it passed in every environment it is required in, and unchecked where
-// one has no result.
+// one has no result. Remade keeps only the environments still without
+// one, since an earlier check may have built it there as it is now.
 func (e *Evidence) settle() {
 	for t := range e.Targets {
 		target := &e.Targets[t]
+		target.Remade = slices.DeleteFunc(target.Remade, func(environment model.Environment) bool {
+			i := slices.Index(e.Plan.Environments, environment)
+			return i < 0 || target.Outcomes[i].Outcome != model.OutcomeNotRun
+		})
 		target.Passed, target.Unchecked = true, false
 		for i, result := range target.Outcomes {
 			if Excluded(e.Plan, target.Target, e.Plan.Environments[i]) {
@@ -320,6 +430,8 @@ func publicationProblems(evidence Evidence, accepted []string) []string {
 		case needs && target.Target.Role != model.Also:
 			problems = append(problems, fmt.Sprintf("%s %s, which %s hasn't; a check with %s there builds it, or share the branch as a draft (--draft)",
 				name, UnmetWords(unmet), DescribeEnvironment(unmet.Environment), unmet.Needs))
+		case target.Unchecked && len(target.Remade) > 0 && target.Target.Role != model.Also:
+			problems = append(problems, fmt.Sprintf("%s was checked in %s before it was made again, from another source or with other tools; dockhand check builds it there again, or share the branch as a draft (--draft)", name, DescribeEnvironment(target.Remade[0])))
 		case target.Unchecked && target.Target.Role != model.Also:
 			problems = append(problems, fmt.Sprintf("%s is changed, and no check of these files built it everywhere it's required; dockhand check builds it, or share the branch as a draft (--draft)", name))
 		case !Acceptable(target.Target):

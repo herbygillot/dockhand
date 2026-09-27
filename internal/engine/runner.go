@@ -329,7 +329,11 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 		// A provider run's ID is unique, and named for its provider:
 		// tart_7y62p4sigena6xlr. The pull request names it, and dockhand
 		// logs finds its evidence by it.
-		execution := model.GuestExecution{ID: model.ExecutionID(store.NewID(environment.Provider)), Run: d.run.ID, Environment: environment, Attempt: attempt + 1, State: model.ExecutionWaiting, CreatedAt: e.now()}
+		// The environment's identity is recorded as it is when the
+		// execution begins: evidence compares it with the environment's
+		// identity whenever it is judged (Counts).
+		identity := e.identitiesNow(ctx, []model.Environment{environment})[environment]
+		execution := model.GuestExecution{ID: model.ExecutionID(store.NewID(environment.Provider)), Run: d.run.ID, Environment: environment, Identity: identity, Attempt: attempt + 1, State: model.ExecutionWaiting, CreatedAt: e.now()}
 		if err := d.fenced(ctx, func(tx store.Tx) error {
 			if err := tx.AddExecution(execution); err != nil {
 				return err

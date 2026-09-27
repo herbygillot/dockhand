@@ -7,6 +7,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 func TestStatusFollowsABranchThroughItsWork(t *testing.T) {
@@ -113,4 +116,20 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	require.Contains(t, out, "building from ")
 	_, _, err = dockhand(t, "logs", "check-9")
 	require.ErrorContains(t, err, "there is no run check-9")
+}
+
+// A check that passed in an environment made again since says so, and
+// asks for another check rather than a submit.
+func TestStatusSaysAnEnvironmentWasMadeAgain(t *testing.T) {
+	arm := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
+	latest := model.Run{Number: 3, State: model.RunPassed}
+	status := engine.BranchStatus{Branch: model.Branch{Name: "dockhand/jq-update"}, Latest: &latest, Current: true,
+		Evidence: &engine.Evidence{Targets: []engine.TargetEvidence{
+			{Target: model.PlanTarget{Target: model.Target{Name: "jq"}, Role: model.Changed}, Unchecked: true, Remade: []model.Environment{arm}},
+			{Target: model.PlanTarget{Target: model.Target{Name: "oniguruma"}, Role: model.Also}, Unchecked: true, Remade: []model.Environment{arm}},
+		}}}
+	rows := attentionFor(status)
+	require.Len(t, rows, 1)
+	require.Equal(t, "check-3 passed, but "+engine.DescribeEnvironment(arm)+" has been made again since, from another source or with other tools; jq must be built there again", rows[0].what)
+	require.Equal(t, "dockhand check --branch jq-update", rows[0].next)
 }

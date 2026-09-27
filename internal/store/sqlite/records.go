@@ -408,7 +408,7 @@ func (t *tx) UpdateRun(r model.Run) error {
 		r.State, r.Detail, nullableMillis(r.FinishedAt), nullableMillis(r.CancelRequested), t.repo, r.ID)
 }
 
-const executionColumns = "id, run_id, provider, platform_os, platform_version, platform_architecture, developer_tools, attempt, state, detail, provider_ref, observed, created_at, finished_at"
+const executionColumns = "id, run_id, provider, platform_os, platform_version, platform_architecture, developer_tools, attempt, state, detail, provider_ref, observed, identity, created_at, finished_at"
 
 func scanExecution(row interface{ Scan(...any) error }) (model.GuestExecution, error) {
 	var e model.GuestExecution
@@ -416,7 +416,7 @@ func scanExecution(row interface{ Scan(...any) error }) (model.GuestExecution, e
 	var finished sql.NullInt64
 	var observed string
 	p := &e.Environment.Platform
-	if err := row.Scan(&e.ID, &e.Run, &e.Environment.Provider, &p.OS, &p.Version, &p.Architecture, &e.Environment.DeveloperTools, &e.Attempt, &e.State, &e.Detail, &e.ProviderRef, &observed, &created, &finished); err != nil {
+	if err := row.Scan(&e.ID, &e.Run, &e.Environment.Provider, &p.OS, &p.Version, &p.Architecture, &e.Environment.DeveloperTools, &e.Attempt, &e.State, &e.Detail, &e.ProviderRef, &observed, &e.Identity, &created, &finished); err != nil {
 		return model.GuestExecution{}, storageError(err)
 	}
 	if observed != "" {
@@ -489,8 +489,8 @@ func (t *tx) AddExecution(e model.GuestExecution) error {
 	if err != nil {
 		return err
 	}
-	_, err = t.exec("INSERT INTO executions(repository_id, "+executionColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		t.repo, e.ID, e.Run, e.Environment.Provider, p.OS, p.Version, p.Architecture, e.Environment.DeveloperTools, e.Attempt, e.State, e.Detail, e.ProviderRef, observed, millis(e.CreatedAt), nullableMillis(e.FinishedAt))
+	_, err = t.exec("INSERT INTO executions(repository_id, "+executionColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		t.repo, e.ID, e.Run, e.Environment.Provider, p.OS, p.Version, p.Architecture, e.Environment.DeveloperTools, e.Attempt, e.State, e.Detail, e.ProviderRef, observed, e.Identity, millis(e.CreatedAt), nullableMillis(e.FinishedAt))
 	return err
 }
 

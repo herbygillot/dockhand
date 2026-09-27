@@ -66,6 +66,30 @@ takes no host disk until it is written.
 `dockhand providers` shows which releases have images, with Xcode or not,
 and whether the other providers are ready. `init` shows the same.
 
+### What an image is made from
+
+Setup pins the vanilla image it starts from by content. It asks the
+registry, through the OCI distribution API, which digest the image's tag
+names, before pulling the tag and again after. Tart documents pulling by
+tag, not by digest, so the digest is read from the registry rather than
+given to Tart. If the tag moved while it was pulled, setup stops and asks
+to be run again. If the registry can't say, setup says the image's origin
+is unknown and carries on.
+
+With each image it makes, setup records that image's origin on this Mac,
+in `~/.dockhand/tart-images/`: the vanilla image's digest, the version of
+setup's own steps, and the MacPorts, Command Line Tools, and Xcode it
+installed. A check reads it without starting the VM. The origin, with the
+version of the guest program that verifies each port, is the release's
+identity, which each provider run records as it begins.
+
+A result stands for the image it was built in. Once an image is made
+again, from a newer vanilla image or with other tools, what passed in the
+old one no longer counts, and `status` and `submit` ask for the ports to
+be checked again. Rebuilding from the same source with the same tools
+keeps the identity, and so the results. An image with no recorded origin,
+one made before dockhand recorded origins, keeps its results as before.
+
 ## Xcode
 
 Xcode is an add-on. A release's checks need only its base image, with the
