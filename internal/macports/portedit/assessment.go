@@ -7,7 +7,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
-	portsource "github.com/herbygillot/dockhand/internal/macports/source"
+	"github.com/herbygillot/dockhand/internal/macports/portsource"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/text"
 )

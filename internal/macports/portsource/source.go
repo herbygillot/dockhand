@@ -1,4 +1,4 @@
-package source
+package portsource
 
 import (
 	"errors"
@@ -30,9 +30,6 @@ const (
 	Releases Catalog = "releases"
 )
 
-// TagPattern is the version leaf's mapping between Portfile versions and tags.
-type TagPattern = version.TagPattern
-
 type Livecheck struct {
 	Headers     map[string]string
 	Compression bool
@@ -56,7 +53,7 @@ type Spec struct {
 	Repository     string
 	CurrentVersion string
 	SourceVersion  string
-	Pattern        TagPattern
+	Pattern        version.TagPattern
 	Catalog        Catalog
 	Livecheck      Livecheck
 }
@@ -205,7 +202,7 @@ func interpret(port macports.PortInfo, forge Forge, prefix, instance string) (Sp
 		}
 		values = append(values, strings.Join(parts, " "))
 	}
-	pattern := TagPattern{Prefix: values[0], Suffix: values[1]}
+	pattern := version.TagPattern{Prefix: values[0], Suffix: values[1]}
 	if port.Options["git.branch"] != pattern.Tag(raw) {
 		return Spec{}, ErrTagPattern
 	}

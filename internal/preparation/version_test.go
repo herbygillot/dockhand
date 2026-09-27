@@ -12,7 +12,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
-	portsource "github.com/herbygillot/dockhand/internal/macports/source"
+	"github.com/herbygillot/dockhand/internal/macports/portsource"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
 	"github.com/herbygillot/dockhand/internal/upstream"

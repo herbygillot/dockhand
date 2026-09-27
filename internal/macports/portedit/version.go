@@ -9,7 +9,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
-	portsource "github.com/herbygillot/dockhand/internal/macports/source"
+	"github.com/herbygillot/dockhand/internal/macports/portsource"
 )
 
 type archivePlan struct {

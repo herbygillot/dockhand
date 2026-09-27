@@ -9,7 +9,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
-	portsource "github.com/herbygillot/dockhand/internal/macports/source"
+	"github.com/herbygillot/dockhand/internal/macports/portsource"
 	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/stretchr/testify/require"
 )

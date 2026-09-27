@@ -8,7 +8,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
-	portsource "github.com/herbygillot/dockhand/internal/macports/source"
+	"github.com/herbygillot/dockhand/internal/macports/portsource"
 	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/stretchr/testify/require"
 )
@@ -126,7 +126,7 @@ func TestResolveDoesNotHideFailuresOrAmbiguity(t *testing.T) {
 	port := githubPort()
 	port.Options["git.branch"] = "different"
 	_, err = service.Resolve(t.Context(), port, "2.0")
-	require.ErrorIs(t, err, upstream.ErrTagPattern)
+	require.ErrorIs(t, err, portsource.ErrTagPattern)
 	port = githubPort()
 	port.OptionErrors = map[string]string{"github.version": "failed"}
 	_, err = service.Resolve(t.Context(), port, "2.0")

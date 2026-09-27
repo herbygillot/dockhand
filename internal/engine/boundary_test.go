@@ -40,7 +40,7 @@ var engineImports = map[string]string{
 	"internal/macports/eval":              "MacPorts' evaluator",
 	"internal/macports/portindex":         "a port index of a revision",
 	"internal/macports/selection":         "reading ports from a checkout",
-	"internal/macports/source":            "Portfile sources, for preparation",
+	"internal/macports/portsource":        "the forges a Portfile's upstream conventions name, for preparation",
 	"internal/macports/workspace":         "a revision's files for MacPorts to read",
 	"internal/macports/portfile":          "Portfile vocabulary",
 	"internal/macports/portedit/archives": "a Portfile's archives, for diff --archive",

@@ -7,16 +7,13 @@ import (
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/forge"
-	portsource "github.com/herbygillot/dockhand/internal/macports/source"
+	"github.com/herbygillot/dockhand/internal/macports/portsource"
 )
 
 var (
-	ErrTagPattern       = portsource.ErrTagPattern
 	ErrReleaseMissing   = errors.New("upstream: requested release was not found in the supplied evidence")
 	ErrReleaseAmbiguous = errors.New("upstream: requested version matches multiple releases")
 )
-
-type TagPattern = version.TagPattern
 
 // Candidate pairs a possible Portfile version with the observed release it describes.
 type Candidate struct {
@@ -33,7 +30,7 @@ type Selection struct {
 // MatchRelease judges already collected evidence; lookup failures must be
 // handled by the reader, not converted into an empty successful observation.
 // A nil pattern means unknown, while an empty pattern means bare version tags.
-func MatchRelease(requested string, pattern *TagPattern, releases []Candidate) (Selection, error) {
+func MatchRelease(requested string, pattern *version.TagPattern, releases []Candidate) (Selection, error) {
 	if err := version.Validate(requested); err != nil {
 		return Selection{}, err
 	}
@@ -71,12 +68,12 @@ func MatchRelease(requested string, pattern *TagPattern, releases []Candidate) (
 	}
 	selected := matches[0]
 	if version.Validate(selected.Candidate.Version) != nil {
-		return Selection{}, fmt.Errorf("%w: cannot map tag %q to a Portfile version", ErrTagPattern, selected.Candidate.Tag)
+		return Selection{}, fmt.Errorf("%w: cannot map tag %q to a Portfile version", portsource.ErrTagPattern, selected.Candidate.Tag)
 	}
 	if pattern != nil && selected.Candidate.Tag != "" {
 		value, matches := pattern.Version(selected.Candidate.Tag)
 		if matches && value != selected.Candidate.Version {
-			return Selection{}, fmt.Errorf("%w: inconsistent version metadata for %q", ErrTagPattern, selected.Candidate.Tag)
+			return Selection{}, fmt.Errorf("%w: inconsistent version metadata for %q", portsource.ErrTagPattern, selected.Candidate.Tag)
 		}
 	}
 	return selected, nil
