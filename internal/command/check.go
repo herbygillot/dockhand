@@ -7,6 +7,7 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -399,23 +400,8 @@ func report(ctx context.Context, e *engine.Engine, run model.Run, streams Stream
 		result.Targets = evidenceView(evidence)
 		streams.emit(result)
 	}
-	width := 0
-	for _, target := range evidence.Targets {
-		width = max(width, len(target.Target.Target.Name))
-	}
 	fmt.Fprintln(out)
-	for _, target := range evidence.Targets {
-		var cells []string
-		for i, result := range target.Outcomes {
-			environment := evidence.Plan.Environments[i]
-			cell := engine.TargetWords(evidence.Plan, target.Target, environment, result, false)
-			if len(evidence.Plan.Environments) > 1 {
-				cell = environmentWords(environment) + " " + cell
-			}
-			cells = append(cells, cell)
-		}
-		fmt.Fprintf(out, "  %-*s  %s\n", width, target.Target.Target.Name, strings.Join(cells, "   "))
-	}
+	writeResults(out, "  ", evidence, false)
 	revision, err := e.Revision(ctx, run.Revision)
 	if err != nil {
 		return err
@@ -431,6 +417,47 @@ func report(ctx context.Context, e *engine.Engine, run model.Run, streams Stream
 		return exitf(130, "%s stopped; finished results are kept", run.Name())
 	}
 	return exitf(3, "%s needs attention: %s", run.Name(), run.Detail)
+}
+
+// writeResults shows each target's result, indented. On one environment
+// it is a line each, "jq  ✓", the environment named when where says so.
+// On several it is a grid, a row per target and a column per environment
+// headed by its release, macOS 26, since the plan named the environments
+// in full.
+func writeResults(out io.Writer, indent string, evidence engine.Evidence, where bool) {
+	environments := evidence.Plan.Environments
+	if len(environments) <= 1 {
+		width := 0
+		for _, target := range evidence.Targets {
+			width = max(width, len(target.Target.Target.Name))
+		}
+		for _, target := range evidence.Targets {
+			var cells []string
+			for i, result := range target.Outcomes {
+				cell := engine.TargetWords(evidence.Plan, target.Target, environments[i], result, false)
+				if where {
+					cell = environmentWords(environments[i]) + " " + cell
+				}
+				cells = append(cells, cell)
+			}
+			fmt.Fprintf(out, "%s%-*s  %s\n", indent, width, target.Target.Target.Name, strings.Join(cells, "   "))
+		}
+		return
+	}
+	grid := tabwriter.NewWriter(out, 0, 0, 3, ' ', 0)
+	fmt.Fprintf(grid, "%sPORT", indent)
+	for _, environment := range environments {
+		fmt.Fprintf(grid, "\t%s", engine.EnvironmentHeading(environment, environments))
+	}
+	fmt.Fprintln(grid)
+	for _, target := range evidence.Targets {
+		fmt.Fprintf(grid, "%s%s", indent, target.Target.Target.Name)
+		for i, result := range target.Outcomes {
+			fmt.Fprintf(grid, "\t%s", engine.TargetWords(evidence.Plan, target.Target, environments[i], result, false))
+		}
+		fmt.Fprintln(grid)
+	}
+	_ = grid.Flush()
 }
 
 // checkResult is a run's --json result, without its targets' results.

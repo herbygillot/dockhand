@@ -54,3 +54,20 @@ func TestTheSignatureNeedsNoVersion(t *testing.T) {
 	require.Equal(t, "Submitted by [dockhand](https://github.com/herbygillot/dockhand) ver. v3.1.0", signature("v3.1.0"))
 	require.Equal(t, "Submitted by [dockhand](https://github.com/herbygillot/dockhand)", signature(" "))
 }
+
+// A column heading is the environment's release alone, with its
+// architecture where two share a release, and its provider where the plan
+// has several.
+func TestEnvironmentHeadingsAreShort(t *testing.T) {
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
+	sequoia := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}}
+	intel := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"}}
+	unknown := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "30", Architecture: "arm64"}}
+	github := model.Environment{Provider: "github"}
+	require.Equal(t, "macOS 26", EnvironmentHeading(tahoe, []model.Environment{tahoe, sequoia}))
+	require.Equal(t, "macOS 15", EnvironmentHeading(sequoia, []model.Environment{tahoe, sequoia}))
+	require.Equal(t, "macOS 26 arm64", EnvironmentHeading(tahoe, []model.Environment{tahoe, intel}))
+	require.Equal(t, "tart macOS 26", EnvironmentHeading(tahoe, []model.Environment{tahoe, github}))
+	require.Equal(t, "github", EnvironmentHeading(github, []model.Environment{tahoe, github}))
+	require.Equal(t, "Darwin 30", EnvironmentHeading(unknown, []model.Environment{unknown}))
+}

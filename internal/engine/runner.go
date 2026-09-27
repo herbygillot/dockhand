@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -636,6 +637,49 @@ func DescribeEnvironment(environment model.Environment) string {
 		return describePlace(environment) + " with the Command Line Tools"
 	}
 	return describePlace(environment)
+}
+
+// EnvironmentHeading is an environment's short name, for a column heading
+// where its full words are shown elsewhere: its release alone, macOS 26,
+// with its architecture where another environment of all shares the
+// release, and its provider where all has several. An environment with no
+// platform is its provider.
+func EnvironmentHeading(environment model.Environment, all []model.Environment) string {
+	platform := environment.Platform
+	if platform.Version == "" && platform.Architecture == "" {
+		return environment.Provider
+	}
+	var parts []string
+	providers := map[string]bool{}
+	shared := 0
+	for _, other := range all {
+		providers[other.Provider] = true
+		if other.Provider == environment.Provider && other.Platform.OS == platform.OS && other.Platform.Version == platform.Version {
+			shared++
+		}
+	}
+	if len(providers) > 1 {
+		parts = append(parts, environment.Provider)
+	}
+	parts = append(parts, releaseWords(platform))
+	if shared > 1 && platform.Architecture != "" {
+		parts = append(parts, platform.Architecture)
+	}
+	return strings.Join(parts, " ")
+}
+
+// releaseWords name a platform's release: macOS 26, or Darwin 30 where the
+// release is unknown, whose Darwin version isn't macOS's.
+func releaseWords(platform model.Platform) string {
+	if platform.OS == "darwin" || platform.OS == "" {
+		if darwin, err := strconv.Atoi(platform.Version); err == nil {
+			if release, err := macos.ReleaseForDarwin(darwin); err == nil {
+				return "macOS " + release.Product
+			}
+		}
+		return "Darwin " + platform.Version
+	}
+	return strings.TrimSpace(platform.OS + " " + platform.Version)
 }
 
 func describePlace(environment model.Environment) string {

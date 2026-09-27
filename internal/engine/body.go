@@ -99,7 +99,7 @@ func ownedSections(facts bodyFacts) string {
 		}
 		fmt.Fprint(&b, "| Port |")
 		for _, environment := range evidence.Plan.Environments {
-			fmt.Fprintf(&b, " %s |", cell(DescribeEnvironment(environment)))
+			fmt.Fprintf(&b, " %s |", cell(EnvironmentHeading(environment, evidence.Plan.Environments)))
 		}
 		fmt.Fprint(&b, "\n| --- |")
 		for range evidence.Plan.Environments {

@@ -366,14 +366,8 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, branch mod
 	}
 	fmt.Fprintf(out, "  Checks   %s\n", checkState(status))
 	if status.Evidence != nil {
-		for _, target := range status.Evidence.Targets {
-			var cells []string
-			for i, result := range target.Outcomes {
-				environment := status.Evidence.Plan.Environments[i]
-				cells = append(cells, environmentWords(environment)+" "+engine.TargetWords(status.Evidence.Plan, target.Target, environment, result, false))
-			}
-			fmt.Fprintf(out, "           %s  %s\n", target.Target.Target.Name, strings.Join(cells, "   "))
-		}
+		// status has no plan above it, so one environment is named.
+		writeResults(out, "           ", *status.Evidence, true)
 	}
 	fmt.Fprintf(out, "  PR       %s\n", prWords(status))
 	for _, row := range attentionFor(status) {

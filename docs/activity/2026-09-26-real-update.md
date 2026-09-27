@@ -298,3 +298,22 @@ previewing an update before starting work is the natural first step.
   stealth-update check compares against the branch's base.
 - **Live:** `update dolt --new --plan` showed 1.81.4_1 → 2.3.5 on master
   `444d8ea`, and no branch was made.
+
+## Short headings, and results as a grid
+
+miller's five-release check showed two layouts that don't scale.
+
+- **The pull request's table** headed each column "tart macOS 12
+  (Monterey) arm64 with Xcode", repeated five times. A column is now
+  headed by its release alone, "macOS 26", since the Tested on lines
+  above give the rest. It adds the architecture where two columns share a
+  release, and the provider where a check used several.
+  (`engine.EnvironmentHeading`.)
+- **The terminal's summary** put every release on one line per port. On
+  several releases it is now a grid: a row per port, and a column per
+  release, under the same short headings.
+  - On one release it stays a line each.
+  - `status`, which has no plan above it, still names the one
+    environment.
+- **Tests:** each heading case, and the grid on two releases with a
+  failure in it.

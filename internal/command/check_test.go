@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 )
@@ -100,4 +101,34 @@ func TestCheckPlanNamesWhatOnlyLeftOut(t *testing.T) {
 		Tests:        model.TestsDeclared,
 	}, nil)
 	require.Contains(t, out.String(), "Changed     jq\nLeft out    libharbor, by --only; submit still needs them checked\n")
+}
+
+// On several environments the results are a grid, a column each headed
+// by its release; on one, a line each, the environment named only where
+// asked.
+func TestResultsOnSeveralReleasesAreAGrid(t *testing.T) {
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	sequoia := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}}
+	targets := []model.PlanTarget{{ID: "flatbuffers", Target: model.Target{Name: "flatbuffers"}}, {ID: "libsigmf", Target: model.Target{Name: "libsigmf"}}}
+	passed := model.TargetResult{Outcome: model.OutcomePassed}
+	failed := model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseInstall}
+	evidence := engine.Evidence{Plan: model.Plan{Environments: []model.Environment{tahoe, sequoia}, Targets: targets}, Targets: []engine.TargetEvidence{
+		{Target: targets[0], Outcomes: []model.TargetResult{passed, passed}},
+		{Target: targets[1], Outcomes: []model.TargetResult{passed, failed}},
+	}}
+	var out bytes.Buffer
+	writeResults(&out, "  ", evidence, false)
+	require.Equal(t, "  PORT          macOS 26   macOS 15\n"+
+		"  flatbuffers   ✓          ✓\n"+
+		"  libsigmf      ✓          ✗ failed at install\n", out.String())
+
+	evidence.Plan.Environments = []model.Environment{tahoe}
+	evidence.Targets = evidence.Targets[:1]
+	evidence.Targets[0].Outcomes = []model.TargetResult{passed}
+	out.Reset()
+	writeResults(&out, "  ", evidence, false)
+	require.Equal(t, "  flatbuffers  ✓\n", out.String())
+	out.Reset()
+	writeResults(&out, "  ", evidence, true)
+	require.Equal(t, "  flatbuffers  tart macOS 26 (Tahoe) arm64 ✓\n", out.String())
 }

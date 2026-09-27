@@ -380,7 +380,7 @@ func TestSubmitFollowsThePublicationRule(t *testing.T) {
 	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Accept: []string{"harbor-viewer"}})
 	require.NoError(t, err)
 	require.Empty(t, plan.Blocking)
-	require.Regexp(t, `###### Tested on\n\nmacOS 26\.6\.2 25G71 arm64\nXcode 26\.6 17F42 · tart: built in a clean VM \(Run ID: tart_[a-z0-9]{16} - checked in check-1\)\n\n\| Port \| tart macOS 26 \(Tahoe\) arm64 with Xcode \|\n`, plan.Body,
+	require.Regexp(t, `###### Tested on\n\nmacOS 26\.6\.2 25G71 arm64\nXcode 26\.6 17F42 · tart: built in a clean VM \(Run ID: tart_[a-z0-9]{16} - checked in check-1\)\n\n\| Port \| macOS 26 \|\n`, plan.Body,
 		"what the guest reported, in the template's words, and the run and check it was in")
 	require.NotContains(t, plan.Body, "Checked by dockhand", "each run names its check")
 	require.Regexp(t, "\n\nSubmitted by \\[dockhand\\]\\(https://github\\.com/herbygillot/dockhand\\) ver\\. \\S+\n$", plan.Body, "dockhand's line closes the description")
