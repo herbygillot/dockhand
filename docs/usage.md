@@ -169,7 +169,10 @@ One check of a branch runs at a time. While one is queued or running, `check` re
 
 - **`logs check-12`** lists the check's provider runs and where each port's log is; `--port jq` prints one. `logs tart_7y62p4sigena6xlr` looks up one provider run by the ID a pull request names, or by the provider's own reference, such as a workflow run's URL.
 - **`retry check-12`** queues the same check again: the same files, plan, and environments, whatever the branch holds now.
-- **`check --baseline`** builds the ports that failed in the branch's latest check, or the `--only` ones, at the master the branch starts from, and reports each beside the branch's result. It shows whether master fails the same way, and nothing more. With `check.baseline = true`, a failed check runs one by itself.
+- **`check --baseline`** builds the ports that failed at install or test in the branch's latest check, or the `--only` ones, at the master that check started from, and reports each beside the branch's result. It shows whether master fails the same way, and nothing more.
+  - It is planned as a check would be, from master's own Portfiles in each of the check's environments, so a port master builds only with Xcode is unmet where there is none. It builds the ports it names, not the rest of their subports.
+  - A port that failed only before building, at lint, fetch, or checksum, is left out unless `--only` names it: those failures come from the branch's own Portfile and distfiles. So is a port the branch adds, since master has nothing to compare.
+  - Baselines are off by default. With `check.baseline = true`, a failed check runs one by itself.
 - **`queue`** lists the checks queued and running, **`wait check-12`** follows one until it ends, and **`cancel check-12`** stops one, keeping what finished.
 
 ## Providers

@@ -45,10 +45,11 @@ One check of a branch runs at a time: while one is queued or running,
 check refuses, and --replace stops it, keeping what it finished, and checks
 the files now, on what --on names (decision 29: switching is explicit).
 
---baseline builds the ports that failed in the branch's latest check, or
-the --only ones, at the master the branch starts from, and reports each
-beside the branch's result. It says what happened in each run and nothing
-more. With check.baseline = true, a failed check runs one by itself.`,
+--baseline builds the ports that failed at install or test in the branch's
+latest check, or the --only ones, at the master that check started from,
+planned there as a check would be, and reports each beside the branch's
+result. It says what happened in each run and nothing more. With
+check.baseline = true, a failed check runs one by itself.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
@@ -136,7 +137,7 @@ more. With check.baseline = true, a failed check runs one by itself.`,
 	cmd.Flags().StringVar(&tests, "tests", "", "declared (advisory), required, or skip")
 	cmd.Flags().BoolVarP(&enqueue, "enqueue", "d", false, "queue the check and return")
 	cmd.Flags().BoolVar(&replace, "replace", false, "stop the branch's queued or running check, keeping what it finished, and check this instead")
-	cmd.Flags().BoolVar(&baseline, "baseline", false, "build what failed in the latest check, or --only ports, at the branch's base")
+	cmd.Flags().BoolVar(&baseline, "baseline", false, "build what failed in the latest check, or --only ports, at the master it started from")
 	cmd.MarkFlagsMutuallyExclusive("baseline", "plan")
 	cmd.MarkFlagsMutuallyExclusive("baseline", "also")
 	cmd.MarkFlagsMutuallyExclusive("head", "staged", "working-tree")
@@ -494,9 +495,12 @@ func runBaseline(ctx context.Context, e *engine.Engine, streams Streams, branch 
 	for _, target := range baseline.Plan.Targets {
 		names = append(names, string(target.ID))
 	}
-	fmt.Fprintf(streams.Out, "%s · baseline of %s: %s at master %s\n", branch.ShortName(), baseline.Of.Name(), strings.Join(names, ", "), engine.Short(branch.Base))
+	fmt.Fprintf(streams.Out, "%s · baseline of %s: %s at master %s\n", branch.ShortName(), baseline.Of.Name(), strings.Join(names, ", "), engine.Short(baseline.Revision.Source.Commit))
 	if len(baseline.New) > 0 {
 		fmt.Fprintf(streams.Out, "  · left out: %s, which the branch adds, so master has nothing to compare\n", strings.Join(baseline.New, ", "))
+	}
+	if len(baseline.Skipped) > 0 {
+		fmt.Fprintf(streams.Out, "  · left out: %s, which failed before building, at lint, fetch, or checksum; --only builds them anyway\n", strings.Join(baseline.Skipped, ", "))
 	}
 	run, err := e.EnqueueBaseline(ctx, branch, baseline, model.OriginPerson)
 	if err != nil {

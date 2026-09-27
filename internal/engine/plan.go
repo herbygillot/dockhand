@@ -32,6 +32,13 @@ type PlanRequest struct {
 	// Also adds unchanged ports, built against the branch.
 	Also  []string
 	Tests model.TestPolicy
+	// directories are Also ports' directories where the caller knows them
+	// already, as a baseline does from the check it explains, so they
+	// aren't looked up by name again.
+	directories map[string]string
+	// alone builds only the Also ports named, not the rest of their
+	// directories' subports, as a baseline does.
+	alone bool
 }
 
 // PlanCheck works out the targets of a check (Design v3 §3): every subport
@@ -85,6 +92,9 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 				return
 			}
 			for i, port := range ports {
+				if role == model.Also && request.alone && !slices.Contains(request.Also, port.Name) {
+					continue
+				}
 				if defined[port.Name] == nil {
 					defined[port.Name] = make([]bool, len(plan.Environments))
 				}
@@ -128,14 +138,23 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 		}
 		add(directory, kind, model.Changed)
 	}
+	// A directory is evaluated once, however many of its ports are named:
+	// twice would count its exclusions twice.
+	var also []string
 	for _, name := range request.Also {
-		directory, err := reader.Directory(ctx, revision.Source, name)
-		if err != nil {
-			return plan, fmt.Errorf("--also %s: %w", name, err)
+		directory, known := request.directories[name]
+		if !known {
+			if directory, err = reader.Directory(ctx, revision.Source, name); err != nil {
+				return plan, fmt.Errorf("--also %s: %w", name, err)
+			}
 		}
 		if slices.Contains(scope.Ports, directory) {
 			return plan, fmt.Errorf("--also %s: the branch changes it, so it is checked already", name)
 		}
+		if slices.Contains(also, directory) {
+			continue
+		}
+		also = append(also, directory)
 		add(directory, model.Unchanged, model.Also)
 	}
 	if len(plan.Unresolved) > 0 {
