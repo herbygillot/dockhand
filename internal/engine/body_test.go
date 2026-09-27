@@ -49,7 +49,7 @@ func TestTestedOnSaysWhatTheEnvironmentWas(t *testing.T) {
 			[]model.GuestExecution{{ID: "github_q2w8e4r6t1y3u5i7", Run: "run_eleven", ProviderRef: "https://github.com/ada/macports-ports/actions/runs/123"}},
 			"Developer tools not recorded · github: MacPorts' CI workflow in the author's fork (Run ID: https://github.com/ada/macports-ports/actions/runs/123 - checked in check-11)\n\n"},
 	} {
-		require.Equal(t, test.want, testedOn(test.environment, test.observed, test.runs, checks), test.name)
+		require.Equal(t, test.want, testedOn(test.environment, test.observed, test.runs, checks, nil), test.name)
 	}
 }
 

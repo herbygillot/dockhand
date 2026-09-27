@@ -398,3 +398,93 @@ func TestEnvironmentsBuildTogetherWhereTheProviderCan(t *testing.T) {
 	require.Equal(t, model.OutcomePassed, outcomes(t, e, run)["libharbor@arm64"])
 	require.Equal(t, model.OutcomePassed, outcomes(t, e, run)["libharbor@x86_64"])
 }
+
+// A check whose every target in an environment would read what an earlier
+// build of it read reuses that build's results, starting nothing
+// (decision 28); a remade environment, a changed dependency, or --fresh
+// builds again.
+func TestAnUnchangedBuildIsReused(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	tools := model.ActivePort{Name: "harbor-tools", Spec: "@1_0", Directory: "graphics/harbor-tools", Archive: "sha256:aa"}
+	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{tools}}, identity: "origin a"}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	first, err := e.Drive(t.Context(), session(t, e), queuedHarborRun(t, e, tahoeArm).ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, first.State, first.Detail)
+	require.Len(t, provider.jobs, 1)
+
+	var branch model.Branch
+	var revision model.Revision
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		if revision, err = r.Revision(first.Revision); err != nil {
+			return err
+		}
+		branch, err = r.Branch(first.Branch)
+		return err
+	}))
+	again := func(fresh bool) model.Run {
+		t.Helper()
+		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}, Fresh: fresh})
+		require.NoError(t, err)
+		queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
+		require.NoError(t, err)
+		run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+		require.NoError(t, err)
+		require.Equal(t, model.RunPassed, run.State, run.Detail)
+		return run
+	}
+	executions := func(run model.Run) ([]model.GuestExecution, []model.TargetResult) {
+		t.Helper()
+		var executions []model.GuestExecution
+		var results []model.TargetResult
+		require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+			if executions, err = r.Executions(run.ID); err != nil {
+				return err
+			}
+			results, err = r.Results(executions[0].ID)
+			return err
+		}))
+		return executions, results
+	}
+
+	second := again(false)
+	require.Len(t, provider.jobs, 1, "nothing was built")
+	reused, results := executions(second)
+	require.Len(t, reused, 1)
+	require.True(t, reused[0].Reused)
+	require.Equal(t, "origin a", reused[0].Identity)
+	built, original := executions(first)
+	require.Len(t, results, len(original))
+	for _, result := range results {
+		require.Equal(t, built[0].ID, result.ReusedFrom, "%s names the build it reuses", result.Target)
+		require.Equal(t, model.OutcomePassed, result.Outcome)
+	}
+	// What a reviewer reads names the build, and the check that reused it.
+	evidence, found, err := e.EvidenceFor(t.Context(), branch.ID, revision.Source.Tree)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, second.ID, evidence.Run.ID)
+	require.Empty(t, evidence.Failed())
+	shown, reusedIn := evidence.Built(0, evidence.Runs(0))
+	require.Equal(t, []model.ExecutionID{built[0].ID}, []model.ExecutionID{shown[0].ID})
+	require.Contains(t, runWords(shown, evidence.Checks(), reusedIn), string(built[0].ID)+" - checked in check-1, reused in check-2")
+
+	again(true)
+	require.Len(t, provider.jobs, 2, "--fresh builds")
+
+	provider.identity = "origin b"
+	again(false)
+	require.Len(t, provider.jobs, 3, "the environment was made again")
+
+	// What every port may source, _resources, is read by every build:
+	// changed, each builds again, and is reused in its turn.
+	write(t, branch.Worktree, map[string]string{"_resources/port1.0/group/harbor-1.0.tcl": "# changed\n"})
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
+	require.NoError(t, err)
+	revision = capture.Revision
+	again(false)
+	require.Len(t, provider.jobs, 4, "_resources changed")
+	again(false)
+	require.Len(t, provider.jobs, 4, "and the new build is reused in its turn")
+}

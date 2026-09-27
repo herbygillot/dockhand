@@ -49,6 +49,68 @@ type Evidence struct {
 	// now are the environments' identities as they are now, which the
 	// results' own are compared with (Counts).
 	now identities
+	// origins are the executions that built reused results, by ID, with
+	// the checks they were in (decision 28).
+	origins map[model.ExecutionID]origin
+}
+
+// origin is an execution that built a result another execution reuses,
+// and the check it was in.
+type origin struct {
+	execution model.GuestExecution
+	check     string
+}
+
+// origin loads the execution that built a reused result.
+func (e *Evidence) origin(r store.Reader, id model.ExecutionID) error {
+	if _, ok := e.origins[id]; ok {
+		return nil
+	}
+	execution, err := r.Execution(id)
+	if err != nil {
+		return err
+	}
+	run, err := r.Run(execution.Run)
+	if err != nil {
+		return err
+	}
+	if e.origins == nil {
+		e.origins = map[model.ExecutionID]origin{}
+	}
+	e.origins[id] = origin{execution: execution, check: run.Name()}
+	return nil
+}
+
+// Built are the provider runs that built an environment's results, among
+// runs: a run that reused earlier builds is shown by those builds, the runs
+// a reviewer can look at, each with the check that reused it (reusedIn).
+func (e Evidence) Built(environment int, runs []model.GuestExecution) (built []model.GuestExecution, reusedIn map[model.ExecutionID]string) {
+	reusedIn = map[model.ExecutionID]string{}
+	add := func(run model.GuestExecution) {
+		if !slices.ContainsFunc(built, func(other model.GuestExecution) bool { return other.ID == run.ID }) {
+			built = append(built, run)
+		}
+	}
+	for _, run := range runs {
+		if !run.Reused {
+			add(run)
+			continue
+		}
+		for _, target := range e.Targets {
+			if environment >= len(target.Outcomes) {
+				continue
+			}
+			result := target.Outcomes[environment]
+			found, ok := e.origins[result.ReusedFrom]
+			if result.Execution != run.ID || !ok {
+				continue
+			}
+			add(found.execution)
+			reusedIn[found.execution.ID] = e.Checks()[run.Run]
+		}
+	}
+	slices.SortStableFunc(built, func(a, b model.GuestExecution) int { return a.CreatedAt.Compare(b.CreatedAt) })
+	return built, reusedIn
 }
 
 // Words is how one target's result in one environment reads, on the
@@ -103,11 +165,15 @@ func (e Evidence) Runs(environment int) []model.GuestExecution {
 	return runs
 }
 
-// Checks name the checks the evidence's runs were in, check-11, by ID.
+// Checks name the checks the evidence's runs were in, check-11, by ID,
+// and the checks that built what they reused.
 func (e Evidence) Checks() map[model.RunID]string {
 	checks := map[model.RunID]string{e.Run.ID: e.Run.Name()}
 	for _, run := range e.Earlier {
 		checks[run.ID] = run.Name()
+	}
+	for _, found := range e.origins {
+		checks[found.execution.Run] = found.check
 	}
 	return checks
 }
@@ -404,6 +470,12 @@ func (e *Evidence) fill(earlier Evidence) bool {
 				continue
 			}
 			target.Outcomes[i] = found
+			if builder, ok := earlier.origins[found.ReusedFrom]; ok {
+				if e.origins == nil {
+					e.origins = map[model.ExecutionID]origin{}
+				}
+				e.origins[found.ReusedFrom] = builder
+			}
 			if recorded {
 				if e.Executions == nil {
 					e.Executions = map[model.ExecutionID]model.GuestExecution{}

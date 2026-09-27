@@ -62,7 +62,11 @@ type GuestExecution struct {
 	// Identity is the environment's identity by origin when the execution
 	// began (buildenv.IdentityProvider): what it was made from and with.
 	// Empty where its provider can't say.
-	Identity   string
+	Identity string
+	// Reused is true for an execution that built nothing: every target it
+	// had to build would read what an earlier build of it read, whose
+	// result it keeps (decision 28, TargetResult.ReusedFrom).
+	Reused     bool
 	CreatedAt  time.Time
 	FinishedAt *time.Time
 }
@@ -183,6 +187,10 @@ type TargetResult struct {
 	// several builders, as MacPorts' workflow has a runner for each macOS
 	// release; the result is theirs together. Empty for one builder.
 	Builders []BuilderResult
+	// ReusedFrom is the execution that built the target, where this result
+	// is an earlier build's, reused because the build would read the same
+	// (decision 28); empty for a result built here.
+	ReusedFrom ExecutionID
 	// Inputs is the key of what the build read (TargetInputs), for reuse
 	// (decision 28); empty where the provider couldn't say.
 	Inputs string

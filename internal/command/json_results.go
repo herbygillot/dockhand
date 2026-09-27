@@ -293,23 +293,29 @@ type executionLogsJSON struct {
 	Attempt     int             `json:"attempt"`
 	State       string          `json:"state"`
 	Detail      string          `json:"detail,omitempty"`
-	Results     []resultLogJSON `json:"results"`
+	// Reused is true for a run that built nothing, reusing earlier builds'
+	// results, each of which names the run that built it.
+	Reused  bool            `json:"reused,omitempty"`
+	Results []resultLogJSON `json:"results"`
 }
 
 type resultLogJSON struct {
-	Target  string `json:"target"`
-	Outcome string `json:"outcome"`
-	Phase   string `json:"phase,omitempty"`
-	Log     string `json:"log,omitempty"`
+	Target     string `json:"target"`
+	Outcome    string `json:"outcome"`
+	Phase      string `json:"phase,omitempty"`
+	Log        string `json:"log,omitempty"`
+	ReusedFrom string `json:"reused_from,omitempty"`
 }
 
 func logsView(logs engine.RunLogs) logsJSON {
 	view := logsJSON{Run: runView(logs.Run), Executions: []executionLogsJSON{}}
 	for _, execution := range logs.Executions {
 		x := execution.Execution
-		entry := executionLogsJSON{ID: string(x.ID), Reference: x.ProviderRef, Environment: environmentView(x.Environment), Attempt: x.Attempt, State: string(x.State), Detail: x.Detail, Results: []resultLogJSON{}}
+		entry := executionLogsJSON{ID: string(x.ID), Reference: x.ProviderRef, Environment: environmentView(x.Environment), Attempt: x.Attempt, State: string(x.State), Detail: x.Detail,
+			Reused: x.Reused, Results: []resultLogJSON{}}
 		for _, result := range execution.Results {
-			entry.Results = append(entry.Results, resultLogJSON{Target: string(result.Target), Outcome: string(result.Outcome), Phase: string(result.Phase), Log: result.Log})
+			entry.Results = append(entry.Results, resultLogJSON{Target: string(result.Target), Outcome: string(result.Outcome), Phase: string(result.Phase), Log: result.Log,
+				ReusedFrom: string(result.ReusedFrom)})
 		}
 		view.Executions = append(view.Executions, entry)
 	}

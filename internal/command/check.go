@@ -22,7 +22,7 @@ import (
 
 func checkCommand(s *settings, streams Streams) *cobra.Command {
 	var selector, tests string
-	var plan, head, staged, workingTree, enqueue, baseline, replace bool
+	var plan, head, staged, workingTree, enqueue, baseline, replace, fresh bool
 	var include, only, also, on []string
 	cmd := &cobra.Command{
 		Use:   "check",
@@ -36,6 +36,10 @@ install, and declared tests (advisory unless --tests required).
 check to some changed ports and adds back the changed ones they need;
 --also builds unchanged ports against the branch. --plan shows what would
 be built and changes nothing.
+
+Where every port an environment would build reads what an earlier build of
+it read, recorded with its result, that result is reused and nothing is
+built there; --fresh builds everything.
 
 Without dockhand serve, the check runs here and says so; Ctrl-C stops it
 and keeps what finished. With serve running, it is handed to serve and
@@ -81,7 +85,7 @@ true, it runs that baseline by itself.`,
 			if tests == "" {
 				tests = s.file.Check.Tests
 			}
-			proposed, err := e.PlanCheck(ctx, engine.PlanRequest{Revision: capture.Revision, Environments: environments, Only: only, Also: also, Tests: model.TestPolicy(tests)})
+			proposed, err := e.PlanCheck(ctx, engine.PlanRequest{Revision: capture.Revision, Environments: environments, Only: only, Also: also, Tests: model.TestPolicy(tests), Fresh: fresh})
 			if err != nil {
 				return err
 			}
@@ -144,6 +148,7 @@ true, it runs that baseline by itself.`,
 	cmd.Flags().BoolVarP(&enqueue, "enqueue", "d", false, "queue the check and return")
 	cmd.Flags().BoolVar(&replace, "replace", false, "stop the branch's queued or running check, keeping what it finished, and check this instead")
 	cmd.Flags().BoolVar(&baseline, "baseline", false, "build what failed in the latest check, or --only ports, at the master it started from")
+	cmd.Flags().BoolVar(&fresh, "fresh", false, "build every port, reusing no earlier build's result")
 	cmd.MarkFlagsMutuallyExclusive("baseline", "plan")
 	cmd.MarkFlagsMutuallyExclusive("baseline", "also")
 	cmd.MarkFlagsMutuallyExclusive("head", "staged", "working-tree")

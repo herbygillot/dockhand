@@ -32,6 +32,8 @@ type PlanRequest struct {
 	// Also adds unchanged ports, built against the branch.
 	Also  []string
 	Tests model.TestPolicy
+	// Fresh builds every target, reusing no earlier build's result.
+	Fresh bool
 	// directories are Also ports' directories where the caller knows them
 	// already, as a baseline does from the check it explains, so they
 	// aren't looked up by name again.
@@ -57,7 +59,7 @@ type rebuild struct {
 // it is never dropped.
 func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan, error) {
 	revision := request.Revision
-	plan := model.Plan{ID: model.PlanID(store.NewID("plan")), Revision: revision.ID, Environments: request.Environments, Only: request.Only, Also: request.Also, Tests: request.Tests, CreatedAt: e.now()}
+	plan := model.Plan{ID: model.PlanID(store.NewID("plan")), Revision: revision.ID, Environments: request.Environments, Only: request.Only, Also: request.Also, Tests: request.Tests, Fresh: request.Fresh, CreatedAt: e.now()}
 	if plan.Tests == "" {
 		plan.Tests = model.TestsDeclared
 	}

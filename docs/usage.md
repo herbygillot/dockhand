@@ -159,6 +159,8 @@ Results are per target and per environment:
 
 With several releases, `check` builds two at a time, as many as macOS runs VMs, and shows the results as a grid, one column per release. A check on several providers, such as `--on tahoe --on github`, builds on each at once.
 
+**Reusing what didn't change.** Each result keeps what its build read: the environment, the port's directory and `_resources`, and every port that was active. When every port an environment would build reads what an earlier passed build of it read, and in the environment as it is now, the check reuses those results and builds nothing there. It says so ("reuses that result, building nothing"), and `logs` names the run that built each port. A rebase that leaves a port's files and dependencies alone keeps its result, and one that changes `_resources` doesn't. `--fresh` builds everything.
+
 **Running it.** With no `serve` running, the check runs in the foreground and says so. Ctrl-C stops it, keeping what finished. With `serve` running, the check is handed to serve and followed here, and Ctrl-C only stops following. `-d` queues it and returns.
 
 A check whose process dies without settling it, killed or lost with its terminal, is shown as **stopped** by `status` and `queue`. `dockhand wait` resumes it where it stopped, and so does the next `serve`; `dockhand cancel` ends it. `clean` removes the clone it left, once nothing runs it.

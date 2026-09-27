@@ -279,6 +279,9 @@ func writeLogs(out io.Writer, logs engine.RunLogs) error {
 		if x.Detail != "" {
 			fmt.Fprintf(out, " (%s)", x.Detail)
 		}
+		if x.Reused {
+			fmt.Fprint(out, ", reusing earlier builds: nothing was built")
+		}
 		fmt.Fprintln(out)
 		if x.ProviderRef != "" {
 			fmt.Fprintf(out, "    %s\n", x.ProviderRef)
@@ -290,6 +293,9 @@ func writeLogs(out io.Writer, logs engine.RunLogs) error {
 			}
 			if result.Detail != "" {
 				line += ": " + result.Detail
+			}
+			if result.ReusedFrom != "" {
+				line += ", as built by run " + string(result.ReusedFrom)
 			}
 			if result.Log != "" {
 				line += "  " + tilde(result.Log)

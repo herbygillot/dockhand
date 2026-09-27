@@ -164,6 +164,9 @@ type resultJSON struct {
 	Excluded bool   `json:"excluded,omitempty"`
 	// Detail is why the target stopped, in its provider's words.
 	Detail string `json:"detail,omitempty"`
+	// ReusedFrom is the provider run that built it, where this result is
+	// an earlier build's, reused.
+	ReusedFrom string `json:"reused_from,omitempty"`
 	// Builders are each builder's part, where the provider's run has
 	// several, as MacPorts' workflow has a runner for each macOS release.
 	Builders []builderJSON `json:"builders,omitempty"`
@@ -270,7 +273,7 @@ func evidenceView(evidence engine.Evidence) []targetJSON {
 		view.Passed = &passed
 		for i, result := range target.Outcomes {
 			environment := evidence.Plan.Environments[i]
-			view.Results = append(view.Results, resultJSON{Outcome: string(result.Outcome), Phase: string(result.Phase), Tests: string(result.Tests), Log: result.Log, Detail: result.Detail,
+			view.Results = append(view.Results, resultJSON{Outcome: string(result.Outcome), Phase: string(result.Phase), Tests: string(result.Tests), Log: result.Log, Detail: result.Detail, ReusedFrom: string(result.ReusedFrom),
 				Builders: builderViews(result.Builders),
 				Excluded: engine.Excluded(evidence.Plan, target.Target, environment), Remade: slices.Contains(target.Remade, environment)})
 		}

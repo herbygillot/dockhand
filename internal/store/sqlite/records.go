@@ -408,7 +408,7 @@ func (t *tx) UpdateRun(r model.Run) error {
 		r.State, r.Detail, nullableMillis(r.FinishedAt), nullableMillis(r.CancelRequested), t.repo, r.ID)
 }
 
-const executionColumns = "id, run_id, provider, platform_os, platform_version, platform_architecture, developer_tools, attempt, state, detail, provider_ref, observed, identity, created_at, finished_at"
+const executionColumns = "id, run_id, provider, platform_os, platform_version, platform_architecture, developer_tools, attempt, state, detail, provider_ref, observed, identity, reused, created_at, finished_at"
 
 func scanExecution(row interface{ Scan(...any) error }) (model.GuestExecution, error) {
 	var e model.GuestExecution
@@ -416,7 +416,7 @@ func scanExecution(row interface{ Scan(...any) error }) (model.GuestExecution, e
 	var finished sql.NullInt64
 	var observed string
 	p := &e.Environment.Platform
-	if err := row.Scan(&e.ID, &e.Run, &e.Environment.Provider, &p.OS, &p.Version, &p.Architecture, &e.Environment.DeveloperTools, &e.Attempt, &e.State, &e.Detail, &e.ProviderRef, &observed, &e.Identity, &created, &finished); err != nil {
+	if err := row.Scan(&e.ID, &e.Run, &e.Environment.Provider, &p.OS, &p.Version, &p.Architecture, &e.Environment.DeveloperTools, &e.Attempt, &e.State, &e.Detail, &e.ProviderRef, &observed, &e.Identity, &e.Reused, &created, &finished); err != nil {
 		return model.GuestExecution{}, storageError(err)
 	}
 	if observed != "" {
@@ -489,8 +489,8 @@ func (t *tx) AddExecution(e model.GuestExecution) error {
 	if err != nil {
 		return err
 	}
-	_, err = t.exec("INSERT INTO executions(repository_id, "+executionColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		t.repo, e.ID, e.Run, e.Environment.Provider, p.OS, p.Version, p.Architecture, e.Environment.DeveloperTools, e.Attempt, e.State, e.Detail, e.ProviderRef, observed, e.Identity, millis(e.CreatedAt), nullableMillis(e.FinishedAt))
+	_, err = t.exec("INSERT INTO executions(repository_id, "+executionColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		t.repo, e.ID, e.Run, e.Environment.Provider, p.OS, p.Version, p.Architecture, e.Environment.DeveloperTools, e.Attempt, e.State, e.Detail, e.ProviderRef, observed, e.Identity, boolInt(e.Reused), millis(e.CreatedAt), nullableMillis(e.FinishedAt))
 	return err
 }
 
@@ -528,8 +528,23 @@ func (t *tx) UpdateExecution(e model.GuestExecution) error {
 		e.State, e.Detail, e.ProviderRef, observed, observed, nullableMillis(e.FinishedAt), t.repo, e.ID)
 }
 
+const resultColumns = "r.execution_id, r.target_id, r.outcome, r.phase, r.tests, r.log, r.detail, r.builders, r.inputs, r.archive, r.reused_from, r.recorded_at"
+
 func (t *tx) Results(execution model.ExecutionID) ([]model.TargetResult, error) {
-	rows, err := t.conn.QueryContext(t.ctx, "SELECT execution_id, target_id, outcome, phase, tests, log, detail, builders, inputs, archive, recorded_at FROM results WHERE repository_id=? AND execution_id=? ORDER BY recorded_at, rowid", t.repo, execution)
+	return t.results("SELECT "+resultColumns+" FROM results r WHERE r.repository_id=? AND r.execution_id=? ORDER BY r.recorded_at, r.rowid", t.repo, execution)
+}
+
+func (t *tx) Reusable(target model.TargetID, environment model.Environment, limit int) ([]model.TargetResult, error) {
+	p := environment.Platform
+	return t.results("SELECT "+resultColumns+" FROM results r JOIN executions e ON e.repository_id=r.repository_id AND e.id=r.execution_id "+
+		"WHERE r.repository_id=? AND r.target_id=? AND r.outcome='passed' AND r.inputs<>'' AND e.reused=0 "+
+		"AND e.provider=? AND e.platform_os=? AND e.platform_version=? AND e.platform_architecture=? AND e.developer_tools=? "+
+		"ORDER BY r.recorded_at DESC, r.rowid DESC LIMIT ?",
+		t.repo, target, environment.Provider, p.OS, p.Version, p.Architecture, environment.DeveloperTools, limit)
+}
+
+func (t *tx) results(query string, args ...any) ([]model.TargetResult, error) {
+	rows, err := t.conn.QueryContext(t.ctx, query, args...)
 	if err != nil {
 		return nil, storageError(err)
 	}
@@ -539,7 +554,7 @@ func (t *tx) Results(execution model.ExecutionID) ([]model.TargetResult, error) 
 		var r model.TargetResult
 		var recorded int64
 		var builders string
-		if err := rows.Scan(&r.Execution, &r.Target, &r.Outcome, &r.Phase, &r.Tests, &r.Log, &r.Detail, &builders, &r.Inputs, &r.Archive, &recorded); err != nil {
+		if err := rows.Scan(&r.Execution, &r.Target, &r.Outcome, &r.Phase, &r.Tests, &r.Log, &r.Detail, &builders, &r.Inputs, &r.Archive, &r.ReusedFrom, &recorded); err != nil {
 			return nil, storageError(err)
 		}
 		if builders != "" {
@@ -577,6 +592,11 @@ func (t *tx) RecordResult(r model.TargetResult) error {
 			return fmt.Errorf("%s's result names inputs %s: %w", r.Target, r.Inputs, err)
 		}
 	}
+	if r.ReusedFrom != "" {
+		if _, err := t.execution(r.ReusedFrom); err != nil {
+			return fmt.Errorf("%s's result is reused from execution %s: %w", r.Target, r.ReusedFrom, err)
+		}
+	}
 	builders := ""
 	if len(r.Builders) > 0 {
 		data, err := json.Marshal(r.Builders)
@@ -589,8 +609,8 @@ func (t *tx) RecordResult(r model.TargetResult) error {
 	err = t.conn.QueryRowContext(t.ctx, "SELECT outcome FROM results WHERE repository_id=? AND execution_id=? AND target_id=?", t.repo, r.Execution, r.Target).Scan(&existing.Outcome)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		_, err = t.exec("INSERT INTO results(repository_id, execution_id, target_id, outcome, phase, tests, log, detail, builders, inputs, archive, recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-			t.repo, r.Execution, r.Target, r.Outcome, r.Phase, r.Tests, r.Log, r.Detail, builders, r.Inputs, r.Archive, millis(r.RecordedAt))
+		_, err = t.exec("INSERT INTO results(repository_id, execution_id, target_id, outcome, phase, tests, log, detail, builders, inputs, archive, reused_from, recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+			t.repo, r.Execution, r.Target, r.Outcome, r.Phase, r.Tests, r.Log, r.Detail, builders, r.Inputs, r.Archive, r.ReusedFrom, millis(r.RecordedAt))
 		return err
 	case err != nil:
 		return storageError(err)
@@ -599,8 +619,8 @@ func (t *tx) RecordResult(r model.TargetResult) error {
 	if !existing.ReplacedBy(r) {
 		return fmt.Errorf("%w: %s's result in execution %s is %s and cannot become %s", store.ErrConflict, r.Target, r.Execution, existing.Outcome, r.Outcome)
 	}
-	_, err = t.exec("UPDATE results SET outcome=?, phase=?, tests=?, log=?, detail=?, builders=?, inputs=?, archive=?, recorded_at=? WHERE repository_id=? AND execution_id=? AND target_id=?",
-		r.Outcome, r.Phase, r.Tests, r.Log, r.Detail, builders, r.Inputs, r.Archive, millis(r.RecordedAt), t.repo, r.Execution, r.Target)
+	_, err = t.exec("UPDATE results SET outcome=?, phase=?, tests=?, log=?, detail=?, builders=?, inputs=?, archive=?, reused_from=?, recorded_at=? WHERE repository_id=? AND execution_id=? AND target_id=?",
+		r.Outcome, r.Phase, r.Tests, r.Log, r.Detail, builders, r.Inputs, r.Archive, r.ReusedFrom, millis(r.RecordedAt), t.repo, r.Execution, r.Target)
 	return err
 }
 

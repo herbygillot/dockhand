@@ -104,6 +104,38 @@ Nothing reads the in-guest manifest, so its loss went unnoticed from the start.
 
 Setup now flushes the guest (`sync`) right before stopping it (`Flush`), and a test holds the order. That changes what an image holds, so the setup protocol is 3. Protocol 2's images have origin records but no archives, and are to be made again.
 
+## Reusing an unchanged build
+
+The first step of per-target reuse: an environment whose every target would read what an earlier build of it read builds nothing, and reuses those results.
+
+**The rule** (`reuse.Current`): a result stands for a build now when its recorded inputs are:
+- complete;
+- recorded in the environment's identity now;
+- for the same variants;
+- with the target's directory, `_resources`, and every active port's directory at the same trees in the revision now.
+
+An active port's archive isn't known before a build runs, so it isn't compared. The same directory at the same tree is the same port and version, whose archive MacPorts' packages serve. The accepted gaps are decision 28's: a build step reading another port's directory, a download over the network, a nondeterministic build.
+
+**Where it applies.** Before an environment's first attempt, the runner looks at each target's five newest passed results in that environment that recorded inputs, from builds rather than reuses (`Reader.Reusable`). A result stands only if the check's test policy lets it (`TestPolicy.Stands`): it still passes when judged under the policy, as one whose tests failed doesn't under `--tests required`, and its tests ran unless this check skips them.
+
+If every target has one, the runner records an execution that built nothing (`GuestExecution.Reused`, schema 20), in the environment as it is now. Its results are the earlier ones, each naming the execution that built it (`TargetResult.ReusedFrom`). No provider is started. Otherwise the provider builds all of them, for now. Reusing some and building others needs a reused dependency's archive in the guest, which is the next step. `check --fresh` (`Plan.Fresh`) reuses nothing.
+
+**What people see.**
+- The check says "every target would build as it did in check-24, and reuses that result, building nothing".
+- `logs` shows the run as "reusing earlier builds: nothing was built", and each result "as built by run tart_…", with that build's log.
+- Tested on names the run that built each port, "tart_… - checked in check-24, reused in check-25", not the run that reused it (`Evidence.Built`).
+- `--json` has `reused` and `reused_from`.
+
+**Checked live.** check-24 had built jq in the rebuilt Tahoe Xcode image, recording complete inputs. check-25, of the same files, reused it and finished in 4.8 seconds without a VM, where a build takes minutes.
+
+**Tests.**
+- The rule's cases, one input changed at a time.
+- `TestAnUnchangedBuildIsReused`:
+  - the same files are reused without the provider;
+  - `--fresh`, a remade environment, and a changed `_resources` build again;
+  - the new build is reused in its turn;
+  - what a reviewer reads names the build.
+
 ## Still to do in item 6
 
 - **Recorded inputs per port:** each build records its input identity and the archives it consumed.

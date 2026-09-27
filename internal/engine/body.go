@@ -100,7 +100,8 @@ func ownedSections(facts bodyFacts) string {
 				observations = []Observation{{}}
 			}
 			for _, observation := range observations {
-				b.WriteString(testedOn(environment, observation.Observed, observation.Runs, checks))
+				built, reusedIn := evidence.Built(i, observation.Runs)
+				b.WriteString(testedOn(environment, observation.Observed, built, checks, reusedIn))
 			}
 		}
 		fmt.Fprint(&b, "| Port |")
@@ -202,7 +203,7 @@ func citesTickets(commits []git.HistoryCommit) bool {
 // reported them, then who built it, and in which runs of which checks. What
 // it didn't report is said by the release's name and the tools the
 // environment stated, and never by the Darwin version, which isn't macOS's.
-func testedOn(environment model.Environment, observed model.Observed, runs []model.GuestExecution, checks map[model.RunID]string) string {
+func testedOn(environment model.Environment, observed model.Observed, runs []model.GuestExecution, checks map[model.RunID]string, reusedIn map[model.ExecutionID]string) string {
 	var b strings.Builder
 	platform := environment.Platform
 	switch {
@@ -227,7 +228,7 @@ func testedOn(environment model.Environment, observed model.Observed, runs []mod
 	if observed.MacPorts != "" {
 		tools += " · MacPorts " + observed.MacPorts
 	}
-	fmt.Fprintf(&b, "%s · %s%s\n\n", tools, providerWords(environment.Provider), runWords(runs, checks))
+	fmt.Fprintf(&b, "%s · %s%s\n\n", tools, providerWords(environment.Provider), runWords(runs, checks, reusedIn))
 	return b.String()
 }
 
@@ -236,7 +237,7 @@ func testedOn(environment model.Environment, observed model.Observed, runs []mod
 // check-11)". A run is named by its provider's own reference where that is
 // a link anyone can follow, such as a workflow run's URL, and by dockhand's
 // ID otherwise, which the author's dockhand logs finds the evidence by.
-func runWords(runs []model.GuestExecution, checks map[model.RunID]string) string {
+func runWords(runs []model.GuestExecution, checks map[model.RunID]string, reusedIn map[model.ExecutionID]string) string {
 	var named []string
 	for _, run := range runs {
 		name := string(run.ID)
@@ -245,6 +246,9 @@ func runWords(runs []model.GuestExecution, checks map[model.RunID]string) string
 		}
 		if check := checks[run.Run]; check != "" {
 			name += " - checked in " + check
+		}
+		if check := reusedIn[run.ID]; check != "" {
+			name += ", reused in " + check
 		}
 		if !slices.Contains(named, name) {
 			named = append(named, name)

@@ -100,6 +100,17 @@ func (p TestPolicy) Judge(result TargetResult) TargetResult {
 	return result
 }
 
+// Stands reports whether an earlier passed result stands for a check under
+// this policy, reused rather than built again (decision 28): it still
+// passes when judged under it, as a result whose tests failed doesn't
+// under required, and its tests ran unless this policy skips them.
+func (p TestPolicy) Stands(result TargetResult) bool {
+	if p.Judge(result).Outcome != OutcomePassed {
+		return false
+	}
+	return p == TestsSkip || result.Tests != TestsSkipped
+}
+
 // Environment is one provider and platform a plan is checked on.
 type Environment struct {
 	Provider string
@@ -186,9 +197,12 @@ type Plan struct {
 	// (Design v3 §7).
 	Omitted []PlanTarget `json:",omitempty"`
 	// Only and Also record the selection as given, for status and the PR.
-	Only      []string
-	Also      []string
-	Tests     TestPolicy
+	Only  []string
+	Also  []string
+	Tests TestPolicy
+	// Fresh builds every target, reusing no earlier build's result
+	// (decision 28).
+	Fresh     bool `json:",omitempty"`
 	CreatedAt time.Time
 }
 

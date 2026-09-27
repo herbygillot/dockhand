@@ -363,6 +363,17 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 		if len(remaining) == 0 {
 			return nil
 		}
+		// Before the first attempt, an environment whose every target would
+		// build as an earlier build did reuses those results (decision 28).
+		if attempt == 0 {
+			reused, err := d.reuse(ctx, environment, remaining, revision.Source.Tree)
+			if err != nil {
+				return err
+			}
+			if reused {
+				return nil
+			}
+		}
 		if attempt >= model.MaxAttempts {
 			d.problem(fmt.Sprintf("%s failed %d times for reasons of its own; see dockhand logs %s", describeEnvironment(environment), attempt, d.run.Name()))
 			return nil
@@ -660,6 +671,11 @@ func runEvidence(r store.Reader, run model.Run, plan model.Plan) (Evidence, erro
 			}
 			te.Outcomes = append(te.Outcomes, result)
 			te.Passed = te.Passed && result.Outcome == model.OutcomePassed
+			if result.ReusedFrom != "" {
+				if err := evidence.origin(r, result.ReusedFrom); err != nil {
+					return Evidence{}, err
+				}
+			}
 		}
 		evidence.Targets = append(evidence.Targets, te)
 	}
