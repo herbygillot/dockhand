@@ -21,7 +21,7 @@ The opt-in acceptance test builds two ports of a real ports tree in a real clone
 ```sh
 DOCKHAND_TEST_TART_LIVE=1 DOCKHAND_TEST_PORTS_TREE=~/Source/macports-ports \
 DOCKHAND_TEST_MACPORTS_TCLSH=/opt/local/bin/port-tclsh \
-go test -v ./internal/provider/tart -run '^TestLiveCheckInATahoeGuest$' -timeout 30m
+go test -v ./internal/buildenv/tart -run '^TestLiveCheckInATahoeGuest$' -timeout 30m
 ```
 
 ## Other opt-in tests
@@ -45,7 +45,7 @@ The rest reach something outside the checkout and run only when named:
 | `DOCKHAND_TEST_PORTS_REPO` | `git` `TestCaptureRealPortsCheckout` | a real macports-ports checkout, read only |
 | `DOCKHAND_TEST_GITHUB_PR`, `DOCKHAND_TEST_GITHUB_TOKEN` | `forge/github` `inspect_live_test.go` | one pull request, `owner/repo#number`, read with that token |
 | `DOCKHAND_TEST_BOOTSTRAP_VM` | `tart/provision` `TestLiveAgentRegistration` | a running disposable VM you own, whose agent it registers |
-| `DOCKHAND_TEST_TART_LIVE` | `provider/tart` `TestLiveCheckInATahoeGuest` | the acceptance test above, with `DOCKHAND_TEST_PORTS_TREE` |
+| `DOCKHAND_TEST_TART_LIVE` | `buildenv/tart` `TestLiveCheckInATahoeGuest` | the acceptance test above, with `DOCKHAND_TEST_PORTS_TREE` |
 | `DOCKHAND_TEST_TART_IMAGE` | `tart/host` `TestLiveTartContracts`, `tart/channel` `TestLiveChannel` | Tart's listing, stop, and delete behavior, and the guest channel, on a clone of the named raw-disk image |
 | `DOCKHAND_TEST_TART_ASIF_SOURCE` | `tart/host` `TestLiveTartListsWhileAnASIFVMRuns` | an ASIF image such as Golden Gate's, cloned and run briefly while Tart lists its VMs; it needs Tart 2.39.0 or newer, and skips on an older one |
 

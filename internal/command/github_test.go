@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/herbygillot/dockhand/internal/provider/actions"
+	"github.com/herbygillot/dockhand/internal/buildenv/ghactions"
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
@@ -23,7 +23,7 @@ type fakeActions struct {
 	// logs are each attempt's jobs' logs, by job name.
 	logs       []map[string]string
 	conclusion []string
-	run        *actions.Run
+	run        *ghactions.Run
 	looks      int
 	reruns     int
 	canceled   int
@@ -37,17 +37,17 @@ func (f *fakeActions) pushed(branch, commit string) bool {
 	return err == nil && strings.TrimSpace(string(out)) == commit
 }
 
-func (f *fakeActions) Runs(_ context.Context, repository, branch, commit string) ([]actions.Run, error) {
+func (f *fakeActions) Runs(_ context.Context, repository, branch, commit string) ([]ghactions.Run, error) {
 	if repository != "ada/macports-ports" || !f.pushed(branch, commit) {
 		return nil, nil
 	}
 	if f.run == nil {
-		f.run = &actions.Run{ID: 7, Attempt: 1, Status: "queued", URL: "https://github.com/ada/macports-ports/actions/runs/7"}
+		f.run = &ghactions.Run{ID: 7, Attempt: 1, Status: "queued", URL: "https://github.com/ada/macports-ports/actions/runs/7"}
 	}
-	return []actions.Run{*f.run}, nil
+	return []ghactions.Run{*f.run}, nil
 }
 
-func (f *fakeActions) Run(_ context.Context, _ string, id int64) (actions.Run, error) {
+func (f *fakeActions) Run(_ context.Context, _ string, id int64) (ghactions.Run, error) {
 	f.looks++
 	switch f.run.Status {
 	case "queued":
@@ -75,11 +75,11 @@ func (f *fakeActions) Cancel(_ context.Context, repository string, id int64) err
 	return nil
 }
 
-func (f *fakeActions) Jobs(_ context.Context, _ string, id int64, attempt int) ([]actions.RunnerJob, error) {
-	var jobs []actions.RunnerJob
+func (f *fakeActions) Jobs(_ context.Context, _ string, id int64, attempt int) ([]ghactions.RunnerJob, error) {
+	var jobs []ghactions.RunnerJob
 	for i, name := range []string{"build (macos-14)", "build (macos-15)"} {
 		if _, ok := f.logs[attempt-1][name]; ok {
-			jobs = append(jobs, actions.RunnerJob{ID: int64(attempt*10 + i), Name: name, Status: "completed"})
+			jobs = append(jobs, ghactions.RunnerJob{ID: int64(attempt*10 + i), Name: name, Status: "completed"})
 		}
 	}
 	return jobs, nil

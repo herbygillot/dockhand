@@ -12,9 +12,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/buildenv/tart"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/provider/tart"
 )
 
 // fakeImages stands in for dockhand's Tart images.

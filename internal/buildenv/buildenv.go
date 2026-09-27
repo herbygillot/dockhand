@@ -1,10 +1,10 @@
 // Package buildenv is the contract between the engine and the providers
-// of build environments a check builds in (Design v3 §7): tart, github,
-// and a person's own command, in internal/provider. A provider is given a
-// Job, one guest execution's work, and reports what happened through a
-// Build; what else it can do, it says by the interfaces it implements.
-// Providers import this package and model, never the engine, which
-// drives them; the command layer composes them.
+// of build environments a check builds in (Design v3 §7), which live
+// beneath it: tart, ghactions for github, and script for a person's own
+// command. A provider is given a Job, one guest execution's work, and
+// reports what happened through a Build; what else it can do, it says by
+// the interfaces it implements. Providers import this package and model,
+// never the engine, which drives them; the command layer composes them.
 package buildenv
 
 import (

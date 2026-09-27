@@ -58,3 +58,14 @@ The person pointed out that providers provide build services, and chose `interna
 - **What moved.** The contract is `internal/buildenv`: `buildenv.Provider`, `Job`, `Target`, `Build`, `ErrInfrastructure`, the capabilities, `Leftover`, `Fork`, and `CheckBranchPrefix`. Its boundary test moved with it, and checks the providers in `../provider`.
 - **The providers stay in `internal/provider/`,** since "provider" is still the word people use: `--on`, `dockhand providers`, and `[providers.command]`.
 - **The engine's locals are `provider` again,** as they were before item 4, now that the package doesn't have that name.
+
+## The providers live beneath their contract
+
+The person pointed out that the part of Tart that implements `buildenv`'s contract belongs in `internal/buildenv/tart`. That is the standard library's own pattern, as in `image/png` beneath `image` and `hash/crc32` beneath `hash`, so all three providers moved:
+- `internal/provider/tart` is `internal/buildenv/tart`;
+- `internal/provider/actions` is `internal/buildenv/ghactions`, as the person named it: GitHub Actions, and clear of `internal/github`;
+- `internal/provider/script` is `internal/buildenv/script`.
+
+`internal/provider` is gone. The Tart and command providers' package names are unchanged. `internal/tart`, which controls VMs and makes images, stays where it is: it is not the contract's.
+
+The boundary test now checks the directories beneath its own, and fails if it finds fewer than three providers' files. The command layer's composition imports, the architecture doc, and the live test's command in the development guide name the new paths.

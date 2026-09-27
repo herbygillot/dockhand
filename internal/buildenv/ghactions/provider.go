@@ -6,7 +6,7 @@
 // builds the ports the commit changes, on each macOS its matrix names;
 // dockhand does not choose the runners, and ports it does not change are
 // not built.
-package actions
+package ghactions
 
 import (
 	"context"

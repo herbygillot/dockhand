@@ -42,11 +42,11 @@ internal/model         the records' vocabulary; imports nothing from dockhand
 5. **Run** (`engine/runner.go`). The run is queued in the store. Whoever holds its lease drives it: `check` in the foreground when no `serve` is running, else `serve`. It makes one guest execution per environment and gives each provider a `buildenv.Job`. The provider records each target's result as it finishes, and the runner judges it under the plan's test policy (`model.TestPolicy.Judge`), whichever provider built it. Trouble with the environment itself is retried, up to `model.MaxAttempts`. A verdict is never retried.
 6. **Evidence** (`engine/evidence.go`, `engine/words.go`). The results across environments become what `check`, `status`, and `submit` show, and the pull request's *Tested on* (`engine/body.go`).
 
-The providers implement `buildenv.Provider`, the contract in `internal/buildenv` for providers of build environments: the `Job` a provider is given, the `Build` it records through, `ErrInfrastructure`, and the capabilities the engine looks for (`ReleaseProvider`, `Remedier`, `OwnTestsProvider`, `LeftoverProvider`). A provider imports the contract and `model`, never the engine; the command layer composes them, and a test holds that line.
+The providers implement `buildenv.Provider`, the contract in `internal/buildenv` for providers of build environments, and live beneath it: the `Job` a provider is given, the `Build` it records through, `ErrInfrastructure`, and the capabilities the engine looks for (`ReleaseProvider`, `Remedier`, `OwnTestsProvider`, `LeftoverProvider`). A provider imports the contract and `model`, never the engine; the command layer composes them, and a test holds that line.
 
-- **`provider/tart`** clones a prepared image for each release and attempt, and deletes the clone afterwards. It stages the revision's tree and a port index into the guest (`verify/staging`), reaches the guest over SSH (`tart/channel`), and runs `guest.tcl` there, in MacPorts CI's order. `tart/host` controls the VMs, and `tart/provision` makes and checks the images `providers setup tart` builds. [Tart provider](tart-provider.md).
-- **`provider/actions`** pushes the revision's commit to your fork and reads MacPorts' own workflow run. [github provider](github-provider.md).
-- **`provider/script`** hands a request file to your command and reads its result file. [command provider](command-provider.md).
+- **`buildenv/tart`** clones a prepared image for each release and attempt, and deletes the clone afterwards. It stages the revision's tree and a port index into the guest (`verify/staging`), reaches the guest over SSH (`tart/channel`), and runs `guest.tcl` there, in MacPorts CI's order. `tart/host` controls the VMs, and `tart/provision` makes and checks the images `providers setup tart` builds. [Tart provider](tart-provider.md).
+- **`buildenv/ghactions`** pushes the revision's commit to your fork and reads MacPorts' own workflow run. [github provider](github-provider.md).
+- **`buildenv/script`** hands a request file to your command and reads its result file. [command provider](command-provider.md).
 
 ## Authoring
 

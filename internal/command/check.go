@@ -12,10 +12,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/buildenv/ghactions"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/provider/actions"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/version"
 )
@@ -224,7 +224,7 @@ func captureMode(ctx context.Context, e *engine.Engine, branch model.Branch, sel
 // write to your fork (Design v3 §9).
 func writePushes(out io.Writer, plan model.Plan) {
 	if slices.ContainsFunc(plan.Environments, func(e model.Environment) bool { return e.Provider == "github" }) {
-		fmt.Fprintf(out, "Pushes      the revision to a %s branch of your fork, where MacPorts' workflow builds it\n", actions.BranchPrefix)
+		fmt.Fprintf(out, "Pushes      the revision to a %s branch of your fork, where MacPorts' workflow builds it\n", ghactions.BranchPrefix)
 	}
 }
 

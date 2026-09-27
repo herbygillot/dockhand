@@ -8,9 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/buildenv/tart"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/github"
-	"github.com/herbygillot/dockhand/internal/provider/tart"
 )
 
 // tartImages is what the providers commands ask of dockhand's Tart images.

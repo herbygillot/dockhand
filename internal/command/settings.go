@@ -11,11 +11,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/buildenv/ghactions"
+	"github.com/herbygillot/dockhand/internal/buildenv/script"
+	"github.com/herbygillot/dockhand/internal/buildenv/tart"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
-	"github.com/herbygillot/dockhand/internal/provider/actions"
-	"github.com/herbygillot/dockhand/internal/provider/script"
-	"github.com/herbygillot/dockhand/internal/provider/tart"
 )
 
 // settings are the global selections. Each comes from its flag, then its
@@ -88,8 +88,8 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 		e.Providers["command"] = &script.Provider{Run: command.Run, Label: command.Name, Repo: e.Repo}
 	}
 	remote := file.Providers.GitHub.Remote
-	github := &actions.Provider{Repo: e.Repo, Fork: func(ctx context.Context) (buildenv.Fork, error) { return e.Fork(ctx, remote) },
-		API: actions.GitHub{Client: authAPI(authStore)}}
+	github := &ghactions.Provider{Repo: e.Repo, Fork: func(ctx context.Context) (buildenv.Fork, error) { return e.Fork(ctx, remote) },
+		API: ghactions.GitHub{Client: authAPI(authStore)}}
 	if testActions != nil {
 		github.API, github.Sleep = testActions, func(ctx context.Context, _ time.Duration) error { return ctx.Err() }
 	}
@@ -131,7 +131,7 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 var testArchiveFetcher func(*engine.Engine) engine.ArchiveFetcher
 
 // testActions, when set, stands in for GitHub Actions.
-var testActions actions.API
+var testActions ghactions.API
 
 // testLeftovers, when set, is a provider with environments left behind,
 // registered under its name in place of whichever the configuration made.

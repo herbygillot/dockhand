@@ -13,9 +13,9 @@ import (
 )
 
 // providerImports are packages a provider must not import, each with why.
-// A provider, in internal/provider, is composed by the command layer and
-// driven by the engine, and meets them only through this package's
-// contract.
+// A provider, in a directory beneath this one, is composed by the command
+// layer and driven by the engine, and meets them only through this
+// package's contract.
 var providerImports = map[string]string{
 	"internal/engine":  "the engine drives providers; a provider meets it through this contract",
 	"internal/command": "the command layer composes providers",
@@ -28,7 +28,7 @@ const module = "github.com/herbygillot/dockhand/"
 // A provider imports the contract, never the engine that drives it (the
 // architecture review of 2026-09-27, finding 4). Its tests may.
 func TestProvidersMeetTheEngineThroughTheContract(t *testing.T) {
-	const providers = "../provider"
+	const providers = "."
 	directories, err := os.ReadDir(providers)
 	require.NoError(t, err)
 	files := token.NewFileSet()
@@ -58,5 +58,5 @@ func TestProvidersMeetTheEngineThroughTheContract(t *testing.T) {
 			checked++
 		}
 	}
-	require.NotZero(t, checked, "the providers were found")
+	require.GreaterOrEqual(t, checked, 3, "the providers were found")
 }
