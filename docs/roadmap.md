@@ -37,15 +37,13 @@ In order. Each item lands in its own commits with an activity note, and a review
    - restoring a rebase left master's newer files as the branch's uncommitted edits;
    - naming two subports of one directory, with `--also` or in a baseline, counted the directory's exclusions twice.
 
-2. **One plan per environment.**
-   - **What a plan holds for each environment.** An environment's plan holds, keyed by the whole environment rather than by position:
-     - the ports its evaluation defined, and why each other one isn't built there;
-     - what each port needs there, such as Xcode;
-     - its dependency graph and its build order.
-   - **What stays branch-wide.** The branch's changed scope and the person's `--only`/`--also` selection stay apart from those.
-   - **A baseline rebuilds a port only in the environments where it failed.**
-   - **Each environment builds in its own order.** That retires today's refusal, where dependencies that run opposite ways on two releases make a cycle in the combined graph.
-   - **One predicate says which recorded results count toward a submission:** matching selection, environment, and test policy. Checks and baselines are then planned through the same path, which item 1 begins.
+2. **One plan per environment.** Done 2026-09-27 ([note](activity/2026-09-27-one-plan-per-environment.md)):
+   - each environment has its own plan, found by the whole environment: its build order, dependencies, Xcode needs, unmet targets, and exclusions with their reasons;
+   - the branch's targets and the person's selection stay the plan's own;
+   - each environment builds in its own order, so opposite dependencies on two releases are no longer refused;
+   - `engine.Counts` is the one rule for which earlier result of the same files stands;
+   - a baseline rebuilds a port only where it failed;
+   - plans recorded in the old form read as per-environment plans.
 
 3. **History changes as complete transitions.** This covers `tidy`, `rebase`, and `restore`, and the review's reproduced base bug is fixed in item 1. A rebase now records its checkpoint and the branch's new base in one transaction; restore still changes Git, then records.
    - **A per-branch lock.** Tidy and rebase move Git refs inside a database transaction today, using it as a lock, against the store's own rule that transactions never touch Git. A per-branch lock takes that job instead.

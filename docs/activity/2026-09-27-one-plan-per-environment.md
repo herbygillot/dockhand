@@ -54,3 +54,7 @@ Tests:
 Tests:
 - a check failing a port on one of two releases, whose baseline rebuilds it on that one alone, and a named port that failed nowhere rebuilt on both;
 - the report on two releases: a port rebuilt on one, and one master doesn't build where the check failed it.
+
+## The roadmap
+
+Item 2 is marked done.
