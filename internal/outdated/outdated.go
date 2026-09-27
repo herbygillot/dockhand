@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -100,6 +103,9 @@ type Service struct {
 	Workspaces *workspace.Registry
 	// Commit is the revision surveyed; HEAD when empty.
 	Commit string
+	// Concurrency is how many ports are looked up at once; Concurrency
+	// when zero.
+	Concurrency int
 }
 
 // Observe captures local HEAD and assesses every selected port independently.
@@ -128,39 +134,92 @@ func (s *Service) Observe(ctx context.Context, selection Selection) (_ Result, e
 		return Result{}, err
 	}
 	defer func() { err = errors.Join(err, files.Close()) }()
-	projection := files.Projection
-	source := files.Source
-	discovery := s.Upstream
 	editor := &portedit.Service{Ports: ports}
-	result := Result{Source: source}
+	result := Result{Source: files.Source}
 	for _, problem := range files.Problems {
 		result.Ports = append(result.Ports, Port{Selector: problem.Port, Result: upstream.Result{Assessment: upstream.Unknown, ObservedAt: time.Now().UTC(), Detail: problem.Detail}})
 	}
-	for _, selected := range files.Ports {
-		selector := selected.Label
-		if err := ctx.Err(); err != nil {
-			return result, err
+	// Ports are looked up concurrently, and the results keep the
+	// selection's order. Probing a candidate version writes it into the
+	// port's own Portfile in the shared projection, so ports that share a
+	// Portfile, subports of one port, go one after another; only distinct
+	// Portfiles overlap. Most of a port's time is spent waiting on its
+	// upstream, and GitHub's requests are paced for the whole process
+	// (internal/github), however many ports are looked up at once.
+	var order []string
+	byPortfile := map[string][]int{}
+	for i, selected := range files.Ports {
+		key := selected.Portfile
+		if key == "" {
+			key = selected.Selection.Selector
 		}
-		item := Port{Selector: selector, Result: upstream.Result{Assessment: upstream.Unknown, ObservedAt: time.Now().UTC()}}
-		probe, problem := editor.Probe(ctx, portedit.ProbeSource{Source: source, Workspace: projection, Selection: selected.Selection, Platform: platform})
-		if problem == nil && selected.Name != "" && probe.Port().Name != selected.Name {
-			problem = fmt.Errorf("indexed subport %s: upstream version probing currently supports the primary port %s", selected.Name, probe.Port().Name)
+		if _, seen := byPortfile[key]; !seen {
+			order = append(order, key)
 		}
-		if problem == nil {
-			var bound *upstream.Discovery
-			bound, problem = discovery.Bind(probe)
-			if problem == nil {
-				item.Result, problem = bound.Discover(ctx)
-			}
-		}
-		if problem != nil {
-			item.Assessment = upstream.Unknown
-			item.Detail = problem.Error()
-		}
-		if err := probe.Close(); err != nil {
-			return result, err
-		}
-		result.Ports = append(result.Ports, item)
+		byPortfile[key] = append(byPortfile[key], i)
 	}
-	return result, ctx.Err()
+	observed := make([]Port, len(files.Ports))
+	done := make([]bool, len(files.Ports))
+	group, gctx := errgroup.WithContext(ctx)
+	group.SetLimit(s.concurrency())
+	for _, key := range order {
+		group.Go(func() error {
+			for _, i := range byPortfile[key] {
+				if err := gctx.Err(); err != nil {
+					return err
+				}
+				var err error
+				if observed[i], err = s.observeOne(gctx, editor, files, platform, files.Ports[i]); err != nil {
+					return err
+				}
+				done[i] = true
+			}
+			return nil
+		})
+	}
+	// Interrupted, it reports the ports it finished, as they stand.
+	failed := group.Wait()
+	for i, port := range observed {
+		if done[i] {
+			result.Ports = append(result.Ports, port)
+		}
+	}
+	if failed == nil {
+		failed = ctx.Err()
+	}
+	return result, failed
+}
+
+// Concurrency is how many ports Observe looks up at once when the service
+// doesn't say: each takes MacPorts processes of its own while it is
+// evaluated, and a few requests upstream.
+var Concurrency = min(8, max(2, runtime.NumCPU()))
+
+func (s *Service) concurrency() int {
+	if s.Concurrency > 0 {
+		return s.Concurrency
+	}
+	return Concurrency
+}
+
+// observeOne looks up one selected port's newest release. A problem with
+// the port is its result; only releasing its probe can fail the survey.
+func (s *Service) observeOne(ctx context.Context, editor *portedit.Service, files *survey.Workspace, platform record.Platform, selected survey.Port) (Port, error) {
+	item := Port{Selector: selected.Label, Result: upstream.Result{Assessment: upstream.Unknown, ObservedAt: time.Now().UTC()}}
+	probe, problem := editor.Probe(ctx, portedit.ProbeSource{Source: files.Source, Workspace: files.Projection, Selection: selected.Selection, Platform: platform})
+	if problem == nil && selected.Name != "" && probe.Port().Name != selected.Name {
+		problem = fmt.Errorf("indexed subport %s: upstream version probing currently supports the primary port %s", selected.Name, probe.Port().Name)
+	}
+	if problem == nil {
+		var bound *upstream.Discovery
+		bound, problem = s.Upstream.Bind(probe)
+		if problem == nil {
+			item.Result, problem = bound.Discover(ctx)
+		}
+	}
+	if problem != nil {
+		item.Assessment = upstream.Unknown
+		item.Detail = problem.Error()
+	}
+	return item, probe.Close()
 }

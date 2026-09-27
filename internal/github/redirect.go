@@ -23,6 +23,9 @@ func (t redirectTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 			return nil, fmt.Errorf("github: redirect left configured API origin")
 		}
 	}
+	if err := paced(req); err != nil {
+		return nil, err
+	}
 	response, err := t.next.RoundTrip(req)
 	if err == nil && t.authenticated && response.StatusCode == http.StatusUnauthorized {
 		response.Body.Close()

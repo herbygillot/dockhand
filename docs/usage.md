@@ -87,7 +87,7 @@ dockhand update --outdated --mine          # one branch each, from fresh master
 dockhand update --outdated jq yq fzf       # the ones named
 ```
 
-`outdated` looks up each port named, or with `--mine` each port whose maintainers line names you (the `maintainer` setting), at master as fetched now. It lists those with newer releases, and counts the rest; `--all` lists every port, and why any couldn't be checked. `update --outdated` makes one branch per port, each update committed as one commit. It shows how it will split the work before it starts, asks unless `-y`, and with `--check` queues a check of each.
+`outdated` looks up each port named, or with `--mine` each port whose maintainers line names you (the `maintainer` setting), at master as fetched now. It lists those with newer releases, and counts the rest; `--all` lists every port, and why any couldn't be checked. Ports are looked up several at a time, so a thousand take about three minutes. Their requests to GitHub are paced below the 900 a minute GitHub allows, and a thousand ports use about 2,000 of the 5,000 an hour it allows your account, a budget shared with the GitHub CLI and anything else acting for you. `update --outdated` makes one branch per port, each update committed as one commit. It shows how it will split the work before it starts, asks unless `-y`, and with `--check` queues a check of each.
 
 ### checksums
 

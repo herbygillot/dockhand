@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	gh "github.com/google/go-github/v91/github"
+
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	githubapi "github.com/herbygillot/dockhand/internal/github"
@@ -18,7 +20,7 @@ func (r *repository) Releases(ctx context.Context) ([]forge.Release, error) {
 	owner, repo, _ := strings.Cut(r.name, "/")
 	seen := map[string]bool{}
 	var releases []forge.Release
-	for row, err := range client.Repositories.ListReleasesIter(ctx, owner, repo, nil) {
+	for row, err := range client.Repositories.ListReleasesIter(ctx, owner, repo, &gh.ListOptions{PerPage: pageSize}) {
 		if err != nil {
 			return nil, githubapi.RateLimitError(err)
 		}

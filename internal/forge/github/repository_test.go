@@ -74,5 +74,6 @@ func TestRepositoriesSharingAClientKeepTheirOwnRequestScope(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "v2", tag.Name)
 	}
-	require.Equal(t, []string{"/repos/owner/one/git/ref/tags/v2", "/repos/owner/two/git/ref/tags/v2", "/repos/owner/one/git/ref/tags/v2"}, []string{<-paths, <-paths, <-paths})
+	require.Equal(t, []string{"/repos/owner/one/git/ref/tags/v2", "/repos/owner/two/git/ref/tags/v2"}, []string{<-paths, <-paths})
+	require.Empty(t, paths, "one remembers the tag it read, and asks nothing the second time")
 }

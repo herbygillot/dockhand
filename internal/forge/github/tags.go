@@ -7,17 +7,50 @@ import (
 	"net/http"
 	"strings"
 
+	gh "github.com/google/go-github/v91/github"
+
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	githubapi "github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/progress"
 )
 
+// Tag reads one tag: from what the repository already read, when it has
+// listed its tags or read this one before, else from the API.
 func (r *repository) Tag(ctx context.Context, name string) (forge.Tag, error) {
 	refName := "refs/tags/" + name
 	if !git.ValidRefName(refName) {
 		return forge.Tag{}, fmt.Errorf("github: invalid tag")
 	}
+	if tag, ok := r.remembered(name); ok {
+		return tag, nil
+	}
+	tag, err := r.readTag(ctx, name, refName)
+	if err == nil {
+		r.remember(tag)
+	}
+	return tag, err
+}
+
+func (r *repository) remembered(name string) (forge.Tag, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	tag, ok := r.tags[name]
+	return tag, ok
+}
+
+func (r *repository) remember(tags ...forge.Tag) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.tags == nil {
+		r.tags = map[string]forge.Tag{}
+	}
+	for _, tag := range tags {
+		r.tags[tag.Name] = tag
+	}
+}
+
+func (r *repository) readTag(ctx context.Context, name, refName string) (forge.Tag, error) {
 	client, err := r.client.API(ctx)
 	if err != nil {
 		return r.gitTag(ctx, name, githubapi.RateLimitError(err))
@@ -68,7 +101,7 @@ func (r *repository) ListTags(ctx context.Context) ([]forge.Tag, error) {
 	owner, repo, _ := strings.Cut(r.name, "/")
 	seen := map[string]bool{}
 	var tags []forge.Tag
-	for row, err := range client.Repositories.ListTagsIter(ctx, owner, repo, nil) {
+	for row, err := range client.Repositories.ListTagsIter(ctx, owner, repo, &gh.ListOptions{PerPage: pageSize}) {
 		if err != nil {
 			return r.gitTags(ctx, githubapi.RateLimitError(err))
 		}
@@ -86,6 +119,9 @@ func (r *repository) ListTags(ctx context.Context) ([]forge.Tag, error) {
 		seen[row.GetName()] = true
 		tags = append(tags, forge.Tag{Name: row.GetName(), Commit: row.GetCommit().GetSHA()})
 	}
+	// The API names each tag's commit, peeled, as Tag would read it. Git's
+	// listing above can't tell a commit from a blob, so it isn't kept.
+	r.remember(tags...)
 	return tags, nil
 }
 

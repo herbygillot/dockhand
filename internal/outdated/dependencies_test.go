@@ -17,8 +17,10 @@ func TestCapabilityDependencies(t *testing.T) {
 		"git": true, "macports": true, "macports/portedit": true,
 		"macports/portindex": true, "macports/survey": true, "macports/workspace": true, "progress": true, "record": true, "upstream": true,
 	}
+	// errgroup is x/sync's concurrency primitive, not an integration.
+	const errgroup = "golang.org/x/sync/errgroup"
 	for _, path := range pkg.Imports {
-		if strings.Contains(strings.Split(path, "/")[0], ".") {
+		if strings.Contains(strings.Split(path, "/")[0], ".") && path != errgroup {
 			require.True(t, strings.HasPrefix(path, prefix) && allowed[strings.TrimPrefix(path, prefix)],
 				"outdated must receive its integrations without importing app, workflow state, or concrete forge clients: %s", path)
 		}

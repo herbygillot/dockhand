@@ -87,3 +87,34 @@ func TestTagCatalogMapsTagNamesAndCommits(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []forge.Tag{{Name: "v2.0", Commit: strings.Repeat("a", 40)}}, tags)
 }
+
+// A listing asks for GitHub's largest page, and a tag it listed is read
+// from the listing afterwards, with no request of its own: the listing
+// names each tag's commit already.
+func TestListedTagsAreNotReadAgain(t *testing.T) {
+	var queries, lookups []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/owner/project/tags":
+			queries = append(queries, r.URL.RawQuery)
+			json.NewEncoder(w).Encode([]any{map[string]any{"name": "v2.0", "commit": map[string]string{"sha": strings.Repeat("a", 40)}}})
+		default:
+			lookups = append(lookups, r.URL.Path)
+			w.WriteHeader(404)
+		}
+	}))
+	defer server.Close()
+	client := github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}}}
+	repository := testRepository(t, &client)
+	_, err := repository.ListTags(t.Context())
+	require.NoError(t, err)
+	tag, err := repository.Tag(t.Context(), "v2.0")
+	require.NoError(t, err)
+	require.Equal(t, forge.Tag{Name: "v2.0", Commit: strings.Repeat("a", 40)}, tag)
+	require.Equal(t, []string{"per_page=100"}, queries)
+	require.Empty(t, lookups)
+
+	_, err = repository.Tag(t.Context(), "v1.0")
+	require.ErrorIs(t, err, forge.ErrNotFound, "a tag the listing didn't have is still asked for")
+	require.Equal(t, []string{"/repos/owner/project/git/ref/tags/v1.0"}, lookups)
+}

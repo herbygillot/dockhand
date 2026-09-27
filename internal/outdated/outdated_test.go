@@ -2,6 +2,7 @@ package outdated_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -68,6 +69,40 @@ func TestObserveKeepsCommittedSourceAndCleansWorkspace(t *testing.T) {
 			require.Equal(t, ".lock", item.Name(), "left in the run root: %s", item.Name())
 		}
 	}
+}
+
+// Ports are looked up several at once, and the result keeps the order
+// they were asked for in, whichever finished first.
+func TestObserveLooksUpPortsTogetherInOrder(t *testing.T) {
+	executable := testsupport.MacPortsTclsh(t)
+	root := t.TempDir()
+	names := []string{"alpha", "beta", "gamma", "delta", "epsilon"}
+	for i, name := range names {
+		path := filepath.Join(root, "devel", name, "Portfile")
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0700))
+		require.NoError(t, os.WriteFile(path, []byte(fmt.Sprintf("PortSystem 1.0\nname %s\nversion 1.%d\ncategories devel\n", name, i)), 0600))
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"add", "."}, {"-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture"}} {
+		command := exec.CommandContext(t.Context(), "git", args...)
+		command.Dir = root
+		output, err := command.CombinedOutput()
+		require.NoError(t, err, "%s", output)
+	}
+	repo, err := git.Open(t.Context(), root, "")
+	require.NoError(t, err)
+	t.Setenv("TMPDIR", t.TempDir())
+	ports := &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}
+	service := outdated.Service{Repo: repo, Ports: ports, Upstream: &upstream.Service{Ports: ports, Versions: ports}, Concurrency: 3}
+	asked := []string{"gamma", "epsilon", "alpha", "delta", "beta"}
+	result, err := service.Observe(t.Context(), outdated.Selection{Ports: asked})
+	require.NoError(t, err)
+	var selectors, versions []string
+	for _, port := range result.Ports {
+		selectors = append(selectors, port.Selector)
+		versions = append(versions, port.CurrentVersion)
+	}
+	require.Equal(t, asked, selectors)
+	require.Equal(t, []string{"1.2", "1.4", "1.0", "1.3", "1.1"}, versions)
 }
 
 func TestObserveRejectsInvalidSelectionAndCanceledWorkBeforeDependencies(t *testing.T) {
