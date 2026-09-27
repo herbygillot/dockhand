@@ -15,7 +15,7 @@ import (
 // without the digest, as for an image made before digests were recorded.
 func TestAnImagesOriginIsItsSourceAndWhatSetupPutInIt(t *testing.T) {
 	manifest := ImageManifest{Protocol: ImageManifestProtocol, Source: "ghcr.io/cirruslabs/macos-tahoe-vanilla:latest", SourceDigest: pinned,
-		Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, MacPortsVersion: "2.12.6", CommandLineTools: "26.6.0.0.1781586589", SetupProtocol: SetupProtocol}
+		Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, MacPortsVersion: "2.12.6", CommandLineTools: "26.6.0.0.1781586589", SetupProtocol: 1}
 	require.Equal(t, "source "+pinned+"; setup 1; macports 2.12.6; tools 26.6.0.0.1781586589", manifest.Origin())
 	xcode := manifest
 	xcode.XcodeVersion = "26.3"

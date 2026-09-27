@@ -48,6 +48,14 @@ Three cases keep today's behaviour:
 - The status row, and the registry against a fake registry with a token challenge, are tested too.
 - So are setup's record, the image record's round trip, and the Tart provider's identity.
 
+## Images keep their archives
+
+Decision 28 planned to identify, and later keep, the archives in a guest's `${prefix}/var/macports/software/<port>/`. MacPorts has since changed what it keeps there. `macports.conf` documents `portimage_mode`, whose default on a filesystem that clones, APFS included, is `directory`: "Downloaded archives are extracted to create the directory and then deleted." A guest built that way keeps no archive to identify a dependency by, or to save. This Mac's `/opt/local` shows it: `port location` names a directory for most ports, and a `.tbz2` only for ports installed before the setting existed.
+
+So setup now sets `portimage_mode directory_and_archive` in the image's `macports.conf` (`installation.KeepArchives`). That setting is documented: "Both archives and extracted directories are kept". MacPorts' registry then keeps the archive as the port's location, so `port location` names a file. It is appended once, after the file's own settings, which it overrides.
+
+That changes what an image holds, so `tart.SetupProtocol` is 2. Its pin now covers `macports/installation` as well as `tart/provision`: the MacPorts installer is provisioning code, and the first pin left it out.
+
 ## Still to do in item 6
 
 - **Recorded inputs per port:** each build records its input identity and the archives it consumed.

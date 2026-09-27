@@ -76,6 +76,11 @@ given to Tart. If the tag moved while it was pulled, setup stops and asks
 to be run again. If the registry can't say, setup says the image's origin
 is unknown and carries on.
 
+Each image keeps every port's archive. It sets MacPorts' documented
+`portimage_mode` to `directory_and_archive`, since on APFS MacPorts
+otherwise deletes an archive once it has extracted it. A check identifies
+the ports active as a target built by their archives.
+
 With each image it makes, setup records that image's origin on this Mac,
 in `~/.dockhand/tart-images/`: the vanilla image's digest, the version of
 setup's own steps, and the MacPorts, Command Line Tools, and Xcode it

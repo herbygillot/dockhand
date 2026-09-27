@@ -49,6 +49,12 @@ func (n *native) InstallXcode(ctx context.Context, name string, config Config) e
 	})
 }
 
+// InstallMacPorts installs MacPorts, keeping each port's archive: a check
+// identifies the ports active as a target built by their archives
+// (decision 28).
 func (n *native) InstallMacPorts(ctx context.Context, name string, config Config, release macos.Release) error {
-	return installation.Install(ctx, n.target(name), config.MacPortsVersion, release)
+	if err := installation.Install(ctx, n.target(name), config.MacPortsVersion, release); err != nil {
+		return err
+	}
+	return installation.KeepArchives(ctx, n.target(name), config.GuestPrefix)
 }

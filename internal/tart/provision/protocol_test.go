@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -13,9 +14,9 @@ import (
 	"github.com/herbygillot/dockhand/internal/tart"
 )
 
-// setupPin is the digest of the provisioning code tart.SetupProtocol 1
-// covers.
-const setupPin = "4316e74cad4616762207e408827cc0b9adbe0434e2b3ed3a03b4e1d6d413894f"
+// setupPin is the digest of the provisioning code tart.SetupProtocol 2
+// covers: this package's, and the MacPorts installation it runs.
+const setupPin = "ae7c74001b7a699af6bea0d1888fb974dd4fa38e75ce14e9e6ae458ac3a4948b"
 
 // What setup puts in an image is identified by tart.SetupProtocol, which
 // evidence's reuse compares (decision 28). A change to the provisioning
@@ -23,12 +24,14 @@ const setupPin = "4316e74cad4616762207e408827cc0b9adbe0434e2b3ed3a03b4e1d6d41389
 // the change alters what an image holds, which ends reuse of evidence from
 // images made before; or, for a change of wording only, update the pin.
 func TestTheSetupProtocolCoversTheProvisioningCode(t *testing.T) {
-	entries, err := os.ReadDir(".")
-	require.NoError(t, err)
 	var names []string
-	for _, entry := range entries {
-		if name := entry.Name(); strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go") {
-			names = append(names, name)
+	for _, directory := range []string{".", "../../macports/installation"} {
+		entries, err := os.ReadDir(directory)
+		require.NoError(t, err)
+		for _, entry := range entries {
+			if name := entry.Name(); strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go") {
+				names = append(names, filepath.Join(directory, name))
+			}
 		}
 	}
 	slices.Sort(names)
@@ -40,6 +43,6 @@ func TestTheSetupProtocolCoversTheProvisioningCode(t *testing.T) {
 		digest.Write(data)
 	}
 	pin := hex.EncodeToString(digest.Sum(nil))
-	require.Equal(t, 1, tart.SetupProtocol)
+	require.Equal(t, 2, tart.SetupProtocol)
 	require.Equal(t, setupPin, pin, "the provisioning code changed: raise tart.SetupProtocol if images made now hold something else, or update setupPin if not")
 }
