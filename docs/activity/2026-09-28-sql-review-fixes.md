@@ -58,3 +58,11 @@ The errors are the same, with `ErrNotFound` for a missing reference.
 The plan is still decoded whole for each result, to ask `model.Plan.Target`. The review measured 0.85 ms for a 300-target, 6-environment plan. It made a cache of decoded plans conditional on that cost being judged worth it, and it isn't done here. Answering the question with SQLite's JSON functions would take the plan's rule from `model` into SQL.
 
 Tests: `TestAResultKeepsWhatItsBuildRead` now also records a result in an execution there isn't, and one reused from an execution there isn't. Both are `ErrNotFound`; neither path was tested before.
+
+## Reuse's candidates come with their builds (finding 6)
+
+`Reusable` joined each result's execution to match the environment, then dropped its columns. Reuse (`engine.driver.earlier`) read each one again by ID as the candidate's origin. `Reader.Reusable` now returns `[]store.Build`, each a result with the execution that built it, from the one query. The store owns that join, and it is the store's contract that changed; `earlier` takes the origin from the build.
+
+To scan one row into both records, the execution and result scanners were split into their fields and a completion (`executionFields`, `resultFields`), which `scanExecution` and `results` now use too. `qualified` names the execution's columns by the join's alias. `reusableQuery` is therefore a `var`, and still the text `TestHistoryIsReadThroughIndexes` checks.
+
+Tests: `TestReusableResultsComeWithTheirBuilds` is the first store test of `Reusable`. It records four executions of a target: two passed builds, a reuse, and a failure. Each also has a passed result that recorded no inputs. The test asserts that only the two builds are returned, newest first, each with its execution exactly as `Execution` reads it, observed environment included, and that the limit holds.

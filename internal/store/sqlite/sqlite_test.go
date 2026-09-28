@@ -426,6 +426,69 @@ func TestAResultKeepsWhatItsBuildRead(t *testing.T) {
 	}))
 }
 
+// A target's reusable results are its passed builds in the environment
+// that recorded what they read, newest first, each with the execution
+// that built it; a failure, a reuse, and a build that read nobody knows
+// what are not (decision 28).
+func TestReusableResultsComeWithTheirBuilds(t *testing.T) {
+	f := open(t)
+	b, r, p := f.seed(t)
+	first, second := f.run(t, b, r, p), f.run(t, b, r, p)
+	inputs := model.NewTargetInputs("source sha256:a; setup 2", "devel/libharbor", "1111111111111111111111111111111111111111", "2222222222222222222222222222222222222222", nil, nil)
+	executions := []model.GuestExecution{
+		{ID: "ex_old", Run: first.ID, Environment: tahoe, Attempt: 1, State: model.ExecutionWaiting, CreatedAt: at},
+		{ID: "ex_new", Run: first.ID, Environment: tahoe, Attempt: 2, State: model.ExecutionWaiting, CreatedAt: at, Observed: model.Observed{MacOS: "26.0", Architecture: "arm64"}},
+		{ID: "ex_reused", Run: first.ID, Environment: tahoe, Attempt: 3, State: model.ExecutionWaiting, CreatedAt: at, Reused: true},
+		{ID: "ex_failed", Run: second.ID, Environment: tahoe, Attempt: 1, State: model.ExecutionWaiting, CreatedAt: at},
+	}
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		key, err := tx.RecordInputs(inputs)
+		if err != nil {
+			return err
+		}
+		for i, e := range executions {
+			if err := tx.AddExecution(e); err != nil {
+				return err
+			}
+			result := model.TargetResult{Execution: e.ID, Target: "libharbor", Outcome: model.OutcomePassed, Tests: model.TestsNone, Inputs: key, RecordedAt: at.Add(time.Duration(i) * time.Minute)}
+			switch e.ID {
+			case "ex_reused":
+				result.ReusedFrom = "ex_old"
+			case "ex_failed":
+				result.Outcome, result.Phase = model.OutcomeFailed, model.PhaseInstall
+			}
+			if err := tx.RecordResult(result); err != nil {
+				return err
+			}
+			// A build that couldn't say what it read.
+			if err := tx.RecordResult(model.TargetResult{Execution: e.ID, Target: "harbor-cli", Outcome: model.OutcomePassed, Tests: model.TestsNone, RecordedAt: at}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	require.NoError(t, f.store.View(t.Context(), f.repo, func(rd store.Reader) error {
+		builds, err := rd.Reusable("libharbor", tahoe, 5)
+		require.NoError(t, err)
+		require.Len(t, builds, 2)
+		require.Equal(t, []model.ExecutionID{"ex_new", "ex_old"}, []model.ExecutionID{builds[0].Result.Execution, builds[1].Result.Execution}, "newest first")
+		for _, build := range builds {
+			built, err := rd.Execution(build.Result.Execution)
+			require.NoError(t, err)
+			require.Equal(t, built, build.Execution, "the execution that built it, read whole")
+		}
+		require.Equal(t, "26.0", builds[0].Execution.Observed.MacOS)
+
+		builds, err = rd.Reusable("libharbor", tahoe, 1)
+		require.NoError(t, err)
+		require.Len(t, builds, 1)
+		none, err := rd.Reusable("harbor-cli", tahoe, 5)
+		require.NoError(t, err)
+		require.Empty(t, none)
+		return nil
+	}))
+}
+
 // A kept archive is recorded once by its digest, with the file name
 // MacPorts gives it; one that can't be named as a file, or has no digest,
 // isn't recorded (decision 28).

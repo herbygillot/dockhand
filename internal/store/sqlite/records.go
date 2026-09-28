@@ -420,21 +420,34 @@ func (t *tx) UpdateRun(r model.Run) error {
 
 const executionColumns = "id, run_id, provider, platform_os, platform_version, platform_architecture, developer_tools, attempt, state, detail, provider_ref, observed, identity, reused, created_at, finished_at"
 
-func scanExecution(row interface{ Scan(...any) error }) (model.GuestExecution, error) {
-	var e model.GuestExecution
+// executionFields are where a row's executionColumns are scanned into e,
+// and what completes e once they are.
+func executionFields(e *model.GuestExecution) ([]any, func() error) {
 	var created int64
 	var finished sql.NullInt64
 	var observed string
 	p := &e.Environment.Platform
-	if err := row.Scan(&e.ID, &e.Run, &e.Environment.Provider, &p.OS, &p.Version, &p.Architecture, &e.Environment.DeveloperTools, &e.Attempt, &e.State, &e.Detail, &e.ProviderRef, &observed, &e.Identity, &e.Reused, &created, &finished); err != nil {
+	fields := []any{&e.ID, &e.Run, &e.Environment.Provider, &p.OS, &p.Version, &p.Architecture, &e.Environment.DeveloperTools, &e.Attempt, &e.State, &e.Detail, &e.ProviderRef, &observed, &e.Identity, &e.Reused, &created, &finished}
+	return fields, func() error {
+		if observed != "" {
+			if err := json.Unmarshal([]byte(observed), &e.Observed); err != nil {
+				return fmt.Errorf("%w: execution %s's observed environment: %w", store.ErrUnavailable, e.ID, err)
+			}
+		}
+		e.CreatedAt, e.FinishedAt = fromMillis(created), fromNullable(finished)
+		return nil
+	}
+}
+
+func scanExecution(row interface{ Scan(...any) error }) (model.GuestExecution, error) {
+	var e model.GuestExecution
+	fields, complete := executionFields(&e)
+	if err := row.Scan(fields...); err != nil {
 		return model.GuestExecution{}, storageError(err)
 	}
-	if observed != "" {
-		if err := json.Unmarshal([]byte(observed), &e.Observed); err != nil {
-			return model.GuestExecution{}, fmt.Errorf("%w: execution %s's observed environment: %w", store.ErrUnavailable, e.ID, err)
-		}
+	if err := complete(); err != nil {
+		return model.GuestExecution{}, err
 	}
-	e.CreatedAt, e.FinishedAt = fromMillis(created), fromNullable(finished)
 	return e, nil
 }
 
@@ -548,16 +561,52 @@ func (t *tx) Results(execution model.ExecutionID) ([]model.TargetResult, error) 
 	return t.results("SELECT "+resultColumns+" FROM results r WHERE r.repository_id=? AND r.execution_id=? ORDER BY r.recorded_at, r.rowid", t.repo, execution)
 }
 
-// reusableQuery reads a target's passed results in an environment, newest
-// first, walking result_target back from the newest.
-const reusableQuery = "SELECT " + resultColumns + " FROM results r JOIN executions e ON e.repository_id=r.repository_id AND e.id=r.execution_id " +
+// reusableQuery reads a target's passed results in an environment, each
+// with the execution that built it, newest first, walking result_target
+// back from the newest.
+var reusableQuery = "SELECT " + resultColumns + ", " + qualified("e", executionColumns) + " FROM results r JOIN executions e ON e.repository_id=r.repository_id AND e.id=r.execution_id " +
 	"WHERE r.repository_id=? AND r.target_id=? AND r.outcome='passed' AND r.inputs<>'' AND r.reused_from='' " +
 	"AND e.provider=? AND e.platform_os=? AND e.platform_version=? AND e.platform_architecture=? AND e.developer_tools=? " +
 	"ORDER BY r.recorded_at DESC, r.rowid DESC LIMIT ?"
 
-func (t *tx) Reusable(target model.TargetID, environment model.Environment, limit int) ([]model.TargetResult, error) {
+func (t *tx) Reusable(target model.TargetID, environment model.Environment, limit int) ([]store.Build, error) {
 	p := environment.Platform
-	return t.results(reusableQuery, t.repo, target, environment.Provider, p.OS, p.Version, p.Architecture, environment.DeveloperTools, limit)
+	rows, err := t.conn.QueryContext(t.ctx, reusableQuery, t.repo, target, environment.Provider, p.OS, p.Version, p.Architecture, environment.DeveloperTools, limit)
+	if err != nil {
+		return nil, storageError(err)
+	}
+	defer rows.Close()
+	var builds []store.Build
+	for rows.Next() {
+		var build store.Build
+		result, completeResult := resultFields(&build.Result)
+		execution, completeExecution := executionFields(&build.Execution)
+		if err := rows.Scan(append(result, execution...)...); err != nil {
+			return nil, storageError(err)
+		}
+		if err := errors.Join(completeResult(), completeExecution()); err != nil {
+			return nil, err
+		}
+		builds = append(builds, build)
+	}
+	return builds, storageError(rows.Err())
+}
+
+// resultFields are where a row's resultColumns are scanned into r, and
+// what completes r once they are.
+func resultFields(r *model.TargetResult) ([]any, func() error) {
+	var recorded int64
+	var builders string
+	fields := []any{&r.Execution, &r.Target, &r.Outcome, &r.Phase, &r.Tests, &r.Log, &r.Detail, &builders, &r.Inputs, &r.Archive, &r.ReusedFrom, &recorded}
+	return fields, func() error {
+		if builders != "" {
+			if err := json.Unmarshal([]byte(builders), &r.Builders); err != nil {
+				return fmt.Errorf("%w: %s's builders in execution %s: %w", store.ErrUnavailable, r.Target, r.Execution, err)
+			}
+		}
+		r.RecordedAt = fromMillis(recorded)
+		return nil
+	}
 }
 
 func (t *tx) results(query string, args ...any) ([]model.TargetResult, error) {
@@ -569,20 +618,22 @@ func (t *tx) results(query string, args ...any) ([]model.TargetResult, error) {
 	var results []model.TargetResult
 	for rows.Next() {
 		var r model.TargetResult
-		var recorded int64
-		var builders string
-		if err := rows.Scan(&r.Execution, &r.Target, &r.Outcome, &r.Phase, &r.Tests, &r.Log, &r.Detail, &builders, &r.Inputs, &r.Archive, &r.ReusedFrom, &recorded); err != nil {
+		fields, complete := resultFields(&r)
+		if err := rows.Scan(fields...); err != nil {
 			return nil, storageError(err)
 		}
-		if builders != "" {
-			if err := json.Unmarshal([]byte(builders), &r.Builders); err != nil {
-				return nil, fmt.Errorf("%w: %s's builders in execution %s: %w", store.ErrUnavailable, r.Target, r.Execution, err)
-			}
+		if err := complete(); err != nil {
+			return nil, err
 		}
-		r.RecordedAt = fromMillis(recorded)
 		results = append(results, r)
 	}
 	return results, storageError(rows.Err())
+}
+
+// qualified is columns, a comma-separated list, each named by a table's
+// alias.
+func qualified(alias, columns string) string {
+	return alias + "." + strings.ReplaceAll(columns, ", ", ", "+alias+".")
 }
 
 func (t *tx) RecordResult(r model.TargetResult) error {

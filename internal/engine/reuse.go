@@ -26,20 +26,16 @@ func (d *driver) earlier(ctx context.Context, environment model.Environment, rem
 	err := d.e.Store.View(ctx, d.e.Repository, func(r store.Reader) error {
 		for i, target := range remaining {
 			targets[i] = reuse.Target{PlanTarget: target.PlanTarget, DependsOn: target.DependsOn}
-			results, err := r.Reusable(target.ID, environment, reuseCandidates)
+			builds, err := r.Reusable(target.ID, environment, reuseCandidates)
 			if err != nil {
 				return err
 			}
-			for _, result := range results {
-				inputs, err := r.Inputs(result.Inputs)
+			for _, build := range builds {
+				inputs, err := r.Inputs(build.Result.Inputs)
 				if err != nil {
 					return err
 				}
-				origin, err := r.Execution(result.Execution)
-				if err != nil {
-					return err
-				}
-				targets[i].Earlier = append(targets[i].Earlier, reuse.Candidate{Result: result, Inputs: inputs, Origin: origin})
+				targets[i].Earlier = append(targets[i].Earlier, reuse.Candidate{Result: build.Result, Inputs: inputs, Origin: build.Execution})
 				paths = append(paths, reuse.Paths(inputs)...)
 			}
 		}
