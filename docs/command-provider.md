@@ -18,6 +18,16 @@ on = ["command"]            # the default for check; --on command also selects i
 
 `check` runs the command once for each attempt. Trouble with the environment is tried again, up to three attempts in all, and a verdict is never repeated. Examples of such trouble: the command exits without writing a result file, or writes one that can't be read.
 
+## How it runs
+
+The command runs in a session of its own, with no terminal. A check that stops early interrupts it and everything it started, such as `port`, with SIGINT, and kills whatever still runs 30 seconds later. A check stops early when:
+- it is canceled with `dockhand cancel`;
+- `check --replace` replaces it;
+- serve stops;
+- you press Ctrl-C.
+
+So a `port` it started isn't left holding MacPorts' lock. It can't prompt: a `sudo` in it must not ask for a password, as under serve, where there is no terminal either. One that asks fails at once, and says so in `command.log`.
+
 ## The request file
 
 The file is `request.json` in a directory of its own. Its path is also given as `$DOCKHAND_REQUEST`. The command runs in that directory, and its output goes to `command.log` there.

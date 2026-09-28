@@ -32,3 +32,10 @@ This covers the rest of the roadmap's "rules the design promises and the code do
 - `TestAnUncertainBranchRecordIsReadBack` uses the history tests' uncertain store, taught to notice a branch being added. It fails without the read-back.
 - The rest of finding 24 is on the roadmap's smaller items. It is `Update` and `Create`, whose edit record can be lost the same way while their files are written; since D4, holds are read from those records.
 
+**A canceled script check stops what it started (finding 42).**
+- The command provider ran the person's script with `exec.CommandContext` and nothing else, so a cancel killed `sh` alone, and a `port` it had started went on, reparented to launchd, holding MacPorts' lock. A cancel here is `dockhand cancel`, `check --replace`, serve stopping, or Ctrl-C.
+- The script now runs in a session of its own (`Setsid`), which leads its process group. A cancel sends SIGINT to the group, then SIGKILL after 30 seconds (`Provider.Grace`) to whatever still runs. Tart's `Foreground` already stops `tart run` this way.
+- **A session, not only a group.** The check found that a group of its own takes the script out of the terminal's foreground group, so a `sudo` that prompts would stop there, waiting on input no one could give. In a session of its own there is no controlling terminal, so a prompting `sudo` fails at once and says so in `command.log`, as it would under serve.
+- The command provider's page says so: the command runs without a terminal and must not prompt.
+- `TestACanceledScriptStopsWhatItStarted` cancels a check whose script started a background `sleep`. Such a job ignores SIGINT in a non-interactive shell, so only the kill reaches it; the test checks it is gone. Without the session it survives, as the orphan it left in that run showed.
+

@@ -51,6 +51,16 @@ func (p ports) Directory(context.Context, model.Source, string) (string, error) 
 // checked runs a check of an edit to jq with the given script.
 func checked(t *testing.T, body string) (model.Run, string, *engine.Engine) {
 	t.Helper()
+	e, session, queued := queuedCheck(t, body, 0)
+	finished, err := e.Drive(t.Context(), session, queued)
+	require.NoError(t, err)
+	return finished, filepath.Join(e.LogDirectory(), finished.Name(), "command-1"), e
+}
+
+// queuedCheck queues a check of an edit to jq with the given script, and
+// the grace a canceled one has, for a session to drive.
+func queuedCheck(t *testing.T, body string, grace time.Duration) (*engine.Engine, *coord.Session, model.RunID) {
+	t.Helper()
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
 	run := filepath.Join(root, "build ports.sh")
@@ -73,17 +83,42 @@ func checked(t *testing.T, body string) (model.Run, string, *engine.Engine) {
 	capture, err := e.Capture(t.Context(), engine.CaptureRequest{Branch: branch})
 	require.NoError(t, err)
 	e.PortReader = ports{"textproc/jq": {"jq", "jq-docs"}}
-	e.Providers = map[string]buildenv.Provider{"command": &script.Provider{Run: run, Label: "my build box", Repo: e.Repo}}
+	e.Providers = map[string]buildenv.Provider{"command": &script.Provider{Run: run, Label: "my build box", Repo: e.Repo, Grace: grace}}
 	plan, err := e.PlanCheck(t.Context(), engine.PlanRequest{Revision: capture.Revision, Environments: []model.Environment{{Provider: "command"}}})
 	require.NoError(t, err)
 	queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
 	require.NoError(t, err)
 	session, err := (&coord.Coordinator{Store: e.Store, Repository: e.Repository, Heartbeat: time.Second}).Start(t.Context(), model.SessionForeground, "test")
 	require.NoError(t, err)
-	finished, err := e.Drive(t.Context(), session, queued.ID)
-	require.NoError(t, err)
+	return e, session, queued.ID
+}
 
-	return finished, filepath.Join(e.LogDirectory(), finished.Name(), "command-1"), e
+// A canceled check stops what its script started, not only the shell: the
+// script leads a session of its own, whose group is interrupted, then,
+// after its grace, killed. A background job of a script ignores the
+// interrupt, as sh has it, so only the kill reaches this one.
+func TestACanceledScriptStopsWhatItStarted(t *testing.T) {
+	child := filepath.Join(t.TempDir(), "child.pid")
+	e, session, queued := queuedCheck(t, `sleep 300 &
+echo $! > '`+child+`'
+wait`, 200*time.Millisecond)
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = e.Drive(ctx, session, queued)
+	}()
+	var pid string
+	require.Eventually(t, func() bool {
+		data, err := os.ReadFile(child)
+		pid = strings.TrimSpace(string(data))
+		return err == nil && pid != ""
+	}, 10*time.Second, 20*time.Millisecond, "the script started its child")
+	cancel()
+	<-done
+	require.Eventually(t, func() bool {
+		return exec.Command("kill", "-0", pid).Run() != nil
+	}, 5*time.Second, 50*time.Millisecond, "the child is stopped with its script")
 }
 
 func TestTheScriptGetsTheRevisionAndReportsEachTarget(t *testing.T) {
