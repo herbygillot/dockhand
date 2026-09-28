@@ -15,3 +15,9 @@ Tests fail with each part undone: `TestUpdateInTheBranchCheckedOutHere` and `Tes
 Checking before tidying, the order the design gives, left hugo's branch at "passed for snapshot 1" in `status`, even with its pull request open. `submit` credited the same check to the commit, "for this commit's files", since a check is keyed to the files and tidy committed them unchanged.
 
 `status` now says "passed for this commit" whenever the latest check read exactly the files as they are, and none of them are uncommitted. Edits on top of the commit still make it the snapshot's. `TestStatusCreditsACheckOfTheCommittedFilesToTheCommit` covers both, and fails with either undone.
+
+## `logs` without a check
+
+`dockhand logs` with nothing named gave cobra's "accepts 1 arg(s), received 0". In a branch's worktree it now shows the branch's latest check, the one a person just ran. Elsewhere it says what to name, and a branch with no check says so. Its heading no longer repeats a passed check's state as its detail: "check-6 · passed", not "check-6 · passed: passed".
+
+`TestQueueWaitCancelAndLogs` covers each, and fails with each undone: the latest check rather than an older one, both messages, and the heading.

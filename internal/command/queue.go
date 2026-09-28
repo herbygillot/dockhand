@@ -193,13 +193,14 @@ func cancelCommand(s *settings, streams Streams) *cobra.Command {
 func logsCommand(s *settings, streams Streams) *cobra.Command {
 	var port string
 	cmd := &cobra.Command{
-		Use:   "logs <check or provider run>",
+		Use:   "logs [check or provider run]",
 		Short: "Show where a check's logs are, or one port's log",
 		Long: `Shows a check's provider runs, check-42's, and where each port's log is, or
 one provider run's alone, by the ID a pull request's Tested on names,
 tart_7y62p4sigena6xlr, or by its provider's own reference, such as a workflow
-run's URL. --port prints one port's log.`,
-		Args: cobra.ExactArgs(1),
+run's URL. In a branch's worktree, with none named, it shows the branch's
+latest check. --port prints one port's log.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			e, err := s.open(ctx)
@@ -207,7 +208,13 @@ run's URL. --port prints one port's log.`,
 				return err
 			}
 			defer e.Close()
-			run, only, err := checkOrRun(ctx, e, args[0])
+			var run model.Run
+			var only model.ExecutionID
+			if len(args) == 0 {
+				run, err = latestCheckHere(ctx, e)
+			} else {
+				run, only, err = checkOrRun(ctx, e, args[0])
+			}
 			if err != nil {
 				return err
 			}
@@ -249,6 +256,26 @@ run's URL. --port prints one port's log.`,
 	return cmd
 }
 
+// latestCheckHere is the newest check of the branch checked out here, for
+// logs with none named.
+func latestCheckHere(ctx context.Context, e *engine.Engine) (model.Run, error) {
+	branch, err := e.Current(ctx)
+	if errors.Is(err, engine.ErrNoBranch) {
+		return model.Run{}, errors.New("name a check, such as check-42, or a provider run; in a branch's worktree, logs shows the branch's latest check")
+	}
+	if err != nil {
+		return model.Run{}, err
+	}
+	runs, err := e.Runs(ctx, store.RunFilter{Branch: branch.ID, Limit: 1})
+	if err != nil {
+		return model.Run{}, err
+	}
+	if len(runs) == 0 {
+		return model.Run{}, fmt.Errorf("%s has no check yet: dockhand check", branch.ShortName())
+	}
+	return runs[0], nil
+}
+
 // checkName is a check's name, check-42 or 42.
 var checkName = regexp.MustCompile(`^(check-)?[0-9]+$`)
 
@@ -269,7 +296,8 @@ func checkOrRun(ctx context.Context, e *engine.Engine, name string) (model.Run, 
 
 func writeLogs(out io.Writer, logs engine.RunLogs) error {
 	fmt.Fprintf(out, "%s · %s", logs.Run.Name(), logs.Run.State)
-	if logs.Run.Detail != "" {
+	// A passed check's detail is "passed" again.
+	if logs.Run.Detail != "" && logs.Run.Detail != string(logs.Run.State) {
 		fmt.Fprintf(out, ": %s", logs.Run.Detail)
 	}
 	fmt.Fprintln(out)

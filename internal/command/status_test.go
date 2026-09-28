@@ -105,6 +105,8 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
+	_, _, err = dockhand(t, "logs")
+	require.ErrorContains(t, err, "jq-update has no check yet: dockhand check")
 
 	_, _, err = dockhand(t, "check", "-d")
 	require.NoError(t, err)
@@ -135,12 +137,15 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 
 	out, _, err = dockhand(t, "logs", "check-3")
 	require.NoError(t, err)
-	require.Regexp(t, `check-3 · passed: passed\n  command, attempt 1, run command_[a-z0-9]{16}: finished\n    jq passed  ~/\.dockhand/logs/check-3/command-1/command\.log\n`, out)
+	require.Regexp(t, `check-3 · passed\n  command, attempt 1, run command_[a-z0-9]{16}: finished\n    jq passed  ~/\.dockhand/logs/check-3/command-1/command\.log\n`, out)
+	here, _, err := dockhand(t, "logs")
+	require.NoError(t, err)
+	require.Equal(t, out, here, "in the branch's worktree, logs is its latest check's")
 	// A provider run's ID finds its evidence too.
 	id := regexp.MustCompile(`command_[a-z0-9]{16}`).FindString(out)
 	out, _, err = dockhand(t, "logs", id)
 	require.NoError(t, err)
-	require.Contains(t, out, "check-3 · passed: passed\n  command, attempt 1, run "+id+": finished\n")
+	require.Contains(t, out, "check-3 · passed\n  command, attempt 1, run "+id+": finished\n")
 	out, _, err = dockhand(t, "logs", id, "--port", "jq")
 	require.NoError(t, err)
 	require.Contains(t, out, "building from ")
@@ -151,6 +156,10 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	require.Contains(t, out, "building from ")
 	_, _, err = dockhand(t, "logs", "check-9")
 	require.ErrorContains(t, err, "there is no run check-9")
+
+	t.Setenv("MACPORTS_TREE", w.clone)
+	_, _, err = dockhand(t, "logs")
+	require.ErrorContains(t, err, "name a check, such as check-42, or a provider run; in a branch's worktree, logs shows the branch's latest check")
 }
 
 // A check that passed in an environment made again since says so, and
