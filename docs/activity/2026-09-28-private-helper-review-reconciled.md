@@ -23,16 +23,24 @@ The person asked Codex to review where logic lives: the private helpers that dec
 
 ## Where it went
 
-One item before item 6 goes on, in the roadmap's own order: a guardrail first, then planning's correctness, then what's written into a Portfile, then fidelity, then structure. Each lands in its own commits, and each probe becomes a regression test when its finding is fixed.
-1. **Finding 3**, source comparison in a package of its own that says what it couldn't read.
-2. **Findings 1 and 2**, build eligibility and a conservative Portfile inspection in `macports`, which item 6's planning move then builds on.
-3. **Findings 5 and 4**, `create`'s Tcl words and Cargo lock.
-4. **Finding 9**, a stealth update's edits inside the editor: the open half of the earlier finding 19, moved here from the smaller items.
-5. **Finding 10**, the body merge's typed result.
-6. **Finding 6**, binary-archive preparation in `macports/binaryarchive`, while archive installs are contained, and before item 6 builds more on them.
-7. **Finding 7 and the table**, the facts with homes: the tree's layout (the earlier finding 29), GitHub addresses (13), provider names (14), a maintainer's identity, and which Darwin releases have arm64. The first three move here from the smaller items.
+Each lands in its own commits, and each probe becomes a regression test when its finding is fixed.
 
-Finding 8 joins the Tart smaller item it revalidates (the earlier finding 7), with the facts tool named.
+**Before item 6 goes on,** what stands on its own, in the roadmap's own order: a guardrail first, then what's written into a Portfile, then fidelity, then structure.
+1. **Finding 3**, source comparison in a package of its own that says what it couldn't read.
+2. **Findings 5 and 4**, `create`'s Tcl words and Cargo lock.
+3. **Finding 9**, a stealth update's edits inside the editor: the open half of the earlier finding 19, moved here from the smaller items.
+4. **Finding 10**, the body merge's typed result.
+5. **Finding 7 and the table**, the facts with homes: the tree's layout (the earlier finding 29), GitHub addresses (13), provider names (14), a maintainer's identity, and which Darwin releases have arm64. The first three move here from the smaller items. They come before items 6 and 7, which would otherwise add more readers of their copies.
+
+**Inside item 6,** where the code they touch is already moving, so it's touched once:
+- **Findings 1 and 2**, build eligibility and a conservative Portfile inspection in `macports`, as planning moves out of the engine, beside the evaluator's typed facts (the earlier finding 27);
+- **Finding 6**, binary-archive preparation in `macports/binaryarchive`, before item 6 builds more on the archive install.
+
+**With item 7,** `create` from `crates:` names builds on finding 4's shared Cargo.lock reader.
+
+**With the Tart smaller item** it revalidates (the earlier finding 7): finding 8, with the facts tool named.
+
+The first version of this reconciliation put findings 1, 2, and 6 in their own block before item 6. Asked whether the items needed synthesizing with the roadmap, that was the part that didn't: the same planning code and archive install would have been moved twice.
 
 **Kept as the review says.**
 - `newport.licenses` stays in `newport` until a second consumer needs it.

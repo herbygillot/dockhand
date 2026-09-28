@@ -112,15 +112,11 @@ In order. Each item lands in its own commits with an activity note, and a review
 
 The order puts live regressions first, then the guardrail unattended submission relies on, then small promises the code doesn't keep, then what a person watching sees, then what grows without bound, and dead code last, since removing it changes nothing.
 
-**Before item 6 goes on: logic in the homes of the facts it interprets** (the [private-helper review](reviews/2026-09-28-private-helper-ownership.md), [note](activity/2026-09-28-private-helper-review-reconciled.md)). In order, each in its own commits, each of its probes a regression test once fixed:
+**Before item 6 goes on: logic in the homes of the facts it interprets** (the [private-helper review](reviews/2026-09-28-private-helper-ownership.md), [note](activity/2026-09-28-private-helper-review-reconciled.md)). What stands on its own, in order, each in its own commits, each of its probes a regression test once fixed:
 - **What a comparison couldn't read** (finding 3). Upstream source comparison moves to a package of its own, over `archive`'s traversal. Its manifest readings say when they're incomplete, so a manifest it can't read holds as D4 has it. It reads Cargo's dependency tables, pyproject's literal strings, and go.mod with `modfile`.
-- **Planning's MacPorts facts at their owner** (findings 1 and 2):
-  - build eligibility in `macports`, reading options as MacPorts does, with an unknown kept apart from an exclusion;
-  - a conservative Portfile inspection in `macports/portfile`: whether a change is only to the revision, and a port's declared version, `go.setup`'s included, for the planner and tidy.
 - **What `create` writes** (findings 5 and 4): a Tcl word encoder beside `tcl/syntax`, and one Cargo.lock reader in `macports/dependency` for creating and updating, keeping each crate's source.
 - **A stealth update's edits inside the editor** (finding 9, the open half of the earlier finding 19).
 - **The description merge's result** (finding 10): each section's outcome as a type, which the preview words.
-- **Binary archives out of the SSH channel** (finding 6): `macports/binaryarchive` holds the signing keys, both signatures, and a site's files. Tart keeps the upload and the guest's configuration, and the keys stay where they are.
 - **Facts with homes** (finding 7, and the review's table):
   - the ports tree's layout in `macports`: `_resources`, categories, and a file's port directory (the earlier finding 29), with `macports.ValidName` in the Tart archive site;
   - GitHub remote and pull request addresses in the GitHub layer (the earlier finding 13);
@@ -128,13 +124,13 @@ The order puts live regressions first, then the guardrail unattended submission 
   - a maintainer's identity in `macports`;
   - which Darwin releases have arm64, in `macos`.
 
-The order is the roadmap's own: a guardrail first, then planning's correctness, then what's written into a Portfile, then fidelity, then structure.
+The order is the roadmap's own: a guardrail first, then what's written into a Portfile, then fidelity, then structure. The facts with homes come before items 6 and 7, which would otherwise add more readers of their copies. Findings 1, 2, and 6 go inside item 6 instead, since they move the planning code and reshape the archive install that item 6 is already moving and extending; there, that code is touched once.
 
 6. **Reuse and archives** (decisions 28 and 44; the previous step 9). This builds on item 2's predicate, and takes planning and that predicate out of the engine as it changes them (item 4).
    - **Per-target reuse** by recorded observations, negative ones included. Begun 2026-09-27 ([note](activity/2026-09-27-reuse-and-archives.md)): where every target an environment would build is unchanged in what it read, its earlier passed results are reused and nothing is built (`check --fresh` builds). Since 2026-09-28 ([note](activity/2026-09-28-partial-reuse.md)), the targets unchanged in what they read are reused and the rest build; the guest installs a reused one they need from its kept archive, and builds it when none is kept.
    - **What each build records:** its input identity and the digest of every archive it consumed. Done 2026-09-27 for Tart ([note](activity/2026-09-27-reuse-and-archives.md)): images keep each port's archive (setup protocol 3), and each result names its inputs by content. Those are the ports active as it built, with their archives' digests and directories, plus the target's own directory and `_resources` by tree, and the environment. It also keeps its own archive's digest.
    - **Environment identity by origin** (32). Done 2026-09-27 for Tart ([note](activity/2026-09-27-reuse-and-archives.md)): setup pins the vanilla image by digest and records each image's origin on the host. Each provider run records its environment's identity, and a result counts only while the environment is still that one. The other providers say nothing yet, so their results stand as before.
-   - **Archives ready for dependents** only once durably transferred and checked. Kept since 2026-09-28 ([note](activity/2026-09-28-kept-archives.md)): Tart fetches a passed target's archive, which is kept once it matches its digest, and cleanup removes those no live result names. Guests install them, for reused targets and on retries, from an archive site of MacPorts' own kind, signed with dockhand's keys.
+   - **Archives ready for dependents** only once durably transferred and checked. Kept since 2026-09-28 ([note](activity/2026-09-28-kept-archives.md)): Tart fetches a passed target's archive, which is kept once it matches its digest, and cleanup removes those no live result names. Guests install them, for reused targets and on retries, from an archive site of MacPorts' own kind, signed with dockhand's keys. Their preparation moves out of the SSH channel before more builds on it: `macports/binaryarchive` holds the signing keys, both signatures, and a site's files, while Tart keeps the upload and the guest's configuration, and the keys stay where they are (the private-helper review's finding 6).
    - **The port reader returns an evaluation report,** or a reference to its observation, rather than port names and dependency lists, so the observations can be recorded; today they would have to be reconstructed.
    - **From the code-organization review,** as planning and results move:
      - `PlanCheck`'s phases named (finding 4);
@@ -144,6 +140,9 @@ The order is the roadmap's own: a guardrail first, then planning's correctness, 
      - an identity that can't be read fails the attempt, rather than recording "no origin" (finding 39);
      - the release `outdated` found passed to the update, and a plan's `--only`, `--also`, `--fresh`, and omissions in its JSON (finding 36);
      - one set of dependencies given to `engine.Open` (finding 1).
+   - **From the private-helper review,** as planning moves, with the evaluator's typed facts (finding 27 above):
+     - build eligibility in `macports`, reading options as MacPorts does, with an unknown kept apart from an exclusion (finding 1);
+     - a conservative Portfile inspection in `macports/portfile`: whether a change is only to the revision, and a port's declared version, `go.setup`'s included, which tidy reads too (finding 2).
 
 7. **Coverage** (the previous step 13, with what `outdated` found).
    - **The 144 ports `outdated --mine` can't check,** sized by reason first. Most use Portfile conventions discovery doesn't take ([note](activity/2026-09-27-outdated-speed.md)).
@@ -152,7 +151,7 @@ The order is the roadmap's own: a guardrail first, then planning's correctness, 
    - **Literal segments of composed versions,** llvm's and openjdk's.
    - **Smaller buckets:** the Go toolchain check on gitlab.com, and the R ports' condition.
    - **Re-sizing:** the host-reader buckets after the oracle, and the PortGroup inclusion map.
-   - **`create`:** from registry names (`pypi:`, `crates:`, `go:`), `--like`, and `go.vendors`.
+   - **`create`:** from registry names (`pypi:`, `crates:`, `go:`), `--like`, and `go.vendors`. `crates:` builds on the Cargo.lock reader that creating and updating share (the private-helper review's finding 4).
    - **From the code-organization review,** where this work touches:
      - one livecheck pipeline for upstream's two paths, before discovery changes (finding 6);
      - `create` names `adopt` as the other authoring commands do, and records design v3's subject (findings 8 and 9).
@@ -320,7 +319,10 @@ Changed:
 **The [private-helper review](reviews/2026-09-28-private-helper-ownership.md)** of 2026-09-28, by Codex, read `7be0dc2d` and was checked again at `dd21ac87` ([note](activity/2026-09-28-private-helper-review-reconciled.md)).
 - **All ten findings hold.** All seven of its probes fail.
 - **Worse than it ranks:** finding 3, which weakens the guardrail unattended submission relies on.
-- **Taken:** 1 to 7, 9, and 10 as one item before item 6 goes on. Finding 8 goes with the Tart smaller item it revalidates.
+- **Taken:**
+  - before item 6 goes on: 3, 4, 5, 7, 9, 10, and the table;
+  - inside item 6: 1, 2, and 6, where the code they move is already moving;
+  - with the Tart smaller item it revalidates: 8.
 - **Kept as it says:** `newport.licenses` stays until a second consumer, and the plist writers stay separate.
 
 **Earlier reviews** were triaged in the previous roadmap, which records what each contributed and what was declined ([v2/roadmap.md](v2/roadmap.md#review-triage-and-validation)).
