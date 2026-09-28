@@ -56,7 +56,7 @@ func TestOutdatedThenUpdateOutdated(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"@ada", "example.org:ada"}, reader.asked[0].Maintainers)
 	require.Contains(t, out, "  PORT   NOW     NEWEST   DOCKHAND CAN\n  jq     1.7.1   1.8.1    update\n")
-	require.Contains(t, out, "1 of 2 ports have newer releases, at master ")
+	require.Contains(t, out, "1 of 2 ports has a newer release, at master ")
 	require.Contains(t, out, " · 1 couldn't be checked (--all says why)\n")
 	out, _, err = dockhand(t, "outdated", "--mine", "--all")
 	require.NoError(t, err)
