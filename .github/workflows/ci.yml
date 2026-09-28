@@ -37,5 +37,8 @@ jobs:
       - name: Lint
         run: make lint
 
+      - name: Dead code
+        run: make deadcode
+
       - name: Build
         run: make build

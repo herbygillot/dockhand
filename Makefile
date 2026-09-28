@@ -47,8 +47,10 @@ fmt-check:
 
 # Whole-program reachability including tests; see docs/reviews/2026-09-17-exported-surface-audit.md.
 # A tool run by version is fetched as a module of its own, which the vendor mode forbids.
+# The tool exits 0 whatever it reports, so anything it prints fails the target.
 deadcode:
-	GOFLAGS= $(GO) run golang.org/x/tools/cmd/deadcode@v0.48.0 -test ./...
+	@out=$$(GOFLAGS= $(GO) run golang.org/x/tools/cmd/deadcode@v0.48.0 -test ./...) || exit 1; \
+	if [ -n "$$out" ]; then echo "unreachable, tests included:" >&2; echo "$$out" >&2; exit 1; fi
 
 # Refresh the vendor directory after a change to go.mod. Commit go.mod, go.sum,
 # and vendor together.
