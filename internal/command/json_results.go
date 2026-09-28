@@ -82,6 +82,21 @@ type upstreamJSON struct {
 	Held bool `json:"held"`
 }
 
+func upstreamView(comparison model.UpstreamComparison) upstreamJSON {
+	view := upstreamJSON{Changes: []upstreamChangeJSON{}, Problem: comparison.Problem, Held: comparison.Held()}
+	for _, change := range comparison.Changes {
+		view.Changes = append(view.Changes, upstreamChangeJSON{Kind: change.Kind, Path: change.Path, Message: change.Message, Hold: change.Hold})
+	}
+	return view
+}
+
+// portUpstreamJSON is what comparing a port's upstream archives found
+// when the branch updated it.
+type portUpstreamJSON struct {
+	Port string `json:"port"`
+	upstreamJSON
+}
+
 type upstreamChangeJSON struct {
 	Kind    string `json:"kind"`
 	Path    string `json:"path"`
@@ -118,10 +133,8 @@ func updateView(branch model.Branch, started bool, update engine.Update, plan bo
 		view.Diff = update.Diff
 	}
 	if upstream := update.Upstream; upstream != nil {
-		view.Upstream = &upstreamJSON{Changes: []upstreamChangeJSON{}, Problem: upstream.Problem, Held: upstream.Held()}
-		for _, change := range upstream.Changes {
-			view.Upstream.Changes = append(view.Upstream.Changes, upstreamChangeJSON{Kind: change.Kind, Path: change.Path, Message: change.Message, Hold: change.Hold})
-		}
+		comparison := upstreamView(*upstream)
+		view.Upstream = &comparison
 	}
 	if stealth := update.Stealth; stealth != nil {
 		view.Stealth = &stealthJSON{Revbumped: stealth.Revbumped, RevbumpProblem: stealth.RevbumpProblem, DistSubdir: stealth.DistSubdir, Problem: stealth.Problem, Distfiles: []stealthDistfileJSON{}}
@@ -221,6 +234,9 @@ type submitJSON struct {
 	LeftOut     []string       `json:"left_out"`
 	Body        string         `json:"body"`
 	PullRequest *submittedJSON `json:"pull_request"`
+	// Upstream is what comparing the upstream archives found for each of
+	// the branch's updates that compared them.
+	Upstream []portUpstreamJSON `json:"upstream"`
 	// Held are why a submission nobody looked over, bump's, waits for a
 	// person's look.
 	Held []string `json:"held,omitempty"`
@@ -250,8 +266,13 @@ type submittedJSON struct {
 }
 
 func submitView(plan engine.SubmitPlan) submitJSON {
-	return submitJSON{Branch: plan.Branch.ShortName(), Title: plan.Title, Commit: plan.Commit, Commits: len(plan.Commits), From: plan.Head(), To: plan.Repository + ":" + engine.UpstreamBranch,
-		Push: pushWords(plan), Checks: checkWords(plan), Findings: findingsView(plan.Findings), Blocking: nonNil(plan.Blocking), LeftOut: nonNil(plan.LeftOut), Body: plan.Body}
+	view := submitJSON{Branch: plan.Branch.ShortName(), Title: plan.Title, Commit: plan.Commit, Commits: len(plan.Commits), From: plan.Head(), To: plan.Repository + ":" + engine.UpstreamBranch,
+		Push: pushWords(plan), Checks: checkWords(plan), Findings: findingsView(plan.Findings), Blocking: nonNil(plan.Blocking), LeftOut: nonNil(plan.LeftOut), Body: plan.Body,
+		Upstream: []portUpstreamJSON{}}
+	for _, found := range plan.Upstream {
+		view.Upstream = append(view.Upstream, portUpstreamJSON{Port: found.Port, upstreamJSON: upstreamView(found.Comparison)})
+	}
+	return view
 }
 
 type cleanStepJSON struct {

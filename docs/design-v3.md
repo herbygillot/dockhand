@@ -247,6 +247,7 @@ jq-update · ready to submit
   To       macports/macports-ports:master
   Commits  1, follows MacPorts' commit rules
   Checks   passed on tart macOS 26 arm64 for this commit's tree
+  Upstream compared; no license, build file, or dependency changes
   Other PRs  none open for jq
 Preview [p] · Edit description [e] · Submit [s] · Cancel [q]
 > s
@@ -505,7 +506,7 @@ jq-4k2p     jq 1.7.1 → 1.8.1 · tart:tahoe ✓ · Portfile +3 −4
 ? submit? y     ✓ opened #34901
 ```
 
-`submit --passing` lists each branch whose check passed for exactly what would be submitted: a committed tree, with no edits left out. It shows each one's submission preview in brief. The `!` lines compare the old and new upstream archives, which dockhand already fetched for the checksums, looking for changed license files, build files, and declared dependencies. Those are what a reviewer would ask about, and what a passing build can't catch.
+`submit --passing` lists each branch whose check passed for exactly what would be submitted: a committed tree, with no edits left out. It shows each one's submission preview in brief. The `!` lines compare the old and new upstream archives, which dockhand already fetched for the checksums, looking for changed license files, build files, and declared dependencies. Those are what a reviewer would ask about, and what a passing build can't catch. A single `submit`'s preview shows them on its `Upstream` line.
 
 `serve` can do the morning's preparation by itself with `serve.for_outdated = "check"`. It then finds new releases of your ports, creates and tidies a branch for each, and checks them, so `submit --passing` is all that's left. By default it never submits. `serve --submit-passing` goes one step further ([§11](#11-serve-the-queue-and-instance-coordination)).
 

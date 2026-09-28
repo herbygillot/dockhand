@@ -74,6 +74,10 @@ type SubmitPlan struct {
 	// as they are.
 	BodyKept bool
 	Evidence *Evidence
+	// Upstream is what comparing the upstream archives found for each of
+	// the branch's updates that compared them. A person's submission shows
+	// it; only one nobody looks over is held for it (D4).
+	Upstream []PortComparison
 	Others   []forge.PullRequestSummary
 	// SearchProblem says why other pull requests could not be looked for.
 	SearchProblem string
@@ -87,6 +91,13 @@ type SubmitPlan struct {
 	Theirs bool
 
 	facts bodyFacts
+}
+
+// PortComparison is what comparing a port's upstream archives found when
+// the branch updated it.
+type PortComparison struct {
+	Port       string
+	Comparison model.UpstreamComparison
 }
 
 // Answer records the person's statements for the template's last two
@@ -194,6 +205,9 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	}
 	e.title(&plan)
 	e.searchOthers(ctx, &plan)
+	if plan.Upstream, err = e.upstreamComparisons(ctx, branch); err != nil {
+		return plan, err
+	}
 	errorsFound := commitrules.Errors(plan.Findings)
 	squashed := !slices.ContainsFunc(plan.Findings, func(f commitrules.Finding) bool { return f.Code == "follow-up" || f.Code == "merge" })
 	var accepted []string

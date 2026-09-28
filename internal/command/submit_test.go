@@ -172,6 +172,59 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 	require.Equal(t, gitRun(t, dir, "rev-parse", "HEAD"), gitRun(t, g.fork, "rev-parse", "dockhand/jq-update"))
 }
 
+// The preview says what comparing the upstream archives found, as update
+// did and submit --passing does, and its JSON carries it: a person's own
+// submission shows it, and isn't held for it (D4).
+func TestTheSubmitPreviewSaysWhatUpstreamFound(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	testPreparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{bumper{repo: e.Repo}} }
+	t.Cleanup(func() { testPreparer = nil })
+	withGitHub(t, w)
+	started, err := jsonOf(t, "start", "jq-update")
+	require.NoError(t, err)
+	t.Setenv("MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
+	_, _, err = dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "tidy")
+	require.NoError(t, err)
+
+	out, _, err := dockhand(t, "submit", "--no-check", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "jq-update · ready to submit\n")
+	require.Contains(t, out, "  Upstream ! archives not compared: the current version's archives could not be fetched: HTTP 404\n")
+	preview, err := jsonOf(t, "submit", "--no-check", "--plan")
+	require.NoError(t, err)
+	require.Equal(t, []any{map[string]any{"port": "jq", "changes": []any{}, "held": true,
+		"problem": "the current version's archives could not be fetched: HTTP 404"}}, preview.Result["upstream"])
+}
+
+// Each update's findings get a line, and name their port when the branch
+// updated several; an update whose archives showed nothing to look at
+// says so.
+func TestTheSubmitPreviewGivesEachUpstreamFindingALine(t *testing.T) {
+	license := model.UpstreamChange{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed", Hold: true}
+	dropped := model.UpstreamChange{Kind: "dependency", Path: "go.mod", Message: "upstream: go.mod drops golang.org/x/net"}
+	preview := func(upstream ...engine.PortComparison) string {
+		var out bytes.Buffer
+		writeSubmitPlan(&out, engine.SubmitPlan{Branch: model.Branch{Name: "dockhand/jq-update"}, Upstream: upstream})
+		return out.String()
+	}
+
+	require.NotContains(t, preview(), "Upstream", "a branch whose updates compared no archives")
+	require.Contains(t, preview(engine.PortComparison{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{}}}),
+		"\n  Upstream compared; no license, build file, or dependency changes\n  Other PRs")
+	require.Contains(t, preview(engine.PortComparison{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{license, dropped}}}),
+		"\n  Upstream ! upstream's LICENSE changed\n"+
+			"           · upstream: go.mod drops golang.org/x/net\n  Other PRs")
+	require.Contains(t, preview(engine.PortComparison{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{license}}},
+		engine.PortComparison{Port: "oniguruma6", Comparison: model.UpstreamComparison{Problem: "HTTP 404"}},
+		engine.PortComparison{Port: "jq", Comparison: model.UpstreamComparison{}}),
+		"\n  Upstream ! jq: upstream's LICENSE changed\n"+
+			"           ! oniguruma6: archives not compared: HTTP 404\n  Other PRs",
+		"an update with nothing to look at adds no line among others' findings")
+}
+
 func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
@@ -253,7 +306,8 @@ func TestCleanAfterTheMerge(t *testing.T) {
 func TestSubmitCheckPassingAndReady(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
-	withBumper(t)
+	testPreparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{bumper{repo: e.Repo}} }
+	t.Cleanup(func() { testPreparer = nil })
 	g := withGitHub(t, w)
 	withScript(t, w, "failed")
 	_, _, err := dockhand(t, "start", "jq-update")
@@ -284,6 +338,8 @@ func TestSubmitCheckPassingAndReady(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, stdout.String(), "For every branch submitted now:\n")
 	require.Contains(t, stdout.String(), "jq-update  jq: update to 1.8.1 · passed on command")
+	require.Contains(t, stdout.String(), "\n            ! archives not compared: the current version's archives could not be fetched: HTTP 404\n",
+		"what upstream showed, which holds only a submission nobody looks over")
 	require.Contains(t, stdout.String(), "+version 1.8.1", "d showed the diff")
 	require.Contains(t, stdout.String(), "Opened #34901")
 	require.Contains(t, stdout.String(), "Submitted 1 of 1.\n")

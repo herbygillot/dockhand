@@ -308,10 +308,8 @@ func submitPassing(ctx context.Context, e *engine.Engine, streams Streams, reque
 			continue
 		}
 		fmt.Fprintf(out, "\n%s  %s · %s · %s\n", status.Branch.ShortName(), plan.Title, checkWords(plan), pullRequestWords(plan))
-		if changes, err := e.UpstreamFindings(ctx, status.Branch); err == nil {
-			for _, change := range changes {
-				fmt.Fprintf(out, "            %s\n", upstreamWords(change))
-			}
+		for _, line := range upstreamLines(plan) {
+			fmt.Fprintf(out, "            %s\n", line)
 		}
 		if len(plan.Blocking) > 0 {
 			for _, blocking := range plan.Blocking {
@@ -368,6 +366,13 @@ func writeSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 	fmt.Fprintf(out, "  Commits  %d, %s\n", len(plan.Commits), rules)
 	fmt.Fprintf(out, "  Push     %s\n", pushWords(plan))
 	fmt.Fprintf(out, "  Checks   %s\n", checkWords(plan))
+	if len(plan.Upstream) > 0 {
+		lines := upstreamLines(plan)
+		if len(lines) == 0 {
+			lines = []string{"compared; no license, build file, or dependency changes"}
+		}
+		fmt.Fprintf(out, "  Upstream %s\n", strings.Join(lines, "\n           "))
+	}
 	fmt.Fprintf(out, "  Other PRs  %s\n", otherWords(plan))
 	fmt.Fprintf(out, "  PR       %s\n", pullRequestWords(plan))
 	if len(plan.LeftOut) > 0 {
@@ -379,6 +384,32 @@ func writeSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 	for _, blocking := range plan.Blocking {
 		fmt.Fprintf(out, "✗ %s\n", blocking)
 	}
+}
+
+// upstreamLines are what comparing the branch's upstream archives found,
+// a line each, marked as update marks them: a change a passing build can't
+// catch, and archives that couldn't be compared, with "!". Each names its
+// port when the branch updated several.
+func upstreamLines(plan engine.SubmitPlan) []string {
+	ports := map[string]bool{}
+	for _, found := range plan.Upstream {
+		ports[found.Port] = true
+	}
+	var lines []string
+	for _, found := range plan.Upstream {
+		port := ""
+		if len(ports) > 1 {
+			port = found.Port + ": "
+		}
+		if found.Comparison.Problem != "" {
+			lines = append(lines, "! "+port+"archives not compared: "+found.Comparison.Problem)
+		}
+		for _, change := range found.Comparison.Changes {
+			change.Message = port + change.Message
+			lines = append(lines, upstreamWords(change))
+		}
+	}
+	return lines
 }
 
 func pushWords(plan engine.SubmitPlan) string {

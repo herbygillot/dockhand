@@ -9,7 +9,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/outdated"
-	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
@@ -259,24 +258,4 @@ func unresolvedWords(plan model.Plan) string {
 		return "it builds nothing"
 	}
 	return strings.Join(words, "; ")
-}
-
-// UpstreamFindings are what comparing the upstream archives found for a
-// branch's updates, from its recorded edits.
-func (e *Engine) UpstreamFindings(ctx context.Context, branch model.Branch) ([]model.UpstreamChange, error) {
-	var edits []model.Edit
-	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		var err error
-		edits, err = r.Edits(branch.ID)
-		return err
-	}); err != nil {
-		return nil, err
-	}
-	var changes []model.UpstreamChange
-	for _, edit := range edits {
-		if edit.Upstream != nil {
-			changes = append(changes, edit.Upstream.Changes...)
-		}
-	}
-	return changes, nil
 }

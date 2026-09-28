@@ -81,6 +81,9 @@ func TestServeHoldsAnUpdateWhoseUpstreamChangedItsLicense(t *testing.T) {
 	candidates, err := e.ServeCandidates(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, []string{"upstream's LICENSE changed; the Portfile's license line may need to follow"}, candidates[0].Held)
+	require.Equal(t, []PortComparison{{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{
+		{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed; the Portfile's license line may need to follow", Hold: true}}}}},
+		candidates[0].Plan.Upstream, "the plan says what was found, for a person's submission to show")
 	_, err = e.SubmitForServe(t.Context(), candidates[0])
 	require.ErrorContains(t, err, "is held for a look: upstream's LICENSE changed")
 }
@@ -102,6 +105,8 @@ func TestServeHoldsAnUpdateWhoseArchivesCouldNotBeCompared(t *testing.T) {
 	candidates, err := e.ServeCandidates(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, held, candidates[0].Held)
+	require.Equal(t, []PortComparison{{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{},
+		Problem: "the versions have 0 and 1 distfiles, so they can't be paired"}}}, candidates[0].Plan.Upstream)
 	_, err = e.SubmitForServe(t.Context(), candidates[0])
 	require.ErrorContains(t, err, "is held for a look: the upstream archives couldn't be compared")
 	require.Empty(t, fake.created)

@@ -119,6 +119,21 @@ func (p SubmitPlan) held(upstream []string) []string {
 // it for a person's look (UpstreamComparison.Holds): what they found that a
 // passing build can't catch, and archives they couldn't compare.
 func (e *Engine) upstreamHolds(ctx context.Context, branch model.Branch) ([]string, error) {
+	comparisons, err := e.upstreamComparisons(ctx, branch)
+	if err != nil {
+		return nil, err
+	}
+	var held []string
+	for _, found := range comparisons {
+		held = append(held, found.Comparison.Holds()...)
+	}
+	return held, nil
+}
+
+// upstreamComparisons are what comparing the upstream archives found for
+// each of a branch's updates that compared them, in the order they were
+// made, from their recorded edits.
+func (e *Engine) upstreamComparisons(ctx context.Context, branch model.Branch) ([]PortComparison, error) {
 	var edits []model.Edit
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		var err error
@@ -127,11 +142,13 @@ func (e *Engine) upstreamHolds(ctx context.Context, branch model.Branch) ([]stri
 	}); err != nil {
 		return nil, err
 	}
-	var held []string
+	var comparisons []PortComparison
 	for _, edit := range edits {
-		held = append(held, edit.Upstream.Holds()...)
+		if edit.Upstream != nil {
+			comparisons = append(comparisons, PortComparison{Port: edit.Port, Comparison: *edit.Upstream})
+		}
 	}
-	return held, nil
+	return comparisons, nil
 }
 
 // SubmitForServe opens the pull request for a candidate serve may submit,
