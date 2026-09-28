@@ -366,6 +366,9 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		if !strings.HasSuffix(update.Diff, "\n") {
 			fmt.Fprintln(out)
 		}
+		// What a reviewer would ask about is part of the look before.
+		writeUpstream(out, update.Upstream)
+		writePatches(out, update)
 		if linked.revbump {
 			result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.except, true)
 			streams.emit(result)
@@ -417,12 +420,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		fmt.Fprintln(out, "Removed dist_subdir: a stealth update set it for the old version, and the new version's archive has a name of its own.")
 	}
 	writeUpstream(out, update.Upstream)
-	for _, problem := range update.PatchProblems {
-		fmt.Fprintf(out, "! patch %s\n", problem)
-	}
-	for _, unchecked := range update.PatchesUnchecked {
-		fmt.Fprintf(out, "· patch %s\n", unchecked)
-	}
+	writePatches(out, update)
 	if linked.revbump {
 		if result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.except, false); err != nil {
 			return branch, update, err
@@ -661,6 +659,17 @@ func startFor(ctx context.Context, e *engine.Engine, port string) (model.Branch,
 func startNamed(ctx context.Context, e *engine.Engine, name string) (model.Branch, bool, error) {
 	branch, err := e.Start(ctx, engine.StartRequest{Name: name})
 	return branch, err == nil, err
+}
+
+// writePatches reports the patches an update found no longer apply, and
+// those it couldn't check.
+func writePatches(out io.Writer, update engine.Update) {
+	for _, problem := range update.PatchProblems {
+		fmt.Fprintf(out, "! patch %s\n", problem)
+	}
+	for _, unchecked := range update.PatchesUnchecked {
+		fmt.Fprintf(out, "· patch %s\n", unchecked)
+	}
 }
 
 // writeUpstream reports what comparing the upstream archives found.

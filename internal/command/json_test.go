@@ -225,6 +225,22 @@ func TestUpdateJSONCarriesTheUpstreamComparison(t *testing.T) {
 		"archives it couldn't compare hold the update, as a finding would (D4)")
 }
 
+// A plan says what comparing the upstream archives found, as the update it
+// previews does: what a reviewer would ask about is part of the look.
+func TestAnUpdatesPlanSaysWhatUpstreamChanged(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	testPreparer = func(e *engine.Engine) engine.Preparer { return unfetchedPrevious{bumper{repo: e.Repo}} }
+	t.Cleanup(func() { testPreparer = nil })
+	started, err := jsonOf(t, "start", "jq-update")
+	require.NoError(t, err)
+	t.Setenv("MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
+	out, _, err := dockhand(t, "update", "jq", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "Plan, nothing changed:")
+	require.Contains(t, out, "! Upstream archives not compared: the current version's archives could not be fetched: HTTP 404")
+}
+
 // submit --check reports the submission's result wherever it stops, with
 // its check inside when it ran one: a failed check leaves the pull request
 // out, and a refusal before checking reports what blocks it.
