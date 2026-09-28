@@ -65,4 +65,24 @@ Tests: `TestAResultKeepsWhatItsBuildRead` now also records a result in an execut
 
 To scan one row into both records, the execution and result scanners were split into their fields and a completion (`executionFields`, `resultFields`), which `scanExecution` and `results` now use too. `qualified` names the execution's columns by the join's alias. `reusableQuery` is therefore a `var`, and still the text `TestHistoryIsReadThroughIndexes` checks.
 
-Tests: `TestReusableResultsComeWithTheirBuilds` is the first store test of `Reusable`. It records four executions of a target: two passed builds, a reuse, and a failure. Each also has a passed result that recorded no inputs. The test asserts that only the two builds are returned, newest first, each with its execution exactly as `Execution` reads it, observed environment included, and that the limit holds.
+Tests: `TestReusableResultsComeWithTheirBuilds` is the first store test of `Reusable`.
+
+## An execution's environment includes its developer tools (finding 10)
+
+Schema 1's `UNIQUE(repository_id, run_id, provider, platform_os, platform_version, platform_architecture, attempt)` predates schema 11's `developer_tools`, which `model.Environment` counts as part of an environment. A plan holding one platform with the Command Line Tools and with Xcode would have its second environment's first attempt refused. Tart can't plan that today, since it picks one kind of tools per release.
+
+Schema 24 adds `developer_tools` to the constraint. A constraint can't be altered, so `executions` is rebuilt, and `results` with it:
+- **Why `results` too:** migrations run in a transaction with foreign keys enforced, where `PRAGMA foreign_keys` can't be turned off. Dropping `executions` leaves `results` without its parent rows. `defer_foreign_keys` doesn't rescue it: the commit fails even after the rebuilt table is renamed into place, as tried in the SQLite CLI.
+- **How:** the new `results` refers to the new `executions` from the start, so nothing refers to the old one when it is dropped. Renaming the new `executions` renames what the new `results` refers to.
+- **What else carries over:** `rowid`s, which order records made in the same millisecond. The `results_final` trigger and schema 23's three indexes on the two tables are made again.
+
+The review's "a table rebuild like schemas 4 and 8" was wrong on this point, and the review now carries a correction.
+
+Checked outside the tests:
+- **Live data:** applied to a copy of the live database (schema 23). The counts and `rowid` order were unchanged, and `integrity_check` and `foreign_key_check` were clean. `results`' reference is rewritten to `"executions"`.
+- **Year scale:** schemas 23 and 24 together take about 1 s with `fullfsync` on the 198,000-result synthetic copy. Its generator had left 2,000 results without executions, which the rebuild refused; a v3 database, which always enforces foreign keys, can't hold them.
+
+Tests:
+- `TestAnExecutionsEnvironmentIncludesItsDeveloperTools` records one attempt in each environment, then refuses a second in either. Without schema 24 the Xcode attempt is refused.
+- `TestExecutionsAndResultsSurviveTheirRebuild` upgrades a schema-23 database, through a new `schemaAt` helper. It checks every carried field, the order of records made at the same time, the trigger, and the foreign key.
+- `TestAFailedMigrationChangesNothing` gives a schema-23 database a result whose execution is gone. Its open fails at schema 24, and the file is left at schema 23 with every row. This backs the claim that a migration's statements stop at the first failure and roll back together. It records four executions of a target: two passed builds, a reuse, and a failure. Each also has a passed result that recorded no inputs. The test asserts that only the two builds are returned, newest first, each with its execution exactly as `Execution` reads it, observed environment included, and that the limit holds.

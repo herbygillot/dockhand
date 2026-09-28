@@ -160,6 +160,8 @@ The records serve a purpose. Reuse reads the newest few passed results per targe
 
 A plan with two environments that differ only in developer tools would fail its second execution's insert with `ErrConflict`. This is **latent**, not live. Tart today chooses one kind of developer tools per macOS release (`internal/buildenv/tart/provider.go:175`), so no plan can contain such a pair. Add `developer_tools` to the constraint when `executions` is next rebuilt, or before any provider offers both kinds for one platform. SQLite cannot alter a table constraint in place, so this means a table rebuild like schemas 4 and 8.
 
+**Correction (while fixing):** it is not like schemas 4 and 8. `edits` has no table referring to it; `executions` has `results`. A migration runs in a transaction with foreign keys enforced, where `PRAGMA foreign_keys` can't be turned off. Dropping `executions` there leaves `results` without its parent rows, and `defer_foreign_keys` doesn't rescue it: the commit still fails after the rebuilt table is renamed into place, as tried. Schema 24 rebuilds `results` too, referring to the new `executions` from the start.
+
 ## What holds up
 
 These were checked and need no change:

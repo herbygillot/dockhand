@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -487,6 +488,115 @@ func TestReusableResultsComeWithTheirBuilds(t *testing.T) {
 		require.Empty(t, none)
 		return nil
 	}))
+}
+
+// An execution's environment is the whole environment: a run's attempt in
+// one platform with the Command Line Tools alone is not its attempt there
+// with Xcode.
+func TestAnExecutionsEnvironmentIncludesItsDeveloperTools(t *testing.T) {
+	f := open(t)
+	tools, xcode := tahoe, tahoe
+	tools.DeveloperTools, xcode.DeveloperTools = model.DeveloperToolsCommandLine, model.DeveloperToolsXcode
+	b := f.branch("br_1", "dockhand/libharbor-2")
+	r := model.Revision{ID: "rev_1", Branch: b.ID, Kind: model.RevisionSnapshot, Snapshot: 1, Source: model.Source{Tree: "tree", Base: "base"}, Head: "head", CreatedAt: at}
+	p := model.Plan{ID: "plan_1", Revision: r.ID, Tests: model.TestsDeclared, CreatedAt: at, Environments: []model.Environment{tools, xcode},
+		Targets: []model.PlanTarget{{ID: "libharbor", Target: model.Target{Name: "libharbor"}, Directory: "devel/libharbor", Kind: model.Substantive, Role: model.Changed}},
+		Builds:  []model.EnvironmentPlan{{Environment: tools, Order: []model.TargetID{"libharbor"}}, {Environment: xcode, Order: []model.TargetID{"libharbor"}}}}
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		return errors.Join(tx.AddBranch(b), tx.AddRevision(r), tx.AddPlan(p))
+	}))
+	run := f.run(t, b, r, p)
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		return errors.Join(
+			tx.AddExecution(model.GuestExecution{ID: "ex_tools", Run: run.ID, Environment: tools, Attempt: 1, State: model.ExecutionWaiting, CreatedAt: at}),
+			tx.AddExecution(model.GuestExecution{ID: "ex_xcode", Run: run.ID, Environment: xcode, Attempt: 1, State: model.ExecutionWaiting, CreatedAt: at}))
+	}))
+	require.ErrorIs(t, f.update(t, func(tx store.Tx) error {
+		return tx.AddExecution(model.GuestExecution{ID: "ex_again", Run: run.ID, Environment: xcode, Attempt: 1, State: model.ExecutionWaiting, CreatedAt: at})
+	}), store.ErrConflict, "one attempt in each whole environment")
+}
+
+// schemaAt is a database at an earlier schema version, with setup run
+// in it.
+func schemaAt(t *testing.T, version int, setup string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "dockhand.db")
+	db, err := sql.Open("sqlite", "file:"+path)
+	require.NoError(t, err)
+	defer db.Close()
+	all := ""
+	for _, schema := range schemas[:version] {
+		all += schema
+	}
+	_, err = db.Exec(all + fmt.Sprintf("PRAGMA application_id=%d; PRAGMA user_version=%d;", applicationID, version))
+	require.NoError(t, err)
+	_, err = db.Exec(setup)
+	require.NoError(t, err)
+	return path
+}
+
+// A run's executions and their results, as schema 23 kept them.
+const schema23Records = `
+INSERT INTO repositories VALUES('repo_1', '/src/macports-ports/.git', 0);
+INSERT INTO branches(repository_id, id, name, base, worktree, managed, title, state, created_at) VALUES('repo_1','br_1','dockhand/jq-4k2p','base','/w',1,'','open',1);
+INSERT INTO revisions VALUES('repo_1','rev_1','br_1','snapshot',1,'','tree','base','head',1);
+INSERT INTO plans VALUES('repo_1','plan_1','rev_1','{}',1);
+INSERT INTO runs(repository_id, id, number, branch_id, revision_id, plan_id, origin, state, detail, created_at) VALUES('repo_1','run_1',1,'br_1','rev_1','plan_1','person','running','',1);
+INSERT INTO executions(repository_id, id, run_id, provider, platform_os, platform_version, platform_architecture, attempt, state, detail, provider_ref, created_at, developer_tools, observed, identity, reused)
+ VALUES('repo_1','ex_2','run_1','tart','darwin','25','arm64',2,'waiting','','clone-2',5,'xcode','{"macos":"26.0"}','image sha256:1',0),
+       ('repo_1','ex_1','run_1','tart','darwin','25','arm64',1,'waiting','','clone-1',5,'xcode','','',0);
+INSERT INTO results(repository_id, execution_id, target_id, outcome, phase, tests, log, inputs, recorded_at, archive, detail, builders, reused_from)
+ VALUES('repo_1','ex_1','zlib','passed','','none','zlib.log','',7,'sha256:aa','','',''),
+       ('repo_1','ex_1','jq','failed','install','none','jq.log','',7,'','no space','',''),
+       ('repo_1','ex_2','jq','not-run','','none','','',7,'','','','');
+`
+
+// Schema 24 rebuilds executions and results; what they held comes
+// through, in the order it was made, with the rules the tables kept.
+func TestExecutionsAndResultsSurviveTheirRebuild(t *testing.T) {
+	s, err := Open(t.Context(), schemaAt(t, 23, schema23Records), Options{})
+	require.NoError(t, err)
+	defer s.Close()
+	require.NoError(t, s.View(t.Context(), "repo_1", func(r store.Reader) error {
+		executions, err := r.Executions("run_1")
+		require.NoError(t, err)
+		require.Equal(t, []model.ExecutionID{"ex_2", "ex_1"}, []model.ExecutionID{executions[0].ID, executions[1].ID}, "made at the same time, in the order made")
+		require.Equal(t, model.DeveloperToolsXcode, executions[0].Environment.DeveloperTools)
+		require.Equal(t, "26.0", executions[0].Observed.MacOS)
+		require.Equal(t, "image sha256:1", executions[0].Identity)
+		results, err := r.Results("ex_1")
+		require.NoError(t, err)
+		require.Equal(t, []model.TargetID{"zlib", "jq"}, []model.TargetID{results[0].Target, results[1].Target}, "recorded at the same time, in the order recorded")
+		require.Equal(t, "sha256:aa", results[0].Archive)
+		require.Equal(t, "no space", results[1].Detail)
+		referred, err := r.ExecutionsReferred("clone-1")
+		require.NoError(t, err)
+		require.Len(t, referred, 1)
+		return nil
+	}))
+	_, err = s.db.Exec("UPDATE results SET outcome='passed' WHERE execution_id='ex_1' AND target_id='jq'")
+	require.ErrorContains(t, err, "a complete target result is final", "the trigger was made again")
+	_, err = s.db.Exec("INSERT INTO results(repository_id, execution_id, target_id, outcome, phase, tests, log, inputs, recorded_at) VALUES('repo_1','ex_none','jq','passed','','none','','',8)")
+	require.ErrorContains(t, err, "FOREIGN KEY", "results refer to the rebuilt executions")
+	var violations int
+	require.NoError(t, s.db.QueryRow("SELECT count(*) FROM pragma_foreign_key_check").Scan(&violations))
+	require.Zero(t, violations)
+}
+
+// A migration that fails leaves the database as it was: the rebuild
+// refuses a result whose execution is gone, which foreign keys, off when
+// this one was written, would have refused before it.
+func TestAFailedMigrationChangesNothing(t *testing.T) {
+	path := schemaAt(t, 23, schema23Records+"INSERT INTO results(repository_id, execution_id, target_id, outcome, phase, tests, log, inputs, recorded_at) VALUES('repo_1','ex_gone','jq','passed','','none','','',8);")
+	_, err := Open(t.Context(), path, Options{})
+	require.ErrorContains(t, err, "schema 24")
+	db, err := sql.Open("sqlite", "file:"+path)
+	require.NoError(t, err)
+	defer db.Close()
+	var version, executions, results int
+	require.NoError(t, db.QueryRow("PRAGMA user_version").Scan(&version))
+	require.NoError(t, db.QueryRow("SELECT (SELECT count(*) FROM executions), (SELECT count(*) FROM results)").Scan(&executions, &results))
+	require.Equal(t, []int{23, 2, 4}, []int{version, executions, results})
 }
 
 // A kept archive is recorded once by its digest, with the file name
