@@ -14,6 +14,39 @@ import (
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
+// A check made before tidy, the order the design gives, checked the files
+// tidy then committed: status credits it to the commit, as submit does.
+func TestStatusCreditsACheckOfTheCommittedFilesToTheCommit(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	withScript(t, w, "passed")
+	started, err := jsonOf(t, "start", "jq-update")
+	require.NoError(t, err)
+	t.Setenv("MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
+	_, _, err = dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "check")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "tidy")
+	require.NoError(t, err)
+
+	out, _, err := dockhand(t, "status")
+	require.NoError(t, err)
+	require.Contains(t, out, "  Checks   passed for this commit\n")
+	require.Contains(t, out, "Next: dockhand submit --branch jq-update\n")
+
+	// Edits on top of the commit are what a check of the working files
+	// checked, not the commit.
+	dir := dig(t, started.Result, "branch", "worktree").(string)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n# more\n"), 0o644))
+	_, _, err = dockhand(t, "check")
+	require.NoError(t, err)
+	out, _, err = dockhand(t, "status")
+	require.NoError(t, err)
+	require.Contains(t, out, "  Checks   passed for snapshot 2\n")
+}
+
 func TestStatusFollowsABranchThroughItsWork(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)

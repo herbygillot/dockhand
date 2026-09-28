@@ -9,3 +9,9 @@ Another session took hugo from 0.166.0 to 0.167.0 with dockhand, as a maintainer
 - A `check` that passed ends with what `status` would say moves the branch on: "Next: dockhand tidy --branch jq-update" for uncommitted work, or `submit` for a commit. A check that `submit --check`, `update --submit`, or `bump` runs leaves that to the submission that follows.
 
 Tests fail with each part undone: `TestUpdateInTheBranchCheckedOutHere` and `TestUpdateWithoutABranchAsksOrSaysHow` for the two forms of update's line, `TestCheckRunsHereWithoutServe` for check's, and `TestSubmitCheckPassingAndReady` for its absence under `submit --check`.
+
+## A check made before tidy is the commit's
+
+Checking before tidying, the order the design gives, left hugo's branch at "passed for snapshot 1" in `status`, even with its pull request open. `submit` credited the same check to the commit, "for this commit's files", since a check is keyed to the files and tidy committed them unchanged.
+
+`status` now says "passed for this commit" whenever the latest check read exactly the files as they are, and none of them are uncommitted. Edits on top of the commit still make it the snapshot's. `TestStatusCreditsACheckOfTheCommittedFilesToTheCommit` covers both, and fails with either undone.

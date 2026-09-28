@@ -312,7 +312,9 @@ func checkState(s engine.BranchStatus) string {
 	}
 	switch s.Latest.State {
 	case model.RunPassed:
-		if s.Current && s.LatestRevision.Kind == model.RevisionCommit {
+		// A check of the working files that tidy then committed unchanged
+		// checked the commit's files, as submit credits it.
+		if s.Current && (s.LatestRevision.Kind == model.RevisionCommit || s.Commits > 0 && len(s.Edited) == 0) {
 			return "passed for this commit"
 		}
 		if s.Current {
