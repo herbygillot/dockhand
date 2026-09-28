@@ -70,6 +70,14 @@ type Build interface {
 	// build, which its result keeps (decision 28). A provider that can't
 	// see them doesn't call it, and the result's inputs are unknown.
 	Consumed(target model.TargetID, active []model.ActivePort)
+	// Keep keeps the archive a target's build made, after its Record, for
+	// a later build of a target that needs it to install rather than build
+	// it again (decision 28). fetch writes the archive whole to the path
+	// it is given, in the file system of the store it is kept in, and it
+	// is kept only if it matches the digest the result reported. One kept
+	// already isn't fetched again. A provider that can't fetch archives
+	// doesn't call it.
+	Keep(target model.TargetID, name string, fetch func(path string) error) error
 	// Progress reports a step to whoever is watching.
 	Progress(message string)
 	// Observe records what the environment reported about itself, for

@@ -517,11 +517,14 @@ type CleanupReport struct {
 	Caches []string
 	// Events and Sessions count what it pruned from the journal.
 	Events, Sessions int
+	// Archives are the kept archives it removed, which no live result
+	// named.
+	Archives []model.Archive
 }
 
 // Removed counts what it removed.
 func (r CleanupReport) Removed() int {
-	n := len(r.Indexes) + len(r.Caches)
+	n := len(r.Indexes) + len(r.Caches) + len(r.Archives)
 	for _, leftover := range r.Leftovers {
 		if leftover.Done {
 			n++
@@ -539,9 +542,10 @@ func (r CleanupReport) Removed() int {
 
 // Cleanup is decision 36's automatic cleanup, which serve runs at most
 // once a day: what clean --merged would remove, less anything it would
-// keep, what checks whose process died left in providers, and port index
-// generations unused for longer than after. Open branches, and work of
-// anyone's own, are never touched.
+// keep, what checks whose process died left in providers, port index
+// generations unused for longer than after, and kept archives no live
+// result names. Open branches, and work of anyone's own, are never
+// touched.
 func (e *Engine) Cleanup(ctx context.Context, session *coord.Session, after time.Duration) (CleanupReport, error) {
 	var report CleanupReport
 	plans, err := e.PlanClean(ctx)
@@ -604,6 +608,25 @@ func (e *Engine) Cleanup(ctx context.Context, session *coord.Session, after time
 		err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 			_, err := tx.AppendEvent(model.Event{At: e.now(), Kind: "cleanup", Level: model.LevelInfo,
 				Message: fmt.Sprintf("removed %s unused for %s: %s", plural(len(report.Caches), "cached image"), CacheUnused, strings.Join(report.Caches, ", "))})
+			return err
+		})
+		if err != nil {
+			return report, err
+		}
+	}
+	// Kept archives go once no live result names them: none of an open
+	// branch's checks, and none recorded within after (decisions 36 and
+	// 44). What stays is said, as the store has no cap.
+	removedArchives, keptArchives, err := e.pruneArchives(ctx, e.now().Add(-after))
+	report.Archives = removedArchives
+	if err != nil {
+		return report, fmt.Errorf("cleaning kept archives: %w", err)
+	}
+	if len(removedArchives) > 0 {
+		err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+			_, err := tx.AppendEvent(model.Event{At: e.now(), Kind: "cleanup", Level: model.LevelInfo,
+				Message: fmt.Sprintf("removed %s, %s, that no open branch's checks name; %s kept, %s", plural(len(removedArchives), "kept archive"), archiveBytes(removedArchives),
+					plural(len(keptArchives), "archive"), archiveBytes(keptArchives))})
 			return err
 		})
 		if err != nil {

@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -349,8 +350,10 @@ type guestResult struct {
 	// Active are the ports that were active as the target built; absent
 	// where the guest didn't record them, and empty where there were none.
 	Active []guestPort `json:"active"`
-	// Archive is the digest of the target's own archive.
-	Archive string `json:"archive"`
+	// Archive is the digest of the target's own archive, and ArchiveFile
+	// where it is in the guest.
+	Archive     string `json:"archive"`
+	ArchiveFile string `json:"archive_file"`
 }
 
 // guestPort is a port active as a target built, as the guest saw it.
@@ -745,7 +748,25 @@ func (p *Provider) record(ctx context.Context, g guest, job buildenv.Job, build 
 	if got.Detail != "" {
 		build.Progress(got.ID + ": " + got.Detail)
 	}
+	// A passed target's archive is kept, for a later build of a target
+	// that needs it to install rather than build it again (decision 28).
+	// One that can't be kept leaves the result as it is.
+	if result.Outcome == model.OutcomePassed && got.Archive != "" {
+		if err := p.keep(ctx, g, build, target.ID, got.ArchiveFile); err != nil {
+			build.Progress(fmt.Sprintf("%s: its archive wasn't kept: %v", got.ID, err))
+		}
+	}
 	return nil
+}
+
+// keep fetches a target's archive from where the guest's MacPorts keeps
+// it, its prefix's software directory, into the build's store.
+func (p *Provider) keep(ctx context.Context, g guest, build buildenv.Build, target model.TargetID, file string) error {
+	software := path.Join(p.prefix(), "var/macports/software") + "/"
+	if file == "" || path.Clean(file) != file || !strings.HasPrefix(file, software) {
+		return fmt.Errorf("the guest named %q, not a file in %s", file, software)
+	}
+	return build.Keep(target, path.Base(file), func(local string) error { return g.Download(ctx, file, local, true) })
 }
 
 // reported is what the guest reported about itself, for the pull request's

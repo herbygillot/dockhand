@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -148,4 +149,55 @@ func TestCleanupPrunesTheJournal(t *testing.T) {
 		}
 		return nil
 	}))
+}
+
+// Cleanup removes the kept archives no live result names, with their
+// files, and what no record names once it is older than its age: a file
+// whose record never followed, a fetch that didn't finish. An open
+// branch's archives stay (decisions 36 and 44).
+func TestCleanupRemovesArchivesNoLiveResultNames(t *testing.T) {
+	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
+	f := setup(t)
+	e := f.open(t)
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{active: []model.ActivePort{}}}
+	run, err := e.Drive(t.Context(), session(t, e), queuedHarborRun(t, e, tahoeArm).ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, run.State, run.Detail)
+
+	old := e.now().Add(-40 * 24 * time.Hour)
+	directory := e.ArchiveDirectory()
+	require.NoError(t, os.MkdirAll(filepath.Join(directory, ".incoming-1"), 0o755))
+	for _, name := range []string{"libharbor", "gone", "orphan", "fresh"} {
+		require.NoError(t, os.WriteFile(filepath.Join(directory, name), []byte(name), 0o644))
+	}
+	// gone's file is new, though its record is old: it goes because its
+	// record does, not by its age.
+	for _, name := range []string{"libharbor", "orphan", ".incoming-1"} {
+		require.NoError(t, os.Chtimes(filepath.Join(directory, name), old, old))
+	}
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		// The scripted build's results name sha256:<target>.
+		for _, archive := range []model.Archive{{Digest: "sha256:libharbor", Name: "libharbor.tbz2", Size: 9, KeptAt: old}, {Digest: "sha256:gone", Name: "gone.tbz2", Size: 4, KeptAt: old}} {
+			if err := tx.KeepArchive(archive); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+
+	report, err := e.Cleanup(t.Context(), session(t, e), 30*24*time.Hour)
+	require.NoError(t, err)
+	require.Len(t, report.Archives, 1)
+	require.Equal(t, "sha256:gone", report.Archives[0].Digest)
+	require.FileExists(t, filepath.Join(directory, "libharbor"), "an open branch's result names it")
+	require.FileExists(t, filepath.Join(directory, "fresh"), "no record names it yet, but it's new")
+	for _, name := range []string{"gone", "orphan", ".incoming-1"} {
+		require.NoFileExists(t, filepath.Join(directory, name))
+		require.NoDirExists(t, filepath.Join(directory, name))
+	}
+	events, err := e.Events(t.Context(), 0)
+	require.NoError(t, err)
+	require.True(t, slices.ContainsFunc(events, func(event model.Event) bool {
+		return event.Message == "removed 1 kept archive, 1 MB, that no open branch's checks name; 1 archive kept, 1 MB"
+	}), "cleanup says what it removed and what the store keeps")
 }

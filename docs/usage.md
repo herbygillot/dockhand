@@ -311,6 +311,7 @@ Serve opens no pull requests by default. With `--submit-passing`, or `serve.subm
 - what checks whose process died left behind;
 - port indexes unused for `cleanup.after`;
 - the journal's events older than `cleanup.after`, and the sessions that ended or went quiet before then, but for one a lease still names;
+- the archives Tart's builds made, which checks keep in `~/.dockhand/archives` for later builds to install, once no open branch's check names them and none has named them within `cleanup.after`. It says how much stays;
 - the vanilla images Tart pulled for `providers setup tart`, once unused for 30 days. Each is deleted from dockhand's own Tart home with `tart delete`, never `tart prune`, and the next setup of its release downloads it again.
 
 `serve` runs it. Without serve, a command starts it in the background once its own work is done, and doesn't wait for it; what it removed goes to `cleanup.log` beside the database. When free space where the database or Tart's images are falls below `cleanup.min_free`, it runs at once, and says so, at most once an hour.
@@ -341,7 +342,7 @@ Serve opens no pull requests by default. With `--submit-passing`, or `serve.subm
 | `check.baseline` | `false` | run a baseline after a failed check |
 | `submit.rerequest_review` | `ask` | after pushing to a pull request with changes requested: `ask`, `always`, or `never` |
 | `cleanup.automatic` | `true` | the daily automatic cleanup |
-| `cleanup.after` | `7d` | how long a port index goes unused before cleanup removes it |
+| `cleanup.after` | `7d` | how long a port index goes unused, or a kept archive unnamed by an open branch, before cleanup removes it |
 | `cleanup.min_free` | `30GB` | the free space below which cleanup runs at once |
 | `serve.for_outdated` | `list` | `list`, `draft`, or `check` |
 | `serve.outdated_at` | `07:00` | when serve looks for new releases, in local time |

@@ -88,6 +88,11 @@ type Reader interface {
 	// Inputs reads what a build read by its key (model.TargetInputs.Key);
 	// ErrNotFound when none was recorded.
 	Inputs(key string) (model.TargetInputs, error)
+	// Archive is a kept archive, by its digest; ErrNotFound when it isn't
+	// kept (decision 28).
+	Archive(digest string) (model.Archive, error)
+	// Archives are every kept archive, by digest.
+	Archives() ([]model.Archive, error)
 	// Reusable are a target's passed results in an environment that keep
 	// what their builds read, from the builds themselves rather than a
 	// reuse of them, newest first, at most limit (decision 28).
@@ -148,6 +153,14 @@ type Tx interface {
 	// RecordInputs keeps what a build read, once for every build that
 	// read the same, and returns its key.
 	RecordInputs(inputs model.TargetInputs) (string, error)
+	// KeepArchive records an archive as kept, once its file is whole and
+	// checked (decision 44). Keeping one already kept changes nothing.
+	KeepArchive(archive model.Archive) error
+	// PruneArchives forgets the archives kept before a time that no live
+	// result names: none in a check of an open branch, and none recorded
+	// at or after it (decisions 36 and 44). It returns what it forgot,
+	// whose files go next.
+	PruneArchives(before time.Time) ([]model.Archive, error)
 
 	AddSession(session model.Session) error
 	UpdateSession(session model.Session) error

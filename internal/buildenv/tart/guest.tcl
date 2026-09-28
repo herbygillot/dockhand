@@ -145,8 +145,8 @@ proc digest {path} {
 # (decision 28): the ports active as it built, other than itself, each
 # with its version, revision, and variants, where its name resolves in the
 # ports tree, and its archive's digest. The target's own archive's digest
-# comes with them, where it is active. Each is asked of port once for all
-# the ports.
+# comes with them, where it is active, and where the archive is, for the
+# host to keep it. Each is asked of port once for all the ports.
 proc consumed {name} {
     global port root
     set ports {}
@@ -163,7 +163,9 @@ proc consumed {name} {
     }
     set inputs [dict create active {}]
     if {$own ne ""} {
-        dict set inputs archive [digest [fact $port -q location {*}$own]]
+        set location [fact $port -q location {*}$own]
+        dict set inputs archive [digest $location]
+        if {[dict get $inputs archive] ne ""} { dict set inputs archive_file $location }
     }
     if {![llength $ports]} { return $inputs }
     set locations [split [fact $port -q location {*}$specs] \n]

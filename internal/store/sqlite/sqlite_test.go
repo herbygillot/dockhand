@@ -420,6 +420,91 @@ func TestAResultKeepsWhatItsBuildRead(t *testing.T) {
 	}))
 }
 
+// A kept archive is recorded once by its digest, with the file name
+// MacPorts gives it; one that can't be named as a file, or has no digest,
+// isn't recorded (decision 28).
+func TestAnArchiveIsRecordedOnceByDigest(t *testing.T) {
+	f := open(t)
+	f.seed(t)
+	archive := model.Archive{Digest: "sha256:55", Name: "libharbor-4_0.darwin_25.arm64.tbz2", Size: 1024, KeptAt: at}
+	for range 2 {
+		require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.KeepArchive(archive) }))
+	}
+	for _, bad := range []model.Archive{{Digest: "sha256:66", Name: "../x.tbz2", Size: 1}, {Digest: "66", Name: "x.tbz2", Size: 1}, {Digest: "sha256:66", Name: "x.tbz2"}} {
+		require.ErrorIs(t, f.update(t, func(tx store.Tx) error { return tx.KeepArchive(bad) }), store.ErrConflict)
+	}
+	require.NoError(t, f.store.View(t.Context(), f.repo, func(rd store.Reader) error {
+		read, err := rd.Archive(archive.Digest)
+		require.NoError(t, err)
+		require.Equal(t, archive, read)
+		_, err = rd.Archive("sha256:66")
+		require.ErrorIs(t, err, store.ErrNotFound)
+		return nil
+	}))
+}
+
+// An archive is forgotten once no live result names it: none of an open
+// branch's checks, and none recorded since the cutoff. One kept since the
+// cutoff stays however it is named (decisions 36 and 44).
+func TestArchivesGoWhenNoLiveResultNamesThem(t *testing.T) {
+	f := open(t)
+	b, r, p := f.seed(t)
+	run := f.run(t, b, r, p)
+	later := at.Add(2 * time.Hour)
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		for i, recorded := range []time.Time{at, later} {
+			execution := model.GuestExecution{ID: model.ExecutionID(fmt.Sprintf("ex_%d", i+1)), Run: run.ID, Environment: tahoe, Attempt: i + 1, State: model.ExecutionWaiting, CreatedAt: at}
+			if err := tx.AddExecution(execution); err != nil {
+				return err
+			}
+			target, archive := model.TargetID("libharbor"), "sha256:aa"
+			if i == 1 {
+				target, archive = "harbor-cli", "sha256:cc"
+			}
+			if err := tx.RecordResult(model.TargetResult{Execution: execution.ID, Target: target, Outcome: model.OutcomePassed, Tests: model.TestsNone, Archive: archive, RecordedAt: recorded}); err != nil {
+				return err
+			}
+		}
+		for _, archive := range []model.Archive{
+			{Digest: "sha256:aa", Name: "libharbor.tbz2", Size: 1, KeptAt: at},
+			{Digest: "sha256:bb", Name: "unnamed.tbz2", Size: 1, KeptAt: at},
+			// Kept long ago, and named by a result recorded since, as a
+			// later check's reuse of the build names its archive.
+			{Digest: "sha256:cc", Name: "harbor-cli.tbz2", Size: 1, KeptAt: at},
+			{Digest: "sha256:dd", Name: "fresh.tbz2", Size: 1, KeptAt: later},
+		} {
+			if err := tx.KeepArchive(archive); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	prune := func() []string {
+		t.Helper()
+		var digests []string
+		require.NoError(t, f.update(t, func(tx store.Tx) error {
+			pruned, err := tx.PruneArchives(at.Add(time.Hour))
+			for _, archive := range pruned {
+				digests = append(digests, archive.Digest)
+			}
+			return err
+		}))
+		return digests
+	}
+	require.Equal(t, []string{"sha256:bb"}, prune(), "no result names it; an open branch's are kept")
+	b.State = model.BranchMerged
+	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.UpdateBranch(b) }))
+	require.Equal(t, []string{"sha256:aa"}, prune(), "a retired branch's goes once its results are older than the cutoff, and one a recent result names stays")
+	require.Empty(t, prune())
+	require.NoError(t, f.store.View(t.Context(), f.repo, func(rd store.Reader) error {
+		kept, err := rd.Archives()
+		require.NoError(t, err)
+		require.Len(t, kept, 2)
+		require.Equal(t, []string{"sha256:cc", "sha256:dd"}, []string{kept[0].Digest, kept[1].Digest})
+		return nil
+	}))
+}
+
 func session(f fixture, id model.SessionID, kind model.SessionKind) model.Session {
 	return model.Session{ID: id, Repository: f.repo, Kind: kind, PID: 4711, ProcessStart: "linux:12345", Version: "test", StartedAt: at, HeartbeatAt: at}
 }

@@ -204,6 +204,8 @@ type fakeBuild struct {
 	progress []string
 	observed []model.Observed
 	refs     []string
+	// kept are the archives fetched, by file name, to what arrived.
+	kept map[string][]byte
 }
 
 func (b *fakeBuild) Refer(ref string) error {
@@ -227,6 +229,29 @@ func (b *fakeBuild) Consumed(target model.TargetID, active []model.ActivePort) {
 		b.consumed = map[model.TargetID][]model.ActivePort{}
 	}
 	b.consumed[target] = active
+}
+
+func (b *fakeBuild) Keep(target model.TargetID, name string, fetch func(path string) error) error {
+	directory, err := os.MkdirTemp("", "dockhand-kept-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(directory)
+	path := filepath.Join(directory, name)
+	if err := fetch(path); err != nil {
+		return err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.kept == nil {
+		b.kept = map[string][]byte{}
+	}
+	b.kept[name] = data
+	return nil
 }
 
 func (b *fakeBuild) Blocked(target model.TargetID) (model.TargetID, bool) {
@@ -285,7 +310,8 @@ func newMac(results ...guestResults) *fakeMac {
 // log copied out, and the clone is deleted after.
 func TestTheProviderRecordsEachTargetAsTheGuestFinishesIt(t *testing.T) {
 	t.Parallel()
-	libharbor := guestResult{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "target-1.log", Active: []guestPort{}, Archive: "sha256:11"}
+	libharbor := guestResult{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "target-1.log", Active: []guestPort{}, Archive: "sha256:11",
+		ArchiveFile: "/opt/local/var/macports/software/libharbor/libharbor-3_0.darwin_25.arm64.tbz2"}
 	cli := guestResult{ID: "harbor-cli", Outcome: "failed", Phase: "install", Log: "target-2.log", Detail: "Failed to install harbor-cli",
 		Active: []guestPort{{Name: "libharbor", Spec: "@3_0", Directory: "devel/libharbor", Archive: "sha256:11"}}}
 	mac := newMac(
@@ -293,6 +319,7 @@ func TestTheProviderRecordsEachTargetAsTheGuestFinishesIt(t *testing.T) {
 		guestResults{State: "running", Targets: []guestResult{libharbor}},
 		guestResults{State: "finished", Targets: []guestResult{libharbor, cli}},
 	)
+	mac.guest.logs["libharbor-3_0.darwin_25.arm64.tbz2"] = "libharbor's archive"
 	job := tartJob(t, 1)
 	build := &fakeBuild{}
 	require.NoError(t, testProvider(mac).Execute(t.Context(), job, build))
@@ -309,6 +336,7 @@ func TestTheProviderRecordsEachTargetAsTheGuestFinishesIt(t *testing.T) {
 		"libharbor":  {},
 		"harbor-cli": {{Name: "libharbor", Spec: "@3_0", Directory: "devel/libharbor", Archive: "sha256:11"}},
 	}, build.consumed, "what each build read, the guest's none included")
+	require.Equal(t, map[string][]byte{"libharbor-3_0.darwin_25.arm64.tbz2": []byte("libharbor's archive")}, build.kept, "a passed target's archive is kept, by MacPorts' name for it")
 
 	vm := "dockhand-check-run-7-tahoe-1"
 	require.Equal(t, []string{"clone dockhand-base-tahoe " + vm, "start " + vm, "reach " + vm + " as dockhand-base-tahoe", "delete " + vm}, mac.events)
@@ -319,6 +347,24 @@ func TestTheProviderRecordsEachTargetAsTheGuestFinishesIt(t *testing.T) {
 	require.Equal(t, "declared", mac.guest.input.Tests)
 	require.Equal(t, 1800, mac.guest.input.TestTimeout)
 	require.NoFileExists(t, filepath.Join(job.Directory, "input.tar"), "the staged archive is removed once it's in the guest")
+}
+
+// An archive is kept only from where the guest's MacPorts keeps archives:
+// a file the guest names elsewhere isn't fetched, and the result stands.
+func TestAnArchiveIsKeptOnlyFromMacPortsSoftware(t *testing.T) {
+	t.Parallel()
+	for _, file := range []string{"", "/etc/master.passwd", "/opt/local/var/macports/software/../../../../etc/master.passwd"} {
+		libharbor := guestResult{ID: "libharbor", Outcome: "passed", Tests: "none", Log: "target-1.log", Archive: "sha256:11", ArchiveFile: file}
+		mac := newMac(guestResults{State: "finished", Targets: []guestResult{libharbor}})
+		mac.guest.logs["master.passwd"] = "secrets"
+		build := &fakeBuild{}
+		job := tartJob(t, 1)
+		job.Targets = job.Targets[:1]
+		require.NoError(t, testProvider(mac).Execute(t.Context(), job, build))
+		require.Len(t, build.results, 1, "the result stands")
+		require.Empty(t, build.kept, "%q isn't fetched", file)
+		require.True(t, slices.ContainsFunc(build.progress, func(line string) bool { return strings.HasPrefix(line, "libharbor: its archive wasn't kept") }), "%q", file)
+	}
 }
 
 // A target an earlier attempt found blocked goes to the guest marked so.

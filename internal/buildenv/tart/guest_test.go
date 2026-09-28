@@ -167,6 +167,7 @@ func TestAVerdictRecordsThePortsActiveAsItBuilt(t *testing.T) {
 		{Name: "gone", Spec: "@1.0_0"},
 	}, results.Targets[0].Active)
 	require.Equal(t, digest("libharbor's archive"), results.Targets[0].Archive)
+	require.Equal(t, filepath.Join(archives, "libharbor"), results.Targets[0].ArchiveFile, "where it is, for the host to keep it")
 	require.Contains(t, commands, "-q location zlib @1.3.2_0 xz @5.8.1_0+universal gone @1.0_0", "asked once for all of them")
 	require.Contains(t, commands, "-q dir gone", "asked alone once the list failed")
 }

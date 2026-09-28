@@ -48,6 +48,28 @@ func Create(path string, mode fs.FileMode, write func(*os.File) error) error {
 	return syncDirectory(filepath.Dir(path))
 }
 
+// Place moves a file already written, from, into place at path: it syncs
+// the file, renames it, and syncs path's directory, so that after a crash
+// the file is there whole or not at all. from must be on path's file
+// system, as a sibling is.
+func Place(from, path string) error {
+	file, err := os.Open(from)
+	if err != nil {
+		return err
+	}
+	err = file.Sync()
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	if err := os.Rename(from, path); err != nil {
+		return err
+	}
+	return syncDirectory(filepath.Dir(path))
+}
+
 // ReplaceDirectory builds a directory in a temporary sibling and moves it into
 // place. A previous directory is retired only after the replacement exists, so
 // a crash leaves either the old or the new directory, never neither. A failing

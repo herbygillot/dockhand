@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -644,6 +645,62 @@ func (t *tx) RecordInputs(inputs model.TargetInputs) (string, error) {
 	key := inputs.Key()
 	_, err = t.exec("INSERT INTO inputs(repository_id, key, record) VALUES(?,?,?) ON CONFLICT DO NOTHING", t.repo, key, string(record))
 	return key, err
+}
+
+func (t *tx) Archive(digest string) (model.Archive, error) {
+	archive := model.Archive{Digest: digest}
+	var kept int64
+	if err := t.conn.QueryRowContext(t.ctx, "SELECT name, size, kept_at FROM archives WHERE repository_id=? AND digest=?", t.repo, digest).Scan(&archive.Name, &archive.Size, &kept); err != nil {
+		return model.Archive{}, storageError(err)
+	}
+	archive.KeptAt = fromMillis(kept)
+	return archive, nil
+}
+
+func (t *tx) Archives() ([]model.Archive, error) {
+	return t.archives("SELECT digest, name, size, kept_at FROM archives WHERE repository_id=? ORDER BY digest", t.repo)
+}
+
+func (t *tx) PruneArchives(before time.Time) ([]model.Archive, error) {
+	unnamed := "a.repository_id=? AND a.kept_at<? AND NOT EXISTS (SELECT 1 FROM results r " +
+		"JOIN executions e ON e.repository_id=r.repository_id AND e.id=r.execution_id " +
+		"JOIN runs u ON u.repository_id=e.repository_id AND u.id=e.run_id " +
+		"JOIN branches b ON b.repository_id=u.repository_id AND b.id=u.branch_id " +
+		"WHERE r.repository_id=a.repository_id AND r.archive=a.digest AND (b.state='open' OR r.recorded_at>=?))"
+	pruned, err := t.archives("SELECT digest, name, size, kept_at FROM archives a WHERE "+unnamed+" ORDER BY digest", t.repo, millis(before), millis(before))
+	if err != nil || len(pruned) == 0 {
+		return nil, err
+	}
+	_, err = t.exec("DELETE FROM archives AS a WHERE "+unnamed, t.repo, millis(before), millis(before))
+	return pruned, err
+}
+
+func (t *tx) archives(query string, args ...any) ([]model.Archive, error) {
+	rows, err := t.conn.QueryContext(t.ctx, query, args...)
+	if err != nil {
+		return nil, storageError(err)
+	}
+	defer rows.Close()
+	var archives []model.Archive
+	for rows.Next() {
+		var archive model.Archive
+		var kept int64
+		if err := rows.Scan(&archive.Digest, &archive.Name, &archive.Size, &kept); err != nil {
+			return nil, storageError(err)
+		}
+		archive.KeptAt = fromMillis(kept)
+		archives = append(archives, archive)
+	}
+	return archives, storageError(rows.Err())
+}
+
+func (t *tx) KeepArchive(archive model.Archive) error {
+	if !strings.HasPrefix(archive.Digest, "sha256:") || !model.ValidArchiveName(archive.Name) || archive.Size <= 0 {
+		return fmt.Errorf("%w: archive %q named %q", store.ErrConflict, archive.Digest, archive.Name)
+	}
+	_, err := t.exec("INSERT INTO archives(repository_id, digest, name, size, kept_at) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING",
+		t.repo, archive.Digest, archive.Name, archive.Size, millis(archive.KeptAt))
+	return err
 }
 
 func placeholders(n int) string { return strings.TrimSuffix(strings.Repeat("?,", n), ",") }

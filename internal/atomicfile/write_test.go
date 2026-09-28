@@ -33,3 +33,18 @@ func TestFailedReplacementRemovesTemporaryFile(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, entries, 1)
 }
+
+// Place moves a file written elsewhere into place whole, and leaves
+// nothing where it was; one that isn't there moves nothing.
+func TestPlaceMovesAWrittenFileIntoPlace(t *testing.T) {
+	root := t.TempDir()
+	from, path := filepath.Join(root, ".incoming"), filepath.Join(root, "kept")
+	require.NoError(t, os.WriteFile(from, []byte("archive"), 0644))
+	require.NoError(t, Place(from, path))
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, "archive", string(data))
+	require.NoFileExists(t, from)
+	require.Error(t, Place(from, filepath.Join(root, "other")))
+	require.NoFileExists(t, filepath.Join(root, "other"))
+}
