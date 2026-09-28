@@ -39,3 +39,7 @@ A version update's plan with no branch to plan in now plans on master, as `--new
 ## Log directories name macOS's release
 
 Everything dockhand says names the release by macOS's number, macOS 26 (Tahoe), but a check's log directory was `tart-25-arm64-1`, by the Darwin version. It's now `tart-macos26-arm64-1`. A Darwin release dockhand doesn't know keeps its Darwin version, as `darwin30`, as its headings do. Each result records its log's whole path, so the logs of earlier checks are found where they are. `TestLogDirectoriesNameTheMacOSRelease` fails with either part undone.
+
+## A pull request's CI, before anything has read it
+
+Once #35000's CI had passed, `status` still showed only "#35000". It does show CI, "#35000, CI ✓", once `status --refresh` or `serve` has read the pull request from GitHub, but nothing said so, and plain `status` never reads GitHub. A branch's own status now says how while nothing has: "#35001 · CI not read yet (dockhand status --refresh)". The table of all branches keeps its short cell. `TestStatusRefreshShowsWhatTheReviewersSaid` fails without the hint, and with it left after the read.

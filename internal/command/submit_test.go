@@ -251,6 +251,9 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
+	out, _, err := dockhand(t, "status")
+	require.NoError(t, err)
+	require.Contains(t, out, "  PR       #34901 · CI not read yet (dockhand status --refresh)\n", "until something reads it, status says how")
 
 	g.status = forge.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, Checks: forge.CheckSummary{Total: 2, Passed: 2}}
 	t.Setenv("MACPORTS_TREE", w.clone)
@@ -259,6 +262,11 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	require.Contains(t, errs, "jq-update: #34901: changes requested\n")
 	require.Contains(t, out, "Needs you\n  ! jq-update  #34901 changes requested (just now)  dockhand edit jq\n")
 	require.Contains(t, out, "#34901 changes requested, CI ✓")
+	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
+	out, _, err = dockhand(t, "status")
+	require.NoError(t, err)
+	require.Contains(t, out, "  PR       #34901 changes requested, CI ✓\n", "once read, it says what it read")
+	t.Setenv("MACPORTS_TREE", w.clone)
 
 	// serve reads them by itself.
 	g.status = forge.PullRequestStatus{Review: "none", Checks: forge.CheckSummary{Total: 2, Passed: 1, Failed: 1, Failing: []string{"macOS 26"}}}

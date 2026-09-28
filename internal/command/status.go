@@ -438,7 +438,12 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, branch mod
 		// status has no plan above it, so one environment is named.
 		writeResults(out, "           ", *status.Evidence, true)
 	}
-	fmt.Fprintf(out, "  PR       %s\n", prWords(status))
+	pr := prWords(status)
+	if opened := status.Branch.PullRequest; opened != nil && opened.Observed == nil {
+		// Nothing has read it from GitHub since it was opened: say how.
+		pr += " · CI not read yet (dockhand status --refresh)"
+	}
+	fmt.Fprintf(out, "  PR       %s\n", pr)
 	writeNext(out, status)
 	return nil
 }
