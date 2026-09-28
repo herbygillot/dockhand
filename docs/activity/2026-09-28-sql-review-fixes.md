@@ -40,3 +40,9 @@ The review said to set `analysis_limit=400` as well, and that was wrong; the rev
 Tests:
 - `TestEveryConnectionSyncsToTheDisk` holds four pooled connections at once and reads each one's settings.
 - `TestOpeningKeepsThePlannersStatistics` records 200 runs, one queued, and shows the planner walks every run before a reopen and uses `run_state` after. It failed with `analysis_limit` set.
+
+## Pruning archives in one statement (finding 1)
+
+`PruneArchives` selected the unnamed archives, then deleted them with the same condition, so the `NOT EXISTS` ran twice. It is now one `DELETE … RETURNING`, sorted by digest in Go, since `RETURNING` gives rows in no promised order. It refuses a read-only transaction first, as `exec` does, since it no longer goes through `exec`.
+
+Tests: `TestArchivesGoWhenNoLiveResultNamesThem` now prunes two archives at once, the later-kept one first by digest. Without the sort, it fails: `RETURNING` gave them in the order they were kept.

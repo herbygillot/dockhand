@@ -685,12 +685,14 @@ const unnamedArchive = "a.repository_id=? AND a.kept_at<? AND NOT EXISTS (SELECT
 	"JOIN branches b ON b.repository_id=u.repository_id AND b.id=u.branch_id " +
 	"WHERE r.repository_id=a.repository_id AND r.archive=a.digest AND (b.state='open' OR r.recorded_at>=?))"
 
+// PruneArchives forgets the unnamed archives and reads them back in the one
+// statement, which returns them in no order of its own.
 func (t *tx) PruneArchives(before time.Time) ([]model.Archive, error) {
-	pruned, err := t.archives("SELECT digest, name, size, kept_at FROM archives a WHERE "+unnamedArchive+" ORDER BY digest", t.repo, millis(before), millis(before))
-	if err != nil || len(pruned) == 0 {
+	if err := t.write(); err != nil {
 		return nil, err
 	}
-	_, err = t.exec("DELETE FROM archives AS a WHERE "+unnamedArchive, t.repo, millis(before), millis(before))
+	pruned, err := t.archives("DELETE FROM archives AS a WHERE "+unnamedArchive+" RETURNING digest, name, size, kept_at", t.repo, millis(before), millis(before))
+	slices.SortFunc(pruned, func(a, b model.Archive) int { return strings.Compare(a.Digest, b.Digest) })
 	return pruned, err
 }
 

@@ -472,6 +472,9 @@ func TestArchivesGoWhenNoLiveResultNamesThem(t *testing.T) {
 			// later check's reuse of the build names its archive.
 			{Digest: "sha256:cc", Name: "harbor-cli.tbz2", Size: 1, KeptAt: at},
 			{Digest: "sha256:dd", Name: "fresh.tbz2", Size: 1, KeptAt: later},
+			// Kept after bb, and listed before it: what's forgotten is
+			// listed by digest.
+			{Digest: "sha256:ab", Name: "unnamed-too.tbz2", Size: 1, KeptAt: at},
 		} {
 			if err := tx.KeepArchive(archive); err != nil {
 				return err
@@ -491,7 +494,7 @@ func TestArchivesGoWhenNoLiveResultNamesThem(t *testing.T) {
 		}))
 		return digests
 	}
-	require.Equal(t, []string{"sha256:bb"}, prune(), "no result names it; an open branch's are kept")
+	require.Equal(t, []string{"sha256:ab", "sha256:bb"}, prune(), "no result names them; an open branch's are kept")
 	b.State = model.BranchMerged
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.UpdateBranch(b) }))
 	require.Equal(t, []string{"sha256:aa"}, prune(), "a retired branch's goes once its results are older than the cutoff, and one a recent result names stays")
