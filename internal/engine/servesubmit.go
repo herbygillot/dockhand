@@ -115,18 +115,21 @@ func (p SubmitPlan) held(upstream []string) []string {
 	return held
 }
 
-// upstreamHolds are the upstream comparison's findings that hold a
-// branch's updates for a person's look.
+// upstreamHolds are why the upstream comparisons of a branch's updates hold
+// it for a person's look (UpstreamComparison.Holds): what they found that a
+// passing build can't catch, and archives they couldn't compare.
 func (e *Engine) upstreamHolds(ctx context.Context, branch model.Branch) ([]string, error) {
-	changes, err := e.UpstreamFindings(ctx, branch)
-	if err != nil {
+	var edits []model.Edit
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		edits, err = r.Edits(branch.ID)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 	var held []string
-	for _, change := range changes {
-		if change.Hold {
-			held = append(held, change.Message)
-		}
+	for _, edit := range edits {
+		held = append(held, edit.Upstream.Holds()...)
 	}
 	return held, nil
 }

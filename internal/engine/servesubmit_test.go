@@ -84,6 +84,28 @@ func TestServeHoldsAnUpdateWhoseUpstreamChangedItsLicense(t *testing.T) {
 	require.ErrorContains(t, err, "is held for a look: upstream's LICENSE changed")
 }
 
+// Archives the update couldn't compare hold serve's submission as a
+// finding would (D4): nobody looks, and the comparison couldn't.
+func TestServeHoldsAnUpdateWhoseArchivesCouldNotBeCompared(t *testing.T) {
+	f := setup(t)
+	e, p := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	fake.others = nil
+	p.upstream = [2]map[string]string{nil, {"LICENSE": "MIT\n"}}
+	branch := servePrepared(t, e)
+
+	held := []string{"the upstream archives couldn't be compared: the versions have 0 and 1 distfiles, so they can't be paired"}
+	status, err := e.BranchStatus(t.Context(), branch)
+	require.NoError(t, err)
+	require.Equal(t, held, status.Held, "the attention list says why")
+	candidates, err := e.ServeCandidates(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, held, candidates[0].Held)
+	_, err = e.SubmitForServe(t.Context(), candidates[0])
+	require.ErrorContains(t, err, "is held for a look: the upstream archives couldn't be compared")
+	require.Empty(t, fake.created)
+}
+
 // Another open pull request for the port holds serve's, which would
 // otherwise open a second one for the same update; so does not knowing,
 // when the search fails.

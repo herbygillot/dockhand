@@ -665,7 +665,9 @@ func writeUpstream(out io.Writer, comparison *model.UpstreamComparison) {
 	switch {
 	case comparison == nil:
 	case comparison.Problem != "":
-		fmt.Fprintf(out, "Upstream archives not compared: %s\n", comparison.Problem)
+		// What couldn't be checked holds as a finding does (D4), so it is
+		// marked as one.
+		fmt.Fprintf(out, "! Upstream archives not compared: %s\n", comparison.Problem)
 	case len(comparison.Changes) == 0:
 		fmt.Fprintln(out, "Upstream archives compared: no license, build file, or dependency changes.")
 	default:

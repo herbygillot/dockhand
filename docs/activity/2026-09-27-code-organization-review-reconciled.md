@@ -50,6 +50,8 @@ Both regressions are this week's, and each is live:
 
 ## Decisions for the person
 
+Decided the same day: D4 as recommended, and D5 as recommended, with the person's note that mechanisms the verbs share can live in `history` ([roadmap](../roadmap.md#decided)).
+
 - **What the update couldn't check, under unattended submission.**
   - The cases:
     - a comparison that couldn't pair the archives (every `go.vendors` and `cargo.crates` port today);

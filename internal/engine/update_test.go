@@ -101,6 +101,8 @@ func (p *fakePreparer) Prepare(ctx context.Context, r preparation.Request) (prep
 	}
 	if r.KeepArchives != "" && p.upstream[0] != nil {
 		result.Previous = []archives.Download{{Path: writeTarball(p.t, r.KeepArchives, "old", p.upstream[0])}}
+	}
+	if r.KeepArchives != "" && p.upstream[1] != nil {
 		result.Downloads = []archives.Download{{Path: writeTarball(p.t, r.KeepArchives, "new", p.upstream[1])}}
 	}
 	return result, nil

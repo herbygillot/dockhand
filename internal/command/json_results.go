@@ -73,8 +73,9 @@ type upstreamJSON struct {
 	Changes []upstreamChangeJSON `json:"changes"`
 	// Problem says why the archives could not be compared.
 	Problem string `json:"problem,omitempty"`
-	// Held is whether a change holds the update for a person's look
-	// before serve may submit it.
+	// Held is whether the comparison holds the update for a person's look
+	// before serve or bump submits it: a change a build can't catch, or
+	// archives it couldn't compare.
 	Held bool `json:"held"`
 }
 

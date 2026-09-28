@@ -221,7 +221,8 @@ func TestUpdateJSONCarriesTheUpstreamComparison(t *testing.T) {
 
 	updated, err := jsonOf(t, "update", "jq")
 	require.NoError(t, err)
-	require.Equal(t, map[string]any{"changes": []any{}, "problem": "the current version's archives could not be fetched: HTTP 404", "held": false}, updated.Result["upstream"])
+	require.Equal(t, map[string]any{"changes": []any{}, "problem": "the current version's archives could not be fetched: HTTP 404", "held": true}, updated.Result["upstream"],
+		"archives it couldn't compare hold the update, as a finding would (D4)")
 }
 
 // submit --check reports the submission's result wherever it stops, with

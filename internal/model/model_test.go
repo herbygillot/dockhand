@@ -262,3 +262,17 @@ func TestJudgeAppliesTheTestPolicy(t *testing.T) {
 		require.Equal(t, c.result.Tests, judged.Tests, "the tests' own outcome is kept")
 	}
 }
+
+// A comparison holds an update for a person's look for what it found that
+// a build can't catch, and for archives it couldn't compare (D4).
+func TestAnUpstreamComparisonHoldsForWhatItCouldNotCheck(t *testing.T) {
+	var none *UpstreamComparison
+	require.False(t, none.Held(), "a port with no archives compares nothing")
+	quiet := &UpstreamComparison{Changes: []UpstreamChange{{Kind: "file", Path: "README", Message: "README changed"}}}
+	require.False(t, quiet.Held())
+	license := &UpstreamComparison{Changes: []UpstreamChange{{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed", Hold: true}}}
+	require.Equal(t, []string{"upstream's LICENSE changed"}, license.Holds())
+	unpaired := &UpstreamComparison{Problem: "the versions have 0 and 1 distfiles, so they can't be paired"}
+	require.True(t, unpaired.Held())
+	require.Equal(t, []string{"the upstream archives couldn't be compared: the versions have 0 and 1 distfiles, so they can't be paired"}, unpaired.Holds())
+}

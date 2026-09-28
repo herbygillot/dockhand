@@ -73,7 +73,7 @@ dockhand update jq --new --plan    # what would change, from master, starting no
 
 `update` finds the newest release the Portfile's own rules accept, from the project's GitHub or GitLab tags and releases, or its livecheck. It moves the version, resets the revision, and fills in checksums. For a Go or Rust port whose Portfile lists its dependencies, it regenerates the list with `go2port` or `cargo2port`. `--shared-release` moves every subport sharing the port's release, and `--keep-old-checksums` refreshes legacy md5 or sha1 checksums in place rather than rewriting them as rmd160, sha256, and size.
 
-It then compares the old and new source archives, and reports what a passing build can't catch: a changed license file, a changed build file, a new declared dependency. `dockhand diff --archive jq` shows the same comparison file by file. With `--json`, the result's `upstream` holds it: each change, why the archives couldn't be compared if they couldn't, and whether a change holds the update for a look before `serve` submits it. It is absent for a port with no archives, such as one fetched with Git.
+It then compares the old and new source archives, and reports what a passing build can't catch: a changed license file, a changed build file, a new declared dependency. `dockhand diff --archive jq` shows the same comparison file by file. With `--json`, the result's `upstream` holds it: each change, why the archives couldn't be compared if they couldn't, and whether it holds the update for a look before `serve` or `bump` submits it, as a change a build can't catch does, and as archives it couldn't compare do. It is absent for a port with no archives, such as one fetched with Git.
 
 `--revbump-dependents` also bumps the revision of every port that links the updated one directly, found in the port index at the branch's base, so users rebuild them. `--except <port>` leaves one out. `tidy` commits each as "<port>: rebuild for <updated> <version>".
 
@@ -92,7 +92,7 @@ It stops wherever a person should look:
 
 - Before it edits anything, it stops with nothing changed when an open branch already changes the port, the check has nowhere to build, or the port is already at the release.
 - A failed check leaves the branch, with its logs.
-- A passing check is held, as `serve`'s are, when the upstream comparison found something a build can't catch, a commit rule has a finding, or another pull request is open for the port, or couldn't be looked for. `bump` exits 3 and names the `submit` that finishes it after a look; with `--json`, `submit.held` lists why.
+- A passing check is held, as `serve`'s are, when the upstream comparison found something a build can't catch or couldn't compare the archives, a commit rule has a finding, or another pull request is open for the port, or couldn't be looked for. `bump` exits 3 and names the `submit` that finishes it after a look; with `--json`, `submit.held` lists why.
 
 The pull request's tested checkboxes stay unticked unless `--tested-binaries` or `--tested-variants` says otherwise: they say what you tested, which dockhand can't.
 
@@ -293,7 +293,7 @@ Between checks it:
 - once a day, unless `cleanup.automatic = false`, cleans up automatically, as below;
 - posts macOS notifications as checks finish and pull requests change. They are posted through AppleScript, so macOS credits them to Script Editor, and clicking one opens it. `serve.notify = false` turns them off, and `--no-notify` turns them off for one run.
 
-Serve opens no pull requests by default. With `--submit-passing`, or `serve.submit_passing = true`, it opens one for each branch it prepared whose check passed, at most `serve.submit_limit` a day. It never opens one with an upstream or commit-rule finding, one needing `--accept`, or one for a port another open pull request updates; those wait on the attention list, and the pull request says serve opened it without a person's review. `--no-submit-passing` turns it off for one run.
+Serve opens no pull requests by default. With `--submit-passing`, or `serve.submit_passing = true`, it opens one for each branch it prepared whose check passed, at most `serve.submit_limit` a day. It never opens one with an upstream or commit-rule finding, one whose archives couldn't be compared, one needing `--accept`, or one for a port another open pull request updates; those wait on the attention list, and the pull request says serve opened it without a person's review. `--no-submit-passing` turns it off for one run.
 
 `--install` runs the agent with the flags given beside it, such as `--no-notify`, and `--uninstall` removes it.
 

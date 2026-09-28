@@ -25,9 +25,10 @@ It stops wherever a person should look:
     the port is already at that release: it says so, and changes nothing.
   - The check fails: the branch stays, with its logs.
   - The check passes, but comparing the upstream archives found what a build
-    can't catch, a commit rule has a finding, or another pull request is open
-    for the port: the branch waits for your look, and it exits 3. dockhand
-    submit --branch <name> submits it after one.
+    can't catch, or couldn't compare them, a commit rule has a finding, or
+    another pull request is open for the port: the branch waits for your
+    look, and it exits 3. dockhand submit --branch <name> submits it after
+    one.
 
 The pull request's tested checkboxes stay unticked unless --tested-binaries
 or --tested-variants says otherwise: they say what you tested, which

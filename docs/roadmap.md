@@ -80,7 +80,7 @@ In order. Each item lands in its own commits with an activity note, and a review
 - **The guardrail unattended submission relies on.** `bump` and serve submit with nobody looking, and the upstream comparison that holds them never runs for a port with `go.vendors` or `cargo.crates` (finding 32).
   - Such an update keeps the old archives for the comparison, as other updates do.
   - What an update couldn't check travels as a typed fact, through a `preparation.Result` that embeds `portedit.Result` (findings 31 and 19). That covers an unpaired comparison, a Go toolchain minimum it couldn't rewrite, and patches it left unchecked.
-  - Those facts hold a submission as D4 decides.
+  - Those facts hold an unattended submission (D4). Done 2026-09-27 for the comparison: archives it couldn't compare hold `bump`'s and serve's submissions, as a changed license does ([note](activity/2026-09-27-what-couldnt-be-checked-holds.md)).
 - **Rules the design promises and the code doesn't keep:**
   - one check per branch, enforced in `Enqueue`, which `submit --check`, `update --submit`, and `retry` bypass today; `--tests` checked before evaluation; and a test for submit's commit binding (finding 2);
   - capture's moved-while-read check with `--include` (finding 43);
@@ -190,16 +190,16 @@ These are taken when their area is next touched, or between items.
 
 - **D2. Tools or Xcode profile.** Should modelled contexts use the Xcode profile, as MacPorts' builders do, or the tools profile they use now? This has been open since oracle phase 5, and changes nothing an update edits today.
 - **D3. Tahoe's Xcode.** Tahoe's Xcode has no upper bound, so a `--rebuild` of its Xcode image would now choose Xcode 27, by the rule that gives Sequoia 26.3. Should Tahoe stay on 26?
-- **D4. What an update couldn't check, when nobody looks before it's submitted.** Should `bump`'s and serve's submissions hold for what the update couldn't check, as they hold for a failed search for other pull requests?
-  - The cases:
-    - a comparison that couldn't pair the archives;
-    - a Go toolchain minimum dockhand couldn't rewrite;
-    - patches it left unchecked.
-  - Recommended: yes. Today every `go.vendors` and `cargo.crates` update goes out with no comparison at all (the code-organization review's finding 32).
-- **D5. Where tidy, rebase, and restore live.** Should they move into `history`, beside the recognition of their changes? Recommended: no. `Transitions.Make` puts the ref change beside its recognition without moving 1,200 lines (finding 22).
 
 ### Decided
 
+- **D4. What an update couldn't check holds a submission nobody reviews** (2026-09-27, [note](activity/2026-09-27-what-couldnt-be-checked-holds.md)).
+  - `bump`'s and serve's submissions wait for a person's look, as they do for a failed search for other pull requests, when the update couldn't check something:
+    - archives the comparison couldn't pair or fetch;
+    - a Go toolchain minimum dockhand couldn't rewrite;
+    - patches it left unchecked.
+  - A person's own `submit` shows them and doesn't hold.
+- **D5. Tidy, rebase, and restore stay in the engine** (2026-09-27). Mechanisms they share can live in `history`, as the transitions do, and the code-organization review's `Transitions.Make` would (finding 22), but the verbs don't move there.
 - **D1. Results checked under different test policies** (2026-09-27). Each result keeps the policy it was checked under, and reads under it, naming its check where that differs: "tests failed (advisory, check-3)". A later `--tests required` check of some ports doesn't bind the others, nor block the submission. The review's probe expected a block.
 - **Baselines** (2026-09-27).
   - They stay optional and off by default: `--baseline`, or `check.baseline = true`.
@@ -261,7 +261,7 @@ These are taken when their area is next touched, or between items.
   - 41's legacy-plan deletion;
   - 20's alias and shared registry;
   - a branch shape shared across commands (10): the person's rule is one shape per command, which commands needn't share.
-- **Left to the person:** D4 and D5.
+- **Decided by the person:** D4, that what an update couldn't check holds; D5, that the history verbs stay in the engine.
 
 **The [architecture and data-flow review](reviews/2026-09-27-architecture-and-data-flow.md)** of 2026-09-27 was checked against the code at `52d03e2a`.
 - **Its probes:** all seven fail as stated.

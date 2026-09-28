@@ -64,18 +64,27 @@ type UpstreamComparison struct {
 	Problem string `json:"problem,omitempty"`
 }
 
-// Held reports whether anything found holds the update for a person's
-// look before serve may submit it.
-func (c *UpstreamComparison) Held() bool {
+// Held reports whether the comparison holds the update for a person's
+// look before a submission nobody reviews, serve's or bump's (Holds).
+func (c *UpstreamComparison) Held() bool { return len(c.Holds()) > 0 }
+
+// Holds are why the comparison holds the update: each change a passing
+// build can't catch, and, since what couldn't be checked holds too (D4),
+// the problem that kept the archives from being compared.
+func (c *UpstreamComparison) Holds() []string {
 	if c == nil {
-		return false
+		return nil
 	}
+	var holds []string
 	for _, change := range c.Changes {
 		if change.Hold {
-			return true
+			holds = append(holds, change.Message)
 		}
 	}
-	return false
+	if c.Problem != "" {
+		holds = append(holds, "the upstream archives couldn't be compared: "+c.Problem)
+	}
+	return holds
 }
 
 // UpstreamChange is one difference between the archives: a license file,
