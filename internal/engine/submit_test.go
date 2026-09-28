@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -457,9 +458,50 @@ func TestSubmitFollowsThePublicationRule(t *testing.T) {
 func TestTheMergedDescriptionKeepsOnlyWhatDockhandWrote(t *testing.T) {
 	fresh := "#### Description\n\nnew\n\n###### Tested on\n\nnew evidence\n"
 	last := "#### Description\n\nold\n\n###### Tested on\n\nold evidence\n"
-	merged, ok := mergeBody("#### Description\n\nmine\n\n###### Tested on\r\n\r\nold evidence\r\n", last, fresh)
+	merged, ok := mergeBody("#### Description\n\nmine\n\n###### Tested on\r\n\r\nold evidence\r\n", last, fresh, false)
 	require.True(t, ok)
 	require.Equal(t, "#### Description\n\nmine\n\n###### Tested on\n\nnew evidence\n", merged, "the description stays the person's")
-	_, ok = mergeBody("#### Description\n\nmine\n\n###### Tested on\n\nI built it myself\n", last, fresh)
+	_, ok = mergeBody("#### Description\n\nmine\n\n###### Tested on\n\nI built it myself\n", last, fresh, false)
 	require.False(t, ok)
+}
+
+// The Type(s) are dockhand's while they are what it wrote: refreshed then,
+// kept once a person edits them, and replaced by types the person names.
+// A description that leaves them out, with Tested on alone, stays without,
+// unless types are named, which go before Tested on.
+func TestTheMergedDescriptionsTypesAreDockhandsWhileUnchanged(t *testing.T) {
+	body := func(description string, ticked []string, evidence string) string {
+		var types strings.Builder
+		for _, kind := range PullRequestTypes {
+			types.WriteString("- [" + tick(slices.Contains(ticked, kind)) + "] " + kind + "\n")
+		}
+		return "#### Description\n\n" + description + "\n\n###### Type(s)\n\n" + types.String() + "\n###### Tested on\n\n" + evidence + "\n"
+	}
+	last := body("jq: update", nil, "old evidence")
+	fresh := body("jq: update", []string{"enhancement"}, "new evidence")
+
+	merged, ok := mergeBody(last, last, fresh, false)
+	require.True(t, ok)
+	require.Equal(t, fresh, merged, "all of it as dockhand now writes it: the enhancement an update is, and the new evidence")
+	require.Equal(t, []string{"its Type(s)", "its description from Tested on down"}, refreshedParts(last, merged))
+	merged, _ = mergeBody(strings.ReplaceAll(last, "\n", "\r\n"), last, fresh, false)
+	require.Contains(t, merged, "- [x] enhancement", "GitHub's line endings aren't a person's edit")
+
+	edited := body("mine", []string{"bugfix"}, "old evidence")
+	merged, ok = mergeBody(edited, last, fresh, false)
+	require.True(t, ok)
+	require.Equal(t, body("mine", []string{"bugfix"}, "new evidence"), merged, "Type(s) a person ticked stay theirs")
+	require.Equal(t, []string{"its description from Tested on down"}, refreshedParts(edited, merged))
+	merged, _ = mergeBody(edited, last, body("jq: update", []string{"security fix"}, "new evidence"), true)
+	require.Equal(t, body("mine", []string{"security fix"}, "new evidence"), merged, "types the person names replace them")
+
+	elided := "#### Description\n\nmine\n\n###### Tested on\n\nold evidence\n"
+	merged, ok = mergeBody(elided, last, fresh, false)
+	require.True(t, ok, "Tested on alone is still dockhand's")
+	require.Equal(t, "#### Description\n\nmine\n\n###### Tested on\n\nnew evidence\n", merged, "a description without Type(s) stays without")
+	merged, _ = mergeBody(elided, last, fresh, true)
+	require.Equal(t, "#### Description\n\nmine\n\n###### Type(s)\n\n- [ ] bugfix\n- [x] enhancement\n- [ ] security fix\n\n###### Tested on\n\nnew evidence\n", merged,
+		"types the person names go before Tested on")
+	require.Equal(t, []string{"its Type(s)", "its description from Tested on down"}, refreshedParts(elided, merged))
+	require.Empty(t, refreshedParts(fresh, fresh))
 }

@@ -78,7 +78,12 @@ type SubmitPlan struct {
 	// BodyKept is true when a person's edits to the description are kept
 	// as they are.
 	BodyKept bool
-	Evidence *Evidence
+	// Refreshes names the parts of an existing pull request's description
+	// that submit rewrites, as the preview says them: its Type(s), and its
+	// description from Tested on down. None for one that is current, the
+	// person's own, or someone else's.
+	Refreshes []string
+	Evidence  *Evidence
 	// Upstream is what comparing the upstream archives found for each of
 	// the branch's updates that compared them. A person's submission shows
 	// it; only one nobody looks over is held for it (D4).
@@ -116,15 +121,20 @@ func (p *SubmitPlan) Answer(testedBinaries, testedVariants bool) {
 		if p.Branch.PullRequest != nil {
 			last = p.Branch.PullRequest.Body
 		}
-		var updated bool
-		p.Body, updated = mergeBody(p.Existing.PullRequest.Body, last, p.Body)
-		p.BodyKept = !updated
+		existing := p.Existing.PullRequest.Body
+		var ours bool
+		p.Body, ours = mergeBody(existing, last, p.Body, len(p.Request.Types) > 0)
+		p.BodyKept, p.Refreshes = !ours, nil
+		// Someone else's description is never rewritten (ApplySubmit).
+		if !p.Theirs {
+			p.Refreshes = refreshedParts(existing, p.Body)
+		}
 	}
 }
 
 // Describe replaces the description with one the person wrote.
 func (p *SubmitPlan) Describe(body string) {
-	p.Body, p.BodyKept = body, true
+	p.Body, p.BodyKept, p.Refreshes = body, true, nil
 }
 
 // Head is the fork's head as "owner/repo:branch".

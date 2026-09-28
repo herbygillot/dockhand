@@ -482,21 +482,19 @@ func pullRequestWords(plan engine.SubmitPlan) string {
 		words += ", a draft: mark it ready for review on GitHub when it is"
 	}
 	switch {
-	case plan.BodyKept:
+	case plan.Theirs:
+		words += "; its title and description are theirs, and stay as they are"
+	case len(plan.Refreshes) == 0 && plan.BodyKept:
 		words += "; its description is yours, and stays as it is"
-	case sameText(plan.Body, plan.Existing.PullRequest.Body):
+	case len(plan.Refreshes) == 0:
 		words += "; its description is current"
 	default:
-		words += "; refreshes its description from Tested on down"
+		words += "; refreshes " + strings.Join(plan.Refreshes, " and ")
+		if plan.BodyKept {
+			words += "; the rest of its description is yours"
+		}
 	}
 	return words
-}
-
-// sameText compares descriptions as GitHub keeps them, whose editor may
-// change line endings.
-func sameText(a, b string) bool {
-	clean := func(text string) string { return strings.TrimSpace(strings.ReplaceAll(text, "\r\n", "\n")) }
-	return clean(a) == clean(b)
 }
 
 // applySubmit submits a plan and reports it. After pushing to a pull

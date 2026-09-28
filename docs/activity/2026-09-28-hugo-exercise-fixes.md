@@ -86,3 +86,24 @@ Two smaller ones it saw alongside:
 - **`update nosuchport`** gave the chain of errors that found it: "macports: target could not be resolved: cannot resolve nosuchport in selected source: portindex: name not indexed: nosuchport". A name the port index doesn't hold is now "no port named nosuchport", still a target that couldn't be resolved and the index's own error. `TestMissingOrStaleNamesNeverFallBackToParent`.
 
 Each fails with its part undone, and each was checked live against the real checkout.
+
+## A pull request's Type(s), when it's submitted again
+
+The person asked whether dockhand could tick enhancement on #35001, opened before dockhand ticked it for an update. It couldn't:
+- submitting again rewrote a description only from Tested on down, taking everything above it as the person's;
+- `submit --type` on a pull request already open was accepted and dropped: the fresh description had the types, and only its part from Tested on was used.
+
+(#35001 was ticked by hand instead, which wasn't what the person meant: the question was what dockhand can do.)
+
+The Type(s) are now a part dockhand owns, like everything from Tested on down (`mergeBody`):
+- **Unchanged since dockhand wrote them,** they're refreshed. Submitting again would have ticked #35001's.
+- **Edited by a person on GitHub,** they stay theirs. So #35001's, ticked by hand, now read as the person's.
+- **Named with `--type`,** they replace what's there, since the person named them.
+- **A description with Tested on alone,** leaving Type(s) out, as another template or a person's edit can, stays without them. With `--type`, the Type(s) go before Tested on. Everything from Tested on down is refreshed as before.
+
+The part is found from its heading to the next heading, so a description with every section, or one with only some, reads the same way. The preview names what changes: "refreshes its Type(s)", "refreshes its description from Tested on down", or both. Someone else's pull request, which submit never rewrites, now says so: "its title and description are theirs".
+
+Tests, each failing with its rule undone:
+- `TestTheMergedDescriptionsTypesAreDockhandsWhileUnchanged`: every case above, and GitHub's line endings, which aren't a person's edit;
+- `TestSubmitAsksTheReviewersBack`: `--type` on an open pull request, with the Type(s) as dockhand wrote them and as a person ticked them;
+- `TestAPullRequestOfSomeoneElsesStaysTheirs`, and `TestAdoptSomeonesPullRequestAndPushOnlyWhereGitHubAllows`, for an adopted pull request with a Tested on of its own.

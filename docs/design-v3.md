@@ -669,7 +669,7 @@ The PR body is written in the template's own sections, and ticks only what dockh
 
 `--skip-notification` adds `[skip notification]`, which stops MacPorts' bot from mentioning maintainers. `submit` suggests it for a batch of trivial rebuilds.
 
-A description a person has edited is kept. Only the span dockhand owns, from Tested on through Verification, is regenerated, and only while the text there is still what dockhand wrote.
+A description a person has edited is kept. Only the parts dockhand owns are regenerated, each only while its text is still what dockhand wrote: the Type(s), and everything from Tested on through Verification. `--type` is the person naming the Type(s), so it replaces them however they read. In a description that leaves them out, with Tested on alone, it adds them before Tested on; without it, such a description stays without them.
 
 ## 10. Status and the attention list
 

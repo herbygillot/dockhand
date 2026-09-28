@@ -364,10 +364,34 @@ func ownedSpan(body string) (int, bool) {
 	return at, at >= 0
 }
 
-// mergeBody updates an existing description: dockhand's part is rewritten
-// only while it is still exactly what dockhand last wrote there, so a
-// person's edits are kept. It reports whether it could.
-func mergeBody(existing, lastWritten, fresh string) (string, bool) {
+// typesSpan locates a description's Type(s), from its heading to the next
+// heading. A description may leave them out, as one a person edited, or
+// wrote from another template, can.
+func typesSpan(body string) (int, int, bool) {
+	start := strings.Index(body, typesHeading)
+	if start < 0 {
+		return 0, 0, false
+	}
+	end := len(body)
+	if next := strings.Index(body[start+len(typesHeading):], "\n#"); next >= 0 {
+		end = start + len(typesHeading) + next + 1
+	}
+	return start, end, true
+}
+
+// mergeBody updates an existing description. Each part dockhand writes is
+// rewritten only while it is still exactly what dockhand last wrote there,
+// so a person's edits are kept: the Type(s), and everything from Tested on
+// down. Types the person named (named) replace the Type(s) however they
+// read, or go before Tested on in a description that leaves them out;
+// unnamed, such a description stays without them. It reports whether the
+// part from Tested on down was dockhand's to rewrite.
+func mergeBody(existing, lastWritten, fresh string, named bool) (string, bool) {
+	body, ours := mergeTestedOn(existing, lastWritten, fresh)
+	return mergeTypes(body, lastWritten, fresh, named), ours
+}
+
+func mergeTestedOn(existing, lastWritten, fresh string) (string, bool) {
 	at, ok := ownedSpan(existing)
 	last, lastOK := ownedSpan(lastWritten)
 	next, nextOK := ownedSpan(fresh)
@@ -375,6 +399,42 @@ func mergeBody(existing, lastWritten, fresh string) (string, bool) {
 		return existing, false
 	}
 	return existing[:at] + fresh[next:], true
+}
+
+func mergeTypes(body, lastWritten, fresh string, named bool) string {
+	start, end, ok := typesSpan(fresh)
+	if !ok {
+		return body
+	}
+	types := fresh[start:end]
+	if from, to, found := typesSpan(body); found {
+		was, wasEnd, written := typesSpan(lastWritten)
+		if named || written && normalize(body[from:to]) == normalize(lastWritten[was:wasEnd]) {
+			return body[:from] + types + body[to:]
+		}
+		return body
+	}
+	if at, found := ownedSpan(body); found && named {
+		return body[:at] + types + body[at:]
+	}
+	return body
+}
+
+// refreshedParts names the parts of a description a merge rewrote, as the
+// submit preview says them.
+func refreshedParts(before, after string) []string {
+	var parts []string
+	from, to, was := typesSpan(before)
+	start, end, is := typesSpan(after)
+	if was != is || was && normalize(before[from:to]) != normalize(after[start:end]) {
+		parts = append(parts, "its Type(s)")
+	}
+	at, wasOwned := ownedSpan(before)
+	next, isOwned := ownedSpan(after)
+	if wasOwned != isOwned || wasOwned && normalize(before[at:]) != normalize(after[next:]) {
+		parts = append(parts, "its description from Tested on down")
+	}
+	return parts
 }
 
 // normalize ignores the line endings GitHub's editor may change.

@@ -89,6 +89,8 @@ func TestAdoptSomeonesPullRequestAndPushOnlyWhereGitHubAllows(t *testing.T) {
 	fake.repos = map[string]string{"newcontrib/macports-ports": theirs}
 	pr := fake.prs[34905]
 	pr.Author = "newcontrib"
+	// A part dockhand would otherwise refresh, as it last saw it.
+	pr.Body = "#### Description\n\ntheirs\n\n###### Tested on\n\nmacOS 15, by hand\n"
 
 	adopted, err := e.AdoptPullRequest(t.Context(), 34905)
 	require.NoError(t, err)
@@ -120,6 +122,7 @@ func TestAdoptSomeonesPullRequestAndPushOnlyWhereGitHubAllows(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, plan.Blocking)
 	require.True(t, plan.Theirs)
+	require.Empty(t, plan.Refreshes, "someone else's description is never rewritten")
 	_, err = e.ApplySubmit(t.Context(), plan)
 	require.NoError(t, err)
 	require.Equal(t, run(t, adopted.Branch.Worktree, "rev-parse", "HEAD"), run(t, theirs, "rev-parse", "patch-1"), "pushed to their branch")

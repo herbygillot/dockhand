@@ -277,6 +277,16 @@ func TestTidyWarnsOfAModifiedBuild(t *testing.T) {
 	require.Empty(t, modifiedBuildWarning(plan("devel+1a2b3c4d5e6f"), "tidy-3"))
 }
 
+// Someone else's pull request keeps its title and description, whatever
+// submit would write, and the preview says so.
+func TestAPullRequestOfSomeoneElsesStaysTheirs(t *testing.T) {
+	plan := engine.SubmitPlan{Existing: &forge.PullRequestObservation{PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 34905}}}, Theirs: true, Refreshes: []string{"its Type(s)"}}
+	require.Equal(t, "updates #34905; its title and description are theirs, and stay as they are", pullRequestWords(plan))
+	plan.Theirs = false
+	plan.BodyKept = true
+	require.Equal(t, "updates #34905; refreshes its Type(s); the rest of its description is yours", pullRequestWords(plan), "types a person names, on a description they edited")
+}
+
 func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
@@ -447,6 +457,27 @@ func TestSubmitAsksTheReviewersBack(t *testing.T) {
 	out, _, err = dockhand(t, "submit", "--no-check", "--plan", "--tested-binaries")
 	require.NoError(t, err)
 	require.Regexp(t, `  PR       updates #\d+; refreshes its description from Tested on down\n`, out)
+	// Its Type(s) are dockhand's too while unchanged, and --type names them
+	// on a pull request already open, as on a new one.
+	out, _, err = dockhand(t, "submit", "--no-check", "--plan", "--type", "bugfix")
+	require.NoError(t, err)
+	require.Regexp(t, `  PR       updates #\d+; refreshes its Type\(s\)\n`, out)
+	typed, err := jsonOf(t, "submit", "--no-check", "--plan", "--type", "bugfix")
+	require.NoError(t, err)
+	require.Contains(t, typed.Result["body"], "- [x] bugfix\n- [ ] enhancement\n")
+	out, _, err = dockhand(t, "submit", "--no-check", "--plan", "--type", "enhancement")
+	require.NoError(t, err)
+	require.Regexp(t, `  PR       updates #\d+; its description is current\n`, out, "an update is already an enhancement")
+	// Type(s) a person ticked on GitHub stay theirs, unless --type names others.
+	opened := g.prs[0].Body
+	g.prs[0].Body = strings.Replace(opened, "- [ ] bugfix", "- [x] bugfix", 1)
+	out, _, err = dockhand(t, "submit", "--no-check", "--plan")
+	require.NoError(t, err)
+	require.Regexp(t, `  PR       updates #\d+; its description is current\n`, out, "the person's tick stays")
+	typed, err = jsonOf(t, "submit", "--no-check", "--plan", "--type", "security fix")
+	require.NoError(t, err)
+	require.Contains(t, typed.Result["body"], "- [ ] bugfix\n- [ ] enhancement\n- [x] security fix\n")
+	g.prs[0].Body = opened
 	g.status = forge.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, ChangesRequestedBy: []string{"ryandesign"}}
 	_, _, err = dockhand(t, "status", "--refresh")
 	require.NoError(t, err)
