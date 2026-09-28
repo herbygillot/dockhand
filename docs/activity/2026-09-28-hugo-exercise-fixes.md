@@ -80,3 +80,9 @@ The unrecorded capture gets an ID of its own, as the plan made of it already did
 The other session checked these fixes against the hugo branch and found one bug they didn't cause. `update jq --plan`, with jq already current, said "jq is already at ; nothing to change." `update --outdated` had the same hole in "nothing to change: it is already at ". An update read the port's versions only from the fidelity report of an edit, and an update to the version the port already has makes no edit. The test preparer made one anyway, so no test saw it.
 
 The editor now keeps the port as it stands whenever it edits nothing (`portedit.Result.Unchanged`), and the update reads its version from that: "jq is already at 1.8.2; nothing to change." A checksums refresh that finds them current reads its version the same way. `TestAnUpdateThatEditsNothingKeepsThePortAsItStands`, with MacPorts' own evaluator, and `TestAnUpdateThatEditedNothingSaysWhatThePortIsAt` fail with either half undone. It was also checked live, against the real checkout.
+
+Two smaller ones it saw alongside:
+- **`outdated jq`, with jq current,** said "0 of 1 port have newer releases", which the fix for one newer port left as it was. With nothing newer, one port is named, "jq has no newer release", and several are counted, "None of 5 ports has a newer release". A port that couldn't be checked isn't said to have none. `TestOutdatedSaysWhenNothingIsNewer`.
+- **`update nosuchport`** gave the chain of errors that found it: "macports: target could not be resolved: cannot resolve nosuchport in selected source: portindex: name not indexed: nosuchport". A name the port index doesn't hold is now "no port named nosuchport", still a target that couldn't be resolved and the index's own error. `TestMissingOrStaleNamesNeverFallBackToParent`.
+
+Each fails with its part undone, and each was checked live against the real checkout.

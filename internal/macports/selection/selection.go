@@ -2,6 +2,7 @@ package selection
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"path"
@@ -29,6 +30,18 @@ func FromEntry(entry portindex.Entry, variants map[string]bool) macports.Selecti
 	return selected
 }
 
+// unknownPort is a name the tree's port index doesn't hold, said as a
+// person would: a misspelled port reads "no port named jqq". It is still a
+// target that couldn't be resolved, and the index's own error.
+type unknownPort struct {
+	name string
+	err  error
+}
+
+func (e unknownPort) Error() string { return "no port named " + e.name }
+
+func (e unknownPort) Unwrap() []error { return []error{macports.ErrTarget, e.err} }
+
 func (r *Reader) Resolve(ctx context.Context, tree macports.Tree, selected macports.Selection) ([]model.Target, error) {
 	if err := selected.Validate(); err != nil {
 		return nil, err
@@ -44,6 +57,9 @@ func (r *Reader) Resolve(ctx context.Context, tree macports.Tree, selected macpo
 		return nil, err
 	}
 	entry, err := index.Lookup(selected.Selector)
+	if errors.Is(err, portindex.ErrNotIndexed) {
+		return nil, unknownPort{name: selected.Selector, err: err}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("%w: cannot resolve %s in selected source: %w", macports.ErrTarget, selected.Selector, err)
 	}
