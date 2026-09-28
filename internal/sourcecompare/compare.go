@@ -182,31 +182,48 @@ func manifestChanges(name string, read reader, old file, hadOld bool, now file, 
 	for _, gap := range readings[1].unread {
 		changes = append(changes, unread(gap+", which the comparison doesn't follow"))
 	}
-	return append(changes, dependencyChanges(name, readings[0].dependencies, readings[1].dependencies)...)
+	return append(changes, dependencyChanges(name, readings[0], readings[1])...)
 }
 
-func dependencyChanges(file string, before, after map[string]string) []Change {
+// dependencyChanges says what a manifest's declared dependencies gained,
+// lost, and moved. A dependency the build had or keeps for another's sake,
+// as a Go module required indirectly, is neither gained nor lost: it is
+// said only where its version moves, and marked indirect on that side.
+func dependencyChanges(file string, before, after reading) []Change {
 	var names []string
-	for name := range after {
+	for name := range after.dependencies {
 		names = append(names, name)
 	}
-	for name := range before {
-		if _, ok := after[name]; !ok {
+	for name := range before.dependencies {
+		if _, ok := after.dependencies[name]; !ok {
 			names = append(names, name)
 		}
 	}
 	slices.Sort(names)
+	spelled := func(version string, indirect bool) string {
+		if indirect {
+			return version + " (indirect)"
+		}
+		return version
+	}
 	var changes []Change
 	for _, name := range names {
-		old, had := before[name]
-		now, has := after[name]
+		old, had := before.dependencies[name]
+		now, has := after.dependencies[name]
+		wasIndirect, isIndirect := false, false
+		if !had {
+			old, wasIndirect = before.indirect[name]
+		}
+		if !has {
+			now, isIndirect = after.indirect[name]
+		}
 		switch {
-		case !had:
+		case !had && !wasIndirect:
 			changes = append(changes, Change{Kind: "dependency", Path: file, Hold: true, Message: strings.TrimSpace(fmt.Sprintf("upstream: %s adds %s %s", file, name, now))})
-		case !has:
+		case !has && !isIndirect:
 			changes = append(changes, Change{Kind: "dependency", Path: file, Message: fmt.Sprintf("upstream: %s drops %s", file, name)})
 		case old != now:
-			changes = append(changes, Change{Kind: "dependency", Path: file, Message: fmt.Sprintf("upstream: %s moves %s from %s to %s", file, name, old, now)})
+			changes = append(changes, Change{Kind: "dependency", Path: file, Message: fmt.Sprintf("upstream: %s moves %s from %s to %s", file, name, spelled(old, wasIndirect), spelled(now, isIndirect))})
 		}
 	}
 	// What holds the update for a look comes first.

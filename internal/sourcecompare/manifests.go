@@ -15,9 +15,12 @@ import (
 
 // reading is what a manifest declares: each dependency's name and its
 // version or constraint, and what of the manifest the reading couldn't
-// follow, such as another file it includes.
+// follow, such as another file it includes. indirect are what it records
+// only for its dependencies' sake, as go.mod's indirect requirements: in
+// the build already, though not declared.
 type reading struct {
 	dependencies map[string]string
+	indirect     map[string]string
 	unread       []string
 }
 
@@ -32,16 +35,19 @@ var manifests = map[string]reader{
 	"requirements.txt": requirements, "pyproject.toml": pyprojectDependencies,
 }
 
-// goModules reads a go.mod's direct requirements; indirect ones are left
-// out, as they are not the module's own declarations.
+// goModules reads a go.mod's requirements: its direct ones as its own
+// declarations, and its indirect ones apart, as modules the build already
+// has for its dependencies' sake.
 func goModules(data []byte) (reading, error) {
 	parsed, err := modfile.ParseLax("go.mod", data, nil)
 	if err != nil {
 		return reading{}, err
 	}
-	found := reading{dependencies: map[string]string{}}
+	found := reading{dependencies: map[string]string{}, indirect: map[string]string{}}
 	for _, required := range parsed.Require {
-		if !required.Indirect {
+		if required.Indirect {
+			found.indirect[required.Mod.Path] = required.Mod.Version
+		} else {
 			found.dependencies[required.Mod.Path] = required.Mod.Version
 		}
 	}

@@ -63,6 +63,23 @@ func TestCompareFindsWhatAReviewerWouldAskAbout(t *testing.T) {
 	require.Empty(t, same)
 }
 
+// A Go module the build already required indirectly is no addition when
+// the module comes to require it directly, as chezmoi 2.73.0 came to
+// require go-humanize, which held its update for a look (the hugo
+// exercise's chezmoi run, finding 1). Nor is one the build keeps
+// indirectly a removal. Each is said only where its version moves.
+func TestAGoModuleTheBuildAlreadyHadIsNoAddition(t *testing.T) {
+	require.Equal(t, []string{
+		"! upstream: go.mod adds github.com/new/direct v1.0.0",
+		"· upstream: go.mod moves github.com/demoted/moved from v1.0.0 to v1.1.0 (indirect)",
+		"· upstream: go.mod moves github.com/dustin/go-humanize from v1.0.1 (indirect) to v1.1.0",
+	}, compared(t, map[string]string{
+		"go.mod": "module chezmoi\n\nrequire (\n\tgithub.com/demoted/moved v1.0.0\n\tgithub.com/demoted/same v1.0.0\n\tgithub.com/dustin/go-humanize v1.0.1 // indirect\n\tgithub.com/promoted/same v1.2.0 // indirect\n\tgithub.com/gone/indirect v0.1.0 // indirect\n)\n",
+	}, map[string]string{
+		"go.mod": "module chezmoi\n\nrequire (\n\tgithub.com/dustin/go-humanize v1.1.0\n\tgithub.com/new/direct v1.0.0\n\tgithub.com/promoted/same v1.2.0\n\tgithub.com/demoted/moved v1.1.0 // indirect\n\tgithub.com/demoted/same v1.0.0 // indirect\n\tgithub.com/new/indirect v0.2.0 // indirect\n)\n",
+	}), "the same version either side of indirect, and an indirect module alone, say nothing")
+}
+
 func TestCompareReadsTheOtherManifestsAndZips(t *testing.T) {
 	older := testsupport.Zipball(t, "pkg-1.0", map[string]string{
 		"Cargo.toml":       "[package]\nname = \"pkg\"\n\n[dependencies]\nserde = \"1.0\"\n\n[dev-dependencies]\nproptest = \"1\"\n",
