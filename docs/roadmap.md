@@ -2,10 +2,11 @@
 
 This is the source of truth for what gets built next and in what order. [Design v3](design-v3.md) defines behavior, [architecture](architecture.md) maps it onto the code, and [usage](usage.md) is the guide. Activity notes record what was done and how it was proven; they are not queues, and neither are reviews: a review's claims are checked against the code, and what holds is folded into the items below.
 
-Reconciled 2026-09-27 against three sources.
+Reconciled 2026-09-27 against four sources.
 - **The [architecture and data-flow review](reviews/2026-09-27-architecture-and-data-flow.md).** Its seven probes were run at `52d03e2a`, and every one fails as the review says; its claims were checked against the code. What was taken from it, and what was changed, is under [Reviews](#reviews).
 - **The previous roadmap.** It carried the rebuild's thirteen steps and v2's history, and is kept whole as [v2/roadmap.md](v2/roadmap.md). Every item it left open is below.
 - **The work of 2026-09-26 and 27.** That is a real update of five ports, faster `outdated`, stopped checks and the clones they leave, and Golden Gate. The notes are linked where they bear on an item.
+- **The [code-organization review](reviews/2026-09-27-code-organization-review.md)** of the same day. It read `a71fc67f`, and its findings were checked again at `3b16b187`, 23 commits later ([note](activity/2026-09-27-code-organization-review-reconciled.md)). What holds is the block before item 6, pieces of items 6 and 7, and smaller items; the rest is under [Reviews](#reviews).
 
 ## Where v3 stands
 
@@ -71,12 +72,53 @@ In order. Each item lands in its own commits with an activity note, and a review
 
    The order changed from the one planned: settling the three things outside v2 that used it let v2 go whole, before `record` moved. The planned check against new imports of retired packages was then moot.
 
+**Before item 6 goes on: what the code-organization review found that shouldn't wait** ([note](activity/2026-09-27-code-organization-review-reconciled.md)). In order, each in its own commits.
+
+- **This week's regressions.** Done 2026-09-27:
+  - a check no longer fails when an earlier build it would reuse read a port outside the ports tree (finding 36);
+  - what the engine and Tart assemble on first use is assembled once, under a lock, now that a check's environments build together (finding 1).
+- **The guardrail unattended submission relies on.** `bump` and serve submit with nobody looking, and the upstream comparison that holds them never runs for a port with `go.vendors` or `cargo.crates` (finding 32).
+  - Such an update keeps the old archives for the comparison, as other updates do.
+  - What an update couldn't check travels as a typed fact, through a `preparation.Result` that embeds `portedit.Result` (findings 31 and 19). That covers an unpaired comparison, a Go toolchain minimum it couldn't rewrite, and patches it left unchecked.
+  - Those facts hold a submission as D4 decides.
+- **Rules the design promises and the code doesn't keep:**
+  - one check per branch, enforced in `Enqueue`, which `submit --check`, `update --submit`, and `retry` bypass today; `--tests` checked before evaluation; and a test for submit's commit binding (finding 2);
+  - capture's moved-while-read check with `--include` (finding 43);
+  - `create`'s result when interrupted, and `adopt`'s and `rebase`'s counts (finding 33);
+  - a new branch whose record's commit was uncertain is read back, not undone (finding 24);
+  - a canceled script build stops its whole process group, gently first (finding 42);
+  - `serve --install` carries `--git`, `TART_HOME`, and the `DOCKHAND_*` settings it was installed under, never a token (finding 46);
+  - `ExitCode` finds an exit through wrapping (finding 17).
+- **Progress on stderr** (finding 31):
+  - `-v` shows what the 48 progress reports say;
+  - `outdated` prints what it found when interrupted, and clears its count.
+- **The journal and serve's files:**
+  - cleanup prunes old events and ended sessions (finding 34);
+  - `check` and `watch` read the journal from where they start (finding 34);
+  - each command opens one observer session (finding 34);
+  - serve's and cleanup's stamps and `serving.json` are per repository, and the day's look is stamped after it (finding 35);
+  - `CleanupDue` gives its reason as a type (finding 37).
+- **Dead code:**
+  - about 460 lines of `git`;
+  - `commitmsg`'s unused composer and `outdated`'s unused helpers;
+  - the other uncalled pieces the review and its check found (findings 18, 9, 20, 13, and 38).
+
+The order puts live regressions first, then the guardrail unattended submission relies on, then small promises the code doesn't keep, then what a person watching sees, then what grows without bound, and dead code last, since removing it changes nothing.
+
 6. **Reuse and archives** (decisions 28 and 44; the previous step 9). This builds on item 2's predicate, and takes planning and that predicate out of the engine as it changes them (item 4).
    - **Per-target reuse** by recorded observations, negative ones included. Begun 2026-09-27 ([note](activity/2026-09-27-reuse-and-archives.md)): where every target an environment would build is unchanged in what it read, its earlier passed results are reused and nothing is built (`check --fresh` builds). Reusing some and building others waits for the kept archives below.
    - **What each build records:** its input identity and the digest of every archive it consumed. Done 2026-09-27 for Tart ([note](activity/2026-09-27-reuse-and-archives.md)): images keep each port's archive (setup protocol 3), and each result names its inputs by content. Those are the ports active as it built, with their archives' digests and directories, plus the target's own directory and `_resources` by tree, and the environment. It also keeps its own archive's digest.
    - **Environment identity by origin** (32). Done 2026-09-27 for Tart ([note](activity/2026-09-27-reuse-and-archives.md)): setup pins the vanilla image by digest and records each image's origin on the host. Each provider run records its environment's identity, and a result counts only while the environment is still that one. The other providers say nothing yet, so their results stand as before.
    - **Archives ready for dependents** only once durably transferred and checked.
    - **The port reader returns an evaluation report,** or a reference to its observation, rather than port names and dependency lists, so the observations can be recorded; today they would have to be reconstructed.
+   - **From the code-organization review,** as planning and results move:
+     - `PlanCheck`'s phases named (finding 4);
+     - a kind on each cell of the evidence, and one rule for an `--also` extra, which status and submit read differently today (finding 25);
+     - the evaluator's computed facts as typed fields (finding 27);
+     - the tests vocabulary checked where results are written, since reuse carries results on (finding 28);
+     - an identity that can't be read fails the attempt, rather than recording "no origin" (finding 39);
+     - the release `outdated` found passed to the update, and a plan's `--only`, `--also`, `--fresh`, and omissions in its JSON (finding 36);
+     - one set of dependencies given to `engine.Open` (finding 1).
 
 7. **Coverage** (the previous step 13, with what `outdated` found).
    - **The 144 ports `outdated --mine` can't check,** sized by reason first. Most use Portfile conventions discovery doesn't take ([note](activity/2026-09-27-outdated-speed.md)).
@@ -86,6 +128,9 @@ In order. Each item lands in its own commits with an activity note, and a review
    - **Smaller buckets:** the Go toolchain check on gitlab.com, and the R ports' condition.
    - **Re-sizing:** the host-reader buckets after the oracle, and the PortGroup inclusion map.
    - **`create`:** from registry names (`pypi:`, `crates:`, `go:`), `--like`, and `go.vendors`.
+   - **From the code-organization review,** where this work touches:
+     - one livecheck pipeline for upstream's two paths, before discovery changes (finding 6);
+     - `create` names `adopt` as the other authoring commands do, and records design v3's subject (findings 8 and 9).
 
 ### Alongside, on the Mac
 
@@ -113,12 +158,46 @@ These are taken when their area is next touched, or between items.
   - the retry of a listing that raced a delete ([openai/tart#1353](https://github.com/openai/tart/issues/1353));
   - trusting a delete only by the VM's absence (#1345, fixed by #1350 on 2026-09-26, hours after 2.39.0 was tagged: unreleased as of 2026-09-27);
   - guests reached over SSH, never `tart exec` (#1346); setup's agent readiness probe is the last `tart exec`, and could move to SSH.
+- **The code-organization review's smaller findings,** each when its files are next touched. Findings are the [review](reviews/2026-09-27-code-organization-review.md)'s, as the [note](activity/2026-09-27-code-organization-review-reconciled.md) corrects them.
+  - **Tart:** one SSH wait that stops at a refused login, and a refusal the runner doesn't retry: about twelve minutes today (finding 7).
+  - **Serve:** its workers each say a problem once, and its daily look runs off the loop (finding 3).
+  - **Copies to fold:**
+    - submit's phases, keeping `--accept`'s errors (finding 5);
+    - run recipes (finding 11);
+    - tidy's rules adapter (finding 12);
+    - GitHub remotes (finding 13);
+    - environment words and provider names (finding 14);
+    - one table test for exec admission (finding 15);
+    - `forge/github`'s guards (finding 16);
+    - small helpers (finding 17);
+    - a port directory's rule (finding 29);
+    - a pull request's head, and its 404 (finding 38).
+  - **JSON:**
+    - a baseline's run is marked;
+    - status's branch embeds the reference other commands give (finding 10).
+  - **Structure:**
+    - `macports`' program and platform mechanics in a subpackage (finding 21);
+    - the history transition as one `Make`, keeping submit's merge check (finding 26);
+    - `Update`'s and `PlanTidy`'s seams (finding 44).
+  - **Latent:**
+    - a stealth update's edits evaluated again (finding 19);
+    - `ls-remote` in a fresh scratch directory (finding 30);
+    - the index cache's identity off a Mac (finding 40);
+    - store error kinds documented (finding 41);
+    - anonymous GitHub remembered for a few minutes (finding 45).
 - **A flake to watch.** `TestTidyAsksWhatItCannotKnow` once failed in its cleanup with a directory not empty ([note](activity/2026-09-27-stopped-checks.md#seen-once-not-explained)).
 
 ## Decisions for the person
 
 - **D2. Tools or Xcode profile.** Should modelled contexts use the Xcode profile, as MacPorts' builders do, or the tools profile they use now? This has been open since oracle phase 5, and changes nothing an update edits today.
 - **D3. Tahoe's Xcode.** Tahoe's Xcode has no upper bound, so a `--rebuild` of its Xcode image would now choose Xcode 27, by the rule that gives Sequoia 26.3. Should Tahoe stay on 26?
+- **D4. What an update couldn't check, when nobody looks before it's submitted.** Should `bump`'s and serve's submissions hold for what the update couldn't check, as they hold for a failed search for other pull requests?
+  - The cases:
+    - a comparison that couldn't pair the archives;
+    - a Go toolchain minimum dockhand couldn't rewrite;
+    - patches it left unchecked.
+  - Recommended: yes. Today every `go.vendors` and `cargo.crates` update goes out with no comparison at all (the code-organization review's finding 32).
+- **D5. Where tidy, rebase, and restore live.** Should they move into `history`, beside the recognition of their changes? Recommended: no. `Transitions.Make` puts the ref change beside its recognition without moving 1,200 lines (finding 22).
 
 ### Decided
 
@@ -144,7 +223,7 @@ These are taken when their area is next touched, or between items.
 
 - **MacPorts compatibility.** Evaluator tests pass on Base 2.12.6. Version adapters follow the [Base design](macports-base-design-prospective.md): the current release plus a pinned master preview. Keep Base and PortGroup compatibility distinct ([evidence](macports-compatibility.md)).
 - **Images.** Twelve images are made and checked: base and Xcode for macOS 12, 13, 14, 15, 26, and 27. Re-probe the facts table when an image is rebuilt; the 2026-09-27 probes found every earlier row unchanged. Golden Gate needs Tart 2.39.0 or newer.
-- **Package boundaries.** Extend import checks when touching a boundary that matters; the command boundary test, and item 4's engine boundary test, are the models. Don't split packages by size alone. Run `make deadcode` after a milestone, and keep test-only exports documented as such.
+- **Package boundaries.** Extend import checks when touching a boundary that matters; the command boundary test, and item 4's engine boundary test, are the models. Don't split packages by size alone. Run `make deadcode` after a milestone, and keep test-only exports documented as such. It can't see an unused exported method on a type held as an interface, so sweep those by references too. CI doesn't run it.
 - **GitHub's budget.** Requests to its API are paced at 750 a minute, under its documented 900. A whole `outdated --mine` spends about 1,800 of the 5,000 an hour the person's account has, a budget shared with the GitHub CLI.
 - **Test throughput.** The cost unit is the MacPorts interpreter. Keep per-test timing visible, and prefer simulated clocks for time-driven tests; v2's `workflow` tests show what wall-clock budgets do under load.
 
@@ -159,6 +238,27 @@ These are taken when their area is next touched, or between items.
 - Parity with v1 or v2 commands that have no current use.
 
 ## Reviews
+
+**The [code-organization review](reviews/2026-09-27-code-organization-review.md)** of 2026-09-27 read `a71fc67f`. Its 46 findings were checked again at `3b16b187` ([note](activity/2026-09-27-code-organization-review-reconciled.md)).
+- **Taken:**
+  - before item 6: findings 1, 2, 9, 13, 17 (`ExitCode`), 18, 19 (the embedding), 20, 24, 31, 32, 33, 34, 35, 36 (the regression), 37, 38 (the unreachable path), 42, 43, and 46;
+  - inside item 6: 1 (the dependencies), 4, 25, 27, 28, 36, and 39;
+  - inside item 7: 6, 8, and 9 (the subject);
+  - the rest as smaller items.
+- **Worse than it said, through later work:** 1, 32, 35, 36, and 37. Two regressions were fixed at once.
+- **Changed:**
+  - 2: a misspelled `--tests` is refused; `bump` and serve don't bypass the rule; `update --submit` does.
+  - 6 is P3.
+  - 18: the `deadcode` advice.
+  - 26: the merge loop stays.
+  - 42: signal the group gently, minding a prompting `sudo`.
+- **Declined:**
+  - splitting `store` or `portindex` (23);
+  - finding 21's plist half;
+  - 41's legacy-plan deletion;
+  - 20's alias and shared registry;
+  - a uniform JSON branch shape (10), by the decision that a command's JSON may follow where it stopped.
+- **Left to the person:** D4 and D5.
 
 **The [architecture and data-flow review](reviews/2026-09-27-architecture-and-data-flow.md)** of 2026-09-27 was checked against the code at `52d03e2a`.
 - **Its probes:** all seven fail as stated.
