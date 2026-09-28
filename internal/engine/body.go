@@ -34,6 +34,10 @@ type bodyFacts struct {
 	NoCheck  bool
 	Accepted []string
 	Types    []string
+	// Updated is true when dockhand wrote every commit and one is an
+	// update it made: a new release, which the template calls an
+	// enhancement unless Types says otherwise.
+	Updated bool
 	// RulesPassed and Squashed come from the commit rules.
 	RulesPassed, Squashed bool
 	// Searched is true when other open pull requests were looked for;
@@ -68,6 +72,9 @@ func pullRequestBody(facts bodyFacts) string {
 	}
 	fmt.Fprintf(&b, "%s\n\n", typesHeading)
 	types := slices.Clone(facts.Types)
+	if len(types) == 0 && facts.Updated {
+		types = append(types, "enhancement")
+	}
 	for _, commit := range facts.Commits {
 		if cve.MatchString(commit.Message) && !slices.Contains(types, "security fix") {
 			types = append(types, "security fix")
@@ -190,6 +197,24 @@ func commitBody(message string) string {
 		}
 	}
 	return strings.TrimSpace(strings.Join(kept, "\n"))
+}
+
+// dockhandUpdate reports whether every commit carries dockhand's
+// Generated-By line, which tidy writes only on a port's commit made of
+// dockhand's own edits, and one of them is an update dockhand recorded.
+func dockhandUpdate(commits []git.HistoryCommit, edits []model.Edit) bool {
+	updated := false
+	for _, commit := range commits {
+		_, rest, _ := strings.Cut(strings.TrimSpace(commit.Message), "\n")
+		_, trailers := splitTrailers(strings.TrimSpace(rest))
+		if !slices.ContainsFunc(trailers, commitmsg.IsAttribution) {
+			return false
+		}
+		updated = updated || slices.ContainsFunc(edits, func(edit model.Edit) bool {
+			return edit.Kind == model.EditUpdate && edit.Subject == commit.Subject()
+		})
+	}
+	return updated
 }
 
 func citesTickets(commits []git.HistoryCommit) bool {

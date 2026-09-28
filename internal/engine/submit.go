@@ -211,16 +211,22 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	errorsFound := commitrules.Errors(plan.Findings)
 	squashed := !slices.ContainsFunc(plan.Findings, func(f commitrules.Finding) bool { return f.Code == "follow-up" || f.Code == "merge" })
 	var accepted []string
+	var edits []model.Edit
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		list, err := r.Acceptances(branch.ID, model.ObjectID(head))
 		for _, a := range list {
 			accepted = append(accepted, a.Port)
 		}
+		if err != nil {
+			return err
+		}
+		edits, err = r.Edits(branch.ID)
 		return err
 	}); err != nil {
 		return plan, err
 	}
 	facts := bodyFacts{Commits: plan.Commits, Evidence: plan.Evidence, NoCheck: request.NoCheck, Accepted: slices.Concat(accepted, request.Accept), Types: request.Types,
+		Updated:     dockhandUpdate(plan.Commits, edits),
 		RulesPassed: !errorsFound, Squashed: squashed, Searched: plan.SearchProblem == "", Others: plan.Others,
 		TestedBinaries: request.TestedBinaries, TestedVariants: request.TestedVariants, SkipNotification: request.SkipNotification}
 	plan.facts = facts
