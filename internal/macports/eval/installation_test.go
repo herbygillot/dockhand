@@ -30,7 +30,7 @@ func findHostInstallation(t *testing.T) hostInstallation {
 	host.port = tcl("set entries [registry::entry imaged]; expr {[llength $entries] ? [[lindex $entries 0] name] : {}}")
 	programs, err := filepath.Glob(filepath.Join(host.prefix, "bin", "*"))
 	require.NoError(t, err)
-	base := []string{"port", "portindex", "portmirror", "port-tclsh", "daemondo"}
+	base := []string{"port", "portf", "portindex", "portmirror", "port-tclsh", "daemondo"}
 	for _, program := range programs {
 		name := filepath.Base(program)
 		if slices.Contains(base, name) {
