@@ -51,6 +51,10 @@ type Request struct {
 	// keeps the new archives and also fetches the current version's, so
 	// the two can be compared; empty keeps neither.
 	KeepArchives string
+	// Stealth asks a checksum refresh to make a stealth update of an
+	// archive it finds changed under the same name; nil refreshes the
+	// checksums alone.
+	Stealth *StealthRequest
 }
 
 // Fidelity is the comparison report for one evaluated edit.
@@ -96,6 +100,12 @@ type Result struct {
 	// go.toolchain_min was left below it; nil where it was raised, or
 	// needn't be.
 	GoToolchain *GoToolchain `json:",omitempty"`
+	// Stealth is the stealth update a checksum refresh found and made; nil
+	// when it found none, or wasn't asked (Request.Stealth).
+	Stealth *Stealth `json:",omitempty"`
+	// DistSubdirRemoved is true when a version update removed the
+	// dist_subdir an earlier stealth update set.
+	DistSubdirRemoved bool `json:",omitempty"`
 	// Unchanged is the port as it stands where nothing was edited, as for
 	// an update to the version it already has: what it is at, which no
 	// fidelity report says then. Nil when there was an edit.

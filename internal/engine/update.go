@@ -173,6 +173,17 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		Version:    request.Version,
 		Subject:    request.Subject,
 	}
+	if request.Action == model.EditChecksums {
+		// A Portfile the branch has changed since its base was edited by
+		// hand first, as for a new version, and its refresh is no stealth
+		// update. Which files those are is the branch's to say; the editor
+		// makes the stealth update of the rest.
+		changed, err := changedSinceBase(ctx, worktree, captured, base)
+		if err != nil {
+			return Update{}, err
+		}
+		input.Stealth = &preparation.StealthRequest{Changed: changed, KeepRevision: request.KeepRevision}
+	}
 	if request.Action == model.EditUpdate {
 		release, err := preparer.ResolveRelease(ctx, input)
 		if err != nil {
@@ -193,30 +204,11 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	if err != nil {
 		return byHand(err)
 	}
-	var stealth *Stealth
-	if request.Action == model.EditChecksums && len(result.Files) > 0 {
-		port := result.Target.Name
-		if port == "" {
-			port = request.Port
-		}
-		if stealth, err = e.stealth(ctx, worktree, branch, captured, port, request.KeepRevision, &result); err != nil {
-			return Update{}, err
-		}
-	}
-	removed := false
-	if request.Action == model.EditUpdate && len(result.Files) > 0 {
-		if removed, err = dropStealthDistSubdir(ctx, worktree, captured, &result); err != nil {
-			return Update{}, err
-		}
-	}
 	update := describe(branch, request.Port, result)
 	update.Base = base
-	update.Stealth, update.DistSubdirRemoved = stealth, removed
-	if stealth != nil {
+	update.Stealth, update.DistSubdirRemoved = result.Stealth, result.DistSubdirRemoved
+	if result.Stealth != nil {
 		update.Subject = update.Port + ": update checksums after a stealth update"
-		if stealth.Revbumped {
-			update.After.Revision++
-		}
 	}
 	if compare && len(result.Files) > 0 {
 		update.Upstream = compareUpstream(ctx, result)
@@ -347,6 +339,16 @@ func portDirectory(file string) string {
 		return parts[0] + "/" + parts[1]
 	}
 	return path.Dir(file)
+}
+
+// changedSinceBase are the files a branch's captured tree has changed since
+// its base.
+func changedSinceBase(ctx context.Context, worktree *git.Repository, captured string, base model.ObjectID) ([]string, error) {
+	trees, err := worktree.CommitTrees(ctx, []string{string(base)})
+	if err != nil {
+		return nil, err
+	}
+	return worktree.ChangedPaths(ctx, trees[string(base)], captured)
 }
 
 // describe reads what the preparation found.

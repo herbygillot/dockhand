@@ -20,6 +20,14 @@ import (
 )
 
 func (s *Service) prepareVersion(ctx context.Context, request Request, input *sourceInput) (Result, error) {
+	result, err := s.prepareNewVersion(ctx, request, input)
+	if err != nil {
+		return result, err
+	}
+	return result, s.dropStealthDistSubdir(ctx, input, &result)
+}
+
+func (s *Service) prepareNewVersion(ctx context.Context, request Request, input *sourceInput) (Result, error) {
 	if request.Release != nil && request.Release.NoUpdate {
 		return s.prepareArchiveVersion(ctx, request, input)
 	}

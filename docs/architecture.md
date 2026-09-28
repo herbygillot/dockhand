@@ -52,7 +52,7 @@ The providers implement `buildenv.Provider`, the contract in `internal/buildenv`
 
 `update`, `checksums`, `revbump`, `create`, and `edit` change a branch's working files and record an `Edit`; none of them commits.
 
-- **`engine/update.go`, `engine/verbs.go`, `engine/stealth.go`** find the branch or start one, check the worktree out sparsely, and write the result into it.
+- **`engine/update.go`, `engine/verbs.go`** find the branch or start one, check the worktree out sparsely, and write the result into it. For a checksum refresh they give the editor the files the branch has changed since its base, and `macports/portedit` makes a stealth update of a Portfile not among them: the revision and `dist_subdir`, evaluated and checked as its other edits are.
 - **`preparation`** turns an update into an edited tree: it materializes a disposable snapshot (`macports/workspace`, `scratch`), finds the release (`upstream`), and has `macports/portedit` make the edit.
 - **`upstream`** finds a port's newest release from its forge's tags and releases (`forge/github`, `forge/gitlab`) or its livecheck, using the Portfile's own version rules. Versions are compared by MacPorts' `vercmp`, through the evaluator. **`outdated`** runs it for many ports at once, and `github` paces every request to GitHub's API across the process, below its documented secondary rate limit.
 - **`macports/portedit`** makes an evaluated edit: `macports/portfile` changes literal values in the source text through `tcl/syntax` spans. `portedit/archives` fetches distfiles and computes checksums, and `macports/fidelity` checks that only what was meant to change did. `macports/dependency` regenerates Go and Rust dependency lists with `go2port` and `cargo2port`.

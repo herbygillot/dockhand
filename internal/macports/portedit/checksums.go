@@ -26,7 +26,11 @@ func (s *Service) prepareChecksums(ctx context.Context, request Request, input *
 	for _, frame := range observed.contexts {
 		result.Coverage = append(result.Coverage, ContextCoverage{Fetch: frame.after.Ports[input.target.Name].Fetch, Platform: frame.profile, Modeled: frame.profile != input.before.Platform})
 	}
-	return s.applyObservedArchives(ctx, request, input, archivePlan{result: result, contents: input.data, observed: observed, subject: "refresh checksums"}, s.Archives.Store(""))
+	result, err = s.applyObservedArchives(ctx, request, input, archivePlan{result: result, contents: input.data, observed: observed, subject: "refresh checksums"}, s.Archives.Store(""))
+	if err != nil {
+		return result, err
+	}
+	return result, s.stealthUpdate(ctx, request, input, &result)
 }
 
 func (s *Service) planObservedChecksums(ctx context.Context, request Request, input *sourceInput) (*observedArchivePlan, error) {

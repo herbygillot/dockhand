@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
 	"github.com/herbygillot/dockhand/internal/progress"
@@ -45,10 +46,16 @@ func (b bumper) Prepare(ctx context.Context, r preparation.Request) (preparation
 	}
 	next, after := old, string(data)
 	revision := 0
+	removed := false
 	switch {
 	case r.Action == model.EditUpdate:
 		next = r.Release.Version
 		after = line.ReplaceAllString(after, "version "+next)
+		// As the editor does: a new version's archive has a name of its
+		// own, so a stealth update's dist_subdir goes.
+		if without, ok, err := portfile.RemoveStealthDistSubdir([]byte(after)); err == nil && ok {
+			after, removed = string(without), true
+		}
 	case r.Action == model.EditRevbump:
 		revision = 1
 		after += "revision 1\n"
@@ -59,6 +66,7 @@ func (b bumper) Prepare(ctx context.Context, r preparation.Request) (preparation
 		return macports.Snapshot{Ports: map[string]macports.PortInfo{"jq": {Version: v, Revision: revision}}}
 	}
 	result := preparation.Result{Target: model.Target{Name: "jq"}, Release: r.Release, PreparedTree: r.Source.Tree, Fidelity: []portedit.Fidelity{{Before: port(old, 0), After: port(next, revision)}}}
+	result.DistSubdirRemoved = removed
 	if after == string(data) {
 		return result, nil
 	}

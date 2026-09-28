@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -42,17 +43,37 @@ func (r rechecksummer) Prepare(ctx context.Context, request preparation.Request)
 		return preparation.Result{}, err
 	}
 	line := regexp.MustCompile(`(?m)^checksums .*$`)
-	declared := line.FindString(string(data))
+	declared := line.FindString(string(data))[len("checksums "):]
 	version := regexp.MustCompile(`(?m)^version\s+(\S+)$`).FindStringSubmatch(string(data))[1]
-	after := line.ReplaceAllString(string(data), "checksums           sha256 "+newSHA+" size 7114508")
-	port := func(checksums string) macports.Snapshot {
-		return macports.Snapshot{Ports: map[string]macports.PortInfo{"jq": {Name: "jq", Version: version, Options: map[string]string{"checksums": checksums}}}}
+	now := portfile.Checksum{Name: "jq-" + version + ".tar.gz", SHA256: newSHA, Size: 7114508}
+	after := []byte(line.ReplaceAllString(string(data), "checksums           sha256 "+newSHA+" size 7114508"))
+	// As the editor does, for a Portfile the branch hasn't changed since
+	// its base: the revision bumped unless asked not to, and dist_subdir set.
+	revision := 0
+	var stealth *preparation.Stealth
+	if asked := request.Stealth; asked != nil && !slices.Contains(asked.Changed, name) {
+		stealth = &preparation.Stealth{Distfiles: []preparation.StealthDistfile{{Name: now.Name, Was: archives.Declared(declared)[""], Now: now}}}
+		if !asked.KeepRevision {
+			if after, err = portfile.BumpRevision(after, "", 0); err != nil {
+				return preparation.Result{}, err
+			}
+			stealth.Revbumped, revision = true, 1
+		}
+		if after, _, err = portfile.StealthDistSubdir(after, stealth.Revbumped); err != nil {
+			return preparation.Result{}, err
+		}
+		stealth.DistSubdir = "jq/" + version + "_1"
 	}
-	edit := git.FileEdit{Path: name, Before: before, After: []byte(after), Mode: before.Mode}
+	port := func(checksums string, revision int) macports.Snapshot {
+		return macports.Snapshot{Ports: map[string]macports.PortInfo{"jq": {Name: "jq", Version: version, Revision: revision, Options: map[string]string{"checksums": checksums}}}}
+	}
+	edit := git.FileEdit{Path: name, Before: before, After: after, Mode: before.Mode}
 	tree, err := r.repo.EditTree(ctx, string(request.Source.Tree), []git.FileEdit{edit})
-	return preparation.Result{Target: model.Target{Name: "jq", Portfile: name}, PreparedTree: model.ObjectID(tree), Files: []git.FileEdit{edit},
-		Fidelity:  []portedit.Fidelity{{Before: port(declared[len("checksums "):]), After: port("")}},
-		Downloads: []archives.Download{{Checksum: portfile.Checksum{Name: "jq-" + version + ".tar.gz", SHA256: newSHA, Size: 7114508}}}}, err
+	result := preparation.Result{Target: model.Target{Name: "jq", Portfile: name}, PreparedTree: model.ObjectID(tree), Files: []git.FileEdit{edit},
+		Fidelity:  []portedit.Fidelity{{Before: port(declared, 0), After: port("", revision)}},
+		Downloads: []archives.Download{{Checksum: now}}}
+	result.Stealth = stealth
+	return result, err
 }
 
 func TestAStealthUpdateSaysSoAndKeepsBothArchives(t *testing.T) {
