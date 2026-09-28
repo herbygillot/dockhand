@@ -39,6 +39,8 @@ type config struct {
 	outputLimit  int
 }
 
+// Option changes how the interpreter is started. The evaluator gives its
+// directory and takes the rest as they are; tests set the rest.
 type Option func(*config)
 
 func WithArgs(args ...string) Option { return func(c *config) { c.args = args } }

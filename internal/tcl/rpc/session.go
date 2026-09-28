@@ -60,6 +60,8 @@ type config struct {
 	frameLimit int
 }
 
+// Option changes a session's defaults. The evaluator takes them all;
+// tests set them to reach the limits.
 type Option func(*config)
 
 func WithInit(scripts ...string) Option {
