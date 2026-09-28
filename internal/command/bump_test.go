@@ -2,23 +2,16 @@ package command
 
 import (
 	"bytes"
-	"context"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/herbygillot/dockhand/internal/engine"
-	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/forge"
 )
-
-// releases stands in for upstream discovery with the ports as given.
-type releases []engine.OutdatedPort
-
-func (r releases) Outdated(context.Context, model.ObjectID, engine.OutdatedRequest) ([]engine.OutdatedPort, error) {
-	return r, nil
-}
 
 // bumpOn runs bump where a person could answer, to show it asks nothing.
 func bumpOn(t *testing.T, args ...string) (string, string, error) {
@@ -33,7 +26,6 @@ func TestBumpGoesFromUpdateToPullRequestAskingNothing(t *testing.T) {
 	versioned(t, w)
 	withBumper(t)
 	withScript(t, w, "passed")
-	withOutdated(t)
 	g := withGitHub(t, w)
 	g.others = nil
 
@@ -55,22 +47,19 @@ func TestBumpGoesFromUpdateToPullRequestAskingNothing(t *testing.T) {
 // What would stop bump before the edit stops it with nothing changed.
 func TestBumpChangesNothingWhenItHasNothingToDo(t *testing.T) {
 	w := newWorld(t)
-	versioned(t, w)
+	require.NoError(t, os.WriteFile(filepath.Join(w.upstream, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n"), 0o644))
+	gitRun(t, w.upstream, "commit", "-q", "-am", "jq: 1.8.1")
 	withBumper(t)
 	withScript(t, w, "passed")
 	withGitHub(t, w)
-	testOutdatedReader = releases{{Port: "jq", Current: "1.8.1", Newest: "1.8.1"}, {Port: "lost", Problem: "no forge could be found for it"}}
-	t.Cleanup(func() { testOutdatedReader = nil })
 
 	out, _, err := bumpOn(t, "jq")
 	require.NoError(t, err)
-	require.Equal(t, "jq is already at 1.8.1, the newest release; nothing to change.\n", out)
+	require.Equal(t, "jq is already at 1.8.1; nothing to change, so no branch was started.\n", out)
 	out, _, err = bumpOn(t, "jq", "1.8.1")
 	require.NoError(t, err)
-	require.Equal(t, "jq is already at 1.8.1; nothing to change.\n", out)
+	require.Equal(t, "jq is already at 1.8.1; nothing to change, so no branch was started.\n", out)
 
-	_, _, err = bumpOn(t, "lost")
-	require.EqualError(t, err, "can't tell whether lost has a newer release: no forge could be found for it; nothing was changed")
 	_, _, err = bumpOn(t, "jq", "1.9", "--on", "nowhere")
 	require.EqualError(t, err, `--on nowhere: no provider "nowhere" is set up; nothing was changed`)
 	_, _, err = bumpOn(t, "jq", "--except", "fd")
@@ -81,6 +70,43 @@ func TestBumpChangesNothingWhenItHasNothingToDo(t *testing.T) {
 	require.Empty(t, gitRun(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
 }
 
+// update --submit and bump report one result: the update's, with each step
+// it went on to inside it, as far as it went. bump's can hold its
+// submission, and says why.
+func TestUpdateSubmitAndBumpReportTheSameJSON(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	withScript(t, w, "passed")
+	g := withGitHub(t, w)
+	g.others = nil
+
+	for _, command := range [][]string{{"update", "jq", "--new", "--submit"}, {"bump", "jq"}} {
+		t.Setenv("MACPORTS_TREE", w.clone)
+		submitted, err := jsonOf(t, command...)
+		require.NoError(t, err, command)
+		result := submitted.Result
+		require.Equal(t, "1.8.1", dig(t, result, "after", "version"), command)
+		require.Equal(t, true, result["started"], command)
+		require.Equal(t, true, result["applied"], command)
+		require.Equal(t, "jq: update to 1.8.1", dig(t, result, "tidy", "commits", 0, "subject"), command)
+		require.NotNil(t, dig(t, result, "tidy", "applied"), command)
+		require.Equal(t, "passed", dig(t, result, "check", "run", "state"), command)
+		require.Equal(t, true, dig(t, result, "submit", "pull_request", "created"), command)
+		require.NotContains(t, result["submit"], "held", command)
+		// Out of the way, so bump starts a branch of its own for jq.
+		_, _, err = dockhand(t, "archive", dig(t, result, "branch", "name").(string))
+		require.NoError(t, err)
+	}
+
+	g.others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}
+	held, err := jsonOf(t, "bump", "jq")
+	require.Equal(t, 3, ExitCode(err))
+	require.Equal(t, "1.8.1", dig(t, held.Result, "after", "version"))
+	require.Nil(t, dig(t, held.Result, "submit", "pull_request"))
+	require.Equal(t, []any{"#34777 is open for the same port: jq: update to 1.8.0"}, dig(t, held.Result, "submit", "held"))
+}
+
 // Nobody looks before bump submits, so what holds serve's pull requests
 // holds bump's: here, another pull request open for the port.
 func TestBumpHoldsWhatServeWould(t *testing.T) {
@@ -88,7 +114,6 @@ func TestBumpHoldsWhatServeWould(t *testing.T) {
 	versioned(t, w)
 	withBumper(t)
 	withScript(t, w, "passed")
-	withOutdated(t)
 	g := withGitHub(t, w) // it finds #34777 open for jq
 
 	_, _, err := bumpOn(t, "jq", "--tested-binaries")

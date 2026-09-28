@@ -42,6 +42,12 @@ type UpdateRequest struct {
 	// FromMaster plans against master as fetched now, with no branch: a
 	// look before starting one. It goes only with Plan.
 	FromMaster bool
+	// Start, for a version update, prepares it against master as fetched
+	// now and starts this branch from that master only once there is an
+	// edit to make: a port already current starts nothing. An edit
+	// dockhand can't make by itself starts it too, for the person to make
+	// by hand. It takes the place of Branch.
+	Start *StartRequest
 	// KeepRevision leaves the revision of a stealth update as it is, for a
 	// change that needs no rebuild.
 	KeepRevision bool
@@ -91,6 +97,9 @@ type Update struct {
 	PatchProblems []string
 	// Current is true when there was nothing to change.
 	Current bool
+	// Started is true when the update started its branch
+	// (UpdateRequest.Start).
+	Started bool
 	// Applied is true when the working files were written.
 	Applied bool
 	// Upstream is what comparing the old and new upstream archives found,
@@ -125,6 +134,31 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	if err != nil {
 		return Update{}, err
 	}
+	// start starts the branch a Start request asks for, from the master
+	// the update was prepared on.
+	start := func() error {
+		if request.Start == nil {
+			return nil
+		}
+		started := *request.Start
+		started.Base = base
+		if branch, err = e.Start(ctx, started); err != nil {
+			return err
+		}
+		worktree, err = e.worktree(ctx, branch)
+		return err
+	}
+	// byHand keeps, for an edit dockhand can't make, the branch the
+	// person will make it in.
+	byHand := func(err error) (Update, error) {
+		if request.Start != nil && errors.Is(err, ErrUnsupported) {
+			if startErr := start(); startErr != nil {
+				return Update{}, errors.Join(err, startErr)
+			}
+			return Update{Branch: branch, Base: base, Port: request.Port, Started: true}, err
+		}
+		return Update{}, err
+	}
 	preparer, err := e.preparer()
 	if err != nil {
 		return Update{}, err
@@ -140,7 +174,7 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	if request.Action == model.EditUpdate {
 		release, err := preparer.ResolveRelease(ctx, input)
 		if err != nil {
-			return Update{}, err
+			return byHand(err)
 		}
 		input.Release = &release
 	}
@@ -155,7 +189,7 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	}
 	result, err := preparer.Prepare(ctx, input)
 	if err != nil {
-		return Update{}, err
+		return byHand(err)
 	}
 	var stealth *Stealth
 	if request.Action == model.EditChecksums && len(result.Files) > 0 {
@@ -197,6 +231,12 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	if request.Plan {
 		return update, nil
 	}
+	if request.Start != nil {
+		if err := start(); err != nil {
+			return update, err
+		}
+		update.Branch, update.Started = branch, true
+	}
 
 	if err := expandFor(ctx, worktree, update.Files); err != nil {
 		return Update{}, err
@@ -234,9 +274,9 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 // files on its base, or for a plan from master, master's tree as fetched
 // now, read through the clone, since a plan only reads.
 func (e *Engine) updateSource(ctx context.Context, request UpdateRequest) (*git.Repository, string, model.ObjectID, error) {
-	if request.FromMaster {
-		if !request.Plan || request.Action != model.EditUpdate {
-			return nil, "", "", errors.New("engine: only a version update is planned from master; start a branch for anything else")
+	if request.FromMaster || request.Start != nil {
+		if request.FromMaster && !request.Plan || request.Action != model.EditUpdate {
+			return nil, "", "", errors.New("engine: only a version update is prepared from master; start a branch for anything else")
 		}
 		master, err := e.fetchMaster(ctx)
 		if err != nil {
@@ -364,8 +404,9 @@ func expandFor(ctx context.Context, worktree *git.Repository, files []string) er
 	return worktree.ExpandSparse(ctx, missing...)
 }
 
-// BranchesChanging lists the open branches whose commits change a port,
-// by its directory's name.
+// BranchesChanging lists the open branches whose commits or working files
+// change a port, by its directory's name: update commits nothing, so a
+// branch it edited changes the port before tidy commits it.
 func (e *Engine) BranchesChanging(ctx context.Context, port string) ([]model.Branch, error) {
 	var open []model.Branch
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
@@ -388,11 +429,32 @@ func (e *Engine) BranchesChanging(ctx context.Context, port string) ([]model.Bra
 		if err != nil {
 			return nil, err
 		}
-		if slices.Contains(ScopeOf(paths).PortNames(), port) {
+		edited, err := e.workingEdits(ctx, branch)
+		if err != nil {
+			return nil, err
+		}
+		if slices.Contains(ScopeOf(append(paths, edited...)).PortNames(), port) {
 			changing = append(changing, branch)
 		}
 	}
 	return changing, nil
+}
+
+// workingEdits are the tracked files edited in a branch's worktree and not
+// yet committed; none where it isn't checked out, which it leaves as it
+// is.
+func (e *Engine) workingEdits(ctx context.Context, branch model.Branch) ([]string, error) {
+	if branch.Worktree == "" || !exists(branch.Worktree) {
+		return nil, nil
+	}
+	worktree, err := git.Open(ctx, branch.Worktree, e.options.Git)
+	if err != nil {
+		return nil, err
+	}
+	if current, err := worktree.CurrentBranch(ctx); err != nil || current != branch.Name {
+		return nil, nil
+	}
+	return worktree.TrackedChanges(ctx)
 }
 
 // FreeName is a name for a new branch for work on a port, per decision 37:

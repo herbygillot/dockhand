@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -309,4 +310,60 @@ func TestAnUpdateComparesTheUpstreamArchives(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, quiet.Upstream, "no archives, nothing compared")
 	require.False(t, quiet.Upstream.Held())
+}
+
+// refusing can't make the edit by itself, as for a port whose pre-fetch
+// hook runs a command.
+type refusing struct{ *fakePreparer }
+
+func (refusing) Prepare(context.Context, preparation.Request) (preparation.Result, error) {
+	return preparation.Result{}, fmt.Errorf("%w: its pre-fetch hook runs exec", ErrUnsupported)
+}
+
+// A version update asked to start its branch prepares it on master and
+// starts the branch from that master only once there is an edit to make,
+// or one for the person to make by hand.
+func TestAnUpdateStartsItsBranchOnlyForAnEdit(t *testing.T) {
+	f := setup(t)
+	e, p := f.withPreparer(t)
+	master := f.upstreamMaster(t)
+	start := func(name string) UpdateRequest {
+		return UpdateRequest{Start: &StartRequest{Name: name}, Action: model.EditUpdate, Port: "jq"}
+	}
+
+	p.version = "1.7.1"
+	update, err := e.Update(t.Context(), start("jq-current"))
+	require.NoError(t, err)
+	require.True(t, update.Current)
+	require.False(t, update.Started)
+	require.Equal(t, PortVersion{Version: "1.7.1"}, update.After)
+	_, err = e.Resolve(t.Context(), "jq-current")
+	require.Error(t, err, "a port already current starts nothing")
+	require.NoDirExists(t, filepath.Join(e.Worktrees(), "jq-current"))
+
+	p.version = "1.8.1"
+	update, err = e.Update(t.Context(), start("jq-new"))
+	require.NoError(t, err)
+	require.True(t, update.Started)
+	require.True(t, update.Applied)
+	require.Equal(t, master, update.Branch.Base, "the master it was prepared on")
+	require.Contains(t, read(t, filepath.Join(update.Branch.Worktree, "textproc/jq/Portfile")), "version 1.8.1")
+
+	changing, err := e.BranchesChanging(t.Context(), "jq")
+	require.NoError(t, err)
+	require.Len(t, changing, 1, "an edit not yet committed changes the port")
+	require.Equal(t, update.Branch.ID, changing[0].ID)
+	e.OutdatedReader = &newReleases{}
+	report, err := e.Outdated(t.Context(), OutdatedRequest{Maintainers: []string{"@ada"}})
+	require.NoError(t, err)
+	plan, err := e.PlanOutdated(t.Context(), report)
+	require.NoError(t, err)
+	require.Empty(t, plan.Updates, "serve starts no second branch for it")
+	require.Contains(t, plan.Skipped, SkippedUpdate{Port: "jq", Reason: "already in jq-new"})
+
+	e.Preparer = refusing{p}
+	update, err = e.Update(t.Context(), start("jq-by-hand"))
+	require.ErrorIs(t, err, ErrUnsupported)
+	require.True(t, update.Started, "the branch to make the edit in by hand")
+	require.DirExists(t, update.Branch.Worktree)
 }

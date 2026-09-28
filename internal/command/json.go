@@ -34,6 +34,9 @@ type outputMode struct {
 	json    bool
 	command string
 	result  any
+	// steps, while an update goes on to its pull request, gathers each
+	// step's result into the update's.
+	steps *updateJSON
 }
 
 // switchWriter is standard output, silenced while --json holds the
@@ -55,8 +58,23 @@ func (s Streams) json() bool { return s.mode != nil && s.mode.json }
 
 // emit keeps a command's result for the --json envelope.
 func (s Streams) emit(result any) {
+	if !s.json() {
+		return
+	}
+	if steps := s.mode.steps; steps != nil {
+		steps.add(result)
+		s.mode.result = *steps
+		return
+	}
+	s.mode.result = result
+}
+
+// linkSteps makes the result of an update that goes on to its pull request,
+// as update --submit and bump do, the update's, with each later step's
+// result inside it: it says how far the update went, whatever stopped it.
+func (s Streams) linkSteps() {
 	if s.json() {
-		s.mode.result = result
+		s.mode.steps = &updateJSON{}
 	}
 }
 

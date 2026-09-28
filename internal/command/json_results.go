@@ -45,6 +45,26 @@ type updateJSON struct {
 	// Upstream is what comparing the old and new upstream archives found,
 	// as update prints it; absent when they weren't compared.
 	Upstream *upstreamJSON `json:"upstream,omitempty"`
+	// Tidy, Check, and Submit are the steps update --submit and bump go on
+	// to, each as tidy, check, and submit report it, as far as they went.
+	Tidy   *tidyJSON   `json:"tidy,omitempty"`
+	Check  *checkJSON  `json:"check,omitempty"`
+	Submit *submitJSON `json:"submit,omitempty"`
+}
+
+// add puts one step's result in an update's that went on.
+func (u *updateJSON) add(result any) {
+	switch step := result.(type) {
+	case updateJSON:
+		step.Tidy, step.Check, step.Submit = u.Tidy, u.Check, u.Submit
+		*u = step
+	case tidyJSON:
+		u.Tidy = &step
+	case checkJSON:
+		u.Check = &step
+	case submitJSON:
+		u.Submit = &step
+	}
 }
 
 type upstreamJSON struct {
@@ -194,6 +214,9 @@ type submitJSON struct {
 	LeftOut     []string       `json:"left_out"`
 	Body        string         `json:"body"`
 	PullRequest *submittedJSON `json:"pull_request"`
+	// Held are why a submission nobody looked over, bump's, waits for a
+	// person's look.
+	Held []string `json:"held,omitempty"`
 }
 
 type submittedJSON struct {

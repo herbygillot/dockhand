@@ -184,6 +184,7 @@ func submitChecked(ctx context.Context, s *settings, e *engine.Engine, streams S
 	if err != nil {
 		return err
 	}
+	streams.emit(submitView(plan))
 	writeSubmitPlan(streams.Out, plan)
 	if len(plan.Blocking) > 0 {
 		return errors.New("nothing was checked or submitted")
@@ -233,6 +234,7 @@ func submitChecked(ctx context.Context, s *settings, e *engine.Engine, streams S
 	if plan.Commit != bound {
 		return fmt.Errorf("%s moved to %s while it was checked; nothing was submitted, since submit --check binds %s", plan.Branch.ShortName(), engine.Short(model.ObjectID(plan.Commit)), engine.Short(model.ObjectID(bound)))
 	}
+	streams.emit(submitView(plan))
 	if len(plan.Blocking) > 0 {
 		writeSubmitPlan(streams.Out, plan)
 		return errors.New("nothing was submitted")
@@ -243,6 +245,9 @@ func submitChecked(ctx context.Context, s *settings, e *engine.Engine, streams S
 			return err
 		}
 		if len(held) > 0 {
+			view := submitView(plan)
+			view.Held = held
+			streams.emit(view)
 			name := plan.Branch.ShortName()
 			return exitf(3, "%s passed its check and waits for your look, so nothing was submitted: %s\nOnce it's fine: dockhand submit --branch %s", name, strings.Join(held, "; "), name)
 		}

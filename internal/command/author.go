@@ -37,8 +37,9 @@ func (c *branchChoice) flags(cmd *cobra.Command) {
 
 func updateCommand(s *settings, streams Streams) *cobra.Command {
 	var where branchChoice
-	var plan, keepOld, shared bool
-	var linked linkedOptions
+	var plan bool
+	var version versionUpdate
+	linked := &version.linked
 	var batch outdatedOptions
 	cmd := &cobra.Command{
 		Use:   "update <port> [version]",
@@ -46,7 +47,8 @@ func updateCommand(s *settings, streams Streams) *cobra.Command {
 		Long: `Moves a port to the newest release upstream, or the version named, and fills
 in its checksums, in the branch's working files. Nothing is committed.
 
-The branch is --branch, else the one checked out here; --new starts one.
+The branch is --branch, else the one checked out here; --new starts one,
+once there is an edit to make, so a port already current starts nothing.
 --plan shows the edit and changes nothing.
 
 --revbump-dependents also bumps the revision of every port that links the
@@ -66,6 +68,8 @@ starting anything; --check also queues a check of each.
 
 --submit goes on to tidy the edit, check it, and submit exactly that
 commit once the check passes: tidy, then submit --check, each previewed.
+With --json, the result is the update's, with tidy's, check's, and submit's
+inside it, as far as it went. dockhand bump is the same, asking nothing.
 Without a terminal, the tidy applies only when it is made of dockhand's own
 edits alone; --yes applies such a tidy on a terminal too, without asking.
 --on says where to check, and --tested-binaries and --tested-variants tick
@@ -99,36 +103,18 @@ settled before anything is edited.`,
 			if len(args) == 0 {
 				return errors.New("name the port to update, or update your outdated ports with --outdated --mine")
 			}
-			if len(linked.except) > 0 && !linked.revbump {
-				return errors.New("--except takes a port out of --revbump-dependents; add --revbump-dependents")
-			}
-			request := engine.UpdateRequest{Action: model.EditUpdate, Port: args[0], KeepOldChecksums: keepOld, SharedRelease: shared, Plan: plan, CompareUpstream: true}
-			if len(args) == 2 {
-				request.Version = args[1]
-			}
-			if linked.submit {
-				if err := checkWhere(cmd.Context(), s, linked.on); err != nil {
-					return fmt.Errorf("%w; nothing was changed", err)
-				}
-				linked.yes = batch.yes
-			}
-			branch, update, err := author(cmd.Context(), s, streams, where, "update", request, linked)
-			if err != nil || !linked.submit || !update.Applied {
+			request, err := version.request(args, plan)
+			if err != nil {
 				return err
 			}
-			return tidyAndSubmit(cmd.Context(), s, streams, branch, linked)
+			linked.yes = batch.yes
+			return version.run(cmd.Context(), s, streams, where, request)
 		},
 	}
 	where.flags(cmd)
+	version.flags(cmd, "with --submit, ")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the edit and change nothing")
 	cmd.Flags().BoolVar(&linked.submit, "submit", false, "then tidy it, check it, and submit it once the check passes")
-	cmd.Flags().StringArrayVar(&linked.on, "on", nil, "with --submit, where to check (default check.on)")
-	cmd.Flags().BoolVar(&linked.testedBinaries, "tested-binaries", false, "with --submit, state that you tested the basic functionality of all binary files")
-	cmd.Flags().BoolVar(&linked.testedVariants, "tested-variants", false, "with --submit, state that you checked the most important variants")
-	cmd.Flags().BoolVar(&keepOld, "keep-old-checksums", false, "refresh legacy md5 or sha1 checksums in place rather than rewriting them as rmd160, sha256, and size")
-	cmd.Flags().BoolVar(&shared, "shared-release", false, "move every subport that shares the port's release")
-	cmd.Flags().BoolVar(&linked.revbump, "revbump-dependents", false, "also bump the revision of the ports that link it directly")
-	cmd.Flags().StringSliceVar(&linked.except, "except", nil, "leave this dependent out of --revbump-dependents")
 	cmd.Flags().BoolVar(&batch.outdated, "outdated", false, "update every named port, or with --mine yours, that has a newer release")
 	cmd.Flags().BoolVar(&batch.mine, "mine", false, "with --outdated, the ports whose maintainers line names you (config maintainer)")
 	cmd.Flags().BoolVar(&batch.check, "check", false, "with --outdated, also queue a check of each")
@@ -170,16 +156,84 @@ The branch is --branch, else the one checked out here; --new starts one.
 	return cmd
 }
 
-// checkWhere resolves where update --submit will check, before the edit,
-// so a mistaken --on changes nothing.
-func checkWhere(ctx context.Context, s *settings, on []string) error {
+// versionUpdate is what update and bump share: how the edit is made, and
+// what going on to the pull request takes.
+type versionUpdate struct {
+	keepOld, shared bool
+	linked          linkedOptions
+}
+
+// flags adds the flags update and bump share. goesOn is what the
+// submission's flags go with, such as "with --submit, "; bump's always go
+// on.
+func (v *versionUpdate) flags(cmd *cobra.Command, goesOn string) {
+	cmd.Flags().StringArrayVar(&v.linked.on, "on", nil, goesOn+"where to check (default check.on)")
+	cmd.Flags().BoolVar(&v.linked.testedBinaries, "tested-binaries", false, goesOn+"state that you tested the basic functionality of all binary files")
+	cmd.Flags().BoolVar(&v.linked.testedVariants, "tested-variants", false, goesOn+"state that you checked the most important variants")
+	cmd.Flags().BoolVar(&v.keepOld, "keep-old-checksums", false, "refresh legacy md5 or sha1 checksums in place rather than rewriting them as rmd160, sha256, and size")
+	cmd.Flags().BoolVar(&v.shared, "shared-release", false, "move every subport that shares the port's release")
+	cmd.Flags().BoolVar(&v.linked.revbump, "revbump-dependents", false, "also bump the revision of the ports that link it directly")
+	cmd.Flags().StringSliceVar(&v.linked.except, "except", nil, "leave this dependent out of --revbump-dependents")
+}
+
+// request is the update of the port args name, to the version they name
+// or the newest.
+func (v versionUpdate) request(args []string, plan bool) (engine.UpdateRequest, error) {
+	if len(v.linked.except) > 0 && !v.linked.revbump {
+		return engine.UpdateRequest{}, errors.New("--except takes a port out of --revbump-dependents; add --revbump-dependents")
+	}
+	request := engine.UpdateRequest{Action: model.EditUpdate, Port: args[0], KeepOldChecksums: v.keepOld, SharedRelease: v.shared, Plan: plan, CompareUpstream: true}
+	if len(args) == 2 {
+		request.Version = args[1]
+	}
+	return request, nil
+}
+
+// run makes the update and, when it goes on to the pull request, tidies,
+// checks, and submits it: update's path, and bump's. With --json, the
+// result is the update's, with each later step's inside it.
+func (v versionUpdate) run(ctx context.Context, s *settings, streams Streams, where branchChoice, request engine.UpdateRequest) error {
+	linked := v.linked
+	if linked.submit {
+		if err := submitReady(ctx, s, request.Port, linked); err != nil {
+			return err
+		}
+		streams.linkSteps()
+	}
+	branch, update, err := author(ctx, s, streams, where, "update", request, linked)
+	if err != nil || !linked.submit || !update.Applied {
+		return err
+	}
+	return tidyAndSubmit(ctx, s, streams, branch, linked)
+}
+
+// submitReady settles, before the edit, what would stop an update going on
+// to its pull request, so stopping there changes nothing: where to check,
+// and for bump, which starts no second branch for a port, an open branch
+// already changing it.
+func submitReady(ctx context.Context, s *settings, port string, linked linkedOptions) error {
 	e, err := s.open(ctx)
 	if err != nil {
 		return err
 	}
 	defer e.Close()
-	_, err = e.Environments(ctx, firstNonEmpty(on, s.file.Check.On))
-	return err
+	if linked.unattended {
+		changing, err := e.BranchesChanging(ctx, port)
+		if err != nil {
+			return err
+		}
+		if len(changing) > 0 {
+			var names []string
+			for _, branch := range changing {
+				names = append(names, branch.ShortName())
+			}
+			return fmt.Errorf("%s is already changed in %s, so nothing was changed; dockhand status %s says what it needs", port, strings.Join(names, ", "), names[0])
+		}
+	}
+	if _, err := e.Environments(ctx, firstNonEmpty(linked.on, s.file.Check.On)); err != nil {
+		return fmt.Errorf("%w; nothing was changed", err)
+	}
+	return nil
 }
 
 // tidyAndSubmit is the rest of update --submit: tidy the branch, then
@@ -197,6 +251,7 @@ func tidyAndSubmit(ctx context.Context, s *settings, streams Streams, branch mod
 	}
 	if !proposal.Keep {
 		fmt.Fprintf(out, "\n%s · tidying %s\n", branch.ShortName(), describeWork(proposal))
+		streams.emit(tidyView(proposal))
 		writeTidyPlan(out, proposal)
 		applied, err := decideTidy(ctx, e, streams, proposal, false, linked.yes, "")
 		if err != nil {
@@ -245,17 +300,28 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	defer e.Close()
 	var started bool
 	out := streams.Out
-	if !fromMaster {
+	// A version update with --new starts its branch once there is an edit
+	// to make, so a port already current starts nothing.
+	deferred := where.new && !request.Plan && request.Action == model.EditUpdate
+	switch {
+	case deferred:
+		name, err := e.FreeName(ctx, request.Port)
+		if err != nil {
+			return branch, update, err
+		}
+		request.Start = &engine.StartRequest{Name: name}
+	case !fromMaster:
 		if branch, started, err = chooseBranch(ctx, e, streams, where, request.Port, purpose); err != nil {
 			return branch, update, err
 		}
-		if started {
-			fmt.Fprintf(out, "Started %s from master %s (fetched just now)\n", branch.Name, engine.Short(branch.Base))
-		}
-		fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), tilde(branch.Worktree))
+		announce(out, branch, started)
 	}
 	request.Branch, request.FromMaster = branch, fromMaster
 	update, err = e.Update(ctx, request)
+	if update.Started {
+		branch, started = update.Branch, true
+		announce(out, branch, started)
+	}
 	if fromMaster && err == nil {
 		fmt.Fprintf(out, "Planned on master %s (fetched just now); --new without --plan starts the branch\n", engine.Short(update.Base))
 		// The dependents are the index's at the master planned on.
@@ -273,9 +339,12 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	result := updateView(branch, started, update, request.Plan)
 	streams.emit(result)
 	if update.Current {
-		if request.Action == model.EditUpdate {
+		switch {
+		case deferred:
+			fmt.Fprintf(out, "%s is already at %s; nothing to change, so no branch was started.\n", update.Port, update.After)
+		case request.Action == model.EditUpdate:
 			fmt.Fprintf(out, "%s is already at %s; nothing to change.\n", update.Port, update.After)
-		} else {
+		default:
 			fmt.Fprintf(out, "%s %s's checksums are current; nothing to change.\n", update.Port, update.After)
 		}
 		return branch, update, nil
@@ -357,6 +426,15 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		fmt.Fprintln(out, "Next: review it with git diff, then commit it")
 	}
 	return branch, update, nil
+}
+
+// announce says which branch an edit is in, and whether it was just
+// started.
+func announce(out io.Writer, branch model.Branch, started bool) {
+	if started {
+		fmt.Fprintf(out, "Started %s from master %s (fetched just now)\n", branch.Name, engine.Short(branch.Base))
+	}
+	fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), tilde(branch.Worktree))
 }
 
 // byHand says that dockhand can't make the edit by itself, why, and how

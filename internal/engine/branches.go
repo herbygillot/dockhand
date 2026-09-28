@@ -35,6 +35,9 @@ type StartRequest struct {
 	Here bool
 	// Origin is who starts it; a person unless serve does.
 	Origin model.Origin
+	// Base is the master commit to start from, fetched moments ago, as an
+	// update prepared on it was; master is fetched now when empty.
+	Base model.ObjectID
 }
 
 // Start creates a branch from freshly fetched master, in a sparse managed
@@ -79,9 +82,12 @@ func (e *Engine) Start(ctx context.Context, request StartRequest) (model.Branch,
 		return model.Branch{}, fmt.Errorf("%s already exists; choose another name, or remove it", directory)
 	}
 
-	base, err := e.fetchMaster(ctx)
-	if err != nil {
-		return model.Branch{}, err
+	base := request.Base
+	if base == "" {
+		var err error
+		if base, err = e.fetchMaster(ctx); err != nil {
+			return model.Branch{}, err
+		}
 	}
 	if err := e.Repo.CreateBranch(ctx, name, string(base)); err != nil {
 		return model.Branch{}, err

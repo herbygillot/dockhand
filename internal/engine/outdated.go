@@ -181,9 +181,10 @@ type PreparedUpdate struct {
 	Problem string
 }
 
-// PrepareOutdated starts each planned branch from fresh master, updates
-// its port with the upstream archives compared, commits the edit when the
-// plan is unambiguous, and with Check queues a check of that commit. A
+// PrepareOutdated updates each planned port from fresh master, with the
+// upstream archives compared, in a branch started once there is an edit
+// to make; commits the edit when the plan is unambiguous; and with Check
+// queues a check of that commit. A
 // problem with one port is reported beside the others, and never stops
 // them.
 func (e *Engine) PrepareOutdated(ctx context.Context, plan OutdatedPlan, options PrepareOptions) []PreparedUpdate {
@@ -199,13 +200,10 @@ func (e *Engine) PrepareOutdated(ctx context.Context, plan OutdatedPlan, options
 
 func (e *Engine) prepareOne(ctx context.Context, planned PlannedUpdate, options PrepareOptions) PreparedUpdate {
 	done := PreparedUpdate{Planned: planned}
-	branch, err := e.Start(ctx, StartRequest{Name: planned.Name, Origin: options.Origin})
+	var err error
+	done.Update, err = e.Update(ctx, UpdateRequest{Start: &StartRequest{Name: planned.Name, Origin: options.Origin}, Action: model.EditUpdate, Port: planned.Port.Port, Version: planned.Port.Newest, CompareUpstream: true})
+	done.Branch = done.Update.Branch
 	if err != nil {
-		done.Problem = err.Error()
-		return done
-	}
-	done.Branch = branch
-	if done.Update, err = e.Update(ctx, UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: planned.Port.Port, Version: planned.Port.Newest, CompareUpstream: true}); err != nil {
 		done.Problem = err.Error()
 		return done
 	}
@@ -213,6 +211,7 @@ func (e *Engine) prepareOne(ctx context.Context, planned PlannedUpdate, options 
 		done.Problem = "nothing to change: it is already at " + done.Update.After.String()
 		return done
 	}
+	branch := done.Branch
 	tidy, err := e.PlanTidy(ctx, TidyRequest{Branch: branch})
 	if err != nil {
 		done.Problem = err.Error()

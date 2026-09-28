@@ -51,7 +51,7 @@ on = ["tart:sequoia,tahoe"]   # where checks build unless --on says otherwise
 All work happens on branches. A branch is an ordinary Git branch of the ports tree, named `dockhand/<name>`, with a base on MacPorts' master and at most one pull request. Dockhand keeps a record of each one it tracks.
 
 - **`start <name>`** creates `dockhand/<name>` from master, fetched just now, in a worktree of its own. `--here` creates it in this checkout instead, which must have no uncommitted changes to tracked files.
-- **`update`, `checksums`, `create`, and `edit` with `--new`** start a branch named after the port, such as `dockhand/jq-4f2a`. `revbump` starts one by itself unless `--branch` names one or you are in one, since a rebuild has its own reason.
+- **`update`, `checksums`, `create`, and `edit` with `--new`** start a branch named after the port, such as `dockhand/jq-4f2a`. A version update starts it once there is an edit to make, so a port already current starts nothing. `revbump` starts one by itself unless `--branch` names one or you are in one, since a rebuild has its own reason.
 - **`adopt [branch]`** tracks a branch you made yourself, as it stands. Its base is where it leaves master.
 - **`adopt --pr <number>`** brings someone's pull request into a branch of its own, `pr-<number>`, to look at and work on. Dockhand assumes no permission to push to their branch: `submit` pushes there only when they let maintainers edit and you have write access, and it never rewrites their description.
 
@@ -77,7 +77,7 @@ It then compares the old and new source archives, and reports what a passing bui
 
 `--revbump-dependents` also bumps the revision of every port that links the updated one directly, found in the port index at the branch's base, so users rebuild them. `--except <port>` leaves one out. `tidy` commits each as "<port>: rebuild for <updated> <version>".
 
-`--submit` goes on to tidy, check, and submit, previewing each step, and submits exactly that commit once its check passes. It takes submit's `--on`, `--tested-binaries`, and `--tested-variants`, and settles where to check before it edits anything. On a terminal the tidy asks for review; `--yes` applies it without asking when it is dockhand's own edit alone, as it does without a terminal.
+`--submit` goes on to tidy, check, and submit, previewing each step, and submits exactly that commit once its check passes. It takes submit's `--on`, `--tested-binaries`, and `--tested-variants`, and settles where to check before it edits anything. On a terminal the tidy asks for review; `--yes` applies it without asking when it is dockhand's own edit alone, as it does without a terminal. With `--json`, the result is the update's, with `tidy`, `check`, and `submit` holding what those commands report, as far as it went: a script reads the versions, the check's results, and the pull request from one result, and sees where it stopped.
 
 ### bump
 
@@ -86,13 +86,13 @@ dockhand bump jq           # the newest release, all the way to its pull request
 dockhand bump jq 1.8.1     # a version you name
 ```
 
-`bump` is `update --new --submit --yes` asking nothing, for an update you want submitted without looking along the way; `update` is the same work a step at a time. It isn't `port bump`, which refreshes checksums, as `checksums` does. It starts a branch from fresh master, updates the port, tidies the edit into one commit, checks it, and submits exactly that commit once the check passes. It takes `update`'s `--revbump-dependents`, `--except`, `--shared-release`, and `--keep-old-checksums`, and `submit`'s `--on`, `--tested-binaries`, and `--tested-variants`.
+`bump` is `update --new --submit --yes` asking nothing, for an update you want submitted without looking along the way; `update` is the same work a step at a time. It isn't `port bump`, which refreshes checksums, as `checksums` does. It updates the port on fresh master, in a branch it starts for the edit, tidies the edit into one commit, checks it, and submits exactly that commit once the check passes. Its `--json` result is `update --submit`'s. It takes `update`'s `--revbump-dependents`, `--except`, `--shared-release`, and `--keep-old-checksums`, and `submit`'s `--on`, `--tested-binaries`, and `--tested-variants`.
 
 It stops wherever a person should look:
 
 - Before it edits anything, it stops with nothing changed when an open branch already changes the port, the check has nowhere to build, or the port is already at the release.
 - A failed check leaves the branch, with its logs.
-- A passing check is held, as `serve`'s are, when the upstream comparison found something a build can't catch, a commit rule has a finding, or another pull request is open for the port, or couldn't be looked for. `bump` exits 3 and names the `submit` that finishes it after a look.
+- A passing check is held, as `serve`'s are, when the upstream comparison found something a build can't catch, a commit rule has a finding, or another pull request is open for the port, or couldn't be looked for. `bump` exits 3 and names the `submit` that finishes it after a look; with `--json`, `submit.held` lists why.
 
 The pull request's tested checkboxes stay unticked unless `--tested-binaries` or `--tested-variants` says otherwise: they say what you tested, which dockhand can't.
 
