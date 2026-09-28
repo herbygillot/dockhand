@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
@@ -164,6 +165,9 @@ func TestInvocationUsesTheImagesHostKeysAndTheRightCredential(t *testing.T) {
 	output, err := exec.Command(askpass).Output()
 	require.NoError(t, err)
 	require.Equal(t, Password+"\n", string(output))
+	root, err := scratch.Root()
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(askpass, root+string(filepath.Separator)), "the helper is in the run root, for a sweep to find if the process dies: %s", askpass)
 	cleanup()
 	require.NoFileExists(t, askpass, "the password helper does not outlive the call")
 }

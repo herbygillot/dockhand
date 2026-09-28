@@ -17,6 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/scratch"
 )
 
 // fakeGitHub stands in for GitHub: the fork is a local bare repository.
@@ -430,4 +431,20 @@ JSON
 	require.Error(t, err)
 	require.Regexp(t, `^jq-update moved to [0-9a-f]{7} while it was checked; nothing was submitted, since submit --check binds [0-9a-f]{7}$`, err.Error())
 	require.Empty(t, g.prs)
+}
+
+// The description is edited in the process's run root, so a process that
+// dies with the editor open leaves the buffer to the next one's sweep.
+func TestTheDescriptionIsEditedInTheRunRoot(t *testing.T) {
+	record := filepath.Join(t.TempDir(), "path")
+	t.Setenv("VISUAL", `edit() { printf '%s' "$1" > '`+record+`'; printf 'edited' > "$1"; }; edit`)
+	text, err := editText(t.Context(), "draft")
+	require.NoError(t, err)
+	require.Equal(t, "edited", text)
+	path, err := os.ReadFile(record)
+	require.NoError(t, err)
+	root, err := scratch.Root()
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(string(path), root+string(filepath.Separator)), "%s is under %s", path, root)
+	require.NoFileExists(t, string(path), "the buffer goes when the edit is done")
 }

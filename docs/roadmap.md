@@ -93,7 +93,8 @@ In order. Each item lands in its own commits with an activity note, and a review
   - a new branch whose record's commit was uncertain is read back, not undone (finding 24). Done 2026-09-27;
   - a canceled script build stops its whole process group, gently first (finding 42). Done 2026-09-27;
   - `serve --install` carries `--git`, `TART_HOME`, and the `DOCKHAND_*` settings it was installed under, never a token (finding 46). Done 2026-09-27;
-  - `ExitCode` finds an exit through wrapping (finding 17). Done 2026-09-27 ([note](activity/2026-09-27-promised-rules.md)).
+  - `ExitCode` finds an exit through wrapping (finding 17). Done 2026-09-27 ([note](activity/2026-09-27-promised-rules.md));
+  - every short-lived directory in the run root, as `scratch` promises: Tart's askpass helper and `submit`'s description buffer (finding 42). Done 2026-09-28 ([note](activity/2026-09-28-dead-code.md)).
 - **Progress on stderr** (finding 31). Done 2026-09-28 ([note](activity/2026-09-28-progress-on-stderr.md)):
   - `-v` shows what the 48 progress reports say;
   - `outdated` prints what it found when interrupted, and clears its count.
@@ -176,6 +177,7 @@ These are taken when their area is next touched, or between items.
     - one table test for exec admission (finding 15);
     - `forge/github`'s guards (finding 16);
     - small helpers (finding 17);
+    - the one-shots that call `os/exec` where `subprocess.Run` would bound their wait and name their failure: `security`, `pkgutil`, `gh auth token`, `open`, `osascript`, `launchctl`, and `port version` (finding 42);
     - a port directory's rule (finding 29);
     - a pull request's head (finding 38).
   - **JSON:**

@@ -22,6 +22,7 @@ var commandImports = map[string]string{
 	"internal/version":  "the command's own version",
 	"internal/progress": "the reporter each command installs, printing what the work reports to standard error",
 	"internal/store":    "filter types for engine queries; records are read and written through the engine",
+	"internal/scratch":  "the edit buffer an editor opens, in the process's run root",
 	// Vocabulary the engine's results carry beyond model's: a checksum,
 	// and a commit-rule finding, whose explanations explain prints.
 	"internal/macports/portfile":    "vocabulary in engine results",

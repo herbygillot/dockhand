@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
@@ -124,7 +125,7 @@ func (g *Guest) invocation() (args, environment []string, cleanup func(), err er
 	}
 	environment = os.Environ()
 	if g.Bootstrap {
-		askpass, err := os.MkdirTemp("", "dockhand-askpass-")
+		askpass, err := scratch.Dir("askpass-")
 		if err != nil {
 			return nil, nil, cleanup, err
 		}

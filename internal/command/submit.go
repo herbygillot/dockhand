@@ -14,6 +14,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/scratch"
 )
 
 func submitCommand(s *settings, streams Streams) *cobra.Command {
@@ -520,7 +521,7 @@ func editText(ctx context.Context, text string) (string, error) {
 	if editor == "" {
 		return "", errors.New("set $EDITOR to edit the description here, or edit it on GitHub after submitting; dockhand keeps your edits")
 	}
-	directory, err := os.MkdirTemp("", "dockhand-description-")
+	directory, err := scratch.Dir("description-")
 	if err != nil {
 		return "", err
 	}
