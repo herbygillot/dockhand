@@ -1,0 +1,115 @@
+diff --git a/internal/engine/helper_review_test.go b/internal/engine/helper_review_test.go
+new file mode 100644
+--- /dev/null
++++ b/internal/engine/helper_review_test.go
+@@ -0,0 +1,38 @@
++package engine
++
++import (
++	"testing"
++
++	"github.com/herbygillot/dockhand/internal/macports"
++	"github.com/herbygillot/dockhand/internal/model"
++	"github.com/stretchr/testify/require"
++)
++
++func TestHelperReviewEligibilityUsesOptionSemantics(t *testing.T) {
++	t.Run("known_fail on", func(t *testing.T) {
++		info := macports.PortInfo{Options: map[string]string{"known_fail": "on"}}
++		value, err := info.Bool("known_fail")
++		require.NoError(t, err)
++		require.True(t, value)
++		require.Equal(t, "known_fail", ineligible(info, tahoeArm.Platform))
++	})
++	t.Run("Tcl list", func(t *testing.T) {
++		info := macports.PortInfo{Options: map[string]string{"supported_archs": "{arm64}"}}
++		require.Empty(t, ineligible(info, tahoeArm.Platform))
++	})
++}
++
++func TestHelperReviewRevisionProofDistinguishesData(t *testing.T) {
++	f := setup(t)
++	write(t, f.clone, map[string]string{"textproc/jq/Portfile": "name jq\nset contents {\nrevision 1\n}\n"})
++	run(t, f.clone, "add", "-A")
++	run(t, f.clone, "commit", "-qm", "before")
++	before := run(t, f.clone, "rev-parse", "HEAD^{tree}")
++	write(t, f.clone, map[string]string{"textproc/jq/Portfile": "name jq\nset contents {\nrevision 2\n}\n"})
++	run(t, f.clone, "add", "-A")
++	after := run(t, f.clone, "write-tree")
++	e := f.open(t)
++	kind, err := e.targetKind(t.Context(), before, after, "textproc/jq", []string{"textproc/jq/Portfile"})
++	require.NoError(t, err)
++	require.Equal(t, model.Substantive, kind)
++}
+diff --git a/internal/archive/helper_review_test.go b/internal/archive/helper_review_test.go
+new file mode 100644
+--- /dev/null
++++ b/internal/archive/helper_review_test.go
+@@ -0,0 +1,30 @@
++package archive
++
++import (
++	"testing"
++
++	"github.com/stretchr/testify/require"
++)
++
++func TestHelperReviewCargoDependencySubtable(t *testing.T) {
++	before := tarball(t, "pkg-1", map[string]string{"Cargo.toml": "[package]\nname = 'pkg'\nversion = '1.0.0'\n"})
++	after := tarball(t, "pkg-2", map[string]string{"Cargo.toml": "[package]\nname = 'pkg'\nversion = '2.0.0'\n[dependencies.serde]\nversion = '1'\n"})
++	changes, err := Compare(t.Context(), before, after)
++	require.NoError(t, err)
++	require.NotEmpty(t, changes, "the added dependency must be visible")
++}
++
++func TestHelperReviewPythonLiteralStrings(t *testing.T) {
++	before := tarball(t, "pkg-1", map[string]string{"pyproject.toml": "[project]\ndependencies = ['click>=8']\n"})
++	after := tarball(t, "pkg-2", map[string]string{"pyproject.toml": "[project]\ndependencies = ['click>=8', 'rich>=13']\n"})
++	changes, err := Compare(t.Context(), before, after)
++	require.NoError(t, err)
++	require.NotEmpty(t, changes, "the added dependency must be visible")
++}
++
++func TestHelperReviewManifestDecodeFailureIsVisible(t *testing.T) {
++	before := tarball(t, "pkg-1", map[string]string{"package.json": `{ "name": "pkg" }`})
++	after := tarball(t, "pkg-2", map[string]string{"package.json": `{ "dependencies":`})
++	_, err := Compare(t.Context(), before, after)
++	require.Error(t, err, "an unreadable manifest is not a successful empty comparison")
++}
+diff --git a/internal/macports/newport/helper_review_test.go b/internal/macports/newport/helper_review_test.go
+new file mode 100644
+--- /dev/null
++++ b/internal/macports/newport/helper_review_test.go
+@@ -0,0 +1,32 @@
++package newport
++
++import (
++	"os/exec"
++	"strings"
++	"testing"
++
++	"github.com/stretchr/testify/require"
++)
++
++func TestHelperReviewTclDescriptionRoundTrip(t *testing.T) {
++	for _, description := range []string{"Tool {x}", `Tool C:\temp`} {
++		t.Run(description, func(t *testing.T) {
++			command := exec.Command("tclsh")
++			command.Stdin = strings.NewReader("proc description args {puts [join $args { }]}\ndescription " + tclWord(description) + "\n")
++			output, err := command.CombinedOutput()
++			require.NoError(t, err)
++			require.Equal(t, description+"\n", string(output))
++		})
++	}
++}
++
++func TestHelperReviewCargoCratesDeclinesOtherRegistry(t *testing.T) {
++	_, err := CargoCrates([]byte(`version = 4
++[[package]]
++name = "private-crate"
++version = "1.0.0"
++source = "registry+https://example.org/index"
++checksum = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
++`))
++	require.Error(t, err, "cargo.crates does not retain this registry's identity")
++}

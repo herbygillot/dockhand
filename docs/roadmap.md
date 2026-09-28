@@ -112,6 +112,24 @@ In order. Each item lands in its own commits with an activity note, and a review
 
 The order puts live regressions first, then the guardrail unattended submission relies on, then small promises the code doesn't keep, then what a person watching sees, then what grows without bound, and dead code last, since removing it changes nothing.
 
+**Before item 6 goes on: logic in the homes of the facts it interprets** (the [private-helper review](reviews/2026-09-28-private-helper-ownership.md), [note](activity/2026-09-28-private-helper-review-reconciled.md)). In order, each in its own commits, each of its probes a regression test once fixed:
+- **What a comparison couldn't read** (finding 3). Upstream source comparison moves to a package of its own, over `archive`'s traversal. Its manifest readings say when they're incomplete, so a manifest it can't read holds as D4 has it. It reads Cargo's dependency tables, pyproject's literal strings, and go.mod with `modfile`.
+- **Planning's MacPorts facts at their owner** (findings 1 and 2):
+  - build eligibility in `macports`, reading options as MacPorts does, with an unknown kept apart from an exclusion;
+  - a conservative Portfile inspection in `macports/portfile`: whether a change is only to the revision, and a port's declared version, `go.setup`'s included, for the planner and tidy.
+- **What `create` writes** (findings 5 and 4): a Tcl word encoder beside `tcl/syntax`, and one Cargo.lock reader in `macports/dependency` for creating and updating, keeping each crate's source.
+- **A stealth update's edits inside the editor** (finding 9, the open half of the earlier finding 19).
+- **The description merge's result** (finding 10): each section's outcome as a type, which the preview words.
+- **Binary archives out of the SSH channel** (finding 6): `macports/binaryarchive` holds the signing keys, both signatures, and a site's files. Tart keeps the upload and the guest's configuration, and the keys stay where they are.
+- **Facts with homes** (finding 7, and the review's table):
+  - the ports tree's layout in `macports`: `_resources`, categories, and a file's port directory (the earlier finding 29), with `macports.ValidName` in the Tart archive site;
+  - GitHub remote and pull request addresses in the GitHub layer (the earlier finding 13);
+  - provider names in `buildenv` (the earlier finding 14);
+  - a maintainer's identity in `macports`;
+  - which Darwin releases have arm64, in `macos`.
+
+The order is the roadmap's own: a guardrail first, then planning's correctness, then what's written into a Portfile, then fidelity, then structure.
+
 6. **Reuse and archives** (decisions 28 and 44; the previous step 9). This builds on item 2's predicate, and takes planning and that predicate out of the engine as it changes them (item 4).
    - **Per-target reuse** by recorded observations, negative ones included. Begun 2026-09-27 ([note](activity/2026-09-27-reuse-and-archives.md)): where every target an environment would build is unchanged in what it read, its earlier passed results are reused and nothing is built (`check --fresh` builds). Since 2026-09-28 ([note](activity/2026-09-28-partial-reuse.md)), the targets unchanged in what they read are reused and the rest build; the guest installs a reused one they need from its kept archive, and builds it when none is kept.
    - **What each build records:** its input identity and the digest of every archive it consumed. Done 2026-09-27 for Tart ([note](activity/2026-09-27-reuse-and-archives.md)): images keep each port's archive (setup protocol 3), and each result names its inputs by content. Those are the ports active as it built, with their archives' digests and directories, plus the target's own directory and `_resources` by tree, and the environment. It also keeps its own archive's digest.
@@ -166,19 +184,17 @@ These are taken when their area is next touched, or between items.
   - trusting a delete only by the VM's absence (#1345, fixed by #1350 on 2026-09-26, hours after 2.39.0 was tagged: unreleased as of 2026-09-27);
   - guests reached over SSH, never `tart exec` (#1346); setup's agent readiness probe is the last `tart exec`, and could move to SSH.
 - **The code-organization review's smaller findings,** each when its files are next touched. Findings are the [review](reviews/2026-09-27-code-organization-review.md)'s, as the [note](activity/2026-09-27-code-organization-review-reconciled.md) corrects them.
-  - **Tart:** one SSH wait that stops at a refused login, and a refusal the runner doesn't retry: about twelve minutes today (finding 7).
+  - **Tart:** one SSH wait that stops at a refused login, and a refusal the runner doesn't retry: about twelve minutes today (finding 7). The facts tool's wait is a third copy (the private-helper review's finding 8).
   - **Serve:** its workers each say a problem once, and its daily look runs off the loop (finding 3).
   - **Copies to fold:**
     - submit's phases, keeping `--accept`'s errors (finding 5);
     - run recipes (finding 11);
     - tidy's rules adapter (finding 12);
-    - GitHub remotes (finding 13);
-    - environment words and provider names (finding 14);
+    - environment words (finding 14; provider names go with the private-helper item);
     - one table test for exec admission (finding 15);
     - `forge/github`'s guards (finding 16);
     - small helpers (finding 17);
     - the one-shots that call `os/exec` where `subprocess.Run` would bound their wait and name their failure: `security`, `pkgutil`, `gh auth token`, `open`, `osascript`, `launchctl`, and `port version` (finding 42);
-    - a port directory's rule (finding 29);
     - a pull request's head (finding 38).
   - **JSON:**
     - status's branch embeds the reference other commands give (finding 10).
@@ -189,7 +205,6 @@ These are taken when their area is next touched, or between items.
     - `Update`'s and `PlanTidy`'s seams (finding 44).
   - **Latent:**
     - an edit record whose commit was uncertain is read back, as a new branch's is: `Update` and `Create` write their files first, and holds are read from the records (finding 24);
-    - a stealth update's edits evaluated again (finding 19);
     - `ls-remote` in a fresh scratch directory (finding 30);
     - the index cache's identity off a Mac (finding 40);
     - store error kinds documented (finding 41);
@@ -301,5 +316,11 @@ Changed:
 - **Its eleven findings hold,** each as the review describes it. Finding 11 is narrower: `status` shows CI once something has read it from GitHub, and plain `status` never does.
 - **Taken,** each in its own commit: 1 for a `+dirty` build, and 2 to 9 and 11. The other session had already taken 10, ticking enhancement for an update dockhand made.
 - **Its improvements** are smaller items, with the duckdb exercise's.
+
+**The [private-helper review](reviews/2026-09-28-private-helper-ownership.md)** of 2026-09-28, by Codex, read `7be0dc2d` and was checked again at `dd21ac87` ([note](activity/2026-09-28-private-helper-review-reconciled.md)).
+- **All ten findings hold.** All seven of its probes fail.
+- **Worse than it ranks:** finding 3, which weakens the guardrail unattended submission relies on.
+- **Taken:** 1 to 7, 9, and 10 as one item before item 6 goes on. Finding 8 goes with the Tart smaller item it revalidates.
+- **Kept as it says:** `newport.licenses` stays until a second consumer, and the plist writers stay separate.
 
 **Earlier reviews** were triaged in the previous roadmap, which records what each contributed and what was declined ([v2/roadmap.md](v2/roadmap.md#review-triage-and-validation)).
