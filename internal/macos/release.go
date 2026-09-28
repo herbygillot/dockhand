@@ -102,6 +102,21 @@ func ProductForDarwin(darwin int) (string, error) {
 	return release.Product, err
 }
 
+// RunsOn reports whether macOS at a Darwin release runs on an architecture,
+// of the two dockhand models: Intel's x86_64 until macOS 26, Darwin 25, the
+// last release for Intel Macs, as every release before Apple silicon is
+// modelled; and Apple silicon's arm64 from its first, macOS 11, Darwin 20.
+// MacPorts' builders in the facts table agree, wherever it has them.
+func RunsOn(darwin int, architecture string) bool {
+	switch architecture {
+	case "x86_64":
+		return darwin >= 8 && darwin <= 25
+	case "arm64":
+		return darwin >= 20
+	}
+	return false
+}
+
 // Describe words a platform for a person unambiguously, "macOS 26 (Tahoe)
 // arm64" for darwin 25, and keeps the raw fields when the release is unknown.
 func Describe(platform model.Platform) string {

@@ -214,6 +214,7 @@ These are taken when their area is next touched, or between items.
   - `submit --plan` showing the pull request's description, which both exercises read through `--json`;
   - `outdated` for one named port, which took 12 seconds in both;
   - a `Generated-By` naming a commit nobody can find, not only a `+dirty` build: submit could ask GitHub, since tidy reads nothing remote.
+- **The observer's boundary at Golden Gate.** A boundary at `${os.major} >= 27` samples nothing below it, since its lower neighbor, Darwin 26, never shipped; the release below, 25, should stand in ([note](activity/2026-09-28-facts-with-homes.md)).
 - **A flake to watch.** `TestTidyAsksWhatItCannotKnow` once failed in its cleanup with a directory not empty ([note](activity/2026-09-27-stopped-checks.md#seen-once-not-explained)).
 
 ## Decisions for the person

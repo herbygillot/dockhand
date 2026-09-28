@@ -257,7 +257,7 @@ func profilesForBoundaries(majors map[int]bool, archDependent bool, native model
 	}
 	if archDependent {
 		for _, arch := range []string{"arm64", "x86_64"} {
-			if current >= 20 || arch != "arm64" {
+			if macos.RunsOn(current, arch) {
 				appendProfile(current, arch)
 			}
 		}
@@ -271,10 +271,17 @@ func profilesForBoundaries(majors map[int]bool, archDependent bool, native model
 		}
 	}
 	slices.Sort(versions)
+	// Each side of a boundary is sampled on the first architecture its
+	// release runs on, and on each where the port reads the architecture.
 	for _, major := range versions {
-		appendProfile(major, "x86_64")
-		if archDependent && major >= 20 {
-			appendProfile(major, "arm64")
+		for _, arch := range []string{"x86_64", "arm64"} {
+			if !macos.RunsOn(major, arch) {
+				continue
+			}
+			appendProfile(major, arch)
+			if !archDependent {
+				break
+			}
 		}
 	}
 	return result, nil

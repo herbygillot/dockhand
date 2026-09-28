@@ -18,25 +18,34 @@ if {${build_arch} eq "arm64"} {distfiles a} else {distfiles b}`), native)
 	require.Contains(t, profiles, model.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"})
 	require.Contains(t, profiles, model.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"})
 	require.NotContains(t, profiles, model.Platform{OS: "darwin", Version: "16", Architecture: "arm64"})
+	profiles, err = observationProfiles([]byte(`if {${os.major} >= 21} {version 1} else {version 0}`), native)
+	require.NoError(t, err)
+	require.Equal(t, []model.Platform{native, {OS: "darwin", Version: "20", Architecture: "x86_64"}, {OS: "darwin", Version: "21", Architecture: "x86_64"},
+		{OS: "darwin", Version: "22", Architecture: "x86_64"}}, profiles, "one architecture each side, where the port doesn't read it")
 	_, err = observationProfiles([]byte(`if {${os.major} >= $minimum} {version 1}`), native)
 	require.ErrorIs(t, err, ErrInconclusive)
 }
 
 // A boundary at Golden Gate reaches for Darwin 26, which Apple skipped; its
-// neighbors on either side are the releases that exist.
+// neighbors on either side are the releases that exist, each on an
+// architecture it runs on: Golden Gate on Apple silicon alone.
 func TestProfilesSkipTheDarwinThatNeverShipped(t *testing.T) {
 	t.Parallel()
 	native := model.Platform{OS: "darwin", Version: "27", Architecture: "arm64"}
 	profiles, err := observationProfiles([]byte(`if {${os.major} >= 27} {version 1} else {version 0}`), native)
 	require.NoError(t, err)
-	require.Contains(t, profiles, model.Platform{OS: "darwin", Version: "27", Architecture: "x86_64"})
+	require.Equal(t, []model.Platform{native}, profiles, "Golden Gate itself, on Apple silicon")
 	for _, profile := range profiles {
 		require.NotEqual(t, "26", profile.Version)
+		require.False(t, profile.Version == "27" && profile.Architecture == "x86_64", "Golden Gate doesn't run on Intel: %v", profiles)
 	}
-	profiles, err = observationProfiles([]byte(`if {${os.major} >= 26} {version 1} else {version 0}`), native)
+	profiles, err = observationProfiles([]byte(`if {${os.major} >= 26} {version 1} else {version 0}
+if {${build_arch} eq "arm64"} {distfiles a} else {distfiles b}`), native)
 	require.NoError(t, err)
 	require.Contains(t, profiles, model.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"})
-	require.Contains(t, profiles, model.Platform{OS: "darwin", Version: "27", Architecture: "x86_64"})
+	require.Contains(t, profiles, model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"})
+	require.Contains(t, profiles, model.Platform{OS: "darwin", Version: "27", Architecture: "arm64"})
+	require.NotContains(t, profiles, model.Platform{OS: "darwin", Version: "27", Architecture: "x86_64"})
 	for _, profile := range profiles {
 		require.NotEqual(t, "26", profile.Version)
 	}

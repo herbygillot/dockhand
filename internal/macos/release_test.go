@@ -86,3 +86,25 @@ func TestGoldenGateIsMacOS27OnDarwin27(t *testing.T) {
 	require.Error(t, err)
 	require.Equal(t, "darwin 26 arm64", Describe(model.Platform{OS: "darwin", Version: "26", Architecture: "arm64"}))
 }
+
+// Which architectures a release runs on agrees with MacPorts' builders in
+// the facts table, wherever it has them: arm64 from Darwin 20, x86_64 until
+// Darwin 25, and Golden Gate on Apple silicon alone.
+func TestReleasesRunOnTheArchitecturesTheirBuildersDo(t *testing.T) {
+	built := map[int]map[string]bool{}
+	for _, facts := range Table().Facts {
+		if built[facts.Darwin] == nil {
+			built[facts.Darwin] = map[string]bool{}
+		}
+		built[facts.Darwin][facts.Architecture] = true
+	}
+	for darwin, architectures := range built {
+		for _, architecture := range []string{"x86_64", "arm64"} {
+			require.Equal(t, architectures[architecture], RunsOn(darwin, architecture), "darwin %d %s", darwin, architecture)
+		}
+	}
+	require.False(t, RunsOn(27, "x86_64"), "Golden Gate runs on Apple silicon alone")
+	require.True(t, RunsOn(8, "x86_64"), "releases before the table are modelled on Intel")
+	require.False(t, RunsOn(19, "arm64"))
+	require.False(t, RunsOn(25, "ppc"))
+}
