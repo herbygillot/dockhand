@@ -27,10 +27,10 @@ func (e *Engine) Remedy(unmet model.Unmet) string {
 // provider when it is set up, and otherwise Tart on this Mac's release.
 func (e *Engine) Environments(ctx context.Context, on []string) ([]model.Environment, error) {
 	if len(on) == 0 {
-		if _, ok := e.Providers["command"]; ok {
-			return []model.Environment{{Provider: "command"}}, nil
+		if _, ok := e.Providers[buildenv.Command]; ok {
+			return []model.Environment{{Provider: buildenv.Command}}, nil
 		}
-		if tart, ok := e.Providers["tart"].(buildenv.ReleaseProvider); ok {
+		if tart, ok := e.Providers[buildenv.Tart].(buildenv.ReleaseProvider); ok {
 			if environments, err := tart.Environments(ctx, ""); err == nil {
 				return environments[:1], nil
 			}
@@ -46,16 +46,16 @@ func (e *Engine) Environments(ctx context.Context, on []string) ([]model.Environ
 	for _, value := range on {
 		name, releases, _ := strings.Cut(value, ":")
 		if _, ok := e.Providers[name]; !ok {
-			if _, isRelease := e.Providers["tart"]; isRelease && releases == "" && knownRelease(name) {
-				name, releases = "tart", name
+			if _, isRelease := e.Providers[buildenv.Tart]; isRelease && releases == "" && knownRelease(name) {
+				name, releases = buildenv.Tart, name
 			}
 		}
 		provider, ok := e.Providers[name]
 		if !ok {
 			switch name {
-			case "tart":
+			case buildenv.Tart:
 				return nil, fmt.Errorf("--on %s: Tart isn't installed here; MacPorts' tart port installs it", value)
-			case "prefix":
+			case buildenv.Prefix:
 				return nil, fmt.Errorf("--on %s: the prefix provider is not in v3 yet; use Tart or your own script (--on command) meanwhile", value)
 			}
 			return nil, fmt.Errorf("--on %s: no provider %q is set up", value, name)
@@ -71,7 +71,7 @@ func (e *Engine) Environments(ctx context.Context, on []string) ([]model.Environ
 			continue
 		}
 		switch {
-		case releases != "" && name == "github":
+		case releases != "" && name == buildenv.GitHub:
 			return nil, fmt.Errorf("--on %s: the github provider builds on the runners MacPorts' workflow names, so it takes no releases", value)
 		case releases != "":
 			return nil, fmt.Errorf("--on %s: the %s provider builds wherever its script does, so it takes no releases", value, name)

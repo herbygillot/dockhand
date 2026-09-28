@@ -75,7 +75,7 @@ type Provider struct {
 	Sleep func(ctx context.Context, d time.Duration) error
 }
 
-func (p *Provider) Name() string { return "github" }
+func (p *Provider) Name() string { return buildenv.GitHub }
 
 func (p *Provider) sleep(ctx context.Context, d time.Duration) error {
 	if p.Sleep != nil {

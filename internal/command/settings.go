@@ -99,7 +99,7 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 	s.file, s.opened, s.openedWith = file, e, options
 	e.Providers = map[string]buildenv.Provider{}
 	if command := file.Providers.Command; command != nil {
-		e.Providers["command"] = &script.Provider{Run: command.Run, Label: command.Name, Repo: e.Repo}
+		e.Providers[buildenv.Command] = &script.Provider{Run: command.Run, Label: command.Name, Repo: e.Repo}
 	}
 	remote := file.Providers.GitHub.Remote
 	github := &ghactions.Provider{Repo: e.Repo, Fork: func(ctx context.Context) (buildenv.Fork, error) { return e.Fork(ctx, remote) },
@@ -107,7 +107,7 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 	if testActions != nil {
 		github.API, github.Sleep = testActions, func(ctx context.Context, _ time.Duration) error { return ctx.Err() }
 	}
-	e.Providers["github"] = github
+	e.Providers[buildenv.GitHub] = github
 	// Tart builds wherever Tart is installed; its images are checked when a
 	// check names a release.
 	if _, err := lookTart("tart"); err == nil || testTart != nil {
@@ -115,7 +115,7 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 		if testTart != nil {
 			testTart(provider)
 		}
-		e.Providers["tart"] = provider
+		e.Providers[buildenv.Tart] = provider
 	}
 	if testLeftovers != nil {
 		e.Providers[testLeftovers.Name()] = testLeftovers

@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
@@ -324,12 +325,12 @@ func firstOf(values ...string) string {
 
 func providerWords(provider string) string {
 	switch provider {
-	case "tart":
-		return "tart: built in a clean VM"
-	case "prefix":
-		return "prefix: built in a MacPorts prefix on the author's Mac"
-	case "github":
-		return "github: MacPorts' CI workflow in the author's fork"
+	case buildenv.Tart:
+		return provider + ": built in a clean VM"
+	case buildenv.Prefix:
+		return provider + ": built in a MacPorts prefix on the author's Mac"
+	case buildenv.GitHub:
+		return provider + ": MacPorts' CI workflow in the author's fork"
 	}
 	return provider + ": built by the author's own command"
 }

@@ -90,7 +90,7 @@ type Provider struct {
 	Grace time.Duration
 }
 
-func (p *Provider) Name() string { return "command" }
+func (p *Provider) Name() string { return buildenv.Command }
 
 var _ buildenv.Provider = (*Provider)(nil)
 

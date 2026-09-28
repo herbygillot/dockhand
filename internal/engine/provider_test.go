@@ -25,6 +25,7 @@ func TestEnvironmentsAreTheProvidersOnNames(t *testing.T) {
 
 	for on, refusal := range map[string]string{
 		"tart:sonoma": "Tart isn't installed here",
+		"prefix":      "the prefix provider is not in v3 yet",
 		"nosuch":      `no provider "nosuch" is set up`,
 		"github:15":   "the github provider builds on the runners MacPorts' workflow names",
 		"command:15":  "the command provider builds wherever its script does",

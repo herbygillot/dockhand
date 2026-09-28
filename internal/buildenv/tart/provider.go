@@ -90,7 +90,7 @@ type Provider struct {
 	xcodes string
 }
 
-func (p *Provider) Name() string { return "tart" }
+func (p *Provider) Name() string { return buildenv.Tart }
 
 func (p *Provider) vms() (machine, error) {
 	p.assembling.Lock()
@@ -172,7 +172,7 @@ func (p *Provider) Environments(ctx context.Context, releases string) ([]model.E
 		if !slices.Contains(images, baseImage(release)) {
 			return nil, fmt.Errorf("no Tart image for macOS %s (%s): dockhand providers setup tart %s makes %s", release.Product, release.Name, release.Slug, baseImage(release))
 		}
-		environment := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: strconv.Itoa(release.Darwin), Architecture: "arm64"},
+		environment := model.Environment{Provider: buildenv.Tart, Platform: model.Platform{OS: "darwin", Version: strconv.Itoa(release.Darwin), Architecture: "arm64"},
 			DeveloperTools: model.DeveloperToolsCommandLine}
 		if slices.Contains(images, xcodeImage(release)) {
 			environment.DeveloperTools = model.DeveloperToolsXcode

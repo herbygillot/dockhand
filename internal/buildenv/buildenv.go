@@ -26,6 +26,21 @@ type Provider interface {
 	Execute(ctx context.Context, job Job, build Build) error
 }
 
+// The providers' names: how people select them with --on, what an
+// environment records as its provider, and what the configuration names
+// their settings by, as [providers.tart].
+const (
+	// Tart builds in clean Tart VMs of dockhand's images.
+	Tart = "tart"
+	// GitHub builds with MacPorts' own workflow, in your fork.
+	GitHub = "github"
+	// Command builds with a person's own script.
+	Command = "command"
+	// Prefix would build in a MacPorts installation of your own on this
+	// Mac (Design v3 §7), which v3 doesn't have yet.
+	Prefix = "prefix"
+)
+
 // ErrInfrastructure marks trouble with a provider's environment rather
 // than with what it built: a VM that would not start, a script that wrote
 // no result. The runner tries such an execution again, up to

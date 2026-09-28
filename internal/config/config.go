@@ -20,6 +20,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/herbygillot/dockhand/internal/atomicfile"
+	"github.com/herbygillot/dockhand/internal/buildenv"
 )
 
 // PathVariable names another configuration file, for tests and experiments.
@@ -240,16 +241,16 @@ func (t TartProvider) Timeout() time.Duration {
 // Capacity is how many checks serve runs on a provider at once.
 func (f File) Capacity(provider string) int {
 	switch provider {
-	case "command":
+	case buildenv.Command:
 		if f.Providers.Command != nil && f.Providers.Command.Capacity > 0 {
 			return f.Providers.Command.Capacity
 		}
-	case "github":
+	case buildenv.GitHub:
 		if f.Providers.GitHub.Capacity > 0 {
 			return f.Providers.GitHub.Capacity
 		}
 		return 2
-	case "tart":
+	case buildenv.Tart:
 		if f.Providers.Tart.Capacity > 0 {
 			return f.Providers.Tart.Capacity
 		}

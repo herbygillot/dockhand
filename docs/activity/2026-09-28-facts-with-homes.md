@@ -13,3 +13,13 @@ The fact is now `macos.RunsOn(darwin, architecture)`, beside `ProductForDarwin`:
 MacPorts' own architecture rules, its universal archs and deployment target from Darwin 20 (`macports/platform.go`), mirror what MacPorts does rather than what a Mac runs, so they stay with it.
 
 **Seen, not changed:** a boundary at Golden Gate, `${os.major} >= 27`, samples nothing below it. Its lower neighbor, Darwin 26, never shipped, so the release below the boundary, 25, is never evaluated. That's the observer's sampling policy, on the roadmap's smaller items.
+
+## Provider names
+
+The providers' names, `tart`, `github`, and `command`, were spelled as literals wherever something named one: the engine's reading of `--on`, the description's Tested on words, cleanup and check's word on a fork's branches, the command layer's composition and readiness lines, the configuration's capacities, and each provider's own `Name`. v2 had constants; the earlier code-organization review's finding 14 counted eight sites.
+
+They are now `buildenv`'s, the contract every provider and its callers already share: `buildenv.Tart`, `GitHub`, `Command`, and `Prefix`, the design's provider of a MacPorts installation on this Mac, which v3 names only to say it doesn't have it yet. Nothing need import a provider to name it. The configuration reads its capacities by them, and keeps its own defaults, two checks at once on GitHub and one elsewhere, apart from what a platform allows, such as the two VMs macOS runs.
+
+What stays spelled out is what isn't a provider's name: the Tart executable, the GitHub PortGroup and forge, the configuration's section tags, which Go can't take from a constant, and the words of messages.
+
+The tests keep spelling the names, as people type them. Changing any of the four constants fails tests, `--on prefix` among them, now a case of `TestEnvironmentsAreTheProvidersOnNames`.

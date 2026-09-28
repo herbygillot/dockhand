@@ -177,7 +177,7 @@ func (e *Engine) planCleanChecks(ctx context.Context, branch model.Branch, repos
 			if err != nil {
 				return err
 			}
-			if !slices.ContainsFunc(plan.Environments, func(e model.Environment) bool { return e.Provider == "github" }) {
+			if !slices.ContainsFunc(plan.Environments, func(e model.Environment) bool { return e.Provider == buildenv.GitHub }) {
 				continue
 			}
 			revision, err := r.Revision(run.Revision)

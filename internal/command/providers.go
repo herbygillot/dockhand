@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildenv/tart"
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/github"
@@ -149,14 +150,14 @@ new one has passed.`,
 // providerLines say whether each provider is ready, one line each, as
 // providers and init show them.
 func providerLines(ctx context.Context, file config.File) []string {
-	lines := []string{fmt.Sprintf("%-8s %s", "tart", tartReadiness(ctx))}
-	lines = append(lines, fmt.Sprintf("%-8s %s", "github", githubReadiness(ctx)))
+	lines := []string{fmt.Sprintf("%-8s %s", buildenv.Tart, tartReadiness(ctx))}
+	lines = append(lines, fmt.Sprintf("%-8s %s", buildenv.GitHub, githubReadiness(ctx)))
 	if command := file.Providers.Command; command != nil {
 		name := command.Name
 		if name == "" {
 			name = "your script"
 		}
-		lines = append(lines, fmt.Sprintf("%-8s ✓ %s: %s", "command", name, command.Run))
+		lines = append(lines, fmt.Sprintf("%-8s ✓ %s: %s", buildenv.Command, name, command.Run))
 	}
 	return lines
 }
