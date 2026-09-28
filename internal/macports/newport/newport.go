@@ -12,7 +12,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/BurntSushi/toml"
+	"github.com/herbygillot/dockhand/internal/macports/dependency"
+	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
 // Modeline is the first line of every Portfile in MacPorts' tree.
@@ -79,31 +80,33 @@ func (b Build) Category() string {
 	return "devel"
 }
 
-// Crate is one registry dependency a Cargo.lock pins.
+// Crate is one crates.io dependency a Cargo.lock pins.
 type Crate struct{ Name, Version, Checksum string }
 
-// CargoCrates reads the registry crates a Cargo.lock pins, with their
-// checksums, sorted as cargo2port writes them. Path and git dependencies,
-// which carry no checksum, are not crates to fetch.
-func CargoCrates(lock []byte) ([]Crate, error) {
-	var parsed struct {
-		Package []struct {
-			Name, Version, Source, Checksum string
-		} `toml:"package"`
+// CargoCrates reads the crates.io crates a Cargo.lock pins, with their
+// checksums, sorted as cargo2port writes them, from the reading an update
+// uses too (dependency.ReadCargoLock). A crate cargo.crates can't fetch,
+// from another registry or from Git, is named in unfetched instead, for
+// the Portfile to mark; the project's own packages are neither.
+func CargoCrates(lock []byte) (crates []Crate, unfetched []string, err error) {
+	packages, err := dependency.ReadCargoLock(lock)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading Cargo.lock: %w", err)
 	}
-	if _, err := toml.Decode(string(lock), &parsed); err != nil {
-		return nil, fmt.Errorf("reading Cargo.lock: %w", err)
-	}
-	var crates []Crate
-	for _, p := range parsed.Package {
-		if strings.HasPrefix(p.Source, "registry+") && p.Checksum != "" {
+	for _, p := range packages {
+		switch p.Source {
+		case dependency.FromCratesIO:
 			crates = append(crates, Crate{Name: p.Name, Version: p.Version, Checksum: p.Checksum})
+		case dependency.FromRegistry:
+			unfetched = append(unfetched, fmt.Sprintf("%s %s comes from another registry, %s, which cargo.crates can't fetch", p.Name, p.Version, p.Origin))
+		case dependency.FromGit:
+			unfetched = append(unfetched, fmt.Sprintf("%s comes from Git, %s; cargo2port writes its cargo.crates_github", p.Name, strings.TrimPrefix(p.Origin, "git+")))
 		}
 	}
 	slices.SortFunc(crates, func(a, b Crate) int {
 		return strings.Compare(a.Name+" "+a.Version, b.Name+" "+b.Version)
 	})
-	return crates, nil
+	return crates, unfetched, nil
 }
 
 // Spec is what a new Portfile says.
@@ -125,6 +128,9 @@ type Spec struct {
 	Maintainer string
 	Build      Build
 	Crates     []Crate
+	// Unfetched are the crates cargo.crates can't fetch, each said as the
+	// Portfile marks it.
+	Unfetched []string
 }
 
 // Unconfirmed lists what the Portfile marks as guessed.
@@ -139,6 +145,9 @@ func (s Spec) Unconfirmed() []string {
 	}
 	if s.Build.System == "" || s.Build.System == "python" || s.Build.System == "go" {
 		marked = append(marked, "build")
+	}
+	if len(s.Unfetched) > 0 {
+		marked = append(marked, "cargo.crates")
 	}
 	return marked
 }
@@ -247,20 +256,22 @@ func Write(s Spec) []byte {
 				fmt.Fprintf(&b, "    %-*s  %-*s  %s%s\n", width, c.Name, vwidth, c.Version, c.Checksum, end)
 			}
 		}
+		for _, crate := range s.Unfetched {
+			mark(crate)
+		}
 	}
 	return []byte(b.String())
 }
 
-// tclWord writes a description as MacPorts does, as plain words, braced
-// only when a character would mean something to Tcl.
+// tclWord writes a description as MacPorts does, as plain words, quoted as
+// one Tcl word only when a character would mean something to Tcl.
 func tclWord(value string) string {
 	value = strings.TrimSpace(strings.Join(strings.Fields(value), " "))
 	if value == "" {
 		return "{}"
 	}
 	if strings.ContainsAny(value, "{}[]$\\\";") {
-		escaped := strings.NewReplacer("{", "\\{", "}", "\\}", "\\", "\\\\").Replace(value)
-		return "{" + escaped + "}"
+		return syntax.Quote(value)
 	}
 	return value
 }

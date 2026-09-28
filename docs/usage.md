@@ -130,7 +130,7 @@ dockhand revbump gdal inkscape --subject "rebuild for poppler 25.09.0" --branch 
 dockhand create https://github.com/owner/project --new --category devel
 ```
 
-`create` reads a GitHub project, its latest release, and the build files at that release, and writes a new port's Portfile. It uses the github PortGroup, and cargo, golang, cmake, meson, or python as the project's files say. A Rust project's `cargo.crates` come from its `Cargo.lock`, and the checksums are filled in. What it guessed is marked with a `# dockhand: unconfirmed` comment: the license from GitHub's detection, the long description, and the category unless `--category` names it. The maintainer is your `maintainer` setting, else `nomaintainer`, marked. `--name` names the port when the project's name isn't right for it. The new Portfile is staged, so the next check includes it.
+`create` reads a GitHub project, its latest release, and the build files at that release, and writes a new port's Portfile. It uses the github PortGroup, and cargo, golang, cmake, meson, or python as the project's files say. A Rust project's `cargo.crates` come from its `Cargo.lock`, read as `update` reads it, and the checksums are filled in. A crate `cargo.crates` can't fetch, from another registry or from Git, is marked rather than written. What it guessed is marked with a `# dockhand: unconfirmed` comment: the license from GitHub's detection, the long description, and the category unless `--category` names it. The maintainer is your `maintainer` setting, else `nomaintainer`, marked. `--name` names the port when the project's name isn't right for it. The new Portfile is staged, so the next check includes it.
 
 ### edit
 

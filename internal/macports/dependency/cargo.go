@@ -10,51 +10,29 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-
-	"github.com/BurntSushi/toml"
-	"golang.org/x/mod/semver"
 )
-
-type cargoPackage struct{ Name, Version, Source, Checksum string }
-type cargoLock struct {
-	Version int
-	Package []cargoPackage
-}
 
 func generateCargo(ctx context.Context, executable string, in Input) (GeneratedBlocks, error) {
 	data, _, err := Manifest(ctx, in.Archive, in.Worksrcdir, "Cargo.lock")
 	if err != nil {
 		return GeneratedBlocks{}, err
 	}
-	var lock cargoLock
-	if _, err := toml.Decode(string(data), &lock); err != nil {
-		return GeneratedBlocks{}, fmt.Errorf("dependency: Cargo.lock: %w", err)
-	}
-	if lock.Version < 1 || lock.Version > 4 || len(lock.Package) == 0 {
-		return GeneratedBlocks{}, fmt.Errorf("dependency: unsupported or empty Cargo.lock")
+	packages, err := ReadCargoLock(data)
+	if err != nil {
+		return GeneratedBlocks{}, err
 	}
 	expected := map[string]string{}
 	var git, online []GitCrate
 	seenGit := map[string]bool{}
 	repoBranches := map[string]string{}
-	for _, pkg := range lock.Package {
-		if !crateName(pkg.Name) || !semver.IsValid("v"+pkg.Version) {
-			return GeneratedBlocks{}, fmt.Errorf("dependency: invalid Cargo.lock package")
-		}
-		if pkg.Source == "" {
+	for _, pkg := range packages {
+		switch pkg.Source {
+		case FromLocal:
 			continue
-		}
-		if pkg.Source == "registry+https://github.com/rust-lang/crates.io-index" || pkg.Source == "sparse+https://index.crates.io/" {
-			if !sha256Value(pkg.Checksum) {
-				return GeneratedBlocks{}, fmt.Errorf("dependency: registry crate %s has no valid checksum", pkg.Name)
-			}
-			key := pkg.Name + " " + pkg.Version
-			if _, ok := expected[key]; ok {
-				return GeneratedBlocks{}, fmt.Errorf("dependency: duplicate registry crate %s", key)
-			}
-			expected[key] = pkg.Checksum
-		} else if raw, ok := strings.CutPrefix(pkg.Source, "git+"); ok {
-			crate, err := parseGitCrate(pkg.Name, raw)
+		case FromCratesIO:
+			expected[pkg.Name+" "+pkg.Version] = pkg.Checksum
+		case FromGit:
+			crate, err := parseGitCrate(pkg.Name, strings.TrimPrefix(pkg.Origin, "git+"))
 			if err != nil {
 				return GeneratedBlocks{}, err
 			}
@@ -74,7 +52,7 @@ func generateCargo(ctx context.Context, executable string, in Input) (GeneratedB
 			repoBranches[crate.Repository] = crate.Reference.Value
 			seenGit[crate.Distfile()] = true
 			git = append(git, crate)
-		} else {
+		default:
 			return GeneratedBlocks{}, fmt.Errorf("dependency: crate %s uses an unsupported registry or source", pkg.Name)
 		}
 	}

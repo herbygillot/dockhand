@@ -114,7 +114,7 @@ The order puts live regressions first, then the guardrail unattended submission 
 
 **Before item 6 goes on: logic in the homes of the facts it interprets** (the [private-helper review](reviews/2026-09-28-private-helper-ownership.md), [note](activity/2026-09-28-private-helper-review-reconciled.md)). What stands on its own, in order, each in its own commits, each of its probes a regression test once fixed:
 - **What a comparison couldn't read** (finding 3). Done 2026-09-28 ([note](activity/2026-09-28-source-comparison.md)): upstream source comparison is `sourcecompare`, over `archive`'s traversal. What it couldn't read of a manifest, or a file past what it reads, holds as D4 has it. Cargo's dependency tables, pyproject's arrays in either quote, Poetry's table, and go.mod are read with real parsers.
-- **What `create` writes** (findings 5 and 4): a Tcl word encoder beside `tcl/syntax`, and one Cargo.lock reader in `macports/dependency` for creating and updating, keeping each crate's source.
+- **What `create` writes** (findings 5 and 4). Done 2026-09-28 ([note](activity/2026-09-28-what-create-writes.md)): `tcl/syntax.Quote` writes a Tcl word that reads back as its value, and one Cargo.lock reader in `macports/dependency` serves creating and updating, keeping each crate's source.
 - **A stealth update's edits inside the editor** (finding 9, the open half of the earlier finding 19).
 - **The description merge's result** (finding 10): each section's outcome as a type, which the preview words.
 - **Facts with homes** (finding 7, and the review's table):

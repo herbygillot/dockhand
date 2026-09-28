@@ -147,7 +147,7 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 		return Created{}, fmt.Errorf("%q is not a category", spec.Category)
 	}
 	if lock, ok := project.Files["Cargo.lock"]; ok && build.System == "cargo" {
-		if spec.Crates, err = newport.CargoCrates(lock); err != nil {
+		if spec.Crates, spec.Unfetched, err = newport.CargoCrates(lock); err != nil {
 			return Created{}, err
 		}
 	}
