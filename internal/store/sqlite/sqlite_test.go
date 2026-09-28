@@ -648,3 +648,45 @@ func TestConcurrentWritersQueueRatherThanCollide(t *testing.T) {
 		return nil
 	}))
 }
+
+// planOf is how SQLite would run a query: EXPLAIN QUERY PLAN's details,
+// one step to a line.
+func (f fixture) planOf(t *testing.T, query string, args ...any) string {
+	t.Helper()
+	rows, err := f.store.db.QueryContext(t.Context(), "EXPLAIN QUERY PLAN "+query, args...)
+	require.NoError(t, err)
+	defer rows.Close()
+	var plan string
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		require.NoError(t, rows.Scan(&id, &parent, &unused, &detail))
+		plan += detail + "\n"
+	}
+	require.NoError(t, rows.Err())
+	return plan
+}
+
+// The queries that read history find their rows through an index, rather
+// than read every row the repository has (docs/reviews/2026-09-28-sql-
+// review.md). A change to a query's wording that loses its index fails
+// here, not a year of history later.
+func TestHistoryIsReadThroughIndexes(t *testing.T) {
+	f := open(t)
+	reusable := []any{f.repo, "libharbor", "tart", "darwin", "25", "arm64", "", 5}
+	for _, c := range []struct {
+		query string
+		args  []any
+		index string
+	}{
+		{"SELECT digest FROM archives a WHERE " + unnamedArchive, []any{f.repo, 1, 1}, "result_archive (repository_id=? AND archive=?)"},
+		{reusableQuery, reusable, "result_target (repository_id=? AND target_id=?)"},
+		{revisionsQuery, []any{f.repo, "br_1"}, "revision_branch (repository_id=? AND branch_id=?)"},
+		{referredQuery, []any{f.repo, "clone"}, "execution_ref (repository_id=? AND provider_ref=?)"},
+		{countEventsQuery, []any{f.repo, "serve.submit", 1}, "event_kind (repository_id=? AND kind=? AND at>?)"},
+		{checkpointsQuery, []any{f.repo, "br_1"}, "checkpoint_branch (repository_id=? AND branch_id=?)"},
+	} {
+		require.Contains(t, f.planOf(t, c.query, c.args...), "INDEX "+c.index, c.query)
+	}
+	require.NotContains(t, f.planOf(t, reusableQuery, reusable...), "TEMP B-TREE", "reuse reads the newest first from the index, without sorting")
+}

@@ -110,8 +110,11 @@ func (t *tx) Checkpoint(number int) (model.Checkpoint, error) {
 	return scanCheckpoint(t.conn.QueryRowContext(t.ctx, "SELECT "+checkpointColumns+" FROM checkpoints WHERE repository_id=? AND number=?", t.repo, number))
 }
 
+// checkpointsQuery reads a branch's checkpoints through checkpoint_branch.
+const checkpointsQuery = "SELECT " + checkpointColumns + " FROM checkpoints WHERE repository_id=? AND branch_id=? ORDER BY number"
+
 func (t *tx) Checkpoints(branch model.BranchID) ([]model.Checkpoint, error) {
-	rows, err := t.conn.QueryContext(t.ctx, "SELECT "+checkpointColumns+" FROM checkpoints WHERE repository_id=? AND branch_id=? ORDER BY number", t.repo, branch)
+	rows, err := t.conn.QueryContext(t.ctx, checkpointsQuery, t.repo, branch)
 	if err != nil {
 		return nil, storageError(err)
 	}

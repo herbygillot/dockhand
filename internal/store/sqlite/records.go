@@ -148,8 +148,11 @@ func (t *tx) Revision(id model.RevisionID) (model.Revision, error) {
 	return scanRevision(t.conn.QueryRowContext(t.ctx, "SELECT "+revisionColumns+" FROM revisions WHERE repository_id=? AND id=?", t.repo, id))
 }
 
+// revisionsQuery reads a branch's revisions through revision_branch.
+const revisionsQuery = "SELECT " + revisionColumns + " FROM revisions WHERE repository_id=? AND branch_id=? ORDER BY created_at, rowid"
+
 func (t *tx) Revisions(branch model.BranchID) ([]model.Revision, error) {
-	rows, err := t.conn.QueryContext(t.ctx, "SELECT "+revisionColumns+" FROM revisions WHERE repository_id=? AND branch_id=? ORDER BY created_at, rowid", t.repo, branch)
+	rows, err := t.conn.QueryContext(t.ctx, revisionsQuery, t.repo, branch)
 	if err != nil {
 		return nil, storageError(err)
 	}
@@ -435,11 +438,15 @@ func (t *tx) execution(id model.ExecutionID) (model.GuestExecution, error) {
 
 func (t *tx) Execution(id model.ExecutionID) (model.GuestExecution, error) { return t.execution(id) }
 
+// referredQuery reads the executions a provider knows by a reference,
+// through execution_ref.
+const referredQuery = "SELECT " + executionColumns + " FROM executions WHERE repository_id=? AND provider_ref=? ORDER BY created_at, rowid"
+
 func (t *tx) ExecutionsReferred(ref string) ([]model.GuestExecution, error) {
 	if ref == "" {
 		return nil, nil
 	}
-	return t.executions("SELECT "+executionColumns+" FROM executions WHERE repository_id=? AND provider_ref=? ORDER BY created_at, rowid", t.repo, ref)
+	return t.executions(referredQuery, t.repo, ref)
 }
 
 func (t *tx) Executions(run model.RunID) ([]model.GuestExecution, error) {
@@ -535,13 +542,16 @@ func (t *tx) Results(execution model.ExecutionID) ([]model.TargetResult, error) 
 	return t.results("SELECT "+resultColumns+" FROM results r WHERE r.repository_id=? AND r.execution_id=? ORDER BY r.recorded_at, r.rowid", t.repo, execution)
 }
 
+// reusableQuery reads a target's passed results in an environment, newest
+// first, walking result_target back from the newest.
+const reusableQuery = "SELECT " + resultColumns + " FROM results r JOIN executions e ON e.repository_id=r.repository_id AND e.id=r.execution_id " +
+	"WHERE r.repository_id=? AND r.target_id=? AND r.outcome='passed' AND r.inputs<>'' AND r.reused_from='' " +
+	"AND e.provider=? AND e.platform_os=? AND e.platform_version=? AND e.platform_architecture=? AND e.developer_tools=? " +
+	"ORDER BY r.recorded_at DESC, r.rowid DESC LIMIT ?"
+
 func (t *tx) Reusable(target model.TargetID, environment model.Environment, limit int) ([]model.TargetResult, error) {
 	p := environment.Platform
-	return t.results("SELECT "+resultColumns+" FROM results r JOIN executions e ON e.repository_id=r.repository_id AND e.id=r.execution_id "+
-		"WHERE r.repository_id=? AND r.target_id=? AND r.outcome='passed' AND r.inputs<>'' AND r.reused_from='' "+
-		"AND e.provider=? AND e.platform_os=? AND e.platform_version=? AND e.platform_architecture=? AND e.developer_tools=? "+
-		"ORDER BY r.recorded_at DESC, r.rowid DESC LIMIT ?",
-		t.repo, target, environment.Provider, p.OS, p.Version, p.Architecture, environment.DeveloperTools, limit)
+	return t.results(reusableQuery, t.repo, target, environment.Provider, p.OS, p.Version, p.Architecture, environment.DeveloperTools, limit)
 }
 
 func (t *tx) results(query string, args ...any) ([]model.TargetResult, error) {
@@ -661,17 +671,20 @@ func (t *tx) Archives() ([]model.Archive, error) {
 	return t.archives("SELECT digest, name, size, kept_at FROM archives WHERE repository_id=? ORDER BY digest", t.repo)
 }
 
+// unnamedArchive selects the archives kept before a time that no live
+// result names, finding the results that name each through result_archive.
+const unnamedArchive = "a.repository_id=? AND a.kept_at<? AND NOT EXISTS (SELECT 1 FROM results r " +
+	"JOIN executions e ON e.repository_id=r.repository_id AND e.id=r.execution_id " +
+	"JOIN runs u ON u.repository_id=e.repository_id AND u.id=e.run_id " +
+	"JOIN branches b ON b.repository_id=u.repository_id AND b.id=u.branch_id " +
+	"WHERE r.repository_id=a.repository_id AND r.archive=a.digest AND (b.state='open' OR r.recorded_at>=?))"
+
 func (t *tx) PruneArchives(before time.Time) ([]model.Archive, error) {
-	unnamed := "a.repository_id=? AND a.kept_at<? AND NOT EXISTS (SELECT 1 FROM results r " +
-		"JOIN executions e ON e.repository_id=r.repository_id AND e.id=r.execution_id " +
-		"JOIN runs u ON u.repository_id=e.repository_id AND u.id=e.run_id " +
-		"JOIN branches b ON b.repository_id=u.repository_id AND b.id=u.branch_id " +
-		"WHERE r.repository_id=a.repository_id AND r.archive=a.digest AND (b.state='open' OR r.recorded_at>=?))"
-	pruned, err := t.archives("SELECT digest, name, size, kept_at FROM archives a WHERE "+unnamed+" ORDER BY digest", t.repo, millis(before), millis(before))
+	pruned, err := t.archives("SELECT digest, name, size, kept_at FROM archives a WHERE "+unnamedArchive+" ORDER BY digest", t.repo, millis(before), millis(before))
 	if err != nil || len(pruned) == 0 {
 		return nil, err
 	}
-	_, err = t.exec("DELETE FROM archives AS a WHERE "+unnamed, t.repo, millis(before), millis(before))
+	_, err = t.exec("DELETE FROM archives AS a WHERE "+unnamedArchive, t.repo, millis(before), millis(before))
 	return pruned, err
 }
 
