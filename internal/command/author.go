@@ -198,7 +198,7 @@ func (v versionUpdate) run(ctx context.Context, s *settings, streams Streams, wh
 		if err := submitReady(ctx, s, request.Port, linked); err != nil {
 			return err
 		}
-		streams.linkSteps()
+		streams.linkSteps(&updateJSON{})
 	}
 	branch, update, err := author(ctx, s, streams, where, "update", request, linked)
 	if err != nil || !linked.submit || !update.Applied {
@@ -321,6 +321,10 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	if update.Started {
 		branch, started = update.Branch, true
 		announce(out, branch, started)
+	}
+	if err != nil && started {
+		// The branch it started stays, for the edit by hand.
+		streams.emit(updateView(branch, started, update, request.Plan))
 	}
 	if fromMaster && err == nil {
 		fmt.Fprintf(out, "Planned on master %s (fetched just now); --new without --plan starts the branch\n", engine.Short(update.Base))

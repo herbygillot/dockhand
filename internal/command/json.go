@@ -34,9 +34,17 @@ type outputMode struct {
 	json    bool
 	command string
 	result  any
-	// steps, while an update goes on to its pull request, gathers each
-	// step's result into the update's.
-	steps *updateJSON
+	// whole, while a command goes on from one step to the next, is its one
+	// result, which each step's result is gathered into (linkSteps).
+	whole gatherer
+}
+
+// A gatherer is a command's result that the steps it goes on to report
+// into, so that the command has one shape wherever it stops: what a step
+// didn't reach is left out.
+type gatherer interface {
+	gather(step any)
+	result() any
 }
 
 // switchWriter is standard output, silenced while --json holds the
@@ -61,20 +69,22 @@ func (s Streams) emit(result any) {
 	if !s.json() {
 		return
 	}
-	if steps := s.mode.steps; steps != nil {
-		steps.add(result)
-		s.mode.result = *steps
+	if whole := s.mode.whole; whole != nil {
+		whole.gather(result)
+		s.mode.result = whole.result()
 		return
 	}
 	s.mode.result = result
 }
 
-// linkSteps makes the result of an update that goes on to its pull request,
-// as update --submit and bump do, the update's, with each later step's
-// result inside it: it says how far the update went, whatever stopped it.
-func (s Streams) linkSteps() {
-	if s.json() {
-		s.mode.steps = &updateJSON{}
+// linkSteps makes whole the command's one result, with each later step's
+// inside it, so a script reads one shape wherever the command stopped:
+// update --submit's and bump's are the update's, submit --check's the
+// submission's, and check's the check's. A command already gathering keeps
+// its own, as update --submit keeps it through submit --check.
+func (s Streams) linkSteps(whole gatherer) {
+	if s.json() && s.mode.whole == nil {
+		s.mode.whole = whole
 	}
 }
 
@@ -128,10 +138,14 @@ type runJSON struct {
 	// Stopped is true for a run recorded as running that no live process
 	// drives; the state says running, as the record does.
 	Stopped bool `json:"stopped,omitempty"`
+	// BaselineOf is the ID of the check a baseline looks into; absent for
+	// a check of the branch itself.
+	BaselineOf string `json:"baseline_of,omitempty"`
 }
 
 func runView(run model.Run) runJSON {
-	return runJSON{Name: run.Name(), ID: string(run.ID), State: string(run.State), Detail: run.Detail, Origin: string(run.Origin), CreatedAt: run.CreatedAt, FinishedAt: run.FinishedAt}
+	return runJSON{Name: run.Name(), ID: string(run.ID), State: string(run.State), Detail: run.Detail, Origin: string(run.Origin), CreatedAt: run.CreatedAt, FinishedAt: run.FinishedAt,
+		BaselineOf: string(run.BaselineOf)}
 }
 
 type revisionJSON struct {
@@ -308,7 +322,23 @@ type checkJSON struct {
 	Run      *runJSON      `json:"run"`
 	// Targets are the finished run's results; empty until it finishes.
 	Targets []targetJSON `json:"targets"`
+	// Baseline is the baseline check.baseline ran after this check failed.
+	Baseline *checkJSON `json:"baseline,omitempty"`
 }
+
+// gather takes a check's result, or the baseline's that looks into it.
+func (c *checkJSON) gather(step any) {
+	if step, ok := step.(checkJSON); ok {
+		if c.Run != nil && step.Run != nil && step.Run.BaselineOf == c.Run.ID {
+			c.Baseline = &step
+			return
+		}
+		step.Baseline = c.Baseline
+		*c = step
+	}
+}
+
+func (c *checkJSON) result() any { return *c }
 
 type pullRequestJSON struct {
 	Repository string     `json:"repository"`

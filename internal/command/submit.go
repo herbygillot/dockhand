@@ -179,6 +179,7 @@ func finishSubmit(ctx context.Context, e *engine.Engine, streams Streams, plan e
 // bump, it holds the submission for a person's look for what would hold
 // serve's (engine.Held).
 func submitChecked(ctx context.Context, s *settings, e *engine.Engine, streams Streams, request engine.SubmitRequest, on []string, unattended bool) error {
+	streams.linkSteps(&submitJSON{})
 	request.PendingCheck, request.Head = true, true
 	plan, err := e.PlanSubmit(ctx, request)
 	if err != nil {

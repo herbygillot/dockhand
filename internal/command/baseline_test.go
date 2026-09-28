@@ -94,3 +94,25 @@ func TestBaselineComparesWithTheBase(t *testing.T) {
 	require.Equal(t, 2, ExitCode(err))
 	require.NotContains(t, out, "--baseline")
 }
+
+// check reports the check's result whatever follows it: a baseline
+// check.baseline runs is inside it, marked as that check's baseline.
+func TestCheckReportsItsBaselineInsideIt(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	next := withOutcomeScript(t, w, "[check]\nbaseline = true\n")
+	_, _, err := dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
+	_, _, err = dockhand(t, "update", "jq")
+	require.NoError(t, err)
+
+	next("failed")
+	checked, err := jsonOf(t, "check")
+	require.Equal(t, 2, ExitCode(err))
+	require.Equal(t, "check-1", dig(t, checked.Result, "run", "name"))
+	require.Equal(t, "failed", dig(t, checked.Result, "run", "state"))
+	require.NotContains(t, checked.Result["run"], "baseline_of", "the check is the branch's own")
+	require.Equal(t, dig(t, checked.Result, "run", "id"), dig(t, checked.Result, "baseline", "run", "baseline_of"))
+}

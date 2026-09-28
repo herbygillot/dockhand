@@ -41,3 +41,5 @@ The steps are gathered by `Streams.linkSteps`: each later `emit` lands in the up
 - `TestBumpChangesNothingWhenItHasNothingToDo` now reaches "current" through the update, and checks no branch is started.
 
 `submit --check --json` still reports its last step alone, as `update --submit` did. The person decided to leave it: a command with several stopping points may report each through its exit code and a result of that step's shape, and a uniform shape isn't sought for its own sake. What matters is sharing code wherever it can be shared. The scripting section of the usage guide now says so.
+
+Revised the same day: the person's rule is one shape per command wherever it stops, and `submit --check` now reports the submission's result with its check inside ([note](2026-09-27-one-json-shape.md)).

@@ -58,4 +58,4 @@ Both regressions are this week's, and each is live:
   - Today these are a line of output, or nothing, and `bump` and serve submit without them.
   - Recommended: they hold, as a failed search for other pull requests already does.
 - **Whether tidy, rebase, and restore move into `history`** (finding 22). Recommended: they stay, and the review's own `Transitions.Make` puts the ref change beside its recognition.
-- **Finding 10's branch shape in JSON** needs no decision. The person decided the same day that a command's JSON may follow where it stopped, and uniformity isn't sought for its own sake. So only the baseline marker is taken.
+- **Finding 10's branch shape in JSON** needs no decision. The person's rule, revised the same day, is one shape per command wherever it stops, and commands needn't share one ([note](2026-09-27-one-json-shape.md)). The baseline marker is taken with that rule.

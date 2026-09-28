@@ -173,7 +173,6 @@ These are taken when their area is next touched, or between items.
     - a port directory's rule (finding 29);
     - a pull request's head, and its 404 (finding 38).
   - **JSON:**
-    - a baseline's run is marked;
     - status's branch embeds the reference other commands give (finding 10).
   - **Structure:**
     - `macports`' program and platform mechanics in a subpackage (finding 21);
@@ -208,7 +207,11 @@ These are taken when their area is next touched, or between items.
   - A baseline is always dockhand's own build. MacPorts' buildbot history is never used as one, nor shown beside one, which withdraws decision 20's labeled hint.
   - Baseline results stay in the check's output. Carrying them into the pull request can come back if it's wanted.
 - **Xcode images follow MacPorts' buildbots** (2026-09-27, [note](activity/2026-09-27-xcode-follows-the-buildbots.md)). A release's Xcode image has the Xcode its arm64 buildbot runs, from the facts table, as its Command Line Tools already follow the builder (decision 13). `providers.tart.xcode` in the configuration names another for a release. It replaces "the newest Xcode the release runs", which gave every release but Golden Gate a newer Xcode than MacPorts builds with.
-- **A command's JSON may follow where it stopped** (2026-09-27, [note](activity/2026-09-27-update-and-bump-share.md)). A command of several steps and several stopping points may report each through its exit code and a result of that step's shape, as `submit --check` does; a uniform shape isn't sought for its own sake. Code is shared wherever it can be, as `update --submit` and `bump` share one path and one result.
+- **A command's JSON has one shape wherever it stops** (2026-09-27, [note](activity/2026-09-27-one-json-shape.md)).
+  - A command's result is a superset of what its steps and exits can say: what it didn't reach is left out or empty, and the steps it goes on to are inside it. A script then reads one shape whatever stopped the command, and the exit code says where.
+  - A command that refuses before doing anything reports only its error.
+  - Different commands needn't share a shape.
+  - It is best effort. It replaces the same day's first ruling, that a command's JSON may follow where it stopped.
 - **`bump` takes a port to its pull request asking nothing** (2026-09-27, [note](activity/2026-09-27-bump.md)). It is `update --new --submit --yes` as a command of its own, the one-shot beside `update`'s step at a time. Nobody looks before it submits, so it holds what `serve` holds, and another open pull request for the port now holds both. The name was kept knowing `port bump` refreshes checksums, and v2's `bump` stopped at the edit.
 - **Branch worktrees go in `~/Source/macports-branches`** (2026-09-27, [note](activity/2026-09-27-worktree-root.md)), wherever the clone is, rather than beside it. `worktrees` in the configuration still names another.
 - **xcodes downloads a missing Xcode** (2026-09-27, [note](activity/2026-09-27-xcode-follows-the-buildbots.md)). With xcodes installed, setup downloads the Xcode it's missing: at a terminal it asks first, and without one it uses the sign-in xcodes keeps, showing what xcodes said when it fails. It checks the archive with `pkgutil --check-signature` before taking it. An exception to decision 32, chosen knowingly: dockhand uses only xcodes' documented command, but xcodes signs in through Apple's undocumented sign-in and download endpoints. When Apple changes them, the download fails loudly, and setup still names the Xcode to download by hand.
@@ -257,7 +260,7 @@ These are taken when their area is next touched, or between items.
   - finding 21's plist half;
   - 41's legacy-plan deletion;
   - 20's alias and shared registry;
-  - a uniform JSON branch shape (10), by the decision that a command's JSON may follow where it stopped.
+  - a branch shape shared across commands (10): the person's rule is one shape per command, which commands needn't share.
 - **Left to the person:** D4 and D5.
 
 **The [architecture and data-flow review](reviews/2026-09-27-architecture-and-data-flow.md)** of 2026-09-27 was checked against the code at `52d03e2a`.

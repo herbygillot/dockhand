@@ -316,7 +316,13 @@ Serve opens no pull requests by default. With `--submit-passing`, or `serve.subm
 
 ## Scripting
 
-- **`--json`** writes one envelope on standard output when the command ends: `{"version": 1, "command": "...", "exit_code": 0, "error": null, "result": {...}}`. A command of several steps reports as far as it went, and its exit code says where it stopped: `submit --check` whose check failed exits 2 with the check's result, and one that submitted exits 0 with the submission's.
+- **`--json`** writes one envelope on standard output when the command ends: `{"version": 1, "command": "...", "exit_code": 0, "error": null, "result": {...}}`. A command's result has one shape wherever it stops, and its exit code says where.
+  - What it didn't reach is left out or empty.
+  - The steps it goes on to are inside it:
+    - `update --submit`'s and `bump`'s result is the update's, with `tidy`, `check`, and `submit` inside;
+    - `submit --check`'s is the submission's, with `check`;
+    - `check`'s is the check's, with the `baseline` that `check.baseline` runs, whose `run.baseline_of` names the check it looks into.
+  - A command that refuses before doing anything reports only its error.
 - **Exit codes:** 0 for success, 1 for an error, 2 for a failed check, 3 when something needs attention (`status --attention`, or a `bump` held for a look), and 130 for an interrupt.
 - **Without a terminal**, nothing is asked. A command that would ask refuses and says what it needs, or proceeds where `-y` is given. `tidy` applies only a plan made of dockhand's own edits, or one you give it.
 

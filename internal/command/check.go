@@ -67,6 +67,9 @@ true, it runs that baseline by itself.`,
 			if err != nil {
 				return err
 			}
+			// The result is the check's, with a baseline check.baseline runs
+			// inside it.
+			streams.linkSteps(&checkJSON{})
 			if baseline {
 				return runBaseline(ctx, e, streams, branch, only, enqueue)
 			}

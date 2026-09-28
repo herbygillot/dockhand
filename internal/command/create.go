@@ -94,6 +94,11 @@ The branch is --branch, else the one checked out here; --new starts one.
 			}
 			created, err := e.Create(ctx, engine.CreateRequest{Branch: branch, URL: args[0], Name: name, Category: category, Maintainer: s.file.Maintainer, Project: &project})
 			if err != nil {
+				// Interrupted once the port was written, the result says
+				// what is there.
+				if created.Port != "" {
+					streams.emit(createdView(branch, created))
+				}
 				return err
 			}
 			streams.emit(createdView(branch, created))

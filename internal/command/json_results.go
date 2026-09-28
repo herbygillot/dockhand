@@ -52,9 +52,9 @@ type updateJSON struct {
 	Submit *submitJSON `json:"submit,omitempty"`
 }
 
-// add puts one step's result in an update's that went on.
-func (u *updateJSON) add(result any) {
-	switch step := result.(type) {
+// gather puts one step's result in an update's that went on.
+func (u *updateJSON) gather(step any) {
+	switch step := step.(type) {
 	case updateJSON:
 		step.Tidy, step.Check, step.Submit = u.Tidy, u.Check, u.Submit
 		*u = step
@@ -66,6 +66,8 @@ func (u *updateJSON) add(result any) {
 		u.Submit = &step
 	}
 }
+
+func (u *updateJSON) result() any { return *u }
 
 type upstreamJSON struct {
 	Changes []upstreamChangeJSON `json:"changes"`
@@ -217,7 +219,22 @@ type submitJSON struct {
 	// Held are why a submission nobody looked over, bump's, waits for a
 	// person's look.
 	Held []string `json:"held,omitempty"`
+	// Check is the check submit --check ran, as far as it went.
+	Check *checkJSON `json:"check,omitempty"`
 }
+
+// gather takes the submission's result, or its check's.
+func (s *submitJSON) gather(step any) {
+	switch step := step.(type) {
+	case submitJSON:
+		step.Check = s.Check
+		*s = step
+	case checkJSON:
+		s.Check = &step
+	}
+}
+
+func (s *submitJSON) result() any { return *s }
 
 type submittedJSON struct {
 	Number  int    `json:"number"`

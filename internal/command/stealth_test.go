@@ -109,6 +109,12 @@ func TestWhatDockhandCantEditItSaysHowToDoByHand(t *testing.T) {
 
 	_, _, err = dockhand(t, "checksums", "jq", "--new")
 	require.ErrorContains(t, err, "can't refresh jq's checksums by itself: its pre-fetch hook runs exec\n")
+
+	refused, err := jsonOf(t, "update", "jq", "--new")
+	require.Error(t, err)
+	require.Contains(t, *refused.Error, "can't update jq by itself")
+	require.Equal(t, true, refused.Result["started"], "the result names the branch kept for the edit by hand")
+	require.Regexp(t, `^dockhand/jq-[a-z0-9]{4}$`, dig(t, refused.Result, "branch", "git_branch"))
 }
 
 func TestUpdateSubmitTidiesChecksAndSubmits(t *testing.T) {

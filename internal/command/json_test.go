@@ -223,3 +223,46 @@ func TestUpdateJSONCarriesTheUpstreamComparison(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, map[string]any{"changes": []any{}, "problem": "the current version's archives could not be fetched: HTTP 404", "held": false}, updated.Result["upstream"])
 }
+
+// submit --check reports the submission's result wherever it stops, with
+// its check inside when it ran one: a failed check leaves the pull request
+// out, and a refusal before checking reports what blocks it.
+func TestSubmitCheckReportsOneShape(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	g := withGitHub(t, w)
+	next := withOutcomeScript(t, w, "")
+	committed := func(name string) {
+		t.Helper()
+		started, err := jsonOf(t, "start", name)
+		require.NoError(t, err)
+		t.Setenv("MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
+		_, _, err = dockhand(t, "update", "jq")
+		require.NoError(t, err)
+		_, _, err = dockhand(t, "tidy")
+		require.NoError(t, err)
+	}
+
+	committed("jq-failing")
+	next("failed")
+	failed, err := jsonOf(t, "submit", "--check")
+	require.Equal(t, 2, ExitCode(err))
+	require.Equal(t, "jq: update to 1.8.1", failed.Result["title"])
+	require.Equal(t, "failed", dig(t, failed.Result, "check", "run", "state"))
+	require.Nil(t, failed.Result["pull_request"])
+	refused, err := jsonOf(t, "submit", "--check")
+	require.Error(t, err, "the failed check stands for the same commit")
+	require.Equal(t, "jq: update to 1.8.1", refused.Result["title"])
+	require.NotEmpty(t, refused.Result["blocking"])
+	require.NotContains(t, refused.Result, "check", "no check ran")
+	require.Empty(t, g.prs)
+
+	committed("jq-passing")
+	next("passed")
+	passed, err := jsonOf(t, "submit", "--check")
+	require.NoError(t, err)
+	require.Equal(t, "jq: update to 1.8.1", passed.Result["title"])
+	require.Equal(t, "passed", dig(t, passed.Result, "check", "run", "state"))
+	require.Equal(t, true, dig(t, passed.Result, "pull_request", "created"))
+}
