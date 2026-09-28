@@ -47,3 +47,16 @@ MacPorts CI passed on all three runners: macos-14 in 2m52s, macos-15 in 3m19s an
 - **Help find the target port in the log.** check-6's log is 47k lines, and hugo's own phases start at line ~46,400 after its dependencies. `logs --port` could start at the target's first phase, or print a phase summary with line numbers.
 - **Show the PR body in `submit --plan`.** The body is what reviewers read and what the checkboxes assert.
 - **`outdated` for one named port took 12.5s.** That is long for one livecheck.
+
+## chezmoi, with `bump`
+
+The same afternoon, with a build of `b8915f15` from a clean clone of origin/main, `dockhand bump chezmoi` took chezmoi from 2.72.2 to 2.73.0. It updated, tidied and checked (check-11, Tart macOS 26, passed) in 2m52s, then held the branch for a look and exited 3. After the look, `submit --branch chezmoi-8ndw` opened [macports/macports-ports#35008](https://github.com/macports/macports-ports/pull/35008), with enhancement ticked. This run confirmed four of the fixes above: status credits the check to the commit, bare `logs` shows the latest check, the log directory is `tart-macos26-arm64-1`, and nothing repeats "upstream".
+
+Findings:
+
+1. **A false hold on a Go module.** The hold was "go.mod adds github.com/dustin/go-humanize v1.1.0", but 2.72.2 already required it (`v1.0.1 // indirect`). 2.73.0 only made it direct and moved it one minor version. For a golang port with `go.offline_build no`, Go fetches modules itself, so no module change in go.mod can need a Portfile edit. Holding bump on one makes every Go port that promotes an indirect dependency wait for a person. At most this should say "moves from indirect v1.0.1 to direct v1.1.0" and not hold.
+2. **Changes outside the build are noise.** "pyproject.toml moves soupsieve from >2.8.3 to >=2.9" comes from chezmoi's docs tooling (mkdocs), which the port never builds. A Go port's comparison could leave out Python manifests, or keep them apart from build files.
+3. **`update --plan` still refuses on an untracked branch.** The fix plans on master when the checkout is on master. When the checkout is on a branch dockhand doesn't track (here the person's `git-devel-2.56.0`), `update chezmoi --plan` still refuses with "No tracked branch: git-devel-2.56.0 is not tracked; dockhand adopt tracks it". A plan changes nothing, so it could plan on master there too. Suggesting `adopt` sends the person the wrong way.
+4. **bump's output arrives in bursts when piped.** Its standard output stayed empty for about a minute while it fetched, updated and tidied, then arrived all at once. The check's progress lines streamed normally.
+5. **The held branch's message works.** "passed its check and waits for your look, so nothing was submitted: <reason>", then "Once it's fine: dockhand submit --branch chezmoi-8ndw", said exactly what to do. The preview's `!` marker showed which upstream line caused the hold, but a legend would help ("! holds the branch for a look").
+6. **A no-op update prints an empty version** (seen on jq, not chezmoi): "jq is already at ; nothing to change." `describe` fills Before and After only from `result.Fidelity`, which is empty when no edit was made. It's reported to the session fixing the other items.
