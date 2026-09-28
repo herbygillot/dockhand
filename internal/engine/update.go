@@ -501,9 +501,6 @@ func shortID() string {
 	return string(id)
 }
 
-// compareUpstream compares the current version's archives with the new
-// version's, one distfile with the same one. Not being able to compare is
-// reported, never a reason to refuse the update.
 // toolchainChange is a Go release upstream's go.mod requires that the
 // Portfile's go.toolchain_min doesn't, as a finding a passing build can't
 // catch, since the builder's Go is new enough: it holds the update for a
@@ -519,6 +516,9 @@ func toolchainChange(toolchain *preparation.GoToolchain) (model.UpstreamChange, 
 	return model.UpstreamChange{Kind: "toolchain", Path: "go.mod", Message: message, Hold: true}, true
 }
 
+// compareUpstream compares the current version's archives with the new
+// version's, one distfile with the same one. Not being able to compare is
+// reported, never a reason to refuse the update.
 func compareUpstream(ctx context.Context, result preparation.Result) *model.UpstreamComparison {
 	comparison := &model.UpstreamComparison{Changes: []model.UpstreamChange{}}
 	switch {
