@@ -1,0 +1,116 @@
+diff --git a/internal/store/sqlite/sql_review_probe_test.go b/internal/store/sqlite/sql_review_probe_test.go
+new file mode 100644
+index 0000000..b76a407
+--- /dev/null
++++ b/internal/store/sqlite/sql_review_probe_test.go
+@@ -0,0 +1,110 @@
++package sqlite
++
++// Probes for docs/reviews/2026-09-28-sql-review.md. They measure; they
++// assert nothing about speed. Run with -v to read their output.
++
++import (
++	"context"
++	"encoding/json"
++	"fmt"
++	"path/filepath"
++	"testing"
++	"time"
++
++	"github.com/herbygillot/dockhand/internal/model"
++	"github.com/herbygillot/dockhand/internal/store"
++)
++
++// TestSQLReviewPragmas prints the settings Open leaves in effect.
++func TestSQLReviewPragmas(t *testing.T) {
++	s, err := Open(context.Background(), filepath.Join(t.TempDir(), "x.db"), Options{})
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer s.Close()
++	for _, p := range []string{"journal_mode", "synchronous", "fullfsync", "checkpoint_fullfsync", "foreign_keys", "wal_autocheckpoint", "journal_size_limit", "analysis_limit"} {
++		var v string
++		if err := s.db.QueryRow("PRAGMA " + p).Scan(&v); err != nil {
++			t.Fatal(p, err)
++		}
++		t.Logf("PRAGMA %-22s = %s", p, v)
++	}
++}
++
++// TestSQLReviewCommitCost times a one-event write transaction under each
++// durability setting.
++func TestSQLReviewCommitCost(t *testing.T) {
++	for _, mode := range []struct{ name, pragmas string }{
++		{"FULL, fullfsync=0 (Open's)", ""},
++		{"FULL, fullfsync=1", "PRAGMA fullfsync=1"},
++		{"NORMAL, fullfsync=0", "PRAGMA synchronous=NORMAL"},
++	} {
++		s, err := Open(context.Background(), filepath.Join(t.TempDir(), "x.db"), Options{})
++		if err != nil {
++			t.Fatal(err)
++		}
++		// One connection, so the pragma holds for every transaction.
++		s.db.SetMaxOpenConns(1)
++		if mode.pragmas != "" {
++			if _, err := s.db.Exec(mode.pragmas); err != nil {
++				t.Fatal(err)
++			}
++		}
++		repo, err := s.Register(context.Background(), "/src/x/.git")
++		if err != nil {
++			t.Fatal(err)
++		}
++		const n = 200
++		start := time.Now()
++		for i := 0; i < n; i++ {
++			if err := s.Update(context.Background(), repo, func(tx store.Tx) error {
++				_, err := tx.AppendEvent(model.Event{At: time.Now(), Kind: "progress", Message: "hello"})
++				return err
++			}); err != nil {
++				t.Fatal(err)
++			}
++		}
++		t.Logf("%-28s %7.3f ms/commit", mode.name, float64(time.Since(start).Microseconds())/1000/n)
++		s.Close()
++	}
++}
++
++func sqlReviewPlan(targets, environments int) model.Plan {
++	p := model.Plan{ID: "plan_x", Revision: "rev_x", CreatedAt: time.Now()}
++	for e := 0; e < environments; e++ {
++		p.Environments = append(p.Environments, model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: fmt.Sprint(20 + e), Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode})
++	}
++	for i := 0; i < targets; i++ {
++		name := fmt.Sprintf("py313-some-dependent-port-%d", i)
++		p.Targets = append(p.Targets, model.PlanTarget{ID: model.TargetID(name), Target: model.Target{Name: name, Portfile: "python/" + name + "/Portfile"}, Directory: "python/" + name, Kind: model.RevisionOnly, Role: model.Changed})
++	}
++	for _, environment := range p.Environments {
++		build := model.EnvironmentPlan{Environment: environment, Dependencies: map[model.TargetID][]model.TargetID{}}
++		for i, target := range p.Targets {
++			build.Order = append(build.Order, target.ID)
++			if i > 0 {
++				build.Dependencies[target.ID] = []model.TargetID{p.Targets[0].ID, p.Targets[i/2].ID}
++			}
++		}
++		p.Builds = append(p.Builds, build)
++	}
++	return p
++}
++
++// BenchmarkSQLReviewDecodePlan is what RecordResult pays per result to
++// read its run's plan.
++func BenchmarkSQLReviewDecodePlan(b *testing.B) {
++	for _, size := range [][2]int{{2, 1}, {50, 3}, {300, 6}} {
++		body, err := json.Marshal(sqlReviewPlan(size[0], size[1]))
++		if err != nil {
++			b.Fatal(err)
++		}
++		b.Run(fmt.Sprintf("targets=%d,environments=%d,bytes=%d", size[0], size[1], len(body)), func(b *testing.B) {
++			for i := 0; i < b.N; i++ {
++				if _, err := decodePlan(body); err != nil {
++					b.Fatal(err)
++				}
++			}
++		})
++	}
++}
