@@ -111,11 +111,18 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 	if newer > 0 || all {
 		table.Flush()
 	}
-	have := "have newer releases"
-	if newer == 1 {
-		have = "has a newer release"
+	ports, master := plural(len(report.Ports), "port"), engine.Short(report.Master)
+	var line string
+	switch {
+	case newer == 0 && unknown == 0 && len(report.Ports) == 1:
+		line = fmt.Sprintf("%s has no newer release, at master %s", report.Ports[0].Port, master)
+	case newer == 0:
+		line = fmt.Sprintf("None of %s has a newer release, at master %s", ports, master)
+	case newer == 1:
+		line = fmt.Sprintf("1 of %s has a newer release, at master %s", ports, master)
+	default:
+		line = fmt.Sprintf("%d of %s have newer releases, at master %s", newer, ports, master)
 	}
-	line := fmt.Sprintf("%d of %s %s, at master %s", newer, plural(len(report.Ports), "port"), have, engine.Short(report.Master))
 	if unknown > 0 {
 		line += fmt.Sprintf(" · %d couldn't be checked", unknown)
 		if !all {

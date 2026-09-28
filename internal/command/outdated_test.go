@@ -38,6 +38,23 @@ func withOutdated(t *testing.T) *jqIsOutdated {
 	return reader
 }
 
+// A report where nothing is newer says so in words that fit its count: a
+// port named alone by its name, and several as none of them.
+func TestOutdatedSaysWhenNothingIsNewer(t *testing.T) {
+	current := func(name string) engine.OutdatedPort {
+		return engine.OutdatedPort{Port: name, Current: "1.8.2", Newest: "1.8.2"}
+	}
+	said := func(ports ...engine.OutdatedPort) string {
+		var out bytes.Buffer
+		require.NoError(t, writeOutdated(t.Context(), nil, &out, engine.OutdatedReport{Master: "1bb30d5aaaaa", Ports: ports}, false))
+		return out.String()
+	}
+	require.Equal(t, "jq has no newer release, at master 1bb30d5\n", said(current("jq")))
+	require.Equal(t, "None of 2 ports has a newer release, at master 1bb30d5\n", said(current("jq"), current("fd")))
+	require.Equal(t, "None of 1 port has a newer release, at master 1bb30d5 · 1 couldn't be checked (--all says why)\n",
+		said(engine.OutdatedPort{Port: "jq", Problem: "no forge"}), "a port that couldn't be checked isn't said to have none")
+}
+
 func TestOutdatedThenUpdateOutdated(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
