@@ -32,10 +32,11 @@ type Member struct {
 	Body    io.Reader
 }
 
-// Clean returns the member path without a leading "./", or false when the
-// path is absolute, unnormalized, or escapes the archive root.
+// Clean returns the member path without a leading "./", or a directory's
+// trailing "/", as tar names one; false when the path is absolute,
+// unnormalized, escapes the archive root, or is the root itself.
 func (m Member) Clean() (string, bool) {
-	clean := strings.TrimPrefix(m.Name, "./")
+	clean := strings.TrimSuffix(strings.TrimPrefix(m.Name, "./"), "/")
 	if clean == "" || clean == "." || path.IsAbs(clean) || clean != path.Clean(clean) || clean == ".." || strings.HasPrefix(clean, "../") {
 		return "", false
 	}
@@ -148,20 +149,22 @@ func decompressor(reader *bufio.Reader) string {
 }
 
 // Extract writes an archive's regular files under a directory, less the one
-// top directory every member shares, if they share one, which names the
-// version. Links and other special members are left out, and a member
-// whose path would leave the directory is refused. It returns how many
-// files it wrote.
+// top directory every file shares, if they share one, which names the
+// version. Links and other special members are left out, as the pax
+// header GitHub's tarballs begin with is, and a member whose path would
+// leave the directory is refused. It returns how many files it wrote.
 func Extract(ctx context.Context, filename, directory string) (int, error) {
 	top := ""
 	shared := true
 	if err := Walk(ctx, filename, func(member Member) error {
 		name, ok := member.Clean()
-		if !ok {
+		if !ok || !member.Regular {
 			return nil
 		}
-		first, _, _ := strings.Cut(name, "/")
+		first, _, nested := strings.Cut(name, "/")
 		switch {
+		case !nested:
+			shared = false
 		case top == "":
 			top = first
 		case first != top:
@@ -175,6 +178,11 @@ func Extract(ctx context.Context, filename, directory string) (int, error) {
 	err := Walk(ctx, filename, func(member Member) error {
 		name, ok := member.Clean()
 		if !ok {
+			// A member for the archive's root, as ./ is in some, is
+			// inside it.
+			if root := strings.TrimSuffix(strings.TrimPrefix(member.Name, "./"), "/"); root == "" || root == "." {
+				return nil
+			}
 			return fmt.Errorf("archive: %s has a member outside it: %s", path.Base(filename), member.Name)
 		}
 		if shared && top != "" {
