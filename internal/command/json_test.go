@@ -176,6 +176,9 @@ func TestJSONForTheWholeLoop(t *testing.T) {
 	require.Equal(t, float64(34901), dig(t, submitted.Result, "pull_request", "number"))
 	require.Equal(t, true, dig(t, submitted.Result, "pull_request", "created"))
 	require.Len(t, g.prs, 1)
+	afterSubmit, err := jsonOf(t, "status")
+	require.NoError(t, err)
+	require.Equal(t, "https://github.com/macports/macports-ports/pull/34901", dig(t, afterSubmit.Result, "branches", 0, "pull_request", "url"))
 
 	explained, err := jsonOf(t, "explain", "merge")
 	require.NoError(t, err)

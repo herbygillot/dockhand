@@ -366,6 +366,7 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	out, _, err = dockhand(t, "status", "--attention")
 	require.Equal(t, 3, ExitCode(err))
 	require.Contains(t, out, "✗ jq-update  #34901 MacPorts CI failing: macOS 26")
+	require.Contains(t, out, "open https://github.com/macports/macports-ports/pull/34901/checks")
 }
 
 func TestCleanAfterTheMerge(t *testing.T) {

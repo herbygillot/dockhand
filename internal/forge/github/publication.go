@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 
 	gh "github.com/google/go-github/v91/github"
@@ -14,25 +13,9 @@ import (
 	githubapi "github.com/herbygillot/dockhand/internal/github"
 )
 
+// NameFromRemote is the repository a remote's URL names on GitHub.
 func (c *Client) NameFromRemote(remote string) (string, error) {
-	var name string
-	if strings.HasPrefix(remote, "git@github.com:") {
-		name = strings.TrimPrefix(remote, "git@github.com:")
-	} else {
-		u, err := url.Parse(remote)
-		if err != nil || !strings.EqualFold(u.Hostname(), "github.com") || u.RawQuery != "" || u.Fragment != "" || (u.Port() != "" && !(u.Scheme == "ssh" && u.Port() == "22")) {
-			return "", fmt.Errorf("github: remote must identify a github.com repository")
-		}
-		if u.Scheme == "https" && u.User != nil || u.Scheme == "ssh" && (u.User == nil || u.User.String() != "git") || u.Scheme != "https" && u.Scheme != "ssh" {
-			return "", fmt.Errorf("github: unsupported GitHub remote URL")
-		}
-		name = strings.TrimPrefix(u.Path, "/")
-	}
-	name = strings.TrimSuffix(name, ".git")
-	if !githubapi.ValidRepositoryName(name) {
-		return "", fmt.Errorf("github: invalid remote repository")
-	}
-	return name, nil
+	return githubapi.RemoteRepository(remote)
 }
 
 func (c *Client) RepositoryInfo(ctx context.Context, name string) (forge.RepositoryInfo, error) {

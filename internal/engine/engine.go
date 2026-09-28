@@ -16,6 +16,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/selection"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -295,23 +296,11 @@ func (e *Engine) UpstreamRemote(ctx context.Context) (*git.Remote, error) {
 		return nil, err
 	}
 	for _, remote := range remotes {
-		if namesRepository(remote.FetchURL, UpstreamRepository) {
+		if name, err := github.RemoteRepository(remote.FetchURL); err == nil && strings.EqualFold(name, UpstreamRepository) {
 			return &remote, nil
 		}
 	}
 	return nil, nil
-}
-
-// namesRepository reports whether a GitHub remote URL, in HTTPS or SSH
-// form, names owner/name.
-func namesRepository(url, repository string) bool {
-	url = strings.TrimSuffix(strings.TrimSuffix(strings.ToLower(url), "/"), ".git")
-	for _, prefix := range []string{"https://github.com/", "http://github.com/", "ssh://git@github.com/", "git@github.com:", "git://github.com/"} {
-		if rest, ok := strings.CutPrefix(url, prefix); ok {
-			return rest == repository
-		}
-	}
-	return false
 }
 
 // fetchMaster freezes MacPorts' current master in the repository.

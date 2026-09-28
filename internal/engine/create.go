@@ -4,15 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	forgegithub "github.com/herbygillot/dockhand/internal/forge/github"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/newport"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -307,18 +306,12 @@ func (g githubProjects) Project(ctx context.Context, address string) (Project, e
 	return found, nil
 }
 
-// githubName is the owner/name a GitHub URL names.
+// githubName is the owner/name of the GitHub project an address names,
+// said in create's words when it isn't on GitHub.
 func githubName(address string) (string, error) {
-	if !strings.Contains(address, "://") {
-		address = "https://" + address
-	}
-	parsed, err := url.Parse(address)
-	if err != nil || !slices.Contains([]string{"github.com", "www.github.com"}, strings.ToLower(parsed.Host)) {
+	name, err := github.PageRepository(address)
+	if errors.Is(err, github.ErrNotGitHub) {
 		return "", fmt.Errorf("create reads projects on GitHub so far, such as https://github.com/owner/project; for %s, write the Portfile yourself", address)
 	}
-	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
-	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
-		return "", fmt.Errorf("%s names no repository", address)
-	}
-	return parts[0] + "/" + strings.TrimSuffix(parts[1], ".git"), nil
+	return name, err
 }

@@ -119,7 +119,7 @@ The order puts live regressions first, then the guardrail unattended submission 
 - **The description merge's result** (finding 10). Done 2026-09-28 ([note](activity/2026-09-28-description-merge-result.md)): the merge returns each part's outcome, refreshed, current, kept, or absent, which the preview words.
 - **Facts with homes** (finding 7, and the review's table):
   - the ports tree's layout in `macports`: `_resources`, categories, and a file's port directory (the earlier finding 29), with `macports.ValidName` in the Tart archive site;
-  - GitHub remote and pull request addresses in the GitHub layer (the earlier finding 13);
+  - GitHub remote and pull request addresses in the GitHub layer (the earlier finding 13). Done 2026-09-28 (the same note): one strict remote reader, a page reader, and the addresses of a remote and a pull request's pages, in `internal/github`;
   - provider names in `buildenv` (the earlier finding 14). Done 2026-09-28 ([note](activity/2026-09-28-facts-with-homes.md)): constants in the contract;
   - a maintainer's identity in `macports`. Done 2026-09-28 (the same note): reading, normalizing, and checking a maintainers line, which now refuses what Tcl reads specially;
   - which Darwin releases have arm64, in `macos`. Done 2026-09-28 (the same note): `macos.RunsOn`, and Golden Gate is no longer evaluated on Intel.

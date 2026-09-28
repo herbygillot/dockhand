@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -520,4 +521,25 @@ func TestTheMergedDescriptionsTypesAreDockhandsWhileUnchanged(t *testing.T) {
 	require.Equal(t, "#### Description\n\nmine\n\n###### Type(s)\n\n- [ ] bugfix\n- [x] enhancement\n- [ ] security fix\n\n###### Tested on\n\nnew evidence\n", merged,
 		"types the person names go before Tested on")
 	require.Equal(t, DescriptionSections{Types: SectionRefreshed, TestedOn: SectionRefreshed}, sections)
+}
+
+// Someone's repository is pushed to by a remote that already pushes there,
+// else at its GitHub address, over SSH where your remotes push over it.
+func TestTheirRemoteIsOneThatPushesThereOrTheirAddress(t *testing.T) {
+	e := &Engine{Forge: &fakeForge{t: t, repos: map[string]string{"bo/macports-ports": "/remotes/bo"}}}
+	remotes := []git.Remote{{Name: "fork", PushURL: "git@github.com:ada/macports-ports.git"}}
+	name, push, err := e.theirRemote(t.Context(), remotes, "bo/macports-ports")
+	require.NoError(t, err)
+	require.Equal(t, "git@github.com:bo/macports-ports.git", name)
+	require.Equal(t, name, push)
+	remotes[0].PushURL = "https://github.com/ada/macports-ports.git"
+	name, push, err = e.theirRemote(t.Context(), remotes, "bo/macports-ports")
+	require.NoError(t, err)
+	require.Equal(t, "https://github.com/bo/macports-ports.git", name)
+	require.Equal(t, name, push)
+	remotes = append(remotes, git.Remote{Name: "bo", PushURL: "/remotes/bo"})
+	name, push, err = e.theirRemote(t.Context(), remotes, "bo/macports-ports")
+	require.NoError(t, err)
+	require.Equal(t, "bo", name)
+	require.Equal(t, "/remotes/bo", push)
 }

@@ -321,7 +321,10 @@ func TestUpstreamRemoteIsFoundByURL(t *testing.T) {
 		"https://github.com/ada/macports-ports.git":      false,
 		"https://example.org/macports/macports-ports":    false,
 	} {
-		require.Equal(t, want, namesRepository(url, UpstreamRepository), url)
+		run(t, f.clone, "remote", "set-url", "macports", url)
+		remote, err = e.UpstreamRemote(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, want, remote != nil, url)
 	}
 }
 

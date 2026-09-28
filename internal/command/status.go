@@ -13,6 +13,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -252,7 +253,7 @@ func pullRequestAttention(s engine.BranchStatus) []attention {
 		return []attention{{mark: "!", branch: name, what: fmt.Sprintf("#%d changes requested%s", pr.Number, age), next: next}}
 	case pr.Observed.Checks == "failing":
 		return []attention{{mark: "✗", branch: name, what: fmt.Sprintf("#%d MacPorts CI failing: %s%s", pr.Number, strings.Join(s.Failing(), ", "), age),
-			next: fmt.Sprintf("open https://github.com/%s/pull/%d/checks", pr.Repository, pr.Number)}}
+			next: "open " + github.PullRequestChecksURL(pr.Repository, pr.Number)}}
 	}
 	return nil
 }

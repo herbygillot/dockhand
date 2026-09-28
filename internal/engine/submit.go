@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -400,10 +401,8 @@ func (e *Engine) theirRemote(ctx context.Context, remotes []git.Remote, reposito
 		}
 		ssh = ssh || strings.HasPrefix(remote.PushURL, "git@github.com:") || strings.HasPrefix(remote.PushURL, "ssh://")
 	}
-	if ssh {
-		return "git@github.com:" + repository, "git@github.com:" + repository + ".git", nil
-	}
-	return "https://github.com/" + repository, "https://github.com/" + repository + ".git", nil
+	address := github.Remote(repository, ssh)
+	return address, address, nil
 }
 
 // mayPushTheirs checks that GitHub lets you push to someone's pull

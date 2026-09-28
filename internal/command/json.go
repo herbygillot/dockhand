@@ -2,7 +2,6 @@ package command
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"slices"
 	"strings"
@@ -11,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -406,7 +406,7 @@ func branchView(status engine.BranchStatus) branchJSON {
 		view.Latest = &latest
 	}
 	if pr := branch.PullRequest; pr != nil {
-		view.PullRequest = &pullRequestJSON{Repository: pr.Repository, Number: pr.Number, URL: fmt.Sprintf("https://github.com/%s/pull/%d", pr.Repository, pr.Number),
+		view.PullRequest = &pullRequestJSON{Repository: pr.Repository, Number: pr.Number, URL: github.PullRequestURL(pr.Repository, pr.Number),
 			Head: pr.Head, Pushed: string(pr.Pushed), Draft: pr.Draft}
 		if observed := pr.Observed; observed != nil {
 			at := observed.At

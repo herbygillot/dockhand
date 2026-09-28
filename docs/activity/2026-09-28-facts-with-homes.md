@@ -50,3 +50,34 @@ Tests:
 The existing selection and configuration tests pass unchanged, apart from two more refused lines. Seventeen mutations each fail a test.
 
 **Seen, not changed:** `port lint` refuses `nomaintainer` beside another maintainer, and `openmaintainer` alone. The configuration doesn't, so `create` could write a line lint refuses. That would be a new rule, not a move.
+
+## GitHub's addresses
+
+Which repository a GitHub address names, and the addresses of a repository and a pull request, were built and read in four places:
+- the engine found MacPorts' remote with a reader of its own (`namesRepository`), laxer than the forge's (`NameFromRemote`);
+- `create` read a project's page address itself (`githubName`), without checking the name;
+- submit built someone else's remote itself (`theirRemote`);
+- the command layer built pull request pages itself, in status and in JSON.
+
+They are now pure operations in the GitHub layer, `internal/github`, beside `ValidRepositoryName`:
+- **`RemoteRepository`** is the forge's strict reader, lifted from `NameFromRemote`. It takes HTTPS and SSH remotes that name a repository exactly, and now a trailing slash too, which Git accepts. The forge's `NameFromRemote` stays the engine's seam, since the tests' remotes are local paths standing for GitHub's. Finding MacPorts' remote needs no GitHub login, so it reads through the function directly.
+- **`PageRepository`** reads a page's address, as a person copies it from a browser, and checks the name. `ErrNotGitHub` marks an address elsewhere, which `create` words in its own terms.
+- **`Remote`** is a repository's Git address over SSH or HTTPS.
+- **`PullRequestURL`** and **`PullRequestChecksURL`** are a pull request's pages, which the command layer renders.
+
+The review suggested the engine supply the pull request's address to the command layer. The command layer calls the GitHub layer instead. The engine knows no forge but GitHub, and the stored pull request names none, so a detour through it would add nothing yet.
+
+**What changes:**
+- MacPorts' remote is no longer recognized over `http://` or `git://`. GitHub stopped serving `git://` in 2022, and only `init`'s sentence reads the remote: master is fetched from MacPorts' URL either way. The earlier review narrowed its finding 13 to this.
+- A remote dockhand makes up for someone's repository now ends in `.git` in the advice it's shown in, as the push address always did.
+- `create` refuses a page whose owner or name GitHub wouldn't allow, such as one with a space, as naming no repository.
+
+Tests:
+- `TestARemoteNamesItsRepositoryExactly`, which covers the forge's cases, the engine's, and more refusals;
+- `TestAPageNamesItsRepository`;
+- `TestGitHubsAddresses`;
+- `TestTheirRemoteIsOneThatPushesThereOrTheirAddress`;
+- the upstream remote's cases, now through a real remote;
+- the checks page in `status --attention`, and the page in status JSON.
+
+Three of twelve mutations first went uncaught: which form someone's remote takes, and both pages. Nothing had pinned them as literals either. The last three tests pin them, and all twelve now fail a test.
