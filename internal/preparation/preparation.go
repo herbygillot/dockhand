@@ -25,25 +25,14 @@ var ErrUnsupported = portedit.ErrUnsupported
 var ErrFidelity = portedit.ErrFidelity
 var ErrNotImplemented = portedit.ErrNotImplemented
 
+// Result is the editor's result, carried whole, with its files as Git
+// edits of the source tree and the tree they make. Prepared is bound to
+// the committed tree's source identity once the candidate is written, and
+// Commits wait for the second upstream check.
 type Result struct {
-	Scope        *macports.ReleaseScope     `json:",omitempty"`
-	Coverage     []portedit.ContextCoverage `json:",omitempty"`
-	Base         model.Source
-	Target       model.Target
+	portedit.Result
 	PreparedTree model.ObjectID
 	Files        []git.FileEdit
-	Commits      []CommitIntent
-	Fidelity     []portedit.Fidelity
-	// Prepared is the evaluated snapshot of the prepared tree, bound to
-	// its committed source identity once the candidate tree is written.
-	Prepared  macports.Snapshot `json:"-"`
-	Release   *model.Release
-	Downloads []archives.Download
-	// Previous are the current version's archives, kept beside the new
-	// ones when Request.KeepArchives asked, and PreviousProblem why not.
-	Previous        []archives.Download `json:"-"`
-	PreviousProblem string              `json:",omitempty"`
-	Patches         []patchcheck.Result `json:",omitempty"`
 }
 
 // PatchProblems names the declared patches that no longer apply to the candidate source.
@@ -154,7 +143,8 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 		}
 	}
 	edited, err := s.editor().Prepare(ctx, request)
-	result := Result{Scope: edited.Scope, Coverage: edited.Coverage, Base: edited.Base, Target: edited.Target, Fidelity: edited.Fidelity, Prepared: edited.Prepared, Release: edited.Release, Downloads: edited.Downloads, Previous: edited.Previous, PreviousProblem: edited.PreviousProblem, Patches: edited.Patches}
+	result := Result{Result: edited}
+	result.Result.Files, result.Commits = nil, nil
 	if err != nil {
 		return result, err
 	}
