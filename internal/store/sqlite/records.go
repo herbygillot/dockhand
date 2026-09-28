@@ -318,8 +318,9 @@ func (t *tx) RunNumbered(number int) (model.Run, error) {
 	return scanRun(t.conn.QueryRowContext(t.ctx, "SELECT "+runColumns+" FROM runs WHERE repository_id=? AND number=?", t.repo, number))
 }
 
-func (t *tx) Runs(filter store.RunFilter) ([]model.Run, error) {
-	query, args := "SELECT "+runColumns+" FROM runs WHERE repository_id=?", []any{t.repo}
+// runsQuery is the query that selects a repository's runs by a filter.
+func runsQuery(repository model.RepositoryID, filter store.RunFilter) (string, []any) {
+	query, args := "SELECT "+runColumns+" FROM runs WHERE repository_id=?", []any{repository}
 	if filter.Branch != "" {
 		query += " AND branch_id=?"
 		args = append(args, filter.Branch)
@@ -334,6 +335,11 @@ func (t *tx) Runs(filter store.RunFilter) ([]model.Run, error) {
 	if filter.Limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", filter.Limit)
 	}
+	return query, args
+}
+
+func (t *tx) Runs(filter store.RunFilter) ([]model.Run, error) {
+	query, args := runsQuery(t.repo, filter)
 	rows, err := t.conn.QueryContext(t.ctx, query, args...)
 	if err != nil {
 		return nil, storageError(err)

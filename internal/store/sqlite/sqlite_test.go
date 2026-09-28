@@ -690,3 +690,64 @@ func TestHistoryIsReadThroughIndexes(t *testing.T) {
 	}
 	require.NotContains(t, f.planOf(t, reusableQuery, reusable...), "TEMP B-TREE", "reuse reads the newest first from the index, without sorting")
 }
+
+// Every connection syncs through to the disk, and bounds the WAL file a
+// checkpoint leaves.
+func TestEveryConnectionSyncsToTheDisk(t *testing.T) {
+	f := open(t)
+	var conns []*sql.Conn
+	for range 4 {
+		conn, err := f.store.db.Conn(t.Context())
+		require.NoError(t, err)
+		conns = append(conns, conn)
+	}
+	for _, conn := range conns {
+		for pragma, want := range map[string]int{"synchronous": 2, "fullfsync": 1, "checkpoint_fullfsync": 1, "journal_size_limit": journalSizeLimit, "foreign_keys": 1} {
+			var got int
+			require.NoError(t, conn.QueryRowContext(t.Context(), "PRAGMA "+pragma).Scan(&got))
+			require.Equal(t, want, got, pragma)
+		}
+	}
+	for _, conn := range conns {
+		require.NoError(t, conn.Close())
+	}
+}
+
+// Opening the database keeps the planner's statistics, without which it
+// read every run to find the queued ones serve polls for, sparing itself
+// a sort over a few. It needs the sampled values, which show queued runs
+// are few; averages alone left it reading every run.
+func TestOpeningKeepsThePlannersStatistics(t *testing.T) {
+	f := open(t)
+	b, r, p := f.seed(t)
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		for number := 1; number <= 200; number++ {
+			run := model.Run{ID: model.RunID(fmt.Sprintf("run_%d", number)), Branch: b.ID, Revision: r.ID, Plan: p.ID, Number: number, Origin: model.OriginServe, State: model.RunQueued, CreatedAt: at}
+			if err := tx.AddRun(run); err != nil {
+				return err
+			}
+			if number == 200 {
+				continue
+			}
+			run.State = model.RunRunning
+			if err := tx.UpdateRun(run); err != nil {
+				return err
+			}
+			finished := at.Add(time.Minute)
+			run.State, run.FinishedAt = model.RunPassed, &finished
+			if err := tx.UpdateRun(run); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	active, args := runsQuery(f.repo, store.RunFilter{States: []model.RunState{model.RunQueued, model.RunRunning}})
+	require.NotContains(t, f.planOf(t, active, args...), "run_state", "without statistics")
+
+	require.NoError(t, f.store.Close())
+	reopened, err := Open(t.Context(), f.path, Options{})
+	require.NoError(t, err)
+	t.Cleanup(func() { reopened.Close() })
+	f.store = reopened
+	require.Contains(t, f.planOf(t, active, args...), "INDEX run_state (repository_id=? AND state=?)")
+}

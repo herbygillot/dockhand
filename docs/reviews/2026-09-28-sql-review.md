@@ -87,6 +87,8 @@ SEARCH runs USING INDEX sqlite_autoindex_runs_2 (repository_id=?)
 
 **Remedy:** in `initialize`, after migrating, run `PRAGMA analysis_limit=400; PRAGMA optimize=0x10002;` once per process. This is SQLite's documented recommendation for applications. `analysis_limit` bounds the cost on large tables. The per-connection DSN pragmas are the wrong place, since `optimize` would run on every new pooled connection.
 
+**Correction (while fixing):** leave `analysis_limit` unset. With a limit, `ANALYZE` skips `sqlite_stat4`'s sampled values and keeps only `sqlite_stat1`'s averages. By average, each of two states holds half the runs, so the planner still walks every run, as a 200-run test showed. The sampled values show that queued runs are few, and with them the planner uses `run_state`, bound parameters included. Both the SQLite CLI and the vendored driver are built with `ENABLE_STAT4`, which is why the unlimited `optimize` above succeeded. Without the limit, the year-scale copy's first analysis took 136 ms, and `optimize` analyzes a table again only after it grows many times over.
+
 ### 4. [P3] Four more lookups scan the repository's rows for want of an index
 
 Each is small today, and each grows with history.
@@ -185,7 +187,7 @@ A smaller setting worth taking along with finding 3: `journal_size_limit` is −
    CREATE INDEX checkpoint_branch ON checkpoints(repository_id, branch_id, number);
    DROP INDEX session_live;
    ```
-2. `PRAGMA analysis_limit=400; PRAGMA optimize=0x10002;` once in `initialize` after migrating, plus `journal_size_limit` (finding 3).
+2. `PRAGMA optimize=0x10002` once in `initialize` after migrating, with `analysis_limit` left unset (see finding 3's correction), plus `journal_size_limit` (finding 3).
 3. `PruneArchives` as a single `DELETE … RETURNING` (finding 1).
 4. Existence reads in `RecordResult`, and reuse's origin taken from `Reusable`'s join (findings 5 and 6). Add the store-internal plan cache only if the measured 0.85 ms per large-plan result is judged worth it.
 5. The durability decision (finding 7) and the retention rule (finding 8), each settled before its code is written.

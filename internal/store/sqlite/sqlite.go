@@ -1,7 +1,8 @@
 // Package sqlite implements the store contract on one SQLite database,
 // dockhand v3's ~/.dockhand/dockhand.db.
 //
-// The database is opened in WAL mode with foreign keys on and full sync. A
+// The database is opened in WAL mode with foreign keys on and full sync,
+// through to the disk on macOS, and its planner's statistics kept. A
 // write transaction begins IMMEDIATE, so writers queue on SQLite's lock
 // instead of failing midway, and a commit whose outcome is unknown says so
 // with store.ErrUncertain. The schema carries the rules it can check by
@@ -55,6 +56,9 @@ const (
 	v2ApplicationID = 0x44484e44
 )
 
+// journalSizeLimit is the most WAL file, in bytes, a checkpoint leaves.
+const journalSizeLimit = 64 << 20
+
 // Options tunes how the database is opened.
 type Options struct {
 	BusyTimeout      time.Duration
@@ -89,10 +93,19 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("%w: %w", store.ErrUnavailable, err)
 	}
+	// fullfsync and checkpoint_fullfsync make a sync reach the disk on
+	// macOS, whose fsync leaves writes in the drive's cache. A checkpoint
+	// is recorded as prepared before its Git change, and must outlast a
+	// power loss that the change outlasts (docs/reviews/2026-09-28-sql-
+	// review.md, finding 7). journal_size_limit returns the WAL file's
+	// space once a large transaction is checkpointed.
 	params := url.Values{"_pragma": {
 		"foreign_keys(1)",
 		"busy_timeout(" + strconv.FormatInt(max(1, options.BusyTimeout.Milliseconds()), 10) + ")",
 		"synchronous(FULL)",
+		"fullfsync(1)",
+		"checkpoint_fullfsync(1)",
+		"journal_size_limit(" + strconv.Itoa(journalSizeLimit) + ")",
 	}}
 	uri := url.URL{Scheme: "file", Path: path, RawQuery: params.Encode()}
 	db, err := sql.Open("sqlite", uri.String())
@@ -141,6 +154,25 @@ func (s *Store) initialize(ctx context.Context) error {
 	if mode != "wal" {
 		return fmt.Errorf("%w: WAL mode required, got %q", store.ErrUnavailable, mode)
 	}
+	if err := s.prepareSchema(ctx); err != nil {
+		return err
+	}
+	// The planner chooses among indexes by statistics kept in the database;
+	// without them it can walk a whole table to spare itself a sort, as it
+	// did for the queued runs serve polls for. Those are a few among many,
+	// which only sampled values (sqlite_stat4) show: an average says each
+	// state holds half the runs. analysis_limit would skip the samples, so
+	// it stays unset. optimize analyzes a table again only once it has
+	// grown many times over, so most opens do nothing.
+	if _, err := s.db.ExecContext(ctx, "PRAGMA optimize=0x10002"); err != nil {
+		return fmt.Errorf("planner statistics: %w", storageError(err))
+	}
+	return nil
+}
+
+// prepareSchema checks that the database is dockhand v3's, and brings its
+// schema up to this build's, or makes it for an empty file.
+func (s *Store) prepareSchema(ctx context.Context) error {
 	return s.transaction(ctx, true, "", func(t *tx) error {
 		var version, app, tables int
 		if err := t.conn.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
