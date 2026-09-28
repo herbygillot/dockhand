@@ -89,8 +89,8 @@ type Reader interface {
 	// ErrNotFound when none was recorded.
 	Inputs(key string) (model.TargetInputs, error)
 	// Reusable are a target's passed results in an environment that keep
-	// what their builds read, from executions that built rather than
-	// reused, newest first, at most limit (decision 28).
+	// what their builds read, from the builds themselves rather than a
+	// reuse of them, newest first, at most limit (decision 28).
 	Reusable(target model.TargetID, environment model.Environment, limit int) ([]model.TargetResult, error)
 
 	Session(id model.SessionID) (model.Session, error)

@@ -82,8 +82,9 @@ func (e *Evidence) origin(r store.Reader, id model.ExecutionID) error {
 }
 
 // Built are the provider runs that built an environment's results, among
-// runs: a run that reused earlier builds is shown by those builds, the runs
-// a reviewer can look at, each with the check that reused it (reusedIn).
+// runs: a result a run reused is shown by the run that built it, the one a
+// reviewer can look at, with the check that reused it (reusedIn). A run
+// shows only for the results it built itself.
 func (e Evidence) Built(environment int, runs []model.GuestExecution) (built []model.GuestExecution, reusedIn map[model.ExecutionID]string) {
 	reusedIn = map[model.ExecutionID]string{}
 	add := func(run model.GuestExecution) {
@@ -92,21 +93,20 @@ func (e Evidence) Built(environment int, runs []model.GuestExecution) (built []m
 		}
 	}
 	for _, run := range runs {
-		if !run.Reused {
-			add(run)
-			continue
-		}
 		for _, target := range e.Targets {
 			if environment >= len(target.Outcomes) {
 				continue
 			}
 			result := target.Outcomes[environment]
-			found, ok := e.origins[result.ReusedFrom]
-			if result.Execution != run.ID || !ok {
+			if result.Execution != run.ID {
 				continue
 			}
-			add(found.execution)
-			reusedIn[found.execution.ID] = e.Checks()[run.Run]
+			if found, ok := e.origins[result.ReusedFrom]; ok {
+				add(found.execution)
+				reusedIn[found.execution.ID] = e.Checks()[run.Run]
+				continue
+			}
+			add(run)
 		}
 	}
 	slices.SortStableFunc(built, func(a, b model.GuestExecution) int { return a.CreatedAt.Compare(b.CreatedAt) })

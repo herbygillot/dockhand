@@ -12,6 +12,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/coord"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -27,9 +28,11 @@ type scriptedProvider struct {
 	partial bool
 	// wait holds the build until its context ends.
 	wait bool
-	// active are reported as the ports active as each target built.
-	active []model.ActivePort
-	jobs   []buildenv.Job
+	// active are reported as the ports active as each target built, and
+	// consumes as one target's, in its place.
+	active   []model.ActivePort
+	consumes map[model.TargetID][]model.ActivePort
+	jobs     []buildenv.Job
 }
 
 func (p *scriptedProvider) Name() string { return "command" }
@@ -63,7 +66,11 @@ func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build 
 			result.Phase = model.PhaseInstall
 		}
 		if p.active != nil {
-			build.Consumed(target.ID, p.active)
+			active := p.active
+			if found, ok := p.consumes[target.ID]; ok {
+				active = found
+			}
+			build.Consumed(target.ID, active)
 			result.Archive = "sha256:" + string(target.ID)
 		}
 		if err := build.Record(result); err != nil {
@@ -515,6 +522,114 @@ func TestAnUnchangedBuildIsReused(t *testing.T) {
 	require.Len(t, provider.jobs, 4, "_resources changed")
 	again(false)
 	require.Len(t, provider.jobs, 4, "and the new build is reused in its turn")
+}
+
+// Where only some targets would read what their earlier builds read, those
+// reuse their results and the rest build, in one execution: the provider is
+// given only what builds. A target one that builds needs is built with it,
+// since a reused build isn't in the guest: what the plan says it needs, and
+// what was active as it last built, which it may reach through ports the
+// branch doesn't change (decision 28).
+func TestTheTargetsThatChangedBuildAndTheRestAreReused(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	lib := model.ActivePort{Name: "libharbor", Spec: "@4_0", Directory: "devel/libharbor", Archive: "sha256:aa"}
+	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{}, consumes: map[model.TargetID][]model.ActivePort{"harbor-cli": {lib}}}, identity: "origin a"}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	revision := harborBranch(t, e)
+	var branch model.Branch
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		var err error
+		branch, err = r.Branch(revision.Branch)
+		return err
+	}))
+	// Later captures compare with the base the fixture's ports were added
+	// on, as its own did.
+	branch.Base = revision.Source.Base
+	// harbor-cli needs libharbor, as the plan says; harbor-viewer needs
+	// neither.
+	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{
+		"devel/libharbor":        {port("libharbor")},
+		"devel/harbor-cli":       {port("harbor-cli", "libharbor")},
+		"graphics/harbor-viewer": {port("harbor-viewer")},
+	}}
+	check := func() (model.Run, []model.TargetID, map[model.TargetID]model.ExecutionID, []model.GuestExecution) {
+		t.Helper()
+		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}})
+		require.NoError(t, err)
+		require.Empty(t, plan.Unresolved)
+		queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
+		require.NoError(t, err)
+		jobs := len(provider.jobs)
+		run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+		require.NoError(t, err)
+		require.Equal(t, model.RunPassed, run.State, run.Detail)
+		var built []model.TargetID
+		for _, job := range provider.jobs[jobs:] {
+			for _, target := range job.Targets {
+				built = append(built, target.ID)
+			}
+		}
+		from := map[model.TargetID]model.ExecutionID{}
+		var executions []model.GuestExecution
+		require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+			if executions, err = r.Executions(run.ID); err != nil {
+				return err
+			}
+			for _, execution := range executions {
+				results, err := r.Results(execution.ID)
+				if err != nil {
+					return err
+				}
+				for _, result := range results {
+					from[result.Target] = result.ReusedFrom
+				}
+			}
+			return nil
+		}))
+		return run, built, from, executions
+	}
+	change := func(files map[string]string) {
+		t.Helper()
+		write(t, branch.Worktree, files)
+		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
+		require.NoError(t, err)
+		revision = capture.Revision
+	}
+
+	_, built, _, first := check()
+	require.Equal(t, []model.TargetID{"libharbor", "harbor-cli", "harbor-viewer"}, built)
+
+	change(map[string]string{"graphics/harbor-viewer/files/a.patch": "c\n"})
+	second, built, from, executions := check()
+	require.Equal(t, []model.TargetID{"harbor-viewer"}, built, "only the port that changed builds")
+	require.Equal(t, map[model.TargetID]model.ExecutionID{"libharbor": first[0].ID, "harbor-cli": first[0].ID, "harbor-viewer": ""}, from)
+	require.Len(t, executions, 1, "one execution builds the rest and holds what it reused")
+	require.False(t, executions[0].Reused, "it built something")
+	evidence, found, err := e.EvidenceFor(t.Context(), branch.ID, revision.Source.Tree)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, second.ID, evidence.Run.ID)
+	shown, reusedIn := evidence.Built(0, evidence.Runs(0))
+	require.Equal(t, []model.ExecutionID{first[0].ID, executions[0].ID}, []model.ExecutionID{shown[0].ID, shown[1].ID}, "each result shows the run that built it")
+	require.Equal(t, map[model.ExecutionID]string{first[0].ID: "check-2"}, reusedIn)
+
+	change(map[string]string{"devel/harbor-cli/Portfile": "name harbor-cli\nrevision 2\n"})
+	_, built, from, third := check()
+	require.Equal(t, []model.TargetID{"libharbor", "harbor-cli"}, built, "harbor-cli builds, and takes libharbor, which the plan says it needs")
+	require.Equal(t, executions[0].ID, from["harbor-viewer"], "harbor-viewer reuses its build in check-2, not check-2's reuse of another")
+
+	// harbor-viewer comes to have libharbor active as it builds, through a
+	// port the branch doesn't change: once it has built that way, it takes
+	// libharbor with it.
+	provider.consumes["harbor-viewer"] = []model.ActivePort{lib}
+	change(map[string]string{"graphics/harbor-viewer/files/a.patch": "d\n"})
+	_, built, _, _ = check()
+	require.Equal(t, []model.TargetID{"harbor-viewer"}, built, "its last build had libharbor inactive")
+	change(map[string]string{"graphics/harbor-viewer/files/a.patch": "e\n"})
+	_, built, from, _ = check()
+	require.Equal(t, []model.TargetID{"libharbor", "harbor-viewer"}, built, "its last build had libharbor active")
+	require.Equal(t, third[0].ID, from["harbor-cli"], "harbor-cli reuses its build in check-3, not check-4's reuse of it")
 }
 
 // An active port the guest couldn't place in the ports tree is recorded

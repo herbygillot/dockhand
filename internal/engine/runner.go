@@ -410,28 +410,31 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 		if len(remaining) == 0 {
 			return nil
 		}
-		// Before the first attempt, an environment whose every target would
-		// build as an earlier build did reuses those results (decision 28).
-		if attempt == 0 {
-			reused, err := d.reuse(ctx, environment, remaining, revision.Source.Tree)
-			if err != nil {
-				return err
-			}
-			if reused {
-				return nil
-			}
-		}
 		if attempt >= model.MaxAttempts {
 			d.problem(fmt.Sprintf("%s failed %d times for reasons of its own; see dockhand logs %s", describeEnvironment(environment), attempt, d.run.Name()))
 			return nil
 		}
+		// The environment's identity is read once for the attempt. Reuse
+		// compares earlier builds' with it, and the execution records it as
+		// it is when the execution begins: evidence compares it with the
+		// environment's identity whenever it is judged (Counts).
+		identity := e.identitiesNow(ctx, []model.Environment{environment})[environment]
+		// Before the first attempt, the targets that would build as an
+		// earlier build did reuse its result (decision 28). When every one
+		// does, nothing is built.
+		var reused map[model.TargetID]reuse.Candidate
+		if attempt == 0 {
+			var err error
+			if reused, err = d.reusable(ctx, environment, identity, remaining, revision.Source.Tree); err != nil {
+				return err
+			}
+			if len(reused) == len(remaining) {
+				return d.recordReuse(ctx, environment, identity, remaining, reused)
+			}
+		}
 		// A provider run's ID is unique, and named for its provider:
 		// tart_7y62p4sigena6xlr. The pull request names it, and dockhand
 		// logs finds its evidence by it.
-		// The environment's identity is recorded as it is when the
-		// execution begins: evidence compares it with the environment's
-		// identity whenever it is judged (Counts).
-		identity := e.identitiesNow(ctx, []model.Environment{environment})[environment]
 		execution := model.GuestExecution{ID: model.ExecutionID(store.NewID(environment.Provider)), Run: d.run.ID, Environment: environment, Identity: identity, Attempt: attempt + 1, State: model.ExecutionWaiting, CreatedAt: e.now()}
 		if err := d.fenced(ctx, func(tx store.Tx) error {
 			if err := tx.AddExecution(execution); err != nil {
@@ -448,10 +451,22 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			return err
 		}
 		build := &build{d: d, ctx: ctx, execution: execution, tree: revision.Source.Tree, results: results, inputs: map[model.TargetID]model.TargetInputs{}}
-		job := buildenv.Job{Run: d.run, Execution: execution, Revision: revision, Plan: d.plan, Environment: environment, Targets: remaining, Commit: commit,
+		// The reused results are the execution's own, recorded before the
+		// provider builds the rest.
+		building := remaining
+		if len(reused) > 0 {
+			if err := build.reuses(remaining, reused); err != nil {
+				return err
+			}
+			building = slices.DeleteFunc(slices.Clone(remaining), func(target buildenv.Target) bool {
+				_, ok := reused[target.ID]
+				return ok
+			})
+		}
+		job := buildenv.Job{Run: d.run, Execution: execution, Revision: revision, Plan: d.plan, Environment: environment, Targets: building, Commit: commit,
 			Directory: filepath.Join(e.LogDirectory(), d.run.Name(), fmt.Sprintf("%s-%d", environmentSlug(environment), execution.Attempt))}
 		err := provider.Execute(ctx, job, build)
-		build.blockRemaining(remaining)
+		build.blockRemaining(building)
 		// The build's copy holds what the provider reported.
 		execution = build.execution
 		switch {

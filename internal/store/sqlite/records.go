@@ -537,7 +537,7 @@ func (t *tx) Results(execution model.ExecutionID) ([]model.TargetResult, error) 
 func (t *tx) Reusable(target model.TargetID, environment model.Environment, limit int) ([]model.TargetResult, error) {
 	p := environment.Platform
 	return t.results("SELECT "+resultColumns+" FROM results r JOIN executions e ON e.repository_id=r.repository_id AND e.id=r.execution_id "+
-		"WHERE r.repository_id=? AND r.target_id=? AND r.outcome='passed' AND r.inputs<>'' AND e.reused=0 "+
+		"WHERE r.repository_id=? AND r.target_id=? AND r.outcome='passed' AND r.inputs<>'' AND r.reused_from='' "+
 		"AND e.provider=? AND e.platform_os=? AND e.platform_version=? AND e.platform_architecture=? AND e.developer_tools=? "+
 		"ORDER BY r.recorded_at DESC, r.rowid DESC LIMIT ?",
 		t.repo, target, environment.Provider, p.OS, p.Version, p.Architecture, environment.DeveloperTools, limit)
