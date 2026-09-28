@@ -74,20 +74,21 @@ func TestTheInstallationIsFresh(t *testing.T) {
 	host := findHostInstallation(t)
 	got := evaluatedDescription(t, strings.Join([]string{
 		"lappend results [file exists ${prefix}/bin/port]",
-		"lappend results [file isdirectory ${prefix}/lib/pkgconfig]",
+		"lappend results [file isdirectory ${prefix}/lib] [file isdirectory ${prefix}/lib/pkgconfig]",
 		"lappend results [file exists ${prefix}/share/macports/install/prefix.mtree]",
 		"lappend results [lsort [glob -nocomplain -tails -directory ${prefix}/bin *]]",
 		"lappend results [catch {registry_active dockhand-no-such-port} message] $message",
 	}, "\n"))
 	require.Equal(t, "1", got[0], "Base's own program is there")
 	require.Equal(t, "1", got[1], "the prefix's skeleton is there")
-	require.Equal(t, "1", got[2], "Base's own files are there")
-	listed, errs := syntax.ListValues(got[3])
+	require.Equal(t, "0", got[2], "a directory MacPorts' package leaves for ports isn't, whatever this Mac has")
+	require.Equal(t, "1", got[3], "Base's own files are there")
+	listed, errs := syntax.ListValues(got[4])
 	require.Empty(t, errs)
 	for _, name := range listed {
-		require.Contains(t, []string{"port", "portindex", "portmirror", "port-tclsh", "daemondo"}, name, "only Base's programs are in a fresh bin")
+		require.Contains(t, []string{"port", "portf", "portindex", "portmirror", "port-tclsh", "daemondo"}, name, "only Base's programs are in a fresh bin")
 	}
-	require.Equal(t, []string{"1", "Registry error: dockhand-no-such-port not registered as installed & active."}, got[4:6])
+	require.Equal(t, []string{"1", "Registry error: dockhand-no-such-port not registered as installed & active."}, got[5:7])
 
 	if host.port != "" {
 		got := evaluatedDescription(t, strings.Join([]string{

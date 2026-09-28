@@ -7,10 +7,15 @@ namespace eval ::dockhand {
 
     # skeleton is the fresh prefix's directories, relative to it: those
     # Base's installer makes from its mtree files, which Base keeps in its
-    # own share directory.
+    # own share directory, less those its package leaves for a port or for
+    # MacPorts itself to make later (later). MacPorts is installed from its
+    # package, in dockhand's images and MacPorts CI alike, and 2.12.6's has
+    # every other directory of the skeleton.
     variable skeleton ""
+    variable later {lib/pkgconfig var/log var/macports/home/Library var/macports/home/Library/Preferences var/macports/logs var/macports/software www}
     proc skeleton {} {
         variable skeleton
+        variable later
         if {$skeleton ne ""} { return $skeleton }
         set skeleton [dict create "" 1]
         foreach name {prefix base} {
@@ -30,6 +35,7 @@ namespace eval ::dockhand {
             }
             close $channel
         }
+        foreach directory $later { dict unset skeleton $directory }
         return $skeleton
     }
 
@@ -44,7 +50,7 @@ namespace eval ::dockhand {
                 # Base's own files: its library, configuration, and state,
                 # and its programs.
                 variable base_areas {libexec/macports share/macports etc/macports var/macports}
-                variable base_files {bin/port bin/portindex bin/portmirror bin/port-tclsh bin/daemondo man}
+                variable base_files {bin/port bin/portf bin/portindex bin/portmirror bin/port-tclsh bin/daemondo man}
                 # nowhere is a directory that doesn't exist: an absent
                 # path's question is asked of nowhere joined with it, and
                 # Tcl answers as it would for the path, in its own words.
