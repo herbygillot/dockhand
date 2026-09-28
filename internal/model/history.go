@@ -88,7 +88,8 @@ func (c *UpstreamComparison) Holds() []string {
 }
 
 // UpstreamChange is one difference between the archives: a license file,
-// a build file, or a declared dependency.
+// a build file, or a declared dependency; or a file the comparison couldn't
+// read, which holds as a change would (kind "unread").
 type UpstreamChange struct {
 	Kind    string `json:"kind"`
 	Path    string `json:"path"`

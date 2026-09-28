@@ -10,12 +10,12 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/herbygillot/dockhand/internal/archive"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
 	"github.com/herbygillot/dockhand/internal/scratch"
+	"github.com/herbygillot/dockhand/internal/sourcecompare"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -542,7 +542,7 @@ func compareUpstream(ctx context.Context, result preparation.Result) *model.Upst
 			comparison.Problem = "the archives were not kept to compare"
 			return comparison
 		}
-		changes, err := archive.Compare(ctx, old.Path, now.Path)
+		changes, err := sourcecompare.Compare(ctx, old.Path, now.Path)
 		if err != nil {
 			comparison.Problem = err.Error()
 			return comparison

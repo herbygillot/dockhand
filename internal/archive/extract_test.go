@@ -9,10 +9,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 func TestExtractSetsAsideTheVersionedTopDirectory(t *testing.T) {
-	archive := tarball(t, "jq-1.8.1", map[string]string{"src/jq.c": "int main;\n", "NEWS": "1.8.1\n"})
+	archive := testsupport.Tarball(t, "jq-1.8.1", map[string]string{"src/jq.c": "int main;\n", "NEWS": "1.8.1\n"})
 	dir := t.TempDir()
 	n, err := Extract(t.Context(), archive, dir)
 	require.NoError(t, err)
@@ -21,7 +23,7 @@ func TestExtractSetsAsideTheVersionedTopDirectory(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "int main;\n", string(data))
 
-	zipped := zipball(t, "jq-1.8.1", map[string]string{"a.txt": "a", "b/c.txt": "c"})
+	zipped := testsupport.Zipball(t, "jq-1.8.1", map[string]string{"a.txt": "a", "b/c.txt": "c"})
 	dir = t.TempDir()
 	_, err = Extract(t.Context(), zipped, dir)
 	require.NoError(t, err)
@@ -64,7 +66,7 @@ func TestWalkReadsXZThroughTheSystemTool(t *testing.T) {
 	if _, err := exec.LookPath("xz"); err != nil {
 		t.Skip("no xz here")
 	}
-	gz := tarball(t, "jq-1.8.1", map[string]string{"NEWS": "1.8.1\n"})
+	gz := testsupport.Tarball(t, "jq-1.8.1", map[string]string{"NEWS": "1.8.1\n"})
 	plain := filepath.Join(t.TempDir(), "jq-1.8.1.tar")
 	data, err := exec.Command("sh", "-c", "gzip -dc "+gz+" > "+plain+" && xz "+plain).CombinedOutput()
 	require.NoError(t, err, string(data))

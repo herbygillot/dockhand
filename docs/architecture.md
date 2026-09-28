@@ -57,7 +57,7 @@ The providers implement `buildenv.Provider`, the contract in `internal/buildenv`
 - **`upstream`** finds a port's newest release from its forge's tags and releases (`forge/github`, `forge/gitlab`) or its livecheck, using the Portfile's own version rules. Versions are compared by MacPorts' `vercmp`, through the evaluator. **`outdated`** runs it for many ports at once, and `github` paces every request to GitHub's API across the process, below its documented secondary rate limit.
 - **`macports/portedit`** makes an evaluated edit: `macports/portfile` changes literal values in the source text through `tcl/syntax` spans. `portedit/archives` fetches distfiles and computes checksums, and `macports/fidelity` checks that only what was meant to change did. `macports/dependency` regenerates Go and Rust dependency lists with `go2port` and `cargo2port`.
 - **`macports/newport`** writes `create`'s first Portfile, marking what it guessed.
-- **`engine/archivediff.go`** compares the old and new source archives for what a reviewer would ask about (`archive`).
+- **`sourcecompare`** compares an update's old and new source archives for what a reviewer would ask about: license and build files, and the dependencies each manifest declares, read with Go's `modfile` and a TOML decoder. What it couldn't read, it says, and that holds as a change does. `archive` walks the archives for it, and `engine/archivediff.go` shows the same archives file by file, for `diff --archive`.
 
 ## Shaping, submitting, and following
 
