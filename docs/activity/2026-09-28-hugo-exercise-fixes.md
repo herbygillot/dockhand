@@ -74,3 +74,9 @@ Tests fail with each part undone:
 The unrecorded capture gets an ID of its own, as the plan made of it already did, since a plan names its revision.
 
 `TestCheckRunsHereWithoutServe` and `TestJSONEnvelopes` fail with any part undone. The check after a plan now captures snapshot 1 itself, rather than reusing one the plan left behind.
+
+## Found after: "already at ;"
+
+The other session checked these fixes against the hugo branch and found one bug they didn't cause. `update jq --plan`, with jq already current, said "jq is already at ; nothing to change." `update --outdated` had the same hole in "nothing to change: it is already at ". An update read the port's versions only from the fidelity report of an edit, and an update to the version the port already has makes no edit. The test preparer made one anyway, so no test saw it.
+
+The editor now keeps the port as it stands whenever it edits nothing (`portedit.Result.Unchanged`), and the update reads its version from that: "jq is already at 1.8.2; nothing to change." A checksums refresh that finds them current reads its version the same way. `TestAnUpdateThatEditsNothingKeepsThePortAsItStands`, with MacPorts' own evaluator, and `TestAnUpdateThatEditedNothingSaysWhatThePortIsAt` fail with either half undone. It was also checked live, against the real checkout.

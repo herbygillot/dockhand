@@ -96,6 +96,10 @@ type Result struct {
 	// go.toolchain_min was left below it; nil where it was raised, or
 	// needn't be.
 	GoToolchain *GoToolchain `json:",omitempty"`
+	// Unchanged is the port as it stands where nothing was edited, as for
+	// an update to the version it already has: what it is at, which no
+	// fidelity report says then. Nil when there was an edit.
+	Unchanged *macports.PortInfo `json:"-"`
 }
 
 // GoToolchain is a Go release a module-mode port's go.mod requires that its
@@ -147,6 +151,15 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 		return Result{}, err
 	}
 	defer func() { err = errors.Join(err, input.Close()) }()
+	result, err := s.prepare(ctx, request, input)
+	if err == nil && len(result.Files) == 0 {
+		port := input.info
+		result.Unchanged = &port
+	}
+	return result, err
+}
+
+func (s *Service) prepare(ctx context.Context, request Request, input *sourceInput) (Result, error) {
 	if request.Action == model.EditUpdate {
 		return s.prepareVersion(ctx, request, input)
 	}

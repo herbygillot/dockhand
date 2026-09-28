@@ -361,6 +361,10 @@ func describe(branch model.Branch, selector string, result preparation.Result) U
 		after := result.Fidelity[len(result.Fidelity)-1].After.Ports[update.Port]
 		update.Before = PortVersion{Version: before.Version, Revision: before.Revision}
 		update.After = PortVersion{Version: after.Version, Revision: after.Revision}
+	} else if port := result.Unchanged; port != nil {
+		// Nothing was edited, so the port is at what it was.
+		update.Before = PortVersion{Version: port.Version, Revision: port.Revision}
+		update.After = update.Before
 	}
 	for _, file := range result.Files {
 		update.Files = append(update.Files, file.Path)

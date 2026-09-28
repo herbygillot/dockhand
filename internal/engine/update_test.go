@@ -373,3 +373,13 @@ func TestAnUpdateStartsItsBranchOnlyForAnEdit(t *testing.T) {
 	require.True(t, update.Started, "the branch to make the edit in by hand")
 	require.DirExists(t, update.Branch.Worktree)
 }
+
+// An update that edited nothing, the port already at the release, says what
+// the port is at from the port as it stands, since no fidelity report says
+// it then; "jq is already at ; nothing to change" read nothing.
+func TestAnUpdateThatEditedNothingSaysWhatThePortIsAt(t *testing.T) {
+	update := describe(model.Branch{}, "jq", preparation.Result{Result: portedit.Result{Unchanged: &macports.PortInfo{Version: "1.8.2", Revision: 1}}})
+	require.Equal(t, PortVersion{Version: "1.8.2", Revision: 1}, update.Before)
+	require.Equal(t, PortVersion{Version: "1.8.2", Revision: 1}, update.After)
+	require.Equal(t, "1.8.2_1", update.After.String())
+}

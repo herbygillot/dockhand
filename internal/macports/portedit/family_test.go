@@ -113,3 +113,17 @@ func TestARecordedStubJoinsASubportBaselineAlone(t *testing.T) {
 	require.Equal(t, []string{"fixture", "fixture-child"}, names(input.before.Ports))
 	require.True(t, request.SharedRelease)
 }
+
+// An update to the version the port already has edits nothing, and keeps
+// the port as it stands, to say what it is at.
+func TestAnUpdateThatEditsNothingKeepsThePortAsItStands(t *testing.T) {
+	t.Parallel()
+	ports, request := familyFixture(t)
+	request.Selection = macports.Selection{Selector: "devel/fixture/Portfile"}
+	request.Release = &model.Release{ReleaseSelection: model.ReleaseSelection{CurrentVersion: "1.0", NoUpdate: true}, Version: "1.0"}
+	result, err := (&Service{Ports: ports}).Prepare(t.Context(), request)
+	require.NoError(t, err)
+	require.Empty(t, result.Files)
+	require.NotNil(t, result.Unchanged)
+	require.Equal(t, "1.0", result.Unchanged.Version)
+}
