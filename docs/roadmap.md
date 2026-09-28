@@ -194,6 +194,12 @@ These are taken when their area is next touched, or between items.
     - the index cache's identity off a Mac (finding 40);
     - store error kinds documented (finding 41);
     - anonymous GitHub remembered for a few minutes (finding 45).
+- **What updating real ports asked for,** from the duckdb and hugo exercises of 2026-09-28 ([duckdb](activity/2026-09-28-duckdb.md), [hugo](reviews/2026-09-28-hugo-bump-exercise.md)):
+  - a Go port's own line: the `go` directive upstream's go.mod gives, and that `go.toolchain_min` still holds, said when it does too, since silence reads the same as not having looked;
+  - `logs --port` starting where the port's own phases do, or listing them with their lines: hugo's began near line 46,400 of 47,000, after its dependencies';
+  - `submit --plan` showing the pull request's description, which both exercises read through `--json`;
+  - `outdated` for one named port, which took 12 seconds in both;
+  - a `Generated-By` naming a commit nobody can find, not only a `+dirty` build: submit could ask GitHub, since tidy reads nothing remote.
 - **A flake to watch.** `TestTidyAsksWhatItCannotKnow` once failed in its cleanup with a directory not empty ([note](activity/2026-09-27-stopped-checks.md#seen-once-not-explained)).
 
 ## Decisions for the person
@@ -290,5 +296,10 @@ Changed:
 - **Finding 5 is ranked lower.** GitHub isn't the default provider, so per-runner evidence is a smaller item. The port reader's report joins item 6, where reuse needs it.
 - **Finding 6 is narrowed.** It shrinks to the JSON gap and the release's provenance, until something reads more.
 - **Finding 1's reuse probe was rewritten for D1.** It expected a block; the person decided each result keeps its own check's policy.
+
+**The [hugo exercise](reviews/2026-09-28-hugo-bump-exercise.md)** of 2026-09-28 was checked against the code at `fdf8147f` ([note](activity/2026-09-28-hugo-exercise-fixes.md)).
+- **Its eleven findings hold,** each as the review describes it. Finding 11 is narrower: `status` shows CI once something has read it from GitHub, and plain `status` never does.
+- **Taken,** each in its own commit: 1 for a `+dirty` build, and 2 to 9 and 11. The other session had already taken 10, ticking enhancement for an update dockhand made.
+- **Its improvements** are smaller items, with the duckdb exercise's.
 
 **Earlier reviews** were triaged in the previous roadmap, which records what each contributed and what was declined ([v2/roadmap.md](v2/roadmap.md#review-triage-and-validation)).
