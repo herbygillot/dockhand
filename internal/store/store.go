@@ -99,6 +99,11 @@ type Reader interface {
 	Lease(resource string) (model.Lease, error)
 	// Events lists events after a sequence number, oldest first.
 	Events(after int64, limit int) ([]model.Event, error)
+	// RunEvents are one run's events after a sequence, oldest first, at
+	// most limit; LastEvent is the journal's newest sequence, 0 when it has
+	// none.
+	RunEvents(run model.RunID, after int64, limit int) ([]model.Event, error)
+	LastEvent() (int64, error)
 	// CountEvents counts the events of a kind journaled at or after a time.
 	CountEvents(kind string, since time.Time) (int, error)
 
@@ -161,6 +166,10 @@ type Tx interface {
 
 	// AppendEvent adds an event to the journal and returns its sequence.
 	AppendEvent(event model.Event) (int64, error)
+	// PruneJournal removes the events recorded before a time, and the
+	// sessions that ended, or last showed a heartbeat, before it, but for
+	// one a lease still names; it says how many of each.
+	PruneJournal(before time.Time) (events, sessions int, err error)
 
 	AddEdit(edit model.Edit) error
 	// AddCheckpoint records a checkpoint; its Number must be

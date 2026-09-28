@@ -98,9 +98,9 @@ In order. Each item lands in its own commits with an activity note, and a review
   - `-v` shows what the 48 progress reports say;
   - `outdated` prints what it found when interrupted, and clears its count.
 - **The journal and serve's files:**
-  - cleanup prunes old events and ended sessions (finding 34);
-  - `check` and `watch` read the journal from where they start (finding 34);
-  - each command opens one observer session (finding 34);
+  - cleanup prunes old events and ended sessions (finding 34). Done 2026-09-28;
+  - `check` and `watch` read the journal from where they start (finding 34). Done 2026-09-28;
+  - each command opens one observer session (finding 34). Done 2026-09-28;
   - serve's and cleanup's stamps and `serving.json` are per repository, and the day's look is stamped after it (finding 35). Done 2026-09-28 ([note](activity/2026-09-28-journal-and-serve-files.md));
   - `CleanupDue` gives its reason as a type (finding 37). Done 2026-09-28.
 - **Dead code:**

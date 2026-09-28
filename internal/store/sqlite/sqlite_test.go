@@ -512,6 +512,26 @@ func TestEventsAreAJournal(t *testing.T) {
 		require.Zero(t, counted, "only what was journaled since")
 		return nil
 	}))
+
+	// A run's events are read by the run, and a watcher starts at the
+	// newest.
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		_, err := tx.AppendEvent(model.Event{At: at.Add(3 * time.Second), Session: "ses_a", Run: "run_2", Kind: "run.state", Message: "another run"})
+		return err
+	}))
+	require.NoError(t, f.store.View(t.Context(), f.repo, func(r store.Reader) error {
+		first, err := r.RunEvents("run_1", 0, 0)
+		require.NoError(t, err)
+		require.Len(t, first, 3)
+		later, err := r.RunEvents("run_1", sequences[1], 0)
+		require.NoError(t, err)
+		require.Len(t, later, 1)
+		require.Equal(t, "target.result", later[0].Kind)
+		last, err := r.LastEvent()
+		require.NoError(t, err)
+		require.Greater(t, last, sequences[2])
+		return nil
+	}))
 }
 
 func TestConcurrentWritersQueueRatherThanCollide(t *testing.T) {

@@ -437,12 +437,9 @@ type journal struct {
 }
 
 func (j *journal) show(ctx context.Context) {
-	events, _ := j.e.Events(ctx, j.last)
+	events, _ := j.e.RunEvents(ctx, j.run, j.last)
 	for _, event := range events {
 		j.last = event.Sequence
-		if event.Run != j.run {
-			continue
-		}
 		switch event.Kind {
 		case "progress", "target.result", "execution.retry", "execution.state":
 			fmt.Fprintf(j.out, "  %s\n", event.Message)

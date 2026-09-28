@@ -900,6 +900,36 @@ func (e *Engine) Events(ctx context.Context, after int64) ([]model.Event, error)
 	return events, err
 }
 
+// RunEvents are one run's events after a sequence, oldest first: what a
+// command following the run shows, read by the run rather than through the
+// whole journal.
+func (e *Engine) RunEvents(ctx context.Context, run model.RunID, after int64) ([]model.Event, error) {
+	var events []model.Event
+	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		for {
+			batch, err := r.RunEvents(run, after, 500)
+			if err != nil || len(batch) == 0 {
+				return err
+			}
+			events = append(events, batch...)
+			after = batch[len(batch)-1].Sequence
+		}
+	})
+	return events, err
+}
+
+// LatestEvent is the journal's newest sequence, where one watching what
+// happens from now starts.
+func (e *Engine) LatestEvent(ctx context.Context) (int64, error) {
+	var last int64
+	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		last, err = r.LastEvent()
+		return err
+	})
+	return last, err
+}
+
 // Next is the run serve drives next (Design v3 §11): a run left running by
 // a driver that is gone, then queued runs a person asked for, then serve's
 // own, oldest first. Runs a live session holds are someone else's.

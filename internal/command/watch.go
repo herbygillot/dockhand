@@ -51,6 +51,12 @@ each event as a line, for scrollback, SSH sessions, and screen readers.`,
 				return err
 			}
 			defer e.Close()
+			// One observer for the whole watch, however often it redraws.
+			ctx, _, end, err := observing(ctx, e)
+			if err != nil {
+				return err
+			}
+			defer end()
 			if plain || !streams.terminal() || !outputTerminal(streams) {
 				err = watchPlain(ctx, e, streams)
 			} else {
@@ -84,6 +90,14 @@ type journalCursor struct {
 	last int64
 }
 
+// start begins at the journal's newest event: a watcher follows what
+// happens from now, without reading what came before to pass it by.
+func (c *journalCursor) start(ctx context.Context) error {
+	last, err := c.e.LatestEvent(ctx)
+	c.last = last
+	return err
+}
+
 func (c *journalCursor) next(ctx context.Context) ([]model.Event, error) {
 	events, err := c.e.Events(ctx, c.last)
 	var news []model.Event
@@ -99,7 +113,7 @@ func (c *journalCursor) next(ctx context.Context) ([]model.Event, error) {
 // watchPlain prints status once, then each event as it is journaled.
 func watchPlain(ctx context.Context, e *engine.Engine, streams Streams) error {
 	cursor := &journalCursor{e: e}
-	if _, err := cursor.next(ctx); err != nil {
+	if err := cursor.start(ctx); err != nil {
 		return err
 	}
 	if err := showStatus(ctx, e, streams, nil, false, false, ""); err != nil {
@@ -168,7 +182,7 @@ func watchLive(ctx context.Context, e *engine.Engine, streams Streams) error {
 	fmt.Fprint(streams.Out, enterView)
 	defer fmt.Fprint(streams.Out, leaveView)
 	cursor := &journalCursor{e: e}
-	if _, err := cursor.next(ctx); err != nil {
+	if err := cursor.start(ctx); err != nil {
 		return err
 	}
 	type input struct {

@@ -154,6 +154,27 @@ func (t *tx) AppendEvent(e model.Event) (int64, error) {
 	return sequence, storageError(err)
 }
 
+func (t *tx) PruneJournal(before time.Time) (int, int, error) {
+	events, err := t.conn.ExecContext(t.ctx, "DELETE FROM events WHERE repository_id=? AND at<?", t.repo, millis(before))
+	if err != nil {
+		return 0, 0, storageError(err)
+	}
+	sessions, err := t.conn.ExecContext(t.ctx, `DELETE FROM sessions WHERE repository_id=? AND COALESCE(ended_at, heartbeat_at)<?
+ AND id NOT IN (SELECT holder FROM leases WHERE repository_id=? AND holder IS NOT NULL)`, t.repo, millis(before), t.repo)
+	if err != nil {
+		return 0, 0, storageError(err)
+	}
+	removedEvents, err := events.RowsAffected()
+	if err != nil {
+		return 0, 0, storageError(err)
+	}
+	removedSessions, err := sessions.RowsAffected()
+	if err != nil {
+		return 0, 0, storageError(err)
+	}
+	return int(removedEvents), int(removedSessions), nil
+}
+
 func (t *tx) CountEvents(kind string, since time.Time) (int, error) {
 	var count int
 	err := t.conn.QueryRowContext(t.ctx, "SELECT count(*) FROM events WHERE repository_id=? AND kind=? AND at>=?", t.repo, kind, millis(since)).Scan(&count)
@@ -164,7 +185,25 @@ func (t *tx) Events(after int64, limit int) ([]model.Event, error) {
 	if limit <= 0 {
 		limit = 1000
 	}
-	rows, err := t.conn.QueryContext(t.ctx, "SELECT sequence, at, session_id, branch_id, run_id, target_id, kind, level, message FROM events WHERE repository_id=? AND sequence>? ORDER BY sequence LIMIT ?", t.repo, after, limit)
+	return t.events("SELECT sequence, at, session_id, branch_id, run_id, target_id, kind, level, message FROM events WHERE repository_id=? AND sequence>? ORDER BY sequence LIMIT ?", t.repo, after, limit)
+}
+
+func (t *tx) RunEvents(run model.RunID, after int64, limit int) ([]model.Event, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+	return t.events("SELECT sequence, at, session_id, branch_id, run_id, target_id, kind, level, message FROM events WHERE repository_id=? AND run_id=? AND sequence>? ORDER BY sequence LIMIT ?", t.repo, run, after, limit)
+}
+
+func (t *tx) LastEvent() (int64, error) {
+	var last int64
+	err := t.conn.QueryRowContext(t.ctx, "SELECT COALESCE(MAX(sequence), 0) FROM events WHERE repository_id=?", t.repo).Scan(&last)
+	return last, storageError(err)
+}
+
+// events reads the events a query selects, in its order.
+func (t *tx) events(query string, args ...any) ([]model.Event, error) {
+	rows, err := t.conn.QueryContext(t.ctx, query, args...)
 	if err != nil {
 		return nil, storageError(err)
 	}

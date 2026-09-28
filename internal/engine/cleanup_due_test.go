@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/store"
 )
 
 // caching is a provider that keeps a cache, as Tart keeps the vanilla images
@@ -94,4 +96,59 @@ func TestEachCheckoutKeepsItsOwnCleanupDay(t *testing.T) {
 	require.False(t, due, "this checkout was just cleaned")
 	due, _ = o.CleanupDue(CleanupEvery, 0)
 	require.True(t, due, "the other checkout wasn't")
+}
+
+// Cleanup prunes the journal, which only grew. Events older than its age
+// go, and so do the sessions that ended, or went quiet, before it, but
+// for one a lease still names. What's newer stays.
+func TestCleanupPrunesTheJournal(t *testing.T) {
+	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
+	f := setup(t)
+	e := f.open(t)
+	old := e.now().Add(-40 * 24 * time.Hour)
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		for _, s := range []model.Session{
+			{ID: "ses_ended", Repository: e.Repository, Kind: model.SessionForeground, PID: 1, ProcessStart: "a", Version: "v", StartedAt: old, HeartbeatAt: old, EndedAt: &old},
+			{ID: "ses_quiet", Repository: e.Repository, Kind: model.SessionObserver, PID: 2, ProcessStart: "b", Version: "v", StartedAt: old, HeartbeatAt: old},
+			{ID: "ses_holding", Repository: e.Repository, Kind: model.SessionServe, PID: 3, ProcessStart: "c", Version: "v", StartedAt: old, HeartbeatAt: old},
+		} {
+			if err := tx.AddSession(s); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.AcquireLease("run:run_old", "ses_holding"); err != nil {
+			return err
+		}
+		for _, event := range []model.Event{{At: old, Kind: "run.state", Level: model.LevelInfo, Message: "long ago"}, {At: e.now(), Kind: "run.state", Level: model.LevelInfo, Message: "today"}} {
+			if _, err := tx.AppendEvent(event); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+
+	report, err := e.Cleanup(t.Context(), session(t, e), 30*24*time.Hour)
+	require.NoError(t, err)
+	require.Equal(t, 1, report.Events)
+	require.Equal(t, 2, report.Sessions, "the ended one and the quiet one")
+	events, err := e.Events(t.Context(), 0)
+	require.NoError(t, err)
+	var messages []string
+	for _, event := range events {
+		messages = append(messages, event.Message)
+	}
+	require.Contains(t, messages, "today")
+	require.NotContains(t, messages, "long ago")
+	var sessions []model.Session
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		sessions, err = r.Sessions()
+		return err
+	}))
+	var ids []model.SessionID
+	for _, s := range sessions {
+		ids = append(ids, s.ID)
+	}
+	require.Contains(t, ids, model.SessionID("ses_holding"), "a lease still names it")
+	require.NotContains(t, ids, model.SessionID("ses_ended"))
+	require.NotContains(t, ids, model.SessionID("ses_quiet"))
 }

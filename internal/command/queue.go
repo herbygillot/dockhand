@@ -35,11 +35,11 @@ func queueCommand(s *settings, streams Streams) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			session, err := observe(ctx, e)
+			ctx, session, end, err := observing(ctx, e)
 			if err != nil {
 				return err
 			}
-			defer session.End(context.WithoutCancel(ctx))
+			defer end()
 			if streams.json() {
 				result := queueJSON{Serve: serveLine(ctx, e), Runs: []queuedRunJSON{}}
 				for i := len(runs) - 1; i >= 0; i-- {

@@ -515,6 +515,8 @@ type CleanupReport struct {
 	// Caches are what it removed from providers' caches, such as the
 	// vanilla images Tart pulled.
 	Caches []string
+	// Events and Sessions count what it pruned from the journal.
+	Events, Sessions int
 }
 
 // Removed counts what it removed.
@@ -604,7 +606,23 @@ func (e *Engine) Cleanup(ctx context.Context, session *coord.Session, after time
 				Message: fmt.Sprintf("removed %s unused for %s: %s", plural(len(report.Caches), "cached image"), CacheUnused, strings.Join(report.Caches, ", "))})
 			return err
 		})
+		if err != nil {
+			return report, err
+		}
 	}
+	// The journal keeps what happened within after, as the index cache
+	// does, and the sessions that ended or went quiet before it go with
+	// their events; one a lease names stays (design v3 §11).
+	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		var err error
+		report.Events, report.Sessions, err = tx.PruneJournal(e.now().Add(-after))
+		if err != nil || report.Events+report.Sessions == 0 {
+			return err
+		}
+		_, err = tx.AppendEvent(model.Event{At: e.now(), Kind: "cleanup", Level: model.LevelVerbose,
+			Message: fmt.Sprintf("pruned %s and %s older than %s from the journal", plural(report.Events, "event"), plural(report.Sessions, "session"), after)})
+		return err
+	})
 	return report, err
 }
 

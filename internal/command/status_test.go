@@ -5,11 +5,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/store"
 )
 
 func TestStatusFollowsABranchThroughItsWork(t *testing.T) {
@@ -132,4 +134,29 @@ func TestStatusSaysAnEnvironmentWasMadeAgain(t *testing.T) {
 	require.Len(t, rows, 1)
 	require.Equal(t, "check-3 passed, but "+engine.DescribeEnvironment(arm)+" has been made again since, from another source or with other tools; jq must be built there again", rows[0].what)
 	require.Equal(t, "dockhand check --branch jq-update", rows[0].next)
+}
+
+// A command judges who is alive through one observer session, however
+// often it judges: status opened one for its stopped checks and another
+// for serve's line on every render, and watch rendered every 30 seconds.
+// Each session is a row and two journal events.
+func TestStatusOpensOneObserverSession(t *testing.T) {
+	w := checkedBranch(t)
+	t.Setenv("MACPORTS_TREE", w.clone) // every branch, and serve's line
+	started := func() int {
+		t.Helper()
+		e, err := (&settings{}).open(t.Context())
+		require.NoError(t, err)
+		defer e.Close()
+		var n int
+		require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+			n, err = r.CountEvents("session.start", time.Time{})
+			return err
+		}))
+		return n
+	}
+	before := started()
+	_, _, err := dockhand(t, "status")
+	require.NoError(t, err)
+	require.Equal(t, before+1, started())
 }

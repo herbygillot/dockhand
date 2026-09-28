@@ -16,3 +16,23 @@ This is roadmap item 1b of the block before item 6: what grows without bound, an
 - **Tests.**
   - `TestEachCheckoutKeepsItsOwnCleanupDay`: two clones in one database.
   - `TestServeLooksAgainAfterStoppingMidLook`, which fails when an interrupted look is stamped.
+
+**The journal is pruned, read where it's needed, and observed once per command (finding 34).**
+- **Pruning.** Nothing deleted events or sessions, so the journal only grew.
+  - `watch` alone opened two observer sessions a redraw, each a row and two events: about 17,000 rows a day.
+  - Design §11 promised events pruned with their runs, but runs are never pruned.
+  - Automatic cleanup now prunes events older than `cleanup.after`, as it does the port index cache, and the sessions that ended, or whose heartbeat stopped, before then. A session a lease still names stays, since the lease row refers to it.
+  - Nothing reads a pruned session: a session is read by its own process, or through a lease. The day's count of serve's pull requests reads today's events only.
+  - `store.Tx.PruneJournal` does both in one transaction, and the pass journals what it pruned.
+- **Reading.**
+  - A command following a check, and `wait`, read the whole journal from sequence 0 on each start, to show one run's events. They now read that run's, through an index on the run (schema 21).
+  - `watch` read everything once only to pass it by. It starts at the newest sequence now.
+  - `store.Reader.RunEvents` and `LastEvent` are the store's reads, and `Engine.RunEvents` and `LatestEvent` the engine's.
+- **One observer session per command.**
+  - `status` opened one to judge stopped checks and another for serve's line, on every render, and `watch` rendered every 30 seconds.
+  - A command now takes one observer, on its context (`observing`), and every judgment under it shares it. That is `status`'s whole render, and `watch` and `queue` for as long as they run.
+- **Tests.**
+  - `TestCleanupPrunesTheJournal`: an old event, an ended session, a quiet one, and a quiet one a lease holds.
+  - The store's journal test gains the run's events and the newest sequence.
+  - `TestStatusOpensOneObserverSession` counts session starts across one `status` of every branch: one, where there were two.
+

@@ -53,6 +53,11 @@ from GitHub first; serve does that every few minutes.`,
 }
 
 func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []string, attentionOnly, all bool, port string) error {
+	ctx, _, end, err := observing(ctx, e)
+	if err != nil {
+		return err
+	}
+	defer end()
 	one := func(branch model.Branch) error {
 		if streams.json() {
 			status, err := judgedStatus(ctx, e, branch)
@@ -141,11 +146,11 @@ type attention struct{ mark, branch, what, next string }
 // judgeStopped marks the statuses whose check stopped when the process
 // running it ended, which only a session can judge.
 func judgeStopped(ctx context.Context, e *engine.Engine, statuses []engine.BranchStatus) error {
-	session, err := observe(ctx, e)
+	_, session, end, err := observing(ctx, e)
 	if err != nil {
 		return err
 	}
-	defer session.End(context.WithoutCancel(ctx))
+	defer end()
 	return engine.JudgeStopped(ctx, session, statuses)
 }
 
@@ -359,9 +364,9 @@ func serveLine(ctx context.Context, e *engine.Engine) string {
 	queued, _ := e.Runs(ctx, store.RunFilter{States: []model.RunState{model.RunQueued, model.RunRunning}})
 	line := "serve: not running"
 	stopped := 0
-	session, err := observe(ctx, e)
+	_, session, end, err := observing(ctx, e)
 	if err == nil {
-		defer session.End(context.WithoutCancel(ctx))
+		defer end()
 		if leader, err := session.Holder(ctx, coord.LeaderResource); err == nil && leader != nil {
 			line = fmt.Sprintf("serve: running (pid %d)", leader.PID)
 			if leading, ok := e.LastServing(); ok && leading.PID == leader.PID && leading.SubmitPassing {
@@ -383,10 +388,22 @@ func serveLine(ctx context.Context, e *engine.Engine) string {
 	return line + " · queue: " + plural(len(queued), "run")
 }
 
-// observe starts an observer session: one that only reads, and judges who
-// is alive.
-func observe(ctx context.Context, e *engine.Engine) (*coord.Session, error) {
-	return startSession(ctx, e, model.SessionObserver)
+type observerKey struct{}
+
+// observing gives a command one observer session, a session that only reads
+// and judges who is alive, on ctx, which every judgment made under ctx
+// shares. Each session is a row and two journal events, and status judged
+// twice a render, which watch redrew every 30 seconds. A ctx that has one
+// keeps it, and ending it is its opener's.
+func observing(ctx context.Context, e *engine.Engine) (context.Context, *coord.Session, func(), error) {
+	if session, ok := ctx.Value(observerKey{}).(*coord.Session); ok {
+		return ctx, session, func() {}, nil
+	}
+	session, err := startSession(ctx, e, model.SessionObserver)
+	if err != nil {
+		return ctx, nil, func() {}, err
+	}
+	return context.WithValue(ctx, observerKey{}, session), session, func() { session.End(context.WithoutCancel(ctx)) }, nil
 }
 
 func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, branch model.Branch) error {

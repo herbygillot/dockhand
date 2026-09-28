@@ -310,6 +310,7 @@ Serve opens no pull requests by default. With `--submit-passing`, or `serve.subm
 - what `clean --merged` would;
 - what checks whose process died left behind;
 - port indexes unused for `cleanup.after`;
+- the journal's events older than `cleanup.after`, and the sessions that ended or went quiet before then, but for one a lease still names;
 - the vanilla images Tart pulled for `providers setup tart`, once unused for 30 days. Each is deleted from dockhand's own Tart home with `tart delete`, never `tart prune`, and the next setup of its release downloads it again.
 
 `serve` runs it. Without serve, a command starts it in the background once its own work is done, and doesn't wait for it; what it removed goes to `cleanup.log` beside the database. When free space where the database or Tart's images are falls below `cleanup.min_free`, it runs at once, and says so, at most once an hour.
