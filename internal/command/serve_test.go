@@ -196,7 +196,7 @@ func TestServeCleansUpAfterAMergeOnceADay(t *testing.T) {
 	out = serveFor("jq-update: cleaned up after the merge: removed worktree ")
 	require.Contains(t, out, ", branch dockhand/jq-update, ada/macports-ports:dockhand/jq-update\n")
 	require.NoDirExists(t, dir)
-	require.FileExists(t, filepath.Join(w.home, ".dockhand", "cleanup.stamp"))
+	require.FileExists(t, cleanupStamp(t, w.home))
 
 	out = serveFor("serve: leading")
 	require.NotContains(t, out, "cleaned up", "once a day")

@@ -101,8 +101,8 @@ In order. Each item lands in its own commits with an activity note, and a review
   - cleanup prunes old events and ended sessions (finding 34);
   - `check` and `watch` read the journal from where they start (finding 34);
   - each command opens one observer session (finding 34);
-  - serve's and cleanup's stamps and `serving.json` are per repository, and the day's look is stamped after it (finding 35);
-  - `CleanupDue` gives its reason as a type (finding 37).
+  - serve's and cleanup's stamps and `serving.json` are per repository, and the day's look is stamped after it (finding 35). Done 2026-09-28 ([note](activity/2026-09-28-journal-and-serve-files.md));
+  - `CleanupDue` gives its reason as a type (finding 37). Done 2026-09-28.
 - **Dead code:**
   - about 460 lines of `git`;
   - `commitmsg`'s unused composer and `outdated`'s unused helpers;

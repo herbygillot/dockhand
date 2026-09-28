@@ -375,8 +375,8 @@ func (c *cleaner) maybe(ctx context.Context) {
 	if err := c.s.e.StampCleanup(); err != nil {
 		return
 	}
-	if strings.HasPrefix(why, "only ") {
-		c.s.say("cleaning up now: %s", why)
+	if why.LowSpace {
+		c.s.say("cleaning up now: %s", why.Words)
 	}
 	report, err := c.s.e.Cleanup(ctx, c.session, c.s.options.CleanupAge)
 	if err != nil {
@@ -431,14 +431,17 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	if now.Before(due) {
 		return
 	}
-	stamp := e.serveFile("outdated.stamp")
-	if info, err := os.Stat(stamp); err == nil && !info.ModTime().Before(due) {
+	if info, err := os.Stat(e.serveFile("outdated.stamp")); err == nil && !info.ModTime().Before(due) {
 		return
 	}
-	if err := os.WriteFile(stamp, nil, 0o644); err != nil {
-		return
-	}
-	_ = os.Chtimes(stamp, now, now)
+	// The day's look is stamped once it has run, so a serve stopped part
+	// way through looks again; one that failed is stamped too, and tried
+	// the next day, its problem said once.
+	defer func() {
+		if ctx.Err() == nil {
+			_ = e.stampServeFile("outdated.stamp", now)
+		}
+	}()
 	report := func(problem string) {
 		if problem != o.reported {
 			o.s.say("%s", problem)
@@ -462,7 +465,7 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	}
 	look := OutdatedLook{CheckedAt: now, Master: string(found.Master), Outdated: names}
 	if data, err := json.Marshal(look); err == nil {
-		_ = os.WriteFile(e.serveFile("outdated.json"), data, 0o644)
+		_ = e.writeServeFile("outdated.json", data)
 	}
 	if len(names) == 0 {
 		o.s.say("serve: none of your ports has a newer release")
@@ -580,7 +583,7 @@ type Serving struct {
 
 func (e *Engine) announceServing(submitPassing bool) {
 	if data, err := json.Marshal(Serving{PID: os.Getpid(), SubmitPassing: submitPassing}); err == nil {
-		_ = os.WriteFile(e.serveFile("serving.json"), data, 0o644)
+		_ = e.writeServeFile("serving.json", data)
 	}
 }
 
@@ -595,7 +598,26 @@ func (e *Engine) LastServing() (Serving, bool) {
 	return serving, true
 }
 
-// serveFile is one of serve's small files beside the database.
+// serveFile is one of serve's small files, kept beside the database for
+// the repository, as serve's lease and the journal are: one database may
+// serve several checkouts, and each keeps its own day.
 func (e *Engine) serveFile(name string) string {
-	return filepath.Join(filepath.Dir(e.LogDirectory()), name)
+	return filepath.Join(filepath.Dir(e.LogDirectory()), "serve", string(e.Repository), name)
+}
+
+// writeServeFile writes one of serve's small files.
+func (e *Engine) writeServeFile(name string, data []byte) error {
+	path := e.serveFile(name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+// stampServeFile marks one of serve's stamps with when.
+func (e *Engine) stampServeFile(name string, when time.Time) error {
+	if err := e.writeServeFile(name, nil); err != nil {
+		return err
+	}
+	return os.Chtimes(e.serveFile(name), when, when)
 }

@@ -131,7 +131,7 @@ func cleanAutomatically(ctx context.Context, e *engine.Engine, streams Streams, 
 		return err
 	}
 	defer session.End(context.WithoutCancel(ctx))
-	fmt.Fprintf(streams.Out, "%s cleaning up: %s\n", time.Now().Format(time.RFC3339), why)
+	fmt.Fprintf(streams.Out, "%s cleaning up: %s\n", time.Now().Format(time.RFC3339), why.Words)
 	report, err := e.Cleanup(ctx, session, file.Cleanup.Age())
 	for _, name := range report.Caches {
 		fmt.Fprintf(streams.Out, "  removed %s from Tart's cache, unused for %s\n", name, engine.CacheUnused)
@@ -153,8 +153,8 @@ func (s *settings) cleanupAfter(streams Streams, command string) {
 	if !due {
 		return
 	}
-	if strings.HasPrefix(why, "only ") {
-		fmt.Fprintf(streams.Err, "Cleaning up in the background: %s.\n", why)
+	if why.LowSpace {
+		fmt.Fprintf(streams.Err, "Cleaning up in the background: %s.\n", why.Words)
 	}
 	if err := startCleanup(s.openedWith); err != nil {
 		fmt.Fprintf(streams.Err, "Couldn't start cleaning up in the background: %v\n", err)

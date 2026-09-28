@@ -132,3 +132,53 @@ func TestServeSubmitsNoMoreThanTheDailyLimit(t *testing.T) {
 	require.Empty(t, g.prs, "the limit holds across restarts")
 	require.Contains(t, served.String(), "at most 1 a day", "the config's submit_passing turns it on")
 }
+
+// stopsServe stands in for a look serve is stopped in the middle of.
+type stopsServe struct{ stop context.CancelFunc }
+
+func (s stopsServe) Outdated(context.Context, model.ObjectID, engine.OutdatedRequest) ([]engine.OutdatedPort, error) {
+	s.stop()
+	return nil, context.Canceled
+}
+
+// A serve stopped in the middle of the day's look looks again when it next
+// leads, rather than skipping the day: the look is stamped once it has
+// run.
+func TestServeLooksAgainAfterStoppingMidLook(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	g := withGitHub(t, w)
+	g.others = nil
+	withScript(t, w, "passed")
+	poll := servePoll
+	t.Cleanup(func() { servePoll = poll })
+	servePoll = 20 * time.Millisecond
+	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
+	now := serveNow
+	t.Cleanup(func() { serveNow = now })
+	morning := time.Date(2026, 9, 25, 8, 0, 0, 0, time.Local)
+	serveNow = func() time.Time { return morning }
+	config := filepath.Join(w.home, ".dockhand", "config.toml")
+	data, err := os.ReadFile(config)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(config, append([]byte("maintainer = \"{@ada example.org:ada}\"\n"), append(data, []byte("\n[serve]\nfor_outdated = \"list\"\nnotify = false\n")...)...), 0o644))
+
+	ctx, stop := context.WithCancel(t.Context())
+	testOutdatedReader = stopsServe{stop: stop}
+	t.Cleanup(func() { testOutdatedReader = nil })
+	var first syncBuffer
+	require.NoError(t, Run(ctx, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &first, Err: &first}))
+
+	withOutdated(t)
+	ctx, stop = context.WithCancel(t.Context())
+	var again syncBuffer
+	done := make(chan error)
+	go func() {
+		done <- Run(ctx, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &again, Err: &again})
+	}()
+	require.Eventually(t, func() bool { return strings.Contains(again.String(), "serve: 1 port of yours has newer releases: jq") },
+		10*time.Second, 10*time.Millisecond, again.String())
+	stop()
+	require.NoError(t, <-done)
+}

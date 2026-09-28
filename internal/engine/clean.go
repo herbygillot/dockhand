@@ -622,21 +622,28 @@ const CleanupEvery = 24 * time.Hour
 // beside the database.
 func (e *Engine) cleanupStamp() string { return e.serveFile("cleanup.stamp") }
 
+// CleanupReason is why automatic cleanup is due: every has passed since
+// the last, or, when LowSpace, free space ran short. Words say which.
+type CleanupReason struct {
+	LowSpace bool
+	Words    string
+}
+
 // CleanupDue says whether automatic cleanup is due, and why: every since
 // the last, or, at most once in LowSpacePause, less than minFree free where
 // the database or a provider's cache is; zero minFree watches no space. It
 // reads files and the providers alone, never the database, so a command
 // asks after closing it.
-func (e *Engine) CleanupDue(every time.Duration, minFree uint64) (bool, string) {
+func (e *Engine) CleanupDue(every time.Duration, minFree uint64) (bool, CleanupReason) {
 	since := every
 	if info, err := os.Stat(e.cleanupStamp()); err == nil {
 		since = e.now().Sub(info.ModTime())
 	}
 	if since >= every {
-		return true, fmt.Sprintf("%s since the last", every)
+		return true, CleanupReason{Words: fmt.Sprintf("%s since the last", every)}
 	}
 	if minFree == 0 || since < LowSpacePause {
-		return false, ""
+		return false, CleanupReason{}
 	}
 	places := []string{filepath.Dir(e.LogDirectory())}
 	for _, name := range slices.Sorted(maps.Keys(e.Providers)) {
@@ -648,10 +655,10 @@ func (e *Engine) CleanupDue(every time.Duration, minFree uint64) (bool, string) 
 	}
 	for _, place := range places {
 		if free, ok := freeSpace(place); ok && free < minFree {
-			return true, fmt.Sprintf("only %s free where %s is, under %s", gigabytes(free), place, gigabytes(minFree))
+			return true, CleanupReason{LowSpace: true, Words: fmt.Sprintf("only %s free where %s is, under %s", gigabytes(free), place, gigabytes(minFree))}
 		}
 	}
-	return false, ""
+	return false, CleanupReason{}
 }
 
 // LowSpacePause is how long cleanup waits after a pass before free space
@@ -661,12 +668,7 @@ const LowSpacePause = time.Hour
 // StampCleanup marks automatic cleanup as run now. It is stamped before it
 // runs, so one that fails isn't tried again at once.
 func (e *Engine) StampCleanup() error {
-	stamp := e.cleanupStamp()
-	if err := os.WriteFile(stamp, nil, 0o644); err != nil {
-		return err
-	}
-	now := e.now()
-	return os.Chtimes(stamp, now, now)
+	return e.stampServeFile("cleanup.stamp", e.now())
 }
 
 func gigabytes(n uint64) string { return fmt.Sprintf("%.0f GB", float64(n)/(1<<30)) }

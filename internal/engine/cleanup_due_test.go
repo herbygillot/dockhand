@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -37,7 +38,7 @@ func TestCleanupIsDueDailyOrWhenSpaceRunsShort(t *testing.T) {
 
 	due, why := e.CleanupDue(CleanupEvery, 0)
 	require.True(t, due, "never cleaned")
-	require.Equal(t, "24h0m0s since the last", why)
+	require.Equal(t, CleanupReason{Words: "24h0m0s since the last"}, why)
 	require.NoError(t, e.StampCleanup())
 	due, _ = e.CleanupDue(CleanupEvery, 0)
 	require.False(t, due, "just cleaned")
@@ -49,8 +50,8 @@ func TestCleanupIsDueDailyOrWhenSpaceRunsShort(t *testing.T) {
 	require.NoError(t, os.Chtimes(stamp, twoHours, twoHours))
 	due, why = e.CleanupDue(CleanupEvery, 1<<62)
 	require.True(t, due, "space is short, and an hour has passed")
-	require.Contains(t, why, "only ")
-	require.Contains(t, why, " free where ")
+	require.True(t, why.LowSpace)
+	require.Contains(t, why.Words, " free where ")
 	due, _ = e.CleanupDue(CleanupEvery, 1)
 	require.False(t, due, "space is plenty")
 
@@ -71,4 +72,26 @@ func TestCleanupPrunesProvidersCaches(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []time.Duration{CacheUnused}, cache.unused)
 	require.Equal(t, []string{"ghcr.io/cirruslabs/macos-sonoma-vanilla@sha256:aaaa"}, report.Caches)
+}
+
+// Each checkout keeps its own cleanup day. One database may serve two
+// checkouts, and one stamp beside it let one checkout's commands hold off
+// the other's cleanup of merged branches.
+func TestEachCheckoutKeepsItsOwnCleanupDay(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	other := filepath.Join(t.TempDir(), "other-ports")
+	run(t, filepath.Dir(other), "clone", "-q", f.upstream, other)
+	options := f.options
+	options.Tree, options.Worktrees = other, t.TempDir()
+	o, err := Open(t.Context(), options)
+	require.NoError(t, err)
+	t.Cleanup(func() { o.Close() })
+	require.NotEqual(t, e.Repository, o.Repository)
+
+	require.NoError(t, e.StampCleanup())
+	due, _ := e.CleanupDue(CleanupEvery, 0)
+	require.False(t, due, "this checkout was just cleaned")
+	due, _ = o.CleanupDue(CleanupEvery, 0)
+	require.True(t, due, "the other checkout wasn't")
 }
