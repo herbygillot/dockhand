@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/version"
 )
 
@@ -25,6 +26,17 @@ type Streams struct {
 	lines *bufio.Reader
 	// mode is whether this command line reports as JSON, and its result.
 	mode *outputMode
+	// status is standard error's one redrawn line, which progress reports
+	// print around.
+	status *statusLine
+}
+
+// stderrLine is the command's redrawn line on standard error.
+func (s Streams) stderrLine() *statusLine {
+	if s.status != nil {
+		return s.status
+	}
+	return &statusLine{w: s.Err}
 }
 
 // errTerminal reports whether errors and progress go to a terminal, where
@@ -87,7 +99,11 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	out := &switchWriter{w: stdout}
 	mode := &outputMode{json: asksForJSON(args)}
 	streams.Out, streams.mode = out, mode
+	if streams.status == nil {
+		streams.status = &statusLine{w: streams.Err}
+	}
 	var asJSON bool
+	var verbosity int
 	root := &cobra.Command{
 		Use:           "dockhand",
 		Short:         "Author, check, and submit changes to MacPorts ports",
@@ -110,9 +126,19 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	root.SetVersionTemplate("dockhand {{.Version}}\n")
 	settings.flags(root)
 	root.PersistentFlags().BoolVar(&asJSON, "json", false, "write the result as one JSON envelope on standard output")
+	root.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "say more of what dockhand does as it works on standard error: -v the work behind the scenes, -vv every step")
 	// A command that can't report as JSON is refused before it does
 	// anything, so --json never does work it can't report.
 	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		// What the work reports as it goes goes to standard error (Design
+		// v3 §12): what a person needs to follow it, and with -v and -vv,
+		// the work behind the scenes and every step.
+		threshold := progress.Level(min(verbosity, int(progress.Debug)))
+		cmd.SetContext(progress.WithReporter(cmd.Context(), func(update progress.Update) {
+			if update.Level <= threshold {
+				streams.status.say(update.Message)
+			}
+		}))
 		mode.command = strings.TrimPrefix(cmd.CommandPath(), "dockhand ")
 		if cmd == root {
 			mode.command = "status"

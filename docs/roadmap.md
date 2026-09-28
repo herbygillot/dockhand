@@ -94,7 +94,7 @@ In order. Each item lands in its own commits with an activity note, and a review
   - a canceled script build stops its whole process group, gently first (finding 42). Done 2026-09-27;
   - `serve --install` carries `--git`, `TART_HOME`, and the `DOCKHAND_*` settings it was installed under, never a token (finding 46). Done 2026-09-27;
   - `ExitCode` finds an exit through wrapping (finding 17). Done 2026-09-27 ([note](activity/2026-09-27-promised-rules.md)).
-- **Progress on stderr** (finding 31):
+- **Progress on stderr** (finding 31). Done 2026-09-28 ([note](activity/2026-09-28-progress-on-stderr.md)):
   - `-v` shows what the 48 progress reports say;
   - `outdated` prints what it found when interrupted, and clears its count.
 - **The journal and serve's files:**

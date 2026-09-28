@@ -17,6 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
+	"github.com/herbygillot/dockhand/internal/progress"
 )
 
 // bumper stands in for MacPorts: a bump rewrites the version line, and a
@@ -254,4 +255,33 @@ func TestAnUpdatesReleaseIsKept(t *testing.T) {
 	require.Equal(t, "jq-1.8.1", dig(t, release, "tag"))
 	require.Equal(t, "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b", dig(t, release, "commit"))
 	require.Equal(t, "jqlang/jq", dig(t, release, "repository"))
+}
+
+// chatty is a bumper that reports as it works, as MacPorts' editor does.
+type chatty struct{ bumper }
+
+func (c chatty) Prepare(ctx context.Context, r preparation.Request) (preparation.Result, error) {
+	progress.Report(ctx, "Building the PortIndex; this may take several minutes")
+	progress.VerboseReport(ctx, "Generating full PortIndex for source abc123")
+	return c.bumper.Prepare(ctx, r)
+}
+
+// What the work reports goes to standard error as it goes (Design v3 §12):
+// what a person needs to follow it, and with -v, the work behind the
+// scenes too.
+func TestProgressGoesToStandardError(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	testPreparer = func(e *engine.Engine) engine.Preparer { return chatty{bumper{repo: e.Repo}} }
+	t.Cleanup(func() { testPreparer = nil })
+
+	out, errs, err := dockhand(t, "update", "jq", "--new")
+	require.NoError(t, err)
+	require.Contains(t, errs, "Building the PortIndex; this may take several minutes\n")
+	require.NotContains(t, errs, "Generating full PortIndex", "the work behind the scenes waits for -v")
+	require.NotContains(t, out, "PortIndex", "progress never mixes with the result")
+
+	_, errs, err = dockhand(t, "update", "jq", "--new", "-v")
+	require.NoError(t, err)
+	require.Contains(t, errs, "Building the PortIndex; this may take several minutes\nGenerating full PortIndex for source abc123\n")
 }

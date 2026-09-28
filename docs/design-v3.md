@@ -769,7 +769,7 @@ A socket-based client and service, the note's option 1, stays unbuilt. The reaso
 
 ## 12. Output, scripting, and configuration
 
-- **Streams.** Progress goes to stderr and results to stdout. `--json` writes one versioned envelope, `{"command", "exit_code", "error", "result"}`, with snake_case keys. A command's result has one shape wherever it stops: what it didn't reach is left out or empty, the steps it goes on to are inside it, and the exit code says where it stopped (revised 2026-09-27, [note](activity/2026-09-27-one-json-shape.md)). Progress is written as JSON Lines only when asked for, with `--events`. JSON never implies approval of a change.
+- **Streams.** Progress goes to stderr and results to stdout: what a person needs to follow the work, `-v` adding the work behind the scenes, and `-vv` every step. `--json` writes one versioned envelope, `{"command", "exit_code", "error", "result"}`, with snake_case keys. A command's result has one shape wherever it stops: what it didn't reach is left out or empty, the steps it goes on to are inside it, and the exit code says where it stopped (revised 2026-09-27, [note](activity/2026-09-27-one-json-shape.md)). Progress is written as JSON Lines only when asked for, with `--events`. JSON never implies approval of a change.
 - **No terminal, no prompts.** A missing choice is an error naming the argument that supplies it.
 - **Exit codes, as today.**
   - 0: the requested outcome, or for `--enqueue`, the request saved.

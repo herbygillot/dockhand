@@ -104,7 +104,7 @@ dockhand update --outdated --mine          # one branch each, from fresh master
 dockhand update --outdated jq yq fzf       # the ones named
 ```
 
-`outdated` looks up each port named, or with `--mine` each port whose maintainers line names you (the `maintainer` setting), at master as fetched now. It lists those with newer releases, and counts the rest; `--all` lists every port, and why any couldn't be checked. Ports are looked up several at a time, so a thousand take about three minutes. Their requests to GitHub are paced below the 900 a minute GitHub allows, and a thousand ports use about 2,000 of the 5,000 an hour it allows your account, a budget shared with the GitHub CLI and anything else acting for you. `update --outdated` makes one branch per port, each update committed as one commit. It shows how it will split the work before it starts, asks unless `-y`, and with `--check` queues a check of each.
+`outdated` looks up each port named, or with `--mine` each port whose maintainers line names you (the `maintainer` setting), at master as fetched now. It lists those with newer releases, and counts the rest; `--all` lists every port, and why any couldn't be checked. Interrupted, it prints what it found so far, and `update --outdated` starts nothing. Ports are looked up several at a time, so a thousand take about three minutes. Their requests to GitHub are paced below the 900 a minute GitHub allows, and a thousand ports use about 2,000 of the 5,000 an hour it allows your account, a budget shared with the GitHub CLI and anything else acting for you. `update --outdated` makes one branch per port, each update committed as one commit. It shows how it will split the work before it starts, asks unless `-y`, and with `--check` queues a check of each.
 
 ### checksums
 
@@ -316,6 +316,7 @@ Serve opens no pull requests by default. With `--submit-passing`, or `serve.subm
 
 ## Scripting
 
+- **Progress** goes to standard error as the work goes: what you need to follow it, such as a port index being built, which can take minutes. `-v` adds the work behind the scenes, and `-vv` every step. A check dockhand runs itself reports its own steps; `-v` shows what the engine and its providers say beneath them.
 - **`--json`** writes one envelope on standard output when the command ends: `{"version": 1, "command": "...", "exit_code": 0, "error": null, "result": {...}}`. A command's result has one shape wherever it stops, and its exit code says where.
   - What it didn't reach is left out or empty.
   - The steps it goes on to are inside it:

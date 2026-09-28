@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync/atomic"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -22,21 +23,22 @@ type outdatedOptions struct {
 }
 
 // outdatedRequest is what --mine and the ports named choose.
-func outdatedRequest(s *settings, streams Streams, ports []string, mine bool) (engine.OutdatedRequest, error) {
-	request := engine.OutdatedRequest{Ports: ports, Progress: lookupProgress(streams)}
+func outdatedRequest(s *settings, streams Streams, ports []string, mine bool) (engine.OutdatedRequest, *lookups, error) {
+	looked := newLookups(streams)
+	request := engine.OutdatedRequest{Ports: ports, Progress: looked.progress}
 	if !mine {
 		if len(ports) == 0 {
-			return request, errors.New("name ports, or choose yours with --mine")
+			return request, looked, errors.New("name ports, or choose yours with --mine")
 		}
-		return request, nil
+		return request, looked, nil
 	}
 	if len(ports) > 0 {
-		return request, errors.New("--mine chooses your ports; name ports or use --mine, not both")
+		return request, looked, errors.New("--mine chooses your ports; name ports or use --mine, not both")
 	}
 	if request.Maintainers = s.file.Maintainers(); len(request.Maintainers) == 0 {
-		return request, errors.New(`--mine needs to know who you are: set maintainer = "{@you example.org:you}" in ~/.dockhand/config.toml, as your ports' maintainers lines name you`)
+		return request, looked, errors.New(`--mine needs to know who you are: set maintainer = "{@you example.org:you}" in ~/.dockhand/config.toml, as your ports' maintainers lines name you`)
 	}
-	return request, nil
+	return request, looked, nil
 }
 
 func outdatedCommand(s *settings, streams Streams) *cobra.Command {
@@ -57,12 +59,18 @@ update --outdated --mine starts on them.`,
 				return err
 			}
 			defer e.Close()
-			request, err := outdatedRequest(s, streams, args, mine)
+			request, looked, err := outdatedRequest(s, streams, args, mine)
 			if err != nil {
 				return err
 			}
 			report, err := e.Outdated(ctx, request)
+			looked.stop()
 			if err != nil {
+				if looked.cutShort(ctx, report) {
+					streams.emit(outdatedView(report))
+					fmt.Fprintf(streams.Out, "Interrupted after looking up %d of %d ports; what those found:\n", len(report.Ports), looked.total.Load())
+					_ = writeOutdated(context.WithoutCancel(ctx), e, streams.Out, report, all)
+				}
 				return err
 			}
 			streams.emit(outdatedView(report))
@@ -129,7 +137,7 @@ func updateOutdated(ctx context.Context, s *settings, streams Streams, args []st
 		return err
 	}
 	defer e.Close()
-	request, err := outdatedRequest(s, streams, args, options.mine)
+	request, looked, err := outdatedRequest(s, streams, args, options.mine)
 	if err != nil {
 		return err
 	}
@@ -140,7 +148,12 @@ func updateOutdated(ctx context.Context, s *settings, streams Streams, args []st
 		}
 	}
 	report, err := e.Outdated(ctx, request)
+	looked.stop()
 	if err != nil {
+		if looked.cutShort(ctx, report) {
+			fmt.Fprintf(streams.Out, "Interrupted after looking up %d of %d ports, so nothing was started; what those found:\n", len(report.Ports), looked.total.Load())
+			_ = writeOutdated(context.WithoutCancel(ctx), e, streams.Out, report, false)
+		}
 		return err
 	}
 	plan, err := e.PlanOutdated(ctx, report)
@@ -229,15 +242,40 @@ func writePrepared(ctx context.Context, e *engine.Engine, out io.Writer, prepare
 // lookupProgress shows, on a terminal, how many ports' newest releases are
 // looked up, on one line it redraws and clears when they all are: a large
 // --mine takes minutes. Elsewhere, and for --json, it shows nothing.
-func lookupProgress(streams Streams) func(done, total int) {
-	if !streams.errTerminal() {
-		return nil
+// lookups follows outdated's lookups: on a terminal it redraws their count
+// in place, and it remembers how many there are, for a look cut short.
+type lookups struct {
+	line  *statusLine
+	draw  bool
+	total atomic.Int64
+}
+
+func newLookups(streams Streams) *lookups {
+	return &lookups{line: streams.stderrLine(), draw: streams.errTerminal()}
+}
+
+// progress is outdated's callback as each lookup finishes.
+func (l *lookups) progress(done, total int) {
+	l.total.Store(int64(total))
+	if !l.draw {
+		return
 	}
-	return func(done, total int) {
-		if done == total {
-			fmt.Fprint(streams.Err, "\r\033[K")
-			return
-		}
-		fmt.Fprintf(streams.Err, "\r\033[KLooking up each port's newest release: %d of %d", done, total)
+	if done == total {
+		l.line.clear()
+		return
 	}
+	l.line.show(fmt.Sprintf("Looking up each port's newest release: %d of %d", done, total))
+}
+
+// stop clears the count, which a look cut short leaves drawn.
+func (l *lookups) stop() {
+	if l.draw {
+		l.line.clear()
+	}
+}
+
+// cutShort reports a look interrupted after finding something, which is
+// worth printing: what was looked up is still true.
+func (l *lookups) cutShort(ctx context.Context, report engine.OutdatedReport) bool {
+	return ctx.Err() != nil && len(report.Ports) > 0
 }

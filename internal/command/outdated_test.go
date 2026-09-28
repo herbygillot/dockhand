@@ -108,6 +108,47 @@ func TestOutdatedShowsItsProgressAtATerminal(t *testing.T) {
 
 	_, errOut, err := dockhand(t, "outdated", "jq", "lost")
 	require.NoError(t, err)
-	require.NotContains(t, errOut, "Looking up")
-	require.Nil(t, reader.asked[1].Progress, "no terminal, no progress")
+	require.NotContains(t, errOut, "Looking up", "no terminal, no count drawn")
+	require.NotNil(t, reader.asked[1].Progress, "the count is still followed, for a look cut short")
+}
+
+// cutShort stands in for a look interrupted after jq was found, and before
+// lost was: it cancels the command, as Ctrl-C does.
+type cutShort struct{ cancel context.CancelFunc }
+
+func (c cutShort) Outdated(_ context.Context, _ model.ObjectID, request engine.OutdatedRequest) ([]engine.OutdatedPort, error) {
+	if request.Progress != nil {
+		request.Progress(1, 2)
+	}
+	c.cancel()
+	return []engine.OutdatedPort{{Port: "jq", Current: "1.7.1", Newest: "1.8.1", Outdated: true}}, context.Canceled
+}
+
+// A look interrupted part way prints what it found, which is still true,
+// and says how far it got; update --outdated then starts nothing.
+func TestAnInterruptedLookPrintsWhatItFound(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	for _, args := range [][]string{{"outdated", "jq", "lost"}, {"update", "--outdated", "jq", "lost"}} {
+		ctx, cancel := context.WithCancel(t.Context())
+		testOutdatedReader = cutShort{cancel: cancel}
+		var out, errs bytes.Buffer
+		err := Run(ctx, args, Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
+		require.ErrorIs(t, err, context.Canceled, args)
+		require.Contains(t, out.String(), "Interrupted after looking up 1 of 2 ports", args)
+		require.Contains(t, out.String(), "  jq     1.7.1   1.8.1    update\n", args)
+	}
+	testOutdatedReader = nil
+	require.Empty(t, gitRun(t, w.clone, "branch", "--list", "dockhand/*"), "update --outdated started nothing")
+}
+
+// A line printed while the count shows clears it, and draws it again after.
+func TestAReportPrintsAroundTheCount(t *testing.T) {
+	var err bytes.Buffer
+	line := &statusLine{w: &err}
+	line.show("Looking up each port's newest release: 1 of 2")
+	line.say("Building the PortIndex")
+	line.clear()
+	require.Equal(t, "\r\033[KLooking up each port's newest release: 1 of 2\r\033[KBuilding the PortIndex\nLooking up each port's newest release: 1 of 2\r\033[K", err.String())
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/version"
 )
@@ -404,7 +405,10 @@ func follow(ctx context.Context, e *engine.Engine, session *coord.Session, run m
 	var err error
 	if drive {
 		var driven model.Run
-		driven, err = e.Drive(ctx, session, run.ID)
+		// Driven only to see its own run through, the engine's and the
+		// providers' reports are the work behind the scenes here: the
+		// journal and the report say what matters (-v shows them).
+		driven, err = e.Drive(progress.Quiet(ctx), session, run.ID)
 		// A serve that started meanwhile may have taken the run; then it
 		// is followed instead.
 		if held := new(coord.HeldError); errors.As(err, &held) {
