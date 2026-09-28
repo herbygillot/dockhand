@@ -56,8 +56,8 @@ func TestTestedOnSaysWhatTheEnvironmentWas(t *testing.T) {
 // The description's last line names dockhand's version, or dockhand alone
 // when the build doesn't know it.
 func TestTheSignatureNeedsNoVersion(t *testing.T) {
-	require.Equal(t, "Submitted by [dockhand](https://github.com/herbygillot/dockhand) ver. v3.1.0", signature("v3.1.0"))
-	require.Equal(t, "Submitted by [dockhand](https://github.com/herbygillot/dockhand)", signature(" "))
+	require.Equal(t, "Submitted by **[dockhand](https://github.com/herbygillot/dockhand)** (ver. v3.1.0)", signature("v3.1.0"))
+	require.Equal(t, "Submitted by **[dockhand](https://github.com/herbygillot/dockhand)**", signature(" "))
 }
 
 // A column heading is the environment's release alone, with its

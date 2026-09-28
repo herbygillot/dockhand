@@ -157,12 +157,13 @@ func ownedSections(facts bodyFacts) string {
 	return b.String()
 }
 
-// signature is the description's last line, naming dockhand and its
-// version, or dockhand alone when the build doesn't know its version.
+// signature is the description's last line, naming dockhand, in bold,
+// and its version, in parentheses, or dockhand alone when the build
+// doesn't know its version.
 func signature(tag string) string {
-	line := "Submitted by [dockhand](" + version.ProjectURL + ")"
+	line := "Submitted by **[dockhand](" + version.ProjectURL + ")**"
 	if tag = strings.TrimSpace(tag); tag != "" {
-		line += " ver. " + tag
+		line += " (ver. " + tag + ")"
 	}
 	return line
 }
