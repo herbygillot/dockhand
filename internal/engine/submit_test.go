@@ -268,13 +268,19 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 	_, err = e.ApplyTidy(t.Context(), tidy)
 	require.NoError(t, err)
 
-	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Types: []string{"bugfix"}})
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
 	require.Empty(t, plan.Blocking)
 	require.NotNil(t, plan.Existing)
 	require.True(t, plan.Replaces, "the tidied commit replaces the pushed one")
 	require.False(t, plan.BodyKept)
-	require.Contains(t, plan.Body, "- [ ] bugfix", "Type(s) is the person's part once the pull request exists")
+	require.Empty(t, plan.Refreshes)
+	// --type names the Type(s) of a pull request already open, as of a new
+	// one: the person named them.
+	typed, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Types: []string{"bugfix"}})
+	require.NoError(t, err)
+	require.Contains(t, typed.Body, "- [x] bugfix")
+	require.Equal(t, []string{"its Type(s)"}, typed.Refreshes)
 	_, err = e.ApplySubmit(t.Context(), plan)
 	require.NoError(t, err)
 	require.Len(t, fake.created, 1)
@@ -486,6 +492,10 @@ func TestTheMergedDescriptionsTypesAreDockhandsWhileUnchanged(t *testing.T) {
 	require.Equal(t, []string{"its Type(s)", "its description from Tested on down"}, refreshedParts(last, merged))
 	merged, _ = mergeBody(strings.ReplaceAll(last, "\n", "\r\n"), last, fresh, false)
 	require.Contains(t, merged, "- [x] enhancement", "GitHub's line endings aren't a person's edit")
+	ticked := body("jq: update", []string{"enhancement"}, "old evidence")
+	merged, _ = mergeBody(ticked, ticked, body("jq: update", []string{"security fix"}, "new evidence"), false)
+	require.Equal(t, body("jq: update", []string{"enhancement", "security fix"}, "new evidence"), merged,
+		"what dockhand ticked stays ticked, though a person's commit since means it wouldn't tick it now; what's newly true is ticked too")
 
 	edited := body("mine", []string{"bugfix"}, "old evidence")
 	merged, ok = mergeBody(edited, last, fresh, false)

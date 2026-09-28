@@ -96,7 +96,7 @@ The person asked whether dockhand could tick enhancement on #35001, opened befor
 (#35001 was ticked by hand instead, which wasn't what the person meant: the question was what dockhand can do.)
 
 The Type(s) are now a part dockhand owns, like everything from Tested on down (`mergeBody`):
-- **Unchanged since dockhand wrote them,** they're refreshed. Submitting again would have ticked #35001's.
+- **Unchanged since dockhand wrote them,** they're refreshed, but only gain ticks. Submitting again would have ticked #35001's. What dockhand ticked stays ticked: an update's enhancement is ticked only while every commit is dockhand's own, and a reviewer's change folded in later would otherwise untick it. The whole suite found that in `TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription`. That test had also pinned the old rule, that `--type` changes nothing once the pull request exists, and now pins the new one.
 - **Edited by a person on GitHub,** they stay theirs. So #35001's, ticked by hand, now read as the person's.
 - **Named with `--type`,** they replace what's there, since the person named them.
 - **A description with Tested on alone,** leaving Type(s) out, as another template or a person's edit can, stays without them. With `--type`, the Type(s) go before Tested on. Everything from Tested on down is refreshed as before.

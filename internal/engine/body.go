@@ -70,7 +70,6 @@ func pullRequestBody(facts bodyFacts) string {
 		}
 		fmt.Fprintln(&b)
 	}
-	fmt.Fprintf(&b, "%s\n\n", typesHeading)
 	types := slices.Clone(facts.Types)
 	if len(types) == 0 && facts.Updated {
 		types = append(types, "enhancement")
@@ -80,12 +79,33 @@ func pullRequestBody(facts bodyFacts) string {
 			types = append(types, "security fix")
 		}
 	}
+	b.WriteString(typesSection(types))
+	b.WriteString(ownedSections(facts))
+	return b.String()
+}
+
+// typesSection is a description's Type(s), with these ticked.
+func typesSection(types []string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s\n\n", typesHeading)
 	for _, kind := range PullRequestTypes {
 		fmt.Fprintf(&b, "- [%s] %s\n", tick(slices.Contains(types, kind)), kind)
 	}
 	b.WriteString("\n")
-	b.WriteString(ownedSections(facts))
 	return b.String()
+}
+
+// tickedTypes are the Type(s) a Type(s) part as dockhand writes it ticks.
+func tickedTypes(section string) []string {
+	var ticked []string
+	for _, line := range strings.Split(section, "\n") {
+		for _, kind := range PullRequestTypes {
+			if strings.TrimSpace(line) == "- [x] "+kind {
+				ticked = append(ticked, kind)
+			}
+		}
+	}
+	return ticked
 }
 
 // ownedSections are the part of the description dockhand keeps up to date:
@@ -382,7 +402,9 @@ func typesSpan(body string) (int, int, bool) {
 // mergeBody updates an existing description. Each part dockhand writes is
 // rewritten only while it is still exactly what dockhand last wrote there,
 // so a person's edits are kept: the Type(s), and everything from Tested on
-// down. Types the person named (named) replace the Type(s) however they
+// down. The Type(s) only gain ticks that way: what dockhand ticked stays
+// ticked, though a person's change folded in since means it wouldn't tick
+// it now. Types the person named (named) replace the Type(s) however they
 // read, or go before Tested on in a description that leaves them out;
 // unnamed, such a description stays without them. It reports whether the
 // part from Tested on down was dockhand's to rewrite.
@@ -409,8 +431,11 @@ func mergeTypes(body, lastWritten, fresh string, named bool) string {
 	types := fresh[start:end]
 	if from, to, found := typesSpan(body); found {
 		was, wasEnd, written := typesSpan(lastWritten)
-		if named || written && normalize(body[from:to]) == normalize(lastWritten[was:wasEnd]) {
+		switch {
+		case named:
 			return body[:from] + types + body[to:]
+		case written && normalize(body[from:to]) == normalize(lastWritten[was:wasEnd]):
+			return body[:from] + typesSection(append(tickedTypes(body[from:to]), tickedTypes(types)...)) + body[to:]
 		}
 		return body
 	}
