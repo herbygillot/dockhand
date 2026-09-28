@@ -151,7 +151,7 @@ Help teaches the short loop first.
 | Purpose | Commands |
 | --- | --- |
 | Start or enter work | `init`, `start`, `adopt`, `path` |
-| Author | `update`, `checksums`, `revbump`, `create`, `edit` |
+| Author | `bump`, `update`, `checksums`, `revbump`, `create`, `edit` |
 | Understand | `status`, `diff`, `impact`, `outdated`, `info` |
 | Check | `check`, `logs`, `retry` |
 | Prepare for review | `tidy`, `submit`, `rebase` |
@@ -253,13 +253,15 @@ Preview [p] · Edit description [e] · Submit [s] · Cancel [q]
 Opened #34901  https://github.com/macports/macports-ports/pull/34901
 ```
 
-The same thing as one explicit line, for someone who knows what they want:
+The same thing as one line, for someone who knows what they want:
 
 ```sh
-dockhand update jq --new --submit
+dockhand bump jq
 ```
 
-`--submit` means tidy the new branch's single authoring edit, check it, and submit that exact commit once the check passes. It is the combination of three commands, spelled out, and it previews all three. Without a terminal, the tidy and submit previews are skipped only when the plan is unambiguous (§8), and `--yes` never resolves an ambiguous plan. On a terminal, `--yes` skips the tidy's review of an unambiguous plan. `--on`, `--tested-binaries`, and `--tested-variants` are passed to the check and the pull request as `submit --check` takes them, and where to check is settled before the edit, so a mistaken `--on` changes nothing. A plain `submit` never tidies or checks by itself.
+`bump` is `update --new --submit --yes` asking nothing: the one-shot, where `update` is the same work a step at a time, looking and editing along the way (added 2026-09-27, [note](activity/2026-09-27-bump.md)). Since nobody looks before it submits, it holds its pull request for what holds `serve`'s (§11), and exits 3 naming the `submit` that finishes it. Before the edit, it stops with nothing changed when an open branch already changes the port, the check has nowhere to build, or the port is already at the release. It never ticks the template's tested checkboxes, which only `--tested-binaries` and `--tested-variants` do.
+
+`update jq --new --submit` is the same, previewing each step. `--submit` means tidy the new branch's single authoring edit, check it, and submit that exact commit once the check passes. It is the combination of three commands, spelled out, and it previews all three. Without a terminal, the tidy and submit previews are skipped only when the plan is unambiguous (§8), and `--yes` never resolves an ambiguous plan. On a terminal, `--yes` skips the tidy's review of an unambiguous plan. `--on`, `--tested-binaries`, and `--tested-variants` are passed to the check and the pull request as `submit --check` takes them, and where to check is settled before the edit, so a mistaken `--on` changes nothing. A plain `submit` never tidies or checks by itself.
 
 ### 6.3 When dockhand can't edit the Portfile
 
@@ -745,7 +747,7 @@ What `serve` does besides running checks (each can be turned off, and all show i
 - **Submits what passed, only when started with `--submit-passing`.** By default `serve` only builds and tests. With the flag, and with `serve.for_outdated = "check"`, it opens a PR for each branch it prepared whose check passed. `serve.submit_passing = true` in the config turns it on for every `serve`, and `--no-submit-passing` turns it off for one run. Either way, `serve` says at startup, and in `queue`, that it opens PRs for passing updates. Guardrails:
   - **Scope.** Only the branches `serve` itself created from new releases. Your own branches are submitted by you, with `submit`, `submit --check`, or `submit --passing`.
   - **What passed.** The check must have passed on the exact committed tree being submitted, under the publication rule in §3, with no acknowledgements needed. A branch that needs `--accept` waits for a person.
-  - **Held for a look.** A branch with any `!` finding from the upstream comparison, such as a changed license file, new declared dependencies, or changed build files, or any commit-rule warning, is not submitted. It lands on the attention list instead.
+  - **Held for a look.** A branch with any `!` finding from the upstream comparison, such as a changed license file, new declared dependencies, or changed build files, or any commit-rule warning, is not submitted; nor is one for a port another open PR updates, or when the search for one fails, since serve would otherwise open a second PR for an update someone already proposed. It lands on the attention list instead.
   - **A daily limit.** At most `serve.submit_limit` PRs a day (10 by default). The rest wait for the next day, so a release wave doesn't land on reviewers all at once.
   - **Visibility.** `queue` and `status` say "serve opens PRs for passing updates". Every PR it opens appears on the attention list as "opened by serve", and the PR body says that it was submitted without a person's review.
 - **Cleans up** on decision 36's schedule.
@@ -848,7 +850,7 @@ Changed by v3:
 
 | Today | v3 |
 | --- | --- |
-| `bump jq` | `update jq --new --submit`, or `start`, `update`, `check`, `tidy`, `submit` |
+| `bump jq` | `update jq --new`, then `check`, `tidy`, `submit`; v3's `bump jq` goes on to the pull request asking nothing |
 | `bump-revision jq --subject …` | `revbump jq --subject …` |
 | `checksums jq` | `checksums jq` |
 | `bump --revbump-dependents` (decided) | `update --revbump-dependents` |

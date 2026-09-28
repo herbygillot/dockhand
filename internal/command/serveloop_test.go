@@ -21,6 +21,7 @@ func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
 	versioned(t, w)
 	withBumper(t)
 	g := withGitHub(t, w)
+	g.others = nil // nobody else's pull request updates jq, which would hold serve's
 	withScript(t, w, "passed")
 	withOutdated(t)
 	poll := servePoll
@@ -88,6 +89,7 @@ func TestServeSubmitsNoMoreThanTheDailyLimit(t *testing.T) {
 	versioned(t, w)
 	withBumper(t)
 	g := withGitHub(t, w)
+	g.others = nil
 	withScript(t, w, "passed")
 	withOutdated(t)
 	poll := servePoll

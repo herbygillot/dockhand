@@ -61,7 +61,7 @@ A command finds its branch from `--branch`, else the branch checked out where it
 
 ## Changing ports
 
-These commands change the branch's working files and commit nothing, unless `update --outdated` or `--submit` asks them to go on. Each remembers what it did, so `tidy` can later write the commit subject a MacPorts reviewer expects. `--plan` shows the edit and changes nothing.
+These commands change the branch's working files and commit nothing, unless `update --outdated`, `--submit`, or `bump` asks them to go on. Each remembers what it did, so `tidy` can later write the commit subject a MacPorts reviewer expects. `--plan` shows the edit and changes nothing.
 
 ### update
 
@@ -78,6 +78,23 @@ It then compares the old and new source archives, and reports what a passing bui
 `--revbump-dependents` also bumps the revision of every port that links the updated one directly, found in the port index at the branch's base, so users rebuild them. `--except <port>` leaves one out. `tidy` commits each as "<port>: rebuild for <updated> <version>".
 
 `--submit` goes on to tidy, check, and submit, previewing each step, and submits exactly that commit once its check passes. It takes submit's `--on`, `--tested-binaries`, and `--tested-variants`, and settles where to check before it edits anything. On a terminal the tidy asks for review; `--yes` applies it without asking when it is dockhand's own edit alone, as it does without a terminal.
+
+### bump
+
+```sh
+dockhand bump jq           # the newest release, all the way to its pull request
+dockhand bump jq 1.8.1     # a version you name
+```
+
+`bump` is `update --new --submit --yes` asking nothing, for an update you want submitted without looking along the way; `update` is the same work a step at a time. It isn't `port bump`, which refreshes checksums, as `checksums` does. It starts a branch from fresh master, updates the port, tidies the edit into one commit, checks it, and submits exactly that commit once the check passes. It takes `update`'s `--revbump-dependents`, `--except`, `--shared-release`, and `--keep-old-checksums`, and `submit`'s `--on`, `--tested-binaries`, and `--tested-variants`.
+
+It stops wherever a person should look:
+
+- Before it edits anything, it stops with nothing changed when an open branch already changes the port, the check has nowhere to build, or the port is already at the release.
+- A failed check leaves the branch, with its logs.
+- A passing check is held, as `serve`'s are, when the upstream comparison found something a build can't catch, a commit rule has a finding, or another pull request is open for the port, or couldn't be looked for. `bump` exits 3 and names the `submit` that finishes it after a look.
+
+The pull request's tested checkboxes stay unticked unless `--tested-binaries` or `--tested-variants` says otherwise: they say what you tested, which dockhand can't.
 
 ### Many ports at once
 
@@ -276,7 +293,7 @@ Between checks it:
 - once a day, unless `cleanup.automatic = false`, cleans up automatically, as below;
 - posts macOS notifications as checks finish and pull requests change. They are posted through AppleScript, so macOS credits them to Script Editor, and clicking one opens it. `serve.notify = false` turns them off, and `--no-notify` turns them off for one run.
 
-Serve opens no pull requests by default. With `--submit-passing`, or `serve.submit_passing = true`, it opens one for each branch it prepared whose check passed, at most `serve.submit_limit` a day. It never opens one with an upstream or commit-rule finding, or one needing `--accept`; those wait on the attention list, and the pull request says serve opened it without a person's review. `--no-submit-passing` turns it off for one run.
+Serve opens no pull requests by default. With `--submit-passing`, or `serve.submit_passing = true`, it opens one for each branch it prepared whose check passed, at most `serve.submit_limit` a day. It never opens one with an upstream or commit-rule finding, one needing `--accept`, or one for a port another open pull request updates; those wait on the attention list, and the pull request says serve opened it without a person's review. `--no-submit-passing` turns it off for one run.
 
 `--install` runs the agent with the flags given beside it, such as `--no-notify`, and `--uninstall` removes it.
 
@@ -300,7 +317,7 @@ Serve opens no pull requests by default. With `--submit-passing`, or `serve.subm
 ## Scripting
 
 - **`--json`** writes one envelope on standard output when the command ends: `{"version": 1, "command": "...", "exit_code": 0, "error": null, "result": {...}}`.
-- **Exit codes:** 0 for success, 1 for an error, 2 for a failed check, 3 when something needs attention (`status --attention`), and 130 for an interrupt.
+- **Exit codes:** 0 for success, 1 for an error, 2 for a failed check, 3 when something needs attention (`status --attention`, or a `bump` held for a look), and 130 for an interrupt.
 - **Without a terminal**, nothing is asked. A command that would ask refuses and says what it needs, or proceeds where `-y` is given. `tidy` applies only a plan made of dockhand's own edits, or one you give it.
 
 ## Settings

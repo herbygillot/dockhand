@@ -43,7 +43,7 @@ dockhand tidy                     # one commit, "jq: update to 1.8.1"
 dockhand submit                   # push to your fork and open the pull request
 ```
 
-Each step shows what it will do before it does it, and `--plan` on any of them shows the plan and changes nothing. `update jq --new --submit` runs the whole sequence, previewing each step. If the check fails, the branch stays as it is. `dockhand logs check-12 --port jq` prints the log, and you fix the Portfile in the worktree and run `check` again. Checks build the files as they are on disk, committed or not, so there is nothing to commit first.
+Each step shows what it will do before it does it, and `--plan` on any of them shows the plan and changes nothing. `update jq --new --submit` runs the whole sequence, previewing each step, and `bump jq` runs it asking nothing, stopping wherever you should look. If the check fails, the branch stays as it is. `dockhand logs check-12 --port jq` prints the log, and you fix the Portfile in the worktree and run `check` again. Checks build the files as they are on disk, committed or not, so there is nothing to commit first.
 
 `status` shows every open branch: its ports, its edits, its latest check, and its pull request, under a list of what needs you, each with the command that moves it forward. Inside a branch's worktree, `status` shows that branch in detail.
 

@@ -55,6 +55,14 @@ func (s Streams) terminal() bool {
 	return ok && isTerminal(file.Fd())
 }
 
+// unattended are the streams of a command that asks nothing, whatever its
+// input, as bump does: everything that would ask goes the way it goes
+// without a terminal.
+func (s Streams) unattended() Streams {
+	s.In, s.interactive, s.lines = strings.NewReader(""), false, nil
+	return s
+}
+
 // gettingStarted is the main help's introduction: how to begin, and where
 // the guide is.
 const gettingStarted = `In your ports checkout, dockhand init sets up, and dockhand providers setup
@@ -65,7 +73,9 @@ tart makes a clean macOS image for checks to build in. Then:
   dockhand tidy                   shape its commits for review
   dockhand submit                 open the pull request from your fork
 
-docs/usage.md is the guide, and dockhand status shows where things are.`
+dockhand bump <port> does all four asking nothing, and stops where you
+should look. docs/usage.md is the guide, and dockhand status shows where
+things are.`
 
 // Run executes the command line in args.
 func Run(ctx context.Context, args []string, streams Streams) error {
@@ -131,6 +141,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	}
 	root.AddGroup(&cobra.Group{ID: "author", Title: "Author:"})
 	for _, command := range []*cobra.Command{
+		bumpCommand(&settings, streams),
 		updateCommand(&settings, streams),
 		checksumsCommand(&settings, streams),
 		revbumpCommand(&settings, streams),

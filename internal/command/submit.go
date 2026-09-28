@@ -64,7 +64,7 @@ GitHub is kept.
 				return err
 			}
 			if check {
-				return submitChecked(ctx, s, e, streams, request, on)
+				return submitChecked(ctx, s, e, streams, request, on, false)
 			}
 			plan, err := e.PlanSubmit(ctx, request)
 			if err != nil {
@@ -175,8 +175,10 @@ func finishSubmit(ctx context.Context, e *engine.Engine, streams Streams, plan e
 
 // submitChecked checks the branch's committed head and submits exactly
 // that commit once the check passes (Design v3 §9): the command itself is
-// the decision, so it asks nothing after the check.
-func submitChecked(ctx context.Context, s *settings, e *engine.Engine, streams Streams, request engine.SubmitRequest, on []string) error {
+// the decision, so it asks nothing after the check. Unattended, as for
+// bump, it holds the submission for a person's look for what would hold
+// serve's (engine.Held).
+func submitChecked(ctx context.Context, s *settings, e *engine.Engine, streams Streams, request engine.SubmitRequest, on []string, unattended bool) error {
 	request.PendingCheck, request.Head = true, true
 	plan, err := e.PlanSubmit(ctx, request)
 	if err != nil {
@@ -234,6 +236,16 @@ func submitChecked(ctx context.Context, s *settings, e *engine.Engine, streams S
 	if len(plan.Blocking) > 0 {
 		writeSubmitPlan(streams.Out, plan)
 		return errors.New("nothing was submitted")
+	}
+	if unattended {
+		held, err := e.Held(ctx, plan)
+		if err != nil {
+			return err
+		}
+		if len(held) > 0 {
+			name := plan.Branch.ShortName()
+			return exitf(3, "%s passed its check and waits for your look, so nothing was submitted: %s\nOnce it's fine: dockhand submit --branch %s", name, strings.Join(held, "; "), name)
+		}
 	}
 	fmt.Fprintln(streams.Out)
 	return applySubmit(ctx, e, streams, plan, s.file.Submit.RerequestReview)

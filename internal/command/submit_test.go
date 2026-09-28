@@ -30,6 +30,8 @@ type fakeGitHub struct {
 	// theirs are other people's pull requests, by number.
 	theirs map[int]forge.PullRequest
 	status forge.PullRequestStatus
+	// others are the open pull requests a search for a port finds.
+	others []forge.PullRequestSummary
 }
 
 func (g *fakeGitHub) AuthenticatedUser(context.Context) (string, error) { return "ada", nil }
@@ -96,14 +98,14 @@ func (g *fakeGitHub) Inspect(context.Context, forge.PullRequestRef) (forge.PullR
 }
 
 func (g *fakeGitHub) OpenPullRequests(context.Context, string, string) ([]forge.PullRequestSummary, error) {
-	return []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}, nil
+	return g.others, nil
 }
 
 func withGitHub(t *testing.T, w world) *fakeGitHub {
 	fork := filepath.Join(filepath.Dir(w.upstream), "fork.git")
 	gitRun(t, filepath.Dir(w.upstream), "clone", "-q", "--bare", w.upstream, fork)
 	gitRun(t, w.clone, "remote", "add", "fork", fork)
-	g := &fakeGitHub{upstream: w.upstream, fork: fork}
+	g := &fakeGitHub{upstream: w.upstream, fork: fork, others: []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}}
 	testForge = func(*engine.Engine) engine.Forge { return g }
 	t.Cleanup(func() { testForge = nil })
 	return g

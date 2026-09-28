@@ -147,14 +147,8 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 	}
 	status.Scope = ScopeOf(changed)
 	if branch.Origin == model.OriginServe {
-		changes, err := e.UpstreamFindings(ctx, branch)
-		if err != nil {
+		if status.Held, err = e.upstreamHolds(ctx, branch); err != nil {
 			return status, err
-		}
-		for _, change := range changes {
-			if change.Hold {
-				status.Held = append(status.Held, change.Message)
-			}
 		}
 	}
 

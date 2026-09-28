@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -59,9 +60,7 @@ const ServeNote = "Opened by `dockhand serve` for an update it prepared and chec
 
 // ServeCandidates are the passing branches (PassingBranches) serve itself
 // started, with no pull request yet. Each is planned as submit would plan
-// it, and held when anything asks for a person: a publication rule the
-// check doesn't meet without an acknowledgement, a finding in the
-// upstream comparison, or a commit-rule finding.
+// it, and held when anything asks for a person (SubmitPlan.held).
 func (e *Engine) ServeCandidates(ctx context.Context) ([]ServeCandidate, error) {
 	passing, err := e.PassingBranches(ctx)
 	if err != nil {
@@ -80,14 +79,56 @@ func (e *Engine) ServeCandidates(ctx context.Context) ([]ServeCandidate, error) 
 			candidates = append(candidates, candidate)
 			continue
 		}
-		candidate.Held = append(candidate.Held, plan.Blocking...)
-		candidate.Held = append(candidate.Held, status.Held...)
-		for _, finding := range plan.Findings {
-			candidate.Held = append(candidate.Held, "commit rules: "+finding.String())
-		}
+		candidate.Held = plan.held(status.Held)
 		candidates = append(candidates, candidate)
 	}
 	return candidates, nil
+}
+
+// Held are the reasons a submission no person looked over waits for one,
+// as dockhand bump's does (SubmitPlan.held), for a branch of any origin.
+func (e *Engine) Held(ctx context.Context, plan SubmitPlan) ([]string, error) {
+	upstream, err := e.upstreamHolds(ctx, plan.Branch)
+	if err != nil {
+		return nil, err
+	}
+	return plan.held(upstream), nil
+}
+
+// held are the reasons a submission no person looked over waits for one
+// (Design v3 §11's guardrails): what blocks it; what the upstream
+// comparison found that a passing build can't catch, as upstream says; a
+// commit-rule finding; and another open pull request for its ports, or not
+// knowing whether there is one.
+func (p SubmitPlan) held(upstream []string) []string {
+	held := slices.Clone(p.Blocking)
+	held = append(held, upstream...)
+	for _, finding := range p.Findings {
+		held = append(held, "commit rules: "+finding.String())
+	}
+	for _, pr := range p.Others {
+		held = append(held, fmt.Sprintf("#%d is open for the same port: %s", pr.Number, pr.Title))
+	}
+	if p.SearchProblem != "" {
+		held = append(held, "couldn't look for other open pull requests: "+p.SearchProblem)
+	}
+	return held
+}
+
+// upstreamHolds are the upstream comparison's findings that hold a
+// branch's updates for a person's look.
+func (e *Engine) upstreamHolds(ctx context.Context, branch model.Branch) ([]string, error) {
+	changes, err := e.UpstreamFindings(ctx, branch)
+	if err != nil {
+		return nil, err
+	}
+	var held []string
+	for _, change := range changes {
+		if change.Hold {
+			held = append(held, change.Message)
+		}
+	}
+	return held, nil
 }
 
 // SubmitForServe opens the pull request for a candidate serve may submit,

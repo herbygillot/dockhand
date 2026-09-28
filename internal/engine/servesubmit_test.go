@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 )
@@ -81,6 +82,27 @@ func TestServeHoldsAnUpdateWhoseUpstreamChangedItsLicense(t *testing.T) {
 	require.Equal(t, []string{"upstream's LICENSE changed; the Portfile's license line may need to follow"}, candidates[0].Held)
 	_, err = e.SubmitForServe(t.Context(), candidates[0])
 	require.ErrorContains(t, err, "is held for a look: upstream's LICENSE changed")
+}
+
+// Another open pull request for the port holds serve's, which would
+// otherwise open a second one for the same update; so does not knowing,
+// when the search fails.
+func TestServeHoldsAnUpdateAnotherPullRequestIsOpenFor(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	fake.others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.1"}}
+	servePrepared(t, e)
+
+	candidates, err := e.ServeCandidates(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []string{"#34777 is open for the same port: jq: update to 1.8.1"}, candidates[0].Held)
+	_, err = e.SubmitForServe(t.Context(), candidates[0])
+	require.ErrorContains(t, err, "is held for a look: #34777 is open")
+	require.Empty(t, fake.created)
+
+	held := SubmitPlan{SearchProblem: "rate limited"}.held(nil)
+	require.Equal(t, []string{"couldn't look for other open pull requests: rate limited"}, held)
 }
 
 // submit --passing and serve read one definition of a passing branch:

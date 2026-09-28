@@ -212,13 +212,14 @@ func tidyAndSubmit(ctx context.Context, s *settings, streams Streams, branch mod
 	}
 	fmt.Fprintln(out)
 	request := engine.SubmitRequest{Branch: branch, TestedBinaries: linked.testedBinaries, TestedVariants: linked.testedVariants}
-	return submitChecked(ctx, s, e, streams, request, linked.on)
+	return submitChecked(ctx, s, e, streams, request, linked.on, linked.unattended)
 }
 
 // linkedOptions are update's --revbump-dependents and --except, and
 // --submit, which goes on from the edit, with what it passes on: submit
 // --check's --on, --tested-binaries, and --tested-variants, and --yes, which
-// applies an unambiguous tidy without asking.
+// applies an unambiguous tidy without asking. unattended is bump's: nobody
+// looks before the submission, so it holds what serve's would.
 type linkedOptions struct {
 	revbump                        bool
 	except                         []string
@@ -226,6 +227,7 @@ type linkedOptions struct {
 	on                             []string
 	testedBinaries, testedVariants bool
 	yes                            bool
+	unattended                     bool
 }
 
 // author finds the branch, makes the edit, and reports it.
