@@ -57,8 +57,14 @@ exit 0
 // the fake port, and returns its results and the commands port was given.
 func guestRun(t *testing.T, input guestInput, env ...string) (guestResults, []string) {
 	t.Helper()
+	return guestRunIn(t, t.TempDir(), input, env...)
+}
+
+// guestRunIn is guestRun in a root the caller gives, whose prefix is
+// root/prefix.
+func guestRunIn(t *testing.T, root string, input guestInput, env ...string) (guestResults, []string) {
+	t.Helper()
 	executable := testsupport.MacPortsTclsh(t)
-	root := t.TempDir()
 	prefix := filepath.Join(root, "prefix")
 	require.NoError(t, os.MkdirAll(filepath.Join(prefix, "bin"), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(prefix, "etc", "macports"), 0o755))
@@ -238,4 +244,29 @@ func keep(items []string, wanted func(string) bool) []string {
 		}
 	}
 	return kept
+}
+
+// The archives the guest installs targets from are an archive site of
+// MacPorts' own kind, one for each type of archive, verified by the key
+// MacPorts is told to trust; without them, MacPorts is left as it is.
+func TestKeptArchivesAreAnArchiveSiteOfMacPorts(t *testing.T) {
+	root := t.TempDir()
+	input := twoTargets("declared")
+	input.Archives = []guestArchive{{Port: "libharbor", Name: "libharbor-4_0.darwin_25.arm64.tbz2"}, {Port: "zlib", Name: "zlib-1.3.2_0.darwin_25.arm64.tbz2"}}
+	input.ArchiveSite, input.ArchiveKeys = "/var/tmp/dockhand-archives", []string{"/var/tmp/dockhand-archives/dockhand.pem", "/var/tmp/dockhand-archives/dockhand.pub"}
+	results, _ := guestRunIn(t, root, input)
+	require.Equal(t, "finished", results.State, results.Detail)
+	etc := filepath.Join(root, "prefix", "etc", "macports")
+	keys, err := os.ReadFile(filepath.Join(etc, "pubkeys.conf"))
+	require.NoError(t, err)
+	require.Equal(t, "/var/tmp/dockhand-archives/dockhand.pem\n/var/tmp/dockhand-archives/dockhand.pub\n", string(keys))
+	sites, err := os.ReadFile(filepath.Join(etc, "archive_sites.conf"))
+	require.NoError(t, err)
+	require.Equal(t, "\nname dockhand_tbz2\nurls file:///var/tmp/dockhand-archives/\ntype tbz2\nprefix "+filepath.Join(root, "prefix")+"\n", string(sites), "one site for the one type")
+
+	plain := t.TempDir()
+	results, _ = guestRunIn(t, plain, twoTargets("declared"))
+	require.Equal(t, "finished", results.State, results.Detail)
+	require.NoFileExists(t, filepath.Join(plain, "prefix", "etc", "macports", "archive_sites.conf"))
+	require.NoFileExists(t, filepath.Join(plain, "prefix", "etc", "macports", "pubkeys.conf"))
 }

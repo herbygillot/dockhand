@@ -304,6 +304,24 @@ try {
     set sources [open $prefix/etc/macports/sources.conf w]
     puts $sources "file://$root/ports \[default\]"
     close $sources
+    # The archives dockhand kept of targets this guest installs rather than
+    # builds (decision 28) are an archive site of MacPorts' own kind: local,
+    # so tried first, and verified by the keys it is told to trust.
+    if {[dict exists $input archives] && [llength [dict get $input archives]]} {
+        set keys [open $prefix/etc/macports/pubkeys.conf a]
+        foreach key [dict get $input archive_keys] { puts $keys $key }
+        close $keys
+        set types {}
+        foreach archive [dict get $input archives] {
+            set type [string range [file extension [dict get $archive name]] 1 end]
+            if {$type ni $types} { lappend types $type }
+        }
+        set sites [open $prefix/etc/macports/archive_sites.conf a]
+        foreach type $types {
+            puts $sites "\nname dockhand_$type\nurls file://[dict get $input archive_site]/\ntype $type\nprefix $prefix"
+        }
+        close $sites
+    }
     package require macports
     mportinit
     set platform [dict get $input platform]

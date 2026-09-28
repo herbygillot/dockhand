@@ -17,19 +17,13 @@ import (
 // environment reuse considers, newest first.
 const reuseCandidates = 5
 
-// reusable chooses the targets an environment has left to build that reuse
-// an earlier build instead, before its first attempt (reuse.Choose,
-// decision 28): each target's newest passed builds there that recorded
-// what they read, in the environment of its identity now. A check with
-// Fresh reuses nothing, and nor does an environment that can't say what it
-// is.
-func (d *driver) reusable(ctx context.Context, environment model.Environment, identity string, remaining []buildenv.Target, tree model.ObjectID) (map[model.TargetID]reuse.Candidate, error) {
-	if d.plan.Fresh || identity == "" || len(remaining) == 0 {
-		return nil, nil
-	}
+// earlier are the targets an environment has left to build, each with
+// its newest passed builds there that recorded what they read (Reusable),
+// and the paths those builds read.
+func (d *driver) earlier(ctx context.Context, environment model.Environment, remaining []buildenv.Target) ([]reuse.Target, []string, error) {
 	targets := make([]reuse.Target, len(remaining))
 	var paths []string
-	if err := d.e.Store.View(ctx, d.e.Repository, func(r store.Reader) error {
+	err := d.e.Store.View(ctx, d.e.Repository, func(r store.Reader) error {
 		for i, target := range remaining {
 			targets[i] = reuse.Target{PlanTarget: target.PlanTarget, DependsOn: target.DependsOn}
 			results, err := r.Reusable(target.ID, environment, reuseCandidates)
@@ -50,22 +44,69 @@ func (d *driver) reusable(ctx context.Context, environment model.Environment, id
 			}
 		}
 		return nil
-	}); err != nil {
-		return nil, err
-	}
-	if len(paths) == 0 {
-		return nil, nil
+	})
+	return targets, paths, err
+}
+
+// reusable chooses the targets that reuse an earlier build instead of
+// building, before an environment's first attempt (reuse.Choose, decision
+// 28): each target's newest earlier build that stands and read what it
+// would read now, in the environment of its identity now. A reused target
+// one that builds needs is installed from its kept archive, or builds. A
+// check with Fresh reuses nothing, and nor does an environment that can't
+// say what it is.
+func (d *driver) reusable(ctx context.Context, identity string, targets []reuse.Target, paths []string, tree model.ObjectID) (reuse.Choice, error) {
+	if d.plan.Fresh || identity == "" || len(paths) == 0 {
+		return reuse.Choice{}, nil
 	}
 	slices.Sort(paths)
 	objects, err := d.e.Repo.Directories(ctx, string(tree), slices.Compact(paths))
 	if err != nil {
-		return nil, err
+		return reuse.Choice{}, err
 	}
 	trees := map[string]model.ObjectID{}
 	for path, object := range objects {
 		trees[path] = model.ObjectID(object)
 	}
-	return reuse.Choose(targets, identity, trees, d.plan.Tests.Stands), nil
+	available := func(c reuse.Candidate) bool {
+		_, kept, err := d.e.keptArchive(ctx, c.Result.Archive)
+		return err == nil && kept
+	}
+	return reuse.Choose(targets, identity, trees, d.plan.Tests.Stands, available), nil
+}
+
+// installs are the kept archives the guest installs targets it doesn't
+// build from, for the targets it builds that need them (reuse.Needs):
+// each a target with a passed result here, reused or finished in an
+// earlier attempt. One whose archive isn't kept is left to MacPorts.
+func (d *driver) installs(ctx context.Context, environment model.Environment, building []reuse.Target, results map[model.TargetID]model.TargetResult) ([]buildenv.Archive, error) {
+	planned, _ := d.plan.In(environment)
+	var installs []buildenv.Archive
+	for _, target := range building {
+		for _, need := range reuse.Needs(target, planned.Order) {
+			if slices.ContainsFunc(building, func(t reuse.Target) bool { return t.ID == need }) || slices.ContainsFunc(installs, func(a buildenv.Archive) bool { return a.Target == need }) {
+				continue
+			}
+			result, ok := results[need]
+			if !ok || result.Outcome != model.OutcomePassed || result.Archive == "" {
+				continue
+			}
+			archive, kept, err := d.e.keptArchive(ctx, result.Archive)
+			if err != nil {
+				return nil, err
+			}
+			if !kept {
+				continue
+			}
+			planned, _ := d.plan.Target(need)
+			port := planned.Target.Name
+			if planned.Target.Subport != "" {
+				port = planned.Target.Subport
+			}
+			installs = append(installs, buildenv.Archive{Target: need, Port: port, Name: archive.Name, Digest: archive.Digest, Path: d.e.archivePath(archive.Digest)})
+		}
+	}
+	return installs, nil
 }
 
 // recordReuse records the execution that reuses every target's earlier

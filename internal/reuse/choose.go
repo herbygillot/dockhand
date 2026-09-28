@@ -24,60 +24,83 @@ type Target struct {
 	Earlier   []Candidate
 }
 
+// Choice is what an environment's targets reuse: an earlier build for each
+// target that reuses one, and among them those a target that builds needs,
+// which the guest installs from their kept archives.
+type Choice struct {
+	Reused   map[model.TargetID]Candidate
+	Installs []model.TargetID
+}
+
 // Choose decides which of an environment's targets reuse an earlier build
 // (decision 28), given the environment's identity now and the revision's
 // trees by path (Paths). A target reuses its newest earlier build whose
 // result stands, by the check's test policy (stands), and whose inputs are
-// what it would read now (Current). The rest build, and so does any
-// target one of them needs: a reused build isn't in the guest to be
-// installed, so MacPorts would give its dependents upstream's archive of
-// the port as master has it, or build it unrecorded. A target needs those
-// the plan says it does, and those active as its newest earlier build ran,
-// which it may reach through ports the branch doesn't change.
+// what it would read now (Current). The rest build.
 //
-// The chosen builds are returned by target; the targets without one
-// build.
-func Choose(targets []Target, identity string, trees map[string]model.ObjectID, stands func(model.TargetResult) bool) map[model.TargetID]Candidate {
-	chosen := map[model.TargetID]Candidate{}
+// A reused target that one that builds needs (Needs) must be in the guest.
+// Where its archive is kept (available), the guest installs it from that
+// archive; otherwise it builds too, since MacPorts would give its
+// dependents upstream's archive of the port as master has it, or build it
+// unrecorded. A target that builds for that reason takes what it needs in
+// turn.
+func Choose(targets []Target, identity string, trees map[string]model.ObjectID, stands func(model.TargetResult) bool, available func(Candidate) bool) Choice {
+	choice := Choice{Reused: map[model.TargetID]Candidate{}}
 	for _, target := range targets {
 		for _, c := range target.Earlier {
 			if stands(c.Result) && Current(c.Inputs, identity, target.PlanTarget, trees) {
-				chosen[target.ID] = c
+				choice.Reused[target.ID] = c
 				break
 			}
 		}
 	}
-	// A target that builds takes what it needs with it, and that what it
-	// needs, until nothing more is taken.
+	ids := make([]model.TargetID, len(targets))
+	for i, target := range targets {
+		ids[i] = target.ID
+	}
+	// A target that builds takes what it needs and can't be installed,
+	// and that what it needs, until nothing more is taken.
 	for taken := true; taken; {
 		taken = false
 		for _, target := range targets {
-			if _, reused := chosen[target.ID]; reused {
+			if _, reused := choice.Reused[target.ID]; reused {
 				continue
 			}
-			for _, need := range needs(target, targets) {
-				if _, reused := chosen[need]; reused {
-					delete(chosen, need)
+			for _, need := range Needs(target, ids) {
+				if c, reused := choice.Reused[need]; reused && !available(c) {
+					delete(choice.Reused, need)
 					taken = true
 				}
 			}
 		}
 	}
-	return chosen
+	for _, target := range targets {
+		if _, reused := choice.Reused[target.ID]; reused {
+			continue
+		}
+		for _, need := range Needs(target, ids) {
+			if _, reused := choice.Reused[need]; reused && !slices.Contains(choice.Installs, need) {
+				choice.Installs = append(choice.Installs, need)
+			}
+		}
+	}
+	return choice
 }
 
-// needs are the targets one needs installed as it builds: those the plan
-// names, and those among the ports active as its newest earlier build ran.
-// A port's name is its target's, in any case, as MacPorts reads names.
-func needs(target Target, targets []Target) []model.TargetID {
+// Needs are the targets, among those given, that one needs installed as it
+// builds: those the plan names, and those among the ports active as its
+// newest earlier build ran, which it may reach through ports the branch
+// doesn't change. A port's name is its target's, in any case, as MacPorts
+// reads names.
+func Needs(target Target, among []model.TargetID) []model.TargetID {
 	needs := slices.Clone(target.DependsOn)
 	if len(target.Earlier) == 0 {
 		return needs
 	}
 	for _, port := range target.Earlier[0].Inputs.Active {
-		for _, other := range targets {
-			if strings.EqualFold(port.Name, string(other.ID)) && !slices.Contains(needs, other.ID) {
-				needs = append(needs, other.ID)
+		for _, other := range among {
+			if strings.EqualFold(port.Name, string(other)) && !slices.Contains(needs, other) {
+				needs = append(needs, other)
 			}
 		}
 	}

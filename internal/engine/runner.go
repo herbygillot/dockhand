@@ -422,15 +422,20 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 		// Before the first attempt, the targets that would build as an
 		// earlier build did reuse its result (decision 28). When every one
 		// does, nothing is built.
+		targets, paths, err := d.earlier(ctx, environment, remaining)
+		if err != nil {
+			return err
+		}
 		var reused map[model.TargetID]reuse.Candidate
 		if attempt == 0 {
-			var err error
-			if reused, err = d.reusable(ctx, environment, identity, remaining, revision.Source.Tree); err != nil {
+			choice, err := d.reusable(ctx, identity, targets, paths, revision.Source.Tree)
+			if err != nil {
 				return err
 			}
-			if len(reused) == len(remaining) {
-				return d.recordReuse(ctx, environment, identity, remaining, reused)
+			if len(choice.Reused) == len(remaining) {
+				return d.recordReuse(ctx, environment, identity, remaining, choice.Reused)
 			}
+			reused = choice.Reused
 		}
 		// A provider run's ID is unique, and named for its provider:
 		// tart_7y62p4sigena6xlr. The pull request names it, and dockhand
@@ -463,9 +468,28 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 				return ok
 			})
 		}
-		job := buildenv.Job{Run: d.run, Execution: execution, Revision: revision, Plan: d.plan, Environment: environment, Targets: building, Commit: commit,
+		// What they need and don't build here, the guest installs from the
+		// archives kept of it.
+		build.installs, err = d.installs(ctx, environment, slices.DeleteFunc(targets, func(target reuse.Target) bool {
+			return !slices.ContainsFunc(building, func(b buildenv.Target) bool { return b.ID == target.ID })
+		}), build.results)
+		if err != nil {
+			return err
+		}
+		if len(build.installs) > 0 {
+			var names []string
+			for _, archive := range build.installs {
+				names = append(names, string(archive.Target))
+			}
+			words := "the guest installs %s from the archives kept of their builds, for the targets that need them"
+			if len(names) == 1 {
+				words = "the guest installs %s from the archive kept of its build, for the targets that need it"
+			}
+			build.Progress(fmt.Sprintf(words, strings.Join(names, ", ")))
+		}
+		job := buildenv.Job{Run: d.run, Execution: execution, Revision: revision, Plan: d.plan, Environment: environment, Targets: building, Commit: commit, Installs: build.installs,
 			Directory: filepath.Join(e.LogDirectory(), d.run.Name(), fmt.Sprintf("%s-%d", environmentSlug(environment), execution.Attempt))}
-		err := provider.Execute(ctx, job, build)
+		err = provider.Execute(ctx, job, build)
 		build.blockRemaining(building)
 		// The build's copy holds what the provider reported.
 		execution = build.execution
@@ -563,6 +587,8 @@ type build struct {
 	// inputs are what each target's build read, as the provider reported
 	// them (Consumed), until its result is recorded.
 	inputs map[model.TargetID]model.TargetInputs
+	// installs are the kept archives the guest installs targets from.
+	installs []buildenv.Archive
 }
 
 func (b *build) Canceled() bool { return b.ctx.Err() != nil && !b.d.stopped() }
@@ -586,6 +612,16 @@ func (b *build) Consumed(target model.TargetID, active []model.ActivePort) {
 	planned, ok := b.d.plan.Target(target)
 	if !ok {
 		return
+	}
+	// A port the guest was to install from its kept archive, active from
+	// another, is one MacPorts got otherwise: said, since the build read
+	// that one.
+	for _, port := range active {
+		for _, archive := range b.installs {
+			if strings.EqualFold(port.Name, archive.Port) && port.Archive != "" && port.Archive != archive.Digest {
+				b.Progress(fmt.Sprintf("%s built with %s from another archive than the one kept of its build: MacPorts chose %s", target, port.Name, port.Archive))
+			}
+		}
 	}
 	inputs, err := reuse.Inputs(b.ctx, b.d.e.Repo, b.tree, b.execution.Identity, planned, active)
 	if err != nil {

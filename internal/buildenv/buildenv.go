@@ -48,6 +48,24 @@ type Job struct {
 	Commit string
 	// Directory is where the execution may keep files, such as logs.
 	Directory string
+	// Installs are the kept archives of targets the job doesn't build that
+	// the ones it builds need: reused, or finished in an earlier attempt.
+	// The guest installs each from its archive rather than build it
+	// (decision 28). A provider that can't install archives leaves them,
+	// and MacPorts gets such a target however it would.
+	Installs []Archive
+}
+
+// Archive is a kept archive a guest installs a target from.
+type Archive struct {
+	Target model.TargetID
+	// Port is the target's port name: its subport's, where it has one.
+	Port string
+	// Name is MacPorts' file name for the archive, and Digest its sha256,
+	// sha256:<hex>.
+	Name, Digest string
+	// Path is where it is kept on the host.
+	Path string
 }
 
 // Target is one target of a job, with what it needs built first in the

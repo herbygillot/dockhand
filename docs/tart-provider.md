@@ -223,6 +223,17 @@ and the digest of the archive the build made. The guest asks `port` for
 them once per target, after its verdict. They are what a later check will
 compare to reuse the result (decision 28).
 
+A passed target's archive is copied out of the guest and kept beside the
+database, checked against that digest. A later check that reuses such a
+target, and builds one that needs it, gives its guest the archive in an
+archive site of MacPorts' own kind, `file:///var/tmp/dockhand-archives/`,
+signed with dockhand's keys, which the guest's `pubkeys.conf` is told to
+trust: RIPEMD-160 with an RSA key, as `pubkeys.conf` documents, and
+signify's, as MacPorts' own site uses. MacPorts tries a local site first,
+and installs the target from it rather than build it. A retry installs
+what an earlier attempt finished the same way. The keys are
+`~/.dockhand/ssh/archives.key` and `archives-rsa.pem`, made on first use.
+
 Each target's log is copied into the check's log directory (`dockhand
 logs`). When the guest's Command Line Tools, or its Xcode in an Xcode
 image, differ from the facts table's row the plan was read with, the

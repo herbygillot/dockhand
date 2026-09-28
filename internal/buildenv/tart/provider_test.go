@@ -2,10 +2,13 @@ package tart
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -154,25 +157,39 @@ type fakeGuest struct {
 	uploaded string
 	input    guestInput
 	logs     map[string]string
+	// uploads are the files sent other than the input, and commands the
+	// commands run, other than launchd's.
+	uploads  map[string][]byte
+	commands [][]string
 }
 
 func (g *fakeGuest) Command(_ context.Context, _ io.Reader, args ...string) ([]byte, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	if slices.Contains(args, "launchctl") || slices.Contains(args, "/bin/launchctl") {
-		g.mu.Lock()
-		defer g.mu.Unlock()
 		if g.exited {
 			return []byte("state = not running"), nil
 		}
 		return []byte("state = running"), nil
 	}
+	g.commands = append(g.commands, args)
 	return nil, nil
 }
 func (g *fakeGuest) Upload(_ context.Context, local, path string, _ bool) error {
-	g.uploaded = path
 	data, err := os.ReadFile(local)
 	if err != nil {
 		return err
 	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if !strings.HasSuffix(path, "input.tar") {
+		if g.uploads == nil {
+			g.uploads = map[string][]byte{}
+		}
+		g.uploads[path] = data
+		return nil
+	}
+	g.uploaded = path
 	return json.Unmarshal(data, &g.input)
 }
 func (g *fakeGuest) Read(_ context.Context, path string, _ bool) ([]byte, error) {
@@ -365,6 +382,73 @@ func TestAnArchiveIsKeptOnlyFromMacPortsSoftware(t *testing.T) {
 		require.Empty(t, build.kept, "%q isn't fetched", file)
 		require.True(t, slices.ContainsFunc(build.progress, func(line string) bool { return strings.HasPrefix(line, "libharbor: its archive wasn't kept") }), "%q", file)
 	}
+}
+
+// The kept archives a job installs go to the guest before its program
+// starts: each signed with dockhand's archive keys both ways MacPorts
+// verifies an archive site's, beside the keys' public halves, in a site
+// the guest's input names, readable by MacPorts' own user. One whose file
+// isn't the archive it was kept as stops the attempt.
+func TestKeptArchivesGoToTheGuestSigned(t *testing.T) {
+	t.Parallel()
+	keys, err := channel.Keys{Directory: t.TempDir()}.ArchiveKeys()
+	require.NoError(t, err)
+	kept := filepath.Join(t.TempDir(), "kept")
+	require.NoError(t, os.WriteFile(kept, []byte("libharbor's archive"), 0o644))
+	sum := sha256.Sum256([]byte("libharbor's archive"))
+	name := "libharbor-4_0.darwin_25.arm64.tbz2"
+	install := buildenv.Archive{Target: "libharbor", Port: "libharbor", Name: name, Digest: "sha256:" + hex.EncodeToString(sum[:]), Path: kept}
+	run := func(install buildenv.Archive) (*fakeMac, *fakeBuild, buildenv.Job, error) {
+		mac := newMac(guestResults{State: "finished", Targets: []guestResult{{ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "target-2.log"}}})
+		provider := testProvider(mac)
+		provider.archiveKeys = func() (channel.ArchiveKeys, error) { return keys, nil }
+		job := tartJob(t, 1)
+		job.Targets, job.Installs = job.Targets[1:], []buildenv.Archive{install}
+		build := &fakeBuild{}
+		return mac, build, job, provider.Execute(t.Context(), job, build)
+	}
+
+	mac, build, job, err := run(install)
+	require.NoError(t, err)
+	require.Len(t, build.results, 1)
+	require.Equal(t, []guestArchive{{Port: "libharbor", Name: name}}, mac.guest.input.Archives)
+	require.Equal(t, "/var/tmp/dockhand-archives", mac.guest.input.ArchiveSite)
+	require.Equal(t, []string{"/var/tmp/dockhand-archives/dockhand.pem", "/var/tmp/dockhand-archives/dockhand.pub"}, mac.guest.input.ArchiveKeys)
+	remote := "/var/tmp/dockhand-archives/libharbor/" + name
+	uploads := mac.guest.uploads
+	require.Equal(t, []byte("libharbor's archive"), uploads[remote])
+	require.Equal(t, keys.Signify.Sign([]byte("libharbor's archive"), "verify with dockhand.pub"), uploads[remote+".sig"])
+	require.Equal(t, keys.Signify.PublicKey("dockhand archives"), uploads["/var/tmp/dockhand-archives/dockhand.pub"])
+	require.Equal(t, keys.RSAPublic, uploads["/var/tmp/dockhand-archives/dockhand.pem"])
+	require.Len(t, uploads, 5)
+	// The RIPEMD-160 signature verifies as MacPorts verifies one.
+	check := t.TempDir()
+	for file, data := range map[string][]byte{"archive": uploads[remote], "archive.rmd160": uploads[remote+".rmd160"], "dockhand.pem": keys.RSAPublic} {
+		require.NoError(t, os.WriteFile(filepath.Join(check, file), data, 0o644))
+	}
+	verify := exec.CommandContext(t.Context(), "/usr/bin/openssl", "dgst", "-ripemd160", "-verify", filepath.Join(check, "dockhand.pem"), "-signature", filepath.Join(check, "archive.rmd160"), filepath.Join(check, "archive"))
+	out, err := verify.CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	at := func(command ...string) int {
+		return slices.IndexFunc(mac.guest.commands, func(c []string) bool {
+			return slices.Equal(c, command) || (len(command) == 1 && slices.Contains(c, command[0]))
+		})
+	}
+	mkdir, chmod := at("sudo", "-n", "/bin/mkdir", "-p", "/var/tmp/dockhand-archives/libharbor"), at("sudo", "-n", "/bin/chmod", "-R", "a+rX", "/var/tmp/dockhand-archives")
+	require.True(t, mkdir >= 0 && chmod > mkdir && at("/var/tmp/dockhand-check-input.tar") > chmod, "the site is made, then readable to all, before the program starts: %q", mac.guest.commands)
+	require.Contains(t, build.progress, "giving the guest libharbor, from the archive kept of its build")
+	entries, err := os.ReadDir(job.Directory)
+	require.NoError(t, err)
+	for _, entry := range entries {
+		require.NotContains(t, []string{name + ".sig", name + ".rmd160", "dockhand.pub", "dockhand.pem"}, entry.Name(), "the signatures and keys are sent, not left")
+	}
+
+	require.NoError(t, os.WriteFile(kept, []byte("libharbor's archive, changed"), 0o644))
+	mac, build, _, err = run(install)
+	require.ErrorIs(t, err, buildenv.ErrInfrastructure)
+	require.ErrorContains(t, err, "isn't the "+install.Digest+" it was kept as")
+	require.Empty(t, build.results)
+	require.Empty(t, mac.guest.uploaded, "the guest program isn't started")
 }
 
 // A target an earlier attempt found blocked goes to the guest marked so.

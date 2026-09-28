@@ -11,7 +11,9 @@ package tart
 
 import (
 	"context"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,6 +35,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
 	"github.com/herbygillot/dockhand/internal/tart/channel"
 )
@@ -73,6 +76,9 @@ type Provider struct {
 	// machine replaces the Mac's VMs in tests, and stager the staging.
 	machine machine
 	stager  func(ctx context.Context, job buildenv.Job, input guestInput, archive string) error
+	// archiveKeys sign the archives guests install; dockhand's own when
+	// nil.
+	archiveKeys func() (channel.ArchiveKeys, error)
 	// assembling guards making the Mac's machine on first use (vms), which
 	// two environments building together may ask for at once.
 	assembling sync.Mutex
@@ -317,6 +323,20 @@ type guestInput struct {
 	Tests       string         `json:"tests"`
 	TestTimeout int            `json:"test_timeout"`
 	Targets     []guestTarget  `json:"targets"`
+	// Archives are the kept archives the guest installs targets from
+	// rather than build them: in ArchiveSite, each in its port's
+	// directory beside its signatures, which the keys at ArchiveKeys
+	// verify. The guest program makes them an archive site of MacPorts'.
+	Archives    []guestArchive `json:"archives,omitempty"`
+	ArchiveSite string         `json:"archive_site,omitempty"`
+	ArchiveKeys []string       `json:"archive_keys,omitempty"`
+}
+
+// guestArchive is a kept archive in the guest: the port it is of, and
+// MacPorts' file name for it.
+type guestArchive struct {
+	Port string `json:"port"`
+	Name string `json:"name"`
 }
 
 type guestTarget struct {
@@ -407,6 +427,15 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	if !slices.ContainsFunc(input.Targets, func(t guestTarget) bool { return !t.Blocked }) {
 		return nil
 	}
+	for _, archive := range job.Installs {
+		if !validPortName(archive.Port) || !model.ValidArchiveName(archive.Name) {
+			return fmt.Errorf("an archive of %q named %q can't be installed", archive.Port, archive.Name)
+		}
+		input.Archives = append(input.Archives, guestArchive{Port: archive.Port, Name: archive.Name})
+	}
+	if len(input.Archives) > 0 {
+		input.ArchiveSite, input.ArchiveKeys = archiveSite, []string{archiveSite + "/dockhand.pem", archiveSite + "/dockhand.pub"}
+	}
 
 	build.Progress("staging the revision for " + release.Name)
 	archive := filepath.Join(job.Directory, "input.tar")
@@ -441,6 +470,9 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	defer g.Close(cleanup)
 	if err := await(ctx, g, started, 4*time.Minute); err != nil {
 		return p.trouble(ctx, "reaching "+vm, err)
+	}
+	if err := p.install(ctx, g, job, build); err != nil {
+		return p.trouble(ctx, "giving "+vm+" the archives it installs", err)
 	}
 	build.Progress("building in " + vm)
 	if err := launch(ctx, g, archive); err != nil {
@@ -596,6 +628,102 @@ func (p *Provider) stage(ctx context.Context, job buildenv.Job, input guestInput
 func guestPlist(prefix string) []byte {
 	return macos.LaunchdPlist(guestLabel, []string{prefix + "/bin/port-tclsh", guestRoot + "/guest.tcl"}, guestRoot+"/runner.log",
 		map[string]string{"PATH": prefix + "/bin:" + prefix + "/sbin:/usr/bin:/bin:/usr/sbin:/sbin"})
+}
+
+// archiveSite is where a guest's kept archives are: an archive site of
+// MacPorts' kind, each archive in its port's directory, which the guest
+// program has MacPorts try first.
+const archiveSite = "/var/tmp/dockhand-archives"
+
+// install gives the guest the kept archives it installs targets from
+// (decision 28): each checked against its digest again, signed with
+// dockhand's archive keys both ways MacPorts verifies an archive site's,
+// and copied in beside its signatures, with the keys' public halves.
+// MacPorts reads them as its unprivileged user, so they are made readable
+// to all; the guest is a clone that goes with its check.
+func (p *Provider) install(ctx context.Context, g guest, job buildenv.Job, build buildenv.Build) error {
+	if len(job.Installs) == 0 {
+		return nil
+	}
+	keys, err := p.signingKeys()
+	if err != nil {
+		return err
+	}
+	directories := []string{"sudo", "-n", "/bin/mkdir", "-p"}
+	for _, archive := range job.Installs {
+		directories = append(directories, archiveSite+"/"+archive.Port)
+	}
+	if _, err := g.Command(ctx, nil, directories...); err != nil {
+		return err
+	}
+	for _, archive := range job.Installs {
+		build.Progress(fmt.Sprintf("giving the guest %s, from the archive kept of its build", archive.Target))
+		data, err := os.ReadFile(archive.Path)
+		if err != nil {
+			return err
+		}
+		if sum := sha256.Sum256(data); "sha256:"+hex.EncodeToString(sum[:]) != archive.Digest {
+			return fmt.Errorf("the archive kept of %s isn't the %s it was kept as", archive.Target, archive.Digest)
+		}
+		sig, rmd160 := filepath.Join(job.Directory, archive.Name+".sig"), filepath.Join(job.Directory, archive.Name+".rmd160")
+		err = os.WriteFile(sig, keys.Signify.Sign(data, "verify with dockhand.pub"), 0o600)
+		if err == nil {
+			err = signRMD160(ctx, keys.RSA, archive.Path, rmd160)
+		}
+		remote := archiveSite + "/" + archive.Port + "/" + archive.Name
+		if err == nil {
+			err = g.Upload(ctx, archive.Path, remote, true)
+		}
+		if err == nil {
+			err = g.Upload(ctx, sig, remote+".sig", true)
+		}
+		if err == nil {
+			err = g.Upload(ctx, rmd160, remote+".rmd160", true)
+		}
+		os.Remove(sig)
+		os.Remove(rmd160)
+		if err != nil {
+			return err
+		}
+	}
+	for name, public := range map[string][]byte{"dockhand.pub": keys.Signify.PublicKey("dockhand archives"), "dockhand.pem": keys.RSAPublic} {
+		local := filepath.Join(job.Directory, name)
+		err := os.WriteFile(local, public, 0o600)
+		if err == nil {
+			err = g.Upload(ctx, local, archiveSite+"/"+name, true)
+		}
+		os.Remove(local)
+		if err != nil {
+			return err
+		}
+	}
+	_, err = g.Command(ctx, nil, "sudo", "-n", "/bin/chmod", "-R", "a+rX", archiveSite)
+	return err
+}
+
+// signRMD160 signs a file with an RSA key as pubkeys.conf says to sign
+// one's own archives: openssl dgst -ripemd160 -sign.
+func signRMD160(ctx context.Context, key, file, signature string) error {
+	_, err := subprocess.Run(ctx, subprocess.Spec{Tool: "openssl", Command: "dgst", Path: "/usr/bin/openssl", Args: []string{"dgst", "-ripemd160", "-sign", key, "-out", signature, file}})
+	return err
+}
+
+// signingKeys are the keys archives given to guests are signed with.
+func (p *Provider) signingKeys() (channel.ArchiveKeys, error) {
+	if p.archiveKeys != nil {
+		return p.archiveKeys()
+	}
+	keys, err := channel.DefaultKeys()
+	if err != nil {
+		return channel.ArchiveKeys{}, err
+	}
+	return keys.ArchiveKeys()
+}
+
+// validPortName reports whether a name is a port's, as a directory's name
+// can be: no path, nothing a shell or a URL would read otherwise.
+func validPortName(name string) bool {
+	return name != "" && name != "." && name != ".." && !strings.ContainsAny(name, "/\\\x00\n ")
 }
 
 // launch copies the archive into the guest, checked by size and sha256,

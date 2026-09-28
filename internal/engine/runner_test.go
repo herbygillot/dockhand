@@ -2,8 +2,12 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -32,7 +36,17 @@ type scriptedProvider struct {
 	// consumes as one target's, in its place.
 	active   []model.ActivePort
 	consumes map[model.TargetID][]model.ActivePort
-	jobs     []buildenv.Job
+	// keep makes each passed target's archive "<target>'s archive", kept.
+	keep bool
+	jobs []buildenv.Job
+}
+
+// scriptedArchive is the archive a scripted build of a target makes: its
+// name, content, and digest.
+func scriptedArchive(target model.TargetID) (string, []byte, string) {
+	content := []byte(string(target) + "'s archive")
+	sum := sha256.Sum256(content)
+	return string(target) + "-1_0.darwin_25.arm64.tbz2", content, "sha256:" + hex.EncodeToString(sum[:])
 }
 
 func (p *scriptedProvider) Name() string { return "command" }
@@ -73,8 +87,17 @@ func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build 
 			build.Consumed(target.ID, active)
 			result.Archive = "sha256:" + string(target.ID)
 		}
+		name, content, digest := scriptedArchive(target.ID)
+		if p.keep {
+			result.Archive = digest
+		}
 		if err := build.Record(result); err != nil {
 			return err
+		}
+		if p.keep && outcome == model.OutcomePassed {
+			if err := build.Keep(target.ID, name, func(path string) error { return os.WriteFile(path, content, 0o644) }); err != nil {
+				return err
+			}
 		}
 		if failing && i == 0 {
 			return errors.New("the VM stopped answering")
@@ -630,6 +653,101 @@ func TestTheTargetsThatChangedBuildAndTheRestAreReused(t *testing.T) {
 	_, built, from, _ = check()
 	require.Equal(t, []model.TargetID{"libharbor", "harbor-viewer"}, built, "its last build had libharbor active")
 	require.Equal(t, third[0].ID, from["harbor-cli"], "harbor-cli reuses its build in check-3, not check-4's reuse of it")
+}
+
+// A reused target that one that builds needs is installed in the guest
+// from the archive kept of its build, rather than built again; so is one
+// an earlier attempt finished, on a retry (decisions 28 and 44). A build
+// that shows it active from another archive is said to have been given
+// another by MacPorts.
+func TestTheGuestInstallsWhatABuildNeedsFromItsKeptArchive(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	_, _, libDigest := scriptedArchive("libharbor")
+	lib := model.ActivePort{Name: "libharbor", Spec: "@4_0", Directory: "devel/libharbor", Archive: libDigest}
+	provider := &identified{scriptedProvider: scriptedProvider{keep: true, active: []model.ActivePort{}, consumes: map[model.TargetID][]model.ActivePort{"harbor-cli": {lib}}}, identity: "origin a"}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	revision := harborBranch(t, e)
+	var branch model.Branch
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		var err error
+		branch, err = r.Branch(revision.Branch)
+		return err
+	}))
+	branch.Base = revision.Source.Base
+	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{
+		"devel/libharbor":        {port("libharbor")},
+		"devel/harbor-cli":       {port("harbor-cli", "libharbor")},
+		"graphics/harbor-viewer": {port("harbor-viewer")},
+	}}
+	check := func(fresh bool) model.Run {
+		t.Helper()
+		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}, Fresh: fresh})
+		require.NoError(t, err)
+		queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
+		require.NoError(t, err)
+		run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+		require.NoError(t, err)
+		require.Equal(t, model.RunPassed, run.State, run.Detail)
+		return run
+	}
+	targets := func(job buildenv.Job) []model.TargetID {
+		var ids []model.TargetID
+		for _, target := range job.Targets {
+			ids = append(ids, target.ID)
+		}
+		return ids
+	}
+	messages := func(run model.Run) []string {
+		t.Helper()
+		events, err := e.RunEvents(t.Context(), run.ID, 0)
+		require.NoError(t, err)
+		var all []string
+		for _, event := range events {
+			all = append(all, event.Message)
+		}
+		return all
+	}
+
+	check(false)
+	require.Len(t, provider.jobs, 1)
+	require.Empty(t, provider.jobs[0].Installs, "everything builds, nothing is installed")
+
+	write(t, branch.Worktree, map[string]string{"devel/harbor-cli/Portfile": "name harbor-cli\nrevision 2\n"})
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
+	require.NoError(t, err)
+	revision = capture.Revision
+	second := check(false)
+	require.Len(t, provider.jobs, 2)
+	job := provider.jobs[1]
+	require.Equal(t, []model.TargetID{"harbor-cli"}, targets(job), "libharbor is reused, not built")
+	require.Len(t, job.Installs, 1)
+	installed := job.Installs[0]
+	require.Equal(t, buildenv.Archive{Target: "libharbor", Port: "libharbor", Name: "libharbor-1_0.darwin_25.arm64.tbz2", Digest: libDigest, Path: installed.Path}, installed)
+	data, err := os.ReadFile(installed.Path)
+	require.NoError(t, err)
+	require.Equal(t, "libharbor's archive", string(data), "the archive kept of its build")
+	require.NotContains(t, strings.Join(messages(second), "\n"), "another archive", "harbor-cli built with the archive it was given")
+
+	// A build that shows libharbor active from another archive: MacPorts
+	// gave it another.
+	provider.consumes["harbor-cli"] = []model.ActivePort{{Name: "libharbor", Spec: "@4_0", Directory: "devel/libharbor", Archive: "sha256:upstream"}}
+	write(t, branch.Worktree, map[string]string{"devel/harbor-cli/Portfile": "name harbor-cli\nrevision 3\n"})
+	capture, err = e.Capture(t.Context(), CaptureRequest{Branch: branch})
+	require.NoError(t, err)
+	revision = capture.Revision
+	third := check(false)
+	require.Contains(t, strings.Join(messages(third), "\n"), "harbor-cli built with libharbor from another archive than the one kept of its build: MacPorts chose sha256:upstream")
+
+	// A retry installs what the attempt before it finished.
+	provider.consumes["harbor-cli"] = []model.ActivePort{lib}
+	provider.failures, provider.partial = 1, true
+	check(true)
+	retry := provider.jobs[len(provider.jobs)-1]
+	require.Equal(t, 2, retry.Execution.Attempt)
+	require.Equal(t, []model.TargetID{"harbor-cli", "harbor-viewer"}, targets(retry))
+	require.Len(t, retry.Installs, 1)
+	require.Equal(t, model.TargetID("libharbor"), retry.Installs[0].Target, "libharbor, which the first attempt built and kept")
 }
 
 // An active port the guest couldn't place in the ports tree is recorded
