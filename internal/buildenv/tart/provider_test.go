@@ -443,6 +443,15 @@ func TestKeptArchivesGoToTheGuestSigned(t *testing.T) {
 		require.NotContains(t, []string{name + ".sig", name + ".rmd160", "dockhand.pub", "dockhand.pem"}, entry.Name(), "the signatures and keys are sent, not left")
 	}
 
+	for _, port := range []string{"lib harbor", "lib\tharbor", "lib#harbor", "lib%20harbor", "..", ""} {
+		refused := install
+		refused.Port = port
+		mac, build, _, err = run(refused)
+		require.ErrorContains(t, err, "can't be installed", "%q", port)
+		require.Empty(t, build.results, "%q", port)
+		require.Empty(t, mac.guest.uploaded, "%q: the guest program isn't started", port)
+	}
+
 	require.NoError(t, os.WriteFile(kept, []byte("libharbor's archive, changed"), 0o644))
 	mac, build, _, err = run(install)
 	require.ErrorIs(t, err, buildenv.ErrInfrastructure)

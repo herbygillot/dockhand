@@ -22,7 +22,7 @@ func ValidatePortsTree(root, described string) error {
 	}
 	for _, category := range categories {
 		name := category.Name()
-		if !category.IsDir() || strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+		if !category.IsDir() || !IsCategory(name) {
 			continue
 		}
 		ports, err := os.ReadDir(filepath.Join(root, name))

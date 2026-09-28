@@ -335,8 +335,8 @@ func (e *Engine) editRecord(ctx context.Context, worktree *git.Repository, branc
 // portDirectory is the <category>/<port> a path is under, or its directory
 // when it is not in one.
 func portDirectory(file string) string {
-	if parts := strings.SplitN(file, "/", 3); len(parts) == 3 {
-		return parts[0] + "/" + parts[1]
+	if directory, ok := macports.PortDirectoryOf(file); ok {
+		return directory
 	}
 	return path.Dir(file)
 }

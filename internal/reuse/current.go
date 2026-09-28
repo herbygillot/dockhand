@@ -3,6 +3,7 @@ package reuse
 import (
 	"maps"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -11,7 +12,7 @@ import (
 // active port's that has one. A port the guest couldn't place in the tree
 // has none, and leaves the inputs incomplete (Current).
 func Paths(recorded model.TargetInputs) []string {
-	paths := []string{recorded.Directory, Resources}
+	paths := []string{recorded.Directory, macports.ResourcesDirectory}
 	for _, port := range recorded.Active {
 		if port.Directory != "" {
 			paths = append(paths, port.Directory)
@@ -39,7 +40,7 @@ func Current(recorded model.TargetInputs, identity string, target model.PlanTarg
 	if recorded.Directory != target.Directory || !maps.Equal(recorded.Variants, target.Target.Variants) {
 		return false
 	}
-	if trees[recorded.Directory] != recorded.Tree || trees[Resources] != recorded.Resources {
+	if trees[recorded.Directory] != recorded.Tree || trees[macports.ResourcesDirectory] != recorded.Resources {
 		return false
 	}
 	for _, port := range recorded.Active {

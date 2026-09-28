@@ -1,16 +1,20 @@
 package engine
 
 import (
-	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/herbygillot/dockhand/internal/macports"
 )
 
-// portChange is MacPorts CI's rule for which directories a pull request
-// changes: a Portfile, or anything under files/, in <category>/<port>
-// (macports-ports .github/workflows/main.yml). Directories beginning with
-// "." or "_" are not ports.
-var portChange = regexp.MustCompile(`^[^._/][^/]*/[^/]+/(Portfile$|files/)`)
+// portChange is the port directory a changed path changes by MacPorts CI's
+// rule: its Portfile, or anything under its files/ (macports-ports
+// .github/workflows/main.yml).
+func portChange(path string) (string, bool) {
+	directory, ok := macports.PortDirectoryOf(path)
+	rest := strings.TrimPrefix(path, directory+"/")
+	return directory, ok && (rest == "Portfile" || strings.HasPrefix(rest, "files/"))
+}
 
 // Scope is what a set of changed paths touches.
 type Scope struct {
@@ -25,21 +29,30 @@ type Scope struct {
 func ScopeOf(paths []string) Scope {
 	var s Scope
 	for _, path := range paths {
-		if strings.HasPrefix(path, "_resources/") {
+		if strings.HasPrefix(path, macports.ResourcesDirectory+"/") {
 			s.Resources = true
 			continue
 		}
-		if !portChange.MatchString(path) {
+		directory, ok := portChange(path)
+		if !ok {
 			continue
 		}
-		parts := strings.SplitN(path, "/", 3)
-		directory := parts[0] + "/" + parts[1]
 		if !slices.Contains(s.Ports, directory) {
 			s.Ports = append(s.Ports, directory)
 		}
 	}
 	slices.Sort(s.Ports)
 	return s
+}
+
+// Changed names what the scope changes, as a person reads it: the ports'
+// names, and _resources when it changed.
+func (s Scope) Changed() []string {
+	names := s.PortNames()
+	if s.Resources {
+		names = append(names, macports.ResourcesDirectory)
+	}
+	return names
 }
 
 // PortNames are the ports' names: the last part of each directory.

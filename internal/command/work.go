@@ -256,10 +256,7 @@ path <branch>)" or an editor. Without a name, the branch checked out here.`,
 }
 
 func describeScope(scope engine.Scope) string {
-	changed := scope.PortNames()
-	if scope.Resources {
-		changed = append(changed, "_resources")
-	}
+	changed := scope.Changed()
 	switch len(changed) {
 	case 0:
 		return ", changing no ports yet"

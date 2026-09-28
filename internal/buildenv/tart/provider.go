@@ -428,7 +428,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		return nil
 	}
 	for _, archive := range job.Installs {
-		if !validPortName(archive.Port) || !model.ValidArchiveName(archive.Name) {
+		if !installable(archive) {
 			return fmt.Errorf("an archive of %q named %q can't be installed", archive.Port, archive.Name)
 		}
 		input.Archives = append(input.Archives, guestArchive{Port: archive.Port, Name: archive.Name})
@@ -720,10 +720,12 @@ func (p *Provider) signingKeys() (channel.ArchiveKeys, error) {
 	return keys.ArchiveKeys()
 }
 
-// validPortName reports whether a name is a port's, as a directory's name
-// can be: no path, nothing a shell or a URL would read otherwise.
-func validPortName(name string) bool {
-	return name != "" && name != "." && name != ".." && !strings.ContainsAny(name, "/\\\x00\n ")
+// installable reports whether a kept archive can go to the guest's archive
+// site: its port's name a port's (macports.ValidName), which the site's
+// URL, <site>/<port>/<archive>, takes as a path segment as it is, and its
+// file named as MacPorts names one.
+func installable(archive buildenv.Archive) bool {
+	return macports.ValidName(archive.Port) && !strings.ContainsAny(archive.Port, "#?%") && model.ValidArchiveName(archive.Name)
 }
 
 // launch copies the archive into the guest, checked by size and sha256,

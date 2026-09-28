@@ -156,6 +156,11 @@ func TestResolutionRefusesAmbiguityTraversalAndMissingSubports(t *testing.T) {
 		_, err := evaluator.Resolve(t.Context(), tree, macports.Selection{Selector: selector})
 		require.ErrorIs(t, err, macports.ErrTarget)
 	}
+	for _, selector := range []string{"devel/fixture/files", "_resources/fixture/Portfile"} {
+		_, err := evaluator.Resolve(t.Context(), tree, macports.Selection{Selector: selector})
+		require.ErrorIs(t, err, macports.ErrTarget)
+		require.ErrorContains(t, err, "expected category/port/Portfile", selector)
+	}
 	evaluator = liveEvaluator(t)
 	_, err := evaluator.Resolve(t.Context(), tree, macports.Selection{Selector: "devel/fixture", Subport: "not-a-subport"})
 	require.Error(t, err)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/model"
-	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -97,7 +96,7 @@ type Context struct {
 }
 
 func (t Tree) Select(target model.Target) (Context, error) {
-	if t.root == "" || !ValidName(target.Name) || (target.Subport != "" && !ValidName(target.Subport)) || !portfilePath(target.Portfile) {
+	if t.root == "" || !ValidName(target.Name) || (target.Subport != "" && !ValidName(target.Subport)) || !ValidPortfilePath(target.Portfile) {
 		return Context{}, fmt.Errorf("macports: a snapshot and category/port/Portfile target are required")
 	}
 	if err := validateVariants(target.Variants); err != nil {
@@ -130,9 +129,4 @@ func (c Context) Target() model.Target {
 	target := c.target
 	target.Variants = maps.Clone(target.Variants)
 	return target
-}
-
-func portfilePath(name string) bool {
-	parts := strings.Split(name, "/")
-	return fs.ValidPath(name) && len(parts) == 3 && parts[2] == "Portfile" && !strings.ContainsAny(name, "\\\x00")
 }

@@ -112,17 +112,17 @@ In order. Each item lands in its own commits with an activity note, and a review
 
 The order puts live regressions first, then the guardrail unattended submission relies on, then small promises the code doesn't keep, then what a person watching sees, then what grows without bound, and dead code last, since removing it changes nothing.
 
-**Before item 6 goes on: logic in the homes of the facts it interprets** (the [private-helper review](reviews/2026-09-28-private-helper-ownership.md), [note](activity/2026-09-28-private-helper-review-reconciled.md)). What stands on its own, in order, each in its own commits, each of its probes a regression test once fixed:
+**Before item 6 goes on: logic in the homes of the facts it interprets** (the [private-helper review](reviews/2026-09-28-private-helper-ownership.md), [note](activity/2026-09-28-private-helper-review-reconciled.md)). Done 2026-09-28. What stood on its own, in order, each in its own commits, each of its probes a regression test once fixed:
 - **What a comparison couldn't read** (finding 3). Done 2026-09-28 ([note](activity/2026-09-28-source-comparison.md)): upstream source comparison is `sourcecompare`, over `archive`'s traversal. What it couldn't read of a manifest, or a file past what it reads, holds as D4 has it. Cargo's dependency tables, pyproject's arrays in either quote, Poetry's table, and go.mod are read with real parsers.
 - **What `create` writes** (findings 5 and 4). Done 2026-09-28 ([note](activity/2026-09-28-what-create-writes.md)): `tcl/syntax.Quote` writes a Tcl word that reads back as its value, and one Cargo.lock reader in `macports/dependency` serves creating and updating, keeping each crate's source.
 - **A stealth update's edits inside the editor** (finding 9, the open half of the earlier finding 19). Done 2026-09-28 ([note](activity/2026-09-28-stealth-in-the-editor.md)): `portedit` makes and evaluates the revision bump and `dist_subdir`, and removes the latter on a version update, given the files the branch changed since its base; edits that would change another port are left for the person.
 - **The description merge's result** (finding 10). Done 2026-09-28 ([note](activity/2026-09-28-description-merge-result.md)): the merge returns each part's outcome, refreshed, current, kept, or absent, which the preview words.
-- **Facts with homes** (finding 7, and the review's table):
-  - the ports tree's layout in `macports`: `_resources`, categories, and a file's port directory (the earlier finding 29), with `macports.ValidName` in the Tart archive site;
-  - GitHub remote and pull request addresses in the GitHub layer (the earlier finding 13). Done 2026-09-28 (the same note): one strict remote reader, a page reader, and the addresses of a remote and a pull request's pages, in `internal/github`;
-  - provider names in `buildenv` (the earlier finding 14). Done 2026-09-28 ([note](activity/2026-09-28-facts-with-homes.md)): constants in the contract;
-  - a maintainer's identity in `macports`. Done 2026-09-28 (the same note): reading, normalizing, and checking a maintainers line, which now refuses what Tcl reads specially;
-  - which Darwin releases have arm64, in `macos`. Done 2026-09-28 (the same note): `macos.RunsOn`, and Golden Gate is no longer evaluated on Intel.
+- **Facts with homes** (finding 7, and the review's table). Done 2026-09-28 ([note](activity/2026-09-28-facts-with-homes.md)), each as operations in the fact's own package, its callers keeping their policies:
+  - the ports tree's layout in `macports` (the earlier finding 29): `_resources`, categories, a path's port directory, Portfile paths, and PortGroups, in `macports/layout.go`, with `macports.ValidName` in the Tart archive site;
+  - GitHub remote and pull request addresses in the GitHub layer (the earlier finding 13): one strict remote reader, a page reader, and the addresses of a remote and a pull request's pages, in `internal/github`;
+  - provider names in `buildenv` (the earlier finding 14): constants in the contract;
+  - a maintainer's identity in `macports`: reading, normalizing, and checking a maintainers line, which now refuses what Tcl reads specially;
+  - which Darwin releases run on which architecture, in `macos`: `macos.RunsOn`, and Golden Gate is no longer evaluated on Intel.
 
 The order is the roadmap's own: a guardrail first, then what's written into a Portfile, then fidelity, then structure. The facts with homes come before items 6 and 7, which would otherwise add more readers of their copies. Findings 1, 2, and 6 go inside item 6 instead, since they move the planning code and reshape the archive install that item 6 is already moving and extending; there, that code is touched once.
 
@@ -189,7 +189,7 @@ These are taken when their area is next touched, or between items.
     - submit's phases, keeping `--accept`'s errors (finding 5);
     - run recipes (finding 11);
     - tidy's rules adapter (finding 12);
-    - environment words (finding 14; provider names go with the private-helper item);
+    - environment words (finding 14; its provider names were done with the private-helper item);
     - one table test for exec admission (finding 15);
     - `forge/github`'s guards (finding 16);
     - small helpers (finding 17);

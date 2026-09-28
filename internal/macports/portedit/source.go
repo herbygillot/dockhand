@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -442,13 +443,12 @@ func withLivecheckOf(port, owner macports.PortInfo) macports.PortInfo {
 // selectedDirectory is the category/port directory a selector names, for a
 // category/port or category/port/Portfile selector, and empty for a name.
 func selectedDirectory(selector string) string {
-	parts := strings.Split(selector, "/")
-	switch {
-	case len(parts) == 3 && parts[2] == "Portfile", len(parts) == 2:
-		if parts[0] == "" || parts[1] == "" || strings.HasPrefix(parts[0], ".") || parts[0] == ".." || parts[1] == ".." {
-			return ""
-		}
-		return parts[0] + "/" + parts[1]
+	portfile := selector
+	if strings.Count(selector, "/") == 1 {
+		portfile += "/Portfile"
 	}
-	return ""
+	if !macports.ValidPortfilePath(portfile) {
+		return ""
+	}
+	return path.Dir(portfile)
 }

@@ -419,10 +419,7 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, branch mod
 		head += " · " + tilde(branch.Worktree)
 	}
 	fmt.Fprintln(out, head)
-	ports := strings.Join(status.Scope.PortNames(), ", ")
-	if status.Scope.Resources {
-		ports = strings.TrimPrefix(ports+", _resources", ", ")
-	}
+	ports := strings.Join(status.Scope.Changed(), ", ")
 	if ports == "" {
 		ports = "none yet"
 	}

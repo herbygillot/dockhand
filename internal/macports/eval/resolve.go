@@ -24,7 +24,7 @@ func (e *Evaluator) Resolve(ctx context.Context, tree macports.Tree, selection m
 	var candidates []string
 	switch strings.Count(selector, "/") {
 	case 2:
-		if path.Base(selector) != "Portfile" {
+		if !macports.ValidPortfilePath(selector) {
 			return nil, fmt.Errorf("%w: expected category/port/Portfile", macports.ErrTarget)
 		}
 		candidates = append(candidates, selector)
@@ -44,7 +44,7 @@ func (e *Evaluator) Resolve(ctx context.Context, tree macports.Tree, selection m
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
-			if !category.IsDir() || strings.HasPrefix(category.Name(), ".") || strings.HasPrefix(category.Name(), "_") {
+			if !category.IsDir() || !macports.IsCategory(category.Name()) {
 				continue
 			}
 			dirs, err := os.ReadDir(filepath.Join(tree.Root(), category.Name()))

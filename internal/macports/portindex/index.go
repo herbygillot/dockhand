@@ -252,7 +252,7 @@ func sourceBaseTree(ctx context.Context, repo *git.Repository, source model.Sour
 
 func requiresFullIndex(paths []string) bool {
 	for _, name := range paths {
-		if name == "_resources" || strings.HasPrefix(name, "_resources/") {
+		if name == macports.ResourcesDirectory || strings.HasPrefix(name, macports.ResourcesDirectory+"/") {
 			return true
 		}
 	}
@@ -436,11 +436,11 @@ func setPortfileTimes(root string, changed []string, indexTime time.Time) error 
 	newer := indexTime.Add(time.Second)
 	seen := map[string]bool{}
 	for _, name := range changed {
-		parts := strings.Split(filepath.ToSlash(name), "/")
-		if len(parts) < 3 || parts[0] == "_resources" {
+		directory, ok := macports.PortDirectoryOf(filepath.ToSlash(name))
+		if !ok {
 			continue
 		}
-		portfile := filepath.Join(root, filepath.FromSlash(parts[0]+"/"+parts[1]+"/Portfile"))
+		portfile := filepath.Join(root, filepath.FromSlash(directory+"/Portfile"))
 		if seen[portfile] {
 			continue
 		}

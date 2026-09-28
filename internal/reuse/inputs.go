@@ -6,12 +6,9 @@ package reuse
 import (
 	"context"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 )
-
-// Resources is the directory of MacPorts' shared code in a ports tree:
-// PortGroups, and what ports source from it.
-const Resources = "_resources"
 
 // Trees names the trees a revision holds at directories;
 // *git.Repository does.
@@ -26,7 +23,7 @@ type Trees interface {
 // revision doesn't hold is left without a tree, which leaves the inputs
 // incomplete.
 func Inputs(ctx context.Context, trees Trees, tree model.ObjectID, identity string, target model.PlanTarget, active []model.ActivePort) (model.TargetInputs, error) {
-	paths := []string{target.Directory, Resources}
+	paths := []string{target.Directory, macports.ResourcesDirectory}
 	for _, port := range active {
 		if port.Directory != "" {
 			paths = append(paths, port.Directory)
@@ -44,5 +41,5 @@ func Inputs(ctx context.Context, trees Trees, tree model.ObjectID, identity stri
 		}
 		read[i] = port
 	}
-	return model.NewTargetInputs(identity, target.Directory, model.ObjectID(found[target.Directory]), model.ObjectID(found[Resources]), target.Target.Variants, read), nil
+	return model.NewTargetInputs(identity, target.Directory, model.ObjectID(found[target.Directory]), model.ObjectID(found[macports.ResourcesDirectory]), target.Target.Variants, read), nil
 }

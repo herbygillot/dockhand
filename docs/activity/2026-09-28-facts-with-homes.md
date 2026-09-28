@@ -81,3 +81,43 @@ Tests:
 - the checks page in `status --attention`, and the page in status JSON.
 
 Three of twelve mutations first went uncaught: which form someone's remote takes, and both pages. Nothing had pinned them as literals either. The last three tests pin them, and all twelve now fail a test.
+
+## The ports tree's layout
+
+The layout of a ports tree was known at over twenty sites in the engine, `macports`' own packages, `reuse`, and the Tart provider, as the earlier review's finding 29 and this review's finding 7 counted:
+- each port in `category/port`, its Portfile there;
+- a category being a top-level directory beginning with neither `.` nor `_`;
+- what ports share in `_resources`, with the PortGroups in `port1.0/group/name-version.tcl`.
+
+`_resources` had an exported constant in `reuse`, a private one in the workspace, and literals elsewhere. The category rule was a regex in two places and prefix checks in seven.
+
+They are now operations in `macports` (`layout.go`), beside `ValidName`:
+- **`ResourcesDirectory`** and **`PortGroupDirectory`**.
+- **`IsCategory`** is MacPorts CI's rule for a top-level directory. MacPorts' own walk of the tree, `mporttraverse`, skips only `_`. CI's rule and dockhand's also skip dotfile directories, such as `.github`, which hold no ports.
+- **`PortDirectoryOf`** is the port directory a path lies in, if any.
+- **`ValidPortfilePath`** says whether a path is exactly a port's Portfile.
+- **`PortGroup`**, with its **`Path`**, is MacPorts' `name-version.tcl`. **`PortGroupAt`** reads a path back, taking the version from after the last hyphen when it begins with a digit, as the impact reading did.
+
+Each consumer keeps its own policy over them:
+- **CI's scope** is the engine's `portChange`, which `diff` reads too: a port directory changes with its Portfile or its `files/`.
+- **tidy's grouping** takes any file in a port directory.
+- **update** falls back to a file's own directory outside every port.
+- The Git-tree and file-system walks stay where they are, now asking `IsCategory`.
+- A changed PortGroup is matched to Portfiles by the path MacPorts would read for their `PortGroup` lines. Before, it was matched by joining the name and version.
+
+The engine's `Scope` now says what it changes as a person reads it (`Changed`), the ports' names and `_resources`. Both `status` and `work` had built that list themselves.
+
+The Tart provider's own port-name check is `macports.ValidName`, which also refuses tabs, other control characters, and malformed UTF-8. It adds the archive site's restriction explicitly: MacPorts reads an archive at `<site>/<port>/<archive>`, a URL, so `#`, `?`, and `%` are refused. Guest commands were already quoted for the shell. `TestKeptArchivesGoToTheGuestSigned` now covers the refusals, which nothing tested before.
+
+**What changes:**
+- A Portfile path under `_resources` or a dotfile directory is no longer a port's, where the workspace and a target's selection took one before.
+- A directory name with `..` inside it, such as `foo..bar`, is no longer refused by the workspace, whose check read any `..` as a parent directory.
+- A file in the PortGroup directory that isn't `name-version.tcl` is taken as shared code that reaches every port, which is what the plan does with any other shared file it can't place.
+
+Tests:
+- `TestThePortsTreesLayout`;
+- `Scope.Changed` in the scope test, and `TestAnUpdatedFileIsInItsPortsDirectory` for update's fallback;
+- the evaluator's refusal of a three-part selector that isn't a port's Portfile, by its message: `tree.Select` refused one anyway, less clearly;
+- the existing scope, tidy, impact, workspace, index, and selection tests, which pass unchanged.
+
+Of 22 mutations, 20 fail a test. Three had gone uncaught until the last three tests above: `Changed` without `_resources`, update's fallback, and the selector's check, which was as untested before as after. The other two change nothing observable: a bare name given `/Portfile` is never a port's Portfile, and in the index's coverage check, a changed file outside every port would mark only a directory no entry has.

@@ -12,6 +12,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/history"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -325,15 +326,11 @@ func derivedSubject(ctx context.Context, repo *git.Repository, before, after str
 	return "", nil
 }
 
-var portPath = regexp.MustCompile(`^[^._/][^/]*/[^/]+/`)
-
 // groupOf is the port directory a path belongs to, or "" for a file
 // outside any port.
 func groupOf(path string) string {
-	if !portPath.MatchString(path) {
-		return ""
-	}
-	return portDirectory(path)
+	directory, _ := macports.PortDirectoryOf(path)
+	return directory
 }
 
 func otherGroups(paths []string, directory string) []string {

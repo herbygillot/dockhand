@@ -381,7 +381,6 @@ func (e *Engine) targetKind(ctx context.Context, before, after, directory string
 }
 
 var (
-	groupFile = regexp.MustCompile(`^_resources/port1\.0/group/([^/]+)\.tcl$`)
 	portGroup = regexp.MustCompile(`\bPortGroup\b(.*)`)
 	literal   = regexp.MustCompile(`^[A-Za-z0-9_.+-]+$`)
 )
@@ -397,9 +396,9 @@ var (
 func (e *Engine) loadsChangedSharedCode(ctx context.Context, tree, portfile string, changed []string) bool {
 	groups := map[string]bool{}
 	for _, path := range changed {
-		if m := groupFile.FindStringSubmatch(path); m != nil {
-			groups[m[1]] = true
-		} else if strings.HasPrefix(path, "_resources/") {
+		if _, ok := macports.PortGroupAt(path); ok {
+			groups[path] = true
+		} else if strings.HasPrefix(path, macports.ResourcesDirectory+"/") {
 			return true
 		}
 	}
@@ -417,7 +416,7 @@ func (e *Engine) loadsChangedSharedCode(ctx context.Context, tree, portfile stri
 			if strings.HasPrefix(strings.TrimSpace(line), "#") {
 				continue
 			}
-			if strings.Contains(line, "_resources") {
+			if strings.Contains(line, macports.ResourcesDirectory) {
 				return true
 			}
 			m := portGroup.FindStringSubmatch(line)
@@ -428,11 +427,11 @@ func (e *Engine) loadsChangedSharedCode(ctx context.Context, tree, portfile stri
 			if len(fields) < 2 || !literal.MatchString(fields[0]) || !literal.MatchString(fields[1]) {
 				return true
 			}
-			name := fields[0] + "-" + fields[1]
-			if groups[name] {
+			next := macports.PortGroup{Name: fields[0], Version: fields[1]}.Path()
+			if groups[next] {
 				return true
 			}
-			if next := "_resources/port1.0/group/" + name + ".tcl"; !seen[next] {
+			if !seen[next] {
 				seen[next] = true
 				queue = append(queue, next)
 			}

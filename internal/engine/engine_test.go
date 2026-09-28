@@ -340,7 +340,21 @@ func TestScopeFollowsCIsRule(t *testing.T) {
 	})
 	require.Equal(t, []string{"devel/libharbor", "textproc/jq"}, scope.Ports)
 	require.True(t, scope.Resources)
+	require.Equal(t, []string{"libharbor", "jq", "_resources"}, scope.Changed(), "as a person reads it")
 	require.Empty(t, ScopeOf([]string{"devel/libharbor/README"}).Ports, "only a Portfile or files/ marks a port")
+	require.Equal(t, []string{"jq"}, ScopeOf([]string{"textproc/jq/Portfile"}).Changed())
+}
+
+// An update's file is in its port's directory, or else in its own.
+func TestAnUpdatedFileIsInItsPortsDirectory(t *testing.T) {
+	for file, directory := range map[string]string{
+		"textproc/jq/Portfile":                    "textproc/jq",
+		"textproc/jq/files/patch-a.diff":          "textproc/jq",
+		"_resources/port1.0/group/golang-1.0.tcl": "_resources/port1.0/group",
+		"README.md": ".",
+	} {
+		require.Equal(t, directory, portDirectory(file), file)
+	}
 }
 
 // A command pointed at a checkout without naming it itself, as

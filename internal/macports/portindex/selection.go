@@ -120,7 +120,7 @@ func (i *Index) Select(ctx context.Context, filter Filter) (Selection, error) {
 			return nil
 		}
 		parts := strings.Split(filepath.ToSlash(rel), "/")
-		if entry.IsDir() && (len(parts) > 2 || strings.HasPrefix(parts[0], "_") || strings.HasPrefix(parts[0], ".")) {
+		if entry.IsDir() && (len(parts) > 2 || !macports.IsCategory(parts[0])) {
 			return filepath.SkipDir
 		}
 		if len(parts) == 3 && parts[2] == "Portfile" {

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
@@ -26,9 +27,8 @@ func validateIncrementalCoverage(seed, candidate, root string, changed []string)
 	}
 	directories := map[string]bool{}
 	for _, name := range changed {
-		parts := strings.Split(filepath.ToSlash(name), "/")
-		if len(parts) >= 3 {
-			directories[parts[0]+"/"+parts[1]] = true
+		if directory, ok := macports.PortDirectoryOf(filepath.ToSlash(name)); ok {
+			directories[directory] = true
 		}
 	}
 	for name, entry := range before {

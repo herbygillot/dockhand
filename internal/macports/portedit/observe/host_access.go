@@ -43,7 +43,7 @@ func portGroupReadBenign(root string, frames []macports.SourceFrame, groups map[
 	if resolved, err := filepath.EvalSymlinks(root); err == nil {
 		root = resolved
 	}
-	groupDir := filepath.Join(root, "_resources", "port1.0", "group")
+	groupDir := filepath.Join(root, filepath.FromSlash(macports.PortGroupDirectory))
 	for i := len(frames) - 1; i >= 0; i-- {
 		frame := frames[i]
 		if frame.File == "" || frame.Line <= 0 {

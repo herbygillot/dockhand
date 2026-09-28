@@ -263,7 +263,7 @@ func treeHoldsPorts(ctx context.Context, repo *git.Repository, tree string) bool
 		return false
 	}
 	for _, category := range categories {
-		if category.Type != "tree" || strings.HasPrefix(category.Name, ".") || strings.HasPrefix(category.Name, "_") {
+		if category.Type != "tree" || !macports.IsCategory(category.Name) {
 			continue
 		}
 		ports, err := repo.ReadTree(ctx, category.Object)

@@ -9,6 +9,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/history"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -51,7 +52,7 @@ func (e *Engine) findDirectory(ctx context.Context, tree, name string) (string, 
 	}
 	var candidates []string
 	for _, entry := range entries {
-		if entry.Type == "tree" && !strings.HasPrefix(entry.Name, "_") && !strings.HasPrefix(entry.Name, ".") {
+		if entry.Type == "tree" && macports.IsCategory(entry.Name) {
 			candidates = append(candidates, entry.Name+"/"+name+"/Portfile")
 		}
 	}

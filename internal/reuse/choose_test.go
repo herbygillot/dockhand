@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -14,9 +15,9 @@ import (
 // otherwise; a target that builds takes the ones it needs with it, since
 // a reused build isn't in the guest to be installed.
 func TestTargetsReuseWhatStandsAndBuildWhatTheBuiltOnesNeed(t *testing.T) {
-	now := map[string]model.ObjectID{"devel/lib": "1", "devel/cli": "2", "graphics/viewer": "3", "graphics/tools": "4", Resources: "5"}
+	now := map[string]model.ObjectID{"devel/lib": "1", "devel/cli": "2", "graphics/viewer": "3", "graphics/tools": "4", macports.ResourcesDirectory: "5"}
 	built := func(target, directory string, active ...model.ActivePort) Candidate {
-		inputs := model.NewTargetInputs("origin a", directory, now[directory], now[Resources], nil, active)
+		inputs := model.NewTargetInputs("origin a", directory, now[directory], now[macports.ResourcesDirectory], nil, active)
 		return Candidate{Result: model.TargetResult{Target: model.TargetID(target), Outcome: model.OutcomePassed, Execution: "tart_1"}, Inputs: inputs}
 	}
 	lib := model.ActivePort{Name: "Lib", Spec: "@1_0", Directory: "devel/lib", Tree: "1", Archive: "sha256:aa"}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -105,7 +106,7 @@ func (e *Engine) Start(ctx context.Context, request StartRequest) (model.Branch,
 			return errors.Join(switched, e.Repo.DeleteBranch(context.WithoutCancel(ctx), name, string(base)))
 		}
 	} else {
-		if err := e.Repo.AddSparseWorktree(ctx, directory, name, []string{"_resources"}); err != nil {
+		if err := e.Repo.AddSparseWorktree(ctx, directory, name, []string{macports.ResourcesDirectory}); err != nil {
 			return model.Branch{}, errors.Join(err, undo())
 		}
 		undo = func() error {
@@ -412,7 +413,7 @@ func (e *Engine) checkOutAgain(ctx context.Context, branch model.Branch) error {
 	if err := e.Repo.PruneWorktrees(ctx); err != nil {
 		return err
 	}
-	if err := e.Repo.AddSparseWorktree(ctx, branch.Worktree, branch.Name, append([]string{"_resources"}, ScopeOf(changed).Ports...)); err != nil {
+	if err := e.Repo.AddSparseWorktree(ctx, branch.Worktree, branch.Name, append([]string{macports.ResourcesDirectory}, ScopeOf(changed).Ports...)); err != nil {
 		return fmt.Errorf("checking %s out again in %s: %w", branch.Name, branch.Worktree, err)
 	}
 	return e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
@@ -525,7 +526,7 @@ func (e *Engine) AdoptPullRequest(ctx context.Context, number int) (PullRequestA
 	if err := e.Repo.CreateBranch(ctx, name, head); err != nil {
 		return adoption, err
 	}
-	if err := e.Repo.AddSparseWorktree(ctx, directory, name, append([]string{"_resources"}, adoption.Scope.Ports...)); err != nil {
+	if err := e.Repo.AddSparseWorktree(ctx, directory, name, append([]string{macports.ResourcesDirectory}, adoption.Scope.Ports...)); err != nil {
 		return adoption, errors.Join(err, e.Repo.DeleteBranch(context.WithoutCancel(ctx), name, head))
 	}
 	adoption.Branch = model.Branch{

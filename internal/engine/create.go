@@ -223,7 +223,7 @@ func (e *Engine) refuseExisting(ctx context.Context, worktree *git.Repository, n
 	}
 	var candidates []string
 	for _, entry := range entries {
-		if entry.Type == "tree" && !strings.HasPrefix(entry.Name, "_") && !strings.HasPrefix(entry.Name, ".") {
+		if entry.Type == "tree" && macports.IsCategory(entry.Name) {
 			candidates = append(candidates, entry.Name+"/"+name)
 		}
 	}

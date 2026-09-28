@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -70,7 +71,7 @@ func (e *Engine) Diff(ctx context.Context, branch model.Branch, paths []string) 
 		diff.Ports = append(diff.Ports, port)
 	}
 	for _, path := range changed {
-		if !portChange.MatchString(path) {
+		if _, ok := portChange(path); !ok {
 			diff.Other = append(diff.Other, path)
 		}
 		if within(path, paths) {
@@ -132,8 +133,6 @@ type Impact struct {
 	Shared []SharedFile
 }
 
-var portGroupFile = regexp.MustCompile(`^_resources/port1\.0/group/(.+)-([0-9][^-/]*)\.tcl$`)
-
 // Impact reads what a branch's change reaches. Dependents are looked for
 // of the named ports, or else of every port the branch changes beyond its
 // revision, from the index at the branch's base.
@@ -184,9 +183,9 @@ func (e *Engine) Impact(ctx context.Context, branch model.Branch, ports []string
 	}
 	for _, path := range diff.Other {
 		shared := SharedFile{Path: path}
-		if match := portGroupFile.FindStringSubmatch(path); match != nil {
-			shared.PortGroup = match[1] + " " + match[2]
-			pattern := `^[[:space:]]*PortGroup[[:space:]]+` + regexp.QuoteMeta(match[1]) + `[[:space:]]+` + regexp.QuoteMeta(match[2]) + `([[:space:]]|$)`
+		if group, ok := macports.PortGroupAt(path); ok {
+			shared.PortGroup = group.Name + " " + group.Version
+			pattern := `^[[:space:]]*PortGroup[[:space:]]+` + regexp.QuoteMeta(group.Name) + `[[:space:]]+` + regexp.QuoteMeta(group.Version) + `([[:space:]]|$)`
 			portfiles, err := e.Repo.GrepTree(ctx, diff.BaseTree, pattern, "*/Portfile")
 			if err != nil {
 				return impact, err
@@ -194,7 +193,7 @@ func (e *Engine) Impact(ctx context.Context, branch model.Branch, ports []string
 			for _, portfile := range portfiles {
 				shared.Users = append(shared.Users, strings.TrimSuffix(portfile, "/Portfile"))
 			}
-		} else if !strings.HasPrefix(path, "_resources/") {
+		} else if !strings.HasPrefix(path, macports.ResourcesDirectory+"/") {
 			continue
 		}
 		impact.Shared = append(impact.Shared, shared)

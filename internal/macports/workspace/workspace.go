@@ -17,10 +17,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 )
 
-// The shared resources every evaluation reads: PortGroups, livecheck and
-// fetch definitions, variant descriptions, and the Xcode table.
-const resources = "_resources"
-
 // Scope is what a workspace holds: port directories as category/port, and
 // whether the whole tree is present. _resources is present after any Ensure.
 type Scope struct {
@@ -184,11 +180,10 @@ func (w *Workspace) Whole() bool {
 // EnsurePort materializes _resources and the target's port directory,
 // including its files/ tree. It is idempotent and cheap when present.
 func (w *Workspace) EnsurePort(ctx context.Context, target model.Target) error {
-	directory := path.Dir(target.Portfile)
-	if strings.Count(directory, "/") != 1 || !fsValid(directory) {
+	if !macports.ValidPortfilePath(target.Portfile) {
 		return fmt.Errorf("workspace: %q is not a category/port/Portfile target", target.Portfile)
 	}
-	return w.ensure(ctx, []string{directory})
+	return w.ensure(ctx, []string{path.Dir(target.Portfile)})
 }
 
 // EnsureAll materializes the whole tree; later Ensure calls are no-ops.
@@ -231,7 +226,7 @@ func (w *Workspace) ensure(ctx context.Context, directories []string) error {
 			}
 		}
 		if !w.resources {
-			include = append(include, resources)
+			include = append(include, macports.ResourcesDirectory)
 		}
 		if len(include) == 0 {
 			return nil
@@ -348,10 +343,10 @@ func (w *Workspace) Overlay(ctx context.Context, edits []git.FileEdit) (*Workspa
 	editsResources := false
 	for _, edit := range edits {
 		overlay.edits = append(overlay.edits, edited[edit.Path])
-		if port := portDirectory(edit.Path); port != "" && !slices.Contains(overlay.ports, port) {
+		if port, ok := macports.PortDirectoryOf(edit.Path); ok && !slices.Contains(overlay.ports, port) {
 			overlay.ports = append(overlay.ports, port)
 		}
-		editsResources = editsResources || strings.HasPrefix(edit.Path, resources+"/")
+		editsResources = editsResources || strings.HasPrefix(edit.Path, macports.ResourcesDirectory+"/")
 	}
 	slices.Sort(overlay.ports)
 	// _resources is read, never written, by an evaluation, and it is a
@@ -363,7 +358,7 @@ func (w *Workspace) Overlay(ctx context.Context, edits []git.FileEdit) (*Workspa
 	baseResources := base.resources || base.all
 	base.mu.Unlock()
 	if !editsResources && baseResources {
-		if err := os.Symlink(filepath.Join(base.directory, resources), filepath.Join(directory, resources)); err != nil {
+		if err := os.Symlink(filepath.Join(base.directory, macports.ResourcesDirectory), filepath.Join(directory, macports.ResourcesDirectory)); err != nil {
 			return nil, errors.Join(err, os.RemoveAll(directory))
 		}
 		overlay.sharedResources = true
@@ -420,7 +415,7 @@ func (w *Workspace) place(name string, entry git.TreeEntry, edited map[string]gi
 // everything once widened, _resources when materialized, and the port
 // directories ensured or edited. Callers hold w.mu.
 func (w *Workspace) holds(name string) bool {
-	if strings.HasPrefix(name, resources+"/") {
+	if strings.HasPrefix(name, macports.ResourcesDirectory+"/") {
 		// An overlay sharing the base's _resources through a symlink holds
 		// none of its entries itself, however wide it becomes.
 		return !w.sharedResources && (w.all || w.resources)
@@ -428,19 +423,8 @@ func (w *Workspace) holds(name string) bool {
 	if w.all {
 		return true
 	}
-	port := portDirectory(name)
-	return port != "" && slices.Contains(w.ports, port)
-}
-
-// portDirectory is the category/port directory a tracked path lies in, or
-// empty for a path outside one: _resources, a dotfile directory, a
-// top-level file.
-func portDirectory(name string) string {
-	parts := strings.SplitN(name, "/", 3)
-	if len(parts) < 3 || strings.HasPrefix(parts[0], "_") || strings.HasPrefix(parts[0], ".") {
-		return ""
-	}
-	return parts[0] + "/" + parts[1]
+	port, ok := macports.PortDirectoryOf(name)
+	return ok && slices.Contains(w.ports, port)
 }
 
 // linkNew places the base's entries within the overlay's scope that the
@@ -512,8 +496,4 @@ func (w *Workspace) Close() error {
 		return err
 	}
 	return errors.Join(err, os.RemoveAll(w.directory))
-}
-
-func fsValid(name string) bool {
-	return name != "" && !strings.HasPrefix(name, "/") && !strings.Contains(name, "..") && !strings.ContainsAny(name, "\\\x00")
 }
