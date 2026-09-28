@@ -230,7 +230,7 @@ Coverage: jq, default variants
   jq    lint ✓   fetch/checksum ✓   build/install ✓   tests ✓     4m12s
 
 Passed for snapshot 1.
-Next: dockhand tidy
+Next: dockhand tidy --branch jq-update
 
 $ dockhand tidy
 Proposed commit
@@ -385,6 +385,7 @@ libharbor-2 · captured working files as snapshot 5
   ✓ reused libharbor, harbor-cli, harbor-tools: their inputs are unchanged
   harbor-viewer   ✓   3m40s
 Passed for snapshot 5.
+Next: dockhand tidy --branch libharbor-2
 ```
 
 Only `harbor-viewer` is rebuilt, because the other results still apply. Until per-target reuse lands, the whole plan is rebuilt instead, and the output says so. `retry check-42` repeats the pinned request exactly; `check` captures newer edits.

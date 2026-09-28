@@ -128,6 +128,13 @@ true, it runs that baseline by itself.`,
 				fmt.Fprintf(streams.Out, "%s replaces %s.\n", run.Name(), strings.Join(replaced, ", "))
 			}
 			err = runQueued(ctx, e, run, streams, enqueue)
+			// A check that passed says what moves the branch on now, as
+			// status would; one run for submit leaves that to submit.
+			if err == nil && !enqueue {
+				if nextErr := writeNextFor(ctx, e, streams.Out, branch.ID); nextErr != nil {
+					fmt.Fprintf(streams.Err, "next: %v\n", nextErr)
+				}
+			}
 			// check.baseline runs the baseline the failed check pointed to,
 			// by itself, when it pointed to one. The report has said why
 			// if it couldn't tell.

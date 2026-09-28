@@ -104,7 +104,7 @@ func TestUpdateInTheBranchCheckedOutHere(t *testing.T) {
 		"jq: 1.7.1 → 1.8.1   (GitHub tag jq-1.8.1)\n"+
 		"Updated version and checksums.\n"+
 		"Changed: textproc/jq/Portfile\n"+
-		"Next: review it with git diff, then commit it\n", out)
+		"Next: dockhand check\n", out)
 	data, err := os.ReadFile(filepath.Join(dir, "textproc/jq/Portfile"))
 	require.NoError(t, err)
 	require.Equal(t, "name jq\nversion 1.8.1\n", string(data))
@@ -154,6 +154,8 @@ func TestUpdateWithoutABranchAsksOrSaysHow(t *testing.T) {
 	require.NotNil(t, another, out.String())
 	require.NotEqual(t, name, another[1])
 	require.Contains(t, out.String(), "jq: 1.7.1 → 1.9")
+	require.Contains(t, out.String(), `Next: cd "$(dockhand path `+another[1]+`)", then dockhand check`+"\n",
+		"a branch not checked out here is gone to first, since a check from elsewhere takes its committed head")
 
 	out.Reset()
 	err = Run(t.Context(), []string{"update", "jq", "2.0", "--branch", another[1]}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs})

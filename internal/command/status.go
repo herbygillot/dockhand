@@ -437,9 +437,29 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, branch mod
 		writeResults(out, "           ", *status.Evidence, true)
 	}
 	fmt.Fprintf(out, "  PR       %s\n", prWords(status))
+	writeNext(out, status)
+	return nil
+}
+
+// writeNext says what moves a branch on, as its attention row does.
+func writeNext(out io.Writer, status engine.BranchStatus) {
 	for _, row := range attentionFor(status) {
 		fmt.Fprintf(out, "Next: %s\n", row.next)
 	}
+}
+
+// writeNextFor says what moves a branch on after its check, as status
+// would.
+func writeNextFor(ctx context.Context, e *engine.Engine, out io.Writer, id model.BranchID) error {
+	branch, err := e.Branch(ctx, id)
+	if err != nil {
+		return err
+	}
+	status, err := e.BranchStatus(ctx, branch)
+	if err != nil {
+		return err
+	}
+	writeNext(out, status)
 	return nil
 }
 

@@ -360,6 +360,7 @@ func TestSubmitCheckPassingAndReady(t *testing.T) {
 	out, _, err = dockhand(t, "submit", "--check")
 	require.NoError(t, err)
 	require.Contains(t, out, "Passed for commit ")
+	require.NotContains(t, out, "Next: ", "submit --check submits; it doesn't send you to submit")
 	require.Contains(t, out, "Updated #34901: pushed up to ")
 	require.Equal(t, gitRun(t, dir, "rev-parse", "HEAD"), gitRun(t, g.fork, "rev-parse", "dockhand/jq-update"))
 }

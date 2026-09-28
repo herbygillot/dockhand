@@ -74,7 +74,7 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	require.Contains(t, errs, "check-1 runs here, since no dockhand serve is running.")
 	require.Contains(t, errs, "command: jq passed")
 	require.Contains(t, out, "jq-update · checking snapshot 1\n")
-	require.Contains(t, out, "  jq  ✓\n\nPassed for snapshot 1.\n")
+	require.Contains(t, out, "  jq  ✓\n\nPassed for snapshot 1.\nNext: dockhand tidy --branch jq-update\n", "what moves the branch on, as status says it")
 
 	out, _, err = dockhand(t, "check", "-d")
 	require.NoError(t, err)

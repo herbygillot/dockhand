@@ -428,9 +428,20 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		streams.emit(result)
 	}
 	if !linked.submit {
-		fmt.Fprintln(out, "Next: review it with git diff, then commit it")
+		fmt.Fprintln(out, "Next: "+nextAfterEdit(ctx, e, branch))
 	}
 	return branch, update, nil
+}
+
+// nextAfterEdit is what follows an edit (Design v3 §6.2): a check of the
+// working files, whose own Next is the tidy that commits them. A branch
+// other than the one checked out here is gone to first, since a check
+// from elsewhere takes the branch's committed head.
+func nextAfterEdit(ctx context.Context, e *engine.Engine, branch model.Branch) string {
+	if current, err := e.Current(ctx); err == nil && current.ID == branch.ID {
+		return "dockhand check"
+	}
+	return fmt.Sprintf(`cd "$(dockhand path %s)", then dockhand check`, branch.ShortName())
 }
 
 // announce says which branch an edit is in, and whether it was just
