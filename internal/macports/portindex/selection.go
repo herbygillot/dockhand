@@ -9,12 +9,13 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
 // Filter matches exact metadata values: alternatives within a field, intersection
 // across fields. Maintainers accept MacPorts handles/emails and Repology handles,
-// and the class words openmaintainer and nomaintainer, which the index carries
+// and the keywords openmaintainer and nomaintainer, which the index carries
 // as maintainers in their own right. NotMaintainers leaves out any port one of
 // its values maintains, whichever way the rest was selected, which is how
 // "open, but not mine" is asked. All selects every indexed entry while
@@ -171,14 +172,14 @@ func (f Filter) matches(entry Entry) (bool, error) {
 		}
 		if field.name == "maintainers" {
 			var err error
-			if values, err = maintainerIdentities(values); err != nil {
+			if values, err = maintainerIdentities(indexed); err != nil {
 				return false, err
 			}
 		}
 		found := false
 		for _, wanted := range field.wanted {
 			if field.name == "maintainers" {
-				wanted = maintainerIdentity(wanted)
+				wanted = macports.MaintainerIdentity(wanted)
 			}
 			for _, value := range values {
 				if strings.EqualFold(wanted, value) {
@@ -192,16 +193,12 @@ func (f Filter) matches(entry Entry) (bool, error) {
 		if entry.Fields["maintainers"] == "" {
 			return false, fmt.Errorf("missing indexed maintainers; selector membership is unknown")
 		}
-		values, failures := syntax.ListValues(entry.Fields["maintainers"])
-		if len(failures) > 0 {
-			return false, fmt.Errorf("invalid indexed maintainers; selector membership is unknown")
-		}
-		identities, err := maintainerIdentities(values)
+		identities, err := maintainerIdentities(entry.Fields["maintainers"])
 		if err != nil {
 			return false, err
 		}
 		for _, excluded := range f.NotMaintainers {
-			if slices.ContainsFunc(identities, func(value string) bool { return strings.EqualFold(maintainerIdentity(excluded), value) }) {
+			if slices.ContainsFunc(identities, func(value string) bool { return strings.EqualFold(macports.MaintainerIdentity(excluded), value) }) {
 				return false, nil
 			}
 		}
@@ -209,35 +206,18 @@ func (f Filter) matches(entry Entry) (bool, error) {
 	return matched, nil
 }
 
-// maintainerIdentities flattens the index's maintainer groups, {{a b} c},
-// into one identity per member.
-func maintainerIdentities(values []string) ([]string, error) {
-	var expanded []string
-	for _, value := range values {
-		group, failures := syntax.ListValues(value)
-		if len(failures) > 0 {
-			return nil, fmt.Errorf("invalid indexed maintainer group; selector membership is unknown")
+// maintainerIdentities are who the index's maintainers field names, one
+// identity for each spelling of each maintainer, {{a b} c} naming three.
+func maintainerIdentities(indexed string) ([]string, error) {
+	maintainers, err := macports.ReadMaintainers(indexed)
+	if err != nil {
+		return nil, fmt.Errorf("invalid indexed maintainers; selector membership is unknown")
+	}
+	var identities []string
+	for _, maintainer := range maintainers {
+		for _, spelling := range maintainer {
+			identities = append(identities, macports.MaintainerIdentity(spelling))
 		}
-		for _, member := range group {
-			expanded = append(expanded, maintainerIdentity(member))
-		}
 	}
-	return expanded, nil
-}
-
-func maintainerIdentity(value string) string {
-	value = strings.ToLower(value)
-	if strings.HasSuffix(value, "@github") {
-		return "@" + strings.TrimSuffix(value, "@github")
-	}
-	if strings.Contains(value, "@") {
-		return value
-	}
-	if domain, user, ok := strings.Cut(value, ":"); ok {
-		return user + "@" + domain
-	}
-	if value == "openmaintainer" || value == "nomaintainer" {
-		return value
-	}
-	return value + "@macports.org"
+	return identities, nil
 }

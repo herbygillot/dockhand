@@ -146,7 +146,7 @@ func TestMaintainerAndSubmitSettings(t *testing.T) {
 	_, err = parse("config.toml", "maintainer = \"ada@example.org\"\n")
 	require.NoError(t, err)
 
-	for _, bad := range []string{"{@ada example.org:ada", "@ada}", "{a {b}}", "a}b"} {
+	for _, bad := range []string{"{@ada example.org:ada", "@ada}", "{a {b}}", "a}b", "[exec true]", " "} {
 		_, err = parse("config.toml", "maintainer = \""+bad+"\"\n")
 		require.ErrorContains(t, err, "maintainer:", bad)
 	}

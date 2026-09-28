@@ -121,7 +121,7 @@ The order puts live regressions first, then the guardrail unattended submission 
   - the ports tree's layout in `macports`: `_resources`, categories, and a file's port directory (the earlier finding 29), with `macports.ValidName` in the Tart archive site;
   - GitHub remote and pull request addresses in the GitHub layer (the earlier finding 13);
   - provider names in `buildenv` (the earlier finding 14). Done 2026-09-28 ([note](activity/2026-09-28-facts-with-homes.md)): constants in the contract;
-  - a maintainer's identity in `macports`;
+  - a maintainer's identity in `macports`. Done 2026-09-28 (the same note): reading, normalizing, and checking a maintainers line, which now refuses what Tcl reads specially;
   - which Darwin releases have arm64, in `macos`. Done 2026-09-28 (the same note): `macos.RunsOn`, and Golden Gate is no longer evaluated on Intel.
 
 The order is the roadmap's own: a guardrail first, then what's written into a Portfile, then fidelity, then structure. The facts with homes come before items 6 and 7, which would otherwise add more readers of their copies. Findings 1, 2, and 6 go inside item 6 instead, since they move the planning code and reshape the archive install that item 6 is already moving and extending; there, that code is touched once.

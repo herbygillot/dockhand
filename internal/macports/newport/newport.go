@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
@@ -202,7 +203,7 @@ func Write(s Spec) []byte {
 	}
 	if s.Maintainer == "" {
 		mark("no maintainer is set in dockhand's config")
-		line("maintainers", "nomaintainer")
+		line("maintainers", macports.NoMaintainer)
 	} else {
 		line("maintainers", s.Maintainer)
 	}

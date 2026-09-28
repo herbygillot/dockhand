@@ -23,3 +23,30 @@ They are now `buildenv`'s, the contract every provider and its callers already s
 What stays spelled out is what isn't a provider's name: the Tart executable, the GitHub PortGroup and forge, the configuration's section tags, which Go can't take from a constant, and the words of messages.
 
 The tests keep spelling the names, as people type them. Changing any of the four constants fails tests, `--on prefix` among them, now a case of `TestEnvironmentsAreTheProvidersOnNames`.
+
+## A maintainer's identity
+
+What a maintainers line says was read three ways, none of them in `macports`:
+- the port index's selection flattened each port's groups and normalized each spelling (`maintainerIdentities`, `maintainerIdentity`);
+- the configuration checked your maintainers line by counting braces over its words (`checkMaintainer`);
+- it split the line on spaces and trimmed the braces to find your spellings (`File.Maintainers`).
+
+They are now `macports`' (`maintainers.go`):
+- **`ReadMaintainers`** reads a value as MacPorts does: a Tcl list of entries, each a list of the spellings that reach one person, an empty one dropped.
+- **`MaintainerIdentity`** normalizes a spelling. It follows MacPorts' own reading of them (`unobscure_maintainers`): a GitHub handle, an address a Portfile obscures as `example.org:ada`, split at its first colon, a MacPorts handle as its `@macports.org` address, and a keyword as itself. It adds Repology's spelling of a GitHub handle, `ada@github`, which selectors accept.
+- **`MaintainerKeyword`** says whether a spelling is `openmaintainer` or `nomaintainer`, which name no one.
+- **`CheckMaintainers`** checks a line as MacPorts writes one: entries apart by spaces, each a spelling or a braced group of them, and at least one.
+
+Selection compares identities through them, keeping its own matching. The configuration validates and reads the line through them. `create` writes the line as it is, so its grouping and spelling are kept.
+
+**Tightened:** the check reads the line as a Tcl list, and it refuses what Tcl reads specially: quotes, backslashes, `$`, `[`, `]`, `;`, and control characters. Before, `maintainer = "[exec …]"` passed, and `create` wrote it into a Portfile, where MacPorts would run it as a command. A newline would have ended the `maintainers` line. A group that runs into the next word, `{a}b`, is refused as a stray brace. Before, it was misreported as a group left open.
+
+Tests:
+- `TestMaintainersReadAsMacPortsReadsThem`;
+- `TestAMaintainersSpellingsAreOneIdentity`;
+- `TestAMaintainersLineIsCheckedAsMacPortsWritesOne`;
+- `TestACheckedMaintainersLineReadsAsItsWords`, which runs each checked line through MacPorts' Tcl as a `maintainers` command, and gets the entries the list reading gets.
+
+The existing selection and configuration tests pass unchanged, apart from two more refused lines. Seventeen mutations each fail a test.
+
+**Seen, not changed:** `port lint` refuses `nomaintainer` beside another maintainer, and `openmaintainer` alone. The configuration doesn't, so `create` could write a line lint refuses. That would be a new rule, not a move.

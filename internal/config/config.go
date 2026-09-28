@@ -21,6 +21,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/macports"
 )
 
 // PathVariable names another configuration file, for tests and experiments.
@@ -326,8 +327,10 @@ func parse(path, text string) (File, error) {
 	default:
 		return File{}, fmt.Errorf("%s: submit.rerequest_review: %q is not ask, always, or never", path, f.Submit.RerequestReview)
 	}
-	if err := checkMaintainer(f.Maintainer); err != nil {
-		return File{}, fmt.Errorf("%s: maintainer: %w", path, err)
+	if f.Maintainer != "" {
+		if err := macports.CheckMaintainers(f.Maintainer); err != nil {
+			return File{}, fmt.Errorf("%s: maintainer: %w", path, err)
+		}
 	}
 	if f.Cleanup.After != "" {
 		if _, err := parseAge(f.Cleanup.After); err != nil {
@@ -369,58 +372,23 @@ func parse(path, text string) (File, error) {
 	return f, nil
 }
 
-// Maintainers are the identities the maintainer line names, the way the
+// Maintainers are the spellings the maintainer line names you by, as the
 // port index's maintainers field carries them: @ada, example.org:ada. The
-// class words openmaintainer and nomaintainer name no one.
+// keywords openmaintainer and nomaintainer name no one.
 func (f File) Maintainers() []string {
-	var identities []string
-	for _, field := range strings.Fields(f.Maintainer) {
-		field = strings.Trim(field, "{}")
-		if field == "" || field == "openmaintainer" || field == "nomaintainer" {
-			continue
-		}
-		identities = append(identities, field)
-	}
-	return identities
-}
-
-// checkMaintainer checks a maintainers line the way MacPorts writes one:
-// entries separated by spaces, each a braced group of a GitHub handle and
-// an obfuscated address, such as {@ada example.org:ada}, or a bare
-// address, handle, openmaintainer, or nomaintainer.
-func checkMaintainer(line string) error {
-	if line == "" {
+	maintainers, err := macports.ReadMaintainers(f.Maintainer)
+	if err != nil {
 		return nil
 	}
-	depth, entries := 0, 0
-	for _, field := range strings.Fields(line) {
-		opening := strings.HasPrefix(field, "{")
-		closing := strings.HasSuffix(field, "}")
-		switch {
-		case opening && depth > 0:
-			return fmt.Errorf("%q opens a group inside another", line)
-		case opening:
-			depth++
-		case depth == 0 && strings.ContainsAny(field, "{}"):
-			return fmt.Errorf("%q has a stray brace", line)
-		}
-		if closing {
-			if depth == 0 {
-				return fmt.Errorf("%q closes a group it never opened", line)
+	var spellings []string
+	for _, maintainer := range maintainers {
+		for _, spelling := range maintainer {
+			if !macports.MaintainerKeyword(spelling) {
+				spellings = append(spellings, spelling)
 			}
-			depth--
-		}
-		if depth == 0 {
-			entries++
 		}
 	}
-	if depth != 0 {
-		return fmt.Errorf("%q leaves a group open", line)
-	}
-	if entries == 0 {
-		return fmt.Errorf("%q names no one", line)
-	}
-	return nil
+	return spellings
 }
 
 func expandHome(path string) (string, error) {
