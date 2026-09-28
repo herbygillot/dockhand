@@ -27,3 +27,11 @@ Checking before tidying, the order the design gives, left hugo's branch at "pass
 The submit preview's new Upstream line read "Upstream · upstream: go.mod moves …", and duckdb's "Upstream ! upstream's CMakeLists.txt changed". Update's own "Upstream changes:" did the same. A finding's words stand alone where they're used, as in what holds a submission, so they say whose change it is.
 
 Under an Upstream label or heading, a finding now leaves that out: "Upstream ! CMakeLists.txt changed; the build may need the Portfile to follow". `submit --passing`, whose lines have no heading, keeps it. `TestUpstreamIsSaidOnceUnderItsHeading` and `TestTheSubmitPreviewGivesEachUpstreamFindingALine` fail with any of it undone.
+
+## A plan with no branch
+
+`update hugo --plan` in the main checkout refused, "hugo is in no open branch, and this checkout is on none", unless `--new` was given, though a plan changes nothing. On a terminal it offered to start a branch for it.
+
+A version update's plan with no branch to plan in now plans on master, as `--new --plan` does: none named, nothing tracked checked out here, and no open branch changing the port. Where a branch changes the port, it still says which to name. On a terminal a plan now asks nothing that could start a branch. Someone's untracked branch is still theirs to adopt, and a branch named with `--branch` is still where the plan goes.
+
+`TestUpdateWithoutABranchAsksOrSaysHow`, `TestAPlanInANamedBranchIsPlannedThere`, and `TestAnUntrackedBranchHereIsTheirsToAdopt` fail with any condition undone.

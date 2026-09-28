@@ -49,7 +49,8 @@ in its checksums, in the branch's working files. Nothing is committed.
 
 The branch is --branch, else the one checked out here; --new starts one,
 once there is an edit to make, so a port already current starts nothing.
---plan shows the edit and changes nothing.
+--plan shows the edit and changes nothing: with no branch to plan in, it
+plans on master, as --new --plan does, and it never starts one.
 
 --revbump-dependents also bumps the revision of every port that links the
 updated one directly, its library dependents in the port index at the
@@ -298,6 +299,12 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		return branch, update, err
 	}
 	defer e.Close()
+	// So is one with no branch to plan in, since a plan starts nothing.
+	if request.Plan && request.Action == model.EditUpdate && !fromMaster {
+		if fromMaster, err = unbranchedPlan(ctx, e, where, request.Port); err != nil {
+			return branch, update, err
+		}
+	}
 	var started bool
 	out := streams.Out
 	// A version update with --new starts its branch once there is an edit
@@ -311,7 +318,12 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		}
 		request.Start = &engine.StartRequest{Name: name}
 	case !fromMaster:
-		if branch, started, err = chooseBranch(ctx, e, streams, where, request.Port, purpose); err != nil {
+		// A plan asks nothing that would start a branch.
+		choosing := streams
+		if request.Plan {
+			choosing = streams.unattended()
+		}
+		if branch, started, err = chooseBranch(ctx, e, choosing, where, request.Port, purpose); err != nil {
 			return branch, update, err
 		}
 		announce(out, branch, started)
@@ -575,6 +587,23 @@ func releaseWords(port string, release model.Release) string {
 		words += ", from its distfiles"
 	}
 	return words
+}
+
+// unbranchedPlan reports whether a version update's plan has no branch to
+// be planned in: none named, nothing tracked checked out here, and no open
+// branch changing the port. It is planned on master, as --new --plan is.
+func unbranchedPlan(ctx context.Context, e *engine.Engine, where branchChoice, port string) (bool, error) {
+	if where.branch != "" {
+		return false, nil
+	}
+	if _, err := e.Current(ctx); !errors.Is(err, engine.ErrNoBranch) {
+		return false, nil
+	}
+	if current, err := e.Repo.CurrentBranch(ctx); err == nil && current != "master" && current != "main" {
+		return false, nil
+	}
+	changing, err := e.BranchesChanging(ctx, port)
+	return len(changing) == 0, err
 }
 
 // chooseBranch is the branch an authoring command works in: --branch, a

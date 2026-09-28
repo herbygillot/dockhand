@@ -126,6 +126,20 @@ func TestUpdateWithoutABranchAsksOrSaysHow(t *testing.T) {
 	_, _, err := dockhand(t, "update", "jq")
 	require.ErrorContains(t, err, "jq is in no open branch, and this checkout is on none; start one with --new, or name one with --branch <name>")
 
+	// A plan changes nothing, so with no branch to plan in it plans on
+	// master, as --new --plan does, and asks nothing on a terminal.
+	none := gitRun(t, w.clone, "branch", "--list", "dockhand/*")
+	planned, _, err := dockhand(t, "update", "jq", "--plan")
+	require.NoError(t, err)
+	require.Regexp(t, `Planned on master [0-9a-f]+ \(fetched just now\); --new without --plan starts the branch\n`, planned)
+	require.Contains(t, planned, "+version 1.8.1")
+	var asked, told bytes.Buffer
+	err = Run(t.Context(), []string{"update", "jq", "--plan"}, Streams{In: strings.NewReader("y\n"), Out: &told, Err: &asked, interactive: true})
+	require.NoError(t, err)
+	require.NotContains(t, asked.String(), "? ", "a plan asks nothing")
+	require.Contains(t, told.String(), "Planned on master ")
+	require.Equal(t, none, gitRun(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
+
 	var out, errs bytes.Buffer
 	err = Run(t.Context(), []string{"update", "jq"}, Streams{In: strings.NewReader("\n"), Out: &out, Err: &errs, interactive: true})
 	require.NoError(t, err)
@@ -138,6 +152,12 @@ func TestUpdateWithoutABranchAsksOrSaysHow(t *testing.T) {
 
 	_, _, err = dockhand(t, "update", "jq")
 	require.ErrorContains(t, err, "jq is changed in "+name+"; name it with --branch "+name+", or start another with --new")
+	// A plan for a port a branch changes says which to plan in, on a
+	// terminal too, rather than offering to start a branch.
+	asked.Reset()
+	err = Run(t.Context(), []string{"update", "jq", "--plan"}, Streams{In: strings.NewReader("n\n"), Out: &told, Err: &asked, interactive: true})
+	require.ErrorContains(t, err, "jq is changed in "+name+"; name it with --branch "+name)
+	require.NotContains(t, asked.String(), "? ")
 
 	out.Reset()
 	errs.Reset()
@@ -165,7 +185,7 @@ func TestUpdateWithoutABranchAsksOrSaysHow(t *testing.T) {
 	// --new with --plan is a look before starting a branch, on master as
 	// fetched now; it starts none.
 	before := gitRun(t, w.clone, "branch", "--list", "dockhand/*")
-	planned, _, err := dockhand(t, "update", "jq", "--new", "--plan")
+	planned, _, err = dockhand(t, "update", "jq", "--new", "--plan")
 	require.NoError(t, err)
 	require.Regexp(t, `Planned on master [0-9a-f]+ \(fetched just now\); --new without --plan starts the branch\n`, planned)
 	require.Contains(t, planned, "Plan, nothing changed:")
@@ -177,12 +197,28 @@ func TestUpdateWithoutABranchAsksOrSaysHow(t *testing.T) {
 	require.ErrorContains(t, err, "none of the others can be")
 }
 
+// A plan in a branch named with --branch is planned there, though the
+// branch doesn't change the port yet.
+func TestAPlanInANamedBranchIsPlannedThere(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	_, _, err := dockhand(t, "start", "plain")
+	require.NoError(t, err)
+	out, _, err := dockhand(t, "update", "jq", "--plan", "--branch", "plain")
+	require.NoError(t, err)
+	require.Contains(t, out, "plain · ~/Source/macports-branches/plain\n")
+	require.NotContains(t, out, "Planned on master")
+}
+
 func TestAnUntrackedBranchHereIsTheirsToAdopt(t *testing.T) {
 	w := newWorld(t)
 	withBumper(t)
 	gitRun(t, w.clone, "switch", "-q", "-c", "mine")
 	_, _, err := dockhand(t, "update", "jq")
 	require.ErrorContains(t, err, "mine is not tracked; dockhand adopt tracks it")
+	_, _, err = dockhand(t, "update", "jq", "--plan")
+	require.ErrorContains(t, err, "mine is not tracked; dockhand adopt tracks it", "a plan in someone's branch isn't master's")
 }
 
 func TestUpdateRevbumpsTheLibraryDependents(t *testing.T) {
