@@ -78,12 +78,10 @@ type SubmitPlan struct {
 	// BodyKept is true when a person's edits to the description are kept
 	// as they are.
 	BodyKept bool
-	// Refreshes names the parts of an existing pull request's description
-	// that submit rewrites, as the preview says them: its Type(s), and its
-	// description from Tested on down. None for one that is current, the
-	// person's own, or someone else's.
-	Refreshes []string
-	Evidence  *Evidence
+	// Sections are what submitting again does to each part of an existing
+	// pull request's description that dockhand writes; zero for a new one.
+	Sections DescriptionSections
+	Evidence *Evidence
 	// Upstream is what comparing the upstream archives found for each of
 	// the branch's updates that compared them. A person's submission shows
 	// it; only one nobody looks over is held for it (D4).
@@ -121,20 +119,19 @@ func (p *SubmitPlan) Answer(testedBinaries, testedVariants bool) {
 		if p.Branch.PullRequest != nil {
 			last = p.Branch.PullRequest.Body
 		}
-		existing := p.Existing.PullRequest.Body
-		var ours bool
-		p.Body, ours = mergeBody(existing, last, p.Body, len(p.Request.Types) > 0)
-		p.BodyKept, p.Refreshes = !ours, nil
+		p.Body, p.Sections = mergeBody(p.Existing.PullRequest.Body, last, p.Body, len(p.Request.Types) > 0)
 		// Someone else's description is never rewritten (ApplySubmit).
-		if !p.Theirs {
-			p.Refreshes = refreshedParts(existing, p.Body)
+		if p.Theirs {
+			p.Sections = DescriptionSections{Types: SectionKept, TestedOn: SectionKept}
 		}
+		p.BodyKept = p.Sections.TestedOn == SectionKept || p.Sections.TestedOn == SectionAbsent
 	}
 }
 
 // Describe replaces the description with one the person wrote.
 func (p *SubmitPlan) Describe(body string) {
-	p.Body, p.BodyKept, p.Refreshes = body, true, nil
+	p.Body, p.BodyKept = body, true
+	p.Sections = DescriptionSections{Types: SectionKept, TestedOn: SectionKept}
 }
 
 // Head is the fork's head as "owner/repo:branch".

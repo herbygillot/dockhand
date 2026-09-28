@@ -399,67 +399,91 @@ func typesSpan(body string) (int, int, bool) {
 	return start, end, true
 }
 
-// mergeBody updates an existing description. Each part dockhand writes is
-// rewritten only while it is still exactly what dockhand last wrote there,
-// so a person's edits are kept: the Type(s), and everything from Tested on
-// down. The Type(s) only gain ticks that way: what dockhand ticked stays
-// ticked, though a person's change folded in since means it wouldn't tick
-// it now. Types the person named (named) replace the Type(s) however they
-// read, or go before Tested on in a description that leaves them out;
-// unnamed, such a description stays without them. It reports whether the
-// part from Tested on down was dockhand's to rewrite.
-func mergeBody(existing, lastWritten, fresh string, named bool) (string, bool) {
-	body, ours := mergeTestedOn(existing, lastWritten, fresh)
-	return mergeTypes(body, lastWritten, fresh, named), ours
+// SectionOutcome is what submitting again does to a part of an existing
+// pull request's description that dockhand writes.
+type SectionOutcome string
+
+const (
+	// SectionRefreshed is rewritten, and reads differently for it.
+	SectionRefreshed SectionOutcome = "refreshed"
+	// SectionCurrent is dockhand's, and already as it would write it.
+	SectionCurrent SectionOutcome = "current"
+	// SectionKept is someone's own: edited since dockhand wrote it, or
+	// never dockhand's, and kept as it is.
+	SectionKept SectionOutcome = "kept"
+	// SectionAbsent is left out of the description, and stays out.
+	SectionAbsent SectionOutcome = "absent"
+)
+
+// DescriptionSections are what submitting again does to each part of an
+// existing pull request's description that dockhand writes: its Type(s),
+// and everything from Tested on down.
+type DescriptionSections struct {
+	Types, TestedOn SectionOutcome
 }
 
-func mergeTestedOn(existing, lastWritten, fresh string) (string, bool) {
+// mergeBody updates an existing description, and says what it did to each
+// part dockhand writes. Each is rewritten only while it is still exactly
+// what dockhand last wrote there, so a person's edits are kept: the
+// Type(s), and everything from Tested on down. The Type(s) only gain ticks
+// that way: what dockhand ticked stays ticked, though a person's change
+// folded in since means it wouldn't tick it now. Types the person named
+// (named) replace the Type(s) however they read, or go before Tested on in
+// a description that leaves them out; unnamed, such a description stays
+// without them.
+func mergeBody(existing, lastWritten, fresh string, named bool) (string, DescriptionSections) {
+	body, testedOn := mergeTestedOn(existing, lastWritten, fresh)
+	body, types := mergeTypes(body, lastWritten, fresh, named)
+	return body, DescriptionSections{Types: types, TestedOn: testedOn}
+}
+
+// rewritten is a part's outcome once dockhand writes it: refreshed, or
+// current where its text stays the same.
+func rewritten(was, is string) SectionOutcome {
+	if normalize(was) == normalize(is) {
+		return SectionCurrent
+	}
+	return SectionRefreshed
+}
+
+func mergeTestedOn(existing, lastWritten, fresh string) (string, SectionOutcome) {
 	at, ok := ownedSpan(existing)
+	if !ok {
+		return existing, SectionAbsent
+	}
 	last, lastOK := ownedSpan(lastWritten)
 	next, nextOK := ownedSpan(fresh)
-	if !ok || !lastOK || !nextOK || normalize(existing[at:]) != normalize(lastWritten[last:]) {
-		return existing, false
+	if !lastOK || !nextOK || normalize(existing[at:]) != normalize(lastWritten[last:]) {
+		return existing, SectionKept
 	}
-	return existing[:at] + fresh[next:], true
+	return existing[:at] + fresh[next:], rewritten(existing[at:], fresh[next:])
 }
 
-func mergeTypes(body, lastWritten, fresh string, named bool) string {
+func mergeTypes(body, lastWritten, fresh string, named bool) (string, SectionOutcome) {
+	from, to, found := typesSpan(body)
 	start, end, ok := typesSpan(fresh)
-	if !ok {
-		return body
+	switch {
+	case !ok && found:
+		return body, SectionKept
+	case !ok:
+		return body, SectionAbsent
 	}
 	types := fresh[start:end]
-	if from, to, found := typesSpan(body); found {
+	if found {
 		was, wasEnd, written := typesSpan(lastWritten)
 		switch {
 		case named:
-			return body[:from] + types + body[to:]
+			return body[:from] + types + body[to:], rewritten(body[from:to], types)
 		case written && normalize(body[from:to]) == normalize(lastWritten[was:wasEnd]):
-			return body[:from] + typesSection(append(tickedTypes(body[from:to]), tickedTypes(types)...)) + body[to:]
+			section := typesSection(append(tickedTypes(body[from:to]), tickedTypes(types)...))
+			return body[:from] + section + body[to:], rewritten(body[from:to], section)
 		}
-		return body
+		return body, SectionKept
 	}
-	if at, found := ownedSpan(body); found && named {
-		return body[:at] + types + body[at:]
+	if at, owned := ownedSpan(body); owned && named {
+		return body[:at] + types + body[at:], SectionRefreshed
 	}
-	return body
-}
-
-// refreshedParts names the parts of a description a merge rewrote, as the
-// submit preview says them.
-func refreshedParts(before, after string) []string {
-	var parts []string
-	from, to, was := typesSpan(before)
-	start, end, is := typesSpan(after)
-	if was != is || was && normalize(before[from:to]) != normalize(after[start:end]) {
-		parts = append(parts, "its Type(s)")
-	}
-	at, wasOwned := ownedSpan(before)
-	next, isOwned := ownedSpan(after)
-	if wasOwned != isOwned || wasOwned && normalize(before[at:]) != normalize(after[next:]) {
-		parts = append(parts, "its description from Tested on down")
-	}
-	return parts
+	return body, SectionAbsent
 }
 
 // normalize ignores the line endings GitHub's editor may change.

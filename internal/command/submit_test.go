@@ -280,7 +280,7 @@ func TestTidyWarnsOfAModifiedBuild(t *testing.T) {
 // Someone else's pull request keeps its title and description, whatever
 // submit would write, and the preview says so.
 func TestAPullRequestOfSomeoneElsesStaysTheirs(t *testing.T) {
-	plan := engine.SubmitPlan{Existing: &forge.PullRequestObservation{PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 34905}}}, Theirs: true, Refreshes: []string{"its Type(s)"}}
+	plan := engine.SubmitPlan{Existing: &forge.PullRequestObservation{PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 34905}}}, Theirs: true, Sections: engine.DescriptionSections{Types: engine.SectionRefreshed}}
 	require.Equal(t, "updates #34905; its title and description are theirs, and stay as they are", pullRequestWords(plan))
 	plan.Theirs = false
 	plan.BodyKept = true

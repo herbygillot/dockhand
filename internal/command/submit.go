@@ -481,15 +481,22 @@ func pullRequestWords(plan engine.SubmitPlan) string {
 	if pr := plan.Branch.PullRequest; pr != nil && pr.Draft && !plan.Request.Draft {
 		words += ", a draft: mark it ready for review on GitHub when it is"
 	}
+	var refreshing []string
+	if plan.Sections.Types == engine.SectionRefreshed {
+		refreshing = append(refreshing, "its Type(s)")
+	}
+	if plan.Sections.TestedOn == engine.SectionRefreshed {
+		refreshing = append(refreshing, "its description from Tested on down")
+	}
 	switch {
 	case plan.Theirs:
 		words += "; its title and description are theirs, and stay as they are"
-	case len(plan.Refreshes) == 0 && plan.BodyKept:
+	case len(refreshing) == 0 && plan.BodyKept:
 		words += "; its description is yours, and stays as it is"
-	case len(plan.Refreshes) == 0:
+	case len(refreshing) == 0:
 		words += "; its description is current"
 	default:
-		words += "; refreshes " + strings.Join(plan.Refreshes, " and ")
+		words += "; refreshes " + strings.Join(refreshing, " and ")
 		if plan.BodyKept {
 			words += "; the rest of its description is yours"
 		}

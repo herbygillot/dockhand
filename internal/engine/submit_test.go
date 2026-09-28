@@ -274,13 +274,13 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 	require.NotNil(t, plan.Existing)
 	require.True(t, plan.Replaces, "the tidied commit replaces the pushed one")
 	require.False(t, plan.BodyKept)
-	require.Empty(t, plan.Refreshes)
+	require.Equal(t, DescriptionSections{Types: SectionCurrent, TestedOn: SectionCurrent}, plan.Sections)
 	// --type names the Type(s) of a pull request already open, as of a new
 	// one: the person named them.
 	typed, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Types: []string{"bugfix"}})
 	require.NoError(t, err)
 	require.Contains(t, typed.Body, "- [x] bugfix")
-	require.Equal(t, []string{"its Type(s)"}, typed.Refreshes)
+	require.Equal(t, DescriptionSections{Types: SectionRefreshed, TestedOn: SectionCurrent}, typed.Sections)
 	_, err = e.ApplySubmit(t.Context(), plan)
 	require.NoError(t, err)
 	require.Len(t, fake.created, 1)
@@ -464,17 +464,22 @@ func TestSubmitFollowsThePublicationRule(t *testing.T) {
 func TestTheMergedDescriptionKeepsOnlyWhatDockhandWrote(t *testing.T) {
 	fresh := "#### Description\n\nnew\n\n###### Tested on\n\nnew evidence\n"
 	last := "#### Description\n\nold\n\n###### Tested on\n\nold evidence\n"
-	merged, ok := mergeBody("#### Description\n\nmine\n\n###### Tested on\r\n\r\nold evidence\r\n", last, fresh, false)
-	require.True(t, ok)
+	merged, sections := mergeBody("#### Description\n\nmine\n\n###### Tested on\r\n\r\nold evidence\r\n", last, fresh, false)
+	require.Equal(t, SectionRefreshed, sections.TestedOn)
 	require.Equal(t, "#### Description\n\nmine\n\n###### Tested on\n\nnew evidence\n", merged, "the description stays the person's")
-	_, ok = mergeBody("#### Description\n\nmine\n\n###### Tested on\n\nI built it myself\n", last, fresh, false)
-	require.False(t, ok)
+	_, sections = mergeBody("#### Description\n\nmine\n\n###### Tested on\n\nI built it myself\n", last, fresh, false)
+	require.Equal(t, SectionKept, sections.TestedOn)
+	_, sections = mergeBody("#### Description\n\nmine\n", last, fresh, false)
+	require.Equal(t, SectionAbsent, sections.TestedOn)
+	_, sections = mergeBody(last, last, last, false)
+	require.Equal(t, SectionCurrent, sections.TestedOn, "dockhand's, and already as it would write it")
 }
 
 // The Type(s) are dockhand's while they are what it wrote: refreshed then,
 // kept once a person edits them, and replaced by types the person names.
 // A description that leaves them out, with Tested on alone, stays without,
-// unless types are named, which go before Tested on.
+// unless types are named, which go before Tested on. The merge says what
+// it did to each part, rather than a second reading of its result.
 func TestTheMergedDescriptionsTypesAreDockhandsWhileUnchanged(t *testing.T) {
 	body := func(description string, ticked []string, evidence string) string {
 		var types strings.Builder
@@ -486,32 +491,33 @@ func TestTheMergedDescriptionsTypesAreDockhandsWhileUnchanged(t *testing.T) {
 	last := body("jq: update", nil, "old evidence")
 	fresh := body("jq: update", []string{"enhancement"}, "new evidence")
 
-	merged, ok := mergeBody(last, last, fresh, false)
-	require.True(t, ok)
+	merged, sections := mergeBody(last, last, fresh, false)
 	require.Equal(t, fresh, merged, "all of it as dockhand now writes it: the enhancement an update is, and the new evidence")
-	require.Equal(t, []string{"its Type(s)", "its description from Tested on down"}, refreshedParts(last, merged))
+	require.Equal(t, DescriptionSections{Types: SectionRefreshed, TestedOn: SectionRefreshed}, sections)
 	merged, _ = mergeBody(strings.ReplaceAll(last, "\n", "\r\n"), last, fresh, false)
 	require.Contains(t, merged, "- [x] enhancement", "GitHub's line endings aren't a person's edit")
 	ticked := body("jq: update", []string{"enhancement"}, "old evidence")
-	merged, _ = mergeBody(ticked, ticked, body("jq: update", []string{"security fix"}, "new evidence"), false)
+	merged, sections = mergeBody(ticked, ticked, body("jq: update", []string{"security fix"}, "new evidence"), false)
 	require.Equal(t, body("jq: update", []string{"enhancement", "security fix"}, "new evidence"), merged,
 		"what dockhand ticked stays ticked, though a person's commit since means it wouldn't tick it now; what's newly true is ticked too")
+	require.Equal(t, SectionRefreshed, sections.Types)
+	_, sections = mergeBody(ticked, ticked, body("jq: update", nil, "old evidence"), false)
+	require.Equal(t, DescriptionSections{Types: SectionCurrent, TestedOn: SectionCurrent}, sections, "nothing ticked goes, and nothing new is")
 
 	edited := body("mine", []string{"bugfix"}, "old evidence")
-	merged, ok = mergeBody(edited, last, fresh, false)
-	require.True(t, ok)
+	merged, sections = mergeBody(edited, last, fresh, false)
 	require.Equal(t, body("mine", []string{"bugfix"}, "new evidence"), merged, "Type(s) a person ticked stay theirs")
-	require.Equal(t, []string{"its description from Tested on down"}, refreshedParts(edited, merged))
-	merged, _ = mergeBody(edited, last, body("jq: update", []string{"security fix"}, "new evidence"), true)
+	require.Equal(t, DescriptionSections{Types: SectionKept, TestedOn: SectionRefreshed}, sections)
+	merged, sections = mergeBody(edited, last, body("jq: update", []string{"security fix"}, "new evidence"), true)
 	require.Equal(t, body("mine", []string{"security fix"}, "new evidence"), merged, "types the person names replace them")
+	require.Equal(t, SectionRefreshed, sections.Types)
 
 	elided := "#### Description\n\nmine\n\n###### Tested on\n\nold evidence\n"
-	merged, ok = mergeBody(elided, last, fresh, false)
-	require.True(t, ok, "Tested on alone is still dockhand's")
+	merged, sections = mergeBody(elided, last, fresh, false)
 	require.Equal(t, "#### Description\n\nmine\n\n###### Tested on\n\nnew evidence\n", merged, "a description without Type(s) stays without")
-	merged, _ = mergeBody(elided, last, fresh, true)
+	require.Equal(t, DescriptionSections{Types: SectionAbsent, TestedOn: SectionRefreshed}, sections, "Tested on alone is still dockhand's")
+	merged, sections = mergeBody(elided, last, fresh, true)
 	require.Equal(t, "#### Description\n\nmine\n\n###### Type(s)\n\n- [ ] bugfix\n- [x] enhancement\n- [ ] security fix\n\n###### Tested on\n\nnew evidence\n", merged,
 		"types the person names go before Tested on")
-	require.Equal(t, []string{"its Type(s)", "its description from Tested on down"}, refreshedParts(elided, merged))
-	require.Empty(t, refreshedParts(fresh, fresh))
+	require.Equal(t, DescriptionSections{Types: SectionRefreshed, TestedOn: SectionRefreshed}, sections)
 }
