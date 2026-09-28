@@ -81,6 +81,9 @@ type Engine struct {
 	// stopAt stops a history change at a step, as if the process ended
 	// there: tests set it (historyStep).
 	stopAt func(step string) error
+	// betweenReads runs between a capture's two reads of the working
+	// files: tests change them there.
+	betweenReads func()
 	// lazy guards what the engine assembles on first use (assemble, and
 	// the forge), which serve's runs, and a check's environments building
 	// together, share.

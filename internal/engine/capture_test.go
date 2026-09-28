@@ -53,3 +53,31 @@ func TestCaptureNumbersSnapshotsAndReusesUnchangedOnes(t *testing.T) {
 	require.Equal(t, first.Revision.Source.Tree, staged.Revision.Source.Tree, "the index holds 1.8.1")
 	require.Equal(t, first.Revision.ID, staged.Revision.ID)
 }
+
+// A capture stands only if the files didn't move while it read them,
+// the files --include adds among them.
+func TestACaptureOfFilesThatMovedIsRefused(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update", Here: true})
+	require.NoError(t, err)
+	dir := branch.Worktree
+	write(t, dir, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n", "notes.txt": "mine\n"})
+
+	for _, test := range []struct {
+		name    string
+		include []string
+		moved   map[string]string
+	}{
+		{"a tracked file", nil, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.2\n"}},
+		{"an included file", []string{"notes.txt"}, map[string]string{"notes.txt": "edited\n"}},
+		{"a tracked file, beside an included one", []string{"notes.txt"}, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.3\n"}},
+	} {
+		e.betweenReads = func() { write(t, dir, test.moved) }
+		_, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Include: test.include})
+		require.EqualError(t, err, "the files changed while they were read; check again once they settle", test.name)
+	}
+	e.betweenReads = nil
+	_, err = e.Capture(t.Context(), CaptureRequest{Branch: branch, Include: []string{"notes.txt"}})
+	require.NoError(t, err, "files at rest are captured")
+}

@@ -104,11 +104,20 @@ func (e *Engine) Capture(ctx context.Context, request CaptureRequest) (Capture, 
 			return Capture{}, err
 		}
 	}
-	// The capture stands only if the files did not move while it read them.
+	// The capture stands only if the files did not move while it read them:
+	// read again, the files --include adds too, the trees must agree.
 	if request.Mode == CaptureWorking || request.Mode == "" {
-		if _, again, err := worktree.WorkingTree(ctx); err != nil {
+		if e.betweenReads != nil {
+			e.betweenReads()
+		}
+		_, again, err := worktree.WorkingTree(ctx)
+		if err == nil && len(request.Include) > 0 {
+			again, err = worktree.WithFiles(ctx, again, request.Include)
+		}
+		if err != nil {
 			return Capture{}, err
-		} else if len(request.Include) == 0 && again != tree {
+		}
+		if again != tree {
 			return Capture{}, errors.New("the files changed while they were read; check again once they settle")
 		}
 	}
