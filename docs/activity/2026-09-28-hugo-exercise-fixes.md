@@ -107,3 +107,11 @@ Tests, each failing with its rule undone:
 - `TestTheMergedDescriptionsTypesAreDockhandsWhileUnchanged`: every case above, and GitHub's line endings, which aren't a person's edit;
 - `TestSubmitAsksTheReviewersBack`: `--type` on an open pull request, with the Type(s) as dockhand wrote them and as a person ticked them;
 - `TestAPullRequestOfSomeoneElsesStaysTheirs`, and `TestAdoptSomeonesPullRequestAndPushOnlyWhereGitHubAllows`, for an adopted pull request with a Tested on of its own.
+
+## Hugo's pull request, submitted again
+
+With the Type(s) fix pushed, the person asked for dockhand to be run against hugo's pull request. It used a build of the pushed main in a clean worktree.
+- `submit --plan --branch hugo-9tu8` said "updates #35000; refreshes its Type(s) and its description from Tested on down". Its description, diffed with GitHub's, differed in two lines: enhancement ticked, and the "Submitted by" line naming the newer dockhand. The fork already had the commit.
+- `submit --branch hugo-9tu8 --yes` updated #35000's description, and GitHub's then matched the plan's.
+
+It said "Updated #35000's title and description", though only the description changed. With nothing pushed, submit said so whatever changed, and even when nothing had. It now says which, "Updated #35000's description", or "#35000 has nothing new" when nothing changed. `TestSubmitSaysWhatItUpdated` covers each case, and fails with each undone.

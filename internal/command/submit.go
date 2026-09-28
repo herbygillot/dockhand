@@ -497,6 +497,23 @@ func pullRequestWords(plan engine.SubmitPlan) string {
 	return words
 }
 
+// updatedWords says what submit changed on a pull request it pushed
+// nothing to: its title, its description, both, or nothing at all.
+func updatedWords(plan engine.SubmitPlan, number int) string {
+	existing := plan.Existing.PullRequest
+	title := !plan.Theirs && plan.Title != existing.Title
+	body := !plan.Theirs && plan.Body != existing.Body
+	switch {
+	case title && body:
+		return fmt.Sprintf("Updated #%d's title and description", number)
+	case title:
+		return fmt.Sprintf("Updated #%d's title", number)
+	case body:
+		return fmt.Sprintf("Updated #%d's description", number)
+	}
+	return fmt.Sprintf("#%d has nothing new: the fork has its commit, and its title and description are current", number)
+}
+
 // applySubmit submits a plan and reports it. After pushing to a pull
 // request whose reviewers requested changes, it asks them to review again
 // as rerequest says: ask (the default), always, or never.
@@ -519,7 +536,7 @@ func applySubmit(ctx context.Context, e *engine.Engine, streams Streams, plan en
 	case submitted.Pushed:
 		fmt.Fprintf(streams.Out, "Updated #%d: pushed up to %s\n", pr.Ref.Number, engine.Short(model.ObjectID(plan.Commit)))
 	default:
-		fmt.Fprintf(streams.Out, "Updated #%d's title and description\n", pr.Ref.Number)
+		fmt.Fprintln(streams.Out, updatedWords(plan, pr.Ref.Number))
 	}
 	observed := plan.Branch.PullRequest
 	if !submitted.Pushed || submitted.Created || observed == nil || observed.Observed == nil || len(observed.Observed.ChangesRequestedBy) == 0 || rerequest == "never" {

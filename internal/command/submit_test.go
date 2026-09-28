@@ -287,6 +287,37 @@ func TestAPullRequestOfSomeoneElsesStaysTheirs(t *testing.T) {
 	require.Equal(t, "updates #34905; refreshes its Type(s); the rest of its description is yours", pullRequestWords(plan), "types a person names, on a description they edited")
 }
 
+// Submitting to a pull request with nothing to push says what it changed:
+// the title, the description, or nothing at all.
+func TestSubmitSaysWhatItUpdated(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	withGitHub(t, w)
+	started, err := jsonOf(t, "start", "jq-update")
+	require.NoError(t, err)
+	t.Setenv("MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
+	_, _, err = dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "tidy")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+
+	out, _, err := dockhand(t, "submit", "--no-check", "--yes", "--title", "jq: update to 1.8.1, reviewed")
+	require.NoError(t, err)
+	require.Contains(t, out, "Updated #34901's title\n")
+	out, _, err = dockhand(t, "submit", "--no-check", "--yes", "--type", "bugfix")
+	require.NoError(t, err)
+	require.Contains(t, out, "Updated #34901's description\n")
+	out, _, err = dockhand(t, "submit", "--no-check", "--yes", "--type", "enhancement", "--title", "jq: update to 1.8.1")
+	require.NoError(t, err)
+	require.Contains(t, out, "Updated #34901's title and description\n")
+	out, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	require.Contains(t, out, "#34901 has nothing new: the fork has its commit, and its title and description are current\n")
+}
+
 func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
