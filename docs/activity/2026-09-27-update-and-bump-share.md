@@ -40,4 +40,4 @@ The steps are gathered by `Streams.linkSteps`: each later `emit` lands in the up
 - `TestUpdateSubmitAndBumpReportTheSameJSON` runs both commands to a pull request and a held `bump`. It fails without `linkSteps`.
 - `TestBumpChangesNothingWhenItHasNothingToDo` now reaches "current" through the update, and checks no branch is started.
 
-`submit --check --json` still reports its last step alone, as `update --submit` did. It could gather its check the same way.
+`submit --check --json` still reports its last step alone, as `update --submit` did. The person decided to leave it: a command with several stopping points may report each through its exit code and a result of that step's shape, and a uniform shape isn't sought for its own sake. What matters is sharing code wherever it can be shared. The scripting section of the usage guide now says so.
