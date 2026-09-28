@@ -243,6 +243,8 @@ func TestAdoptTracksABranchAsItStands(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, again.Already)
 	require.Equal(t, adoption.Branch.ID, again.Branch.ID)
+	require.Equal(t, 2, again.Commits, "a tracked branch is counted as it stands")
+	require.Equal(t, []string{"jq"}, again.Scope.PortNames())
 
 	run(t, f.clone, "branch", "elsewhere", "master")
 	elsewhere, err := e.Adopt(t.Context(), AdoptRequest{Branch: "elsewhere"})

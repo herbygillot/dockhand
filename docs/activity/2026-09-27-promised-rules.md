@@ -13,3 +13,14 @@ This covers the rest of the roadmap's "rules the design promises and the code do
 - Now the second read repeats the whole capture, included files too, and compares the two trees. That also catches an included file changing after it was read.
 - `TestACaptureOfFilesThatMovedIsRefused` changes files between the reads through a test-only hook: a tracked file, an included one, and a tracked one beside an included one. No test had covered the check at all; with the old check, the included case isn't refused.
 
+**`adopt` and `rebase` report what they did (finding 33).** `create`'s result when interrupted was fixed with the one-shape rule ([note](2026-09-27-one-json-shape.md)).
+- **`adopt`.**
+  - Adopting a branch already tracked returned before counting, so `adopt --json` said it had 0 commits and no ports.
+  - A branch renamed with Git was counted, but its ports weren't.
+  - `adopt --pr` of a pull request already tracked did the same.
+  - Each path now counts the branch's commits above its base, and the ports they touch, through one `changes`.
+- **`rebase`.**
+  - It counted the branch's commits before replaying them, and the replay drops a change master already has. So "Rebased jq-update (2 commits)" could name one it didn't keep. It now counts the commits it replayed.
+  - A branch already on master recorded a rebase from master onto itself on every `rebase`. `history`'s `SetBase` now changes nothing, and records nothing, for a base the branch already has.
+- **Tests.** `TestAdoptTracksABranchAsItStands` checks the tracked branch's count, and `TestARebaseCountsWhatItReplays` checks both rebase fixes. Each fails without its fix.
+

@@ -155,10 +155,11 @@ func (h *Transitions) Read(ctx context.Context, number int) (model.Checkpoint, b
 	return checkpoint, err == nil
 }
 
-// SetBase records a branch's new base, and the rebase that moved it.
+// SetBase records a branch's new base, and the rebase that moved it; a
+// base that is already the branch's changes nothing, and says nothing.
 func (h *Transitions) SetBase(tx store.Tx, id model.BranchID, base model.ObjectID, checkpoint string) error {
 	current, err := tx.Branch(id)
-	if err != nil {
+	if err != nil || current.Base == base {
 		return err
 	}
 	previous := current.Base

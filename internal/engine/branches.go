@@ -138,6 +138,19 @@ func (e *Engine) worktreeDirectory(name string) string {
 	return filepath.Join(e.Worktrees(), strings.TrimPrefix(name, model.BranchPrefix))
 }
 
+// changes are a branch's commits above base and the ports they touch.
+func (e *Engine) changes(ctx context.Context, base model.ObjectID, head string) (int, Scope, error) {
+	commits, err := e.Repo.CountCommits(ctx, string(base), head)
+	if err != nil {
+		return 0, Scope{}, err
+	}
+	paths, err := e.Repo.ChangedPaths(ctx, string(base), head)
+	if err != nil {
+		return 0, Scope{}, err
+	}
+	return commits, ScopeOf(paths), nil
+}
+
 // AdoptRequest asks to track an existing branch.
 type AdoptRequest struct {
 	// Branch is the Git branch to track; the checkout's current branch
@@ -191,7 +204,11 @@ func (e *Engine) Adopt(ctx context.Context, request AdoptRequest) (Adoption, err
 		}
 		return err
 	})
-	if err != nil || adoption.Already {
+	if err != nil {
+		return adoption, err
+	}
+	if adoption.Already {
+		adoption.Commits, adoption.Scope, err = e.changes(ctx, adoption.Branch.Base, head)
 		return adoption, err
 	}
 	if renamed, ok, err := e.renamedFrom(ctx, name, head); err != nil || ok {
@@ -203,7 +220,7 @@ func (e *Engine) Adopt(ctx context.Context, request AdoptRequest) (Adoption, err
 		if checkouts, err := e.Repo.Checkouts(ctx, name); err == nil && len(checkouts) > 0 {
 			renamed.Worktree = checkouts[0]
 		}
-		if adoption.Commits, err = e.Repo.CountCommits(ctx, string(renamed.Base), head); err != nil {
+		if adoption.Commits, adoption.Scope, err = e.changes(ctx, renamed.Base, head); err != nil {
 			return adoption, err
 		}
 		err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
@@ -226,14 +243,9 @@ func (e *Engine) Adopt(ctx context.Context, request AdoptRequest) (Adoption, err
 	if err != nil {
 		return Adoption{}, fmt.Errorf("%s shares no history with master: %w", name, err)
 	}
-	if adoption.Commits, err = e.Repo.CountCommits(ctx, base, head); err != nil {
+	if adoption.Commits, adoption.Scope, err = e.changes(ctx, model.ObjectID(base), head); err != nil {
 		return Adoption{}, err
 	}
-	paths, err := e.Repo.ChangedPaths(ctx, base, head)
-	if err != nil {
-		return Adoption{}, err
-	}
-	adoption.Scope = ScopeOf(paths)
 	checkouts, err := e.Repo.Checkouts(ctx, name)
 	if err != nil {
 		return Adoption{}, err
@@ -454,6 +466,10 @@ func (e *Engine) AdoptPullRequest(ctx context.Context, number int) (PullRequestA
 	for _, branch := range tracked {
 		if branch.PullRequest != nil && branch.PullRequest.Repository == UpstreamRepository && branch.PullRequest.Number == number {
 			adoption.Branch, adoption.Already = branch, true
+			if head, _, err := e.Repo.Branch(ctx, branch.Name); err == nil {
+				adoption.Commits, adoption.Scope, err = e.changes(ctx, branch.Base, head)
+				return adoption, err
+			}
 			return adoption, nil
 		}
 	}

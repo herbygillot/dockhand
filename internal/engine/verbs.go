@@ -157,9 +157,6 @@ func (e *Engine) rebase(ctx context.Context, branch model.Branch) (Rebased, erro
 		result.UpToDate = true
 		return result, e.Store.Update(ctx, e.Repository, func(tx store.Tx) error { return e.history().SetBase(tx, current.ID, master, "") })
 	}
-	if result.Commits, err = worktree.CountCommits(ctx, string(current.Base), head); err != nil {
-		return Rebased{}, err
-	}
 	committer, err := worktree.Author(ctx)
 	if err != nil {
 		return Rebased{}, err
@@ -170,6 +167,10 @@ func (e *Engine) rebase(ctx context.Context, branch model.Branch) (Rebased, erro
 		return Rebased{}, fmt.Errorf("%w; %s is as it was. Resolve it by hand with git rebase %s, or ask for help on the PR", err, current.ShortName(), short(master))
 	}
 	if err != nil {
+		return Rebased{}, err
+	}
+	// Counted as replayed: a change master already has is dropped.
+	if result.Commits, err = worktree.CountCommits(ctx, string(master), rebased); err != nil {
 		return Rebased{}, err
 	}
 

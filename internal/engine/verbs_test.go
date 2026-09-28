@@ -2,6 +2,7 @@ package engine
 
 import (
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -136,4 +137,37 @@ func TestRetryAndArchive(t *testing.T) {
 	back, err := e.Archive(t.Context(), branch, true)
 	require.NoError(t, err)
 	require.Equal(t, model.BranchOpen, back.State)
+}
+
+// A rebase counts the commits it replays: a change master already has is
+// dropped, and not counted. A branch already on master is changed in
+// nothing, and no rebase is recorded for it.
+func TestARebaseCountsWhatItReplays(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update", Here: true})
+	require.NoError(t, err)
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
+	commitAs(t, branch.Worktree, "Ada ada@example.org", "jq: update to 1.8.1")
+	write(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
+	commitAs(t, branch.Worktree, "Ada ada@example.org", "libharbor: update to 3")
+
+	rebases := func() int {
+		t.Helper()
+		events, err := e.Events(t.Context(), 0)
+		require.NoError(t, err)
+		return len(slices.DeleteFunc(events, func(event model.Event) bool { return event.Kind != "branch.rebase" }))
+	}
+	up, err := e.Rebase(t.Context(), branch)
+	require.NoError(t, err)
+	require.True(t, up.UpToDate)
+	require.Zero(t, rebases(), "a branch already on master records no rebase from master onto itself")
+
+	write(t, f.upstream, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
+	run(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 3")
+	rebased, err := e.Rebase(t.Context(), branch)
+	require.NoError(t, err)
+	require.Equal(t, 1, rebased.Commits, "libharbor's change is master's now")
+	require.Equal(t, []string{"jq: update to 1.8.1"}, log(t, branch.Worktree, rebased.To))
+	require.Equal(t, 1, rebases())
 }

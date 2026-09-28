@@ -89,7 +89,7 @@ In order. Each item lands in its own commits with an activity note, and a review
 - **Rules the design promises and the code doesn't keep:**
   - one check per branch, enforced in `Enqueue`, which `submit --check`, `update --submit`, and `retry` bypassed; `--tests` checked before evaluation; and a test for submit's commit binding (finding 2). Done 2026-09-27 ([note](activity/2026-09-27-one-check-per-branch.md));
   - capture's moved-while-read check with `--include` (finding 43). Done 2026-09-27;
-  - `create`'s result when interrupted, and `adopt`'s and `rebase`'s counts (finding 33);
+  - `create`'s result when interrupted, and `adopt`'s and `rebase`'s counts (finding 33). Done 2026-09-27;
   - a new branch whose record's commit was uncertain is read back, not undone (finding 24);
   - a canceled script build stops its whole process group, gently first (finding 42);
   - `serve --install` carries `--git`, `TART_HOME`, and the `DOCKHAND_*` settings it was installed under, never a token (finding 46);
