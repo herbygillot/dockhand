@@ -81,9 +81,33 @@ type Engine struct {
 	// stopAt stops a history change at a step, as if the process ended
 	// there: tests set it (historyStep).
 	stopAt func(step string) error
-	// lazy guards what the engine assembles on first use and serve's
-	// concurrent runs share, the forge among them.
+	// lazy guards what the engine assembles on first use (assemble, and
+	// the forge), which serve's runs, and a check's environments building
+	// together, share.
 	lazy sync.Mutex
+}
+
+// assemble returns what field holds, building it on first use. The build
+// runs outside the engine's lock, so it may assemble what it needs in
+// turn; two callers building at once both get the one set first.
+func assemble[T comparable](e *Engine, field *T, build func() (T, error)) (T, error) {
+	var none T
+	e.lazy.Lock()
+	held := *field
+	e.lazy.Unlock()
+	if held != none {
+		return held, nil
+	}
+	built, err := build()
+	if err != nil {
+		return none, err
+	}
+	e.lazy.Lock()
+	defer e.lazy.Unlock()
+	if *field == none {
+		*field = built
+	}
+	return *field, nil
 }
 
 // Open checks that Tree is inside a ports checkout, opens the store, and

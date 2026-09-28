@@ -32,24 +32,28 @@ type Preparer interface {
 // own evaluator with upstream discovery on GitHub and GitLab, assembled
 // on first use.
 func (e *Engine) preparer() (Preparer, error) {
-	if e.Preparer != nil {
-		return e.Preparer, nil
-	}
-	ports, err := e.selectionReader()
-	if err != nil {
-		return nil, err
-	}
-	e.Preparer = &preparation.Service{Repo: e.Repo, Ports: ports, Upstream: e.discovery(ports), HTTP: http.DefaultClient, Workspaces: &workspace.Registry{}}
-	return e.Preparer, nil
+	return assemble(e, &e.Preparer, func() (Preparer, error) {
+		ports, err := e.selectionReader()
+		if err != nil {
+			return nil, err
+		}
+		return &preparation.Service{Repo: e.Repo, Ports: ports, Upstream: e.discovery(ports), HTTP: http.DefaultClient, Workspaces: &workspace.Registry{}}, nil
+	})
+}
+
+// github is GitHub as the person's login reaches it: the system keychain's,
+// or GH_TOKEN's.
+func (e *Engine) github() *forgegithub.Client {
+	client := &github.Client{HTTP: http.DefaultClient, Credentials: github.SystemCredentials{Store: keychain.Store{}, Key: github.CredentialKey}}
+	return &forgegithub.Client{Client: client, GitExecutable: e.options.Git}
 }
 
 // discovery finds ports' newest releases upstream, on GitHub and GitLab.
 func (e *Engine) discovery(ports *selection.Reader) *upstream.Service {
-	client := &github.Client{HTTP: http.DefaultClient, Credentials: github.SystemCredentials{Store: keychain.Store{}, Key: github.CredentialKey}}
 	return &upstream.Service{
 		Ports: ports, HTTP: http.DefaultClient, Versions: ports,
 		Catalogs: map[portsource.Forge]upstream.Catalog{
-			portsource.GitHub: &forgegithub.Client{Client: client, GitExecutable: e.options.Git},
+			portsource.GitHub: e.github(),
 			portsource.GitLab: &forgegitlab.Client{HTTP: http.DefaultClient},
 		},
 	}
@@ -58,17 +62,15 @@ func (e *Engine) discovery(ports *selection.Reader) *upstream.Service {
 // selectionReader is MacPorts' own evaluator, resolving port names
 // against an index staged for each source tree.
 func (e *Engine) selectionReader() (*selection.Reader, error) {
-	if e.ports != nil {
-		return e.ports, nil
-	}
-	cache, err := IndexCache()
-	if err != nil {
-		return nil, err
-	}
-	native := &eval.Evaluator{Executable: e.options.Tclsh}
-	index := portindex.Config{CacheDirectory: cache, Mirror: &portindex.Mirror{HTTP: http.DefaultClient, Base: os.Getenv("DOCKHAND_INDEX_MIRROR")}}
-	e.ports = &selection.Reader{Evaluator: native, Index: &portindex.Stager{Repo: e.Repo, Config: index, NativePlatform: native.NativePlatform, WithoutBase: true}}
-	return e.ports, nil
+	return assemble(e, &e.ports, func() (*selection.Reader, error) {
+		cache, err := IndexCache()
+		if err != nil {
+			return nil, err
+		}
+		native := &eval.Evaluator{Executable: e.options.Tclsh}
+		index := portindex.Config{CacheDirectory: cache, Mirror: &portindex.Mirror{HTTP: http.DefaultClient, Base: os.Getenv("DOCKHAND_INDEX_MIRROR")}}
+		return &selection.Reader{Evaluator: native, Index: &portindex.Stager{Repo: e.Repo, Config: index, NativePlatform: native.NativePlatform, WithoutBase: true}}, nil
+	})
 }
 
 // PortIndex is how the engine stages a tree's port index for a platform,

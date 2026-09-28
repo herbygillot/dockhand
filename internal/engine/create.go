@@ -4,18 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 
-	"github.com/herbygillot/dockhand/internal/credential/keychain"
 	"github.com/herbygillot/dockhand/internal/forge"
 	forgegithub "github.com/herbygillot/dockhand/internal/forge/github"
 	"github.com/herbygillot/dockhand/internal/git"
-	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/newport"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -242,11 +239,9 @@ func (e *Engine) refuseExisting(ctx context.Context, worktree *git.Repository, n
 }
 
 func (e *Engine) projectReader() (ProjectReader, error) {
-	if e.ProjectReader == nil {
-		client := &github.Client{HTTP: http.DefaultClient, Credentials: github.SystemCredentials{Store: keychain.Store{}, Key: github.CredentialKey}}
-		e.ProjectReader = githubProjects{client: &forgegithub.Client{Client: client, GitExecutable: e.options.Git}}
-	}
-	return e.ProjectReader, nil
+	return assemble(e, &e.ProjectReader, func() (ProjectReader, error) {
+		return githubProjects{client: e.github()}, nil
+	})
 }
 
 // githubProjects observes projects on GitHub.

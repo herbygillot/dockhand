@@ -69,15 +69,13 @@ func (e *Engine) Outdated(ctx context.Context, request OutdatedRequest) (Outdate
 // outdatedReader is the engine's OutdatedReader: the one it was given, or
 // MacPorts' evaluator with upstream discovery.
 func (e *Engine) outdatedReader() (OutdatedReader, error) {
-	if e.OutdatedReader != nil {
-		return e.OutdatedReader, nil
-	}
-	ports, err := e.selectionReader()
-	if err != nil {
-		return nil, err
-	}
-	e.OutdatedReader = &surveyedPorts{e: e, service: &outdated.Service{Repo: e.Repo, Ports: ports, Upstream: e.discovery(ports), Index: ports.Index, Workspaces: &workspace.Registry{}}}
-	return e.OutdatedReader, nil
+	return assemble(e, &e.OutdatedReader, func() (OutdatedReader, error) {
+		ports, err := e.selectionReader()
+		if err != nil {
+			return nil, err
+		}
+		return &surveyedPorts{e: e, service: &outdated.Service{Repo: e.Repo, Ports: ports, Upstream: e.discovery(ports), Index: ports.Index, Workspaces: &workspace.Registry{}}}, nil
+	})
 }
 
 // surveyedPorts reads outdated ports with v2's survey.

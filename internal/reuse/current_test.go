@@ -35,4 +35,9 @@ func TestARecordedBuildStandsWhileItsInputsDo(t *testing.T) {
 	incomplete := recorded
 	incomplete.Active = []model.ActivePort{{Name: "oniguruma6", Spec: "@6.9.10_0", Directory: "devel/oniguruma6", Tree: "33"}}
 	require.False(t, Current(incomplete, "origin a", target, now), "an archive wasn't known, so the inputs are incomplete")
+
+	outside := recorded
+	outside.Active = []model.ActivePort{{Name: "legacy", Spec: "@1_0", Archive: "sha256:55"}}
+	require.Equal(t, []string{"sysutils/jq", "_resources"}, Paths(outside), "a port with no directory has none to look up")
+	require.False(t, Current(outside, "origin a", target, now), "a port outside the tree leaves the inputs incomplete")
 }

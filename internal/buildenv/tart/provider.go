@@ -72,6 +72,9 @@ type Provider struct {
 	// machine replaces the Mac's VMs in tests, and stager the staging.
 	machine machine
 	stager  func(ctx context.Context, job buildenv.Job, input guestInput, archive string) error
+	// assembling guards making the Mac's machine on first use (vms), which
+	// two environments building together may ask for at once.
+	assembling sync.Mutex
 	// host is this Mac's Darwin release; the kernel's when zero.
 	host int
 	// starting lets one clone start at a time (start).
@@ -83,6 +86,8 @@ type Provider struct {
 func (p *Provider) Name() string { return "tart" }
 
 func (p *Provider) vms() (machine, error) {
+	p.assembling.Lock()
+	defer p.assembling.Unlock()
 	if p.machine != nil {
 		return p.machine, nil
 	}

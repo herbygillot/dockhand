@@ -20,15 +20,13 @@ import (
 // portReader is the engine's PortReader: the one it was given, or
 // MacPorts' own evaluator.
 func (e *Engine) portReader() (PortReader, error) {
-	if e.PortReader != nil {
-		return e.PortReader, nil
-	}
-	ports, err := e.selectionReader()
-	if err != nil {
-		return nil, err
-	}
-	e.PortReader = &evaluatedPorts{repo: e.Repo, ports: ports, workspaces: &workspace.Registry{}}
-	return e.PortReader, nil
+	return assemble(e, &e.PortReader, func() (PortReader, error) {
+		ports, err := e.selectionReader()
+		if err != nil {
+			return nil, err
+		}
+		return &evaluatedPorts{repo: e.Repo, ports: ports, workspaces: &workspace.Registry{}}, nil
+	})
 }
 
 // evaluatedPorts evaluates Portfiles with MacPorts, in a projection of the

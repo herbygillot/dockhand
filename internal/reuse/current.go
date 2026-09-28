@@ -8,11 +8,14 @@ import (
 
 // Paths are the directories whose trees say whether recorded inputs are
 // what a build would read now: the target's own, _resources, and each
-// active port's.
+// active port's that has one. A port the guest couldn't place in the tree
+// has none, and leaves the inputs incomplete (Current).
 func Paths(recorded model.TargetInputs) []string {
 	paths := []string{recorded.Directory, Resources}
 	for _, port := range recorded.Active {
-		paths = append(paths, port.Directory)
+		if port.Directory != "" {
+			paths = append(paths, port.Directory)
+		}
 	}
 	return paths
 }

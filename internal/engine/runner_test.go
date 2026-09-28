@@ -488,3 +488,66 @@ func TestAnUnchangedBuildIsReused(t *testing.T) {
 	again(false)
 	require.Len(t, provider.jobs, 4, "and the new build is reused in its turn")
 }
+
+// An active port the guest couldn't place in the ports tree is recorded
+// with no directory, so its build's inputs are incomplete: a later check
+// doesn't reuse that build, and builds again rather than failing.
+func TestABuildReadingAPortOutsideTheTreeIsBuiltAgain(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	elsewhere := model.ActivePort{Name: "harbor-legacy", Spec: "@1_0", Archive: "sha256:aa"}
+	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{elsewhere}}, identity: "origin a"}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	queued := queuedHarborRun(t, e, tahoeArm)
+	first, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, first.State, first.Detail)
+
+	var branch model.Branch
+	var revision model.Revision
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		if revision, err = r.Revision(first.Revision); err != nil {
+			return err
+		}
+		branch, err = r.Branch(first.Branch)
+		return err
+	}))
+	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}})
+	require.NoError(t, err)
+	again, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
+	require.NoError(t, err)
+	second, err := e.Drive(t.Context(), session(t, e), again.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, second.State, second.Detail)
+	require.Len(t, provider.jobs, 2, "built again, not reused")
+}
+
+// indexing builds two environments together, each asking first for what
+// the engine assembles on first use, as Tart's ask for the port index.
+type indexing struct {
+	together
+	index func() error
+}
+
+func (p *indexing) Execute(ctx context.Context, job buildenv.Job, build buildenv.Build) error {
+	if err := p.index(); err != nil {
+		return err
+	}
+	return p.together.Execute(ctx, job, build)
+}
+
+// Environments building together share what the engine assembles on
+// first use: go test -race sees them race for it without the engine's
+// lock.
+func TestEnvironmentsBuildingTogetherShareWhatTheEngineAssembles(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
+	provider := &indexing{index: func() error { _, err := e.PortIndex(); return err }}
+	provider.begun.Add(2)
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	queued := queuedHarborRun(t, e, tahoeArm, tahoeX86)
+	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, run.State, run.Detail)
+}
