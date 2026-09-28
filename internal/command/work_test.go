@@ -141,3 +141,22 @@ func TestInitRefusesAnOldGit(t *testing.T) {
 	require.EqualError(t, err, "dockhand needs Git 2.40 or newer, and "+old+" is 2.39.5; install a newer one, such as with: sudo port install git, or name one with GIT_BIN")
 	require.NoFileExists(t, filepath.Join(w.home, ".dockhand", "dockhand.db"), "nothing was recorded")
 }
+
+// With MACPORTS_TREE naming the checkout, as a person's shell does, a
+// command run in a branch's worktree works on the branch checked out
+// there, as start's "cd" suggests; elsewhere, on the checkout named.
+// MACPORTS_TREE used to win, so the worktree's branch was never "here".
+func TestMacPortsTreeKeepsTheWorktreeYouAreIn(t *testing.T) {
+	w := newWorld(t)
+	t.Setenv("MACPORTS_TREE", w.clone)
+	_, _, err := dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	worktree := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
+	t.Chdir(worktree)
+	out, _, err := dockhand(t, "path")
+	require.NoError(t, err)
+	require.Equal(t, worktree+"\n", out)
+	t.Chdir(w.home)
+	_, _, err = dockhand(t, "path")
+	require.ErrorContains(t, err, "master is not tracked", "outside it, the checkout named, which has master out")
+}

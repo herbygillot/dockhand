@@ -28,7 +28,7 @@ file is $DOCKHAND_CONFIG, else ~/.dockhand/config.toml; an unknown key in
 it is refused by name. Flags, then the environment, come before the file.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			options, file, path, err := s.options()
+			options, file, path, err := s.options(cmd.Context())
 			if err != nil {
 				return err
 			}

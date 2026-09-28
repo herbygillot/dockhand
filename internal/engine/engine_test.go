@@ -339,3 +339,30 @@ func TestScopeFollowsCIsRule(t *testing.T) {
 	require.True(t, scope.Resources)
 	require.Empty(t, ScopeOf([]string{"devel/libharbor/README"}).Ports, "only a Portfile or files/ marks a port")
 }
+
+// A command pointed at a checkout without naming it itself, as
+// MACPORTS_TREE points one, works in the branch worktree it is run in,
+// whose branch is the one checked out there; anywhere else, in the
+// checkout named. The name may reach the checkout through a symlink, as
+// ~/Source/ports reaches ~/Source/macports-ports.
+func TestHereIsTheWorktreeACommandRunsIn(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
+	require.NoError(t, err)
+	worktree, err := filepath.EvalSymlinks(branch.Worktree)
+	require.NoError(t, err)
+	tree := e.Clone()
+	link := filepath.Join(t.TempDir(), "ports")
+	require.NoError(t, os.Symlink(tree, link))
+	inside := filepath.Join(branch.Worktree, "inside")
+	require.NoError(t, os.Mkdir(inside, 0o755))
+
+	for _, named := range []string{tree, link} {
+		require.Equal(t, worktree, Here(t.Context(), named, branch.Worktree, ""), "the worktree run in")
+		require.Equal(t, worktree, Here(t.Context(), named, inside, ""), "a directory inside it")
+		require.Equal(t, named, Here(t.Context(), named, t.TempDir(), ""), "not in a checkout")
+		require.Equal(t, named, Here(t.Context(), named, f.upstream, ""), "in another repository")
+	}
+	require.Equal(t, "/nowhere", Here(t.Context(), "/nowhere", branch.Worktree, ""), "a tree that isn't a checkout is left to fail as it would")
+}

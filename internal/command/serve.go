@@ -195,7 +195,7 @@ func serveAgent(ctx context.Context, s *settings, streams Streams, install bool,
 		return err
 	}
 	tree := e.Clone()
-	options, _, _, err := s.options()
+	options, _, _, err := s.options(ctx)
 	e.Close()
 	if err != nil {
 		return err

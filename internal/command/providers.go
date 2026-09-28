@@ -50,7 +50,7 @@ in dockhand's own macOS VMs; github, in your fork's GitHub Actions; and
 command, your own script, when the configuration file names one.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			_, file, _, err := s.options()
+			_, file, _, err := s.options(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -101,7 +101,7 @@ new one has passed.`,
 			if len(args) == 1 {
 				options.Release = args[0]
 			}
-			_, file, _, err := s.options()
+			_, file, _, err := s.options(cmd.Context())
 			if err != nil {
 				return err
 			}

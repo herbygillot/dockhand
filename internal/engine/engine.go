@@ -196,6 +196,31 @@ func GitVersion(ctx context.Context, options Options) (git.Version, error) {
 	return version, nil
 }
 
+// Here is the checkout to work on in dir when a command is pointed at
+// tree without naming it itself, as MACPORTS_TREE points one: dir's own
+// worktree when it is a worktree of the same repository, whose branch is
+// the one checked out here, and tree otherwise. Inside a branch's
+// worktree, that worktree is the checkout it belongs to.
+func Here(ctx context.Context, tree, dir, executable string) string {
+	named, err := git.Open(ctx, tree, executable)
+	if err != nil {
+		return tree
+	}
+	here, err := git.Open(ctx, dir, executable)
+	if err != nil || !sameDirectory(here.CommonDir, named.CommonDir) {
+		return tree
+	}
+	return here.Root
+}
+
+// sameDirectory reports whether two paths name one directory, however
+// either is spelled.
+func sameDirectory(a, b string) bool {
+	a, errA := filepath.EvalSymlinks(a)
+	b, errB := filepath.EvalSymlinks(b)
+	return errA == nil && errB == nil && a == b
+}
+
 // OpenPortsTree opens the checkout containing dir and refuses anything that
 // is not a ports tree: at least one <category>/<port>/Portfile in the
 // working tree, or, for a sparse checkout, on one of its local branches.

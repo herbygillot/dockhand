@@ -48,7 +48,7 @@ func firstOf(values ...string) string {
 }
 
 // options resolves the engine's options, reading the configuration file.
-func (s *settings) options() (engine.Options, config.File, string, error) {
+func (s *settings) options(ctx context.Context) (engine.Options, config.File, string, error) {
 	configPath, err := config.Path()
 	if err != nil {
 		return engine.Options{}, config.File{}, "", err
@@ -65,8 +65,18 @@ func (s *settings) options() (engine.Options, config.File, string, error) {
 		}
 		database = filepath.Join(home, ".dockhand", "dockhand.db")
 	}
+	// With no --tree, MACPORTS_TREE names the checkout, and a directory in
+	// one of its worktrees is that worktree, whose branch is the one
+	// checked out here.
+	tree := s.tree
+	if tree == "" {
+		tree = "."
+		if named := os.Getenv("MACPORTS_TREE"); named != "" {
+			tree = engine.Here(ctx, named, ".", firstOf(s.git, os.Getenv("GIT_BIN")))
+		}
+	}
 	return engine.Options{
-		Tree:      firstOf(s.tree, os.Getenv("MACPORTS_TREE"), "."),
+		Tree:      tree,
 		Git:       firstOf(s.git, os.Getenv("GIT_BIN")),
 		Database:  database,
 		Worktrees: file.Worktrees,
@@ -78,7 +88,7 @@ func (s *settings) options() (engine.Options, config.File, string, error) {
 }
 
 func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
-	options, file, _, err := s.options()
+	options, file, _, err := s.options(ctx)
 	if err != nil {
 		return nil, err
 	}

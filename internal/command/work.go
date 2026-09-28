@@ -32,7 +32,7 @@ It first checks the Git dockhand runs, git on PATH or $GIT_BIN, and refuses
 one older than 2.40, which rebase needs.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			options, file, configPath, err := s.options()
+			options, file, configPath, err := s.options(cmd.Context())
 			if err != nil {
 				return err
 			}
