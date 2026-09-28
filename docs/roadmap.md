@@ -80,7 +80,11 @@ In order. Each item lands in its own commits with an activity note, and a review
 - **The guardrail unattended submission relies on.** `bump` and serve submit with nobody looking, and the upstream comparison that holds them never runs for a port with `go.vendors` or `cargo.crates` (finding 32).
   - Such an update keeps the old archives for the comparison, as other updates do.
   - What an update couldn't check travels as a typed fact, through a `preparation.Result` that embeds `portedit.Result` (findings 31 and 19). That covers an unpaired comparison, a Go toolchain minimum it couldn't rewrite, and patches it left unchecked.
-  - Those facts hold an unattended submission (D4). Done 2026-09-27 for the comparison: archives it couldn't compare hold `bump`'s and serve's submissions, as a changed license does ([note](activity/2026-09-27-what-couldnt-be-checked-holds.md)).
+  - Those facts hold an unattended submission (D4). Done 2026-09-27 ([note](activity/2026-09-27-what-couldnt-be-checked-holds.md)):
+    - archives it couldn't compare hold `bump`'s and serve's submissions, as a changed license does;
+    - a Go or Cargo port's update keeps its old archives, so its comparison runs;
+    - a Go toolchain minimum left below go.mod's requirement holds;
+    - unchecked patches are shown, not held, since the build applies them.
 - **Rules the design promises and the code doesn't keep:**
   - one check per branch, enforced in `Enqueue`, which `submit --check`, `update --submit`, and `retry` bypass today; `--tests` checked before evaluation; and a test for submit's commit binding (finding 2);
   - capture's moved-while-read check with `--include` (finding 43);
@@ -194,11 +198,11 @@ These are taken when their area is next touched, or between items.
 ### Decided
 
 - **D4. What an update couldn't check holds a submission nobody reviews** (2026-09-27, [note](activity/2026-09-27-what-couldnt-be-checked-holds.md)).
-  - `bump`'s and serve's submissions wait for a person's look, as they do for a failed search for other pull requests, when the update couldn't check something:
+  - `bump`'s and serve's submissions wait for a person's look, as they do for a failed search for other pull requests, when the update couldn't check something a passing build can't catch:
     - archives the comparison couldn't pair or fetch;
-    - a Go toolchain minimum dockhand couldn't rewrite;
-    - patches it left unchecked.
-  - A person's own `submit` shows them and doesn't hold.
+    - a Go toolchain minimum dockhand left below go.mod's requirement: undeclared, or one it can't rewrite.
+  - Patches the update couldn't check, a Git-fetched port's, were named too. They are shown, not held: the build applies every patch and fails on one that doesn't apply, so a passing check has proven them.
+  - A person's own `submit` shows these and doesn't hold.
 - **D5. Tidy, rebase, and restore stay in the engine** (2026-09-27). Mechanisms they share can live in `history`, as the transitions do, and the code-organization review's `Transitions.Make` would (finding 22), but the verbs don't move there.
 - **D1. Results checked under different test policies** (2026-09-27). Each result keeps the policy it was checked under, and reads under it, naming its check where that differs: "tests failed (advisory, check-3)". A later `--tests required` check of some ports doesn't bind the others, nor block the submission. The review's probe expected a block.
 - **Baselines** (2026-09-27).

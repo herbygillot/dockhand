@@ -420,6 +420,9 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	for _, problem := range update.PatchProblems {
 		fmt.Fprintf(out, "! patch %s\n", problem)
 	}
+	for _, unchecked := range update.PatchesUnchecked {
+		fmt.Fprintf(out, "· patch %s\n", unchecked)
+	}
 	if linked.revbump {
 		if result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.except, false); err != nil {
 			return branch, update, err
@@ -671,7 +674,7 @@ func writeUpstream(out io.Writer, comparison *model.UpstreamComparison) {
 	case len(comparison.Changes) == 0:
 		fmt.Fprintln(out, "Upstream archives compared: no license, build file, or dependency changes.")
 	default:
-		fmt.Fprintln(out, "Upstream archives compared:")
+		fmt.Fprintln(out, "Upstream changes:")
 		for _, change := range comparison.Changes {
 			fmt.Fprintf(out, "  %s\n", upstreamWords(change))
 		}

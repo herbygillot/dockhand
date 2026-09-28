@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/preparation"
 )
 
 // servePrepared has serve prepare and check jq's update, and returns the
@@ -103,6 +104,27 @@ func TestServeHoldsAnUpdateWhoseArchivesCouldNotBeCompared(t *testing.T) {
 	require.Equal(t, held, candidates[0].Held)
 	_, err = e.SubmitForServe(t.Context(), candidates[0])
 	require.ErrorContains(t, err, "is held for a look: the upstream archives couldn't be compared")
+	require.Empty(t, fake.created)
+}
+
+// A Go release upstream's go.mod requires that the Portfile's minimum
+// doesn't holds serve's submission: the builder's Go passes the build, and
+// raising or declaring the minimum is a person's call.
+func TestServeHoldsAnUpdateWhoseGoToolchainNeedsALook(t *testing.T) {
+	f := setup(t)
+	e, p := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	fake.others = nil
+	p.toolchain = &preparation.GoToolchain{Required: "1.25"}
+	branch := servePrepared(t, e)
+
+	held := []string{"upstream: go.mod requires Go 1.25, and the Portfile declares no go.toolchain_min; declaring one gates the port on older Go, the maintainer's call"}
+	status, err := e.BranchStatus(t.Context(), branch)
+	require.NoError(t, err)
+	require.Equal(t, held, status.Held)
+	candidates, err := e.ServeCandidates(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, held, candidates[0].Held)
 	require.Empty(t, fake.created)
 }
 

@@ -9,6 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/model"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -31,6 +32,13 @@ func manifestArchive(t *testing.T, name, manifest, version string) []byte {
 	require.NoError(t, gz.Close())
 	return data.Bytes()
 }
+func fileBytes(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	return data
+}
+
 func dependencyHelper(t *testing.T, body string) string {
 	t.Helper()
 	file := filepath.Join(t.TempDir(), "dependency helper")
@@ -40,7 +48,7 @@ func dependencyHelper(t *testing.T, body string) string {
 func TestGoDependencyPreparation(t *testing.T) {
 	t.Parallel()
 	sha := strings.Repeat("a", 64)
-	for _, scenario := range []string{"success", "removed", "missing", "failed", "partial", "override", "patched", "local-patch", "unsupported-context"} {
+	for _, scenario := range []string{"success", "kept", "removed", "missing", "failed", "partial", "override", "patched", "local-patch", "unsupported-context"} {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
 			old := "module github.com/owner/fixture\ngo 1.24\nrequire example.com/old v1.0.0\n"
@@ -103,6 +111,9 @@ func TestGoDependencyPreparation(t *testing.T) {
 				require.NoError(t, err)
 				request.Source = model.Source{Tree: model.ObjectID(tree)}
 			}
+			if scenario == "kept" {
+				request.KeepArchives = t.TempDir()
+			}
 			result, err := service.Prepare(t.Context(), request)
 			switch scenario {
 			case "unsupported-context":
@@ -131,10 +142,22 @@ func TestGoDependencyPreparation(t *testing.T) {
 				if scenario == "success" {
 					require.Contains(t, string(result.Files[0].After), "example.com/new/v2 lock v2.0.0")
 				}
-				require.Equal(t, int64(2), requests.Load())
+				require.Equal(t, int64(2), requests.Load(), "each version's archive is fetched once, kept or not")
 				require.Len(t, result.Downloads, 1)
 				for _, fidelity := range result.Fidelity {
 					require.Empty(t, fidelity.UnexpectedChanges)
+				}
+				if scenario == "kept" {
+					// The current version's archive is kept beside the new
+					// one, so the update's upstream comparison has a pair.
+					require.Len(t, result.Previous, 1)
+					require.Empty(t, result.PreviousProblem)
+					require.FileExists(t, result.Previous[0].Path)
+					require.FileExists(t, result.Downloads[0].Path)
+					require.Equal(t, before, fileBytes(t, result.Previous[0].Path))
+					require.Equal(t, after, fileBytes(t, result.Downloads[0].Path))
+				} else {
+					require.Empty(t, result.Previous, "kept only when asked")
 				}
 			}
 			if err != nil {
@@ -308,7 +331,8 @@ source = "git+https://github.com/owner/gitdep?branch=main#%s"
 	require.NoError(t, err)
 	require.NotEmpty(t, result.PreparedTree)
 	require.Equal(t, int64(2), gitDownloads.Load())
-	require.Len(t, result.Downloads, 2)
+	require.Len(t, result.Downloads, 1, "the port's source")
+	require.Len(t, result.Crates, 1, "the Git crate, apart, since the current version has no counterpart to compare")
 	require.Contains(t, string(result.Files[0].After), "gitdep owner/gitdep main "+newCommit+" "+checksum)
 	require.NotContains(t, string(result.Files[0].After), oldCommit)
 }

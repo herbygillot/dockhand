@@ -8,7 +8,9 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
+	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
 // A port fetched with git has no archive to download and no checksums to
@@ -118,6 +120,10 @@ func (s *Service) applyGitVersion(ctx context.Context, request Request, input *s
 	}
 	if patched(evaluated.after.Ports[input.target.Name]) {
 		progress.Report(ctx, "%s declares patches; a git fetch is not extracted here, so they are checked by the build", input.target.Name)
+		names, _ := syntax.ListValues(evaluated.after.Ports[input.target.Name].Options["patchfiles"])
+		for _, name := range names {
+			result.Patches = append(result.Patches, patchcheck.Result{Name: name, Detail: "a git fetch isn't extracted here; the build applies it"})
+		}
 	}
 	return result, nil
 }

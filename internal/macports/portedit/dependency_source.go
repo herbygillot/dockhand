@@ -30,16 +30,21 @@ func dependencySources(info macports.PortInfo, sources []archives.Source) ([]arc
 	return result, nil
 }
 
-func originalDependencySource(ctx context.Context, store *archives.Store, info macports.PortInfo, sources []archives.Source, plan *dependency.Plan) (dependency.Input, error) {
+// originalDependencySource fetches the current version's archives, fetch,
+// and finds the dependency manifest in the one of candidates that holds
+// it. It returns what it fetched, which an update keeping archives to
+// compare keeps.
+func originalDependencySource(ctx context.Context, store *archives.Store, info macports.PortInfo, fetch, candidates []archives.Source, plan *dependency.Plan) (dependency.Input, []archives.Download, error) {
 	var downloads []archives.Download
-	for _, source := range sources {
+	for _, source := range fetch {
 		download, err := store.Fetch(ctx, info, source)
 		if err != nil {
-			return dependency.Input{}, err
+			return dependency.Input{}, nil, err
 		}
 		downloads = append(downloads, download)
 	}
-	return selectDependencySource(ctx, info, sources, downloads, plan)
+	input, err := selectDependencySource(ctx, info, candidates, downloads, plan)
+	return input, downloads, err
 }
 
 func selectDependencySource(ctx context.Context, info macports.PortInfo, sources []archives.Source, downloads []archives.Download, plan *dependency.Plan) (dependency.Input, error) {

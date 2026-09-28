@@ -93,8 +93,10 @@ type Update struct {
 	Subject string
 	// Distfiles counts the archives whose checksums were written.
 	Distfiles int
-	// PatchProblems name the port's patches that no longer apply.
-	PatchProblems []string
+	// PatchProblems name the port's patches that no longer apply, and
+	// PatchesUnchecked those no check reached before the build.
+	PatchProblems    []string
+	PatchesUnchecked []string
 	// Current is true when there was nothing to change.
 	Current bool
 	// Started is true when the update started its branch
@@ -218,6 +220,12 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	}
 	if compare && len(result.Files) > 0 {
 		update.Upstream = compareUpstream(ctx, result)
+	}
+	if change, ok := toolchainChange(result.GoToolchain); ok && len(result.Files) > 0 {
+		if update.Upstream == nil {
+			update.Upstream = &model.UpstreamComparison{Changes: []model.UpstreamChange{}}
+		}
+		update.Upstream.Changes = append(update.Upstream.Changes, change)
 	}
 	if len(result.Files) == 0 {
 		update.Current = true
@@ -343,7 +351,8 @@ func portDirectory(file string) string {
 
 // describe reads what the preparation found.
 func describe(branch model.Branch, selector string, result preparation.Result) Update {
-	update := Update{Branch: branch, Port: result.Target.Name, Release: result.Release, PatchProblems: result.PatchProblems(), Distfiles: len(result.Downloads)}
+	update := Update{Branch: branch, Port: result.Target.Name, Release: result.Release, PatchProblems: result.PatchProblems(), PatchesUnchecked: result.UncheckedPatches(),
+		Distfiles: len(result.Downloads) + len(result.Crates)}
 	if update.Port == "" {
 		update.Port = selector
 	}
@@ -495,6 +504,21 @@ func shortID() string {
 // compareUpstream compares the current version's archives with the new
 // version's, one distfile with the same one. Not being able to compare is
 // reported, never a reason to refuse the update.
+// toolchainChange is a Go release upstream's go.mod requires that the
+// Portfile's go.toolchain_min doesn't, as a finding a passing build can't
+// catch, since the builder's Go is new enough: it holds the update for a
+// person's look, as a new declared dependency does.
+func toolchainChange(toolchain *preparation.GoToolchain) (model.UpstreamChange, bool) {
+	if toolchain == nil {
+		return model.UpstreamChange{}, false
+	}
+	message := fmt.Sprintf("upstream: go.mod requires Go %s, and the Portfile declares no go.toolchain_min; declaring one gates the port on older Go, the maintainer's call", toolchain.Required)
+	if toolchain.Declared != "" {
+		message = fmt.Sprintf("upstream: go.mod requires Go %s, above go.toolchain_min %s, which isn't one literal declaration dockhand can raise; raise it by hand", toolchain.Required, toolchain.Declared)
+	}
+	return model.UpstreamChange{Kind: "toolchain", Path: "go.mod", Message: message, Hold: true}, true
+}
+
 func compareUpstream(ctx context.Context, result preparation.Result) *model.UpstreamComparison {
 	comparison := &model.UpstreamComparison{Changes: []model.UpstreamChange{}}
 	switch {

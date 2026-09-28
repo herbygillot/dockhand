@@ -76,15 +76,20 @@ func TestModuleModeGoPortRaisesToolchainMinFromTheManifest(t *testing.T) {
 	require.Len(t, result.Commits, 1)
 }
 
-// A minimum that already covers the requirement, a GOPATH-mode build, and a
-// port declaring no minimum are all left as they are, with the last one
-// told what the manifest asks for.
+// A minimum that already covers the requirement, a GOPATH-mode build, a
+// port declaring no minimum, and one declaring it in a way that can't be
+// rewritten are all left as they are. The last two carry what the manifest
+// asks for, which a passing build can't catch, as a fact of the result.
 func TestToolchainMinIsLeftAloneWhenNotRaisable(t *testing.T) {
 	t.Parallel()
-	for _, test := range []struct{ name, extra, keep, message string }{
-		{"already covered", "go.offline_build no\ngo.toolchain_min 1.24\n", "go.toolchain_min 1.24", ""},
-		{"gopath mode", "go.offline_build yes\ngo.toolchain_min 1.22\n", "go.toolchain_min 1.22", "GOPATH mode"},
-		{"undeclared", "go.offline_build no\n", "", "declares no go.toolchain_min"},
+	for _, test := range []struct {
+		name, extra, keep, message string
+		fact                       *GoToolchain
+	}{
+		{"already covered", "go.offline_build no\ngo.toolchain_min 1.24\n", "go.toolchain_min 1.24", "", nil},
+		{"gopath mode", "go.offline_build yes\ngo.toolchain_min 1.22\n", "go.toolchain_min 1.22", "GOPATH mode", nil},
+		{"undeclared", "go.offline_build no\n", "", "declares no go.toolchain_min", &GoToolchain{Required: "1.24"}},
+		{"not literal", "go.offline_build no\nset floor 1.22\ngo.toolchain_min ${floor}\n", "go.toolchain_min ${floor}", "raise it by hand", &GoToolchain{Required: "1.24", Declared: "1.22"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -102,6 +107,7 @@ func TestToolchainMinIsLeftAloneWhenNotRaisable(t *testing.T) {
 			if test.message != "" {
 				require.Contains(t, strings.Join(messages, "\n"), test.message)
 			}
+			require.Equal(t, test.fact, result.GoToolchain)
 		})
 	}
 }

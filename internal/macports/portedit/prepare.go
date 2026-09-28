@@ -87,6 +87,10 @@ type Result struct {
 	Prepared  macports.Snapshot `json:"-"`
 	Release   *model.Release
 	Downloads []archives.Download
+	// Crates are the archives of the Git-pinned crates a Cargo update
+	// fetched for their checksums: dependencies, not the port's source, so
+	// nothing among Previous is theirs to compare with.
+	Crates []archives.Download `json:",omitempty"`
 	// Previous are the current version's archives, fetched only when
 	// KeepArchives asked, and PreviousProblem why they could not be.
 	Previous        []archives.Download `json:"-"`
@@ -94,6 +98,22 @@ type Result struct {
 	// Patches reports whether each declared patch file still applies to the
 	// candidate source; a rejected patch is a finding, not a refusal.
 	Patches []patchcheck.Result `json:",omitempty"`
+	// GoToolchain is what go.mod requires where the Portfile's
+	// go.toolchain_min was left below it; nil where it was raised, or
+	// needn't be.
+	GoToolchain *GoToolchain `json:",omitempty"`
+}
+
+// GoToolchain is a Go release a module-mode port's go.mod requires that its
+// go.toolchain_min doesn't: undeclared, since declaring one gates the port
+// on systems whose Go is older, which is the maintainer's call, or declared
+// in a way dockhand can't rewrite. A passing build can't catch either: the
+// builder's Go is new enough.
+type GoToolchain struct {
+	Required string
+	// Declared is the Portfile's go.toolchain_min; empty when it declares
+	// none.
+	Declared string
 }
 
 // report records a fidelity report and makes its evaluated snapshot the

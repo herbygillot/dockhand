@@ -135,33 +135,36 @@ func dependencyPatches(input *sourceInput, kind string) error {
 	return nil
 }
 
-func (s *Service) dependencyBase(ctx context.Context, request Request, input *sourceInput, plan *dependency.Plan) (*sourceInput, []archives.Source, error) {
+// dependencyBase is the port with its dependency declarations stripped, as
+// the current version's source, with that source's archives, all of them,
+// and the ones that may hold the dependency manifest.
+func (s *Service) dependencyBase(ctx context.Context, request Request, input *sourceInput, plan *dependency.Plan) (*sourceInput, []archives.Source, []archives.Source, error) {
 	stripped, err := plan.Strip(input.data)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	evaluated, err := s.evaluateEdit(ctx, input, stripped)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	base := input.derive(stripped, evaluated.after)
 
 	// The stripped baseline was evaluated in an overlay, and its paths name
 	// that overlay; the sources policy checks them against its port
 	// directory there.
-	sources, err := archives.Sources(base.info, base.portdirIn(base.before.Root))
+	all, err := archives.Sources(base.info, base.portdirIn(base.before.Root))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	sources, err = dependencySources(base.info, sources)
+	candidates, err := dependencySources(base.info, all)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return base, sources, nil
+	return base, all, candidates, nil
 }
 
 func (s *Service) prepareDependencyVersion(ctx context.Context, request Request, input *sourceInput, plan *dependency.Plan, executable string) (Result, error) {
-	base, sources, err := s.dependencyBase(ctx, request, input, plan)
+	base, all, sources, err := s.dependencyBase(ctx, request, input, plan)
 	if err != nil {
 		return Result{}, err
 	}
@@ -178,7 +181,14 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	}
 	defer os.RemoveAll(directory)
 	store := s.Archives.Store(directory)
-	oldInput, err := originalDependencySource(ctx, store, base.info, sources, plan)
+	// An update that keeps archives to compare keeps the current version's,
+	// every one, beside the new ones, as an archive update does; the
+	// manifest is read from among them.
+	fetch := sources
+	if request.KeepArchives != "" {
+		store, fetch = s.Archives.Store(request.KeepArchives), all
+	}
+	oldInput, previous, err := originalDependencySource(ctx, store, base.info, fetch, sources, plan)
 	if err != nil {
 		return Result{}, err
 	}
@@ -296,7 +306,10 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	result.Base = request.Source
 	result.Files = []portfile.Edit{evaluated.edit}
 	result.report(final)
-	result.Downloads = append(result.Downloads, gitDownloads...)
+	result.Crates = gitDownloads
+	if request.KeepArchives != "" {
+		result.Previous = previous
+	}
 	if err := s.raiseGoToolchain(ctx, request, input, &result); err != nil {
 		return Result{}, err
 	}

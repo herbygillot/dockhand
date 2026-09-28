@@ -37,7 +37,10 @@ type updateJSON struct {
 	Distfiles int           `json:"distfiles"`
 	Subject   string        `json:"subject"`
 	Patches   []string      `json:"patch_problems"`
-	Diff      string        `json:"diff,omitempty"`
+	// Unchecked are the patches no check reached before the build, which
+	// applies them.
+	Unchecked []string `json:"unchecked_patches"`
+	Diff      string   `json:"diff,omitempty"`
 	// Revbumped are the dependents --revbump-dependents bumped, or would.
 	Revbumped []string `json:"revbumped,omitempty"`
 	// Stealth is a checksum refresh's stealth update.
@@ -109,7 +112,8 @@ type checksumJSON struct {
 func updateView(branch model.Branch, started bool, update engine.Update, plan bool) updateJSON {
 	view := updateJSON{Branch: branchRef(branch), Started: started, Port: update.Port,
 		Before: versionJSON{update.Before.Version, update.Before.Revision}, After: versionJSON{update.After.Version, update.After.Revision},
-		Current: update.Current, Applied: update.Applied, Files: nonNil(update.Files), Distfiles: update.Distfiles, Subject: update.Subject, Patches: nonNil(update.PatchProblems)}
+		Current: update.Current, Applied: update.Applied, Files: nonNil(update.Files), Distfiles: update.Distfiles, Subject: update.Subject, Patches: nonNil(update.PatchProblems),
+		Unchecked: nonNil(update.PatchesUnchecked)}
 	if plan {
 		view.Diff = update.Diff
 	}

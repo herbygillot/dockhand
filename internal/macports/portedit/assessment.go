@@ -144,7 +144,7 @@ func (p *VersionProbe) Assess(ctx context.Context, release *model.Release) (Asse
 	if depErr == nil && plan != nil {
 		executable, toolErr := p.editor.DependencyTools.Resolve(plan.Kind)
 		add("helper", executable, toolErr)
-		base, _, depErr = p.editor.dependencyBase(ctx, p.request, p.input, plan)
+		base, _, _, depErr = p.editor.dependencyBase(ctx, p.request, p.input, plan)
 		if depErr != nil {
 			add("dependency-source", "", depErr)
 		}

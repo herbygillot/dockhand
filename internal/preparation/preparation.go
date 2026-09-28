@@ -20,6 +20,7 @@ import (
 
 type Request = portedit.Request
 type CommitIntent = portedit.CommitIntent
+type GoToolchain = portedit.GoToolchain
 
 var ErrUnsupported = portedit.ErrUnsupported
 var ErrFidelity = portedit.ErrFidelity
@@ -33,6 +34,19 @@ type Result struct {
 	portedit.Result
 	PreparedTree model.ObjectID
 	Files        []git.FileEdit
+}
+
+// UncheckedPatches names the declared patches no check reached before the
+// build, which applies them: a git-fetched port's, whose source isn't
+// extracted here, or ones outside the source directory.
+func (r Result) UncheckedPatches() []string {
+	var names []string
+	for _, patch := range r.Patches {
+		if !patch.Checked {
+			names = append(names, patch.Name+": "+patch.Detail)
+		}
+	}
+	return names
 }
 
 // PatchProblems names the declared patches that no longer apply to the candidate source.

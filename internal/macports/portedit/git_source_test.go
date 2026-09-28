@@ -1,6 +1,7 @@
 package portedit
 
 import (
+	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/model"
 	"strings"
 	"testing"
@@ -103,4 +104,20 @@ checksums sha256 aaaa size 2
 	_, err = s.Prepare(t.Context(), r)
 	require.ErrorIs(t, err, ErrUnsupported)
 	require.Contains(t, err.Error(), "mixes an archive into the clone")
+}
+
+// A git fetch isn't extracted here, so its patches aren't checked before
+// the build, which applies them: the result records each as unchecked.
+func TestAGitFetchedPortsPatchesAreRecordedUnchecked(t *testing.T) {
+	t.Parallel()
+	s, r, _ := archiveFixture(t, `version 1.2.3
+fetch.type git
+git.url https://example.invalid/fixture.git
+git.branch v${version}
+patchfiles fix.patch
+`)
+	r.Release = gitRelease(strings.Repeat("a", 40))
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Equal(t, []patchcheck.Result{{Name: "fix.patch", Detail: "a git fetch isn't extracted here; the build applies it"}}, result.Patches)
 }

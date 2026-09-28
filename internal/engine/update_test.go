@@ -40,6 +40,9 @@ type fakePreparer struct {
 	// upstream are the old and new versions' archive contents, kept as
 	// tarballs when an update asks to compare them.
 	upstream [2]map[string]string
+	// toolchain is a Go requirement an update's go.mod leaves above the
+	// Portfile's minimum.
+	toolchain *preparation.GoToolchain
 }
 
 func (p *fakePreparer) ResolveRelease(_ context.Context, r preparation.Request) (model.Release, error) {
@@ -95,6 +98,7 @@ func (p *fakePreparer) Prepare(ctx context.Context, r preparation.Request) (prep
 		return preparation.Result{}, err
 	}
 	result.Files, result.PreparedTree = []git.FileEdit{edit}, model.ObjectID(tree)
+	result.GoToolchain = p.toolchain
 	result.Commits = []preparation.CommitIntent{{Subject: r.Selection.Selector + ": update to " + next}}
 	if r.Action == model.EditRevbump {
 		result.Commits[0].Subject = r.Selection.Selector + ": " + r.Subject
