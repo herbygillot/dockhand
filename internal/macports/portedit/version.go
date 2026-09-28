@@ -140,18 +140,27 @@ func (s *Service) applyArchivePlan(ctx context.Context, request Request, input *
 // previousArchives fetches the current version's archives, for comparing
 // with the new ones. Not getting them is a problem to report, never a
 // reason to refuse the update.
+// previousArchives are the current version's archives as MacPorts shipped
+// them, checked against the Portfile's checksums, from upstream or else
+// MacPorts' mirror (Store.Shipped), so the update is compared with what
+// users build today; or why they couldn't be had.
 func (s *Service) previousArchives(ctx context.Context, input *sourceInput, store *archives.Store) ([]archives.Download, string) {
 	sources, err := archives.Sources(input.info, input.portdirIn(input.before.Root))
 	if err != nil {
 		return nil, err.Error()
 	}
-	var kept []archives.Download
-	for _, source := range sources {
-		download, err := store.Fetch(ctx, input.info, source)
-		if err != nil {
-			return kept, fmt.Sprintf("fetching %s: %v", source.Name, err)
-		}
-		kept = append(kept, download)
+	shipped, err := store.Shipped(ctx, input.info, sources)
+	if err != nil {
+		return nil, err.Error()
 	}
-	return kept, ""
+	return downloadsOf(shipped), ""
+}
+
+// downloadsOf are the shipped archives' downloads.
+func downloadsOf(shipped []archives.Shipped) []archives.Download {
+	downloads := make([]archives.Download, len(shipped))
+	for i, archive := range shipped {
+		downloads[i] = archive.Download
+	}
+	return downloads
 }

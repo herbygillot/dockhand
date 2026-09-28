@@ -83,6 +83,7 @@ In order. Each item lands in its own commits with an activity note, and a review
   - Those facts hold an unattended submission (D4). Done 2026-09-27 ([note](activity/2026-09-27-what-couldnt-be-checked-holds.md)):
     - archives it couldn't compare hold `bump`'s and serve's submissions, as a changed license does;
     - a Go or Cargo port's update keeps its old archives, so its comparison runs;
+    - the old archives are compared as MacPorts shipped them: checked against the Portfile's checksums, and from MacPorts' mirror under the port's `dist_subdir` where upstream now serves something else;
     - a Go toolchain minimum left below go.mod's requirement holds;
     - unchecked patches are shown, not held, since the build applies them.
 - **Rules the design promises and the code doesn't keep:**

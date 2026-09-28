@@ -25,9 +25,6 @@ func TestTheOldArchiveComesFromTheMirrorAfterAStealthUpdate(t *testing.T) {
 		fmt.Fprint(w, old)
 	}))
 	defer mirror.Close()
-	saved := mirrorURL
-	mirrorURL = mirror.URL + "/"
-	t.Cleanup(func() { mirrorURL = saved })
 
 	sha := func(s string) string { sum := sha256.Sum256([]byte(s)); return hex.EncodeToString(sum[:]) }
 	info := func(contents string) macports.PortInfo {
@@ -37,7 +34,7 @@ func TestTheOldArchiveComesFromTheMirrorAfterAStealthUpdate(t *testing.T) {
 			"fetch.type": "standard", "fetch.archive_compatible": "1", "fetch.ignore_sslcert": "0", "fetch.has_credentials": "0",
 		}}
 	}
-	store := archives.Client{}.Store(t.TempDir())
+	store := archives.Client{Mirror: mirror.URL + "/"}.Store(t.TempDir())
 
 	// The branch declares what upstream serves now.
 	fetched, err := fetchDeclared(t.Context(), store, info(now), "")

@@ -9,6 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/model"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
+	"github.com/herbygillot/dockhand/internal/preparation"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
@@ -32,6 +34,22 @@ func manifestArchive(t *testing.T, name, manifest, version string) []byte {
 	require.NoError(t, gz.Close())
 	return data.Bytes()
 }
+
+// shippedChecksums declares the current version's archive in the fixture's
+// Portfile as archive, where the fixture declares placeholders: an update
+// keeping archives to compare fetches it as MacPorts shipped it.
+func shippedChecksums(t *testing.T, service *preparation.Service, source model.Source, archive []byte) model.Source {
+	t.Helper()
+	state, data, err := service.Repo.File(t.Context(), string(source.Tree), "devel/fixture/Portfile")
+	require.NoError(t, err)
+	placeholder := fmt.Sprintf("checksums rmd160 %s \\\n    sha256 %s \\\n    size 1\n", strings.Repeat("0", 40), strings.Repeat("0", 64))
+	require.Contains(t, string(data), placeholder)
+	declared := fmt.Sprintf("checksums sha256 %x \\\n    size %d\n", sha256.Sum256(archive), len(archive))
+	tree, err := service.Repo.EditTree(t.Context(), string(source.Tree), []git.FileEdit{{Path: "devel/fixture/Portfile", Before: state, After: []byte(strings.Replace(string(data), placeholder, declared, 1)), Mode: state.Mode}})
+	require.NoError(t, err)
+	return model.Source{Tree: model.ObjectID(tree), Base: source.Base}
+}
+
 func fileBytes(t *testing.T, path string) []byte {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -48,7 +66,7 @@ func dependencyHelper(t *testing.T, body string) string {
 func TestGoDependencyPreparation(t *testing.T) {
 	t.Parallel()
 	sha := strings.Repeat("a", 64)
-	for _, scenario := range []string{"success", "kept", "removed", "missing", "failed", "partial", "override", "patched", "local-patch", "unsupported-context"} {
+	for _, scenario := range []string{"success", "kept", "kept-stealth", "kept-unshipped", "removed", "missing", "failed", "partial", "override", "patched", "local-patch", "unsupported-context"} {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
 			old := "module github.com/owner/fixture\ngo 1.24\nrequire example.com/old v1.0.0\n"
@@ -58,6 +76,13 @@ func TestGoDependencyPreparation(t *testing.T) {
 			}
 			before := manifestArchive(t, "go.mod", old, "1.0")
 			after := manifestArchive(t, "go.mod", next, "2.0")
+			// What upstream serves under the current version's name after a
+			// stealth update: not what MacPorts shipped.
+			stealthy := manifestArchive(t, "go.mod", old+"// regenerated\n", "1.0")
+			served := before
+			if scenario == "kept-stealth" || scenario == "kept-unshipped" {
+				served = stealthy
+			}
 			extra := `options go.vendors
  default go.vendors {}
  proc fixture_vendors {} {
@@ -88,7 +113,7 @@ func TestGoDependencyPreparation(t *testing.T) {
 			service, request := versionFixture(t, "go-setup", extra, func(w http.ResponseWriter, r *http.Request) {
 				requests.Add(1)
 				if strings.Contains(r.URL.Path, "/1.0/") {
-					_, _ = w.Write(before)
+					_, _ = w.Write(served)
 				} else {
 					_, _ = w.Write(after)
 				}
@@ -111,8 +136,18 @@ func TestGoDependencyPreparation(t *testing.T) {
 				require.NoError(t, err)
 				request.Source = model.Source{Tree: model.ObjectID(tree)}
 			}
-			if scenario == "kept" {
+			var mirrored atomic.Value
+			if strings.HasPrefix(scenario, "kept") {
 				request.KeepArchives = t.TempDir()
+				request.Source = shippedChecksums(t, service, request.Source, before)
+			}
+			if scenario == "kept-stealth" {
+				mirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					mirrored.Store(r.URL.Path)
+					_, _ = w.Write(before)
+				}))
+				t.Cleanup(mirror.Close)
+				service.Mirror = mirror.URL + "/"
 			}
 			result, err := service.Prepare(t.Context(), request)
 			switch scenario {
@@ -142,21 +177,37 @@ func TestGoDependencyPreparation(t *testing.T) {
 				if scenario == "success" {
 					require.Contains(t, string(result.Files[0].After), "example.com/new/v2 lock v2.0.0")
 				}
-				require.Equal(t, int64(2), requests.Load(), "each version's archive is fetched once, kept or not")
+				fetched := int64(2)
+				if scenario == "kept-unshipped" {
+					fetched = 3 // once as shipped, which fails, and once as served
+				}
+				require.Equal(t, fetched, requests.Load(), "each version's archive is fetched once, kept or not")
 				require.Len(t, result.Downloads, 1)
 				for _, fidelity := range result.Fidelity {
 					require.Empty(t, fidelity.UnexpectedChanges)
 				}
-				if scenario == "kept" {
+				switch scenario {
+				case "kept", "kept-stealth":
 					// The current version's archive is kept beside the new
-					// one, so the update's upstream comparison has a pair.
+					// one, as MacPorts shipped it, so the update's upstream
+					// comparison has a pair: from upstream, or where upstream
+					// now serves something else, from MacPorts' mirror under
+					// the port's dist_subdir.
 					require.Len(t, result.Previous, 1)
 					require.Empty(t, result.PreviousProblem)
 					require.FileExists(t, result.Previous[0].Path)
 					require.FileExists(t, result.Downloads[0].Path)
 					require.Equal(t, before, fileBytes(t, result.Previous[0].Path))
 					require.Equal(t, after, fileBytes(t, result.Downloads[0].Path))
-				} else {
+					if scenario == "kept-stealth" {
+						require.Regexp(t, `^/fixture/fixture-`, mirrored.Load())
+					}
+				case "kept-unshipped":
+					// Neither has it as shipped: the update goes on, and its
+					// comparison says why it can't be made.
+					require.Empty(t, result.Previous)
+					require.Contains(t, result.PreviousProblem, "upstream no longer serves")
+				default:
 					require.Empty(t, result.Previous, "kept only when asked")
 				}
 			}

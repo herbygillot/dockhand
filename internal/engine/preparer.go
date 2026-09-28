@@ -11,6 +11,7 @@ import (
 	forgegitlab "github.com/herbygillot/dockhand/internal/forge/gitlab"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
 	"github.com/herbygillot/dockhand/internal/macports/selection"
@@ -37,7 +38,7 @@ func (e *Engine) preparer() (Preparer, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &preparation.Service{Repo: e.Repo, Ports: ports, Upstream: e.discovery(ports), HTTP: http.DefaultClient, Workspaces: &workspace.Registry{}}, nil
+		return &preparation.Service{Repo: e.Repo, Ports: ports, Upstream: e.discovery(ports), HTTP: http.DefaultClient, Mirror: archives.MacPortsMirror, Workspaces: &workspace.Registry{}}, nil
 	})
 }
 

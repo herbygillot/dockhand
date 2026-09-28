@@ -313,3 +313,55 @@ func TestCalendarPreparationEvaluatesPreservedTransformation(t *testing.T) {
 		})
 	}
 }
+
+// An update keeping archives to compare keeps the current version's as
+// MacPorts shipped it: from upstream while it serves it as the Portfile
+// declares, else from MacPorts' mirror, under the port's dist_subdir, and
+// else not at all, saying why.
+func TestAnUpdateComparesWithTheArchiveMacPortsShipped(t *testing.T) {
+	t.Parallel()
+	shipped, regenerated, next := "fixture 1.0 as shipped", "fixture 1.0 as regenerated", "fixture 2.0"
+	for _, test := range []struct{ name, upstream, mirror, problem string }{
+		{"upstream", shipped, "", ""},
+		{"mirror", regenerated, shipped, ""},
+		{"neither", regenerated, "", "upstream no longer serves fixture-1.0.tar.gz as the Portfile's checksums describe it"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			service, request := versionFixture(t, "setup", "dist_subdir fixture/1.0_1\n", func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/releases/1.0/fixture-1.0.tar.gz":
+					fmt.Fprint(w, test.upstream)
+				case "/releases/2.0/fixture-2.0.tar.gz":
+					fmt.Fprint(w, next)
+				default:
+					w.WriteHeader(404)
+				}
+			})
+			request.KeepArchives = t.TempDir()
+			request.Source = shippedChecksums(t, service, request.Source, []byte(shipped))
+			var asked atomic.Value
+			if test.mirror != "" {
+				mirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					asked.Store(r.URL.Path)
+					fmt.Fprint(w, test.mirror)
+				}))
+				t.Cleanup(mirror.Close)
+				service.Mirror = mirror.URL + "/"
+			}
+			result, err := service.Prepare(t.Context(), request)
+			require.NoError(t, err, "the update goes on whatever the comparison can have")
+			require.Equal(t, next, string(fileBytes(t, result.Downloads[0].Path)))
+			if test.problem != "" {
+				require.Equal(t, test.problem, result.PreviousProblem)
+				require.Empty(t, result.Previous)
+				return
+			}
+			require.Empty(t, result.PreviousProblem)
+			require.Equal(t, shipped, string(fileBytes(t, result.Previous[0].Path)))
+			if test.mirror != "" {
+				require.Equal(t, "/fixture/1.0_1/fixture-1.0.tar.gz", asked.Load(), "under the port's dist_subdir")
+			}
+		})
+	}
+}

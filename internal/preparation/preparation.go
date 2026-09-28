@@ -65,13 +65,17 @@ type Service struct {
 	DependencyTools  dependency.Tools
 	HTTP             *http.Client
 	MaxDownloadBytes int64
+	// Mirror is where an archive upstream no longer serves as its Portfile
+	// declares it is fetched from, archives.MacPortsMirror in use; none
+	// when empty.
+	Mirror string
 	// Workspaces hands out one projection per source; nil opens one per
 	// preparation.
 	Workspaces *workspace.Registry
 }
 
 func (s *Service) editor() *portedit.Service {
-	editor := &portedit.Service{Ports: s.Ports, DependencyTools: s.DependencyTools, Archives: archives.Client{HTTP: s.HTTP, MaxBytes: s.MaxDownloadBytes}}
+	editor := &portedit.Service{Ports: s.Ports, DependencyTools: s.DependencyTools, Archives: archives.Client{HTTP: s.HTTP, MaxBytes: s.MaxDownloadBytes, Mirror: s.Mirror}}
 	if s.Upstream != nil {
 		editor.Manifests = s.Upstream
 	}

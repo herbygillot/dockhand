@@ -32,19 +32,39 @@ func dependencySources(info macports.PortInfo, sources []archives.Source) ([]arc
 
 // originalDependencySource fetches the current version's archives, fetch,
 // and finds the dependency manifest in the one of candidates that holds
-// it. It returns what it fetched, which an update keeping archives to
-// compare keeps.
-func originalDependencySource(ctx context.Context, store *archives.Store, info macports.PortInfo, fetch, candidates []archives.Source, plan *dependency.Plan) (dependency.Input, []archives.Download, error) {
+// it. Kept to compare, they are fetched as MacPorts shipped them
+// (Store.Shipped), and returned. Where that fails, the manifest is read
+// from what upstream serves, as it was before they were kept, and the
+// problem is returned in their place: the update can't be compared with
+// bytes MacPorts didn't ship.
+func originalDependencySource(ctx context.Context, store *archives.Store, info macports.PortInfo, fetch, candidates []archives.Source, plan *dependency.Plan, kept bool) (dependency.Input, []archives.Download, string, error) {
 	var downloads []archives.Download
-	for _, source := range fetch {
-		download, err := store.Fetch(ctx, info, source)
-		if err != nil {
-			return dependency.Input{}, nil, err
+	problem := ""
+	if kept {
+		shipped, err := store.Shipped(ctx, info, fetch)
+		switch {
+		case ctx.Err() != nil:
+			return dependency.Input{}, nil, "", ctx.Err()
+		case err != nil:
+			problem = err.Error()
+		default:
+			downloads = downloadsOf(shipped)
 		}
-		downloads = append(downloads, download)
+	}
+	if downloads == nil {
+		for _, source := range fetch {
+			download, err := store.Fetch(ctx, info, source)
+			if err != nil {
+				return dependency.Input{}, nil, "", err
+			}
+			downloads = append(downloads, download)
+		}
 	}
 	input, err := selectDependencySource(ctx, info, candidates, downloads, plan)
-	return input, downloads, err
+	if problem != "" {
+		downloads = nil
+	}
+	return input, downloads, problem, err
 }
 
 func selectDependencySource(ctx context.Context, info macports.PortInfo, sources []archives.Source, downloads []archives.Download, plan *dependency.Plan) (dependency.Input, error) {

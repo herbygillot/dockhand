@@ -184,11 +184,11 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	// An update that keeps archives to compare keeps the current version's,
 	// every one, beside the new ones, as an archive update does; the
 	// manifest is read from among them.
-	fetch := sources
-	if request.KeepArchives != "" {
+	fetch, kept := sources, request.KeepArchives != ""
+	if kept {
 		store, fetch = s.Archives.Store(request.KeepArchives), all
 	}
-	oldInput, previous, err := originalDependencySource(ctx, store, base.info, fetch, sources, plan)
+	oldInput, previous, previousProblem, err := originalDependencySource(ctx, store, base.info, fetch, sources, plan, kept)
 	if err != nil {
 		return Result{}, err
 	}
@@ -307,8 +307,8 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	result.Files = []portfile.Edit{evaluated.edit}
 	result.report(final)
 	result.Crates = gitDownloads
-	if request.KeepArchives != "" {
-		result.Previous = previous
+	if kept {
+		result.Previous, result.PreviousProblem = previous, previousProblem
 	}
 	if err := s.raiseGoToolchain(ctx, request, input, &result); err != nil {
 		return Result{}, err

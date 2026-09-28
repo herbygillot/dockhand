@@ -9,7 +9,6 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/herbygillot/dockhand/internal/archive"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -35,10 +34,6 @@ type FetchedArchive struct {
 	Mirror bool
 	Sum    portfile.Checksum
 }
-
-// mirrorURL is MacPorts' distfiles mirror, which keeps each archive under
-// its port's dist_subdir; tests stand in for it.
-var mirrorURL = "https://distfiles.macports.org/"
 
 // ArchiveDiff is how one of a port's archives changed from the branch's
 // base to its files now.
@@ -213,43 +208,23 @@ func (p *evaluatedPorts) FetchArchives(ctx context.Context, source model.Source,
 		return nil, err
 	}
 	info := snapshot.Ports[targets[0].Name]
-	return fetchDeclared(ctx, archives.Client{}.Store(into), info, filepath.Join(tree.Root(), filepath.FromSlash(directory)))
+	return fetchDeclared(ctx, archives.Client{Mirror: archives.MacPortsMirror}.Store(into), info, filepath.Join(tree.Root(), filepath.FromSlash(directory)))
 }
 
-// fetchDeclared fetches each archive the port declares, checked against
-// its checksums, from upstream or else MacPorts' mirror.
+// fetchDeclared fetches each archive the port declares as its checksums
+// declare it, from upstream or else MacPorts' mirror (Store.Shipped).
 func fetchDeclared(ctx context.Context, store *archives.Store, info macports.PortInfo, portdir string) ([]FetchedArchive, error) {
 	sources, err := archives.Sources(info, portdir)
 	if err != nil {
 		return nil, err
 	}
-	declared := declaredChecksums(info.Options["checksums"])
-	subdir := info.Options["dist_subdir"]
-	if subdir == "" {
-		subdir = info.Name
+	shipped, err := store.Shipped(ctx, info, sources)
+	if err != nil {
+		return nil, err
 	}
 	var fetched []FetchedArchive
-	for _, source := range sources {
-		want, ok := declared[source.Name]
-		if !ok && len(declared) == 1 && len(sources) == 1 {
-			want, ok = declared[""]
-		}
-		if !ok {
-			return nil, fmt.Errorf("%s has no checksums in the Portfile", source.Name)
-		}
-		download, err := store.Fetch(ctx, info, source)
-		if err == nil && !changedContents(want, download.Checksum) {
-			fetched = append(fetched, FetchedArchive{Name: source.Name, Path: download.Path, Sum: download.Checksum})
-			continue
-		}
-		if download.Path != "" {
-			_ = os.Remove(download.Path)
-		}
-		mirrored, mirrorErr := store.Fetch(ctx, info, archives.Source{Name: source.Name, URL: mirrorURL + strings.Trim(subdir, "/") + "/" + source.Name})
-		if mirrorErr != nil || changedContents(want, mirrored.Checksum) {
-			return nil, fmt.Errorf("neither upstream nor MacPorts' mirror has %s as the Portfile's checksums describe it", source.Name)
-		}
-		fetched = append(fetched, FetchedArchive{Name: source.Name, Path: mirrored.Path, Mirror: true, Sum: mirrored.Checksum})
+	for _, archive := range shipped {
+		fetched = append(fetched, FetchedArchive{Name: archive.Name, Path: archive.Path, Mirror: archive.Mirror, Sum: archive.Checksum})
 	}
 	return fetched, nil
 }

@@ -3,10 +3,10 @@ package engine
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
@@ -57,14 +57,14 @@ func (e *Engine) stealth(ctx context.Context, worktree *git.Repository, branch m
 	if !atBase.Exists || atBase.Blob != edit.Before.Blob {
 		return nil, nil
 	}
-	was := declaredChecksums(result.Fidelity[0].Before.Ports[port].Options["checksums"])
+	was := archives.Declared(result.Fidelity[0].Before.Ports[port].Options["checksums"])
 	var found Stealth
 	for _, download := range result.Downloads {
 		before, ok := was[download.Name]
 		if !ok && len(was) == 1 && len(result.Downloads) == 1 {
 			before, ok = was[""]
 		}
-		if ok && changedContents(before, download.Checksum) {
+		if ok && archives.Differs(before, download.Checksum) {
 			found.Distfiles = append(found.Distfiles, StealthDistfile{Name: download.Name, Was: before, Now: download.Checksum})
 		}
 	}
@@ -137,44 +137,4 @@ func rewritePrepared(ctx context.Context, worktree *git.Repository, captured str
 
 func unsupportedReason(err error) string {
 	return strings.TrimPrefix(err.Error(), portfile.ErrUnsupported.Error()+": ")
-}
-
-// declaredChecksums reads an evaluated checksums option, by distfile:
-// "rmd160 … sha256 … size …" for one unnamed distfile, or each distfile's
-// name followed by its checksums.
-func declaredChecksums(value string) map[string]portfile.Checksum {
-	declared := map[string]portfile.Checksum{}
-	name := ""
-	words := strings.Fields(value)
-	for i := 0; i < len(words); i++ {
-		word := words[i]
-		if !portfile.IsChecksumKind(word) || i+1 == len(words) {
-			name = word
-			continue
-		}
-		i++
-		sum := declared[name]
-		sum.Name = name
-		switch word {
-		case "rmd160":
-			sum.RMD160 = words[i]
-		case "sha256":
-			sum.SHA256 = words[i]
-		case "size":
-			sum.Size, _ = strconv.ParseInt(words[i], 10, 64)
-		case "md5":
-			sum.MD5 = words[i]
-		case "sha1":
-			sum.SHA1 = words[i]
-		}
-		declared[name] = sum
-	}
-	return declared
-}
-
-// changedContents compares what both declare.
-func changedContents(was, now portfile.Checksum) bool {
-	return was.SHA256 != "" && was.SHA256 != now.SHA256 ||
-		was.RMD160 != "" && was.RMD160 != now.RMD160 ||
-		was.Size != 0 && was.Size != now.Size
 }

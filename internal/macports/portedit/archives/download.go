@@ -43,6 +43,10 @@ type Client struct {
 	MaxBytes int64
 	// Timeout bounds each archive download; two minutes when unset.
 	Timeout time.Duration
+	// Mirror is where Shipped looks for an archive upstream no longer
+	// serves as declared, MacPortsMirror in use; none when empty, as in
+	// tests.
+	Mirror string
 }
 
 // LocalPatches checks that every declared patch file is a frozen regular
