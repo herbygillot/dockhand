@@ -891,12 +891,27 @@ func describePlace(environment model.Environment) string {
 	return environment.Provider + " " + described
 }
 
+// environmentSlug names an environment's log directory: its provider, its
+// release as everything else names it, macOS 26 as macos26, and its
+// architecture. A Darwin release macos doesn't know keeps its Darwin
+// version, darwin30, which isn't macOS's.
 func environmentSlug(environment model.Environment) string {
 	parts := []string{environment.Provider}
-	for _, part := range []string{environment.Platform.Version, environment.Platform.Architecture} {
-		if part != "" {
-			parts = append(parts, part)
+	platform := environment.Platform
+	if platform.Version != "" {
+		release := platform.OS + platform.Version
+		if platform.OS == "darwin" || platform.OS == "" {
+			release = "darwin" + platform.Version
+			if darwin, err := strconv.Atoi(platform.Version); err == nil {
+				if known, err := macos.ReleaseForDarwin(darwin); err == nil {
+					release = "macos" + known.Product
+				}
+			}
 		}
+		parts = append(parts, release)
+	}
+	if platform.Architecture != "" {
+		parts = append(parts, platform.Architecture)
 	}
 	return strings.Join(parts, "-")
 }

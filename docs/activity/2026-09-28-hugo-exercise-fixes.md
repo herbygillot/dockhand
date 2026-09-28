@@ -35,3 +35,7 @@ Under an Upstream label or heading, a finding now leaves that out: "Upstream ! C
 A version update's plan with no branch to plan in now plans on master, as `--new --plan` does: none named, nothing tracked checked out here, and no open branch changing the port. Where a branch changes the port, it still says which to name. On a terminal a plan now asks nothing that could start a branch. Someone's untracked branch is still theirs to adopt, and a branch named with `--branch` is still where the plan goes.
 
 `TestUpdateWithoutABranchAsksOrSaysHow`, `TestAPlanInANamedBranchIsPlannedThere`, and `TestAnUntrackedBranchHereIsTheirsToAdopt` fail with any condition undone.
+
+## Log directories name macOS's release
+
+Everything dockhand says names the release by macOS's number, macOS 26 (Tahoe), but a check's log directory was `tart-25-arm64-1`, by the Darwin version. It's now `tart-macos26-arm64-1`. A Darwin release dockhand doesn't know keeps its Darwin version, as `darwin30`, as its headings do. Each result records its log's whole path, so the logs of earlier checks are found where they are. `TestLogDirectoriesNameTheMacOSRelease` fails with either part undone.

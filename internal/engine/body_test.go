@@ -77,6 +77,17 @@ func TestEnvironmentHeadingsAreShort(t *testing.T) {
 	require.Equal(t, "Darwin 30", EnvironmentHeading(unknown, []model.Environment{unknown}))
 }
 
+// A log directory names the release as everything else does, macOS 26 as
+// macos26, not by its Darwin version, which isn't macOS's.
+func TestLogDirectoriesNameTheMacOSRelease(t *testing.T) {
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	require.Equal(t, "tart-macos26-arm64", environmentSlug(tahoe))
+	require.Equal(t, "tart-macos15-x86_64", environmentSlug(model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "x86_64"}}))
+	require.Equal(t, "tart-darwin30-arm64", environmentSlug(model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "30", Architecture: "arm64"}}))
+	require.Equal(t, "tart-darwin30-arm64", environmentSlug(model.Environment{Provider: "tart", Platform: model.Platform{Version: "30", Architecture: "arm64"}}), "no OS is Darwin's")
+	require.Equal(t, "command", environmentSlug(model.Environment{Provider: "command"}))
+}
+
 // Timed-out tests ran and didn't pass: the checklist doesn't claim the
 // existing tests were tried, and the table says they timed out. (The
 // architecture review of 2026-09-27, finding 1.)
