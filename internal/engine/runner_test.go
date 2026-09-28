@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -338,10 +339,37 @@ func TestServeTakesPeoplesChecksFirst(t *testing.T) {
 	first := queuedHarborRun(t, e, tahoeArm)
 	branch, err := e.Branch(t.Context(), first.Branch)
 	require.NoError(t, err)
-	byServe, err := e.Enqueue(t.Context(), branch, mustPlan(t, e, first), model.OriginServe)
-	require.NoError(t, err)
-	byPerson, err := e.Enqueue(t.Context(), branch, mustPlan(t, e, first), model.OriginPerson)
-	require.NoError(t, err)
+	// A branch has one check at a time, so the queue's others are other
+	// branches': each recorded here with the same work as the first.
+	other := func(name string, origin model.Origin) model.Run {
+		t.Helper()
+		var run model.Run
+		require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+			revision, err := tx.Revision(first.Revision)
+			if err != nil {
+				return err
+			}
+			started := branch
+			started.ID, started.Name, started.Worktree = model.BranchID(store.NewID("br")), model.BranchPrefix+name, filepath.Join(t.TempDir(), name)
+			if err := tx.AddBranch(started); err != nil {
+				return err
+			}
+			revision.ID, revision.Branch = model.RevisionID(store.NewID("rev")), started.ID
+			if err := tx.AddRevision(revision); err != nil {
+				return err
+			}
+			plan := mustPlan(t, e, first)
+			plan.Revision = revision.ID
+			if err := tx.AddPlan(plan); err != nil {
+				return err
+			}
+			run, err = e.queue(tx, model.Run{Branch: started.ID, Revision: revision.ID, Plan: plan.ID, Origin: origin}, "queued")
+			return err
+		}))
+		return run
+	}
+	byServe := other("harbor-serve", model.OriginServe)
+	byPerson := other("harbor-person", model.OriginPerson)
 
 	s := session(t, e)
 	var order []int
@@ -550,4 +578,51 @@ func TestEnvironmentsBuildingTogetherShareWhatTheEngineAssembles(t *testing.T) {
 	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
 	require.NoError(t, err)
 	require.Equal(t, model.RunPassed, run.State, run.Detail)
+}
+
+// A branch has one check at a time (decision 29): another is refused while
+// one is queued or running, for the same files or others, by Enqueue or
+// Retry alike. A baseline looks beside the check it explains, and a check
+// asked to stop no longer counts.
+func TestABranchHasOneCheckAtATime(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
+	first := queuedHarborRun(t, e, tahoeArm)
+	branch, err := e.Branch(t.Context(), first.Branch)
+	require.NoError(t, err)
+
+	var active *ActiveRunError
+	_, err = e.Enqueue(t.Context(), branch, mustPlan(t, e, first), model.OriginPerson)
+	require.ErrorAs(t, err, &active)
+	require.True(t, active.SameRevision)
+	require.EqualError(t, err, "check-1 is already queued for these files; dockhand wait check-1 follows it")
+
+	write(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 5\n"})
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
+	require.NoError(t, err)
+	edited, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}})
+	require.NoError(t, err)
+	_, err = e.Enqueue(t.Context(), branch, edited, model.OriginServe)
+	require.ErrorAs(t, err, &active)
+	require.False(t, active.SameRevision)
+	require.Regexp(t, `^check-1 is queued for snapshot \d+, and a branch has one check at a time; dockhand cancel check-1 stops it, keeping what it finished$`, err.Error())
+
+	baseline, err := e.enqueue(t.Context(), branch, mustPlan(t, e, first), model.OriginPerson, first.ID)
+	require.NoError(t, err, "a baseline looks beside the check it explains")
+	require.Equal(t, first.ID, baseline.BaselineOf)
+
+	done, err := e.Drive(t.Context(), session(t, e), first.ID)
+	require.NoError(t, err)
+	require.True(t, done.State.Terminal())
+	second, err := e.Enqueue(t.Context(), branch, edited, model.OriginPerson)
+	require.NoError(t, err, "once the first is done, the next may queue")
+	_, err = e.Retry(t.Context(), done)
+	require.ErrorAs(t, err, &active, "a retry is the branch's check too")
+	require.Equal(t, second.ID, active.Run.ID)
+
+	_, err = e.RequestCancel(t.Context(), session(t, e), second.ID)
+	require.NoError(t, err)
+	_, err = e.Retry(t.Context(), done)
+	require.NoError(t, err, "a check asked to stop no longer counts")
 }

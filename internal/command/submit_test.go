@@ -390,3 +390,44 @@ func TestAdoptRecognizesARenamedBranch(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "#34901")
 }
+
+// A branch has one check at a time: submit --check doesn't queue a second
+// beside one already queued for the same commit, and says how to finish.
+// And it submits exactly the commit it checked: a branch that moved while
+// its check ran is not submitted.
+func TestSubmitCheckKeepsToOneCheckAndItsCommit(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	g := withGitHub(t, w)
+	withScript(t, w, "passed")
+	_, _, err := dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
+	t.Setenv("MACPORTS_TREE", dir)
+	_, _, err = dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "tidy")
+	require.NoError(t, err)
+
+	_, _, err = dockhand(t, "check", "--head", "--enqueue")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "submit", "--check")
+	require.EqualError(t, err, "check-1 is already queued for these files; dockhand wait check-1 follows it; once it passes, dockhand submit --branch jq-update submits this commit")
+	_, _, err = dockhand(t, "cancel", "check-1")
+	require.NoError(t, err)
+
+	// The build commits to the branch as it runs.
+	script := filepath.Join(w.home, "bin", "build-ports")
+	require.NoError(t, os.WriteFile(script, []byte(`#!/bin/sh
+git -C "$MOVE_IN" commit -q --allow-empty -m "moved while checked"
+cat > "$(dirname "$1")/result.json" <<JSON
+{"version": 1, "targets": [{"id": "jq", "outcome": "passed"}]}
+JSON
+`), 0o755))
+	t.Setenv("MOVE_IN", dir)
+	_, _, err = dockhand(t, "submit", "--check")
+	require.Error(t, err)
+	require.Regexp(t, `^jq-update moved to [0-9a-f]{7} while it was checked; nothing was submitted, since submit --check binds [0-9a-f]{7}$`, err.Error())
+	require.Empty(t, g.prs)
+}

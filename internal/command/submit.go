@@ -217,6 +217,9 @@ func submitChecked(ctx context.Context, s *settings, e *engine.Engine, streams S
 			return errors.New("nothing was checked or submitted: " + unrunnable(proposed))
 		}
 		run, err := e.Enqueue(ctx, plan.Branch, proposed, model.OriginPerson)
+		if active := new(engine.ActiveRunError); errors.As(err, &active) && active.SameRevision {
+			return fmt.Errorf("%w; once it passes, dockhand submit --branch %s submits this commit", err, plan.Branch.ShortName())
+		}
 		if err != nil {
 			return err
 		}

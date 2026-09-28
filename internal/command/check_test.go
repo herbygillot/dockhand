@@ -194,3 +194,22 @@ func TestBaselineResultsShowWhereItRebuilt(t *testing.T) {
 		"gone at master 1a2b3c4 · tart macOS 26 (Tahoe) arm64\n"+
 		"  · not built at the base: replaced by other\n", out.String())
 }
+
+// A misspelled --tests is refused before anything is captured or planned.
+func TestCheckRefusesAnUnknownTestPolicyAtOnce(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	withScript(t, w, "passed")
+	_, _, err := dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
+	_, _, err = dockhand(t, "update", "jq")
+	require.NoError(t, err)
+
+	_, _, err = dockhand(t, "check", "--tests", "requried")
+	require.EqualError(t, err, `--tests "requried" is not declared, required, or skip`)
+	out, _, err := dockhand(t, "status")
+	require.NoError(t, err)
+	require.NotContains(t, out, "check-1", "nothing was queued")
+}

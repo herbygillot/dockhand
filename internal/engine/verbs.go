@@ -83,24 +83,16 @@ func (e *Engine) findDirectory(ctx context.Context, tree, name string) (string, 
 }
 
 // Retry queues a run's exact request again: the same revision and plan,
-// whatever the branch holds now. Until per-target reuse lands, the whole
-// plan is built again.
+// whatever the branch holds now, as the branch's one check (queue). Until
+// per-target reuse lands, the whole plan is built again.
 func (e *Engine) Retry(ctx context.Context, previous model.Run) (model.Run, error) {
 	if !previous.State.Terminal() {
 		return model.Run{}, fmt.Errorf("%s is still %s; dockhand wait %s follows it", previous.Name(), previous.State, previous.Name())
 	}
 	var run model.Run
 	err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-		number, err := tx.NextRunNumber()
-		if err != nil {
-			return err
-		}
-		run = model.Run{ID: model.RunID(store.NewID("run")), Branch: previous.Branch, Revision: previous.Revision, Plan: previous.Plan, Number: number, Origin: model.OriginPerson, State: model.RunQueued, CreatedAt: e.now(), BaselineOf: previous.BaselineOf}
-		if err := tx.AddRun(run); err != nil {
-			return err
-		}
-		_, err = tx.AppendEvent(model.Event{At: run.CreatedAt, Branch: run.Branch, Run: run.ID, Kind: "run.state", Level: model.LevelInfo,
-			Message: fmt.Sprintf("%s queued, retrying %s", run.Name(), previous.Name())})
+		var err error
+		run, err = e.queue(tx, model.Run{Branch: previous.Branch, Revision: previous.Revision, Plan: previous.Plan, Origin: model.OriginPerson, BaselineOf: previous.BaselineOf}, "queued, retrying "+previous.Name())
 		return err
 	})
 	return run, err

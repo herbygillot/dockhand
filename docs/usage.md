@@ -182,7 +182,7 @@ With several releases, `check` builds two at a time, as many as macOS runs VMs, 
 
 A check whose process dies without settling it, killed or lost with its terminal, is shown as **stopped** by `status` and `queue`. `dockhand wait` resumes it where it stopped, and so does the next `serve`; `dockhand cancel` ends it. `clean` removes the clone it left, once nothing runs it.
 
-One check of a branch runs at a time. While one is queued or running, `check` refuses, and `--replace` stops it, keeping what it finished, and checks the files as they are now.
+One check of a branch runs at a time. While one is queued or running, `check` refuses, and `--replace` stops it, keeping what it finished, and checks the files as they are now. `submit --check`, `update --submit`, and `retry` refuse too, naming the check to wait for or cancel; a baseline looks beside the check it explains, and a check asked to stop no longer counts. A misspelled `--tests` is refused before anything is captured.
 
 ### After a check
 

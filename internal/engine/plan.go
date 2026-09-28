@@ -59,6 +59,11 @@ type rebuild struct {
 // it is never dropped.
 func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan, error) {
 	revision := request.Revision
+	// A policy that isn't one of the three is refused before anything is
+	// evaluated.
+	if request.Tests != "" && !request.Tests.Valid() {
+		return model.Plan{}, fmt.Errorf("--tests %q is not declared, required, or skip", request.Tests)
+	}
 	plan := model.Plan{ID: model.PlanID(store.NewID("plan")), Revision: revision.ID, Environments: request.Environments, Only: request.Only, Also: request.Also, Tests: request.Tests, Fresh: request.Fresh, CreatedAt: e.now()}
 	if plan.Tests == "" {
 		plan.Tests = model.TestsDeclared

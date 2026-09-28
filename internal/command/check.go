@@ -58,6 +58,10 @@ true, it runs that baseline by itself.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
+			// A misspelled policy is refused before anything is captured.
+			if tests != "" && !model.TestPolicy(tests).Valid() {
+				return fmt.Errorf("--tests %q is not declared, required, or skip", tests)
+			}
 			e, err := s.open(ctx)
 			if err != nil {
 				return err
@@ -692,7 +696,9 @@ func replaceActive(ctx context.Context, e *engine.Engine, streams Streams, branc
 	if err != nil {
 		return nil, err
 	}
-	runs = slices.DeleteFunc(runs, func(run model.Run) bool { return run.BaselineOf != "" })
+	// A baseline looks beside the check it explains, and a run asked to
+	// stop is on its way out: neither is the branch's one check.
+	runs = slices.DeleteFunc(runs, func(run model.Run) bool { return run.BaselineOf != "" || run.CancelRequested != nil })
 	if len(runs) == 0 {
 		return nil, nil
 	}

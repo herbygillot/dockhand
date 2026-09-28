@@ -87,7 +87,7 @@ In order. Each item lands in its own commits with an activity note, and a review
     - a Go toolchain minimum left below go.mod's requirement holds;
     - unchecked patches are shown, not held, since the build applies them.
 - **Rules the design promises and the code doesn't keep:**
-  - one check per branch, enforced in `Enqueue`, which `submit --check`, `update --submit`, and `retry` bypass today; `--tests` checked before evaluation; and a test for submit's commit binding (finding 2);
+  - one check per branch, enforced in `Enqueue`, which `submit --check`, `update --submit`, and `retry` bypassed; `--tests` checked before evaluation; and a test for submit's commit binding (finding 2). Done 2026-09-27 ([note](activity/2026-09-27-one-check-per-branch.md));
   - capture's moved-while-read check with `--include` (finding 43);
   - `create`'s result when interrupted, and `adopt`'s and `rebase`'s counts (finding 33);
   - a new branch whose record's commit was uncertain is read back, not undone (finding 24);

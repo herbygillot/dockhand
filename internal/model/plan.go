@@ -78,6 +78,11 @@ const (
 	TestsSkip     TestPolicy = "skip"
 )
 
+// Valid reports whether the policy is one of the three.
+func (p TestPolicy) Valid() bool {
+	return p == TestsDeclared || p == TestsRequired || p == TestsSkip
+}
+
 // Judge decides a target's recorded outcome from what its provider
 // reported, under this test policy (Design v3 §7). Providers report facts,
 // the build's outcome and the tests' outcome, and the runner judges every
@@ -295,9 +300,7 @@ func (p Plan) Validate() error {
 	case p.CreatedAt.IsZero():
 		return invalid("plan %s has no creation time", p.ID)
 	}
-	switch p.Tests {
-	case TestsDeclared, TestsRequired, TestsSkip:
-	default:
+	if !p.Tests.Valid() {
 		return invalid("plan %s has unknown test policy %q", p.ID, p.Tests)
 	}
 	environments := map[Environment]bool{}

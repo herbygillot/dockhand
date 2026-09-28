@@ -28,6 +28,8 @@ func RunResource(id model.RunID) string { return "run:" + string(id) }
 
 // Enqueue records a check request: its plan and a queued run. The request
 // is immutable from here; editing the branch never changes what it means.
+// A branch has one check at a time (decision 29), so it refuses while
+// another is queued or running (ActiveRunError).
 func (e *Engine) Enqueue(ctx context.Context, branch model.Branch, plan model.Plan, origin model.Origin) (model.Run, error) {
 	return e.enqueue(ctx, branch, plan, origin, "")
 }
@@ -38,19 +40,64 @@ func (e *Engine) enqueue(ctx context.Context, branch model.Branch, plan model.Pl
 		if err := tx.AddPlan(plan); err != nil {
 			return err
 		}
-		number, err := tx.NextRunNumber()
-		if err != nil {
-			return err
-		}
-		run = model.Run{ID: model.RunID(store.NewID("run")), Branch: branch.ID, Revision: plan.Revision, Plan: plan.ID, Number: number, Origin: origin, State: model.RunQueued, CreatedAt: e.now(), BaselineOf: baselineOf}
-		if err := tx.AddRun(run); err != nil {
-			return err
-		}
-		_, err = tx.AppendEvent(model.Event{At: run.CreatedAt, Branch: branch.ID, Run: run.ID, Kind: "run.state", Level: model.LevelInfo,
-			Message: fmt.Sprintf("%s queued for %s", run.Name(), branch.ShortName())})
+		var err error
+		run, err = e.queue(tx, model.Run{Branch: branch.ID, Revision: plan.Revision, Plan: plan.ID, Origin: origin, BaselineOf: baselineOf}, "queued for "+branch.ShortName())
 		return err
 	})
 	return run, err
+}
+
+// queue records run as queued, numbered and stamped now, saying why in the
+// journal. A branch has one check at a time (decision 29): a run that isn't
+// a baseline, which looks beside the check it explains, is refused while
+// another of the branch's is queued or running and not asked to stop.
+func (e *Engine) queue(tx store.Tx, run model.Run, why string) (model.Run, error) {
+	if run.BaselineOf == "" {
+		active, err := tx.Runs(store.RunFilter{Branch: run.Branch, States: []model.RunState{model.RunQueued, model.RunRunning}})
+		if err != nil {
+			return run, err
+		}
+		for _, other := range active {
+			if other.BaselineOf != "" || other.CancelRequested != nil {
+				continue
+			}
+			checking, err := tx.Revision(other.Revision)
+			if err != nil {
+				return run, err
+			}
+			return run, &ActiveRunError{Run: other, Checking: checking, SameRevision: other.Revision == run.Revision}
+		}
+	}
+	number, err := tx.NextRunNumber()
+	if err != nil {
+		return run, err
+	}
+	run.ID, run.Number, run.State, run.CreatedAt = model.RunID(store.NewID("run")), number, model.RunQueued, e.now()
+	if err := tx.AddRun(run); err != nil {
+		return run, err
+	}
+	_, err = tx.AppendEvent(model.Event{At: run.CreatedAt, Branch: run.Branch, Run: run.ID, Kind: "run.state", Level: model.LevelInfo,
+		Message: run.Name() + " " + why})
+	return run, err
+}
+
+// ActiveRunError is the branch's check already queued or running, which a
+// new one for the branch would stand beside: a branch has one check at a
+// time (decision 29).
+type ActiveRunError struct {
+	Run model.Run
+	// Checking is what it checks, and SameRevision whether that is what
+	// the new check would have.
+	Checking     model.Revision
+	SameRevision bool
+}
+
+func (a *ActiveRunError) Error() string {
+	name := a.Run.Name()
+	if a.SameRevision {
+		return fmt.Sprintf("%s is already %s for these files; dockhand wait %s follows it", name, a.Run.State, name)
+	}
+	return fmt.Sprintf("%s is %s for %s, and a branch has one check at a time; dockhand cancel %s stops it, keeping what it finished", name, a.Run.State, Describe(a.Checking), name)
 }
 
 // RequestCancel records that a run should stop. A queued run is canceled
