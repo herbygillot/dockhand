@@ -215,14 +215,26 @@ func TestTheSubmitPreviewGivesEachUpstreamFindingALine(t *testing.T) {
 	require.Contains(t, preview(engine.PortComparison{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{}}}),
 		"\n  Upstream compared; no license, build file, or dependency changes\n  Other PRs")
 	require.Contains(t, preview(engine.PortComparison{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{license, dropped}}}),
-		"\n  Upstream ! upstream's LICENSE changed\n"+
-			"           · upstream: go.mod drops golang.org/x/net\n  Other PRs")
+		"\n  Upstream ! LICENSE changed\n"+
+			"           · go.mod drops golang.org/x/net\n  Other PRs", "the label says upstream once")
 	require.Contains(t, preview(engine.PortComparison{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{license}}},
 		engine.PortComparison{Port: "oniguruma6", Comparison: model.UpstreamComparison{Problem: "HTTP 404"}},
 		engine.PortComparison{Port: "jq", Comparison: model.UpstreamComparison{}}),
-		"\n  Upstream ! jq: upstream's LICENSE changed\n"+
+		"\n  Upstream ! jq: LICENSE changed\n"+
 			"           ! oniguruma6: archives not compared: HTTP 404\n  Other PRs",
 		"an update with nothing to look at adds no line among others' findings")
+}
+
+// Under an Upstream heading, a finding doesn't say upstream again; where
+// no heading says whose it is, as in submit --passing, it keeps the word.
+func TestUpstreamIsSaidOnceUnderItsHeading(t *testing.T) {
+	license := model.UpstreamChange{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed", Hold: true}
+	dropped := model.UpstreamChange{Kind: "dependency", Path: "go.mod", Message: "upstream: go.mod drops golang.org/x/net"}
+	var update bytes.Buffer
+	writeUpstream(&update, &model.UpstreamComparison{Changes: []model.UpstreamChange{license, dropped}})
+	require.Equal(t, "Upstream changes:\n  ! LICENSE changed\n  · go.mod drops golang.org/x/net\n", update.String())
+	plan := engine.SubmitPlan{Upstream: []engine.PortComparison{{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{license, dropped}}}}}
+	require.Equal(t, []string{"! upstream's LICENSE changed", "· upstream: go.mod drops golang.org/x/net"}, upstreamLines(plan, false))
 }
 
 func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {

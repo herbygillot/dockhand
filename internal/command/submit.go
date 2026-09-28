@@ -308,7 +308,7 @@ func submitPassing(ctx context.Context, e *engine.Engine, streams Streams, reque
 			continue
 		}
 		fmt.Fprintf(out, "\n%s  %s · %s · %s\n", status.Branch.ShortName(), plan.Title, checkWords(plan), pullRequestWords(plan))
-		for _, line := range upstreamLines(plan) {
+		for _, line := range upstreamLines(plan, false) {
 			fmt.Fprintf(out, "            %s\n", line)
 		}
 		if len(plan.Blocking) > 0 {
@@ -367,7 +367,7 @@ func writeSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 	fmt.Fprintf(out, "  Push     %s\n", pushWords(plan))
 	fmt.Fprintf(out, "  Checks   %s\n", checkWords(plan))
 	if len(plan.Upstream) > 0 {
-		lines := upstreamLines(plan)
+		lines := upstreamLines(plan, true)
 		if len(lines) == 0 {
 			lines = []string{"compared; no license, build file, or dependency changes"}
 		}
@@ -389,8 +389,9 @@ func writeSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 // upstreamLines are what comparing the branch's upstream archives found,
 // a line each, marked as update marks them: a change a passing build can't
 // catch, and archives that couldn't be compared, with "!". Each names its
-// port when the branch updated several.
-func upstreamLines(plan engine.SubmitPlan) []string {
+// port when the branch updated several, and under an Upstream label
+// (headed) doesn't say upstream again.
+func upstreamLines(plan engine.SubmitPlan, headed bool) []string {
 	ports := map[string]bool{}
 	for _, found := range plan.Upstream {
 		ports[found.Port] = true
@@ -405,6 +406,9 @@ func upstreamLines(plan engine.SubmitPlan) []string {
 			lines = append(lines, "! "+port+"archives not compared: "+found.Comparison.Problem)
 		}
 		for _, change := range found.Comparison.Changes {
+			if headed {
+				change = underUpstream(change)
+			}
 			change.Message = port + change.Message
 			lines = append(lines, upstreamWords(change))
 		}

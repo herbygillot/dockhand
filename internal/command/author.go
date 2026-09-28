@@ -696,9 +696,23 @@ func writeUpstream(out io.Writer, comparison *model.UpstreamComparison) {
 	default:
 		fmt.Fprintln(out, "Upstream changes:")
 		for _, change := range comparison.Changes {
-			fmt.Fprintf(out, "  %s\n", upstreamWords(change))
+			fmt.Fprintf(out, "  %s\n", upstreamWords(underUpstream(change)))
 		}
 	}
+}
+
+// underUpstream is a change as words under an Upstream heading, which
+// already says whose it is: "upstream's LICENSE changed" is "LICENSE
+// changed" there. Elsewhere, as in what holds a submission, the words
+// stand alone.
+func underUpstream(change model.UpstreamChange) model.UpstreamChange {
+	for _, prefix := range []string{"upstream's ", "upstream: "} {
+		if rest, ok := strings.CutPrefix(change.Message, prefix); ok {
+			change.Message = rest
+			break
+		}
+	}
+	return change
 }
 
 func upstreamWords(change model.UpstreamChange) string {

@@ -21,3 +21,9 @@ Checking before tidying, the order the design gives, left hugo's branch at "pass
 `dockhand logs` with nothing named gave cobra's "accepts 1 arg(s), received 0". In a branch's worktree it now shows the branch's latest check, the one a person just ran. Elsewhere it says what to name, and a branch with no check says so. Its heading no longer repeats a passed check's state as its detail: "check-6 · passed", not "check-6 · passed: passed".
 
 `TestQueueWaitCancelAndLogs` covers each, and fails with each undone: the latest check rather than an older one, both messages, and the heading.
+
+## Upstream, once
+
+The submit preview's new Upstream line read "Upstream · upstream: go.mod moves …", and duckdb's "Upstream ! upstream's CMakeLists.txt changed". Update's own "Upstream changes:" did the same. A finding's words stand alone where they're used, as in what holds a submission, so they say whose change it is.
+
+Under an Upstream label or heading, a finding now leaves that out: "Upstream ! CMakeLists.txt changed; the build may need the Portfile to follow". `submit --passing`, whose lines have no heading, keeps it. `TestUpstreamIsSaidOnceUnderItsHeading` and `TestTheSubmitPreviewGivesEachUpstreamFindingALine` fail with any of it undone.
