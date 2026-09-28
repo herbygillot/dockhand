@@ -214,6 +214,10 @@ These are taken when their area is next touched, or between items.
   - `submit --plan` showing the pull request's description, which both exercises read through `--json`;
   - `outdated` for one named port, which took 12 seconds in both;
   - a `Generated-By` naming a commit nobody can find, not only a `+dirty` build: submit could ask GitHub, since tidy reads nothing remote.
+- **What the chezmoi run asked for** ([review](reviews/2026-09-28-hugo-bump-exercise.md#chezmoi-with-bump)):
+  - a Go module the build already required indirectly is no addition when it becomes direct. Today go.mod's indirect requirements are left out of the reading, so the promotion reads as added and holds the update. It's taken first among these, since it stops every Go update that promotes one;
+  - a comparison that knows which manifests the port builds with, and sets the rest apart: chezmoi's pyproject.toml is its documentation's;
+  - a legend for the preview's `!`, which marks what holds the branch for a look.
 - **The observer's boundary at Golden Gate.** A boundary at `${os.major} >= 27` samples nothing below it, since its lower neighbor, Darwin 26, never shipped; the release below, 25, should stand in ([note](activity/2026-09-28-facts-with-homes.md)).
 - **A flake to watch.** `TestTidyAsksWhatItCannotKnow` once failed in its cleanup with a directory not empty ([note](activity/2026-09-27-stopped-checks.md#seen-once-not-explained)).
 
@@ -311,11 +315,18 @@ Changed:
 - **Finding 5 is ranked lower.** GitHub isn't the default provider, so per-runner evidence is a smaller item. The port reader's report joins item 6, where reuse needs it.
 - **Finding 6 is narrowed.** It shrinks to the JSON gap and the release's provenance, until something reads more.
 - **Finding 1's reuse probe was rewritten for D1.** It expected a block; the person decided each result keeps its own check's policy.
+- **`update --plan` on a branch dockhand doesn't track.** It refuses and points at `adopt`, as a test pins. It could plan on master when that branch doesn't change the port, as it does on master itself, and otherwise point at `--branch` or `--new --plan` (the chezmoi run's finding 3).
 
 **The [hugo exercise](reviews/2026-09-28-hugo-bump-exercise.md)** of 2026-09-28 was checked against the code at `fdf8147f` ([note](activity/2026-09-28-hugo-exercise-fixes.md)).
 - **Its eleven findings hold,** each as the review describes it. Finding 11 is narrower: `status` shows CI once something has read it from GitHub, and plain `status` never does.
 - **Taken,** each in its own commit: 1 for a `+dirty` build, and 2 to 9 and 11. The other session had already taken 10, ticking enhancement for an update dockhand made.
 - **Its improvements** are smaller items, with the duckdb exercise's.
+
+**The chezmoi run** in the same review, `dockhand bump` with `b8915f15`, was checked against the code at `4bb16db3`.
+- **Finding 1 holds, and is older than the comparison's rewrite.** `sourcecompare` leaves go.mod's indirect requirements out, as `archive`'s comparison did before it, so a module that becomes direct reads as added. That false hold is the first of its smaller items. Its broader claim, that no go.mod change can need a Portfile edit, goes too far: a module new to the build can need a library from MacPorts, as a cgo one can, so a new one still holds.
+- **Finding 2** is noise rather than a defect: the comparison reads every manifest it knows, and nothing tells it which the port builds with. A smaller item, as is finding 5's legend.
+- **Finding 3** is a decision for the person: the refusal is deliberate.
+- **Findings 4 and 6** need nothing: 4 is by design, and 6 was an older build's, as the review now says.
 
 **The [private-helper review](reviews/2026-09-28-private-helper-ownership.md)** of 2026-09-28, by Codex, read `7be0dc2d` and was checked again at `dd21ac87` ([note](activity/2026-09-28-private-helper-review-reconciled.md)).
 - **All ten findings hold.** All seven of its probes fail.
