@@ -19,7 +19,7 @@ import (
 )
 
 // settings are the global selections. Each comes from its flag, then its
-// environment variable, then the configuration file, then its default.
+// environment variable, then its default.
 type settings struct {
 	tree     string
 	database string

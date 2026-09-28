@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -279,4 +280,36 @@ func TestNotificationsCanBeTurnedOff(t *testing.T) {
 	off := false
 	file := config.File{Serve: config.Serve{Notify: &off}}
 	require.False(t, file.Serve.Notifies())
+}
+
+// serve's agent runs with the settings it was installed under: --git, the
+// database, and the environment variables dockhand reads, each path made
+// absolute, since launchd starts it in /. A token is never written, since
+// anyone on the Mac can read the agent's file; the install says so.
+func TestServeInstallCarriesTheSettingsItRanWith(t *testing.T) {
+	w := checkedBranch(t)
+	realLaunchctl, realOS := launchctl, agentOS
+	t.Cleanup(func() { launchctl, agentOS = realLaunchctl, realOS })
+	launchctl = func(context.Context, ...string) error { return nil }
+	agentOS = "darwin"
+	git, err := exec.LookPath("git")
+	require.NoError(t, err)
+	t.Setenv("GIT_BIN", git)
+	require.NoError(t, os.MkdirAll(filepath.Join(w.home, "tart"), 0o755))
+	t.Chdir(w.home)
+	t.Setenv("TART_HOME", "tart")
+	t.Setenv("GH_TOKEN", "ghp_secret")
+
+	out, _, err := dockhand(t, "serve", "--install", "--db", ".dockhand/dockhand.db")
+	require.NoError(t, err)
+	require.Contains(t, out, "  With   DOCKHAND_UPSTREAM, TART_HOME, as set now\n")
+	require.Contains(t, out, "GH_TOKEN isn't written into the agent, which anyone on this Mac can read")
+	plist, err := os.ReadFile(filepath.Join(w.home, "Library", "LaunchAgents", AgentLabel+".plist"))
+	require.NoError(t, err)
+	agent := string(plist)
+	require.Contains(t, agent, "<string>--db</string>\n    <string>"+filepath.Join(w.home, ".dockhand", "dockhand.db")+"</string>\n    <string>--git</string>\n    <string>"+git+"</string>\n")
+	require.Contains(t, agent, "<key>DOCKHAND_UPSTREAM</key>\n    <string>"+w.upstream+"</string>\n")
+	require.Contains(t, agent, "<key>TART_HOME</key>\n    <string>"+filepath.Join(w.home, "tart")+"</string>\n", "made absolute")
+	require.NotContains(t, agent, "ghp_secret")
+	require.NotContains(t, agent, "GH_TOKEN")
 }

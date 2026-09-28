@@ -295,7 +295,7 @@ Between checks it:
 
 Serve opens no pull requests by default. With `--submit-passing`, or `serve.submit_passing = true`, it opens one for each branch it prepared whose check passed, at most `serve.submit_limit` a day. It never opens one with an upstream or commit-rule finding, one whose archives couldn't be compared, one needing `--accept`, or one for a port another open pull request updates; those wait on the attention list, and the pull request says serve opened it without a person's review. `--no-submit-passing` turns it off for one run.
 
-`--install` runs the agent with the flags given beside it, such as `--no-notify`, and `--uninstall` removes it.
+`--install` runs the agent with the flags given beside it, such as `--no-notify`, and with the settings serve was installed under: `--git`, `--db`, and the environment variables below that serve reads, each path made absolute. Run it again after changing them. `--uninstall` removes it.
 
 ## Cleaning up
 
@@ -365,5 +365,11 @@ Serve opens no pull requests by default. With `--submit-passing`, or `serve.subm
 | `GIT_BIN` | the Git executable, when `--git` isn't given |
 | `GH_TOKEN`, `GITHUB_TOKEN` | a GitHub token, ahead of any saved login |
 | `DOCKHAND_TART_HOME` | where dockhand's Tart images are; `~/.dockhand/tart` otherwise |
+| `TART_HOME` | your own Tart home, read to count your running VMs against the Mac's two; `~/.tart` otherwise |
+| `DOCKHAND_SSH_DIR` | the keys dockhand reaches its Tart guests with; `~/.dockhand/ssh` otherwise |
+| `DOCKHAND_UPSTREAM` | where master is fetched from, a mirror or a local repository, rather than MacPorts' own |
+| `DOCKHAND_INDEX_MIRROR` | the directory port indexes are downloaded from, a nearer mirror's, rather than MacPorts' |
 | `DOCKHAND_INDEX_CACHE` | where port indexes are cached; `dockhand/indexes` in your cache directory otherwise |
 | `DOCKHAND_GITHUB_CLIENT_ID` | the OAuth application `auth login` uses |
+
+`serve --install` keeps the ones serve reads, as they are when it's run, in the agent: `DOCKHAND_CONFIG`, `DOCKHAND_UPSTREAM`, `DOCKHAND_INDEX_MIRROR`, `DOCKHAND_INDEX_CACHE`, `DOCKHAND_TART_HOME`, `TART_HOME`, and `DOCKHAND_SSH_DIR`, with `--git` and `--db`. A token is never kept there, since anyone on the Mac can read the agent's file.

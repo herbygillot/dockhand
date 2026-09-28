@@ -207,8 +207,21 @@ func serveAgent(ctx context.Context, s *settings, streams Streams, install bool,
 	if executable, err = filepath.EvalSymlinks(executable); err != nil {
 		return err
 	}
-	logs := filepath.Join(filepath.Dir(options.Database), "logs", "serve.log")
-	data, err := agentPlist(executable, tree, options.Database, os.Getenv("PATH"), logs, flags)
+	// launchd starts the agent in /, so every path it's given is absolute.
+	database, err := filepath.Abs(options.Database)
+	if err != nil {
+		return err
+	}
+	arguments := []string{executable, "serve", "--tree", tree, "--db", database}
+	if options.Git != "" {
+		arguments = append(arguments, "--git", options.Git)
+	}
+	environment, err := agentEnvironment()
+	if err != nil {
+		return err
+	}
+	logs := filepath.Join(filepath.Dir(database), "logs", "serve.log")
+	data, err := agentPlist(append(arguments, flags...), environment, logs)
 	if err != nil {
 		return err
 	}
@@ -223,14 +236,58 @@ func serveAgent(ctx context.Context, s *settings, streams Streams, install bool,
 	if err := launchctl(ctx, "bootstrap", domain, plist); err != nil {
 		return err
 	}
-	fmt.Fprintf(streams.Out, "serve now starts at login and restarts if it stops.\n  Agent  %s\n  Log    %s\nAfter upgrading dockhand, run serve --install again to restart it on the new build.\n", tilde(plist), tilde(logs))
+	fmt.Fprintf(streams.Out, "serve now starts at login and restarts if it stops.\n  Agent  %s\n  Log    %s\n", tilde(plist), tilde(logs))
+	var carried []string
+	for _, variable := range environment[1:] {
+		carried = append(carried, variable[0])
+	}
+	if len(carried) > 0 {
+		fmt.Fprintf(streams.Out, "  With   %s, as set now\n", strings.Join(carried, ", "))
+	}
+	for _, token := range []string{"GH_TOKEN", "GITHUB_TOKEN"} {
+		if os.Getenv(token) != "" {
+			fmt.Fprintf(streams.Out, "%s isn't written into the agent, which anyone on this Mac can read; serve signs in to GitHub with the keychain's login (dockhand auth login).\n", token)
+		}
+	}
+	fmt.Fprintln(streams.Out, "After upgrading dockhand, or changing these settings, run serve --install again to restart it on the new build.")
 	return nil
+}
+
+// agentVariables are the settings dockhand reads from its environment that
+// serve's agent needs as they were when it was installed:
+//   - the configuration file;
+//   - where master is fetched from;
+//   - the port index's mirror and cache;
+//   - Tart's home and dockhand's own;
+//   - the SSH keys guests are reached with.
+//
+// A token is never written, since the agent's file is readable by anyone
+// on the Mac.
+var agentVariables = []string{config.PathVariable, "DOCKHAND_UPSTREAM", "DOCKHAND_INDEX_MIRROR", "DOCKHAND_INDEX_CACHE", "DOCKHAND_TART_HOME", "TART_HOME", "DOCKHAND_SSH_DIR"}
+
+// agentEnvironment is PATH and whichever of agentVariables are set, each a
+// local path made absolute, since launchd starts the agent in /.
+func agentEnvironment() ([][2]string, error) {
+	environment := [][2]string{{"PATH", os.Getenv("PATH")}}
+	for _, name := range agentVariables {
+		value := os.Getenv(name)
+		if value == "" {
+			continue
+		}
+		if _, err := os.Stat(value); err == nil && !filepath.IsAbs(value) {
+			if value, err = filepath.Abs(value); err != nil {
+				return nil, err
+			}
+		}
+		environment = append(environment, [2]string{name, value})
+	}
+	return environment, nil
 }
 
 // agentPlist is the launchd property list that runs serve for one ports
 // checkout and database. launchd's PATH is minimal, so the installing
 // shell's PATH is kept, for git and MacPorts.
-func agentPlist(executable, tree, database, path, log string, flags []string) ([]byte, error) {
+func agentPlist(arguments []string, environment [][2]string, log string) ([]byte, error) {
 	var b bytes.Buffer
 	b.WriteString(xml.Header)
 	b.WriteString(`<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">` + "\n")
@@ -250,16 +307,19 @@ func agentPlist(executable, tree, database, path, log string, flags []string) ([
 	}
 	key("ProgramArguments")
 	b.WriteString("  <array>\n")
-	for _, arg := range append([]string{executable, "serve", "--tree", tree, "--db", database}, flags...) {
+	for _, arg := range arguments {
 		if err := str("    ", arg); err != nil {
 			return nil, err
 		}
 	}
 	b.WriteString("  </array>\n")
 	key("EnvironmentVariables")
-	b.WriteString("  <dict>\n    <key>PATH</key>\n")
-	if err := str("    ", path); err != nil {
-		return nil, err
+	b.WriteString("  <dict>\n")
+	for _, variable := range environment {
+		fmt.Fprintf(&b, "    <key>%s</key>\n", variable[0])
+		if err := str("    ", variable[1]); err != nil {
+			return nil, err
+		}
 	}
 	b.WriteString("  </dict>\n")
 	key("RunAtLoad")

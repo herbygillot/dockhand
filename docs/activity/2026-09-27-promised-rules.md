@@ -39,3 +39,16 @@ This covers the rest of the roadmap's "rules the design promises and the code do
 - The command provider's page says so: the command runs without a terminal and must not prompt.
 - `TestACanceledScriptStopsWhatItStarted` cancels a check whose script started a background `sleep`. Such a job ignores SIGINT in a non-interactive shell, so only the kill reaches it; the test checks it is gone. Without the session it survives, as the orphan it left in that run showed.
 
+**`serve --install` keeps the settings serve was installed under (finding 46).**
+- The launchd agent ran `serve --tree <checkout> --db <database>` with the flags given beside `--install`, and `PATH`, and nothing else. It dropped:
+  - `--git` or `GIT_BIN`;
+  - `DOCKHAND_CONFIG`, `DOCKHAND_UPSTREAM`, `DOCKHAND_INDEX_MIRROR`, `DOCKHAND_INDEX_CACHE`, `DOCKHAND_TART_HOME`, and `DOCKHAND_SSH_DIR`;
+  - `TART_HOME`, which decides which of the person's own VMs serve counts against the Mac's two.
+- A relative `--db` was written as given, but launchd starts the agent in `/`.
+- The agent now carries `--git` when one was resolved, and the database made absolute. Its environment holds each of those variables set at install time, a local path made absolute.
+- A token is never written, since the agent's file is readable by anyone on the Mac. When `GH_TOKEN` or `GITHUB_TOKEN` is set, the install says so, and that serve signs in with the keychain's login.
+- The install names what it carried: "With DOCKHAND_UPSTREAM, TART_HOME, as set now".
+- The usage guide's table of environment variables gains `TART_HOME`, `DOCKHAND_SSH_DIR`, `DOCKHAND_UPSTREAM`, and `DOCKHAND_INDEX_MIRROR`, and says which the agent keeps.
+- `settings`' comment no longer claims a configuration-file step it doesn't have.
+- `TestServeInstallCarriesTheSettingsItRanWith`.
+

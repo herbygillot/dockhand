@@ -92,7 +92,7 @@ In order. Each item lands in its own commits with an activity note, and a review
   - `create`'s result when interrupted, and `adopt`'s and `rebase`'s counts (finding 33). Done 2026-09-27;
   - a new branch whose record's commit was uncertain is read back, not undone (finding 24). Done 2026-09-27;
   - a canceled script build stops its whole process group, gently first (finding 42). Done 2026-09-27;
-  - `serve --install` carries `--git`, `TART_HOME`, and the `DOCKHAND_*` settings it was installed under, never a token (finding 46);
+  - `serve --install` carries `--git`, `TART_HOME`, and the `DOCKHAND_*` settings it was installed under, never a token (finding 46). Done 2026-09-27;
   - `ExitCode` finds an exit through wrapping (finding 17). Done 2026-09-27 ([note](activity/2026-09-27-promised-rules.md)).
 - **Progress on stderr** (finding 31):
   - `-v` shows what the 48 progress reports say;
