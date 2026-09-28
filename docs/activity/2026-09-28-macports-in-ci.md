@@ -17,13 +17,15 @@ The person asked for a MacPorts image to save the install. None can be had: GitH
 
 Looking there showed two things about the step:
 - **The pin wasn't one.** MacPorts' package ends by running `port selfupdate`. When a newer release is out, that builds and installs it from source, while the log still says 2.12.6.
-- **Most of the install's 26 seconds was likely that selfupdate** fetching the ports tree, which these tests never read: they evaluate their own fixture trees, and dockhand's `portindex` runs name their own sources. MacPorts' CI writes its configuration first "to prevent the postflight script from spending a lot of time running selfupdate", with a source marked `nosync`, since the package keeps configuration it finds.
+- **Most of the install's 26 seconds was that selfupdate** fetching the ports tree, which these tests never read: they evaluate their own fixture trees, and dockhand's `portindex` runs name their own sources. MacPorts' CI writes its configuration first "to prevent the postflight script from spending a lot of time running selfupdate", with a source marked `nosync`, since the package keeps configuration it finds.
 
 The person chose to follow MacPorts' releases rather than pin one, to meet a new release's changes as soon as it's out. So CI now:
 - reads the release from `RELEASE_URL`, the file `port selfupdate` reads, and refuses anything that isn't a version;
 - installs that release's package, checked as before;
 - writes a `sources.conf` whose one source, an empty directory, is `[default,nosync]`, before the package installs;
 - prints `port version` after it.
+
+Measured on the first run, `installer` took 4.5 seconds rather than 26.6, and the step 6 rather than 28 to 40. The log says what was tested: "Version: 2.12.6".
 
 A new release in a family the evaluator admits, 2.12.7, is tested the day it's out. A new family, 2.13, is refused by the evaluator until dockhand has been checked against it, so it stops CI until it has. That's the signal, as a hard stop.
 
