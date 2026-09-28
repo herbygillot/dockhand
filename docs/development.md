@@ -32,7 +32,7 @@ Tests that need MacPorts run only against the installation `DOCKHAND_TEST_MACPOR
 DOCKHAND_TEST_MACPORTS_TCLSH=/opt/local/bin/port-tclsh make test
 ```
 
-CI runs them too, against MacPorts Base 2.12.6, the version the evaluator is pinned to. It installs the release's package for the runner's macOS, checked against the release's own checksums.
+CI runs them too, against the release MacPorts currently points its users at, as `port selfupdate` reads it, so a new release meets this code the day it's out. A new family, which the evaluator refuses until dockhand has been checked against it, stops CI until then. CI installs the release's package for the runner's macOS, checked against the release's own checksums.
 
 The rest reach something outside the checkout and run only when named:
 

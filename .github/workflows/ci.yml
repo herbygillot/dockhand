@@ -26,13 +26,19 @@ jobs:
         run: make vendor-check
 
       # The tests that evaluate Portfiles, run the guest program, or check
-      # signatures as MacPorts does, run against MacPorts Base at the
-      # version the evaluator is pinned to, installed as MacPorts documents:
-      # the release's package for this macOS, checked against the release's
-      # own checksums.
+      # signatures as MacPorts does, run against the release MacPorts points
+      # its users at, the one port selfupdate reads from RELEASE_URL, so a
+      # new release meets this code as soon as it's out. It's installed as
+      # MacPorts documents: the release's package for this macOS, checked
+      # against the release's own checksums. The package keeps configuration
+      # it finds, and ends by running selfupdate; a source marked nosync, as
+      # MacPorts' own CI sets up, keeps that from fetching a ports tree these
+      # tests never read.
       - name: MacPorts
         run: |
-          version=2.12.6
+          release=$(curl -fsSL https://raw.githubusercontent.com/macports/macports-base/master/config/RELEASE_URL)
+          version=${release##*/v}
+          if ! printf '%s\n' "$version" | grep -Eqx '[0-9]+\.[0-9]+\.[0-9]+'; then echo "MacPorts' RELEASE_URL names no release: $release" >&2; exit 1; fi
           major=$(sw_vers -productVersion | cut -d. -f1)
           base=https://github.com/macports/macports-base/releases/download/v$version
           curl -fsSLO "$base/MacPorts-$version.chk.txt"
@@ -41,7 +47,10 @@ jobs:
           sum=$(sed -n "s/^SHA2-256($package)= //p" "MacPorts-$version.chk.txt")
           curl -fsSLO "$base/$package"
           echo "$sum  $package" | shasum -a 256 -c -
+          sudo mkdir -p /opt/local/etc/macports "$RUNNER_TEMP/ports"
+          echo "file://$RUNNER_TEMP/ports [default,nosync]" | sudo tee /opt/local/etc/macports/sources.conf
           sudo installer -pkg "$package" -target /
+          /opt/local/bin/port version
           echo "DOCKHAND_TEST_MACPORTS_TCLSH=/opt/local/bin/port-tclsh" >> "$GITHUB_ENV"
 
       - name: Test
