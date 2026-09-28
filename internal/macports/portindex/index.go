@@ -45,23 +45,16 @@ type Config struct {
 	Mirror *Mirror
 }
 
-// DefaultMirrorURL returns the MacPorts mirror index for a platform. Recorded
-// provider settings keep it as bootstrap provenance; staging does not use it
-// because a mirrored index cannot prove which source tree it describes.
-//
-// The mirror names an index by the kernel architecture MacPorts reports as
-// os.arch, arm or i386, not by the build architecture a platform record
-// carries, so arm64 maps to arm and x86_64 to i386.
-func DefaultMirrorURL(platform model.Platform) (string, error) {
-	return MirrorURL("", platform)
-}
-
 // DefaultMirrorBase is the tarballs directory of the mirror the index is
 // fetched from when no other is configured.
 const DefaultMirrorBase = "https://ftp.fau.de/macports/release/tarballs"
 
 // MirrorURL is the platform's index under a mirror's tarballs directory,
 // the default mirror's when base is empty.
+//
+// The mirror names an index by the kernel architecture MacPorts reports as
+// os.arch, arm or i386, not by the build architecture a platform record
+// carries, so arm64 maps to arm and x86_64 to i386.
 func MirrorURL(base string, platform model.Platform) (string, error) {
 	for _, value := range []string{platform.OS, platform.Version, platform.Architecture} {
 		if value == "" || strings.ContainsAny(value, "/\\\x00\r\n\t ") {

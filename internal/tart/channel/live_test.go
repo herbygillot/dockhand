@@ -90,12 +90,6 @@ func TestLiveChannel(t *testing.T) {
 	received, err := os.ReadFile(back)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(payload, received), "64 MiB came back intact")
-	for _, offset := range []int64{0, 1 << 20, int64(len(payload)) - 100} {
-		chunk, err := guest.Range(ctx, "/var/tmp/dockhand-channel-test", offset, 1<<20, true)
-		require.NoError(t, err)
-		end := min(offset+1<<20, int64(len(payload)))
-		require.True(t, bytes.Equal(payload[offset:end], chunk), "range at %d", offset)
-	}
 
 	stranger := &channel.Guest{Address: address, Image: "another-image", Keys: keys}
 	_, err = stranger.Command(ctx, nil, "/usr/bin/true")

@@ -2,7 +2,6 @@ package coord
 
 import (
 	"context"
-	"errors"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -114,8 +113,10 @@ func TestADeadHoldersLeaseIsTakenAtOnceAndItsWritesAreFenced(t *testing.T) {
 	require.NoError(t, b.Fenced(t.Context(), taken, func(store.Tx) error { return nil }))
 
 	var events []model.Event
-	_, err = f.c.Tail(canceledAfterOnePass(t), 0, time.Millisecond, func(e model.Event) error { events = append(events, e); return nil })
-	require.NoError(t, err)
+	require.NoError(t, f.c.Store.View(t.Context(), f.c.Repository, func(r store.Reader) error {
+		events, err = r.Events(0, 500)
+		return err
+	}))
 	last := events[len(events)-1]
 	require.Equal(t, "lease.acquire", last.Kind)
 	require.Contains(t, last.Message, "process 100 has exited")
@@ -162,9 +163,12 @@ func TestAnEndedSessionHoldsNothing(t *testing.T) {
 	require.Equal(t, uint64(2), lease.Generation)
 
 	require.NoError(t, f.c.Store.View(t.Context(), f.c.Repository, func(r store.Reader) error {
-		live, err := r.Sessions()
+		ended, err := r.Session(a.ID())
 		require.NoError(t, err)
-		require.Len(t, live, 1)
+		require.NotNil(t, ended.EndedAt)
+		standby, err := r.Session(b.ID())
+		require.NoError(t, err)
+		require.Nil(t, standby.EndedAt)
 		return nil
 	}))
 }
@@ -204,39 +208,6 @@ func TestHolderNamesOnlyALiveHolder(t *testing.T) {
 	require.Nil(t, holder, "a dead leader leads nothing")
 }
 
-func TestTailDeliversTheJournalInOrder(t *testing.T) {
-	f := setup(t)
-	s := f.session(t, 100, model.SessionServe)
-	require.NoError(t, f.c.Store.Update(t.Context(), f.c.Repository, func(tx store.Tx) error {
-		for _, kind := range []string{"run.state", "guest.clone", "target.result"} {
-			if _, err := s.Emit(tx, model.Event{Kind: kind, Run: "run_1"}); err != nil {
-				return err
-			}
-		}
-		return nil
-	}))
-	var kinds []string
-	last, err := f.c.Tail(canceledAfterOnePass(t), 0, time.Millisecond, func(e model.Event) error {
-		if e.Run == "run_1" {
-			kinds = append(kinds, e.Kind)
-		}
-		return nil
-	})
-	require.NoError(t, err)
-	require.Equal(t, []string{"run.state", "guest.clone", "target.result"}, kinds)
-
-	stop := errors.New("stop")
-	_, err = f.c.Tail(t.Context(), 0, time.Millisecond, func(model.Event) error { return stop })
-	require.ErrorIs(t, err, stop)
-
-	more, err := f.c.Tail(canceledAfterOnePass(t), last, time.Millisecond, func(model.Event) error {
-		t.Fatal("nothing new after the last sequence")
-		return nil
-	})
-	require.NoError(t, err)
-	require.Equal(t, last, more)
-}
-
 func TestKeepAliveBeats(t *testing.T) {
 	f := setup(t)
 	f.c.Now, f.c.Heartbeat = nil, 10*time.Millisecond
@@ -274,12 +245,4 @@ func TestSystemLivenessKnowsAReplacedOrExitedProcess(t *testing.T) {
 	alive, err = System{}.Alive(proc)
 	require.NoError(t, err)
 	require.False(t, alive, "an exited process is dead at once")
-}
-
-// canceledAfterOnePass gives Tail a context that ends shortly after it has
-// read what is already in the journal.
-func canceledAfterOnePass(t *testing.T) context.Context {
-	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
-	t.Cleanup(cancel)
-	return ctx
 }

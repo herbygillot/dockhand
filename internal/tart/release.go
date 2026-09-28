@@ -76,19 +76,3 @@ func GoldenName(image string) string {
 	}
 	return image + "-golden"
 }
-
-// PreparedReleases are the releases a local image serves under setup's
-// names, a command-line-tools or a full-Xcode image, oldest first.
-func PreparedReleases(images []Image) []macos.Release {
-	var prepared []macos.Release
-	for _, release := range macos.Known() {
-		for _, image := range images {
-			if image.Source == "local" && (image.Name == (Prepared{Release: release, Profile: macos.ProfileTools}).Name() ||
-				image.Name == (Prepared{Release: release, Profile: macos.ProfileXcode}).Name()) {
-				prepared = append(prepared, release)
-				break
-			}
-		}
-	}
-	return prepared
-}

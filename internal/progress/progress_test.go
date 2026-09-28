@@ -2,7 +2,6 @@ package progress_test
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"testing"
 
@@ -10,21 +9,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestReporterSerializesConcurrentScopesAndPreservesCancellation(t *testing.T) {
+func TestReporterSerializesConcurrentReportsAndPreservesCancellation(t *testing.T) {
 	var updates []progress.Update
 	parent, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	ctx := progress.WithReporter(parent, func(update progress.Update) { updates = append(updates, update) })
 	var workers sync.WaitGroup
 	for i := range 12 {
-		workers.Go(func() { progress.Report(progress.WithScope(ctx, fmt.Sprint(i)), "staging %d", i) })
+		workers.Go(func() { progress.Report(ctx, "staging %d", i) })
 	}
 	workers.Wait()
 	require.Len(t, updates, 12)
 	seen := map[string]bool{}
 	for _, update := range updates {
-		require.Equal(t, "staging "+update.Scope, update.Message)
-		seen[update.Scope] = true
+		seen[update.Message] = true
 	}
 	require.Len(t, seen, 12)
 	cancel()

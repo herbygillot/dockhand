@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/scratch"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
 // HistoryCommit is one commit of a branch, as tidy and submit read it.
@@ -193,6 +194,29 @@ func (r *Repository) MoveCheckout(ctx context.Context, from, to string) error {
 	return err
 }
 
+// checkoutHead is the branch this checkout has out, empty when its HEAD is
+// detached, and the commit it is at.
+func (r *Repository) checkoutHead(ctx context.Context) (string, string, error) {
+	head, err := r.Resolve(ctx, "HEAD")
+	if err != nil {
+		return "", "", fmt.Errorf("git: the checkout has no commit: %w", err)
+	}
+	out, err := r.output(ctx, "symbolic-ref", "--quiet", "HEAD")
+	if err != nil {
+		var failure *subprocess.Error
+		var exit interface{ ExitCode() int }
+		if errors.As(err, &failure) && errors.As(failure.Cause, &exit) && exit.ExitCode() == 1 {
+			return "", head, nil
+		}
+		return "", "", err
+	}
+	branch, ok := strings.CutPrefix(strings.TrimSpace(string(out)), "refs/heads/")
+	if !ok || !ValidBranchName(branch) {
+		return "", "", fmt.Errorf("git: invalid checkout branch")
+	}
+	return branch, head, nil
+}
+
 // FileBlobs maps each of paths that tree holds as a file to its object
 // ID; a path the tree lacks is absent from the map.
 func (r *Repository) FileBlobs(ctx context.Context, tree string, paths []string) (map[string]string, error) {
@@ -314,24 +338,4 @@ func (r *Repository) Replay(ctx context.Context, onto, upstream, head string, co
 		}
 	}
 	return parent, nil
-}
-
-// Rebase replays the commits branch has above upstream onto onto, in this
-// checkout, which must have branch checked out. A rebase that stops on
-// conflicts is aborted, leaving everything as it was, and the error names
-// the conflicting files.
-func (r *Repository) Rebase(ctx context.Context, onto, upstream, branch string) error {
-	if !ValidObjectID(onto) || !ValidObjectID(upstream) || !ValidBranchName(branch) {
-		return fmt.Errorf("git: invalid rebase of %q onto %q", branch, onto)
-	}
-	_, err := r.output(ctx, "rebase", "--quiet", "--no-autosquash", "--no-update-refs", "--onto", onto, upstream, branch)
-	if err == nil {
-		return nil
-	}
-	conflicts, conflictErr := r.Conflicts(context.WithoutCancel(ctx))
-	_, abortErr := r.output(context.WithoutCancel(ctx), "rebase", "--abort")
-	if conflictErr == nil && len(conflicts) > 0 {
-		return errors.Join(fmt.Errorf("%w in %s", ErrRebaseConflict, strings.Join(conflicts, ", ")), abortErr)
-	}
-	return errors.Join(err, abortErr)
 }

@@ -27,23 +27,6 @@ func (t *tx) Session(id model.SessionID) (model.Session, error) {
 	return t.scanSession(t.conn.QueryRowContext(t.ctx, "SELECT "+sessionColumns+" FROM sessions WHERE repository_id=? AND id=?", t.repo, id))
 }
 
-func (t *tx) Sessions() ([]model.Session, error) {
-	rows, err := t.conn.QueryContext(t.ctx, "SELECT "+sessionColumns+" FROM sessions WHERE repository_id=? AND ended_at IS NULL ORDER BY started_at, id", t.repo)
-	if err != nil {
-		return nil, storageError(err)
-	}
-	defer rows.Close()
-	var sessions []model.Session
-	for rows.Next() {
-		s, err := t.scanSession(rows)
-		if err != nil {
-			return nil, err
-		}
-		sessions = append(sessions, s)
-	}
-	return sessions, storageError(rows.Err())
-}
-
 func (t *tx) AddSession(s model.Session) error {
 	if err := s.Validate(); err != nil {
 		return err

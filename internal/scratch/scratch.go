@@ -5,7 +5,7 @@
 // the process ends normally, and it is held under an advisory lock while
 // the process lives, so a root whose lock can be taken belongs to a process
 // that died without cleaning up and is swept by the next process that opens
-// a root, and by gc. Nothing meant to outlive a command lives here: the
+// a root. Nothing meant to outlive a command lives here: the
 // state database, verification artifacts and logs, the Tart pool, and the
 // index cache have their own configured homes.
 package scratch
@@ -67,7 +67,7 @@ func Root() (string, error) {
 		return "", err
 	}
 	root, lock = created, held
-	_, _ = sweep(os.TempDir(), created, time.Time{}, false)
+	_, _ = sweep(os.TempDir(), created)
 	return root, nil
 }
 
@@ -110,33 +110,12 @@ func Close() error {
 	return errors.Join(err, held.Close())
 }
 
-// Stale lists the run roots under the system temporary directory whose
-// process is gone: those whose lock can be taken, and hidden ones left
-// unlocked for longer than a new root takes to lock. The process's own
-// root is never listed. With a non-zero legacyBefore, it also lists the
-// directories an earlier dockhand build made outside a run root, every
-// dockhand-* name, last modified before that time; those carry no lock,
-// so age is the only evidence a process is not still using one.
-func Stale(legacyBefore time.Time) ([]string, error) {
-	mu.Lock()
-	own := root
-	mu.Unlock()
-	return sweep(os.TempDir(), own, legacyBefore, true)
-}
-
-// Sweep removes what Stale lists and returns the directories it removed. A
-// root another sweeper is removing at the same time is left to it.
-func Sweep(legacyBefore time.Time) ([]string, error) {
-	mu.Lock()
-	own := root
-	mu.Unlock()
-	return sweep(os.TempDir(), own, legacyBefore, false)
-}
-
-// legacy is the name every transient directory shared before run roots.
-const legacy = "dockhand-"
-
-func sweep(parent, own string, legacyBefore time.Time, dryRun bool) ([]string, error) {
+// sweep removes the run roots under parent whose process is gone, all but
+// own: those whose lock can be taken, and hidden ones left unlocked for
+// longer than a new root takes to lock. It returns the directories it
+// removed; a root another sweeper is removing at the same time is left to
+// it.
+func sweep(parent, own string) ([]string, error) {
 	entries, err := os.ReadDir(parent)
 	if err != nil {
 		return nil, fmt.Errorf("scratch: %w", err)
@@ -167,16 +146,8 @@ func sweep(parent, own string, legacyBefore time.Time, dryRun bool) ([]string, e
 				errs = append(errs, err)
 				continue
 			}
-		case strings.HasPrefix(name, legacy) && !legacyBefore.IsZero():
-			info, err := entry.Info()
-			stale = err == nil && info.ModTime().Before(legacyBefore)
 		}
 		if !stale {
-			continue
-		}
-		if dryRun {
-			release()
-			found = append(found, directory)
 			continue
 		}
 		if err := os.RemoveAll(directory); err != nil {

@@ -26,14 +26,6 @@ type Change struct {
 	Hold    bool
 }
 
-func (c Change) String() string {
-	mark := "·"
-	if c.Hold {
-		mark = "!"
-	}
-	return mark + " " + c.Message
-}
-
 // memberLimit is the most of one file the comparison reads.
 const memberLimit = 1 << 20
 

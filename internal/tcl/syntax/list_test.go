@@ -38,11 +38,11 @@ func TestListAndDictionaryValues(t *testing.T) {
 	require.Equal(t, map[string]string{"version": "2", "name": "two words"}, dictionary, "dictionary: %v, %v", dictionary, errs)
 }
 
-func TestListLensesPreserveAbsoluteSourceSpans(t *testing.T) {
+func TestListsPreserveAbsoluteSourceSpans(t *testing.T) {
 	source := []byte(`checksums {sha256 {nested value} "quoted value" escaped\ value}`)
 	word := commands(parse(t, source))[0].Words[1]
 	braced := word.Segments[0].(syntax.Braced)
-	elements, errs := braced.ListLens(source)
+	elements, errs := syntax.SplitList(source, braced.Body)
 	require.Empty(t, errs)
 
 	want := []string{"sha256", "{nested value}", `"quoted value"`, `escaped\ value`}

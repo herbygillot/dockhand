@@ -204,24 +204,10 @@ func (r *Repository) DiffTrees(ctx context.Context, before, after string, paths 
 // ChangedPaths compares immutable commits or trees without rename folding, so
 // moving a file exposes both its original and new paths to scope decisions.
 func (r *Repository) ChangedPaths(ctx context.Context, before, after string) ([]string, error) {
-	return r.changedPaths(ctx, before, after, "--no-renames")
-}
-
-// AddedOrModifiedPaths applies Git's AM filter with standard rename detection.
-// Use ChangedPaths for scope checks that must also see deletions and both sides
-// of a move; this method excludes renamed and type-changed entries.
-func (r *Repository) AddedOrModifiedPaths(ctx context.Context, before, after string) ([]string, error) {
-	return r.changedPaths(ctx, before, after, "--find-renames", "--diff-filter=AM")
-}
-
-func (r *Repository) changedPaths(ctx context.Context, before, after string, options ...string) ([]string, error) {
 	if !ValidObjectID(before) || !ValidObjectID(after) {
 		return nil, fmt.Errorf("git: changed paths require literal object IDs")
 	}
-	args := []string{"diff-tree", "--no-commit-id", "--name-only", "--no-ext-diff", "--no-textconv", "--no-relative", "--ignore-submodules=none", "-r", "-z"}
-	args = append(args, options...)
-	args = append(args, before, after, "--")
-	out, err := r.output(ctx, args...)
+	out, err := r.output(ctx, "diff-tree", "--no-commit-id", "--name-only", "--no-ext-diff", "--no-textconv", "--no-relative", "--ignore-submodules=none", "-r", "-z", "--no-renames", before, after, "--")
 	if err != nil || len(out) == 0 {
 		return nil, err
 	}

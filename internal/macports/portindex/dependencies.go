@@ -1,7 +1,6 @@
 package portindex
 
 import (
-	"errors"
 	"sort"
 	"strings"
 
@@ -9,17 +8,12 @@ import (
 )
 
 const (
-	DependsFetch   = "depends_fetch"
-	DependsExtract = "depends_extract"
-	DependsPatch   = "depends_patch"
-	DependsBuild   = "depends_build"
-	DependsLib     = "depends_lib"
-	DependsRun     = "depends_run"
-	DependsTest    = "depends_test"
+	DependsBuild = "depends_build"
+	DependsLib   = "depends_lib"
+	DependsRun   = "depends_run"
 )
 
 var reverseDependencyFields = []string{DependsLib, DependsBuild, DependsRun}
-var closureDependencyFields = []string{DependsFetch, DependsExtract, DependsPatch, DependsBuild, DependsLib, DependsRun, DependsTest}
 
 // Dependent describes one reverse dependency edge from an indexed port.
 type Dependent struct {
@@ -40,13 +34,6 @@ type Unread struct {
 type Reverse struct {
 	ByPort map[string][]Dependent
 	Unread []Unread
-}
-
-// Closure contains the transitive dependencies of selected roots.
-type Closure struct {
-	Dependencies []string
-	Missing      []string
-	Unread       []Unread
 }
 
 // dependencyName extracts the provider port from a MacPorts dependency token.
@@ -117,66 +104,6 @@ func (i *Index) ReverseDependencies() (Reverse, error) {
 	}
 	sortUnread(result.Unread)
 	return result, nil
-}
-
-// DependencyClosure resolves every dependency phase transitively. Names are
-// lowercased so the result follows PortIndex's case-insensitive lookup rules.
-func (i *Index) DependencyClosure(roots []string) (Closure, error) {
-	rootSet := map[string]bool{}
-	queue := make([]string, 0, len(roots))
-	for _, value := range roots {
-		name := strings.ToLower(value)
-		if name != "" && !rootSet[name] {
-			rootSet[name] = true
-			queue = append(queue, name)
-		}
-	}
-	sort.Strings(queue)
-	seen := map[string]bool{}
-	dependencies := map[string]bool{}
-	missing := map[string]bool{}
-	var unread []Unread
-	for len(queue) > 0 {
-		name := queue[0]
-		queue = queue[1:]
-		if seen[name] {
-			continue
-		}
-		seen[name] = true
-		entry, err := i.Lookup(name)
-		if errors.Is(err, ErrNotIndexed) {
-			missing[name] = true
-			continue
-		}
-		if err != nil {
-			return Closure{}, err
-		}
-		edges, bad := entry.dependencyEdges(closureDependencyFields)
-		unread = append(unread, bad...)
-		next := make([]string, 0, len(edges))
-		for dependency := range edges {
-			if !rootSet[dependency] {
-				dependencies[dependency] = true
-			}
-			if !seen[dependency] {
-				next = append(next, dependency)
-			}
-		}
-		sort.Strings(next)
-		queue = append(queue, next...)
-	}
-	result := Closure{Dependencies: sortedKeys(dependencies), Missing: sortedKeys(missing), Unread: unread}
-	sortUnread(result.Unread)
-	return result, nil
-}
-
-func sortedKeys(values map[string]bool) []string {
-	result := make([]string, 0, len(values))
-	for value := range values {
-		result = append(result, value)
-	}
-	sort.Strings(result)
-	return result
 }
 
 func sortUnread(values []Unread) {

@@ -83,16 +83,13 @@ func TestConcurrentCallsKeepTheirReplies(t *testing.T) {
 	}
 }
 
-func TestNoiseIsBoundedAndCopied(t *testing.T) {
+// What the interpreter prints outside a frame, however much, is not the
+// reply, and the call still gets its answer.
+func TestStrayOutputIsNotTheReply(t *testing.T) {
 	s, _ := session(t)
 	result, err := s.Call(t.Context(), "eval", "puts [string repeat x 70000]; return done")
 	require.NoError(t, err)
 	require.Equal(t, "done", result)
-	noise := s.Noise()
-	require.Len(t, noise, 64<<10)
-	require.True(t, strings.HasSuffix(string(noise), "xxx\n"))
-	noise[0] = 'z'
-	require.Equal(t, byte('x'), s.Noise()[0])
 }
 
 func TestMalformedRepliesBreakSession(t *testing.T) {

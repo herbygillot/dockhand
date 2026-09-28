@@ -318,10 +318,10 @@ func TestAStoppedServeLeavesTheRunForTheNext(t *testing.T) {
 	require.Equal(t, model.RunRunning, run.State, "serve stopping cancels nothing")
 
 	second := session(t, e)
-	next, found, err := e.Next(t.Context(), second)
+	candidates, err := e.Candidates(t.Context(), second)
 	require.NoError(t, err)
-	require.True(t, found)
-	require.Equal(t, queued.ID, next.ID, "a run whose driver is gone comes first")
+	require.NotEmpty(t, candidates)
+	require.Equal(t, queued.ID, candidates[0].ID, "a run whose driver is gone comes first")
 	provider.mu.Lock()
 	provider.wait = false
 	provider.mu.Unlock()
@@ -374,13 +374,13 @@ func TestServeTakesPeoplesChecksFirst(t *testing.T) {
 	s := session(t, e)
 	var order []int
 	for {
-		next, found, err := e.Next(t.Context(), s)
+		candidates, err := e.Candidates(t.Context(), s)
 		require.NoError(t, err)
-		if !found {
+		if len(candidates) == 0 {
 			break
 		}
-		order = append(order, next.Number)
-		_, err = e.Resume(t.Context(), s, next.ID)
+		order = append(order, candidates[0].Number)
+		_, err = e.Resume(t.Context(), s, candidates[0].ID)
 		require.NoError(t, err)
 	}
 	require.Equal(t, []int{first.Number, byPerson.Number, byServe.Number}, order)

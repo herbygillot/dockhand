@@ -114,38 +114,6 @@ func (g *Guest) Read(ctx context.Context, path string, sudo bool) ([]byte, error
 	}
 }
 
-// Range reads up to limit bytes of a file that may still be growing, from
-// offset, and checks them against the sha256 of the same bytes read again
-// on the guest: bytes already written do not change as a log grows. A
-// file that is not there is os.ErrNotExist.
-func (g *Guest) Range(ctx context.Context, path string, offset int64, limit int, sudo bool) ([]byte, error) {
-	if offset < 0 || limit <= 0 {
-		return nil, fmt.Errorf("channel: invalid range")
-	}
-	start := strconv.FormatInt(offset+1, 10)
-	for attempt := 1; ; attempt++ {
-		var data bytes.Buffer
-		err := g.stream(ctx, &data, elevate(sudo, "/bin/sh", "-c", `[ -f "$1" ] || exit 3; /usr/bin/tail -c +"$2" "$1" | /usr/bin/head -c "$3"`, "dockhand", path, start, strconv.Itoa(limit))...)
-		if err != nil {
-			return nil, err
-		}
-		if data.Len() == 0 {
-			return nil, nil
-		}
-		output, err := g.run(ctx, nil, nil, false, Quote(elevate(sudo, "/bin/sh", "-c", `/usr/bin/tail -c +"$2" "$1" | /usr/bin/head -c "$3" | /usr/bin/openssl dgst -sha256 -r | /usr/bin/cut -d' ' -f1`, "dockhand", path, start, strconv.Itoa(data.Len()))...))
-		if err != nil {
-			return nil, err
-		}
-		sum := sha256.Sum256(data.Bytes())
-		if strings.TrimSpace(string(output)) == hex.EncodeToString(sum[:]) {
-			return data.Bytes(), nil
-		}
-		if attempt == attempts {
-			return nil, fmt.Errorf("%w: %s from byte %d", ErrTransfer, path, offset)
-		}
-	}
-}
-
 // stream runs a command whose standard output is data, sent to w alone, and
 // reports a file the command found missing as os.ErrNotExist.
 func (g *Guest) stream(ctx context.Context, w io.Writer, args ...string) error {

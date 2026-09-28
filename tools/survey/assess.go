@@ -62,18 +62,6 @@ type Port struct {
 	portedit.Assessment
 }
 
-// Headline is the plain word for a port's outcome; the code itself stays in
-// JSON.
-func (p Port) Headline() string {
-	switch p.Outcome {
-	case portedit.InputFound:
-		return "ready"
-	case portedit.CandidateChecked:
-		return "candidate ready"
-	}
-	return p.Outcome
-}
-
 // Service receives evaluation, source selection, and optional release integrations.
 type Service struct {
 	Repo            *git.Repository

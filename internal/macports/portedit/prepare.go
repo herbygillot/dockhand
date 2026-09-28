@@ -27,10 +27,6 @@ var (
 
 type CommitIntent struct {
 	Subject string
-	Body    string
-	// References are cited in the trailer block, ahead of the attribution.
-	References []commitmsg.Reference
-	Paths      []string
 }
 
 type Request struct {
@@ -50,9 +46,7 @@ type Request struct {
 	// Subject is the commit subject after the port name; empty takes the
 	// editor's default for the action, and a revision bump has none.
 	Subject string
-	// References are the tickets the commit cites.
-	References []commitmsg.Reference
-	Release    *model.Release
+	Release *model.Release
 	// KeepArchives is a directory, the caller's, where a version update
 	// keeps the new archives and also fetches the current version's, so
 	// the two can be compared; empty keeps neither.
@@ -212,6 +206,6 @@ func (r *Result) commitEdit(input *sourceInput, request Request, edit portfile.E
 	if err != nil {
 		return err
 	}
-	r.Commits = []CommitIntent{{Subject: line, References: request.References, Paths: []string{input.target.Portfile}}}
+	r.Commits = []CommitIntent{{Subject: line}}
 	return nil
 }

@@ -78,7 +78,7 @@ func (e *Engine) outdatedReader() (OutdatedReader, error) {
 	})
 }
 
-// surveyedPorts reads outdated ports with v2's survey.
+// surveyedPorts reads outdated ports with the outdated package's service.
 type surveyedPorts struct {
 	e       *Engine
 	service *outdated.Service

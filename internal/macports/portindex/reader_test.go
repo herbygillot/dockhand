@@ -71,7 +71,7 @@ func TestSequentialReadUsesTclStringLength(t *testing.T) {
 	require.Equal(t, []string{"accent", "next"}, names)
 }
 
-func TestReverseDependenciesAndTransitiveClosure(t *testing.T) {
+func TestReverseDependencies(t *testing.T) {
 	t.Parallel()
 	index, err := portindex.Open(writeIndex(t, []indexRecord{
 		{"core", "name core portdir devel/core depends_run port:runtime"},
@@ -92,10 +92,4 @@ func TestReverseDependenciesAndTransitiveClosure(t *testing.T) {
 	require.Equal(t, "builder", reverse.ByPort["tool"][0].Name)
 	require.Equal(t, []string{portindex.DependsBuild}, reverse.ByPort["tool"][0].Fields)
 	require.Equal(t, "core", reverse.ByPort["runtime"][0].Name)
-
-	closure, err := index.DependencyClosure([]string{"consumer"})
-	require.NoError(t, err)
-	require.Equal(t, []string{"absent", "core", "fetcher", "runtime"}, closure.Dependencies)
-	require.Equal(t, []string{"absent"}, closure.Missing)
-	require.Empty(t, closure.Unread)
 }

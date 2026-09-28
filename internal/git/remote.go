@@ -85,42 +85,6 @@ func (r *Repository) Push(ctx context.Context, request Push) error {
 	return err
 }
 
-// CheckContributionBase obtains the selected base without writing FETCH_HEAD
-// or remote-tracking refs, then checks the contribution's ancestry.
-func (r *Repository) CheckContributionBase(ctx context.Context, remote, branch, base, commit string) error {
-	if !validRemoteURL(remote) || !ValidBranchName(branch) || !ValidObjectID(base) || !ValidObjectID(commit) {
-		return fmt.Errorf("git: invalid contribution base")
-	}
-	head, err := r.RemoteHead(ctx, remote, branch)
-	if err != nil {
-		return err
-	}
-	if !head.Exists {
-		return fmt.Errorf("%w: upstream base branch is missing", ErrRefConflict)
-	}
-	if kind, err := r.ObjectType(ctx, head.Object); err != nil || kind != "commit" {
-		if _, err := r.output(ctx, "fetch", "--no-tags", "--no-write-fetch-head", "--recurse-submodules=no", "--", remote, "refs/heads/"+branch); err != nil {
-			return err
-		}
-	}
-	ancestor := r.IsAncestor
-	included, err := ancestor(ctx, base, head.Object)
-	if err != nil {
-		return err
-	}
-	if !included {
-		return fmt.Errorf("%w: recorded base is not in the selected upstream branch", ErrRefConflict)
-	}
-	merged, err := ancestor(ctx, commit, head.Object)
-	if err != nil {
-		return err
-	}
-	if merged {
-		return fmt.Errorf("%w: contribution is already in the upstream branch", ErrRefConflict)
-	}
-	return nil
-}
-
 // DeleteRemoteBranch removes a remote branch only while it still holds the
 // expected commit, using the same lease the push path relies on. A branch that
 // is already gone is not an error; a moved branch is a RefConflict.
@@ -182,22 +146,6 @@ func (r *Repository) MergeBase(ctx context.Context, a, b string) (string, error)
 		return "", fmt.Errorf("git: no common ancestor")
 	}
 	return base, nil
-}
-
-// FirstCommitAbove is the oldest commit reachable from head that base does not reach.
-func (r *Repository) FirstCommitAbove(ctx context.Context, base, head string) (string, error) {
-	if !ValidObjectID(base) || !ValidObjectID(head) {
-		return "", fmt.Errorf("git: literal commit objects are required")
-	}
-	out, err := r.output(ctx, "rev-list", "--reverse", base+".."+head, "--")
-	if err != nil {
-		return "", err
-	}
-	first, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
-	if !ValidObjectID(first) {
-		return "", fmt.Errorf("git: nothing above the base")
-	}
-	return first, nil
 }
 
 // RemoteTag is a tag of a repository read by URL and the object it peels

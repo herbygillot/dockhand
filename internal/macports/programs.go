@@ -93,37 +93,6 @@ var HostPrograms = []HostProgram{
 		`--components`, `--targets-built`, `--host-target`, `--shared-mode`, `--link-shared`, `--link-static`, `--has-rtti`, `--assertion-mode`, `--build-mode`, `--cmakedir`, `--obj-root`, `--src-root`, `[a-z0-9]+`)},
 }
 
-// ValidHostPrograms reports the first entry of programs whose patterns do
-// not compile, or whose form is unknown, as its index and a reason; -1 if
-// every entry is sound.
-func ValidHostPrograms(programs []HostProgram) (int, string) {
-	for i, program := range programs {
-		patterns := []string{program.Name}
-		for _, option := range program.Options {
-			patterns = append(patterns, option.Pattern)
-		}
-		patterns = append(patterns, program.Refused...)
-		for _, pattern := range patterns {
-			if _, err := regexp.Compile("^(?:" + pattern + ")$"); err != nil {
-				return i, err.Error()
-			}
-		}
-		switch program.Form {
-		case FormAny, FormOnly, FormWrapper:
-			if len(program.Subcommands) > 0 {
-				return i, "subcommands outside the subcommand form"
-			}
-		case FormSubcommand:
-			if len(program.Subcommands) == 0 {
-				return i, "the subcommand form without subcommands"
-			}
-		default:
-			return i, "unknown form " + strconv.Quote(string(program.Form))
-		}
-	}
-	return -1, ""
-}
-
 // TclHostPrograms renders programs as the Tcl list the evaluator's
 // dispatcher reads: one dictionary per program.
 func TclHostPrograms(programs []HostProgram) string {

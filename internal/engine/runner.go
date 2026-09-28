@@ -930,18 +930,7 @@ func (e *Engine) LatestEvent(ctx context.Context) (int64, error) {
 	return last, err
 }
 
-// Next is the run serve drives next (Design v3 §11): a run left running by
-// a driver that is gone, then queued runs a person asked for, then serve's
-// own, oldest first. Runs a live session holds are someone else's.
-func (e *Engine) Next(ctx context.Context, session *coord.Session) (model.Run, bool, error) {
-	candidates, err := e.Candidates(ctx, session)
-	if err != nil || len(candidates) == 0 {
-		return model.Run{}, false, err
-	}
-	return candidates[0], true, nil
-}
-
-// Candidates are the runs serve could drive, in the order Next takes them:
+// Candidates are the runs serve could drive, in the order it takes them:
 // a run left running by a driver that is gone, then queued runs a person
 // asked for, then serve's own, oldest first. Runs a live session holds,
 // this one included, are left out.

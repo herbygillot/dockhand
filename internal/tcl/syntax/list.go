@@ -6,10 +6,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/text"
 )
 
-func (b Braced) ListLens(src []byte) ([]text.Span, []Error) {
-	return SplitList(src, b.Body)
-}
-
 func SplitList(src []byte, window text.Span) ([]text.Span, []Error) {
 	var elems []text.Span
 	var errs []Error

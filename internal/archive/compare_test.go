@@ -52,10 +52,16 @@ func zipball(t *testing.T, top string, files map[string]string) string {
 	return name
 }
 
+// messages are the changes as marked lines: "!" for what holds, "·" for
+// what doesn't.
 func messages(changes []Change) []string {
 	var all []string
 	for _, change := range changes {
-		all = append(all, change.String())
+		mark := "·"
+		if change.Hold {
+			mark = "!"
+		}
+		all = append(all, mark+" "+change.Message)
 	}
 	return all
 }

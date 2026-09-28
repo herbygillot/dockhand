@@ -42,9 +42,10 @@ func TestDirLivesUnderOneLockedRootRemovedOnClose(t *testing.T) {
 	require.NoError(t, err)
 	defer other.Close()
 	require.ErrorIs(t, syscall.Flock(int(other.Fd()), syscall.LOCK_EX|syscall.LOCK_NB), syscall.EWOULDBLOCK)
-	stale, err := Stale(time.Time{})
+	removed, err := sweep(parent, root)
 	require.NoError(t, err)
-	require.Empty(t, stale, "the process's own root is never stale")
+	require.Empty(t, removed, "the process's own root is never swept")
+	require.DirExists(t, root)
 	require.NoError(t, Close())
 	require.NoDirExists(t, root)
 	c, err := Dir("again-")
@@ -75,29 +76,18 @@ func TestSweepRemovesTheRootsOfDeadProcessesAndKeepsLiveOnes(t *testing.T) {
 	past := time.Now().Add(-2 * abandoned)
 	require.NoError(t, os.Chtimes(old, past, past))
 	require.NoError(t, os.WriteFile(filepath.Join(parent, prefix+"file"), nil, 0600), "a file with the prefix is not a root")
-	// Directories an earlier build made outside a run root carry no lock;
-	// only their age says nothing is using them.
-	legacyOld := filepath.Join(parent, legacy+"overlay-1")
-	require.NoError(t, os.MkdirAll(legacyOld, 0700))
-	require.NoError(t, os.Chtimes(legacyOld, past, past))
-	legacyNew := filepath.Join(parent, legacy+"overlay-2")
-	require.NoError(t, os.MkdirAll(legacyNew, 0700))
+	// A directory an earlier build made outside a run root carries no lock,
+	// and is not a root however old it is.
+	earlier := filepath.Join(parent, "dockhand-overlay-1")
+	require.NoError(t, os.MkdirAll(earlier, 0700))
+	require.NoError(t, os.Chtimes(earlier, past, past))
 
-	stale, err := Stale(time.Time{})
+	removed, err := sweep(parent, filepath.Dir(own))
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{dead, old}, stale, "no legacy time, no legacy directories")
-	require.DirExists(t, dead, "listing removes nothing")
-	stale, err = Stale(time.Now().Add(-time.Minute))
-	require.NoError(t, err)
-	require.ElementsMatch(t, []string{dead, old, legacyOld}, stale)
-
-	removed, err := Sweep(time.Now().Add(-time.Minute))
-	require.NoError(t, err)
-	require.ElementsMatch(t, []string{dead, old, legacyOld}, removed)
+	require.ElementsMatch(t, []string{dead, old}, removed)
 	require.NoDirExists(t, dead)
 	require.NoDirExists(t, old)
-	require.NoDirExists(t, legacyOld)
-	require.DirExists(t, legacyNew, "a legacy directory newer than the threshold may be in use")
+	require.DirExists(t, earlier, "only run roots are swept")
 	require.DirExists(t, live, "a locked root belongs to a running process")
 	require.DirExists(t, fresh, "a root still being made is left alone")
 	require.DirExists(t, own)
@@ -155,7 +145,7 @@ func TestConcurrentRootCreationLeavesEveryRootLocked(t *testing.T) {
 		roots++
 	}
 	require.Positive(t, roots, "the children left roots for the parent")
-	removed, err := Sweep(time.Time{})
+	removed, err := sweep(parent, "")
 	require.NoError(t, err)
 	require.Len(t, removed, roots)
 }

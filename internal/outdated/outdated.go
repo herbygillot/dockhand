@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
-	"strings"
 	"sync"
 	"time"
 
@@ -33,68 +32,8 @@ type Port struct {
 	upstream.Result
 }
 
-// Headline is the plain wording of a port's assessment; the code itself
-// stays in JSON.
-func (p Port) Headline() string {
-	return strings.ReplaceAll(string(p.Assessment), "-", " ")
-}
-
-// Incomplete reports whether any port's observation is unknown, so a caller
-// reads the verdict from the result rather than from the catalog's
-// constants.
-func (r Result) Incomplete() bool {
-	for _, port := range r.Ports {
-		if port.Assessment == upstream.Unknown {
-			return true
-		}
-	}
-	return false
-}
-
-// Hidden counts the ports an out-of-date report leaves unlisted.
-type Hidden struct {
-	Current int
-	Unknown int
-}
-
-// OutOfDate is the result as outdated reports it unless asked for every
-// port: only the ports with an update available. Current ports and ports
-// that could not be checked are counted rather than listed, so a check
-// that failed is never silent.
-func (r Result) OutOfDate() (Result, Hidden) {
-	report := Result{Source: r.Source, Ports: []Port{}}
-	var hidden Hidden
-	for _, port := range r.Ports {
-		switch port.Assessment {
-		case upstream.UpdateAvailable:
-			report.Ports = append(report.Ports, port)
-		case upstream.Current:
-			hidden.Current++
-		default:
-			hidden.Unknown++
-		}
-	}
-	return report, hidden
-}
-
-// Note is the line that says what an out-of-date report left out, or
-// nothing when it left nothing out.
-func (h Hidden) Note() string {
-	var parts []string
-	if h.Current > 0 {
-		parts = append(parts, fmt.Sprintf("%d current", h.Current))
-	}
-	if h.Unknown > 0 {
-		parts = append(parts, fmt.Sprintf("%d could not be checked", h.Unknown))
-	}
-	if len(parts) == 0 {
-		return ""
-	}
-	return "Not listed: " + strings.Join(parts, ", ") + "; --all lists them."
-}
-
 // Service observes committed ports using caller-supplied integrations and cache
-// configuration. It does not open workflow state or accept jobs.
+// configuration. It reads no record of dockhand's.
 type Service struct {
 	Repo     *git.Repository
 	Ports    macports.NativeEvaluator

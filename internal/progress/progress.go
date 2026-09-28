@@ -32,12 +32,10 @@ func (l Level) String() string {
 
 type Update struct {
 	Level   Level
-	Scope   string
 	Message string
 }
 
 type reporterKey struct{}
-type scopeKey struct{}
 type quietKey struct{}
 type reporter struct {
 	mu     sync.Mutex
@@ -48,11 +46,6 @@ type reporter struct {
 // The callback should return promptly and must not report recursively.
 func WithReporter(ctx context.Context, report func(Update)) context.Context {
 	return context.WithValue(ctx, reporterKey{}, &reporter{report: report})
-}
-
-// WithScope names what subsequent reports are about, such as a port.
-func WithScope(ctx context.Context, scope string) context.Context {
-	return context.WithValue(ctx, scopeKey{}, scope)
 }
 
 // Quiet lowers the info reports made under ctx to verbose. A command that
@@ -80,11 +73,10 @@ func emit(ctx context.Context, level Level, format string, args ...any) {
 	if sink == nil || sink.report == nil {
 		return
 	}
-	scope, _ := ctx.Value(scopeKey{}).(string)
 	if quiet, _ := ctx.Value(quietKey{}).(bool); quiet && level == Info {
 		level = Verbose
 	}
-	update := Update{Level: level, Scope: scope, Message: fmt.Sprintf(format, args...)}
+	update := Update{Level: level, Message: fmt.Sprintf(format, args...)}
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
 	sink.report(update)

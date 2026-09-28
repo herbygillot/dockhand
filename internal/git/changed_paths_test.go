@@ -48,7 +48,7 @@ func TestChangedPathsIncludesBothSidesOfMovesAndRawNames(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 }
 
-func TestAddedOrModifiedPathsMatchesGitAMSelection(t *testing.T) {
+func TestChangedPathsNamesEveryKindOfChange(t *testing.T) {
 	t.Parallel()
 	repo := snapshotRepo(t)
 	before := snapshotTree(t, repo,
@@ -65,24 +65,7 @@ func TestAddedOrModifiedPathsMatchesGitAMSelection(t *testing.T) {
 		snapshotBlob(t, repo, "mode", "script", 0o100755),
 		snapshotBlob(t, repo, "type", "modified", 0o120000),
 	)
-	out, err := exec.CommandContext(t.Context(), "git", "-C", repo.Root, "config", "diff.renames", "false").CombinedOutput()
-	require.NoError(t, err, string(out))
-	paths, err := repo.AddedOrModifiedPaths(t.Context(), before, after)
+	paths, err := repo.ChangedPaths(t.Context(), before, after)
 	require.NoError(t, err)
-	require.Equal(t, []string{"added\tname", "mode", "modified"}, paths)
-	all, err := repo.ChangedPaths(t.Context(), before, after)
-	require.NoError(t, err)
-	require.Contains(t, all, "deleted")
-	require.Contains(t, all, "old-name")
-	require.Contains(t, all, "new-name")
-	require.Contains(t, all, "type")
-	paths, err = repo.AddedOrModifiedPaths(t.Context(), before, before)
-	require.NoError(t, err)
-	require.Empty(t, paths)
-	_, err = repo.AddedOrModifiedPaths(t.Context(), "HEAD", after)
-	require.Error(t, err)
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	_, err = repo.AddedOrModifiedPaths(ctx, before, after)
-	require.ErrorIs(t, err, context.Canceled)
+	require.Equal(t, []string{"added\tname", "deleted", "mode", "modified", "new-name", "old-name", "type"}, paths)
 }

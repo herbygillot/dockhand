@@ -87,16 +87,6 @@ func TestTransfersArriveWholeAndAreChecked(t *testing.T) {
 	small, err := g.Read(t.Context(), remote, false)
 	require.NoError(t, err)
 	require.Equal(t, payload, small)
-
-	chunk, err := g.Range(t.Context(), remote, 5, 20, false)
-	require.NoError(t, err)
-	require.Equal(t, payload[5:25], chunk)
-	tail, err := g.Range(t.Context(), remote, int64(len(payload))-3, 20, false)
-	require.NoError(t, err)
-	require.Equal(t, payload[len(payload)-3:], tail)
-	past, err := g.Range(t.Context(), remote, int64(len(payload)), 20, false)
-	require.NoError(t, err)
-	require.Empty(t, past)
 }
 
 // A read damaged in transit is tried again, and one that keeps arriving
@@ -129,8 +119,6 @@ func TestMissingFilesAndLostConnectionsAreNamed(t *testing.T) {
 	_, err := g.Read(t.Context(), missing, false)
 	require.ErrorIs(t, err, os.ErrNotExist)
 	require.ErrorIs(t, g.Download(t.Context(), missing, filepath.Join(t.TempDir(), "local"), false), os.ErrNotExist)
-	_, err = g.Range(t.Context(), missing, 0, 10, false)
-	require.ErrorIs(t, err, os.ErrNotExist)
 
 	g.Address = "unreachable"
 	_, err = g.Command(t.Context(), nil, "/usr/bin/true")

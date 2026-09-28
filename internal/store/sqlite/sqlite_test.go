@@ -467,10 +467,12 @@ func TestLeasesAreFenced(t *testing.T) {
 		return err
 	}), store.ErrConflict, "an ended session holds nothing new")
 	require.NoError(t, f.store.View(t.Context(), f.repo, func(r store.Reader) error {
-		live, err := r.Sessions()
+		a, err := r.Session("ses_a")
 		require.NoError(t, err)
-		require.Len(t, live, 1)
-		require.Equal(t, model.SessionID("ses_b"), live[0].ID)
+		require.Equal(t, endedAt, *a.EndedAt)
+		b, err := r.Session("ses_b")
+		require.NoError(t, err)
+		require.Nil(t, b.EndedAt)
 		return nil
 	}))
 

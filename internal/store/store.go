@@ -94,8 +94,6 @@ type Reader interface {
 	Reusable(target model.TargetID, environment model.Environment, limit int) ([]model.TargetResult, error)
 
 	Session(id model.SessionID) (model.Session, error)
-	// Sessions lists sessions that have not ended.
-	Sessions() ([]model.Session, error)
 	Lease(resource string) (model.Lease, error)
 	// Events lists events after a sequence number, oldest first.
 	Events(after int64, limit int) ([]model.Event, error)

@@ -35,13 +35,6 @@ func (r *Repository) WithBranchLock(ctx context.Context, branch string, fn func(
 	return withLock(ctx, filepath.Join(r.CommonDir, "dockhand", "branch-locks"), strings.ToLower(branch), fn)
 }
 
-func (r *Repository) WithPushLock(ctx context.Context, directory, scope string, fn func(context.Context) error) error {
-	if !filepath.IsAbs(directory) || scope == "" {
-		return fmt.Errorf("git: publication lock requires an absolute directory and scope")
-	}
-	return withLock(ctx, directory, scope, fn)
-}
-
 // withLock carries the lock file in the context so git children inherit the
 // descriptor and keep the lock if this process exits mid-operation.
 func withLock(ctx context.Context, directory, key string, fn func(context.Context) error) error {
@@ -53,10 +46,24 @@ func withLock(ctx context.Context, directory, key string, fn func(context.Contex
 	})
 }
 
-// WithRemoteBranchLock serializes cooperating pushes to one forge repository branch.
-func (r *Repository) WithRemoteBranchLock(ctx context.Context, directory, forge, repository, branch string, fn func(context.Context) error) error {
-	if !ValidBranchName(branch) || forge == "" || repository == "" {
-		return fmt.Errorf("git: remote branch identity required")
+// Checkouts lists the worktrees that have branch checked out.
+func (r *Repository) Checkouts(ctx context.Context, branch string) ([]string, error) {
+	if !ValidBranchName(branch) {
+		return nil, fmt.Errorf("git: invalid branch")
 	}
-	return r.WithPushLock(ctx, directory, forge+":"+strings.ToLower(repository)+":"+branch, fn)
+	out, err := r.output(ctx, "worktree", "list", "--porcelain", "-z")
+	if err != nil {
+		return nil, err
+	}
+	var checkout string
+	var result []string
+	for _, field := range strings.Split(string(out), "\x00") {
+		if strings.HasPrefix(field, "worktree ") {
+			checkout = strings.TrimPrefix(field, "worktree ")
+		}
+		if field == "branch refs/heads/"+branch {
+			result = append(result, checkout)
+		}
+	}
+	return result, nil
 }

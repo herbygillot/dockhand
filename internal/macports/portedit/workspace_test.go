@@ -30,7 +30,7 @@ func TestCommitEditRecordsFilesAndFidelityBeforeJudging(t *testing.T) {
 	require.NoError(t, result.commitEdit(input, request, edit, Fidelity{ExpectedChanges: []string{"fixture.revision +1"}}, "revbump"))
 	require.Equal(t, []portfile.Edit{edit}, result.Files)
 	require.Len(t, result.Fidelity, 1)
-	require.Equal(t, []CommitIntent{{Subject: "fixture: because", Paths: []string{"devel/fixture/Portfile"}}}, result.Commits)
+	require.Equal(t, []CommitIntent{{Subject: "fixture: because"}}, result.Commits)
 
 	var failed Result
 	err := failed.commitEdit(input, request, edit, Fidelity{UnexpectedChanges: []string{"sibling.version changed"}}, "revbump")

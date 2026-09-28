@@ -61,7 +61,7 @@ The providers implement `buildenv.Provider`, the contract in `internal/buildenv`
 
 ## Shaping, submitting, and following
 
-- **`engine/tidy.go`, `engine/tidyplan.go`** propose the commits a reviewer should see, one per port directory by default, and apply them without changing a file. Commit messages come from `macports/commitmsg`, and `macports/commitrules` checks them against what MacPorts asks.
+- **`engine/tidy.go`, `engine/tidyplan.go`** propose the commits a reviewer should see, one per port directory by default, and apply them without changing a file. Tidy composes the messages, keeping the trailers the commits carried and adding `macports/commitmsg`'s attribution line, and `macports/commitrules` checks them against what MacPorts asks.
 - **`history`** makes `tidy`, `rebase` (`engine/verbs.go`), and `restore` complete transitions, which the engine's verbs decide and `history.Transitions` carries out. Each holds the branch's lock (`git.WithBranchLock`); a tidy or rebase records its checkpoint as prepared, makes its Git change, and settles the checkpoint, and the next of them on the branch finishes what a stopped one left. A rebase replays its commits with `git.Replay` before anything moves.
 - **`engine/submit.go`, `engine/body.go`, `engine/forge.go`** push to your fork conditionally, never over someone else's push, and open or update the pull request with MacPorts' template filled in. GitHub access is `forge/github` over the shared client in `github`, with the login from `credential/keychain`, `GH_TOKEN`, or the GitHub CLI.
 - **`engine/follow.go`** reads your pull requests' state, reviews, and CI. **`engine/review.go`** applies the commit rules to anyone's pull request. **`engine/clean.go`** removes what merged branches leave, and what checks whose process died left in providers (`LeftoverProvider`), under the check's lease.
@@ -92,6 +92,6 @@ v2's packages were deleted on 2026-09-27: `workflow`, `state`, `publish`, `verif
 - to `model`: a release and how it was chosen, and an update's intent. What an update does is `model.EditKind`, the kind its edit records;
 - to `macports`: a release's scope, beside the code that computes and rebinds it;
 - to `forge`: a pull request, its reference, state, and status;
-- to `macports/commitmsg`: a commit's ticket references.
+- to `macports/commitmsg`: a commit's ticket references, deleted on 2026-09-28 with the unused composer that read them.
 
 Everything else in the tree is in the binary or a tool, apart from `testsupport`, which tests share. `go list -deps ./cmd/dockhand` lists what the binary is made of.

@@ -21,31 +21,6 @@ func localGuest(ctx context.Context, input io.Reader, args ...string) ([]byte, e
 	return out, nil
 }
 
-func TestGuestTransportProbesRoundTripAndFailure(t *testing.T) {
-	require.NoError(t, CheckGuestTransport(t.Context(), localGuest))
-	for _, mode := range []string{"lost-input", "lost-output", "swallowed-exit", "transport-error"} {
-		t.Run(mode, func(t *testing.T) {
-			run := func(ctx context.Context, input io.Reader, args ...string) ([]byte, error) {
-				if mode == "lost-input" {
-					input = nil
-				}
-				out, err := localGuest(ctx, input, args...)
-				if mode == "lost-output" {
-					out = nil
-				}
-				if err != nil && mode == "swallowed-exit" {
-					err = nil
-				}
-				if err != nil && mode == "transport-error" {
-					err = errors.New("disconnected")
-				}
-				return out, err
-			}
-			require.Error(t, CheckGuestTransport(t.Context(), run))
-		})
-	}
-}
-
 func TestGuestAgentVersionIsOnlyDiagnostic(t *testing.T) {
 	for _, value := range []string{"tart-guest-agent version 0.14.1-extra", "nightly development snapshot", ""} {
 		run := func(context.Context, io.Reader, ...string) ([]byte, error) { return []byte(value), nil }
@@ -66,5 +41,4 @@ func TestGuestAgentVersionIsOnlyDiagnostic(t *testing.T) {
 	cancel()
 	_, err = ObserveGuestAgentVersion(ctx, localGuest)
 	require.ErrorIs(t, err, context.Canceled)
-	require.Error(t, CheckGuestTransport(ctx, localGuest))
 }

@@ -103,10 +103,11 @@ In order. Each item lands in its own commits with an activity note, and a review
   - each command opens one observer session (finding 34). Done 2026-09-28;
   - serve's and cleanup's stamps and `serving.json` are per repository, and the day's look is stamped after it (finding 35). Done 2026-09-28 ([note](activity/2026-09-28-journal-and-serve-files.md));
   - `CleanupDue` gives its reason as a type (finding 37). Done 2026-09-28.
-- **Dead code:**
-  - about 460 lines of `git`;
+- **Dead code.** Done 2026-09-28 ([note](activity/2026-09-28-dead-code.md)):
+  - about 520 lines of `git`;
   - `commitmsg`'s unused composer and `outdated`'s unused helpers;
-  - the other uncalled pieces the review and its check found (findings 18, 9, 20, 13, and 38).
+  - the other uncalled pieces the review and its check found (findings 18, 9, 20, 13, and 38), where a 404 now reads as a pull request not found;
+  - what `deadcode` without `-test`, and a references check, found beside them.
 
 The order puts live regressions first, then the guardrail unattended submission relies on, then small promises the code doesn't keep, then what a person watching sees, then what grows without bound, and dead code last, since removing it changes nothing.
 
@@ -176,10 +177,11 @@ These are taken when their area is next touched, or between items.
     - `forge/github`'s guards (finding 16);
     - small helpers (finding 17);
     - a port directory's rule (finding 29);
-    - a pull request's head, and its 404 (finding 38).
+    - a pull request's head (finding 38).
   - **JSON:**
     - status's branch embeds the reference other commands give (finding 10).
   - **Structure:**
+    - tidy's message composer in `commitmsg`, beside the rules it uses (finding 9);
     - `macports`' program and platform mechanics in a subpackage (finding 21);
     - the history transition as one `Make`, keeping submit's merge check (finding 26);
     - `Update`'s and `PlanTidy`'s seams (finding 44).
@@ -232,7 +234,7 @@ These are taken when their area is next touched, or between items.
 
 - **MacPorts compatibility.** Evaluator tests pass on Base 2.12.6. Version adapters follow the [Base design](macports-base-design-prospective.md): the current release plus a pinned master preview. Keep Base and PortGroup compatibility distinct ([evidence](macports-compatibility.md)).
 - **Images.** Twelve images are made and checked: base and Xcode for macOS 12, 13, 14, 15, 26, and 27. Re-probe the facts table when an image is rebuilt; the 2026-09-27 probes found every earlier row unchanged. Golden Gate needs Tart 2.39.0 or newer.
-- **Package boundaries.** Extend import checks when touching a boundary that matters; the command boundary test, and item 4's engine boundary test, are the models. Don't split packages by size alone. Run `make deadcode` after a milestone, and keep test-only exports documented as such. It can't see an unused exported method on a type held as an interface, so sweep those by references too. CI doesn't run it.
+- **Package boundaries.** Extend import checks when touching a boundary that matters; the command boundary test, and item 4's engine boundary test, are the models. Don't split packages by size alone. Run `make deadcode` after a milestone, and keep test-only exports documented as such. A sweep also runs the tool without `-test`: what it lists, only tests reach, and each is test support, documented as such, or dead. The tool can't see an unused exported method on a type that reaches an interface or reflection, so a sweep checks those by references too. CI doesn't run it.
 - **GitHub's budget.** Requests to its API are paced at 750 a minute, under its documented 900. A whole `outdated --mine` spends about 1,800 of the 5,000 an hour the person's account has, a budget shared with the GitHub CLI.
 - **Test throughput.** The cost unit is the MacPorts interpreter. Keep per-test timing visible, and prefer simulated clocks for time-driven tests; v2's `workflow` tests show what wall-clock budgets do under load.
 

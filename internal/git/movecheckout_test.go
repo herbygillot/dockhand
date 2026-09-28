@@ -51,4 +51,8 @@ func TestMoveCheckoutTakesASparseCheckoutBack(t *testing.T) {
 	require.Equal(t, "a\n", string(data))
 	require.Equal(t, "M c/Portfile", gitIn(t, worktree, "status", "--short", "--untracked-files=no"), "a change to a file it doesn't move stays, and b stays outside")
 	require.NoFileExists(t, filepath.Join(worktree, "b/Portfile"))
+
+	gitIn(t, worktree, "checkout", "-q", "--detach")
+	require.ErrorContains(t, repo.MoveCheckout(t.Context(), before, after), "no branch is checked out", "a detached checkout has no branch to move")
+	require.Equal(t, before, gitIn(t, worktree, "rev-parse", "HEAD"))
 }

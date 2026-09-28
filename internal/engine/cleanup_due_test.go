@@ -139,16 +139,13 @@ func TestCleanupPrunesTheJournal(t *testing.T) {
 	}
 	require.Contains(t, messages, "today")
 	require.NotContains(t, messages, "long ago")
-	var sessions []model.Session
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
-		sessions, err = r.Sessions()
-		return err
+		_, err := r.Session("ses_holding")
+		require.NoError(t, err, "a lease still names it")
+		for _, gone := range []model.SessionID{"ses_ended", "ses_quiet"} {
+			_, err := r.Session(gone)
+			require.ErrorIs(t, err, store.ErrNotFound, gone)
+		}
+		return nil
 	}))
-	var ids []model.SessionID
-	for _, s := range sessions {
-		ids = append(ids, s.ID)
-	}
-	require.Contains(t, ids, model.SessionID("ses_holding"), "a lease still names it")
-	require.NotContains(t, ids, model.SessionID("ses_ended"))
-	require.NotContains(t, ids, model.SessionID("ses_quiet"))
 }

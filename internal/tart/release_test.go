@@ -55,23 +55,3 @@ func TestOnlyAKnownArm64ReleaseIsProvisionable(t *testing.T) {
 		require.Error(t, err)
 	}
 }
-
-// The releases a local image serves are read from setup's image names, a
-// command-line-tools or a full-Xcode image either; a pulled OCI image or an
-// image under another name serves none.
-func TestPreparedReleasesAreSetupsLocalImages(t *testing.T) {
-	images := []Image{
-		{Name: "dockhand-xcode-sequoia", Source: "local"},
-		{Name: "dockhand-base-sonoma", Source: "local"},
-		{Name: "dockhand-base-sequoia", Source: "local"},
-		{Name: "dockhand-base-tahoe", Source: "OCI"},
-		{Name: "my-ventura", Source: "local"},
-		{Name: "dockhand-base-ventura-golden", Source: "local"},
-	}
-	var slugs []string
-	for _, release := range PreparedReleases(images) {
-		slugs = append(slugs, release.Slug)
-	}
-	require.Equal(t, []string{"sonoma", "sequoia"}, slugs, "oldest first, each once")
-	require.Empty(t, PreparedReleases(nil))
-}

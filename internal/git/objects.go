@@ -213,33 +213,6 @@ func objectResult(out []byte, err error) (string, error) {
 	return object, nil
 }
 
-func (r *Repository) CommitMessage(ctx context.Context, commit string) (string, error) {
-	if !ValidObjectID(commit) {
-		return "", fmt.Errorf("git: a literal commit object is required")
-	}
-	message, err := r.output(ctx, "show", "-s", "--format=%B", commit, "--")
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(message)), nil
-}
-
-// SingleParent returns the parent of a non-root, non-merge commit.
-func (r *Repository) SingleParent(ctx context.Context, commit string) (string, error) {
-	if !ValidObjectID(commit) {
-		return "", fmt.Errorf("git: a literal commit object is required")
-	}
-	parents, err := r.output(ctx, "rev-list", "--parents", "-n", "1", commit, "--")
-	if err != nil {
-		return "", err
-	}
-	fields := strings.Fields(string(parents))
-	if len(fields) != 2 || fields[0] != commit || !ValidObjectID(fields[1]) {
-		return "", fmt.Errorf("git: contribution requires a commit with exactly one parent")
-	}
-	return fields[1], nil
-}
-
 // CommitBefore is the newest first-parent ancestor of start, start itself
 // included, committed at or before the instant; empty when none is.
 func (r *Repository) CommitBefore(ctx context.Context, start string, before time.Time) (string, error) {

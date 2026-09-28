@@ -20,8 +20,6 @@ import (
 //go:embed loop.tcl
 var loopScript string
 
-const noiseLimit = 64 << 10
-
 const defaultLineLimit = 1 << 20
 
 const defaultFrameLimit = 16 << 20
@@ -51,7 +49,6 @@ type Session struct {
 
 	mu     sync.Mutex
 	broken error
-	noise  bytes.Buffer
 }
 
 const defaultHandshakeTimeout = 30 * time.Second
@@ -135,12 +132,6 @@ func newSession(ctx context.Context, proc *shell.Proc, cfg config) (*Session, er
 	return s, nil
 }
 
-func (s *Session) Noise() []byte {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return append([]byte(nil), s.noise.Bytes()...)
-}
-
 func (s *Session) Call(ctx context.Context, op string, args ...string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -153,22 +144,16 @@ func (s *Session) Call(ctx context.Context, op string, args ...string) (string, 
 
 	type result struct {
 		payload string
-		noise   []byte
 		err     error
 	}
 	ch := make(chan result, 1)
 	go func() {
-		payload, noise, err := s.roundTrip(op, args)
-		ch <- result{payload, noise, err}
+		payload, err := s.roundTrip(op, args)
+		ch <- result{payload, err}
 	}()
 
 	select {
 	case res := <-ch:
-
-		s.noise.Write(res.noise)
-		if over := s.noise.Len() - noiseLimit; over > 0 {
-			s.noise.Next(over)
-		}
 		if res.err != nil {
 			var ce CallError
 			if !errors.As(res.err, &ce) {
@@ -191,13 +176,13 @@ func (s *Session) breakSession(cause error) error {
 	return s.broken
 }
 
-func (s *Session) roundTrip(op string, args []string) (string, []byte, error) {
+func (s *Session) roundTrip(op string, args []string) (string, error) {
 	// The protocol carries UTF-8 text; a Tcl 9 interpreter refuses anything
 	// else, so it is refused here, before it is sent, and the session
 	// stays usable.
 	for i, a := range append([]string{op}, args...) {
 		if !utf8.ValidString(a) {
-			return "", nil, CallError{Msg: fmt.Sprintf("rpc: call argument %d is not valid UTF-8", i)}
+			return "", CallError{Msg: fmt.Sprintf("rpc: call argument %d is not valid UTF-8", i)}
 		}
 	}
 	var req bytes.Buffer
@@ -206,40 +191,36 @@ func (s *Session) roundTrip(op string, args []string) (string, []byte, error) {
 		fmt.Fprintf(&req, "%d\n%s\n", len(a), a)
 	}
 	if _, err := s.proc.Stdin().Write(req.Bytes()); err != nil {
-		return "", nil, fmt.Errorf("rpc: write: %w", err)
+		return "", fmt.Errorf("rpc: write: %w", err)
 	}
 
-	var noise bytes.Buffer
 	for {
 		line, err := readLine(s.r, s.lineLimit)
 		if err != nil {
-			return "", noise.Bytes(), fmt.Errorf("rpc: read: %w (stderr: %q)", err, s.proc.StderrTail())
+			return "", fmt.Errorf("rpc: read: %w (stderr: %q)", err, s.proc.StderrTail())
 		}
+		// What the interpreter prints outside a frame is not the reply.
 		if !strings.HasPrefix(line, sentinel) {
-			noise.WriteString(line)
-			if over := noise.Len() - noiseLimit; over > 0 {
-				noise.Next(over)
-			}
 			continue
 		}
 		fields := strings.Fields(strings.TrimSuffix(line, "\n"))
 		if len(fields) != 3 {
-			return "", noise.Bytes(), fmt.Errorf("rpc: malformed frame header %q", line)
+			return "", fmt.Errorf("rpc: malformed frame header %q", line)
 		}
 		n, err := strconv.Atoi(fields[2])
 		if err != nil || n < 0 {
-			return "", noise.Bytes(), fmt.Errorf("rpc: malformed frame length %q", line)
+			return "", fmt.Errorf("rpc: malformed frame length %q", line)
 		}
 		if n > s.frameLimit {
 
-			return "", noise.Bytes(), fmt.Errorf("%w: frame advertises %d bytes, limit is %d", ErrFrameLimit, n, s.frameLimit)
+			return "", fmt.Errorf("%w: frame advertises %d bytes, limit is %d", ErrFrameLimit, n, s.frameLimit)
 		}
 		payload := make([]byte, n+1)
 		if _, err := io.ReadFull(s.r, payload); err != nil {
-			return "", noise.Bytes(), fmt.Errorf("rpc: short frame: %w", err)
+			return "", fmt.Errorf("rpc: short frame: %w", err)
 		}
 		if payload[n] != '\n' {
-			return "", noise.Bytes(), fmt.Errorf("rpc: malformed frame delimiter %q", payload[n])
+			return "", fmt.Errorf("rpc: malformed frame delimiter %q", payload[n])
 		}
 		body := string(payload[:n])
 		switch fields[1] {
@@ -247,13 +228,13 @@ func (s *Session) roundTrip(op string, args []string) (string, []byte, error) {
 			// Tcl 8.6 encodes a lone surrogate as invalid UTF-8 rather
 			// than refusing it, as Tcl 9 does.
 			if !utf8.ValidString(body) {
-				return "", noise.Bytes(), CallError{Msg: "rpc: reply is not valid UTF-8"}
+				return "", CallError{Msg: "rpc: reply is not valid UTF-8"}
 			}
-			return body, noise.Bytes(), nil
+			return body, nil
 		case "err":
-			return "", noise.Bytes(), CallError{Msg: body}
+			return "", CallError{Msg: body}
 		default:
-			return "", noise.Bytes(), fmt.Errorf("rpc: unknown frame status %q", fields[1])
+			return "", fmt.Errorf("rpc: unknown frame status %q", fields[1])
 		}
 	}
 }
