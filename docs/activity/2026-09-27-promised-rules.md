@@ -24,3 +24,11 @@ This covers the rest of the roadmap's "rules the design promises and the code do
   - A branch already on master recorded a rebase from master onto itself on every `rebase`. `history`'s `SetBase` now changes nothing, and records nothing, for a base the branch already has.
 - **Tests.** `TestAdoptTracksABranchAsItStands` checks the tracked branch's count, and `TestARebaseCountsWhatItReplays` checks both rebase fixes. Each fails without its fix.
 
+**A new branch whose record's commit was uncertain is read back (finding 24).**
+- The store reports a commit it can't vouch for as `ErrUncertain`, as an interrupt during the commit leaves it.
+- `Start` and `adopt --pr` then undid the Git branch and worktree they had made, whatever the commit's fate. When it had landed, that left an open record whose branch was gone: its name stayed taken, and nothing freed it.
+- Both now read the record back first, through `recordedAfterAll`, as history's changes already do (roadmap item 3). A record that landed keeps its branch; one that didn't is undone.
+- `Start` is the only way a new branch is made (`update --new`, `bump`, serve's preparation), so this covers them all.
+- `TestAnUncertainBranchRecordIsReadBack` uses the history tests' uncertain store, taught to notice a branch being added. It fails without the read-back.
+- The rest of finding 24 is on the roadmap's smaller items. It is `Update` and `Create`, whose edit record can be lost the same way while their files are written; since D4, holds are read from those records.
+

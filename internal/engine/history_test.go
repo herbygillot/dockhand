@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -166,11 +167,18 @@ type uncertainStore struct {
 	fired  bool
 }
 
-// watchedTx notes what a transaction recorded about checkpoints.
+// watchedTx notes what a transaction recorded about checkpoints, and
+// whether it added a branch.
 type watchedTx struct {
 	store.Tx
 	added   bool
 	settled model.CheckpointState
+	branch  bool
+}
+
+func (t *watchedTx) AddBranch(b model.Branch) error {
+	t.branch = true
+	return t.Tx.AddBranch(b)
 }
 
 func (t *watchedTx) AddCheckpoint(c model.Checkpoint) error {
@@ -279,4 +287,31 @@ func TestAHistoryChangeWaitsForTheBranchsLock(t *testing.T) {
 	require.NoError(t, <-done)
 	_, err = e.ApplyTidy(t.Context(), plan)
 	require.NoError(t, err)
+}
+
+// A new branch's record the store reports as uncertain is read back. One
+// that landed keeps the Git branch made for it, where undoing that left a
+// record whose branch was gone and whose name stayed taken; one that
+// didn't land is undone, and the name is free. (The code-organization
+// review of 2026-09-27, finding 24.)
+func TestAnUncertainBranchRecordIsReadBack(t *testing.T) {
+	adds := func(tx *watchedTx) bool { return tx.branch }
+	for _, landed := range []bool{true, false} {
+		f := setup(t)
+		e := f.open(t)
+		e.Store = &uncertainStore{Store: e.Store, when: adds, landed: landed}
+		branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
+		if landed {
+			require.NoError(t, err, "the record landed, so the branch stands")
+			require.DirExists(t, branch.Worktree)
+			found, err := e.Resolve(t.Context(), "jq-update")
+			require.NoError(t, err)
+			require.Equal(t, branch.ID, found.ID)
+			continue
+		}
+		require.ErrorIs(t, err, store.ErrUncertain)
+		require.NoDirExists(t, filepath.Join(e.Worktrees(), "jq-update"), "what Git made for it is undone")
+		_, err = e.Start(t.Context(), StartRequest{Name: "jq-update"})
+		require.NoError(t, err, "the name is free again")
+	}
 }

@@ -90,7 +90,7 @@ In order. Each item lands in its own commits with an activity note, and a review
   - one check per branch, enforced in `Enqueue`, which `submit --check`, `update --submit`, and `retry` bypassed; `--tests` checked before evaluation; and a test for submit's commit binding (finding 2). Done 2026-09-27 ([note](activity/2026-09-27-one-check-per-branch.md));
   - capture's moved-while-read check with `--include` (finding 43). Done 2026-09-27;
   - `create`'s result when interrupted, and `adopt`'s and `rebase`'s counts (finding 33). Done 2026-09-27;
-  - a new branch whose record's commit was uncertain is read back, not undone (finding 24);
+  - a new branch whose record's commit was uncertain is read back, not undone (finding 24). Done 2026-09-27;
   - a canceled script build stops its whole process group, gently first (finding 42);
   - `serve --install` carries `--git`, `TART_HOME`, and the `DOCKHAND_*` settings it was installed under, never a token (finding 46);
   - `ExitCode` finds an exit through wrapping (finding 17). Done 2026-09-27 ([note](activity/2026-09-27-promised-rules.md)).
@@ -184,6 +184,7 @@ These are taken when their area is next touched, or between items.
     - the history transition as one `Make`, keeping submit's merge check (finding 26);
     - `Update`'s and `PlanTidy`'s seams (finding 44).
   - **Latent:**
+    - an edit record whose commit was uncertain is read back, as a new branch's is: `Update` and `Create` write their files first, and holds are read from the records (finding 24);
     - a stealth update's edits evaluated again (finding 19);
     - `ls-remote` in a fresh scratch directory (finding 30);
     - the index cache's identity off a Mac (finding 40);

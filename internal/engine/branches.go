@@ -128,9 +128,30 @@ func (e *Engine) Start(ctx context.Context, request StartRequest) (model.Branch,
 			Message: fmt.Sprintf("started %s from master %s in %s", name, short(base), directory)})
 		return err
 	}); err != nil {
+		if e.recordedAfterAll(ctx, err, branch.ID) {
+			return branch, nil
+		}
 		return model.Branch{}, errors.Join(err, undo())
 	}
 	return branch, nil
+}
+
+// recordedAfterAll reads a new branch's record back when the store couldn't
+// say whether its commit landed, as an interrupt during the commit leaves
+// it (roadmap item 3): a record that landed keeps the Git branch made for
+// it, where undoing that would leave a record whose branch is gone and
+// whose name stays taken; one that didn't land is undone.
+func (e *Engine) recordedAfterAll(ctx context.Context, err error, id model.BranchID) bool {
+	if !errors.Is(err, store.ErrUncertain) {
+		return false
+	}
+	found := false
+	_ = e.Store.View(context.WithoutCancel(ctx), e.Repository, func(r store.Reader) error {
+		_, err := r.Branch(id)
+		found = err == nil
+		return nil
+	})
+	return found
 }
 
 // worktreeDirectory is where a branch's managed worktree goes.
@@ -520,8 +541,9 @@ func (e *Engine) AdoptPullRequest(ctx context.Context, number int) (PullRequestA
 			Message: fmt.Sprintf("adopted #%d by @%s as %s", number, pr.Author, name)})
 		return err
 	})
-	if err != nil {
+	if err != nil && !e.recordedAfterAll(ctx, err, adoption.Branch.ID) {
 		err = errors.Join(err, e.Repo.RemoveWorktree(context.WithoutCancel(ctx), directory), e.Repo.DeleteBranch(context.WithoutCancel(ctx), name, head))
+		return adoption, err
 	}
-	return adoption, err
+	return adoption, nil
 }
