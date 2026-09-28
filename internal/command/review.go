@@ -309,10 +309,23 @@ func applyTidy(ctx context.Context, e *engine.Engine, streams Streams, plan engi
 	streams.emit(applied)
 	name := result.Checkpoint.Name()
 	fmt.Fprintf(streams.Out, "Created %s. The files are unchanged.\nCheckpoint %s keeps the old history (dockhand restore %s).\n", plural(len(result.Commits), "commit"), name, name)
+	if warning := modifiedBuildWarning(plan, name); warning != "" {
+		fmt.Fprintln(streams.Err, warning)
+	}
 	if plan.Branch.PullRequest != nil && len(plan.History) > 0 {
 		fmt.Fprintf(streams.Out, "#%d still shows %s until you submit; submit will replace its history, if no one else has pushed.\n", plan.Branch.PullRequest.Number, plural(len(plan.History), "commit"))
 	}
 	return nil
+}
+
+// modifiedBuildWarning says, for a tidy whose commits name a dockhand
+// built from uncommitted source, how to name one anybody can find before
+// they're submitted.
+func modifiedBuildWarning(plan engine.TidyPlan, checkpoint string) string {
+	if !plan.ModifiedBuild() {
+		return ""
+	}
+	return fmt.Sprintf("! Generated-By names this dockhand, built from uncommitted source, which nobody else can find. Before submitting, tidy again with a build of a pushed commit: dockhand restore %s, then dockhand tidy.", checkpoint)
 }
 
 func restoreCommand(s *settings, streams Streams) *cobra.Command {

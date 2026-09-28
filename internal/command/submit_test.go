@@ -237,6 +237,46 @@ func TestUpstreamIsSaidOnceUnderItsHeading(t *testing.T) {
 	require.Equal(t, []string{"! upstream's LICENSE changed", "· upstream: go.mod drops golang.org/x/net"}, upstreamLines(plan, false))
 }
 
+// A commit whose Generated-By names a dockhand built from uncommitted
+// source is shown before it's submitted, since nobody else can find that
+// build; the preview's JSON lists it. One naming a committed build isn't.
+func TestSubmitShowsACommitNamingAModifiedBuild(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	withGitHub(t, w)
+	started, err := jsonOf(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := dig(t, started.Result, "branch", "worktree").(string)
+	t.Setenv("MACPORTS_TREE", dir)
+	_, _, err = dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	trailer := "\n\nGenerated-By: Dockhand v0.0.0-20260924.0.0.20260928175309-2bbcfdb76480%s (https://github.com/herbygillot/dockhand)"
+	gitRun(t, dir, "commit", "-q", "-am", "jq: update to 1.8.1"+fmt.Sprintf(trailer, ""))
+	out, _, err := dockhand(t, "submit", "--plan", "--no-check")
+	require.NoError(t, err)
+	require.NotContains(t, out, "uncommitted source")
+
+	gitRun(t, dir, "commit", "-q", "--amend", "-m", "jq: update to 1.8.1"+fmt.Sprintf(trailer, "+dirty"))
+	out, _, err = dockhand(t, "submit", "--plan", "--no-check")
+	require.NoError(t, err)
+	require.Contains(t, out, "  ! commit "+engine.Short(model.ObjectID(gitRun(t, dir, "rev-parse", "HEAD")))+"'s Generated-By names a dockhand built from uncommitted source, which nobody else can find; tidy it again with a build of a pushed commit\n")
+	preview, err := jsonOf(t, "submit", "--plan", "--no-check")
+	require.NoError(t, err)
+	require.Equal(t, []any{gitRun(t, dir, "rev-parse", "HEAD")}, preview.Result["modified_builds"])
+}
+
+// A tidy whose commits name a dockhand built from uncommitted source says
+// so as it writes them, with how to name one anybody can find.
+func TestTidyWarnsOfAModifiedBuild(t *testing.T) {
+	plan := func(tag string) engine.TidyPlan {
+		return engine.TidyPlan{Groups: []engine.TidyGroup{{Message: "jq: update to 1.8.1\n\nGenerated-By: Dockhand " + tag + " (https://github.com/herbygillot/dockhand)"}}}
+	}
+	require.Equal(t, "! Generated-By names this dockhand, built from uncommitted source, which nobody else can find. Before submitting, tidy again with a build of a pushed commit: dockhand restore tidy-3, then dockhand tidy.",
+		modifiedBuildWarning(plan("devel+1a2b3c4d5e6f.modified"), "tidy-3"))
+	require.Empty(t, modifiedBuildWarning(plan("devel+1a2b3c4d5e6f"), "tidy-3"))
+}
+
 func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)

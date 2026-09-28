@@ -32,3 +32,15 @@ func TestIsAttributionKnowsEveryFormDockhandWrote(t *testing.T) {
 		require.False(t, commitmsg.IsAttribution(line), line)
 	}
 }
+
+// A commit whose Generated-By names a build of uncommitted source is
+// known, as submit shows it; one naming a committed build, or none, isn't.
+func TestAModifiedBuildIsKnownFromItsTrailer(t *testing.T) {
+	t.Parallel()
+	dirty := "hugo: update to 0.167.0\n\nGenerated-By: Dockhand v0.0.0-20260924.0.0.20260928140136-2601fff7d884+dirty (https://github.com/herbygillot/dockhand)\n"
+	clean := "hugo: update to 0.167.0\n\nGenerated-By: Dockhand v0.0.0-20260924.0.0.20260928175309-2bbcfdb76480 (https://github.com/herbygillot/dockhand)\n"
+	require.True(t, commitmsg.ModifiedBuild(dirty))
+	require.False(t, commitmsg.ModifiedBuild(clean))
+	require.False(t, commitmsg.ModifiedBuild("hugo: update to 0.167.0\n"))
+	require.False(t, commitmsg.ModifiedBuild("hugo: update to 0.167.0\n\nSee: https://example.org/v0.0.0+dirty\n"), "only dockhand's trailer names its build")
+}

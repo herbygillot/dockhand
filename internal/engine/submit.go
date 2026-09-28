@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -58,6 +59,10 @@ type SubmitPlan struct {
 	Findings []commitrules.Finding
 	// LeftOut are uncommitted files --head leaves out.
 	LeftOut []string
+	// ModifiedBuilds are the commits whose Generated-By names a dockhand
+	// built from uncommitted source, which nobody else can find: shown,
+	// so they can be tidied again with a build of a pushed commit.
+	ModifiedBuilds []string
 
 	Repository, HeadRepository, PushURL string
 	// RemoteHead is the fork's branch as it was seen.
@@ -178,6 +183,11 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	}
 	if len(plan.Commits) == 0 {
 		return plan, fmt.Errorf("%s has no commits above master yet; commit your edits with dockhand tidy", branch.Name)
+	}
+	for _, commit := range plan.Commits {
+		if commitmsg.ModifiedBuild(commit.Message) {
+			plan.ModifiedBuilds = append(plan.ModifiedBuilds, commit.ID)
+		}
 	}
 	changed, err := worktree.ChangedPaths(ctx, trees[string(branch.Base)], plan.Tree)
 	if err != nil {

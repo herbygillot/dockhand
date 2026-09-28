@@ -257,7 +257,7 @@ dockhand submit --plan     # the preview: commits, destination, title, checks, u
 dockhand submit
 ```
 
-`submit` pushes the branch's committed head to your fork and opens its pull request against `macports/macports-ports`, or updates the one it has. The preview also lists any other open pull requests for the same ports, and what comparing each update's upstream archives found, as the update reported it: a `!` line is what a reviewer would ask about. They're yours to weigh; a submission of yours isn't held for them, as `serve`'s and `bump`'s are. With `--json`, `upstream` holds them, by port.
+`submit` pushes the branch's committed head to your fork and opens its pull request against `macports/macports-ports`, or updates the one it has. The preview also lists any other open pull requests for the same ports, and what comparing each update's upstream archives found, as the update reported it: a `!` line is what a reviewer would ask about. They're yours to weigh; a submission of yours isn't held for them, as `serve`'s and `bump`'s are. With `--json`, `upstream` holds them, by port. A commit whose `Generated-By` names a dockhand built from uncommitted source is flagged too, since nobody else can find that build; `modified_builds` lists them.
 
 The committed files must have passed a check, for every changed port in every environment. Because a check builds the files rather than the commits, a check before `tidy` covers the commits `tidy` makes.
 

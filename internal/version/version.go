@@ -87,6 +87,14 @@ func namesRevision(version, revision string) bool {
 	return index >= 0 && base[index+1:] == revision
 }
 
+// TagModified reports whether a build's tag, as Tag gives it and a
+// Generated-By trailer names it, is of uncommitted source: the "+dirty"
+// the toolchain appends to a pseudo-version, or an untagged build's
+// ".modified". Nobody else can find such a build.
+func TagModified(tag string) bool {
+	return strings.Contains(tag, "+dirty") || strings.HasSuffix(tag, ".modified")
+}
+
 // Tag is the one-token form for trailers and user agents: the module
 // version when tagged, otherwise "devel+<revision>", with ".modified" when
 // the tree had uncommitted changes, so a commit names the exact code that

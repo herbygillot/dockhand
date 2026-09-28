@@ -38,6 +38,18 @@ func IsAttribution(line string) bool {
 	return false
 }
 
+// ModifiedBuild reports whether a message's Generated-By names a dockhand
+// built from uncommitted source, which nobody else can find.
+func ModifiedBuild(message string) bool {
+	for _, line := range strings.Split(message, "\n") {
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), generatedByPrefix); ok {
+			tag, _, _ := strings.Cut(rest, " ")
+			return version.TagModified(tag)
+		}
+	}
+	return false
+}
+
 // Subject composes the commit subject MacPorts asks for, "<port>: <what
 // changed>". The person writes only what follows the port name, so a
 // subject that already carries it is refused rather than doubled.

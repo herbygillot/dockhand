@@ -566,6 +566,12 @@ type TidyResult struct {
 	Commits    []string
 }
 
+// ModifiedBuild reports whether the plan's commits name, in Generated-By,
+// a dockhand built from uncommitted source, which nobody else can find.
+func (p TidyPlan) ModifiedBuild() bool {
+	return slices.ContainsFunc(p.Groups, func(group TidyGroup) bool { return commitmsg.ModifiedBuild(group.Message) })
+}
+
 // ErrStalePlan reports a plan whose branch or files changed since it was
 // made.
 var ErrStalePlan = errors.New("the branch changed since this plan was made")

@@ -43,3 +43,24 @@ Everything dockhand says names the release by macOS's number, macOS 26 (Tahoe), 
 ## A pull request's CI, before anything has read it
 
 Once #35000's CI had passed, `status` still showed only "#35000". It does show CI, "#35000, CI ✓", once `status --refresh` or `serve` has read the pull request from GitHub, but nothing said so, and plain `status` never reads GitHub. A branch's own status now says how while nothing has: "#35001 · CI not read yet (dockhand status --refresh)". The table of all branches keeps its short cell. `TestStatusRefreshShowsWhatTheReviewersSaid` fails without the hint, and with it left after the read.
+
+## A Generated-By nobody can find
+
+Each commit tidy writes names the dockhand that wrote it, in its `Generated-By` trailer, by the version Go stamped. A build of uncommitted source carries `+dirty` there, and such a trailer went out three times in one day:
+- #34992 was merged with a `+dirty` version in its commit;
+- duckdb's first tidy named one, and was redone;
+- the hugo branch was tidied with a build of `14320eb7`, which a rebase of the shared main then orphaned.
+
+Two checks now catch the first kind:
+- **Tidy** warns as it writes such a trailer, with how to redo it: "Before submitting, tidy again with a build of a pushed commit: dockhand restore tidy-3, then dockhand tidy."
+- **Submit's preview** flags each commit whose trailer names one, however it got there, and `submit --json` lists them as `modified_builds`. A person's own submission isn't held for it.
+
+A build is of uncommitted source when its tag carries the toolchain's `+dirty`, or an untagged build's `.modified` (`version.TagModified`).
+
+The orphaned commit isn't caught: that would take asking GitHub whether the commit exists, from tidy, which reads nothing remote. The way to avoid it is written down in development.md: build from a pushed commit, in a clean worktree. This session also no longer rebases the shared main.
+
+Tests fail with each part undone:
+- `TestATagOfUncommittedSourceIsModified` for both forms;
+- `TestAModifiedBuildIsKnownFromItsTrailer`, only dockhand's own trailer counting;
+- `TestSubmitShowsACommitNamingAModifiedBuild` for the preview and JSON;
+- `TestTidyWarnsOfAModifiedBuild`.

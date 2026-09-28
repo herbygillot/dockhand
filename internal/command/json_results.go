@@ -237,6 +237,9 @@ type submitJSON struct {
 	// Upstream is what comparing the upstream archives found for each of
 	// the branch's updates that compared them.
 	Upstream []portUpstreamJSON `json:"upstream"`
+	// ModifiedBuilds are the commits whose Generated-By names a dockhand
+	// built from uncommitted source.
+	ModifiedBuilds []string `json:"modified_builds"`
 	// Held are why a submission nobody looked over, bump's, waits for a
 	// person's look.
 	Held []string `json:"held,omitempty"`
@@ -268,7 +271,7 @@ type submittedJSON struct {
 func submitView(plan engine.SubmitPlan) submitJSON {
 	view := submitJSON{Branch: plan.Branch.ShortName(), Title: plan.Title, Commit: plan.Commit, Commits: len(plan.Commits), From: plan.Head(), To: plan.Repository + ":" + engine.UpstreamBranch,
 		Push: pushWords(plan), Checks: checkWords(plan), Findings: findingsView(plan.Findings), Blocking: nonNil(plan.Blocking), LeftOut: nonNil(plan.LeftOut), Body: plan.Body,
-		Upstream: []portUpstreamJSON{}}
+		Upstream: []portUpstreamJSON{}, ModifiedBuilds: nonNil(plan.ModifiedBuilds)}
 	for _, found := range plan.Upstream {
 		view.Upstream = append(view.Upstream, portUpstreamJSON{Port: found.Port, upstreamJSON: upstreamView(found.Comparison)})
 	}

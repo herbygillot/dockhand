@@ -52,3 +52,15 @@ func TestAPseudoVersionDoesNotRepeatItsRevision(t *testing.T) {
 	require.Equal(t, "v0.9.0 (5e3a5de30bb3)", Info{Version: "v0.9.0", Revision: "5e3a5de30bb3"}.String())
 	require.Equal(t, "devel (1a2b3c4d5e6f)", Info{Version: "devel", Revision: "1a2b3c4d5e6f"}.String())
 }
+
+// A build of uncommitted source is known from its tag in either form a
+// Generated-By trailer names it: the toolchain's pseudo-version with
+// +dirty, or an untagged build's .modified.
+func TestATagOfUncommittedSourceIsModified(t *testing.T) {
+	t.Parallel()
+	require.True(t, TagModified("v0.0.0-20260924.0.0.20260928140136-2601fff7d884+dirty"))
+	require.True(t, TagModified(Info{Version: "devel", Revision: "1a2b3c4d5e6f", Modified: true}.Tag()))
+	require.False(t, TagModified("v0.0.0-20260924.0.0.20260928175309-2bbcfdb76480"))
+	require.False(t, TagModified(Info{Version: "devel", Revision: "1a2b3c4d5e6f"}.Tag()))
+	require.False(t, TagModified("v0.3.0"))
+}

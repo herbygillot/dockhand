@@ -381,6 +381,9 @@ func writeSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 	for _, finding := range plan.Findings {
 		fmt.Fprintf(out, "  %s\n", finding)
 	}
+	for _, commit := range plan.ModifiedBuilds {
+		fmt.Fprintf(out, "  ! commit %s's Generated-By names a dockhand built from uncommitted source, which nobody else can find; tidy it again with a build of a pushed commit\n", engine.Short(model.ObjectID(commit)))
+	}
 	for _, blocking := range plan.Blocking {
 		fmt.Fprintf(out, "✗ %s\n", blocking)
 	}
