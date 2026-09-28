@@ -351,6 +351,13 @@ func (t *tx) update(what, query string, args ...any) error {
 	return nil
 }
 
+// exists reports ErrNotFound unless the repository has the row a query
+// selects by key: a reference checked without reading what it names.
+func (t *tx) exists(query string, key any) error {
+	var found int
+	return storageError(t.conn.QueryRowContext(t.ctx, query, t.repo, key).Scan(&found))
+}
+
 func busy(err error) bool {
 	var coded interface{ Code() int }
 	return errors.As(err, &coded) && (coded.Code()&255 == 5 || coded.Code()&255 == 6)

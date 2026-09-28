@@ -46,3 +46,15 @@ Tests:
 `PruneArchives` selected the unnamed archives, then deleted them with the same condition, so the `NOT EXISTS` ran twice. It is now one `DELETE … RETURNING`, sorted by digest in Go, since `RETURNING` gives rows in no promised order. It refuses a read-only transaction first, as `exec` does, since it no longer goes through `exec`.
 
 Tests: `TestArchivesGoWhenNoLiveResultNamesThem` now prunes two archives at once, the later-kept one first by digest. Without the sort, it fails: `RETURNING` gave them in the order they were kept.
+
+## A result's references are checked, not read (finding 5)
+
+`RecordResult` read and decoded whole records to learn a few facts. It read the execution, decoding `observed`, and then the run, only to reach the run's plan. It also read and decoded the inputs record, up to 7.4 KB, and the reused-from execution, only to learn that they exist. It now:
+- reads the run and plan IDs in one join of `executions` and `runs`;
+- checks the inputs and the reused-from execution with `SELECT 1`, through a new `tx.exists`.
+
+The errors are the same, with `ErrNotFound` for a missing reference.
+
+The plan is still decoded whole for each result, to ask `model.Plan.Target`. The review measured 0.85 ms for a 300-target, 6-environment plan. It made a cache of decoded plans conditional on that cost being judged worth it, and it isn't done here. Answering the question with SQLite's JSON functions would take the plan's rule from `model` into SQL.
+
+Tests: `TestAResultKeepsWhatItsBuildRead` now also records a result in an execution there isn't, and one reused from an execution there isn't. Both are `ErrNotFound`; neither path was tested before.

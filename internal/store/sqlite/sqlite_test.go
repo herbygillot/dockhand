@@ -388,6 +388,9 @@ func TestAResultKeepsWhatItsBuildRead(t *testing.T) {
 
 	missing := model.TargetResult{Execution: execution.ID, Target: "libharbor", Outcome: model.OutcomePassed, Tests: model.TestsNone, Inputs: inputs.Key(), RecordedAt: at}
 	require.ErrorIs(t, f.update(t, func(tx store.Tx) error { return tx.RecordResult(missing) }), store.ErrNotFound, "inputs are recorded before the result naming them")
+	elsewhere := missing
+	elsewhere.Execution = "ex_none"
+	require.ErrorIs(t, f.update(t, func(tx store.Tx) error { return tx.RecordResult(elsewhere) }), store.ErrNotFound, "a result is recorded in an execution there is")
 
 	var keys []string
 	for range 2 {
@@ -402,6 +405,9 @@ func TestAResultKeepsWhatItsBuildRead(t *testing.T) {
 	built.Archive = "sha256:55"
 	built.Detail = "a dependency failed to install: zlib"
 	built.Builders = []model.BuilderResult{{Builder: "macos-14", Outcome: model.OutcomeNotRun}, {Builder: "macos-15", Outcome: model.OutcomePassed, Tests: model.TestsPassed, Log: "15.log"}}
+	borrowed := built
+	borrowed.ReusedFrom = "ex_none"
+	require.ErrorIs(t, f.update(t, func(tx store.Tx) error { return tx.RecordResult(borrowed) }), store.ErrNotFound, "a result is reused from an execution there is")
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.RecordResult(built) }))
 
 	require.NoError(t, f.store.View(t.Context(), f.repo, func(rd store.Reader) error {

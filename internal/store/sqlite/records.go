@@ -589,28 +589,26 @@ func (t *tx) RecordResult(r model.TargetResult) error {
 	if err := r.Validate(); err != nil {
 		return err
 	}
-	e, err := t.execution(r.Execution)
-	if err != nil {
-		return err
+	var run model.RunID
+	var planID model.PlanID
+	if err := t.conn.QueryRowContext(t.ctx, "SELECT u.id, u.plan_id FROM executions e JOIN runs u ON u.repository_id=e.repository_id AND u.id=e.run_id WHERE e.repository_id=? AND e.id=?",
+		t.repo, r.Execution).Scan(&run, &planID); err != nil {
+		return fmt.Errorf("%s's result in execution %s: %w", r.Target, r.Execution, storageError(err))
 	}
-	run, err := t.Run(e.Run)
-	if err != nil {
-		return err
-	}
-	plan, err := t.Plan(run.Plan)
+	plan, err := t.Plan(planID)
 	if err != nil {
 		return err
 	}
 	if _, ok := plan.Target(r.Target); !ok {
-		return fmt.Errorf("%w: target %s is not in run %s's plan", model.ErrInvalid, r.Target, run.ID)
+		return fmt.Errorf("%w: target %s is not in run %s's plan", model.ErrInvalid, r.Target, run)
 	}
 	if r.Inputs != "" {
-		if _, err := t.Inputs(r.Inputs); err != nil {
+		if err := t.exists("SELECT 1 FROM inputs WHERE repository_id=? AND key=?", r.Inputs); err != nil {
 			return fmt.Errorf("%s's result names inputs %s: %w", r.Target, r.Inputs, err)
 		}
 	}
 	if r.ReusedFrom != "" {
-		if _, err := t.execution(r.ReusedFrom); err != nil {
+		if err := t.exists("SELECT 1 FROM executions WHERE repository_id=? AND id=?", r.ReusedFrom); err != nil {
 			return fmt.Errorf("%s's result is reused from execution %s: %w", r.Target, r.ReusedFrom, err)
 		}
 	}
