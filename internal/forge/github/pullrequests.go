@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -79,8 +80,11 @@ func (c *Client) Observe(ctx context.Context, ref forge.PullRequestRef) (forge.P
 		return forge.PullRequestObservation{}, githubapi.RateLimitError(err)
 	}
 	owner, repo, _ := strings.Cut(ref.Repository, "/")
-	row, _, err := client.PullRequests.Get(ctx, owner, repo, ref.Number)
+	row, response, err := client.PullRequests.Get(ctx, owner, repo, ref.Number)
 	if err != nil {
+		if response != nil && response.StatusCode == http.StatusNotFound {
+			return forge.PullRequestObservation{}, fmt.Errorf("%w: %w", forge.ErrNotFound, err)
+		}
 		return forge.PullRequestObservation{}, githubapi.RateLimitError(err)
 	}
 	if row.GetNumber() != ref.Number {

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -49,11 +50,11 @@ func (e *Engine) refresh(ctx context.Context, branch model.Branch) (Refreshed, e
 	pr := branch.PullRequest
 	ref := forge.PullRequestRef{Forge: forge.GitHub, Repository: pr.Repository, Number: pr.Number}
 	observed, err := e.forge().Observe(ctx, ref)
+	if errors.Is(err, forge.ErrNotFound) {
+		return refreshed, fmt.Errorf("#%d was not found", pr.Number)
+	}
 	if err != nil {
 		return refreshed, err
-	}
-	if !observed.Found {
-		return refreshed, fmt.Errorf("#%d was not found", pr.Number)
 	}
 	now := observed.PullRequest
 	next := model.PullRequestObservation{State: string(now.State), Head: model.ObjectID(now.RemoteHead), Review: "none", Checks: "none", At: e.now()}

@@ -284,6 +284,19 @@ func TestObserveTerminalPRFromDeletedFork(t *testing.T) {
 	}
 }
 
+// A pull request GitHub doesn't have is forge.ErrNotFound, as a missing
+// commit, file, or tag is.
+func TestObservingAMissingPullRequestIsNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprint(w, `{"message":"Not Found"}`)
+	}))
+	defer server.Close()
+	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL, Token: "fixture-token"}}}
+	_, err := client.Observe(t.Context(), forge.PullRequestRef{Forge: forge.GitHub, Repository: "upstream/ports", Number: 3})
+	require.ErrorIs(t, err, forge.ErrNotFound)
+}
+
 func TestMarkReadyTakesADraftOutOfDraft(t *testing.T) {
 	draft := true
 	var mutations int

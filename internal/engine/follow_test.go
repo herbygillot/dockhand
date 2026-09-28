@@ -52,6 +52,14 @@ func TestPullRequestsAreFollowed(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, statuses[0].SomeoneElsePushed())
 
+	// The forge no longer has it.
+	pr := fake.prs[number]
+	delete(fake.prs, number)
+	refreshed, err = e.RefreshPullRequests(t.Context())
+	require.NoError(t, err)
+	require.EqualError(t, refreshed[0].Err, "#34901 was not found")
+	fake.prs[number] = pr
+
 	// And it is merged.
 	fake.prs[number].State = forge.PullRequestMerged
 	refreshed, err = e.RefreshPullRequests(t.Context())

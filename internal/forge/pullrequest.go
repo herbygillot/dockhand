@@ -134,7 +134,9 @@ type Accounts interface {
 }
 
 // PullRequests finds, observes, and writes pull requests. One that can
-// report a pull request's status is also a PullRequestInspector.
+// report a pull request's status is also a PullRequestInspector. Find
+// reports no match as an observation not Found; Observe reports a pull
+// request the forge doesn't have as ErrNotFound.
 type PullRequests interface {
 	Find(context.Context, PullRequestQuery) (PullRequestObservation, error)
 	Observe(context.Context, PullRequestRef) (PullRequestObservation, error)
