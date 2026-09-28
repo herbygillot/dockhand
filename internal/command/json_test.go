@@ -65,7 +65,7 @@ func TestJSONEnvelopes(t *testing.T) {
 	require.Equal(t, "substantive", dig(t, planned.Result, "plan", "targets", 0, "kind"))
 	require.Equal(t, "command", dig(t, planned.Result, "plan", "builds", 0, "environment", "provider"))
 	require.Equal(t, []any{"jq"}, dig(t, planned.Result, "plan", "builds", 0, "order"), "each environment's own order")
-	require.Equal(t, "snapshot 1", dig(t, planned.Result, "revision", "description"))
+	require.Equal(t, "a new snapshot", dig(t, planned.Result, "revision", "description"), "a plan records and numbers nothing")
 	require.Nil(t, planned.Result["run"])
 
 	queued, err := jsonOf(t, "check", "-d")

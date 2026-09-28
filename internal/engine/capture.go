@@ -29,6 +29,10 @@ type CaptureRequest struct {
 	Mode   CaptureMode
 	// Include adds untracked files to the capture without staging them.
 	Include []string
+	// Plan records nothing, for check --plan: an earlier revision with the
+	// same files is still found, and new files are a snapshot numbered
+	// only when a check records it.
+	Plan bool
 }
 
 // Capture is the revision a check covers.
@@ -43,6 +47,10 @@ type Capture struct {
 // Describe names the revision for people: "snapshot 3" or "commit 7e3f1a2".
 func Describe(revision model.Revision) string {
 	if revision.Kind == model.RevisionSnapshot {
+		if revision.Snapshot == 0 {
+			// A plan's capture, which only a check records and numbers.
+			return "a new snapshot"
+		}
 		return fmt.Sprintf("snapshot %d", revision.Snapshot)
 	}
 	return "commit " + short(revision.Source.Commit)
@@ -128,16 +136,35 @@ func (e *Engine) Capture(ctx context.Context, request CaptureRequest) (Capture, 
 	} else {
 		revision.Kind = model.RevisionSnapshot
 	}
+	found := func(existing []model.Revision) bool {
+		for _, earlier := range slices.Backward(existing) {
+			if earlier.SameTree(revision) && earlier.Kind == revision.Kind && earlier.Source.Commit == revision.Source.Commit {
+				capture.Revision, capture.Reused = earlier, true
+				return true
+			}
+		}
+		return false
+	}
+	if request.Plan {
+		err = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+			existing, err := r.Revisions(branch.ID)
+			if err == nil && !found(existing) {
+				// An ID of its own, as the plan made of it has, though
+				// neither is recorded.
+				revision.ID = model.RevisionID(store.NewID("rev"))
+				capture.Revision = revision
+			}
+			return err
+		})
+		return capture, err
+	}
 	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 		existing, err := tx.Revisions(branch.ID)
 		if err != nil {
 			return err
 		}
-		for _, earlier := range slices.Backward(existing) {
-			if earlier.SameTree(revision) && earlier.Kind == revision.Kind && earlier.Source.Commit == revision.Source.Commit {
-				capture.Revision, capture.Reused = earlier, true
-				return nil
-			}
+		if found(existing) {
+			return nil
 		}
 		revision.ID = model.RevisionID(store.NewID("rev"))
 		if revision.Kind == model.RevisionSnapshot {

@@ -64,3 +64,13 @@ Tests fail with each part undone:
 - `TestAModifiedBuildIsKnownFromItsTrailer`, only dockhand's own trailer counting;
 - `TestSubmitShowsACommitNamingAModifiedBuild` for the preview and JSON;
 - `TestTidyWarnsOfAModifiedBuild`.
+
+## `check --plan` records nothing
+
+`check --plan` says it "changes nothing", but it printed "captured working files as snapshot 1": it recorded the snapshot, numbered it, and the check that followed reused it. A plan now captures without recording (`CaptureRequest.Plan`):
+- it still finds a snapshot already recorded of the same files, "checking snapshot 1";
+- new files are "a new snapshot", which only a check records and numbers: "would capture the working files as a new snapshot".
+
+The unrecorded capture gets an ID of its own, as the plan made of it already did, since a plan names its revision.
+
+`TestCheckRunsHereWithoutServe` and `TestJSONEnvelopes` fail with any part undone. The check after a plan now captures snapshot 1 itself, rather than reusing one the plan left behind.

@@ -86,7 +86,7 @@ true, it runs that baseline by itself.`,
 			if err != nil {
 				return err
 			}
-			capture, err := e.Capture(ctx, engine.CaptureRequest{Branch: branch, Mode: mode, Include: include})
+			capture, err := e.Capture(ctx, engine.CaptureRequest{Branch: branch, Mode: mode, Include: include, Plan: plan})
 			if err != nil {
 				return err
 			}
@@ -101,6 +101,9 @@ true, it runs that baseline by itself.`,
 			what := "checking " + engine.Describe(capture.Revision)
 			if capture.Revision.Kind == model.RevisionSnapshot && !capture.Reused {
 				what = "captured working files as " + engine.Describe(capture.Revision)
+				if plan {
+					what = "would capture the working files as " + engine.Describe(capture.Revision)
+				}
 			}
 			fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), what)
 			if len(capture.Untracked) > 0 {

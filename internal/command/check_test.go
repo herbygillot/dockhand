@@ -65,7 +65,7 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	withScript(t, w, "passed")
 	out, _, err := dockhand(t, "check", "--plan")
 	require.NoError(t, err)
-	require.Equal(t, "jq-update · captured working files as snapshot 1\nChanged     jq\nProvider    command · tests declared\n", out)
+	require.Equal(t, "jq-update · would capture the working files as a new snapshot\nChanged     jq\nProvider    command · tests declared\n", out)
 	_, _, err = dockhand(t, "check", "--on", "tart:tahoe")
 	require.ErrorContains(t, err, "Tart isn't installed here")
 
@@ -73,8 +73,11 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, errs, "check-1 runs here, since no dockhand serve is running.")
 	require.Contains(t, errs, "command: jq passed")
-	require.Contains(t, out, "jq-update · checking snapshot 1\n")
+	require.Contains(t, out, "jq-update · captured working files as snapshot 1\n", "the plan recorded nothing for the check to reuse")
 	require.Contains(t, out, "  jq  ✓\n\nPassed for snapshot 1.\nNext: dockhand tidy --branch jq-update\n", "what moves the branch on, as status says it")
+	out, _, err = dockhand(t, "check", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "jq-update · checking snapshot 1\n", "a plan finds a snapshot already recorded of the same files")
 
 	out, _, err = dockhand(t, "check", "-d")
 	require.NoError(t, err)
