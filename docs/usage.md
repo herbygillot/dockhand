@@ -71,7 +71,7 @@ dockhand update jq 1.8.1           # a version you name, in the branch checked o
 dockhand update jq --new --plan    # what would change, from master, starting nothing
 ```
 
-A plan never starts a branch. With no branch to plan in, none named and none checked out here or changing the port, `update jq --plan` plans on master too.
+A plan never starts a branch. With no branch to plan in, none named and none checked out here or changing the port, `update jq --plan` plans on master too. A branch you made with Git, which dockhand doesn't track, counts as none while it doesn't change the port, and the plan says so. Where it does, in commits, edits, or files it adds, a plan on master would leave your changes out, so it refuses, and names `adopt`, which lets the plan read them, and `--new --plan`, which plans without them. Edits to the port on master itself, not committed, are refused the same way. `update jq` on such a branch starts a branch as it would on master, or refuses where the branch changes the port.
 
 `update` finds the newest release the Portfile's own rules accept, from the project's GitHub or GitLab tags and releases, or its livecheck. It moves the version, resets the revision, and fills in checksums. For a Go or Rust port whose Portfile lists its dependencies, it regenerates the list with `go2port` or `cargo2port`. `--shared-release` moves every subport sharing the port's release, and `--keep-old-checksums` refreshes legacy md5 or sha1 checksums in place rather than rewriting them as rmd160, sha256, and size.
 

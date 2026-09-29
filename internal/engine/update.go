@@ -455,6 +455,40 @@ func (e *Engine) BranchesChanging(ctx context.Context, port string) ([]model.Bra
 	return changing, nil
 }
 
+// ChangesHere reports whether what's checked out where the engine was
+// opened changes a port: in the commits since it left master, as fetched
+// now, or in files edited or added and not committed. Work planned on
+// master would leave those out. It's for a checkout dockhand doesn't
+// track, a branch a person made with Git or master itself; a tracked
+// branch's changes are BranchesChanging's.
+func (e *Engine) ChangesHere(ctx context.Context, port string) (bool, error) {
+	master, err := e.fetchMaster(ctx)
+	if err != nil {
+		return false, err
+	}
+	head, err := e.Repo.Resolve(ctx, "HEAD")
+	if err != nil {
+		return false, err
+	}
+	left, err := e.Repo.MergeBase(ctx, head, string(master))
+	if err != nil {
+		return false, err
+	}
+	paths, err := e.Repo.ChangedPaths(ctx, left, head)
+	if err != nil {
+		return false, err
+	}
+	edited, err := e.Repo.TrackedChanges(ctx)
+	if err != nil {
+		return false, err
+	}
+	added, err := e.Repo.Untracked(ctx)
+	if err != nil {
+		return false, err
+	}
+	return slices.Contains(ScopeOf(slices.Concat(paths, edited, added)).PortNames(), port), nil
+}
+
 // workingEdits are the tracked files edited in a branch's worktree and not
 // yet committed; none where it isn't checked out, which it leaves as it
 // is.

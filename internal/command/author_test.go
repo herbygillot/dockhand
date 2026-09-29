@@ -219,14 +219,57 @@ func TestAPlanInANamedBranchIsPlannedThere(t *testing.T) {
 	require.NotContains(t, out, "Planned on master")
 }
 
+// A branch someone made with Git, which dockhand doesn't track, is theirs
+// to adopt where it changes the port, in commits, edits, or files it adds,
+// which work on master would leave out. Where it doesn't, it's no context,
+// as master isn't: a plan is made on master, saying why, and an update
+// says how to start a branch, as on master (D7, decided 2026-09-29).
 func TestAnUntrackedBranchHereIsTheirsToAdopt(t *testing.T) {
 	w := newWorld(t)
+	versioned(t, w)
 	withBumper(t)
 	gitRun(t, w.clone, "switch", "-q", "-c", "mine")
-	_, _, err := dockhand(t, "update", "jq")
-	require.ErrorContains(t, err, "mine is not tracked; dockhand adopt tracks it")
-	_, _, err = dockhand(t, "update", "jq", "--plan")
-	require.ErrorContains(t, err, "mine is not tracked; dockhand adopt tracks it", "a plan in someone's branch isn't master's")
+	planned, _, err := dockhand(t, "update", "jq", "--plan")
+	require.NoError(t, err)
+	require.Regexp(t, `Planned on master [0-9a-f]+ \(fetched just now\), since mine doesn't change jq; --new without --plan starts the branch\n`, planned)
+	_, _, err = dockhand(t, "update", "jq")
+	require.ErrorContains(t, err, "jq is in no open branch, and mine, checked out here, doesn't change it; start one with --new, or name one with --branch <name>")
+
+	refused := func(why string) {
+		t.Helper()
+		_, _, err := dockhand(t, "update", "jq", "--plan")
+		require.ErrorContains(t, err, "mine changes jq, which a plan on master would leave out; dockhand adopt tracks it, so the plan reads its changes, or --new --plan plans on master without them", why)
+		_, _, err = dockhand(t, "update", "jq")
+		require.ErrorContains(t, err, "mine changes jq and isn't tracked; dockhand adopt tracks it, so the update is made there, or --new starts a branch from master without its changes", why)
+	}
+	patch := filepath.Join(w.clone, "textproc/jq/files/patch-fix.diff")
+	require.NoError(t, os.MkdirAll(filepath.Dir(patch), 0o755))
+	require.NoError(t, os.WriteFile(patch, []byte("--- a\n+++ b\n"), 0o644))
+	refused("a file it adds")
+	require.NoError(t, os.RemoveAll(filepath.Dir(patch)))
+	portfile := filepath.Join(w.clone, "textproc/jq/Portfile")
+	require.NoError(t, os.WriteFile(portfile, []byte("name jq\n# mine\n"), 0o644))
+	refused("an edit not committed")
+	gitRun(t, w.clone, "commit", "-q", "-am", "jq: mine")
+	refused("a commit since it left master")
+	planned, _, err = dockhand(t, "update", "jq", "--new", "--plan")
+	require.NoError(t, err)
+	require.Regexp(t, `Planned on master [0-9a-f]+ \(fetched just now\); --new without --plan starts the branch\n`, planned)
+}
+
+// Master's own edits to a port, not committed, would be left out of a plan
+// on master too, so it refuses them, and --new --plan plans without them
+// (D7).
+func TestAPlanOnMasterDoesntLeaveEditsOut(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	require.NoError(t, os.WriteFile(filepath.Join(w.clone, "textproc/jq/Portfile"), []byte("name jq\n# mine\n"), 0o644))
+	_, _, err := dockhand(t, "update", "jq", "--plan")
+	require.ErrorContains(t, err, "what's checked out here changes jq, which a plan on master would leave out; --new --plan plans on master without it")
+	planned, _, err := dockhand(t, "update", "jq", "--new", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, planned, "Planned on master ")
 }
 
 func TestUpdateRevbumpsTheLibraryDependents(t *testing.T) {

@@ -300,8 +300,9 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	}
 	defer e.Close()
 	// So is one with no branch to plan in, since a plan starts nothing.
+	var beside string
 	if request.Plan && request.Action == model.EditUpdate && !fromMaster {
-		if fromMaster, err = unbranchedPlan(ctx, e, where, request.Port); err != nil {
+		if fromMaster, beside, err = unbranchedPlan(ctx, e, where, request.Port); err != nil {
 			return branch, update, err
 		}
 	}
@@ -339,7 +340,11 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		streams.emit(updateView(branch, started, update, request.Plan))
 	}
 	if fromMaster && err == nil {
-		fmt.Fprintf(out, "Planned on master %s (fetched just now); --new without --plan starts the branch\n", engine.Short(update.Base))
+		why := ""
+		if beside != "" {
+			why = fmt.Sprintf(", since %s doesn't change %s", beside, request.Port)
+		}
+		fmt.Fprintf(out, "Planned on master %s (fetched just now)%s; --new without --plan starts the branch\n", engine.Short(update.Base), why)
 		// The dependents are the index's at the master planned on.
 		branch.Base = update.Base
 	}
@@ -591,19 +596,38 @@ func releaseWords(port string, release model.Release) string {
 
 // unbranchedPlan reports whether a version update's plan has no branch to
 // be planned in: none named, nothing tracked checked out here, and no open
-// branch changing the port. It is planned on master, as --new --plan is.
-func unbranchedPlan(ctx context.Context, e *engine.Engine, where branchChoice, port string) (bool, error) {
+// branch changing the port. It is planned on master, as --new --plan is,
+// and beside is the untracked branch checked out here, if one is. What's
+// checked out here and changes the port is refused instead, since a plan
+// on master would leave it out (D7).
+func unbranchedPlan(ctx context.Context, e *engine.Engine, where branchChoice, port string) (fromMaster bool, beside string, err error) {
 	if where.branch != "" {
-		return false, nil
+		return false, "", nil
 	}
 	if _, err := e.Current(ctx); !errors.Is(err, engine.ErrNoBranch) {
-		return false, nil
+		return false, "", nil
 	}
-	if current, err := e.Repo.CurrentBranch(ctx); err == nil && current != "master" && current != "main" {
-		return false, nil
+	beside = untrackedHere(ctx, e)
+	changes, err := e.ChangesHere(ctx, port)
+	switch {
+	case err != nil:
+		return false, "", err
+	case changes && beside != "":
+		return false, "", fmt.Errorf("%w: %s changes %s, which a plan on master would leave out; dockhand adopt tracks it, so the plan reads its changes, or --new --plan plans on master without them", engine.ErrNoBranch, beside, port)
+	case changes:
+		return false, "", fmt.Errorf("what's checked out here changes %s, which a plan on master would leave out; --new --plan plans on master without it", port)
 	}
 	changing, err := e.BranchesChanging(ctx, port)
-	return len(changing) == 0, err
+	return len(changing) == 0, beside, err
+}
+
+// untrackedHere is the branch checked out here when it's one a person made
+// and dockhand doesn't track; empty for master, or no branch at all.
+func untrackedHere(ctx context.Context, e *engine.Engine) string {
+	if current, err := e.Repo.CurrentBranch(ctx); err == nil && current != "master" && current != "main" {
+		return current
+	}
+	return ""
 }
 
 // chooseBranch is the branch an authoring command works in: --branch, a
@@ -622,9 +646,17 @@ func chooseBranch(ctx context.Context, e *engine.Engine, streams Streams, where 
 		return branch, false, err
 	}
 	// A branch someone made and dockhand does not track is theirs to
-	// adopt; master, or no branch at all, is no context.
-	if current, currentErr := e.Repo.CurrentBranch(ctx); currentErr == nil && current != "master" && current != "main" {
-		return model.Branch{}, false, err
+	// adopt where it changes the port; otherwise it's no context, as
+	// master isn't, or no branch at all (D7).
+	beside := untrackedHere(ctx, e)
+	if beside != "" {
+		changes, err := e.ChangesHere(ctx, port)
+		if err != nil {
+			return model.Branch{}, false, err
+		}
+		if changes {
+			return model.Branch{}, false, fmt.Errorf("%w: %s changes %s and isn't tracked; dockhand adopt tracks it, so the %s is made there, or --new starts a branch from master without its changes", engine.ErrNoBranch, beside, port, purpose)
+		}
 	}
 
 	changing, err := e.BranchesChanging(ctx, port)
@@ -637,7 +669,11 @@ func chooseBranch(ctx context.Context, e *engine.Engine, streams Streams, where 
 	}
 	if !streams.terminal() {
 		if len(names) == 0 {
-			return model.Branch{}, false, fmt.Errorf("%s is in no open branch, and this checkout is on none; start one with --new, or name one with --branch <name>", port)
+			here := "this checkout is on none"
+			if beside != "" {
+				here = beside + ", checked out here, doesn't change it"
+			}
+			return model.Branch{}, false, fmt.Errorf("%s is in no open branch, and %s; start one with --new, or name one with --branch <name>", port, here)
 		}
 		return model.Branch{}, false, fmt.Errorf("%s is changed in %s; name it with --branch %s, or start another with --new", port, strings.Join(names, ", "), names[0])
 	}
