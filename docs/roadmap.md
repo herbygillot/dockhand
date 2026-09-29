@@ -220,7 +220,7 @@ These are taken when their area is next touched, or between items.
   - a legend for the preview's `!`, which marks what holds the branch for a look.
 - **What the sshuttle run asked for** ([review](reviews/2026-09-28-hugo-bump-exercise.md#sshuttle-through-paths-not-yet-taken)), the first of them before anything else here:
   - **the current version's archives found as the new version's are.** Done 2026-09-28 ([note](activity/2026-09-28-mirror-groups-and-ready.md)): from MacPorts' own fetch plan, mirror groups expanded, for updates and `diff --archive`. About a third of the tree, the ports on PyPI's, CPAN's, and other mirror groups, can be compared, and so submitted unattended;
-  - `submit --ready` refused by an organization's OAuth App access restrictions says what to do. Done 2026-09-28 (the same note): its page, or `gh pr ready <n>`, whose app signs in on its own. Whether dockhand should use the GitHub CLI's login for that one call is the person's;
+  - `submit --ready` refused by an organization's OAuth App access restrictions says what to do. Done 2026-09-28 (the same note): its page, or `gh pr ready <n>`, whose app signs in on its own. Whether dockhand should use the GitHub CLI's login for that one call is the person's (D8);
   - `submit --ready --plan` previews marking ready, and a draft's preview names `dockhand submit --ready`;
   - a submission waiting on a queued or running check of the same files names it and `dockhand wait <check>`, rather than "run dockhand check first";
   - `wait` with no argument follows the check of the branch checked out here, as bare `logs` does. Done 2026-09-28, with the certigo run's `cancel` ([note](activity/2026-09-28-certigo-fixes.md));
@@ -245,7 +245,7 @@ These are taken when their area is next touched, or between items.
   - a database migration that says so, since builds older than it can't open the database afterward; certigo's first run migrated it silently.
 - **What the beekeeper-studio run asked for** ([review](reviews/2026-09-28-hugo-bump-exercise.md#beekeeper-studio-a-port-that-needed-a-portfile-change)):
   - **an environment the check excluded isn't called tested,** the run's most serious finding (finding 4). `platforms {darwin >= 23}` excluded macOS 12, and the grid said so. But `submit --plan` said the check passed there, and the pull request's Tested on listed it, "its version not recorded", though nothing built there. Tested on lists every planned environment (`engine/body.go`), and submit's plan joins them itself (`command/submit.go`). Which environments a check tested is the evidence's to say, and an excluded one is named as excluded, with why;
-  - a failure summarized by its cause (finding 2). The guest takes MacPorts' last three `Error:` lines: "`make` failed with exit code: 2; Failed to build beekeeper-studio". The cause, "fatal error: 'source_location' file not found" as node-gyp rebuilt sqlanywhere, was only in the log. A build tool's output isn't MacPorts' interface, so what's read beyond MacPorts' own lines, and how it's marked as a reading of the log, is decided first;
+  - a failure summarized by its cause (finding 2). The guest takes MacPorts' last three `Error:` lines: "`make` failed with exit code: 2; Failed to build beekeeper-studio". The cause, "fatal error: 'source_location' file not found" as node-gyp rebuilt sqlanywhere, was only in the log. A build tool's output isn't MacPorts' interface, so what's read beyond MacPorts' own lines, and how it's marked as a reading of the log, is decided first (D10);
   - an exclusion by `platforms` named for it, not "known_fail" (finding 3): with build eligibility, in item 6;
   - a yarn workspace's manifests read (finding 1): with the chezmoi run's item on which manifests the port builds with, above.
 - **Branches from before v3.** The hugo exercise's checkout holds 22 local `dockhand/bump/<port>-<id>` branches from earlier dockhand, which nothing reports ([review](reviews/2026-09-28-hugo-bump-exercise.md#cleaning-up), finding 3). Its classification is the design:
@@ -260,10 +260,21 @@ These are taken when their area is next touched, or between items.
 ## Decisions for the person
 
 - **D2. Tools or Xcode profile.** Should modelled contexts use the Xcode profile, as MacPorts' builders do, or the tools profile they use now? This has been open since oracle phase 5, and changes nothing an update edits today.
-- **D3. Tahoe's Xcode.** Tahoe's Xcode has no upper bound, so a `--rebuild` of its Xcode image would now choose Xcode 27, by the rule that gives Sequoia 26.3. Should Tahoe stay on 26?
+- **D6. How long build history is kept** (the SQL review's finding 8). Runs, executions, results, plans, revisions, and each build's recorded inputs are never removed. Inputs grow fastest, at about 3.6 KB a build: an estimated 700 MB at 200,000 builds. The review suggests the archives' cutoff: keep what a result still usable for reuse, or an open branch, refers to. A merged branch's own record stays either way, for status.
+- **D7. `update --plan` on a branch dockhand doesn't track** (the chezmoi run's finding 3). It refuses and points at `adopt`, as a test pins, since the branch may hold the person's own edits to the port. The choices:
+  - A: better words only, naming `--new --plan` too;
+  - B, proposed: plan on master unless what's checked out here changes the port, in commits since master or uncommitted edits, and refuse only then. The same test would cover master's own uncommitted edits, and `update` without `--plan` could act as it does on master;
+  - C: always plan on master, leaving out the person's own edits without a word.
+- **D8. The GitHub CLI for marking ready.** When an organization refuses dockhand's app, a refused `--ready` says how to finish: the pull request's page, or `gh pr ready <n>`. dockhand could run that command itself when `gh` is installed and signed in. It's a documented command, and gh's login stays gh's, but the change would be made as another app, one the organization allows.
+- **D9. Holds on the dependencies dockhand writes** (discussed 2026-09-28). `update` writes `go.vendors` and `cargo.crates` itself, and a check builds with only what the port declares, so a changed Go module or Rust crate rarely needs a person. Three questions:
+  - no Go dependency holds at all, keeping the `go.toolchain_min` check: proposed;
+  - a new Rust `-sys` crate in Cargo.lock, which can link a MacPorts library where one is installed and a bundled copy where it isn't, a difference a clean check can't see: hold, list without holding, or ignore. Holding is proposed;
+  - the lines that don't hold, such as a module that moves: kept, a count, or dropped. A count in the update's own output, and nothing in the pull request, is proposed.
+- **D10. What a failure's summary reads beyond MacPorts' own lines** (the beekeeper-studio run's finding 2). Today it's MacPorts' last three `Error:` lines. A compiler's `error:` or `fatal error:` line, in the format clang documents, would name the cause; a build tool's own marks, such as electron-builder's `⨯`, aren't a documented interface. Proposed: the first compiler error in the port's log, marked as read from the log, beside MacPorts' lines.
 
 ### Decided
 
+- **D3. Tahoe's Xcode** (2026-09-27), settled by Xcode images following MacPorts' buildbots, below. Tahoe's image has 26.6, its buildbot's, and a `--rebuild` keeps to that rather than choosing Xcode 27.
 - **D4. What an update couldn't check holds a submission nobody reviews** (2026-09-27, [note](activity/2026-09-27-what-couldnt-be-checked-holds.md)).
   - `bump`'s and serve's submissions wait for a person's look, as they do for a failed search for other pull requests, when the update couldn't check something a passing build can't catch:
     - archives the comparison couldn't pair or fetch;
@@ -354,8 +365,6 @@ Changed:
 - **Finding 5 is ranked lower.** GitHub isn't the default provider, so per-runner evidence is a smaller item. The port reader's report joins item 6, where reuse needs it.
 - **Finding 6 is narrowed.** It shrinks to the JSON gap and the release's provenance, until something reads more.
 - **Finding 1's reuse probe was rewritten for D1.** It expected a block; the person decided each result keeps its own check's policy.
-- **How long build history is kept** (the SQL review's finding 8). Runs, executions, results, plans, revisions, and each build's recorded inputs are never removed. Inputs grow fastest, at about 3.6 KB a build: an estimated 700 MB at 200,000 builds. The review suggests the archives' cutoff: keep what a result still usable for reuse, or an open branch, refers to. A merged branch's own record stays either way, for status.
-- **`update --plan` on a branch dockhand doesn't track.** It refuses and points at `adopt`, as a test pins. It could plan on master when that branch doesn't change the port, as it does on master itself, and otherwise point at `--branch` or `--new --plan` (the chezmoi run's finding 3).
 
 **The [hugo exercise](reviews/2026-09-28-hugo-bump-exercise.md)** of 2026-09-28 was checked against the code at `fdf8147f` ([note](activity/2026-09-28-hugo-exercise-fixes.md)).
 - **Its eleven findings hold,** each as the review describes it. Finding 11 is narrower: `status` shows CI once something has read it from GitHub, and plain `status` never does.
@@ -365,7 +374,7 @@ Changed:
 **The chezmoi run** in the same review, `dockhand bump` with `b8915f15`, was checked against the code at `4bb16db3`.
 - **Finding 1 holds, and is older than the comparison's rewrite.** `sourcecompare` leaves go.mod's indirect requirements out, as `archive`'s comparison did before it, so a module that becomes direct reads as added. That false hold is fixed ([note](activity/2026-09-28-go-module-promotion.md)). Its broader claim, that no go.mod change can need a Portfile edit, goes too far: a module new to the build can need a library from MacPorts, as a cgo one can, so a new one still holds.
 - **Finding 2** is noise rather than a defect: the comparison reads every manifest it knows, and nothing tells it which the port builds with. A smaller item, as is finding 5's legend.
-- **Finding 3** is a decision for the person: the refusal is deliberate.
+- **Finding 3** is a decision for the person, D7: the refusal is deliberate.
 - **Findings 4 and 6** need nothing: 4 is by design, and 6 was an older build's, as the review now says.
 
 **Re-submitting sshuttle** in the same review, after its move to Python 3.14, was checked against the code at `259ee3ba`.
@@ -400,7 +409,7 @@ Changed:
   - Commits reach the disk (`fullfsync`, as the review recommended), and the planner keeps its statistics.
   - An execution's uniqueness includes its developer tools (schema 24).
 - **Left, as the review allows:** caching plans inside the store, which finding 5 takes only with a measured need.
-- **Finding 8 is a decision for the person:** how long build history is kept.
+- **Finding 8 is a decision for the person,** D6: how long build history is kept.
 
 **The [private-helper review](reviews/2026-09-28-private-helper-ownership.md)** of 2026-09-28, by Codex, read `7be0dc2d` and was checked again at `dd21ac87` ([note](activity/2026-09-28-private-helper-review-reconciled.md)).
 - **All ten findings hold.** All seven of its probes fail.
