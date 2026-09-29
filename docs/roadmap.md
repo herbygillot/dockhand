@@ -321,6 +321,7 @@ Changed:
 - **Finding 5 is ranked lower.** GitHub isn't the default provider, so per-runner evidence is a smaller item. The port reader's report joins item 6, where reuse needs it.
 - **Finding 6 is narrowed.** It shrinks to the JSON gap and the release's provenance, until something reads more.
 - **Finding 1's reuse probe was rewritten for D1.** It expected a block; the person decided each result keeps its own check's policy.
+- **How long build history is kept** (the SQL review's finding 8). Runs, executions, results, plans, revisions, and each build's recorded inputs are never removed. Inputs grow fastest, at about 3.6 KB a build: an estimated 700 MB at 200,000 builds. The review suggests the archives' cutoff: keep what a result still usable for reuse, or an open branch, refers to. A merged branch's own record stays either way, for status.
 - **`update --plan` on a branch dockhand doesn't track.** It refuses and points at `adopt`, as a test pins. It could plan on master when that branch doesn't change the port, as it does on master itself, and otherwise point at `--branch` or `--new --plan` (the chezmoi run's finding 3).
 
 **The [hugo exercise](reviews/2026-09-28-hugo-bump-exercise.md)** of 2026-09-28 was checked against the code at `fdf8147f` ([note](activity/2026-09-28-hugo-exercise-fixes.md)).
@@ -337,6 +338,16 @@ Changed:
 **The cleanup** in the same review, `dockhand clean` at `0ffed143`, was checked against `42bcaf3a`.
 - **Findings 1 and 2 hold, and are fixed** ([note](activity/2026-09-28-status-after-clean.md)): status took clean's removal of a merged branch for a lost one, and couldn't find a merged record by name.
 - **Finding 3 holds:** branches from before v3 go unreported. With the review's sorting of them, it's a smaller item.
+
+**The [SQL review](reviews/2026-09-28-sql-review.md)** of 2026-09-28 read `02a4d318`. Its fixes landed as `b140a961` to `42bcaf3a` ([note](activity/2026-09-28-sql-review-fixes.md)), and were checked here against the code.
+- **Done:** findings 1 to 7, 9, and 10.
+  - History's questions are read through indexes (schema 23), which tests hold the queries to.
+  - Archives are pruned in one statement.
+  - A result's references are checked rather than read, and reuse's candidates come with their builds.
+  - Commits reach the disk (`fullfsync`, as the review recommended), and the planner keeps its statistics.
+  - An execution's uniqueness includes its developer tools (schema 24).
+- **Left, as the review allows:** caching plans inside the store, which finding 5 takes only with a measured need.
+- **Finding 8 is a decision for the person:** how long build history is kept.
 
 **The [private-helper review](reviews/2026-09-28-private-helper-ownership.md)** of 2026-09-28, by Codex, read `7be0dc2d` and was checked again at `dd21ac87` ([note](activity/2026-09-28-private-helper-review-reconciled.md)).
 - **All ten findings hold.** All seven of its probes fail.
