@@ -61,7 +61,7 @@ A command finds its branch from `--branch`, else the branch checked out where it
 
 ## Changing ports
 
-These commands change the branch's working files and commit nothing, unless `update --outdated`, `--submit`, or `bump` asks them to go on. Each remembers what it did, so `tidy` can later write the commit subject a MacPorts reviewer expects. `--plan` shows the edit and changes nothing.
+These commands change the branch's working files and commit nothing, unless `update --outdated`, `--submit`, or `bump` asks them to go on. Each remembers what it did, so `tidy` can later write the commit subject a MacPorts reviewer expects, beside your own changes too, while every line it wrote still stands. `--plan` shows the edit and changes nothing.
 
 ### update
 

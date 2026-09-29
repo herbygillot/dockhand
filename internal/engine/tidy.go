@@ -238,12 +238,21 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 					break
 				}
 			}
+			standing := ""
+			if chosen == nil {
+				if standing, err = standingSubject(ctx, worktree, final, directory, edits); err != nil {
+					return TidyPlan{}, err
+				}
+			}
 			if chosen != nil {
 				whose := "your"
 				if commitmsg.Attributed(chosen.Message) {
 					whose = "dockhand's"
 				}
 				group.Notes = append(group.Notes, fmt.Sprintf("subject from %s commit %s", whose, short(model.ObjectID(chosen.ID))))
+			} else if standing != "" {
+				subject = standing
+				group.Notes = append(group.Notes, "subject from dockhand's edits, which the other changes leave standing")
 			} else if subject, err = derivedSubject(ctx, worktree, trees[base], final, group); err != nil {
 				return TidyPlan{}, err
 			} else if subject != "" {
@@ -358,6 +367,83 @@ func describeDirectory(directory string) string {
 // dockhand's authoring commands wrote there, one after another from the
 // base, with nothing changed in between; and if so, the subject they wrote:
 // the last update's, else the last edit's.
+// chainSubject is the subject a chain of dockhand's edits of one directory
+// gives: a new port's names it new, and an update's names the version,
+// whatever edits followed them.
+func chainSubject(mine []model.Edit) string {
+	for _, kind := range []model.EditKind{model.EditCreate, model.EditUpdate} {
+		for _, edit := range slices.Backward(mine) {
+			if edit.Kind == kind {
+				return edit.Subject
+			}
+		}
+	}
+	return mine[len(mine)-1].Subject
+}
+
+// standingSubject is the subject dockhand's edits of a directory give,
+// while every line they wrote still stands in the final files: a person's
+// changes beside them, as to the same Portfile, leave the update what the
+// commit does. Once a line they wrote is gone, as when the person took the
+// version back, it gives none.
+func standingSubject(ctx context.Context, repo *git.Repository, final, directory string, edits []model.Edit) (string, error) {
+	var mine []model.Edit
+	for _, edit := range edits {
+		if edit.Directory == directory {
+			mine = append(mine, edit)
+		}
+	}
+	if directory == "" || len(mine) == 0 {
+		return "", nil
+	}
+	first, last := map[string]model.ObjectID{}, map[string]model.ObjectID{}
+	var paths []string
+	for _, edit := range mine {
+		for _, file := range edit.Files {
+			if _, seen := first[file.Path]; !seen {
+				first[file.Path] = file.Before
+				paths = append(paths, file.Path)
+			}
+			last[file.Path] = file.After
+		}
+	}
+	finals, err := repo.FileBlobs(ctx, final, paths)
+	if err != nil {
+		return "", err
+	}
+	lines := func(blob model.ObjectID) (map[string]bool, error) {
+		found := map[string]bool{}
+		if blob == "" {
+			return found, nil
+		}
+		data, err := repo.ReadBlob(ctx, string(blob))
+		for _, line := range strings.Split(string(data), "\n") {
+			found[line] = true
+		}
+		return found, err
+	}
+	for _, path := range paths {
+		before, err := lines(first[path])
+		if err != nil {
+			return "", err
+		}
+		written, err := lines(last[path])
+		if err != nil {
+			return "", err
+		}
+		now, err := lines(model.ObjectID(finals[path]))
+		if err != nil {
+			return "", err
+		}
+		for line := range written {
+			if !before[line] && !now[line] {
+				return "", nil
+			}
+		}
+	}
+	return chainSubject(mine), nil
+}
+
 func fromEdits(ctx context.Context, repo *git.Repository, baseTree, final, directory string, paths []string, edits []model.Edit) (bool, string, error) {
 	var mine []model.Edit
 	for _, edit := range edits {
@@ -408,21 +494,7 @@ func fromEdits(ctx context.Context, repo *git.Repository, baseTree, final, direc
 			return false, "", nil
 		}
 	}
-	// A new port's subject names it new, and an update's names the
-	// version, whatever edits followed them.
-	subject := mine[len(mine)-1].Subject
-	found := false
-	for _, kind := range []model.EditKind{model.EditCreate, model.EditUpdate} {
-		for _, edit := range slices.Backward(mine) {
-			if edit.Kind == kind {
-				subject, found = edit.Subject, true
-				break
-			}
-		}
-		if found {
-			break
-		}
-	}
+	subject := chainSubject(mine)
 	return true, subject, nil
 }
 

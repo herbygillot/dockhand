@@ -226,3 +226,46 @@ func TestRestorePutsTheStagedVersionBack(t *testing.T) {
 	require.Equal(t, staged, run(t, branch.Worktree, "show", ":textproc/jq/Portfile"))
 	require.Equal(t, "name jq\nversion 1.8.1\n# working version\n", read(t, filepath.Join(branch.Worktree, "textproc/jq/Portfile")), "the working files are untouched")
 }
+
+// A person's edit beside dockhand's uncommitted edits keeps their subject,
+// the update's though a revision bump followed it, while every line they
+// wrote still stands. Lines they didn't write are the person's to change.
+// Once one they wrote is gone, as when the version is taken back, the
+// subject is the person's to give (the hugo exercise's certigo run,
+// finding 2).
+func TestAPersonsEditBesideAnUpdateKeepsItsSubject(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
+	require.NoError(t, err)
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
+	require.NoError(t, err)
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditRevbump, Port: "jq", Subject: "rebuild against the new oniguruma"})
+	require.NoError(t, err)
+	require.Equal(t, "name jq\nversion 1.8.1\nrevision 1\n", read(t, filepath.Join(branch.Worktree, "textproc/jq/Portfile")))
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nrevision 1\nbuild.args-append VERSION=1.8.1\n"})
+
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Len(t, plan.Groups, 1)
+	group := plan.Groups[0]
+	require.False(t, group.FromEdits)
+	require.Equal(t, "jq: update to 1.8.1", group.Subject(), "the update's, not the revision bump's")
+	require.Contains(t, group.Notes, "subject from dockhand's edits, which the other changes leave standing")
+	require.Contains(t, group.Notes, "has changes dockhand's commands did not make; review them")
+	require.NotContains(t, group.Message, "Generated-By", "the commit isn't dockhand's edits alone")
+	require.Empty(t, group.Blocking)
+	require.False(t, plan.Unambiguous(), "a person's changes are reviewed")
+
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "version 1.8.1\nrevision 1\n"})
+	plan, err = e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Equal(t, "jq: update to 1.8.1", plan.Groups[0].Subject())
+	require.Contains(t, plan.Groups[0].Notes, "subject from dockhand's edits, which the other changes leave standing", "a line dockhand didn't write is the person's")
+
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\ngo.setup github.com/jqlang/jq 1.8.2 v\nrevision 1\n"})
+	plan, err = e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	require.NotContains(t, plan.Groups[0].Notes, "subject from dockhand's edits, which the other changes leave standing", "the version dockhand wrote is gone")
+	require.NotEqual(t, "jq: update to 1.8.1", plan.Groups[0].Subject())
+}
