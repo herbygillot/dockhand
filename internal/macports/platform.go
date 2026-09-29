@@ -113,17 +113,24 @@ type ModelledToolchain struct {
 // Darwin 8 and 9, which no buildbot builds.
 var ErrNoToolchain = errors.New("macports: the facts table has no toolchain")
 
-// Toolchain is a modelled platform's developer tools, from the facts table:
-// the Command Line Tools profile unless the context has Xcode, as a Tart
-// release with its Xcode image and MacPorts' builders do.
+// Toolchain is a modelled platform's developer tools, from the facts table.
+// A context that states them is modelled with them: Xcode, as a Tart
+// release with its Xcode image has, or the Command Line Tools alone. One
+// that doesn't is modelled as MacPorts' builders are set up, with Xcode
+// (D2), and with the Command Line Tools where the table has no Xcode row.
 func Toolchain(platform model.Platform, developer model.DeveloperTools) (ModelledToolchain, error) {
 	if _, err := PlatformVariables(platform); err != nil {
 		return ModelledToolchain{}, err
 	}
 	darwin, _ := strconv.Atoi(platform.Version)
 	table := macos.Table()
-	if developer == model.DeveloperToolsXcode {
+	switch developer {
+	case model.DeveloperToolsXcode:
 		return xcodeToolchain(table, darwin, platform)
+	case "":
+		if tools, err := xcodeToolchain(table, darwin, platform); !errors.Is(err, ErrNoToolchain) {
+			return tools, err
+		}
 	}
 	facts, ok := table.Lookup(darwin, platform.Architecture, macos.ProfileTools)
 	derived := false

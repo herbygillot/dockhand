@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"sort"
 	"strings"
 	"time"
@@ -80,7 +81,7 @@ func openCache(ctx context.Context, c Config, platform model.Platform) (*cache, 
 	// A generation is a function of what the indexer was told about the
 	// platform, so the variables are part of the identity: an index built
 	// under an earlier description is not reused under this one.
-	variables, err := macports.PlatformVariables(platform)
+	variables, err := told(goruntime.GOOS, platform)
 	if err != nil {
 		return nil, err
 	}

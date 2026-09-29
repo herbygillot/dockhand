@@ -151,22 +151,35 @@ func TestFileStatSetsItsCallersArray(t *testing.T) {
 
 // observedDescription observes lines in a platform's context, leaving a Tcl
 // list in results that the port's description carries out.
-func observedDescription(t *testing.T, platform model.Platform, lines string) ([]string, macports.PortObservation) {
+func observedDescription(t *testing.T, platform model.Platform, tools model.DeveloperTools, lines string) ([]string, macports.PortObservation) {
 	t.Helper()
 	e := liveEvaluator(t)
 	tree := fixtureTree(t)
 	putFile(t, tree.Root(), "devel/effects/Portfile", "PortSystem 1.0\nname effects\nversion 1\nset results {}\n"+lines+"\ndescription {*}$results\n")
 	bound, err := tree.Select(model.Target{Name: "effects", Portfile: "devel/effects/Portfile"})
 	require.NoError(t, err)
-	got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Declarations: true, Platform: platform})
+	got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Declarations: true, Platform: platform, DeveloperTools: tools})
 	require.NoError(t, err)
 	values, errs := syntax.ListValues(got.Snapshot.Ports["effects"].Options["description"])
 	require.Empty(t, errs)
 	return values, got.Ports["effects"]
 }
 
+// A modelled context that doesn't state its tools is modelled as MacPorts'
+// builders are set up, with Xcode from the table's Xcode row, whatever
+// tools this Mac has (D2, decided 2026-09-29).
+func TestAnUnstatedContextIsEvaluatedWithXcode(t *testing.T) {
+	t.Parallel()
+	monterey := model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}
+	xcode, err := macports.Toolchain(monterey, model.DeveloperToolsXcode)
+	require.NoError(t, err)
+	got, _ := observedDescription(t, monterey, "", "lappend results $xcodeversion $developer_dir [file exists /Applications/Xcode.app]")
+	require.Equal(t, []string{xcode.Xcode, macports.XcodeDeveloper, "1"}, got)
+}
+
 // A modelled context answers Base's toolchain questions from the facts
-// table (docs/oracle.md, phase 5), whatever tools this Mac has.
+// table (docs/oracle.md, phase 5), whatever tools this Mac has: here, one
+// that states the Command Line Tools.
 func TestAModelledContextTakesItsToolsFromTheTable(t *testing.T) {
 	t.Parallel()
 	lines := strings.Join([]string{
@@ -182,10 +195,10 @@ func TestAModelledContextTakesItsToolsFromTheTable(t *testing.T) {
 		{model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}, "1400.0.29.202", "MacOSX12.sdk"},
 		{model.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"}, "2100.1.1.101", "MacOSX26.sdk"},
 	} {
-		tools, err := macports.Toolchain(c.platform, "")
+		tools, err := macports.Toolchain(c.platform, model.DeveloperToolsCommandLine)
 		require.NoError(t, err)
 		require.Equal(t, c.clang, tools.Clang, "the table, as this test expects it")
-		got, port := observedDescription(t, c.platform, lines)
+		got, port := observedDescription(t, c.platform, model.DeveloperToolsCommandLine, lines)
 		require.Equal(t, []string{"none", macports.CommandLineTools, c.clang,
 			macports.CommandLineTools + "/SDKs/" + c.sdk, "/usr/bin/clang",
 			"1", "0", "0"}, got, "%+v", c.platform)

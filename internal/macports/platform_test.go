@@ -36,15 +36,15 @@ func TestPlatformVariablesFollowMacPortsBase(t *testing.T) {
 	}
 }
 
-// A modelled context's developer tools come from the facts table, in the
-// Command Line Tools profile: an image's row where there is one, else a
-// buildbot's made tools-only, with what it doesn't tell from an image with
-// the same tools package, and the host where no source tells.
+// A modelled context that states the Command Line Tools takes them from
+// the facts table: an image's row where there is one, else a buildbot's
+// made tools-only, with what it doesn't tell from an image with the same
+// tools package, and the host where no source tells.
 func TestToolchainComesFromTheFactsTable(t *testing.T) {
 	t.Parallel()
 	image, ok := macos.Table().Lookup(25, "arm64", macos.ProfileTools)
 	require.True(t, ok)
-	got, err := macports.Toolchain(model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, "")
+	got, err := macports.Toolchain(model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, model.DeveloperToolsCommandLine)
 	require.NoError(t, err)
 	require.False(t, got.Derived)
 	require.Equal(t, "none", got.Xcode)
@@ -57,7 +57,7 @@ func TestToolchainComesFromTheFactsTable(t *testing.T) {
 	builder, ok := macos.Table().Lookup(25, "x86_64", macos.ProfileXcode)
 	require.True(t, ok)
 	require.Equal(t, image.Tools, builder.Tools, "the harvest found the same tools package on both")
-	got, err = macports.Toolchain(model.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"}, "")
+	got, err = macports.Toolchain(model.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"}, model.DeveloperToolsCommandLine)
 	require.NoError(t, err)
 	require.True(t, got.Derived)
 	require.Equal(t, "none", got.Xcode, "a buildbot's Xcode row is modelled without Xcode")
@@ -66,14 +66,14 @@ func TestToolchainComesFromTheFactsTable(t *testing.T) {
 	require.Equal(t, image.Clang, got.Clang, "the arm64 image with the same tools gives clang")
 	require.Equal(t, image.SDKs, got.SDKs)
 
-	got, err = macports.Toolchain(model.Platform{OS: "darwin", Version: "19", Architecture: "x86_64"}, "")
+	got, err = macports.Toolchain(model.Platform{OS: "darwin", Version: "19", Architecture: "x86_64"}, model.DeveloperToolsCommandLine)
 	require.NoError(t, err)
 	require.Equal(t, "none", got.Tools, "the 10.15 builder carries no tools")
 	require.NotEqual(t, "none", got.Xcode, "so it is modelled as it is, with Xcode")
 	require.Equal(t, macports.XcodeDeveloper, got.DeveloperDir)
 	require.True(t, got.XCSelect, "libxcselect is a file before macOS 11")
 
-	_, err = macports.Toolchain(model.Platform{OS: "darwin", Version: "9", Architecture: "x86_64"}, "")
+	_, err = macports.Toolchain(model.Platform{OS: "darwin", Version: "9", Architecture: "x86_64"}, model.DeveloperToolsCommandLine)
 	require.ErrorIs(t, err, macports.ErrNoToolchain)
 }
 
@@ -120,15 +120,16 @@ func TestAnXcodeToolchainComesFromItsProfile(t *testing.T) {
 
 // ModelVariables is PlatformVariables with the modelled tools, as one list
 // of pairs override_vars accepts, whose caches answer for clang and
-// /usr/bin's shims; a platform the table has no row for is described alone.
+// /usr/bin's shims; a platform the table has no row for is described alone,
+// whether or not it states its tools.
 func TestModelVariablesAddTheModelledTools(t *testing.T) {
 	t.Parallel()
 	platform := model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
 	base, err := macports.PlatformVariables(platform)
 	require.NoError(t, err)
-	tools, err := macports.Toolchain(platform, "")
+	tools, err := macports.Toolchain(platform, model.DeveloperToolsCommandLine)
 	require.NoError(t, err)
-	got, err := macports.ModelVariables(platform, "")
+	got, err := macports.ModelVariables(platform, model.DeveloperToolsCommandLine)
 	require.NoError(t, err)
 	pairs, errs := syntax.DictValues(got)
 	require.Empty(t, errs)
@@ -159,7 +160,7 @@ func TestModelVariablesAddTheModelledTools(t *testing.T) {
 
 func TestToolchainAnswersNameTheSDKsAndTheirLinks(t *testing.T) {
 	t.Parallel()
-	got, err := macports.ToolchainAnswers(model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, "")
+	got, err := macports.ToolchainAnswers(model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, model.DeveloperToolsCommandLine)
 	require.NoError(t, err)
 	answers, errs := syntax.DictValues(got)
 	require.Empty(t, errs)
@@ -179,4 +180,25 @@ func TestRuntimeIsModeledWhenItDescribesAnotherHost(t *testing.T) {
 	mac := model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
 	require.False(t, macports.Runtime{Platform: mac}.Modeled())
 	require.True(t, macports.Runtime{Platform: mac, Host: model.Platform{OS: "linux", Version: "6", Architecture: "x86_64"}}.Modeled())
+}
+
+// A context that doesn't state its tools is modelled as MacPorts' builders
+// are set up, with Xcode, from the table's Xcode row (D2, decided
+// 2026-09-29).
+func TestAnUnstatedContextIsModelledWithXcode(t *testing.T) {
+	t.Parallel()
+	for _, platform := range []model.Platform{{OS: "darwin", Version: "21", Architecture: "arm64"}, {OS: "darwin", Version: "19", Architecture: "x86_64"}} {
+		unstated, err := macports.Toolchain(platform, "")
+		require.NoError(t, err)
+		xcode, err := macports.Toolchain(platform, model.DeveloperToolsXcode)
+		require.NoError(t, err)
+		require.Equal(t, xcode, unstated, "%+v", platform)
+		require.NotEqual(t, "none", unstated.Xcode)
+		variables, err := macports.ModelVariables(platform, "")
+		require.NoError(t, err)
+		pairs, errs := syntax.DictValues(variables)
+		require.Empty(t, errs)
+		require.Equal(t, macports.XcodeDeveloper, pairs["developer_dir"], "%+v", platform)
+		require.Equal(t, unstated.Xcode, pairs["xcodeversion"])
+	}
 }

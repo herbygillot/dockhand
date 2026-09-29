@@ -285,6 +285,17 @@ func sameFile(source, destination string) bool {
 	return err == nil && b.Mode().IsRegular() && a.Size() == b.Size() && a.ModTime().Equal(b.ModTime())
 }
 
+// told is what the indexer is told the platform looks like, on a host
+// running host: its variables, and on a host that isn't a Mac, the Mac's
+// developer tools as modelled, as MacPorts' builders are set up (D2). A
+// cache's generations are a function of it.
+func told(host string, platform model.Platform) (string, error) {
+	if host != "darwin" {
+		return macports.ModelVariables(platform, "")
+	}
+	return macports.PlatformVariables(platform)
+}
+
 // buildPortIndex runs the indexer for one immutable source root and publishes
 // the complete result atomically. An empty seed requests a full pass; otherwise
 // the seed's entries are reused and the changed port directories are reindexed.
@@ -348,13 +359,7 @@ func buildPortIndex(ctx context.Context, c Config, platform model.Platform, sour
 		// what uname -p reports there, arm on Apple silicon, which a bare
 		// plat_ver_arch argument would set verbatim to the build
 		// architecture and so answer every ${os.arch} test wrongly.
-		describe := macports.PlatformVariables
-		if goruntime.GOOS != "darwin" {
-			// A host that is not a Mac models the Mac's toolchain as well,
-			// in the Command Line Tools profile.
-			describe = func(platform model.Platform) (string, error) { return macports.ModelVariables(platform, "") }
-		}
-		overrides, err := describe(platform)
+		overrides, err := told(goruntime.GOOS, platform)
 		if err != nil {
 			return err
 		}

@@ -449,3 +449,23 @@ func TestIndexGenerationWidensASparseWorkspace(t *testing.T) {
 	requireVersion(t, index, "other", "1")
 	requireVersion(t, index, "working", "1")
 }
+
+// The indexer is told the platform's variables, and on a host that isn't a
+// Mac, the Mac's developer tools as MacPorts' builders are set up, with
+// Xcode (D2): a Mac answers for its own. A cache is kept for what its
+// indexer is told, so an index built under another description isn't
+// reused.
+func TestTheIndexerIsToldTheBuildersTools(t *testing.T) {
+	platform := model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}
+	plain, err := macports.PlatformVariables(platform)
+	require.NoError(t, err)
+	onMac, err := told("darwin", platform)
+	require.NoError(t, err)
+	require.Equal(t, plain, onMac, "a Mac answers for its own tools")
+	modelled, err := macports.ModelVariables(platform, "")
+	require.NoError(t, err)
+	elsewhere, err := told("linux", platform)
+	require.NoError(t, err)
+	require.Equal(t, modelled, elsewhere)
+	require.Contains(t, elsewhere, "developer_dir "+macports.XcodeDeveloper, "the builders' tools, with Xcode")
+}

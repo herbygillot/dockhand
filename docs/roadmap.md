@@ -253,7 +253,7 @@ These are taken when their area is next touched, or between items.
   - D7's plan rule. Done 2026-09-29 ([note](activity/2026-09-29-plans-beside-untracked-branches.md));
   - D8's `gh pr ready`, and the guide on asking an organization to approve dockhand's app. Done 2026-09-29 ([note](activity/2026-09-29-ready-through-the-github-cli.md));
   - D10's first compiler error, in a package of its own. Done 2026-09-29 ([note](activity/2026-09-29-a-failures-likely-cause.md)), in `buildlog`;
-  - D2's default, with the oracle's design note.
+  - D2's default, with the oracle's design note. Done 2026-09-29 ([note](activity/2026-09-29-modelled-with-xcode.md)).
 - **What cleaning up after beekeeper-studio and ov asked for** ([review](reviews/2026-09-28-hugo-bump-exercise.md#cleaning-up-after-beekeeper-studio-and-ov)):
   - **a branch checked out where clean leaves it isn't deleted.** clean removed an adopted branch while the person's own worktree had it checked out, which it rightly left in place, so the worktree stood on a branch that was gone. Done 2026-09-29 ([note](activity/2026-09-29-clean-keeps-checked-out-branches.md)): a branch checked out anywhere but the worktree clean removes is kept, and says where, looked for when planned and again before it goes.
 - **Branches from before v3.** The hugo exercise's checkout holds 22 local `dockhand/bump/<port>-<id>` branches from earlier dockhand, which nothing reports ([review](reviews/2026-09-28-hugo-bump-exercise.md#cleaning-up), finding 3). Its classification is the design:

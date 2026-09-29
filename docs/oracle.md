@@ -352,16 +352,22 @@ The five the scope left open, as settled on 2026-09-25:
 
 Isolation, not among the five, is settled as best effort, above.
 
-**Which profile a modelled context is**, settled on 2026-09-26: the
-tools profile, dockhand's base images'. Xcode is an add-on, as it was in
-v2: a release's Xcode image is made only when asked for, and a release
-that has one builds there. Without it, a check on Tart doesn't build a
-port whose `use_xcode` is yes in the release's context, or whose
-prerequisite's is. It says which command makes the image
+**Which profile a modelled context is**, settled on 2026-09-26 as the
+tools profile, dockhand's base images', and changed on 2026-09-29 by the
+person's D2: a context that doesn't state its tools is modelled in the
+Xcode profile, as MacPorts' builders are set up, from the facts table's
+Xcode row, and in the tools profile only where the table has no Xcode
+row ([note](activity/2026-09-29-modelled-with-xcode.md)). So is the
+index a host that isn't a Mac builds, which a Mac builds with its own
+tools. A context that states its tools is modelled with them. Xcode is
+still an add-on for checks, as it was in v2: a release's Xcode image is
+made only when asked for, and a release that has one builds there, and
+states Xcode. Without it, a check on Tart doesn't build a port whose
+`use_xcode` is yes in the release's context, or whose prerequisite's is.
+It says which command makes the image
 ([note](activity/2026-09-26-xcode-add-on.md),
-[then](activity/2026-09-26-xcode-unmet.md)). A context with Xcode is
-modelled in the Xcode profile, and one whose tools are stated is modelled
-on the Mac's own release too
+[then](activity/2026-09-26-xcode-unmet.md)). A context whose tools are
+stated is modelled on the Mac's own release too
 ([note](activity/2026-09-26-plan-with-the-build-tools.md)).
 
 ## Open questions
