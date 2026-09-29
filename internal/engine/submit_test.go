@@ -436,6 +436,8 @@ func TestSubmitFollowsThePublicationRule(t *testing.T) {
 	require.NotContains(t, plan.Body, "Checked by dockhand", "each run names its check")
 	require.True(t, strings.HasPrefix(plan.Body, "Submitted by [dockhand](https://github.com/herbygillot/dockhand)\n\n#### Description\n\n"), "dockhand's line opens the description")
 	require.Regexp(t, "\n\n- \\[dockhand\\]\\(https://github\\.com/herbygillot/dockhand\\) ver\\. \\S+\n$", plan.Body, "and its version closes it")
+	require.Regexp(t, "\n- \\[ \\] checked that the Portfile's most important .+\n\n<!-- dockhand -->\n\n- \\[dockhand\\]", plan.Body,
+		"a comment GitHub doesn't show ends the checklist, so dockhand's line isn't taken for its last item")
 	require.Contains(t, plan.Body, "| jq | ✓ |\n| harbor-viewer | ✗ failed at install, accepted: cause not established |\n")
 	require.Contains(t, plan.Body, "- [x] tried a full install with `sudo port -vst install`? (dockhand builds from source as MacPorts CI does, without trace mode)")
 	require.Contains(t, plan.Body, "- [x] tried existing tests with `sudo port test`?")

@@ -9,6 +9,6 @@ The person asked for dockhand's line in a pull request's description to move. It
 - a person took the first line out of one written since;
 - a person began the description otherwise.
 
-**Rendering.** The last line is a Markdown list item right after the Verification checklist. Where nothing stands between them, `[skip notification]` being the only thing that can, CommonMark continues the checklist's list with it. GitHub then shows it as the checklist's last item, and the checklist with a list's looser spacing. Said to the person, who asked for the line as it is.
+**Rendering.** The last line is a Markdown list item right after the Verification checklist. Where nothing stood between them, `[skip notification]` being the only thing that can, CommonMark continued the checklist's list with it: the line became the checklist's last item, and the checklist took a loose list's spacing. The person agreed to a fix that keeps the line as they asked for it. A comment GitHub doesn't show, `<!-- dockhand -->`, now stands between them and ends the list. Rendering both with pandoc's CommonMark reader showed each: one loose list of three without it, and the checklist tight with the line a list of its own with it. Pandoc's GFM mode splits a task list from other items by itself, which CommonMark doesn't.
 
-Tests: `TestTheSignatureNeedsNoVersion` and `TestAnOlderDescriptionGainsItsFirstLine`, in the engine, and the submit test's description, which begins and ends as it now does. Seven mutations each fail a test.
+Tests: `TestTheSignatureNeedsNoVersion` and `TestAnOlderDescriptionGainsItsFirstLine`, in the engine, and the submit test's description, which begins and ends as it now does, with the comment before its last line. Eight mutations each fail a test.

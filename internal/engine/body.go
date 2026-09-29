@@ -180,13 +180,19 @@ func ownedSections(facts bodyFacts) string {
 	if facts.SkipNotification {
 		fmt.Fprint(&b, "\n[skip notification]\n")
 	}
-	fmt.Fprintf(&b, "\n%s\n", signature(version.Current().Tag()))
+	// A comment, which GitHub doesn't show, ends the checklist's list:
+	// Markdown would take dockhand's line, a list item after a blank line,
+	// for the checklist's last item, and space the checklist out for it.
+	fmt.Fprintf(&b, "\n%s\n\n%s\n", listEnd, signature(version.Current().Tag()))
 	return b.String()
 }
 
 // submittedBy is the description's first line, naming dockhand, whose
 // version the last line gives.
 var submittedBy = "Submitted by [dockhand](" + version.ProjectURL + ")"
+
+// listEnd ends the Verification checklist before dockhand's last line.
+const listEnd = "<!-- dockhand -->"
 
 // signature is the description's last line, dockhand with its version, or
 // dockhand alone when the build doesn't know its version.
