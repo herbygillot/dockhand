@@ -243,3 +243,35 @@ With a build of `d9065492`, `update --outdated tbls flyctl --check --yes` made o
 
 1. **dockhand writes a Go minimum lower than go.mod's.** tbls 1.96.1's go.mod says `go 1.26.8`. dockhand said "Raising go.toolchain_min from 1.25.8 to 1.26, which tbls's go.mod requires" and wrote `1.26`, which is lower than what's required. The build passes only because MacPorts' go is 1.27.1. (With ov, whose go.mod said `1.26.0`, the trimmed `1.26` was only a style nit; this is the case where it's wrong.) I set `go.toolchain_min 1.26.8` by hand and replaced the queued check; tidy folded the fix into the update's commit. The minimum should be go.mod's version as written.
 2. ~~**`update --outdated`'s summary doesn't name its branches.**~~ Withdrawn. The output names each branch ("  ✓ tbls-y0bv: 1.95.0 → 1.96.1, one commit, check-30 queued"); my `grep -v '^[-+ @]'` filter, meant for diff lines, hid every indented line.
+
+## gh, usql, hk and pgdog, chosen for untried paths
+
+With a build of `c42d0587`, I planned 17 candidate ports and took four for paths not yet exercised. usql went through `bump` with a hold, then a reviewed `submit --branch` ([macports/macports-ports#35036](https://github.com/macports/macports-ports/pull/35036)). gh took `update <port> <version>` with two sources chosen by OS version. hk was a cargo port with a major release. pgdog was investigated only. `outdated --all` over the person's 896 ports explained the 44 it couldn't check.
+
+What worked well:
+
+- **gh's conditional sources.** gh builds from source on darwin ≥ 17 and uses a prebuilt `gh_${version}_macOS_amd64.zip` below that, each with its own `checksums`. Evaluating as darwin 25, dockhand updated both. The zip's values matched upstream's `gh_2.101.0_checksums.txt`. check-35 passed on Tart macOS 12, Tart macOS 26 and GitHub.
+- **usql's hold.** `bump usql` passed check-34 and then stopped with exit 3: "waits for your look … Once it's fine: dockhand submit --branch usql-4s2t". After review, `submit --branch --yes` showed the `!` lines without blocking, and the PR reset `revision 1` to 0.
+- **hk's crates.** The update rewrote 280 crate lines, and the Portfile's `cargo.crates` matched v2.4.0's Cargo.lock exactly: 352 registry crates, with names, versions and checksums.
+- **VM capacity.** With usql's Tart build running, gh's Tahoe build said "waiting for the Mac's VMs: 2 are running, and macOS runs two at most" and started when one freed up.
+- **npm manifests in the comparison.** vacuum's plan showed "package.json moves tar from ^7.5.16 to ^7.5.21", so the comparison now reads npm manifests (see beekeeper-studio, finding 1).
+
+Findings:
+
+1. **Copyright years are held as license changes.** usql's `LICENSE` and generated `text/license.go` changed only "2016-2025" to "2016-2026", and zlint's LICENSE only "2024" to "2026". Each got "! LICENSE changed; the Portfile's license line may need to follow", which holds `bump`. A change confined to a copyright line could be reported without holding, or with the changed line quoted.
+2. **gh's comparison message is confusing.** Its plan said "! Upstream archives not compared: the versions have 1 and 2 distfiles, so they can't be paired". Each OS branch has exactly one distfile. The comparison could pair the source build's archives, which is the branch every modern builder takes.
+3. **pgdog is refused, though dockhand could do most of it.** `update pgdog` refused with "existing cargo.crates_github differs from the original manifest/helper output; preserve these overrides with manual preparation". The Portfile labels its two git crates `master`, which cargo_fetch writes as `branch = "master"` in cargo's source replacement. 0.1.60's Cargo.lock pins them by `rev=` (pg_raw_parse cf9e398…, scram ee15a47…), and `cargo.offline_cmd` is empty, so cargo builds online anyway. Refusing to rewrite a hand-chosen label is defensible. dockhand could still keep each entry's third field, update its commit and tarball checksum, and regenerate `cargo.crates`, leaving a person only the label to judge.
+4. **update doesn't mention regenerated crates.** hk's update said "Updated version and checksums (1 distfile)" after rewriting 280 crate lines. Something like "and 352 crates (160 changed)" would tell a reviewer what the diff holds.
+5. **mise can't be checked at all.** `outdated` reported `macports: invalid dependency "port:bin/cmake:cmake"` (sysutils/mise, line 34). MacPorts base takes the last colon field as the port and builds mise fine on the modern buildbots, so dockhand is stricter than base here. The Portfile should say `path:bin/cmake:cmake`, but dockhand should read what base reads.
+6. **Why 44 ports couldn't be checked** (`outdated --all`):
+   - 18 have custom livecheck hooks;
+   - 17 use `livecheck.type git` (date-versioned ports mostly);
+   - 2 have no release matching the livecheck filter (mop, libunibreak);
+   - 2 have no editable version input (meli);
+   - 1 has a non-numeric version (unison-lang "M2g");
+   - 1 has livecheck disabled (rune-editor);
+   - 1 was a redirect that downgraded HTTPS (libgsm);
+   - 1 was a GitHub 404 (timeleft);
+   - 1 is mise, above.
+
+   The 35 livecheck cases say "name the version to update to", which is right. The HTTPS downgrade deserves a look: the port's livecheck URL is `http://www.quut.com/gsm/`.
