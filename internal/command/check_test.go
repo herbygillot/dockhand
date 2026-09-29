@@ -87,7 +87,7 @@ func TestCheckRunsHereWithoutServe(t *testing.T) {
 	_, _, err = dockhand(t, "check")
 	require.ErrorContains(t, err, "check-2 is already queued for these files; dockhand wait check-2 follows it", "one check of a branch at a time")
 	out, _, err = dockhand(t, "check", "--replace")
-	require.Contains(t, out, "Stopped check-2; what it finished is kept.\ncheck-3 replaces check-2.\n")
+	require.Contains(t, out, "Canceled check-2 before it started.\ncheck-3 replaces check-2.\n", "it was only queued (the hugo exercise's certigo run, finding 5)")
 	require.Equal(t, 2, ExitCode(err), "a failed check exits 2")
 	require.ErrorContains(t, err, "check-3 failed for snapshot 1: jq did not pass. Logs: dockhand logs check-3")
 	require.Contains(t, out, "  jq  ✗ failed at install\n")
@@ -215,4 +215,16 @@ func TestCheckRefusesAnUnknownTestPolicyAtOnce(t *testing.T) {
 	out, _, err := dockhand(t, "status")
 	require.NoError(t, err)
 	require.NotContains(t, out, "check-1", "nothing was queued")
+}
+
+// What stopping a check says follows what it had done: one only queued was
+// cancelled before it started, and one that recorded nothing finished
+// nothing (the hugo exercise's certigo run, finding 5).
+func TestAStoppedCheckSaysWhatItLeft(t *testing.T) {
+	run := model.Run{ID: "run_2", Number: 2}
+	require.Equal(t, "Canceled check-2 before it started.", stopWords(run, true))
+	require.Equal(t, "Stopped check-2; what it finished is kept.", stopWords(run, false))
+	require.EqualError(t, stoppedExit(run, engine.Evidence{Run: run}), "check-2 stopped before anything finished")
+	recorded := engine.Evidence{Run: run, Executions: map[model.ExecutionID]model.GuestExecution{"tart_2": {ID: "tart_2", Run: "run_2"}}}
+	require.EqualError(t, stoppedExit(run, recorded), "check-2 stopped; finished results are kept")
 }

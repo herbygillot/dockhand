@@ -178,3 +178,14 @@ func TestAResultCountsWhereItsCheckPlannedTheTarget(t *testing.T) {
 	require.False(t, Counts(recorded, legacy, "libharbor", "origin a"), "it ran before identities were recorded, and the environment has been made since")
 	require.True(t, Counts(recorded, model.GuestExecution{Environment: arm}, "libharbor", "origin b"), "no execution ran it: planning found it unmet")
 }
+
+// A check recorded a result when one of its results came from its own
+// provider runs, not only from earlier checks of its files, whose results
+// its evidence also carries.
+func TestACheckRecordedWhatItsOwnRunsDid(t *testing.T) {
+	evidence := Evidence{Run: model.Run{ID: "run_2"}, Executions: map[model.ExecutionID]model.GuestExecution{"tart_1": {ID: "tart_1", Run: "run_1"}}}
+	require.False(t, evidence.Recorded(), "only an earlier check's")
+	evidence.Executions["tart_2"] = model.GuestExecution{ID: "tart_2", Run: "run_2"}
+	require.True(t, evidence.Recorded())
+	require.False(t, Evidence{Run: model.Run{ID: "run_3"}}.Recorded())
+}

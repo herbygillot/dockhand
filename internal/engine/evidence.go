@@ -218,6 +218,17 @@ func (e Evidence) Observations(environment int) []Observation {
 
 // Unchecked lists the targets no check of the files built everywhere they
 // are required.
+// Recorded reports whether the check itself recorded a result, rather
+// than only earlier checks of its files: whether it finished anything.
+func (e Evidence) Recorded() bool {
+	for _, execution := range e.Executions {
+		if execution.Run == e.Run.ID {
+			return true
+		}
+	}
+	return false
+}
+
 func (e Evidence) Unchecked() []TargetEvidence {
 	var unchecked []TargetEvidence
 	for _, target := range e.Targets {

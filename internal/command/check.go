@@ -509,9 +509,27 @@ func report(ctx context.Context, e *engine.Engine, run model.Run, streams Stream
 		}
 		return exitf(2, "%s failed for %s: %s. Logs: dockhand logs %s", run.Name(), engine.Describe(revision), run.Detail, run.Name())
 	case model.RunCanceled:
-		return exitf(130, "%s stopped; finished results are kept", run.Name())
+		return stoppedExit(run, evidence)
 	}
 	return exitf(3, "%s needs attention: %s", run.Name(), run.Detail)
+}
+
+// stoppedExit says what a check that was stopped leaves: what it finished,
+// or nothing, when it finished nothing, as one cancelled while queued.
+func stoppedExit(run model.Run, evidence engine.Evidence) error {
+	if !evidence.Recorded() {
+		return exitf(130, "%s stopped before anything finished", run.Name())
+	}
+	return exitf(130, "%s stopped; finished results are kept", run.Name())
+}
+
+// stopWords say what cancelling a check did: one only queued is cancelled
+// before it started, and one running keeps what it finished.
+func stopWords(run model.Run, wasQueued bool) string {
+	if wasQueued {
+		return fmt.Sprintf("Canceled %s before it started.", run.Name())
+	}
+	return fmt.Sprintf("Stopped %s; what it finished is kept.", run.Name())
 }
 
 // hintBaseline points a failed check to check --baseline when a baseline
@@ -650,7 +668,7 @@ func reportBaseline(ctx context.Context, e *engine.Engine, run model.Run, stream
 	writeBaselineResults(out, base, branch, engine.Short(revision.Source.Commit))
 	switch run.State {
 	case model.RunCanceled:
-		return exitf(130, "%s stopped; finished results are kept", run.Name())
+		return stoppedExit(run, base)
 	case model.RunAttention:
 		return exitf(3, "%s needs attention: %s", run.Name(), run.Detail)
 	}
@@ -741,12 +759,13 @@ func replaceActive(ctx context.Context, e *engine.Engine, streams Streams, branc
 				return stopped, fmt.Errorf("%s keeps running; nothing new was queued", run.Name())
 			}
 		}
+		wasQueued := run.State == model.RunQueued
 		run, err = e.RequestCancel(ctx, session, run.ID)
 		if err != nil {
 			return stopped, err
 		}
 		if run.State == model.RunCanceled {
-			fmt.Fprintf(streams.Out, "Stopped %s; what it finished is kept.\n", run.Name())
+			fmt.Fprintln(streams.Out, stopWords(run, wasQueued))
 		} else {
 			fmt.Fprintf(streams.Out, "%s: stop requested; the process running it stops it at its next step.\n", run.Name())
 		}

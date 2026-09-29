@@ -239,7 +239,7 @@ These are taken when their area is next touched, or between items.
   - a subject kept where a person edits on top of dockhand's uncommitted update. Done 2026-09-28 ([note](activity/2026-09-28-certigo-fixes.md)): while every line dockhand's edits wrote still stands, their subject does, noted. Reading a declared version, `go.setup`'s included, stays with the private-helper review's finding 2, inside item 6;
   - `update --json`'s upstream messages without the "upstream: " prefix that the text drops under its heading. Done 2026-09-28 (the same note);
   - `cancel` with no argument, like `wait`: the check of the branch checked out here, not cobra's error. Done 2026-09-28 (the same note), for both;
-  - a check cancelled while only queued said so, not "what it finished is kept";
+  - a check cancelled while only queued said so, not "what it finished is kept". Done 2026-09-28 (the same note);
   - `status --json`'s serve as fields, whether it runs, its pid, and the queue, beside the sentence;
   - progress reported while a run is driven journaled as the run's progress events, as a provider's already is. The PortIndex rebuild, five minutes of check-16, showed only in serve's log, and `wait` never saw it;
   - a database migration that says so, since builds older than it can't open the database afterward; certigo's first run migrated it silently.

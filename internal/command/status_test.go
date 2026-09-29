@@ -117,13 +117,13 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	require.Contains(t, out, "serve: not running · queue: 1 run\n\nRUN      BRANCH     SOURCE      ON       STATE   DETAIL\ncheck-1  jq-update  snapshot 1  command  queued  \n")
 	out, _, err = dockhand(t, "check", "-d", "--replace")
 	require.NoError(t, err)
-	require.Contains(t, out, "Stopped check-1; what it finished is kept.\ncheck-2 replaces check-1.\n")
+	require.Contains(t, out, "Canceled check-1 before it started.\ncheck-2 replaces check-1.\n", "it was only queued (the hugo exercise's certigo run, finding 5)")
 
 	// In the branch's worktree, cancel and wait take its latest check (the
 	// hugo exercise's certigo run, finding 4).
 	out, _, err = dockhand(t, "cancel")
 	require.NoError(t, err)
-	require.Equal(t, "check-2 canceled; finished results are kept.\n", out)
+	require.Equal(t, "Canceled check-2 before it started.\n", out)
 	_, _, err = dockhand(t, "cancel", "check-2")
 	require.ErrorContains(t, err, "check-2 already canceled")
 
@@ -137,7 +137,7 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	require.NoError(t, err, "a finished run is reported as it ended")
 	require.Contains(t, out, "Passed for snapshot 1.")
 	_, _, err = dockhand(t, "wait", "check-2")
-	require.ErrorContains(t, err, "check-2 stopped", "the check named, not the latest")
+	require.ErrorContains(t, err, "check-2 stopped before anything finished", "the check named, not the latest, which finished nothing")
 
 	out, _, err = dockhand(t, "logs", "check-3")
 	require.NoError(t, err)

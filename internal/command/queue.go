@@ -178,13 +178,14 @@ worktree, with no check named, the branch's latest.`,
 				return err
 			}
 			defer session.End(context.WithoutCancel(ctx))
+			wasQueued := run.State == model.RunQueued
 			run, err = e.RequestCancel(ctx, session, run.ID)
 			if err != nil {
 				return err
 			}
 			streams.emit(map[string]any{"run": runView(run), "canceled": run.State == model.RunCanceled})
 			if run.State == model.RunCanceled {
-				fmt.Fprintf(streams.Out, "%s canceled; finished results are kept.\n", run.Name())
+				fmt.Fprintln(streams.Out, stopWords(run, wasQueued))
 				return nil
 			}
 			fmt.Fprintf(streams.Out, "%s: cancel requested; the process running it stops it at its next step.\n", run.Name())

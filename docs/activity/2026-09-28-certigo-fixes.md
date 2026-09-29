@@ -27,3 +27,17 @@ The comparison's messages keep the word where they stand alone: in what holds a 
 `cancel` with no argument failed with cobra's own "accepts 1 arg(s), received 0", as `wait` did, which the sshuttle run found. `logs` already took the branch's latest check when none was named. Now `wait` and `cancel` do too, in a branch's worktree: a branch has one check at a time, so its latest is the one queued or running, if any is. Elsewhere, each says to name a check, and what it takes in a worktree. A check named is still the one used.
 
 `TestQueueWaitCancelAndLogs` now cancels the branch's queued check and waits on its next without naming them. It waits on an older check by name while a newer one exists, and checks each command's words outside a worktree. Four mutations each fail it.
+
+## A check stopped before it started says so (finding 5)
+
+`check --replace` over a check that was only queued said "Stopped check-15; what it finished is kept.", though nothing had run. `cancel` said the same in its own words, "check-15 canceled; finished results are kept.", and `wait` on such a check reported "check-15 stopped; finished results are kept".
+
+Now:
+- **`check --replace` and `cancel`** know what the check was before cancelling it. One only queued is "Canceled check-15 before it started.", and one running is "Stopped check-15; what it finished is kept.", the same words from both.
+- **Reporting a stopped check,** as `wait` and a foreground check do, says "stopped before anything finished" unless the check itself recorded a result. Whether it did is the evidence's to say (`Evidence.Recorded`): one of its results came from its own provider runs, not only from earlier checks of its files, whose results the evidence also carries.
+
+Tests:
+- `TestAStoppedCheckSaysWhatItLeft` and `TestACheckRecordedWhatItsOwnRunsDid`;
+- the replace and cancel tests of queued checks, now expecting the new words, and a wait on a cancelled check.
+
+Nine mutations each fail a test. Three were caught only by the direct tests: the command tests stop only checks that recorded nothing, with no earlier results.
