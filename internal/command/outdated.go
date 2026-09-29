@@ -240,7 +240,8 @@ func writePrepared(ctx context.Context, e *engine.Engine, out io.Writer, prepare
 	}
 	fmt.Fprintln(out, summary)
 	if check && queued > 0 {
-		if line := serveLine(ctx, e); strings.HasPrefix(line, "serve: not running") {
+		// Whether serve runs is only a hint here, after the work is done.
+		if serve, err := readServe(ctx, e); err == nil && !serve.Running {
 			fmt.Fprintln(out, "serve isn't running: dockhand serve, or dockhand wait to run them here")
 		}
 	}

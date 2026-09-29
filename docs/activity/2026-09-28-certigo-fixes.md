@@ -41,3 +41,23 @@ Tests:
 - the replace and cancel tests of queued checks, now expecting the new words, and a wait on a cancelled check.
 
 Nine mutations each fail a test. Three were caught only by the direct tests: the command tests stop only checks that recorded nothing, with no earlier results.
+
+## Serve's state as fields (finding 6)
+
+`status --json` and `queue --json` gave serve's state only as its line, "serve: running (pid 34857) · queue: 1 run", which a script had to take apart. Beside the line, wherever it's shown, they now carry it as fields under `serve_state`: `running`, `pid`, `opens_pull_requests`, `queue` and `stopped`. The line is written from them. `outdated`, which matched the line's start to learn whether serve runs, reads the field.
+
+What the fields say is the engine's to read (`Engine.ServeState`), as a branch's status is:
+- the leader's lease says whether serve runs, and as which process;
+- the queue and its stopped checks are the runs';
+- whether serve opens pull requests is what the leading serve said of itself in `serving.json`, while that file's PID is the leader's.
+
+That last comparison was the command's, as `LastServing`'s comment asked of its callers. It's the engine's now, and `lastServing` is private.
+
+A reading that fails now fails `status` and `queue`, as judging their stopped checks already did, where before it said "serve: not running". `outdated` leaves its hint out when it can't tell, since the hint comes after its work is done.
+
+Tests:
+- `TestServeStateSaysWhoLeadsAndWhatStopped`: a check whose process still runs it and one whose process ended, a leader, an earlier serve's `serving.json`, and the leader's own;
+- `TestServesStateIsFieldsAndItsLine`, for the line and the fields;
+- the JSON of `queue`, and of `status --all` over a stopped check.
+
+Seventeen mutations each fail a test.

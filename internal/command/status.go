@@ -16,7 +16,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/store"
 )
 
 func statusCommand(s *settings, streams Streams) *cobra.Command {
@@ -101,6 +100,12 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 	for _, status := range statuses {
 		rows = append(rows, attentionFor(status)...)
 	}
+	var serve engine.ServeState
+	if !attentionOnly {
+		if serve, err = readServe(ctx, e); err != nil {
+			return err
+		}
+	}
 	out := streams.Out
 	if streams.json() {
 		result := statusJSON{Attention: attentionView(rows)}
@@ -109,7 +114,8 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 			for _, status := range statuses {
 				result.Branches = append(result.Branches, branchView(status))
 			}
-			result.Serve = serveLine(ctx, e)
+			view := serveView(serve)
+			result.Serve, result.ServeState = serveWords(serve), &view
 		}
 		streams.emit(result)
 	}
@@ -143,7 +149,7 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 	if found, ok := e.LastOutdatedLook(); ok && len(found.Outdated) > 0 {
 		fmt.Fprintf(out, "\nYour ports: %s newer releases, as serve found %s (dockhand update --outdated --mine)\n", plural(len(found.Outdated), "port")+map[bool]string{true: " has", false: " have"}[len(found.Outdated) == 1], ago(found.CheckedAt))
 	}
-	fmt.Fprintf(out, "\n%s\n", serveLine(ctx, e))
+	fmt.Fprintf(out, "\n%s\n", serveWords(serve))
 	return nil
 }
 
@@ -373,33 +379,33 @@ func prWords(s engine.BranchStatus) string {
 	return words
 }
 
-// serveLine says whether serve runs, and what the queue holds.
-func serveLine(ctx context.Context, e *engine.Engine) string {
-	queued, _ := e.Runs(ctx, store.RunFilter{States: []model.RunState{model.RunQueued, model.RunRunning}})
-	line := "serve: not running"
-	stopped := 0
+// readServe is serve's state, as this command's observer sees it.
+func readServe(ctx context.Context, e *engine.Engine) (engine.ServeState, error) {
 	_, session, end, err := observing(ctx, e)
-	if err == nil {
-		defer end()
-		if leader, err := session.Holder(ctx, coord.LeaderResource); err == nil && leader != nil {
-			line = fmt.Sprintf("serve: running (pid %d)", leader.PID)
-			if leading, ok := e.LastServing(); ok && leading.PID == leader.PID && leading.SubmitPassing {
-				line += " · opens PRs for passing updates"
-			}
-		}
-		for _, run := range queued {
-			if ok, err := engine.Stopped(ctx, session, run); err == nil && ok {
-				stopped++
-			}
+	if err != nil {
+		return engine.ServeState{}, err
+	}
+	defer end()
+	return e.ServeState(ctx, session)
+}
+
+// serveWords are serve's state as a line: "serve: running (pid 34857) ·
+// queue: 1 run".
+func serveWords(s engine.ServeState) string {
+	line := "serve: not running"
+	if s.Running {
+		line = fmt.Sprintf("serve: running (pid %d)", s.PID)
+		if s.OpensPullRequests {
+			line += " · opens PRs for passing updates"
 		}
 	}
 	switch {
-	case len(queued) == 0:
+	case s.Queue == 0:
 		return line + " · queue: empty"
-	case stopped > 0:
-		return line + fmt.Sprintf(" · queue: %s, %d stopped", plural(len(queued), "run"), stopped)
+	case s.Stopped > 0:
+		return line + fmt.Sprintf(" · queue: %s, %d stopped", plural(s.Queue, "run"), s.Stopped)
 	}
-	return line + " · queue: " + plural(len(queued), "run")
+	return line + " · queue: " + plural(s.Queue, "run")
 }
 
 type observerKey struct{}

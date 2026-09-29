@@ -362,6 +362,51 @@ func TestAStoppedServeLeavesTheRunForTheNext(t *testing.T) {
 	require.Equal(t, 2, provider.jobs[1].Execution.Attempt, "the interrupted execution counts as an attempt")
 }
 
+// Serve's state says whether a serve leads, as which process, and whether
+// it opens pull requests, as that serve said of itself rather than an
+// earlier one; and the checks queued or running, with those whose process
+// ended counted as stopped (the hugo exercise's certigo run, finding 6).
+func TestServeStateSaysWhoLeadsAndWhatStopped(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	ctx := t.Context()
+	observer := session(t, e)
+	state, err := e.ServeState(ctx, observer)
+	require.NoError(t, err)
+	require.Equal(t, ServeState{}, state)
+
+	run := queuedHarborRun(t, e, tahoeArm)
+	driver := session(t, e)
+	lease, err := driver.Acquire(ctx, RunResource(run.ID))
+	require.NoError(t, err)
+	require.NoError(t, driver.Fenced(ctx, lease, func(tx store.Tx) error {
+		run.State = model.RunRunning
+		return tx.UpdateRun(run)
+	}))
+	state, err = e.ServeState(ctx, observer)
+	require.NoError(t, err)
+	require.Equal(t, ServeState{Queue: 1}, state, "its process still runs it")
+	require.NoError(t, driver.End(context.WithoutCancel(ctx)))
+	state, err = e.ServeState(ctx, observer)
+	require.NoError(t, err)
+	require.Equal(t, ServeState{Queue: 1, Stopped: 1}, state, "its process ended without settling it")
+
+	require.NoError(t, e.writeServeFile("serving.json", []byte(`{"pid": 1, "submit_passing": true}`)))
+	_, err = session(t, e).Lead(ctx)
+	require.NoError(t, err)
+	state, err = e.ServeState(ctx, observer)
+	require.NoError(t, err)
+	require.Equal(t, ServeState{Running: true, PID: os.Getpid(), Queue: 1, Stopped: 1}, state, "an earlier serve's word isn't the leader's")
+	e.announceServing(true)
+	state, err = e.ServeState(ctx, observer)
+	require.NoError(t, err)
+	require.Equal(t, ServeState{Running: true, PID: os.Getpid(), OpensPullRequests: true, Queue: 1, Stopped: 1}, state)
+	e.announceServing(false)
+	state, err = e.ServeState(ctx, observer)
+	require.NoError(t, err)
+	require.False(t, state.OpensPullRequests)
+}
+
 func TestServeTakesPeoplesChecksFirst(t *testing.T) {
 	f := setup(t)
 	e := f.open(t)

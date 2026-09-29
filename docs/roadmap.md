@@ -240,7 +240,7 @@ These are taken when their area is next touched, or between items.
   - `update --json`'s upstream messages without the "upstream: " prefix that the text drops under its heading. Done 2026-09-28 (the same note);
   - `cancel` with no argument, like `wait`: the check of the branch checked out here, not cobra's error. Done 2026-09-28 (the same note), for both;
   - a check cancelled while only queued said so, not "what it finished is kept". Done 2026-09-28 (the same note);
-  - `status --json`'s serve as fields, whether it runs, its pid, and the queue, beside the sentence;
+  - `status --json`'s serve as fields, whether it runs, its pid, and the queue, beside the sentence. Done 2026-09-29 (the same note): `serve_state`, in `queue --json` too, read by the engine;
   - progress reported while a run is driven journaled as the run's progress events, as a provider's already is. The PortIndex rebuild, five minutes of check-16, showed only in serve's log, and `wait` never saw it;
   - a database migration that says so, since builds older than it can't open the database afterward; certigo's first run migrated it silently.
 - **Branches from before v3.** The hugo exercise's checkout holds 22 local `dockhand/bump/<port>-<id>` branches from earlier dockhand, which nothing reports ([review](reviews/2026-09-28-hugo-bump-exercise.md#cleaning-up), finding 3). Its classification is the design:

@@ -77,6 +77,8 @@ func TestJSONEnvelopes(t *testing.T) {
 	require.Equal(t, "check-1", dig(t, listed.Result, "runs", 0, "name"))
 	require.Equal(t, "jq-update", dig(t, listed.Result, "runs", 0, "branch"))
 	require.Equal(t, "serve: not running · queue: 1 run", listed.Result["serve"])
+	require.Equal(t, map[string]any{"running": false, "queue": float64(1), "stopped": float64(0)}, listed.Result["serve_state"],
+		"serve's state as fields a script reads (the hugo exercise's certigo run, finding 6)")
 
 	waited, err := jsonOf(t, "wait", "check-1")
 	require.NoError(t, err)
@@ -94,6 +96,9 @@ func TestJSONEnvelopes(t *testing.T) {
 	require.Equal(t, true, dig(t, branch, "latest_check", "current"))
 	require.Equal(t, "check-1", dig(t, branch, "latest_check", "run", "name"))
 	require.Nil(t, dig(t, branch, "pull_request"))
+	everything, err := jsonOf(t, "status", "--all")
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{"running": false, "queue": float64(0), "stopped": float64(0)}, everything.Result["serve_state"])
 
 	attention, err := jsonOf(t, "status", "--attention")
 	require.Error(t, err)
@@ -299,4 +304,21 @@ func TestUpstreamJSONWordsChangesUnderItsKey(t *testing.T) {
 	require.Equal(t, "go.mod adds golang.org/x/net v0.44.0", view.Changes[0].Message)
 	require.Equal(t, "LICENSE changed; the Portfile's license line may need to follow", view.Changes[1].Message)
 	require.True(t, view.Held)
+}
+
+// Serve's state is fields, and its line is written from them: whether it
+// runs, as which process, whether it opens pull requests, and the queue
+// with what has stopped (the hugo exercise's certigo run, finding 6).
+func TestServesStateIsFieldsAndItsLine(t *testing.T) {
+	require.Equal(t, "serve: not running · queue: empty", serveWords(engine.ServeState{}))
+	running := engine.ServeState{Running: true, PID: 34857, OpensPullRequests: true, Queue: 2, Stopped: 1}
+	require.Equal(t, "serve: running (pid 34857) · opens PRs for passing updates · queue: 2 runs, 1 stopped", serveWords(running))
+	data, err := json.Marshal(serveView(running))
+	require.NoError(t, err)
+	require.JSONEq(t, `{"running": true, "pid": 34857, "opens_pull_requests": true, "queue": 2, "stopped": 1}`, string(data))
+	running.OpensPullRequests, running.Stopped = false, 0
+	require.Equal(t, "serve: running (pid 34857) · queue: 2 runs", serveWords(running))
+	data, err = json.Marshal(serveView(running))
+	require.NoError(t, err)
+	require.JSONEq(t, `{"running": true, "pid": 34857, "queue": 2, "stopped": 0}`, string(data))
 }

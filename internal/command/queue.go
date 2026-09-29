@@ -40,8 +40,12 @@ func queueCommand(s *settings, streams Streams) *cobra.Command {
 				return err
 			}
 			defer end()
+			serve, err := readServe(ctx, e)
+			if err != nil {
+				return err
+			}
 			if streams.json() {
-				result := queueJSON{Serve: serveLine(ctx, e), Runs: []queuedRunJSON{}}
+				result := queueJSON{Serve: serveWords(serve), ServeState: serveView(serve), Runs: []queuedRunJSON{}}
 				for i := len(runs) - 1; i >= 0; i-- {
 					queued, err := checkResult(ctx, e, runs[i])
 					if err != nil {
@@ -55,7 +59,7 @@ func queueCommand(s *settings, streams Streams) *cobra.Command {
 				}
 				streams.emit(result)
 			}
-			fmt.Fprintln(streams.Out, serveLine(ctx, e))
+			fmt.Fprintln(streams.Out, serveWords(serve))
 			if len(runs) == 0 {
 				return nil
 			}

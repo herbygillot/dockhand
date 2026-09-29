@@ -581,15 +581,57 @@ type Serving struct {
 	SubmitPassing bool `json:"submit_passing"`
 }
 
+// ServeState is serve's state for the repository, as status and queue
+// show it: whether a serve leads it, as which process, and whether that
+// serve opens pull requests for the updates it prepared that pass; and the
+// checks queued or running, with how many of those have stopped.
+type ServeState struct {
+	Running           bool
+	PID               int
+	OpensPullRequests bool
+	Queue             int
+	Stopped           int
+}
+
+// ServeState reads serve's state. Judging who is alive takes a session.
+func (e *Engine) ServeState(ctx context.Context, session *coord.Session) (ServeState, error) {
+	queued, err := e.Runs(ctx, store.RunFilter{States: []model.RunState{model.RunQueued, model.RunRunning}})
+	if err != nil {
+		return ServeState{}, err
+	}
+	state := ServeState{Queue: len(queued)}
+	for _, run := range queued {
+		stopped, err := Stopped(ctx, session, run)
+		if err != nil {
+			return ServeState{}, err
+		}
+		if stopped {
+			state.Stopped++
+		}
+	}
+	leader, err := session.Holder(ctx, coord.LeaderResource)
+	if err != nil {
+		return ServeState{}, err
+	}
+	if leader != nil {
+		state.Running, state.PID = true, leader.PID
+		// What an earlier serve said of itself isn't the leader's to say.
+		if serving, ok := e.lastServing(); ok && serving.PID == leader.PID {
+			state.OpensPullRequests = serving.SubmitPassing
+		}
+	}
+	return state, nil
+}
+
 func (e *Engine) announceServing(submitPassing bool) {
 	if data, err := json.Marshal(Serving{PID: os.Getpid(), SubmitPassing: submitPassing}); err == nil {
 		_ = e.writeServeFile("serving.json", data)
 	}
 }
 
-// LastServing is what the last serve to lead said about itself; a caller
-// compares its PID with the leader's.
-func (e *Engine) LastServing() (Serving, bool) {
+// lastServing is what the last serve to lead said about itself, which is
+// the leader's to say only while their PIDs match.
+func (e *Engine) lastServing() (Serving, bool) {
 	var serving Serving
 	data, err := os.ReadFile(e.serveFile("serving.json"))
 	if err != nil || json.Unmarshal(data, &serving) != nil {

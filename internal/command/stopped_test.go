@@ -50,6 +50,9 @@ func TestAKilledCheckReadsAsStopped(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, true, dig(t, result.Result, "branches", 0, "active_checks", 0, "stopped"))
 	require.Equal(t, "running", dig(t, result.Result, "branches", 0, "active_checks", 0, "state"), "the record is left as it is")
+	result, err = jsonOf(t, "status", "--all")
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{"running": false, "queue": float64(1), "stopped": float64(1)}, result.Result["serve_state"])
 
 	out, _, err = dockhand(t, "queue")
 	require.NoError(t, err)
