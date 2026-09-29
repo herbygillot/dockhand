@@ -123,6 +123,7 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 	if testPreparer != nil {
 		e.Preparer = testPreparer(e)
 	}
+	e.GitHubCLI = gitHubCLI
 	if testForge != nil {
 		e.Forge = testForge(e)
 	}

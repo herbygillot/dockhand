@@ -17,6 +17,11 @@ var ErrRejected = errors.New("forge: remote write was rejected")
 var ErrAuthentication = errors.New("forge: authentication is required")
 
 var ErrNotFound = errors.New("forge: requested object was not found")
+
+// ErrAppRestricted is an organization refusing the app a client acts as,
+// one it hasn't approved, as GitHub's OAuth App access restrictions do.
+// Another app it has approved may do what this one can't.
+var ErrAppRestricted = errors.New("forge: the organization restricts which apps may act for it")
 var ErrIncomplete = errors.New("forge: incomplete repository evidence")
 
 type Tag struct{ Name, Commit string }

@@ -175,6 +175,12 @@ func namesPort(title, port string) bool {
 	return false
 }
 
+// appRestricted is GitHub's refusal of an app an organization hasn't
+// approved.
+type appRestricted struct{ error }
+
+func (appRestricted) Is(target error) bool { return target == forge.ErrAppRestricted }
+
 // readyMutation takes a draft out of draft; GitHub's REST API can't.
 const readyMutation = `mutation($id: ID!) { markPullRequestReadyForReview(input: {pullRequestId: $id}) { pullRequest { isDraft } } }`
 
@@ -208,7 +214,13 @@ func (c *Client) MarkReady(ctx context.Context, ref forge.PullRequestRef) (forge
 			return forge.PullRequestObservation{}, githubapi.RateLimitError(err)
 		}
 		if len(result.Errors) > 0 {
-			return forge.PullRequestObservation{}, fmt.Errorf("github: %s", result.Errors[0].Message)
+			refused := fmt.Errorf("github: %s", result.Errors[0].Message)
+			// GitHub says it in words alone, as the macports organization's
+			// refusal did (the hugo exercise's sshuttle run, finding 2).
+			if strings.Contains(result.Errors[0].Message, "OAuth App access restrictions") {
+				return forge.PullRequestObservation{}, appRestricted{refused}
+			}
+			return forge.PullRequestObservation{}, refused
 		}
 		if row, _, err = client.PullRequests.Get(ctx, owner, repo, ref.Number); err != nil {
 			return forge.PullRequestObservation{}, githubapi.RateLimitError(err)

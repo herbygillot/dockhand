@@ -63,6 +63,9 @@ type Engine struct {
 	Preparer Preparer
 	// Forge publishes; GitHub when nil.
 	Forge Forge
+	// GitHubCLI marks a draft ready where an organization refuses the
+	// forge's app; none when nil.
+	GitHubCLI GitHubCLI
 	// PortReader reads ports for plans; MacPorts' own evaluator when nil.
 	PortReader PortReader
 	// DependentReader finds dependents for impact; the port index when nil.

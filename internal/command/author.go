@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 )
@@ -18,6 +19,11 @@ import (
 // testPreparer, when set, stands in for MacPorts in every engine a
 // command opens.
 var testPreparer func(*engine.Engine) engine.Preparer
+
+// gitHubCLI is the GitHub CLI every engine a command opens may mark a
+// draft ready with, where an organization refuses dockhand's app (D8).
+// Tests stand in for it, so no test runs the one installed.
+var gitHubCLI engine.GitHubCLI = github.CLI{}
 
 // testForge, when set, stands in for GitHub in every engine a command
 // opens.

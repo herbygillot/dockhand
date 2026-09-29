@@ -251,7 +251,7 @@ These are taken when their area is next touched, or between items.
 - **What the decisions of 2026-09-29 ask for,** after the beekeeper-studio run's first item:
   - D9's holds: none for Go; a new `-sys` crate listed with a hint at the MacPorts library it may link; counts for the rest. Done 2026-09-29 ([note](activity/2026-09-29-go-and-rust-hold-nothing.md)), for Rust too;
   - D7's plan rule. Done 2026-09-29 ([note](activity/2026-09-29-plans-beside-untracked-branches.md));
-  - D8's `gh pr ready`, and the guide on asking an organization to approve dockhand's app;
+  - D8's `gh pr ready`, and the guide on asking an organization to approve dockhand's app. Done 2026-09-29 ([note](activity/2026-09-29-ready-through-the-github-cli.md));
   - D10's first compiler error, in a package of its own;
   - D2's default, with the oracle's design note.
 - **What cleaning up after beekeeper-studio and ov asked for** ([review](reviews/2026-09-28-hugo-bump-exercise.md#cleaning-up-after-beekeeper-studio-and-ov)):

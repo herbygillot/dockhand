@@ -30,6 +30,8 @@ type fakeForge struct {
 	created  []forge.PullRequestInput
 	updated  []forge.PullRequestInput
 	readied  []int
+	// readyRefused is GitHub's refusal to mark a pull request ready.
+	readyRefused error
 	// repos are other people's repositories, by name, as local paths.
 	repos map[string]string
 	// permission is the role Permission reports; reviews are those posted.
@@ -134,6 +136,9 @@ func (f *fakeForge) OpenPullRequests(context.Context, string, string) ([]forge.P
 }
 
 func (f *fakeForge) MarkReady(_ context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error) {
+	if f.readyRefused != nil {
+		return forge.PullRequestObservation{}, f.readyRefused
+	}
 	f.readied = append(f.readied, ref.Number)
 	return f.observe(f.prs[ref.Number]), nil
 }
@@ -570,4 +575,55 @@ func TestTheirRemoteIsOneThatPushesThereOrTheirAddress(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "bo", name)
 	require.Equal(t, "/remotes/bo", push)
+}
+
+// restricted is GitHub's refusal of an app an organization hasn't
+// approved, as the forge's client reports it.
+type restricted struct{ error }
+
+func (restricted) Is(target error) bool { return target == forge.ErrAppRestricted }
+
+// signedInCLI is a GitHub CLI signed in as login, recording what it marks
+// ready.
+type signedInCLI struct {
+	login   string
+	readied []int
+}
+
+func (c *signedInCLI) Login(context.Context) (string, error) { return c.login, nil }
+
+func (c *signedInCLI) MarkReady(_ context.Context, ref forge.PullRequestRef) error {
+	c.readied = append(c.readied, ref.Number)
+	return nil
+}
+
+// Where an organization refuses dockhand's app, the GitHub CLI marks the
+// draft ready when it's signed in as dockhand is, and the journal says it
+// did; with none, the refusal says what to do (D8).
+func TestAReadyTheOrganizationRefusesGoesThroughTheGitHubCLI(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Draft: true})
+	require.NoError(t, err)
+	_, err = e.ApplySubmit(t.Context(), plan)
+	require.NoError(t, err)
+	fake.readyRefused = restricted{errors.New("github: the `macports` organization has enabled OAuth App access restrictions")}
+
+	_, byCLI, err := e.Ready(t.Context(), branch)
+	require.ErrorIs(t, err, forge.ErrAppRestricted)
+	require.False(t, byCLI)
+	require.NotContains(t, err.Error(), "GitHub CLI wasn't used", "with no CLI, nothing more to say")
+
+	cli := &signedInCLI{login: "ada"}
+	e.GitHubCLI = cli
+	readied, byCLI, err := e.Ready(t.Context(), branch)
+	require.NoError(t, err)
+	require.True(t, byCLI)
+	require.False(t, readied.PullRequest.Draft)
+	require.Equal(t, []int{readied.PullRequest.Number}, cli.readied)
+	events, err := e.Events(t.Context(), 0)
+	require.NoError(t, err)
+	require.Equal(t, fmt.Sprintf("marked #%d ready for review with the GitHub CLI", readied.PullRequest.Number), events[len(events)-1].Message)
 }

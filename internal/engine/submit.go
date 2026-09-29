@@ -583,22 +583,59 @@ func (e *Engine) createdAnyway(ctx context.Context, plan SubmitPlan, failed erro
 	return found, nil
 }
 
-// Ready takes a branch's draft pull request out of draft, so it is ready
-// for review (Design v3 §9's submit --ready).
-func (e *Engine) Ready(ctx context.Context, branch model.Branch) (model.Branch, error) {
-	branch, err := e.Branch(ctx, branch.ID)
+// readyByCLI marks a pull request ready with the GitHub CLI, when it's
+// signed in as the account dockhand acts for, since the change is then
+// made by the same person through another app; why it didn't, otherwise.
+func (e *Engine) readyByCLI(ctx context.Context, ref forge.PullRequestRef) (bool, string) {
+	if e.GitHubCLI == nil {
+		return false, ""
+	}
+	login, err := e.GitHubCLI.Login(ctx)
 	if err != nil {
-		return branch, err
+		return false, fmt.Sprintf("The GitHub CLI wasn't used: %v.", err)
+	}
+	mine, err := e.forge().AuthenticatedUser(ctx)
+	if err != nil {
+		return false, fmt.Sprintf("The GitHub CLI wasn't used: dockhand's own account couldn't be read: %v.", err)
+	}
+	if !strings.EqualFold(login, mine) {
+		return false, fmt.Sprintf("The GitHub CLI wasn't used: it's signed in as %s, and dockhand as %s.", login, mine)
+	}
+	if err := e.GitHubCLI.MarkReady(ctx, ref); err != nil {
+		return false, fmt.Sprintf("The GitHub CLI couldn't mark it ready either: %v.", err)
+	}
+	return true, ""
+}
+
+// Ready takes a branch's draft pull request out of draft, so it is ready
+// for review (Design v3 §9's submit --ready). Where an organization
+// refuses dockhand's app, the GitHub CLI does it when it's signed in as
+// the account dockhand is (D8), and byCLI says so.
+func (e *Engine) Ready(ctx context.Context, branch model.Branch) (_ model.Branch, byCLI bool, err error) {
+	branch, err = e.Branch(ctx, branch.ID)
+	if err != nil {
+		return branch, false, err
 	}
 	pr := branch.PullRequest
 	if pr == nil {
-		return branch, fmt.Errorf("%s has no pull request yet; dockhand submit opens one", branch.Name)
+		return branch, false, fmt.Errorf("%s has no pull request yet; dockhand submit opens one", branch.Name)
 	}
-	if _, err := e.forge().MarkReady(ctx, forge.PullRequestRef{Forge: forge.GitHub, Repository: pr.Repository, Number: pr.Number}); err != nil {
+	ref := forge.PullRequestRef{Forge: forge.GitHub, Repository: pr.Repository, Number: pr.Number}
+	if _, err := e.forge().MarkReady(ctx, ref); err != nil {
 		// GitHub may refuse dockhand's app what it allows another, as an
 		// organization that restricts which apps may act for its members
 		// does (the hugo exercise's sshuttle run, finding 2).
-		return branch, fmt.Errorf("marking #%d ready for review: %w\nIt's still a draft. Mark it ready on its page, %s, or with the GitHub CLI, which signs in as its own app: gh pr ready %d --repo %s", pr.Number, err, github.PullRequestURL(pr.Repository, pr.Number), pr.Number, pr.Repository)
+		var why string
+		if errors.Is(err, forge.ErrAppRestricted) {
+			byCLI, why = e.readyByCLI(ctx, ref)
+		}
+		if !byCLI {
+			err = fmt.Errorf("marking #%d ready for review: %w\nIt's still a draft. Mark it ready on its page, %s, or with the GitHub CLI, which signs in as its own app: gh pr ready %d --repo %s", pr.Number, err, github.PullRequestURL(pr.Repository, pr.Number), pr.Number, pr.Repository)
+			if why != "" {
+				err = fmt.Errorf("%w\n%s", err, why)
+			}
+			return branch, false, err
+		}
 	}
 	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 		current, err := tx.Branch(branch.ID)
@@ -613,11 +650,14 @@ func (e *Engine) Ready(ctx context.Context, branch model.Branch) (model.Branch, 
 			return err
 		}
 		branch = current
-		_, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: "branch.ready", Level: model.LevelInfo,
-			Message: fmt.Sprintf("marked #%d ready for review", pr.Number)})
+		message := fmt.Sprintf("marked #%d ready for review", pr.Number)
+		if byCLI {
+			message += " with the GitHub CLI"
+		}
+		_, err = tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: "branch.ready", Level: model.LevelInfo, Message: message})
 		return err
 	})
-	return branch, err
+	return branch, byCLI, err
 }
 
 // RequestReview asks the reviewers who requested changes on a branch's

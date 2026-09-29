@@ -359,3 +359,32 @@ func TestPermissionAndPostReview(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "https://github.com/upstream/ports/pull/3#pullrequestreview-1", url)
 }
+
+// GitHub refusing an app an organization hasn't approved is told apart, as
+// GitHub's own words say it, from its other refusals (D8).
+func TestMarkReadyTellsAnOrganizationsRefusalOfTheApp(t *testing.T) {
+	refusal := "Could not resolve to a node with the global id of 'PR_node3'"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/upstream/ports/pulls/3":
+			row := prJSON()
+			row["draft"], row["node_id"] = true, "PR_node3"
+			json.NewEncoder(w).Encode(row)
+		case r.Method == http.MethodPost && r.URL.Path == "/graphql":
+			json.NewEncoder(w).Encode(map[string]any{"errors": []map[string]string{{"type": "FORBIDDEN", "message": refusal}}})
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL, Token: "fixture-token"}}}
+	ref := forge.PullRequestRef{Forge: forge.GitHub, Repository: "upstream/ports", Number: 3}
+	_, err := client.MarkReady(t.Context(), ref)
+	require.EqualError(t, err, "github: "+refusal)
+	require.NotErrorIs(t, err, forge.ErrAppRestricted)
+
+	refusal = "Although you appear to have the correct authorization credentials, the `upstream` organization has enabled OAuth App access restrictions, meaning that data access to third-parties is limited."
+	_, err = client.MarkReady(t.Context(), ref)
+	require.EqualError(t, err, "github: "+refusal)
+	require.ErrorIs(t, err, forge.ErrAppRestricted)
+}

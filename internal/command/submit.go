@@ -166,9 +166,14 @@ func finishSubmit(ctx context.Context, e *engine.Engine, streams Streams, plan e
 	if !ready {
 		return nil
 	}
-	branch, err := e.Ready(ctx, plan.Branch)
+	branch, byCLI, err := e.Ready(ctx, plan.Branch)
 	if err != nil {
 		return err
+	}
+	if byCLI {
+		organization, _, _ := strings.Cut(branch.PullRequest.Repository, "/")
+		fmt.Fprintf(streams.Out, "Marked #%d ready for review with the GitHub CLI: the %s organization refuses dockhand's app.\n", branch.PullRequest.Number, organization)
+		return nil
 	}
 	fmt.Fprintf(streams.Out, "Marked #%d ready for review.\n", branch.PullRequest.Number)
 	return nil

@@ -29,6 +29,16 @@ type Forge interface {
 	RequestReviewers(ctx context.Context, ref forge.PullRequestRef, logins []string) error
 }
 
+// GitHubCLI is the GitHub CLI, which acts on GitHub as its own app. An
+// organization that refuses dockhand's app may take it, as the macports
+// organization does to mark a draft ready (D8).
+type GitHubCLI interface {
+	// Login is the account it's signed in as.
+	Login(ctx context.Context) (string, error)
+	// MarkReady takes a draft pull request out of draft.
+	MarkReady(ctx context.Context, ref forge.PullRequestRef) error
+}
+
 // forge is the engine's Forge: the one it was given, or GitHub with the
 // login from the system keychain (or GH_TOKEN), assembled on first use.
 func (e *Engine) forge() Forge {

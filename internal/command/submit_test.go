@@ -527,12 +527,30 @@ func TestSubmitCheckPassingAndReady(t *testing.T) {
 	require.Equal(t, "0 branches passed their checks\n", out, "a pushed branch is done")
 
 	// GitHub may refuse dockhand's app, as an organization restricting
-	// apps does: what to do instead is said (the sshuttle run, finding 2).
-	g.readyRefused = errors.New("github: the `macports` organization has enabled OAuth App access restrictions")
+	// apps does: what to do instead is said (the sshuttle run, finding 2),
+	// and the GitHub CLI does it where it's signed in as dockhand is (D8).
+	g.readyRefused = restricted{errors.New("github: the `macports` organization has enabled OAuth App access restrictions")}
+	refused := "marking #34901 ready for review: github: the `macports` organization has enabled OAuth App access restrictions\n" +
+		"It's still a draft. Mark it ready on its page, https://github.com/macports/macports-ports/pull/34901, or with the GitHub CLI, which signs in as its own app: gh pr ready 34901 --repo macports/macports-ports\n"
 	_, _, err = dockhand(t, "submit", "--ready", "--yes")
-	require.EqualError(t, err, "marking #34901 ready for review: github: the `macports` organization has enabled OAuth App access restrictions\n"+
-		"It's still a draft. Mark it ready on its page, https://github.com/macports/macports-ports/pull/34901, or with the GitHub CLI, which signs in as its own app: gh pr ready 34901 --repo macports/macports-ports")
+	require.EqualError(t, err, refused+"The GitHub CLI wasn't used: the GitHub CLI isn't installed.")
+	var byCLI []int
+	gitHubCLI = signedIn{login: "bob", readied: &byCLI}
+	t.Cleanup(func() { gitHubCLI = signedIn{} })
+	_, _, err = dockhand(t, "submit", "--ready", "--yes")
+	require.EqualError(t, err, refused+"The GitHub CLI wasn't used: it's signed in as bob, and dockhand as ada.")
+	require.Empty(t, byCLI, "another account's CLI isn't used")
+	gitHubCLI = signedIn{login: "Ada", readied: &byCLI}
+	out, _, err = dockhand(t, "submit", "--ready", "--yes")
+	require.NoError(t, err)
+	require.Contains(t, out, "Marked #34901 ready for review with the GitHub CLI: the macports organization refuses dockhand's app.\n")
+	require.Equal(t, []int{34901}, byCLI)
 	require.Empty(t, g.readied)
+	g.readyRefused = errors.New("github: Could not resolve to a node")
+	_, _, err = dockhand(t, "submit", "--ready", "--yes")
+	require.ErrorContains(t, err, "github: Could not resolve to a node\nIt's still a draft.")
+	require.NotContains(t, err.Error(), "wasn't used", "a refusal that isn't the organization's isn't the CLI's to try")
+	require.Equal(t, []int{34901}, byCLI)
 	g.readyRefused = nil
 
 	out, _, err = dockhand(t, "submit", "--ready", "--yes")
@@ -731,3 +749,9 @@ func TestSubmitsCheckLineNamesOnlyWhereItBuilt(t *testing.T) {
 	require.Equal(t, "passed on "+engine.DescribeEnvironment(tahoe)+" for this commit's files (check-21); nothing built on "+engine.DescribeEnvironment(monterey)+", where every port is excluded",
 		checkWords(engine.SubmitPlan{Evidence: evidence}))
 }
+
+// restricted is GitHub's refusal of an app an organization hasn't
+// approved, as the forge's client reports it.
+type restricted struct{ error }
+
+func (restricted) Is(target error) bool { return target == forge.ErrAppRestricted }
