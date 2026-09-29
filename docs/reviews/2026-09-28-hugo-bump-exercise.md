@@ -218,3 +218,9 @@ The release port fetches three distfiles from kernel.org: `git-${version}.tar.xz
 7. **A replaced check exits 0 in the foreground.** check-25, stopped by `--replace` after failing at checksum, ended its foreground process with "check-25 stopped; finished results are kept" and exit 0. A script would read that as success.
 
 What worked well: `check --replace` (check-26) and MacPorts CI's rule, which built both subports of the changed directory, git before git-devel, deactivating between them. `--tests skip` kept git's long `make test` off the Tart runs, while GitHub ran its workflow. check-26 passed git and git-devel on Tart macOS 12, Tart macOS 26 and GitHub, and the log shows `patch-git-subtree.html.diff` applied under `+doc`.
+
+### Cleaning up after beekeeper-studio and ov
+
+With `11fb35f9`, after #35015 and #35017 merged, `clean --yes` removed beekeeper-studio-imae's worktree, local branch and fork branch. For the adopted `hand/ov-0.55` it removed the local and fork branches but, rightly, not the worktree, which I had made by hand.
+
+1. **clean deleted a branch checked out in a worktree it wouldn't remove.** `hand/ov-0.55` was checked out in `~/Source/macports-branches/ov-hand`, and clean deleted it anyway; `git branch -d` would have refused. That left the worktree broken: HEAD on a branch that no longer exists, `git status` showing "No commits yet on hand/ov-0.55…[gone]" and every file staged as added. Here nothing was lost; I confirmed the files matched the merged e535c0b, then ran `git worktree remove --force`. But the worktree belonged to the person. clean should keep a branch that's checked out in a worktree it keeps, and say so ("keep branch hand/ov-0.55: checked out in ~/Source/macports-branches/ov-hand, which dockhand didn't make"). Or it could detach that worktree at the merged commit first. The preview didn't hint at the conflict either.
