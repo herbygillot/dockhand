@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/buildlog"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macos"
@@ -645,6 +647,9 @@ func (b *build) Consumed(target model.TargetID, active []model.ActivePort) {
 
 func (b *build) Record(result model.TargetResult) error {
 	result = b.d.plan.Tests.Judge(result)
+	if result.Outcome == model.OutcomeFailed {
+		result.Detail = withCause(result.Detail, result.Log)
+	}
 	result.Execution = b.execution.ID
 	if result.RecordedAt.IsZero() {
 		result.RecordedAt = b.d.e.now()
@@ -687,6 +692,28 @@ func (b *build) Observe(observed model.Observed) error {
 
 func (b *build) Progress(message string) {
 	b.d.emit(b.ctx, "progress", describeEnvironment(b.execution.Environment)+": "+message)
+}
+
+// withCause adds to a failure's detail what its log most likely says made
+// it fail, marked as read from the log, beside what the provider said
+// (D10): whichever provider built it, the log is on this Mac by now.
+func withCause(detail, log string) string {
+	if log == "" {
+		return detail
+	}
+	file, err := os.Open(log)
+	if err != nil {
+		return detail
+	}
+	defer file.Close()
+	cause, ok := buildlog.First(file)
+	switch {
+	case !ok:
+		return detail
+	case detail == "":
+		return "from its log: " + cause.Line
+	}
+	return detail + " · from its log: " + cause.Line
 }
 
 // blockRemaining records as blocked the targets a provider left without a

@@ -158,7 +158,7 @@ Results are per target and per environment:
 | Result | Meaning |
 | --- | --- |
 | passed | linted, fetched, checksummed, and installed; its tests count only when required |
-| failed | one of those failed; the log says which |
+| failed | one of those failed; the log says which, and a failure's summary adds the first compiler error it finds there, marked "from its log" |
 | blocked | a changed port it needs failed, so it wasn't built |
 | unmet | the environment can't build it, such as a port needing Xcode where there is none |
 

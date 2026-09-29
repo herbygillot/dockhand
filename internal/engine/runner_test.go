@@ -42,7 +42,10 @@ type scriptedProvider struct {
 	// says is reported as the build starts, as staging a guest's index
 	// is, with a line behind the scenes after it.
 	says string
-	jobs []buildenv.Job
+	// logs and details are what a target's result names as its log, and
+	// what the provider said of it.
+	logs, details map[model.TargetID]string
+	jobs          []buildenv.Job
 }
 
 // scriptedArchive is the archive a scripted build of a target makes: its
@@ -83,7 +86,7 @@ func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build 
 		if !ok {
 			outcome = model.OutcomePassed
 		}
-		result := model.TargetResult{Target: target.ID, Outcome: outcome, Tests: model.TestsNone}
+		result := model.TargetResult{Target: target.ID, Outcome: outcome, Tests: model.TestsNone, Log: p.logs[target.ID], Detail: p.details[target.ID]}
 		if outcome == model.OutcomeFailed {
 			result.Phase = model.PhaseInstall
 		}
@@ -441,6 +444,40 @@ func TestWhatTheWorkReportsIsTheRunsProgress(t *testing.T) {
 	}
 	require.Equal(t, []string{describeEnvironment(tahoeArm) + ": " + says}, kept, "what's behind the scenes isn't kept")
 	require.Contains(t, shown, progress.Update{Level: progress.Verbose, Message: says})
+}
+
+// A failure's detail gains what its log most likely says made it fail,
+// marked as read from the log, beside what the provider said: whichever
+// provider built it, the log is on this Mac (D10, from the beekeeper-studio
+// run's finding 2).
+func TestAFailuresDetailSaysWhatItsLogShows(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	log := filepath.Join(t.TempDir(), "harbor-cli.log")
+	require.NoError(t, os.WriteFile(log, []byte("--->  Building harbor-cli\nsrc/cli.c:3:1: error: expected ';' after expression\nmake: *** [all] Error 1\n"), 0o644))
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{
+		outcomes: map[model.TargetID]model.Outcome{"harbor-cli": model.OutcomeFailed},
+		logs:     map[model.TargetID]string{"harbor-cli": log, "libharbor": log},
+		details:  map[model.TargetID]string{"harbor-cli": "`make` failed with exit code: 2"},
+	}}
+	queued := queuedHarborRun(t, e, tahoeArm)
+	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	details := map[model.TargetID]string{}
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		plan, err := r.Plan(run.Plan)
+		require.NoError(t, err)
+		evidence, err := runEvidence(r, run, plan)
+		require.NoError(t, err)
+		for _, target := range evidence.Targets {
+			details[target.Target.ID] = target.Outcomes[0].Detail
+		}
+		return nil
+	}))
+	require.Equal(t, "`make` failed with exit code: 2 · from its log: src/cli.c:3:1: error: expected ';' after expression", details["harbor-cli"])
+	require.Empty(t, details["libharbor"], "a target that passed has no cause, whatever its log")
+	require.Equal(t, "from its log: src/cli.c:3:1: error: expected ';' after expression", withCause("", log), "with nothing else said")
+	require.Equal(t, "said", withCause("said", filepath.Join(t.TempDir(), "gone.log")), "a log that can't be read says nothing")
 }
 
 func TestServeTakesPeoplesChecksFirst(t *testing.T) {
