@@ -97,15 +97,19 @@ func TestTidyRegroupsAndAppliesASavedPlan(t *testing.T) {
 	saved, err := os.ReadFile(file)
 	require.NoError(t, err)
 	require.Contains(t, string(saved), "message = '''\njq: note harbor\n'''\n")
-	edited := strings.Replace(string(saved), "message = '''\njq: note harbor\n'''", "message = '''\njq: note harbor\n\nThe note says why harbor needs jq.\n'''", 1)
+	edited := strings.Replace(string(saved), "message = '''\njq: note harbor\n'''", "message = '''\njq: note harbor\n\nThe note says why harbor needs jq.\n\nIt names the build.\n'''", 1)
 	require.NoError(t, os.WriteFile(file, []byte(edited), 0o644))
 
 	out, _, err = dockhand(t, "tidy", "--apply", file)
 	require.NoError(t, err)
 	require.Contains(t, out, "harbor · the plan saved in "+file+"\n")
+	// It shows each message as it will be written, the edit included, and
+	// not the notes on how the proposal was made (finding 2).
+	require.Contains(t, out, "\nCommits to write\n  1  jq: note harbor\n       includes edits not yet committed\n       files: textproc/jq/Portfile\n       author: Test <test@example.org>\n       body:\n         The note says why harbor needs jq.\n\n         It names the build.\n  2  github-1.0: follow harbor's releases\n")
+	require.NotContains(t, out, "subject from")
 	require.Contains(t, out, "Created 2 commits.")
 	require.Equal(t, "github-1.0: follow harbor's releases\njq: note harbor", gitRun(t, w.clone, "log", "-2", "--format=%s"))
-	require.Equal(t, "jq: note harbor\n\nThe note says why harbor needs jq.", gitRun(t, w.clone, "log", "-1", "--format=%B", "HEAD~1"))
+	require.Equal(t, "jq: note harbor\n\nThe note says why harbor needs jq.\n\nIt names the build.", gitRun(t, w.clone, "log", "-1", "--format=%B", "HEAD~1"))
 	_, _, err = dockhand(t, "tidy", "--apply", file)
 	require.ErrorContains(t, err, "it has new commits")
 

@@ -302,7 +302,9 @@ func (e *Engine) LoadTidyPlan(ctx context.Context, data []byte) (TidyPlan, error
 	}
 	var covered []string
 	for i, commit := range saved.Commits {
-		group := TidyGroup{Message: strings.TrimSpace(string(commit.Message)) + "\n", Author: git.Signature(commit.Author), Paths: commit.Paths, Working: commit.Working, Notes: commit.Notes}
+		// The saved notes say how the proposal was made, which an edited
+		// message may no longer fit; the plan as saved is what applies.
+		group := TidyGroup{Message: strings.TrimSpace(string(commit.Message)) + "\n", Author: git.Signature(commit.Author), Paths: commit.Paths, Working: commit.Working}
 		for _, path := range commit.Paths {
 			if slices.Contains(covered, path) {
 				return TidyPlan{}, fmt.Errorf("%s is in more than one commit", path)

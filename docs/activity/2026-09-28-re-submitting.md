@@ -38,3 +38,20 @@ Tests:
 - `TestTidyRegroupsAndAppliesASavedPlan`: a message edited in the file as plain text reaches its commit.
 
 Eight mutations each fail a test.
+
+## Applying a saved plan shows what it writes (finding 2)
+
+`tidy --apply` reprinted the saved plan as the proposal had been printed: each commit's subject, files, and the notes on how the proposal was made. It never showed a message's body, so the body the person had added to sshuttle's commit showed only in `git log` afterwards. A note can also go stale once a message is edited, such as "subject from your commit e15ced6". And that note said "your commit" of any commit it took a subject from, though e15ced6 was dockhand's own, carrying its Generated-By line.
+
+Now:
+- **Applying shows each commit as it will be written:** its subject, whether it takes edits not yet committed, its files, its author, and its whole body, blank lines kept.
+- **The saved notes aren't read back.** They said how the proposal was made. The plan as saved, edited or not, is what applies. The file keeps them for the person editing it.
+- **A subject's source says whose commit it was:** "subject from dockhand's commit …" of one carrying dockhand's attribution line, and "your commit" otherwise. Whether a message is dockhand's is `commitmsg`'s to say (`Attributed`), beside the attribution line itself.
+
+Tests:
+- `TestTidyRegroupsAndAppliesASavedPlan`: the apply shows the edited, two-paragraph body, and no notes;
+- `TestASubjectSaysWhoseCommitItCameFrom`: a person's commit, and one of dockhand's;
+- `TestACommitIsDockhandsByItsAttribution`;
+- the saved-plan test: a loaded plan carries no notes.
+
+Seven mutations each fail a test.

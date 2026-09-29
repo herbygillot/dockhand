@@ -239,7 +239,11 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 				}
 			}
 			if chosen != nil {
-				group.Notes = append(group.Notes, fmt.Sprintf("subject from your commit %s", short(model.ObjectID(chosen.ID))))
+				whose := "your"
+				if commitmsg.Attributed(chosen.Message) {
+					whose = "dockhand's"
+				}
+				group.Notes = append(group.Notes, fmt.Sprintf("subject from %s commit %s", whose, short(model.ObjectID(chosen.ID))))
 			} else if subject, err = derivedSubject(ctx, worktree, trees[base], final, group); err != nil {
 				return TidyPlan{}, err
 			} else if subject != "" {

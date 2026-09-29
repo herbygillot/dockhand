@@ -240,6 +240,45 @@ func writeTidyPlan(out io.Writer, plan engine.TidyPlan) {
 	fmt.Fprintln(out)
 }
 
+// writeSavedPlan says what applying a saved plan writes: each commit's
+// whole message, as it may have been edited, with its files and author.
+func writeSavedPlan(out io.Writer, plan engine.TidyPlan) {
+	title := "Commit to write"
+	if len(plan.Groups) > 1 {
+		title = "Commits to write"
+	}
+	fmt.Fprintf(out, "\n%s\n", title)
+	for i, group := range plan.Groups {
+		subject, body, _ := strings.Cut(strings.TrimSpace(group.Message), "\n")
+		if subject == "" {
+			subject = "(needs a subject)"
+		}
+		fmt.Fprintf(out, "  %d  %s\n", i+1, subject)
+		if group.Working {
+			fmt.Fprintln(out, "       includes edits not yet committed")
+		}
+		fmt.Fprintf(out, "       files: %s\n", strings.Join(group.Paths, ", "))
+		if group.Author.Name != "" {
+			fmt.Fprintf(out, "       author: %s <%s>\n", group.Author.Name, group.Author.Email)
+		}
+		if body = strings.TrimSpace(body); body != "" {
+			fmt.Fprintln(out, "       body:")
+			for _, line := range strings.Split(body, "\n") {
+				if strings.TrimSpace(line) == "" {
+					fmt.Fprintln(out)
+					continue
+				}
+				fmt.Fprintf(out, "         %s\n", line)
+			}
+		}
+		for _, blocking := range group.Blocking {
+			fmt.Fprintf(out, "       ✗ %s\n", blocking)
+		}
+	}
+	writeFindings(out, plan)
+	fmt.Fprintln(out)
+}
+
 func writeFindings(out io.Writer, plan engine.TidyPlan) {
 	if len(plan.Findings) == 0 {
 		return
@@ -292,7 +331,7 @@ func applySaved(ctx context.Context, e *engine.Engine, streams Streams, file str
 	}
 	streams.emit(tidyView(proposal))
 	fmt.Fprintf(streams.Out, "%s · the plan saved in %s\n", proposal.Branch.ShortName(), file)
-	writeTidyPlan(streams.Out, proposal)
+	writeSavedPlan(streams.Out, proposal)
 	if blocking := proposal.Blocking(); len(blocking) > 0 {
 		return fmt.Errorf("the plan can't be applied yet: %s", strings.Join(blocking, "; "))
 	}

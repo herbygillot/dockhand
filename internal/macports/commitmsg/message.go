@@ -7,6 +7,7 @@ package commitmsg
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/version"
@@ -36,6 +37,12 @@ func IsAttribution(line string) bool {
 		}
 	}
 	return false
+}
+
+// Attributed reports whether a commit message carries dockhand's
+// attribution line, as tidy writes it on a commit of dockhand's own edits.
+func Attributed(message string) bool {
+	return slices.ContainsFunc(strings.Split(message, "\n"), IsAttribution)
 }
 
 // ModifiedBuild reports whether a message's Generated-By names a dockhand

@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"encoding/json"
+	"slices"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -100,6 +102,10 @@ func TestASavedPlanAppliesUntilTheBranchMoves(t *testing.T) {
 	loaded, err := e.LoadTidyPlan(t.Context(), edited)
 	require.NoError(t, err)
 	require.Equal(t, "libharbor: update to 3, with the github PortGroup it needs", loaded.Groups[0].Subject())
+	require.NotEmpty(t, regrouped.Groups[1].Notes)
+	for _, group := range loaded.Groups {
+		require.Empty(t, group.Notes, "the notes said how the proposal was made; the plan as saved is what applies")
+	}
 	require.Equal(t, []string{"libharbor"}, loaded.Groups[0].Ports)
 	require.Len(t, loaded.Groups[1].Combines, 1)
 	require.Empty(t, loaded.Blocking())
@@ -175,4 +181,27 @@ func TestASavedPlansMessagesReadAsWritten(t *testing.T) {
 		require.Equal(t, message, string(saved.Commits[0].Message))
 		require.True(t, when.Equal(saved.Commits[0].Author.When))
 	}
+}
+
+// A subject taken from a commit says whose commit it was: dockhand's, by
+// its attribution line, or the person's (the hugo exercise's re-submitting
+// sshuttle, finding 2).
+func TestASubjectSaysWhoseCommitItCameFrom(t *testing.T) {
+	_, plan := threeChanges(t)
+	at := slices.IndexFunc(plan.Groups, func(g TidyGroup) bool { return g.Directory == "textproc/jq" })
+	require.GreaterOrEqual(t, at, 0)
+	jq := plan.Groups[at]
+	require.Contains(t, jq.Notes, "subject from your commit "+short(model.ObjectID(jq.Combines[0].ID)))
+
+	f := setup(t)
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update", Here: true})
+	require.NoError(t, err)
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
+	commitAs(t, branch.Worktree, "Ada ada@example.org", "jq: update to 1.8.1\n\n"+commitmsg.GeneratedBy())
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# built with the new oniguruma\n"})
+	proposal, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Len(t, proposal.Groups, 1)
+	require.Contains(t, proposal.Groups[0].Notes, "subject from dockhand's commit "+short(model.ObjectID(proposal.Groups[0].Combines[0].ID)))
 }

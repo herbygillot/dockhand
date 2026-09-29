@@ -33,6 +33,15 @@ func TestIsAttributionKnowsEveryFormDockhandWrote(t *testing.T) {
 	}
 }
 
+// A commit is dockhand's when its message carries the attribution line,
+// in any form dockhand wrote.
+func TestACommitIsDockhandsByItsAttribution(t *testing.T) {
+	t.Parallel()
+	require.True(t, commitmsg.Attributed("jq: update to 1.8.1\n\n"+commitmsg.GeneratedBy()+"\n"))
+	require.True(t, commitmsg.Attributed("jq: update to 1.8.1\n\nAssisted-By: Dockhand v0.1.0"))
+	require.False(t, commitmsg.Attributed("jq: update to 1.8.1\n\nAssisted-By: Claude Code\n"))
+}
+
 // A commit whose Generated-By names a build of uncommitted source is
 // known, as submit shows it; one naming a committed build, or none, isn't.
 func TestAModifiedBuildIsKnownFromItsTrailer(t *testing.T) {
