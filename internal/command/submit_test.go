@@ -508,6 +508,11 @@ func TestSubmitCheckPassingAndReady(t *testing.T) {
 	out, _, err = dockhand(t, "submit", "--passing")
 	require.ErrorContains(t, err, "--passing asks about each branch, so it needs a terminal")
 	require.Contains(t, out, "1 branch passed its check\n  jq-update\n")
+	// Nor does --yes stand in for the look at each, which it had been
+	// ignored for (D11, from the ov run's finding 7).
+	out, _, err = dockhand(t, "submit", "--passing", "--yes")
+	require.EqualError(t, err, "--passing asks about each branch, so it takes no --yes; dockhand submit --branch <name> --yes submits one without asking")
+	require.Empty(t, out, "refused before anything is looked at")
 
 	var stdout, errs bytes.Buffer
 	err = Run(t.Context(), []string{"submit", "--passing"}, Streams{In: strings.NewReader("y\nn\nd\ny\n"), Out: &stdout, Err: &errs, interactive: true})

@@ -272,7 +272,7 @@ These are taken when their area is next touched, or between items.
   - the index a check stages found nearer to hand (finding 4). check-23 built a whole index for macOS 15, which no earlier check at that master had used, so the review's premise was another release's. Still, a Tart check's stager builds no base index, seeds only from the same release's recent generations, and never from the mirror for a snapshot, which has no commit; `portindex/source.go` says verification keeps the base, which the wiring doesn't;
   - `submit --passing`'s upstream lines under a label of their own, and so without "upstream:", as the single preview's are (finding 5). The prefix was kept on purpose, since those lines had no heading (4315d6bd);
   - an `edit` of another port narrowed away again, in a worktree dockhand made, once nothing of the branch's is in it (finding 6). An adopted worktree's sparse set is the person's to keep;
-  - `submit --passing --yes` refused, rather than `--yes` silently ignored (finding 7). A batch submission for scripts is D11.
+  - `submit --passing --yes` refused, rather than `--yes` silently ignored (finding 7). Done 2026-09-29, as D11 decided ([note](activity/2026-09-29-passing-takes-no-yes.md)).
 - **What cleaning up duckdb-cxx14 asked for** ([review](reviews/2026-09-28-hugo-bump-exercise.md#cleaning-up-duckdb-cxx14)):
   - status saying that a branch's changes are already on master (finding 1). It compares a branch only with its recorded base, so duckdb-cxx14's edit, landed on master by another route, still asked "commit it for review". With the patch-id comparison "Branches from before v3" plans, below, for branches dockhand doesn't track;
   - an archived branch's Git branch, with nothing master lacks, going with its worktree (finding 2). clean keeps an archived branch's Git branch on purpose, since its work isn't merged. One with nothing beyond master could go too, once status and checking out again treat it as a merged branch's: today status would call it gone, and `checkOutAgain` would fail.
@@ -288,10 +288,10 @@ These are taken when their area is next touched, or between items.
 ## Decisions for the person
 
 - **D6. How long build history is kept** (the SQL review's finding 8). Runs, executions, results, plans, revisions, and each build's recorded inputs are never removed. Inputs grow fastest, at about 3.6 KB a build: an estimated 700 MB at 200,000 builds. The review suggests the archives' cutoff: keep what a result still usable for reuse, or an open branch, refers to. A merged branch's own record stays either way, for status. The person would peel it back by weight (2026-09-29): some light records kept for 30 days, others gone once their branch merges. Reuse reads a merged branch's results for later checks, so what goes at merge is settled with item 6's reuse by content.
-- **D11. A batch `submit --passing` for scripts** (the ov run's finding 7). `--passing` asks about each passing branch on a terminal, as the design means it to (principle 7: publishing is a person's decision about an exact revision), and `--yes` is silently ignored with it. A script can submit one branch at a time, `submit --branch <name> --yes`. Should `--passing --yes` submit every passing branch? Proposed: no; refuse `--yes` with `--passing`, naming the one-branch form.
 
 ### Decided
 
+- **D11. No batch `submit --passing`** (2026-09-29). `--passing` asks about each passing branch, as the design means it to (principle 7), and refuses `--yes`, which it had ignored, naming `submit --branch <name> --yes`, which submits one branch without asking ([note](activity/2026-09-29-passing-takes-no-yes.md)).
 - **D9. Holds on the dependencies dockhand writes** (2026-09-29). `update` writes `go.vendors` and `cargo.crates` itself, and a check builds with only what the port declares, so what changes in them doesn't hold:
   - Go: no dependency holds at all. The `go.toolchain_min` check stays, and holds as D4 has it;
   - a new Rust `-sys` crate is listed for the person's attention, without holding. It can link a library MacPorts provides where one is installed, and a bundled copy where it isn't, which a clean check can't tell apart, so the port may want to declare the library;
@@ -426,7 +426,7 @@ Changed:
   - ov's 3 is narrower: the JSON says the tests were none, and the pull request leaves out its tests item.
   - ov's 4: check-23 was the first check on macOS 15 at that master, so the premise, another release's index, doesn't carry over.
   - ov's 7 is wider: `--yes` is silently ignored with `--passing`.
-- **Deliberate:** ov's 5, the prefix `--passing` kept since its lines have no heading (4315d6bd); ov's 7, a look at each branch (principle 7), now D11; duckdb-cxx14's 2, the Git branch clean keeps for an archived branch's unmerged work.
+- **Deliberate:** ov's 5, the prefix `--passing` kept since its lines have no heading (4315d6bd); ov's 7, a look at each branch (principle 7), which D11 keeps; duckdb-cxx14's 2, the Git branch clean keeps for an archived branch's unmerged work.
 - **Don't hold:** yq's 3 and git's 7, a failed or stopped check exiting 0. A failed check under `update --submit` exits 2, as a test pins, and one stopped by another's `--replace` exits 130; the 0 was the session's: zsh's `time` before a pipeline collapses `$pipestatus` to one element, and the session withdrew both.
 - **Fixed:** the cleanup's 1 and 2 (`d1527ecd`, `8c66f470`).
 

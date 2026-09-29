@@ -58,6 +58,11 @@ GitHub is kept.
 			if preview && (check || passing || yes || ready) {
 				return errors.New("--plan previews one branch's submission; it goes without --check, --passing, --yes, and --ready (dockhand check --plan previews a check)")
 			}
+			// Each passing branch is the person's to look at before it's
+			// submitted (principle 7), so --passing asks about each (D11).
+			if passing && yes {
+				return errors.New("--passing asks about each branch, so it takes no --yes; dockhand submit --branch <name> --yes submits one without asking")
+			}
 			if passing {
 				return submitPassing(ctx, e, streams, request, s.file.Submit.RerequestReview)
 			}
