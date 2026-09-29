@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 type archivePlan struct {
@@ -145,15 +146,34 @@ func (s *Service) applyArchivePlan(ctx context.Context, request Request, input *
 // MacPorts' mirror (Store.Shipped), so the update is compared with what
 // users build today; or why they couldn't be had.
 func (s *Service) previousArchives(ctx context.Context, input *sourceInput, store *archives.Store) ([]archives.Download, string) {
-	sources, err := archives.Sources(input.info, input.portdirIn(input.before.Root))
+	plan, err := shippedPlan(ctx, input)
 	if err != nil {
 		return nil, err.Error()
 	}
-	shipped, err := store.Shipped(ctx, input.info, sources)
+	shipped, err := store.Shipped(ctx, input.info, plan)
 	if err != nil {
 		return nil, err.Error()
 	}
 	return downloadsOf(shipped), ""
+}
+
+// shippedPlan is MacPorts' own fetch plan for the Portfile as it stands,
+// on this Mac: each archive, with the locations MacPorts would fetch it
+// from, a mirror group such as PyPI's expanded as MacPorts expands it. The
+// new version's archives are fetched from its plan the same way.
+func shippedPlan(ctx context.Context, input *sourceInput) ([]macports.Distfile, error) {
+	if err := archives.CheckPolicy(input.info, input.portdirIn(input.before.Root)); err != nil {
+		return nil, err
+	}
+	observations, err := input.observe.Observe(ctx, input.data, []model.Platform{input.before.Platform}, true, true)
+	if err != nil {
+		return nil, err
+	}
+	plan, err := observations[0].Ports[input.target.Name].FetchPlan()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrUnsupported, err)
+	}
+	return plan, nil
 }
 
 // downloadsOf are the shipped archives' downloads.

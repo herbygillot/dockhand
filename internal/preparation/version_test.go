@@ -42,7 +42,7 @@ func versionFixture(t *testing.T, style, extra string, handler http.HandlerFunc)
 	t.Cleanup(server.Close)
 	service, request := preparationFixture(t, "")
 	declaration := "version 1.0\ngithub.setup owner fixture $version v\n"
-	if style == "setup" {
+	if style == "setup" || style == "mirror" {
 		declaration = "github.setup owner fixture 1.0 v\n"
 	}
 	if style == "gitlab-setup" {
@@ -83,9 +83,17 @@ proc gitlab.setup {owner project value prefix} {
  git.branch ${prefix}${value}
 }
 ` + declaration + fmt.Sprintf("revision 3\nmaster_sites %s/releases/${version}\nchecksums rmd160 %s \\\n    sha256 %s \\\n    size 1\n", server.URL, strings.Repeat("0", 40), strings.Repeat("0", 64)) + extra
+	var mirrors []git.FileEdit
+	if style == "mirror" {
+		// A mirror group of the tree's own, as MacPorts reads PyPI's from
+		// the ports tree, serving what the direct site does.
+		contents += "master_sites fixturemirror:${version}\n"
+		group := fmt.Sprintf("namespace eval ::portfetch::mirror_sites {\nvariable sites\nset sites(fixturemirror) {\n    %s/releases/\n}\n}\n", server.URL)
+		mirrors = append(mirrors, git.FileEdit{Path: "_resources/port1.0/fetch/mirror_sites.tcl", After: []byte(group), Mode: 0o100644})
+	}
 	before, _, err := service.Repo.File(t.Context(), string(request.Source.Tree), "devel/fixture/Portfile")
 	require.NoError(t, err)
-	edits := []git.FileEdit{{Path: "devel/fixture/Portfile", Before: before, After: []byte(contents), Mode: before.Mode}}
+	edits := append([]git.FileEdit{{Path: "devel/fixture/Portfile", Before: before, After: []byte(contents), Mode: before.Mode}}, mirrors...)
 	if strings.HasPrefix(style, "go-") {
 		group := `options go.package go.domain go.version
 proc go.setup {package value {prefix ""} {suffix ""}} {
@@ -312,6 +320,34 @@ func TestCalendarPreparationEvaluatesPreservedTransformation(t *testing.T) {
 			require.Equal(t, int64(1), downloads.Load())
 		})
 	}
+}
+
+// A port fetched from a MacPorts mirror group, as a python port is from
+// PyPI's, is compared as any other: its current version's archives come
+// from where MacPorts' own fetch plan finds them, the group expanded, as
+// the new version's do. They had been refused, so every such update held
+// (the hugo exercise's sshuttle run, finding 1).
+func TestAnUpdateOfAPortOnAMirrorGroupIsCompared(t *testing.T) {
+	t.Parallel()
+	shipped, next := "fixture 1.0 as shipped", "fixture 2.0"
+	service, request := versionFixture(t, "mirror", "", func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/releases/1.0/fixture-1.0.tar.gz":
+			fmt.Fprint(w, shipped)
+		case "/releases/2.0/fixture-2.0.tar.gz":
+			fmt.Fprint(w, next)
+		default:
+			w.WriteHeader(404)
+		}
+	})
+	request.KeepArchives = t.TempDir()
+	request.Source = shippedChecksums(t, service, request.Source, []byte(shipped))
+	result, err := service.Prepare(t.Context(), request)
+	require.NoError(t, err)
+	require.Equal(t, next, string(fileBytes(t, result.Downloads[0].Path)))
+	require.Empty(t, result.PreviousProblem)
+	require.Len(t, result.Previous, 1)
+	require.Equal(t, shipped, string(fileBytes(t, result.Previous[0].Path)))
 }
 
 // An update keeping archives to compare keeps the current version's as

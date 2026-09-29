@@ -2,6 +2,10 @@ package macports
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"strings"
+
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -70,6 +74,21 @@ type PortObservation struct {
 	Distfiles         []Distfile
 	Problems          []string
 }
+
+// FetchPlan is the port's fetch plan as MacPorts made it: each archive,
+// with the locations MacPorts would fetch it from, its mirror groups
+// expanded. Without one, the error says why, with the observation's
+// problems.
+func (o PortObservation) FetchPlan() ([]Distfile, error) {
+	switch {
+	case len(o.Distfiles) > 0:
+		return o.Distfiles, nil
+	case len(o.Problems) > 0:
+		return nil, fmt.Errorf("MacPorts' fetch plan names no archives: %s", strings.Join(o.Problems, "; "))
+	}
+	return nil, errors.New("MacPorts' fetch plan names no archives")
+}
+
 type Observation struct {
 	Snapshot Snapshot
 	Modeled  bool

@@ -25,47 +25,63 @@ type Shipped struct {
 	Mirror bool
 }
 
-// Shipped fetches each of sources as the Portfile's checksums declare it.
-// That is from upstream, or, where upstream now serves something else
-// under its name, or nothing, from the client's mirror, under the port's
-// dist_subdir: its name, unless the Portfile sets one, as a stealth update
-// does to keep the earlier archive apart. An archive the Portfile declares
-// no checksums for, or that neither has as declared, fails.
-func (s *Store) Shipped(ctx context.Context, info macports.PortInfo, sources []Source) ([]Shipped, error) {
+// Shipped fetches each archive of a fetch plan as the Portfile's checksums
+// declare it. That is from upstream: the first of its locations that
+// serves it, in the plan's order, as MacPorts' own fetch takes it. Where
+// that serves something else under its name, or none serves it, it is
+// from the client's mirror, under the port's dist_subdir: its name, unless
+// the Portfile sets one, as a stealth update does to keep the earlier
+// archive apart. An archive the Portfile declares no checksums for, or that
+// neither has as declared, fails.
+func (s *Store) Shipped(ctx context.Context, info macports.PortInfo, plan []macports.Distfile) ([]Shipped, error) {
 	declared := Declared(info.Options["checksums"])
 	subdir := strings.Trim(info.Options["dist_subdir"], "/")
 	if subdir == "" {
 		subdir = info.Name
 	}
 	var shipped []Shipped
-	for _, source := range sources {
-		want, ok := declared[source.Name]
-		if !ok && len(declared) == 1 && len(sources) == 1 {
+	for _, file := range plan {
+		if file.Name == "" || !portfile.Literal(file.Name) || file.Name == "." || file.Name == ".." {
+			return shipped, fmt.Errorf("%w: ambiguous distfile %s", portfile.ErrUnsupported, file.Name)
+		}
+		want, ok := declared[file.Name]
+		if !ok && len(declared) == 1 && len(plan) == 1 {
 			want, ok = declared[""]
 		}
 		if !ok {
-			return shipped, fmt.Errorf("%s has no checksums in the Portfile", source.Name)
+			return shipped, fmt.Errorf("%s has no checksums in the Portfile", file.Name)
 		}
-		download, err := s.Fetch(ctx, info, source)
-		if err == nil && !Differs(want, download.Checksum) {
-			shipped = append(shipped, Shipped{Download: download})
-			continue
-		}
-		discard(download)
-		if ctx.Err() != nil {
-			return shipped, ctx.Err()
+		if len(file.URLs) > 0 {
+			download, err := s.FetchFirst(ctx, info, file.Name, file.URLs)
+			if err == nil && !Differs(want, download.Checksum) {
+				shipped = append(shipped, Shipped{Download: download})
+				continue
+			}
+			discard(download)
+			if ctx.Err() != nil {
+				return shipped, ctx.Err()
+			}
 		}
 		if s.client.Mirror == "" {
-			return shipped, fmt.Errorf("upstream no longer serves %s as the Portfile's checksums describe it", source.Name)
+			return shipped, fmt.Errorf("upstream no longer serves %s as the Portfile's checksums describe it", file.Name)
 		}
-		mirrored, err := s.Fetch(ctx, info, Source{Name: source.Name, URL: strings.TrimRight(s.client.Mirror, "/") + "/" + subdir + "/" + url.PathEscape(source.Name)})
+		mirrored, err := s.Fetch(ctx, info, Source{Name: file.Name, URL: strings.TrimRight(s.client.Mirror, "/") + "/" + subdir + "/" + url.PathEscape(file.Name)})
 		if err != nil || Differs(want, mirrored.Checksum) {
 			discard(mirrored)
-			return shipped, fmt.Errorf("neither upstream nor MacPorts' mirror has %s as the Portfile's checksums describe it", source.Name)
+			return shipped, fmt.Errorf("neither upstream nor MacPorts' mirror has %s as the Portfile's checksums describe it", file.Name)
 		}
 		shipped = append(shipped, Shipped{Download: mirrored, Mirror: true})
 	}
 	return shipped, nil
+}
+
+// FetchPlan is a fetch plan of direct sources, each at its one location.
+func FetchPlan(sources []Source) []macports.Distfile {
+	plan := make([]macports.Distfile, len(sources))
+	for i, source := range sources {
+		plan[i] = macports.Distfile{Name: source.Name, URLs: []string{source.URL}}
+	}
+	return plan
 }
 
 // discard removes a kept archive that isn't the one wanted.

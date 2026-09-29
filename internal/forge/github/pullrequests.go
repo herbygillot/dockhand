@@ -208,7 +208,7 @@ func (c *Client) MarkReady(ctx context.Context, ref forge.PullRequestRef) (forge
 			return forge.PullRequestObservation{}, githubapi.RateLimitError(err)
 		}
 		if len(result.Errors) > 0 {
-			return forge.PullRequestObservation{}, fmt.Errorf("github: marking #%d ready: %s", ref.Number, result.Errors[0].Message)
+			return forge.PullRequestObservation{}, fmt.Errorf("github: %s", result.Errors[0].Message)
 		}
 		if row, _, err = client.PullRequests.Get(ctx, owner, repo, ref.Number); err != nil {
 			return forge.PullRequestObservation{}, githubapi.RateLimitError(err)

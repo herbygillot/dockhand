@@ -595,7 +595,10 @@ func (e *Engine) Ready(ctx context.Context, branch model.Branch) (model.Branch, 
 		return branch, fmt.Errorf("%s has no pull request yet; dockhand submit opens one", branch.Name)
 	}
 	if _, err := e.forge().MarkReady(ctx, forge.PullRequestRef{Forge: forge.GitHub, Repository: pr.Repository, Number: pr.Number}); err != nil {
-		return branch, fmt.Errorf("marking #%d ready for review: %w", pr.Number, err)
+		// GitHub may refuse dockhand's app what it allows another, as an
+		// organization that restricts which apps may act for its members
+		// does (the hugo exercise's sshuttle run, finding 2).
+		return branch, fmt.Errorf("marking #%d ready for review: %w\nIt's still a draft. Mark it ready on its page, %s, or with the GitHub CLI, which signs in as its own app: gh pr ready %d --repo %s", pr.Number, err, github.PullRequestURL(pr.Repository, pr.Number), pr.Number, pr.Repository)
 	}
 	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 		current, err := tx.Branch(branch.ID)

@@ -203,22 +203,26 @@ func (p *evaluatedPorts) FetchArchives(ctx context.Context, source model.Source,
 	if err != nil {
 		return nil, err
 	}
-	snapshot, err := p.ports.Evaluate(ctx, bound)
+	observation, err := p.ports.Observe(ctx, bound, macports.ObservationRequest{SelectedOnly: true})
 	if err != nil {
 		return nil, err
 	}
-	info := snapshot.Ports[targets[0].Name]
-	return fetchDeclared(ctx, archives.Client{Mirror: archives.MacPortsMirror}.Store(into), info, filepath.Join(tree.Root(), filepath.FromSlash(directory)))
+	name := targets[0].Name
+	return fetchDeclared(ctx, archives.Client{Mirror: archives.MacPortsMirror}.Store(into), observation.Snapshot.Ports[name], observation.Ports[name], filepath.Join(tree.Root(), filepath.FromSlash(directory)))
 }
 
 // fetchDeclared fetches each archive the port declares as its checksums
-// declare it, from upstream or else MacPorts' mirror (Store.Shipped).
-func fetchDeclared(ctx context.Context, store *archives.Store, info macports.PortInfo, portdir string) ([]FetchedArchive, error) {
-	sources, err := archives.Sources(info, portdir)
+// declare it, from upstream, where MacPorts' own fetch plan finds it, or
+// else MacPorts' mirror (Store.Shipped).
+func fetchDeclared(ctx context.Context, store *archives.Store, info macports.PortInfo, observed macports.PortObservation, portdir string) ([]FetchedArchive, error) {
+	if err := archives.CheckPolicy(info, portdir); err != nil {
+		return nil, err
+	}
+	plan, err := observed.FetchPlan()
 	if err != nil {
 		return nil, err
 	}
-	shipped, err := store.Shipped(ctx, info, sources)
+	shipped, err := store.Shipped(ctx, info, plan)
 	if err != nil {
 		return nil, err
 	}

@@ -41,7 +41,7 @@ func originalDependencySource(ctx context.Context, store *archives.Store, info m
 	var downloads []archives.Download
 	problem := ""
 	if kept {
-		shipped, err := store.Shipped(ctx, info, fetch)
+		shipped, err := store.Shipped(ctx, info, archives.FetchPlan(fetch))
 		switch {
 		case ctx.Err() != nil:
 			return dependency.Input{}, nil, "", ctx.Err()

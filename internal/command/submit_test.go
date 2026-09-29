@@ -33,6 +33,8 @@ type fakeGitHub struct {
 	status forge.PullRequestStatus
 	// others are the open pull requests a search for a port finds.
 	others []forge.PullRequestSummary
+	// readyRefused is GitHub's refusal to mark a pull request ready.
+	readyRefused error
 }
 
 func (g *fakeGitHub) AuthenticatedUser(context.Context) (string, error) { return "ada", nil }
@@ -76,6 +78,9 @@ func (g *fakeGitHub) Update(_ context.Context, input forge.PullRequestInput) (fo
 	return forge.PullRequestObservation{Found: true, PullRequest: *pr}, nil
 }
 func (g *fakeGitHub) MarkReady(_ context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error) {
+	if g.readyRefused != nil {
+		return forge.PullRequestObservation{}, g.readyRefused
+	}
 	g.readied = append(g.readied, ref.Number)
 	return g.Observe(context.Background(), ref)
 }
@@ -475,6 +480,15 @@ func TestSubmitCheckPassingAndReady(t *testing.T) {
 	out, _, err = dockhand(t, "submit", "--passing")
 	require.NoError(t, err)
 	require.Equal(t, "0 branches passed their checks\n", out, "a pushed branch is done")
+
+	// GitHub may refuse dockhand's app, as an organization restricting
+	// apps does: what to do instead is said (the sshuttle run, finding 2).
+	g.readyRefused = errors.New("github: the `macports` organization has enabled OAuth App access restrictions")
+	_, _, err = dockhand(t, "submit", "--ready", "--yes")
+	require.EqualError(t, err, "marking #34901 ready for review: github: the `macports` organization has enabled OAuth App access restrictions\n"+
+		"It's still a draft. Mark it ready on its page, https://github.com/macports/macports-ports/pull/34901, or with the GitHub CLI, which signs in as its own app: gh pr ready 34901 --repo macports/macports-ports")
+	require.Empty(t, g.readied)
+	g.readyRefused = nil
 
 	out, _, err = dockhand(t, "submit", "--ready", "--yes")
 	require.NoError(t, err)
