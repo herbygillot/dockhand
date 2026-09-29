@@ -108,12 +108,13 @@ func queueRow(ctx context.Context, e *engine.Engine, session *coord.Session, run
 
 func waitCommand(s *settings, streams Streams) *cobra.Command {
 	return &cobra.Command{
-		Use:   "wait <run>",
+		Use:   "wait [check]",
 		Short: "Follow a check until it ends",
-		Long: `Follows a check, such as check-42, until it ends, and reports it. With
-serve running, this only observes, and Ctrl-C stops following; with no
-serve, the check runs here, as a foreground check would.`,
-		Args: cobra.ExactArgs(1),
+		Long: `Follows a check, such as check-42, until it ends, and reports it; in a
+branch's worktree, with no check named, the branch's latest. With serve
+running, this only observes, and Ctrl-C stops following; with no serve,
+the check runs here, as a foreground check would.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			e, err := s.open(ctx)
@@ -121,7 +122,7 @@ serve, the check runs here, as a foreground check would.`,
 				return err
 			}
 			defer e.Close()
-			run, err := e.RunNamed(ctx, args[0])
+			run, err := namedOrLatest(ctx, e, args, "name a check, such as check-42; in a branch's worktree, wait follows the branch's latest check")
 			if err != nil {
 				return err
 			}
@@ -153,9 +154,11 @@ serve, the check runs here, as a foreground check would.`,
 
 func cancelCommand(s *settings, streams Streams) *cobra.Command {
 	return &cobra.Command{
-		Use:   "cancel <run>",
+		Use:   "cancel [check]",
 		Short: "Stop a check, keeping what finished",
-		Args:  cobra.ExactArgs(1),
+		Long: `Stops a check, such as check-42, keeping what it finished; in a branch's
+worktree, with no check named, the branch's latest.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			e, err := s.open(ctx)
@@ -163,7 +166,7 @@ func cancelCommand(s *settings, streams Streams) *cobra.Command {
 				return err
 			}
 			defer e.Close()
-			run, err := e.RunNamed(ctx, args[0])
+			run, err := namedOrLatest(ctx, e, args, "name a check, such as check-42; in a branch's worktree, cancel stops the branch's latest check")
 			if err != nil {
 				return err
 			}
@@ -211,7 +214,7 @@ latest check. --port prints one port's log.`,
 			var run model.Run
 			var only model.ExecutionID
 			if len(args) == 0 {
-				run, err = latestCheckHere(ctx, e)
+				run, err = latestCheckHere(ctx, e, "name a check, such as check-42, or a provider run; in a branch's worktree, logs shows the branch's latest check")
 			} else {
 				run, only, err = checkOrRun(ctx, e, args[0])
 			}
@@ -257,11 +260,12 @@ latest check. --port prints one port's log.`,
 }
 
 // latestCheckHere is the newest check of the branch checked out here, for
-// logs with none named.
-func latestCheckHere(ctx context.Context, e *engine.Engine) (model.Run, error) {
+// logs, wait, and cancel with none named; unnamed is what to say where no
+// branch is checked out.
+func latestCheckHere(ctx context.Context, e *engine.Engine, unnamed string) (model.Run, error) {
 	branch, err := e.Current(ctx)
 	if errors.Is(err, engine.ErrNoBranch) {
-		return model.Run{}, errors.New("name a check, such as check-42, or a provider run; in a branch's worktree, logs shows the branch's latest check")
+		return model.Run{}, errors.New(unnamed)
 	}
 	if err != nil {
 		return model.Run{}, err
@@ -274,6 +278,16 @@ func latestCheckHere(ctx context.Context, e *engine.Engine) (model.Run, error) {
 		return model.Run{}, fmt.Errorf("%s has no check yet: dockhand check", branch.ShortName())
 	}
 	return runs[0], nil
+}
+
+// namedOrLatest is the check args name, or with none, the latest check of
+// the branch checked out here: a branch has one check at a time, so it is
+// the one queued or running, if any is. unnamed says what to do elsewhere.
+func namedOrLatest(ctx context.Context, e *engine.Engine, args []string, unnamed string) (model.Run, error) {
+	if len(args) == 1 {
+		return e.RunNamed(ctx, args[0])
+	}
+	return latestCheckHere(ctx, e, unnamed)
 }
 
 // checkName is a check's name, check-42 or 42.

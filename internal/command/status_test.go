@@ -119,7 +119,9 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "Stopped check-1; what it finished is kept.\ncheck-2 replaces check-1.\n")
 
-	out, _, err = dockhand(t, "cancel", "check-2")
+	// In the branch's worktree, cancel and wait take its latest check (the
+	// hugo exercise's certigo run, finding 4).
+	out, _, err = dockhand(t, "cancel")
 	require.NoError(t, err)
 	require.Equal(t, "check-2 canceled; finished results are kept.\n", out)
 	_, _, err = dockhand(t, "cancel", "check-2")
@@ -127,13 +129,15 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 
 	_, _, err = dockhand(t, "check", "-d")
 	require.NoError(t, err)
-	out, errs, err := dockhand(t, "wait", "check-3")
+	out, errs, err := dockhand(t, "wait")
 	require.NoError(t, err)
 	require.Contains(t, errs, "check-3 runs here, since no dockhand serve is running.")
 	require.Contains(t, out, "Passed for snapshot 1.")
 	out, _, err = dockhand(t, "wait", "check-3")
 	require.NoError(t, err, "a finished run is reported as it ended")
 	require.Contains(t, out, "Passed for snapshot 1.")
+	_, _, err = dockhand(t, "wait", "check-2")
+	require.ErrorContains(t, err, "check-2 stopped", "the check named, not the latest")
 
 	out, _, err = dockhand(t, "logs", "check-3")
 	require.NoError(t, err)
@@ -160,6 +164,10 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	t.Setenv("MACPORTS_TREE", w.clone)
 	_, _, err = dockhand(t, "logs")
 	require.ErrorContains(t, err, "name a check, such as check-42, or a provider run; in a branch's worktree, logs shows the branch's latest check")
+	_, _, err = dockhand(t, "wait")
+	require.EqualError(t, err, "name a check, such as check-42; in a branch's worktree, wait follows the branch's latest check")
+	_, _, err = dockhand(t, "cancel")
+	require.EqualError(t, err, "name a check, such as check-42; in a branch's worktree, cancel stops the branch's latest check")
 }
 
 // A check that passed in an environment made again since says so, and

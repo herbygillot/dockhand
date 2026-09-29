@@ -14,7 +14,6 @@ That is a comparison of lines, not a reading of the Portfile. Reading a declared
 
 `TestAPersonsEditBesideAnUpdateKeepsItsSubject` covers the kept subject and its note, a line dockhand didn't write, and a version taken back. Its chain is an update followed by a revision bump, whose subjects differ. The existing tidy test's update and checksum refresh record the same subject, so it hadn't pinned which edit names the chain. Five mutations each fail a test.
 
-
 ## Upstream changes worded alike in JSON (finding 3)
 
 Under the text's Upstream heading, a change's leading "upstream: ", or "upstream's ", is left off, since the heading says it. The JSON of `update` and `submit` kept it, though its changes sit under an `upstream` key. They're now worded as under the heading.
@@ -22,3 +21,9 @@ Under the text's Upstream heading, a change's leading "upstream: ", or "upstream
 The comparison's messages keep the word where they stand alone: in what holds a submission, and in the edit records already stored, which a view would have to word either way. So the view words them, rather than the comparison.
 
 `TestUpstreamJSONWordsChangesUnderItsKey` covers a dependency's message and a license file's. Its mutation fails it.
+
+## `cancel` and `wait` with no check named (finding 4)
+
+`cancel` with no argument failed with cobra's own "accepts 1 arg(s), received 0", as `wait` did, which the sshuttle run found. `logs` already took the branch's latest check when none was named. Now `wait` and `cancel` do too, in a branch's worktree: a branch has one check at a time, so its latest is the one queued or running, if any is. Elsewhere, each says to name a check, and what it takes in a worktree. A check named is still the one used.
+
+`TestQueueWaitCancelAndLogs` now cancels the branch's queued check and waits on its next without naming them. It waits on an older check by name while a newer one exists, and checks each command's words outside a worktree. Four mutations each fail it.

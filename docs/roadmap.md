@@ -223,7 +223,7 @@ These are taken when their area is next touched, or between items.
   - `submit --ready` refused by an organization's OAuth App access restrictions says what to do. Done 2026-09-28 (the same note): its page, or `gh pr ready <n>`, whose app signs in on its own. Whether dockhand should use the GitHub CLI's login for that one call is the person's;
   - `submit --ready --plan` previews marking ready, and a draft's preview names `dockhand submit --ready`;
   - a submission waiting on a queued or running check of the same files names it and `dockhand wait <check>`, rather than "run dockhand check first";
-  - `wait` with no argument follows the check of the branch checked out here, as bare `logs` does;
+  - `wait` with no argument follows the check of the branch checked out here, as bare `logs` does. Done 2026-09-28, with the certigo run's `cancel` ([note](activity/2026-09-28-certigo-fixes.md));
   - serve's banner says "1 check at a time": one Tart check still builds two releases at once;
   - the github provider's `dockhand-check/` branch removed from the fork when its run finishes; clean removes them only once the branch is merged;
   - the GitHub environment's macOS release in Tested on, from the jobs API's runner labels. Its Xcode is only in the log's text, which isn't a documented interface;
@@ -238,7 +238,7 @@ These are taken when their area is next touched, or between items.
 - **What the certigo run asked for** ([review](reviews/2026-09-28-hugo-bump-exercise.md#certigo-with-a-hands-on-binary-test)):
   - a subject kept where a person edits on top of dockhand's uncommitted update. Done 2026-09-28 ([note](activity/2026-09-28-certigo-fixes.md)): while every line dockhand's edits wrote still stands, their subject does, noted. Reading a declared version, `go.setup`'s included, stays with the private-helper review's finding 2, inside item 6;
   - `update --json`'s upstream messages without the "upstream: " prefix that the text drops under its heading. Done 2026-09-28 (the same note);
-  - `cancel` with no argument, like `wait`: the check of the branch checked out here, not cobra's error;
+  - `cancel` with no argument, like `wait`: the check of the branch checked out here, not cobra's error. Done 2026-09-28 (the same note), for both;
   - a check cancelled while only queued said so, not "what it finished is kept";
   - `status --json`'s serve as fields, whether it runs, its pid, and the queue, beside the sentence;
   - progress reported while a run is driven journaled as the run's progress events, as a provider's already is. The PortIndex rebuild, five minutes of check-16, showed only in serve's log, and `wait` never saw it;

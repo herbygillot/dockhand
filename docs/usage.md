@@ -196,7 +196,7 @@ One check of a branch runs at a time. While one is queued or running, `check` re
   - A port that failed only before building, at lint, fetch, or checksum, is left out unless `--only` names it: those failures come from the branch's own Portfile and distfiles. So is a port the branch adds, since master has nothing to compare.
   - A failed check points to it when a baseline can answer something, naming the ports and the master: `To see whether jq fails at master 1a2b3c4 too: dockhand check --baseline --branch jq-update`.
   - Baselines are off by default. With `check.baseline = true`, a failed check runs the one it points to by itself.
-- **`queue`** lists the checks queued and running, **`wait check-12`** follows one until it ends, and **`cancel check-12`** stops one, keeping what finished.
+- **`queue`** lists the checks queued and running, **`wait check-12`** follows one until it ends, and **`cancel check-12`** stops one, keeping what finished. In a branch's worktree, `wait` and `cancel` with no check named take the branch's latest, as `logs` does.
 
 ## Providers
 
