@@ -40,6 +40,54 @@ const memberLimit = 1 << 20
 
 var licenseName = regexp.MustCompile(`(?i)^(licen[cs]e|copying|copyright|notice|unlicense)([._-].*)?$`)
 
+// sourceExtensions are a program's source, never a license file, whatever
+// the file is named: usql's text/license.go is Go.
+var sourceExtensions = []string{".c", ".cc", ".cpp", ".cs", ".go", ".h", ".java", ".js", ".kt", ".lua", ".m", ".php", ".pl", ".py", ".rb", ".rs", ".scala", ".sh", ".swift", ".tcl", ".ts"}
+
+// licenseFile reports a license file by its name: LICENSE, COPYING, NOTICE,
+// and their kin, such as LICENSE-MIT or COPYING.LESSER, but not a program's
+// source named for one.
+func licenseFile(base string) bool {
+	return licenseName.MatchString(base) && !slices.Contains(sourceExtensions, strings.ToLower(path.Ext(base)))
+}
+
+// A copyright line names its holder and years: "Copyright (c) 2016-2026
+// Kenneth Shaw". Its years are one, or a range or list of them.
+var (
+	copyrightLine  = regexp.MustCompile(`(?i)copyright|\(c\)|©`)
+	copyrightYears = regexp.MustCompile(`\b(19|20)\d\d(\s*(-|–|,|and)\s*(19|20)\d\d)*\b`)
+)
+
+// yearsOnly reports whether two versions of a license file differ only in
+// the years of their copyright lines, as a new year moves them, and gives
+// the first such line as it now reads. A line added, removed, or changed in
+// anything but its years is a change to the license file, which is read no
+// further: a new holder, or a license's own text, could need the Portfile's
+// license line to follow.
+func yearsOnly(old, now []byte) (string, bool) {
+	before, after := strings.Split(string(old), "\n"), strings.Split(string(now), "\n")
+	if len(before) != len(after) {
+		return "", false
+	}
+	first := ""
+	for i := range before {
+		if before[i] == after[i] {
+			continue
+		}
+		if !copyrightLine.MatchString(before[i]) || !copyrightLine.MatchString(after[i]) ||
+			copyrightYears.ReplaceAllString(before[i], "") != copyrightYears.ReplaceAllString(after[i], "") {
+			return "", false
+		}
+		if first == "" {
+			first = strings.TrimSpace(after[i])
+			if runes := []rune(first); len(runes) > 120 {
+				first = string(runes[:119]) + "…"
+			}
+		}
+	}
+	return first, first != ""
+}
+
 // buildNames are the top-level files that say how software builds.
 var buildNames = []string{"CMakeLists.txt", "configure.ac", "configure.in", "meson.build", "meson_options.txt", "Makefile.am", "Makefile.PL",
 	"setup.py", "setup.cfg", "build.gradle", "pom.xml", "SConstruct", "build.zig", "Package.swift", "Gemfile", "cpanfile", "DESCRIPTION"}
@@ -105,7 +153,14 @@ func Compare(ctx context.Context, older, newer string) ([]Change, error) {
 			changes = append(changes, nativeLinks(old, hadOld, now, hasNow)...)
 		case manifests[name] != nil:
 			changes = append(changes, manifestChanges(name, manifests[name], old, hadOld, now, hasNow)...)
-		case licenseName.MatchString(base):
+		case licenseFile(base) && hadOld && hasNow:
+			if line, ok := yearsOnly(old.data, now.data); ok {
+				changes = append(changes, Change{Kind: "license", Path: name,
+					Message: fmt.Sprintf("upstream's %s changed only its copyright years: %q", name, line)})
+				continue
+			}
+			fallthrough
+		case licenseFile(base):
 			what := "changed"
 			switch {
 			case !hadOld:
@@ -152,7 +207,7 @@ func interesting(ctx context.Context, filename string) (map[string]file, error) 
 		}
 		depth := strings.Count(rest, "/")
 		base := path.Base(rest)
-		wanted := licenseName.MatchString(base) && depth <= 1 ||
+		wanted := licenseFile(base) && depth <= 1 ||
 			depth == 0 && (slices.Contains(buildNames, base) || manifests[base] != nil || base == cargoLock)
 		if !wanted {
 			return nil

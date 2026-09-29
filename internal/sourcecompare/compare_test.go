@@ -218,3 +218,45 @@ func TestANewCrateLinkingANativeLibraryIsListed(t *testing.T) {
 	require.Equal(t, []string{"· upstream: Cargo.lock adds zstd-sys 2.0.13+zstd.1.5.6, which links the native library zstd: MacPorts may provide it, for the Portfile to declare, rather than the crate linking whatever copy it finds"},
 		compared(t, map[string]string{}, map[string]string{"Cargo.lock": lock("zstd-sys 2.0.13+zstd.1.5.6")}), "a lock new to the source")
 }
+
+// A license file whose copyright lines moved only their years, as usql's
+// and zlint's did for a new year, is said with the line, and holds
+// nothing: the license is the same. Anything else changed in it holds as
+// before, a holder or a year outside a copyright line included.
+func TestALicenseWhoseCopyrightYearsMovedHoldsNothing(t *testing.T) {
+	const mit = "The MIT License (MIT)\n\nCopyright (c) 2016-2025 Kenneth Shaw\n\nPermission is hereby granted, free of charge.\n"
+	for _, test := range []struct {
+		name, after string
+		want        []string
+	}{
+		{"a range's end", strings.Replace(mit, "2016-2025", "2016-2026", 1),
+			[]string{`· upstream's LICENSE changed only its copyright years: "Copyright (c) 2016-2026 Kenneth Shaw"`}},
+		{"a range become one year", strings.Replace(mit, "2016-2025", "2016", 1),
+			[]string{`· upstream's LICENSE changed only its copyright years: "Copyright (c) 2016 Kenneth Shaw"`}},
+		{"a holder", strings.Replace(mit, "2016-2025 Kenneth Shaw", "2016-2026 Someone Else", 1),
+			[]string{"! upstream's LICENSE changed; the Portfile's license line may need to follow"}},
+		{"a line added", strings.Replace(mit, "Kenneth Shaw\n", "Kenneth Shaw\nCopyright (c) 2026 Someone Else\n", 1),
+			[]string{"! upstream's LICENSE changed; the Portfile's license line may need to follow"}},
+		{"the license's text", strings.Replace(mit, "free of charge", "for a fee", 1),
+			[]string{"! upstream's LICENSE changed; the Portfile's license line may need to follow"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.want, compared(t, map[string]string{"LICENSE": mit}, map[string]string{"LICENSE": test.after}))
+		})
+	}
+	gpl := "GNU GENERAL PUBLIC LICENSE\nVersion 2, June 1991\n\nCopyright (C) 1989, 1991 Free Software Foundation, Inc.\n"
+	require.Equal(t, []string{"! upstream's COPYING changed; the Portfile's license line may need to follow"},
+		compared(t, map[string]string{"COPYING": gpl}, map[string]string{"COPYING": strings.Replace(gpl, "June 1991", "June 2007", 1)}),
+		"a year outside a copyright line is the license's own text")
+	require.Equal(t, []string{"· upstream's COPYING changed only its copyright years: \"Copyright (C) 1989, 1991, 2026 Free Software Foundation, Inc.\""},
+		compared(t, map[string]string{"COPYING": gpl}, map[string]string{"COPYING": strings.Replace(gpl, "1989, 1991", "1989, 1991, 2026", 1)}))
+}
+
+// A program's source named for a license is source, as usql's generated
+// text/license.go is Go; a license file's kin, such as LICENSE-MIT, is
+// still one.
+func TestSourceNamedForALicenseIsNoLicense(t *testing.T) {
+	require.Equal(t, []string{"! upstream's LICENSE-MIT changed; the Portfile's license line may need to follow"}, compared(t,
+		map[string]string{"text/license.go": "package text\n// 2025\n", "LICENSE-MIT": "MIT\n"},
+		map[string]string{"text/license.go": "package text\n// 2026\n", "LICENSE-MIT": "MIT, changed\n"}))
+}
