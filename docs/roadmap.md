@@ -113,7 +113,7 @@ In order. Each item lands in its own commits with an activity note, and a review
 The order puts live regressions first, then the guardrail unattended submission relies on, then small promises the code doesn't keep, then what a person watching sees, then what grows without bound, and dead code last, since removing it changes nothing.
 
 **Before item 6 goes on: logic in the homes of the facts it interprets** (the [private-helper review](reviews/2026-09-28-private-helper-ownership.md), [note](activity/2026-09-28-private-helper-review-reconciled.md)). Done 2026-09-28. What stood on its own, in order, each in its own commits, each of its probes a regression test once fixed:
-- **What a comparison couldn't read** (finding 3). Done 2026-09-28 ([note](activity/2026-09-28-source-comparison.md)): upstream source comparison is `sourcecompare`, over `archive`'s traversal. What it couldn't read of a manifest, or a file past what it reads, holds as D4 has it. Cargo's dependency tables, pyproject's arrays in either quote, Poetry's table, and go.mod are read with real parsers.
+- **What a comparison couldn't read** (finding 3). Done 2026-09-28 ([note](activity/2026-09-28-source-comparison.md)): upstream source comparison is `sourcecompare`, over `archive`'s traversal. What it couldn't read of a manifest, or a file past what it reads, holds as D4 has it. Cargo's dependency tables, pyproject's arrays in either quote, Poetry's table, and go.mod are read with real parsers. The review's [follow-up](reviews/2026-09-28-private-helper-follow-up.md) found one gap left: what the old version's manifest couldn't be read for was dropped, so a gap on that side alone compared as nothing, and held nothing. It's next.
 - **What `create` writes** (findings 5 and 4). Done 2026-09-28 ([note](activity/2026-09-28-what-create-writes.md)): `tcl/syntax.Quote` writes a Tcl word that reads back as its value, and one Cargo.lock reader in `macports/dependency` serves creating and updating, keeping each crate's source.
 - **A stealth update's edits inside the editor** (finding 9, the open half of the earlier finding 19). Done 2026-09-28 ([note](activity/2026-09-28-stealth-in-the-editor.md)): `portedit` makes and evaluates the revision bump and `dist_subdir`, and removes the latter on a version update, given the files the branch changed since its base; edits that would change another port are left for the person.
 - **The description merge's result** (finding 10). Done 2026-09-28 ([note](activity/2026-09-28-description-merge-result.md)): the merge returns each part's outcome, refreshed, current, kept, or absent, which the preview words.
@@ -141,8 +141,8 @@ The order is the roadmap's own: a guardrail first, then what's written into a Po
      - the release `outdated` found passed to the update, and a plan's `--only`, `--also`, `--fresh`, and omissions in its JSON (finding 36);
      - one set of dependencies given to `engine.Open` (finding 1).
    - **From the private-helper review,** as planning moves, with the evaluator's typed facts (finding 27 above):
-     - build eligibility in `macports`, reading options as MacPorts does, with an unknown kept apart from an exclusion (finding 1). An exclusion by `platforms` is named for it: MacPorts defaults `known_fail` to yes where a port's `platforms` exclude the host, which showed as "known_fail" for beekeeper-studio, which declares none (the beekeeper-studio run's finding 3);
-     - a conservative Portfile inspection in `macports/portfile`: whether a change is only to the revision, and a port's declared version, `go.setup`'s included, which tidy reads too (finding 2).
+     - build eligibility in `macports`, reading options as MacPorts does, with an unknown kept apart from an exclusion (finding 1): Tcl's booleans, `on` included, `supported_archs` as a Tcl list, and an option that couldn't be read as unknown (the follow-up review). An exclusion by `platforms` is named for it: MacPorts defaults `known_fail` to yes where a port's `platforms` exclude the host, which showed as "known_fail" for beekeeper-studio, which declares none (the beekeeper-studio run's finding 3);
+     - a conservative Portfile inspection in `macports/portfile`: whether a change is only to the revision, and a port's declared version, `go.setup`'s included, which tidy reads too (finding 2). A revision line inside Tcl data isn't a command, and a version is read only where it's literal, so moving today's regexes isn't enough (the follow-up review).
 
 7. **Coverage** (the previous step 13, with what `outdated` found).
    - **The 144 ports `outdated --mine` can't check,** sized by reason first. Most use Portfile conventions discovery doesn't take ([note](activity/2026-09-27-outdated-speed.md)).
@@ -410,5 +410,10 @@ Changed:
   - inside item 6: 1, 2, and 6, where the code they move is already moving;
   - with the Tart smaller item it revalidates: 8.
 - **Kept as it says:** `newport.licenses` stays until a second consumer, and the plist writers stay separate.
+
+**Its [follow-up](reviews/2026-09-28-private-helper-follow-up.md)** of 2026-09-28, also by Codex, read `259ee3ba` and was checked at `11fb35f9`, where nothing it cites had changed ([note](activity/2026-09-29-private-helper-follow-up-reconciled.md)).
+- **Its table holds:** five findings addressed, and four open where the roadmap schedules them, each still in the code where it says.
+- **Its remaining gap holds.** Both of its cases compare as nothing when the gap is in the old version, and hold when it's in the new. Taken next.
+- **Its criteria for the scheduled items** join item 6's entries. What it says of archive signing and SSH readiness, their items already say.
 
 **Earlier reviews** were triaged in the previous roadmap, which records what each contributed and what was declined ([v2/roadmap.md](v2/roadmap.md#review-triage-and-validation)).
