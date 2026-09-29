@@ -228,7 +228,9 @@ These are taken when their area is next touched, or between items.
   - the github provider's `dockhand-check/` branch removed from the fork when its run finishes; clean removes them only once the branch is merged;
   - the GitHub environment's macOS release in Tested on, from the jobs API's runner labels. Its Xcode is only in the log's text, which isn't a documented interface;
   - a Python port's own line, as a Go port's `go` directive has one: `requires-python` moving past the version the port pins. sshuttle 2.0.0 raised its floor to 3.10;
-  - a quiet note, not a hold, where a port pins an older Python than the PortGroup's default, as sshuttle pins 3.13 against 3.14.
+  - a quiet note, not a hold, where a port pins an older Python than the PortGroup's default, as sshuttle pins 3.13 against 3.14;
+  - a Python requirement that excludes the version MacPorts has of a port the Portfile depends on holds. sqlit-tui 1.6.4 pins `textual-fastdatatable==0.19.0`, while MacPorts' py-textual-fastdatatable is 0.17.1, and a noarch build passes regardless. The port index at the base has the version;
+  - the stub notice said once: the editor's `load` reports it each time an update loads the port, as its probe and its preparation do, so py-pipdeptree's update said it three times.
 - **What re-submitting sshuttle asked for** ([review](reviews/2026-09-28-hugo-bump-exercise.md#moving-sshuttle-to-python-314-and-re-submitting)):
   - a saved tidy plan whose messages read as plain text. Done 2026-09-28 ([note](activity/2026-09-28-re-submitting.md)): TOML, each message a multi-line literal string, as the guide's `plan.toml` always said; plans saved as JSON before are still read;
   - `tidy --apply` showing each commit's whole message as it will be written. Done 2026-09-28 (the same note): without the saved notes on how the proposal was made, and a subject's source says "dockhand's commit" of one carrying dockhand's Generated-By line;
@@ -362,6 +364,7 @@ Changed:
 - **Finding 6 is wording:** serve's capacity counts checks, and a Tart check builds two releases at once, as designed.
 - **Finding 7 is half right:** clean removes a check's fork branch once the branch is merged, but it stays on the fork while the branch is open.
 - **Finding 9** is the `logs --port` item, already a smaller item.
+- **Finding 1's fix was confirmed live** at `8a68d406`, against a scratch copy of the database. PyPI ports are compared: py-pipdeptree 4.2.5's Rust rewrite held on its new Cargo dependencies and meson.build, and sqlit-tui 1.6.4 showed a moved pin. That run found two more items, the pin that should have held and a repeated notice, now among the run's items.
 
 **The [SQL review](reviews/2026-09-28-sql-review.md)** of 2026-09-28 read `02a4d318`. Its fixes landed as `b140a961` to `42bcaf3a` ([note](activity/2026-09-28-sql-review-fixes.md)), and were checked here against the code.
 - **Done:** findings 1 to 7, 9, and 10.
