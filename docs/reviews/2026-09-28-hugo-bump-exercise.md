@@ -275,3 +275,11 @@ Findings:
    - 1 is mise, above.
 
    The 35 livecheck cases say "name the version to update to", which is right. libgsm's downgrade is the server's doing: its livecheck URL `https://www.quut.com/gsm` (homepage, no trailing slash) answers 301 to `http://www.quut.com/gsm/`. dockhand is right to refuse following it. The fix is the Portfile's: `https://www.quut.com/gsm/` answers 200 directly.
+
+### Submitting hk and gh, with a real rebase
+
+hk 2.4.0 passed check-36 (Tart macOS 26, GitHub). tidy's saved plan took a body noting hk 2's configuration changes and the migration guide, and it reached the PR's Description ([macports/macports-ports#35037](https://github.com/macports/macports-ports/pull/35037)). gh's branch was rebased for real after master moved from 62fe703 to e63b8ea: "Rebased gh-ee07 (1 commit) from master 62fe703 onto e63b8ea", with checkpoint rebase-29. `restore rebase-29` put it back ("history and files before rebase-29 (77d0907), on master 62fe703 again"), and a second rebase produced the same files. gh opened as [macports/macports-ports#35038](https://github.com/macports/macports-ports/pull/35038).
+
+1. **GitHub results are never reused after a rebase.** Re-checking after the rebase (check-37), both Tart environments reused check-35 ("every target would build as it did in check-35, and reuses that result, building nothing"), but the GitHub environment pushed and ran the workflow again: about 5.5 of the check's 5.7 minutes. Master's one new commit touched only py-async-geotiff. If GitHub results can't be reused by design (the workflow reads the whole tree), the plan could say so.
+2. **After `restore rebase-29`, status said "passed for older work".** The branch was back at 77d0907, exactly the files check-35 passed. Status seems to credit only the latest check (check-37, for the rebased files), not any check that matches.
+3. **Rebase's Next line ignores an existing check.** The second rebase printed "Next: dockhand check, since the files it builds on have changed", while status already said "passed for this commit": check-37 covers exactly those files.
