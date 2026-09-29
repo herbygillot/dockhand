@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/archive"
+	"github.com/herbygillot/dockhand/internal/macports/dependency"
 )
 
 // Change is one difference between two versions' source archives that a
@@ -42,6 +43,18 @@ var licenseName = regexp.MustCompile(`(?i)^(licen[cs]e|copying|copyright|notice|
 // buildNames are the top-level files that say how software builds.
 var buildNames = []string{"CMakeLists.txt", "configure.ac", "configure.in", "meson.build", "meson_options.txt", "Makefile.am", "Makefile.PL",
 	"setup.py", "setup.cfg", "build.gradle", "pom.xml", "SConstruct", "build.zig", "Package.swift", "Gemfile", "cpanfile", "DESCRIPTION"}
+
+// proven are the manifests whose dependencies a check proves. A Go module
+// or a Rust crate is compiled into what the port builds, and a check builds
+// with only what the port declares, so one needing a library the port
+// doesn't declare fails it. What they change is counted, and holds nothing,
+// nor does what the comparison couldn't read of them (D9). A Python or Node
+// dependency is another port, found when the software runs, which a build
+// doesn't prove.
+var proven = map[string]bool{"go.mod": true, "Cargo.toml": true, cargoLock: true}
+
+// cargoLock is read for the crates new to it that link a native library.
+const cargoLock = "Cargo.lock"
 
 // file is a member as the comparison read it: its first memberLimit bytes,
 // and whether there was more.
@@ -79,7 +92,7 @@ func Compare(ctx context.Context, older, newer string) ([]Change, error) {
 		old, hadOld := before[name]
 		now, hasNow := after[name]
 		if old.truncated || now.truncated {
-			changes = append(changes, Change{Kind: "unread", Path: name, Hold: true,
+			changes = append(changes, Change{Kind: "unread", Path: name, Hold: !proven[name],
 				Message: fmt.Sprintf("upstream's %s is larger than the %d KiB the comparison reads, so it wasn't compared", name, memberLimit>>10)})
 			continue
 		}
@@ -88,6 +101,8 @@ func Compare(ctx context.Context, older, newer string) ([]Change, error) {
 		}
 		base := path.Base(name)
 		switch {
+		case name == cargoLock:
+			changes = append(changes, nativeLinks(old, hadOld, now, hasNow)...)
 		case manifests[name] != nil:
 			changes = append(changes, manifestChanges(name, manifests[name], old, hadOld, now, hasNow)...)
 		case licenseName.MatchString(base):
@@ -138,7 +153,7 @@ func interesting(ctx context.Context, filename string) (map[string]file, error) 
 		depth := strings.Count(rest, "/")
 		base := path.Base(rest)
 		wanted := licenseName.MatchString(base) && depth <= 1 ||
-			depth == 0 && (slices.Contains(buildNames, base) || manifests[base] != nil)
+			depth == 0 && (slices.Contains(buildNames, base) || manifests[base] != nil || base == cargoLock)
 		if !wanted {
 			return nil
 		}
@@ -160,7 +175,7 @@ func interesting(ctx context.Context, filename string) (map[string]file, error) 
 // says what it couldn't read of either.
 func manifestChanges(name string, read reader, old file, hadOld bool, now file, hasNow bool) []Change {
 	unread := func(what string) Change {
-		return Change{Kind: "unread", Path: name, Hold: true, Message: fmt.Sprintf("upstream's %s %s", name, what)}
+		return Change{Kind: "unread", Path: name, Hold: !proven[name], Message: fmt.Sprintf("upstream's %s %s", name, what)}
 	}
 	var readings [2]reading
 	for i, side := range []struct {
@@ -189,14 +204,25 @@ func manifestChanges(name string, read reader, old file, hadOld bool, now file, 
 			changes = append(changes, unread("in the old version "+gap+", which the comparison doesn't follow"))
 		}
 	}
+	if proven[name] {
+		return append(changes, dependencyCount(name, readings[0], readings[1])...)
+	}
 	return append(changes, dependencyChanges(name, readings[0], readings[1])...)
 }
 
-// dependencyChanges says what a manifest's declared dependencies gained,
-// lost, and moved. A dependency the build had or keeps for another's sake,
-// as a Go module required indirectly, is neither gained nor lost: it is
-// said only where its version moves, and marked indirect on that side.
-func dependencyChanges(file string, before, after reading) []Change {
+// dependencyDelta is one declared dependency that differs between the
+// versions: how, "adds", "drops", or "moves", and its version on each side,
+// marked indirect where the build had or keeps it only for another's sake.
+type dependencyDelta struct {
+	how, name, old, now     string
+	wasIndirect, isIndirect bool
+}
+
+// dependencyDeltas are what a manifest's declared dependencies gained,
+// lost, and moved, by name. A dependency the build had or keeps for
+// another's sake, as a Go module required indirectly, is neither gained
+// nor lost: it moves only where its version does.
+func dependencyDeltas(before, after reading) []dependencyDelta {
 	var names []string
 	for name := range after.dependencies {
 		names = append(names, name)
@@ -207,6 +233,37 @@ func dependencyChanges(file string, before, after reading) []Change {
 		}
 	}
 	slices.Sort(names)
+	var deltas []dependencyDelta
+	for _, name := range names {
+		old, had := before.dependencies[name]
+		now, has := after.dependencies[name]
+		delta := dependencyDelta{name: name}
+		if !had {
+			old, delta.wasIndirect = before.indirect[name]
+		}
+		if !has {
+			now, delta.isIndirect = after.indirect[name]
+		}
+		delta.old, delta.now = old, now
+		switch {
+		case !had && !delta.wasIndirect:
+			delta.how = "adds"
+		case !has && !delta.isIndirect:
+			delta.how = "drops"
+		case old != now:
+			delta.how = "moves"
+		default:
+			continue
+		}
+		deltas = append(deltas, delta)
+	}
+	return deltas
+}
+
+// dependencyChanges says what a manifest's declared dependencies gained,
+// lost, and moved, one line each. What's gained holds, as another port the
+// Portfile may need to declare.
+func dependencyChanges(file string, before, after reading) []Change {
 	spelled := func(version string, indirect bool) string {
 		if indirect {
 			return version + " (indirect)"
@@ -214,23 +271,14 @@ func dependencyChanges(file string, before, after reading) []Change {
 		return version
 	}
 	var changes []Change
-	for _, name := range names {
-		old, had := before.dependencies[name]
-		now, has := after.dependencies[name]
-		wasIndirect, isIndirect := false, false
-		if !had {
-			old, wasIndirect = before.indirect[name]
-		}
-		if !has {
-			now, isIndirect = after.indirect[name]
-		}
-		switch {
-		case !had && !wasIndirect:
-			changes = append(changes, Change{Kind: "dependency", Path: file, Hold: true, Message: strings.TrimSpace(fmt.Sprintf("upstream: %s adds %s %s", file, name, now))})
-		case !has && !isIndirect:
-			changes = append(changes, Change{Kind: "dependency", Path: file, Message: fmt.Sprintf("upstream: %s drops %s", file, name)})
-		case old != now:
-			changes = append(changes, Change{Kind: "dependency", Path: file, Message: fmt.Sprintf("upstream: %s moves %s from %s to %s", file, name, spelled(old, wasIndirect), spelled(now, isIndirect))})
+	for _, delta := range dependencyDeltas(before, after) {
+		switch delta.how {
+		case "adds":
+			changes = append(changes, Change{Kind: "dependency", Path: file, Hold: true, Message: strings.TrimSpace(fmt.Sprintf("upstream: %s adds %s %s", file, delta.name, delta.now))})
+		case "drops":
+			changes = append(changes, Change{Kind: "dependency", Path: file, Message: fmt.Sprintf("upstream: %s drops %s", file, delta.name)})
+		default:
+			changes = append(changes, Change{Kind: "dependency", Path: file, Message: fmt.Sprintf("upstream: %s moves %s from %s to %s", file, delta.name, spelled(delta.old, delta.wasIndirect), spelled(delta.now, delta.isIndirect))})
 		}
 	}
 	// What holds the update for a look comes first.
@@ -243,5 +291,66 @@ func dependencyChanges(file string, before, after reading) []Change {
 		}
 		return 1
 	})
+	return changes
+}
+
+// dependencyCount says in one line how many of a proven manifest's
+// declared dependencies it gained, lost, and moved, "upstream: go.mod: 2
+// added, 4 moved", holding nothing (D9).
+func dependencyCount(file string, before, after reading) []Change {
+	counts := map[string]int{}
+	for _, delta := range dependencyDeltas(before, after) {
+		counts[delta.how]++
+	}
+	var parts []string
+	for _, part := range [][2]string{{"adds", "added"}, {"drops", "dropped"}, {"moves", "moved"}} {
+		if n := counts[part[0]]; n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", n, part[1]))
+		}
+	}
+	if len(parts) == 0 {
+		return nil
+	}
+	return []Change{{Kind: "dependency", Path: file, Message: fmt.Sprintf("upstream: %s: %s", file, strings.Join(parts, ", "))}}
+}
+
+// nativeLinks lists the crates new to a Cargo.lock that link a native
+// library, as Cargo's -sys crates do. Such a crate often links a copy of
+// the library it finds installed, and builds one it bundles otherwise,
+// which a clean check can't tell apart: where MacPorts has the library,
+// the Portfile may want to declare it. They're for the person's attention,
+// and hold nothing (D9).
+func nativeLinks(old file, hadOld bool, now file, hasNow bool) []Change {
+	if !hasNow {
+		return nil
+	}
+	unread := func(version string, err error) []Change {
+		return []Change{{Kind: "unread", Path: cargoLock, Message: fmt.Sprintf("upstream's Cargo.lock couldn't be read in the %s version, so the crates new to it that link a native library weren't looked for: %v", version, err)}}
+	}
+	packages, err := dependency.ReadCargoLock(now.data)
+	if err != nil {
+		return unread("new", err)
+	}
+	had := map[string]bool{}
+	if hadOld {
+		earlier, err := dependency.ReadCargoLock(old.data)
+		if err != nil {
+			return unread("old", err)
+		}
+		for _, pkg := range earlier {
+			had[pkg.Name] = true
+		}
+	}
+	var changes []Change
+	for _, pkg := range packages {
+		library := pkg.NativeLibrary()
+		if library == "" || had[pkg.Name] {
+			continue
+		}
+		// Once, whichever versions the lock pins.
+		had[pkg.Name] = true
+		changes = append(changes, Change{Kind: "dependency", Path: cargoLock,
+			Message: fmt.Sprintf("upstream: Cargo.lock adds %s %s, which links the native library %s: MacPorts may provide it, for the Portfile to declare, rather than the crate linking whatever copy it finds", pkg.Name, pkg.Version, library)})
+	}
 	return changes
 }

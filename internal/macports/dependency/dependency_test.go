@@ -353,3 +353,11 @@ func TestACargoLockIsReadWithWhereEachPackageComesFrom(t *testing.T) {
 		require.ErrorContains(t, err, c.err)
 	}
 }
+
+// A package named for a native library links it, by Cargo's convention:
+// foo-sys links foo, in either spelling crates.io treats alike.
+func TestACargoPackageNamedForANativeLibraryLinksIt(t *testing.T) {
+	for name, library := range map[string]string{"libgit2-sys": "libgit2", "openssl-sys": "openssl", "onig_sys": "onig", "serde": "", "sys": "", "-sys": "", "sysinfo": ""} {
+		require.Equal(t, library, CargoPackage{Name: name}.NativeLibrary(), name)
+	}
+}

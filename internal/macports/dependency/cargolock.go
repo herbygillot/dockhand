@@ -35,6 +35,20 @@ type CargoPackage struct {
 	Checksum      string
 }
 
+// NativeLibrary is the native library a package links, by Cargo's
+// convention for naming such packages: foo-sys links foo ("The *-sys
+// Packages", The Cargo Book). Such a package often finds the library
+// installed and links it, and builds a copy it bundles otherwise. Empty
+// for a package not named so. crates.io treats - and _ in names alike.
+func (p CargoPackage) NativeLibrary() string {
+	for _, suffix := range []string{"-sys", "_sys"} {
+		if library, ok := strings.CutSuffix(p.Name, suffix); ok {
+			return library
+		}
+	}
+	return ""
+}
+
 // cratesIO is crates.io's index as a lock names it, in each protocol.
 var cratesIO = []string{"registry+https://github.com/rust-lang/crates.io-index", "sparse+https://index.crates.io/"}
 

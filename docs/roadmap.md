@@ -249,7 +249,7 @@ These are taken when their area is next touched, or between items.
   - an exclusion by `platforms` named for it, not "known_fail" (finding 3): with build eligibility, in item 6;
   - a yarn workspace's manifests read (finding 1): with the chezmoi run's item on which manifests the port builds with, above.
 - **What the decisions of 2026-09-29 ask for,** after the beekeeper-studio run's first item:
-  - D9's holds: none for Go; a new `-sys` crate listed with a hint at the MacPorts library it may link; counts for the rest;
+  - D9's holds: none for Go; a new `-sys` crate listed with a hint at the MacPorts library it may link; counts for the rest. Done 2026-09-29 ([note](activity/2026-09-29-go-and-rust-hold-nothing.md)), for Rust too;
   - D7's plan rule;
   - D8's `gh pr ready`, and the guide on asking an organization to approve dockhand's app;
   - D10's first compiler error, in a package of its own;
@@ -375,7 +375,7 @@ Changed:
 - **Its improvements** are smaller items, with the duckdb exercise's.
 
 **The chezmoi run** in the same review, `dockhand bump` with `b8915f15`, was checked against the code at `4bb16db3`.
-- **Finding 1 holds, and is older than the comparison's rewrite.** `sourcecompare` leaves go.mod's indirect requirements out, as `archive`'s comparison did before it, so a module that becomes direct reads as added. That false hold is fixed ([note](activity/2026-09-28-go-module-promotion.md)). Its broader claim, that no go.mod change can need a Portfile edit, goes too far: a module new to the build can need a library from MacPorts, as a cgo one can, so a new one still holds.
+- **Finding 1 holds, and is older than the comparison's rewrite.** `sourcecompare` leaves go.mod's indirect requirements out, as `archive`'s comparison did before it, so a module that becomes direct reads as added. That false hold is fixed ([note](activity/2026-09-28-go-module-promotion.md)). Its broader claim, that no go.mod change can need a Portfile edit, went too far then: a module new to the build can need a library from MacPorts, as a cgo one can. D9 has since decided no Go dependency holds, since a cgo module links its library or fails, which a check catches.
 - **Finding 2** is noise rather than a defect: the comparison reads every manifest it knows, and nothing tells it which the port builds with. A smaller item, as is finding 5's legend.
 - **Finding 3** is a decision for the person, D7: the refusal is deliberate.
 - **Findings 4 and 6** need nothing: 4 is by design, and 6 was an older build's, as the review now says.

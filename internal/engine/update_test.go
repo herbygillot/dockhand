@@ -298,8 +298,9 @@ func TestAnUpdateComparesTheUpstreamArchives(t *testing.T) {
 	require.True(t, update.Upstream.Held())
 	require.Equal(t, []string{
 		"upstream's COPYING changed; the Portfile's license line may need to follow",
-		"upstream: go.mod adds golang.org/x/net v0.44.0",
+		"upstream: go.mod: 1 added",
 	}, []string{update.Upstream.Changes[0].Message, update.Upstream.Changes[1].Message})
+	require.False(t, update.Upstream.Changes[1].Hold, "a Go module holds nothing (D9)")
 	require.NoDirExists(t, p.requests[0].KeepArchives, "the archives go when the update is done")
 
 	var edits []model.Edit
