@@ -142,7 +142,7 @@ The order is the roadmap's own: a guardrail first, then what's written into a Po
      - one set of dependencies given to `engine.Open` (finding 1).
    - **From the private-helper review,** as planning moves, with the evaluator's typed facts (finding 27 above):
      - build eligibility in `macports`, reading options as MacPorts does, with an unknown kept apart from an exclusion (finding 1). A boolean is tested in MacPorts' own interpreter, as MacPorts tests `known_fail` (`string is true -strict`), not matched against spellings in Go, which misses Tcl's `on` and its prefixes; `supported_archs` is read as a Tcl list, and an option that couldn't be read is unknown (the follow-up review). An exclusion by `platforms` is named for it: MacPorts defaults `known_fail` to yes where a port's `platforms` exclude the host, which showed as "known_fail" for beekeeper-studio, which declares none (the beekeeper-studio run's finding 3);
-     - a conservative Portfile inspection in `macports/portfile`: whether a change is only to the revision, and a port's declared version, `go.setup`'s included, which tidy reads too (finding 2). A revision line inside Tcl data isn't a command, and a version is read only where it's literal, so moving today's regexes isn't enough (the follow-up review).
+     - a conservative Portfile inspection in `macports/portfile`: whether a change is only to the revision, and a port's declared version, `go.setup`'s included, which tidy reads too (finding 2). A revision line inside Tcl data isn't a command, and a version is read only where it's literal, so moving today's regexes isn't enough (the follow-up review). Nor is another subport's setup line the port's version, as git-devel's `github.setup` was read for git's, so tidy couldn't name a bump made by hand (the git run's finding 5).
 
 7. **Coverage** (the previous step 13, with what `outdated` found).
    - **The 144 ports `outdated --mine` can't check,** sized by reason first. Most use Portfile conventions discovery doesn't take ([note](activity/2026-09-27-outdated-speed.md)).
@@ -205,11 +205,11 @@ These are taken when their area is next touched, or between items.
   - **Latent:**
     - an edit record whose commit was uncertain is read back, as a new branch's is: `Update` and `Create` write their files first, and holds are read from the records (finding 24);
     - `ls-remote` in a fresh scratch directory (finding 30);
-    - the index cache's identity off a Mac (finding 40);
+    - the index cache's identity off a Mac (finding 40). Done 2026-09-29 ([note](activity/2026-09-29-modelled-with-xcode.md)), with D2: a cache is kept for what its indexer is told;
     - store error kinds documented (finding 41);
     - anonymous GitHub remembered for a few minutes (finding 45).
 - **What updating real ports asked for,** from the duckdb and hugo exercises of 2026-09-28 ([duckdb](activity/2026-09-28-duckdb.md), [hugo](reviews/2026-09-28-hugo-bump-exercise.md)):
-  - a Go port's own line: the `go` directive upstream's go.mod gives, and that `go.toolchain_min` still holds, said when it does too, since silence reads the same as not having looked;
+  - a Go port's own line: the `go` directive upstream's go.mod gives, and that `go.toolchain_min` still holds, said when it does too, since silence reads the same as not having looked. A minimum dockhand raised is said only as the update runs, since the portedit result records only one it left below, so the submit preview and `--passing` never show it (the ov run's finding 1, and yq's 4); the pull request's diff does;
   - `logs --port` starting where the port's own phases do, or listing them with their lines: hugo's began near line 46,400 of 47,000, after its dependencies';
   - `submit --plan` showing the pull request's description, which both exercises read through `--json`;
   - `outdated` for one named port, which took 12 seconds in both;
@@ -257,6 +257,25 @@ These are taken when their area is next touched, or between items.
 - **What cleaning up after beekeeper-studio and ov asked for** ([review](reviews/2026-09-28-hugo-bump-exercise.md#cleaning-up-after-beekeeper-studio-and-ov)):
   - **a branch checked out where clean leaves it isn't deleted.** clean removed an adopted branch while the person's own worktree had it checked out, which it rightly left in place, so the worktree stood on a branch that was gone. Done 2026-09-29 ([note](activity/2026-09-29-clean-keeps-checked-out-branches.md)): a branch checked out anywhere but the worktree clean removes is kept, and says where, looked for when planned and again before it goes.
   - **`status` changes nothing.** `status --all` checked an archived branch's worktree out again after `clean --archived` removed it, undoing clean, then asked for it to be checked again. Done 2026-09-29 ([note](activity/2026-09-29-status-reads-only.md)): status reads a worktree only where it's there, and an archived branch's checks ask nothing of the person.
+- **What the yq run asked for** ([review](reviews/2026-09-28-hugo-bump-exercise.md#yq-where-dockhand-removed-a-line-the-port-needed)), the first of them before anything else here:
+  - **a `dist_subdir` removed only where every distfile's name changes with the version** (finding 1). Every version update removes a top-level `dist_subdir ${name}/${version}_${revision}`, or `_N`, the forms MacPorts' guide gives a stealth update, without looking at the distfiles (`portedit`'s `dropStealthDistSubdir`). yq's man page keeps one name across versions, which the line keeps apart on the mirrors. Without it, check-27 failed at checksum on Tart, while GitHub, fetching from GitHub, passed, so a check on GitHub alone would have let it be submitted. The removal is `portedit`'s, which has both versions' fetch plans: it keeps the line where any distfile's name is the same in both;
+  - the removal said in `update --plan`'s text, as the update says it (finding 2). The plan shows only the diff's `-` line.
+- **What the git run asked for** ([review](reviews/2026-09-28-hugo-bump-exercise.md#git-a-port-dockhand-couldnt-update)):
+  - **checksums declared in a variant.** MacPorts runs a variant's body as a procedure it builds by joining strings, so Tcl records no file for its commands, and the `+doc` variant's `checksums-append` can't be located in the Portfile (`portfile.LocateDeclaration`). `distfiles.Bind` drops that reason, so the refusal says "calculated checksum algorithm", wrapped as "baseline {…}: portfile: unsupported source edit: …", which the command can't trim, and its advice, `dockhand checksums git`, meets the same refusal (findings 1 and 2). git's computed names work, as yq's did. Finding a declaration a variant runs in the variant's body is `macports/portfile`'s; the refusal's reason is `distfiles`' to keep, typed, for the command to word, with advice only where it can work;
+  - `checksums` printing, where it can't write them, the lines for every distfile of the default variants, from MacPorts' fetch plan, which `portedit/archives` can compute (finding 3);
+  - no "Kept: the branch, unchanged." from a plan made on master, which starts no branch (finding 4);
+  - an upstream comparison for a version changed by hand, from `check` or `submit`, which today say nothing of one (finding 6).
+  - A hand-made version bump that tidy couldn't name (finding 5) is item 6's Portfile inspection: the version is read from the first forge setup line anywhere, here git-devel's `github.setup` in its subport, so git's own `version` line was never read.
+- **What the ov run asked for** ([review](reviews/2026-09-28-hugo-bump-exercise.md#ov-through-adopt-edit-retry-and-submit---passing)):
+  - `go.toolchain_min` written as go.mod's `go` directive gives it, `1.26.0` rather than `1.26` (finding 2). `dependency.GoRequirement` gives the series, by design, and the raise compares by series too, so a declared `1.26.0` is taken to cover `go 1.26.2`, which Go enforces in module mode. It also reads the `toolchain` line as a requirement, though Go documents it as a suggestion;
+  - `--tests required` saying where a port declares no tests (finding 3). Such a port passes under any policy, as designed, but the plan says "tests required" and the grid "✓" for it as for tests that passed. Only the guest reads `test.run`; the plan's words would need `macports` to read it;
+  - the index a check stages found nearer to hand (finding 4). check-23 built a whole index for macOS 15, which no earlier check at that master had used, so the review's premise was another release's. Still, a Tart check's stager builds no base index, seeds only from the same release's recent generations, and never from the mirror for a snapshot, which has no commit; `portindex/source.go` says verification keeps the base, which the wiring doesn't;
+  - `submit --passing`'s upstream lines under a label of their own, and so without "upstream:", as the single preview's are (finding 5). The prefix was kept on purpose, since those lines had no heading (4315d6bd);
+  - an `edit` of another port narrowed away again, in a worktree dockhand made, once nothing of the branch's is in it (finding 6). An adopted worktree's sparse set is the person's to keep;
+  - `submit --passing --yes` refused, rather than `--yes` silently ignored (finding 7). A batch submission for scripts is D11.
+- **What cleaning up duckdb-cxx14 asked for** ([review](reviews/2026-09-28-hugo-bump-exercise.md#cleaning-up-duckdb-cxx14)):
+  - status saying that a branch's changes are already on master (finding 1). It compares a branch only with its recorded base, so duckdb-cxx14's edit, landed on master by another route, still asked "commit it for review". With the patch-id comparison "Branches from before v3" plans, below, for branches dockhand doesn't track;
+  - an archived branch's Git branch, with nothing master lacks, going with its worktree (finding 2). clean keeps an archived branch's Git branch on purpose, since its work isn't merged. One with nothing beyond master could go too, once status and checking out again treat it as a merged branch's: today status would call it gone, and `checkOutAgain` would fail.
 - **Branches from before v3.** The hugo exercise's checkout holds 22 local `dockhand/bump/<port>-<id>` branches from earlier dockhand, which nothing reports ([review](reviews/2026-09-28-hugo-bump-exercise.md#cleaning-up), finding 3). Its classification is the design:
   - in master by patch-id (`git cherry`, since MacPorts rebases on merge), as 13 were, whatever became of their pull requests: removable, with the fork branch when it holds the same commit;
   - superseded by a newer version in master, as 1 was: removable after a look;
@@ -269,6 +288,7 @@ These are taken when their area is next touched, or between items.
 ## Decisions for the person
 
 - **D6. How long build history is kept** (the SQL review's finding 8). Runs, executions, results, plans, revisions, and each build's recorded inputs are never removed. Inputs grow fastest, at about 3.6 KB a build: an estimated 700 MB at 200,000 builds. The review suggests the archives' cutoff: keep what a result still usable for reuse, or an open branch, refers to. A merged branch's own record stays either way, for status. The person would peel it back by weight (2026-09-29): some light records kept for 30 days, others gone once their branch merges. Reuse reads a merged branch's results for later checks, so what goes at merge is settled with item 6's reuse by content.
+- **D11. A batch `submit --passing` for scripts** (the ov run's finding 7). `--passing` asks about each passing branch on a terminal, as the design means it to (principle 7: publishing is a person's decision about an exact revision), and `--yes` is silently ignored with it. A script can submit one branch at a time, `submit --branch <name> --yes`. Should `--passing --yes` submit every passing branch? Proposed: no; refuse `--yes` with `--passing`, naming the one-branch form.
 
 ### Decided
 
@@ -395,6 +415,20 @@ Changed:
 - **Finding 3 holds, with a cause the review didn't see:** MacPorts itself defaults `known_fail` to yes where `platforms` exclude the host (`port1.0/portutil.tcl`), and `ineligible` reports it as though the port declared it. It joins build eligibility's move to `macports`, in item 6.
 - **Finding 1 is narrower than stated.** The top-level `package.json` is read, its dependencies and devDependencies. What isn't read is a manifest below the top level, a workspace's included, `.nvmrc`, or a lockfile. It joins the chezmoi run's item on which manifests the port builds with.
 - **Confirmed fixed:** tidy keeping the update's subject over a person's edit, the certigo run's finding 2.
+
+**The later runs** in the same review were checked against the code at `8c66f470`: cleaning up duckdb-cxx14, ov, git, and the cleanup after beekeeper-studio and ov, each with `11fb35f9`, and yq, with `24aa38fa`.
+- **Hold as described:** yq's 1 and 2, git's 2, 3, and 6, ov's 1 (which yq's 4 repeats) and 6, and duckdb-cxx14's 1. yq's 1 is worse than it says: a check on GitHub alone, which fetched the man page from GitHub, passed, so the update would have been submitted without the line.
+- **Hold, narrower or wider:**
+  - git's 1: computed checksum names work, as yq's did. What's refused is a checksum declared in a variant, which can't be located in the Portfile, and the reason is lost on the way.
+  - git's 4 is wider: any plan made on master says it kept the branch.
+  - git's 5 is narrower: tidy names a bump made by hand, but read git-devel's `github.setup` line as git's version.
+  - ov's 2 is wider: the raise compares by series too.
+  - ov's 3 is narrower: the JSON says the tests were none, and the pull request leaves out its tests item.
+  - ov's 4: check-23 was the first check on macOS 15 at that master, so the premise, another release's index, doesn't carry over.
+  - ov's 7 is wider: `--yes` is silently ignored with `--passing`.
+- **Deliberate:** ov's 5, the prefix `--passing` kept since its lines have no heading (4315d6bd); ov's 7, a look at each branch (principle 7), now D11; duckdb-cxx14's 2, the Git branch clean keeps for an archived branch's unmerged work.
+- **Don't hold:** yq's 3 and git's 7, a failed or stopped check exiting 0. A failed check under `update --submit` exits 2, as a test pins, and one stopped by another's `--replace` exits 130; the 0 was likely the shell pipe's status the session read.
+- **Fixed:** the cleanup's 1 and 2 (`d1527ecd`, `8c66f470`).
 
 **The cleanup** in the same review, `dockhand clean` at `0ffed143`, was checked against `42bcaf3a`.
 - **Findings 1 and 2 hold, and are fixed** ([note](activity/2026-09-28-status-after-clean.md)): status took clean's removal of a merged branch for a lost one, and couldn't find a merged record by name.
