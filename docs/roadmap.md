@@ -229,6 +229,10 @@ These are taken when their area is next touched, or between items.
   - the GitHub environment's macOS release in Tested on, from the jobs API's runner labels. Its Xcode is only in the log's text, which isn't a documented interface;
   - a Python port's own line, as a Go port's `go` directive has one: `requires-python` moving past the version the port pins. sshuttle 2.0.0 raised its floor to 3.10;
   - a quiet note, not a hold, where a port pins an older Python than the PortGroup's default, as sshuttle pins 3.13 against 3.14.
+- **What re-submitting sshuttle asked for** ([review](reviews/2026-09-28-hugo-bump-exercise.md#moving-sshuttle-to-python-314-and-re-submitting)):
+  - a saved tidy plan whose messages read as plain text. It's JSON today, a message a `\n`-escaped string, though the guide has named the file `plan.toml` since v3's first guide. TOML with each message a multi-line literal string would make the guide true. The vendored TOML decoder reads those, but its encoder escapes newlines, so the file would be written by hand;
+  - `tidy --apply` showing each commit's whole message as it will be written, since it prints only subjects. It shouldn't reprint the saved notes on where a subject came from, which an edited message may no longer fit. And "subject from your commit" should be said only of a commit dockhand didn't write: its Generated-By line tells them apart (`commitmsg.IsAttribution`);
+  - a re-submit refreshing the Description while it's still exactly as dockhand last wrote it, as it refreshes the Type(s): a commit body added after the pull request opened never reaches it now.
 - **Branches from before v3.** The hugo exercise's checkout holds 22 local `dockhand/bump/<port>-<id>` branches from earlier dockhand, which nothing reports ([review](reviews/2026-09-28-hugo-bump-exercise.md#cleaning-up), finding 3). Its classification is the design:
   - in master by patch-id (`git cherry`, since MacPorts rebases on merge), as 13 were, whatever became of their pull requests: removable, with the fork branch when it holds the same commit;
   - superseded by a newer version in master, as 1 was: removable after a look;
@@ -345,6 +349,9 @@ Changed:
 - **Finding 2** is noise rather than a defect: the comparison reads every manifest it knows, and nothing tells it which the port builds with. A smaller item, as is finding 5's legend.
 - **Finding 3** is a decision for the person: the refusal is deliberate.
 - **Findings 4 and 6** need nothing: 4 is by design, and 6 was an older build's, as the review now says.
+
+**Re-submitting sshuttle** in the same review, after its move to Python 3.14, was checked against the code at `259ee3ba`.
+- **All three findings hold.** A saved tidy plan is JSON (`TidyPlan.Save`), as it has been since it was added, while the guide calls it `plan.toml`. Applying one prints subjects and the saved notes, never a message's body. The note on a subject's source says "your commit" of any commit. A re-submit merges only the Type(s) and Tested on down (`mergeBody`), so the Description written from the commit's body at opening stays as it was. Each is a smaller item.
 
 **The cleanup** in the same review, `dockhand clean` at `0ffed143`, was checked against `42bcaf3a`.
 - **Findings 1 and 2 hold, and are fixed** ([note](activity/2026-09-28-status-after-clean.md)): status took clean's removal of a merged branch for a lost one, and couldn't find a merged record by name.
