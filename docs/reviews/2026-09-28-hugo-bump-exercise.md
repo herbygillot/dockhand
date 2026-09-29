@@ -117,3 +117,33 @@ Findings:
 ### Cleaning up after sshuttle
 
 With a build of `f85f200b`, `clean --yes` removed sshuttle-2's worktree, local branch, fork branch, and both of its checks' `dockhand-check/` branches. Afterwards, the findings from Cleaning up are fixed. `status --all` lists every cleaned branch as "cleaned" with its PR "merged", and nothing appears under Needs you. `status sshuttle-2` says "cleaned after its merge". Only the 22 legacy `dockhand/bump/*` branches (finding 3 there) remain for a person to delete.
+
+## certigo, with a hands-on binary test
+
+With a build of `d7682668` (its first run migrated the main database, silently), certigo went from 1.18.0 to 1.18.1 ([macports/macports-ports#35013](https://github.com/macports/macports-ports/pull/35013)). Paths new to this exercise:
+
+- `update --new --json`;
+- a no-op `checksums`;
+- a duplicate `check -d`, which was refused with "check-14 is already queued for these files; dockhand wait check-14 follows it";
+- `cancel check-14`, and `check -d --replace` over a queued check;
+- Tart macOS 13 (Ventura);
+- `status --attention` (exit 3) and `status --json`;
+- a no-op `rebase`;
+- `check --head`;
+- `submit --tested-binaries`, then a re-submit with `--type enhancement --type bugfix`, which refreshed the open PR's Type(s).
+
+check-16 (working files) and check-17 (the committed head, adding GitHub) passed. The plan-format and apply-output fixes held: the saved plan is TOML with the message as a plain multi-line string, and `tidy --apply` printed the body it applied. The first submit carried the commit body into the Description.
+
+**The binary test found what every check passed.** In a throwaway `dockhand-xcode-tahoe` guest, certigo 1.18.1 connected and verified www.macports.org (TLS 1.3) and refused a wrong expected name (exit 1). It also spoke STARTTLS to smtp.gmail.com:587, dumped a PEM chain and a PKCS#12 bundle made with the system openssl, refused a wrong PKCS#12 password (exit 2), printed JSON, showed zlint's warnings, and failed a self-signed cert's verification. But `certigo --version` printed `(devel)`. 1.18.1 replaced its hardcoded version string (1.18.0 still said "1.17.1") with Go's build info, which a tarball build doesn't have; upstream documents `-ldflags "-X github.com/square/certigo/cli.version=…"` for such builds. The Portfile now passes it, and a rebuild in the same guest printed `1.18.1`. Lint, fetch, build, destroot, install and the declared tests all passed without it. Only running the binary shows it.
+
+Findings:
+
+1. **Running each installed binary's `--version` would catch this class of regression.** After install, in the guest, each executable the port installs under `${prefix}/bin` could be run with `--version`, flagging output that lacks the port's version, as advice rather than failure. Version strings are what reviewers and `port installed` users compare.
+2. **A person's edit on top of dockhand's uncommitted update costs the subject.** With the update not yet committed and a hand edit to the same Portfile, tidy proposed "(needs a subject)", with a ✗ finding. The version change and its recorded subject "certigo: update to 1.18.1" are still dockhand's. The subject could be kept, with the note that other changes are included. (In sshuttle's case the update was already committed, so the subject came from that commit.)
+3. **`update --json` keeps the "upstream: " prefix.** Its upstream messages still begin with it, though the text output dropped it.
+4. **`cancel` with no argument** gives cobra's raw "accepts 1 arg(s), received 0", like `wait`. Inside a branch it could cancel that branch's queued or running check.
+5. **"Stopped check-15; what it finished is kept."** was said of a check that was only queued and had finished nothing.
+6. **`status --json` gives serve as a sentence.** Its `serve` field is the preformatted "serve: running (pid 34857) · queue: 1 run", not fields a script can read.
+7. **The PortIndex rebuild is only visible in serve's log.** serve printed "Building the PortIndex; this may take several minutes" in the middle of check-16, which took 5 minutes. A one-time cost after the migration seems likely, but the person following with `wait` never saw that line.
+
+Not exercised yet: `retry`, `adopt`, `archive`, `edit`, `revbump`, `create`, `start --here`, `check --also/--only/--baseline/--fresh`, and `submit --passing`.
