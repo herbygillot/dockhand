@@ -54,11 +54,36 @@ func TestTestedOnSaysWhatTheEnvironmentWas(t *testing.T) {
 	}
 }
 
-// The description's last line names dockhand's version, or dockhand alone
-// when the build doesn't know it.
+// The description's first line names dockhand, and its last line
+// dockhand's version, or dockhand alone when the build doesn't know it.
 func TestTheSignatureNeedsNoVersion(t *testing.T) {
-	require.Equal(t, "Submitted by **[dockhand](https://github.com/herbygillot/dockhand)** (ver. v3.1.0)", signature("v3.1.0"))
-	require.Equal(t, "Submitted by **[dockhand](https://github.com/herbygillot/dockhand)**", signature(" "))
+	require.Equal(t, "Submitted by [dockhand](https://github.com/herbygillot/dockhand)", submittedBy)
+	require.Equal(t, "- [dockhand](https://github.com/herbygillot/dockhand) ver. v3.1.0", signature("v3.1.0"))
+	require.Equal(t, "- [dockhand](https://github.com/herbygillot/dockhand)", signature(" "))
+}
+
+// A description dockhand wrote before its first line named dockhand gains
+// that line when submitting again rewrites its last line, which named
+// dockhand then. One whose Tested on a person edited keeps its old last
+// line, and gains nothing; a first line a person took out stays out.
+func TestAnOlderDescriptionGainsItsFirstLine(t *testing.T) {
+	old := "#### Description\n\nupdate\n\n###### Tested on\n\nmacOS 26\n\nSubmitted by **[dockhand](https://github.com/herbygillot/dockhand)** (ver. v3.0.0)\n"
+	fresh := submittedBy + "\n\n#### Description\n\nupdate\n\n###### Tested on\n\nmacOS 26\n\n" + signature("v3.1.0") + "\n"
+	merged, sections := mergeBody(old, old, fresh, false)
+	require.Equal(t, fresh, merged)
+	require.Equal(t, SectionRefreshed, sections.TestedOn)
+
+	edited := strings.Replace(old, "macOS 26", "macOS 26, and by hand", 1)
+	merged, _ = mergeBody(edited, old, fresh, false)
+	require.Equal(t, edited, merged, "its old last line stays, so no first line is added")
+
+	removed := strings.TrimPrefix(fresh, submittedBy+"\n\n")
+	merged, _ = mergeBody(removed, fresh, fresh, false)
+	require.Equal(t, removed, merged, "a first line a person took out stays out")
+
+	introduced := "Why now: a CVE.\n\n" + old
+	merged, _ = mergeBody(introduced, old, fresh, false)
+	require.True(t, strings.HasPrefix(merged, "Why now: a CVE.\n\n#### Description"), "one a person began otherwise begins as they did")
 }
 
 // A column heading is the environment's release alone, with its

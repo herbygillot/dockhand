@@ -54,7 +54,7 @@ type bodyFacts struct {
 // ticking only what the facts establish.
 func pullRequestBody(facts bodyFacts) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n\n", descriptionHeading)
+	fmt.Fprintf(&b, "%s\n\n%s\n\n", submittedBy, descriptionHeading)
 	if len(facts.Commits) == 1 {
 		if text := commitBody(facts.Commits[0].Message); text != "" {
 			fmt.Fprintf(&b, "%s\n\n", text)
@@ -184,13 +184,16 @@ func ownedSections(facts bodyFacts) string {
 	return b.String()
 }
 
-// signature is the description's last line, naming dockhand, in bold,
-// and its version, in parentheses, or dockhand alone when the build
-// doesn't know its version.
+// submittedBy is the description's first line, naming dockhand, whose
+// version the last line gives.
+var submittedBy = "Submitted by [dockhand](" + version.ProjectURL + ")"
+
+// signature is the description's last line, dockhand with its version, or
+// dockhand alone when the build doesn't know its version.
 func signature(tag string) string {
-	line := "Submitted by **[dockhand](" + version.ProjectURL + ")**"
+	line := "- [dockhand](" + version.ProjectURL + ")"
 	if tag = strings.TrimSpace(tag); tag != "" {
-		line += " (ver. " + tag + ")"
+		line += " ver. " + tag
 	}
 	return line
 }
@@ -439,7 +442,22 @@ func mergeBody(existing, lastWritten, fresh string, named bool) (string, Descrip
 	body, testedOn := mergeTestedOn(existing, lastWritten, fresh)
 	body, types := mergeTypes(body, lastWritten, fresh, named)
 	body, description := mergeDescription(body, lastWritten, fresh)
-	return body, DescriptionSections{Description: description, Types: types, TestedOn: testedOn}
+	return submittedFirst(body, lastWritten, fresh, testedOn), DescriptionSections{Description: description, Types: types, TestedOn: testedOn}
+}
+
+// submittedFirst gives a description dockhand wrote before its first line
+// named dockhand the line fresh begins with, where rewriting everything
+// from Tested on down took away the last line that named dockhand. One
+// that begins otherwise, or whose first line a person took out, stays as
+// it is.
+func submittedFirst(body, lastWritten, fresh string, testedOn SectionOutcome) string {
+	switch {
+	case testedOn != SectionRefreshed && testedOn != SectionCurrent:
+		return body
+	case !strings.HasPrefix(fresh, submittedBy) || strings.HasPrefix(lastWritten, submittedBy) || !strings.HasPrefix(body, descriptionHeading):
+		return body
+	}
+	return submittedBy + "\n\n" + body
 }
 
 // mergeDescription rewrites the Description while it is still exactly what
