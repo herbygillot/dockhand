@@ -122,7 +122,7 @@ func TestAdoptSomeonesPullRequestAndPushOnlyWhereGitHubAllows(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, plan.Blocking)
 	require.True(t, plan.Theirs)
-	require.Equal(t, DescriptionSections{Types: SectionKept, TestedOn: SectionKept}, plan.Sections, "someone else's description is never rewritten")
+	require.Equal(t, DescriptionSections{Description: SectionKept, Types: SectionKept, TestedOn: SectionKept}, plan.Sections, "someone else's description is never rewritten")
 	_, err = e.ApplySubmit(t.Context(), plan)
 	require.NoError(t, err)
 	require.Equal(t, run(t, adopted.Branch.Worktree, "rev-parse", "HEAD"), run(t, theirs, "rev-parse", "patch-1"), "pushed to their branch")

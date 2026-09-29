@@ -275,13 +275,13 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 	require.NotNil(t, plan.Existing)
 	require.True(t, plan.Replaces, "the tidied commit replaces the pushed one")
 	require.False(t, plan.BodyKept)
-	require.Equal(t, DescriptionSections{Types: SectionCurrent, TestedOn: SectionCurrent}, plan.Sections)
+	require.Equal(t, DescriptionSections{Description: SectionCurrent, Types: SectionCurrent, TestedOn: SectionCurrent}, plan.Sections)
 	// --type names the Type(s) of a pull request already open, as of a new
 	// one: the person named them.
 	typed, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Types: []string{"bugfix"}})
 	require.NoError(t, err)
 	require.Contains(t, typed.Body, "- [x] bugfix")
-	require.Equal(t, DescriptionSections{Types: SectionRefreshed, TestedOn: SectionCurrent}, typed.Sections)
+	require.Equal(t, DescriptionSections{Description: SectionCurrent, Types: SectionRefreshed, TestedOn: SectionCurrent}, typed.Sections)
 	_, err = e.ApplySubmit(t.Context(), plan)
 	require.NoError(t, err)
 	require.Len(t, fake.created, 1)
@@ -494,7 +494,7 @@ func TestTheMergedDescriptionsTypesAreDockhandsWhileUnchanged(t *testing.T) {
 
 	merged, sections := mergeBody(last, last, fresh, false)
 	require.Equal(t, fresh, merged, "all of it as dockhand now writes it: the enhancement an update is, and the new evidence")
-	require.Equal(t, DescriptionSections{Types: SectionRefreshed, TestedOn: SectionRefreshed}, sections)
+	require.Equal(t, DescriptionSections{Description: SectionCurrent, Types: SectionRefreshed, TestedOn: SectionRefreshed}, sections)
 	merged, _ = mergeBody(strings.ReplaceAll(last, "\n", "\r\n"), last, fresh, false)
 	require.Contains(t, merged, "- [x] enhancement", "GitHub's line endings aren't a person's edit")
 	ticked := body("jq: update", []string{"enhancement"}, "old evidence")
@@ -503,12 +503,12 @@ func TestTheMergedDescriptionsTypesAreDockhandsWhileUnchanged(t *testing.T) {
 		"what dockhand ticked stays ticked, though a person's commit since means it wouldn't tick it now; what's newly true is ticked too")
 	require.Equal(t, SectionRefreshed, sections.Types)
 	_, sections = mergeBody(ticked, ticked, body("jq: update", nil, "old evidence"), false)
-	require.Equal(t, DescriptionSections{Types: SectionCurrent, TestedOn: SectionCurrent}, sections, "nothing ticked goes, and nothing new is")
+	require.Equal(t, DescriptionSections{Description: SectionCurrent, Types: SectionCurrent, TestedOn: SectionCurrent}, sections, "nothing ticked goes, and nothing new is")
 
 	edited := body("mine", []string{"bugfix"}, "old evidence")
 	merged, sections = mergeBody(edited, last, fresh, false)
 	require.Equal(t, body("mine", []string{"bugfix"}, "new evidence"), merged, "Type(s) a person ticked stay theirs")
-	require.Equal(t, DescriptionSections{Types: SectionKept, TestedOn: SectionRefreshed}, sections)
+	require.Equal(t, DescriptionSections{Description: SectionKept, Types: SectionKept, TestedOn: SectionRefreshed}, sections)
 	merged, sections = mergeBody(edited, last, body("jq: update", []string{"security fix"}, "new evidence"), true)
 	require.Equal(t, body("mine", []string{"security fix"}, "new evidence"), merged, "types the person names replace them")
 	require.Equal(t, SectionRefreshed, sections.Types)
@@ -516,11 +516,39 @@ func TestTheMergedDescriptionsTypesAreDockhandsWhileUnchanged(t *testing.T) {
 	elided := "#### Description\n\nmine\n\n###### Tested on\n\nold evidence\n"
 	merged, sections = mergeBody(elided, last, fresh, false)
 	require.Equal(t, "#### Description\n\nmine\n\n###### Tested on\n\nnew evidence\n", merged, "a description without Type(s) stays without")
-	require.Equal(t, DescriptionSections{Types: SectionAbsent, TestedOn: SectionRefreshed}, sections, "Tested on alone is still dockhand's")
+	require.Equal(t, DescriptionSections{Description: SectionKept, Types: SectionAbsent, TestedOn: SectionRefreshed}, sections, "Tested on alone is still dockhand's")
 	merged, sections = mergeBody(elided, last, fresh, true)
 	require.Equal(t, "#### Description\n\nmine\n\n###### Type(s)\n\n- [ ] bugfix\n- [x] enhancement\n- [ ] security fix\n\n###### Tested on\n\nnew evidence\n", merged,
 		"types the person names go before Tested on")
-	require.Equal(t, DescriptionSections{Types: SectionRefreshed, TestedOn: SectionRefreshed}, sections)
+	require.Equal(t, DescriptionSections{Description: SectionKept, Types: SectionRefreshed, TestedOn: SectionRefreshed}, sections)
+}
+
+// The Description is dockhand's while it is what dockhand wrote, as the
+// Type(s) are: a commit's body written since the pull request opened
+// reaches it then (the hugo exercise's re-submitting sshuttle, finding 3).
+// One a person edited, or left out, stays so.
+func TestTheMergedDescriptionsDescriptionIsDockhandsWhileUnchanged(t *testing.T) {
+	types := typesSection([]string{"enhancement"})
+	body := func(description string) string {
+		return "#### Description\n\n" + description + types + "###### Tested on\n\nevidence\n"
+	}
+	last := body("")
+	fresh := body("Build with Python 3.14, the python PortGroup's default.\n\n")
+	merged, sections := mergeBody(last, last, fresh, false)
+	require.Equal(t, fresh, merged)
+	require.Equal(t, SectionRefreshed, sections.Description)
+	merged, sections = mergeBody(strings.ReplaceAll(last, "\n", "\r\n"), last, fresh, false)
+	require.Contains(t, merged, "Build with Python 3.14", "GitHub's line endings aren't a person's edit")
+	require.Equal(t, SectionRefreshed, sections.Description)
+
+	mine := body("What I tested by hand.\n\n")
+	merged, sections = mergeBody(mine, last, fresh, false)
+	require.Equal(t, mine, merged, "a person's Description stays theirs")
+	require.Equal(t, SectionKept, sections.Description)
+	elided := types + "###### Tested on\n\nevidence\n"
+	merged, sections = mergeBody(elided, last, fresh, false)
+	require.Equal(t, elided, merged, "a description without one stays without")
+	require.Equal(t, SectionAbsent, sections.Description)
 }
 
 // Someone's repository is pushed to by a remote that already pushes there,

@@ -123,7 +123,7 @@ func (p *SubmitPlan) Answer(testedBinaries, testedVariants bool) {
 		p.Body, p.Sections = mergeBody(p.Existing.PullRequest.Body, last, p.Body, len(p.Request.Types) > 0)
 		// Someone else's description is never rewritten (ApplySubmit).
 		if p.Theirs {
-			p.Sections = DescriptionSections{Types: SectionKept, TestedOn: SectionKept}
+			p.Sections = DescriptionSections{Description: SectionKept, Types: SectionKept, TestedOn: SectionKept}
 		}
 		p.BodyKept = p.Sections.TestedOn == SectionKept || p.Sections.TestedOn == SectionAbsent
 	}
@@ -132,7 +132,7 @@ func (p *SubmitPlan) Answer(testedBinaries, testedVariants bool) {
 // Describe replaces the description with one the person wrote.
 func (p *SubmitPlan) Describe(body string) {
 	p.Body, p.BodyKept = body, true
-	p.Sections = DescriptionSections{Types: SectionKept, TestedOn: SectionKept}
+	p.Sections = DescriptionSections{Description: SectionKept, Types: SectionKept, TestedOn: SectionKept}
 }
 
 // Head is the fork's head as "owner/repo:branch".

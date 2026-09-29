@@ -482,22 +482,29 @@ func pullRequestWords(plan engine.SubmitPlan) string {
 		words += ", a draft: mark it ready for review on GitHub when it is"
 	}
 	var refreshing []string
+	if plan.Sections.Description == engine.SectionRefreshed {
+		refreshing = append(refreshing, "its Description section")
+	}
 	if plan.Sections.Types == engine.SectionRefreshed {
 		refreshing = append(refreshing, "its Type(s)")
 	}
 	if plan.Sections.TestedOn == engine.SectionRefreshed {
 		refreshing = append(refreshing, "its description from Tested on down")
 	}
+	// A Description a person wrote is theirs, as the part from Tested on
+	// down is once they edit it.
+	yours := plan.BodyKept || plan.Sections.Description == engine.SectionKept
 	switch {
 	case plan.Theirs:
 		words += "; its title and description are theirs, and stay as they are"
-	case len(refreshing) == 0 && plan.BodyKept:
+	case len(refreshing) == 0 && yours:
 		words += "; its description is yours, and stays as it is"
 	case len(refreshing) == 0:
 		words += "; its description is current"
 	default:
-		words += "; refreshes " + strings.Join(refreshing, " and ")
-		if plan.BodyKept {
+		last := len(refreshing) - 1
+		words += "; refreshes " + strings.TrimPrefix(strings.Join(refreshing[:last], ", ")+" and "+refreshing[last], " and ")
+		if yours {
 			words += "; the rest of its description is yours"
 		}
 	}

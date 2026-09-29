@@ -385,17 +385,20 @@ func ownedSpan(body string) (int, bool) {
 	return at, at >= 0
 }
 
-// typesSpan locates a description's Type(s), from its heading to the next
-// heading. A description may leave them out, as one a person edited, or
-// wrote from another template, can.
-func typesSpan(body string) (int, int, bool) {
-	start := strings.Index(body, typesHeading)
+// typesSpan locates a description's Type(s). A description may leave them
+// out, as one a person edited, or wrote from another template, can.
+func typesSpan(body string) (int, int, bool) { return sectionSpan(body, typesHeading) }
+
+// sectionSpan locates a part of a description, from its heading to the
+// next heading.
+func sectionSpan(body, heading string) (int, int, bool) {
+	start := strings.Index(body, heading)
 	if start < 0 {
 		return 0, 0, false
 	}
 	end := len(body)
-	if next := strings.Index(body[start+len(typesHeading):], "\n#"); next >= 0 {
-		end = start + len(typesHeading) + next + 1
+	if next := strings.Index(body[start+len(heading):], "\n#"); next >= 0 {
+		end = start + len(heading) + next + 1
 	}
 	return start, end, true
 }
@@ -417,15 +420,16 @@ const (
 )
 
 // DescriptionSections are what submitting again does to each part of an
-// existing pull request's description that dockhand writes: its Type(s),
-// and everything from Tested on down.
+// existing pull request's description that dockhand writes: its
+// Description, its Type(s), and everything from Tested on down.
 type DescriptionSections struct {
-	Types, TestedOn SectionOutcome
+	Description, Types, TestedOn SectionOutcome
 }
 
 // mergeBody updates an existing description, and says what it did to each
 // part dockhand writes. Each is rewritten only while it is still exactly
 // what dockhand last wrote there, so a person's edits are kept: the
+// Description, which is the commit's body or the commits' table, the
 // Type(s), and everything from Tested on down. The Type(s) only gain ticks
 // that way: what dockhand ticked stays ticked, though a person's change
 // folded in since means it wouldn't tick it now. Types the person named
@@ -435,7 +439,25 @@ type DescriptionSections struct {
 func mergeBody(existing, lastWritten, fresh string, named bool) (string, DescriptionSections) {
 	body, testedOn := mergeTestedOn(existing, lastWritten, fresh)
 	body, types := mergeTypes(body, lastWritten, fresh, named)
-	return body, DescriptionSections{Types: types, TestedOn: testedOn}
+	body, description := mergeDescription(body, lastWritten, fresh)
+	return body, DescriptionSections{Description: description, Types: types, TestedOn: testedOn}
+}
+
+// mergeDescription rewrites the Description while it is still exactly what
+// dockhand last wrote there, so a commit's body written since the pull
+// request opened reaches it; one a person edited, or left out, stays so.
+func mergeDescription(body, lastWritten, fresh string) (string, SectionOutcome) {
+	from, to, found := sectionSpan(body, descriptionHeading)
+	if !found {
+		return body, SectionAbsent
+	}
+	was, wasEnd, written := sectionSpan(lastWritten, descriptionHeading)
+	start, end, ok := sectionSpan(fresh, descriptionHeading)
+	if !written || !ok || normalize(body[from:to]) != normalize(lastWritten[was:wasEnd]) {
+		return body, SectionKept
+	}
+	section := fresh[start:end]
+	return body[:from] + section + body[to:], rewritten(body[from:to], section)
 }
 
 // rewritten is a part's outcome once dockhand writes it: refreshed, or

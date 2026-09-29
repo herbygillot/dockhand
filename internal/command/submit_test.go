@@ -292,6 +292,51 @@ func TestAPullRequestOfSomeoneElsesStaysTheirs(t *testing.T) {
 	require.Equal(t, "updates #34905; refreshes its Type(s); the rest of its description is yours", pullRequestWords(plan), "types a person names, on a description they edited")
 }
 
+// A commit's body written after the pull request opened reaches its
+// Description while that is still dockhand's, and the preview says so
+// (the hugo exercise's re-submitting sshuttle, finding 3).
+func TestAResubmitRefreshesTheDescriptionItWrote(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	g := withGitHub(t, w)
+	_, _, err := dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
+	t.Setenv("MACPORTS_TREE", dir)
+	_, _, err = dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "tidy")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	require.NotContains(t, g.prs[0].Body, "Built against the new libonig")
+
+	subject, rest, _ := strings.Cut(gitRun(t, dir, "log", "-1", "--format=%B"), "\n")
+	gitRun(t, dir, "commit", "-q", "--amend", "-m", subject+"\n\nBuilt against the new libonig.\n"+rest)
+	out, _, err := dockhand(t, "submit", "--no-check", "--plan")
+	require.NoError(t, err)
+	require.Regexp(t, `  PR       updates #\d+; refreshes its Description section\n`, out)
+	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	require.Contains(t, g.prs[0].Body, "#### Description\n\nBuilt against the new libonig.\n\n###### Type(s)")
+
+	edited := strings.Replace(g.prs[0].Body, "Built against the new libonig.", "What I tested by hand.", 1)
+	g.prs[0].Body = edited
+	out, _, err = dockhand(t, "submit", "--no-check", "--plan")
+	require.NoError(t, err)
+	require.Regexp(t, `  PR       updates #\d+; its description is yours, and stays as it is\n`, out, "a Description a person edited is theirs")
+}
+
+// Every part refreshed is named, in the description's order.
+func TestTheRefreshedPartsAreNamed(t *testing.T) {
+	plan := engine.SubmitPlan{Existing: &forge.PullRequestObservation{PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 34905}}},
+		Sections: engine.DescriptionSections{Description: engine.SectionRefreshed, Types: engine.SectionRefreshed, TestedOn: engine.SectionRefreshed}}
+	require.Equal(t, "updates #34905; refreshes its Description section, its Type(s) and its description from Tested on down", pullRequestWords(plan))
+	plan.Sections.Types = engine.SectionCurrent
+	require.Equal(t, "updates #34905; refreshes its Description section and its description from Tested on down", pullRequestWords(plan))
+}
+
 // Submitting to a pull request with nothing to push says what it changed:
 // the title, the description, or nothing at all.
 func TestSubmitSaysWhatItUpdated(t *testing.T) {
