@@ -26,13 +26,14 @@ type BranchStatus struct {
 	// Tree is the files as they are now: the working files when edited,
 	// else the head's.
 	Tree string
-	// Latest is the newest finished check, and Active any check queued or
-	// running.
+	// Latest is the check status judges by: the newest finished check of
+	// the files as they are now, as submit credits one, else the newest
+	// finished check. Active is any check queued or running.
 	Latest   *model.Run
 	Active   []model.Run
 	Evidence *Evidence
 	// Current is true when Latest checked exactly the files as they are
-	// now.
+	// now, whatever their history.
 	Current bool
 	// LatestRevision is what Latest checked.
 	LatestRevision *model.Revision
@@ -192,6 +193,15 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 			}
 		}
 		slices.Reverse(status.Active)
+		// A check of the files as they are now stands, whichever it was, as
+		// submit credits it (EvidenceFor): a branch restored to files an
+		// earlier check passed is that check's, not the newest one's.
+		if checks, err = treeRuns(r, branch.ID, model.ObjectID(status.Tree)); err != nil {
+			return err
+		}
+		if len(checks) > 0 {
+			status.Latest, status.Current = &checks[0], true
+		}
 		if status.Latest == nil {
 			return nil
 		}
@@ -200,8 +210,9 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 			return err
 		}
 		status.LatestRevision = &revision
-		status.Current = string(revision.Source.Tree) == status.Tree && revision.Source.Base == branch.Base
-		checks, err = treeRuns(r, branch.ID, revision.Source.Tree)
+		if !status.Current {
+			checks, err = treeRuns(r, branch.ID, revision.Source.Tree)
+		}
 		return err
 	})
 	if err != nil || status.Latest == nil {

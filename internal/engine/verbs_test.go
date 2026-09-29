@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -170,4 +171,49 @@ func TestARebaseCountsWhatItReplays(t *testing.T) {
 	require.Equal(t, 1, rebased.Commits, "libharbor's change is master's now")
 	require.Equal(t, []string{"jq: update to 1.8.1"}, log(t, branch.Worktree, rebased.To))
 	require.Equal(t, 1, rebases())
+}
+
+// A branch restored to the files an earlier check passed is that check's,
+// in status as in submit, though a newer check passed other files: after
+// restore rebase-29 put gh back at check-35's files, status said "passed
+// for older work" of check-37's (the gh rebase's finding 2).
+func TestStatusCreditsTheCheckOfTheFilesAsTheyAre(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch := committedUpdate(t, e)
+	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}}
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
+	before := checkHead(t, e, branch)
+
+	write(t, f.upstream, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
+	run(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 3")
+	rebased, err := e.Rebase(t.Context(), branch)
+	require.NoError(t, err)
+	branch, err = e.Resolve(t.Context(), "jq-update")
+	require.NoError(t, err)
+	after := checkHead(t, e, branch)
+	status, err := e.BranchStatus(t.Context(), branch)
+	require.NoError(t, err)
+	require.Equal(t, after.ID, status.Latest.ID)
+	require.True(t, status.Current)
+
+	_, _, err = e.Restore(t.Context(), rebased.Checkpoint.Name())
+	require.NoError(t, err)
+	branch, err = e.Resolve(t.Context(), "jq-update")
+	require.NoError(t, err)
+	status, err = e.BranchStatus(t.Context(), branch)
+	require.NoError(t, err)
+	require.Equal(t, before.ID, status.Latest.ID, "the check of these files, not the newest")
+	require.True(t, status.Current)
+	require.Empty(t, status.Evidence.Failed())
+	evidence, found, err := e.EvidenceFor(t.Context(), branch.ID, model.ObjectID(status.Tree))
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, before.ID, evidence.Run.ID, "as submit credits it")
+
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.2\n"})
+	status, err = e.BranchStatus(t.Context(), branch)
+	require.NoError(t, err)
+	require.Equal(t, after.ID, status.Latest.ID, "files no check has seen are judged by the newest check")
+	require.False(t, status.Current)
 }
