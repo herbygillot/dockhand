@@ -51,8 +51,8 @@ func (b bumper) Prepare(ctx context.Context, r preparation.Request) (preparation
 	case r.Action == model.EditUpdate:
 		next = r.Release.Version
 		after = line.ReplaceAllString(after, "version "+next)
-		// As the editor does: a new version's archive has a name of its
-		// own, so a stealth update's dist_subdir goes.
+		// As the editor does where every archive of the new version has a
+		// name of its own: a stealth update's dist_subdir goes.
 		if without, ok, err := portfile.RemoveStealthDistSubdir([]byte(after)); err == nil && ok {
 			after, removed = string(without), true
 		}

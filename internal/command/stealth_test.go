@@ -221,9 +221,13 @@ func TestANewVersionRemovesTheStealthDistSubdir(t *testing.T) {
 	gitRun(t, w.upstream, "commit", "-q", "-am", "jq: 1.7.1")
 	withBumper(t)
 
+	planned, _, err := dockhand(t, "update", "jq", "--new", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, planned, "Removes dist_subdir: a stealth update set it for the old version, and every archive of the new version has a name of its own.\n",
+		"the plan says it, as the update does (the hugo exercise's yq run, finding 2)")
 	out, _, err := dockhand(t, "update", "jq", "--new")
 	require.NoError(t, err)
-	require.Contains(t, out, "Removed dist_subdir: a stealth update set it for the old version, and the new version's archive has a name of its own.\n")
+	require.Contains(t, out, "Removed dist_subdir: a stealth update set it for the old version, and every archive of the new version has a name of its own.\n")
 	dir := regexp.MustCompile(`· (\S+)\n`).FindStringSubmatch(out)[1]
 	home, _ := os.UserHomeDir()
 	data, err := os.ReadFile(filepath.Join(home, dir[2:], "textproc/jq/Portfile"))

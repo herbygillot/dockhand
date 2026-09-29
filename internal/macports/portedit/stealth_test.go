@@ -91,14 +91,14 @@ func TestAStealthUpdateThatWouldChangeASubportIsLeftForYou(t *testing.T) {
 	require.NotContains(t, string(result.Files[0].After), "dist_subdir")
 }
 
-// A version update drops a stealth update's dist_subdir, whose new archive
-// has a name of its own, as the editor evaluates it.
+// A version update drops a stealth update's dist_subdir where the new
+// archive has a name of its own, as the editor evaluates it.
 func TestANewVersionDropsTheStealthDistSubdirAsEvaluated(t *testing.T) {
 	t.Parallel()
 	s, r, _ := archiveFixture(t, `version 1.2.3
 revision 2
 master_sites @SITE@/${version}
-distfiles fixture.zip
+distfiles fixture-${version}.zip
 checksums sha256 aaaa size 2
 dist_subdir ${name}/${version}_${revision}
 `)
@@ -109,4 +109,26 @@ dist_subdir ${name}/${version}_${revision}
 	require.Contains(t, string(result.Files[0].After), "version 1.2.4")
 	require.Equal(t, []string{"fixture.dist_subdir"}, result.Fidelity[len(result.Fidelity)-1].ExpectedChanges)
 	require.Equal(t, "fixture", result.Prepared.Ports["fixture"].Options["dist_subdir"], "MacPorts' own default again")
+}
+
+// A dist_subdir an archive still needs stays: yq's man page keeps one name
+// across versions, which the line keeps apart on the mirrors, and without
+// it a mirror served the old one (the hugo exercise's yq run, finding 1).
+// Only where every archive's name changes with the version does it go.
+func TestANewVersionKeepsADistSubdirAnArchiveStillNeeds(t *testing.T) {
+	t.Parallel()
+	s, r, requests := archiveFixture(t, `version 1.2.3
+revision 2
+master_sites @SITE@/${version}
+distfiles fixture-${version}.zip fixture-man.tar.gz
+checksums fixture-${version}.zip sha256 aaaa size 2 fixture-man.tar.gz sha256 bbbb size 3
+dist_subdir ${name}/${version}_${revision}
+`)
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"/1.2.4/fixture-1.2.4.zip", "/1.2.4/fixture-man.tar.gz"}, *requests)
+	require.False(t, result.DistSubdirRemoved)
+	require.Contains(t, string(result.Files[0].After), "dist_subdir ${name}/${version}_${revision}\n")
+	require.Contains(t, string(result.Files[0].After), "version 1.2.4")
+	require.Equal(t, "fixture/1.2.4_0", result.Prepared.Ports["fixture"].Options["dist_subdir"], "the new version's own directory")
 }

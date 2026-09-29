@@ -117,15 +117,22 @@ func (s *Service) stealthUpdate(ctx context.Context, request Request, input *sou
 }
 
 // dropStealthDistSubdir removes a stealth update's dist_subdir from a
-// version update: the new version's archive has a name of its own. The
-// removal is evaluated and held to changing the selected port's dist_subdir
-// alone; one that another port shares is left, and said.
+// version update, where every archive the new version fetches has a name
+// of its own. One whose name is the same in both versions, as yq's man
+// page's is, still needs the line to keep its versions apart on the
+// mirrors, so it stays (the hugo exercise's yq run); so does one whose
+// current archives can't be told. The removal is evaluated and held to
+// changing the selected port's dist_subdir alone; one that another port
+// shares is left, and said.
 func (s *Service) dropStealthDistSubdir(ctx context.Context, input *sourceInput, result *Result) error {
 	if len(result.Files) != 1 || result.Prepared.Ports == nil {
 		return nil
 	}
 	contents, removed, err := portfile.RemoveStealthDistSubdir(result.Files[0].After)
 	if err != nil || !removed {
+		return nil
+	}
+	if shared, err := sharedDistfile(ctx, input, result.Downloads); err != nil || shared != "" {
 		return nil
 	}
 	previous := result.Prepared
@@ -142,6 +149,22 @@ func (s *Service) dropStealthDistSubdir(ctx context.Context, input *sourceInput,
 	result.report(report)
 	result.DistSubdirRemoved = true
 	return nil
+}
+
+// sharedDistfile is an archive the new version fetches under a name the
+// current version's has too, by MacPorts' own fetch plan for the Portfile
+// as it stands; empty where every name changes.
+func sharedDistfile(ctx context.Context, input *sourceInput, downloads []archives.Download) (string, error) {
+	current, err := shippedPlan(ctx, input)
+	if err != nil {
+		return "", err
+	}
+	for _, download := range downloads {
+		if slices.ContainsFunc(current, func(distfile macports.Distfile) bool { return distfile.Name == download.Name }) {
+			return download.Name, nil
+		}
+	}
+	return "", nil
 }
 
 // distSubdirReport expects only the selected port's dist_subdir to change,

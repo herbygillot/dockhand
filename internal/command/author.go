@@ -389,6 +389,9 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		if !strings.HasSuffix(update.Diff, "\n") {
 			fmt.Fprintln(out)
 		}
+		if update.DistSubdirRemoved {
+			fmt.Fprintln(out, "Removes "+distSubdirRemoved)
+		}
 		// What a reviewer would ask about is part of the look before.
 		writeUpstream(out, update.Upstream)
 		writePatches(out, update)
@@ -440,7 +443,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		fmt.Fprintln(out, "dockhand diff --archive shows what changed inside the archive.")
 	}
 	if update.DistSubdirRemoved {
-		fmt.Fprintln(out, "Removed dist_subdir: a stealth update set it for the old version, and the new version's archive has a name of its own.")
+		fmt.Fprintln(out, "Removed "+distSubdirRemoved)
 	}
 	writeUpstream(out, update.Upstream)
 	writePatches(out, update)
@@ -455,6 +458,11 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	}
 	return branch, update, nil
 }
+
+// distSubdirRemoved is why a version update removes a stealth update's
+// dist_subdir, which the update says, and its plan before it (the hugo
+// exercise's yq run, finding 2).
+const distSubdirRemoved = "dist_subdir: a stealth update set it for the old version, and every archive of the new version has a name of its own."
 
 // nextAfterEdit is what follows an edit (Design v3 §6.2): a check of the
 // working files, whose own Next is the tidy that commits them. A branch
