@@ -433,12 +433,11 @@ func decodeMetadata(reply string) (macports.PortInfo, []string, error) {
 			return macports.PortInfo{}, nil, fmt.Errorf("macports: invalid %s dependencies: %v", phase, errs)
 		}
 		for _, spec := range deps {
-			fields := strings.SplitN(spec, ":", 3)
-			valid := len(fields) == 2 && fields[0] == "port" || len(fields) == 3 && (fields[0] == "path" || fields[0] == "bin" || fields[0] == "lib")
-			if !valid || !macports.ValidName(fields[len(fields)-1]) {
-				return macports.PortInfo{}, nil, fmt.Errorf("macports: invalid dependency %q", spec)
+			dependency, err := macports.ParseDependency(phase, spec)
+			if err != nil {
+				return macports.PortInfo{}, nil, err
 			}
-			value.Dependencies = append(value.Dependencies, macports.Dependency{Port: fields[len(fields)-1], Phase: phase, Spec: spec})
+			value.Dependencies = append(value.Dependencies, dependency)
 		}
 	}
 	return value, subs, nil

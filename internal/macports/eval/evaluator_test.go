@@ -187,11 +187,12 @@ func TestEvaluationRejectsPlatformMismatchAndCancellation(t *testing.T) {
 
 func TestDecodeMetadataPreservesTclValuesAndDependencySyntax(t *testing.T) {
 	t.Parallel()
-	info, subs, err := decodeMetadata(`name {demo} version 1.2 revision 0 epoch 0 description {a {b} [c] $d} depends_run {port:foo bin:bar:provider} subports {child}`)
+	info, subs, err := decodeMetadata(`name {demo} version 1.2 revision 0 epoch 0 description {a {b} [c] $d} depends_run {port:foo bin:bar:provider} depends_build {port:bin/cmake:cmake} subports {child}`)
 	require.NoError(t, err)
 	require.Equal(t, []string{"child"}, subs)
 	require.Equal(t, "a {b} [c] $d", info.Options["description"])
-	require.Equal(t, []macports.Dependency{{Port: "foo", Phase: "run", Spec: "port:foo"}, {Port: "provider", Phase: "run", Spec: "bin:bar:provider"}}, info.Dependencies)
+	require.Equal(t, []macports.Dependency{{Port: "cmake", Phase: "build", Spec: "port:bin/cmake:cmake"},
+		{Port: "foo", Phase: "run", Spec: "port:foo"}, {Port: "provider", Phase: "run", Spec: "bin:bar:provider"}}, info.Dependencies, "the port is the last field, as Base reads it")
 	for _, reply := range []string{"name {", "name demo version 1 revision x epoch 0", "name demo version 1 revision 0 epoch 0 depends_run {foo}", "name demo version 1 revision -1 epoch 0"} {
 		_, _, err := decodeMetadata(reply)
 		require.Error(t, err)
