@@ -19,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/reuse"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -365,6 +366,17 @@ func (e *Engine) pollInterval() time.Duration {
 // environment runs the guest executions one environment needs.
 func (d *driver) environment(ctx context.Context, provider buildenv.Provider, environment model.Environment, revision model.Revision, commit string) error {
 	e := d.e
+	// What the work tells a person as it goes is the run's to keep, as its
+	// provider's progress is: whoever follows the run sees it, not only the
+	// terminal driving it, and staging the index a guest takes can run for
+	// minutes. Keeping it goes through the context without the observer,
+	// so it can't report to itself.
+	kept := ctx
+	ctx = progress.Observe(ctx, func(update progress.Update) {
+		if update.Level == progress.Info {
+			d.emit(kept, "progress", describeEnvironment(environment)+": "+update.Message)
+		}
+	})
 	for {
 		var executions []model.GuestExecution
 		var results map[model.TargetID]model.TargetResult

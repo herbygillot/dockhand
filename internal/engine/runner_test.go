@@ -18,6 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -38,6 +39,9 @@ type scriptedProvider struct {
 	consumes map[model.TargetID][]model.ActivePort
 	// keep makes each passed target's archive "<target>'s archive", kept.
 	keep bool
+	// says is reported as the build starts, as staging a guest's index
+	// is, with a line behind the scenes after it.
+	says string
 	jobs []buildenv.Job
 }
 
@@ -59,6 +63,10 @@ func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build 
 	p.mu.Unlock()
 	if failing && !p.partial {
 		return errors.New("the VM did not start")
+	}
+	if p.says != "" {
+		progress.Report(ctx, "%s", p.says)
+		progress.VerboseReport(ctx, "behind the scenes of %s", p.says)
 	}
 	for i, target := range job.Targets {
 		if p.wait {
@@ -405,6 +413,34 @@ func TestServeStateSaysWhoLeadsAndWhatStopped(t *testing.T) {
 	state, err = e.ServeState(ctx, observer)
 	require.NoError(t, err)
 	require.False(t, state.OpensPullRequests)
+}
+
+// What the work tells a person as a run builds, as staging the index a
+// guest takes, is the run's progress, for whoever follows it with wait. A
+// command driving its own check still shows it only when asked (the hugo
+// exercise's certigo run, finding 7).
+func TestWhatTheWorkReportsIsTheRunsProgress(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	says := "Building the PortIndex; this may take several minutes"
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{says: says}}
+	queued := queuedHarborRun(t, e, tahoeArm)
+	var shown []progress.Update
+	driving := progress.Quiet(progress.WithReporter(t.Context(), func(update progress.Update) { shown = append(shown, update) }))
+	run, err := e.Drive(driving, session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, run.State, run.Detail)
+
+	events, err := e.RunEvents(t.Context(), run.ID, 0)
+	require.NoError(t, err)
+	var kept []string
+	for _, event := range events {
+		if event.Kind == "progress" {
+			kept = append(kept, event.Message)
+		}
+	}
+	require.Equal(t, []string{describeEnvironment(tahoeArm) + ": " + says}, kept, "what's behind the scenes isn't kept")
+	require.Contains(t, shown, progress.Update{Level: progress.Verbose, Message: says})
 }
 
 func TestServeTakesPeoplesChecksFirst(t *testing.T) {

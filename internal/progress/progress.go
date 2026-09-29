@@ -1,6 +1,7 @@
 // Package progress carries user-facing progress reports from operations to
-// whoever is watching: the CLI prints them, tests collect them, and nothing
-// else depends on them. Reports are sentences for a person, not log lines.
+// whoever is watching: the CLI prints them, a check's run keeps the ones a
+// person following it needs, and tests collect them. Nothing decides
+// anything by them. Reports are sentences for a person, not log lines.
 package progress
 
 import (
@@ -37,6 +38,7 @@ type Update struct {
 
 type reporterKey struct{}
 type quietKey struct{}
+type observerKey struct{}
 type reporter struct {
 	mu     sync.Mutex
 	report func(Update)
@@ -46,6 +48,32 @@ type reporter struct {
 // The callback should return promptly and must not report recursively.
 func WithReporter(ctx context.Context, report func(Update)) context.Context {
 	return context.WithValue(ctx, reporterKey{}, &reporter{report: report})
+}
+
+// observer is one that Observe added, and the one it was added beside.
+type observer struct {
+	mu      sync.Mutex
+	observe func(Update)
+	outer   *observer
+}
+
+// Observe has the reports made under ctx go to observe as well as to the
+// reporter, at the level they were made: Quiet lowers what a command
+// shows of the work it drives, not what the work's own record keeps.
+// Callbacks are serialized; observe should return promptly and must not
+// report under the context Observe returns.
+func Observe(ctx context.Context, observe func(Update)) context.Context {
+	if observe == nil {
+		return ctx
+	}
+	outer, _ := ctx.Value(observerKey{}).(*observer)
+	return context.WithValue(ctx, observerKey{}, &observer{observe: observe, outer: outer})
+}
+
+func (o *observer) notify(update Update) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.observe(update)
 }
 
 // Quiet lowers the info reports made under ctx to verbose. A command that
@@ -70,13 +98,20 @@ func DebugReport(ctx context.Context, format string, args ...any) { emit(ctx, De
 
 func emit(ctx context.Context, level Level, format string, args ...any) {
 	sink, _ := ctx.Value(reporterKey{}).(*reporter)
+	observed, _ := ctx.Value(observerKey{}).(*observer)
+	if (sink == nil || sink.report == nil) && observed == nil {
+		return
+	}
+	update := Update{Level: level, Message: fmt.Sprintf(format, args...)}
+	for o := observed; o != nil; o = o.outer {
+		o.notify(update)
+	}
 	if sink == nil || sink.report == nil {
 		return
 	}
-	if quiet, _ := ctx.Value(quietKey{}).(bool); quiet && level == Info {
-		level = Verbose
+	if quiet, _ := ctx.Value(quietKey{}).(bool); quiet && update.Level == Info {
+		update.Level = Verbose
 	}
-	update := Update{Level: level, Message: fmt.Sprintf(format, args...)}
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
 	sink.report(update)

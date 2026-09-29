@@ -24,6 +24,7 @@ var engineImports = map[string]string{
 	"internal/git":                 "the checkout, captures, and history",
 	"internal/history":             "tidy, rebase, and restore as complete transitions",
 	"internal/reuse":               "what each target's build read, for reuse",
+	"internal/progress":            "what the work reports as a check builds, which its run keeps for whoever follows it",
 	"golang.org/x/sync/errgroup":   "a check's environments building together",
 	"github.com/BurntSushi/toml":   "a saved tidy plan, a file a person edits",
 	"internal/macos":               "macOS releases, for environments and their words",

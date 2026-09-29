@@ -61,3 +61,22 @@ Tests:
 - the JSON of `queue`, and of `status --all` over a stopped check.
 
 Seventeen mutations each fail a test.
+
+## The work's progress kept with the run (finding 7)
+
+check-16 spent five minutes building a PortIndex. serve's log said "Building the PortIndex; this may take several minutes", but whoever followed the check with `wait` saw nothing. `wait` shows the run's journal, and only a provider's progress was journaled. What the work reported through its context went only to the terminal of the process driving it.
+
+Now what the work reports as an environment builds, for a person following it (progress's info level), is the run's progress too, named for the environment as a provider's is. The reports that can come then are the port index's, as the provider stages the one its guest takes:
+- building it;
+- seeding it from the mirror, or indexing in full when the mirror has none;
+- waiting for another process indexing the same tree.
+
+What's behind the scenes, verbose and debug, isn't kept.
+
+To see the reports, the driver adds an observer to each environment's context (`progress.Observe`), and keeps them through the context without it, so keeping one can't report to itself. What a run keeps is the engine's to decide, for every provider alike, so the engine now imports `progress`, named in its boundary with why. An observer sees a report at the level it was made. `Quiet` lowers a foreground check's info reports to verbose for its own terminal, but it doesn't lower what the run keeps: the journal is the same whoever drives the run. So a foreground check now shows these lines too, through the journal it follows. With `-v`, it also shows them as the work's own reports.
+
+Tests:
+- `TestObserversSeeReportsAtTheLevelMade`: levels under `Quiet`, an observer beside another, reports made outside one, an observer without a reporter, and concurrent reports;
+- `TestWhatTheWorkReportsIsTheRunsProgress`: a provider's info report during a quiet drive is the run's progress, named for its environment, and its verbose one isn't kept.
+
+Nine mutations each fail a test; the one removing the observer's lock fails under `-race`.
