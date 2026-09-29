@@ -21,9 +21,17 @@ import (
 type Request = portedit.Request
 type CommitIntent = portedit.CommitIntent
 type GoToolchain = portedit.GoToolchain
+type GoToolchainOutcome = portedit.GoToolchainOutcome
 type Stealth = portedit.Stealth
 type StealthDistfile = portedit.StealthDistfile
 type StealthRequest = portedit.StealthRequest
+
+const (
+	GoToolchainCovered    = portedit.GoToolchainCovered
+	GoToolchainRaised     = portedit.GoToolchainRaised
+	GoToolchainUndeclared = portedit.GoToolchainUndeclared
+	GoToolchainByHand     = portedit.GoToolchainByHand
+)
 
 var ErrUnsupported = portedit.ErrUnsupported
 var ErrFidelity = portedit.ErrFidelity

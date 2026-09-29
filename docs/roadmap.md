@@ -209,7 +209,7 @@ These are taken when their area is next touched, or between items.
     - store error kinds documented (finding 41);
     - anonymous GitHub remembered for a few minutes (finding 45).
 - **What updating real ports asked for,** from the duckdb and hugo exercises of 2026-09-28 ([duckdb](activity/2026-09-28-duckdb.md), [hugo](reviews/2026-09-28-hugo-bump-exercise.md)):
-  - a Go port's own line: the `go` directive upstream's go.mod gives, and that `go.toolchain_min` still holds, said when it does too, since silence reads the same as not having looked. A minimum dockhand raised is said only as the update runs, since the portedit result records only one it left below, so the submit preview and `--passing` never show it (the ov run's finding 1, and yq's 4); the pull request's diff does;
+  - a Go port's own line: the `go` directive upstream's go.mod gives, and that `go.toolchain_min` still holds, said when it does too, since silence reads the same as not having looked. A minimum dockhand raised was said only as the update ran, so the submit preview and `--passing` never showed it (the ov run's finding 1, and yq's 4). Done 2026-09-29 ([note](activity/2026-09-29-go-minimum-as-go-mod-writes-it.md)): each outcome is an upstream line, and only a minimum left unmet holds. The pull request shows it in its diff, and its description carries no upstream finding, this one included;
   - `logs --port` starting where the port's own phases do, or listing them with their lines: hugo's began near line 46,400 of 47,000, after its dependencies';
   - `submit --plan` showing the pull request's description, which both exercises read through `--json`;
   - `outdated` for one named port, which took 12 seconds in both;
@@ -267,7 +267,7 @@ These are taken when their area is next touched, or between items.
   - an upstream comparison for a version changed by hand, from `check` or `submit`, which today say nothing of one (finding 6).
   - A hand-made version bump that tidy couldn't name (finding 5) is item 6's Portfile inspection: the version is read from the first forge setup line anywhere, here git-devel's `github.setup` in its subport, so git's own `version` line was never read.
 - **What the ov run asked for** ([review](reviews/2026-09-28-hugo-bump-exercise.md#ov-through-adopt-edit-retry-and-submit---passing)):
-  - **`go.toolchain_min` written as go.mod's `go` directive gives it,** `1.26.0` rather than `1.26` (finding 2). The tbls run showed it wrong, not a nit: tbls 1.96.1's go.mod says `go 1.26.8`, and dockhand wrote `1.26`, which admits a Go the module refuses; it built only because MacPorts' go is 1.27.1 (the tbls run's finding 1). `dependency.GoRequirement` gives the series, by design, and the raise compares by series too, so a declared `1.26.0` is taken to cover `go 1.26.2`, which Go enforces in module mode. It also reads the `toolchain` line as a requirement, though Go documents it as a suggestion;
+  - **`go.toolchain_min` written as go.mod's `go` directive gives it,** `1.26.8` rather than `1.26` (finding 2, and the tbls run's 1). Done 2026-09-29 ([note](activity/2026-09-29-go-minimum-as-go-mod-writes-it.md)). It was a matter of fidelity, not the defect this item once called it: the Go PortGroup compares only the series, since MacPorts ships the newest patch release of each series, so `1.26` gated tbls exactly as `1.26.8` does, and comparing by series is right. What was a defect was the `toolchain` line read as a requirement, though Go documents it as a suggestion and the PortGroup builds with `GOTOOLCHAIN=local`: it could gate a port on systems where it builds;
   - `--tests required` saying where a port declares no tests (finding 3). Such a port passes under any policy, as designed, but the plan says "tests required" and the grid "✓" for it as for tests that passed. Only the guest reads `test.run`; the plan's words would need `macports` to read it;
   - the index a check stages found nearer to hand (finding 4). check-23 built a whole index for macOS 15, which no earlier check at that master had used, so the review's premise was another release's. Still, a Tart check's stager builds no base index, seeds only from the same release's recent generations, and never from the mirror for a snapshot, which has no commit; `portindex/source.go` says verification keeps the base, which the wiring doesn't;
   - `submit --passing`'s upstream lines under a label of their own, and so without "upstream:", as the single preview's are (finding 5). The prefix was kept on purpose, since those lines had no heading (4315d6bd);
@@ -432,7 +432,7 @@ Changed:
   - git's 1: computed checksum names work, as yq's did. What's refused is a checksum declared in a variant, which can't be located in the Portfile, and the reason is lost on the way.
   - git's 4 is wider: any plan made on master says it kept the branch.
   - git's 5 is narrower: tidy names a bump made by hand, but read git-devel's `github.setup` line as git's version.
-  - ov's 2 is wider: the raise compares by series too.
+  - ov's 2: the raise compares by series, as the Go PortGroup does, which is right.
   - ov's 3 is narrower: the JSON says the tests were none, and the pull request leaves out its tests item.
   - ov's 4: check-23 was the first check on macOS 15 at that master, so the premise, another release's index, doesn't carry over.
   - ov's 7 is wider: `--yes` is silently ignored with `--passing`.
@@ -441,7 +441,7 @@ Changed:
 - **Fixed:** the cleanup's 1 and 2 (`d1527ecd`, `8c66f470`).
 
 **The tbls and flyctl run** in the same review, `update --outdated` with `d9065492`, was checked against the code at `ac15806c`.
-- **Finding 1 holds,** as the ov run's finding 2, and shows it a defect: `GoRequirement` gives go.mod's series, so `go 1.26.8` became `1.26`.
+- **Finding 1 holds as a fact, not as a defect.** `GoRequirement` gave go.mod's series, so `go 1.26.8` became `1.26`; but the Go PortGroup compares only the series, so the gate was the same (corrected 2026-09-29, when this roadmap had first called it a defect). It's fixed with the ov run's finding 2.
 - **Finding 2 doesn't hold:** above the summary, each branch has a line of its own naming it, "✓ tbls-y0bv: 1.95.0 → 1.96.1, one commit, check-31 queued", as a test pins; the summary counts them.
 - **Confirmed working:** D9's count, "go.mod: 14 moved", and a queued check replaced saying "Canceled check-30 before it started."
 

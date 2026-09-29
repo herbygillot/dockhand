@@ -55,45 +55,52 @@ checksums sha256 aaaa size 2
 }
 
 // In module mode Go enforces go.mod's go directive, so a literal
-// go.toolchain_min below it is raised to the required series; the manifest
-// is read from the archive's top directory through the GOPATH worksrcdir.
+// go.toolchain_min of an earlier series is raised to the directive, as
+// go.mod writes it; the toolchain directive, only a suggestion, is no
+// requirement. The manifest is read from the archive's top directory
+// through the GOPATH worksrcdir.
 func TestModuleModeGoPortRaisesToolchainMinFromTheManifest(t *testing.T) {
 	t.Parallel()
-	s, r := goModFixture(t, "module example.com/fixture\ngo 1.24\ntoolchain go1.25.1\n", "go.offline_build no\ngo.toolchain_min 1.22\n")
+	s, r := goModFixture(t, "module example.com/fixture\ngo 1.24.3\ntoolchain go1.25.1\n", "go.offline_build no\ngo.toolchain_min 1.22\n")
 	var messages []string
 	ctx := progress.WithReporter(t.Context(), func(u progress.Update) { messages = append(messages, u.Message) })
 	result, err := s.Prepare(ctx, r)
 	require.NoError(t, err)
 	after := string(result.Files[0].After)
 	require.Contains(t, after, "version 1.2.4\nrevision 0")
-	require.Contains(t, after, "go.toolchain_min 1.25")
+	require.Contains(t, after, "go.toolchain_min 1.24.3\n")
 	require.NotContains(t, after, "1.22")
-	require.Contains(t, strings.Join(messages, "\n"), "Raising go.toolchain_min from 1.22 to 1.25")
-	require.Equal(t, "1.25", result.Fidelity[len(result.Fidelity)-1].After.Ports["fixture"].Options["go.toolchain_min"])
+	require.Contains(t, strings.Join(messages, "\n"), "Raising go.toolchain_min from 1.22 to 1.24.3")
+	require.Equal(t, "1.24.3", result.Fidelity[len(result.Fidelity)-1].After.Ports["fixture"].Options["go.toolchain_min"])
 	for _, report := range result.Fidelity {
 		require.Empty(t, report.UnexpectedChanges)
 	}
 	require.Len(t, result.Commits, 1)
+	require.Equal(t, &GoToolchain{Required: "1.24.3", Declared: "1.22", Outcome: GoToolchainRaised}, result.GoToolchain)
 }
 
-// A minimum that already covers the requirement, a GOPATH-mode build, a
-// port declaring no minimum, and one declaring it in a way that can't be
-// rewritten are all left as they are. The last two carry what the manifest
-// asks for, which a passing build can't catch, as a fact of the result.
+// A minimum of the required series already covers it, whatever the patch
+// release, since the Go PortGroup compares only the series. It, a
+// GOPATH-mode build, a port declaring no minimum, and one declaring it in a
+// way that can't be rewritten are all left as they are, each with what the
+// update found as a fact of the result, but for GOPATH mode, whose go.mod
+// isn't read.
 func TestToolchainMinIsLeftAloneWhenNotRaisable(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
-		name, extra, keep, message string
-		fact                       *GoToolchain
+		name, directive, extra, keep, message string
+		fact                                  *GoToolchain
 	}{
-		{"already covered", "go.offline_build no\ngo.toolchain_min 1.24\n", "go.toolchain_min 1.24", "", nil},
-		{"gopath mode", "go.offline_build yes\ngo.toolchain_min 1.22\n", "go.toolchain_min 1.22", "GOPATH mode", nil},
-		{"undeclared", "go.offline_build no\n", "", "declares no go.toolchain_min", &GoToolchain{Required: "1.24"}},
-		{"not literal", "go.offline_build no\nset floor 1.22\ngo.toolchain_min ${floor}\n", "go.toolchain_min ${floor}", "raise it by hand", &GoToolchain{Required: "1.24", Declared: "1.22"}},
+		{"already covered", "1.24", "go.offline_build no\ngo.toolchain_min 1.24\n", "go.toolchain_min 1.24", "", &GoToolchain{Required: "1.24", Declared: "1.24", Outcome: GoToolchainCovered}},
+		{"a patch release of the series", "1.24.8", "go.offline_build no\ngo.toolchain_min 1.24\n", "go.toolchain_min 1.24\n", "", &GoToolchain{Required: "1.24.8", Declared: "1.24", Outcome: GoToolchainCovered}},
+		{"a later series", "1.24.8", "go.offline_build no\ngo.toolchain_min 1.25.0\n", "go.toolchain_min 1.25.0\n", "", &GoToolchain{Required: "1.24.8", Declared: "1.25.0", Outcome: GoToolchainCovered}},
+		{"gopath mode", "1.24", "go.offline_build yes\ngo.toolchain_min 1.22\n", "go.toolchain_min 1.22", "GOPATH mode", nil},
+		{"undeclared", "1.24", "go.offline_build no\n", "", "declares no go.toolchain_min", &GoToolchain{Required: "1.24", Outcome: GoToolchainUndeclared}},
+		{"not literal", "1.24", "go.offline_build no\nset floor 1.22\ngo.toolchain_min ${floor}\n", "go.toolchain_min ${floor}", "raise it by hand", &GoToolchain{Required: "1.24", Declared: "1.22", Outcome: GoToolchainByHand}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			s, r := goModFixture(t, "module example.com/fixture\ngo 1.24\n", test.extra)
+			s, r := goModFixture(t, "module example.com/fixture\ngo "+test.directive+"\n", test.extra)
 			var messages []string
 			ctx := progress.WithReporter(t.Context(), func(u progress.Update) { messages = append(messages, u.Message) })
 			result, err := s.Prepare(ctx, r)
@@ -103,7 +110,7 @@ func TestToolchainMinIsLeftAloneWhenNotRaisable(t *testing.T) {
 			if test.keep != "" {
 				require.Contains(t, after, test.keep)
 			}
-			require.NotContains(t, after, "go.toolchain_min 1.24\n"+"go.toolchain_min")
+			require.NotContains(t, after, "go.toolchain_min "+test.directive+"\n"+"go.toolchain_min")
 			if test.message != "" {
 				require.Contains(t, strings.Join(messages, "\n"), test.message)
 			}

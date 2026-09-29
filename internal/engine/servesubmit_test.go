@@ -120,7 +120,7 @@ func TestServeHoldsAnUpdateWhoseGoToolchainNeedsALook(t *testing.T) {
 	e, p := f.withPreparer(t)
 	fake := f.withFork(t, e)
 	fake.others = nil
-	p.toolchain = &preparation.GoToolchain{Required: "1.25"}
+	p.toolchain = &preparation.GoToolchain{Required: "1.25", Outcome: preparation.GoToolchainUndeclared}
 	branch := servePrepared(t, e)
 
 	held := []string{"upstream: go.mod requires Go 1.25, and the Portfile declares no go.toolchain_min; declaring one gates the port on older Go, the maintainer's call"}
@@ -131,6 +131,36 @@ func TestServeHoldsAnUpdateWhoseGoToolchainNeedsALook(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, held, candidates[0].Held)
 	require.Empty(t, fake.created)
+}
+
+// A minimum the update raised, or one that already gates on the series
+// go.mod requires, holds nothing, and is said where the submission is
+// previewed, not only as the update ran (the ov run's finding 1).
+func TestServeSaysAGoToolchainMinimumItNeedNotHold(t *testing.T) {
+	for _, test := range []struct {
+		toolchain preparation.GoToolchain
+		message   string
+	}{
+		{preparation.GoToolchain{Required: "1.26.8", Declared: "1.25.8", Outcome: preparation.GoToolchainRaised},
+			"upstream: go.mod requires Go 1.26.8, so go.toolchain_min is raised from 1.25.8"},
+		{preparation.GoToolchain{Required: "1.26.8", Declared: "1.26", Outcome: preparation.GoToolchainCovered},
+			"upstream: go.mod requires Go 1.26.8, which go.toolchain_min 1.26 already gates on"},
+	} {
+		t.Run(string(test.toolchain.Outcome), func(t *testing.T) {
+			f := setup(t)
+			e, p := f.withPreparer(t)
+			fake := f.withFork(t, e)
+			fake.others = nil
+			p.toolchain = &test.toolchain
+			servePrepared(t, e)
+
+			candidates, err := e.ServeCandidates(t.Context())
+			require.NoError(t, err)
+			require.Empty(t, candidates[0].Held)
+			require.Equal(t, []PortComparison{{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{
+				{Kind: "toolchain", Path: "go.mod", Message: test.message}}}}}, candidates[0].Plan.Upstream)
+		})
+	}
 }
 
 // Another open pull request for the port holds serve's, which would

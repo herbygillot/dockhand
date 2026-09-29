@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go/version"
 	"maps"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -12,7 +13,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/progress"
-	"golang.org/x/mod/semver"
 )
 
 // The Go PortGroup's go.toolchain_min gates a port on systems whose Go is
@@ -36,10 +36,11 @@ func moduleModeGo(info macports.PortInfo) bool {
 
 // raiseGoToolchain reads the new release's go.mod, from the kept archive or,
 // for a git-fetched port, from the repository at the resolved commit, and
-// raises a literal go.toolchain_min to the series it requires. It never
-// lowers one, never adds one, and never refuses the bump: a port that
-// declares no minimum, or carries it in a way that cannot be edited, is
-// told about the requirement and left as it is.
+// raises a literal go.toolchain_min below the series it requires to the
+// release it names, as go.mod writes it. It never lowers one, never adds
+// one, and never refuses the bump: a port that declares no minimum, or
+// carries it in a way that cannot be edited, is told about the requirement
+// and left as it is. What it found and did is the result's GoToolchain.
 func (s *Service) raiseGoToolchain(ctx context.Context, request Request, input *sourceInput, result *Result) error {
 	if len(result.Files) == 0 || result.Prepared.Ports == nil {
 		return nil
@@ -61,19 +62,23 @@ func (s *Service) raiseGoToolchain(ctx context.Context, request Request, input *
 		return nil
 	}
 	current := selected.Options["go.toolchain_min"]
+	outcome := func(outcome GoToolchainOutcome) {
+		result.GoToolchain = &GoToolchain{Required: required, Declared: current, Outcome: outcome}
+	}
 	switch {
 	case current == "":
 		progress.Report(ctx, "%s requires Go %s per go.mod and declares no go.toolchain_min; declaring it would gate the port on systems whose Go is older", input.target.Name, required)
-		result.GoToolchain = &GoToolchain{Required: required}
+		outcome(GoToolchainUndeclared)
 		return nil
-	case semver.Compare("v"+semver.MajorMinor("v" + current)[1:], "v"+required) >= 0:
+	case seriesCovers(current, required):
 		progress.VerboseReport(ctx, "The Portfile's go.toolchain_min %s already covers the %s that go.mod requires", current, required)
+		outcome(GoToolchainCovered)
 		return nil
 	}
 	contents, err := portfile.RewriteLiteralDeclaration(result.Files[0].After, "go.toolchain_min", current, required)
 	if errors.Is(err, ErrUnsupported) {
 		progress.Report(ctx, "Warning: %s requires Go %s per go.mod but go.toolchain_min %s is not a single literal declaration; raise it by hand", input.target.Name, required, current)
-		result.GoToolchain = &GoToolchain{Required: required, Declared: current}
+		outcome(GoToolchainByHand)
 		return nil
 	}
 	if err != nil {
@@ -106,12 +111,24 @@ func (s *Service) raiseGoToolchain(ctx context.Context, request Request, input *
 		return fmt.Errorf("%w: %v", ErrFidelity, report.UnexpectedChanges)
 	}
 	progress.Report(ctx, "Raising go.toolchain_min from %s to %s, which %s's go.mod requires", current, required, input.target.Name)
+	outcome(GoToolchainRaised)
 	return nil
+}
+
+// seriesCovers reports whether a declared go.toolchain_min is of the
+// required release's series or a later one. The Go PortGroup compares only
+// the series, since MacPorts ships the newest patch release of each series
+// it packages, so 1.26 already gates on what go.mod's 1.26.8 asks, and a
+// patch release moving within the series leaves the Portfile alone. A
+// declared value Go can't read covers nothing.
+func seriesCovers(declared, required string) bool {
+	series := version.Lang("go" + declared)
+	return series != "" && version.Compare(series, version.Lang("go"+required)) >= 0
 }
 
 // goRequirement finds go.mod in the first kept archive that holds one at
 // the port's worksrcdir, or in the repository at the resolved commit when
-// the port is fetched with git, and reports the Go series it requires.
+// the port is fetched with git, and reports the Go release it requires.
 func (s *Service) goRequirement(ctx context.Context, request Request, info macports.PortInfo, downloads []archives.Download) (required string, found bool, err error) {
 	if gitFetched(info) {
 		if s.Manifests == nil || request.Release == nil {

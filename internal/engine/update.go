@@ -552,19 +552,30 @@ func shortID() string {
 	return string(id)
 }
 
-// toolchainChange is a Go release upstream's go.mod requires that the
-// Portfile's go.toolchain_min doesn't, as a finding a passing build can't
-// catch, since the builder's Go is new enough: it holds the update for a
-// person's look, as a new declared dependency does.
+// toolchainChange is what upstream's go.mod requires of the Go release a
+// module-mode port builds with, and what the update did about the
+// Portfile's go.toolchain_min, said whatever it did, since silence reads
+// the same as not having looked. A requirement the minimum doesn't meet is
+// one a passing build can't catch, since the builder's Go is new enough: it
+// holds the update for a person's look, as a new declared dependency does.
 func toolchainChange(toolchain *preparation.GoToolchain) (model.UpstreamChange, bool) {
 	if toolchain == nil {
 		return model.UpstreamChange{}, false
 	}
-	message := fmt.Sprintf("upstream: go.mod requires Go %s, and the Portfile declares no go.toolchain_min; declaring one gates the port on older Go, the maintainer's call", toolchain.Required)
-	if toolchain.Declared != "" {
+	var message string
+	switch toolchain.Outcome {
+	case preparation.GoToolchainCovered:
+		message = fmt.Sprintf("upstream: go.mod requires Go %s, which go.toolchain_min %s already gates on", toolchain.Required, toolchain.Declared)
+	case preparation.GoToolchainRaised:
+		message = fmt.Sprintf("upstream: go.mod requires Go %s, so go.toolchain_min is raised from %s", toolchain.Required, toolchain.Declared)
+	case preparation.GoToolchainUndeclared:
+		message = fmt.Sprintf("upstream: go.mod requires Go %s, and the Portfile declares no go.toolchain_min; declaring one gates the port on older Go, the maintainer's call", toolchain.Required)
+	case preparation.GoToolchainByHand:
 		message = fmt.Sprintf("upstream: go.mod requires Go %s, above go.toolchain_min %s, which isn't one literal declaration dockhand can raise; raise it by hand", toolchain.Required, toolchain.Declared)
+	default:
+		return model.UpstreamChange{}, false
 	}
-	return model.UpstreamChange{Kind: "toolchain", Path: "go.mod", Message: message, Hold: true}, true
+	return model.UpstreamChange{Kind: "toolchain", Path: "go.mod", Message: message, Hold: toolchain.Unmet()}, true
 }
 
 // compareUpstream compares the current version's archives with the new

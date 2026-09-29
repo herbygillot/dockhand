@@ -37,12 +37,15 @@ func TestGOPATHWorksrcdirFindsTheManifestUnderTheArchiveTopDirectory(t *testing.
 	require.True(t, GOPATHLayout("gopath/src/github.com/cli/cli/v2"))
 }
 
-func TestGoRequirementIsTheLargerOfGoAndToolchainDirectives(t *testing.T) {
+// The requirement is the go directive as go.mod writes it, whatever the
+// toolchain directive suggests: the tbls run's 1.26.8 was written 1.26.
+func TestGoRequirementIsTheGoDirectiveAsWritten(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct{ manifest, want string }{
 		{"module example.com/x\ngo 1.24\n", "1.24"},
-		{"module example.com/x\ngo 1.24.2\n", "1.24"},
-		{"module example.com/x\ngo 1.24\ntoolchain go1.25.1\n", "1.25"},
+		{"module example.com/x\ngo 1.24.0\n", "1.24.0"},
+		{"module example.com/x\ngo 1.26.8\n", "1.26.8"},
+		{"module example.com/x\ngo 1.24\ntoolchain go1.25.1\n", "1.24"},
 		{"module example.com/x\ngo 1.26\ntoolchain go1.25.1\n", "1.26"},
 		{"module example.com/x\n", ""},
 	} {

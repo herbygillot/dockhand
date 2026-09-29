@@ -96,9 +96,9 @@ type Result struct {
 	// Patches reports whether each declared patch file still applies to the
 	// candidate source; a rejected patch is a finding, not a refusal.
 	Patches []patchcheck.Result `json:",omitempty"`
-	// GoToolchain is what go.mod requires where the Portfile's
-	// go.toolchain_min was left below it; nil where it was raised, or
-	// needn't be.
+	// GoToolchain is what a module-mode port's go.mod requires, and what
+	// the update did about the Portfile's go.toolchain_min; nil where no
+	// go.mod was read.
 	GoToolchain *GoToolchain `json:",omitempty"`
 	// Stealth is the stealth update a checksum refresh found and made; nil
 	// when it found none, or wasn't asked (Request.Stealth).
@@ -112,16 +112,41 @@ type Result struct {
 	Unchanged *macports.PortInfo `json:"-"`
 }
 
-// GoToolchain is a Go release a module-mode port's go.mod requires that its
-// go.toolchain_min doesn't: undeclared, since declaring one gates the port
-// on systems whose Go is older, which is the maintainer's call, or declared
-// in a way dockhand can't rewrite. A passing build can't catch either: the
-// builder's Go is new enough.
+// GoToolchain is the Go release a module-mode port's go.mod requires, and
+// what the update did about the Portfile's go.toolchain_min.
 type GoToolchain struct {
+	// Required is go.mod's go directive, as it writes it.
 	Required string
-	// Declared is the Portfile's go.toolchain_min; empty when it declares
-	// none.
+	// Declared is the Portfile's go.toolchain_min before the update; empty
+	// when it declares none.
 	Declared string
+	Outcome  GoToolchainOutcome
+}
+
+// GoToolchainOutcome is what an update did about go.mod's requirement.
+type GoToolchainOutcome string
+
+const (
+	// GoToolchainCovered is a declared minimum already of the required
+	// series, which is all the Go PortGroup compares.
+	GoToolchainCovered GoToolchainOutcome = "covered"
+	// GoToolchainRaised is a declared minimum dockhand raised to the
+	// requirement.
+	GoToolchainRaised GoToolchainOutcome = "raised"
+	// GoToolchainUndeclared is a port that declares no minimum. Declaring
+	// one gates the port on systems whose Go is older, which is the
+	// maintainer's call.
+	GoToolchainUndeclared GoToolchainOutcome = "undeclared"
+	// GoToolchainByHand is a minimum below the requirement declared in a
+	// way dockhand can't rewrite.
+	GoToolchainByHand GoToolchainOutcome = "by hand"
+)
+
+// Unmet reports a requirement the Portfile's minimum doesn't meet after the
+// update. A passing build can't catch it, since the builder's Go is new
+// enough, so it's a person's to look at.
+func (t GoToolchain) Unmet() bool {
+	return t.Outcome == GoToolchainUndeclared || t.Outcome == GoToolchainByHand
 }
 
 // report records a fidelity report and makes its evaluated snapshot the
