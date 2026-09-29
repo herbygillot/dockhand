@@ -81,7 +81,7 @@ func TestTidyRegroupsAndAppliesASavedPlan(t *testing.T) {
 	_, _, err := dockhand(t, "adopt")
 	require.NoError(t, err)
 
-	file := filepath.Join(t.TempDir(), "plan.json")
+	file := filepath.Join(t.TempDir(), "plan.toml")
 	_, _, err = dockhand(t, "tidy", "--out", file)
 	require.ErrorContains(t, err, "add --plan")
 	out, _, err := dockhand(t, "tidy", "--plan", "--group", "2 1", "--out", file)
@@ -91,11 +91,21 @@ func TestTidyRegroupsAndAppliesASavedPlan(t *testing.T) {
 	require.Contains(t, out, "Saved the plan to "+file+".")
 	require.Equal(t, "jq: note harbor", gitRun(t, w.clone, "log", "-1", "--format=%s"), "saving changes nothing")
 
+	// A message reads in the saved plan as the commit will say it, and is
+	// edited as plain text (the hugo exercise's re-submitting sshuttle,
+	// finding 1).
+	saved, err := os.ReadFile(file)
+	require.NoError(t, err)
+	require.Contains(t, string(saved), "message = '''\njq: note harbor\n'''\n")
+	edited := strings.Replace(string(saved), "message = '''\njq: note harbor\n'''", "message = '''\njq: note harbor\n\nThe note says why harbor needs jq.\n'''", 1)
+	require.NoError(t, os.WriteFile(file, []byte(edited), 0o644))
+
 	out, _, err = dockhand(t, "tidy", "--apply", file)
 	require.NoError(t, err)
 	require.Contains(t, out, "harbor · the plan saved in "+file+"\n")
 	require.Contains(t, out, "Created 2 commits.")
 	require.Equal(t, "github-1.0: follow harbor's releases\njq: note harbor", gitRun(t, w.clone, "log", "-2", "--format=%s"))
+	require.Equal(t, "jq: note harbor\n\nThe note says why harbor needs jq.", gitRun(t, w.clone, "log", "-1", "--format=%B", "HEAD~1"))
 	_, _, err = dockhand(t, "tidy", "--apply", file)
 	require.ErrorContains(t, err, "it has new commits")
 

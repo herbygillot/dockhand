@@ -1,10 +1,16 @@
 package engine
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
+	"time"
 
+	"github.com/BurntSushi/toml"
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // threeChanges makes a branch with a PortGroup edit not yet committed,
@@ -77,14 +83,19 @@ func TestASavedPlanAppliesUntilTheBranchMoves(t *testing.T) {
 	require.NoError(t, err)
 	data, err := regrouped.Save()
 	require.NoError(t, err)
-	require.Contains(t, string(data), `"version": 1`)
-	require.Contains(t, string(data), `"working_tree": "`+plan.Final+`"`)
+	require.Contains(t, string(data), "version = 2")
+	require.Contains(t, string(data), `working_tree = "`+plan.Final+`"`)
 
 	var saved savedTidyPlan
-	require.NoError(t, json.Unmarshal(data, &saved))
-	saved.Commits[0].Message = "libharbor: update to 3, with the github PortGroup it needs\n"
-	edited, err := json.Marshal(saved)
+	_, err = toml.Decode(string(data), &saved)
 	require.NoError(t, err)
+	saved.Commits[0].Message = "libharbor: update to 3, with the github PortGroup it needs\n"
+	encode := func(plan savedTidyPlan) []byte {
+		var b bytes.Buffer
+		require.NoError(t, toml.NewEncoder(&b).Encode(plan))
+		return b.Bytes()
+	}
+	edited := encode(saved)
 
 	loaded, err := e.LoadTidyPlan(t.Context(), edited)
 	require.NoError(t, err)
@@ -93,17 +104,28 @@ func TestASavedPlanAppliesUntilTheBranchMoves(t *testing.T) {
 	require.Len(t, loaded.Groups[1].Combines, 1)
 	require.Empty(t, loaded.Blocking())
 
+	// A plan saved as JSON, before, is still read.
+	legacy := saved
+	legacy.Version = 1
+	old, err := json.Marshal(legacy)
+	require.NoError(t, err)
+	loaded, err = e.LoadTidyPlan(t.Context(), old)
+	require.NoError(t, err)
+	require.Equal(t, "libharbor: update to 3, with the github PortGroup it needs", loaded.Groups[0].Subject())
+
 	short := saved
 	short.Commits = short.Commits[:1]
-	partial, err := json.Marshal(short)
-	require.NoError(t, err)
-	_, err = e.LoadTidyPlan(t.Context(), partial)
+	_, err = e.LoadTidyPlan(t.Context(), encode(short))
 	require.ErrorContains(t, err, "don't cover exactly the branch's changes: missing textproc/jq/Portfile")
 
 	_, err = e.LoadTidyPlan(t.Context(), []byte(`{"version": 1, "extra": true}`))
 	require.ErrorContains(t, err, "not a saved tidy plan")
+	_, err = e.LoadTidyPlan(t.Context(), []byte("version = 2\nextra = true\n"))
+	require.ErrorContains(t, err, "not a saved tidy plan: a plan has no extra")
 	_, err = e.LoadTidyPlan(t.Context(), []byte(`{"version": 2}`))
-	require.ErrorContains(t, err, "version 2; this dockhand reads version 1")
+	require.ErrorContains(t, err, "not a saved tidy plan: a JSON plan is version 1")
+	_, err = e.LoadTidyPlan(t.Context(), []byte("version = 3\n"))
+	require.ErrorContains(t, err, "version 3; this dockhand reads version 2")
 
 	write(t, plan.Worktree, map[string]string{"textproc/jq/Portfile": "edited after the plan\n"})
 	_, err = e.LoadTidyPlan(t.Context(), edited)
@@ -128,4 +150,29 @@ func TestASavedPlanAppliesUntilTheBranchMoves(t *testing.T) {
 	require.Equal(t, []string{"libharbor: update to 3, with the github PortGroup it needs", "jq: build against libharbor 3"}, log(t, plan.Worktree, plan.Branch.Base))
 	_, err = e.LoadTidyPlan(t.Context(), edited)
 	require.ErrorContains(t, err, "it has new commits")
+}
+
+// A saved plan's messages read as the commits will say them, and read back
+// as they were: a multi-line literal string where TOML can hold the
+// message, escaped where it can't (the hugo exercise's re-submitting
+// sshuttle, finding 1).
+func TestASavedPlansMessagesReadAsWritten(t *testing.T) {
+	when := time.Date(2026, 9, 28, 12, 0, 0, 0, time.FixedZone("", -4*60*60))
+	body := "sshuttle: update to 2.0.0\n\nBuild with Python 3.14, the python PortGroup's default.\n\nGenerated-By: Dockhand v3 (https://github.com/herbygillot/dockhand)\n"
+	for message, literal := range map[string]bool{
+		body:                                   true,
+		"jq: it's \"quoted\" \\ and\ttabbed\n": true,
+		"jq: holds '''three quotes'''\n":       false,
+		"jq: rings a bell \a\n":                false,
+		"jq: '''\"both\"''' and \\ \a\n":       false,
+	} {
+		plan := TidyPlan{Branch: model.Branch{Name: "dockhand/jq"}, Groups: []TidyGroup{{Message: message, Paths: []string{"textproc/jq/Portfile"}, Author: git.Signature{Name: "Ada", Email: "ada@example.org", When: when}}}}
+		data, err := plan.Save()
+		require.NoError(t, err)
+		require.Equal(t, literal, bytes.Contains(data, []byte("message = '''\n"+message+"'''")), "%s", data)
+		saved, err := decodeSavedPlan(data)
+		require.NoError(t, err, "%s", data)
+		require.Equal(t, message, string(saved.Commits[0].Message))
+		require.True(t, when.Equal(saved.Commits[0].Author.When))
+	}
 }

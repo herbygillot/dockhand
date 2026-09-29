@@ -18,3 +18,23 @@ Tests:
 - `TestTheRefreshedPartsAreNamed`: the words when all three parts are refreshed.
 
 Seven mutations each fail a test.
+
+## A saved plan's messages read as plain text (finding 1)
+
+`tidy --plan --out <file>` saved the plan as JSON, as it had since it was added, so a message to edit was an escaped string: `"sshuttle: update to 2.0.0\n\nBuild with Python 3.14…"`. The guide has always named the file `plan.toml`.
+
+A plan is now TOML, and says so in a comment at its top:
+- each message is a multi-line literal string, which reads as the commit will say it, and is edited as plain text;
+- a message TOML can't hold that way, one with three single quotes or a control character, is an escaped string instead;
+- the rest is written by the TOML encoder already vendored, whose own strings escape newlines, so the message writes itself (`planMessage`, a `toml.Marshaler`);
+- reading a plan refuses a key a plan doesn't have, as reading JSON refused an unknown field;
+- a plan saved as JSON before, version 1, is still read, and a version newer than this dockhand's is refused as before. A plan whose version doesn't match its format is not a saved plan.
+
+The engine's allowed imports name the TOML package, for a saved plan.
+
+Tests:
+- `TestASavedPlansMessagesReadAsWritten`: a message with a body, one with quotes, a backslash, and a tab, and three that need escapes, each read back as it was, and literal only where it can be;
+- `TestASavedPlanAppliesUntilTheBranchMoves`, now over TOML, with a JSON plan from before still applying, and the refusals;
+- `TestTidyRegroupsAndAppliesASavedPlan`: a message edited in the file as plain text reaches its commit.
+
+Eight mutations each fail a test.

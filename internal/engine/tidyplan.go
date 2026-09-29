@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+
+	"github.com/BurntSushi/toml"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -117,41 +121,81 @@ func (p TidyPlan) combine(members []TidyGroup, numbers []int, chosen git.Signatu
 	return group
 }
 
-// TidyPlanVersion is the version of the saved tidy plan format.
-const TidyPlanVersion = 1
+// TidyPlanVersion is the version of the saved tidy plan format: TOML,
+// whose messages read as they will be written. Version 1 was JSON, whose
+// messages were escaped strings, and is still read.
+const TidyPlanVersion = 2
 
 // savedTidyPlan is a tidy plan as a file: the commits to make, bound to
 // the branch's base, its tip, and its working files when the plan was
 // made. Messages and authors may be edited in the file; the paths are
 // checked against the branch when it is applied.
 type savedTidyPlan struct {
-	Version int    `json:"version"`
-	Branch  string `json:"branch"`
-	Base    string `json:"base"`
-	Head    string `json:"head"`
-	Working string `json:"working_tree"`
+	Version int    `json:"version" toml:"version"`
+	Branch  string `json:"branch" toml:"branch"`
+	Base    string `json:"base" toml:"base"`
+	Head    string `json:"head" toml:"head"`
+	Working string `json:"working_tree" toml:"working_tree"`
 	// Index is the index's tree when the plan was made; absent from plans
 	// saved before it was recorded.
-	Index   string        `json:"index,omitempty"`
-	Commits []savedCommit `json:"commits"`
+	Index   string        `json:"index,omitempty" toml:"index,omitempty"`
+	Commits []savedCommit `json:"commits" toml:"commits"`
 }
 
 type savedCommit struct {
-	Message  string      `json:"message"`
-	Author   savedAuthor `json:"author"`
-	Paths    []string    `json:"paths"`
-	Combines []string    `json:"combines,omitempty"`
-	Working  bool        `json:"includes_uncommitted_edits,omitempty"`
-	Notes    []string    `json:"notes,omitempty"`
+	Message  planMessage `json:"message" toml:"message"`
+	Author   savedAuthor `json:"author" toml:"author"`
+	Paths    []string    `json:"paths" toml:"paths"`
+	Combines []string    `json:"combines,omitempty" toml:"combines,omitempty"`
+	Working  bool        `json:"includes_uncommitted_edits,omitempty" toml:"includes_uncommitted_edits,omitempty"`
+	Notes    []string    `json:"notes,omitempty" toml:"notes,omitempty"`
 }
 
 type savedAuthor struct {
-	Name  string    `json:"name"`
-	Email string    `json:"email"`
-	When  time.Time `json:"date"`
+	Name  string    `json:"name" toml:"name"`
+	Email string    `json:"email" toml:"email"`
+	When  time.Time `json:"date" toml:"date"`
 }
 
-// Save writes the plan as a file a person can review, edit, and apply
+// planMessage is a commit's message in a saved plan. It is written as a
+// multi-line literal string, so it reads as the commit will say it, unless
+// it holds what one can't: three quotes, or a control character other than
+// a tab. Then it is a string with escapes.
+type planMessage string
+
+func (m planMessage) MarshalTOML() ([]byte, error) {
+	text := strings.TrimSpace(string(m)) + "\n"
+	if !strings.Contains(text, "'''") && !strings.ContainsFunc(text, func(r rune) bool { return unicode.IsControl(r) && r != '\n' && r != '\t' }) {
+		return []byte("'''\n" + text + "'''"), nil
+	}
+	return []byte(tomlQuoted(text)), nil
+}
+
+// tomlQuoted is a TOML basic string: quotes, backslashes, and control
+// characters escaped.
+func tomlQuoted(text string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range text {
+		switch {
+		case r == '"' || r == '\\':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r < 0x20 || r == 0x7f:
+			fmt.Fprintf(&b, `\u%04X`, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
+// Save writes the plan as a TOML file a person can review, edit, and apply
 // with LoadTidyPlan.
 func (p TidyPlan) Save() ([]byte, error) {
 	if p.Keep || len(p.Groups) == 0 {
@@ -159,28 +203,60 @@ func (p TidyPlan) Save() ([]byte, error) {
 	}
 	saved := savedTidyPlan{Version: TidyPlanVersion, Branch: p.Branch.Name, Base: p.Base, Head: p.Head, Working: p.Final, Index: p.Index}
 	for _, group := range p.Groups {
-		commit := savedCommit{Message: group.Message, Author: savedAuthor(group.Author), Paths: group.Paths, Working: group.Working, Notes: group.Notes}
+		commit := savedCommit{Message: planMessage(group.Message), Author: savedAuthor(group.Author), Paths: group.Paths, Working: group.Working, Notes: group.Notes}
 		for _, combined := range group.Combines {
 			commit.Combines = append(commit.Combines, combined.ID)
 		}
 		saved.Commits = append(saved.Commits, commit)
 	}
-	data, err := json.MarshalIndent(saved, "", "  ")
-	return append(data, '\n'), err
+	var b bytes.Buffer
+	fmt.Fprintf(&b, "# dockhand tidy's plan for %s: the commits it makes, in order.\n", p.Branch.ShortName())
+	b.WriteString("# A commit's message and author may be edited here; then dockhand tidy --apply this file.\n")
+	b.WriteString("# Its paths, and the commits it combines, are checked against the branch.\n\n")
+	encoder := toml.NewEncoder(&b)
+	encoder.Indent = ""
+	if err := encoder.Encode(saved); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
+}
+
+// decodeSavedPlan reads a saved plan: TOML, or JSON as version 1 was.
+func decodeSavedPlan(data []byte) (savedTidyPlan, error) {
+	var saved savedTidyPlan
+	version, format := TidyPlanVersion, "TOML"
+	if bytes.HasPrefix(bytes.TrimSpace(data), []byte("{")) {
+		version, format = 1, "JSON"
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&saved); err != nil {
+			return saved, fmt.Errorf("this is not a saved tidy plan: %w", err)
+		}
+	} else {
+		read, err := toml.Decode(string(data), &saved)
+		if err != nil {
+			return saved, fmt.Errorf("this is not a saved tidy plan: %w", err)
+		}
+		if unknown := read.Undecoded(); len(unknown) > 0 {
+			return saved, fmt.Errorf("this is not a saved tidy plan: a plan has no %s", unknown[0])
+		}
+	}
+	switch {
+	case saved.Version > TidyPlanVersion:
+		return saved, fmt.Errorf("this plan's format is version %d; this dockhand reads version %d", saved.Version, TidyPlanVersion)
+	case saved.Version != version:
+		return saved, fmt.Errorf("this is not a saved tidy plan: a %s plan is version %d", format, version)
+	}
+	return saved, nil
 }
 
 // LoadTidyPlan reads a saved plan back, as long as the branch's base, its
 // tip, and its working files are as they were when it was made, and its
 // commits still cover exactly the branch's changes.
 func (e *Engine) LoadTidyPlan(ctx context.Context, data []byte) (TidyPlan, error) {
-	var saved savedTidyPlan
-	decoder := json.NewDecoder(strings.NewReader(string(data)))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&saved); err != nil {
-		return TidyPlan{}, fmt.Errorf("this is not a saved tidy plan: %w", err)
-	}
-	if saved.Version != TidyPlanVersion {
-		return TidyPlan{}, fmt.Errorf("this plan's format is version %d; this dockhand reads version %d", saved.Version, TidyPlanVersion)
+	saved, err := decodeSavedPlan(data)
+	if err != nil {
+		return TidyPlan{}, err
 	}
 	branch, err := e.Resolve(ctx, saved.Branch)
 	if err != nil {
@@ -226,7 +302,7 @@ func (e *Engine) LoadTidyPlan(ctx context.Context, data []byte) (TidyPlan, error
 	}
 	var covered []string
 	for i, commit := range saved.Commits {
-		group := TidyGroup{Message: strings.TrimSpace(commit.Message) + "\n", Author: git.Signature(commit.Author), Paths: commit.Paths, Working: commit.Working, Notes: commit.Notes}
+		group := TidyGroup{Message: strings.TrimSpace(string(commit.Message)) + "\n", Author: git.Signature(commit.Author), Paths: commit.Paths, Working: commit.Working, Notes: commit.Notes}
 		for _, path := range commit.Paths {
 			if slices.Contains(covered, path) {
 				return TidyPlan{}, fmt.Errorf("%s is in more than one commit", path)
