@@ -226,7 +226,9 @@ These are taken when their area is next touched, or between items.
   - `wait` with no argument follows the check of the branch checked out here, as bare `logs` does;
   - serve's banner says "1 check at a time": one Tart check still builds two releases at once;
   - the github provider's `dockhand-check/` branch removed from the fork when its run finishes; clean removes them only once the branch is merged;
-  - the GitHub environment's macOS release in Tested on, from the jobs API's runner labels. Its Xcode is only in the log's text, which isn't a documented interface.
+  - the GitHub environment's macOS release in Tested on, from the jobs API's runner labels. Its Xcode is only in the log's text, which isn't a documented interface;
+  - a Python port's own line, as a Go port's `go` directive has one: `requires-python` moving past the version the port pins. sshuttle 2.0.0 raised its floor to 3.10;
+  - a quiet note, not a hold, where a port pins an older Python than the PortGroup's default, as sshuttle pins 3.13 against 3.14.
 - **Branches from before v3.** The hugo exercise's checkout holds 22 local `dockhand/bump/<port>-<id>` branches from earlier dockhand, which nothing reports ([review](reviews/2026-09-28-hugo-bump-exercise.md#cleaning-up), finding 3). Its classification is the design:
   - in master by patch-id (`git cherry`, since MacPorts rebases on merge), as 13 were, whatever became of their pull requests: removable, with the fork branch when it holds the same commit;
   - superseded by a newer version in master, as 1 was: removable after a look;
