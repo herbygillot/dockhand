@@ -403,6 +403,30 @@ func TestCleanAfterTheMerge(t *testing.T) {
 	out, _, err = dockhand(t, "clean")
 	require.NoError(t, err)
 	require.Equal(t, "Nothing to remove.\n", out)
+
+	// What clean removed on purpose needs no one, and the record it keeps
+	// is found by name as status --all lists it (the hugo exercise's
+	// "Cleaning up", findings 1 and 2).
+	out, _, err = dockhand(t, "status", "--all")
+	require.NoError(t, err)
+	require.NotContains(t, out, "Needs you")
+	require.Regexp(t, `jq-update +— +cleaned +— +#34901 merged\n`, out)
+	require.NotContains(t, out, "not pushed")
+	all, err := jsonOf(t, "status", "--all")
+	require.NoError(t, err)
+	require.Empty(t, all.Result["attention"])
+	require.Equal(t, true, dig(t, all.Result, "branches", 0, "cleaned"))
+	out, _, err = dockhand(t, "status", "jq-update")
+	require.NoError(t, err)
+	require.Equal(t, "jq-update\n  Work     cleaned after its merge\n  PR       #34901 merged\n", out, "its worktree, ports, and checks went with it, and nothing is next")
+	_, _, err = dockhand(t, "update", "jq", "--branch", "jq-update")
+	require.ErrorContains(t, err, "no tracked branch named jq-update", "a merged branch takes no changes")
+	_, _, err = dockhand(t, "start", "jq-update")
+	require.NoError(t, err, "a merged branch's name can be used again")
+	out, _, err = dockhand(t, "status", "jq-update")
+	require.NoError(t, err)
+	require.Contains(t, out, "jq-update · ~/Source/macports-branches/jq-update\n  Ports    none yet\n")
+	require.Contains(t, out, "  PR       —\n", "the open branch of the name, not the merged record")
 }
 
 func TestSubmitCheckPassingAndReady(t *testing.T) {

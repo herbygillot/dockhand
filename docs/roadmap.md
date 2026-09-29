@@ -218,6 +218,12 @@ These are taken when their area is next touched, or between items.
   - a Go module the build already required indirectly is no addition when it becomes direct. Done 2026-09-28 ([note](activity/2026-09-28-go-module-promotion.md)): go.mod's indirect requirements are read apart, and a module moving between them and the direct ones is said only where its version moves, without holding;
   - a comparison that knows which manifests the port builds with, and sets the rest apart: chezmoi's pyproject.toml is its documentation's;
   - a legend for the preview's `!`, which marks what holds the branch for a look.
+- **Branches from before v3.** The hugo exercise's checkout holds 22 local `dockhand/bump/<port>-<id>` branches from earlier dockhand, which nothing reports ([review](reviews/2026-09-28-hugo-bump-exercise.md#cleaning-up), finding 3). Its classification is the design:
+  - in master by patch-id (`git cherry`, since MacPorts rebases on merge), as 13 were, whatever became of their pull requests: removable, with the fork branch when it holds the same commit;
+  - superseded by a newer version in master, as 1 was: removable after a look;
+  - unfinished, as 8 were: listed with `adopt` to take one up, never removed.
+
+  `clean` could list them, and remove the first kind with its fork branches when asked.
 - **The observer's boundary at Golden Gate.** A boundary at `${os.major} >= 27` samples nothing below it, since its lower neighbor, Darwin 26, never shipped; the release below, 25, should stand in ([note](activity/2026-09-28-facts-with-homes.md)).
 - **A flake to watch.** `TestTidyAsksWhatItCannotKnow` once failed in its cleanup with a directory not empty ([note](activity/2026-09-27-stopped-checks.md#seen-once-not-explained)).
 
@@ -327,6 +333,10 @@ Changed:
 - **Finding 2** is noise rather than a defect: the comparison reads every manifest it knows, and nothing tells it which the port builds with. A smaller item, as is finding 5's legend.
 - **Finding 3** is a decision for the person: the refusal is deliberate.
 - **Findings 4 and 6** need nothing: 4 is by design, and 6 was an older build's, as the review now says.
+
+**The cleanup** in the same review, `dockhand clean` at `0ffed143`, was checked against `42bcaf3a`.
+- **Findings 1 and 2 hold, and are fixed** ([note](activity/2026-09-28-status-after-clean.md)): status took clean's removal of a merged branch for a lost one, and couldn't find a merged record by name.
+- **Finding 3 holds:** branches from before v3 go unreported. With the review's sorting of them, it's a smaller item.
 
 **The [private-helper review](reviews/2026-09-28-private-helper-ownership.md)** of 2026-09-28, by Codex, read `7be0dc2d` and was checked again at `dd21ac87` ([note](activity/2026-09-28-private-helper-review-reconciled.md)).
 - **All ten findings hold.** All seven of its probes fail.

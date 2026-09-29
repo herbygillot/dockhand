@@ -51,6 +51,10 @@ func (t *tx) BranchNamed(name string) (model.Branch, error) {
 	return t.scanBranch(t.conn.QueryRowContext(t.ctx, "SELECT "+branchColumns+" FROM branches WHERE repository_id=? AND name=? AND state<>'merged'", t.repo, name))
 }
 
+func (t *tx) MergedBranchNamed(name string) (model.Branch, error) {
+	return t.scanBranch(t.conn.QueryRowContext(t.ctx, "SELECT "+branchColumns+" FROM branches WHERE repository_id=? AND name=? AND state='merged' ORDER BY created_at DESC, id DESC LIMIT 1", t.repo, name))
+}
+
 func (t *tx) Branches(filter store.BranchFilter) ([]model.Branch, error) {
 	query, args := "SELECT "+branchColumns+" FROM branches WHERE repository_id=?", []any{t.repo}
 	if len(filter.States) > 0 {

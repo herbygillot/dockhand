@@ -24,7 +24,8 @@ func cleanCommand(s *settings, streams Streams) *cobra.Command {
 		Long: `Removes a merged branch's worktree, local branch, and your fork's branch,
 each only while it still holds the merged commit. A worktree with edits or
 untracked files, and work that went on past the merge, are kept. The
-branch's record stays, so status --all still finds it.
+branch's record stays: status --all lists it as cleaned, and status
+<branch> still finds it.
 
 --closed and --archived take the worktrees of branches whose pull request
 was closed without merging, or that were archived, and nothing else: their

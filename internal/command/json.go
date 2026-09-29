@@ -363,15 +363,17 @@ type latestJSON struct {
 }
 
 type branchJSON struct {
-	Name        string   `json:"name"`
-	GitBranch   string   `json:"git_branch"`
-	ID          string   `json:"id"`
-	State       string   `json:"state"`
-	Worktree    string   `json:"worktree"`
-	Managed     bool     `json:"managed"`
-	Base        string   `json:"base"`
-	Head        string   `json:"head,omitempty"`
-	Missing     bool     `json:"missing,omitempty"`
+	Name      string `json:"name"`
+	GitBranch string `json:"git_branch"`
+	ID        string `json:"id"`
+	State     string `json:"state"`
+	Worktree  string `json:"worktree"`
+	Managed   bool   `json:"managed"`
+	Base      string `json:"base"`
+	Head      string `json:"head,omitempty"`
+	Missing   bool   `json:"missing,omitempty"`
+	// Cleaned is a merged branch whose Git branch clean removed.
+	Cleaned     bool     `json:"cleaned,omitempty"`
 	Commits     int      `json:"commits"`
 	Edited      []string `json:"edited"`
 	Directories []string `json:"directories"`
@@ -386,7 +388,7 @@ type branchJSON struct {
 func branchView(status engine.BranchStatus) branchJSON {
 	branch := status.Branch
 	view := branchJSON{Name: branch.ShortName(), GitBranch: branch.Name, ID: string(branch.ID), State: string(branch.State), Worktree: branch.Worktree, Managed: branch.Managed,
-		Base: string(branch.Base), Head: status.Head, Missing: status.Missing, Commits: status.Commits,
+		Base: string(branch.Base), Head: status.Head, Missing: status.Missing, Cleaned: status.Cleaned(), Commits: status.Commits,
 		Edited: nonNil(status.Edited), Directories: nonNil(status.Scope.Ports), Ports: nonNil(status.Scope.PortNames()), Active: []runJSON{}, Releases: []releaseJSON{}}
 	for _, found := range status.Releases {
 		release := found.Release

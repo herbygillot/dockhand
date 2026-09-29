@@ -73,6 +73,9 @@ type Reader interface {
 	Branch(id model.BranchID) (model.Branch, error)
 	// BranchNamed finds the branch with a Git name that is not merged.
 	BranchNamed(name string) (model.Branch, error)
+	// MergedBranchNamed finds the newest merged branch with a Git name,
+	// whose record clean keeps; the name may have been used again since.
+	MergedBranchNamed(name string) (model.Branch, error)
 	Branches(filter BranchFilter) ([]model.Branch, error)
 
 	Revision(id model.RevisionID) (model.Revision, error)

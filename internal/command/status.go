@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -71,7 +72,7 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 		return showBranch(ctx, e, streams.Out, branch)
 	}
 	if len(args) == 1 {
-		branch, err := e.Resolve(ctx, args[0])
+		branch, err := e.ResolveRecord(ctx, args[0])
 		if err != nil {
 			return err
 		}
@@ -130,7 +131,12 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 		table := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(table, "BRANCH\tPORTS\tWORK\tCHECKS\tPR")
 		for _, status := range statuses {
-			fmt.Fprintf(table, "%s\t%d\t%s\t%s\t%s\n", status.Branch.ShortName(), len(status.Scope.Ports), workWords(status), checkState(status), prWords(status))
+			ports := strconv.Itoa(len(status.Scope.Ports))
+			if status.Cleaned() {
+				// What its Git branch changed went with it.
+				ports = "—"
+			}
+			fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\n", status.Branch.ShortName(), ports, workWords(status), checkState(status), prWords(status))
 		}
 		table.Flush()
 	}
@@ -170,6 +176,9 @@ func attentionFor(s engine.BranchStatus) []attention {
 	name := s.Branch.ShortName()
 	row := func(mark, what, next string) []attention {
 		return []attention{{mark: mark, branch: name, what: what, next: next}}
+	}
+	if s.Cleaned() {
+		return nil
 	}
 	if s.Missing {
 		return row("!", "its Git branch is gone", "dockhand adopt <new name>, if you renamed it")
@@ -282,6 +291,8 @@ func writeAttention(out io.Writer, rows []attention) {
 
 func workWords(s engine.BranchStatus) string {
 	switch {
+	case s.Cleaned():
+		return "cleaned"
 	case s.Missing:
 		return "branch gone"
 	case s.Commits == 0 && len(s.Edited) == 0:
@@ -356,7 +367,7 @@ func prWords(s engine.BranchStatus) string {
 			words += ", CI …"
 		}
 	}
-	if !s.Pushed() {
+	if !s.Missing && !s.Pushed() {
 		words += ", not pushed"
 	}
 	return words
@@ -415,26 +426,32 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, branch mod
 		return err
 	}
 	head := branch.ShortName()
-	if branch.Worktree != "" {
+	if branch.Worktree != "" && !status.Cleaned() {
 		head += " · " + tilde(branch.Worktree)
 	}
 	fmt.Fprintln(out, head)
-	ports := strings.Join(status.Scope.Changed(), ", ")
-	if ports == "" {
-		ports = "none yet"
-	}
-	fmt.Fprintf(out, "  Ports    %s\n", ports)
-	fmt.Fprintf(out, "  Work     %s above master %s\n", workWords(status), engine.Short(branch.Base))
-	for _, found := range status.Releases {
-		fmt.Fprintf(out, "  Release  %s\n", releaseWords(found.Port, found.Release))
-	}
-	if len(status.Edited) > 0 {
-		fmt.Fprintf(out, "  Edited   %s\n", strings.Join(status.Edited, ", "))
-	}
-	fmt.Fprintf(out, "  Checks   %s\n", checkState(status))
-	if status.Evidence != nil {
-		// status has no plan above it, so one environment is named.
-		writeResults(out, "           ", *status.Evidence, true)
+	if status.Cleaned() {
+		// What its Git branch changed, and what checked it, went with it:
+		// its pull request says what became of the work.
+		fmt.Fprintln(out, "  Work     cleaned after its merge")
+	} else {
+		ports := strings.Join(status.Scope.Changed(), ", ")
+		if ports == "" {
+			ports = "none yet"
+		}
+		fmt.Fprintf(out, "  Ports    %s\n", ports)
+		fmt.Fprintf(out, "  Work     %s above master %s\n", workWords(status), engine.Short(branch.Base))
+		for _, found := range status.Releases {
+			fmt.Fprintf(out, "  Release  %s\n", releaseWords(found.Port, found.Release))
+		}
+		if len(status.Edited) > 0 {
+			fmt.Fprintf(out, "  Edited   %s\n", strings.Join(status.Edited, ", "))
+		}
+		fmt.Fprintf(out, "  Checks   %s\n", checkState(status))
+		if status.Evidence != nil {
+			// status has no plan above it, so one environment is named.
+			writeResults(out, "           ", *status.Evidence, true)
+		}
 	}
 	pr := prWords(status)
 	if opened := status.Branch.PullRequest; opened != nil && opened.Observed == nil {

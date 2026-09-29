@@ -82,6 +82,13 @@ func JudgeStopped(ctx context.Context, session *coord.Session, statuses []Branch
 	return nil
 }
 
+// Cleaned reports whether a merged branch's Git branch is gone, as clean
+// removes it once its work is in master: nothing about it needs anyone.
+// Any other branch whose Git branch is gone was lost, as to a rename.
+func (s BranchStatus) Cleaned() bool {
+	return s.Missing && s.Branch.State == model.BranchMerged
+}
+
 // Pushed reports whether the pull request has the branch's head.
 func (s BranchStatus) Pushed() bool {
 	return s.Branch.PullRequest != nil && string(s.Branch.PullRequest.Pushed) == s.Head

@@ -177,6 +177,7 @@ func TestBranchesKeepTheirRules(t *testing.T) {
 	reopened.State = model.BranchOpen
 	require.ErrorIs(t, f.update(t, func(tx store.Tx) error { return tx.UpdateBranch(reopened) }), store.ErrConflict, "a merge is final")
 	reused := f.branch("br_2", b.Name)
+	reused.CreatedAt = at.Add(time.Hour)
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.AddBranch(reused) }), "a merged branch's name can be used again")
 
 	require.NoError(t, f.store.View(t.Context(), f.repo, func(r store.Reader) error {
@@ -184,6 +185,19 @@ func TestBranchesKeepTheirRules(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, open, 1)
 		require.Equal(t, reused.ID, open[0].ID)
+		got, err := r.MergedBranchNamed(b.Name)
+		require.NoError(t, err)
+		require.Equal(t, merged.ID, got.ID, "the merged record, not the open branch that took its name")
+		_, err = r.MergedBranchNamed("dockhand/never")
+		require.ErrorIs(t, err, store.ErrNotFound)
+		return nil
+	}))
+	reused.State = model.BranchMerged
+	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.UpdateBranch(reused) }))
+	require.NoError(t, f.store.View(t.Context(), f.repo, func(r store.Reader) error {
+		got, err := r.MergedBranchNamed(b.Name)
+		require.NoError(t, err)
+		require.Equal(t, reused.ID, got.ID, "the newest of the merged branches of a name")
 		return nil
 	}))
 }

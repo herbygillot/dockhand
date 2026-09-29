@@ -338,10 +338,27 @@ func (e *Engine) renamedFrom(ctx context.Context, name, head string) (model.Bran
 // Resolve finds a tracked branch by the name a person typed: the Git name,
 // or the name without dockhand's prefix.
 func (e *Engine) Resolve(ctx context.Context, selector string) (model.Branch, error) {
+	return e.named(ctx, selector, store.Reader.BranchNamed)
+}
+
+// ResolveRecord finds a branch as Resolve does, or else the newest merged
+// branch of that name, whose record clean keeps, as status --all shows it.
+// Commands that change a branch resolve it; merged ones take no changes.
+func (e *Engine) ResolveRecord(ctx context.Context, selector string) (model.Branch, error) {
+	branch, err := e.Resolve(ctx, selector)
+	if !errors.Is(err, ErrNoBranch) {
+		return branch, err
+	}
+	return e.named(ctx, selector, store.Reader.MergedBranchNamed)
+}
+
+// named finds the branch a selector names, by its short name or its Git
+// name, with lookup.
+func (e *Engine) named(ctx context.Context, selector string, lookup func(store.Reader, string) (model.Branch, error)) (model.Branch, error) {
 	var branch model.Branch
 	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		for _, name := range []string{selector, model.BranchPrefix + selector} {
-			found, err := r.BranchNamed(name)
+			found, err := lookup(r, name)
 			if err == nil {
 				branch = found
 				return nil

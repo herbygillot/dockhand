@@ -306,7 +306,7 @@ Serve opens no pull requests by default. With `--submit-passing`, or `serve.subm
 - **What checks left behind.** A check deletes its Tart clone when it ends, and a later attempt of the same check deletes an earlier one's. A check whose process dies with no later attempt leaves its clone behind, sometimes still running and holding one of the Mac's two VM slots. Whichever branches it cleans, `clean` lists these clones too, and removes one once no process is running its check, stopping it first. It keeps a clone no check of this checkout made, since another database may be using it, and it never touches the images checks clone from.
 - **`archive [branch]`** hides a branch from status without touching anything; `status --all` still shows it, and `archive --undo` brings it back.
 
-`clean` shows what it would remove first. On a terminal it asks, and a script passes `--yes`. A branch's record always stays, so `status --all` still finds it. Check logs in `~/.dockhand/logs` are kept.
+`clean` shows what it would remove first. On a terminal it asks, and a script passes `--yes`. A branch's record always stays, so `status --all` still lists it, as cleaned, and `status <branch>` still finds it. Check logs in `~/.dockhand/logs` are kept.
 
 **Automatic cleanup.** Once a day, dockhand cleans up by itself, unless `cleanup.automatic = false`. It removes:
 - what `clean --merged` would;
