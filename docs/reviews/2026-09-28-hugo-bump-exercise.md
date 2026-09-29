@@ -60,3 +60,13 @@ Findings:
 4. **bump's output arrives in bursts when piped.** Its standard output stayed empty for about a minute while it fetched, updated and tidied, then arrived all at once. The check's progress lines streamed normally. This is by design: progress goes to standard error line by line, and standard output carries each step's result when the step finishes, so update's and tidy's results arrive together.
 5. **The held branch's message works.** "passed its check and waits for your look, so nothing was submitted: <reason>", then "Once it's fine: dockhand submit --branch chezmoi-8ndw", said exactly what to do. The preview's `!` marker showed which upstream line caused the hold, but a legend would help ("! holds the branch for a look").
 6. **A no-op update printed an empty version**, "jq is already at ; nothing to change." This was seen with builds 75d0a05e and 9f1f3ee8, which predate c1d8614f ("a port already current says what it's at"). With b8915f15 it prints "jq is already at 1.8.2; nothing to change."
+
+## Cleaning up
+
+With a build of `0ffed143` from a clean clone of origin/main, `status --refresh` found all eight open PRs merged, including #35000 and #35008. `clean` previewed a worktree, local branch and fork branch for each, and `clean --yes` removed all 24. It left `duckdb-cxx14` alone (uncommitted edits, no PR). The preview, with each branch's "merged at <commit>" and "--yes removes these", was clear.
+
+What followed was not:
+
+1. **`status --all` treats every cleaned branch as a problem.** Each of the eight appears under Needs you as "its Git branch is gone" → "dockhand adopt <new name>, if you renamed it", with Work "branch gone" and PR "#35000 merged, not pushed". clean removed those branches on purpose, and the fork branch was pushed and then deleted, not never pushed. The record should say the branch was cleaned, show nothing under Needs you, and give the PR as simply merged.
+2. **`status <branch>` can't find a cleaned branch.** `status hugo-9tu8` says "no tracked branch named hugo-9tu8", though clean's help says "The branch's record stays, so status --all still finds it" and `status --all` lists it. Naming a branch should find whatever `--all` can.
+3. **clean ignores legacy branches.** The ports checkout still has 22 local `dockhand/bump/<port>-<id>` branches from 2026-09-13 to 2026-09-24, earlier dockhand's naming. They aren't tracked, so nothing reports or cleans them. A one-time notice, or `clean --legacy`, would stop them piling up.
