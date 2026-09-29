@@ -226,6 +226,22 @@ rebase that conflicts is abandoned with the branch as it was.`,
 			if branch.PullRequest != nil {
 				fmt.Fprintf(streams.Out, "#%d still has the old commits; dockhand submit replaces them, if no one else has pushed.\n", branch.PullRequest.Number)
 			}
+			// A check of the rebased files can already stand, as one does
+			// after a second rebase onto the same master: status says what
+			// then moves the branch on.
+			moved, err := e.Branch(ctx, branch.ID)
+			if err != nil {
+				return err
+			}
+			status, err := e.BranchStatus(ctx, moved)
+			if err != nil {
+				return err
+			}
+			if status.Current {
+				fmt.Fprintf(streams.Out, "%s checked these files already: %s.\n", status.Latest.Name(), checkState(status))
+				writeNext(streams.Out, status)
+				return nil
+			}
 			fmt.Fprintln(streams.Out, "Next: dockhand check, since the files it builds on have changed")
 			return nil
 		},

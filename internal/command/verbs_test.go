@@ -53,6 +53,9 @@ func TestEditRevbumpRetryRebaseAndArchive(t *testing.T) {
 	out, _, err = dockhand(t, "rebase")
 	require.NoError(t, err)
 	require.Regexp(t, `Rebased notes \(1 commit\) from master [0-9a-f]{7} onto [0-9a-f]{7}\.\nCheckpoint rebase-2 keeps the old history \(dockhand restore rebase-2\)\.\n`, out)
+	require.Contains(t, out, "Next: dockhand check, since the files it builds on have changed\n")
+	_, _, err = dockhand(t, "check")
+	require.NoError(t, err)
 	oldMaster := gitRun(t, w.upstream, "rev-parse", "--short=7", "HEAD~1")
 	newMaster := gitRun(t, w.upstream, "rev-parse", "--short=7", "HEAD")
 
@@ -62,10 +65,15 @@ func TestEditRevbumpRetryRebaseAndArchive(t *testing.T) {
 	require.Regexp(t, `^Restored dockhand/notes to its history and files before rebase-2 \([0-9a-f]{7}\), on master `+oldMaster+` again\.\n$`, out)
 	require.NoFileExists(t, filepath.Join(dir, "README"), "master's newer file isn't left as the branch's edit")
 
-	// One recorded before checkpoints kept the base says what it leaves.
+	// Rebasing again makes files a check has seen, which it names (the gh
+	// rebase's finding 3).
 	out, _, err = dockhand(t, "rebase")
 	require.NoError(t, err)
 	require.Contains(t, out, "Checkpoint rebase-3 keeps the old history")
+	require.Contains(t, out, "check-3 checked these files already: passed for this commit.\nNext: dockhand submit --branch notes\n")
+	require.NotContains(t, out, "Next: dockhand check")
+
+	// One recorded before checkpoints kept the base says what it leaves.
 	db, err := sql.Open("sqlite", filepath.Join(w.home, ".dockhand", "dockhand.db"))
 	require.NoError(t, err)
 	_, err = db.ExecContext(t.Context(), "UPDATE checkpoints SET base_before='', base_after='' WHERE number=3")

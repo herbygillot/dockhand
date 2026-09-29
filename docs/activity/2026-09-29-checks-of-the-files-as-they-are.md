@@ -1,0 +1,16 @@
+# 2026-09-29: status and rebase credit a check of the files as they are
+
+A real rebase of gh in the hugo exercise ([review](../reviews/2026-09-28-hugo-bump-exercise.md#submitting-hk-and-gh-with-a-real-rebase)) found three places where what dockhand said about checks didn't match what it knew.
+
+**Status judged only the newest check** (finding 2). check-35 passed gh's files, a rebase made new ones, and check-37 passed those. `restore rebase-29` put the branch back at exactly check-35's files, and status said "passed for older work": it judged the branch by its newest finished check, check-37, which had checked other files. Submit reads the newest finished check of the files as they are (`EvidenceFor`), and would have credited check-35, so the two disagreed. Status now reads what submit reads: the check it judges by is the newest finished check of the files as they are now, whatever their history, and the newest finished check only where none covers them. It no longer asks that the check's base be the branch's, since the tree is the files, and a check builds files, not history. serve's choice of branches to submit reads the same status, so it agrees with submit too.
+
+**Rebase always said to check** (finding 3). "Next: dockhand check, since the files it builds on have changed" was one fixed line. A second rebase onto the same master made files check-37 had passed, and status already said so. Where a check of the rebased files stands, rebase now names it and says what status would: "check-3 checked these files already: passed for this commit." and "Next: dockhand submit --branch notes". Otherwise it says what it did.
+
+**GitHub rebuilt everything, silently** (finding 1). Re-checking gh after the rebase, both Tart environments reused check-35, while GitHub ran its workflow again: 5.5 of the check's 5.7 minutes, though master's one new commit touched another port. That's by design for now: reuse needs the environment's identity, which only Tart reports (`buildenv.IdentityProvider`), so the github and command providers reuse nothing. It wasn't said. Now, where an environment has no identity and another environment of the same check has one, the check says, as it starts that environment, "builds every target, since its provider doesn't say what the environment is, so no earlier result can be reused there". A check where no environment could reuse, such as one on the command provider alone, says nothing of it, and nor does `--fresh`. The roadmap asked for this in the plan. The plan doesn't ask providers what they are, which is read as each environment starts, so it's said there, beside the line saying another environment reused. Reusing GitHub's results stays with item 6.
+
+Tests:
+- `TestStatusCreditsTheCheckOfTheFilesAsTheyAre`, in the engine: after a rebase and a check, restoring puts status on the first check, as `EvidenceFor` has it, and an edit no check has seen puts it back on the newest;
+- `TestEditRevbumpRetryRebaseAndArchive`, in the command: a rebase to unchecked files says to check, and a second rebase onto the same master names the check of its files and the next step;
+- `TestAnEnvironmentThatCantReuseSaysSo`: said for GitHub beside an environment with an identity, and not where none has one, or all do.
+
+Six mutations each fail a test.
