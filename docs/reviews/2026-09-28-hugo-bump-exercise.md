@@ -274,4 +274,4 @@ Findings:
    - 1 was a GitHub 404 (timeleft);
    - 1 is mise, above.
 
-   The 35 livecheck cases say "name the version to update to", which is right. The HTTPS downgrade deserves a look: the port's livecheck URL is `http://www.quut.com/gsm/`.
+   The 35 livecheck cases say "name the version to update to", which is right. libgsm's downgrade is the server's doing: its livecheck URL `https://www.quut.com/gsm` (homepage, no trailing slash) answers 301 to `http://www.quut.com/gsm/`. dockhand is right to refuse following it. The fix is the Portfile's: `https://www.quut.com/gsm/` answers 200 directly.
