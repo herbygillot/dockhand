@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -138,4 +139,32 @@ func TestEachReportNamesTheRunsThatMadeIt(t *testing.T) {
 	require.Len(t, observations, 3, "and stands alone beside two")
 	require.Equal(t, model.Observed{}, observations[2].Observed)
 	require.Empty(t, evidence().Observations(0))
+}
+
+// An environment where every port is excluded wasn't tested: Tested on
+// doesn't name it, and the table still says excluded (the beekeeper-studio
+// run's finding 4, where platforms {darwin >= 23} left macOS 12 out, and
+// the pull request said it was built there).
+func TestAnExcludedEnvironmentIsNotCalledTested(t *testing.T) {
+	monterey := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
+	target := model.PlanTarget{ID: "beekeeper-studio", Target: model.Target{Name: "beekeeper-studio"}}
+	evidence := Evidence{
+		Run: model.Run{ID: "run_21", Number: 21},
+		Plan: model.Plan{Environments: []model.Environment{monterey, tahoe}, Builds: []model.EnvironmentPlan{
+			{Environment: monterey, Exclusions: []model.Exclusion{{Target: target.Target, Reason: "known_fail"}}},
+			{Environment: tahoe, Order: []model.TargetID{target.ID}},
+		}},
+		Targets:    []TargetEvidence{{Target: target, Passed: true, Outcomes: []model.TargetResult{{Outcome: model.OutcomeNotRun}, {Execution: "tart_b", Outcome: model.OutcomePassed}}}},
+		Executions: map[model.ExecutionID]model.GuestExecution{"tart_b": {ID: "tart_b", Run: "run_21", Observed: model.Observed{MacOS: "26.6", Xcode: "26.6"}}},
+	}
+	require.False(t, evidence.Tested(0))
+	require.True(t, evidence.ExcludesAll(0))
+	require.True(t, evidence.Tested(1))
+	require.False(t, evidence.ExcludesAll(1))
+
+	testedOn, table, found := strings.Cut(ownedSections(bodyFacts{Evidence: &evidence}), "| Port |")
+	require.True(t, found)
+	require.Equal(t, "###### Tested on\n\nmacOS 26.6 arm64\nXcode 26.6 · tart: built in a clean VM (Run ID: tart_b - checked in check-21)\n\n", testedOn)
+	require.Contains(t, table, "| beekeeper-studio | — excluded | ✓ |")
 }

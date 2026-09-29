@@ -711,3 +711,23 @@ func TestTheDescriptionIsEditedInTheRunRoot(t *testing.T) {
 	require.True(t, strings.HasPrefix(string(path), root+string(filepath.Separator)), "%s is under %s", path, root)
 	require.NoFileExists(t, string(path), "the buffer goes when the edit is done")
 }
+
+// submit's plan says the check passed only where it built something, and
+// names where every port was excluded, rather than calling it tested there
+// (the beekeeper-studio run's finding 4).
+func TestSubmitsCheckLineNamesOnlyWhereItBuilt(t *testing.T) {
+	monterey := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
+	target := model.PlanTarget{ID: "beekeeper-studio", Target: model.Target{Name: "beekeeper-studio"}}
+	evidence := &engine.Evidence{
+		Run: model.Run{ID: "run_21", Number: 21},
+		Plan: model.Plan{Environments: []model.Environment{monterey, tahoe}, Builds: []model.EnvironmentPlan{
+			{Environment: monterey, Exclusions: []model.Exclusion{{Target: target.Target, Reason: "known_fail"}}},
+			{Environment: tahoe, Order: []model.TargetID{target.ID}},
+		}},
+		Targets:    []engine.TargetEvidence{{Target: target, Passed: true, Outcomes: []model.TargetResult{{Outcome: model.OutcomeNotRun}, {Execution: "tart_b", Outcome: model.OutcomePassed}}}},
+		Executions: map[model.ExecutionID]model.GuestExecution{"tart_b": {ID: "tart_b", Run: "run_21"}},
+	}
+	require.Equal(t, "passed on "+engine.DescribeEnvironment(tahoe)+" for this commit's files (check-21); nothing built on "+engine.DescribeEnvironment(monterey)+", where every port is excluded",
+		checkWords(engine.SubmitPlan{Evidence: evidence}))
+}

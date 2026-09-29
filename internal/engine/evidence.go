@@ -165,6 +165,25 @@ func (e Evidence) Runs(environment int) []model.GuestExecution {
 	return runs
 }
 
+// Tested reports whether anything the evidence holds was built or reused
+// in an environment: whether any of its results came from a provider run
+// there. One where every target is excluded has none, and neither has one
+// no check reached.
+func (e Evidence) Tested(environment int) bool {
+	return len(e.Runs(environment)) > 0
+}
+
+// ExcludesAll reports whether the plan leaves every one of the evidence's
+// targets out in an environment, so that nothing is built there.
+func (e Evidence) ExcludesAll(environment int) bool {
+	for _, target := range e.Targets {
+		if !e.Plan.Excludes(target.Target, e.Plan.Environments[environment]) {
+			return false
+		}
+	}
+	return len(e.Targets) > 0
+}
+
 // Checks name the checks the evidence's runs were in, check-11, by ID,
 // and the checks that built what they reused.
 func (e Evidence) Checks() map[model.RunID]string {

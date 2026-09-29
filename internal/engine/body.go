@@ -122,12 +122,11 @@ func ownedSections(facts bodyFacts) string {
 		fmt.Fprintln(&b, "No local check has finished for this commit yet. This is a draft, so MacPorts CI starts early.")
 	default:
 		checks := evidence.Checks()
+		// An environment where nothing was built or reused, as one where
+		// every port is excluded, has no report, and isn't named: it
+		// wasn't tested, and the table says why.
 		for i, environment := range evidence.Plan.Environments {
-			observations := evidence.Observations(i)
-			if len(observations) == 0 {
-				observations = []Observation{{}}
-			}
-			for _, observation := range observations {
+			for _, observation := range evidence.Observations(i) {
 				built, reusedIn := evidence.Built(i, observation.Runs)
 				b.WriteString(testedOn(environment, observation.Observed, built, checks, reusedIn))
 			}

@@ -441,13 +441,24 @@ func checkWords(plan engine.SubmitPlan) string {
 	case evidence == nil:
 		return "none has finished for this commit's files"
 	}
-	var environments []string
-	for _, environment := range evidence.Plan.Environments {
-		environments = append(environments, engine.DescribeEnvironment(environment))
+	var environments, tested, excluded []string
+	for i, environment := range evidence.Plan.Environments {
+		words := engine.DescribeEnvironment(environment)
+		environments = append(environments, words)
+		switch {
+		case evidence.Tested(i):
+			tested = append(tested, words)
+		case evidence.ExcludesAll(i):
+			excluded = append(excluded, words)
+		}
 	}
 	failed := evidence.Failed()
 	if len(failed) == 0 {
-		return fmt.Sprintf("passed on %s for this commit's files (%s)", strings.Join(environments, ", "), evidence.Run.Name())
+		passed := fmt.Sprintf("passed on %s for this commit's files (%s)", strings.Join(tested, ", "), evidence.Run.Name())
+		if len(excluded) > 0 {
+			passed += fmt.Sprintf("; nothing built on %s, where every port is excluded", strings.Join(excluded, ", "))
+		}
+		return passed
 	}
 	var names []string
 	for _, target := range failed {
