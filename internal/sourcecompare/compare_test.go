@@ -152,6 +152,21 @@ func TestWhatTheComparisonCouldntReadHolds(t *testing.T) {
 		"! upstream: requirements.txt adds rich >=13",
 	}, compared(t, map[string]string{"requirements.txt": "click>=8\n"}, map[string]string{"requirements.txt": "-r base.txt\nclick>=8\nrich>=13\n"}),
 		"what it could read is still compared")
+	// A gap in the old version holds as one in the new does, since what
+	// changed is as unknown (the private-helper follow-up's gap in finding
+	// 3). A gap both versions share is said once; different ones, each.
+	require.Equal(t, []string{"! upstream's requirements.txt in the old version reads base.txt too, which the comparison doesn't follow"},
+		compared(t, map[string]string{"requirements.txt": "-r base.txt\n"}, map[string]string{"requirements.txt": "# a comment only\n"}))
+	require.Equal(t, []string{"! upstream's pyproject.toml in the old version declares its dependencies dynamically, from another file, which the comparison doesn't follow"},
+		compared(t, map[string]string{"pyproject.toml": "[project]\nname = 'pkg'\ndynamic = ['dependencies']\n"}, map[string]string{"pyproject.toml": "[project]\nname = 'pkg'\n"}))
+	require.Equal(t, []string{
+		"! upstream's requirements.txt reads base.txt too, which the comparison doesn't follow",
+		"! upstream: requirements.txt adds rich >=13",
+	}, compared(t, map[string]string{"requirements.txt": "-r base.txt\nclick>=8\n"}, map[string]string{"requirements.txt": "-r base.txt\nclick>=8\nrich>=13\n"}))
+	require.Equal(t, []string{
+		"! upstream's requirements.txt reads common.txt too, which the comparison doesn't follow",
+		"! upstream's requirements.txt in the old version reads base.txt too, which the comparison doesn't follow",
+	}, compared(t, map[string]string{"requirements.txt": "-r base.txt\n"}, map[string]string{"requirements.txt": "-r common.txt\n"}))
 	large := strings.Repeat("x", memberLimit+1)
 	require.Equal(t, []string{"! upstream's CMakeLists.txt is larger than the 1024 KiB the comparison reads, so it wasn't compared"},
 		compared(t, map[string]string{"CMakeLists.txt": large}, map[string]string{"CMakeLists.txt": large + "y"}))

@@ -177,10 +177,17 @@ func manifestChanges(name string, read reader, old file, hadOld bool, now file, 
 		}
 		readings[i] = found
 	}
-	// What it couldn't follow holds, so it comes first.
+	// What it couldn't follow holds, so it comes first: in either version,
+	// since a gap in the old one leaves what changed as unknown as one in
+	// the new. A gap both share is said once.
 	var changes []Change
 	for _, gap := range readings[1].unread {
 		changes = append(changes, unread(gap+", which the comparison doesn't follow"))
+	}
+	for _, gap := range readings[0].unread {
+		if !slices.Contains(readings[1].unread, gap) {
+			changes = append(changes, unread("in the old version "+gap+", which the comparison doesn't follow"))
+		}
 	}
 	return append(changes, dependencyChanges(name, readings[0], readings[1])...)
 }
