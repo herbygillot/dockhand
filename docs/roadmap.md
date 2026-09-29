@@ -218,6 +218,15 @@ These are taken when their area is next touched, or between items.
   - a Go module the build already required indirectly is no addition when it becomes direct. Done 2026-09-28 ([note](activity/2026-09-28-go-module-promotion.md)): go.mod's indirect requirements are read apart, and a module moving between them and the direct ones is said only where its version moves, without holding;
   - a comparison that knows which manifests the port builds with, and sets the rest apart: chezmoi's pyproject.toml is its documentation's;
   - a legend for the preview's `!`, which marks what holds the branch for a look.
+- **What the sshuttle run asked for** ([review](reviews/2026-09-28-hugo-bump-exercise.md#sshuttle-through-paths-not-yet-taken)), the first of them before anything else here:
+  - **the current version's archives found as the new version's are:** from the URLs MacPorts itself computes, mirror groups expanded. Today `archives.Sources` reads `master_sites` itself and refuses a mirror group, so the comparison can't run and holds. That affects every port fetched from a MacPorts mirror, about a third of the tree: 2,569 python PortGroup ports on PyPI's default, 2,029 perl5 ports on CPAN's, and 3,106 more that name only mirror groups. None can be submitted unattended. `diff --archive` reads the same way;
+  - `submit --ready` refused by an organization's OAuth App access restrictions says what to do: mark it ready on GitHub at its page, or `gh pr ready <n>`, whose app the organization allows;
+  - `submit --ready --plan` previews marking ready, and a draft's preview names `dockhand submit --ready`;
+  - a submission waiting on a queued or running check of the same files names it and `dockhand wait <check>`, rather than "run dockhand check first";
+  - `wait` with no argument follows the check of the branch checked out here, as bare `logs` does;
+  - serve's banner says "1 check at a time": one Tart check still builds two releases at once;
+  - the github provider's `dockhand-check/` branch removed from the fork when its run finishes; clean removes them only once the branch is merged;
+  - the GitHub environment's macOS release in Tested on, from the jobs API's runner labels. Its Xcode is only in the log's text, which isn't a documented interface.
 - **Branches from before v3.** The hugo exercise's checkout holds 22 local `dockhand/bump/<port>-<id>` branches from earlier dockhand, which nothing reports ([review](reviews/2026-09-28-hugo-bump-exercise.md#cleaning-up), finding 3). Its classification is the design:
   - in master by patch-id (`git cherry`, since MacPorts rebases on merge), as 13 were, whatever became of their pull requests: removable, with the fork branch when it holds the same commit;
   - superseded by a newer version in master, as 1 was: removable after a look;
@@ -338,6 +347,12 @@ Changed:
 **The cleanup** in the same review, `dockhand clean` at `0ffed143`, was checked against `42bcaf3a`.
 - **Findings 1 and 2 hold, and are fixed** ([note](activity/2026-09-28-status-after-clean.md)): status took clean's removal of a merged branch for a lost one, and couldn't find a merged record by name.
 - **Finding 3 holds:** branches from before v3 go unreported. With the review's sorting of them, it's a smaller item.
+
+**The sshuttle run** in the hugo exercise's review, with `0ffed143`, was checked against the code at `2aa25a54`.
+- **Findings 1 to 5 and 8 hold.** Finding 1 is wider than PyPI: the current version's archives are found by a reading of `master_sites` that refuses every MacPorts mirror group, while the new version's come from MacPorts' own fetch URLs. It holds about a third of the tree, so it's first among the run's items. Finding 2 is GitHub's GraphQL mutation for marking ready, refused for dockhand's OAuth app by the macports organization, and passed on without a way forward.
+- **Finding 6 is wording:** serve's capacity counts checks, and a Tart check builds two releases at once, as designed.
+- **Finding 7 is half right:** clean removes a check's fork branch once the branch is merged, but it stays on the fork while the branch is open.
+- **Finding 9** is the `logs --port` item, already a smaller item.
 
 **The [SQL review](reviews/2026-09-28-sql-review.md)** of 2026-09-28 read `02a4d318`. Its fixes landed as `b140a961` to `42bcaf3a` ([note](activity/2026-09-28-sql-review-fixes.md)), and were checked here against the code.
 - **Done:** findings 1 to 7, 9, and 10.
