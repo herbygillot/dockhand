@@ -138,7 +138,9 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 		return status, err
 	}
 	status.Tree = trees[head]
-	if worktree, err := e.worktree(ctx, branch); err == nil {
+	// Status only reads: a worktree clean removed isn't checked out again
+	// for it, so its files are the branch's committed ones.
+	if worktree, err := e.openWorktree(ctx, branch); err == nil {
 		if status.Edited, err = worktree.TrackedChanges(ctx); err != nil {
 			return status, err
 		}

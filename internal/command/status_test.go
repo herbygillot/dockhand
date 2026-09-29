@@ -210,3 +210,17 @@ func TestStatusOpensOneObserverSession(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, before+1, started())
 }
+
+// A branch set aside asks nothing of its checks: one archived after its
+// files moved on from what passed isn't asked to be checked again, as
+// status --all asked of duckdb-cxx14 (the hugo exercise's review).
+func TestAnArchivedBranchAsksNothingOfItsChecks(t *testing.T) {
+	latest := model.Run{Number: 3, State: model.RunPassed}
+	revision := model.Revision{Kind: model.RevisionSnapshot, Snapshot: 1}
+	status := engine.BranchStatus{Branch: model.Branch{Name: "dockhand/duckdb-cxx14", State: model.BranchOpen}, Latest: &latest, LatestRevision: &revision}
+	rows := attentionFor(status)
+	require.Len(t, rows, 1, "an open branch is asked")
+	require.Equal(t, "snapshot 1 passed; the files have changed since", rows[0].what)
+	status.Branch.State = model.BranchArchived
+	require.Empty(t, attentionFor(status))
+}

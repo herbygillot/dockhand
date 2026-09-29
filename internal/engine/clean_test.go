@@ -167,3 +167,36 @@ func TestCleanKeepsABranchCheckedOutWhereItStays(t *testing.T) {
 	require.Equal(t, "it is checked out in "+branch.Worktree+"; switch away there first", done[0].Steps[0].Kept)
 	require.NotEmpty(t, run(t, e.Repo.Root, "for-each-ref", "refs/heads/dockhand/jq-update"))
 }
+
+// Status only reads: the worktree clean removed from an archived branch
+// isn't checked out again for it, as status --all did for duckdb-cxx14,
+// undoing clean --archived. Its files are the branch's committed ones.
+// Work on the branch still checks it out again (the hugo exercise's
+// review, "status --all checks an archived branch out again").
+func TestStatusDoesntCheckOutAgainWhatCleanRemoved(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch := committedUpdate(t, e)
+	archived, err := e.Archive(t.Context(), branch, false)
+	require.NoError(t, err)
+	plans, err := e.PlanClean(t.Context(), model.BranchArchived)
+	require.NoError(t, err)
+	_, err = e.ApplyClean(t.Context(), plans)
+	require.NoError(t, err)
+	require.NoDirExists(t, archived.Worktree)
+
+	statuses, err := e.Status(t.Context(), model.BranchArchived)
+	require.NoError(t, err)
+	require.Len(t, statuses, 1)
+	require.NoDirExists(t, archived.Worktree, "status checks nothing out")
+	head, tree, err := e.Repo.Branch(t.Context(), archived.Name)
+	require.NoError(t, err)
+	require.Equal(t, head, statuses[0].Head)
+	require.Equal(t, tree, statuses[0].Tree, "the committed files")
+	require.Empty(t, statuses[0].Edited)
+
+	directory, err := e.Edit(t.Context(), archived, "jq")
+	require.NoError(t, err)
+	require.DirExists(t, archived.Worktree, "work on it checks it out again")
+	require.DirExists(t, filepath.Join(archived.Worktree, directory))
+}

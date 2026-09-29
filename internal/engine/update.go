@@ -379,13 +379,24 @@ func describe(branch model.Branch, selector string, result preparation.Result) U
 }
 
 // worktree opens the branch's checkout, which must have the branch checked
-// out.
+// out, checking it out again where clean removed it, for work on the
+// branch.
 func (e *Engine) worktree(ctx context.Context, branch model.Branch) (*git.Repository, error) {
 	if branch.Worktree == "" {
 		return nil, fmt.Errorf("%s is not checked out anywhere; check it out with git switch %s", branch.Name, branch.Name)
 	}
 	if err := e.checkOutAgain(ctx, branch); err != nil {
 		return nil, err
+	}
+	return e.openWorktree(ctx, branch)
+}
+
+// openWorktree opens the branch's checkout as it is, which must have the
+// branch checked out. One that's gone isn't made again, as worktree makes
+// it, so what only reads a branch, as status does, changes nothing.
+func (e *Engine) openWorktree(ctx context.Context, branch model.Branch) (*git.Repository, error) {
+	if branch.Worktree == "" || !exists(branch.Worktree) {
+		return nil, fmt.Errorf("%s has no worktree here", branch.Name)
 	}
 	worktree, err := git.Open(ctx, branch.Worktree, e.options.Git)
 	if err != nil {

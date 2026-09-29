@@ -198,6 +198,10 @@ func attentionFor(s engine.BranchStatus) []attention {
 	if pr := s.Branch.PullRequest; pr != nil && s.Branch.Origin == model.OriginServe && (pr.Observed == nil || pr.Observed.State == "open") {
 		return row("·", fmt.Sprintf("#%d opened by serve, without a person's review", pr.Number), "dockhand status "+name)
 	}
+	// A branch set aside asks nothing of its checks.
+	if s.Branch.State == model.BranchArchived {
+		return nil
+	}
 	if s.Latest == nil || !s.Current || len(s.Active) > 0 {
 		if s.Latest != nil && !s.Current && s.Latest.State == model.RunPassed && len(s.Active) == 0 {
 			return row("!", engine.Describe(*s.LatestRevision)+" passed; the files have changed since", "dockhand check --branch "+name)
