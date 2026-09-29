@@ -28,6 +28,8 @@ The hugo exercise's "Cleaning up" ([review](../reviews/2026-09-28-hugo-bump-exer
 - `update --branch`, refused;
 - a new branch that takes the name, which `status` then finds before the merged record.
 
+**Confirmed live:** the hugo session cleaned sshuttle's branch after #35011 merged, with a build of `f85f200b`. `status --all` showed it as cleaned, with #35011 merged and nothing under Needs you, and `status sshuttle-2` said "cleaned after its merge".
+
 `TestBranchesKeepTheirRules` covers the store's lookup: the merged record rather than the open branch of the same name, the newest of two, and a name never used. The existing rename test still shows a lost open branch needing you.
 
 Twelve mutations each fail a test. One was caught only once the test compared the pull request line: once a new branch took the merged branch's name, its Git branch was found again, and the two views were the same but for that line.
