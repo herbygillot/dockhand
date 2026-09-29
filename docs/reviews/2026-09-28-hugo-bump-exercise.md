@@ -162,3 +162,43 @@ Findings:
 2. **The failure summary names the wrong line.** It was "`make` failed with exit code: 2; Failed to build beekeeper-studio". The cause, "fatal error: 'source_location' file not found", and the module, "node-gyp failed to rebuild … sqlanywhere", were deeper in the log. The first `fatal error:` line, and electron-builder's `⨯` line, would be the better summary.
 3. **An exclusion by `platforms` is labelled `known_fail`.** It showed as "Excluded … macOS 12 (Monterey): known_fail", the raw value and the wrong reason. The port has no `known_fail`, and MacPorts has a separate keyword by that name. It should read "unsupported: platforms {darwin >= 23}".
 4. **An excluded environment is presented as tested.** `submit --plan` said "passed on tart macOS 12 (Monterey) …, macOS 14 …, macOS 26". The PR's Tested on listed "macOS 12 (Monterey) arm64 / Xcode, its version not recorded · tart: built in a clean VM", although nothing was built there. Only the table said "— excluded". A public claim of testing that didn't happen is the most serious finding of this run. I corrected #35015 by re-checking on 14 and 26 only and re-submitting.
+
+## Cleaning up duckdb-cxx14
+
+`duckdb-cxx14` had no PR, and one uncommitted Portfile edit: C++14 for duckdb's build on macOS 12 and older. That same change had landed on master as e5467392f89 "duckdb: fix build on macOS 12 and older"; the working Portfile was identical to master's. To remove it with dockhand, I had to discard the edit by hand, `archive` the branch, and run `clean --archived`.
+
+1. **dockhand doesn't notice when a branch's edits are already on master.** `status` kept listing duckdb-cxx14 under Needs you ("snapshot 1 passed; commit it for review") after its change had landed on master by another route. A worktree whose files match current master in every directory it changes could be reported as "already on master", with archive, or cleaning its worktree, as the next step.
+2. **`clean --archived` keeps a Git branch with nothing on it.** It kept `dockhand/duckdb-cxx14` ("dockhand path duckdb-cxx14 checks it out again"), though the branch has no commits beyond master. A branch with nothing master lacks could go with its worktree.
+
+## ov, through adopt, edit, retry and submit --passing
+
+With a build of `11fb35f9`, ov went from 0.54.0 to 0.55.0 ([macports/macports-ports#35017](https://github.com/macports/macports-ports/pull/35017)), on paths new to this exercise:
+
+- a branch made by hand (`git worktree add --no-checkout -b hand/ov-0.55`, sparse over `_resources` and `textproc/ov`), then `adopt`;
+- `update ov` inside it;
+- `edit` with `EDITOR=true`, with no editor, and for a port outside the sparse set;
+- `check --fresh --on tart:sequoia --tests required` (check-23);
+- `retry check-23` (check-24);
+- `tidy`;
+- `submit --passing --tested-binaries`, driven through a pseudo-terminal.
+
+What worked well:
+
+- `adopt` read the hand-made branch as it was ("0 commits above master e137723, changing no ports yet").
+- `update` raised the Go minimum itself: "Raising go.toolchain_min from 1.25.0 to 1.26, which ov's go.mod requires". Upstream's `go.mod` did move from 1.25.0 to 1.26.0.
+- `edit` without a terminal prints the Portfile's path, as documented, and brings a port outside the sparse set into the worktree.
+- `retry` repeated check-23's exact snapshot in 1.5 minutes.
+- The "Building the PortIndex" notice now appears in the check's own output.
+- `--passing` refused without a terminal with a clear alternative, and on one it offered "y submit · n not now · d diff".
+- The PR ticked enhancement for dockhand's own commit on an adopted branch.
+- In a fresh macOS 15 guest, ov reported 0.55.0 (the Portfile's `-X main.Version` still takes effect). The sample config, notes and three completions are installed. It paged a short file, a long one with `--exit-write`, a CSV in column mode with a header, standard input, and a gzip file, and `--exec` ran its command. A bad flag exits 1.
+
+Findings:
+
+1. **The Go minimum's raise is said only once.** `update` announced raising go.toolchain_min from 1.25.0 to 1.26, but neither `submit --plan`'s Upstream section, nor `--passing`'s list, nor the PR mention it. A raised minimum is exactly what a reviewer checks; it could stay with the update's recorded comparison and reach the preview and the PR.
+2. **The raised value drops a component.** dockhand wrote `go.toolchain_min 1.26`; go.mod says `go 1.26.0`, and the Portfile had `1.25.0`.
+3. **`--tests required` on a port with no tests passes without saying so.** ov declares none. The plan said "tests required" and the check passed with no test phase. The plan could say "ov declares no tests".
+4. **The PortIndex build is costly.** check-23 spent about 1,000 CPU-seconds on the host (5 minutes of wall time) building the PortIndex, for master e137723, which beekeeper-studio's checks had already used. Perhaps the index is kept per worktree, or an adopted worktree misses the cache. retry, in the same worktree, rebuilt nothing.
+5. **`--passing` repeats "upstream:".** Its list prefixes every line with "upstream:", where the submit preview no longer does.
+6. **`edit` of another port widens the sparse set for good.** `edit jq` left `sysutils/jq` checked out in the ov branch's worktree. Harmless, but nothing narrows it again.
+7. **`--passing` requires a terminal even with `--yes`.** The message is clear, and asking about each branch is deliberate, but a script has no batch equivalent short of one `submit --branch <name> --yes` per branch.
