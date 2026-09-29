@@ -248,6 +248,12 @@ These are taken when their area is next touched, or between items.
   - a failure summarized by its cause (finding 2). The guest takes MacPorts' last three `Error:` lines: "`make` failed with exit code: 2; Failed to build beekeeper-studio". The cause, "fatal error: 'source_location' file not found" as node-gyp rebuilt sqlanywhere, was only in the log. A build tool's output isn't MacPorts' interface, so what's read beyond MacPorts' own lines, and how it's marked as a reading of the log, is decided first (D10);
   - an exclusion by `platforms` named for it, not "known_fail" (finding 3): with build eligibility, in item 6;
   - a yarn workspace's manifests read (finding 1): with the chezmoi run's item on which manifests the port builds with, above.
+- **What the decisions of 2026-09-29 ask for,** after the beekeeper-studio run's first item:
+  - D9's holds: none for Go; a new `-sys` crate listed with a hint at the MacPorts library it may link; counts for the rest;
+  - D7's plan rule;
+  - D8's `gh pr ready`, and the guide on asking an organization to approve dockhand's app;
+  - D10's first compiler error, in a package of its own;
+  - D2's default, with the oracle's design note.
 - **Branches from before v3.** The hugo exercise's checkout holds 22 local `dockhand/bump/<port>-<id>` branches from earlier dockhand, which nothing reports ([review](reviews/2026-09-28-hugo-bump-exercise.md#cleaning-up), finding 3). Its classification is the design:
   - in master by patch-id (`git cherry`, since MacPorts rebases on merge), as 13 were, whatever became of their pull requests: removable, with the fork branch when it holds the same commit;
   - superseded by a newer version in master, as 1 was: removable after a look;
@@ -259,21 +265,18 @@ These are taken when their area is next touched, or between items.
 
 ## Decisions for the person
 
-- **D2. Tools or Xcode profile.** Should modelled contexts use the Xcode profile, as MacPorts' builders do, or the tools profile they use now? This has been open since oracle phase 5, and changes nothing an update edits today.
-- **D6. How long build history is kept** (the SQL review's finding 8). Runs, executions, results, plans, revisions, and each build's recorded inputs are never removed. Inputs grow fastest, at about 3.6 KB a build: an estimated 700 MB at 200,000 builds. The review suggests the archives' cutoff: keep what a result still usable for reuse, or an open branch, refers to. A merged branch's own record stays either way, for status.
-- **D7. `update --plan` on a branch dockhand doesn't track** (the chezmoi run's finding 3). It refuses and points at `adopt`, as a test pins, since the branch may hold the person's own edits to the port. The choices:
-  - A: better words only, naming `--new --plan` too;
-  - B, proposed: plan on master unless what's checked out here changes the port, in commits since master or uncommitted edits, and refuse only then. The same test would cover master's own uncommitted edits, and `update` without `--plan` could act as it does on master;
-  - C: always plan on master, leaving out the person's own edits without a word.
-- **D8. The GitHub CLI for marking ready.** When an organization refuses dockhand's app, a refused `--ready` says how to finish: the pull request's page, or `gh pr ready <n>`. dockhand could run that command itself when `gh` is installed and signed in. It's a documented command, and gh's login stays gh's, but the change would be made as another app, one the organization allows.
-- **D9. Holds on the dependencies dockhand writes** (discussed 2026-09-28). `update` writes `go.vendors` and `cargo.crates` itself, and a check builds with only what the port declares, so a changed Go module or Rust crate rarely needs a person. Three questions:
-  - no Go dependency holds at all, keeping the `go.toolchain_min` check: proposed;
-  - a new Rust `-sys` crate in Cargo.lock, which can link a MacPorts library where one is installed and a bundled copy where it isn't, a difference a clean check can't see: hold, list without holding, or ignore. Holding is proposed;
-  - the lines that don't hold, such as a module that moves: kept, a count, or dropped. A count in the update's own output, and nothing in the pull request, is proposed.
-- **D10. What a failure's summary reads beyond MacPorts' own lines** (the beekeeper-studio run's finding 2). Today it's MacPorts' last three `Error:` lines. A compiler's `error:` or `fatal error:` line, in the format clang documents, would name the cause; a build tool's own marks, such as electron-builder's `⨯`, aren't a documented interface. Proposed: the first compiler error in the port's log, marked as read from the log, beside MacPorts' lines.
+- **D6. How long build history is kept** (the SQL review's finding 8). Runs, executions, results, plans, revisions, and each build's recorded inputs are never removed. Inputs grow fastest, at about 3.6 KB a build: an estimated 700 MB at 200,000 builds. The review suggests the archives' cutoff: keep what a result still usable for reuse, or an open branch, refers to. A merged branch's own record stays either way, for status. The person would peel it back by weight (2026-09-29): some light records kept for 30 days, others gone once their branch merges. Reuse reads a merged branch's results for later checks, so what goes at merge is settled with item 6's reuse by content.
 
 ### Decided
 
+- **D9. Holds on the dependencies dockhand writes** (2026-09-29). `update` writes `go.vendors` and `cargo.crates` itself, and a check builds with only what the port declares, so what changes in them doesn't hold:
+  - Go: no dependency holds at all. The `go.toolchain_min` check stays, and holds as D4 has it;
+  - a new Rust `-sys` crate is listed for the person's attention, without holding. It can link a library MacPorts provides where one is installed, and a bundled copy where it isn't, which a clean check can't tell apart, so the port may want to declare the library;
+  - the lines that don't hold are a count in the update's own output, such as "go.mod: 2 added, 4 moved", and nothing in the pull request.
+- **D7. `update --plan` on a branch dockhand doesn't track** (2026-09-29): it plans on master unless what's checked out here changes the port, in commits since master or uncommitted edits, and refuses only then, naming `adopt` and `--new --plan`. Master's own uncommitted edits to the port are treated the same way, and `update` without `--plan` acts as it does on master.
+- **D8. The GitHub CLI for marking ready** (2026-09-29). When an organization refuses dockhand's app, `submit --ready` marks the pull request ready with `gh pr ready` where `gh` is installed and signed in, and says it did; otherwise it says how to finish, as now. The organization's owners can approve dockhand's app instead, which the guide explains how to ask for.
+- **D10. A failure's likely cause** (2026-09-29). Beside MacPorts' own `Error:` lines, a failure's summary gives the first compiler error in the port's log, in the format clang documents, marked as read from the log. Classifiers for other causes can follow, best effort, in a package of their own.
+- **D2. Modelled contexts default to the Xcode profile** (2026-09-29), as MacPorts' builders are set up. A context that states its tools is modelled with them, as before. This replaces the tools profile the oracle settled on 2026-09-26.
 - **D3. Tahoe's Xcode** (2026-09-27), settled by Xcode images following MacPorts' buildbots, below. Tahoe's image has 26.6, its buildbot's, and a `--rebuild` keeps to that rather than choosing Xcode 27.
 - **D4. What an update couldn't check holds a submission nobody reviews** (2026-09-27, [note](activity/2026-09-27-what-couldnt-be-checked-holds.md)).
   - `bump`'s and serve's submissions wait for a person's look, as they do for a failed search for other pull requests, when the update couldn't check something a passing build can't catch:
