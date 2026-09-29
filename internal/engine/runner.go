@@ -231,6 +231,17 @@ func (d *driver) fenced(ctx context.Context, fn func(store.Tx) error) error {
 	return d.session.Fenced(context.WithoutCancel(ctx), d.lease, fn)
 }
 
+// anotherCanReuse reports whether another environment of the check has an
+// identity, which reuse needs.
+func (d *driver) anotherCanReuse(ctx context.Context, environment model.Environment) bool {
+	for other, identity := range d.e.identitiesNow(ctx, d.plan.Environments) {
+		if other != environment && identity != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func (d *driver) emit(ctx context.Context, kind, message string) {
 	_ = d.fenced(ctx, func(tx store.Tx) error {
 		_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: kind, Level: model.LevelInfo, Message: message})
@@ -441,6 +452,13 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			return err
 		}
 		var reused map[model.TargetID]reuse.Candidate
+		if attempt == 0 && identity == "" && !d.plan.Fresh && d.anotherCanReuse(ctx, environment) {
+			// Where another environment of the check can reuse its results,
+			// this one's building everything reads as a fault unless it's
+			// said: a GitHub run records neither what its runner is nor
+			// what the build read (the gh rebase's finding 1).
+			d.emit(ctx, "execution.state", fmt.Sprintf("%s: %s: builds every target, since its provider doesn't say what the environment is, so no earlier result can be reused there", d.run.Name(), describeEnvironment(environment)))
+		}
 		if attempt == 0 {
 			choice, err := d.reusable(ctx, identity, targets, paths, revision.Source.Tree)
 			if err != nil {

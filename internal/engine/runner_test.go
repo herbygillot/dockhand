@@ -977,3 +977,48 @@ func TestABranchHasOneCheckAtATime(t *testing.T) {
 	_, err = e.Retry(t.Context(), done)
 	require.NoError(t, err, "a check asked to stop no longer counts")
 }
+
+// An environment whose provider can't say what it is builds every target,
+// and says why where another environment of the check could reuse: gh's
+// re-check reused its Tart results and ran GitHub's workflow again, 5.5
+// of its 5.7 minutes, without a word (the gh rebase's finding 1). Where no
+// environment of the check could, it's nothing to remark on.
+func TestAnEnvironmentThatCantReuseSaysSo(t *testing.T) {
+	github := model.Environment{Provider: "github", Platform: tahoeArm.Platform}
+	said := func(t *testing.T, e *Engine) []string {
+		t.Helper()
+		events, err := e.Events(t.Context(), 0)
+		require.NoError(t, err)
+		var messages []string
+		for _, event := range events {
+			if strings.Contains(event.Message, "builds every target") {
+				messages = append(messages, event.Message)
+			}
+		}
+		return messages
+	}
+
+	f := setup(t)
+	e := f.open(t)
+	e.Providers = map[string]buildenv.Provider{"command": &identified{identity: "origin a"}, "github": &scriptedProvider{}}
+	run, err := e.Drive(t.Context(), session(t, e), queuedHarborRun(t, e, tahoeArm, github).ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, run.State, run.Detail)
+	messages := said(t, e)
+	require.Len(t, messages, 1)
+	require.Equal(t, run.Name()+": "+describeEnvironment(github)+": builds every target, since its provider doesn't say what the environment is, so no earlier result can be reused there", messages[0])
+
+	f = setup(t)
+	e = f.open(t)
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}, "github": &scriptedProvider{}}
+	_, err = e.Drive(t.Context(), session(t, e), queuedHarborRun(t, e, tahoeArm, github).ID)
+	require.NoError(t, err)
+	require.Empty(t, said(t, e), "no environment could reuse")
+
+	f = setup(t)
+	e = f.open(t)
+	e.Providers = map[string]buildenv.Provider{"command": &identified{identity: "origin a"}}
+	_, err = e.Drive(t.Context(), session(t, e), queuedHarborRun(t, e, tahoeArm, tahoeX86).ID)
+	require.NoError(t, err)
+	require.Empty(t, said(t, e), "every environment could")
+}
