@@ -92,3 +92,12 @@ Findings:
 9. **The logs are still very long.** Each Tart log is about 72k lines, and sshuttle's own phases start around line 70,900 (see Improvements).
 
 Worked well: `watch` without a terminal prints status once, then streams events. `explain` lists its rules, quotes MacPorts' guide, and refuses an unknown code helpfully. `review --markdown` gives a short, correct review. `path`, `diff` and `impact` are quick and clear.
+
+### What a comparison would have caught, and what the build did
+
+Two things about sshuttle 2.0.0 are exactly what dockhand's upstream comparison exists to report, and it reported neither, because it couldn't compare PyPI archives (finding 1):
+
+- `requires-python` moved from `>=3.9` to `>=3.10`, and the classifiers dropped 3.9 (they list 3.10 to 3.12; upstream's tox and CI test only those). The port pins `python.default_version 313`, so it is unaffected. For a Python port, though, a raised floor, or a ceiling below the port's pinned version, is the Python equivalent of Go's `go` directive and deserves a line.
+- The python PortGroup's default is now 314 (`python_get_default_version`), while sshuttle pins 313. Neither `outdated` nor `update` mentions a pinned version that lags the PortGroup's default. That's a candidate for a quiet note rather than a hold.
+
+By hand, outside dockhand, the 2.0.0 build was exercised in two throwaway clones of `dockhand-xcode-tahoe`: a client with sshuttle installed from the branch's Portfile, and an SSH server running macOS's own Python 3.9.6. Tart's shared network doesn't let the guests reach each other, so the client reached the server through an SSH port forward over the host. Through that, a single-address tunnel (1.1.1.1/32), a full tunnel (0/0) and a full tunnel with `--dns` all carried traffic. The pf anchor used `pass out quick` (2.0.0's fix), the remote's own address was auto-excluded (2.0.0's feature), and every rule was flushed with pf disabled when sshuttle stopped. A dockhand command that kept a check's passing guest, or started one from an installed archive, would make this kind of by-hand test a single step.
