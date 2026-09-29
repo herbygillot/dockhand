@@ -11,6 +11,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/store"
 )
 
 // mergedBranch submits an update and has GitHub merge it.
@@ -123,4 +124,46 @@ func TestCleanupRemovesWhatCleanWouldAndOldIndexes(t *testing.T) {
 	again, err := e.Cleanup(t.Context(), session(t, e), 7*24*time.Hour)
 	require.NoError(t, err)
 	require.Zero(t, again.Removed(), "what is kept stays kept")
+}
+
+// A branch checked out in a worktree clean keeps, one dockhand didn't make
+// as an adopted branch's, is kept: deleting it would leave that worktree on
+// a branch that's gone, which git branch -d refuses to do. So is one
+// checked out in your checkout. (The hugo exercise's cleanup after
+// beekeeper-studio and ov, where clean left an adopted branch's worktree
+// with nothing to stand on.)
+func TestCleanKeepsABranchCheckedOutWhereItStays(t *testing.T) {
+	_, e, fake, branch := mergedBranch(t)
+	branch.Managed = false
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(branch) }))
+	plans, err := e.PlanClean(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{
+		"branch dockhand/jq-update":             "it is checked out in " + branch.Worktree + "; switch away there first",
+		"ada/macports-ports:dockhand/jq-update": "",
+	}, whats(plans), "the worktree isn't dockhand's to remove")
+	_, err = e.ApplyClean(t.Context(), plans)
+	require.NoError(t, err)
+	require.Equal(t, "dockhand/jq-update", strings.TrimSpace(run(t, branch.Worktree, "branch", "--show-current")))
+	require.NotEmpty(t, run(t, e.Repo.Root, "for-each-ref", "refs/heads/dockhand/jq-update"), "the branch stays")
+	require.Empty(t, fake.head("dockhand/jq-update"), "the fork's branch still went")
+
+	// Checked out in your checkout instead, it's kept too.
+	run(t, branch.Worktree, "switch", "-q", "--detach")
+	run(t, e.Repo.Root, "switch", "-q", "dockhand/jq-update")
+	plans, err = e.PlanClean(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "it is checked out in your checkout; switch away first", whats(plans)["branch dockhand/jq-update"])
+
+	// Planned while nowhere else, then checked out before clean ran: the
+	// branch is looked for again before it goes.
+	run(t, e.Repo.Root, "switch", "-q", "--detach")
+	plans, err = e.PlanClean(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, whats(plans)["branch dockhand/jq-update"])
+	run(t, branch.Worktree, "switch", "-q", "dockhand/jq-update")
+	done, err := e.ApplyClean(t.Context(), plans)
+	require.NoError(t, err)
+	require.Equal(t, "it is checked out in "+branch.Worktree+"; switch away there first", done[0].Steps[0].Kept)
+	require.NotEmpty(t, run(t, e.Repo.Root, "for-each-ref", "refs/heads/dockhand/jq-update"))
 }

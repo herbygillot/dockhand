@@ -124,9 +124,13 @@ func (e *Engine) planCleanBranch(ctx context.Context, branch model.Branch) (Clea
 			step.Kept = beyond
 		case worktreeKept:
 			step.Kept = "the worktree it is checked out in is kept"
-		case !branch.Managed && branch.Worktree != "":
-			if current, err := e.Repo.CurrentBranch(ctx); err == nil && current == branch.Name {
-				step.Kept = "it is checked out in your checkout; switch away first"
+		default:
+			removing := ""
+			if branch.Managed {
+				removing = branch.Worktree
+			}
+			if step.Kept, err = e.checkedOut(ctx, branch.Name, removing); err != nil {
+				return plan, err
 			}
 		}
 		plan.Steps = append(plan.Steps, step)
@@ -233,6 +237,39 @@ func (e *Engine) planCleanChecks(ctx context.Context, branch model.Branch, repos
 	return steps, nil
 }
 
+// checkedOut says where a branch is checked out, other than in the
+// worktree clean is removing: your checkout, or a worktree dockhand didn't
+// make or keeps. Deleting the branch would leave that checkout on a branch
+// that's gone, as git branch -d refuses to, so it's kept.
+func (e *Engine) checkedOut(ctx context.Context, branch, removing string) (string, error) {
+	checkouts, err := e.Repo.Checkouts(ctx, branch)
+	if err != nil {
+		return "", err
+	}
+	for _, checkout := range checkouts {
+		switch {
+		case removing != "" && samePath(checkout, removing):
+		case samePath(checkout, e.Repo.Root):
+			return "it is checked out in your checkout; switch away first", nil
+		default:
+			return "it is checked out in " + checkout + "; switch away there first", nil
+		}
+	}
+	return "", nil
+}
+
+// samePath reports whether two paths name the same directory, through any
+// links, as Git reports a worktree's.
+func samePath(a, b string) bool {
+	resolved := func(path string) string {
+		if real, err := filepath.EvalSymlinks(path); err == nil {
+			return real
+		}
+		return filepath.Clean(path)
+	}
+	return resolved(a) == resolved(b)
+}
+
 // planCleanWorktree plans removing an unmerged branch's worktree, and
 // nothing else, unless it holds work of its own.
 func (e *Engine) planCleanWorktree(ctx context.Context, branch model.Branch) (CleanBranch, error) {
@@ -315,6 +352,10 @@ func (e *Engine) ApplyClean(ctx context.Context, plans []CleanBranch) ([]CleanBr
 				if slices.ContainsFunc(plan.Steps, func(s CleanStep) bool { return s.kind == "worktree" && s.Kept != "" }) {
 					step.Kept = "the worktree it is checked out in is kept"
 					continue
+				}
+				// So does one checked out anywhere, now its worktree is gone.
+				if step.Kept, err = e.checkedOut(ctx, plan.Branch.Name, ""); err != nil || step.Kept != "" {
+					break
 				}
 				err = e.Repo.DeleteBranch(ctx, plan.Branch.Name, step.expected)
 			case "fork":

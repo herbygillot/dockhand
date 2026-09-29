@@ -301,7 +301,7 @@ Serve opens no pull requests by default. With `--submit-passing`, or `serve.subm
 
 ## Cleaning up
 
-- **`clean`**, which is `clean --merged`, removes a merged branch's worktree, local branch, and fork branch, each only while it still holds the merged commit. A worktree with edits or untracked files, and work that went on past the merge, are kept.
+- **`clean`**, which is `clean --merged`, removes a merged branch's worktree, local branch, and fork branch, each only while it still holds the merged commit. A worktree with edits or untracked files, and work that went on past the merge, are kept. So is a branch checked out anywhere clean doesn't remove, your checkout or a worktree dockhand didn't make, since deleting it would leave that checkout on a branch that's gone.
 - **`clean --closed`** and **`clean --archived`** take only the worktrees of branches whose pull request closed unmerged, or that you archived. Their work isn't merged, so the branches and checkpoints stay, and `path` or any command that needs the worktree checks it out again.
 - **What checks left behind.** A check deletes its Tart clone when it ends, and a later attempt of the same check deletes an earlier one's. A check whose process dies with no later attempt leaves its clone behind, sometimes still running and holding one of the Mac's two VM slots. Whichever branches it cleans, `clean` lists these clones too, and removes one once no process is running its check, stopping it first. It keeps a clone no check of this checkout made, since another database may be using it, and it never touches the images checks clone from.
 - **`archive [branch]`** hides a branch from status without touching anything; `status --all` still shows it, and `archive --undo` brings it back.
