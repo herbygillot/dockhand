@@ -87,7 +87,7 @@ Findings:
 4. **The submit refusal ignores a queued check.** With check-12 queued, `submit --plan` said "no check has finished … run dockhand check first", and the Checks line said "none has finished". It should name check-12 and `dockhand wait check-12`.
 5. **`wait` with no argument** fails with cobra's raw "accepts 1 arg(s), received 0", as `logs` did before its fix. In a branch's worktree it could follow that branch's queued or running check.
 6. **serve's banner and the scheduler disagree.** The banner said "builds on github (2 at a time), tart (1 at a time)", but the Sonoma and Tahoe VMs started, built and passed at the same time.
-7. **The GitHub check leaves its branch on the fork.** `dockhand-check/e15ced625514` is still on herbygillot/macports-ports after check-12 finished, and nothing reports it or cleans it up.
+7. **The GitHub check leaves its branch on the fork until clean.** `dockhand-check/e15ced625514` stayed on herbygillot/macports-ports after check-12 finished. Once #35011 merged, `clean` removed it and check-13's `dockhand-check/7e7c6cd17724` along with the branch, so they don't pile up. They do linger for the life of the PR.
 8. **The GitHub line in the description says "Developer tools not recorded".** The runner's macOS and Xcode could be read from the workflow log, as Tart's are from the guest.
 9. **The logs are still very long.** Each Tart log is about 72k lines, and sshuttle's own phases start around line 70,900 (see Improvements).
 
@@ -113,3 +113,7 @@ Findings:
 1. **A saved tidy plan is JSON.** "Edit its messages there if you like" means editing `\n`-escaped strings inside JSON. A plan that shows each message as plain text, like `git rebase -i`'s reword or a message file per commit, would suit people.
 2. **`tidy --apply` doesn't show the message it applies.** It reprints the proposal, but not the edited message, so the body I added was visible only in `git log` afterwards. It also says "subject from your commit e15ced6", when that subject was dockhand's own, from the update.
 3. **A re-submit never refreshes the Description section.** It refreshes "from Tested on down", so a commit body added after the PR opened ("Build with Python 3.14, the python PortGroup's default.") never reaches the PR, and #35011's Description stays empty. As with Type(s), the Description could be refreshed while it is still exactly as dockhand wrote it.
+
+### Cleaning up after sshuttle
+
+With a build of `f85f200b`, `clean --yes` removed sshuttle-2's worktree, local branch, fork branch, and both of its checks' `dockhand-check/` branches. Afterwards, the findings from Cleaning up are fixed. `status --all` lists every cleaned branch as "cleaned" with its PR "merged", and nothing appears under Needs you. `status sshuttle-2` says "cleaned after its merge". Only the 22 legacy `dockhand/bump/*` branches (finding 3 there) remain for a person to delete.
