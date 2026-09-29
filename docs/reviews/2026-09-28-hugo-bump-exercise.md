@@ -283,3 +283,34 @@ hk 2.4.0 passed check-36 (Tart macOS 26, GitHub). tidy's saved plan took a body 
 1. **GitHub results are never reused after a rebase.** Re-checking after the rebase (check-37), both Tart environments reused check-35 ("every target would build as it did in check-35, and reuses that result, building nothing"), but the GitHub environment pushed and ran the workflow again: about 5.5 of the check's 5.7 minutes. Master's one new commit touched only py-async-geotiff. If GitHub results can't be reused by design (the workflow reads the whole tree), the plan could say so.
 2. **After `restore rebase-29`, status said "passed for older work".** The branch was back at 77d0907, exactly the files check-35 passed. Status seems to credit only the latest check (check-37, for the rebased files), not any check that matches.
 3. **Rebase's Next line ignores an existing check.** The second rebase printed "Next: dockhand check, since the files it builds on have changed", while status already said "passed for this commit": check-37 covers exactly those files.
+
+## libuv (someone else's PR), sqlit-tui with its dependency, ouch and s2n-tls
+
+With `c42d0587`, a second set of four, chosen for paths not yet exercised:
+
+- **libuv:** essandess's draft [macports/macports-ports#34620](https://github.com/macports/macports-ports/pull/34620) (1.44.2 → 1.52.1), taken through `adopt --pr`, `review --markdown`, `impact`, `check --also ttyd,luv,uvw` (check-38) and `check --baseline --only uvw,uvw2` (check-40). Nothing posted.
+- **sqlit-tui 1.6.4 with py-textual-fastdatatable 0.19.0,** in one branch ([macports/macports-ports#35041](https://github.com/macports/macports-ports/pull/35041)). sqlit-tui 1.6.4 pins `textual-fastdatatable==0.19.0`, so the dependency went to an explicit version below its newest (0.19.3).
+- **ouch 0.8.3** ([#35042](https://github.com/macports/macports-ports/pull/35042)), with a hands-on test.
+- **s2n-tls 1.7.10** ([#35043](https://github.com/macports/macports-ports/pull/35043)), with its test suite run by hand.
+
+What worked well:
+
+- **The patch check.** `update libuv --plan` reported that `patch-libuv-legacy.diff` no longer applies to 1.53.0 (every hunk failing in five files). #34620 comments that patch out, and a second one, which is the reviewer's real question there.
+- **adopt --pr.** It said "Adopted pr-34620: … by @essandess, 1 commit, changing libuv; maintainers can edit".
+- **impact** listed 20 library dependents, as "candidates to look at, not proof of anything".
+- **--also** expanded ttyd, luv and uvw to their subports (luv-luajit, uvw-headers, uvw-static, uvw2). libuv and its dependents built on Tart macOS 12 and 26.
+- **--baseline** told the advisory test results apart. uvw's tests fail at the PR's base (fd44713) too, so that predates the PR. uvw2's timeout on the branch didn't recur in a fresh re-run (check-43), so it was a flake.
+- **The two-port branch.** One branch took both updates. check-39 ordered all five `py3xx-textual-fastdatatable` subports, the stub, then sqlit-tui, and passed on Tahoe and GitHub. tidy proposed a series of two commits, dependency first. submit refused a title it couldn't choose ("the pull request needs a title, since the branch changes several ports: give one with --title"), and the PR described both commits in a table.
+- **tidy --group.** "2 1" reordered, "1+2" combined (warning "message from commit 1, so check it says what all of them do"), and "3" was refused.
+- **ouch by hand.** In a Tahoe guest, ouch 0.8.3 round-tripped tar.gz, tar.xz, tar.bz2, tar.zst, tar.lz4, zip, 7z and tar.sz byte for byte, listed an archive, and failed cleanly on a corrupt zip and a missing file.
+
+Findings:
+
+1. **`update --plan` doesn't mention other open PRs.** It planned libuv 1.53.0 without noting #34620 already open for libuv; only submit's preview looks. Someone about to start an update is exactly who should hear about a PR already in flight.
+2. **`review` checks commit rules only.** It passed #34620 ("The commits and Portfiles follow the rules dockhand checks") without the analysis `update` does: the patch check, the upstream comparison, or dependents. It didn't mention that the PR comments out two patchfiles. Running those checks on someone else's PR would make review much more useful.
+3. **impact's suggested next step is alphabetical.** It suggested `check --also aria2,bind9,bind9.18`: the first three alphabetically, and among the heaviest to build. Something like smallest-first, or a mix across dependency kinds, would be a better default.
+4. **`check --baseline --plan` is refused with cobra's raw text:** "if any flags in the group [baseline plan] are set none of the others can be". Either support it or say why not in dockhand's own words.
+5. **--baseline ignores advisory test results.** After check-38's advisory test failures, `check --baseline` said "nothing failed in check-38, so there is nothing to compare; name ports with --only". With `--only uvw,uvw2`, its report compared builds only ("✓ builds at the base, as it does on the branch"), though it ran because of test results. It didn't say that uvw's tests failed at the base too, or that uvw2's passed there. The per-environment lines showed both, but the summary is what people read.
+6. **tidy --group lets a dependent come first.** `--group "2 1"` would commit sqlit-tui 1.6.4, which pins textual-fastdatatable 0.19.0, before the commit that provides 0.19.0, with no warning. check's Order already knows the dependency.
+7. **check can't build variants.** s2n-tls runs its tests only in `+tests`. `submit --tested-variants` ticks the checklist box, but no check can produce that evidence. Something like `check --variants +tests`, recorded in Tested on, would.
+8. **s2n-tls's `+tests` variant is broken, a Portfile issue found in passing.** Run by hand (`port test +tests` in a Tahoe guest), all 284 tests aborted: "Library not loaded: @rpath/libs2n.1.dylib … no LC_RPATH's found". The cmake PortGroup always sets `-DCMAKE_BUILD_WITH_INSTALL_RPATH:BOOL=ON`, so the test binaries in the build tree have no rpath to `build/lib`. The variant's `test.env DYLD_LIBRARY_PATH=…` doesn't reach them, presumably stripped by SIP when MacPorts runs the test command through `/bin/sh`. With the variable set directly, `ctest` passed all 284 on 1.7.10. The variant would work by building without the install rpath.
