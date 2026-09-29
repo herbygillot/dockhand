@@ -141,7 +141,7 @@ The order is the roadmap's own: a guardrail first, then what's written into a Po
      - the release `outdated` found passed to the update, and a plan's `--only`, `--also`, `--fresh`, and omissions in its JSON (finding 36);
      - one set of dependencies given to `engine.Open` (finding 1).
    - **From the private-helper review,** as planning moves, with the evaluator's typed facts (finding 27 above):
-     - build eligibility in `macports`, reading options as MacPorts does, with an unknown kept apart from an exclusion (finding 1);
+     - build eligibility in `macports`, reading options as MacPorts does, with an unknown kept apart from an exclusion (finding 1). An exclusion by `platforms` is named for it: MacPorts defaults `known_fail` to yes where a port's `platforms` exclude the host, which showed as "known_fail" for beekeeper-studio, which declares none (the beekeeper-studio run's finding 3);
      - a conservative Portfile inspection in `macports/portfile`: whether a change is only to the revision, and a port's declared version, `go.setup`'s included, which tidy reads too (finding 2).
 
 7. **Coverage** (the previous step 13, with what `outdated` found).
@@ -216,7 +216,7 @@ These are taken when their area is next touched, or between items.
   - a `Generated-By` naming a commit nobody can find, not only a `+dirty` build: submit could ask GitHub, since tidy reads nothing remote.
 - **What the chezmoi run asked for** ([review](reviews/2026-09-28-hugo-bump-exercise.md#chezmoi-with-bump)):
   - a Go module the build already required indirectly is no addition when it becomes direct. Done 2026-09-28 ([note](activity/2026-09-28-go-module-promotion.md)): go.mod's indirect requirements are read apart, and a module moving between them and the direct ones is said only where its version moves, without holding;
-  - a comparison that knows which manifests the port builds with, and sets the rest apart: chezmoi's pyproject.toml is its documentation's;
+  - a comparison that knows which manifests the port builds with, and sets the rest apart: chezmoi's pyproject.toml is its documentation's. It reads those below the top level the build uses, too, which it doesn't yet: beekeeper-studio's yarn workspace `apps/studio/package.json` added two dependencies and moved electron from 39.8.5 to 39.8.10, unseen, as a Node version in `.nvmrc` or the lockfile would be (the beekeeper-studio run's finding 1);
   - a legend for the preview's `!`, which marks what holds the branch for a look.
 - **What the sshuttle run asked for** ([review](reviews/2026-09-28-hugo-bump-exercise.md#sshuttle-through-paths-not-yet-taken)), the first of them before anything else here:
   - **the current version's archives found as the new version's are.** Done 2026-09-28 ([note](activity/2026-09-28-mirror-groups-and-ready.md)): from MacPorts' own fetch plan, mirror groups expanded, for updates and `diff --archive`. About a third of the tree, the ports on PyPI's, CPAN's, and other mirror groups, can be compared, and so submitted unattended;
@@ -243,6 +243,11 @@ These are taken when their area is next touched, or between items.
   - `status --json`'s serve as fields, whether it runs, its pid, and the queue, beside the sentence. Done 2026-09-29 (the same note): `serve_state`, in `queue --json` too, read by the engine;
   - progress reported while a run is driven journaled as the run's progress events, as a provider's already is. The PortIndex rebuild, five minutes of check-16, showed only in serve's log, and `wait` never saw it. Done 2026-09-29 (the same note): each environment's info reports, named for it;
   - a database migration that says so, since builds older than it can't open the database afterward; certigo's first run migrated it silently.
+- **What the beekeeper-studio run asked for** ([review](reviews/2026-09-28-hugo-bump-exercise.md#beekeeper-studio-a-port-that-needed-a-portfile-change)):
+  - **an environment the check excluded isn't called tested,** the run's most serious finding (finding 4). `platforms {darwin >= 23}` excluded macOS 12, and the grid said so. But `submit --plan` said the check passed there, and the pull request's Tested on listed it, "its version not recorded", though nothing built there. Tested on lists every planned environment (`engine/body.go`), and submit's plan joins them itself (`command/submit.go`). Which environments a check tested is the evidence's to say, and an excluded one is named as excluded, with why;
+  - a failure summarized by its cause (finding 2). The guest takes MacPorts' last three `Error:` lines: "`make` failed with exit code: 2; Failed to build beekeeper-studio". The cause, "fatal error: 'source_location' file not found" as node-gyp rebuilt sqlanywhere, was only in the log. A build tool's output isn't MacPorts' interface, so what's read beyond MacPorts' own lines, and how it's marked as a reading of the log, is decided first;
+  - an exclusion by `platforms` named for it, not "known_fail" (finding 3): with build eligibility, in item 6;
+  - a yarn workspace's manifests read (finding 1): with the chezmoi run's item on which manifests the port builds with, above.
 - **Branches from before v3.** The hugo exercise's checkout holds 22 local `dockhand/bump/<port>-<id>` branches from earlier dockhand, which nothing reports ([review](reviews/2026-09-28-hugo-bump-exercise.md#cleaning-up), finding 3). Its classification is the design:
   - in master by patch-id (`git cherry`, since MacPorts rebases on merge), as 13 were, whatever became of their pull requests: removable, with the fork branch when it holds the same commit;
   - superseded by a newer version in master, as 1 was: removable after a look;
@@ -369,6 +374,12 @@ Changed:
 **The certigo run** in the same review, with `d7682668`, was checked against the code at `fc1e21a9`.
 - **Findings 2 to 7 hold,** each as described; each is a smaller item. Finding 1 is a new check to design rather than a defect, and is under Later: running built programs has side effects to design for first, and the core comes first.
 - **Confirmed fixed:** the saved plan as TOML with plain-text messages, `tidy --apply` showing the body it applies, and the Description from the commit's body on the first submit.
+
+**The beekeeper-studio run** in the same review, with `de693086`, was checked against the code at `60995fad`.
+- **Findings 2 and 4 hold** as described. The guest's summary of a failure is MacPorts' last three `Error:` lines (`why` in the Tart guest's script). Tested on lists every planned environment, filling in an empty observation where nothing ran, and submit's plan says "passed on" of all of them.
+- **Finding 3 holds, with a cause the review didn't see:** MacPorts itself defaults `known_fail` to yes where `platforms` exclude the host (`port1.0/portutil.tcl`), and `ineligible` reports it as though the port declared it. It joins build eligibility's move to `macports`, in item 6.
+- **Finding 1 is narrower than stated.** The top-level `package.json` is read, its dependencies and devDependencies. What isn't read is a manifest below the top level, a workspace's included, `.nvmrc`, or a lockfile. It joins the chezmoi run's item on which manifests the port builds with.
+- **Confirmed fixed:** tidy keeping the update's subject over a person's edit, the certigo run's finding 2.
 
 **The cleanup** in the same review, `dockhand clean` at `0ffed143`, was checked against `42bcaf3a`.
 - **Findings 1 and 2 hold, and are fixed** ([note](activity/2026-09-28-status-after-clean.md)): status took clean's removal of a merged branch for a lost one, and couldn't find a merged record by name.
