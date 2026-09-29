@@ -236,10 +236,6 @@ These are taken when their area is next touched, or between items.
   - `tidy --apply` showing each commit's whole message as it will be written. Done 2026-09-28 (the same note): without the saved notes on how the proposal was made, and a subject's source says "dockhand's commit" of one carrying dockhand's Generated-By line;
   - a re-submit refreshing the Description while it's still exactly as dockhand last wrote it, as it refreshes the Type(s). Done 2026-09-28 ([note](activity/2026-09-28-re-submitting.md)): a commit's body written after the pull request opened reaches it, and the preview says so.
 - **What the certigo run asked for** ([review](reviews/2026-09-28-hugo-bump-exercise.md#certigo-with-a-hands-on-binary-test)):
-  - each executable a port installs run with `--version` in the guest after install, with advice, never a failure, where the output lacks the port's version. certigo 1.18.1 printed `(devel)`, since its version moved to Go's build info, which a tarball build lacks. Every check passed, and only the binary showed it. The design needs:
-    - the executables from MacPorts' own `port contents`;
-    - a timeout and no input, since some start servers or wait on stdin;
-    - a limit for ports with many executables;
   - a subject kept where a person edits on top of dockhand's uncommitted update. Today the chain of edits breaks, so `fromEdits` drops the recorded "certigo: update to 1.18.1". Deriving one from the Portfile then finds no `version` line, since `go.setup` holds it (the private-helper review's finding 2, inside item 6). While the Portfile still declares the version the update recorded, its subject could stand, noted as including other changes;
   - `update --json`'s upstream messages without the "upstream: " prefix that the text drops under its heading. The comparison's messages could leave it out, and callers add it where a message stands alone;
   - `cancel` with no argument, like `wait`: the check of the branch checked out here, not cobra's error;
@@ -289,6 +285,9 @@ These are taken when their area is next touched, or between items.
 ## Later
 
 - **The prefix provider:** checks on a MacPorts installation on this Mac.
+- **Running what a port installs** (the certigo run's finding 1). Each executable a port installs would be run with `--version` in the guest after install, with advice, never a failure, where the output lacks the port's version. certigo 1.18.1 printed `(devel)`, since its version moved to Go's build info, which a tarball build lacks. Every check passed, and only the binary showed it.
+  - Running built programs unattended has side effects to design for first: some start servers or wait on input, so each needs a timeout and no input, and a port with many executables would flood the result. The executables would come from MacPorts' own `port contents`.
+  - Not before dockhand's core capabilities are solid, as the person decided on 2026-09-28.
 - **Expiring credentials.** This adds access and refresh tokens with their expirations, and refresh across processes, before any login flow that needs them.
 - **Evidence across repository registrations.** One database serves several checkouts. Once reuse keys evidence by content (item 6), what's left is whether identical inputs from another checkout are trusted.
 
@@ -368,7 +367,7 @@ Changed:
 - **All three findings hold.** A saved tidy plan is JSON (`TidyPlan.Save`), as it has been since it was added, while the guide calls it `plan.toml`. Applying one prints subjects and the saved notes, never a message's body. The note on a subject's source says "your commit" of any commit. A re-submit merges only the Type(s) and Tested on down (`mergeBody`), so the Description written from the commit's body at opening stays as it was. Each is a smaller item.
 
 **The certigo run** in the same review, with `d7682668`, was checked against the code at `fc1e21a9`.
-- **Findings 2 to 7 hold,** each as described; each is a smaller item. Finding 1 is a new check to design rather than a defect, and a smaller item too.
+- **Findings 2 to 7 hold,** each as described; each is a smaller item. Finding 1 is a new check to design rather than a defect, and is under Later: running built programs has side effects to design for first, and the core comes first.
 - **Confirmed fixed:** the saved plan as TOML with plain-text messages, `tidy --apply` showing the body it applies, and the Description from the commit's body on the first submit.
 
 **The cleanup** in the same review, `dockhand clean` at `0ffed143`, was checked against `42bcaf3a`.
