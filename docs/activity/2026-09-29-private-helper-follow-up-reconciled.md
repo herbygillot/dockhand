@@ -17,6 +17,10 @@ Codex's [follow-up](../reviews/2026-09-28-private-helper-follow-up.md) to its [p
   What it says of archive signing and SSH readiness, their items already say.
 - **Sizes.** `engine` is 11,140 production lines now, against its 10,900, after the week's fixes; `command` is 8,142 and `portedit` 3,329, as it says. It recommends no new package beyond the planned `macports/binaryarchive`, and the roadmap has none.
 
+## Tcl's booleans
+
+`on` is Tcl's own, not MacPorts': Tcl's boolean forms are `1`, `true`, `yes`, and `on`, and their opposites, in any case and any unambiguous prefix. In MacPorts' interpreter, Tcl 8.6.17, `string is true -strict` accepts `on`, `ON`, `y`, `t`, and `tr`, and refuses `o`, which could be either, and `2`, which `expr` takes as true. MacPorts tests `known_fail` with `string is true -strict` (`_mportcheck_known_fail` in `macports1.0/macports.tcl`), as port1.0's `tbool` does. `ineligible` accepts only `yes`, `1`, and `true`. So item 6's entry has eligibility test a boolean in MacPorts' own interpreter, where the evaluator already runs, rather than match more spellings in Go.
+
 ## Taken
 
 - The old version's gaps, next, as the comparison came first before.
