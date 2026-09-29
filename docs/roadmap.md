@@ -235,6 +235,18 @@ These are taken when their area is next touched, or between items.
   - a saved tidy plan whose messages read as plain text. Done 2026-09-28 ([note](activity/2026-09-28-re-submitting.md)): TOML, each message a multi-line literal string, as the guide's `plan.toml` always said; plans saved as JSON before are still read;
   - `tidy --apply` showing each commit's whole message as it will be written. Done 2026-09-28 (the same note): without the saved notes on how the proposal was made, and a subject's source says "dockhand's commit" of one carrying dockhand's Generated-By line;
   - a re-submit refreshing the Description while it's still exactly as dockhand last wrote it, as it refreshes the Type(s). Done 2026-09-28 ([note](activity/2026-09-28-re-submitting.md)): a commit's body written after the pull request opened reaches it, and the preview says so.
+- **What the certigo run asked for** ([review](reviews/2026-09-28-hugo-bump-exercise.md#certigo-with-a-hands-on-binary-test)):
+  - each executable a port installs run with `--version` in the guest after install, with advice, never a failure, where the output lacks the port's version. certigo 1.18.1 printed `(devel)`, since its version moved to Go's build info, which a tarball build lacks. Every check passed, and only the binary showed it. The design needs:
+    - the executables from MacPorts' own `port contents`;
+    - a timeout and no input, since some start servers or wait on stdin;
+    - a limit for ports with many executables;
+  - a subject kept where a person edits on top of dockhand's uncommitted update. Today the chain of edits breaks, so `fromEdits` drops the recorded "certigo: update to 1.18.1". Deriving one from the Portfile then finds no `version` line, since `go.setup` holds it (the private-helper review's finding 2, inside item 6). While the Portfile still declares the version the update recorded, its subject could stand, noted as including other changes;
+  - `update --json`'s upstream messages without the "upstream: " prefix that the text drops under its heading. The comparison's messages could leave it out, and callers add it where a message stands alone;
+  - `cancel` with no argument, like `wait`: the check of the branch checked out here, not cobra's error;
+  - a check cancelled while only queued said so, not "what it finished is kept";
+  - `status --json`'s serve as fields, whether it runs, its pid, and the queue, beside the sentence;
+  - progress reported while a run is driven journaled as the run's progress events, as a provider's already is. The PortIndex rebuild, five minutes of check-16, showed only in serve's log, and `wait` never saw it;
+  - a database migration that says so, since builds older than it can't open the database afterward; certigo's first run migrated it silently.
 - **Branches from before v3.** The hugo exercise's checkout holds 22 local `dockhand/bump/<port>-<id>` branches from earlier dockhand, which nothing reports ([review](reviews/2026-09-28-hugo-bump-exercise.md#cleaning-up), finding 3). Its classification is the design:
   - in master by patch-id (`git cherry`, since MacPorts rebases on merge), as 13 were, whatever became of their pull requests: removable, with the fork branch when it holds the same commit;
   - superseded by a newer version in master, as 1 was: removable after a look;
@@ -354,6 +366,10 @@ Changed:
 
 **Re-submitting sshuttle** in the same review, after its move to Python 3.14, was checked against the code at `259ee3ba`.
 - **All three findings hold.** A saved tidy plan is JSON (`TidyPlan.Save`), as it has been since it was added, while the guide calls it `plan.toml`. Applying one prints subjects and the saved notes, never a message's body. The note on a subject's source says "your commit" of any commit. A re-submit merges only the Type(s) and Tested on down (`mergeBody`), so the Description written from the commit's body at opening stays as it was. Each is a smaller item.
+
+**The certigo run** in the same review, with `d7682668`, was checked against the code at `fc1e21a9`.
+- **Findings 2 to 7 hold,** each as described; each is a smaller item. Finding 1 is a new check to design rather than a defect, and a smaller item too.
+- **Confirmed fixed:** the saved plan as TOML with plain-text messages, `tidy --apply` showing the body it applies, and the Description from the commit's body on the first submit.
 
 **The cleanup** in the same review, `dockhand clean` at `0ffed143`, was checked against `42bcaf3a`.
 - **Findings 1 and 2 hold, and are fixed** ([note](activity/2026-09-28-status-after-clean.md)): status took clean's removal of a merged branch for a lost one, and couldn't find a merged record by name.
