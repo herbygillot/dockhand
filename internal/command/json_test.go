@@ -9,6 +9,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
 )
 
@@ -285,4 +286,17 @@ func TestSubmitCheckReportsOneShape(t *testing.T) {
 	require.Equal(t, "jq: update to 1.8.1", passed.Result["title"])
 	require.Equal(t, "passed", dig(t, passed.Result, "check", "run", "state"))
 	require.Equal(t, true, dig(t, passed.Result, "pull_request", "created"))
+}
+
+// Under the JSON's upstream key, as under the text's Upstream heading, a
+// change is worded without "upstream", which the key already says (the
+// hugo exercise's certigo run, finding 3).
+func TestUpstreamJSONWordsChangesUnderItsKey(t *testing.T) {
+	view := upstreamView(model.UpstreamComparison{Changes: []model.UpstreamChange{
+		{Kind: "dependency", Path: "go.mod", Message: "upstream: go.mod adds golang.org/x/net v0.44.0", Hold: true},
+		{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed; the Portfile's license line may need to follow", Hold: true},
+	}})
+	require.Equal(t, "go.mod adds golang.org/x/net v0.44.0", view.Changes[0].Message)
+	require.Equal(t, "LICENSE changed; the Portfile's license line may need to follow", view.Changes[1].Message)
+	require.True(t, view.Held)
 }

@@ -237,7 +237,7 @@ These are taken when their area is next touched, or between items.
   - a re-submit refreshing the Description while it's still exactly as dockhand last wrote it, as it refreshes the Type(s). Done 2026-09-28 ([note](activity/2026-09-28-re-submitting.md)): a commit's body written after the pull request opened reaches it, and the preview says so.
 - **What the certigo run asked for** ([review](reviews/2026-09-28-hugo-bump-exercise.md#certigo-with-a-hands-on-binary-test)):
   - a subject kept where a person edits on top of dockhand's uncommitted update. Done 2026-09-28 ([note](activity/2026-09-28-certigo-fixes.md)): while every line dockhand's edits wrote still stands, their subject does, noted. Reading a declared version, `go.setup`'s included, stays with the private-helper review's finding 2, inside item 6;
-  - `update --json`'s upstream messages without the "upstream: " prefix that the text drops under its heading. The comparison's messages could leave it out, and callers add it where a message stands alone;
+  - `update --json`'s upstream messages without the "upstream: " prefix that the text drops under its heading. Done 2026-09-28 (the same note);
   - `cancel` with no argument, like `wait`: the check of the branch checked out here, not cobra's error;
   - a check cancelled while only queued said so, not "what it finished is kept";
   - `status --json`'s serve as fields, whether it runs, its pid, and the queue, beside the sentence;

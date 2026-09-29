@@ -82,10 +82,12 @@ type upstreamJSON struct {
 	Held bool `json:"held"`
 }
 
+// upstreamView is a comparison under the JSON's upstream key, whose
+// changes are worded as under the text's Upstream heading.
 func upstreamView(comparison model.UpstreamComparison) upstreamJSON {
 	view := upstreamJSON{Changes: []upstreamChangeJSON{}, Problem: comparison.Problem, Held: comparison.Held()}
 	for _, change := range comparison.Changes {
-		view.Changes = append(view.Changes, upstreamChangeJSON{Kind: change.Kind, Path: change.Path, Message: change.Message, Hold: change.Hold})
+		view.Changes = append(view.Changes, upstreamChangeJSON{Kind: change.Kind, Path: change.Path, Message: underUpstream(change).Message, Hold: change.Hold})
 	}
 	return view
 }
