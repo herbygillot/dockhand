@@ -267,7 +267,7 @@ These are taken when their area is next touched, or between items.
   - an upstream comparison for a version changed by hand, from `check` or `submit`, which today say nothing of one (finding 6).
   - A hand-made version bump that tidy couldn't name (finding 5) is item 6's Portfile inspection: the version is read from the first forge setup line anywhere, here git-devel's `github.setup` in its subport, so git's own `version` line was never read.
 - **What the ov run asked for** ([review](reviews/2026-09-28-hugo-bump-exercise.md#ov-through-adopt-edit-retry-and-submit---passing)):
-  - `go.toolchain_min` written as go.mod's `go` directive gives it, `1.26.0` rather than `1.26` (finding 2). `dependency.GoRequirement` gives the series, by design, and the raise compares by series too, so a declared `1.26.0` is taken to cover `go 1.26.2`, which Go enforces in module mode. It also reads the `toolchain` line as a requirement, though Go documents it as a suggestion;
+  - **`go.toolchain_min` written as go.mod's `go` directive gives it,** `1.26.0` rather than `1.26` (finding 2). The tbls run showed it wrong, not a nit: tbls 1.96.1's go.mod says `go 1.26.8`, and dockhand wrote `1.26`, which admits a Go the module refuses; it built only because MacPorts' go is 1.27.1 (the tbls run's finding 1). `dependency.GoRequirement` gives the series, by design, and the raise compares by series too, so a declared `1.26.0` is taken to cover `go 1.26.2`, which Go enforces in module mode. It also reads the `toolchain` line as a requirement, though Go documents it as a suggestion;
   - `--tests required` saying where a port declares no tests (finding 3). Such a port passes under any policy, as designed, but the plan says "tests required" and the grid "✓" for it as for tests that passed. Only the guest reads `test.run`; the plan's words would need `macports` to read it;
   - the index a check stages found nearer to hand (finding 4). check-23 built a whole index for macOS 15, which no earlier check at that master had used, so the review's premise was another release's. Still, a Tart check's stager builds no base index, seeds only from the same release's recent generations, and never from the mirror for a snapshot, which has no commit; `portindex/source.go` says verification keeps the base, which the wiring doesn't;
   - `submit --passing`'s upstream lines under a label of their own, and so without "upstream:", as the single preview's are (finding 5). The prefix was kept on purpose, since those lines had no heading (4315d6bd);
@@ -429,6 +429,11 @@ Changed:
 - **Deliberate:** ov's 5, the prefix `--passing` kept since its lines have no heading (4315d6bd); ov's 7, a look at each branch (principle 7), which D11 keeps; duckdb-cxx14's 2, the Git branch clean keeps for an archived branch's unmerged work.
 - **Don't hold:** yq's 3 and git's 7, a failed or stopped check exiting 0. A failed check under `update --submit` exits 2, as a test pins, and one stopped by another's `--replace` exits 130; the 0 was the session's: zsh's `time` before a pipeline collapses `$pipestatus` to one element, and the session withdrew both.
 - **Fixed:** the cleanup's 1 and 2 (`d1527ecd`, `8c66f470`).
+
+**The tbls and flyctl run** in the same review, `update --outdated` with `d9065492`, was checked against the code at `ac15806c`.
+- **Finding 1 holds,** as the ov run's finding 2, and shows it a defect: `GoRequirement` gives go.mod's series, so `go 1.26.8` became `1.26`.
+- **Finding 2 doesn't hold:** above the summary, each branch has a line of its own naming it, "✓ tbls-y0bv: 1.95.0 → 1.96.1, one commit, check-31 queued", as a test pins; the summary counts them.
+- **Confirmed working:** D9's count, "go.mod: 14 moved", and a queued check replaced saying "Canceled check-30 before it started."
 
 **The cleanup** in the same review, `dockhand clean` at `0ffed143`, was checked against `42bcaf3a`.
 - **Findings 1 and 2 hold, and are fixed** ([note](activity/2026-09-28-status-after-clean.md)): status took clean's removal of a merged branch for a lost one, and couldn't find a merged record by name.
