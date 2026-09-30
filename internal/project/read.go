@@ -54,8 +54,9 @@ type Reading struct {
 	// fetches beside the one it builds in, perhaps.
 	Missing string
 	// Files are what was read: the license files at the top and at the
-	// root, each there or one directory down, and the root's build files,
-	// manifests, and Cargo.lock, each by its path below Top.
+	// root, each there or one directory down, the root's build files,
+	// manifests, and Cargo.lock, and the package.json of each Node
+	// workspace the root's names, each by its path below Top.
 	Files map[string]File
 }
 
@@ -182,5 +183,89 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 			found.Files[rest] = file
 		}
 	}
-	return found, nil
+	return found, found.readWorkspaces(ctx, filename)
+}
+
+// readWorkspaces reads the package.json of each workspace the root's
+// package.json names, as yarn and npm install them with it: beekeeper-studio
+// moved electron in apps/studio/package.json, which reading the root alone
+// didn't see (the beekeeper-studio run's finding 1). They're read in a
+// second pass, only where the root names workspaces, since the root's may
+// come after theirs in the archive; a node_modules directory is never one.
+func (r *Reading) readWorkspaces(ctx context.Context, filename string) error {
+	root, ok := r.Files[path.Join(r.Root, "package.json")]
+	if !ok || root.Truncated {
+		return nil
+	}
+	manifest, err := ReadPackageJSON(root.Data)
+	if err != nil || len(manifest.Workspaces) == 0 {
+		return nil
+	}
+	return archive.Walk(ctx, filename, func(member archive.Member) error {
+		name, ok := member.Clean()
+		if !ok || !member.Regular || ignorable(name) {
+			return nil
+		}
+		rest, ok := name, true
+		if r.Top != "" {
+			rest, ok = strings.CutPrefix(name, r.Top+"/")
+		}
+		below := rest
+		if ok && r.Root != "" {
+			below, ok = strings.CutPrefix(rest, r.Root+"/")
+		}
+		if !ok || path.Base(below) != "package.json" {
+			return nil
+		}
+		directory := path.Dir(below)
+		if directory == "." || slices.Contains(strings.Split(directory, "/"), "node_modules") || !workspace(manifest.Workspaces, directory) {
+			return nil
+		}
+		data, err := io.ReadAll(io.LimitReader(member.Body, FileLimit+1))
+		if err != nil {
+			return err
+		}
+		if len(data) > FileLimit {
+			r.Files[rest] = File{Data: data[:FileLimit], Truncated: true}
+			return nil
+		}
+		r.Files[rest] = File{Data: data}
+		return nil
+	})
+}
+
+// workspace reports whether a directory below a Node project's root is one
+// of its workspaces, as the root's package.json names them: glob patterns
+// of its path, "**" standing for any number of directories, and one
+// starting "!" leaving out what it matches, the last that matches saying.
+func workspace(patterns []string, directory string) bool {
+	in := false
+	for _, pattern := range patterns {
+		pattern, exclude := strings.CutPrefix(pattern, "!")
+		pattern = strings.Trim(path.Clean("/"+pattern), "/")
+		if pattern != "" && glob(strings.Split(pattern, "/"), strings.Split(directory, "/")) {
+			in = !exclude
+		}
+	}
+	return in
+}
+
+// glob matches a path's segments against a pattern's, each as path.Match
+// matches one, and "**" any number of them.
+func glob(pattern, segments []string) bool {
+	switch {
+	case len(pattern) == 0:
+		return len(segments) == 0
+	case pattern[0] == "**":
+		for i := range len(segments) + 1 {
+			if glob(pattern[1:], segments[i:]) {
+				return true
+			}
+		}
+		return false
+	case len(segments) == 0:
+		return false
+	}
+	matched, err := path.Match(pattern[0], segments[0])
+	return err == nil && matched && glob(pattern[1:], segments[1:])
 }

@@ -250,6 +250,21 @@ func TestANewCrateLinkingANativeLibraryIsListed(t *testing.T) {
 		compared(t, map[string]string{}, map[string]string{"Cargo.lock": lock("zstd-sys 2.0.13+zstd.1.5.6")}), "a lock new to the source")
 }
 
+// A Node workspace's manifest is compared as the root's is: beekeeper-studio
+// added two dependencies and moved electron in apps/studio/package.json,
+// which reading the root alone said nothing of (the beekeeper-studio run's
+// finding 1).
+func TestAWorkspacesManifestIsComparedAsTheRootsIs(t *testing.T) {
+	root := `{"workspaces": ["apps/*"], "devDependencies": {"yarn": "1.22.22"}}`
+	require.Equal(t, []string{
+		"! upstream: apps/studio/package.json adds devicon 2.16.0",
+		"! upstream: apps/studio/package.json adds simple-icons 15.0.0",
+		"· upstream: apps/studio/package.json moves electron from 39.8.5 to 39.8.10",
+	}, compared(t,
+		map[string]string{"package.json": root, "apps/studio/package.json": `{"dependencies": {"electron": "39.8.5"}}`},
+		map[string]string{"package.json": root, "apps/studio/package.json": `{"dependencies": {"electron": "39.8.10", "devicon": "2.16.0", "simple-icons": "15.0.0"}}`}))
+}
+
 // A crate that linked a native library, gone from Cargo.lock, is said
 // where the Portfile still has what's there for the library, which still
 // reaches the build: zola's PortGroup openssl, left once openssl-sys went,

@@ -168,3 +168,38 @@ func TestAReadingIsKeptByWhatItRead(t *testing.T) {
 	_, ok = cache.Kept(strings.Repeat("b", 64), Spec{})
 	require.False(t, ok)
 }
+
+// A Node project's workspaces are read with it, each one's package.json by
+// its path, as yarn and npm install them together: beekeeper-studio moved
+// electron in apps/studio/package.json. Patterns are globs of the path,
+// "**" any depth, "!" leaving one out; node_modules is never a workspace,
+// and a project that names none reads its root alone.
+func TestANodeProjectsWorkspacesAreReadWithIt(t *testing.T) {
+	files := map[string]string{
+		"app-6/package.json":                              `{"workspaces": ["apps/*", "shared/**", "!apps/legacy"]}`,
+		"app-6/apps/studio/package.json":                  `{}`,
+		"app-6/apps/legacy/package.json":                  `{}`,
+		"app-6/apps/studio/node_modules/x/package.json":   `{}`,
+		"app-6/shared/ui/icons/package.json":              `{}`,
+		"app-6/docs/package.json":                         `{}`,
+		"app-6/apps/studio/src/package.json":              `{}`,
+		"app-6/shared/node_modules/left-pad/package.json": `{}`,
+	}
+	require.Equal(t, []string{"apps/studio/package.json", "package.json", "shared/ui/icons/package.json"}, names(read(t, files, Spec{})))
+
+	files["app-6/package.json"] = `{"workspaces": {"packages": ["./apps/*"], "nohoist": ["**"]}}`
+	require.Equal(t, []string{"apps/legacy/package.json", "apps/studio/package.json", "package.json"}, names(read(t, files, Spec{})), "yarn's object, and a pattern written from ./")
+
+	files["app-6/package.json"] = `{"workspaces": "apps/*", "dependencies": {"electron": "39.8.10"}}`
+	require.Equal(t, []string{"package.json"}, names(read(t, files, Spec{})), "workspaces of another shape name none")
+	manifest, err := ReadPackageJSON([]byte(files["app-6/package.json"]))
+	require.NoError(t, err, "and the manifest reads as it did")
+	require.Equal(t, "39.8.10", manifest.Dependencies["electron"])
+
+	nested := map[string]string{"mono-1/js/package.json": `{"workspaces": ["packages/*"], "license": "MIT"}`, "mono-1/js/packages/a/package.json": `{}`, "mono-1/packages/b/package.json": `{}`}
+	found := read(t, nested, Spec{Subdirectory: "js"})
+	require.Equal(t, []string{"js/package.json", "js/packages/a/package.json"}, names(found), "below the root the port builds in")
+	manifest, err = ReadPackageJSON(found.Files["js/package.json"].Data)
+	require.NoError(t, err)
+	require.Equal(t, "MIT", manifest.License)
+}
