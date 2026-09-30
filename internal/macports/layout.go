@@ -27,6 +27,13 @@ func IsCategory(name string) bool {
 	return name != "" && !strings.HasPrefix(name, ".") && !strings.HasPrefix(name, "_")
 }
 
+// ValidCategory reports whether a name can be a category for a new port:
+// one directory, in a port name's characters, that isn't one the tree
+// keeps for itself (_resources, a dotfile directory; IsCategory).
+func ValidCategory(name string) bool {
+	return ValidName(name) && IsCategory(name)
+}
+
 // PortDirectoryOf is the port directory, category/port, a path in the
 // ports tree lies in. ok is false for a path in no port's directory: at
 // the top of the tree, in _resources or a dotfile directory, or a file of

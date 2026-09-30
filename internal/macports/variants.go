@@ -23,13 +23,13 @@ type Variant struct {
 // them, as its evaluation reported them. A port that declares none has
 // none; what can't be read is an error.
 func (p PortInfo) Variants() ([]Variant, error) {
-	names, errs := syntax.ListValues(p.Options["variants"])
-	if len(errs) > 0 {
-		return nil, fmt.Errorf("macports: %s's variants can't be read: %v", p.Name, errs)
+	names, _, err := p.optionList("variants")
+	if err != nil {
+		return nil, fmt.Errorf("%s's variants: %w", p.Name, err)
 	}
-	info, errs := syntax.DictValues(p.Options["vinfo"])
-	if len(errs) > 0 {
-		return nil, fmt.Errorf("macports: %s's variant information can't be read: %v", p.Name, errs)
+	info, _, err := p.optionDict("vinfo")
+	if err != nil {
+		return nil, fmt.Errorf("%s's variants: %w", p.Name, err)
 	}
 	var variants []Variant
 	for _, name := range names {
@@ -43,11 +43,14 @@ func (p PortInfo) Variants() ([]Variant, error) {
 		variant := Variant{Name: name, Description: fields["description"]}
 		// is_default exists only for a default variant, "+" where on.
 		variant.Default = fields["is_default"] == "+"
-		if requires, _ := syntax.ListValues(fields["requires"]); len(requires) > 0 {
-			variant.Requires = requires
-		}
-		if conflicts, _ := syntax.ListValues(fields["conflicts"]); len(conflicts) > 0 {
-			variant.Conflicts = conflicts
+		for key, into := range map[string]*[]string{"requires": &variant.Requires, "conflicts": &variant.Conflicts} {
+			list, err := readList(p.Name+" +"+name+" "+key, fields[key])
+			if err != nil {
+				return nil, err
+			}
+			if len(list) > 0 {
+				*into = list
+			}
 		}
 		variants = append(variants, variant)
 	}

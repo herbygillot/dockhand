@@ -93,6 +93,11 @@ func TestCreateWritesANewPortFromItsProject(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "rift: new port, version 0.4.2", strings.TrimSpace(gitRun(t, dir, "log", "-1", "--format=%s")))
 
+	// A category the tree keeps for itself is refused before anything is
+	// written (the helper-ownership review's table).
+	_, _, err = dockhand(t, "create", "https://github.com/rift-dev/rift", "--new", "--name", "rift2", "--category", "_resources")
+	require.ErrorContains(t, err, `"_resources" is not a category`)
+
 	// A name a port already has is refused.
 	testProjectReader = jqProject{}
 	_, _, err = dockhand(t, "create", "https://github.com/jqlang/jq", "--category", "sysutils")

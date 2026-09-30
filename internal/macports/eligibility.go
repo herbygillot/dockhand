@@ -1,12 +1,10 @@
 package macports
 
 import (
-	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
 // Exclusion is why MacPorts CI wouldn't build a port on a platform, by the
@@ -61,10 +59,11 @@ func (e Eligibility) Reason() string {
 // error, which is neither eligible nor excluded, and the caller keeps it
 // apart (the private-helper review's finding 1).
 func BuildEligibility(port PortInfo, platform model.Platform) (Eligibility, error) {
-	if failure := port.OptionErrors["replaced_by"]; failure != "" {
-		return Eligibility{}, fmt.Errorf("macports: replaced_by: %s", failure)
+	replacedBy, _, err := port.option("replaced_by")
+	if err != nil {
+		return Eligibility{}, err
 	}
-	if by := strings.TrimSpace(port.Options["replaced_by"]); by != "" {
+	if by := strings.TrimSpace(replacedBy); by != "" {
 		return Eligibility{Excluded: ExcludedReplaced, Detail: by}, nil
 	}
 	knownFail, err := port.KnownFail()
@@ -77,12 +76,9 @@ func BuildEligibility(port PortInfo, platform model.Platform) (Eligibility, erro
 		}
 		return Eligibility{Excluded: ExcludedKnownFail}, nil
 	}
-	if failure := port.OptionErrors["supported_archs"]; failure != "" {
-		return Eligibility{}, fmt.Errorf("macports: supported_archs: %s", failure)
-	}
-	archs, errs := syntax.ListValues(port.Options["supported_archs"])
-	if len(errs) > 0 {
-		return Eligibility{}, fmt.Errorf("macports: supported_archs %q isn't a Tcl list", port.Options["supported_archs"])
+	archs, _, err := port.optionList("supported_archs")
+	if err != nil {
+		return Eligibility{}, err
 	}
 	if len(archs) > 0 && platform.Architecture != "" && !slices.Contains(archs, "noarch") && !slices.Contains(archs, platform.Architecture) {
 		return Eligibility{Excluded: ExcludedArchs, Detail: strings.Join(archs, " ")}, nil

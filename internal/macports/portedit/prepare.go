@@ -168,6 +168,39 @@ func (t GoToolchain) Unmet() bool {
 
 // report records a fidelity report and makes its evaluated snapshot the
 // prepared result.
+// PortBefore is a port as the edit found it: the first evaluation's, or,
+// where nothing was edited, as it stands; false where the result says
+// neither.
+func (r Result) PortBefore(name string) (macports.PortInfo, bool) {
+	if len(r.Fidelity) > 0 {
+		port, ok := r.Fidelity[0].Before.Ports[name]
+		return port, ok
+	}
+	if r.Unchanged != nil && r.Unchanged.Name == name {
+		return *r.Unchanged, true
+	}
+	return macports.PortInfo{}, false
+}
+
+// PortAfter is a port as the edit leaves it: the prepared files'
+// evaluation, which the last fidelity report's is, or, where nothing was
+// edited, as it stands; false where the result says neither. Its readers
+// needn't know which of those the result holds (the helper-ownership
+// review's table).
+func (r Result) PortAfter(name string) (macports.PortInfo, bool) {
+	if port, ok := r.Prepared.Ports[name]; ok {
+		return port, true
+	}
+	if len(r.Fidelity) > 0 {
+		port, ok := r.Fidelity[len(r.Fidelity)-1].After.Ports[name]
+		return port, ok
+	}
+	if r.Unchanged != nil && r.Unchanged.Name == name {
+		return *r.Unchanged, true
+	}
+	return macports.PortInfo{}, false
+}
+
 func (r *Result) report(report Fidelity) {
 	r.Fidelity = append(r.Fidelity, report)
 	r.Prepared = report.After

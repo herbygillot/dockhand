@@ -284,15 +284,15 @@ func TestAMovedPythonRequirementCarriesItsSpecifier(t *testing.T) {
 		testsupport.Tarball(t, "pkg-1", map[string]string{"requirements.txt": "requests[socks]>=2.30\nurllib3 (>=1.26)\n", "package.json": `{"dependencies": {"left-pad": "1.0.0"}}`}),
 		testsupport.Tarball(t, "pkg-2", map[string]string{"requirements.txt": "requests[socks]>=2.31 ; python_version >= '3.9'\nurllib3 (>=2.0)\nidna==3.7\n", "package.json": `{"dependencies": {"left-pad": "1.3.0"}}`}), Versions{})
 	require.NoError(t, err)
-	required := map[string]*Requirement{}
+	required := map[string][]Requirement{}
 	for _, change := range changes {
-		required[change.Message] = change.Requirement
+		required[change.Message] = change.Requirements
 	}
-	require.Equal(t, map[string]*Requirement{
-		"upstream: requirements.txt adds idna ==3.7":                                    {Name: "idna", Specifier: "==3.7"},
-		"upstream: requirements.txt moves requests from [socks]>=2.30 to [socks]>=2.31": {Name: "requests", Specifier: ">=2.31"},
-		"upstream: requirements.txt moves urllib3 from (>=1.26) to (>=2.0)":             {Name: "urllib3", Specifier: ">=2.0"},
-		"upstream: package.json moves left-pad from 1.0.0 to 1.3.0":                     nil,
+	require.Equal(t, map[string][]Requirement{
+		"upstream: requirements.txt adds idna ==3.7":                                                             {{Name: "idna", Specifier: "==3.7"}},
+		"upstream: requirements.txt moves requests from [socks]>=2.30 to [socks]>=2.31; python_version >= '3.9'": {{Name: "requests", Specifier: ">=2.31", Marker: "python_version >= '3.9'"}},
+		"upstream: requirements.txt moves urllib3 from (>=1.26) to (>=2.0)":                                      {{Name: "urllib3", Specifier: ">=2.0"}},
+		"upstream: package.json moves left-pad from 1.0.0 to 1.3.0":                                              nil,
 	}, required)
 }
 
@@ -338,4 +338,32 @@ func TestAChangeNamesItsFilesBuildSystem(t *testing.T) {
 		systems[change.Path] = change.System
 	}
 	require.Equal(t, map[string]macports.BuildSystem{"LICENSE": "", "meson.build": macports.Meson, "package.json": macports.Node}, systems)
+}
+
+// A requirement's condition is part of it: a Windows-only requirement made
+// macOS's is as good as added, and holds; one added only for another
+// platform is said and holds nothing; one declared twice, under two
+// conditions, keeps both; and a Cargo dependency's Git revision moving
+// under the same version is said, holding nothing, as D9 has Cargo's (the
+// helper-ownership review's finding 1, its probes as regression tests).
+func TestARequirementsConditionIsPartOfIt(t *testing.T) {
+	require.Equal(t, []string{"! upstream: requirements.txt moves requests from >=2; sys_platform == 'win32' to >=2; sys_platform == 'darwin', which now may apply to macOS"},
+		compared(t, map[string]string{"requirements.txt": "requests>=2; sys_platform == 'win32'\n"}, map[string]string{"requirements.txt": "requests>=2; sys_platform == 'darwin'\n"}))
+	require.Equal(t, []string{"· upstream: requirements.txt adds pywin32 >=306; sys_platform == 'win32'"},
+		compared(t, map[string]string{"requirements.txt": "requests>=2\n"}, map[string]string{"requirements.txt": "requests>=2\npywin32>=306; sys_platform == 'win32'\n"}))
+	require.Equal(t, []string{"! upstream: requirements.txt adds tomli >=1; python_version < '3.11'"},
+		compared(t, map[string]string{"requirements.txt": ""}, map[string]string{"requirements.txt": "tomli>=1; python_version < '3.11'\n"}),
+		"a condition the Python version settles may apply, where that version isn't known")
+
+	changes, err := Compare(t.Context(), testsupport.Tarball(t, "pkg-1", map[string]string{"requirements.txt": "numpy<2; python_version < '3.10'\n"}),
+		testsupport.Tarball(t, "pkg-2", map[string]string{"requirements.txt": "numpy<2; python_version < '3.10'\nnumpy>=2; python_version >= '3.10'\n"}), Versions{})
+	require.NoError(t, err)
+	require.Len(t, changes, 1)
+	require.Equal(t, "upstream: requirements.txt moves numpy from <2; python_version < '3.10' to <2; python_version < '3.10' | >=2; python_version >= '3.10'", changes[0].Message)
+	require.Equal(t, []Requirement{{Name: "numpy", Specifier: "<2", Marker: "python_version < '3.10'"}, {Name: "numpy", Specifier: ">=2", Marker: "python_version >= '3.10'"}},
+		changes[0].Requirements, "both declarations, not the second over the first")
+
+	require.Equal(t, []string{"· upstream: Cargo.toml: 1 moved"},
+		compared(t, map[string]string{"Cargo.toml": "[dependencies]\nwidget = { version = '1', git = 'https://example.invalid/widget', rev = 'aaaa' }\n"},
+			map[string]string{"Cargo.toml": "[dependencies]\nwidget = { version = '1', git = 'https://example.invalid/widget', rev = 'bbbb' }\n"}))
 }

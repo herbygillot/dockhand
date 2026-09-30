@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/fetch"
 	"github.com/herbygillot/dockhand/internal/macports"
 )
 
@@ -39,28 +40,13 @@ func (e *Engine) httpsProbe() HTTPSProbe {
 	return requestProbe{}
 }
 
-// requestProbe asks a URL for its head, and failing that its first byte,
-// as a server that refuses HEAD answers GET: an answer below 400, after
-// redirects, within ten seconds, is one.
-type requestProbe struct{}
+// requestProbe asks a URL as fetch asks one (fetch.Ask), within ten
+// seconds: a redirect back to plain HTTP is no answer over HTTPS, as
+// fetching refuses it (the helper-ownership review's finding 2).
+type requestProbe struct{ client *http.Client }
 
-func (requestProbe) Answers(ctx context.Context, url string) bool {
+func (p requestProbe) Answers(ctx context.Context, url string) bool {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	for _, method := range []string{http.MethodHead, http.MethodGet} {
-		request, err := http.NewRequestWithContext(ctx, method, url, nil)
-		if err != nil {
-			return false
-		}
-		request.Header.Set("Range", "bytes=0-0")
-		response, err := http.DefaultClient.Do(request)
-		if err != nil {
-			return false
-		}
-		response.Body.Close()
-		if response.StatusCode < 400 {
-			return true
-		}
-	}
-	return false
+	return fetch.Ask(ctx, p.client, url).Answered
 }

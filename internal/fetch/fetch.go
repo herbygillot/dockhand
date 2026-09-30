@@ -1,6 +1,7 @@
 package fetch
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -68,23 +69,7 @@ func Open(client *http.Client, request *http.Request, limit int64) (*http.Respon
 	if request.URL.User != nil || request.URL.Host == "" || request.URL.Scheme != "http" && request.URL.Scheme != "https" {
 		return nil, fmt.Errorf("fetch: unsupported URL")
 	}
-	if client == nil {
-		client = http.DefaultClient
-	}
-	configured := *client
-	configured.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if req.URL.User != nil || req.URL.Scheme != "http" && req.URL.Scheme != "https" || len(via) >= 10 {
-			return fmt.Errorf("fetch: unsupported redirect")
-		}
-		if via[0].URL.Scheme == "https" && req.URL.Scheme != "https" {
-			return fmt.Errorf("fetch: redirect downgraded HTTPS")
-		}
-		if client.CheckRedirect != nil {
-			return client.CheckRedirect(req, via)
-		}
-		return nil
-	}
-	response, err := configured.Do(request)
+	response, err := redirecting(client).Do(request)
 	if err != nil {
 		return nil, err
 	}
@@ -102,6 +87,68 @@ func Open(client *http.Client, request *http.Request, limit int64) (*http.Respon
 	}
 	response.Body = &boundedBody{ReadCloser: response.Body, remaining: limit}
 	return response, nil
+}
+
+// redirecting is the client as Open and Ask use it: following at most ten
+// redirects, to http and https alone, never from HTTPS to plain HTTP, and
+// then as the client's own rule says.
+func redirecting(client *http.Client) *http.Client {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	configured := *client
+	configured.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if req.URL.User != nil || req.URL.Scheme != "http" && req.URL.Scheme != "https" || len(via) >= 10 {
+			return fmt.Errorf("fetch: unsupported redirect")
+		}
+		if via[0].URL.Scheme == "https" && req.URL.Scheme != "https" {
+			return fmt.Errorf("fetch: redirect downgraded HTTPS")
+		}
+		if client.CheckRedirect != nil {
+			return client.CheckRedirect(req, via)
+		}
+		return nil
+	}
+	return &configured
+}
+
+// Answer is what asking a URL found: whether it answered, below 400, and
+// the URL that did after redirects; Err is why it didn't.
+type Answer struct {
+	Answered bool
+	Final    string
+	Err      error
+}
+
+// Ask asks a URL for its head, and, where that isn't answered, as some
+// servers refuse HEAD, its first byte, following redirects as Open does:
+// one from HTTPS to plain HTTP is no answer. Unlike Open's, its success is
+// any status below 400, since a probe needs no body.
+func Ask(ctx context.Context, client *http.Client, url string) Answer {
+	var answer Answer
+	for _, method := range []string{http.MethodHead, http.MethodGet} {
+		request, err := http.NewRequestWithContext(ctx, method, url, nil)
+		if err != nil {
+			return Answer{Err: err}
+		}
+		if request.URL.User != nil || request.URL.Host == "" || request.URL.Scheme != "http" && request.URL.Scheme != "https" {
+			return Answer{Err: fmt.Errorf("fetch: unsupported URL")}
+		}
+		request.Header.Set("User-Agent", UserAgent)
+		request.Header.Set("Range", "bytes=0-0")
+		response, err := redirecting(client).Do(request)
+		if err != nil {
+			return Answer{Err: err}
+		}
+		response.Body.Close()
+		answer = Answer{Final: response.Request.URL.Redacted()}
+		if response.StatusCode < 400 {
+			answer.Answered = true
+			return answer
+		}
+		answer.Err = &StatusError{Status: response.StatusCode, URL: answer.Final}
+	}
+	return answer
 }
 
 type boundedBody struct {

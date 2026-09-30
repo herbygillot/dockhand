@@ -37,12 +37,8 @@ func (p PortInfo) DeclaresTests() (declares, known bool) {
 // PortGroups are the PortGroups the port loads, by name; known is false
 // where they weren't read.
 func (p PortInfo) PortGroups() (groups []string, known bool) {
-	value, set := p.Options["dockhand.portgroups"]
-	if !set || p.OptionErrors["dockhand.portgroups"] != "" {
-		return nil, false
-	}
-	groups, errs := syntax.ListValues(value)
-	return groups, len(errs) == 0
+	groups, set, err := p.optionList("dockhand.portgroups")
+	return groups, set && err == nil
 }
 
 // FetchCredentials reports whether MacPorts credentials apply to the port's

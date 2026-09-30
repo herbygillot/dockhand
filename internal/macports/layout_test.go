@@ -64,3 +64,15 @@ func TestThePortsTreesLayout(t *testing.T) {
 		}
 	}
 }
+
+// A new port's category is a directory a category can be: not one the
+// tree keeps for itself, and one directory in a port name's characters
+// (the helper-ownership review's table).
+func TestACategoryANewPortCanGoIn(t *testing.T) {
+	for _, name := range []string{"devel", "python", "x11", "sysutils"} {
+		require.True(t, macports.ValidCategory(name), name)
+	}
+	for _, name := range []string{"", "_resources", ".github", "a/b", "net work", "..", "."} {
+		require.False(t, macports.ValidCategory(name), name)
+	}
+}

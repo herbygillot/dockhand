@@ -179,7 +179,7 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 	if plain := e.plainHTTP(ctx, homepageOnly(spec.Homepage)); len(plain) > 0 && plain[0].Answers {
 		homepageFrom, spec.Homepage = spec.Homepage, plain[0].HTTPS
 	}
-	if strings.ContainsAny(spec.Category, "/ ") || spec.Category == "" {
+	if !macports.ValidCategory(spec.Category) {
 		return Created{}, fmt.Errorf("%q is not a category", spec.Category)
 	}
 	if lock, ok := project.Files["Cargo.lock"]; ok && build.System == "cargo" {

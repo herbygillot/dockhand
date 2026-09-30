@@ -176,7 +176,7 @@ func rebuildWhere(evidence Evidence, id model.TargetID) planning.Limited {
 		if planned, ok := evidence.Plan.In(environment); ok && planned.Builds(id) {
 			built = append(built, environment)
 		}
-		if result.Outcome == model.OutcomeFailed && (result.Phase == model.PhaseInstall || result.Phase == model.PhaseTest) || result.Outcome == model.OutcomePassed && result.Tests.Failed() {
+		if building, _ := failedAt(result.TargetResult); building {
 			failed = append(failed, environment)
 		}
 	}
@@ -227,6 +227,29 @@ func (e *Engine) atBase(ctx context.Context, base model.ObjectID, evidence Evide
 	return have, added, tree, nil
 }
 
+// failedAt is the one rule for what a baseline can speak to in a result
+// (the helper-ownership review's table): building is a failure while the
+// port built, at install or test, or tests that failed where the policy
+// only reports them; before is a failure before it built, at lint,
+// fetch, or checksum, which comes from the branch's own Portfile and
+// distfiles, and a baseline can't answer. A result blocked, unmet, or not
+// run is neither.
+func failedAt(result model.TargetResult) (building, before bool) {
+	switch {
+	case result.Outcome == model.OutcomePassed:
+		return result.Tests.Failed(), false
+	case result.Outcome != model.OutcomeFailed:
+		return false, false
+	}
+	switch result.Phase {
+	case model.PhaseInstall, model.PhaseTest:
+		return true, false
+	case model.PhaseLint, model.PhaseFetch, model.PhaseChecksum:
+		return false, true
+	}
+	return false, false
+}
+
 // BaselineWorthy sorts a check's ports into those a baseline can say
 // something about, that failed at install or test somewhere, or whose
 // tests failed where the policy only reports them, as uvw's did in
@@ -237,18 +260,8 @@ func BaselineWorthy(evidence Evidence) (worthy, skipped []string) {
 	for _, target := range evidence.Targets {
 		built, early := false, false
 		for _, result := range target.Outcomes {
-			if result.Outcome == model.OutcomePassed && result.Tests.Failed() {
-				built = true
-			}
-			if result.Outcome != model.OutcomeFailed {
-				continue
-			}
-			switch result.Phase {
-			case model.PhaseInstall, model.PhaseTest:
-				built = true
-			case model.PhaseLint, model.PhaseFetch, model.PhaseChecksum:
-				early = true
-			}
+			building, before := failedAt(result.TargetResult)
+			built, early = built || building, early || before
 		}
 		switch {
 		case built:

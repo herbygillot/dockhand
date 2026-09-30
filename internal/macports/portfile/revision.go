@@ -19,28 +19,11 @@ func BumpRevision(src []byte, subport string, current int) ([]byte, error) {
 		return nil, fmt.Errorf("%w: invalid Tcl syntax: %v", ErrUnsupported, errs)
 	}
 	if subport != "" {
-		var matches []*syntax.Script
-		for _, item := range script.Items {
-			cmd, ok := item.(syntax.Command)
-			if !ok {
-				continue
-			}
-			name, ok := cmd.Name(src)
-			if !ok || name != "subport" || len(cmd.Words) != 3 {
-				continue
-			}
-			name, ok = cmd.Words[1].Literal(src)
-			if !ok || name != subport {
-				continue
-			}
-			if body, ok := cmd.Words[2].BracedScript(src); ok {
-				matches = append(matches, body)
-			}
-		}
-		if len(matches) != 1 {
+		body, ok := subportBody(src, script, subport)
+		if !ok {
 			return nil, fmt.Errorf("%w: select a single literal subport block for %s", ErrUnsupported, subport)
 		}
-		script = matches[0]
+		script = body
 	}
 	var revisions []syntax.Command
 	for _, item := range script.Items {

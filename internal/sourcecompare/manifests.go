@@ -22,10 +22,12 @@ type reading struct {
 	dependencies map[string]string
 	indirect     map[string]string
 	unread       []string
-	// specifiers are the PEP 440 version specifiers of a Python manifest's
-	// PEP 508 requirements, by the dependency's name as dependencies has
-	// it; not Poetry's constraints, which are another syntax.
-	specifiers map[string]string
+	// requirements are a Python manifest's PEP 508 requirements, by the
+	// dependency's name as dependencies has it: every declaration of it,
+	// each with its version specifier and its marker, so one declared
+	// twice, under two conditions, keeps both. Not Poetry's constraints,
+	// which are another syntax.
+	requirements map[string][]Requirement
 }
 
 // reader reads one kind of manifest; an error is a manifest it couldn't
@@ -119,16 +121,28 @@ func cargoRequirement(value any) (string, error) {
 	case string:
 		return value, nil
 	case map[string]any:
-		if version, ok := value["version"].(string); ok {
-			return version, nil
-		}
+		// A Git source is read with its version, where it has both: its
+		// revision moving under the same version is a change too (the
+		// helper-ownership review's finding 1), said, and holding nothing,
+		// as D9 has Cargo's.
+		source := ""
 		if git, ok := value["git"].(string); ok {
+			source = "git " + git
 			for _, pin := range []string{"rev", "tag", "branch"} {
 				if at, ok := value[pin].(string); ok {
-					return fmt.Sprintf("git %s %s %s", git, pin, at), nil
+					source = fmt.Sprintf("git %s %s %s", git, pin, at)
+					break
 				}
 			}
-			return "git " + git, nil
+		}
+		if version, ok := value["version"].(string); ok {
+			if source != "" {
+				return version + " (" + source + ")", nil
+			}
+			return version, nil
+		}
+		if source != "" {
+			return source, nil
 		}
 		if dir, ok := value["path"].(string); ok {
 			return "path " + dir, nil
@@ -160,9 +174,9 @@ func nodeDependencies(data []byte) (reading, error) {
 	return found, nil
 }
 
-// requirement is a Python requirement as PEP 508 writes one: its name, and
-// its extras and version specifier, up to any environment marker.
-var requirement = regexp.MustCompile(`^([A-Za-z0-9][A-Za-z0-9._-]*)\s*([^;]*)`)
+// requirement is a Python requirement as PEP 508 writes one: its name, its
+// extras and version specifier, and its environment marker after a ";".
+var requirement = regexp.MustCompile(`^([A-Za-z0-9][A-Za-z0-9._-]*)\s*([^;]*)(?:;(.*))?$`)
 
 // requirements reads a requirements.txt, one requirement a line. A line
 // that includes or constrains by another file names what isn't read.
@@ -178,7 +192,7 @@ func requirements(data []byte) (reading, error) {
 			continue
 		}
 		if m := requirement.FindStringSubmatch(line); m != nil {
-			found.require(m[1], m[2])
+			found.require(m[1], m[2], m[3])
 		}
 	}
 	return found, nil
@@ -187,19 +201,28 @@ func requirements(data []byte) (reading, error) {
 // require records a PEP 508 requirement: its name, as Python compares
 // names, so a renaming such as textual_fastdatatable to
 // Textual-FastDataTable moves nothing, and what follows it, with its
-// version specifier apart from any extras.
-func (r *reading) require(name, rest string) {
+// version specifier apart from any extras, under its marker where it has
+// one (the helper-ownership review's finding 1).
+func (r *reading) require(name, rest, marker string) {
 	rest = strings.TrimSpace(rest)
 	name = NormalizeName(name)
-	r.dependencies[name] = rest
-	if r.specifiers == nil {
-		r.specifiers = map[string]string{}
+	marker = strings.Join(strings.Fields(marker), " ")
+	declared := rest
+	if marker != "" {
+		declared = strings.TrimSpace(rest + "; " + marker)
+	}
+	if prior, ok := r.dependencies[name]; ok {
+		declared = prior + " | " + declared
+	}
+	r.dependencies[name] = declared
+	if r.requirements == nil {
+		r.requirements = map[string][]Requirement{}
 	}
 	specifier := strings.TrimSpace(extras.ReplaceAllString(rest, ""))
 	if inner, ok := strings.CutPrefix(specifier, "("); ok {
 		specifier = strings.TrimSpace(strings.TrimSuffix(inner, ")"))
 	}
-	r.specifiers[name] = specifier
+	r.requirements[name] = append(r.requirements[name], Requirement{Name: name, Specifier: specifier, Marker: marker})
 }
 
 // extras are a requirement's extras, "[socks]", before its specifier.
@@ -233,7 +256,7 @@ func pyprojectDependencies(data []byte) (reading, error) {
 			if m == nil {
 				return reading{}, fmt.Errorf("%q isn't a requirement", entry)
 			}
-			found.require(m[1], m[2])
+			found.require(m[1], m[2], m[3])
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(manifest.Tool.Poetry.Dependencies)) {

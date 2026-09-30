@@ -110,3 +110,56 @@ type failingBody struct{ err error }
 
 func (f failingBody) Read([]byte) (int, error) { return 0, f.err }
 func (f failingBody) Close() error             { return nil }
+
+// roundTrips stands in for the network: each request's answer.
+type roundTrips func(*http.Request) (*http.Response, error)
+
+func (f roundTrips) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func answer(r *http.Request, status int, location string) *http.Response {
+	header := http.Header{}
+	if location != "" {
+		header.Set("Location", location)
+	}
+	return &http.Response{StatusCode: status, Header: header, Body: io.NopCloser(strings.NewReader("")), Request: r}
+}
+
+// Asking a URL follows redirects as Open does: one from HTTPS back to
+// plain HTTP is no answer, where it had been counted as one (the
+// helper-ownership review's finding 2). A server that refuses HEAD is
+// asked for a byte; any status below 400 answers, and the URL that did is
+// said.
+func TestAskingAURLFollowsRedirectsAsFetchingDoes(t *testing.T) {
+	client := &http.Client{Transport: roundTrips(func(r *http.Request) (*http.Response, error) {
+		switch {
+		case r.URL.Path == "/downgrade" && r.URL.Scheme == "https":
+			return answer(r, http.StatusFound, "http://example.invalid/plain"), nil
+		case r.URL.Path == "/moved":
+			return answer(r, http.StatusMovedPermanently, "https://example.invalid/home/"), nil
+		case r.URL.Path == "/nohead" && r.Method == http.MethodHead:
+			return answer(r, http.StatusMethodNotAllowed, ""), nil
+		case r.URL.Path == "/nohead":
+			require.Equal(t, "bytes=0-0", r.Header.Get("Range"))
+			return answer(r, http.StatusPartialContent, ""), nil
+		case r.URL.Path == "/gone":
+			return answer(r, http.StatusNotFound, ""), nil
+		}
+		return answer(r, http.StatusOK, ""), nil
+	})}
+	got := Ask(t.Context(), client, "https://example.invalid/downgrade")
+	require.False(t, got.Answered)
+	require.ErrorContains(t, got.Err, "redirect downgraded HTTPS")
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://example.invalid/downgrade", nil)
+	require.NoError(t, err)
+	_, err = Open(client, request, 1)
+	require.ErrorContains(t, err, "redirect downgraded HTTPS", "the rule Open keeps too")
+
+	got = Ask(t.Context(), client, "https://example.invalid/moved")
+	require.True(t, got.Answered)
+	require.Equal(t, "https://example.invalid/home/", got.Final)
+	require.True(t, Ask(t.Context(), client, "https://example.invalid/nohead").Answered)
+	got = Ask(t.Context(), client, "https://example.invalid/gone")
+	require.False(t, got.Answered)
+	require.ErrorContains(t, got.Err, "HTTP 404")
+	require.ErrorContains(t, Ask(t.Context(), client, "ftp://example.invalid/").Err, "unsupported URL")
+}

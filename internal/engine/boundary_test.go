@@ -34,6 +34,7 @@ var engineImports = map[string]string{
 	"internal/atomicfile":          "kept archives, whole or not at all",
 	"internal/version":             "its own version, in the pull request",
 	"internal/archive":             "reading archives, for diff --archive",
+	"internal/fetch":               "asking a URL whether it answers over HTTPS, as fetching follows redirects",
 	"internal/sourcecompare":       "what upstream's source changed, for update",
 	"internal/outdated":            "what outdated reads of upstream",
 	"internal/preparation":         "preparing an update's edit",

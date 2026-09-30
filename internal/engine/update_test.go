@@ -403,7 +403,7 @@ func TestAnUpdateStartsItsBranchOnlyForAnEdit(t *testing.T) {
 // the port is at from the port as it stands, since no fidelity report says
 // it then; "jq is already at ; nothing to change" read nothing.
 func TestAnUpdateThatEditedNothingSaysWhatThePortIsAt(t *testing.T) {
-	update := describe(model.Branch{}, "jq", preparation.Result{Result: portedit.Result{Unchanged: &macports.PortInfo{Version: "1.8.2", Revision: 1}}})
+	update := describe(model.Branch{}, "jq", preparation.Result{Result: portedit.Result{Unchanged: &macports.PortInfo{Name: "jq", Version: "1.8.2", Revision: 1}}})
 	require.Equal(t, PortVersion{Version: "1.8.2", Revision: 1}, update.Before)
 	require.Equal(t, PortVersion{Version: "1.8.2", Revision: 1}, update.After)
 	require.Equal(t, "1.8.2_1", update.After.String())
@@ -526,4 +526,33 @@ func TestAnUpdateSaysThePortsPlainHTTPURLs(t *testing.T) {
 	revbump, err := e.Update(t.Context(), UpdateRequest{Branch: update.Branch, Action: model.EditRevbump, Port: "jq", Subject: "rebuild for oniguruma 6.9.10"})
 	require.NoError(t, err)
 	require.Empty(t, revbump.PlainHTTP)
+}
+
+// A Python pin that applies only elsewhere asks nothing of MacPorts' port:
+// a Windows-only requests==999 doesn't hold an update MacPorts'
+// py313-requests 1 builds, while the same pin for macOS does (the
+// helper-ownership review's finding 1, its probe as a regression test).
+func TestAPinForAnotherPlatformHoldsNothing(t *testing.T) {
+	for marker, holds := range map[string]bool{"sys_platform == 'win32'": false, "sys_platform == 'darwin'": true, "python_version >= '3.12'": true, "python_version < '3.10'": false} {
+		dir := t.TempDir()
+		old := archives.Download{Name: "old.tar.gz", Path: writeTarball(t, dir, "pkg-1", map[string]string{"requirements.txt": "requests==1; " + marker + "\n"})}
+		next := archives.Download{Name: "new.tar.gz", Path: writeTarball(t, dir, "pkg-2", map[string]string{"requirements.txt": "requests==999; " + marker + "\n"})}
+		result := preparation.Result{}
+		result.Target = model.Target{Name: "demo"}
+		result.Downloads = []archives.Download{next}
+		result.Pairs = []preparation.ArchivePair{{Previous: old, Next: next}}
+		result.Prepared = macports.Snapshot{Ports: map[string]macports.PortInfo{"demo": {Name: "demo", Options: map[string]string{"dockhand.portgroups": "python"},
+			Dependencies: []macports.Dependency{{Port: "py313-requests"}}}}}
+		e := Engine{PortReader: fakePorts{directories: map[string][]macports.PortInfo{"python/py-requests": {{Name: "py313-requests", Version: "1"}}}}}
+		_, requirements := compareUpstream(t.Context(), result, sourcecompare.Versions{})
+		require.Len(t, requirements, 1, marker)
+		pins := e.pythonPins(t.Context(), model.Source{}, result, requirements)
+		if holds {
+			require.Len(t, pins, 1, marker)
+			require.True(t, pins[0].Hold, marker)
+			require.Contains(t, pins[0].Message, "requires requests ==999, which MacPorts' py313-requests 1 doesn't meet")
+		} else {
+			require.Empty(t, pins, marker)
+		}
+	}
 }

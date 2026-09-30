@@ -87,22 +87,9 @@ func Candidates(src []byte) ([]Candidate, error) {
 			if index >= 0 {
 				word(cmd.Words[index])
 			}
-			// A control structure's bodies are scripts, whatever its shape;
-			// the shape is the parser's to know. Declaration blocks carry
-			// their script last.
-			if _, bodies, ok := cmd.Control(src); ok {
-				for _, body := range bodies {
-					if script, ok := body.BracedScript(src); ok {
-						walk(script, false)
-					}
-				}
-				continue
-			}
-			switch name {
-			case "proc", "platform", "variant", "subport":
-				if script, ok := cmd.Words[len(cmd.Words)-1].BracedScript(src); ok {
-					walk(script, false)
-				}
+			// The bodies MacPorts runs, as bodies says, and no data.
+			for _, body := range bodies(src, cmd) {
+				walk(body, false)
 			}
 		}
 	}

@@ -394,7 +394,7 @@ func TestAPlanKeepsAnUnreadEligibilityApart(t *testing.T) {
 	e.PortReader = ports
 	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}})
 	require.NoError(t, err)
-	require.Contains(t, plan.Unresolved, model.Unresolved{Target: model.Target{Name: "libharbor", Portfile: "devel/libharbor/Portfile"}, Reason: "macports: supported_archs: cannot evaluate"})
+	require.Contains(t, plan.Unresolved, model.Unresolved{Target: model.Target{Name: "libharbor", Portfile: "devel/libharbor/Portfile"}, Reason: "macports: evaluating supported_archs: cannot evaluate"})
 
 	ports = harborPorts()
 	cli := ports.directories["devel/harbor-cli"][0]

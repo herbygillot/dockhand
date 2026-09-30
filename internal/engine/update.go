@@ -243,7 +243,7 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	// A version update or a checksum refresh is where the port's URLs are
 	// looked at, so its plain-HTTP ones are said there.
 	if request.Action == model.EditUpdate || request.Action == model.EditChecksums {
-		if info, ok := preparedPort(result, update.Port); ok {
+		if info, ok := result.PortAfter(update.Port); ok {
 			update.PlainHTTP = e.plainHTTP(ctx, info)
 		}
 	}
@@ -410,15 +410,11 @@ func describe(branch model.Branch, selector string, result preparation.Result) U
 	if update.Port == "" {
 		update.Port = selector
 	}
-	if len(result.Fidelity) > 0 {
-		before := result.Fidelity[0].Before.Ports[update.Port]
-		after := result.Fidelity[len(result.Fidelity)-1].After.Ports[update.Port]
+	if before, ok := result.PortBefore(update.Port); ok {
 		update.Before = PortVersion{Version: before.Version, Revision: before.Revision}
+	}
+	if after, ok := result.PortAfter(update.Port); ok {
 		update.After = PortVersion{Version: after.Version, Revision: after.Revision}
-	} else if port := result.Unchanged; port != nil {
-		// Nothing was edited, so the port is at what it was.
-		update.Before = PortVersion{Version: port.Version, Revision: port.Revision}
-		update.After = update.Before
 	}
 	for _, file := range result.Files {
 		update.Files = append(update.Files, file.Path)
@@ -428,19 +424,6 @@ func describe(branch model.Branch, selector string, result preparation.Result) U
 		update.Subject = result.Commits[0].Subject
 	}
 	return update
-}
-
-// preparedPort is the port as the edit leaves it: as the last evaluation
-// found it, or, where nothing was edited, as it was.
-func preparedPort(result preparation.Result, name string) (macports.PortInfo, bool) {
-	if len(result.Fidelity) > 0 {
-		info, ok := result.Fidelity[len(result.Fidelity)-1].After.Ports[name]
-		return info, ok
-	}
-	if result.Unchanged != nil {
-		return *result.Unchanged, true
-	}
-	return macports.PortInfo{}, false
 }
 
 // worktree opens the branch's checkout, which must have the branch checked
@@ -672,7 +655,7 @@ func compareUpstream(ctx context.Context, result preparation.Result, versions so
 	// Package.swift, which its build never reads (the flatbuffers run's
 	// finding 2). Which the port uses is MacPorts' to say; where it can't
 	// say, every file holds as before.
-	port := result.Prepared.Ports[result.Target.Name]
+	port, _ := result.PortAfter(result.Target.Name)
 	uses, known := port.BuildSystems()
 	unused := func(system macports.BuildSystem) bool {
 		return known && system != "" && !slices.Contains(uses, system)
@@ -720,8 +703,10 @@ func compareUpstream(ctx context.Context, result preparation.Result, versions so
 				continue
 			}
 			comparison.Changes = append(comparison.Changes, found)
-			if change.Requirement != nil && !unused(change.System) {
-				required = append(required, pythonRequirement{manifest: change.Path, Requirement: *change.Requirement})
+			if !unused(change.System) {
+				for _, requirement := range change.Requirements {
+					required = append(required, pythonRequirement{manifest: change.Path, Requirement: requirement})
+				}
 			}
 		}
 	}
@@ -763,10 +748,19 @@ func (e *Engine) pythonPins(ctx context.Context, source model.Source, result pre
 	}
 	var changes []model.UpstreamChange
 	for _, need := range required {
-		for _, dependency := range result.Prepared.Ports[result.Target.Name].Dependencies {
+		prepared, _ := result.PortAfter(result.Target.Name)
+		for _, dependency := range prepared.Dependencies {
 			provided, ok := macports.PythonPackage(dependency.Port)
 			if !ok || sourcecompare.NormalizeName(provided) != need.Name {
 				continue
+			}
+			// A requirement whose marker says it applies only elsewhere,
+			// as a Windows-only pin, asks nothing of MacPorts' port (the
+			// helper-ownership review's finding 1); one that can't be told
+			// is checked as one that applies.
+			python, _ := macports.PythonVersion(dependency.Port)
+			if applies, err := need.OnMacOS(python); err == nil && applies == sourcecompare.No {
+				break
 			}
 			version, err := portVersion(ctx, reader, source, dependency.Port)
 			var admits bool

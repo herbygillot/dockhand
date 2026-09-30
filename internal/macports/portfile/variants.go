@@ -23,24 +23,29 @@ func ArchiveVariants(src []byte) []string {
 	if len(errs) > 0 {
 		return nil
 	}
+	// Only the commands MacPorts runs (commands), never data: a variant
+	// written inside a string, or a checksums inside a variant's set, is
+	// neither a variant nor a declaration (the helper-ownership review's
+	// finding 3).
 	var variants []string
-	for cmd := range script.Commands(src, func(syntax.Command) bool { return true }) {
+	commands(src, script, false, func(cmd syntax.Command, _ bool) {
 		if name, _ := cmd.Name(src); name != "variant" || len(cmd.Words) < 3 {
-			continue
+			return
 		}
 		variant, ok := cmd.Words[1].Literal(src)
 		body, braced := cmd.Words[len(cmd.Words)-1].BracedScript(src)
 		if !ok || !braced || slices.Contains(variants, variant) {
-			continue
+			return
 		}
-		for inner := range body.Commands(src, func(syntax.Command) bool { return true }) {
+		declares := false
+		commands(src, body, true, func(inner syntax.Command, _ bool) {
 			name, _ := inner.Name(src)
 			option, _, _ := strings.Cut(name, "-")
-			if slices.Contains(archiveOptions, option) {
-				variants = append(variants, variant)
-				break
-			}
+			declares = declares || slices.Contains(archiveOptions, option)
+		})
+		if declares {
+			variants = append(variants, variant)
 		}
-	}
+	})
 	return variants
 }

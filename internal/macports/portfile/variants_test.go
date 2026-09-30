@@ -38,3 +38,25 @@ variant indirect description {through a procedure} {
 `)))
 	require.Empty(t, portfile.ArchiveVariants([]byte("variant {")), "text that isn't Tcl names nothing")
 }
+
+// Only what MacPorts runs is read: a variant written inside a string, and
+// a checksums inside a variant's set, are data, neither a variant nor a
+// declaration, while a variant a platform block or a condition runs is
+// one (the helper-ownership review's finding 3, its probe as a regression
+// test).
+func TestArchiveVariantsReadNoData(t *testing.T) {
+	t.Parallel()
+	for _, src := range []string{
+		"set documentation {variant imaginary {distfiles-append example.tar.gz}}\n",
+		"variant docs description {Documentation} {set example {checksums sha256 aaaa}}\n",
+	} {
+		require.Empty(t, portfile.ArchiveVariants([]byte(src)), src)
+	}
+	require.Equal(t, []string{"arm", "late"}, portfile.ArchiveVariants([]byte(`platform darwin arm {
+    variant arm description {ARM} { distfiles-append arm.tar.gz }
+}
+if {${os.major} > 20} {
+    variant late description {Late} { if {1} { master_sites-append https://example.org/ } }
+}
+`)))
+}

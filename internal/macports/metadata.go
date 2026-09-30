@@ -67,10 +67,11 @@ func (s Snapshot) RequiresXcode() (bool, error) {
 // evaluation could not settle. Every reader of use_xcode and
 // extract.rename goes through it, so no site keeps its own list.
 func (p PortInfo) Bool(option string) (bool, error) {
-	if failure, ok := p.OptionErrors[option]; ok {
-		return false, fmt.Errorf("macports: evaluating %s: %s", option, failure)
+	value, _, err := p.option(option)
+	if err != nil {
+		return false, err
 	}
-	switch strings.ToLower(strings.TrimSpace(p.Options[option])) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "", "0", "false", "no", "off":
 		return false, nil
 	case "1", "true", "yes", "on":

@@ -38,17 +38,27 @@ type Change struct {
 	// language or a build file's tool, for a caller that knows which the
 	// port uses; empty for a license file.
 	System macports.BuildSystem
-	// Requirement is a Python requirement the new version adds or moves,
-	// for what it asks of the port that provides it; nil for every other
-	// change.
-	Requirement *Requirement
+	// Requirements are a Python requirement the new version adds or
+	// moves, each declaration of it, for what it asks of the port that
+	// provides it; none for every other change.
+	Requirements []Requirement
 }
 
 // Requirement is a Python dependency a manifest requires: its name, as PEP
-// 503 compares names, and its PEP 440 version specifier, which Admits
-// reads.
+// 503 compares names, its PEP 440 version specifier, which Admits reads,
+// and its PEP 508 marker, where it applies, which Evaluate reads; empty
+// for one that applies everywhere.
 type Requirement struct {
-	Name, Specifier string
+	Name, Specifier, Marker string
+}
+
+// OnMacOS is whether a requirement applies to a MacPorts build, with the
+// Python version the build uses where it's known.
+func (r Requirement) OnMacOS(pythonVersion string) (Applies, error) {
+	if r.Marker == "" {
+		return Yes, nil
+	}
+	return Evaluate(r.Marker, MacOS(pythonVersion))
 }
 
 // memberLimit is the most of one file the comparison reads.
@@ -390,6 +400,18 @@ func dependencyDeltas(before, after reading) []dependencyDelta {
 	return deltas
 }
 
+// elsewhere reports declarations of a requirement that all apply only
+// elsewhere than macOS, by their markers; none, or one that may apply, is
+// not.
+func elsewhere(declarations []Requirement) bool {
+	for _, declaration := range declarations {
+		if applies, err := declaration.OnMacOS(""); err != nil || applies != No {
+			return false
+		}
+	}
+	return len(declarations) > 0
+}
+
 // dependencyChanges says what a manifest's declared dependencies gained,
 // lost, and moved, one line each. What's gained holds, as another port the
 // Portfile may need to declare.
@@ -402,17 +424,25 @@ func dependencyChanges(file string, before, after reading) []Change {
 	}
 	var changes []Change
 	for _, delta := range dependencyDeltas(before, after) {
-		var required *Requirement
-		if specifier, ok := after.specifiers[delta.name]; ok {
-			required = &Requirement{Name: NormalizeName(delta.name), Specifier: specifier}
-		}
+		required := after.requirements[delta.name]
 		switch delta.how {
 		case "adds":
-			changes = append(changes, Change{Kind: "dependency", Path: file, Hold: true, Requirement: required, Message: strings.TrimSpace(fmt.Sprintf("upstream: %s adds %s %s", file, delta.name, delta.now))})
+			// One that applies only elsewhere, as a Windows-only one, is
+			// said and holds nothing; one that may apply here holds.
+			changes = append(changes, Change{Kind: "dependency", Path: file, Hold: !elsewhere(required), Requirements: required,
+				Message: strings.TrimSpace(fmt.Sprintf("upstream: %s adds %s %s", file, delta.name, delta.now))})
 		case "drops":
 			changes = append(changes, Change{Kind: "dependency", Path: file, Message: fmt.Sprintf("upstream: %s drops %s", file, delta.name)})
 		default:
-			changes = append(changes, Change{Kind: "dependency", Path: file, Requirement: required, Message: fmt.Sprintf("upstream: %s moves %s from %s to %s", file, delta.name, spelled(delta.old, delta.wasIndirect), spelled(delta.now, delta.isIndirect))})
+			// One that applied only elsewhere and now may apply here, as
+			// a Windows-only requirement made macOS's, is as good as added,
+			// and holds as one (the helper-ownership review's finding 1).
+			message := fmt.Sprintf("upstream: %s moves %s from %s to %s", file, delta.name, spelled(delta.old, delta.wasIndirect), spelled(delta.now, delta.isIndirect))
+			arrives := required != nil && elsewhere(before.requirements[delta.name]) && !elsewhere(required)
+			if arrives {
+				message += ", which now may apply to macOS"
+			}
+			changes = append(changes, Change{Kind: "dependency", Path: file, Hold: arrives, Requirements: required, Message: message})
 		}
 	}
 	// What holds the update for a look comes first.
