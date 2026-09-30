@@ -216,13 +216,32 @@ namespace eval ::dockhand {
             }
             # The Python the python PortGroup would build the port with, were
             # python.default_version not pinned: its own default of it,
-            # python_get_default_version, which Portfiles call too. A port
-            # without the PortGroup has none.
+            # python_get_default_version, which Portfiles call too, as it
+            # says in the port, capped at the newest of its python.versions;
+            # and as it says for a port that names none, its proc run as it
+            # is in an empty interpreter, since a port not named py- that
+            # pins the version has python.versions set to the pin
+            # (python_set_default_version). Which applies is the Go side's
+            # (macports.PortInfo.PythonPinned). A port without the PortGroup
+            # has neither.
             if {[$worker eval {llength [info procs python_get_default_version]}]} {
                 if {[catch {$worker eval python_get_default_version} python]} {
                     dict set failures dockhand.python_default $python
                 } else {
                     dict set out dockhand.python_default $python
+                }
+                if {[catch {
+                    set probe [interp create -safe]
+                    try {
+                        $probe eval [list proc default {} [$worker eval {info body python_get_default_version}]]
+                        $probe eval default
+                    } finally {
+                        interp delete $probe
+                    }
+                } python]} {
+                    dict set failures dockhand.python_group_default $python
+                } else {
+                    dict set out dockhand.python_group_default $python
                 }
             }
             # Whether the port declares tests, read as MacPorts reads it,

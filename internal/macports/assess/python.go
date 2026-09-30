@@ -133,8 +133,10 @@ func (a *assessment) requiresPython() (model.UpstreamChange, bool) {
 	default:
 		found.Message = fmt.Sprintf("upstream: %s requires Python %s", file, now)
 	}
+	// A py- port builds for its python.versions; any other's follow its
+	// pin, which is what a person moves.
 	option := "python.default_version"
-	if _, set := a.input.Port.Options["python.versions"]; set {
+	if _, subport := macports.PythonPackage(a.input.Port.Name); subport || strings.HasPrefix(a.input.Port.Name, "py-") {
 		option = "python.versions"
 	}
 	switch {

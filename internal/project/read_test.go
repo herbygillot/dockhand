@@ -224,3 +224,30 @@ func TestAProjectsDeclaredLicenseIsItsManifests(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, [2]string{"Apache-2.0", "py/pyproject.toml"}, [2]string{license, file}, "at the root the port builds in")
 }
+
+// setup.py and setup.cfg are setuptools': a backend known not to read
+// them, as sshuttle's hatchling, doesn't; setuptools, pbr, and a project's
+// own backend may. A project's backend is its root pyproject.toml's.
+func TestAPythonBackendReadsWhatsItsOwn(t *testing.T) {
+	for _, test := range []struct {
+		backend, file string
+		reads         bool
+	}{
+		{"hatchling.build", "setup.cfg", false},
+		{"flit_core.buildapi", "setup.py", false},
+		{"hatchling.build", "CMakeLists.txt", true},
+		{"setuptools.build_meta", "setup.cfg", true},
+		{"setuptools.build_meta:__legacy__", "setup.py", true},
+		{"pbr.build", "setup.cfg", true},
+		{"_custom_build", "setup.py", true},
+	} {
+		require.Equal(t, test.reads, BackendReads(test.backend, test.file), "%s reads %s", test.backend, test.file)
+	}
+	backend, ok := read(t, map[string]string{"sshuttle-2.0.0/pyproject.toml": "[build-system]\nrequires = [\"hatchling\"]\nbuild-backend = \"hatchling.build\"\n"}, Spec{}).PythonBackend()
+	require.True(t, ok)
+	require.Equal(t, "hatchling.build", backend)
+	_, ok = read(t, map[string]string{"old-1/pyproject.toml": "[tool.black]\n"}, Spec{}).PythonBackend()
+	require.False(t, ok, "none named")
+	require.True(t, DeclaresVersion("setup.cfg", "current_version = 2.0.0", "2.0.0"), "bumpversion's")
+	require.False(t, DeclaresVersion("setup.cfg", "current_version = 2.0.0.1", "2.0.0"))
+}

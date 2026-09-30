@@ -30,8 +30,10 @@ import (
 // crate gone that linked a native library the port still has something
 // for is said. 3: batch 13's, a Node project's workspaces read, a Python
 // project's requires-python judged, and a Python pin behind the
-// PortGroup's default noted.
-const Policy = 3
+// PortGroup's default noted. 4: that note read as MacPorts' PortGroup
+// computes its default, and a setup file its project's backend doesn't
+// read set apart.
+const Policy = 4
 
 // Input is what one port's assessment reads.
 type Input struct {
@@ -291,7 +293,7 @@ func (a *assessment) pair(pair Pair) {
 		case change.Kind == "license":
 			a.add(a.license(change, pair, port))
 		case change.Kind == "build":
-			a.add(finding(change, change.How != "version"))
+			a.add(a.build(change, pair))
 		default:
 			a.add(finding(change, false))
 		}
@@ -392,6 +394,27 @@ func (a *assessment) native(change sourcecompare.Change) (model.UpstreamChange, 
 	}
 	found.Message += ": MacPorts may provide it, for the Portfile to declare, rather than the crate linking whatever copy it finds"
 	return found, true
+}
+
+// build is a build file's change as a finding: one of the project's own
+// version alone holds nothing; one the Python project's backend doesn't
+// read, as sshuttle's hatchling doesn't read the setup.cfg bumpversion
+// keeps its version in, is set apart (the sshuttle run with f075232d); any
+// other holds, the build perhaps needing the Portfile to follow.
+func (a *assessment) build(change sourcecompare.Change, pair Pair) model.UpstreamChange {
+	if change.How == "version" {
+		return finding(change, false)
+	}
+	if backend, ok := pair.After.PythonBackend(); ok && !project.BackendReads(backend, change.Path) {
+		reason := fmt.Sprintf("the project builds with %s, which doesn't read %s", backend, path.Base(change.Path))
+		a.cover(model.Coverage{Path: change.Path, System: string(change.System), Relevance: "unknown", Treatment: "set-apart", Policy: "build-backend", Reason: reason})
+		found := finding(change, false)
+		found.Message += "; " + reason + ", so it holds nothing"
+		return found
+	}
+	found := finding(change, true)
+	found.Message += "; the build may need the Portfile to follow"
+	return found
 }
 
 // license is a license file's change as a finding, which holds, with

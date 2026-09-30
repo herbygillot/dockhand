@@ -616,7 +616,7 @@ func TestAChangeTheBuildDoesntReadHoldsNothing(t *testing.T) {
 	comparison := (&Engine{}).assessUpstream(t.Context(), result, sourcecompare.Versions{Old: "25.9.23", New: "25.12.19"}, [2]model.Source{}, true)
 	require.Equal(t, []model.UpstreamChange{
 		{Kind: "build", Path: "CMakeLists.txt", Message: "upstream's CMakeLists.txt changed; the build may need the Portfile to follow", Hold: true, Rule: assess.BuildFileChanged, Class: model.Introduced},
-		{Kind: "build", Path: "Package.swift", Message: "upstream's Package.swift is new; the build may need the Portfile to follow; flatbuffers builds with cmake, not swift, so it holds nothing",
+		{Kind: "build", Path: "Package.swift", Message: "upstream's Package.swift is new; flatbuffers builds with cmake, not swift, so it holds nothing",
 			Rule: assess.BuildFileChanged, Class: model.Introduced},
 		{Kind: "dependency", Path: "package.json", Message: "upstream: package.json: 2 dependencies changed; flatbuffers builds with cmake, not node, so it holds nothing",
 			Rule: assess.DependenciesCounted, Class: model.Introduced},

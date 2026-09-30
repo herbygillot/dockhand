@@ -101,10 +101,29 @@ var versionDeclarations = map[string][]string{
 	"configure.ac":   {`^\s*AC_INIT\s*\(.*\[?%s(\]|,|\)|\s)`},
 	"configure.in":   {`^\s*AC_INIT\s*\(.*\[?%s(\]|,|\)|\s)`},
 	"setup.py":       {`\bversion\s*=\s*['"]%s['"]`},
-	"setup.cfg":      {`^\s*version\s*=\s*%s\s*$`},
+	"setup.cfg":      {`^\s*version\s*=\s*%s\s*$`, `^\s*current_version\s*=\s*%s\s*$`},
 	"DESCRIPTION":    {`^Version:\s*%s\s*$`},
 	"build.gradle":   {`^\s*version\s*=?\s*['"]%s['"]`},
 	"Makefile.PL":    {`\bVERSION\s*=>\s*['"]%s['"]`},
+}
+
+// setupFreeBackends are PEP 517 backends that read neither setup.py nor
+// setup.cfg: a project building with one keeps them for other tools, if at
+// all, as sshuttle, built with hatchling, keeps bumpversion's version in
+// setup.cfg (the sshuttle run with f075232d). Any other backend,
+// setuptools', pbr's, or a project's own in its tree, may read them.
+var setupFreeBackends = []string{"hatchling.build", "flit_core.buildapi", "poetry.core.masonry.api", "pdm.backend", "maturin", "mesonpy", "scikit_build_core.build", "uv_build"}
+
+// BackendReads reports whether a Python project that builds with a PEP 517
+// backend reads a build file: setup.py and setup.cfg are setuptools', and
+// a backend known not to read them doesn't; every other file, as far as
+// this says, is read.
+func BackendReads(backend, name string) bool {
+	switch path.Base(name) {
+	case "setup.py", "setup.cfg":
+		return !slices.Contains(setupFreeBackends, backend)
+	}
+	return true
 }
 
 // DeclaresVersion reports whether a line of a build file declares the

@@ -172,7 +172,7 @@ func Compare(older, newer project.Reading, versions Versions) []Change {
 				how, what = "removed", "was removed"
 			}
 			changes = append(changes, Change{Kind: "build", How: how, Path: name,
-				Message: fmt.Sprintf("upstream's %s %s; the build may need the Portfile to follow", name, what)})
+				Message: fmt.Sprintf("upstream's %s %s", name, what)})
 		}
 	}
 	for i := range changes {

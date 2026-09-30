@@ -225,6 +225,21 @@ func (r Reading) DeclaredLicense() (license, file string, ok bool) {
 	return "", "", false
 }
 
+// PythonBackend is the PEP 517 backend the project's pyproject.toml at its
+// root builds with, as it names it; false where it names none, or there's
+// none that could be read.
+func (r Reading) PythonBackend() (string, bool) {
+	found, ok := r.RootFile("pyproject.toml")
+	if !ok || found.Truncated {
+		return "", false
+	}
+	manifest, err := ReadPyproject(found.Data)
+	if err != nil || manifest.BuildBackend == "" {
+		return "", false
+	}
+	return manifest.BuildBackend, true
+}
+
 // readWorkspaces reads the package.json of each workspace the root's
 // package.json names, as yarn and npm install them with it: beekeeper-studio
 // moved electron in apps/studio/package.json, which reading the root alone

@@ -394,7 +394,11 @@ func TestTheEvaluatorReportsThePortGroupsAPortLoads(t *testing.T) {
 // its python.versions, python.version, and python.default_version, and the
 // default the PortGroup would give it, from its own
 // python_get_default_version; a port without the PortGroup has none. The
-// PortGroup is a stand-in with MacPorts' own options, defaults, and procs.
+// PortGroup is a stand-in with MacPorts' own options, defaults, and procs,
+// python_set_default_version's option_proc included: a port not named py-
+// that pins the version has python.versions set to the pin, which the
+// stand-in once left out, so sshuttle's pin read as the default (the
+// sshuttle run with f075232d).
 func TestTheEvaluatorReadsAPortsPythons(t *testing.T) {
 	t.Parallel()
 	e := liveEvaluator(t)
@@ -418,10 +422,20 @@ proc python_get_default_version {} {
         return ${def_v}
     }
 }
+option_proc python.default_version python_set_default_version
+proc python_set_default_version {option action args} {
+    if {$action ne "set"} {
+        return
+    }
+    if {![string match py-* [option name]]} {
+        python.versions [option python.default_version]
+    }
+}
 `)
 	putFile(t, tree.Root(), "net/sshuttle/Portfile", "PortSystem 1.0\nPortGroup python 1.0\nname sshuttle\nversion 2.0.0\npython.default_version 313\n")
 	putFile(t, tree.Root(), "python/py-demo/Portfile", "PortSystem 1.0\nPortGroup python 1.0\nname py-demo\nversion 1\npython.versions 312 313\n")
 	putFile(t, tree.Root(), "net/current/Portfile", "PortSystem 1.0\nPortGroup python 1.0\nname current\nversion 1\n")
+	putFile(t, tree.Root(), "python/py-behind/Portfile", "PortSystem 1.0\nPortGroup python 1.0\nname py-behind\nversion 1\npython.versions 312 313 314\npython.default_version 313\n")
 	putFile(t, tree.Root(), "devel/plain/Portfile", "PortSystem 1.0\nname plain\nversion 1\n")
 	evaluated := func(name string) macports.PortInfo {
 		t.Helper()
@@ -444,6 +458,10 @@ proc python_get_default_version {} {
 	pinned, standard, ok = demo.PythonPinned()
 	require.True(t, ok)
 	require.Equal(t, [2]string{"3.13", "3.13"}, [2]string{pinned, standard}, "the PortGroup's default is the newest the port builds for, without 3.14")
+
+	pinned, standard, ok = evaluated("py-behind").PythonPinned()
+	require.True(t, ok)
+	require.Equal(t, [2]string{"3.13", "3.14"}, [2]string{pinned, standard}, "a py- port's own python.versions reach 3.14")
 
 	pinned, standard, ok = evaluated("current").PythonPinned()
 	require.True(t, ok)

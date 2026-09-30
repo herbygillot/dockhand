@@ -80,12 +80,20 @@ func release(version string) (string, bool) {
 // not pinned, its own default (python_get_default_version), each as Python
 // writes it; false for a port without the PortGroup, or one evaluated
 // before these were read. sshuttle pins 3.13, where the default is 3.14.
+// A py- port's python.versions are its own, so the default the PortGroup
+// computes in the port says, capped at the newest it builds for; any other
+// port's follow its pin (python_set_default_version), so the default is
+// the one the PortGroup computes for a port that names none.
 func (p PortInfo) PythonPinned() (pinned, standard string, ok bool) {
 	pin, _, err := p.option("python.default_version")
 	if err != nil {
 		return "", "", false
 	}
-	def, _, err := p.option("dockhand.python_default")
+	computed := "dockhand.python_group_default"
+	if strings.HasPrefix(p.Name, "py-") || pythonSubport.MatchString(p.Name) {
+		computed = "dockhand.python_default"
+	}
+	def, _, err := p.option(computed)
 	if err != nil {
 		return "", "", false
 	}
