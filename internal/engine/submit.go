@@ -93,8 +93,10 @@ type SubmitPlan struct {
 	Others   []forge.PullRequestSummary
 	// SearchProblem says why other pull requests could not be looked for.
 	SearchProblem string
-	// Moved are the Git-fetched ports whose git.branch names another
-	// commit now than when the check the submission rests on planned it.
+	// Moved are the Git-fetched ports whose git.branch named another
+	// commit when the check the submission rests on planned it than when
+	// their update chose it (preparedSources), or names another now than
+	// then (movedSources).
 	Moved []model.Concern
 	// Blocking is what stops the submission.
 	Blocking []string
@@ -251,6 +253,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	}); err != nil {
 		return plan, err
 	}
+	plan.Moved = append(preparedSources(plan.Evidence, edits), plan.Moved...)
 	facts := bodyFacts{Commits: plan.Commits, Evidence: plan.Evidence, NoCheck: request.NoCheck, Accepted: slices.Concat(accepted, request.Accept), Types: request.Types,
 		Updated:     dockhandUpdate(plan.Commits, edits),
 		RulesPassed: !errorsFound, Squashed: squashed, Searched: plan.SearchProblem == "", Others: plan.Others,

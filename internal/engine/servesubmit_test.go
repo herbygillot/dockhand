@@ -1,10 +1,13 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -262,6 +265,103 @@ func TestPassingIsOneDefinitionForSubmitAndServe(t *testing.T) {
 	candidates, err := e.ServeCandidates(t.Context())
 	require.NoError(t, err)
 	require.Empty(t, candidates, "and serve submits it no more than submit --passing would")
+}
+
+// A Git-fetched port whose update chose a commit its tag no longer named
+// when the check was planned is a concern: the update prepared one
+// source, and the check built another. The update is matched to the
+// planned target by its port and the source its release names, the newest
+// such update being the one the files carry; one for another tag, another
+// repository, or another port, or that found no commit, says nothing. A
+// target --only left out is compared as a built one is.
+func TestATagMovedBetweenAnUpdateAndItsCheckIsAConcern(t *testing.T) {
+	chosen, planned := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	source := model.GitSource{URL: "https://github.com/harbor/libharbor.git", Ref: "v4", Commit: model.ObjectID(planned), ResolvedAt: time.Now()}
+	evidence := &Evidence{Run: model.Run{Number: 7}, Plan: model.Plan{Targets: []model.PlanTarget{{ID: "libharbor", Target: model.Target{Name: "libharbor"}}},
+		Builds: []model.EnvironmentPlan{{Order: []model.TargetID{"libharbor"}, Git: map[model.TargetID]model.GitSource{"libharbor": source}}}}}
+	release := func(tag, commit string) *model.Release {
+		return &model.Release{Version: "4", Forge: "github", Instance: "https://github.com", Repository: "harbor/libharbor", Tag: tag, Commit: commit}
+	}
+	update := func(port string, release *model.Release) model.Edit {
+		return model.Edit{Kind: model.EditUpdate, Port: port, Release: release}
+	}
+
+	require.Empty(t, preparedSources(evidence, []model.Edit{update("libharbor", release("v4", planned))}), "the check built what the update chose")
+	moved := preparedSources(evidence, []model.Edit{update("libharbor", release("v4", chosen))})
+	require.Equal(t, []model.Concern{{Origin: model.FromUpstream, Port: "libharbor", Rule: "release-moved", Subject: planned, Class: model.Introduced,
+		Detail: "libharbor's git.branch v4 named aaaaaaa when its update chose it, and bbbbbbb when check-7 planned it: the check built another source than the update chose"}}, moved)
+	require.Contains(t, SubmitPlan{Moved: moved}.held(), moved[0].Detail, "it holds a submission nobody looks over")
+
+	require.Empty(t, preparedSources(evidence, []model.Edit{update("libharbor", release("v4", chosen)), update("libharbor", release("v4", planned))}),
+		"the newest update chose what the check built")
+	require.Empty(t, preparedSources(evidence, []model.Edit{update("libharbor", release("v3", chosen))}), "an update to another tag, edited since")
+	fork := release("v4", chosen)
+	fork.Repository = "fork/libharbor"
+	require.Empty(t, preparedSources(evidence, []model.Edit{update("libharbor", fork)}), "another repository's tag")
+	require.Empty(t, preparedSources(evidence, []model.Edit{update("harbor-cli", release("v4", chosen))}), "another port's update")
+	require.Empty(t, preparedSources(evidence, []model.Edit{update("libharbor", release("v4", ""))}), "an update that found no commit")
+	unresolved := evidence.Plan
+	unresolved.Builds = []model.EnvironmentPlan{{Order: []model.TargetID{"libharbor"}, Git: map[model.TargetID]model.GitSource{
+		"libharbor": {URL: source.URL, Ref: "v4", Unresolved: "its refs couldn't be read", ResolvedAt: source.ResolvedAt}}}}
+	require.Empty(t, preparedSources(&Evidence{Run: evidence.Run, Plan: unresolved}, []model.Edit{update("libharbor", release("v4", chosen))}), "a check that couldn't resolve the tag")
+	require.Empty(t, preparedSources(nil, []model.Edit{update("libharbor", release("v4", chosen))}), "no check")
+
+	evidence.Plan.Omitted = []model.PlanTarget{{ID: "harbor-cli", Target: model.Target{Name: "harbor-cli"}}}
+	evidence.Plan.Builds[0].Git["harbor-cli"] = source
+	moved = preparedSources(evidence, []model.Edit{update("harbor-cli", release("v4", chosen))})
+	require.Len(t, moved, 1, "--only left it out, and its tag was resolved with the rest")
+	require.Equal(t, "harbor-cli", moved[0].Port)
+}
+
+// taggedRelease finds jq's release at a tag of a repository on disk, as a
+// forge would, and the commit the tag named when it looked.
+type taggedRelease struct{ forge, repository, commit string }
+
+func (r taggedRelease) Outdated(context.Context, model.ObjectID, OutdatedRequest) ([]OutdatedPort, error) {
+	return []OutdatedPort{{Port: "jq", Current: "1.7.1", Newest: "1.8.1", Outdated: true,
+		Release: &model.Release{Version: "1.8.1", Forge: "github", Instance: r.forge, Repository: r.repository, Tag: "jq-1.8.1", Commit: r.commit}}}, nil
+}
+
+// serve holds an update of a Git-fetched port whose tag moved after the
+// update chose it and before its check was planned: the check built
+// another source than the update chose, and nobody looked.
+func TestServeHoldsAnUpdateWhoseTagMovedBeforeItsCheck(t *testing.T) {
+	f := setup(t)
+	e, p := f.withPreparer(t)
+	f.withFork(t, e)
+	forge := t.TempDir()
+	project := filepath.Join(forge, "jqlang", "jq")
+	require.NoError(t, os.MkdirAll(project, 0o755))
+	run(t, project, "init", "-q")
+	run(t, project, "commit", "-q", "--allow-empty", "-m", "1.8.1")
+	run(t, project, "tag", "jq-1.8.1")
+	chosen := run(t, project, "rev-parse", "HEAD")
+	var moved string
+	p.during = func() {
+		run(t, project, "commit", "-q", "--allow-empty", "-m", "1.8.1, again")
+		run(t, project, "tag", "-f", "jq-1.8.1")
+		moved = run(t, project, "rev-parse", "HEAD")
+	}
+	jq := port("jq")
+	jq.Options = map[string]string{"fetch.type": "git", "git.url": project, "git.branch": "jq-1.8.1"}
+	e.OutdatedReader = taggedRelease{forge: forge, repository: "jqlang/jq", commit: chosen}
+	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {jq}}}
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
+	report, err := e.Outdated(t.Context(), OutdatedRequest{Maintainers: []string{"@ada"}})
+	require.NoError(t, err)
+	plan, err := e.PlanOutdated(t.Context(), report)
+	require.NoError(t, err)
+	prepared := e.PrepareOutdated(t.Context(), plan, PrepareOptions{Origin: model.OriginServe, Check: true, Environments: []model.Environment{{Provider: "command"}}, Tests: model.TestsDeclared})
+	require.Len(t, prepared, 1)
+	require.Empty(t, prepared[0].Problem)
+	checked, err := e.Drive(t.Context(), session(t, e), prepared[0].Run.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, checked.State, checked.Detail)
+
+	candidates, err := e.ServeCandidates(t.Context())
+	require.NoError(t, err)
+	require.Len(t, candidates, 1)
+	require.Equal(t, []string{"jq's git.branch jq-1.8.1 named " + chosen[:7] + " when its update chose it, and " + moved[:7] + " when " + checked.Name() + " planned it: the check built another source than the update chose"}, candidates[0].Held)
 }
 
 // A target --only left out whose tag moved after the check is a concern as

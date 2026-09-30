@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // EditIntent is what a person asked of an update beyond the version: the
 // choices that shape the commit. It is set once from the command line and
@@ -67,6 +70,23 @@ type ReleaseListing struct {
 	ETag         string `json:",omitempty"`
 	LastModified string `json:",omitempty"`
 	SHA256       string
+}
+
+// Names reports whether a Git fetch of a source fetches this release: its
+// git.branch is the release's tag, or its commit where the Portfile pins
+// one, and its git.url is the release's repository on its forge, as a
+// forge PortGroup writes it, the repository's address with ".git" after
+// it, whose case the forge doesn't read. An archive's release, or one
+// found without a repository, names no Git source.
+func (r Release) Names(source GitSource) bool {
+	if r.Archive || r.Instance == "" || r.Repository == "" || source.Ref == "" {
+		return false
+	}
+	if source.Ref != r.Tag && source.Ref != r.Commit {
+		return false
+	}
+	address := strings.TrimSuffix(strings.TrimRight(source.URL, "/"), ".git")
+	return strings.EqualFold(address, strings.TrimRight(r.Instance, "/")+"/"+r.Repository)
 }
 
 // SourceSpelling is the version the source names: SourceVersion when the

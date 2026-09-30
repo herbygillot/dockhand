@@ -106,8 +106,9 @@ func (p SubmitPlan) held() []string {
 // Concerns are what a submission would wait on a person's look for, were
 // nobody to look it over (the assessment design, E), each once: what its
 // assessments found that a passing build can't catch, or couldn't check
-// (D4); a commit-rule finding; and another open pull request for its
-// ports, or not knowing whether there is one. A person's own submission
+// (D4); a Git-fetched source whose tag moved between its update, its
+// check, and now (Moved); a commit-rule finding; and another open pull
+// request for its ports, or not knowing whether there is one. A person's own submission
 // shows them and goes ahead, and each kind of submission keeps its own
 // rules over its evidence (§3's publication rule).
 func (p SubmitPlan) Concerns() []model.Concern {
@@ -166,6 +167,36 @@ func (e *Engine) movedSources(ctx context.Context, evidence *Evidence) []model.C
 		}
 		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: "source-moved", Subject: string(current.Commit), Class: model.Introduced,
 			Detail: fmt.Sprintf("%s's git.branch %s named %s when %s planned it, and names %s now: the check built another source than this would submit", target.Target.Name, planned.Ref, short(planned.Commit), evidence.Run.Name(), short(current.Commit))})
+	}
+	return concerns
+}
+
+// preparedSources are the Git-fetched ports whose update chose a release
+// whose tag named another commit then than when the check a submission
+// rests on planned it: the update prepared one source, and the check
+// built another, since a tag binds nothing (the assessment design, A). An
+// update is matched to a planned target by its port and by the Git source
+// its release names (model.Release.Names); the newest such edit is the one
+// the branch's files carry. A release or plan that names no commit says
+// nothing of whether the tag moved.
+func preparedSources(evidence *Evidence, edits []model.Edit) []model.Concern {
+	if evidence == nil {
+		return nil
+	}
+	var concerns []model.Concern
+	for _, p := range plannedSources(evidence.Plan) {
+		target, planned := p.target, p.source
+		var chosen *model.Release
+		for _, edit := range edits {
+			if edit.Port == target.Target.Name && edit.Release != nil && edit.Release.Names(planned) {
+				chosen = edit.Release
+			}
+		}
+		if chosen == nil || chosen.Commit == "" || planned.Commit == "" || model.ObjectID(chosen.Commit) == planned.Commit {
+			continue
+		}
+		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: "release-moved", Subject: string(planned.Commit), Class: model.Introduced,
+			Detail: fmt.Sprintf("%s's git.branch %s named %s when its update chose it, and %s when %s planned it: the check built another source than the update chose", target.Target.Name, planned.Ref, short(model.ObjectID(chosen.Commit)), short(planned.Commit), evidence.Run.Name())})
 	}
 	return concerns
 }
