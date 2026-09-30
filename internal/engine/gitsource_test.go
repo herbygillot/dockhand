@@ -177,12 +177,17 @@ func TestAMovedTagDoesntLetEarlierEvidenceStand(t *testing.T) {
 // An earlier check of the same files fills in what a later one didn't
 // build only where its build fetched the commit the later check expects
 // (Counts): once the tag moved, libharbor's earlier result is no evidence
-// for the files as they fetch now, and it asks for a check again.
+// for the files as they fetch now, and it asks for a check again. Nor are
+// the results of what was built against it, harbor-cli with libharbor
+// active, and harbor-viewer against that harbor-cli too, as reuse would
+// build them again (reuse.AgainstOtherSources).
 func TestAnEarlierResultFillsInOnlyForTheCommitExpected(t *testing.T) {
 	f := setup(t)
 	e := f.open(t)
 	url, first, move := harborRepository(t)
-	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{}, fetches: map[model.TargetID]string{"libharbor": first}}, identity: "origin a"}
+	lib := model.ActivePort{Name: "libharbor", Spec: "@4_0", Directory: "devel/libharbor", Archive: "sha256:libharbor"}
+	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{}, consumes: map[model.TargetID][]model.ActivePort{"harbor-cli": {lib}, "harbor-viewer": {lib}},
+		fetches: map[model.TargetID]string{"libharbor": first}}, identity: "origin a"}
 	e.Providers = map[string]buildenv.Provider{"command": provider}
 	revision := harborBranch(t, e)
 	e.PortReader = gitHarbor(url, "v4")
@@ -222,7 +227,108 @@ func TestAnEarlierResultFillsInOnlyForTheCommitExpected(t *testing.T) {
 
 	move()
 	require.Equal(t, model.RunAttention, check().State)
-	require.Equal(t, []model.TargetID{"libharbor"}, missing(), "the earlier build fetched another commit than the tag names now")
+	require.Equal(t, []model.TargetID{"libharbor", "harbor-cli", "harbor-viewer"}, missing(),
+		"the earlier build fetched another commit than the tag names now, and the others were built against it")
+}
+
+// harborChecks checks the harbor branch on one environment with a
+// provider and ports of its own, and reads what the evidence of its files
+// still misses.
+type harborChecks struct {
+	t        *testing.T
+	e        *Engine
+	branch   model.Branch
+	revision model.Revision
+}
+
+func newHarborChecks(t *testing.T, e *Engine, ports fakePorts, provider buildenv.Provider) harborChecks {
+	t.Helper()
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	c := harborChecks{t: t, e: e, revision: harborBranch(t, e)}
+	e.PortReader = ports
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		var err error
+		c.branch, err = r.Branch(c.revision.Branch)
+		return err
+	}))
+	return c
+}
+
+// check plans and drives a check, fresh where asked, of the ports named,
+// or of every one.
+func (c harborChecks) check(fresh bool, only ...string) (model.Run, model.Plan) {
+	c.t.Helper()
+	plan, err := c.e.PlanCheck(c.t.Context(), PlanRequest{Revision: c.revision, Environments: []model.Environment{tahoeArm}, Only: only, Fresh: fresh})
+	require.NoError(c.t, err)
+	queued, err := c.e.Enqueue(c.t.Context(), c.branch, plan, model.OriginPerson)
+	require.NoError(c.t, err)
+	run, err := c.e.Drive(c.t.Context(), session(c.t, c.e), queued.ID)
+	require.NoError(c.t, err)
+	return run, plan
+}
+
+// missing are the targets no check of the files built where the evidence
+// asks for them (Evidence.Missing).
+func (c harborChecks) missing() []model.TargetID {
+	c.t.Helper()
+	evidence, found, err := c.e.EvidenceFor(c.t.Context(), c.branch.ID, c.revision.Source.Tree)
+	require.NoError(c.t, err)
+	require.True(c.t, found)
+	var ids []model.TargetID
+	for _, target := range evidence.Missing() {
+		ids = append(ids, target.Target.ID)
+	}
+	return ids
+}
+
+// A failure is judged as a pass is: harbor-cli's build that failed against
+// libharbor's build of the old commit is no evidence once the tag moved.
+// A blocked result built nothing, and isn't judged by what it was built
+// against: harbor-viewer, blocked by harbor-cli, stands while nothing
+// moved, as it did before.
+func TestAnEarlierFailureAgainstAnOldCommitDoesntStand(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	url, first, move := harborRepository(t)
+	lib := model.ActivePort{Name: "libharbor", Spec: "@4_0", Directory: "devel/libharbor", Archive: "sha256:libharbor"}
+	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{}, consumes: map[model.TargetID][]model.ActivePort{"harbor-cli": {lib}},
+		outcomes: map[model.TargetID]model.Outcome{"harbor-cli": model.OutcomeFailed}, fetches: map[model.TargetID]string{"libharbor": first}}, identity: "origin a"}
+	c := newHarborChecks(t, e, gitHarbor(url, "v4"), provider)
+
+	run, _ := c.check(false)
+	require.Equal(t, model.RunFailed, run.State)
+	// Each check after the first has no result of its own: its
+	// environment fails every attempt.
+	provider.failures = model.MaxAttempts
+	run, _ = c.check(true)
+	require.Equal(t, model.RunAttention, run.State)
+	require.Empty(t, c.missing(), "harbor-cli's failure and harbor-viewer's block stand")
+
+	move()
+	provider.failures = model.MaxAttempts
+	c.check(true)
+	missing := c.missing()
+	require.Contains(t, missing, model.TargetID("libharbor"))
+	require.Contains(t, missing, model.TargetID("harbor-cli"), "it failed against the old commit's build")
+}
+
+// A build whose provider didn't say which ports were active can't be
+// established to have been built against the commit a Git-fetched target
+// it needs is expected at, as reuse can't establish it, so an earlier
+// check's result of it doesn't stand for a later check, though the tag
+// names what it did.
+func TestADependentWhoseProviderDidntSayWhatWasActiveDoesntStand(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	url, first, _ := harborRepository(t)
+	provider := &identified{scriptedProvider: scriptedProvider{fetches: map[model.TargetID]string{"libharbor": first}}, identity: "origin a"}
+	c := newHarborChecks(t, e, gitHarbor(url, "v4"), provider)
+
+	run, _ := c.check(false)
+	require.Equal(t, model.RunPassed, run.State, run.Detail)
+	provider.failures = model.MaxAttempts
+	c.check(true)
+	require.Equal(t, []model.TargetID{"harbor-cli", "harbor-viewer"}, c.missing(), "libharbor's result says what it fetched; what needs it can't say what it had")
 }
 
 // A build that fetched another commit than its check expected, the tag

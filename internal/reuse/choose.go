@@ -41,11 +41,9 @@ type Choice struct {
 // what it would read now (Current). The rest build.
 //
 // A target fetched with Git is reused only for the commit its plan expects
-// (Current), and what needs it only where its earlier build had active an
-// archive a build of that commit made (builtAgainst): the same tree of a
-// Git-fetched port isn't the same port, as the same tree of any other is.
-// A target that builds again for that reason makes what needs it build
-// again too, since that read the build before.
+// (Current), and what was built against another commit's build of it, or
+// against a build in that case in turn, builds again too
+// (AgainstOtherSources).
 //
 // A reused target that one that builds needs (Needs) must be in the guest.
 // Where its archive is kept (available), the guest installs it from that
@@ -63,27 +61,12 @@ func Choose(targets []Target, identity string, trees map[string]model.ObjectID, 
 			}
 		}
 	}
-	ids := make([]model.TargetID, len(targets))
-	byID := map[model.TargetID]Target{}
-	for i, target := range targets {
-		ids[i], byID[target.ID] = target.ID, target
+	for id := range AgainstOtherSources(targets, choice.Reused) {
+		delete(choice.Reused, id)
 	}
-	rebuilt := map[model.TargetID]bool{}
-	for taken := true; taken; {
-		taken = false
-		for _, target := range targets {
-			c, reused := choice.Reused[target.ID]
-			if !reused {
-				continue
-			}
-			for _, need := range needs(target.DependsOn, c.Inputs.Active, ids) {
-				if dependency := byID[need]; rebuilt[need] || dependency.Git != nil && !builtAgainst(c, dependency) {
-					delete(choice.Reused, target.ID)
-					rebuilt[target.ID], taken = true, true
-					break
-				}
-			}
-		}
+	ids := make([]model.TargetID, len(targets))
+	for i, target := range targets {
+		ids[i] = target.ID
 	}
 	// A target that builds takes what it needs and can't be installed,
 	// and that what it needs, until nothing more is taken.
@@ -138,6 +121,43 @@ func needs(dependsOn []model.TargetID, active []model.ActivePort, among []model.
 		}
 	}
 	return needed
+}
+
+// AgainstOtherSources are the targets whose chosen earlier build (chosen)
+// was built against another source of a Git-fetched target than its plan
+// expects now (batch 20): the build had active an archive of a Git-fetched
+// target it needs that no build of the commit expected made
+// (builtAgainst), or it needs a target whose chosen build is in that case,
+// since it read that build in turn. What a build needs is what the plan
+// says (DependsOn) and the ports active as it ran, among targets; a build
+// that didn't say which were active can't be established to have had the
+// commit expected. The same tree of a Git-fetched port isn't the same
+// port, as the same tree of any other is, so such a build stands for none
+// now: reuse builds it again (Choose), and an earlier check's result of it
+// isn't evidence for the commit expected now.
+func AgainstOtherSources(targets []Target, chosen map[model.TargetID]Candidate) map[model.TargetID]bool {
+	ids := make([]model.TargetID, len(targets))
+	byID := map[model.TargetID]Target{}
+	for i, target := range targets {
+		ids[i], byID[target.ID] = target.ID, target
+	}
+	against := map[model.TargetID]bool{}
+	for taken := true; taken; {
+		taken = false
+		for _, target := range targets {
+			c, ok := chosen[target.ID]
+			if !ok || against[target.ID] {
+				continue
+			}
+			for _, need := range needs(target.DependsOn, c.Inputs.Active, ids) {
+				if dependency := byID[need]; against[need] || dependency.Git != nil && !builtAgainst(c, dependency) {
+					against[target.ID], taken = true, true
+					break
+				}
+			}
+		}
+	}
+	return against
 }
 
 // builtAgainst reports whether an earlier build had active an archive of a

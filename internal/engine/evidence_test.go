@@ -205,30 +205,34 @@ func TestAResultCountsWhereItsCheckPlannedTheTarget(t *testing.T) {
 	in := func(environment model.Environment) model.GuestExecution {
 		return model.GuestExecution{ID: "execution", Environment: environment, Identity: "origin a"}
 	}
-	require.True(t, Counts(recorded, in(arm), "libharbor", "origin a", nil, ""))
-	require.True(t, Counts(recorded, in(arm), "harbor-cli", "origin a", nil, ""), "what it found there stands, an unmet need too")
-	require.False(t, Counts(recorded, in(arm), "harbor-intel", "origin a", nil, ""), "excluded there")
-	require.True(t, Counts(recorded, in(tahoeX86), "harbor-intel", "origin a", nil, ""))
-	require.False(t, Counts(recorded, in(tahoeX86), "harbor-cli", "origin a", nil, ""), "not planned there: --only left it out")
-	require.False(t, Counts(recorded, in(xcode), "libharbor", "origin a", nil, ""), "the same release with other tools is another environment")
+	require.True(t, Counts(recorded, in(arm), "libharbor", "origin a", nil, "", false))
+	require.True(t, Counts(recorded, in(arm), "harbor-cli", "origin a", nil, "", false), "what it found there stands, an unmet need too")
+	require.False(t, Counts(recorded, in(arm), "harbor-intel", "origin a", nil, "", false), "excluded there")
+	require.True(t, Counts(recorded, in(tahoeX86), "harbor-intel", "origin a", nil, "", false))
+	require.False(t, Counts(recorded, in(tahoeX86), "harbor-cli", "origin a", nil, "", false), "not planned there: --only left it out")
+	require.False(t, Counts(recorded, in(xcode), "libharbor", "origin a", nil, "", false), "the same release with other tools is another environment")
 
 	// And the environment is still the one it ran in: made from the same
 	// source, with the same tools, set up and verified the same way.
-	require.False(t, Counts(recorded, in(arm), "libharbor", "origin b", nil, ""), "remade since")
-	require.True(t, Counts(recorded, in(arm), "libharbor", "", nil, ""), "its identity now is unknown")
+	require.False(t, Counts(recorded, in(arm), "libharbor", "origin b", nil, "", false), "remade since")
+	require.True(t, Counts(recorded, in(arm), "libharbor", "", nil, "", false), "its identity now is unknown")
 	legacy := in(arm)
 	legacy.Identity = ""
-	require.False(t, Counts(recorded, legacy, "libharbor", "origin a", nil, ""), "it ran before identities were recorded, and the environment has been made since")
-	require.True(t, Counts(recorded, model.GuestExecution{Environment: arm}, "libharbor", "origin b", nil, ""), "no execution ran it: planning found it unmet")
+	require.False(t, Counts(recorded, legacy, "libharbor", "origin a", nil, "", false), "it ran before identities were recorded, and the environment has been made since")
+	require.True(t, Counts(recorded, model.GuestExecution{Environment: arm}, "libharbor", "origin b", nil, "", false), "no execution ran it: planning found it unmet")
 
 	// And where the newest check fetches the target with Git, its build
 	// fetched the commit that check expects (batch 20).
 	commit := model.ObjectID(strings.Repeat("a", 40))
 	expected := &model.GitSource{URL: "https://github.com/harbor/libharbor.git", Ref: "v4", Commit: commit, ResolvedAt: time.Now()}
-	require.True(t, Counts(recorded, in(arm), "libharbor", "origin a", expected, commit))
-	require.False(t, Counts(recorded, in(arm), "libharbor", "origin a", expected, model.ObjectID(strings.Repeat("b", 40))), "the tag named another commit then")
-	require.False(t, Counts(recorded, in(arm), "libharbor", "origin a", expected, ""), "recorded without the commit it fetched")
-	require.True(t, Counts(recorded, model.GuestExecution{Environment: arm}, "harbor-cli", "origin a", expected, ""), "an unmet need says nothing of the source")
+	require.True(t, Counts(recorded, in(arm), "libharbor", "origin a", expected, commit, false))
+	require.False(t, Counts(recorded, in(arm), "libharbor", "origin a", expected, model.ObjectID(strings.Repeat("b", 40)), false), "the tag named another commit then")
+	require.False(t, Counts(recorded, in(arm), "libharbor", "origin a", expected, "", false), "recorded without the commit it fetched")
+	require.True(t, Counts(recorded, model.GuestExecution{Environment: arm}, "harbor-cli", "origin a", expected, "", false), "an unmet need says nothing of the source")
+
+	// And its build wasn't built against another commit's build of a
+	// Git-fetched target (reuse.AgainstOtherSources).
+	require.False(t, Counts(recorded, in(arm), "libharbor", "origin a", nil, "", true), "built against another source than the newest check expects")
 }
 
 // A check recorded a result when one of its results came from its own

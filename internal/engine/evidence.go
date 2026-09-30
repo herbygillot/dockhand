@@ -3,10 +3,12 @@ package engine
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/reuse"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -158,10 +160,19 @@ type Evidence struct {
 	// origins are the executions that built reused results, by ID, with
 	// the checks they were in (decision 28).
 	origins map[model.ExecutionID]origin
-	// fetched are the commits the builds of an earlier check's results for
-	// Git-fetched targets recorded fetching, by execution and target
-	// (readFetched), which fill compares with what this check expects.
-	fetched map[[2]string]model.ObjectID
+	// sources are what the builds of an earlier check's results read of
+	// the sources this check expects to fetch with Git, by execution and
+	// target (readSources), which fill judges them by (Counts).
+	sources map[[2]string]readSource
+}
+
+// readSource is what an earlier result's build read of the sources a
+// newer check expects to fetch with Git: the commit it fetched, where it
+// said, and whether it was built against another source of a Git-fetched
+// target than the newer check expects (reuse.AgainstOtherSources).
+type readSource struct {
+	fetched model.ObjectID
+	other   bool
 }
 
 // origin is an execution that built a result another execution reuses,
@@ -532,7 +543,7 @@ func treeEvidence(r store.Reader, primary model.Run, runs []model.Run, now ident
 		if err != nil {
 			return Evidence{}, err
 		}
-		if err := earlier.readFetched(r, plan); err != nil {
+		if err := earlier.readSources(r, plan); err != nil {
 			return Evidence{}, err
 		}
 		if evidence.fill(earlier) {
@@ -572,15 +583,21 @@ func (e Evidence) missing() bool {
 //     (batch 20). One recorded without it, as every result was before,
 //     or whose provider couldn't say, doesn't count; nor does one whose tag
 //     named another commit then. An unmet need, which no execution
-//     recorded, says nothing of the source.
+//     recorded, says nothing of the source;
+//   - it wasn't built against another source of a Git-fetched target than
+//     the newest check expects, directly or through another target's
+//     build (other), by the rule reuse rebuilds by
+//     (reuse.AgainstOtherSources): what was built against a tag's old
+//     commit is another build than one against its new one, whatever the
+//     files say.
 //
 // Nothing else about the check's selection matters: from the same files,
 // a target builds the same whichever ports were selected with it. Nor does
 // its test policy: a result keeps the policy of the check that recorded it,
 // and reads under it (decision D1, Evidence.Words).
-func Counts(recorded model.Plan, execution model.GuestExecution, id model.TargetID, now string, git *model.GitSource, fetched model.ObjectID) bool {
+func Counts(recorded model.Plan, execution model.GuestExecution, id model.TargetID, now string, git *model.GitSource, fetched model.ObjectID, other bool) bool {
 	planned, ok := recorded.In(execution.Environment)
-	return ok && planned.Builds(id) && current(execution, now) && (git == nil || execution.ID == "" || git.BuiltBy(fetched))
+	return ok && planned.Builds(id) && current(execution, now) && (git == nil || execution.ID == "" || git.BuiltBy(fetched)) && !other
 }
 
 // current reports whether an execution ran in the environment there is
@@ -608,24 +625,66 @@ func (e *Evidence) dropRemade() {
 	}
 }
 
-// readFetched reads, for an earlier check's results of the targets a newer
-// check expects to fetch with Git (primary), the commit each one's build
-// recorded fetching, from its inputs, for fill to compare (Counts). A
-// result with no inputs recorded has none.
-func (e *Evidence) readFetched(r store.Reader, primary model.Plan) error {
-	for _, target := range e.Targets {
-		for _, c := range target.Outcomes {
-			if _, git := primary.GitIn(c.Environment, target.Target.ID); !git || c.Kind != CellRecorded || c.Inputs == "" {
+// readSources reads what an earlier check's builds read of the sources a
+// newer check expects to fetch with Git (primary), for fill to judge them
+// by (Counts): the commit each recorded fetching, from its inputs, and
+// which were built against another source of a Git-fetched target than
+// the newer check expects, directly or through another target's build, by
+// the rule reuse rebuilds by (reuse.AgainstOtherSources). Within a check, a
+// target's build read that check's result of what it needs there: the
+// build it made, or the earlier build it reused, installed from its kept
+// archive, whose result carries that build's archive and inputs. A result
+// with no inputs recorded read nothing dockhand can name, so what it needs
+// of a Git-fetched target can't be established. A blocked result built
+// nothing, so the rule has nothing of it to judge. Nothing is read where
+// the newer check fetches nothing with Git.
+func (e *Evidence) readSources(r store.Reader, primary model.Plan) error {
+	if !slices.ContainsFunc(primary.Builds, func(build model.EnvironmentPlan) bool { return len(build.Git) > 0 }) {
+		return nil
+	}
+	e.sources = map[[2]string]readSource{}
+	for j, environment := range e.Plan.Environments {
+		var targets []reuse.Target
+		built := map[model.TargetID]reuse.Candidate{}
+		keys := map[model.TargetID][2]string{}
+		for _, target := range e.Targets {
+			c := target.Outcomes[j]
+			if c.Kind != CellRecorded {
 				continue
 			}
-			inputs, err := r.Inputs(c.Inputs)
-			if err != nil {
-				return err
+			var inputs model.TargetInputs
+			if c.Inputs != "" {
+				var err error
+				if inputs, err = r.Inputs(c.Inputs); err != nil {
+					return err
+				}
 			}
-			if e.fetched == nil {
-				e.fetched = map[[2]string]model.ObjectID{}
+			build := reuse.Candidate{Result: c.TargetResult, Inputs: inputs}
+			planned := reuse.Target{PlanTarget: target.Target, DependsOn: e.Plan.DependsOnIn(environment, target.Target.ID), Earlier: []reuse.Candidate{build}}
+			if source, ok := primary.GitIn(environment, target.Target.ID); ok {
+				planned.Git = &source
 			}
-			e.fetched[[2]string{string(c.Execution), string(c.Target)}] = inputs.Fetched
+			targets = append(targets, planned)
+			if c.Outcome == model.OutcomePassed || c.Outcome == model.OutcomeFailed {
+				built[target.Target.ID] = build
+			}
+			keys[target.Target.ID] = [2]string{string(c.Execution), string(c.Target)}
+			e.sources[keys[target.Target.ID]] = readSource{fetched: inputs.Fetched}
+		}
+		// A Git-fetched target the earlier check has no result of, which
+		// a build there had active all the same, was a build dockhand
+		// can't place.
+		expected, _ := primary.In(environment)
+		for _, id := range slices.Sorted(maps.Keys(expected.Git)) {
+			if _, ok := keys[id]; !ok {
+				source := expected.Git[id]
+				targets = append(targets, reuse.Target{PlanTarget: model.PlanTarget{ID: id}, Git: &source})
+			}
+		}
+		for id := range reuse.AgainstOtherSources(targets, built) {
+			read := e.sources[keys[id]]
+			read.other = true
+			e.sources[keys[id]] = read
 		}
 	}
 	return nil
@@ -660,8 +719,8 @@ func (e *Evidence) fill(earlier Evidence) bool {
 			if source, ok := e.Plan.GitIn(environment, target.Target.ID); ok {
 				git = &source
 			}
-			fetched := earlier.fetched[[2]string{string(found.Execution), string(found.Target)}]
-			if found.Kind != CellRecorded && found.Kind != CellUnmet || !Counts(earlier.Plan, execution, target.Target.ID, e.now[environment], git, fetched) {
+			read := earlier.sources[[2]string{string(found.Execution), string(found.Target)}]
+			if found.Kind != CellRecorded && found.Kind != CellUnmet || !Counts(earlier.Plan, execution, target.Target.ID, e.now[environment], git, read.fetched, read.other) {
 				if found.Kind == CellRecorded && !current(execution, e.now[environment]) {
 					target.Outcomes[i].Kind, target.Outcomes[i].Recorded = CellRemade, execution.Identity
 				}

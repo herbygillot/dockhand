@@ -138,3 +138,37 @@ func TestAMovedTagRebuildsWhatWasBuiltAgainstIt(t *testing.T) {
 	require.Equal(t, []model.TargetID{"viewer"}, reused(Choose(targets(a, unrecorded), "origin a", now, stands, kept)),
 		"a build that recorded no commit, as every one before batch 20, stands for no Git-fetched target, nor for what was built against it")
 }
+
+// What was built against another commit's build of a Git-fetched target
+// than its plan expects is one rule, which reuse rebuilds by and evidence
+// judges an earlier check's results by, whatever their outcome: built
+// against it directly, or against a build in that case, or by a build
+// that didn't say which ports were active, which can't be established to
+// have had the commit expected. The Git-fetched target's own commit isn't
+// this rule's (Current), and a build needing none of them stands.
+func TestWhatWasBuiltAgainstAnotherSourceIsOneRule(t *testing.T) {
+	a, b := model.ObjectID(strings.Repeat("a", 40)), model.ObjectID(strings.Repeat("b", 40))
+	build := func(target string, outcome model.Outcome, archive string, fetched model.ObjectID, active []model.ActivePort) Candidate {
+		return Candidate{Result: model.TargetResult{Target: model.TargetID(target), Outcome: outcome, Archive: archive}, Inputs: model.TargetInputs{Active: active, Fetched: fetched}}
+	}
+	chosen := map[model.TargetID]Candidate{
+		"lib": build("lib", model.OutcomePassed, "sha256:lib-a", a, []model.ActivePort{}),
+		// cli failed, built against lib's build of a.
+		"cli": build("cli", model.OutcomeFailed, "", "", []model.ActivePort{{Name: "lib", Archive: "sha256:lib-a"}}),
+		// app reaches cli through what was active, not the plan.
+		"app":   build("app", model.OutcomePassed, "sha256:app", "", []model.ActivePort{{Name: "cli", Archive: "sha256:cli"}}),
+		"tools": build("tools", model.OutcomePassed, "sha256:tools", "", nil),
+		"docs":  build("docs", model.OutcomePassed, "sha256:docs", "", []model.ActivePort{}),
+	}
+	targets := func(expected model.ObjectID) []Target {
+		target := func(id string, dependsOn ...model.TargetID) Target {
+			return Target{PlanTarget: model.PlanTarget{ID: model.TargetID(id)}, DependsOn: dependsOn, Earlier: []Candidate{chosen[model.TargetID(id)]}}
+		}
+		lib := target("lib")
+		lib.Git = &model.GitSource{URL: "https://github.com/harbor/lib.git", Ref: "v4", Commit: expected, ResolvedAt: time.Now()}
+		return []Target{lib, target("cli", "lib"), target("app"), target("tools", "lib"), target("docs")}
+	}
+	require.Equal(t, map[model.TargetID]bool{"tools": true}, AgainstOtherSources(targets(a), chosen), "tools didn't say what it had active")
+	require.Equal(t, map[model.TargetID]bool{"cli": true, "app": true, "tools": true}, AgainstOtherSources(targets(b), chosen),
+		"the tag moved: cli was built against lib's build of a, and app against that cli")
+}
