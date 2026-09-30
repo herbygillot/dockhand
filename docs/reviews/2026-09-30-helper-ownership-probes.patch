@@ -1,0 +1,148 @@
+--- /dev/null
++++ b/internal/sourcecompare/helper_review_test.go
+@@ -0,0 +1,21 @@
++package sourcecompare
++
++import "testing"
++
++func TestHelperReviewMarkerOnlyChangeIsVisible(t *testing.T) {
++	changes := compared(t,
++		map[string]string{"requirements.txt": "requests>=2; sys_platform == 'win32'\n"},
++		map[string]string{"requirements.txt": "requests>=2; sys_platform == 'darwin'\n"})
++	if len(changes) == 0 {
++		t.Fatal("a requirement became applicable to Darwin, but the comparison has no findings")
++	}
++}
++
++func TestHelperReviewCargoSourceChangeIsVisible(t *testing.T) {
++	changes := compared(t,
++		map[string]string{"Cargo.toml": "[dependencies]\nwidget = { version = '1', git = 'https://example.invalid/widget', rev = 'aaaa' }\n"},
++		map[string]string{"Cargo.toml": "[dependencies]\nwidget = { version = '1', git = 'https://example.invalid/widget', rev = 'bbbb' }\n"})
++	if len(changes) == 0 {
++		t.Fatal("a dependency's source revision moved, but its version string hides the change")
++	}
++}
+--- /dev/null
++++ b/internal/engine/helper_review_test.go
+@@ -0,0 +1,67 @@
++package engine
++
++import (
++	"io"
++	"net/http"
++	"strings"
++	"testing"
++
++	"github.com/herbygillot/dockhand/internal/fetch"
++	"github.com/herbygillot/dockhand/internal/macports"
++	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
++	"github.com/herbygillot/dockhand/internal/model"
++	"github.com/herbygillot/dockhand/internal/preparation"
++	"github.com/herbygillot/dockhand/internal/sourcecompare"
++)
++
++func TestHelperReviewWindowsOnlyPinDoesNotHoldMacOS(t *testing.T) {
++	dir := t.TempDir()
++	old := archives.Download{Name: "old.tar.gz", Path: writeTarball(t, dir, "pkg-1", map[string]string{
++		"requirements.txt": "requests==1; sys_platform == 'win32'\n",
++	})}
++	next := archives.Download{Name: "new.tar.gz", Path: writeTarball(t, dir, "pkg-2", map[string]string{
++		"requirements.txt": "requests==999; sys_platform == 'win32'\n",
++	})}
++	result := preparation.Result{}
++	result.Target = model.Target{Name: "demo"}
++	result.Downloads = []archives.Download{next}
++	result.Pairs = []preparation.ArchivePair{{Previous: old, Next: next}}
++	result.Prepared = macports.Snapshot{
++		Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"},
++		Ports:    map[string]macports.PortInfo{"demo": {Name: "demo", Options: map[string]string{"dockhand.portgroups": "python"}, Dependencies: []macports.Dependency{{Port: "py313-requests"}}}},
++	}
++	e := Engine{PortReader: fakePorts{directories: map[string][]macports.PortInfo{
++		"python/py-requests": {{Name: "py313-requests", Version: "1"}},
++	}}}
++	_, requirements := compareUpstream(t.Context(), result, sourcecompare.Versions{})
++	for _, change := range e.pythonPins(t.Context(), model.Source{}, result, requirements) {
++		if change.Hold {
++			t.Errorf("a Windows-only requirement held the MacPorts update: %s", change.Message)
++		}
++	}
++}
++
++type helperReviewTransport func(*http.Request) (*http.Response, error)
++
++func (f helperReviewTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
++
++func TestHelperReviewHTTPSProbeRejectsDowngrade(t *testing.T) {
++	previous := http.DefaultClient
++	t.Cleanup(func() { http.DefaultClient = previous })
++	http.DefaultClient = &http.Client{Transport: helperReviewTransport(func(r *http.Request) (*http.Response, error) {
++		status, headers := http.StatusOK, make(http.Header)
++		if r.URL.Scheme == "https" {
++			status = http.StatusFound
++			headers.Set("Location", "http://example.invalid/")
++		}
++		return &http.Response{StatusCode: status, Header: headers, Body: io.NopCloser(strings.NewReader("")), Request: r}, nil
++	})}
++	request, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://example.invalid/", nil)
++	if response, err := fetch.Open(http.DefaultClient, request, 1); err == nil {
++		response.Body.Close()
++		t.Fatal("control: existing fetch policy unexpectedly accepted downgrade")
++	}
++	if (requestProbe{}).Answers(t.Context(), "https://example.invalid/") {
++		t.Fatal("HTTPS probe says yes although the successful response is plain HTTP; fetch.Open rejects the same redirect")
++	}
++}
+--- /dev/null
++++ b/internal/macports/helper_review_test.go
+@@ -0,0 +1,30 @@
++package macports
++
++import (
++	"testing"
++
++	"github.com/herbygillot/dockhand/internal/tcl/syntax"
++)
++
++func TestHelperReviewVariantReadFailuresAreNotEmpty(t *testing.T) {
++	for _, key := range []string{"variants", "vinfo"} {
++		t.Run(key, func(t *testing.T) {
++			port := PortInfo{Name: "demo", OptionErrors: map[string]string{key: "could not evaluate"}}
++			if variants, err := port.Variants(); err == nil {
++				t.Fatalf("failed %s was read as a successful variant list: %#v", key, variants)
++			}
++		})
++	}
++}
++
++func TestHelperReviewVariantConstraintsKeepParseFailures(t *testing.T) {
++	for _, field := range []string{"requires", "conflicts"} {
++		t.Run(field, func(t *testing.T) {
++			fields := field + " " + syntax.Quote("{")
++			port := PortInfo{Name: "demo", Options: map[string]string{"variants": "tests", "vinfo": "tests " + syntax.Quote(fields)}}
++			if variants, err := port.Variants(); err == nil {
++				t.Fatalf("malformed %s was read without an error: %#v", field, variants)
++			}
++		})
++	}
++}
+--- /dev/null
++++ b/internal/macports/portfile/helper_review_test.go
+@@ -0,0 +1,18 @@
++package portfile_test
++
++import (
++	"testing"
++
++	"github.com/herbygillot/dockhand/internal/macports/portfile"
++)
++
++func TestHelperReviewArchiveVariantsExcludeTclData(t *testing.T) {
++	for _, src := range []string{
++		"set documentation {variant imaginary {distfiles-append example.tar.gz}}\n",
++		"variant docs description {Documentation} {set example {checksums sha256 aaaa}}\n",
++	} {
++		if got := portfile.ArchiveVariants([]byte(src)); len(got) != 0 {
++			t.Errorf("data was taken for archive declarations: %v in %q", got, src)
++		}
++	}
++}
