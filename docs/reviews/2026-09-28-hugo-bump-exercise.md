@@ -413,3 +413,9 @@ After the fix, `status` asks for every earlier branch to be checked again, which
 - **The reason is wrong.** It says "tart macOS 26 … has been made again since, from another source or with other tools". Nothing about the image changed; dockhand's build procedure did. Something like "dockhand now builds each target from source; check-50 predates that" would say why.
 - **The table disagrees with the attention list.** CHECKS still says "passed for this commit" for the same branches.
 - **Old results can be told apart where the logs survive.** A target's log shows "Staging <port> into destroot" if it was built, and "Fetching archive for <port>" with no build if it wasn't. The scan behind finding 2 did exactly that: of every kept check log, only check-38, check-43 and check-52 had archive installs. Blanket re-checking is simple and safe, so this is only an option: keep a result whose log proves a build, and re-check the rest.
+
+### Re-checking after the guest fix
+
+With a build of `175c36d1`, I re-checked flatbuffers-25e2 (check-56), gh-xhwl (check-57) and dua-cli-aktg (check-58). All passed, and every target log on every VM shows "Staging <port> into destroot" and no "Fetching archive for <port>". status is clean for all three.
+
+1. **The Next line doesn't rebuild where status says it must.** status said "check-48 passed, but since then on tart macOS 12 (Monterey) … flatbuffers … must be built there again", with Next `dockhand check --branch flatbuffers-25e2`. That check builds where check.on says, macOS 26 only, as `--plan` showed, so following the advice wouldn't have cleared the item. The Next line could carry the environments that need the rebuild (`--on tart:12,26`), or check could default to the environments whose results no longer stand. I ran `--on tart:12,26` myself. gh-xhwl had the same gap.
