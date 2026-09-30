@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -426,4 +427,58 @@ source = "git+https://github.com/owner/pinned?rev=%s#%s"
 	require.NotContains(t, contents, "\ncargo.crates_github", "no declaration is added for online crates")
 	require.NotContains(t, contents, newCommit)
 	require.Contains(t, contents, "# Disable offline mode to work around Git dependencies\ncargo.offline_cmd\n")
+}
+
+// A port that declares its crates refreshes its own archive's checksums as
+// any port does: the crates' declarations are Cargo.lock's, set aside while
+// the archive is fetched and checked, and put back as they were, byte for
+// byte, with no crate fetched. create writes such a port, and couldn't
+// fill in its checksums, nor could checksums after it (the txt run's
+// finding 1). Where the crates' checksums come before the port's own, the
+// two can't be told apart, and it's refused.
+func TestAPortWithCratesRefreshesItsOwnChecksums(t *testing.T) {
+	t.Parallel()
+	sha := strings.Repeat("b", 64)
+	for _, order := range []string{"after", "before"} {
+		t.Run(order, func(t *testing.T) {
+			appendCrate := "checksums-append ${name}-${version}.crate sha256 $checksum"
+			if order == "before" {
+				appendCrate = "checksums ${name}-${version}.crate sha256 $checksum {*}[option checksums]"
+			}
+			extra := `options cargo.crates cargo.crates_github cargo.update cargo.dir
+ default cargo.crates {}
+ default cargo.crates_github {}
+ default cargo.update no
+ default cargo.dir {${worksrcpath}}
+ proc fixture_crates {} {
+  foreach {name version checksum} [option cargo.crates] {
+   distfiles-append ${name}-${version}.crate:crate-${name}
+   master_sites-append https://static.crates.io/crates/${name}:crate-${name}
+   ` + appendCrate + `
+  }
+ }
+ port::register_callback fixture_crates
+cargo.crates old 1.2.3 ` + sha + "\n"
+			archive := []byte("fixture 1.0 as upstream serves it now")
+			var requests atomic.Int64
+			service, request := versionFixture(t, "setup", extra, func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				_, _ = w.Write(archive)
+			})
+			request.Action, request.Version, request.Release = model.EditChecksums, "", nil
+			result, err := service.Prepare(t.Context(), request)
+			if order == "before" {
+				require.ErrorContains(t, err, "reads its cargo.crates's checksums before its own archives'")
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, result.Files, 1)
+			after := string(result.Files[0].After)
+			sum := sha256.Sum256(archive)
+			require.Contains(t, after, "sha256 "+hex.EncodeToString(sum[:]), "the port's own archive is refreshed")
+			require.Contains(t, after, "\ncargo.crates old 1.2.3 "+sha+"\n", "the crates are as they were")
+			require.Equal(t, int64(1), requests.Load(), "no crate is fetched")
+			require.Equal(t, request.Source, result.Base)
+		})
+	}
 }

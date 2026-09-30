@@ -4,17 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports/distfiles"
-	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/dependency"
+	"github.com/herbygillot/dockhand/internal/macports/distfiles"
+	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
 // prepareChecksums re-downloads every declared archive and rewrites the
@@ -22,6 +25,92 @@ import (
 // per-platform distfiles are refreshed the same way a version bump refreshes
 // them; without one, the plain declaration path handles a single context.
 func (s *Service) prepareChecksums(ctx context.Context, request Request, input *sourceInput) (Result, error) {
+	plan, err := vendoredSources(input)
+	if err != nil {
+		return Result{Base: request.Source, Target: input.target}, err
+	}
+	var result Result
+	if plan != nil {
+		result, err = s.refreshVendoredChecksums(ctx, request, input, plan)
+	} else {
+		result, err = s.refreshChecksums(ctx, request, input)
+	}
+	if err != nil {
+		return result, err
+	}
+	return result, s.stealthUpdate(ctx, request, input, &result)
+}
+
+// vendoredSources are a port's crates or Go modules, as its Portfile
+// declares them (dependency.Inspect), or nil for a port with none.
+func vendoredSources(input *sourceInput) (*dependency.Plan, error) {
+	for _, key := range []string{dependency.Go, dependency.Cargo, dependency.CargoGit} {
+		if input.info.OptionErrors[key] != "" {
+			return nil, fmt.Errorf("%w: cannot evaluate %s", ErrUnsupported, key)
+		}
+	}
+	plan, err := dependency.Inspect(input.data, input.info.Options)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s: %w", ErrUnsupported, input.target.Name, err)
+	}
+	return plan, nil
+}
+
+// refreshVendoredChecksums refreshes the checksums of a port's own archives
+// where its Portfile declares its crates or Go modules too. Those
+// declarations are Cargo.lock's or go.sum's, with the checksums they carry,
+// and MacPorts' fetch of them isn't one dockhand checks (CheckPolicy), so
+// the refresh runs on the Portfile with them set aside, as an update's
+// archives are computed (dependencyBase). Setting them aside leaves each
+// command where it was, empty, so they go back where they were, byte for
+// byte; the port then reads its refreshed checksums followed by the ones
+// the declarations append, as it read the old ones, and nothing else of it
+// changes.
+func (s *Service) refreshVendoredChecksums(ctx context.Context, request Request, input *sourceInput, plan *dependency.Plan) (Result, error) {
+	stripped, err := plan.Strip(input.data)
+	if err != nil {
+		return Result{Base: request.Source, Target: input.target}, err
+	}
+	evaluated, err := s.evaluateEdit(ctx, input, stripped)
+	if err != nil {
+		return Result{Base: request.Source, Target: input.target}, err
+	}
+	base := input.derive(stripped, evaluated.after)
+	result, err := s.refreshChecksums(ctx, request, base)
+	if err != nil || len(result.Files) == 0 {
+		return result, err
+	}
+	refreshed := result.Files[0].After
+	contents, err := plan.Apply(refreshed, plan.Values)
+	if err != nil {
+		return result, err
+	}
+	name := input.target.Name
+	before, _ := syntax.ListValues(input.info.Options["checksums"])
+	own, _ := syntax.ListValues(base.info.Options["checksums"])
+	if len(before) < len(own) || !slices.Equal(before[:len(own)], own) {
+		return result, fmt.Errorf("%w: %s reads its %s's checksums before its own archives', so the two can't be told apart", ErrUnsupported, name, plan.Kind)
+	}
+	now, _ := syntax.ListValues(result.Prepared.Ports[name].Options["checksums"])
+	final, err := s.evaluateEdit(ctx, input, contents)
+	if err != nil {
+		return result, err
+	}
+	report := fidelity.ScopedChecksums(input.scope, input.before, final.after, name, strings.Join(append(now, before[len(own):]...), " "))
+	if err := result.commitEdit(input, request, final.edit, report, "refresh checksums"); err != nil {
+		return result, err
+	}
+	if input.scope != nil {
+		if result.Scope, err = macports.RebindReleaseScope(input.scope, final.after); err != nil {
+			return result, err
+		}
+	}
+	return result, nil
+}
+
+// refreshChecksums re-downloads a port's archives and rewrites the
+// checksums they're declared by.
+func (s *Service) refreshChecksums(ctx context.Context, request Request, input *sourceInput) (Result, error) {
 	result := Result{Base: request.Source, Target: input.target}
 	observed, err := s.planObservedChecksums(ctx, request, input)
 	var unlocated *distfiles.Unlocated
@@ -34,11 +123,7 @@ func (s *Service) prepareChecksums(ctx context.Context, request Request, input *
 	for _, frame := range observed.contexts {
 		result.Coverage = append(result.Coverage, ContextCoverage{Fetch: frame.after.Ports[input.target.Name].Fetch, Platform: frame.profile, Variant: frame.variant, Modeled: frame.profile != input.before.Platform})
 	}
-	result, err = s.applyObservedArchives(ctx, request, input, archivePlan{result: result, contents: input.data, observed: observed, subject: "refresh checksums"}, s.Archives.Store(""))
-	if err != nil {
-		return result, err
-	}
-	return result, s.stealthUpdate(ctx, request, input, &result)
+	return s.applyObservedArchives(ctx, request, input, archivePlan{result: result, contents: input.data, observed: observed, subject: "refresh checksums"}, s.Archives.Store(""))
 }
 
 func (s *Service) planObservedChecksums(ctx context.Context, request Request, input *sourceInput) (*observedArchivePlan, error) {
