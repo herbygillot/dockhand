@@ -405,3 +405,11 @@ Findings:
    All came from packages.macports.org, and so were never rebuilt against the branch's libuv, which is the point of `--also`. I've corrected my earlier line about check-38 above. Any change that doesn't bump the revision is exposed the same way: a non-default variant, a lint fix, a dependency spec, or `platforms`.
 3. **A passing target doesn't show its tests.** check-53 printed "s2n-tls +tests ✓" and nothing about the 284 tests that passed, though check-52 said "declares no tests" beside the others. "tests passed (284)" or just "tests passed" would show that the required tests ran.
 4. **Correction to the txt finding on check's question.** "choose --head … or --working-tree" comes up when `check --branch X` runs from the main checkout. Run from X's worktree, check takes the working files without asking. On a branch with no commits the question is still moot, but it's narrower than I said.
+
+**Verified** with a build of `7b8aa546`: check-54 (`--variants each --tests required`) passed all three targets. Each target log shows "Cleaning s2n-tls" first, then extract, configure, build and destroot. None shows "Fetching archive for s2n-tls". Each result line says what happened: "✓ declares no tests" for the defaults and `+debug`, and "✓ tests passed" for `+tests` (284/284).
+
+After the fix, `status` asks for every earlier branch to be checked again, which is safe. Its wording has problems, though:
+
+- **The reason is wrong.** It says "tart macOS 26 … has been made again since, from another source or with other tools". Nothing about the image changed; dockhand's build procedure did. Something like "dockhand now builds each target from source; check-50 predates that" would say why.
+- **The table disagrees with the attention list.** CHECKS still says "passed for this commit" for the same branches.
+- **Old results can be told apart where the logs survive.** A target's log shows "Staging <port> into destroot" if it was built, and "Fetching archive for <port>" with no build if it wasn't. The scan behind finding 2 did exactly that: of every kept check log, only check-38, check-43 and check-52 had archive installs. Blanket re-checking is simple and safe, so this is only an option: keep a result whose log proves a build, and re-check the rest.
