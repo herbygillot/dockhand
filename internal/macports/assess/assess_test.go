@@ -235,10 +235,10 @@ func TestABuildFileMovingADependencysVersionHolds(t *testing.T) {
 // Within a manifest, what holds comes first, as a person reads them; and
 // what the old version couldn't be read for leaves the base unknown.
 func TestHoldsComeFirstAndAnUnreadBaseIsUnknown(t *testing.T) {
-	require.Equal(t, []string{"! upstream: package.json adds zod 3", "· upstream: package.json drops chalk"},
-		compared(t, map[string]string{"package.json": `{"dependencies": {"chalk": "5"}}`}, map[string]string{"package.json": `{"dependencies": {"zod": "3"}}`}))
-	changes, err := compareArchives(t, testsupport.Tarball(t, "pkg-1", map[string]string{"package.json": "{"}),
-		testsupport.Tarball(t, "pkg-2", map[string]string{"package.json": "{}"}), Versions{})
+	require.Equal(t, []string{"! upstream: requirements.txt adds rich >=13", "· upstream: requirements.txt drops click"},
+		compared(t, map[string]string{"requirements.txt": "click>=8\n"}, map[string]string{"requirements.txt": "rich>=13\n"}))
+	changes, err := compareArchives(t, testsupport.Tarball(t, "pkg-1", map[string]string{"pyproject.toml": "[project]\nname = "}),
+		testsupport.Tarball(t, "pkg-2", map[string]string{"pyproject.toml": "[project]\nname = 'pkg'\n"}), Versions{})
 	require.NoError(t, err)
 	require.Len(t, changes, 1)
 	require.Equal(t, model.UnknownBaseline, changes[0].Class)

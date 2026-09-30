@@ -120,7 +120,7 @@ func TestCompareReadsTheOtherManifestsAndZips(t *testing.T) {
 	require.Equal(t, []string{
 		"· upstream: Cargo.toml: 1 added (tokio), 1 dropped (proptest)",
 		"! upstream's docs/COPYING.md was removed; the Portfile's license line may need to follow",
-		"! upstream: package.json adds chalk ^5",
+		"· upstream: package.json: 1 added (chalk)",
 		"! upstream: pyproject.toml adds rich >=13",
 		"· upstream: requirements.txt moves requests from >=2.0 to >=2.1",
 	}, messages(changes))
@@ -169,10 +169,12 @@ func TestPyprojectDependenciesAreReadAsTOML(t *testing.T) {
 
 // What the comparison couldn't read holds, as a change would, rather than
 // reading as no change: a manifest it can't parse, one that reads another
-// file, and a file past what it reads. (Finding 3.) A Rust manifest's
-// holds nothing, as its changes don't (D9).
+// file, and a file past what it reads. (Finding 3.) A Rust or Node
+// manifest's holds nothing, as its changes don't (D9).
 func TestWhatTheComparisonCouldntReadHolds(t *testing.T) {
-	require.Equal(t, []string{"! upstream's package.json couldn't be read in the new version, so its dependencies weren't compared: unexpected end of JSON input"},
+	require.Equal(t, []string{"! upstream's pyproject.toml couldn't be read in the new version, so its dependencies weren't compared: toml: line 2 (last key \"project.name\"): unexpected EOF; expected value"},
+		compared(t, map[string]string{"pyproject.toml": "[project]\nname = 'pkg'\n"}, map[string]string{"pyproject.toml": "[project]\nname = "}))
+	require.Equal(t, []string{"· upstream's package.json couldn't be read in the new version, so its dependencies weren't compared: unexpected end of JSON input"},
 		compared(t, map[string]string{"package.json": `{ "name": "pkg" }`}, map[string]string{"package.json": `{ "dependencies":`}))
 	require.Equal(t, []string{"· upstream's Cargo.toml couldn't be read in the old version, so its dependencies weren't compared: serde: a int64 isn't a requirement"},
 		compared(t, map[string]string{"Cargo.toml": "[dependencies]\nserde = 1\n"}, map[string]string{"Cargo.toml": "[dependencies]\nserde = '1'\n"}))
@@ -206,16 +208,22 @@ func TestWhatTheComparisonCouldntReadHolds(t *testing.T) {
 // A Go module or a Rust crate is compiled into what the port builds, so a
 // check that builds with only the port's declarations proves them: what
 // go.mod and Cargo.toml change is counted, and holds nothing, nor does
-// what couldn't be read of them. A Python or Node manifest's still holds
-// (D9, decided 2026-09-29).
-func TestGoAndRustDependenciesAreCountedAndHoldNothing(t *testing.T) {
+// what couldn't be read of them. A Node package is fetched and bundled by
+// the build, so package.json's are too (D9, for Node, decided 2026-09-30,
+// after beekeeper-studio held on every plain npm addition). A Python
+// manifest's still holds (D9, decided 2026-09-29).
+func TestGoRustAndNodeDependenciesAreCountedAndHoldNothing(t *testing.T) {
 	require.Equal(t, []string{"· upstream: go.mod: 1 added (golang.org/x/net)"},
 		compared(t, map[string]string{"go.mod": "module m\n"}, map[string]string{"go.mod": "module m\n\nrequire golang.org/x/net v0.44.0\n"}))
 	large := "module m\n" + strings.Repeat("// x\n", project.FileLimit)
 	require.Equal(t, []string{"· upstream's go.mod is larger than the 1024 KiB the comparison reads, so it wasn't compared"},
 		compared(t, map[string]string{"go.mod": large}, map[string]string{"go.mod": large + "// y\n"}))
-	require.Equal(t, []string{"! upstream's package.json is larger than the 1024 KiB the comparison reads, so it wasn't compared"},
+	require.Equal(t, []string{"· upstream's package.json is larger than the 1024 KiB the comparison reads, so it wasn't compared"},
 		compared(t, map[string]string{"package.json": large}, map[string]string{"package.json": large + "y"}))
+	require.Equal(t, []string{"! upstream's requirements.txt is larger than the 1024 KiB the comparison reads, so it wasn't compared"},
+		compared(t, map[string]string{"requirements.txt": large}, map[string]string{"requirements.txt": large + "y"}))
+	require.Equal(t, []string{"· upstream: package.json: 1 added (zod), 1 dropped (chalk)"},
+		compared(t, map[string]string{"package.json": `{"dependencies": {"chalk": "5"}}`}, map[string]string{"package.json": `{"dependencies": {"zod": "3"}}`}))
 	require.Empty(t, compared(t, map[string]string{"go.mod": "module m\n\nrequire golang.org/x/net v0.44.0\n"}, map[string]string{"go.mod": "module m\n\nrequire golang.org/x/net v0.44.0 // a comment\n"}),
 		"nothing gained, lost, or moved is nothing to count")
 }
@@ -294,13 +302,11 @@ func TestANativeLibraryIsSaidWhereMacPortsHasAPortForIt(t *testing.T) {
 // A Node workspace's manifest is compared as the root's is: beekeeper-studio
 // added two dependencies and moved electron in apps/studio/package.json,
 // which reading the root alone said nothing of (the beekeeper-studio run's
-// finding 1).
+// finding 1). Its dependencies are counted, as a Node package's are (D9).
 func TestAWorkspacesManifestIsComparedAsTheRootsIs(t *testing.T) {
 	root := `{"workspaces": ["apps/*"], "devDependencies": {"yarn": "1.22.22"}}`
 	require.Equal(t, []string{
-		"! upstream: apps/studio/package.json adds devicon 2.16.0",
-		"! upstream: apps/studio/package.json adds simple-icons 15.0.0",
-		"· upstream: apps/studio/package.json moves electron from 39.8.5 to 39.8.10",
+		"· upstream: apps/studio/package.json: 2 added (devicon, simple-icons), 1 moved (electron)",
 	}, compared(t,
 		map[string]string{"package.json": root, "apps/studio/package.json": `{"dependencies": {"electron": "39.8.5"}}`},
 		map[string]string{"package.json": root, "apps/studio/package.json": `{"dependencies": {"electron": "39.8.10", "devicon": "2.16.0", "simple-icons": "15.0.0"}}`}))

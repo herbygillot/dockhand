@@ -32,8 +32,9 @@ import (
 // project's requires-python judged, and a Python pin behind the
 // PortGroup's default noted. 4: that note read as MacPorts' PortGroup
 // computes its default, and a setup file its project's backend doesn't
-// read set apart.
-const Policy = 4
+// read set apart. 5: a Node package's dependencies counted, as a Rust
+// crate's are, not held (D9).
+const Policy = 5
 
 // Input is what one port's assessment reads.
 type Input struct {
@@ -105,11 +106,15 @@ const (
 // proven are the manifests whose dependencies a check proves (D9). A Go
 // module or a Rust crate is compiled into what the port builds, and a
 // check builds with only what the port declares, so one needing a library
-// the port doesn't declare fails it. What they change is counted, and
-// holds nothing, nor does what the comparison couldn't read of them. A
-// Python or Node dependency is another port, found when the software runs,
-// which a build doesn't prove.
-var proven = map[string]bool{"go.mod": true, "Cargo.toml": true, project.CargoLock: true}
+// the port doesn't declare fails it. A Node package is fetched and bundled
+// by the build, as npm and yarn install it: no port provides one, so a
+// check that builds proves it resolves, and one with native code compiles
+// there or fails it (D9, for Node, decided 2026-09-30 after beekeeper-studio
+// held on every plain npm addition). What they change is counted, and holds
+// nothing, nor does what the comparison couldn't read of them. A Python
+// dependency is another port, found when the software runs, which a build
+// doesn't prove.
+var proven = map[string]bool{"go.mod": true, "Cargo.toml": true, project.CargoLock: true, "package.json": true}
 
 // namedDependencies is how many of a kind a count names.
 const namedDependencies = 3
