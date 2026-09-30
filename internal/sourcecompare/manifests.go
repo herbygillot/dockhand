@@ -101,9 +101,8 @@ func readManifest(name string, data []byte) (reading, error) {
 // cargoConstraint is a Cargo dependency as the comparison compares it: its
 // version, with its Git source where it has both, since its revision
 // moving under the same version is a change too (the helper-ownership
-// review's finding 1), said and holding nothing, as D9 has Cargo's; and
-// marked optional, since one a feature turns on becoming one every build
-// has is a change too (the txt run's finding 6).
+// review's finding 1); and marked optional, since one a feature turns on
+// becoming one every build has is a change too (the txt run's finding 6).
 func cargoConstraint(dependency project.CargoDependency) string {
 	source := ""
 	if dependency.Git != "" {

@@ -16,25 +16,41 @@ import (
 	"github.com/herbygillot/dockhand/internal/project"
 )
 
-// Change is one difference between two versions' source archives that a
-// reviewer would ask about. Hold marks what a person should look at before
-// the update is submitted; the rest is information.
+// Change is one difference between two versions' source that a reviewer
+// would ask about, as a fact: what changed and how. What it means for a
+// port, and whether it holds a submission, is macports/assess's to say.
 type Change struct {
 	// Kind is license, build, dependency, or unread: a file the comparison
-	// couldn't read, or read only in part, which holds as a change would.
+	// couldn't read, or read only in part, or an archive whose project
+	// wasn't found.
 	Kind string
+	// How is what happened to it:
+	//   - a license or build file "added", "removed", or "changed", or
+	//     "years" where only a license's copyright years moved, and
+	//     "version" where a build file changed only the project's version
+	//     it declares;
+	//   - a dependency "adds", "drops", or "moves", or "native" for a crate
+	//     new to a Cargo.lock that links a native library;
+	//   - an unread file "truncated", "unreadable", or "unfollowed", for
+	//     another file a manifest includes, and "ambiguous" for an archive
+	//     whose project wasn't found.
+	How string
+	// Side is the version that couldn't be read, "old" or "new", of an
+	// unread change.
+	Side string
 	// Path is the file, relative to the archive's top directory.
 	Path    string
 	Message string
-	Hold    bool
 	// System is the build system the file belongs to, a manifest's
-	// language or a build file's tool, for a caller that knows which the
-	// port uses; empty for a license file.
+	// language or a build file's tool; empty for a license file.
 	System project.System
-	// Requirements are a Python requirement the new version adds or
-	// moves, each declaration of it, for what it asks of the port that
-	// provides it; none for every other change.
-	Requirements []project.Requirement
+	// Name is a dependency's name, and Old and Now its version or
+	// constraint in each version, as the manifest writes it.
+	Name, Old, Now string
+	// Requirements and Before are a Python dependency's declarations in
+	// the new version and the old, each with its specifier and marker;
+	// none for every other change.
+	Requirements, Before []project.Requirement
 }
 
 // A copyright line names its holder and years: "Copyright (c) 2016-2026
@@ -75,21 +91,12 @@ func yearsOnly(old, now []byte) (string, bool) {
 // that changes only the version it names spells.
 type Versions struct{ Old, New string }
 
-// proven are the manifests whose dependencies a check proves. A Go module
-// or a Rust crate is compiled into what the port builds, and a check builds
-// with only what the port declares, so one needing a library the port
-// doesn't declare fails it. What they change is counted, and holds nothing,
-// nor does what the comparison couldn't read of them (D9). A Python or Node
-// dependency is another port, found when the software runs, which a build
-// doesn't prove.
-var proven = map[string]bool{"go.mod": true, "Cargo.toml": true, project.CargoLock: true}
-
 // Compare reports the license files, build files, and declared
 // dependencies that differ between two versions' readings, the old and the
 // new, and what it couldn't read of them. Each is by its path below its
 // archive's top, whose name, the version's, is set aside so the same file
 // compares across versions. A version whose project couldn't be found is
-// said, and holds, as what couldn't be read does.
+// said.
 func Compare(older, newer project.Reading, versions Versions) []Change {
 	var lost []Change
 	for _, side := range []struct {
@@ -97,7 +104,7 @@ func Compare(older, newer project.Reading, versions Versions) []Change {
 		reading project.Reading
 	}{{"old", older}, {"new", newer}} {
 		if side.reading.Layout == project.Ambiguous {
-			lost = append(lost, Change{Kind: "unread", Hold: true,
+			lost = append(lost, Change{Kind: "unread", How: "ambiguous", Side: side.version,
 				Message: fmt.Sprintf("upstream's %s archive holds %s and no file beside them, so which is the project wasn't found, and it wasn't compared", side.version, strings.Join(side.reading.Tops, ", "))})
 		}
 	}
@@ -121,7 +128,7 @@ func Compare(older, newer project.Reading, versions Versions) []Change {
 		now, hasNow := after[name]
 		base := path.Base(name)
 		if old.Truncated || now.Truncated {
-			changes = append(changes, Change{Kind: "unread", Path: name, Hold: !proven[base],
+			changes = append(changes, Change{Kind: "unread", How: "truncated", Path: name,
 				Message: fmt.Sprintf("upstream's %s is larger than the %d KiB the comparison reads, so it wasn't compared", name, project.FileLimit>>10)})
 			continue
 		}
@@ -135,35 +142,35 @@ func Compare(older, newer project.Reading, versions Versions) []Change {
 			changes = append(changes, manifestChanges(name, old, hadOld, now, hasNow)...)
 		case project.LicenseFile(base) && hadOld && hasNow:
 			if line, ok := yearsOnly(old.Data, now.Data); ok {
-				changes = append(changes, Change{Kind: "license", Path: name,
+				changes = append(changes, Change{Kind: "license", How: "years", Path: name,
 					Message: fmt.Sprintf("upstream's %s changed only its copyright years: %q", name, line)})
 				continue
 			}
 			fallthrough
 		case project.LicenseFile(base):
-			what := "changed"
+			how, what := "changed", "changed"
 			switch {
 			case !hadOld:
-				what = "was added"
+				how, what = "added", "was added"
 			case !hasNow:
-				what = "was removed"
+				how, what = "removed", "was removed"
 			}
-			changes = append(changes, Change{Kind: "license", Path: name, Hold: true,
+			changes = append(changes, Change{Kind: "license", How: how, Path: name,
 				Message: fmt.Sprintf("upstream's %s %s; the Portfile's license line may need to follow", name, what)})
 		default:
-			if line, ok := versionOnly(old.Data, now.Data, versions); hadOld && hasNow && ok {
-				changes = append(changes, Change{Kind: "build", Path: name,
+			if line, ok := versionOnly(name, old.Data, now.Data, versions); hadOld && hasNow && ok {
+				changes = append(changes, Change{Kind: "build", How: "version", Path: name,
 					Message: fmt.Sprintf("upstream's %s changed only the version it names: %q", name, line)})
 				continue
 			}
-			what := "changed"
+			how, what := "changed", "changed"
 			switch {
 			case !hadOld:
-				what = "is new"
+				how, what = "added", "is new"
 			case !hasNow:
-				what = "was removed"
+				how, what = "removed", "was removed"
 			}
-			changes = append(changes, Change{Kind: "build", Path: name, Hold: true,
+			changes = append(changes, Change{Kind: "build", How: how, Path: name,
 				Message: fmt.Sprintf("upstream's %s %s; the build may need the Portfile to follow", name, what)})
 		}
 	}
@@ -184,12 +191,14 @@ func quotable(line string) string {
 }
 
 // versionOnly reports whether a build file's two versions differ only in
-// the release they name, as nuspell's CMakeLists.txt changed only
-// project(nuspell VERSION 5.1.9), and gives the first such line as it now
-// reads: each line that differs reads as the new one once the old version
-// in it is the new one. A line added or removed, or changed in anything
-// else, is a change to the build.
-func versionOnly(old, now []byte, versions Versions) (string, bool) {
+// the project's version they declare, as nuspell's CMakeLists.txt changed
+// only project(nuspell VERSION 5.1.9), and gives the first such line as it
+// now reads: each line that differs reads as the new one once the old
+// version in it is the new one, and declares the project's version as its
+// build system does. A line added or removed, or changed in anything else,
+// is a change to the build, as find_package(SomeLibrary 1.0) moving with
+// the project's version is (the update-workflow review's finding 2).
+func versionOnly(name string, old, now []byte, versions Versions) (string, bool) {
 	if versions.Old == "" || versions.New == "" || versions.Old == versions.New {
 		return "", false
 	}
@@ -202,7 +211,7 @@ func versionOnly(old, now []byte, versions Versions) (string, bool) {
 		if before[i] == after[i] {
 			continue
 		}
-		if strings.ReplaceAll(before[i], versions.Old, versions.New) != after[i] {
+		if strings.ReplaceAll(before[i], versions.Old, versions.New) != after[i] || !project.DeclaresVersion(name, after[i], versions.New) {
 			return "", false
 		}
 		if first == "" {
@@ -216,8 +225,8 @@ func versionOnly(old, now []byte, versions Versions) (string, bool) {
 // says what it couldn't read of either.
 func manifestChanges(name string, old project.File, hadOld bool, now project.File, hasNow bool) []Change {
 	base := path.Base(name)
-	unread := func(what string) Change {
-		return Change{Kind: "unread", Path: name, Hold: !proven[base], Message: fmt.Sprintf("upstream's %s %s", name, what)}
+	unread := func(how, side, what string) Change {
+		return Change{Kind: "unread", How: how, Side: side, Path: name, Message: fmt.Sprintf("upstream's %s %s", name, what)}
 	}
 	var readings [2]reading
 	for i, side := range []struct {
@@ -230,24 +239,21 @@ func manifestChanges(name string, old project.File, hadOld bool, now project.Fil
 		}
 		found, err := readManifest(base, side.file.Data)
 		if err != nil {
-			return []Change{unread(fmt.Sprintf("couldn't be read in the %s version, so its dependencies weren't compared: %v", side.version, err))}
+			return []Change{unread("unreadable", side.version, fmt.Sprintf("couldn't be read in the %s version, so its dependencies weren't compared: %v", side.version, err))}
 		}
 		readings[i] = found
 	}
-	// What it couldn't follow holds, so it comes first: in either version,
-	// since a gap in the old one leaves what changed as unknown as one in
-	// the new. A gap both share is said once.
+	// What it couldn't follow comes first: in either version, since a gap
+	// in the old one leaves what changed as unknown as one in the new. A
+	// gap both share is said once.
 	var changes []Change
 	for _, gap := range readings[1].unread {
-		changes = append(changes, unread(gap+", which the comparison doesn't follow"))
+		changes = append(changes, unread("unfollowed", "new", gap+", which the comparison doesn't follow"))
 	}
 	for _, gap := range readings[0].unread {
 		if !slices.Contains(readings[1].unread, gap) {
-			changes = append(changes, unread("in the old version "+gap+", which the comparison doesn't follow"))
+			changes = append(changes, unread("unfollowed", "old", "in the old version "+gap+", which the comparison doesn't follow"))
 		}
-	}
-	if proven[base] {
-		return append(changes, dependencyCount(name, readings[0], readings[1])...)
 	}
 	return append(changes, dependencyChanges(name, readings[0], readings[1])...)
 }
@@ -302,21 +308,8 @@ func dependencyDeltas(before, after reading) []dependencyDelta {
 	return deltas
 }
 
-// elsewhere reports declarations of a requirement that all apply only
-// elsewhere than macOS, by their markers; none, or one that may apply, is
-// not.
-func elsewhere(declarations []project.Requirement) bool {
-	for _, declaration := range declarations {
-		if applies, err := declaration.OnMacOS(""); err != nil || applies != project.No {
-			return false
-		}
-	}
-	return len(declarations) > 0
-}
-
-// dependencyChanges says what a manifest's declared dependencies gained,
-// lost, and moved, one line each. What's gained holds, as another port the
-// Portfile may need to declare.
+// dependencyChanges are what a manifest's declared dependencies gained,
+// lost, and moved, one change each, in name order.
 func dependencyChanges(file string, before, after reading) []Change {
 	spelled := func(version string, indirect bool) string {
 		if indirect {
@@ -326,82 +319,32 @@ func dependencyChanges(file string, before, after reading) []Change {
 	}
 	var changes []Change
 	for _, delta := range dependencyDeltas(before, after) {
-		required := after.requirements[delta.name]
+		change := Change{Kind: "dependency", How: delta.how, Path: file, Name: delta.name, Old: delta.old, Now: delta.now,
+			Requirements: after.requirements[delta.name], Before: before.requirements[delta.name]}
 		switch delta.how {
 		case "adds":
-			// One that applies only elsewhere, as a Windows-only one, is
-			// said and holds nothing; one that may apply here holds.
-			changes = append(changes, Change{Kind: "dependency", Path: file, Hold: !elsewhere(required), Requirements: required,
-				Message: strings.TrimSpace(fmt.Sprintf("upstream: %s adds %s %s", file, delta.name, delta.now))})
+			change.Message = strings.TrimSpace(fmt.Sprintf("upstream: %s adds %s %s", file, delta.name, delta.now))
 		case "drops":
-			changes = append(changes, Change{Kind: "dependency", Path: file, Message: fmt.Sprintf("upstream: %s drops %s", file, delta.name)})
+			change.Message = fmt.Sprintf("upstream: %s drops %s", file, delta.name)
 		default:
-			// One that applied only elsewhere and now may apply here, as
-			// a Windows-only requirement made macOS's, is as good as added,
-			// and holds as one (the helper-ownership review's finding 1).
-			message := fmt.Sprintf("upstream: %s moves %s from %s to %s", file, delta.name, spelled(delta.old, delta.wasIndirect), spelled(delta.now, delta.isIndirect))
-			arrives := required != nil && elsewhere(before.requirements[delta.name]) && !elsewhere(required)
-			if arrives {
-				message += ", which now may apply to macOS"
-			}
-			changes = append(changes, Change{Kind: "dependency", Path: file, Hold: arrives, Requirements: required, Message: message})
+			change.Message = fmt.Sprintf("upstream: %s moves %s from %s to %s", file, delta.name, spelled(delta.old, delta.wasIndirect), spelled(delta.now, delta.isIndirect))
 		}
+		changes = append(changes, change)
 	}
-	// What holds the update for a look comes first.
-	slices.SortStableFunc(changes, func(a, b Change) int {
-		switch {
-		case a.Hold == b.Hold:
-			return 0
-		case a.Hold:
-			return -1
-		}
-		return 1
-	})
 	return changes
 }
-
-// dependencyCount says in one line how many of a proven manifest's
-// declared dependencies it gained, lost, and moved, holding nothing (D9),
-// naming them where there are few of a kind: "upstream: Cargo.toml: 1
-// added (inferno), 1 moved (open)", and "upstream: go.mod: 2 added, 14
-// moved" (the txt run's finding 6).
-func dependencyCount(file string, before, after reading) []Change {
-	names := map[string][]string{}
-	for _, delta := range dependencyDeltas(before, after) {
-		names[delta.how] = append(names[delta.how], delta.name)
-	}
-	var parts []string
-	for _, part := range [][2]string{{"adds", "added"}, {"drops", "dropped"}, {"moves", "moved"}} {
-		some := names[part[0]]
-		switch {
-		case len(some) == 0:
-		case len(some) <= namedDependencies:
-			parts = append(parts, fmt.Sprintf("%d %s (%s)", len(some), part[1], strings.Join(some, ", ")))
-		default:
-			parts = append(parts, fmt.Sprintf("%d %s", len(some), part[1]))
-		}
-	}
-	if len(parts) == 0 {
-		return nil
-	}
-	return []Change{{Kind: "dependency", Path: file, Message: fmt.Sprintf("upstream: %s: %s", file, strings.Join(parts, ", "))}}
-}
-
-// namedDependencies is how many of a kind the count names.
-const namedDependencies = 3
 
 // nativeLinks lists the crates new to a Cargo.lock that link a native
 // library, as Cargo's -sys crates do. Such a crate often links a copy of
 // the library it finds installed, and builds one it bundles otherwise,
 // which a clean check can't tell apart: where MacPorts has the library,
-// the Portfile may want to declare it. They're for the person's attention,
-// and hold nothing (D9).
+// the Portfile may want to declare it.
 func nativeLinks(name string, old project.File, hadOld bool, now project.File, hasNow bool) []Change {
 	if !hasNow {
 		return nil
 	}
 	unread := func(version string, err error) []Change {
-		return []Change{{Kind: "unread", Path: name, Message: fmt.Sprintf("upstream's Cargo.lock couldn't be read in the %s version, so the crates new to it that link a native library weren't looked for: %v", version, err)}}
+		return []Change{{Kind: "unread", How: "unreadable", Side: version, Path: name, Message: fmt.Sprintf("upstream's Cargo.lock couldn't be read in the %s version, so the crates new to it that link a native library weren't looked for: %v", version, err)}}
 	}
 	packages, err := project.ReadCargoLock(now.Data)
 	if err != nil {
@@ -425,7 +368,7 @@ func nativeLinks(name string, old project.File, hadOld bool, now project.File, h
 		}
 		// Once, whichever versions the lock pins.
 		had[pkg.Name] = true
-		changes = append(changes, Change{Kind: "dependency", Path: name,
+		changes = append(changes, Change{Kind: "dependency", How: "native", Path: name, Name: pkg.Name, Now: pkg.Version,
 			Message: fmt.Sprintf("upstream: Cargo.lock adds %s %s, which links the native library %s: MacPorts may provide it, for the Portfile to declare, rather than the crate linking whatever copy it finds", pkg.Name, pkg.Version, library)})
 	}
 	return changes

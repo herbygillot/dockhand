@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
 	"github.com/herbygillot/dockhand/internal/project"
@@ -252,18 +253,9 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	if result.Stealth != nil {
 		update.Subject = update.Port + ": update checksums after a stealth update"
 	}
-	if compare && len(result.Files) > 0 {
-		var required []pythonRequirement
-		update.Upstream, required = compareUpstream(ctx, result, sourcecompare.Versions{Old: update.Before.Version, New: update.After.Version})
-		if update.Upstream != nil {
-			update.Upstream.Changes = append(update.Upstream.Changes, e.pythonPins(ctx, model.Source{Tree: result.PreparedTree, Base: model.ObjectID(base)}, result, required)...)
-		}
-	}
-	if change, ok := toolchainChange(result.GoToolchain); ok && len(result.Files) > 0 {
-		if update.Upstream == nil {
-			update.Upstream = &model.UpstreamComparison{Changes: []model.UpstreamChange{}}
-		}
-		update.Upstream.Changes = append(update.Upstream.Changes, change)
+	if len(result.Files) > 0 && (compare || result.GoToolchain != nil) {
+		trees := [2]model.Source{{Tree: model.ObjectID(captured), Base: model.ObjectID(base)}, {Tree: result.PreparedTree, Base: model.ObjectID(base)}}
+		update.Upstream = e.assessUpstream(ctx, result, sourcecompare.Versions{Old: update.Before.Version, New: update.After.Version}, trees, compare)
 	}
 	if len(result.Files) == 0 {
 		update.Current = true
@@ -601,194 +593,125 @@ func shortID() string {
 	return string(id)
 }
 
-// toolchainChange is what upstream's go.mod requires of the Go release a
-// module-mode port builds with, and what the update did about the
-// Portfile's go.toolchain_min, said whatever it did, since silence reads
-// the same as not having looked. A requirement the minimum doesn't meet is
-// one a passing build can't catch, since the builder's Go is new enough: it
-// holds the update for a person's look, as a new declared dependency does.
-func toolchainChange(toolchain *preparation.GoToolchain) (model.UpstreamChange, bool) {
-	if toolchain == nil {
-		return model.UpstreamChange{}, false
+// assessUpstream assesses what upstream's change means for the port an
+// update prepared (the assessment design, C): each archive the update
+// replaced beside the one that replaces it, in every context that fetches
+// them, as gh's source tarball and the prebuilt zip older macOS fetches
+// each have their own, read where the port builds there; what the new
+// version's Python requirements ask of the ports that provide them, whose
+// versions are observed in the tree before the edit and after, as the
+// assessment asks; and what its go.mod asks of go.toolchain_min, whether
+// or not archives are compared. Not being able to compare is reported,
+// never a reason to refuse the update. Nil where nothing was compared or
+// said.
+func (e *Engine) assessUpstream(ctx context.Context, result preparation.Result, versions sourcecompare.Versions, trees [2]model.Source, compare bool) *model.UpstreamComparison {
+	input := assess.Input{Versions: versions}
+	input.Base, _ = result.PortBefore(result.Target.Name)
+	input.Port, _ = result.PortAfter(result.Target.Name)
+	if t := result.GoToolchain; t != nil {
+		input.Toolchain = &assess.Toolchain{Required: t.Required, Declared: t.Declared, Outcome: toolchainOutcomes[t.Outcome]}
 	}
-	var message string
-	switch toolchain.Outcome {
-	case preparation.GoToolchainCovered:
-		message = fmt.Sprintf("upstream: go.mod requires Go %s, which go.toolchain_min %s already gates on", toolchain.Required, toolchain.Declared)
-	case preparation.GoToolchainRaised:
-		message = fmt.Sprintf("upstream: go.mod requires Go %s, so go.toolchain_min is raised from %s", toolchain.Required, toolchain.Declared)
-	case preparation.GoToolchainUndeclared:
-		message = fmt.Sprintf("upstream: go.mod requires Go %s, and the Portfile declares no go.toolchain_min; declaring one gates the port on older Go, the maintainer's call", toolchain.Required)
-	case preparation.GoToolchainByHand:
-		message = fmt.Sprintf("upstream: go.mod requires Go %s, above go.toolchain_min %s, which isn't one literal declaration dockhand can raise; raise it by hand", toolchain.Required, toolchain.Declared)
-	default:
-		return model.UpstreamChange{}, false
-	}
-	return model.UpstreamChange{Kind: "toolchain", Path: "go.mod", Message: message, Hold: toolchain.Unmet()}, true
-}
-
-// compareUpstream compares each archive the update replaced with the one
-// that replaces it, in every context that fetches them: gh's source
-// tarball, and the prebuilt zip older macOS fetches, each with its own. A
-// change the pairs share is said once. Not being able to compare is
-// reported, never a reason to refuse the update.
-//
-// It also gives the Python requirements the new version adds or moves, for
-// pythonPins.
-func compareUpstream(ctx context.Context, result preparation.Result, versions sourcecompare.Versions) (*model.UpstreamComparison, []pythonRequirement) {
-	comparison := &model.UpstreamComparison{Changes: []model.UpstreamChange{}}
+	problem := ""
 	switch {
+	case !compare:
 	case result.PreviousProblem != "":
-		comparison.Problem = "the current version's archives could not be fetched: " + result.PreviousProblem
-		return comparison, nil
+		problem = "the current version's archives could not be fetched: " + result.PreviousProblem
 	case len(result.Downloads) == 0:
 		// A port fetched with git has no archives, so nothing to compare.
-		return nil, nil
-	}
-	for _, download := range result.Downloads {
-		if !slices.ContainsFunc(result.Pairs, func(pair preparation.ArchivePair) bool { return pair.Next.Name == download.Name }) {
-			comparison.Problem = download.Name + " replaces no archive dockhand could find, so it wasn't compared"
-			return comparison, nil
+		compare = false
+	default:
+		for _, download := range result.Downloads {
+			if !slices.ContainsFunc(result.Pairs, func(pair preparation.ArchivePair) bool { return pair.Next.Name == download.Name }) {
+				problem = download.Name + " replaces no archive dockhand could find, so it wasn't compared"
+				break
+			}
 		}
 	}
-	// A file of a build system the port doesn't use holds nothing:
-	// flatbuffers, built with CMake, held on package.json and
-	// Package.swift, which its build never reads (the flatbuffers run's
-	// finding 2). Which the port uses is MacPorts' to say; where it can't
-	// say, every file holds as before.
-	port, _ := result.PortAfter(result.Target.Name)
-	uses, known := port.BuildSystems()
-	unused := func(system project.System) bool {
-		return known && system != "" && !slices.Contains(uses, system)
+	if compare && problem == "" {
+		pairs, err := readPairs(ctx, result.Pairs, input.Base, input.Port)
+		if err != nil {
+			problem = err.Error()
+		}
+		input.Pairs = pairs
 	}
-	var names []string
-	for _, system := range uses {
-		names = append(names, string(system))
+	if problem == "" && len(input.Pairs) > 0 {
+		input.Observed = e.observeProviders(ctx, input, trees)
 	}
-	// counted are the manifests of build systems the port doesn't use: where
-	// each one's line is, and how many of its dependencies changed.
-	counted, seen := map[string][2]int{}, map[string]bool{}
-	var required []pythonRequirement
-	// Each version is read where its port builds (the assessment
-	// design's step 1): a monorepo's Python bindings in bindings/python.
-	previous, _ := result.PortBefore(result.Target.Name)
-	specs := [2]project.Spec{{Subdirectory: macports.SourceSubdirectory(previous.Options["worksrcdir"])}, {Subdirectory: macports.SourceSubdirectory(port.Options["worksrcdir"])}}
-	for _, pair := range result.Pairs {
+	comparison := assess.Assess(input)
+	comparison.Problem = problem
+	if !compare && len(comparison.Changes) == 0 {
+		return nil
+	}
+	return &comparison
+}
+
+// toolchainOutcomes are what the editor did about go.toolchain_min, as the
+// assessment words them.
+var toolchainOutcomes = map[preparation.GoToolchainOutcome]string{
+	preparation.GoToolchainCovered: assess.ToolchainCovered, preparation.GoToolchainRaised: assess.ToolchainRaised,
+	preparation.GoToolchainUndeclared: assess.ToolchainUndeclared, preparation.GoToolchainByHand: assess.ToolchainByHand,
+}
+
+// readPairs reads each pair of archives, each version where its port
+// builds in the context that fetches it (the assessment design's step 1):
+// a monorepo's Python bindings in bindings/python. A pair a context didn't
+// name the port for is read with the update's own.
+func readPairs(ctx context.Context, pairs []preparation.ArchivePair, base, port macports.PortInfo) ([]assess.Pair, error) {
+	var read []assess.Pair
+	for _, pair := range pairs {
 		if pair.Previous.Path == "" || pair.Next.Path == "" {
-			comparison.Problem = "the archives were not kept to compare"
-			return comparison, nil
+			return nil, errors.New("the archives were not kept to compare")
+		}
+		ports := [2]macports.PortInfo{pair.Base, pair.Port}
+		for i, fallback := range []macports.PortInfo{base, port} {
+			if ports[i].Name == "" {
+				ports[i] = fallback
+			}
 		}
 		var readings [2]project.Reading
 		for i, archive := range []string{pair.Previous.Path, pair.Next.Path} {
-			reading, err := project.Read(ctx, archive, specs[i])
+			reading, err := project.Read(ctx, archive, project.Spec{Subdirectory: macports.SourceSubdirectory(ports[i].Options["worksrcdir"])})
 			if err != nil {
-				comparison.Problem = fmt.Sprintf("reading %s: %v", path.Base(archive), err)
-				return comparison, nil
+				return nil, fmt.Errorf("reading %s: %v", path.Base(archive), err)
 			}
 			readings[i] = reading
 		}
-		changes := sourcecompare.Compare(readings[0], readings[1], versions)
-		for _, change := range changes {
-			found := model.UpstreamChange{Kind: change.Kind, Path: change.Path, Message: change.Message, Hold: change.Hold}
-			if unused(change.System) {
-				why := fmt.Sprintf("%s builds with %s, not %s, so it holds nothing", port.Name, strings.Join(names, " and "), change.System)
-				if change.Kind != "dependency" {
-					found.Hold, found.Message = false, found.Message+"; "+why
-				} else {
-					// A manifest's dependencies are counted, as a proven
-					// manifest's are (D9), since none holds.
-					if seen[change.Message] {
-						continue
-					}
-					seen[change.Message] = true
-					if at, ok := counted[change.Path]; ok {
-						counted[change.Path] = [2]int{at[0], at[1] + 1}
-						continue
-					}
-					counted[change.Path] = [2]int{len(comparison.Changes), 1}
-					found = model.UpstreamChange{Kind: "dependency", Path: change.Path, Message: why}
-				}
-			}
-			if slices.Contains(comparison.Changes, found) {
-				continue
-			}
-			comparison.Changes = append(comparison.Changes, found)
-			if !unused(change.System) {
-				for _, requirement := range change.Requirements {
-					required = append(required, pythonRequirement{manifest: change.Path, Requirement: requirement})
-				}
-			}
-		}
+		read = append(read, assess.Pair{Archive: pair.Next.Name, Before: readings[0], After: readings[1], Port: pair.Port})
 	}
-	for path, at := range counted {
-		change := &comparison.Changes[at[0]]
-		changed := fmt.Sprintf("%d dependencies changed", at[1])
-		if at[1] == 1 {
-			changed = "1 dependency changed"
-		}
-		change.Message = fmt.Sprintf("upstream: %s: %s; %s", path, changed, change.Message)
-	}
-	return comparison, required
+	return read, nil
 }
 
-// pythonRequirement is a Python requirement a manifest of the new version
-// adds or moves.
-type pythonRequirement struct {
-	manifest string
-	project.Requirement
-}
-
-// pythonPins are the requirements the new version adds or moves that the
-// port providing them, among those the updated port depends on, doesn't
-// meet at the version the update's tree has of it. A noarch build passes
-// whatever the version, so a requirement the dependency can't meet is a
-// finding a build can't catch, and holds: sqlit-tui 1.6.4 pins
-// textual-fastdatatable==0.19.0, and MacPorts had 0.17.1. The tree is the
-// branch's, so a branch that updates the dependency first meets it. A
-// requirement no dependency's name matches is left alone: a port needn't
-// be named for its package. What can't be told is said, and doesn't hold,
-// since the comparison without it says what it always said.
-func (e *Engine) pythonPins(ctx context.Context, source model.Source, result preparation.Result, required []pythonRequirement) []model.UpstreamChange {
-	if len(required) == 0 {
-		return nil
-	}
-	reader, err := e.portReader()
-	if err != nil {
-		return []model.UpstreamChange{{Kind: "dependency", Message: "upstream: couldn't read the ports its Python requirements name: " + err.Error()}}
-	}
-	var changes []model.UpstreamChange
-	for _, need := range required {
-		prepared, _ := result.PortAfter(result.Target.Name)
-		for _, dependency := range prepared.Dependencies {
-			provided, ok := macports.PythonPackage(dependency.Port)
-			if !ok || project.NormalizeName(provided) != need.Name {
+// observeProviders observes what an assessment wants, until it wants
+// nothing more: the version of each port that provides a Python
+// requirement in question, evaluated in the tree before the edit or after.
+// What can't be observed is said as such, which the assessment weighs as
+// not knowing.
+func (e *Engine) observeProviders(ctx context.Context, input assess.Input, trees [2]model.Source) map[assess.Provider]assess.Observation {
+	observed := map[assess.Provider]assess.Observation{}
+	input.Observed = observed
+	reader, unreadable := e.portReader()
+	for {
+		wanted := assess.Wanted(input)
+		if len(wanted) == 0 {
+			return observed
+		}
+		for _, provider := range wanted {
+			if unreadable != nil {
+				observed[provider] = assess.Observation{Problem: "couldn't read the ports: " + unreadable.Error()}
 				continue
 			}
-			// A requirement whose marker says it applies only elsewhere,
-			// as a Windows-only pin, asks nothing of MacPorts' port (the
-			// helper-ownership review's finding 1); one that can't be told
-			// is checked as one that applies.
-			python, _ := macports.PythonVersion(dependency.Port)
-			if applies, err := need.OnMacOS(python); err == nil && applies == project.No {
-				break
+			tree := trees[1]
+			if provider.Base {
+				tree = trees[0]
 			}
-			version, err := portVersion(ctx, reader, source, dependency.Port)
-			var admits bool
-			if err == nil {
-				admits, err = project.Admits(need.Specifier, version)
+			version, err := portVersion(ctx, reader, tree, provider.Port)
+			if err != nil {
+				observed[provider] = assess.Observation{Problem: err.Error()}
+				continue
 			}
-			switch {
-			case err != nil:
-				changes = append(changes, model.UpstreamChange{Kind: "dependency", Path: need.manifest,
-					Message: fmt.Sprintf("upstream: couldn't tell whether MacPorts' %s meets %s's %s %s: %v", dependency.Port, need.manifest, need.Name, need.Specifier, err)})
-			case !admits:
-				changes = append(changes, model.UpstreamChange{Kind: "dependency", Path: need.manifest, Hold: true,
-					Message: fmt.Sprintf("upstream: %s requires %s %s, which MacPorts' %s %s doesn't meet", need.manifest, need.Name, need.Specifier, dependency.Port, version)})
-			}
-			break
+			observed[provider] = assess.Observation{Version: version}
 		}
 	}
-	return changes
 }
 
 // portVersion is a port's version in a tree, as MacPorts evaluates it on

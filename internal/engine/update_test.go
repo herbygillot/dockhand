@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -93,11 +95,32 @@ func (p *fakePreparer) Prepare(ctx context.Context, r preparation.Request) (prep
 	if p.during != nil {
 		p.during()
 	}
-	snapshot := func(version string, revision int) macports.Snapshot {
-		return macports.Snapshot{Ports: map[string]macports.PortInfo{r.Selection.Selector: {Name: r.Selection.Selector, Version: version, Revision: revision, Options: p.options}}}
+	// A Go requirement is a module-mode Go port's, whose minimum is as the
+	// toolchain says the edit found it, and left it.
+	options := [2]map[string]string{p.options, p.options}
+	if t := p.toolchain; t != nil {
+		for i, minimum := range []string{t.Declared, t.Declared} {
+			if i == 1 && t.Outcome == preparation.GoToolchainRaised {
+				minimum = t.Required
+			}
+			options[i] = map[string]string{"go.package": "example.org/jq", "go.offline_build": "no"}
+			maps.Copy(options[i], p.options)
+			if minimum != "" {
+				options[i]["go.toolchain_min"] = minimum
+			}
+		}
+	}
+	snapshot := func(version string, revision int, options map[string]string) macports.Snapshot {
+		return macports.Snapshot{Ports: map[string]macports.PortInfo{r.Selection.Selector: {Name: r.Selection.Selector, Version: version, Revision: revision, Options: options}}}
 	}
 	result := preparation.Result{Target: model.Target{Name: r.Selection.Selector, Portfile: name}, Release: r.Release, PreparedTree: r.Source.Tree,
-		Fidelity: []portedit.Fidelity{{Before: snapshot(string(old), revision), After: snapshot(next, nextRevision)}}}
+		Fidelity: []portedit.Fidelity{{Before: snapshot(string(old), revision, options[0]), After: snapshot(next, nextRevision, options[1])}}}
+	// The port depended on the same ports before the edit.
+	if len(p.dependencies) > 0 {
+		before := port(r.Selection.Selector, p.dependencies...)
+		before.Version, before.Revision, before.Options = string(old), revision, options[0]
+		result.Fidelity[0].Before.Ports[r.Selection.Selector] = before
+	}
 	if after == string(data) {
 		return result, nil
 	}
@@ -109,7 +132,7 @@ func (p *fakePreparer) Prepare(ctx context.Context, r preparation.Request) (prep
 	result.Files, result.PreparedTree = []git.FileEdit{edit}, model.ObjectID(tree)
 	result.GoToolchain = p.toolchain
 	if len(p.dependencies) > 0 {
-		result.Prepared = snapshot(next, nextRevision)
+		result.Prepared = snapshot(next, nextRevision, options[1])
 		result.Prepared.Ports[r.Selection.Selector] = port(r.Selection.Selector, p.dependencies...)
 	}
 	result.Commits = []preparation.CommitIntent{{Subject: r.Selection.Selector + ": update to " + next}}
@@ -423,11 +446,11 @@ func TestAChangeTheArchivesShareIsSaidOnce(t *testing.T) {
 	result := preparation.Result{}
 	result.Downloads = []archives.Download{source.Next, binary.Next}
 	result.Pairs = []preparation.ArchivePair{source, binary}
-	comparison, _ := compareUpstream(t.Context(), result, sourcecompare.Versions{})
+	comparison := (&Engine{}).assessUpstream(t.Context(), result, sourcecompare.Versions{}, [2]model.Source{}, true)
 	require.Empty(t, comparison.Problem)
 	require.Equal(t, []model.UpstreamChange{
-		{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed; the Portfile's license line may need to follow", Hold: true},
-		{Kind: "build", Path: "meson.build", Message: "upstream's meson.build is new; the build may need the Portfile to follow", Hold: true},
+		{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed; the Portfile's license line may need to follow", Hold: true, Rule: assess.LicenseChanged, Class: model.Introduced},
+		{Kind: "build", Path: "meson.build", Message: "upstream's meson.build is new; the build may need the Portfile to follow", Hold: true, Rule: assess.BuildFileChanged, Class: model.Introduced},
 	}, comparison.Changes)
 }
 
@@ -450,10 +473,12 @@ func TestTheComparisonReadsWhereThePortBuilds(t *testing.T) {
 	result.Prepared = macports.Snapshot{Ports: map[string]macports.PortInfo{"py-demo": {Name: "py-demo", Options: map[string]string{"worksrcdir": "demo-2/python"}}}}
 	result.Downloads = []archives.Download{next}
 	result.Pairs = []preparation.ArchivePair{{Previous: previous, Next: next}}
-	comparison, _ := compareUpstream(t.Context(), result, sourcecompare.Versions{})
+	comparison := (&Engine{}).assessUpstream(t.Context(), result, sourcecompare.Versions{}, [2]model.Source{}, true)
 	require.Empty(t, comparison.Problem)
 	require.Equal(t, []model.UpstreamChange{
-		{Kind: "dependency", Path: "python/pyproject.toml", Message: "upstream: python/pyproject.toml adds rich >=13", Hold: true},
+		{Kind: "dependency", Path: "python/pyproject.toml", Message: "upstream: python/pyproject.toml adds rich >=13", Hold: true, Rule: assess.DependencyAdded, Subject: "rich", Class: model.Introduced},
+		{Kind: "dependency", Path: "python/pyproject.toml", Message: "upstream: python/pyproject.toml requires rich >=13, and no port the Portfile depends on is named for it",
+			Rule: assess.ProviderUnresolved, Subject: "rich", Class: model.Introduced},
 	}, comparison.Changes)
 }
 
@@ -461,16 +486,20 @@ func TestTheComparisonReadsWhereThePortBuilds(t *testing.T) {
 // provides it doesn't meet it at the version the branch has: sqlit-tui
 // 1.6.4 pins textual-fastdatatable==0.19.0, and MacPorts had 0.17.1, while
 // a noarch build passes regardless (the sshuttle run). A branch that
-// updates the dependency first meets it (the libuv run).
+// updates the dependency first meets it (the libuv run). One whose
+// provider's version can't be told holds too, and one no dependency's name
+// matches is said, holding nothing (batch 19).
 func TestAPythonPinMacPortsCantMeetHolds(t *testing.T) {
+	unresolved := model.UpstreamChange{Kind: "dependency", Path: "pyproject.toml", Rule: assess.ProviderUnresolved, Subject: "pyyaml", Class: model.Introduced,
+		Message: "upstream: pyproject.toml requires pyyaml >=6.0.2, and no port the Portfile depends on is named for it"}
 	for _, test := range []struct {
 		name, has string
 		want      []model.UpstreamChange
 	}{
-		{"unmet", "0.17.1", []model.UpstreamChange{{Kind: "dependency", Path: "pyproject.toml", Hold: true,
+		{"unmet", "0.17.1", []model.UpstreamChange{unresolved, {Kind: "dependency", Path: "pyproject.toml", Hold: true, Rule: assess.RequirementUnmet, Subject: "textual-fastdatatable", Class: model.Introduced,
 			Message: "upstream: pyproject.toml requires textual-fastdatatable ==0.19.0, which MacPorts' py313-textual-fastdatatable 0.17.1 doesn't meet"}}},
-		{"met by the branch", "0.19.0", nil},
-		{"unreadable", "not-a-version", []model.UpstreamChange{{Kind: "dependency", Path: "pyproject.toml",
+		{"met by the branch", "0.19.0", []model.UpstreamChange{unresolved}},
+		{"unreadable", "not-a-version", []model.UpstreamChange{unresolved, {Kind: "dependency", Path: "pyproject.toml", Hold: true, Rule: assess.RequirementUnknown, Subject: "textual-fastdatatable", Class: model.Introduced,
 			Message: "upstream: couldn't tell whether MacPorts' py313-textual-fastdatatable meets pyproject.toml's textual-fastdatatable ==0.19.0: \"not-a-version\" isn't a PEP 440 version"}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -492,8 +521,40 @@ func TestAPythonPinMacPortsCantMeetHolds(t *testing.T) {
 					pins = append(pins, change)
 				}
 			}
-			require.Equal(t, test.want, pins, "PyYAML, which no dependency's name matches, is left alone")
+			require.Equal(t, test.want, pins)
 		})
+	}
+}
+
+// The base's provider is read in the base's tree: a requirement the
+// candidate's provider doesn't meet, which the base's didn't either, is
+// said and holds nothing, while one the base met holds.
+func TestAPinIsJudgedAgainstTheBasesTree(t *testing.T) {
+	for _, test := range []struct {
+		base string
+		hold bool
+	}{{"12", false}, {"13.1", true}} {
+		dir := t.TempDir()
+		old := archives.Download{Name: "old.tar.gz", Path: writeTarball(t, dir, "pkg-1", map[string]string{"requirements.txt": "rich>=13\n"})}
+		next := archives.Download{Name: "new.tar.gz", Path: writeTarball(t, dir, "pkg-2", map[string]string{"requirements.txt": "rich>=14\n"})}
+		result := preparation.Result{}
+		result.Target = model.Target{Name: "demo"}
+		result.Downloads = []archives.Download{next}
+		result.Pairs = []preparation.ArchivePair{{Previous: old, Next: next}}
+		demo := macports.PortInfo{Name: "demo", Options: map[string]string{"dockhand.portgroups": "python"}, Dependencies: []macports.Dependency{{Port: "py313-rich"}}}
+		result.Unchanged = &demo
+		result.Prepared = macports.Snapshot{Ports: map[string]macports.PortInfo{"demo": demo}}
+		e := Engine{PortReader: fakePorts{directories: map[string][]macports.PortInfo{"python/py-rich": {{Name: "py313-rich", Version: "13.2"}}},
+			trees: map[model.ObjectID]map[string][]macports.PortInfo{"base": {"python/py-rich": {{Name: "py313-rich", Version: test.base}}}}}}
+		comparison := e.assessUpstream(t.Context(), result, sourcecompare.Versions{}, [2]model.Source{{Tree: "base"}, {Tree: "new"}}, true)
+		var unmet []model.UpstreamChange
+		for _, change := range comparison.Changes {
+			if change.Rule == assess.RequirementUnmet {
+				unmet = append(unmet, change)
+			}
+		}
+		require.Len(t, unmet, 1, test.base)
+		require.Equal(t, test.hold, unmet[0].Hold, test.base)
 	}
 }
 
@@ -522,11 +583,13 @@ func TestAChangeTheBuildDoesntReadHoldsNothing(t *testing.T) {
 	other.Name = "flatbuffers-25.12.19.zip"
 	result.Downloads = []archives.Download{next, other}
 	result.Pairs = []preparation.ArchivePair{{Previous: previous, Next: next}, {Previous: previous, Next: other}}
-	comparison, _ := compareUpstream(t.Context(), result, sourcecompare.Versions{Old: "25.9.23", New: "25.12.19"})
+	comparison := (&Engine{}).assessUpstream(t.Context(), result, sourcecompare.Versions{Old: "25.9.23", New: "25.12.19"}, [2]model.Source{}, true)
 	require.Equal(t, []model.UpstreamChange{
-		{Kind: "build", Path: "CMakeLists.txt", Message: "upstream's CMakeLists.txt changed; the build may need the Portfile to follow", Hold: true},
-		{Kind: "build", Path: "Package.swift", Message: "upstream's Package.swift is new; the build may need the Portfile to follow; flatbuffers builds with cmake, not swift, so it holds nothing"},
-		{Kind: "dependency", Path: "package.json", Message: "upstream: package.json: 2 dependencies changed; flatbuffers builds with cmake, not node, so it holds nothing"},
+		{Kind: "build", Path: "CMakeLists.txt", Message: "upstream's CMakeLists.txt changed; the build may need the Portfile to follow", Hold: true, Rule: assess.BuildFileChanged, Class: model.Introduced},
+		{Kind: "build", Path: "Package.swift", Message: "upstream's Package.swift is new; the build may need the Portfile to follow; flatbuffers builds with cmake, not swift, so it holds nothing",
+			Rule: assess.BuildFileChanged, Class: model.Introduced},
+		{Kind: "dependency", Path: "package.json", Message: "upstream: package.json: 2 dependencies changed; flatbuffers builds with cmake, not node, so it holds nothing",
+			Rule: assess.DependenciesCounted, Class: model.Introduced},
 	}, comparison.Changes)
 }
 
@@ -570,9 +633,12 @@ func TestAPinForAnotherPlatformHoldsNothing(t *testing.T) {
 		result.Prepared = macports.Snapshot{Ports: map[string]macports.PortInfo{"demo": {Name: "demo", Options: map[string]string{"dockhand.portgroups": "python"},
 			Dependencies: []macports.Dependency{{Port: "py313-requests"}}}}}
 		e := Engine{PortReader: fakePorts{directories: map[string][]macports.PortInfo{"python/py-requests": {{Name: "py313-requests", Version: "1"}}}}}
-		_, requirements := compareUpstream(t.Context(), result, sourcecompare.Versions{})
-		require.Len(t, requirements, 1, marker)
-		pins := e.pythonPins(t.Context(), model.Source{}, result, requirements)
+		var pins []model.UpstreamChange
+		for _, change := range e.assessUpstream(t.Context(), result, sourcecompare.Versions{}, [2]model.Source{}, true).Changes {
+			if change.Rule == assess.RequirementUnmet {
+				pins = append(pins, change)
+			}
+		}
 		if holds {
 			require.Len(t, pins, 1, marker)
 			require.True(t, pins[0].Hold, marker)

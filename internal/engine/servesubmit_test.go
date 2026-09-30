@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
 )
@@ -82,7 +83,7 @@ func TestServeHoldsAnUpdateWhoseUpstreamChangedItsLicense(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"upstream's LICENSE changed; the Portfile's license line may need to follow"}, candidates[0].Held)
 	require.Equal(t, []PortComparison{{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{
-		{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed; the Portfile's license line may need to follow", Hold: true}}}}},
+		{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed; the Portfile's license line may need to follow", Hold: true, Rule: assess.LicenseChanged, Class: model.Introduced}}}}},
 		candidates[0].Plan.Upstream, "the plan says what was found, for a person's submission to show")
 	_, err = e.SubmitForServe(t.Context(), candidates[0])
 	require.ErrorContains(t, err, "is held for a look: upstream's LICENSE changed")
@@ -158,7 +159,7 @@ func TestServeSaysAGoToolchainMinimumItNeedNotHold(t *testing.T) {
 			require.NoError(t, err)
 			require.Empty(t, candidates[0].Held)
 			require.Equal(t, []PortComparison{{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{
-				{Kind: "toolchain", Path: "go.mod", Message: test.message}}}}}, candidates[0].Plan.Upstream)
+				{Kind: "toolchain", Path: "go.mod", Message: test.message, Rule: assess.GoToolchainRule, Subject: "1.26.8", Class: model.Introduced}}}}}, candidates[0].Plan.Upstream)
 		})
 	}
 }

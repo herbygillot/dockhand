@@ -44,8 +44,10 @@ type observedArchivePlan struct {
 // ones, each pair its own.
 type archivePair struct {
 	previous distfiles.Artifact
-	info     macports.PortInfo
-	next     string
+	// info and port are the port as the context that fetches the archives
+	// evaluates it, before the edit and after.
+	info, port macports.PortInfo
+	next       string
 }
 
 func (s *Service) bindArchives(ctx context.Context, input *sourceInput, contents []byte, observed macports.Observation) (distfiles.Binding, error) {
@@ -171,7 +173,7 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 			coverage.download(artifact, next)
 			if !paired[id] {
 				paired[id] = true
-				plan.pairs = append(plan.pairs, archivePair{previous: previous, info: old, next: artifact.Name})
+				plan.pairs = append(plan.pairs, archivePair{previous: previous, info: old, port: next, next: artifact.Name})
 			}
 		}
 		plan.contexts = append(plan.contexts, archiveContext{profile: profile, variant: variant, session: session, before: before.Snapshot, after: after.Snapshot, binding: binding, affected: affected})

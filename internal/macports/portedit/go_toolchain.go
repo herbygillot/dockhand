@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go/version"
 	"maps"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -15,25 +14,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/project"
 )
-
-// The Go PortGroup's go.toolchain_min gates a port on systems whose Go is
-// too old. Which value is right depends on how the port builds, and the
-// PortGroup's own guidance is followed here: with go.offline_build no the
-// build runs in module mode, Go enforces go.mod's go directive, and the
-// directive is exactly the minimum, so it is copied; in GOPATH mode the
-// directive is only an upper bound on what the source needs, so the
-// declared minimum is left alone.
-
-// moduleModeGo reports a Go PortGroup port that builds in module mode:
-// go.offline_build set and false, read as Tcl reads a boolean. An unset or
-// unreadable value is not module mode, which leaves the minimum alone.
-func moduleModeGo(info macports.PortInfo) bool {
-	if _, set := info.Options["go.offline_build"]; !set || info.Options["go.package"] == "" {
-		return false
-	}
-	offline, err := info.Bool("go.offline_build")
-	return err == nil && !offline
-}
 
 // raiseGoToolchain reads the new release's go.mod, from the kept archive or,
 // for a git-fetched port, from the repository at the resolved commit, and
@@ -51,7 +31,7 @@ func (s *Service) raiseGoToolchain(ctx context.Context, request Request, input *
 	if selected.Options["go.package"] == "" {
 		return nil
 	}
-	if !moduleModeGo(selected) {
+	if !selected.GoModuleMode() {
 		progress.VerboseReport(ctx, "%s builds in GOPATH mode, where go.mod's go directive is only an upper bound; go.toolchain_min is left as declared", input.target.Name)
 		return nil
 	}
@@ -71,7 +51,7 @@ func (s *Service) raiseGoToolchain(ctx context.Context, request Request, input *
 		progress.Report(ctx, "%s requires Go %s per go.mod and declares no go.toolchain_min; declaring it would gate the port on systems whose Go is older", input.target.Name, required)
 		outcome(GoToolchainUndeclared)
 		return nil
-	case seriesCovers(current, required):
+	case macports.GoToolchainCovers(current, required):
 		progress.VerboseReport(ctx, "The Portfile's go.toolchain_min %s already covers the %s that go.mod requires", current, required)
 		outcome(GoToolchainCovered)
 		return nil
@@ -114,17 +94,6 @@ func (s *Service) raiseGoToolchain(ctx context.Context, request Request, input *
 	progress.Report(ctx, "Raising go.toolchain_min from %s to %s, which %s's go.mod requires", current, required, input.target.Name)
 	outcome(GoToolchainRaised)
 	return nil
-}
-
-// seriesCovers reports whether a declared go.toolchain_min is of the
-// required release's series or a later one. The Go PortGroup compares only
-// the series, since MacPorts ships the newest patch release of each series
-// it packages, so 1.26 already gates on what go.mod's 1.26.8 asks, and a
-// patch release moving within the series leaves the Portfile alone. A
-// declared value Go can't read covers nothing.
-func seriesCovers(declared, required string) bool {
-	series := version.Lang("go" + declared)
-	return series != "" && version.Compare(series, version.Lang("go"+required)) >= 0
 }
 
 // goRequirement finds go.mod in the first kept archive that holds one at

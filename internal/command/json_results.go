@@ -88,14 +88,17 @@ type upstreamJSON struct {
 	// before serve or bump submits it: a change a build can't catch, or
 	// archives it couldn't compare.
 	Held bool `json:"held"`
+	// Coverage is what the comparison set apart, and why.
+	Coverage []model.Coverage `json:"coverage,omitempty"`
 }
 
 // upstreamView is a comparison under the JSON's upstream key, whose
 // changes are worded as under the text's Upstream heading.
 func upstreamView(comparison model.UpstreamComparison) upstreamJSON {
-	view := upstreamJSON{Changes: []upstreamChangeJSON{}, Problem: comparison.Problem, Held: comparison.Held()}
+	view := upstreamJSON{Changes: []upstreamChangeJSON{}, Problem: comparison.Problem, Held: comparison.Held(), Coverage: comparison.Coverage}
 	for _, change := range comparison.Changes {
-		view.Changes = append(view.Changes, upstreamChangeJSON{Kind: change.Kind, Path: change.Path, Message: underUpstream(change).Message, Hold: change.Hold})
+		view.Changes = append(view.Changes, upstreamChangeJSON{Kind: change.Kind, Path: change.Path, Message: underUpstream(change).Message, Hold: change.Hold,
+			Rule: change.Rule, Subject: change.Subject, Class: string(change.Class)})
 	}
 	return view
 }
@@ -112,6 +115,11 @@ type upstreamChangeJSON struct {
 	Path    string `json:"path"`
 	Message string `json:"message"`
 	Hold    bool   `json:"hold"`
+	// Rule, with the path and subject, is what identifies it; class is
+	// how the candidate stands against its base on it.
+	Rule    string `json:"rule,omitempty"`
+	Subject string `json:"subject,omitempty"`
+	Class   string `json:"class,omitempty"`
 }
 
 type stealthJSON struct {

@@ -108,3 +108,32 @@ func TestAFlatArchivesSubdirectory(t *testing.T) {
 	require.Equal(t, "python", found.Root)
 	require.Equal(t, []string{"LICENSE", "python/pyproject.toml"}, names(found))
 }
+
+// A build file's line declares the project's version only as its build
+// system declares one: find_package(SomeLibrary 1.0) names a dependency's
+// version, however it happens to read.
+func TestAVersionDeclarationIsTheBuildSystemsOwn(t *testing.T) {
+	for _, test := range []struct {
+		name, line string
+		declares   bool
+	}{
+		{"CMakeLists.txt", "project(nuspell VERSION 5.1.9 LANGUAGES CXX)", true},
+		{"CMakeLists.txt", "  VERSION 5.1.9", true},
+		{"CMakeLists.txt", "find_package(SomeLibrary 5.1.9 REQUIRED)", false},
+		{"CMakeLists.txt", "project(nuspell VERSION 5.1.90)", false},
+		{"meson.build", "project('nuspell', version: '5.1.9')", true},
+		{"meson.build", "dependency('icu', version: '>=5.1.9')", false},
+		{"configure.ac", "AC_INIT([hello], [5.1.9])", true},
+		{"setup.py", "    version='5.1.9',", true},
+		{"setup.cfg", "version = 5.1.9", true},
+		{"DESCRIPTION", "Version: 5.1.9", true},
+		{"Package.swift", "// 5.1.9", false},
+		{"CMakeLists.txt", "project(x VERSION 1)", false},
+	} {
+		version := "5.1.9"
+		if strings.Contains(test.line, "VERSION 1)") {
+			version = ""
+		}
+		require.Equal(t, test.declares, DeclaresVersion(test.name, test.line, version), test.name+": "+test.line)
+	}
+}

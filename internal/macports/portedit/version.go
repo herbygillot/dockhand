@@ -101,7 +101,7 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 	switch {
 	case request.KeepArchives != "":
 		store = s.Archives.Store(request.KeepArchives)
-	case patched(input.info) || moduleModeGo(input.info):
+	case patched(input.info) || input.info.GoModuleMode():
 		directory, err := scratch.Dir("patchcheck-")
 		if err != nil {
 			return Result{}, err
@@ -150,7 +150,13 @@ func (p archivePlan) pairs() []archivePair {
 
 // ArchivePair is an archive an update replaced, as MacPorts shipped it,
 // beside the archive that replaces it: what the upstream comparison reads.
-type ArchivePair struct{ Previous, Next archives.Download }
+// Base and Port are the port as the context that fetches them evaluates
+// it, before the edit and after, whose build systems and worksrcdir are
+// that context's.
+type ArchivePair struct {
+	Previous, Next archives.Download
+	Base, Port     macports.PortInfo
+}
 
 // pairArchives fetches the archives the update replaces as MacPorts
 // shipped them, checked against the Portfile's checksums, from upstream or
@@ -180,7 +186,7 @@ func pairArchives(ctx context.Context, store *archives.Store, pairs []archivePai
 			}
 			previous = shipped[0].Download
 		}
-		paired = append(paired, ArchivePair{Previous: previous, Next: next})
+		paired = append(paired, ArchivePair{Previous: previous, Next: next, Base: pair.info, Port: pair.port})
 	}
 	return paired, ""
 }

@@ -24,13 +24,19 @@ type fakePorts struct {
 	// withVariants is a port as its variants make it, where they change
 	// what planning reads.
 	withVariants func(port macports.PortInfo, variants map[string]bool) macports.PortInfo
+	// trees are directories as a tree has them, where it has them
+	// otherwise than directories does.
+	trees map[model.ObjectID]map[string][]macports.PortInfo
 }
 
-func (f fakePorts) Ports(_ context.Context, _ model.Source, directory string, environment model.Environment, variants map[string]bool) ([]macports.PortInfo, error) {
+func (f fakePorts) Ports(_ context.Context, source model.Source, directory string, environment model.Environment, variants map[string]bool) ([]macports.PortInfo, error) {
 	if f.broken[directory] {
 		return nil, errors.New("Portfile error: can't read \"foo\": no such variable")
 	}
 	ports, ok := f.directories[directory]
+	if tree, has := f.trees[source.Tree][directory]; has {
+		ports, ok = tree, true
+	}
 	if !ok {
 		return nil, errors.New("no Portfile")
 	}

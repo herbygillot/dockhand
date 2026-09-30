@@ -57,11 +57,16 @@ type Edit struct {
 	Release *Release `json:",omitempty"`
 }
 
-// UpstreamComparison is what an update's upstream archives showed.
+// UpstreamComparison is what an update's upstream archives showed: an
+// assessment of what upstream's change means for the port (the
+// assessment design, C).
 type UpstreamComparison struct {
 	Changes []UpstreamChange `json:"changes"`
 	// Problem says why the archives could not be compared.
 	Problem string `json:"problem,omitempty"`
+	// Coverage says what the assessment read, and what it set apart and
+	// why; none in a comparison recorded before it did.
+	Coverage []Coverage `json:"coverage,omitempty"`
 }
 
 // Held reports whether the comparison holds the update for a person's
@@ -87,14 +92,66 @@ func (c *UpstreamComparison) Holds() []string {
 	return holds
 }
 
-// UpstreamChange is one difference between the archives: a license file,
-// a build file, or a declared dependency; or a file the comparison couldn't
-// read, which holds as a change would (kind "unread").
+// UpstreamChange is one finding of an assessment: a license file, a build
+// file, or a declared dependency that changed; a file the comparison
+// couldn't read (kind "unread"); or what a change asks of the port, such
+// as a Python requirement its dependency doesn't meet. One that holds is a
+// concern: it asks a person's look before a submission nobody reviews.
 type UpstreamChange struct {
 	Kind    string `json:"kind"`
 	Path    string `json:"path"`
 	Message string `json:"message"`
 	Hold    bool   `json:"hold"`
+	// Rule is what raised it, and Subject what it's about within its
+	// path, such as a dependency's name: with the path, its identity,
+	// which its message isn't. Empty in a finding recorded before they
+	// were kept.
+	Rule    string `json:"rule,omitempty"`
+	Subject string `json:"subject,omitempty"`
+	// Class says how the candidate stands against the base on it.
+	Class ConcernClass `json:"class,omitempty"`
+}
+
+// Key identifies a finding: its rule, path, and subject, or where it was
+// recorded without a rule, its kind, path, and message.
+func (c UpstreamChange) Key() string {
+	if c.Rule == "" {
+		return c.Kind + "\x00" + c.Path + "\x00" + c.Message
+	}
+	return c.Rule + "\x00" + c.Path + "\x00" + c.Subject
+}
+
+// ConcernClass is how a candidate stands against its base on a finding.
+type ConcernClass string
+
+const (
+	// Introduced is new with the candidate, as any change is.
+	Introduced ConcernClass = "introduced"
+	// Resolved is the base's, and gone from the candidate.
+	Resolved ConcernClass = "resolved"
+	// Present is the base's too: said, and holding nothing, since an
+	// update isn't an audit of everything the port already was.
+	Present ConcernClass = "present"
+	// UnknownBaseline is where the base couldn't be assessed, which
+	// holds as what couldn't be checked does (D4).
+	UnknownBaseline ConcernClass = "unknown-baseline"
+)
+
+// Coverage is one thing an assessment read, or set apart, and why: a
+// file, with the evidence of whether the port's build reads it (Relevance)
+// kept apart from what the assessment did with it (Treatment), so a
+// policy's setting apart is never mistaken for a proof.
+type Coverage struct {
+	Path   string `json:"path"`
+	System string `json:"system,omitempty"`
+	// Relevance is used, irrelevant, or unknown: whether the port's build
+	// is known to read the file.
+	Relevance string `json:"relevance"`
+	// Treatment is inspected, or set-apart, and Policy the rule that set it
+	// apart, with Reason in words.
+	Treatment string `json:"treatment"`
+	Policy    string `json:"policy,omitempty"`
+	Reason    string `json:"reason,omitempty"`
 }
 
 // Validate checks the rules every stored edit keeps.
