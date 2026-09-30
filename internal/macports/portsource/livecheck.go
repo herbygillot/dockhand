@@ -22,7 +22,7 @@ func discoverListing(port macports.PortInfo) (Spec, error) {
 	}
 	live := Livecheck{Type: port.Options["livecheck.type"], Regex: port.Options["livecheck.regex"], Version: port.Options["livecheck.version"]}
 	sourceVersion := archiveSourceVersion(port)
-	if live.Type != "regex" && live.Type != "regexm" || live.Regex == "" || live.Version != sourceVersion || port.Options["dockhand.livecheck_standard"] != "1" {
+	if standard, err := port.LivecheckStandard(); live.Type != "regex" && live.Type != "regexm" || live.Regex == "" || live.Version != sourceVersion || err != nil || !standard {
 		return Spec{}, fmt.Errorf("%w: require standard regex livecheck for the evaluated port version, without custom hooks", ErrUnsupported)
 	}
 	if err := readListing(port, &live); err != nil {

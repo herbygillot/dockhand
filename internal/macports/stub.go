@@ -1,6 +1,7 @@
 package macports
 
 import (
+	"fmt"
 	"github.com/herbygillot/dockhand/internal/model"
 	"slices"
 	"strconv"
@@ -10,16 +11,18 @@ import (
 // ResolveStub resolves a bump's selection once, for binding and editing
 // alike: a stub selection is redirected to the newest subport that carries
 // its release and the stub's name is returned beside it; any other
-// selection comes back unchanged with an empty name.
-func ResolveStub(snapshot Snapshot, selected model.Target) (model.Target, string) {
+// selection comes back unchanged with an empty name. Where the evaluator
+// couldn't tell whether the selected port builds anything, it says so,
+// rather than take a stub for an ordinary port.
+func ResolveStub(snapshot Snapshot, selected model.Target) (model.Target, string, error) {
 	if selected.Subport != "" {
-		return selected, ""
+		return selected, "", nil
 	}
-	newest, _ := stubMembers(snapshot, selected.Name)
-	if newest == "" {
-		return selected, ""
+	newest, _, err := stubMembers(snapshot, selected.Name)
+	if err != nil || newest == "" {
+		return selected, "", err
 	}
-	return model.Target{Name: newest, Portfile: selected.Portfile, Subport: newest, Variants: selected.Variants}, selected.Name
+	return model.Target{Name: newest, Portfile: selected.Portfile, Subport: newest, Variants: selected.Variants}, selected.Name, nil
 }
 
 // stubMembers reports whether the named port is a stub whose subports carry
@@ -27,22 +30,28 @@ func ResolveStub(snapshot Snapshot, selected model.Target) (model.Target, string
 // version do, the shape of a python `py-foo` port over its `py3x-foo`
 // subports. It returns the newest such subport, by natural order of the
 // names, and every member. An ordinary port returns "" and nil.
-func stubMembers(snapshot Snapshot, name string) (newest string, members []string) {
+func stubMembers(snapshot Snapshot, name string) (newest string, members []string, err error) {
 	stub, ok := snapshot.Ports[name]
-	if !ok || stub.Options["dockhand.metadata_only"] != "1" || stub.Version == "" {
-		return "", nil
+	if !ok || stub.Version == "" {
+		return "", nil, nil
+	}
+	if only, err := stub.MetadataOnly(); err != nil || !only {
+		if err != nil {
+			err = fmt.Errorf("macports: can't tell whether %s builds anything: %w", name, err)
+		}
+		return "", nil, err
 	}
 	for sibling, info := range snapshot.Ports {
-		if sibling == name || info.Version != stub.Version || info.Options["dockhand.metadata_only"] == "1" {
+		if only, _ := info.MetadataOnly(); sibling == name || info.Version != stub.Version || only {
 			continue
 		}
 		members = append(members, sibling)
 	}
 	if len(members) == 0 {
-		return "", nil
+		return "", nil, nil
 	}
 	slices.SortFunc(members, naturalCompare)
-	return members[len(members)-1], members
+	return members[len(members)-1], members, nil
 }
 
 // naturalCompare orders names with embedded numbers by their numeric value,

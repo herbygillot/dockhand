@@ -110,6 +110,11 @@ func Compare(name string, old, next macports.PortInfo) []string {
 	if !reflect.DeepEqual(old.Dependencies, next.Dependencies) {
 		differences = append(differences, name+".dependencies changed")
 	}
+	// The fetch is compared by its kind, which the options' compatible
+	// flag doesn't tell apart among the kinds a direct download repeats.
+	if fetchKind(old) != fetchKind(next) {
+		differences = append(differences, name+".fetch changed")
+	}
 	keys := map[string]bool{}
 	for key := range old.Options {
 		keys[key] = true
@@ -128,6 +133,13 @@ func Compare(name string, old, next macports.PortInfo) []string {
 		differences = append(differences, name+".option-errors changed")
 	}
 	return differences
+}
+
+func fetchKind(port macports.PortInfo) string {
+	if port.Fetch == nil {
+		return ""
+	}
+	return port.Fetch.Kind
 }
 
 // Equivalent requires two evaluations of the same context to agree on every
@@ -281,7 +293,11 @@ func ReleaseScope(before, after macports.Snapshot, selected string, authorized b
 		if err != nil {
 			return nil, err
 		}
-		member := macports.ReleaseMember{Target: target, Before: macports.ReleaseStateOf(old), After: macports.ReleaseStateOf(next), NeedsXcode: needsXcode, MetadataOnly: next.Options["dockhand.metadata_only"] == "1"}
+		metadataOnly, err := next.MetadataOnly()
+		if err != nil {
+			return nil, err
+		}
+		member := macports.ReleaseMember{Target: target, Before: macports.ReleaseStateOf(old), After: macports.ReleaseStateOf(next), NeedsXcode: needsXcode, MetadataOnly: metadataOnly}
 		if old.Version == next.Version {
 			scope.Protected = append(scope.Protected, member)
 			continue
@@ -313,7 +329,8 @@ func ReleaseScope(before, after macports.Snapshot, selected string, authorized b
 // nothing. Such a sibling moves with the selected port without shared-release
 // authorization, since it has no source of its own to get wrong.
 func followsObsolete(name, selected string, old, next, oldRoot, nextRoot macports.PortInfo) bool {
-	return name != selected && next.Options["replaced_by"] == selected && next.Options["dockhand.metadata_only"] == "1" &&
+	only, err := next.MetadataOnly()
+	return name != selected && next.Options["replaced_by"] == selected && err == nil && only &&
 		old.Version == oldRoot.Version && next.Version == nextRoot.Version
 }
 

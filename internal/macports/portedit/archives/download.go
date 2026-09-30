@@ -269,10 +269,11 @@ func byteLabel(size int64) string {
 // CheckFetchCredentials refuses a port whose downloads need MacPorts
 // credentials, which the direct downloader does not carry.
 func CheckFetchCredentials(info macports.PortInfo) error {
-	if info.OptionErrors["fetch.has_credentials"] != "" || info.Options["fetch.has_credentials"] == "" {
+	credentials, err := info.FetchCredentials()
+	if err != nil {
 		return fmt.Errorf("%w: cannot determine applicable MacPorts fetch credentials; prepare this update manually with MacPorts", portfile.ErrUnsupported)
 	}
-	if info.Options["fetch.has_credentials"] != "0" {
+	if credentials {
 		return fmt.Errorf("%w: MacPorts credentials apply to the selected source downloads; authenticated fetching is not supported by the direct downloader; prepare this update manually with MacPorts", portfile.ErrUnsupported)
 	}
 	return nil
@@ -285,8 +286,12 @@ func CheckPolicy(info macports.PortInfo, portdir string) error {
 	if err := CheckFetchCredentials(info); err != nil {
 		return err
 	}
-	if problem := info.OptionErrors["fetch.archive_compatible"]; problem != "" {
-		return fmt.Errorf("%w: %s", portfile.ErrUnsupported, problem)
+	compatible, problem, err := info.ArchiveCompatible()
+	switch {
+	case err != nil:
+		return fmt.Errorf("%w: %v", portfile.ErrUnsupported, err)
+	case !compatible:
+		return fmt.Errorf("%w: %s; prepare this port manually", portfile.ErrUnsupported, problem)
 	}
 	for _, key := range []string{"distfiles", "master_sites", "checksums", "fetch.type", "fetch.archive_compatible", "patchfiles", "filespath", "fetch.ignore_sslcert", "go.vendors", "cargo.crates", "cargo.crates_github"} {
 		if info.OptionErrors[key] != "" {
@@ -297,7 +302,7 @@ func CheckPolicy(info macports.PortInfo, portdir string) error {
 	// been evaluated and be false.
 	_, evaluated := info.Options["fetch.ignore_sslcert"]
 	ignoreCertificate, err := info.Bool("fetch.ignore_sslcert")
-	if info.Options["fetch.type"] != "standard" || info.Options["fetch.archive_compatible"] != "1" || !evaluated || err != nil || ignoreCertificate || info.Options["go.vendors"] != "" || info.Options["cargo.crates"] != "" || info.Options["cargo.crates_github"] != "" {
+	if info.Options["fetch.type"] != "standard" || !evaluated || err != nil || ignoreCertificate || info.Options["go.vendors"] != "" || info.Options["cargo.crates"] != "" || info.Options["cargo.crates_github"] != "" {
 		return fmt.Errorf("%w: fetch customization or vendored source requires a dedicated preparer", portfile.ErrUnsupported)
 	}
 	if err := LocalPatches(info, portdir); err != nil {

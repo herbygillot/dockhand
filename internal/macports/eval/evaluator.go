@@ -401,10 +401,10 @@ func decodeMetadata(reply string) (macports.PortInfo, []string, error) {
 		}
 		assessment := fetchguard.Assess(value, fields[0], fields[1], fields[2], origins, definitions)
 		value.Fetch = &assessment
+		// A custom fetch is incompatible, and why is the assessment's
+		// (PortInfo.ArchiveCompatible); fidelity compares its kind.
 		if assessment.Kind != "custom" {
 			values["fetch.archive_compatible"] = "1"
-		} else {
-			value.OptionErrors["fetch.archive_compatible"] = fmt.Sprintf("MacPorts Base %s: %s; prepare this port manually", values["dockhand.base_version"], assessment.Problem)
 		}
 		delete(values, "fetch_details")
 	}

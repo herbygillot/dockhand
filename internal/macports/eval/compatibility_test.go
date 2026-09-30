@@ -178,7 +178,11 @@ func TestRefusedHookIsPlacedInItsFile(t *testing.T) {
 			require.NoError(t, err)
 			info := snapshot.Ports["fixture"]
 			require.Equal(t, "0", info.Options["fetch.archive_compatible"])
-			require.Equal(t, "MacPorts Base "+snapshot.Runtime.BaseVersion+": "+test.want+"; prepare this port manually", info.OptionErrors["fetch.archive_compatible"])
+			compatible, problem, err := info.ArchiveCompatible()
+			require.NoError(t, err)
+			require.False(t, compatible)
+			require.Equal(t, "MacPorts Base "+snapshot.Runtime.BaseVersion+": "+test.want, problem)
+			require.Empty(t, info.OptionErrors["fetch.archive_compatible"], "the reason is the assessment's, not a sentence among the options")
 			require.NotContains(t, info.Options, "fetch_details")
 		})
 	}

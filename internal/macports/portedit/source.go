@@ -188,7 +188,9 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 		}
 		stub = request.Stub
 		request.SharedRelease = true
-	} else if carrier, name := macports.ResolveStub(before, selected); name != "" {
+	} else if carrier, name, err := macports.ResolveStub(before, selected); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrUnsupported, err)
+	} else if name != "" {
 		// Said once, though the probe and the preparation each load the
 		// port (the sshuttle run: py-pipdeptree's update said it thrice).
 		progress.ReportOnce(ctx, "%s is a stub; editing %s and its sibling subports as one release", name, carrier.Name)
@@ -426,13 +428,13 @@ func withLivecheckOf(port, owner macports.PortInfo) macports.PortInfo {
 	}
 	port.OptionErrors = maps.Clone(port.OptionErrors)
 	for key, value := range owner.Options {
-		if strings.HasPrefix(key, "livecheck.") || strings.HasPrefix(key, "dockhand.livecheck_") {
+		if macports.IsLivecheckOption(key) {
 			port.Options[key] = value
 			delete(port.OptionErrors, key)
 		}
 	}
 	for key, value := range owner.OptionErrors {
-		if strings.HasPrefix(key, "livecheck.") {
+		if macports.IsLivecheckOption(key) {
 			if port.OptionErrors == nil {
 				port.OptionErrors = map[string]string{}
 			}

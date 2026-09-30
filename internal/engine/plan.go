@@ -140,10 +140,8 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 				evaluated.xcode[id] = needsXcode
 				// Whether it declares tests is MacPorts' reading of test.run;
 				// one that can't be read, or wasn't, is left unsaid.
-				if _, set := port.Options["dockhand.test_run"]; set {
-					if tests, err := port.Bool("dockhand.test_run"); err == nil && !tests {
-						evaluated.untested[id] = true
-					}
+				if declares, known := port.DeclaresTests(); known && !declares {
+					evaluated.untested[id] = true
 				}
 			}
 		}

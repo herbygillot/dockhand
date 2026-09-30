@@ -86,7 +86,7 @@ func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, s
 func requestHeaders(port macports.PortInfo, spec portsource.Spec) http.Header {
 	headers := http.Header{}
 	agent := fetch.UserAgent
-	if base := port.Options["dockhand.base_version"]; base != "" && port.OptionErrors["dockhand.base_version"] == "" {
+	if base, ok := port.BaseVersion(); ok {
 		agent = "MacPorts/" + base + " libcurl " + fetch.UserAgent
 	}
 	headers.Set("User-Agent", agent)

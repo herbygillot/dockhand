@@ -20,7 +20,7 @@ func RebindReleaseScope(scope *ReleaseScope, snapshot Snapshot) (*ReleaseScope, 
 	}
 	for i, member := range updated.Affected {
 		info, ok := snapshot.Ports[member.Target.Name]
-		if !ok || (info.Options["dockhand.metadata_only"] == "1") != member.MetadataOnly {
+		if only, err := info.MetadataOnly(); !ok || err != nil || only != member.MetadataOnly {
 			return nil, fmt.Errorf("macports: shared-release target %s changed identity", member.Target.Name)
 		}
 		// Reverification can cover implementation fixes, not a new release hidden

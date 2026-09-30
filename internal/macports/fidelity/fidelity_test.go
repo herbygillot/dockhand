@@ -102,3 +102,13 @@ func TestVersionAllowsAHomepageThatFollowsTheVersion(t *testing.T) {
 	report = ScopedVersion(false, before, after, "main", model.Release{Version: "0.230.0"}, "sha256 bbbb")
 	require.NotEmpty(t, report.UnexpectedChanges, "other metadata still may not move")
 }
+
+// A fetch is compared by its kind, which the options' compatible flag
+// doesn't tell apart among the kinds a direct download repeats.
+func TestAFetchIsComparedByItsKind(t *testing.T) {
+	port := func(kind string) macports.PortInfo {
+		return macports.PortInfo{Name: "demo", Version: "1", Options: map[string]string{"fetch.archive_compatible": "1"}, Fetch: &macports.FetchSemantics{Kind: kind}}
+	}
+	require.Equal(t, []string{"demo.fetch changed"}, Compare("demo", port("standard"), port("git")))
+	require.Empty(t, Compare("demo", port("standard"), port("standard")))
+}

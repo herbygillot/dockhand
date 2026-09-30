@@ -129,7 +129,7 @@ The order is the roadmap's own: a guardrail first, then what's written into a Po
 6. **Reuse and archives** (decisions 28 and 44; the previous step 9). This builds on item 2's predicate, and takes planning and that predicate out of the engine as it changes them (item 4).
 
    Taken from 2026-09-30 in this order, each in its own commits, since each later one reads what an earlier one types:
-   1. the evaluator's computed facts as typed fields (finding 27, below), which eligibility and planning then read;
+   1. the evaluator's computed facts as typed fields (finding 27, below), which eligibility and planning then read. Done 2026-09-30 ([note](activity/2026-09-30-typed-facts.md)): accessors in `macports`, a failed stub probe said, and the fetch's reason read from its assessment;
    2. build eligibility in `macports` (the private-helper review's finding 1, below);
    3. the conservative Portfile inspection (its finding 2, below);
    4. planning out of the engine, its phases named, the port reader's evaluation report recorded, and a dependency met by a file (findings 4 and 27, below);
@@ -147,7 +147,7 @@ The order is the roadmap's own: a guardrail first, then what's written into a Po
    - **From the code-organization review,** as planning and results move:
      - `PlanCheck`'s phases named (finding 4);
      - a kind on each cell of the evidence, and one rule for an `--also` extra, which status and submit read differently today (finding 25);
-     - the evaluator's computed facts as typed fields (finding 27);
+     - the evaluator's computed facts as typed fields (finding 27). Done 2026-09-30 ([note](activity/2026-09-30-typed-facts.md)), but for the Base version on the bound probe, which moves with the evaluation report;
      - the tests vocabulary checked where results are written, since reuse carries results on (finding 28);
      - an identity that can't be read fails the attempt, rather than recording "no origin" (finding 39);
      - the release `outdated` found passed to the update, and a plan's `--only`, `--also`, `--fresh`, and omissions in its JSON (finding 36);

@@ -136,7 +136,6 @@ namespace eval ::dockhand {
                 dict set out livecheck.name [lindex $effective 4]
                 foreach field {livecheck.type livecheck.url livecheck.regex} { dict unset failures $field }
             }
-            set metadata_only 0
             if {![catch {$worker eval {
                 apply {{} {
                     if {[exists replaced_by] && [option replaced_by] ne ""} { return 1 }
@@ -147,8 +146,11 @@ namespace eval ::dockhand {
                     if {![llength [info procs $procedure]]} { return 0 }
                     expr {[string trim [info body $procedure]] eq {global {*}[info globals]}}
                 }}
-            }} value]} { set metadata_only $value }
-            dict set out dockhand.metadata_only $metadata_only
+            }} value]} {
+                dict set out dockhand.metadata_only $value
+            } else {
+                dict set failures dockhand.metadata_only "cannot tell whether the port builds anything: $value"
+            }
             foreach field {cargo.dir patch.dir} {
                 if {![dict exists $out $field]} { continue }
                 set source [$worker eval {file normalize [option worksrcpath]}]

@@ -4,7 +4,6 @@ import (
 	"path"
 	"slices"
 
-	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
 // BuildSystem is a way software is built, or the language whose files
@@ -53,12 +52,8 @@ var portGroupSystems = map[string]BuildSystem{
 // tell of none, as for a port that builds by its own commands, or one
 // whose PortGroups weren't read: then nothing is known not to be used.
 func (p PortInfo) BuildSystems() ([]BuildSystem, bool) {
-	groups, set := p.Options["dockhand.portgroups"]
-	if !set {
-		return nil, false
-	}
-	names, errs := syntax.ListValues(groups)
-	if len(errs) > 0 {
+	names, known := p.PortGroups()
+	if !known {
 		return nil, false
 	}
 	var systems []BuildSystem

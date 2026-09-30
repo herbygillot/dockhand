@@ -389,3 +389,21 @@ func TestTheEvaluatorReportsThePortGroupsAPortLoads(t *testing.T) {
 		require.Equal(t, "./configure", snapshot.Ports[name].Options["configure.cmd"], name)
 	}
 }
+
+// A probe of whether a port builds anything that fails is recorded as a
+// failure, not taken for a port that builds, as it had been (the
+// code-organization review's finding 27).
+func TestAFailedMetadataProbeIsRecorded(t *testing.T) {
+	t.Parallel()
+	e := liveEvaluator(t)
+	tree := fixtureTree(t)
+	putFile(t, tree.Root(), "devel/unsure/Portfile", "PortSystem 1.0\nname unsure\nversion 1\ntrace add variable distfiles read {apply {args {error boom}}}\n")
+	targets, err := e.Resolve(t.Context(), tree, macports.Selection{Selector: "unsure"})
+	require.NoError(t, err)
+	bound, err := tree.Select(targets[0])
+	require.NoError(t, err)
+	snapshot, err := e.Evaluate(t.Context(), bound)
+	require.NoError(t, err)
+	_, err = snapshot.Ports["unsure"].MetadataOnly()
+	require.ErrorContains(t, err, "cannot tell whether the port builds anything")
+}

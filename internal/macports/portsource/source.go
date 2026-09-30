@@ -146,7 +146,7 @@ func Interpret(port macports.PortInfo, purpose Purpose) (Spec, error) {
 	if err := readListing(port, &spec.Livecheck); err != nil {
 		return Spec{}, err
 	}
-	if port.Options["dockhand.livecheck_standard"] != "1" {
+	if standard, err := port.LivecheckStandard(); err != nil || !standard {
 		return Spec{}, fmt.Errorf("%w: the port's livecheck has custom hooks; name the version to update to", ErrUnsupported)
 	}
 	spec.Livecheck.Overridden = true
