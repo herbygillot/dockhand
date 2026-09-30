@@ -212,19 +212,16 @@ func convert(id model.TargetID, got TargetResult, fallbackLog string) (model.Tar
 	case model.OutcomePassed, model.OutcomeBlocked:
 		result.Phase = ""
 	case model.OutcomeFailed:
-		switch result.Phase {
-		case model.PhaseLint, model.PhaseFetch, model.PhaseChecksum, model.PhaseInstall, model.PhaseTest:
-		default:
+		if !result.Phase.Valid() {
 			return model.TargetResult{}, fmt.Errorf("%s failed at unknown phase %q", id, got.Phase)
 		}
 	default:
 		return model.TargetResult{}, fmt.Errorf("%s has unknown outcome %q", id, got.Outcome)
 	}
-	switch result.Tests {
-	case "":
+	if result.Tests == "" {
 		result.Tests = model.TestsNone
-	case model.TestsPassed, model.TestsFailed, model.TestsTimedOut, model.TestsNone, model.TestsSkipped:
-	default:
+	}
+	if !result.Tests.Valid() {
 		return model.TargetResult{}, fmt.Errorf("%s has unknown tests outcome %q", id, got.Tests)
 	}
 	if result.Log == "" {

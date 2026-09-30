@@ -303,15 +303,21 @@ type identities map[model.Environment]string
 func (e *Engine) identitiesNow(ctx context.Context, environments []model.Environment) identities {
 	now := identities{}
 	for _, environment := range environments {
-		provider, ok := e.Providers[environment.Provider].(buildenv.IdentityProvider)
-		if !ok {
-			continue
-		}
-		if identity, err := provider.Identity(ctx, environment); err == nil {
+		if identity, err := e.identityNow(ctx, environment); err == nil && identity != "" {
 			now[environment] = identity
 		}
 	}
 	return now
+}
+
+// identityNow is what an environment's provider says it is now: empty
+// where the provider can't say, and an error where it couldn't be read.
+func (e *Engine) identityNow(ctx context.Context, environment model.Environment) (string, error) {
+	provider, ok := e.Providers[environment.Provider].(buildenv.IdentityProvider)
+	if !ok {
+		return "", nil
+	}
+	return provider.Identity(ctx, environment)
 }
 
 // evidenceNow is treeEvidence as it stands now: the environments' current

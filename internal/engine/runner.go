@@ -443,7 +443,21 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 		// compares earlier builds' with it, and the execution records it as
 		// it is when the execution begins: evidence compares it with the
 		// environment's identity whenever it is judged (Counts).
-		identity := e.identitiesNow(ctx, []model.Environment{environment})[environment]
+		identity, err := e.identityNow(ctx, environment)
+		if err != nil {
+			// One that can't be read isn't recorded as none, which a
+			// provider that can't say records, and which evidence would
+			// read later as the environment made again (the
+			// code-organization review, finding 39): the attempt fails as
+			// the environment's, and the next reads it again.
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if err := d.unreadIdentity(ctx, environment, attempt, err); err != nil {
+				return err
+			}
+			continue
+		}
 		// Before the first attempt, the targets that would build as an
 		// earlier build did reuse its result (decision 28). When every one
 		// does, nothing is built.
@@ -539,6 +553,18 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 		}
 		return d.endExecution(ctx, execution, model.ExecutionFinished, "")
 	}
+}
+
+// unreadIdentity records an attempt that ended before it began, since what
+// the environment is couldn't be read.
+func (d *driver) unreadIdentity(ctx context.Context, environment model.Environment, attempt int, cause error) error {
+	execution := model.GuestExecution{ID: model.ExecutionID(store.NewID(environment.Provider)), Run: d.run.ID, Environment: environment, Attempt: attempt + 1, State: model.ExecutionWaiting, CreatedAt: d.e.now()}
+	if err := d.fenced(ctx, func(tx store.Tx) error { return tx.AddExecution(execution) }); err != nil {
+		return err
+	}
+	detail := "couldn't read what the environment is: " + cause.Error()
+	d.emit(ctx, "execution.retry", fmt.Sprintf("%s: %s", describeEnvironment(environment), detail))
+	return d.endExecution(ctx, execution, model.ExecutionInfrastructure, detail)
 }
 
 func (d *driver) endExecution(ctx context.Context, execution model.GuestExecution, state model.ExecutionState, detail string) error {

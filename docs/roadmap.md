@@ -133,7 +133,7 @@ The order is the roadmap's own: a guardrail first, then what's written into a Po
    2. build eligibility in `macports` (the private-helper review's finding 1, below). Done 2026-09-30 ([note](activity/2026-09-30-build-eligibility.md)): `macports.BuildEligibility`, with `known_fail` and `platforms` as MacPorts decides them, and an unreadable option unresolved;
    3. the conservative Portfile inspection (its finding 2, below). Done 2026-09-30 ([note](activity/2026-09-30-portfile-inspection.md)): revision-only changes, declared versions and revisions, and PortGroup references, read from the parsed source;
    4. planning out of the engine, its phases named, the port reader's evaluation report recorded, and a dependency met by a file (findings 4 and 27, below). Planning's phases, named and out of the engine, done 2026-09-30 ([note](activity/2026-09-30-planning-phases.md)): `internal/planning` decides from what the engine reads, and a plan's targets are their ports' names. A dependency met by a file closes no cycle, done 2026-09-30 ([note](activity/2026-09-30-dependency-met-by-a-file.md)). The evaluation report and the Base version on the bound probe are taken off: reuse keys on what each build recorded in the guest, so the report would have no reader, and the version's two readers hold a port, not a snapshot (the same note);
-   5. results and the reuse predicate: a kind on each cell, the tests vocabulary where results are written, and an unreadable identity (findings 25, 28, and 39);
+   5. results and the reuse predicate: a kind on each cell, the tests vocabulary where results are written, and an unreadable identity (findings 25, 28, and 39). The vocabularies and the identity done 2026-09-30 ([note](activity/2026-09-30-results-as-written.md));
    6. the binary archive site out of Tart's SSH channel (the private-helper review's finding 6);
    7. the JSON gaps and one set of dependencies for `engine.Open` (findings 36 and 1).
 
@@ -148,8 +148,8 @@ The order is the roadmap's own: a guardrail first, then what's written into a Po
      - `PlanCheck`'s phases named (finding 4). Done 2026-09-30 ([note](activity/2026-09-30-planning-phases.md)), with the `Validate` clause it asked for;
      - a kind on each cell of the evidence, and one rule for an `--also` extra, which status and submit read differently today (finding 25);
      - the evaluator's computed facts as typed fields (finding 27). Done 2026-09-30 ([note](activity/2026-09-30-typed-facts.md)). The Base version on the bound probe is taken off, as the evaluation report is ([note](activity/2026-09-30-dependency-met-by-a-file.md));
-     - the tests vocabulary checked where results are written, since reuse carries results on (finding 28);
-     - an identity that can't be read fails the attempt, rather than recording "no origin" (finding 39);
+     - the tests vocabulary checked where results are written, since reuse carries results on (finding 28). Done 2026-09-30 ([note](activity/2026-09-30-results-as-written.md)), with the phase's, and a builder's part's;
+     - an identity that can't be read fails the attempt, rather than recording "no origin" (finding 39). Done 2026-09-30 ([note](activity/2026-09-30-results-as-written.md)), and `logs --json` gives the identity recorded;
      - the release `outdated` found passed to the update, and a plan's `--only`, `--also`, `--fresh`, and omissions in its JSON (finding 36);
      - one set of dependencies given to `engine.Open` (finding 1).
    - **From the private-helper review,** as planning moves, with the evaluator's typed facts (finding 27 above):

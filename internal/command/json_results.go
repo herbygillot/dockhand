@@ -389,8 +389,12 @@ type executionLogsJSON struct {
 	Reference   string          `json:"reference,omitempty"`
 	Environment environmentJSON `json:"environment"`
 	Attempt     int             `json:"attempt"`
-	State       string          `json:"state"`
-	Detail      string          `json:"detail,omitempty"`
+	// Identity is what the environment was as the run began, by its
+	// provider's words, as evidence compares it later; empty where the
+	// provider can't say.
+	Identity string `json:"identity,omitempty"`
+	State    string `json:"state"`
+	Detail   string `json:"detail,omitempty"`
 	// Reused is true for a run that built nothing, reusing earlier builds'
 	// results, each of which names the run that built it.
 	Reused  bool            `json:"reused,omitempty"`
@@ -409,7 +413,7 @@ func logsView(logs engine.RunLogs) logsJSON {
 	view := logsJSON{Run: runView(logs.Run), Executions: []executionLogsJSON{}}
 	for _, execution := range logs.Executions {
 		x := execution.Execution
-		entry := executionLogsJSON{ID: string(x.ID), Reference: x.ProviderRef, Environment: environmentView(x.Environment), Attempt: x.Attempt, State: string(x.State), Detail: x.Detail,
+		entry := executionLogsJSON{ID: string(x.ID), Reference: x.ProviderRef, Environment: environmentView(x.Environment), Attempt: x.Attempt, Identity: x.Identity, State: string(x.State), Detail: x.Detail,
 			Reused: x.Reused, Results: []resultLogJSON{}}
 		for _, result := range execution.Results {
 			entry.Results = append(entry.Results, resultLogJSON{Target: string(result.Target), Outcome: string(result.Outcome), Phase: string(result.Phase), Log: result.Log,

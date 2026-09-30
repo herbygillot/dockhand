@@ -224,6 +224,26 @@ func TestTargetResultCheckpoints(t *testing.T) {
 	require.ErrorIs(t, result(OutcomeFailed, "").Validate(), ErrInvalid, "a failure says where")
 	require.ErrorIs(t, result(OutcomePassed, PhaseInstall).Validate(), ErrInvalid)
 	require.ErrorIs(t, result("flaky", "").Validate(), ErrInvalid)
+	// Every vocabulary is checked where results are written, whichever
+	// provider wrote them, the builders' parts included.
+	require.ErrorIs(t, result(OutcomeFailed, "compile").Validate(), ErrInvalid, "a phase outside the vocabulary")
+	tested := result(OutcomePassed, "")
+	for _, tests := range []TestOutcome{"", TestsPassed, TestsFailed, TestsTimedOut, TestsNone, TestsSkipped} {
+		tested.Tests = tests
+		require.NoError(t, tested.Validate(), tests)
+	}
+	tested.Tests = "flaky"
+	require.ErrorIs(t, tested.Validate(), ErrInvalid, "a tests outcome outside the vocabulary")
+	built := result(OutcomePassed, "")
+	built.Builders = []BuilderResult{{Builder: "macOS 26", Outcome: OutcomePassed, Tests: TestsPassed}, {Builder: "macOS 15", Outcome: OutcomeFailed, Phase: PhaseTest}}
+	require.NoError(t, built.Validate())
+	for _, part := range []BuilderResult{{Builder: "macOS 15", Outcome: "flaky"}, {Builder: "macOS 15", Outcome: OutcomeFailed, Phase: "compile"}, {Builder: "macOS 15", Outcome: OutcomePassed, Tests: "flaky"}} {
+		built.Builders[1] = part
+		require.ErrorIs(t, built.Validate(), ErrInvalid, "a builder's %+v", part)
+	}
+	for _, phase := range []Phase{PhaseLint, PhaseFetch, PhaseChecksum, PhaseInstall, PhaseTest} {
+		require.NoError(t, result(OutcomeFailed, phase).Validate(), phase)
+	}
 
 	require.True(t, result(OutcomeNotRun, "").ReplacedBy(result(OutcomePassed, "")))
 	require.True(t, result(OutcomeNotRun, "").ReplacedBy(result(OutcomeInterrupted, "")), "a guest lost mid-build marks its target")

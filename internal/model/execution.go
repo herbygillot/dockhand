@@ -156,6 +156,15 @@ const (
 	PhaseTest     Phase = "test"
 )
 
+// Valid reports one of the phases a check stops at.
+func (p Phase) Valid() bool {
+	switch p {
+	case PhaseLint, PhaseFetch, PhaseChecksum, PhaseInstall, PhaseTest:
+		return true
+	}
+	return false
+}
+
 // TestOutcome reports a target's tests apart from its verdict, since tests
 // are advisory unless the plan requires them.
 type TestOutcome string
@@ -168,6 +177,15 @@ const (
 	TestsNone    TestOutcome = "none"
 	TestsSkipped TestOutcome = "skipped"
 )
+
+// Valid reports one of the tests' outcomes.
+func (t TestOutcome) Valid() bool {
+	switch t {
+	case TestsPassed, TestsFailed, TestsTimedOut, TestsNone, TestsSkipped:
+		return true
+	}
+	return false
+}
 
 // Failed reports tests that ran and didn't pass: failed, or timed out.
 func (t TestOutcome) Failed() bool { return t == TestsFailed || t == TestsTimedOut }
@@ -227,10 +245,37 @@ func (r TargetResult) Validate() error {
 	case r.Outcome != OutcomeFailed && r.Phase != "":
 		return invalid("%s result for %s names a phase", r.Outcome, r.Target)
 	}
-	switch r.Outcome {
+	// Each vocabulary is checked here, where every provider's results are
+	// written, and reused ones carried on (the code-organization review,
+	// finding 28). A result that says nothing of tests leaves them empty.
+	if err := resultWords(r.Target, "", r.Outcome, r.Phase, r.Tests); err != nil {
+		return err
+	}
+	for _, builder := range r.Builders {
+		if err := resultWords(r.Target, builder.Builder, builder.Outcome, builder.Phase, builder.Tests); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// resultWords checks a result's outcome, phase, and tests, or one of its
+// builders', against their vocabularies.
+func resultWords(target TargetID, builder string, outcome Outcome, phase Phase, tests TestOutcome) error {
+	of := string(target)
+	if builder != "" {
+		of += " on " + builder
+	}
+	switch outcome {
 	case OutcomePassed, OutcomeFailed, OutcomeBlocked, OutcomeInterrupted, OutcomeNotRun, OutcomeUnevaluated:
 	default:
-		return invalid("result for %s has unknown outcome %q", r.Target, r.Outcome)
+		return invalid("result for %s has unknown outcome %q", of, outcome)
+	}
+	if phase != "" && !phase.Valid() {
+		return invalid("result for %s has unknown phase %q", of, phase)
+	}
+	if tests != "" && !tests.Valid() {
+		return invalid("result for %s has unknown tests outcome %q", of, tests)
 	}
 	return nil
 }

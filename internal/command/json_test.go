@@ -322,3 +322,18 @@ func TestServesStateIsFieldsAndItsLine(t *testing.T) {
 	require.NoError(t, err)
 	require.JSONEq(t, `{"running": true, "pid": 34857, "queue": 2, "stopped": 0}`, string(data))
 }
+
+// logs --json says what each environment was as its run began, as
+// evidence compares it later, and nothing where its provider can't say.
+func TestLogsSayWhatTheEnvironmentWas(t *testing.T) {
+	logs := engine.RunLogs{Executions: []engine.ExecutionLogs{
+		{Execution: model.GuestExecution{ID: "tart_1", Attempt: 1, State: model.ExecutionFinished, Identity: "source sha256:a; setup 3"}},
+		{Execution: model.GuestExecution{ID: "command_1", Attempt: 1, State: model.ExecutionFinished}},
+	}}
+	data, err := json.Marshal(logsView(logs))
+	require.NoError(t, err)
+	var view map[string]any
+	require.NoError(t, json.Unmarshal(data, &view))
+	require.Equal(t, "source sha256:a; setup 3", dig(t, view, "executions", 0, "identity"))
+	require.NotContains(t, dig(t, view, "executions", 1), "identity")
+}

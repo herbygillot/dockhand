@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/store"
 )
 
 // A branch changing jq and libharbor, committed, and checkable with the
@@ -89,10 +91,50 @@ func TestANarrowedCheckNeverShrinksWhatSubmitRequires(t *testing.T) {
 type identified struct {
 	scriptedProvider
 	identity string
+	// unreadable fails that many reads of the identity first.
+	unreadable int
 }
 
 func (p *identified) Identity(context.Context, model.Environment) (string, error) {
+	if p.unreadable > 0 {
+		p.unreadable--
+		return "", errors.New("reading the image record: unexpected end of JSON input")
+	}
 	return p.identity, nil
+}
+
+// An identity that can't be read fails the attempt as the environment's,
+// and the next attempt reads it again: recorded as none, which a provider
+// that can't say records, evidence would later read the image as made
+// again (the code-organization review, finding 39).
+func TestAnIdentityThatCantBeReadFailsTheAttempt(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	provider := &identified{identity: "origin a", unreadable: 1}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	queued := queuedHarborRun(t, e, tahoeArm)
+	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, run.State, run.Detail)
+	var executions []model.GuestExecution
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		executions, err = r.Executions(run.ID)
+		return err
+	}))
+	require.Len(t, executions, 2)
+	require.Equal(t, model.ExecutionInfrastructure, executions[0].State)
+	require.Equal(t, "couldn't read what the environment is: reading the image record: unexpected end of JSON input", executions[0].Detail)
+	require.Equal(t, model.ExecutionFinished, executions[1].State)
+	require.Equal(t, 2, executions[1].Attempt)
+	require.Equal(t, "origin a", executions[1].Identity, "read again, and recorded as it is")
+	require.Len(t, provider.jobs, 1, "nothing was built on the attempt that couldn't read it")
+
+	e = setup(t).open(t)
+	e.Providers = map[string]buildenv.Provider{"command": &identified{identity: "origin a", unreadable: model.MaxAttempts}}
+	queued = queuedHarborRun(t, e, tahoeArm)
+	run, err = e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.NotEqual(t, model.RunPassed, run.State, "attempts that can't read it run out as any failing environment's do")
 }
 
 // A result stands for the environment it ran in only while it is that
