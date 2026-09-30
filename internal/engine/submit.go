@@ -84,9 +84,11 @@ type SubmitPlan struct {
 	// pull request's description that dockhand writes; zero for a new one.
 	Sections DescriptionSections
 	Evidence *Evidence
-	// Upstream is what comparing the upstream archives found for each of
-	// the branch's updates that compared them. A person's submission shows
-	// it; only one nobody looks over is held for it (D4).
+	// Upstream is what upstream's change means for each port the commit
+	// changes, against the branch's base: its revision's assessments,
+	// collected where they weren't recorded (the assessment design, D). A
+	// person's submission shows them; only one nobody looks over is held
+	// for them (D4).
 	Upstream []PortComparison
 	Others   []forge.PullRequestSummary
 	// SearchProblem says why other pull requests could not be looked for.
@@ -103,8 +105,8 @@ type SubmitPlan struct {
 	facts bodyFacts
 }
 
-// PortComparison is what comparing a port's upstream archives found when
-// the branch updated it.
+// PortComparison is what upstream's change means for a port a revision
+// changes.
 type PortComparison struct {
 	Port       string
 	Comparison model.UpstreamComparison
@@ -225,7 +227,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	}
 	e.title(&plan)
 	e.searchOthers(ctx, &plan)
-	if plan.Upstream, err = e.upstreamComparisons(ctx, branch); err != nil {
+	if plan.Upstream, err = e.revisionComparisons(ctx, branch, model.ObjectID(plan.Tree), true); err != nil {
 		return plan, err
 	}
 	errorsFound := commitrules.Errors(plan.Findings)

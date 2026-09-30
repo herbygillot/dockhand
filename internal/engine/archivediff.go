@@ -179,49 +179,88 @@ func (e *Engine) archiveFetcher() (ArchiveFetcher, error) {
 // it declares from upstream, or, when upstream no longer serves it as the
 // Portfile's checksums say, from MacPorts' distfiles mirror, where a
 // stealth-updated archive's old contents survive.
-func (p *evaluatedPorts) FetchArchives(ctx context.Context, source model.Source, directory, into string) (_ []FetchedArchive, err error) {
-	files, done, err := p.workspaces.Acquire(ctx, p.repo, source)
+func (p *evaluatedPorts) FetchArchives(ctx context.Context, source model.Source, directory, into string) ([]FetchedArchive, error) {
+	info, plan, err := p.ArchivePlan(ctx, source, directory, "")
 	if err != nil {
 		return nil, err
+	}
+	return fetchPlanned(ctx, archives.Client{Mirror: archives.MacPortsMirror}.Store(into), info, plan)
+}
+
+// ArchivePlanner says what a port fetches in a source, as MacPorts
+// evaluates it on this Mac.
+type ArchivePlanner interface {
+	// ArchivePlan is a port of a directory, or its first where port is
+	// empty, as evaluated, and the archives its fetch plan names, which
+	// fetchPlanned fetches; ErrNoArchives where it names none, as for a
+	// port fetched with Git, or a metaport.
+	ArchivePlan(ctx context.Context, source model.Source, directory, port string) (macports.PortInfo, []macports.Distfile, error)
+}
+
+// ErrNoArchives is a port whose fetch plan names no archives, and ErrNoPort
+// a directory that defines no port by the name asked for.
+var (
+	ErrNoArchives = errors.New("the port's fetch plan names no archives")
+	ErrNoPort     = errors.New("no such port")
+)
+
+func (p *evaluatedPorts) ArchivePlan(ctx context.Context, source model.Source, directory, port string) (_ macports.PortInfo, _ []macports.Distfile, err error) {
+	files, done, err := p.workspaces.Acquire(ctx, p.repo, source)
+	if err != nil {
+		return macports.PortInfo{}, nil, err
 	}
 	defer func() { err = errors.Join(err, done()) }()
 	if err := files.EnsurePort(ctx, model.Target{Portfile: directory + "/Portfile"}); err != nil {
-		return nil, err
+		return macports.PortInfo{}, nil, err
 	}
 	tree, err := files.Tree(model.Platform{})
 	if err != nil {
-		return nil, err
+		return macports.PortInfo{}, nil, err
 	}
 	targets, err := p.ports.Resolve(ctx, tree, macports.Selection{Selector: directory})
 	if err != nil {
-		return nil, err
+		return macports.PortInfo{}, nil, err
 	}
-	if len(targets) == 0 {
-		return nil, fmt.Errorf("%s defines no port", directory)
+	i := slices.IndexFunc(targets, func(target model.Target) bool { return port == "" || target.Name == port })
+	if i < 0 {
+		return macports.PortInfo{}, nil, fmt.Errorf("%w: %s defines no port %s", ErrNoPort, directory, port)
 	}
-	bound, err := files.Context(targets[0], model.Platform{})
+	bound, err := files.Context(targets[i], model.Platform{})
 	if err != nil {
-		return nil, err
+		return macports.PortInfo{}, nil, err
 	}
 	observation, err := p.ports.Observe(ctx, bound, macports.ObservationRequest{SelectedOnly: true})
 	if err != nil {
-		return nil, err
+		return macports.PortInfo{}, nil, err
 	}
-	name := targets[0].Name
-	return fetchDeclared(ctx, archives.Client{Mirror: archives.MacPortsMirror}.Store(into), observation.Snapshot.Ports[name], observation.Ports[name], filepath.Join(tree.Root(), filepath.FromSlash(directory)))
+	name := targets[i].Name
+	info := observation.Snapshot.Ports[name]
+	plan, err := planOf(info, observation.Ports[name], filepath.Join(tree.Root(), filepath.FromSlash(directory)))
+	return info, plan, err
 }
 
-// fetchDeclared fetches each archive the port declares as its checksums
-// declare it, from upstream, where MacPorts' own fetch plan finds it, or
-// else MacPorts' mirror (Store.Shipped).
-func fetchDeclared(ctx context.Context, store *archives.Store, info macports.PortInfo, observed macports.PortObservation, portdir string) ([]FetchedArchive, error) {
+// planOf is the archives a port's fetch plan names, which dockhand fetches
+// as MacPorts would: ErrNoArchives where it names none, MacPorts' reason
+// where it couldn't make one, and the refusal of a fetch the policy leaves
+// to a dedicated preparer.
+func planOf(info macports.PortInfo, observed macports.PortObservation, portdir string) ([]macports.Distfile, error) {
+	plan, err := observed.FetchPlan()
+	switch {
+	case err != nil && len(observed.Problems) == 0:
+		return nil, ErrNoArchives
+	case err != nil:
+		return nil, err
+	}
 	if err := archives.CheckPolicy(info, portdir); err != nil {
 		return nil, err
 	}
-	plan, err := observed.FetchPlan()
-	if err != nil {
-		return nil, err
-	}
+	return plan, nil
+}
+
+// fetchPlanned fetches each archive of a fetch plan as the port's
+// checksums declare it, from upstream, where MacPorts' own fetch plan
+// finds it, or else MacPorts' mirror (Store.Shipped).
+func fetchPlanned(ctx context.Context, store *archives.Store, info macports.PortInfo, plan []macports.Distfile) ([]FetchedArchive, error) {
 	shipped, err := store.Shipped(ctx, info, plan)
 	if err != nil {
 		return nil, err

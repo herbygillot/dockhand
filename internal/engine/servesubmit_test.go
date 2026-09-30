@@ -122,6 +122,7 @@ func TestServeHoldsAnUpdateWhoseGoToolchainNeedsALook(t *testing.T) {
 	fake := f.withFork(t, e)
 	fake.others = nil
 	p.toolchain = &preparation.GoToolchain{Required: "1.25", Outcome: preparation.GoToolchainUndeclared}
+	p.upstream = [2]map[string]string{{"go.mod": "module m\n\ngo 1.24\n"}, {"go.mod": "module m\n\ngo 1.25\n"}}
 	branch := servePrepared(t, e)
 
 	held := []string{"upstream: go.mod requires Go 1.25, and the Portfile declares no go.toolchain_min; declaring one gates the port on older Go, the maintainer's call"}
@@ -153,6 +154,7 @@ func TestServeSaysAGoToolchainMinimumItNeedNotHold(t *testing.T) {
 			fake := f.withFork(t, e)
 			fake.others = nil
 			p.toolchain = &test.toolchain
+			p.upstream = [2]map[string]string{{"go.mod": "module m\n\ngo 1.25.8\n"}, {"go.mod": "module m\n\ngo 1.26.8\n"}}
 			servePrepared(t, e)
 
 			candidates, err := e.ServeCandidates(t.Context())
@@ -181,7 +183,7 @@ func TestServeHoldsAnUpdateAnotherPullRequestIsOpenFor(t *testing.T) {
 	require.ErrorContains(t, err, "is held for a look: #34777 is open")
 	require.Empty(t, fake.created)
 
-	held := SubmitPlan{SearchProblem: "rate limited"}.held(nil)
+	held := SubmitPlan{SearchProblem: "rate limited"}.held()
 	require.Equal(t, []string{"couldn't look for other open pull requests: rate limited"}, held)
 }
 

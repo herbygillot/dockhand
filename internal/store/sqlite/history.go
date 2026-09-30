@@ -209,3 +209,40 @@ func (t *tx) LastReview(repository string, number int) (model.Review, error) {
 	}
 	return r, nil
 }
+
+func (t *tx) RecordAssessment(a model.Assessment) error {
+	if err := a.Validate(); err != nil {
+		return err
+	}
+	comparison, err := json.Marshal(a.Comparison)
+	if err != nil {
+		return err
+	}
+	_, err = t.exec("INSERT INTO assessments(repository_id, branch_id, tree, base, port, directory, comparison, policy, at) VALUES(?,?,?,?,?,?,?,?,?) "+
+		"ON CONFLICT(repository_id, branch_id, tree, base, port) DO UPDATE SET directory=excluded.directory, comparison=excluded.comparison, policy=excluded.policy, at=excluded.at",
+		t.repo, a.Branch, a.Tree, a.Base, a.Port, a.Directory, string(comparison), a.Policy, millis(a.At))
+	return err
+}
+
+func (t *tx) Assessments(branch model.BranchID) ([]model.Assessment, error) {
+	rows, err := t.conn.QueryContext(t.ctx, "SELECT branch_id, tree, base, port, directory, comparison, policy, at FROM assessments WHERE repository_id=? AND branch_id=? ORDER BY at DESC, rowid DESC", t.repo, branch)
+	if err != nil {
+		return nil, storageError(err)
+	}
+	defer rows.Close()
+	var assessments []model.Assessment
+	for rows.Next() {
+		var a model.Assessment
+		var comparison string
+		var at int64
+		if err := rows.Scan(&a.Branch, &a.Tree, &a.Base, &a.Port, &a.Directory, &comparison, &a.Policy, &at); err != nil {
+			return nil, storageError(err)
+		}
+		if err := json.Unmarshal([]byte(comparison), &a.Comparison); err != nil {
+			return nil, fmt.Errorf("%w: assessment of %s: %w", store.ErrUnavailable, a.Port, err)
+		}
+		a.At = fromMillis(at)
+		assessments = append(assessments, a)
+	}
+	return assessments, storageError(rows.Err())
+}

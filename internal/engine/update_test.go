@@ -526,6 +526,36 @@ func TestAPythonPinMacPortsCantMeetHolds(t *testing.T) {
 	}
 }
 
+// An update on a fresh branch records its own comparison as the
+// assessment of the files it leaves, since it compared them against the
+// base in every context; a Git-fetched port's compared no archives, and
+// records none, so its assessment is made when it's collected.
+func TestAFreshUpdateRecordsItsAssessment(t *testing.T) {
+	for _, git := range []bool{false, true} {
+		f := setup(t)
+		e, p := f.withPreparer(t)
+		p.upstream = [2]map[string]string{{"LICENSE": "MIT\n"}, {"LICENSE": "GPL\n"}}
+		if git {
+			p.options = map[string]string{"fetch.type": "git"}
+		}
+		update, err := e.Update(t.Context(), UpdateRequest{Start: &StartRequest{Name: "jq-update"}, Action: model.EditUpdate, Port: "jq", CompareUpstream: true})
+		require.NoError(t, err)
+		var recorded []model.Assessment
+		require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+			var err error
+			recorded, err = r.Assessments(update.Branch.ID)
+			return err
+		}))
+		if git {
+			require.Empty(t, recorded)
+			continue
+		}
+		require.Len(t, recorded, 1)
+		require.Equal(t, *update.Upstream, recorded[0].Comparison)
+		require.Equal(t, update.Branch.Base, recorded[0].Base)
+	}
+}
+
 // The base's provider is read in the base's tree: a requirement the
 // candidate's provider doesn't meet, which the base's didn't either, is
 // said and holds nothing, while one the base met holds.

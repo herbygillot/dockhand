@@ -158,3 +158,9 @@ func (p PortInfo) Description() string {
 	}
 	return strings.Join(words, " ")
 }
+
+// GitFetched reports a port whose source is a Git checkout, fetch.type git,
+// as MacPorts evaluated it, rather than archives.
+func (p PortInfo) GitFetched() bool {
+	return p.Options["fetch.type"] == "git" && p.OptionErrors["fetch.type"] == ""
+}

@@ -14,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
 	"github.com/herbygillot/dockhand/internal/project"
@@ -304,9 +305,36 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	case model.EditRevbump:
 		change = fmt.Sprintf("revision %d → %d", update.Before.Revision, update.After.Revision)
 	}
+	// Where the branch was as its base before the edit, as a new one is,
+	// the update's own comparison is the assessment of the files it
+	// leaves: its before is the base and its after the revision, and it
+	// compared them in every context that fetches them (the assessment
+	// design, D), or couldn't, which it says. A Git-fetched port's update
+	// compared no archives, and records none, so its assessment is made
+	// when it's collected.
+	var primed *model.Assessment
+	if after, _ := result.PortAfter(update.Port); compare && update.Upstream != nil && !after.GitFetched() {
+		trees, err := worktree.CommitTrees(ctx, []string{string(base)})
+		if err != nil {
+			return update, err
+		}
+		if trees[string(base)] == captured {
+			_, applied, err := worktree.WorkingTree(ctx)
+			if err != nil {
+				return update, err
+			}
+			primed = &model.Assessment{Branch: branch.ID, Tree: model.ObjectID(applied), Base: base, Port: update.Port, Directory: edit.Directory,
+				Comparison: *update.Upstream, Policy: assess.Policy, At: edit.At}
+		}
+	}
 	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 		if err := tx.AddEdit(edit); err != nil {
 			return err
+		}
+		if primed != nil {
+			if err := tx.RecordAssessment(*primed); err != nil {
+				return err
+			}
 		}
 		_, err := tx.AppendEvent(model.Event{At: edit.At, Branch: branch.ID, Kind: "branch.edit", Level: model.LevelInfo,
 			Message: fmt.Sprintf("%s: %s (%s)", update.Port, change, listPaths(update.Files))})
@@ -628,7 +656,7 @@ func (e *Engine) assessUpstream(ctx context.Context, result preparation.Result, 
 		}
 	}
 	if compare && problem == "" {
-		pairs, err := readPairs(ctx, result.Pairs, input.Base, input.Port)
+		pairs, err := e.readPairs(ctx, result.Pairs, input.Base, input.Port)
 		if err != nil {
 			problem = err.Error()
 		}
@@ -645,6 +673,12 @@ func (e *Engine) assessUpstream(ctx context.Context, result preparation.Result, 
 	return &comparison
 }
 
+// readings is where readings of upstream's archives are kept; none are
+// where the engine wasn't given a place.
+func (e *Engine) readings() project.Cache {
+	return project.Cache{Directory: e.options.Readings}
+}
+
 // toolchainOutcomes are what the editor did about go.toolchain_min, as the
 // assessment words them.
 var toolchainOutcomes = map[preparation.GoToolchainOutcome]string{
@@ -655,8 +689,9 @@ var toolchainOutcomes = map[preparation.GoToolchainOutcome]string{
 // readPairs reads each pair of archives, each version where its port
 // builds in the context that fetches it (the assessment design's step 1):
 // a monorepo's Python bindings in bindings/python. A pair a context didn't
-// name the port for is read with the update's own.
-func readPairs(ctx context.Context, pairs []preparation.ArchivePair, base, port macports.PortInfo) ([]assess.Pair, error) {
+// name the port for is read with the update's own. What's read is kept,
+// by the archive's content, for an assessment made again.
+func (e *Engine) readPairs(ctx context.Context, pairs []preparation.ArchivePair, base, port macports.PortInfo) ([]assess.Pair, error) {
 	var read []assess.Pair
 	for _, pair := range pairs {
 		if pair.Previous.Path == "" || pair.Next.Path == "" {
@@ -669,10 +704,10 @@ func readPairs(ctx context.Context, pairs []preparation.ArchivePair, base, port 
 			}
 		}
 		var readings [2]project.Reading
-		for i, archive := range []string{pair.Previous.Path, pair.Next.Path} {
-			reading, err := project.Read(ctx, archive, project.Spec{Subdirectory: macports.SourceSubdirectory(ports[i].Options["worksrcdir"])})
+		for i, archive := range []archives.Download{pair.Previous, pair.Next} {
+			reading, err := e.readings().Read(ctx, archive.Path, archive.SHA256, project.Spec{Subdirectory: macports.SourceSubdirectory(ports[i].Options["worksrcdir"])})
 			if err != nil {
-				return nil, fmt.Errorf("reading %s: %v", path.Base(archive), err)
+				return nil, fmt.Errorf("reading %s: %v", path.Base(archive.Path), err)
 			}
 			readings[i] = reading
 		}

@@ -122,6 +122,9 @@ type Reader interface {
 
 	// Edits lists a branch's authoring records, oldest first.
 	Edits(branch model.BranchID) ([]model.Edit, error)
+	// Assessments lists what was recorded of what upstream's change means
+	// for the ports a branch's revisions change, newest first.
+	Assessments(branch model.BranchID) ([]model.Assessment, error)
 	Checkpoint(number int) (model.Checkpoint, error)
 	// Checkpoints lists a branch's checkpoints, oldest first.
 	Checkpoints(branch model.BranchID) ([]model.Checkpoint, error)
@@ -193,6 +196,9 @@ type Tx interface {
 	PruneJournal(before time.Time) (events, sessions int, err error)
 
 	AddEdit(edit model.Edit) error
+	// RecordAssessment records a revision's assessment of a port,
+	// replacing one recorded for the same revision, base, and port.
+	RecordAssessment(assessment model.Assessment) error
 	// AddCheckpoint records a checkpoint; its Number must be
 	// NextCheckpointNumber's.
 	AddCheckpoint(checkpoint model.Checkpoint) error

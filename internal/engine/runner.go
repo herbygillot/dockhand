@@ -341,6 +341,13 @@ func (d *driver) drive(ctx context.Context, id model.RunID) (model.Run, error) {
 		// An interrupt cancels ctx too; the run is still settled.
 		return e.finishCanceled(context.WithoutCancel(ctx), d.session, d.lease, id)
 	}
+	// Beside the build, what upstream's change means for each port it
+	// changes is collected where it isn't recorded, for the submission
+	// that follows (the assessment design, D). It never fails the check:
+	// what it couldn't do, its assessment says.
+	if _, err := e.revisionAssessments(ctx, d.run.Branch, revision.Source.Base, revision.Source.Tree, true); err != nil {
+		d.emit(ctx, "progress", "upstream's change couldn't be assessed: "+err.Error())
+	}
 	return d.finish(context.WithoutCancel(ctx))
 }
 

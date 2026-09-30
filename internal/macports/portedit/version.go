@@ -78,7 +78,7 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 		scope.Input = input.versionInput
 		input.scope = scope
 	}
-	if gitFetched(input.info) {
+	if input.info.GitFetched() {
 		return s.planGitVersion(ctx, request, input, contents, versioned)
 	}
 	observed, err := s.planObservedArchives(ctx, request, input, contents)

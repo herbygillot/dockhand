@@ -398,13 +398,20 @@ type branchJSON struct {
 	Latest      *latestJSON      `json:"latest_check"`
 	Active      []runJSON        `json:"active_checks"`
 	PullRequest *pullRequestJSON `json:"pull_request"`
+	// Held and Assessment are, for a branch serve prepared, what its files'
+	// recorded assessments hold it for, and how far they're recorded:
+	// available, incomplete, or pending, which a check or a submission
+	// collects.
+	Held       []string `json:"held,omitempty"`
+	Assessment string   `json:"assessment,omitempty"`
 }
 
 func branchView(status engine.BranchStatus) branchJSON {
 	branch := status.Branch
 	view := branchJSON{Name: branch.ShortName(), GitBranch: branch.Name, ID: string(branch.ID), State: string(branch.State), Worktree: branch.Worktree, Managed: branch.Managed,
 		Base: string(branch.Base), Head: status.Head, Missing: status.Missing, Cleaned: status.Cleaned(), Commits: status.Commits,
-		Edited: nonNil(status.Edited), Directories: nonNil(status.Scope.Ports), Ports: nonNil(status.Scope.PortNames()), Active: []runJSON{}, Releases: []releaseJSON{}}
+		Edited: nonNil(status.Edited), Directories: nonNil(status.Scope.Ports), Ports: nonNil(status.Scope.PortNames()), Active: []runJSON{}, Releases: []releaseJSON{},
+		Held: status.Held, Assessment: string(status.Assessment)}
 	for _, found := range status.Releases {
 		release := found.Release
 		view.Releases = append(view.Releases, releaseJSON{Port: found.Port, Version: release.Version, Forge: release.Forge, Repository: release.Repository,

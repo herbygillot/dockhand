@@ -37,9 +37,11 @@ type BranchStatus struct {
 	Current bool
 	// LatestRevision is what Latest checked.
 	LatestRevision *model.Revision
-	// Held are the upstream comparison's findings that hold a branch serve
-	// prepared for a person's look.
-	Held []string
+	// Held are the findings of its files' recorded assessments that hold
+	// a branch serve prepared for a person's look, and Assessment how far
+	// they're recorded; status collects none.
+	Held       []string
+	Assessment AssessmentState
 	// Stopped is the active run recorded as running that no live process
 	// drives, once JudgeStopped has looked; nil otherwise.
 	Stopped *model.Run
@@ -157,7 +159,7 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 	}
 	status.Scope = ScopeOf(changed)
 	if branch.Origin == model.OriginServe {
-		if status.Held, err = e.upstreamHolds(ctx, branch); err != nil {
+		if status.Held, status.Assessment, err = e.assessedHolds(ctx, branch, model.ObjectID(status.Tree), status.Scope.Ports); err != nil {
 			return status, err
 		}
 	}

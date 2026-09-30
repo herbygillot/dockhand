@@ -28,11 +28,6 @@ func obsoleteIn(info macports.PortInfo) bool {
 	return info.Options["replaced_by"] != "" && info.OptionErrors["replaced_by"] == ""
 }
 
-// gitFetched reports whether MacPorts fetches the port by cloning.
-func gitFetched(info macports.PortInfo) bool {
-	return info.Options["fetch.type"] == "git" && info.OptionErrors["fetch.type"] == ""
-}
-
 // checkGitSource refuses the shapes the git path does not handle: an archive
 // beside the clone, or a generated dependency block, which would need the
 // clone on the host.
@@ -60,7 +55,7 @@ func (s *Service) planGitVersion(ctx context.Context, request Request, input *so
 		return archivePlan{}, err
 	}
 	next := versioned.Ports[input.target.Name]
-	if !gitFetched(next) {
+	if !next.GitFetched() {
 		return archivePlan{}, fmt.Errorf("%w: the version edit changed the fetch type", ErrFidelity)
 	}
 	if err := checkGitSource(next); err != nil {

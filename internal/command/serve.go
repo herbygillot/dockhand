@@ -263,7 +263,7 @@ func serveAgent(ctx context.Context, s *settings, streams Streams, install bool,
 //
 // A token is never written, since the agent's file is readable by anyone
 // on the Mac.
-var agentVariables = []string{config.PathVariable, "DOCKHAND_UPSTREAM", "DOCKHAND_INDEX_MIRROR", "DOCKHAND_INDEX_CACHE", "DOCKHAND_TART_HOME", "TART_HOME", "DOCKHAND_SSH_DIR"}
+var agentVariables = []string{config.PathVariable, "DOCKHAND_UPSTREAM", "DOCKHAND_INDEX_MIRROR", "DOCKHAND_INDEX_CACHE", "DOCKHAND_READING_CACHE", "DOCKHAND_TART_HOME", "TART_HOME", "DOCKHAND_SSH_DIR"}
 
 // agentEnvironment is PATH and whichever of agentVariables are set, each a
 // local path made absolute, since launchd starts the agent in /.

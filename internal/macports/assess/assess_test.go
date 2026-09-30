@@ -184,8 +184,10 @@ func TestTheGoMinimumIsJudgedAsItStands(t *testing.T) {
 			"upstream: go.mod requires Go 1.24, and the Portfile declares no go.toolchain_min; declaring one gates the port on older Go, the maintainer's call", model.Introduced, true, true},
 		{"undeclared, as at the base", Input{Port: goPort(""), Base: goPort(""), Pairs: pair("1.24.0", "1.24.3"), Toolchain: &Toolchain{Required: "1.24.3", Outcome: ToolchainUndeclared}},
 			"upstream: go.mod requires Go 1.24.3, and the Portfile declares no go.toolchain_min; declaring one gates the port on older Go, the maintainer's call; the base's didn't gate on it either", model.Present, false, true},
-		{"by hand, the base unread", Input{Port: goPort("1.21"), Base: goPort("1.21"), Toolchain: &Toolchain{Required: "1.24"}},
+		{"by hand, the base unread", Input{Port: goPort("1.21"), Base: goPort("1.21"), Toolchain: &Toolchain{Required: "1.24", Declared: "1.21", Outcome: ToolchainByHand}},
 			"upstream: go.mod requires Go 1.24, above go.toolchain_min 1.21, which isn't one literal declaration dockhand can raise; raise it by hand", model.UnknownBaseline, true, true},
+		{"below, no edit having looked", Input{Port: goPort("1.21"), Base: goPort("1.21"), Toolchain: &Toolchain{Required: "1.24"}},
+			"upstream: go.mod requires Go 1.24, above go.toolchain_min 1.21, which doesn't gate on it", model.UnknownBaseline, true, true},
 		{"GOPATH mode", Input{Port: macports.PortInfo{Options: map[string]string{"go.package": "example.org/demo"}}, Toolchain: &Toolchain{Required: "1.24"}}, "", "", false, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -266,4 +268,19 @@ func TestAGoMinimumThatCoversIsSaidSo(t *testing.T) {
 	changes := Assess(Input{Port: goPort("1.26"), Base: goPort("1.20"), Toolchain: &Toolchain{Required: "1.26.8"}}).Changes
 	require.Equal(t, []model.UpstreamChange{{Kind: "toolchain", Path: "go.mod", Rule: GoToolchainRule, Subject: "1.26.8", Class: model.Introduced,
 		Message: "upstream: go.mod requires Go 1.26.8, which go.toolchain_min 1.26 already gates on"}}, changes)
+}
+
+// Where no edit said what go.mod requires, as for a version changed by
+// hand, the new version's go.mod says.
+func TestAGoRequirementIsReadWhereNoEditSaid(t *testing.T) {
+	pairs := []Pair{{Before: read(t, "pkg-1", map[string]string{"go.mod": "module m\n\ngo 1.22\n"}, project.Spec{}),
+		After: read(t, "pkg-2", map[string]string{"go.mod": "module m\n\ngo 1.24\n"}, project.Spec{})}}
+	var toolchain []model.UpstreamChange
+	for _, change := range Assess(Input{Port: goPort("1.22"), Base: goPort("1.22"), Pairs: pairs}).Changes {
+		if change.Rule == GoToolchainRule {
+			toolchain = append(toolchain, change)
+		}
+	}
+	require.Equal(t, []model.UpstreamChange{{Kind: "toolchain", Path: "go.mod", Rule: GoToolchainRule, Subject: "1.24", Class: model.Introduced, Hold: true,
+		Message: "upstream: go.mod requires Go 1.24, above go.toolchain_min 1.22, which doesn't gate on it"}}, toolchain)
 }

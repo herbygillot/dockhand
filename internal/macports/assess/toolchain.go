@@ -21,8 +21,10 @@ type Toolchain struct {
 	Declared, Outcome string
 }
 
-// The outcomes an edit reports.
+// The outcomes an edit reports, and toolchainBelow, a minimum below the
+// requirement that no edit looked at.
 const (
+	toolchainBelow      = "below"
 	ToolchainCovered    = "covered"
 	ToolchainRaised     = "raised"
 	ToolchainUndeclared = "undeclared"
@@ -37,6 +39,12 @@ const (
 // the same as not having looked.
 func (a *assessment) toolchain() (model.UpstreamChange, bool) {
 	t := a.input.Toolchain
+	if t == nil {
+		// Where no edit said, the new version's go.mod says, as read.
+		if required, ok := goRequired(a.input.Pairs, func(p Pair) project.Reading { return p.After }); ok {
+			t = &Toolchain{Required: required}
+		}
+	}
 	if t == nil || t.Required == "" || !a.input.Port.GoModuleMode() {
 		return model.UpstreamChange{}, false
 	}
@@ -51,7 +59,7 @@ func (a *assessment) toolchain() (model.UpstreamChange, bool) {
 		case final == "":
 			outcome = ToolchainUndeclared
 		default:
-			outcome = ToolchainByHand
+			outcome = toolchainBelow
 		}
 	}
 	switch outcome {
@@ -61,13 +69,15 @@ func (a *assessment) toolchain() (model.UpstreamChange, bool) {
 		found.Message = fmt.Sprintf("upstream: go.mod requires Go %s, so go.toolchain_min is raised from %s", t.Required, t.Declared)
 	case ToolchainUndeclared:
 		found.Message = fmt.Sprintf("upstream: go.mod requires Go %s, and the Portfile declares no go.toolchain_min; declaring one gates the port on older Go, the maintainer's call", t.Required)
-	default:
+	case ToolchainByHand:
 		found.Message = fmt.Sprintf("upstream: go.mod requires Go %s, above go.toolchain_min %s, which isn't one literal declaration dockhand can raise; raise it by hand", t.Required, final)
+	default:
+		found.Message = fmt.Sprintf("upstream: go.mod requires Go %s, above go.toolchain_min %s, which doesn't gate on it", t.Required, final)
 	}
 	if covered {
 		return found, true
 	}
-	switch required, known := a.baseRequired(); {
+	switch required, known := goRequired(a.input.Pairs, func(p Pair) project.Reading { return p.Before }); {
 	case !known:
 		found.Class = model.UnknownBaseline
 	case a.input.Base.GoModuleMode() && !macports.GoToolchainCovers(a.input.Base.Options["go.toolchain_min"], required) &&
@@ -79,12 +89,12 @@ func (a *assessment) toolchain() (model.UpstreamChange, bool) {
 	return found, true
 }
 
-// baseRequired is what the base's go.mod required, from the archives
-// read, which hold only the project's own at its root; false where no
-// archive holds one it could read.
-func (a *assessment) baseRequired() (string, bool) {
-	for _, pair := range a.input.Pairs {
-		for name, file := range pair.Before.Files {
+// goRequired is what a version's go.mod requires, from the archives read,
+// which hold only the project's own at its root; false where no archive
+// holds one it could read.
+func goRequired(pairs []Pair, side func(Pair) project.Reading) (string, bool) {
+	for _, pair := range pairs {
+		for name, file := range side(pair).Files {
 			if path.Base(name) != "go.mod" || file.Truncated {
 				continue
 			}

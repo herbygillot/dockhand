@@ -243,6 +243,9 @@ func attentionFor(s engine.BranchStatus) []attention {
 			return row("·", engine.Describe(*s.LatestRevision)+" passed; commit it for review", "dockhand tidy --branch "+name)
 		case s.Branch.PullRequest == nil && len(s.Held) > 0:
 			return row("!", "passed; held for a look: "+s.Held[0], "dockhand submit --branch "+name)
+		case s.Branch.PullRequest == nil && s.Assessment == engine.AssessmentPending:
+			// Status collects nothing; submitting assesses what isn't yet.
+			return row("·", "passed; what upstream's change means isn't assessed yet, which submitting does", "dockhand submit --branch "+name)
 		case s.Branch.PullRequest == nil:
 			return row("·", "passed; waiting for you to submit", "dockhand submit --branch "+name)
 		case !s.Pushed():

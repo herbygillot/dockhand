@@ -216,3 +216,39 @@ func TestAnEditKeepsItsUpstreamComparisonAndABranchItsOrigin(t *testing.T) {
 		return nil
 	}))
 }
+
+// A revision's assessment of a port is kept by its tree, base, and port,
+// newest first; recording one again for the same replaces it.
+func TestAnAssessmentIsTheRevisions(t *testing.T) {
+	f := open(t)
+	b := f.branch("br_1", "dockhand/croc-7hq2")
+	found := model.UpstreamComparison{Changes: []model.UpstreamChange{{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed", Hold: true, Rule: "license-changed", Class: model.Introduced}},
+		Coverage: []model.Coverage{{Path: "package.json", Relevance: "unknown", Treatment: "set-apart", Policy: "portgroup-scoping"}}}
+	first := model.Assessment{Branch: b.ID, Tree: "t1", Base: "b1", Port: "croc", Directory: "net/croc", Comparison: found, Policy: 1, At: at}
+	second := first
+	second.Tree, second.At = "t2", at.Add(time.Minute)
+	again := first
+	again.Comparison, again.At = model.UpstreamComparison{Changes: []model.UpstreamChange{}}, at.Add(2*time.Minute)
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		if err := tx.AddBranch(b); err != nil {
+			return err
+		}
+		for _, a := range []model.Assessment{first, second} {
+			if err := tx.RecordAssessment(a); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		assessments, err := tx.Assessments(b.ID)
+		require.NoError(t, err)
+		require.Equal(t, []model.Assessment{second, first}, assessments)
+		require.NoError(t, tx.RecordAssessment(again))
+		assessments, err = tx.Assessments(b.ID)
+		require.NoError(t, err)
+		require.Equal(t, []model.Assessment{again, second}, assessments)
+		require.Error(t, tx.RecordAssessment(model.Assessment{Branch: b.ID, Tree: "t1", Base: "b1", Port: "croc", Directory: "net/croc"}), "no policy")
+		return nil
+	}))
+}

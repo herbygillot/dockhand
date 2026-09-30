@@ -83,6 +83,20 @@ func (e *Engine) PortIndex() (portindex.Source, error) {
 	return ports.Index, nil
 }
 
+// ReadingCache is where readings of upstream's archives are kept:
+// $DOCKHAND_READING_CACHE, else dockhand/readings in the user's cache
+// directory. It is disposable.
+func ReadingCache() (string, error) {
+	if chosen := os.Getenv("DOCKHAND_READING_CACHE"); chosen != "" {
+		return filepath.Abs(chosen)
+	}
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(cache, "dockhand", "readings"), nil
+}
+
 // IndexCache is where port indexes are kept: $DOCKHAND_INDEX_CACHE, else
 // dockhand/indexes in the user's cache directory. It is disposable.
 func IndexCache() (string, error) {

@@ -84,6 +84,9 @@ func (s *settings) options(ctx context.Context) (engine.Options, config.File, st
 		// local repository.
 		Upstream: os.Getenv("DOCKHAND_UPSTREAM"),
 		Tclsh:    portTclsh(),
+		// Readings are a saving: where the cache can't be placed, none
+		// are kept.
+		Readings: readingCache(),
 	}, file, configPath, nil
 }
 
@@ -199,3 +202,13 @@ func tilde(path string) string {
 }
 
 func homeDir() (string, error) { return os.UserHomeDir() }
+
+// readingCache is where readings are kept, or none where it can't be
+// placed.
+func readingCache() string {
+	directory, err := engine.ReadingCache()
+	if err != nil {
+		return ""
+	}
+	return directory
+}

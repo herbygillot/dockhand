@@ -100,7 +100,7 @@ func (s *Service) raiseGoToolchain(ctx context.Context, request Request, input *
 // the port's worksrcdir, or in the repository at the resolved commit when
 // the port is fetched with git, and reports the Go release it requires.
 func (s *Service) goRequirement(ctx context.Context, request Request, info macports.PortInfo, downloads []archives.Download) (required string, found bool, err error) {
-	if gitFetched(info) {
+	if info.GitFetched() {
 		if s.Manifests == nil || request.Release == nil {
 			progress.VerboseReport(ctx, "%s is fetched with git and no manifest source is configured; go.toolchain_min is left as declared", info.Name)
 			return "", false, nil

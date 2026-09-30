@@ -14,7 +14,8 @@ import (
 // projectImports are the packages of dockhand's own this package may
 // import, each with why.
 var projectImports = map[string]string{
-	"internal/archive": "an archive's members, which a reading walks",
+	"internal/archive":    "an archive's members, which a reading walks",
+	"internal/atomicfile": "a reading kept whole or not at all",
 }
 
 // The project reader knows nothing of MacPorts, nor of anything that

@@ -160,7 +160,7 @@ func (p *VersionProbe) Assess(ctx context.Context, release *model.Release) (Asse
 			}
 		}
 		fetchDetail, checksumDetail := "MacPorts archive locations are observed; availability is untested", "Checksum declarations are associated across the observed contexts"
-		if gitFetched(p.input.info) {
+		if p.input.info.GitFetched() {
 			fetchDetail, checksumDetail = "Git source; the build clones git.url at git.branch", "No checksums: the source is cloned, not downloaded"
 		}
 		add("fetch", fetchDetail, fetchErr)

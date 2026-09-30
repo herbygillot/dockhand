@@ -53,6 +53,9 @@ type Options struct {
 	// Poll is how often a driver looks for a cancel request; a second when
 	// zero.
 	Poll time.Duration
+	// Readings is where readings of upstream's archives are kept
+	// (ReadingCache); none are kept when empty.
+	Readings string
 }
 
 // Engine is bound to one ports checkout and its registered repository.
@@ -69,6 +72,9 @@ type Engine struct {
 	GitHubCLI GitHubCLI
 	// PortReader reads ports for plans; MacPorts' own evaluator when nil.
 	PortReader PortReader
+	// ArchivePlanner says what a port fetches, for its assessment;
+	// MacPorts' own evaluator when nil.
+	ArchivePlanner ArchivePlanner
 	// DependentReader finds dependents for impact; the port index when nil.
 	DependentReader DependentReader
 	// OutdatedReader finds newer releases for outdated; MacPorts' evaluator

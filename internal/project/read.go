@@ -18,6 +18,12 @@ type Spec struct {
 	Subdirectory string
 }
 
+// subdirectory is the spec's subdirectory as a path below the top, however
+// it was written: "/bindings/python/" is bindings/python.
+func (s Spec) subdirectory() string {
+	return strings.Trim(path.Clean("/"+s.Subdirectory), "/")
+}
+
 // Layout is how an archive holds its files.
 type Layout string
 
@@ -99,7 +105,7 @@ func wanted(rest, root string) bool {
 // that can't be read is an error; one whose project can't be found is
 // Ambiguous, which the caller says.
 func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
-	subdirectory := strings.Trim(path.Clean("/"+spec.Subdirectory), "/")
+	subdirectory := spec.subdirectory()
 	// Each file any layout could keep, by its whole path, and what's
 	// learned of the layout on the way.
 	candidates := map[string]File{}

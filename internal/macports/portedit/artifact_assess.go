@@ -9,7 +9,7 @@ import (
 )
 
 func (s *Service) assessArchives(ctx context.Context, request Request, input *sourceInput) (contexts []ContextCoverage, fetchErr, checksumErr error) {
-	if gitFetched(input.info) {
+	if input.info.GitFetched() {
 		return []ContextCoverage{{Fetch: input.info.Fetch, Platform: input.before.Platform}}, checkGitSource(input.info), nil
 	}
 	profiles, err := input.observe.Profiles(ctx, input.data)

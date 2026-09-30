@@ -137,3 +137,34 @@ func TestAVersionDeclarationIsTheBuildSystemsOwn(t *testing.T) {
 		require.Equal(t, test.declares, DeclaresVersion(test.name, test.line, version), test.name+": "+test.line)
 	}
 }
+
+// A reading is kept by what it read: the same archive read the same way is
+// read once, and stands without the archive; another root is another
+// reading; an archive without a digest to know it by isn't kept; and the
+// zero cache keeps nothing (the assessment design's step 1 and 3
+// fixture).
+func TestAReadingIsKeptByWhatItRead(t *testing.T) {
+	cache := Cache{Directory: t.TempDir()}
+	archive := testsupport.Tarball(t, "demo-1.0", map[string]string{"LICENSE": "MIT", "cli/Cargo.toml": "[package]\n", "bindings/python/pyproject.toml": "[project]\n"})
+	digest := strings.Repeat("a", 64)
+	cli, err := cache.Read(t.Context(), archive, digest, Spec{Subdirectory: "cli"})
+	require.NoError(t, err)
+	kept, ok := cache.Kept(digest, Spec{Subdirectory: "/cli/"})
+	require.True(t, ok, "the same read, however its root is written")
+	require.Equal(t, cli, kept)
+	_, ok = cache.Kept(digest, Spec{Subdirectory: "bindings/python"})
+	require.False(t, ok, "another root is another reading")
+	python, err := cache.Read(t.Context(), "/nonexistent.tar.gz", digest, Spec{Subdirectory: "cli"})
+	require.NoError(t, err, "a kept reading stands without the archive")
+	require.Equal(t, cli, python)
+	_, err = cache.Read(t.Context(), archive, "not a digest", Spec{})
+	require.NoError(t, err)
+	_, ok = cache.Kept("not a digest", Spec{})
+	require.False(t, ok)
+	_, ok = Cache{}.Kept(digest, Spec{Subdirectory: "cli"})
+	require.False(t, ok)
+	_, err = cache.Read(t.Context(), "/nonexistent.tar.gz", strings.Repeat("b", 64), Spec{})
+	require.Error(t, err, "what can't be read is never kept")
+	_, ok = cache.Kept(strings.Repeat("b", 64), Spec{})
+	require.False(t, ok)
+}
