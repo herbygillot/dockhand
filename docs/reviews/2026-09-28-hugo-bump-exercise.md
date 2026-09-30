@@ -372,3 +372,21 @@ Findings:
 6. **The homepage kept `http`.** `homepage http://txt.hellman.io/` came from GitHub's metadata as given; `https://txt.hellman.io/` answers 200.
 
 What worked: the PortGroup choice, the crate list, marking unconfirmed values, staging the file, and a clear Next line ("dockhand edit txt, then dockhand check"). With the checksums, the destroot and those four fields corrected, the Portfile would be close to the hand draft.
+
+## create, for txt, again
+
+With a build of `a2de6992`, `dockhand create https://github.com/ErikHellman/txt --new` took 17 seconds and opened with a one-line summary: "txt 0.8.1 · Rust (Cargo.toml) · Cargo.toml says MIT OR Apache-2.0 · "A fast, intuitive terminal text editor"". Five of the six earlier findings are fixed. The checksums are filled in (1 distfile + 374 crates), and a `destroot` installs the binary, marked unconfirmed. The license is `{MIT Apache-2}` from Cargo.toml, the description is the manifest's, and the homepage is `https://`, with a line saying GitHub gives `http://`. The Portfile passed check-50 on Tart macOS 26 with the category, maintainer, long description and destroot settled by hand; the destroot gained shell completions and docs. The port waits unsubmitted in `txt-h6yo`. dua-cli 2.45.1 went through `update`, `check`, `tidy` and `submit` without a stop: #35060.
+
+Findings:
+
+1. **The category still defaults to `devel`, and a port can't be moved once created.** Without a terminal and `--category`, txt went to `devel/txt` again. Moving it was the hard part:
+   - `git mv devel/txt editors/txt` does nothing in the sparse worktree ("matched paths that exist outside of your sparse-checkout definition, so will not be updated in the index").
+   - dockhand has no move or rename.
+   - `create --category editors` in the same branch refused: "there is already a port txt, at devel/txt; dockhand update txt updates it". That advice is wrong for a port create itself wrote a minute earlier, uncommitted, with no release to update to.
+
+   I had to `git rm -f devel/txt/Portfile`, re-create, and copy my edits back. Two fixes would each do: let `create` replace its own uncommitted creation, moving it if `--category` changed, or give `edit` a way to change a port's category. The description ("terminal text editor") would also have given a better guess than the build system.
+2. **check asks head-or-working-tree on a branch with no commits.** `check --branch txt-h6yo` stopped: "txt-h6yo's worktree has edits (editors/txt/Portfile); choose --head for the committed tip or --working-tree for the files". The branch has no commits, so `--head` is master and holds no txt; the working files are the only thing to check. Earlier builds took the working files as a snapshot without asking (sqlit-1.6.4, check-39). A branch with no commits could skip the question.
+3. **tidy knows the subject but still wants it typed.** tidy proposed "txt: new port", then stopped because the file "has changes dockhand's commands did not make", so I had to run `--squash --message "txt: new port"` with the same words. Flagging the hand edits is fair. But when the proposal is one commit whose subject is already right, a `--yes`-style acceptance would be enough.
+4. **A new port's PR says nothing about the port.** submit's description for txt has the template, the Tested-on table and the checklist, with no Type ticked, and nothing on what txt is. For a new port, the Portfile's description, homepage and license (and perhaps "new port" as its type) would help a reviewer who has never heard of it.
+5. **Idea for create's destroot: completions.** txt depends on `clap_complete` and has `--completions <shell>`. When a Cargo.lock includes `clap_complete`, create could suggest completion lines, marked unconfirmed like the destroot. Low priority.
+6. **update's summaries.** "Updated version and checksums (1 distfile) and 368 crates (9 changed) and 0 Git crates (0 changed)": the zero clause is noise. "Upstream changes: Cargo.toml: 1 added, 1 moved" doesn't say which dependencies. They were `inferno` added, and `open` going from optional to required. Naming them would make the line useful.
