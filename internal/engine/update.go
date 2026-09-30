@@ -794,7 +794,7 @@ func portVersion(ctx context.Context, reader PortReader, source model.Source, na
 	if err != nil {
 		return "", err
 	}
-	ports, err := reader.Ports(ctx, source, directory, model.Environment{})
+	ports, err := reader.Ports(ctx, source, directory, model.Environment{}, nil)
 	if err != nil {
 		return "", err
 	}

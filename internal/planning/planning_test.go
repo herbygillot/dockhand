@@ -183,3 +183,33 @@ func ids(targets []model.PlanTarget) []model.TargetID {
 	}
 	return ids
 }
+
+// A dependency names a port. Where the port is built with variants in
+// place of its defaults, that build is what's needed; where its default
+// build is there beside its variant builds, the default one is.
+func TestADependencyFindsThePortsBuild(t *testing.T) {
+	variant := candidate("libharbor", model.Changed)
+	variant.Target.Variants = map[string]bool{"tests": true}
+	variant.ID = variant.Target.ID()
+	input := Input{
+		Environments: []model.Environment{arm},
+		Candidates:   []model.PlanTarget{variant, candidate("harbor-cli", model.Changed)},
+		Evaluations:  []Evaluation{{"libharbor +tests": {}, "harbor-cli": needing("libharbor")}},
+	}
+	decision, err := Decide(input)
+	require.NoError(t, err)
+	require.Equal(t, []model.TargetID{"libharbor +tests"}, decision.Builds[0].Dependencies["harbor-cli"])
+
+	input.Candidates = append([]model.PlanTarget{candidate("libharbor", model.Changed)}, input.Candidates...)
+	input.Evaluations[0]["libharbor"] = Evaluated{}
+	decision, err = Decide(input)
+	require.NoError(t, err)
+	require.Equal(t, []model.TargetID{"libharbor"}, decision.Builds[0].Dependencies["harbor-cli"])
+
+	// --only names a port, and keeps every build of it.
+	input.Only = []string{"libharbor"}
+	decision, err = Decide(input)
+	require.NoError(t, err)
+	require.Equal(t, []model.TargetID{"libharbor", "libharbor +tests"}, ids(decision.Targets))
+	require.Equal(t, []model.TargetID{"harbor-cli"}, ids(decision.Omitted))
+}

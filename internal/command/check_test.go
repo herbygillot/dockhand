@@ -19,7 +19,7 @@ import (
 // after it.
 type onePort struct{}
 
-func (onePort) Ports(_ context.Context, _ model.Source, directory string, _ model.Environment) ([]macports.PortInfo, error) {
+func (onePort) Ports(_ context.Context, _ model.Source, directory string, _ model.Environment, variants map[string]bool) ([]macports.PortInfo, error) {
 	return []macports.PortInfo{{Name: filepath.Base(directory), Options: map[string]string{}}}, nil
 }
 

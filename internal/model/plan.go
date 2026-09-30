@@ -210,8 +210,14 @@ type Plan struct {
 	Tests TestPolicy
 	// Fresh builds every target, reusing no earlier build's result
 	// (decision 28).
-	Fresh     bool `json:",omitempty"`
-	CreatedAt time.Time
+	Fresh bool `json:",omitempty"`
+	// Variants are the variants --variants built its one port with, as
+	// MacPorts writes them, in place of its defaults; EachVariant is
+	// --variants each, which built it with its defaults and then with
+	// each variant it declares.
+	Variants    string `json:",omitempty"`
+	EachVariant bool   `json:",omitempty"`
+	CreatedAt   time.Time
 }
 
 // In is an environment's plan.
@@ -243,15 +249,17 @@ func (p Plan) Runnable() bool {
 // Excludes reports whether the plan leaves a target out in an environment,
 // where it is not built and not required to pass.
 func (p Plan) Excludes(target PlanTarget, environment Environment) bool {
-	_, excluded := p.ExclusionIn(environment, target.Target.Name)
+	_, excluded := p.ExclusionIn(environment, target.ID)
 	return excluded
 }
 
-// ExclusionIn is why an environment doesn't build a port, when it doesn't.
-func (p Plan) ExclusionIn(environment Environment, name string) (Exclusion, bool) {
+// ExclusionIn is why an environment doesn't build a target, when it
+// doesn't: by the target's identity, so a port's variant build is its
+// own.
+func (p Plan) ExclusionIn(environment Environment, id TargetID) (Exclusion, bool) {
 	build, _ := p.In(environment)
 	for _, exclusion := range build.Exclusions {
-		if exclusion.Target.Name == name {
+		if exclusion.Target.ID() == id {
 			return exclusion, true
 		}
 	}
@@ -405,8 +413,8 @@ func (b EnvironmentPlan) validate(p Plan) error {
 		}
 	}
 	for _, exclusion := range b.Exclusions {
-		if earlier[TargetID(exclusion.Target.Name)] {
-			return invalid("plan %s both builds and excludes %s", where, exclusion.Target.Name)
+		if earlier[exclusion.Target.ID()] {
+			return invalid("plan %s both builds and excludes %s", where, exclusion.Target.ID())
 		}
 	}
 	return nil

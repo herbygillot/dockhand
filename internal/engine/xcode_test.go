@@ -20,8 +20,8 @@ type xcodeOnArm struct {
 	broken bool
 }
 
-func (p xcodeOnArm) Ports(ctx context.Context, source model.Source, directory string, environment model.Environment) ([]macports.PortInfo, error) {
-	ports, err := p.fakePorts.Ports(ctx, source, directory, environment)
+func (p xcodeOnArm) Ports(ctx context.Context, source model.Source, directory string, environment model.Environment, variants map[string]bool) ([]macports.PortInfo, error) {
+	ports, err := p.fakePorts.Ports(ctx, source, directory, environment, variants)
 	if err != nil {
 		return nil, err
 	}

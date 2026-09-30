@@ -2,10 +2,12 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -18,8 +20,9 @@ import (
 // name. MacPorts' own evaluator is the real one.
 type PortReader interface {
 	// Ports reads a directory as it reads in an environment: on its
-	// platform, with its developer tools where it states them.
-	Ports(ctx context.Context, source model.Source, directory string, environment model.Environment) ([]macports.PortInfo, error)
+	// platform, with its developer tools where it states them, and with the
+	// variants chosen, its defaults where none are.
+	Ports(ctx context.Context, source model.Source, directory string, environment model.Environment, variants map[string]bool) ([]macports.PortInfo, error)
 	Directory(ctx context.Context, source model.Source, name string) (string, error)
 }
 
@@ -35,6 +38,11 @@ type PlanRequest struct {
 	Tests model.TestPolicy
 	// Fresh builds every target, reusing no earlier build's result.
 	Fresh bool
+	// Variants builds the one port the check selects with these variants
+	// instead of its defaults; EachVariant builds it with its defaults,
+	// and then with each variant it declares (VariantBuilds).
+	Variants    map[string]bool
+	EachVariant bool
 	// directories are Also ports' directories where the caller knows them
 	// already, as a baseline does from the check it explains, so they
 	// aren't looked up by name again.
@@ -59,7 +67,17 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	if request.Tests != "" && !request.Tests.Valid() {
 		return model.Plan{}, fmt.Errorf("--tests %q is not declared, required, or skip", request.Tests)
 	}
-	plan := model.Plan{ID: model.PlanID(store.NewID("plan")), Revision: revision.ID, Environments: request.Environments, Only: request.Only, Also: request.Also, Tests: request.Tests, Fresh: request.Fresh, CreatedAt: e.now()}
+	plan := model.Plan{ID: model.PlanID(store.NewID("plan")), Revision: revision.ID, Environments: request.Environments, Only: request.Only, Also: request.Also, Tests: request.Tests, Fresh: request.Fresh,
+		Variants: model.Target{Variants: request.Variants}.VariantSpec(), EachVariant: request.EachVariant, CreatedAt: e.now()}
+	if len(request.Variants) > 0 && request.EachVariant {
+		return plan, errors.New("--variants each builds every variant; it takes no others")
+	}
+	if len(request.Variants) > 0 || request.EachVariant {
+		// MacPorts' workflow builds each port's default variants alone.
+		if slices.ContainsFunc(request.Environments, func(environment model.Environment) bool { return environment.Provider == buildenv.GitHub }) {
+			return plan, errors.New("--variants builds on tart or your command: GitHub's workflow builds default variants only")
+		}
+	}
 	if plan.Tests == "" {
 		plan.Tests = model.TestsDeclared
 	}
@@ -85,15 +103,18 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	// defined, eligible, need Xcode, or need a changed library on one
 	// platform and not another.
 	evaluations := make([]planning.Evaluation, len(plan.Environments))
+	// infos are the ports as each environment read them, for the variants
+	// they declare.
+	infos := make([]map[model.TargetID]macports.PortInfo, len(plan.Environments))
 	for i := range evaluations {
-		evaluations[i] = planning.Evaluation{}
+		evaluations[i], infos[i] = planning.Evaluation{}, map[model.TargetID]macports.PortInfo{}
 	}
 	// candidates are every port some environment defined, as the branch
 	// sees it, in the order the scope and --also name them.
 	var candidates []model.PlanTarget
 	add := func(directory string, kind model.TargetKind, role model.TargetRole) {
 		for e, environment := range plan.Environments {
-			ports, err := reader.Ports(ctx, revision.Source, directory, environment)
+			ports, err := reader.Ports(ctx, revision.Source, directory, environment, nil)
 			if err != nil {
 				plan.Unresolved = append(plan.Unresolved, model.Unresolved{Target: model.Target{Name: directoryName(directory), Portfile: directory + "/Portfile"}, Reason: err.Error()})
 				return
@@ -115,7 +136,7 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 				if !slices.ContainsFunc(candidates, func(c model.PlanTarget) bool { return c.ID == id }) {
 					candidates = append(candidates, model.PlanTarget{ID: id, Target: target, Directory: directory, Kind: kind, Role: role})
 				}
-				evaluations[e][id] = evaluated
+				evaluations[e][id], infos[e][id] = evaluated, port
 			}
 		}
 	}
@@ -147,6 +168,11 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	}
 	if len(plan.Unresolved) > 0 {
 		return plan, nil
+	}
+	if len(request.Variants) > 0 || request.EachVariant {
+		if candidates, err = planVariants(ctx, reader, revision.Source, request, &plan, candidates, evaluations, infos); err != nil || len(plan.Unresolved) > 0 {
+			return plan, err
+		}
 	}
 
 	decision, err := planning.Decide(planning.Input{Environments: plan.Environments, Candidates: candidates, Evaluations: evaluations, Only: request.Only, Where: request.where})
@@ -243,4 +269,119 @@ func (e *Engine) loadsChangedSharedCode(ctx context.Context, tree, start string,
 		}
 	}
 	return false
+}
+
+// planVariants gives the one port a check selects the variant builds it
+// asks for (Design v3 §3): with --variants, that port built with them in
+// place of its defaults; with --variants each, beside its default build,
+// one for each variant it declares (VariantBuilds). Each is evaluated
+// with its variants in each environment, since what planning reads of a
+// port can change with them, and is left out where the port doesn't
+// declare them. A variant the port doesn't declare is refused.
+func planVariants(ctx context.Context, reader PortReader, source model.Source, request PlanRequest, plan *model.Plan, candidates []model.PlanTarget, evaluations []planning.Evaluation, infos []map[model.TargetID]macports.PortInfo) ([]model.PlanTarget, error) {
+	selected, err := variantsTarget(candidates, request.Only)
+	if err != nil {
+		return candidates, err
+	}
+	declared := make([][]macports.Variant, len(plan.Environments))
+	var all []macports.Variant
+	for e := range plan.Environments {
+		info, ok := infos[e][selected.ID]
+		if !ok {
+			continue
+		}
+		if declared[e], err = info.Variants(); err != nil {
+			return candidates, err
+		}
+		for _, variant := range declared[e] {
+			if !slices.ContainsFunc(all, func(v macports.Variant) bool { return v.Name == variant.Name }) {
+				all = append(all, variant)
+			}
+		}
+	}
+	sets := []map[string]bool{request.Variants}
+	if request.EachVariant {
+		if sets = VariantBuilds(all); len(sets) == 0 {
+			return candidates, fmt.Errorf("--variants each: %s declares no variant beyond its defaults and universal", selected.Target.Name)
+		}
+	} else if missing := macports.Undeclared(request.Variants, all); len(missing) > 0 {
+		return candidates, fmt.Errorf("--variants: %s declares no %s", selected.Target.Name, strings.Join(missing, ", "))
+	}
+	var builds []model.PlanTarget
+	for _, variants := range sets {
+		target := selected
+		target.Target.Variants = variants
+		target.ID = target.Target.ID()
+		for e, environment := range plan.Environments {
+			if len(macports.Undeclared(variants, declared[e])) > 0 {
+				continue // not there: the build would be its defaults'
+			}
+			ports, err := reader.Ports(ctx, source, selected.Directory, environment, variants)
+			if err != nil {
+				plan.Unresolved = append(plan.Unresolved, model.Unresolved{Target: target.Target, Reason: err.Error()})
+				continue
+			}
+			i := slices.IndexFunc(ports, func(port macports.PortInfo) bool { return port.Name == selected.Target.Name })
+			if i < 0 {
+				plan.Unresolved = append(plan.Unresolved, model.Unresolved{Target: target.Target, Reason: "with " + target.Target.VariantSpec() + " it isn't defined"})
+				continue
+			}
+			evaluated, err := planning.Evaluate(ports[i], environment.Platform)
+			if err != nil {
+				plan.Unresolved = append(plan.Unresolved, model.Unresolved{Target: target.Target, Reason: err.Error()})
+				continue
+			}
+			evaluations[e][target.ID] = evaluated
+		}
+		builds = append(builds, target)
+	}
+	at := slices.IndexFunc(candidates, func(c model.PlanTarget) bool { return c.ID == selected.ID })
+	if !request.EachVariant {
+		// Built with the variants instead of its defaults.
+		for e := range evaluations {
+			delete(evaluations[e], selected.ID)
+		}
+		return slices.Replace(candidates, at, at+1, builds...), nil
+	}
+	return slices.Insert(candidates, at+1, builds...), nil
+}
+
+// variantsTarget is the one port --variants builds: the one --only names,
+// or the one port the branch changes.
+func variantsTarget(candidates []model.PlanTarget, only []string) (model.PlanTarget, error) {
+	switch {
+	case len(only) == 1:
+		if i := slices.IndexFunc(candidates, func(c model.PlanTarget) bool { return c.Target.Name == only[0] }); i >= 0 {
+			return candidates[i], nil
+		}
+		return model.PlanTarget{}, fmt.Errorf("--only %s: the branch does not change it", only[0])
+	case len(only) > 1:
+		return model.PlanTarget{}, fmt.Errorf("--variants builds one port; --only names %d", len(only))
+	}
+	var changed []model.PlanTarget
+	for _, c := range candidates {
+		if c.Role == model.Changed {
+			changed = append(changed, c)
+		}
+	}
+	if len(changed) != 1 {
+		return model.PlanTarget{}, fmt.Errorf("--variants builds one port, and the branch changes %d; name it with --only", len(changed))
+	}
+	return changed[0], nil
+}
+
+// VariantBuilds are the builds --variants each makes of a port beside its
+// defaults: one for each variant it declares, over its defaults, but for
+// the ones among its defaults, which its default build has, and
+// universal, which needs other architectures' dependencies a clean
+// builder doesn't have.
+func VariantBuilds(declared []macports.Variant) []map[string]bool {
+	var builds []map[string]bool
+	for _, variant := range declared {
+		if variant.Default || variant.Name == "universal" {
+			continue
+		}
+		builds = append(builds, map[string]bool{variant.Name: true})
+	}
+	return builds
 }

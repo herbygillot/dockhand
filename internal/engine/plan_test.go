@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"testing"
 
@@ -20,15 +21,24 @@ import (
 type fakePorts struct {
 	directories map[string][]macports.PortInfo
 	broken      map[string]bool
+	// withVariants is a port as its variants make it, where they change
+	// what planning reads.
+	withVariants func(port macports.PortInfo, variants map[string]bool) macports.PortInfo
 }
 
-func (f fakePorts) Ports(_ context.Context, _ model.Source, directory string, environment model.Environment) ([]macports.PortInfo, error) {
+func (f fakePorts) Ports(_ context.Context, _ model.Source, directory string, environment model.Environment, variants map[string]bool) ([]macports.PortInfo, error) {
 	if f.broken[directory] {
 		return nil, errors.New("Portfile error: can't read \"foo\": no such variable")
 	}
 	ports, ok := f.directories[directory]
 	if !ok {
 		return nil, errors.New("no Portfile")
+	}
+	if len(variants) > 0 && f.withVariants != nil {
+		ports = slices.Clone(ports)
+		for i := range ports {
+			ports[i] = f.withVariants(ports[i], variants)
+		}
 	}
 	return ports, nil
 }
@@ -230,7 +240,7 @@ type harborByPlatform struct {
 	crossed bool
 }
 
-func (p harborByPlatform) Ports(ctx context.Context, source model.Source, directory string, environment model.Environment) ([]macports.PortInfo, error) {
+func (p harborByPlatform) Ports(ctx context.Context, source model.Source, directory string, environment model.Environment, variants map[string]bool) ([]macports.PortInfo, error) {
 	x86 := environment.Platform.Architecture == "x86_64"
 	switch {
 	case directory == "graphics/harbor-viewer" && !x86:
@@ -244,7 +254,7 @@ func (p harborByPlatform) Ports(ctx context.Context, source model.Source, direct
 	case p.crossed && directory == "devel/harbor-cli":
 		return []macports.PortInfo{port("harbor-cli")}, nil
 	}
-	return p.fakePorts.Ports(ctx, source, directory, environment)
+	return p.fakePorts.Ports(ctx, source, directory, environment, variants)
 }
 
 // Each platform keeps its own dependencies: --only adds back a changed
@@ -321,8 +331,8 @@ func TestEachPlatformKeepsItsOwnDependencies(t *testing.T) {
 // evaluation is on x86_64, as a Portfile's platform conditions can.
 type armOnlyViewer struct{ fakePorts }
 
-func (p armOnlyViewer) Ports(ctx context.Context, source model.Source, directory string, environment model.Environment) ([]macports.PortInfo, error) {
-	ports, err := p.fakePorts.Ports(ctx, source, directory, environment)
+func (p armOnlyViewer) Ports(ctx context.Context, source model.Source, directory string, environment model.Environment, variants map[string]bool) ([]macports.PortInfo, error) {
+	ports, err := p.fakePorts.Ports(ctx, source, directory, environment, variants)
 	if err == nil && directory == "graphics/harbor-viewer" {
 		ports = []macports.PortInfo{port("harbor-viewer")}
 		if environment.Platform.Architecture == "x86_64" {
@@ -395,4 +405,87 @@ func TestAPlanKeepsAnUnreadEligibilityApart(t *testing.T) {
 	exclusion, excluded := plan.ExclusionIn(tahoeArm, "harbor-cli")
 	require.True(t, excluded)
 	require.Equal(t, "its platforms, {darwin >= 26}, exclude this release", exclusion.Reason)
+}
+
+// harborVariants gives libharbor variants: +tests declares its tests, and
+// +docs needs Xcode, as what planning reads can change with a variant;
+// x11 is a default, and universal is Base's own.
+func harborVariants() fakePorts {
+	ports := harborPorts()
+	lib := port("libharbor")
+	lib.Options["dockhand.test_run"] = "0"
+	lib.Options["variants"] = "tests docs x11 universal"
+	lib.Options["vinfo"] = "tests {description Tests} docs {requires tests} x11 {is_default +} universal {}"
+	ports.directories["devel/libharbor"] = []macports.PortInfo{lib}
+	ports.withVariants = func(port macports.PortInfo, variants map[string]bool) macports.PortInfo {
+		port.Options = maps.Clone(port.Options)
+		if variants["tests"] || variants["docs"] { // docs requires tests, which MacPorts turns on with it
+			port.Options["dockhand.test_run"] = "1"
+		}
+		if variants["docs"] {
+			port.Options["use_xcode"] = "yes"
+		}
+		return port
+	}
+	return ports
+}
+
+// x86LacksDocs is libharbor without +docs on x86_64.
+type x86LacksDocs struct{ fakePorts }
+
+func (p x86LacksDocs) Ports(ctx context.Context, source model.Source, directory string, environment model.Environment, variants map[string]bool) ([]macports.PortInfo, error) {
+	ports, err := p.fakePorts.Ports(ctx, source, directory, environment, variants)
+	if err == nil && environment == tahoeX86 && directory == "devel/libharbor" {
+		ports = slices.Clone(ports)
+		ports[0].Options = maps.Clone(ports[0].Options)
+		ports[0].Options["variants"] = "tests x11 universal"
+	}
+	return ports, err
+}
+
+// --variants builds the one port a check selects its way, evaluated with
+// the variants, since what planning reads can change with them: in place
+// of its defaults, or, with each, beside them, one build for each variant
+// it declares but its defaults and universal. A variant it doesn't
+// declare there leaves that build out there; one it declares nowhere, a
+// check of more than one port, and GitHub's workflow, which builds
+// default variants alone, are refused (item 8).
+func TestVariantsBuildOnePortTheirWay(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	revision := harborBranch(t, e)
+	e.PortReader = x86LacksDocs{harborVariants()}
+	both := []model.Environment{tahoeArm, tahoeX86}
+
+	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: both, Only: []string{"libharbor"}, Variants: map[string]bool{"tests": true}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"libharbor +tests:substantive:changed"}, names(plan.Targets), "in place of its defaults")
+	require.Equal(t, "+tests", plan.Variants)
+	arm, _ := plan.In(tahoeArm)
+	require.Empty(t, arm.Untested, "+tests declares its tests")
+
+	plan, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: both, Only: []string{"libharbor"}, EachVariant: true})
+	require.NoError(t, err)
+	require.True(t, plan.EachVariant)
+	require.Equal(t, []string{"libharbor:substantive:changed", "libharbor +tests:substantive:changed", "libharbor +docs:substantive:changed"}, names(plan.Targets),
+		"x11 is among its defaults, and universal is left out")
+	arm, _ = plan.In(tahoeArm)
+	require.Equal(t, []model.TargetID{"libharbor"}, arm.Untested)
+	require.Equal(t, []model.TargetID{"libharbor +docs"}, arm.NeedsXcode)
+	x86, _ := plan.In(tahoeX86)
+	require.NotContains(t, x86.Order, model.TargetID("libharbor +docs"))
+	exclusion, excluded := plan.ExclusionIn(tahoeX86, "libharbor +docs")
+	require.True(t, excluded)
+	require.Equal(t, "not defined there", exclusion.Reason)
+	require.False(t, plan.Excludes(plan.Targets[0], tahoeX86), "the port's other builds aren't excluded with it")
+	require.Equal(t, []string{"harbor-cli:revision-only:changed", "harbor-viewer:substantive:changed", "harbor-viewer-legacy:substantive:changed"}, names(plan.Omitted))
+
+	_, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: both, Only: []string{"libharbor"}, Variants: map[string]bool{"gui": true}})
+	require.ErrorContains(t, err, "--variants: libharbor declares no gui")
+	_, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: both, Variants: map[string]bool{"tests": true}})
+	require.ErrorContains(t, err, "--variants builds one port, and the branch changes 5; name it with --only")
+	_, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{{Provider: "github"}}, Only: []string{"libharbor"}, EachVariant: true})
+	require.ErrorContains(t, err, "GitHub's workflow builds default variants only")
+	_, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: both, Only: []string{"libharbor"}, EachVariant: true, Variants: map[string]bool{"tests": true}})
+	require.ErrorContains(t, err, "--variants each builds every variant")
 }

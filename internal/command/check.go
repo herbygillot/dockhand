@@ -733,7 +733,7 @@ func writeBaselineResults(out io.Writer, base, branch engine.Evidence, master st
 				continue
 			}
 			fmt.Fprintf(out, "%s at master %s · %s\n", target.Target.ID, master, environmentWords(environment))
-			if exclusion, excluded := base.Plan.ExclusionIn(environment, target.Target.Target.Name); excluded {
+			if exclusion, excluded := base.Plan.ExclusionIn(environment, target.Target.ID); excluded {
 				fmt.Fprintf(out, "  · not built at the base: %s\n", exclusion.Reason)
 				continue
 			}

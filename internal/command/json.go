@@ -218,6 +218,10 @@ type planJSON struct {
 	Only  []string `json:"only"`
 	Also  []string `json:"also"`
 	Fresh bool     `json:"fresh"`
+	// Variants are --variants', as MacPorts writes them; EachVariant is
+	// --variants each.
+	Variants    string `json:"variants,omitempty"`
+	EachVariant bool   `json:"each_variant,omitempty"`
 	// Targets are the plan's, each with its dependencies in any
 	// environment and the environments where it needs Xcode.
 	Targets []targetJSON `json:"targets"`
@@ -256,7 +260,7 @@ type exclusionJSON struct {
 
 func planView(plan model.Plan) planJSON {
 	view := planJSON{ID: string(plan.ID), Tests: string(plan.Tests), Environments: []environmentJSON{}, Only: append([]string{}, plan.Only...), Also: append([]string{}, plan.Also...), Fresh: plan.Fresh,
-		Targets: []targetJSON{}, Omitted: []targetJSON{}, Exclusions: []exclusionJSON{}, Unmet: []unmetJSON{}, Unresolved: []exclusionJSON{}}
+		Variants: plan.Variants, EachVariant: plan.EachVariant, Targets: []targetJSON{}, Omitted: []targetJSON{}, Exclusions: []exclusionJSON{}, Unmet: []unmetJSON{}, Unresolved: []exclusionJSON{}}
 	for _, environment := range plan.Environments {
 		view.Environments = append(view.Environments, environmentView(environment))
 	}

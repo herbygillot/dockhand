@@ -48,7 +48,7 @@ func (p *evaluatedPorts) nativePlatform(ctx context.Context) (model.Platform, er
 	return p.native, p.nativeErr
 }
 
-func (p *evaluatedPorts) Ports(ctx context.Context, source model.Source, directory string, environment model.Environment) (_ []macports.PortInfo, err error) {
+func (p *evaluatedPorts) Ports(ctx context.Context, source model.Source, directory string, environment model.Environment, variants map[string]bool) (_ []macports.PortInfo, err error) {
 	files, done, err := p.workspaces.Acquire(ctx, p.repo, source)
 	if err != nil {
 		return nil, err
@@ -80,7 +80,7 @@ func (p *evaluatedPorts) Ports(ctx context.Context, source model.Source, directo
 	if err != nil {
 		return nil, err
 	}
-	targets, err := p.ports.Resolve(ctx, tree, macports.Selection{Selector: directory})
+	targets, err := p.ports.Resolve(ctx, tree, macports.Selection{Selector: directory, Variants: variants})
 	if err != nil {
 		return nil, fmt.Errorf("evaluating %s: %w", directory, err)
 	}

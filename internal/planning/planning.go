@@ -180,6 +180,24 @@ func Needs(built []model.PlanTarget, reasons []map[model.TargetID]string, evalua
 	builtAnywhere := func(id model.TargetID) bool {
 		return slices.ContainsFunc(built, func(c model.PlanTarget) bool { return c.ID == id })
 	}
+	// A dependency names a port: it's the port's default build where the
+	// plan has one, and otherwise its one build, as --variants builds a
+	// port with its variants in place of its defaults.
+	resolve := func(dep model.TargetID) model.TargetID {
+		if builtAnywhere(dep) {
+			return dep
+		}
+		var builds []model.TargetID
+		for _, c := range built {
+			if model.TargetID(c.Target.Name) == dep {
+				builds = append(builds, c.ID)
+			}
+		}
+		if len(builds) == 1 {
+			return builds[0]
+		}
+		return dep
+	}
 	needs = make([]map[model.TargetID][]Dependency, len(evaluations))
 	union = map[model.TargetID][]model.TargetID{}
 	for e := range evaluations {
@@ -189,6 +207,7 @@ func Needs(built []model.PlanTarget, reasons []map[model.TargetID]string, evalua
 				continue
 			}
 			for _, dep := range evaluations[e][c.ID].Dependencies {
+				dep.Port = resolve(dep.Port)
 				if dep.Port == c.ID || !builtAnywhere(dep.Port) || reasons[e][dep.Port] != "" {
 					continue
 				}
@@ -341,15 +360,24 @@ func Narrow(targets []model.PlanTarget, needs map[model.TargetID][]model.TargetI
 			}
 		}
 	}
-	for _, name := range only {
-		target, ok := byID[model.TargetID(name)]
-		if !ok || target.Role != model.Changed {
-			return nil, nil, fmt.Errorf("--only %s: the branch does not change it; --also builds an unchanged port", name)
-		}
-		keep[target.ID] = model.Changed
+	// A port named is every build of it the plan has, its variant builds
+	// with its default one.
+	named := func(name string) []model.PlanTarget {
+		return slices.DeleteFunc(slices.Clone(targets), func(t model.PlanTarget) bool { return t.Target.Name != name || t.Role != model.Changed })
 	}
 	for _, name := range only {
-		visit(model.TargetID(name))
+		builds := named(name)
+		if len(builds) == 0 {
+			return nil, nil, fmt.Errorf("--only %s: the branch does not change it; --also builds an unchanged port", name)
+		}
+		for _, target := range builds {
+			keep[target.ID] = model.Changed
+		}
+	}
+	for _, name := range only {
+		for _, target := range named(name) {
+			visit(target.ID)
+		}
 	}
 	for _, target := range targets {
 		role, ok := keep[target.ID]
