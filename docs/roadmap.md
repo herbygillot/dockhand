@@ -171,6 +171,13 @@ The order is the roadmap's own: a guardrail first, then what's written into a Po
 
 8. **Variants in checks** (the libuv, sqlit-tui, ouch, and s2n-tls run's finding 7). Design v3 promises `check --variants` for a single selected target, and `--variants each` evidence ticking the template's variants item; neither exists, so `submit --tested-variants` ticks a box no check can evidence. s2n-tls runs its tests only under `+tests`. It follows item 6, which keys results and reuse by what each build read, the variants asked for included; the guest, the command provider's request file, Tested on, and the evidence grid each name the variants, and GitHub's workflow, which builds only default variants, says it can't.
 
+   Decided 2026-09-30, with the person:
+   - `--variants each` builds the selected target's default variants, and then each variant it declares, one at a time over its defaults, all but `universal`, which needs other architectures' dependencies a clean guest doesn't have. Which variants a port declares is `macports`' to say (`PortInfo(variants)` and `vinfo`), and which of them `each` builds is planning's.
+   - Above a number of builds, targets times environments, `check` asks first; without a terminal it needs `--yes`.
+   - A passing `--variants each` check ticks the template's variants item by itself, and the description lists the variants it built.
+
+   Already below the plan: `model.Target` carries variants, the Tart guest and the command provider's request pass them to `port install` and to the test check, and reuse keys results by them. What's to build is the plan and above. A target's identity becomes its name and its variants (the plan's `Validate` holds it to that), since `each` builds one port several times; the port reader evaluates a target with its variants, since eligibility, dependencies, Xcode, and `test.run` can change with them; a variant the port doesn't declare is refused before anything builds. GitHub's workflow builds default variants only, so `--variants` there is refused, saying so.
+
 ### Alongside, on the Mac
 
 These need MacPorts Base, whole-tree surveys, or VMs, so they run as the Mac allows, independent of the order above.
