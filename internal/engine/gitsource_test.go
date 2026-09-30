@@ -34,12 +34,15 @@ func harborRepository(t *testing.T) (url, first string, move func() string) {
 }
 
 // gitHarbor is the harbor ports, with libharbor fetched with Git from url
-// at ref.
-func gitHarbor(url, ref string) fakePorts {
+// at ref, and harbor-cli too where cli is.
+func gitHarbor(url, ref string, cli ...bool) fakePorts {
 	ports := harborPorts()
 	libharbor := port("libharbor")
 	libharbor.Options = map[string]string{"fetch.type": "git", "git.url": url, "git.branch": ref}
 	ports.directories["devel/libharbor"] = []macports.PortInfo{libharbor}
+	if len(cli) > 0 && cli[0] {
+		ports.directories["devel/harbor-cli"][0].Options = map[string]string{"fetch.type": "git", "git.url": url, "git.branch": ref}
+	}
 	return ports
 }
 
@@ -96,7 +99,9 @@ func TestAMovedTagDoesntLetEarlierEvidenceStand(t *testing.T) {
 	url, first, move := harborRepository(t)
 	lib := model.ActivePort{Name: "libharbor", Spec: "@4_0", Directory: "devel/libharbor", Archive: "sha256:libharbor"}
 	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{}, consumes: map[model.TargetID][]model.ActivePort{"harbor-cli": {lib}, "harbor-viewer": {lib}},
-		fetches: map[model.TargetID]string{"libharbor": first}}, identity: "origin a"}
+		// A commit said of harbor-cli, fetched otherwise, is none of its
+		// inputs, and doesn't keep its build from being reused.
+		fetches: map[model.TargetID]string{"libharbor": first, "harbor-cli": first}}, identity: "origin a"}
 	e.Providers = map[string]buildenv.Provider{"command": provider}
 	revision := harborBranch(t, e)
 	e.PortReader = gitHarbor(url, "v4")
@@ -233,7 +238,7 @@ func TestABuildThatFetchedAnotherCommitFailsAtFetch(t *testing.T) {
 	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{}, fetches: map[model.TargetID]string{"libharbor": first}}, identity: "origin a"}
 	e.Providers = map[string]buildenv.Provider{"command": provider}
 	revision := harborBranch(t, e)
-	e.PortReader = gitHarbor(url, "v4")
+	e.PortReader = gitHarbor(url, "v4", true)
 	var branch model.Branch
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
 		var err error
@@ -265,15 +270,25 @@ func TestABuildThatFetchedAnotherCommitFailsAtFetch(t *testing.T) {
 	require.Equal(t, model.OutcomeBlocked, results["harbor-cli"].Outcome, "what needs it isn't built against another source")
 	fetch := logs.Executions[0].Git["libharbor"]
 	require.Equal(t, "fetched "+first[:7]+", not "+second[:7]+", which git.branch v4 named when the check was planned", FetchedWords(fetch.Expected, fetch.Fetched), "its evidence says what it fetched")
+	_, found := logs.Executions[0].Git["harbor-cli"]
+	require.False(t, found, "a blocked target, fetched with Git too, fetched nothing")
+	said := func(run model.Run, words string) bool {
+		t.Helper()
+		events, err := e.RunEvents(t.Context(), run.ID, 0)
+		require.NoError(t, err)
+		return slices.ContainsFunc(events, func(event model.Event) bool { return strings.Contains(event.Message, words) })
+	}
+	require.False(t, said(run, "harbor-cli: its build didn't say"), "nor is it said not to have said what")
+
+	provider.fetches["libharbor"] = "v4"
+	run = check()
+	require.Equal(t, model.RunPassed, run.State, "what isn't a commit is no answer, and the build stands, its source unknown")
+	require.True(t, said(run, `libharbor: its provider said its build fetched "v4", which isn't a commit`))
 
 	delete(provider.fetches, "libharbor")
 	run = check()
 	require.Equal(t, model.RunPassed, run.State, run.Detail)
-	events, err := e.RunEvents(t.Context(), run.ID, 0)
-	require.NoError(t, err)
-	require.True(t, slices.ContainsFunc(events, func(event model.Event) bool {
-		return strings.Contains(event.Message, "libharbor: its build didn't say which commit of git.branch v4 it fetched, so no later check can reuse its result")
-	}), "a provider that can't say is said to")
+	require.True(t, said(run, "libharbor: its build didn't say which commit of git.branch v4 it fetched, so no later check can reuse its result"), "a provider that can't say is said to")
 	logs, err = e.Logs(t.Context(), run.ID)
 	require.NoError(t, err)
 	fetch = logs.Executions[0].Git["libharbor"]

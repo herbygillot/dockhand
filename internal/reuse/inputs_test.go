@@ -39,4 +39,13 @@ func TestInputsNameEachDirectoryByItsTree(t *testing.T) {
 			{Name: "zlib", Spec: "@1.3.2_0", Directory: "archivers/zlib", Tree: "33", Archive: "sha256:44"},
 		}}, inputs, "a tree is the revision's, never the provider's")
 	require.False(t, inputs.Complete(), "a directory the revision doesn't hold")
+
+	none, err := Inputs(t.Context(), revision, "t1", "origin", target, []model.ActivePort{})
+	require.NoError(t, err)
+	require.NotNil(t, none.Active, "a build that read no other port")
+	require.True(t, none.Complete())
+	unknown, err := Inputs(t.Context(), revision, "t1", "origin", target, nil)
+	require.NoError(t, err)
+	require.Nil(t, unknown.Active, "a provider that couldn't say which ports were active, as a command reporting only what it fetched")
+	require.False(t, unknown.Complete())
 }
