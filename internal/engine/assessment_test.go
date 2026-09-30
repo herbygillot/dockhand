@@ -21,6 +21,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // plannedPort is a port as a fake planner has it in one tree: as
@@ -40,11 +41,22 @@ type fakePlanner struct {
 	server  *httptest.Server
 	served  map[string][]byte
 	fetches *atomic.Int64
+	// refusing is the status the server answers with instead, while it's
+	// set, and mirror the status its mirror answers with, where set.
+	refusing, mirror *atomic.Int64
 }
 
 func newPlanner(t *testing.T) *fakePlanner {
-	p := &fakePlanner{t: t, ports: map[model.ObjectID]map[string]plannedPort{}, served: map[string][]byte{}, fetches: &atomic.Int64{}}
+	p := &fakePlanner{t: t, ports: map[model.ObjectID]map[string]plannedPort{}, served: map[string][]byte{}, fetches: &atomic.Int64{}, refusing: &atomic.Int64{}, mirror: &atomic.Int64{}}
 	p.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if status := p.mirror.Load(); status != 0 && strings.HasPrefix(r.URL.Path, "/mirror/") {
+			w.WriteHeader(int(status))
+			return
+		}
+		if status := p.refusing.Load(); status != 0 {
+			w.WriteHeader(int(status))
+			return
+		}
 		data, ok := p.served[strings.TrimPrefix(r.URL.Path, "/")]
 		if !ok {
 			http.NotFound(w, r)
@@ -447,4 +459,94 @@ func TestASourceMovedSinceItsCheckIsAConcern(t *testing.T) {
 	evidence.Plan.Builds[0].Git["tool"] = model.GitSource{URL: t.TempDir() + "/gone", Ref: "v2", Commit: model.ObjectID(built)}
 	require.Empty(t, e.movedSources(t.Context(), evidence), "a ref that can't be read now isn't said to have moved")
 	require.Empty(t, e.movedSources(t.Context(), nil))
+}
+
+// An assessment that stopped short for what another try may not meet, a
+// server failing, upstream's or the mirror's where upstream refused, is
+// tried again when it's next collected, and finishes;
+// one refused, as a 404 refuses, stands for its files, and isn't fetched
+// again.
+func TestAnAssessmentStoppedByTheNetworkIsTriedAgain(t *testing.T) {
+	for _, test := range []struct {
+		status, mirror int
+		again          bool
+	}{{http.StatusServiceUnavailable, 0, true}, {http.StatusNotFound, 0, false}, {http.StatusNotFound, http.StatusBadGateway, true}} {
+		e, branch, base, tree := revisionFixture(t, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
+		p := newPlanner(t)
+		e.ArchivePlanner = p
+		e.ArchiveMirror = p.server.URL + "/mirror/"
+		e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {{Name: "jq"}}}}
+		p.add(base, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.7.1"}, archives: map[string]map[string]string{"jq-1.7.1.tar.gz": {"LICENSE": "MIT\n"}}})
+		p.add(tree, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.8.1"}, archives: map[string]map[string]string{"jq-1.8.1.tar.gz": {"LICENSE": "MIT\n"}}})
+		p.refusing.Store(int64(test.status))
+		p.mirror.Store(int64(test.mirror))
+		assessments, err := e.revisionAssessments(t.Context(), branch.ID, branch.Base, tree, true)
+		require.NoError(t, err)
+		require.Contains(t, assessments[0].Comparison.Problem, "archives couldn't be fetched", test.status)
+		require.Equal(t, test.again, assessments[0].Comparison.Transient, test.status)
+		require.NotEmpty(t, holds(assessments[0]), "what couldn't be checked holds (D4)")
+
+		p.refusing.Store(0)
+		p.mirror.Store(0)
+		assessments, err = e.revisionAssessments(t.Context(), branch.ID, branch.Base, tree, true)
+		require.NoError(t, err)
+		if test.again {
+			require.Empty(t, assessments[0].Comparison.Problem, "tried again, and finished")
+			require.False(t, assessments[0].Comparison.Transient)
+		} else {
+			require.Contains(t, assessments[0].Comparison.Problem, "archives couldn't be fetched", "a refusal stands for its files")
+			require.Zero(t, p.fetches.Load())
+		}
+	}
+}
+
+// A port that declares its crates is compared through its own archives,
+// planned from its Portfile with the crates set aside, as a checksum
+// refresh sets them aside: they're its Cargo.lock's, which the comparison
+// reads, and MacPorts' fetch of them isn't one dockhand checks. One
+// fetched with Git plans none, and is compared by its commits.
+func TestAVendoredPortIsComparedByItsOwnArchives(t *testing.T) {
+	f := setup(t)
+	f.options.Tclsh = testsupport.MacPortsTclsh(t)
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "vendored"})
+	require.NoError(t, err)
+	trees, err := e.Repo.CommitTrees(t.Context(), []string{string(branch.Base)})
+	require.NoError(t, err)
+	sum := strings.Repeat("a", 64)
+	port := func(name, fetch string) string {
+		return "PortSystem 1.0\nPortGroup cargo_fetch 1.0\nname " + name + "\nversion 1.0\ncategories devel\nlicense MIT\nmaintainers nomaintainer\n" +
+			"homepage https://example.invalid\ndescription demo\nlong_description demo\n" + fetch +
+			"cargo.crates \\\n    anyhow 1.0.0 " + sum + " \\\n    serde 1.0.1 " + sum + "\n"
+	}
+	tree := editTree(t, e, model.ObjectID(trees[string(branch.Base)]), map[string]string{
+		// A stand-in for MacPorts' cargo_fetch PortGroup, appending each
+		// crate to the port's own archives as it does.
+		"_resources/port1.0/group/cargo_fetch-1.0.tcl": `options cargo.crates cargo.crates_github
+default cargo.crates {}
+default cargo.crates_github {}
+proc demo_crates {} {
+    foreach {cname cversion chksum} [option cargo.crates] {
+        distfiles-append ${cname}-${cversion}.crate:crate-${cname}
+        master_sites-append https://static.crates.io/crates/${cname}:crate-${cname}
+        checksums-append ${cname}-${cversion}.crate sha256 ${chksum}
+    }
+}
+port::register_callback demo_crates
+`,
+		"devel/zdemo/Portfile": port("zdemo", "master_sites https://example.invalid/releases\nchecksums sha256 "+sum+" size 10\n"),
+		"devel/zgit/Portfile":  port("zgit", "fetch.type git\ngit.url https://example.invalid/zgit.git\ngit.branch "+strings.Repeat("b", 40)+"\n"),
+	})
+	planner, err := e.archivePlanner()
+	require.NoError(t, err)
+
+	info, plan, err := planner.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/zdemo", "")
+	require.NoError(t, err)
+	require.Len(t, plan, 1)
+	require.Equal(t, "zdemo-1.0.tar.gz", plan[0].Name)
+	require.Contains(t, info.Options["cargo.crates"], "anyhow", "the port is as it is, crates and all")
+	require.Contains(t, info.Options["checksums"], "anyhow-1.0.0.crate")
+
+	_, _, err = planner.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/zgit", "")
+	require.ErrorIs(t, err, ErrNoArchives)
 }

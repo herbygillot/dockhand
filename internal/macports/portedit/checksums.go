@@ -44,12 +44,7 @@ func (s *Service) prepareChecksums(ctx context.Context, request Request, input *
 // vendoredSources are a port's crates or Go modules, as its Portfile
 // declares them (dependency.Inspect), or nil for a port with none.
 func vendoredSources(input *sourceInput) (*dependency.Plan, error) {
-	for _, key := range []string{dependency.Go, dependency.Cargo, dependency.CargoGit} {
-		if input.info.OptionErrors[key] != "" {
-			return nil, fmt.Errorf("%w: cannot evaluate %s", ErrUnsupported, key)
-		}
-	}
-	plan, err := dependency.Inspect(input.data, input.info.Options)
+	plan, err := dependency.Declared(input.data, input.info)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s: %w", ErrUnsupported, input.target.Name, err)
 	}

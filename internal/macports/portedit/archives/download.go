@@ -17,6 +17,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/fetch"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/dependency"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"golang.org/x/crypto/ripemd160" //nolint:staticcheck // MacPorts checksums are rmd160, among others.
@@ -277,6 +278,25 @@ func CheckFetchCredentials(info macports.PortInfo) error {
 		return fmt.Errorf("%w: MacPorts credentials apply to the selected source downloads; authenticated fetching is not supported by the direct downloader; prepare this update manually with MacPorts", portfile.ErrUnsupported)
 	}
 	return nil
+}
+
+// OwnArchives is a port's Portfile with the crates or Go modules it
+// declares set aside, as a checksum refresh sets them aside: evaluated, its
+// fetch plan names the port's own archives, which CheckPolicy may admit
+// where it refuses the port as it is. The declarations are its lock
+// file's, read in those archives, and MacPorts' fetch of them isn't one
+// the direct downloader makes. False, with the Portfile as it is, for a
+// port that declares none.
+func OwnArchives(contents []byte, info macports.PortInfo) ([]byte, bool, error) {
+	declared, err := dependency.Declared(contents, info)
+	switch {
+	case err != nil:
+		return nil, false, fmt.Errorf("%w: %s: %w", portfile.ErrUnsupported, info.Name, err)
+	case declared == nil:
+		return contents, false, nil
+	}
+	stripped, err := declared.Strip(contents)
+	return stripped, err == nil, err
 }
 
 // CheckPolicy refuses a port whose archives the direct downloader cannot

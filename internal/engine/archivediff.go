@@ -11,9 +11,11 @@ import (
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/archive"
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/scratch"
 )
@@ -192,8 +194,9 @@ func (p *evaluatedPorts) FetchArchives(ctx context.Context, source model.Source,
 type ArchivePlanner interface {
 	// ArchivePlan is a port of a directory, or its first where port is
 	// empty, as evaluated, and the archives its fetch plan names, which
-	// fetchPlanned fetches; ErrNoArchives where it names none, as for a
-	// port fetched with Git, or a metaport.
+	// fetchPlanned fetches: its own, where it declares crates or Go
+	// modules too; ErrNoArchives where it names none, as for a port
+	// fetched with Git, or a metaport.
 	ArchivePlan(ctx context.Context, source model.Source, directory, port string) (macports.PortInfo, []macports.Distfile, error)
 }
 
@@ -235,8 +238,44 @@ func (p *evaluatedPorts) ArchivePlan(ctx context.Context, source model.Source, d
 	}
 	name := targets[i].Name
 	info := observation.Snapshot.Ports[name]
-	plan, err := planOf(info, observation.Ports[name], filepath.Join(tree.Root(), filepath.FromSlash(directory)))
+	own, err := p.withoutVendored(ctx, files, targets[i], info)
+	if err != nil {
+		return info, nil, err
+	}
+	if own != nil {
+		observation = *own
+	}
+	plan, err := planOf(observation.Snapshot.Ports[name], observation.Ports[name], filepath.Join(tree.Root(), filepath.FromSlash(directory)))
 	return info, plan, err
+}
+
+// withoutVendored is a port observed with the crates or Go modules its
+// Portfile declares set aside (archives.OwnArchives), so that its fetch
+// plan names its own archives, which a comparison reads the declarations
+// in. Nil for a port that declares none.
+func (p *evaluatedPorts) withoutVendored(ctx context.Context, files *workspace.Workspace, target model.Target, info macports.PortInfo) (_ *macports.Observation, err error) {
+	contents, err := os.ReadFile(filepath.Join(files.Root(), filepath.FromSlash(target.Portfile)))
+	if err != nil {
+		return nil, err
+	}
+	stripped, vendored, err := archives.OwnArchives(contents, info)
+	if err != nil || !vendored {
+		return nil, err
+	}
+	overlay, err := files.Overlay(ctx, []git.FileEdit{{Path: target.Portfile, After: stripped}})
+	if err != nil {
+		return nil, err
+	}
+	defer func() { err = errors.Join(err, overlay.Close()) }()
+	bound, err := overlay.Context(target, model.Platform{})
+	if err != nil {
+		return nil, err
+	}
+	observation, err := p.ports.Observe(ctx, bound, macports.ObservationRequest{SelectedOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	return &observation, nil
 }
 
 // planOf is the archives a port's fetch plan names, which dockhand fetches

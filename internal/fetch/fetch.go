@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"slices"
 	"strings"
 )
 
@@ -174,4 +176,24 @@ func (b *boundedBody) Read(p []byte) (int, error) {
 	n, err := b.ReadCloser.Read(p)
 	b.remaining -= int64(n)
 	return n, err
+}
+
+// Transient reports a failure another try may not meet: the network's, a
+// timeout, or a server that was busy or failing (429, or 500 and above). A
+// refusal, as a 404 is, says what the server has, and isn't one. Of
+// failures joined, as upstream's and a mirror's are, any one that is makes
+// it one.
+func Transient(err error) bool {
+	switch failure := err.(type) {
+	case nil:
+		return false
+	case *StatusError:
+		return failure.Status == http.StatusTooManyRequests || failure.Status >= http.StatusInternalServerError
+	case net.Error:
+		// A timeout is one: context.DeadlineExceeded is a net.Error too.
+		return true
+	case interface{ Unwrap() []error }:
+		return slices.ContainsFunc(failure.Unwrap(), Transient)
+	}
+	return Transient(errors.Unwrap(err))
 }

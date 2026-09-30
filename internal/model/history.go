@@ -67,6 +67,11 @@ type UpstreamComparison struct {
 	// Coverage says what the assessment read, and what it set apart and
 	// why; none in a comparison recorded before it did.
 	Coverage []Coverage `json:"coverage,omitempty"`
+	// Transient is a Problem another try may not meet, a network's
+	// failure or a forge's rate limit, which collecting the assessment
+	// again tries; a refusal, as a 404, or a port that doesn't evaluate,
+	// stands for its files.
+	Transient bool `json:"transient,omitempty"`
 }
 
 // Held reports whether the comparison holds the update for a person's

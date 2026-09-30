@@ -78,6 +78,10 @@ type Engine struct {
 	// SourceArchiver writes a Git-fetched port's forge's archive of a
 	// commit, for its assessment; upstream discovery's forges when nil.
 	SourceArchiver SourceArchiver
+	// ArchiveMirror is MacPorts' distfiles mirror, which an assessment
+	// fetches an archive from where upstream no longer serves it;
+	// archives.MacPortsMirror when empty.
+	ArchiveMirror string
 	// DependentReader finds dependents for impact; the port index when nil.
 	DependentReader DependentReader
 	// OutdatedReader finds newer releases for outdated; MacPorts' evaluator

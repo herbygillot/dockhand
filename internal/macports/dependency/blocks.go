@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/text"
 )
@@ -60,6 +61,18 @@ type Plan struct {
 	Values map[string][]string
 	// Git states how a Cargo port obtains Git-pinned crates; empty for Go.
 	Git GitPolicy
+}
+
+// Declared is the crates or Go modules a port's Portfile declares, as
+// MacPorts evaluated the port (Inspect), or nil for a port with none; a
+// declaration MacPorts couldn't evaluate is an error.
+func Declared(src []byte, info macports.PortInfo) (*Plan, error) {
+	for _, key := range []string{Go, Cargo, CargoGit} {
+		if info.OptionErrors[key] != "" {
+			return nil, fmt.Errorf("dependency: cannot evaluate %s", key)
+		}
+	}
+	return Inspect(src, info.Options)
 }
 
 func Inspect(src []byte, options map[string]string) (*Plan, error) {

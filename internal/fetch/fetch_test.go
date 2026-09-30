@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -162,4 +164,18 @@ func TestAskingAURLFollowsRedirectsAsFetchingDoes(t *testing.T) {
 	require.False(t, got.Answered)
 	require.ErrorContains(t, got.Err, "HTTP 404")
 	require.ErrorContains(t, Ask(t.Context(), client, "ftp://example.invalid/").Err, "unsupported URL")
+}
+
+// A failure another try may not meet is the network's, a timeout, or a
+// busy or failing server's; a refusal, as a 404, isn't.
+func TestAFailureWorthTryingAgain(t *testing.T) {
+	for err, again := range map[error]bool{
+		&StatusError{Status: 503}: true, &StatusError{Status: 429}: true, &StatusError{Status: 404}: false, &StatusError{Status: 403}: false,
+		&url.Error{Op: "Get", URL: "https://example.org", Err: &net.DNSError{Err: "no such host", Name: "example.org"}}: true,
+		fmt.Errorf("fetching: %w", context.DeadlineExceeded):                                                            true,
+		errors.New("the server sent html"):                                                                              false,
+		errors.Join(errors.New("upstream"), &StatusError{Status: 502}):                                                  true,
+	} {
+		require.Equal(t, again, Transient(err), err.Error())
+	}
 }

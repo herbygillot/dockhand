@@ -22,10 +22,12 @@ import (
 	"github.com/herbygillot/dockhand/internal/sourcecompare"
 )
 
-// Policy is the version of the rules an assessment is made under: raising
-// it keeps an assessment made before from standing for one made now,
-// without reading anything again (the assessment design, C).
-const Policy = 1
+// Policy is the version of the rules an assessment is made under, and of
+// what the engine gives them to compare: raising it keeps an assessment
+// made before from standing for one made now, without reading anything
+// again (the assessment design, C). 2: a port that declares its crates or
+// Go modules is compared through its own archives, not refused.
+const Policy = 2
 
 // Input is what one port's assessment reads.
 type Input struct {

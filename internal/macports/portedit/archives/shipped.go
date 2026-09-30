@@ -2,6 +2,7 @@ package archives
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -51,8 +52,13 @@ func (s *Store) Shipped(ctx context.Context, info macports.PortInfo, plan []macp
 		if !ok {
 			return shipped, fmt.Errorf("%s has no checksums in the Portfile", file.Name)
 		}
+		// What went wrong upstream and at the mirror is kept beneath the
+		// words, for a caller that asks what kind of failure it was, such
+		// as one another try may not meet (fetch.Transient).
+		var upstream error
 		if len(file.URLs) > 0 {
 			download, err := s.FetchFirst(ctx, info, file.Name, file.URLs)
+			upstream = err
 			if err == nil && !Differs(want, download.Checksum) {
 				shipped = append(shipped, Shipped{Download: download})
 				continue
@@ -63,12 +69,12 @@ func (s *Store) Shipped(ctx context.Context, info macports.PortInfo, plan []macp
 			}
 		}
 		if s.client.Mirror == "" {
-			return shipped, fmt.Errorf("upstream no longer serves %s as the Portfile's checksums describe it", file.Name)
+			return shipped, &unavailable{words: fmt.Sprintf("upstream no longer serves %s as the Portfile's checksums describe it", file.Name), causes: upstream}
 		}
 		mirrored, err := s.Fetch(ctx, info, Source{Name: file.Name, URL: strings.TrimRight(s.client.Mirror, "/") + "/" + subdir + "/" + url.PathEscape(file.Name)})
 		if err != nil || Differs(want, mirrored.Checksum) {
 			discard(mirrored)
-			return shipped, fmt.Errorf("neither upstream nor MacPorts' mirror has %s as the Portfile's checksums describe it", file.Name)
+			return shipped, &unavailable{words: fmt.Sprintf("neither upstream nor MacPorts' mirror has %s as the Portfile's checksums describe it", file.Name), causes: errors.Join(upstream, err)}
 		}
 		shipped = append(shipped, Shipped{Download: mirrored, Mirror: true})
 	}
@@ -131,3 +137,13 @@ func Differs(declared, sum portfile.Checksum) bool {
 		declared.RMD160 != "" && declared.RMD160 != sum.RMD160 ||
 		declared.Size != 0 && declared.Size != sum.Size
 }
+
+// unavailable is an archive that couldn't be had, in a person's words,
+// with what went wrong beneath them.
+type unavailable struct {
+	words  string
+	causes error
+}
+
+func (u *unavailable) Error() string { return u.words }
+func (u *unavailable) Unwrap() error { return u.causes }
