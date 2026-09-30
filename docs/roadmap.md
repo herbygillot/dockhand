@@ -168,6 +168,7 @@ The order is the roadmap's own: a guardrail first, then what's written into a Po
    - **From the code-organization review,** where this work touches:
      - one livecheck pipeline for upstream's two paths, before discovery changes (finding 6);
      - `create` names `adopt` as the other authoring commands do, and records design v3's subject (findings 8 and 9).
+   - **Shell completions in a created destroot,** where Cargo.lock has `clap_complete`, suggested and marked unconfirmed, as the destroot is ([create, for txt, again](reviews/2026-09-28-hugo-bump-exercise.md#create-for-txt-again), finding 5). Low priority.
 
 8. **Variants in checks** (the libuv, sqlit-tui, ouch, and s2n-tls run's finding 7). Done 2026-09-30 ([note](activity/2026-09-30-variants-in-checks.md)), but for a baseline of a variant build, which rebuilds the port's defaults at the base. Design v3 promises `check --variants` for a single selected target, and `--variants each` evidence ticking the template's variants item; neither exists, so `submit --tested-variants` ticks a box no check can evidence. s2n-tls runs its tests only under `+tests`. It follows item 6, which keys results and reuse by what each build read, the variants asked for included; the guest, the command provider's request file, Tested on, and the evidence grid each name the variants, and GitHub's workflow, which builds only default variants, says it can't.
 
@@ -206,7 +207,8 @@ The order of all the work, as of 2026-09-29:
 3. batch 16, since `checksums` couldn't refresh any port with vendored crates or Go modules, and `create` couldn't finish the commonest new Rust port (added 2026-09-30). Done 2026-09-30;
 4. item 8, variants in checks, which keys its results as item 6 does. Done 2026-09-30;
 5. batch 17, what the helper-ownership review of 2026-09-30 reproduced: a false hold serve would stop on, an HTTPS answer that was HTTP, and the variant reader item 8 now calls (added 2026-09-30). Done 2026-09-30;
-6. batches 10 to 15, with item 7's coverage beside batch 13, which reads more of the same archives, and the two boundaries that review recommends, a project's manifests read once and the update assessment in `macports`, taken before batch 13 adds more manifests.
+6. batch 18, a new port from create to submit without a hand-made detour, since every new port meets it (added 2026-09-30);
+7. batches 10 to 15, with item 7's coverage beside batch 13, which reads more of the same archives, and the two boundaries that review recommends, a project's manifests read once and the update assessment in `macports`, taken before batch 13 adds more manifests.
 
 What batches 10 to 15 touch doesn't move with item 6, so they wait without cost, and batch 12's GitHub work wants item 6's environment identity. The order is the implementer's to re-settle as work lands.
 
@@ -284,6 +286,12 @@ What batches 10 to 15 touch doesn't move with item 6, so they wait without cost,
   - a category `create` can write (the review's table). `create --category _resources` passes its check, which refuses only a slash or a space, while `macports.IsCategory` refuses a directory beginning `_` or `.`. A category validator in `macports`, used before anything is written;
   - one owner of which results a baseline rebuilds: `rebuildWhere` and `BaselineWorthy` repeat the install, test, and advisory-failure predicate;
   - the prepared port read one way: `describe` and `preparedPort` read the editor's fidelity history and `Unchanged`, while the comparison reads `Prepared`. An accessor on the editor's result.
+- **Batch 18: a new port, from create to submit** ([create, for txt, again](reviews/2026-09-28-hugo-bump-exercise.md#create-for-txt-again)). txt passed check-50 once the person had moved it, re-created it, and spelled tidy's subject out; each detour is one of these.
+  - a created port moved to another category (finding 1). Without a terminal the category is the build system's guess, `devel`, and nothing moves a port afterwards: `git mv` is a no-op in the sparse worktree, and `create --category editors` in the same branch refused with "there is already a port txt … dockhand update txt updates it", wrong for a port create itself wrote, uncommitted, with nothing to update to. `create` again, for the port this branch created and hasn't committed, moves it to the category named, keeping the person's edits, and `refuseExisting` says so rather than advising `update`. The guess itself can read the project's description and topics against the tree's category names (an "editor" is `editors`), still marked unconfirmed;
+  - `check --branch` on a branch with no commits taking its working files (finding 2). Asking head or working tree is the design's for a branch checked out elsewhere with edits, but with no commits its head is its base, which holds nothing of it, so the working files are the only answer;
+  - a created port's hand edits leaving tidy's plan unambiguous (finding 3). tidy proposed "txt: new port", then wanted `--squash --message` with the same words, since the file "has changes dockhand's commands did not make". Editing a created port is what `create` asks for ("Next: dockhand edit txt"), so for a port this branch created, the edits are the port's, and the plan stands; an update edited by hand still asks;
+  - a new port's pull request saying what the port is (finding 4): its description, homepage, and license, from the Portfile as evaluated, under Description, where the commit has no body. Its Type(s) stay unticked, since MacPorts' template says a new Portfile, a "submission", is detected and labelled by its own automation;
+  - the update's summary without its zero clauses, and the upstream count naming what moved (finding 6): "and 0 Git crates (0 changed)" is said only where there are any; "Cargo.toml: 1 added, 1 moved" names them, inferno added and `open` moved, where there are few, and a dependency turning from optional to required is a move, which `cargoRequirement` reads today as no change.
 
 ### Taken when their area is next touched
 
@@ -549,6 +557,12 @@ Changed:
 **create, for txt** in the same review, `create https://github.com/ErikHellman/txt --new` at `a91728ee`, was checked against the code at `a8d92e2b`.
 - **All six findings hold,** each as described. Finding 1 is wider: `archives.CheckPolicy` refuses every port with vendored crates or Go modules, so `checksums` can't refresh any of them, while `update` strips and restores the blocks around the same step.
 - **Placed:** all six as batch 16, taken after item 6 for finding 1.
+
+**create, for txt, again, and dua-cli** in the same review, with `a2de6992`, was checked against the code at `96f151be`.
+- **Five of the six earlier `create` findings are confirmed fixed;** the sixth, the category, is this run's finding 1. dua-cli 2.45.1 went from update to submit without a stop (#35060).
+- **Findings 1, 2, 3, and 6 hold,** each as described: `refuseExisting` advises `update` for any existing port; `captureMode` asks for any branch checked out elsewhere with edits, commits or none; tidy's plan with a hand-edit note isn't unambiguous; the summary loops over every regenerated block, zero or not, and the upstream count names nothing.
+- **Finding 4 holds in part.** The description should say what the port is; but no Type ticked is right for a new port, which MacPorts' template says its automation detects as a submission.
+- **Placed:** 1, 2, 3, 4, and 6 as batch 18, taken next; 5 with item 7's `create` work.
 
 **The roadmap's smaller items were re-batched on 2026-09-29,** after batches 1 to 3: by area and in order, rather than by the run that found each, which the done items keep.
 
