@@ -196,8 +196,9 @@ In batches, in the order they're taken, each touching one area once, so a change
 The order of all the work, as of 2026-09-29:
 1. batches 4 to 9, each small or medium, each putting right something a person is told or relies on today, batch 9 the most common false hold;
 2. item 6, reuse and archives, with the planning it moves out of the engine;
-3. item 8, variants in checks, which keys its results as item 6 does;
-4. batches 10 to 15, with item 7's coverage beside batch 13, which reads more of the same archives.
+3. batch 16, since `checksums` can't refresh any port with vendored crates or Go modules, and `create` can't finish the commonest new Rust port (added 2026-09-30);
+4. item 8, variants in checks, which keys its results as item 6 does;
+5. batches 10 to 15, with item 7's coverage beside batch 13, which reads more of the same archives.
 
 What batches 10 to 15 touch doesn't move with item 6, so they wait without cost, and batch 12's GitHub work wants item 6's environment identity. The order is the implementer's to re-settle as work lands.
 
@@ -261,6 +262,12 @@ What batches 10 to 15 touch doesn't move with item 6, so they wait without cost,
   - the index a check stages found nearer to hand (finding 4). check-23 built a whole index for macOS 15, which no earlier check at that master had used, so the review's premise was another release's. Still, a Tart check's stager builds no base index, seeds only from the same release's recent generations, and never from the mirror for a snapshot, which has no commit; `portindex/source.go` says verification keeps the base, which the wiring doesn't ([the ov run](reviews/2026-09-28-hugo-bump-exercise.md#ov-through-adopt-edit-retry-and-submit---passing)).
 - **Batch 15: provenance.**
   - a `Generated-By` naming a commit nobody can find, not only a `+dirty` build: submit could ask GitHub, since tidy reads nothing remote ([the hugo exercise](reviews/2026-09-28-hugo-bump-exercise.md)).
+- **Batch 16: a new Rust port, and checksums of vendored sources** ([create, for txt](reviews/2026-09-28-hugo-bump-exercise.md#create-for-txt)). Taken after item 6, before the rest: the first item stops `checksums` for every port with `cargo.crates`, `go.vendors`, or `cargo.crates_github`, not only a new one.
+  - `checksums` of a port with vendored sources (finding 1). `create` runs the checksum refresh, which binds the Portfile's archives as written, and `archives.CheckPolicy` refuses a port whose `cargo.crates` is set: "fetch customization or vendored source requires a dedicated preparer". txt was left with zeros, and `dockhand checksums txt`, the advice given, meets the same refusal. `update` has the step it lacks: it sets the dependency blocks aside (`plan.Strip`), computes the source archive's checksums, and puts them back (`plan.Apply`). The refresh should do the same in `portedit`, the crates' checksums being Cargo.lock's already;
+  - a destroot for a Cargo or Go port, marked unconfirmed (finding 2). `newport` writes none for any build system, and neither PortGroup installs anything, while its unconfirmed list names the build for Go and Python only. For one binary named for the package, the `xinstall` line the peer gives, and the build among what's unconfirmed;
+  - the license and description from the manifest before the forge (findings 3 and 5). GitHub said NOASSERTION, so `license unknown`, where Cargo.toml says `MIT OR Apache-2.0`, MacPorts' `{MIT Apache-2}`; `newport.License` maps a single SPDX ID only. Cargo.toml's `description` is shorter and nearer MacPorts' style than GitHub's. An SPDX expression, `OR` as a choice and `AND` as both, joins `newport`'s map;
+  - the category's guess said with its value (finding 4). It's `python` or `devel` by build system, marked in the file, and in the output only as the word "category" among what's unconfirmed; since it picks the directory, `create` should print what it chose;
+  - an `http://` homepage from GitHub's metadata written as given (finding 6), where https answers; the probe is the engine's, as `create`'s other reads are.
 
 ### Taken when their area is next touched
 
@@ -522,6 +529,10 @@ Changed:
 **Adding py-flatbuffers to #35044** in the same review, with `c42d0587`, was checked against the code at `8c8863a0`.
 - **All three findings hold.** An unscoped checksum refresh let only the selected port's checksums change (`fidelity.Checksums`), so a family's shared declaration was refused; fixed the same day. The 404's words are the download's, which doesn't know a PyPI release's files. `ApplyTidy` writes every group as a new commit, with the committer's time now.
 - **Placed:** 1 with batch 5, done; 2 in batch 8; 3 in batch 10.
+
+**create, for txt** in the same review, `create https://github.com/ErikHellman/txt --new` at `a91728ee`, was checked against the code at `a8d92e2b`.
+- **All six findings hold,** each as described. Finding 1 is wider: `archives.CheckPolicy` refuses every port with vendored crates or Go modules, so `checksums` can't refresh any of them, while `update` strips and restores the blocks around the same step.
+- **Placed:** all six as batch 16, taken after item 6 for finding 1.
 
 **The roadmap's smaller items were re-batched on 2026-09-29,** after batches 1 to 3: by area and in order, rather than by the run that found each, which the done items keep.
 
