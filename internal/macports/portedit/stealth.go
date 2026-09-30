@@ -19,12 +19,17 @@ import (
 // changed upstream under the same name as a stealth update (Design v3 §6.5):
 // the revision bumped, since the source changed, unless KeepRevision, and
 // dist_subdir set so mirrors keep both archives. Changed are the files the
-// branch has changed since its base, which the caller knows: a Portfile
-// among them was edited by hand first, as for a new version, and its
-// refresh is no stealth update.
+// branch has changed since its base, which the caller knows, and Base the
+// port as the base evaluates it, where Changed names its Portfile: a
+// version edited by hand since, as for a new version, makes the refresh no
+// stealth update, while a comment or a homepage edited leaves it one (the
+// update-workflow review's efficiency note). Base is nil where the base has
+// no such port, or it couldn't be evaluated, and a Portfile changed then is
+// taken as a new version.
 type StealthRequest struct {
 	Changed      []string
 	KeepRevision bool
+	Base         *macports.PortInfo
 }
 
 // Stealth is the stealth update a checksum refresh found and made, as its
@@ -61,10 +66,19 @@ func (s *Service) stealthUpdate(ctx context.Context, request Request, input *sou
 	if asked == nil || len(result.Files) != 1 || len(result.Fidelity) == 0 || len(result.Downloads) == 0 || result.Prepared.Ports == nil {
 		return nil
 	}
-	if slices.Contains(asked.Changed, input.target.Portfile) {
-		return nil
-	}
 	name := input.target.Name
+	// A revision already bumped by hand since the base isn't bumped again,
+	// and dist_subdir follows it.
+	keep, byHand := asked.KeepRevision, false
+	if slices.Contains(asked.Changed, input.target.Portfile) {
+		current := result.Fidelity[0].Before.Ports[name]
+		if asked.Base == nil || asked.Base.Version != current.Version {
+			return nil
+		}
+		if current.Revision > asked.Base.Revision {
+			keep, byHand = true, true
+		}
+	}
 	was := archives.Declared(result.Fidelity[0].Before.Ports[name].Options["checksums"])
 	found := &Stealth{}
 	for _, download := range result.Downloads {
@@ -82,7 +96,7 @@ func (s *Service) stealthUpdate(ctx context.Context, request Request, input *sou
 	result.Stealth = found
 	previous := result.Prepared
 	contents := result.Files[0].After
-	if !asked.KeepRevision {
+	if !keep {
 		bumped, err := portfile.BumpRevision(contents, input.target.Subport, previous.Ports[name].Revision)
 		if err != nil {
 			found.RevbumpProblem = unsupportedReason(err)
@@ -90,7 +104,7 @@ func (s *Service) stealthUpdate(ctx context.Context, request Request, input *sou
 			contents, found.Revbumped = bumped, true
 		}
 	}
-	if after, _, err := portfile.StealthDistSubdir(contents, found.Revbumped); err != nil {
+	if after, _, err := portfile.StealthDistSubdir(contents, found.Revbumped || byHand); err != nil {
 		found.Problem = unsupportedReason(err)
 	} else {
 		contents = after

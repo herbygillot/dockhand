@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -55,10 +56,12 @@ func TestAStealthUpdateKeepingTheRevisionNumbersTheDirectory(t *testing.T) {
 }
 
 // No stealth update is made where none is asked, or of a Portfile the
-// branch changed since its base, as a new version edited by hand is.
-func TestAStealthUpdateNeedsAskingAndAnUnchangedPortfile(t *testing.T) {
+// branch changed since its base in its version, as a new version edited by
+// hand is, or where the base can't say.
+func TestAStealthUpdateNeedsAskingAndAnUnchangedVersion(t *testing.T) {
 	t.Parallel()
-	for _, asked := range []*StealthRequest{nil, {Changed: []string{"devel/fixture/Portfile"}}} {
+	changed := []string{"devel/fixture/Portfile"}
+	for _, asked := range []*StealthRequest{nil, {Changed: changed}, {Changed: changed, Base: &macports.PortInfo{Name: "fixture", Version: "1.2.2", Revision: 2}}} {
 		s, r, _ := archiveFixture(t, stealthPortfile)
 		r.Action, r.Version, r.Release = model.EditChecksums, "", nil
 		r.Stealth = asked
@@ -67,6 +70,34 @@ func TestAStealthUpdateNeedsAskingAndAnUnchangedPortfile(t *testing.T) {
 		require.Nil(t, result.Stealth)
 		require.NotContains(t, string(result.Files[0].After), "dist_subdir", "the checksums alone are refreshed")
 		require.Contains(t, string(result.Files[0].After), "revision 2")
+	}
+}
+
+// A Portfile the branch changed since its base in anything but its
+// version, a comment or a homepage, is still a stealth update's: the
+// version decides, not whether the file changed (the update-workflow
+// review's efficiency note). A revision the branch already bumped by hand
+// isn't bumped again, and dist_subdir follows it.
+func TestAStealthUpdateIsDecidedByTheVersion(t *testing.T) {
+	t.Parallel()
+	changed := []string{"devel/fixture/Portfile"}
+	for _, test := range []struct {
+		base                 macports.PortInfo
+		revbumped            bool
+		revision, distSubdir string
+	}{
+		{macports.PortInfo{Name: "fixture", Version: "1.2.3", Revision: 2}, true, "revision 3", "fixture/1.2.3_3"},
+		{macports.PortInfo{Name: "fixture", Version: "1.2.3", Revision: 1}, false, "revision 2", "fixture/1.2.3_2"},
+	} {
+		s, r, _ := archiveFixture(t, stealthPortfile)
+		r.Action, r.Version, r.Release = model.EditChecksums, "", nil
+		r.Stealth = &StealthRequest{Changed: changed, Base: &test.base}
+		result, err := s.Prepare(t.Context(), r)
+		require.NoError(t, err)
+		require.NotNil(t, result.Stealth)
+		require.Equal(t, test.revbumped, result.Stealth.Revbumped)
+		require.Equal(t, test.distSubdir, result.Stealth.DistSubdir)
+		require.Contains(t, string(result.Files[0].After), test.revision)
 	}
 }
 

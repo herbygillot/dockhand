@@ -217,15 +217,17 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		Subject:    request.Subject,
 	}
 	if request.Action == model.EditChecksums {
-		// A Portfile the branch has changed since its base was edited by
-		// hand first, as for a new version, and its refresh is no stealth
-		// update. Which files those are is the branch's to say; the editor
-		// makes the stealth update of the rest.
+		// Which files the branch changed since its base is the branch's to
+		// say, and where its Portfile is among them, the port as the base
+		// evaluates it: a version edited by hand since makes the refresh no
+		// stealth update, while a comment or a homepage edited leaves it
+		// one. The editor decides, and makes the stealth update.
 		changed, err := changedSinceBase(ctx, worktree, captured, base)
 		if err != nil {
 			return Update{}, err
 		}
-		input.Stealth = &preparation.StealthRequest{Changed: changed, KeepRevision: request.KeepRevision}
+		input.Stealth = &preparation.StealthRequest{Changed: changed, KeepRevision: request.KeepRevision,
+			Base: e.basePort(ctx, model.Source{Tree: model.ObjectID(captured), Base: base}, base, request.Port, changed)}
 	}
 	// own is the branch's own pull request, which is no other.
 	own := 0
@@ -428,6 +430,35 @@ func portDirectory(file string) string {
 		return directory
 	}
 	return path.Dir(file)
+}
+
+// basePort is a port as the branch's base evaluates it, where the branch
+// changed its Portfile since; nil where it didn't, where the base has no
+// such port, or where it couldn't be evaluated, which a stealth update
+// takes as a new version.
+func (e *Engine) basePort(ctx context.Context, source model.Source, base model.ObjectID, name string, changed []string) *macports.PortInfo {
+	reader, err := e.portReader()
+	if err != nil {
+		return nil
+	}
+	directory, err := reader.Directory(ctx, source, name)
+	if err != nil || !slices.Contains(changed, directory+"/Portfile") {
+		return nil
+	}
+	trees, err := e.Repo.CommitTrees(ctx, []string{string(base)})
+	if err != nil {
+		return nil
+	}
+	ports, err := reader.Ports(ctx, model.Source{Commit: base, Tree: model.ObjectID(trees[string(base)]), Base: base}, directory, model.Environment{}, nil)
+	if err != nil {
+		return nil
+	}
+	for _, port := range ports {
+		if port.Name == name {
+			return &port
+		}
+	}
+	return nil
 }
 
 // changedSinceBase are the files a branch's captured tree has changed since

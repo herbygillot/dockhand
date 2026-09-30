@@ -689,3 +689,24 @@ func TestAPinForAnotherPlatformHoldsNothing(t *testing.T) {
 		}
 	}
 }
+
+// A checksum refresh's stealth decision gets the port as the base
+// evaluates it, where the branch changed its Portfile since, and nothing
+// otherwise, or where the base has no such port.
+func TestAStealthRefreshGetsTheBasesPort(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "stealth"})
+	require.NoError(t, err)
+	trees, err := e.Repo.CommitTrees(t.Context(), []string{string(branch.Base)})
+	require.NoError(t, err)
+	base := model.ObjectID(trees[string(branch.Base)])
+	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {{Name: "jq", Version: "1.8.1"}}},
+		trees: map[model.ObjectID]map[string][]macports.PortInfo{base: {"textproc/jq": {{Name: "jq", Version: "1.7.1"}}}}}
+	source := model.Source{Tree: "branch-tree", Base: branch.Base}
+	port := e.basePort(t.Context(), source, branch.Base, "jq", []string{"textproc/jq/Portfile"})
+	require.NotNil(t, port)
+	require.Equal(t, "1.7.1", port.Version, "the base's, not the branch's")
+	require.Nil(t, e.basePort(t.Context(), source, branch.Base, "jq", []string{"textproc/jq/files/patch-a.diff"}), "the Portfile didn't change")
+	require.Nil(t, e.basePort(t.Context(), source, branch.Base, "gone", []string{"textproc/gone/Portfile"}), "no such port")
+}
