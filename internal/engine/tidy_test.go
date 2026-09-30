@@ -1,12 +1,14 @@
 package engine
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -268,4 +270,51 @@ func TestAPersonsEditBesideAnUpdateKeepsItsSubject(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, plan.Groups[0].Notes, "subject from dockhand's edits, which the other changes leave standing", "the version dockhand wrote is gone")
 	require.NotEqual(t, "jq: update to 1.8.1", plan.Groups[0].Subject())
+}
+
+// Rearranging tidy's commits so a port comes before one it depends on is
+// noted on its commit, as the check of the files orders them; the order
+// is still the person's (the libuv run's finding 6).
+func TestARegroupPuttingADependentFirstIsNoted(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch := twoPortBranch(t, e)
+	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{
+		"textproc/jq": {port("jq", "libharbor")}, "devel/libharbor": {port("libharbor")},
+	}}
+	// Edits to both, uncommitted, checked as they are: tidy proposes a
+	// commit for each.
+	write(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3.1\n", "textproc/jq/Portfile": "name jq\nversion 1.8.2\n"})
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
+	require.NoError(t, err)
+	checkPlan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}})
+	require.NoError(t, err)
+	queued, err := e.Enqueue(t.Context(), branch, checkPlan, model.OriginPerson)
+	require.NoError(t, err)
+	check, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunPassed, check.State)
+
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	order := map[string]int{}
+	for i, group := range plan.Groups {
+		order[group.Directory] = i + 1
+	}
+	require.Contains(t, order, "textproc/jq")
+	require.Contains(t, order, "devel/libharbor")
+	dependentFirst := fmt.Sprintf("%d %d", order["textproc/jq"], order["devel/libharbor"])
+	regrouped, err := e.Regroup(t.Context(), plan, dependentFirst, "")
+	require.NoError(t, err)
+	require.Equal(t, "textproc/jq", regrouped.Groups[0].Directory)
+	require.Contains(t, regrouped.Groups[0].Notes, "comes before commit 2, which changes libharbor, a port jq depends on as "+check.Name()+" orders them")
+
+	dependencyFirst := fmt.Sprintf("%d %d", order["devel/libharbor"], order["textproc/jq"])
+	regrouped, err = e.Regroup(t.Context(), plan, dependencyFirst, "")
+	require.NoError(t, err)
+	for _, group := range regrouped.Groups {
+		for _, note := range group.Notes {
+			require.NotContains(t, note, "depends on", "the dependency first needs no note")
+		}
+	}
 }

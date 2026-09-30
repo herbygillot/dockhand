@@ -361,3 +361,47 @@ func pathDifference(want, have []string) string {
 	}
 	return strings.Join(words, "; ")
 }
+
+// Regroup rearranges a tidy plan's commits (TidyPlan.Regroup), and notes
+// each that would come before a commit it depends on, as the newest check
+// of the files orders their ports: "2 1" would have committed sqlit-tui,
+// which pins textual-fastdatatable 0.19.0, before the commit providing it
+// (the libuv run's finding 6). The note warns; the order is the person's.
+// Files no check has seen are rearranged without one.
+func (e *Engine) Regroup(ctx context.Context, plan TidyPlan, spec, author string) (TidyPlan, error) {
+	regrouped, err := plan.Regroup(spec, author)
+	if err != nil {
+		return plan, err
+	}
+	evidence, found, err := e.EvidenceFor(ctx, plan.Branch.ID, model.ObjectID(plan.Final))
+	if err != nil || !found {
+		return regrouped, err
+	}
+	at := map[string]int{}
+	for i, group := range regrouped.Groups {
+		if _, ok := at[group.Directory]; !ok && group.Directory != "" {
+			at[group.Directory] = i
+		}
+	}
+	directory := func(id model.TargetID) string {
+		target, _ := evidence.Plan.Target(id)
+		return target.Directory
+	}
+	for _, environment := range evidence.Plan.Environments {
+		planned, _ := evidence.Plan.In(environment)
+		for id, needs := range planned.Dependencies {
+			commit, ok := at[directory(id)]
+			if !ok {
+				continue
+			}
+			for _, need := range needs {
+				later, ok := at[directory(need)]
+				note := fmt.Sprintf("comes before commit %d, which changes %s, a port %s depends on as %s orders them", later+1, need, id, evidence.Run.Name())
+				if ok && later > commit && !slices.Contains(regrouped.Groups[commit].Notes, note) {
+					regrouped.Groups[commit].Notes = append(regrouped.Groups[commit].Notes, note)
+				}
+			}
+		}
+	}
+	return regrouped, nil
+}

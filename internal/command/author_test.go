@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
@@ -403,4 +405,36 @@ Write them yourself; its archives have these now:
 
 	err = byHand(fmt.Errorf("%w: a version it can't find", engine.ErrUnsupported), engine.UpdateRequest{Action: model.EditUpdate, Port: "git", Plan: true, FromMaster: true}, model.Branch{}, false)
 	require.EqualError(t, err, "can't update git by itself: a version it can't find\nEdit the version yourself; dockhand checksums git then fills in the rest:\n  dockhand edit git", "a plan keeps nothing, having changed nothing")
+}
+
+// An update names the port's other open pull requests, planned or made,
+// and stops for none: libuv 1.53.0 was planned without a word of #34620
+// (the libuv run's finding 1). What couldn't be looked for is said.
+func TestAnUpdateNamesOtherOpenPullRequests(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	g := &fakeGitHub{others: []forge.PullRequestSummary{{Number: 34620, Title: "jq: update to 1.8.0", URL: "https://github.com/macports/macports-ports/pull/34620"}}}
+	testForge = func(*engine.Engine) engine.Forge { return g }
+
+	planned, _, err := dockhand(t, "update", "jq", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, planned, "Also open for jq: #34620 jq: update to 1.8.0\n")
+	result, err := jsonOf(t, "update", "jq", "--plan")
+	require.NoError(t, err)
+	require.Equal(t, []any{map[string]any{"number": float64(34620), "title": "jq: update to 1.8.0", "url": "https://github.com/macports/macports-ports/pull/34620"}}, dig(t, result.Result, "others"))
+
+	made, _, err := dockhand(t, "update", "jq", "--new")
+	require.NoError(t, err, "it stops for none")
+	require.Contains(t, made, "Also open for jq: #34620 jq: update to 1.8.0\n")
+
+	g.searchErr = errors.New("rate limited")
+	dir := filepath.Join(w.home, "Source", "macports-branches")
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	t.Setenv("MACPORTS_TREE", filepath.Join(dir, entries[0].Name()))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, entries[0].Name(), "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\n"), 0o644))
+	again, _, err := dockhand(t, "update", "jq", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, again, "Couldn't look for other open pull requests for jq: rate limited\n")
 }

@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/engine"
 )
 
 func gitRun(t *testing.T, dir string, args ...string) string {
@@ -26,6 +28,10 @@ type world struct{ home, upstream, clone string }
 
 func newWorld(t *testing.T) world {
 	t.Helper()
+	// What would ask GitHub, such as an update looking for other open pull
+	// requests, asks a fake that knows of none, unless a test gives its own.
+	testForge = func(*engine.Engine) engine.Forge { return &fakeGitHub{} }
+	t.Cleanup(func() { testForge = nil })
 	// Git reports resolved paths; on macOS the temporary directory is
 	// reached through /var, a link to /private/var.
 	root, err := filepath.EvalSymlinks(t.TempDir())

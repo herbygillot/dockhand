@@ -12,8 +12,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -629,4 +631,37 @@ func TestAReadyTheOrganizationRefusesGoesThroughTheGitHubCLI(t *testing.T) {
 	events, err := e.Events(t.Context(), 0)
 	require.NoError(t, err)
 	require.Equal(t, fmt.Sprintf("marked #%d ready for review with the GitHub CLI", readied.PullRequest.Number), events[len(events)-1].Message)
+}
+
+// A submission waiting on a check of its files that hasn't finished names
+// it and the wait, not a new check to run (the sshuttle run).
+func TestASubmissionNamesTheCheckItWaitsOn(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}}
+	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
+	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureHead})
+	require.NoError(t, err)
+	checkPlan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}})
+	require.NoError(t, err)
+	queued, err := e.Enqueue(t.Context(), branch, checkPlan, model.OriginPerson)
+	require.NoError(t, err)
+
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Equal(t, []string{queued.Name() + ", of this commit's files, is queued; dockhand wait " + queued.Name() + ", then submit, or submit a draft with --draft"}, plan.Blocking)
+}
+
+// The search for a port's other open pull requests leaves out the branch's
+// own, and finds each once however many of the ports it's for.
+func TestOtherOpenPullRequestsLeaveOutTheBranchsOwn(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	fake.others = []forge.PullRequestSummary{{Number: 35044, Title: "flatbuffers: update"}, {Number: 34620, Title: "libuv: update"}}
+	others, problem := e.openPullRequests(t.Context(), []string{"flatbuffers", "libsigmf"}, 35044)
+	require.Empty(t, problem)
+	require.Equal(t, []forge.PullRequestSummary{{Number: 34620, Title: "libuv: update"}}, others)
 }

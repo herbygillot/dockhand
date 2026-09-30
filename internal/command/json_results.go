@@ -48,6 +48,10 @@ type updateJSON struct {
 	// Upstream is what comparing the old and new upstream archives found,
 	// as update prints it; absent when they weren't compared.
 	Upstream *upstreamJSON `json:"upstream,omitempty"`
+	// Others are the port's other open pull requests, where the update
+	// looked, and OthersProblem why it couldn't.
+	Others        []otherJSON `json:"others,omitempty"`
+	OthersProblem string      `json:"others_problem,omitempty"`
 	// Tidy, Check, and Submit are the steps update --submit and bump go on
 	// to, each as tidy, check, and submit report it, as far as they went.
 	Tidy   *tidyJSON   `json:"tidy,omitempty"`
@@ -126,6 +130,13 @@ type checksumJSON struct {
 	Size   int64  `json:"size,omitempty"`
 }
 
+// otherJSON is another open pull request for a port.
+type otherJSON struct {
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	URL    string `json:"url,omitempty"`
+}
+
 func updateView(branch model.Branch, started bool, update engine.Update, plan bool) updateJSON {
 	view := updateJSON{Branch: branchRef(branch), Started: started, Port: update.Port,
 		Before: versionJSON{update.Before.Version, update.Before.Revision}, After: versionJSON{update.After.Version, update.After.Revision},
@@ -138,6 +149,10 @@ func updateView(branch model.Branch, started bool, update engine.Update, plan bo
 		comparison := upstreamView(*upstream)
 		view.Upstream = &comparison
 	}
+	for _, pr := range update.Others {
+		view.Others = append(view.Others, otherJSON{Number: pr.Number, Title: pr.Title, URL: pr.URL})
+	}
+	view.OthersProblem = update.OthersProblem
 	if stealth := update.Stealth; stealth != nil {
 		view.Stealth = &stealthJSON{Revbumped: stealth.Revbumped, RevbumpProblem: stealth.RevbumpProblem, DistSubdir: stealth.DistSubdir, Problem: stealth.Problem, Distfiles: []stealthDistfileJSON{}}
 		for _, d := range stealth.Distfiles {

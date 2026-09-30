@@ -189,7 +189,7 @@ func (v versionUpdate) request(args []string, plan bool) (engine.UpdateRequest, 
 	if len(v.linked.except) > 0 && !v.linked.revbump {
 		return engine.UpdateRequest{}, errors.New("--except takes a port out of --revbump-dependents; add --revbump-dependents")
 	}
-	request := engine.UpdateRequest{Action: model.EditUpdate, Port: args[0], KeepOldChecksums: v.keepOld, SharedRelease: v.shared, Plan: plan, CompareUpstream: true}
+	request := engine.UpdateRequest{Action: model.EditUpdate, Port: args[0], KeepOldChecksums: v.keepOld, SharedRelease: v.shared, Plan: plan, CompareUpstream: true, LookForOthers: true}
 	if len(args) == 2 {
 		request.Version = args[1]
 	}
@@ -395,6 +395,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		// What a reviewer would ask about is part of the look before.
 		writeUpstream(out, update.Upstream)
 		writePatches(out, update)
+		writeOthers(out, update)
 		if linked.revbump {
 			result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.except, true)
 			streams.emit(result)
@@ -447,6 +448,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	}
 	writeUpstream(out, update.Upstream)
 	writePatches(out, update)
+	writeOthers(out, update)
 	if linked.revbump {
 		if result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.except, false); err != nil {
 			return branch, update, err
@@ -792,6 +794,19 @@ func writeUpstream(out io.Writer, comparison *model.UpstreamComparison) {
 		for _, change := range comparison.Changes {
 			fmt.Fprintf(out, "  %s\n", upstreamWords(underUpstream(change)))
 		}
+	}
+}
+
+// writeOthers names the port's other open pull requests the update found,
+// or why it couldn't look. They stop nothing: submit shows them again, and
+// bump and serve hold on one.
+func writeOthers(out io.Writer, update engine.Update) {
+	if update.OthersProblem != "" {
+		fmt.Fprintf(out, "Couldn't look for other open pull requests for %s: %s\n", update.Port, update.OthersProblem)
+		return
+	}
+	for _, pr := range update.Others {
+		fmt.Fprintf(out, "Also open for %s: #%d %s\n", update.Port, pr.Number, pr.Title)
 	}
 }
 

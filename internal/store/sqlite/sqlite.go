@@ -70,7 +70,24 @@ type Store struct {
 	db      *sql.DB
 	options Options
 	path    string
+	// migration is the migration Open made, if it made one.
+	migration *Migration
 }
+
+// Migration is a schema migration Open made, and where the database's
+// form before it is kept: a build older than the migration can't open the
+// database after it, and can open the copy.
+type Migration struct {
+	From, To int
+	Copy     string
+}
+
+// Migration is the migration Open made; nil where it made none.
+func (s *Store) Migration() *Migration { return s.migration }
+
+// keptCopies is how long the copies migrations keep are kept, beyond the
+// newest one.
+const keptCopies = 30 * 24 * time.Hour
 
 var _ store.Store = (*Store)(nil)
 
@@ -154,6 +171,9 @@ func (s *Store) initialize(ctx context.Context) error {
 	if mode != "wal" {
 		return fmt.Errorf("%w: WAL mode required, got %q", store.ErrUnavailable, mode)
 	}
+	if err := s.keepBeforeMigrating(ctx); err != nil {
+		return err
+	}
 	if err := s.prepareSchema(ctx); err != nil {
 		return err
 	}
@@ -166,6 +186,43 @@ func (s *Store) initialize(ctx context.Context) error {
 	// grown many times over, so most opens do nothing.
 	if _, err := s.db.ExecContext(ctx, "PRAGMA optimize=0x10002"); err != nil {
 		return fmt.Errorf("planner statistics: %w", storageError(err))
+	}
+	return nil
+}
+
+// keepBeforeMigrating copies a database this build would migrate, as it is,
+// beside itself, dockhand.db.schema-24, before the migration, and prunes
+// the copies earlier migrations kept once they're old. VACUUM INTO makes a
+// consistent copy, as SQLite documents, and runs outside a transaction, so
+// it comes before prepareSchema's; another process may migrate between the
+// two, which leaves a copy of the older form, as intended. Where the copy
+// can't be made, nothing is migrated.
+func (s *Store) keepBeforeMigrating(ctx context.Context) error {
+	var version, app int
+	if err := s.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
+		return storageError(err)
+	}
+	if err := s.db.QueryRowContext(ctx, "PRAGMA application_id").Scan(&app); err != nil {
+		return storageError(err)
+	}
+	if app != applicationID || version >= schemaVersion {
+		return nil
+	}
+	copy := fmt.Sprintf("%s.schema-%d", s.path, version)
+	if _, err := os.Stat(copy); errors.Is(err, os.ErrNotExist) {
+		if _, err := s.db.ExecContext(ctx, "VACUUM INTO ?", copy); err != nil {
+			return fmt.Errorf("%w: keeping a copy of %s before migrating it from schema %d to %d: %w; nothing was migrated", store.ErrUnavailable, s.path, version, schemaVersion, storageError(err))
+		}
+		if err := os.Chmod(copy, 0o600); err != nil {
+			return err
+		}
+	}
+	s.migration = &Migration{From: version, To: schemaVersion, Copy: copy}
+	earlier, _ := filepath.Glob(s.path + ".schema-*")
+	for _, path := range earlier {
+		if info, err := os.Stat(path); err == nil && path != copy && time.Since(info.ModTime()) > keptCopies {
+			_ = os.Remove(path)
+		}
 	}
 	return nil
 }

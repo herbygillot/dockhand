@@ -275,9 +275,25 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan) error {
 			plan.CheckNeeded = true
 			return nil
 		}
-		if !request.Draft {
-			plan.Blocking = append(plan.Blocking, "no check has finished for this commit's files; run dockhand check first, submit a draft with --draft, or submit without a check with --no-check, which the pull request states")
+		if request.Draft {
+			return nil
 		}
+		// A check of these files still to finish is the one to wait for,
+		// not a new one to run.
+		var pending []model.Run
+		if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+			var err error
+			pending, err = runsOfTree(r, plan.Branch.ID, model.ObjectID(plan.Tree), model.RunQueued, model.RunRunning)
+			return err
+		}); err != nil {
+			return err
+		}
+		if len(pending) > 0 {
+			run := pending[0]
+			plan.Blocking = append(plan.Blocking, fmt.Sprintf("%s, of this commit's files, is %s; dockhand wait %s, then submit, or submit a draft with --draft", run.Name(), run.State, run.Name()))
+			return nil
+		}
+		plan.Blocking = append(plan.Blocking, "no check has finished for this commit's files; run dockhand check first, submit a draft with --draft, or submit without a check with --no-check, which the pull request states")
 		return nil
 	}
 	plan.Evidence = &evidence
@@ -451,21 +467,29 @@ func (e *Engine) title(plan *SubmitPlan) {
 
 // searchOthers looks for other open pull requests for the same ports.
 func (e *Engine) searchOthers(ctx context.Context, plan *SubmitPlan) {
-	for _, port := range plan.Ports {
+	except := 0
+	if plan.Existing != nil {
+		except = plan.Existing.PullRequest.Ref.Number
+	}
+	plan.Others, plan.SearchProblem = e.openPullRequests(ctx, plan.Ports, except)
+}
+
+// openPullRequests are the open pull requests for any of the ports, but
+// except, each once; or why they couldn't be looked for.
+func (e *Engine) openPullRequests(ctx context.Context, ports []string, except int) ([]forge.PullRequestSummary, string) {
+	var others []forge.PullRequestSummary
+	for _, port := range ports {
 		found, err := e.forge().OpenPullRequests(ctx, UpstreamRepository, port)
 		if err != nil {
-			plan.SearchProblem = err.Error()
-			return
+			return nil, err.Error()
 		}
 		for _, pr := range found {
-			if plan.Existing != nil && pr.Number == plan.Existing.PullRequest.Ref.Number {
-				continue
-			}
-			if !slices.ContainsFunc(plan.Others, func(o forge.PullRequestSummary) bool { return o.Number == pr.Number }) {
-				plan.Others = append(plan.Others, pr)
+			if pr.Number != except && !slices.ContainsFunc(others, func(o forge.PullRequestSummary) bool { return o.Number == pr.Number }) {
+				others = append(others, pr)
 			}
 		}
 	}
+	return others, ""
 }
 
 // Submitted is what submit did.

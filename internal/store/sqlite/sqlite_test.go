@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -946,4 +947,44 @@ func TestOpeningKeepsThePlannersStatistics(t *testing.T) {
 	t.Cleanup(func() { reopened.Close() })
 	f.store = reopened
 	require.Contains(t, f.planOf(t, active, args...), "INDEX run_state (repository_id=? AND state=?)")
+}
+
+// Migrating a database keeps a copy of it as it was beside it first, for
+// the builds that can't open it after, and says what it did; a database at
+// this build's schema, or a new one, is neither copied nor migrated. An
+// old copy goes once it's old, the one just made staying (the certigo
+// run: its first run migrated the database silently).
+func TestAMigrationKeepsTheDatabaseAsItWas(t *testing.T) {
+	path := schemaAt(t, schemaVersion-1, schema23Records)
+	stale := path + ".schema-2"
+	require.NoError(t, os.WriteFile(stale, []byte("an old copy"), 0o600))
+	old := time.Now().Add(-keptCopies - time.Hour)
+	require.NoError(t, os.Chtimes(stale, old, old))
+
+	s, err := Open(t.Context(), path, Options{})
+	require.NoError(t, err)
+	require.Equal(t, &Migration{From: schemaVersion - 1, To: schemaVersion, Copy: path + fmt.Sprintf(".schema-%d", schemaVersion-1)}, s.Migration())
+	require.NoError(t, s.Close())
+	require.NoFileExists(t, stale, "an old copy goes")
+
+	copied, err := sql.Open("sqlite", "file:"+s.Migration().Copy)
+	require.NoError(t, err)
+	defer copied.Close()
+	var version, runs int
+	require.NoError(t, copied.QueryRow("PRAGMA user_version").Scan(&version))
+	require.Equal(t, schemaVersion-1, version, "the copy is the database before")
+	require.NoError(t, copied.QueryRow("SELECT count(*) FROM runs").Scan(&runs))
+	require.Equal(t, 1, runs)
+	info, err := os.Stat(s.Migration().Copy)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+
+	again, err := Open(t.Context(), path, Options{})
+	require.NoError(t, err)
+	require.Nil(t, again.Migration(), "at this build's schema, nothing to migrate")
+	require.NoError(t, again.Close())
+	fresh, err := Open(t.Context(), filepath.Join(t.TempDir(), "dockhand.db"), Options{})
+	require.NoError(t, err)
+	require.Nil(t, fresh.Migration(), "a new database is made, not migrated")
+	require.NoError(t, fresh.Close())
 }

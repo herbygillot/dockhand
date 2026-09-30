@@ -338,6 +338,12 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 // treeRuns lists a branch's finished checks of a tree, newest first. A
 // baseline is evidence about another run, never the branch's own check.
 func treeRuns(r store.Reader, branch model.BranchID, tree model.ObjectID) ([]model.Run, error) {
+	return runsOfTree(r, branch, tree, model.RunPassed, model.RunFailed, model.RunAttention)
+}
+
+// runsOfTree are a branch's checks of a tree in the given states, newest
+// first, baselines aside.
+func runsOfTree(r store.Reader, branch model.BranchID, tree model.ObjectID, states ...model.RunState) ([]model.Run, error) {
 	revisions, err := r.Revisions(branch)
 	if err != nil {
 		return nil, err
@@ -351,7 +357,7 @@ func treeRuns(r store.Reader, branch model.BranchID, tree model.ObjectID) ([]mod
 	if len(matching) == 0 {
 		return nil, nil
 	}
-	runs, err := r.Runs(store.RunFilter{Branch: branch, States: []model.RunState{model.RunPassed, model.RunFailed, model.RunAttention}})
+	runs, err := r.Runs(store.RunFilter{Branch: branch, States: states})
 	if err != nil {
 		return nil, err
 	}

@@ -78,7 +78,7 @@ commits, and its files are as they were when it was saved.`,
 				return err
 			}
 			if group != "" && !proposal.Keep {
-				if proposal, err = proposal.Regroup(group, author); err != nil {
+				if proposal, err = e.Regroup(ctx, proposal, group, author); err != nil {
 					return fmt.Errorf("--group: %w", err)
 				}
 			}
@@ -156,7 +156,7 @@ func decideTidy(ctx context.Context, e *engine.Engine, streams Streams, proposal
 			if err != nil {
 				return false, err
 			}
-			regrouped, err := proposal.Regroup(spec, author)
+			regrouped, err := e.Regroup(ctx, proposal, spec, author)
 			if err != nil {
 				fmt.Fprintf(streams.Err, "Not changed: %v\n", err)
 				continue

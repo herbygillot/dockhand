@@ -31,8 +31,10 @@ type fakeGitHub struct {
 	// theirs are other people's pull requests, by number.
 	theirs map[int]forge.PullRequest
 	status forge.PullRequestStatus
-	// others are the open pull requests a search for a port finds.
-	others []forge.PullRequestSummary
+	// others are the open pull requests a search for a port finds, and
+	// searchErr why the search fails.
+	others    []forge.PullRequestSummary
+	searchErr error
 	// readyRefused is GitHub's refusal to mark a pull request ready.
 	readyRefused error
 }
@@ -104,7 +106,7 @@ func (g *fakeGitHub) Inspect(context.Context, forge.PullRequestRef) (forge.PullR
 }
 
 func (g *fakeGitHub) OpenPullRequests(context.Context, string, string) ([]forge.PullRequestSummary, error) {
-	return g.others, nil
+	return g.others, g.searchErr
 }
 
 func withGitHub(t *testing.T, w world) *fakeGitHub {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
 	"github.com/herbygillot/dockhand/internal/scratch"
@@ -54,6 +55,10 @@ type UpdateRequest struct {
 	// CompareUpstream fetches the current version's archives beside the
 	// new ones and compares them, for a version update (Design v3 §6.12).
 	CompareUpstream bool
+	// LookForOthers names the port's other open pull requests, for a
+	// version update, as submit's preview does: someone starting an update
+	// should hear of one in flight. It holds nothing, and stops nothing.
+	LookForOthers bool
 }
 
 // PortVersion is a port's version and revision.
@@ -115,6 +120,11 @@ type Update struct {
 	// Upstream is what comparing the old and new upstream archives found,
 	// when the update compared them.
 	Upstream *model.UpstreamComparison
+	// Others are the port's other open pull requests, where the update
+	// looked for them (UpdateRequest.LookForOthers), and OthersProblem why
+	// they couldn't be looked for.
+	Others        []forge.PullRequestSummary
+	OthersProblem string
 	// Stealth is a checksum refresh's stealth update, when it found one.
 	Stealth *Stealth
 	// DistSubdirRemoved is true when a version update removed the
@@ -234,6 +244,13 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	if len(result.Files) == 0 {
 		update.Current = true
 		return update, nil
+	}
+	if request.LookForOthers && request.Action == model.EditUpdate {
+		except := 0
+		if branch.PullRequest != nil {
+			except = branch.PullRequest.Number
+		}
+		update.Others, update.OthersProblem = e.openPullRequests(ctx, []string{update.Port}, except)
 	}
 	diff, err := worktree.DiffTrees(ctx, captured, string(result.PreparedTree))
 	if err != nil {

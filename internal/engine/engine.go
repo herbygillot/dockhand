@@ -20,6 +20,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/selection"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/store/sqlite"
 )
@@ -128,6 +129,12 @@ func Open(ctx context.Context, options Options) (*Engine, error) {
 	s, err := sqlite.Open(ctx, options.Database, sqlite.Options{})
 	if err != nil {
 		return nil, err
+	}
+	// A migration can't be undone by an older build, which can't open the
+	// database after it, so it's said, with the copy kept of the database
+	// before it.
+	if migrated := s.Migration(); migrated != nil {
+		progress.Report(ctx, "Migrated dockhand's database from schema %d to %d; dockhand builds older than this one can't open it now. Its schema %d form is kept at %s.", migrated.From, migrated.To, migrated.From, migrated.Copy)
 	}
 	id, err := s.Register(ctx, repo.CommonDir)
 	if err != nil {
