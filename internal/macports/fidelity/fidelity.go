@@ -227,6 +227,20 @@ func Checksums(before, after macports.Snapshot, selected, checksums string) Repo
 	info.Options["checksums"] = checksums
 	expected.Ports[selected] = info
 	result := Report{Before: before, After: after, ExpectedChanges: []string{selected + ".checksums"}}
+	// A sibling of the same version whose checksums were the selected
+	// port's, and are its new ones now, shares its declaration, as a python
+	// stub and its subports share one, and moves with it. A sibling that
+	// keeps its own is left as it was.
+	shared := before.Ports[selected]
+	for name, sibling := range before.Ports {
+		if name == selected || sibling.Version != shared.Version || sibling.Options["checksums"] != shared.Options["checksums"] || after.Ports[name].Options["checksums"] != checksums {
+			continue
+		}
+		sibling.Options = maps.Clone(sibling.Options)
+		sibling.Options["checksums"] = checksums
+		expected.Ports[name] = sibling
+		result.ExpectedChanges = append(result.ExpectedChanges, name+".checksums, shared")
+	}
 	normalized := after
 	normalized.Ports = maps.Clone(after.Ports)
 	next := normalized.Ports[selected]

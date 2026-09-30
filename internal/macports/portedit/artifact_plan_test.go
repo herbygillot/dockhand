@@ -359,3 +359,26 @@ variant extra description {Install the extras} {
 	}
 	require.Equal(t, []string{"fixture-1.2.3.tar.gz", "fixture-doc-1.2.3.tar.gz", "fixture-extra-1.2.3.tar.gz"}, names, "each archive once, a variant's own included")
 }
+
+// A checksum refresh of a port whose family shares one declaration, as a
+// python stub and its subports do, refreshes it for all of them: the stub
+// had been refused as an unintended change (the py-flatbuffers run's
+// finding 1).
+func TestARefreshOfAFamilysSharedChecksums(t *testing.T) {
+	t.Parallel()
+	s, r, _ := archiveFixture(t, `version 1.2.3
+master_sites @SITE@/${version}
+distfiles fixture-${version}.tar.gz
+checksums fixture-${version}.tar.gz sha256 aaaa size 2
+subport py313-fixture {}
+subport py312-fixture {}
+`)
+	r.Action, r.Version, r.Release = model.EditChecksums, "", nil
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	body := "archive bytes for /1.2.3/fixture-1.2.3.tar.gz"
+	require.Contains(t, string(result.Files[0].After), fmt.Sprintf("sha256 %x", sha256.Sum256([]byte(body))))
+	for _, name := range []string{"fixture", "py313-fixture", "py312-fixture"} {
+		require.Contains(t, result.Prepared.Ports[name].Options["checksums"], fmt.Sprintf("%x", sha256.Sum256([]byte(body))), name)
+	}
+}

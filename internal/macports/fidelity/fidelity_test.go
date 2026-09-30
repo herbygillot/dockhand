@@ -55,6 +55,35 @@ func TestRevisionAndChecksumsReportOnlyIntendedChanges(t *testing.T) {
 	})
 	require.Empty(t, Checksums(before, refreshed, "main", "sha256 bbbb").UnexpectedChanges)
 	require.NotEmpty(t, Checksums(before, refreshed, "main", "sha256 cccc").UnexpectedChanges, "checksums must match the intended values")
+
+	// A python stub and its subports share one declaration: refreshing the
+	// selected subport's refreshes the stub's (the py-flatbuffers run's
+	// finding 1). A sibling left behind, or one of another version, isn't
+	// the selected port's to change.
+	family := func(stub, other string) macports.Snapshot {
+		return snapshot(map[string]macports.PortInfo{
+			"py313-demo": {Name: "py313-demo", Version: "1", Options: map[string]string{"checksums": "sha256 bbbb"}},
+			"py-demo":    {Name: "py-demo", Version: "1", Options: map[string]string{"checksums": stub}},
+			"py312-demo": {Name: "py312-demo", Version: "0.9", Options: map[string]string{"checksums": other}},
+		})
+	}
+	shared := snapshot(map[string]macports.PortInfo{
+		"py313-demo": {Name: "py313-demo", Version: "1", Options: map[string]string{"checksums": "sha256 aaaa"}},
+		"py-demo":    {Name: "py-demo", Version: "1", Options: map[string]string{"checksums": "sha256 aaaa"}},
+		"py312-demo": {Name: "py312-demo", Version: "0.9", Options: map[string]string{"checksums": "sha256 aaaa"}},
+	})
+	moved := Checksums(shared, family("sha256 bbbb", "sha256 aaaa"), "py313-demo", "sha256 bbbb")
+	require.Empty(t, moved.UnexpectedChanges)
+	require.Equal(t, []string{"py313-demo.checksums", "py-demo.checksums, shared"}, moved.ExpectedChanges)
+	require.Empty(t, Checksums(shared, family("sha256 aaaa", "sha256 aaaa"), "py313-demo", "sha256 bbbb").UnexpectedChanges, "a sibling keeping its own declaration is left as it was")
+	require.NotEmpty(t, Checksums(shared, family("sha256 bbbb", "sha256 bbbb"), "py313-demo", "sha256 bbbb").UnexpectedChanges, "another version's aren't shared")
+	require.NotEmpty(t, Checksums(shared, family("sha256 cccc", "sha256 aaaa"), "py313-demo", "sha256 bbbb").UnexpectedChanges, "nor are other checksums")
+	apart := snapshot(map[string]macports.PortInfo{
+		"py313-demo": {Name: "py313-demo", Version: "1", Options: map[string]string{"checksums": "sha256 aaaa"}},
+		"py-demo":    {Name: "py-demo", Version: "1", Options: map[string]string{"checksums": "sha256 zzzz"}},
+		"py312-demo": {Name: "py312-demo", Version: "0.9", Options: map[string]string{"checksums": "sha256 aaaa"}},
+	})
+	require.NotEmpty(t, Checksums(apart, family("sha256 bbbb", "sha256 aaaa"), "py313-demo", "sha256 bbbb").UnexpectedChanges, "a sibling with checksums of its own shares nothing")
 	require.Error(t, CheckSnapshot(macports.Snapshot{}, macports.Context{}))
 }
 

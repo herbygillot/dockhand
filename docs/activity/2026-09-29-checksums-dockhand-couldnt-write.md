@@ -18,13 +18,18 @@ The command words it without the context it arose in, and gives advice only wher
 
 A plan changes nothing, so a refusal of one no longer says "Kept: the branch, unchanged." (finding 4), which a plan from master said of a branch it never started.
 
+## A family's shared checksums
+
+Found after the batch, by the py-flatbuffers addition ([review](../reviews/2026-09-28-hugo-bump-exercise.md#adding-py-flatbuffers-to-35044), finding 1): `dockhand checksums py-flatbuffers` was refused, "evaluation does not match the intended change: … py-flatbuffers.checksums changed". A python stub and its subports share one `checksums` declaration, and a refresh without a release scope let only the selected port's checksums change (`fidelity.Checksums`). Now a sibling of the same version, whose checksums were the selected port's and are its new ones, moves with it. A sibling with checksums of its own, or of another version, is still held to what it was.
+
 Tests:
 - `TestADeclarationInAVariantIsLocatedInItsBody`, with the frames as the probe recorded them, and its refusals;
 - `TestAVariantDeclaringArchivesIsNamed`;
 - `TestAnUpdateWritesADefaultVariantsChecksums`, git's shape, and `TestAnUpdateWritesAVariantsChecksumsWhenItIsntDefault`;
 - `TestAChecksumDeclarationNotFoundSaysWhy` and `TestARefreshThatCantWriteReturnsTheChecksums`;
-- `TestAChecksumsBlockIsWrittenAsTheGuideLaysItOut` and `TestAnEditDockhandCantMakeSaysWhyAndWhatWorks`.
+- `TestAChecksumsBlockIsWrittenAsTheGuideLaysItOut` and `TestAnEditDockhandCantMakeSaysWhyAndWhatWorks`;
+- the fidelity test's family cases, and `TestARefreshOfAFamilysSharedChecksums`, a stub and two subports.
 
-Fourteen mutations were tried; all but one fail a test. The survivor is the native context's `variant == ""` guard in `applyObservedArchives`, kept on purpose: variant contexts follow the platform contexts, so the first match is a platform's either way, and the guard holds if that order changes.
+Seventeen mutations were tried, the family's three included; all but one fail a test. The survivor is the native context's `variant == ""` guard in `applyObservedArchives`, kept on purpose: variant contexts follow the platform contexts, so the first match is a platform's either way, and the guard holds if that order changes.
 
 Not checked live: git is already at its newest release on master, and planning a checksum refresh needs a branch, which a check of this shouldn't start in the person's checkout.
