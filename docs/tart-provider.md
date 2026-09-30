@@ -233,6 +233,9 @@ signify's, as MacPorts' own site uses. MacPorts tries a local site first,
 and installs the target from it rather than build it. A retry installs
 what an earlier attempt finished the same way. The keys are
 `~/.dockhand/ssh/archives.key` and `archives-rsa.pem`, made on first use.
+Signing an archive as a site's entry, and the keys, are
+`macports/binaryarchive`'s; the provider uploads the entry and configures
+the guest's MacPorts to trust it.
 
 Each target's log is copied into the check's log directory (`dockhand
 logs`). When the guest's Command Line Tools, or its Xcode in an Xcode

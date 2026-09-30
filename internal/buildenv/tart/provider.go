@@ -11,12 +11,11 @@ package tart
 
 import (
 	"context"
-	"crypto/sha256"
 	_ "embed"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -31,11 +30,11 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/binaryarchive"
 	"github.com/herbygillot/dockhand/internal/macports/installation"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/subprocess"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
 	"github.com/herbygillot/dockhand/internal/tart/channel"
 )
@@ -78,7 +77,7 @@ type Provider struct {
 	stager  func(ctx context.Context, job buildenv.Job, input guestInput, archive string) error
 	// archiveKeys sign the archives guests install; dockhand's own when
 	// nil.
-	archiveKeys func() (channel.ArchiveKeys, error)
+	archiveKeys func() (binaryarchive.Keys, error)
 	// assembling guards making the Mac's machine on first use (vms), which
 	// two environments building together may ask for at once.
 	assembling sync.Mutex
@@ -428,13 +427,13 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		return nil
 	}
 	for _, archive := range job.Installs {
-		if !installable(archive) {
+		if !binaryarchive.Installable(archive.Port, archive.Name) {
 			return fmt.Errorf("an archive of %q named %q can't be installed", archive.Port, archive.Name)
 		}
 		input.Archives = append(input.Archives, guestArchive{Port: archive.Port, Name: archive.Name})
 	}
 	if len(input.Archives) > 0 {
-		input.ArchiveSite, input.ArchiveKeys = archiveSite, []string{archiveSite + "/dockhand.pem", archiveSite + "/dockhand.pub"}
+		input.ArchiveSite, input.ArchiveKeys = archiveSite, []string{path.Join(archiveSite, binaryarchive.RSAPublicKey), path.Join(archiveSite, binaryarchive.SignifyPublicKey)}
 	}
 
 	build.Progress("staging the revision for " + release.Name)
@@ -651,46 +650,34 @@ func (p *Provider) install(ctx context.Context, g guest, job buildenv.Job, build
 	}
 	directories := []string{"sudo", "-n", "/bin/mkdir", "-p"}
 	for _, archive := range job.Installs {
-		directories = append(directories, archiveSite+"/"+archive.Port)
+		directories = append(directories, path.Join(archiveSite, archive.Port))
 	}
 	if _, err := g.Command(ctx, nil, directories...); err != nil {
 		return err
 	}
 	for _, archive := range job.Installs {
 		build.Progress(fmt.Sprintf("giving the guest %s, from the archive kept of its build", archive.Target))
-		data, err := os.ReadFile(archive.Path)
+		entry, err := binaryarchive.Sign(ctx, keys, binaryarchive.Archive{Port: archive.Port, Name: archive.Name, Digest: archive.Digest, Path: archive.Path}, job.Directory)
 		if err != nil {
-			return err
+			return fmt.Errorf("the archive kept of %s: %w", archive.Target, err)
 		}
-		if sum := sha256.Sum256(data); "sha256:"+hex.EncodeToString(sum[:]) != archive.Digest {
-			return fmt.Errorf("the archive kept of %s isn't the %s it was kept as", archive.Target, archive.Digest)
+		for _, name := range slices.Sorted(maps.Keys(entry.Files)) {
+			if err == nil {
+				err = g.Upload(ctx, entry.Files[name], binaryarchive.EntryPath(archiveSite, entry.Port, name), true)
+			}
+			if local := entry.Files[name]; local != archive.Path {
+				os.Remove(local)
+			}
 		}
-		sig, rmd160 := filepath.Join(job.Directory, archive.Name+".sig"), filepath.Join(job.Directory, archive.Name+".rmd160")
-		err = os.WriteFile(sig, keys.Signify.Sign(data, "verify with dockhand.pub"), 0o600)
-		if err == nil {
-			err = signRMD160(ctx, keys.RSA, archive.Path, rmd160)
-		}
-		remote := archiveSite + "/" + archive.Port + "/" + archive.Name
-		if err == nil {
-			err = g.Upload(ctx, archive.Path, remote, true)
-		}
-		if err == nil {
-			err = g.Upload(ctx, sig, remote+".sig", true)
-		}
-		if err == nil {
-			err = g.Upload(ctx, rmd160, remote+".rmd160", true)
-		}
-		os.Remove(sig)
-		os.Remove(rmd160)
 		if err != nil {
 			return err
 		}
 	}
-	for name, public := range map[string][]byte{"dockhand.pub": keys.Signify.PublicKey("dockhand archives"), "dockhand.pem": keys.RSAPublic} {
+	for name, public := range keys.PublicKeys() {
 		local := filepath.Join(job.Directory, name)
 		err := os.WriteFile(local, public, 0o600)
 		if err == nil {
-			err = g.Upload(ctx, local, archiveSite+"/"+name, true)
+			err = g.Upload(ctx, local, path.Join(archiveSite, name), true)
 		}
 		os.Remove(local)
 		if err != nil {
@@ -701,31 +688,17 @@ func (p *Provider) install(ctx context.Context, g guest, job buildenv.Job, build
 	return err
 }
 
-// signRMD160 signs a file with an RSA key as pubkeys.conf says to sign
-// one's own archives: openssl dgst -ripemd160 -sign.
-func signRMD160(ctx context.Context, key, file, signature string) error {
-	_, err := subprocess.Run(ctx, subprocess.Spec{Tool: "openssl", Command: "dgst", Path: "/usr/bin/openssl", Args: []string{"dgst", "-ripemd160", "-sign", key, "-out", signature, file}})
-	return err
-}
-
-// signingKeys are the keys archives given to guests are signed with.
-func (p *Provider) signingKeys() (channel.ArchiveKeys, error) {
+// signingKeys are the keys archives given to guests are signed with, kept
+// beside dockhand's SSH keys, where they have always been.
+func (p *Provider) signingKeys() (binaryarchive.Keys, error) {
 	if p.archiveKeys != nil {
 		return p.archiveKeys()
 	}
 	keys, err := channel.DefaultKeys()
 	if err != nil {
-		return channel.ArchiveKeys{}, err
+		return binaryarchive.Keys{}, err
 	}
-	return keys.ArchiveKeys()
-}
-
-// installable reports whether a kept archive can go to the guest's archive
-// site: its port's name a port's (macports.ValidName), which the site's
-// URL, <site>/<port>/<archive>, takes as a path segment as it is, and its
-// file named as MacPorts names one.
-func installable(archive buildenv.Archive) bool {
-	return macports.ValidName(archive.Port) && !strings.ContainsAny(archive.Port, "#?%") && model.ValidArchiveName(archive.Name)
+	return binaryarchive.LoadKeys(keys.Directory)
 }
 
 // launch copies the archive into the guest, checked by size and sha256,

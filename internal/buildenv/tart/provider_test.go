@@ -21,6 +21,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/macos"
+	"github.com/herbygillot/dockhand/internal/macports/binaryarchive"
 	"github.com/herbygillot/dockhand/internal/model"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
 	"github.com/herbygillot/dockhand/internal/tart/channel"
@@ -391,7 +392,7 @@ func TestAnArchiveIsKeptOnlyFromMacPortsSoftware(t *testing.T) {
 // isn't the archive it was kept as stops the attempt.
 func TestKeptArchivesGoToTheGuestSigned(t *testing.T) {
 	t.Parallel()
-	keys, err := channel.Keys{Directory: t.TempDir()}.ArchiveKeys()
+	keys, err := binaryarchive.LoadKeys(t.TempDir())
 	require.NoError(t, err)
 	kept := filepath.Join(t.TempDir(), "kept")
 	require.NoError(t, os.WriteFile(kept, []byte("libharbor's archive"), 0o644))
@@ -401,7 +402,7 @@ func TestKeptArchivesGoToTheGuestSigned(t *testing.T) {
 	run := func(install buildenv.Archive) (*fakeMac, *fakeBuild, buildenv.Job, error) {
 		mac := newMac(guestResults{State: "finished", Targets: []guestResult{{ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "target-2.log"}}})
 		provider := testProvider(mac)
-		provider.archiveKeys = func() (channel.ArchiveKeys, error) { return keys, nil }
+		provider.archiveKeys = func() (binaryarchive.Keys, error) { return keys, nil }
 		job := tartJob(t, 1)
 		job.Targets, job.Installs = job.Targets[1:], []buildenv.Archive{install}
 		build := &fakeBuild{}

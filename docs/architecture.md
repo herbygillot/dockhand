@@ -82,7 +82,7 @@ Several dockhand processes can share one database: a foreground `check`, a `serv
 | `~/.dockhand/dockhand.db` (`--db`, `$DOCKHAND_DB`) | the records |
 | `~/.dockhand/logs/check-N/` | each execution's logs, beside the database |
 | `~/.dockhand/tart/` (`$DOCKHAND_TART_HOME`) | dockhand's Tart images, their golden copies, and the check clones |
-| `~/.dockhand/ssh/` | the key the host uses to reach its guests |
+| `~/.dockhand/ssh/` | the key the host uses to reach its guests (`tart/channel`), and the keys kept archives are signed with for them (`macports/binaryarchive`) |
 | the user cache directory, `dockhand/indexes` (`$DOCKHAND_INDEX_CACHE`) | port indexes, keyed by source tree; disposable |
 | one run root under the system temporary directory | a process's short-lived workspaces, removed when it exits (`scratch`) |
 | `~/Source/macports-branches` | branch worktrees, unless `worktrees` says otherwise |
