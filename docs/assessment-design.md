@@ -229,7 +229,7 @@ Each step lands in its own commits and is pushed once it passes. The contracts s
    - the gate reading concerns;
    - the Git forge archive.
 
-   This takes batch 19's Git item, finding 4, and batch 13's hand-changed version. Fixtures: MIT to GPL to MIT holds nothing; a new port with no fictitious missing archive; a directory with two Python subports of different applicability. Done 2026-09-30 ([note](activity/2026-09-30-revision-assessment.md)), in this Mac's context, where an update's own comparison, recorded when its branch was fresh, covers every context. `review` collects with batch 11. An assessment recorded incomplete stays for its files; trying again for the same files is a follow-up.
+   This takes batch 19's Git item, finding 4, and batch 13's hand-changed version. Fixtures: MIT to GPL to MIT holds nothing; a new port with no fictitious missing archive; a directory with two Python subports of different applicability. Done 2026-09-30 ([note](activity/2026-09-30-revision-assessment.md)), with a Git-fetched port compared through its forge's archive of each commit and a tag moved since the check a concern ([note](activity/2026-09-30-git-ports-assessed.md)), in this Mac's context, where an update's own comparison, recorded when its branch was fresh, covers every context. `review` collects with batch 11. An assessment recorded incomplete stays for its files; trying again for the same files is a follow-up.
 4. **Batch 20,** on the same source facts, what a build fetched. Fixture: a moved tag doesn't let earlier build evidence stand for the newly resolved commit.
 5. **Batch 19's remainder:**
    - release uncertainty, beside item 7's single livecheck pipeline;

@@ -3,6 +3,8 @@ package engine
 import (
 	"cmp"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -202,10 +204,7 @@ func (e *Engine) assessPort(ctx context.Context, planner ArchivePlanner, sources
 	switch {
 	case problem != "":
 	case infos[1].GitFetched():
-		// Assessing a Git-fetched port through its forge's archive of each
-		// commit is batch 20's source identity's to make possible; until
-		// then, what couldn't be checked holds (D4).
-		problem = "a Git-fetched port's upstream isn't assessed yet"
+		input.Pairs, coverage, problem = e.readCommits(ctx, infos, hadBase)
 	case !fetches:
 		coverage = append(coverage, model.Coverage{Path: directory, Relevance: "unknown", Treatment: "inspected", Reason: name + " fetches no upstream source, so there's nothing to compare"})
 	default:
@@ -218,6 +217,94 @@ func (e *Engine) assessPort(ctx context.Context, planner ArchivePlanner, sources
 	comparison.Problem = problem
 	comparison.Coverage = append(comparison.Coverage, coverage...)
 	return comparison
+}
+
+// readCommits reads a Git-fetched port's source at the commit each
+// version's git.branch names, through its forge's archive of each commit,
+// paired: the commit's files, as the forge archives them, submodules left
+// out, never what a build's clone checked out, which its coverage says. The
+// base's git.branch is resolved now, not when the base was made: a tag
+// moved since names another commit, and the coverage says that too. A
+// reading of a commit is kept by the commit, so an assessment made again
+// asks the forge for nothing.
+func (e *Engine) readCommits(ctx context.Context, infos [2]macports.PortInfo, hadBase bool) ([]assess.Pair, []model.Coverage, string) {
+	archiver, err := e.sourceArchiver()
+	if err != nil {
+		return nil, nil, err.Error()
+	}
+	directory, err := scratch.Dir("assess-")
+	if err != nil {
+		return nil, nil, err.Error()
+	}
+	defer os.RemoveAll(directory)
+	readings := [2]project.Reading{{Layout: project.Enclosed, Files: map[string]project.File{}}}
+	var commits [2]string
+	for side, info := range infos {
+		if side == 0 && !hadBase {
+			continue
+		}
+		which := "the revision's"
+		if side == 0 {
+			which = "the base's"
+		}
+		declared, _, err := info.GitSource()
+		if err != nil {
+			return nil, nil, fmt.Sprintf("%s Git source couldn't be read: %v", which, err)
+		}
+		resolved := e.resolveGit(ctx, declared)
+		switch {
+		case resolved.Unresolved != "":
+			return nil, nil, fmt.Sprintf("%s git.branch couldn't be resolved: %s", which, resolved.Unresolved)
+		case resolved.Commit == "":
+			return nil, nil, fmt.Sprintf("%s git.branch is an abbreviated commit, %s, which only a clone expands", which, resolved.Abbreviation)
+		}
+		commits[side] = string(resolved.Commit)
+		spec := project.Spec{Subdirectory: macports.SourceSubdirectory(info.Options["worksrcdir"])}
+		key := commitKey(commits[side])
+		if reading, ok := e.readings().Kept(key, spec); ok {
+			readings[side] = reading
+			continue
+		}
+		path, err := archiver.SourceArchive(ctx, info, commits[side], directory)
+		if err != nil {
+			return nil, nil, fmt.Sprintf("%s commit %s couldn't be fetched from its forge: %v", which, commits[side], err)
+		}
+		if readings[side], err = e.readings().Read(ctx, path, key, spec); err != nil {
+			return nil, nil, fmt.Sprintf("reading %s commit %s: %v", which, commits[side], err)
+		}
+	}
+	reason := "read from the forge's archive of each commit, submodules left out"
+	if hadBase {
+		reason += "; the base's git.branch as it names a commit now"
+	}
+	coverage := []model.Coverage{{Path: commits[1], Relevance: "unknown", Treatment: "inspected", Reason: reason}}
+	return []assess.Pair{{Archive: commits[1], Before: readings[0], After: readings[1]}}, coverage, ""
+}
+
+// commitKey is what a reading of a commit is kept by: a digest of the
+// commit, which is what a Git-fetched port's source observed is.
+func commitKey(commit string) string {
+	sum := sha256.Sum256([]byte("git commit " + commit))
+	return hex.EncodeToString(sum[:])
+}
+
+// SourceArchiver writes a Git-fetched port's forge's archive of a commit,
+// for its assessment.
+type SourceArchiver interface {
+	SourceArchive(ctx context.Context, port macports.PortInfo, commit, directory string) (string, error)
+}
+
+// sourceArchiver is the one the engine was given, or upstream discovery's
+// forges.
+func (e *Engine) sourceArchiver() (SourceArchiver, error) {
+	if e.SourceArchiver != nil {
+		return e.SourceArchiver, nil
+	}
+	ports, err := e.selectionReader()
+	if err != nil {
+		return nil, err
+	}
+	return e.discovery(ports), nil
 }
 
 // readPlans reads the archives each version's fetch plan names, paired:

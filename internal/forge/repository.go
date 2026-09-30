@@ -3,6 +3,7 @@ package forge
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"time"
 )
@@ -61,6 +62,16 @@ type Documents interface {
 // absent file reports ErrNotFound; the read is bounded by limit bytes.
 type FileRepository interface {
 	File(ctx context.Context, commit, path string, limit int64) ([]byte, error)
+}
+
+// ArchiveRepository writes the forge's archive of the repository's files
+// at a commit, a gzipped tarball, bounded by limit bytes: for comparing a
+// Git-fetched port's source from one commit to another, which a Git fetch
+// downloads no archive of (the assessment design, D). It's the commit's
+// files as the forge archives them, submodules left out, never what a
+// build's clone checked out.
+type ArchiveRepository interface {
+	Archive(ctx context.Context, commit string, into io.Writer, limit int64) error
 }
 
 // DatedRepository reports when a commit was made, its committer's date, so

@@ -414,7 +414,7 @@ func writeSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 	fmt.Fprintf(out, "  Commits  %d, %s\n", len(plan.Commits), rules)
 	fmt.Fprintf(out, "  Push     %s\n", pushWords(plan))
 	fmt.Fprintf(out, "  Checks   %s\n", checkWords(plan))
-	if len(plan.Upstream) > 0 {
+	if len(plan.Upstream) > 0 || len(plan.Moved) > 0 {
 		lines := upstreamLines(plan)
 		if len(lines) == 0 {
 			lines = []string{"compared; no license, build file, or dependency changes"}
@@ -464,6 +464,11 @@ func upstreamLines(plan engine.SubmitPlan) []string {
 			change.Message = port + change.Message
 			lines = append(lines, upstreamWords(change))
 		}
+	}
+	// A Git-fetched port whose tag has moved since its check: the check
+	// built another source than this would submit.
+	for _, moved := range plan.Moved {
+		lines = append(lines, "! "+moved.Detail)
 	}
 	return lines
 }

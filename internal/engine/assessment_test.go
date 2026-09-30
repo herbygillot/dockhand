@@ -242,9 +242,9 @@ func TestEachSubportIsAssessedForItself(t *testing.T) {
 	require.NotContains(t, strings.Join(holds(byPort["py313-demo"]), "\n"), "py313-tomli")
 }
 
-// A Git-fetched port's upstream isn't assessed yet, which holds as what
-// couldn't be checked does (D4); a port that fetches no source has nothing
-// to compare, and says so without holding.
+// A Git-fetched port whose source can't be read isn't compared, which
+// holds as what couldn't be checked does (D4); a port that fetches no
+// source has nothing to compare, and says so without holding.
 func TestWhatCantBeComparedSaysSo(t *testing.T) {
 	e, branch, base, tree := revisionFixture(t, map[string]string{"devel/gitty/Portfile": "name gitty\n", "devel/meta/Portfile": "name meta\n"})
 	p := newPlanner(t)
@@ -260,7 +260,7 @@ func TestWhatCantBeComparedSaysSo(t *testing.T) {
 	for _, a := range assessments {
 		byPort[a.Port] = a
 	}
-	require.Equal(t, []string{"the upstream archives couldn't be compared: a Git-fetched port's upstream isn't assessed yet"}, holds(byPort["gitty"]))
+	require.Equal(t, []string{"the upstream archives couldn't be compared: the revision's Git source couldn't be read: macports: fetched with Git, and git.url names no repository"}, holds(byPort["gitty"]))
 	_, state, err := e.assessedHolds(t.Context(), branch, tree, []string{"devel/gitty", "devel/meta"})
 	require.NoError(t, err)
 	require.Equal(t, AssessmentIncomplete, state)
@@ -341,4 +341,110 @@ func TestAlikeArchivesPairByName(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, assessments, 1)
 	require.Empty(t, messagesOf(assessments[0].Comparison), "the manual beside itself, the source beside the source: nothing changed")
+}
+
+// commitArchives stand in for a forge's archives of commits, each commit's
+// files as given, counting what's asked of them.
+type commitArchives struct {
+	t     *testing.T
+	files map[string]map[string]string
+	asked *atomic.Int64
+}
+
+func (c commitArchives) SourceArchive(_ context.Context, _ macports.PortInfo, commit, directory string) (string, error) {
+	c.asked.Add(1)
+	files, ok := c.files[commit]
+	if !ok {
+		return "", fmt.Errorf("no archive of %s", commit)
+	}
+	return writeTarball(c.t, directory, "owner-tool-"+commit[:7], files), nil
+}
+
+// A Git-fetched port is compared through its forge's archive of the commit
+// each version's git.branch names, resolved as a clone would, and said to
+// be read so; a reading of a commit is kept by the commit, so the forge is
+// asked nothing again. A git.branch no ref is can't be compared, and holds.
+func TestAGitFetchedPortIsComparedByItsCommits(t *testing.T) {
+	project := t.TempDir()
+	run(t, project, "init", "-q")
+	write(t, project, map[string]string{"README": "1\n"})
+	run(t, project, "add", "-A")
+	run(t, project, "commit", "-q", "-m", "one")
+	run(t, project, "tag", "v1")
+	write(t, project, map[string]string{"README": "2\n"})
+	run(t, project, "commit", "-q", "-am", "two")
+	run(t, project, "tag", "v2")
+	v1, v2 := run(t, project, "rev-parse", "v1^{commit}"), run(t, project, "rev-parse", "v2^{commit}")
+
+	e, branch, base, tree := revisionFixture(t, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
+	p := newPlanner(t)
+	e.ArchivePlanner = p
+	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"devel/libharbor": {{Name: "libharbor"}}}}
+	archives := commitArchives{t: t, files: map[string]map[string]string{v1: {"LICENSE": "MIT\n"}, v2: {"LICENSE": "GPL\n"}}, asked: &atomic.Int64{}}
+	e.SourceArchiver = archives
+	tool := func(ref string) plannedPort {
+		return plannedPort{info: macports.PortInfo{Name: "libharbor", Options: map[string]string{"fetch.type": "git", "git.url": project, "git.branch": ref}}}
+	}
+	p.add(base, tool("v1"))
+	p.add(tree, tool("v2"))
+	assessments, err := e.revisionAssessments(t.Context(), branch.ID, branch.Base, tree, true)
+	require.NoError(t, err)
+	require.Len(t, assessments, 1)
+	require.Empty(t, assessments[0].Comparison.Problem)
+	require.Equal(t, []string{"upstream's LICENSE changed; the Portfile's license line may need to follow"}, holds(assessments[0]))
+	require.Equal(t, []model.Coverage{{Path: v2, Relevance: "unknown", Treatment: "inspected",
+		Reason: "read from the forge's archive of each commit, submodules left out; the base's git.branch as it names a commit now"}}, assessments[0].Comparison.Coverage)
+	require.EqualValues(t, 2, archives.asked.Load())
+
+	later := editTree(t, e, tree, map[string]string{"devel/libharbor/files/a.diff": "a"})
+	p.same(later, tree)
+	_, err = e.revisionAssessments(t.Context(), branch.ID, branch.Base, later, true)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, archives.asked.Load(), "the forge asked nothing again")
+
+	moved := editTree(t, e, tree, map[string]string{"devel/libharbor/files/b.diff": "b"})
+	p.add(moved, tool("v9"))
+	assessments, err = e.revisionAssessments(t.Context(), branch.ID, branch.Base, moved, true)
+	require.NoError(t, err)
+	require.Contains(t, assessments[0].Comparison.Problem, "the revision's git.branch couldn't be resolved")
+	require.NotEmpty(t, holds(assessments[0]))
+
+	abbreviated := editTree(t, e, tree, map[string]string{"devel/libharbor/files/c.diff": "c"})
+	p.add(abbreviated, tool(v2[:9]))
+	assessments, err = e.revisionAssessments(t.Context(), branch.ID, branch.Base, abbreviated, true)
+	require.NoError(t, err)
+	require.Equal(t, "the revision's git.branch is an abbreviated commit, "+v2[:9]+", which only a clone expands", assessments[0].Comparison.Problem)
+}
+
+// A Git-fetched port whose tag moved after its check is a concern: the
+// check built one source, and the submission would ship another. One
+// whose tag still names what was built, or can't be read now, isn't.
+func TestASourceMovedSinceItsCheckIsAConcern(t *testing.T) {
+	project := t.TempDir()
+	run(t, project, "init", "-q")
+	write(t, project, map[string]string{"README": "1\n"})
+	run(t, project, "add", "-A")
+	run(t, project, "commit", "-q", "-m", "one")
+	run(t, project, "tag", "v2")
+	built := run(t, project, "rev-parse", "HEAD")
+	f := setup(t)
+	e := f.open(t)
+	target := model.PlanTarget{ID: "tool", Target: model.Target{Name: "tool"}}
+	evidence := &Evidence{Run: model.Run{Number: 7}, Plan: model.Plan{Targets: []model.PlanTarget{target}, Builds: []model.EnvironmentPlan{{
+		Order: []model.TargetID{"tool"}, Git: map[model.TargetID]model.GitSource{"tool": {URL: project, Ref: "v2", Commit: model.ObjectID(built)}}}}}}
+	require.Empty(t, e.movedSources(t.Context(), evidence))
+
+	write(t, project, map[string]string{"README": "2\n"})
+	run(t, project, "commit", "-q", "-am", "two")
+	run(t, project, "tag", "-f", "v2")
+	now := run(t, project, "rev-parse", "HEAD")
+	moved := e.movedSources(t.Context(), evidence)
+	require.Len(t, moved, 1)
+	require.Equal(t, model.Concern{Origin: model.FromUpstream, Port: "tool", Rule: "source-moved", Subject: now, Class: model.Introduced,
+		Detail: "tool's git.branch v2 named " + built[:7] + " when check-7 planned it, and names " + now[:7] + " now: the check built another source than this would submit"}, moved[0])
+	require.Contains(t, SubmitPlan{Moved: moved}.held(), moved[0].Detail, "it holds a submission nobody looks over")
+
+	evidence.Plan.Builds[0].Git["tool"] = model.GitSource{URL: t.TempDir() + "/gone", Ref: "v2", Commit: model.ObjectID(built)}
+	require.Empty(t, e.movedSources(t.Context(), evidence), "a ref that can't be read now isn't said to have moved")
+	require.Empty(t, e.movedSources(t.Context(), nil))
 }

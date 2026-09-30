@@ -75,6 +75,9 @@ type Engine struct {
 	// ArchivePlanner says what a port fetches, for its assessment;
 	// MacPorts' own evaluator when nil.
 	ArchivePlanner ArchivePlanner
+	// SourceArchiver writes a Git-fetched port's forge's archive of a
+	// commit, for its assessment; upstream discovery's forges when nil.
+	SourceArchiver SourceArchiver
 	// DependentReader finds dependents for impact; the port index when nil.
 	DependentReader DependentReader
 	// OutdatedReader finds newer releases for outdated; MacPorts' evaluator

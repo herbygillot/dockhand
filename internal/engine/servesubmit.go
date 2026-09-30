@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -128,11 +129,45 @@ func (p SubmitPlan) Concerns() []model.Concern {
 				Detail: "the upstream archives couldn't be compared: " + problem})
 		}
 	}
+	for _, moved := range p.Moved {
+		add(moved)
+	}
 	for _, finding := range p.Findings {
 		add(model.Concern{Origin: model.FromCommitRules, Rule: finding.Code, Detail: "commit rules: " + finding.String()})
 	}
 	for _, concern := range othersConcerns(p.Others, p.SearchProblem) {
 		add(concern)
+	}
+	return concerns
+}
+
+// movedSources are the Git-fetched ports whose git.branch names another
+// commit now than when the check a submission rests on planned it: the
+// build proved one source, and the pull request would ship another, since
+// a tag binds nothing (the assessment design, A). Each repository and ref
+// is read once; one that can't be read now isn't said to have moved, as
+// the check's own evidence says what it built.
+func (e *Engine) movedSources(ctx context.Context, evidence *Evidence) []model.Concern {
+	if evidence == nil {
+		return nil
+	}
+	now := map[[2]string]model.GitSource{}
+	var concerns []model.Concern
+	for _, build := range evidence.Plan.Builds {
+		for _, id := range slices.Sorted(maps.Keys(build.Git)) {
+			planned := build.Git[id]
+			key := [2]string{planned.URL, planned.Ref}
+			if _, read := now[key]; !read {
+				now[key] = e.resolveGit(ctx, model.GitSource{URL: planned.URL, Ref: planned.Ref})
+			}
+			current := now[key]
+			if planned.Commit == "" || current.Commit == "" || current.Commit == planned.Commit {
+				continue
+			}
+			target, _ := evidence.Plan.Target(id)
+			concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: "source-moved", Subject: string(current.Commit), Class: model.Introduced,
+				Detail: fmt.Sprintf("%s's git.branch %s named %s when %s planned it, and names %s now: the check built another source than this would submit", target.Target.Name, planned.Ref, short(planned.Commit), evidence.Run.Name(), short(current.Commit))})
+		}
 	}
 	return concerns
 }
