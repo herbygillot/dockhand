@@ -564,6 +564,15 @@ Changed:
 - **Finding 4 holds in part.** The description should say what the port is; but no Type ticked is right for a new port, which MacPorts' template says its automation detects as a submission.
 - **Placed:** 1, 2, 3, 4, and 6 as batch 18, taken next; 5 with item 7's `create` work.
 
+**s2n-tls, and `check --variants`,** in the same review, with `f7e0e3bb`, was checked against the code at `f9d61a82`.
+- **Findings 1, 2, and 3 hold, and are fixed at once** ([note](activity/2026-09-30-targets-built-from-source.md)):
+  - the guest installed each target without `-s`, so MacPorts took a published archive for any target of a released version, revision, and variants, `--also` dependents most of all, and a check passed what it never built;
+  - it kept each target's work, which the port's next variant build then refused;
+  - a target whose tests passed didn't say so.
+
+  `VerifierProtocol` 2 ends the standing and reuse of every result the old guest recorded.
+- **Finding 4 narrows the txt run's finding 2,** batch 18's second item: the question comes only with `check --branch` from another checkout, which the item already says.
+
 **The roadmap's smaller items were re-batched on 2026-09-29,** after batches 1 to 3: by area and in order, rather than by the run that found each, which the done items keep.
 
 **The cleanup** in the same review, `dockhand clean` at `0ffed143`, was checked against `42bcaf3a`.

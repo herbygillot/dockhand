@@ -7,11 +7,15 @@ attempt, or else by `dockhand clean` or serve's daily cleanup, once no
 process runs its check. It follows MacPorts CI's order (decisions 11 and 22). For each target,
 in dependency order:
 
-1. everything installed is deactivated;
+1. everything installed is deactivated, and the target's earlier work is
+   cleaned, as another variant's build of it leaves one;
 2. the target is linted;
 3. its dependencies are installed and activated, from MacPorts' binary
    archives where they exist;
-4. it is fetched, checksummed, and installed;
+4. it is fetched, checksummed, and installed from its source (`port -s`),
+   never from a published archive, as CI's `mpbb install-port --source`
+   builds it: an archive of the same version, revision, and variants is
+   master's Portfile's build, not the branch's;
 5. its declared tests run. As in CI they are advisory unless the check
    says `--tests required`.
 

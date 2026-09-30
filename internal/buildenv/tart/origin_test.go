@@ -31,7 +31,7 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 	require.NoError(t, tartvm.WriteImageRecord(home, "dockhand-base-tahoe", manifest))
 	identity, err = provider.Identity(t.Context(), tahoe)
 	require.NoError(t, err)
-	require.Equal(t, manifest.Origin()+"; verifier 1", identity)
+	require.Equal(t, manifest.Origin()+"; verifier 2", identity)
 
 	xcode := tahoe
 	xcode.DeveloperTools = model.DeveloperToolsXcode
@@ -40,8 +40,12 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 	require.Empty(t, identity, "the Xcode image is another image, and has no record")
 }
 
-// guestPin is the digest of the guest program VerifierProtocol 1 covers.
-const guestPin = "b66588a248b56c8756465efb956f0176174ba13c49c905933bc0fa648b6beebf"
+// guestPin is the digest of the guest program VerifierProtocol 2 covers.
+// Protocol 2 builds each target from its source, never from a published
+// archive, and cleans its earlier work first (the s2n-tls run's findings 1
+// and 2): what protocol 1 recorded may be an archive install taken for a
+// build, so none of it stands any more.
+const guestPin = "8ec69645a5d087fc9e9b735ef59e055088696308e32b7978fe78e5c8b3d98db3"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this
@@ -53,6 +57,6 @@ func TestTheVerifierProtocolCoversTheGuestProgram(t *testing.T) {
 	data, err := os.ReadFile("guest.tcl")
 	require.NoError(t, err)
 	sum := sha256.Sum256(data)
-	require.Equal(t, 1, VerifierProtocol)
+	require.Equal(t, 2, VerifierProtocol)
 	require.Equal(t, guestPin, hex.EncodeToString(sum[:]), "guest.tcl changed: raise VerifierProtocol if ports are built or judged otherwise, or update guestPin if not")
 }

@@ -24,6 +24,11 @@ func targetWords(plan model.Plan, target model.PlanTarget, result Cell, reading 
 	switch result.Outcome {
 	case model.OutcomePassed:
 		switch result.Tests {
+		case model.TestsPassed:
+			// Tests that ran and passed are said, as failing ones are:
+			// s2n-tls +tests read "✓" of its 284 required tests (the
+			// s2n-tls run's finding 3).
+			return "✓ tests passed"
 		case model.TestsFailed:
 			return "✓ build passed; tests failed (" + reading + ")"
 		case model.TestsTimedOut:

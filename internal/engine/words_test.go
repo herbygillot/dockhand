@@ -19,6 +19,7 @@ func TestTargetWordsAreDesignV3s(t *testing.T) {
 		words    string
 	}{
 		{model.TargetResult{Outcome: model.OutcomePassed}, false, "✓"},
+		{model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsPassed}, false, "✓ tests passed"},
 		{model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsFailed}, false, "✓ build passed; tests failed (advisory)"},
 		{model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsTimedOut}, false, "✓ build passed; tests timed out (advisory)"},
 		{model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseTest, Tests: model.TestsTimedOut}, false, "✗ failed at test: tests timed out"},

@@ -235,6 +235,12 @@ proc build {index target} {
             return [{*}$fail $result install "deactivating the ports before it failed: [why $log $message]"]
         }
     }
+    # An earlier target of the same port, another variant's build, left
+    # its work directory, which MacPorts refuses to go on with under other
+    # variants; CI cleans up between ports too (mpbb cleanup).
+    if {[set message [run $log [concat $here clean --work $selection]]] ne ""} {
+        return [{*}$fail $result fetch "cleaning an earlier build's work failed: [why $log $message]"]
+    }
     if {[set message [run $log [concat $here lint $selection]]] ne ""} {
         return [{*}$fail $result lint [why $log $message]]
     }
@@ -250,9 +256,13 @@ proc build {index target} {
         }
     }
     # Its dependencies are in place, as CI's install-port has them, unless
-    # its variants ask for others, which install then brings.
-    set install [concat $here -dk install --unrequested $selection]
-    if {![llength $variants]} { set install [concat $here -dkn install --unrequested $selection] }
+    # its variants ask for others, which install then brings. The target
+    # itself is built from its source, never installed from a published
+    # archive, as CI's install-port --source builds it: an archive of the
+    # same version, revision, and variants is master's Portfile's build,
+    # not the branch's.
+    set install [concat $here -dks install --unrequested $selection]
+    if {![llength $variants]} { set install [concat $here -dkns install --unrequested $selection] }
     if {[set message [run $log $install]] ne ""} {
         return [{*}$fail $result install [why $log $message]]
     }

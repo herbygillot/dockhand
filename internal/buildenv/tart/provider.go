@@ -46,7 +46,7 @@ const Protocol = 1
 // environment's origin, so raising it ends reuse of evidence the program
 // recorded before (decision 28). A test pins guest.tcl, and fails until a
 // change to it raises this or, for a change of wording only, re-pins.
-const VerifierProtocol = 1
+const VerifierProtocol = 2
 
 // guestRoot is where the guest program and the staged tree live in a clone.
 const guestRoot = "/var/tmp/dockhand-check"

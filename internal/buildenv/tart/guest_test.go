@@ -118,9 +118,13 @@ func twoTargets(tests string) guestInput {
 	}}
 }
 
-// Each target is linted, its dependencies installed, and then fetched,
-// checksummed, and installed, as MacPorts CI does, with its declared tests
-// after; the results say so target by target.
+// Each target's earlier work is cleaned, and it's linted, its
+// dependencies installed, and then fetched, checksummed, and installed
+// from its source, never from a published archive, as MacPorts CI does
+// (install-port --source), with its declared tests after; the results say
+// so target by target. s2n-tls's +tests build was refused for +debug's
+// work, and a target MacPorts' packages had was installed from them, not
+// built (the s2n-tls run's findings 1 and 2).
 func TestTheGuestBuildsEachTargetInCIsOrder(t *testing.T) {
 	t.Parallel()
 	results, commands := guestRun(t, twoTargets("declared"), "TESTED=libharbor", "DEPS=libharbor=zlib harbor-cli=libharbor")
@@ -137,11 +141,12 @@ func TestTheGuestBuildsEachTargetInCIsOrder(t *testing.T) {
 		}
 	}
 	require.Equal(t, []string{
+		"-N -D devel/libharbor clean --work subport=libharbor",
 		"-N -D devel/libharbor lint subport=libharbor",
 		"-q echo depof:libharbor",
 		"-N -D devel/libharbor -d fetch subport=libharbor",
 		"-N -D devel/libharbor -d checksum subport=libharbor",
-		"-N -D devel/libharbor -dkn install --unrequested subport=libharbor",
+		"-N -D devel/libharbor -dkns install --unrequested subport=libharbor",
 		"-N -D devel/libharbor -d test subport=libharbor",
 	}, keep(libharbor, func(c string) bool { return !strings.Contains(c, "installed") }))
 	require.Contains(t, commands, "-N -d install --unrequested zlib", "a target's dependencies are installed first")
