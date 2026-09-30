@@ -290,7 +290,13 @@ proc build {index target} {
                 continue
             }
             dict set result fetched $commit
-            set expect [expr {[dict exists $git expect] ? [dict get $git expect] : ""}]
+            # Read as a string: expr would take an abbreviated commit
+            # that's all digits for a number, and one led by a zero for
+            # octal, as 00230075 is 77885.
+            set expect ""
+            if {[dict exists $git expect]} {
+                set expect [dict get $git expect]
+            }
             if {$expect ne "" && [string first $expect $commit] != 0} {
                 set ref "the default branch"
                 if {[dict get $git ref] ne ""} { set ref "git.branch [dict get $git ref]" }

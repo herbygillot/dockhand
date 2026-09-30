@@ -53,7 +53,12 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // recorded no commit, which reuse and evidence now require of them
 // (reuse.Current, engine.Counts). Every other port is built and judged as
 // before, so its evidence stands, and the protocol stays 2.
-const guestPin = "8883755f6af8d92e1a2c6e9dda06cdc8f97aa6afa2fe811fe8c49ff686058438"
+//
+// The expected commit is read as a string since: an abbreviation of
+// octal digits led by a zero, 0157, had been taken for the number 111 and
+// its fetch failed as moved. Only such a Git-fetched port is judged
+// otherwise, and what failed so stood for nothing, so the protocol stays 2.
+const guestPin = "99b3c69013899fb0b73cf00c1a05cf57746eb436c71d3d171d77f2b2847983c1"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this

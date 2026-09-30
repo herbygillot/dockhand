@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -278,6 +279,43 @@ func TestTheGuestReportsTheCommitAGitFetchCheckedOut(t *testing.T) {
 	require.Equal(t, commit, results.Targets[0].Fetched)
 	require.Equal(t, "passed", results.Targets[1].Outcome, results.Targets[1].Detail)
 	require.Equal(t, cli, results.Targets[1].Fetched, "the whole commit an abbreviation expands to")
+}
+
+// An abbreviated commit that's all digits is a commit's beginning, read
+// as a string, never a number: one led by a zero, its digits octal's,
+// isn't the octal number Tcl's expr would take it for, as 00230075 read
+// as 77885 did.
+func TestAnAbbreviationOfDigitsIsReadAsWritten(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	var commit string
+	// A commit whose abbreviation is octal digits led by a zero, found by
+	// making commits until one is.
+	dir := filepath.Join(root, "checkouts", "libharbor")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	git := func(args ...string) string {
+		command := exec.CommandContext(t.Context(), "git", append([]string{"-C", dir, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid"}, args...)...)
+		command.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+		out, err := command.CombinedOutput()
+		require.NoError(t, err, "%s", out)
+		return strings.TrimSpace(string(out))
+	}
+	git("init", "-q")
+	for i := 0; ; i++ {
+		git("commit", "-q", "--allow-empty", "-m", fmt.Sprint("release ", i))
+		commit = git("rev-parse", "HEAD")
+		if commit[0] == '0' && strings.Trim(commit[:4], "01234567") == "" {
+			break
+		}
+		require.Less(t, i, 20000, "no commit abbreviated as digits")
+	}
+	input := twoTargets("declared")
+	input.Targets = input.Targets[:1]
+	input.Targets[0].Git = &guestGit{Ref: commit[:4], Expect: commit[:4]}
+	results, _ := guestRunIn(t, root, input)
+	require.Equal(t, "finished", results.State, results.Detail)
+	require.Equal(t, "passed", results.Targets[0].Outcome, results.Targets[0].Detail)
+	require.Equal(t, commit, results.Targets[0].Fetched)
 }
 
 // A Git fetch that checked out another commit than the check expected
