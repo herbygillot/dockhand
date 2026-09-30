@@ -117,9 +117,10 @@ if {[llength [info procs checkout]] == 0} {
 }
 # fetched is the commit a checkout is at, as Git's own rev-parse reads it.
 # The checkout is MacPorts' unprivileged user's, and this program runs as
-# root, so it is named safe for this one command.
+# root, so Git is told it is safe for this one command, as Base tells it
+# when it reads a port's own files with Git (portmain.tcl).
 proc fetched {path} {
-    return [string trim [exec /usr/bin/git -c safe.directory=$path -C $path rev-parse --verify {HEAD^{commit}}]]
+    return [string trim [exec /usr/bin/git -c safe.directory=* -C $path rev-parse --verify {HEAD^{commit}}]]
 }
 
 # fact is a command's output, trimmed, or nothing.

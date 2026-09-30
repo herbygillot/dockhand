@@ -53,7 +53,7 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // recorded no commit, which reuse and evidence now require of them
 // (reuse.Current, engine.Counts). Every other port is built and judged as
 // before, so its evidence stands, and the protocol stays 2.
-const guestPin = "3942a23f0bdcaaa0ec0a9a3da3c1708fa15bc3cffa33d3f152e77c765ed287bb"
+const guestPin = "8883755f6af8d92e1a2c6e9dda06cdc8f97aa6afa2fe811fe8c49ff686058438"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this
