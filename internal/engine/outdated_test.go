@@ -8,6 +8,8 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/outdated"
+	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
 // newReleases stands in for upstream discovery: jq has a newer release,
@@ -63,4 +65,25 @@ func TestOutdatedPortsArePreparedOneBranchEach(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, again.Updates)
 	require.Equal(t, "already in "+done.Branch.ShortName(), again.Skipped[0].Reason)
+}
+
+// Discovery's assessment decides what outdated says of a port. One whose
+// newer version was set aside, with nothing newer beyond it, is neither
+// outdated nor current: it carries what was set aside, and no branch is
+// planned for it (the update-workflow review's finding 6). An update found
+// beyond a version set aside is outdated as any.
+func TestAnUncertainPortIsNeitherOutdatedNorPlanned(t *testing.T) {
+	aside := []SetAside{{Tag: "v2.0", Version: "2.0", Source: "2.0", Predates: "v1.0"}}
+	uncertain := outdatedPort(outdated.Port{Selector: "yq", Result: upstream.Result{CurrentVersion: "1.0", CandidateVersion: "2.0", Assessment: upstream.Uncertain, SetAside: aside}})
+	require.Equal(t, OutdatedPort{Port: "yq", Current: "1.0", Newest: "2.0", Uncertain: aside}, uncertain)
+	release := &model.Release{Version: "1.1"}
+	updated := outdatedPort(outdated.Port{Selector: "yq", Result: upstream.Result{CurrentVersion: "1.0", CandidateVersion: "1.1", Assessment: upstream.UpdateAvailable, SetAside: aside, Release: release}})
+	require.Equal(t, OutdatedPort{Port: "yq", Current: "1.0", Newest: "1.1", Outdated: true, Release: release}, updated)
+
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	plan, err := e.PlanOutdated(t.Context(), OutdatedReport{Ports: []OutdatedPort{uncertain}})
+	require.NoError(t, err)
+	require.Empty(t, plan.Updates)
+	require.Empty(t, plan.Skipped, "the command says why it's left for a look")
 }

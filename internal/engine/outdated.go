@@ -29,10 +29,25 @@ type OutdatedPort struct {
 	Newest  string
 	// Outdated is true when upstream has a newer release.
 	Outdated bool
+	// Uncertain are the versions that compare newer than the port's own,
+	// newest first, but that discovery set aside, since their tags'
+	// commits predate the port's own tag's: whether the port is outdated
+	// is a person's call, and Newest is the first of them. It is neither
+	// current nor to be updated by itself.
+	Uncertain []SetAside
 	// Problem says why the port could not be checked.
 	Problem string
 	Release *model.Release
 }
+
+// SetAside is a version discovery set aside: it compares newer than the
+// port's own, but its tag's commit predates the port's own tag's.
+type SetAside = upstream.SetAside
+
+// UncertainRelease is an update's refusal to choose a release where
+// discovery set a newer one aside and found nothing newer beyond it: the
+// update needs the version named.
+type UncertainRelease = upstream.UncertainError
 
 // OutdatedReader finds ports' newest releases at a commit of master.
 // MacPorts' evaluator and upstream discovery are the real one.
@@ -89,19 +104,26 @@ func (s *surveyedPorts) Outdated(ctx context.Context, commit model.ObjectID, req
 	result, err := service.Observe(ctx, outdated.Selection{Ports: request.Ports, Maintainers: request.Maintainers})
 	var ports []OutdatedPort
 	for _, port := range result.Ports {
-		entry := OutdatedPort{Port: port.Selector, Current: port.CurrentVersion, Newest: port.CandidateVersion, Release: port.Release}
-		switch port.Assessment {
-		case upstream.UpdateAvailable:
-			entry.Outdated = true
-		case upstream.Unknown:
-			entry.Problem = port.Detail
-			if entry.Problem == "" {
-				entry.Problem = "its newest release could not be found"
-			}
-		}
-		ports = append(ports, entry)
+		ports = append(ports, outdatedPort(port))
 	}
 	return ports, err
+}
+
+// outdatedPort is a port as upstream discovery assessed it.
+func outdatedPort(port outdated.Port) OutdatedPort {
+	entry := OutdatedPort{Port: port.Selector, Current: port.CurrentVersion, Newest: port.CandidateVersion, Release: port.Release}
+	switch port.Assessment {
+	case upstream.UpdateAvailable:
+		entry.Outdated = true
+	case upstream.Uncertain:
+		entry.Uncertain = port.SetAside
+	case upstream.Unknown:
+		entry.Problem = port.Detail
+		if entry.Problem == "" {
+			entry.Problem = "its newest release could not be found"
+		}
+	}
+	return entry
 }
 
 // OutdatedPlan is how update --outdated splits the work before it starts
@@ -128,7 +150,8 @@ type SkippedUpdate struct {
 
 // PlanOutdated splits a report's outdated ports into branches: a port an
 // open branch already changes, or whose newest release could not be
-// found, is left alone.
+// found, is left alone. A port whose newest release is uncertain isn't
+// outdated, and isn't planned: which release it takes is a person's call.
 func (e *Engine) PlanOutdated(ctx context.Context, report OutdatedReport) (OutdatedPlan, error) {
 	var plan OutdatedPlan
 	for _, port := range report.Ports {

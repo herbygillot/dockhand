@@ -568,9 +568,11 @@ func TestTiedTagsAtOneCommitTakeTheLatestStyle(t *testing.T) {
 	}
 }
 
-// A tag that compares newer than the port's own but was made before it is
-// an old tag oddly spelled, as bat-extras' v20200408 is beside v2024.08.24,
-// and is set aside, saying so. A newer release beyond it is still found.
+// A tag that compares newer than the port's own but was made before it may
+// be an old tag oddly spelled, as bat-extras' v20200408 is beside
+// v2024.08.24, and is set aside, saying so. With nothing newer beyond it,
+// the port isn't called current: that's uncertain, and an update needs a
+// version named. A newer release beyond it is still found.
 func TestAnOldTagThatComparesNewerIsSetAside(t *testing.T) {
 	t.Parallel()
 	day := func(date string) time.Time {
@@ -596,8 +598,16 @@ func TestAnOldTagThatComparesNewerIsSetAside(t *testing.T) {
 	service.EvaluateVersion = identityVersion
 	result, err := service.DiscoverPort(t.Context(), port)
 	require.NoError(t, err)
-	require.Equal(t, upstream.Current, result.Assessment)
+	require.Equal(t, upstream.Uncertain, result.Assessment)
+	require.Nil(t, result.Release, "nothing is selected")
+	aside := []upstream.SetAside{{Tag: "v20200408", Version: "20200408", Source: "20200408", Predates: "v2024.08.24"}}
+	require.Equal(t, aside, result.SetAside)
+	require.Equal(t, "20200408", result.CandidateVersion)
 	require.Contains(t, result.Detail, "set aside v20200408, older than v2024.08.24 though it compares newer")
+	_, err = service.Resolve(t.Context(), port, "")
+	var uncertain *upstream.UncertainError
+	require.ErrorAs(t, err, &uncertain)
+	require.Equal(t, aside, uncertain.SetAside)
 
 	c.tags = append(c.tags, forge.Tag{Name: "v2024.09.01"})
 	c.dates[commit("v2024.09.01")] = day("2024-09-01")
@@ -605,7 +615,77 @@ func TestAnOldTagThatComparesNewerIsSetAside(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, upstream.UpdateAvailable, result.Assessment)
 	require.Equal(t, "v2024.09.01", result.Release.Tag)
+	require.Equal(t, aside, result.SetAside)
 	require.Contains(t, result.Detail, "set aside v20200408")
+}
+
+// A newer release whose tag's commit predates the port's own, as one made
+// on a release branch or tagged late can, is set aside as a misspelled old
+// tag is, and the port isn't called current for it: that's uncertain,
+// naming the version to ask for (the update-workflow review's finding 6,
+// its probe as a regression test).
+func TestANewerReleaseMadeEarlierIsUncertainNotCurrent(t *testing.T) {
+	t.Parallel()
+	c := &catalog{releases: []forge.Release{{Tag: "v1.0"}, {Tag: "v2.0"}}}
+	service := automaticService(t, c)
+	ids := map[string]string{"v1.0": strings.Repeat("a", 40), "v2.0": strings.Repeat("b", 40)}
+	c.tag = tagFunc(func(_ context.Context, _ string, name string) (forge.Tag, error) {
+		return forge.Tag{Name: name, Commit: ids[name]}, nil
+	})
+	c.dates = map[string]time.Time{ids["v1.0"]: time.Date(2026, 9, 20, 0, 0, 0, 0, time.UTC), ids["v2.0"]: time.Date(2026, 9, 10, 0, 0, 0, 0, time.UTC)}
+	result, err := service.DiscoverPort(t.Context(), automaticPort())
+	require.NoError(t, err)
+	require.Equal(t, upstream.Uncertain, result.Assessment)
+	require.Equal(t, []upstream.SetAside{{Tag: "v2.0", Version: "2.0", Source: "2.0", Predates: "v1.0"}}, result.SetAside)
+	require.Equal(t, "Can't tell whether current at 1.0: set aside v2.0, older than v1.0 though it compares newer", result.Detail)
+
+	// So is a catalog whose every release is set aside, as one that no
+	// longer lists the port's own is here.
+	c.releases = c.releases[1:]
+	result, err = service.DiscoverPort(t.Context(), automaticPort())
+	require.NoError(t, err)
+	require.Equal(t, upstream.Uncertain, result.Assessment)
+	require.Equal(t, "2.0", result.CandidateVersion)
+}
+
+// A Portfile that derives its version from the tag's otherwise than as the
+// same string orders its versions its own way: here v2.0 becomes 20, past
+// v4.0. Two tags prove nothing of that order, so where the port's own
+// version isn't its tag's, every tag is evaluated, and v2.0 is the newest
+// (the update-workflow review's finding 6, its probe as a regression test).
+func TestTwoTagsDontProveADerivedVersionsOrder(t *testing.T) {
+	t.Parallel()
+	c := &catalog{releases: []forge.Release{{Tag: "v1.0"}, {Tag: "v2.0"}, {Tag: "v3.0"}, {Tag: "v4.0"}}}
+	service := automaticService(t, c)
+	port := automaticPort()
+	port.Version = "1"
+	var evaluated []string
+	service.EvaluateVersion = func(_ context.Context, source string) (string, error) {
+		evaluated = append(evaluated, source)
+		if source == "2.0" {
+			return "20", nil
+		}
+		return source, nil
+	}
+	result, err := service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, upstream.UpdateAvailable, result.Assessment)
+	require.Equal(t, "v2.0", result.Release.Tag)
+	require.Equal(t, "20", result.CandidateVersion)
+	require.ElementsMatch(t, []string{"2.0", "3.0", "4.0"}, evaluated, "each once; v1.0 is the port's own")
+
+	// So is one whose version is its tag's at the port's own release, but
+	// not at the newest tags.
+	port = automaticPort()
+	evaluated = nil
+	service.EvaluateVersion = func(_ context.Context, source string) (string, error) {
+		evaluated = append(evaluated, source)
+		return map[string]string{"4.0": "4", "3.0": "3", "2.0": "20"}[source], nil
+	}
+	result, err = service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, "v2.0", result.Release.Tag)
+	require.ElementsMatch(t, []string{"2.0", "3.0", "4.0"}, evaluated)
 }
 
 // countedVersions is MacPorts' comparer, counting the interpreters a port's

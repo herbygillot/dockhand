@@ -85,7 +85,7 @@ update --outdated --mine starts on them.`,
 func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report engine.OutdatedReport, all bool) error {
 	table := tabwriter.NewWriter(out, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(table, "  PORT\tNOW\tNEWEST\tDOCKHAND CAN")
-	newer, unknown := 0, 0
+	newer, unknown, uncertain := 0, 0, 0
 	for _, port := range report.Ports {
 		switch {
 		case port.Problem != "":
@@ -93,6 +93,11 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 			if all {
 				fmt.Fprintf(table, "  %s\t%s\t?\tcouldn't check: %s\n", port.Port, orDash(port.Current), port.Problem)
 			}
+		case len(port.Uncertain) > 0:
+			// Neither current nor outdated for sure, so it's listed for
+			// a look, with the update that takes it.
+			uncertain++
+			fmt.Fprintf(table, "  %s\t%s\t%s?\tupdate %s %s after a look: %s\n", port.Port, port.Current, port.Newest, port.Port, port.Uncertain[0].Source, setAsideWords(port.Uncertain))
 		case port.Outdated:
 			newer++
 			can := "update"
@@ -108,20 +113,26 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 			fmt.Fprintf(table, "  %s\t%s\t%s\tnothing; it is current\n", port.Port, port.Current, port.Newest)
 		}
 	}
-	if newer > 0 || all {
+	if newer > 0 || uncertain > 0 || all {
 		table.Flush()
 	}
 	ports, master := plural(len(report.Ports), "port"), engine.Short(report.Master)
 	var line string
+	alone := len(report.Ports) == 1 && newer == 0 && unknown == 0
 	switch {
-	case newer == 0 && unknown == 0 && len(report.Ports) == 1:
+	case alone && uncertain == 0:
 		line = fmt.Sprintf("%s has no newer release, at master %s", report.Ports[0].Port, master)
+	case alone:
+		line = fmt.Sprintf("%s may have a newer release, at master %s", report.Ports[0].Port, master)
 	case newer == 0:
 		line = fmt.Sprintf("None of %s has a newer release, at master %s", ports, master)
 	case newer == 1:
 		line = fmt.Sprintf("1 of %s has a newer release, at master %s", ports, master)
 	default:
 		line = fmt.Sprintf("%d of %s have newer releases, at master %s", newer, ports, master)
+	}
+	if uncertain > 0 && !alone {
+		line += fmt.Sprintf(" · %d may have one, for a look", uncertain)
 	}
 	if unknown > 0 {
 		line += fmt.Sprintf(" · %d couldn't be checked", unknown)
@@ -131,6 +142,20 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 	}
 	fmt.Fprintln(out, line)
 	return nil
+}
+
+// setAsideWords says why a port's newest release is uncertain: what was set
+// aside compares newer than the port's version, but was tagged on a commit
+// older than the port's own tag's.
+func setAsideWords(aside []engine.SetAside) string {
+	if len(aside) == 1 {
+		return fmt.Sprintf("%s compares newer, but its commit is older than %s's", aside[0].Tag, aside[0].Predates)
+	}
+	var tags []string
+	for _, version := range aside {
+		tags = append(tags, version.Tag)
+	}
+	return fmt.Sprintf("%s compare newer, but their commits are older than %s's", strings.Join(tags, ", "), aside[0].Predates)
 }
 
 func orDash(value string) string {
@@ -174,7 +199,7 @@ func updateOutdated(ctx context.Context, s *settings, streams Streams, args []st
 	out := streams.Out
 	if len(plan.Updates) == 0 {
 		fmt.Fprintln(out, "Nothing to update: none of them has a newer release that isn't already in a branch.")
-		writeSkipped(out, plan)
+		writeSkipped(out, plan, report)
 		return nil
 	}
 	var names []string
@@ -182,7 +207,7 @@ func updateOutdated(ctx context.Context, s *settings, streams Streams, args []st
 		names = append(names, engine.BranchName(update.Name))
 	}
 	fmt.Fprintf(out, "Will start %s, one per port (unrelated ports go in separate PRs):\n  %s\n", plural(len(plan.Updates), "branch"), strings.Join(names, " · "))
-	writeSkipped(out, plan)
+	writeSkipped(out, plan, report)
 	if options.plan {
 		fmt.Fprintln(out, "Nothing was started (--plan).")
 		return nil
@@ -202,9 +227,17 @@ func updateOutdated(ctx context.Context, s *settings, streams Streams, args []st
 	return writePrepared(ctx, e, out, prepared, options.check)
 }
 
-func writeSkipped(out io.Writer, plan engine.OutdatedPlan) {
+// writeSkipped says the ports update --outdated leaves alone, and why: the
+// plan's, and those whose newest release is uncertain, which a person
+// names after a look.
+func writeSkipped(out io.Writer, plan engine.OutdatedPlan, report engine.OutdatedReport) {
 	for _, skipped := range plan.Skipped {
 		fmt.Fprintf(out, "Skipped: %s (%s)\n", skipped.Port, skipped.Reason)
+	}
+	for _, port := range report.Ports {
+		if len(port.Uncertain) > 0 {
+			fmt.Fprintf(out, "Skipped: %s (%s; after a look, dockhand update %s %s)\n", port.Port, setAsideWords(port.Uncertain), port.Port, port.Uncertain[0].Source)
+		}
 	}
 }
 

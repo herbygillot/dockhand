@@ -15,8 +15,15 @@ import (
 )
 
 // jqIsOutdated stands in for upstream discovery: jq has 1.8.1, and lost
-// can't be checked.
-type jqIsOutdated struct{ asked []engine.OutdatedRequest }
+// can't be checked. With uncertain, yq may have 5.0, which was set aside.
+type jqIsOutdated struct {
+	asked     []engine.OutdatedRequest
+	uncertain bool
+}
+
+// yqMayBeOutdated is a port whose newest release is uncertain: v5.0
+// compares newer, but was tagged on a commit older than v4.44.1's.
+var yqMayBeOutdated = engine.OutdatedPort{Port: "yq", Current: "4.44.1", Newest: "5.0", Uncertain: []engine.SetAside{{Tag: "v5.0", Version: "5.0", Source: "5.0", Predates: "v4.44.1"}}}
 
 func (j *jqIsOutdated) Outdated(_ context.Context, _ model.ObjectID, request engine.OutdatedRequest) ([]engine.OutdatedPort, error) {
 	j.asked = append(j.asked, request)
@@ -25,10 +32,14 @@ func (j *jqIsOutdated) Outdated(_ context.Context, _ model.ObjectID, request eng
 			request.Progress(done, 2)
 		}
 	}
-	return []engine.OutdatedPort{
+	ports := []engine.OutdatedPort{
 		{Port: "jq", Current: "1.7.1", Newest: "1.8.1", Outdated: true},
 		{Port: "lost", Problem: "no forge could be found for it"},
-	}, nil
+	}
+	if j.uncertain {
+		ports = append(ports, yqMayBeOutdated)
+	}
+	return ports, nil
 }
 
 func withOutdated(t *testing.T) *jqIsOutdated {
@@ -53,6 +64,13 @@ func TestOutdatedSaysWhenNothingIsNewer(t *testing.T) {
 	require.Equal(t, "None of 2 ports has a newer release, at master 1bb30d5\n", said(current("jq"), current("fd")))
 	require.Equal(t, "None of 1 port has a newer release, at master 1bb30d5 · 1 couldn't be checked (--all says why)\n",
 		said(engine.OutdatedPort{Port: "jq", Problem: "no forge"}), "a port that couldn't be checked isn't said to have none")
+
+	// Nor is one whose newest release is uncertain, which is listed, with
+	// why and the update that takes it (the update-workflow review's
+	// finding 6).
+	row := "  PORT   NOW      NEWEST   DOCKHAND CAN\n  yq     4.44.1   5.0?     update yq 5.0 after a look: v5.0 compares newer, but its commit is older than v4.44.1's\n"
+	require.Equal(t, row+"yq may have a newer release, at master 1bb30d5\n", said(yqMayBeOutdated))
+	require.Equal(t, row+"None of 2 ports has a newer release, at master 1bb30d5 · 1 may have one, for a look\n", said(yqMayBeOutdated, current("jq")))
 }
 
 func TestOutdatedThenUpdateOutdated(t *testing.T) {
@@ -109,6 +127,31 @@ func TestOutdatedThenUpdateOutdated(t *testing.T) {
 	require.ErrorContains(t, err, "--mine and --check go with --outdated")
 	_, _, err = dockhand(t, "update")
 	require.ErrorContains(t, err, "name the port to update, or update your outdated ports with --outdated --mine")
+}
+
+// update --outdated starts nothing for a port whose newest release is
+// uncertain, and says why and what takes it; outdated's JSON lists what was
+// set aside (the update-workflow review's finding 6).
+func TestUpdateOutdatedLeavesAnUncertainPortForALook(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	reader := withOutdated(t)
+	reader.uncertain = true
+
+	out, _, err := dockhand(t, "update", "--outdated", "--plan", "jq", "lost", "yq")
+	require.NoError(t, err)
+	require.Contains(t, out, "Will start 1 branch, one per port (unrelated ports go in separate PRs):\n  dockhand/jq-")
+	require.Contains(t, out, "Skipped: yq (v5.0 compares newer, but its commit is older than v4.44.1's; after a look, dockhand update yq 5.0)\n")
+
+	result, err := jsonOf(t, "outdated", "jq", "lost", "yq")
+	require.NoError(t, err)
+	yq := dig(t, result.Result, "ports", 2)
+	require.Equal(t, "yq", dig(t, yq, "port"))
+	require.Equal(t, false, dig(t, yq, "outdated"))
+	require.Equal(t, "5.0", dig(t, yq, "newest"))
+	require.Equal(t, []any{map[string]any{"tag": "v5.0", "version": "5.0", "source": "5.0", "predates": "v4.44.1"}}, dig(t, yq, "uncertain"))
+	require.Nil(t, dig(t, result.Result, "ports", 0, "uncertain"), "absent for a port outdated for sure")
 }
 
 // At a terminal, outdated shows how many ports are looked up on a line it

@@ -428,6 +428,9 @@ type OutdatedLook struct {
 	CheckedAt time.Time `json:"checked_at"`
 	Master    string    `json:"master"`
 	Outdated  []string  `json:"outdated"`
+	// Uncertain are the ports that may have a newer release, which serve
+	// neither calls current nor prepares: a person looks.
+	Uncertain []string `json:"uncertain,omitempty"`
 }
 
 // outdatedScanner looks for new releases of your ports once a day, at the
@@ -470,22 +473,31 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 		report(fmt.Sprintf("serve: looking for new releases of your ports: %v", err))
 		return
 	}
-	var names []string
+	var names, uncertain []string
 	for _, port := range found.Ports {
-		if port.Outdated {
+		switch {
+		case port.Outdated:
 			names = append(names, port.Port)
+		case len(port.Uncertain) > 0:
+			uncertain = append(uncertain, port.Port)
 		}
 	}
-	look := OutdatedLook{CheckedAt: now, Master: string(found.Master), Outdated: names}
+	look := OutdatedLook{CheckedAt: now, Master: string(found.Master), Outdated: names, Uncertain: uncertain}
 	if data, err := json.Marshal(look); err == nil {
 		_ = e.writeServeFile("outdated.json", data)
 	}
 	if len(names) == 0 {
 		o.s.say("serve: none of your ports has a newer release")
-		return
+	} else {
+		o.s.say("serve: %s of yours %s newer releases: %s", plural(len(names), "port"), map[bool]string{true: "has", false: "have"}[len(names) == 1], strings.Join(names, ", "))
 	}
-	o.s.say("serve: %s of yours %s newer releases: %s", plural(len(names), "port"), map[bool]string{true: "has", false: "have"}[len(names) == 1], strings.Join(names, ", "))
-	if settings.Mode == "list" || settings.Mode == "" {
+	// A port whose newest release is uncertain is neither current nor an
+	// update serve prepares: it is listed for a person, who names the
+	// version to take.
+	if len(uncertain) > 0 {
+		o.s.say("serve: %s of yours may have newer releases, for your look: %s (dockhand outdated %s says why)", plural(len(uncertain), "port"), strings.Join(uncertain, ", "), strings.Join(uncertain, " "))
+	}
+	if len(names) == 0 || settings.Mode == "list" || settings.Mode == "" {
 		return
 	}
 	plan, err := e.PlanOutdated(ctx, found)

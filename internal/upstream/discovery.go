@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -19,7 +20,43 @@ const (
 	Unknown         Assessment = "unknown"
 	Current         Assessment = "current"
 	UpdateAvailable Assessment = "update-available"
+	// Uncertain is a port discovery can't call current or outdated: a
+	// version that compares newer than the port's own was set aside
+	// (Result.SetAside), and nothing newer is found beyond it. Nothing is
+	// selected; a person looks, and names the version to update to.
+	Uncertain Assessment = "uncertain"
 )
+
+// SetAside is a version that compares newer than the port's own, set aside
+// because its tag's commit was made before the commit of the tag the port
+// follows now. An old tag oddly spelled is one, as dolt's v040.15 is; so is
+// a release made on a branch, a tag made late, or a commit dated wrong, and
+// none of that tells them apart.
+type SetAside struct {
+	Tag string
+	// Version is the port's version at the tag, as the Portfile evaluates
+	// it, and Source the version as the tag spells it, which an update
+	// names to take it: dockhand update <port> <Source>.
+	Version, Source string
+	// Predates is the tag the port follows now, whose commit this tag's
+	// predates.
+	Predates string
+}
+
+// UncertainError is Resolve's answer for a port whose discovery is
+// Uncertain: an update chooses no release there, and needs one named.
+type UncertainError struct {
+	Port     string
+	SetAside []SetAside
+}
+
+func (e *UncertainError) Error() string {
+	var tags []string
+	for _, aside := range e.SetAside {
+		tags = append(tags, aside.Tag)
+	}
+	return fmt.Sprintf("upstream: can't tell whether %s is current: %s compares newer, but predates %s; name the version to update to", e.Port, strings.Join(tags, ", "), e.SetAside[0].Predates)
+}
 
 // Catalog binds an interpreted Portfile source to its remote repository.
 type Catalog interface {
@@ -35,13 +72,20 @@ type Observation struct {
 }
 
 type Result struct {
+	// Release is the release selected, current or newer; nil where the
+	// assessment is Unknown or Uncertain.
 	Release          *model.Release
 	CurrentVersion   string
 	CandidateVersion string
 	Assessment       Assessment
-	Evidence         []Observation
-	Detail           string
-	ObservedAt       time.Time
+	// SetAside are the versions that compare newer than the one selected
+	// but predate the port's own release, newest first. With none selected
+	// beyond them, the assessment is Uncertain, and CandidateVersion is the
+	// newest of them.
+	SetAside   []SetAside
+	Evidence   []Observation
+	Detail     string
+	ObservedAt time.Time
 }
 
 type Service struct {

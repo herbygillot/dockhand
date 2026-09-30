@@ -357,6 +357,9 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	if errors.Is(err, engine.ErrUnsupported) {
 		return branch, update, byHand(err, request, branch, started)
 	}
+	if uncertain := new(engine.UncertainRelease); errors.As(err, &uncertain) {
+		return branch, update, uncertainUpdate(request.Port, uncertain.SetAside, linked, branch, started)
+	}
 	if err != nil {
 		if started {
 			return branch, update, fmt.Errorf("%w\nKept: %s, with nothing changed", err, branch.Name)
@@ -534,6 +537,23 @@ func byHand(err error, request engine.UpdateRequest, branch model.Branch, starte
 		return fmt.Errorf("can't update %s by itself: %s%s\nEdit the version yourself; dockhand checksums %s then prints the checksums to write:\n  dockhand edit %s", port, reason, kept, port, port)
 	}
 	return fmt.Errorf("can't update %s by itself: %s%s\nEdit the version yourself; dockhand checksums %s then fills in the rest:\n  dockhand edit %s", port, reason, kept, port, port)
+}
+
+// uncertainUpdate is an update to the newest release that found none to
+// choose: what compares newest was set aside, since its tag's commit is
+// older than the port's own, and nothing newer is beyond it. Whether it's
+// a release is a person's call, so it needs attention, and names the
+// update that takes it.
+func uncertainUpdate(port string, aside []engine.SetAside, linked linkedOptions, branch model.Branch, started bool) error {
+	verb := "update"
+	if linked.unattended {
+		verb = "bump"
+	}
+	kept := ""
+	if started {
+		kept = "\nKept: " + branch.Name + ", with nothing changed."
+	}
+	return exitf(3, "can't tell whether %s is current, so nothing was changed: %s\nIf %s is a release: dockhand %s %s %s%s", port, setAsideWords(aside), aside[0].Tag, verb, port, aside[0].Source, kept)
 }
 
 // writeStealth shows each changed archive's checksums, before and after.

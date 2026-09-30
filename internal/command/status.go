@@ -146,8 +146,14 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 		}
 		table.Flush()
 	}
-	if found, ok := e.LastOutdatedLook(); ok && len(found.Outdated) > 0 {
-		fmt.Fprintf(out, "\nYour ports: %s newer releases, as serve found %s (dockhand update --outdated --mine)\n", plural(len(found.Outdated), "port")+map[bool]string{true: " has", false: " have"}[len(found.Outdated) == 1], ago(found.CheckedAt))
+	if found, ok := e.LastOutdatedLook(); ok && (len(found.Outdated) > 0 || len(found.Uncertain) > 0) {
+		fmt.Fprintln(out)
+		if len(found.Outdated) > 0 {
+			fmt.Fprintf(out, "Your ports: %s newer releases, as serve found %s (dockhand update --outdated --mine)\n", plural(len(found.Outdated), "port")+map[bool]string{true: " has", false: " have"}[len(found.Outdated) == 1], ago(found.CheckedAt))
+		}
+		if len(found.Uncertain) > 0 {
+			fmt.Fprintf(out, "Your ports: %s may have newer releases, for your look, as serve found %s (dockhand outdated %s)\n", plural(len(found.Uncertain), "port"), ago(found.CheckedAt), strings.Join(found.Uncertain, " "))
+		}
 	}
 	fmt.Fprintf(out, "\n%s\n", serveWords(serve))
 	return nil

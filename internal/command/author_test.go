@@ -439,6 +439,45 @@ func TestAnUpdateNamesOtherOpenPullRequests(t *testing.T) {
 	require.Contains(t, again, "Couldn't look for other open pull requests for jq: rate limited\n")
 }
 
+// uncertainBumper is a bumper whose discovery set jq-1.9.0 aside, tagged
+// on a commit older than jq-1.7.1's, and found nothing newer.
+type uncertainBumper struct{ bumper }
+
+func (b uncertainBumper) ResolveRelease(ctx context.Context, r preparation.Request) (model.Release, error) {
+	if r.Version == "" {
+		return model.Release{}, &engine.UncertainRelease{Port: "jq", SetAside: []engine.SetAside{{Tag: "jq-1.9.0", Version: "1.9.0", Source: "1.9.0", Predates: "jq-1.7.1"}}}
+	}
+	return b.bumper.ResolveRelease(ctx, r)
+}
+
+// An update to the newest release where discovery can't say which that is
+// chooses none: it changes nothing, needs a look, and names the update that
+// takes what was set aside, which then goes ahead (the update-workflow
+// review's finding 6).
+func TestAnUncertainNewestReleaseIsNamedNotChosen(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	testPreparer = func(e *engine.Engine) engine.Preparer { return uncertainBumper{bumper{repo: e.Repo}} }
+	t.Cleanup(func() { testPreparer = nil })
+	withScript(t, w, "passed")
+	withGitHub(t, w)
+
+	_, _, err := dockhand(t, "update", "jq", "--new")
+	require.Equal(t, 3, ExitCode(err), "it needs a look")
+	require.EqualError(t, err, "can't tell whether jq is current, so nothing was changed: jq-1.9.0 compares newer, but its commit is older than jq-1.7.1's\nIf jq-1.9.0 is a release: dockhand update jq 1.9.0")
+	_, _, err = bumpOn(t, "jq")
+	require.Equal(t, 3, ExitCode(err))
+	require.ErrorContains(t, err, "\nIf jq-1.9.0 is a release: dockhand bump jq 1.9.0")
+	result, err := jsonOf(t, "update", "jq", "--plan")
+	require.Equal(t, 3, ExitCode(err))
+	require.Nil(t, result.Result, "a refusal before anything is done reports only its error")
+	require.Empty(t, gitRun(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
+
+	out, _, err := dockhand(t, "update", "jq", "1.9.0", "--new")
+	require.NoError(t, err)
+	require.Contains(t, out, "jq: 1.7.1 → 1.9.0")
+}
+
 // regenerating is a preparer whose update wrote a dependency block again.
 type regenerating struct{ bumper }
 

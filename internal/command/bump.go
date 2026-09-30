@@ -23,6 +23,9 @@ looking and editing along the way. With --json, its result is update
 It stops wherever a person should look:
   - A branch already changes the port, the check has nowhere to build, or
     the port is already at that release: it says so, and changes nothing.
+  - A newer tag was made before the port's own, and nothing newer is beyond
+    it, so which release is the newest can't be told: it changes nothing,
+    exits 3, and names the bump that takes that tag, if it's a release.
   - The check fails: the branch stays, with its logs.
   - The check passes, but comparing the upstream archives found what a build
     can't catch, or couldn't compare them, a commit rule has a finding, or

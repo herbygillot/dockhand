@@ -30,6 +30,11 @@ func (s *Service) resolve(ctx context.Context, port macports.PortInfo, requested
 		if err != nil {
 			return model.Release{}, err
 		}
+		// A port discovery can't call current or outdated has no release
+		// to choose: the update needs one named.
+		if result.Assessment == Uncertain {
+			return model.Release{}, &UncertainError{Port: port.Name, SetAside: result.SetAside}
+		}
 		return *result.Release, nil
 	}
 	if err := version.Validate(requested); err != nil {

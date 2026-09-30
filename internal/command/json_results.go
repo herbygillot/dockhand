@@ -445,13 +445,37 @@ type outdatedPortJSON struct {
 	Current  string `json:"current"`
 	Newest   string `json:"newest"`
 	Outdated bool   `json:"outdated"`
-	Problem  string `json:"problem,omitempty"`
+	// Uncertain are the versions that compare newer than the current one
+	// but were tagged on commits older than its own, newest first:
+	// whether the port is outdated is a person's call, and newest is the
+	// first of them. Absent for a port that is current or outdated.
+	Uncertain []setAsideJSON `json:"uncertain,omitempty"`
+	Problem   string         `json:"problem,omitempty"`
+}
+
+// setAsideJSON is a version that compares newer than a port's own but was
+// tagged on an older commit than the port's own tag, predates.
+type setAsideJSON struct {
+	Tag string `json:"tag"`
+	// Version is the port's version at the tag, and Source the version the
+	// tag spells, which dockhand update <port> <source> takes.
+	Version  string `json:"version"`
+	Source   string `json:"source"`
+	Predates string `json:"predates"`
+}
+
+func setAsideView(aside []engine.SetAside) []setAsideJSON {
+	var views []setAsideJSON
+	for _, version := range aside {
+		views = append(views, setAsideJSON{Tag: version.Tag, Version: version.Version, Source: version.Source, Predates: version.Predates})
+	}
+	return views
 }
 
 func outdatedView(report engine.OutdatedReport) map[string]any {
 	ports := []outdatedPortJSON{}
 	for _, port := range report.Ports {
-		ports = append(ports, outdatedPortJSON{Port: port.Port, Current: port.Current, Newest: port.Newest, Outdated: port.Outdated, Problem: port.Problem})
+		ports = append(ports, outdatedPortJSON{Port: port.Port, Current: port.Current, Newest: port.Newest, Outdated: port.Outdated, Uncertain: setAsideView(port.Uncertain), Problem: port.Problem})
 	}
 	return map[string]any{"master": report.Master, "ports": ports}
 }
