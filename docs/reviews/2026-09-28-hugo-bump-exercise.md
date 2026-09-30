@@ -314,3 +314,38 @@ Findings:
 6. **tidy --group lets a dependent come first.** `--group "2 1"` would commit sqlit-tui 1.6.4, which pins textual-fastdatatable 0.19.0, before the commit that provides 0.19.0, with no warning. check's Order already knows the dependency.
 7. **check can't build variants.** s2n-tls runs its tests only in `+tests`. `submit --tested-variants` ticks the checklist box, but no check can produce that evidence. Something like `check --variants +tests`, recorded in Tested on, would.
 8. **s2n-tls's `+tests` variant is broken, a Portfile issue found in passing.** Run by hand (`port test +tests` in a Tahoe guest), all 284 tests aborted: "Library not loaded: @rpath/libs2n.1.dylib … no LC_RPATH's found". The cmake PortGroup always sets `-DCMAKE_BUILD_WITH_INSTALL_RPATH:BOOL=ON`, so the test binaries in the build tree have no rpath to `build/lib`. The variant's `test.env DYLD_LIBRARY_PATH=…` doesn't reach them, presumably stripped by SIP when MacPorts runs the test command through `/bin/sh`. With the variable set directly, `ctest` passed all 284 on 1.7.10. The variant would work by building without the install rpath.
+
+## flatbuffers, nuspell, zola and alertmanager
+
+A third set at `c42d0587`, chosen for more paths not yet exercised:
+
+- **flatbuffers** 24.3.25 → 25.12.19, with `update --revbump-dependents` bumping libsigmf ([macports/macports-ports#35044](https://github.com/macports/macports-ports/pull/35044)).
+- **nuspell** 5.1.8 → 5.1.9, with `--revbump-dependents` and `--except` ([#35045](https://github.com/macports/macports-ports/pull/35045)).
+- **zola**: reusing the legacy branch `dockhand/bump/zola-…` through `adopt` and `rebase`, then a fresh update, which isn't submitted (see below).
+- **alertmanager** 0.34.1, under a continuous `serve` that was interrupted and restarted ([#35046](https://github.com/macports/macports-ports/pull/35046)).
+
+What worked well:
+
+- **The dependent revbump.** `update flatbuffers --new --revbump-dependents` found libsigmf ("Direct library dependents, from the index at c95ae6f: libsigmf"), took its revision from 1 to 2, and recorded "libsigmf: rebuild for flatbuffers 25.12.19". tidy proposed the two-commit series, and check-44 built both on Tart macOS 12, Tart macOS 26 and GitHub. The rebuild is warranted: flatbuffers installs a static library, and flatc-generated headers check the flatbuffers version.
+- **Reproducible updates.** A fresh `update zola` matched the two-week-old legacy branch's Portfile exactly, apart from the crate list's alignment, which is now tidier.
+- **archive and archive --undo** each said exactly what they did.
+- **Interrupting serve.** A SIGINT to a continuous `serve` during check-47 stopped it within seconds: "check-47: left running for the next serve". `queue` showed "stopped · the process running it ended; dockhand wait check-47 resumes it, cancel ends it", and the VM was gone. The next `serve --drain` said "check-47 alertmanager-h1jw: resuming … passed" at once, because alertmanager had finished before the interrupt. `logs` shows the run as "infrastructure-failed (interrupted: the process driving it stopped)" beside "alertmanager passed". (A true mid-target interrupt still wants a longer build.)
+- **Continuous serve's PR polling** noted gh and sqlit merged, and "#34620: changes requested". Its daily outdated job said "serve.for_outdated needs to know your ports: set maintainer = … in ~/.dockhand/config.toml".
+
+Findings:
+
+1. **`--revbump-dependents` misses dependents through non-default variants.** enchant2 links nuspell only under `+nuspell` (`variant nuspell { depends_lib-append port:nuspell }`), and nuspell's Portfile says "please rev-bump enchant2 when the library version changes". dockhand said "Direct library dependents … none" and refused `--except enchant2`: "it is not a library dependent of nuspell". Evaluating default variants is defensible, but a dependent reachable through a variant could be listed separately, as optional. And `--except` of a variant-only dependent could be accepted rather than refused. (For 5.1.9 no rebuild was needed: the SOVERSION is the major version, still 5.)
+2. **More false holds from files the build ignores:**
+   - nuspell's `! CMakeLists.txt changed` was only its `project(… VERSION 5.1.9)` line.
+   - flatbuffers held on `package.json` (eslint additions) and `Package.swift`, JavaScript and Swift tooling the C++ port never builds. Its `CMakeLists.txt` hold was also internal: source lists, test targets and a helper's parameter, with no install, option, dependency, standard or SOVERSION change.
+
+   With the copyright-year cases, holds on files a port doesn't build from are now the most common false stop. A diff limited to install rules, options, `find_package` and the like, or holds scoped to the files the port's build system reads, would cut most of them.
+3. **An adopted branch that isn't checked out is stuck.**
+   - `adopt dockhand/bump/zola-…` succeeded with "It is not checked out anywhere; git switch dockhand/bump/zola-… checks it out".
+   - `dockhand path bump/zola-…` refused with the same advice.
+   - A worktree made with `git worktree add` wasn't recognized: `rebase` there said "not checked out anywhere", and re-running `adopt` inside it said "already tracked".
+
+   So the only route dockhand offers switches the person's main checkout. `adopt` could make a worktree, as `start` does. Or `path` could make one for an adopted branch, or adopting inside a worktree could record it.
+4. **The legacy branch's commit names an old build.** It carries `Generated-By: Dockhand v0.0.0-20260921.2.0.20260923041537-ec1997b8bc53`, a pre-v3 build. A rebase keeps that trailer; a re-tidy would replace it. Neither says so.
+
+zola 0.23.6 itself doesn't build, a porting problem rather than dockhand's. check-46 failed at install on Tart macOS 26 and on all three GitHub runners in `aws-lc-sys` 0.45.0: "call to undeclared function 'aws_lc_0_45_0_FIPS_mode'" in jitterentropy. No other port in the tree vendors aws-lc-sys 0.45 or sets aws-lc build variables. The branch `zola-reqh` is left unsubmitted.
