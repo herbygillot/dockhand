@@ -272,7 +272,7 @@ func TestAnUpstreamComparisonHoldsForWhatItCouldNotCheck(t *testing.T) {
 	require.False(t, quiet.Held())
 	license := &UpstreamComparison{Changes: []UpstreamChange{{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed", Hold: true}}}
 	require.Equal(t, []string{"upstream's LICENSE changed"}, license.Holds())
-	unpaired := &UpstreamComparison{Problem: "the versions have 0 and 1 distfiles, so they can't be paired"}
+	unpaired := &UpstreamComparison{Problem: "new.tar.gz replaces no archive dockhand could find, so it wasn't compared"}
 	require.True(t, unpaired.Held())
-	require.Equal(t, []string{"the upstream archives couldn't be compared: the versions have 0 and 1 distfiles, so they can't be paired"}, unpaired.Holds())
+	require.Equal(t, []string{"the upstream archives couldn't be compared: new.tar.gz replaces no archive dockhand could find, so it wasn't compared"}, unpaired.Holds())
 }

@@ -260,3 +260,34 @@ func TestSourceNamedForALicenseIsNoLicense(t *testing.T) {
 		map[string]string{"text/license.go": "package text\n// 2025\n", "LICENSE-MIT": "MIT\n"},
 		map[string]string{"text/license.go": "package text\n// 2026\n", "LICENSE-MIT": "MIT, changed\n"}))
 }
+
+// A Python dependency is known by its name as Python compares names, so a
+// respelling moves nothing, and only what its version asks for does.
+func TestAPythonDependencyRespelledIsTheSameOne(t *testing.T) {
+	require.Equal(t, []string{"· upstream: pyproject.toml moves textual-fastdatatable from ==0.17.1 to ==0.19.0"}, compared(t,
+		map[string]string{"pyproject.toml": "[project]\ndependencies = [\"textual_fastdatatable==0.17.1\", \"Zope.Interface>=5\"]\n"},
+		map[string]string{"pyproject.toml": "[project]\ndependencies = [\"Textual-FastDataTable==0.19.0\", \"zope-interface>=5\"]\n"}))
+	require.Empty(t, compared(t,
+		map[string]string{"pyproject.toml": "[tool.poetry.dependencies]\npython = \"^3.10\"\nRuamel_Yaml = \"^0.18\"\n"},
+		map[string]string{"pyproject.toml": "[tool.poetry.dependencies]\npython = \"^3.10\"\nruamel-yaml = \"^0.18\"\n"}), "Poetry's names too")
+}
+
+// A Python requirement the new version adds or moves carries its name and
+// specifier, without extras or the parentheses PEP 508 allows; a Node
+// dependency, or Poetry's constraint, which isn't PEP 440's, carries none.
+func TestAMovedPythonRequirementCarriesItsSpecifier(t *testing.T) {
+	changes, err := Compare(t.Context(),
+		testsupport.Tarball(t, "pkg-1", map[string]string{"requirements.txt": "requests[socks]>=2.30\nurllib3 (>=1.26)\n", "package.json": `{"dependencies": {"left-pad": "1.0.0"}}`}),
+		testsupport.Tarball(t, "pkg-2", map[string]string{"requirements.txt": "requests[socks]>=2.31 ; python_version >= '3.9'\nurllib3 (>=2.0)\nidna==3.7\n", "package.json": `{"dependencies": {"left-pad": "1.3.0"}}`}))
+	require.NoError(t, err)
+	required := map[string]*Requirement{}
+	for _, change := range changes {
+		required[change.Message] = change.Requirement
+	}
+	require.Equal(t, map[string]*Requirement{
+		"upstream: requirements.txt adds idna ==3.7":                                    {Name: "idna", Specifier: "==3.7"},
+		"upstream: requirements.txt moves requests from [socks]>=2.30 to [socks]>=2.31": {Name: "requests", Specifier: ">=2.31"},
+		"upstream: requirements.txt moves urllib3 from (>=1.26) to (>=2.0)":             {Name: "urllib3", Specifier: ">=2.0"},
+		"upstream: package.json moves left-pad from 1.0.0 to 1.3.0":                     nil,
+	}, required)
+}

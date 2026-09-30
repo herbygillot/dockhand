@@ -346,8 +346,9 @@ func TestAnUpdateOfAPortOnAMirrorGroupIsCompared(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, next, string(fileBytes(t, result.Downloads[0].Path)))
 	require.Empty(t, result.PreviousProblem)
-	require.Len(t, result.Previous, 1)
-	require.Equal(t, shipped, string(fileBytes(t, result.Previous[0].Path)))
+	require.Len(t, result.Pairs, 1)
+	require.Equal(t, shipped, string(fileBytes(t, result.Pairs[0].Previous.Path)))
+	require.Equal(t, next, string(fileBytes(t, result.Pairs[0].Next.Path)))
 }
 
 // An update keeping archives to compare keeps the current version's as
@@ -390,11 +391,11 @@ func TestAnUpdateComparesWithTheArchiveMacPortsShipped(t *testing.T) {
 			require.Equal(t, next, string(fileBytes(t, result.Downloads[0].Path)))
 			if test.problem != "" {
 				require.Equal(t, test.problem, result.PreviousProblem)
-				require.Empty(t, result.Previous)
+				require.Empty(t, result.Pairs)
 				return
 			}
 			require.Empty(t, result.PreviousProblem)
-			require.Equal(t, shipped, string(fileBytes(t, result.Previous[0].Path)))
+			require.Equal(t, shipped, string(fileBytes(t, result.Pairs[0].Previous.Path)))
 			if test.mirror != "" {
 				require.Equal(t, "/fixture/1.0_1/fixture-1.0.tar.gz", asked.Load(), "under the port's dist_subdir")
 			}

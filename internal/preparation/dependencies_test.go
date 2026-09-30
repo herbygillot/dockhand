@@ -193,22 +193,22 @@ func TestGoDependencyPreparation(t *testing.T) {
 					// comparison has a pair: from upstream, or where upstream
 					// now serves something else, from MacPorts' mirror under
 					// the port's dist_subdir.
-					require.Len(t, result.Previous, 1)
+					require.Len(t, result.Pairs, 1)
 					require.Empty(t, result.PreviousProblem)
-					require.FileExists(t, result.Previous[0].Path)
+					require.FileExists(t, result.Pairs[0].Previous.Path)
 					require.FileExists(t, result.Downloads[0].Path)
-					require.Equal(t, before, fileBytes(t, result.Previous[0].Path))
-					require.Equal(t, after, fileBytes(t, result.Downloads[0].Path))
+					require.Equal(t, before, fileBytes(t, result.Pairs[0].Previous.Path))
+					require.Equal(t, after, fileBytes(t, result.Pairs[0].Next.Path))
 					if scenario == "kept-stealth" {
 						require.Regexp(t, `^/fixture/fixture-`, mirrored.Load())
 					}
 				case "kept-unshipped":
 					// Neither has it as shipped: the update goes on, and its
 					// comparison says why it can't be made.
-					require.Empty(t, result.Previous)
+					require.Empty(t, result.Pairs)
 					require.Contains(t, result.PreviousProblem, "upstream no longer serves")
 				default:
-					require.Empty(t, result.Previous, "kept only when asked")
+					require.Empty(t, result.Pairs, "kept only when asked")
 				}
 			}
 			if err != nil {

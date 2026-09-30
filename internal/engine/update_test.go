@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -43,6 +44,8 @@ type fakePreparer struct {
 	// toolchain is a Go requirement an update's go.mod leaves above the
 	// Portfile's minimum.
 	toolchain *preparation.GoToolchain
+	// dependencies are the ports the updated port depends on.
+	dependencies []string
 }
 
 func (p *fakePreparer) ResolveRelease(_ context.Context, r preparation.Request) (model.Release, error) {
@@ -99,15 +102,23 @@ func (p *fakePreparer) Prepare(ctx context.Context, r preparation.Request) (prep
 	}
 	result.Files, result.PreparedTree = []git.FileEdit{edit}, model.ObjectID(tree)
 	result.GoToolchain = p.toolchain
+	if len(p.dependencies) > 0 {
+		result.Prepared = snapshot(next, nextRevision)
+		result.Prepared.Ports[r.Selection.Selector] = port(r.Selection.Selector, p.dependencies...)
+	}
 	result.Commits = []preparation.CommitIntent{{Subject: r.Selection.Selector + ": update to " + next}}
 	if r.Action == model.EditRevbump {
 		result.Commits[0].Subject = r.Selection.Selector + ": " + r.Subject
 	}
-	if r.KeepArchives != "" && p.upstream[0] != nil {
-		result.Previous = []archives.Download{{Path: writeTarball(p.t, r.KeepArchives, "old", p.upstream[0])}}
-	}
+	// The new archive replaces the old one where both are given; given
+	// alone, it replaces none dockhand found.
 	if r.KeepArchives != "" && p.upstream[1] != nil {
-		result.Downloads = []archives.Download{{Path: writeTarball(p.t, r.KeepArchives, "new", p.upstream[1])}}
+		next := archives.Download{Path: writeTarball(p.t, r.KeepArchives, "new", p.upstream[1])}
+		next.Name = "new.tar.gz"
+		result.Downloads = []archives.Download{next}
+		if p.upstream[0] != nil {
+			result.Pairs = []preparation.ArchivePair{{Previous: archives.Download{Path: writeTarball(p.t, r.KeepArchives, "old", p.upstream[0])}, Next: next}}
+		}
 	}
 	return result, nil
 }
@@ -383,4 +394,66 @@ func TestAnUpdateThatEditedNothingSaysWhatThePortIsAt(t *testing.T) {
 	require.Equal(t, PortVersion{Version: "1.8.2", Revision: 1}, update.Before)
 	require.Equal(t, PortVersion{Version: "1.8.2", Revision: 1}, update.After)
 	require.Equal(t, "1.8.2_1", update.After.String())
+}
+
+// Each archive an update replaced is compared with its own replacement,
+// and a change they share, such as the license both carry, is said once.
+func TestAChangeTheArchivesShareIsSaidOnce(t *testing.T) {
+	dir := t.TempDir()
+	pair := func(name string, before, after map[string]string) preparation.ArchivePair {
+		next := archives.Download{Path: writeTarball(t, dir, name+"-2", after)}
+		next.Name = name + "-2.tar.gz"
+		return preparation.ArchivePair{Previous: archives.Download{Path: writeTarball(t, dir, name+"-1", before)}, Next: next}
+	}
+	source := pair("source", map[string]string{"LICENSE": "MIT\n"}, map[string]string{"LICENSE": "Apache-2.0\n", "meson.build": "project('x')\n"})
+	binary := pair("binary", map[string]string{"LICENSE": "MIT\n"}, map[string]string{"LICENSE": "Apache-2.0\n"})
+	result := preparation.Result{}
+	result.Downloads = []archives.Download{source.Next, binary.Next}
+	result.Pairs = []preparation.ArchivePair{source, binary}
+	comparison, _ := compareUpstream(t.Context(), result)
+	require.Empty(t, comparison.Problem)
+	require.Equal(t, []model.UpstreamChange{
+		{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed; the Portfile's license line may need to follow", Hold: true},
+		{Kind: "build", Path: "meson.build", Message: "upstream's meson.build is new; the build may need the Portfile to follow", Hold: true},
+	}, comparison.Changes)
+}
+
+// A Python requirement the new version moves holds where the port that
+// provides it doesn't meet it at the version the branch has: sqlit-tui
+// 1.6.4 pins textual-fastdatatable==0.19.0, and MacPorts had 0.17.1, while
+// a noarch build passes regardless (the sshuttle run). A branch that
+// updates the dependency first meets it (the libuv run).
+func TestAPythonPinMacPortsCantMeetHolds(t *testing.T) {
+	for _, test := range []struct {
+		name, has string
+		want      []model.UpstreamChange
+	}{
+		{"unmet", "0.17.1", []model.UpstreamChange{{Kind: "dependency", Path: "pyproject.toml", Hold: true,
+			Message: "upstream: pyproject.toml requires textual-fastdatatable ==0.19.0, which MacPorts' py313-textual-fastdatatable 0.17.1 doesn't meet"}}},
+		{"met by the branch", "0.19.0", nil},
+		{"unreadable", "not-a-version", []model.UpstreamChange{{Kind: "dependency", Path: "pyproject.toml",
+			Message: "upstream: couldn't tell whether MacPorts' py313-textual-fastdatatable meets pyproject.toml's textual-fastdatatable ==0.19.0: \"not-a-version\" isn't a PEP 440 version"}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := setup(t)
+			e, p := f.withPreparer(t)
+			branch, err := e.Start(t.Context(), StartRequest{Name: "sqlit-tui"})
+			require.NoError(t, err)
+			p.dependencies = []string{"py313-textual-fastdatatable", "py313-textual"}
+			e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"python/py-textual-fastdatatable": {{Name: "py313-textual-fastdatatable", Version: test.has}}}}
+			p.upstream = [2]map[string]string{
+				{"pyproject.toml": "[project]\ndependencies = [\"textual-fastdatatable==0.17.1\", \"textual>=0.80\", \"PyYAML>=6\"]\n"},
+				{"pyproject.toml": "[project]\ndependencies = [\"Textual_FastDataTable==0.19.0\", \"textual>=0.80\", \"PyYAML>=6.0.2\"]\n"},
+			}
+			update, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq", CompareUpstream: true})
+			require.NoError(t, err)
+			var pins []model.UpstreamChange
+			for _, change := range update.Upstream.Changes {
+				if !strings.Contains(change.Message, " moves ") {
+					pins = append(pins, change)
+				}
+			}
+			require.Equal(t, test.want, pins, "PyYAML, which no dependency's name matches, is left alone")
+		})
+	}
 }

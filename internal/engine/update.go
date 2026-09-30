@@ -211,7 +211,11 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		update.Subject = update.Port + ": update checksums after a stealth update"
 	}
 	if compare && len(result.Files) > 0 {
-		update.Upstream = compareUpstream(ctx, result)
+		var required []pythonRequirement
+		update.Upstream, required = compareUpstream(ctx, result)
+		if update.Upstream != nil {
+			update.Upstream.Changes = append(update.Upstream.Changes, e.pythonPins(ctx, model.Source{Tree: result.PreparedTree, Base: model.ObjectID(base)}, result, required)...)
+		}
 	}
 	if change, ok := toolchainChange(result.GoToolchain); ok && len(result.Files) > 0 {
 		if update.Upstream == nil {
@@ -578,36 +582,121 @@ func toolchainChange(toolchain *preparation.GoToolchain) (model.UpstreamChange, 
 	return model.UpstreamChange{Kind: "toolchain", Path: "go.mod", Message: message, Hold: toolchain.Unmet()}, true
 }
 
-// compareUpstream compares the current version's archives with the new
-// version's, one distfile with the same one. Not being able to compare is
+// compareUpstream compares each archive the update replaced with the one
+// that replaces it, in every context that fetches them: gh's source
+// tarball, and the prebuilt zip older macOS fetches, each with its own. A
+// change the pairs share is said once. Not being able to compare is
 // reported, never a reason to refuse the update.
-func compareUpstream(ctx context.Context, result preparation.Result) *model.UpstreamComparison {
+//
+// It also gives the Python requirements the new version adds or moves, for
+// pythonPins.
+func compareUpstream(ctx context.Context, result preparation.Result) (*model.UpstreamComparison, []pythonRequirement) {
 	comparison := &model.UpstreamComparison{Changes: []model.UpstreamChange{}}
 	switch {
 	case result.PreviousProblem != "":
 		comparison.Problem = "the current version's archives could not be fetched: " + result.PreviousProblem
-		return comparison
+		return comparison, nil
 	case len(result.Downloads) == 0:
 		// A port fetched with git has no archives, so nothing to compare.
-		return nil
-	case len(result.Previous) != len(result.Downloads):
-		comparison.Problem = fmt.Sprintf("the versions have %d and %d distfiles, so they can't be paired", len(result.Previous), len(result.Downloads))
-		return comparison
+		return nil, nil
 	}
-	for i, now := range result.Downloads {
-		old := result.Previous[i]
-		if old.Path == "" || now.Path == "" {
-			comparison.Problem = "the archives were not kept to compare"
-			return comparison
+	for _, download := range result.Downloads {
+		if !slices.ContainsFunc(result.Pairs, func(pair preparation.ArchivePair) bool { return pair.Next.Name == download.Name }) {
+			comparison.Problem = download.Name + " replaces no archive dockhand could find, so it wasn't compared"
+			return comparison, nil
 		}
-		changes, err := sourcecompare.Compare(ctx, old.Path, now.Path)
+	}
+	var required []pythonRequirement
+	for _, pair := range result.Pairs {
+		if pair.Previous.Path == "" || pair.Next.Path == "" {
+			comparison.Problem = "the archives were not kept to compare"
+			return comparison, nil
+		}
+		changes, err := sourcecompare.Compare(ctx, pair.Previous.Path, pair.Next.Path)
 		if err != nil {
 			comparison.Problem = err.Error()
-			return comparison
+			return comparison, nil
 		}
 		for _, change := range changes {
-			comparison.Changes = append(comparison.Changes, model.UpstreamChange{Kind: change.Kind, Path: change.Path, Message: change.Message, Hold: change.Hold})
+			found := model.UpstreamChange{Kind: change.Kind, Path: change.Path, Message: change.Message, Hold: change.Hold}
+			if slices.Contains(comparison.Changes, found) {
+				continue
+			}
+			comparison.Changes = append(comparison.Changes, found)
+			if change.Requirement != nil {
+				required = append(required, pythonRequirement{manifest: change.Path, Requirement: *change.Requirement})
+			}
 		}
 	}
-	return comparison
+	return comparison, required
+}
+
+// pythonRequirement is a Python requirement a manifest of the new version
+// adds or moves.
+type pythonRequirement struct {
+	manifest string
+	sourcecompare.Requirement
+}
+
+// pythonPins are the requirements the new version adds or moves that the
+// port providing them, among those the updated port depends on, doesn't
+// meet at the version the update's tree has of it. A noarch build passes
+// whatever the version, so a requirement the dependency can't meet is a
+// finding a build can't catch, and holds: sqlit-tui 1.6.4 pins
+// textual-fastdatatable==0.19.0, and MacPorts had 0.17.1. The tree is the
+// branch's, so a branch that updates the dependency first meets it. A
+// requirement no dependency's name matches is left alone: a port needn't
+// be named for its package. What can't be told is said, and doesn't hold,
+// since the comparison without it says what it always said.
+func (e *Engine) pythonPins(ctx context.Context, source model.Source, result preparation.Result, required []pythonRequirement) []model.UpstreamChange {
+	if len(required) == 0 {
+		return nil
+	}
+	reader, err := e.portReader()
+	if err != nil {
+		return []model.UpstreamChange{{Kind: "dependency", Message: "upstream: couldn't read the ports its Python requirements name: " + err.Error()}}
+	}
+	var changes []model.UpstreamChange
+	for _, need := range required {
+		for _, dependency := range result.Prepared.Ports[result.Target.Name].Dependencies {
+			provided, ok := macports.PythonPackage(dependency.Port)
+			if !ok || sourcecompare.NormalizeName(provided) != need.Name {
+				continue
+			}
+			version, err := portVersion(ctx, reader, source, dependency.Port)
+			var admits bool
+			if err == nil {
+				admits, err = sourcecompare.Admits(need.Specifier, version)
+			}
+			switch {
+			case err != nil:
+				changes = append(changes, model.UpstreamChange{Kind: "dependency", Path: need.manifest,
+					Message: fmt.Sprintf("upstream: couldn't tell whether MacPorts' %s meets %s's %s %s: %v", dependency.Port, need.manifest, need.Name, need.Specifier, err)})
+			case !admits:
+				changes = append(changes, model.UpstreamChange{Kind: "dependency", Path: need.manifest, Hold: true,
+					Message: fmt.Sprintf("upstream: %s requires %s %s, which MacPorts' %s %s doesn't meet", need.manifest, need.Name, need.Specifier, dependency.Port, version)})
+			}
+			break
+		}
+	}
+	return changes
+}
+
+// portVersion is a port's version in a tree, as MacPorts evaluates it on
+// this Mac.
+func portVersion(ctx context.Context, reader PortReader, source model.Source, name string) (string, error) {
+	directory, err := reader.Directory(ctx, source, name)
+	if err != nil {
+		return "", err
+	}
+	ports, err := reader.Ports(ctx, source, directory, model.Environment{})
+	if err != nil {
+		return "", err
+	}
+	for _, port := range ports {
+		if port.Name == name {
+			return port.Version, nil
+		}
+	}
+	return "", fmt.Errorf("%s defines no port %s", directory, name)
 }

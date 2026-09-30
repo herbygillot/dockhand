@@ -315,8 +315,11 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	result.Files = []portfile.Edit{evaluated.edit}
 	result.report(final)
 	result.Crates = gitDownloads
-	if kept {
-		result.Previous, result.PreviousProblem = previous, previousProblem
+	switch {
+	case kept && previousProblem != "":
+		result.PreviousProblem = previousProblem
+	case kept:
+		result.Pairs, result.PreviousProblem = pairArchives(ctx, store, archivePlan.pairs(), previous, result.Downloads)
 	}
 	if err := s.raiseGoToolchain(ctx, request, input, &result); err != nil {
 		return Result{}, err

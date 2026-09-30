@@ -98,7 +98,7 @@ func TestServeHoldsAnUpdateWhoseArchivesCouldNotBeCompared(t *testing.T) {
 	p.upstream = [2]map[string]string{nil, {"LICENSE": "MIT\n"}}
 	branch := servePrepared(t, e)
 
-	held := []string{"the upstream archives couldn't be compared: the versions have 0 and 1 distfiles, so they can't be paired"}
+	held := []string{"the upstream archives couldn't be compared: new.tar.gz replaces no archive dockhand could find, so it wasn't compared"}
 	status, err := e.BranchStatus(t.Context(), branch)
 	require.NoError(t, err)
 	require.Equal(t, held, status.Held, "the attention list says why")
@@ -106,7 +106,7 @@ func TestServeHoldsAnUpdateWhoseArchivesCouldNotBeCompared(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, held, candidates[0].Held)
 	require.Equal(t, []PortComparison{{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{},
-		Problem: "the versions have 0 and 1 distfiles, so they can't be paired"}}}, candidates[0].Plan.Upstream)
+		Problem: "new.tar.gz replaces no archive dockhand could find, so it wasn't compared"}}}, candidates[0].Plan.Upstream)
 	_, err = e.SubmitForServe(t.Context(), candidates[0])
 	require.ErrorContains(t, err, "is held for a look: the upstream archives couldn't be compared")
 	require.Empty(t, fake.created)

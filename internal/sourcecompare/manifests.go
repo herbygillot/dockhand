@@ -22,6 +22,10 @@ type reading struct {
 	dependencies map[string]string
 	indirect     map[string]string
 	unread       []string
+	// specifiers are the PEP 440 version specifiers of a Python manifest's
+	// PEP 508 requirements, by the dependency's name as dependencies has
+	// it; not Poetry's constraints, which are another syntax.
+	specifiers map[string]string
 }
 
 // reader reads one kind of manifest; an error is a manifest it couldn't
@@ -174,11 +178,32 @@ func requirements(data []byte) (reading, error) {
 			continue
 		}
 		if m := requirement.FindStringSubmatch(line); m != nil {
-			found.dependencies[strings.ToLower(m[1])] = strings.TrimSpace(m[2])
+			found.require(m[1], m[2])
 		}
 	}
 	return found, nil
 }
+
+// require records a PEP 508 requirement: its name, as Python compares
+// names, so a renaming such as textual_fastdatatable to
+// Textual-FastDataTable moves nothing, and what follows it, with its
+// version specifier apart from any extras.
+func (r *reading) require(name, rest string) {
+	rest = strings.TrimSpace(rest)
+	name = NormalizeName(name)
+	r.dependencies[name] = rest
+	if r.specifiers == nil {
+		r.specifiers = map[string]string{}
+	}
+	specifier := strings.TrimSpace(extras.ReplaceAllString(rest, ""))
+	if inner, ok := strings.CutPrefix(specifier, "("); ok {
+		specifier = strings.TrimSpace(strings.TrimSuffix(inner, ")"))
+	}
+	r.specifiers[name] = specifier
+}
+
+// extras are a requirement's extras, "[socks]", before its specifier.
+var extras = regexp.MustCompile(`^\[[^\]]*\]`)
 
 // pyprojectDependencies reads a pyproject.toml's dependencies: PEP 621's
 // [project] array, or Poetry's table. Dependencies declared dynamically,
@@ -208,7 +233,7 @@ func pyprojectDependencies(data []byte) (reading, error) {
 			if m == nil {
 				return reading{}, fmt.Errorf("%q isn't a requirement", entry)
 			}
-			found.dependencies[strings.ToLower(m[1])] = strings.TrimSpace(m[2])
+			found.require(m[1], m[2])
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(manifest.Tool.Poetry.Dependencies)) {
@@ -219,7 +244,7 @@ func pyprojectDependencies(data []byte) (reading, error) {
 		if err != nil {
 			return reading{}, fmt.Errorf("%s: %w", name, err)
 		}
-		found.dependencies[strings.ToLower(name)] = version
+		found.dependencies[NormalizeName(name)] = version
 	}
 	return found, nil
 }

@@ -6,6 +6,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/scratch"
 	"os"
+	"slices"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
@@ -113,7 +114,7 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 		return result, err
 	}
 	if request.KeepArchives != "" {
-		result.Previous, result.PreviousProblem = s.previousArchives(ctx, input, store)
+		result.Pairs, result.PreviousProblem = pairArchives(ctx, store, plan.pairs(), nil, result.Downloads)
 	}
 	if err := s.raiseGoToolchain(ctx, request, input, &result); err != nil {
 		return result, err
@@ -138,23 +139,50 @@ func (s *Service) applyArchivePlan(ctx context.Context, request Request, input *
 	return s.applyObservedArchives(ctx, request, input, plan, store)
 }
 
-// previousArchives fetches the current version's archives, for comparing
-// with the new ones. Not getting them is a problem to report, never a
-// reason to refuse the update.
-// previousArchives are the current version's archives as MacPorts shipped
-// them, checked against the Portfile's checksums, from upstream or else
-// MacPorts' mirror (Store.Shipped), so the update is compared with what
-// users build today; or why they couldn't be had.
-func (s *Service) previousArchives(ctx context.Context, input *sourceInput, store *archives.Store) ([]archives.Download, string) {
-	plan, err := shippedPlan(ctx, input)
-	if err != nil {
-		return nil, err.Error()
+// pairs are the archives the plan replaces, each beside its replacement;
+// none for a git-fetched port, which downloads nothing.
+func (p archivePlan) pairs() []archivePair {
+	if p.observed == nil {
+		return nil
 	}
-	shipped, err := store.Shipped(ctx, input.info, plan)
-	if err != nil {
-		return nil, err.Error()
+	return p.observed.pairs
+}
+
+// ArchivePair is an archive an update replaced, as MacPorts shipped it,
+// beside the archive that replaces it: what the upstream comparison reads.
+type ArchivePair struct{ Previous, Next archives.Download }
+
+// pairArchives fetches the archives the update replaces as MacPorts
+// shipped them, checked against the Portfile's checksums, from upstream or
+// else MacPorts' mirror (Store.Shipped), each as the context that fetches
+// it declares it, and pairs each with the archive that replaces it there.
+// have are archives already fetched as shipped, found by name. Not getting
+// one is a problem to report, never a reason to refuse the update.
+func pairArchives(ctx context.Context, store *archives.Store, pairs []archivePair, have, downloads []archives.Download) ([]ArchivePair, string) {
+	named := func(downloads []archives.Download, name string) (archives.Download, bool) {
+		i := slices.IndexFunc(downloads, func(d archives.Download) bool { return d.Name == name })
+		if i < 0 {
+			return archives.Download{}, false
+		}
+		return downloads[i], true
 	}
-	return downloadsOf(shipped), ""
+	var paired []ArchivePair
+	for _, pair := range pairs {
+		next, ok := named(downloads, pair.next)
+		if !ok {
+			return nil, pair.next + " wasn't fetched"
+		}
+		previous, ok := named(have, pair.previous.Name)
+		if !ok {
+			shipped, err := store.Shipped(ctx, pair.info, []macports.Distfile{pair.previous.Distfile})
+			if err != nil {
+				return nil, err.Error()
+			}
+			previous = shipped[0].Download
+		}
+		paired = append(paired, ArchivePair{Previous: previous, Next: next})
+	}
+	return paired, ""
 }
 
 // shippedPlan is MacPorts' own fetch plan for the Portfile as it stands,

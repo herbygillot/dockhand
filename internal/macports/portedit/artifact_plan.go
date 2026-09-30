@@ -27,6 +27,20 @@ type plannedArchive struct {
 type observedArchivePlan struct {
 	contexts  []archiveContext
 	downloads []plannedArchive
+	// pairs are each archive the update replaces beside its replacement,
+	// once for each checksum declaration they share, whichever contexts
+	// fetch them.
+	pairs []archivePair
+}
+
+// archivePair is an archive the update replaces, as the context that
+// fetches it declares it, and the name of the archive that replaces it
+// there: gh's source tarball on one macOS, and its prebuilt zip on older
+// ones, each pair its own.
+type archivePair struct {
+	previous distfiles.Artifact
+	info     macports.PortInfo
+	next     string
 }
 
 func (s *Service) bindArchives(ctx context.Context, input *sourceInput, contents []byte, observed macports.Observation) (distfiles.Binding, error) {
@@ -54,6 +68,7 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 	coverage := newArchiveCoverage()
 	protected := map[string]bool{}
 	changed := map[string]bool{}
+	paired := map[string]bool{}
 	progress.DebugReport(ctx, "Observing %d archive contexts", len(profiles))
 	befores, err := input.observe.Observe(ctx, input.data, profiles, true, false)
 	if err != nil {
@@ -149,6 +164,10 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 			}
 			changed[id] = true
 			coverage.download(artifact, next)
+			if !paired[id] {
+				paired[id] = true
+				plan.pairs = append(plan.pairs, archivePair{previous: previous, info: old, next: artifact.Name})
+			}
 		}
 		plan.contexts = append(plan.contexts, archiveContext{profile: profile, before: before.Snapshot, after: after.Snapshot, binding: binding, affected: affected})
 	}

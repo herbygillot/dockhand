@@ -20,6 +20,7 @@ import (
 
 type Request = portedit.Request
 type CommitIntent = portedit.CommitIntent
+type ArchivePair = portedit.ArchivePair
 type GoToolchain = portedit.GoToolchain
 type GoToolchainOutcome = portedit.GoToolchainOutcome
 type Stealth = portedit.Stealth

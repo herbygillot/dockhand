@@ -87,12 +87,14 @@ type Result struct {
 	Downloads []archives.Download
 	// Crates are the archives of the Git-pinned crates a Cargo update
 	// fetched for their checksums: dependencies, not the port's source, so
-	// nothing among Previous is theirs to compare with.
+	// no pair is theirs to compare.
 	Crates []archives.Download `json:",omitempty"`
-	// Previous are the current version's archives, fetched only when
-	// KeepArchives asked, and PreviousProblem why they could not be.
-	Previous        []archives.Download `json:"-"`
-	PreviousProblem string              `json:",omitempty"`
+	// Pairs are each archive the update replaced beside the one that
+	// replaces it, in every context that fetches them, fetched only when
+	// KeepArchives asked; PreviousProblem is why the replaced ones could
+	// not be.
+	Pairs           []ArchivePair `json:"-"`
+	PreviousProblem string        `json:",omitempty"`
 	// Patches reports whether each declared patch file still applies to the
 	// candidate source; a rejected patch is a finding, not a refusal.
 	Patches []patchcheck.Result `json:",omitempty"`

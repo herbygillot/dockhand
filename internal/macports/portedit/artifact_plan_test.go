@@ -1,6 +1,7 @@
 package portedit
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
@@ -229,4 +230,46 @@ checksums sha256 [lindex [lindex ${module_info} 0] 0] size [lindex [lindex ${mod
 	require.NotContains(t, after, `"revision 1"`)
 	require.Contains(t, after, "version 1.2.4")
 	require.NotContains(t, after, strings.Repeat("a", 64))
+}
+
+// An update whose archive depends on the macOS release, as gh's source
+// tarball and older systems' prebuilt zip do, pairs each archive it replaces
+// with its own replacement, fetched as MacPorts shipped it with that
+// context's checksums. The current version's archives were this Mac's plan
+// alone, one against the new version's two, so nothing was compared (the
+// gh, usql, hk, and pgdog run's finding 2).
+func TestAnUpdateOfArchivesChosenByReleasePairsEach(t *testing.T) {
+	t.Parallel()
+	declared := func(path string) string {
+		body := "archive bytes for " + path
+		return fmt.Sprintf("sha256 %x size %d", sha256.Sum256([]byte(body)), len(body))
+	}
+	s, r, _ := archiveFixture(t, `version 1.2.3
+master_sites @SITE@/${version}
+if {${os.major} >= 17} {
+ distfiles source-${version}.tar.gz
+ checksums `+declared("/1.2.3/source-1.2.3.tar.gz")+`
+} else {
+ distfiles binary-${version}.zip
+ checksums `+declared("/1.2.3/binary-1.2.3.zip")+`
+}
+`)
+	r.KeepArchives = t.TempDir()
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Empty(t, result.PreviousProblem)
+	require.Len(t, result.Downloads, 2)
+	require.Len(t, result.Pairs, 2, "one pair for each checksum declaration, however many contexts share it")
+	pairs := map[string]string{}
+	for _, pair := range result.Pairs {
+		previous, err := os.ReadFile(pair.Previous.Path)
+		require.NoError(t, err)
+		next, err := os.ReadFile(pair.Next.Path)
+		require.NoError(t, err)
+		pairs[string(previous)] = string(next)
+	}
+	require.Equal(t, map[string]string{
+		"archive bytes for /1.2.3/source-1.2.3.tar.gz": "archive bytes for /1.2.4/source-1.2.4.tar.gz",
+		"archive bytes for /1.2.3/binary-1.2.3.zip":    "archive bytes for /1.2.4/binary-1.2.4.zip",
+	}, pairs, "each context's archive beside its own replacement, once")
 }

@@ -33,6 +33,17 @@ type Change struct {
 	Path    string
 	Message string
 	Hold    bool
+	// Requirement is a Python requirement the new version adds or moves,
+	// for what it asks of the port that provides it; nil for every other
+	// change.
+	Requirement *Requirement
+}
+
+// Requirement is a Python dependency a manifest requires: its name, as PEP
+// 503 compares names, and its PEP 440 version specifier, which Admits
+// reads.
+type Requirement struct {
+	Name, Specifier string
 }
 
 // memberLimit is the most of one file the comparison reads.
@@ -327,13 +338,17 @@ func dependencyChanges(file string, before, after reading) []Change {
 	}
 	var changes []Change
 	for _, delta := range dependencyDeltas(before, after) {
+		var required *Requirement
+		if specifier, ok := after.specifiers[delta.name]; ok {
+			required = &Requirement{Name: NormalizeName(delta.name), Specifier: specifier}
+		}
 		switch delta.how {
 		case "adds":
-			changes = append(changes, Change{Kind: "dependency", Path: file, Hold: true, Message: strings.TrimSpace(fmt.Sprintf("upstream: %s adds %s %s", file, delta.name, delta.now))})
+			changes = append(changes, Change{Kind: "dependency", Path: file, Hold: true, Requirement: required, Message: strings.TrimSpace(fmt.Sprintf("upstream: %s adds %s %s", file, delta.name, delta.now))})
 		case "drops":
 			changes = append(changes, Change{Kind: "dependency", Path: file, Message: fmt.Sprintf("upstream: %s drops %s", file, delta.name)})
 		default:
-			changes = append(changes, Change{Kind: "dependency", Path: file, Message: fmt.Sprintf("upstream: %s moves %s from %s to %s", file, delta.name, spelled(delta.old, delta.wasIndirect), spelled(delta.now, delta.isIndirect))})
+			changes = append(changes, Change{Kind: "dependency", Path: file, Requirement: required, Message: fmt.Sprintf("upstream: %s moves %s from %s to %s", file, delta.name, spelled(delta.old, delta.wasIndirect), spelled(delta.now, delta.isIndirect))})
 		}
 	}
 	// What holds the update for a look comes first.
