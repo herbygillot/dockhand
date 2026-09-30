@@ -69,8 +69,9 @@ func TestOutdatedSaysWhenNothingIsNewer(t *testing.T) {
 	// why and the update that takes it (the update-workflow review's
 	// finding 6).
 	row := "  PORT   NOW      NEWEST   DOCKHAND CAN\n  yq     4.44.1   5.0?     update yq 5.0 after a look: v5.0 compares newer, but its commit is older than v4.44.1's\n"
-	require.Equal(t, row+"yq may have a newer release, at master 1bb30d5\n", said(yqMayBeOutdated))
-	require.Equal(t, row+"None of 2 ports has a newer release, at master 1bb30d5 · 1 may have one, for a look\n", said(yqMayBeOutdated, current("jq")))
+	settle := "A tag set aside that's no release, as an old one misspelled is, stays out once the port's livecheck leaves it out.\n"
+	require.Equal(t, row+"yq may have a newer release, at master 1bb30d5\n"+settle, said(yqMayBeOutdated))
+	require.Equal(t, row+"None of 2 ports has a newer release, at master 1bb30d5 · 1 may have one, for a look\n"+settle, said(yqMayBeOutdated, current("jq")))
 }
 
 func TestOutdatedThenUpdateOutdated(t *testing.T) {

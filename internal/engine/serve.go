@@ -429,8 +429,37 @@ type OutdatedLook struct {
 	Master    string    `json:"master"`
 	Outdated  []string  `json:"outdated"`
 	// Uncertain are the ports that may have a newer release, which serve
-	// neither calls current nor prepares: a person looks.
-	Uncertain []string `json:"uncertain,omitempty"`
+	// neither calls current nor prepares: a person looks. SetAside are the
+	// tags each was uncertain for, which the next look reads to say a port
+	// again only where they changed.
+	Uncertain []string            `json:"uncertain,omitempty"`
+	SetAside  map[string][]string `json:"set_aside,omitempty"`
+}
+
+// uncertainWords are the day's line of the ports that may have newer
+// releases: each named where what was set aside is new since the last
+// look, and the rest, said already, counted. A port with a misspelled old
+// tag, as dolt's v040.15, is uncertain every day it's otherwise current,
+// and named once, not every morning. Empty where there is none to say.
+func uncertainWords(last OutdatedLook, look OutdatedLook) string {
+	var fresh []string
+	for _, port := range look.Uncertain {
+		if !slices.Equal(last.SetAside[port], look.SetAside[port]) {
+			fresh = append(fresh, port)
+		}
+	}
+	already := len(look.Uncertain) - len(fresh)
+	switch {
+	case len(fresh) == 0 && already == 0:
+		return ""
+	case len(fresh) == 0:
+		return fmt.Sprintf("serve: %s of yours may still have newer releases, as before (dockhand status lists them)", plural(already, "port"))
+	}
+	line := fmt.Sprintf("serve: %s of yours may have newer releases, for your look: %s (dockhand outdated %s says why)", plural(len(fresh), "port"), strings.Join(fresh, ", "), strings.Join(fresh, " "))
+	if already > 0 {
+		line += fmt.Sprintf("; %d more as before", already)
+	}
+	return line
 }
 
 // outdatedScanner looks for new releases of your ports once a day, at the
@@ -474,15 +503,20 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 		return
 	}
 	var names, uncertain []string
+	setAside := map[string][]string{}
 	for _, port := range found.Ports {
 		switch {
 		case port.Outdated:
 			names = append(names, port.Port)
 		case len(port.Uncertain) > 0:
 			uncertain = append(uncertain, port.Port)
+			for _, aside := range port.Uncertain {
+				setAside[port.Port] = append(setAside[port.Port], aside.Tag)
+			}
 		}
 	}
-	look := OutdatedLook{CheckedAt: now, Master: string(found.Master), Outdated: names, Uncertain: uncertain}
+	last, _ := e.LastOutdatedLook()
+	look := OutdatedLook{CheckedAt: now, Master: string(found.Master), Outdated: names, Uncertain: uncertain, SetAside: setAside}
 	if data, err := json.Marshal(look); err == nil {
 		_ = e.writeServeFile("outdated.json", data)
 	}
@@ -493,9 +527,9 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	}
 	// A port whose newest release is uncertain is neither current nor an
 	// update serve prepares: it is listed for a person, who names the
-	// version to take.
-	if len(uncertain) > 0 {
-		o.s.say("serve: %s of yours may have newer releases, for your look: %s (dockhand outdated %s says why)", plural(len(uncertain), "port"), strings.Join(uncertain, ", "), strings.Join(uncertain, " "))
+	// version to take, once for what was set aside.
+	if line := uncertainWords(last, look); line != "" {
+		o.s.say("%s", line)
 	}
 	if len(names) == 0 || settings.Mode == "list" || settings.Mode == "" {
 		return

@@ -141,6 +141,11 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 		}
 	}
 	fmt.Fprintln(out, line)
+	if uncertain > 0 {
+		// Serve says such a port once, but outdated every time it's asked:
+		// the port's own livecheck can settle it for good.
+		fmt.Fprintln(out, "A tag set aside that's no release, as an old one misspelled is, stays out once the port's livecheck leaves it out.")
+	}
 	return nil
 }
 
