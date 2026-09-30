@@ -3,11 +3,11 @@ package engine
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -345,43 +345,35 @@ func directoryName(directory string) string {
 	return directory[strings.LastIndexByte(directory, '/')+1:]
 }
 
-var revisionDeclaration = regexp.MustCompile(`^\s*revision\s+\S+\s*$`)
-
 // targetKind proves a directory's change revision-only from its source:
 // nothing under files/ changed, no shared code it loads changed, and the
 // Portfile is identical once its revision lines are set aside. Anything
 // else is substantive (Design v3 §3).
 func (e *Engine) targetKind(ctx context.Context, before, after, directory string, changed []string) (model.TargetKind, error) {
-	portfile := directory + "/Portfile"
+	file := directory + "/Portfile"
 	for _, path := range changed {
-		if strings.HasPrefix(path, directory+"/") && path != portfile {
+		if strings.HasPrefix(path, directory+"/") && path != file {
 			return model.Substantive, nil
 		}
 	}
-	if e.loadsChangedSharedCode(ctx, after, portfile, changed) {
+	if e.loadsChangedSharedCode(ctx, after, file, changed) {
 		return model.Substantive, nil
 	}
-	old, oldText, err := e.Repo.File(ctx, before, portfile)
+	old, oldText, err := e.Repo.File(ctx, before, file)
 	if err != nil || !old.Exists {
 		return model.Substantive, nil
 	}
-	_, newText, err := e.Repo.File(ctx, after, portfile)
+	_, newText, err := e.Repo.File(ctx, after, file)
 	if err != nil {
 		return model.Substantive, nil
 	}
-	strip := func(text []byte) []string {
-		return slices.DeleteFunc(strings.Split(string(text), "\n"), revisionDeclaration.MatchString)
-	}
-	if slices.Equal(strip(oldText), strip(newText)) {
+	// Whether only revision declarations changed is the Portfile's source
+	// to prove, as Tcl reads it: a "revision" in data is a change.
+	if portfile.RevisionOnly(oldText, newText) {
 		return model.RevisionOnly, nil
 	}
 	return model.Substantive, nil
 }
-
-var (
-	portGroup = regexp.MustCompile(`\bPortGroup\b(.*)`)
-	literal   = regexp.MustCompile(`^[A-Za-z0-9_.+-]+$`)
-)
 
 // loadsChangedSharedCode reports whether changed shared code under
 // _resources can reach a Portfile, as its source says, answering yes to
@@ -391,7 +383,7 @@ var (
 // directly or through another PortGroup. A PortGroup line that doesn't
 // spell its name and version literally, or a file that names _resources
 // itself, could load anything.
-func (e *Engine) loadsChangedSharedCode(ctx context.Context, tree, portfile string, changed []string) bool {
+func (e *Engine) loadsChangedSharedCode(ctx context.Context, tree, start string, changed []string) bool {
 	groups := map[string]bool{}
 	for _, path := range changed {
 		if _, ok := macports.PortGroupAt(path); ok {
@@ -403,29 +395,19 @@ func (e *Engine) loadsChangedSharedCode(ctx context.Context, tree, portfile stri
 	if len(groups) == 0 {
 		return false
 	}
-	queue, seen := []string{portfile}, map[string]bool{portfile: true}
+	queue, seen := []string{start}, map[string]bool{start: true}
 	for len(queue) > 0 {
 		file, text, err := e.Repo.File(ctx, tree, queue[0])
 		queue = queue[1:]
 		if err != nil || !file.Exists {
 			return true
 		}
-		for _, line := range strings.Split(string(text), "\n") {
-			if strings.HasPrefix(strings.TrimSpace(line), "#") {
-				continue
-			}
-			if strings.Contains(line, macports.ResourcesDirectory) {
-				return true
-			}
-			m := portGroup.FindStringSubmatch(line)
-			if m == nil {
-				continue
-			}
-			fields := strings.Fields(strings.TrimRight(m[1], "}; "))
-			if len(fields) < 2 || !literal.MatchString(fields[0]) || !literal.MatchString(fields[1]) {
-				return true
-			}
-			next := macports.PortGroup{Name: fields[0], Version: fields[1]}.Path()
+		references, conclusive := portfile.PortGroupReferences(text)
+		if !conclusive {
+			return true
+		}
+		for _, reference := range references {
+			next := reference.Path()
 			if groups[next] {
 				return true
 			}

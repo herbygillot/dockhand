@@ -13,6 +13,8 @@ import (
 	"slices"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 )
 
 // Severity is how much a finding matters.
@@ -159,47 +161,25 @@ type Portfile struct {
 	Before, After string
 }
 
-var (
-	versionLine  = regexp.MustCompile(`(?m)^\s*version\s+(\S+)`)
-	setupLine    = regexp.MustCompile(`(?m)^\s*(?:github|gitlab|bitbucket|codeberg|sourcehut)\.setup\s+\S+\s+\S+\s+(\S+)`)
-	revisionLine = regexp.MustCompile(`(?m)^\s*revision\s+(\S+)`)
-)
-
 // CheckPortfiles applies the content rules to the Portfiles a branch
-// changes. It reads only the Portfile's first version and revision, the
-// port's own; subports that declare their own are not checked.
+// changes. It reads the main port's version and revision as the Portfile
+// proves them (portfile.DeclaredVersion); subports that declare their own
+// are not checked, nor is a version the source can't prove.
 func CheckPortfiles(portfiles []Portfile) []Finding {
 	var findings []Finding
 	for _, p := range portfiles {
 		if p.Before == "" || p.After == "" {
 			continue
 		}
-		before, after := version(p.Before), version(p.After)
-		if before == "" || after == "" || before == after {
+		before, knownBefore := portfile.DeclaredVersion([]byte(p.Before), "")
+		after, knownAfter := portfile.DeclaredVersion([]byte(p.After), "")
+		if !knownBefore || !knownAfter || before == after {
 			continue
 		}
-		if m := revisionLine.FindStringSubmatchIndex(p.After); m != nil {
-			value := p.After[m[2]:m[3]]
-			if value != "0" {
-				line := strings.Count(p.After[:m[2]], "\n") + 1
-				findings = append(findings, Finding{Code: "revision-after-update", Severity: Error, Where: fmt.Sprintf("%s:%d", p.Path, line),
-					Message: fmt.Sprintf("revision is %s after a version update; MacPorts expects 0", value)})
-			}
+		if value, line, ok := portfile.DeclaredRevision([]byte(p.After)); ok && value != "0" {
+			findings = append(findings, Finding{Code: "revision-after-update", Severity: Error, Where: fmt.Sprintf("%s:%d", p.Path, line),
+				Message: fmt.Sprintf("revision is %s after a version update; MacPorts expects 0", value)})
 		}
 	}
 	return findings
-}
-
-// Version is the version a Portfile declares for itself, from its version
-// line or its forge setup line; empty when neither is literal enough to read.
-func Version(portfile string) string { return version(portfile) }
-
-func version(portfile string) string {
-	if m := setupLine.FindStringSubmatch(portfile); m != nil {
-		return m[1]
-	}
-	if m := versionLine.FindStringSubmatch(portfile); m != nil {
-		return m[1]
-	}
-	return ""
 }

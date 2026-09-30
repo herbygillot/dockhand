@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"path"
 	"context"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -317,23 +319,31 @@ func derivedSubject(ctx context.Context, repo *git.Repository, before, after str
 	if group.Directory == "" {
 		return "", nil
 	}
-	portfile := group.Directory + "/Portfile"
-	if !slices.Contains(group.Paths, portfile) {
+	file := group.Directory + "/Portfile"
+	if !slices.Contains(group.Paths, file) {
 		return "", nil
 	}
-	old, oldText, err := repo.File(ctx, before, portfile)
+	old, oldText, err := repo.File(ctx, before, file)
 	if err != nil {
 		return "", nil
 	}
-	current, text, err := repo.File(ctx, after, portfile)
+	current, text, err := repo.File(ctx, after, file)
 	if err != nil || !current.Exists {
 		return "", nil
 	}
 	if !old.Exists {
 		return group.Ports[0] + ": new port", nil
 	}
-	from, to := commitrules.Version(string(oldText)), commitrules.Version(string(text))
-	if to != "" && from != to && !strings.Contains(to, "$") {
+	// The version the port declares, as its Portfile proves it: the
+	// group's first port, which is the directory's own or one of its
+	// subports.
+	subport := ""
+	if group.Ports[0] != path.Base(group.Directory) {
+		subport = group.Ports[0]
+	}
+	from, known := portfile.DeclaredVersion(oldText, subport)
+	to, ok := portfile.DeclaredVersion(text, subport)
+	if ok && (!known || from != to) {
 		return group.Ports[0] + ": update to " + to, nil
 	}
 	return "", nil

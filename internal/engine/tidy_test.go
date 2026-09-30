@@ -318,3 +318,21 @@ func TestARegroupPuttingADependentFirstIsNoted(t *testing.T) {
 		}
 	}
 }
+
+// A version bump made by hand is named by the version the port itself
+// declares, not another subport's setup line: git's own version line was
+// never read, since git-devel's github.setup came first (the git run's
+// finding 5).
+func TestTidyNamesAHandMadeBumpByThePortsOwnVersion(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-hand", Here: true})
+	require.NoError(t, err)
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.2\nsubport jq-devel {\n    github.setup jqlang jq 1.9.0 jq-\n}\n"})
+	commitAs(t, branch.Worktree, "Ada ada@example.org", "wip")
+
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Len(t, plan.Groups, 1)
+	require.Equal(t, "jq: update to 1.8.2", plan.Groups[0].Subject())
+}

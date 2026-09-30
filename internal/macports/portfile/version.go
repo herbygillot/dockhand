@@ -81,68 +81,8 @@ func Candidates(src []byte) ([]Candidate, error) {
 				if len(cmd.Words) == 3 {
 					index = 2
 				}
-			case "github.setup", "gitlab.setup":
-				if len(cmd.Words) >= 4 && len(cmd.Words) <= 6 {
-					index = 3
-				}
-			case "go.setup":
-				if len(cmd.Words) >= 3 && len(cmd.Words) <= 5 {
-					index = 2
-				}
-			// The perl5, R, and ruby PortGroups carry the version as a setup
-			// argument: perl5.setup module vers ?cpandir?, R.setup domain
-			// author package version ?tag_prefix? ?tag_suffix?, and
-			// ruby.setup module vers ?type? ?docs? ?source? ?implementation?.
-			case "perl5.setup":
-				if len(cmd.Words) >= 3 && len(cmd.Words) <= 4 {
-					index = 2
-				}
-			case "R.setup":
-				if len(cmd.Words) >= 5 && len(cmd.Words) <= 7 {
-					index = 4
-				}
-			case "ruby.setup":
-				if len(cmd.Words) >= 3 && len(cmd.Words) <= 7 {
-					index = 2
-				}
-			// Dictionary, font, cross-toolchain, and Pure module PortGroups
-			// take the version second: aspelldict.setup locale version lang
-			// ?aspell-version?, hunspelldict.setup locale version lang
-			// ?source?, x11font.setup name version subdir, pure.setup module
-			// version, crossbinutils.setup target version.
-			case "aspelldict.setup", "hunspelldict.setup":
-				if len(cmd.Words) >= 4 && len(cmd.Words) <= 5 {
-					index = 2
-				}
-			case "x11font.setup":
-				if len(cmd.Words) == 4 {
-					index = 2
-				}
-			case "pure.setup", "crossbinutils.setup":
-				if len(cmd.Words) == 3 {
-					index = 2
-				}
-			// Two more forges take it third, after author and project:
-			// bitbucket.setup author project version ?tag_prefix? and
-			// codeberg.setup author project version ?tag_prefix? ?tag_suffix?.
-			case "bitbucket.setup":
-				if len(cmd.Words) >= 4 && len(cmd.Words) <= 5 {
-					index = 3
-				}
-			case "codeberg.setup":
-				if len(cmd.Words) >= 4 && len(cmd.Words) <= 6 {
-					index = 3
-				}
-			// octave.setup keeps a two-argument form, module version, beside
-			// its full one, repo author module version ?tag_prefix?
-			// ?tag_suffix?; three arguments name no version at all.
-			case "octave.setup":
-				switch {
-				case len(cmd.Words) == 3:
-					index = 2
-				case len(cmd.Words) >= 5 && len(cmd.Words) <= 7:
-					index = 4
-				}
+			default:
+				index = setupVersionIndex(name, len(cmd.Words))
 			}
 			if index >= 0 {
 				word(cmd.Words[index])
@@ -204,4 +144,76 @@ func (c Candidate) Probe() string {
 		result.WriteRune(r)
 	}
 	return result.String()
+}
+
+// setupVersionIndex is the word of a PortGroup's setup command that carries
+// the version, as each PortGroup's setup takes it, or -1 for a command, or
+// a shape of one, that carries none.
+func setupVersionIndex(name string, words int) int {
+	index := -1
+	switch name {
+	case "github.setup", "gitlab.setup":
+		if words >= 4 && words <= 6 {
+			index = 3
+		}
+	case "go.setup":
+		if words >= 3 && words <= 5 {
+			index = 2
+		}
+	// The perl5, R, and ruby PortGroups carry the version as a setup
+	// argument: perl5.setup module vers ?cpandir?, R.setup domain
+	// author package version ?tag_prefix? ?tag_suffix?, and
+	// ruby.setup module vers ?type? ?docs? ?source? ?implementation?.
+	case "perl5.setup":
+		if words >= 3 && words <= 4 {
+			index = 2
+		}
+	case "R.setup":
+		if words >= 5 && words <= 7 {
+			index = 4
+		}
+	case "ruby.setup":
+		if words >= 3 && words <= 7 {
+			index = 2
+		}
+	// Dictionary, font, cross-toolchain, and Pure module PortGroups
+	// take the version second: aspelldict.setup locale version lang
+	// ?aspell-version?, hunspelldict.setup locale version lang
+	// ?source?, x11font.setup name version subdir, pure.setup module
+	// version, crossbinutils.setup target version.
+	case "aspelldict.setup", "hunspelldict.setup":
+		if words >= 4 && words <= 5 {
+			index = 2
+		}
+	case "x11font.setup":
+		if words == 4 {
+			index = 2
+		}
+	case "pure.setup", "crossbinutils.setup":
+		if words == 3 {
+			index = 2
+		}
+	// Two more forges take it third, after author and project:
+	// bitbucket.setup author project version ?tag_prefix? and
+	// codeberg.setup author project version ?tag_prefix? ?tag_suffix?.
+	case "bitbucket.setup":
+		if words >= 4 && words <= 5 {
+			index = 3
+		}
+	case "codeberg.setup":
+		if words >= 4 && words <= 6 {
+			index = 3
+		}
+	// octave.setup keeps a two-argument form, module version, beside
+	// its full one, repo author module version ?tag_prefix?
+	// ?tag_suffix?; three arguments name no version at all.
+	case "octave.setup":
+		switch {
+		case words == 3:
+			index = 2
+		case words >= 5 && words <= 7:
+			index = 4
+		}
+	}
+	return index
 }
