@@ -157,7 +157,7 @@ func Compare(older, newer project.Reading, versions Versions) []Change {
 				how, what = "removed", "was removed"
 			}
 			changes = append(changes, Change{Kind: "license", How: how, Path: name,
-				Message: fmt.Sprintf("upstream's %s %s; the Portfile's license line may need to follow", name, what)})
+				Message: fmt.Sprintf("upstream's %s %s", name, what)})
 		default:
 			if line, ok := versionOnly(name, old.Data, now.Data, versions); hadOld && hasNow && ok {
 				changes = append(changes, Change{Kind: "build", How: "version", Path: name,

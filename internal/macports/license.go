@@ -22,6 +22,7 @@ var spdxLicenses = map[string]string{
 	"AGPL-3.0": "AGPL-3", "AGPL-3.0-only": "AGPL-3", "AGPL-3.0-or-later": "AGPL-3+", "MPL-2.0": "MPL-2", "Zlib": "zlib",
 	"BSL-1.0": "Boost-1", "EPL-2.0": "EPL-2", "Artistic-2.0": "Artistic-2", "WTFPL": "WTFPL-2",
 	"CC0-1.0": "public-domain", "Unlicense": "public-domain",
+	"EUPL-1.1": "EUPL-1.1", "EUPL-1.2": "EUPL-1.2",
 }
 
 // License is MacPorts' license line for an SPDX license expression, as
@@ -123,6 +124,41 @@ func balanced(tokens []string) bool {
 		}
 	}
 	return depth == 0
+}
+
+// LicenseNames reports whether a Portfile's license line names each
+// license another line does, as one that applies or among a choice: zola's
+// "EUPL-1.2 MIT" names Cargo.toml's EUPL-1.2, and "MIT" doesn't. A line
+// that isn't a Tcl list names nothing.
+func LicenseNames(line, other string) bool {
+	has, ok := licenseNames(line)
+	wanted, wantedOK := licenseNames(other)
+	if !ok || !wantedOK || len(wanted) == 0 {
+		return false
+	}
+	for _, name := range wanted {
+		if !slices.Contains(has, name) {
+			return false
+		}
+	}
+	return true
+}
+
+// licenseNames are the licenses a license line names, each choice's too.
+func licenseNames(line string) ([]string, bool) {
+	terms, err := readList("license", line)
+	if err != nil {
+		return nil, false
+	}
+	var names []string
+	for _, term := range terms {
+		choices, err := readList("license", term)
+		if err != nil {
+			return nil, false
+		}
+		names = append(names, choices...)
+	}
+	return names, true
 }
 
 // LicenseWords says a Portfile's license line for a person: a braced

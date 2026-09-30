@@ -276,8 +276,10 @@ func (a *assessment) pair(pair Pair) {
 			// proven manifest's (D9); an archive whose project wasn't
 			// found names no manifest, and holds.
 			a.add(finding(change, !proven[base]))
+		case change.Kind == "license" && change.How == "years":
+			a.add(finding(change, false))
 		case change.Kind == "license":
-			a.add(finding(change, change.How != "years"))
+			a.add(a.license(change, pair, port))
 		case change.Kind == "build":
 			a.add(finding(change, change.How != "version"))
 		default:
@@ -341,6 +343,38 @@ func unlinked(change sourcecompare.Change, port macports.PortInfo) (model.Upstre
 	found := finding(change, false)
 	found.Message += fmt.Sprintf(", while the Portfile still has %s: unless something else needs %s, %s", strings.Join(still, " and "), it, goes)
 	return found, true
+}
+
+// license is a license file's change as a finding, which holds, with
+// what the project's manifest declares beside what the Portfile says:
+// zola's "LICENSE-MIT was added" said nothing of Cargo.toml's EUPL-1.2,
+// which the Portfile's MIT had missed since 0.22.0 (the zola run with
+// 68df8b57). Where the candidate's license line names what the manifest
+// declares and the base's didn't, the Portfile has followed, and it holds
+// nothing.
+func (a *assessment) license(change sourcecompare.Change, pair Pair, port macports.PortInfo) model.UpstreamChange {
+	found := finding(change, true)
+	declared, file, ok := pair.After.DeclaredLicense()
+	evidence := ""
+	if ok {
+		evidence = file + " says " + declared
+		if was, _, ok := pair.Before.DeclaredLicense(); ok && was != declared {
+			evidence = fmt.Sprintf("%s's license moves from %s to %s", file, was, declared)
+		}
+		if named, ok := macports.License(declared); ok && macports.LicenseNames(port.Options["license"], named) && !macports.LicenseNames(a.input.Base.Options["license"], named) {
+			found.Hold = false
+			found.Message += "; " + evidence + ", which the Portfile's license line now names"
+			return found
+		}
+		if line := port.Options["license"]; line != "" {
+			evidence += ", and the Portfile says " + macports.LicenseWords(line)
+		}
+	}
+	found.Message += "; the Portfile's license line may need to follow"
+	if evidence != "" {
+		found.Message += "; " + evidence
+	}
+	return found
 }
 
 // dependency is a declared dependency's change as a finding. One the new

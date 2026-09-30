@@ -24,6 +24,7 @@ func TestALicenseExpressionInMacPortsWords(t *testing.T) {
 		"BSD-3-Clause AND (MIT OR Zlib)":  "BSD {MIT zlib}",
 		"GPL-3.0-or-later":                "GPL-3+",
 		"CC0-1.0":                         "public-domain",
+		"EUPL-1.2":                        "EUPL-1.2",
 		"Unlicense OR MIT":                "{public-domain MIT}",
 		"BSD-2-Clause OR BSD-3-Clause":    "BSD",
 		"(MIT)":                           "MIT",
@@ -63,4 +64,26 @@ func TestAPortsDescription(t *testing.T) {
 	require.Equal(t, "A fast, intuitive terminal text editor", PortInfo{Options: map[string]string{"description": "{A fast, intuitive terminal text editor}"}}.Description())
 	require.Equal(t, "Harbor tools", PortInfo{Options: map[string]string{"description": "Harbor tools"}}.Description())
 	require.Empty(t, PortInfo{}.Description())
+}
+
+// A license line names another's licenses where it has each, as one that
+// applies or among a choice: zola's "EUPL-1.2 MIT" names Cargo.toml's
+// EUPL-1.2, and master's "MIT" didn't.
+func TestALicenseLineNamesAnothersLicenses(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		line, other string
+		names       bool
+	}{
+		{"EUPL-1.2 MIT", "EUPL-1.2", true},
+		{"MIT", "EUPL-1.2", false},
+		{"{MIT Apache-2}", "{MIT Apache-2}", true},
+		{"{MIT Apache-2}", "MIT", true},
+		{"MIT", "{MIT Apache-2}", false},
+		{"GPL-2+", "GPL-2", false},
+		{"MIT", "", false},
+		{"{MIT", "MIT", false},
+	} {
+		require.Equal(t, test.names, LicenseNames(test.line, test.other), "%q names %q", test.line, test.other)
+	}
 }

@@ -192,6 +192,39 @@ func (r Reading) RootFile(name string) (File, bool) {
 	return file, ok
 }
 
+// DeclaredLicense is the license the project's own manifest at its root
+// declares, as an SPDX expression, and the manifest's path below Top:
+// Cargo.toml's [package], pyproject.toml's [project], or package.json's,
+// the first of them that declares one as a string; false where none does.
+// zola declares EUPL-1.2 in Cargo.toml, which its license files alone
+// don't say (the zola run with 68df8b57).
+func (r Reading) DeclaredLicense() (license, file string, ok bool) {
+	for _, name := range []string{"Cargo.toml", "pyproject.toml", "package.json"} {
+		found, ok := r.RootFile(name)
+		if !ok || found.Truncated {
+			continue
+		}
+		switch name {
+		case "Cargo.toml":
+			if manifest, err := ReadCargoManifest(found.Data); err == nil && manifest.Package != nil {
+				license = manifest.Package.License
+			}
+		case "pyproject.toml":
+			if manifest, err := ReadPyproject(found.Data); err == nil && manifest.Project != nil {
+				license = manifest.Project.License
+			}
+		default:
+			if manifest, err := ReadPackageJSON(found.Data); err == nil {
+				license = manifest.License
+			}
+		}
+		if license != "" {
+			return license, path.Join(r.Root, name), true
+		}
+	}
+	return "", "", false
+}
+
 // readWorkspaces reads the package.json of each workspace the root's
 // package.json names, as yarn and npm install them with it: beekeeper-studio
 // moved electron in apps/studio/package.json, which reading the root alone

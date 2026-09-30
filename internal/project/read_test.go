@@ -203,3 +203,24 @@ func TestANodeProjectsWorkspacesAreReadWithIt(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "MIT", manifest.License)
 }
+
+// A project's declared license is its root manifest's: Cargo.toml's,
+// pyproject.toml's, or package.json's, the first declaring one as a
+// string, where zola says EUPL-1.2; none where no manifest declares one.
+func TestAProjectsDeclaredLicenseIsItsManifests(t *testing.T) {
+	for _, test := range []struct {
+		files         map[string]string
+		license, file string
+	}{
+		{map[string]string{"zola-0.23.6/Cargo.toml": "[package]\nname = \"zola\"\nlicense = \"EUPL-1.2\"\n", "zola-0.23.6/package.json": `{"license": "MIT"}`}, "EUPL-1.2", "Cargo.toml"},
+		{map[string]string{"demo-1/Cargo.toml": "[workspace]\nmembers = [\"a\"]\n", "demo-1/pyproject.toml": "[project]\nname = \"demo\"\nlicense = \"MIT\"\n"}, "MIT", "pyproject.toml"},
+		{map[string]string{"demo-1/package.json": `{"license": {"type": "MIT"}}`, "demo-1/sub/Cargo.toml": "[package]\nlicense = \"MIT\"\n"}, "", ""},
+	} {
+		license, file, ok := read(t, test.files, Spec{}).DeclaredLicense()
+		require.Equal(t, test.license != "", ok)
+		require.Equal(t, [2]string{test.license, test.file}, [2]string{license, file})
+	}
+	license, file, ok := read(t, map[string]string{"mono-1/py/pyproject.toml": "[project]\nname = \"m\"\nlicense = \"Apache-2.0\"\n"}, Spec{Subdirectory: "py"}).DeclaredLicense()
+	require.True(t, ok)
+	require.Equal(t, [2]string{"Apache-2.0", "py/pyproject.toml"}, [2]string{license, file}, "at the root the port builds in")
+}

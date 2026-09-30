@@ -297,6 +297,40 @@ func TestACrateGoneThatLinkedANativeLibraryIsSaidWhereThePortStillHasIt(t *testi
 	require.Equal(t, []string{added}, messages(assessed(zola)))
 }
 
+// A license file's change says what the project's manifest declares beside
+// what the Portfile says: zola's "LICENSE-MIT was added" was the evidence
+// of a relicensing to EUPL-1.2 that master's `license MIT` had missed since
+// 0.22.0. Once the candidate's license line names what the manifest
+// declares, where the base's didn't, the Portfile has followed, and it
+// holds nothing (the zola run with 68df8b57).
+func TestALicenseChangeNamesTheManifestsLicense(t *testing.T) {
+	cargo := func(license string) string {
+		return "[package]\nname = \"zola\"\nversion = \"0.23.6\"\nlicense = \"" + license + "\"\n"
+	}
+	pair := Pair{Archive: "zola-0.23.6.tar.gz",
+		Before: read(t, "zola-0.22.1", map[string]string{"LICENSE": "EUPL\n", "Cargo.toml": cargo("EUPL-1.2")}, project.Spec{}),
+		After:  read(t, "zola-0.23.6", map[string]string{"LICENSE": "EUPL\n", "LICENSE-MIT": "MIT\n", "Cargo.toml": cargo("EUPL-1.2")}, project.Spec{})}
+	zola := func(license string) macports.PortInfo {
+		return macports.PortInfo{Name: "zola", Options: map[string]string{"license": license, "dockhand.portgroups": "cargo"}}
+	}
+	input := Input{Port: zola("MIT"), Base: zola("MIT"), Pairs: []Pair{pair}}
+	require.Equal(t, []string{"! upstream's LICENSE-MIT was added; the Portfile's license line may need to follow; Cargo.toml says EUPL-1.2, and the Portfile says MIT"}, messages(Assess(input).Changes))
+
+	input.Port = zola("EUPL-1.2 MIT")
+	require.Equal(t, []string{"· upstream's LICENSE-MIT was added; Cargo.toml says EUPL-1.2, which the Portfile's license line now names"}, messages(Assess(input).Changes))
+
+	input.Base = zola("EUPL-1.2 MIT")
+	require.Equal(t, []string{"! upstream's LICENSE-MIT was added; the Portfile's license line may need to follow; Cargo.toml says EUPL-1.2, and the Portfile says EUPL-1.2 and MIT"}, messages(Assess(input).Changes),
+		"the base named it already, so the new file isn't what the line followed")
+
+	input.Base, input.Pairs[0].Before = zola("MIT"), read(t, "zola-0.21.0", map[string]string{"LICENSE": "MIT\n", "Cargo.toml": cargo("MIT")}, project.Spec{})
+	input.Port = zola("MIT")
+	require.Equal(t, []string{
+		"! upstream's LICENSE changed; the Portfile's license line may need to follow; Cargo.toml's license moves from MIT to EUPL-1.2, and the Portfile says MIT",
+		"! upstream's LICENSE-MIT was added; the Portfile's license line may need to follow; Cargo.toml's license moves from MIT to EUPL-1.2, and the Portfile says MIT",
+	}, messages(Assess(input).Changes))
+}
+
 // A license file whose copyright lines moved only their years, as usql's
 // and zlint's did for a new year, is said with the line, and holds
 // nothing: the license is the same. Anything else changed in it holds as
