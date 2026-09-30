@@ -546,7 +546,7 @@ func TestSubmitCheckPassingAndReady(t *testing.T) {
 	previewed, _, err := dockhand(t, "submit", "--plan", "--ready")
 	require.NoError(t, err)
 	require.Contains(t, previewed, "#34901 isn't a draft, so --ready has nothing to do.\n")
-	require.Contains(t, previewed, "\nDescription, as the pull request would have it:\n    Submitted by [dockhand](https://github.com/herbygillot/dockhand)\n\n    #### Description\n")
+	require.Contains(t, previewed, "\nDescription, as the pull request would have it:\n    Submitted by **[dockhand](https://github.com/herbygillot/dockhand)**\n\n    #### Description\n")
 	require.Contains(t, previewed, "Nothing was submitted (--plan).\n")
 	require.Empty(t, g.readied, "a preview marks nothing")
 

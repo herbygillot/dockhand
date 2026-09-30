@@ -57,7 +57,7 @@ func TestTestedOnSaysWhatTheEnvironmentWas(t *testing.T) {
 // The description's first line names dockhand, and its last line
 // dockhand's version, or dockhand alone when the build doesn't know it.
 func TestTheSignatureNeedsNoVersion(t *testing.T) {
-	require.Equal(t, "Submitted by [dockhand](https://github.com/herbygillot/dockhand)", submittedBy)
+	require.Equal(t, "Submitted by **[dockhand](https://github.com/herbygillot/dockhand)**", submittedBy)
 	require.Equal(t, "- [dockhand](https://github.com/herbygillot/dockhand) ver. v3.1.0", signature("v3.1.0"))
 	require.Equal(t, "- [dockhand](https://github.com/herbygillot/dockhand)", signature(" "))
 }
@@ -84,6 +84,14 @@ func TestAnOlderDescriptionGainsItsFirstLine(t *testing.T) {
 	introduced := "Why now: a CVE.\n\n" + old
 	merged, _ = mergeBody(introduced, old, fresh, false)
 	require.True(t, strings.HasPrefix(merged, "Why now: a CVE.\n\n#### Description"), "one a person began otherwise begins as they did")
+
+	// One dockhand began with the plain line, before it was bold, is given
+	// the bold one, while it's as dockhand wrote it.
+	plain := plainSubmittedBy + "\n\n#### Description\n\nupdate\n\n###### Tested on\n\nmacOS 26\n\n" + signature("v3.1.0") + "\n"
+	merged, _ = mergeBody(plain, plain, fresh, false)
+	require.Equal(t, fresh, merged)
+	merged, _ = mergeBody("Why now.\n\n"+plain, plain, fresh, false)
+	require.True(t, strings.HasPrefix(merged, "Why now.\n\n"+plainSubmittedBy+"\n"), "a line a person moved stays theirs")
 }
 
 // A column heading is the environment's release alone, with its

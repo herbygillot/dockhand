@@ -187,9 +187,14 @@ func ownedSections(facts bodyFacts) string {
 	return b.String()
 }
 
-// submittedBy is the description's first line, naming dockhand, whose
-// version the last line gives.
-var submittedBy = "Submitted by [dockhand](" + version.ProjectURL + ")"
+// submittedBy is the description's first line, naming dockhand in bold,
+// whose version the last line gives. plainSubmittedBy is the line as
+// dockhand wrote it before it was bold, which a description it wrote
+// then, and nobody changed, is given in its place.
+var (
+	submittedBy      = "Submitted by **[dockhand](" + version.ProjectURL + ")**"
+	plainSubmittedBy = "Submitted by [dockhand](" + version.ProjectURL + ")"
+)
 
 // listEnd ends the Verification checklist before dockhand's last line.
 const listEnd = "<!-- dockhand -->"
@@ -457,6 +462,9 @@ func mergeBody(existing, lastWritten, fresh string, named bool) (string, Descrip
 // that begins otherwise, or whose first line a person took out, stays as
 // it is.
 func submittedFirst(body, lastWritten, fresh string, testedOn SectionOutcome) string {
+	if rest, ok := strings.CutPrefix(body, plainSubmittedBy+"\n"); ok && strings.HasPrefix(lastWritten, plainSubmittedBy+"\n") && strings.HasPrefix(fresh, submittedBy) {
+		return submittedBy + "\n" + rest
+	}
 	switch {
 	case testedOn != SectionRefreshed && testedOn != SectionCurrent:
 		return body
