@@ -587,7 +587,7 @@ func (d *driver) finish(ctx context.Context) (model.Run, error) {
 	var failed, incomplete []string
 	for _, target := range evidence.Targets {
 		for i, result := range target.Outcomes {
-			if Excluded(d.plan, target.Target, d.plan.Environments[i]) {
+			if result.Kind == CellExcluded {
 				continue
 			}
 			name := string(target.Target.ID)
@@ -598,9 +598,8 @@ func (d *driver) finish(ctx context.Context) (model.Run, error) {
 					failed = append(failed, name)
 				}
 			case model.OutcomeUnmet:
-				unmet, _ := d.plan.UnmetIn(d.plan.Environments[i], target.Target.ID)
-				problem := fmt.Sprintf("%s isn't built on %s: it %s", name, describeEnvironment(d.plan.Environments[i]), UnmetWords(unmet))
-				if remedy := d.e.Remedy(unmet); remedy != "" {
+				problem := fmt.Sprintf("%s isn't built on %s: it %s", name, describeEnvironment(d.plan.Environments[i]), UnmetWords(result.Unmet))
+				if remedy := d.e.Remedy(result.Unmet); remedy != "" {
 					problem += "; " + remedy
 				}
 				d.problems = append(d.problems, problem)
@@ -837,20 +836,22 @@ func runEvidence(r store.Reader, run model.Run, plan model.Plan) (Evidence, erro
 	for _, target := range plan.Targets {
 		te := TargetEvidence{Target: target, Passed: true}
 		for _, environment := range plan.Environments {
-			if Excluded(plan, target, environment) {
-				te.Outcomes = append(te.Outcomes, model.TargetResult{Target: target.ID, Outcome: model.OutcomeNotRun})
+			if plan.Excludes(target, environment) {
+				te.Outcomes = append(te.Outcomes, noResult(CellExcluded, environment, target.ID))
 				continue
 			}
-			if _, unmet := plan.UnmetIn(environment, target.ID); unmet {
-				te.Outcomes = append(te.Outcomes, model.TargetResult{Target: target.ID, Outcome: model.OutcomeUnmet})
+			if unmet, ok := plan.UnmetIn(environment, target.ID); ok {
+				te.Outcomes = append(te.Outcomes, Cell{TargetResult: model.TargetResult{Target: target.ID, Outcome: model.OutcomeUnmet}, Kind: CellUnmet, Environment: environment, Unmet: unmet})
 				te.Passed = false
 				continue
 			}
 			result, ok := merged[environment][target.ID]
 			if !ok {
-				result = model.TargetResult{Target: target.ID, Outcome: model.OutcomeNotRun}
+				te.Outcomes = append(te.Outcomes, noResult(CellNotRun, environment, target.ID))
+				te.Passed = false
+				continue
 			}
-			te.Outcomes = append(te.Outcomes, result)
+			te.Outcomes = append(te.Outcomes, recorded(environment, result))
 			te.Passed = te.Passed && result.Outcome == model.OutcomePassed
 			if result.ReusedFrom != "" {
 				if err := evidence.origin(r, result.ReusedFrom); err != nil {

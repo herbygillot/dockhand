@@ -134,8 +134,8 @@ func TestPlanFollowsCIsScopeOrderAndEligibility(t *testing.T) {
 	require.Equal(t, []model.Exclusion{
 		{Target: model.Target{Name: "harbor-cli-old", Portfile: "devel/harbor-cli/Portfile", Subport: "harbor-cli-old"}, Reason: "replaced by harbor-cli"},
 	}, x86Plan.Exclusions, "a port excluded everywhere is excluded in each environment, and not planned")
-	require.True(t, Excluded(plan, plan.Targets[3], tahoeArm), "x86_64 only")
-	require.False(t, Excluded(plan, plan.Targets[3], tahoeX86))
+	require.True(t, plan.Excludes(plan.Targets[3], tahoeArm), "x86_64 only")
+	require.False(t, plan.Excludes(plan.Targets[3], tahoeX86))
 
 	narrowed, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}, Only: []string{"harbor-viewer"}})
 	require.NoError(t, err)
@@ -368,9 +368,9 @@ func TestAPlanRecordsWhatDeclaresNoTests(t *testing.T) {
 	planned, _ := plan.In(tahoeArm)
 	require.Equal(t, []model.TargetID{"harbor-cli"}, planned.Untested, "libharbor declares tests, and harbor-viewer's test.run wasn't read")
 
-	require.Equal(t, "✓ declares no tests", targetWords(plan, model.PlanTarget{ID: "harbor-cli"}, tahoeArm, model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsNone}, "", false))
+	require.Equal(t, "✓ declares no tests", targetWords(plan, model.PlanTarget{ID: "harbor-cli"}, recorded(tahoeArm, model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsNone}), "", false))
 	plan.Tests = model.TestsDeclared
-	require.Equal(t, "✓", targetWords(plan, model.PlanTarget{ID: "harbor-cli"}, tahoeArm, model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsNone}, "", false), "only a policy requiring tests needs saying so")
+	require.Equal(t, "✓", targetWords(plan, model.PlanTarget{ID: "harbor-cli"}, recorded(tahoeArm, model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsNone}), "", false), "only a policy requiring tests needs saying so")
 }
 
 // A port whose eligibility couldn't be read is unresolved, neither built

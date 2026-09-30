@@ -29,8 +29,13 @@ func TestTargetWordsAreDesignV3s(t *testing.T) {
 		{model.TargetResult{Outcome: model.OutcomeNotRun}, false, "· not run"},
 		{model.TargetResult{Outcome: model.OutcomeInterrupted}, false, "· interrupted"},
 	} {
-		require.Equal(t, c.words, targetWords(model.Plan{}, target, command, c.result, "", c.accepted))
+		require.Equal(t, c.words, targetWords(model.Plan{}, target, recorded(command, c.result), "", c.accepted))
 	}
 	require.Equal(t, "✓ build passed; tests failed (not counted, --tests skip)",
-		targetWords(model.Plan{}, target, command, model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsFailed}, "not counted, --tests skip", false))
+		targetWords(model.Plan{}, target, recorded(command, model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsFailed}), "not counted, --tests skip", false))
+	// An excluded or unmet cell reads by its kind, not by asking the plan,
+	// which for a cell an earlier check filled isn't the one that found it.
+	require.Equal(t, "— excluded", targetWords(model.Plan{}, target, noResult(CellExcluded, command, "jq"), "", false))
+	unmet := Cell{TargetResult: model.TargetResult{Outcome: model.OutcomeUnmet}, Kind: CellUnmet, Environment: command, Unmet: model.Unmet{Target: "jq", Environment: command, Needs: model.RequiresXcode}}
+	require.Equal(t, "· not built: "+UnmetWords(unmet.Unmet), targetWords(model.Plan{}, target, unmet, "", false))
 }

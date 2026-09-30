@@ -767,7 +767,7 @@ func TestSubmitsCheckLineNamesOnlyWhereItBuilt(t *testing.T) {
 			{Environment: monterey, Exclusions: []model.Exclusion{{Target: target.Target, Reason: "known_fail"}}},
 			{Environment: tahoe, Order: []model.TargetID{target.ID}},
 		}},
-		Targets:    []engine.TargetEvidence{{Target: target, Passed: true, Outcomes: []model.TargetResult{{Outcome: model.OutcomeNotRun}, {Execution: "tart_b", Outcome: model.OutcomePassed}}}},
+		Targets:    []engine.TargetEvidence{{Target: target, Passed: true, Outcomes: cells([]model.TargetResult{{Outcome: model.OutcomeNotRun}, {Execution: "tart_b", Outcome: model.OutcomePassed}})}},
 		Executions: map[model.ExecutionID]model.GuestExecution{"tart_b": {ID: "tart_b", Run: "run_21"}},
 	}
 	require.Equal(t, "passed on "+engine.DescribeEnvironment(tahoe)+" for this commit's files (check-21); nothing built on "+engine.DescribeEnvironment(monterey)+", where every port is excluded",

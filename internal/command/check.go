@@ -726,7 +726,7 @@ func writeBaselineResults(out io.Writer, base, branch engine.Evidence, master st
 			environment := base.Plan.Environments[n]
 			theirs := model.TargetResult{Outcome: model.OutcomeNotRun}
 			if j := slices.Index(branch.Plan.Environments, environment); i >= 0 && j >= 0 {
-				theirs = branch.Targets[i].Outcomes[j]
+				theirs = branch.Targets[i].Outcomes[j].TargetResult
 			}
 			planned, _ := base.Plan.In(environment)
 			if !planned.Builds(target.Target.ID) && theirs.Outcome != model.OutcomeFailed {
@@ -737,7 +737,7 @@ func writeBaselineResults(out io.Writer, base, branch engine.Evidence, master st
 				fmt.Fprintf(out, "  · not built at the base: %s\n", exclusion.Reason)
 				continue
 			}
-			fmt.Fprintf(out, "  %s\n", baselineWords(result, theirs, branch.Run.Name()))
+			fmt.Fprintf(out, "  %s\n", baselineWords(result.TargetResult, theirs, branch.Run.Name()))
 		}
 	}
 }

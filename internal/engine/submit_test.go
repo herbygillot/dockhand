@@ -373,8 +373,11 @@ func checked(t *testing.T, e *Engine, branch model.Branch, jq, viewer model.Outc
 			return err
 		}
 		state := model.RunPassed
-		if jq != model.OutcomePassed || viewer != model.OutcomePassed {
+		switch {
+		case jq != model.OutcomePassed || viewer != model.OutcomePassed && viewer != "":
 			state = model.RunFailed
+		case viewer == "":
+			state = model.RunAttention
 		}
 		runRecord := model.Run{ID: model.RunID(store.NewID("run")), Branch: branch.ID, Revision: revision.ID, Plan: plan.ID, Number: number, Origin: model.OriginPerson, State: model.RunQueued, CreatedAt: at}
 		execution := model.GuestExecution{ID: model.ExecutionID(store.NewID("tart")), Run: runRecord.ID, Environment: tahoe, Attempt: 1, State: model.ExecutionWaiting, CreatedAt: at,
@@ -392,6 +395,9 @@ func checked(t *testing.T, e *Engine, branch model.Branch, jq, viewer model.Outc
 				return tx.RecordResult(result)
 			},
 			func() error {
+				if viewer == "" {
+					return nil // the check didn't reach it
+				}
 				result := model.TargetResult{Execution: execution.ID, Target: "harbor-viewer", Outcome: viewer, Tests: model.TestsNone, RecordedAt: at}
 				if viewer == model.OutcomeFailed {
 					result.Phase = model.PhaseInstall
@@ -452,6 +458,19 @@ func TestSubmitFollowsThePublicationRule(t *testing.T) {
 		return nil
 	}))
 	require.Len(t, fake.created, 1)
+
+	// An extra no check reached asks nothing, and there is nothing of it
+	// to accept (TargetEvidence.Extra).
+	h := setup(t)
+	e3, _ := h.withPreparer(t)
+	h.withFork(t, e3)
+	branch3 := committedUpdate(t, e3)
+	checked(t, e3, branch3, model.OutcomePassed, "")
+	plan, err = e3.PlanSubmit(t.Context(), SubmitRequest{Branch: branch3})
+	require.NoError(t, err)
+	require.NotContains(t, strings.Join(plan.Blocking, "\n"), "harbor-viewer")
+	_, err = e3.PlanSubmit(t.Context(), SubmitRequest{Branch: branch3, Accept: []string{"harbor-viewer"}})
+	require.ErrorContains(t, err, "--accept harbor-viewer: no check of these files built it, so there is no failure to accept")
 
 	// A changed port that fails goes out only as a draft.
 	g := setup(t)

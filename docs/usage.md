@@ -261,7 +261,7 @@ dockhand submit
 
 The committed files must have passed a check, for every changed port in every environment. Because a check builds the files rather than the commits, a check before `tidy` covers the commits `tidy` makes.
 
-- `--accept <port>` acknowledges a failed extra from `--also` or a failed revision-only port. The pull request says the cause wasn't established.
+- `--accept <port>` acknowledges a failed extra from `--also` or a failed revision-only port. The pull request says the cause wasn't established. An extra no check built asks nothing of submit, status, or serve, and there is nothing of it to accept: it's built for what it shows.
 - `--draft` opens a draft, which unfinished or failing checks allow, and `--ready` takes it out of draft once its commit passes; `--ready --plan` says what it would do, and a draft's preview names it. GitHub can refuse dockhand that, as an organization restricting which apps may act for its members does; the macports organization does. dockhand then runs `gh pr ready` itself, when the GitHub CLI is installed and signed in as the account dockhand is, since that CLI signs in as its own app, and says it did. Otherwise the error names the pull request's page and `gh pr ready`, and why the CLI wasn't used. Only the organization's owners can let dockhand's own app through: on GitHub, Settings → Applications → Authorized OAuth Apps → dockhand, then Request access beside the organization, which asks them.
 - `--no-check` submits without a check, and the pull request says no local build ran.
 - `--check` checks the committed head first and submits exactly that commit once it passes; running it is the decision. `--on` says where.

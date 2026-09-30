@@ -231,3 +231,115 @@ func TestACheckRecordedWhatItsOwnRunsDid(t *testing.T) {
 	require.True(t, evidence.Recorded())
 	require.False(t, Evidence{Run: model.Run{ID: "run_3"}}.Recorded())
 }
+
+// cells are hand-built results as the evidence's cells: recorded, but for
+// a result not run or unmet, whose cells are of those kinds.
+func cells(results []model.TargetResult) []Cell {
+	var cells []Cell
+	for _, result := range results {
+		kind := CellRecorded
+		switch result.Outcome {
+		case model.OutcomeNotRun:
+			kind = CellNotRun
+		case model.OutcomeUnmet:
+			kind = CellUnmet
+		}
+		cells = append(cells, Cell{TargetResult: result, Kind: kind})
+	}
+	return cells
+}
+
+// A cell says what it is, so its readers don't ask the plan again: a
+// target --only left out, filled from an earlier check where the
+// environment couldn't build it, is unmet as that check's plan found it,
+// which the newer plan, that doesn't build it, can't say (the
+// code-organization review, finding 25).
+func TestACellFilledFromAnEarlierCheckKeepsWhatItIs(t *testing.T) {
+	tools := model.Environment{Provider: "command", DeveloperTools: model.DeveloperToolsCommandLine}
+	unmet := model.Unmet{Target: "harbor-tools", Environment: tools, Needs: model.RequiresXcode}
+	earlier := Evidence{
+		Plan: model.Plan{Environments: []model.Environment{tools}, Builds: []model.EnvironmentPlan{{Environment: tools, Order: []model.TargetID{"harbor-tools"}, Unmet: []model.Unmet{unmet}}}},
+		Targets: []TargetEvidence{{Target: model.PlanTarget{ID: "harbor-tools", Target: model.Target{Name: "harbor-tools"}, Role: model.Changed},
+			Outcomes: []Cell{{TargetResult: model.TargetResult{Target: "harbor-tools", Outcome: model.OutcomeUnmet}, Kind: CellUnmet, Environment: tools, Unmet: unmet}}}},
+	}
+	now := Evidence{
+		Run:  model.Run{ID: "run_2", Number: 2},
+		Plan: model.Plan{Environments: []model.Environment{tools}, Builds: []model.EnvironmentPlan{{Environment: tools, Order: []model.TargetID{"harbor-cli"}}}},
+		Targets: []TargetEvidence{{Target: model.PlanTarget{ID: "harbor-tools", Target: model.Target{Name: "harbor-tools"}, Role: model.Changed},
+			Outcomes: []Cell{noResult(CellNotRun, tools, "harbor-tools")}}},
+	}
+	require.True(t, now.missing())
+	require.True(t, now.fill(earlier))
+	now.settle()
+	target := now.Targets[0]
+	require.Equal(t, CellUnmet, target.Outcomes[0].Kind)
+	require.True(t, target.Missing())
+	require.Equal(t, "· not built: needs Xcode", now.Words(target, 0, false))
+	require.Equal(t, []string{"harbor-tools needs Xcode, which " + DescribeEnvironment(tools) + " hasn't; a check with Xcode there builds it, or share the branch as a draft (--draft)"},
+		publicationProblems(now, nil))
+}
+
+// An extra from --also is built for what it shows: one no check built asks
+// nothing of status, submit, or serve, and one that failed is accepted,
+// never fixed. Status and submit exempted an unbuilt extra, while serve's
+// passing branches counted it as failed, and submit asked to accept it.
+func TestAnExtraFollowsOneRule(t *testing.T) {
+	arm := tahoeArm
+	extra := func(c Cell) TargetEvidence {
+		e := Evidence{Plan: model.Plan{Environments: []model.Environment{arm}}, Targets: []TargetEvidence{{Target: model.PlanTarget{ID: "oniguruma", Target: model.Target{Name: "oniguruma"}, Kind: model.Unchanged, Role: model.Also}, Outcomes: []Cell{c}}}}
+		e.settle()
+		return e.Targets[0]
+	}
+	unbuilt := extra(noResult(CellNotRun, arm, "oniguruma"))
+	require.True(t, unbuilt.Unchecked)
+	require.False(t, unbuilt.Missing(), "it asks for no check")
+	require.False(t, unbuilt.Failing(), "nor is it failed")
+	remade := extra(noResult(CellRemade, arm, "oniguruma"))
+	require.Equal(t, []model.Environment{arm}, remade.Remade())
+	require.False(t, remade.Missing())
+	failed := extra(recorded(arm, model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseInstall}))
+	require.True(t, failed.Failing(), "its failure is accepted, so it is one")
+	require.False(t, failed.Missing())
+
+	evidence := Evidence{Run: model.Run{ID: "run_1", Number: 1}, Plan: model.Plan{Environments: []model.Environment{arm}}, Targets: []TargetEvidence{unbuilt}}
+	require.Empty(t, evidence.Failed())
+	require.Empty(t, evidence.Missing())
+	require.Empty(t, publicationProblems(evidence, nil))
+	evidence.Targets = []TargetEvidence{failed}
+	require.Equal(t, []string{"oniguruma (an extra from --also) did not pass in check-1; acknowledge it with --accept oniguruma if its failure is not this branch's doing"}, publicationProblems(evidence, nil))
+	require.Empty(t, publicationProblems(evidence, []string{"oniguruma"}))
+
+	changed := TargetEvidence{Target: model.PlanTarget{ID: "jq", Target: model.Target{Name: "jq"}, Kind: model.Substantive, Role: model.Changed}, Outcomes: []Cell{noResult(CellNotRun, arm, "jq")}}
+	evidence.Targets = []TargetEvidence{changed}
+	evidence.settle()
+	require.True(t, evidence.Targets[0].Missing())
+	require.True(t, evidence.Targets[0].Failing())
+}
+
+// A result recorded in an environment made again since is missing, as one
+// no check built is, so an earlier check of the files fills it where its
+// result is the environment's as it is now: an image made again and then
+// put back as it was.
+func TestARemadeCellIsMissing(t *testing.T) {
+	cli := model.PlanTarget{ID: "harbor-cli", Target: model.Target{Name: "harbor-cli"}, Role: model.Changed}
+	evidence := Evidence{
+		Plan:       model.Plan{Environments: []model.Environment{tahoeArm}, Builds: []model.EnvironmentPlan{{Environment: tahoeArm, Order: []model.TargetID{"harbor-cli"}}}},
+		Executions: map[model.ExecutionID]model.GuestExecution{"tart_b": {ID: "tart_b", Environment: tahoeArm, Identity: "origin b"}},
+		Targets:    []TargetEvidence{{Target: cli, Outcomes: []Cell{recorded(tahoeArm, model.TargetResult{Execution: "tart_b", Target: "harbor-cli", Outcome: model.OutcomePassed})}}},
+		now:        identities{tahoeArm: "origin a"},
+	}
+	require.Equal(t, CellNotRun, recorded(tahoeArm, model.TargetResult{Outcome: model.OutcomeNotRun}).Kind, "a checkpoint that never reached it is no result")
+	evidence.dropRemade()
+	require.Equal(t, CellRemade, evidence.Targets[0].Outcomes[0].Kind)
+	require.True(t, evidence.missing(), "an earlier check may have built it as the environment is now")
+	earlier := Evidence{
+		Plan:       evidence.Plan,
+		Executions: map[model.ExecutionID]model.GuestExecution{"tart_a": {ID: "tart_a", Environment: tahoeArm, Identity: "origin a"}},
+		Targets:    []TargetEvidence{{Target: cli, Outcomes: []Cell{recorded(tahoeArm, model.TargetResult{Execution: "tart_a", Target: "harbor-cli", Outcome: model.OutcomePassed})}}},
+	}
+	require.True(t, evidence.fill(earlier))
+	evidence.settle()
+	require.True(t, evidence.Targets[0].Passed)
+	require.Empty(t, evidence.Targets[0].Remade())
+	require.False(t, evidence.missing())
+}

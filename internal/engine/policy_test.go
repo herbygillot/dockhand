@@ -26,7 +26,7 @@ func TestAResultReadsUnderItsOwnChecksPolicy(t *testing.T) {
 		},
 		policies: map[model.RunID]model.TestPolicy{required.ID: model.TestsRequired, advisory.ID: model.TestsDeclared},
 	}
-	old := TargetEvidence{Target: model.PlanTarget{ID: "libharbor"}, Outcomes: []model.TargetResult{{Execution: "ex_old", Outcome: model.OutcomePassed, Tests: model.TestsFailed}}}
+	old := TargetEvidence{Target: model.PlanTarget{ID: "libharbor"}, Outcomes: cells([]model.TargetResult{{Execution: "ex_old", Outcome: model.OutcomePassed, Tests: model.TestsFailed}})}
 	require.Equal(t, "✓ build passed; tests failed (advisory, check-3)", evidence.Words(old, 0, false))
 	evidence.Plan.Tests = model.TestsDeclared
 	require.Equal(t, "✓ build passed; tests failed (advisory)", evidence.Words(old, 0, false), "the same policy needs no check named")

@@ -108,7 +108,7 @@ func TestABaselineTakesPortsThatFailedWhileBuilding(t *testing.T) {
 	}
 	passed := model.TargetResult{Outcome: model.OutcomePassed}
 	target := func(id string, outcomes ...model.TargetResult) TargetEvidence {
-		return TargetEvidence{Target: model.PlanTarget{ID: model.TargetID(id), Target: model.Target{Name: id}}, Outcomes: outcomes}
+		return TargetEvidence{Target: model.PlanTarget{ID: model.TargetID(id), Target: model.Target{Name: id}}, Outcomes: cells(outcomes)}
 	}
 	evidence := Evidence{Plan: model.Plan{Environments: []model.Environment{tahoeArm, tahoeX86}}, Targets: []TargetEvidence{
 		target("installs", failed(model.PhaseInstall), passed),

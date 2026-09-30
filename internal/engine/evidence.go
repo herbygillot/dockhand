@@ -10,23 +10,108 @@ import (
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
+// CellKind is what a target's cell of the evidence holds in one
+// environment, which its readers take from the cell rather than asking the
+// plan again (the code-organization review, finding 25).
+type CellKind string
+
+const (
+	// CellRecorded is a result an execution recorded, or reused.
+	CellRecorded CellKind = "recorded"
+	// CellExcluded is a target the plan leaves out there, which needn't
+	// pass there.
+	CellExcluded CellKind = "excluded"
+	// CellUnmet is a target the environment can't build: the cell's Unmet
+	// says why, as the plan that found it says.
+	CellUnmet CellKind = "unmet"
+	// CellNotRun is a target required there that no check of the files
+	// built: --only left it out, or the check stopped before it.
+	CellNotRun CellKind = "not-run"
+	// CellRemade is a target built there before the environment was made
+	// again, from another source or with other tools: another environment,
+	// whose results don't stand for it (Counts).
+	CellRemade CellKind = "remade"
+)
+
+// Cell is a target's result in one environment, with what kind of cell it
+// is. An excluded, unmet, not run, or remade cell's result is
+// OutcomeNotRun, or OutcomeUnmet, with no execution.
+type Cell struct {
+	model.TargetResult
+	Kind        CellKind
+	Environment model.Environment
+	// Unmet is why the environment can't build the target, for CellUnmet.
+	Unmet model.Unmet
+}
+
+// recorded is a result recorded in an environment, as a cell: one that
+// says its target wasn't reached is a cell not run.
+func recorded(environment model.Environment, result model.TargetResult) Cell {
+	if result.Outcome == model.OutcomeNotRun {
+		return Cell{TargetResult: result, Kind: CellNotRun, Environment: environment}
+	}
+	return Cell{TargetResult: result, Kind: CellRecorded, Environment: environment}
+}
+
+// noResult is a cell of a kind with no result behind it.
+func noResult(kind CellKind, environment model.Environment, target model.TargetID) Cell {
+	return Cell{TargetResult: model.TargetResult{Target: target, Outcome: model.OutcomeNotRun}, Kind: kind, Environment: environment}
+}
+
+// Unbuilt reports a cell whose target no check of the files built there,
+// where the plan asks it to be: not run, remade, or unmet.
+func (c Cell) Unbuilt() bool {
+	return c.Kind == CellNotRun || c.Kind == CellRemade || c.Kind == CellUnmet
+}
+
 // TargetEvidence is one planned target's result across a run's
 // environments.
 type TargetEvidence struct {
 	Target model.PlanTarget
-	// Outcomes are the target's result in each environment, in the plan's
-	// order; OutcomeNotRun where none was recorded.
-	Outcomes []model.TargetResult
+	// Outcomes are the target's cells, one for each environment, in the
+	// plan's order.
+	Outcomes []Cell
 	Passed   bool
 	// Unchecked is true when no check of the files built the target in an
 	// environment it is required in: --only left it out, the check stopped
-	// before it, or the environment has been made again since.
+	// before it, the environment can't build it, or the environment has
+	// been made again since.
 	Unchecked bool
-	// Remade are the environments where the target's result was recorded
-	// before the environment was made again, from another source or with
-	// other tools: another environment, whose results don't stand for it
-	// (Counts).
-	Remade []model.Environment
+}
+
+// Remade are the environments where the target's result was recorded
+// before the environment was made again, and none since.
+func (t TargetEvidence) Remade() []model.Environment {
+	var remade []model.Environment
+	for _, c := range t.Outcomes {
+		if c.Kind == CellRemade {
+			remade = append(remade, c.Environment)
+		}
+	}
+	return remade
+}
+
+// Extra reports a target from --also. It is the one rule for an extra that
+// status, submit, and serve read: an extra is built for what it shows, so
+// it asks nothing where no check built it, and where it fails, its failure
+// is accepted (Acceptable), never fixed.
+func (t TargetEvidence) Extra() bool { return t.Target.Role == model.Also }
+
+// Missing reports a target that asks for a check: one no check of the
+// files built everywhere it's required, and not an extra.
+func (t TargetEvidence) Missing() bool { return t.Unchecked && !t.Extra() }
+
+// Failing reports a target that didn't pass where it must: a changed one
+// that didn't pass everywhere it's required, or an extra with a result
+// that didn't pass.
+func (t TargetEvidence) Failing() bool {
+	if t.Passed {
+		return false
+	}
+	if !t.Extra() {
+		return true
+	}
+	return slices.ContainsFunc(t.Outcomes, func(c Cell) bool { return c.Kind == CellRecorded && c.Outcome != model.OutcomePassed })
 }
 
 // Evidence is what the finished checks of a tree established, judged
@@ -121,7 +206,7 @@ func (e Evidence) Built(environment int, runs []model.GuestExecution) (built []m
 // required never makes an earlier advisory result read as required.
 func (e Evidence) Words(target TargetEvidence, environment int, accepted bool) string {
 	result := target.Outcomes[environment]
-	return targetWords(e.Plan, target.Target, e.Plan.Environments[environment], result, e.testsReading(result), accepted)
+	return targetWords(e.Plan, target.Target, result, e.testsReading(result.TargetResult), accepted)
 }
 
 // testsReading says how a result's tests count: "advisory", "not counted,
@@ -235,8 +320,6 @@ func (e Evidence) Observations(environment int) []Observation {
 	return observations
 }
 
-// Unchecked lists the targets no check of the files built everywhere they
-// are required.
 // Recorded reports whether the check itself recorded a result, rather
 // than only earlier checks of its files: whether it finished anything.
 func (e Evidence) Recorded() bool {
@@ -248,21 +331,23 @@ func (e Evidence) Recorded() bool {
 	return false
 }
 
-func (e Evidence) Unchecked() []TargetEvidence {
-	var unchecked []TargetEvidence
+// Missing lists the targets that ask for a check (TargetEvidence.Missing).
+func (e Evidence) Missing() []TargetEvidence {
+	var missing []TargetEvidence
 	for _, target := range e.Targets {
-		if target.Unchecked {
-			unchecked = append(unchecked, target)
+		if target.Missing() {
+			missing = append(missing, target)
 		}
 	}
-	return unchecked
+	return missing
 }
 
-// Failed lists the targets that did not pass in every environment.
+// Failed lists the targets that didn't pass where they must
+// (TargetEvidence.Failing).
 func (e Evidence) Failed() []TargetEvidence {
 	var failed []TargetEvidence
 	for _, target := range e.Targets {
-		if !target.Passed {
+		if target.Failing() {
 			failed = append(failed, target)
 		}
 	}
@@ -389,8 +474,12 @@ func treeEvidence(r store.Reader, primary model.Run, runs []model.Run, now ident
 	evidence.dropRemade()
 	for _, target := range plan.Omitted {
 		te := TargetEvidence{Target: target}
-		for range plan.Environments {
-			te.Outcomes = append(te.Outcomes, model.TargetResult{Target: target.ID, Outcome: model.OutcomeNotRun})
+		for _, environment := range plan.Environments {
+			kind := CellNotRun
+			if plan.Excludes(target, environment) {
+				kind = CellExcluded
+			}
+			te.Outcomes = append(te.Outcomes, noResult(kind, environment, target.ID))
 		}
 		evidence.Targets = append(evidence.Targets, te)
 	}
@@ -418,8 +507,8 @@ func treeEvidence(r store.Reader, primary model.Run, runs []model.Run, now ident
 // is required in.
 func (e Evidence) missing() bool {
 	for _, target := range e.Targets {
-		for i, result := range target.Outcomes {
-			if result.Outcome == model.OutcomeNotRun && !Excluded(e.Plan, target.Target, e.Plan.Environments[i]) {
+		for _, c := range target.Outcomes {
+			if c.Kind == CellNotRun || c.Kind == CellRemade {
 				return true
 			}
 		}
@@ -456,8 +545,8 @@ func current(execution model.GuestExecution, now string) bool {
 }
 
 // dropRemade drops the results recorded in an environment that is another
-// now, by its identity, and notes where: they are the environment's as it
-// was, which no longer stands for it.
+// now, by its identity, and marks their cells remade: they are the
+// environment's as it was, which no longer stands for it.
 func (e *Evidence) dropRemade() {
 	for t := range e.Targets {
 		target := &e.Targets[t]
@@ -466,17 +555,8 @@ func (e *Evidence) dropRemade() {
 			if !ok || current(execution, e.now[execution.Environment]) {
 				continue
 			}
-			target.Outcomes[i] = model.TargetResult{Target: result.Target, Outcome: model.OutcomeNotRun}
-			target.remade(execution.Environment)
+			target.Outcomes[i] = noResult(CellRemade, result.Environment, result.Target)
 		}
-	}
-}
-
-// remade notes an environment where the target's result was recorded
-// before the environment was made again.
-func (t *TargetEvidence) remade(environment model.Environment) {
-	if !slices.Contains(t.Remade, environment) {
-		t.Remade = append(t.Remade, environment)
 	}
 }
 
@@ -491,8 +571,8 @@ func (e *Evidence) fill(earlier Evidence) bool {
 			continue
 		}
 		for i, result := range target.Outcomes {
-			environment := e.Plan.Environments[i]
-			if result.Outcome != model.OutcomeNotRun || Excluded(e.Plan, target.Target, environment) {
+			environment := result.Environment
+			if result.Kind != CellNotRun && result.Kind != CellRemade {
 				continue
 			}
 			j := slices.Index(earlier.Plan.Environments, environment)
@@ -505,9 +585,9 @@ func (e *Evidence) fill(earlier Evidence) bool {
 				// An unmet result is the plan's, with no execution behind it.
 				execution = model.GuestExecution{Environment: environment}
 			}
-			if found.Outcome == model.OutcomeNotRun || !Counts(earlier.Plan, execution, target.Target.ID, e.now[environment]) {
-				if found.Outcome != model.OutcomeNotRun && !current(execution, e.now[environment]) {
-					target.remade(environment)
+			if found.Kind != CellRecorded && found.Kind != CellUnmet || !Counts(earlier.Plan, execution, target.Target.ID, e.now[environment]) {
+				if found.Kind == CellRecorded && !current(execution, e.now[environment]) {
+					target.Outcomes[i].Kind = CellRemade
 				}
 				continue
 			}
@@ -536,24 +616,20 @@ func (e *Evidence) fill(earlier Evidence) bool {
 	return took
 }
 
-// settle works out each target's verdict from its outcomes: passed where
-// it passed in every environment it is required in, and unchecked where
-// one has no result. Remade keeps only the environments still without
-// one, since an earlier check may have built it there as it is now.
+// settle works out each target's verdict from its cells: passed where it
+// passed in every environment it is required in, and unchecked where one
+// has no result. A cell an earlier check filled is recorded, or unmet, so
+// it is remade no longer.
 func (e *Evidence) settle() {
 	for t := range e.Targets {
 		target := &e.Targets[t]
-		target.Remade = slices.DeleteFunc(target.Remade, func(environment model.Environment) bool {
-			i := slices.Index(e.Plan.Environments, environment)
-			return i < 0 || target.Outcomes[i].Outcome != model.OutcomeNotRun
-		})
 		target.Passed, target.Unchecked = true, false
-		for i, result := range target.Outcomes {
-			if Excluded(e.Plan, target.Target, e.Plan.Environments[i]) {
+		for _, c := range target.Outcomes {
+			if c.Kind == CellExcluded {
 				continue
 			}
-			target.Passed = target.Passed && result.Outcome == model.OutcomePassed
-			target.Unchecked = target.Unchecked || result.Outcome == model.OutcomeNotRun || result.Outcome == model.OutcomeUnmet
+			target.Passed = target.Passed && c.Outcome == model.OutcomePassed
+			target.Unchecked = target.Unchecked || c.Unbuilt()
 		}
 	}
 }
@@ -565,14 +641,15 @@ func publicationProblems(evidence Evidence, accepted []string) []string {
 	var problems []string
 	for _, target := range evidence.Failed() {
 		name := target.Target.Target.Name
-		unmet, needs := evidence.unmet(target)
+		unmet, needs := target.unmet()
+		remade := target.Remade()
 		switch {
-		case needs && target.Target.Role != model.Also:
+		case needs && target.Missing():
 			problems = append(problems, fmt.Sprintf("%s %s, which %s hasn't; a check with %s there builds it, or share the branch as a draft (--draft)",
 				name, UnmetWords(unmet), DescribeEnvironment(unmet.Environment), unmet.Needs))
-		case target.Unchecked && len(target.Remade) > 0 && target.Target.Role != model.Also:
-			problems = append(problems, fmt.Sprintf("%s was checked in %s before it was made again, from another source or with other tools; dockhand check builds it there again, or share the branch as a draft (--draft)", name, DescribeEnvironment(target.Remade[0])))
-		case target.Unchecked && target.Target.Role != model.Also:
+		case len(remade) > 0 && target.Missing():
+			problems = append(problems, fmt.Sprintf("%s was checked in %s before it was made again, from another source or with other tools; dockhand check builds it there again, or share the branch as a draft (--draft)", name, DescribeEnvironment(remade[0])))
+		case target.Missing():
 			problems = append(problems, fmt.Sprintf("%s is changed, and no check of these files built it everywhere it's required; dockhand check builds it, or share the branch as a draft (--draft)", name))
 		case !Acceptable(target.Target):
 			problems = append(problems, fmt.Sprintf("%s did not pass in %s; fix it, or share it as a draft (--draft)", name, evidence.Run.Name()))
@@ -584,11 +661,12 @@ func publicationProblems(evidence Evidence, accepted []string) []string {
 }
 
 // unmet is the first environment that can't build a target, when one
-// can't, and it has no result from an earlier check there either.
-func (e Evidence) unmet(target TargetEvidence) (model.Unmet, bool) {
-	for i, result := range target.Outcomes {
-		if result.Outcome == model.OutcomeUnmet {
-			return e.Plan.UnmetIn(e.Plan.Environments[i], target.Target.ID)
+// can't, and it has no result from an earlier check there either, as the
+// plan that found it says.
+func (t TargetEvidence) unmet() (model.Unmet, bool) {
+	for _, c := range t.Outcomes {
+		if c.Kind == CellUnmet {
+			return c.Unmet, true
 		}
 	}
 	return model.Unmet{}, false
@@ -602,10 +680,4 @@ func kindWords(target model.PlanTarget) string {
 		return "revision bump only"
 	}
 	return "changed"
-}
-
-// Excluded reports whether the plan leaves a target out in an environment,
-// where it is not built and not required to pass.
-func Excluded(plan model.Plan, target model.PlanTarget, environment model.Environment) bool {
-	return plan.Excludes(target, environment)
 }

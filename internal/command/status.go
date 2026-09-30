@@ -225,12 +225,11 @@ func attentionFor(s engine.BranchStatus) []attention {
 	case model.RunPassed:
 		var unchecked, remade []string
 		var environment model.Environment
-		for _, target := range s.Evidence.Unchecked() {
+		for _, target := range s.Evidence.Missing() {
 			switch {
-			case target.Target.Role == model.Also:
-			case len(target.Remade) > 0:
+			case len(target.Remade()) > 0:
 				remade = append(remade, target.Target.Target.Name)
-				environment = target.Remade[0]
+				environment = target.Remade()[0]
 			default:
 				unchecked = append(unchecked, target.Target.Target.Name)
 			}

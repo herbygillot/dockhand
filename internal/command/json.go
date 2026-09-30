@@ -303,11 +303,10 @@ func evidenceView(evidence engine.Evidence) []targetJSON {
 		view := targetView(evidence.Plan, target.Target)
 		passed := target.Passed
 		view.Passed = &passed
-		for i, result := range target.Outcomes {
-			environment := evidence.Plan.Environments[i]
+		for _, result := range target.Outcomes {
 			view.Results = append(view.Results, resultJSON{Outcome: string(result.Outcome), Phase: string(result.Phase), Tests: string(result.Tests), Log: result.Log, Detail: result.Detail, ReusedFrom: string(result.ReusedFrom),
 				Builders: builderViews(result.Builders),
-				Excluded: engine.Excluded(evidence.Plan, target.Target, environment), Remade: slices.Contains(target.Remade, environment)})
+				Excluded: result.Kind == engine.CellExcluded, Remade: result.Kind == engine.CellRemade})
 		}
 		targets = append(targets, view)
 	}

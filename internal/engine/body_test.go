@@ -119,8 +119,8 @@ func TestLogDirectoriesNameTheMacOSRelease(t *testing.T) {
 // architecture review of 2026-09-27, finding 1.)
 func TestTimedOutTestsAreNotPassing(t *testing.T) {
 	evidence := Evidence{Plan: model.Plan{Environments: []model.Environment{{Provider: "command"}}}, Targets: []TargetEvidence{
-		{Target: model.PlanTarget{ID: "jq", Target: model.Target{Name: "jq"}}, Passed: true, Outcomes: []model.TargetResult{{Outcome: model.OutcomePassed, Tests: model.TestsPassed}}},
-		{Target: model.PlanTarget{ID: "libharbor", Target: model.Target{Name: "libharbor"}}, Passed: true, Outcomes: []model.TargetResult{{Outcome: model.OutcomePassed, Tests: model.TestsTimedOut}}},
+		{Target: model.PlanTarget{ID: "jq", Target: model.Target{Name: "jq"}}, Passed: true, Outcomes: cells([]model.TargetResult{{Outcome: model.OutcomePassed, Tests: model.TestsPassed}})},
+		{Target: model.PlanTarget{ID: "libharbor", Target: model.Target{Name: "libharbor"}}, Passed: true, Outcomes: cells([]model.TargetResult{{Outcome: model.OutcomePassed, Tests: model.TestsTimedOut}})},
 	}}
 	body := ownedSections(bodyFacts{Evidence: &evidence})
 	require.Contains(t, body, "- [ ] tried existing tests")
@@ -145,7 +145,7 @@ func TestEachReportNamesTheRunsThatMadeIt(t *testing.T) {
 		for i, id := range executions {
 			e.Executions[id] = runs[id]
 			e.Targets = append(e.Targets, TargetEvidence{Target: model.PlanTarget{ID: model.TargetID(fmt.Sprint("port", i))},
-				Outcomes: []model.TargetResult{{Execution: id, Outcome: model.OutcomePassed}}})
+				Outcomes: cells([]model.TargetResult{{Execution: id, Outcome: model.OutcomePassed}})})
 		}
 		return e
 	}
@@ -180,7 +180,7 @@ func TestAnExcludedEnvironmentIsNotCalledTested(t *testing.T) {
 			{Environment: monterey, Exclusions: []model.Exclusion{{Target: target.Target, Reason: "known_fail"}}},
 			{Environment: tahoe, Order: []model.TargetID{target.ID}},
 		}},
-		Targets:    []TargetEvidence{{Target: target, Passed: true, Outcomes: []model.TargetResult{{Outcome: model.OutcomeNotRun}, {Execution: "tart_b", Outcome: model.OutcomePassed}}}},
+		Targets:    []TargetEvidence{{Target: target, Passed: true, Outcomes: []Cell{noResult(CellExcluded, monterey, target.ID), recorded(tahoe, model.TargetResult{Execution: "tart_b", Outcome: model.OutcomePassed})}}},
 		Executions: map[model.ExecutionID]model.GuestExecution{"tart_b": {ID: "tart_b", Run: "run_21", Observed: model.Observed{MacOS: "26.6", Xcode: "26.6"}}},
 	}
 	require.False(t, evidence.Tested(0))

@@ -10,15 +10,15 @@ import "github.com/herbygillot/dockhand/internal/model"
 // evaluate. Reading says how the tests counted, "advisory" when empty
 // (Evidence.testsReading). Accepted marks a failure submit --accept
 // acknowledged.
-func targetWords(plan model.Plan, target model.PlanTarget, environment model.Environment, result model.TargetResult, reading string, accepted bool) string {
+func targetWords(plan model.Plan, target model.PlanTarget, result Cell, reading string, accepted bool) string {
 	if reading == "" {
 		reading = "advisory"
 	}
-	if Excluded(plan, target, environment) {
+	switch result.Kind {
+	case CellExcluded:
 		return "— excluded"
-	}
-	if unmet, ok := plan.UnmetIn(environment, target.ID); ok {
-		return "· not built: " + UnmetWords(unmet)
+	case CellUnmet:
+		return "· not built: " + UnmetWords(result.Unmet)
 	}
 	var words string
 	switch result.Outcome {

@@ -177,8 +177,8 @@ func TestStatusSaysAnEnvironmentWasMadeAgain(t *testing.T) {
 	latest := model.Run{Number: 3, State: model.RunPassed}
 	status := engine.BranchStatus{Branch: model.Branch{Name: "dockhand/jq-update"}, Latest: &latest, Current: true,
 		Evidence: &engine.Evidence{Targets: []engine.TargetEvidence{
-			{Target: model.PlanTarget{Target: model.Target{Name: "jq"}, Role: model.Changed}, Unchecked: true, Remade: []model.Environment{arm}},
-			{Target: model.PlanTarget{Target: model.Target{Name: "oniguruma"}, Role: model.Also}, Unchecked: true, Remade: []model.Environment{arm}},
+			{Target: model.PlanTarget{Target: model.Target{Name: "jq"}, Role: model.Changed}, Unchecked: true, Outcomes: []engine.Cell{{Kind: engine.CellRemade, Environment: arm}}},
+			{Target: model.PlanTarget{Target: model.Target{Name: "oniguruma"}, Role: model.Also}, Unchecked: true, Outcomes: []engine.Cell{{Kind: engine.CellRemade, Environment: arm}}},
 		}}}
 	rows := attentionFor(status)
 	require.Len(t, rows, 1)
