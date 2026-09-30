@@ -572,6 +572,10 @@ Changed:
 
   `VerifierProtocol` 2 ends the standing and reuse of every result the old guest recorded.
 - **Finding 4 narrows the txt run's finding 2,** batch 18's second item: the question comes only with `check --branch` from another checkout, which the item already says.
+- **The fix was confirmed live** by check-54: all three of s2n-tls's builds cleaned, configured, built, and staged, with no archive fetched. Its three notes on status after the protocol change:
+  - the reason said the image was made again, when dockhand's building changed: a provider now says what changed where it can (`buildenv.IdentityExplainer`), as Tart says a new guest protocol, and status and submit use its words;
+  - the CHECKS column said "passed for this commit" while the attention list asked for another check: it says "passed, but needs another check" now. Both fixed the same day ([note](activity/2026-09-30-targets-built-from-source.md));
+  - declined, as the run offered it only as an option: keeping results whose logs show a build. A log's text isn't a documented MacPorts interface, and checking again is the one-time cost of a change that has already happened.
 
 **The roadmap's smaller items were re-batched on 2026-09-29,** after batches 1 to 3: by area and in order, rather than by the run that found each, which the done items keep.
 

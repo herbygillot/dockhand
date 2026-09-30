@@ -170,8 +170,8 @@ func TestAResultStandsOnlyWhileItsEnvironmentDoes(t *testing.T) {
 
 	provider.identity = "source sha256:b; setup 1"
 	remade := blocking()
-	require.Contains(t, remade, "jq was checked in "+DescribeEnvironment(tahoeArm)+" before it was made again")
-	require.Contains(t, remade, "libharbor was checked in")
+	require.Contains(t, remade, "jq's check no longer stands: since it, "+DescribeEnvironment(tahoeArm)+" was made again")
+	require.Contains(t, remade, "libharbor's check no longer stands")
 	passing, err := e.PassingBranches(t.Context())
 	require.NoError(t, err)
 	require.Empty(t, passing.Ready, "submit --passing and serve don't count it as passing")
@@ -182,7 +182,7 @@ func TestAResultStandsOnlyWhileItsEnvironmentDoes(t *testing.T) {
 	checkHead(t, e, branch, "jq")
 	remade = blocking()
 	require.NotContains(t, remade, "jq")
-	require.Contains(t, remade, "libharbor was checked in "+DescribeEnvironment(tahoeArm)+" before it was made again")
+	require.Contains(t, remade, "libharbor's check no longer stands: since it, "+DescribeEnvironment(tahoeArm)+" was made again")
 	checkHead(t, e, branch, "libharbor")
 	require.Empty(t, blocking(), "the two narrowed checks together stand for the environment as it is now")
 }
@@ -342,4 +342,36 @@ func TestARemadeCellIsMissing(t *testing.T) {
 	require.True(t, evidence.Targets[0].Passed)
 	require.Empty(t, evidence.Targets[0].Remade())
 	require.False(t, evidence.missing())
+}
+
+// explained is an identified provider that says what changed between two
+// of its identities, as Tart says a new guest protocol.
+type explained struct{ *identified }
+
+func (explained) IdentityChange(_ model.Environment, recorded, now string) string {
+	return "dockhand has begun to build otherwise, from " + recorded + " to " + now
+}
+
+// Where a result no longer stands because its environment changed, the
+// provider's words say what changed, in submit's problem and on the
+// evidence's cell, rather than that the environment was made again (the
+// s2n-tls run's note 1).
+func TestTheProviderSaysWhatChangedInAnEnvironment(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := twoPortBranch(t, e)
+	provider := explained{&identified{identity: "verifier 1"}}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	checkHead(t, e, branch)
+	provider.identity = "verifier 2"
+	submission, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq, libharbor: update"})
+	require.NoError(t, err)
+	require.Contains(t, strings.Join(submission.Blocking, "\n"),
+		"jq's check no longer stands: since it, on "+DescribeEnvironment(tahoeArm)+", dockhand has begun to build otherwise, from verifier 1 to verifier 2; dockhand check builds it there again")
+	evidence, _, err := e.EvidenceFor(t.Context(), branch.ID, model.ObjectID(run(t, branch.Worktree, "rev-parse", "HEAD^{tree}")))
+	require.NoError(t, err)
+	cell := evidence.Targets[0].Outcomes[0]
+	require.Equal(t, CellRemade, cell.Kind)
+	require.Equal(t, "verifier 1", cell.Recorded)
 }

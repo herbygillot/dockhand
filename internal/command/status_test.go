@@ -182,7 +182,14 @@ func TestStatusSaysAnEnvironmentWasMadeAgain(t *testing.T) {
 		}}}
 	rows := attentionFor(status)
 	require.Len(t, rows, 1)
-	require.Equal(t, "check-3 passed, but "+engine.DescribeEnvironment(arm)+" has been made again since, from another source or with other tools; jq must be built there again", rows[0].what)
+	require.Equal(t, "check-3 passed, but since then "+engine.DescribeEnvironment(arm)+" was made again, from another source or with other tools; jq must be built there again", rows[0].what)
+	require.Equal(t, "passed, but needs another check", checkState(status), "the table agrees")
+
+	// Where the provider can say what changed, as Tart says a new guest
+	// protocol, it's said: the image is the one it was (the s2n-tls run).
+	status.Evidence.Targets[0].Outcomes[0].Change = "dockhand has begun to build each target from its source, never from a published archive, and from clean work"
+	rows = attentionFor(status)
+	require.Equal(t, "check-3 passed, but since then on "+engine.DescribeEnvironment(arm)+", dockhand has begun to build each target from its source, never from a published archive, and from clean work; jq must be built there again", rows[0].what)
 	require.Equal(t, "dockhand check --branch jq-update", rows[0].next)
 }
 

@@ -227,6 +227,32 @@ func (p *Provider) Identity(_ context.Context, environment model.Environment) (s
 	return fmt.Sprintf("%s; verifier %d", manifest.Origin(), VerifierProtocol), nil
 }
 
+// verifierChanges are what each guest protocol changed in how it builds,
+// for a person told why an earlier result doesn't stand.
+var verifierChanges = map[int]string{
+	2: "has begun to build each target from its source, never from a published archive, and from clean work",
+}
+
+// IdentityChange says what changed between two of an environment's
+// identities where only its guest protocol did: the image is the one it
+// was, and dockhand builds in it otherwise now (buildenv.IdentityExplainer).
+// A changed image is left for the engine to say.
+func (p *Provider) IdentityChange(_ model.Environment, recorded, now string) string {
+	recordedImage, recordedProtocol, ok := strings.Cut(recorded, "; verifier ")
+	nowImage, nowProtocol, nowOK := strings.Cut(now, "; verifier ")
+	if !ok || !nowOK || recordedImage != nowImage || recordedProtocol == nowProtocol {
+		return ""
+	}
+	protocol, err := strconv.Atoi(nowProtocol)
+	if err != nil {
+		return ""
+	}
+	if change, known := verifierChanges[protocol]; known {
+		return "dockhand " + change
+	}
+	return "dockhand has begun to build otherwise"
+}
+
 // Storage is dockhand's Tart home, where Tart keeps the vanilla images
 // setup pulled (buildenv.CacheProvider).
 func (p *Provider) Storage() (string, error) {

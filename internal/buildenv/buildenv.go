@@ -166,6 +166,14 @@ type IdentityProvider interface {
 	Identity(ctx context.Context, environment model.Environment) (string, error)
 }
 
+// An IdentityExplainer says, in words for a person, what changed between
+// an identity it recorded and its identity now, as a clause ("dockhand
+// has begun to build each target from its source"), or nothing where it
+// can't say, and the engine says the environment was made again.
+type IdentityExplainer interface {
+	IdentityChange(environment model.Environment, recorded, now string) string
+}
+
 // A LeftoverProvider makes environments that can outlast the process that
 // made them, as a Tart clone does when the process checking in it dies and
 // no later attempt of its run comes to remove it. It lists them, each by

@@ -38,3 +38,12 @@ check-53 printed "s2n-tls +tests ✓" of 284 required tests that passed. A targe
 - `TestTheGuestBuildsEachTargetInCIsOrder` covers the clean, and `-dkns` for the target's install.
 - `TestTheVerifierProtocolCoversTheGuestProgram` and `TestAnEnvironmentsIdentityIsItsImagesOrigin` cover protocol 2.
 - `TestTargetWordsAreDesignV3s` covers "✓ tests passed".
+
+## After it: status says what changed
+
+The run confirmed the fix live: check-54 cleaned, configured, built, and staged each of s2n-tls's three builds, and fetched no archive. It then noted what status said about the results the protocol change set aside:
+- **The reason.** Status said the image had been "made again, from another source or with other tools", which it hadn't: dockhand's building had changed. A provider may now say what changed between an identity it recorded and its identity now (`buildenv.IdentityExplainer`). Tart says so where only its guest protocol moved, and the evidence cell keeps the identity its result was recorded under, so status and submit can say it: "check-50 passed, but since then on tart macOS 26 (Tahoe) arm64 with Xcode, dockhand has begun to build each target from its source, never from a published archive, and from clean work; txt must be built there again". Elsewhere, the environment was made again, as before.
+- **The table.** Its CHECKS column said "passed for this commit" while the attention list asked for another check. A passed check whose results don't all stand now reads "passed, but needs another check".
+- **Keeping results whose logs show a build.** The run's third note offered this as an option, and it's declined. A log's text isn't a documented MacPorts interface, and checking again is a one-time cost.
+
+Tests: `TestAChangedIdentitySaysWhatChanged` (Tart), `TestTheProviderSaysWhatChangedInAnEnvironment` (engine), and `TestStatusSaysAnEnvironmentWasMadeAgain`, which now covers the column too.

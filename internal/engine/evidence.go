@@ -42,6 +42,10 @@ type Cell struct {
 	Environment model.Environment
 	// Unmet is why the environment can't build the target, for CellUnmet.
 	Unmet model.Unmet
+	// Recorded is the environment's identity when its result was recorded,
+	// for CellRemade, and Change what's other now, in a person's words
+	// (RemadeWords).
+	Recorded, Change string
 }
 
 // recorded is a result recorded in an environment, as a cell: one that
@@ -89,6 +93,23 @@ func (t TargetEvidence) Remade() []model.Environment {
 		}
 	}
 	return remade
+}
+
+// RemadeWords says what changed in the first environment where the
+// target's result was recorded before it changed: its provider's words
+// where it can say (buildenv.IdentityExplainer), as Tart says a new guest
+// protocol, and otherwise that the environment was made again.
+func (t TargetEvidence) RemadeWords() string {
+	for _, c := range t.Outcomes {
+		if c.Kind != CellRemade {
+			continue
+		}
+		if c.Change != "" {
+			return "on " + DescribeEnvironment(c.Environment) + ", " + c.Change
+		}
+		return DescribeEnvironment(c.Environment) + " was made again, from another source or with other tools"
+	}
+	return ""
 }
 
 // Extra reports a target from --also. It is the one rule for an extra that
@@ -423,6 +444,18 @@ func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []mode
 		evidence, err = treeEvidence(r, primary, runs, now)
 		return err
 	})
+	// What changed where a result no longer stands is its provider's to
+	// say, outside the transaction, as identities are read.
+	for t := range evidence.Targets {
+		for i, c := range evidence.Targets[t].Outcomes {
+			if c.Kind != CellRemade || c.Recorded == "" {
+				continue
+			}
+			if explainer, ok := e.Providers[c.Environment.Provider].(buildenv.IdentityExplainer); ok {
+				evidence.Targets[t].Outcomes[i].Change = explainer.IdentityChange(c.Environment, c.Recorded, now[c.Environment])
+			}
+		}
+	}
 	return evidence, err
 }
 
@@ -556,6 +589,7 @@ func (e *Evidence) dropRemade() {
 				continue
 			}
 			target.Outcomes[i] = noResult(CellRemade, result.Environment, result.Target)
+			target.Outcomes[i].Recorded = execution.Identity
 		}
 	}
 }
@@ -587,7 +621,7 @@ func (e *Evidence) fill(earlier Evidence) bool {
 			}
 			if found.Kind != CellRecorded && found.Kind != CellUnmet || !Counts(earlier.Plan, execution, target.Target.ID, e.now[environment]) {
 				if found.Kind == CellRecorded && !current(execution, e.now[environment]) {
-					target.Outcomes[i].Kind = CellRemade
+					target.Outcomes[i].Kind, target.Outcomes[i].Recorded = CellRemade, execution.Identity
 				}
 				continue
 			}
@@ -648,7 +682,7 @@ func publicationProblems(evidence Evidence, accepted []string) []string {
 			problems = append(problems, fmt.Sprintf("%s %s, which %s hasn't; a check with %s there builds it, or share the branch as a draft (--draft)",
 				name, UnmetWords(unmet), DescribeEnvironment(unmet.Environment), unmet.Needs))
 		case len(remade) > 0 && target.Missing():
-			problems = append(problems, fmt.Sprintf("%s was checked in %s before it was made again, from another source or with other tools; dockhand check builds it there again, or share the branch as a draft (--draft)", name, DescribeEnvironment(remade[0])))
+			problems = append(problems, fmt.Sprintf("%s's check no longer stands: since it, %s; dockhand check builds it there again, or share the branch as a draft (--draft)", name, target.RemadeWords()))
 		case target.Missing():
 			problems = append(problems, fmt.Sprintf("%s is changed, and no check of these files built it everywhere it's required; dockhand check builds it, or share the branch as a draft (--draft)", name))
 		case !Acceptable(target.Target):

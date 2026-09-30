@@ -60,3 +60,18 @@ func TestTheVerifierProtocolCoversTheGuestProgram(t *testing.T) {
 	require.Equal(t, 2, VerifierProtocol)
 	require.Equal(t, guestPin, hex.EncodeToString(sum[:]), "guest.tcl changed: raise VerifierProtocol if ports are built or judged otherwise, or update guestPin if not")
 }
+
+// Where only the guest protocol changed, the image is the one it was, and
+// what's other is how dockhand builds in it, which Tart says; a changed
+// image, or an identity it doesn't know, is left for the engine to say
+// (the s2n-tls run's note 1).
+func TestAChangedIdentitySaysWhatChanged(t *testing.T) {
+	p := &Provider{}
+	image := "source sha256:eeec; setup 3; macports 2.12.6; tools 26.6"
+	require.Equal(t, "dockhand has begun to build each target from its source, never from a published archive, and from clean work",
+		p.IdentityChange(model.Environment{}, image+"; verifier 1", image+"; verifier 2"))
+	require.Equal(t, "dockhand has begun to build otherwise", p.IdentityChange(model.Environment{}, image+"; verifier 2", image+"; verifier 9"))
+	require.Empty(t, p.IdentityChange(model.Environment{}, image+"; verifier 1", "source sha256:ffff; setup 3; macports 2.12.6; tools 26.6; verifier 2"), "another image")
+	require.Empty(t, p.IdentityChange(model.Environment{}, image+"; verifier 2", image+"; verifier 2"))
+	require.Empty(t, p.IdentityChange(model.Environment{}, "", image+"; verifier 2"))
+}

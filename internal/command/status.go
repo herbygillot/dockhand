@@ -224,19 +224,19 @@ func attentionFor(s engine.BranchStatus) []attention {
 		return row("!", run.Name()+" needs attention: "+run.Detail, "dockhand logs "+run.Name())
 	case model.RunPassed:
 		var unchecked, remade []string
-		var environment model.Environment
+		var why string
 		for _, target := range s.Evidence.Missing() {
 			switch {
 			case len(target.Remade()) > 0:
 				remade = append(remade, target.Target.Target.Name)
-				environment = target.Remade()[0]
+				why = target.RemadeWords()
 			default:
 				unchecked = append(unchecked, target.Target.Target.Name)
 			}
 		}
 		switch {
 		case len(remade) > 0:
-			return row("!", fmt.Sprintf("%s passed, but %s has been made again since, from another source or with other tools; %s must be built there again", run.Name(), environmentWords(environment), strings.Join(remade, ", ")), "dockhand check --branch "+name)
+			return row("!", fmt.Sprintf("%s passed, but since then %s; %s must be built there again", run.Name(), why, strings.Join(remade, ", ")), "dockhand check --branch "+name)
 		case len(unchecked) > 0:
 			return row("!", fmt.Sprintf("%s passed, but no check of these files built %s", run.Name(), strings.Join(unchecked, ", ")), "dockhand check --branch "+name)
 		case len(s.Edited) > 0:
@@ -333,6 +333,11 @@ func checkState(s engine.BranchStatus) string {
 	}
 	switch s.Latest.State {
 	case model.RunPassed:
+		// A passed check whose results no longer all stand, as after its
+		// environment changed, isn't a pass for the branch now.
+		if s.Evidence != nil && len(s.Evidence.Missing()) > 0 {
+			return "passed, but needs another check"
+		}
 		// A check of the working files that tidy then committed unchanged
 		// checked the commit's files, as submit credits it.
 		if s.Current && (s.LatestRevision.Kind == model.RevisionCommit || s.Commits > 0 && len(s.Edited) == 0) {
