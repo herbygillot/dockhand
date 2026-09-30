@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/distfiles"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -13,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -272,4 +274,88 @@ if {${os.major} >= 17} {
 		"archive bytes for /1.2.3/source-1.2.3.tar.gz": "archive bytes for /1.2.4/source-1.2.4.tar.gz",
 		"archive bytes for /1.2.3/binary-1.2.3.zip":    "archive bytes for /1.2.4/binary-1.2.4.zip",
 	}, pairs, "each context's archive beside its own replacement, once")
+}
+
+// A default variant's own distfile has its checksums updated with the
+// rest, as git's +doc declares git-htmldocs' with checksums-append in its
+// body, which dockhand couldn't locate (the git run's finding 1).
+func TestAnUpdateWritesADefaultVariantsChecksums(t *testing.T) {
+	t.Parallel()
+	s, r, requests := archiveFixture(t, `version 1.2.3
+master_sites @SITE@/${version}
+distfiles fixture-${version}.tar.gz
+checksums fixture-${version}.tar.gz sha256 aaaa size 2
+default_variants +doc
+variant doc description {Install documentation} {
+    distfiles-append    fixture-doc-${version}.tar.gz
+    checksums-append    fixture-doc-${version}.tar.gz \
+                        sha256  bbbb \
+                        size    3
+}
+`)
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"/1.2.4/fixture-1.2.4.tar.gz", "/1.2.4/fixture-doc-1.2.4.tar.gz"}, *requests)
+	after := string(result.Files[0].After)
+	doc := "archive bytes for /1.2.4/fixture-doc-1.2.4.tar.gz"
+	require.Contains(t, after, fmt.Sprintf("    checksums-append    fixture-doc-${version}.tar.gz \\\n                        sha256  %x \\\n                        size    %d\n", sha256.Sum256([]byte(doc)), len(doc)))
+	require.NotContains(t, after, "bbbb")
+	require.NotContains(t, after, "aaaa")
+}
+
+// A variant that isn't on by default and declares an archive of its own
+// has its checksums updated too, observed asked for on this Mac, or the
+// Portfile would keep the old version's for it.
+func TestAnUpdateWritesAVariantsChecksumsWhenItIsntDefault(t *testing.T) {
+	t.Parallel()
+	s, r, requests := archiveFixture(t, `version 1.2.3
+master_sites @SITE@/${version}
+distfiles fixture-${version}.tar.gz
+checksums fixture-${version}.tar.gz sha256 aaaa size 2
+variant extra description {Install the extras} {
+    distfiles-append    fixture-extra-${version}.tar.gz
+    checksums-append    fixture-extra-${version}.tar.gz sha256 bbbb size 3
+}
+variant quiet description {Nothing to fetch} {}
+`)
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"/1.2.4/fixture-1.2.4.tar.gz", "/1.2.4/fixture-extra-1.2.4.tar.gz"}, *requests)
+	extra := "archive bytes for /1.2.4/fixture-extra-1.2.4.tar.gz"
+	require.Contains(t, string(result.Files[0].After), fmt.Sprintf("checksums-append    fixture-extra-${version}.tar.gz sha256 %x size %d\n", sha256.Sum256([]byte(extra)), len(extra)))
+	require.NotContains(t, string(result.Files[0].After), "bbbb")
+	require.True(t, slices.ContainsFunc(result.Coverage, func(c ContextCoverage) bool { return c.Variant == "extra" && c.Affected && !c.Modeled }), "the variant's context is named")
+	require.False(t, slices.ContainsFunc(result.Coverage, func(c ContextCoverage) bool { return c.Variant == "quiet" }), "one fetching nothing of its own isn't asked about")
+}
+
+// A checksum refresh that can't find a declaration to edit returns the
+// checksums every archive has now, for a person to write, where it had
+// said only why (the git run's finding 3).
+func TestARefreshThatCantWriteReturnsTheChecksums(t *testing.T) {
+	t.Parallel()
+	s, r, _ := archiveFixture(t, `version 1.2.3
+master_sites @SITE@/${version}
+distfiles fixture-${version}.tar.gz fixture-doc-${version}.tar.gz
+checksums fixture-${version}.tar.gz sha256 aaaa size 2
+eval checksums-append fixture-doc-${version}.tar.gz sha256 bbbb size 3
+variant extra description {Install the extras} {
+    distfiles-append fixture-extra-${version}.tar.gz
+    checksums-append fixture-extra-${version}.tar.gz sha256 cccc size 4
+}
+`)
+	r.Action, r.Version, r.Release = model.EditChecksums, "", nil
+	_, err := s.Prepare(t.Context(), r)
+	var toWrite *ChecksumsToWrite
+	require.ErrorAs(t, err, &toWrite)
+	var unlocated *distfiles.Unlocated
+	require.ErrorAs(t, err, &unlocated, "the reason stays reachable")
+	var names []string
+	for _, sum := range toWrite.Checksums {
+		body := "archive bytes for /1.2.3/" + sum.Name
+		require.Equal(t, fmt.Sprintf("%x", sha256.Sum256([]byte(body))), sum.SHA256)
+		require.Equal(t, int64(len(body)), sum.Size)
+		require.NotEmpty(t, sum.RMD160)
+		names = append(names, sum.Name)
+	}
+	require.Equal(t, []string{"fixture-1.2.3.tar.gz", "fixture-doc-1.2.3.tar.gz", "fixture-extra-1.2.3.tar.gz"}, names, "each archive once, a variant's own included")
 }

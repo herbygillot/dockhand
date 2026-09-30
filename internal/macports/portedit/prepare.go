@@ -65,6 +65,9 @@ type Fidelity = fidelity.Report
 type ContextCoverage struct {
 	Fetch    *macports.FetchSemantics `json:",omitempty"`
 	Platform model.Platform
+	// Variant is the variant asked for in a variant's context, one whose
+	// body declares archives of its own.
+	Variant  string `json:",omitempty"`
 	Modeled  bool
 	Affected bool
 }

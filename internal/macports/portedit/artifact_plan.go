@@ -11,11 +11,16 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/progress"
 )
 
 type archiveContext struct {
-	profile       model.Platform
+	profile model.Platform
+	// variant is the variant asked for in a variant's context, observed
+	// with session; empty for a profile's, observed as the input's.
+	variant       string
+	session       *observe.Session
 	before, after macports.Snapshot
 	binding       distfiles.Binding
 	affected      bool
@@ -78,49 +83,49 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 	if err != nil {
 		return nil, fmt.Errorf("%w: observing candidate %v", errProbeInconclusive, err)
 	}
-	for i, profile := range profiles {
-		progress.DebugReport(ctx, "Checking archive context %s %s %s", profile.OS, profile.Version, profile.Architecture)
-		before, after := befores[i], afters[i]
+	// observeContext checks one context's baseline and candidate, and plans
+	// what it fetches: a profile's, or a variant's on this Mac.
+	observeContext := func(profile model.Platform, variant string, session *observe.Session, before, after macports.Observation) error {
 		old, next := before.Snapshot.Ports[input.target.Name], after.Snapshot.Ports[input.target.Name]
 		if obsoleteIn(old) && obsoleteIn(next) {
 			// The port is an obsolete follower in this context, with no
 			// archive of its own; the context adds no requirement.
 			progress.VerboseReport(ctx, "%s is obsolete on %s %s %s; no archive to cover there", input.target.Name, profile.OS, profile.Version, profile.Architecture)
-			continue
+			return nil
 		}
 		affected := old.Version != next.Version
 		if next.Fetch != nil && next.Fetch.Rejected {
 			progress.VerboseReport(ctx, "Preserving rejection-only fetch guard for %s %s %s; archive coverage does not establish build support", profile.OS, profile.Version, profile.Architecture)
 		}
 		if affected && (old.Version != input.info.Version || next.Version != request.Release.Version) {
-			return nil, fmt.Errorf("%w: candidate changed an independent version on %+v", ErrFidelity, profile)
+			return fmt.Errorf("%w: candidate changed an independent version on %+v", ErrFidelity, profile)
 		}
 		if !affected {
 			if err := fidelity.Equivalent(before.Snapshot, after.Snapshot); err != nil {
-				return nil, fmt.Errorf("protected context %+v: %w", profile, err)
+				return fmt.Errorf("protected context %+v: %w", profile, err)
 			}
 		} else {
 			report := fidelity.ScopedVersion(request.SharedRelease, before.Snapshot, after.Snapshot, input.target.Name, *request.Release, next.Options["checksums"])
 			if len(report.UnexpectedChanges) > 0 {
-				return nil, fmt.Errorf("%w: context %+v: %v", ErrFidelity, profile, report.UnexpectedChanges)
+				return fmt.Errorf("%w: context %+v: %v", ErrFidelity, profile, report.UnexpectedChanges)
 			}
 		}
 		oldBinding, err := s.bindArchives(ctx, input, input.data, before)
 		if err != nil {
-			return nil, fmt.Errorf("baseline %+v: %w", profile, err)
+			return fmt.Errorf("baseline %+v: %w", profile, err)
 		}
 		binding, err := s.bindArchives(ctx, input, contents, after)
 		if err != nil {
-			return nil, fmt.Errorf("candidate %+v: %w", profile, err)
+			return fmt.Errorf("candidate %+v: %w", profile, err)
 		}
 		if err := s.checkSharedArchiveOwners(ctx, input, input.data, before, oldBinding); err != nil {
-			return nil, err
+			return err
 		}
 		if err := s.checkSharedArchiveOwners(ctx, input, contents, after, binding); err != nil {
-			return nil, err
+			return err
 		}
 		if len(oldBinding.Groups) != len(binding.Groups) || len(oldBinding.Artifacts) != len(binding.Artifacts) {
-			return nil, fmt.Errorf("%w: candidate changed archive/checksum structure", ErrFidelity)
+			return fmt.Errorf("%w: candidate changed archive/checksum structure", ErrFidelity)
 		}
 		oldGroups := map[string]distfiles.Group{}
 		for _, group := range oldBinding.Groups {
@@ -129,11 +134,11 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 		for _, group := range binding.Groups {
 			previous, ok := oldGroups[group.ID()]
 			if !ok || len(previous.Values) != len(group.Values) {
-				return nil, fmt.Errorf("%w: candidate activated different checksum declarations", ErrFidelity)
+				return fmt.Errorf("%w: candidate activated different checksum declarations", ErrFidelity)
 			}
 			for algorithm, value := range group.Values {
 				if previous.Values[algorithm].Value != value.Value {
-					return nil, fmt.Errorf("%w: candidate changed checksum literals", ErrFidelity)
+					return fmt.Errorf("%w: candidate changed checksum literals", ErrFidelity)
 				}
 			}
 			if !affected {
@@ -150,17 +155,17 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 			coverage.cover(artifact)
 			previous, ok := oldFiles[id]
 			if !ok {
-				return nil, fmt.Errorf("%w: candidate changed archive ownership", ErrFidelity)
+				return fmt.Errorf("%w: candidate changed archive ownership", ErrFidelity)
 			}
 			if slices.Equal(previous.URLs, artifact.URLs) {
 				protected[id] = true
 				if previous.Name != artifact.Name {
-					return nil, fmt.Errorf("%w: filename changed without fetch location", ErrFidelity)
+					return fmt.Errorf("%w: filename changed without fetch location", ErrFidelity)
 				}
 				continue
 			}
 			if !affected {
-				return nil, fmt.Errorf("%w: protected artifact location changed", ErrFidelity)
+				return fmt.Errorf("%w: protected artifact location changed", ErrFidelity)
 			}
 			changed[id] = true
 			coverage.download(artifact, next)
@@ -169,7 +174,35 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 				plan.pairs = append(plan.pairs, archivePair{previous: previous, info: old, next: artifact.Name})
 			}
 		}
-		plan.contexts = append(plan.contexts, archiveContext{profile: profile, before: before.Snapshot, after: after.Snapshot, binding: binding, affected: affected})
+		plan.contexts = append(plan.contexts, archiveContext{profile: profile, variant: variant, session: session, before: before.Snapshot, after: after.Snapshot, binding: binding, affected: affected})
+		return nil
+	}
+	for i, profile := range profiles {
+		progress.DebugReport(ctx, "Checking archive context %s %s %s", profile.OS, profile.Version, profile.Architecture)
+		if err := observeContext(profile, "", input.observe, befores[i], afters[i]); err != nil {
+			return nil, err
+		}
+	}
+	// A variant runs its declarations only where it's asked for, so one
+	// whose body declares archives of its own, off by default, is observed
+	// asked for, on this Mac, and its archives are planned as a context's
+	// are: git-htmldocs is +doc's, and a variant nobody updated would keep
+	// the old version's checksums.
+	for _, variant := range portfile.ArchiveVariants(input.data) {
+		progress.DebugReport(ctx, "Checking archive context +%s", variant)
+		session := input.observe.WithVariants(map[string]bool{variant: true})
+		native := []model.Platform{input.before.Platform}
+		before, err := session.Observe(ctx, input.data, native, true, false)
+		if err != nil {
+			return nil, fmt.Errorf("%w: +%s declares archives of its own, and couldn't be observed: %v", ErrUnsupported, variant, err)
+		}
+		after, err := session.Observe(ctx, contents, native, true, false)
+		if err != nil {
+			return nil, fmt.Errorf("%w: +%s declares archives of its own, and couldn't be observed with the new version: %v", ErrUnsupported, variant, err)
+		}
+		if err := observeContext(input.before.Platform, variant, session, before[0], after[0]); err != nil {
+			return nil, fmt.Errorf("+%s: %w", variant, err)
+		}
 	}
 	if ids := coverage.uncovered(); len(ids) > 0 {
 		return nil, fmt.Errorf("%w: checksum declaration %s has no archive in the observed contexts", errProbeInconclusive, ids[0])

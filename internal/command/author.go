@@ -485,20 +485,35 @@ func announce(out io.Writer, branch model.Branch, started bool) {
 }
 
 // byHand says that dockhand can't make the edit by itself, why, and how
-// to make it by hand (Design v3 §6.3).
+// to make it by hand (Design v3 §6.3), with advice only where it can work:
+// checksums dockhand can't find in the Portfile to edit, it can't refresh
+// either, and prints instead. A plan changes nothing, so it keeps nothing.
 func byHand(err error, request engine.UpdateRequest, branch model.Branch, started bool) error {
 	reason := strings.TrimPrefix(err.Error(), engine.ErrUnsupported.Error()+": ")
-	kept := "the branch, unchanged"
-	if started {
-		kept = branch.Name + ", with nothing changed"
+	var unlocated *engine.Unlocated
+	if errors.As(err, &unlocated) {
+		reason = unlocated.Error()
 	}
-	switch request.Action {
-	case model.EditChecksums:
-		return fmt.Errorf("can't refresh %s's checksums by itself: %s\nKept: %s.\nWrite them yourself, as port checksum %s reports them:\n  dockhand edit %s",
-			request.Port, reason, kept, request.Port, request.Port)
+	kept := ""
+	switch {
+	case request.Plan:
+	case started:
+		kept = "\nKept: " + branch.Name + ", with nothing changed."
+	default:
+		kept = "\nKept: the branch, unchanged."
 	}
-	return fmt.Errorf("can't update %s by itself: %s\nKept: %s.\nEdit the version yourself; dockhand checksums %s then fills in the rest:\n  dockhand edit %s",
-		request.Port, reason, kept, request.Port, request.Port)
+	port := request.Port
+	var toWrite *engine.ChecksumsToWrite
+	switch {
+	case request.Action == model.EditChecksums && errors.As(err, &toWrite):
+		block := strings.ReplaceAll(portfile.ChecksumsBlock(toWrite.Checksums), "\n", "\n    ")
+		return fmt.Errorf("can't refresh %s's checksums by itself: %s%s\nWrite them yourself; its archives have these now:\n    %s\n  dockhand edit %s", port, reason, kept, block, port)
+	case request.Action == model.EditChecksums:
+		return fmt.Errorf("can't refresh %s's checksums by itself: %s%s\nWrite them yourself, as port checksum %s reports them:\n  dockhand edit %s", port, reason, kept, port, port)
+	case unlocated != nil:
+		return fmt.Errorf("can't update %s by itself: %s%s\nEdit the version yourself; dockhand checksums %s then prints the checksums to write:\n  dockhand edit %s", port, reason, kept, port, port)
+	}
+	return fmt.Errorf("can't update %s by itself: %s%s\nEdit the version yourself; dockhand checksums %s then fills in the rest:\n  dockhand edit %s", port, reason, kept, port, port)
 }
 
 // writeStealth shows each changed archive's checksums, before and after.

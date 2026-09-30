@@ -21,7 +21,32 @@ type Token struct {
 	// Portfile, such as a digest table read through lindex or an array
 	// element; Span then locates that occurrence.
 	Traced bool
+	// Unlocated is why the declaration the token belongs to couldn't be
+	// found in the Portfile, which leaves it not literal.
+	Unlocated error
 }
+
+// Unlocated is a checksum declaration dockhand can't find in the Portfile
+// to edit, with why: one a PortGroup makes, or a procedure the Portfile
+// calls. It is an unsupported edit, and says which archive's checksums it
+// is, so a refusal can name them rather than the words it couldn't edit.
+type Unlocated struct {
+	// Name is the archive the checksums are for; empty where the
+	// declaration names none, as a port with one archive's may not.
+	Name   string
+	Reason error
+}
+
+func (u *Unlocated) Error() string {
+	what := "the checksums"
+	if u.Name != "" {
+		what += " for " + u.Name
+	}
+	reason := strings.TrimPrefix(u.Reason.Error(), portfile.ErrUnsupported.Error()+": ")
+	return fmt.Sprintf("%s can't be found in the Portfile to edit: %s", what, reason)
+}
+
+func (u *Unlocated) Unwrap() error { return u.Reason }
 type Group struct {
 	Name   string
 	Values map[string]Token
@@ -92,7 +117,7 @@ func Bind(src []byte, path string, info macports.PortInfo, observed macports.Por
 		}
 		tokens := make([]Token, len(declaration.Values))
 		for i, value := range declaration.Values {
-			tokens[i].Value = value
+			tokens[i].Value, tokens[i].Unlocated = value, err
 			if err == nil && len(cmd.Words) == len(tokens)+1 {
 				word := cmd.Words[i+1]
 				literal, ok := word.Literal(src)
@@ -132,10 +157,16 @@ func Bind(src []byte, path string, info macports.PortInfo, observed macports.Por
 		}
 		for i < len(result.Tokens) && portfile.IsChecksumKind(result.Tokens[i].Value) {
 			kind := result.Tokens[i]
+			if kind.Unlocated != nil {
+				return result, &Unlocated{Name: group.Name, Reason: kind.Unlocated}
+			}
 			if !kind.Literal || i+1 >= len(result.Tokens) {
 				return result, fmt.Errorf("%w: calculated checksum algorithm", portfile.ErrUnsupported)
 			}
 			value := result.Tokens[i+1]
+			if value.Unlocated != nil {
+				return result, &Unlocated{Name: group.Name, Reason: value.Unlocated}
+			}
 			if !value.Literal {
 				return result, fmt.Errorf("%w: checksum value has no unique literal owner", portfile.ErrUnsupported)
 			}

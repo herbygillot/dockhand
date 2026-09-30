@@ -3,6 +3,7 @@ package observe
 import (
 	"context"
 	"errors"
+	"maps"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
@@ -43,6 +44,24 @@ type Session struct {
 // far.
 func (s *Session) WithBaseline(contents []byte) *Session {
 	return &Session{Ports: s.Ports, Primary: s.Primary, Target: s.Target, Native: s.Native, Baseline: contents, Project: s.Project, operands: append([]string(nil), s.operands...)}
+}
+
+// WithVariants is a session whose targets ask for these variants, as
+// "port install +doc" would, with its own cache, since what a variant
+// declares is observed only where it's asked for. The baseline and the
+// operands found so far are kept.
+func (s *Session) WithVariants(variants map[string]bool) *Session {
+	primary, target := s.Primary, s.Target
+	primary.Variants, target.Variants = maps.Clone(primary.Variants), maps.Clone(target.Variants)
+	if primary.Variants == nil {
+		primary.Variants = map[string]bool{}
+	}
+	if target.Variants == nil {
+		target.Variants = map[string]bool{}
+	}
+	maps.Copy(primary.Variants, variants)
+	maps.Copy(target.Variants, variants)
+	return &Session{Ports: s.Ports, Primary: primary, Target: target, Native: s.Native, Baseline: s.Baseline, Project: s.Project, operands: append([]string(nil), s.operands...)}
 }
 
 // bind selects the owning Portfile, or the selected subport alone for a

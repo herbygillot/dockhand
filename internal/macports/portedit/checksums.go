@@ -2,6 +2,7 @@ package portedit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
@@ -10,6 +11,9 @@ import (
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
 )
 
@@ -20,11 +24,15 @@ import (
 func (s *Service) prepareChecksums(ctx context.Context, request Request, input *sourceInput) (Result, error) {
 	result := Result{Base: request.Source, Target: input.target}
 	observed, err := s.planObservedChecksums(ctx, request, input)
+	var unlocated *distfiles.Unlocated
+	if errors.As(err, &unlocated) {
+		return result, s.checksumsToWrite(ctx, input, err)
+	}
 	if err != nil {
 		return result, err
 	}
 	for _, frame := range observed.contexts {
-		result.Coverage = append(result.Coverage, ContextCoverage{Fetch: frame.after.Ports[input.target.Name].Fetch, Platform: frame.profile, Modeled: frame.profile != input.before.Platform})
+		result.Coverage = append(result.Coverage, ContextCoverage{Fetch: frame.after.Ports[input.target.Name].Fetch, Platform: frame.profile, Variant: frame.variant, Modeled: frame.profile != input.before.Platform})
 	}
 	result, err = s.applyObservedArchives(ctx, request, input, archivePlan{result: result, contents: input.data, observed: observed, subject: "refresh checksums"}, s.Archives.Store(""))
 	if err != nil {
@@ -44,18 +52,16 @@ func (s *Service) planObservedChecksums(ctx context.Context, request Request, in
 	if err != nil {
 		return nil, fmt.Errorf("%w: observing %v", errProbeInconclusive, err)
 	}
-	for i, profile := range profiles {
-		progress.DebugReport(ctx, "Checking archive context %s %s %s", profile.OS, profile.Version, profile.Architecture)
-		observed := observations[i]
+	observeContext := func(profile model.Platform, variant string, session *observe.Session, observed macports.Observation) error {
 		if obsoleteIn(observed.Snapshot.Ports[input.target.Name]) {
-			continue
+			return nil
 		}
 		binding, err := s.bindArchives(ctx, input, input.data, observed)
 		if err != nil {
-			return nil, fmt.Errorf("context %+v: %w", profile, err)
+			return fmt.Errorf("context %+v: %w", profile, err)
 		}
 		if err := s.checkSharedArchiveOwners(ctx, input, input.data, observed, binding); err != nil {
-			return nil, err
+			return err
 		}
 		info := observed.Snapshot.Ports[input.target.Name]
 		coverage.declare(info, binding.Groups)
@@ -63,7 +69,27 @@ func (s *Service) planObservedChecksums(ctx context.Context, request Request, in
 			coverage.cover(artifact)
 			coverage.download(artifact, info)
 		}
-		plan.contexts = append(plan.contexts, archiveContext{profile: profile, before: observed.Snapshot, after: observed.Snapshot, binding: binding})
+		plan.contexts = append(plan.contexts, archiveContext{profile: profile, variant: variant, session: session, before: observed.Snapshot, after: observed.Snapshot, binding: binding})
+		return nil
+	}
+	for i, profile := range profiles {
+		progress.DebugReport(ctx, "Checking archive context %s %s %s", profile.OS, profile.Version, profile.Architecture)
+		if err := observeContext(profile, "", input.observe, observations[i]); err != nil {
+			return nil, err
+		}
+	}
+	// A variant's own archives are refreshed as an update writes them
+	// (planObservedArchives).
+	for _, variant := range portfile.ArchiveVariants(input.data) {
+		progress.DebugReport(ctx, "Checking archive context +%s", variant)
+		session := input.observe.WithVariants(map[string]bool{variant: true})
+		observed, err := session.Observe(ctx, input.data, []model.Platform{input.before.Platform}, true, false)
+		if err != nil {
+			return nil, fmt.Errorf("%w: +%s declares archives of its own, and couldn't be observed: %v", ErrUnsupported, variant, err)
+		}
+		if err := observeContext(input.before.Platform, variant, session, observed[0]); err != nil {
+			return nil, fmt.Errorf("+%s: %w", variant, err)
+		}
 	}
 	if ids := coverage.uncovered(); len(ids) > 0 {
 		return nil, fmt.Errorf("%w: checksum declaration %s has no archive in the observed contexts", errProbeInconclusive, ids[0])
@@ -93,4 +119,56 @@ func inertChecksumGroups(info macports.PortInfo, groups []distfiles.Group) map[s
 		}
 	}
 	return inert
+}
+
+// ChecksumsToWrite is a checksum refresh dockhand couldn't write, with the
+// checksums the archives MacPorts' fetch plan names have now, for a person
+// to write: every archive of the contexts a refresh observes, a variant's
+// own included.
+type ChecksumsToWrite struct {
+	Checksums []portfile.Checksum
+	Err       error
+}
+
+func (c *ChecksumsToWrite) Error() string { return c.Err.Error() }
+func (c *ChecksumsToWrite) Unwrap() error { return c.Err }
+
+// checksumsToWrite fetches the archives a refresh would have written the
+// checksums of, and returns refusal with them; refusal alone where they
+// couldn't be had.
+func (s *Service) checksumsToWrite(ctx context.Context, input *sourceInput, refusal error) error {
+	profiles, err := input.observe.Profiles(ctx, input.data)
+	if err != nil {
+		return refusal
+	}
+	observations, err := input.observe.Observe(ctx, input.data, profiles, true, false)
+	if err != nil {
+		return refusal
+	}
+	for _, variant := range portfile.ArchiveVariants(input.data) {
+		observed, err := input.observe.WithVariants(map[string]bool{variant: true}).Observe(ctx, input.data, []model.Platform{input.before.Platform}, true, false)
+		if err != nil {
+			return refusal
+		}
+		observations = append(observations, observed...)
+	}
+	var sums []portfile.Checksum
+	for _, observed := range observations {
+		info := observed.Snapshot.Ports[input.target.Name]
+		plan, err := observed.Ports[input.target.Name].FetchPlan()
+		if err != nil {
+			return refusal
+		}
+		for _, file := range plan {
+			if slices.ContainsFunc(sums, func(sum portfile.Checksum) bool { return sum.Name == file.Name }) {
+				continue
+			}
+			download, err := s.Archives.Store("").FetchFirst(ctx, info, file.Name, file.URLs)
+			if err != nil {
+				return refusal
+			}
+			sums = append(sums, download.Checksum)
+		}
+	}
+	return &ChecksumsToWrite{Checksums: sums, Err: refusal}
 }

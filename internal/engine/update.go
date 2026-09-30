@@ -74,6 +74,14 @@ func (v PortVersion) String() string {
 // sentinel's own words.
 var ErrUnsupported = preparation.ErrUnsupported
 
+// Unlocated is a checksum declaration dockhand can't find in the Portfile
+// to edit, an unsupported edit that names the archive and why.
+type Unlocated = preparation.Unlocated
+
+// ChecksumsToWrite is a checksum refresh dockhand couldn't write, with the
+// archives' checksums for a person to write.
+type ChecksumsToWrite = preparation.ChecksumsToWrite
+
 // Update reports an update or checksum refresh.
 type Update struct {
 	Branch model.Branch

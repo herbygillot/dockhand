@@ -58,11 +58,7 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 		// Every archive still matches its declared checksums; there is nothing to commit.
 		return result, nil
 	}
-	finalProfiles := make([]model.Platform, len(plan.observed.contexts))
-	for i, frame := range plan.observed.contexts {
-		finalProfiles[i] = frame.profile
-	}
-	finals, err := input.observe.Observe(ctx, contents, finalProfiles, false, false)
+	finals, err := observeFinal(ctx, input, plan.observed.contexts, contents)
 	if err != nil {
 		return result, err
 	}
@@ -83,7 +79,7 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 	final := evaluated.after
 	var native archiveContext
 	for _, frame := range plan.observed.contexts {
-		if frame.profile == input.before.Platform {
+		if frame.profile == input.before.Platform && frame.variant == "" {
 			native = frame
 			break
 		}
@@ -139,4 +135,32 @@ func wantedChecksums(binding distfiles.Binding, updates map[text.Span]checksumUp
 		}
 	}
 	return wanted
+}
+
+// observeFinal observes the edited contents in each context the plan
+// observed, a profile's as the input's, and a variant's with its own
+// session, in the contexts' order.
+func observeFinal(ctx context.Context, input *sourceInput, contexts []archiveContext, contents []byte) ([]macports.Observation, error) {
+	finals := make([]macports.Observation, len(contexts))
+	var profiles []model.Platform
+	var at []int
+	for i, frame := range contexts {
+		if frame.variant == "" {
+			profiles, at = append(profiles, frame.profile), append(at, i)
+			continue
+		}
+		observed, err := frame.session.Observe(ctx, contents, []model.Platform{frame.profile}, false, false)
+		if err != nil {
+			return nil, fmt.Errorf("+%s: %w", frame.variant, err)
+		}
+		finals[i] = observed[0]
+	}
+	observed, err := input.observe.Observe(ctx, contents, profiles, false, false)
+	if err != nil {
+		return nil, err
+	}
+	for k, i := range at {
+		finals[i] = observed[k]
+	}
+	return finals, nil
 }

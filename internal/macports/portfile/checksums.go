@@ -2,6 +2,7 @@ package portfile
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -116,4 +117,19 @@ func (c Checksum) Value(kind string) (string, bool) {
 func IsChecksumKind(kind string) bool {
 	_, ok := Checksum{}.Value(kind)
 	return ok
+}
+
+// ChecksumsBlock is a checksums declaration of these archives, in the
+// layout MacPorts' guide gives one: each archive named, then its rmd160,
+// sha256, and size, one to a line, continued, aligned under the first.
+func ChecksumsBlock(sums []Checksum) string {
+	const indent = "                    "
+	var lines []string
+	for _, sum := range sums {
+		lines = append(lines, sum.Name)
+		for _, pair := range [][2]string{{"rmd160", sum.RMD160}, {"sha256", sum.SHA256}, {"size", fmt.Sprint(sum.Size)}} {
+			lines = append(lines, fmt.Sprintf("%-8s%s", pair[0], pair[1]))
+		}
+	}
+	return "checksums           " + strings.Join(lines, " \\\n"+indent)
 }

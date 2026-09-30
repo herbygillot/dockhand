@@ -9,6 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
+	"github.com/herbygillot/dockhand/internal/macports/distfiles"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
@@ -21,6 +22,8 @@ import (
 type Request = portedit.Request
 type CommitIntent = portedit.CommitIntent
 type ArchivePair = portedit.ArchivePair
+type ChecksumsToWrite = portedit.ChecksumsToWrite
+type Unlocated = distfiles.Unlocated
 type GoToolchain = portedit.GoToolchain
 type GoToolchainOutcome = portedit.GoToolchainOutcome
 type Stealth = portedit.Stealth

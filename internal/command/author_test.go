@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -373,4 +374,33 @@ func TestProgressGoesToStandardError(t *testing.T) {
 	_, errs, err = dockhand(t, "update", "jq", "--new", "-v")
 	require.NoError(t, err)
 	require.Contains(t, errs, "Building the PortIndex; this may take several minutes\nGenerating full PortIndex for source abc123\n")
+}
+
+// What dockhand can't write, it says in its own words, with advice only
+// where the advice works: git's refusal said "baseline {…}: portfile:
+// unsupported source edit: calculated checksum algorithm", advised
+// checksums, which refused the same way, and said a plan kept a branch it
+// never started (the git run's findings 1 to 4).
+func TestAnEditDockhandCantMakeSaysWhyAndWhatWorks(t *testing.T) {
+	unlocated := fmt.Errorf("baseline {OS:darwin Version:25 Architecture:arm64}: %w", &engine.Unlocated{Name: "git-htmldocs-2.56.0.tar.xz", Reason: fmt.Errorf("%w: no command written in the Portfile makes it, as an eval'd one isn't", engine.ErrUnsupported)})
+	branch := model.Branch{Name: "dockhand/git-ab12"}
+
+	err := byHand(unlocated, engine.UpdateRequest{Action: model.EditUpdate, Port: "git"}, branch, false)
+	require.EqualError(t, err, `can't update git by itself: the checksums for git-htmldocs-2.56.0.tar.xz can't be found in the Portfile to edit: no command written in the Portfile makes it, as an eval'd one isn't
+Kept: the branch, unchanged.
+Edit the version yourself; dockhand checksums git then prints the checksums to write:
+  dockhand edit git`)
+
+	err = byHand(&engine.ChecksumsToWrite{Err: unlocated, Checksums: []portfile.Checksum{{Name: "git-2.56.0.tar.xz", RMD160: "aaaa", SHA256: "bbbb", Size: 8}}}, engine.UpdateRequest{Action: model.EditChecksums, Port: "git"}, branch, false)
+	require.EqualError(t, err, `can't refresh git's checksums by itself: the checksums for git-htmldocs-2.56.0.tar.xz can't be found in the Portfile to edit: no command written in the Portfile makes it, as an eval'd one isn't
+Kept: the branch, unchanged.
+Write them yourself; its archives have these now:
+    checksums           git-2.56.0.tar.xz \
+                        rmd160  aaaa \
+                        sha256  bbbb \
+                        size    8
+  dockhand edit git`)
+
+	err = byHand(fmt.Errorf("%w: a version it can't find", engine.ErrUnsupported), engine.UpdateRequest{Action: model.EditUpdate, Port: "git", Plan: true, FromMaster: true}, model.Branch{}, false)
+	require.EqualError(t, err, "can't update git by itself: a version it can't find\nEdit the version yourself; dockhand checksums git then fills in the rest:\n  dockhand edit git", "a plan keeps nothing, having changed nothing")
 }
