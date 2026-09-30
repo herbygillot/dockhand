@@ -32,9 +32,12 @@ type fakeGitHub struct {
 	theirs map[int]forge.PullRequest
 	status forge.PullRequestStatus
 	// others are the open pull requests a search for a port finds, and
-	// searchErr why the search fails.
+	// searchErr why the search fails. The first quiet searches find
+	// nothing, as before another was opened; searches counts them all.
 	others    []forge.PullRequestSummary
 	searchErr error
+	quiet     int
+	searches  int
 	// readyRefused is GitHub's refusal to mark a pull request ready.
 	readyRefused error
 }
@@ -106,6 +109,10 @@ func (g *fakeGitHub) Inspect(context.Context, forge.PullRequestRef) (forge.PullR
 }
 
 func (g *fakeGitHub) OpenPullRequests(context.Context, string, string) ([]forge.PullRequestSummary, error) {
+	g.searches++
+	if g.searches <= g.quiet {
+		return nil, nil
+	}
 	return g.others, g.searchErr
 }
 

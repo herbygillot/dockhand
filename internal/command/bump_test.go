@@ -2,6 +2,7 @@ package command
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -99,7 +100,9 @@ func TestUpdateSubmitAndBumpReportTheSameJSON(t *testing.T) {
 		require.NoError(t, err)
 	}
 
+	// #34777 opens while jq is checked, after bump looked before its edit.
 	g.others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}
+	g.quiet = g.searches + 1
 	held, err := jsonOf(t, "bump", "jq")
 	require.Equal(t, 3, ExitCode(err))
 	require.Equal(t, "1.8.1", dig(t, held.Result, "after", "version"))
@@ -108,7 +111,11 @@ func TestUpdateSubmitAndBumpReportTheSameJSON(t *testing.T) {
 }
 
 // Nobody looks before bump submits, so what holds serve's pull requests
-// holds bump's: here, another pull request open for the port.
+// holds bump's: here, another pull request open for the port. It's looked
+// for before the edit, so one already open stops bump before anything is
+// downloaded or built, as does not knowing; and again before submitting,
+// since one may have opened meanwhile (the update-workflow review's
+// efficiency item).
 func TestBumpHoldsWhatServeWould(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
@@ -117,6 +124,23 @@ func TestBumpHoldsWhatServeWould(t *testing.T) {
 	g := withGitHub(t, w) // it finds #34777 open for jq
 
 	_, _, err := bumpOn(t, "jq", "--tested-binaries")
+	require.Equal(t, 3, ExitCode(err), "it needs your attention")
+	require.EqualError(t, err, "jq waits for your look, so nothing was changed: #34777 is open for the same port: jq: update to 1.8.0\nOnce it's fine: dockhand update jq --new --submit")
+	require.Equal(t, 1, g.searches, "looked for once, before the edit")
+	g.searchErr = errors.New("rate limited")
+	g.others = nil
+	_, _, err = bumpOn(t, "jq", "1.8.1")
+	require.Equal(t, 3, ExitCode(err))
+	require.EqualError(t, err, "jq waits for your look, so nothing was changed: couldn't look for other open pull requests: rate limited\nOnce it's fine: dockhand update jq 1.8.1 --new --submit")
+	held, err := jsonOf(t, "bump", "jq")
+	require.Equal(t, 3, ExitCode(err))
+	require.Nil(t, held.Result, "a refusal before anything is done reports only its error")
+	require.Empty(t, gitRun(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started, so nothing was downloaded or built")
+
+	// #34777 opens while jq is checked.
+	g.searchErr, g.others = nil, []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}
+	g.quiet = g.searches + 1
+	_, _, err = bumpOn(t, "jq", "--tested-binaries")
 	require.Equal(t, 3, ExitCode(err), "it needs your attention")
 	require.Regexp(t, `^jq-[a-z0-9]{4} passed its check and waits for your look, so nothing was submitted: #34777 is open for the same port: jq: update to 1\.8\.0\nOnce it's fine: dockhand submit --branch jq-[a-z0-9]{4}$`, err.Error())
 	require.Empty(t, g.prs)

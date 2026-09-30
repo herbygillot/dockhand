@@ -207,6 +207,9 @@ func (v versionUpdate) run(ctx context.Context, s *settings, streams Streams, wh
 		}
 		streams.linkSteps(&updateJSON{})
 	}
+	// bump's other open pull requests are looked for before the edit, since
+	// one would hold its submission after the check.
+	request.Unattended = linked.unattended
 	branch, update, err := author(ctx, s, streams, where, "update", request, linked)
 	if err != nil || !linked.submit || !update.Applied {
 		return err
@@ -359,6 +362,9 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	}
 	if uncertain := new(engine.UncertainRelease); errors.As(err, &uncertain) {
 		return branch, update, uncertainUpdate(request.Port, uncertain.SetAside, linked, branch, started)
+	}
+	if held := new(engine.HeldBeforeEdit); errors.As(err, &held) {
+		return branch, update, heldBeforeEdit(request, held.Held)
 	}
 	if err != nil {
 		if started {
@@ -554,6 +560,17 @@ func uncertainUpdate(port string, aside []engine.SetAside, linked linkedOptions,
 		kept = "\nKept: " + branch.Name + ", with nothing changed."
 	}
 	return exitf(3, "can't tell whether %s is current, so nothing was changed: %s\nIf %s is a release: dockhand %s %s %s%s", port, setAsideWords(aside), aside[0].Tag, verb, port, aside[0].Source, kept)
+}
+
+// heldBeforeEdit is bump held before its edit for what would hold its
+// submission after the check, said as a held submission is. After a look,
+// update --submit goes ahead, since a person watches it.
+func heldBeforeEdit(request engine.UpdateRequest, held []string) error {
+	next := "dockhand update " + request.Port
+	if request.Version != "" {
+		next += " " + request.Version
+	}
+	return exitf(3, "%s waits for your look, so nothing was changed: %s\nOnce it's fine: %s --new --submit", request.Port, strings.Join(held, "; "), next)
 }
 
 // writeStealth shows each changed archive's checksums, before and after.

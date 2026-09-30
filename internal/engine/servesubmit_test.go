@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -185,6 +186,54 @@ func TestServeHoldsAnUpdateAnotherPullRequestIsOpenFor(t *testing.T) {
 
 	held := SubmitPlan{SearchProblem: "rate limited"}.held()
 	require.Equal(t, []string{"couldn't look for other open pull requests: rate limited"}, held)
+}
+
+// An update no person looks over, bump's, looks for the port's other open
+// pull requests once its release is found, and is held there on one, or
+// on not knowing, before its edit is prepared: nothing is downloaded, and
+// no branch is started. Finding none, it prepares the edit without asking
+// again. An update a person asked for names them after its edit, as
+// before, and a port already current asks nothing (the update-workflow
+// review's efficiency item).
+func TestAnUnattendedUpdateLooksForOthersBeforeItsEdit(t *testing.T) {
+	f := setup(t)
+	e, p := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	fake.others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}
+	bump := func(name string) UpdateRequest {
+		return UpdateRequest{Start: &StartRequest{Name: name}, Action: model.EditUpdate, Port: "jq", LookForOthers: true, Unattended: true}
+	}
+
+	_, err := e.Update(t.Context(), bump("jq-bump"))
+	var held *HeldBeforeEdit
+	require.ErrorAs(t, err, &held)
+	require.Equal(t, &HeldBeforeEdit{Port: "jq", Held: []string{"#34777 is open for the same port: jq: update to 1.8.0"}}, held)
+	require.Empty(t, p.requests, "nothing was prepared")
+	fake.others, fake.searchErr = nil, errors.New("rate limited")
+	_, err = e.Update(t.Context(), bump("jq-bump"))
+	require.ErrorAs(t, err, &held)
+	require.Equal(t, []string{"couldn't look for other open pull requests: rate limited"}, held.Held)
+	require.Empty(t, p.requests)
+	require.Empty(t, run(t, f.clone, "branch", "--list", "dockhand/*"), "no branch was started")
+
+	fake.searchErr, fake.searches = nil, 0
+	current := bump("jq-current")
+	current.Version, current.Release = "1.7.1", &model.Release{ReleaseSelection: model.ReleaseSelection{NoUpdate: true}, Version: "1.7.1"}
+	update, err := e.Update(t.Context(), current)
+	require.NoError(t, err)
+	require.True(t, update.Current)
+	require.Zero(t, fake.searches, "a current port has nothing to hold")
+	update, err = e.Update(t.Context(), bump("jq-bump"))
+	require.NoError(t, err)
+	require.True(t, update.Applied)
+	require.Equal(t, 1, fake.searches, "looked for once, before the edit")
+
+	fake.others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}
+	person := bump("jq-update")
+	person.Unattended = false
+	update, err = e.Update(t.Context(), person)
+	require.NoError(t, err, "a person's update stops for none")
+	require.Equal(t, fake.others, update.Others)
 }
 
 // submit --passing and serve read one definition of a passing branch:

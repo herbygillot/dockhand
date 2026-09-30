@@ -93,8 +93,9 @@ dockhand bump jq 1.8.1     # a version you name
 It stops wherever a person should look:
 
 - Before it edits anything, it stops with nothing changed when an open branch already changes the port, the check has nowhere to build, or the port is already at the release. Where it can't tell which release is the newest, as `update` can't, it exits 3 and names the `bump` that takes the one set aside.
+- Once it knows the release, and before it downloads or builds anything, it looks for other open pull requests for the port. One found, or not knowing, would hold the submission after the check, so it stops there, changing nothing: it exits 3, as a held check does, and names the `update --new --submit` that goes ahead after a look.
 - A failed check leaves the branch, with its logs.
-- A passing check is held, as `serve`'s are, when the upstream comparison found something a build can't catch or couldn't compare the archives, a commit rule has a finding, or another pull request is open for the port, or couldn't be looked for. `bump` exits 3 and names the `submit` that finishes it after a look; with `--json`, `submit.held` lists why.
+- A passing check is held, as `serve`'s are, when the upstream comparison found something a build can't catch or couldn't compare the archives, a commit rule has a finding, or another pull request is open for the port, or couldn't be looked for: it looks again before submitting, since one may have opened while it checked. `bump` exits 3 and names the `submit` that finishes it after a look; with `--json`, `submit.held` lists why.
 
 The pull request's tested checkboxes stay unticked unless `--tested-binaries` or `--tested-variants` says otherwise: they say what you tested, which dockhand can't. The one exception is a passing `check --variants each` of the port, which ticks the variants item by itself and says which variants it built, since it built them.
 

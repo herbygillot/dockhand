@@ -63,3 +63,24 @@ Two of discovery's shortcuts said more than their evidence (finding 6). Its two 
 ### Left as it is
 
 - **`create` can ask a plain homepage twice** when it doesn't answer: once to decide what to write, and again in its checksum refresh. Sharing answers across calls needs an owner and a lifetime, since serve's engine lives for days, so it waits for a reason beyond this item.
+
+## bump looks for other pull requests before the edit
+
+`bump` searched for other open pull requests for the port only in submit's plan, after the downloads, the edit, and the check, and was held there. A duplicate already open cost a whole build to find.
+- **Before the edit:** `UpdateRequest.Unattended`, which `bump` sets from its unattended mode, has the update look once its release is found and before it prepares anything. It goes through the path `update --plan` already uses, `openPullRequests`, with no second forge query.
+- **Held there:** one found, or a search that failed, holds it with `HeldBeforeEdit`. The update downloads nothing and starts no branch. A port found current looks for nothing, since it has nothing to submit.
+- **One voice:** the reasons are the held submission's own words, now `othersHeld`, which `SubmitPlan.held` uses too. `bump` exits 3, as for a held check: "jq waits for your look, so nothing was changed: #34777 is open for the same port: jq: update to 1.8.0", then "Once it's fine: dockhand update jq --new --submit", which a person watches and which holds nothing for another pull request. With `--json` it reports only the error, as a refusal before anything is done does.
+- **Looked for once before the edit:** the update's own search after the edit is skipped for an unattended update, which just looked. Submit's plan still looks again before publishing, since one may have opened while it checked.
+- **What doesn't change:** an `update` a person asks for, `--submit` or not, looks after its edit and names what it finds, as before.
+
+`bump`'s help and `docs/usage.md` say where it stops now.
+
+### Proven
+
+- **The engine:** an unattended update is held on another pull request, and on a failed search, with nothing prepared and no branch started. A current port asks nothing. Finding none, it prepares the edit, searching once. A person's update still goes ahead and names the others.
+- **The command:** `bump` stops before the edit with the held words and exit 3, for a pull request and for a failed search, and its JSON is only the error. A pull request opened while the check ran still holds the submission, from the search before publishing, and `submit` after a look opens it. The command tests' preparer now says a release the port is at already is no update, as discovery does.
+- **Mutation testing:** every mutant of the new decisions is killed: the early look turned off, made to run for a current port, the second look made to run again, the failed search not holding, the threshold for holding, and bump not asking for it.
+
+### Left as it is
+
+- **Serve's preparation** doesn't look before its edits. Its daily look prepares, and in check mode checks, every outdated port, and holds on another pull request only at submission, as it did. It could take the same field, but whether serve should skip preparing a port someone else is updating is a question of what `draft` and `check` promise, and this item is bump's.

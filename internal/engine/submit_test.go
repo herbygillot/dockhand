@@ -28,10 +28,14 @@ type fakeForge struct {
 	fork     string
 	prs      map[int]*forge.PullRequest
 	next     int
-	others   []forge.PullRequestSummary
-	created  []forge.PullRequestInput
-	updated  []forge.PullRequestInput
-	readied  []int
+	// others are the open pull requests a search for a port finds, and
+	// searchErr why it fails; searches counts them.
+	others    []forge.PullRequestSummary
+	searchErr error
+	searches  int
+	created   []forge.PullRequestInput
+	updated   []forge.PullRequestInput
+	readied   []int
 	// readyRefused is GitHub's refusal to mark a pull request ready.
 	readyRefused error
 	// repos are other people's repositories, by name, as local paths.
@@ -134,7 +138,8 @@ func (f *fakeForge) Update(_ context.Context, input forge.PullRequestInput) (for
 }
 
 func (f *fakeForge) OpenPullRequests(context.Context, string, string) ([]forge.PullRequestSummary, error) {
-	return f.others, nil
+	f.searches++
+	return f.others, f.searchErr
 }
 
 func (f *fakeForge) MarkReady(_ context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error) {

@@ -28,12 +28,20 @@ import (
 // checksum refresh adds a checksums line.
 type bumper struct{ repo *git.Repository }
 
-func (b bumper) ResolveRelease(_ context.Context, r preparation.Request) (model.Release, error) {
+func (b bumper) ResolveRelease(ctx context.Context, r preparation.Request) (model.Release, error) {
 	version := r.Version
 	if version == "" {
 		version = "1.8.1"
 	}
-	return model.Release{Version: version, Forge: "github", Repository: "jqlang/jq", Tag: "jq-" + version, Commit: "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b"}, nil
+	// As discovery does, it says a release the port is at already is no
+	// update.
+	_, data, err := b.repo.File(ctx, string(r.Source.Tree), "textproc/"+r.Selection.Selector+"/Portfile")
+	if err != nil {
+		return model.Release{}, err
+	}
+	current := regexp.MustCompile(`(?m)^version (\S+)$`).FindSubmatch(data)
+	noUpdate := current != nil && string(current[1]) == version
+	return model.Release{ReleaseSelection: model.ReleaseSelection{NoUpdate: noUpdate}, Version: version, Forge: "github", Repository: "jqlang/jq", Tag: "jq-" + version, Commit: "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b"}, nil
 }
 
 func (b bumper) Prepare(ctx context.Context, r preparation.Request) (preparation.Result, error) {

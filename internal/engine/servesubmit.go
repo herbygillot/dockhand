@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -130,13 +131,55 @@ func (p SubmitPlan) Concerns() []model.Concern {
 	for _, finding := range p.Findings {
 		add(model.Concern{Origin: model.FromCommitRules, Rule: finding.Code, Detail: "commit rules: " + finding.String()})
 	}
-	for _, pr := range p.Others {
-		add(model.Concern{Origin: model.FromOtherPullRequests, Rule: "open", Subject: fmt.Sprint(pr.Number), Detail: fmt.Sprintf("#%d is open for the same port: %s", pr.Number, pr.Title)})
-	}
-	if p.SearchProblem != "" {
-		add(model.Concern{Origin: model.FromOtherPullRequests, Rule: "search-failed", Detail: "couldn't look for other open pull requests: " + p.SearchProblem})
+	for _, concern := range othersConcerns(p.Others, p.SearchProblem) {
+		add(concern)
 	}
 	return concerns
+}
+
+// othersConcerns are what other open pull requests for a port ask of a
+// submission no person looked over: each one found, or not knowing
+// whether there is one. Bump's search before its edit and a submission's
+// gate say them in one voice.
+func othersConcerns(others []forge.PullRequestSummary, problem string) []model.Concern {
+	var concerns []model.Concern
+	for _, pr := range others {
+		concerns = append(concerns, model.Concern{Origin: model.FromOtherPullRequests, Rule: "open", Subject: fmt.Sprint(pr.Number),
+			Detail: fmt.Sprintf("#%d is open for the same port: %s", pr.Number, pr.Title)})
+	}
+	if problem != "" {
+		concerns = append(concerns, model.Concern{Origin: model.FromOtherPullRequests, Rule: "search-failed", Detail: "couldn't look for other open pull requests: " + problem})
+	}
+	return concerns
+}
+
+// HeldBeforeEdit is an update no person looks over, bump's, held for a
+// look before its edit was prepared (UpdateRequest.Unattended), for what
+// would hold its submission after the check: another open pull request
+// for the port, or not knowing whether there is one. Held says why, as a
+// held submission does.
+type HeldBeforeEdit struct {
+	Port string
+	Held []string
+}
+
+func (h *HeldBeforeEdit) Error() string {
+	return fmt.Sprintf("%s is held for a look before its edit: %s", h.Port, strings.Join(h.Held, "; "))
+}
+
+// heldBeforeEdit looks for the port's other open pull requests before an
+// unattended update prepares its edit. One found, or not knowing, would
+// hold the submission once the check passed, so it holds the update now,
+// before anything is downloaded or built.
+func (e *Engine) heldBeforeEdit(ctx context.Context, port string, except int) error {
+	var held []string
+	for _, concern := range othersConcerns(e.openPullRequests(ctx, []string{port}, except)) {
+		held = append(held, concern.Detail)
+	}
+	if len(held) > 0 {
+		return &HeldBeforeEdit{Port: port, Held: held}
+	}
+	return nil
 }
 
 // assessedHolds are why the recorded assessments of a branch's files hold

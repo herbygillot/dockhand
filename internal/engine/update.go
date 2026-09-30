@@ -66,6 +66,13 @@ type UpdateRequest struct {
 	// version update, as submit's preview does: someone starting an update
 	// should hear of one in flight. It holds nothing, and stops nothing.
 	LookForOthers bool
+	// Unattended is a version update no person looks over before it is
+	// submitted, bump's. It looks for the port's other open pull requests
+	// once its release is found and before it prepares the edit, and is
+	// held there on one, or on not knowing (HeldBeforeEdit), since either
+	// would hold the submission after the check: nothing is downloaded or
+	// built for it. Submit looks again before publishing.
+	Unattended bool
 }
 
 // PortVersion is a port's version and revision.
@@ -220,6 +227,11 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		}
 		input.Stealth = &preparation.StealthRequest{Changed: changed, KeepRevision: request.KeepRevision}
 	}
+	// own is the branch's own pull request, which is no other.
+	own := 0
+	if branch.PullRequest != nil {
+		own = branch.PullRequest.Number
+	}
 	if request.Action == model.EditUpdate {
 		input.Release = request.Release
 		release, err := preparer.ResolveRelease(ctx, input)
@@ -227,6 +239,11 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 			return byHand(err)
 		}
 		input.Release = &release
+		if request.Unattended && !release.NoUpdate {
+			if err := e.heldBeforeEdit(ctx, request.Port, own); err != nil {
+				return Update{}, err
+			}
+		}
 	}
 	compare := request.CompareUpstream && request.Action == model.EditUpdate
 	if compare {
@@ -264,12 +281,9 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		update.Current = true
 		return update, nil
 	}
-	if request.LookForOthers && request.Action == model.EditUpdate {
-		except := 0
-		if branch.PullRequest != nil {
-			except = branch.PullRequest.Number
-		}
-		update.Others, update.OthersProblem = e.openPullRequests(ctx, []string{update.Port}, except)
+	// An unattended update looked before its edit, and found none.
+	if request.LookForOthers && request.Action == model.EditUpdate && !request.Unattended {
+		update.Others, update.OthersProblem = e.openPullRequests(ctx, []string{update.Port}, own)
 	}
 	diff, err := worktree.DiffTrees(ctx, captured, string(result.PreparedTree))
 	if err != nil {

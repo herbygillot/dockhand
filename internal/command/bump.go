@@ -26,12 +26,15 @@ It stops wherever a person should look:
   - A newer tag was made before the port's own, and nothing newer is beyond
     it, so which release is the newest can't be told: it changes nothing,
     exits 3, and names the bump that takes that tag, if it's a release.
+  - Another pull request is open for the port, or couldn't be looked for:
+    it stops before downloading or building anything, and exits 3. dockhand
+    update <port> --new --submit goes ahead after a look.
   - The check fails: the branch stays, with its logs.
   - The check passes, but comparing the upstream archives found what a build
     can't catch, or couldn't compare them, a commit rule has a finding, or
-    another pull request is open for the port: the branch waits for your
-    look, and it exits 3. dockhand submit --branch <name> submits it after
-    one.
+    another pull request was opened for the port meanwhile, as it looks
+    again before submitting: the branch waits for your look, and it exits
+    3. dockhand submit --branch <name> submits it after one.
 
 The pull request's tested checkboxes stay unticked unless --tested-binaries
 or --tested-variants says otherwise: they say what you tested, which
