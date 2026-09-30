@@ -1,0 +1,157 @@
+diff --git a/internal/sourcecompare/update_review_test.go b/internal/sourcecompare/update_review_test.go
+new file mode 100644
+--- /dev/null
++++ b/internal/sourcecompare/update_review_test.go
+@@ -0,0 +1,40 @@
++package sourcecompare
++
++import (
++	"github.com/herbygillot/dockhand/internal/testsupport"
++	"github.com/stretchr/testify/require"
++	"testing"
++)
++
++func TestUpdateReviewPythonCompatibilitySurface(t *testing.T) {
++	old := testsupport.Tarball(t, "pkg-1", map[string]string{"pyproject.toml": "[project]\nrequires-python = \">=3.9\"\ndependencies = []\n[build-system]\nrequires = [\"setuptools>=61\"]\nbuild-backend = \"setuptools.build_meta\"\n"})
++	next := testsupport.Tarball(t, "pkg-2", map[string]string{"pyproject.toml": "[project]\nrequires-python = \">=3.13\"\ndependencies = []\n[build-system]\nrequires = [\"hatchling>=1\"]\nbuild-backend = \"hatchling.build\"\n"})
++	changes, err := Compare(t.Context(), old, next, Versions{Old: "1", New: "2"})
++	require.NoError(t, err)
++	require.Empty(t, changes, "current comparison omits Python support and build backend changes")
++}
++
++func TestUpdateReviewNestedProjectCoverage(t *testing.T) {
++	old := testsupport.Tarball(t, "pkg-1", map[string]string{"python/pyproject.toml": "[project]\ndependencies = [\"requests>=2\"]\n"})
++	next := testsupport.Tarball(t, "pkg-2", map[string]string{"python/pyproject.toml": "[project]\ndependencies = [\"requests>=2\", \"rich>=13\"]\n"})
++	changes, err := Compare(t.Context(), old, next, Versions{})
++	require.NoError(t, err)
++	require.Empty(t, changes, "current comparison does not name the nested project or its coverage gap")
++}
++
++func TestUpdateReviewFlatArchiveCoverage(t *testing.T) {
++	old := testsupport.Tarball(t, ".", map[string]string{"LICENSE": "MIT\n"})
++	next := testsupport.Tarball(t, ".", map[string]string{"LICENSE": "GPL\n"})
++	changes, err := Compare(t.Context(), old, next, Versions{})
++	require.NoError(t, err)
++	require.Empty(t, changes, "current comparison silently skips files in the archive root")
++}
++
++func TestUpdateReviewVersionOnlyNeedsSemanticContext(t *testing.T) {
++	old := testsupport.Tarball(t, "pkg-1.0", map[string]string{"CMakeLists.txt": "project(demo VERSION 1.0)\nfind_package(SomeLibrary 1.0 REQUIRED)\n"})
++	next := testsupport.Tarball(t, "pkg-2.0", map[string]string{"CMakeLists.txt": "project(demo VERSION 2.0)\nfind_package(SomeLibrary 2.0 REQUIRED)\n"})
++	changes, err := Compare(t.Context(), old, next, Versions{Old: "1.0", New: "2.0"})
++	require.NoError(t, err)
++	require.Len(t, changes, 1)
++	require.False(t, changes[0].Hold, "current version-only heuristic suppresses the dependency minimum change too")
++}
+diff --git a/internal/engine/update_review_test.go b/internal/engine/update_review_test.go
+new file mode 100644
+--- /dev/null
++++ b/internal/engine/update_review_test.go
+@@ -0,0 +1,62 @@
++package engine
++
++import (
++	"github.com/herbygillot/dockhand/internal/macports"
++	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
++	"github.com/herbygillot/dockhand/internal/model"
++	"github.com/herbygillot/dockhand/internal/preparation"
++	"github.com/herbygillot/dockhand/internal/sourcecompare"
++	"github.com/stretchr/testify/require"
++	"testing"
++)
++
++func TestUpdateReviewGitSourceHasNoComparison(t *testing.T) {
++	result := preparation.Result{}
++	result.Target = model.Target{Name: "demo"}
++	result.Prepared = macports.Snapshot{Ports: map[string]macports.PortInfo{"demo": {Name: "demo", Options: map[string]string{"fetch.type": "git"}}}}
++	comparison, _ := compareUpstream(t.Context(), result, sourcecompare.Versions{Old: "1", New: "2"})
++	require.Nil(t, comparison, "current git path records no comparison and contributes no hold")
++}
++
++func TestUpdateReviewUnknownPythonConstraintIsAdvisory(t *testing.T) {
++	f := setup(t)
++	e, _ := f.withPreparer(t)
++	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"python/py-requests": {{Name: "py313-requests", Version: "not-a-version"}}}}
++	result := preparation.Result{}
++	result.Target = model.Target{Name: "demo"}
++	result.Prepared = macports.Snapshot{Ports: map[string]macports.PortInfo{"demo": port("demo", "py313-requests")}}
++	findings := e.pythonPins(t.Context(), model.Source{}, result, []pythonRequirement{{manifest: "pyproject.toml", Requirement: sourcecompare.Requirement{Name: "requests", Specifier: ">=999"}}})
++	require.Len(t, findings, 1)
++	require.False(t, findings[0].Hold, "current policy permits an unreadable dependency version")
++}
++
++func TestUpdateReviewUsesDoesNotProveUnused(t *testing.T) {
++	dir := t.TempDir()
++	old := archives.Download{Name: "old.tar.gz", Path: writeTarball(t, dir, "old", map[string]string{"package.json": `{"dependencies":{"left-pad":"^1"}}`})}
++	next := archives.Download{Name: "new.tar.gz", Path: writeTarball(t, dir, "new", map[string]string{"package.json": `{"dependencies":{"left-pad":"^1","new-runtime":"^1"}}`})}
++	result := preparation.Result{}
++	result.Target = model.Target{Name: "hybrid"}
++	result.Prepared = macports.Snapshot{Ports: map[string]macports.PortInfo{"hybrid": {Name: "hybrid", Options: map[string]string{"dockhand.portgroups": "cmake", "use_configure": "yes", "configure.cmd": "/opt/local/bin/cmake"}}}}
++	result.Downloads = []archives.Download{next}
++	result.Pairs = []preparation.ArchivePair{{Previous: old, Next: next}}
++	comparison, _ := compareUpstream(t.Context(), result, sourcecompare.Versions{})
++	require.False(t, comparison.Held(), "current heuristic suppresses Node findings when the PortGroup only identifies CMake")
++}
++
++func TestUpdateReviewAssessmentOutlivesItsEdit(t *testing.T) {
++	f := setup(t)
++	e, p := f.withPreparer(t)
++	branch, err := e.Start(t.Context(), StartRequest{Name: "review-history"})
++	require.NoError(t, err)
++	p.upstream = [2]map[string]string{{"LICENSE": "MIT\n"}, {"LICENSE": "GPL\n"}}
++	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq", Version: "2.0", CompareUpstream: true})
++	require.NoError(t, err)
++	p.upstream = [2]map[string]string{{"LICENSE": "GPL\n"}, {"LICENSE": "MIT\n"}}
++	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq", Version: "3.0", CompareUpstream: true})
++	require.NoError(t, err)
++	comparisons, err := e.upstreamComparisons(t.Context(), branch)
++	require.NoError(t, err)
++	require.Len(t, comparisons, 2, "current policy replays both historical transitions even though the final license matches the original")
++	require.True(t, comparisons[0].Comparison.Held())
++	require.True(t, comparisons[1].Comparison.Held())
++}
+diff --git a/internal/upstream/update_review_test.go b/internal/upstream/update_review_test.go
+new file mode 100644
+--- /dev/null
++++ b/internal/upstream/update_review_test.go
+@@ -0,0 +1,40 @@
++package upstream_test
++
++import (
++	"context"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/herbygillot/dockhand/internal/forge"
++	"github.com/herbygillot/dockhand/internal/upstream"
++	"github.com/stretchr/testify/require"
++)
++
++func TestUpdateReviewNewerReleaseWithOlderCommitTime(t *testing.T) {
++	c := &catalog{releases: []forge.Release{{Tag: "v1.0"}, {Tag: "v2.0"}}}
++	service := automaticService(t, c)
++	ids := map[string]string{"v1.0": strings.Repeat("a", 40), "v2.0": strings.Repeat("b", 40)}
++	c.tag = tagFunc(func(_ context.Context, _ string, name string) (forge.Tag, error) {
++		return forge.Tag{Name: name, Commit: ids[name]}, nil
++	})
++	c.dates = map[string]time.Time{ids["v1.0"]: time.Date(2026, 9, 20, 0, 0, 0, 0, time.UTC), ids["v2.0"]: time.Date(2026, 9, 10, 0, 0, 0, 0, time.UTC)}
++	result, err := service.DiscoverPort(t.Context(), automaticPort())
++	require.NoError(t, err)
++	require.Equal(t, upstream.Current, result.Assessment, "the current heuristic vetoes the newer version solely because its commit is older")
++	require.Contains(t, result.Detail, "set aside v2.0")
++}
++
++func TestUpdateReviewTopTwoDoNotProveOrdering(t *testing.T) {
++	c := &catalog{releases: []forge.Release{{Tag: "v1.0"}, {Tag: "v2.0"}, {Tag: "v3.0"}, {Tag: "v4.0"}}}
++	service := automaticService(t, c)
++	service.EvaluateVersion = func(_ context.Context, source string) (string, error) {
++		if source == "2.0" {
++			return "20.0", nil
++		}
++		return source, nil
++	}
++	result, err := service.DiscoverPort(t.Context(), automaticPort())
++	require.NoError(t, err)
++	require.Equal(t, "4.0", result.CandidateVersion, "the current optimization does not evaluate v2.0, whose mapped version is newer")
++}
