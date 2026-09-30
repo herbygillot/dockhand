@@ -1,0 +1,9 @@
+# 2026-09-30: assessing an update, a design addition
+
+Asked to step back over the pending batches, the recent reviews, and the architecture before the queue grows further, I read the roadmap's open items against the code. Most of what's left (batch 9's remainder, batches 11, 13, 19, and 20, item 7, and both 2026-09-30 reviews' boundaries) lands on one flow: what upstream's change means for a port, and whether a submission nobody reviews may go ahead. The build side has owners, typed records, and identities; that flow has none. The comparison is a side effect of `update`, stored on its edit, with no source identity or coverage, holds set in `sourcecompare` and overridden in the engine, and holds reaching serve's gate as strings. Taken item by item, the queue would have added branches to `compareUpstream` and strings to `held`.
+
+The [assessment design](../assessment-design.md) adds five things, each a record and a function or two: a port's source identity; `internal/project`, reading one source tree's typed facts with its coverage; `internal/macports/assess`, the policy, pure as `planning` is; an assessment of each port a revision changes against its base, the expensive comparison kept by the pair of source identities; and typed concerns, which the gate filters.
+
+The person accepted it, with both behavior changes it names, recorded as D14: the net change from the base is assessed, so a license changed and changed back holds nothing and a later source edit is assessed again; and a Git-fetched port is compared through its forge's archive of each commit.
+
+Folded in: Design v3 gains the assessment noun in §3 and states §11's holds as concerns; architecture describes the owners as being built; the roadmap takes the design as item 9, whose first three steps come before batch 20 and batch 19's remainder, with batch 19's first four items placed inside its steps. No code changed.

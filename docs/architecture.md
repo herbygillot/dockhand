@@ -60,6 +60,12 @@ The providers implement `buildenv.Provider`, the contract in `internal/buildenv`
 - **`buildlog`** reads a failed build's log for what most likely made it fail: the first compiler error, as clang writes its diagnostics. The engine adds it to the failure's summary, marked as read from the log, whichever provider built it.
 - **`sourcecompare`** compares an update's old and new source archives for what a reviewer would ask about: license and build files, and the dependencies each manifest declares, read with Go's `modfile` and a TOML decoder. What it couldn't read, it says, and that holds as a change does. `archive` walks the archives for it, and `engine/archivediff.go` shows the same archives file by file, for `diff --archive`.
 
+**Being built: assessing an update** ([assessment design](assessment-design.md), the roadmap's item 9). Today the comparison runs inside `update` and is stored on its `Edit`. It moves to three owners, with the engine between them:
+- **`project`** reads one source tree at a root the caller gives, from evaluated port facts: license and build files, and each ecosystem's manifest as its own typed record, with what it couldn't read. It takes `sourcecompare`'s readers, PEP 440 and 508, `newport`'s manifest decoding, and `dependency.GoRequirement` and `GoBinary`.
+- **`sourcecompare`** becomes a diff of two readings, facts only, without holds.
+- **`macports/assess`** decides, as `planning` does from what it's given, what the diff means for the port: coverage, and typed concerns, each saying whether it holds unattended submission.
+- **The engine** assesses each port a revision changes against its base, keeping the comparison by the pair of the versions' source identities (`model`), and the gate reads concerns rather than strings.
+
 ## Shaping, submitting, and following
 
 - **`engine/tidy.go`, `engine/tidyplan.go`** propose the commits a reviewer should see, one per port directory by default, and apply them without changing a file. Tidy composes the messages, keeping the trailers the commits carried and adding `macports/commitmsg`'s attribution line, and `macports/commitrules` checks them against what MacPorts asks.
