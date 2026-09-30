@@ -45,8 +45,7 @@ func (e *Engine) preparer() (Preparer, error) {
 // github is GitHub as the person's login reaches it: the system keychain's,
 // or GH_TOKEN's.
 func (e *Engine) github() *forgegithub.Client {
-	client := &github.Client{HTTP: http.DefaultClient, Credentials: github.SystemCredentials{Store: keychain.Store{}, Key: github.CredentialKey}}
-	return &forgegithub.Client{Client: client, GitExecutable: e.options.Git}
+	return &forgegithub.Client{Client: github.SystemClient(keychain.Store{}), GitExecutable: e.options.Git}
 }
 
 // discovery finds ports' newest releases upstream, on GitHub and GitLab.

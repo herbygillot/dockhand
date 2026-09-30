@@ -136,6 +136,11 @@ func (s *Service) ResolveRelease(ctx context.Context, request Request) (_ model.
 		return model.Release{}, err
 	}
 	defer func() { err = errors.Join(err, probe.Close()) }()
+	// A release already found upstream, as outdated finds one, is taken as
+	// it is rather than asked for again, and is checked as any is.
+	if request.Release != nil {
+		return *request.Release, probe.CheckRelease(ctx, *request.Release)
+	}
 	discovery, err := s.Upstream.Bind(probe)
 	if err != nil {
 		return model.Release{}, err

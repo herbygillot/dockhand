@@ -30,6 +30,10 @@ type UpdateRequest struct {
 	Port   string
 	// Version is the release a bump moves to; the newest when empty.
 	Version string
+	// Release is that release where it was found already, as outdated
+	// finds one: the update takes it rather than asking upstream again,
+	// and checks it against the Portfile as any. Its version is Version's.
+	Release *model.Release
 	// KeepOldChecksums refreshes a legacy checksum group's values in place
 	// instead of rewriting it as rmd160, sha256, and size.
 	KeepOldChecksums bool
@@ -152,6 +156,9 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	if !macports.ValidName(request.Port) {
 		return Update{}, fmt.Errorf("%q is not a port name", request.Port)
 	}
+	if request.Release != nil && (request.Action != model.EditUpdate || request.Release.Version != request.Version) {
+		return Update{}, fmt.Errorf("engine: the release found is %s's, for a version update to %q", request.Release.Version, request.Version)
+	}
 	branch := request.Branch
 	worktree, captured, base, err := e.updateSource(ctx, request)
 	if err != nil {
@@ -206,6 +213,7 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		input.Stealth = &preparation.StealthRequest{Changed: changed, KeepRevision: request.KeepRevision}
 	}
 	if request.Action == model.EditUpdate {
+		input.Release = request.Release
 		release, err := preparer.ResolveRelease(ctx, input)
 		if err != nil {
 			return byHand(err)

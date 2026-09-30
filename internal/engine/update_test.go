@@ -50,6 +50,9 @@ type fakePreparer struct {
 }
 
 func (p *fakePreparer) ResolveRelease(_ context.Context, r preparation.Request) (model.Release, error) {
+	if r.Release != nil {
+		return *r.Release, nil
+	}
 	version := p.version
 	if r.Version != "" {
 		version = r.Version
@@ -269,6 +272,13 @@ func TestUpdateNeedsTheBranchCheckedOut(t *testing.T) {
 	require.ErrorContains(t, err, "not checked out anywhere")
 	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditKind("publish"), Port: "jq"})
 	require.ErrorContains(t, err, "not an update")
+	// A release found already is the version asked for, for a version
+	// update, or it is refused rather than taken.
+	found := &model.Release{Version: "1.8.1", Forge: "github", Tag: "jq-1.8.1"}
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq", Version: "1.8.0", Release: found})
+	require.ErrorContains(t, err, `the release found is 1.8.1's, for a version update to "1.8.0"`)
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditChecksums, Port: "jq", Version: "1.8.1", Release: found})
+	require.ErrorContains(t, err, "the release found is 1.8.1's")
 }
 
 func TestBranchesChangingAndFreeNames(t *testing.T) {

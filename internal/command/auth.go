@@ -24,12 +24,10 @@ type credentials interface {
 
 // The login's parts, which tests stand in for.
 var (
-	authFlow  credential.DeviceFlow = &github.DeviceFlow{HTTP: http.DefaultClient}
-	authStore credentials           = keychain.Store{}
-	authAPI                         = func(store credential.Store) *github.Client {
-		return &github.Client{HTTP: http.DefaultClient, Credentials: github.SystemCredentials{Store: store, Key: github.CredentialKey}}
-	}
-	openBrowser = func(ctx context.Context, url string) error {
+	authFlow    credential.DeviceFlow = &github.DeviceFlow{HTTP: http.DefaultClient}
+	authStore   credentials           = keychain.Store{}
+	authAPI                           = github.SystemClient
+	openBrowser                       = func(ctx context.Context, url string) error {
 		path, err := exec.LookPath("open")
 		if err != nil {
 			return err

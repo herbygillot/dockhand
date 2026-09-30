@@ -292,7 +292,7 @@ func TestCalendarPreparationEvaluatesPreservedTransformation(t *testing.T) {
 			tree, err := service.Repo.EditTree(t.Context(), string(request.Source.Tree), []git.FileEdit{{Path: "devel/fixture/Portfile", Before: before, After: []byte(text), Mode: before.Mode}})
 			require.NoError(t, err)
 			request.Source = model.Source{Tree: model.ObjectID(tree)}
-			request.Version = "2026-09-14"
+			request.Version, request.Release = "2026-09-14", nil // resolved, not the fixture's
 			catalog := releaseTagFunc(func(_ context.Context, _, tag string) (forge.Tag, error) {
 				if tag != "v2026-09-14" {
 					return forge.Tag{}, forge.ErrNotFound
@@ -401,4 +401,39 @@ func TestAnUpdateComparesWithTheArchiveMacPortsShipped(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A release found already, as outdated finds one, is taken as it is
+// rather than asked of upstream again, and is checked against the
+// Portfile as one found now would be (the code-organization review,
+// finding 36).
+func TestAReleaseFoundAlreadyIsCheckedNotFoundAgain(t *testing.T) {
+	t.Parallel()
+	service, request := versionFixture(t, "setup", "", func(w http.ResponseWriter, r *http.Request) {})
+	var asked atomic.Int64
+	service.Upstream.Catalogs[portsource.GitHub] = releaseTagFunc(func(_ context.Context, _, tag string) (forge.Tag, error) {
+		asked.Add(1)
+		if tag != "v2.0" {
+			return forge.Tag{}, forge.ErrNotFound
+		}
+		return forge.Tag{Name: tag, Commit: strings.Repeat("a", 40)}, nil
+	})
+	request.Version, request.Release = "2.0", nil
+	found, err := service.ResolveRelease(t.Context(), request)
+	require.NoError(t, err)
+	require.Equal(t, "v2.0", found.Tag)
+	before := asked.Load()
+	require.NotZero(t, before)
+
+	request.Release = &found
+	again, err := service.ResolveRelease(t.Context(), request)
+	require.NoError(t, err)
+	require.Equal(t, found, again)
+	require.Equal(t, before, asked.Load(), "upstream isn't asked again")
+
+	moved := found
+	moved.Tag = "release-2.0"
+	request.Release = &moved
+	_, err = service.ResolveRelease(t.Context(), request)
+	require.ErrorIs(t, err, preparation.ErrFidelity, "a release the Portfile can't name is refused, found now or before")
 }

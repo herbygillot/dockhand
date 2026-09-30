@@ -213,9 +213,17 @@ type planJSON struct {
 	ID           string            `json:"id"`
 	Environments []environmentJSON `json:"environments"`
 	Tests        string            `json:"tests"`
+	// Only, Also, and Fresh are what the person asked: --only's changed
+	// ports, --also's unchanged ones, and --fresh.
+	Only  []string `json:"only"`
+	Also  []string `json:"also"`
+	Fresh bool     `json:"fresh"`
 	// Targets are the plan's, each with its dependencies in any
 	// environment and the environments where it needs Xcode.
 	Targets []targetJSON `json:"targets"`
+	// Omitted are the changed targets --only left out, which submission
+	// still requires.
+	Omitted []targetJSON `json:"omitted"`
 	// Builds are each environment's own order and dependencies.
 	Builds     []buildJSON     `json:"builds"`
 	Exclusions []exclusionJSON `json:"exclusions"`
@@ -247,12 +255,16 @@ type exclusionJSON struct {
 }
 
 func planView(plan model.Plan) planJSON {
-	view := planJSON{ID: string(plan.ID), Tests: string(plan.Tests), Environments: []environmentJSON{}, Targets: []targetJSON{}, Exclusions: []exclusionJSON{}, Unmet: []unmetJSON{}, Unresolved: []exclusionJSON{}}
+	view := planJSON{ID: string(plan.ID), Tests: string(plan.Tests), Environments: []environmentJSON{}, Only: append([]string{}, plan.Only...), Also: append([]string{}, plan.Also...), Fresh: plan.Fresh,
+		Targets: []targetJSON{}, Omitted: []targetJSON{}, Exclusions: []exclusionJSON{}, Unmet: []unmetJSON{}, Unresolved: []exclusionJSON{}}
 	for _, environment := range plan.Environments {
 		view.Environments = append(view.Environments, environmentView(environment))
 	}
 	for _, target := range plan.Targets {
 		view.Targets = append(view.Targets, targetView(plan, target))
+	}
+	for _, target := range plan.Omitted {
+		view.Omitted = append(view.Omitted, targetView(plan, target))
 	}
 	view.Builds = []buildJSON{}
 	for _, planned := range plan.Builds {

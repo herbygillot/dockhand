@@ -19,13 +19,13 @@ func (n *newReleases) Outdated(_ context.Context, _ model.ObjectID, request Outd
 	return []OutdatedPort{
 		{Port: "lost", Problem: "no forge could be found for its master_sites"},
 		{Port: "libharbor", Current: "2", Newest: "2"},
-		{Port: "jq", Current: "1.7.1", Newest: "1.8.1", Outdated: true},
+		{Port: "jq", Current: "1.7.1", Newest: "1.8.1", Outdated: true, Release: &model.Release{Version: "1.8.1", Forge: "github", Tag: "jq-1.8.1", Commit: "found by outdated"}},
 	}, nil
 }
 
 func TestOutdatedPortsArePreparedOneBranchEach(t *testing.T) {
 	f := setup(t)
-	e, _ := f.withPreparer(t)
+	e, p := f.withPreparer(t)
 	releases := &newReleases{}
 	e.OutdatedReader = releases
 	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}}
@@ -49,6 +49,7 @@ func TestOutdatedPortsArePreparedOneBranchEach(t *testing.T) {
 	done := prepared[0]
 	require.Empty(t, done.Problem)
 	require.True(t, done.Tidied)
+	require.Equal(t, "found by outdated", p.requests[0].Release.Commit, "the release outdated found, not one asked for again (finding 36)")
 	require.Equal(t, model.OriginServe, done.Branch.Origin)
 	require.Equal(t, []string{"jq: update to 1.8.1"}, log(t, done.Branch.Worktree, done.Branch.Base))
 	require.NotNil(t, done.Run)

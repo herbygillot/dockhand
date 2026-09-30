@@ -68,6 +68,13 @@ func TestJSONEnvelopes(t *testing.T) {
 	require.Equal(t, []any{"jq"}, dig(t, planned.Result, "plan", "builds", 0, "order"), "each environment's own order")
 	require.Equal(t, "a new snapshot", dig(t, planned.Result, "revision", "description"), "a plan records and numbers nothing")
 	require.Nil(t, planned.Result["run"])
+	require.Equal(t, []any{}, dig(t, planned.Result, "plan", "only"))
+	require.Equal(t, []any{}, dig(t, planned.Result, "plan", "omitted"))
+	require.Equal(t, false, dig(t, planned.Result, "plan", "fresh"))
+	narrowed, err := jsonOf(t, "check", "--plan", "--only", "jq", "--fresh")
+	require.NoError(t, err)
+	require.Equal(t, []any{"jq"}, dig(t, narrowed.Result, "plan", "only"), "what was asked, as the text says it")
+	require.Equal(t, true, dig(t, narrowed.Result, "plan", "fresh"))
 
 	queued, err := jsonOf(t, "check", "-d")
 	require.NoError(t, err)
@@ -336,4 +343,20 @@ func TestLogsSayWhatTheEnvironmentWas(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &view))
 	require.Equal(t, "source sha256:a; setup 3", dig(t, view, "executions", 0, "identity"))
 	require.NotContains(t, dig(t, view, "executions", 1), "identity")
+}
+
+// A plan's JSON carries what the person asked and what --only left out,
+// as its text does: the changed targets submission still requires.
+func TestAPlansJSONSaysWhatWasAskedAndLeftOut(t *testing.T) {
+	arm := model.Environment{Provider: "command"}
+	plan := model.Plan{ID: "p1", Environments: []model.Environment{arm}, Tests: model.TestsDeclared, Only: []string{"jq"}, Also: []string{"oniguruma"},
+		Targets: []model.PlanTarget{{ID: "jq", Target: model.Target{Name: "jq"}, Directory: "textproc/jq", Kind: model.Substantive, Role: model.Changed},
+			{ID: "oniguruma", Target: model.Target{Name: "oniguruma"}, Directory: "textproc/oniguruma", Kind: model.Unchanged, Role: model.Also}},
+		Omitted: []model.PlanTarget{{ID: "libharbor", Target: model.Target{Name: "libharbor"}, Directory: "devel/libharbor", Kind: model.Substantive, Role: model.Changed}},
+		Builds:  []model.EnvironmentPlan{{Environment: arm, Order: []model.TargetID{"jq", "oniguruma"}}}}
+	view := planView(plan)
+	require.Equal(t, []string{"jq"}, view.Only)
+	require.Equal(t, []string{"oniguruma"}, view.Also)
+	require.Len(t, view.Omitted, 1)
+	require.Equal(t, "libharbor", view.Omitted[0].Name)
 }
