@@ -60,6 +60,15 @@ type Observed struct {
 	Build   newport.Build
 	// Name and Category are the port's, unless the request names them.
 	Name, Category string
+	// Declared is what the project's own manifest says of it.
+	Declared newport.Declared
+	// License is the license line in MacPorts' words, from the manifest
+	// (LicenseFrom names it) or, failing that, the forge (LicenseFrom
+	// empty); empty where neither says one MacPorts has a name for.
+	License, LicenseFrom string
+	// Description is the port's one line: the manifest's, else the
+	// forge's.
+	Description string
 }
 
 // ObserveProject reads an upstream project, for a person to see before
@@ -73,12 +82,29 @@ func (e *Engine) ObserveProject(ctx context.Context, address string) (Observed, 
 	if err != nil {
 		return Observed{}, err
 	}
+	return observe(project)
+}
+
+// observe is what create makes of a project: its version, its build, and
+// its license and one line, which its own manifest says nearer MacPorts'
+// words than the forge does, the forge's being the fallback.
+func observe(project Project) (Observed, error) {
 	_, version, ok := newport.SplitTag(project.Tag)
 	if !ok {
 		return Observed{}, fmt.Errorf("%s's latest release is tagged %q, which names no version", project.Owner+"/"+project.Name, project.Tag)
 	}
 	build := newport.Detect(project.Files)
-	return Observed{Project: project, Version: version, Build: build, Name: defaultName(project, build), Category: build.Category()}, nil
+	observed := Observed{Project: project, Version: version, Build: build, Name: defaultName(project, build), Category: build.Category(),
+		Declared: newport.Declare(project.Files, build), Description: project.Description}
+	if license, ok := macports.License(observed.Declared.License); ok {
+		observed.License, observed.LicenseFrom = license, observed.Declared.File
+	} else if license, ok := macports.License(project.License); ok {
+		observed.License = license
+	}
+	if observed.Declared.Description != "" {
+		observed.Description = observed.Declared.Description
+	}
+	return observed, nil
 }
 
 // defaultName is a new port's name when none is given: the project's, in
@@ -106,6 +132,11 @@ type Created struct {
 	// why it could not.
 	Checksums        *Update
 	ChecksumsProblem string
+	// HomepageFrom is the forge's plain-HTTP homepage, where its https form
+	// answers and the Portfile has that, as MacPorts prefers.
+	HomepageFrom string
+	// PlainHTTP are the Portfile's URLs still over plain HTTP.
+	PlainHTTP []PlainURL
 }
 
 // Create writes a new port's first Portfile from an upstream project, in
@@ -120,16 +151,15 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 	}
 	var observed Observed
 	if request.Project != nil {
-		observed = Observed{Project: *request.Project}
-		observed.Build = newport.Detect(observed.Project.Files)
-	} else if observed, err = e.ObserveProject(ctx, request.URL); err != nil {
+		observed, err = observe(*request.Project)
+	} else {
+		observed, err = e.ObserveProject(ctx, request.URL)
+	}
+	if err != nil {
 		return Created{}, err
 	}
-	project, build := observed.Project, observed.Build
-	prefix, version, ok := newport.SplitTag(project.Tag)
-	if !ok {
-		return Created{}, fmt.Errorf("%s's latest release is tagged %q, which names no version", project.Owner+"/"+project.Name, project.Tag)
-	}
+	project, build, version := observed.Project, observed.Build, observed.Version
+	prefix, _, _ := newport.SplitTag(project.Tag)
 	name := request.Name
 	if name == "" {
 		name = defaultName(project, build)
@@ -138,9 +168,16 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 		return Created{}, fmt.Errorf("%q is not a port name; name it with --name", name)
 	}
 	spec := newport.Spec{Name: name, Category: request.Category, Owner: project.Owner, Project: project.Name, Version: version, TagPrefix: prefix,
-		Description: project.Description, Homepage: project.Homepage, License: newport.License(project.License), Maintainer: request.Maintainer, Build: build}
+		Description: observed.Description, Homepage: project.Homepage, License: observed.License, LicenseFrom: observed.LicenseFrom, Maintainer: request.Maintainer, Build: build,
+		Binaries: newport.Binaries(project.Files, build)}
 	if spec.Category == "" {
 		spec.Category, spec.CategoryGuessed = build.Category(), true
+	}
+	// MacPorts prefers HTTPS: a forge's plain-HTTP homepage is written as
+	// its https form where that answers.
+	var homepageFrom string
+	if plain := e.plainHTTP(ctx, homepageOnly(spec.Homepage)); len(plain) > 0 && plain[0].Answers {
+		homepageFrom, spec.Homepage = spec.Homepage, plain[0].HTTPS
 	}
 	if strings.ContainsAny(spec.Category, "/ ") || spec.Category == "" {
 		return Created{}, fmt.Errorf("%q is not a category", spec.Category)
@@ -197,7 +234,7 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 	}
 
 	created := Created{Port: name, Directory: directory, Project: project, Version: version, Build: build, Crates: len(spec.Crates),
-		Category: spec.Category, Unconfirmed: spec.Unconfirmed()}
+		Category: spec.Category, Unconfirmed: spec.Unconfirmed(), HomepageFrom: homepageFrom}
 	update, err := e.Update(ctx, UpdateRequest{Branch: request.Branch, Action: model.EditChecksums, Port: name})
 	switch {
 	case ctx.Err() != nil:
@@ -206,8 +243,20 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 		created.ChecksumsProblem = err.Error()
 	default:
 		created.Checksums = &update
+		created.PlainHTTP = update.PlainHTTP
+	}
+	// Where the refresh couldn't look at the port's URLs, the homepage is
+	// still said if it's plain HTTP.
+	if len(created.PlainHTTP) == 0 {
+		created.PlainHTTP = e.plainHTTP(ctx, homepageOnly(spec.Homepage))
 	}
 	return created, nil
+}
+
+// homepageOnly is a port that names only a homepage, for asking about it
+// before there's a Portfile to evaluate.
+func homepageOnly(homepage string) macports.PortInfo {
+	return macports.PortInfo{Options: map[string]string{"homepage": homepage}}
 }
 
 // refuseExisting refuses a name a port in the base, or in the branch,

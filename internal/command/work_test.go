@@ -2,6 +2,7 @@ package command
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,7 +32,8 @@ func newWorld(t *testing.T) world {
 	// What would ask GitHub, such as an update looking for other open pull
 	// requests, asks a fake that knows of none, unless a test gives its own.
 	testForge = func(*engine.Engine) engine.Forge { return &fakeGitHub{} }
-	t.Cleanup(func() { testForge = nil })
+	testHTTPS = httpsAnswers{}
+	t.Cleanup(func() { testForge, testHTTPS = nil, nil })
 	// Git reports resolved paths; on macOS the temporary directory is
 	// reached through /var, a link to /private/var.
 	root, err := filepath.EvalSymlinks(t.TempDir())
@@ -166,3 +168,9 @@ func TestMacPortsTreeKeepsTheWorktreeYouAreIn(t *testing.T) {
 	_, _, err = dockhand(t, "path")
 	require.ErrorContains(t, err, "master is not tracked", "outside it, the checkout named, which has master out")
 }
+
+// httpsAnswers stands in for asking URLs over HTTPS: those it holds true
+// answer.
+type httpsAnswers map[string]bool
+
+func (a httpsAnswers) Answers(_ context.Context, url string) bool { return a[url] }

@@ -2,6 +2,8 @@ package macports
 
 import (
 	"errors"
+	"regexp"
+	"slices"
 
 	"strings"
 
@@ -112,3 +114,41 @@ func (p PortInfo) BaseVersion() (string, bool) {
 func IsLivecheckOption(key string) bool {
 	return strings.HasPrefix(key, "livecheck.") || strings.HasPrefix(key, "dockhand.livecheck_")
 }
+
+// PlainURL is a URL a port names over plain HTTP, and the option it's in.
+type PlainURL struct {
+	Option, URL string
+}
+
+// PlainHTTP are the port's URLs over plain HTTP, which MacPorts prefers
+// over HTTPS: its homepage, and each of its master_sites that is a URL
+// (without the ":tag" that names which distfiles it serves). A mirror
+// group, "gnu" or "sourceforge:project", is MacPorts' own list, and none
+// of the port's.
+func (p PortInfo) PlainHTTP() []PlainURL {
+	var plain []PlainURL
+	if homepage := p.Options["homepage"]; strings.HasPrefix(homepage, "http://") {
+		plain = append(plain, PlainURL{Option: "homepage", URL: homepage})
+	}
+	sites, _ := syntax.ListValues(p.Options["master_sites"])
+	for _, site := range sites {
+		if !strings.HasPrefix(site, "http://") {
+			continue
+		}
+		// Its tags, a mirror option or which distfiles it serves, are
+		// taken off as Base takes them, one or two.
+		for range 2 {
+			if m := taggedURL.FindStringSubmatch(site); m != nil {
+				site = m[1]
+			}
+		}
+		if !slices.ContainsFunc(plain, func(u PlainURL) bool { return u.URL == site }) {
+			plain = append(plain, PlainURL{Option: "master_sites", URL: site})
+		}
+	}
+	return plain
+}
+
+// taggedURL is Base's pattern for a site with a tag after it
+// (fetch_common.tcl, tagged_url_re).
+var taggedURL = regexp.MustCompile(`^([a-zA-Z]+://.+/?):([0-9A-Za-z_-]+)$`)

@@ -47,6 +47,8 @@ type fakePreparer struct {
 	toolchain *preparation.GoToolchain
 	// dependencies are the ports the updated port depends on.
 	dependencies []string
+	// options are the evaluated port's options after the edit.
+	options map[string]string
 }
 
 func (p *fakePreparer) ResolveRelease(_ context.Context, r preparation.Request) (model.Release, error) {
@@ -92,7 +94,7 @@ func (p *fakePreparer) Prepare(ctx context.Context, r preparation.Request) (prep
 		p.during()
 	}
 	snapshot := func(version string, revision int) macports.Snapshot {
-		return macports.Snapshot{Ports: map[string]macports.PortInfo{r.Selection.Selector: {Name: r.Selection.Selector, Version: version, Revision: revision}}}
+		return macports.Snapshot{Ports: map[string]macports.PortInfo{r.Selection.Selector: {Name: r.Selection.Selector, Version: version, Revision: revision, Options: p.options}}}
 	}
 	result := preparation.Result{Target: model.Target{Name: r.Selection.Selector, Portfile: name}, Release: r.Release, PreparedTree: r.Source.Tree,
 		Fidelity: []portedit.Fidelity{{Before: snapshot(string(old), revision), After: snapshot(next, nextRevision)}}}
@@ -500,4 +502,28 @@ func TestAChangeTheBuildDoesntReadHoldsNothing(t *testing.T) {
 		{Kind: "build", Path: "Package.swift", Message: "upstream's Package.swift is new; the build may need the Portfile to follow; flatbuffers builds with cmake, not swift, so it holds nothing"},
 		{Kind: "dependency", Path: "package.json", Message: "upstream: package.json: 2 dependencies changed; flatbuffers builds with cmake, not node, so it holds nothing"},
 	}, comparison.Changes)
+}
+
+// A version update or a checksum refresh says the port's URLs over plain
+// HTTP, its homepage and its master_sites, with whether each answers over
+// HTTPS, which MacPorts prefers; a mirror group is MacPorts' own, and a
+// revision bump doesn't look.
+func TestAnUpdateSaysThePortsPlainHTTPURLs(t *testing.T) {
+	f := setup(t)
+	e, p := f.withPreparer(t)
+	p.options = map[string]string{"homepage": "http://jqlang.example/", "master_sites": "http://dl.example/jq/:src gnu https://github.com/jqlang/jq/releases/"}
+	e.HTTPS = httpsAnswers{"https://jqlang.example/": true}
+	want := []PlainURL{
+		{PlainURL: macports.PlainURL{Option: "homepage", URL: "http://jqlang.example/"}, HTTPS: "https://jqlang.example/", Answers: true},
+		{PlainURL: macports.PlainURL{Option: "master_sites", URL: "http://dl.example/jq/"}, HTTPS: "https://dl.example/jq/"},
+	}
+	update, err := e.Update(t.Context(), UpdateRequest{Start: &StartRequest{Name: "jq-update"}, Action: model.EditUpdate, Port: "jq"})
+	require.NoError(t, err)
+	require.Equal(t, want, update.PlainHTTP)
+	checksums, err := e.Update(t.Context(), UpdateRequest{Branch: update.Branch, Action: model.EditChecksums, Port: "jq"})
+	require.NoError(t, err)
+	require.Equal(t, want, checksums.PlainHTTP)
+	revbump, err := e.Update(t.Context(), UpdateRequest{Branch: update.Branch, Action: model.EditRevbump, Port: "jq", Subject: "rebuild for oniguruma 6.9.10"})
+	require.NoError(t, err)
+	require.Empty(t, revbump.PlainHTTP)
 }

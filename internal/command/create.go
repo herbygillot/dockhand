@@ -27,8 +27,11 @@ say, with the release's version. A Rust project's cargo.crates come from
 its Cargo.lock. It then fills in the checksums as dockhand checksums does.
 
 What it observed, it fills in; what it guessed, it marks with a
-"# dockhand: unconfirmed" comment: the license from GitHub's detection, the
-long description, and the category unless --category names it. The
+"# dockhand: unconfirmed" comment: the license, from the project's
+Cargo.toml or pyproject.toml where it declares one MacPorts has a name for,
+else from GitHub's detection; the long description; and the category,
+guessed from the build system unless --category names it. The description
+is the manifest's one line where it has one, else GitHub's. The
 maintainer is your config's maintainer, else nomaintainer, marked. The new
 Portfile is staged, so the next check includes it. Nothing is committed.
 
@@ -55,12 +58,15 @@ The branch is --branch, else the one checked out here; --new starts one.
 			out := streams.Out
 			project := observed.Project
 			license := "no license detected"
-			if project.License != "" {
+			switch {
+			case observed.LicenseFrom != "":
+				license = observed.LicenseFrom + " says " + observed.Declared.License
+			case project.License != "":
 				license = "GitHub says " + project.License
 			}
 			header := fmt.Sprintf("%s %s · %s · %s", name, observed.Version, buildWords(observed), license)
-			if project.Description != "" {
-				header += fmt.Sprintf(" · %q", project.Description)
+			if observed.Description != "" {
+				header += fmt.Sprintf(" · %q", observed.Description)
 			}
 			fmt.Fprintln(out, header)
 
@@ -127,16 +133,27 @@ The branch is --branch, else the one checked out here; --new starts one.
 				}
 				fmt.Fprintf(out, "  checksums: %s\n", what)
 			}
+			if created.HomepageFrom != "" {
+				fmt.Fprintf(out, "  homepage: over HTTPS, as MacPorts prefers; GitHub gives %s\n", created.HomepageFrom)
+			}
 			if len(created.Unconfirmed) > 0 {
 				var marked []string
 				for _, what := range created.Unconfirmed {
-					if what == "license" && project.License != "" {
+					switch {
+					case what == "license" && observed.LicenseFrom != "":
+						what = "license (from " + observed.LicenseFrom + ")"
+					case what == "license" && observed.License != "":
 						what = "license (from GitHub's detection)"
+					case what == "category":
+						// It picks the directory, so the guess is said with
+						// what it chose.
+						what = "category " + created.Category + " (guessed from the build system; --category chooses)"
 					}
 					marked = append(marked, what)
 				}
 				fmt.Fprintf(out, "  Unconfirmed, marked in the file: %s\n", strings.Join(marked, ", "))
 			}
+			writePlainHTTP(out, created.PlainHTTP)
 			fmt.Fprintf(out, "Next: dockhand edit %s, then dockhand check\n", created.Port)
 			return nil
 		},

@@ -53,6 +53,9 @@ type updateJSON struct {
 	Regenerated   []regeneratedJSON `json:"regenerated,omitempty"`
 	Others        []otherJSON       `json:"others,omitempty"`
 	OthersProblem string            `json:"others_problem,omitempty"`
+	// PlainHTTP are the port's URLs over plain HTTP, and whether each
+	// answers over HTTPS.
+	PlainHTTP []plainHTTPJSON `json:"plain_http,omitempty"`
 	// Tidy, Check, and Submit are the steps update --submit and bump go on
 	// to, each as tidy, check, and submit report it, as far as they went.
 	Tidy   *tidyJSON   `json:"tidy,omitempty"`
@@ -165,6 +168,9 @@ func updateView(branch model.Branch, started bool, update engine.Update, plan bo
 		view.Others = append(view.Others, otherJSON{Number: pr.Number, Title: pr.Title, URL: pr.URL})
 	}
 	view.OthersProblem = update.OthersProblem
+	for _, url := range update.PlainHTTP {
+		view.PlainHTTP = append(view.PlainHTTP, plainHTTPJSON{Option: url.Option, URL: url.URL, HTTPS: url.HTTPS, Answers: url.Answers})
+	}
 	if stealth := update.Stealth; stealth != nil {
 		view.Stealth = &stealthJSON{Revbumped: stealth.Revbumped, RevbumpProblem: stealth.RevbumpProblem, DistSubdir: stealth.DistSubdir, Problem: stealth.Problem, Distfiles: []stealthDistfileJSON{}}
 		for _, d := range stealth.Distfiles {
@@ -462,4 +468,13 @@ func preparedView(prepared []engine.PreparedUpdate) map[string]any {
 		views = append(views, view)
 	}
 	return map[string]any{"prepared": views}
+}
+
+// plainHTTPJSON is a URL a port names over plain HTTP, its https form, and
+// whether that answers.
+type plainHTTPJSON struct {
+	Option  string `json:"option"`
+	URL     string `json:"url"`
+	HTTPS   string `json:"https"`
+	Answers bool   `json:"https_answers"`
 }

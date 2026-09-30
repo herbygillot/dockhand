@@ -1,0 +1,43 @@
+package macports
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+// A license expression, as a forge detects one or a manifest declares one,
+// is said in MacPorts' words, as the Guide writes them: a choice braced,
+// licenses that all apply side by side, versions without ".0", and a work
+// in the public domain by CC0 or the Unlicense public-domain, as the tree
+// says it. What it can't say is no answer, never a guess.
+func TestALicenseExpressionInMacPortsWords(t *testing.T) {
+	t.Parallel()
+	for expression, want := range map[string]string{
+		"MIT":                             "MIT",
+		"Apache-2.0":                      "Apache-2",
+		"MIT OR Apache-2.0":               "{MIT Apache-2}",
+		"MIT/Apache-2.0":                  "{MIT Apache-2}",
+		"Apache-2.0 or MIT":               "{Apache-2 MIT}",
+		"MIT AND Zlib":                    "MIT zlib",
+		"(MIT OR Apache-2.0) AND BSL-1.0": "{MIT Apache-2} Boost-1",
+		"BSD-3-Clause AND (MIT OR Zlib)":  "BSD {MIT zlib}",
+		"GPL-3.0-or-later":                "GPL-3+",
+		"CC0-1.0":                         "public-domain",
+		"Unlicense OR MIT":                "{public-domain MIT}",
+		"BSD-2-Clause OR BSD-3-Clause":    "BSD",
+		"(MIT)":                           "MIT",
+		"((MIT))":                         "MIT",
+		"(MIT) OR (ISC)":                  "{MIT ISC}",
+		"(MIT OR ISC) AND (Zlib)":         "{MIT ISC} zlib",
+	} {
+		got, ok := License(expression)
+		require.True(t, ok, expression)
+		require.Equal(t, want, got, expression)
+	}
+	for _, expression := range []string{"", "NOASSERTION", "Unicode-3.0", "MIT OR Unicode-3.0", "Apache-2.0 WITH LLVM-exception",
+		"(MIT AND Zlib) OR ISC", "MIT AND", "(MIT OR ISC"} {
+		_, ok := License(expression)
+		require.False(t, ok, expression)
+	}
+}

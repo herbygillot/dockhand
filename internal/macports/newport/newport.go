@@ -122,13 +122,18 @@ type Spec struct {
 	Version, TagPrefix string
 	Description        string
 	Homepage           string
-	// License is MacPorts' name for the forge's detection; empty when it
-	// detected none, or one MacPorts has no name for.
-	License string
+	// License is the license line, in MacPorts' words (macports.License);
+	// empty where none could be said. LicenseFrom is the manifest it came
+	// from, Cargo.toml or pyproject.toml, and empty for the forge's
+	// detection.
+	License, LicenseFrom string
 	// Maintainer is the maintainers line; nomaintainer when empty.
 	Maintainer string
 	Build      Build
-	Crates     []Crate
+	// Binaries are the programs a Cargo or Go build makes, which its
+	// destroot installs (Binaries).
+	Binaries []string
+	Crates   []Crate
 	// Unfetched are the crates cargo.crates can't fetch, each said as the
 	// Portfile marks it.
 	Unfetched []string
@@ -146,6 +151,10 @@ func (s Spec) Unconfirmed() []string {
 	}
 	if s.Build.System == "" || s.Build.System == "python" || s.Build.System == "go" {
 		marked = append(marked, "build")
+	}
+	// Neither PortGroup installs anything itself.
+	if s.Build.System == "cargo" || s.Build.System == "go" {
+		marked = append(marked, "destroot")
 	}
 	if len(s.Unfetched) > 0 {
 		marked = append(marked, "cargo.crates")
@@ -195,10 +204,14 @@ func Write(s Spec) []byte {
 	}
 	line("categories", s.Category)
 	if s.License == "" {
-		mark("the forge detected no license MacPorts names; read the project's license")
+		mark("neither the project's manifest nor the forge names a license MacPorts has a name for; read the project's license")
 		line("license", "unknown")
 	} else {
-		mark("from the forge's license detection")
+		if s.LicenseFrom != "" {
+			mark("from " + s.LicenseFrom + "'s license field")
+		} else {
+			mark("from the forge's license detection")
+		}
 		line("license", s.License)
 	}
 	if s.Maintainer == "" {
@@ -216,7 +229,15 @@ func Write(s Spec) []byte {
 		line("homepage", s.Homepage)
 	}
 	b.WriteString("\n")
-	line("checksums", "rmd160  0 \\")
+	// A Cargo or Go port's crates or modules are distfiles too, whose
+	// checksums they append, so the port's own names its file, as the
+	// tree's do; lint refuses one that doesn't.
+	if s.Build.System == "cargo" || s.Build.System == "go" {
+		line("checksums", "${distname}${extract.suffix} \\")
+		fmt.Fprintf(&b, "%-20s%s\n", "", "rmd160  0 \\")
+	} else {
+		line("checksums", "rmd160  0 \\")
+	}
 	fmt.Fprintf(&b, "%-20s%s\n", "", "sha256  0 \\")
 	fmt.Fprintf(&b, "%-20s%s\n", "", "size    0")
 	switch s.Build.System {
@@ -234,6 +255,10 @@ func Write(s Spec) []byte {
 	case "":
 		b.WriteString("\n")
 		mark("the build system was not recognized; say how it builds")
+	}
+	if s.Build.System == "cargo" || s.Build.System == "go" {
+		b.WriteString("\n")
+		s.writeDestroot(&b)
 	}
 	if s.Build.System == "cargo" {
 		b.WriteString("\n")
@@ -264,6 +289,29 @@ func Write(s Spec) []byte {
 	return []byte(b.String())
 }
 
+// writeDestroot installs the programs the build makes, as the tree's Cargo
+// and Go ports do: neither PortGroup installs anything itself. Each is
+// named ${name} where it's the port's own name.
+func (s Spec) writeDestroot(b *strings.Builder) {
+	if len(s.Binaries) == 0 {
+		fmt.Fprintf(b, "%s %s\n", Unconfirmed, "the manifest names no program; install what the build makes in a destroot block")
+		return
+	}
+	fmt.Fprintf(b, "%s %s\n", Unconfirmed, "installs the programs the manifest names; add what else the port should install")
+	b.WriteString("destroot {\n")
+	for _, binary := range s.Binaries {
+		if binary == s.Name {
+			binary = "${name}"
+		}
+		if s.Build.System == "cargo" {
+			fmt.Fprintf(b, "    xinstall -m 0755 \\\n        ${worksrcpath}/target/[cargo.rust_platform]/release/%s \\\n        ${destroot}${prefix}/bin/\n", binary)
+		} else {
+			fmt.Fprintf(b, "    xinstall -m 0755 ${worksrcpath}/%s ${destroot}${prefix}/bin/\n", binary)
+		}
+	}
+	b.WriteString("}\n")
+}
+
 // tclWord writes a description as MacPorts does, as plain words, quoted as
 // one Tcl word only when a character would mean something to Tcl.
 func tclWord(value string) string {
@@ -276,19 +324,6 @@ func tclWord(value string) string {
 	}
 	return value
 }
-
-// licenses are MacPorts' names for the SPDX identifiers forges report.
-var licenses = map[string]string{
-	"MIT": "MIT", "Apache-2.0": "Apache-2", "BSD-2-Clause": "BSD", "BSD-3-Clause": "BSD", "ISC": "ISC",
-	"GPL-2.0": "GPL-2", "GPL-2.0-only": "GPL-2", "GPL-2.0-or-later": "GPL-2+", "GPL-3.0": "GPL-3", "GPL-3.0-only": "GPL-3", "GPL-3.0-or-later": "GPL-3+",
-	"LGPL-2.1": "LGPL-2.1", "LGPL-2.1-only": "LGPL-2.1", "LGPL-2.1-or-later": "LGPL-2.1+", "LGPL-3.0": "LGPL-3", "LGPL-3.0-only": "LGPL-3", "LGPL-3.0-or-later": "LGPL-3+",
-	"AGPL-3.0": "AGPL-3", "AGPL-3.0-only": "AGPL-3", "AGPL-3.0-or-later": "AGPL-3+", "MPL-2.0": "MPL-2", "Unlicense": "Unlicense", "Zlib": "zlib",
-	"BSL-1.0": "Boost-1", "0BSD": "BSD", "CC0-1.0": "CC0-1", "EPL-2.0": "EPL-2", "Artistic-2.0": "Artistic-2", "WTFPL": "WTFPL-2",
-}
-
-// License is MacPorts' name for an SPDX identifier, or empty for one it
-// has no name for, such as GitHub's NOASSERTION.
-func License(spdx string) string { return licenses[spdx] }
 
 // SplitTag parses a release tag into the prefix before the version and the
 // version: v0.4.2 is "v" and 0.4.2, rift-0.4.2 is "rift-" and 0.4.2.

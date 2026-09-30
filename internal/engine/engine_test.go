@@ -93,8 +93,15 @@ func (f fixture) open(t *testing.T) *Engine {
 	e, err := Open(t.Context(), f.options)
 	require.NoError(t, err)
 	t.Cleanup(func() { e.Close() })
+	e.HTTPS = httpsAnswers{} // no test asks the network
 	return e
 }
+
+// httpsAnswers stands in for asking URLs over HTTPS: those it holds true
+// answer.
+type httpsAnswers map[string]bool
+
+func (a httpsAnswers) Answers(_ context.Context, url string) bool { return a[url] }
 
 func (f fixture) upstreamMaster(t *testing.T) model.ObjectID {
 	return model.ObjectID(run(t, f.upstream, "rev-parse", "master"))

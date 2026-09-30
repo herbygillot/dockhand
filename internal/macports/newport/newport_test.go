@@ -48,7 +48,7 @@ func TestARustProjectGetsCargoAndItsCrates(t *testing.T) {
 	prefix, version, ok := SplitTag("v0.4.2")
 	require.True(t, ok)
 	spec := Spec{Name: "rift", Category: "textproc", Owner: "rift-dev", Project: "rift", Version: version, TagPrefix: prefix,
-		Description: "Fast structural diff for config files", License: License("MIT"), Maintainer: "{@ada example.org:ada} openmaintainer", Build: build, Crates: crates}
+		Description: "Fast structural diff for config files", License: "MIT", Maintainer: "{@ada example.org:ada} openmaintainer", Build: build, Binaries: []string{"rift", "rift-lsp"}, Crates: crates}
 	require.Equal(t, Modeline+`
 
 PortSystem          1.0
@@ -68,15 +68,26 @@ description         Fast structural diff for config files
 # dockhand: unconfirmed, write a longer description
 long_description    {*}${description}
 
-checksums           rmd160  0 \
+checksums           ${distname}${extract.suffix} \
+                    rmd160  0 \
                     sha256  0 \
                     size    0
+
+# dockhand: unconfirmed, installs the programs the manifest names; add what else the port should install
+destroot {
+    xinstall -m 0755 \
+        ${worksrcpath}/target/[cargo.rust_platform]/release/${name} \
+        ${destroot}${prefix}/bin/
+    xinstall -m 0755 \
+        ${worksrcpath}/target/[cargo.rust_platform]/release/rift-lsp \
+        ${destroot}${prefix}/bin/
+}
 
 cargo.crates \
     anyhow  1.0.89   86fdf8605db99b54d3cd748a44c6d04df638eb5dafb219b135d0149bd0db01f6 \
     serde   1.0.210  c8e3592472072e6e22e0a54d5904d9febf8508f65fb8552499a1abc7d1078c3a
 `, string(Write(spec)))
-	require.Equal(t, []string{"license", "long_description"}, spec.Unconfirmed())
+	require.Equal(t, []string{"license", "long_description", "destroot"}, spec.Unconfirmed())
 }
 
 // A crate from another registry isn't taken for a crates.io crate, whose
@@ -118,8 +129,6 @@ func TestWhatCantBeObservedIsMarked(t *testing.T) {
 	require.Contains(t, out, "python.versions     313\n")
 	require.Equal(t, []string{"category", "license", "long_description", "maintainers", "build"}, spec.Unconfirmed())
 
-	require.Equal(t, "", License("NOASSERTION"))
-	require.Equal(t, "Apache-2", License("Apache-2.0"))
 	prefix, version, ok := SplitTag("rift-0.4.2")
 	require.True(t, ok)
 	require.Equal(t, "rift-", prefix)
@@ -145,4 +154,55 @@ func TestADescriptionReachesTclAsWritten(t *testing.T) {
 	require.NoError(t, err, "%s", output)
 	require.Equal(t, strings.Join(descriptions, "\n")+"\n", string(output))
 	require.Equal(t, "A tool for x", tclWord("  A   tool\tfor x "), "plain words stay plain, as MacPorts writes them")
+}
+
+// A project's own manifest says its license and its one line: Cargo.toml's
+// [package], pyproject.toml's [project]. What it doesn't give as a string,
+// a license a Cargo workspace inherits or a PEP 621 table, is left out, as
+// is a manifest that doesn't parse, and the Portfile says which it read.
+func TestAProjectsManifestSaysItsLicenseAndItsLine(t *testing.T) {
+	cargo := Build{System: "cargo", Evidence: "Cargo.toml"}
+	python := Build{System: "python", Evidence: "pyproject.toml"}
+	for _, c := range []struct {
+		files    map[string][]byte
+		build    Build
+		declared Declared
+	}{
+		{map[string][]byte{"Cargo.toml": []byte("[package]\nname = \"txt\"\nlicense = \"MIT OR Apache-2.0\"\ndescription = \"A fast, intuitive terminal text editor\"\n")}, cargo,
+			Declared{License: "MIT OR Apache-2.0", Description: "A fast, intuitive terminal text editor", File: "Cargo.toml"}},
+		{map[string][]byte{"Cargo.toml": []byte("[package]\nlicense.workspace = true\ndescription.workspace = true\n")}, cargo, Declared{File: "Cargo.toml"}},
+		{map[string][]byte{"Cargo.toml": []byte("[workspace]\nmembers = [\"a\"]\n")}, cargo, Declared{}},
+		{map[string][]byte{"Cargo.toml": []byte("[package\n")}, cargo, Declared{}},
+		{map[string][]byte{"pyproject.toml": []byte("[project]\nlicense = \"BSD-3-Clause\"\ndescription = \"Tools\"\n")}, python,
+			Declared{License: "BSD-3-Clause", Description: "Tools", File: "pyproject.toml"}},
+		{map[string][]byte{"pyproject.toml": []byte("[project]\nlicense = {text = \"MIT\"}\n")}, python, Declared{File: "pyproject.toml"}},
+		{map[string][]byte{"go.mod": []byte("module x\n")}, Build{System: "go", Evidence: "go.mod"}, Declared{}},
+	} {
+		require.Equal(t, c.declared, Declare(c.files, c.build), "%s", c.files)
+	}
+	spec := Spec{Name: "txt", Category: "editors", Owner: "o", Project: "txt", Version: "0.8.1", License: "{MIT Apache-2}", LicenseFrom: "Cargo.toml", Build: cargo}
+	require.Contains(t, string(Write(spec)), "# dockhand: unconfirmed, from Cargo.toml's license field\nlicense             {MIT Apache-2}\n")
+}
+
+// Neither the cargo nor the golang PortGroup installs anything, so a new
+// port installs the programs its manifest names, as the tree's do:
+// Cargo.toml's [[bin]] targets, else its package; the one go build makes
+// at go.mod's module, a major version's suffix aside (the txt run's
+// finding 2).
+func TestANewPortInstallsWhatItsManifestNames(t *testing.T) {
+	cargo, golang := Build{System: "cargo", Evidence: "Cargo.toml"}, Build{System: "go", Evidence: "go.mod"}
+	require.Equal(t, []string{"txt"}, Binaries(map[string][]byte{"Cargo.toml": []byte("[package]\nname = \"txt\"\n")}, cargo))
+	require.Equal(t, []string{"a", "b"}, Binaries(map[string][]byte{"Cargo.toml": []byte("[package]\nname = \"x\"\n[[bin]]\nname = \"a\"\n[[bin]]\nname = \"b\"\n")}, cargo))
+	require.Empty(t, Binaries(map[string][]byte{"Cargo.toml": []byte("[workspace]\nmembers = [\"a\"]\n")}, cargo))
+	require.Equal(t, []string{"lazysql"}, Binaries(map[string][]byte{"go.mod": []byte("module github.com/jorgerojas26/lazysql\n\ngo 1.24\n")}, golang))
+	require.Equal(t, []string{"tool"}, Binaries(map[string][]byte{"go.mod": []byte("module example.org/tool/v3\n")}, golang))
+	require.Empty(t, Binaries(map[string][]byte{"go.mod": []byte("go 1.24\n")}, golang))
+
+	spec := Spec{Name: "lazysql", Category: "databases", Owner: "o", Project: "lazysql", Version: "0.5.9", TagPrefix: "v", Build: golang, Binaries: []string{"lazysql"}}
+	require.Contains(t, string(Write(spec)), "destroot {\n    xinstall -m 0755 ${worksrcpath}/${name} ${destroot}${prefix}/bin/\n}\n")
+	require.Contains(t, spec.Unconfirmed(), "destroot")
+	spec = Spec{Name: "tool", Category: "devel", Owner: "o", Project: "tool", Version: "1.0", Build: cargo}
+	require.Contains(t, string(Write(spec)), Unconfirmed+" the manifest names no program; install what the build makes in a destroot block\n")
+	require.NotContains(t, string(Write(spec)), "destroot {")
+	require.NotContains(t, Spec{Build: Build{System: "cmake"}}.Unconfirmed(), "destroot", "a cmake build installs what it installs")
 }

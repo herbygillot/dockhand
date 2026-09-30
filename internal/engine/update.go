@@ -132,6 +132,11 @@ type Update struct {
 	// they couldn't be looked for.
 	Others        []forge.PullRequestSummary
 	OthersProblem string
+	// PlainHTTP are the port's URLs over plain HTTP, homepage and
+	// master_sites, each with whether its https form answers, since
+	// MacPorts prefers HTTPS. They're said, never changed: that's the
+	// maintainer's call, and no part of the edit.
+	PlainHTTP []PlainURL
 	// Stealth is a checksum refresh's stealth update, when it found one.
 	Stealth *Stealth
 	// DistSubdirRemoved is true when a version update removed the
@@ -235,6 +240,13 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	}
 	update := describe(branch, request.Port, result)
 	update.Base = base
+	// A version update or a checksum refresh is where the port's URLs are
+	// looked at, so its plain-HTTP ones are said there.
+	if request.Action == model.EditUpdate || request.Action == model.EditChecksums {
+		if info, ok := preparedPort(result, update.Port); ok {
+			update.PlainHTTP = e.plainHTTP(ctx, info)
+		}
+	}
 	update.Stealth, update.DistSubdirRemoved = result.Stealth, result.DistSubdirRemoved
 	if result.Stealth != nil {
 		update.Subject = update.Port + ": update checksums after a stealth update"
@@ -416,6 +428,19 @@ func describe(branch model.Branch, selector string, result preparation.Result) U
 		update.Subject = result.Commits[0].Subject
 	}
 	return update
+}
+
+// preparedPort is the port as the edit leaves it: as the last evaluation
+// found it, or, where nothing was edited, as it was.
+func preparedPort(result preparation.Result, name string) (macports.PortInfo, bool) {
+	if len(result.Fidelity) > 0 {
+		info, ok := result.Fidelity[len(result.Fidelity)-1].After.Ports[name]
+		return info, ok
+	}
+	if result.Unchanged != nil {
+		return *result.Unchanged, true
+	}
+	return macports.PortInfo{}, false
 }
 
 // worktree opens the branch's checkout, which must have the branch checked

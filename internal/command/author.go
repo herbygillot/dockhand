@@ -374,6 +374,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		default:
 			fmt.Fprintf(out, "%s %s's checksums are current; nothing to change.\n", update.Port, update.After)
 		}
+		writePlainHTTP(out, update.PlainHTTP)
 		return branch, update, nil
 	}
 	if request.Action == model.EditUpdate {
@@ -396,6 +397,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		writeUpstream(out, update.Upstream)
 		writePatches(out, update)
 		writeOthers(out, update)
+		writePlainHTTP(out, update.PlainHTTP)
 		if linked.revbump {
 			result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.except, true)
 			streams.emit(result)
@@ -459,6 +461,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	writeUpstream(out, update.Upstream)
 	writePatches(out, update)
 	writeOthers(out, update)
+	writePlainHTTP(out, update.PlainHTTP)
 	if linked.revbump {
 		if result.Revbumped, err = revbumpLinked(ctx, e, out, branch, update, linked.except, false); err != nil {
 			return branch, update, err
@@ -814,6 +817,23 @@ func writeUpstream(out io.Writer, comparison *model.UpstreamComparison) {
 // writeOthers names the port's other open pull requests the update found,
 // or why it couldn't look. They stop nothing: submit shows them again, and
 // bump and serve hold on one.
+// writePlainHTTP says the port's plain-HTTP URLs, which MacPorts would
+// have over HTTPS, with whether the https form answers. The Portfile is
+// left as it is: changing them is the maintainer's call.
+func writePlainHTTP(out io.Writer, plain []engine.PlainURL) {
+	if len(plain) == 0 {
+		return
+	}
+	fmt.Fprintln(out, "MacPorts prefers HTTPS; over plain HTTP:")
+	for _, url := range plain {
+		answer := url.HTTPS + " answers"
+		if !url.Answers {
+			answer = "https doesn't answer there"
+		}
+		fmt.Fprintf(out, "  %s %s: %s\n", url.Option, url.URL, answer)
+	}
+}
+
 func writeOthers(out io.Writer, update engine.Update) {
 	if update.OthersProblem != "" {
 		fmt.Fprintf(out, "Couldn't look for other open pull requests for %s: %s\n", update.Port, update.OthersProblem)

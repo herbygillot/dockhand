@@ -136,11 +136,17 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 	if testOutdatedReader != nil {
 		e.OutdatedReader = testOutdatedReader
 	}
+	if testHTTPS != nil {
+		e.HTTPS = testHTTPS
+	}
 	if testArchiveFetcher != nil {
 		e.ArchiveFetcher = testArchiveFetcher(e)
 	}
 	return e, nil
 }
+
+// testHTTPS, when set, stands in for asking URLs over HTTPS.
+var testHTTPS engine.HTTPSProbe
 
 // testArchiveFetcher, when set, stands in for fetching archives.
 var testArchiveFetcher func(*engine.Engine) engine.ArchiveFetcher

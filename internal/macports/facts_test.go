@@ -73,3 +73,16 @@ func TestAStubWhoseProbeFailedIsSaid(t *testing.T) {
 	_, _, err := ResolveStub(snapshot, model.Target{Name: "py-requests"})
 	require.ErrorContains(t, err, "can't tell whether py-requests builds anything")
 }
+
+// A port's plain-HTTP URLs are its homepage and its master_sites that are
+// URLs, tags taken off as Base takes them, and never a mirror group, which
+// is MacPorts' own; MacPorts prefers HTTPS.
+func TestAPortsPlainHTTPURLs(t *testing.T) {
+	t.Parallel()
+	info := PortInfo{Options: map[string]string{
+		"homepage":     "http://txt.hellman.io/",
+		"master_sites": "http://ftp.example.org/pub/ http://ftp.example.org/pub/:docs http://mirror.example.org/x/:nosubdir:src https://example.org/ gnu sourceforge:project",
+	}}
+	require.Equal(t, []PlainURL{{"homepage", "http://txt.hellman.io/"}, {"master_sites", "http://ftp.example.org/pub/"}, {"master_sites", "http://mirror.example.org/x/"}}, info.PlainHTTP())
+	require.Empty(t, PortInfo{Options: map[string]string{"homepage": "https://example.org", "master_sites": "https://example.org/ gnu"}}.PlainHTTP())
+}

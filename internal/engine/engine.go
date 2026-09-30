@@ -79,6 +79,9 @@ type Engine struct {
 	ArchiveFetcher ArchiveFetcher
 	// ProjectReader observes upstream projects for create; GitHub when nil.
 	ProjectReader ProjectReader
+	// HTTPS says whether a URL answers over HTTPS, for a port's plain-HTTP
+	// URLs; a request of the URL when nil.
+	HTTPS HTTPSProbe
 	// Providers are where checks build, by name.
 	Providers map[string]buildenv.Provider
 	ports     *selection.Reader
