@@ -22,7 +22,7 @@ func ConfirmSource(ctx context.Context, kind string, in Input, rename bool) erro
 	if err != nil {
 		return err
 	}
-	if !rename && !GOPATHLayout(in.Worksrcdir) && member != path.Join(in.Worksrcdir, name) {
+	if !rename && !macports.GOPATHLayout(in.Worksrcdir) && member != path.Join(in.Worksrcdir, name) {
 		return fmt.Errorf("%w: %s does not contain %s/%s", macports.ErrManifestMissing, member, in.Worksrcdir, name)
 	}
 	return nil

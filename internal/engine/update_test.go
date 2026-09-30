@@ -431,6 +431,32 @@ func TestAChangeTheArchivesShareIsSaidOnce(t *testing.T) {
 	}, comparison.Changes)
 }
 
+// Each version is read where its port builds, as its worksrcdir names it:
+// a project nested in python/ is compared there, with the license at the
+// archive's top, and a manifest outside it isn't read (the update-workflow
+// review's finding 1).
+func TestTheComparisonReadsWhereThePortBuilds(t *testing.T) {
+	dir := t.TempDir()
+	next := archives.Download{Path: writeTarball(t, dir, "demo-2", map[string]string{
+		"LICENSE": "MIT\n", "python/pyproject.toml": "[project]\ndependencies = [\"requests>=2\", \"rich>=13\"]\n", "package.json": `{"dependencies":{"x":"1"}}`,
+	})}
+	next.Name = "demo-2.tar.gz"
+	previous := archives.Download{Path: writeTarball(t, dir, "demo-1", map[string]string{
+		"LICENSE": "MIT\n", "python/pyproject.toml": "[project]\ndependencies = [\"requests>=2\"]\n",
+	})}
+	result := preparation.Result{}
+	result.Target = model.Target{Name: "py-demo"}
+	result.Unchanged = &macports.PortInfo{Name: "py-demo", Options: map[string]string{"worksrcdir": "demo-1/python"}}
+	result.Prepared = macports.Snapshot{Ports: map[string]macports.PortInfo{"py-demo": {Name: "py-demo", Options: map[string]string{"worksrcdir": "demo-2/python"}}}}
+	result.Downloads = []archives.Download{next}
+	result.Pairs = []preparation.ArchivePair{{Previous: previous, Next: next}}
+	comparison, _ := compareUpstream(t.Context(), result, sourcecompare.Versions{})
+	require.Empty(t, comparison.Problem)
+	require.Equal(t, []model.UpstreamChange{
+		{Kind: "dependency", Path: "python/pyproject.toml", Message: "upstream: python/pyproject.toml adds rich >=13", Hold: true},
+	}, comparison.Changes)
+}
+
 // A Python requirement the new version moves holds where the port that
 // provides it doesn't meet it at the version the branch has: sqlit-tui
 // 1.6.4 pins textual-fastdatatable==0.19.0, and MacPorts had 0.17.1, while

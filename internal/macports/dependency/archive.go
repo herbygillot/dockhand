@@ -14,13 +14,6 @@ import (
 const maxManifestBytes = 16 << 20
 
 // Manifest reads a regular archive member without extracting files onto the host.
-// GOPATHLayout reports whether worksrcdir is the Go PortGroup's default,
-// gopath/src/<go.package>, a post-extract location rather than an archive
-// path.
-func GOPATHLayout(worksrcdir string) bool {
-	return strings.HasPrefix(strings.Trim(worksrcdir, "/"), "gopath/src/")
-}
-
 func Manifest(ctx context.Context, filename, worksrcdir, name string) ([]byte, string, error) {
 	found := map[string][]byte{}
 	err := archive.Walk(ctx, filename, func(member archive.Member) error {
@@ -58,11 +51,7 @@ func Manifest(ctx context.Context, filename, worksrcdir, name string) ([]byte, s
 	// source after extraction, not where the archive holds it: the archive's
 	// top-level directory is flattened into GOPATH by post-extract, so the
 	// manifest sits directly under that top-level directory.
-	_, subdir, _ := strings.Cut(strings.Trim(worksrcdir, "/"), "/")
-	if GOPATHLayout(worksrcdir) {
-		subdir = ""
-	}
-	relative := path.Join(subdir, name)
+	relative := path.Join(macports.SourceSubdirectory(worksrcdir), name)
 	var selected string
 	for member := range found {
 		_, suffix, nested := strings.Cut(member, "/")

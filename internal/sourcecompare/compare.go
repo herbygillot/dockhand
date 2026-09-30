@@ -1,26 +1,19 @@
 // Package sourcecompare compares two versions of a project's upstream
-// source, as their release archives hold it, for what a reviewer would ask
-// about before an update is submitted (Design v3 §6.12): a license file, a
-// build file, or a declared dependency. It reads the archives through
-// archive's traversal, and owns what their files mean: which files are
-// license and build files, and how each manifest declares dependencies.
-// What it couldn't read it says, so an empty reading never stands for one
-// it couldn't make.
+// source, as project read them, for what a reviewer would ask about before
+// an update is submitted (Design v3 §6.12): a license file, a build file,
+// or a declared dependency. What it couldn't read it says, so an empty
+// reading never stands for one it couldn't make.
 package sourcecompare
 
 import (
 	"bytes"
-	"context"
 	"fmt"
-	"io"
 	"path"
 	"regexp"
 	"slices"
 	"strings"
 
-	"github.com/herbygillot/dockhand/internal/archive"
-	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/dependency"
+	"github.com/herbygillot/dockhand/internal/project"
 )
 
 // Change is one difference between two versions' source archives that a
@@ -37,44 +30,11 @@ type Change struct {
 	// System is the build system the file belongs to, a manifest's
 	// language or a build file's tool, for a caller that knows which the
 	// port uses; empty for a license file.
-	System macports.BuildSystem
+	System project.System
 	// Requirements are a Python requirement the new version adds or
 	// moves, each declaration of it, for what it asks of the port that
 	// provides it; none for every other change.
-	Requirements []Requirement
-}
-
-// Requirement is a Python dependency a manifest requires: its name, as PEP
-// 503 compares names, its PEP 440 version specifier, which Admits reads,
-// and its PEP 508 marker, where it applies, which Evaluate reads; empty
-// for one that applies everywhere.
-type Requirement struct {
-	Name, Specifier, Marker string
-}
-
-// OnMacOS is whether a requirement applies to a MacPorts build, with the
-// Python version the build uses where it's known.
-func (r Requirement) OnMacOS(pythonVersion string) (Applies, error) {
-	if r.Marker == "" {
-		return Yes, nil
-	}
-	return Evaluate(r.Marker, MacOS(pythonVersion))
-}
-
-// memberLimit is the most of one file the comparison reads.
-const memberLimit = 1 << 20
-
-var licenseName = regexp.MustCompile(`(?i)^(licen[cs]e|copying|copyright|notice|unlicense)([._-].*)?$`)
-
-// sourceExtensions are a program's source, never a license file, whatever
-// the file is named: usql's text/license.go is Go.
-var sourceExtensions = []string{".c", ".cc", ".cpp", ".cs", ".go", ".h", ".java", ".js", ".kt", ".lua", ".m", ".php", ".pl", ".py", ".rb", ".rs", ".scala", ".sh", ".swift", ".tcl", ".ts"}
-
-// licenseFile reports a license file by its name: LICENSE, COPYING, NOTICE,
-// and their kin, such as LICENSE-MIT or COPYING.LESSER, but not a program's
-// source named for one.
-func licenseFile(base string) bool {
-	return licenseName.MatchString(base) && !slices.Contains(sourceExtensions, strings.ToLower(path.Ext(base)))
+	Requirements []project.Requirement
 }
 
 // A copyright line names its holder and years: "Copyright (c) 2016-2026
@@ -111,24 +71,9 @@ func yearsOnly(old, now []byte) (string, bool) {
 	return first, first != ""
 }
 
-// systems are the build system each top-level build file and manifest
-// belongs to.
-var systems = map[string]macports.BuildSystem{
-	"CMakeLists.txt": macports.CMake, "configure.ac": macports.Autotools, "configure.in": macports.Autotools, "Makefile.am": macports.Autotools,
-	"meson.build": macports.Meson, "meson_options.txt": macports.Meson, "Makefile.PL": macports.Perl, "cpanfile": macports.Perl,
-	"setup.py": macports.Python, "setup.cfg": macports.Python, "requirements.txt": macports.Python, "pyproject.toml": macports.Python,
-	"build.gradle": macports.Java, "pom.xml": macports.Java, "SConstruct": macports.SCons, "build.zig": macports.Zig,
-	"Package.swift": macports.Swift, "Gemfile": macports.Ruby, "DESCRIPTION": macports.R,
-	"go.mod": macports.Go, "Cargo.toml": macports.Cargo, cargoLock: macports.Cargo, "package.json": macports.Node,
-}
-
 // Versions are the release an update moves from and to, which a build file
 // that changes only the version it names spells.
 type Versions struct{ Old, New string }
-
-// buildNames are the top-level files that say how software builds.
-var buildNames = []string{"CMakeLists.txt", "configure.ac", "configure.in", "meson.build", "meson_options.txt", "Makefile.am", "Makefile.PL",
-	"setup.py", "setup.cfg", "build.gradle", "pom.xml", "SConstruct", "build.zig", "Package.swift", "Gemfile", "cpanfile", "DESCRIPTION"}
 
 // proven are the manifests whose dependencies a check proves. A Go module
 // or a Rust crate is compiled into what the port builds, and a check builds
@@ -137,32 +82,29 @@ var buildNames = []string{"CMakeLists.txt", "configure.ac", "configure.in", "mes
 // nor does what the comparison couldn't read of them (D9). A Python or Node
 // dependency is another port, found when the software runs, which a build
 // doesn't prove.
-var proven = map[string]bool{"go.mod": true, "Cargo.toml": true, cargoLock: true}
+var proven = map[string]bool{"go.mod": true, "Cargo.toml": true, project.CargoLock: true}
 
-// cargoLock is read for the crates new to it that link a native library.
-const cargoLock = "Cargo.lock"
-
-// file is a member as the comparison read it: its first memberLimit bytes,
-// and whether there was more.
-type file struct {
-	data      []byte
-	truncated bool
-}
-
-// Compare reads two versions' archives, the old and the new, and reports
-// the license files, build files, and declared dependencies that differ,
-// and what it couldn't read of them. Each archive's single top directory,
-// which names its version, is set aside so the same file compares across
-// versions.
-func Compare(ctx context.Context, older, newer string, versions Versions) ([]Change, error) {
-	before, err := interesting(ctx, older)
-	if err != nil {
-		return nil, fmt.Errorf("reading %s: %w", path.Base(older), err)
+// Compare reports the license files, build files, and declared
+// dependencies that differ between two versions' readings, the old and the
+// new, and what it couldn't read of them. Each is by its path below its
+// archive's top, whose name, the version's, is set aside so the same file
+// compares across versions. A version whose project couldn't be found is
+// said, and holds, as what couldn't be read does.
+func Compare(older, newer project.Reading, versions Versions) []Change {
+	var lost []Change
+	for _, side := range []struct {
+		version string
+		reading project.Reading
+	}{{"old", older}, {"new", newer}} {
+		if side.reading.Layout == project.Ambiguous {
+			lost = append(lost, Change{Kind: "unread", Hold: true,
+				Message: fmt.Sprintf("upstream's %s archive holds %s and no file beside them, so which is the project wasn't found, and it wasn't compared", side.version, strings.Join(side.reading.Tops, ", "))})
+		}
 	}
-	after, err := interesting(ctx, newer)
-	if err != nil {
-		return nil, fmt.Errorf("reading %s: %w", path.Base(newer), err)
+	if len(lost) > 0 {
+		return lost
 	}
+	before, after := older.Files, newer.Files
 	var names []string
 	for name := range before {
 		names = append(names, name)
@@ -177,28 +119,28 @@ func Compare(ctx context.Context, older, newer string, versions Versions) ([]Cha
 	for _, name := range names {
 		old, hadOld := before[name]
 		now, hasNow := after[name]
-		if old.truncated || now.truncated {
-			changes = append(changes, Change{Kind: "unread", Path: name, Hold: !proven[name],
-				Message: fmt.Sprintf("upstream's %s is larger than the %d KiB the comparison reads, so it wasn't compared", name, memberLimit>>10)})
-			continue
-		}
-		if hadOld && hasNow && bytes.Equal(old.data, now.data) {
-			continue
-		}
 		base := path.Base(name)
+		if old.Truncated || now.Truncated {
+			changes = append(changes, Change{Kind: "unread", Path: name, Hold: !proven[base],
+				Message: fmt.Sprintf("upstream's %s is larger than the %d KiB the comparison reads, so it wasn't compared", name, project.FileLimit>>10)})
+			continue
+		}
+		if hadOld && hasNow && bytes.Equal(old.Data, now.Data) {
+			continue
+		}
 		switch {
-		case name == cargoLock:
-			changes = append(changes, nativeLinks(old, hadOld, now, hasNow)...)
-		case manifests[name] != nil:
-			changes = append(changes, manifestChanges(name, manifests[name], old, hadOld, now, hasNow)...)
-		case licenseFile(base) && hadOld && hasNow:
-			if line, ok := yearsOnly(old.data, now.data); ok {
+		case base == project.CargoLock:
+			changes = append(changes, nativeLinks(name, old, hadOld, now, hasNow)...)
+		case project.Manifest(base):
+			changes = append(changes, manifestChanges(name, old, hadOld, now, hasNow)...)
+		case project.LicenseFile(base) && hadOld && hasNow:
+			if line, ok := yearsOnly(old.Data, now.Data); ok {
 				changes = append(changes, Change{Kind: "license", Path: name,
 					Message: fmt.Sprintf("upstream's %s changed only its copyright years: %q", name, line)})
 				continue
 			}
 			fallthrough
-		case licenseFile(base):
+		case project.LicenseFile(base):
 			what := "changed"
 			switch {
 			case !hadOld:
@@ -209,7 +151,7 @@ func Compare(ctx context.Context, older, newer string, versions Versions) ([]Cha
 			changes = append(changes, Change{Kind: "license", Path: name, Hold: true,
 				Message: fmt.Sprintf("upstream's %s %s; the Portfile's license line may need to follow", name, what)})
 		default:
-			if line, ok := versionOnly(old.data, now.data, versions); hadOld && hasNow && ok {
+			if line, ok := versionOnly(old.Data, now.Data, versions); hadOld && hasNow && ok {
 				changes = append(changes, Change{Kind: "build", Path: name,
 					Message: fmt.Sprintf("upstream's %s changed only the version it names: %q", name, line)})
 				continue
@@ -226,9 +168,9 @@ func Compare(ctx context.Context, older, newer string, versions Versions) ([]Cha
 		}
 	}
 	for i := range changes {
-		changes[i].System = systems[path.Base(changes[i].Path)]
+		changes[i].System = project.SystemOf(changes[i].Path)
 	}
-	return changes, nil
+	return changes
 }
 
 // quotable is a line as a message quotes it: trimmed, and cut short past
@@ -270,63 +212,23 @@ func versionOnly(old, now []byte, versions Versions) (string, bool) {
 	return first, first != ""
 }
 
-// interesting reads an archive's license files, top-level build files, and
-// dependency manifests, by their path below its top directory.
-func interesting(ctx context.Context, filename string) (map[string]file, error) {
-	files := map[string]file{}
-	top := ""
-	err := archive.Walk(ctx, filename, func(member archive.Member) error {
-		name, ok := member.Clean()
-		if !ok || !member.Regular {
-			return nil
-		}
-		first, rest, nested := strings.Cut(name, "/")
-		if !nested {
-			return nil
-		}
-		if top == "" {
-			top = first
-		}
-		if first != top {
-			return nil
-		}
-		depth := strings.Count(rest, "/")
-		base := path.Base(rest)
-		wanted := licenseFile(base) && depth <= 1 ||
-			depth == 0 && (slices.Contains(buildNames, base) || manifests[base] != nil || base == cargoLock)
-		if !wanted {
-			return nil
-		}
-		data, err := io.ReadAll(io.LimitReader(member.Body, memberLimit+1))
-		if err != nil {
-			return err
-		}
-		if len(data) > memberLimit {
-			files[rest] = file{data: data[:memberLimit], truncated: true}
-			return nil
-		}
-		files[rest] = file{data: data}
-		return nil
-	})
-	return files, err
-}
-
 // manifestChanges compares what a manifest declares in each version, and
 // says what it couldn't read of either.
-func manifestChanges(name string, read reader, old file, hadOld bool, now file, hasNow bool) []Change {
+func manifestChanges(name string, old project.File, hadOld bool, now project.File, hasNow bool) []Change {
+	base := path.Base(name)
 	unread := func(what string) Change {
-		return Change{Kind: "unread", Path: name, Hold: !proven[name], Message: fmt.Sprintf("upstream's %s %s", name, what)}
+		return Change{Kind: "unread", Path: name, Hold: !proven[base], Message: fmt.Sprintf("upstream's %s %s", name, what)}
 	}
 	var readings [2]reading
 	for i, side := range []struct {
 		version string
-		file    file
+		file    project.File
 		present bool
 	}{{"old", old, hadOld}, {"new", now, hasNow}} {
 		if !side.present {
 			continue
 		}
-		found, err := read(side.file.data)
+		found, err := readManifest(base, side.file.Data)
 		if err != nil {
 			return []Change{unread(fmt.Sprintf("couldn't be read in the %s version, so its dependencies weren't compared: %v", side.version, err))}
 		}
@@ -344,7 +246,7 @@ func manifestChanges(name string, read reader, old file, hadOld bool, now file, 
 			changes = append(changes, unread("in the old version "+gap+", which the comparison doesn't follow"))
 		}
 	}
-	if proven[name] {
+	if proven[base] {
 		return append(changes, dependencyCount(name, readings[0], readings[1])...)
 	}
 	return append(changes, dependencyChanges(name, readings[0], readings[1])...)
@@ -403,9 +305,9 @@ func dependencyDeltas(before, after reading) []dependencyDelta {
 // elsewhere reports declarations of a requirement that all apply only
 // elsewhere than macOS, by their markers; none, or one that may apply, is
 // not.
-func elsewhere(declarations []Requirement) bool {
+func elsewhere(declarations []project.Requirement) bool {
 	for _, declaration := range declarations {
-		if applies, err := declaration.OnMacOS(""); err != nil || applies != No {
+		if applies, err := declaration.OnMacOS(""); err != nil || applies != project.No {
 			return false
 		}
 	}
@@ -494,20 +396,20 @@ const namedDependencies = 3
 // which a clean check can't tell apart: where MacPorts has the library,
 // the Portfile may want to declare it. They're for the person's attention,
 // and hold nothing (D9).
-func nativeLinks(old file, hadOld bool, now file, hasNow bool) []Change {
+func nativeLinks(name string, old project.File, hadOld bool, now project.File, hasNow bool) []Change {
 	if !hasNow {
 		return nil
 	}
 	unread := func(version string, err error) []Change {
-		return []Change{{Kind: "unread", Path: cargoLock, Message: fmt.Sprintf("upstream's Cargo.lock couldn't be read in the %s version, so the crates new to it that link a native library weren't looked for: %v", version, err)}}
+		return []Change{{Kind: "unread", Path: name, Message: fmt.Sprintf("upstream's Cargo.lock couldn't be read in the %s version, so the crates new to it that link a native library weren't looked for: %v", version, err)}}
 	}
-	packages, err := dependency.ReadCargoLock(now.data)
+	packages, err := project.ReadCargoLock(now.Data)
 	if err != nil {
 		return unread("new", err)
 	}
 	had := map[string]bool{}
 	if hadOld {
-		earlier, err := dependency.ReadCargoLock(old.data)
+		earlier, err := project.ReadCargoLock(old.Data)
 		if err != nil {
 			return unread("old", err)
 		}
@@ -523,7 +425,7 @@ func nativeLinks(old file, hadOld bool, now file, hasNow bool) []Change {
 		}
 		// Once, whichever versions the lock pins.
 		had[pkg.Name] = true
-		changes = append(changes, Change{Kind: "dependency", Path: cargoLock,
+		changes = append(changes, Change{Kind: "dependency", Path: name,
 			Message: fmt.Sprintf("upstream: Cargo.lock adds %s %s, which links the native library %s: MacPorts may provide it, for the Portfile to declare, rather than the crate linking whatever copy it finds", pkg.Name, pkg.Version, library)})
 	}
 	return changes

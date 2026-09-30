@@ -34,28 +34,6 @@ func TestGOPATHWorksrcdirFindsTheManifestUnderTheArchiveTopDirectory(t *testing.
 	two := sourceArchive(t, map[string]string{"a-1/go.mod": "module a\n", "b-1/go.mod": "module b\n"})
 	_, _, err = Manifest(t.Context(), two, in.Worksrcdir, "go.mod")
 	require.Error(t, err, "two top-level manifests are ambiguous")
-	require.False(t, GOPATHLayout("uni-2.10.0"))
-	require.True(t, GOPATHLayout("gopath/src/github.com/cli/cli/v2"))
-}
-
-// The requirement is the go directive as go.mod writes it, whatever the
-// toolchain directive suggests: the tbls run's 1.26.8 was written 1.26.
-func TestGoRequirementIsTheGoDirectiveAsWritten(t *testing.T) {
-	t.Parallel()
-	for _, test := range []struct{ manifest, want string }{
-		{"module example.com/x\ngo 1.24\n", "1.24"},
-		{"module example.com/x\ngo 1.24.0\n", "1.24.0"},
-		{"module example.com/x\ngo 1.26.8\n", "1.26.8"},
-		{"module example.com/x\ngo 1.24\ntoolchain go1.25.1\n", "1.24"},
-		{"module example.com/x\ngo 1.26\ntoolchain go1.25.1\n", "1.26"},
-		{"module example.com/x\n", ""},
-	} {
-		got, err := GoRequirement([]byte(test.manifest))
-		require.NoError(t, err, test.manifest)
-		require.Equal(t, test.want, got, test.manifest)
-	}
-	_, err := GoRequirement([]byte("go 1.24 1.25\n"))
-	require.Error(t, err)
 }
 
 // A regenerated block's entries are counted, and those not as they were:

@@ -7,9 +7,24 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/project"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
+
+// compareArchives reads two archives as project does, each at its top, and
+// compares them.
+func compareArchives(t *testing.T, older, newer string, versions Versions) ([]Change, error) {
+	t.Helper()
+	var readings [2]project.Reading
+	for i, archive := range []string{older, newer} {
+		reading, err := project.Read(t.Context(), archive, project.Spec{})
+		if err != nil {
+			return nil, err
+		}
+		readings[i] = reading
+	}
+	return Compare(readings[0], readings[1], versions), nil
+}
 
 // messages are the changes as marked lines: "!" for what holds, "·" for
 // what doesn't.
@@ -28,7 +43,7 @@ func messages(changes []Change) []string {
 // compared compares two versions of a project whose files are given.
 func compared(t *testing.T, before, after map[string]string) []string {
 	t.Helper()
-	changes, err := Compare(t.Context(), testsupport.Tarball(t, "pkg-1", before), testsupport.Tarball(t, "pkg-2", after), Versions{})
+	changes, err := compareArchives(t, testsupport.Tarball(t, "pkg-1", before), testsupport.Tarball(t, "pkg-2", after), Versions{})
 	require.NoError(t, err)
 	return messages(changes)
 }
@@ -48,7 +63,7 @@ func TestCompareFindsWhatAReviewerWouldAskAbout(t *testing.T) {
 		"CMakeLists.txt": "project(croc)\n",
 		"meson.build":    "project('croc')\n",
 	})
-	changes, err := Compare(t.Context(), older, newer, Versions{})
+	changes, err := compareArchives(t, older, newer, Versions{})
 	require.NoError(t, err)
 	require.Equal(t, []string{
 		"! upstream's LICENSE changed; the Portfile's license line may need to follow",
@@ -56,7 +71,7 @@ func TestCompareFindsWhatAReviewerWouldAskAbout(t *testing.T) {
 		"! upstream's meson.build is new; the build may need the Portfile to follow",
 	}, messages(changes), "unchanged CMakeLists.txt, source files, and indirect modules say nothing")
 
-	same, err := Compare(t.Context(), older, testsupport.Tarball(t, "croc-10.2.6", map[string]string{
+	same, err := compareArchives(t, older, testsupport.Tarball(t, "croc-10.2.6", map[string]string{
 		"LICENSE": "MIT\n", "go.mod": "module croc\n\nrequire (\n\tgolang.org/x/sys v0.30.0\n\tgithub.com/old/dep v1.0.0\n)\n", "CMakeLists.txt": "project(croc)\n", "main.go": "x",
 	}), Versions{})
 	require.NoError(t, err)
@@ -92,7 +107,7 @@ func TestCompareReadsTheOtherManifestsAndZips(t *testing.T) {
 		"requirements.txt": "requests>=2.1\n",
 		"pyproject.toml":   "[project]\ndependencies = [\n  \"click>=8\",\n  \"rich>=13\",\n]\n",
 	})
-	changes, err := Compare(t.Context(), older, newer, Versions{})
+	changes, err := compareArchives(t, older, newer, Versions{})
 	require.NoError(t, err)
 	require.Equal(t, []string{
 		"· upstream: Cargo.toml: 1 added (tokio), 1 dropped (proptest)",
@@ -118,6 +133,13 @@ func TestCargoDependenciesAreReadAsTOML(t *testing.T) {
 	}
 	require.Equal(t, []string{"· upstream: Cargo.toml: 3 added (libc, shared, tokio)"}, compared(t, before, tagged("1.40")))
 	require.Equal(t, []string{"· upstream: Cargo.toml: 1 moved (tokio)"}, compared(t, tagged("1.40"), tagged("1.41")))
+	// A name is read where it's first declared, the package's own table
+	// before its tests', and a path is compared as one.
+	both := func(test, path string) map[string]string {
+		return map[string]string{"Cargo.toml": "[dependencies]\nserde = '1'\nlocal = { path = '" + path + "' }\n[dev-dependencies]\nserde = '" + test + "'\n"}
+	}
+	require.Empty(t, compared(t, both("1.1", "../a"), both("1.2", "../a")))
+	require.Equal(t, []string{"· upstream: Cargo.toml: 1 moved (local)"}, compared(t, both("1.1", "../a"), both("1.1", "../b")))
 }
 
 // A pyproject.toml is read as TOML: its [project] array in either kind of
@@ -166,7 +188,7 @@ func TestWhatTheComparisonCouldntReadHolds(t *testing.T) {
 		"! upstream's requirements.txt reads common.txt too, which the comparison doesn't follow",
 		"! upstream's requirements.txt in the old version reads base.txt too, which the comparison doesn't follow",
 	}, compared(t, map[string]string{"requirements.txt": "-r base.txt\n"}, map[string]string{"requirements.txt": "-r common.txt\n"}))
-	large := strings.Repeat("x", memberLimit+1)
+	large := strings.Repeat("x", project.FileLimit+1)
 	require.Equal(t, []string{"! upstream's CMakeLists.txt is larger than the 1024 KiB the comparison reads, so it wasn't compared"},
 		compared(t, map[string]string{"CMakeLists.txt": large}, map[string]string{"CMakeLists.txt": large + "y"}))
 	require.Empty(t, compared(t, map[string]string{"package.json": `{ "dependencies":`}, map[string]string{"package.json": `{ "dependencies":`}),
@@ -181,7 +203,7 @@ func TestWhatTheComparisonCouldntReadHolds(t *testing.T) {
 func TestGoAndRustDependenciesAreCountedAndHoldNothing(t *testing.T) {
 	require.Equal(t, []string{"· upstream: go.mod: 1 added (golang.org/x/net)"},
 		compared(t, map[string]string{"go.mod": "module m\n"}, map[string]string{"go.mod": "module m\n\nrequire golang.org/x/net v0.44.0\n"}))
-	large := "module m\n" + strings.Repeat("// x\n", memberLimit)
+	large := "module m\n" + strings.Repeat("// x\n", project.FileLimit)
 	require.Equal(t, []string{"· upstream's go.mod is larger than the 1024 KiB the comparison reads, so it wasn't compared"},
 		compared(t, map[string]string{"go.mod": large}, map[string]string{"go.mod": large + "// y\n"}))
 	require.Equal(t, []string{"! upstream's package.json is larger than the 1024 KiB the comparison reads, so it wasn't compared"},
@@ -212,9 +234,9 @@ func TestANewCrateLinkingANativeLibraryIsListed(t *testing.T) {
 		"· upstream: Cargo.lock adds onig_sys 69.8.1, which links the native library onig: MacPorts may provide it, for the Portfile to declare, rather than the crate linking whatever copy it finds",
 	}, compared(t, before, map[string]string{"Cargo.lock": lock("libgit2-sys 0.17.0+1.8.1", "libgit2-sys 0.18.1+1.9.1", "onig_sys 69.8.1", "openssl-sys 0.9.109", "serde 1.0.210", "tokio 1.40.0")}),
 		"one that moves, or a crate that links nothing, isn't listed, and one pinned twice is listed once")
-	require.Equal(t, []string{"· upstream's Cargo.lock couldn't be read in the new version, so the crates new to it that link a native library weren't looked for: dependency: unsupported or empty Cargo.lock"},
+	require.Equal(t, []string{"· upstream's Cargo.lock couldn't be read in the new version, so the crates new to it that link a native library weren't looked for: project: unsupported or empty Cargo.lock"},
 		compared(t, before, map[string]string{"Cargo.lock": "version = 9\n"}))
-	require.Equal(t, []string{"· upstream's Cargo.lock couldn't be read in the old version, so the crates new to it that link a native library weren't looked for: dependency: unsupported or empty Cargo.lock"},
+	require.Equal(t, []string{"· upstream's Cargo.lock couldn't be read in the old version, so the crates new to it that link a native library weren't looked for: project: unsupported or empty Cargo.lock"},
 		compared(t, map[string]string{"Cargo.lock": "version = 9\n"}, before))
 	require.Equal(t, []string{"· upstream: Cargo.lock adds zstd-sys 2.0.13+zstd.1.5.6, which links the native library zstd: MacPorts may provide it, for the Portfile to declare, rather than the crate linking whatever copy it finds"},
 		compared(t, map[string]string{}, map[string]string{"Cargo.lock": lock("zstd-sys 2.0.13+zstd.1.5.6")}), "a lock new to the source")
@@ -280,15 +302,15 @@ func TestAPythonDependencyRespelledIsTheSameOne(t *testing.T) {
 // specifier, without extras or the parentheses PEP 508 allows; a Node
 // dependency, or Poetry's constraint, which isn't PEP 440's, carries none.
 func TestAMovedPythonRequirementCarriesItsSpecifier(t *testing.T) {
-	changes, err := Compare(t.Context(),
+	changes, err := compareArchives(t,
 		testsupport.Tarball(t, "pkg-1", map[string]string{"requirements.txt": "requests[socks]>=2.30\nurllib3 (>=1.26)\n", "package.json": `{"dependencies": {"left-pad": "1.0.0"}}`}),
 		testsupport.Tarball(t, "pkg-2", map[string]string{"requirements.txt": "requests[socks]>=2.31 ; python_version >= '3.9'\nurllib3 (>=2.0)\nidna==3.7\n", "package.json": `{"dependencies": {"left-pad": "1.3.0"}}`}), Versions{})
 	require.NoError(t, err)
-	required := map[string][]Requirement{}
+	required := map[string][]project.Requirement{}
 	for _, change := range changes {
 		required[change.Message] = change.Requirements
 	}
-	require.Equal(t, map[string][]Requirement{
+	require.Equal(t, map[string][]project.Requirement{
 		"upstream: requirements.txt adds idna ==3.7":                                                             {{Name: "idna", Specifier: "==3.7"}},
 		"upstream: requirements.txt moves requests from [socks]>=2.30 to [socks]>=2.31; python_version >= '3.9'": {{Name: "requests", Specifier: ">=2.31", Marker: "python_version >= '3.9'"}},
 		"upstream: requirements.txt moves urllib3 from (>=1.26) to (>=2.0)":                                      {{Name: "urllib3", Specifier: ">=2.0"}},
@@ -305,7 +327,7 @@ func TestABuildFileNamingTheNewVersionHoldsNothing(t *testing.T) {
 	versions := Versions{Old: "5.1.8", New: "5.1.9"}
 	compare := func(after string, versions Versions) []string {
 		t.Helper()
-		changes, err := Compare(t.Context(), testsupport.Tarball(t, "nuspell-5.1.8", map[string]string{"CMakeLists.txt": before}), testsupport.Tarball(t, "nuspell-5.1.9", map[string]string{"CMakeLists.txt": after}), versions)
+		changes, err := compareArchives(t, testsupport.Tarball(t, "nuspell-5.1.8", map[string]string{"CMakeLists.txt": before}), testsupport.Tarball(t, "nuspell-5.1.9", map[string]string{"CMakeLists.txt": after}), versions)
 		require.NoError(t, err)
 		return messages(changes)
 	}
@@ -316,7 +338,7 @@ func TestABuildFileNamingTheNewVersionHoldsNothing(t *testing.T) {
 	require.Equal(t, held, compare(bumped+"install(TARGETS nuspell)\n", versions), "a line added at the end")
 	unended := func(before, after string) []string {
 		t.Helper()
-		changes, err := Compare(t.Context(), testsupport.Tarball(t, "x-1", map[string]string{"meson.build": before}), testsupport.Tarball(t, "x-2", map[string]string{"meson.build": after}), versions)
+		changes, err := compareArchives(t, testsupport.Tarball(t, "x-1", map[string]string{"meson.build": before}), testsupport.Tarball(t, "x-2", map[string]string{"meson.build": after}), versions)
 		require.NoError(t, err)
 		return messages(changes)
 	}
@@ -329,15 +351,15 @@ func TestABuildFileNamingTheNewVersionHoldsNothing(t *testing.T) {
 // Each change says which build system its file belongs to, for a caller
 // that knows which the port uses; a license file belongs to none.
 func TestAChangeNamesItsFilesBuildSystem(t *testing.T) {
-	changes, err := Compare(t.Context(),
+	changes, err := compareArchives(t,
 		testsupport.Tarball(t, "pkg-1", map[string]string{"LICENSE": "MIT\n"}),
 		testsupport.Tarball(t, "pkg-2", map[string]string{"LICENSE": "GPL\n", "meson.build": "project('x')\n", "package.json": `{"dependencies": {"left-pad": "1.0.0"}}`}), Versions{})
 	require.NoError(t, err)
-	systems := map[string]macports.BuildSystem{}
+	systems := map[string]project.System{}
 	for _, change := range changes {
 		systems[change.Path] = change.System
 	}
-	require.Equal(t, map[string]macports.BuildSystem{"LICENSE": "", "meson.build": macports.Meson, "package.json": macports.Node}, systems)
+	require.Equal(t, map[string]project.System{"LICENSE": "", "meson.build": project.Meson, "package.json": project.Node}, systems)
 }
 
 // A requirement's condition is part of it: a Windows-only requirement made
@@ -355,12 +377,12 @@ func TestARequirementsConditionIsPartOfIt(t *testing.T) {
 		compared(t, map[string]string{"requirements.txt": ""}, map[string]string{"requirements.txt": "tomli>=1; python_version < '3.11'\n"}),
 		"a condition the Python version settles may apply, where that version isn't known")
 
-	changes, err := Compare(t.Context(), testsupport.Tarball(t, "pkg-1", map[string]string{"requirements.txt": "numpy<2; python_version < '3.10'\n"}),
+	changes, err := compareArchives(t, testsupport.Tarball(t, "pkg-1", map[string]string{"requirements.txt": "numpy<2; python_version < '3.10'\n"}),
 		testsupport.Tarball(t, "pkg-2", map[string]string{"requirements.txt": "numpy<2; python_version < '3.10'\nnumpy>=2; python_version >= '3.10'\n"}), Versions{})
 	require.NoError(t, err)
 	require.Len(t, changes, 1)
 	require.Equal(t, "upstream: requirements.txt moves numpy from <2; python_version < '3.10' to <2; python_version < '3.10' | >=2; python_version >= '3.10'", changes[0].Message)
-	require.Equal(t, []Requirement{{Name: "numpy", Specifier: "<2", Marker: "python_version < '3.10'"}, {Name: "numpy", Specifier: ">=2", Marker: "python_version >= '3.10'"}},
+	require.Equal(t, []project.Requirement{{Name: "numpy", Specifier: "<2", Marker: "python_version < '3.10'"}, {Name: "numpy", Specifier: ">=2", Marker: "python_version >= '3.10'"}},
 		changes[0].Requirements, "both declarations, not the second over the first")
 
 	require.Equal(t, []string{"· upstream: Cargo.toml: 1 moved (widget)"},
@@ -385,4 +407,17 @@ func TestAProvenManifestsCountNamesWhatMoved(t *testing.T) {
 	}
 	require.Equal(t, []string{"· upstream: Cargo.toml: 4 added"},
 		compared(t, map[string]string{"Cargo.toml": "[dependencies]\n"}, map[string]string{"Cargo.toml": many("crate", 4)}))
+}
+
+// A flat archive's files are compared at its root, which read as nothing
+// before; an archive whose project can't be found holds, as what couldn't
+// be read does (the update-workflow review's finding 1).
+func TestArchivesOfEveryLayoutAreComparedOrSaid(t *testing.T) {
+	changes, err := compareArchives(t, testsupport.Tarball(t, ".", map[string]string{"LICENSE": "MIT\n"}), testsupport.Tarball(t, ".", map[string]string{"LICENSE": "GPL\n"}), Versions{})
+	require.NoError(t, err)
+	require.Equal(t, []string{"! upstream's LICENSE changed; the Portfile's license line may need to follow"}, messages(changes))
+
+	changes, err = compareArchives(t, testsupport.Tarball(t, "pkg-1", map[string]string{"LICENSE": "MIT\n"}), testsupport.Tarball(t, ".", map[string]string{"b-2/LICENSE": "MIT\n", "a-2/LICENSE": "MIT\n"}), Versions{})
+	require.NoError(t, err)
+	require.Equal(t, []string{"! upstream's new archive holds a-2, b-2 and no file beside them, so which is the project wasn't found, and it wasn't compared"}, messages(changes))
 }

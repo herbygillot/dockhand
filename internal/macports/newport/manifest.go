@@ -1,10 +1,6 @@
 package newport
 
-import (
-	"github.com/BurntSushi/toml"
-
-	"github.com/herbygillot/dockhand/internal/macports/dependency"
-)
+import "github.com/herbygillot/dockhand/internal/project"
 
 // Declared is what a project's own manifest says of it: its license, as
 // an SPDX expression, and its one-line description, each empty where the
@@ -19,73 +15,52 @@ type Declared struct {
 }
 
 // Declare reads the manifest the build was detected from: Cargo.toml's
-// [package], or pyproject.toml's [project]. A field it doesn't give as a
-// string, such as one a Cargo workspace inherits or a PEP 621 license
-// table, is left out; so is all of a manifest that isn't TOML.
+// [package], or pyproject.toml's [project], as project reads them. A field
+// it doesn't give as a string, such as one a Cargo workspace inherits or a
+// PEP 621 license table, is left out; so is all of a manifest that can't
+// be read.
 func Declare(files map[string][]byte, build Build) Declared {
-	// The fields as the manifest writes them, strings or not.
-	type fields struct {
-		License     any `toml:"license"`
-		Description any `toml:"description"`
-	}
-	var found *fields
+	declared := Declared{File: build.Evidence}
 	switch build.Evidence {
 	case "Cargo.toml":
-		var manifest struct {
-			Package *fields `toml:"package"`
+		manifest, err := project.ReadCargoManifest(files["Cargo.toml"])
+		if err != nil || manifest.Package == nil {
+			return Declared{}
 		}
-		if _, err := toml.Decode(string(files["Cargo.toml"]), &manifest); err == nil {
-			found = manifest.Package
-		}
+		declared.License, declared.Description = manifest.Package.License, manifest.Package.Description
 	case "pyproject.toml":
-		var manifest struct {
-			Project *fields `toml:"project"`
+		manifest, err := project.ReadPyproject(files["pyproject.toml"])
+		if err != nil || manifest.Project == nil {
+			return Declared{}
 		}
-		if _, err := toml.Decode(string(files["pyproject.toml"]), &manifest); err == nil {
-			found = manifest.Project
-		}
-	}
-	if found == nil {
+		declared.License, declared.Description = manifest.Project.License, manifest.Project.Description
+	default:
 		return Declared{}
 	}
-	declared := Declared{File: build.Evidence}
-	declared.License, _ = found.License.(string)
-	declared.Description, _ = found.Description.(string)
 	return declared
 }
 
 // Binaries are the programs a Rust or Go project builds, as its manifest
 // names them, for its destroot to install: Cargo.toml's [[bin]] targets,
 // else its package, which Cargo builds as its one binary; or the one `go
-// build` makes at go.mod's module (dependency.GoBinary). None where the
-// manifest doesn't say, as a Cargo workspace's root doesn't.
+// build` makes at go.mod's module (project.GoModule.Binary). None where
+// the manifest doesn't say, as a Cargo workspace's root doesn't.
 func Binaries(files map[string][]byte, build Build) []string {
 	switch build.System {
 	case "cargo":
-		var manifest struct {
-			Package *struct {
-				Name string `toml:"name"`
-			} `toml:"package"`
-			Bin []struct {
-				Name string `toml:"name"`
-			} `toml:"bin"`
-		}
-		if _, err := toml.Decode(string(files["Cargo.toml"]), &manifest); err != nil {
+		manifest, err := project.ReadCargoManifest(files["Cargo.toml"])
+		if err != nil {
 			return nil
 		}
-		var names []string
-		for _, bin := range manifest.Bin {
-			if bin.Name != "" {
-				names = append(names, bin.Name)
-			}
+		if len(manifest.Bins) == 0 && manifest.Package != nil && manifest.Package.Name != "" {
+			return []string{manifest.Package.Name}
 		}
-		if len(names) == 0 && manifest.Package != nil && manifest.Package.Name != "" {
-			names = []string{manifest.Package.Name}
-		}
-		return names
+		return manifest.Bins
 	case "go":
-		if binary, err := dependency.GoBinary(files["go.mod"]); err == nil {
-			return []string{binary}
+		if module, err := project.ReadGoMod(files["go.mod"]); err == nil {
+			if binary, ok := module.Binary(); ok {
+				return []string{binary}
+			}
 		}
 	}
 	return nil

@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/project"
 )
 
 // The Go PortGroup's go.toolchain_min gates a port on systems whose Go is
@@ -142,11 +143,11 @@ func (s *Service) goRequirement(ctx context.Context, request Request, info macpo
 		if err != nil {
 			return "", false, err
 		}
-		required, err := dependency.GoRequirement(data)
+		module, err := project.ReadGoMod(data)
 		if err != nil {
 			return "", false, fmt.Errorf("%w: reading go.mod: %v", ErrUnsupported, err)
 		}
-		return required, true, nil
+		return module.Go, true, nil
 	}
 	for _, download := range downloads {
 		if download.Path == "" {
@@ -159,11 +160,11 @@ func (s *Service) goRequirement(ctx context.Context, request Request, info macpo
 		if err != nil {
 			return "", false, err
 		}
-		required, err := dependency.GoRequirement(data)
+		module, err := project.ReadGoMod(data)
 		if err != nil {
 			return "", false, fmt.Errorf("%w: reading go.mod: %v", ErrUnsupported, err)
 		}
-		return required, true, nil
+		return module.Go, true, nil
 	}
 	return "", false, nil
 }

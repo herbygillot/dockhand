@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/dependency"
+	"github.com/herbygillot/dockhand/internal/project"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
@@ -106,21 +106,21 @@ type Crate struct{ Name, Version, Checksum string }
 
 // CargoCrates reads the crates.io crates a Cargo.lock pins, with their
 // checksums, sorted as cargo2port writes them, from the reading an update
-// uses too (dependency.ReadCargoLock). A crate cargo.crates can't fetch,
+// uses too (project.ReadCargoLock). A crate cargo.crates can't fetch,
 // from another registry or from Git, is named in unfetched instead, for
 // the Portfile to mark; the project's own packages are neither.
 func CargoCrates(lock []byte) (crates []Crate, unfetched []string, err error) {
-	packages, err := dependency.ReadCargoLock(lock)
+	packages, err := project.ReadCargoLock(lock)
 	if err != nil {
 		return nil, nil, fmt.Errorf("reading Cargo.lock: %w", err)
 	}
 	for _, p := range packages {
 		switch p.Source {
-		case dependency.FromCratesIO:
+		case project.FromCratesIO:
 			crates = append(crates, Crate{Name: p.Name, Version: p.Version, Checksum: p.Checksum})
-		case dependency.FromRegistry:
+		case project.FromRegistry:
 			unfetched = append(unfetched, fmt.Sprintf("%s %s comes from another registry, %s, which cargo.crates can't fetch", p.Name, p.Version, p.Origin))
-		case dependency.FromGit:
+		case project.FromGit:
 			unfetched = append(unfetched, fmt.Sprintf("%s comes from Git, %s; cargo2port writes its cargo.crates_github", p.Name, strings.TrimPrefix(p.Origin, "git+")))
 		}
 	}

@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
+	"github.com/herbygillot/dockhand/internal/project"
 	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/sourcecompare"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -657,7 +658,7 @@ func compareUpstream(ctx context.Context, result preparation.Result, versions so
 	// say, every file holds as before.
 	port, _ := result.PortAfter(result.Target.Name)
 	uses, known := port.BuildSystems()
-	unused := func(system macports.BuildSystem) bool {
+	unused := func(system project.System) bool {
 		return known && system != "" && !slices.Contains(uses, system)
 	}
 	var names []string
@@ -668,16 +669,25 @@ func compareUpstream(ctx context.Context, result preparation.Result, versions so
 	// each one's line is, and how many of its dependencies changed.
 	counted, seen := map[string][2]int{}, map[string]bool{}
 	var required []pythonRequirement
+	// Each version is read where its port builds (the assessment
+	// design's step 1): a monorepo's Python bindings in bindings/python.
+	previous, _ := result.PortBefore(result.Target.Name)
+	specs := [2]project.Spec{{Subdirectory: macports.SourceSubdirectory(previous.Options["worksrcdir"])}, {Subdirectory: macports.SourceSubdirectory(port.Options["worksrcdir"])}}
 	for _, pair := range result.Pairs {
 		if pair.Previous.Path == "" || pair.Next.Path == "" {
 			comparison.Problem = "the archives were not kept to compare"
 			return comparison, nil
 		}
-		changes, err := sourcecompare.Compare(ctx, pair.Previous.Path, pair.Next.Path, versions)
-		if err != nil {
-			comparison.Problem = err.Error()
-			return comparison, nil
+		var readings [2]project.Reading
+		for i, archive := range []string{pair.Previous.Path, pair.Next.Path} {
+			reading, err := project.Read(ctx, archive, specs[i])
+			if err != nil {
+				comparison.Problem = fmt.Sprintf("reading %s: %v", path.Base(archive), err)
+				return comparison, nil
+			}
+			readings[i] = reading
 		}
+		changes := sourcecompare.Compare(readings[0], readings[1], versions)
 		for _, change := range changes {
 			found := model.UpstreamChange{Kind: change.Kind, Path: change.Path, Message: change.Message, Hold: change.Hold}
 			if unused(change.System) {
@@ -725,7 +735,7 @@ func compareUpstream(ctx context.Context, result preparation.Result, versions so
 // adds or moves.
 type pythonRequirement struct {
 	manifest string
-	sourcecompare.Requirement
+	project.Requirement
 }
 
 // pythonPins are the requirements the new version adds or moves that the
@@ -751,7 +761,7 @@ func (e *Engine) pythonPins(ctx context.Context, source model.Source, result pre
 		prepared, _ := result.PortAfter(result.Target.Name)
 		for _, dependency := range prepared.Dependencies {
 			provided, ok := macports.PythonPackage(dependency.Port)
-			if !ok || sourcecompare.NormalizeName(provided) != need.Name {
+			if !ok || project.NormalizeName(provided) != need.Name {
 				continue
 			}
 			// A requirement whose marker says it applies only elsewhere,
@@ -759,13 +769,13 @@ func (e *Engine) pythonPins(ctx context.Context, source model.Source, result pre
 			// helper-ownership review's finding 1); one that can't be told
 			// is checked as one that applies.
 			python, _ := macports.PythonVersion(dependency.Port)
-			if applies, err := need.OnMacOS(python); err == nil && applies == sourcecompare.No {
+			if applies, err := need.OnMacOS(python); err == nil && applies == project.No {
 				break
 			}
 			version, err := portVersion(ctx, reader, source, dependency.Port)
 			var admits bool
 			if err == nil {
-				admits, err = sourcecompare.Admits(need.Specifier, version)
+				admits, err = project.Admits(need.Specifier, version)
 			}
 			switch {
 			case err != nil:

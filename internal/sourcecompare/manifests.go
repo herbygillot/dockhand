@@ -1,23 +1,19 @@
 package sourcecompare
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
 	"maps"
-	"regexp"
 	"slices"
 	"strings"
 
-	"github.com/BurntSushi/toml"
-	"golang.org/x/mod/modfile"
+	"github.com/herbygillot/dockhand/internal/project"
 )
 
-// reading is what a manifest declares: each dependency's name and its
-// version or constraint, and what of the manifest the reading couldn't
-// follow, such as another file it includes. indirect are what it records
-// only for its dependencies' sake, as go.mod's indirect requirements: in
-// the build already, though not declared.
+// reading is what a manifest declares, as the comparison compares it: each
+// dependency's name and its version or constraint, and what of the
+// manifest the reading couldn't follow, such as another file it includes.
+// indirect are what it records only for its dependencies' sake, as go.mod's
+// indirect requirements: in the build already, though not declared.
 type reading struct {
 	dependencies map[string]string
 	indirect     map[string]string
@@ -27,274 +23,125 @@ type reading struct {
 	// each with its version specifier and its marker, so one declared
 	// twice, under two conditions, keeps both. Not Poetry's constraints,
 	// which are another syntax.
-	requirements map[string][]Requirement
+	requirements map[string][]project.Requirement
 }
 
-// reader reads one kind of manifest; an error is a manifest it couldn't
-// read at all.
-type reader func([]byte) (reading, error)
-
-// manifests are the top-level files that declare dependencies, and how to
-// read them.
-var manifests = map[string]reader{
-	"go.mod": goModules, "Cargo.toml": cargoDependencies, "package.json": nodeDependencies,
-	"requirements.txt": requirements, "pyproject.toml": pyprojectDependencies,
-}
-
-// goModules reads a go.mod's requirements: its direct ones as its own
-// declarations, and its indirect ones apart, as modules the build already
-// has for its dependencies' sake.
-func goModules(data []byte) (reading, error) {
-	parsed, err := modfile.ParseLax("go.mod", data, nil)
-	if err != nil {
-		return reading{}, err
-	}
-	found := reading{dependencies: map[string]string{}, indirect: map[string]string{}}
-	for _, required := range parsed.Require {
-		if required.Indirect {
-			found.indirect[required.Mod.Path] = required.Mod.Version
-		} else {
-			found.dependencies[required.Mod.Path] = required.Mod.Version
-		}
-	}
-	return found, nil
-}
-
-// cargoTables are where a Cargo.toml declares dependencies, in the order a
-// name declared in several is read: its own, then for building, then for
-// tests, then the workspace's.
-var cargoTables = []string{"dependencies", "build-dependencies", "dev-dependencies"}
-
-// cargoDependencies reads a Cargo.toml's dependency tables: the package's,
-// each target's, and the workspace's.
-func cargoDependencies(data []byte) (reading, error) {
-	var manifest map[string]any
-	if err := toml.Unmarshal(data, &manifest); err != nil {
-		return reading{}, err
-	}
+// readManifest reads one kind of manifest, by its name, through project's
+// reader for it; an error is a manifest it couldn't read at all.
+func readManifest(name string, data []byte) (reading, error) {
 	found := reading{dependencies: map[string]string{}}
-	read := func(tables map[string]any, names []string) error {
-		for _, table := range names {
-			entries, ok := tables[table].(map[string]any)
-			if tables[table] != nil && !ok {
-				return fmt.Errorf("[%s] isn't a table", table)
-			}
-			for _, name := range slices.Sorted(maps.Keys(entries)) {
-				if _, seen := found.dependencies[name]; seen {
-					continue
-				}
-				version, err := cargoRequirement(entries[name])
-				if err != nil {
-					return fmt.Errorf("%s: %w", name, err)
-				}
-				found.dependencies[name] = version
-			}
-		}
-		return nil
-	}
-	if err := read(manifest, cargoTables); err != nil {
-		return reading{}, err
-	}
-	if targets, ok := manifest["target"].(map[string]any); ok {
-		for _, target := range slices.Sorted(maps.Keys(targets)) {
-			tables, ok := targets[target].(map[string]any)
-			if !ok {
-				return reading{}, fmt.Errorf("[target.%s] isn't a table", target)
-			}
-			if err := read(tables, cargoTables); err != nil {
-				return reading{}, err
-			}
-		}
-	}
-	if workspace, ok := manifest["workspace"].(map[string]any); ok {
-		if err := read(workspace, []string{"dependencies"}); err != nil {
+	switch name {
+	case "go.mod":
+		// Its direct requirements are its own declarations, and its
+		// indirect ones apart, as modules the build already has for its
+		// dependencies' sake.
+		module, err := project.ReadGoModLax(data)
+		if err != nil {
 			return reading{}, err
 		}
-	}
-	return found, nil
-}
-
-// cargoRequirement is a dependency's requirement as Cargo.toml gives it: a
-// version, or a table's version, Git source, path, or workspace.
-func cargoRequirement(value any) (string, error) {
-	switch value := value.(type) {
-	case string:
-		return value, nil
-	case map[string]any:
-		// A Git source is read with its version, where it has both: its
-		// revision moving under the same version is a change too (the
-		// helper-ownership review's finding 1), said, and holding nothing,
-		// as D9 has Cargo's.
-		source := ""
-		if git, ok := value["git"].(string); ok {
-			source = "git " + git
-			for _, pin := range []string{"rev", "tag", "branch"} {
-				if at, ok := value[pin].(string); ok {
-					source = fmt.Sprintf("git %s %s %s", git, pin, at)
-					break
-				}
+		found.indirect = map[string]string{}
+		for _, required := range module.Requires {
+			if required.Indirect {
+				found.indirect[required.Path] = required.Version
+			} else {
+				found.dependencies[required.Path] = required.Version
 			}
 		}
-		// An optional dependency, one a feature turns on, becoming one
-		// every build has is a change too (the txt run's finding 6).
-		optional := ""
-		if value["optional"] == true {
-			optional = " (optional)"
+	case "Cargo.toml":
+		manifest, err := project.ReadCargoManifest(data)
+		if err != nil {
+			return reading{}, err
 		}
-		if version, ok := value["version"].(string); ok {
-			if source != "" {
-				return version + " (" + source + ")" + optional, nil
+		// A name declared in several tables is read where it's first.
+		for _, dependency := range manifest.Dependencies {
+			if _, seen := found.dependencies[dependency.Name]; !seen {
+				found.dependencies[dependency.Name] = cargoConstraint(dependency)
 			}
-			return version + optional, nil
 		}
-		if source != "" {
-			return source, nil
+	case "package.json":
+		manifest, err := project.ReadPackageJSON(data)
+		if err != nil {
+			return reading{}, err
 		}
-		if dir, ok := value["path"].(string); ok {
-			return "path " + dir, nil
+		for _, set := range []map[string]string{manifest.Dependencies, manifest.DevDependencies} {
+			maps.Copy(found.dependencies, set)
 		}
-		if value["workspace"] == true {
-			return "workspace", nil
+	case "requirements.txt":
+		// A line that includes or constrains by another file names what
+		// isn't read.
+		requirements := project.ReadRequirements(data)
+		for _, file := range requirements.Includes {
+			found.unread = append(found.unread, fmt.Sprintf("reads %s too", file))
 		}
-		return "", errors.New("neither a version, a Git source, a path, nor the workspace's")
-	}
-	return "", fmt.Errorf("a %T isn't a requirement", value)
-}
-
-// nodeDependencies reads a package.json's dependencies and
-// devDependencies.
-func nodeDependencies(data []byte) (reading, error) {
-	var manifest struct {
-		Dependencies    map[string]string `json:"dependencies"`
-		DevDependencies map[string]string `json:"devDependencies"`
-	}
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		return reading{}, err
-	}
-	found := reading{dependencies: map[string]string{}}
-	for _, set := range []map[string]string{manifest.Dependencies, manifest.DevDependencies} {
-		for name, version := range set {
-			found.dependencies[name] = version
+		for _, declaration := range requirements.Declarations {
+			found.require(declaration)
 		}
-	}
-	return found, nil
-}
-
-// requirement is a Python requirement as PEP 508 writes one: its name, its
-// extras and version specifier, and its environment marker after a ";".
-var requirement = regexp.MustCompile(`^([A-Za-z0-9][A-Za-z0-9._-]*)\s*([^;]*)(?:;(.*))?$`)
-
-// requirements reads a requirements.txt, one requirement a line. A line
-// that includes or constrains by another file names what isn't read.
-func requirements(data []byte) (reading, error) {
-	found := reading{dependencies: map[string]string{}}
-	for _, line := range strings.Split(string(data), "\n") {
-		line, _, _ = strings.Cut(line, "#")
-		line = strings.TrimSpace(line)
-		option, file, _ := strings.Cut(line, " ")
-		switch option {
-		case "-r", "--requirement", "-c", "--constraint":
-			found.unread = append(found.unread, fmt.Sprintf("reads %s too", strings.TrimSpace(file)))
-			continue
+	case "pyproject.toml":
+		// PEP 621's [project] array, or Poetry's table. Dependencies
+		// declared dynamically, from another file, are named as not read.
+		manifest, err := project.ReadPyproject(data)
+		if err != nil {
+			return reading{}, err
 		}
-		if m := requirement.FindStringSubmatch(line); m != nil {
-			found.require(m[1], m[2], m[3])
+		if manifest.Project != nil {
+			if slices.Contains(manifest.Project.Dynamic, "dependencies") {
+				found.unread = append(found.unread, "declares its dependencies dynamically, from another file")
+			}
+			for _, declaration := range manifest.Project.Dependencies {
+				found.require(declaration)
+			}
 		}
+		maps.Copy(found.dependencies, manifest.Poetry)
+	default:
+		return reading{}, fmt.Errorf("%s isn't a manifest the comparison reads", name)
 	}
 	return found, nil
 }
 
-// require records a PEP 508 requirement: its name, as Python compares
-// names, so a renaming such as textual_fastdatatable to
-// Textual-FastDataTable moves nothing, and what follows it, with its
-// version specifier apart from any extras, under its marker where it has
-// one (the helper-ownership review's finding 1).
-func (r *reading) require(name, rest, marker string) {
-	rest = strings.TrimSpace(rest)
-	name = NormalizeName(name)
-	marker = strings.Join(strings.Fields(marker), " ")
-	declared := rest
-	if marker != "" {
-		declared = strings.TrimSpace(rest + "; " + marker)
+// cargoConstraint is a Cargo dependency as the comparison compares it: its
+// version, with its Git source where it has both, since its revision
+// moving under the same version is a change too (the helper-ownership
+// review's finding 1), said and holding nothing, as D9 has Cargo's; and
+// marked optional, since one a feature turns on becoming one every build
+// has is a change too (the txt run's finding 6).
+func cargoConstraint(dependency project.CargoDependency) string {
+	source := ""
+	if dependency.Git != "" {
+		source = "git " + dependency.Git
+		if dependency.Pin != "" {
+			source = fmt.Sprintf("git %s %s %s", dependency.Git, dependency.Pin, dependency.At)
+		}
 	}
-	if prior, ok := r.dependencies[name]; ok {
+	optional := ""
+	if dependency.Optional {
+		optional = " (optional)"
+	}
+	switch {
+	case dependency.Version != "" && source != "":
+		return dependency.Version + " (" + source + ")" + optional
+	case dependency.Version != "":
+		return dependency.Version + optional
+	case source != "":
+		return source
+	case dependency.Path != "":
+		return "path " + dependency.Path
+	}
+	return "workspace"
+}
+
+// require records a PEP 508 requirement, as written, under its marker
+// where it has one; a name declared twice keeps both.
+func (r *reading) require(declaration project.Declaration) {
+	declared := declaration.Written
+	if declaration.Marker != "" {
+		declared = strings.TrimSpace(declaration.Written + "; " + declaration.Marker)
+	}
+	if prior, ok := r.dependencies[declaration.Name]; ok {
 		declared = prior + " | " + declared
 	}
-	r.dependencies[name] = declared
+	r.dependencies[declaration.Name] = declared
 	if r.requirements == nil {
-		r.requirements = map[string][]Requirement{}
+		r.requirements = map[string][]project.Requirement{}
 	}
-	specifier := strings.TrimSpace(extras.ReplaceAllString(rest, ""))
-	if inner, ok := strings.CutPrefix(specifier, "("); ok {
-		specifier = strings.TrimSpace(strings.TrimSuffix(inner, ")"))
-	}
-	r.requirements[name] = append(r.requirements[name], Requirement{Name: name, Specifier: specifier, Marker: marker})
-}
-
-// extras are a requirement's extras, "[socks]", before its specifier.
-var extras = regexp.MustCompile(`^\[[^\]]*\]`)
-
-// pyprojectDependencies reads a pyproject.toml's dependencies: PEP 621's
-// [project] array, or Poetry's table. Dependencies declared dynamically,
-// from another file, are named as not read.
-func pyprojectDependencies(data []byte) (reading, error) {
-	var manifest struct {
-		Project *struct {
-			Dependencies []string `toml:"dependencies"`
-			Dynamic      []string `toml:"dynamic"`
-		} `toml:"project"`
-		Tool struct {
-			Poetry struct {
-				Dependencies map[string]any `toml:"dependencies"`
-			} `toml:"poetry"`
-		} `toml:"tool"`
-	}
-	if err := toml.Unmarshal(data, &manifest); err != nil {
-		return reading{}, err
-	}
-	found := reading{dependencies: map[string]string{}}
-	if project := manifest.Project; project != nil {
-		if slices.Contains(project.Dynamic, "dependencies") {
-			found.unread = append(found.unread, "declares its dependencies dynamically, from another file")
-		}
-		for _, entry := range project.Dependencies {
-			m := requirement.FindStringSubmatch(strings.TrimSpace(entry))
-			if m == nil {
-				return reading{}, fmt.Errorf("%q isn't a requirement", entry)
-			}
-			found.require(m[1], m[2], m[3])
-		}
-	}
-	for _, name := range slices.Sorted(maps.Keys(manifest.Tool.Poetry.Dependencies)) {
-		if name == "python" {
-			continue
-		}
-		version, err := poetryRequirement(manifest.Tool.Poetry.Dependencies[name])
-		if err != nil {
-			return reading{}, fmt.Errorf("%s: %w", name, err)
-		}
-		found.dependencies[NormalizeName(name)] = version
-	}
-	return found, nil
-}
-
-// poetryRequirement is a Poetry dependency's constraint: a string, or a
-// table's version, Git source, or path.
-func poetryRequirement(value any) (string, error) {
-	if table, ok := value.(map[string]any); ok {
-		if version, ok := table["version"].(string); ok {
-			return version, nil
-		}
-		if git, ok := table["git"].(string); ok {
-			return "git " + git, nil
-		}
-		if dir, ok := table["path"].(string); ok {
-			return "path " + dir, nil
-		}
-		return "", errors.New("neither a version, a Git source, nor a path")
-	}
-	if version, ok := value.(string); ok {
-		return version, nil
-	}
-	return "", fmt.Errorf("a %T isn't a constraint", value)
+	r.requirements[declaration.Name] = append(r.requirements[declaration.Name], declaration.Requirement)
 }

@@ -16,38 +16,6 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-// GoRequirement is the Go release a go.mod's go directive requires, as the
-// directive writes it: "1.24", "1.24.0", or "1.24.2". It is what
-// go.toolchain_min copies for a port that builds in module mode, where Go
-// enforces the directive. The toolchain directive is left out: Go documents
-// it as a suggestion, which the Go PortGroup's GOTOOLCHAIN=local ignores. A
-// manifest without a go directive requires nothing.
-func GoRequirement(data []byte) (string, error) {
-	mod, err := modfile.Parse("go.mod", data, nil)
-	if err != nil || mod.Go == nil {
-		return "", err
-	}
-	return mod.Go.Version, nil
-}
-
-// GoBinary is the program `go build` makes at a module's root: named for
-// the module path's last element, less a major version's /vN suffix, as
-// Go names it. A go.mod without a module path makes none that can be named.
-func GoBinary(data []byte) (string, error) {
-	mod, err := modfile.Parse("go.mod", data, nil)
-	if err != nil {
-		return "", err
-	}
-	if mod.Module == nil {
-		return "", fmt.Errorf("dependency: go.mod names no module")
-	}
-	prefix, _, ok := module.SplitPathVersion(mod.Module.Mod.Path)
-	if !ok {
-		prefix = mod.Module.Mod.Path
-	}
-	return path.Base(prefix), nil
-}
-
 func generateGo(ctx context.Context, executable string, in Input) (GeneratedBlocks, error) {
 	data, member, err := Manifest(ctx, in.Archive, in.Worksrcdir, "go.mod")
 	if err != nil {

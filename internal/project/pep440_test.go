@@ -1,4 +1,4 @@
-package sourcecompare
+package project
 
 import (
 	"testing"

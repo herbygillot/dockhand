@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/project"
 	"github.com/herbygillot/dockhand/internal/scratch"
 	"maps"
 	"os"
@@ -17,7 +18,7 @@ func generateCargo(ctx context.Context, executable string, in Input) (GeneratedB
 	if err != nil {
 		return GeneratedBlocks{}, err
 	}
-	packages, err := ReadCargoLock(data)
+	packages, err := project.ReadCargoLock(data)
 	if err != nil {
 		return GeneratedBlocks{}, err
 	}
@@ -27,11 +28,11 @@ func generateCargo(ctx context.Context, executable string, in Input) (GeneratedB
 	repoBranches := map[string]string{}
 	for _, pkg := range packages {
 		switch pkg.Source {
-		case FromLocal:
+		case project.FromLocal:
 			continue
-		case FromCratesIO:
+		case project.FromCratesIO:
 			expected[pkg.Name+" "+pkg.Version] = pkg.Checksum
-		case FromGit:
+		case project.FromGit:
 			crate, err := parseGitCrate(pkg.Name, strings.TrimPrefix(pkg.Origin, "git+"))
 			if err != nil {
 				return GeneratedBlocks{}, err
@@ -118,18 +119,6 @@ func safeRepository(value string) bool {
 			if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("._-", r)) {
 				return false
 			}
-		}
-	}
-	return true
-}
-
-func crateName(name string) bool {
-	if name == "" {
-		return false
-	}
-	for _, r := range name {
-		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-') {
-			return false
 		}
 	}
 	return true

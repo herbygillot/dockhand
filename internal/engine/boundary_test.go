@@ -36,6 +36,7 @@ var engineImports = map[string]string{
 	"internal/archive":             "reading archives, for diff --archive",
 	"internal/fetch":               "asking a URL whether it answers over HTTPS, as fetching follows redirects",
 	"internal/sourcecompare":       "what upstream's source changed, for update",
+	"internal/project":             "reading upstream's project where the port builds, for update's comparison",
 	"internal/outdated":            "what outdated reads of upstream",
 	"internal/preparation":         "preparing an update's edit",
 	"internal/upstream":            "upstream projects' releases",
