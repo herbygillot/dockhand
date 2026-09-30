@@ -428,3 +428,17 @@ Findings:
 
 1. **update could have said the openssl PortGroup went stale.** update rewrote the crate list and saw `openssl-sys` leave Cargo.lock. The Portfile still used `PortGroup openssl`, which exists only for such a dependency. Its upstream-change line could say so: "openssl-sys is gone from Cargo.lock; the openssl PortGroup may no longer be needed". The same holds for other PortGroups tied to a -sys crate. Here the stale PortGroup didn't just linger, it broke the build.
 2. **The new assessment can't compare this cargo port.** `submit --plan` says "Upstream ! archives not compared: portfile: unsupported source edit: fetch customization or vendored source requires a dedicated preparer", and that `!` holds a bump's or serve's submission. zola is a plain github-archive cargo port, the same shape create now checksums without trouble (txt). The assessment's source preparation seems to lack the cargo support that checksums gained in ff3f44a4.
+
+### zola, with 68df8b57
+
+`submit --plan` on zola-reqh now compares upstream (finding 2 fixed). Finding 1's rule can't show here, since the branch had already dropped the PortGroup. The new comparison raised these:
+
+1. **The license hold was right, and found a real error.** "! LICENSE-MIT was added; the Portfile's license line may need to follow". zola relicensed in 0.22.0 (CHANGELOG: "Licence changed to EUPL 1.2"; Cargo.toml `license = "EUPL-1.2"`). Its README says code from before a given commit stays MIT. So `license MIT` had been wrong on master since 0.22.x, and the port is now `license EUPL-1.2 MIT`. check-60 passed it on Tart macOS 12, Tart macOS 26 and GitHub, and #35068 was updated. Two improvements:
+   - The hold could name the evidence it has: "Cargo.toml says EUPL-1.2; the Portfile says MIT". That's stronger than "a file was added".
+   - The hold stays after the license line is changed. Once the Portfile's license names what the manifest says, it could step down to `·`.
+2. **Three of the four native-library notes are noise.**
+   - `jni-sys` comes in through `rustls-platform-verifier`, which uses JNI only on Android, so it's never built on macOS.
+   - `system-configuration-sys` binds Apple's SystemConfiguration framework, which MacPorts doesn't provide.
+   - `aws-lc-sys` builds its bundled aws-lc, and MacPorts has no aws-lc port.
+
+   Only `zstd-sys` has a MacPorts counterpart (zstd), and linking it is optional. The note could be limited to libraries MacPorts has a port for, and skip crates reachable only through non-macOS target dependencies. As worded ("MacPorts may provide it"), it asks the person to check each one.
