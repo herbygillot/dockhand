@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"slices"
+	"strings"
 )
 
 // ObjectID is a full Git object identifier for a commit, tree, or blob.
@@ -59,6 +60,35 @@ type Target struct {
 	// Variants records explicit choices: true enables a variant and false
 	// disables it. An absent key leaves that variant unspecified.
 	Variants map[string]bool
+}
+
+// VariantSpec is a target's variant choices as MacPorts writes them on a
+// command line, sorted by name: "+docs -tests"; empty for its defaults.
+func (t Target) VariantSpec() string {
+	names := make([]string, 0, len(t.Variants))
+	for name := range t.Variants {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	words := make([]string, 0, len(names))
+	for _, name := range names {
+		sign := "-"
+		if t.Variants[name] {
+			sign = "+"
+		}
+		words = append(words, sign+name)
+	}
+	return strings.Join(words, " ")
+}
+
+// ID is a target's identity in a plan: its port's name, and its variant
+// choices after it where it has any, "s2n-tls +tests", since a check may
+// build one port with several.
+func (t Target) ID() TargetID {
+	if spec := t.VariantSpec(); spec != "" {
+		return TargetID(t.Name + " " + spec)
+	}
+	return TargetID(t.Name)
 }
 
 // CompareTargets orders targets by their complete selection. Empty and nil

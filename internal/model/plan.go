@@ -321,10 +321,10 @@ func (p Plan) Validate() error {
 		if target.Target.Name == "" || target.Directory == "" {
 			return invalid("plan %s target %s has no port or directory", p.ID, target.ID)
 		}
-		// A target is known by its port's name, which the environments'
-		// plans and every result name it by.
-		if target.ID != TargetID(target.Target.Name) {
-			return invalid("plan %s target %s is port %s", p.ID, target.ID, target.Target.Name)
+		// A target is known by its port's name and its variants, which the
+		// environments' plans and every result name it by.
+		if target.ID != target.Target.ID() {
+			return invalid("plan %s target %s is %s", p.ID, target.ID, target.Target.ID())
 		}
 		switch target.Role {
 		case Changed, Prerequisite:
@@ -344,8 +344,8 @@ func (p Plan) Validate() error {
 		if target.ID == "" || seen[target.ID] || target.Role != Changed {
 			return invalid("plan %s omits %q, which is planned, repeated, or not a changed target", p.ID, target.ID)
 		}
-		if target.ID != TargetID(target.Target.Name) {
-			return invalid("plan %s omits %s, which is port %s", p.ID, target.ID, target.Target.Name)
+		if target.ID != target.Target.ID() {
+			return invalid("plan %s omits %s, which is %s", p.ID, target.ID, target.Target.ID())
 		}
 		seen[target.ID] = true
 	}

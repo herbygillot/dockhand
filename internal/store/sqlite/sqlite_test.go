@@ -56,7 +56,7 @@ func (f fixture) seed(t *testing.T) (model.Branch, model.Revision, model.Plan) {
 	r := model.Revision{ID: "rev_1", Branch: b.ID, Kind: model.RevisionSnapshot, Snapshot: 1, Source: model.Source{Tree: "tree", Base: "base"}, Head: "head", CreatedAt: at}
 	p := model.Plan{ID: "plan_1", Revision: r.ID, Tests: model.TestsDeclared, CreatedAt: at, Environments: []model.Environment{tahoe},
 		Targets: []model.PlanTarget{
-			{ID: "libharbor", Target: model.Target{Name: "libharbor", Variants: map[string]bool{"docs": false}}, Directory: "devel/libharbor", Kind: model.Substantive, Role: model.Changed},
+			{ID: "libharbor", Target: model.Target{Name: "libharbor"}, Directory: "devel/libharbor", Kind: model.Substantive, Role: model.Changed},
 			{ID: "harbor-cli", Target: model.Target{Name: "harbor-cli"}, Directory: "devel/harbor-cli", Kind: model.RevisionOnly, Role: model.Changed},
 		},
 		Builds: []model.EnvironmentPlan{{Environment: tahoe, Order: []model.TargetID{"libharbor", "harbor-cli"},
@@ -228,11 +228,21 @@ func TestSnapshotsAreNumberedInOrder(t *testing.T) {
 
 func TestPlansRoundTrip(t *testing.T) {
 	f := open(t)
-	_, _, p := f.seed(t)
+	_, revision, p := f.seed(t)
+	// A target built with variants keeps them, and is known by them.
+	variant := p
+	variant.ID = "plan_2"
+	variant.Targets = []model.PlanTarget{{ID: "libharbor -docs +tests", Target: model.Target{Name: "libharbor", Variants: map[string]bool{"docs": false, "tests": true}},
+		Directory: "devel/libharbor", Kind: model.Substantive, Role: model.Changed}}
+	variant.Builds = []model.EnvironmentPlan{{Environment: tahoe, Order: []model.TargetID{"libharbor -docs +tests"}}}
+	variant.Revision = revision.ID
+	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.AddPlan(variant) }))
 	require.NoError(t, f.store.View(t.Context(), f.repo, func(r store.Reader) error {
-		got, err := r.Plan(p.ID)
-		require.NoError(t, err)
-		require.Equal(t, p, got)
+		for _, want := range []model.Plan{p, variant} {
+			got, err := r.Plan(want.ID)
+			require.NoError(t, err)
+			require.Equal(t, want, got)
+		}
 		return nil
 	}))
 }

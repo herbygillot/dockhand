@@ -298,3 +298,13 @@ func TestAnUpstreamComparisonHoldsForWhatItCouldNotCheck(t *testing.T) {
 	require.True(t, unpaired.Held())
 	require.Equal(t, []string{"the upstream archives couldn't be compared: new.tar.gz replaces no archive dockhand could find, so it wasn't compared"}, unpaired.Holds())
 }
+
+// A target is known by its port's name, and by its variant choices where
+// it has any, as MacPorts writes them, sorted.
+func TestATargetsIdentityHasItsVariants(t *testing.T) {
+	require.Equal(t, TargetID("s2n-tls"), Target{Name: "s2n-tls"}.ID())
+	require.Equal(t, TargetID("s2n-tls"), Target{Name: "s2n-tls", Variants: map[string]bool{}}.ID())
+	both := Target{Name: "s2n-tls", Variants: map[string]bool{"tests": true, "docs": false}}
+	require.Equal(t, "-docs +tests", both.VariantSpec())
+	require.Equal(t, TargetID("s2n-tls -docs +tests"), both.ID())
+}

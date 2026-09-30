@@ -441,3 +441,44 @@ func TestTheEvaluatorSaysWhyAPortIsKnownToFail(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, macports.ExcludedKnownFail, eligibility.Excluded)
 }
+
+// The variants a port declares come from Base's own record of them, its
+// universal among them:
+// which are defaults, what each requires and conflicts with, and its
+// description (PortInfo(variants), PortInfo(vinfo)).
+func TestTheEvaluatorReportsTheVariantsAPortDeclares(t *testing.T) {
+	t.Parallel()
+	evaluator := liveEvaluator(t)
+	root := t.TempDir()
+	putFile(t, root, "devel/harbor/Portfile", `PortSystem 1.0
+name harbor
+version 1.0
+categories devel
+license MIT
+description Harbor
+long_description Harbor
+homepage https://example.invalid
+variant tests description {Build and run the tests} {}
+variant docs requires tests description {Documentation} {}
+variant python312 conflicts python313 description {Python 3.12} {}
+variant python313 conflicts python312 description {Python 3.13} {}
+default_variants +python313
+`)
+	tree, err := macports.NewTree(model.Source{Tree: model.ObjectID(strings.Repeat("a", 40))}, root, model.Platform{})
+	require.NoError(t, err)
+	targets, err := evaluator.Resolve(t.Context(), tree, macports.Selection{Selector: "harbor"})
+	require.NoError(t, err)
+	source, err := tree.Select(targets[0])
+	require.NoError(t, err)
+	snapshot, err := evaluator.Evaluate(t.Context(), source)
+	require.NoError(t, err)
+	variants, err := snapshot.Ports["harbor"].Variants()
+	require.NoError(t, err)
+	require.Equal(t, []macports.Variant{
+		{Name: "tests", Description: "Build and run the tests"},
+		{Name: "docs", Requires: []string{"tests"}, Description: "Documentation"},
+		{Name: "python312", Conflicts: []string{"python313"}, Description: "Python 3.12"},
+		{Name: "python313", Default: true, Conflicts: []string{"python312"}, Description: "Python 3.13"},
+		{Name: "universal"}, // Base's own, for a port it can build for several architectures
+	}, variants)
+}
