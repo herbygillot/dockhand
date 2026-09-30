@@ -223,25 +223,31 @@ func TestTheSubmitPreviewGivesEachUpstreamFindingALine(t *testing.T) {
 		"\n  Upstream compared; no license, build file, or dependency changes\n  Other PRs")
 	require.Contains(t, preview(engine.PortComparison{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{license, dropped}}}),
 		"\n  Upstream ! LICENSE changed\n"+
-			"           · go.mod drops golang.org/x/net\n  Other PRs", "the label says upstream once")
+			"           · go.mod drops golang.org/x/net\n"+
+			"           (! holds bump's and serve's submission for your look; · holds nothing)\n  Other PRs", "the label says upstream once")
 	require.Contains(t, preview(engine.PortComparison{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{license}}},
 		engine.PortComparison{Port: "oniguruma6", Comparison: model.UpstreamComparison{Problem: "HTTP 404"}},
 		engine.PortComparison{Port: "jq", Comparison: model.UpstreamComparison{}}),
 		"\n  Upstream ! jq: LICENSE changed\n"+
-			"           ! oniguruma6: archives not compared: HTTP 404\n  Other PRs",
+			"           ! oniguruma6: archives not compared: HTTP 404\n"+
+			"           (! holds bump's and serve's submission for your look; · holds nothing)\n  Other PRs",
 		"an update with nothing to look at adds no line among others' findings")
 }
 
 // Under an Upstream heading, a finding doesn't say upstream again; where
-// no heading says whose it is, as in submit --passing, it keeps the word.
+// no heading says whose it is it would keep the word, and every list of
+// them has one, --passing's included (the ov run's finding 5).
 func TestUpstreamIsSaidOnceUnderItsHeading(t *testing.T) {
 	license := model.UpstreamChange{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed", Hold: true}
 	dropped := model.UpstreamChange{Kind: "dependency", Path: "go.mod", Message: "upstream: go.mod drops golang.org/x/net"}
 	var update bytes.Buffer
 	writeUpstream(&update, &model.UpstreamComparison{Changes: []model.UpstreamChange{license, dropped}})
-	require.Equal(t, "Upstream changes:\n  ! LICENSE changed\n  · go.mod drops golang.org/x/net\n", update.String())
+	require.Equal(t, "Upstream changes:\n  ! LICENSE changed\n  · go.mod drops golang.org/x/net\n  (! holds bump's and serve's submission for your look; · holds nothing)\n", update.String(), "a list with a mark that holds says what the marks mean (the chezmoi run)")
+	update.Reset()
+	writeUpstream(&update, &model.UpstreamComparison{Changes: []model.UpstreamChange{dropped}})
+	require.Equal(t, "Upstream changes:\n  · go.mod drops golang.org/x/net\n", update.String(), "one without needs no legend")
 	plan := engine.SubmitPlan{Upstream: []engine.PortComparison{{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{license, dropped}}}}}
-	require.Equal(t, []string{"! upstream's LICENSE changed", "· upstream: go.mod drops golang.org/x/net"}, upstreamLines(plan, false))
+	require.Equal(t, []string{"! LICENSE changed", "· go.mod drops golang.org/x/net"}, upstreamLines(plan), "every list of them has a heading now, --passing's too")
 }
 
 // A commit whose Generated-By names a dockhand built from uncommitted
@@ -521,7 +527,7 @@ func TestSubmitCheckPassingAndReady(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, stdout.String(), "For every branch submitted now:\n")
 	require.Contains(t, stdout.String(), "jq-update  jq: update to 1.8.1 · passed on command")
-	require.Contains(t, stdout.String(), "\n            ! archives not compared: the current version's archives could not be fetched: HTTP 404\n",
+	require.Contains(t, stdout.String(), "\n            Upstream ! archives not compared: the current version's archives could not be fetched: HTTP 404\n",
 		"what upstream showed, which holds only a submission nobody looks over")
 	require.Contains(t, stdout.String(), "+version 1.8.1", "d showed the diff")
 	require.Contains(t, stdout.String(), "Opened #34901")
@@ -532,6 +538,17 @@ func TestSubmitCheckPassingAndReady(t *testing.T) {
 	out, _, err = dockhand(t, "submit", "--passing")
 	require.NoError(t, err)
 	require.Equal(t, "0 branches passed their checks\n", out, "a pushed branch is done")
+
+	// --ready is previewed, as the step that changes the pull request's
+	// state, and a draft's preview names it; the preview shows the
+	// description, which only its JSON had (the sshuttle run, and the
+	// hugo exercise).
+	previewed, _, err := dockhand(t, "submit", "--plan", "--ready")
+	require.NoError(t, err)
+	require.Contains(t, previewed, "#34901 isn't a draft, so --ready has nothing to do.\n")
+	require.Contains(t, previewed, "\nDescription, as the pull request would have it:\n    Submitted by [dockhand](https://github.com/herbygillot/dockhand)\n\n    #### Description\n")
+	require.Contains(t, previewed, "Nothing was submitted (--plan).\n")
+	require.Empty(t, g.readied, "a preview marks nothing")
 
 	// GitHub may refuse dockhand's app, as an organization restricting
 	// apps does: what to do instead is said (the sshuttle run, finding 2),
@@ -762,3 +779,26 @@ func TestSubmitsCheckLineNamesOnlyWhereItBuilt(t *testing.T) {
 type restricted struct{ error }
 
 func (restricted) Is(target error) bool { return target == forge.ErrAppRestricted }
+
+// A draft's preview names the command that marks it ready, and --ready's
+// preview says what it would do in each case.
+func TestTheReadyStepIsPreviewed(t *testing.T) {
+	draft := engine.SubmitPlan{Branch: model.Branch{PullRequest: &model.PullRequest{Number: 34901, Draft: true}},
+		Existing: &forge.PullRequestObservation{PullRequest: forge.PullRequest{Ref: forge.PullRequestRef{Number: 34901}}}}
+	require.True(t, strings.HasPrefix(pullRequestWords(draft), "updates #34901, a draft: dockhand submit --ready marks it ready for review"), pullRequestWords(draft))
+	for _, test := range []struct {
+		plan  engine.SubmitPlan
+		ready bool
+		words string
+	}{
+		{draft, true, "Then marks #34901 ready for review.\n"},
+		{engine.SubmitPlan{Branch: model.Branch{PullRequest: &model.PullRequest{Number: 34901}}}, true, "#34901 isn't a draft, so --ready has nothing to do.\n"},
+		{engine.SubmitPlan{Request: engine.SubmitRequest{Draft: true}}, true, "Opens it as a draft, then marks it ready for review.\n"},
+		{engine.SubmitPlan{}, true, "It opens ready for review, not as a draft, so --ready has nothing to do.\n"},
+		{draft, false, ""},
+	} {
+		var out bytes.Buffer
+		writeReadyPreview(&out, test.plan, test.ready)
+		require.Equal(t, test.words, out.String())
+	}
+}

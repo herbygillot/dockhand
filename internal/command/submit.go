@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -55,8 +56,8 @@ GitHub is kept.
 			}
 			defer e.Close()
 			request.TestedBinaries, request.TestedVariants = testedBinaries, testedVariants
-			if preview && (check || passing || yes || ready) {
-				return errors.New("--plan previews one branch's submission; it goes without --check, --passing, --yes, and --ready (dockhand check --plan previews a check)")
+			if preview && (check || passing || yes) {
+				return errors.New("--plan previews one branch's submission; it goes without --check, --passing, and --yes (dockhand check --plan previews a check)")
 			}
 			// Each passing branch is the person's to look at before it's
 			// submitted (principle 7), so --passing asks about each (D11).
@@ -82,6 +83,8 @@ GitHub is kept.
 				return errors.New("nothing was submitted")
 			}
 			if preview {
+				writeReadyPreview(streams.Out, plan, ready)
+				writeDescription(streams.Out, plan)
 				fmt.Fprintln(streams.Out, "Nothing was submitted (--plan).")
 				return nil
 			}
@@ -160,6 +163,33 @@ func askTested(streams Streams, plan *engine.SubmitPlan) error {
 	}
 	plan.Answer(binaries, variants)
 	return nil
+}
+
+// writeReadyPreview says what --ready would do after the submission.
+func writeReadyPreview(out io.Writer, plan engine.SubmitPlan, ready bool) {
+	if !ready {
+		return
+	}
+	switch pr := plan.Branch.PullRequest; {
+	case pr != nil && pr.Draft:
+		fmt.Fprintf(out, "Then marks #%d ready for review.\n", pr.Number)
+	case pr != nil:
+		fmt.Fprintf(out, "#%d isn't a draft, so --ready has nothing to do.\n", pr.Number)
+	case plan.Request.Draft:
+		fmt.Fprintln(out, "Opens it as a draft, then marks it ready for review.")
+	default:
+		fmt.Fprintln(out, "It opens ready for review, not as a draft, so --ready has nothing to do.")
+	}
+}
+
+// writeDescription shows the pull request's description as the submission
+// would leave it, which a preview otherwise shows only in its JSON.
+func writeDescription(out io.Writer, plan engine.SubmitPlan) {
+	fmt.Fprintln(out, "\nDescription, as the pull request would have it:")
+	for _, line := range strings.Split(strings.TrimRight(plan.Body, "\n"), "\n") {
+		fmt.Fprintln(out, strings.TrimRight("    "+line, " "))
+	}
+	fmt.Fprintln(out)
 }
 
 // finishSubmit applies a plan, then takes its pull request out of draft
@@ -318,8 +348,10 @@ func submitPassing(ctx context.Context, e *engine.Engine, streams Streams, reque
 			continue
 		}
 		fmt.Fprintf(out, "\n%s  %s · %s · %s\n", status.Branch.ShortName(), plan.Title, checkWords(plan), pullRequestWords(plan))
-		for _, line := range upstreamLines(plan, false) {
-			fmt.Fprintf(out, "            %s\n", line)
+		// Under a label of their own, as the single preview's are, the
+		// lines need no "upstream:" each (the ov run's finding 5).
+		if lines := upstreamLines(plan); len(lines) > 0 {
+			fmt.Fprintf(out, "            Upstream %s\n", strings.Join(lines, "\n                     "))
 		}
 		if len(plan.Blocking) > 0 {
 			for _, blocking := range plan.Blocking {
@@ -377,11 +409,14 @@ func writeSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 	fmt.Fprintf(out, "  Push     %s\n", pushWords(plan))
 	fmt.Fprintf(out, "  Checks   %s\n", checkWords(plan))
 	if len(plan.Upstream) > 0 {
-		lines := upstreamLines(plan, true)
+		lines := upstreamLines(plan)
 		if len(lines) == 0 {
 			lines = []string{"compared; no license, build file, or dependency changes"}
 		}
 		fmt.Fprintf(out, "  Upstream %s\n", strings.Join(lines, "\n           "))
+		if slices.ContainsFunc(lines, func(line string) bool { return strings.HasPrefix(line, "! ") }) {
+			fmt.Fprintf(out, "           %s\n", holdLegend)
+		}
 	}
 	fmt.Fprintf(out, "  Other PRs  %s\n", otherWords(plan))
 	fmt.Fprintf(out, "  PR       %s\n", pullRequestWords(plan))
@@ -402,9 +437,9 @@ func writeSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 // upstreamLines are what comparing the branch's upstream archives found,
 // a line each, marked as update marks them: a change a passing build can't
 // catch, and archives that couldn't be compared, with "!". Each names its
-// port when the branch updated several, and under an Upstream label
-// (headed) doesn't say upstream again.
-func upstreamLines(plan engine.SubmitPlan, headed bool) []string {
+// port when the branch updated several, and, under the Upstream label
+// every list of them has, doesn't say upstream again.
+func upstreamLines(plan engine.SubmitPlan) []string {
 	ports := map[string]bool{}
 	for _, found := range plan.Upstream {
 		ports[found.Port] = true
@@ -419,9 +454,7 @@ func upstreamLines(plan engine.SubmitPlan, headed bool) []string {
 			lines = append(lines, "! "+port+"archives not compared: "+found.Comparison.Problem)
 		}
 		for _, change := range found.Comparison.Changes {
-			if headed {
-				change = underUpstream(change)
-			}
+			change = underUpstream(change)
 			change.Message = port + change.Message
 			lines = append(lines, upstreamWords(change))
 		}
@@ -500,7 +533,7 @@ func pullRequestWords(plan engine.SubmitPlan) string {
 	}
 	words := fmt.Sprintf("updates #%d", plan.Existing.PullRequest.Ref.Number)
 	if pr := plan.Branch.PullRequest; pr != nil && pr.Draft && !plan.Request.Draft {
-		words += ", a draft: mark it ready for review on GitHub when it is"
+		words += ", a draft: dockhand submit --ready marks it ready for review"
 	}
 	var refreshing []string
 	if plan.Sections.Description == engine.SectionRefreshed {

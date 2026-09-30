@@ -25,6 +25,7 @@ type ArchivePair = portedit.ArchivePair
 type ChecksumsToWrite = portedit.ChecksumsToWrite
 type Unlocated = distfiles.Unlocated
 type GoToolchain = portedit.GoToolchain
+type Regenerated = portedit.Regenerated
 type GoToolchainOutcome = portedit.GoToolchainOutcome
 type Stealth = portedit.Stealth
 type StealthDistfile = portedit.StealthDistfile

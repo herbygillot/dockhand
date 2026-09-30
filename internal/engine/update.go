@@ -104,8 +104,11 @@ type Update struct {
 	Diff string
 	// Subject is the commit subject the edit would be committed with.
 	Subject string
-	// Distfiles counts the archives whose checksums were written.
-	Distfiles int
+	// Distfiles counts the port's archives whose checksums were written,
+	// and Regenerated the dependency blocks written again, a Git crate's
+	// archive among them, each with its entries.
+	Distfiles   int
+	Regenerated []preparation.Regenerated
 	// PatchProblems name the port's patches that no longer apply, and
 	// PatchesUnchecked those no check reached before the build.
 	PatchProblems    []string
@@ -383,7 +386,7 @@ func changedSinceBase(ctx context.Context, worktree *git.Repository, captured st
 // describe reads what the preparation found.
 func describe(branch model.Branch, selector string, result preparation.Result) Update {
 	update := Update{Branch: branch, Port: result.Target.Name, Release: result.Release, PatchProblems: result.PatchProblems(), PatchesUnchecked: result.UncheckedPatches(),
-		Distfiles: len(result.Downloads) + len(result.Crates)}
+		Distfiles: len(result.Downloads), Regenerated: result.Regenerated}
 	if update.Port == "" {
 		update.Port = selector
 	}

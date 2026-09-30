@@ -3,9 +3,14 @@ package portedit
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/fetch"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/pypi"
+	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -24,7 +29,7 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 		progress.VerboseReport(ctx, "Refreshing %s", item.artifact.Name)
 		download, err := store.FetchFirst(ctx, item.info, item.artifact.Name, item.artifact.URLs)
 		if err != nil {
-			return result, err
+			return result, wheelsOnly(ctx, s.PyPI, item.artifact.Name, item.artifact.URLs, item.info.Version, err)
 		}
 		group := item.artifact.Group
 		if group.Legacy() && !request.KeepOldChecksums && !group.Traced() {
@@ -163,4 +168,29 @@ func observeFinal(ctx context.Context, input *sourceInput, contexts []archiveCon
 		finals[i] = observed[k]
 	}
 	return finals, nil
+}
+
+// wheelsOnly says, of a source archive PyPI doesn't serve, where PyPI
+// publishes only wheels for the release, and never will a source archive:
+// py-flatbuffers 25.12.19's update said its sdist wasn't "published at
+// that location yet", which it replaces. What PyPI publishes is its JSON
+// API's to say; where it can't, or the release has a source archive, err
+// stands as it is.
+func wheelsOnly(ctx context.Context, index pypi.Client, name string, urls []string, version string, err error) error {
+	var status *fetch.StatusError
+	if !errors.As(err, &status) || status.Status != http.StatusNotFound {
+		return err
+	}
+	for _, address := range urls {
+		project, ok := pypi.SourceProject(address)
+		if !ok {
+			continue
+		}
+		files, lookErr := index.Files(ctx, project, version)
+		if lookErr != nil || len(files) == 0 || slices.ContainsFunc(files, func(f pypi.File) bool { return f.PackageType == "sdist" }) {
+			return err
+		}
+		return fmt.Errorf("archives: downloading %s: %w; PyPI publishes only wheels for %s %s, and a release without a source archive never gets one, so the port needs its source from elsewhere, such as the project's own release on its forge", name, status, project, version)
+	}
+	return err
 }

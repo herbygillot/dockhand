@@ -438,3 +438,28 @@ func TestAnUpdateNamesOtherOpenPullRequests(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, again, "Couldn't look for other open pull requests for jq: rate limited\n")
 }
+
+// regenerating is a preparer whose update wrote a dependency block again.
+type regenerating struct{ bumper }
+
+func (b regenerating) Prepare(ctx context.Context, r preparation.Request) (preparation.Result, error) {
+	result, err := b.bumper.Prepare(ctx, r)
+	result.Regenerated = []preparation.Regenerated{{Option: "cargo.crates", Count: 352, Changed: 160}}
+	return result, err
+}
+
+// An update says what it wrote of the dependency blocks, not only the
+// distfiles: hk's said "1 distfile" of 280 lines of crates (the gh, usql,
+// hk, and pgdog run's finding 4).
+func TestAnUpdateCountsTheCratesItWrote(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	testPreparer = func(e *engine.Engine) engine.Preparer { return regenerating{bumper{repo: e.Repo}} }
+	t.Cleanup(func() { testPreparer = nil })
+	result, err := jsonOf(t, "update", "jq", "--plan")
+	require.NoError(t, err)
+	require.Equal(t, []any{map[string]any{"option": "cargo.crates", "count": float64(352), "changed": float64(160)}}, dig(t, result.Result, "regenerated"))
+	out, _, err := dockhand(t, "update", "jq", "--new")
+	require.NoError(t, err)
+	require.Contains(t, out, " and 352 crates (160 changed)")
+}

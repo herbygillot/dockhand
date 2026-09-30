@@ -42,6 +42,8 @@ type observerKey struct{}
 type reporter struct {
 	mu     sync.Mutex
 	report func(Update)
+	// said are the reports ReportOnce has made through it.
+	said map[string]bool
 }
 
 // WithReporter serializes callbacks, including those from concurrent operations.
@@ -87,6 +89,26 @@ func Quiet(ctx context.Context) context.Context {
 
 // Report emits an info-level report.
 func Report(ctx context.Context, format string, args ...any) { emit(ctx, Info, format, args...) }
+
+// ReportOnce emits an info-level report the first time it's made to the
+// command's reporter, and not again: a notice about the work, such as a
+// port being a stub, that each pass over the same work would repeat.
+func ReportOnce(ctx context.Context, format string, args ...any) {
+	if sink, _ := ctx.Value(reporterKey{}).(*reporter); sink != nil {
+		message := fmt.Sprintf(format, args...)
+		sink.mu.Lock()
+		said := sink.said[message]
+		if sink.said == nil {
+			sink.said = map[string]bool{}
+		}
+		sink.said[message] = true
+		sink.mu.Unlock()
+		if said {
+			return
+		}
+	}
+	emit(ctx, Info, format, args...)
+}
 
 // VerboseReport emits a report for people who asked for more.
 func VerboseReport(ctx context.Context, format string, args ...any) {

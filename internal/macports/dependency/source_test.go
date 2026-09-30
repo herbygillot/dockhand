@@ -3,6 +3,7 @@ package dependency
 import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/stretchr/testify/require"
+	"strings"
 	"testing"
 )
 
@@ -54,5 +55,22 @@ func TestGoRequirementIsTheGoDirectiveAsWritten(t *testing.T) {
 		require.Equal(t, test.want, got, test.manifest)
 	}
 	_, err := GoRequirement([]byte("go 1.24 1.25\n"))
+	require.Error(t, err)
+}
+
+// A regenerated block's entries are counted, and those not as they were:
+// a crate at a new version, or a new one, and a Go module whose version
+// or checksums moved, however its fields are ordered.
+func TestARegeneratedBlocksEntriesAreCounted(t *testing.T) {
+	t.Parallel()
+	count, changed, err := Entries(Cargo, []string{"a", "1.0", "aaaa", "b", "2.0", "bbbb"}, []string{"a", "1.0", "aaaa", "b", "2.1", "cccc", "c", "0.1", "dddd"})
+	require.NoError(t, err)
+	require.Equal(t, [2]int{3, 2}, [2]int{count, changed})
+	sum := strings.Repeat("a", 64)
+	old := []string{"github.com/x/y", "lock", "v1", "sha256", sum, "size", "10"}
+	count, changed, err = Entries(Go, old, []string{"github.com/x/y", "sha256", sum, "size", "10", "lock", "v1"})
+	require.NoError(t, err)
+	require.Equal(t, [2]int{1, 0}, [2]int{count, changed}, "the same module, its fields in another order")
+	_, _, err = Entries(Cargo, []string{"a", "1.0"}, nil)
 	require.Error(t, err)
 }

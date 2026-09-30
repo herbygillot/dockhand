@@ -7,6 +7,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/pypi"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -92,6 +93,9 @@ type Result struct {
 	// fetched for their checksums: dependencies, not the port's source, so
 	// no pair is theirs to compare.
 	Crates []archives.Download `json:",omitempty"`
+	// Regenerated are the dependency blocks the update wrote again, each
+	// with how many entries it has, and how many aren't as they were.
+	Regenerated []Regenerated `json:",omitempty"`
 	// Pairs are each archive the update replaced beside the one that
 	// replaces it, in every context that fetches them, fetched only when
 	// KeepArchives asked; PreviousProblem is why the replaced ones could
@@ -115,6 +119,14 @@ type Result struct {
 	// an update to the version it already has: what it is at, which no
 	// fidelity report says then. Nil when there was an edit.
 	Unchanged *macports.PortInfo `json:"-"`
+}
+
+// Regenerated is one dependency block an update wrote again: go.vendors,
+// cargo.crates, or cargo.crates_github, its entries, a Go module or a
+// crate each, and those that aren't as they were.
+type Regenerated struct {
+	Option         string
+	Count, Changed int
 }
 
 // GoToolchain is the Go release a module-mode port's go.mod requires, and
@@ -171,6 +183,9 @@ type Service struct {
 	// a git-fetched port that downloads no archive to read it from; nil
 	// leaves such a port's toolchain minimum as declared.
 	Manifests ManifestSource
+	// PyPI says which files a PyPI release publishes, where its source
+	// archive can't be had; its zero value asks PyPI.
+	PyPI pypi.Client
 }
 
 // ManifestSource reads one file of a port's source repository at the

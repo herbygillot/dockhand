@@ -79,3 +79,20 @@ func TestObserversSeeReportsAtTheLevelMade(t *testing.T) {
 	workers.Wait()
 	require.Len(t, concurrent, 12)
 }
+
+// A notice made once through a command's reporter isn't made again, as a
+// stub's is by each load of the port; another is, and so is the same one
+// under another reporter.
+func TestAReportMadeOnceIsntRepeated(t *testing.T) {
+	var got []string
+	ctx := progress.WithReporter(context.Background(), func(u progress.Update) { got = append(got, u.Message) })
+	progress.ReportOnce(ctx, "%s is a stub", "py-demo")
+	progress.ReportOnce(ctx, "%s is a stub", "py-demo")
+	progress.ReportOnce(ctx, "%s is a stub", "py-other")
+	progress.Report(ctx, "said each time")
+	progress.Report(ctx, "said each time")
+	require.Equal(t, []string{"py-demo is a stub", "py-other is a stub", "said each time", "said each time"}, got)
+	var again []string
+	progress.ReportOnce(progress.WithReporter(context.Background(), func(u progress.Update) { again = append(again, u.Message) }), "%s is a stub", "py-demo")
+	require.Equal(t, []string{"py-demo is a stub"}, again)
+}

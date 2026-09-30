@@ -249,6 +249,12 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if err != nil {
 		return Result{}, err
 	}
+	var regenerated []Regenerated
+	for _, name := range slices.Sorted(maps.Keys(values)) {
+		if count, changed, err := dependency.Entries(name, plan.Values[name], values[name]); err == nil {
+			regenerated = append(regenerated, Regenerated{Option: name, Count: count, Changed: changed})
+		}
+	}
 	evaluated, err := s.evaluateEdit(ctx, input, contents)
 	if err != nil {
 		return Result{}, err
@@ -315,6 +321,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	result.Files = []portfile.Edit{evaluated.edit}
 	result.report(final)
 	result.Crates = gitDownloads
+	result.Regenerated = regenerated
 	switch {
 	case kept && previousProblem != "":
 		result.PreviousProblem = previousProblem

@@ -189,7 +189,9 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 		stub = request.Stub
 		request.SharedRelease = true
 	} else if carrier, name := macports.ResolveStub(before, selected); name != "" {
-		progress.Report(ctx, "%s is a stub; editing %s and its sibling subports as one release", name, carrier.Name)
+		// Said once, though the probe and the preparation each load the
+		// port (the sshuttle run: py-pipdeptree's update said it thrice).
+		progress.ReportOnce(ctx, "%s is a stub; editing %s and its sibling subports as one release", name, carrier.Name)
 		stub = name
 		request.Stub, request.SharedRelease = name, true
 		selected = carrier

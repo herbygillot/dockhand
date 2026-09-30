@@ -50,8 +50,9 @@ type updateJSON struct {
 	Upstream *upstreamJSON `json:"upstream,omitempty"`
 	// Others are the port's other open pull requests, where the update
 	// looked, and OthersProblem why it couldn't.
-	Others        []otherJSON `json:"others,omitempty"`
-	OthersProblem string      `json:"others_problem,omitempty"`
+	Regenerated   []regeneratedJSON `json:"regenerated,omitempty"`
+	Others        []otherJSON       `json:"others,omitempty"`
+	OthersProblem string            `json:"others_problem,omitempty"`
 	// Tidy, Check, and Submit are the steps update --submit and bump go on
 	// to, each as tidy, check, and submit report it, as far as they went.
 	Tidy   *tidyJSON   `json:"tidy,omitempty"`
@@ -130,6 +131,14 @@ type checksumJSON struct {
 	Size   int64  `json:"size,omitempty"`
 }
 
+// regeneratedJSON is a dependency block an update wrote again: its
+// entries, and how many aren't as they were.
+type regeneratedJSON struct {
+	Option  string `json:"option"`
+	Count   int    `json:"count"`
+	Changed int    `json:"changed"`
+}
+
 // otherJSON is another open pull request for a port.
 type otherJSON struct {
 	Number int    `json:"number"`
@@ -148,6 +157,9 @@ func updateView(branch model.Branch, started bool, update engine.Update, plan bo
 	if upstream := update.Upstream; upstream != nil {
 		comparison := upstreamView(*upstream)
 		view.Upstream = &comparison
+	}
+	for _, block := range update.Regenerated {
+		view.Regenerated = append(view.Regenerated, regeneratedJSON{Option: block.Option, Count: block.Count, Changed: block.Changed})
 	}
 	for _, pr := range update.Others {
 		view.Others = append(view.Others, otherJSON{Number: pr.Number, Title: pr.Title, URL: pr.URL})

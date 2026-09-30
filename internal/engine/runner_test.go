@@ -1022,3 +1022,10 @@ func TestAnEnvironmentThatCantReuseSaysSo(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, said(t, e), "every environment could")
 }
+
+// Serve's banner counts checks, and says where one builds several of its
+// environments at once, as Tart builds two releases (the sshuttle run).
+func TestServeSaysHowManyChecksAndEnvironmentsAtOnce(t *testing.T) {
+	require.Equal(t, "tart (1 check at a time, each building up to 2 of its environments at once)", capacityWords("tart", &together{}, 1))
+	require.Equal(t, "command (2 checks at a time)", capacityWords("command", &scriptedProvider{}, 2))
+}

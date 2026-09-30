@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -151,6 +152,18 @@ func (s *server) lead(ctx context.Context, session *coord.Session) (*model.Lease
 	}
 }
 
+// capacityWords says how many checks a provider takes at once. Capacity
+// counts checks, and a check may build several of its environments at
+// once, as Tart builds two releases in the Mac's two VMs, which "1 at a
+// time" hid (the sshuttle run).
+func capacityWords(name string, provider buildenv.Provider, checks int) string {
+	words := fmt.Sprintf("%s (%s at a time", name, plural(checks, "check"))
+	if parallel, ok := provider.(buildenv.ParallelProvider); ok && parallel.Parallel() > 1 {
+		words += fmt.Sprintf(", each building up to %d of its environments at once", parallel.Parallel())
+	}
+	return words + ")"
+}
+
 func (s *server) run(ctx context.Context, session *coord.Session, lease model.Lease) error {
 	e, options := s.e, s.options
 	var providers []string
@@ -162,7 +175,7 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	var described []string
 	for _, name := range providers {
 		capacity[name] = max(options.Capacity[name], 1)
-		described = append(described, fmt.Sprintf("%s (%d at a time)", name, capacity[name]))
+		described = append(described, capacityWords(name, e.Providers[name], capacity[name]))
 	}
 	if len(described) == 0 {
 		described = []string{"none set up; checks will need attention"}

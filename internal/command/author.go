@@ -410,6 +410,16 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	if update.Distfiles > 0 {
 		what += fmt.Sprintf(" (%s)", plural(update.Distfiles, "distfile"))
 	}
+	// What the dependency blocks hold, which the diff shows line by line:
+	// hk's said "1 distfile" of 280 lines of crates (the gh, usql, hk, and
+	// pgdog run's finding 4).
+	for _, block := range update.Regenerated {
+		entry := map[string]string{"go.vendors": "Go module", "cargo.crates": "crate", "cargo.crates_github": "Git crate"}[block.Option]
+		if entry == "" {
+			entry = block.Option + " entry"
+		}
+		what += fmt.Sprintf(" and %s (%d changed)", plural(block.Count, entry), block.Changed)
+	}
 	if update.Before.Revision != 0 && update.After.Revision == 0 {
 		what += "; revision reset to 0"
 	}
@@ -787,12 +797,16 @@ func writeUpstream(out io.Writer, comparison *model.UpstreamComparison) {
 		// What couldn't be checked holds as a finding does (D4), so it is
 		// marked as one.
 		fmt.Fprintf(out, "! Upstream archives not compared: %s\n", comparison.Problem)
+		fmt.Fprintln(out, holdLegend)
 	case len(comparison.Changes) == 0:
 		fmt.Fprintln(out, "Upstream archives compared: no license, build file, or dependency changes.")
 	default:
 		fmt.Fprintln(out, "Upstream changes:")
 		for _, change := range comparison.Changes {
 			fmt.Fprintf(out, "  %s\n", upstreamWords(underUpstream(change)))
+		}
+		if comparison.Held() {
+			fmt.Fprintln(out, "  "+holdLegend)
 		}
 	}
 }
@@ -809,6 +823,10 @@ func writeOthers(out io.Writer, update engine.Update) {
 		fmt.Fprintf(out, "Also open for %s: #%d %s\n", update.Port, pr.Number, pr.Title)
 	}
 }
+
+// holdLegend says what the marks of an upstream finding mean, beside any
+// list with one that holds (the chezmoi run).
+const holdLegend = "(! holds bump's and serve's submission for your look; · holds nothing)"
 
 // underUpstream is a change as words under an Upstream heading, which
 // already says whose it is: "upstream's LICENSE changed" is "LICENSE

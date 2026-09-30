@@ -332,3 +332,44 @@ func Equivalent(kind string, a, b []string) bool {
 	}
 	return slices.Equal(rows(a), rows(b))
 }
+
+// Entries counts a regenerated block's entries, the modules or crates it
+// declares, and among them those that aren't an entry of the old block as
+// written: a crate at a new version, or a new one. An entry is the block's
+// own row, a Go module with its version and checksums, as Equivalent
+// compares them.
+func Entries(kind string, old, next []string) (count, changed int, err error) {
+	rows := func(values []string) (map[string]bool, int, error) {
+		groups, err := tokenRows(kind, values)
+		if err != nil {
+			return nil, 0, err
+		}
+		keys := map[string]bool{}
+		for _, row := range groups {
+			if kind == Go {
+				pairs := []string{}
+				for i := 1; i+1 < len(row); i += 2 {
+					pairs = append(pairs, row[i]+" "+row[i+1])
+				}
+				slices.Sort(pairs)
+				row = append([]string{row[0]}, pairs...)
+			}
+			keys[strings.Join(row, " ")] = true
+		}
+		return keys, len(groups), nil
+	}
+	before, _, err := rows(old)
+	if err != nil {
+		return 0, 0, err
+	}
+	after, count, err := rows(next)
+	if err != nil {
+		return 0, 0, err
+	}
+	for key := range after {
+		if !before[key] {
+			changed++
+		}
+	}
+	return count, changed, nil
+}

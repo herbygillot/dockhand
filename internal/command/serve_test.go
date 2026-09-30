@@ -63,7 +63,7 @@ func TestServeDrainsTheQueue(t *testing.T) {
 	out, _, err := dockhand(t, "serve", "--drain")
 	require.NoError(t, err)
 	require.Contains(t, out, "serve: leading (pid ")
-	require.Contains(t, out, "builds on command (1 at a time), github (2 at a time) · opens no pull requests; it only checks\n")
+	require.Contains(t, out, "builds on command (1 check at a time), github (2 checks at a time) · opens no pull requests; it only checks\n")
 	require.Contains(t, out, "check-1 jq-update: running\ncheck-1 jq-update: passed\nserve: the queue is empty\n")
 	out, _, err = dockhand(t, "queue")
 	require.NoError(t, err)
@@ -251,7 +251,7 @@ JSON
 		require.Eventually(t, func() bool { return started("check-1") && started("check-2") }, 5*time.Second, 10*time.Millisecond,
 			"with capacity 2, both checks run at once")
 	})
-	require.Contains(t, out, "builds on command (2 at a time)")
+	require.Contains(t, out, "builds on command (2 checks at a time)")
 	require.Contains(t, out, "check-1 jq-update: passed\n")
 	require.Contains(t, out, "check-2 jq-other: passed\n")
 
