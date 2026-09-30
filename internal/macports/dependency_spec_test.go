@@ -1,6 +1,7 @@
 package macports
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -27,6 +28,7 @@ func TestADependencyIsReadAsBaseReadsIt(t *testing.T) {
 		dependency, err := ParseDependency("build", spec)
 		require.NoError(t, err, spec)
 		require.Equal(t, Dependency{Port: port, Phase: "build", Spec: spec}, dependency)
+		require.Equal(t, !strings.HasPrefix(spec, "port:"), dependency.MetByFile(), "only lib:, bin:, and path: are met by a file: %s", spec)
 	}
 	for _, spec := range []string{"cmake", "port:", "port::cmake", "bin::git", "lib:libz", "file:x:y", "path:a:b:c", "port:a/b", "port:x:..", "port:cmake ", "bin:a b:c"} {
 		_, err := ParseDependency("build", spec)

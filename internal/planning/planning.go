@@ -18,11 +18,20 @@ import (
 // needs Xcode with the environment's tools, and whether it declares tests.
 type Evaluated struct {
 	Eligibility  macports.Eligibility
-	Dependencies []model.TargetID
+	Dependencies []Dependency
 	NeedsXcode   bool
 	// Untested is a port whose test.run MacPorts reads as off; one it
 	// couldn't read, or didn't, is left unsaid.
 	Untested bool
+}
+
+// Dependency is a port another depends on. ByFile is one Base would find
+// met by a file where the file is there and no port owns it (a lib:,
+// bin:, or path: dependency, and none by port:), which a dependency by
+// port on the same port overrides.
+type Dependency struct {
+	Port   model.TargetID
+	ByFile bool
 }
 
 // Evaluate reads what planning needs of a port as an environment on the
@@ -42,7 +51,12 @@ func Evaluate(port macports.PortInfo, platform model.Platform) (Evaluated, error
 	}
 	evaluated := Evaluated{Eligibility: eligibility, NeedsXcode: needsXcode}
 	for _, dependency := range port.Dependencies {
-		evaluated.Dependencies = append(evaluated.Dependencies, model.TargetID(dependency.Port))
+		id := model.TargetID(dependency.Port)
+		if i := slices.IndexFunc(evaluated.Dependencies, func(d Dependency) bool { return d.Port == id }); i >= 0 {
+			evaluated.Dependencies[i].ByFile = evaluated.Dependencies[i].ByFile && dependency.MetByFile()
+			continue
+		}
+		evaluated.Dependencies = append(evaluated.Dependencies, Dependency{Port: id, ByFile: dependency.MetByFile()})
 	}
 	if declares, known := port.DeclaresTests(); known && !declares {
 		evaluated.Untested = true
@@ -162,25 +176,25 @@ func Built(candidates []model.PlanTarget, reasons []map[model.TargetID]string) [
 // Needs are what each target needs built first in each environment: the
 // targets built there that it depends on there. Their union, over every
 // environment, is what --only adds back.
-func Needs(built []model.PlanTarget, reasons []map[model.TargetID]string, evaluations []Evaluation) (needs []map[model.TargetID][]model.TargetID, union map[model.TargetID][]model.TargetID) {
+func Needs(built []model.PlanTarget, reasons []map[model.TargetID]string, evaluations []Evaluation) (needs []map[model.TargetID][]Dependency, union map[model.TargetID][]model.TargetID) {
 	builtAnywhere := func(id model.TargetID) bool {
 		return slices.ContainsFunc(built, func(c model.PlanTarget) bool { return c.ID == id })
 	}
-	needs = make([]map[model.TargetID][]model.TargetID, len(evaluations))
+	needs = make([]map[model.TargetID][]Dependency, len(evaluations))
 	union = map[model.TargetID][]model.TargetID{}
 	for e := range evaluations {
-		needs[e] = map[model.TargetID][]model.TargetID{}
+		needs[e] = map[model.TargetID][]Dependency{}
 		for _, c := range built {
 			if reasons[e][c.ID] != "" {
 				continue
 			}
 			for _, dep := range evaluations[e][c.ID].Dependencies {
-				if dep == c.ID || !builtAnywhere(dep) || reasons[e][dep] != "" || slices.Contains(needs[e][c.ID], dep) {
+				if dep.Port == c.ID || !builtAnywhere(dep.Port) || reasons[e][dep.Port] != "" {
 					continue
 				}
 				needs[e][c.ID] = append(needs[e][c.ID], dep)
-				if !slices.Contains(union[c.ID], dep) {
-					union[c.ID] = append(union[c.ID], dep)
+				if !slices.Contains(union[c.ID], dep.Port) {
+					union[c.ID] = append(union[c.ID], dep.Port)
 				}
 			}
 		}
@@ -192,8 +206,11 @@ func Needs(built []model.PlanTarget, reasons []map[model.TargetID]string, evalua
 // dependency order, so dependencies that run opposite ways on two releases
 // are no cycle; what those need there; and what it rules out, the targets
 // --only left out included, since submit requires them wherever they
-// aren't. A loop among what it builds is returned instead of a plan.
-func EnvironmentPlan(environment model.Environment, targets, candidates []model.PlanTarget, reasons map[model.TargetID]string, needs map[model.TargetID][]model.TargetID, evaluation Evaluation) (model.EnvironmentPlan, []string) {
+// aren't. A loop among what it builds is returned instead of a plan,
+// unless a dependency met by a file closes it: Base drops that dependency
+// where the file is there, and would loop itself where it isn't, so the
+// plan drops it and keeps the order the rest make.
+func EnvironmentPlan(environment model.Environment, targets, candidates []model.PlanTarget, reasons map[model.TargetID]string, needs map[model.TargetID][]Dependency, evaluation Evaluation) (model.EnvironmentPlan, []string) {
 	planned := model.EnvironmentPlan{Environment: environment}
 	var members []model.TargetID
 	for _, target := range targets {
@@ -202,16 +219,32 @@ func EnvironmentPlan(environment model.Environment, targets, candidates []model.
 		}
 	}
 	dependencies := map[model.TargetID][]model.TargetID{}
+	byFile := map[[2]model.TargetID]bool{}
 	for _, id := range members {
 		for _, dep := range needs[id] {
-			if slices.Contains(members, dep) {
-				dependencies[id] = append(dependencies[id], dep)
+			if slices.Contains(members, dep.Port) {
+				dependencies[id] = append(dependencies[id], dep.Port)
+				byFile[[2]model.TargetID{id, dep.Port}] = dep.ByFile
 			}
 		}
 	}
 	order, cycle := dependencyOrder(members, dependencies)
-	if cycle != nil {
-		return model.EnvironmentPlan{}, cycle
+	for cycle != nil {
+		// The loop's first dependency met by a file goes, and the order is
+		// found again; a loop of dependencies by port alone is refused.
+		i := 0
+		for i < len(cycle)-1 && !byFile[[2]model.TargetID{model.TargetID(cycle[i]), model.TargetID(cycle[i+1])}] {
+			i++
+		}
+		if i == len(cycle)-1 {
+			return model.EnvironmentPlan{}, cycle
+		}
+		from, to := model.TargetID(cycle[i]), model.TargetID(cycle[i+1])
+		dependencies[from] = slices.DeleteFunc(dependencies[from], func(id model.TargetID) bool { return id == to })
+		if len(dependencies[from]) == 0 {
+			delete(dependencies, from)
+		}
+		order, cycle = dependencyOrder(members, dependencies)
 	}
 	planned.Order = order
 	if len(dependencies) > 0 {

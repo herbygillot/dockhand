@@ -22,7 +22,15 @@ func candidate(name string, role model.TargetRole) model.PlanTarget {
 	return model.PlanTarget{ID: model.TargetID(name), Target: model.Target{Name: name}, Directory: "devel/" + name, Kind: kind, Role: role}
 }
 
-func needing(deps ...model.TargetID) Evaluated { return Evaluated{Dependencies: deps} }
+func needing(deps ...model.TargetID) Evaluated {
+	var evaluated Evaluated
+	for _, dep := range deps {
+		evaluated.Dependencies = append(evaluated.Dependencies, Dependency{Port: dep})
+	}
+	return evaluated
+}
+
+func onPorts(ports ...model.TargetID) []Dependency { return needing(ports...).Dependencies }
 
 // Each phase is a function of what came before it: an environment that
 // doesn't define a port, or where MacPorts CI wouldn't build it, or where
@@ -58,9 +66,9 @@ func TestAPlanIsDecidedPhaseByPhase(t *testing.T) {
 	built := Built(input.Candidates, reasons)
 	require.Equal(t, []model.TargetID{"harbor-cli", "libharbor", "harbor-tools", "harbor-viewer", "harbor-extra"}, ids(built), "harbor-legacy is ruled out everywhere")
 	needs, union := Needs(built, reasons, input.Evaluations)
-	require.Equal(t, map[model.TargetID][]model.TargetID{"harbor-cli": {"libharbor"}, "libharbor": {"harbor-tools"}}, needs[0],
+	require.Equal(t, map[model.TargetID][]Dependency{"harbor-cli": onPorts("libharbor"), "libharbor": onPorts("harbor-tools")}, needs[0],
 		"not itself, nor a port the plan doesn't build")
-	require.Equal(t, map[model.TargetID][]model.TargetID{"harbor-cli": {"libharbor"}, "harbor-tools": {"libharbor"}}, needs[1],
+	require.Equal(t, map[model.TargetID][]Dependency{"harbor-cli": onPorts("libharbor"), "harbor-tools": onPorts("libharbor")}, needs[1],
 		"nor one built elsewhere and not here")
 	require.Equal(t, map[model.TargetID][]model.TargetID{"harbor-cli": {"libharbor"}, "libharbor": {"harbor-tools"}, "harbor-tools": {"libharbor"}}, union)
 
@@ -109,6 +117,37 @@ func TestOnlyAndACycle(t *testing.T) {
 	require.Empty(t, decision.Targets)
 }
 
+// A dependency Base would find met by a file, where the file is there and
+// no port owns it, orders what the plan builds as any other does, but a
+// loop it closes is no cycle: Base drops it where the file is there, as a
+// clean guest's git meets bin:git:git. A loop of dependencies by port alone
+// is refused as before.
+func TestADependencyMetByAFileClosesNoCycle(t *testing.T) {
+	evaluation := Evaluation{
+		"harbor-cli": {Dependencies: []Dependency{{Port: "libharbor"}}},
+		"libharbor":  {Dependencies: []Dependency{{Port: "harbor-git", ByFile: true}}},
+		"harbor-git": {Dependencies: []Dependency{{Port: "harbor-cli"}}},
+		"harbor-doc": {Dependencies: []Dependency{{Port: "harbor-cli", ByFile: true}}},
+	}
+	input := Input{
+		Environments: []model.Environment{arm},
+		Candidates:   []model.PlanTarget{candidate("harbor-doc", model.Changed), candidate("libharbor", model.Changed), candidate("harbor-cli", model.Changed), candidate("harbor-git", model.Changed)},
+		Evaluations:  []Evaluation{evaluation},
+	}
+	decision, err := Decide(input)
+	require.NoError(t, err)
+	require.Empty(t, decision.Cycles)
+	require.Equal(t, []model.TargetID{"libharbor", "harbor-cli", "harbor-doc", "harbor-git"}, decision.Builds[0].Order,
+		"harbor-doc still after harbor-cli, which it needs by a file, where nothing loops")
+	require.Equal(t, map[model.TargetID][]model.TargetID{"harbor-cli": {"libharbor"}, "harbor-git": {"harbor-cli"}, "harbor-doc": {"harbor-cli"}}, decision.Builds[0].Dependencies,
+		"libharbor's dependency on harbor-git by a file closed the loop, and went")
+
+	evaluation["libharbor"] = Evaluated{Dependencies: []Dependency{{Port: "harbor-git"}}}
+	decision, err = Decide(input)
+	require.NoError(t, err)
+	require.Equal(t, []Cycle{{Environment: arm, Ports: []string{"harbor-cli", "libharbor", "harbor-git", "harbor-cli"}}}, decision.Cycles)
+}
+
 // What planning reads of a port is its own: whether it needs Xcode and
 // declares tests, what it depends on, and whether MacPorts CI builds it,
 // with what can't be read an error.
@@ -117,7 +156,15 @@ func TestEvaluateReadsWhatPlanningNeeds(t *testing.T) {
 		Dependencies: []macports.Dependency{{Port: "libharbor", Phase: "lib", Spec: "port:libharbor"}}}
 	evaluated, err := Evaluate(port, arm.Platform)
 	require.NoError(t, err)
-	require.Equal(t, Evaluated{Dependencies: []model.TargetID{"libharbor"}, NeedsXcode: true, Untested: true}, evaluated)
+	require.Equal(t, Evaluated{Dependencies: onPorts("libharbor"), NeedsXcode: true, Untested: true}, evaluated)
+
+	port.Dependencies = append(port.Dependencies,
+		macports.Dependency{Port: "harbor-git", Phase: "fetch", Spec: "bin:git:harbor-git"},
+		macports.Dependency{Port: "libharbor", Phase: "build", Spec: "path:lib/libharbor.dylib:libharbor"})
+	evaluated, err = Evaluate(port, arm.Platform)
+	require.NoError(t, err)
+	require.Equal(t, []Dependency{{Port: "libharbor"}, {Port: "harbor-git", ByFile: true}}, evaluated.Dependencies,
+		"once each, by a file only where no dependency names it by port")
 
 	delete(port.Options, "dockhand.test_run")
 	evaluated, err = Evaluate(port, arm.Platform)

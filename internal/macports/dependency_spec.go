@@ -32,3 +32,11 @@ func ParseDependency(phase, spec string) (Dependency, error) {
 	}
 	return Dependency{Port: match[2], Phase: phase, Spec: spec}, nil
 }
+
+// MetByFile reports a lib:, bin:, or path: dependency, which Base drops
+// where its file is found and no port owns it (_get_dep_port): a program on
+// PATH, a library in the system's directories, or a path. Whether the file
+// is there is the installing machine's to say, not the evaluation's.
+func (d Dependency) MetByFile() bool {
+	return fileDependency.MatchString(d.Spec)
+}
