@@ -206,3 +206,27 @@ func TestANewPortInstallsWhatItsManifestNames(t *testing.T) {
 	require.NotContains(t, string(Write(spec)), "destroot {")
 	require.NotContains(t, Spec{Build: Build{System: "cmake"}}.Unconfirmed(), "destroot", "a cmake build installs what it installs")
 }
+
+// Where the person names no category, the project's description can: a
+// word of it, or its plural, that is one of the tree's categories, as a
+// "terminal text editor" is editors; a Python project is python's, as
+// MacPorts keeps them; and otherwise the build system guesses, as before
+// (the txt run's finding 1).
+func TestACategoryGuessedFromTheDescription(t *testing.T) {
+	categories := []string{"devel", "editors", "games", "mail", "net", "python", "textproc", "x11"}
+	cargo := Build{System: "cargo", Evidence: "Cargo.toml"}
+	for description, want := range map[string][2]string{
+		"A fast, intuitive terminal text editor": {"editors", "its description"},
+		"A mail client for the terminal":         {"mail", "its description"},
+		"Networking tools":                       {"devel", "the build system"},
+		"":                                       {"devel", "the build system"},
+		"Games, and an editor":                   {"games", "its description"},
+	} {
+		category, from := GuessCategory(cargo, description, categories)
+		require.Equal(t, want, [2]string{category, from}, description)
+	}
+	category, from := GuessCategory(Build{System: "python", Evidence: "pyproject.toml"}, "A mail client", categories)
+	require.Equal(t, [2]string{"python", "the build system"}, [2]string{category, from})
+	spec := Spec{Name: "txt", Category: "editors", CategoryGuessed: true, CategoryFrom: "its description", Owner: "o", Project: "txt", Version: "1", Build: cargo}
+	require.Contains(t, string(Write(spec)), "# dockhand: unconfirmed, guessed from its description\ncategories          editors\n")
+}

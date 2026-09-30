@@ -218,6 +218,9 @@ func writeTidyPlan(out io.Writer, plan engine.TidyPlan) {
 		if group.Working {
 			fmt.Fprintln(out, "       includes edits not yet committed")
 		}
+		if group.Created {
+			fmt.Fprintln(out, "       a new port create wrote, with your edits since")
+		}
 		fmt.Fprintf(out, "       files: %s\n", strings.Join(group.Paths, ", "))
 		if _, rest, ok := strings.Cut(strings.TrimSpace(group.Message), "\n\n"); ok {
 			for _, line := range strings.Split(rest, "\n") {

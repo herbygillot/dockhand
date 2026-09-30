@@ -459,17 +459,24 @@ func dependencyChanges(file string, before, after reading) []Change {
 }
 
 // dependencyCount says in one line how many of a proven manifest's
-// declared dependencies it gained, lost, and moved, "upstream: go.mod: 2
-// added, 4 moved", holding nothing (D9).
+// declared dependencies it gained, lost, and moved, holding nothing (D9),
+// naming them where there are few of a kind: "upstream: Cargo.toml: 1
+// added (inferno), 1 moved (open)", and "upstream: go.mod: 2 added, 14
+// moved" (the txt run's finding 6).
 func dependencyCount(file string, before, after reading) []Change {
-	counts := map[string]int{}
+	names := map[string][]string{}
 	for _, delta := range dependencyDeltas(before, after) {
-		counts[delta.how]++
+		names[delta.how] = append(names[delta.how], delta.name)
 	}
 	var parts []string
 	for _, part := range [][2]string{{"adds", "added"}, {"drops", "dropped"}, {"moves", "moved"}} {
-		if n := counts[part[0]]; n > 0 {
-			parts = append(parts, fmt.Sprintf("%d %s", n, part[1]))
+		some := names[part[0]]
+		switch {
+		case len(some) == 0:
+		case len(some) <= namedDependencies:
+			parts = append(parts, fmt.Sprintf("%d %s (%s)", len(some), part[1], strings.Join(some, ", ")))
+		default:
+			parts = append(parts, fmt.Sprintf("%d %s", len(some), part[1]))
 		}
 	}
 	if len(parts) == 0 {
@@ -477,6 +484,9 @@ func dependencyCount(file string, before, after reading) []Change {
 	}
 	return []Change{{Kind: "dependency", Path: file, Message: fmt.Sprintf("upstream: %s: %s", file, strings.Join(parts, ", "))}}
 }
+
+// namedDependencies is how many of a kind the count names.
+const namedDependencies = 3
 
 // nativeLinks lists the crates new to a Cargo.lock that link a native
 // library, as Cargo's -sys crates do. Such a crate often links a copy of

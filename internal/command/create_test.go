@@ -137,13 +137,42 @@ func TestCreateTakesTheManifestsLicenseAndLine(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "  homepage: over HTTPS, as MacPorts prefers; GitHub gives http://txt.hellman.io/\n", "the finding 6 of the txt run")
 	require.Contains(t, out, "txt 0.8.1 · Rust (Cargo.toml) · Cargo.toml says MIT OR Apache-2.0 · \"A fast, intuitive terminal text editor\"\n")
-	require.Contains(t, out, "Unconfirmed, marked in the file: category devel (guessed from the build system; --category chooses), license (from Cargo.toml), long_description, maintainers")
+	require.Contains(t, out, "Unconfirmed, marked in the file: category devel (guessed from the build system; create --category moves it), license (from Cargo.toml), long_description, maintainers")
 	branch := regexp.MustCompile(`dockhand/(txt-[a-z0-9]{4})`).FindStringSubmatch(out)[1]
 	data, err := os.ReadFile(filepath.Join(w.home, "Source", "macports-branches", branch, "devel/txt/Portfile"))
 	require.NoError(t, err)
 	require.Contains(t, string(data), "# dockhand: unconfirmed, from Cargo.toml's license field\nlicense             {MIT Apache-2}\n")
 	require.Contains(t, string(data), "description         A fast, intuitive terminal text editor\n")
 	require.Contains(t, string(data), "homepage            https://txt.hellman.io/\n")
+
+	// Edited by hand, as create asks, and then created again with another
+	// category, it moves there, its edits kept; with none, it's said what
+	// moves it (the txt run's finding 1).
+	dir := filepath.Join(w.home, "Source", "macports-branches", branch)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "devel/txt/Portfile"), append(data, []byte("\n# settled by hand\n")...), 0o644))
+	t.Setenv("MACPORTS_TREE", dir)
+	out, _, err = dockhand(t, "create", "https://github.com/ErikHellman/txt", "--category", "editors")
+	require.NoError(t, err)
+	require.Contains(t, out, "Moved txt from devel/txt to editors/txt, its files as they were, your edits included\n")
+	moved, err := os.ReadFile(filepath.Join(dir, "editors/txt/Portfile"))
+	require.NoError(t, err)
+	require.Contains(t, string(moved), "# settled by hand\n")
+	require.NoDirExists(t, filepath.Join(dir, "devel/txt"))
+	require.Equal(t, "editors/txt/Portfile", strings.TrimSpace(gitRun(t, dir, "diff", "--cached", "--name-only")), "staged where it now is")
+	_, _, err = dockhand(t, "create", "https://github.com/ErikHellman/txt")
+	require.ErrorContains(t, err, "txt is this branch's new port, at editors/txt, not yet committed: dockhand edit txt edits it, and create --category <another> moves it")
+
+	// Its hand edits leave tidy's plan standing, with create's subject and
+	// no attribution, since dockhand didn't make them all (the txt run's
+	// finding 3). Committed, it's no longer create's to move.
+	out, _, err = dockhand(t, "tidy")
+	require.NoError(t, err)
+	require.Contains(t, out, "a new port create wrote, with your edits since")
+	require.Equal(t, "txt: new port, version 0.8.1", strings.TrimSpace(gitRun(t, dir, "log", "-1", "--format=%s")))
+	require.NotContains(t, gitRun(t, dir, "log", "-1", "--format=%B"), "Generated-By")
+	_, _, err = dockhand(t, "create", "https://github.com/ErikHellman/txt", "--category", "games")
+	require.ErrorContains(t, err, "txt is this branch's new port, at editors/txt, and committed: dockhand edit txt edits it")
+	t.Setenv("MACPORTS_TREE", w.clone)
 
 	// Where https doesn't answer, the homepage is written as GitHub gives
 	// it, and said.

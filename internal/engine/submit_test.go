@@ -684,3 +684,23 @@ func TestOtherOpenPullRequestsLeaveOutTheBranchsOwn(t *testing.T) {
 	require.Empty(t, problem)
 	require.Equal(t, []forge.PullRequestSummary{{Number: 34620, Title: "libuv: update"}}, others)
 }
+
+// A Portfile the branch adds, which its base doesn't have, is a new port,
+// said in the pull request as the submitted files evaluate it; a port the
+// base already has is none (the txt run's finding 4).
+func TestSubmitSaysTheNewPortsTheBranchAdds(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	write(t, branch.Worktree, map[string]string{"devel/harbor/Portfile": "name harbor\nversion 1.0\n"})
+	run(t, branch.Worktree, "add", "--sparse", "devel/harbor/Portfile")
+	run(t, branch.Worktree, "commit", "-q", "-m", "harbor: new port, version 1.0")
+	harbor := macports.PortInfo{Name: "harbor", Version: "1.0", Options: map[string]string{"description": "{Harbor tools for the command line}", "homepage": "https://harbor.example/", "license": "{MIT Apache-2}"}}
+	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"devel/harbor": {harbor}, "textproc/jq": {port("jq")}}}
+	checked(t, e, branch, model.OutcomePassed, model.OutcomePassed)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq: update to 1.8.1; harbor: new port"})
+	require.NoError(t, err)
+	require.Contains(t, plan.Body, "#### Description\n\nNew port **harbor** 1.0: Harbor tools for the command line\n\n- homepage: https://harbor.example/\n- license: MIT or Apache-2\n\n")
+	require.NotContains(t, plan.Body, "New port **jq**", "jq is in the base")
+}

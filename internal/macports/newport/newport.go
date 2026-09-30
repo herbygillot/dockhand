@@ -81,6 +81,26 @@ func (b Build) Category() string {
 	return "devel"
 }
 
+// GuessCategory is a new port's category where the person names none:
+// python for a Python project, which MacPorts keeps there by name; else a
+// category of the tree's that the project's description names, a word or
+// its plural, as a "terminal text editor" names editors; else the build
+// system's guess. Its second result says which, for the Portfile's mark.
+func GuessCategory(build Build, description string, categories []string) (category, from string) {
+	if build.System != "python" {
+		for _, word := range strings.FieldsFunc(strings.ToLower(description), func(r rune) bool {
+			return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9')
+		}) {
+			for _, candidate := range []string{word, word + "s"} {
+				if len(word) > 2 && slices.Contains(categories, candidate) {
+					return candidate, "its description"
+				}
+			}
+		}
+	}
+	return build.Category(), "the build system"
+}
+
 // Crate is one crates.io dependency a Cargo.lock pins.
 type Crate struct{ Name, Version, Checksum string }
 
@@ -114,8 +134,10 @@ func CargoCrates(lock []byte) (crates []Crate, unfetched []string, err error) {
 type Spec struct {
 	Name     string
 	Category string
-	// CategoryGuessed marks the category as unconfirmed.
+	// CategoryGuessed marks the category as unconfirmed, and CategoryFrom
+	// says what it was guessed from.
 	CategoryGuessed bool
+	CategoryFrom    string
 	// Owner and Project are the GitHub repository; Version and TagPrefix
 	// make the release's tag.
 	Owner, Project     string
@@ -200,7 +222,11 @@ func Write(s Spec) []byte {
 	line("revision", "0")
 	b.WriteString("\n")
 	if s.CategoryGuessed {
-		mark("guessed from the build system")
+		from := s.CategoryFrom
+		if from == "" {
+			from = "the build system"
+		}
+		mark("guessed from " + from)
 	}
 	line("categories", s.Category)
 	if s.License == "" {

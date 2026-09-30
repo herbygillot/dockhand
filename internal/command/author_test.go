@@ -444,7 +444,7 @@ type regenerating struct{ bumper }
 
 func (b regenerating) Prepare(ctx context.Context, r preparation.Request) (preparation.Result, error) {
 	result, err := b.bumper.Prepare(ctx, r)
-	result.Regenerated = []preparation.Regenerated{{Option: "cargo.crates", Count: 352, Changed: 160}}
+	result.Regenerated = []preparation.Regenerated{{Option: "cargo.crates", Count: 352, Changed: 160}, {Option: "cargo.crates_github", Count: 0, Changed: 0}}
 	return result, err
 }
 
@@ -458,8 +458,8 @@ func TestAnUpdateCountsTheCratesItWrote(t *testing.T) {
 	t.Cleanup(func() { testPreparer = nil })
 	result, err := jsonOf(t, "update", "jq", "--plan")
 	require.NoError(t, err)
-	require.Equal(t, []any{map[string]any{"option": "cargo.crates", "count": float64(352), "changed": float64(160)}}, dig(t, result.Result, "regenerated"))
+	require.Equal(t, map[string]any{"option": "cargo.crates", "count": float64(352), "changed": float64(160)}, dig(t, result.Result, "regenerated", 0))
 	out, _, err := dockhand(t, "update", "jq", "--new")
 	require.NoError(t, err)
-	require.Contains(t, out, " and 352 crates (160 changed)")
+	require.Contains(t, out, " and 352 crates (160 changed).\n", "an empty block says nothing: no \"and 0 Git crates (0 changed)\" (the txt run's finding 6)")
 }

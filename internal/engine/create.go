@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -137,6 +138,11 @@ type Created struct {
 	HomepageFrom string
 	// PlainHTTP are the Portfile's URLs still over plain HTTP.
 	PlainHTTP []PlainURL
+	// MovedFrom is where a port this branch created was, where create
+	// moved it to another category rather than write it.
+	MovedFrom string
+	// CategoryFrom is what a guessed category was guessed from.
+	CategoryFrom string
 }
 
 // Create writes a new port's first Portfile from an upstream project, in
@@ -167,11 +173,25 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 	if !macports.ValidName(name) {
 		return Created{}, fmt.Errorf("%q is not a port name; name it with --name", name)
 	}
+	// A port this branch created and hasn't committed is moved to the
+	// category named, as it is, rather than refused as one to update (the
+	// txt run's finding 1).
+	if created, own, err := e.createdHere(ctx, worktree, request.Branch, name); err != nil || own {
+		if err != nil {
+			return Created{}, err
+		}
+		return e.moveCreated(ctx, worktree, request.Branch, created, request.Category)
+	}
 	spec := newport.Spec{Name: name, Category: request.Category, Owner: project.Owner, Project: project.Name, Version: version, TagPrefix: prefix,
 		Description: observed.Description, Homepage: project.Homepage, License: observed.License, LicenseFrom: observed.LicenseFrom, Maintainer: request.Maintainer, Build: build,
 		Binaries: newport.Binaries(project.Files, build)}
 	if spec.Category == "" {
-		spec.Category, spec.CategoryGuessed = build.Category(), true
+		categories, err := treeCategories(ctx, worktree)
+		if err != nil {
+			return Created{}, err
+		}
+		spec.Category, spec.CategoryFrom = newport.GuessCategory(build, observed.Description, categories)
+		spec.CategoryGuessed = true
 	}
 	// MacPorts prefers HTTPS: a forge's plain-HTTP homepage is written as
 	// its https form where that answers.
@@ -234,7 +254,7 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 	}
 
 	created := Created{Port: name, Directory: directory, Project: project, Version: version, Build: build, Crates: len(spec.Crates),
-		Category: spec.Category, Unconfirmed: spec.Unconfirmed(), HomepageFrom: homepageFrom}
+		Category: spec.Category, CategoryFrom: spec.CategoryFrom, Unconfirmed: spec.Unconfirmed(), HomepageFrom: homepageFrom}
 	update, err := e.Update(ctx, UpdateRequest{Branch: request.Branch, Action: model.EditChecksums, Port: name})
 	switch {
 	case ctx.Err() != nil:
@@ -259,6 +279,112 @@ func homepageOnly(homepage string) macports.PortInfo {
 	return macports.PortInfo{Options: map[string]string{"homepage": homepage}}
 }
 
+// treeCategories are the categories the branch's tree has.
+func treeCategories(ctx context.Context, worktree *git.Repository) ([]string, error) {
+	_, tree, err := worktree.WorkingTree(ctx)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := worktree.ReadTree(ctx, tree)
+	if err != nil {
+		return nil, err
+	}
+	var categories []string
+	for _, entry := range entries {
+		if entry.Type == "tree" && macports.IsCategory(entry.Name) {
+			categories = append(categories, entry.Name)
+		}
+	}
+	return categories, nil
+}
+
+// createdHere is the port of a name this branch's create wrote, where its
+// Portfile is still where create wrote it.
+func (e *Engine) createdHere(ctx context.Context, worktree *git.Repository, branch model.Branch, name string) (model.Edit, bool, error) {
+	var edits []model.Edit
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		edits, err = r.Edits(branch.ID)
+		return err
+	}); err != nil {
+		return model.Edit{}, false, err
+	}
+	for i := len(edits) - 1; i >= 0; i-- {
+		edit := edits[i]
+		if edit.Kind != model.EditCreate || edit.Port != name {
+			continue
+		}
+		_, err := os.Stat(filepath.Join(worktree.Root, filepath.FromSlash(edit.Directory), "Portfile"))
+		return edit, err == nil, nil
+	}
+	return model.Edit{}, false, nil
+}
+
+// moveCreated moves a port this branch created, and hasn't committed, to
+// another category, its files as they are, the person's edits included,
+// staged where they now are. Committed, it's the branch's history, which
+// create doesn't rewrite; asked for its own category, it's already there.
+func (e *Engine) moveCreated(ctx context.Context, worktree *git.Repository, branch model.Branch, created model.Edit, category string) (Created, error) {
+	name, from := created.Port, created.Directory
+	head, tree, err := worktree.WorkingTree(ctx)
+	if err != nil {
+		return Created{}, err
+	}
+	trees, err := worktree.CommitTrees(ctx, []string{head})
+	if err != nil {
+		return Created{}, err
+	}
+	if file, _, err := worktree.File(ctx, trees[head], from+"/Portfile"); err != nil || file.Exists {
+		if err != nil {
+			return Created{}, err
+		}
+		return Created{}, fmt.Errorf("%s is this branch's new port, at %s, and committed: dockhand edit %s edits it; create moves one only before it's committed", name, from, name)
+	}
+	if category == "" || category == path.Dir(from) {
+		return Created{}, fmt.Errorf("%s is this branch's new port, at %s, not yet committed: dockhand edit %s edits it, and create --category <another> moves it, keeping your edits", name, from, name)
+	}
+	if !macports.ValidCategory(category) {
+		return Created{}, fmt.Errorf("%q is not a category", category)
+	}
+	to := category + "/" + name
+	if existing, err := worktree.ExistingPaths(ctx, tree, []string{to}); err != nil || len(existing) > 0 {
+		if err != nil {
+			return Created{}, err
+		}
+		return Created{}, fmt.Errorf("there is already a %s", to)
+	}
+	if err := expandFor(ctx, worktree, []string{to + "/Portfile"}); err != nil {
+		return Created{}, err
+	}
+	target := filepath.Join(worktree.Root, filepath.FromSlash(to))
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return Created{}, err
+	}
+	if err := os.Rename(filepath.Join(worktree.Root, filepath.FromSlash(from)), target); err != nil {
+		return Created{}, err
+	}
+	if err := worktree.AddAll(ctx, from, to); err != nil {
+		return Created{}, err
+	}
+	// The move is create's still: it wrote what it wrote, now at to, so
+	// what the person has changed since is as much theirs as it was.
+	moved := model.Edit{ID: model.EditID(store.NewID("ed")), Branch: branch.ID, Kind: model.EditCreate, Port: name, Directory: to, Subject: created.Subject, At: e.now()}
+	for _, file := range created.Files {
+		moved.Files = append(moved.Files, model.EditedFile{Path: to + strings.TrimPrefix(file.Path, from), After: file.After})
+	}
+	if err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		if err := tx.AddEdit(moved); err != nil {
+			return err
+		}
+		_, err := tx.AppendEvent(model.Event{At: moved.At, Branch: branch.ID, Kind: "branch.edit", Level: model.LevelInfo,
+			Message: fmt.Sprintf("%s: moved from %s to %s", name, from, to)})
+		return err
+	}); err != nil {
+		return Created{}, err
+	}
+	return Created{Port: name, Directory: to, Category: category, MovedFrom: from}, nil
+}
+
 // refuseExisting refuses a name a port in the base, or in the branch,
 // already has, in any category.
 func (e *Engine) refuseExisting(ctx context.Context, worktree *git.Repository, name string) error {
@@ -266,15 +392,13 @@ func (e *Engine) refuseExisting(ctx context.Context, worktree *git.Repository, n
 	if err != nil {
 		return err
 	}
-	entries, err := worktree.ReadTree(ctx, tree)
+	categories, err := treeCategories(ctx, worktree)
 	if err != nil {
 		return err
 	}
 	var candidates []string
-	for _, entry := range entries {
-		if entry.Type == "tree" && macports.IsCategory(entry.Name) {
-			candidates = append(candidates, entry.Name+"/"+name)
-		}
+	for _, category := range categories {
+		candidates = append(candidates, category+"/"+name)
 	}
 	existing, err := worktree.ExistingPaths(ctx, tree, candidates)
 	if err != nil {

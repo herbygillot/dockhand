@@ -324,3 +324,20 @@ func TestAVariantsCheckSaysWhatItBuildsAndAsksFirst(t *testing.T) {
 	require.Equal(t, "Variants    jq +tests, in place of its defaults\n", out.String())
 	require.NoError(t, confirmVariantBuilds(Streams{}, single, false), "only each asks")
 }
+
+// check --branch from another checkout takes a branch's working files
+// where it has no commits, since its head is only its base; with commits
+// and edits beside them, which is meant is asked (the txt run's finding 2).
+func TestCheckingABranchWithNoCommitsTakesItsWorkingFiles(t *testing.T) {
+	w := checkedBranch(t)
+	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
+	t.Setenv("MACPORTS_TREE", w.clone)
+	out, _, err := dockhand(t, "check", "--plan", "--branch", "jq-update")
+	require.NoError(t, err)
+	require.Contains(t, out, "jq-update · would capture the working files as a new snapshot\n")
+
+	gitRun(t, dir, "commit", "-q", "-am", "jq: update to 1.8.1")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\nrevision 1\n"), 0o644))
+	_, _, err = dockhand(t, "check", "--plan", "--branch", "jq-update")
+	require.ErrorContains(t, err, "jq-update's worktree has edits (textproc/jq/Portfile); choose --head for the committed tip or --working-tree for the files")
+}

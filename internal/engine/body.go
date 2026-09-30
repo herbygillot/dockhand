@@ -48,6 +48,15 @@ type bodyFacts struct {
 	// TestedBinaries and TestedVariants are the person's own statements.
 	TestedBinaries, TestedVariants bool
 	SkipNotification               bool
+	// NewPorts are the ports the branch adds, as its Portfiles say them,
+	// for a reviewer who has never heard of one.
+	NewPorts []NewPort
+}
+
+// NewPort is a port a branch adds: its name and version, its one line,
+// its homepage, and its license in a person's words.
+type NewPort struct {
+	Name, Version, Description, Homepage, License string
 }
 
 // pullRequestBody writes the description in the template's sections,
@@ -55,6 +64,23 @@ type bodyFacts struct {
 func pullRequestBody(facts bodyFacts) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n\n%s\n\n", submittedBy, descriptionHeading)
+	// A new port is said as its Portfile says it, for a reviewer who has
+	// never heard of it (the txt run's finding 4). Its Type(s) stay as
+	// they are: MacPorts' automation labels a new Portfile a submission.
+	for _, port := range facts.NewPorts {
+		fmt.Fprintf(&b, "New port **%s** %s", port.Name, port.Version)
+		if port.Description != "" {
+			fmt.Fprintf(&b, ": %s", port.Description)
+		}
+		b.WriteString("\n")
+		if port.Homepage != "" {
+			fmt.Fprintf(&b, "\n- homepage: %s", port.Homepage)
+		}
+		if port.License != "" {
+			fmt.Fprintf(&b, "\n- license: %s", port.License)
+		}
+		b.WriteString("\n\n")
+	}
 	if len(facts.Commits) == 1 {
 		if text := commitBody(facts.Commits[0].Message); text != "" {
 			fmt.Fprintf(&b, "%s\n\n", text)

@@ -178,6 +178,16 @@ func (e *Engine) Capture(ctx context.Context, request CaptureRequest) (Capture, 
 	return capture, err
 }
 
+// CommitsAhead is how many commits a branch has beyond its base; none for
+// a branch whose work is all in its working files.
+func (e *Engine) CommitsAhead(ctx context.Context, branch model.Branch) (int, error) {
+	head, _, err := e.Repo.Branch(ctx, branch.Name)
+	if err != nil {
+		return 0, err
+	}
+	return e.Repo.CountCommits(ctx, string(branch.Base), head)
+}
+
 // Edited lists the tracked files a branch's worktree has changed and not
 // committed.
 func (e *Engine) Edited(ctx context.Context, branch model.Branch) ([]string, error) {

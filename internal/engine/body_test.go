@@ -252,3 +252,14 @@ func TestTheVariantsFlag(t *testing.T) {
 	_, _, err = VariantsFlag("tests")
 	require.ErrorContains(t, err, "--variants: ")
 }
+
+// A new port is said under Description as its Portfile says it, for a
+// reviewer who has never heard of it; its Type(s) stay unticked, since
+// MacPorts' automation labels a new Portfile a submission (the txt run's
+// finding 4).
+func TestANewPortIsSaidInItsDescription(t *testing.T) {
+	body := pullRequestBody(bodyFacts{NewPorts: []NewPort{{Name: "txt", Version: "0.8.1", Description: "A fast, intuitive terminal text editor",
+		Homepage: "https://txt.hellman.io/", License: "MIT or Apache-2"}}})
+	require.Contains(t, body, "#### Description\n\nNew port **txt** 0.8.1: A fast, intuitive terminal text editor\n\n- homepage: https://txt.hellman.io/\n- license: MIT or Apache-2\n\n")
+	require.Contains(t, body, "- [ ] bugfix\n- [ ] enhancement\n- [ ] security fix\n")
+}

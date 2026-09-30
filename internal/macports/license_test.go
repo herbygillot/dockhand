@@ -41,3 +41,26 @@ func TestALicenseExpressionInMacPortsWords(t *testing.T) {
 		require.False(t, ok, expression)
 	}
 }
+
+// A license line reads for a person as MacPorts means it: a braced choice
+// with "or", licenses that all apply with "and".
+func TestALicenseLineInWords(t *testing.T) {
+	t.Parallel()
+	for line, want := range map[string]string{
+		"MIT":                    "MIT",
+		"{MIT Apache-2}":         "MIT or Apache-2",
+		"MIT zlib":               "MIT and zlib",
+		"{MIT Apache-2} Boost-1": "(MIT or Apache-2) and Boost-1",
+		"{MIT":                   "{MIT",
+	} {
+		require.Equal(t, want, LicenseWords(line), line)
+	}
+}
+
+// A port's description is its words, as the evaluation lists them.
+func TestAPortsDescription(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "A fast, intuitive terminal text editor", PortInfo{Options: map[string]string{"description": "{A fast, intuitive terminal text editor}"}}.Description())
+	require.Equal(t, "Harbor tools", PortInfo{Options: map[string]string{"description": "Harbor tools"}}.Description())
+	require.Empty(t, PortInfo{}.Description())
+}

@@ -416,6 +416,11 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	// hk's said "1 distfile" of 280 lines of crates (the gh, usql, hk, and
 	// pgdog run's finding 4).
 	for _, block := range update.Regenerated {
+		// A block with nothing in it, before or after, says nothing:
+		// "and 0 Git crates (0 changed)" (the txt run's finding 6).
+		if block.Count == 0 && block.Changed == 0 {
+			continue
+		}
 		entry := map[string]string{"go.vendors": "Go module", "cargo.crates": "crate", "cargo.crates_github": "Git crate"}[block.Option]
 		if entry == "" {
 			entry = block.Option + " entry"

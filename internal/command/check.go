@@ -250,10 +250,20 @@ func captureMode(ctx context.Context, e *engine.Engine, branch model.Branch, sel
 	if err != nil {
 		return "", err
 	}
-	if len(edits) > 0 {
-		return "", fmt.Errorf("%s's worktree has edits (%s); choose --head for the committed tip or --working-tree for the files", branch.ShortName(), strings.Join(edits, ", "))
+	if len(edits) == 0 {
+		return engine.CaptureHead, nil
 	}
-	return engine.CaptureHead, nil
+	// A branch with no commits has nothing at its head but its base, so
+	// its working files are the only thing of it to check (the txt run's
+	// finding 2).
+	commits, err := e.CommitsAhead(ctx, branch)
+	if err != nil {
+		return "", err
+	}
+	if commits == 0 {
+		return engine.CaptureWorking, nil
+	}
+	return "", fmt.Errorf("%s's worktree has edits (%s); choose --head for the committed tip or --working-tree for the files", branch.ShortName(), strings.Join(edits, ", "))
 }
 
 // writePushes says where a check pushes: "only checking" never hides a

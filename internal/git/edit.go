@@ -265,3 +265,15 @@ func (r *Repository) Add(ctx context.Context, paths ...string) error {
 	_, err := r.output(ctx, append([]string{"add", "--sparse", "--"}, paths...)...)
 	return err
 }
+
+// AddAll stages paths as the working files have them, new, changed, or
+// gone, as a directory moved elsewhere in the worktree is.
+func (r *Repository) AddAll(ctx context.Context, paths ...string) error {
+	for _, name := range paths {
+		if !snapshotPath(name) {
+			return fmt.Errorf("git: invalid path %q", name)
+		}
+	}
+	_, err := r.output(ctx, append([]string{"add", "--sparse", "--all", "--"}, paths...)...)
+	return err
+}

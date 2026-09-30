@@ -135,11 +135,17 @@ func cargoRequirement(value any) (string, error) {
 				}
 			}
 		}
+		// An optional dependency, one a feature turns on, becoming one
+		// every build has is a change too (the txt run's finding 6).
+		optional := ""
+		if value["optional"] == true {
+			optional = " (optional)"
+		}
 		if version, ok := value["version"].(string); ok {
 			if source != "" {
-				return version + " (" + source + ")", nil
+				return version + " (" + source + ")" + optional, nil
 			}
-			return version, nil
+			return version + optional, nil
 		}
 		if source != "" {
 			return source, nil

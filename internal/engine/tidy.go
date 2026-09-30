@@ -48,6 +48,10 @@ type TidyGroup struct {
 	// FromEdits is true when its files are exactly what dockhand's
 	// authoring commands wrote, and its subject the one they wrote.
 	FromEdits bool
+	// Created is a new port this branch's create wrote, edited by hand
+	// since, as create asks: its edits are the port's, and create's
+	// subject still names the commit, though it isn't dockhand's alone.
+	Created bool
 	// Notes say why it needs a person's review.
 	Notes []string
 	// Blocking are what must be settled before it can be applied.
@@ -90,7 +94,7 @@ func (p TidyPlan) Unambiguous() bool {
 		return false
 	}
 	for _, g := range p.Groups {
-		if !g.FromEdits || g.Directory == "" || len(g.Notes) > 0 || len(g.Blocking) > 0 {
+		if !g.FromEdits && !g.Created || g.Directory == "" || len(g.Notes) > 0 || len(g.Blocking) > 0 {
 			return false
 		}
 	}
@@ -223,13 +227,23 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 			return TidyPlan{}, err
 		}
 		group.FromEdits = chained
+		// A new port create wrote, and the person has edited since, as
+		// create asks ("Next: dockhand edit txt"), is the port: the plan
+		// stands, with create's subject, where it had wanted the same
+		// words typed (the txt run's finding 3). It's no longer only what
+		// dockhand wrote, so it carries no attribution.
+		if !chained && directory != "" {
+			if subject, group.Created, err = createdPort(ctx, worktree, trees[base], directory, edits); err != nil {
+				return TidyPlan{}, err
+			}
+		}
 		if chained {
 			for _, commit := range group.Combines {
 				if body(commit.Message) != "" {
 					group.Notes = append(group.Notes, fmt.Sprintf("commit %s %q has a message body that this commit would not keep", short(model.ObjectID(commit.ID)), commit.Subject()))
 				}
 			}
-		} else if directory != "" {
+		} else if directory != "" && !group.Created {
 			group.Notes = append(group.Notes, "has changes dockhand's commands did not make; review them")
 		}
 		var chosen *git.HistoryCommit
@@ -452,6 +466,21 @@ func standingSubject(ctx context.Context, repo *git.Repository, final, directory
 		}
 	}
 	return chainSubject(mine), nil
+}
+
+// createdPort is the subject of a port this branch's create wrote, where
+// its directory is one create recorded writing and its Portfile isn't in
+// the base: a new port, whoever has edited it since.
+func createdPort(ctx context.Context, repo *git.Repository, baseTree, directory string, edits []model.Edit) (string, bool, error) {
+	i := slices.IndexFunc(edits, func(edit model.Edit) bool { return edit.Kind == model.EditCreate && edit.Directory == directory })
+	if i < 0 {
+		return "", false, nil
+	}
+	file, _, err := repo.File(ctx, baseTree, directory+"/Portfile")
+	if err != nil || file.Exists {
+		return "", false, err
+	}
+	return edits[i].Subject, true, nil
 }
 
 func fromEdits(ctx context.Context, repo *git.Repository, baseTree, final, directory string, paths []string, edits []model.Edit) (bool, string, error) {

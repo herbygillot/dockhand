@@ -108,6 +108,11 @@ The branch is --branch, else the one checked out here; --new starts one.
 				return err
 			}
 			streams.emit(createdView(branch, created))
+			if created.MovedFrom != "" {
+				fmt.Fprintf(out, "Moved %s from %s to %s, its files as they were, your edits included\n", created.Port, created.MovedFrom, created.Directory)
+				fmt.Fprintf(out, "Next: dockhand edit %s, then dockhand check\n", created.Port)
+				return nil
+			}
 			groups := []string{"github"}
 			switch created.Build.System {
 			case "go":
@@ -146,8 +151,8 @@ The branch is --branch, else the one checked out here; --new starts one.
 						what = "license (from GitHub's detection)"
 					case what == "category":
 						// It picks the directory, so the guess is said with
-						// what it chose.
-						what = "category " + created.Category + " (guessed from the build system; --category chooses)"
+						// what it chose, and create --category moves it.
+						what = "category " + created.Category + " (guessed from " + created.CategoryFrom + "; create --category moves it)"
 					}
 					marked = append(marked, what)
 				}
@@ -187,9 +192,10 @@ type createdJSON struct {
 	Crates      int           `json:"crates"`
 	Unconfirmed []string      `json:"unconfirmed"`
 	Checksums   string        `json:"checksums_problem,omitempty"`
+	MovedFrom   string        `json:"moved_from,omitempty"`
 }
 
 func createdView(branch model.Branch, created engine.Created) createdJSON {
 	return createdJSON{Branch: branchRef(branch), Port: created.Port, Directory: created.Directory, Version: created.Version, Build: created.Build.System,
-		Category: created.Category, Crates: created.Crates, Unconfirmed: nonNil(created.Unconfirmed), Checksums: created.ChecksumsProblem}
+		Category: created.Category, Crates: created.Crates, Unconfirmed: nonNil(created.Unconfirmed), Checksums: created.ChecksumsProblem, MovedFrom: created.MovedFrom}
 }

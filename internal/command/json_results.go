@@ -220,8 +220,10 @@ type tidyCommitJSON struct {
 	Working   bool     `json:"includes_uncommitted_edits"`
 	Author    string   `json:"author"`
 	FromEdits bool     `json:"from_dockhand_edits"`
-	Notes     []string `json:"notes"`
-	Blocking  []string `json:"blocking"`
+	// Created is a new port create wrote, edited by hand since.
+	Created  bool     `json:"created,omitempty"`
+	Notes    []string `json:"notes"`
+	Blocking []string `json:"blocking"`
 }
 
 type tidyJSON struct {
@@ -243,7 +245,7 @@ func tidyView(plan engine.TidyPlan) tidyJSON {
 	view := tidyJSON{Branch: plan.Branch.ShortName(), Keep: plan.Keep, Unambiguous: plan.Unambiguous(), Commits: []tidyCommitJSON{}, Findings: findingsView(plan.Findings)}
 	for _, group := range plan.Groups {
 		commit := tidyCommitJSON{Subject: group.Subject(), Message: group.Message, Paths: nonNil(group.Paths), Ports: nonNil(group.Ports), Combines: []string{},
-			Working: group.Working, FromEdits: group.FromEdits, Notes: nonNil(group.Notes), Blocking: nonNil(group.Blocking)}
+			Working: group.Working, FromEdits: group.FromEdits, Created: group.Created, Notes: nonNil(group.Notes), Blocking: nonNil(group.Blocking)}
 		if group.Author.Name != "" {
 			commit.Author = group.Author.Name + " <" + group.Author.Email + ">"
 		}

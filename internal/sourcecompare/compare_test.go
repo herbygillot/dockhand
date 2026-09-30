@@ -52,7 +52,7 @@ func TestCompareFindsWhatAReviewerWouldAskAbout(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{
 		"! upstream's LICENSE changed; the Portfile's license line may need to follow",
-		"· upstream: go.mod: 1 added, 1 dropped, 1 moved",
+		"· upstream: go.mod: 1 added (golang.org/x/net), 1 dropped (github.com/old/dep), 1 moved (golang.org/x/sys)",
 		"! upstream's meson.build is new; the build may need the Portfile to follow",
 	}, messages(changes), "unchanged CMakeLists.txt, source files, and indirect modules say nothing")
 
@@ -70,7 +70,7 @@ func TestCompareFindsWhatAReviewerWouldAskAbout(t *testing.T) {
 // version does: here one module is added, and two move.
 func TestAGoModuleTheBuildAlreadyHadIsNoAddition(t *testing.T) {
 	require.Equal(t, []string{
-		"· upstream: go.mod: 1 added, 2 moved",
+		"· upstream: go.mod: 1 added (github.com/new/direct), 2 moved (github.com/demoted/moved, github.com/dustin/go-humanize)",
 	}, compared(t, map[string]string{
 		"go.mod": "module chezmoi\n\nrequire (\n\tgithub.com/demoted/moved v1.0.0\n\tgithub.com/demoted/same v1.0.0\n\tgithub.com/dustin/go-humanize v1.0.1 // indirect\n\tgithub.com/promoted/same v1.2.0 // indirect\n\tgithub.com/gone/indirect v0.1.0 // indirect\n)\n",
 	}, map[string]string{
@@ -95,7 +95,7 @@ func TestCompareReadsTheOtherManifestsAndZips(t *testing.T) {
 	changes, err := Compare(t.Context(), older, newer, Versions{})
 	require.NoError(t, err)
 	require.Equal(t, []string{
-		"· upstream: Cargo.toml: 1 added, 1 dropped",
+		"· upstream: Cargo.toml: 1 added (tokio), 1 dropped (proptest)",
 		"! upstream's docs/COPYING.md was removed; the Portfile's license line may need to follow",
 		"! upstream: package.json adds chalk ^5",
 		"! upstream: pyproject.toml adds rich >=13",
@@ -109,15 +109,15 @@ func TestCompareReadsTheOtherManifestsAndZips(t *testing.T) {
 // 2026-09-28, finding 3.)
 func TestCargoDependenciesAreReadAsTOML(t *testing.T) {
 	before := map[string]string{"Cargo.toml": "[package]\nname = 'pkg'\nversion = '1.0.0'\n"}
-	require.Equal(t, []string{"· upstream: Cargo.toml: 1 added"},
+	require.Equal(t, []string{"· upstream: Cargo.toml: 1 added (serde)"},
 		compared(t, before, map[string]string{"Cargo.toml": "[package]\nname = 'pkg'\nversion = '2.0.0'\n[dependencies.serde]\nversion = '1'\n"}))
 	tagged := func(tag string) map[string]string {
 		return map[string]string{"Cargo.toml": "[package]\nname = 'pkg'\n" +
 			"[target.'cfg(unix)'.dependencies]\nlibc = '0.2'\n[workspace.dependencies]\nshared = { workspace = true }\n" +
 			"[dependencies]\ntokio = { git = 'https://github.com/tokio-rs/tokio', tag = '" + tag + "' }\n"}
 	}
-	require.Equal(t, []string{"· upstream: Cargo.toml: 3 added"}, compared(t, before, tagged("1.40")))
-	require.Equal(t, []string{"· upstream: Cargo.toml: 1 moved"}, compared(t, tagged("1.40"), tagged("1.41")))
+	require.Equal(t, []string{"· upstream: Cargo.toml: 3 added (libc, shared, tokio)"}, compared(t, before, tagged("1.40")))
+	require.Equal(t, []string{"· upstream: Cargo.toml: 1 moved (tokio)"}, compared(t, tagged("1.40"), tagged("1.41")))
 }
 
 // A pyproject.toml is read as TOML: its [project] array in either kind of
@@ -179,7 +179,7 @@ func TestWhatTheComparisonCouldntReadHolds(t *testing.T) {
 // what couldn't be read of them. A Python or Node manifest's still holds
 // (D9, decided 2026-09-29).
 func TestGoAndRustDependenciesAreCountedAndHoldNothing(t *testing.T) {
-	require.Equal(t, []string{"· upstream: go.mod: 1 added"},
+	require.Equal(t, []string{"· upstream: go.mod: 1 added (golang.org/x/net)"},
 		compared(t, map[string]string{"go.mod": "module m\n"}, map[string]string{"go.mod": "module m\n\nrequire golang.org/x/net v0.44.0\n"}))
 	large := "module m\n" + strings.Repeat("// x\n", memberLimit)
 	require.Equal(t, []string{"· upstream's go.mod is larger than the 1024 KiB the comparison reads, so it wasn't compared"},
@@ -363,7 +363,26 @@ func TestARequirementsConditionIsPartOfIt(t *testing.T) {
 	require.Equal(t, []Requirement{{Name: "numpy", Specifier: "<2", Marker: "python_version < '3.10'"}, {Name: "numpy", Specifier: ">=2", Marker: "python_version >= '3.10'"}},
 		changes[0].Requirements, "both declarations, not the second over the first")
 
-	require.Equal(t, []string{"· upstream: Cargo.toml: 1 moved"},
+	require.Equal(t, []string{"· upstream: Cargo.toml: 1 moved (widget)"},
 		compared(t, map[string]string{"Cargo.toml": "[dependencies]\nwidget = { version = '1', git = 'https://example.invalid/widget', rev = 'aaaa' }\n"},
 			map[string]string{"Cargo.toml": "[dependencies]\nwidget = { version = '1', git = 'https://example.invalid/widget', rev = 'bbbb' }\n"}))
+}
+
+// A count names the dependencies where there are few of a kind, and only
+// counts them where there are more; an optional Cargo dependency becoming
+// one every build has is a move (the txt run's finding 6).
+func TestAProvenManifestsCountNamesWhatMoved(t *testing.T) {
+	require.Equal(t, []string{"· upstream: Cargo.toml: 1 added (inferno), 1 moved (open)"},
+		compared(t, map[string]string{"Cargo.toml": "[dependencies]\nopen = { version = '5', optional = true }\n"},
+			map[string]string{"Cargo.toml": "[dependencies]\nopen = '5'\ninferno = '0.12'\n"}))
+	many := func(prefix string, n int) string {
+		var b strings.Builder
+		b.WriteString("[dependencies]\n")
+		for i := range n {
+			fmt.Fprintf(&b, "%s%d = '1'\n", prefix, i)
+		}
+		return b.String()
+	}
+	require.Equal(t, []string{"· upstream: Cargo.toml: 4 added"},
+		compared(t, map[string]string{"Cargo.toml": "[dependencies]\n"}, map[string]string{"Cargo.toml": many("crate", 4)}))
 }

@@ -148,3 +148,13 @@ func (p PortInfo) PlainHTTP() []PlainURL {
 // taggedURL is Base's pattern for a site with a tag after it
 // (fetch_common.tcl, tagged_url_re).
 var taggedURL = regexp.MustCompile(`^([a-zA-Z]+://.+/?):([0-9A-Za-z_-]+)$`)
+
+// Description is the port's one line as a person reads it: its
+// description option's words, which the evaluation reports as a Tcl list.
+func (p PortInfo) Description() string {
+	words, _, err := p.optionList("description")
+	if err != nil {
+		return strings.TrimSpace(p.Options["description"])
+	}
+	return strings.Join(words, " ")
+}

@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/github"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -203,6 +204,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	}
 	scope := ScopeOf(changed)
 	plan.Ports = scope.PortNames()
+	newPorts := e.newPorts(ctx, worktree, model.Source{Commit: model.ObjectID(head), Tree: model.ObjectID(plan.Tree), Base: branch.Base}, trees[string(branch.Base)], changed)
 	plan.Findings = commitrules.CheckCommits(ruleCommits(plan.Commits))
 	portfiles, err := portfileFindings(ctx, worktree, trees[string(branch.Base)], plan.Tree, changed)
 	if err != nil {
@@ -246,7 +248,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	facts := bodyFacts{Commits: plan.Commits, Evidence: plan.Evidence, NoCheck: request.NoCheck, Accepted: slices.Concat(accepted, request.Accept), Types: request.Types,
 		Updated:     dockhandUpdate(plan.Commits, edits),
 		RulesPassed: !errorsFound, Squashed: squashed, Searched: plan.SearchProblem == "", Others: plan.Others,
-		TestedBinaries: request.TestedBinaries, TestedVariants: request.TestedVariants, SkipNotification: request.SkipNotification}
+		TestedBinaries: request.TestedBinaries, TestedVariants: request.TestedVariants, SkipNotification: request.SkipNotification, NewPorts: newPorts}
 	plan.facts = facts
 	plan.Answer(request.TestedBinaries, request.TestedVariants)
 	return plan, nil
@@ -753,4 +755,32 @@ func (e *Engine) fork(ctx context.Context, remotes []git.Remote, login, named st
 		return buildenv.Fork{}, fmt.Errorf("%s is not a fork of %s; dockhand pushes only to your fork", fork.Repository, UpstreamRepository)
 	}
 	return fork, nil
+}
+
+// newPorts are the ports a branch adds, each a Portfile its base doesn't
+// have, as the submitted files evaluate them. One that can't be evaluated
+// is left out: the description says less, and nothing more is wrong.
+func (e *Engine) newPorts(ctx context.Context, worktree *git.Repository, source model.Source, baseTree string, changed []string) []NewPort {
+	reader, err := e.portReader()
+	if err != nil {
+		return nil
+	}
+	var ports []NewPort
+	for _, path := range changed {
+		directory, ok := macports.PortDirectoryOf(path)
+		if !ok || path != directory+"/Portfile" {
+			continue
+		}
+		if before, _, err := worktree.File(ctx, baseTree, path); err != nil || before.Exists {
+			continue
+		}
+		evaluated, err := reader.Ports(ctx, source, directory, model.Environment{}, nil)
+		if err != nil || len(evaluated) == 0 {
+			continue
+		}
+		port := evaluated[0]
+		ports = append(ports, NewPort{Name: port.Name, Version: port.Version, Description: port.Description(),
+			Homepage: port.Options["homepage"], License: macports.LicenseWords(port.Options["license"])})
+	}
+	return ports
 }

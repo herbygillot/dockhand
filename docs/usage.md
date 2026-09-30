@@ -133,7 +133,7 @@ dockhand create https://github.com/owner/project --new --category devel
 `create` reads a GitHub project, its latest release, and the build files at that release, and writes a new port's Portfile. It uses the github PortGroup, and cargo, golang, cmake, meson, or python as the project's files say. A Rust project's `cargo.crates` come from its `Cargo.lock`, read as `update` reads it, and the checksums are filled in. A crate `cargo.crates` can't fetch, from another registry or from Git, is marked rather than written. What it guessed is marked with a `# dockhand: unconfirmed` comment:
 - the license, from the project's `Cargo.toml` or `pyproject.toml` where it declares one MacPorts has a name for, else from GitHub's detection. It's written in MacPorts' words: `MIT OR Apache-2.0` is `{MIT Apache-2}`, and CC0 or the Unlicense is `public-domain`;
 - the long description;
-- the category, guessed from the build system unless `--category` names it, and said with what it chose, since it picks the directory;
+- the category, unless `--category` names it: one of the tree's categories the project's description names (a "terminal text editor" is `editors`), else the build system's guess, and said with what it chose, since it picks the directory. Running `create` again with another `--category`, before the port is committed, moves it there, your edits included;
 - a Rust or Go port's `destroot`, which installs the programs its manifest names, since neither PortGroup installs anything.
 
 The description is the manifest's one line where it has one, else GitHub's. A plain-HTTP homepage is written as its `https://` form where that answers, since MacPorts prefers HTTPS, and said where it doesn't. The maintainer is your `maintainer` setting, else `nomaintainer`, marked. `--name` names the port when the project's name isn't right for it. The new Portfile is staged, so the next check includes it.
@@ -168,7 +168,7 @@ Results are per target and per environment:
 | blocked | a changed port it needs failed, so it wasn't built |
 | unmet | the environment can't build it, such as a port needing Xcode where there is none |
 
-**What it captures.** By default, the tracked files as they are on disk, committed or not, as a numbered snapshot. `--staged` checks the index, and `--head` the committed tip. `--working-tree` checks the working files of a `--branch` checked out elsewhere, and `--include <file>` adds an untracked file without staging it.
+**What it captures.** By default, the tracked files as they are on disk, committed or not, as a numbered snapshot. `--staged` checks the index, and `--head` the committed tip. `--working-tree` checks the working files of a `--branch` checked out elsewhere, which asks for one or the other where it has commits and edits too; one with no commits has only its working files to check, so it takes them. `--include <file>` adds an untracked file without staging it.
 
 **What it builds.** `--only <port>` narrows the check to some of the changed ports, and adds back the changed ports they need. `--also <port>` builds unchanged ports against the branch, such as the dependents `impact` lists.
 

@@ -124,3 +124,26 @@ func balanced(tokens []string) bool {
 	}
 	return depth == 0
 }
+
+// LicenseWords says a Portfile's license line for a person: a braced
+// choice as "MIT or Apache-2", licenses that all apply as "and", "(MIT or
+// Apache-2) and Boost-1". A line that isn't a Tcl list is said as written.
+func LicenseWords(license string) string {
+	terms, err := readList("license", license)
+	if err != nil || len(terms) == 0 {
+		return strings.TrimSpace(license)
+	}
+	words := make([]string, len(terms))
+	for i, term := range terms {
+		choices, err := readList("license", term)
+		if err != nil || len(choices) < 2 {
+			words[i] = term
+			continue
+		}
+		words[i] = strings.Join(choices, " or ")
+		if len(terms) > 1 {
+			words[i] = "(" + words[i] + ")"
+		}
+	}
+	return strings.Join(words, " and ")
+}
