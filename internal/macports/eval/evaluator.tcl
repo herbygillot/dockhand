@@ -174,6 +174,14 @@ namespace eval ::dockhand {
                 dict set out dockhand.livecheck_standard $standard
             }
             dict set out dockhand.base_version [base_version]
+            # Whether the port declares tests, read as MacPorts reads it,
+            # tbool test.run: an option Base gives no default, so unset is
+            # off, not unknown.
+            if {[catch {$worker eval {tbool test.run}} tests]} {
+                dict set failures dockhand.test_run $tests
+            } else {
+                dict set out dockhand.test_run $tests
+            }
             foreach field {fetch.user fetch.password fetch_credentials macports::fetch_credentials} {
                 dict unset out $field
             }

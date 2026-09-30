@@ -349,3 +349,26 @@ func TestAPortAnEnvironmentDoesNotDefineIsNotBuiltThere(t *testing.T) {
 	exclusion, _ := plan.ExclusionIn(tahoeArm, "harbor-viewer-intel")
 	require.Equal(t, "not defined there", exclusion.Reason)
 }
+
+// A plan records the targets that declare no tests, by test.run as
+// MacPorts reads it, so a check requiring tests can say it asks
+// nothing of them (the ov run's finding 3). One whose test.run wasn't read
+// is left unsaid.
+func TestAPlanRecordsWhatDeclaresNoTests(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	revision := harborBranch(t, e)
+	ports := harborPorts()
+	ports.directories["devel/libharbor"][0].Options["dockhand.test_run"] = "1"
+	ports.directories["devel/harbor-cli"][0].Options["dockhand.test_run"] = "0"
+	e.PortReader = ports
+
+	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}, Tests: model.TestsRequired})
+	require.NoError(t, err)
+	planned, _ := plan.In(tahoeArm)
+	require.Equal(t, []model.TargetID{"harbor-cli"}, planned.Untested, "libharbor declares tests, and harbor-viewer's test.run wasn't read")
+
+	require.Equal(t, "✓ declares no tests", targetWords(plan, model.PlanTarget{ID: "harbor-cli"}, tahoeArm, model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsNone}, "", false))
+	plan.Tests = model.TestsDeclared
+	require.Equal(t, "✓", targetWords(plan, model.PlanTarget{ID: "harbor-cli"}, tahoeArm, model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsNone}, "", false), "only a policy requiring tests needs saying so")
+}

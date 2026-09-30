@@ -169,6 +169,9 @@ const (
 	TestsSkipped TestOutcome = "skipped"
 )
 
+// Failed reports tests that ran and didn't pass: failed, or timed out.
+func (t TestOutcome) Failed() bool { return t == TestsFailed || t == TestsTimedOut }
+
 // TargetResult is the checkpoint for one target in one execution.
 type TargetResult struct {
 	Execution ExecutionID

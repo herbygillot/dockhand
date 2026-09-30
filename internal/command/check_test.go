@@ -171,6 +171,28 @@ func TestCheckPlanShowsEachEnvironmentsOrder(t *testing.T) {
 // A baseline's report sets each port beside the branch's result where the
 // baseline rebuilt it, and says why where the check failed it and master
 // doesn't build it; elsewhere it says nothing.
+// A baseline run for tests that failed where the policy only reports them
+// says what the tests did at the base, not only that the port built: uvw's
+// failed there too, and uvw2's passed (the libuv run's finding 5).
+func TestABaselineSaysWhatTheTestsDidAtTheBase(t *testing.T) {
+	built := func(tests model.TestOutcome) model.TargetResult {
+		return model.TargetResult{Outcome: model.OutcomePassed, Tests: tests}
+	}
+	for _, test := range []struct {
+		base, branch model.TestOutcome
+		words        string
+	}{
+		{model.TestsFailed, model.TestsFailed, "✓ builds at the base, as it does on the branch; its tests fail at the base too, as in check-38, so they did before this branch."},
+		{model.TestsPassed, model.TestsTimedOut, "✓ builds at the base, as it does on the branch; its tests pass at the base, and time out in check-38; the cause isn't established."},
+		{model.TestsSkipped, model.TestsFailed, "✓ builds at the base, as it does on the branch; its tests fail in check-38, and weren't run at the base (skipped), so there's nothing to set beside them."},
+		{model.TestsFailed, model.TestsPassed, "✓ builds at the base, as it does on the branch; its tests fail at the base, and pass in check-38."},
+		{model.TestsTimedOut, model.TestsNone, "✓ builds at the base, as it does on the branch; its tests time out at the base, and weren't run in check-38 (none)."},
+		{model.TestsPassed, model.TestsPassed, "✓ builds at the base, as it does on the branch."},
+	} {
+		require.Equal(t, test.words, baselineWords(built(test.base), built(test.branch), "check-38"), "%s at the base, %s on the branch", test.base, test.branch)
+	}
+}
+
 func TestBaselineResultsShowWhereItRebuilt(t *testing.T) {
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
 	sequoia := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}}
@@ -227,4 +249,24 @@ func TestAStoppedCheckSaysWhatItLeft(t *testing.T) {
 	require.EqualError(t, stoppedExit(run, engine.Evidence{Run: run}), "check-2 stopped before anything finished")
 	recorded := engine.Evidence{Run: run, Executions: map[model.ExecutionID]model.GuestExecution{"tart_2": {ID: "tart_2", Run: "run_2"}}}
 	require.EqualError(t, stoppedExit(run, recorded), "check-2 stopped; finished results are kept")
+}
+
+// A plan requiring tests names the ports that declare none, which pass
+// under any policy; a plan that doesn't require them needn't.
+func TestAPlanRequiringTestsNamesWhatDeclaresNone(t *testing.T) {
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	plan := model.Plan{Tests: model.TestsRequired, Environments: []model.Environment{tahoe},
+		Targets: []model.PlanTarget{{ID: "ov", Target: model.Target{Name: "ov"}, Kind: model.Substantive, Role: model.Changed}, {ID: "jq", Target: model.Target{Name: "jq"}, Kind: model.Substantive, Role: model.Changed}},
+		Builds:  []model.EnvironmentPlan{{Environment: tahoe, Order: []model.TargetID{"ov", "jq"}, Untested: []model.TargetID{"ov"}}}}
+	var out bytes.Buffer
+	writePlan(&out, plan, nil, nil)
+	require.Contains(t, out.String(), "No tests    ov declares none, so requiring them asks nothing of it\n")
+	plan.Builds[0].Untested = []model.TargetID{"ov", "jq"}
+	out.Reset()
+	writePlan(&out, plan, nil, nil)
+	require.Contains(t, out.String(), "No tests    ov, jq declare none, so requiring them asks nothing of them\n")
+	plan.Tests = model.TestsDeclared
+	out.Reset()
+	writePlan(&out, plan, nil, nil)
+	require.NotContains(t, out.String(), "No tests")
 }

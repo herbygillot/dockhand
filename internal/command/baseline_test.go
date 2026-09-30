@@ -55,6 +55,12 @@ func TestBaselineComparesWithTheBase(t *testing.T) {
 	out, _, err := dockhand(t, "check")
 	require.Equal(t, 2, ExitCode(err))
 	require.Regexp(t, "\n\nTo see whether jq fails at master [0-9a-f]{7} too: dockhand check --baseline --branch jq-update\n$", out)
+	// --plan shows the baseline, and runs nothing: the numbers below would
+	// move if it had (the libuv run's finding 4).
+	previewed, _, err := dockhand(t, "check", "--baseline", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, previewed, "jq-update · baseline of check-2: jq at master ")
+	require.Contains(t, previewed, "Also        jq\nProvider    command · tests declared\n")
 	next("passed")
 	out, _, err = dockhand(t, "check", "--baseline")
 	require.NoError(t, err, "a baseline is evidence, and never fails")

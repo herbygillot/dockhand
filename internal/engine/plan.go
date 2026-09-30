@@ -94,10 +94,11 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 		ineligible map[model.TargetID]string
 		deps       map[model.TargetID][]model.TargetID
 		xcode      map[model.TargetID]bool
+		untested   map[model.TargetID]bool
 	}
 	evaluations := make([]evaluation, len(plan.Environments))
 	for i := range evaluations {
-		evaluations[i] = evaluation{defined: map[model.TargetID]bool{}, ineligible: map[model.TargetID]string{}, deps: map[model.TargetID][]model.TargetID{}, xcode: map[model.TargetID]bool{}}
+		evaluations[i] = evaluation{defined: map[model.TargetID]bool{}, ineligible: map[model.TargetID]string{}, deps: map[model.TargetID][]model.TargetID{}, xcode: map[model.TargetID]bool{}, untested: map[model.TargetID]bool{}}
 	}
 	// candidates are every port some environment defined, as the branch
 	// sees it, in the order the scope and --also name them.
@@ -137,6 +138,13 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 					evaluated.deps[id] = append(evaluated.deps[id], model.TargetID(dependency.Port))
 				}
 				evaluated.xcode[id] = needsXcode
+				// Whether it declares tests is MacPorts' reading of test.run;
+				// one that can't be read, or wasn't, is left unsaid.
+				if _, set := port.Options["dockhand.test_run"]; set {
+					if tests, err := port.Bool("dockhand.test_run"); err == nil && !tests {
+						evaluated.untested[id] = true
+					}
+				}
 			}
 		}
 	}
@@ -258,6 +266,9 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 		for _, id := range order {
 			if evaluations[e].xcode[id] {
 				planned.NeedsXcode = append(planned.NeedsXcode, id)
+			}
+			if evaluations[e].untested[id] {
+				planned.Untested = append(planned.Untested, id)
 			}
 		}
 		for _, c := range candidates {

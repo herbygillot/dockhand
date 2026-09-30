@@ -8,6 +8,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/store"
 )
 
 // A baseline is planned the way a check is, from the base's own Portfiles
@@ -72,10 +73,28 @@ func TestABaselineUsesTheCheckedBase(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, checked.Base, current.Base, "the rebase moved the branch's base on")
 
+	revisions := func() int {
+		t.Helper()
+		var found []model.Revision
+		require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+			var err error
+			found, err = r.Revisions(branch.ID)
+			return err
+		}))
+		return len(found)
+	}
+	before := revisions()
+	preview, err := e.PreviewBaseline(t.Context(), current, []string{"jq"})
+	require.NoError(t, err)
+	require.Equal(t, checked.Base, preview.Revision.Source.Commit)
+	require.NotEmpty(t, preview.Revision.ID)
+	require.Equal(t, before, revisions(), "a preview records nothing")
+
 	baseline, err := e.PlanBaseline(t.Context(), current, []string{"jq"})
 	require.NoError(t, err)
 	require.Equal(t, checked.Base, baseline.Revision.Source.Commit)
 	require.Equal(t, checked.Base, baseline.Revision.Source.Base)
+	require.Equal(t, before+1, revisions(), "the base is recorded as the branch's revision once planned")
 }
 
 // Without --only, a baseline takes the ports that failed at install or
@@ -98,10 +117,13 @@ func TestABaselineTakesPortsThatFailedWhileBuilding(t *testing.T) {
 		target("fetches", failed(model.PhaseFetch), passed),
 		target("blocked", model.TargetResult{Outcome: model.OutcomeBlocked}, passed),
 		target("passes", passed, passed),
+		target("advisory", passed, model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsTimedOut}),
+		target("tested", model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsPassed}, passed),
 	}}
 	worthy, skipped := BaselineWorthy(evidence)
-	require.Equal(t, []string{"installs", "tests", "both"}, worthy)
+	require.Equal(t, []string{"installs", "tests", "both", "advisory"}, worthy, "tests that failed where they only report are worth one too (the libuv run's finding 5)")
 	require.Equal(t, []string{"lints", "fetches"}, skipped)
+	require.Equal(t, rebuild{environments: []model.Environment{tahoeX86}, elsewhere: evidence.Run.Name() + " didn't fail it there"}, rebuildWhere(evidence, "advisory"), "rebuilt where its tests failed")
 }
 
 // A failed check points to a baseline of what it could explain, and only

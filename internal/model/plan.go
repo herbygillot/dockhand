@@ -98,8 +98,7 @@ func (p TestPolicy) Judge(result TargetResult) TargetResult {
 	if result.Outcome != OutcomePassed || p != TestsRequired {
 		return result
 	}
-	switch result.Tests {
-	case TestsFailed, TestsTimedOut:
+	if result.Tests.Failed() {
 		result.Outcome, result.Phase = OutcomeFailed, PhaseTest
 	}
 	return result
@@ -167,6 +166,10 @@ type EnvironmentPlan struct {
 	// the Command Line Tools: their use_xcode, as MacPorts decides it with
 	// the environment's tools.
 	NeedsXcode []TargetID `json:",omitempty"`
+	// Untested are the targets in Order that declare no tests here, their
+	// test.run off as MacPorts evaluates it: they pass whatever the test
+	// policy, which a plan requiring tests says of them.
+	Untested []TargetID `json:",omitempty"`
 	// Unmet are the targets in Order this environment can't build, decided
 	// when the check is accepted.
 	Unmet []Unmet `json:",omitempty"`

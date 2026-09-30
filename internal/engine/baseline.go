@@ -40,6 +40,17 @@ type Baseline struct {
 // needs are the base's, and a port that needs Xcode is unmet where there
 // is none, not sent there.
 func (e *Engine) PlanBaseline(ctx context.Context, branch model.Branch, ports []string) (Baseline, error) {
+	return e.planBaseline(ctx, branch, ports, true)
+}
+
+// PreviewBaseline plans a baseline as PlanBaseline does, and records
+// nothing, not even the base as a revision of the branch: what check
+// --baseline --plan shows.
+func (e *Engine) PreviewBaseline(ctx context.Context, branch model.Branch, ports []string) (Baseline, error) {
+	return e.planBaseline(ctx, branch, ports, false)
+}
+
+func (e *Engine) planBaseline(ctx context.Context, branch model.Branch, ports []string, record bool) (Baseline, error) {
 	var baseline Baseline
 	var checked model.Revision
 	var found bool
@@ -90,7 +101,7 @@ func (e *Engine) PlanBaseline(ctx context.Context, branch model.Branch, ports []
 	if len(also) == 0 {
 		return baseline, fmt.Errorf("%s: master %s has none of them, so there is nothing to compare", strings.Join(baseline.New, ", "), short(base))
 	}
-	if baseline.Revision, err = e.baseRevision(ctx, branch, base, baseTree); err != nil {
+	if baseline.Revision, err = e.baseRevision(ctx, branch, base, baseTree, record); err != nil {
 		return baseline, err
 	}
 	baseline.Plan, err = e.PlanCheck(ctx, PlanRequest{Revision: baseline.Revision, Environments: baseline.OfPlan.Environments, Also: also, Tests: baseline.OfPlan.Tests,
@@ -153,8 +164,9 @@ func (e *Engine) BaselineCandidates(ctx context.Context, run model.Run) ([]strin
 }
 
 // rebuildWhere is where a baseline rebuilds a port: the environments where
-// the check failed it at install or test, or, for one named that failed
-// nowhere there, every environment the check built it in.
+// the check failed it at install or test, or its tests failed, or, for one
+// named that failed nowhere there, every environment the check built it
+// in.
 func rebuildWhere(evidence Evidence, id model.TargetID) rebuild {
 	i := slices.IndexFunc(evidence.Targets, func(target TargetEvidence) bool { return target.Target.ID == id })
 	var failed, built []model.Environment
@@ -163,7 +175,7 @@ func rebuildWhere(evidence Evidence, id model.TargetID) rebuild {
 		if planned, ok := evidence.Plan.In(environment); ok && planned.Builds(id) {
 			built = append(built, environment)
 		}
-		if result.Outcome == model.OutcomeFailed && (result.Phase == model.PhaseInstall || result.Phase == model.PhaseTest) {
+		if result.Outcome == model.OutcomeFailed && (result.Phase == model.PhaseInstall || result.Phase == model.PhaseTest) || result.Outcome == model.OutcomePassed && result.Tests.Failed() {
 			failed = append(failed, environment)
 		}
 	}
@@ -214,15 +226,19 @@ func (e *Engine) atBase(ctx context.Context, base model.ObjectID, evidence Evide
 	return have, added, tree, nil
 }
 
-// BaselineWorthy sorts a check's failed ports into those a baseline can
-// say something about, that failed at install or test somewhere, and those
-// it can't, that failed only before building, at lint, fetch, or checksum,
-// which come from the branch's own Portfile and distfiles. A port blocked,
-// unmet, or not evaluated is neither.
+// BaselineWorthy sorts a check's ports into those a baseline can say
+// something about, that failed at install or test somewhere, or whose
+// tests failed where the policy only reports them, as uvw's did in
+// check-38, and those it can't, that failed only before building, at
+// lint, fetch, or checksum, which come from the branch's own Portfile and
+// distfiles. A port blocked, unmet, or not evaluated is neither.
 func BaselineWorthy(evidence Evidence) (worthy, skipped []string) {
-	for _, target := range evidence.Failed() {
+	for _, target := range evidence.Targets {
 		built, early := false, false
 		for _, result := range target.Outcomes {
+			if result.Outcome == model.OutcomePassed && result.Tests.Failed() {
+				built = true
+			}
 			if result.Outcome != model.OutcomeFailed {
 				continue
 			}
@@ -243,10 +259,28 @@ func BaselineWorthy(evidence Evidence) (worthy, skipped []string) {
 	return worthy, skipped
 }
 
-// baseRevision is a base, as a revision of the branch, recorded once.
-func (e *Engine) baseRevision(ctx context.Context, branch model.Branch, base model.ObjectID, tree string) (model.Revision, error) {
+// baseRevision is a base, as a revision of the branch, recorded once; not
+// recorded at all for a preview.
+func (e *Engine) baseRevision(ctx context.Context, branch model.Branch, base model.ObjectID, tree string, record bool) (model.Revision, error) {
 	revision := model.Revision{Branch: branch.ID, Kind: model.RevisionCommit, Head: base, CreatedAt: e.now(),
 		Source: model.Source{Commit: base, Tree: model.ObjectID(tree), Base: base}}
+	if !record {
+		// The base's revision where one is recorded; else one with an ID
+		// of its own, as the plan made of it has, though neither is
+		// recorded, as a check's plan captures.
+		err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+			existing, err := r.Revisions(branch.ID)
+			if i := slices.IndexFunc(existing, func(earlier model.Revision) bool {
+				return earlier.Kind == model.RevisionCommit && earlier.Source.Commit == base
+			}); err == nil && i >= 0 {
+				revision = existing[i]
+				return nil
+			}
+			revision.ID = model.RevisionID(store.NewID("rev"))
+			return err
+		})
+		return revision, err
+	}
 	err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 		existing, err := tx.Revisions(branch.ID)
 		if err != nil {

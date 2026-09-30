@@ -28,6 +28,12 @@ func targetWords(plan model.Plan, target model.PlanTarget, environment model.Env
 			return "✓ build passed; tests failed (" + reading + ")"
 		case model.TestsTimedOut:
 			return "✓ build passed; tests timed out (" + reading + ")"
+		case model.TestsNone:
+			// Required tests ask nothing of a port that declares none, so its
+			// ✓ isn't a pass of tests (the ov run's finding 3).
+			if plan.Tests == model.TestsRequired {
+				return "✓ declares no tests"
+			}
 		}
 		return "✓"
 	case model.OutcomeFailed:

@@ -347,3 +347,24 @@ compiler.blacklist-append {clang < 1300}
 	require.NoError(t, err)
 	require.Equal(t, older.Model, chosen)
 }
+
+// Whether a port declares tests is MacPorts' reading of test.run, which
+// Base gives no default: set, or unset, and so off.
+func TestTheEvaluatorReadsWhetherAPortDeclaresTests(t *testing.T) {
+	t.Parallel()
+	e := liveEvaluator(t)
+	tree := fixtureTree(t)
+	putFile(t, tree.Root(), "devel/tested/Portfile", "PortSystem 1.0\nname tested\nversion 1\ntest.run yes\n")
+	putFile(t, tree.Root(), "devel/untested/Portfile", "PortSystem 1.0\nname untested\nversion 1\n")
+	for name, want := range map[string]bool{"tested": true, "untested": false} {
+		targets, err := e.Resolve(t.Context(), tree, macports.Selection{Selector: name})
+		require.NoError(t, err)
+		bound, err := tree.Select(targets[0])
+		require.NoError(t, err)
+		snapshot, err := e.Evaluate(t.Context(), bound)
+		require.NoError(t, err)
+		tests, err := snapshot.Ports[name].Bool("dockhand.test_run")
+		require.NoError(t, err)
+		require.Equal(t, want, tests, name)
+	}
+}

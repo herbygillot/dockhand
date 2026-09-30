@@ -76,6 +76,9 @@ true, it runs that baseline by itself.`,
 			// The result is the check's, with a baseline check.baseline runs
 			// inside it.
 			streams.linkSteps(&checkJSON{})
+			if baseline && plan {
+				return previewBaseline(ctx, e, streams, branch, only)
+			}
 			if baseline {
 				return runBaseline(ctx, e, streams, branch, only, enqueue)
 			}
@@ -168,7 +171,6 @@ true, it runs that baseline by itself.`,
 	cmd.Flags().BoolVar(&replace, "replace", false, "stop the branch's queued or running check, keeping what it finished, and check this instead")
 	cmd.Flags().BoolVar(&baseline, "baseline", false, "build what failed in the latest check, or --only ports, at the master it started from")
 	cmd.Flags().BoolVar(&fresh, "fresh", false, "build every port, reusing no earlier build's result")
-	cmd.MarkFlagsMutuallyExclusive("baseline", "plan")
 	cmd.MarkFlagsMutuallyExclusive("baseline", "also")
 	cmd.MarkFlagsMutuallyExclusive("head", "staged", "working-tree")
 	return cmd
@@ -296,6 +298,25 @@ func writePlan(out io.Writer, plan model.Plan, notes []string, remedy func(model
 		on = append(on, environmentWords(environment))
 	}
 	fmt.Fprintf(out, "Provider    %s · tests %s\n", strings.Join(on, "; "), plan.Tests)
+	// Tests required ask nothing of a port that declares none, which
+	// passes under any policy: said, so its ✓ isn't read as tests passed.
+	if plan.Tests == model.TestsRequired {
+		var untested []string
+		for _, build := range plan.Builds {
+			for _, id := range build.Untested {
+				if target, ok := plan.Target(id); ok && !slices.Contains(untested, target.Target.Name) {
+					untested = append(untested, target.Target.Name)
+				}
+			}
+		}
+		switch len(untested) {
+		case 0:
+		case 1:
+			fmt.Fprintf(out, "No tests    %s declares none, so requiring them asks nothing of it\n", untested[0])
+		default:
+			fmt.Fprintf(out, "No tests    %s declare none, so requiring them asks nothing of them\n", strings.Join(untested, ", "))
+		}
+	}
 	for _, note := range notes {
 		fmt.Fprintf(out, "            %s\n", note)
 	}
@@ -614,6 +635,20 @@ func checkResult(ctx context.Context, e *engine.Engine, run model.Run) (checkJSO
 	return result, nil
 }
 
+// previewBaseline shows the baseline check --baseline would run, and
+// runs nothing.
+func previewBaseline(ctx context.Context, e *engine.Engine, streams Streams, branch model.Branch, only []string) error {
+	baseline, err := e.PreviewBaseline(ctx, branch, only)
+	if err != nil {
+		return err
+	}
+	writeBaselineHeader(streams.Out, branch, baseline)
+	writePlan(streams.Out, baseline.Plan, e.PolicyNotes(baseline.Plan), e.Remedy)
+	planned := planView(baseline.Plan)
+	streams.emit(checkJSON{Branch: branch.ShortName(), Plan: &planned, Targets: []targetJSON{}})
+	return nil
+}
+
 // runBaseline plans a baseline of the branch's latest check and runs it,
 // here or through serve.
 func runBaseline(ctx context.Context, e *engine.Engine, streams Streams, branch model.Branch, only []string, enqueue bool) error {
@@ -621,22 +656,27 @@ func runBaseline(ctx context.Context, e *engine.Engine, streams Streams, branch 
 	if err != nil {
 		return err
 	}
-	var names []string
-	for _, target := range baseline.Plan.Targets {
-		names = append(names, string(target.ID))
-	}
-	fmt.Fprintf(streams.Out, "%s · baseline of %s: %s at master %s\n", branch.ShortName(), baseline.Of.Name(), strings.Join(names, ", "), engine.Short(baseline.Revision.Source.Commit))
-	if len(baseline.New) > 0 {
-		fmt.Fprintf(streams.Out, "  · left out: %s, which the branch adds, so master has nothing to compare\n", strings.Join(baseline.New, ", "))
-	}
-	if len(baseline.Skipped) > 0 {
-		fmt.Fprintf(streams.Out, "  · left out: %s, which failed before building, at lint, fetch, or checksum; --only builds them anyway\n", strings.Join(baseline.Skipped, ", "))
-	}
+	writeBaselineHeader(streams.Out, branch, baseline)
 	run, err := e.EnqueueBaseline(ctx, branch, baseline, model.OriginPerson)
 	if err != nil {
 		return err
 	}
 	return runQueued(ctx, e, run, streams, enqueue)
+}
+
+// writeBaselineHeader says what a baseline builds, and what it leaves out.
+func writeBaselineHeader(out io.Writer, branch model.Branch, baseline engine.Baseline) {
+	var names []string
+	for _, target := range baseline.Plan.Targets {
+		names = append(names, string(target.ID))
+	}
+	fmt.Fprintf(out, "%s · baseline of %s: %s at master %s\n", branch.ShortName(), baseline.Of.Name(), strings.Join(names, ", "), engine.Short(baseline.Revision.Source.Commit))
+	if len(baseline.New) > 0 {
+		fmt.Fprintf(out, "  · left out: %s, which the branch adds, so master has nothing to compare\n", strings.Join(baseline.New, ", "))
+	}
+	if len(baseline.Skipped) > 0 {
+		fmt.Fprintf(out, "  · left out: %s, which failed before building, at lint, fetch, or checksum; --only builds them anyway\n", strings.Join(baseline.Skipped, ", "))
+	}
 }
 
 // reportBaseline sets each port's result at the base beside its result in
@@ -702,11 +742,37 @@ func writeBaselineResults(out io.Writer, base, branch engine.Evidence, master st
 	}
 }
 
+// baselineTestWords sets a port's tests at the base beside its tests on
+// the branch, where either failed though the policy let the port pass: what
+// a baseline run for advisory test failures is for, as uvw's failed at the
+// base too, and uvw2's passed there.
+func baselineTestWords(base, branch model.TestOutcome, check string) string {
+	verb := func(tests model.TestOutcome) string {
+		if tests == model.TestsTimedOut {
+			return "time out"
+		}
+		return "fail"
+	}
+	switch {
+	case base.Failed() && branch.Failed():
+		return fmt.Sprintf("its tests %s at the base too, as in %s, so they did before this branch.", verb(base), check)
+	case branch.Failed() && base == model.TestsPassed:
+		return fmt.Sprintf("its tests pass at the base, and %s in %s; the cause isn't established.", verb(branch), check)
+	case branch.Failed():
+		return fmt.Sprintf("its tests %s in %s, and weren't run at the base (%s), so there's nothing to set beside them.", verb(branch), check, base)
+	case branch == model.TestsPassed:
+		return fmt.Sprintf("its tests %s at the base, and pass in %s.", verb(base), check)
+	}
+	return fmt.Sprintf("its tests %s at the base, and weren't run in %s (%s).", verb(base), check, branch)
+}
+
 func baselineWords(base, branch model.TargetResult, check string) string {
 	passed := func(r model.TargetResult) bool { return r.Outcome == model.OutcomePassed }
 	switch {
 	case base.Outcome != model.OutcomePassed && base.Outcome != model.OutcomeFailed:
 		return fmt.Sprintf("· not built at the base (%s)", base.Outcome)
+	case passed(base) && passed(branch) && (base.Tests.Failed() || branch.Tests.Failed()):
+		return "✓ builds at the base, as it does on the branch; " + baselineTestWords(base.Tests, branch.Tests, check)
 	case passed(base) && passed(branch):
 		return "✓ builds at the base, as it does on the branch."
 	case passed(base):

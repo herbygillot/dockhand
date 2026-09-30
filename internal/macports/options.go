@@ -28,7 +28,7 @@ var InfoOptions = []string{"name", "version", "revision", "epoch", "homepage"}
 
 // ComputedOptions are the options the evaluator computes itself, with the
 // dockhand prefix or from Base's fetch machinery.
-var ComputedOptions = []string{"fetch.has_credentials", "fetch.archive_compatible", "dockhand.livecheck_standard", "dockhand.metadata_only", "dockhand.base_version", "dockhand.livecheck_declared", "livecheck.name"}
+var ComputedOptions = []string{"fetch.has_credentials", "fetch.archive_compatible", "dockhand.livecheck_standard", "dockhand.metadata_only", "dockhand.base_version", "dockhand.livecheck_declared", "livecheck.name", "dockhand.test_run"}
 
 // VersionFollowers are the options a version bump may change on the
 // selected port: those the source is named by, and a homepage that spells
