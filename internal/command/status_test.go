@@ -190,7 +190,15 @@ func TestStatusSaysAnEnvironmentWasMadeAgain(t *testing.T) {
 	status.Evidence.Targets[0].Outcomes[0].Change = "dockhand has begun to build each target from its source, never from a published archive, and from clean work"
 	rows = attentionFor(status)
 	require.Equal(t, "check-3 passed, but since then on "+engine.DescribeEnvironment(arm)+", dockhand has begun to build each target from its source, never from a published archive, and from clean work; jq must be built there again", rows[0].what)
-	require.Equal(t, "dockhand check --branch jq-update", rows[0].next)
+	require.Equal(t, "dockhand check --branch jq-update", rows[0].next, "no environments to name")
+
+	// The check that builds it again builds where this one did, which
+	// check.on may not name: check-48 built on macOS 12 and 26, and a
+	// bare check built on 26 alone (the hugo exercise's re-checks).
+	monterey := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}}
+	status.Evidence.Plan.Environments = []model.Environment{monterey, arm, {Provider: "github"}}
+	rows = attentionFor(status)
+	require.Equal(t, "dockhand check --branch jq-update --on tart:12,26 --on github", rows[0].next)
 }
 
 // A command judges who is alive through one observer session, however

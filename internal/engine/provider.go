@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
@@ -79,6 +80,44 @@ func (e *Engine) Environments(ctx context.Context, on []string) ([]model.Environ
 		add(model.Environment{Provider: name})
 	}
 	return environments, nil
+}
+
+// OnValues are environments as --on names them, as Environments reads
+// them back: Tart's releases together by their product versions,
+// tart:12,26, and another provider by its name, in the order the
+// environments first name each. False where a release can't be named, as
+// one this dockhand doesn't know can't.
+func OnValues(environments []model.Environment) ([]string, bool) {
+	var values []string
+	releases := map[string][]string{}
+	for _, environment := range environments {
+		if environment.Provider != buildenv.Tart {
+			if !slices.Contains(values, environment.Provider) {
+				values = append(values, environment.Provider)
+			}
+			continue
+		}
+		darwin, err := strconv.Atoi(environment.Platform.Version)
+		if err != nil {
+			return nil, false
+		}
+		release, err := macos.ReleaseForDarwin(darwin)
+		if err != nil {
+			return nil, false
+		}
+		if _, ok := releases[buildenv.Tart]; !ok {
+			values = append(values, buildenv.Tart)
+		}
+		if !slices.Contains(releases[buildenv.Tart], release.Product) {
+			releases[buildenv.Tart] = append(releases[buildenv.Tart], release.Product)
+		}
+	}
+	for i, value := range values {
+		if names, ok := releases[value]; ok {
+			values[i] = value + ":" + strings.Join(names, ",")
+		}
+	}
+	return values, true
 }
 
 // knownRelease reports whether a name is a macOS release, by name or

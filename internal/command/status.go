@@ -240,11 +240,18 @@ func attentionFor(s engine.BranchStatus) []attention {
 				unchecked = append(unchecked, target.Target.Target.Name)
 			}
 		}
+		// A check that builds them again builds where this one did, which
+		// check.on may not name: what still stands is reused, and the rest
+		// built (the hugo exercise's re-checks after the guest fix).
+		again := "dockhand check --branch " + name
+		if on, ok := engine.OnValues(s.Evidence.Plan.Environments); ok && len(on) > 0 {
+			again += " --on " + strings.Join(on, " --on ")
+		}
 		switch {
 		case len(remade) > 0:
-			return row("!", fmt.Sprintf("%s passed, but since then %s; %s must be built there again", run.Name(), why, strings.Join(remade, ", ")), "dockhand check --branch "+name)
+			return row("!", fmt.Sprintf("%s passed, but since then %s; %s must be built there again", run.Name(), why, strings.Join(remade, ", ")), again)
 		case len(unchecked) > 0:
-			return row("!", fmt.Sprintf("%s passed, but no check of these files built %s", run.Name(), strings.Join(unchecked, ", ")), "dockhand check --branch "+name)
+			return row("!", fmt.Sprintf("%s passed, but no check of these files built %s", run.Name(), strings.Join(unchecked, ", ")), again)
 		case len(s.Edited) > 0:
 			return row("·", engine.Describe(*s.LatestRevision)+" passed; commit it for review", "dockhand tidy --branch "+name)
 		case s.Branch.PullRequest == nil && len(s.Held) > 0:

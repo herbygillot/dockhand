@@ -75,3 +75,17 @@ func TestEnvironmentsOfAProviderThatTakesReleases(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []model.Environment{{Provider: "command"}}, environments, "a command provider someone set up comes first")
 }
+
+// Environments are named as --on names them, Tart's releases together by
+// their product versions; one whose release dockhand doesn't know can't
+// be.
+func TestEnvironmentsAreNamedAsOnNamesThem(t *testing.T) {
+	tart := func(darwin string, tools model.DeveloperTools) model.Environment {
+		return model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: darwin, Architecture: "arm64"}, DeveloperTools: tools}
+	}
+	values, ok := OnValues([]model.Environment{{Provider: "command"}, tart("21", model.DeveloperToolsCommandLine), tart("25", model.DeveloperToolsXcode), tart("21", model.DeveloperToolsXcode), {Provider: "github"}})
+	require.True(t, ok)
+	require.Equal(t, []string{"command", "tart:12,26", "github"}, values)
+	_, ok = OnValues([]model.Environment{tart("99", "")})
+	require.False(t, ok)
+}
