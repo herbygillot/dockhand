@@ -46,3 +46,20 @@ Two of discovery's shortcuts said more than their evidence (finding 6). Its two 
 
 - **A version that is its tag's everywhere dockhand looks,** at the port's own release and the two newest tags, and not below them, is taken for the identity. The review's exact probe maps 2.0 to 20.0 with the identity everywhere else, including the port's own 1.0, so no evaluation short of every tag shows it. Evaluating every tag of every port is what the fast path exists to avoid, as the review asks it be kept, so the probe's regression test derives the port's own version too.
 - **A permanent misspelled tag makes its port uncertain whenever it's current,** as dolt would be with `v040.15`, until its livecheck filters the tag out. That is the roadmap's call: "uncertain instead" of current.
+
+## The URL probe off the critical path
+
+`plainHTTP` asked each of a port's plain-HTTP URLs over HTTPS in turn, for up to ten seconds each, and did so for a port found already current.
+- **Together:** the URLs are asked four at a time (`httpsAsks`, through `errgroup`, which the engine already uses for a check's environments), so a port waits about as long as its slowest host. Results keep the port's order, and the words are unchanged.
+- **Each once:** `macports.PortInfo.PlainHTTP` already names each URL once, the homepage and a master site alike, so each is asked once. The engine doesn't dedupe again.
+- **Only beside an edit:** an update or checksum refresh with nothing to change no longer asks. The URLs are advice for someone editing the Portfile, and a current port is now said to be current at once. `docs/usage.md` says so.
+
+### Proven
+
+- **The probe:** a gate holds the asks, so the test sees four in flight together and no fifth. Each URL is asked once, a duplicate site and the homepage among them, and the results come in the port's order. It passes under `-race`.
+- **The update:** a current port's update and checksum refresh leave its URLs unasked.
+- **Mutation testing:** asking one at a time, asking without a bound, and asking for a current port are each killed.
+
+### Left as it is
+
+- **`create` can ask a plain homepage twice** when it doesn't answer: once to decide what to write, and again in its checksum refresh. Sharing answers across calls needs an owner and a lifetime, since serve's engine lives for days, so it waits for a reason beyond this item.

@@ -6,14 +6,22 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/herbygillot/dockhand/internal/fetch"
 	"github.com/herbygillot/dockhand/internal/macports"
 )
 
-// HTTPSProbe says whether a URL answers over HTTPS.
+// HTTPSProbe says whether a URL answers over HTTPS. It is asked about
+// several URLs at once.
 type HTTPSProbe interface {
 	Answers(ctx context.Context, url string) bool
 }
+
+// httpsAsks is how many of a port's URLs are asked over HTTPS at once: a
+// port names a few, and a long list of mirrors waits on four hosts at a
+// time, not on each in turn.
+const httpsAsks = 4
 
 // PlainURL is a URL a port names over plain HTTP, its https form, and
 // whether that answers.
@@ -23,13 +31,27 @@ type PlainURL struct {
 	Answers bool
 }
 
-// plainHTTP are a port's plain-HTTP URLs, each asked over HTTPS.
+// plainHTTP are a port's plain-HTTP URLs, each asked over HTTPS, in the
+// order the port names them. They're asked a few at once (httpsAsks), so
+// a port waits about as long as its slowest host, up to ten seconds, not
+// the sum of them; PlainHTTP names each URL once, so each is asked once.
 func (e *Engine) plainHTTP(ctx context.Context, info macports.PortInfo) []PlainURL {
-	var plain []PlainURL
-	for _, url := range info.PlainHTTP() {
-		secure := "https://" + strings.TrimPrefix(url.URL, "http://")
-		plain = append(plain, PlainURL{PlainURL: url, HTTPS: secure, Answers: e.httpsProbe().Answers(ctx, secure)})
+	urls := info.PlainHTTP()
+	if len(urls) == 0 {
+		return nil
 	}
+	probe := e.httpsProbe()
+	plain := make([]PlainURL, len(urls))
+	var asks errgroup.Group
+	asks.SetLimit(httpsAsks)
+	for i, url := range urls {
+		plain[i] = PlainURL{PlainURL: url, HTTPS: "https://" + strings.TrimPrefix(url.URL, "http://")}
+		asks.Go(func() error {
+			plain[i].Answers = probe.Answers(ctx, plain[i].HTTPS)
+			return nil
+		})
+	}
+	_ = asks.Wait()
 	return plain
 }
 

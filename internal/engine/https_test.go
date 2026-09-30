@@ -1,12 +1,18 @@
 package engine
 
 import (
+	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/macports"
 )
 
 type roundTrips func(*http.Request) (*http.Response, error)
@@ -28,4 +34,78 @@ func TestTheHTTPSProbeRejectsADowngrade(t *testing.T) {
 	})}}
 	require.False(t, probe.Answers(t.Context(), "https://example.invalid/"))
 	require.True(t, probe.Answers(t.Context(), "https://example.invalid/secure"))
+}
+
+// gatedProbe answers as httpsAnswers does, once its gate opens, and counts
+// each URL's asks, the asks in flight, and the most in flight at once.
+type gatedProbe struct {
+	answers httpsAnswers
+	open    chan struct{}
+	mu      sync.Mutex
+	asked   map[string]int
+	flying  int
+	most    int
+}
+
+// newGatedProbe is a probe whose gate is shut, for the test to open, or
+// open already.
+func newGatedProbe(answers httpsAnswers, shut bool) *gatedProbe {
+	probe := &gatedProbe{answers: answers, open: make(chan struct{}), asked: map[string]int{}}
+	if !shut {
+		close(probe.open)
+	}
+	return probe
+}
+
+func (g *gatedProbe) Answers(ctx context.Context, url string) bool {
+	g.mu.Lock()
+	g.asked[url]++
+	g.flying++
+	g.most = max(g.most, g.flying)
+	g.mu.Unlock()
+	select {
+	case <-g.open:
+	case <-ctx.Done():
+	}
+	g.mu.Lock()
+	g.flying--
+	g.mu.Unlock()
+	return g.answers[url]
+}
+
+func (g *gatedProbe) inFlight() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.flying
+}
+
+// A port's plain-HTTP URLs are asked over HTTPS a few at once, not each in
+// turn for up to ten seconds, and each once, and they're said in the order
+// the port names them (the update-workflow review's efficiency item).
+func TestAPortsURLsAreAskedTogetherEachOnce(t *testing.T) {
+	var sites []string
+	for i := range 6 {
+		sites = append(sites, fmt.Sprintf("http://mirror%d.example/jq/", i))
+	}
+	info := macports.PortInfo{Options: map[string]string{"homepage": "http://jqlang.example/",
+		"master_sites": strings.Join(append(sites, "http://mirror2.example/jq/:src", "http://jqlang.example/"), " ")}}
+	probe := newGatedProbe(httpsAnswers{"https://mirror3.example/jq/": true}, true)
+	e := &Engine{HTTPS: probe}
+	said := make(chan []PlainURL)
+	go func() { said <- e.plainHTTP(t.Context(), info) }()
+	require.Eventually(t, func() bool { return probe.inFlight() == httpsAsks }, 5*time.Second, time.Millisecond, "asked together, not in turn")
+	time.Sleep(50 * time.Millisecond) // were there no bound, the rest would be asked by now
+	require.Equal(t, httpsAsks, probe.inFlight(), "no more than that at once")
+	close(probe.open)
+	plain := <-said
+	require.Equal(t, httpsAsks, probe.most)
+	want := []PlainURL{{PlainURL: macports.PlainURL{Option: "homepage", URL: "http://jqlang.example/"}, HTTPS: "https://jqlang.example/"}}
+	for i, site := range sites {
+		want = append(want, PlainURL{PlainURL: macports.PlainURL{Option: "master_sites", URL: site}, HTTPS: "https://" + strings.TrimPrefix(site, "http://"), Answers: i == 3})
+	}
+	require.Equal(t, want, plain)
+	for _, url := range want {
+		require.Equal(t, 1, probe.asked[url.HTTPS], url.HTTPS)
+	}
+	require.Nil(t, e.plainHTTP(t.Context(), macports.PortInfo{Options: map[string]string{"homepage": "https://jqlang.example/"}}))
 }

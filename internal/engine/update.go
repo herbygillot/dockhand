@@ -244,8 +244,10 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	update := describe(branch, request.Port, result)
 	update.Base = base
 	// A version update or a checksum refresh is where the port's URLs are
-	// looked at, so its plain-HTTP ones are said there.
-	if request.Action == model.EditUpdate || request.Action == model.EditChecksums {
+	// looked at, so its plain-HTTP ones are said there, beside the edit. A
+	// port with nothing to change is said to be current without waiting on
+	// its hosts.
+	if (request.Action == model.EditUpdate || request.Action == model.EditChecksums) && len(result.Files) > 0 {
 		if info, ok := result.PortAfter(update.Port); ok {
 			update.PlainHTTP = e.plainHTTP(ctx, info)
 		}

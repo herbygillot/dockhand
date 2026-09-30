@@ -626,12 +626,14 @@ func TestAChangeTheBuildDoesntReadHoldsNothing(t *testing.T) {
 // A version update or a checksum refresh says the port's URLs over plain
 // HTTP, its homepage and its master_sites, with whether each answers over
 // HTTPS, which MacPorts prefers; a mirror group is MacPorts' own, and a
-// revision bump doesn't look.
+// revision bump doesn't look. Nor does an update with nothing to change,
+// which says the port is current without waiting on its hosts.
 func TestAnUpdateSaysThePortsPlainHTTPURLs(t *testing.T) {
 	f := setup(t)
 	e, p := f.withPreparer(t)
 	p.options = map[string]string{"homepage": "http://jqlang.example/", "master_sites": "http://dl.example/jq/:src gnu https://github.com/jqlang/jq/releases/"}
-	e.HTTPS = httpsAnswers{"https://jqlang.example/": true}
+	probe := newGatedProbe(httpsAnswers{"https://jqlang.example/": true}, false)
+	e.HTTPS = probe
 	want := []PlainURL{
 		{PlainURL: macports.PlainURL{Option: "homepage", URL: "http://jqlang.example/"}, HTTPS: "https://jqlang.example/", Answers: true},
 		{PlainURL: macports.PlainURL{Option: "master_sites", URL: "http://dl.example/jq/"}, HTTPS: "https://dl.example/jq/"},
@@ -645,6 +647,15 @@ func TestAnUpdateSaysThePortsPlainHTTPURLs(t *testing.T) {
 	revbump, err := e.Update(t.Context(), UpdateRequest{Branch: update.Branch, Action: model.EditRevbump, Port: "jq", Subject: "rebuild for oniguruma 6.9.10"})
 	require.NoError(t, err)
 	require.Empty(t, revbump.PlainHTTP)
+
+	asked := probe.asked["https://jqlang.example/"]
+	for _, action := range []model.EditKind{model.EditUpdate, model.EditChecksums} {
+		current, err := e.Update(t.Context(), UpdateRequest{Branch: update.Branch, Action: action, Port: "jq"})
+		require.NoError(t, err)
+		require.True(t, current.Current, action)
+		require.Empty(t, current.PlainHTTP, action)
+	}
+	require.Equal(t, asked, probe.asked["https://jqlang.example/"], "a current port's URLs aren't asked")
 }
 
 // A Python pin that applies only elsewhere asks nothing of MacPorts' port:
