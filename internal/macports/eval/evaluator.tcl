@@ -176,6 +176,35 @@ namespace eval ::dockhand {
                 dict set out dockhand.livecheck_standard $standard
             }
             dict set out dockhand.base_version [base_version]
+            # Whether the port is known to fail here, as MacPorts tests it,
+            # string is true -strict, and whether its platforms exclude this
+            # release, as Base's own _handle_platforms decides it, which
+            # defaults known_fail to yes where they do: a port that declares
+            # no known_fail can still be one, and the reason is its
+            # platforms. Base's default is caught while the check runs, and
+            # put back; a Base without the procedure leaves it unsaid.
+            if {[catch {$worker eval {expr {[exists known_fail] && [string is true -strict [option known_fail]] ? 1 : 0}}} known]} {
+                dict set failures dockhand.known_fail $known
+            } else {
+                dict set out dockhand.known_fail $known
+            }
+            if {[catch {$worker eval {
+                apply {{} {
+                    if {![llength [info procs ::_handle_platforms]] || ![llength [info procs ::default]]} { return "" }
+                    set ::dockhand_platforms_compatible 1
+                    rename ::default ::dockhand_default
+                    proc ::default {option value} { if {$option eq "known_fail"} { set ::dockhand_platforms_compatible 0 } }
+                    set failed [catch {::_handle_platforms platforms set [option platforms]} problem]
+                    rename ::default {}
+                    rename ::dockhand_default ::default
+                    if {$failed} { error $problem }
+                    return $::dockhand_platforms_compatible
+                }}
+            }} compatible]} {
+                dict set failures dockhand.platforms_compatible $compatible
+            } elseif {$compatible ne ""} {
+                dict set out dockhand.platforms_compatible $compatible
+            }
             # The PortGroups the port loads, by name, as Base records them
             # for the registry and the PortIndex.
             if {[catch {$worker eval {

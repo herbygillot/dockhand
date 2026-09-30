@@ -407,3 +407,37 @@ func TestAFailedMetadataProbeIsRecorded(t *testing.T) {
 	_, err = snapshot.Ports["unsure"].MetadataOnly()
 	require.ErrorContains(t, err, "cannot tell whether the port builds anything")
 }
+
+// Whether a port is known to fail, and whether its platforms exclude the
+// release, are MacPorts' own answers: beekeeper-studio declares no
+// known_fail, and its platforms {darwin >= 23} make MacPorts mark it known
+// to fail on macOS 12, which a plan names for its platforms (the
+// beekeeper-studio run's finding 3). known_fail on is true, as Tcl reads it.
+func TestTheEvaluatorSaysWhyAPortIsKnownToFail(t *testing.T) {
+	t.Parallel()
+	e := liveEvaluator(t)
+	tree := fixtureTree(t)
+	putFile(t, tree.Root(), "devel/newer/Portfile", "PortSystem 1.0\nname newer\nversion 1\nplatforms {darwin >= 23}\n")
+	putFile(t, tree.Root(), "devel/failing/Portfile", "PortSystem 1.0\nname failing\nversion 1\nknown_fail on\n")
+	observe := func(name, version string) macports.PortInfo {
+		t.Helper()
+		targets, err := e.Resolve(t.Context(), tree, macports.Selection{Selector: name})
+		require.NoError(t, err)
+		bound, err := tree.Select(targets[0])
+		require.NoError(t, err)
+		got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: version, Architecture: "arm64"}})
+		require.NoError(t, err)
+		return got.Snapshot.Ports[name]
+	}
+	old := observe("newer", "21")
+	eligibility, err := macports.BuildEligibility(old, model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"})
+	require.NoError(t, err)
+	require.Equal(t, "its platforms, {darwin >= 23}, exclude this release", eligibility.Reason())
+	current := observe("newer", "25")
+	eligibility, err = macports.BuildEligibility(current, model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"})
+	require.NoError(t, err)
+	require.True(t, eligibility.Eligible())
+	eligibility, err = macports.BuildEligibility(observe("failing", "25"), model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"})
+	require.NoError(t, err)
+	require.Equal(t, macports.ExcludedKnownFail, eligibility.Excluded)
+}

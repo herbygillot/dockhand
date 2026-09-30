@@ -77,6 +77,28 @@ func (p PortInfo) ArchiveCompatible() (bool, string, error) {
 	return false, problem, nil
 }
 
+// KnownFail reports a port known to fail where it was evaluated, as
+// MacPorts tests known_fail, string is true -strict, in its interpreter;
+// an error where it couldn't be read. A port evaluated without the fact,
+// as a test's is, is read as Tcl reads a boolean.
+func (p PortInfo) KnownFail() (bool, error) {
+	if _, set := p.Options["dockhand.known_fail"]; set || p.OptionErrors["dockhand.known_fail"] != "" {
+		return p.Bool("dockhand.known_fail")
+	}
+	return p.Bool("known_fail")
+}
+
+// PlatformsCompatible reports whether the port's platforms admit the
+// release it was evaluated for, as Base's own check decides; known is
+// false where it couldn't say.
+func (p PortInfo) PlatformsCompatible() (compatible, known bool) {
+	if _, set := p.Options["dockhand.platforms_compatible"]; !set {
+		return false, false
+	}
+	compatible, err := p.Bool("dockhand.platforms_compatible")
+	return compatible, err == nil
+}
+
 // BaseVersion is the MacPorts Base that evaluated the port; false where it
 // wasn't read.
 func (p PortInfo) BaseVersion() (string, bool) {

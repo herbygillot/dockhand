@@ -372,3 +372,27 @@ func TestAPlanRecordsWhatDeclaresNoTests(t *testing.T) {
 	plan.Tests = model.TestsDeclared
 	require.Equal(t, "✓", targetWords(plan, model.PlanTarget{ID: "harbor-cli"}, tahoeArm, model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsNone}, "", false), "only a policy requiring tests needs saying so")
 }
+
+// A port whose eligibility couldn't be read is unresolved, neither built
+// nor excluded; one excluded by its platforms is named for them.
+func TestAPlanKeepsAnUnreadEligibilityApart(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	revision := harborBranch(t, e)
+	ports := harborPorts()
+	ports.directories["devel/libharbor"][0].OptionErrors = map[string]string{"supported_archs": "cannot evaluate"}
+	e.PortReader = ports
+	plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}})
+	require.NoError(t, err)
+	require.Contains(t, plan.Unresolved, model.Unresolved{Target: model.Target{Name: "libharbor", Portfile: "devel/libharbor/Portfile"}, Reason: "macports: supported_archs: cannot evaluate"})
+
+	ports = harborPorts()
+	cli := ports.directories["devel/harbor-cli"][0]
+	cli.Options["dockhand.known_fail"], cli.Options["dockhand.platforms_compatible"], cli.Options["platforms"] = "1", "0", "{darwin >= 26}"
+	e.PortReader = ports
+	plan, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: []model.Environment{tahoeArm}})
+	require.NoError(t, err)
+	exclusion, excluded := plan.ExclusionIn(tahoeArm, "harbor-cli")
+	require.True(t, excluded)
+	require.Equal(t, "its platforms, {darwin >= 26}, exclude this release", exclusion.Reason)
+}

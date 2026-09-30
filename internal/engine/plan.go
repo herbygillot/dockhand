@@ -131,8 +131,15 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 				}
 				evaluated := evaluations[e]
 				evaluated.defined[id] = true
-				if reason := ineligible(port, environment.Platform); reason != "" {
-					evaluated.ineligible[id] = reason
+				// Whether MacPorts CI would build it here is macports' to
+				// say; what can't be read is unresolved, not excluded.
+				eligibility, err := macports.BuildEligibility(port, environment.Platform)
+				if err != nil {
+					plan.Unresolved = append(plan.Unresolved, model.Unresolved{Target: target, Reason: err.Error()})
+					return
+				}
+				if !eligibility.Eligible() {
+					evaluated.ineligible[id] = eligibility.Reason()
 				}
 				for _, dependency := range port.Dependencies {
 					evaluated.deps[id] = append(evaluated.deps[id], model.TargetID(dependency.Port))
@@ -336,24 +343,6 @@ func unmetNeeds(planned model.EnvironmentPlan) []model.Unmet {
 
 func directoryName(directory string) string {
 	return directory[strings.LastIndexByte(directory, '/')+1:]
-}
-
-// ineligible says why a port is not built on a platform, following
-// MacPorts CI: replaced ports, ports marked known_fail, and ports whose
-// supported_archs exclude the platform's.
-func ineligible(port macports.PortInfo, platform model.Platform) string {
-	if by := strings.TrimSpace(port.Options["replaced_by"]); by != "" {
-		return "replaced by " + by
-	}
-	switch strings.ToLower(strings.TrimSpace(port.Options["known_fail"])) {
-	case "yes", "1", "true":
-		return "known_fail"
-	}
-	archs := strings.Fields(port.Options["supported_archs"])
-	if len(archs) > 0 && platform.Architecture != "" && !slices.Contains(archs, "noarch") && !slices.Contains(archs, platform.Architecture) {
-		return "supported_archs " + strings.Join(archs, " ") + " only"
-	}
-	return ""
 }
 
 var revisionDeclaration = regexp.MustCompile(`^\s*revision\s+\S+\s*$`)
