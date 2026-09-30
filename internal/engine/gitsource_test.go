@@ -346,6 +346,27 @@ func TestAnEarlierFailureAgainstAnOldCommitDoesntStand(t *testing.T) {
 	require.Contains(t, missing, model.TargetID("harbor-cli"), "it failed against the old commit's build")
 }
 
+// A fetch that failed because the source moved built nothing, so it
+// stands for no later check, even one that expects the commit it fetched:
+// a tag that moved between a check's plan and its fetch fails that check
+// at fetch, and the next check, which expects what the tag names now,
+// builds it rather than reading that failure as its own.
+func TestAFetchThatFoundItsSourceMovedStandsForNone(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	url, first, move := harborRepository(t)
+	move()
+	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{}, fetches: map[model.TargetID]string{"libharbor": first}}, identity: "origin a"}
+	c := newHarborChecks(t, e, gitHarbor(url, "v4"), provider)
+
+	checked, _ := c.check(false)
+	require.Equal(t, model.RunFailed, checked.State, "libharbor fetched another commit than its check expected")
+	run(t, url, "tag", "-f", "v4", first)
+	provider.failures = model.MaxAttempts
+	c.check(true)
+	require.Contains(t, c.missing(), model.TargetID("libharbor"), "the fetch that found its source moved built nothing")
+}
+
 // A build whose provider didn't say which ports were active can't be
 // established to have been built against the commit a Git-fetched target
 // it needs is expected at, as reuse can't establish it, so an earlier

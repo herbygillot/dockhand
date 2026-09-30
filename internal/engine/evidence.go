@@ -589,7 +589,10 @@ func (e Evidence) missing() bool {
 //     build (other), by the rule reuse rebuilds by
 //     (reuse.AgainstOtherSources): what was built against a tag's old
 //     commit is another build than one against its new one, whatever the
-//     files say.
+//     files say;
+//   - its own check didn't find its source moved: that fetch failed and
+//     built nothing, so it stands for no check, even one that expects the
+//     commit it fetched.
 //
 // Nothing else about the check's selection matters: from the same files,
 // a target builds the same whichever ports were selected with it. Nor does
@@ -597,7 +600,9 @@ func (e Evidence) missing() bool {
 // and reads under it (decision D1, Evidence.Words).
 func Counts(recorded model.Plan, execution model.GuestExecution, id model.TargetID, now string, git *model.GitSource, fetched model.ObjectID, other bool) bool {
 	planned, ok := recorded.In(execution.Environment)
-	return ok && planned.Builds(id) && current(execution, now) && (git == nil || execution.ID == "" || git.BuiltBy(fetched)) && !other
+	own, fetchedWithGit := recorded.GitIn(execution.Environment, id)
+	return ok && planned.Builds(id) && current(execution, now) && (git == nil || execution.ID == "" || git.BuiltBy(fetched)) && !other &&
+		!(fetchedWithGit && own.Moved(fetched))
 }
 
 // current reports whether an execution ran in the environment there is

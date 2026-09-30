@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -233,6 +234,16 @@ func TestAResultCountsWhereItsCheckPlannedTheTarget(t *testing.T) {
 	// And its build wasn't built against another commit's build of a
 	// Git-fetched target (reuse.AgainstOtherSources).
 	require.False(t, Counts(recorded, in(arm), "libharbor", "origin a", nil, "", true), "built against another source than the newest check expects")
+
+	// Nor did its own check find its source moved: that fetch failed and
+	// built nothing, whatever a later check expects.
+	own := recorded
+	own.Builds = slices.Clone(recorded.Builds)
+	own.Builds[0].Git = map[model.TargetID]model.GitSource{"libharbor": *expected}
+	later := *expected
+	later.Commit = model.ObjectID(strings.Repeat("b", 40))
+	require.False(t, Counts(own, in(arm), "libharbor", "origin a", &later, later.Commit, false), "its check expected one commit, and it fetched another")
+	require.True(t, Counts(own, in(arm), "libharbor", "origin a", expected, commit, false), "it fetched what its check expected")
 }
 
 // A check recorded a result when one of its results came from its own
