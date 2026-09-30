@@ -368,3 +368,24 @@ func TestTheEvaluatorReadsWhetherAPortDeclaresTests(t *testing.T) {
 		require.Equal(t, want, tests, name)
 	}
 }
+
+// The PortGroups a port loads are reported by name, as Base records them,
+// and a port that loads none reports an empty list, not nothing.
+func TestTheEvaluatorReportsThePortGroupsAPortLoads(t *testing.T) {
+	t.Parallel()
+	e := liveEvaluator(t)
+	tree := fixtureTree(t)
+	putFile(t, tree.Root(), "devel/plain/Portfile", "PortSystem 1.0\nname plain\nversion 1\n")
+	for name, want := range map[string]string{"fixture": "dockhand-fixture", "plain": ""} {
+		targets, err := e.Resolve(t.Context(), tree, macports.Selection{Selector: name})
+		require.NoError(t, err)
+		bound, err := tree.Select(targets[0])
+		require.NoError(t, err)
+		snapshot, err := e.Evaluate(t.Context(), bound)
+		require.NoError(t, err)
+		groups, set := snapshot.Ports[name].Options["dockhand.portgroups"]
+		require.True(t, set, name)
+		require.Equal(t, want, groups, name)
+		require.Equal(t, "./configure", snapshot.Ports[name].Options["configure.cmd"], name)
+	}
+}

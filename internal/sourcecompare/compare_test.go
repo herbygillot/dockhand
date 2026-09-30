@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -27,7 +28,7 @@ func messages(changes []Change) []string {
 // compared compares two versions of a project whose files are given.
 func compared(t *testing.T, before, after map[string]string) []string {
 	t.Helper()
-	changes, err := Compare(t.Context(), testsupport.Tarball(t, "pkg-1", before), testsupport.Tarball(t, "pkg-2", after))
+	changes, err := Compare(t.Context(), testsupport.Tarball(t, "pkg-1", before), testsupport.Tarball(t, "pkg-2", after), Versions{})
 	require.NoError(t, err)
 	return messages(changes)
 }
@@ -47,7 +48,7 @@ func TestCompareFindsWhatAReviewerWouldAskAbout(t *testing.T) {
 		"CMakeLists.txt": "project(croc)\n",
 		"meson.build":    "project('croc')\n",
 	})
-	changes, err := Compare(t.Context(), older, newer)
+	changes, err := Compare(t.Context(), older, newer, Versions{})
 	require.NoError(t, err)
 	require.Equal(t, []string{
 		"! upstream's LICENSE changed; the Portfile's license line may need to follow",
@@ -57,7 +58,7 @@ func TestCompareFindsWhatAReviewerWouldAskAbout(t *testing.T) {
 
 	same, err := Compare(t.Context(), older, testsupport.Tarball(t, "croc-10.2.6", map[string]string{
 		"LICENSE": "MIT\n", "go.mod": "module croc\n\nrequire (\n\tgolang.org/x/sys v0.30.0\n\tgithub.com/old/dep v1.0.0\n)\n", "CMakeLists.txt": "project(croc)\n", "main.go": "x",
-	}))
+	}), Versions{})
 	require.NoError(t, err)
 	require.Empty(t, same)
 }
@@ -91,7 +92,7 @@ func TestCompareReadsTheOtherManifestsAndZips(t *testing.T) {
 		"requirements.txt": "requests>=2.1\n",
 		"pyproject.toml":   "[project]\ndependencies = [\n  \"click>=8\",\n  \"rich>=13\",\n]\n",
 	})
-	changes, err := Compare(t.Context(), older, newer)
+	changes, err := Compare(t.Context(), older, newer, Versions{})
 	require.NoError(t, err)
 	require.Equal(t, []string{
 		"· upstream: Cargo.toml: 1 added, 1 dropped",
@@ -244,6 +245,9 @@ func TestALicenseWhoseCopyrightYearsMovedHoldsNothing(t *testing.T) {
 			require.Equal(t, test.want, compared(t, map[string]string{"LICENSE": mit}, map[string]string{"LICENSE": test.after}))
 		})
 	}
+	require.Equal(t, []string{"! upstream's LICENSE changed; the Portfile's license line may need to follow"},
+		compared(t, map[string]string{"LICENSE": "Copyright (c) 2025 Kenneth Shaw"}, map[string]string{"LICENSE": "Copyright (c) 2026 Kenneth Shaw\nAll rights reserved."}),
+		"a line added after the last, in a file without a final newline")
 	gpl := "GNU GENERAL PUBLIC LICENSE\nVersion 2, June 1991\n\nCopyright (C) 1989, 1991 Free Software Foundation, Inc.\n"
 	require.Equal(t, []string{"! upstream's COPYING changed; the Portfile's license line may need to follow"},
 		compared(t, map[string]string{"COPYING": gpl}, map[string]string{"COPYING": strings.Replace(gpl, "June 1991", "June 2007", 1)}),
@@ -278,7 +282,7 @@ func TestAPythonDependencyRespelledIsTheSameOne(t *testing.T) {
 func TestAMovedPythonRequirementCarriesItsSpecifier(t *testing.T) {
 	changes, err := Compare(t.Context(),
 		testsupport.Tarball(t, "pkg-1", map[string]string{"requirements.txt": "requests[socks]>=2.30\nurllib3 (>=1.26)\n", "package.json": `{"dependencies": {"left-pad": "1.0.0"}}`}),
-		testsupport.Tarball(t, "pkg-2", map[string]string{"requirements.txt": "requests[socks]>=2.31 ; python_version >= '3.9'\nurllib3 (>=2.0)\nidna==3.7\n", "package.json": `{"dependencies": {"left-pad": "1.3.0"}}`}))
+		testsupport.Tarball(t, "pkg-2", map[string]string{"requirements.txt": "requests[socks]>=2.31 ; python_version >= '3.9'\nurllib3 (>=2.0)\nidna==3.7\n", "package.json": `{"dependencies": {"left-pad": "1.3.0"}}`}), Versions{})
 	require.NoError(t, err)
 	required := map[string]*Requirement{}
 	for _, change := range changes {
@@ -290,4 +294,48 @@ func TestAMovedPythonRequirementCarriesItsSpecifier(t *testing.T) {
 		"upstream: requirements.txt moves urllib3 from (>=1.26) to (>=2.0)":             {Name: "urllib3", Specifier: ">=2.0"},
 		"upstream: package.json moves left-pad from 1.0.0 to 1.3.0":                     nil,
 	}, required)
+}
+
+// A build file whose change is only the release it names holds nothing,
+// said with the line, as nuspell's CMakeLists.txt changed only its
+// project VERSION (the flatbuffers run's finding 2). Anything else changed
+// in it holds, as does a version change the update can't vouch for.
+func TestABuildFileNamingTheNewVersionHoldsNothing(t *testing.T) {
+	const before = "cmake_minimum_required(VERSION 3.12)\nproject(nuspell VERSION 5.1.8 LANGUAGES CXX)\nadd_subdirectory(src)\n"
+	versions := Versions{Old: "5.1.8", New: "5.1.9"}
+	compare := func(after string, versions Versions) []string {
+		t.Helper()
+		changes, err := Compare(t.Context(), testsupport.Tarball(t, "nuspell-5.1.8", map[string]string{"CMakeLists.txt": before}), testsupport.Tarball(t, "nuspell-5.1.9", map[string]string{"CMakeLists.txt": after}), versions)
+		require.NoError(t, err)
+		return messages(changes)
+	}
+	bumped := strings.Replace(before, "5.1.8", "5.1.9", 1)
+	require.Equal(t, []string{`· upstream's CMakeLists.txt changed only the version it names: "project(nuspell VERSION 5.1.9 LANGUAGES CXX)"`}, compare(bumped, versions))
+	held := []string{"! upstream's CMakeLists.txt changed; the build may need the Portfile to follow"}
+	require.Equal(t, held, compare(strings.Replace(bumped, "add_subdirectory(src)", "add_subdirectory(src)\nadd_subdirectory(tests)", 1), versions), "a line added")
+	require.Equal(t, held, compare(bumped+"install(TARGETS nuspell)\n", versions), "a line added at the end")
+	unended := func(before, after string) []string {
+		t.Helper()
+		changes, err := Compare(t.Context(), testsupport.Tarball(t, "x-1", map[string]string{"meson.build": before}), testsupport.Tarball(t, "x-2", map[string]string{"meson.build": after}), versions)
+		require.NoError(t, err)
+		return messages(changes)
+	}
+	require.Equal(t, []string{"! upstream's meson.build changed; the build may need the Portfile to follow"}, unended("project('nuspell', version: '5.1.8')", "project('nuspell', version: '5.1.9')\nsubdir('tests')"), "a line added after the last, in a file without a final newline")
+	require.Equal(t, held, compare(strings.Replace(bumped, "3.12", "3.16", 1), versions), "the minimum CMake, beside the version")
+	require.Equal(t, held, compare(bumped, Versions{}), "no versions to vouch for it")
+	require.Equal(t, held, compare(strings.Replace(before, "5.1.8", "5.2.0", 1), versions), "another version than the update's")
+}
+
+// Each change says which build system its file belongs to, for a caller
+// that knows which the port uses; a license file belongs to none.
+func TestAChangeNamesItsFilesBuildSystem(t *testing.T) {
+	changes, err := Compare(t.Context(),
+		testsupport.Tarball(t, "pkg-1", map[string]string{"LICENSE": "MIT\n"}),
+		testsupport.Tarball(t, "pkg-2", map[string]string{"LICENSE": "GPL\n", "meson.build": "project('x')\n", "package.json": `{"dependencies": {"left-pad": "1.0.0"}}`}), Versions{})
+	require.NoError(t, err)
+	systems := map[string]macports.BuildSystem{}
+	for _, change := range changes {
+		systems[change.Path] = change.System
+	}
+	require.Equal(t, map[string]macports.BuildSystem{"LICENSE": "", "meson.build": macports.Meson, "package.json": macports.Node}, systems)
 }

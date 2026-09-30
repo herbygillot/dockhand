@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/archive"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
 )
 
@@ -33,6 +34,10 @@ type Change struct {
 	Path    string
 	Message string
 	Hold    bool
+	// System is the build system the file belongs to, a manifest's
+	// language or a build file's tool, for a caller that knows which the
+	// port uses; empty for a license file.
+	System macports.BuildSystem
 	// Requirement is a Python requirement the new version adds or moves,
 	// for what it asks of the port that provides it; nil for every other
 	// change.
@@ -90,14 +95,26 @@ func yearsOnly(old, now []byte) (string, bool) {
 			return "", false
 		}
 		if first == "" {
-			first = strings.TrimSpace(after[i])
-			if runes := []rune(first); len(runes) > 120 {
-				first = string(runes[:119]) + "…"
-			}
+			first = quotable(after[i])
 		}
 	}
 	return first, first != ""
 }
+
+// systems are the build system each top-level build file and manifest
+// belongs to.
+var systems = map[string]macports.BuildSystem{
+	"CMakeLists.txt": macports.CMake, "configure.ac": macports.Autotools, "configure.in": macports.Autotools, "Makefile.am": macports.Autotools,
+	"meson.build": macports.Meson, "meson_options.txt": macports.Meson, "Makefile.PL": macports.Perl, "cpanfile": macports.Perl,
+	"setup.py": macports.Python, "setup.cfg": macports.Python, "requirements.txt": macports.Python, "pyproject.toml": macports.Python,
+	"build.gradle": macports.Java, "pom.xml": macports.Java, "SConstruct": macports.SCons, "build.zig": macports.Zig,
+	"Package.swift": macports.Swift, "Gemfile": macports.Ruby, "DESCRIPTION": macports.R,
+	"go.mod": macports.Go, "Cargo.toml": macports.Cargo, cargoLock: macports.Cargo, "package.json": macports.Node,
+}
+
+// Versions are the release an update moves from and to, which a build file
+// that changes only the version it names spells.
+type Versions struct{ Old, New string }
 
 // buildNames are the top-level files that say how software builds.
 var buildNames = []string{"CMakeLists.txt", "configure.ac", "configure.in", "meson.build", "meson_options.txt", "Makefile.am", "Makefile.PL",
@@ -127,7 +144,7 @@ type file struct {
 // and what it couldn't read of them. Each archive's single top directory,
 // which names its version, is set aside so the same file compares across
 // versions.
-func Compare(ctx context.Context, older, newer string) ([]Change, error) {
+func Compare(ctx context.Context, older, newer string, versions Versions) ([]Change, error) {
 	before, err := interesting(ctx, older)
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", path.Base(older), err)
@@ -182,6 +199,11 @@ func Compare(ctx context.Context, older, newer string) ([]Change, error) {
 			changes = append(changes, Change{Kind: "license", Path: name, Hold: true,
 				Message: fmt.Sprintf("upstream's %s %s; the Portfile's license line may need to follow", name, what)})
 		default:
+			if line, ok := versionOnly(old.data, now.data, versions); hadOld && hasNow && ok {
+				changes = append(changes, Change{Kind: "build", Path: name,
+					Message: fmt.Sprintf("upstream's %s changed only the version it names: %q", name, line)})
+				continue
+			}
 			what := "changed"
 			switch {
 			case !hadOld:
@@ -193,7 +215,49 @@ func Compare(ctx context.Context, older, newer string) ([]Change, error) {
 				Message: fmt.Sprintf("upstream's %s %s; the build may need the Portfile to follow", name, what)})
 		}
 	}
+	for i := range changes {
+		changes[i].System = systems[path.Base(changes[i].Path)]
+	}
 	return changes, nil
+}
+
+// quotable is a line as a message quotes it: trimmed, and cut short past
+// 120 characters.
+func quotable(line string) string {
+	line = strings.TrimSpace(line)
+	if runes := []rune(line); len(runes) > 120 {
+		return string(runes[:119]) + "…"
+	}
+	return line
+}
+
+// versionOnly reports whether a build file's two versions differ only in
+// the release they name, as nuspell's CMakeLists.txt changed only
+// project(nuspell VERSION 5.1.9), and gives the first such line as it now
+// reads: each line that differs reads as the new one once the old version
+// in it is the new one. A line added or removed, or changed in anything
+// else, is a change to the build.
+func versionOnly(old, now []byte, versions Versions) (string, bool) {
+	if versions.Old == "" || versions.New == "" || versions.Old == versions.New {
+		return "", false
+	}
+	before, after := strings.Split(string(old), "\n"), strings.Split(string(now), "\n")
+	if len(before) != len(after) {
+		return "", false
+	}
+	first := ""
+	for i := range before {
+		if before[i] == after[i] {
+			continue
+		}
+		if strings.ReplaceAll(before[i], versions.Old, versions.New) != after[i] {
+			return "", false
+		}
+		if first == "" {
+			first = quotable(after[i])
+		}
+	}
+	return first, first != ""
 }
 
 // interesting reads an archive's license files, top-level build files, and

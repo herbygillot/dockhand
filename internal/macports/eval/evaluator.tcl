@@ -174,6 +174,15 @@ namespace eval ::dockhand {
                 dict set out dockhand.livecheck_standard $standard
             }
             dict set out dockhand.base_version [base_version]
+            # The PortGroups the port loads, by name, as Base records them
+            # for the registry and the PortIndex.
+            if {[catch {$worker eval {
+                if {[info exists PortInfo(portgroups)]} { lmap group $PortInfo(portgroups) {lindex $group 0} }
+            }} groups]} {
+                dict set failures dockhand.portgroups $groups
+            } else {
+                dict set out dockhand.portgroups $groups
+            }
             # Whether the port declares tests, read as MacPorts reads it,
             # tbool test.run: an option Base gives no default, so unset is
             # off, not unknown.

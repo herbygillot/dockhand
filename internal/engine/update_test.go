@@ -20,6 +20,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
+	"github.com/herbygillot/dockhand/internal/sourcecompare"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -410,7 +411,7 @@ func TestAChangeTheArchivesShareIsSaidOnce(t *testing.T) {
 	result := preparation.Result{}
 	result.Downloads = []archives.Download{source.Next, binary.Next}
 	result.Pairs = []preparation.ArchivePair{source, binary}
-	comparison, _ := compareUpstream(t.Context(), result)
+	comparison, _ := compareUpstream(t.Context(), result, sourcecompare.Versions{})
 	require.Empty(t, comparison.Problem)
 	require.Equal(t, []model.UpstreamChange{
 		{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed; the Portfile's license line may need to follow", Hold: true},
@@ -456,4 +457,37 @@ func TestAPythonPinMacPortsCantMeetHolds(t *testing.T) {
 			require.Equal(t, test.want, pins, "PyYAML, which no dependency's name matches, is left alone")
 		})
 	}
+}
+
+// A file of a build system the port doesn't use holds nothing, and says
+// why: flatbuffers, built with CMake, held on package.json and
+// Package.swift (the flatbuffers run's finding 2). A build file of the one
+// it uses still holds, and one that changed only the version it names
+// doesn't (nuspell's CMakeLists.txt).
+func TestAChangeTheBuildDoesntReadHoldsNothing(t *testing.T) {
+	dir := t.TempDir()
+	next := archives.Download{Path: writeTarball(t, dir, "flatbuffers-25.12.19", map[string]string{
+		"CMakeLists.txt": "project(FlatBuffers VERSION 25.12.19)\nadd_library(flatbuffers src/a.cpp src/b.cpp)\n",
+		"package.json":   `{"devDependencies": {"eslint": "9.0.0", "typescript": "5.8.3"}}`,
+		"Package.swift":  "// swift-tools-version:5.9\n",
+	})}
+	next.Name = "flatbuffers-25.12.19.tar.gz"
+	previous := archives.Download{Path: writeTarball(t, dir, "flatbuffers-25.9.23", map[string]string{
+		"CMakeLists.txt": "project(FlatBuffers VERSION 25.9.23)\nadd_library(flatbuffers src/a.cpp)\n",
+		"package.json":   `{"devDependencies": {"eslint": "8.0.0"}}`,
+	})}
+	result := preparation.Result{}
+	result.Target = model.Target{Name: "flatbuffers"}
+	result.Prepared = macports.Snapshot{Ports: map[string]macports.PortInfo{"flatbuffers": {Name: "flatbuffers", Options: map[string]string{"dockhand.portgroups": "github cmake", "use_configure": "yes", "configure.cmd": "/opt/local/bin/cmake"}}}}
+	// A second archive with the same package.json counts nothing twice.
+	other := next
+	other.Name = "flatbuffers-25.12.19.zip"
+	result.Downloads = []archives.Download{next, other}
+	result.Pairs = []preparation.ArchivePair{{Previous: previous, Next: next}, {Previous: previous, Next: other}}
+	comparison, _ := compareUpstream(t.Context(), result, sourcecompare.Versions{Old: "25.9.23", New: "25.12.19"})
+	require.Equal(t, []model.UpstreamChange{
+		{Kind: "build", Path: "CMakeLists.txt", Message: "upstream's CMakeLists.txt changed; the build may need the Portfile to follow", Hold: true},
+		{Kind: "build", Path: "Package.swift", Message: "upstream's Package.swift is new; the build may need the Portfile to follow; flatbuffers builds with cmake, not swift, so it holds nothing"},
+		{Kind: "dependency", Path: "package.json", Message: "upstream: package.json: 2 dependencies changed; flatbuffers builds with cmake, not node, so it holds nothing"},
+	}, comparison.Changes)
 }

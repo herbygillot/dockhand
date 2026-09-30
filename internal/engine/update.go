@@ -233,7 +233,7 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	}
 	if compare && len(result.Files) > 0 {
 		var required []pythonRequirement
-		update.Upstream, required = compareUpstream(ctx, result)
+		update.Upstream, required = compareUpstream(ctx, result, sourcecompare.Versions{Old: update.Before.Version, New: update.After.Version})
 		if update.Upstream != nil {
 			update.Upstream.Changes = append(update.Upstream.Changes, e.pythonPins(ctx, model.Source{Tree: result.PreparedTree, Base: model.ObjectID(base)}, result, required)...)
 		}
@@ -618,7 +618,7 @@ func toolchainChange(toolchain *preparation.GoToolchain) (model.UpstreamChange, 
 //
 // It also gives the Python requirements the new version adds or moves, for
 // pythonPins.
-func compareUpstream(ctx context.Context, result preparation.Result) (*model.UpstreamComparison, []pythonRequirement) {
+func compareUpstream(ctx context.Context, result preparation.Result, versions sourcecompare.Versions) (*model.UpstreamComparison, []pythonRequirement) {
 	comparison := &model.UpstreamComparison{Changes: []model.UpstreamChange{}}
 	switch {
 	case result.PreviousProblem != "":
@@ -634,27 +634,71 @@ func compareUpstream(ctx context.Context, result preparation.Result) (*model.Ups
 			return comparison, nil
 		}
 	}
+	// A file of a build system the port doesn't use holds nothing:
+	// flatbuffers, built with CMake, held on package.json and
+	// Package.swift, which its build never reads (the flatbuffers run's
+	// finding 2). Which the port uses is MacPorts' to say; where it can't
+	// say, every file holds as before.
+	port := result.Prepared.Ports[result.Target.Name]
+	uses, known := port.BuildSystems()
+	unused := func(system macports.BuildSystem) bool {
+		return known && system != "" && !slices.Contains(uses, system)
+	}
+	var names []string
+	for _, system := range uses {
+		names = append(names, string(system))
+	}
+	// counted are the manifests of build systems the port doesn't use: where
+	// each one's line is, and how many of its dependencies changed.
+	counted, seen := map[string][2]int{}, map[string]bool{}
 	var required []pythonRequirement
 	for _, pair := range result.Pairs {
 		if pair.Previous.Path == "" || pair.Next.Path == "" {
 			comparison.Problem = "the archives were not kept to compare"
 			return comparison, nil
 		}
-		changes, err := sourcecompare.Compare(ctx, pair.Previous.Path, pair.Next.Path)
+		changes, err := sourcecompare.Compare(ctx, pair.Previous.Path, pair.Next.Path, versions)
 		if err != nil {
 			comparison.Problem = err.Error()
 			return comparison, nil
 		}
 		for _, change := range changes {
 			found := model.UpstreamChange{Kind: change.Kind, Path: change.Path, Message: change.Message, Hold: change.Hold}
+			if unused(change.System) {
+				why := fmt.Sprintf("%s builds with %s, not %s, so it holds nothing", port.Name, strings.Join(names, " and "), change.System)
+				if change.Kind != "dependency" {
+					found.Hold, found.Message = false, found.Message+"; "+why
+				} else {
+					// A manifest's dependencies are counted, as a proven
+					// manifest's are (D9), since none holds.
+					if seen[change.Message] {
+						continue
+					}
+					seen[change.Message] = true
+					if at, ok := counted[change.Path]; ok {
+						counted[change.Path] = [2]int{at[0], at[1] + 1}
+						continue
+					}
+					counted[change.Path] = [2]int{len(comparison.Changes), 1}
+					found = model.UpstreamChange{Kind: "dependency", Path: change.Path, Message: why}
+				}
+			}
 			if slices.Contains(comparison.Changes, found) {
 				continue
 			}
 			comparison.Changes = append(comparison.Changes, found)
-			if change.Requirement != nil {
+			if change.Requirement != nil && !unused(change.System) {
 				required = append(required, pythonRequirement{manifest: change.Path, Requirement: *change.Requirement})
 			}
 		}
+	}
+	for path, at := range counted {
+		change := &comparison.Changes[at[0]]
+		changed := fmt.Sprintf("%d dependencies changed", at[1])
+		if at[1] == 1 {
+			changed = "1 dependency changed"
+		}
+		change.Message = fmt.Sprintf("upstream: %s: %s; %s", path, changed, change.Message)
 	}
 	return comparison, required
 }
