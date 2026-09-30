@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -211,4 +212,115 @@ func ListRemoteTags(ctx context.Context, executable, url string, names ...string
 		tags = append(tags, RemoteTag{Name: name, Object: object})
 	}
 	return tags, nil
+}
+
+// ErrNoRef is a name no ref of a remote resolves, as a fresh clone of it
+// would read the name (CloneCheckout).
+var ErrNoRef = errors.New("git: no ref of the remote is that name")
+
+// Checkout is what a fresh clone of a remote checks out at a name, as the
+// remote's refs say: the commit, or, where no ref is the name and it has
+// the form of an abbreviated object name, the abbreviation, which only a
+// clone's objects expand, and which the commit checked out begins with.
+type Checkout struct {
+	Commit       string
+	Abbreviation string
+}
+
+// abbreviated is gitrevisions(7)'s short object name: a leading substring
+// of a commit's hexadecimal name, four digits at least.
+var abbreviated = regexp.MustCompile(`^[0-9a-f]{4,63}$`)
+
+// CloneCheckout is the commit a fresh clone of url checks out at name,
+// read from the remote's refs with ls-remote rather than a clone: what
+// `git clone url && git checkout -q name` leaves HEAD at, as MacPorts'
+// Git fetch does. An empty name is the clone's own checkout, the remote's
+// HEAD. A whole commit is itself. Otherwise the name resolves among the
+// refs a clone has (git-clone(1)): the remote's default branch as a local
+// branch, every branch as origin/<branch>, and every tag. git-checkout(1)
+// checks out a local branch by that name first; failing that, the first
+// ref gitrevisions(7) finds for the name, a tag before a branch; failing
+// that, the one remote-tracking branch of the name, which it guesses a
+// new branch from. A name none resolves is an abbreviated commit, where it
+// has that form, or ErrNoRef. It runs outside any checkout, so no
+// repository's configuration applies, and never prompts for credentials.
+func CloneCheckout(ctx context.Context, executable, url, name string) (Checkout, error) {
+	if !validRemoteURL(url) {
+		return Checkout{}, fmt.Errorf("git: invalid remote")
+	}
+	// Git reads an object name's hexadecimal digits in either case.
+	if lower := strings.ToLower(name); ValidObjectID(lower) {
+		return Checkout{Commit: lower}, nil
+	}
+	out, err := (&Repository{Root: os.TempDir(), Executable: executable}).output(ctx, "ls-remote", "--symref", "--", url, "HEAD", "refs/heads/*", "refs/tags/*")
+	if err != nil {
+		return Checkout{}, err
+	}
+	// local is what a fresh clone's refs name, by the clone's own names.
+	local := map[string]string{}
+	var head, defaultBranch string
+	peeled := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		// --symref names what HEAD points to: the default branch.
+		if symref, ok := strings.CutPrefix(line, "ref: "); ok {
+			if target, ref, _ := strings.Cut(symref, "\t"); ref == "HEAD" {
+				defaultBranch, _ = strings.CutPrefix(target, "refs/heads/")
+			}
+			continue
+		}
+		object, ref, ok := strings.Cut(line, "\t")
+		if !ok || !ValidObjectID(object) {
+			return Checkout{}, fmt.Errorf("git: unreadable ls-remote line %q", line)
+		}
+		switch {
+		case ref == "HEAD":
+			head = object
+		case strings.HasPrefix(ref, "refs/heads/"):
+			local["refs/remotes/origin/"+strings.TrimPrefix(ref, "refs/heads/")] = object
+		case strings.HasPrefix(ref, "refs/tags/") && strings.HasSuffix(ref, "^{}"):
+			peeled[strings.TrimSuffix(ref, "^{}")] = object
+		case strings.HasPrefix(ref, "refs/tags/"):
+			local[ref] = object
+		}
+	}
+	// A tag names its commit once peeled, which is what checkout lands on.
+	for ref, commit := range peeled {
+		local[ref] = commit
+	}
+	if head != "" {
+		local["HEAD"] = head
+	}
+	if commit, ok := local["refs/remotes/origin/"+defaultBranch]; defaultBranch != "" && ok {
+		local["refs/heads/"+defaultBranch] = commit
+		local["refs/remotes/origin/HEAD"] = commit
+	}
+	if name == "" {
+		if head == "" {
+			return Checkout{}, fmt.Errorf("%w: the remote lists no HEAD", ErrNoRef)
+		}
+		return Checkout{Commit: head}, nil
+	}
+	commit := ""
+	for _, rule := range []string{name, "refs/" + name, "refs/tags/" + name, "refs/heads/" + name, "refs/remotes/" + name, "refs/remotes/" + name + "/HEAD"} {
+		if found, ok := local[rule]; ok {
+			commit = found
+			break
+		}
+	}
+	if commit == "" {
+		commit = local["refs/remotes/origin/"+name]
+	}
+	if branch, ok := local["refs/heads/"+name]; ok {
+		commit = branch
+	}
+	switch lower := strings.ToLower(name); {
+	case commit != "":
+		return Checkout{Commit: commit}, nil
+	case abbreviated.MatchString(lower):
+		return Checkout{Abbreviation: lower}, nil
+	}
+	return Checkout{}, fmt.Errorf("%w: %s", ErrNoRef, name)
 }
