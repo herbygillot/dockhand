@@ -193,6 +193,25 @@ func TestAGitFetchedPortsSourceIsItsEnvironmentsToExpect(t *testing.T) {
 	require.Equal(t, map[model.TargetID]model.GitSource{"libharbor": {URL: "https://github.com/harbor/libharbor.git", Ref: "v4"}}, decision.Builds[0].Git)
 	require.Nil(t, decision.Builds[1].Git, "fetched otherwise there")
 
+	// A target --only leaves out has the source it declares where it
+	// would be built, for an earlier check's result of it to be judged by
+	// what its tag names now; none where it's ruled out.
+	input.Candidates = append(input.Candidates, candidate("harbor-docs", model.Changed))
+	input.Evaluations[0]["harbor-docs"], input.Evaluations[1]["harbor-docs"] = Evaluated{}, Evaluated{}
+	input.Only = []string{"harbor-docs"}
+	decision, err = Decide(input)
+	require.NoError(t, err)
+	require.Equal(t, []model.TargetID{"libharbor", "harbor-cli"}, ids(decision.Omitted))
+	require.Equal(t, []model.TargetID{"harbor-docs"}, decision.Builds[0].Order)
+	require.Equal(t, map[model.TargetID]model.GitSource{"libharbor": {URL: "https://github.com/harbor/libharbor.git", Ref: "v4"}}, decision.Builds[0].Git, "left out, and would be built there")
+	require.Nil(t, decision.Builds[1].Git)
+	ruledOut := evaluated
+	ruledOut.Eligibility = macports.Eligibility{Excluded: macports.ExcludedKnownFail}
+	input.Evaluations[0]["libharbor"] = ruledOut
+	decision, err = Decide(input)
+	require.NoError(t, err)
+	require.Nil(t, decision.Builds[0].Git, "ruled out there, so nothing is required of it there")
+
 	port.OptionErrors = map[string]string{"git.branch": "can't read \"tag\": no such variable"}
 	_, err = Evaluate(port, arm.Platform)
 	require.Error(t, err)

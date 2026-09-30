@@ -158,7 +158,10 @@ func TestPlanValidation(t *testing.T) {
 		"a target not its port's name":   func(p *Plan) { p.Targets[1].Target.Name = "libharbor-devel" },
 		"omitted not its port's name":    func(p *Plan) { p.Omitted[0].Target.Name = "harbor-view" },
 		"a Git source for what isn't built": func(p *Plan) {
-			p.Builds[0].Git = map[TargetID]GitSource{"harbor-viewer": resolvedGit()}
+			p.Builds[0].Git = map[TargetID]GitSource{"harbor-lost": resolvedGit()}
+		},
+		"a Git source for what --only left out, where it's excluded": func(p *Plan) {
+			p.Builds[1].Git = map[TargetID]GitSource{"harbor-viewer": resolvedGit()}
 		},
 		"a Git source with no repository": func(p *Plan) {
 			p.Builds[0].Git = map[TargetID]GitSource{"libharbor": {Ref: "v4", Commit: resolvedGit().Commit, ResolvedAt: at}}
@@ -204,6 +207,8 @@ func TestPlanValidation(t *testing.T) {
 	require.Equal(t, resolvedGit(), source)
 	_, ok = fetched.GitIn(intel, "libharbor")
 	require.False(t, ok, "each environment's own")
+	fetched.Builds[0].Git["harbor-viewer"] = resolvedGit()
+	require.NoError(t, fetched.Validate(), "--only left it out, and it would be built there")
 
 	unresolved := plan()
 	unresolved.Unresolved = []Unresolved{{Target: Target{Name: "harbor-viewer"}, Reason: "evaluation failed"}}

@@ -281,6 +281,40 @@ func (c harborChecks) missing() []model.TargetID {
 	return ids
 }
 
+// A Git-fetched target --only leaves out still has the commit its tag
+// names expected of it (planning.OmittedSources): the check doesn't build
+// it, but an earlier check's result of it, or of what was built against
+// it, stands only for that commit. Here harbor-cli needs neither of the
+// others, and a check of it alone leaves libharbor and harbor-viewer to an
+// earlier full check, which stands while the tag names what it built.
+func TestATargetLeftOutExpectsTheCommitItsTagNames(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	url, first, move := harborRepository(t)
+	lib := model.ActivePort{Name: "libharbor", Spec: "@4_0", Directory: "devel/libharbor", Archive: "sha256:libharbor"}
+	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{}, consumes: map[model.TargetID][]model.ActivePort{"harbor-viewer": {lib}},
+		fetches: map[model.TargetID]string{"libharbor": first}}, identity: "origin a"}
+	ports := gitHarbor(url, "v4")
+	ports.directories["devel/harbor-cli"][0] = port("harbor-cli")
+	c := newHarborChecks(t, e, ports, provider)
+
+	run, _ := c.check(false)
+	require.Equal(t, model.RunPassed, run.State, run.Detail)
+	_, plan := c.check(false, "harbor-cli")
+	require.Equal(t, []string{"libharbor:substantive:changed", "harbor-viewer:substantive:changed"}, names(plan.Omitted))
+	source, ok := plan.GitIn(tahoeArm, "libharbor")
+	require.True(t, ok, "left out, and expected all the same")
+	require.Equal(t, model.ObjectID(first), source.Commit)
+	require.Empty(t, c.missing(), "the full check fetched the commit the tag names")
+
+	second := move()
+	_, plan = c.check(false, "harbor-cli")
+	source, _ = plan.GitIn(tahoeArm, "libharbor")
+	require.Equal(t, model.ObjectID(second), source.Commit)
+	require.Equal(t, []model.TargetID{"libharbor", "harbor-viewer"}, c.missing(),
+		"the full check's libharbor fetched another commit than the tag names now, and harbor-viewer was built against it")
+}
+
 // A failure is judged as a pass is: harbor-cli's build that failed against
 // libharbor's build of the old commit is no evidence once the tag moved.
 // A blocked result built nothing, and isn't judged by what it was built
@@ -329,6 +363,29 @@ func TestADependentWhoseProviderDidntSayWhatWasActiveDoesntStand(t *testing.T) {
 	provider.failures = model.MaxAttempts
 	c.check(true)
 	require.Equal(t, []model.TargetID{"harbor-cli", "harbor-viewer"}, c.missing(), "libharbor's result says what it fetched; what needs it can't say what it had")
+}
+
+// A build that had active a Git-fetched target its check didn't build, as
+// harbor-cli had libharbor through a port the branch doesn't change while
+// --only left libharbor out, had an archive no build dockhand can place
+// made, so its result doesn't stand once the plan expects libharbor at a
+// commit.
+func TestABuildAgainstAGitFetchedPortItsCheckDidntBuildDoesntStand(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	url, _, _ := harborRepository(t)
+	lib := model.ActivePort{Name: "libharbor", Spec: "@4_0", Directory: "devel/libharbor", Archive: "sha256:master's libharbor"}
+	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{}, consumes: map[model.TargetID][]model.ActivePort{"harbor-cli": {lib}}}, identity: "origin a"}
+	ports := gitHarbor(url, "v4")
+	ports.directories["devel/harbor-cli"][0] = port("harbor-cli")
+	ports.directories["graphics/harbor-viewer"][0] = port("harbor-viewer")
+	c := newHarborChecks(t, e, ports, provider)
+
+	run, _ := c.check(false, "harbor-cli")
+	require.Equal(t, model.RunPassed, run.State, run.Detail)
+	run, _ = c.check(false, "harbor-viewer")
+	require.Equal(t, model.RunPassed, run.State, run.Detail)
+	require.Equal(t, []model.TargetID{"harbor-cli", "libharbor"}, c.missing(), "no check built libharbor, and harbor-cli had one nobody can place")
 }
 
 // A build that fetched another commit than its check expected, the tag

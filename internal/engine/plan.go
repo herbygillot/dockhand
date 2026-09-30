@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -209,15 +210,16 @@ const gitResolveTimeout = time.Minute
 // result records. Each repository and ref is read once for the plan, so
 // every environment expects the same commit. One that can't be read is
 // said to be, and its build expected to fetch nothing in particular: its
-// result says what it fetched, and stands for no later check's.
+// result says what it fetched, and stands for no later check's. A target
+// --only left out is resolved too (planning.OmittedSources): nothing
+// builds it, but an earlier check's result of it stands only for the
+// commit its tag names now, and that is read now or never, since evidence
+// is judged from the store alone.
 func (e *Engine) resolveGitSources(ctx context.Context, builds []model.EnvironmentPlan) error {
 	resolved := map[[2]string]model.GitSource{}
 	for _, planned := range builds {
-		for _, id := range planned.Order {
-			source, ok := planned.Git[id]
-			if !ok {
-				continue
-			}
+		for _, id := range slices.Sorted(maps.Keys(planned.Git)) {
+			source := planned.Git[id]
 			key := [2]string{source.URL, source.Ref}
 			if _, done := resolved[key]; !done {
 				progress.VerboseReport(ctx, "%s is fetched with Git: reading which commit %s names in %s", id, refWords(source.Ref), source.URL)

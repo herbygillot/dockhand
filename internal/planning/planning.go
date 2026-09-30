@@ -121,8 +121,8 @@ type Decision struct {
 
 // Decide plans the candidates, phase by phase: what each environment rules
 // out, what is built anywhere, what each target needs first where it's
-// built, what --only keeps, each environment's plan, and the plan's own
-// order, merged from theirs.
+// built, what --only keeps, each environment's plan, with the sources of
+// what --only left out, and the plan's own order, merged from theirs.
 func Decide(input Input) (Decision, error) {
 	if len(input.Evaluations) != len(input.Environments) {
 		return Decision{}, fmt.Errorf("%d evaluations for %d environments", len(input.Evaluations), len(input.Environments))
@@ -144,6 +144,7 @@ func Decide(input Input) (Decision, error) {
 			decision.Cycles = append(decision.Cycles, Cycle{Environment: environment, Ports: cycle})
 			continue
 		}
+		OmittedSources(&planned, decision.Omitted, reasons[e], input.Evaluations[e])
 		decision.Builds = append(decision.Builds, planned)
 	}
 	if len(decision.Cycles) > 0 {
@@ -302,6 +303,28 @@ func EnvironmentPlan(environment model.Environment, targets, candidates []model.
 	// What it needs there decides what it can't build.
 	planned.Unmet = unmetNeeds(planned)
 	return planned, nil
+}
+
+// OmittedSources gives an environment's plan the source each changed
+// target --only left out (omitted) declares where it is fetched with Git
+// there and not ruled out, as a target it builds has, for the engine to
+// resolve with theirs. The check doesn't build it, but submission still
+// requires it there, and an earlier check's result of it, or of what was
+// built against it, stands only for the commit its tag names now (the
+// engine's Counts), which a check that left it out must still say. A
+// submission compares that commit with what its tag names then, as it does
+// for what the check built.
+func OmittedSources(planned *model.EnvironmentPlan, omitted []model.PlanTarget, reasons map[model.TargetID]string, evaluation Evaluation) {
+	for _, target := range omitted {
+		source := evaluation[target.ID].Git
+		if source == nil || reasons[target.ID] != "" {
+			continue
+		}
+		if planned.Git == nil {
+			planned.Git = map[model.TargetID]model.GitSource{}
+		}
+		planned.Git[target.ID] = *source
+	}
 }
 
 // Merge is the plan's own list of targets: the environments' orders,

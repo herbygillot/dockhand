@@ -178,7 +178,11 @@ type EnvironmentPlan struct {
 	Exclusions []Exclusion `json:",omitempty"`
 	// Git are the targets in Order fetched with Git here, each with the
 	// source its build is expected to fetch: the commit its git.branch
-	// named when the check was planned (batch 20).
+	// named when the check was planned (batch 20). The changed targets
+	// --only left out that would be built here have theirs too: the check
+	// doesn't build them, but an earlier check's result of one stands only
+	// where it fetched that commit, and a submission compares that commit
+	// with what the tag names then.
 	Git map[TargetID]GitSource `json:",omitempty"`
 }
 
@@ -430,8 +434,9 @@ func (b EnvironmentPlan) validate(p Plan) error {
 		}
 	}
 	for id, source := range b.Git {
-		if !earlier[id] {
-			return invalid("plan %s has a Git source for %s, which it doesn't build", where, id)
+		omitted := slices.ContainsFunc(p.Omitted, func(target PlanTarget) bool { return target.ID == id })
+		if _, excluded := p.ExclusionIn(b.Environment, id); !earlier[id] && (!omitted || excluded) {
+			return invalid("plan %s has a Git source for %s, which it neither builds nor would build but for --only", where, id)
 		}
 		if problem := source.problem(); problem != "" {
 			return invalid("plan %s: %s's Git source %s", where, id, problem)

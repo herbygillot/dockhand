@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"fmt"
-	"maps"
 	"slices"
 	"strings"
 
@@ -144,32 +143,57 @@ func (p SubmitPlan) Concerns() []model.Concern {
 // movedSources are the Git-fetched ports whose git.branch names another
 // commit now than when the check a submission rests on planned it: the
 // build proved one source, and the pull request would ship another, since
-// a tag binds nothing (the assessment design, A). Each repository and ref
-// is read once; one that can't be read now isn't said to have moved, as
-// the check's own evidence says what it built.
+// a tag binds nothing (the assessment design, A). A target --only left out
+// is among them: the plan resolved its tag too, and an earlier check's
+// result of it stands only where it built that commit (Counts). Each
+// repository and ref is read once; one that can't be read now isn't said
+// to have moved, as the check's own evidence says what it built.
 func (e *Engine) movedSources(ctx context.Context, evidence *Evidence) []model.Concern {
 	if evidence == nil {
 		return nil
 	}
 	now := map[[2]string]model.GitSource{}
 	var concerns []model.Concern
-	for _, build := range evidence.Plan.Builds {
-		for _, id := range slices.Sorted(maps.Keys(build.Git)) {
-			planned := build.Git[id]
-			key := [2]string{planned.URL, planned.Ref}
-			if _, read := now[key]; !read {
-				now[key] = e.resolveGit(ctx, model.GitSource{URL: planned.URL, Ref: planned.Ref})
-			}
-			current := now[key]
-			if planned.Commit == "" || current.Commit == "" || current.Commit == planned.Commit {
-				continue
-			}
-			target, _ := evidence.Plan.Target(id)
-			concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: "source-moved", Subject: string(current.Commit), Class: model.Introduced,
-				Detail: fmt.Sprintf("%s's git.branch %s named %s when %s planned it, and names %s now: the check built another source than this would submit", target.Target.Name, planned.Ref, short(planned.Commit), evidence.Run.Name(), short(current.Commit))})
+	for _, p := range plannedSources(evidence.Plan) {
+		target, planned := p.target, p.source
+		key := [2]string{planned.URL, planned.Ref}
+		if _, read := now[key]; !read {
+			now[key] = e.resolveGit(ctx, model.GitSource{URL: planned.URL, Ref: planned.Ref})
 		}
+		current := now[key]
+		if planned.Commit == "" || current.Commit == "" || current.Commit == planned.Commit {
+			continue
+		}
+		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: "source-moved", Subject: string(current.Commit), Class: model.Introduced,
+			Detail: fmt.Sprintf("%s's git.branch %s named %s when %s planned it, and names %s now: the check built another source than this would submit", target.Target.Name, planned.Ref, short(planned.Commit), evidence.Run.Name(), short(current.Commit))})
 	}
 	return concerns
+}
+
+// plannedSource is a Git-fetched target of a plan, and the source the plan
+// expects it to fetch.
+type plannedSource struct {
+	target model.PlanTarget
+	source model.GitSource
+}
+
+// plannedSources are the sources a plan expects its Git-fetched targets to
+// fetch, in the plan's order, with those --only left out after: each
+// target's once for each repository and ref its environments evaluate,
+// since one resolution serves every environment (resolveGitSources).
+func plannedSources(plan model.Plan) []plannedSource {
+	var planned []plannedSource
+	for _, target := range slices.Concat(plan.Targets, plan.Omitted) {
+		for _, build := range plan.Builds {
+			source, ok := build.Git[target.ID]
+			if ok && !slices.ContainsFunc(planned, func(p plannedSource) bool {
+				return p.target.ID == target.ID && p.source.URL == source.URL && p.source.Ref == source.Ref
+			}) {
+				planned = append(planned, plannedSource{target: target, source: source})
+			}
+		}
+	}
+	return planned
 }
 
 // othersConcerns are what other open pull requests for a port ask of a

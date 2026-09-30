@@ -263,3 +263,26 @@ func TestPassingIsOneDefinitionForSubmitAndServe(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, candidates, "and serve submits it no more than submit --passing would")
 }
+
+// A target --only left out whose tag moved after the check is a concern as
+// a built one is: its tag was resolved with the plan, and an earlier
+// check's result of it stands for the commit it named then.
+func TestASourceLeftOutThatMovedSinceItsCheckIsAConcern(t *testing.T) {
+	project := t.TempDir()
+	run(t, project, "init", "-q")
+	run(t, project, "commit", "-q", "--allow-empty", "-m", "one")
+	run(t, project, "tag", "v2")
+	built := run(t, project, "rev-parse", "HEAD")
+	f := setup(t)
+	e := f.open(t)
+	evidence := &Evidence{Run: model.Run{Number: 8}, Plan: model.Plan{Omitted: []model.PlanTarget{{ID: "tool", Target: model.Target{Name: "tool"}}},
+		Builds: []model.EnvironmentPlan{{Git: map[model.TargetID]model.GitSource{"tool": {URL: project, Ref: "v2", Commit: model.ObjectID(built)}}}}}}
+	require.Empty(t, e.movedSources(t.Context(), evidence))
+
+	run(t, project, "commit", "-q", "--allow-empty", "-m", "two")
+	run(t, project, "tag", "-f", "v2")
+	now := run(t, project, "rev-parse", "HEAD")
+	moved := e.movedSources(t.Context(), evidence)
+	require.Len(t, moved, 1)
+	require.Equal(t, "tool's git.branch v2 named "+built[:7]+" when check-8 planned it, and names "+now[:7]+" now: the check built another source than this would submit", moved[0].Detail)
+}
