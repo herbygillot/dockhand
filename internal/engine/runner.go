@@ -735,8 +735,8 @@ func (b *build) Record(result model.TargetResult) error {
 	inputs, read := b.inputs[result.Target]
 	// What a Git-fetched target's build fetched is an input of it, which
 	// a port fetched otherwise has none of, whatever its provider said. A
-	// provider that says what the build fetched, and not which ports were
-	// active, as a person's command doesn't, leaves those unknown, and the
+	// provider that says what the build fetched but not which ports were
+	// active, as a person's command can, leaves those unknown, and the
 	// inputs kept incomplete.
 	fetched, said := b.fetched[result.Target]
 	if _, ok := b.d.plan.GitIn(b.execution.Environment, result.Target); ok && said {
