@@ -250,6 +250,47 @@ func TestANewCrateLinkingANativeLibraryIsListed(t *testing.T) {
 		compared(t, map[string]string{}, map[string]string{"Cargo.lock": lock("zstd-sys 2.0.13+zstd.1.5.6")}), "a lock new to the source")
 }
 
+// A crate new to Cargo.lock that links a native library is said where
+// MacPorts has a port for the library, named, and set apart in coverage
+// where it has none: three of zola's four, jni-sys, system-configuration-sys,
+// and aws-lc-sys, named libraries MacPorts has no port for, and only
+// zstd-sys one it has (the zola run with 68df8b57). A library whose port is
+// named otherwise is found by that name, and one whose presence couldn't
+// be observed is said as before.
+func TestANativeLibraryIsSaidWhereMacPortsHasAPortForIt(t *testing.T) {
+	var readings [2]project.Reading
+	for i, crates := range [][]string{{"serde 1.0.210"}, {"serde 1.0.210", "jni-sys 0.3.0", "system-configuration-sys 0.6.0", "aws-lc-sys 0.45.0", "zstd-sys 2.0.13+zstd.1.5.6", "onig_sys 69.8.1"}} {
+		reading, err := project.Read(t.Context(), testsupport.Tarball(t, fmt.Sprintf("zola-%d", i), map[string]string{"Cargo.lock": lock(crates...)}), project.Spec{})
+		require.NoError(t, err)
+		readings[i] = reading
+	}
+	zola := macports.PortInfo{Name: "zola", Options: map[string]string{"dockhand.portgroups": "cargo"}}
+	input := Input{Port: zola, Base: zola, Pairs: []Pair{{Archive: "zola-0.23.6.tar.gz", Before: readings[0], After: readings[1]}}}
+	var wanted []string
+	for _, provider := range Wanted(input) {
+		wanted = append(wanted, provider.Port)
+	}
+	require.Equal(t, []string{"jni", "system-configuration", "aws-lc", "zstd", "onig", "oniguruma6"}, wanted)
+	comparison := observed(t, input, map[Provider]Observation{
+		{Port: "jni"}: {Absent: true}, {Port: "system-configuration"}: {Absent: true}, {Port: "aws-lc"}: {Absent: true},
+		{Port: "zstd"}: {Version: "1.5.7", Directory: "archivers/zstd"}, {Port: "onig"}: {Absent: true}, {Port: "oniguruma6"}: {Version: "6.9.10", Directory: "devel/oniguruma6"},
+	})
+	require.Equal(t, []string{
+		"· upstream: Cargo.lock adds zstd-sys 2.0.13+zstd.1.5.6, which links the native library zstd, which MacPorts has as archivers/zstd: the Portfile may declare it, rather than the crate linking whatever copy it finds",
+		"· upstream: Cargo.lock adds onig_sys 69.8.1, which links the native library onig, which MacPorts has as devel/oniguruma6: the Portfile may declare it, rather than the crate linking whatever copy it finds",
+	}, messages(comparison.Changes))
+	var reasons []string
+	for _, coverage := range comparison.Coverage {
+		if coverage.Policy == "native-library-ports" {
+			reasons = append(reasons, coverage.Reason)
+		}
+	}
+	require.Equal(t, []string{"jni-sys links jni, which MacPorts has no port for", "system-configuration-sys links system-configuration, which MacPorts has no port for", "aws-lc-sys links aws-lc, which MacPorts has no port for"}, reasons)
+
+	comparison = observed(t, input, map[Provider]Observation{{Port: "jni"}: {Absent: true}, {Port: "system-configuration"}: {Absent: true}, {Port: "aws-lc"}: {Problem: "couldn't read the ports"}})
+	require.Contains(t, messages(comparison.Changes), "· upstream: Cargo.lock adds aws-lc-sys 0.45.0, which links the native library aws-lc: MacPorts may provide it, for the Portfile to declare, rather than the crate linking whatever copy it finds", "not observed, so said as before")
+}
+
 // A Node workspace's manifest is compared as the root's is: beekeeper-studio
 // added two dependencies and moved electron in apps/studio/package.json,
 // which reading the root alone said nothing of (the beekeeper-studio run's

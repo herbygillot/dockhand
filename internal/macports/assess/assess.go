@@ -66,11 +66,14 @@ type Provider struct {
 	Base bool
 }
 
-// Observation is a port's version as the caller observed it, or why it
-// couldn't.
+// Observation is a port's version as the caller observed it, and its
+// directory; or that the tree has no such port (Absent); or why it
+// couldn't tell.
 type Observation struct {
-	Version string
-	Problem string
+	Version   string
+	Directory string
+	Absent    bool
+	Problem   string
 }
 
 // Rules are what raised a finding: with its path and subject, its
@@ -146,6 +149,9 @@ type assessment struct {
 	// requirements are the Python requirements of manifests the port's
 	// build uses, each with its declarations in both versions, for pins.
 	requirements []requirement
+	// wanted are the ports whose presence judging a native library needs
+	// that weren't observed, for Wanted.
+	wanted []Provider
 }
 
 // requirement is a Python dependency a used manifest declares, in the new
@@ -276,6 +282,10 @@ func (a *assessment) pair(pair Pair) {
 			// proven manifest's (D9); an archive whose project wasn't
 			// found names no manifest, and holds.
 			a.add(finding(change, !proven[base]))
+		case change.How == "native":
+			if found, ok := a.native(change); ok {
+				a.add(found)
+			}
 		case change.Kind == "license" && change.How == "years":
 			a.add(finding(change, false))
 		case change.Kind == "license":
@@ -342,6 +352,45 @@ func unlinked(change sourcecompare.Change, port macports.PortInfo) (model.Upstre
 	}
 	found := finding(change, false)
 	found.Message += fmt.Sprintf(", while the Portfile still has %s: unless something else needs %s, %s", strings.Join(still, " and "), it, goes)
+	return found, true
+}
+
+// native is a crate new to Cargo.lock that links a native library, said
+// where MacPorts has a port for the library, named, for the Portfile to
+// declare rather than the crate linking whatever copy it finds. zola's
+// jni-sys, system-configuration-sys, and aws-lc-sys named libraries
+// MacPorts has no port for, which a person could do nothing about (the
+// zola run with 68df8b57): one none of whose names (macports.LibraryPorts)
+// is a port in the candidate's tree is set apart in coverage. Where that
+// couldn't be observed, it's said as it was, MacPorts perhaps providing
+// it; Wanted asks for each name not yet observed.
+func (a *assessment) native(change sourcecompare.Change) (model.UpstreamChange, bool) {
+	library := project.CargoPackage{Name: change.Name}.NativeLibrary()
+	found := finding(change, false)
+	absent := true
+	for _, name := range macports.LibraryPorts(library) {
+		observation, ok := a.input.Observed[Provider{Port: name}]
+		switch {
+		case !ok:
+			a.wanted = append(a.wanted, Provider{Port: name})
+			absent = false
+		case observation.Problem != "":
+			absent = false
+		case !observation.Absent:
+			where := name
+			if observation.Directory != "" {
+				where = observation.Directory
+			}
+			found.Message += fmt.Sprintf(", which MacPorts has as %s: the Portfile may declare it, rather than the crate linking whatever copy it finds", where)
+			return found, true
+		}
+	}
+	if absent {
+		a.cover(model.Coverage{Path: change.Path, Relevance: "unknown", Treatment: "set-apart", Policy: "native-library-ports",
+			Reason: fmt.Sprintf("%s links %s, which MacPorts has no port for", change.Name, library)})
+		return model.UpstreamChange{}, false
+	}
+	found.Message += ": MacPorts may provide it, for the Portfile to declare, rather than the crate linking whatever copy it finds"
 	return found, true
 }
 

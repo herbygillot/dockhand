@@ -339,7 +339,8 @@ func dependencyChanges(file string, before, after reading) []Change {
 // library, as Cargo's -sys crates do. Such a crate often links a copy of
 // the library it finds installed, and builds one it bundles otherwise,
 // which a clean check can't tell apart: where MacPorts has the library,
-// the Portfile may want to declare it. It lists those gone from it too,
+// the Portfile may want to declare it, which is assess's to say. It lists
+// those gone from it too,
 // "unlinked": what the Portfile declared for the library may be left.
 func nativeLinks(name string, old project.File, hadOld bool, now project.File, hasNow bool) []Change {
 	if !hasNow {
@@ -375,7 +376,7 @@ func nativeLinks(name string, old project.File, hadOld bool, now project.File, h
 		// Once, whichever versions the lock pins.
 		had[pkg.Name] = true
 		changes = append(changes, Change{Kind: "dependency", How: "native", Path: name, Name: pkg.Name, Now: pkg.Version,
-			Message: fmt.Sprintf("upstream: Cargo.lock adds %s %s, which links the native library %s: MacPorts may provide it, for the Portfile to declare, rather than the crate linking whatever copy it finds", pkg.Name, pkg.Version, library)})
+			Message: fmt.Sprintf("upstream: Cargo.lock adds %s %s, which links the native library %s", pkg.Name, pkg.Version, library)})
 	}
 	for _, pkg := range earlier {
 		library := pkg.NativeLibrary()

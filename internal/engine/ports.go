@@ -135,10 +135,17 @@ func (p *evaluatedPorts) Directory(ctx context.Context, source model.Source, nam
 		return "", err
 	}
 	if len(targets) == 0 || !strings.Contains(targets[0].Portfile, "/") {
-		return "", fmt.Errorf("no port %s in this tree", name)
+		return "", notInTree(name)
 	}
 	return path.Dir(targets[0].Portfile), nil
 }
+
+// notInTree is a port a tree doesn't have, said as a person would, and
+// ErrNoPort.
+type notInTree string
+
+func (n notInTree) Error() string      { return "no port " + string(n) + " in this tree" }
+func (notInTree) Is(target error) bool { return target == ErrNoPort }
 
 // dependencyPhases words the index's reverse-dependency fields.
 var dependencyPhases = map[string]string{portindex.DependsBuild: "build", portindex.DependsLib: "library", portindex.DependsRun: "runtime"}

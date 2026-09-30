@@ -41,22 +41,45 @@ func (p PortInfo) PortGroups() (groups []string, known bool) {
 	return groups, set && err == nil
 }
 
+// libraryPorts are the ports named otherwise than the native libraries
+// they provide, as Rust's -sys crates name them: onig_sys links
+// oniguruma6, and libz-sys zlib.
+var libraryPorts = map[string][]string{
+	"onig":          {"oniguruma6"},
+	"libz":          {"zlib"},
+	"lzma":          {"xz"},
+	"tikv-jemalloc": {"jemalloc"},
+}
+
+// LibraryPorts are the names a port providing a native library may have,
+// as the library is named, in the order to look for them: the library's
+// own, zstd; without its lib prefix, sqlite3 for libsqlite3; and those
+// named otherwise, zlib for libz. A port named for a library may be
+// versioned too, as openssl3 is, which TiesTo reads.
+func LibraryPorts(library string) []string {
+	names := []string{library}
+	if bare := strings.TrimPrefix(library, "lib"); bare != library && bare != "" {
+		names = append(names, bare)
+	}
+	return append(names, libraryPorts[library]...)
+}
+
 // LibraryTies are what of a port is there for a native library, by the
-// names MacPorts gives it: PortGroups named for it, as openssl is, and the
-// ports it depends on named for it, as openssl3 is, versioned, or sqlite3
-// is for libsqlite3, without its lib prefix.
+// names MacPorts gives it (LibraryPorts): PortGroups named for it, as
+// openssl is, and the ports it depends on named for it, as openssl3 is,
+// versioned, sqlite3 for libsqlite3, or oniguruma6 for onig.
 type LibraryTies struct {
 	PortGroups, Ports []string
 }
 
 // TiesTo are what of the port is there for a native library, as the
-// library is named; none where nothing is named for it. A name without
-// the lib prefix is taken only as it is, so libz's z doesn't name z3.
+// library is named; none where nothing is named for it. Only the
+// library's own name is taken versioned, so libz's z doesn't name z3.
 func (p PortInfo) TiesTo(library string) LibraryTies {
-	bare := strings.TrimPrefix(library, "lib")
+	names := LibraryPorts(library)
 	named := func(name string) bool {
 		version, ok := strings.CutPrefix(name, library)
-		return ok && strings.Trim(version, "0123456789") == "" || bare != library && name == bare
+		return ok && strings.Trim(version, "0123456789") == "" || slices.Contains(names[1:], name)
 	}
 	var ties LibraryTies
 	groups, _ := p.PortGroups()

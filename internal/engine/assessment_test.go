@@ -20,6 +20,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/project"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -549,4 +550,32 @@ port::register_callback demo_crates
 
 	_, _, err = planner.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/zgit", "")
 	require.ErrorIs(t, err, ErrNoArchives)
+}
+
+// What an assessment wants of the ports is observed in the tree: a port
+// that's there by its version and directory, one the tree hasn't got as
+// absent, which a native library with no port is set apart for, and not
+// as a problem.
+func TestAPortTheTreeHasntGotIsObservedAbsent(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"archivers/zstd": {{Name: "zstd", Version: "1.5.7"}}}}
+	lock := func(crates ...string) string {
+		text := "version = 3\n"
+		for _, crate := range crates {
+			name, version, _ := strings.Cut(crate, " ")
+			text += fmt.Sprintf("\n[[package]]\nname = %q\nversion = %q\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = %q\n", name, version, strings.Repeat("a", 64))
+		}
+		return text
+	}
+	var readings [2]project.Reading
+	for i, crates := range [][]string{{"serde 1.0.210"}, {"serde 1.0.210", "zstd-sys 2.0.13", "aws-lc-sys 0.45.0"}} {
+		reading, err := project.Read(t.Context(), testsupport.Tarball(t, fmt.Sprintf("zola-%d", i), map[string]string{"Cargo.lock": lock(crates...)}), project.Spec{})
+		require.NoError(t, err)
+		readings[i] = reading
+	}
+	input := assess.Input{Port: macports.PortInfo{Name: "zola"}, Pairs: []assess.Pair{{Archive: "zola.tar.gz", Before: readings[0], After: readings[1]}}}
+	observed := e.observeProviders(t.Context(), input, [2]model.Source{{Tree: "base"}, {Tree: "candidate"}})
+	require.Equal(t, assess.Observation{Version: "1.5.7", Directory: "archivers/zstd"}, observed[assess.Provider{Port: "zstd"}])
+	require.Equal(t, assess.Observation{Absent: true}, observed[assess.Provider{Port: "aws-lc"}])
 }

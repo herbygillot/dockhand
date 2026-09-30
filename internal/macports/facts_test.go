@@ -97,10 +97,25 @@ func TestWhatsTiedToANativeLibraryIsWhatsNamedForIt(t *testing.T) {
 		"openssl":    {PortGroups: []string{"openssl"}, Ports: []string{"openssl3"}},
 		"libsqlite3": {Ports: []string{"sqlite3"}},
 		"libgit2":    {Ports: []string{"libgit2"}},
-		"libz":       {},
+		"libz":       {Ports: []string{"zlib"}},
 		"onig":       {},
 	} {
 		require.Equal(t, want, port.TiesTo(library), library)
 	}
 	require.Equal(t, LibraryTies{Ports: []string{"openssl3"}}, PortInfo{Dependencies: port.Dependencies}.TiesTo("openssl"), "a port whose PortGroups weren't read")
+	require.Equal(t, LibraryTies{Ports: []string{"oniguruma6"}}, PortInfo{Dependencies: []Dependency{{Port: "oniguruma6"}, {Port: "oniguruma7"}}}.TiesTo("onig"), "named otherwise, and only as named")
+}
+
+// A library's ports are looked for by its own name, without its lib
+// prefix, and by the names ports provide it under otherwise.
+func TestTheNamesALibrarysPortMayHave(t *testing.T) {
+	for library, want := range map[string][]string{
+		"zstd":       {"zstd"},
+		"libsqlite3": {"libsqlite3", "sqlite3"},
+		"libz":       {"libz", "z", "zlib"},
+		"onig":       {"onig", "oniguruma6"},
+		"lib":        {"lib"},
+	} {
+		require.Equal(t, want, LibraryPorts(library), library)
+	}
 }

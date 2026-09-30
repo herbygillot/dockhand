@@ -57,7 +57,7 @@ func (f fakePorts) Directory(_ context.Context, _ model.Source, name string) (st
 			}
 		}
 	}
-	return "", errors.New("no such port")
+	return "", notInTree(name)
 }
 
 func port(name string, deps ...string) macports.PortInfo {
