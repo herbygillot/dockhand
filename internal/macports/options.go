@@ -19,6 +19,7 @@ var ReadOptions = []string{
 	"github.author", "github.project", "github.version", "github.tag_prefix", "github.tag_suffix", "github.tarball_from",
 	"gitlab.author", "gitlab.project", "gitlab.version", "gitlab.tag_prefix", "gitlab.tag_suffix", "gitlab.instance",
 	"git.url", "git.branch",
+	"python.versions", "python.version", "python.default_version",
 	"use_xcode", "replaced_by", "known_fail", "supported_archs", "use_configure", "configure.cmd",
 }
 
@@ -28,7 +29,7 @@ var InfoOptions = []string{"name", "version", "revision", "epoch", "homepage"}
 
 // ComputedOptions are the options the evaluator computes itself, with the
 // dockhand prefix or from Base's fetch machinery.
-var ComputedOptions = []string{"fetch.has_credentials", "fetch.archive_compatible", "dockhand.livecheck_standard", "dockhand.metadata_only", "dockhand.base_version", "dockhand.livecheck_declared", "livecheck.name", "dockhand.test_run", "dockhand.portgroups", "dockhand.known_fail", "dockhand.platforms_compatible"}
+var ComputedOptions = []string{"fetch.has_credentials", "fetch.archive_compatible", "dockhand.livecheck_standard", "dockhand.metadata_only", "dockhand.base_version", "dockhand.livecheck_declared", "livecheck.name", "dockhand.test_run", "dockhand.portgroups", "dockhand.known_fail", "dockhand.platforms_compatible", "dockhand.python_default"}
 
 // VersionFollowers are the options a version bump may change on the
 // selected port: those the source is named by, and a homepage that spells

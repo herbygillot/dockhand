@@ -105,7 +105,8 @@ func (a *assessment) judge(declarations []project.Requirement, provider string, 
 // Wanted are the observations an assessment needs that it doesn't have:
 // the version MacPorts has of each port that provides a requirement in
 // question, in the candidate's tree, and, where the candidate's doesn't
-// meet it, in the base's, to tell whether the base met it.
+// meet it, in the base's, to tell whether the base met it; and of each
+// Python whose patch release a requires-python turns on.
 func Wanted(input Input) []Provider {
 	a := assessment{input: input, counted: map[string][2]int{}, seen: map[string]bool{}}
 	for _, pair := range input.Pairs {
@@ -129,6 +130,9 @@ func Wanted(input Input) []Provider {
 		case judgedNow == unmet && q.before != "" && len(applying(q.requirement.before, q.before)) > 0:
 			want(Provider{Port: q.before, Base: true})
 		}
+	}
+	for _, provider := range a.pythonsWanted() {
+		want(provider)
 	}
 	return wanted
 }

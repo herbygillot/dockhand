@@ -41,7 +41,7 @@ func (a *assessment) toolchain() (model.UpstreamChange, bool) {
 	t := a.input.Toolchain
 	if t == nil {
 		// Where no edit said, the new version's go.mod says, as read.
-		if required, ok := goRequired(a.input.Pairs, func(p Pair) project.Reading { return p.After }); ok {
+		if required, ok := goRequired(a.input.Pairs, after); ok {
 			t = &Toolchain{Required: required}
 		}
 	}
@@ -77,7 +77,7 @@ func (a *assessment) toolchain() (model.UpstreamChange, bool) {
 	if covered {
 		return found, true
 	}
-	switch required, known := goRequired(a.input.Pairs, func(p Pair) project.Reading { return p.Before }); {
+	switch required, known := goRequired(a.input.Pairs, before); {
 	case !known:
 		found.Class = model.UnknownBaseline
 	case a.input.Base.GoModuleMode() && !macports.GoToolchainCovers(a.input.Base.Options["go.toolchain_min"], required) &&

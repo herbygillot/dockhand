@@ -186,6 +186,12 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 	return found, found.readWorkspaces(ctx, filename)
 }
 
+// RootFile is a file at the project's root, by its name, as read.
+func (r Reading) RootFile(name string) (File, bool) {
+	file, ok := r.Files[path.Join(r.Root, name)]
+	return file, ok
+}
+
 // readWorkspaces reads the package.json of each workspace the root's
 // package.json names, as yarn and npm install them with it: beekeeper-studio
 // moved electron in apps/studio/package.json, which reading the root alone
@@ -193,7 +199,7 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 // second pass, only where the root names workspaces, since the root's may
 // come after theirs in the archive; a node_modules directory is never one.
 func (r *Reading) readWorkspaces(ctx context.Context, filename string) error {
-	root, ok := r.Files[path.Join(r.Root, "package.json")]
+	root, ok := r.RootFile("package.json")
 	if !ok || root.Truncated {
 		return nil
 	}

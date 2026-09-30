@@ -28,8 +28,10 @@ import (
 // again (the assessment design, C). 2: a port that declares its crates or
 // Go modules is compared through its own archives, not refused, and a
 // crate gone that linked a native library the port still has something
-// for is said.
-const Policy = 2
+// for is said. 3: batch 13's, a Node project's workspaces read, a Python
+// project's requires-python judged, and a Python pin behind the
+// PortGroup's default noted.
+const Policy = 3
 
 // Input is what one port's assessment reads.
 type Input struct {
@@ -91,6 +93,8 @@ const (
 	ProviderUnresolved  = "python-provider-unresolved"
 	ProviderRemoved     = "python-provider-removed"
 	GoToolchainRule     = "go-toolchain"
+	RequiresPythonRule  = "python-requires"
+	PythonPinBehind     = "python-pin-behind"
 )
 
 // proven are the manifests whose dependencies a check proves (D9). A Go
@@ -119,6 +123,12 @@ func Assess(input Input) model.UpstreamComparison {
 		a.add(found)
 	}
 	if found, ok := a.toolchain(); ok {
+		a.add(found)
+	}
+	if found, ok := a.requiresPython(); ok {
+		a.add(found)
+	}
+	if found, ok := a.pythonPin(); ok {
 		a.add(found)
 	}
 	return a.comparison

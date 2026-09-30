@@ -214,6 +214,17 @@ namespace eval ::dockhand {
             } else {
                 dict set out dockhand.portgroups $groups
             }
+            # The Python the python PortGroup would build the port with, were
+            # python.default_version not pinned: its own default of it,
+            # python_get_default_version, which Portfiles call too. A port
+            # without the PortGroup has none.
+            if {[$worker eval {llength [info procs python_get_default_version]}]} {
+                if {[catch {$worker eval python_get_default_version} python]} {
+                    dict set failures dockhand.python_default $python
+                } else {
+                    dict set out dockhand.python_default $python
+                }
+            }
             # Whether the port declares tests, read as MacPorts reads it,
             # tbool test.run: an option Base gives no default, so unset is
             # off, not unknown.

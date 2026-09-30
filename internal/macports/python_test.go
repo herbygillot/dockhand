@@ -27,3 +27,25 @@ func TestAPythonPortsVersion(t *testing.T) {
 		require.False(t, ok, port)
 	}
 }
+
+// The Pythons a port builds for are a subport's own, else its
+// python.versions, else the python.version an application's port pins;
+// none for a port of another kind, or one whose python.versions couldn't
+// be settled and that pins none.
+func TestThePythonsAPortBuildsFor(t *testing.T) {
+	for _, test := range []struct {
+		port PortInfo
+		want []string
+	}{
+		{PortInfo{Name: "py313-requests", Options: map[string]string{"python.versions": "310 311 312 313", "python.version": "313"}}, []string{"3.13"}},
+		{PortInfo{Name: "py-requests", Options: map[string]string{"python.versions": "310 311 312 313", "python.version": "313"}}, []string{"3.10", "3.11", "3.12", "3.13"}},
+		{PortInfo{Name: "sshuttle", Options: map[string]string{"python.version": "313", "python.default_version": "313"}}, []string{"3.13"}},
+		{PortInfo{Name: "sshuttle", Options: map[string]string{"python.version": "313"}, OptionErrors: map[string]string{"python.versions": "boom"}}, []string{"3.13"}},
+		{PortInfo{Name: "py27-six", Options: map[string]string{}}, []string{"2.7"}},
+		{PortInfo{Name: "jq", Options: map[string]string{}}, nil},
+	} {
+		require.Equal(t, test.want, test.port.Pythons(), test.port.Name)
+	}
+	require.Equal(t, "python313", PythonPort("3.13"))
+	require.Equal(t, "python27", PythonPort("2.7"))
+}

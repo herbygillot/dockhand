@@ -390,6 +390,71 @@ func TestTheEvaluatorReportsThePortGroupsAPortLoads(t *testing.T) {
 	}
 }
 
+// A python PortGroup port's Pythons are read as MacPorts evaluates them,
+// its python.versions, python.version, and python.default_version, and the
+// default the PortGroup would give it, from its own
+// python_get_default_version; a port without the PortGroup has none. The
+// PortGroup is a stand-in with MacPorts' own options, defaults, and procs.
+func TestTheEvaluatorReadsAPortsPythons(t *testing.T) {
+	t.Parallel()
+	e := liveEvaluator(t)
+	tree := fixtureTree(t)
+	putFile(t, tree.Root(), "_resources/port1.0/group/python-1.0.tcl", `options python.versions python.version python.default_version
+default python.default_version {[python_get_default_version]}
+default python.version {[python_get_version]}
+proc python_get_version {} {
+    if {[string match py-* [option name]]} {
+        return [string range [option subport] 2 [string first "-" [option subport]]-1]
+    } else {
+        return [option python.default_version]
+    }
+}
+proc python_get_default_version {} {
+    global python.versions
+    set def_v 314
+    if {[info exists python.versions] && ${def_v} ni ${python.versions}} {
+        return [lindex ${python.versions} end]
+    } else {
+        return ${def_v}
+    }
+}
+`)
+	putFile(t, tree.Root(), "net/sshuttle/Portfile", "PortSystem 1.0\nPortGroup python 1.0\nname sshuttle\nversion 2.0.0\npython.default_version 313\n")
+	putFile(t, tree.Root(), "python/py-demo/Portfile", "PortSystem 1.0\nPortGroup python 1.0\nname py-demo\nversion 1\npython.versions 312 313\n")
+	putFile(t, tree.Root(), "net/current/Portfile", "PortSystem 1.0\nPortGroup python 1.0\nname current\nversion 1\n")
+	putFile(t, tree.Root(), "devel/plain/Portfile", "PortSystem 1.0\nname plain\nversion 1\n")
+	evaluated := func(name string) macports.PortInfo {
+		t.Helper()
+		targets, err := e.Resolve(t.Context(), tree, macports.Selection{Selector: name})
+		require.NoError(t, err)
+		bound, err := tree.Select(targets[0])
+		require.NoError(t, err)
+		snapshot, err := e.Evaluate(t.Context(), bound)
+		require.NoError(t, err)
+		return snapshot.Ports[name]
+	}
+	sshuttle := evaluated("sshuttle")
+	require.Equal(t, []string{"3.13"}, sshuttle.Pythons())
+	pinned, standard, ok := sshuttle.PythonPinned()
+	require.True(t, ok)
+	require.Equal(t, [2]string{"3.13", "3.14"}, [2]string{pinned, standard})
+
+	demo := evaluated("py-demo")
+	require.Equal(t, []string{"3.12", "3.13"}, demo.Pythons())
+	pinned, standard, ok = demo.PythonPinned()
+	require.True(t, ok)
+	require.Equal(t, [2]string{"3.13", "3.13"}, [2]string{pinned, standard}, "the PortGroup's default is the newest the port builds for, without 3.14")
+
+	pinned, standard, ok = evaluated("current").PythonPinned()
+	require.True(t, ok)
+	require.Equal(t, [2]string{"3.14", "3.14"}, [2]string{pinned, standard}, "a port that pins nothing has the default")
+
+	plain := evaluated("plain")
+	require.Empty(t, plain.Pythons())
+	_, _, ok = plain.PythonPinned()
+	require.False(t, ok)
+}
+
 // A probe of whether a port builds anything that fails is recorded as a
 // failure, not taken for a port that builds, as it had been (the
 // code-organization review's finding 27).
