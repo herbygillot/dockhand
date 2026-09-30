@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -41,6 +42,11 @@ func (p ports) Ports(_ context.Context, _ model.Source, directory string, _ mode
 	for _, name := range names {
 		infos = append(infos, macports.PortInfo{Name: name, Options: map[string]string{}})
 	}
+	// A git.url entry has each directory's main port fetched with Git
+	// from it, at its tag jq-1.8.1.
+	if url := p["git.url"]; len(url) == 1 && len(infos) > 0 {
+		infos[0].Options = map[string]string{"fetch.type": "git", "git.url": url[0], "git.branch": "jq-1.8.1"}
+	}
 	return infos, nil
 }
 
@@ -60,6 +66,12 @@ func checked(t *testing.T, body string) (model.Run, string, *engine.Engine) {
 // queuedCheck queues a check of an edit to jq with the given script, and
 // the grace a canceled one has, for a session to drive.
 func queuedCheck(t *testing.T, body string, grace time.Duration) (*engine.Engine, *coord.Session, model.RunID) {
+	t.Helper()
+	return queuedCheckOf(t, body, grace, ports{"textproc/jq": {"jq", "jq-docs"}})
+}
+
+// queuedCheckOf is queuedCheck with the ports as reader has them.
+func queuedCheckOf(t *testing.T, body string, grace time.Duration, reader ports) (*engine.Engine, *coord.Session, model.RunID) {
 	t.Helper()
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
@@ -82,7 +94,7 @@ func queuedCheck(t *testing.T, body string, grace time.Duration) (*engine.Engine
 	require.NoError(t, os.WriteFile(filepath.Join(clone, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n"), 0o644))
 	capture, err := e.Capture(t.Context(), engine.CaptureRequest{Branch: branch})
 	require.NoError(t, err)
-	e.PortReader = ports{"textproc/jq": {"jq", "jq-docs"}}
+	e.PortReader = reader
 	e.Providers = map[string]buildenv.Provider{"command": &script.Provider{Run: run, Label: "my build box", Repo: e.Repo, Grace: grace}}
 	plan, err := e.PlanCheck(t.Context(), engine.PlanRequest{Revision: capture.Revision, Environments: []model.Environment{{Provider: "command"}}})
 	require.NoError(t, err)
@@ -167,6 +179,57 @@ JSON`
 	require.NoError(t, err)
 	require.Equal(t, "name jq\nversion 1.8.1\n", string(portfile), "the snapshot's files")
 	require.FileExists(t, filepath.Join(dir, "command.log"))
+}
+
+// A Git-fetched target's request names its repository, git.branch, and
+// the commit git.branch named when the check was planned, which its fetch
+// must check out. The commit the script says the fetch checked out is kept
+// with the result, and one other than the request's fails the target at
+// fetch, whatever its outcome says (batch 20).
+func TestTheScriptIsToldTheCommitAGitFetchMustCheckOut(t *testing.T) {
+	upstream := t.TempDir()
+	git(t, upstream, "init", "-q")
+	git(t, upstream, "commit", "-q", "--allow-empty", "-m", "1.8.1")
+	git(t, upstream, "tag", "jq-1.8.1")
+	commit := git(t, upstream, "rev-parse", "HEAD")
+	reader := ports{"textproc/jq": {"jq", "jq-docs"}, "git.url": {upstream}}
+	reporting := func(fetched string) string {
+		return `cat > "$(dirname "$1")/result.json" <<'JSON'
+{"version": 1, "targets": [
+  {"id": "jq", "outcome": "passed", "fetched": "` + fetched + `"},
+  {"id": "jq-docs", "outcome": "passed"}
+]}
+JSON`
+	}
+	checked := func(body string) (model.Run, engine.RunLogs, string) {
+		e, session, queued := queuedCheckOf(t, body, 0, reader)
+		run, err := e.Drive(t.Context(), session, queued)
+		require.NoError(t, err)
+		logs, err := e.Logs(t.Context(), run.ID)
+		require.NoError(t, err)
+		return run, logs, filepath.Join(e.LogDirectory(), run.Name(), "command-1")
+	}
+
+	run, logs, dir := checked(reporting(commit))
+	require.Equal(t, model.RunPassed, run.State, run.Detail)
+	var request script.Request
+	data, err := os.ReadFile(filepath.Join(dir, "request.json"))
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(data, &request))
+	require.Equal(t, &script.Git{URL: upstream, Branch: "jq-1.8.1", Commit: commit}, request.Targets[0].Git)
+	require.Nil(t, request.Targets[1].Git, "a subport fetched otherwise")
+	require.Equal(t, model.ObjectID(commit), logs.Executions[0].Git["jq"].Fetched, "kept with its result")
+
+	other := strings.Repeat("b", 40)
+	run, logs, _ = checked(reporting(other))
+	require.Equal(t, model.RunFailed, run.State)
+	jq := logs.Executions[0].Results[slices.IndexFunc(logs.Executions[0].Results, func(result model.TargetResult) bool { return result.Target == "jq" })]
+	require.Equal(t, model.OutcomeFailed, jq.Outcome)
+	require.Equal(t, model.PhaseFetch, jq.Phase)
+	require.Contains(t, jq.Detail, "the source moved: git.branch jq-1.8.1 named "+commit[:7])
+
+	run, _, _ = checked(reporting("jq-1.8.1"))
+	require.Equal(t, model.RunAttention, run.State, "a commit that isn't one is trouble with the script")
 }
 
 func TestNoResultFileIsInfrastructureTrouble(t *testing.T) {

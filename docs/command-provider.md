@@ -45,7 +45,8 @@ The file is `request.json` in a directory of its own. Its path is also given as 
   "platform": {"OS": "", "Version": "", "Architecture": ""},
   "tests": "declared",
   "targets": [
-    {"id": "libharbor", "name": "libharbor", "portfile": "devel/libharbor/Portfile", "kind": "substantive", "role": "changed"},
+    {"id": "libharbor", "name": "libharbor", "portfile": "devel/libharbor/Portfile", "kind": "substantive", "role": "changed",
+     "git": {"url": "https://github.com/harbor/libharbor.git", "branch": "v4.0", "commit": "1a2b3c4…"}},
     {"id": "harbor-cli", "name": "harbor-cli", "portfile": "devel/harbor-cli/Portfile", "kind": "revision-only", "role": "changed", "depends_on": ["libharbor"]}
   ],
   "result": "/…/logs/check-3/command-1/result.json",
@@ -68,6 +69,7 @@ The file is `request.json` in a directory of its own. Its path is also given as 
 - **`targets`** are in dependency order. Build them in this order.
   - `subport`, when present, is the subport to build from the Portfile.
   - `kind` is `substantive`, `revision-only`, or `unchanged`. `role` is `changed`, `also`, or `prerequisite`.
+  - `git`, present for a port MacPorts fetches with Git (`fetch.type git`), is what its fetch clones: `url` is its `git.url`, `branch` its `git.branch`, absent for the repository's default branch, and `commit` the commit `branch` named when the check was planned. A tag can be moved, so the fetch must check out that commit, and your script should say which one it did (`fetched`, below). `commit` is absent where dockhand couldn't read the repository's refs, or where `branch` is an abbreviated commit, which only a clone expands.
 - **`tests`** is the test policy:
   - `declared`: run the declared tests, and a failure is advisory;
   - `required`: a test failure fails the target;
@@ -81,7 +83,7 @@ Write the result file at the `result` path:
 {
   "version": 1,
   "targets": [
-    {"id": "libharbor", "outcome": "passed", "tests": "passed", "log": "libharbor.log"},
+    {"id": "libharbor", "outcome": "passed", "tests": "passed", "log": "libharbor.log", "fetched": "1a2b3c4…"},
     {"id": "harbor-cli", "outcome": "failed", "phase": "install"}
   ]
 }
@@ -96,4 +98,5 @@ Write the result file at the `result` path:
   A pull request names it instead of dockhand's ID when it's an `https://`
   link anyone can follow.
 - **`log`** is a log file for the target. A relative path is read from the request's directory. The default is `command.log`.
+- **`fetched`**, for a target with `git`, is the commit its fetch checked out. MacPorts clones into the port's `worksrcpath`, so after `port fetch` it is what `git -C <worksrcpath> rev-parse HEAD` says. A commit other than the request's `commit`, or other than one `branch` abbreviates, means the source moved since the check was planned: the target is recorded as failed at `fetch`, whatever `outcome` says, since it didn't build the source the check covers. A value that isn't a whole commit is trouble with the script. Without `fetched`, what the build fetched is unknown: the result stands for this check, and no later check reuses it.
 - **Blocked dependents.** When a target fails, every target that depends on it is recorded as blocked, whatever the script reports for it. An old build of a dependency never stands in for the one this branch changes.

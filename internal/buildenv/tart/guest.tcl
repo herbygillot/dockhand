@@ -101,6 +101,27 @@ if {[llength [info procs declares_tests]] == 0} {
         return $declared
     }
 }
+# checkout is where MacPorts' Git fetch left a port's source: its
+# worksrcpath, the "full path to extracted source code" as the Portfile
+# reference has it. Base's git fetch clones into it (portfetch.tcl's
+# gitfetch, alike in 2.11 and 2.12), and Portfiles' own post-fetch steps
+# find the clone there. It is read as declares_tests reads test.run.
+if {[llength [info procs checkout]] == 0} {
+    proc checkout {portdir name variants} {
+        set handle [mportopen "file://$portdir" [list subport $name] $variants]
+        set worker [ditem_key $handle workername]
+        set path [$worker eval {option worksrcpath}]
+        mportclose $handle
+        return $path
+    }
+}
+# fetched is the commit a checkout is at, as Git's own rev-parse reads it.
+# The checkout is MacPorts' unprivileged user's, and this program runs as
+# root, so it is named safe for this one command.
+proc fetched {path} {
+    return [string trim [exec /usr/bin/git -c safe.directory=$path -C $path rev-parse --verify {HEAD^{commit}}]]
+}
+
 # fact is a command's output, trimmed, or nothing.
 proc fact {args} {
     if {[catch {exec {*}$args 2>/dev/null} value]} { return "" }
@@ -253,6 +274,27 @@ proc build {index target} {
     foreach phase {fetch checksum} {
         if {[set message [run $log [concat $here -d $phase $selection]]] ne ""} {
             return [{*}$fail $result $phase [why $log $message]]
+        }
+        # What a Git fetch checked out is the source the target builds
+        # from, which its tag doesn't bind: it is reported, and where it
+        # isn't the commit the check expected, the source moved since the
+        # check was planned, and nothing is built from it. One that can't
+        # be read is said in the log, and builds as it did before.
+        if {$phase eq "fetch" && [dict exists $target git]} {
+            set git [dict get $target git]
+            if {[catch {fetched [checkout $portdir $name $variants]} commit]} {
+                set fd [open $log a]
+                puts $fd "dockhand: which commit the fetch checked out wasn't read: $commit"
+                close $fd
+                continue
+            }
+            dict set result fetched $commit
+            set expect [expr {[dict exists $git expect] ? [dict get $git expect] : ""}]
+            if {$expect ne "" && [string first $expect $commit] != 0} {
+                set ref "the default branch"
+                if {[dict get $git ref] ne ""} { set ref "git.branch [dict get $git ref]" }
+                return [{*}$fail $result fetch "the source moved: $ref named $expect when the check was planned, and the fetch checked out $commit"]
+            }
         }
     }
     # Its dependencies are in place, as CI's install-port has them, unless

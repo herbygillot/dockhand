@@ -27,16 +27,26 @@ type ActivePort struct {
 // TargetInputs are what a target's build read, as far as dockhand can name
 // them (decision 28): the environment by its identity; the target's own
 // directory and _resources, each by its tree; the variants it was asked
-// for; and the ports active as it built. Until evaluation records what it
-// sources, all of _resources counts as read.
+// for; the ports active as it built; and for a port fetched with Git, the
+// commit it fetched. Until evaluation records what it sources, all of
+// _resources counts as read.
 type TargetInputs struct {
 	Environment string
 	Directory   string
 	Tree        ObjectID
 	Resources   ObjectID
 	Variants    map[string]bool `json:",omitempty"`
-	// Active are in name order.
+	// Active are in name order: empty for a build that read no other
+	// port, and nil where its provider couldn't say, as one that reports
+	// only what a Git fetch checked out can't.
 	Active []ActivePort
+	// Fetched is the commit a Git-fetched target's build checked out, as
+	// its provider reported it (batch 20): the source it built, which its
+	// Portfile's tag doesn't bind. It is empty for a port fetched
+	// otherwise, and where the provider couldn't say, which the plan the
+	// build was checked by tells apart (EnvironmentPlan.Git). Left out when
+	// empty, so a key recorded before it is the same key still.
+	Fetched ObjectID `json:",omitempty"`
 }
 
 // NewTargetInputs gathers a build's inputs, the active ports in name
@@ -58,10 +68,10 @@ func (i TargetInputs) Key() string {
 
 // Complete reports whether every input is identified by content: the
 // environment, the target's directory and _resources, and each active
-// port's directory and archive. Only complete inputs can stand for
-// another build's.
+// port's directory and archive, which are known. Only complete inputs can
+// stand for another build's.
 func (i TargetInputs) Complete() bool {
-	if i.Environment == "" || i.Tree == "" || i.Resources == "" {
+	if i.Environment == "" || i.Tree == "" || i.Resources == "" || i.Active == nil {
 		return false
 	}
 	for _, port := range i.Active {

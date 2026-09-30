@@ -33,11 +33,23 @@ func Paths(recorded model.TargetInputs) []string {
 // version, whose archive MacPorts' packages serve, or dockhand kept. A
 // build step reading another port's directory, a download over the
 // network, and a nondeterministic build are the accepted gaps.
-func Current(recorded model.TargetInputs, identity string, target model.PlanTarget, trees map[string]model.ObjectID) bool {
+//
+// A port fetched with Git is the exception: the same Portfile names a tag,
+// which binds nothing, so the same tree can fetch another source. Where
+// the target is fetched with Git now (git, from the plan), its earlier
+// build stands only where it recorded fetching the commit the plan expects
+// now (batch 20); one that recorded none, as every build before dockhand
+// recorded it, or whose provider couldn't say, can't be established to
+// have built it. A build that recorded a commit stands for no target that
+// isn't fetched with Git now.
+func Current(recorded model.TargetInputs, identity string, target model.PlanTarget, git *model.GitSource, trees map[string]model.ObjectID) bool {
 	if !recorded.Complete() || identity == "" || recorded.Environment != identity {
 		return false
 	}
 	if recorded.Directory != target.Directory || !maps.Equal(recorded.Variants, target.Target.Variants) {
+		return false
+	}
+	if git == nil && recorded.Fetched != "" || git != nil && !git.BuiltBy(recorded.Fetched) {
 		return false
 	}
 	if trees[recorded.Directory] != recorded.Tree || trees[macports.ResourcesDirectory] != recorded.Resources {

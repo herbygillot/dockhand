@@ -88,6 +88,13 @@ type Archive struct {
 type Target struct {
 	model.PlanTarget
 	DependsOn []model.TargetID
+	// Git is the source a target fetched with Git is expected to fetch in
+	// the job's environment, from the plan: the commit its git.branch
+	// named when the check was planned (batch 20); nil for a port fetched
+	// otherwise. A provider that can see what the fetch checked out stops
+	// a build that fetched another commit, which built another source, and
+	// reports what it fetched (Build.Fetched).
+	Git *model.GitSource
 }
 
 // Build is how a provider learns what to skip and records what happened.
@@ -103,6 +110,13 @@ type Build interface {
 	// build, which its result keeps (decision 28). A provider that can't
 	// see them doesn't call it, and the result's inputs are unknown.
 	Consumed(target model.TargetID, active []model.ActivePort)
+	// Fetched reports the commit a Git-fetched target's build checked out
+	// (Target.Git), before its Record: the source it built, which its
+	// result keeps with its inputs, and which must be the commit the plan
+	// expected, or the result fails at fetch. A provider that can't see it
+	// doesn't call it, and what the build fetched is unknown: its result
+	// stands for its own check, and for no later one.
+	Fetched(target model.TargetID, commit string)
 	// Keep keeps the archive a target's build made, after its Record, for
 	// a later build of a target that needs it to install rather than build
 	// it again (decision 28). fetch writes the archive whole to the path

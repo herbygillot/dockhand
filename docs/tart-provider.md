@@ -227,6 +227,32 @@ and the digest of the archive the build made. The guest asks `port` for
 them once per target, after its verdict. They are what a later check will
 compare to reuse the result (decision 28).
 
+A port MacPorts fetches with Git (`fetch.type git`) names its source by
+`git.branch`, usually a tag, which binds nothing as an archive's checksums
+do: a project can move it. So a check resolves each such port's
+`git.branch` to a commit as it is planned, from the repository's refs
+(`git ls-remote`), and `check --plan` says which. The Portfile keeps its
+tag. Once `port fetch` has cloned the port into its `worksrcpath`, the
+guest reads the commit checked out there with `git rev-parse` and reports
+it with the result, which keeps it with what the build read. A fetch that
+checked out another commit than the check expected fetched another
+source, one the tag names since the check was planned: the guest builds
+nothing from it, and the target fails at fetch, saying so. That is a
+verdict, not trouble with the guest, since another attempt would fetch the
+same; a new check expects what the tag names then. An earlier build of a
+Git-fetched port is reused only where it recorded the commit the new check
+expects, and a port built against it only where it was built against a
+build of that commit. A checkout the guest can't read is said in the
+target's log, and the build goes on, its source unknown: no later check
+reuses it.
+
+The guest finds the checkout at `worksrcpath`, which it reads from
+MacPorts' own Tcl interface as it reads whether a port declares tests. The
+Portfile reference documents `worksrcpath` as the full path to the port's
+source, and Portfiles' own post-fetch steps find a Git clone there, but it
+doesn't say in so many words that a Git fetch clones there: that is Base's
+`portfetch.tcl`, alike in 2.11 and 2.12.
+
 A passed target's archive is copied out of the guest and kept beside the
 database, checked against that digest. A later check that reuses such a
 target, and builds one that needs it, gives its guest the archive in an

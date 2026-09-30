@@ -241,6 +241,26 @@ type buildJSON struct {
 	Environment environmentJSON     `json:"environment"`
 	Order       []string            `json:"order"`
 	DependsOn   map[string][]string `json:"depends_on,omitempty"`
+	// Git are the targets fetched with Git there, and what each one's
+	// build must fetch.
+	Git map[string]gitSourceJSON `json:"git,omitempty"`
+}
+
+// gitSourceJSON is what a Git-fetched target's build is expected to fetch:
+// its repository and git.branch, and the commit git.branch named when the
+// check was planned, or the abbreviation it begins with, or why neither is
+// known.
+type gitSourceJSON struct {
+	URL          string    `json:"url"`
+	Branch       string    `json:"branch,omitempty"`
+	Commit       string    `json:"commit,omitempty"`
+	Abbreviation string    `json:"abbreviation,omitempty"`
+	Unresolved   string    `json:"unresolved,omitempty"`
+	ResolvedAt   time.Time `json:"resolved_at"`
+}
+
+func gitSourceView(source model.GitSource) gitSourceJSON {
+	return gitSourceJSON{URL: source.URL, Branch: source.Ref, Commit: string(source.Commit), Abbreviation: source.Abbreviation, Unresolved: source.Unresolved, ResolvedAt: source.ResolvedAt}
 }
 
 // unmetJSON is a target an environment can't build, and what it needs.
@@ -281,6 +301,12 @@ func planView(plan model.Plan) planJSON {
 					build.DependsOn = map[string][]string{}
 				}
 				build.DependsOn[string(id)] = append(build.DependsOn[string(id)], string(dependency))
+			}
+			if source, ok := planned.Git[id]; ok {
+				if build.Git == nil {
+					build.Git = map[string]gitSourceJSON{}
+				}
+				build.Git[string(id)] = gitSourceView(source)
 			}
 		}
 		view.Builds = append(view.Builds, build)

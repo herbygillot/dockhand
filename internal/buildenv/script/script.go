@@ -57,6 +57,20 @@ type Target struct {
 	Kind      string          `json:"kind"`
 	Role      string          `json:"role"`
 	DependsOn []string        `json:"depends_on,omitempty"`
+	// Git is what a port fetched with Git fetches; absent for one fetched
+	// otherwise.
+	Git *Git `json:"git,omitempty"`
+}
+
+// Git is what a Git-fetched target's fetch clones, and must check out
+// (batch 20): git.url, git.branch, empty for the default branch, and the
+// commit git.branch named when the check was planned. Commit is absent
+// where dockhand couldn't resolve it, and where git.branch abbreviates a
+// commit, which only a clone expands.
+type Git struct {
+	URL    string `json:"url"`
+	Branch string `json:"branch,omitempty"`
+	Commit string `json:"commit,omitempty"`
 }
 
 // Result is the file the script writes.
@@ -77,6 +91,10 @@ type TargetResult struct {
 	Phase   string `json:"phase,omitempty"`
 	Tests   string `json:"tests,omitempty"`
 	Log     string `json:"log,omitempty"`
+	// Fetched is the commit a Git-fetched target's fetch checked out,
+	// where the script read it; one other than its request's commit fails
+	// the target at fetch, whatever its outcome says.
+	Fetched string `json:"fetched,omitempty"`
 }
 
 // Provider runs the script.
@@ -107,6 +125,9 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 			Variants: target.Target.Variants, Kind: string(target.Kind), Role: string(target.Role)}
 		for _, dep := range target.DependsOn {
 			t.DependsOn = append(t.DependsOn, string(dep))
+		}
+		if target.Git != nil {
+			t.Git = &Git{URL: target.Git.URL, Branch: target.Git.Ref, Commit: string(target.Git.Commit)}
 		}
 		request.Targets = append(request.Targets, t)
 	}
@@ -198,6 +219,14 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		recorded, err := convert(target.ID, got, logPath)
 		if err != nil {
 			return fmt.Errorf("%w: %s: %w", buildenv.ErrInfrastructure, p.Label, err)
+		}
+		// What a Git fetch checked out is the script's to say; the engine
+		// judges it by the commit the request named.
+		if got.Fetched != "" {
+			if !git.ValidObjectID(got.Fetched) {
+				return fmt.Errorf("%w: %s: %s fetched %q, which isn't a commit", buildenv.ErrInfrastructure, p.Label, target.ID, got.Fetched)
+			}
+			build.Fetched(target.ID, got.Fetched)
 		}
 		if err := build.Record(recorded); err != nil {
 			return err

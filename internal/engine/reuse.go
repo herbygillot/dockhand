@@ -25,7 +25,7 @@ func (d *driver) earlier(ctx context.Context, environment model.Environment, rem
 	var paths []string
 	err := d.e.Store.View(ctx, d.e.Repository, func(r store.Reader) error {
 		for i, target := range remaining {
-			targets[i] = reuse.Target{PlanTarget: target.PlanTarget, DependsOn: target.DependsOn}
+			targets[i] = reuse.Target{PlanTarget: target.PlanTarget, DependsOn: target.DependsOn, Git: target.Git}
 			builds, err := r.Reusable(target.ID, environment, reuseCandidates)
 			if err != nil {
 				return err

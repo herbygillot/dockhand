@@ -45,7 +45,15 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // archive, and cleans its earlier work first (the s2n-tls run's findings 1
 // and 2): what protocol 1 recorded may be an archive install taken for a
 // build, so none of it stands any more.
-const guestPin = "8ec69645a5d087fc9e9b735ef59e055088696308e32b7978fe78e5c8b3d98db3"
+//
+// Since batch 20 the program also reads the commit a Git fetch checked
+// out, and stops a target whose fetch checked out another than the check
+// expected. That judges only Git-fetched ports otherwise, and what the
+// program recorded of them before stands for no later check anyway: it
+// recorded no commit, which reuse and evidence now require of them
+// (reuse.Current, engine.Counts). Every other port is built and judged as
+// before, so its evidence stands, and the protocol stays 2.
+const guestPin = "3942a23f0bdcaaa0ec0a9a3da3c1708fa15bc3cffa33d3f152e77c765ed287bb"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this

@@ -1,9 +1,11 @@
 package command
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -343,6 +345,34 @@ func TestLogsSayWhatTheEnvironmentWas(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &view))
 	require.Equal(t, "source sha256:a; setup 3", dig(t, view, "executions", 0, "identity"))
 	require.NotContains(t, dig(t, view, "executions", 1), "identity")
+}
+
+// logs says, of a Git-fetched target's build, the commit it fetched and
+// the source it was to fetch, or that its provider didn't say (batch 20).
+func TestLogsSayWhatAGitFetchedBuildFetched(t *testing.T) {
+	commit := model.ObjectID("1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b")
+	source := model.GitSource{URL: "https://github.com/harbor/libharbor.git", Ref: "v4", Commit: commit, ResolvedAt: time.Now()}
+	logs := engine.RunLogs{Run: model.Run{Number: 3, State: model.RunPassed}, Executions: []engine.ExecutionLogs{
+		{Execution: model.GuestExecution{ID: "tart_1", Attempt: 1, State: model.ExecutionFinished},
+			Results: []model.TargetResult{{Target: "libharbor", Outcome: model.OutcomePassed}, {Target: "harbor-cli", Outcome: model.OutcomePassed}},
+			Git:     map[model.TargetID]engine.GitFetch{"libharbor": {Expected: source, Fetched: commit}}},
+		{Execution: model.GuestExecution{ID: "github_1", Attempt: 1, State: model.ExecutionFinished},
+			Results: []model.TargetResult{{Target: "libharbor", Outcome: model.OutcomePassed}},
+			Git:     map[model.TargetID]engine.GitFetch{"libharbor": {Expected: source}}},
+	}}
+	var out bytes.Buffer
+	require.NoError(t, writeLogs(&out, logs))
+	require.Contains(t, out.String(), "    libharbor passed\n      fetched 1a2b3c4, the commit git.branch v4 named when the check was planned\n    harbor-cli passed\n")
+	require.Contains(t, out.String(), "    libharbor passed\n      which commit of git.branch v4 it fetched isn't known: its provider didn't say; 1a2b3c4 was expected\n")
+
+	data, err := json.Marshal(logsView(logs))
+	require.NoError(t, err)
+	var view map[string]any
+	require.NoError(t, json.Unmarshal(data, &view))
+	require.Equal(t, string(commit), dig(t, view, "executions", 0, "results", 0, "fetched"))
+	require.Equal(t, "v4", dig(t, view, "executions", 0, "results", 0, "git", "branch"))
+	require.NotContains(t, dig(t, view, "executions", 0, "results", 1), "git", "fetched otherwise")
+	require.NotContains(t, dig(t, view, "executions", 1, "results", 0), "fetched", "its provider didn't say")
 }
 
 // A plan's JSON carries what the person asked and what --only left out,

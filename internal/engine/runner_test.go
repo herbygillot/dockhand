@@ -45,7 +45,10 @@ type scriptedProvider struct {
 	// logs and details are what a target's result names as its log, and
 	// what the provider said of it.
 	logs, details map[model.TargetID]string
-	jobs          []buildenv.Job
+	// fetches are the commits Git-fetched targets' builds say they
+	// checked out.
+	fetches map[model.TargetID]string
+	jobs    []buildenv.Job
 }
 
 // scriptedArchive is the archive a scripted build of a target makes: its
@@ -101,6 +104,9 @@ func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build 
 		name, content, digest := scriptedArchive(target.ID)
 		if p.keep {
 			result.Archive = digest
+		}
+		if commit, ok := p.fetches[target.ID]; ok {
+			build.Fetched(target.ID, commit)
 		}
 		if err := build.Record(result); err != nil {
 			return err

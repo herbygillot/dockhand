@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/planning"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -184,12 +187,68 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 		plan.Unresolved = append(plan.Unresolved, model.Unresolved{Target: model.Target{Name: cycle.Ports[0]},
 			Reason: fmt.Sprintf("dependency cycle on %s: %s", describeEnvironment(cycle.Environment), strings.Join(cycle.Ports, " → "))})
 	}
+	if err := e.resolveGitSources(ctx, decision.Builds); err != nil {
+		return plan, err
+	}
 	if len(plan.Unresolved) > 0 {
 		plan.Builds = decision.Builds
 		return plan, nil
 	}
 	plan.Builds, plan.Targets = decision.Builds, decision.Targets
 	return plan, plan.Validate()
+}
+
+// gitResolveTimeout bounds reading one repository's refs as a check is
+// planned, so a host that doesn't answer can't hold the check.
+const gitResolveTimeout = time.Minute
+
+// resolveGitSources resolves what each Git-fetched target's build is
+// expected to fetch (batch 20): the commit its git.branch names now, in a
+// fresh clone of its git.url (git.CloneCheckout). A Portfile keeps its
+// tag, and the plan the commit, which the build checks it fetched and its
+// result records. Each repository and ref is read once for the plan, so
+// every environment expects the same commit. One that can't be read is
+// said to be, and its build expected to fetch nothing in particular: its
+// result says what it fetched, and stands for no later check's.
+func (e *Engine) resolveGitSources(ctx context.Context, builds []model.EnvironmentPlan) error {
+	resolved := map[[2]string]model.GitSource{}
+	for _, planned := range builds {
+		for _, id := range planned.Order {
+			source, ok := planned.Git[id]
+			if !ok {
+				continue
+			}
+			key := [2]string{source.URL, source.Ref}
+			if _, done := resolved[key]; !done {
+				progress.VerboseReport(ctx, "%s is fetched with Git: reading which commit %s names in %s", id, refWords(source.Ref), source.URL)
+				resolved[key] = e.resolveGit(ctx, source)
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+			}
+			planned.Git[id] = resolved[key]
+		}
+	}
+	return nil
+}
+
+// resolveGit reads which commit a Git source's ref names now.
+func (e *Engine) resolveGit(ctx context.Context, source model.GitSource) model.GitSource {
+	ctx, cancel := context.WithTimeout(ctx, gitResolveTimeout)
+	defer cancel()
+	checkout, err := git.CloneCheckout(ctx, e.Repo.Executable, source.URL, source.Ref)
+	source.ResolvedAt = e.now()
+	switch {
+	case errors.Is(err, git.ErrNoRef) && source.Ref == "":
+		source.Unresolved = source.URL + " names no default branch"
+	case errors.Is(err, git.ErrNoRef):
+		source.Unresolved = fmt.Sprintf("%s has no branch or tag %s", source.URL, source.Ref)
+	case err != nil:
+		source.Unresolved = "its refs couldn't be read: " + err.Error()
+	default:
+		source.Commit, source.Abbreviation = model.ObjectID(checkout.Commit), checkout.Abbreviation
+	}
+	return source
 }
 
 func directoryName(directory string) string {

@@ -342,6 +342,7 @@ func writePlan(out io.Writer, plan model.Plan, notes []string, remedy func(model
 		fmt.Fprintf(out, "            %s\n", note)
 	}
 	writeOrder(out, plan)
+	writeGitSources(out, plan)
 	writeExclusions(out, plan)
 	// Each environment's remedy follows its last target it can't build.
 	for _, planned := range plan.Builds {
@@ -356,6 +357,32 @@ func writePlan(out io.Writer, plan model.Plan, notes []string, remedy func(model
 	}
 	for _, unresolved := range plan.Unresolved {
 		fmt.Fprintf(out, "✗ %s can't be planned: %s\n", unresolved.Target.Name, unresolved.Reason)
+	}
+}
+
+// writeGitSources says what each Git-fetched target's build must fetch:
+// the commit its git.branch names as the check is planned, which its build
+// is checked against. A target is said once where its environments expect
+// the same, as they do but where one evaluates another git.branch.
+func writeGitSources(out io.Writer, plan model.Plan) {
+	var lines []string
+	for _, planned := range plan.Builds {
+		for _, id := range planned.Order {
+			source, ok := planned.Git[id]
+			if !ok {
+				continue
+			}
+			if line := fmt.Sprintf("%s: %s", id, engine.GitSourceWords(source)); !slices.Contains(lines, line) {
+				lines = append(lines, line)
+			}
+		}
+	}
+	for i, line := range lines {
+		label := ""
+		if i == 0 {
+			label = "Git"
+		}
+		fmt.Fprintf(out, "%-12s%s\n", label, line)
 	}
 }
 

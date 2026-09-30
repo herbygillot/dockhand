@@ -16,11 +16,13 @@ type Candidate struct {
 }
 
 // Target is one target an environment has left to build: what the plan
-// says it needs built first there, and its earlier builds there, newest
-// first.
+// says it needs built first there, the source its build is expected to
+// fetch where it is fetched with Git there, and its earlier builds there,
+// newest first.
 type Target struct {
 	model.PlanTarget
 	DependsOn []model.TargetID
+	Git       *model.GitSource
 	Earlier   []Candidate
 }
 
@@ -38,6 +40,13 @@ type Choice struct {
 // result stands, by the check's test policy (stands), and whose inputs are
 // what it would read now (Current). The rest build.
 //
+// A target fetched with Git is reused only for the commit its plan expects
+// (Current), and what needs it only where its earlier build had active an
+// archive a build of that commit made (builtAgainst): the same tree of a
+// Git-fetched port isn't the same port, as the same tree of any other is.
+// A target that builds again for that reason makes what needs it build
+// again too, since that read the build before.
+//
 // A reused target that one that builds needs (Needs) must be in the guest.
 // Where its archive is kept (available), the guest installs it from that
 // archive; otherwise it builds too, since MacPorts would give its
@@ -48,15 +57,33 @@ func Choose(targets []Target, identity string, trees map[string]model.ObjectID, 
 	choice := Choice{Reused: map[model.TargetID]Candidate{}}
 	for _, target := range targets {
 		for _, c := range target.Earlier {
-			if stands(c.Result) && Current(c.Inputs, identity, target.PlanTarget, trees) {
+			if stands(c.Result) && Current(c.Inputs, identity, target.PlanTarget, target.Git, trees) {
 				choice.Reused[target.ID] = c
 				break
 			}
 		}
 	}
 	ids := make([]model.TargetID, len(targets))
+	byID := map[model.TargetID]Target{}
 	for i, target := range targets {
-		ids[i] = target.ID
+		ids[i], byID[target.ID] = target.ID, target
+	}
+	rebuilt := map[model.TargetID]bool{}
+	for taken := true; taken; {
+		taken = false
+		for _, target := range targets {
+			c, reused := choice.Reused[target.ID]
+			if !reused {
+				continue
+			}
+			for _, need := range needs(target.DependsOn, c.Inputs.Active, ids) {
+				if dependency := byID[need]; rebuilt[need] || dependency.Git != nil && !builtAgainst(c, dependency) {
+					delete(choice.Reused, target.ID)
+					rebuilt[target.ID], taken = true, true
+					break
+				}
+			}
+		}
 	}
 	// A target that builds takes what it needs and can't be installed,
 	// and that what it needs, until nothing more is taken.
@@ -93,16 +120,39 @@ func Choose(targets []Target, identity string, trees map[string]model.ObjectID, 
 // doesn't change. A port's name is its target's, in any case, as MacPorts
 // reads names.
 func Needs(target Target, among []model.TargetID) []model.TargetID {
-	needs := slices.Clone(target.DependsOn)
 	if len(target.Earlier) == 0 {
-		return needs
+		return slices.Clone(target.DependsOn)
 	}
-	for _, port := range target.Earlier[0].Inputs.Active {
+	return needs(target.DependsOn, target.Earlier[0].Inputs.Active, among)
+}
+
+// needs are the targets, among those given, that a build needs: those the
+// plan names, and those among the ports active as it ran.
+func needs(dependsOn []model.TargetID, active []model.ActivePort, among []model.TargetID) []model.TargetID {
+	needed := slices.Clone(dependsOn)
+	for _, port := range active {
 		for _, other := range among {
-			if strings.EqualFold(port.Name, string(other)) && !slices.Contains(needs, other) {
-				needs = append(needs, other)
+			if strings.EqualFold(port.Name, string(other)) && !slices.Contains(needed, other) {
+				needed = append(needed, other)
 			}
 		}
 	}
-	return needs
+	return needed
+}
+
+// builtAgainst reports whether an earlier build had active an archive of a
+// Git-fetched target that a build of it from the commit its plan expects
+// now made: one of its earlier builds that recorded fetching that commit.
+func builtAgainst(c Candidate, dependency Target) bool {
+	for _, port := range c.Inputs.Active {
+		if !strings.EqualFold(port.Name, string(dependency.ID)) || port.Archive == "" {
+			continue
+		}
+		for _, earlier := range dependency.Earlier {
+			if earlier.Result.Archive == port.Archive && dependency.Git.BuiltBy(earlier.Inputs.Fetched) {
+				return true
+			}
+		}
+	}
+	return false
 }

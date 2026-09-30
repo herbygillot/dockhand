@@ -23,6 +23,10 @@ type Evaluated struct {
 	// Untested is a port whose test.run MacPorts reads as off; one it
 	// couldn't read, or didn't, is left unsaid.
 	Untested bool
+	// Git is what a port fetched with Git declares it fetches there, which
+	// the engine resolves to the commit its build is expected to fetch;
+	// nil for a port fetched otherwise.
+	Git *model.GitSource
 }
 
 // Dependency is a port another depends on. ByFile is one Base would find
@@ -60,6 +64,13 @@ func Evaluate(port macports.PortInfo, platform model.Platform) (Evaluated, error
 	}
 	if declares, known := port.DeclaresTests(); known && !declares {
 		evaluated.Untested = true
+	}
+	source, git, err := port.GitSource()
+	if err != nil {
+		return Evaluated{}, err
+	}
+	if git {
+		evaluated.Git = &source
 	}
 	return evaluated, nil
 }
@@ -275,6 +286,12 @@ func EnvironmentPlan(environment model.Environment, targets, candidates []model.
 		}
 		if evaluation[id].Untested {
 			planned.Untested = append(planned.Untested, id)
+		}
+		if source := evaluation[id].Git; source != nil {
+			if planned.Git == nil {
+				planned.Git = map[model.TargetID]model.GitSource{}
+			}
+			planned.Git[id] = *source
 		}
 	}
 	for _, c := range candidates {

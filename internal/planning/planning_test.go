@@ -176,6 +176,28 @@ func TestEvaluateReadsWhatPlanningNeeds(t *testing.T) {
 	require.Error(t, err)
 }
 
+// A port fetched with Git there has the source it declares in each
+// environment's plan that builds it, for the engine to resolve to the
+// commit its build is expected to fetch (batch 20); a port whose Git
+// source can't be read is left unresolved, not built as fetched otherwise.
+func TestAGitFetchedPortsSourceIsItsEnvironmentsToExpect(t *testing.T) {
+	port := macports.PortInfo{Name: "libharbor", Options: map[string]string{"fetch.type": "git", "git.url": "https://github.com/harbor/libharbor.git", "git.branch": "v4"}}
+	evaluated, err := Evaluate(port, arm.Platform)
+	require.NoError(t, err)
+	require.Equal(t, &model.GitSource{URL: "https://github.com/harbor/libharbor.git", Ref: "v4"}, evaluated.Git)
+
+	input := Input{Environments: []model.Environment{arm, intel}, Candidates: []model.PlanTarget{candidate("libharbor", model.Changed), candidate("harbor-cli", model.Changed)},
+		Evaluations: []Evaluation{{"libharbor": evaluated, "harbor-cli": needing("libharbor")}, {"libharbor": {}, "harbor-cli": needing("libharbor")}}}
+	decision, err := Decide(input)
+	require.NoError(t, err)
+	require.Equal(t, map[model.TargetID]model.GitSource{"libharbor": {URL: "https://github.com/harbor/libharbor.git", Ref: "v4"}}, decision.Builds[0].Git)
+	require.Nil(t, decision.Builds[1].Git, "fetched otherwise there")
+
+	port.OptionErrors = map[string]string{"git.branch": "can't read \"tag\": no such variable"}
+	_, err = Evaluate(port, arm.Platform)
+	require.Error(t, err)
+}
+
 func ids(targets []model.PlanTarget) []model.TargetID {
 	var ids []model.TargetID
 	for _, target := range targets {

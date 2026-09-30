@@ -3,7 +3,9 @@ package reuse
 import (
 	"maps"
 	"slices"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -17,7 +19,7 @@ import (
 func TestTargetsReuseWhatStandsAndBuildWhatTheBuiltOnesNeed(t *testing.T) {
 	now := map[string]model.ObjectID{"devel/lib": "1", "devel/cli": "2", "graphics/viewer": "3", "graphics/tools": "4", macports.ResourcesDirectory: "5"}
 	built := func(target, directory string, active ...model.ActivePort) Candidate {
-		inputs := model.NewTargetInputs("origin a", directory, now[directory], now[macports.ResourcesDirectory], nil, active)
+		inputs := model.NewTargetInputs("origin a", directory, now[directory], now[macports.ResourcesDirectory], nil, append([]model.ActivePort{}, active...))
 		return Candidate{Result: model.TargetResult{Target: model.TargetID(target), Outcome: model.OutcomePassed, Execution: "tart_1"}, Inputs: inputs}
 	}
 	lib := model.ActivePort{Name: "Lib", Spec: "@1_0", Directory: "devel/lib", Tree: "1", Archive: "sha256:aa"}
@@ -79,4 +81,60 @@ func TestTargetsReuseWhatStandsAndBuildWhatTheBuiltOnesNeed(t *testing.T) {
 	newest := targets()
 	newest[0].Earlier = []Candidate{stale, older}
 	require.Equal(t, model.ExecutionID("tart_0"), Choose(newest, "origin a", now, stands, none).Reused["lib"].Result.Execution, "the newest doesn't read what lib would now")
+}
+
+// A moved tag doesn't let earlier build evidence stand for the commit it
+// names now (batch 20): the Git-fetched target builds, and so does what
+// was built against its earlier build, which read what that commit made,
+// and what needs one of those in turn. What was built against a build of
+// the commit expected now stands, and what needs none of them.
+func TestAMovedTagRebuildsWhatWasBuiltAgainstIt(t *testing.T) {
+	now := map[string]model.ObjectID{"devel/lib": "1", "devel/cli": "2", "graphics/viewer": "3", "graphics/tools": "4", "graphics/app": "6", macports.ResourcesDirectory: "5"}
+	a, b := model.ObjectID(strings.Repeat("a", 40)), model.ObjectID(strings.Repeat("b", 40))
+	built := func(target, directory, archive string, fetched model.ObjectID, active ...model.ActivePort) Candidate {
+		inputs := model.NewTargetInputs("origin a", directory, now[directory], now[macports.ResourcesDirectory], nil, append([]model.ActivePort{}, active...))
+		inputs.Fetched = fetched
+		return Candidate{Result: model.TargetResult{Target: model.TargetID(target), Outcome: model.OutcomePassed, Execution: "tart_1", Archive: archive}, Inputs: inputs}
+	}
+	libFrom := func(archive string) model.ActivePort {
+		return model.ActivePort{Name: "lib", Spec: "@4_0", Directory: "devel/lib", Tree: "1", Archive: archive}
+	}
+	cliBuilt := model.ActivePort{Name: "cli", Spec: "@1_0", Directory: "devel/cli", Tree: "2", Archive: "sha256:cli"}
+	expecting := func(commit model.ObjectID) *model.GitSource {
+		return &model.GitSource{URL: "https://github.com/harbor/lib.git", Ref: "v4", Commit: commit, ResolvedAt: time.Now()}
+	}
+	targets := func(expected model.ObjectID, libBuilds ...Candidate) []Target {
+		return []Target{
+			{PlanTarget: model.PlanTarget{ID: "lib", Target: model.Target{Name: "lib"}, Directory: "devel/lib"}, Git: expecting(expected), Earlier: libBuilds},
+			{PlanTarget: model.PlanTarget{ID: "cli", Target: model.Target{Name: "cli"}, Directory: "devel/cli"}, DependsOn: []model.TargetID{"lib"},
+				Earlier: []Candidate{built("cli", "devel/cli", "sha256:cli", "", libFrom("sha256:lib-a"))}},
+			// tools reaches lib through a port the branch doesn't change.
+			{PlanTarget: model.PlanTarget{ID: "tools", Target: model.Target{Name: "tools"}, Directory: "graphics/tools"},
+				Earlier: []Candidate{built("tools", "graphics/tools", "sha256:tools", "", libFrom("sha256:lib-a"))}},
+			// app needs cli, and not lib itself.
+			{PlanTarget: model.PlanTarget{ID: "app", Target: model.Target{Name: "app"}, Directory: "graphics/app"}, DependsOn: []model.TargetID{"cli"},
+				Earlier: []Candidate{built("app", "graphics/app", "sha256:app", "", cliBuilt)}},
+			{PlanTarget: model.PlanTarget{ID: "viewer", Target: model.Target{Name: "viewer"}, Directory: "graphics/viewer"},
+				Earlier: []Candidate{built("viewer", "graphics/viewer", "sha256:viewer", "")}},
+		}
+	}
+	stands := func(model.TargetResult) bool { return true }
+	kept := func(Candidate) bool { return true }
+	reused := func(choice Choice) []model.TargetID { return slices.Sorted(maps.Keys(choice.Reused)) }
+	fromA := built("lib", "devel/lib", "sha256:lib-a", a)
+
+	require.Equal(t, []model.TargetID{"app", "cli", "lib", "tools", "viewer"}, reused(Choose(targets(a, fromA), "origin a", now, stands, kept)), "the tag names the commit it did")
+	require.Equal(t, []model.TargetID{"viewer"}, reused(Choose(targets(b, fromA), "origin a", now, stands, kept)),
+		"moved: lib builds from its new commit, cli and tools were built against the old one, and app against that cli")
+
+	fromB := built("lib", "devel/lib", "sha256:lib-b", b)
+	require.Equal(t, []model.TargetID{"lib", "viewer"}, reused(Choose(targets(b, fromB, fromA), "origin a", now, stands, kept)),
+		"lib reuses its build of the new commit; cli and tools were built against the old one's")
+	againstB := targets(b, fromB, fromA)
+	againstB[1].Earlier = []Candidate{built("cli", "devel/cli", "sha256:cli", "", libFrom("sha256:lib-b"))}
+	require.Equal(t, []model.TargetID{"app", "cli", "lib", "viewer"}, reused(Choose(againstB, "origin a", now, stands, kept)), "cli was built against the new commit's build")
+
+	unrecorded := built("lib", "devel/lib", "sha256:lib-a", "")
+	require.Equal(t, []model.TargetID{"viewer"}, reused(Choose(targets(a, unrecorded), "origin a", now, stands, kept)),
+		"a build that recorded no commit, as every one before batch 20, stands for no Git-fetched target, nor for what was built against it")
 }

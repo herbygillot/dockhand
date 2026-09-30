@@ -176,6 +176,10 @@ type EnvironmentPlan struct {
 	// Exclusions are the ports the plan doesn't build here, and that
 	// needn't pass here, those --only left out included.
 	Exclusions []Exclusion `json:",omitempty"`
+	// Git are the targets in Order fetched with Git here, each with the
+	// source its build is expected to fetch: the commit its git.branch
+	// named when the check was planned (batch 20).
+	Git map[TargetID]GitSource `json:",omitempty"`
 }
 
 // Builds reports whether the environment's plan has the target in its
@@ -287,6 +291,14 @@ func (p Plan) DependsOnIn(environment Environment, id TargetID) []TargetID {
 func (p Plan) NeedsXcodeIn(environment Environment, id TargetID) bool {
 	build, _ := p.In(environment)
 	return slices.Contains(build.NeedsXcode, id)
+}
+
+// GitIn is the source a target's build in an environment is expected to
+// fetch, where it is fetched with Git there.
+func (p Plan) GitIn(environment Environment, id TargetID) (GitSource, bool) {
+	build, _ := p.In(environment)
+	source, ok := build.Git[id]
+	return source, ok
 }
 
 // Target finds a plan target by ID.
@@ -415,6 +427,14 @@ func (b EnvironmentPlan) validate(p Plan) error {
 	for _, exclusion := range b.Exclusions {
 		if earlier[exclusion.Target.ID()] {
 			return invalid("plan %s both builds and excludes %s", where, exclusion.Target.ID())
+		}
+	}
+	for id, source := range b.Git {
+		if !earlier[id] {
+			return invalid("plan %s has a Git source for %s, which it doesn't build", where, id)
+		}
+		if problem := source.problem(); problem != "" {
+			return invalid("plan %s: %s's Git source %s", where, id, problem)
 		}
 	}
 	return nil

@@ -5,7 +5,10 @@
 // reads each runner's log for what it says about each port. The workflow
 // builds the ports the commit changes, on each macOS its matrix names;
 // dockhand does not choose the runners, and ports it does not change are
-// not built.
+// not built. Nor does the workflow say which commit a Git-fetched port's
+// fetch checked out, so this provider never reports one (Build.Fetched):
+// such a result's source is unknown, which the engine says, and it stands
+// for its own check alone.
 package ghactions
 
 import (

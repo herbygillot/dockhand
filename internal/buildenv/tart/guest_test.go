@@ -81,20 +81,21 @@ func guestRunIn(t *testing.T, root string, input guestInput, env ...string) (gue
 	data, err := json.Marshal(input)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(root, "input.json"), data, 0o644))
-	// MacPorts itself is stood in for: the platform, and which ports
-	// declare tests.
+	// MacPorts itself is stood in for: the platform, which ports declare
+	// tests, and where a Git fetch left each one's checkout.
 	prelude := `
 package provide macports 1.0
 namespace eval macports {variable os_platform darwin; variable os_major 25; variable build_arch arm64}
 proc mportinit {} {}
 proc declares_tests {portdir name variants} { return [expr {$name in $::env(TESTED)}] }
+proc checkout {portdir name variants} { return [file join $::env(CHECKOUTS) $name] }
 set foreignManagers {}
 `
 	script := filepath.Join(root, "guest.tcl")
 	require.NoError(t, os.WriteFile(script, append([]byte(prelude), guestProgram...), 0o644))
 	command := exec.CommandContext(t.Context(), executable, script)
 	portLog := filepath.Join(root, "port.log")
-	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "PORT_LOG="+portLog, "TESTED=", "DEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED="), env...)
+	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "PORT_LOG="+portLog, "TESTED=", "DEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
 	output, _ := command.CombinedOutput()
 	data, err = os.ReadFile(filepath.Join(root, "results.json"))
 	require.NoError(t, err, "%s", output)
@@ -239,6 +240,88 @@ func TestAGuestThatCannotSetUpSaysSo(t *testing.T) {
 	require.Equal(t, "errored", results.State)
 	require.Contains(t, results.Detail, "no PortIndex")
 	require.Empty(t, results.Targets)
+}
+
+// checkoutAt makes a Git checkout where the guest finds a port's
+// (CHECKOUTS/<name>), as MacPorts' Git fetch leaves one, and returns the
+// commit it is at.
+func checkoutAt(t *testing.T, root, name string) string {
+	t.Helper()
+	dir := filepath.Join(root, "checkouts", name)
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	git := func(args ...string) string {
+		command := exec.CommandContext(t.Context(), "git", append([]string{"-C", dir, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid"}, args...)...)
+		command.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+		out, err := command.CombinedOutput()
+		require.NoError(t, err, "%s", out)
+		return strings.TrimSpace(string(out))
+	}
+	git("init", "-q")
+	git("commit", "-q", "--allow-empty", "-m", "release")
+	return git("rev-parse", "HEAD")
+}
+
+// What a Git-fetched target's fetch checked out is reported with its
+// result (batch 20): the commit the check expected, or one it begins with
+// where git.branch abbreviates it.
+func TestTheGuestReportsTheCommitAGitFetchCheckedOut(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	commit := checkoutAt(t, root, "libharbor")
+	cli := checkoutAt(t, root, "harbor-cli")
+	input := twoTargets("declared")
+	input.Targets[0].Git = &guestGit{Ref: "v4", Expect: commit}
+	input.Targets[1].Git = &guestGit{Ref: cli[:8], Expect: cli[:8]}
+	results, _ := guestRunIn(t, root, input)
+	require.Equal(t, "finished", results.State, results.Detail)
+	require.Equal(t, "passed", results.Targets[0].Outcome, results.Targets[0].Detail)
+	require.Equal(t, commit, results.Targets[0].Fetched)
+	require.Equal(t, "passed", results.Targets[1].Outcome, results.Targets[1].Detail)
+	require.Equal(t, cli, results.Targets[1].Fetched, "the whole commit an abbreviation expands to")
+}
+
+// A Git fetch that checked out another commit than the check expected
+// fetched another source, one its tag names since the check was planned:
+// nothing is built from it, the target fails at fetch saying so, and what
+// needs it is blocked.
+func TestAGitSourceThatMovedIsNotBuilt(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	moved := checkoutAt(t, root, "libharbor")
+	expected := strings.Repeat("1", 40)
+	input := twoTargets("declared")
+	input.Targets[0].Git = &guestGit{Ref: "v4", Expect: expected}
+	results, commands := guestRunIn(t, root, input)
+	require.Equal(t, "finished", results.State, results.Detail)
+	require.Equal(t, "failed", results.Targets[0].Outcome)
+	require.Equal(t, "fetch", results.Targets[0].Phase)
+	require.Equal(t, moved, results.Targets[0].Fetched, "what it did fetch is reported")
+	require.Equal(t, "the source moved: git.branch v4 named "+expected+" when the check was planned, and the fetch checked out "+moved, results.Targets[0].Detail)
+	require.Equal(t, "blocked", results.Targets[1].Outcome)
+	for _, command := range commands {
+		require.False(t, strings.Contains(command, "subport=libharbor") && (strings.Contains(command, " checksum ") || strings.Contains(command, " install ")), "nothing is built from it: %s", command)
+	}
+}
+
+// A checkout the guest can't read leaves what was fetched unknown: the log
+// says so, and the target builds as it did before. A plan that couldn't
+// resolve the ref expects nothing, and what was fetched is reported.
+func TestAGitFetchThatCantBeReadBuildsAsBefore(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	input := twoTargets("declared")
+	input.Targets[0].Git = &guestGit{Ref: "v4", Expect: strings.Repeat("1", 40)}
+	cli := checkoutAt(t, root, "harbor-cli")
+	input.Targets[1].Git = &guestGit{Ref: "v4"}
+	results, _ := guestRunIn(t, root, input)
+	require.Equal(t, "finished", results.State, results.Detail)
+	require.Equal(t, "passed", results.Targets[0].Outcome, results.Targets[0].Detail)
+	require.Empty(t, results.Targets[0].Fetched)
+	log, err := os.ReadFile(filepath.Join(root, "target-1.log"))
+	require.NoError(t, err)
+	require.Contains(t, string(log), "dockhand: which commit the fetch checked out wasn't read:")
+	require.Equal(t, "passed", results.Targets[1].Outcome, results.Targets[1].Detail)
+	require.Equal(t, cli, results.Targets[1].Fetched)
 }
 
 func keep(items []string, wanted func(string) bool) []string {

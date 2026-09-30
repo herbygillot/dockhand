@@ -1,6 +1,11 @@
 package engine
 
-import "github.com/herbygillot/dockhand/internal/model"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/herbygillot/dockhand/internal/model"
+)
 
 // targetWords is how one target's result in one environment reads, on the
 // terminal and in the pull request alike, so the two never word one result
@@ -62,6 +67,62 @@ func targetWords(plan model.Plan, target model.PlanTarget, result Cell, reading 
 		words += ", accepted: cause not established"
 	}
 	return words
+}
+
+// refWords names a Git source's ref as a Portfile gives it: "git.branch
+// v1.2", or its repository's default branch where it names none.
+func refWords(ref string) string {
+	if ref == "" {
+		return "the default branch"
+	}
+	return "git.branch " + ref
+}
+
+// expectedWords names what a Git source's build is expected to fetch: a
+// commit, shortened, or the abbreviation it begins with.
+func expectedWords(source model.GitSource) string {
+	if source.Commit != "" {
+		return short(source.Commit)
+	}
+	return source.Abbreviation
+}
+
+// GitSourceWords say what a Git-fetched target's build is expected to
+// fetch, as a check is planned: "git.branch v1.2 names 1a2b3c4 now, which
+// its build must fetch", or why that isn't known.
+func GitSourceWords(source model.GitSource) string {
+	switch {
+	case source.Commit != "" && strings.EqualFold(source.Ref, string(source.Commit)):
+		return fmt.Sprintf("git.branch is commit %s, which its build must fetch", short(source.Commit))
+	case source.Commit != "":
+		return fmt.Sprintf("%s names %s now, which its build must fetch", refWords(source.Ref), short(source.Commit))
+	case source.Abbreviation != "":
+		return fmt.Sprintf("git.branch abbreviates a commit, %s, which its build must fetch", source.Abbreviation)
+	}
+	return fmt.Sprintf("which commit %s names isn't known (%s); its build records what it fetches, and stands for no later check", refWords(source.Ref), source.Unresolved)
+}
+
+// movedWords say why a build that fetched another commit than its plan
+// expected failed at fetch.
+func movedWords(source model.GitSource, fetched model.ObjectID) string {
+	return fmt.Sprintf("the source moved: %s named %s when the check was planned, and the build fetched %s; a new check builds what it names now", refWords(source.Ref), expectedWords(source), short(fetched))
+}
+
+// FetchedWords say what a Git-fetched target's build fetched, for its
+// evidence: the commit it was expected to, another, or, where its provider
+// couldn't say, that it isn't known.
+func FetchedWords(source model.GitSource, fetched model.ObjectID) string {
+	switch {
+	case fetched == "" && source.Expected() == "":
+		return fmt.Sprintf("which commit of %s it fetched isn't known, nor which one was expected", refWords(source.Ref))
+	case fetched == "":
+		return fmt.Sprintf("which commit of %s it fetched isn't known: its provider didn't say; %s was expected", refWords(source.Ref), expectedWords(source))
+	case source.BuiltBy(fetched):
+		return fmt.Sprintf("fetched %s, the commit %s named when the check was planned", short(fetched), refWords(source.Ref))
+	case source.Moved(fetched):
+		return fmt.Sprintf("fetched %s, not %s, which %s named when the check was planned", short(fetched), expectedWords(source), refWords(source.Ref))
+	}
+	return fmt.Sprintf("fetched %s of %s, which couldn't be resolved when the check was planned", short(fetched), refWords(source.Ref))
 }
 
 // UnmetWords say what an unmet target needs: "needs Xcode", or "needs

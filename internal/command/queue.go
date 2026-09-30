@@ -348,6 +348,11 @@ func writeLogs(out io.Writer, logs engine.RunLogs) error {
 				line += "  " + tilde(result.Log)
 			}
 			fmt.Fprintln(out, line)
+			// A Git-fetched target's build says what it fetched, or that
+			// its provider couldn't say.
+			if fetch, ok := execution.Git[result.Target]; ok {
+				fmt.Fprintf(out, "      %s\n", engine.FetchedWords(fetch.Expected, fetch.Fetched))
+			}
 			// A result with several builders shows each one's part.
 			for _, part := range result.Builders {
 				line := fmt.Sprintf("      %s %s", part.Builder, part.Outcome)

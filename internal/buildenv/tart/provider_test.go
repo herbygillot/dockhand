@@ -218,6 +218,7 @@ type fakeBuild struct {
 	mu       sync.Mutex
 	blocked  map[model.TargetID]bool
 	consumed map[model.TargetID][]model.ActivePort
+	fetched  map[model.TargetID]string
 	results  []model.TargetResult
 	progress []string
 	observed []model.Observed
@@ -247,6 +248,15 @@ func (b *fakeBuild) Consumed(target model.TargetID, active []model.ActivePort) {
 		b.consumed = map[model.TargetID][]model.ActivePort{}
 	}
 	b.consumed[target] = active
+}
+
+func (b *fakeBuild) Fetched(target model.TargetID, commit string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.fetched == nil {
+		b.fetched = map[model.TargetID]string{}
+	}
+	b.fetched[target] = commit
 }
 
 func (b *fakeBuild) Keep(target model.TargetID, name string, fetch func(path string) error) error {
@@ -468,6 +478,31 @@ func TestABlockedTargetGoesToTheGuestMarked(t *testing.T) {
 	require.NoError(t, testProvider(mac).Execute(t.Context(), tartJob(t, 2), &fakeBuild{blocked: map[model.TargetID]bool{"harbor-cli": true}}))
 	require.False(t, mac.guest.input.Targets[0].Blocked)
 	require.True(t, mac.guest.input.Targets[1].Blocked)
+}
+
+// A Git-fetched target goes to the guest with the commit its fetch must
+// check out (batch 20), a port fetched otherwise without one, and the
+// commit the guest says a fetch checked out is reported with the result.
+// One that isn't a commit is trouble with the guest.
+func TestAGitFetchedTargetGoesToTheGuestWithTheCommitExpected(t *testing.T) {
+	t.Parallel()
+	commit := strings.Repeat("a", 40)
+	libharbor := guestResult{ID: "libharbor", Outcome: "passed", Tests: "none", Log: "target-1.log", Fetched: commit}
+	cli := guestResult{ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "target-2.log"}
+	job := tartJob(t, 1)
+	job.Targets[0].Git = &model.GitSource{URL: "https://example.org/libharbor.git", Ref: "v4", Commit: model.ObjectID(commit), ResolvedAt: time.Now()}
+	mac := newMac(guestResults{State: "finished", Targets: []guestResult{libharbor, cli}})
+	build := &fakeBuild{}
+	require.NoError(t, testProvider(mac).Execute(t.Context(), job, build))
+	require.Equal(t, &guestGit{Ref: "v4", Expect: commit}, mac.guest.input.Targets[0].Git)
+	require.Nil(t, mac.guest.input.Targets[1].Git)
+	require.Equal(t, map[model.TargetID]string{"libharbor": commit}, build.fetched)
+
+	libharbor.Fetched = "v4"
+	mac = newMac(guestResults{State: "finished", Targets: []guestResult{libharbor}})
+	err := testProvider(mac).Execute(t.Context(), job, &fakeBuild{})
+	require.ErrorIs(t, err, buildenv.ErrInfrastructure)
+	require.ErrorContains(t, err, `fetched "v4", which isn't a commit`)
 }
 
 // A guest that errors, a program that stops without finishing, or a VM

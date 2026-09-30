@@ -374,6 +374,19 @@ type guestTarget struct {
 	// Blocked is a target whose changed dependency failed in an earlier
 	// attempt: the guest records it blocked without building it.
 	Blocked bool `json:"blocked,omitempty"`
+	// Git is what a Git-fetched target's fetch must check out; absent for
+	// a port fetched otherwise.
+	Git *guestGit `json:"git,omitempty"`
+}
+
+// guestGit is what a Git-fetched target's fetch must check out (batch 20):
+// its ref, for the guest's words, and the commit the ref named when the
+// check was planned, or the abbreviation that commit begins with. Expect
+// is empty where the plan couldn't resolve the ref, and the guest only
+// reports what the fetch checked out.
+type guestGit struct {
+	Ref    string `json:"ref"`
+	Expect string `json:"expect,omitempty"`
 }
 
 // guestResults is what the guest program writes as it goes.
@@ -399,6 +412,9 @@ type guestResult struct {
 	// where it is in the guest.
 	Archive     string `json:"archive"`
 	ArchiveFile string `json:"archive_file"`
+	// Fetched is the commit a Git-fetched target's fetch checked out;
+	// absent where the guest couldn't read it.
+	Fetched string `json:"fetched,omitempty"`
 }
 
 // guestPort is a port active as a target built, as the guest saw it.
@@ -443,6 +459,9 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		t := guestTarget{ID: string(target.ID), Name: name, Portfile: target.Target.Portfile, Variants: target.Target.Variants}
 		for _, dependency := range target.DependsOn {
 			t.DependsOn = append(t.DependsOn, string(dependency))
+		}
+		if target.Git != nil {
+			t.Git = &guestGit{Ref: target.Git.Ref, Expect: target.Git.Expected()}
 		}
 		_, t.Blocked = build.Blocked(target.ID)
 		input.Targets = append(input.Targets, t)
@@ -862,6 +881,12 @@ func (p *Provider) record(ctx context.Context, g guest, job buildenv.Job, build 
 		if err := g.Download(ctx, guestRoot+"/"+got.Log, local, true); err == nil {
 			result.Log = local
 		}
+	}
+	if got.Fetched != "" {
+		if !git.ValidObjectID(got.Fetched) {
+			return fmt.Errorf("%w: the guest reported %s fetched %q, which isn't a commit", buildenv.ErrInfrastructure, got.ID, got.Fetched)
+		}
+		build.Fetched(target.ID, got.Fetched)
 	}
 	if got.Active != nil {
 		active := make([]model.ActivePort, len(got.Active))

@@ -22,6 +22,7 @@ func TestInputsAreKnownByContent(t *testing.T) {
 	unkept := zlib
 	unkept.Archive = ""
 	require.False(t, NewTargetInputs("origin", "devel/libharbor", "11", "22", nil, []ActivePort{unkept}).Complete(), "an image that keeps no archives")
-	require.False(t, NewTargetInputs("", "devel/libharbor", "11", "22", nil, nil).Complete(), "an environment that can't say what it is")
-	require.True(t, NewTargetInputs("origin", "devel/libharbor", "11", "22", nil, nil).Complete(), "a build that read no other port")
+	require.False(t, NewTargetInputs("", "devel/libharbor", "11", "22", nil, []ActivePort{}).Complete(), "an environment that can't say what it is")
+	require.True(t, NewTargetInputs("origin", "devel/libharbor", "11", "22", nil, []ActivePort{}).Complete(), "a build that read no other port")
+	require.False(t, NewTargetInputs("origin", "devel/libharbor", "11", "22", nil, nil).Complete(), "a build whose provider couldn't say which were active")
 }

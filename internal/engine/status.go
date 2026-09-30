@@ -311,14 +311,30 @@ type RunLogs struct {
 type ExecutionLogs struct {
 	Execution model.GuestExecution
 	Results   []model.TargetResult
+	// Git are what the builds of its Git-fetched targets fetched, by
+	// target, where one built.
+	Git map[model.TargetID]GitFetch
 }
 
-// Logs gathers where a run's logs are.
+// GitFetch is what a Git-fetched target's build fetched (batch 20): the
+// source its plan expected, and the commit the build recorded fetching,
+// empty where its provider didn't say (FetchedWords).
+type GitFetch struct {
+	Expected model.GitSource
+	Fetched  model.ObjectID
+}
+
+// Logs gathers where a run's logs are, and what the builds of its
+// Git-fetched targets fetched, which is evidence of what they built.
 func (e *Engine) Logs(ctx context.Context, id model.RunID) (RunLogs, error) {
 	logs := RunLogs{}
 	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		var err error
 		if logs.Run, err = r.Run(id); err != nil {
+			return err
+		}
+		plan, err := r.Plan(logs.Run.Plan)
+		if err != nil {
 			return err
 		}
 		executions, err := r.Executions(id)
@@ -330,7 +346,26 @@ func (e *Engine) Logs(ctx context.Context, id model.RunID) (RunLogs, error) {
 			if err != nil {
 				return err
 			}
-			logs.Executions = append(logs.Executions, ExecutionLogs{Execution: execution, Results: results})
+			entry := ExecutionLogs{Execution: execution, Results: results}
+			for _, result := range results {
+				source, git := plan.GitIn(execution.Environment, result.Target)
+				if !git || result.Outcome != model.OutcomePassed && result.Outcome != model.OutcomeFailed {
+					continue
+				}
+				fetch := GitFetch{Expected: source}
+				if result.Inputs != "" {
+					inputs, err := r.Inputs(result.Inputs)
+					if err != nil {
+						return err
+					}
+					fetch.Fetched = inputs.Fetched
+				}
+				if entry.Git == nil {
+					entry.Git = map[model.TargetID]GitFetch{}
+				}
+				entry.Git[result.Target] = fetch
+			}
+			logs.Executions = append(logs.Executions, entry)
 		}
 		return nil
 	})

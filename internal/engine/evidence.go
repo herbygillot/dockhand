@@ -158,6 +158,10 @@ type Evidence struct {
 	// origins are the executions that built reused results, by ID, with
 	// the checks they were in (decision 28).
 	origins map[model.ExecutionID]origin
+	// fetched are the commits the builds of an earlier check's results for
+	// Git-fetched targets recorded fetching, by execution and target
+	// (readFetched), which fill compares with what this check expects.
+	fetched map[[2]string]model.ObjectID
 }
 
 // origin is an execution that built a result another execution reuses,
@@ -528,6 +532,9 @@ func treeEvidence(r store.Reader, primary model.Run, runs []model.Run, now ident
 		if err != nil {
 			return Evidence{}, err
 		}
+		if err := earlier.readFetched(r, plan); err != nil {
+			return Evidence{}, err
+		}
 		if evidence.fill(earlier) {
 			evidence.Earlier = append(evidence.Earlier, run)
 		}
@@ -558,15 +565,22 @@ func (e Evidence) missing() bool {
 //   - the environment is the one there is now: its identity when the
 //     execution began (recorded) is its identity now, where its provider
 //     says what that is (decision 28). An image made again from another
-//     source, or with other tools, is another environment.
+//     source, or with other tools, is another environment;
+//   - where the newest check expects the target's build to fetch a commit
+//     with Git (git), the result's build recorded fetching that commit
+//     (fetched), since the same files name a tag, which binds nothing
+//     (batch 20). One recorded without it, as every result was before,
+//     or whose provider couldn't say, doesn't count; nor does one whose tag
+//     named another commit then. An unmet need, which no execution
+//     recorded, says nothing of the source.
 //
 // Nothing else about the check's selection matters: from the same files,
 // a target builds the same whichever ports were selected with it. Nor does
 // its test policy: a result keeps the policy of the check that recorded it,
 // and reads under it (decision D1, Evidence.Words).
-func Counts(recorded model.Plan, execution model.GuestExecution, id model.TargetID, now string) bool {
+func Counts(recorded model.Plan, execution model.GuestExecution, id model.TargetID, now string, git *model.GitSource, fetched model.ObjectID) bool {
 	planned, ok := recorded.In(execution.Environment)
-	return ok && planned.Builds(id) && current(execution, now)
+	return ok && planned.Builds(id) && current(execution, now) && (git == nil || execution.ID == "" || git.BuiltBy(fetched))
 }
 
 // current reports whether an execution ran in the environment there is
@@ -594,6 +608,29 @@ func (e *Evidence) dropRemade() {
 	}
 }
 
+// readFetched reads, for an earlier check's results of the targets a newer
+// check expects to fetch with Git (primary), the commit each one's build
+// recorded fetching, from its inputs, for fill to compare (Counts). A
+// result with no inputs recorded has none.
+func (e *Evidence) readFetched(r store.Reader, primary model.Plan) error {
+	for _, target := range e.Targets {
+		for _, c := range target.Outcomes {
+			if _, git := primary.GitIn(c.Environment, target.Target.ID); !git || c.Kind != CellRecorded || c.Inputs == "" {
+				continue
+			}
+			inputs, err := r.Inputs(c.Inputs)
+			if err != nil {
+				return err
+			}
+			if e.fetched == nil {
+				e.fetched = map[[2]string]model.ObjectID{}
+			}
+			e.fetched[[2]string{string(c.Execution), string(c.Target)}] = inputs.Fetched
+		}
+	}
+	return nil
+}
+
 // fill takes an earlier check's results for what this evidence lacks,
 // where they count (Counts), and reports whether it took any.
 func (e *Evidence) fill(earlier Evidence) bool {
@@ -619,7 +656,12 @@ func (e *Evidence) fill(earlier Evidence) bool {
 				// An unmet result is the plan's, with no execution behind it.
 				execution = model.GuestExecution{Environment: environment}
 			}
-			if found.Kind != CellRecorded && found.Kind != CellUnmet || !Counts(earlier.Plan, execution, target.Target.ID, e.now[environment]) {
+			var git *model.GitSource
+			if source, ok := e.Plan.GitIn(environment, target.Target.ID); ok {
+				git = &source
+			}
+			fetched := earlier.fetched[[2]string{string(found.Execution), string(found.Target)}]
+			if found.Kind != CellRecorded && found.Kind != CellUnmet || !Counts(earlier.Plan, execution, target.Target.ID, e.now[environment], git, fetched) {
 				if found.Kind == CellRecorded && !current(execution, e.now[environment]) {
 					target.Outcomes[i].Kind, target.Outcomes[i].Recorded = CellRemade, execution.Identity
 				}

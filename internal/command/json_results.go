@@ -423,6 +423,11 @@ type resultLogJSON struct {
 	Phase      string `json:"phase,omitempty"`
 	Log        string `json:"log,omitempty"`
 	ReusedFrom string `json:"reused_from,omitempty"`
+	// Git is what a Git-fetched target's build was to fetch, and Fetched
+	// the commit it recorded fetching, absent where its provider didn't
+	// say.
+	Git     *gitSourceJSON `json:"git,omitempty"`
+	Fetched string         `json:"fetched,omitempty"`
 }
 
 func logsView(logs engine.RunLogs) logsJSON {
@@ -432,8 +437,13 @@ func logsView(logs engine.RunLogs) logsJSON {
 		entry := executionLogsJSON{ID: string(x.ID), Reference: x.ProviderRef, Environment: environmentView(x.Environment), Attempt: x.Attempt, Identity: x.Identity, State: string(x.State), Detail: x.Detail,
 			Reused: x.Reused, Results: []resultLogJSON{}}
 		for _, result := range execution.Results {
-			entry.Results = append(entry.Results, resultLogJSON{Target: string(result.Target), Outcome: string(result.Outcome), Phase: string(result.Phase), Log: result.Log,
-				ReusedFrom: string(result.ReusedFrom)})
+			view := resultLogJSON{Target: string(result.Target), Outcome: string(result.Outcome), Phase: string(result.Phase), Log: result.Log,
+				ReusedFrom: string(result.ReusedFrom)}
+			if fetch, ok := execution.Git[result.Target]; ok {
+				source := gitSourceView(fetch.Expected)
+				view.Git, view.Fetched = &source, string(fetch.Fetched)
+			}
+			entry.Results = append(entry.Results, view)
 		}
 		view.Executions = append(view.Executions, entry)
 	}

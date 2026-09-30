@@ -21,7 +21,8 @@ type Trees interface {
 // (buildenv.Build.Consumed), and the revision's trees for the target's
 // directory, _resources, and each active port's directory. A directory the
 // revision doesn't hold is left without a tree, which leaves the inputs
-// incomplete.
+// incomplete. Active is nil where the provider couldn't say which ports
+// were active, which leaves them incomplete too.
 func Inputs(ctx context.Context, trees Trees, tree model.ObjectID, identity string, target model.PlanTarget, active []model.ActivePort) (model.TargetInputs, error) {
 	paths := []string{target.Directory, macports.ResourcesDirectory}
 	for _, port := range active {
@@ -33,7 +34,10 @@ func Inputs(ctx context.Context, trees Trees, tree model.ObjectID, identity stri
 	if err != nil {
 		return model.TargetInputs{}, err
 	}
-	read := make([]model.ActivePort, len(active))
+	var read []model.ActivePort
+	if active != nil {
+		read = make([]model.ActivePort, len(active))
+	}
 	for i, port := range active {
 		port.Tree = ""
 		if port.Directory != "" {

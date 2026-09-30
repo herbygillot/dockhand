@@ -84,6 +84,11 @@ var (
 // plan builds harbor-cli and harbor-tools on libharbor, each environment
 // in its own order: on arm64, harbor-tools doesn't need libharbor, and
 // comes first.
+// resolvedGit is libharbor's Git source, its tag resolved to a commit.
+func resolvedGit() GitSource {
+	return GitSource{URL: "https://example.org/libharbor.git", Ref: "v4", Commit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", ResolvedAt: at}
+}
+
 func plan() Plan {
 	return Plan{
 		ID: "p1", Revision: "v1", Tests: TestsDeclared, CreatedAt: at,
@@ -152,6 +157,30 @@ func TestPlanValidation(t *testing.T) {
 		"omitted but not changed":        func(p *Plan) { p.Omitted[0].Role = Also },
 		"a target not its port's name":   func(p *Plan) { p.Targets[1].Target.Name = "libharbor-devel" },
 		"omitted not its port's name":    func(p *Plan) { p.Omitted[0].Target.Name = "harbor-view" },
+		"a Git source for what isn't built": func(p *Plan) {
+			p.Builds[0].Git = map[TargetID]GitSource{"harbor-viewer": resolvedGit()}
+		},
+		"a Git source with no repository": func(p *Plan) {
+			p.Builds[0].Git = map[TargetID]GitSource{"libharbor": {Ref: "v4", Commit: resolvedGit().Commit, ResolvedAt: at}}
+		},
+		"a Git source neither resolved nor said why": func(p *Plan) {
+			p.Builds[0].Git = map[TargetID]GitSource{"libharbor": {URL: resolvedGit().URL, Ref: "v4", ResolvedAt: at}}
+		},
+		"a Git source resolved and not": func(p *Plan) {
+			source := resolvedGit()
+			source.Unresolved = "its refs couldn't be read"
+			p.Builds[0].Git = map[TargetID]GitSource{"libharbor": source}
+		},
+		"a Git source resolved at no time": func(p *Plan) {
+			source := resolvedGit()
+			source.ResolvedAt = time.Time{}
+			p.Builds[0].Git = map[TargetID]GitSource{"libharbor": source}
+		},
+		"a Git source both a commit and an abbreviation": func(p *Plan) {
+			source := resolvedGit()
+			source.Abbreviation = "aaaaaaa"
+			p.Builds[0].Git = map[TargetID]GitSource{"libharbor": source}
+		},
 	} {
 		p := plan()
 		p.Targets = slices.Clone(p.Targets)
@@ -165,6 +194,16 @@ func TestPlanValidation(t *testing.T) {
 		change(&p)
 		require.ErrorIs(t, p.Validate(), ErrInvalid, name)
 	}
+
+	fetched := plan()
+	fetched.Builds = slices.Clone(fetched.Builds)
+	fetched.Builds[0].Git = map[TargetID]GitSource{"libharbor": resolvedGit(), "harbor-cli": {URL: "https://example.org/cli.git", Unresolved: "its refs couldn't be read", ResolvedAt: at}}
+	require.NoError(t, fetched.Validate(), "resolved, or saying why not")
+	source, ok := fetched.GitIn(arm, "libharbor")
+	require.True(t, ok)
+	require.Equal(t, resolvedGit(), source)
+	_, ok = fetched.GitIn(intel, "libharbor")
+	require.False(t, ok, "each environment's own")
 
 	unresolved := plan()
 	unresolved.Unresolved = []Unresolved{{Target: Target{Name: "harbor-viewer"}, Reason: "evaluation failed"}}

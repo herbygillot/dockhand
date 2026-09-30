@@ -436,7 +436,11 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			}
 			if result, ok := results[id]; !ok || !result.Outcome.Complete() {
 				target, _ := d.plan.Target(id)
-				remaining = append(remaining, buildenv.Target{PlanTarget: target, DependsOn: planned.Dependencies[id]})
+				next := buildenv.Target{PlanTarget: target, DependsOn: planned.Dependencies[id]}
+				if source, ok := planned.Git[id]; ok {
+					next.Git = &source
+				}
+				remaining = append(remaining, next)
 			}
 		}
 		if len(remaining) == 0 {
@@ -508,7 +512,7 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 		}); err != nil {
 			return err
 		}
-		build := &build{d: d, ctx: ctx, execution: execution, tree: revision.Source.Tree, results: results, inputs: map[model.TargetID]model.TargetInputs{}}
+		build := &build{d: d, ctx: ctx, execution: execution, tree: revision.Source.Tree, results: results, inputs: map[model.TargetID]model.TargetInputs{}, fetched: map[model.TargetID]model.ObjectID{}}
 		// The reused results are the execution's own, recorded before the
 		// provider builds the rest.
 		building := remaining
@@ -651,6 +655,9 @@ type build struct {
 	// inputs are what each target's build read, as the provider reported
 	// them (Consumed), until its result is recorded.
 	inputs map[model.TargetID]model.TargetInputs
+	// fetched are the commits Git-fetched targets' builds checked out, as
+	// the provider reported them (Fetched), until each result is recorded.
+	fetched map[model.TargetID]model.ObjectID
 	// installs are the kept archives the guest installs targets from.
 	installs []buildenv.Archive
 }
@@ -687,12 +694,32 @@ func (b *build) Consumed(target model.TargetID, active []model.ActivePort) {
 			}
 		}
 	}
+	if inputs, ok := b.read(planned, active); ok {
+		b.inputs[target] = inputs
+	}
+}
+
+// read is what a target's build read of the revision, with the ports its
+// provider saw active: nil where it couldn't say (reuse.Inputs). Inputs
+// that can't be read are left unknown, and said to be.
+func (b *build) read(planned model.PlanTarget, active []model.ActivePort) (model.TargetInputs, bool) {
 	inputs, err := reuse.Inputs(b.ctx, b.d.e.Repo, b.tree, b.execution.Identity, planned, active)
 	if err != nil {
-		b.Progress(fmt.Sprintf("%s: what its build read wasn't recorded: %v", target, err))
+		b.Progress(fmt.Sprintf("%s: what its build read wasn't recorded: %v", planned.ID, err))
+		return model.TargetInputs{}, false
+	}
+	return inputs, true
+}
+
+// Fetched keeps the commit a Git-fetched target's build checked out, for
+// its result's inputs and for judging it by its plan (judgeSource). One
+// that isn't a commit is no answer.
+func (b *build) Fetched(target model.TargetID, commit string) {
+	if !git.ValidObjectID(commit) {
+		b.Progress(fmt.Sprintf("%s: its provider said its build fetched %q, which isn't a commit", target, commit))
 		return
 	}
-	b.inputs[target] = inputs
+	b.fetched[target] = model.ObjectID(commit)
 }
 
 func (b *build) Record(result model.TargetResult) error {
@@ -700,11 +727,24 @@ func (b *build) Record(result model.TargetResult) error {
 	if result.Outcome == model.OutcomeFailed {
 		result.Detail = withCause(result.Detail, result.Log)
 	}
+	result = b.judgeSource(result)
 	result.Execution = b.execution.ID
 	if result.RecordedAt.IsZero() {
 		result.RecordedAt = b.d.e.now()
 	}
 	inputs, read := b.inputs[result.Target]
+	// What a Git-fetched target's build fetched is an input of it, which
+	// a port fetched otherwise has none of, whatever its provider said. A
+	// provider that says what the build fetched, and not which ports were
+	// active, as a person's command doesn't, leaves those unknown, and the
+	// inputs kept incomplete.
+	fetched, said := b.fetched[result.Target]
+	if _, ok := b.d.plan.GitIn(b.execution.Environment, result.Target); ok && said {
+		if planned, found := b.d.plan.Target(result.Target); !read && found {
+			inputs, read = b.read(planned, nil)
+		}
+		inputs.Fetched = fetched
+	}
 	err := b.d.fenced(b.ctx, func(tx store.Tx) error {
 		if read {
 			key, err := tx.RecordInputs(inputs)
@@ -726,8 +766,38 @@ func (b *build) Record(result model.TargetResult) error {
 	if err == nil {
 		b.results[result.Target] = result
 		delete(b.inputs, result.Target)
+		delete(b.fetched, result.Target)
 	}
 	return err
+}
+
+// judgeSource judges a Git-fetched target's result by the source its plan
+// expected (batch 20). A build that fetched another commit than the one
+// git.branch named when the check was planned built another source than
+// the check covers, whatever its provider said of it: it fails at fetch.
+// That is a verdict, not trouble with the environment. Another attempt
+// would expect the same commit and fetch the same other one, since that is
+// what the ref names now, and nothing about the environment is wrong; the
+// port's source moved under the check, as it does under a checksum when an
+// archive is replaced, and a new check, which resolves the ref again,
+// builds what it names now. Tart's guest applies the same rule as it
+// builds, so nothing is built from the other source; the verdict recorded
+// is this one, so the two can't disagree. A build whose provider didn't
+// say what it fetched stands as it is, for its own check alone, and that
+// is said.
+func (b *build) judgeSource(result model.TargetResult) model.TargetResult {
+	source, ok := b.d.plan.GitIn(b.execution.Environment, result.Target)
+	if !ok || result.Outcome != model.OutcomePassed && result.Outcome != model.OutcomeFailed {
+		return result
+	}
+	fetched, said := b.fetched[result.Target]
+	switch {
+	case source.Moved(fetched):
+		result.Outcome, result.Phase, result.Detail = model.OutcomeFailed, model.PhaseFetch, movedWords(source, fetched)
+	case !said:
+		b.Progress(fmt.Sprintf("%s: its build didn't say which commit of %s it fetched, so no later check can reuse its result", result.Target, refWords(source.Ref)))
+	}
+	return result
 }
 
 func (b *build) Refer(ref string) error {

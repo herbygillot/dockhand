@@ -36,3 +36,7 @@ A run that was cancelled, timed out, or never started building is run again (onl
 `dockhand cancel` (or `check --replace`) cancels the run on GitHub too. A `serve` that stops leaves the run going, and the next `serve` picks it up again. Once a branch is merged, `clean` removes its `dockhand-check/` branches from your fork, as long as each still holds the commit that was checked.
 
 The workflow builds only what the commit changes. A port that `--also` adds but the commit doesn't change isn't built there. Its result stays "not run", and the check says why.
+
+## A port fetched with Git
+
+A check expects a Git-fetched port's build to fetch the commit its `git.branch` names when the check is planned, since a tag can be moved and binds nothing, as an archive's checksums do. Tart checks that commit in the guest, and a command reports what it fetched. MacPorts' workflow says neither, so this provider can't attest which commit a runner built, and doesn't claim to: the check says so as it records the port's result, and `dockhand logs check-N` says "which commit of git.branch … it fetched isn't known: its provider didn't say" under the port. Such a result stands for its own check alone. No later check reuses it, nor does a later check of the same files take it in place of a build of its own.

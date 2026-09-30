@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -105,6 +106,34 @@ func TestCheckPlanNamesWhatOnlyLeftOut(t *testing.T) {
 		Tests:        model.TestsDeclared,
 	}, nil, nil)
 	require.Contains(t, out.String(), "Changed     jq\nLeft out    libharbor, by --only; submit still needs them checked\n")
+}
+
+// A plan says what each Git-fetched target's build must fetch: the commit
+// its tag names as the check is planned, once where its environments
+// agree, or why that isn't known (batch 20).
+func TestCheckPlanSaysWhatAGitFetchMustCheckOut(t *testing.T) {
+	arm := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	intel := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"}}
+	target := func(name string) model.PlanTarget {
+		return model.PlanTarget{ID: model.TargetID(name), Target: model.Target{Name: name}, Kind: model.Substantive, Role: model.Changed}
+	}
+	commit := model.ObjectID("1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b")
+	tag := model.GitSource{URL: "https://github.com/harbor/libharbor.git", Ref: "v4", Commit: commit, ResolvedAt: time.Now()}
+	cli := model.GitSource{URL: "https://github.com/harbor/cli.git", Ref: "v2", Unresolved: "its refs couldn't be read: timed out", ResolvedAt: time.Now()}
+	plan := model.Plan{Environments: []model.Environment{arm, intel}, Tests: model.TestsDeclared,
+		Targets: []model.PlanTarget{target("libharbor"), target("harbor-cli")},
+		Builds: []model.EnvironmentPlan{
+			{Environment: arm, Order: []model.TargetID{"libharbor", "harbor-cli"}, Git: map[model.TargetID]model.GitSource{"libharbor": tag, "harbor-cli": cli}},
+			{Environment: intel, Order: []model.TargetID{"libharbor", "harbor-cli"}, Git: map[model.TargetID]model.GitSource{"libharbor": tag}},
+		}}
+	var out bytes.Buffer
+	writePlan(&out, plan, nil, nil)
+	require.Contains(t, out.String(), "Git         libharbor: git.branch v4 names 1a2b3c4 now, which its build must fetch\n"+
+		"            harbor-cli: which commit git.branch v2 names isn't known (its refs couldn't be read: timed out); its build records what it fetches, and stands for no later check\n")
+
+	view := planView(plan)
+	require.Equal(t, gitSourceJSON{URL: tag.URL, Branch: "v4", Commit: string(commit), ResolvedAt: tag.ResolvedAt}, view.Builds[1].Git["libharbor"])
+	require.NotContains(t, view.Builds[1].Git, "harbor-cli", "fetched otherwise there")
 }
 
 // On several environments the results are a grid, a column each headed
