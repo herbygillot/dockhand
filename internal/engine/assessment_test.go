@@ -78,6 +78,11 @@ func (p *fakePlanner) add(tree model.ObjectID, port plannedPort) {
 	p.ports[tree][port.info.Name] = port
 }
 
+// same plans a tree's ports as another tree's, the same archives served.
+func (p *fakePlanner) same(tree, as model.ObjectID) {
+	p.ports[tree] = p.ports[as]
+}
+
 func (p *fakePlanner) ArchivePlan(_ context.Context, source model.Source, directory, name string) (macports.PortInfo, []macports.Distfile, error) {
 	port, ok := p.ports[source.Tree][name]
 	if !ok {
@@ -177,7 +182,7 @@ func TestARevisionIsAssessedByItsNetChange(t *testing.T) {
 
 	// A later revision that changes an unrelated file reads what was kept.
 	later := editTree(t, e, tree, map[string]string{"textproc/jq/files/patch-a.diff": "--- a\n"})
-	p.add(later, p.ports[tree]["jq"])
+	p.same(later, tree)
 	assessments, err = e.revisionAssessments(t.Context(), branch.ID, branch.Base, later, true)
 	require.NoError(t, err)
 	require.Len(t, assessments, 1)
@@ -289,7 +294,7 @@ func TestWhatsRecordedForARevisionStands(t *testing.T) {
 		{Branch: branch.ID, Tree: tree, Base: branch.Base, Port: "jq", Directory: "textproc/jq", Comparison: marker, Policy: assess.Policy + 1, At: at},
 	} {
 		other := editTree(t, e, tree, map[string]string{"textproc/jq/files/a.diff": fmt.Sprint(stale.Policy)})
-		p.add(other, p.ports[tree]["jq"])
+		p.same(other, tree)
 		stale.Tree = other
 		record(stale)
 		assessments, err := e.revisionAssessments(t.Context(), branch.ID, branch.Base, other, true)
@@ -301,7 +306,7 @@ func TestWhatsRecordedForARevisionStands(t *testing.T) {
 
 	// A later tree gets its own, though an earlier one's is recorded.
 	later := editTree(t, e, tree, map[string]string{"textproc/jq/files/b.diff": "b"})
-	p.add(later, p.ports[tree]["jq"])
+	p.same(later, tree)
 	assessments, err = e.revisionAssessments(t.Context(), branch.ID, branch.Base, later, true)
 	require.NoError(t, err)
 	require.Equal(t, later, assessments[0].Tree)
