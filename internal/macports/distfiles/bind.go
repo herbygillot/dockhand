@@ -47,6 +47,7 @@ func (u *Unlocated) Error() string {
 }
 
 func (u *Unlocated) Unwrap() error { return u.Reason }
+
 type Group struct {
 	Name   string
 	Values map[string]Token

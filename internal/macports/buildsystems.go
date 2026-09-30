@@ -3,7 +3,6 @@ package macports
 import (
 	"path"
 	"slices"
-
 )
 
 // BuildSystem is a way software is built, or the language whose files
