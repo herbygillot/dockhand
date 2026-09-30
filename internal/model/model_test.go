@@ -150,6 +150,8 @@ func TestPlanValidation(t *testing.T) {
 		"no directory":                   func(p *Plan) { p.Targets[1].Directory = "" },
 		"omitted and planned":            func(p *Plan) { p.Omitted[0].ID = "harbor-cli" },
 		"omitted but not changed":        func(p *Plan) { p.Omitted[0].Role = Also },
+		"a target not its port's name":   func(p *Plan) { p.Targets[1].Target.Name = "libharbor-devel" },
+		"omitted not its port's name":    func(p *Plan) { p.Omitted[0].Target.Name = "harbor-view" },
 	} {
 		p := plan()
 		p.Targets = slices.Clone(p.Targets)

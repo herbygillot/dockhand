@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/planning"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -92,11 +93,11 @@ func (e *Engine) planBaseline(ctx context.Context, branch model.Branch, ports []
 	baseline.New = added
 	var also []string
 	directories := map[string]string{}
-	where := map[string]rebuild{}
+	where := map[model.TargetID]planning.Limited{}
 	for _, target := range targets {
 		also = append(also, string(target.ID))
 		directories[string(target.ID)] = target.Directory
-		where[string(target.ID)] = rebuildWhere(evidence, target.ID)
+		where[target.ID] = rebuildWhere(evidence, target.ID)
 	}
 	if len(also) == 0 {
 		return baseline, fmt.Errorf("%s: master %s has none of them, so there is nothing to compare", strings.Join(baseline.New, ", "), short(base))
@@ -167,7 +168,7 @@ func (e *Engine) BaselineCandidates(ctx context.Context, run model.Run) ([]strin
 // the check failed it at install or test, or its tests failed, or, for one
 // named that failed nowhere there, every environment the check built it
 // in.
-func rebuildWhere(evidence Evidence, id model.TargetID) rebuild {
+func rebuildWhere(evidence Evidence, id model.TargetID) planning.Limited {
 	i := slices.IndexFunc(evidence.Targets, func(target TargetEvidence) bool { return target.Target.ID == id })
 	var failed, built []model.Environment
 	for n, result := range evidence.Targets[i].Outcomes {
@@ -180,9 +181,9 @@ func rebuildWhere(evidence Evidence, id model.TargetID) rebuild {
 		}
 	}
 	if len(failed) > 0 {
-		return rebuild{environments: failed, elsewhere: evidence.Run.Name() + " didn't fail it there"}
+		return planning.Limited{Environments: failed, Elsewhere: evidence.Run.Name() + " didn't fail it there"}
 	}
-	return rebuild{environments: built, elsewhere: evidence.Run.Name() + " didn't build it there"}
+	return planning.Limited{Environments: built, Elsewhere: evidence.Run.Name() + " didn't build it there"}
 }
 
 // latestCheck is a branch's newest finished check, not a baseline: the

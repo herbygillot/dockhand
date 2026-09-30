@@ -132,7 +132,7 @@ The order is the roadmap's own: a guardrail first, then what's written into a Po
    1. the evaluator's computed facts as typed fields (finding 27, below), which eligibility and planning then read. Done 2026-09-30 ([note](activity/2026-09-30-typed-facts.md)): accessors in `macports`, a failed stub probe said, and the fetch's reason read from its assessment;
    2. build eligibility in `macports` (the private-helper review's finding 1, below). Done 2026-09-30 ([note](activity/2026-09-30-build-eligibility.md)): `macports.BuildEligibility`, with `known_fail` and `platforms` as MacPorts decides them, and an unreadable option unresolved;
    3. the conservative Portfile inspection (its finding 2, below). Done 2026-09-30 ([note](activity/2026-09-30-portfile-inspection.md)): revision-only changes, declared versions and revisions, and PortGroup references, read from the parsed source;
-   4. planning out of the engine, its phases named, the port reader's evaluation report recorded, and a dependency met by a file (findings 4 and 27, below);
+   4. planning out of the engine, its phases named, the port reader's evaluation report recorded, and a dependency met by a file (findings 4 and 27, below). Planning's phases, named and out of the engine, done 2026-09-30 ([note](activity/2026-09-30-planning-phases.md)): `internal/planning` decides from what the engine reads, and a plan's targets are their ports' names;
    5. results and the reuse predicate: a kind on each cell, the tests vocabulary where results are written, and an unreadable identity (findings 25, 28, and 39);
    6. the binary archive site out of Tart's SSH channel (the private-helper review's finding 6);
    7. the JSON gaps and one set of dependencies for `engine.Open` (findings 36 and 1).
@@ -145,7 +145,7 @@ The order is the roadmap's own: a guardrail first, then what's written into a Po
    - **A dependency Base would find met by a file** (`bin:`, `lib:`, `path:`) orders the targets in a plan, where Base drops it when the file is there and no port owns it: in a clean guest, `bin:git:git` is met by the Command Line Tools' git. Two targets of one branch can then be ordered, or refused as a cycle, where Base sees no dependency ([note](activity/2026-09-29-read-as-base-reads-it.md)). With the evaluation report, which would say what the environment holds.
    - **The port reader returns an evaluation report,** or a reference to its observation, rather than port names and dependency lists, so the observations can be recorded; today they would have to be reconstructed.
    - **From the code-organization review,** as planning and results move:
-     - `PlanCheck`'s phases named (finding 4);
+     - `PlanCheck`'s phases named (finding 4). Done 2026-09-30 ([note](activity/2026-09-30-planning-phases.md)), with the `Validate` clause it asked for;
      - a kind on each cell of the evidence, and one rule for an `--also` extra, which status and submit read differently today (finding 25);
      - the evaluator's computed facts as typed fields (finding 27). Done 2026-09-30 ([note](activity/2026-09-30-typed-facts.md)), but for the Base version on the bound probe, which moves with the evaluation report;
      - the tests vocabulary checked where results are written, since reuse carries results on (finding 28);

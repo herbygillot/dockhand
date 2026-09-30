@@ -8,6 +8,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/planning"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -123,7 +124,7 @@ func TestABaselineTakesPortsThatFailedWhileBuilding(t *testing.T) {
 	worthy, skipped := BaselineWorthy(evidence)
 	require.Equal(t, []string{"installs", "tests", "both", "advisory"}, worthy, "tests that failed where they only report are worth one too (the libuv run's finding 5)")
 	require.Equal(t, []string{"lints", "fetches"}, skipped)
-	require.Equal(t, rebuild{environments: []model.Environment{tahoeX86}, elsewhere: evidence.Run.Name() + " didn't fail it there"}, rebuildWhere(evidence, "advisory"), "rebuilt where its tests failed")
+	require.Equal(t, planning.Limited{Environments: []model.Environment{tahoeX86}, Elsewhere: evidence.Run.Name() + " didn't fail it there"}, rebuildWhere(evidence, "advisory"), "rebuilt where its tests failed")
 }
 
 // A failed check points to a baseline of what it could explain, and only

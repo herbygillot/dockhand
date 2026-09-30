@@ -24,6 +24,7 @@ var engineImports = map[string]string{
 	"internal/git":                 "the checkout, captures, and history",
 	"internal/history":             "tidy, rebase, and restore as complete transitions",
 	"internal/reuse":               "what each target's build read, for reuse",
+	"internal/planning":            "what a check builds, where, and in what order, from the ports it evaluates",
 	"internal/progress":            "what the work reports as a check builds, which its run keeps for whoever follows it",
 	"internal/buildlog":            "what a failed build's log most likely says made it fail",
 	"golang.org/x/sync/errgroup":   "a check's environments building together",
