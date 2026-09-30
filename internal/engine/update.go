@@ -73,6 +73,10 @@ type UpdateRequest struct {
 	// would hold the submission after the check: nothing is downloaded or
 	// built for it. Submit looks again before publishing.
 	Unattended bool
+	// answered are the HTTPS answers the command making the update has had
+	// already, create's for the homepage it wrote, which aren't asked
+	// again (plainHTTP).
+	answered map[string]bool
 }
 
 // PortVersion is a port's version and revision.
@@ -268,7 +272,7 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	// its hosts.
 	if (request.Action == model.EditUpdate || request.Action == model.EditChecksums) && len(result.Files) > 0 {
 		if info, ok := result.PortAfter(update.Port); ok {
-			update.PlainHTTP = e.plainHTTP(ctx, info)
+			update.PlainHTTP = e.plainHTTP(ctx, info, request.answered)
 		}
 	}
 	update.Stealth, update.DistSubdirRemoved = result.Stealth, result.DistSubdirRemoved

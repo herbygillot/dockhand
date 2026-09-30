@@ -92,7 +92,7 @@ func TestAPortsURLsAreAskedTogetherEachOnce(t *testing.T) {
 	probe := newGatedProbe(httpsAnswers{"https://mirror3.example/jq/": true}, true)
 	e := &Engine{HTTPS: probe}
 	said := make(chan []PlainURL)
-	go func() { said <- e.plainHTTP(t.Context(), info) }()
+	go func() { said <- e.plainHTTP(t.Context(), info, nil) }()
 	require.Eventually(t, func() bool { return probe.inFlight() == httpsAsks }, 5*time.Second, time.Millisecond, "asked together, not in turn")
 	time.Sleep(50 * time.Millisecond) // were there no bound, the rest would be asked by now
 	require.Equal(t, httpsAsks, probe.inFlight(), "no more than that at once")
@@ -107,5 +107,23 @@ func TestAPortsURLsAreAskedTogetherEachOnce(t *testing.T) {
 	for _, url := range want {
 		require.Equal(t, 1, probe.asked[url.HTTPS], url.HTTPS)
 	}
-	require.Nil(t, e.plainHTTP(t.Context(), macports.PortInfo{Options: map[string]string{"homepage": "https://jqlang.example/"}}))
+	require.Nil(t, e.plainHTTP(t.Context(), macports.PortInfo{Options: map[string]string{"homepage": "https://jqlang.example/"}}, nil))
+}
+
+// Answers a command has had already aren't asked again, and new ones join
+// them: create asks a homepage before writing it, and its checksum refresh
+// would otherwise ask again (batch 21).
+func TestAnAnswerHadIsntAskedAgain(t *testing.T) {
+	probe := newGatedProbe(httpsAnswers{"https://jqlang.example/": true}, false)
+	e := &Engine{HTTPS: probe}
+	answered := map[string]bool{"https://dl.example/": false}
+	plain := e.plainHTTP(t.Context(), macports.PortInfo{Options: map[string]string{"homepage": "http://jqlang.example/", "master_sites": "http://dl.example/"}}, answered)
+	require.Len(t, plain, 2)
+	require.True(t, plain[0].Answers)
+	require.False(t, plain[1].Answers)
+	require.Zero(t, probe.asked["https://dl.example/"], "answered already")
+	require.Equal(t, 1, probe.asked["https://jqlang.example/"])
+	require.Equal(t, map[string]bool{"https://dl.example/": false, "https://jqlang.example/": true}, answered)
+	e.plainHTTP(t.Context(), macports.PortInfo{Options: map[string]string{"homepage": "http://jqlang.example/"}}, answered)
+	require.Equal(t, 1, probe.asked["https://jqlang.example/"], "asked once in all")
 }

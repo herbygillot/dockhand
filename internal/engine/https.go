@@ -35,7 +35,11 @@ type PlainURL struct {
 // order the port names them. They're asked a few at once (httpsAsks), so
 // a port waits about as long as its slowest host, up to ten seconds, not
 // the sum of them; PlainHTTP names each URL once, so each is asked once.
-func (e *Engine) plainHTTP(ctx context.Context, info macports.PortInfo) []PlainURL {
+// Answered are the answers one command has had already, which it isn't
+// asked again, and which the new ones join: create asks a homepage before
+// writing it, and its checksum refresh would otherwise ask again. Nil
+// keeps none.
+func (e *Engine) plainHTTP(ctx context.Context, info macports.PortInfo, answered map[string]bool) []PlainURL {
 	urls := info.PlainHTTP()
 	if len(urls) == 0 {
 		return nil
@@ -46,12 +50,21 @@ func (e *Engine) plainHTTP(ctx context.Context, info macports.PortInfo) []PlainU
 	asks.SetLimit(httpsAsks)
 	for i, url := range urls {
 		plain[i] = PlainURL{PlainURL: url, HTTPS: "https://" + strings.TrimPrefix(url.URL, "http://")}
+		if answer, ok := answered[plain[i].HTTPS]; ok {
+			plain[i].Answers = answer
+			continue
+		}
 		asks.Go(func() error {
 			plain[i].Answers = probe.Answers(ctx, plain[i].HTTPS)
 			return nil
 		})
 	}
 	_ = asks.Wait()
+	if answered != nil {
+		for _, url := range plain {
+			answered[url.HTTPS] = url.Answers
+		}
+	}
 	return plain
 }
 
