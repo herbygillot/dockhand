@@ -442,3 +442,14 @@ Findings:
    - `aws-lc-sys` builds its bundled aws-lc, and MacPorts has no aws-lc port.
 
    Only `zstd-sys` has a MacPorts counterpart (zstd), and linking it is optional. The note could be limited to libraries MacPorts has a port for, and skip crates reachable only through non-macOS target dependencies. As worded ("MacPorts may provide it"), it asks the person to check each one.
+
+## Batch 13 on real ports
+
+At the implementor session's request, with a build of `f075232d`. sshuttle and beekeeper-studio were planned from scratch branches holding their old Portfiles (b1bc94f3d3d's sshuttle 1.3.2, dc1da711073's beekeeper-studio 5.9.2), now archived.
+
+- **zola** reads as intended: "· LICENSE-MIT was added; Cargo.toml says EUPL-1.2, which the Portfile's license line now names", and the one native-library note left names `archivers/zstd`.
+- **sshuttle** 1.3.2 → 2.0.0:
+  - The requires-python note is right: "· pyproject.toml's requires-python moves from <4.0,>=3.9 to <4.0,>=3.10, which admits Python 3.13, which the port builds with".
+  - The expected pin note, that `python.default_version` 313 is behind the PortGroup's 3.14, is in neither the text nor the JSON. This Portfile writes the setting across a continuation line (`python.default_version \` / `313`).
+  - "! setup.cfg changed" is a false hold. The whole diff is bumpversion's `current_version` line, and the build is hatchling through pyproject.toml.
+- **beekeeper-studio** 5.9.2 → 6.1.4: the workspaces are read, and apps/studio and apps/ui-kit changes appear. But three `!` holds are plain npm additions (devicon, simple-icons, @replit/codemirror-indentation-markers). A yarn-built port needs no Portfile change for those, and Cargo additions get only `·`. As it stands, nearly every beekeeper bump would be held.
