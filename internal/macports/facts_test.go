@@ -86,3 +86,21 @@ func TestAPortsPlainHTTPURLs(t *testing.T) {
 	require.Equal(t, []PlainURL{{"homepage", "http://txt.hellman.io/"}, {"master_sites", "http://ftp.example.org/pub/"}, {"master_sites", "http://mirror.example.org/x/"}}, info.PlainHTTP())
 	require.Empty(t, PortInfo{Options: map[string]string{"homepage": "https://example.org", "master_sites": "https://example.org/ gnu"}}.PlainHTTP())
 }
+
+// A native library's ties are what's named for it: its PortGroup, and the
+// ports depended on, versioned or without their lib prefix, never a port a
+// name only begins, nor one a stripped name's version would name.
+func TestWhatsTiedToANativeLibraryIsWhatsNamedForIt(t *testing.T) {
+	port := PortInfo{Options: map[string]string{"dockhand.portgroups": "cargo openssl github"},
+		Dependencies: []Dependency{{Port: "openssl3", Phase: "lib"}, {Port: "openssl3", Phase: "build"}, {Port: "opensslx"}, {Port: "sqlite3"}, {Port: "z3"}, {Port: "libgit2"}, {Port: "zlib"}}}
+	for library, want := range map[string]LibraryTies{
+		"openssl":    {PortGroups: []string{"openssl"}, Ports: []string{"openssl3"}},
+		"libsqlite3": {Ports: []string{"sqlite3"}},
+		"libgit2":    {Ports: []string{"libgit2"}},
+		"libz":       {},
+		"onig":       {},
+	} {
+		require.Equal(t, want, port.TiesTo(library), library)
+	}
+	require.Equal(t, LibraryTies{Ports: []string{"openssl3"}}, PortInfo{Dependencies: port.Dependencies}.TiesTo("openssl"), "a port whose PortGroups weren't read")
+}

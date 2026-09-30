@@ -26,7 +26,9 @@ import (
 // what the engine gives them to compare: raising it keeps an assessment
 // made before from standing for one made now, without reading anything
 // again (the assessment design, C). 2: a port that declares its crates or
-// Go modules is compared through its own archives, not refused.
+// Go modules is compared through its own archives, not refused, and a
+// crate gone that linked a native library the port still has something
+// for is said.
 const Policy = 2
 
 // Input is what one port's assessment reads.
@@ -81,6 +83,7 @@ const (
 	DependencyMoved     = "dependency-moved"
 	DependenciesCounted = "dependencies-counted"
 	NativeLibrary       = "native-library"
+	NativeLibraryLeft   = "native-library-left"
 	Unread              = "unread"
 	LayoutAmbiguous     = "layout-ambiguous"
 	RequirementUnmet    = "python-requirement-unmet"
@@ -244,6 +247,11 @@ func (a *assessment) pair(pair Pair) {
 			continue
 		}
 		switch {
+		case change.How == "unlinked":
+			if found, ok := unlinked(change, port); ok {
+				a.add(found)
+			}
+			continue
 		case change.Kind == "dependency" && change.How != "native" && proven[base]:
 			proved = append(proved, change)
 			continue
@@ -288,12 +296,41 @@ func finding(change sourcecompare.Change, hold bool) model.UpstreamChange {
 		found.Rule, found.Subject = Unread, change.Side
 	case change.How == "native":
 		found.Rule, found.Subject = NativeLibrary, change.Name
+	case change.How == "unlinked":
+		found.Rule, found.Subject = NativeLibraryLeft, change.Name
 	}
 	// What the old version couldn't be read for leaves the base unknown.
 	if change.Kind == "unread" && change.Side == "old" {
 		found.Class = model.UnknownBaseline
 	}
 	return found
+}
+
+// unlinked is a crate that linked a native library, gone from Cargo.lock,
+// as a finding where the port still has what's there for the library: a
+// PortGroup or a dependency named for it, which still reach the build.
+// zola's PortGroup openssl, left once openssl-sys went, put OpenSSL 3's
+// headers before aws-lc's own, and broke its build. It holds nothing, and
+// is said only where the port has something left.
+func unlinked(change sourcecompare.Change, port macports.PortInfo) (model.UpstreamChange, bool) {
+	ties := port.TiesTo(project.CargoPackage{Name: change.Name}.NativeLibrary())
+	var still []string
+	for _, group := range ties.PortGroups {
+		still = append(still, "PortGroup "+group)
+	}
+	for _, dependency := range ties.Ports {
+		still = append(still, "its dependency on "+dependency)
+	}
+	if len(still) == 0 {
+		return model.UpstreamChange{}, false
+	}
+	it, goes := "it", "it can go, since it still reaches the build"
+	if len(still) > 1 {
+		it, goes = "them", "they can go, since they still reach the build"
+	}
+	found := finding(change, false)
+	found.Message += fmt.Sprintf(", while the Portfile still has %s: unless something else needs %s, %s", strings.Join(still, " and "), it, goes)
+	return found, true
 }
 
 // dependency is a declared dependency's change as a finding. One the new

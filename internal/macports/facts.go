@@ -41,6 +41,38 @@ func (p PortInfo) PortGroups() (groups []string, known bool) {
 	return groups, set && err == nil
 }
 
+// LibraryTies are what of a port is there for a native library, by the
+// names MacPorts gives it: PortGroups named for it, as openssl is, and the
+// ports it depends on named for it, as openssl3 is, versioned, or sqlite3
+// is for libsqlite3, without its lib prefix.
+type LibraryTies struct {
+	PortGroups, Ports []string
+}
+
+// TiesTo are what of the port is there for a native library, as the
+// library is named; none where nothing is named for it. A name without
+// the lib prefix is taken only as it is, so libz's z doesn't name z3.
+func (p PortInfo) TiesTo(library string) LibraryTies {
+	bare := strings.TrimPrefix(library, "lib")
+	named := func(name string) bool {
+		version, ok := strings.CutPrefix(name, library)
+		return ok && strings.Trim(version, "0123456789") == "" || bare != library && name == bare
+	}
+	var ties LibraryTies
+	groups, _ := p.PortGroups()
+	for _, group := range groups {
+		if named(group) {
+			ties.PortGroups = append(ties.PortGroups, group)
+		}
+	}
+	for _, dependency := range p.Dependencies {
+		if named(dependency.Port) && !slices.Contains(ties.Ports, dependency.Port) {
+			ties.Ports = append(ties.Ports, dependency.Port)
+		}
+	}
+	return ties
+}
+
 // FetchCredentials reports whether MacPorts credentials apply to the port's
 // downloads; an error where the evaluator couldn't tell.
 func (p PortInfo) FetchCredentials() (bool, error) {

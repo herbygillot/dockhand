@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/project"
 	"github.com/herbygillot/dockhand/internal/sourcecompare"
@@ -247,6 +248,38 @@ func TestANewCrateLinkingANativeLibraryIsListed(t *testing.T) {
 		compared(t, map[string]string{"Cargo.lock": "version = 9\n"}, before))
 	require.Equal(t, []string{"· upstream: Cargo.lock adds zstd-sys 2.0.13+zstd.1.5.6, which links the native library zstd: MacPorts may provide it, for the Portfile to declare, rather than the crate linking whatever copy it finds"},
 		compared(t, map[string]string{}, map[string]string{"Cargo.lock": lock("zstd-sys 2.0.13+zstd.1.5.6")}), "a lock new to the source")
+}
+
+// A crate that linked a native library, gone from Cargo.lock, is said
+// where the Portfile still has what's there for the library, which still
+// reaches the build: zola's PortGroup openssl, left once openssl-sys went,
+// put OpenSSL 3's headers before aws-lc's own and broke its build. It
+// holds nothing, and a port with nothing left for it hears nothing.
+func TestACrateGoneThatLinkedANativeLibraryIsSaidWhereThePortStillHasIt(t *testing.T) {
+	var readings [2]project.Reading
+	for i, crates := range [][]string{{"openssl-sys 0.9.109", "native-tls 0.2.12", "libgit2-sys 0.17.0+1.8.1"}, {"aws-lc-sys 0.45.0", "libgit2-sys 0.17.0+1.8.1"}} {
+		reading, err := project.Read(t.Context(), testsupport.Tarball(t, fmt.Sprintf("zola-%d", i), map[string]string{"Cargo.lock": lock(crates...)}), project.Spec{})
+		require.NoError(t, err)
+		readings[i] = reading
+	}
+	added := "· upstream: Cargo.lock adds aws-lc-sys 0.45.0, which links the native library aws-lc: MacPorts may provide it, for the Portfile to declare, rather than the crate linking whatever copy it finds"
+	assessed := func(port macports.PortInfo) []model.UpstreamChange {
+		return Assess(Input{Port: port, Pairs: []Pair{{Archive: "new", Before: readings[0], After: readings[1]}}}).Changes
+	}
+	zola := macports.PortInfo{Name: "zola", Options: map[string]string{"dockhand.portgroups": "cargo openssl"}, Dependencies: []macports.Dependency{{Port: "openssl3", Phase: "lib"}}}
+	changes := assessed(zola)
+	require.Equal(t, []string{added,
+		"· upstream: Cargo.lock drops openssl-sys, which linked the native library openssl, while the Portfile still has PortGroup openssl and its dependency on openssl3: unless something else needs them, they can go, since they still reach the build",
+	}, messages(changes))
+	require.Equal(t, NativeLibraryLeft, changes[1].Rule)
+	require.Equal(t, "openssl-sys", changes[1].Subject)
+
+	zola.Options["dockhand.portgroups"] = "cargo"
+	require.Equal(t, []string{added,
+		"· upstream: Cargo.lock drops openssl-sys, which linked the native library openssl, while the Portfile still has its dependency on openssl3: unless something else needs it, it can go, since it still reaches the build",
+	}, messages(assessed(zola)))
+	zola.Dependencies = nil
+	require.Equal(t, []string{added}, messages(assessed(zola)))
 }
 
 // A license file whose copyright lines moved only their years, as usql's
