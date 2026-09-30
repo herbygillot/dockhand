@@ -681,3 +681,26 @@ func kindWords(target model.PlanTarget) string {
 	}
 	return "changed"
 }
+
+// VariantsBuilt are the variant builds a --variants each check made of its
+// port, as MacPorts writes each, "+tests", with whether every one passed
+// wherever it's required, and its default build too: what the pull
+// request template's variants item asks, which such a check answers.
+func (e Evidence) VariantsBuilt() (port string, builds []string, passed bool) {
+	if !e.Plan.EachVariant {
+		return "", nil, false
+	}
+	passed = true
+	for _, target := range e.Targets {
+		if spec := target.Target.Target.VariantSpec(); spec != "" {
+			port = target.Target.Target.Name
+			builds = append(builds, spec)
+		}
+	}
+	for _, target := range e.Targets {
+		if target.Target.Target.Name == port && !target.Passed {
+			passed = false
+		}
+	}
+	return port, builds, passed && len(builds) > 0
+}

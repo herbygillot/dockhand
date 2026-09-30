@@ -23,8 +23,8 @@ import (
 )
 
 func checkCommand(s *settings, streams Streams) *cobra.Command {
-	var selector, tests string
-	var plan, head, staged, workingTree, enqueue, baseline, replace, fresh bool
+	var selector, tests, variants string
+	var plan, head, staged, workingTree, enqueue, baseline, replace, fresh, yes bool
 	var include, only, also, on []string
 	cmd := &cobra.Command{
 		Use:   "check",
@@ -97,7 +97,12 @@ true, it runs that baseline by itself.`,
 			if tests == "" {
 				tests = s.file.Check.Tests
 			}
-			proposed, err := e.PlanCheck(ctx, engine.PlanRequest{Revision: capture.Revision, Environments: environments, Only: only, Also: also, Tests: model.TestPolicy(tests), Fresh: fresh})
+			chosen, each, err := engine.VariantsFlag(variants)
+			if err != nil {
+				return err
+			}
+			proposed, err := e.PlanCheck(ctx, engine.PlanRequest{Revision: capture.Revision, Environments: environments, Only: only, Also: also, Tests: model.TestPolicy(tests), Fresh: fresh,
+				Variants: chosen, EachVariant: each})
 			if err != nil {
 				return err
 			}
@@ -122,6 +127,9 @@ true, it runs that baseline by itself.`,
 			}
 			if plan {
 				return nil
+			}
+			if err := confirmVariantBuilds(streams, proposed, yes); err != nil {
+				return err
 			}
 			replaced, err := replaceActive(ctx, e, streams, branch, capture.Revision, replace)
 			if err != nil {
@@ -171,6 +179,8 @@ true, it runs that baseline by itself.`,
 	cmd.Flags().BoolVar(&replace, "replace", false, "stop the branch's queued or running check, keeping what it finished, and check this instead")
 	cmd.Flags().BoolVar(&baseline, "baseline", false, "build what failed in the latest check, or --only ports, at the master it started from")
 	cmd.Flags().BoolVar(&fresh, "fresh", false, "build every port, reusing no earlier build's result")
+	cmd.Flags().StringVar(&variants, "variants", "", "build the one port checked with these variants, +name -name, or each: its defaults, then each variant it declares")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with --variants each, make its builds without asking")
 	cmd.MarkFlagsMutuallyExclusive("baseline", "also")
 	cmd.MarkFlagsMutuallyExclusive("head", "staged", "working-tree")
 	return cmd
@@ -267,7 +277,7 @@ func unrunnable(plan model.Plan) string {
 func writePlan(out io.Writer, plan model.Plan, notes []string, remedy func(model.Unmet) string) {
 	var changed, extra []string
 	for _, target := range plan.Targets {
-		name := target.Target.Name
+		name := string(target.ID)
 		switch target.Role {
 		case model.Also:
 			extra = append(extra, name)
@@ -289,7 +299,7 @@ func writePlan(out io.Writer, plan model.Plan, notes []string, remedy func(model
 	if len(plan.Omitted) > 0 {
 		var omitted []string
 		for _, target := range plan.Omitted {
-			omitted = append(omitted, target.Target.Name)
+			omitted = append(omitted, string(target.ID))
 		}
 		fmt.Fprintf(out, "Left out    %s, by --only; submit still needs them checked\n", strings.Join(omitted, ", "))
 	}
@@ -298,14 +308,15 @@ func writePlan(out io.Writer, plan model.Plan, notes []string, remedy func(model
 		on = append(on, environmentWords(environment))
 	}
 	fmt.Fprintf(out, "Provider    %s · tests %s\n", strings.Join(on, "; "), plan.Tests)
+	writeVariants(out, plan)
 	// Tests required ask nothing of a port that declares none, which
 	// passes under any policy: said, so its ✓ isn't read as tests passed.
 	if plan.Tests == model.TestsRequired {
 		var untested []string
 		for _, build := range plan.Builds {
 			for _, id := range build.Untested {
-				if target, ok := plan.Target(id); ok && !slices.Contains(untested, target.Target.Name) {
-					untested = append(untested, target.Target.Name)
+				if target, ok := plan.Target(id); ok && !slices.Contains(untested, string(target.ID)) {
+					untested = append(untested, string(target.ID))
 				}
 			}
 		}
@@ -385,9 +396,9 @@ func writeExclusions(out io.Writer, plan model.Plan) {
 	var all []excluded
 	for _, planned := range plan.Builds {
 		for _, exclusion := range planned.Exclusions {
-			i := slices.IndexFunc(all, func(x excluded) bool { return x.name == exclusion.Target.Name && x.reason == exclusion.Reason })
+			i := slices.IndexFunc(all, func(x excluded) bool { return x.name == string(exclusion.Target.ID()) && x.reason == exclusion.Reason })
 			if i < 0 {
-				all = append(all, excluded{name: exclusion.Target.Name, reason: exclusion.Reason})
+				all = append(all, excluded{name: string(exclusion.Target.ID()), reason: exclusion.Reason})
 				i = len(all) - 1
 			}
 			all[i].where = append(all[i].where, environmentWords(planned.Environment))
@@ -584,7 +595,7 @@ func writeResults(out io.Writer, indent string, evidence engine.Evidence, where 
 	if len(environments) <= 1 {
 		width := 0
 		for _, target := range evidence.Targets {
-			width = max(width, len(target.Target.Target.Name))
+			width = max(width, len(target.Target.ID))
 		}
 		for _, target := range evidence.Targets {
 			var cells []string
@@ -595,7 +606,7 @@ func writeResults(out io.Writer, indent string, evidence engine.Evidence, where 
 				}
 				cells = append(cells, cell)
 			}
-			fmt.Fprintf(out, "%s%-*s  %s\n", indent, width, target.Target.Target.Name, strings.Join(cells, "   "))
+			fmt.Fprintf(out, "%s%-*s  %s\n", indent, width, target.Target.ID, strings.Join(cells, "   "))
 		}
 		return
 	}
@@ -606,7 +617,7 @@ func writeResults(out io.Writer, indent string, evidence engine.Evidence, where 
 	}
 	fmt.Fprintln(grid)
 	for _, target := range evidence.Targets {
-		fmt.Fprintf(grid, "%s%s", indent, target.Target.Target.Name)
+		fmt.Fprintf(grid, "%s%s", indent, target.Target.ID)
 		for i := range target.Outcomes {
 			fmt.Fprintf(grid, "\t%s", evidence.Words(target, i, false))
 		}
@@ -838,4 +849,51 @@ func replaceActive(ctx context.Context, e *engine.Engine, streams Streams, branc
 		stopped = append(stopped, run.Name())
 	}
 	return stopped, nil
+}
+
+// writeVariants says what --variants builds: the one port with its
+// variants in place of its defaults, or, with each, its defaults and then
+// each variant it declares.
+func writeVariants(out io.Writer, plan model.Plan) {
+	var builds []string
+	var port string
+	for _, target := range plan.Targets {
+		if spec := target.Target.VariantSpec(); spec != "" {
+			port = target.Target.Name
+			builds = append(builds, spec)
+		}
+	}
+	switch {
+	case plan.EachVariant && len(builds) > 0:
+		fmt.Fprintf(out, "Variants    %s with its defaults, then with each of %s over them (universal left out)\n", port, strings.Join(builds, ", "))
+	case plan.Variants != "" && len(builds) > 0:
+		fmt.Fprintf(out, "Variants    %s %s, in place of its defaults\n", port, plan.Variants)
+	}
+}
+
+// variantBuildsToAsk is how many builds --variants each makes, targets
+// times environments, before check asks first: each is a whole build.
+const variantBuildsToAsk = 12
+
+// confirmVariantBuilds asks before a --variants each check makes more
+// than variantBuildsToAsk builds; without a terminal, --yes goes ahead.
+func confirmVariantBuilds(streams Streams, plan model.Plan, yes bool) error {
+	builds := 0
+	for _, planned := range plan.Builds {
+		builds += len(planned.Order)
+	}
+	if !plan.EachVariant || builds <= variantBuildsToAsk || yes {
+		return nil
+	}
+	if !streams.terminal() {
+		return fmt.Errorf("nothing was checked: --variants each makes %d builds here; without a terminal, --yes builds them", builds)
+	}
+	ok, err := confirm(streams, fmt.Sprintf("? --variants each makes %d builds, each a whole build; go ahead? [y/N] ", builds))
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.New("nothing was checked")
+	}
+	return nil
 }

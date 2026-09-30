@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -283,4 +284,43 @@ func cells(results []model.TargetResult) []engine.Cell {
 		cells = append(cells, engine.Cell{TargetResult: result, Kind: kind})
 	}
 	return cells
+}
+
+// A --variants plan says what it builds, and --variants each asks before
+// more builds than it would make unasked: on a terminal, a question;
+// without one, --yes (item 8).
+func TestAVariantsCheckSaysWhatItBuildsAndAsksFirst(t *testing.T) {
+	arm := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	jq := model.PlanTarget{ID: "jq", Target: model.Target{Name: "jq"}, Directory: "textproc/jq", Kind: model.Substantive, Role: model.Changed}
+	plan := model.Plan{Environments: []model.Environment{arm}, EachVariant: true, Targets: []model.PlanTarget{jq}}
+	order := []model.TargetID{"jq"}
+	for _, variant := range []string{"tests", "docs", "oniguruma", "static"} {
+		build := jq
+		build.Target.Variants = map[string]bool{variant: true}
+		build.ID = build.Target.ID()
+		plan.Targets = append(plan.Targets, build)
+		order = append(order, build.ID)
+	}
+	plan.Builds = []model.EnvironmentPlan{{Environment: arm, Order: order}}
+	var out strings.Builder
+	writeVariants(&out, plan)
+	require.Equal(t, "Variants    jq with its defaults, then with each of +tests, +docs, +oniguruma, +static over them (universal left out)\n", out.String())
+
+	require.NoError(t, confirmVariantBuilds(Streams{}, plan, false), "five builds, asked nothing")
+	for range 3 {
+		plan.Builds = append(plan.Builds, model.EnvironmentPlan{Environment: arm, Order: order})
+	}
+	require.EqualError(t, confirmVariantBuilds(Streams{In: strings.NewReader("")}, plan, false),
+		"nothing was checked: --variants each makes 20 builds here; without a terminal, --yes builds them")
+	require.NoError(t, confirmVariantBuilds(Streams{}, plan, true))
+	var asked strings.Builder
+	require.NoError(t, confirmVariantBuilds(Streams{In: strings.NewReader("y\n"), Out: &asked, Err: &asked, interactive: true}, plan, false))
+	require.EqualError(t, confirmVariantBuilds(Streams{In: strings.NewReader("n\n"), Out: &asked, Err: &asked, interactive: true}, plan, false), "nothing was checked")
+	require.Contains(t, asked.String(), "? --variants each makes 20 builds, each a whole build; go ahead? [y/N] ")
+
+	single := model.Plan{Variants: "+tests", Targets: []model.PlanTarget{plan.Targets[1]}}
+	out.Reset()
+	writeVariants(&out, single)
+	require.Equal(t, "Variants    jq +tests, in place of its defaults\n", out.String())
+	require.NoError(t, confirmVariantBuilds(Streams{}, single, false), "only each asks")
 }

@@ -141,7 +141,7 @@ func ownedSections(facts bodyFacts) string {
 		}
 		fmt.Fprintln(&b)
 		for _, target := range evidence.Targets {
-			fmt.Fprintf(&b, "| %s |", target.Target.Target.Name)
+			fmt.Fprintf(&b, "| %s |", target.Target.ID)
 			for i := range target.Outcomes {
 				fmt.Fprintf(&b, " %s |", evidence.Words(target, i, slices.Contains(facts.Accepted, target.Target.Target.Name)))
 			}
@@ -176,7 +176,15 @@ func ownedSections(facts bodyFacts) string {
 	}
 	item(built, "tried a full install with `sudo port -vst install`?", installNote(built))
 	item(facts.TestedBinaries, "tested basic functionality of all binary files?", "")
-	item(facts.TestedVariants, "checked that the Portfile's most important [variants](https://trac.macports.org/wiki/Variants) haven't been broken?", "")
+	// A --variants each check that passed answers the variants item, and
+	// says which it built; otherwise it's the person's statement.
+	variants, variantsNote := facts.TestedVariants, ""
+	if evidence != nil && !facts.NoCheck {
+		if port, builds, passed := evidence.VariantsBuilt(); passed {
+			variants, variantsNote = true, fmt.Sprintf("(dockhand built %s with each of %s over its defaults)", port, strings.Join(builds, ", "))
+		}
+	}
+	item(variants, "checked that the Portfile's most important [variants](https://trac.macports.org/wiki/Variants) haven't been broken?", variantsNote)
 	if facts.SkipNotification {
 		fmt.Fprint(&b, "\n[skip notification]\n")
 	}

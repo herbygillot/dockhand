@@ -96,7 +96,7 @@ It stops wherever a person should look:
 - A failed check leaves the branch, with its logs.
 - A passing check is held, as `serve`'s are, when the upstream comparison found something a build can't catch or couldn't compare the archives, a commit rule has a finding, or another pull request is open for the port, or couldn't be looked for. `bump` exits 3 and names the `submit` that finishes it after a look; with `--json`, `submit.held` lists why.
 
-The pull request's tested checkboxes stay unticked unless `--tested-binaries` or `--tested-variants` says otherwise: they say what you tested, which dockhand can't.
+The pull request's tested checkboxes stay unticked unless `--tested-binaries` or `--tested-variants` says otherwise: they say what you tested, which dockhand can't. The one exception is a passing `check --variants each` of the port, which ticks the variants item by itself and says which variants it built, since it built them.
 
 ### Many ports at once
 
@@ -171,6 +171,14 @@ Results are per target and per environment:
 **What it captures.** By default, the tracked files as they are on disk, committed or not, as a numbered snapshot. `--staged` checks the index, and `--head` the committed tip. `--working-tree` checks the working files of a `--branch` checked out elsewhere, and `--include <file>` adds an untracked file without staging it.
 
 **What it builds.** `--only <port>` narrows the check to some of the changed ports, and adds back the changed ports they need. `--also <port>` builds unchanged ports against the branch, such as the dependents `impact` lists.
+
+`--variants` builds one port its way: the port `--only` names, or the one port the branch changes. There are two forms:
+- `--variants +tests` builds it with those variants in place of its defaults, as MacPorts' command line writes them (`+tests -docs`).
+- `--variants each` builds it with its defaults, then once with each variant it declares, over its defaults. The variants among its defaults are left out, since its default build has them, and so is `universal`, which needs other architectures' dependencies a clean VM doesn't have.
+
+Each build is evaluated with its variants, so it's planned as MacPorts would build it: whether it needs Xcode, whether it declares tests, and what it depends on can change with a variant. A build is left out of a release whose port doesn't declare its variant there. A variant the port doesn't declare anywhere is refused before anything builds. Each build is its own row, `s2n-tls +tests`, in the plan, the results, and the pull request.
+
+`each` makes one whole build per variant per environment. Above 12 builds, `check` asks first; without a terminal, `--yes` builds them. GitHub's workflow builds default variants only, so `--variants` there is refused.
 
 **Where it builds.** `--on` names where, and every one named must pass; repeat it for several. Without it, `check.on` decides, and without that, your command provider if you have one, else Tart on this Mac's release. The forms are:
 

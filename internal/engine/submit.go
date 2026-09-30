@@ -298,7 +298,12 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan) error {
 	}
 	plan.Evidence = &evidence
 	for _, port := range request.Accept {
-		i := slices.IndexFunc(evidence.Targets, func(t TargetEvidence) bool { return t.Target.Target.Name == port })
+		// A port may have several builds, its variant builds beside its
+		// default one: the one to accept is one that failed.
+		i := slices.IndexFunc(evidence.Targets, func(t TargetEvidence) bool { return t.Target.Target.Name == port && t.Failing() })
+		if i < 0 {
+			i = slices.IndexFunc(evidence.Targets, func(t TargetEvidence) bool { return t.Target.Target.Name == port })
+		}
 		switch {
 		case i < 0:
 			return fmt.Errorf("--accept %s: %s checked no port %s", port, evidence.Run.Name(), port)

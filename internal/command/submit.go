@@ -157,9 +157,15 @@ func askTested(streams Streams, plan *engine.SubmitPlan) error {
 	if err != nil {
 		return err
 	}
-	variants, err := confirm(streams, "? Did you check that the most important variants aren't broken? [y/N] ")
-	if err != nil {
-		return err
+	// A --variants each check that passed has answered this one.
+	variants := false
+	if plan.Evidence != nil {
+		_, _, variants = plan.Evidence.VariantsBuilt()
+	}
+	if !variants {
+		if variants, err = confirm(streams, "? Did you check that the most important variants aren't broken? [y/N] "); err != nil {
+			return err
+		}
 	}
 	plan.Answer(binaries, variants)
 	return nil

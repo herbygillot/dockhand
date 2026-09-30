@@ -201,3 +201,54 @@ func TestAnExcludedEnvironmentIsNotCalledTested(t *testing.T) {
 	require.Equal(t, "###### Tested on\n\nmacOS 26.6 arm64\nXcode 26.6 · tart: built in a clean VM (Run ID: tart_b - checked in check-21)\n\n", testedOn)
 	require.Contains(t, table, "| beekeeper-studio | — excluded | ✓ |")
 }
+
+// A --variants each check that passed ticks the template's variants item
+// by itself, and says which it built; each build is its own row. One
+// where a variant build failed leaves the item to the person.
+func TestAVariantsCheckAnswersTheVariantsItem(t *testing.T) {
+	command := model.Environment{Provider: "command"}
+	passed := func(target model.Target) TargetEvidence {
+		return TargetEvidence{Target: model.PlanTarget{ID: target.ID(), Target: target}, Passed: true,
+			Outcomes: []Cell{recorded(command, model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsNone})}}
+	}
+	jq := model.Target{Name: "jq"}
+	tests := model.Target{Name: "jq", Variants: map[string]bool{"tests": true}}
+	docs := model.Target{Name: "jq", Variants: map[string]bool{"docs": true}}
+	evidence := Evidence{Plan: model.Plan{Environments: []model.Environment{command}, EachVariant: true}, Targets: []TargetEvidence{passed(jq), passed(tests), passed(docs)}}
+	port, builds, ok := evidence.VariantsBuilt()
+	require.True(t, ok)
+	require.Equal(t, "jq", port)
+	require.Equal(t, []string{"+tests", "+docs"}, builds)
+	body := ownedSections(bodyFacts{Evidence: &evidence})
+	require.Contains(t, body, "- [x] checked that the Portfile's most important [variants](https://trac.macports.org/wiki/Variants) haven't been broken? (dockhand built jq with each of +tests, +docs over its defaults)\n")
+	require.Contains(t, body, "| jq +tests | ✓ |\n")
+
+	evidence.Targets[2].Passed = false
+	_, _, ok = evidence.VariantsBuilt()
+	require.False(t, ok, "a variant build that didn't pass answers nothing")
+	require.Contains(t, ownedSections(bodyFacts{Evidence: &evidence}), "- [ ] checked that the Portfile's most important [variants]")
+	require.Contains(t, ownedSections(bodyFacts{Evidence: &evidence, TestedVariants: true}), "- [x] checked that the Portfile's most important [variants](https://trac.macports.org/wiki/Variants) haven't been broken?\n",
+		"the person's statement, as before")
+	evidence.Plan.EachVariant = false
+	_, _, ok = evidence.VariantsBuilt()
+	require.False(t, ok, "only --variants each answers it")
+}
+
+// check's --variants is each, or variants as MacPorts' command line takes
+// them.
+func TestTheVariantsFlag(t *testing.T) {
+	variants, each, err := VariantsFlag("+tests -docs")
+	require.NoError(t, err)
+	require.False(t, each)
+	require.Equal(t, map[string]bool{"tests": true, "docs": false}, variants)
+	variants, each, err = VariantsFlag(" each ")
+	require.NoError(t, err)
+	require.True(t, each)
+	require.Nil(t, variants)
+	variants, each, err = VariantsFlag("")
+	require.NoError(t, err)
+	require.False(t, each)
+	require.Nil(t, variants)
+	_, _, err = VariantsFlag("tests")
+	require.ErrorContains(t, err, "--variants: ")
+}
