@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/credential"
+	"github.com/herbygillot/dockhand/internal/fetch"
 	"github.com/herbygillot/dockhand/internal/forge"
 )
 
@@ -41,7 +41,7 @@ type SystemCredentials struct {
 // GITHUB_TOKEN where set, else the login dockhand keeps in the store. It
 // is the one way dockhand makes that client.
 func SystemClient(store credential.Store) *Client {
-	return &Client{HTTP: http.DefaultClient, Credentials: SystemCredentials{Store: store, Key: CredentialKey}}
+	return &Client{HTTP: fetch.Client, Credentials: SystemCredentials{Store: store, Key: CredentialKey}}
 }
 
 func (s SystemCredentials) Token(ctx context.Context) (Token, error) {

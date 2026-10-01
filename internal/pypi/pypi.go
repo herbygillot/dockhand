@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/herbygillot/dockhand/internal/fetch"
 )
 
 // API is where PyPI's JSON API answers.
@@ -45,7 +47,7 @@ func (c Client) Files(ctx context.Context, project, version string) ([]File, err
 	request.Header.Set("Accept", "application/json")
 	client := c.HTTP
 	if client == nil {
-		client = http.DefaultClient
+		client = fetch.Client
 	}
 	response, err := client.Do(request)
 	if err != nil {

@@ -2,11 +2,11 @@ package engine
 
 import (
 	"context"
-	"net/http"
 	"os"
 	"path/filepath"
 
 	"github.com/herbygillot/dockhand/internal/credential/keychain"
+	"github.com/herbygillot/dockhand/internal/fetch"
 	forgegithub "github.com/herbygillot/dockhand/internal/forge/github"
 	forgegitlab "github.com/herbygillot/dockhand/internal/forge/gitlab"
 	"github.com/herbygillot/dockhand/internal/github"
@@ -38,7 +38,7 @@ func (e *Engine) preparer() (Preparer, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &preparation.Service{Repo: e.Repo, Ports: ports, Upstream: e.discovery(ports), HTTP: http.DefaultClient, Mirror: archives.MacPortsMirror, Workspaces: &workspace.Registry{}}, nil
+		return &preparation.Service{Repo: e.Repo, Ports: ports, Upstream: e.discovery(ports), HTTP: fetch.Client, Mirror: archives.MacPortsMirror, Workspaces: &workspace.Registry{}}, nil
 	})
 }
 
@@ -51,10 +51,10 @@ func (e *Engine) github() *forgegithub.Client {
 // discovery finds ports' newest releases upstream, on GitHub and GitLab.
 func (e *Engine) discovery(ports *selection.Reader) *upstream.Service {
 	return &upstream.Service{
-		Ports: ports, HTTP: http.DefaultClient, Versions: ports,
+		Ports: ports, HTTP: fetch.Client, Versions: ports,
 		Catalogs: map[portsource.Forge]upstream.Catalog{
 			portsource.GitHub: e.github(),
-			portsource.GitLab: &forgegitlab.Client{HTTP: http.DefaultClient},
+			portsource.GitLab: &forgegitlab.Client{HTTP: fetch.Client},
 		},
 	}
 }
@@ -79,7 +79,7 @@ func indexConfig() (portindex.Config, error) {
 	if err != nil {
 		return portindex.Config{}, err
 	}
-	return portindex.Config{CacheDirectory: cache, Mirror: &portindex.Mirror{HTTP: http.DefaultClient, Base: os.Getenv("DOCKHAND_INDEX_MIRROR")}}, nil
+	return portindex.Config{CacheDirectory: cache, Mirror: &portindex.Mirror{HTTP: fetch.Client, Base: os.Getenv("DOCKHAND_INDEX_MIRROR")}}, nil
 }
 
 // PortIndex is how the engine stages a tree's port index for a platform,

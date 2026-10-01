@@ -40,7 +40,7 @@ func (r *repository) Archive(ctx context.Context, commit string, into io.Writer,
 		return err
 	}
 	request.Header.Set("User-Agent", fetch.UserAgent)
-	served, err := fetch.Open(http.DefaultClient, request, limit)
+	served, err := fetch.Open(fetch.Client, request, limit)
 	if err != nil {
 		return fmt.Errorf("github: fetching the archive of %s: %w", commit, err)
 	}

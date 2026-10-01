@@ -96,7 +96,7 @@ func Open(client *http.Client, request *http.Request, limit int64) (*http.Respon
 // then as the client's own rule says.
 func redirecting(client *http.Client) *http.Client {
 	if client == nil {
-		client = http.DefaultClient
+		client = Client
 	}
 	configured := *client
 	configured.CheckRedirect = func(req *http.Request, via []*http.Request) error {

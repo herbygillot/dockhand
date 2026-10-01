@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -24,7 +23,7 @@ type credentials interface {
 
 // The login's parts, which tests stand in for.
 var (
-	authFlow    credential.DeviceFlow = &github.DeviceFlow{HTTP: http.DefaultClient}
+	authFlow    credential.DeviceFlow = &github.DeviceFlow{}
 	authStore   credentials           = keychain.Store{}
 	authAPI                           = github.SystemClient
 	openBrowser                       = func(ctx context.Context, url string) error {

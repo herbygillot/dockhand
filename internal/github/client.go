@@ -8,6 +8,8 @@ import (
 	"sync"
 
 	gh "github.com/google/go-github/v91/github"
+
+	"github.com/herbygillot/dockhand/internal/fetch"
 )
 
 type Config struct {
@@ -124,7 +126,7 @@ func (c *Client) newAPI(token string, source CredentialSource) (*gh.Client, erro
 	}
 	transport := client.Transport
 	if transport == nil {
-		transport = http.DefaultTransport
+		transport = fetch.Transport
 	}
 	client.Transport = redirectTransport{next: transport, source: source, authenticated: token != ""}
 	options := []gh.ClientOptionsFunc{gh.WithHTTPClient(&client)}

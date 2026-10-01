@@ -7,10 +7,13 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/credential"
+	"github.com/herbygillot/dockhand/internal/fetch"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/endpoints"
 )
 
+// DeviceFlow signs in through GitHub's device flow. HTTP is fetch.Client
+// when nil, whose wait for a response is bounded.
 type DeviceFlow struct {
 	HTTP       *http.Client
 	Endpoint   oauth2.Endpoint
@@ -35,9 +38,11 @@ func (f *DeviceFlow) Authorize(ctx context.Context, clientID string, present fun
 		endpoint = endpoints.GitHub
 	}
 	config := oauth2.Config{ClientID: clientID, Scopes: []string{"public_repo"}, Endpoint: endpoint}
-	if f.HTTP != nil {
-		ctx = context.WithValue(ctx, oauth2.HTTPClient, f.HTTP)
+	client := f.HTTP
+	if client == nil {
+		client = fetch.Client
 	}
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, client)
 	authorization, err := config.DeviceAuth(ctx)
 	if err != nil {
 		return credential.Value{}, fmt.Errorf("github: starting device authorization: %w", err)
@@ -62,8 +67,8 @@ func (f *DeviceFlow) Authorize(ctx context.Context, clientID string, present fun
 	if token.TokenType != "" && !strings.EqualFold(token.TokenType, "bearer") {
 		return credential.Value{}, fmt.Errorf("github: device authorization returned unsupported token type %q", token.TokenType)
 	}
-	client := &Client{HTTP: f.HTTP, Config: Config{BaseURL: f.APIBaseURL, Token: secret}}
-	login, err := client.AuthenticatedUser(ctx)
+	api := &Client{HTTP: client, Config: Config{BaseURL: f.APIBaseURL, Token: secret}}
+	login, err := api.AuthenticatedUser(ctx)
 	if err != nil {
 		return credential.Value{}, err
 	}

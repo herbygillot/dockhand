@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/herbygillot/dockhand/internal/fetch"
 )
 
 // Registry reads an image's digest through the OCI distribution API, the
@@ -59,7 +61,7 @@ func (r Registry) Digest(ctx context.Context, reference string) (string, error) 
 	}
 	client := r.HTTP
 	if client == nil {
-		client = http.DefaultClient
+		client = fetch.Client
 	}
 	manifest := fmt.Sprintf("%s://%s/v2/%s/manifests/%s", scheme, host, repository, tag)
 	response, err := r.head(ctx, client, manifest, "")
