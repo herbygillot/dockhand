@@ -328,6 +328,7 @@ func submitView(plan engine.SubmitPlan) submitJSON {
 
 type cleanStepJSON struct {
 	What    string `json:"what"`
+	Why     string `json:"why,omitempty"`
 	Kept    string `json:"kept,omitempty"`
 	Removed bool   `json:"removed"`
 }
@@ -336,6 +337,9 @@ type cleanBranchJSON struct {
 	Branch string          `json:"branch"`
 	Merged string          `json:"merged_at"`
 	Steps  []cleanStepJSON `json:"steps"`
+	// Superseded says what master has of an unmerged branch's ports, for a
+	// look before git branch -D removes it.
+	Superseded string `json:"superseded,omitempty"`
 }
 
 type leftoverJSON struct {
@@ -362,9 +366,9 @@ func leftoversView(leftovers []engine.Leftover) []leftoverJSON {
 func cleanView(plans []engine.CleanBranch) []cleanBranchJSON {
 	views := []cleanBranchJSON{}
 	for _, plan := range plans {
-		view := cleanBranchJSON{Branch: plan.Branch.ShortName(), Merged: string(plan.Merged), Steps: []cleanStepJSON{}}
+		view := cleanBranchJSON{Branch: plan.Branch.ShortName(), Merged: string(plan.Merged), Steps: []cleanStepJSON{}, Superseded: plan.Superseded}
 		for _, step := range plan.Steps {
-			view.Steps = append(view.Steps, cleanStepJSON{What: step.What, Kept: step.Kept, Removed: step.Done})
+			view.Steps = append(view.Steps, cleanStepJSON{What: step.What, Why: step.Why, Kept: step.Kept, Removed: step.Done})
 		}
 		views = append(views, view)
 	}

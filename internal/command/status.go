@@ -142,7 +142,13 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 				// What its Git branch changed went with it.
 				ports = "—"
 			}
-			fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\n", status.Branch.ShortName(), ports, workWords(status), checkState(status), prWords(status))
+			// An archived branch is said, as clean says it; its row
+			// read as an open one's (the dogfood run with bf711891).
+			name := status.Branch.ShortName()
+			if status.Branch.State == model.BranchArchived {
+				name += " (archived)"
+			}
+			fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\n", name, ports, workWords(status), checkState(status), prWords(status))
 		}
 		table.Flush()
 	}

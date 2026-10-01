@@ -53,6 +53,12 @@ func TestCleanTakesAnArchivedBranchsWorktreeAndPathBringsItBack(t *testing.T) {
 	require.NoDirExists(t, dir)
 	require.Equal(t, head, strings.TrimSpace(gitRun(t, w.clone, "rev-parse", "dockhand/jq-update")), "the branch and its work stay")
 
+	// status --all says it's archived, which its row didn't (the dogfood
+	// run with bf711891).
+	out, _, err = dockhand(t, "status", "--all")
+	require.NoError(t, err)
+	require.Regexp(t, `(?m)^jq-update \(archived\)\s+1\s+1 commit\s`, out)
+
 	out, _, err = dockhand(t, "path", "jq-update")
 	require.NoError(t, err)
 	// macOS's temporary directories are under /private, which one side may

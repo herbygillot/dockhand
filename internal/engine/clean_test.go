@@ -259,4 +259,17 @@ func TestAnArchivedBranchWithNothingMasterLacksGoesWithItsWorktree(t *testing.T)
 	status, err := e.BranchStatus(t.Context(), archived)
 	require.NoError(t, err)
 	require.True(t, status.Cleaned(), "cleaned, not lost")
+
+	// One with no worktree is said all the same, as zola, adopted with
+	// none, wasn't (the dogfood run with bf711891).
+	adopted, err := e.Branch(t.Context(), working.ID)
+	require.NoError(t, err)
+	adopted.Managed, adopted.Worktree = false, ""
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(adopted) }))
+	plans, err = e.PlanClean(t.Context(), model.BranchArchived)
+	require.NoError(t, err)
+	require.Len(t, plans, 1)
+	require.Equal(t, "dockhand/jq-update", plans[0].Branch.Name)
+	require.Empty(t, plans[0].Steps)
+	require.Equal(t, "master has jq at 1.8.2, where the branch took 1.7.1 to 1.8.1", plans[0].Superseded)
 }

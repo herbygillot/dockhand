@@ -82,7 +82,7 @@ func (e *Engine) PlanClean(ctx context.Context, states ...model.BranchState) ([]
 		if err != nil {
 			return nil, err
 		}
-		if len(plan.Steps) > 0 {
+		if len(plan.Steps) > 0 || plan.Superseded != "" {
 			plans = append(plans, plan)
 		}
 	}
@@ -279,21 +279,25 @@ func samePath(a, b string) bool {
 }
 
 // planCleanWorktree plans removing an unmerged branch's worktree, and
-// nothing else, unless it holds work of its own.
+// nothing else, unless it holds work of its own. A branch with no worktree
+// of dockhand's, as an adopted one may have none, is read all the same:
+// clean --archived skipped the adopted pre-v3 zola branch before asking
+// whether master supersedes it (the dogfood run with bf711891).
 func (e *Engine) planCleanWorktree(ctx context.Context, branch model.Branch) (CleanBranch, error) {
 	plan := CleanBranch{Branch: branch}
-	if !branch.Managed || !exists(branch.Worktree) {
-		return plan, nil
-	}
-	step := CleanStep{What: "worktree " + branch.Worktree, kind: "worktree", path: branch.Worktree}
-	dirty, err := e.dirty(ctx, branch.Worktree)
-	if err != nil {
-		return plan, err
-	}
-	step.Kept = dirty
-	plan.Steps = append(plan.Steps, step)
-	if dirty != "" {
-		return plan, nil
+	removing := ""
+	if branch.Managed && exists(branch.Worktree) {
+		step := CleanStep{What: "worktree " + branch.Worktree, kind: "worktree", path: branch.Worktree}
+		dirty, err := e.dirty(ctx, branch.Worktree)
+		if err != nil {
+			return plan, err
+		}
+		step.Kept = dirty
+		plan.Steps = append(plan.Steps, step)
+		if dirty != "" {
+			return plan, nil
+		}
+		removing = branch.Worktree
 	}
 	// A Git branch with nothing master lacks holds no work, so it goes
 	// with its worktree: clean --archived kept duckdb-cxx14's, which had no
@@ -318,7 +322,7 @@ func (e *Engine) planCleanWorktree(ctx context.Context, branch model.Branch) (Cl
 		}
 		return plan, nil
 	}
-	kept, err := e.checkedOut(ctx, branch.Name, branch.Worktree)
+	kept, err := e.checkedOut(ctx, branch.Name, removing)
 	if err != nil {
 		return plan, err
 	}
