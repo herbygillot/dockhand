@@ -37,7 +37,7 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 | FTP dial | 30 s | "fetch: <dial error>" | `fetch/ftp.go:31` |  |
 | HTTPS probes of plain-HTTP URLs | 4 at once, 10 s each | the URL is said not to answer over HTTPS | `engine/https.go:24,84` | in usage.md |
 | GitHub API pace | 80 ms apart (750/min) | requests wait their turn | `github/pace.go:21` | in usage.md |
-| GitHub rate limit | reset time, or Retry-After, else 1 min | never waited; the error propagates | `github/ratelimit.go:18-26` | gap |
+| GitHub rate limit | a read waits up to 2 min for the reset, or Retry-After, else 1 min, then asks once more | past that, or for a write, never retried: "GitHub's rate limit for your login resets at 14:05, in 23 minutes"; nothing is asked while limited | `github/ratelimit.go` (`rateWait`) |  |
 | API page size | 100, no page cap | every page is followed | `forge/github/repository.go:17` |  |
 | Pull request search | one page of 50 | more aren't seen | `forge/github/pullrequests.go:148` |  |
 | git ref resolved while planning a check | 1 min per git.url | the target is unresolved, and the check goes on | `engine/plan.go:204` |  |

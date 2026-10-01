@@ -128,8 +128,13 @@ func (c *Client) newAPI(token string, source CredentialSource) (*gh.Client, erro
 	if transport == nil {
 		transport = fetch.Transport
 	}
-	client.Transport = redirectTransport{next: transport, source: source, authenticated: token != ""}
-	options := []gh.ClientOptionsFunc{gh.WithHTTPClient(&client)}
+	// The transport reads GitHub's rate limits (rateLimited), so go-github's
+	// own check, which refuses before the transport could wait, is off.
+	client.Transport = rateLimited{
+		next:   redirectTransport{next: transport, source: source, authenticated: token != ""},
+		limits: newRateLimits(token != ""),
+	}
+	options := []gh.ClientOptionsFunc{gh.WithHTTPClient(&client), gh.WithDisableRateLimitCheck()}
 	if c.Config.BaseURL != "" {
 		options = append(options, gh.WithURLs(&c.Config.BaseURL, nil))
 	}
