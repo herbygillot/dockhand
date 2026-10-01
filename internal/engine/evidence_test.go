@@ -304,6 +304,37 @@ func TestACellFilledFromAnEarlierCheckKeepsWhatItIs(t *testing.T) {
 		publicationProblems(now, nil))
 }
 
+// A blocked result stands with what blocked it in turn: one blocked by a
+// blocked result stands only while that one does, however long the chain.
+// One whose blockers all stand stands, and so does one whose check names
+// nothing that blocked it.
+func TestABlockStandsWithWhatBlockedItInTurn(t *testing.T) {
+	key := func(target string) [2]string { return [2]string{"command_1", target} }
+	blockers := map[[2]string][][2]string{key("b"): {key("a")}, key("c"): {key("b")}, key("d"): {key("c")}, key("e"): {key("d")}, key("f"): {key("e")}}
+	stands := map[[2]string]bool{key("b"): true, key("c"): true, key("d"): true, key("e"): true, key("f"): true, key("g"): true}
+	standing(stands, blockers)
+	require.Equal(t, map[[2]string]bool{key("g"): true}, stands, "a's result doesn't stand, so neither does what it blocked, nor what that blocked")
+
+	stands = map[[2]string]bool{key("a"): true, key("b"): true, key("c"): true}
+	standing(stands, map[[2]string][][2]string{key("b"): {key("a")}, key("c"): {key("a"), key("b")}})
+	require.Len(t, stands, 3)
+}
+
+// What blocked a result is what blocks a build (buildenv.Build.Blocked):
+// its check's results there of what the plan says it needs that didn't
+// pass, a blocked one among them, and not one that passed.
+func TestWhatBlockedAResultIsWhatItNeedsThatDidntPass(t *testing.T) {
+	environment := tahoeArm
+	plan := model.Plan{Environments: []model.Environment{environment}, Builds: []model.EnvironmentPlan{{Environment: environment, Order: []model.TargetID{"a", "b", "c", "d", "e"},
+		Dependencies: map[model.TargetID][]model.TargetID{"b": {"a"}, "c": {"b"}, "e": {"d", "a"}}}}}
+	evidence := Evidence{Plan: plan}
+	for id, outcome := range map[model.TargetID]model.Outcome{"a": model.OutcomeFailed, "b": model.OutcomeBlocked, "c": model.OutcomeBlocked, "d": model.OutcomePassed, "e": model.OutcomeBlocked} {
+		evidence.Targets = append(evidence.Targets, TargetEvidence{Target: model.PlanTarget{ID: id}, Outcomes: []Cell{{TargetResult: model.TargetResult{Execution: "command_1", Target: id, Outcome: outcome}, Kind: CellRecorded, Environment: environment}}})
+	}
+	key := func(target string) [2]string { return [2]string{"command_1", target} }
+	require.Equal(t, map[[2]string][][2]string{key("b"): {key("a")}, key("c"): {key("b")}, key("e"): {key("a")}}, evidence.blockers())
+}
+
 // An extra from --also is built for what it shows: one no check built asks
 // nothing of status, submit, or serve, and one that failed is accepted,
 // never fixed. Status and submit exempted an unbuilt extra, while serve's

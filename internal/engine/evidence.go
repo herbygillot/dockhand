@@ -508,7 +508,11 @@ func runsOfTree(r store.Reader, branch model.BranchID, tree model.ObjectID, stat
 // gaps filled from earlier checks of the same files, newest first. What
 // no check built is unchecked (Design v3 §7: a narrowed check never
 // quietly shrinks what submit requires). A result recorded in an
-// environment that is another now, by its identity, doesn't count (Counts).
+// environment that is another now, by its identity, doesn't count (Counts),
+// and nor does an earlier check's blocked result whose blocker's result
+// doesn't (standing). The run's own blocked results were recorded in the
+// attempt that recorded what blocked them, after its provider
+// (blockRemaining), so they stand and fall with it.
 func treeEvidence(r store.Reader, primary model.Run, runs []model.Run, now identities) (Evidence, error) {
 	plan, err := r.Plan(primary.Plan)
 	if err != nil {
@@ -594,6 +598,11 @@ func (e Evidence) missing() bool {
 //     built nothing, so it stands for no check, even one that expects the
 //     commit it fetched.
 //
+// A blocked result stands besides only with what blocked it: each result
+// of its own check that blocked it must stand too, in the same evidence
+// (standing). That is a question of the other targets' cells, which fill
+// answers as it takes an earlier check's results.
+//
 // Nothing else about the check's selection matters: from the same files,
 // a target builds the same whichever ports were selected with it. Nor does
 // its test policy: a result keeps the policy of the check that recorded it,
@@ -630,6 +639,59 @@ func (e *Evidence) dropRemade() {
 	}
 }
 
+// resultKey names a recorded result: the execution that recorded it, and
+// its target.
+func resultKey(result model.TargetResult) [2]string {
+	return [2]string{string(result.Execution), string(result.Target)}
+}
+
+// blockers are what blocked each of one check's blocked results, by result
+// (resultKey): that check's results there of what the target needs, as its
+// plan says, that didn't pass, as a build is blocked
+// (buildenv.Build.Blocked). The evidence is the check's own (runEvidence),
+// before anything is dropped from it or filled into it.
+func (e Evidence) blockers() map[[2]string][][2]string {
+	blockers := map[[2]string][][2]string{}
+	for _, target := range e.Targets {
+		for j, c := range target.Outcomes {
+			if c.Kind != CellRecorded || c.Outcome != model.OutcomeBlocked {
+				continue
+			}
+			for _, need := range e.Plan.DependsOnIn(c.Environment, target.Target.ID) {
+				k := slices.IndexFunc(e.Targets, func(other TargetEvidence) bool { return other.Target.ID == need })
+				if k < 0 {
+					continue
+				}
+				if found := e.Targets[k].Outcomes[j]; found.Execution != "" && found.Outcome != model.OutcomePassed {
+					blockers[resultKey(c.TargetResult)] = append(blockers[resultKey(c.TargetResult)], resultKey(found.TargetResult))
+				}
+			}
+		}
+	}
+	return blockers
+}
+
+// standing keeps among stands, results by key, only the blocked results
+// each of whose blockers stands too, in turn: a blocked result built
+// nothing, and says only that what it needs didn't pass, so it stands
+// only with the results that said so. A tag moved since leaves an earlier
+// check's failure of a Git-fetched target standing for no later check, and
+// what it blocked with it; a later result of the blocker, as a narrowed
+// check's pass, leaves the block standing for nothing. A blocked result
+// whose check names nothing that blocked it, as a provider can block a
+// target of its own accord, stands as it is.
+func standing(stands map[[2]string]bool, blockers map[[2]string][][2]string) {
+	for dropped := true; dropped; {
+		dropped = false
+		for blocked, by := range blockers {
+			if stands[blocked] && slices.ContainsFunc(by, func(key [2]string) bool { return !stands[key] }) {
+				delete(stands, blocked)
+				dropped = true
+			}
+		}
+	}
+}
+
 // readSources reads what an earlier check's builds read of the sources a
 // newer check expects to fetch with Git (primary), for fill to judge them
 // by (Counts): the commit each recorded fetching, from its inputs, and
@@ -641,8 +703,9 @@ func (e *Evidence) dropRemade() {
 // archive, whose result carries that build's archive and inputs. A result
 // with no inputs recorded read nothing dockhand can name, so what it needs
 // of a Git-fetched target can't be established. A blocked result built
-// nothing, so the rule has nothing of it to judge. Nothing is read where
-// the newer check fetches nothing with Git.
+// nothing, so the rule has nothing of it to judge: it stands with what
+// blocked it (standing). Nothing is read where the newer check fetches
+// nothing with Git.
 func (e *Evidence) readSources(r store.Reader, primary model.Plan) error {
 	if !slices.ContainsFunc(primary.Builds, func(build model.EnvironmentPlan) bool { return len(build.Git) > 0 }) {
 		return nil
@@ -673,7 +736,7 @@ func (e *Evidence) readSources(r store.Reader, primary model.Plan) error {
 			if c.Outcome == model.OutcomePassed || c.Outcome == model.OutcomeFailed {
 				built[target.Target.ID] = build
 			}
-			keys[target.Target.ID] = [2]string{string(c.Execution), string(c.Target)}
+			keys[target.Target.ID] = resultKey(c.TargetResult)
 			e.sources[keys[target.Target.ID]] = readSource{fetched: inputs.Fetched}
 		}
 		// A Git-fetched target the earlier check has no result of, which
@@ -696,9 +759,16 @@ func (e *Evidence) readSources(r store.Reader, primary model.Plan) error {
 }
 
 // fill takes an earlier check's results for what this evidence lacks,
-// where they count (Counts), and reports whether it took any.
+// where they count (Counts), and reports whether it took any. A blocked
+// result is taken only with the results of that check that blocked it
+// (standing): this evidence's cells for them hold either those, taken
+// here, or another result.
 func (e *Evidence) fill(earlier Evidence) bool {
-	took := false
+	type place struct {
+		t, i int
+		cell Cell
+	}
+	var found []place
 	for t := range e.Targets {
 		target := &e.Targets[t]
 		k := slices.IndexFunc(earlier.Targets, func(other TargetEvidence) bool { return other.Target.ID == target.Target.ID })
@@ -714,8 +784,8 @@ func (e *Evidence) fill(earlier Evidence) bool {
 			if j < 0 {
 				continue
 			}
-			found := earlier.Targets[k].Outcomes[j]
-			execution, recorded := earlier.Executions[found.Execution]
+			cell := earlier.Targets[k].Outcomes[j]
+			execution, recorded := earlier.Executions[cell.Execution]
 			if !recorded {
 				// An unmet result is the plan's, with no execution behind it.
 				execution = model.GuestExecution{Environment: environment}
@@ -724,34 +794,48 @@ func (e *Evidence) fill(earlier Evidence) bool {
 			if source, ok := e.Plan.GitIn(environment, target.Target.ID); ok {
 				git = &source
 			}
-			read := earlier.sources[[2]string{string(found.Execution), string(found.Target)}]
-			if found.Kind != CellRecorded && found.Kind != CellUnmet || !Counts(earlier.Plan, execution, target.Target.ID, e.now[environment], git, read.fetched, read.other) {
-				if found.Kind == CellRecorded && !current(execution, e.now[environment]) {
+			read := earlier.sources[resultKey(cell.TargetResult)]
+			if cell.Kind != CellRecorded && cell.Kind != CellUnmet || !Counts(earlier.Plan, execution, target.Target.ID, e.now[environment], git, read.fetched, read.other) {
+				if cell.Kind == CellRecorded && !current(execution, e.now[environment]) {
 					target.Outcomes[i].Kind, target.Outcomes[i].Recorded = CellRemade, execution.Identity
 				}
 				continue
 			}
-			target.Outcomes[i] = found
-			if builder, ok := earlier.origins[found.ReusedFrom]; ok {
-				if e.origins == nil {
-					e.origins = map[model.ExecutionID]origin{}
-				}
-				e.origins[found.ReusedFrom] = builder
-			}
-			if recorded {
-				if e.Executions == nil {
-					e.Executions = map[model.ExecutionID]model.GuestExecution{}
-				}
-				e.Executions[execution.ID] = execution
-				if policy, ok := earlier.policies[execution.Run]; ok {
-					if e.policies == nil {
-						e.policies = map[model.RunID]model.TestPolicy{}
-					}
-					e.policies[execution.Run] = policy
-				}
-			}
-			took = true
+			found = append(found, place{t: t, i: i, cell: cell})
 		}
+	}
+	stands := map[[2]string]bool{}
+	for _, p := range found {
+		if p.cell.Kind == CellRecorded {
+			stands[resultKey(p.cell.TargetResult)] = true
+		}
+	}
+	standing(stands, earlier.blockers())
+	took := false
+	for _, p := range found {
+		if p.cell.Kind == CellRecorded && !stands[resultKey(p.cell.TargetResult)] {
+			continue
+		}
+		e.Targets[p.t].Outcomes[p.i] = p.cell
+		if builder, ok := earlier.origins[p.cell.ReusedFrom]; ok {
+			if e.origins == nil {
+				e.origins = map[model.ExecutionID]origin{}
+			}
+			e.origins[p.cell.ReusedFrom] = builder
+		}
+		if execution, recorded := earlier.Executions[p.cell.Execution]; recorded {
+			if e.Executions == nil {
+				e.Executions = map[model.ExecutionID]model.GuestExecution{}
+			}
+			e.Executions[execution.ID] = execution
+			if policy, ok := earlier.policies[execution.Run]; ok {
+				if e.policies == nil {
+					e.policies = map[model.RunID]model.TestPolicy{}
+				}
+				e.policies[execution.Run] = policy
+			}
+		}
+		took = true
 	}
 	return took
 }

@@ -318,8 +318,9 @@ func TestATargetLeftOutExpectsTheCommitItsTagNames(t *testing.T) {
 // A failure is judged as a pass is: harbor-cli's build that failed against
 // libharbor's build of the old commit is no evidence once the tag moved.
 // A blocked result built nothing, and isn't judged by what it was built
-// against: harbor-viewer, blocked by harbor-cli, stands while nothing
-// moved, as it did before.
+// against, but stands only with what blocked it (standing): harbor-viewer,
+// blocked by harbor-cli, stands while nothing moved, and once harbor-cli's
+// failure no longer stands, its block doesn't either.
 func TestAnEarlierFailureAgainstAnOldCommitDoesntStand(t *testing.T) {
 	f := setup(t)
 	e := f.open(t)
@@ -341,9 +342,64 @@ func TestAnEarlierFailureAgainstAnOldCommitDoesntStand(t *testing.T) {
 	move()
 	provider.failures = model.MaxAttempts
 	c.check(true)
-	missing := c.missing()
-	require.Contains(t, missing, model.TargetID("libharbor"))
-	require.Contains(t, missing, model.TargetID("harbor-cli"), "it failed against the old commit's build")
+	require.Equal(t, []model.TargetID{"libharbor", "harbor-cli", "harbor-viewer"}, c.missing(),
+		"harbor-cli failed against the old commit's build, and harbor-viewer was blocked by that failure")
+}
+
+// A blocked result stands only with what blocked it (standing). Here
+// libharbor's build of the tag's first commit fails, and blocks harbor-cli
+// and harbor-viewer. While the tag names that commit, the failure and the
+// blocks stand for a later check that builds nothing; once the tag moves,
+// the failure is no evidence for the files as they fetch now, and neither
+// is what it blocked: all three ask for a check, rather than harbor-cli
+// reading as blocked by a failure that no longer stands.
+func TestABlockStandsOnlyWithWhatBlockedIt(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	url, first, move := harborRepository(t)
+	provider := &identified{scriptedProvider: scriptedProvider{active: []model.ActivePort{},
+		outcomes: map[model.TargetID]model.Outcome{"libharbor": model.OutcomeFailed}, fetches: map[model.TargetID]string{"libharbor": first}}, identity: "origin a"}
+	c := newHarborChecks(t, e, gitHarbor(url, "v4"), provider)
+
+	run, _ := c.check(false)
+	require.Equal(t, model.RunFailed, run.State)
+	provider.failures = model.MaxAttempts
+	run, _ = c.check(true)
+	require.Equal(t, model.RunAttention, run.State)
+	evidence, found, err := e.EvidenceFor(t.Context(), c.branch.ID, c.revision.Source.Tree)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Empty(t, evidence.Missing(), "the failure and what it blocked stand while the tag names what was built")
+	for _, target := range evidence.Targets {
+		if target.Target.ID == "harbor-cli" || target.Target.ID == "harbor-viewer" {
+			require.Equal(t, model.OutcomeBlocked, target.Outcomes[0].Outcome, target.Target.ID)
+		}
+	}
+
+	move()
+	provider.failures = model.MaxAttempts
+	c.check(true)
+	require.Equal(t, []model.TargetID{"libharbor", "harbor-cli", "harbor-viewer"}, c.missing(),
+		"libharbor's failure was of the old commit, and the blocks stand with it")
+}
+
+// A block stands only with what blocked it, whether or not anything is
+// fetched with Git: once a check --only narrows to the blocker passes, the
+// earlier check's block of what it left out stands for nothing, and asks
+// for a check, rather than reading as blocked by a failure the evidence no
+// longer holds.
+func TestABlockDoesntOutliveALaterPassOfItsBlocker(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	provider := &identified{scriptedProvider: scriptedProvider{outcomes: map[model.TargetID]model.Outcome{"libharbor": model.OutcomeFailed}}, identity: "origin a"}
+	c := newHarborChecks(t, e, harborPorts(), provider)
+
+	run, _ := c.check(false)
+	require.Equal(t, model.RunFailed, run.State)
+	delete(provider.outcomes, "libharbor")
+	run, _ = c.check(false, "libharbor")
+	require.Equal(t, model.RunPassed, run.State, run.Detail)
+	require.Equal(t, []model.TargetID{"harbor-cli", "harbor-viewer"}, c.missing(), "libharbor passes now, so nothing blocks them")
 }
 
 // A fetch that failed because the source moved built nothing, so it

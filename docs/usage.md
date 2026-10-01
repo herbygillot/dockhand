@@ -166,7 +166,7 @@ Results are per target and per environment:
 | --- | --- |
 | passed | linted, fetched, checksummed, and installed; its tests count only when required |
 | failed | one of those failed; the log says which, and a failure's summary adds the first compiler error it finds there, marked "from its log" |
-| blocked | a changed port it needs failed, so it wasn't built |
+| blocked | a changed port it needs failed, so it wasn't built; an earlier check's block fills in for a later check only while the failure that blocked it does |
 | unmet | the environment can't build it, such as a port needing Xcode where there is none |
 
 **What it captures.** By default, the tracked files as they are on disk, committed or not, as a numbered snapshot. `--staged` checks the index, and `--head` the committed tip. `--working-tree` checks the working files of a `--branch` checked out elsewhere, which asks for one or the other where it has commits and edits too; one with no commits has only its working files to check, so it takes them. `--include <file>` adds an untracked file without staging it.
