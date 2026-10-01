@@ -242,6 +242,8 @@ type tidyJSON struct {
 	Unambiguous bool             `json:"unambiguous"`
 	Commits     []tidyCommitJSON `json:"commits"`
 	Findings    []findingJSON    `json:"findings"`
+	// Warnings are what MacPorts' commit rules warn of in commits it keeps.
+	Warnings []findingJSON `json:"warnings"`
 	// Applied is what applying made, when it did.
 	Applied *tidyAppliedJSON `json:"applied"`
 }
@@ -255,7 +257,7 @@ type tidyAppliedJSON struct {
 }
 
 func tidyView(plan engine.TidyPlan) tidyJSON {
-	view := tidyJSON{Branch: plan.Branch.ShortName(), Keep: plan.Keep, Unambiguous: plan.Unambiguous(), Commits: []tidyCommitJSON{}, Findings: findingsView(plan.Findings)}
+	view := tidyJSON{Branch: plan.Branch.ShortName(), Keep: plan.Keep, Unambiguous: plan.Unambiguous(), Commits: []tidyCommitJSON{}, Findings: findingsView(plan.Findings), Warnings: findingsView(plan.Warnings)}
 	for _, group := range plan.Groups {
 		commit := tidyCommitJSON{Subject: group.Subject(), Message: group.Message, Paths: nonNil(group.Paths), Ports: nonNil(group.Ports), Combines: []string{},
 			Working: group.Working, FromEdits: group.FromEdits, Created: group.Created, Notes: nonNil(group.Notes), Blocking: nonNil(group.Blocking)}

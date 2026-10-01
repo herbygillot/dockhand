@@ -85,6 +85,28 @@ commits, and its files are as they were when it was saved.`,
 			streams.emit(tidyView(proposal))
 			out := streams.Out
 			fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), describeWork(proposal))
+			if proposal.Keep && len(proposal.Warnings) > 0 {
+				// What the rules warn of is said, as submit says it, with
+				// the plan to rewrite a message in (the rust and cargo run).
+				fmt.Fprintln(out, "The commits follow MacPorts' rules, and nothing is uncommitted, but for what the rules warn of:")
+				for _, warning := range proposal.Warnings {
+					fmt.Fprintf(out, "  %s\n", warning)
+				}
+				writeFindings(out, proposal)
+				if !plan || saveTo == "" {
+					fmt.Fprintln(out, "To rewrite a message: dockhand tidy --plan --out tidy.toml, edit it there, then dockhand tidy --apply tidy.toml")
+					return nil
+				}
+				data, err := proposal.Save()
+				if err != nil {
+					return err
+				}
+				if err := os.WriteFile(saveTo, data, 0o644); err != nil {
+					return err
+				}
+				fmt.Fprintf(out, "Saved the commits as they are to %s. Edit their messages there, then: dockhand tidy --apply %s\n", saveTo, saveTo)
+				return nil
+			}
 			if proposal.Keep {
 				fmt.Fprintln(out, "The commits already follow MacPorts' rules, and nothing is uncommitted; nothing to tidy.")
 				writeFindings(out, proposal)

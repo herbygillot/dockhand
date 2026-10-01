@@ -84,6 +84,10 @@ type TidyPlan struct {
 	// Findings are problems in the files, for the person to fix; tidy
 	// never changes files.
 	Findings []commitrules.Finding
+	// Warnings are what MacPorts' commit rules warn of in the commits as
+	// they are, as submit says them: a plan that would keep the commits
+	// can still be saved, for their messages to be rewritten.
+	Warnings []commitrules.Finding
 }
 
 // Unambiguous reports whether the plan may be applied without review:
@@ -164,9 +168,17 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 			return TidyPlan{}, err
 		}
 	}
-	if len(working) == 0 && !request.Squash && !commitrules.Errors(commitrules.CheckCommits(ruleCommits(history))) {
+	// Commits that break no rule are kept, but a warning is said, as
+	// submit says it, with their plan to rewrite the message from: tidy
+	// said "nothing to tidy" where submit warned of a body line over 72
+	// characters, and saved no plan to fix it in (the rust and cargo run).
+	rules := commitrules.CheckCommits(ruleCommits(history))
+	if len(working) == 0 && !request.Squash && !commitrules.Errors(rules) {
 		plan.Keep = true
-		return plan, nil
+		if len(rules) == 0 {
+			return plan, nil
+		}
+		plan.Warnings = rules
 	}
 
 	var edits []model.Edit
@@ -295,11 +307,30 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 		}
 		plan.Groups = append(plan.Groups, group)
 	}
+	// Kept for its warnings, the plan is the commits as they are, to save
+	// and rewrite a message in; one that would change them is a proposal.
+	if plan.Keep && !reproduces(plan.Groups, history) {
+		plan.Keep = false
+	}
 
 	if request.Squash {
 		plan.Groups = []TidyGroup{squash(plan.Groups, changed, history, request.Message, person, author)}
 	}
 	return plan, nil
+}
+
+// reproduces reports whether a plan's commits are the branch's own, one
+// for one, under the same messages.
+func reproduces(groups []TidyGroup, history []git.HistoryCommit) bool {
+	if len(groups) != len(history) {
+		return false
+	}
+	for i, group := range groups {
+		if len(group.Combines) != 1 || group.Combines[0].ID != history[i].ID || group.Message != history[i].Message {
+			return false
+		}
+	}
+	return true
 }
 
 // squash makes one commit of the whole branch.

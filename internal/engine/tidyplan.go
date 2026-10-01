@@ -198,7 +198,9 @@ func tomlQuoted(text string) string {
 // Save writes the plan as a TOML file a person can review, edit, and apply
 // with LoadTidyPlan.
 func (p TidyPlan) Save() ([]byte, error) {
-	if p.Keep || len(p.Groups) == 0 {
+	// A plan that keeps the commits is saved only for what the rules warn
+	// of in them, to rewrite a message.
+	if p.Keep && len(p.Warnings) == 0 || len(p.Groups) == 0 {
 		return nil, errors.New("the plan changes nothing")
 	}
 	saved := savedTidyPlan{Version: TidyPlanVersion, Branch: p.Branch.Name, Base: p.Base, Head: p.Head, Working: p.Final, Index: p.Index}

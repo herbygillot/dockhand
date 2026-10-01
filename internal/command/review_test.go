@@ -125,3 +125,39 @@ func TestTidyRegroupsAndAppliesASavedPlan(t *testing.T) {
 	require.Equal(t, "github-1.0: follow harbor's releases", gitRun(t, w.clone, "log", "-1", "--format=%s"))
 	require.Equal(t, "_resources/port1.0/group/github-1.0.tcl\ntextproc/jq/Portfile", gitRun(t, w.clone, "show", "--format=", "--name-only", "HEAD"))
 }
+
+// What MacPorts' rules warn of in commits tidy would keep is said, as
+// submit says it, with the commits saved as they are to rewrite a message
+// in: tidy said "nothing to tidy" where submit warned of a body line over
+// 72 characters, and saved no plan to fix it (the rust and cargo run).
+func TestTidySaysWhatTheRulesWarnOfAndSavesTheCommitsToRewrite(t *testing.T) {
+	w := newWorld(t)
+	gitRun(t, w.clone, "switch", "-q", "-c", "update-jq")
+	require.NoError(t, os.WriteFile(filepath.Join(w.clone, "textproc/jq/Portfile"), []byte("name jq\n# a\n"), 0o644))
+	long := "This body line runs on past the seventy-two characters MacPorts asks of it."
+	gitRun(t, w.clone, "commit", "-q", "-am", "jq: note a\n\n"+long)
+	_, _, err := dockhand(t, "adopt")
+	require.NoError(t, err)
+	commit := gitRun(t, w.clone, "rev-parse", "--short=7", "HEAD")
+
+	out, _, err := dockhand(t, "tidy", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "The commits follow MacPorts' rules, and nothing is uncommitted, but for what the rules warn of:\n  ! commit "+commit+": body has lines over 72 characters [body-wrap]\n")
+	require.Contains(t, out, "To rewrite a message: dockhand tidy --plan --out tidy.toml")
+
+	file := filepath.Join(t.TempDir(), "tidy.toml")
+	out, _, err = dockhand(t, "tidy", "--plan", "--out", file)
+	require.NoError(t, err)
+	require.Contains(t, out, "Saved the commits as they are to "+file+".")
+	saved, err := os.ReadFile(file)
+	require.NoError(t, err)
+	require.Contains(t, string(saved), long)
+	edited := strings.Replace(string(saved), long, "This body line now wraps at the seventy-two characters\nMacPorts asks of it.", 1)
+	require.NoError(t, os.WriteFile(file, []byte(edited), 0o644))
+	_, _, err = dockhand(t, "tidy", "--apply", file)
+	require.NoError(t, err)
+	require.Equal(t, "jq: note a\n\nThis body line now wraps at the seventy-two characters\nMacPorts asks of it.", gitRun(t, w.clone, "log", "-1", "--format=%B"))
+	out, _, err = dockhand(t, "tidy", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "nothing to tidy", "with nothing left to warn of")
+}
