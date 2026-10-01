@@ -676,6 +676,9 @@ func portfileFindings(ctx context.Context, repo *git.Repository, before, after s
 type TidyResult struct {
 	Checkpoint model.Checkpoint
 	Commits    []string
+	// Kept is how many of the leading commits are the branch's own, as
+	// they were, since tidy wouldn't change them.
+	Kept int
 }
 
 // ModifiedBuild reports whether the plan's commits name, in Generated-By,
@@ -750,10 +753,24 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 	}
 	parent, tree := plan.Base, trees[plan.Base]
 	var result TidyResult
-	for _, group := range plan.Groups {
+	// A commit the branch has already, at the same place, from the same
+	// parent, with the same tree, author, and message (commitmsg.Unchanged),
+	// stays as it is: written again, it has another committer time, so a
+	// re-submit replaced the pull request's history rather than adding a
+	// commit to it (#35044, adding py-flatbuffers, finding 3). Once one is
+	// made anew, the rest are, their parents being new.
+	keeping := true
+	for i, group := range plan.Groups {
 		if tree, err = worktree.ComposeTree(ctx, tree, plan.Final, group.Paths); err != nil {
 			return TidyResult{}, err
 		}
+		if keeping && i < len(plan.History) && unchangedCommit(plan.History[i], parent, tree, group) {
+			parent = plan.History[i].ID
+			result.Commits = append(result.Commits, parent)
+			result.Kept++
+			continue
+		}
+		keeping = false
 		if parent, err = worktree.WriteCommit(ctx, git.Commit{Tree: tree, Parents: []string{parent}, Message: group.Message, Author: group.Author, Committer: committer}); err != nil {
 			return TidyResult{}, err
 		}
@@ -793,6 +810,14 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 		return result, history.Unfinished("the commits are made", err)
 	}
 	return result, nil
+}
+
+// unchangedCommit reports whether a branch's commit can stand for the one a
+// group would write on parent with tree.
+func unchangedCommit(had git.HistoryCommit, parent, tree string, group TidyGroup) bool {
+	return len(had.Parents) == 1 && had.Parents[0] == parent && had.Tree == tree &&
+		had.Author.Name == group.Author.Name && had.Author.Email == group.Author.Email && had.Author.When.Equal(group.Author.When) &&
+		commitmsg.Unchanged(had.Message, group.Message)
 }
 
 // Restore puts a branch's history back as a checkpoint kept it, when the

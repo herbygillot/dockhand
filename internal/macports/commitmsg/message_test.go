@@ -1,6 +1,7 @@
 package commitmsg_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
@@ -52,4 +53,26 @@ func TestAModifiedBuildIsKnownFromItsTrailer(t *testing.T) {
 	require.False(t, commitmsg.ModifiedBuild(clean))
 	require.False(t, commitmsg.ModifiedBuild("hugo: update to 0.167.0\n"))
 	require.False(t, commitmsg.ModifiedBuild("hugo: update to 0.167.0\n\nSee: https://example.org/v0.0.0+dirty\n"), "only dockhand's trailer names its build")
+}
+
+// A commit can stand for one tidy would write where they say the same,
+// but perhaps for the attribution line, which names the build that wrote
+// each where both carry it; not where only one does, nor where the one
+// written names a build of uncommitted source, which tidying again is
+// meant to replace.
+func TestACommitThatSaysTheSameIsUnchanged(t *testing.T) {
+	message := "jq: update to 1.8.1\n\nGenerated-By: Dockhand v3.0.0 (https://github.com/herbygillot/dockhand)\n"
+	for _, test := range []struct {
+		had  string
+		same bool
+	}{
+		{message, true},
+		{strings.TrimSuffix(message, "\n"), true},
+		{"jq: update to 1.8.1\n\nGenerated-By: Dockhand v2.9.0 (https://github.com/herbygillot/dockhand)\n", true},
+		{"jq: update to 1.8.1\n", false},
+		{"jq: update to 1.8.2\n\nGenerated-By: Dockhand v3.0.0 (https://github.com/herbygillot/dockhand)\n", false},
+		{"jq: update to 1.8.1\n\nGenerated-By: Dockhand devel+1a2b3c4d5e6f+dirty (https://github.com/herbygillot/dockhand)\n", false},
+	} {
+		require.Equal(t, test.same, commitmsg.Unchanged(test.had, message), test.had)
+	}
 }

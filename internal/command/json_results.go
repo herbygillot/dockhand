@@ -247,6 +247,9 @@ type tidyJSON struct {
 type tidyAppliedJSON struct {
 	Checkpoint string   `json:"checkpoint"`
 	Commits    []string `json:"commits"`
+	// Kept is how many of the leading commits are the branch's own, as
+	// they were.
+	Kept int `json:"kept,omitempty"`
 }
 
 func tidyView(plan engine.TidyPlan) tidyJSON {

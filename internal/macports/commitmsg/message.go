@@ -57,6 +57,32 @@ func ModifiedBuild(message string) bool {
 	return false
 }
 
+// Unchanged reports whether a commit with message had can stand for one
+// with message want: they say the same, but perhaps for dockhand's
+// attribution line, which names the build that wrote each and so differs
+// across builds, where both carry one. The one already written names the
+// build that wrote it, which stays true; unless that build was of
+// uncommitted source, which nobody can find, and which tidying again is
+// meant to replace.
+func Unchanged(had, want string) bool {
+	if strings.TrimRight(had, "\n") == strings.TrimRight(want, "\n") {
+		return true
+	}
+	if ModifiedBuild(had) || Attributed(had) != Attributed(want) {
+		return false
+	}
+	without := func(message string) string {
+		var lines []string
+		for _, line := range strings.Split(strings.TrimRight(message, "\n"), "\n") {
+			if !IsAttribution(line) {
+				lines = append(lines, line)
+			}
+		}
+		return strings.TrimRight(strings.Join(lines, "\n"), "\n")
+	}
+	return without(had) == without(want)
+}
+
 // Subject composes the commit subject MacPorts asks for, "<port>: <what
 // changed>". The person writes only what follows the port name, so a
 // subject that already carries it is refused rather than doubled.

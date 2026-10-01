@@ -347,14 +347,27 @@ func applyTidy(ctx context.Context, e *engine.Engine, streams Streams, plan engi
 		return err
 	}
 	applied := tidyView(plan)
-	applied.Applied = &tidyAppliedJSON{Checkpoint: result.Checkpoint.Name(), Commits: result.Commits}
+	applied.Applied = &tidyAppliedJSON{Checkpoint: result.Checkpoint.Name(), Commits: result.Commits, Kept: result.Kept}
 	streams.emit(applied)
 	name := result.Checkpoint.Name()
-	fmt.Fprintf(streams.Out, "Created %s. The files are unchanged.\nCheckpoint %s keeps the old history (dockhand restore %s).\n", plural(len(result.Commits), "commit"), name, name)
+	made := fmt.Sprintf("Created %s", plural(len(result.Commits), "commit"))
+	if result.Kept > 0 {
+		as := "they were"
+		if result.Kept == 1 {
+			as = "it was"
+		}
+		made = fmt.Sprintf("Kept %s as %s, and created %d", plural(result.Kept, "commit"), as, len(result.Commits)-result.Kept)
+	}
+	fmt.Fprintf(streams.Out, "%s. The files are unchanged.\nCheckpoint %s keeps the old history (dockhand restore %s).\n", made, name, name)
 	if warning := modifiedBuildWarning(plan, name); warning != "" {
 		fmt.Fprintln(streams.Err, warning)
 	}
-	if plan.Branch.PullRequest != nil && len(plan.History) > 0 {
+	switch {
+	case plan.Branch.PullRequest == nil || len(plan.History) == 0:
+	case result.Kept == len(plan.History):
+		// Every commit it has stays, so submitting adds the rest to it.
+		fmt.Fprintf(streams.Out, "#%d gains %s when you submit, on top of the %s it has.\n", plan.Branch.PullRequest.Number, plural(len(result.Commits)-result.Kept, "commit"), plural(len(plan.History), "commit"))
+	default:
 		fmt.Fprintf(streams.Out, "#%d still shows %s until you submit; submit will replace its history, if no one else has pushed.\n", plan.Branch.PullRequest.Number, plural(len(plan.History), "commit"))
 	}
 	return nil

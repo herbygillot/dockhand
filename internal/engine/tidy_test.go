@@ -336,3 +336,38 @@ func TestTidyNamesAHandMadeBumpByThePortsOwnVersion(t *testing.T) {
 	require.Len(t, plan.Groups, 1)
 	require.Equal(t, "jq: update to 1.8.2", plan.Groups[0].Subject())
 }
+
+// A re-tidy keeps the commits it wouldn't change, as they are: #35044's
+// first two commits were written again with the same trees and messages,
+// another committer time, so submitting replaced the pull request's
+// history rather than adding a commit to it (adding py-flatbuffers,
+// finding 3). Once a commit is made anew, those after it are too.
+func TestTidyKeepsTheCommitsItWouldntChange(t *testing.T) {
+	f := setup(t)
+	write(t, f.upstream, map[string]string{"textproc/yq/Portfile": "name yq\nversion 4.54.1\n"})
+	run(t, f.upstream, "add", "-A")
+	run(t, f.upstream, "commit", "-q", "-m", "yq: new port")
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
+	require.NoError(t, err)
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
+	require.NoError(t, err)
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	first, err := e.ApplyTidy(t.Context(), plan)
+	require.NoError(t, err)
+	require.Zero(t, first.Kept)
+	jq := first.Commits[0]
+
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditRevbump, Port: "yq", Subject: "rebuild for jq 1.8.1"})
+	require.NoError(t, err)
+	plan, err = e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Len(t, plan.Groups, 2, "%+v", plan.Groups)
+	second, err := e.ApplyTidy(t.Context(), plan)
+	require.NoError(t, err)
+	require.Equal(t, 1, second.Kept)
+	require.Equal(t, jq, second.Commits[0], "jq's commit is the one it was")
+	require.NotEqual(t, jq, second.Commits[1])
+	require.Equal(t, []string{"jq: update to 1.8.1", "yq: rebuild for jq 1.8.1"}, log(t, branch.Worktree, branch.Base))
+}
