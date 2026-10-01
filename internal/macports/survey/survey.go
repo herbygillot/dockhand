@@ -102,20 +102,29 @@ func OpenAt(ctx context.Context, repo *git.Repository, revision string, workspac
 			err = errors.Join(err, release())
 		}
 	}()
-	// A survey resolves names and evaluates whatever it selected: the
-	// whole tree.
-	if err := files.EnsureAll(ctx); err != nil {
-		return nil, err
-	}
-	if err := macports.ValidatePortsTree(files.Root(), repo.Root); err != nil {
-		return nil, err
-	}
+	// The workspace projects a tree the repository already validated, as
+	// the index's stager has it, and holds only what is ensured.
 	into, err := files.Tree(platform)
 	if err != nil {
 		return nil, err
 	}
 	ports, problems, err := selectPorts(ctx, index, into, selection)
 	if err != nil {
+		return nil, err
+	}
+	// A survey evaluates what it selected, each port's directory with
+	// _resources, brought in one materialization; a name the index
+	// couldn't place widens the tree as it's resolved, and an index built
+	// rather than found widens it first. The whole tree, materialized and
+	// removed again for one port, took most of outdated hugo's 7 seconds
+	// (the hugo exercise, batch 14).
+	var targets []model.Target
+	for _, port := range ports {
+		if macports.ValidPortfilePath(port.Portfile) {
+			targets = append(targets, model.Target{Portfile: port.Portfile})
+		}
+	}
+	if err := files.EnsurePorts(ctx, targets...); err != nil {
 		return nil, err
 	}
 	return &Workspace{Source: source, Root: files.Root(), Ports: ports, Problems: problems, Projection: files, release: release}, nil

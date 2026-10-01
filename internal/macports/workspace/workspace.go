@@ -180,10 +180,22 @@ func (w *Workspace) Whole() bool {
 // EnsurePort materializes _resources and the target's port directory,
 // including its files/ tree. It is idempotent and cheap when present.
 func (w *Workspace) EnsurePort(ctx context.Context, target model.Target) error {
-	if !macports.ValidPortfilePath(target.Portfile) {
-		return fmt.Errorf("workspace: %q is not a category/port/Portfile target", target.Portfile)
+	return w.EnsurePorts(ctx, target)
+}
+
+// EnsurePorts is EnsurePort for several targets, in one materialization.
+func (w *Workspace) EnsurePorts(ctx context.Context, targets ...model.Target) error {
+	var directories []string
+	for _, target := range targets {
+		if !macports.ValidPortfilePath(target.Portfile) {
+			return fmt.Errorf("workspace: %q is not a category/port/Portfile target", target.Portfile)
+		}
+		directories = append(directories, path.Dir(target.Portfile))
 	}
-	return w.ensure(ctx, []string{path.Dir(target.Portfile)})
+	if len(directories) == 0 {
+		return nil
+	}
+	return w.ensure(ctx, directories)
 }
 
 // EnsureAll materializes the whole tree; later Ensure calls are no-ops.

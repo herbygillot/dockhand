@@ -2,10 +2,12 @@ package macports
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/model"
 	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -104,6 +106,12 @@ func (t Tree) Select(target model.Target) (Context, error) {
 	}
 	filename := filepath.Join(t.root, filepath.FromSlash(target.Portfile))
 	resolved, err := filepath.EvalSymlinks(filename)
+	if errors.Is(err, os.ErrNotExist) {
+		// Said as the tree's path, not the snapshot's temporary directory:
+		// outdated textproc/jq/Portfile said "lstat /private/var/folders/…
+		// /textproc/jq: no such file or directory" (batch 14).
+		return Context{}, fmt.Errorf("no port at %s", path.Dir(target.Portfile))
+	}
 	if err != nil {
 		return Context{}, err
 	}
