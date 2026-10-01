@@ -431,6 +431,7 @@ func TestAResultKeepsWhatItsBuildRead(t *testing.T) {
 	built.Archive = "sha256:55"
 	built.Detail = "a dependency failed to install: zlib"
 	built.Builders = []model.BuilderResult{{Builder: "macos-14", Outcome: model.OutcomeNotRun}, {Builder: "macos-15", Outcome: model.OutcomePassed, Tests: model.TestsPassed, Log: "15.log"}}
+	built.Log, built.Steps = "target-1.log", []model.LogStep{{Name: model.StepLint, Line: 1}, {Name: model.StepDependencies, Line: 4}, {Name: model.StepFetch, Line: 46400}}
 	borrowed := built
 	borrowed.ReusedFrom = "ex_none"
 	require.ErrorIs(t, f.update(t, func(tx store.Tx) error { return tx.RecordResult(borrowed) }), store.ErrNotFound, "a result is reused from an execution there is")
@@ -443,6 +444,7 @@ func TestAResultKeepsWhatItsBuildRead(t *testing.T) {
 		require.Equal(t, "sha256:55", results[0].Archive)
 		require.Equal(t, "a dependency failed to install: zlib", results[0].Detail)
 		require.Equal(t, built.Builders, results[0].Builders)
+		require.Equal(t, built.Steps, results[0].Steps, "where each step began in its log")
 		read, err := rd.Inputs(results[0].Inputs)
 		require.NoError(t, err)
 		require.Equal(t, inputs, read)

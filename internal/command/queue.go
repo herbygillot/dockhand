@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/buildlog"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -200,6 +201,7 @@ worktree, with no check named, the branch's latest.`,
 
 func logsCommand(s *settings, streams Streams) *cobra.Command {
 	var port string
+	var all bool
 	cmd := &cobra.Command{
 		Use:   "logs [check or provider run]",
 		Short: "Show where a check's logs are, or one port's log",
@@ -207,9 +209,17 @@ func logsCommand(s *settings, streams Streams) *cobra.Command {
 one provider run's alone, by the ID a pull request's Tested on names,
 tart_7y62p4sigena6xlr, or by its provider's own reference, such as a workflow
 run's URL. In a branch's worktree, with none named, it shows the branch's
-latest check. --port prints one port's log.`,
+latest check.
+
+--port prints one port's log. Where its provider recorded where each step of
+the build began, as Tart's does, it lists them with their lines first, and
+prints from the port's own build on, leaving out its dependencies' installs
+before it; --all prints the whole log.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if all && port == "" {
+				return errors.New("--all goes with --port")
+			}
 			ctx := cmd.Context()
 			e, err := s.open(ctx)
 			if err != nil {
@@ -237,31 +247,63 @@ latest check. --port prints one port's log.`,
 				streams.emit(logsView(logs))
 				return writeLogs(streams.Out, logs)
 			}
-			var found string
+			var found model.TargetResult
 			for _, execution := range logs.Executions {
 				for _, result := range execution.Results {
 					if string(result.Target) == port && result.Log != "" {
-						found = result.Log
+						found = result
 					}
 				}
 			}
-			if found == "" {
+			if found.Log == "" {
 				return fmt.Errorf("%s recorded no log for %s", run.Name(), port)
 			}
-			data, err := os.ReadFile(found)
+			data, err := os.ReadFile(found.Log)
 			if errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("%s's log for %s, %s, is gone", run.Name(), port, found)
+				return fmt.Errorf("%s's log for %s, %s, is gone", run.Name(), port, found.Log)
 			}
 			if err != nil {
 				return err
 			}
-			streams.emit(map[string]any{"run": runView(run), "port": port, "log": found, "text": string(data)})
-			_, err = streams.Out.Write(data)
-			return err
+			streams.emit(portLogView(run, found, data))
+			return writePortLog(streams.Out, found, data, all)
 		},
 	}
-	cmd.Flags().StringVar(&port, "port", "", "print this port's log")
+	cmd.Flags().StringVar(&port, "port", "", "print this port's log, from its own build on where its steps were recorded")
+	cmd.Flags().BoolVar(&all, "all", false, "with --port, print the whole log")
 	return cmd
+}
+
+// writePortLog prints a port's log. Where its provider recorded where each
+// step of the build began, it lists them first, and prints from the port's
+// own build on, leaving out its dependencies' installs before it: hugo's
+// own phases began near line 46,400 of 47,000 (the hugo exercise). all
+// prints the whole log alone, as it is printed where no steps were
+// recorded.
+func writePortLog(out io.Writer, result model.TargetResult, data []byte, all bool) error {
+	if all || len(result.Steps) == 0 {
+		_, err := out.Write(data)
+		return err
+	}
+	fmt.Fprintf(out, "Steps in %s:\n", tilde(result.Log))
+	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	for _, step := range result.Steps {
+		fmt.Fprintf(tw, "  %s\tline %d\n", step.Name, step.Line)
+	}
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	if own, ok := result.OwnBuild(); ok && own.Line > 1 {
+		if rest, ok := buildlog.From(data, own.Line); ok {
+			fmt.Fprintf(out, "From line %d, where %s's own build begins; --all prints the %d lines before it too, its dependencies' installs among them.\n\n", own.Line, result.Target, own.Line-1)
+			_, err := out.Write(rest)
+			return err
+		}
+		fmt.Fprintf(out, "The log ends before line %d, where %s's own build was recorded to begin, so it's printed whole.\n", own.Line, result.Target)
+	}
+	fmt.Fprintln(out)
+	_, err := out.Write(data)
+	return err
 }
 
 // latestCheckHere is the newest check of the branch checked out here, for

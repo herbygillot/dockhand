@@ -58,7 +58,13 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // octal digits led by a zero, 0157, had been taken for the number 111 and
 // its fetch failed as moved. Only such a Git-fetched port is judged
 // otherwise, and what failed so stood for nothing, so the protocol stays 2.
-const guestPin = "99b3c69013899fb0b73cf00c1a05cf57746eb436c71d3d171d77f2b2847983c1"
+//
+// Since batch 14 the program also records where each step of a target's
+// build begins in its log, for logs --port to find the port's own build
+// after its dependencies' (the hugo exercise). It runs the same steps in
+// the same order and judges them as before, so the protocol stays 2, and
+// the results it recorded earlier stand, without their steps.
+const guestPin = "010786239d3b639c587a16e1129abd0095f0d6b602eb92cfbf9fa6d371abb984"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this

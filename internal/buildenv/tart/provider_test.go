@@ -335,13 +335,15 @@ func newMac(results ...guestResults) *fakeMac {
 }
 
 // Each target's result is recorded as the guest's results grow, with its
-// log copied out, and the clone is deleted after.
+// log copied out and where each step began in it, and the clone is deleted
+// after.
 func TestTheProviderRecordsEachTargetAsTheGuestFinishesIt(t *testing.T) {
 	t.Parallel()
 	libharbor := guestResult{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "target-1.log", Active: []guestPort{}, Archive: "sha256:11",
 		ArchiveFile: "/opt/local/var/macports/software/libharbor/libharbor-3_0.darwin_25.arm64.tbz2"}
 	cli := guestResult{ID: "harbor-cli", Outcome: "failed", Phase: "install", Log: "target-2.log", Detail: "Failed to install harbor-cli",
-		Active: []guestPort{{Name: "libharbor", Spec: "@3_0", Directory: "devel/libharbor", Archive: "sha256:11"}}}
+		Active: []guestPort{{Name: "libharbor", Spec: "@3_0", Directory: "devel/libharbor", Archive: "sha256:11"}},
+		Steps:  []guestStep{{"lint", 1}, {"dependencies", 3}, {"fetch", 900}, {"checksum", 902}, {"install", 903}}}
 	mac := newMac(
 		guestResults{State: "running"},
 		guestResults{State: "running", Targets: []guestResult{libharbor}},
@@ -355,7 +357,8 @@ func TestTheProviderRecordsEachTargetAsTheGuestFinishesIt(t *testing.T) {
 	require.Len(t, build.results, 2)
 	require.Equal(t, model.TargetResult{Target: "libharbor", Outcome: model.OutcomePassed, Tests: model.TestsPassed, Log: filepath.Join(job.Directory, "target-1.log"), Archive: "sha256:11"}, build.results[0])
 	require.Equal(t, model.TargetResult{Target: "harbor-cli", Outcome: model.OutcomeFailed, Phase: model.PhaseInstall, Tests: model.TestsNone, Log: filepath.Join(job.Directory, "target-2.log"),
-		Detail: "Failed to install harbor-cli"}, build.results[1], "the guest's detail is the result's")
+		Steps:  []model.LogStep{{Name: model.StepLint, Line: 1}, {Name: model.StepDependencies, Line: 3}, {Name: model.StepFetch, Line: 900}, {Name: model.StepChecksum, Line: 902}, {Name: model.StepInstall, Line: 903}},
+		Detail: "Failed to install harbor-cli"}, build.results[1], "the guest's detail is the result's, and its steps")
 	log, err := os.ReadFile(filepath.Join(job.Directory, "target-1.log"))
 	require.NoError(t, err)
 	require.Equal(t, "built libharbor", string(log))

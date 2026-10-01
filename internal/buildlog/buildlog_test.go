@@ -49,3 +49,23 @@ func TestTheFirstCompilerErrorIsTheLikelyCause(t *testing.T) {
 		require.False(t, ok, none)
 	}
 }
+
+// A log from a line is what follows the newlines before it, as the Tart
+// guest counts lines where each step of a build begins: a step that wrote
+// nothing last begins after the log's last line, and a line the log never
+// reached isn't in it.
+func TestALogFromALineStartsAtThatLine(t *testing.T) {
+	log := []byte("--->  Installing zlib\n--->  Fetching hugo\nError: it broke\n")
+	for line, want := range map[int]string{1: string(log), 2: "--->  Fetching hugo\nError: it broke\n", 3: "Error: it broke\n", 4: ""} {
+		rest, ok := From(log, line)
+		require.True(t, ok, line)
+		require.Equal(t, want, string(rest), line)
+	}
+	for _, line := range []int{0, 5} {
+		_, ok := From(log, line)
+		require.False(t, ok, line)
+	}
+	rest, ok := From([]byte("a line with no newline"), 1)
+	require.True(t, ok)
+	require.Equal(t, "a line with no newline", string(rest))
+}

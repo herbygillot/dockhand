@@ -22,7 +22,8 @@ set environment [dict create]
 
 # save writes the results so far, replacing the file whole. A result's
 # fields are strings, but for the ports active as it built, a list of
-# them.
+# them, and for where each step of its build began in its log, a list of
+# each step's name and line.
 proc save {state {detail ""}} {
     global root input results environment
     set targets {}
@@ -37,6 +38,13 @@ proc save {state {detail ""}} {
                     lappend ports [json::write object {*}$object]
                 }
                 lappend fields $key [json::write array {*}$ports]
+            } elseif {$key eq "steps"} {
+                set steps {}
+                foreach entry $value {
+                    lassign $entry step line
+                    lappend steps [json::write object name [json::write string $step] line $line]
+                }
+                lappend fields $key [json::write array {*}$steps]
             } else {
                 lappend fields $key [json::write string $value]
             }
@@ -143,6 +151,39 @@ proc why {log message} {
     }
     if {[llength $errors]} { return [join [lrange $errors end-2 end] "; "] }
     return $message
+}
+
+# counted is how far each target's log has been counted: the bytes read,
+# and the lines they held.
+set counted [dict create]
+
+# mark records with a target's result where a step of its build begins in
+# its log: the line the step's output starts on, counting from 1. A
+# target's log holds its dependencies' installs as well as its own build,
+# and hugo's own phases began near line 46,400 of 47,000 (the hugo
+# exercise), so logs --port starts at the target's own. This program runs
+# each step, so it says where each begins, and nothing is read from
+# MacPorts' progress lines, which aren't an interface it documents. A log
+# is counted from where its last count ended. A step whose place can't be
+# read is left out, and the build goes on.
+proc mark {resultVar log step} {
+    upvar 1 $resultVar result
+    global counted
+    lassign {0 0} offset lines
+    if {[dict exists $counted $log]} { lassign [dict get $counted $log] offset lines }
+    if {[catch {
+        set fd [open $log r]
+        fconfigure $fd -translation binary
+        seek $fd $offset
+        set text [read $fd]
+        close $fd
+    }]} {
+        return
+    }
+    incr offset [string length $text]
+    incr lines [regexp -all {\n} $text]
+    dict set counted $log [list $offset $lines]
+    dict lappend result steps [list $step [expr {$lines + 1}]]
 }
 
 # digests remembers each archive's digest: the same archive is active for
@@ -253,6 +294,7 @@ proc build {index target} {
 
     # Only this target's dependencies are active when it builds.
     if {[fact $port -q installed active] ne ""} {
+        mark result $log deactivate
         if {[set message [run $log [list $port -N -f deactivate active]]] ne ""} {
             return [{*}$fail $result install "deactivating the ports before it failed: [why $log $message]"]
         }
@@ -260,19 +302,23 @@ proc build {index target} {
     # An earlier target of the same port, another variant's build, left
     # its work directory, which MacPorts refuses to go on with under other
     # variants; CI cleans up between ports too (mpbb cleanup).
+    mark result $log clean
     if {[set message [run $log [concat $here clean --work $selection]]] ne ""} {
         return [{*}$fail $result fetch "cleaning an earlier build's work failed: [why $log $message]"]
     }
+    mark result $log lint
     if {[set message [run $log [concat $here lint $selection]]] ne ""} {
         return [{*}$fail $result lint [why $log $message]]
     }
     set dependencies [fact $port -q echo depof:$name]
     if {$dependencies ne ""} {
+        mark result $log dependencies
         if {[set message [run $log [concat [list $port -N -d install --unrequested] $dependencies]]] ne ""} {
             return [{*}$fail $result install "a dependency failed to install: [why $log $message]"]
         }
     }
     foreach phase {fetch checksum} {
+        mark result $log $phase
         if {[set message [run $log [concat $here -d $phase $selection]]] ne ""} {
             return [{*}$fail $result $phase [why $log $message]]
         }
@@ -312,6 +358,7 @@ proc build {index target} {
     # not the branch's.
     set install [concat $here -dks install --unrequested $selection]
     if {![llength $variants]} { set install [concat $here -dkns install --unrequested $selection] }
+    mark result $log install
     if {[set message [run $log $install]] ne ""} {
         return [{*}$fail $result install [why $log $message]]
     }
@@ -320,6 +367,7 @@ proc build {index target} {
     if {$tests eq "skip"} {
         dict set result tests skipped
     } elseif {[declares_tests $portdir $name $variants]} {
+        mark result $log test
         set message [timed $log [concat $here -d test $selection] [dict get $input test_timeout]]
         switch -- $message {
             "" { dict set result tests passed }

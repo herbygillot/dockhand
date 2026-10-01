@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -22,7 +23,8 @@ import (
 // each target's dependencies from DEPS ("name=dep ..."), and fails the
 // phases FAIL names ("phase:port ..."). A port's archive is ARCHIVES/<name>,
 // and its directory devel/<name>, but for UNRESOLVED, which port can't
-// resolve.
+// resolve. Each step of a build writes its command to the log, "port
+// <arguments>", and installing dependencies writes DEPLINES lines more.
 const fakePort = `#!/bin/sh
 echo "$*" >> "$PORT_LOG"
 case "$*" in
@@ -44,6 +46,13 @@ case "$*" in
       case "$*" in *"depof:${entry%%=*}") echo "${entry#*=}" ;; esac
     done
     exit 0 ;;
+esac
+case "$*" in
+  *" deactivate "*|*" clean "*|*" lint "*|*" install "*|*" fetch "*|*" checksum "*|*" test "*)
+    echo "port $*"
+    case "$*" in
+      "-N -d install --unrequested "*) if [ "${DEPLINES:-0}" -gt 0 ]; then yes "a dependency's line" | head -n "$DEPLINES"; fi ;;
+    esac ;;
 esac
 for entry in $FAIL; do
   phase=${entry%%:*}; port=${entry#*:}
@@ -96,7 +105,7 @@ set foreignManagers {}
 	require.NoError(t, os.WriteFile(script, append([]byte(prelude), guestProgram...), 0o644))
 	command := exec.CommandContext(t.Context(), executable, script)
 	portLog := filepath.Join(root, "port.log")
-	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "PORT_LOG="+portLog, "TESTED=", "DEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
+	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "PORT_LOG="+portLog, "TESTED=", "DEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
 	output, _ := command.CombinedOutput()
 	data, err = os.ReadFile(filepath.Join(root, "results.json"))
 	require.NoError(t, err, "%s", output)
@@ -131,9 +140,10 @@ func TestTheGuestBuildsEachTargetInCIsOrder(t *testing.T) {
 	t.Parallel()
 	results, commands := guestRun(t, twoTargets("declared"), "TESTED=libharbor", "DEPS=libharbor=zlib harbor-cli=libharbor")
 	require.Equal(t, "finished", results.State, results.Detail)
+	steps := []guestStep{{"clean", 1}, {"lint", 2}, {"dependencies", 3}, {"fetch", 4}, {"checksum", 5}, {"install", 6}}
 	require.Equal(t, []guestResult{
-		{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "target-1.log", Active: []guestPort{}},
-		{ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "target-2.log", Active: []guestPort{}},
+		{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "target-1.log", Active: []guestPort{}, Steps: append(slices.Clone(steps), guestStep{"test", 7})},
+		{ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "target-2.log", Active: []guestPort{}, Steps: steps},
 	}, results.Targets)
 	require.Equal(t, "arm64", results.Environment["architecture"])
 	var libharbor []string
@@ -153,6 +163,43 @@ func TestTheGuestBuildsEachTargetInCIsOrder(t *testing.T) {
 	}, keep(libharbor, func(c string) bool { return !strings.Contains(c, "installed") }))
 	require.Contains(t, commands, "-N -d install --unrequested zlib", "a target's dependencies are installed first")
 	require.Contains(t, commands, "-N -d install --unrequested libharbor", "the dependent's changed dependency is among them")
+}
+
+// Each target's result says where each step of its build begins in its
+// log, the line its output starts on, as the guest runs the step, so a
+// port's own build is found after its dependencies' installs: hugo's own
+// phases began near line 46,400 of 47,000 (the hugo exercise). Each
+// target's log is counted on its own, and the line named is the step's
+// first.
+func TestTheGuestRecordsWhereEachStepBeginsInItsLog(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	results, _ := guestRunIn(t, root, twoTargets("declared"), "TESTED=libharbor", "DEPS=libharbor=zlib harbor-cli=libharbor",
+		"ACTIVE=  zlib @1.3.2_0 (active)\\n", "DEPLINES=46000")
+	require.Equal(t, "finished", results.State, results.Detail)
+	steps := []guestStep{{"deactivate", 1}, {"clean", 2}, {"lint", 3}, {"dependencies", 4}, {"fetch", 46005}, {"checksum", 46006}, {"install", 46007}}
+	require.Equal(t, append(slices.Clone(steps), guestStep{"test", 46008}), results.Targets[0].Steps)
+	require.Equal(t, steps, results.Targets[1].Steps, "its own log, counted from its start")
+	commands := map[string]string{
+		"deactivate": "-N -f deactivate active", "clean": " clean --work ", "lint": " lint ", "dependencies": "-N -d install --unrequested ",
+		"fetch": " -d fetch ", "checksum": " -d checksum ", "install": " -dkns install ", "test": " -d test ",
+	}
+	for _, target := range results.Targets {
+		data, err := os.ReadFile(filepath.Join(root, target.Log))
+		require.NoError(t, err)
+		lines := strings.Split(string(data), "\n")
+		for _, step := range target.Steps {
+			line := lines[step.Line-1]
+			require.True(t, strings.HasPrefix(line, "port ") && strings.Contains(line, commands[step.Name]), "%s's %s step begins at line %d: %q", target.ID, step.Name, step.Line, line)
+		}
+	}
+
+	// A target that fails has the steps it began, the one it failed at
+	// last; one blocked has none.
+	results, _ = guestRunIn(t, t.TempDir(), twoTargets("declared"), "FAIL=checksum:libharbor")
+	require.Equal(t, []guestStep{{"clean", 1}, {"lint", 2}, {"fetch", 3}, {"checksum", 4}}, results.Targets[0].Steps)
+	require.Equal(t, "blocked", results.Targets[1].Outcome)
+	require.Empty(t, results.Targets[1].Steps)
 }
 
 // Each verdict comes with what its build read (decision 28): the ports

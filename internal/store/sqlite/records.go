@@ -559,7 +559,7 @@ func (t *tx) UpdateExecution(e model.GuestExecution) error {
 		e.State, e.Detail, e.ProviderRef, observed, observed, nullableMillis(e.FinishedAt), t.repo, e.ID)
 }
 
-const resultColumns = "r.execution_id, r.target_id, r.outcome, r.phase, r.tests, r.log, r.detail, r.builders, r.inputs, r.archive, r.reused_from, r.recorded_at"
+const resultColumns = "r.execution_id, r.target_id, r.outcome, r.phase, r.tests, r.log, r.steps, r.detail, r.builders, r.inputs, r.archive, r.reused_from, r.recorded_at"
 
 func (t *tx) Results(execution model.ExecutionID) ([]model.TargetResult, error) {
 	return t.results("SELECT "+resultColumns+" FROM results r WHERE r.repository_id=? AND r.execution_id=? ORDER BY r.recorded_at, r.rowid", t.repo, execution)
@@ -600,9 +600,14 @@ func (t *tx) Reusable(target model.TargetID, environment model.Environment, limi
 // what completes r once they are.
 func resultFields(r *model.TargetResult) ([]any, func() error) {
 	var recorded int64
-	var builders string
-	fields := []any{&r.Execution, &r.Target, &r.Outcome, &r.Phase, &r.Tests, &r.Log, &r.Detail, &builders, &r.Inputs, &r.Archive, &r.ReusedFrom, &recorded}
+	var steps, builders string
+	fields := []any{&r.Execution, &r.Target, &r.Outcome, &r.Phase, &r.Tests, &r.Log, &steps, &r.Detail, &builders, &r.Inputs, &r.Archive, &r.ReusedFrom, &recorded}
 	return fields, func() error {
+		if steps != "" {
+			if err := json.Unmarshal([]byte(steps), &r.Steps); err != nil {
+				return fmt.Errorf("%w: %s's log steps in execution %s: %w", store.ErrUnavailable, r.Target, r.Execution, err)
+			}
+		}
 		if builders != "" {
 			if err := json.Unmarshal([]byte(builders), &r.Builders); err != nil {
 				return fmt.Errorf("%w: %s's builders in execution %s: %w", store.ErrUnavailable, r.Target, r.Execution, err)
@@ -611,6 +616,16 @@ func resultFields(r *model.TargetResult) ([]any, func() error) {
 		r.RecordedAt = fromMillis(recorded)
 		return nil
 	}
+}
+
+// jsonColumn is one of a result's lists as its column keeps it: JSON, or
+// empty where the list is.
+func jsonColumn[T any](list []T) (string, error) {
+	if len(list) == 0 {
+		return "", nil
+	}
+	data, err := json.Marshal(list)
+	return string(data), err
 }
 
 func (t *tx) results(query string, args ...any) ([]model.TargetResult, error) {
@@ -667,20 +682,20 @@ func (t *tx) RecordResult(r model.TargetResult) error {
 			return fmt.Errorf("%s's result is reused from execution %s: %w", r.Target, r.ReusedFrom, err)
 		}
 	}
-	builders := ""
-	if len(r.Builders) > 0 {
-		data, err := json.Marshal(r.Builders)
-		if err != nil {
-			return err
-		}
-		builders = string(data)
+	builders, err := jsonColumn(r.Builders)
+	if err != nil {
+		return err
+	}
+	steps, err := jsonColumn(r.Steps)
+	if err != nil {
+		return err
 	}
 	var existing model.TargetResult
 	err = t.conn.QueryRowContext(t.ctx, "SELECT outcome FROM results WHERE repository_id=? AND execution_id=? AND target_id=?", t.repo, r.Execution, r.Target).Scan(&existing.Outcome)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		_, err = t.exec("INSERT INTO results(repository_id, execution_id, target_id, outcome, phase, tests, log, detail, builders, inputs, archive, reused_from, recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-			t.repo, r.Execution, r.Target, r.Outcome, r.Phase, r.Tests, r.Log, r.Detail, builders, r.Inputs, r.Archive, r.ReusedFrom, millis(r.RecordedAt))
+		_, err = t.exec("INSERT INTO results(repository_id, execution_id, target_id, outcome, phase, tests, log, steps, detail, builders, inputs, archive, reused_from, recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+			t.repo, r.Execution, r.Target, r.Outcome, r.Phase, r.Tests, r.Log, steps, r.Detail, builders, r.Inputs, r.Archive, r.ReusedFrom, millis(r.RecordedAt))
 		return err
 	case err != nil:
 		return storageError(err)
@@ -689,8 +704,8 @@ func (t *tx) RecordResult(r model.TargetResult) error {
 	if !existing.ReplacedBy(r) {
 		return fmt.Errorf("%w: %s's result in execution %s is %s and cannot become %s", store.ErrConflict, r.Target, r.Execution, existing.Outcome, r.Outcome)
 	}
-	_, err = t.exec("UPDATE results SET outcome=?, phase=?, tests=?, log=?, detail=?, builders=?, inputs=?, archive=?, reused_from=?, recorded_at=? WHERE repository_id=? AND execution_id=? AND target_id=?",
-		r.Outcome, r.Phase, r.Tests, r.Log, r.Detail, builders, r.Inputs, r.Archive, r.ReusedFrom, millis(r.RecordedAt), t.repo, r.Execution, r.Target)
+	_, err = t.exec("UPDATE results SET outcome=?, phase=?, tests=?, log=?, steps=?, detail=?, builders=?, inputs=?, archive=?, reused_from=?, recorded_at=? WHERE repository_id=? AND execution_id=? AND target_id=?",
+		r.Outcome, r.Phase, r.Tests, r.Log, steps, r.Detail, builders, r.Inputs, r.Archive, r.ReusedFrom, millis(r.RecordedAt), t.repo, r.Execution, r.Target)
 	return err
 }
 

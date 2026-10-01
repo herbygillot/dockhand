@@ -456,6 +456,48 @@ type resultLogJSON struct {
 	// say.
 	Git     *gitSourceJSON `json:"git,omitempty"`
 	Fetched string         `json:"fetched,omitempty"`
+	// Steps are where each step of the build began in its log, in the
+	// order they ran; absent where its provider didn't record them.
+	Steps []logStepJSON `json:"steps,omitempty"`
+}
+
+// logStepJSON is where a step of a build began in its log: the line its
+// output starts on, counting from 1.
+type logStepJSON struct {
+	Name string `json:"name"`
+	Line int    `json:"line"`
+}
+
+func logStepViews(steps []model.LogStep) []logStepJSON {
+	var views []logStepJSON
+	for _, step := range steps {
+		views = append(views, logStepJSON{Name: string(step.Name), Line: step.Line})
+	}
+	return views
+}
+
+// portLogJSON is logs --port's result: the port's whole log, and where
+// each step of its build began in it.
+type portLogJSON struct {
+	Run  runJSON `json:"run"`
+	Port string  `json:"port"`
+	Log  string  `json:"log"`
+	// Steps are where each step of the build began in the log, in the
+	// order they ran; absent where its provider didn't record them.
+	Steps []logStepJSON `json:"steps,omitempty"`
+	// OwnBuild is the line the port's own build begins on, after its
+	// dependencies' installs, where the text output starts; absent where
+	// the steps don't say.
+	OwnBuild int    `json:"own_build,omitempty"`
+	Text     string `json:"text"`
+}
+
+func portLogView(run model.Run, result model.TargetResult, data []byte) portLogJSON {
+	view := portLogJSON{Run: runView(run), Port: string(result.Target), Log: result.Log, Steps: logStepViews(result.Steps), Text: string(data)}
+	if own, ok := result.OwnBuild(); ok {
+		view.OwnBuild = own.Line
+	}
+	return view
 }
 
 func logsView(logs engine.RunLogs) logsJSON {
@@ -466,7 +508,7 @@ func logsView(logs engine.RunLogs) logsJSON {
 			Reused: x.Reused, Results: []resultLogJSON{}}
 		for _, result := range execution.Results {
 			view := resultLogJSON{Target: string(result.Target), Outcome: string(result.Outcome), Phase: string(result.Phase), Log: result.Log,
-				ReusedFrom: string(result.ReusedFrom)}
+				ReusedFrom: string(result.ReusedFrom), Steps: logStepViews(result.Steps)}
 			if fetch, ok := execution.Git[result.Target]; ok {
 				source := gitSourceView(fetch.Expected)
 				view.Git, view.Fetched = &source, string(fetch.Fetched)

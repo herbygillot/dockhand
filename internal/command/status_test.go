@@ -159,6 +159,12 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	out, _, err = dockhand(t, "logs", "check-3", "--port", "jq")
 	require.NoError(t, err)
 	require.Contains(t, out, "building from ")
+	require.NotContains(t, out, "Steps in", "a person's command records no steps, so the log is printed whole")
+	whole, _, err := dockhand(t, "logs", "check-3", "--port", "jq", "--all")
+	require.NoError(t, err)
+	require.Equal(t, out, whole)
+	_, _, err = dockhand(t, "logs", "check-3", "--all")
+	require.EqualError(t, err, "--all goes with --port")
 	_, _, err = dockhand(t, "logs", "check-9")
 	require.ErrorContains(t, err, "there is no run check-9")
 
@@ -169,6 +175,59 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	require.EqualError(t, err, "name a check, such as check-42; in a branch's worktree, wait follows the branch's latest check")
 	_, _, err = dockhand(t, "cancel")
 	require.EqualError(t, err, "name a check, such as check-42; in a branch's worktree, cancel stops the branch's latest check")
+}
+
+// A port's log, where its provider recorded where each step of the build
+// began, lists the steps with their lines and starts at the port's own
+// build, saying what it left out: hugo's own phases began near line 46,400
+// of 47,000, after its dependencies' (the hugo exercise). --all prints the
+// log alone, whole, as it's printed where no steps were recorded; with
+// --json, the whole log comes with its steps and the line its own build
+// begins on.
+func TestLogsForAPortStartsAtItsOwnBuild(t *testing.T) {
+	own := "--->  Fetching distfiles for hugo\n--->  Verifying checksums for hugo\n--->  Building hugo\nError: Failed to build hugo\n"
+	data := []byte("--->  Deactivating zlib\n--->  Cleaning hugo\n--->  Verifying Portfile for hugo\n" + strings.Repeat("--->  a dependency's line\n", 46000) + own)
+	path := filepath.Join(t.TempDir(), "target-3.log")
+	result := model.TargetResult{Target: "hugo", Outcome: model.OutcomeFailed, Phase: model.PhaseInstall, Log: path, Steps: []model.LogStep{
+		{Name: model.StepDeactivate, Line: 1}, {Name: model.StepClean, Line: 2}, {Name: model.StepLint, Line: 3}, {Name: model.StepDependencies, Line: 4},
+		{Name: model.StepFetch, Line: 46004}, {Name: model.StepChecksum, Line: 46005}, {Name: model.StepInstall, Line: 46006},
+	}}
+	steps := "Steps in " + path + ":\n" +
+		"  deactivate    line 1\n" +
+		"  clean         line 2\n" +
+		"  lint          line 3\n" +
+		"  dependencies  line 4\n" +
+		"  fetch         line 46004\n" +
+		"  checksum      line 46005\n" +
+		"  install       line 46006\n"
+	var out strings.Builder
+	require.NoError(t, writePortLog(&out, result, data, false))
+	require.Equal(t, steps+"From line 46004, where hugo's own build begins; --all prints the 46003 lines before it too, its dependencies' installs among them.\n\n"+own, out.String())
+
+	out.Reset()
+	require.NoError(t, writePortLog(&out, result, data, true))
+	require.Equal(t, string(data), out.String(), "--all prints the log alone")
+
+	view := portLogView(model.Run{Number: 48}, result, data)
+	require.Equal(t, 46004, view.OwnBuild)
+	require.Equal(t, logStepJSON{Name: "fetch", Line: 46004}, view.Steps[4])
+	require.Equal(t, string(data), view.Text, "the whole log, which the steps say where to cut")
+
+	// No steps recorded, as before them, or by another provider: the whole
+	// log. Steps with no dependencies' step have nothing to leave out; and
+	// a log that ends before its own build was to begin is printed whole,
+	// saying so.
+	out.Reset()
+	require.NoError(t, writePortLog(&out, model.TargetResult{Target: "hugo", Log: path}, data, false))
+	require.Equal(t, string(data), out.String())
+	out.Reset()
+	alone := model.TargetResult{Target: "hugo", Log: path, Steps: []model.LogStep{{Name: model.StepClean, Line: 1}, {Name: model.StepFetch, Line: 2}}}
+	require.NoError(t, writePortLog(&out, alone, []byte("--->  Cleaning hugo\n--->  Fetching hugo\n"), false))
+	require.Equal(t, "Steps in "+path+":\n  clean  line 1\n  fetch  line 2\n\n--->  Cleaning hugo\n--->  Fetching hugo\n", out.String())
+	out.Reset()
+	require.NoError(t, writePortLog(&out, result, []byte("--->  Deactivating zlib\n"), false))
+	require.Equal(t, steps+"The log ends before line 46004, where hugo's own build was recorded to begin, so it's printed whole.\n\n--->  Deactivating zlib\n", out.String())
+	require.Zero(t, portLogView(model.Run{Number: 48}, alone, nil).OwnBuild)
 }
 
 // A check that passed in an environment made again since says so, and

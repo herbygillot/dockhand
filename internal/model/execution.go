@@ -221,6 +221,43 @@ func (t TestOutcome) Valid() bool {
 // Failed reports tests that ran and didn't pass: failed, or timed out.
 func (t TestOutcome) Failed() bool { return t == TestsFailed || t == TestsTimedOut }
 
+// Step is one of the steps a target's build takes, each writing to its
+// log in turn: those that are phases are named for them, and the others
+// prepare for its build.
+type Step string
+
+const (
+	// StepDeactivate deactivates the ports an earlier target left active,
+	// so that only this one's dependencies are.
+	StepDeactivate Step = "deactivate"
+	// StepClean removes an earlier build's work.
+	StepClean Step = "clean"
+	StepLint  Step = Step(PhaseLint)
+	// StepDependencies installs the target's dependencies, which can be
+	// most of its log.
+	StepDependencies Step = "dependencies"
+	StepFetch        Step = Step(PhaseFetch)
+	StepChecksum     Step = Step(PhaseChecksum)
+	StepInstall      Step = Step(PhaseInstall)
+	StepTest         Step = Step(PhaseTest)
+)
+
+// Valid reports one of the steps a build takes.
+func (s Step) Valid() bool {
+	switch s {
+	case StepDeactivate, StepClean, StepLint, StepDependencies, StepFetch, StepChecksum, StepInstall, StepTest:
+		return true
+	}
+	return false
+}
+
+// LogStep is where a step of a target's build begins in its log: the line
+// its output starts on, counting from 1.
+type LogStep struct {
+	Name Step
+	Line int
+}
+
 // TargetResult is the checkpoint for one target in one execution.
 type TargetResult struct {
 	Execution ExecutionID
@@ -231,6 +268,12 @@ type TargetResult struct {
 	Tests TestOutcome
 	// Log locates the target's log beside the database.
 	Log string
+	// Steps are where each step of the build begins in Log, in the order
+	// they ran, as its provider recorded them; empty where it didn't, as
+	// for a result recorded before providers did (the hugo exercise:
+	// hugo's own phases began near line 46,400 of 47,000, after its
+	// dependencies').
+	Steps []LogStep
 	// Detail is why the target stopped, in its provider's words, where the
 	// provider says: MacPorts' last errors for a failed target, or the
 	// changed dependency that blocked one.
@@ -287,7 +330,37 @@ func (r TargetResult) Validate() error {
 			return err
 		}
 	}
+	// Steps are places in the log, in the order they ran; one that wrote
+	// nothing begins where the next does.
+	if len(r.Steps) > 0 && r.Log == "" {
+		return invalid("result for %s has steps but no log", r.Target)
+	}
+	for i, step := range r.Steps {
+		switch {
+		case !step.Name.Valid():
+			return invalid("result for %s has unknown step %q", r.Target, step.Name)
+		case step.Line < 1:
+			return invalid("result for %s has its %s step at line %d", r.Target, step.Name, step.Line)
+		case i > 0 && step.Line < r.Steps[i-1].Line:
+			return invalid("result for %s has its %s step at line %d, before its %s step's %d", r.Target, step.Name, step.Line, r.Steps[i-1].Name, r.Steps[i-1].Line)
+		}
+	}
 	return nil
+}
+
+// OwnBuild is the step a target's own build begins with in its log, the
+// one after its dependencies were installed: theirs come first, and can
+// be most of the log (the hugo exercise: hugo's own phases began near line
+// 46,400 of 47,000). None where no dependencies' step was recorded, so
+// little but the target's own comes before, or where none followed it, as
+// when a dependency failed to install.
+func (r TargetResult) OwnBuild() (LogStep, bool) {
+	for i, step := range r.Steps {
+		if step.Name == StepDependencies && i+1 < len(r.Steps) {
+			return r.Steps[i+1], true
+		}
+	}
+	return LogStep{}, false
 }
 
 // resultWords checks a result's outcome, phase, and tests, or one of its

@@ -415,6 +415,16 @@ type guestResult struct {
 	// Fetched is the commit a Git-fetched target's fetch checked out;
 	// absent where the guest couldn't read it.
 	Fetched string `json:"fetched,omitempty"`
+	// Steps are where each step of the build began in its log, in the
+	// order they ran; absent for a target not built.
+	Steps []guestStep `json:"steps,omitempty"`
+}
+
+// guestStep is where a step of a target's build began in its log: the
+// line its output starts on, counting from 1.
+type guestStep struct {
+	Name string `json:"name"`
+	Line int    `json:"line"`
 }
 
 // guestPort is a port active as a target built, as the guest saw it.
@@ -880,6 +890,10 @@ func (p *Provider) record(ctx context.Context, g guest, job buildenv.Job, build 
 		local := filepath.Join(job.Directory, got.Log)
 		if err := g.Download(ctx, guestRoot+"/"+got.Log, local, true); err == nil {
 			result.Log = local
+			// Where each step began is a place in this log, kept with it.
+			for _, step := range got.Steps {
+				result.Steps = append(result.Steps, model.LogStep{Name: model.Step(step.Name), Line: step.Line})
+			}
 		}
 	}
 	if got.Fetched != "" {

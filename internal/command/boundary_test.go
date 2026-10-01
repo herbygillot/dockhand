@@ -36,6 +36,10 @@ var commandImports = map[string]string{
 	"internal/credential/keychain":  "auth: the macOS Keychain",
 	"github.com/spf13/cobra":        "the command line itself",
 	"golang.org/x/sys/unix":         "whether a stream is a terminal",
+	// Where a port's own build begins is the result's (model.OwnBuild);
+	// logs --port prints its log from that line, counted as the guest
+	// counts it.
+	"internal/buildlog": "a log from the line a step of its build began on, for logs --port",
 }
 
 const module = "github.com/herbygillot/dockhand/"

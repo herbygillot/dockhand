@@ -300,6 +300,42 @@ func TestTargetResultCheckpoints(t *testing.T) {
 	require.True(t, errors.Is(invalid("x"), ErrInvalid))
 }
 
+// A result's steps are where each begins in its log, in the order they
+// ran, so each is a known step, at a line, and none before the one ahead
+// of it; a step that wrote nothing begins where the next does, and there
+// are none without a log. The target's own build is the step after its
+// dependencies' installs (the hugo exercise).
+func TestAResultsStepsAreWhereEachBeginsInItsLog(t *testing.T) {
+	result := TargetResult{Execution: "e1", Target: "hugo", Outcome: OutcomePassed, RecordedAt: at, Log: "target-3.log", Steps: []LogStep{
+		{StepDeactivate, 1}, {StepClean, 40}, {StepLint, 42}, {StepDependencies, 45}, {StepFetch, 46400}, {StepChecksum, 46400}, {StepInstall, 46410}, {StepTest, 46900},
+	}}
+	require.NoError(t, result.Validate())
+	own, ok := result.OwnBuild()
+	require.True(t, ok)
+	require.Equal(t, LogStep{StepFetch, 46400}, own)
+	for _, steps := range [][]LogStep{
+		{{"compile", 1}},
+		{{StepFetch, 0}},
+		{{StepFetch, 10}, {StepChecksum, 9}},
+	} {
+		bad := result
+		bad.Steps = steps
+		require.ErrorIs(t, bad.Validate(), ErrInvalid, "%v", steps)
+	}
+	logless := result
+	logless.Log = ""
+	require.ErrorIs(t, logless.Validate(), ErrInvalid, "steps are places in a log")
+
+	for _, steps := range [][]LogStep{
+		nil,
+		{{StepClean, 1}, {StepLint, 3}, {StepFetch, 5}},
+		{{StepClean, 1}, {StepLint, 3}, {StepDependencies, 5}},
+	} {
+		_, ok := TargetResult{Steps: steps}.OwnBuild()
+		require.False(t, ok, "%v: none recorded, no dependencies' step, or nothing after it", steps)
+	}
+}
+
 // The build decides unless the policy requires tests; then tests that
 // failed or timed out fail a port that built, at the test phase. A port
 // with no tests passes under any policy, and a failure stays a failure.

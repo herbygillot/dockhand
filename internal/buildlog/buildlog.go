@@ -1,11 +1,14 @@
 // Package buildlog reads a build's log for what most likely made it fail:
 // the line a person would look for first. It's a reading of the log, best
 // effort, and whoever shows it says so, beside MacPorts' own words (D10).
-// More readings can join compilerError as they're wanted.
+// More readings can join compilerError as they're wanted. It also finds a
+// log's lines from where a step of the build began, as its provider
+// recorded it (model.LogStep).
 package buildlog
 
 import (
 	"bufio"
+	"bytes"
 	"io"
 	"regexp"
 	"strings"
@@ -40,4 +43,22 @@ func First(log io.Reader) (Cause, bool) {
 		}
 	}
 	return Cause{}, false
+}
+
+// From is a log from the start of one of its lines, counting from 1, as
+// a provider records where each step of a build begins: nothing after a
+// log's last line, and false where the log ends before it.
+func From(log []byte, line int) ([]byte, bool) {
+	if line < 1 {
+		return nil, false
+	}
+	start := 0
+	for range line - 1 {
+		end := bytes.IndexByte(log[start:], '\n')
+		if end < 0 {
+			return nil, false
+		}
+		start += end + 1
+	}
+	return log[start:], true
 }
