@@ -91,15 +91,31 @@ func expectedWords(source model.GitSource) string {
 // fetch, as a check is planned: "git.branch v1.2 names 1a2b3c4 now, which
 // its build must fetch", or why that isn't known.
 func GitSourceWords(source model.GitSource) string {
+	return sourceWords(source, "which its build must fetch", "its build records what it fetches, and stands for no later check")
+}
+
+// LeftOutSourceWords say what a Git-fetched target --only left out is
+// expected to have fetched: the check doesn't build it, but an earlier
+// check's result of it stands only where its build fetched the commit its
+// git.branch names as the check is planned (Counts). "git.branch v1.2
+// names 1a2b3c4 now, which an earlier check's build of it must have
+// fetched to stand", or why that isn't known.
+func LeftOutSourceWords(source model.GitSource) string {
+	return sourceWords(source, "which an earlier check's build of it must have fetched to stand", "no earlier check's result of it stands")
+}
+
+// sourceWords say what a Git source names as a check is planned, and what
+// that asks (fetch), or why it isn't known, and what that means (unknown).
+func sourceWords(source model.GitSource, fetch, unknown string) string {
 	switch {
 	case source.Commit != "" && strings.EqualFold(source.Ref, string(source.Commit)):
-		return fmt.Sprintf("git.branch is commit %s, which its build must fetch", short(source.Commit))
+		return fmt.Sprintf("git.branch is commit %s, %s", short(source.Commit), fetch)
 	case source.Commit != "":
-		return fmt.Sprintf("%s names %s now, which its build must fetch", refWords(source.Ref), short(source.Commit))
+		return fmt.Sprintf("%s names %s now, %s", refWords(source.Ref), short(source.Commit), fetch)
 	case source.Abbreviation != "":
-		return fmt.Sprintf("git.branch abbreviates a commit, %s, which its build must fetch", source.Abbreviation)
+		return fmt.Sprintf("git.branch abbreviates a commit, %s, %s", source.Abbreviation, fetch)
 	}
-	return fmt.Sprintf("which commit %s names isn't known (%s); its build records what it fetches, and stands for no later check", refWords(source.Ref), source.Unresolved)
+	return fmt.Sprintf("which commit %s names isn't known (%s); %s", refWords(source.Ref), source.Unresolved, unknown)
 }
 
 // movedWords say why a build that fetched another commit than its plan

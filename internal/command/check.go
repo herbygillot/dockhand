@@ -363,17 +363,27 @@ func writePlan(out io.Writer, plan model.Plan, notes []string, remedy func(model
 // writeGitSources says what each Git-fetched target's build must fetch:
 // the commit its git.branch names as the check is planned, which its build
 // is checked against. A target is said once where its environments expect
-// the same, as they do but where one evaluates another git.branch.
+// the same, as they do but where one evaluates another git.branch. Those
+// --only left out follow, marked so: the check doesn't build them, but an
+// earlier check's result of one stands only where it fetched that commit.
 func writeGitSources(out io.Writer, plan model.Plan) {
 	var lines []string
+	add := func(line string) {
+		if !slices.Contains(lines, line) {
+			lines = append(lines, line)
+		}
+	}
 	for _, planned := range plan.Builds {
 		for _, id := range planned.Order {
-			source, ok := planned.Git[id]
-			if !ok {
-				continue
+			if source, ok := planned.Git[id]; ok {
+				add(fmt.Sprintf("%s: %s", id, engine.GitSourceWords(source)))
 			}
-			if line := fmt.Sprintf("%s: %s", id, engine.GitSourceWords(source)); !slices.Contains(lines, line) {
-				lines = append(lines, line)
+		}
+	}
+	for _, planned := range plan.Builds {
+		for _, target := range plan.Omitted {
+			if source, ok := planned.Git[target.ID]; ok {
+				add(fmt.Sprintf("%s (left out): %s", target.ID, engine.LeftOutSourceWords(source)))
 			}
 		}
 	}

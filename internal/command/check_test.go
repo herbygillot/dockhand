@@ -134,6 +134,37 @@ func TestCheckPlanSaysWhatAGitFetchMustCheckOut(t *testing.T) {
 	view := planView(plan)
 	require.Equal(t, gitSourceJSON{URL: tag.URL, Branch: "v4", Commit: string(commit), ResolvedAt: tag.ResolvedAt}, view.Builds[1].Git["libharbor"])
 	require.NotContains(t, view.Builds[1].Git, "harbor-cli", "fetched otherwise there")
+	require.Nil(t, view.Builds[0].OmittedGit, "nothing left out")
+}
+
+// A Git-fetched target --only left out has the commit its tag names
+// expected of it too (planning.OmittedSources), and the plan shows it,
+// marked as left out, in its text and its JSON apart from what it builds:
+// the check doesn't build it, but an earlier check's result of it stands
+// only where it fetched that commit.
+func TestCheckPlanShowsTheGitSourcesOfWhatOnlyLeftOut(t *testing.T) {
+	arm := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	target := func(name string) model.PlanTarget {
+		return model.PlanTarget{ID: model.TargetID(name), Target: model.Target{Name: name}, Kind: model.Substantive, Role: model.Changed}
+	}
+	commit := model.ObjectID("1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b")
+	tag := model.GitSource{URL: "https://github.com/harbor/libharbor.git", Ref: "v4", Commit: commit, ResolvedAt: time.Now()}
+	viewer := model.GitSource{URL: "https://github.com/harbor/viewer.git", Ref: "v1", Unresolved: "the repository has no branch or tag v1", ResolvedAt: time.Now()}
+	cli := model.GitSource{URL: "https://github.com/harbor/cli.git", Ref: "v2", Commit: "9f8e7d6c5b4a9f8e7d6c5b4a9f8e7d6c5b4a9f8e", ResolvedAt: time.Now()}
+	plan := model.Plan{Environments: []model.Environment{arm}, Tests: model.TestsDeclared, Only: []string{"harbor-cli"},
+		Targets: []model.PlanTarget{target("harbor-cli")},
+		Omitted: []model.PlanTarget{target("libharbor"), target("harbor-viewer")},
+		Builds: []model.EnvironmentPlan{{Environment: arm, Order: []model.TargetID{"harbor-cli"},
+			Git: map[model.TargetID]model.GitSource{"harbor-cli": cli, "libharbor": tag, "harbor-viewer": viewer}}}}
+	var out bytes.Buffer
+	writePlan(&out, plan, nil, nil)
+	require.Contains(t, out.String(), "Git         harbor-cli: git.branch v2 names 9f8e7d6 now, which its build must fetch\n"+
+		"            libharbor (left out): git.branch v4 names 1a2b3c4 now, which an earlier check's build of it must have fetched to stand\n"+
+		"            harbor-viewer (left out): which commit git.branch v1 names isn't known (the repository has no branch or tag v1); no earlier check's result of it stands\n")
+
+	view := planView(plan)
+	require.Equal(t, map[string]gitSourceJSON{"harbor-cli": gitSourceView(cli)}, view.Builds[0].Git, "what it builds")
+	require.Equal(t, map[string]gitSourceJSON{"libharbor": gitSourceView(tag), "harbor-viewer": gitSourceView(viewer)}, view.Builds[0].OmittedGit, "what it left out, apart")
 }
 
 // On several environments the results are a grid, a column each headed

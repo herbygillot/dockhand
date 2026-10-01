@@ -173,6 +173,8 @@ Results are per target and per environment:
 
 **What it builds.** `--only <port>` narrows the check to some of the changed ports, and adds back the changed ports they need. `--also <port>` builds unchanged ports against the branch, such as the dependents `impact` lists.
 
+**A port fetched with Git.** Its `git.branch` names a tag or a branch, which binds nothing, so the plan resolves it to the commit it names as the check is planned, and says so: "libharbor: git.branch v4 names 1a2b3c4 now, which its build must fetch". A build that fetched another commit fails at fetch, and a result stands for a later check only for the commit that check expects. A port `--only` left out is shown too, marked "(left out)", since an earlier check's result of it stands only where it fetched the commit its tag names now. With `--json`, each of the plan's builds holds what it builds under `git`, and what `--only` left out under `omitted_git`.
+
 `--variants` builds one port its way: the port `--only` names, or the one port the branch changes. There are two forms:
 - `--variants +tests` builds it with those variants in place of its defaults, as MacPorts' command line writes them (`+tests -docs`).
 - `--variants each` builds it with its defaults, then once with each variant it declares, over its defaults. The variants among its defaults are left out, since its default build has them, and so is `universal`, which needs other architectures' dependencies a clean VM doesn't have.
