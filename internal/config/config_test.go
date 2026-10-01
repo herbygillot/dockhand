@@ -138,6 +138,28 @@ func TestCleanupSettings(t *testing.T) {
 	}
 }
 
+// A size or an age past what dockhand counts in is refused, as any value
+// that isn't one is: 16777216TB is 2^64 bytes, which wrapped around to
+// none, and 106752 days is past a duration's 292 years, which wrapped
+// around to a negative age, before which cleanup would prune everything.
+func TestASettingThatOverflowsIsRefused(t *testing.T) {
+	for _, bad := range []string{"16777216TB", "17179869184GB", "99999999999999999999GB"} {
+		_, err := parse("config.toml", "[cleanup]\nmin_free = \""+bad+"\"\n")
+		require.EqualError(t, err, "config.toml: cleanup.min_free: \""+bad+"\" is not a size such as 30GB")
+	}
+	f, err := parse("config.toml", "[cleanup]\nmin_free = \"16777215TB\"\n")
+	require.NoError(t, err, "the largest that fits")
+	require.Equal(t, uint64(16777215)<<40, f.Cleanup.Free())
+
+	for _, bad := range []string{"106752d", "9223372036854775807d"} {
+		_, err := parse("config.toml", "[cleanup]\nafter = \""+bad+"\"\n")
+		require.EqualError(t, err, "config.toml: cleanup.after: \""+bad+"\" is not a number of days, such as 7d")
+	}
+	f, err = parse("config.toml", "[cleanup]\nafter = \"106751d\"\n")
+	require.NoError(t, err)
+	require.Positive(t, f.Cleanup.Age())
+}
+
 func TestMaintainerAndSubmitSettings(t *testing.T) {
 	f, err := parse("config.toml", "maintainer = \"{@ada example.org:ada} openmaintainer\"\n\n[submit]\nrerequest_review = \"always\"\n")
 	require.NoError(t, err)

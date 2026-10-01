@@ -10,6 +10,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -145,7 +146,9 @@ func parseSize(value string) (uint64, error) {
 	}
 	number = strings.TrimSpace(strings.TrimRight(number, "TGB"))
 	n, err := strconv.ParseUint(number, 10, 64)
-	if err != nil || n == 0 {
+	// A size past what 64 bits count of bytes wrapped around to a small
+	// one, which cleanup took as min_free (the limits sweep, 2026-10-01).
+	if err != nil || n == 0 || n > math.MaxUint64/unit {
 		return 0, fmt.Errorf("%q is not a size such as 30GB", value)
 	}
 	return n * unit, nil
@@ -170,7 +173,9 @@ func (c Cleanup) Age() time.Duration {
 func parseAge(value string) (time.Duration, error) {
 	if days, ok := strings.CutSuffix(value, "d"); ok {
 		n, err := strconv.Atoi(days)
-		if err != nil || n <= 0 {
+		// Days past what a duration holds, about 292 years, wrapped around
+		// to a negative age, and cleanup would prune everything.
+		if err != nil || n <= 0 || n > int(math.MaxInt64/(24*time.Hour)) {
 			return 0, fmt.Errorf("%q is not a number of days, such as 7d", value)
 		}
 		return time.Duration(n) * 24 * time.Hour, nil
