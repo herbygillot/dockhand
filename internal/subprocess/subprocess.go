@@ -37,12 +37,21 @@ type Spec struct {
 	WaitDelay time.Duration
 	// Limit bounds the captured bytes of each stream; zero imposes none.
 	Limit int64
+	// Drain, with a Limit, reads a stream on past it and drops the rest,
+	// rather than failing the command: it then ends as it would have, its
+	// exit status the verdict, as patch's is. A stream no longer read
+	// broke the command's pipe, and failed it, or killed it, for its
+	// output alone (the limits sweep, 2026-10-01). Result.Truncated says
+	// bytes were dropped.
+	Drain bool
 }
 
 // Result is what the command wrote. Stderr is empty when Combined.
+// Truncated is true when Drain dropped bytes past the limit.
 type Result struct {
-	Output []byte
-	Stderr []byte
+	Output    []byte
+	Stderr    []byte
+	Truncated bool
 }
 
 // Error reports a failed command with what it wrote to standard error, or to
@@ -81,7 +90,7 @@ func Run(ctx context.Context, spec Spec) (Result, error) {
 			command.ExtraFiles = append(command.ExtraFiles, file)
 		}
 	}
-	output, stderr := &bounded{limit: spec.Limit}, &bounded{limit: spec.Limit}
+	output, stderr := &bounded{limit: spec.Limit, drain: spec.Drain}, &bounded{limit: spec.Limit, drain: spec.Drain}
 	var out io.Writer = output
 	if spec.Stdout != nil {
 		out = io.MultiWriter(spec.Stdout, output)
@@ -96,11 +105,11 @@ func Run(ctx context.Context, spec Spec) (Result, error) {
 		command.Stderr = stderr
 	}
 	err := command.Run()
-	result := Result{Output: output.Bytes(), Stderr: stderr.Bytes()}
+	result := Result{Output: output.Bytes(), Stderr: stderr.Bytes(), Truncated: spec.Drain && (output.exceeded || stderr.exceeded)}
 	if err == nil {
 		return result, nil
 	}
-	if output.exceeded || stderr.exceeded {
+	if (output.exceeded || stderr.exceeded) && !spec.Drain {
 		err = errors.Join(errOutputLimit, err)
 	}
 	detail := stderr.String()
@@ -115,19 +124,25 @@ func Run(ctx context.Context, spec Spec) (Result, error) {
 }
 
 // bounded stops accepting bytes past its limit and remembers that it did, so a
-// runaway helper fails instead of exhausting memory. It wraps the buffer
-// rather than embedding it: an embedded buffer would promote ReadFrom, which
-// io.Copy prefers over Write, and the limit would never be consulted.
+// runaway helper fails instead of exhausting memory; draining, it keeps what
+// fits and drops the rest. It wraps the buffer rather than embedding it: an
+// embedded buffer would promote ReadFrom, which io.Copy prefers over Write,
+// and the limit would never be consulted.
 type bounded struct {
 	buffer   bytes.Buffer
 	limit    int64
+	drain    bool
 	exceeded bool
 }
 
 func (b *bounded) Write(p []byte) (int, error) {
 	if b.limit > 0 && int64(b.buffer.Len()+len(p)) > b.limit {
 		b.exceeded = true
-		return 0, errOutputLimit
+		if !b.drain {
+			return 0, errOutputLimit
+		}
+		b.buffer.Write(p[:b.limit-int64(b.buffer.Len())])
+		return len(p), nil
 	}
 	return b.buffer.Write(p)
 }

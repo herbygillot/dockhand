@@ -60,8 +60,8 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 | Limit | Value | When it's hit | Where | |
 | --- | --- | --- | --- | --- |
 | Source file a patch touches | 64 MiB | "exceeds the size limit"; every patch unchecked | `macports/patchcheck/patchcheck.go:296` |  |
-| Compressed patch (.gz, .bz2) | 64 MiB | cut silently | `macports/patchcheck/patchcheck.go:220` | gap |
-| patch's output | 1 MiB | the check errors if patch exited 0 | `macports/patchcheck/patchcheck.go:176` | gap |
+| Compressed patch (.gz, .bz2) | 64 MiB decompressed | refused, "decompresses to more than the 64 MiB dockhand checks of a patch"; that patch unchecked | `macports/patchcheck/patchcheck.go` (`decompress`) |  |
+| patch's output | 1 MiB kept | the rest is dropped; patch's exit status decides | `macports/patchcheck/patchcheck.go` (`subprocess.Spec.Drain`) |  |
 | patch --version output | 64 KiB | error | `macports/patchcheck/patchcheck.go:327` |  |
 | go.mod or Cargo.lock in an archive | 16 MiB | "dependency: oversized NAME" | `macports/dependency/archive.go:14` |  |
 | go2port or cargo2port | 10 min, 16 MiB of output | deadline or output error | `macports/dependency/generate.go:28` |  |

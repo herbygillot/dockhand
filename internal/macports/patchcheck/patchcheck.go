@@ -173,7 +173,11 @@ func Check(ctx context.Context, request Request) ([]Result, error) {
 			continue
 		}
 		args := append([]string{flag, "-t", "-N", "-p" + strconv.Itoa(strip)}, extra...)
-		output, err := subprocess.Run(ctx, subprocess.Spec{Tool: "patch", Path: command, Args: args, Dir: dir, Stdin: bytes.NewReader(contents[i]), Combined: true, Limit: 1 << 20})
+		// patch's exit status is its verdict, and its output only the
+		// detail: output past the first MiB is dropped, not a failure of
+		// the check. Before, a patch that applied with that much to say
+		// failed every patch's check (the limits sweep, 2026-10-01).
+		output, err := subprocess.Run(ctx, subprocess.Spec{Tool: "patch", Path: command, Args: args, Dir: dir, Stdin: bytes.NewReader(contents[i]), Combined: true, Limit: 1 << 20, Drain: true})
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
@@ -211,19 +215,32 @@ func parseArgs(args []string) (strip int, extra []string, unsupported string) {
 }
 
 func decompress(patch Patch) ([]byte, error) {
+	var reader io.Reader
 	switch strings.ToLower(path.Ext(patch.Name)) {
 	case ".gz":
-		reader, err := gzip.NewReader(bytes.NewReader(patch.Data))
+		gz, err := gzip.NewReader(bytes.NewReader(patch.Data))
 		if err != nil {
 			return nil, fmt.Errorf("gzip: %w", err)
 		}
-		return io.ReadAll(io.LimitReader(reader, maxPatchedFile))
+		reader = gz
 	case ".bz2":
-		return io.ReadAll(io.LimitReader(bzip2.NewReader(bytes.NewReader(patch.Data)), maxPatchedFile))
+		reader = bzip2.NewReader(bytes.NewReader(patch.Data))
 	case ".xz", ".z":
 		return nil, fmt.Errorf("%s compression is not modeled", strings.TrimPrefix(path.Ext(patch.Name), "."))
+	default:
+		return patch.Data, nil
 	}
-	return patch.Data, nil
+	// A patch that decompresses past the bound is refused, leaving it
+	// unchecked, rather than cut: a cut patch was checked as its first 64
+	// MiB, and could read as applying (the limits sweep, 2026-10-01).
+	data, err := io.ReadAll(io.LimitReader(reader, maxPatchedFile+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxPatchedFile {
+		return nil, fmt.Errorf("decompresses to more than the %d MiB dockhand checks of a patch", maxPatchedFile>>20)
+	}
+	return data, nil
 }
 
 // targets lists the paths a patch names after stripping leading components,

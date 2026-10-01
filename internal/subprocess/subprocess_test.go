@@ -72,3 +72,21 @@ func TestRunBoundsOutputAndJoinsCancellation(t *testing.T) {
 	_, err = Run(t.Context(), Spec{Tool: "fixture"})
 	require.ErrorContains(t, err, "executable is required")
 }
+
+// Draining, output past the limit is dropped and the command runs to its
+// end: its exit status, not its output's length, decides.
+func TestRunDrainsOutputPastTheLimit(t *testing.T) {
+	path := script(t, "yes | head -c 4096; echo done >&2; exit \"$FIXTURE_EXIT\"\n")
+	result, err := Run(t.Context(), Spec{Tool: "fixture", Path: path, Limit: 512, Drain: true, Env: []string{"FIXTURE_EXIT=0", "PATH=" + os.Getenv("PATH")}})
+	require.NoError(t, err)
+	require.True(t, result.Truncated)
+	require.Len(t, result.Output, 512)
+	require.Equal(t, "done\n", string(result.Stderr), "the command ran to its end")
+
+	result, err = Run(t.Context(), Spec{Tool: "fixture", Path: path, Limit: 512, Drain: true, Env: []string{"FIXTURE_EXIT=4", "PATH=" + os.Getenv("PATH")}})
+	var exit *exec.ExitError
+	require.ErrorAs(t, err, &exit)
+	require.Equal(t, 4, exit.ExitCode())
+	require.NotErrorIs(t, err, errOutputLimit, "the overflow isn't the failure")
+	require.True(t, result.Truncated)
+}

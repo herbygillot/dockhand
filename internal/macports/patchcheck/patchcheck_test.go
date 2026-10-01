@@ -5,11 +5,14 @@ import (
 	"bytes"
 	"compress/gzip"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 func sourceArchive(t *testing.T, files map[string]string) string {
@@ -87,6 +90,55 @@ func TestTargets(t *testing.T) {
 	data := "diff --git a/src/x.c b/src/x.c\nIndex: src/y.c\n--- a/src/x.c\t2026-01-01\n+++ b/src/x.c\n--- /dev/null\n+++ b/new.txt\n*** old/ctx.c\n"
 	require.Equal(t, []string{"src/x.c", "y.c", "new.txt", "ctx.c"}, targets([]byte(data), 1))
 	require.Equal(t, []string{"a/src/x.c", "b/src/x.c", "src/y.c", "b/new.txt", "old/ctx.c"}, targets([]byte(data), 0))
+}
+
+// A compressed patch that decompresses past the 64 MiB checked of one is
+// refused, and left unchecked, as other unreadable patches are, rather than
+// checked as its first 64 MiB; the others are still checked.
+func TestACompressedPatchPastTheBoundIsUncheckedNotCut(t *testing.T) {
+	archive := sourceArchive(t, map[string]string{"project-2.0/dir/a.txt": "one\ntwo\nthree\n"})
+	var gzipped bytes.Buffer
+	gz := gzip.NewWriter(&gzipped)
+	_, _ = gz.Write([]byte(good))
+	_, _ = gz.Write(bytes.Repeat([]byte("\n"), maxPatchedFile))
+	require.NoError(t, gz.Close())
+	results, err := Check(t.Context(), Request{Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{
+		{Name: "large.diff.gz", Data: gzipped.Bytes()}, {Name: "good.diff", Data: []byte(good)},
+	}})
+	require.NoError(t, err)
+	require.Equal(t, Result{Name: "large.diff.gz", Detail: "decompresses to more than the 64 MiB dockhand checks of a patch"}, results[0])
+	require.True(t, results[1].Applies, results[1].Detail)
+	require.Contains(t, Summary(results), "large.diff.gz unchecked (decompresses to more than the 64 MiB")
+}
+
+// patch's exit status is its verdict, however much it says: a patch that
+// applies saying more than the MiB of its output kept applies, and one that
+// doesn't is rejected, where the overflow failed the whole check. patch
+// here says it, standing in for one that prints a line for each of many
+// files.
+func TestPatchsExitStatusDecidesPastItsOutputLimit(t *testing.T) {
+	real, err := exec.LookPath("patch")
+	require.NoError(t, err)
+	bin := t.TempDir()
+	testsupport.WriteExecutable(t, filepath.Join(bin, "patch"), "#!/bin/sh\n"+
+		"if [ \"$1\" = --version ]; then exec "+real+" --version; fi\n"+
+		"cat >/dev/null\n"+
+		"yes 'checking file dir/a.txt' | head -c 2097152\n"+
+		"exit \"$FAKE_PATCH_EXIT\"\n")
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	archive := sourceArchive(t, map[string]string{"project-2.0/dir/a.txt": "one\ntwo\nthree\n"})
+	request := Request{Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{{Name: "good.diff", Data: []byte(good)}}}
+
+	t.Setenv("FAKE_PATCH_EXIT", "0")
+	results, err := Check(t.Context(), request)
+	require.NoError(t, err)
+	require.Equal(t, Result{Name: "good.diff", Checked: true, Applies: true, Detail: "applies"}, results[0])
+
+	t.Setenv("FAKE_PATCH_EXIT", "1")
+	results, err = Check(t.Context(), request)
+	require.NoError(t, err)
+	require.True(t, results[0].Checked)
+	require.False(t, results[0].Applies)
 }
 
 func TestUnreadableArchiveLeavesPatchesUnchecked(t *testing.T) {
