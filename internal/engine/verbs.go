@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/history"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -106,6 +107,9 @@ type Rebased struct {
 	UpToDate   bool
 	Checkpoint *model.Checkpoint
 	Commits    int
+	// OlderBuilds are the builds the rebased commits name in Generated-By
+	// other than this one, which a rebase keeps as the commits had them.
+	OlderBuilds []string
 }
 
 // Rebase moves a branch's commits onto freshly fetched master, in its
@@ -171,9 +175,16 @@ func (e *Engine) rebase(ctx context.Context, branch model.Branch) (Rebased, erro
 		return Rebased{}, err
 	}
 	// Counted as replayed: a change master already has is dropped.
-	if result.Commits, err = worktree.CountCommits(ctx, string(master), rebased); err != nil {
+	replayed, err := worktree.History(ctx, string(master), rebased)
+	if err != nil {
 		return Rebased{}, err
 	}
+	result.Commits = len(replayed)
+	var messages []string
+	for _, commit := range replayed {
+		messages = append(messages, commit.Message)
+	}
+	result.OlderBuilds = commitmsg.OtherBuilds(messages)
 
 	// The checkpoint is recorded before anything moves. Its ref keeps the
 	// old history reachable before the branch leaves it, and the checkout

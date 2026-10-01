@@ -76,3 +76,15 @@ func TestACommitThatSaysTheSameIsUnchanged(t *testing.T) {
 		require.Equal(t, test.same, commitmsg.Unchanged(test.had, message), test.had)
 	}
 }
+
+// The builds messages' attribution lines name other than this one are
+// each named once: a pre-v3 build by its tag, a legacy form by its line;
+// this build, and a message without the line, name none.
+func TestTheOtherBuildsCommitsName(t *testing.T) {
+	old := "zola: update to 0.22.1\n\nGenerated-By: Dockhand v0.0.0-20260921.2.0.20260923041537-ec1997b8bc53 (https://github.com/herbygillot/dockhand)\n"
+	legacy := "jq: update to 1.8.1\n\nAssisted-By: Dockhand 0.1\n"
+	current := "yq: update to 4.54.1\n\n" + commitmsg.GeneratedBy() + "\n"
+	require.Equal(t, []string{"v0.0.0-20260921.2.0.20260923041537-ec1997b8bc53", "Assisted-By: Dockhand 0.1"},
+		commitmsg.OtherBuilds([]string{old, current, "a hand commit\n", legacy, old}))
+	require.Empty(t, commitmsg.OtherBuilds([]string{current}))
+}

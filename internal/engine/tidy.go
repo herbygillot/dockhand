@@ -681,6 +681,17 @@ type TidyResult struct {
 	Kept int
 }
 
+// OlderBuilds are the builds the branch's commits name in Generated-By
+// other than this one: a commit tidy leaves as it is keeps its line, and
+// one it writes names this build.
+func (p TidyPlan) OlderBuilds() []string {
+	var messages []string
+	for _, commit := range p.History {
+		messages = append(messages, commit.Message)
+	}
+	return commitmsg.OtherBuilds(messages)
+}
+
 // ModifiedBuild reports whether the plan's commits name, in Generated-By,
 // a dockhand built from uncommitted source, which nobody else can find.
 func (p TidyPlan) ModifiedBuild() bool {

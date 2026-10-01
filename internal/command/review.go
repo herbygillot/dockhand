@@ -239,6 +239,9 @@ func writeTidyPlan(out io.Writer, plan engine.TidyPlan) {
 			fmt.Fprintf(out, "       ✗ %s\n", blocking)
 		}
 	}
+	if builds := plan.OlderBuilds(); len(builds) > 0 {
+		fmt.Fprintf(out, "  · the branch's commits name an older dockhand in Generated-By, %s: a commit tidy leaves as it is keeps it, and one it writes names this build\n", strings.Join(builds, ", "))
+	}
 	writeFindings(out, plan)
 	fmt.Fprintln(out)
 }

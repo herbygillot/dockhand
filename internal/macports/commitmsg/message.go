@@ -57,6 +57,32 @@ func ModifiedBuild(message string) bool {
 	return false
 }
 
+// OtherBuilds are the builds messages' attribution lines name other than
+// this one, each once, in order: a pre-v3 branch's commit names
+// "v0.0.0-20260921…", which a rebase keeps and a commit tidy writes again
+// replaces (the flatbuffers, nuspell, zola, and alertmanager run's finding
+// 4). A legacy form is named by its whole line.
+func OtherBuilds(messages []string) []string {
+	current := version.Current().Tag()
+	var builds []string
+	for _, message := range messages {
+		for _, line := range strings.Split(message, "\n") {
+			line = strings.TrimSpace(line)
+			if !IsAttribution(line) {
+				continue
+			}
+			build := line
+			if rest, ok := strings.CutPrefix(line, generatedByPrefix); ok {
+				build, _, _ = strings.Cut(rest, " ")
+			}
+			if build != current && !slices.Contains(builds, build) {
+				builds = append(builds, build)
+			}
+		}
+	}
+	return builds
+}
+
 // Unchanged reports whether a commit with message had can stand for one
 // with message want: they say the same, but perhaps for dockhand's
 // attribution line, which names the build that wrote each and so differs

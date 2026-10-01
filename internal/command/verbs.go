@@ -223,6 +223,9 @@ rebase that conflicts is abandoned with the branch as it was.`,
 			name := rebased.Checkpoint.Name()
 			fmt.Fprintf(streams.Out, "Rebased %s (%s) from master %s onto %s.\nCheckpoint %s keeps the old history (dockhand restore %s).\n",
 				branch.ShortName(), plural(rebased.Commits, "commit"), engine.Short(rebased.From), engine.Short(rebased.To), name, name)
+			if len(rebased.OlderBuilds) > 0 {
+				fmt.Fprintf(streams.Out, "The rebased commits keep their Generated-By, naming an older dockhand, %s; tidy names this build in a commit it writes again.\n", strings.Join(rebased.OlderBuilds, ", "))
+			}
 			if branch.PullRequest != nil {
 				fmt.Fprintf(streams.Out, "#%d still has the old commits; dockhand submit replaces them, if no one else has pushed.\n", branch.PullRequest.Number)
 			}

@@ -217,3 +217,27 @@ func TestStatusCreditsTheCheckOfTheFilesAsTheyAre(t *testing.T) {
 	require.Equal(t, after.ID, status.Latest.ID, "files no check has seen are judged by the newest check")
 	require.False(t, status.Current)
 }
+
+// A pre-v3 branch's commit names its build in Generated-By, which a rebase
+// keeps and a commit tidy writes again replaces; both say so (the
+// flatbuffers, nuspell, zola, and alertmanager run's finding 4).
+func TestARebaseAndATidySayAnOlderBuildsAttribution(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "zola-legacy", Here: true})
+	require.NoError(t, err)
+	old := "v0.0.0-20260921.2.0.20260923041537-ec1997b8bc53"
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
+	commitAs(t, branch.Worktree, "Ada ada@example.org", "jq: update to 1.8.1\n\nGenerated-By: Dockhand "+old+" (https://github.com/herbygillot/dockhand)")
+
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Equal(t, []string{old}, plan.OlderBuilds())
+
+	write(t, f.upstream, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
+	run(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 3")
+	rebased, err := e.Rebase(t.Context(), branch)
+	require.NoError(t, err)
+	require.Equal(t, 1, rebased.Commits)
+	require.Equal(t, []string{old}, rebased.OlderBuilds, "the rebased commit keeps it")
+}
