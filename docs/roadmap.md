@@ -221,7 +221,8 @@ The order of all the work, as of 2026-09-30:
 12. batches 10 and 12 (done 2026-09-30), 14 and 15 (done 2026-10-01), and item 7's coverage, which item 9 doesn't touch;
 13. batch 23, what the fluent-bit run found (added 2026-09-30);
 14. batch 24, a Cargo port declaring its crates per platform, as cargo does (added 2026-10-01);
-15. batch 25, what the limits sweep and the SQL rescan found that can't wait (added 2026-10-01, taken the same day at the person's word), then batch 26, the rest of the sweep's gaps.
+15. batch 25, what the limits sweep and the SQL rescan found that can't wait (added 2026-10-01, taken the same day at the person's word), then batch 26, the rest of the sweep's gaps;
+16. batch 27, a Go pin the update's Go minimum contradicts (added 2026-10-01).
 
 What batches 10 to 15 touch doesn't move with item 6, so they wait without cost, and batch 12's GitHub work wants item 6's environment identity. The order is the implementer's to re-settle as work lands.
 
@@ -357,6 +358,8 @@ What batches 10 to 15 touch doesn't move with item 6, so they wait without cost,
   - `create`'s 4 MiB project-file limit, which GitHub's contents API meets first at about 1 MB;
   - `cleanup.after` short enough to prune the events the daily submit limit counts, and a config size that overflows;
   - `patch` overflowing its output cap but exiting 0, which fails the whole check.
+- **Batch 27: what the trivy run found** ([#35083](https://github.com/macports/macports-ports/pull/35083)).
+  - a Go pin the update outgrows. trivy 0.75.0's go.mod requires Go 1.27.0; `update` raised `go.toolchain_min` from 1.26.3 to 1.27.0, and said "go.mod requires Go 1.27.0, which go.toolchain_min 1.27.0 already gates on", while the Portfile pinned Go 1.26 (`depends_build port:go-1.26`, `go.bin ${prefix}/bin/go-1.26`), under a comment saying why, and its commit "until 0.75". The rule judges the requirement against `go.toolchain_min` alone (`assess/toolchain.go`); nothing reads a pin. A Go the port pins older than go.mod requires should hold: "go.mod requires Go 1.27.0, but the Portfile pins go-1.26 (go.bin, depends_build); the pin may be obsolete". What names the pin is `macports`' to say from the evaluated `go.bin` and dependencies, beside `GoToolchainCovers`; quoting the comment above it needs the Portfile's text, which the assessment doesn't read yet, as with a counted dependency named. A check builds with the pinned Go and fails on go.mod's requirement, so this is said before the check rather than caught by none. The person removed the pin by hand, and check-68 passed on Tart 12 and 26 and GitHub with go-1.27.
 
 ### Taken when their area is next touched
 
