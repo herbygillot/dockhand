@@ -219,7 +219,8 @@ The order of all the work, as of 2026-09-30:
 10. batch 21, small, what item 9 and batches 19 and 20 left and what the dogfood run met after them, its status line first, since a person follows it today (added 2026-09-30). Done 2026-09-30;
 11. batch 13's remainder (done 2026-09-30), then batch 11, whose `review` assesses a pull request as item 9 assesses any revision (done 2026-09-30), then batch 22 (added 2026-09-30, done 2026-09-30);
 12. batches 10 and 12 (done 2026-09-30), 14 and 15 (done 2026-10-01), and item 7's coverage, which item 9 doesn't touch;
-13. batch 23, what the fluent-bit run found (added 2026-09-30).
+13. batch 23, what the fluent-bit run found (added 2026-09-30);
+14. batch 24, a Cargo port declaring its crates per platform, as cargo does (added 2026-10-01).
 
 What batches 10 to 15 touch doesn't move with item 6, so they wait without cost, and batch 12's GitHub work wants item 6's environment identity. The order is the implementer's to re-settle as work lands.
 
