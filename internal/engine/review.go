@@ -227,6 +227,9 @@ func (r ReviewReport) UpstreamWords() []string {
 		for _, change := range found.Comparison.Changes {
 			lines = append(lines, port+change.Message)
 		}
+		if words := CoverageWords(found.Comparison); words != "" {
+			lines = append(lines, port+words)
+		}
 	}
 	return lines
 }

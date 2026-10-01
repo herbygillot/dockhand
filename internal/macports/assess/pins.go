@@ -109,7 +109,7 @@ func (a *assessment) judge(declarations []project.Requirement, provider string, 
 // whose patch release a requires-python turns on; and whether the tree has
 // a port for each native library a new crate links.
 func Wanted(input Input) []Provider {
-	a := assessment{input: input, counted: map[string][2]int{}, seen: map[string]bool{}}
+	a := assessment{input: input}
 	for _, pair := range input.Pairs {
 		a.pair(pair)
 	}

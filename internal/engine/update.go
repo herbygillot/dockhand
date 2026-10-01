@@ -129,9 +129,11 @@ type Update struct {
 	Distfiles   int
 	Regenerated []preparation.Regenerated
 	// PatchProblems name the port's patches that no longer apply, and
-	// PatchesUnchecked those no check reached before the build.
+	// PatchesUnchecked those no check reached before the build;
+	// PatchesApplied counts those checked that apply.
 	PatchProblems    []string
 	PatchesUnchecked []string
+	PatchesApplied   int
 	// Current is true when there was nothing to change.
 	Current bool
 	// Started is true when the update started its branch
@@ -478,7 +480,7 @@ func changedSinceBase(ctx context.Context, worktree *git.Repository, captured st
 
 // describe reads what the preparation found.
 func describe(branch model.Branch, selector string, result preparation.Result) Update {
-	update := Update{Branch: branch, Port: result.Target.Name, Release: result.Release, PatchProblems: result.PatchProblems(), PatchesUnchecked: result.UncheckedPatches(),
+	update := Update{Branch: branch, Port: result.Target.Name, Release: result.Release, PatchProblems: result.PatchProblems(), PatchesUnchecked: result.UncheckedPatches(), PatchesApplied: result.PatchesApplied(),
 		Distfiles: len(result.Downloads), Regenerated: result.Regenerated}
 	if update.Port == "" {
 		update.Port = selector

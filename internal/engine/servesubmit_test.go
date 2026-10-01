@@ -86,9 +86,11 @@ func TestServeHoldsAnUpdateWhoseUpstreamChangedItsLicense(t *testing.T) {
 	candidates, err := e.ServeCandidates(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, []string{"upstream's LICENSE changed; the Portfile's license line may need to follow"}, candidates[0].Held)
-	require.Equal(t, []PortComparison{{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{
-		{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed; the Portfile's license line may need to follow", Hold: true, Rule: assess.LicenseChanged, Class: model.Introduced}}}}},
-		candidates[0].Plan.Upstream, "the plan says what was found, for a person's submission to show")
+	require.Len(t, candidates[0].Plan.Upstream, 1)
+	require.Equal(t, "jq", candidates[0].Plan.Upstream[0].Port)
+	require.Equal(t, []model.UpstreamChange{
+		{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed; the Portfile's license line may need to follow", Hold: true, Rule: assess.LicenseChanged, Class: model.Introduced}},
+		candidates[0].Plan.Upstream[0].Comparison.Changes, "the plan says what was found, for a person's submission to show")
 	_, err = e.SubmitForServe(t.Context(), candidates[0])
 	require.ErrorContains(t, err, "is held for a look: upstream's LICENSE changed")
 }
@@ -164,8 +166,9 @@ func TestServeSaysAGoToolchainMinimumItNeedNotHold(t *testing.T) {
 			candidates, err := e.ServeCandidates(t.Context())
 			require.NoError(t, err)
 			require.Empty(t, candidates[0].Held)
-			require.Equal(t, []PortComparison{{Port: "jq", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{
-				{Kind: "toolchain", Path: "go.mod", Message: test.message, Rule: assess.GoToolchainRule, Subject: "1.26.8", Class: model.Introduced}}}}}, candidates[0].Plan.Upstream)
+			require.Len(t, candidates[0].Plan.Upstream, 1)
+			require.Equal(t, []model.UpstreamChange{
+				{Kind: "toolchain", Path: "go.mod", Message: test.message, Rule: assess.GoToolchainRule, Subject: "1.26.8", Class: model.Introduced}}, candidates[0].Plan.Upstream[0].Comparison.Changes)
 		})
 	}
 }

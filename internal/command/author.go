@@ -833,15 +833,35 @@ func startNamed(ctx context.Context, e *engine.Engine, name string) (model.Branc
 	return branch, err == nil, err
 }
 
-// writePatches reports the patches an update found no longer apply, and
-// those it couldn't check.
+// writePatches reports the patches an update found apply, those that no
+// longer do, and those it couldn't check: that they apply is said too, so
+// a check that found nothing isn't taken for none (the fluent-bit run).
 func writePatches(out io.Writer, update engine.Update) {
+	if update.PatchesApplied > 0 {
+		source := "the new source"
+		if update.Release != nil && update.Release.Version != "" {
+			source = update.Release.Version + "'s source"
+		}
+		fmt.Fprintf(out, "· %s to %s\n", appliesWords(update.PatchesApplied, len(update.PatchProblems)), source)
+	}
 	for _, problem := range update.PatchProblems {
 		fmt.Fprintf(out, "! patch %s\n", problem)
 	}
 	for _, unchecked := range update.PatchesUnchecked {
 		fmt.Fprintf(out, "· patch %s\n", unchecked)
 	}
+}
+
+// appliesWords says how many patches apply, "6 patches apply", or of how
+// many, where others don't.
+func appliesWords(applied, rejected int) string {
+	switch {
+	case rejected > 0:
+		return fmt.Sprintf("%d of %d patches apply", applied, applied+rejected)
+	case applied == 1:
+		return "1 patch applies"
+	}
+	return fmt.Sprintf("%d patches apply", applied)
 }
 
 // writeUpstream reports what comparing the upstream archives found.
@@ -855,10 +875,16 @@ func writeUpstream(out io.Writer, comparison *model.UpstreamComparison) {
 		fmt.Fprintln(out, holdLegend)
 	case len(comparison.Changes) == 0:
 		fmt.Fprintln(out, "Upstream archives compared: no license, build file, or dependency changes.")
+		if words := engine.CoverageWords(*comparison); words != "" {
+			fmt.Fprintf(out, "  · %s\n", words)
+		}
 	default:
 		fmt.Fprintln(out, "Upstream changes:")
 		for _, change := range comparison.Changes {
 			fmt.Fprintf(out, "  %s\n", upstreamWords(underUpstream(change)))
+		}
+		if words := engine.CoverageWords(*comparison); words != "" {
+			fmt.Fprintf(out, "  · %s\n", words)
 		}
 		if comparison.Held() {
 			fmt.Fprintln(out, "  "+holdLegend)

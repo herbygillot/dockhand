@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/sourcecompare"
 )
 
@@ -13,7 +14,8 @@ import (
 // base applied that the candidate drops, with whether it still would:
 // libuv's #34620 dropped patch-libuv-legacy.diff, which no longer applied
 // (the libuv run's finding 2). None holds; one the check couldn't model is
-// coverage, and one that applies is nothing to say.
+// coverage, and so is one that applies, said so a check that found nothing
+// isn't taken for none (the fluent-bit run, batch 23).
 func TestPatchesAreSaidAgainstTheCandidatesSource(t *testing.T) {
 	comparison := Assess(Input{Versions: sourcecompare.Versions{Old: "1.44.2", New: "1.52.1"}, Patches: []Patch{
 		{Result: patchcheck.Result{Name: "patch-kept.diff", Checked: true, Applies: true}},
@@ -28,7 +30,8 @@ func TestPatchesAreSaidAgainstTheCandidatesSource(t *testing.T) {
 		"· patch-still.diff, which the base applied, is dropped, though it still applies to 1.52.1's source: what it fixed may need it still",
 	}, messages(comparison.Changes))
 	require.Equal(t, []string{PatchRejected, PatchDropped, PatchDropped}, []string{comparison.Changes[0].Rule, comparison.Changes[1].Rule, comparison.Changes[2].Rule})
-	require.Len(t, comparison.Coverage, 1)
-	require.Equal(t, "patch-unchecked", comparison.Coverage[0].Policy)
-	require.Equal(t, "patch.dir leaves the source directory", comparison.Coverage[0].Reason)
+	require.Equal(t, []model.Coverage{
+		{Path: "patch-kept.diff", Relevance: "used", Treatment: "inspected", Policy: "patch-applies", Reason: "applies to 1.52.1's source"},
+		{Path: "patch-elsewhere.diff", Relevance: "used", Treatment: "set-apart", Policy: "patch-unchecked", Reason: "patch.dir leaves the source directory"},
+	}, comparison.Coverage)
 }

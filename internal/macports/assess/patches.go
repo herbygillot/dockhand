@@ -45,6 +45,10 @@ func (a *assessment) patches() []model.UpstreamChange {
 			change.Rule = PatchRejected
 			change.Message = fmt.Sprintf("%s doesn't apply to %s, so the build fails at its patch phase: %s", patch.Name, source, patch.Detail)
 		default:
+			// One that applies is coverage, said so a check that found
+			// nothing isn't taken for none: fluent-bit's six applied, and
+			// the person dry-ran them by hand (the fluent-bit run).
+			a.cover(model.Coverage{Path: patch.Name, Relevance: "used", Treatment: "inspected", Policy: "patch-applies", Reason: "applies to " + source})
 			continue
 		}
 		found = append(found, change)

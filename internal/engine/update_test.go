@@ -618,11 +618,10 @@ func TestAChangeTheBuildDoesntReadHoldsNothing(t *testing.T) {
 	comparison := (&Engine{}).assessUpstream(t.Context(), result, sourcecompare.Versions{Old: "25.9.23", New: "25.12.19"}, [2]model.Source{}, true)
 	require.Equal(t, []model.UpstreamChange{
 		{Kind: "build", Path: "CMakeLists.txt", Message: "upstream's CMakeLists.txt changed; the build may need the Portfile to follow", Hold: true, Rule: assess.BuildFileChanged, Class: model.Introduced},
-		{Kind: "build", Path: "Package.swift", Message: "upstream's Package.swift is new; flatbuffers builds with cmake, not swift, so it holds nothing",
-			Rule: assess.BuildFileChanged, Class: model.Introduced},
-		{Kind: "dependency", Path: "package.json", Message: "upstream: package.json: 2 dependencies changed; flatbuffers builds with cmake, not node, so it holds nothing",
-			Rule: assess.DependenciesCounted, Class: model.Introduced},
 	}, comparison.Changes)
+	// The files of build systems flatbuffers doesn't use are said in
+	// coverage alone, set apart (rust 1.99.0's package.json, batch 23).
+	require.Equal(t, "Read CMakeLists.txt; set apart: Package.swift (swift), package.json (node)", CoverageWords(*comparison))
 }
 
 // A version update or a checksum refresh says the port's URLs over plain

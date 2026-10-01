@@ -483,6 +483,11 @@ func comparisonLines(comparisons []engine.PortComparison) []string {
 			change.Message = port + change.Message
 			lines = append(lines, upstreamWords(change))
 		}
+		// What it read and checked is said too, so silence isn't taken
+		// for not looking (rust 1.99.0, batch 23).
+		if words := engine.CoverageWords(found.Comparison); words != "" {
+			lines = append(lines, "· "+port+words)
+		}
 	}
 	return lines
 }

@@ -150,3 +150,62 @@ func UnmetWords(unmet model.Unmet) string {
 	}
 	return words
 }
+
+// coverageNamed is how many files a coverage line names before counting
+// the rest.
+const coverageNamed = 5
+
+// CoverageWords say in one line what an assessment read and checked: the
+// new version's files it read, the patches that apply and those it
+// couldn't check, and what it set apart. A comparison that found nothing
+// read as one that hadn't looked: rust's said only its package.json, and
+// its Cargo manifests and patches went unmentioned (rust 1.99.0, batch
+// 23). Empty where the comparison recorded no coverage.
+func CoverageWords(comparison model.UpstreamComparison) string {
+	var read, apart []string
+	applied, unchecked := 0, 0
+	for _, c := range comparison.Coverage {
+		switch {
+		case c.Policy == "read":
+			read = append(read, c.Path)
+		case c.Policy == "patch-applies":
+			applied++
+		case c.Policy == "patch-unchecked":
+			unchecked++
+		case c.Treatment == "set-apart" && c.System != "":
+			apart = append(apart, c.Path+" ("+c.System+")")
+		case c.Treatment == "set-apart":
+			apart = append(apart, c.Path)
+		}
+	}
+	var parts []string
+	if len(read) > 0 {
+		parts = append(parts, "read "+namedList(read))
+	}
+	switch applied {
+	case 0:
+	case 1:
+		parts = append(parts, "1 patch applies")
+	default:
+		parts = append(parts, fmt.Sprintf("%d patches apply", applied))
+	}
+	if unchecked > 0 {
+		parts = append(parts, plural(unchecked, "patch")+" unchecked")
+	}
+	if len(apart) > 0 {
+		parts = append(parts, "set apart: "+namedList(apart))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	words := strings.Join(parts, "; ")
+	return strings.ToUpper(words[:1]) + words[1:]
+}
+
+// namedList names up to coverageNamed items, and counts the rest.
+func namedList(items []string) string {
+	if len(items) <= coverageNamed {
+		return strings.Join(items, ", ")
+	}
+	return fmt.Sprintf("%s, and %d more", strings.Join(items[:coverageNamed], ", "), len(items)-coverageNamed)
+}

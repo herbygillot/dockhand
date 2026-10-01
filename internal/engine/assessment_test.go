@@ -405,8 +405,10 @@ func TestAGitFetchedPortIsComparedByItsCommits(t *testing.T) {
 	require.Len(t, assessments, 1)
 	require.Empty(t, assessments[0].Comparison.Problem)
 	require.Equal(t, []string{"upstream's LICENSE changed; the Portfile's license line may need to follow"}, holds(assessments[0]))
-	require.Equal(t, []model.Coverage{{Path: v2, Relevance: "unknown", Treatment: "inspected",
-		Reason: "read from the forge's archive of each commit, submodules left out; the base's git.branch as it names a commit now"}}, assessments[0].Comparison.Coverage)
+	require.Equal(t, []model.Coverage{
+		{Path: "LICENSE", Relevance: "used", Treatment: "inspected", Policy: "read", Reason: "compared with the base's"},
+		{Path: v2, Relevance: "unknown", Treatment: "inspected",
+			Reason: "read from the forge's archive of each commit, submodules left out; the base's git.branch as it names a commit now"}}, assessments[0].Comparison.Coverage)
 	require.EqualValues(t, 2, archives.asked.Load())
 
 	later := editTree(t, e, tree, map[string]string{"devel/libharbor/files/a.diff": "a"})

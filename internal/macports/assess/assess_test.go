@@ -218,7 +218,29 @@ func TestCoverageSaysWhatWasSetApartAndWhy(t *testing.T) {
 		{Path: "python", Relevance: "unknown", Treatment: "inspected", Reason: "the port builds in python, which flatbuffers-2.tar.gz doesn't have, so it was read at its top"},
 		{Path: "package.json", System: "node", Relevance: "unknown", Treatment: "set-apart", Policy: "portgroup-scoping", Reason: "flatbuffers builds with cmake, not node"},
 	}, comparison.Coverage)
-	require.Equal(t, []string{"· upstream: package.json: 1 dependency changed; flatbuffers builds with cmake, not node, so it holds nothing"}, messages(comparison.Changes))
+	// Said in coverage alone, not as a note: rust's package.json, its
+	// in-tree tidy tooling's, was noise (rust 1.99.0, batch 23).
+	require.Empty(t, comparison.Changes)
+}
+
+// Each file of the new version's that was read is said, with whether the
+// base had it, so a comparison that found nothing isn't taken for one that
+// didn't look: rust's Cargo manifests were read, and nothing said so
+// (rust 1.99.0, batch 23).
+func TestCoverageSaysWhatWasRead(t *testing.T) {
+	port := macports.PortInfo{Name: "zdemo", Options: map[string]string{"dockhand.portgroups": "cargo"}}
+	comparison := Assess(Input{Port: port, Base: port, Pairs: []Pair{{
+		Archive: "zdemo-2.tar.gz",
+		Before:  read(t, "zdemo-1", map[string]string{"Cargo.toml": "[workspace]\nmembers = [\"a\"]\n", "LICENSE": "MIT\n"}, project.Spec{}),
+		After:   read(t, "zdemo-2", map[string]string{"Cargo.toml": "[workspace]\nmembers = [\"a\"]\n", "LICENSE": "MIT\n", "Cargo.lock": "version = 4\n\n[[package]]\nname = \"a\"\nversion = \"1.0.0\"\n", "package.json": "{}"}, project.Spec{}),
+	}}})
+	require.Empty(t, comparison.Changes)
+	require.Equal(t, []model.Coverage{
+		{Path: "Cargo.lock", System: "cargo", Relevance: "used", Treatment: "inspected", Policy: "read", Reason: "new in this version"},
+		{Path: "Cargo.toml", System: "cargo", Relevance: "used", Treatment: "inspected", Policy: "read", Reason: "compared with the base's"},
+		{Path: "LICENSE", Relevance: "used", Treatment: "inspected", Policy: "read", Reason: "compared with the base's"},
+		{Path: "package.json", System: "node", Relevance: "unknown", Treatment: "set-apart", Policy: "portgroup-scoping", Reason: "zdemo builds with cargo, not node"},
+	}, comparison.Coverage)
 }
 
 // A build file whose line moved with the project's version but doesn't

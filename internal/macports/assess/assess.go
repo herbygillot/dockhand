@@ -12,6 +12,7 @@ package assess
 
 import (
 	"fmt"
+	"maps"
 	"path"
 	"slices"
 	"strings"
@@ -139,7 +140,7 @@ const namedDependencies = 3
 // said once. Findings that hold come first within each manifest, as a
 // person reads them.
 func Assess(input Input) model.UpstreamComparison {
-	a := assessment{input: input, comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{}}, counted: map[string][2]int{}, seen: map[string]bool{}}
+	a := assessment{input: input, comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{}}}
 	for _, pair := range input.Pairs {
 		a.pair(pair)
 	}
@@ -165,11 +166,6 @@ func Assess(input Input) model.UpstreamComparison {
 type assessment struct {
 	input      Input
 	comparison model.UpstreamComparison
-	// counted are where each set-apart manifest's count is among the
-	// findings, and how many it counts, and seen the dependency changes
-	// already counted, across pairs.
-	counted map[string][2]int
-	seen    map[string]bool
 	// requirements are the Python requirements of manifests the port's
 	// build uses, each with its declarations in both versions, for pins.
 	requirements []requirement
@@ -262,28 +258,12 @@ func (a *assessment) pair(pair Pair) {
 			flush()
 		}
 		base := path.Base(change.Path)
+		// What changed in a file of a build system the port doesn't use is
+		// said in coverage alone: rust's "package.json: 1 dependency
+		// changed; rust builds with cargo, not node", its in-tree tidy
+		// tooling's, was accurate and noise (rust 1.99.0, batch 23).
 		if unused(change.System) {
 			a.cover(model.Coverage{Path: change.Path, System: string(change.System), Relevance: "unknown", Treatment: "set-apart", Policy: "portgroup-scoping", Reason: why(change.System)})
-			if change.Kind != "dependency" {
-				found := finding(change, false)
-				found.Message += "; " + why(change.System) + ", so it holds nothing"
-				a.add(found)
-				continue
-			}
-			// A manifest's dependencies are counted, as a proven
-			// manifest's are (D9), since none holds.
-			if a.seen[change.Message] {
-				continue
-			}
-			a.seen[change.Message] = true
-			at, ok := a.counted[change.Path]
-			if !ok {
-				at = [2]int{len(a.comparison.Changes), 0}
-				a.comparison.Changes = append(a.comparison.Changes, model.UpstreamChange{Kind: "dependency", Path: change.Path, Rule: DependenciesCounted, Class: model.Introduced})
-			}
-			at[1]++
-			a.counted[change.Path] = at
-			a.comparison.Changes[at[0]].Message = countedMessage(change.Path, at[1], why(change.System))
 			continue
 		}
 		switch {
@@ -322,6 +302,31 @@ func (a *assessment) pair(pair Pair) {
 	}
 	flush()
 	a.unchanged(pair, unused)
+	a.read(pair, unused, known, why)
+}
+
+// read covers each file of the new version's that was read, so a
+// comparison that found nothing isn't taken for one that didn't look:
+// rust's said only its package.json, and the person couldn't tell whether
+// its Cargo manifests had been read (rust 1.99.0, batch 23). A file of a
+// build system the port doesn't use is set apart, as its changes are.
+func (a *assessment) read(pair Pair, unused func(project.System) bool, known bool, why func(project.System) string) {
+	for _, name := range slices.Sorted(maps.Keys(pair.After.Files)) {
+		system := project.SystemOf(name)
+		if unused(system) {
+			a.cover(model.Coverage{Path: name, System: string(system), Relevance: "unknown", Treatment: "set-apart", Policy: "portgroup-scoping", Reason: why(system)})
+			continue
+		}
+		relevance := "used"
+		if !known && system != "" {
+			relevance = "unknown"
+		}
+		reason := "compared with the base's"
+		if _, ok := pair.Before.Files[name]; !ok {
+			reason = "new in this version"
+		}
+		a.cover(model.Coverage{Path: name, System: string(system), Relevance: relevance, Treatment: "inspected", Policy: "read", Reason: reason})
+	}
 }
 
 // finding is a change as a finding, holding or not, with its rule.
@@ -530,15 +535,6 @@ func count(file string, changes []sourcecompare.Change) model.UpstreamChange {
 	}
 	return model.UpstreamChange{Kind: "dependency", Path: file, Rule: DependenciesCounted, Class: model.Introduced,
 		Message: fmt.Sprintf("upstream: %s: %s", file, strings.Join(parts, ", "))}
-}
-
-// countedMessage is a set-apart manifest's count.
-func countedMessage(file string, n int, why string) string {
-	changed := fmt.Sprintf("%d dependencies changed", n)
-	if n == 1 {
-		changed = "1 dependency changed"
-	}
-	return fmt.Sprintf("upstream: %s: %s; %s, so it holds nothing", file, changed, why)
 }
 
 // unchanged gathers the Python requirements of the new version's used

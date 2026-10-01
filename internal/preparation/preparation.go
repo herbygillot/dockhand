@@ -65,6 +65,19 @@ func (r Result) UncheckedPatches() []string {
 	return names
 }
 
+// PatchesApplied counts the declared patches that apply to the candidate
+// source, checked: fluent-bit's six applied, and nothing said so, so the
+// person dry-ran them by hand (the fluent-bit run, batch 23).
+func (r Result) PatchesApplied() int {
+	applied := 0
+	for _, patch := range r.Patches {
+		if patch.Checked && patch.Applies {
+			applied++
+		}
+	}
+	return applied
+}
+
 // PatchProblems names the declared patches that no longer apply to the candidate source.
 func (r Result) PatchProblems() []string {
 	var problems []string
