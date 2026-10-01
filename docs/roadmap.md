@@ -217,7 +217,7 @@ The order of all the work, as of 2026-09-30:
 8. batch 20, a Git-fetched port's source bound to its build, on item 9's source identity. Done 2026-09-30;
 9. batch 19's remainder. Done 2026-09-30;
 10. batch 21, small, what item 9 and batches 19 and 20 left and what the dogfood run met after them, its status line first, since a person follows it today (added 2026-09-30). Done 2026-09-30;
-11. batch 13's remainder (done 2026-09-30), then batch 11, whose `review` assesses a pull request as item 9 assesses any revision (done 2026-09-30), then batch 22 (added 2026-09-30);
+11. batch 13's remainder (done 2026-09-30), then batch 11, whose `review` assesses a pull request as item 9 assesses any revision (done 2026-09-30), then batch 22 (added 2026-09-30, done 2026-09-30);
 12. batches 10, 12, 14, and 15, and item 7's coverage, which item 9 doesn't touch.
 
 What batches 10 to 15 touch doesn't move with item 6, so they wait without cost, and batch 12's GitHub work wants item 6's environment identity. The order is the implementer's to re-settle as work lands.
@@ -324,7 +324,7 @@ What batches 10 to 15 touch doesn't move with item 6, so they wait without cost,
     - a revision assessment refused every Cargo or Go port that declares its crates or modules, "archives not compared", which held unattended submission: its own archives are now compared, planned from its Portfile with the declarations set aside, and `assess.Policy` is 2;
     - update said nothing when openssl-sys left Cargo.lock and the Portfile kept `PortGroup openssl`, which then broke the build: `native-library-left` says a crate gone that linked a native library where the port still has a PortGroup or a dependency named for it.
 
-- **Batch 22: what batch 21 left.**
+- **Batch 22: what batch 21 left.** Done 2026-09-30 ([note](activity/2026-09-30-batch-22.md)), but for `source-moved` in status, which nothing records for status to read: submit's plan isn't kept, serve's hold is held in memory, and an assessment keeps the commit it read only in its coverage's words.
   - a blocked result filled in from an earlier check standing whatever its blocker's result does now. Where a Git-fetched target's tag moved, its old result no longer stands, but what it blocked still reads as blocked by it; a later check builds both. That a blocked result stands only with what blocked it is a rule of its own ([note](activity/2026-09-30-batch-20-open-ends.md));
   - status saying `release-moved` and `source-moved`, which only submit says today. `release-moved` needs only the store and the plan; `source-moved` reads the network, so status could say when it last looked ([note](activity/2026-09-30-batch-20-open-ends.md));
   - `check --plan` and its JSON showing the Git sources of targets `--only` left out, which the plan now holds;
@@ -363,6 +363,10 @@ What batches 10 to 15 touch doesn't move with item 6, so they wait without cost,
     - store error kinds documented (finding 41);
     - anonymous GitHub remembered for a few minutes (finding 45).
 - **The observer's boundary at Golden Gate.** A boundary at `${os.major} >= 27` samples nothing below it, since its lower neighbor, Darwin 26, never shipped; the release below, 25, should stand in ([note](activity/2026-09-28-facts-with-homes.md)).
+- **What batch 22 left** ([note](activity/2026-09-30-batch-22.md)):
+  - `outdated --mine` still suggests the `{@you example.org:you}` placeholder, where `SuggestMaintainer` would give the person's own line;
+  - `submit --json` doesn't carry a person's `release-moved` or `source-moved` concerns, which only its text and an unattended submission's `held` say;
+  - an assessment of a Git-fetched port is recorded once per set of files and never compared with the commit a later check planned; `release-moved` covers an update, and nothing covers a hand edit, which records no release.
 - **A changed directory's subports, named.** `impact` and `diff` say "Changed ports libuv", and `review`'s summary "1 commit changing libuv", where devel/libuv also defines libuv-devel, which the change reaches as much and the assessment already reports (the batch 11 run on #34620). The index at the base names a directory's subports, which `Dependents` already reads; taken when those verbs are next touched.
 - **A counted dependency the Portfile names, named.** A count names its packages only up to three, so beekeeper-studio 6.1.4 read "apps/studio/package.json: 2 added (devicon, simple-icons), 9 moved", electron among the nine unnamed. Harmless there, since the Portfile doesn't pin electron and yarn fetches it; where a Portfile does name a package a count moves, it could be named whatever the count (the dogfood run with 4a7ce225). `assess` would need the Portfile's text, or the options that name it, which it doesn't read yet; taken when the assessment next reads the Portfile.
 - **A flake to watch.** `TestTidyAsksWhatItCannotKnow` once failed in its cleanup with a directory not empty ([note](activity/2026-09-27-stopped-checks.md#seen-once-not-explained)).
