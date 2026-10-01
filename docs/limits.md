@@ -29,7 +29,7 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 | Livecheck document through GitHub's API | 16 MiB | "document exceeds the 16 MiB listing limit" | `forge/github/documents.go:47` |  |
 | Manifest read from a forge (go.mod) | 1 MiB | "exceeds N bytes" | `upstream/manifest.go:14` |  |
 | create's project files at the release tag | 4 MiB (≈1 MB in practice) | GitHub's contents API fails first past ≈1 MB | `engine/create.go:424` | gap |
-| PyPI JSON | 8 MiB | cut silently; "unexpected EOF" | `pypi/pypi.go:61` | gap |
+| PyPI JSON | 8 MiB, through `fetch.Open` | "its JSON is larger than the 8 MiB dockhand reads of a release" | `pypi/pypi.go` (`maxRelease`) |  |
 | Mirror's PortIndex | 128 MiB, no timeout | "Mirror index unavailable, indexing in full" | `macports/portindex/mirror.go:83` |  |
 | Tart registry token | 1 MiB | decode error | `tart/registry.go:143` |  |
 | Redirects | 10 | "fetch: unsupported redirect" | `fetch/fetch.go:103` |  |

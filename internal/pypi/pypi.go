@@ -7,8 +7,8 @@ package pypi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -25,6 +25,10 @@ type File struct {
 	Filename    string `json:"filename"`
 	PackageType string `json:"packagetype"`
 }
+
+// maxRelease bounds a release's JSON read from PyPI, which names its files
+// and the project's description; a release's is a few kilobytes.
+const maxRelease = 8 << 20
 
 // Client asks PyPI's JSON API.
 type Client struct {
@@ -45,22 +49,23 @@ func (c Client) Files(ctx context.Context, project, version string) ([]File, err
 		return nil, err
 	}
 	request.Header.Set("Accept", "application/json")
-	client := c.HTTP
-	if client == nil {
-		client = fetch.Client
-	}
-	response, err := client.Do(request)
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("pypi: %s %s: HTTP %d", project, version, response.StatusCode)
-	}
+	request.Header.Set("User-Agent", fetch.UserAgent)
 	var release struct {
 		URLs []File `json:"urls"`
 	}
-	if err := json.NewDecoder(io.LimitReader(response.Body, 8<<20)).Decode(&release); err != nil {
+	// Through fetch.Open, as dockhand's other reads go: a redirect from
+	// HTTPS to plain HTTP is refused, and a reply too large is said as
+	// one, where a body cut at the bound read as "unexpected EOF" (the
+	// limits sweep, 2026-10-01).
+	response, err := fetch.Open(c.HTTP, request, maxRelease)
+	if err == nil {
+		defer response.Body.Close()
+		err = json.NewDecoder(response.Body).Decode(&release)
+	}
+	switch {
+	case errors.Is(err, fetch.ErrTooLarge):
+		return nil, fmt.Errorf("pypi: %s %s: its JSON is larger than the %d MiB dockhand reads of a release", project, version, maxRelease>>20)
+	case err != nil:
 		return nil, fmt.Errorf("pypi: %s %s: %w", project, version, err)
 	}
 	return release.URLs, nil
