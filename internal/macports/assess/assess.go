@@ -34,8 +34,9 @@ import (
 // computes its default, and a setup file its project's backend doesn't
 // read set apart. 5: a Node package's dependencies counted, as a Rust
 // crate's are, not held (D9). 6: patches checked against the candidate's
-// source, its own and those it drops.
-const Policy = 6
+// source, its own and those it drops. 7: license text moved between files
+// said once, holding nothing, and a subport's archives planned for it.
+const Policy = 7
 
 // Input is what one port's assessment reads.
 type Input struct {
@@ -89,6 +90,7 @@ type Observation struct {
 const (
 	LicenseChanged      = "license-changed"
 	LicenseYears        = "license-years"
+	LicenseMoved        = "license-moved"
 	BuildFileChanged    = "build-file-changed"
 	BuildFileVersion    = "build-file-version"
 	DependencyAdded     = "dependency-added"
@@ -303,7 +305,7 @@ func (a *assessment) pair(pair Pair) {
 			if found, ok := a.native(change); ok {
 				a.add(found)
 			}
-		case change.Kind == "license" && change.How == "years":
+		case change.Kind == "license" && (change.How == "years" || change.How == "moved"):
 			a.add(finding(change, false))
 		case change.Kind == "license":
 			a.add(a.license(change, pair, port))
@@ -323,6 +325,8 @@ func finding(change sourcecompare.Change, hold bool) model.UpstreamChange {
 	switch {
 	case change.Kind == "license" && change.How == "years":
 		found.Rule = LicenseYears
+	case change.Kind == "license" && change.How == "moved":
+		found.Rule = LicenseMoved
 	case change.Kind == "license":
 		found.Rule = LicenseChanged
 	case change.Kind == "build" && change.How == "version":

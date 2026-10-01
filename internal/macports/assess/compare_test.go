@@ -378,6 +378,31 @@ func TestALicenseChangeNamesTheManifestsLicense(t *testing.T) {
 	}, messages(Assess(input).Changes))
 }
 
+// License text moved between files, none of it new, is said once and holds
+// nothing: libuv 1.52.1 moved its Joyent and tree.h sections out of
+// LICENSE into LICENSE-extra, and dockhand held twice, "LICENSE changed"
+// and "LICENSE-extra was added" (the batch 11 run on #34620). New text, a
+// license file removed, or more than a few lines gone beside what moved
+// holds as before.
+func TestLicenseTextMovedBetweenFilesIsSaidOnce(t *testing.T) {
+	own := "Copyright the project contributors.\n\nPermission is granted, as the MIT license grants it.\n"
+	joyent := "This applies to code from the old repository:\n\nCopyright Joyent, Inc.\nPermission is granted, as the MIT license grants it.\n"
+	tree := "Copyright Niels Provos.\nRedistribution is permitted under the three clause BSD license.\n"
+	notes := "libuv is licensed as follows:\n====\n- a file no longer here, copyright someone.\n"
+	before := map[string]string{"LICENSE": notes + own + "====\n" + joyent + "====\n" + tree}
+	moved := map[string]string{"LICENSE": own, "LICENSE-extra": joyent + "\n====\n\n" + tree}
+	require.Equal(t, []string{"· upstream moved license text into LICENSE-extra from LICENSE, and none of it is new; 4 lines went beside it"}, compared(t, before, moved))
+
+	added := map[string]string{"LICENSE": own, "LICENSE-extra": joyent + tree + "Additional terms: no use on Tuesdays.\n"}
+	require.Equal(t, []string{"! upstream's LICENSE changed; the Portfile's license line may need to follow", "! upstream's LICENSE-extra was added; the Portfile's license line may need to follow"},
+		compared(t, before, added), "new text isn't a move")
+	dual := map[string]string{"LICENSE-MIT": own, "LICENSE-APACHE": tree}
+	require.Equal(t, []string{"! upstream's LICENSE-APACHE was removed; the Portfile's license line may need to follow", "! upstream's LICENSE-MIT changed; the Portfile's license line may need to follow", "! upstream's LICENSE-extra was added; the Portfile's license line may need to follow"},
+		compared(t, dual, map[string]string{"LICENSE-MIT": own + tree, "LICENSE-extra": tree}), "a license removed isn't a move, though nothing is new")
+	long := map[string]string{"LICENSE": notes + "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\n" + own + joyent}
+	require.Len(t, compared(t, long, map[string]string{"LICENSE": own, "LICENSE-extra": joyent}), 2, "more than a few lines gone beside what moved")
+}
+
 // A license file whose copyright lines moved only their years, as usql's
 // and zlint's did for a new year, is said with the line, and holds
 // nothing: the license is the same. Anything else changed in it holds as

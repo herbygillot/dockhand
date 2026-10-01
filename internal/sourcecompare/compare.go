@@ -26,7 +26,8 @@ type Change struct {
 	Kind string
 	// How is what happened to it:
 	//   - a license or build file "added", "removed", or "changed", or
-	//     "years" where only a license's copyright years moved, and
+	//     "years" where only a license's copyright years moved, or "moved"
+	//     where license text moved between files and none is new, and
 	//     "version" where a build file changed only the project's version
 	//     it declares;
 	//   - a dependency "adds", "drops", or "moves", or "native" for a crate
@@ -175,10 +176,107 @@ func Compare(older, newer project.Reading, versions Versions) []Change {
 				Message: fmt.Sprintf("upstream's %s %s", name, what)})
 		}
 	}
+	changes = licenseMove(changes, before, after)
 	for i := range changes {
 		changes[i].System = project.SystemOf(changes[i].Path)
 	}
 	return changes
+}
+
+// movedAside is the most lines of license text that may go, beside what
+// moved, for a change of license files to be a move: libuv 1.52.1 moved
+// its Joyent and tree.h sections out of LICENSE into LICENSE-extra, and
+// seven lines naming files it no longer has, and separators, went with
+// them (the batch 11 run on #34620).
+const movedAside = 10
+
+// licenseMove folds a version's license file changes into one, "moved",
+// where its license text moved between files: a license file was added,
+// none removed, no line of the new version's license files is new, and at
+// most movedAside lines went beside what moved. Lines are compared
+// trimmed, blank ones set aside, so text is the same wherever it moved
+// to. Removing a license file isn't a move, since dropping one of two
+// licenses adds nothing either. Otherwise the changes stand.
+func licenseMove(changes []Change, before, after map[string]project.File) []Change {
+	var added, from []string
+	first := -1
+	for i, change := range changes {
+		if change.Kind != "license" {
+			continue
+		}
+		if first < 0 {
+			first = i
+		}
+		switch change.How {
+		case "added":
+			added = append(added, change.Path)
+		case "changed":
+			from = append(from, change.Path)
+		default:
+			// A file removed, or one whose years alone changed, isn't
+			// text moved.
+			return changes
+		}
+	}
+	if len(added) == 0 {
+		return changes
+	}
+	lines := func(files map[string]project.File) (map[string]int, bool) {
+		counted := map[string]int{}
+		for name, file := range files {
+			if !project.LicenseFile(path.Base(name)) {
+				continue
+			}
+			if file.Truncated {
+				return nil, false
+			}
+			for line := range strings.SplitSeq(string(file.Data), "\n") {
+				if line = strings.TrimSpace(line); line != "" {
+					counted[line]++
+				}
+			}
+		}
+		return counted, true
+	}
+	had, okOld := lines(before)
+	has, okNew := lines(after)
+	if !okOld || !okNew {
+		return changes
+	}
+	went := 0
+	for line, n := range has {
+		if n > had[line] {
+			return changes
+		}
+	}
+	for line, n := range had {
+		went += n - has[line]
+	}
+	if went > movedAside {
+		return changes
+	}
+	message := fmt.Sprintf("upstream moved license text into %s", strings.Join(added, " and "))
+	if len(from) > 0 {
+		message += " from " + strings.Join(from, " and ")
+	}
+	message += ", and none of it is new"
+	switch {
+	case went == 1:
+		message += "; a line went beside it"
+	case went > 1:
+		message += fmt.Sprintf("; %d lines went beside it", went)
+	}
+	moved := Change{Kind: "license", How: "moved", Path: added[0], Message: message}
+	var folded []Change
+	for i, change := range changes {
+		switch {
+		case i == first:
+			folded = append(folded, moved)
+		case change.Kind != "license":
+			folded = append(folded, change)
+		}
+	}
+	return folded
 }
 
 // quotable is a line as a message quotes it: trimmed, and cut short past
