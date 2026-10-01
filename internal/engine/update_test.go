@@ -545,7 +545,7 @@ func TestAFreshUpdateRecordsItsAssessment(t *testing.T) {
 		var recorded []model.Assessment
 		require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
 			var err error
-			recorded, err = r.Assessments(update.Branch.ID)
+			recorded, err = r.Assessments(store.AssessmentFilter{Branch: update.Branch.ID})
 			return err
 		}))
 		if git {

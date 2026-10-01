@@ -884,6 +884,7 @@ func (f fixture) planOf(t *testing.T, query string, args ...any) string {
 func TestHistoryIsReadThroughIndexes(t *testing.T) {
 	f := open(t)
 	reusable := []any{f.repo, "libharbor", "tart", "darwin", "25", "arm64", "", 5}
+	revisionAssessments, revision := assessmentsQuery(f.repo, store.AssessmentFilter{Branch: "br_1", Tree: "tree", Base: "base"})
 	for _, c := range []struct {
 		query string
 		args  []any
@@ -895,6 +896,7 @@ func TestHistoryIsReadThroughIndexes(t *testing.T) {
 		{referredQuery, []any{f.repo, "clone"}, "execution_ref (repository_id=? AND provider_ref=?)"},
 		{countEventsQuery, []any{f.repo, "serve.submit", 1}, "event_kind (repository_id=? AND kind=? AND at>?)"},
 		{checkpointsQuery, []any{f.repo, "br_1"}, "checkpoint_branch (repository_id=? AND branch_id=?)"},
+		{revisionAssessments, revision, "sqlite_autoindex_assessments_1 (repository_id=? AND branch_id=? AND tree=? AND base=?)"},
 	} {
 		require.Contains(t, f.planOf(t, c.query, c.args...), "INDEX "+c.index, c.query)
 	}

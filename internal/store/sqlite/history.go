@@ -224,8 +224,33 @@ func (t *tx) RecordAssessment(a model.Assessment) error {
 	return err
 }
 
-func (t *tx) Assessments(branch model.BranchID) ([]model.Assessment, error) {
-	rows, err := t.conn.QueryContext(t.ctx, "SELECT branch_id, tree, base, port, directory, comparison, policy, at FROM assessments WHERE repository_id=? AND branch_id=? ORDER BY at DESC, rowid DESC", t.repo, branch)
+// assessmentsQuery reads the assessments a filter selects. A revision's,
+// by its branch, tree, and base, are found through the key they're kept
+// by, where every check read and decoded all its branch had ever recorded
+// to keep its revision's (the SQL review's rescan). They're ordered by
+// +at, which no index holds: by at, the planner read them through
+// assessment_branch, every one the branch had, to spare itself sorting
+// the revision's few.
+func assessmentsQuery(repository model.RepositoryID, filter store.AssessmentFilter) (string, []any) {
+	query, args := "SELECT branch_id, tree, base, port, directory, comparison, policy, at FROM assessments WHERE repository_id=?", []any{repository}
+	if filter.Branch != "" {
+		query += " AND branch_id=?"
+		args = append(args, filter.Branch)
+	}
+	if filter.Tree != "" {
+		query += " AND tree=?"
+		args = append(args, filter.Tree)
+	}
+	if filter.Base != "" {
+		query += " AND base=?"
+		args = append(args, filter.Base)
+	}
+	return query + " ORDER BY +at DESC, rowid DESC", args
+}
+
+func (t *tx) Assessments(filter store.AssessmentFilter) ([]model.Assessment, error) {
+	query, args := assessmentsQuery(t.repo, filter)
+	rows, err := t.conn.QueryContext(t.ctx, query, args...)
 	if err != nil {
 		return nil, storageError(err)
 	}

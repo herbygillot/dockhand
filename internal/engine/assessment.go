@@ -56,9 +56,9 @@ func (e *Engine) revisionAssessments(ctx context.Context, branch model.BranchID,
 	}
 	var recorded []model.Assessment
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		all, err := r.Assessments(branch)
-		for _, a := range all {
-			if a.Tree == tree && a.Base == base && a.Policy == assess.Policy {
+		revision, err := r.Assessments(store.AssessmentFilter{Branch: branch, Tree: tree, Base: base})
+		for _, a := range revision {
+			if a.Policy == assess.Policy {
 				recorded = append(recorded, a)
 			}
 		}

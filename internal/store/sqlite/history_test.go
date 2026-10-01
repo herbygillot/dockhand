@@ -241,14 +241,49 @@ func TestAnAssessmentIsTheRevisions(t *testing.T) {
 		return nil
 	}))
 	require.NoError(t, f.update(t, func(tx store.Tx) error {
-		assessments, err := tx.Assessments(b.ID)
+		assessments, err := tx.Assessments(store.AssessmentFilter{Branch: b.ID})
 		require.NoError(t, err)
 		require.Equal(t, []model.Assessment{second, first}, assessments)
 		require.NoError(t, tx.RecordAssessment(again))
-		assessments, err = tx.Assessments(b.ID)
+		assessments, err = tx.Assessments(store.AssessmentFilter{Branch: b.ID})
 		require.NoError(t, err)
 		require.Equal(t, []model.Assessment{again, second}, assessments)
 		require.Error(t, tx.RecordAssessment(model.Assessment{Branch: b.ID, Tree: "t1", Base: "b1", Port: "croc", Directory: "net/croc"}), "no policy")
+		return nil
+	}))
+}
+
+// A revision's assessments are read by its branch, tree, and base alone,
+// newest first: every check read and decoded all its branch had ever
+// recorded, to keep its revision's (the SQL review's rescan).
+func TestARevisionsAssessmentsAreReadByItsKey(t *testing.T) {
+	f := open(t)
+	b, other := f.branch("br_1", "dockhand/croc-7hq2"), f.branch("br_2", "dockhand/croc-m4ve")
+	croc := model.Assessment{Branch: b.ID, Tree: "t1", Base: "b1", Port: "croc", Directory: "net/croc", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{}}, Policy: 1, At: at}
+	jq := croc
+	jq.Port, jq.Directory, jq.At = "jq", "sysutils/jq", at.Add(time.Minute)
+	nextTree, nextBase, otherBranch := croc, croc, croc
+	nextTree.Tree, nextBase.Base, otherBranch.Branch = "t2", "b2", other.ID
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		for _, branch := range []model.Branch{b, other} {
+			if err := tx.AddBranch(branch); err != nil {
+				return err
+			}
+		}
+		for _, a := range []model.Assessment{croc, jq, nextTree, nextBase, otherBranch} {
+			if err := tx.RecordAssessment(a); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	require.NoError(t, f.store.View(t.Context(), f.repo, func(r store.Reader) error {
+		revision, err := r.Assessments(store.AssessmentFilter{Branch: b.ID, Tree: "t1", Base: "b1"})
+		require.NoError(t, err)
+		require.Equal(t, []model.Assessment{jq, croc}, revision)
+		all, err := r.Assessments(store.AssessmentFilter{})
+		require.NoError(t, err)
+		require.Len(t, all, 5, "empty fields select all")
 		return nil
 	}))
 }

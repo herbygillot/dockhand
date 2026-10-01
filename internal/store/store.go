@@ -62,6 +62,13 @@ type RunFilter struct {
 	Limit  int
 }
 
+// AssessmentFilter selects assessments, newest first; empty fields select
+// all. A branch, tree, and base select one revision's.
+type AssessmentFilter struct {
+	Branch     model.BranchID
+	Tree, Base model.ObjectID
+}
+
 // Build is a target's result with the execution that built it.
 type Build struct {
 	Result    model.TargetResult
@@ -123,8 +130,8 @@ type Reader interface {
 	// Edits lists a branch's authoring records, oldest first.
 	Edits(branch model.BranchID) ([]model.Edit, error)
 	// Assessments lists what was recorded of what upstream's change means
-	// for the ports a branch's revisions change, newest first.
-	Assessments(branch model.BranchID) ([]model.Assessment, error)
+	// for the ports revisions change, newest first.
+	Assessments(filter AssessmentFilter) ([]model.Assessment, error)
 	Checkpoint(number int) (model.Checkpoint, error)
 	// Checkpoints lists a branch's checkpoints, oldest first.
 	Checkpoints(branch model.BranchID) ([]model.Checkpoint, error)
