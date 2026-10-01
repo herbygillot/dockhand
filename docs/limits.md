@@ -27,8 +27,8 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 | Forge archive of a commit (Git-fetched ports) | none | any size downloads | `upstream/source_archive.go` |  |
 | Livecheck page | 16 MiB | too large; the lookup's result is unknown | `upstream/http.go:130` |  |
 | Livecheck document through GitHub's API | 16 MiB | "document exceeds the 16 MiB listing limit" | `forge/github/documents.go:47` |  |
-| Manifest read from a forge (go.mod) | 1 MiB | "exceeds N bytes" | `upstream/manifest.go:14` |  |
-| create's project files at the release tag | 4 MiB (≈1 MB in practice) | GitHub's contents API fails first past ≈1 MB | `engine/create.go:424` | gap |
+| Manifest read from a forge (go.mod) | 1 MiB, read to it on GitHub and GitLab | "is larger than the 1024 KiB dockhand reads of it" | `upstream/manifest.go:14`, `forge/github/files.go`, `forge/gitlab/files.go` |  |
+| create's project files at the release tag | 4 MiB | "is larger than the 4096 KiB dockhand reads of it"; one past the contents API's inline 1 MB is read raw | `engine/create.go:424`, `forge/github/files.go` |  |
 | PyPI JSON | 8 MiB, through `fetch.Open` | "its JSON is larger than the 8 MiB dockhand reads of a release" | `pypi/pypi.go` (`maxRelease`) |  |
 | Mirror's PortIndex | 128 MiB, no timeout | "Mirror index unavailable, indexing in full" | `macports/portindex/mirror.go:83` |  |
 | Tart registry token | 1 MiB | decode error | `tart/registry.go:143` |  |

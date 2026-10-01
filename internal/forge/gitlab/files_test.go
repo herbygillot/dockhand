@@ -43,3 +43,24 @@ func TestFileReadsOneRawFileAtACommit(t *testing.T) {
 	_, err = files.File(t.Context(), "main", "go.mod", 1<<20)
 	require.Error(t, err, "a commit is required")
 }
+
+// A file is read only to its limit, however much GitLab sends: the whole
+// body was read before the limit was checked. This server sends without
+// end, until the reader goes.
+func TestARawFileIsReadOnlyToItsLimit(t *testing.T) {
+	t.Parallel()
+	commit := strings.Repeat("c", 40)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		chunk := []byte(strings.Repeat("x", 64<<10))
+		for r.Context().Err() == nil {
+			if _, err := w.Write(chunk); err != nil {
+				return
+			}
+		}
+	}))
+	defer server.Close()
+	repository, err := (&forgegitlab.Client{HTTP: server.Client()}).Repository(server.URL, "group/project")
+	require.NoError(t, err)
+	_, err = repository.(forge.FileRepository).File(t.Context(), commit, "package.json", 1<<20)
+	require.EqualError(t, err, "gitlab: package.json is larger than the 1024 KiB dockhand reads of it")
+}
