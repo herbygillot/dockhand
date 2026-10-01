@@ -270,7 +270,7 @@ func captureMode(ctx context.Context, e *engine.Engine, branch model.Branch, sel
 // write to your fork (Design v3 §9).
 func writePushes(out io.Writer, plan model.Plan) {
 	if slices.ContainsFunc(plan.Environments, func(e model.Environment) bool { return e.Provider == buildenv.GitHub }) {
-		fmt.Fprintf(out, "Pushes      the revision to a %s branch of your fork, where MacPorts' workflow builds it\n", ghactions.BranchPrefix)
+		fmt.Fprintf(out, "Pushes      the revision to a %s branch of your fork, where MacPorts' workflow builds it, and removes the branch once the run is read\n", ghactions.BranchPrefix)
 	}
 }
 

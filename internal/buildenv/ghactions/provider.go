@@ -1,8 +1,9 @@
 // Package actions is the github provider (Design v3 §7): it builds a
 // revision with MacPorts' own workflow, in your fork. It pushes the
 // revision's commit to a branch of your fork, where the workflow runs on
-// push as it does for every branch but master, waits for that run, and
-// reads each runner's log for what it says about each port. The workflow
+// push as it does for every branch but master, waits for that run, reads
+// each runner's log for what it says about each port, and removes the
+// branch once the check is done with the run. The workflow
 // builds the ports the commit changes, on each macOS its matrix names;
 // dockhand does not choose the runners, and ports it does not change are
 // not built. Nor does the workflow say which commit a Git-fetched port's
@@ -13,6 +14,7 @@ package ghactions
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,8 +33,9 @@ import (
 // ports on push.
 const Workflow = "main.yml"
 
-// BranchPrefix names the branches the provider pushes to your fork; clean
-// removes a merged branch's.
+// BranchPrefix names the branches the provider pushes to your fork. It
+// removes each once the check is done with its run; clean removes a merged
+// branch's that are left.
 const BranchPrefix = buildenv.CheckBranchPrefix
 
 // Run is one run of the workflow, at its latest attempt.
@@ -114,7 +117,19 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	if err != nil {
 		return fmt.Errorf("%w: reading %s on %s: %w", buildenv.ErrInfrastructure, branch, fork.Repository, err)
 	}
+	// GitHub keeps listing a branch's runs once the branch is gone, so a
+	// run of the commit from before the push, an earlier check's whose
+	// branch was removed once it was read, isn't this check's: the push
+	// starts one of its own.
+	var before int64
 	if head != (git.RefValue{Exists: true, Object: job.Commit}) {
+		earlier, err := p.API.Runs(ctx, fork.Repository, branch, job.Commit)
+		if err != nil {
+			return fmt.Errorf("%w: finding the workflow's earlier runs: %w", buildenv.ErrInfrastructure, err)
+		}
+		for _, r := range earlier {
+			before = max(before, r.ID)
+		}
 		build.Progress(fmt.Sprintf("pushing to %s on %s", branch, fork.Repository))
 		if err := p.Repo.Push(ctx, git.Push{Remote: fork.PushURL, Branch: branch, Commit: job.Commit, ExpectedRemote: head}); err != nil {
 			return fmt.Errorf("%w: pushing to %s: %w", buildenv.ErrInfrastructure, fork.Repository, err)
@@ -128,6 +143,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		if err != nil {
 			return fmt.Errorf("%w: finding the workflow's run: %w", buildenv.ErrInfrastructure, err)
 		}
+		runs = slices.DeleteFunc(runs, func(r Run) bool { return r.ID <= before })
 		if len(runs) > 0 {
 			run = slices.MaxFunc(runs, func(a, b Run) int { return int(a.ID - b.ID) })
 			break
@@ -186,8 +202,38 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		}
 	}
 	build.Progress(fmt.Sprintf("%s: %s; reading the logs", run.URL, run.Conclusion))
+	err = p.read(ctx, job, build, fork.Repository, run)
+	// The check is done with the run once it is read, or once its last
+	// attempt has ended: its logs are kept here, and nothing reads the run
+	// again. Until then the branch stays, since a later attempt runs the
+	// run again (Rerun), as does a driver that stopped with the check left
+	// for the next.
+	if ctx.Err() == nil && (err == nil || job.Execution.Attempt >= model.MaxAttempts) {
+		p.removeBranch(ctx, build, fork, branch, job.Commit)
+	}
+	return err
+}
 
-	jobs, err := p.API.Jobs(ctx, fork.Repository, run.ID, run.Attempt)
+// removeBranch removes the check's branch from your fork, while it still
+// holds the commit pushed. One it can't remove is said, once, and left for
+// clean, which removes a merged branch's; it never fails the check.
+func (p *Provider) removeBranch(ctx context.Context, build buildenv.Build, fork buildenv.Fork, branch, commit string) {
+	err := p.Repo.DeleteRemoteBranch(ctx, fork.PushURL, branch, git.RefValue{Exists: true, Object: commit})
+	var moved *git.RefConflict
+	switch {
+	case errors.As(err, &moved):
+		build.Progress(fmt.Sprintf("left %s on %s, since it has moved since the check", branch, fork.Repository))
+	case err != nil:
+		build.Progress(fmt.Sprintf("couldn't remove %s from %s, which dockhand clean removes once the branch is merged: %v", branch, fork.Repository, err))
+	default:
+		build.Progress(fmt.Sprintf("removed %s from %s", branch, fork.Repository))
+	}
+}
+
+// read reads a completed run: each runner's log, kept in the job's
+// directory, and from them each target's result.
+func (p *Provider) read(ctx context.Context, job buildenv.Job, build buildenv.Build, repository string, run Run) error {
+	jobs, err := p.API.Jobs(ctx, repository, run.ID, run.Attempt)
 	if err != nil {
 		return fmt.Errorf("%w: listing %s's jobs: %w", buildenv.ErrInfrastructure, run.URL, err)
 	}
@@ -196,7 +242,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		if j.Conclusion == "skipped" {
 			continue
 		}
-		log, err := p.API.JobLog(ctx, fork.Repository, j.ID)
+		log, err := p.API.JobLog(ctx, repository, j.ID)
 		if err != nil {
 			return fmt.Errorf("%w: reading %s's log: %w", buildenv.ErrInfrastructure, j.Name, err)
 		}

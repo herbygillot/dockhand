@@ -168,7 +168,9 @@ func (e *Engine) planCleanBranch(ctx context.Context, branch model.Branch) (Clea
 
 // planCleanChecks finds the branches the github provider pushed to your
 // fork for the branch's checks, one per commit checked, each removed only
-// while it still holds that commit.
+// while it still holds that commit. The provider removes each once its
+// check is done with the run, so these are the ones it left: one it
+// couldn't remove, or a canceled check's.
 func (e *Engine) planCleanChecks(ctx context.Context, branch model.Branch, repository string) ([]CleanStep, error) {
 	var revisions []model.Revision
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {

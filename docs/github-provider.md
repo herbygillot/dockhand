@@ -30,10 +30,13 @@ on = ["github"]   # makes it check's default
    - A runner that listed its subports without the port didn't build it, as the workflow leaves a port off a macOS it doesn't support. The others decide.
    - Each runner's part is kept with the result: `dockhand logs check-N` shows it under the port, and `--json` as `builders`.
    - Test failures are advisory, as in MacPorts' CI, unless `--tests required`, which dockhand applies to the workflow's reported results as it does to Tart's. The workflow runs its own tests whatever the policy, so `--tests skip` only stops them counting.
+5. It removes `dockhand-check/<commit>` from your fork, as long as it still holds the commit pushed. The logs are kept here, so nothing needs the branch once the run is read. `check` says this too before it starts.
 
 A run that was cancelled, timed out, or never started building is run again (only its failed jobs) instead of being read. So is a run that failed without naming a port, once: it counts as trouble with the environment, and a later attempt reruns it. A port's own failure is a verdict and is not retried.
 
-`dockhand cancel` (or `check --replace`) cancels the run on GitHub too. A `serve` that stops leaves the run going, and the next `serve` picks it up again. Once a branch is merged, `clean` removes its `dockhand-check/` branches from your fork, as long as each still holds the commit that was checked.
+The branch stays while the check may still need its run: until the check's last attempt, since a later attempt runs the run again, and when a `serve` stops, which leaves the run going for the next `serve` to pick up. A later check of the same commit, such as `dockhand retry`, pushes it again and reads the run that push starts, not the earlier one.
+
+A branch dockhand can't remove, because your fork can't be reached, say, is said once, and the check goes on as it would. `dockhand cancel` (or `check --replace`) cancels the run on GitHub too, and leaves the branch, so a retry runs that run again. Once a branch is merged, `clean` removes the `dockhand-check/` branches its checks left on your fork, as long as each still holds the commit that was checked.
 
 The workflow builds only what the commit changes. A port that `--also` adds but the commit doesn't change isn't built there. Its result stays "not run", and the check says why.
 

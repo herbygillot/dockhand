@@ -246,5 +246,6 @@ type Fork struct {
 }
 
 // CheckBranchPrefix names the branches a check pushes to your fork, as the
-// github provider does; clean removes a merged branch's.
+// github provider does. The provider removes each once the check is done
+// with its run; clean removes a merged branch's that are left.
 const CheckBranchPrefix = "dockhand-check/"

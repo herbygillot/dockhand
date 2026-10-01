@@ -3,6 +3,7 @@ package command
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -13,23 +14,48 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv/ghactions"
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
-// fakeActions stands in for GitHub Actions in your fork: a push of a
-// dockhand-check branch starts one run, which completes on the second look
-// with the logs given for its attempt.
+// fakeActions stands in for GitHub Actions in your fork: each push of a
+// dockhand-check branch, as the fork's hook records it, starts a run,
+// which completes on the second look with the logs given for its attempt.
+// As on GitHub, a branch's runs are still listed once the branch is gone.
 type fakeActions struct {
 	fork string
-	// logs are each attempt's jobs' logs, by job name.
+	// logs are each attempt's jobs' logs, by job name, whichever run.
 	logs       []map[string]string
 	conclusion []string
-	run        *ghactions.Run
-	looks      int
-	reruns     int
-	canceled   int
-	// hold keeps the run in progress, calling hold at each look, until
-	// it returns false.
+	runs       []*fakeRun
+	// starting is a push found once, whose run GitHub hasn't started.
+	starting bool
+	looks    int
+	reruns   int
+	canceled int
+	// hold keeps a run in progress, calling hold at each look, until it
+	// returns false.
 	hold func() bool
+}
+
+// fakeRun is a run, and the branch and commit whose push started it.
+type fakeRun struct {
+	ghactions.Run
+	branch, commit string
+}
+
+// recordPushes has the fork record each push it takes, as GitHub sees
+// the pushes that start runs.
+func recordPushes(t *testing.T, fork string) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(filepath.Join(fork, "hooks", "post-receive"), []byte("#!/bin/sh\ncat >> pushes\n"), 0o755))
+}
+
+// refuseDeletions has the fork refuse to delete a branch, as a fork that
+// can't be reached would fail to.
+func refuseDeletions(t *testing.T, fork string) {
+	t.Helper()
+	hook := "#!/bin/sh\nwhile read old new ref; do\n\tcase \"$new\" in\n\t*[!0]*) ;;\n\t*) echo \"no deleting $ref here\" >&2; exit 1 ;;\n\tesac\ndone\n"
+	require.NoError(t, os.WriteFile(filepath.Join(fork, "hooks", "pre-receive"), []byte(hook), 0o755))
 }
 
 func (f *fakeActions) pushed(branch, commit string) bool {
@@ -37,41 +63,84 @@ func (f *fakeActions) pushed(branch, commit string) bool {
 	return err == nil && strings.TrimSpace(string(out)) == commit
 }
 
+// pushes counts the fork's pushes of the commit to the branch.
+func (f *fakeActions) pushes(branch, commit string) int {
+	data, _ := os.ReadFile(filepath.Join(f.fork, "pushes"))
+	pushes := 0
+	for _, line := range strings.Split(string(data), "\n") {
+		if fields := strings.Fields(line); len(fields) == 3 && fields[1] == commit && fields[2] == "refs/heads/"+branch {
+			pushes++
+		}
+	}
+	return pushes
+}
+
 func (f *fakeActions) Runs(_ context.Context, repository, branch, commit string) ([]ghactions.Run, error) {
-	if repository != "ada/macports-ports" || !f.pushed(branch, commit) {
+	if repository != "ada/macports-ports" {
 		return nil, nil
 	}
-	if f.run == nil {
-		f.run = &ghactions.Run{ID: 7, Attempt: 1, Status: "queued", URL: "https://github.com/ada/macports-ports/actions/runs/7"}
+	var runs []ghactions.Run
+	for _, r := range f.runs {
+		if r.branch == branch && r.commit == commit {
+			runs = append(runs, r.Run)
+		}
 	}
-	return []ghactions.Run{*f.run}, nil
+	for pushed := f.pushes(branch, commit); len(runs) < pushed; {
+		// GitHub starts a push's run a little after the push: here, at
+		// the second look that finds the push.
+		if f.starting = !f.starting; f.starting {
+			break
+		}
+		id := int64(7 + len(f.runs))
+		started := &fakeRun{Run: ghactions.Run{ID: id, Attempt: 1, Status: "queued", URL: fmt.Sprintf("https://github.com/ada/macports-ports/actions/runs/%d", id)}, branch: branch, commit: commit}
+		f.runs = append(f.runs, started)
+		runs = append(runs, started.Run)
+	}
+	return runs, nil
+}
+
+func (f *fakeActions) find(id int64) *fakeRun {
+	for _, r := range f.runs {
+		if r.ID == id {
+			return r
+		}
+	}
+	panic(fmt.Sprintf("no run %d", id))
 }
 
 func (f *fakeActions) Run(_ context.Context, _ string, id int64) (ghactions.Run, error) {
 	f.looks++
-	switch f.run.Status {
+	run := f.find(id)
+	switch run.Status {
 	case "queued":
-		f.run.Status = "in_progress"
+		run.Status = "in_progress"
 	case "in_progress":
 		if f.hold != nil && f.hold() {
 			time.Sleep(10 * time.Millisecond)
 			break
 		}
-		f.run.Status, f.run.Conclusion = "completed", f.conclusion[f.run.Attempt-1]
+		run.Status, run.Conclusion = "completed", f.conclusion[run.Attempt-1]
 	}
-	return *f.run, nil
+	return run.Run, nil
 }
 
+// Rerun is refused once the run's branch is gone: GitHub doesn't document
+// what it reruns then, so the provider never asks it to.
 func (f *fakeActions) Rerun(_ context.Context, _ string, id int64) error {
+	run := f.find(id)
+	if !f.pushed(run.branch, run.commit) {
+		return fmt.Errorf("run %d's branch %s is gone", id, run.branch)
+	}
 	f.reruns++
-	f.run.Attempt++
-	f.run.Status, f.run.Conclusion = "queued", ""
+	run.Attempt++
+	run.Status, run.Conclusion = "queued", ""
 	return nil
 }
 
 func (f *fakeActions) Cancel(_ context.Context, repository string, id int64) error {
 	f.canceled++
-	f.run.Status, f.run.Conclusion = "completed", "cancelled"
+	run := f.find(id)
+	run.Status, run.Conclusion = "completed", "cancelled"
 	return nil
 }
 
@@ -118,9 +187,16 @@ func githubBranch(t *testing.T) (*fakeActions, world) {
 	testPortReader = onePort{}
 	t.Cleanup(func() { testPortReader = nil })
 	g := withGitHub(t, w)
+	recordPushes(t, g.fork)
 	f := &fakeActions{fork: g.fork}
 	withActions(t, f)
 	return f, w
+}
+
+// checkBranches are the dockhand-check branches on the fork.
+func checkBranches(t *testing.T, f *fakeActions) string {
+	t.Helper()
+	return strings.TrimSpace(gitRun(t, f.fork, "for-each-ref", "--format=%(refname:short)", "refs/heads/dockhand-check/"))
 }
 
 func TestGitHubBuildsWithMacPortsWorkflowInYourFork(t *testing.T) {
@@ -130,7 +206,7 @@ func TestGitHubBuildsWithMacPortsWorkflowInYourFork(t *testing.T) {
 
 	out, _, err := dockhand(t, "check", "--on", "github", "--plan")
 	require.NoError(t, err)
-	require.Contains(t, out, "Provider    github · tests declared\nPushes      the revision to a dockhand-check/ branch of your fork, where MacPorts' workflow builds it\n")
+	require.Contains(t, out, "Provider    github · tests declared\nPushes      the revision to a dockhand-check/ branch of your fork, where MacPorts' workflow builds it, and removes the branch once the run is read\n")
 	_, _, err = dockhand(t, "check", "--on", "github:sonoma")
 	require.ErrorContains(t, err, "takes no releases")
 
@@ -143,9 +219,13 @@ func TestGitHubBuildsWithMacPortsWorkflowInYourFork(t *testing.T) {
 	require.Contains(t, out, "Passed for snapshot 1.")
 	require.Equal(t, 0, f.reruns)
 
-	// The commit is on your fork, and each runner's log beside the run's.
-	branches := strings.TrimSpace(gitRun(t, f.fork, "for-each-ref", "--format=%(refname:short)", "refs/heads/dockhand-check/"))
-	require.Regexp(t, `^dockhand-check/[0-9a-f]{12}$`, branches)
+	// The commit was pushed to your fork, and its branch removed once the
+	// run was read (the sshuttle run's finding 7); each runner's log is
+	// kept beside the run's, read by the run's ID, not the branch.
+	require.Len(t, f.runs, 1)
+	require.Regexp(t, `^dockhand-check/[0-9a-f]{12}$`, f.runs[0].branch)
+	require.Contains(t, errs, "github: removed "+f.runs[0].branch+" from ada/macports-ports\n")
+	require.Empty(t, checkBranches(t, f))
 	logs, _, err := dockhand(t, "logs", "check-1")
 	require.NoError(t, err)
 	require.Contains(t, logs, "build-macos-15.log")
@@ -169,6 +249,100 @@ func TestGitHubRunsAFailureNoPortExplainsAgain(t *testing.T) {
 	require.Contains(t, errs, "unsuccessful jobs again")
 	require.Contains(t, errs, "github: jq passed")
 	require.Equal(t, 1, f.reruns)
+	// The first attempt left the branch for the second to run the run
+	// again, which the fake refuses without it; the second removed it.
+	require.Len(t, f.runs, 1)
+	require.Equal(t, 1, strings.Count(errs, "github: removed "+f.runs[0].branch+" from ada/macports-ports\n"))
+	require.Empty(t, checkBranches(t, f))
+}
+
+// A run that fails without naming a port on every attempt has its branch
+// removed once the last attempt has read it: no attempt runs it again.
+func TestTheLastAttemptOfAGitHubCheckRemovesItsBranch(t *testing.T) {
+	f, _ := githubBranch(t)
+	stuck := map[string]string{"build (macos-14)": "2026-09-25T10:00:00.0Z ##[error]bootstrap failed\n"}
+	f.logs = []map[string]string{stuck, stuck, stuck}
+	f.conclusion = []string{"failure", "failure", "failure"}
+
+	_, errs, err := dockhand(t, "check", "--on", "github")
+	require.Error(t, err, errs)
+	require.Equal(t, 2, f.reruns)
+	require.Len(t, f.runs, 1)
+	require.Equal(t, 1, strings.Count(errs, "github: removed "+f.runs[0].branch+" from ada/macports-ports\n"))
+	require.Empty(t, checkBranches(t, f))
+}
+
+// The branch is gone once its run is read, so a later check of the same
+// commit, as retry is, pushes it again and reads the run that push starts,
+// not the earlier one GitHub still lists for the branch. The earlier
+// check's logs stay readable: they were kept as the run was read.
+func TestRetryingAGitHubCheckRunsTheWorkflowAgain(t *testing.T) {
+	f, _ := githubBranch(t)
+	f.logs = []map[string]string{{"build (macos-14)": built("jq", false)}}
+	f.conclusion = []string{"success"}
+	_, errs, err := dockhand(t, "check", "--on", "github")
+	require.NoError(t, err, errs)
+	require.Empty(t, checkBranches(t, f))
+
+	out, errs, err := dockhand(t, "retry", "check-1")
+	require.NoError(t, err, errs)
+	require.Contains(t, out, "check-2 repeats check-1")
+	require.Contains(t, errs, "github: pushing to dockhand-check/")
+	require.Contains(t, errs, "github: in progress https://github.com/ada/macports-ports/actions/runs/8\n")
+	require.NotContains(t, errs, "actions/runs/7", "the earlier check's run isn't this one's")
+	require.Contains(t, errs, "github: jq passed")
+	require.Len(t, f.runs, 2)
+	require.Equal(t, f.runs[0].branch, f.runs[1].branch)
+	require.Empty(t, checkBranches(t, f))
+
+	logs, _, err := dockhand(t, "logs", "check-2")
+	require.NoError(t, err)
+	require.Contains(t, logs, "\n    https://github.com/ada/macports-ports/actions/runs/8\n")
+	logs, _, err = dockhand(t, "logs", "check-1")
+	require.NoError(t, err)
+	require.Contains(t, logs, "\n    https://github.com/ada/macports-ports/actions/runs/7\n")
+	logged, _, err := dockhand(t, "logs", "check-1", "--port", "jq")
+	require.NoError(t, err)
+	require.Contains(t, logged, "##[group]Installing jq")
+}
+
+// A serve that stops leaves the run going and its branch on the fork, so
+// the next driver finds that run, rather than pushing again and starting
+// another, and removes the branch once it has read it.
+func TestAResumedGitHubCheckReadsTheRunItLeft(t *testing.T) {
+	f, _ := githubBranch(t)
+	f.logs = []map[string]string{{"build (macos-14)": built("jq", false)}, {"build (macos-14)": built("jq", false)}}
+	f.conclusion = []string{"success", "success"}
+	_, _, err := dockhand(t, "check", "--on", "github", "-d")
+	require.NoError(t, err)
+
+	ctx := t.Context()
+	e, err := (&settings{}).open(ctx)
+	require.NoError(t, err)
+	defer e.Close()
+	run, err := e.RunNamed(ctx, "check-1")
+	require.NoError(t, err)
+	serving, err := startSession(ctx, e, model.SessionServe)
+	require.NoError(t, err)
+	stopping, stop := context.WithCancel(ctx)
+	f.hold = func() bool {
+		stop()
+		return true
+	}
+	stopped, err := e.Resume(stopping, serving, run.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunRunning, stopped.State, "serve stopping cancels nothing")
+	require.NoError(t, serving.End(context.WithoutCancel(ctx)))
+	require.Equal(t, 0, f.canceled)
+	require.NotEmpty(t, checkBranches(t, f), "the run isn't read, so its branch stays")
+
+	f.hold = nil
+	_, errs, err := dockhand(t, "wait", "check-1")
+	require.NoError(t, err, errs)
+	require.Contains(t, errs, "github: jq passed")
+	require.Len(t, f.runs, 1, "the run it left, not another")
+	require.Equal(t, 0, f.reruns)
+	require.Empty(t, checkBranches(t, f))
 }
 
 func TestGitHubReadsAFailedPortsPhase(t *testing.T) {
@@ -199,16 +373,26 @@ func TestCancelingAGitHubCheckCancelsItsRun(t *testing.T) {
 	_, errs, err := dockhand(t, "check", "--on", "github")
 	require.Error(t, err, errs)
 	require.Equal(t, 1, f.canceled)
+	// Its run isn't read, and a retry runs the run again, so the branch
+	// is left for clean.
+	require.NotEmpty(t, checkBranches(t, f))
 }
 
-func TestCleanRemovesTheCheckBranchesInYourFork(t *testing.T) {
+// A branch the check couldn't remove from your fork is said once, doesn't
+// fail the check, and is left for clean, which removes it once the branch
+// is merged.
+func TestCleanRemovesTheCheckBranchesLeftInYourFork(t *testing.T) {
 	f, w := githubBranch(t)
 	f.logs = []map[string]string{{"build (macos-14)": built("jq", false)}}
 	f.conclusion = []string{"success"}
+	refuseDeletions(t, f.fork)
 	_, errs, err := dockhand(t, "check", "--on", "github")
 	require.NoError(t, err, errs)
-	checked := strings.TrimSpace(gitRun(t, f.fork, "for-each-ref", "--format=%(refname:short)", "refs/heads/dockhand-check/"))
+	checked := checkBranches(t, f)
 	require.NotEmpty(t, checked)
+	require.Equal(t, 1, strings.Count(errs, "github: couldn't remove "+checked+" from ada/macports-ports, which dockhand clean removes once the branch is merged: "), errs)
+	require.NotContains(t, errs, "github: removed")
+	require.NoError(t, os.Remove(filepath.Join(f.fork, "hooks", "pre-receive")))
 
 	_, _, err = dockhand(t, "tidy")
 	require.NoError(t, err)

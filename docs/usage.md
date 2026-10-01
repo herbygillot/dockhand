@@ -241,6 +241,8 @@ macOS runs at most two VMs at once, your own among them, so `serve` runs one Tar
 
 `--on github` builds with MacPorts' own CI workflow in your fork's GitHub Actions, the way a pull request is built ([details](github-provider.md)). It needs the GitHub login, a remote that pushes to your fork, and Actions enabled on the fork, which GitHub turns off for new forks.
 
+It pushes the commit to a `dockhand-check/` branch of your fork, and removes that branch once it has read the run, keeping the logs here. Where it can't, it says so, and `clean` removes it once your branch is merged.
+
 ### command
 
 Your own script, for a build box or a VM you manage. Dockhand gives it a request file and reads back a result file. It can't vouch for how the script built, so results read "reported by <name>" ([details](command-provider.md)).
@@ -318,7 +320,7 @@ Serve opens no pull requests by default. With `--submit-passing`, or `serve.subm
 
 ## Cleaning up
 
-- **`clean`**, which is `clean --merged`, removes a merged branch's worktree, local branch, and fork branch, each only while it still holds the merged commit. A worktree with edits or untracked files, and work that went on past the merge, are kept. So is a branch checked out anywhere clean doesn't remove, your checkout or a worktree dockhand didn't make, since deleting it would leave that checkout on a branch that's gone.
+- **`clean`**, which is `clean --merged`, removes a merged branch's worktree, local branch, and fork branch, each only while it still holds the merged commit, and the `dockhand-check/` branches its checks left on your fork, each only while it still holds the commit checked. A worktree with edits or untracked files, and work that went on past the merge, are kept. So is a branch checked out anywhere clean doesn't remove, your checkout or a worktree dockhand didn't make, since deleting it would leave that checkout on a branch that's gone.
 - **`clean --closed`** and **`clean --archived`** also take the worktrees of branches whose pull request closed unmerged, or that you archived, and only their worktrees; merged branches are cleaned with them, unless `--merged=false` leaves those. Their work isn't merged, so the branches and checkpoints stay, and `path` or any command that needs the worktree checks it out again.
 - **What checks left behind.** A check deletes its Tart clone when it ends, and a later attempt of the same check deletes an earlier one's. A check whose process dies with no later attempt leaves its clone behind, sometimes still running and holding one of the Mac's two VM slots. Whichever branches it cleans, `clean` lists these clones too, and removes one once no process is running its check, stopping it first. It keeps a clone no check of this checkout made, since another database may be using it, and it never touches the images checks clone from.
 - **`archive [branch]`** hides a branch from status without touching anything; `status --all` still shows it, and `archive --undo` brings it back.
