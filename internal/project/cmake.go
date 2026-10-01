@@ -68,13 +68,13 @@ func ReadCMake(data []byte) CMakeFacts {
 			if len(args) > 0 {
 				option := CMakeOption{Default: "OFF"}
 				if len(args) > 2 {
-					option.Default = strings.ToUpper(args[2])
+					option.Default = cmakeBool(args[2])
 				}
 				facts.Options[args[0]] = option
 			}
 		case "cmake_dependent_option":
 			if len(args) > 2 {
-				facts.Options[args[0]] = CMakeOption{Default: strings.ToUpper(args[2]), Dependent: true}
+				facts.Options[args[0]] = CMakeOption{Default: cmakeBool(args[2]), Dependent: true}
 			}
 		case "find_package":
 			if len(args) == 0 {
@@ -93,6 +93,21 @@ func ReadCMake(data []byte) CMakeFacts {
 		}
 	}
 	return facts
+}
+
+// cmakeBool is an option's default as CMake reads a boolean constant, ON
+// or OFF, whichever of its spellings it's written in: fluent-bit's "No"
+// read as "added, no by default" (the dogfood run with 58e2d7eb). One that
+// isn't a constant, as a variable's reference, is kept as written.
+func cmakeBool(value string) string {
+	switch upper := strings.ToUpper(value); {
+	case upper == "ON", upper == "YES", upper == "TRUE", upper == "Y", upper == "1":
+		return "ON"
+	case upper == "OFF", upper == "NO", upper == "FALSE", upper == "N", upper == "0", upper == "", upper == "IGNORE",
+		upper == "NOTFOUND", strings.HasSuffix(upper, "-NOTFOUND"):
+		return "OFF"
+	}
+	return value
 }
 
 // cmakeCommand is one command invocation: its name, lower-cased, as CMake

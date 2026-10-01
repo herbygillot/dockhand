@@ -369,6 +369,8 @@ What batches 10 to 15 touch doesn't move with item 6, so they wait without cost,
 
 ### Taken when their area is next touched
 
+- **A CMake project's options kept in included files** (the dogfood run with 58e2d7eb, fluent-bit 5.1.3). The summary batch 23 added reads the root `CMakeLists.txt` alone; fluent-bit keeps its plugins' options in `cmake/plugins_options.cmake`, which the root `include()`s, and 5.1.3 flipped one there through its own `DEFINE_OPTION` macro. Reading the files the root includes is a second pass of the archive, as a Node workspace's; a project's own macro, as `DEFINE_OPTION`, isn't CMake's `option()`, and reading it would mean guessing at what it does. Taken when the summary is next touched, the included files at least.
+
 - **Tart workarounds to retire as Tart releases fixes:**
   - the retry of a listing that raced a delete ([openai/tart#1353](https://github.com/openai/tart/issues/1353));
   - trusting a delete only by the VM's absence (#1345, fixed by #1350 on 2026-09-26, hours after 2.39.0 was tagged: unreleased as of 2026-09-27);

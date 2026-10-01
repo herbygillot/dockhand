@@ -455,7 +455,11 @@ func cmakeWords(old, now []byte) string {
 		option, was := after.Options[name], before.Options[name]
 		switch _, had := before.Options[name]; {
 		case !had:
-			said = append(said, fmt.Sprintf("option %s added, %s by default", name, strings.ToLower(option.Default)))
+			by := option.Default
+			if by == "ON" || by == "OFF" {
+				by = strings.ToLower(by)
+			}
+			said = append(said, fmt.Sprintf("option %s added, %s by default", name, by))
 		case was.Default != option.Default:
 			said = append(said, fmt.Sprintf("option %s's default moves from %s to %s", name, was.Default, option.Default))
 		}

@@ -17,6 +17,8 @@ project(fluent-bit VERSION 5.1.3)
 #[[ option(FLB_BRACKETED "nor this" ON) ]]
 option(FLB_TLS "Build with TLS" ON)
 OPTION(FLB_KAFKA "Kafka output")
+option(FLB_PROTOBUF_ENCODER "Protobuf" No)
+option(FLB_SHARED "Shared" ${BUILD_SHARED_LIBS})
 cmake_dependent_option(FLB_KAFKA_SASL "SASL" ON "FLB_KAFKA" OFF)
 find_package(Threads REQUIRED)
 if(FLB_TLS AND (NOT FLB_SYSTEM_WINDOWS))
@@ -29,6 +31,7 @@ endif()
 `))
 	require.Equal(t, map[string]CMakeOption{
 		"FLB_TLS": {Default: "ON"}, "FLB_KAFKA": {Default: "OFF"}, "FLB_KAFKA_SASL": {Default: "ON", Dependent: true},
+		"FLB_PROTOBUF_ENCODER": {Default: "OFF"}, "FLB_SHARED": {Default: "${BUILD_SHARED_LIBS}"},
 	}, facts.Options)
 	require.Equal(t, []CMakePackage{
 		{Name: "Threads", Required: true},
