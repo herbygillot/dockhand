@@ -469,3 +469,10 @@ With a build of `55325484`.
 **`update nuspell 5.1.9 --revbump-dependents --plan`**, from a scratch branch at 5.1.8 (archived): "none", then "· under a variant, which the index doesn't record: enchant2 (+nuspell)", and `--except enchant2` is accepted ("· left out with --except: enchant2"). The CMakeLists false hold is gone too: "· CMakeLists.txt changed only the version it names: "VERSION 5.1.9"".
 
 4. **Two commands disagree on what the index records.** update says a variant dependency is one "the index doesn't record", yet impact reads MoarVM's `+macports_libuv` dependency from an index. If they're different mechanisms, saying how enchant2 was found ("found in enchant2's Portfile under +nuspell") would avoid the contradiction.
+
+## fluent-bit 5.1.3
+
+With a build of `5873a622`: `update fluent-bit --new`, check-62 (Tart macOS 12, Tart macOS 26 and GitHub, all ✓), tidy, submit, giving #35071. One hold: "! CMakeLists.txt changed". I read the diff through GitHub's compare API. A new `FLB_PROTOBUF_ENCODER` option defaults to No, an output plugin was added only under `FLB_ALL`, and `FLB_IN_WINDOWS_EXPORTER_METRICS`'s default changed. None of these concerns the port.
+
+1. **update doesn't check that the port's patches still apply.** fluent-bit carries six patches. `review` now dry-runs a PR's patches against the new source, but neither `update --plan` nor `submit --plan` said anything about them, so I dry-ran them by hand on 5.1.3 (all apply at -p0). The build would catch a failure, but only after a long build. The plan is the cheap place to say "6 patches apply to 5.1.3's source", or name the one that doesn't.
+2. **A CMake hold could say what changed.** "! CMakeLists.txt changed" sent me to the diff. A summary would let the person decide from the plan: options added with their defaults, defaults changed, `find_package` added or bumped, the project version. Here: "adds option FLB_PROTOBUF_ENCODER (default No); FLB_IN_WINDOWS_EXPORTER_METRICS ON→OFF; adds find_package(Protobuf 3.12) under FLB_PROTOBUF_ENCODER". That's the same treatment Cargo.toml and package.json already get.
