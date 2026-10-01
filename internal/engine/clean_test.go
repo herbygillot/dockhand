@@ -202,3 +202,46 @@ func TestStatusDoesntCheckOutAgainWhatCleanRemoved(t *testing.T) {
 	require.DirExists(t, archived.Worktree, "work on it checks it out again")
 	require.DirExists(t, filepath.Join(archived.Worktree, directory))
 }
+
+// An archived branch's Git branch with nothing master lacks goes with its
+// worktree, and status reads it as cleaned, not lost: clean --archived
+// kept duckdb-cxx14's, which held no commit beyond master (cleaning up
+// duckdb-cxx14, finding 2). One with a commit of its own stays, for path
+// to check it out again.
+func TestAnArchivedBranchWithNothingMasterLacksGoesWithItsWorktree(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	empty, err := e.Start(t.Context(), StartRequest{Name: "duckdb-cxx14"})
+	require.NoError(t, err)
+	working, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
+	require.NoError(t, err)
+	_, err = e.Edit(t.Context(), working, "jq")
+	require.NoError(t, err)
+	write(t, working.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
+	commitAs(t, working.Worktree, "Ada ada@example.org", "jq: update to 1.8.1")
+	for _, branch := range []model.Branch{empty, working} {
+		_, err = e.Archive(t.Context(), branch, false)
+		require.NoError(t, err)
+	}
+	plans, err := e.PlanClean(t.Context(), model.BranchArchived)
+	require.NoError(t, err)
+	require.Len(t, plans, 2)
+	steps := map[string][]CleanStep{}
+	for _, plan := range plans {
+		steps[plan.Branch.Name] = plan.Steps
+	}
+	require.Len(t, steps["dockhand/duckdb-cxx14"], 2)
+	require.Equal(t, "branch dockhand/duckdb-cxx14", steps["dockhand/duckdb-cxx14"][1].What)
+	require.Equal(t, "it has nothing master lacks", steps["dockhand/duckdb-cxx14"][1].Why)
+	require.Len(t, steps["dockhand/jq-update"], 1, "its work stays, for path")
+
+	_, err = e.ApplyClean(t.Context(), plans)
+	require.NoError(t, err)
+	require.Empty(t, run(t, e.Repo.Root, "branch", "--list", "dockhand/duckdb-cxx14"))
+	require.NotEmpty(t, run(t, e.Repo.Root, "branch", "--list", "dockhand/jq-update"))
+	archived, err := e.Branch(t.Context(), empty.ID)
+	require.NoError(t, err)
+	status, err := e.BranchStatus(t.Context(), archived)
+	require.NoError(t, err)
+	require.True(t, status.Cleaned(), "cleaned, not lost")
+}

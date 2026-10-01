@@ -189,17 +189,24 @@ func writeClean(out io.Writer, plans []engine.CleanBranch, done bool) int {
 		}
 		fmt.Fprintln(out, line)
 		for _, step := range plan.Steps {
+			why := ""
+			if step.Why != "" {
+				why = ": " + step.Why
+			}
 			switch {
 			case step.Kept != "":
 				fmt.Fprintf(out, "  keep     %s: %s\n", cleanWords(step.What), step.Kept)
 			case done && step.Done:
-				fmt.Fprintf(out, "  removed  %s\n", cleanWords(step.What))
+				fmt.Fprintf(out, "  removed  %s%s\n", cleanWords(step.What), why)
 			default:
-				fmt.Fprintf(out, "  remove   %s\n", cleanWords(step.What))
+				fmt.Fprintf(out, "  remove   %s%s\n", cleanWords(step.What), why)
 				count++
 			}
 		}
-		if plan.Branch.State != model.BranchMerged && slices.ContainsFunc(plan.Steps, func(s engine.CleanStep) bool { return s.Kept == "" }) {
+		// An unmerged branch's Git branch stays, but for one with nothing
+		// master lacks, which goes with its worktree.
+		branchStep := slices.ContainsFunc(plan.Steps, func(s engine.CleanStep) bool { return strings.HasPrefix(s.What, "branch ") })
+		if plan.Branch.State != model.BranchMerged && !branchStep && slices.ContainsFunc(plan.Steps, func(s engine.CleanStep) bool { return s.Kept == "" }) {
 			fmt.Fprintf(out, "  keep     branch %s: dockhand path %s checks it out again\n", plan.Branch.Name, plan.Branch.ShortName())
 		}
 	}

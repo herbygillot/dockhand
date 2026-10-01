@@ -26,6 +26,8 @@ type CleanStep struct {
 	What string
 	// Kept says why it stays; empty when it would be removed.
 	Kept string
+	// Why says why it goes, where that isn't its branch's kind's reason.
+	Why string
 	// Done is true once it was removed.
 	Done bool
 
@@ -286,6 +288,29 @@ func (e *Engine) planCleanWorktree(ctx context.Context, branch model.Branch) (Cl
 	}
 	step.Kept = dirty
 	plan.Steps = append(plan.Steps, step)
+	if dirty != "" {
+		return plan, nil
+	}
+	// A Git branch with nothing master lacks holds no work, so it goes
+	// with its worktree: clean --archived kept duckdb-cxx14's, which had no
+	// commit beyond master (cleaning up duckdb-cxx14, finding 2). One with
+	// work of its own stays, for path to check it out again.
+	head, _, err := e.Repo.Branch(ctx, branch.Name)
+	if err != nil {
+		return plan, nil
+	}
+	master, ok := e.lastMaster(ctx)
+	if !ok {
+		master = branch.Base
+	}
+	if beyond, err := e.Repo.CountCommits(ctx, string(master), head); err != nil || beyond > 0 {
+		return plan, nil
+	}
+	kept, err := e.checkedOut(ctx, branch.Name, branch.Worktree)
+	if err != nil {
+		return plan, err
+	}
+	plan.Steps = append(plan.Steps, CleanStep{What: "branch " + branch.Name, kind: "branch", expected: head, Kept: kept, Why: "it has nothing master lacks"})
 	return plan, nil
 }
 
