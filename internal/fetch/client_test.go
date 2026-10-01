@@ -16,6 +16,7 @@ func TestARequestNoHostAnswersIsGivenUp(t *testing.T) {
 	transport := newTransport()
 	require.Equal(t, ResponseWait, transport.ResponseHeaderTimeout)
 	require.Same(t, Transport, Client.Transport)
+	require.Zero(t, DownloadClient.Transport.(*http.Transport).ResponseHeaderTimeout, "a download's stall bounds its wait instead")
 
 	release := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))

@@ -25,3 +25,14 @@ func newTransport() *http.Transport {
 
 // Client is the HTTP client dockhand's requests go through, on Transport.
 var Client = &http.Client{Transport: Transport}
+
+// DownloadClient is Client for a download, which a Stall bounds, the wait
+// for its response included: Transport's minute would cut that wait short
+// of a download's own bound.
+var DownloadClient = &http.Client{Transport: downloadTransport()}
+
+func downloadTransport() *http.Transport {
+	transport := newTransport()
+	transport.ResponseHeaderTimeout = 0
+	return transport
+}

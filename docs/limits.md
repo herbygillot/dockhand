@@ -23,7 +23,7 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 | Limit | Value | When it's hit | Where | |
 | --- | --- | --- | --- | --- |
 | Distfile download, size | none | any size downloads, at the person's word (2026-10-01) | `portedit/archives/download.go` |  |
-| Distfile download, time | 1 min without data | "no data arrived for 1m0s, so dockhand gave up on it"; a download that keeps arriving goes on | `portedit/archives/download.go`, `fetch/stall.go` |  |
+| Distfile download, time | 3 min without data | "no data arrived for 3m0s, so dockhand gave up on it"; a download that keeps arriving goes on, and its wait for a response is bounded the same | `portedit/archives/download.go`, `fetch/stall.go` |  |
 | Forge archive of a commit (Git-fetched ports) | none | any size downloads | `upstream/source_archive.go` |  |
 | Livecheck page | 16 MiB | too large; the lookup's result is unknown | `upstream/http.go:130` |  |
 | Livecheck document through GitHub's API | 16 MiB | "document exceeds the 16 MiB listing limit" | `forge/github/documents.go:47` |  |

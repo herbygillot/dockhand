@@ -38,15 +38,15 @@ type Download struct {
 type Source struct{ Name, URL string }
 
 // Client fetches archives, each of any size, as long as data keeps
-// arriving; the zero value uses dockhand's HTTP client and a minute's
-// stall. A download's size is unbounded at the person's word (2026-10-01):
+// arriving; the zero value uses dockhand's download client and a stall of
+// three minutes, the person's choice (2026-10-01). A download's size is unbounded at the person's word (2026-10-01):
 // rustc's 566 MB source passed the 512 MiB it had, and the two minutes.
 type Client struct {
 	HTTP *http.Client
 	// MaxBytes bounds each archive; none when unset.
 	MaxBytes int64
 	// Stall bounds how long a download may go without a byte, the wait
-	// for a response included; a minute when unset.
+	// for a response included; three minutes when unset.
 	Stall time.Duration
 	// Mirror is where Shipped looks for an archive upstream no longer
 	// serves as declared, MacPortsMirror in use; none when empty, as in
@@ -152,7 +152,7 @@ func (c Client) download(ctx context.Context, info macports.PortInfo, source Sou
 	name, address := source.Name, source.URL
 	bound := c.Stall
 	if bound <= 0 {
-		bound = time.Minute
+		bound = 3 * time.Minute
 	}
 	limit := c.MaxBytes
 	if limit <= 0 {
@@ -189,7 +189,11 @@ func (c Client) download(ctx context.Context, info macports.PortInfo, source Sou
 			agent = fetch.UserAgent
 		}
 		request.Header.Set("User-Agent", agent)
-		response, err := fetch.Open(c.HTTP, request, limit)
+		client := c.HTTP
+		if client == nil {
+			client = fetch.DownloadClient
+		}
+		response, err := fetch.Open(client, request, limit)
 		if err != nil {
 			return Download{}, fail(err)
 		}
