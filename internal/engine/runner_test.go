@@ -449,7 +449,11 @@ func TestWhatTheWorkReportsIsTheRunsProgress(t *testing.T) {
 		}
 	}
 	require.Equal(t, []string{describeEnvironment(tahoeArm) + ": " + says}, kept, "what's behind the scenes isn't kept")
-	require.Contains(t, shown, progress.Update{Level: progress.Verbose, Message: says})
+	// The command shows what the run keeps through the run, and -v the
+	// rest, each saying which environment it's about, since two stage at
+	// once (the hugo exercise's check-64).
+	require.Contains(t, shown, progress.Update{Level: progress.Debug, Message: describeEnvironment(tahoeArm) + ": " + says})
+	require.Contains(t, shown, progress.Update{Level: progress.Verbose, Message: describeEnvironment(tahoeArm) + ": behind the scenes of " + says})
 }
 
 // A failure's detail gains what its log most likely says made it fail,
@@ -482,8 +486,16 @@ func TestAFailuresDetailSaysWhatItsLogShows(t *testing.T) {
 	}))
 	require.Equal(t, "`make` failed with exit code: 2 · from its log: src/cli.c:3:1: error: expected ';' after expression", details["harbor-cli"])
 	require.Empty(t, details["libharbor"], "a target that passed has no cause, whatever its log")
-	require.Equal(t, "from its log: src/cli.c:3:1: error: expected ';' after expression", withCause("", log), "with nothing else said")
-	require.Equal(t, "said", withCause("said", filepath.Join(t.TempDir(), "gone.log")), "a log that can't be read says nothing")
+	require.Equal(t, "from its log: src/cli.c:3:1: error: expected ';' after expression", withCause("", model.TargetResult{Log: log}), "with nothing else said")
+	require.Equal(t, "said", withCause("said", model.TargetResult{Log: filepath.Join(t.TempDir(), "gone.log")}), "a log that can't be read says nothing")
+
+	// Read from where the step that failed began: an error a dependency's
+	// build printed before it, and went on from, isn't its cause.
+	stepped := filepath.Join(t.TempDir(), "hugo.log")
+	require.NoError(t, os.WriteFile(stepped, []byte("dep/probe.c:1:1: error: tried and went on\n--->  Building hugo\ncmd/main.c:9:2: error: hugo's own\n"), 0o644))
+	steps := []model.LogStep{{Name: model.StepDependencies, Line: 1}, {Name: model.StepInstall, Line: 2}}
+	require.Equal(t, "from its log: cmd/main.c:9:2: error: hugo's own", withCause("", model.TargetResult{Log: stepped, Steps: steps}))
+	require.Equal(t, "from its log: dep/probe.c:1:1: error: tried and went on", withCause("", model.TargetResult{Log: stepped}), "without steps, from the top")
 }
 
 func TestServeTakesPeoplesChecksFirst(t *testing.T) {

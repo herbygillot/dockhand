@@ -217,7 +217,7 @@ func Stage(ctx context.Context, repo *git.Repository, source model.Source, platf
 		if string(source.Base) != baseTree {
 			baseCommit = string(source.Base)
 		}
-		if _, err := cache.ensure(ctx, repo, baseTree, "", nil, false, nil, true, baseCommit); err != nil {
+		if _, err := cache.ensure(ctx, repo, baseTree, named("base", baseCommit, baseTree), "", nil, false, nil, true, baseCommit); err != nil {
 			return "", err
 		}
 		// The candidate indexes strictly, every port it changes, from the
@@ -229,19 +229,42 @@ func Stage(ctx context.Context, repo *git.Repository, source model.Source, platf
 		if err != nil {
 			return "", err
 		}
-		entry, err = cache.ensure(ctx, repo, tree, root, projection, !requiresFullIndex(changed), []string{baseTree}, false, string(source.Commit))
+		entry, err = cache.ensure(ctx, repo, tree, "the revision's tree "+tree[:12], root, projection, !requiresFullIndex(changed), []string{baseTree}, false, string(source.Commit))
 		if err != nil {
 			return "", err
 		}
 	} else {
 		// A tree that is its own base, as a baseline check's is, is
 		// upstream's, whose ports that don't parse are no contribution's.
-		entry, err = cache.ensure(ctx, repo, tree, root, projection, false, nil, true, string(source.Commit))
+		entry, err = cache.ensure(ctx, repo, tree, named("", string(source.Commit), tree), root, projection, false, nil, true, string(source.Commit))
 		if err != nil {
 			return "", err
 		}
 	}
 	return entry, install(entry, root)
+}
+
+// named is how progress names a tree being indexed: by the commit it's
+// the tree of, where it's known, as "base fd44713349eb's tree
+// ed48c589f778"; the hugo exercise's check-64 named a branch's tree, its
+// base's, and its base's commit by their IDs alone.
+func named(role, commit, tree string) string {
+	name := "tree " + tree[:12]
+	if git.ValidObjectID(commit) && commit != tree {
+		name = commit[:12] + "'s tree " + tree[:12]
+	}
+	if role != "" {
+		name = role + " " + name
+	}
+	return name
+}
+
+// plural counts a noun, "1 changed path", "2 changed paths".
+func plural(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }
 
 // IsIndexFile reports whether a name at a tree's root is the index Stage
@@ -323,9 +346,9 @@ func told(host string, platform model.Platform) (string, error) {
 // The guard, when present, is inherited by the indexer so the generation lock
 // outlives a parent that exits mid-build.
 func buildPortIndex(ctx context.Context, c Config, platform model.Platform, sourceRoot string, projection macports.Projection, destination, seed string, changed []string, strict bool, guard *os.File, meta generation) (err error) {
-	short := meta.Tree
-	if len(short) > 12 {
-		short = short[:12]
+	name := meta.name
+	if name == "" && len(meta.Tree) >= 12 {
+		name = "tree " + meta.Tree[:12]
 	}
 	if projection != nil && !projection.Whole() {
 		// The indexer lists what the root holds; a port absent from a
@@ -335,9 +358,9 @@ func buildPortIndex(ctx context.Context, c Config, platform model.Platform, sour
 	}
 	if seed == "" {
 		progress.Report(ctx, "Building the PortIndex; this may take several minutes")
-		progress.VerboseReport(ctx, "Generating full PortIndex for source %s", short)
+		progress.VerboseReport(ctx, "Generating full PortIndex for %s", name)
 	} else {
-		progress.VerboseReport(ctx, "Updating PortIndex for source %s from %d changed paths", short, len(changed))
+		progress.VerboseReport(ctx, "Updating PortIndex for %s from %s", name, plural(len(changed), "changed path"))
 	}
 	started := time.Now()
 	err = atomicfile.ReplaceDirectory(destination, func(temp string) (err error) {

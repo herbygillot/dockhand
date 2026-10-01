@@ -126,14 +126,14 @@ func TestStageSharesOneGenerationAcrossConsumers(t *testing.T) {
 	index, messages, err := f.stage(source)
 	require.NoError(t, err)
 	requireVersion(t, index, "working", "1")
-	require.Contains(t, strings.Join(messages, "\n"), "Generating full PortIndex for source "+tree[:12])
+	require.Contains(t, strings.Join(messages, "\n"), "Generating full PortIndex for tree "+tree[:12])
 	require.Contains(t, strings.Join(messages, "\n"), "full pass")
 
 	index, messages, err = f.stage(source)
 	require.NoError(t, err)
 	requireVersion(t, index, "working", "1")
 	joined := strings.Join(messages, "\n")
-	require.Contains(t, joined, "Using cached PortIndex for source "+tree[:12])
+	require.Contains(t, joined, "Using the cached PortIndex for tree "+tree[:12])
 	require.NotContains(t, joined, "Generating")
 	require.NotContains(t, joined, "Updating")
 	meta, ok := readGeneration(filepath.Join(f.environment(), generationsDirectory, tree))
@@ -160,8 +160,8 @@ func TestCandidateDerivesFromBaseAndLaterMasterAdvancesIncrementally(t *testing.
 	require.NoError(t, err)
 	requireVersion(t, index, "working", "2")
 	joined := strings.Join(messages, "\n")
-	require.Contains(t, joined, "Generating full PortIndex for source "+baseTree[:12])
-	require.Contains(t, joined, "Updating PortIndex for source "+candidateTree[:12]+" from 1 changed paths")
+	require.Contains(t, joined, "Generating full PortIndex for base "+base[:12]+"'s tree "+baseTree[:12])
+	require.Contains(t, joined, "Updating PortIndex for the revision's tree "+candidateTree[:12]+" from 1 changed path")
 	require.Equal(t, 1, strings.Count(joined, "Generating full"))
 	baseMeta, ok := readGeneration(filepath.Join(f.environment(), generationsDirectory, baseTree))
 	require.True(t, ok)
@@ -177,7 +177,7 @@ func TestCandidateDerivesFromBaseAndLaterMasterAdvancesIncrementally(t *testing.
 	_, messages, err = f.stage(source)
 	require.NoError(t, err)
 	joined = strings.Join(messages, "\n")
-	require.Contains(t, joined, "Using cached PortIndex for source "+candidateTree[:12])
+	require.Contains(t, joined, "Using the cached PortIndex for the revision's tree "+candidateTree[:12])
 	require.NotContains(t, joined, "Generating")
 	require.NotContains(t, joined, "Updating")
 
@@ -190,7 +190,7 @@ func TestCandidateDerivesFromBaseAndLaterMasterAdvancesIncrementally(t *testing.
 	requireVersion(t, index, "other", "3")
 	requireVersion(t, index, "working", "1")
 	joined = strings.Join(messages, "\n")
-	require.Contains(t, joined, "Updating PortIndex for source "+masterTree[:12]+" from 1 changed paths")
+	require.Contains(t, joined, "Updating PortIndex for tree "+masterTree[:12]+" from 1 changed path")
 	require.NotContains(t, joined, "Generating full")
 	require.Equal(t, masterTree, f.latest())
 }
@@ -232,7 +232,7 @@ func TestStageReusesTreeDiffsAndInvalidatesSharedResources(t *testing.T) {
 		if wantFull {
 			require.Contains(t, joined, "Generating full PortIndex")
 		} else {
-			require.Contains(t, joined, "Updating PortIndex for source")
+			require.Contains(t, joined, "Updating PortIndex for tree")
 			require.NotContains(t, joined, "Generating full PortIndex")
 		}
 		check(index)

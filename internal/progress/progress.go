@@ -39,6 +39,8 @@ type Update struct {
 type reporterKey struct{}
 type quietKey struct{}
 type observerKey struct{}
+type keptKey struct{}
+type withinKey struct{}
 type reporter struct {
 	mu     sync.Mutex
 	report func(Update)
@@ -76,6 +78,27 @@ func (o *observer) notify(update Update) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.observe(update)
+}
+
+// Keep is Observe for an observer that keeps the info reports made under
+// ctx for whoever follows the work, as a check's run keeps each
+// environment's: a command driving it Quiet shows them through that
+// record, so its reporter lowers them to debug rather than verbose, and -v
+// doesn't show each twice, once bare and once kept (the hugo exercise's
+// check-64).
+func Keep(ctx context.Context, keep func(Update)) context.Context {
+	return context.WithValue(Observe(ctx, keep), keptKey{}, true)
+}
+
+// Within has the reports made under ctx say first what they're about, as
+// "macOS 15 (Tart): ": two environments of a check stage at once, and
+// their lines were told apart only by their order (the hugo exercise's
+// check-64). Within an earlier one, both are said, outer first.
+func Within(ctx context.Context, about string) context.Context {
+	if outer, _ := ctx.Value(withinKey{}).(string); outer != "" {
+		about = outer + ": " + about
+	}
+	return context.WithValue(ctx, withinKey{}, about)
 }
 
 // Quiet lowers the info reports made under ctx to verbose. A command that
@@ -125,6 +148,9 @@ func emit(ctx context.Context, level Level, format string, args ...any) {
 		return
 	}
 	update := Update{Level: level, Message: fmt.Sprintf(format, args...)}
+	if about, _ := ctx.Value(withinKey{}).(string); about != "" {
+		update.Message = about + ": " + update.Message
+	}
 	for o := observed; o != nil; o = o.outer {
 		o.notify(update)
 	}
@@ -133,6 +159,9 @@ func emit(ctx context.Context, level Level, format string, args ...any) {
 	}
 	if quiet, _ := ctx.Value(quietKey{}).(bool); quiet && update.Level == Info {
 		update.Level = Verbose
+		if kept, _ := ctx.Value(keptKey{}).(bool); kept {
+			update.Level = Debug
+		}
 	}
 	sink.mu.Lock()
 	defer sink.mu.Unlock()

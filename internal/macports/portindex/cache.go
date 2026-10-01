@@ -43,6 +43,8 @@ type generation struct {
 	// Duration is how long the indexer ran, in milliseconds, so the cost
 	// of a full pass is a measurement rather than a figure.
 	Duration int64 `json:"duration_ms"`
+	// name is how progress names the tree being indexed (named).
+	name string
 	// Mirror is the provenance of a generation seeded from the mirror's
 	// index rather than from a generation of this cache.
 	Mirror *mirrorProvenance `json:"mirror,omitempty"`
@@ -147,13 +149,16 @@ func (c *cache) usable(tree string, strict bool) bool {
 // with the mirror enabled, the mirror's index bracketed to the tree's commit.
 // The latest pointer advances only when requested, so candidate trees never
 // displace an upstream seed.
-func (c *cache) ensure(ctx context.Context, repo *git.Repository, tree, root string, projection macports.Projection, strict bool, seeds []string, advance bool, commit string) (string, error) {
+func (c *cache) ensure(ctx context.Context, repo *git.Repository, tree, name, root string, projection macports.Projection, strict bool, seeds []string, advance bool, commit string) (string, error) {
 	if !git.ValidObjectID(tree) {
 		return "", fmt.Errorf("portindex: invalid source tree %q", tree)
 	}
+	if name == "" {
+		name = "tree " + tree[:12]
+	}
 	target := c.generation(tree)
 	if c.usable(tree, strict) {
-		progress.DebugReport(ctx, "Using cached PortIndex for source %s", tree[:12])
+		progress.VerboseReport(ctx, "Using the cached PortIndex for %s", name)
 		return target, touchEntry(target)
 	}
 	lockPath := target + ".lock"
@@ -161,7 +166,7 @@ func (c *cache) ensure(ctx context.Context, repo *git.Repository, tree, root str
 	switch {
 	case errors.Is(err, filelock.ErrBusy):
 		progress.Report(ctx, "Waiting for another process to finish indexing this source")
-		progress.VerboseReport(ctx, "Waiting for another process indexing source %s", tree[:12])
+		progress.VerboseReport(ctx, "Waiting for another process indexing %s", name)
 		fallthrough
 	case errors.Is(err, os.ErrNotExist):
 		guard, err = filelock.Acquire(ctx, lockPath, filelock.Exclusive)
@@ -195,10 +200,10 @@ func (c *cache) ensure(ctx context.Context, repo *git.Repository, tree, root str
 	if err != nil {
 		return "", err
 	}
-	meta := generation{Tree: tree}
+	meta := generation{Tree: tree, name: name}
 	if seed == "" && !strict && c.config.Mirror != nil && repo != nil && git.ValidObjectID(commit) {
 		var provenance *mirrorProvenance
-		seed, changed, provenance, err = c.mirrorSeed(ctx, repo, commit, tree)
+		seed, changed, provenance, err = c.mirrorSeed(ctx, repo, commit, tree, name)
 		if err != nil {
 			return "", err
 		}

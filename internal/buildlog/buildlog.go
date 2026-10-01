@@ -33,10 +33,18 @@ var compilerError = regexp.MustCompile(`^[^\s:]*[^\s:\d][^:]*:\d+:(\d+:)? (fatal
 // First reads a log for the first line a reading takes as a failure's
 // likely cause: in a C or C++ build, the first error is the one the rest
 // follow from. None where the log has none, or can't be read.
-func First(log io.Reader) (Cause, bool) {
+func First(log io.Reader) (Cause, bool) { return FirstFrom(log, 1) }
+
+// FirstFrom is First from a line of the log on, counting from 1, as from
+// where the step that failed began: a dependency's build before it may
+// have printed an error of its own and gone on (batch 14).
+func FirstFrom(log io.Reader, from int) (Cause, bool) {
 	lines := bufio.NewScanner(log)
 	lines.Buffer(make([]byte, 64<<10), 1<<20)
 	for number := 1; lines.Scan(); number++ {
+		if number < from {
+			continue
+		}
 		line := strings.TrimRight(lines.Text(), "\r")
 		if compilerError.MatchString(line) {
 			return Cause{Line: strings.TrimSpace(line), Number: number}, true

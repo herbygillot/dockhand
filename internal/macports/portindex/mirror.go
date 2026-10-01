@@ -55,7 +55,7 @@ type mirrorProvenance struct {
 // provenance, or an empty seed when the mirror cannot seed this tree: no
 // Last-Modified, no bracketing commit in the target's history, a target
 // older than the snapshot, or shared resources changed since the bracket.
-func (c *cache) mirrorSeed(ctx context.Context, repo *git.Repository, commit, tree string) (string, []string, *mirrorProvenance, error) {
+func (c *cache) mirrorSeed(ctx context.Context, repo *git.Repository, commit, tree, name string) (string, []string, *mirrorProvenance, error) {
 	mirror := c.config.Mirror
 	address := mirror.URL
 	if address == "" {
@@ -95,7 +95,7 @@ func (c *cache) mirrorSeed(ctx context.Context, repo *git.Repository, commit, tr
 		return "", nil, nil, nil
 	}
 	if committed.Before(lastModified) {
-		progress.VerboseReport(ctx, "Source commit %s predates the mirror index of %s; indexing in full", commit[:12], lastModified.UTC().Format(time.RFC3339))
+		progress.VerboseReport(ctx, "The commit of %s predates the mirror index of %s, which can seed only a later one; indexing in full", name, lastModified.UTC().Format(time.RFC3339))
 		return "", nil, nil, nil
 	}
 	bracket, err := repo.CommitBefore(ctx, commit, lastModified.Add(-margin))

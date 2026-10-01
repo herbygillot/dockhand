@@ -96,3 +96,25 @@ func TestAReportMadeOnceIsntRepeated(t *testing.T) {
 	progress.ReportOnce(progress.WithReporter(context.Background(), func(u progress.Update) { again = append(again, u.Message) }), "%s is a stub", "py-demo")
 	require.Equal(t, []string{"py-demo is a stub"}, again)
 }
+
+// Reports made within what they're about say it first, outer first, to
+// the reporter and to observers alike; and what a keeping observer keeps
+// isn't shown again at -v by a Quiet command, which shows it through the
+// observer's record (the hugo exercise's check-64).
+func TestReportsSayWhatTheyreAboutAndKeptOnesArentRepeated(t *testing.T) {
+	var shown, kept []progress.Update
+	ctx := progress.WithReporter(context.Background(), func(update progress.Update) { shown = append(shown, update) })
+	environment := progress.Keep(progress.Within(progress.Quiet(ctx), "macOS 15 (Tart)"), func(update progress.Update) { kept = append(kept, update) })
+	progress.Report(environment, "Building the PortIndex")
+	progress.VerboseReport(progress.Within(environment, "base fd44713"), "indexing in full")
+	progress.Report(progress.Within(progress.Quiet(ctx), "not kept"), "lowered to verbose")
+	require.Equal(t, []progress.Update{
+		{Level: progress.Debug, Message: "macOS 15 (Tart): Building the PortIndex"},
+		{Level: progress.Verbose, Message: "macOS 15 (Tart): base fd44713: indexing in full"},
+		{Level: progress.Verbose, Message: "not kept: lowered to verbose"},
+	}, shown)
+	require.Equal(t, []progress.Update{
+		{Level: progress.Info, Message: "macOS 15 (Tart): Building the PortIndex"},
+		{Level: progress.Verbose, Message: "macOS 15 (Tart): base fd44713: indexing in full"},
+	}, kept)
+}

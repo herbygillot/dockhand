@@ -35,7 +35,7 @@ func TestStagerStagesOnceAndOpensAfter(t *testing.T) {
 	index, err := stager.Index(ctx, into)
 	require.NoError(t, err)
 	requireVersion(t, index, "working", "1")
-	require.Contains(t, strings.Join(messages, "\n"), "Generating full PortIndex for source "+tree[:12])
+	require.Contains(t, strings.Join(messages, "\n"), "Generating full PortIndex for tree "+tree[:12])
 	messages = nil
 	index, err = stager.Index(ctx, into)
 	require.NoError(t, err)
@@ -45,7 +45,7 @@ func TestStagerStagesOnceAndOpensAfter(t *testing.T) {
 	again := &Stager{Repo: f.repo, Config: f.config}
 	_, err = again.Index(ctx, into)
 	require.NoError(t, err)
-	require.Contains(t, strings.Join(messages, "\n"), "Using cached PortIndex for source "+tree[:12])
+	require.Contains(t, strings.Join(messages, "\n"), "Using the cached PortIndex for tree "+tree[:12])
 
 	unplaced, err := macports.NewTree(source, snapshot.Root, model.Platform{})
 	require.NoError(t, err)

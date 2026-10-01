@@ -390,11 +390,12 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 	// provider's progress is: whoever follows the run sees it, not only the
 	// terminal driving it, and staging the index a guest takes can run for
 	// minutes. Keeping it goes through the context without the observer,
-	// so it can't report to itself.
+	// so it can't report to itself. Every report says which environment
+	// it's about, the verbose ones too, since two stage at once.
 	kept := ctx
-	ctx = progress.Observe(ctx, func(update progress.Update) {
+	ctx = progress.Keep(progress.Within(ctx, describeEnvironment(environment)), func(update progress.Update) {
 		if update.Level == progress.Info {
-			d.emit(kept, "progress", describeEnvironment(environment)+": "+update.Message)
+			d.emit(kept, "progress", update.Message)
 		}
 	})
 	for {
@@ -725,7 +726,7 @@ func (b *build) Fetched(target model.TargetID, commit string) {
 func (b *build) Record(result model.TargetResult) error {
 	result = b.d.plan.Tests.Judge(result)
 	if result.Outcome == model.OutcomeFailed {
-		result.Detail = withCause(result.Detail, result.Log)
+		result.Detail = withCause(result.Detail, result)
 	}
 	result = b.judgeSource(result)
 	result.Execution = b.execution.ID
@@ -816,17 +817,24 @@ func (b *build) Progress(message string) {
 
 // withCause adds to a failure's detail what its log most likely says made
 // it fail, marked as read from the log, beside what the provider said
-// (D10): whichever provider built it, the log is on this Mac by now.
-func withCause(detail, log string) string {
-	if log == "" {
+// (D10): whichever provider built it, the log is on this Mac by now. It's
+// read from where the step that failed began, the last the provider
+// recorded, where it recorded them: the dependencies' installs before a
+// port's own build fill most of its log.
+func withCause(detail string, result model.TargetResult) string {
+	if result.Log == "" {
 		return detail
 	}
-	file, err := os.Open(log)
+	file, err := os.Open(result.Log)
 	if err != nil {
 		return detail
 	}
 	defer file.Close()
-	cause, ok := buildlog.First(file)
+	from := 1
+	if len(result.Steps) > 0 {
+		from = result.Steps[len(result.Steps)-1].Line
+	}
+	cause, ok := buildlog.FirstFrom(file, from)
 	switch {
 	case !ok:
 		return detail
