@@ -7,7 +7,9 @@ package sourcecompare
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
+	"maps"
 	"path"
 	"regexp"
 	"slices"
@@ -171,6 +173,8 @@ func Compare(older, newer project.Reading, versions Versions) []Change {
 				how, what = "added", "is new"
 			case !hasNow:
 				how, what = "removed", "was removed"
+			case base == "CMakeLists.txt":
+				what += cmakeWords(old.Data, now.Data)
 			}
 			changes = append(changes, Change{Kind: "build", How: how, Path: name,
 				Message: fmt.Sprintf("upstream's %s %s", name, what)})
@@ -433,6 +437,123 @@ func dependencyChanges(file string, before, after reading) []Change {
 	return changes
 }
 
+// cmakeNamed is how many of a CMakeLists.txt's changes are said before
+// the rest are counted.
+const cmakeNamed = 5
+
+// cmakeWords say what a CMakeLists.txt's change does to the options it
+// offers and the packages it finds, as ": option FLB_KAFKA added, off by
+// default; find_package(OpenSSL) added, under FLB_TLS", or that it changes
+// neither: fluent-bit's "CMakeLists.txt changed" sent the person to the
+// diff, where nothing concerned the port (the fluent-bit run, batch 23).
+// It says; what holds is assess's, and D12's: any other change to a build
+// file still holds.
+func cmakeWords(old, now []byte) string {
+	before, after := project.ReadCMake(old), project.ReadCMake(now)
+	var said []string
+	for _, name := range slices.Sorted(maps.Keys(after.Options)) {
+		option, was := after.Options[name], before.Options[name]
+		switch _, had := before.Options[name]; {
+		case !had:
+			said = append(said, fmt.Sprintf("option %s added, %s by default", name, strings.ToLower(option.Default)))
+		case was.Default != option.Default:
+			said = append(said, fmt.Sprintf("option %s's default moves from %s to %s", name, was.Default, option.Default))
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(before.Options)) {
+		if _, has := after.Options[name]; !has {
+			said = append(said, "option "+name+" removed")
+		}
+	}
+	find := func(packages []project.CMakePackage, name string) (project.CMakePackage, bool) {
+		for _, pkg := range packages {
+			if pkg.Name == name {
+				return pkg, true
+			}
+		}
+		return project.CMakePackage{}, false
+	}
+	under := func(pkg project.CMakePackage) string {
+		if len(pkg.Under) == 0 {
+			return ""
+		}
+		return ", under " + strings.Join(pkg.Under, " and ")
+	}
+	seen := map[string]bool{}
+	for _, pkg := range after.Packages {
+		if seen[pkg.Name] {
+			continue
+		}
+		seen[pkg.Name] = true
+		was, had := find(before.Packages, pkg.Name)
+		switch {
+		case !had:
+			said = append(said, fmt.Sprintf("find_package(%s) added%s", pkg.Name, under(pkg)))
+		case was.Version != pkg.Version && pkg.Version != "":
+			said = append(said, fmt.Sprintf("find_package(%s) now asks for %s%s", pkg.Name, pkg.Version, under(pkg)))
+		case !was.Required && pkg.Required:
+			said = append(said, fmt.Sprintf("find_package(%s) is now REQUIRED%s", pkg.Name, under(pkg)))
+		case strings.Join(was.Under, " and ") != strings.Join(pkg.Under, " and "):
+			said = append(said, fmt.Sprintf("find_package(%s) moves%s", pkg.Name, cmp.Or(under(pkg), ", out of its if()")))
+		}
+	}
+	for _, pkg := range before.Packages {
+		if _, has := find(after.Packages, pkg.Name); !has && !seen[pkg.Name] {
+			seen[pkg.Name] = true
+			said = append(said, fmt.Sprintf("find_package(%s) dropped", pkg.Name))
+		}
+	}
+	switch {
+	case len(said) == 0:
+		return ", though no option or find_package did"
+	case len(said) > cmakeNamed:
+		return fmt.Sprintf(": %s; and %d more", strings.Join(said[:cmakeNamed], "; "), len(said)-cmakeNamed)
+	}
+	return ": " + strings.Join(said, "; ")
+}
+
+// lockMoves are what a Cargo.lock changes of the crates it pins from
+// elsewhere, each crate once: added, dropped, or moved to other versions,
+// which assess counts in one line, holding nothing (D9). A workspace's own
+// crates, which move with its release, aren't counted. rust 1.99.0's
+// Cargo.lock changed much, and its assessment said nothing of it, since
+// only crates linking a native library were looked for (rust 1.99.0,
+// batch 23).
+func lockMoves(name string, earlier, packages []project.CargoPackage) []Change {
+	versions := func(packages []project.CargoPackage) map[string][]string {
+		found := map[string][]string{}
+		for _, pkg := range packages {
+			if pkg.Source != project.FromLocal {
+				found[pkg.Name] = append(found[pkg.Name], pkg.Version)
+			}
+		}
+		for crate := range found {
+			slices.Sort(found[crate])
+		}
+		return found
+	}
+	before, now := versions(earlier), versions(packages)
+	var changes []Change
+	for _, crate := range slices.Sorted(maps.Keys(now)) {
+		old, had := before[crate]
+		switch {
+		case !had:
+			changes = append(changes, Change{Kind: "dependency", How: "adds", Path: name, Name: crate, Now: strings.Join(now[crate], ", "),
+				Message: fmt.Sprintf("upstream: %s adds %s %s", name, crate, strings.Join(now[crate], ", "))})
+		case !slices.Equal(old, now[crate]):
+			changes = append(changes, Change{Kind: "dependency", How: "moves", Path: name, Name: crate, Old: strings.Join(old, ", "), Now: strings.Join(now[crate], ", "),
+				Message: fmt.Sprintf("upstream: %s moves %s from %s to %s", name, crate, strings.Join(old, ", "), strings.Join(now[crate], ", "))})
+		}
+	}
+	for _, crate := range slices.Sorted(maps.Keys(before)) {
+		if _, has := now[crate]; !has {
+			changes = append(changes, Change{Kind: "dependency", How: "drops", Path: name, Name: crate, Old: strings.Join(before[crate], ", "),
+				Message: fmt.Sprintf("upstream: %s drops %s", name, crate)})
+		}
+	}
+	return changes
+}
+
 // nativeLinks lists the crates new to a Cargo.lock that link a native
 // library, as Cargo's -sys crates do. Such a crate often links a copy of
 // the library it finds installed, and builds one it bundles otherwise,
@@ -465,7 +586,7 @@ func nativeLinks(name string, old project.File, hadOld bool, now project.File, h
 	for _, pkg := range packages {
 		has[pkg.Name] = true
 	}
-	var changes []Change
+	changes := lockMoves(name, earlier, packages)
 	for _, pkg := range packages {
 		library := pkg.NativeLibrary()
 		if library == "" || had[pkg.Name] {

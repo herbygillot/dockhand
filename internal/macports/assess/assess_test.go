@@ -251,7 +251,7 @@ func TestABuildFileMovingADependencysVersionHolds(t *testing.T) {
 		Before: read(t, "pkg-1.0", map[string]string{"CMakeLists.txt": "project(demo VERSION 1.0)\nfind_package(SomeLibrary 1.0 REQUIRED)\n"}, project.Spec{}),
 		After:  read(t, "pkg-2.0", map[string]string{"CMakeLists.txt": "project(demo VERSION 2.0)\nfind_package(SomeLibrary 2.0 REQUIRED)\n"}, project.Spec{}),
 	}}})
-	require.Equal(t, []string{"! upstream's CMakeLists.txt changed; the build may need the Portfile to follow"}, messages(comparison.Changes))
+	require.Equal(t, []string{"! upstream's CMakeLists.txt changed: find_package(SomeLibrary) now asks for 2.0; the build may need the Portfile to follow"}, messages(comparison.Changes))
 }
 
 // Within a manifest, what holds comes first, as a person reads them; and

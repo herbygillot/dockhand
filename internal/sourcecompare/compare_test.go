@@ -1,6 +1,7 @@
 package sourcecompare
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -114,4 +115,46 @@ func TestARequirementDeclaredTwiceKeepsBoth(t *testing.T) {
 	require.Len(t, changes, 1)
 	require.Equal(t, []project.Requirement{{Name: "numpy", Specifier: "<2", Marker: "python_version < '3.10'"}, {Name: "numpy", Specifier: ">=2", Marker: "python_version >= '3.10'"}},
 		changes[0].Requirements, "both declarations, not the second over the first")
+}
+
+// What a Cargo.lock changes of the crates it pins from elsewhere is said,
+// each crate once, for assess to count, and the workspace's own crates,
+// which move with its release, aren't: rust 1.99.0's lock changed much,
+// and nothing said so (batch 23).
+func TestALockSaysWhatItChangesOfCratesFromElsewhere(t *testing.T) {
+	lock := func(packages ...string) string {
+		text := "version = 4\n"
+		for _, pkg := range packages {
+			name, version, _ := strings.Cut(pkg, " ")
+			text += "\n[[package]]\nname = \"" + name + "\"\nversion = \"" + version + "\"\n"
+			if !strings.HasPrefix(name, "rustc_") {
+				text += "source = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"" + strings.Repeat("a", 64) + "\"\n"
+			}
+		}
+		return text
+	}
+	changes, err := compareArchives(t,
+		testsupport.Tarball(t, "rustc-1", map[string]string{"Cargo.lock": lock("rustc_driver 0.1.0", "serde 1.0.200", "syn 1.0.109", "syn 2.0.60", "old-crate 0.1.0")}),
+		testsupport.Tarball(t, "rustc-2", map[string]string{"Cargo.lock": lock("rustc_driver 0.2.0", "serde 1.0.210", "syn 2.0.60", "syn 2.0.70", "new-crate 3.0.0")}), Versions{})
+	require.NoError(t, err)
+	var said []string
+	for _, change := range changes {
+		said = append(said, change.How+" "+change.Name)
+	}
+	require.Equal(t, []string{"adds new-crate", "moves serde", "moves syn", "drops old-crate"}, said, "rustc_driver, the workspace's own, isn't counted")
+}
+
+// A CMakeLists.txt's change says what it does to the options it offers
+// and the packages it finds: fluent-bit's "CMakeLists.txt changed" sent
+// the person to the diff, where nothing concerned the port (the
+// fluent-bit run, batch 23).
+func TestACMakeListsChangeSaysWhatItDoes(t *testing.T) {
+	before := "project(fluent-bit VERSION 5.1.2)\noption(FLB_TLS \"TLS\" ON)\noption(FLB_OLD \"gone\")\nfind_package(Threads REQUIRED)\nfind_package(ZLIB 1.2)\n"
+	after := "project(fluent-bit VERSION 5.1.3)\noption(FLB_TLS \"TLS\" OFF)\noption(FLB_KAFKA \"Kafka\")\nfind_package(Threads REQUIRED)\nfind_package(ZLIB 1.3)\nif(FLB_KAFKA)\n  find_package(RdKafka REQUIRED)\nendif()\n"
+	changes, err := compareArchives(t,
+		testsupport.Tarball(t, "fluent-bit-5.1.2", map[string]string{"CMakeLists.txt": before}),
+		testsupport.Tarball(t, "fluent-bit-5.1.3", map[string]string{"CMakeLists.txt": after}), Versions{Old: "5.1.2", New: "5.1.3"})
+	require.NoError(t, err)
+	require.Len(t, changes, 1)
+	require.Equal(t, "upstream's CMakeLists.txt changed: option FLB_KAFKA added, off by default; option FLB_TLS's default moves from ON to OFF; option FLB_OLD removed; find_package(ZLIB) now asks for 1.3; find_package(RdKafka) added, under FLB_KAFKA", changes[0].Message)
 }

@@ -248,13 +248,15 @@ func TestANewCrateLinkingANativeLibraryIsListed(t *testing.T) {
 	require.Equal(t, []string{
 		"· upstream: Cargo.lock adds libgit2-sys 0.17.0+1.8.1, which links the native library libgit2: MacPorts may provide it, for the Portfile to declare, rather than the crate linking whatever copy it finds",
 		"· upstream: Cargo.lock adds onig_sys 69.8.1, which links the native library onig: MacPorts may provide it, for the Portfile to declare, rather than the crate linking whatever copy it finds",
+		"· upstream: Cargo.lock: 3 added (libgit2-sys, onig_sys, tokio), 2 moved (openssl-sys, serde)",
 	}, compared(t, before, map[string]string{"Cargo.lock": lock("libgit2-sys 0.17.0+1.8.1", "libgit2-sys 0.18.1+1.9.1", "onig_sys 69.8.1", "openssl-sys 0.9.109", "serde 1.0.210", "tokio 1.40.0")}),
-		"one that moves, or a crate that links nothing, isn't listed, and one pinned twice is listed once")
+		"one that moves, or a crate that links nothing, isn't listed, and one pinned twice is listed once; all are counted, holding nothing (rust 1.99.0, batch 23)")
 	require.Equal(t, []string{"· upstream's Cargo.lock couldn't be read in the new version, so the crates new to it that link a native library weren't looked for: project: unsupported or empty Cargo.lock"},
 		compared(t, before, map[string]string{"Cargo.lock": "version = 9\n"}))
 	require.Equal(t, []string{"· upstream's Cargo.lock couldn't be read in the old version, so the crates new to it that link a native library weren't looked for: project: unsupported or empty Cargo.lock"},
 		compared(t, map[string]string{"Cargo.lock": "version = 9\n"}, before))
-	require.Equal(t, []string{"· upstream: Cargo.lock adds zstd-sys 2.0.13+zstd.1.5.6, which links the native library zstd: MacPorts may provide it, for the Portfile to declare, rather than the crate linking whatever copy it finds"},
+	require.Equal(t, []string{"· upstream: Cargo.lock adds zstd-sys 2.0.13+zstd.1.5.6, which links the native library zstd: MacPorts may provide it, for the Portfile to declare, rather than the crate linking whatever copy it finds",
+		"· upstream: Cargo.lock: 1 added (zstd-sys)"},
 		compared(t, map[string]string{}, map[string]string{"Cargo.lock": lock("zstd-sys 2.0.13+zstd.1.5.6")}), "a lock new to the source")
 }
 
@@ -286,6 +288,7 @@ func TestANativeLibraryIsSaidWhereMacPortsHasAPortForIt(t *testing.T) {
 	require.Equal(t, []string{
 		"· upstream: Cargo.lock adds zstd-sys 2.0.13+zstd.1.5.6, which links the native library zstd, which MacPorts has as archivers/zstd: the Portfile may declare it, rather than the crate linking whatever copy it finds",
 		"· upstream: Cargo.lock adds onig_sys 69.8.1, which links the native library onig, which MacPorts has as devel/oniguruma6: the Portfile may declare it, rather than the crate linking whatever copy it finds",
+		"· upstream: Cargo.lock: 5 added",
 	}, messages(comparison.Changes))
 	var reasons []string
 	for _, coverage := range comparison.Coverage {
@@ -330,8 +333,10 @@ func TestACrateGoneThatLinkedANativeLibraryIsSaidWhereThePortStillHasIt(t *testi
 	}
 	zola := macports.PortInfo{Name: "zola", Options: map[string]string{"dockhand.portgroups": "cargo openssl"}, Dependencies: []macports.Dependency{{Port: "openssl3", Phase: "lib"}}}
 	changes := assessed(zola)
+	counted := "· upstream: Cargo.lock: 1 added (aws-lc-sys), 2 dropped (native-tls, openssl-sys)"
 	require.Equal(t, []string{added,
 		"· upstream: Cargo.lock drops openssl-sys, which linked the native library openssl, while the Portfile still has PortGroup openssl and its dependency on openssl3: unless something else needs them, they can go, since they still reach the build",
+		counted,
 	}, messages(changes))
 	require.Equal(t, NativeLibraryLeft, changes[1].Rule)
 	require.Equal(t, "openssl-sys", changes[1].Subject)
@@ -339,9 +344,10 @@ func TestACrateGoneThatLinkedANativeLibraryIsSaidWhereThePortStillHasIt(t *testi
 	zola.Options["dockhand.portgroups"] = "cargo"
 	require.Equal(t, []string{added,
 		"· upstream: Cargo.lock drops openssl-sys, which linked the native library openssl, while the Portfile still has its dependency on openssl3: unless something else needs it, it can go, since it still reaches the build",
+		counted,
 	}, messages(assessed(zola)))
 	zola.Dependencies = nil
-	require.Equal(t, []string{added}, messages(assessed(zola)))
+	require.Equal(t, []string{added, counted}, messages(assessed(zola)))
 }
 
 // A license file's change says what the project's manifest declares beside
@@ -474,7 +480,7 @@ func TestABuildFileNamingTheNewVersionHoldsNothing(t *testing.T) {
 	}
 	bumped := strings.Replace(before, "5.1.8", "5.1.9", 1)
 	require.Equal(t, []string{`· upstream's CMakeLists.txt changed only the version it names: "project(nuspell VERSION 5.1.9 LANGUAGES CXX)"`}, compare(bumped, versions))
-	held := []string{"! upstream's CMakeLists.txt changed; the build may need the Portfile to follow"}
+	held := []string{"! upstream's CMakeLists.txt changed, though no option or find_package did; the build may need the Portfile to follow"}
 	require.Equal(t, held, compare(strings.Replace(bumped, "add_subdirectory(src)", "add_subdirectory(src)\nadd_subdirectory(tests)", 1), versions), "a line added")
 	require.Equal(t, held, compare(bumped+"install(TARGETS nuspell)\n", versions), "a line added at the end")
 	unended := func(before, after string) []string {
