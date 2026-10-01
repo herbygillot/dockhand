@@ -41,8 +41,11 @@ import (
 // its own is compared, where rust's were "not compared" (the rust and
 // cargo run). 9: archives of any size downloaded, and read to 4 GiB
 // uncompressed, a zip's under the same bound, where rust's source was past
-// both (the person's word, 2026-10-01).
-const Policy = 9
+// both (the person's word, 2026-10-01). 10: a Go the Portfile pins, by
+// go.bin or a dependency on go-1.NN, older than go.mod requires holds,
+// where only go.toolchain_min was judged and trivy's go-1.26 under 0.75.0's
+// Go 1.27.0 read as gated on (the trivy run, #35083).
+const Policy = 10
 
 // Input is what one port's assessment reads.
 type Input struct {

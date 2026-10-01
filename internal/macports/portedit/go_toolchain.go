@@ -42,6 +42,13 @@ func (s *Service) raiseGoToolchain(ctx context.Context, request Request, input *
 	if !found || required == "" {
 		return nil
 	}
+	// A pin older than the requirement fails the build whatever the
+	// minimum says: trivy's go-1.26 under 0.75.0's Go 1.27.0, where only
+	// the raise was said (the trivy run, #35083). The pin is the
+	// maintainer's to remove, and is left as it is.
+	if pin, ok := selected.GoPinned(); ok && !pin.Meets(required) {
+		progress.Report(ctx, "Warning: %s requires Go %s per go.mod, but pins %s; the pin may be obsolete", input.target.Name, required, pin)
+	}
 	current := selected.Options["go.toolchain_min"]
 	outcome := func(outcome GoToolchainOutcome) {
 		result.GoToolchain = &GoToolchain{Required: required, Declared: current, Outcome: outcome}

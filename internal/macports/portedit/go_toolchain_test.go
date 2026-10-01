@@ -79,6 +79,41 @@ func TestModuleModeGoPortRaisesToolchainMinFromTheManifest(t *testing.T) {
 	require.Equal(t, &GoToolchain{Required: "1.24.3", Declared: "1.22", Outcome: GoToolchainRaised}, result.GoToolchain)
 }
 
+// A pin older than go.mod requires is said as the minimum is raised, and
+// left as it is: trivy's go-1.26, under 0.75.0's Go 1.27.0, where only the
+// raise was said (the trivy run, #35083). A pin that meets it isn't said.
+func TestAnUpdateSaysAGoPinItsGoModOutgrows(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name, series string
+		says         bool
+	}{
+		{"outgrown", "1.26", true},
+		{"met", "1.27", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			pin := "options go.bin\ngo.offline_build no\ngo.toolchain_min 1.26.3\ndepends_build port:go-" + test.series + "\ngo.bin ${prefix}/bin/go-" + test.series + "\n"
+			s, r := goModFixture(t, "module example.com/fixture\ngo 1.27.0\n", pin)
+			var messages []string
+			ctx := progress.WithReporter(t.Context(), func(u progress.Update) { messages = append(messages, u.Message) })
+			result, err := s.Prepare(ctx, r)
+			require.NoError(t, err)
+			after := string(result.Files[0].After)
+			require.Contains(t, after, "go.toolchain_min 1.27.0\n")
+			require.Contains(t, after, "go.bin ${prefix}/bin/go-"+test.series+"\n")
+			said := strings.Join(messages, "\n")
+			require.Contains(t, said, "Raising go.toolchain_min from 1.26.3 to 1.27.0")
+			warning := "Warning: fixture requires Go 1.27.0 per go.mod, but pins go-" + test.series + " (go.bin, depends_build); the pin may be obsolete"
+			if test.says {
+				require.Contains(t, said, warning)
+			} else {
+				require.NotContains(t, said, "pin may be obsolete")
+			}
+		})
+	}
+}
+
 // A minimum of the required series already covers it, whatever the patch
 // release, since the Go PortGroup compares only the series. It, a
 // GOPATH-mode build, a port declaring no minimum, and one declaring it in a

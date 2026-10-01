@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -388,6 +389,41 @@ func TestTheEvaluatorReportsThePortGroupsAPortLoads(t *testing.T) {
 		require.Equal(t, want, groups, name)
 		require.Equal(t, "./configure", snapshot.Ports[name].Options["configure.cmd"], name)
 	}
+}
+
+// The Go a golang PortGroup port pins is read as MacPorts evaluates it:
+// go.bin, with ${prefix} as Base sets it, beside the dependencies, as
+// trivy pinned go-1.26 by both (the trivy run, #35083); a port building
+// with the PortGroup's own ${prefix}/bin/go and port:go pins nothing. The
+// PortGroup is a stand-in with MacPorts' own option and defaults.
+func TestTheEvaluatorReadsTheGoAPortPins(t *testing.T) {
+	t.Parallel()
+	e := liveEvaluator(t)
+	tree := fixtureTree(t)
+	putFile(t, tree.Root(), "_resources/port1.0/group/golang-1.0.tcl", "options go.bin\ndefault go.bin {${prefix}/bin/go}\ndefault depends_build port:go\n")
+	putFile(t, tree.Root(), "security/trivy/Portfile", "PortSystem 1.0\nPortGroup golang 1.0\nname trivy\nversion 0.75.0\ndepends_build port:go-1.26\ngo.bin ${prefix}/bin/go-1.26\n")
+	putFile(t, tree.Root(), "devel/current/Portfile", "PortSystem 1.0\nPortGroup golang 1.0\nname current\nversion 1\n")
+	evaluated := func(name string) macports.PortInfo {
+		t.Helper()
+		targets, err := e.Resolve(t.Context(), tree, macports.Selection{Selector: name})
+		require.NoError(t, err)
+		bound, err := tree.Select(targets[0])
+		require.NoError(t, err)
+		snapshot, err := e.Evaluate(t.Context(), bound)
+		require.NoError(t, err)
+		return snapshot.Ports[name]
+	}
+	trivy := evaluated("trivy")
+	require.Equal(t, "go-1.26", path.Base(trivy.Options["go.bin"]))
+	require.True(t, path.IsAbs(trivy.Options["go.bin"]), "${prefix} is substituted: %s", trivy.Options["go.bin"])
+	pin, pinned := trivy.GoPinned()
+	require.True(t, pinned)
+	require.Equal(t, macports.GoPin{Series: "1.26", By: []string{"go.bin", "depends_build"}}, pin)
+
+	current := evaluated("current")
+	require.Equal(t, "go", path.Base(current.Options["go.bin"]))
+	_, pinned = current.GoPinned()
+	require.False(t, pinned)
 }
 
 // A python PortGroup port's Pythons are read as MacPorts evaluates them,

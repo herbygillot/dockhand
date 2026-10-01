@@ -14,7 +14,7 @@ var ReadOptions = []string{
 	"fetch.user_agent", "fetch.ignore_sslcert",
 	"patchfiles", "patch.pre_args", "patch.dir",
 	"livecheck.type", "livecheck.url", "livecheck.regex", "livecheck.version", "livecheck.ignore_sslcert", "livecheck.compression", "livecheck.curloptions",
-	"go.vendors", "go.version", "go.package", "go.domain", "go.offline_build", "go.toolchain_min",
+	"go.vendors", "go.version", "go.package", "go.domain", "go.offline_build", "go.toolchain_min", "go.bin",
 	"cargo.crates", "cargo.crates_github", "cargo.update", "cargo.dir", "cargo.offline_cmd",
 	"github.author", "github.project", "github.version", "github.tag_prefix", "github.tag_suffix", "github.tarball_from",
 	"gitlab.author", "gitlab.project", "gitlab.version", "gitlab.tag_prefix", "gitlab.tag_suffix", "gitlab.instance",
