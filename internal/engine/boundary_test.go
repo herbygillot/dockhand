@@ -37,6 +37,7 @@ var engineImports = map[string]string{
 	"internal/fetch":               "asking a URL whether it answers over HTTPS, as fetching follows redirects",
 	"internal/sourcecompare":       "what upstream's source changed, for update",
 	"internal/macports/assess":     "what upstream's change means for the port, for update",
+	"internal/macports/patchcheck": "a revision's patches checked against its source, for its assessment",
 	"internal/project":             "reading upstream's project where the port builds, for update's comparison",
 	"internal/outdated":            "what outdated reads of upstream",
 	"internal/preparation":         "preparing an update's edit",

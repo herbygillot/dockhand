@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/fetch"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
+	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -214,7 +216,17 @@ func (e *Engine) assessPort(ctx context.Context, planner ArchivePlanner, sources
 	case !fetches:
 		coverage = append(coverage, model.Coverage{Path: directory, Relevance: "unknown", Treatment: "inspected", Reason: name + " fetches no upstream source, so there's nothing to compare"})
 	default:
-		input.Pairs, problem, again = e.readPlans(ctx, infos, plans, hadBase)
+		scratchDirectory, err := scratch.Dir("assess-")
+		if err != nil {
+			problem = err.Error()
+			break
+		}
+		defer os.RemoveAll(scratchDirectory)
+		var fetched map[string]string
+		input.Pairs, fetched, problem, again = e.readPlans(ctx, infos, plans, hadBase, scratchDirectory)
+		if problem == "" {
+			input.Patches = e.revisionPatches(ctx, infos, plans[1], sources, directory, scratchDirectory, fetched)
+		}
 	}
 	if problem == "" && len(input.Pairs) > 0 {
 		input.Observed = e.observeProviders(ctx, input, sources)
@@ -223,6 +235,97 @@ func (e *Engine) assessPort(ctx context.Context, planner ArchivePlanner, sources
 	comparison.Problem, comparison.Transient = problem, again && problem != ""
 	comparison.Coverage = append(comparison.Coverage, coverage...)
 	return comparison
+}
+
+// revisionPatches checks the revision's patches, and those the base applied
+// that it drops, against the revision's archives (patchcheck.Port): those
+// readPlans fetched, by name, and the rest fetched now into directory,
+// where a kept reading spared fetching them. Each patch is read from the
+// port's files in its own version's tree, where filespath names below the
+// port's directory; one the check can't reach is unchecked, with why.
+// None where neither version declares patches.
+func (e *Engine) revisionPatches(ctx context.Context, infos [2]macports.PortInfo, plan []macports.Distfile, sources [2]model.Source, portdir, directory string, fetched map[string]string) []assess.Patch {
+	own, ownErr := infos[1].Patchfiles()
+	had, hadErr := infos[0].Patchfiles()
+	var dropped []string
+	for _, name := range had {
+		if !slices.Contains(own, name) {
+			dropped = append(dropped, name)
+		}
+	}
+	if len(own)+len(dropped) == 0 {
+		return nil
+	}
+	var found []assess.Patch
+	unchecked := func(why string) []assess.Patch {
+		for _, name := range own {
+			found = append(found, assess.Patch{Result: patchcheck.Result{Name: name, Detail: why}})
+		}
+		for _, name := range dropped {
+			found = append(found, assess.Patch{Result: patchcheck.Result{Name: name, Detail: why}, Dropped: true})
+		}
+		return found
+	}
+	if err := errors.Join(ownErr, hadErr); err != nil {
+		return unchecked("patchfiles couldn't be read: " + err.Error())
+	}
+	var paths, missing []string
+	var missed []macports.Distfile
+	for _, file := range plan {
+		if path, ok := fetched[file.Name]; ok {
+			paths = append(paths, path)
+		} else {
+			missed = append(missed, file)
+			missing = append(missing, file.Name)
+		}
+	}
+	if len(missed) > 0 {
+		into, err := os.MkdirTemp(directory, "")
+		if err != nil {
+			return unchecked(err.Error())
+		}
+		archives, err := fetchPlanned(ctx, archives.Client{Mirror: e.mirror()}.Store(into), infos[1], missed)
+		if err != nil {
+			return unchecked(fmt.Sprintf("%s couldn't be fetched to check them against: %v", strings.Join(missing, ", "), err))
+		}
+		for _, archive := range archives {
+			paths = append(paths, archive.Path)
+		}
+	}
+	var patches []patchcheck.Patch
+	read := func(side int, name string) ([]byte, string) {
+		where, ok := infos[side].FilesPath(portdir, name)
+		if !ok {
+			return nil, "its filespath isn't below the port's directory"
+		}
+		file, data, err := e.Repo.File(ctx, string(sources[side].Tree), where)
+		switch {
+		case err != nil:
+			return nil, err.Error()
+		case !file.Exists:
+			return nil, where + " isn't in the tree"
+		}
+		return data, ""
+	}
+	var unreadable []assess.Patch
+	for side, names := range [][]string{dropped, own} {
+		for _, name := range names {
+			data, why := read(side, name)
+			if why != "" {
+				unreadable = append(unreadable, assess.Patch{Result: patchcheck.Result{Name: name, Detail: why}, Dropped: side == 0})
+				continue
+			}
+			patches = append(patches, patchcheck.Patch{Name: name, Data: data})
+		}
+	}
+	results, err := patchcheck.Port(ctx, infos[1], paths, patches)
+	if err != nil {
+		return unchecked(err.Error())
+	}
+	for _, result := range results {
+		found = append(found, assess.Patch{Result: result, Dropped: slices.Contains(dropped, result.Name)})
+	}
+	return append(found, unreadable...)
 }
 
 // readCommits reads a Git-fetched port's source at the commit each
@@ -338,8 +441,9 @@ func (e *Engine) sourceArchiver() (SourceArchiver, error) {
 // read beside nothing, as new. A reading kept for an archive's content,
 // by the sha256 its Portfile declares, stands without fetching it again;
 // the rest are fetched as the Portfile's checksums declare them, and
-// kept. What couldn't be fetched or read is the problem.
-func (e *Engine) readPlans(ctx context.Context, infos [2]macports.PortInfo, plans [2][]macports.Distfile, hadBase bool) ([]assess.Pair, string, bool) {
+// kept, in directory, the caller's, which the revision's fetched are
+// returned by name from. What couldn't be fetched or read is the problem.
+func (e *Engine) readPlans(ctx context.Context, infos [2]macports.PortInfo, plans [2][]macports.Distfile, hadBase bool, directory string) ([]assess.Pair, map[string]string, string, bool) {
 	type side struct {
 		info     macports.PortInfo
 		plan     []macports.Distfile
@@ -364,11 +468,9 @@ func (e *Engine) readPlans(ctx context.Context, infos [2]macports.PortInfo, plan
 		}
 		return ""
 	}
-	directory, err := scratch.Dir("assess-")
-	if err != nil {
-		return nil, err.Error(), false
-	}
-	defer os.RemoveAll(directory)
+	// The revision's archives fetched, by name, which the patch check
+	// reads too.
+	fetchedNow := map[string]string{}
 	cache := e.readings()
 	for i, s := range sides {
 		var missing []macports.Distfile
@@ -384,7 +486,7 @@ func (e *Engine) readPlans(ctx context.Context, infos [2]macports.PortInfo, plan
 		}
 		into, err := os.MkdirTemp(directory, "")
 		if err != nil {
-			return nil, err.Error(), false
+			return nil, nil, err.Error(), false
 		}
 		fetched, err := fetchPlanned(ctx, archives.Client{Mirror: e.mirror()}.Store(into), s.info, missing)
 		if err != nil {
@@ -392,14 +494,17 @@ func (e *Engine) readPlans(ctx context.Context, infos [2]macports.PortInfo, plan
 			if i == 0 {
 				which = "the base's"
 			}
-			return nil, fmt.Sprintf("%s archives couldn't be fetched: %v", which, err), transient(err)
+			return nil, nil, fmt.Sprintf("%s archives couldn't be fetched: %v", which, err), transient(err)
 		}
 		for _, archive := range fetched {
 			reading, err := cache.Read(ctx, archive.Path, archive.Sum.SHA256, s.spec)
 			if err != nil {
-				return nil, fmt.Sprintf("reading %s: %v", archive.Name, err), false
+				return nil, nil, fmt.Sprintf("reading %s: %v", archive.Name, err), false
 			}
 			s.readings[archive.Name] = reading
+			if i == 1 {
+				fetchedNow[archive.Name] = archive.Path
+			}
 		}
 	}
 	// Pair them: alike by name first, then in the order the plans name the
@@ -424,5 +529,5 @@ func (e *Engine) readPlans(ctx context.Context, infos [2]macports.PortInfo, plan
 		}
 		pairs = append(pairs, pair)
 	}
-	return pairs, "", false
+	return pairs, fetchedNow, "", false
 }

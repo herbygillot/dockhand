@@ -119,3 +119,23 @@ func TestTheNamesALibrarysPortMayHave(t *testing.T) {
 		require.Equal(t, want, LibraryPorts(library), library)
 	}
 }
+
+// A port's file is in its tree where filespath names below its directory,
+// as the evaluation wrote it with its own root; files where it wrote none;
+// and nowhere it can say where filespath is elsewhere.
+func TestWhereAPortsFileIsInItsTree(t *testing.T) {
+	for _, test := range []struct {
+		filespath, want string
+		ok              bool
+	}{
+		{"", "devel/libuv/files/patch-a.diff", true},
+		{"/tmp/workspace-1/devel/libuv/files", "devel/libuv/files/patch-a.diff", true},
+		{"/tmp/workspace-1/devel/libuv/files/legacy", "devel/libuv/files/legacy/patch-a.diff", true},
+		{"/tmp/devel/libuv/workspace/devel/libuv/files", "devel/libuv/files/patch-a.diff", true},
+		{"/opt/elsewhere/files", "", false},
+	} {
+		where, ok := PortInfo{Options: map[string]string{"filespath": test.filespath}}.FilesPath("devel/libuv", "patch-a.diff")
+		require.Equal(t, test.ok, ok, test.filespath)
+		require.Equal(t, test.want, where, test.filespath)
+	}
+}

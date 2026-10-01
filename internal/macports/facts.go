@@ -2,6 +2,8 @@ package macports
 
 import (
 	"errors"
+	"path"
+	"path/filepath"
 	"regexp"
 	"slices"
 
@@ -94,6 +96,30 @@ func (p PortInfo) TiesTo(library string) LibraryTies {
 		}
 	}
 	return ties
+}
+
+// Patchfiles are the patches the port applies, by name, in order; an error
+// where the evaluation couldn't settle them, or they aren't a list.
+func (p PortInfo) Patchfiles() ([]string, error) {
+	names, _, err := p.optionList("patchfiles")
+	return names, err
+}
+
+// FilesPath is where one of the port's files, a patch by its name, is in
+// its tree: below the port's directory, where filespath names, which the
+// evaluation wrote with its own root; files where it wrote none. False
+// where filespath isn't below the port's directory.
+func (p PortInfo) FilesPath(directory, name string) (string, bool) {
+	files := filepath.ToSlash(p.Options["filespath"])
+	if files == "" {
+		return path.Join(directory, "files", name), true
+	}
+	files += "/"
+	i := strings.LastIndex(files, "/"+directory+"/")
+	if i < 0 {
+		return "", false
+	}
+	return path.Join(directory, files[i+len(directory)+2:], name), true
 }
 
 // FetchCredentials reports whether MacPorts credentials apply to the port's

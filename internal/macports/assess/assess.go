@@ -33,8 +33,9 @@ import (
 // PortGroup's default noted. 4: that note read as MacPorts' PortGroup
 // computes its default, and a setup file its project's backend doesn't
 // read set apart. 5: a Node package's dependencies counted, as a Rust
-// crate's are, not held (D9).
-const Policy = 5
+// crate's are, not held (D9). 6: patches checked against the candidate's
+// source, its own and those it drops.
+const Policy = 6
 
 // Input is what one port's assessment reads.
 type Input struct {
@@ -50,6 +51,10 @@ type Input struct {
 	Toolchain *Toolchain
 	// Observed are the observations Wanted named, as the caller made them.
 	Observed map[Provider]Observation
+	// Patches are the candidate's patches and those the base applied that
+	// it doesn't, each checked against the candidate's archives; none
+	// where neither declares any, or the archives weren't fetched.
+	Patches []Patch
 }
 
 // Pair is one archive the candidate fetches, read, beside the base's it
@@ -101,6 +106,8 @@ const (
 	GoToolchainRule     = "go-toolchain"
 	RequiresPythonRule  = "python-requires"
 	PythonPinBehind     = "python-pin-behind"
+	PatchRejected       = "patch-rejected"
+	PatchDropped        = "patch-dropped"
 )
 
 // proven are the manifests whose dependencies a check proves (D9). A Go
@@ -139,6 +146,9 @@ func Assess(input Input) model.UpstreamComparison {
 		a.add(found)
 	}
 	if found, ok := a.pythonPin(); ok {
+		a.add(found)
+	}
+	for _, found := range a.patches() {
 		a.add(found)
 	}
 	return a.comparison

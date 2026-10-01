@@ -579,3 +579,66 @@ func TestAPortTheTreeHasntGotIsObservedAbsent(t *testing.T) {
 	require.Equal(t, assess.Observation{Version: "1.5.7", Directory: "archivers/zstd"}, observed[assess.Provider{Port: "zstd"}])
 	require.Equal(t, assess.Observation{Absent: true}, observed[assess.Provider{Port: "aws-lc"}])
 }
+
+// A revision's patches are checked against its source, as an update's
+// are: one that no longer applies is said, and one that does isn't
+// (the libuv run's finding 2).
+func TestARevisionsPatchesAreCheckedAgainstItsSource(t *testing.T) {
+	kept := "--- src/main.c\n+++ src/main.c\n@@ -1 +1 @@\n-int main;\n+int main(void);\n"
+	stale := "--- src/gone.c\n+++ src/gone.c\n@@ -1 +1 @@\n-old\n+new\n"
+	e, branch, base, tree := revisionFixture(t, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n", "textproc/jq/files/patch-kept.diff": kept, "textproc/jq/files/patch-stale.diff": stale})
+	p := newPlanner(t)
+	e.ArchivePlanner = p
+	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {{Name: "jq"}}}}
+	p.add(base, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.7.1"}, archives: map[string]map[string]string{"jq-1.7.1.tar.gz": {"src/main.c": "int main;\n"}}})
+	options := map[string]string{"patchfiles": "patch-kept.diff patch-stale.diff", "worksrcdir": "jq-1.8.1", "patch.pre_args": "-p0", "extract.rename": "0"}
+	p.add(tree, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.8.1", Options: options}, archives: map[string]map[string]string{"jq-1.8.1.tar.gz": {"src/main.c": "int main;\n"}}})
+	assessments, err := e.revisionAssessments(t.Context(), branch.ID, branch.Base, tree, true)
+	require.NoError(t, err)
+	require.Len(t, assessments, 1)
+	var patches []model.UpstreamChange
+	for _, change := range assessments[0].Comparison.Changes {
+		if change.Kind == "patch" {
+			patches = append(patches, change)
+		}
+	}
+	require.Len(t, patches, 1, "%+v", assessments[0].Comparison)
+	require.Equal(t, assess.PatchRejected, patches[0].Rule)
+	require.Equal(t, "patch-stale.diff", patches[0].Subject)
+	require.Contains(t, patches[0].Message, "patch-stale.diff doesn't apply to 1.8.1's source, so the build fails at its patch phase")
+	require.False(t, patches[0].Hold)
+	require.Equal(t, int64(2), p.fetches.Load(), "each version's archive fetched once, the patch check reading the revision's as fetched")
+}
+
+// The patches a revision drops are checked against its source too, read
+// from the base's tree: libuv's #34620 dropped patch-libuv-legacy.diff,
+// which no longer applied, and another (the libuv run's finding 2). A
+// patch whose file isn't in the tree is unchecked, with why, and an
+// archive a kept reading spared fetching is fetched for the check.
+func TestTheBasesPatchesARevisionDropsAreChecked(t *testing.T) {
+	e, _, base, _ := revisionFixture(t, nil)
+	p := newPlanner(t)
+	legacy := "--- src/unix/core.c\n+++ src/unix/core.c\n@@ -1 +1 @@\n-legacy\n+legacy, patched\n"
+	still := "--- src/uv.c\n+++ src/uv.c\n@@ -1 +1 @@\n-uv\n+uv, patched\n"
+	before := editTree(t, e, base, map[string]string{"devel/libuv/files/patch-legacy.diff": legacy, "devel/libuv/files/patch-still.diff": still})
+	after := editTree(t, e, base, map[string]string{"devel/libuv/Portfile": "name libuv\n"})
+	options := map[string]string{"worksrcdir": "libuv-1.52.1", "patch.pre_args": "-p0", "extract.rename": "0"}
+	p.add(after, plannedPort{info: macports.PortInfo{Name: "libuv", Version: "1.52.1", Options: options}, archives: map[string]map[string]string{"libuv-1.52.1.tar.gz": {"src/unix/core.c": "rewritten\n", "src/uv.c": "uv\n"}}})
+	info, plan, err := p.ArchivePlan(t.Context(), model.Source{Tree: after}, "devel/libuv", "libuv")
+	require.NoError(t, err)
+	had := macports.PortInfo{Name: "libuv", Options: map[string]string{"patchfiles": "patch-legacy.diff patch-still.diff patch-lost.diff"}}
+	directory := t.TempDir()
+	patches := e.revisionPatches(t.Context(), [2]macports.PortInfo{had, info}, plan, [2]model.Source{{Tree: before}, {Tree: after}}, "devel/libuv", directory, nil)
+	byName := map[string]assess.Patch{}
+	for _, patch := range patches {
+		byName[patch.Name] = patch
+	}
+	require.Len(t, byName, 3)
+	require.True(t, byName["patch-legacy.diff"].Dropped)
+	require.True(t, byName["patch-legacy.diff"].Checked)
+	require.False(t, byName["patch-legacy.diff"].Applies)
+	require.True(t, byName["patch-still.diff"].Applies)
+	require.False(t, byName["patch-lost.diff"].Checked)
+	require.Equal(t, "devel/libuv/files/patch-lost.diff isn't in the tree", byName["patch-lost.diff"].Detail)
+	require.Equal(t, int64(1), p.fetches.Load(), "fetched for the check, as no reading fetched it")
+}
