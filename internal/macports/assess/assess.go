@@ -36,7 +36,10 @@ import (
 // crate's are, not held (D9). 6: patches checked against the candidate's
 // source, its own and those it drops. 7: license text moved between files
 // said once, holding nothing, and a subport's archives planned for it.
-const Policy = 7
+// 8: a vendored port's patches read in the tree, so one with patches of
+// its own is compared, where rust's were "not compared" (the rust and
+// cargo run).
+const Policy = 8
 
 // Input is what one port's assessment reads.
 type Input struct {

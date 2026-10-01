@@ -19,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/project"
 	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/sourcecompare"
@@ -180,6 +181,9 @@ func (e *Engine) makeAssessments(ctx context.Context, branch model.BranchID, bas
 			// One recorded incomplete for what another try may not meet, a
 			// network's failure or a forge's rate limit, is tried again.
 			if a, ok := have(port.Name); ok && !a.Comparison.Transient {
+				// Said, since whether one was made again or reused wasn't
+				// (the rust and cargo run).
+				progress.VerboseReport(ctx, "%s: the assessment recorded for these files under policy %d stands", port.Name, a.Policy)
 				found = append(found, a)
 				continue
 			}
