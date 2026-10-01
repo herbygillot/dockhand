@@ -151,6 +151,37 @@ func TestCleanupPrunesTheJournal(t *testing.T) {
 	}))
 }
 
+// Cleanup keeps today's events, however short cleanup.after is: serve's
+// daily limit counts the pull requests it opened since midnight from
+// them, and an hour's after pruned the morning's, so serve opened more
+// than its limit. Yesterday's go as after says.
+func TestCleanupKeepsTheEventsTodaysSubmitLimitCounts(t *testing.T) {
+	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
+	f := setup(t)
+	e := f.open(t)
+	now := e.now()
+	morning := dayStart(now).Add(time.Minute)
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		for _, event := range []model.Event{
+			{At: dayStart(now).Add(-time.Minute), Kind: ServeSubmitKind, Level: model.LevelInfo, Message: "yesterday's"},
+			{At: morning, Kind: ServeSubmitKind, Level: model.LevelInfo, Message: "this morning's"},
+		} {
+			if _, err := tx.AppendEvent(event); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	require.Greater(t, now.Sub(morning), time.Hour, "the morning's is older than after")
+
+	report, err := e.Cleanup(t.Context(), session(t, e), time.Hour)
+	require.NoError(t, err)
+	require.Equal(t, 1, report.Events, "yesterday's")
+	opened, err := e.servedToday(t.Context(), now)
+	require.NoError(t, err)
+	require.Equal(t, 1, opened, "this morning's still counts")
+}
+
 // Cleanup removes the kept archives no live result names, with their
 // files, and what no record names once it is older than its age: a file
 // whose record never followed, a fetch that didn't finish. An open

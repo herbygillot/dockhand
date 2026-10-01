@@ -162,7 +162,7 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 | The daily look | 07:00 | a failure waits a day | `engine/serve.go:492` | in usage.md · `serve.outdated_at` |
 | Checks at once per provider | tart 1, github 2, command 1 | runs wait | `config/config.go:243` | in usage.md · `providers.*.capacity` |
 | Cleanup | once a day | a failure waits a day | `engine/clean.go:744` | in usage.md |
-| Caches, kept archives, events, sessions | 7 days | pruned | `config/config.go:155` | in usage.md · `cleanup.after` |
+| Caches, kept archives, events, sessions | 7 days | pruned; today's events stay whatever the age, as serve.submit_limit counts them | `config/config.go:155 · engine/clean.go` (`dayStart`) | in usage.md · `cleanup.after` |
 | Free space that triggers cleanup | 30 GB; a 1 h pause when low | — | `config/config.go:123 · engine/clean.go:791` | in usage.md · `cleanup.min_free` |
 | Tart's vanilla images | 30 days unused | removed | `engine/clean.go:739` | in usage.md |
 | Database copies kept at a migration | 30 days | removed | `store/sqlite/sqlite.go:90` | in usage.md |

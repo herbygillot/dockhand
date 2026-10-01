@@ -643,16 +643,21 @@ func (p *passingSubmitter) maybe(ctx context.Context) {
 }
 
 // servedToday counts the pull requests serve opened by itself since the
-// start of now's day.
+// start of now's day. Cleanup keeps the day's events for it (Cleanup).
 func (e *Engine) servedToday(ctx context.Context, now time.Time) (int, error) {
-	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	var count int
 	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		var err error
-		count, err = r.CountEvents(ServeSubmitKind, midnight)
+		count, err = r.CountEvents(ServeSubmitKind, dayStart(now))
 		return err
 	})
 	return count, err
+}
+
+// dayStart is midnight at the start of t's day, where t is: the day
+// serve.submit_limit counts.
+func dayStart(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 }
 
 // Serving is what the leading serve says about itself, for status and

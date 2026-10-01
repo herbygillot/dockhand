@@ -332,7 +332,7 @@ Serve opens no pull requests by default. With `--submit-passing`, or `serve.subm
 - what `clean --merged` would;
 - what checks whose process died left behind;
 - port indexes unused for `cleanup.after`;
-- the journal's events older than `cleanup.after`, and the sessions that ended or went quiet before then, but for one a lease still names;
+- the journal's events older than `cleanup.after`, and the sessions that ended or went quiet before then, but for one a lease still names, and for today's, which `serve.submit_limit` counts, however short `cleanup.after` is;
 - the archives Tart's builds made, which checks keep in `~/.dockhand/archives` for later builds to install, once no open branch's check names them and none has named them within `cleanup.after`. It says how much stays;
 - the vanilla images Tart pulled for `providers setup tart`, once unused for 30 days. Each is deleted from dockhand's own Tart home with `tart delete`, never `tart prune`, and the next setup of its release downloads it again.
 
