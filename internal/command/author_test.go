@@ -315,7 +315,7 @@ func TestUpdateRevbumpsTheLibraryDependents(t *testing.T) {
 	testDependentReader = jqDependents{under: true}
 	out, _, err = dockhand(t, "update", "jq", "--revbump-dependents", "--plan")
 	require.NoError(t, err)
-	require.Contains(t, out, ":\n  yq\n  · under a variant, which the index doesn't record: jo (+jq)\n")
+	require.Contains(t, out, ":\n  yq\n  · under a variant, found in the Portfile, which the index doesn't record: jo (+jq)\n")
 	testDependentReader = jqDependents{}
 
 	out, _, err = dockhand(t, "update", "jq", "--revbump-dependents")

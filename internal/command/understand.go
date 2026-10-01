@@ -289,7 +289,7 @@ func writeImpact(out io.Writer, impact engine.Impact) {
 		for _, dependent := range impact.Dependents {
 			dependents = append(dependents, dependent.Words())
 		}
-		row(label, strings.Join(dependents, ", ")+"; candidates to look at, not proof of anything")
+		row(label, strings.Join(dependents, ", ")+"; candidates to look at")
 	}
 
 	if len(impact.Shared) == 0 {

@@ -56,7 +56,7 @@ func TestDiffAndImpact(t *testing.T) {
 	out, _, err = dockhand(t, "impact")
 	require.NoError(t, err)
 	require.Equal(t, `Changed ports     jq
-Other dependents  jo (build), yq (library, runtime); candidates to look at, not proof of anything
+Other dependents  jo (build), yq (library, runtime); candidates to look at
 Shared files      none
 Next: dockhand check --also yq,jo builds them against the branch
 `, out)

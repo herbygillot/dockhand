@@ -252,7 +252,7 @@ func (r ReviewReport) DependentsWords() string {
 	if more := len(r.Dependents) - len(named); more > 0 {
 		words += fmt.Sprintf(", and %d more", more)
 	}
-	return fmt.Sprintf("%s, from the index at %s: %s; candidates to look at, not proof of anything.", plural(len(r.Dependents), "dependent"), short(model.ObjectID(r.Base)), words)
+	return fmt.Sprintf("%s, from the index at %s: %s; candidates to look at.", plural(len(r.Dependents), "dependent"), short(model.ObjectID(r.Base)), words)
 }
 
 // Comments are the findings on a Portfile line, as comments on that line.
