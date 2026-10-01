@@ -536,7 +536,12 @@ proc demo_crates {} {
 port::register_callback demo_crates
 `,
 		"devel/zdemo/Portfile": port("zdemo", "master_sites https://example.invalid/releases\nchecksums sha256 "+sum+" size 10\n"),
-		"devel/zgit/Portfile":  port("zgit", "fetch.type git\ngit.url https://example.invalid/zgit.git\ngit.branch "+strings.Repeat("b", 40)+"\n"),
+		// One with a patch of its own, read in its files/ (the rust and
+		// cargo run, whose nine patches read "local patch directory is
+		// unavailable").
+		"devel/zpatched/Portfile":               port("zpatched", "master_sites https://example.invalid/releases\nchecksums sha256 "+sum+" size 10\npatchfiles patch-build.diff\n"),
+		"devel/zpatched/files/patch-build.diff": "--- a/build\n+++ b/build\n",
+		"devel/zgit/Portfile":                   port("zgit", "fetch.type git\ngit.url https://example.invalid/zgit.git\ngit.branch "+strings.Repeat("b", 40)+"\n"),
 	})
 	planner, err := e.archivePlanner()
 	require.NoError(t, err)
@@ -547,6 +552,10 @@ port::register_callback demo_crates
 	require.Equal(t, "zdemo-1.0.tar.gz", plan[0].Name)
 	require.Contains(t, info.Options["cargo.crates"], "anyhow", "the port is as it is, crates and all")
 	require.Contains(t, info.Options["checksums"], "anyhow-1.0.0.crate")
+
+	_, plan, err = planner.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/zpatched", "")
+	require.NoError(t, err)
+	require.Equal(t, "zpatched-1.0.tar.gz", plan[0].Name)
 
 	_, _, err = planner.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/zgit", "")
 	require.ErrorIs(t, err, ErrNoArchives)

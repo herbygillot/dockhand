@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -285,6 +286,17 @@ func (p *evaluatedPorts) withoutVendored(ctx context.Context, files *workspace.W
 	observation, err := p.ports.Observe(ctx, bound, macports.ObservationRequest{SelectedOnly: true})
 	if err != nil {
 		return nil, err
+	}
+	// The overlay is gone once this returns, and with it the files/ its
+	// evaluation's filespath names, which the fetch policy reads the
+	// port's patches in: they're the tree's, as the port as it is says.
+	// rust's nine patches read "local patch directory is unavailable", and
+	// its archives weren't compared (the rust and cargo run).
+	if own, ok := observation.Snapshot.Ports[target.Name]; ok {
+		own.Options = maps.Clone(own.Options)
+		own.Options["filespath"] = info.Options["filespath"]
+		observation.Snapshot.Ports = maps.Clone(observation.Snapshot.Ports)
+		observation.Snapshot.Ports[target.Name] = own
 	}
 	return &observation, nil
 }
