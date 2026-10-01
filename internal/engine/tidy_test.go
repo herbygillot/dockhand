@@ -371,3 +371,32 @@ func TestTidyKeepsTheCommitsItWouldntChange(t *testing.T) {
 	require.NotEqual(t, jq, second.Commits[1])
 	require.Equal(t, []string{"jq: update to 1.8.1", "yq: rebuild for jq 1.8.1"}, log(t, branch.Worktree, branch.Base))
 }
+
+// Once a branch's work is committed, a worktree dockhand made is narrowed
+// back to _resources and the ports the branch changes: edit jq widened the
+// ov branch's worktree for good (the ov run's finding 6).
+func TestTidyNarrowsAWorktreeBackToTheBranchsPorts(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
+	require.NoError(t, err)
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
+	require.NoError(t, err)
+	_, err = e.Edit(t.Context(), branch, "libharbor")
+	require.NoError(t, err)
+	worktree, err := e.openWorktree(t.Context(), branch)
+	require.NoError(t, err)
+	cone, err := worktree.SparseCone(t.Context())
+	require.NoError(t, err)
+	require.Contains(t, cone, "devel/libharbor", "edit widened it")
+
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	result, err := e.ApplyTidy(t.Context(), plan)
+	require.NoError(t, err)
+	require.Equal(t, []string{"devel/libharbor"}, result.Narrowed)
+	cone, err = worktree.SparseCone(t.Context())
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"_resources", "textproc/jq"}, cone)
+	require.NoDirExists(t, filepath.Join(branch.Worktree, "devel/libharbor"))
+}

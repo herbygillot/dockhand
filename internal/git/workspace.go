@@ -87,6 +87,14 @@ func (r *Repository) ExpandSparse(ctx context.Context, directories ...string) er
 	return err
 }
 
+// NarrowSparse sets the worktree's sparse cone to directories, leaving the
+// rest out; untracked files in a directory left out stay, as git leaves
+// them.
+func (r *Repository) NarrowSparse(ctx context.Context, directories []string) error {
+	_, err := r.output(ctx, append([]string{"sparse-checkout", "set", "--cone", "--"}, directories...)...)
+	return err
+}
+
 // SparseCone lists the worktree's sparse directories; empty when the
 // checkout is not sparse.
 func (r *Repository) SparseCone(ctx context.Context) ([]string, error) {

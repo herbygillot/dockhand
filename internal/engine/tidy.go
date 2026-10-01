@@ -679,6 +679,9 @@ type TidyResult struct {
 	// Kept is how many of the leading commits are the branch's own, as
 	// they were, since tidy wouldn't change them.
 	Kept int
+	// Narrowed are the directories a worktree dockhand made was narrowed
+	// to leave out again, once nothing of the branch's is in them.
+	Narrowed []string
 }
 
 // OlderBuilds are the builds the branch's commits name in Generated-By
@@ -816,11 +819,51 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 	if err := worktree.ResetIndex(ctx); err != nil {
 		return result, fmt.Errorf("the commits are made, but resetting the index failed: %w; git reset brings it in line", err)
 	}
+	// A narrowing that fails leaves the worktree as wide as it was.
+	if narrowed, err := e.narrow(ctx, worktree, plan.Branch, plan.Base, plan.Final); err == nil {
+		result.Narrowed = narrowed
+	}
 	message := fmt.Sprintf("tidied %s into %s (checkpoint %s)", plural(len(plan.History), "commit"), plural(len(result.Commits), "commit"), checkpoint.Name())
 	if err := e.history().Settle(ctx, checkpoint, model.CheckpointApplied, message); err != nil {
 		return result, history.Unfinished("the commits are made", err)
 	}
 	return result, nil
+}
+
+// narrow leaves out of a worktree dockhand made the directories the branch
+// doesn't change, once its work is committed: edit jq widened the ov
+// branch's worktree with sysutils/jq for good (the ov run's finding 6). Its
+// cone is _resources and the ports the branch changes, as start and
+// checkOutAgain make it. A worktree the person made is theirs, as wide as
+// they made it, and one that isn't sparse is whole; nothing's narrowed
+// before the work is committed, when an edit may be under way.
+func (e *Engine) narrow(ctx context.Context, worktree *git.Repository, branch model.Branch, base, final string) ([]string, error) {
+	if !branch.Managed {
+		return nil, nil
+	}
+	cone, err := worktree.SparseCone(ctx)
+	if err != nil || len(cone) == 0 {
+		return nil, err
+	}
+	trees, err := worktree.CommitTrees(ctx, []string{base})
+	if err != nil {
+		return nil, err
+	}
+	changed, err := worktree.ChangedPaths(ctx, trees[base], final)
+	if err != nil {
+		return nil, err
+	}
+	want := append([]string{macports.ResourcesDirectory}, ScopeOf(changed).Ports...)
+	var left []string
+	for _, directory := range cone {
+		if !slices.Contains(want, directory) {
+			left = append(left, directory)
+		}
+	}
+	if len(left) == 0 {
+		return nil, nil
+	}
+	return left, worktree.NarrowSparse(ctx, want)
 }
 
 // unchangedCommit reports whether a branch's commit can stand for the one a

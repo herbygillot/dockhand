@@ -362,6 +362,9 @@ func applyTidy(ctx context.Context, e *engine.Engine, streams Streams, plan engi
 		made = fmt.Sprintf("Kept %s as %s, and created %d", plural(result.Kept, "commit"), as, len(result.Commits)-result.Kept)
 	}
 	fmt.Fprintf(streams.Out, "%s. The files are unchanged.\nCheckpoint %s keeps the old history (dockhand restore %s).\n", made, name, name)
+	if len(result.Narrowed) > 0 {
+		fmt.Fprintf(streams.Out, "Left %s out of the worktree again, as nothing of the branch's is there.\n", strings.Join(result.Narrowed, ", "))
+	}
 	if warning := modifiedBuildWarning(plan, name); warning != "" {
 		fmt.Fprintln(streams.Err, warning)
 	}
