@@ -150,22 +150,48 @@ func (notInTree) Is(target error) bool { return target == ErrNoPort }
 // dependencyPhases words the index's reverse-dependency fields.
 var dependencyPhases = map[string]string{portindex.DependsBuild: "build", portindex.DependsLib: "library", portindex.DependsRun: "runtime"}
 
-// Dependents reads the direct dependents of the directories' ports from
-// the port index of the source.
-func (p *evaluatedPorts) Dependents(ctx context.Context, source model.Source, directories []string) (_ []Dependent, err error) {
+// index reads the port index of a source, staged for it as the source's
+// ports are resolved.
+func (p *evaluatedPorts) index(ctx context.Context, source model.Source, read func(*portindex.Index) error) (err error) {
 	files, done, err := p.workspaces.Acquire(ctx, p.repo, source)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer func() { err = errors.Join(err, done()) }()
 	tree, err := files.Tree(model.Platform{})
 	if err != nil {
-		return nil, err
+		return err
 	}
 	index, err := p.ports.Index.Index(ctx, tree)
 	if err != nil {
-		return nil, fmt.Errorf("reading the port index: %w", err)
+		return fmt.Errorf("reading the port index: %w", err)
 	}
+	return read(index)
+}
+
+// Spellings reads the ways the port index of the source writes a
+// maintainer (portindex.Index.Spellings).
+func (p *evaluatedPorts) Spellings(ctx context.Context, source model.Source, spelling string) (spellings []portindex.MaintainerSpelling, err error) {
+	err = p.index(ctx, source, func(index *portindex.Index) error {
+		spellings, err = index.Spellings(spelling)
+		return err
+	})
+	return spellings, err
+}
+
+// Dependents reads the direct dependents of the directories' ports from
+// the port index of the source.
+func (p *evaluatedPorts) Dependents(ctx context.Context, source model.Source, directories []string) (all []Dependent, err error) {
+	err = p.index(ctx, source, func(index *portindex.Index) error {
+		all, err = dependentsIn(index, directories)
+		return err
+	})
+	return all, err
+}
+
+// dependentsIn are the direct dependents of the directories' ports in an
+// index.
+func dependentsIn(index *portindex.Index, directories []string) ([]Dependent, error) {
 	var changed []string
 	if err := index.Each(func(entry portindex.Entry) bool {
 		if slices.Contains(directories, entry.Portdir) {

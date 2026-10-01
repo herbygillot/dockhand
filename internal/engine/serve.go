@@ -494,7 +494,13 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 		}
 	}
 	if len(settings.Maintainers) == 0 {
-		report(`serve: serve.for_outdated needs to know your ports: set maintainer = "{@you example.org:you}" in ~/.dockhand/config.toml`)
+		// The person's own line, as master's ports write their GitHub
+		// login, where it can be found (the flyctl run).
+		var suggestion MaintainerSuggestion
+		if master, err := e.fetchMaster(ctx); err == nil {
+			suggestion = e.SuggestMaintainer(ctx, master)
+		}
+		report("serve: serve.for_outdated needs to know your ports: " + MaintainerWords(suggestion))
 		return
 	}
 	found, err := e.Outdated(ctx, OutdatedRequest{Maintainers: settings.Maintainers})

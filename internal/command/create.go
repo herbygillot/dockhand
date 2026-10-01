@@ -32,7 +32,8 @@ Cargo.toml or pyproject.toml where it declares one MacPorts has a name for,
 else from GitHub's detection; the long description; and the category,
 guessed from the build system unless --category names it. The description
 is the manifest's one line where it has one, else GitHub's. The
-maintainer is your config's maintainer, else nomaintainer, marked. The new
+maintainer is your config's maintainer, else nomaintainer, marked, with
+the line to set: the one the ports naming your GitHub login write. The new
 Portfile is staged, so the next check includes it. Nothing is committed.
 
 The branch is --branch, else the one checked out here; --new starts one.
@@ -157,6 +158,12 @@ The branch is --branch, else the one checked out here; --new starts one.
 					marked = append(marked, what)
 				}
 				fmt.Fprintf(out, "  Unconfirmed, marked in the file: %s\n", strings.Join(marked, ", "))
+			}
+			if s.file.Maintainer == "" {
+				// The person's own line, as the ports at the branch's base
+				// write their GitHub login, where it can be found (the
+				// flyctl run).
+				fmt.Fprintf(out, "  maintainers: nomaintainer, as your config names none; %s\n", engine.MaintainerWords(e.SuggestMaintainer(ctx, branch.Base)))
 			}
 			writePlainHTTP(out, created.PlainHTTP)
 			fmt.Fprintf(out, "Next: dockhand edit %s, then dockhand check\n", created.Port)

@@ -2,6 +2,7 @@ package macports
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -66,6 +67,23 @@ func MaintainerIdentity(spelling string) string {
 		return spelling
 	}
 	return spelling + "@macports.org"
+}
+
+// Names reports whether one of the maintainer's spellings names whom
+// spelling does (MaintainerIdentity): {@ada example.org:ada} names @ada,
+// and ada@example.org too.
+func (m Maintainer) Names(spelling string) bool {
+	identity := MaintainerIdentity(spelling)
+	return slices.ContainsFunc(m, func(own string) bool { return MaintainerIdentity(own) == identity })
+}
+
+// String is the maintainer as a maintainers line writes it: a lone
+// spelling as it is, and several braced, {@ada example.org:ada}.
+func (m Maintainer) String() string {
+	if len(m) == 1 {
+		return m[0]
+	}
+	return "{" + strings.Join(m, " ") + "}"
 }
 
 // MaintainerKeyword reports whether a spelling is openmaintainer or

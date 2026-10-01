@@ -45,6 +45,23 @@ func TestAMaintainersSpellingsAreOneIdentity(t *testing.T) {
 	require.False(t, macports.MaintainerKeyword("ada"))
 }
 
+// A maintainer names whom any of its spellings names, as MacPorts reads
+// spellings, and is written back as a maintainers line writes it: a lone
+// spelling as it is, several braced.
+func TestAMaintainerNamesWhomItsSpellingsDo(t *testing.T) {
+	herby := macports.Maintainer{"gmail.com:herby.gillot", "@herbygillot"}
+	require.True(t, herby.Names("@HerbyGillot"))
+	require.True(t, herby.Names("herbygillot@github"))
+	require.True(t, herby.Names("herby.gillot@gmail.com"))
+	require.False(t, herby.Names("@herby"))
+	require.False(t, herby.Names("herbygillot"), "a MacPorts handle is its address, another identity")
+	require.Equal(t, "{gmail.com:herby.gillot @herbygillot}", herby.String())
+	require.Equal(t, "@herbygillot", macports.Maintainer{"@herbygillot"}.String())
+	read, err := macports.ReadMaintainers(herby.String() + " openmaintainer")
+	require.NoError(t, err)
+	require.Equal(t, []macports.Maintainer{herby, {"openmaintainer"}}, read, "it reads back as it was")
+}
+
 // checkedLines are maintainers lines as MacPorts writes them.
 var checkedLines = []string{
 	"{@ada example.org:ada} openmaintainer",

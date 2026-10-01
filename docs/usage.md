@@ -137,7 +137,7 @@ dockhand create https://github.com/owner/project --new --category devel
 - the category, unless `--category` names it: one of the tree's categories the project's description names (a "terminal text editor" is `editors`), else the build system's guess, and said with what it chose, since it picks the directory. Running `create` again with another `--category`, before the port is committed, moves it there, your edits included;
 - a Rust or Go port's `destroot`, which installs the programs its manifest names, since neither PortGroup installs anything.
 
-The description is the manifest's one line where it has one, else GitHub's. A plain-HTTP homepage is written as its `https://` form where that answers, since MacPorts prefers HTTPS, and said where it doesn't. The maintainer is your `maintainer` setting, else `nomaintainer`, marked. `--name` names the port when the project's name isn't right for it. The new Portfile is staged, so the next check includes it.
+The description is the manifest's one line where it has one, else GitHub's. A plain-HTTP homepage is written as its `https://` form where that answers, since MacPorts prefers HTTPS, and said where it doesn't. The maintainer is your `maintainer` setting, else `nomaintainer`, marked, and `create` says the line to set: the one the ports naming your GitHub login write at the branch's base, as `{gmail.com:herby.gillot @herbygillot}`, with any others they write named, each with how many ports write it, for you to choose from. It writes no configuration; where it can't find yours, it says `{@you example.org:you}` for you to fill in. `--name` names the port when the project's name isn't right for it. The new Portfile is staged, so the next check includes it.
 
 ### edit
 
@@ -308,7 +308,7 @@ dockhand serve --drain       # run what is queued now, then exit
 Between checks it:
 
 - reads your open pull requests every few minutes, so `status` shows their reviews and CI, and marks a merged one's branch merged;
-- once a day, at `serve.outdated_at`, looks for new releases of your ports and does what `serve.for_outdated` says: `list` counts them for status, `draft` prepares a branch for each, and `check` also checks each. A port that may have one, as `outdated` says, is never prepared: serve and status list it for your look;
+- once a day, at `serve.outdated_at`, looks for new releases of your ports and does what `serve.for_outdated` says: `list` counts them for status, `draft` prepares a branch for each, and `check` also checks each. A port that may have one, as `outdated` says, is never prepared: serve and status list it for your look. Without a `maintainer` setting it can't know your ports, and says the line to set, as `create` does: the one master's ports write your GitHub login with;
 - once a day, unless `cleanup.automatic = false`, cleans up automatically, as below;
 - posts macOS notifications as checks finish and pull requests change. They are posted through AppleScript, so macOS credits them to Script Editor, and clicking one opens it. `serve.notify = false` turns them off, and `--no-notify` turns them off for one run.
 

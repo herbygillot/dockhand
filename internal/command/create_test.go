@@ -16,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
 )
@@ -138,6 +139,8 @@ func TestCreateTakesTheManifestsLicenseAndLine(t *testing.T) {
 	require.Contains(t, out, "  homepage: over HTTPS, as MacPorts prefers; GitHub gives http://txt.hellman.io/\n", "the finding 6 of the txt run")
 	require.Contains(t, out, "txt 0.8.1 · Rust (Cargo.toml) · Cargo.toml says MIT OR Apache-2.0 · \"A fast, intuitive terminal text editor\"\n")
 	require.Contains(t, out, "Unconfirmed, marked in the file: category devel (guessed from the build system; create --category moves it), license (from Cargo.toml), long_description, maintainers")
+	require.Contains(t, out, "  maintainers: nomaintainer, as your config names none; set maintainer = \"{@you example.org:you}\" in ~/.dockhand/config.toml\n",
+		"no port at the base names @ada")
 	branch := regexp.MustCompile(`dockhand/(txt-[a-z0-9]{4})`).FindStringSubmatch(out)[1]
 	data, err := os.ReadFile(filepath.Join(w.home, "Source", "macports-branches", branch, "devel/txt/Portfile"))
 	require.NoError(t, err)
@@ -181,6 +184,36 @@ func TestCreateTakesTheManifestsLicenseAndLine(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, out, "homepage: over HTTPS")
 	require.Contains(t, out, "MacPorts prefers HTTPS; over plain HTTP:\n  homepage http://txt.hellman.io/: https doesn't answer there\n")
+}
+
+// maintainedPort is onePort, with an index whose ports write @ada two ways.
+type maintainedPort struct{ onePort }
+
+func (maintainedPort) Spellings(_ context.Context, _ model.Source, spelling string) ([]portindex.MaintainerSpelling, error) {
+	if spelling != "@ada" {
+		return nil, nil
+	}
+	return []portindex.MaintainerSpelling{{Maintainer: macports.Maintainer{"@ada", "example.org:ada"}, Portfiles: 12}, {Maintainer: macports.Maintainer{"@ada"}, Portfiles: 2}}, nil
+}
+
+// Where the config names no maintainer, create writes nomaintainer, and
+// says the line to set: the person's own, as the ports naming their
+// GitHub login write it, with the others named to choose from. It writes
+// no config (the flyctl run, macports/macports-ports#35069).
+func TestCreateSuggestsTheMaintainerLineThePortsWrite(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	testProjectReader = txtProject{}
+	testPreparer = func(e *engine.Engine) engine.Preparer { return checksummer{repo: e.Repo} }
+	testPortReader = maintainedPort{}
+	t.Cleanup(func() { testProjectReader, testPreparer, testPortReader = nil, nil, nil })
+	config := filepath.Join(w.home, ".dockhand", "config.toml")
+	require.NoFileExists(t, config)
+
+	out, _, err := dockhand(t, "create", "https://github.com/ErikHellman/txt", "--new", "--category", "editors")
+	require.NoError(t, err)
+	require.Contains(t, out, "  maintainers: nomaintainer, as your config names none; set maintainer = \"{@ada example.org:ada}\" in ~/.dockhand/config.toml, as 12 of the ports that name @ada write it, or as others do: \"@ada\" (2)\n")
+	require.NoFileExists(t, config, "it only suggests")
 }
 
 // A port's plain-HTTP URLs are said with whether their https form answers,
