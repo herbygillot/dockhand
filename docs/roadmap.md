@@ -377,6 +377,7 @@ What batches 10 to 15 touch doesn't move with item 6, so they wait without cost,
   - the mirror's index seeding a base older than it, by the paths changed from the base to a commit after the mirror's time. Sound, but a `_resources` change in that span forces a full pass anyway, and in this checkout a base a week old has one: it would spare macOS 15's 3m42s full pass only for a base a few days old, once per base and release (check-64);
   - steps for GitHub Actions' logs, where each runner's job log is shared by its ports, and the `::group::` headings are MacPorts' workflow's, not dockhand's: reading them for positions widens an existing exception to documented interfaces, the person's call;
   - serve remembering, for the life of the process, the builds GitHub has, rather than asking once per candidate it plans.
+- **An excluded cell saying why** (the wasmer run, [#35077](https://github.com/macports/macports-ports/pull/35077)). Tested on's macOS 12 column read only "— excluded", where the Portfile marks wasmer `known_fail` on arm64 before macOS 14, and `check --plan` said the bare keyword. The column stays, since it tells a reviewer what was planned and not built; the cell and the plan should give the plan's `Exclusion.Reason` in words, as "— not built: the Portfile marks it known_fail here". Taken when the body's words are next touched.
 - **A flake to watch.** `TestTidyAsksWhatItCannotKnow` once failed in its cleanup with a directory not empty ([note](activity/2026-09-27-stopped-checks.md#seen-once-not-explained)).
 
 ### Done, by the run that asked
