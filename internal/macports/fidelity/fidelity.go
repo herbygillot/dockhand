@@ -25,6 +25,13 @@ type Report struct {
 	UnexpectedChanges []string
 }
 
+// Err is the report's unexpected changes as one ErrMismatch, said once and
+// joined: printed as a list, they read "[fidelity: …: rust-src has …]"
+// inside another "fidelity: …" (the rust and cargo run).
+func (r Report) Err() error {
+	return fmt.Errorf("%w: %s", ErrMismatch, strings.Join(r.UnexpectedChanges, "; "))
+}
+
 // CheckSnapshot requires an evaluation to describe its bound source, target,
 // and platform completely.
 func CheckSnapshot(snapshot macports.Snapshot, bound macports.Context) error {
@@ -304,16 +311,20 @@ func ReleaseScope(before, after macports.Snapshot, selected string, authorized b
 		}
 		member.Follower = followsObsolete(name, selected, old, next, oldRoot, nextRoot)
 		if member.NeedsAuthorization(selected) && !authorized {
-			return nil, fmt.Errorf("%w: shared release also changes %s; inspect with assess --shared-release --version and authorize with bump --shared-release", ErrMismatch, name)
+			return nil, fmt.Errorf("%w: %s, another port of the same Portfile, moves with %s's release; --shared-release moves both, and --plan shows what that changes first", ErrMismatch, name, selected)
 		}
+		// Said as what the person sees of the Portfile, not as how the
+		// release is prepared: "rust-src has independent distfiles;
+		// shared-source preparation is required" said neither what nor
+		// why (the rust and cargo run).
 		if old.Version != oldRoot.Version || next.Version != nextRoot.Version {
-			return nil, fmt.Errorf("%w: %s belongs to an independent release", ErrMismatch, name)
+			return nil, fmt.Errorf("%w: %s, another port of the same Portfile, keeps a version of its own, which updating %s doesn't move", ErrMismatch, name, selected)
 		}
 		// A shared input must describe the same source, not just coincident versions.
 		if !member.MetadataOnly {
 			for _, key := range []string{"git.branch", "distfiles", "master_sites", "checksums"} {
 				if old.Options[key] != oldRoot.Options[key] || next.Options[key] != nextRoot.Options[key] {
-					return nil, fmt.Errorf("%w: %s has independent %s; shared-source preparation is required", ErrMismatch, name, key)
+					return nil, fmt.Errorf("%w: %s, another port of the same Portfile, fetches its own source (its %s differ from %s's), which updating %s doesn't move", ErrMismatch, name, key, selected, selected)
 				}
 			}
 		}
@@ -340,7 +351,7 @@ func followsObsolete(name, selected string, old, next, oldRoot, nextRoot macport
 func ScopedVersion(shared bool, before, after macports.Snapshot, selected string, release model.Release, checksums string) Report {
 	scope, err := ReleaseScope(before, after, selected, shared)
 	if err != nil {
-		return Report{Before: before, After: after, UnexpectedChanges: []string{err.Error()}}
+		return Report{Before: before, After: after, UnexpectedChanges: []string{strings.TrimPrefix(err.Error(), ErrMismatch.Error()+": ")}}
 	}
 	if len(scope.Affected) == 1 && scope.Affected[0].Target.Name == selected {
 		return version(before, after, selected, release, checksums)

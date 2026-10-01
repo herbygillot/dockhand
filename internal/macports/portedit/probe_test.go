@@ -88,7 +88,7 @@ func TestVersionProbingRejectsAmbiguityAndSiblingChanges(t *testing.T) {
 set b 1.2.3
 if {$a ne "1.2.3"} {github.setup owner fixture $a v} else {github.setup owner fixture $b v}`, "", "2 version inputs", ErrUnsupported},
 		// The subport is selected: its sibling, the main port, moves too.
-		{"sibling", "github.setup owner fixture 1.2.3 v\nsubport fixture-child {}", "fixture-child", "shared release also changes fixture", ErrFidelity},
+		{"sibling", "github.setup owner fixture 1.2.3 v\nsubport fixture-child {}", "fixture-child", "fixture, another port of the same Portfile, moves with fixture-child's release; --shared-release moves both", ErrFidelity},
 		{"unchanged evaluated version", "github.setup owner fixture 1.2.3 v\nversion 5", "", "did not change the evaluated version", ErrUnsupported},
 		{"failed probe", `set release 1.2.3
 if {$release ne "1.2.3"} {error "candidate is not evaluable"}

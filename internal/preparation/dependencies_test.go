@@ -299,8 +299,8 @@ extract.rename no
 			result, err := service.Prepare(t.Context(), request)
 			switch scenario {
 			case "shared-unauthorized":
-				require.ErrorContains(t, err, "shared release also changes fixture")
-				require.ErrorContains(t, err, "authorize with bump --shared-release")
+				require.ErrorContains(t, err, "fixture, another port of the same Portfile, moves with fixture-server's release")
+				require.ErrorContains(t, err, "--shared-release moves both")
 			case "unsupported-context":
 				require.ErrorContains(t, err, "pre-fetch hook 1 ends with `set distfiles changed.tar.gz` rather than return -code error, which writes `distfiles`, at Portfile line 46")
 				require.NotContains(t, err.Error(), "dependency resolution failed")

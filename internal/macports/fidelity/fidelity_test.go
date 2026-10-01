@@ -112,3 +112,25 @@ func TestAFetchIsComparedByItsKind(t *testing.T) {
 	require.Equal(t, []string{"demo.fetch changed"}, Compare("demo", port("standard"), port("git")))
 	require.Empty(t, Compare("demo", port("standard"), port("standard")))
 }
+
+// A port of the same Portfile that fetches its own source is said as the
+// person sees it, and once: rust's refusal read "fidelity: … : [fidelity:
+// … : rust-src has independent distfiles; shared-source preparation is
+// required]" (the rust and cargo run).
+func TestASiblingFetchingItsOwnSourceIsSaidOnce(t *testing.T) {
+	before := snapshot(map[string]macports.PortInfo{
+		"rust":     {Name: "rust", Version: "1.98.1", Options: map[string]string{"distfiles": "rustc-1.98.1-src.tar.gz", "checksums": "sha256 aaaa"}},
+		"rust-src": {Name: "rust-src", Version: "1.98.1", Options: map[string]string{"distfiles": "rust-src-1.98.1.tar.gz", "checksums": "sha256 bbbb"}},
+	})
+	after := snapshot(map[string]macports.PortInfo{
+		"rust":     {Name: "rust", Version: "1.99.0", Options: map[string]string{"distfiles": "rustc-1.99.0-src.tar.gz", "checksums": "sha256 cccc"}},
+		"rust-src": {Name: "rust-src", Version: "1.99.0", Options: map[string]string{"distfiles": "rust-src-1.99.0.tar.gz", "checksums": "sha256 dddd"}},
+	})
+	err := ScopedVersion(true, before, after, "rust", model.Release{Version: "1.99.0"}, "sha256 cccc").Err()
+	require.ErrorIs(t, err, ErrMismatch)
+	require.EqualError(t, err, "fidelity: evaluation does not match the intended change: rust-src, another port of the same Portfile, fetches its own source (its distfiles differ from rust's), which updating rust doesn't move")
+	// Without --shared-release, a sibling moving with the release names the
+	// flag that moves both, where it named an assess command v3 hasn't.
+	require.EqualError(t, ScopedVersion(false, before, after, "rust", model.Release{Version: "1.99.0"}, "sha256 cccc").Err(),
+		"fidelity: evaluation does not match the intended change: rust-src, another port of the same Portfile, moves with rust's release; --shared-release moves both, and --plan shows what that changes first")
+}

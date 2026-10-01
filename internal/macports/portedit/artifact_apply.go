@@ -72,7 +72,7 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 		checksums := strings.Join(wantedChecksums(frame.binding, updates), " ")
 		finalFidelity := fidelity.ScopedChecksums(input.scope, frame.after, final.Snapshot, input.target.Name, checksums)
 		if len(finalFidelity.UnexpectedChanges) > 0 {
-			return result, fmt.Errorf("%w: final context %+v: %v", ErrFidelity, frame.profile, finalFidelity.UnexpectedChanges)
+			return result, fmt.Errorf("%w: final context %+v: %s", ErrFidelity, frame.profile, strings.Join(finalFidelity.UnexpectedChanges, "; "))
 		}
 	}
 	// The final native snapshot is kept last: workflow validates the stored Git tree

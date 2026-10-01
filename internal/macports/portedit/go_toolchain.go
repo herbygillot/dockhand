@@ -96,7 +96,7 @@ func (s *Service) raiseGoToolchain(ctx context.Context, request Request, input *
 	result.Files = []portfile.Edit{evaluated.edit}
 	result.report(report)
 	if len(report.UnexpectedChanges) > 0 {
-		return fmt.Errorf("%w: %v", ErrFidelity, report.UnexpectedChanges)
+		return report.Err()
 	}
 	progress.Report(ctx, "Raising go.toolchain_min from %s to %s, which %s's go.mod requires", current, required, input.target.Name)
 	outcome(GoToolchainRaised)

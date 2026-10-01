@@ -357,7 +357,9 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		// The dependents are the index's at the master planned on.
 		branch.Base = update.Base
 	}
-	if errors.Is(err, engine.ErrUnsupported) {
+	// One whose evaluation isn't the change intended is refused as one it
+	// can't make: rust's came bare, with no way on (the rust and cargo run).
+	if errors.Is(err, engine.ErrUnsupported) || errors.Is(err, engine.ErrFidelity) {
 		return branch, update, byHand(err, request, branch, started)
 	}
 	if uncertain := new(engine.UncertainRelease); errors.As(err, &uncertain) {
@@ -518,7 +520,7 @@ func announce(out io.Writer, branch model.Branch, started bool) {
 // checksums dockhand can't find in the Portfile to edit, it can't refresh
 // either, and prints instead. A plan changes nothing, so it keeps nothing.
 func byHand(err error, request engine.UpdateRequest, branch model.Branch, started bool) error {
-	reason := strings.TrimPrefix(err.Error(), engine.ErrUnsupported.Error()+": ")
+	reason := strings.TrimPrefix(strings.TrimPrefix(err.Error(), engine.ErrUnsupported.Error()+": "), engine.ErrFidelity.Error()+": ")
 	var unlocated *engine.Unlocated
 	if errors.As(err, &unlocated) {
 		reason = unlocated.Error()

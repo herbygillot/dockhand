@@ -6,6 +6,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/model"
 	"slices"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
@@ -109,7 +110,7 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 		} else {
 			report := fidelity.ScopedVersion(request.SharedRelease, before.Snapshot, after.Snapshot, input.target.Name, *request.Release, next.Options["checksums"])
 			if len(report.UnexpectedChanges) > 0 {
-				return fmt.Errorf("%w: context %+v: %v", ErrFidelity, profile, report.UnexpectedChanges)
+				return fmt.Errorf("%w: context %+v: %s", ErrFidelity, profile, strings.Join(report.UnexpectedChanges, "; "))
 			}
 		}
 		oldBinding, err := s.bindArchives(ctx, input, input.data, before)

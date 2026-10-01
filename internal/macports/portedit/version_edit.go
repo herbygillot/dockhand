@@ -210,7 +210,7 @@ func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator,
 		}
 		report := fidelity.ScopedVersion(request.SharedRelease, baseline, after, input.target.Name, desired, next.Options["checksums"])
 		if checkFidelity && len(report.UnexpectedChanges) > 0 {
-			rejected = fmt.Errorf("%w: %v", ErrFidelity, report.UnexpectedChanges)
+			rejected = report.Err()
 			continue
 		}
 		selected, snapshot = contents, after

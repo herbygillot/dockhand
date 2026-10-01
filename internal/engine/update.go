@@ -98,6 +98,11 @@ func (v PortVersion) String() string {
 // sentinel's own words.
 var ErrUnsupported = preparation.ErrUnsupported
 
+// ErrFidelity is an edit whose evaluation isn't the change intended, which
+// update refuses as it refuses an edit it can't make, with how to make it
+// by hand.
+var ErrFidelity = preparation.ErrFidelity
+
 // Unlocated is a checksum declaration dockhand can't find in the Portfile
 // to edit, an unsupported edit that names the archive and why.
 type Unlocated = preparation.Unlocated
