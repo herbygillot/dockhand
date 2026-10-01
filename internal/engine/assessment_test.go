@@ -642,3 +642,36 @@ func TestTheBasesPatchesARevisionDropsAreChecked(t *testing.T) {
 	require.Equal(t, "devel/libuv/files/patch-lost.diff isn't in the tree", byName["patch-lost.diff"].Detail)
 	require.Equal(t, int64(1), p.fetches.Load(), "fetched for the check, as no reading fetched it")
 }
+
+// A subport's fetch plan is its own, asked for by its name: libuv's
+// libuv-devel couldn't be assessed, since the directory resolved to libuv
+// alone (the batch 11 run on #34620). A name the directory doesn't define
+// is ErrNoPort, as a subport new to it is on the base's side.
+func TestASubportsArchivesArePlannedForIt(t *testing.T) {
+	f := setup(t)
+	f.options.Tclsh = testsupport.MacPortsTclsh(t)
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "subported"})
+	require.NoError(t, err)
+	trees, err := e.Repo.CommitTrees(t.Context(), []string{string(branch.Base)})
+	require.NoError(t, err)
+	sum := strings.Repeat("a", 64)
+	tree := editTree(t, e, model.ObjectID(trees[string(branch.Base)]), map[string]string{
+		"devel/zdemo/Portfile": "PortSystem 1.0\nname zdemo\nversion 1.0\ncategories devel\nlicense MIT\nmaintainers nomaintainer\n" +
+			"homepage https://example.invalid\ndescription demo\nlong_description demo\nmaster_sites https://example.invalid/releases\n" +
+			"checksums sha256 " + sum + " size 10\nsubport zdemo-devel {\n    version 2.0\n}\n",
+	})
+	planner, err := e.archivePlanner()
+	require.NoError(t, err)
+	info, plan, err := planner.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/zdemo", "zdemo-devel")
+	require.NoError(t, err)
+	require.Equal(t, "zdemo-devel", info.Name)
+	require.Equal(t, "2.0", info.Version)
+	require.Len(t, plan, 1)
+	require.Equal(t, "zdemo-2.0.tar.gz", plan[0].Name, "distname is ${name}-${version}, the main port's name")
+	info, _, err = planner.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/zdemo", "zdemo")
+	require.NoError(t, err)
+	require.Equal(t, "1.0", info.Version)
+	_, _, err = planner.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/zdemo", "zdemo-nightly")
+	require.ErrorIs(t, err, ErrNoPort)
+}

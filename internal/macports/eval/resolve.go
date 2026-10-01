@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -79,6 +80,24 @@ func (e *Evaluator) Resolve(ctx context.Context, tree macports.Tree, selection m
 		return nil, err
 	}
 	defer func() { err = errors.Join(err, session.Close()) }()
+	if selection.Subport != "" {
+		// A subport the Portfile doesn't define is a target that can't be
+		// resolved, said as one, not as MacPorts failing to evaluate it:
+		// the base of a revision that adds a subport has none.
+		main := provisional
+		main.Subport = ""
+		mainBound, err := tree.Select(main)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %w", macports.ErrTarget, err)
+		}
+		top, subs, err := evaluateOne(ctx, session, mainBound, "")
+		if err != nil {
+			return nil, err
+		}
+		if top.Name != selection.Subport && !slices.Contains(subs, selection.Subport) {
+			return nil, fmt.Errorf("%w: %s defines no subport %s", macports.ErrTarget, candidates[0], selection.Subport)
+		}
+	}
 	info, _, err := evaluateOne(ctx, session, bound, selection.Subport)
 	if err != nil {
 		return nil, err

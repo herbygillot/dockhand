@@ -226,7 +226,18 @@ func (p *evaluatedPorts) ArchivePlan(ctx context.Context, source model.Source, d
 	}
 	i := slices.IndexFunc(targets, func(target model.Target) bool { return port == "" || target.Name == port })
 	if i < 0 {
-		return macports.PortInfo{}, nil, fmt.Errorf("%w: %s defines no port %s", ErrNoPort, directory, port)
+		// A directory resolves to its main port; a subport is asked for by
+		// its name, as libuv's libuv-devel is (the batch 11 run on #34620).
+		targets, err = p.ports.Resolve(ctx, tree, macports.Selection{Selector: directory, Subport: port})
+		switch {
+		case errors.Is(err, macports.ErrTarget):
+			return macports.PortInfo{}, nil, fmt.Errorf("%w: %s defines no port %s", ErrNoPort, directory, port)
+		case err != nil:
+			return macports.PortInfo{}, nil, err
+		}
+		if i = slices.IndexFunc(targets, func(target model.Target) bool { return target.Name == port }); i < 0 {
+			return macports.PortInfo{}, nil, fmt.Errorf("%w: %s defines no port %s", ErrNoPort, directory, port)
+		}
 	}
 	bound, err := files.Context(targets[i], model.Platform{})
 	if err != nil {
