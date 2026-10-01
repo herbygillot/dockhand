@@ -191,6 +191,9 @@ type Adoption struct {
 	// Commits counts the commits above master.
 	Commits int
 	Scope   Scope
+	// Placed is where adopting checked the branch out, where it wasn't
+	// anywhere, and Unplaced why it couldn't.
+	Placed, Unplaced string
 }
 
 // Adopt tracks a branch dockhand did not create, as it stands: nothing is
@@ -230,8 +233,14 @@ func (e *Engine) Adopt(ctx context.Context, request AdoptRequest) (Adoption, err
 		return adoption, err
 	}
 	if adoption.Already {
-		adoption.Commits, adoption.Scope, err = e.changes(ctx, adoption.Branch.Base, head)
-		return adoption, err
+		if adoption.Commits, adoption.Scope, err = e.changes(ctx, adoption.Branch.Base, head); err != nil {
+			return adoption, err
+		}
+		// Adopting again inside a worktree the person added since records it.
+		if adoption.Branch.Worktree == "" {
+			adoption.place(ctx, e)
+		}
+		return adoption, nil
 	}
 	if renamed, ok, err := e.renamedFrom(ctx, name, head); err != nil || ok {
 		if err != nil {
@@ -288,7 +297,66 @@ func (e *Engine) Adopt(ctx context.Context, request AdoptRequest) (Adoption, err
 			Message: fmt.Sprintf("adopted %s: %d commits above master %s", name, adoption.Commits, short(model.ObjectID(base)))})
 		return err
 	})
+	if err == nil && worktree == "" {
+		adoption.place(ctx, e)
+	}
 	return adoption, err
+}
+
+// place checks out an adopted branch that isn't anywhere, as start does,
+// saying where, or why it couldn't, which leaves the adoption as it was.
+func (a *Adoption) place(ctx context.Context, e *Engine) {
+	placed, err := e.placeWorktree(ctx, a.Branch)
+	if err != nil {
+		a.Unplaced = err.Error()
+		return
+	}
+	a.Branch, a.Placed = placed, placed.Worktree
+}
+
+// placeWorktree gives a branch with no worktree recorded one: where it's
+// checked out now, as in a worktree the person added after adopting it,
+// recorded as theirs; else one made for it, as start makes one, sparse,
+// holding _resources and the ports it changes, recorded as dockhand's.
+// Adopting dockhand/bump/zola-… said only that git switch checked it out,
+// which switches the person's own checkout, and a worktree they added
+// wasn't found (the flatbuffers, nuspell, zola, and alertmanager run's
+// finding 3).
+func (e *Engine) placeWorktree(ctx context.Context, branch model.Branch) (model.Branch, error) {
+	checkouts, err := e.Repo.Checkouts(ctx, branch.Name)
+	if err != nil {
+		return branch, err
+	}
+	var message string
+	if len(checkouts) > 0 {
+		branch.Worktree, branch.Managed = checkouts[0], false
+		message = "found checked out in " + branch.Worktree
+	} else {
+		directory := e.worktreeDirectory(branch.Name)
+		if exists(directory) {
+			return branch, fmt.Errorf("%s, where dockhand would check it out, already exists; git switch %s checks it out here", directory, branch.Name)
+		}
+		head, _, err := e.Repo.Branch(ctx, branch.Name)
+		if err != nil {
+			return branch, err
+		}
+		changed, err := e.Repo.ChangedPaths(ctx, string(branch.Base), head)
+		if err != nil {
+			return branch, err
+		}
+		if err := e.Repo.AddSparseWorktree(ctx, directory, branch.Name, append([]string{macports.ResourcesDirectory}, ScopeOf(changed).Ports...)); err != nil {
+			return branch, fmt.Errorf("checking %s out in %s: %w", branch.Name, directory, err)
+		}
+		branch.Worktree, branch.Managed = directory, true
+		message = "checked out in " + directory
+	}
+	return branch, e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		if err := tx.UpdateBranch(branch); err != nil {
+			return err
+		}
+		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: "branch.worktree", Level: model.LevelInfo, Message: message})
+		return err
+	})
 }
 
 // renamedFrom finds the tracked branch a Git branch was renamed from: one
@@ -398,7 +466,9 @@ func (e *Engine) Path(ctx context.Context, selector string) (string, error) {
 		return "", err
 	}
 	if branch.Worktree == "" {
-		return "", fmt.Errorf("%s is not checked out anywhere; check it out with git switch %s", branch.Name, branch.Name)
+		if branch, err = e.placeWorktree(ctx, branch); err != nil {
+			return "", err
+		}
 	}
 	if err := e.checkOutAgain(ctx, branch); err != nil {
 		return "", err

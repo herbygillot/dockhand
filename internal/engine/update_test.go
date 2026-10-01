@@ -293,8 +293,10 @@ func TestUpdateNeedsTheBranchCheckedOut(t *testing.T) {
 	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
 	require.ErrorContains(t, err, "is not checked out in")
 
+	// A branch with no worktree is checked out for the update, which a
+	// Git branch that's gone can't be.
 	_, err = e.Update(t.Context(), UpdateRequest{Branch: model.Branch{Name: "dockhand/elsewhere"}, Action: model.EditUpdate, Port: "jq"})
-	require.ErrorContains(t, err, "not checked out anywhere")
+	require.ErrorContains(t, err, "local branch no longer exists: dockhand/elsewhere")
 	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditKind("publish"), Port: "jq"})
 	require.ErrorContains(t, err, "not an update")
 	// A release found already is the version asked for, for a version

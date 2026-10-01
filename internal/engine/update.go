@@ -504,7 +504,10 @@ func describe(branch model.Branch, selector string, result preparation.Result) U
 // branch.
 func (e *Engine) worktree(ctx context.Context, branch model.Branch) (*git.Repository, error) {
 	if branch.Worktree == "" {
-		return nil, fmt.Errorf("%s is not checked out anywhere; check it out with git switch %s", branch.Name, branch.Name)
+		var err error
+		if branch, err = e.placeWorktree(ctx, branch); err != nil {
+			return nil, err
+		}
 	}
 	if err := e.checkOutAgain(ctx, branch); err != nil {
 		return nil, err

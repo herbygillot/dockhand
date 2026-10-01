@@ -184,9 +184,11 @@ edit and you have write access, and never rewrites their description.`,
 			if err != nil {
 				return err
 			}
-			streams.emit(map[string]any{"branch": branchRef(adoption.Branch), "already": adoption.Already, "renamed_from": adoption.Renamed, "commits": adoption.Commits, "ports": nonNil(adoption.Scope.PortNames())})
+			streams.emit(map[string]any{"branch": branchRef(adoption.Branch), "already": adoption.Already, "renamed_from": adoption.Renamed, "commits": adoption.Commits, "ports": nonNil(adoption.Scope.PortNames()),
+				"placed": adoption.Placed, "unplaced": adoption.Unplaced})
 			if adoption.Already {
 				fmt.Fprintf(streams.Out, "%s is already tracked.\n", adoption.Branch.Name)
+				writePlaced(streams.Out, adoption)
 				return nil
 			}
 			if adoption.Renamed != "" {
@@ -197,14 +199,25 @@ edit and you have write access, and never rewrites their description.`,
 				return nil
 			}
 			fmt.Fprintf(streams.Out, "Adopted %s: %s above master %s%s.\n", adoption.Branch.Name, plural(adoption.Commits, "commit"), engine.Short(adoption.Branch.Base), describeScope(adoption.Scope))
-			if adoption.Branch.Worktree == "" {
-				fmt.Fprintf(streams.Out, "It is not checked out anywhere; git switch %s checks it out.\n", adoption.Branch.Name)
-			}
+			writePlaced(streams.Out, adoption)
 			return nil
 		},
 	}
 	cmd.Flags().IntVar(&pr, "pr", 0, "bring someone's pull request, by number, into a branch of its own")
 	return cmd
+}
+
+// writePlaced says where adopting checked a branch out that wasn't
+// anywhere, or found it checked out, or why it couldn't.
+func writePlaced(out io.Writer, adoption engine.Adoption) {
+	switch {
+	case adoption.Placed != "" && adoption.Branch.Managed:
+		fmt.Fprintf(out, "It wasn't checked out anywhere; it is now, in %s, as dockhand start checks a branch out.\n", adoption.Placed)
+	case adoption.Placed != "":
+		fmt.Fprintf(out, "It's checked out in %s, which is recorded as its worktree.\n", adoption.Placed)
+	case adoption.Unplaced != "":
+		fmt.Fprintf(out, "It is not checked out anywhere: %s.\n", adoption.Unplaced)
+	}
 }
 
 func adoptPullRequest(ctx context.Context, e *engine.Engine, streams Streams, number int) error {

@@ -253,10 +253,16 @@ func TestAdoptTracksABranchAsItStands(t *testing.T) {
 	require.Equal(t, 2, again.Commits, "a tracked branch is counted as it stands")
 	require.Equal(t, []string{"jq"}, again.Scope.PortNames())
 
+	// A branch not checked out anywhere is checked out as start checks one
+	// out, not left for git switch to switch the person's own checkout
+	// (the flatbuffers, nuspell, zola, and alertmanager run's finding 3).
 	run(t, f.clone, "branch", "elsewhere", "master")
 	elsewhere, err := e.Adopt(t.Context(), AdoptRequest{Branch: "elsewhere"})
 	require.NoError(t, err)
-	require.Empty(t, elsewhere.Branch.Worktree, "a branch not checked out has no worktree")
+	require.Equal(t, e.worktreeDirectory("elsewhere"), elsewhere.Branch.Worktree)
+	require.Equal(t, elsewhere.Branch.Worktree, elsewhere.Placed)
+	require.True(t, elsewhere.Branch.Managed, "dockhand's, as start's are")
+	require.DirExists(t, filepath.Join(elsewhere.Branch.Worktree, "_resources"))
 	require.Zero(t, elsewhere.Commits)
 
 	_, err = e.Adopt(t.Context(), AdoptRequest{Branch: "master"})
@@ -293,11 +299,27 @@ func TestPathAndResolve(t *testing.T) {
 	_, err = e.Path(t.Context(), "")
 	require.ErrorContains(t, err, "master is not tracked")
 
+	// Where dockhand can't check an adopted branch out, a worktree the
+	// person adds for it later is found, and recorded as theirs.
 	run(t, f.clone, "branch", "parked", "master")
-	_, err = e.Adopt(t.Context(), AdoptRequest{Branch: "parked"})
+	require.NoError(t, os.MkdirAll(e.worktreeDirectory("parked"), 0o755))
+	parked, err := e.Adopt(t.Context(), AdoptRequest{Branch: "parked"})
 	require.NoError(t, err)
-	_, err = e.Path(t.Context(), "parked")
-	require.ErrorContains(t, err, "not checked out anywhere")
+	require.Contains(t, parked.Unplaced, "already exists")
+	require.Empty(t, parked.Branch.Worktree)
+	// Git reports resolved paths; on macOS the temporary directory is
+	// reached through /var, a link to /private/var.
+	temporary, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	theirs := filepath.Join(temporary, "parked")
+	run(t, f.clone, "worktree", "add", "-q", theirs, "parked")
+	path, err = e.Path(t.Context(), "parked")
+	require.NoError(t, err)
+	require.Equal(t, theirs, path)
+	recorded, err := e.Resolve(t.Context(), "parked")
+	require.NoError(t, err)
+	require.Equal(t, theirs, recorded.Worktree)
+	require.False(t, recorded.Managed, "the person's")
 
 	// A removed worktree is checked out again; with its Git branch gone
 	// too, there is nothing to check out.
