@@ -47,6 +47,10 @@ type SubmitRequest struct {
 	// TestedBinaries and TestedVariants are the person's statements for
 	// the template's last two items.
 	TestedBinaries, TestedVariants bool
+	// Note replaces the branch's note, which the description gives under
+	// Description (model.Branch.Note), and empty clears it; nil keeps the
+	// one recorded. It is recorded once the submission is applied.
+	Note *string
 }
 
 // SubmitPlan is exactly what submit would do, bound to the branch head
@@ -113,6 +117,13 @@ type SubmitPlan struct {
 	// Theirs is true for a pull request someone else opened: submit only
 	// pushes to it, and never rewrites its title or description.
 	Theirs bool
+	// Note is the person's note the description gives under Description:
+	// the one the request gives, or the branch's, trimmed and with Unix
+	// line endings. NoteLeftOut is true when the description won't give
+	// it, since its Description is a person's own, edited since dockhand
+	// wrote it or left out, which submit keeps as it is.
+	Note        string
+	NoteLeftOut bool
 
 	facts bodyFacts
 }
@@ -141,12 +152,14 @@ func (p *SubmitPlan) Answer(testedBinaries, testedVariants bool) {
 			p.Sections = DescriptionSections{Description: SectionKept, Types: SectionKept, TestedOn: SectionKept}
 		}
 		p.BodyKept = p.Sections.TestedOn == SectionKept || p.Sections.TestedOn == SectionAbsent
+		p.NoteLeftOut = p.Note != "" && (p.Sections.Description == SectionKept || p.Sections.Description == SectionAbsent)
 	}
 }
 
-// Describe replaces the description with one the person wrote.
+// Describe replaces the description with one the person wrote, which
+// gives their note however they left it.
 func (p *SubmitPlan) Describe(body string) {
-	p.Body, p.BodyKept = body, true
+	p.Body, p.BodyKept, p.NoteLeftOut = body, true, false
 	p.Sections = DescriptionSections{Description: SectionKept, Types: SectionKept, TestedOn: SectionKept}
 }
 
@@ -238,6 +251,15 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	if err := e.destination(ctx, worktree, &plan); err != nil {
 		return plan, err
 	}
+	plan.Note = branch.Note
+	if request.Note != nil {
+		plan.Note = strings.TrimSpace(strings.ReplaceAll(*request.Note, "\r\n", "\n"))
+		// Their description is theirs, which submit never rewrites, so a
+		// note would be recorded and never given.
+		if plan.Theirs && plan.Note != "" {
+			return plan, fmt.Errorf("--note: #%d was opened from %s, so its description stays theirs; say it in a comment on #%d instead", plan.Branch.PullRequest.Number, plan.HeadRepository, plan.Branch.PullRequest.Number)
+		}
+	}
 	e.title(&plan)
 	e.searchOthers(ctx, &plan)
 	plan.UnfoundBuilds, plan.BuildsProblem = e.unfoundBuilds(ctx, plan.Commits)
@@ -265,7 +287,8 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	facts := bodyFacts{Commits: plan.Commits, Evidence: plan.Evidence, NoCheck: request.NoCheck, Accepted: slices.Concat(accepted, request.Accept), Types: request.Types,
 		Updated:     dockhandUpdate(plan.Commits, edits),
 		RulesPassed: !errorsFound, Squashed: squashed, Searched: plan.SearchProblem == "", Others: plan.Others,
-		TestedBinaries: request.TestedBinaries, TestedVariants: request.TestedVariants, SkipNotification: request.SkipNotification, NewPorts: newPorts}
+		TestedBinaries: request.TestedBinaries, TestedVariants: request.TestedVariants, SkipNotification: request.SkipNotification, NewPorts: newPorts,
+		Note: plan.Note}
 	plan.facts = facts
 	plan.Answer(request.TestedBinaries, request.TestedVariants)
 	return plan, nil
@@ -595,6 +618,9 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, e
 			Pushed: model.ObjectID(plan.Commit), Body: body, Draft: draft, Observed: seen}
 		if plan.Request.Title != "" {
 			branch.Title = plan.Request.Title
+		}
+		if plan.Request.Note != nil {
+			branch.Note = plan.Note
 		}
 		if err := tx.UpdateBranch(branch); err != nil {
 			return err

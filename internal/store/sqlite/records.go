@@ -16,7 +16,7 @@ import (
 // Times are stored in milliseconds, so a record read back carries its times
 // truncated to the millisecond.
 
-const branchColumns = "id, name, base, worktree, managed, title, state, pr_repository, pr_number, pr_head, pr_pushed, pr_body, pr_draft, pr_observed, created_at, origin"
+const branchColumns = "id, name, base, worktree, managed, title, state, pr_repository, pr_number, pr_head, pr_pushed, pr_body, pr_draft, pr_observed, created_at, origin, note"
 
 func (t *tx) scanBranch(row interface{ Scan(...any) error }) (model.Branch, error) {
 	var b model.Branch
@@ -26,7 +26,7 @@ func (t *tx) scanBranch(row interface{ Scan(...any) error }) (model.Branch, erro
 	var prPushed, prBody, prObserved string
 	var prDraft int
 	var created int64
-	if err := row.Scan(&b.ID, &b.Name, &b.Base, &b.Worktree, &managed, &b.Title, &b.State, &prRepository, &prNumber, &prHead, &prPushed, &prBody, &prDraft, &prObserved, &created, &b.Origin); err != nil {
+	if err := row.Scan(&b.ID, &b.Name, &b.Base, &b.Worktree, &managed, &b.Title, &b.State, &prRepository, &prNumber, &prHead, &prPushed, &prBody, &prDraft, &prObserved, &created, &b.Origin, &b.Note); err != nil {
 		return model.Branch{}, storageError(err)
 	}
 	b.Repository, b.Managed, b.CreatedAt = t.repo, managed == 1, fromMillis(created)
@@ -109,8 +109,8 @@ func (t *tx) AddBranch(b model.Branch) error {
 		b.Origin = model.OriginPerson
 	}
 	repository, number, head, pushed, body, draft, observed := pullRequestColumns(b.PullRequest)
-	_, err := t.exec("INSERT INTO branches(repository_id, "+branchColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		t.repo, b.ID, b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, millis(b.CreatedAt), b.Origin)
+	_, err := t.exec("INSERT INTO branches(repository_id, "+branchColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		t.repo, b.ID, b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, millis(b.CreatedAt), b.Origin, b.Note)
 	return err
 }
 
@@ -132,8 +132,8 @@ func (t *tx) UpdateBranch(b model.Branch) error {
 		return fmt.Errorf("%w: branch %s's creation time is fixed", store.ErrConflict, b.ID)
 	}
 	repository, number, head, pushed, body, draft, observed := pullRequestColumns(b.PullRequest)
-	return t.update("branch "+string(b.ID), "UPDATE branches SET name=?, base=?, worktree=?, managed=?, title=?, state=?, pr_repository=?, pr_number=?, pr_head=?, pr_pushed=?, pr_body=?, pr_draft=?, pr_observed=? WHERE repository_id=? AND id=?",
-		b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, t.repo, b.ID)
+	return t.update("branch "+string(b.ID), "UPDATE branches SET name=?, base=?, worktree=?, managed=?, title=?, state=?, pr_repository=?, pr_number=?, pr_head=?, pr_pushed=?, pr_body=?, pr_draft=?, pr_observed=?, note=? WHERE repository_id=? AND id=?",
+		b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, b.Note, t.repo, b.ID)
 }
 
 const revisionColumns = "id, branch_id, kind, snapshot, commit_id, tree_id, base_id, head_id, created_at"

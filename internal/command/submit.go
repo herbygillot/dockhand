@@ -19,7 +19,7 @@ import (
 )
 
 func submitCommand(s *settings, streams Streams) *cobra.Command {
-	var selector string
+	var selector, note string
 	var request engine.SubmitRequest
 	var yes, testedBinaries, testedVariants, check, passing, ready, preview bool
 	var on []string
@@ -42,6 +42,10 @@ every branch whose check passed for exactly what it would submit, asking
 about each. --ready takes a draft pull request out of draft, once its
 commit passes as submit requires.
 
+--note adds your own note to the pull request's description, under its
+Description, kept with the branch and given each time dockhand writes the
+description; --note "" takes it out.
+
 Every push is conditional on the fork's branch being where submit last saw
 it, so nobody else's push is ever overwritten. A description you edited on
 GitHub is kept.
@@ -56,6 +60,10 @@ GitHub is kept.
 			}
 			defer e.Close()
 			request.TestedBinaries, request.TestedVariants = testedBinaries, testedVariants
+			// --note "" clears the note, which leaving --note out keeps.
+			if cmd.Flags().Changed("note") {
+				request.Note = &note
+			}
 			if preview && (check || passing || yes) {
 				return errors.New("--plan previews one branch's submission; it goes without --check, --passing, and --yes (dockhand check --plan previews a check)")
 			}
@@ -132,6 +140,7 @@ GitHub is kept.
 	cmd.Flags().BoolVar(&ready, "ready", false, "take the pull request out of draft once it is submitted")
 	cmd.Flags().StringSliceVar(&request.Accept, "accept", nil, "acknowledge a failed extra or revision-bump-only port for this exact commit")
 	cmd.Flags().StringVar(&request.Title, "title", "", "the pull request's title (default: the commit subject)")
+	cmd.Flags().StringVar(&note, "note", "", "your own note in the pull request's description, kept as dockhand rewrites it; \"\" takes it out")
 	cmd.Flags().StringSliceVar(&request.Types, "type", nil, "the template's Type(s): bugfix, enhancement, security fix (default: enhancement for an update dockhand made)")
 	cmd.Flags().StringVar(&request.Remote, "remote", "", "the Git remote of your fork, when several could be")
 	cmd.Flags().BoolVar(&request.SkipNotification, "skip-notification", false, "add [skip notification], so maintainers are not mentioned")
@@ -143,6 +152,7 @@ GitHub is kept.
 	cmd.MarkFlagsMutuallyExclusive("passing", "branch")
 	cmd.MarkFlagsMutuallyExclusive("passing", "title")
 	cmd.MarkFlagsMutuallyExclusive("passing", "accept")
+	cmd.MarkFlagsMutuallyExclusive("passing", "note")
 	return cmd
 }
 
@@ -426,6 +436,9 @@ func writeSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 	}
 	fmt.Fprintf(out, "  Other PRs  %s\n", otherWords(plan))
 	fmt.Fprintf(out, "  PR       %s\n", pullRequestWords(plan))
+	if plan.Note != "" {
+		fmt.Fprintf(out, "  Note     %s\n", noteLine(plan))
+	}
 	if len(plan.LeftOut) > 0 {
 		fmt.Fprintf(out, "  Left out %s (not committed)\n", strings.Join(plan.LeftOut, ", "))
 	}
@@ -444,6 +457,19 @@ func writeSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 	for _, blocking := range plan.Blocking {
 		fmt.Fprintf(out, "✗ %s\n", blocking)
 	}
+}
+
+// noteLine says the person's note in a line: its first, with an ellipsis
+// for the rest, and where the description won't give it, why.
+func noteLine(plan engine.SubmitPlan) string {
+	words, rest, more := strings.Cut(plan.Note, "\n")
+	if more && strings.TrimSpace(rest) != "" {
+		words = strings.TrimSpace(words) + " …"
+	}
+	if plan.NoteLeftOut {
+		words += "\n           ! not in the description: its Description is yours, edited on GitHub or taken out, and stays as it is"
+	}
+	return words
 }
 
 // upstreamLines are what comparing the branch's upstream archives found,

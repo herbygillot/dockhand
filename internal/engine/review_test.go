@@ -126,6 +126,8 @@ func TestAdoptSomeonesPullRequestAndPushOnlyWhereGitHubAllows(t *testing.T) {
 	require.Empty(t, plan.Blocking)
 	require.True(t, plan.Theirs)
 	require.Equal(t, DescriptionSections{Description: SectionKept, Types: SectionKept, TestedOn: SectionKept}, plan.Sections, "someone else's description is never rewritten")
+	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: adopted.Branch, NoCheck: true, Note: new("Their tests need a network.")})
+	require.ErrorContains(t, err, "--note: #34905 was opened from newcontrib/macports-ports, so its description stays theirs", "a note would never be given")
 	_, err = e.ApplySubmit(t.Context(), plan)
 	require.NoError(t, err)
 	require.Equal(t, run(t, adopted.Branch.Worktree, "rev-parse", "HEAD"), run(t, theirs, "rev-parse", "patch-1"), "pushed to their branch")

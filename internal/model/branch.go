@@ -107,6 +107,13 @@ type Branch struct {
 	// Origin is who started it: a person, or serve for your outdated
 	// ports. serve submits only its own (Design v3 §11).
 	Origin Origin
+	// Note is a person's note for the pull request, which its description
+	// gives under Description each time dockhand writes it (submit
+	// --note); empty for none. dockhand writes the whole description, so
+	// a person had no way to say in it why rust's tests failed (the rust
+	// run, #35084). It is the branch's, not the pull request's, so a note
+	// given before one opens is kept for it.
+	Note string
 }
 
 // Validate checks the rules every stored branch keeps.

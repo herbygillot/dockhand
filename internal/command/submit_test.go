@@ -441,6 +441,64 @@ func TestTheRefreshedPartsAreNamed(t *testing.T) {
 	require.Equal(t, "updates #34905; refreshes its Description section and its description from Tested on down", pullRequestWords(plan))
 }
 
+// submit --note gives a person's note under the description's
+// Description, kept with the branch: submitting again without it keeps
+// it, a new one replaces it, which is the description's update, and
+// --note "" takes it out. The preview shows it, and says when a
+// Description a person edited won't give it. A note is one branch's, so
+// --passing takes none. dockhand writes the whole description, so a
+// person had no way to say in it why rust's tests failed (the rust run,
+// #35084).
+func TestSubmitNoteIsKeptWithTheBranch(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	g := withGitHub(t, w)
+	started, err := jsonOf(t, "start", "jq-update")
+	require.NoError(t, err)
+	t.Setenv("MACPORTS_TREE", dig(t, started.Result, "branch", "worktree").(string))
+	_, _, err = dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "tidy")
+	require.NoError(t, err)
+
+	note := "The tests failed on a permission error,\nbefore any test ran."
+	out, _, err := dockhand(t, "submit", "--no-check", "--plan", "--note", note)
+	require.NoError(t, err)
+	require.Contains(t, out, "  Note     The tests failed on a permission error, …\n")
+	require.Contains(t, out, "    > **Author's note:** The tests failed on a permission error,\n    > before any test ran.\n")
+	_, _, err = dockhand(t, "submit", "--no-check", "--yes", "--note", note)
+	require.NoError(t, err)
+	require.Contains(t, g.prs[0].Body, "#### Description\n\n> **Author's note:** The tests failed on a permission error,\n> before any test ran.\n\n###### Type(s)")
+
+	out, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	require.Contains(t, out, "#34901 has nothing new: the fork has its commit, and its title and description are current\n", "the note is kept")
+	require.Contains(t, g.prs[0].Body, "> **Author's note:** The tests failed")
+
+	out, _, err = dockhand(t, "submit", "--no-check", "--yes", "--note", "Fixed upstream.")
+	require.NoError(t, err)
+	require.Contains(t, out, "Updated #34901's description\n")
+	require.Contains(t, g.prs[0].Body, "#### Description\n\n> **Author's note:** Fixed upstream.\n\n###### Type(s)")
+	require.NotContains(t, g.prs[0].Body, "permission error")
+
+	out, _, err = dockhand(t, "submit", "--no-check", "--yes", "--note", "")
+	require.NoError(t, err)
+	require.Contains(t, out, "Updated #34901's description\n")
+	require.NotContains(t, g.prs[0].Body, "Author's note")
+	out, _, err = dockhand(t, "submit", "--no-check", "--plan")
+	require.NoError(t, err)
+	require.NotContains(t, out, "  Note ")
+
+	g.prs[0].Body = strings.Replace(g.prs[0].Body, "#### Description\n\n", "#### Description\n\nWhat I tested by hand.\n\n", 1)
+	out, _, err = dockhand(t, "submit", "--no-check", "--plan", "--note", "Fixed upstream.")
+	require.NoError(t, err)
+	require.Contains(t, out, "  Note     Fixed upstream.\n           ! not in the description: its Description is yours, edited on GitHub or taken out, and stays as it is\n")
+
+	_, _, err = dockhand(t, "submit", "--passing", "--note", "Fixed upstream.")
+	require.ErrorContains(t, err, "none of the others can be")
+}
+
 // Submitting to a pull request with nothing to push says what it changed:
 // the title, the description, or nothing at all.
 func TestSubmitSaysWhatItUpdated(t *testing.T) {

@@ -751,3 +751,86 @@ func TestSubmitSaysTheNewPortsTheBranchAdds(t *testing.T) {
 	require.Contains(t, plan.Body, "#### Description\n\nNew port **harbor** 1.0: Harbor tools for the command line\n\n- homepage: https://harbor.example/\n- license: MIT or Apache-2\n\n")
 	require.NotContains(t, plan.Body, "New port **jq**", "jq is in the base")
 }
+
+// A person's note is the branch's, and the description gives it under
+// Description each time dockhand writes it: submitting again keeps it,
+// --note replaces it, which counts as a change to the pull request, and an
+// empty one takes it out. dockhand writes the whole description, so a
+// person had no way to say in it why rust's tests failed (the rust run,
+// #35084). A plan records nothing; a Description a person edited on
+// GitHub stays theirs, and the plan says the note isn't in it.
+func TestANoteIsKeptInTheDescription(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	recordedNote := func() string {
+		t.Helper()
+		var note string
+		require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+			recorded, err := r.Branch(branch.ID)
+			note = recorded.Note
+			return err
+		}))
+		return note
+	}
+
+	note := "  rust's tests didn't run: bootstrap panicked on a permission error.\r\n\r\nThe environment's, not the tests'.\n"
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Note: new(note)})
+	require.NoError(t, err)
+	quoted := "> **Author's note:** rust's tests didn't run: bootstrap panicked on a permission error.\n>\n> The environment's, not the tests'.\n\n"
+	require.Contains(t, plan.Body, "#### Description\n\n"+quoted+"###### Type(s)\n")
+	require.Empty(t, recordedNote(), "a plan records nothing")
+	submitted, err := e.ApplySubmit(t.Context(), plan)
+	require.NoError(t, err)
+	number := submitted.PullRequest.Ref.Number
+	require.Equal(t, "rust's tests didn't run: bootstrap panicked on a permission error.\n\nThe environment's, not the tests'.", recordedNote())
+
+	// Submitting again, without --note, keeps it.
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	require.Contains(t, plan.Body, quoted)
+	require.Equal(t, DescriptionSections{Description: SectionCurrent, Types: SectionCurrent, TestedOn: SectionCurrent}, plan.Sections)
+	_, err = e.ApplySubmit(t.Context(), plan)
+	require.NoError(t, err)
+	require.Empty(t, fake.updated, "nothing new")
+
+	// A new note replaces it, and the pull request is updated for it alone.
+	// One with a line that would begin a heading is quoted, and so stays
+	// within the Description when replaced again.
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Note: new("Fixed upstream in\n#35090.")})
+	require.NoError(t, err)
+	require.Equal(t, SectionRefreshed, plan.Sections.Description)
+	require.Contains(t, plan.Body, "#### Description\n\n> **Author's note:** Fixed upstream in\n> #35090.\n\n###### Type(s)\n")
+	require.NotContains(t, plan.Body, "permission error")
+	_, err = e.ApplySubmit(t.Context(), plan)
+	require.NoError(t, err)
+	require.Len(t, fake.updated, 1, "the note's change is the pull request's")
+	require.Equal(t, plan.Body, fake.prs[number].Body)
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Note: new("Fixed upstream.")})
+	require.NoError(t, err)
+	require.Contains(t, plan.Body, "#### Description\n\n> **Author's note:** Fixed upstream.\n\n###### Type(s)\n")
+	require.NotContains(t, plan.Body, "#35090")
+	_, err = e.ApplySubmit(t.Context(), plan)
+	require.NoError(t, err)
+
+	// An empty note takes it out.
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Note: new("")})
+	require.NoError(t, err)
+	require.Equal(t, SectionRefreshed, plan.Sections.Description)
+	require.Contains(t, plan.Body, "#### Description\n\n###### Type(s)\n")
+	_, err = e.ApplySubmit(t.Context(), plan)
+	require.NoError(t, err)
+	require.Len(t, fake.updated, 3)
+	require.NotContains(t, fake.prs[number].Body, "Author's note")
+	require.Empty(t, recordedNote())
+
+	// A Description a person edited on GitHub is theirs, and the plan says
+	// the note isn't in it.
+	fake.prs[number].Body = strings.Replace(fake.prs[number].Body, "#### Description\n\n", "#### Description\n\nMy own words.\n\n", 1)
+	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Note: new("Fixed upstream.")})
+	require.NoError(t, err)
+	require.Equal(t, SectionKept, plan.Sections.Description)
+	require.True(t, plan.NoteLeftOut)
+	require.NotContains(t, plan.Body, "Author's note")
+}

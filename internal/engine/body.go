@@ -52,6 +52,9 @@ type bodyFacts struct {
 	// NewPorts are the ports the branch adds, as its Portfiles say them,
 	// for a reviewer who has never heard of one.
 	NewPorts []NewPort
+	// Note is the person's own note (model.Branch.Note), which the
+	// Description gives after what dockhand wrote there.
+	Note string
 }
 
 // NewPort is a port a branch adds: its name and version, its one line,
@@ -98,6 +101,9 @@ func pullRequestBody(facts bodyFacts) string {
 		}
 		fmt.Fprintln(&b)
 	}
+	if facts.Note != "" {
+		b.WriteString(noteWords(facts.Note))
+	}
 	types := slices.Clone(facts.Types)
 	if len(types) == 0 && facts.Updated {
 		types = append(types, "enhancement")
@@ -109,6 +115,23 @@ func pullRequestBody(facts bodyFacts) string {
 	}
 	b.WriteString(typesSection(types))
 	b.WriteString(ownedSections(facts))
+	return b.String()
+}
+
+// noteWords is a person's note as the Description gives it, a quote led
+// by "Author's note:", so a reviewer tells it from what dockhand wrote. A
+// quote also keeps any of its lines from beginning a heading, which would
+// end the Description there (sectionSpan), and submitting again would
+// read the rest of the note as a part dockhand doesn't write.
+func noteWords(note string) string {
+	var b strings.Builder
+	for i, line := range strings.Split(note, "\n") {
+		if i == 0 {
+			line = "**Author's note:** " + line
+		}
+		fmt.Fprintln(&b, strings.TrimRight("> "+line, " \t"))
+	}
+	b.WriteString("\n")
 	return b.String()
 }
 

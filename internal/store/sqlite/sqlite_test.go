@@ -164,6 +164,8 @@ func TestBranchesKeepTheirRules(t *testing.T) {
 	require.ErrorIs(t, f.update(t, func(tx store.Tx) error { return tx.AddBranch(f.branch("br_2", b.Name)) }), store.ErrConflict, "one open branch per name")
 
 	b.Title, b.PullRequest = "libharbor: update to 2.0", &model.PullRequest{Repository: "macports/macports-ports", Number: 34901, Head: "ada/macports-ports:dockhand/libharbor-2"}
+	// A person's note for the pull request is the branch's (schema 27).
+	b.Note = "The tests failed on a permission error,\nbefore any test ran."
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.UpdateBranch(b) }))
 	require.NoError(t, f.store.View(t.Context(), f.repo, func(r store.Reader) error {
 		got, err := r.BranchNamed(b.Name)
