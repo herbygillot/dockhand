@@ -235,6 +235,21 @@ func TestAnArchivedBranchWithNothingMasterLacksGoesWithItsWorktree(t *testing.T)
 	require.Equal(t, "it has nothing master lacks", steps["dockhand/duckdb-cxx14"][1].Why)
 	require.Len(t, steps["dockhand/jq-update"], 1, "its work stays, for path")
 
+	// One whose port master has since moved on is said, for a look, as the
+	// adopted and archived pre-v3 zola branch was (the dogfood run with
+	// fb2d195f).
+	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.2\n"})
+	run(t, f.upstream, "commit", "-q", "-am", "jq: update to 1.8.2")
+	_, err = e.fetchMaster(t.Context())
+	require.NoError(t, err)
+	plans, err = e.PlanClean(t.Context(), model.BranchArchived)
+	require.NoError(t, err)
+	for _, plan := range plans {
+		if plan.Branch.Name == "dockhand/jq-update" {
+			require.Equal(t, "master has jq at 1.8.2, where the branch took 1.7.1 to 1.8.1", plan.Superseded)
+		}
+	}
+
 	_, err = e.ApplyClean(t.Context(), plans)
 	require.NoError(t, err)
 	require.Empty(t, run(t, e.Repo.Root, "branch", "--list", "dockhand/duckdb-cxx14"))

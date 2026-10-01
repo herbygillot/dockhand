@@ -155,9 +155,13 @@ func writeLegacy(out io.Writer, branches []engine.LegacyBranch, done bool) int {
 	count := 0
 	fmt.Fprintln(out, "Branches from before v3 (dockhand/bump/…):")
 	for _, branch := range branches {
+		name := branch.Name
+		if branch.ForkOnly {
+			name = branch.Fork + " (on your fork only)"
+		}
 		switch {
 		case branch.Kind == engine.LegacyOnMaster && branch.Kept != "":
-			fmt.Fprintf(out, "  keep     %s: %s\n", branch.Name, branch.Kept)
+			fmt.Fprintf(out, "  keep     %s: %s\n", name, branch.Kept)
 		case branch.Kind == engine.LegacyOnMaster:
 			verb := "remove "
 			if done && branch.Done {
@@ -165,8 +169,8 @@ func writeLegacy(out io.Writer, branches []engine.LegacyBranch, done bool) int {
 			} else {
 				count++
 			}
-			fmt.Fprintf(out, "  %s  %s: %s\n", verb, branch.Name, branch.Detail)
-			if branch.Fork != "" {
+			fmt.Fprintf(out, "  %s  %s: %s\n", verb, name, branch.Detail)
+			if branch.Fork != "" && !branch.ForkOnly {
 				fmt.Fprintf(out, "  %s  %s, which holds the same commit\n", verb, branch.Fork)
 				if !done || !branch.Done {
 					count++
@@ -175,10 +179,14 @@ func writeLegacy(out io.Writer, branches []engine.LegacyBranch, done bool) int {
 			if branch.ForkKept != "" {
 				fmt.Fprintf(out, "  keep     your fork's branch: %s\n", branch.ForkKept)
 			}
+		case branch.Kind == engine.LegacySuperseded && branch.ForkOnly:
+			fmt.Fprintf(out, "  look     %s: %s; removing it from your fork is yours once you've looked\n", name, branch.Detail)
 		case branch.Kind == engine.LegacySuperseded:
-			fmt.Fprintf(out, "  look     %s: %s; git branch -D %s removes it once you've looked\n", branch.Name, branch.Detail, branch.Name)
+			fmt.Fprintf(out, "  look     %s: %s; git branch -D %s removes it once you've looked\n", name, branch.Detail, branch.Name)
+		case branch.ForkOnly:
+			fmt.Fprintf(out, "  keep     %s: %s; fetch it here, and dockhand adopt %s takes it up\n", name, branch.Detail, branch.Name)
 		default:
-			fmt.Fprintf(out, "  keep     %s: %s; dockhand adopt %s takes it up\n", branch.Name, branch.Detail, branch.Name)
+			fmt.Fprintf(out, "  keep     %s: %s; dockhand adopt %s takes it up\n", name, branch.Detail, branch.Name)
 		}
 	}
 	return count
@@ -188,7 +196,7 @@ func legacyView(branches []engine.LegacyBranch) []map[string]any {
 	view := []map[string]any{}
 	for _, branch := range branches {
 		view = append(view, map[string]any{"name": branch.Name, "head": branch.Head, "kind": string(branch.Kind), "detail": branch.Detail,
-			"fork": branch.Fork, "fork_kept": branch.ForkKept, "kept": branch.Kept, "removed": branch.Done})
+			"fork_only": branch.ForkOnly, "fork": branch.Fork, "fork_kept": branch.ForkKept, "kept": branch.Kept, "removed": branch.Done})
 	}
 	return view
 }
@@ -274,7 +282,11 @@ func writeClean(out io.Writer, plans []engine.CleanBranch, done bool) int {
 		// An unmerged branch's Git branch stays, but for one with nothing
 		// master lacks, which goes with its worktree.
 		branchStep := slices.ContainsFunc(plan.Steps, func(s engine.CleanStep) bool { return strings.HasPrefix(s.What, "branch ") })
-		if plan.Branch.State != model.BranchMerged && !branchStep && slices.ContainsFunc(plan.Steps, func(s engine.CleanStep) bool { return s.Kept == "" }) {
+		switch {
+		case plan.Branch.State == model.BranchMerged || branchStep || !slices.ContainsFunc(plan.Steps, func(s engine.CleanStep) bool { return s.Kept == "" }):
+		case plan.Superseded != "":
+			fmt.Fprintf(out, "  look     branch %s: %s; git branch -D %s removes it once you've looked\n", plan.Branch.Name, plan.Superseded, plan.Branch.Name)
+		default:
 			fmt.Fprintf(out, "  keep     branch %s: dockhand path %s checks it out again\n", plan.Branch.Name, plan.Branch.ShortName())
 		}
 	}

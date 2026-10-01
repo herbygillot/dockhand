@@ -44,6 +44,10 @@ type CleanBranch struct {
 	// Merged is the commit the pull request was merged at.
 	Merged model.ObjectID
 	Steps  []CleanStep
+	// Superseded says the ports master has at other versions than an
+	// unmerged branch with work of its own started from, which a person
+	// may look at before removing it.
+	Superseded string
 }
 
 // PlanClean previews removing what merged branches leave behind (Design
@@ -304,6 +308,14 @@ func (e *Engine) planCleanWorktree(ctx context.Context, branch model.Branch) (Cl
 		master = branch.Base
 	}
 	if beyond, err := e.Repo.CountCommits(ctx, string(master), head); err != nil || beyond > 0 {
+		// Work of its own stays; but one master supersedes, as the
+		// adopted and archived pre-v3 zola branch was by 0.23.6, is said,
+		// for a look (the dogfood run with fb2d195f).
+		if err == nil {
+			if moves, err := e.portMoves(ctx, string(master), head); err == nil {
+				plan.Superseded = superseded(moves)
+			}
+		}
 		return plan, nil
 	}
 	kept, err := e.checkedOut(ctx, branch.Name, branch.Worktree)

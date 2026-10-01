@@ -80,15 +80,17 @@ func TestCleanAddsWhatItsFlagsName(t *testing.T) {
 func TestCleanSaysWhatItDoesWithBranchesFromBeforeV3(t *testing.T) {
 	plans := []engine.LegacyBranch{
 		{Name: "dockhand/bump/jq-9c1d", Kind: engine.LegacySuperseded, Detail: "master has jq at 1.8.1, where the branch took 1.7.1 to 1.8.0"},
-		{Name: "dockhand/bump/libharbor-4f2a", Kind: engine.LegacyOnMaster, Detail: "master has its 1 commit, by their changes", Fork: "ada/macports-ports:dockhand/bump/libharbor-4f2a"},
-		{Name: "dockhand/bump/newport-77aa", Kind: engine.LegacyUnfinished, Detail: "1 commit master hasn't"},
+		{Name: "dockhand/bump/libharbor-4f2a", Kind: engine.LegacyOnMaster, Detail: `master has the same change as its "libharbor: update to 2"`, Fork: "ada/macports-ports:dockhand/bump/libharbor-4f2a"},
+		{Name: "dockhand/bump/newport-77aa", Kind: engine.LegacyUnfinished, Detail: "takes newport from 1 to 2, which master still has at 1"},
+		{Name: "dockhand/bump/xplr-atgg", Kind: engine.LegacyOnMaster, Detail: `master has the same change as its "xplr: update to 1.0"`, ForkOnly: true, Fork: "ada/macports-ports:dockhand/bump/xplr-atgg"},
 	}
 	var out bytes.Buffer
-	require.Equal(t, 2, writeLegacy(&out, plans, false))
+	require.Equal(t, 3, writeLegacy(&out, plans, false))
 	require.Equal(t, "Branches from before v3 (dockhand/bump/…):\n"+
 		"  look     dockhand/bump/jq-9c1d: master has jq at 1.8.1, where the branch took 1.7.1 to 1.8.0; git branch -D dockhand/bump/jq-9c1d removes it once you've looked\n"+
-		"  remove   dockhand/bump/libharbor-4f2a: master has its 1 commit, by their changes\n"+
+		"  remove   dockhand/bump/libharbor-4f2a: master has the same change as its \"libharbor: update to 2\"\n"+
 		"  remove   ada/macports-ports:dockhand/bump/libharbor-4f2a, which holds the same commit\n"+
-		"  keep     dockhand/bump/newport-77aa: 1 commit master hasn't; dockhand adopt dockhand/bump/newport-77aa takes it up\n", out.String())
+		"  keep     dockhand/bump/newport-77aa: takes newport from 1 to 2, which master still has at 1; dockhand adopt dockhand/bump/newport-77aa takes it up\n"+
+		"  remove   ada/macports-ports:dockhand/bump/xplr-atgg (on your fork only): master has the same change as its \"xplr: update to 1.0\"\n", out.String())
 	require.Zero(t, writeLegacy(&out, nil, false))
 }

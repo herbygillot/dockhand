@@ -33,7 +33,7 @@ func TestPushUsesExplicitExpectedHeadAndNeverPushesTags(t *testing.T) {
 	require.Equal(t, "refs/heads/candidate\n", string(out))
 }
 
-// A branch's commits are counted by whether master has their change, by
+// A branch's commits are listed with whether master has their change, by
 // patch-id, as git cherry reads them: one picked onto master under
 // another commit is master's, and one it lacks is the branch's own.
 func TestCherryCountsWhatMasterHasOfABranch(t *testing.T) {
@@ -53,12 +53,12 @@ func TestCherryCountsWhatMasterHasOfABranch(t *testing.T) {
 	gitIn(t, dir, "cherry-pick", picked)
 	master := gitIn(t, dir, "rev-parse", "HEAD")
 
-	equivalent, own, err := repo.Cherry(t.Context(), master, head)
+	commits, err := repo.Cherry(t.Context(), master, head)
 	require.NoError(t, err)
-	require.Equal(t, [2]int{1, 1}, [2]int{equivalent, own})
-	equivalent, own, err = repo.Cherry(t.Context(), head, head)
+	require.Equal(t, []git.CherryCommit{{ID: picked, Subject: "jq: update to 2", Equivalent: true}, {ID: head, Subject: "jq: fix the build"}}, commits)
+	commits, err = repo.Cherry(t.Context(), head, head)
 	require.NoError(t, err)
-	require.Equal(t, [2]int{0, 0}, [2]int{equivalent, own}, "nothing beyond itself")
-	_, _, err = repo.Cherry(t.Context(), "master", head)
+	require.Empty(t, commits, "nothing beyond itself")
+	_, err = repo.Cherry(t.Context(), "master", head)
 	require.Error(t, err, "literal commits")
 }

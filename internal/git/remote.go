@@ -65,6 +65,29 @@ func (r *Repository) RemoteHead(ctx context.Context, remote, branch string) (Ref
 	return RefValue{Exists: true, Object: fields[0]}, nil
 }
 
+// RemoteBranches are a remote's branches under a prefix, by name, each
+// with its commit, as one ls-remote lists them.
+func (r *Repository) RemoteBranches(ctx context.Context, remote, prefix string) (map[string]string, error) {
+	if !validRemoteURL(remote) || prefix == "" || !ValidBranchName(strings.TrimSuffix(prefix, "/")) {
+		return nil, fmt.Errorf("git: invalid remote or prefix")
+	}
+	out, err := r.output(ctx, "ls-remote", "--refs", "--", remote, "refs/heads/"+prefix+"*")
+	if err != nil {
+		return nil, err
+	}
+	branches := map[string]string{}
+	for _, row := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		fields := strings.Fields(row)
+		if len(fields) != 2 || !ValidObjectID(fields[0]) {
+			continue
+		}
+		if name, ok := strings.CutPrefix(fields[1], "refs/heads/"); ok && strings.HasPrefix(name, prefix) {
+			branches[name] = fields[0]
+		}
+	}
+	return branches, nil
+}
+
 // Push uses a literal destination ref and an explicit expected value, independent
 // of remote-tracking refs. Repeating a confirmed desired head is a no-op.
 func (r *Repository) Push(ctx context.Context, request Push) error {
@@ -133,27 +156,35 @@ func (r *Repository) CountCommits(ctx context.Context, base, head string) (int, 
 	return strconv.Atoi(strings.TrimSpace(string(out)))
 }
 
-// Cherry counts head's commits that upstream lacks by those whose change
-// upstream has all the same, by patch-id, and those it hasn't, as git
-// cherry marks them "-" and "+": a branch merged by a rebase, as MacPorts
-// merges, has its changes in master under other commits.
-func (r *Repository) Cherry(ctx context.Context, upstream, head string) (equivalent, own int, err error) {
+// CherryCommit is one of a branch's commits that upstream lacks, and
+// whether upstream has its change all the same, by patch-id.
+type CherryCommit struct {
+	ID, Subject string
+	Equivalent  bool
+}
+
+// Cherry lists head's commits that upstream lacks, oldest first, each with
+// whether upstream has its change all the same, by patch-id, as git cherry
+// marks it "-": a branch merged by a rebase, as MacPorts merges, has its
+// changes in master under other commits.
+func (r *Repository) Cherry(ctx context.Context, upstream, head string) ([]CherryCommit, error) {
 	if !ValidObjectID(upstream) || !ValidObjectID(head) {
-		return 0, 0, fmt.Errorf("git: literal commit objects are required")
+		return nil, fmt.Errorf("git: literal commit objects are required")
 	}
-	out, err := r.output(ctx, "cherry", upstream, head)
+	out, err := r.output(ctx, "cherry", "-v", upstream, head)
 	if err != nil {
-		return 0, 0, err
+		return nil, err
 	}
+	var commits []CherryCommit
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		switch {
-		case strings.HasPrefix(line, "- "):
-			equivalent++
-		case strings.HasPrefix(line, "+ "):
-			own++
+		mark, rest, ok := strings.Cut(line, " ")
+		if !ok || mark != "-" && mark != "+" {
+			continue
 		}
+		id, subject, _ := strings.Cut(rest, " ")
+		commits = append(commits, CherryCommit{ID: id, Subject: subject, Equivalent: mark == "-"})
 	}
-	return equivalent, own, nil
+	return commits, nil
 }
 
 // MergeBase is the best common ancestor of two commits.
