@@ -165,6 +165,7 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 | Free space that triggers cleanup | 30 GB; a 1 h pause when low | — | `config/config.go:123 · engine/clean.go:791` | in usage.md · `cleanup.min_free` |
 | Tart's vanilla images | 30 days unused | removed | `engine/clean.go:739` | in usage.md |
 | Database copies kept at a migration | 30 days | removed | `store/sqlite/sqlite.go:90` | in usage.md |
+| A migration's copy left unfinished | 1 h | removed at the next migration; never counts as a kept copy | `store/sqlite/sqlite.go` (`abandonedCopies`) | |
 | Check logs (~/.dockhand/logs) | never removed | 780 MB across 62 checks today (D6) | `engine/runner.go:548` | gap |
 | Reading cache | never removed | only a reader version bump clears it | `project/cache.go` |  |
 | Abandoned scratch run roots | 10 min | swept | `scratch/scratch.go:30` |  |
