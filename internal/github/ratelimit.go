@@ -143,7 +143,7 @@ func (t rateLimited) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 		// The refusal's body, GitHub's message, is set aside: the error
 		// says when the limit lifts.
-		io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
 		response.Body.Close()
 		if waited || !t.limits.mayWait(req, until) {
 			return nil, t.limits.refusal(kind, until)
@@ -214,7 +214,7 @@ func (l *rateLimits) mayWait(req *http.Request, until time.Time) bool {
 	if req.Method != http.MethodGet && req.Method != http.MethodHead {
 		return false
 	}
-	if until.Sub(time.Now()) > rateWait {
+	if time.Until(until) > rateWait {
 		return false
 	}
 	deadline, ok := req.Context().Deadline()
@@ -228,7 +228,7 @@ func (l *rateLimits) wait(ctx context.Context, kind limitKind, until time.Time) 
 	if kind == primaryLimit {
 		until = until.Add(resetMargin)
 	}
-	return l.sleep(ctx, until.Sub(time.Now()))
+	return l.sleep(ctx, time.Until(until))
 }
 
 func (l *rateLimits) waitWords(kind limitKind, until time.Time) string {
