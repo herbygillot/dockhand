@@ -7,7 +7,7 @@ import (
 )
 
 // Forge is what submit needs of GitHub: who you are, which repositories
-// your remotes name, and the pull requests.
+// your remotes name, the pull requests, and dockhand's own repository.
 type Forge interface {
 	AuthenticatedUser(ctx context.Context) (string, error)
 	NameFromRemote(url string) (string, error)
@@ -27,6 +27,9 @@ type Forge interface {
 	PostReview(ctx context.Context, input forge.ReviewInput) (string, error)
 	// RequestReviewers asks people to review a pull request again.
 	RequestReviewers(ctx context.Context, ref forge.PullRequestRef, logins []string) error
+	// Repository binds a repository for reading, such as dockhand's own,
+	// asked whether it has the builds a branch's commits name.
+	Repository(instance, name string) (forge.Repository, error)
 }
 
 // GitHubCLI is the GitHub CLI, which acts on GitHub as its own app. An

@@ -80,6 +80,14 @@ type DatedRepository interface {
 	CommitTime(ctx context.Context, commit string) (time.Time, error)
 }
 
+// CommitRepository reports whether the repository has a commit, named in
+// full or by a leading part of its name, as gitrevisions(7) abbreviates
+// it: as a Generated-By trailer's build names the commit it was built
+// from, which nobody else can find where the forge doesn't have it.
+type CommitRepository interface {
+	HasCommit(ctx context.Context, commit string) (bool, error)
+}
+
 // Description is what a forge says about a repository: its one-line
 // description, its homepage, and the license it detected, as an SPDX
 // identifier.

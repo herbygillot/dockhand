@@ -45,16 +45,25 @@ func Attributed(message string) bool {
 	return slices.ContainsFunc(strings.Split(message, "\n"), IsAttribution)
 }
 
-// ModifiedBuild reports whether a message's Generated-By names a dockhand
-// built from uncommitted source, which nobody else can find.
-func ModifiedBuild(message string) bool {
+// Build is the build a message's Generated-By names, by its tag:
+// "v0.0.0-20260924.0.0.20260928175309-2bbcfdb76480", or
+// "devel+1a2b3c4d5e6f.modified". A message without the line, or with only
+// a legacy form of it, names none.
+func Build(message string) (string, bool) {
 	for _, line := range strings.Split(message, "\n") {
 		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), generatedByPrefix); ok {
 			tag, _, _ := strings.Cut(rest, " ")
-			return version.TagModified(tag)
+			return tag, true
 		}
 	}
-	return false
+	return "", false
+}
+
+// ModifiedBuild reports whether a message's Generated-By names a dockhand
+// built from uncommitted source, which nobody else can find.
+func ModifiedBuild(message string) bool {
+	tag, ok := Build(message)
+	return ok && version.TagModified(tag)
 }
 
 // OtherBuilds are the builds messages' attribution lines name other than

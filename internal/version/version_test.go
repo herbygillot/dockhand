@@ -2,6 +2,7 @@ package version
 
 import (
 	"runtime/debug"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -23,7 +24,7 @@ func TestTagAndStringForms(t *testing.T) {
 func TestCurrentPrefersTheStampedTagThenTheLinkedOverride(t *testing.T) {
 	t.Parallel()
 	stamped := &debug.BuildInfo{Main: debug.Module{Version: "v0.9.0"}, Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: "5e3a5de30bb3a1b2c3d4e5f6"}, {Key: "vcs.modified", Value: "false"}}}
-	require.Equal(t, Info{Version: "v0.9.0", Revision: "5e3a5de30bb3"}, current(stamped, true, "v0.8.0"), "a stamped tag wins over a stale build variable")
+	require.Equal(t, Info{Version: "v0.9.0", Revision: "5e3a5de30bb3", FullRevision: "5e3a5de30bb3a1b2c3d4e5f6"}, current(stamped, true, "v0.8.0"), "a stamped tag wins over a stale build variable; the revision is kept whole beside its display")
 	pseudo := &debug.BuildInfo{Main: debug.Module{Version: "v0.9.1-0.20260918135415-06ffbfdc5777"}}
 	require.Equal(t, "v0.9.1-0.20260918135415-06ffbfdc5777", current(pseudo, true, "v0.8.0").Version, "a stamped pseudo-version is a version too")
 	tarball := &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}}
@@ -31,7 +32,7 @@ func TestCurrentPrefersTheStampedTagThenTheLinkedOverride(t *testing.T) {
 	require.Equal(t, Info{Version: "v0.9.0"}, current(tarball, true, " 0.9.0 "), "a MacPorts-style version gains its v")
 	require.Equal(t, "v0.9.0", current(tarball, true, "0.9.0").Tag())
 	require.Equal(t, Info{Version: "devel"}, current(tarball, true, ""))
-	require.Equal(t, Info{Version: "devel", Revision: "06ffbfdc5777"}, current(&debug.BuildInfo{Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: "06ffbfdc5777"}}}, true, ""))
+	require.Equal(t, Info{Version: "devel", Revision: "06ffbfdc5777", FullRevision: "06ffbfdc5777"}, current(&debug.BuildInfo{Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: "06ffbfdc5777"}}}, true, ""))
 	require.Equal(t, Info{Version: "v0.9.0"}, current(nil, false, "0.9.0"), "no build information at all still takes the linked version")
 	require.Equal(t, Info{Version: "unknown"}, current(nil, false, ""))
 }
@@ -63,4 +64,29 @@ func TestATagOfUncommittedSourceIsModified(t *testing.T) {
 	require.False(t, TagModified("v0.0.0-20260924.0.0.20260928175309-2bbcfdb76480"))
 	require.False(t, TagModified(Info{Version: "devel", Revision: "1a2b3c4d5e6f"}.Tag()))
 	require.False(t, TagModified("v0.3.0"))
+}
+
+// A build's tag says what finds its source: an older build's commit as
+// the tag abbreviates it, a release's tag, or nothing, for a build that
+// recorded no revision or was of uncommitted source. This build's own tag
+// gives the whole commit the toolchain recorded, which a forge is asked
+// for (the hugo exercise's unpushed build).
+func TestABuildsTagSaysWhatFindsItsSource(t *testing.T) {
+	t.Parallel()
+	older := Info{Version: "devel"}
+	require.Equal(t, Source{Commit: "2bbcfdb76480"}, sourceOf("v0.0.0-20260924.0.0.20260928175309-2bbcfdb76480", older))
+	require.Equal(t, Source{Commit: "1a2b3c4d5e6f"}, sourceOf("devel+1a2b3c4d5e6f", older))
+	require.Equal(t, Source{Release: "v0.0.0-20260924.0"}, sourceOf("v0.0.0-20260924.0", older), "a tag that merely looks date-shaped is a release")
+	require.Equal(t, Source{Release: "v0.9.0"}, sourceOf("v0.9.0", older))
+	for _, tag := range []string{"devel", "unknown", "devel+1a2b3c4d5e6f.modified", "v0.0.0-20260924.0.0.20260928140136-2601fff7d884+dirty", "v0.9.0+dirty"} {
+		require.Equal(t, Source{}, sourceOf(tag, older), tag)
+	}
+
+	running := Info{Version: "v0.0.0-20260924.0.0.20260928175309-2bbcfdb76480", Revision: "2bbcfdb76480", FullRevision: "2bbcfdb76480" + strings.Repeat("a", 28)}
+	require.Equal(t, Source{Commit: running.FullRevision}, sourceOf(running.Tag(), running), "this build's own tag gives its whole commit")
+	tagged := Info{Version: "v0.9.0", Revision: "5e3a5de30bb3", FullRevision: "5e3a5de30bb3" + strings.Repeat("b", 28)}
+	require.Equal(t, Source{Commit: tagged.FullRevision}, sourceOf("v0.9.0", tagged), "and a tagged build's, the commit rather than a tag that can move")
+	require.Equal(t, Source{Commit: "1a2b3c4d5e6f"}, sourceOf("devel+1a2b3c4d5e6f", running), "another build's tag gives its own")
+	installed := Info{Version: running.Version}
+	require.Equal(t, Source{Commit: "2bbcfdb76480"}, sourceOf(installed.Tag(), installed), "go install from the module proxy records no revision, and the tag's abbreviation is all there is")
 }

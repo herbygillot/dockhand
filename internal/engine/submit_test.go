@@ -49,6 +49,48 @@ type fakeForge struct {
 	// createFails fails the next Create: after opening the pull request,
 	// as a reply lost on the way back, when lost is set, or before.
 	createFails, lost bool
+	// dockhand is dockhand's own repository as GitHub has it: its commits
+	// and tags, why asking it fails, and what was asked of it.
+	dockhand fakeDockhand
+}
+
+// fakeDockhand is dockhand's own repository on GitHub.
+type fakeDockhand struct {
+	name    string
+	commits []string
+	tags    []string
+	err     error
+	asked   []string
+}
+
+func (f *fakeForge) Repository(_, name string) (forge.Repository, error) {
+	f.dockhand.name = name
+	return &f.dockhand, nil
+}
+
+func (d *fakeDockhand) Name() string { return d.name }
+
+func (d *fakeDockhand) Tag(_ context.Context, name string) (forge.Tag, error) {
+	d.asked = append(d.asked, name)
+	switch {
+	case d.err != nil:
+		return forge.Tag{}, d.err
+	case slices.Contains(d.tags, name):
+		return forge.Tag{Name: name, Commit: strings.Repeat("d", 40)}, nil
+	}
+	return forge.Tag{}, forge.ErrNotFound
+}
+
+func (d *fakeDockhand) ListTags(context.Context) ([]forge.Tag, error) {
+	return nil, errors.New("dockhand's tags aren't listed")
+}
+
+func (d *fakeDockhand) HasCommit(_ context.Context, commit string) (bool, error) {
+	d.asked = append(d.asked, commit)
+	if d.err != nil {
+		return false, d.err
+	}
+	return slices.ContainsFunc(d.commits, func(c string) bool { return strings.HasPrefix(c, commit) }), nil
 }
 
 func (f *fakeForge) AuthenticatedUser(context.Context) (string, error) { return "ada", nil }

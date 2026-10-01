@@ -435,6 +435,12 @@ func writeSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 	for _, commit := range plan.ModifiedBuilds {
 		fmt.Fprintf(out, "  ! commit %s's Generated-By names a dockhand built from uncommitted source, which nobody else can find; tidy it again with a build of a pushed commit\n", engine.Short(model.ObjectID(commit)))
 	}
+	for _, build := range plan.UnfoundBuilds {
+		fmt.Fprintf(out, "  ! %s\n", unfoundBuildWords(build))
+	}
+	if plan.BuildsProblem != "" {
+		fmt.Fprintf(out, "  ! couldn't ask GitHub whether it has the dockhand builds the commits name in Generated-By: %s\n", plan.BuildsProblem)
+	}
 	for _, blocking := range plan.Blocking {
 		fmt.Fprintf(out, "✗ %s\n", blocking)
 	}
@@ -541,6 +547,29 @@ func otherWords(plan engine.SubmitPlan) string {
 		found = append(found, fmt.Sprintf("#%d %s", pr.Number, pr.Title))
 	}
 	return strings.Join(found, " · ")
+}
+
+// unfoundBuildWords say a build the commits name in Generated-By that
+// nobody else can find, and why: what it was built from isn't on GitHub
+// until it's pushed there, or it recorded nothing to find. Tidy keeps a
+// commit whose only change would be its Generated-By, unless its build
+// was of uncommitted source, so tidying again isn't what's said here.
+func unfoundBuildWords(build engine.UnfoundBuild) string {
+	var commits []string
+	for _, commit := range build.Commits {
+		commits = append(commits, engine.Short(model.ObjectID(commit)))
+	}
+	words := fmt.Sprintf("commit %s's Generated-By names dockhand %s", commits[0], build.Build)
+	if len(commits) > 1 {
+		words = fmt.Sprintf("commits %s name dockhand %s in Generated-By", strings.Join(commits, ", "), build.Build)
+	}
+	switch {
+	case build.Source.Commit != "":
+		return words + ", built from a commit dockhand's GitHub repository doesn't have, which nobody else can find until it's pushed there"
+	case build.Source.Release != "":
+		return words + ", built at a tag dockhand's GitHub repository doesn't have, which nobody else can find until it's pushed there"
+	}
+	return words + ", which recorded no commit, so nobody can find what it was built from"
 }
 
 func pullRequestWords(plan engine.SubmitPlan) string {

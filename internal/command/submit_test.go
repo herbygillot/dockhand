@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/scratch"
+	"github.com/herbygillot/dockhand/internal/version"
 )
 
 // fakeGitHub stands in for GitHub: the fork is a local bare repository.
@@ -40,9 +42,35 @@ type fakeGitHub struct {
 	searches  int
 	// readyRefused is GitHub's refusal to mark a pull request ready.
 	readyRefused error
+	// dockhand are the commits of dockhand's own repository GitHub has,
+	// and dockhandErr why asking it fails.
+	dockhand    []string
+	dockhandErr error
 }
 
 func (g *fakeGitHub) AuthenticatedUser(context.Context) (string, error) { return "ada", nil }
+
+func (g *fakeGitHub) Repository(_, name string) (forge.Repository, error) {
+	return fakeDockhand{g: g, name: name}, nil
+}
+
+// fakeDockhand is dockhand's own repository on GitHub, which has no tags.
+type fakeDockhand struct {
+	g    *fakeGitHub
+	name string
+}
+
+func (d fakeDockhand) Name() string { return d.name }
+func (d fakeDockhand) Tag(context.Context, string) (forge.Tag, error) {
+	return forge.Tag{}, forge.ErrNotFound
+}
+func (d fakeDockhand) ListTags(context.Context) ([]forge.Tag, error) { return nil, nil }
+func (d fakeDockhand) HasCommit(_ context.Context, commit string) (bool, error) {
+	if d.g.dockhandErr != nil {
+		return false, d.g.dockhandErr
+	}
+	return slices.ContainsFunc(d.g.dockhand, func(c string) bool { return strings.HasPrefix(c, commit) }), nil
+}
 func (g *fakeGitHub) NameFromRemote(url string) (string, error) {
 	switch url {
 	case g.upstream:
@@ -284,6 +312,67 @@ func TestSubmitShowsACommitNamingAModifiedBuild(t *testing.T) {
 	preview, err := jsonOf(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
 	require.Equal(t, []any{gitRun(t, dir, "rev-parse", "HEAD")}, preview.Result["modified_builds"])
+}
+
+// A commit whose Generated-By names a build dockhand's repository on
+// GitHub doesn't have is shown before it's submitted, as one naming a
+// build of uncommitted source is, since nobody else can find that build
+// either (the hugo exercise, finding 1); the preview's JSON lists it
+// beside modified_builds. Where GitHub can't be asked, that's said once.
+// Neither stops the submission.
+func TestSubmitSaysABuildGitHubDoesntHave(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	g := withGitHub(t, w)
+	started, err := jsonOf(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := dig(t, started.Result, "branch", "worktree").(string)
+	t.Setenv("MACPORTS_TREE", dir)
+	_, _, err = dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	unpushed := "v0.0.0-20260924.0.0.20260928190000-14320eb7c0de"
+	gitRun(t, dir, "commit", "-q", "-am", "jq: update to 1.8.1\n\nGenerated-By: Dockhand "+unpushed+" (https://github.com/herbygillot/dockhand)")
+	head := gitRun(t, dir, "rev-parse", "HEAD")
+
+	out, _, err := dockhand(t, "submit", "--plan", "--no-check")
+	require.NoError(t, err)
+	require.Contains(t, out, "jq-update · ready to submit\n")
+	require.Contains(t, out, "  ! commit "+engine.Short(model.ObjectID(head))+"'s Generated-By names dockhand "+unpushed+", built from a commit dockhand's GitHub repository doesn't have, which nobody else can find until it's pushed there\n")
+	preview, err := jsonOf(t, "submit", "--plan", "--no-check")
+	require.NoError(t, err)
+	require.Equal(t, []any{map[string]any{"build": unpushed, "commits": []any{head}, "commit": "14320eb7c0de"}}, preview.Result["unfound_builds"])
+	require.NotContains(t, preview.Result, "builds_problem")
+
+	g.dockhandErr = errors.New("github: API rate limit exceeded")
+	out, _, err = dockhand(t, "submit", "--plan", "--no-check")
+	require.NoError(t, err)
+	require.Contains(t, out, "  ! couldn't ask GitHub whether it has the dockhand builds the commits name in Generated-By: github: API rate limit exceeded\n")
+	require.NotContains(t, out, "pushed there")
+	preview, err = jsonOf(t, "submit", "--plan", "--no-check")
+	require.NoError(t, err)
+	require.Equal(t, []any{}, preview.Result["unfound_builds"])
+	require.Equal(t, "github: API rate limit exceeded", preview.Result["builds_problem"])
+
+	g.dockhandErr, g.dockhand = nil, []string{"14320eb7c0de" + strings.Repeat("0", 28)}
+	out, _, err = dockhand(t, "submit", "--plan", "--no-check")
+	require.NoError(t, err)
+	require.NotContains(t, out, "Generated-By", "a build GitHub has is said nowhere")
+
+	g.dockhand = nil
+	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	require.Len(t, g.prs, 1, "nothing here stops the submission")
+}
+
+// A build several commits name is said once, naming each; one built at a
+// release's tag says the tag, and one that recorded no commit says so.
+func TestAnUnfoundBuildIsSaidOnceForItsCommits(t *testing.T) {
+	commits := []string{strings.Repeat("a", 40), strings.Repeat("b", 40)}
+	require.Equal(t, "commits aaaaaaa, bbbbbbb name dockhand v0.3.0 in Generated-By, built at a tag dockhand's GitHub repository doesn't have, which nobody else can find until it's pushed there",
+		unfoundBuildWords(engine.UnfoundBuild{Build: "v0.3.0", Commits: commits, Source: version.Source{Release: "v0.3.0"}}))
+	require.Equal(t, "commit aaaaaaa's Generated-By names dockhand devel, which recorded no commit, so nobody can find what it was built from",
+		unfoundBuildWords(engine.UnfoundBuild{Build: "devel", Commits: commits[:1]}))
 }
 
 // A tidy whose commits name a dockhand built from uncommitted source says

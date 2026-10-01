@@ -65,6 +65,13 @@ type SubmitPlan struct {
 	// built from uncommitted source, which nobody else can find: shown,
 	// so they can be tidied again with a build of a pushed commit.
 	ModifiedBuilds []string
+	// UnfoundBuilds are the other builds the commits name in Generated-By
+	// that nobody else can find either: dockhand's repository on GitHub
+	// doesn't have what each was built from, or it names nothing. Shown,
+	// holding nothing, as ModifiedBuilds are.
+	UnfoundBuilds []UnfoundBuild
+	// BuildsProblem says why GitHub couldn't be asked about them.
+	BuildsProblem string
 
 	Repository, HeadRepository, PushURL string
 	// RemoteHead is the fork's branch as it was seen.
@@ -233,6 +240,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	}
 	e.title(&plan)
 	e.searchOthers(ctx, &plan)
+	plan.UnfoundBuilds, plan.BuildsProblem = e.unfoundBuilds(ctx, plan.Commits)
 	if plan.Upstream, err = e.revisionComparisons(ctx, branch, model.ObjectID(plan.Tree), true); err != nil {
 		return plan, err
 	}

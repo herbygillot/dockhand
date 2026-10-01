@@ -285,6 +285,10 @@ type Checkout struct {
 // of a commit's hexadecimal name, four digits at least.
 var abbreviated = regexp.MustCompile(`^[0-9a-f]{4,63}$`)
 
+// ValidAbbreviation reports whether name has the form of an abbreviated
+// object name, gitrevisions(7)'s leading substring of one.
+func ValidAbbreviation(name string) bool { return abbreviated.MatchString(name) }
+
 // CloneCheckout is the commit a fresh clone of url checks out at name,
 // read from the remote's refs with ls-remote rather than a clone: what
 // `git clone url && git checkout -q name` leaves HEAD at, as MacPorts'
@@ -373,7 +377,7 @@ func CloneCheckout(ctx context.Context, executable, url, name string) (Checkout,
 	switch lower := strings.ToLower(name); {
 	case commit != "":
 		return Checkout{Commit: commit}, nil
-	case abbreviated.MatchString(lower):
+	case ValidAbbreviation(lower):
 		return Checkout{Abbreviation: lower}, nil
 	}
 	return Checkout{}, fmt.Errorf("%w: %s", ErrNoRef, name)

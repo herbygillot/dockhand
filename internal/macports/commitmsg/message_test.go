@@ -55,6 +55,20 @@ func TestAModifiedBuildIsKnownFromItsTrailer(t *testing.T) {
 	require.False(t, commitmsg.ModifiedBuild("hugo: update to 0.167.0\n\nSee: https://example.org/v0.0.0+dirty\n"), "only dockhand's trailer names its build")
 }
 
+// The build a commit's Generated-By names is its tag, which submit asks
+// GitHub about; a legacy form names none, and nor does a message without
+// the line.
+func TestTheBuildAGeneratedByNames(t *testing.T) {
+	t.Parallel()
+	build, ok := commitmsg.Build("hugo: update to 0.167.0\n\n  Generated-By: Dockhand devel+1a2b3c4d5e6f (https://github.com/herbygillot/dockhand)\n")
+	require.True(t, ok)
+	require.Equal(t, "devel+1a2b3c4d5e6f", build)
+	for _, message := range []string{"hugo: update to 0.167.0\n", "jq: update to 1.8.1\n\nAssisted-By: Dockhand v0.1.0", "jq: update to 1.8.1\n\nGenerated-by: dockhand"} {
+		_, ok := commitmsg.Build(message)
+		require.False(t, ok, message)
+	}
+}
+
 // A commit can stand for one tidy would write where they say the same,
 // but perhaps for the attribution line, which names the build that wrote
 // each where both carry it; not where only one does, nor where the one

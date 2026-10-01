@@ -288,6 +288,12 @@ type submitJSON struct {
 	// ModifiedBuilds are the commits whose Generated-By names a dockhand
 	// built from uncommitted source.
 	ModifiedBuilds []string `json:"modified_builds"`
+	// UnfoundBuilds are the other builds the commits' Generated-By name
+	// that nobody else can find: dockhand's repository on GitHub doesn't
+	// have what each was built from, or it recorded nothing. BuildsProblem
+	// says why GitHub couldn't be asked.
+	UnfoundBuilds []unfoundBuildJSON `json:"unfound_builds"`
+	BuildsProblem string             `json:"builds_problem,omitempty"`
 	// Held are why a submission nobody looked over, bump's, waits for a
 	// person's look.
 	Held []string `json:"held,omitempty"`
@@ -308,6 +314,18 @@ func (s *submitJSON) gather(step any) {
 
 func (s *submitJSON) result() any { return *s }
 
+// unfoundBuildJSON is a build the commits name in Generated-By that
+// nobody else can find.
+type unfoundBuildJSON struct {
+	Build   string   `json:"build"`
+	Commits []string `json:"commits"`
+	// Commit is the dockhand commit GitHub was asked for, in full or as
+	// the build abbreviates it, and Release the tag; neither, for a build
+	// that recorded no commit.
+	Commit  string `json:"commit,omitempty"`
+	Release string `json:"release,omitempty"`
+}
+
 type submittedJSON struct {
 	Number  int    `json:"number"`
 	URL     string `json:"url"`
@@ -319,9 +337,12 @@ type submittedJSON struct {
 func submitView(plan engine.SubmitPlan) submitJSON {
 	view := submitJSON{Branch: plan.Branch.ShortName(), Title: plan.Title, Commit: plan.Commit, Commits: len(plan.Commits), From: plan.Head(), To: plan.Repository + ":" + engine.UpstreamBranch,
 		Push: pushWords(plan), Checks: checkWords(plan), Findings: findingsView(plan.Findings), Blocking: nonNil(plan.Blocking), LeftOut: nonNil(plan.LeftOut), Body: plan.Body,
-		Upstream: []portUpstreamJSON{}, ModifiedBuilds: nonNil(plan.ModifiedBuilds)}
+		Upstream: []portUpstreamJSON{}, ModifiedBuilds: nonNil(plan.ModifiedBuilds), UnfoundBuilds: []unfoundBuildJSON{}, BuildsProblem: plan.BuildsProblem}
 	for _, found := range plan.Upstream {
 		view.Upstream = append(view.Upstream, portUpstreamJSON{Port: found.Port, upstreamJSON: upstreamView(found.Comparison)})
+	}
+	for _, build := range plan.UnfoundBuilds {
+		view.UnfoundBuilds = append(view.UnfoundBuilds, unfoundBuildJSON{Build: build.Build, Commits: build.Commits, Commit: build.Source.Commit, Release: build.Source.Release})
 	}
 	return view
 }

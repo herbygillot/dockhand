@@ -3,6 +3,8 @@ package version
 import (
 	"runtime/debug"
 	"strings"
+
+	"golang.org/x/mod/module"
 )
 
 // ProjectURL is where dockhand lives.
@@ -14,7 +16,11 @@ type Info struct {
 	Version string
 	// Revision is the VCS revision, shortened to twelve characters, if known.
 	Revision string
-	Modified bool
+	// FullRevision is the VCS revision as the toolchain recorded it, all of
+	// it: what a forge is asked for, where Revision is what Tag and String
+	// show of it.
+	FullRevision string
+	Modified     bool
 }
 
 // Version is the version a packager names at link time when no version
@@ -39,7 +45,7 @@ func current(info *debug.BuildInfo, ok bool, named string) Info {
 		for _, setting := range info.Settings {
 			switch setting.Key {
 			case "vcs.revision":
-				current.Revision = setting.Value
+				current.Revision, current.FullRevision = setting.Value, setting.Value
 			case "vcs.modified":
 				current.Modified = setting.Value == "true"
 			}
@@ -111,4 +117,45 @@ func (i Info) Tag() string {
 		tag += ".modified"
 	}
 	return tag
+}
+
+// Source is what a build's tag, as Tag gives it and a Generated-By trailer
+// names it, gives anybody to find the build's source by in the project's
+// repository: the commit it was built from, or the tag of a release.
+// Neither, where the build recorded no revision (devel or unknown), or
+// was of uncommitted source, which nothing finds.
+type Source struct {
+	// Commit is the commit, in full where the tag is this build's own and
+	// the toolchain recorded it, else the twelve characters a tag
+	// abbreviates it to.
+	Commit string
+	// Release is a tagged build's tag, where no commit is known.
+	Release string
+}
+
+// SourceOf is what a build's tag gives anybody to find its source by.
+func SourceOf(tag string) Source {
+	return sourceOf(tag, Current())
+}
+
+func sourceOf(tag string, running Info) Source {
+	if TagModified(tag) {
+		return Source{}
+	}
+	var source Source
+	switch rest, devel := strings.CutPrefix(tag, "devel+"); {
+	case devel:
+		source.Commit = rest
+	case module.IsPseudoVersion(tag):
+		source.Commit, _ = module.PseudoVersionRev(tag)
+	case tag != "devel" && tag != "unknown" && tag != "":
+		source.Release = tag
+	}
+	// This build's own tag names the commit it was built from in full,
+	// which needs no forge to expand it: a tag's twelve characters are a
+	// prefix, and a release tag can move.
+	if tag == running.Tag() && running.FullRevision != "" && strings.HasPrefix(running.FullRevision, source.Commit) {
+		return Source{Commit: running.FullRevision}
+	}
+	return source
 }
