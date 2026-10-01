@@ -1,10 +1,12 @@
 package git
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -247,6 +249,76 @@ func (r *Repository) CommitTime(ctx context.Context, commit string) (time.Time, 
 		return time.Time{}, fmt.Errorf("git: invalid commit time")
 	}
 	return time.Unix(seconds, 0).UTC(), nil
+}
+
+// ReadFiles reads the blobs of a tree at the paths given, by path, in one
+// process: a path the tree doesn't have, or that names a directory, is
+// left out, and a symlink's is its target. Reading a few hundred
+// Portfiles one at a time costs a process for each level of each path.
+func (r *Repository) ReadFiles(ctx context.Context, tree string, paths []string) (map[string][]byte, error) {
+	if !ValidObjectID(tree) {
+		return nil, fmt.Errorf("git: literal tree objects are required")
+	}
+	files := map[string][]byte{}
+	if len(paths) == 0 {
+		return files, nil
+	}
+	var input strings.Builder
+	for _, name := range paths {
+		if !snapshotPath(name) {
+			return nil, fmt.Errorf("git: invalid file path %q", name)
+		}
+		input.WriteString(tree + ":" + name + "\n")
+	}
+	command := r.command(ctx, nil, "cat-file", "--batch")
+	command.Stdin = strings.NewReader(input.String())
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	stdout, err := command.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := command.Start(); err != nil {
+		return nil, err
+	}
+	in := bufio.NewReader(stdout)
+	readErr := func() error {
+		for _, name := range paths {
+			header, err := in.ReadString('\n')
+			if err != nil {
+				return err
+			}
+			fields := strings.Fields(header)
+			if len(fields) == 2 && fields[1] == "missing" {
+				continue
+			}
+			if len(fields) != 3 {
+				return fmt.Errorf("invalid object header %q", header)
+			}
+			size, err := strconv.ParseInt(fields[2], 10, 64)
+			if err != nil || size < 0 {
+				return fmt.Errorf("invalid object size %q", fields[2])
+			}
+			data := make([]byte, int(size))
+			if _, err := io.ReadFull(in, data); err != nil {
+				return err
+			}
+			if _, err := in.Discard(1); err != nil {
+				return err
+			}
+			if fields[1] == "blob" {
+				files[name] = data
+			}
+		}
+		return nil
+	}()
+	if readErr != nil {
+		_ = command.Process.Kill()
+	}
+	if err := command.Wait(); err != nil && readErr == nil {
+		return nil, fmt.Errorf("git cat-file: %w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	return files, readErr
 }
 
 // GrepTree lists the paths in a tree whose contents match an extended

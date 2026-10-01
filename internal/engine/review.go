@@ -246,7 +246,7 @@ func (r ReviewReport) DependentsWords() string {
 	}
 	var named []string
 	for _, dependent := range r.Dependents[:min(reviewDependentsNamed, len(r.Dependents))] {
-		named = append(named, fmt.Sprintf("%s (%s)", dependent.Name, strings.Join(dependent.Phases, ", ")))
+		named = append(named, dependent.Words())
 	}
 	words := strings.Join(named, ", ")
 	if more := len(r.Dependents) - len(named); more > 0 {

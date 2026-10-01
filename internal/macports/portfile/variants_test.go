@@ -60,3 +60,34 @@ if {${os.major} > 20} {
 }
 `)))
 }
+
+// The variants that depend on a port are those whose own body declares a
+// dependency on it, in any phase and any form Base reads, enchant2's
+// +nuspell; one depending on another port, a default dependency, one
+// through a variable, or the name inside data isn't one.
+func TestTheVariantsThatDependOnAPort(t *testing.T) {
+	src := []byte(`PortSystem 1.0
+name enchant2
+depends_lib port:glib2
+variant nuspell description {Use nuspell} {
+    depends_lib-append port:nuspell
+}
+variant hunspell description {Use hunspell} {
+    depends_lib-append path:lib/libhunspell.dylib:hunspell
+}
+variant both {
+    depends_build-append port:pkgconfig
+    depends_run-append lib:libnuspell:Nuspell
+}
+variant indirect {
+    depends_lib-append port:${dep}
+}
+variant quoted {
+    set note "depends_lib-append port:nuspell"
+}
+`)
+	require.Equal(t, []string{"nuspell", "both"}, portfile.DependencyVariants(src, "nuspell"))
+	require.Equal(t, []string{"hunspell"}, portfile.DependencyVariants(src, "hunspell"))
+	require.Empty(t, portfile.DependencyVariants(src, "glib2"), "a default dependency is the index's")
+	require.Empty(t, portfile.DependencyVariants([]byte("variant x {"), "nuspell"), "unparseable")
+}

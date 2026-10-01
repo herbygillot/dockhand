@@ -13,13 +13,16 @@ import (
 )
 
 // jqDependents stands in for the port index: two ports depend on jq.
-type jqDependents struct{}
+// jqDependents are jq's dependents, as the index has them; where under,
+// jo links it under its +jq variant too, as variantDependents finds.
+type jqDependents struct{ under bool }
 
-func (jqDependents) Dependents(context.Context, model.Source, []string) ([]engine.Dependent, error) {
-	return []engine.Dependent{
-		{Name: "jo", Directory: "textproc/jo", On: []string{"jq"}, Phases: []string{"build"}},
-		{Name: "yq", Directory: "textproc/yq", On: []string{"jq"}, Phases: []string{"library", "runtime"}},
-	}, nil
+func (d jqDependents) Dependents(context.Context, model.Source, []string) ([]engine.Dependent, error) {
+	jo := engine.Dependent{Name: "jo", Directory: "textproc/jo", On: []string{"jq"}, Phases: []string{"build"}}
+	if d.under {
+		jo.Phases, jo.Variants = []string{"library"}, []string{"jq"}
+	}
+	return []engine.Dependent{jo, {Name: "yq", Directory: "textproc/yq", On: []string{"jq"}, Phases: []string{"library", "runtime"}}}, nil
 }
 
 func TestDiffAndImpact(t *testing.T) {

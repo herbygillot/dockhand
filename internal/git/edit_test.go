@@ -87,3 +87,18 @@ func TestEditTreeRefusesInvalidOverlappingAndSymlinkPaths(t *testing.T) {
 	_, err := repo.EditTree(ctx, base, nil)
 	require.ErrorIs(t, err, context.Canceled)
 }
+
+// A tree's files are read in one process, by path: one the tree doesn't
+// have, or a directory, is left out, and an empty file is read as empty.
+func TestReadFilesReadsATreesFilesByPath(t *testing.T) {
+	t.Parallel()
+	repo := snapshotRepo(t)
+	port := snapshotTree(t, repo, snapshotBlob(t, repo, "Portfile", "name a\nvariant x { depends_lib-append port:z }\n", 0o100644), snapshotBlob(t, repo, "empty", "", 0o100644))
+	category := snapshotTree(t, repo, git.TreeEntry{Name: "a", Object: port, Mode: 0o40000, Type: "tree"})
+	tree := snapshotTree(t, repo, git.TreeEntry{Name: "devel", Object: category, Mode: 0o40000, Type: "tree"})
+	files, err := repo.ReadFiles(t.Context(), tree, []string{"devel/a/Portfile", "devel/b/Portfile", "devel/a", "devel/a/empty"})
+	require.NoError(t, err)
+	require.Equal(t, map[string][]byte{"devel/a/Portfile": []byte("name a\nvariant x { depends_lib-append port:z }\n"), "devel/a/empty": {}}, files)
+	_, err = repo.ReadFiles(t.Context(), tree, []string{"../outside"})
+	require.Error(t, err)
+}

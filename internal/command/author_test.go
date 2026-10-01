@@ -311,6 +311,13 @@ func TestUpdateRevbumpsTheLibraryDependents(t *testing.T) {
 	require.Contains(t, out, ":\n  yq\n", "jo only builds with jq")
 	require.NoFileExists(t, filepath.Join(dir, "textproc/yq/Portfile"), "a plan bumps nothing")
 
+	// One that links it only under a variant is listed apart.
+	testDependentReader = jqDependents{under: true}
+	out, _, err = dockhand(t, "update", "jq", "--revbump-dependents", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, ":\n  yq\n  · under a variant, which the index doesn't record: jo (+jq)\n")
+	testDependentReader = jqDependents{}
+
 	out, _, err = dockhand(t, "update", "jq", "--revbump-dependents")
 	require.NoError(t, err)
 	require.Contains(t, out, "Revision bumped 1 port; subject \"<port>: rebuild for jq 1.8.1\" recorded for tidy.\n")

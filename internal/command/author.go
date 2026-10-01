@@ -621,11 +621,21 @@ func revbumpLinked(ctx context.Context, e *engine.Engine, out io.Writer, branch 
 	if err != nil && len(done.Bump)+len(done.Changed)+len(done.Excepted) == 0 {
 		return nil, err
 	}
-	var names []string
+	// Those that link it only under a variant, which the index doesn't
+	// record, are listed apart, and bumped as the rest are.
+	var names, indexed, under []string
 	for _, dependent := range done.Bump {
 		names = append(names, dependent.Name)
+		if len(dependent.Variants) > 0 {
+			under = append(under, fmt.Sprintf("%s (+%s)", dependent.Name, strings.Join(dependent.Variants, " or +")))
+		} else {
+			indexed = append(indexed, dependent.Name)
+		}
 	}
-	fmt.Fprintf(out, "Direct library dependents, from the index at %s:\n  %s\n", engine.Short(done.Base), orNone(strings.Join(names, "  ")))
+	fmt.Fprintf(out, "Direct library dependents, from the index at %s:\n  %s\n", engine.Short(done.Base), orNone(strings.Join(indexed, "  ")))
+	if len(under) > 0 {
+		fmt.Fprintf(out, "  · under a variant, which the index doesn't record: %s\n", strings.Join(under, ", "))
+	}
 	for _, dependent := range done.Changed {
 		fmt.Fprintf(out, "  · %s: the branch already changes it, so it is left as it is\n", dependent.Name)
 	}

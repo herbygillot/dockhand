@@ -3,11 +3,13 @@ package engine
 import (
 	"context"
 	"fmt"
+	"path"
 	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -102,6 +104,21 @@ type Dependent struct {
 	On []string
 	// Phases are how: "build", "library", or "runtime".
 	Phases []string
+	// Variants are those under which alone it depends on them, as
+	// enchant2 links nuspell under +nuspell; none where its default
+	// variants do.
+	Variants []string
+}
+
+// Words say a dependent for a person: its name, how it depends, and the
+// variants it depends under, where only they make it: "enchant2 (library,
+// under +nuspell)".
+func (d Dependent) Words() string {
+	how := strings.Join(d.Phases, ", ")
+	if len(d.Variants) > 0 {
+		how += ", under +" + strings.Join(d.Variants, " or +")
+	}
+	return fmt.Sprintf("%s (%s)", d.Name, how)
 }
 
 // DependentReader finds the direct dependents of the ports some
@@ -143,14 +160,15 @@ var dependentKinds = []string{"library", "build", "runtime"}
 // kinds taken for the first. Nothing sizes a build, so within a kind it's
 // the first the index names; impact suggested the first three in name
 // order, aria2, bind9, and bind9.18, among the heaviest of libuv's to
-// build (the libuv run's finding 3).
+// build (the libuv run's finding 3). One that depends only under a variant
+// isn't taken, since check --also builds a port's default variants.
 func (i Impact) OneOfEachKind() []Dependent {
 	var chosen []Dependent
 	for _, kind := range dependentKinds {
 		if slices.ContainsFunc(chosen, func(d Dependent) bool { return slices.Contains(d.Phases, kind) }) {
 			continue
 		}
-		if j := slices.IndexFunc(i.Dependents, func(d Dependent) bool { return slices.Contains(d.Phases, kind) }); j >= 0 {
+		if j := slices.IndexFunc(i.Dependents, func(d Dependent) bool { return len(d.Variants) == 0 && slices.Contains(d.Phases, kind) }); j >= 0 {
 			chosen = append(chosen, i.Dependents[j])
 		}
 	}
@@ -226,7 +244,9 @@ func (e *Engine) Impact(ctx context.Context, branch model.Branch, ports []string
 }
 
 // dependents asks the engine's DependentReader, or the port reader when
-// it can answer.
+// it can answer, what depends on the directories' ports by their default
+// variants, and adds those that depend on them only under a variant
+// (variantDependents).
 func (e *Engine) dependents(ctx context.Context, source model.Source, directories []string) ([]Dependent, error) {
 	reader := e.DependentReader
 	if reader == nil {
@@ -239,7 +259,112 @@ func (e *Engine) dependents(ctx context.Context, source model.Source, directorie
 			return nil, fmt.Errorf("nothing here reads dependents")
 		}
 	}
-	return reader.Dependents(ctx, source, directories)
+	found, err := reader.Dependents(ctx, source, directories)
+	if err != nil {
+		return found, err
+	}
+	under, err := e.variantDependents(ctx, source, directories, found)
+	return append(found, under...), err
+}
+
+// appendOnce appends a value a list doesn't hold yet.
+func appendOnce(list []string, value string) []string {
+	if slices.Contains(list, value) {
+		return list
+	}
+	return append(list, value)
+}
+
+// evaluatedPhases word an evaluated dependency's phase as a dependent's.
+var evaluatedPhases = map[string]string{"lib": "library", "build": "build", "run": "runtime"}
+
+// variantDependents are the ports that depend on a directory's port only
+// under a variant, which the port index, recording default variants'
+// dependencies, can't name: enchant2 links nuspell only under +nuspell,
+// so --revbump-dependents said none and refused --except enchant2 (the
+// flatbuffers, nuspell, zola, and alertmanager run's finding 1). The
+// Portfiles naming the port as a dependency are found by their text, read
+// in one go, and only the variants whose own body declares it
+// (portfile.DependencyVariants) are evaluated, each alone, for MacPorts to
+// say what the port then depends on: of zlib's 1,104 Portfiles, sixteen
+// variants, and of nuspell's one, enchant2's. A directory a known
+// dependent is in, or one of the directories', isn't looked at again; a
+// variant MacPorts can't evaluate says nothing.
+func (e *Engine) variantDependents(ctx context.Context, source model.Source, directories []string, known []Dependent) ([]Dependent, error) {
+	reader, err := e.portReader()
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, directory := range directories {
+		ports, err := reader.Ports(ctx, source, directory, model.Environment{}, nil)
+		if err != nil {
+			continue
+		}
+		for _, port := range ports {
+			names = append(names, port.Name)
+		}
+	}
+	var candidates []string
+	for _, name := range names {
+		portfiles, err := e.Repo.GrepTree(ctx, string(source.Tree), ":"+regexp.QuoteMeta(name)+`([[:space:]]|$|\\|\})`, "*/Portfile")
+		if err != nil {
+			return nil, err
+		}
+		for _, portfile := range portfiles {
+			// A directory a dependent the index names is in is one already:
+			// what --revbump-dependents bumps is a directory, subports and
+			// all. Of openssl's 56 Portfiles naming it in a variant, most
+			// are.
+			directory := path.Dir(portfile)
+			if !slices.Contains(directories, directory) && !slices.ContainsFunc(known, func(d Dependent) bool { return d.Directory == directory }) && !slices.Contains(candidates, portfile) {
+				candidates = append(candidates, portfile)
+			}
+		}
+	}
+	slices.Sort(candidates)
+	files, err := e.Repo.ReadFiles(ctx, string(source.Tree), candidates)
+	if err != nil {
+		return nil, err
+	}
+	var found []*Dependent
+	byName := map[string]*Dependent{}
+	for _, candidate := range candidates {
+		directory := path.Dir(candidate)
+		for _, name := range names {
+			for _, variant := range portfile.DependencyVariants(files[candidate], name) {
+				ports, err := reader.Ports(ctx, source, directory, model.Environment{}, map[string]bool{variant: true})
+				if err != nil {
+					continue
+				}
+				for _, port := range ports {
+					if slices.ContainsFunc(known, func(d Dependent) bool { return d.Name == port.Name }) {
+						continue
+					}
+					for _, dependency := range port.Dependencies {
+						phase := evaluatedPhases[dependency.Phase]
+						if phase == "" || !strings.EqualFold(dependency.Port, name) {
+							continue
+						}
+						dependent := byName[port.Name]
+						if dependent == nil {
+							dependent = &Dependent{Name: port.Name, Directory: directory}
+							byName[port.Name] = dependent
+							found = append(found, dependent)
+						}
+						dependent.On = appendOnce(dependent.On, name)
+						dependent.Phases = appendOnce(dependent.Phases, phase)
+						dependent.Variants = appendOnce(dependent.Variants, variant)
+					}
+				}
+			}
+		}
+	}
+	under := make([]Dependent, 0, len(found))
+	for _, dependent := range found {
+		under = append(under, *dependent)
+	}
+	return under, nil
 }
 
 // LinkedPorts is what update --revbump-dependents would bump for a port:

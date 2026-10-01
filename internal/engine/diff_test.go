@@ -200,3 +200,74 @@ func TestImpactSuggestsOneDependentOfEachKind(t *testing.T) {
 	require.Equal(t, []string{"luv", "aria2"}, names, "luv is the library and the runtime one")
 	require.Empty(t, Impact{}.OneOfEachKind())
 }
+
+// A port that depends on a changed one only under a variant is a
+// dependent too, which the index, recording default variants', doesn't
+// name: enchant2 links nuspell only under +nuspell (the flatbuffers,
+// nuspell, zola, and alertmanager run's finding 1). It's found where its
+// Portfile's variant names the port, and MacPorts, evaluating that
+// variant, says so; a variant naming it only in data, or a dependent the
+// index already names, isn't one again. impact doesn't suggest building
+// it, since check --also builds default variants.
+func TestADependentUnderAVariantIsFound(t *testing.T) {
+	e, _, base, _ := revisionFixture(t, nil)
+	tree := editTree(t, e, base, map[string]string{
+		"textproc/nuspell/Portfile":  "name nuspell\n",
+		"textproc/enchant2/Portfile": "name enchant2\nvariant nuspell description {Use nuspell} {\n    depends_lib-append port:nuspell\n}\nvariant docs {\n    set note port:nuspell\n}\n",
+		"textproc/hunspell/Portfile": "name hunspell\ndepends_lib port:nuspell\nvariant extra {\n    depends_run-append port:nuspell\n}\n",
+	})
+	e.PortReader = fakePorts{
+		directories: map[string][]macports.PortInfo{
+			"textproc/nuspell":  {{Name: "nuspell"}},
+			"textproc/enchant2": {{Name: "enchant2"}},
+			"textproc/hunspell": {{Name: "hunspell", Dependencies: []macports.Dependency{{Port: "nuspell", Phase: "lib"}}}},
+		},
+		withVariants: func(port macports.PortInfo, variants map[string]bool) macports.PortInfo {
+			if port.Name == "enchant2" && variants["nuspell"] {
+				port.Dependencies = append(port.Dependencies, macports.Dependency{Port: "nuspell", Phase: "lib", Spec: "port:nuspell"})
+			}
+			return port
+		},
+	}
+	dependents, err := e.dependents(t.Context(), model.Source{Tree: tree}, []string{"textproc/nuspell"})
+	require.NoError(t, err)
+	require.Equal(t, []Dependent{
+		{Name: "hunspell", Directory: "textproc/hunspell", On: []string{"nuspell"}, Phases: []string{"library"}},
+		{Name: "enchant2", Directory: "textproc/enchant2", On: []string{"nuspell"}, Phases: []string{"library"}, Variants: []string{"nuspell"}},
+	}, dependents)
+	require.Equal(t, "enchant2 (library, under +nuspell)", dependents[1].Words())
+	require.Equal(t, []Dependent{dependents[0]}, Impact{Dependents: dependents}.OneOfEachKind())
+}
+
+// A port that links a changed one only under a variant is a linked port
+// too, listed apart and bumped with the rest, which --except can leave
+// out: enchant2 links nuspell only under +nuspell, and --except enchant2
+// was refused as not a library dependent (the flatbuffers, nuspell, zola,
+// and alertmanager run's finding 1).
+func TestALinkedPortUnderAVariantIsBumpedAndCanBeExcepted(t *testing.T) {
+	f := setup(t)
+	harborMaster(t, f)
+	write(t, f.upstream, map[string]string{"net/harbor-sync/Portfile": "PortGroup github 1.0\nname harbor-sync\nvariant sync description {Sync} {\n    depends_lib-append port:libharbor\n}\n"})
+	run(t, f.upstream, "commit", "-q", "-am", "harbor-sync's variant")
+	e := f.open(t)
+	ports := harborPorts()
+	ports.directories["net/harbor-sync"] = []macports.PortInfo{port("harbor-sync")}
+	ports.withVariants = func(info macports.PortInfo, variants map[string]bool) macports.PortInfo {
+		if info.Name == "harbor-sync" && variants["sync"] {
+			info.Dependencies = append(info.Dependencies, macports.Dependency{Port: "libharbor", Phase: "lib", Spec: "port:libharbor"})
+		}
+		return info
+	}
+	e.PortReader = ports
+	branch, err := e.Start(t.Context(), StartRequest{Name: "libharbor-3", Here: true})
+	require.NoError(t, err)
+
+	linked, err := e.LinkedPorts(t.Context(), branch, "libharbor", nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{"harbor-cli", "harbor-viewer", "harbor-sync"}, dependentNames(linked.Bump))
+	require.Equal(t, []string{"sync"}, linked.Bump[2].Variants)
+	linked, err = e.LinkedPorts(t.Context(), branch, "libharbor", []string{"harbor-sync"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"harbor-sync"}, linked.Excepted)
+	require.Equal(t, []string{"harbor-cli", "harbor-viewer"}, dependentNames(linked.Bump))
+}

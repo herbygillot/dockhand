@@ -287,7 +287,7 @@ func writeImpact(out io.Writer, impact engine.Impact) {
 	default:
 		var dependents []string
 		for _, dependent := range impact.Dependents {
-			dependents = append(dependents, fmt.Sprintf("%s (%s)", dependent.Name, strings.Join(dependent.Phases, ", ")))
+			dependents = append(dependents, dependent.Words())
 		}
 		row(label, strings.Join(dependents, ", ")+"; candidates to look at, not proof of anything")
 	}
