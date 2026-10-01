@@ -34,6 +34,9 @@ func (l Level) String() string {
 type Update struct {
 	Level   Level
 	Message string
+	// About is what the report is about, as Within said, which Message
+	// begins with too: a part of the work, as one environment of a check.
+	About string
 }
 
 type reporterKey struct{}
@@ -149,7 +152,7 @@ func emit(ctx context.Context, level Level, format string, args ...any) {
 	}
 	update := Update{Level: level, Message: fmt.Sprintf(format, args...)}
 	if about, _ := ctx.Value(withinKey{}).(string); about != "" {
-		update.Message = about + ": " + update.Message
+		update.Message, update.About = about+": "+update.Message, about
 	}
 	for o := observed; o != nil; o = o.outer {
 		o.notify(update)

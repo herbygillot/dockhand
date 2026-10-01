@@ -370,6 +370,7 @@ type chatty struct{ bumper }
 func (c chatty) Prepare(ctx context.Context, r preparation.Request) (preparation.Result, error) {
 	progress.Report(ctx, "Building the PortIndex; this may take several minutes")
 	progress.VerboseReport(ctx, "Generating full PortIndex for source abc123")
+	progress.VerboseReport(progress.Within(ctx, "macOS 15 (Tart)"), "Using the cached PortIndex for base abc123")
 	return c.bumper.Prepare(ctx, r)
 }
 
@@ -391,6 +392,9 @@ func TestProgressGoesToStandardError(t *testing.T) {
 	_, errs, err = dockhand(t, "update", "jq", "--new", "-v")
 	require.NoError(t, err)
 	require.Contains(t, errs, "Building the PortIndex; this may take several minutes\nGenerating full PortIndex for source abc123\n")
+	// A report about a part of the work is indented under the command's
+	// own, as a check's run's lines are (the hugo exercise's check-65).
+	require.Contains(t, errs, "\n  macOS 15 (Tart): Using the cached PortIndex for base abc123\n")
 }
 
 // What dockhand can't write, it says in its own words, with advice only

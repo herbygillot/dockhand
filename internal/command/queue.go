@@ -247,17 +247,11 @@ before it; --all prints the whole log.`,
 				streams.emit(logsView(logs))
 				return writeLogs(streams.Out, logs)
 			}
-			var found model.TargetResult
-			for _, execution := range logs.Executions {
-				for _, result := range execution.Results {
-					if string(result.Target) == port && result.Log != "" {
-						found = result
-					}
-				}
-			}
-			if found.Log == "" {
+			chosen, others, ok := portLogs(logs, port)
+			if !ok {
 				return fmt.Errorf("%s recorded no log for %s", run.Name(), port)
 			}
+			found := chosen.result
 			data, err := os.ReadFile(found.Log)
 			if errors.Is(err, os.ErrNotExist) {
 				return fmt.Errorf("%s's log for %s, %s, is gone", run.Name(), port, found.Log)
@@ -265,13 +259,83 @@ before it; --all prints the whole log.`,
 			if err != nil {
 				return err
 			}
-			streams.emit(portLogView(run, found, data))
+			view := portLogView(run, found, data)
+			view.Execution = string(chosen.execution.ID)
+			for _, other := range others {
+				view.Elsewhere = append(view.Elsewhere, portLogElsewhereJSON{Execution: string(other.execution.ID), Environment: environmentView(other.execution.Environment), Outcome: string(other.result.Outcome), Tests: string(other.result.Tests)})
+			}
+			streams.emit(view)
+			// Which build's log this is, where the check built the port in
+			// more than one place, goes with the steps, or beside a log
+			// printed alone, so the log stays as it is.
+			if len(others) > 0 {
+				where := streams.Out
+				if all || len(found.Steps) == 0 {
+					where = streams.Err
+				}
+				fmt.Fprintf(where, "%s's log on %s, run %s: %s\n", port, environmentWords(chosen.execution.Environment), chosen.execution.ID, portBuildWords(found))
+				for _, other := range others {
+					fmt.Fprintf(where, "  also on %s, run %s: %s; dockhand logs %s --port %s\n", environmentWords(other.execution.Environment), other.execution.ID, portBuildWords(other.result), other.execution.ID, port)
+				}
+			}
 			return writePortLog(streams.Out, found, data, all)
 		},
 	}
 	cmd.Flags().StringVar(&port, "port", "", "print this port's log, from its own build on where its steps were recorded")
 	cmd.Flags().BoolVar(&all, "all", false, "with --port, print the whole log")
 	return cmd
+}
+
+// portLog is one build's log of a port: the provider run it was in, and
+// its result.
+type portLog struct {
+	execution model.GuestExecution
+	result    model.TargetResult
+}
+
+// portLogs are a check's logs of a port, the one to show first, and the
+// others: where it failed, or its tests did, before where it passed, the
+// latest of those. check-65's libuv-devel failed its tests on macOS 15 and
+// passed on 26, and logs --port showed 26's, the last (the hugo exercise).
+func portLogs(logs engine.RunLogs, port string) (portLog, []portLog, bool) {
+	var all []portLog
+	for _, execution := range logs.Executions {
+		for _, result := range execution.Results {
+			if string(result.Target) == port && result.Log != "" {
+				all = append(all, portLog{execution: execution.Execution, result: result})
+			}
+		}
+	}
+	if len(all) == 0 {
+		return portLog{}, nil, false
+	}
+	rank := func(result model.TargetResult) int {
+		switch {
+		case result.Outcome == model.OutcomeFailed:
+			return 2
+		case result.Tests.Failed():
+			return 1
+		}
+		return 0
+	}
+	chosen := 0
+	for i, log := range all {
+		if rank(log.result) >= rank(all[chosen].result) {
+			chosen = i
+		}
+	}
+	return all[chosen], append(slices.Clone(all[:chosen]), all[chosen+1:]...), true
+}
+
+// portBuildWords say how a build of a port went, for choosing its log.
+func portBuildWords(result model.TargetResult) string {
+	switch {
+	case result.Outcome == model.OutcomeFailed && result.Phase != "":
+		return "failed at " + string(result.Phase)
+	case result.Tests.Failed():
+		return string(result.Outcome) + ", its tests " + strings.ReplaceAll(string(result.Tests), "-", " ")
+	}
+	return string(result.Outcome)
 }
 
 // writePortLog prints a port's log. Where its provider recorded where each

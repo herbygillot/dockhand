@@ -488,8 +488,20 @@ type portLogJSON struct {
 	// OwnBuild is the line the port's own build begins on, after its
 	// dependencies' installs, where the text output starts; absent where
 	// the steps don't say.
-	OwnBuild int    `json:"own_build,omitempty"`
-	Text     string `json:"text"`
+	OwnBuild int `json:"own_build,omitempty"`
+	// Execution is the provider run whose build this is; Elsewhere, the
+	// check's other builds of the port, where it built it in more than one
+	// place.
+	Execution string                 `json:"execution,omitempty"`
+	Elsewhere []portLogElsewhereJSON `json:"elsewhere,omitempty"`
+	Text      string                 `json:"text"`
+}
+
+type portLogElsewhereJSON struct {
+	Execution   string          `json:"execution"`
+	Environment environmentJSON `json:"environment"`
+	Outcome     string          `json:"outcome"`
+	Tests       string          `json:"tests,omitempty"`
 }
 
 func portLogView(run model.Run, result model.TargetResult, data []byte) portLogJSON {

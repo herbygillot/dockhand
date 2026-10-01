@@ -230,6 +230,42 @@ func TestLogsForAPortStartsAtItsOwnBuild(t *testing.T) {
 	require.Zero(t, portLogView(model.Run{Number: 48}, alone, nil).OwnBuild)
 }
 
+// A check's logs of a port open where it failed, or failed its tests,
+// before where it passed, the latest of those, and name the others:
+// check-65's libuv-devel failed its tests on macOS 15 and passed on 26, and
+// logs --port showed 26's (the hugo exercise).
+func TestLogsForAPortOpenWhereItFailed(t *testing.T) {
+	sequoia := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
+	build := func(id string, environment model.Environment, result model.TargetResult) engine.ExecutionLogs {
+		result.Target, result.Log = "libuv-devel", "/logs/"+id+"/target-2.log"
+		return engine.ExecutionLogs{Execution: model.GuestExecution{ID: model.ExecutionID(id), Environment: environment}, Results: []model.TargetResult{result}}
+	}
+	logs := engine.RunLogs{Executions: []engine.ExecutionLogs{
+		build("tart_z4oq", sequoia, model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsFailed}),
+		build("tart_k7ma", tahoe, model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsPassed}),
+	}}
+	chosen, others, ok := portLogs(logs, "libuv-devel")
+	require.True(t, ok)
+	require.Equal(t, model.ExecutionID("tart_z4oq"), chosen.execution.ID)
+	require.Len(t, others, 1)
+	require.Equal(t, model.ExecutionID("tart_k7ma"), others[0].execution.ID)
+	require.Equal(t, "passed, its tests failed", portBuildWords(chosen.result))
+
+	// A failed build comes before failed tests; and with none, the latest.
+	logs.Executions = append(logs.Executions, build("tart_f41l", tahoe, model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseInstall}))
+	chosen, others, _ = portLogs(logs, "libuv-devel")
+	require.Equal(t, model.ExecutionID("tart_f41l"), chosen.execution.ID)
+	require.Len(t, others, 2)
+	require.Equal(t, "failed at install", portBuildWords(chosen.result))
+	logs.Executions = logs.Executions[1:2]
+	chosen, others, _ = portLogs(logs, "libuv-devel")
+	require.Equal(t, model.ExecutionID("tart_k7ma"), chosen.execution.ID)
+	require.Empty(t, others)
+	_, _, ok = portLogs(logs, "libuv")
+	require.False(t, ok)
+}
+
 // A check that passed in an environment made again since says so, and
 // asks for another check rather than a submit.
 func TestStatusSaysAnEnvironmentWasMadeAgain(t *testing.T) {

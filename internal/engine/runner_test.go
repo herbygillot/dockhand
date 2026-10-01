@@ -452,8 +452,9 @@ func TestWhatTheWorkReportsIsTheRunsProgress(t *testing.T) {
 	// The command shows what the run keeps through the run, and -v the
 	// rest, each saying which environment it's about, since two stage at
 	// once (the hugo exercise's check-64).
-	require.Contains(t, shown, progress.Update{Level: progress.Debug, Message: describeEnvironment(tahoeArm) + ": " + says})
-	require.Contains(t, shown, progress.Update{Level: progress.Verbose, Message: describeEnvironment(tahoeArm) + ": behind the scenes of " + says})
+	about := describeEnvironment(tahoeArm)
+	require.Contains(t, shown, progress.Update{Level: progress.Debug, Message: about + ": " + says, About: about})
+	require.Contains(t, shown, progress.Update{Level: progress.Verbose, Message: about + ": behind the scenes of " + says, About: about})
 }
 
 // A failure's detail gains what its log most likely says made it fail,

@@ -134,10 +134,19 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 		// v3 §12): what a person needs to follow it, and with -v and -vv,
 		// the work behind the scenes and every step.
 		threshold := progress.Level(min(verbosity, int(progress.Debug)))
+		// A report about a part of the work, as one environment of a check,
+		// is indented under the command's own, as the run's lines are: the
+		// index's lines began at the margin among the provider's (the hugo
+		// exercise's check-65).
 		cmd.SetContext(progress.WithReporter(cmd.Context(), func(update progress.Update) {
-			if update.Level <= threshold {
-				streams.status.say(update.Message)
+			if update.Level > threshold {
+				return
 			}
+			if update.About != "" {
+				streams.status.say("  " + update.Message)
+				return
+			}
+			streams.status.say(update.Message)
 		}))
 		mode.command = strings.TrimPrefix(cmd.CommandPath(), "dockhand ")
 		if cmd == root {

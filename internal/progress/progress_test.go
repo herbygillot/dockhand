@@ -109,12 +109,12 @@ func TestReportsSayWhatTheyreAboutAndKeptOnesArentRepeated(t *testing.T) {
 	progress.VerboseReport(progress.Within(environment, "base fd44713"), "indexing in full")
 	progress.Report(progress.Within(progress.Quiet(ctx), "not kept"), "lowered to verbose")
 	require.Equal(t, []progress.Update{
-		{Level: progress.Debug, Message: "macOS 15 (Tart): Building the PortIndex"},
-		{Level: progress.Verbose, Message: "macOS 15 (Tart): base fd44713: indexing in full"},
-		{Level: progress.Verbose, Message: "not kept: lowered to verbose"},
+		{Level: progress.Debug, Message: "macOS 15 (Tart): Building the PortIndex", About: "macOS 15 (Tart)"},
+		{Level: progress.Verbose, Message: "macOS 15 (Tart): base fd44713: indexing in full", About: "macOS 15 (Tart): base fd44713"},
+		{Level: progress.Verbose, Message: "not kept: lowered to verbose", About: "not kept"},
 	}, shown)
 	require.Equal(t, []progress.Update{
-		{Level: progress.Info, Message: "macOS 15 (Tart): Building the PortIndex"},
-		{Level: progress.Verbose, Message: "macOS 15 (Tart): base fd44713: indexing in full"},
+		{Level: progress.Info, Message: "macOS 15 (Tart): Building the PortIndex", About: "macOS 15 (Tart)"},
+		{Level: progress.Verbose, Message: "macOS 15 (Tart): base fd44713: indexing in full", About: "macOS 15 (Tart): base fd44713"},
 	}, kept)
 }
