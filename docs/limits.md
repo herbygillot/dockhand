@@ -22,9 +22,9 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 
 | Limit | Value | When it's hit | Where | |
 | --- | --- | --- | --- | --- |
-| Distfile download, size | 512 MiB | "larger than the 512 MiB limit"; archives not compared, which holds | `portedit/archives/download.go:153` | gap |
-| Distfile download, time | 2 min | "no complete response within dockhand's 2m0s limit" | `portedit/archives/download.go:149` |  |
-| Forge archive of a commit (Git-fetched ports) | 512 MiB | "couldn't be fetched from its forge" | `upstream/source_archive.go:19` |  |
+| Distfile download, size | none | any size downloads, at the person's word (2026-10-01) | `portedit/archives/download.go` |  |
+| Distfile download, time | 1 min without data | "no data arrived for 1m0s, so dockhand gave up on it"; a download that keeps arriving goes on | `portedit/archives/download.go`, `fetch/stall.go` |  |
+| Forge archive of a commit (Git-fetched ports) | none | any size downloads | `upstream/source_archive.go` |  |
 | Livecheck page | 16 MiB | too large; the lookup's result is unknown | `upstream/http.go:130` |  |
 | Livecheck document through GitHub's API | 16 MiB | "document exceeds the 16 MiB listing limit" | `forge/github/documents.go:47` |  |
 | Manifest read from a forge (go.mod) | 1 MiB | "exceeds N bytes" | `upstream/manifest.go:14` |  |
@@ -48,9 +48,9 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 
 | Limit | Value | When it's hit | Where | |
 | --- | --- | --- | --- | --- |
-| Archive walk (tar, any compression) | 1 GiB uncompressed | "exceeds scan limit: it holds more than the 1024 MiB…"; holds | `archive/archive.go:26` | gap |
-| Zip archives | no limit | nothing stops a large one | `archive/archive.go (zip branch)` | gap |
-| diff --archive extraction to disk | no cap | writes both archives whole | `engine/archivediff.go:143` | gap |
+| Archive walk (tar, any compression) | 4 GiB uncompressed, all read through | "exceeds scan limit: it holds more than the 4 GiB dockhand reads of one, uncompressed"; holds | `archive/archive.go` |  |
+| Zip archives | 4 GiB of what's read | as a tar archive's; a member not read costs nothing | `archive/archive.go` (zip branch) |  |
+| diff --archive extraction to disk | 4 GiB per archive, the walk's bound | writes both archives whole, up to it | `engine/archivediff.go:143` |  |
 | A file the comparison reads (license, build file, manifest, Cargo.lock, package.json) | 1 MiB each | kept truncated; "larger than the 1024 KiB the comparison reads"; holds, but for go.mod, Cargo.toml, Cargo.lock, package.json | `project/read.go:71` | in usage.md |
 | License text moved between files | ≤ 10 other lines | past that, the changes stand as changes | `sourcecompare/compare.go:191` |  |
 | Symlink target in a snapshot | 4096 B | "symlink target too long" | `git/snapshot.go:184` |  |

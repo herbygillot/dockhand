@@ -38,8 +38,10 @@ import (
 // said once, holding nothing, and a subport's archives planned for it.
 // 8: a vendored port's patches read in the tree, so one with patches of
 // its own is compared, where rust's were "not compared" (the rust and
-// cargo run).
-const Policy = 8
+// cargo run). 9: archives of any size downloaded, and read to 4 GiB
+// uncompressed, a zip's under the same bound, where rust's source was past
+// both (the person's word, 2026-10-01).
+const Policy = 9
 
 // Input is what one port's assessment reads.
 type Input struct {

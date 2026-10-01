@@ -86,4 +86,26 @@ func TestAWalkPastTheLimitSaysSo(t *testing.T) {
 	}
 	scanLimit = 1 << 20
 	require.NoError(t, Walk(t.Context(), tarball, func(Member) error { return nil }), "within the limit, the archive ends as it does")
+
+	// A zip archive's members count as they're read, under the same limit,
+	// where it had none (the limits sweep); one not read costs nothing.
+	var zipped bytes.Buffer
+	zw := zip.NewWriter(&zipped)
+	for _, name := range []string{"root/a.txt", "root/b.txt"} {
+		w, err := zw.Create(name)
+		require.NoError(t, err)
+		_, _ = w.Write(bytes.Repeat([]byte("x"), 2048))
+	}
+	require.NoError(t, zw.Close())
+	zipfile := filepath.Join(t.TempDir(), "source-456")
+	require.NoError(t, os.WriteFile(zipfile, zipped.Bytes(), 0600))
+	scanLimit = 3072
+	err := Walk(t.Context(), zipfile, func(m Member) error {
+		_, err := io.Copy(io.Discard, m.Body)
+		return err
+	})
+	require.ErrorIs(t, err, errScanLimit)
+	require.ErrorContains(t, err, "more than the 3 KiB dockhand reads of one")
+	require.NoError(t, Walk(t.Context(), zipfile, func(Member) error { return nil }))
+	require.Equal(t, "4 GiB", sizeWords(4<<30))
 }

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -36,14 +37,17 @@ type Download struct {
 // fetched from.
 type Source struct{ Name, URL string }
 
-// Client fetches archives with bounded size and time; the zero value uses
-// the default HTTP client, 512 MiB, and two minutes.
+// Client fetches archives, each of any size, as long as data keeps
+// arriving; the zero value uses dockhand's HTTP client and a minute's
+// stall. A download's size is unbounded at the person's word (2026-10-01):
+// rustc's 566 MB source passed the 512 MiB it had, and the two minutes.
 type Client struct {
 	HTTP *http.Client
-	// MaxBytes bounds each archive; 512 MiB when unset.
+	// MaxBytes bounds each archive; none when unset.
 	MaxBytes int64
-	// Timeout bounds each archive download; two minutes when unset.
-	Timeout time.Duration
+	// Stall bounds how long a download may go without a byte, the wait
+	// for a response included; a minute when unset.
+	Stall time.Duration
 	// Mirror is where Shipped looks for an archive upstream no longer
 	// serves as declared, MacPortsMirror in use; none when empty, as in
 	// tests.
@@ -146,20 +150,25 @@ func Sources(info macports.PortInfo, portdir string) ([]Source, error) {
 
 func (c Client) download(ctx context.Context, info macports.PortInfo, source Source, output io.Writer) (Download, error) {
 	name, address := source.Name, source.URL
-	timeout := c.Timeout
-	if timeout <= 0 {
-		timeout = 2 * time.Minute
+	bound := c.Stall
+	if bound <= 0 {
+		bound = time.Minute
 	}
 	limit := c.MaxBytes
 	if limit <= 0 {
-		limit = 512 << 20
+		limit = math.MaxInt64
 	}
 	parent := ctx
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	ctx, stall := fetch.NewStall(ctx, bound)
+	defer stall.Stop()
 	// fail words a failure with the file, the URL it was asked from, and the
 	// cause, so the job's detail says where and why without the log.
-	fail := func(err error) error { return downloadError(parent, name, address, limit, timeout, err) }
+	fail := func(err error) error {
+		if errors.Is(context.Cause(ctx), fetch.ErrStalled) {
+			err = fmt.Errorf("%w for %s, so dockhand gave up on it: %w", fetch.ErrStalled, bound, err)
+		}
+		return downloadError(parent, name, address, limit, err)
+	}
 	var reader io.ReadCloser
 	if strings.HasPrefix(address, "ftp://") {
 		// An anonymous FTP fetch, which about a hundred ports' only master
@@ -195,8 +204,9 @@ func (c Client) download(ctx context.Context, info macports.PortInfo, source Sou
 		reader = response.Body
 	}
 	defer reader.Close()
+	body := stall.Reader(reader)
 	prefix := make([]byte, 512)
-	n, err := io.ReadFull(reader, prefix)
+	n, err := io.ReadFull(body, prefix)
 	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 		return Download{}, fail(fmt.Errorf("transfer stopped after %d bytes: %w", n, err))
 	}
@@ -213,7 +223,7 @@ func (c Client) download(ctx context.Context, info macports.PortInfo, source Sou
 	if _, err = hashes.Write(prefix); err != nil {
 		return Download{}, err
 	}
-	remaining, err := io.Copy(hashes, reader)
+	remaining, err := io.Copy(hashes, body)
 	if err != nil {
 		return Download{}, fail(fmt.Errorf("transfer stopped after %d bytes: %w", int64(n)+remaining, err))
 	}
@@ -228,12 +238,12 @@ var errHTMLPage = errors.New("the server sent an HTML page instead of the file")
 
 // downloadError words one archive's failure: the file, the URL it was asked
 // from, and the cause. A refusal keeps its status, the redirect that led to
-// it, and what the server said; the size limit and dockhand's own deadline
-// are named as such, since the bare errors say neither the number nor whose
-// limit it was; a transport error drops the URL it repeats. The parent
+// it, and what the server said; a size limit is named as such, since the
+// bare error says neither the number nor whose limit it was, and a stall
+// says itself; a transport error drops the URL it repeats. The parent
 // context's own cancellation passes through unworded, and every cause stays
 // reachable with errors.Is and errors.As.
-func downloadError(parent context.Context, name, address string, limit int64, timeout time.Duration, err error) error {
+func downloadError(parent context.Context, name, address string, limit int64, err error) error {
 	if parent.Err() != nil {
 		return fmt.Errorf("archives: downloading %s from %s: %w", name, address, parent.Err())
 	}
@@ -248,8 +258,8 @@ func downloadError(parent context.Context, name, address string, limit int64, ti
 		return fmt.Errorf("archives: downloading %s: %w%s", name, err, note)
 	case errors.Is(err, fetch.ErrTooLarge):
 		return fmt.Errorf("archives: downloading %s from %s: larger than the %s limit: %w", name, address, byteLabel(limit), err)
-	case errors.Is(err, context.DeadlineExceeded):
-		return fmt.Errorf("archives: downloading %s from %s: no complete response within dockhand's %s limit: %w", name, address, timeout, err)
+	case errors.Is(err, fetch.ErrStalled):
+		return fmt.Errorf("archives: downloading %s from %s: %w", name, address, err)
 	case errors.As(err, &transport):
 		return fmt.Errorf("archives: downloading %s from %s: %w", name, address, transport.Err)
 	}

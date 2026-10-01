@@ -1,6 +1,7 @@
 package archives
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -13,6 +14,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/fetch"
 )
 
 func archiveInfo(site string) macports.PortInfo {
@@ -90,12 +93,25 @@ func TestDownloadRejectsErrorBodiesAndSizeOverflow(t *testing.T) {
 	_, err := (Client{}).fetchOne(ctx, archiveInfo("http://localhost"))
 	require.ErrorIs(t, err, context.Canceled)
 
-	// Dockhand's own deadline is named as its own, with the URL and the file.
+	// A download that stalls is given up, said as such, with the URL and the
+	// file; one that keeps sending goes on past the bound, whatever its
+	// size, which nothing bounds (the person's word, 2026-10-01).
 	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
 	defer slow.Close()
-	_, err = (Client{Timeout: 50 * time.Millisecond}).fetchOne(t.Context(), archiveInfo(slow.URL))
-	require.ErrorIs(t, err, context.DeadlineExceeded)
-	require.ErrorContains(t, err, "downloading source-2.tar.gz from "+slow.URL+"/source-2.tar.gz: no complete response within dockhand's 50ms limit")
+	_, err = (Client{Stall: 50 * time.Millisecond}).fetchOne(t.Context(), archiveInfo(slow.URL))
+	require.ErrorIs(t, err, fetch.ErrStalled)
+	require.ErrorContains(t, err, "downloading source-2.tar.gz from "+slow.URL+"/source-2.tar.gz: fetch: no data arrived for 50ms, so dockhand gave up on it")
+	trickle := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for range 8 {
+			_, _ = w.Write(bytes.Repeat([]byte{0x1f}, 64))
+			w.(http.Flusher).Flush()
+			time.Sleep(20 * time.Millisecond)
+		}
+	}))
+	defer trickle.Close()
+	result, err := (Client{Stall: 50 * time.Millisecond}).fetchOne(t.Context(), archiveInfo(trickle.URL))
+	require.NoError(t, err, "160 ms in all, but never 50 without a byte")
+	require.Equal(t, int64(512), result.Size)
 
 	// A transport failure names the cause without repeating the URL.
 	_, err = (Client{}).fetchOne(t.Context(), archiveInfo("http://127.0.0.1:1"))

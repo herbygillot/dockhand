@@ -22,8 +22,11 @@ import (
 var errScanLimit = errors.New("archive: exceeds scan limit")
 
 // scanLimit bounds the uncompressed bytes one walk reads; a variable for
-// tests.
-var scanLimit int64 = 1 << 30
+// tests. 4 GiB, at the person's word (2026-10-01): rustc's source holds
+// 3.5 GiB, past the 1 GiB it had. A tar stream has no index, so a walk
+// reads every member to reach the next; a zip archive's members are read
+// only as asked, so what's read of them counts.
+var scanLimit int64 = 4 << 30
 
 // scanLimited is a stream that stops at the scan limit, and says so where
 // more follows, rather than ending as if the archive had: tar read a
@@ -34,13 +37,26 @@ type scanLimited struct {
 	n int64
 }
 
+// sizeWords is a limit in the unit that reads naturally.
+func sizeWords(n int64) string {
+	switch {
+	case n >= 1<<30 && n%(1<<30) == 0:
+		return fmt.Sprintf("%d GiB", n>>30)
+	case n >= 1<<20 && n%(1<<20) == 0:
+		return fmt.Sprintf("%d MiB", n>>20)
+	case n >= 1<<10 && n%(1<<10) == 0:
+		return fmt.Sprintf("%d KiB", n>>10)
+	}
+	return fmt.Sprintf("%d bytes", n)
+}
+
 func (s *scanLimited) Read(p []byte) (int, error) {
 	if s.n <= 0 {
 		var one [1]byte
 		k, err := io.ReadFull(s.r, one[:])
 		switch {
 		case k > 0:
-			return 0, fmt.Errorf("%w: it holds more than the %d MiB dockhand reads of one, uncompressed", errScanLimit, scanLimit>>20)
+			return 0, fmt.Errorf("%w: it holds more than the %s dockhand reads of one, uncompressed", errScanLimit, sizeWords(scanLimit))
 		case err != nil && !errors.Is(err, io.EOF):
 			return 0, err
 		}
@@ -93,6 +109,9 @@ func Walk(ctx context.Context, filename string, fn func(Member) error) error {
 		if err != nil {
 			return err
 		}
+		// What's read of the members counts against the scan limit, as a
+		// tar stream's does; a zip archive had none (the limits sweep).
+		budget := &scanLimited{n: scanLimit}
 		for _, member := range zr.File {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -101,7 +120,8 @@ func Walk(ctx context.Context, filename string, fn func(Member) error) error {
 			if err != nil {
 				return err
 			}
-			err = fn(Member{Name: member.Name, Regular: member.Mode().IsRegular(), Size: int64(member.UncompressedSize64), Body: body})
+			budget.r = body
+			err = fn(Member{Name: member.Name, Regular: member.Mode().IsRegular(), Size: int64(member.UncompressedSize64), Body: budget})
 			closeErr := body.Close()
 			if err != nil {
 				return err

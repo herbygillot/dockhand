@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -14,9 +15,9 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
 )
 
-// sourceArchiveLimit bounds a forge's archive of a commit, as a distfile's
-// download is bounded.
-const sourceArchiveLimit = 512 << 20
+// sourceArchiveLimit is a forge's archive of a commit unbounded in size, as
+// a distfile's download is, at the person's word (2026-10-01).
+const sourceArchiveLimit = math.MaxInt64
 
 // SourceArchive writes the forge's archive of a Git-fetched port's
 // repository at a commit into a directory, and gives its path, for
