@@ -50,6 +50,26 @@ func TestTheFirstCompilerErrorIsTheLikelyCause(t *testing.T) {
 	}
 }
 
+// A line past the 1 MiB read for a cause, as a build may print, is passed
+// over and still counted, and the log is read on: the scan stopped at one
+// without saying, and the error after it went unseen.
+func TestALongLineDoesNotHideTheCauseAfterIt(t *testing.T) {
+	long := strings.Repeat("x", maxLine+1)
+	log := "--->  Building foo\n" + long + "\nfoo.c:1:2: error: unknown type name 'bar'\n"
+	cause, ok := FirstFrom(strings.NewReader(log), 2)
+	require.True(t, ok)
+	require.Equal(t, Cause{Line: "foo.c:1:2: error: unknown type name 'bar'", Number: 3}, cause, "numbered as From counts")
+	rest, ok := From([]byte(log), cause.Number)
+	require.True(t, ok)
+	require.True(t, strings.HasPrefix(string(rest), cause.Line))
+
+	_, ok = First(strings.NewReader("foo.c:1:2: error: " + long))
+	require.False(t, ok, "a cause past the bound, with no newline, is passed over too")
+	cause, ok = First(strings.NewReader("--->  Building foo\nfoo.c:1:2: error: no newline at the end"))
+	require.True(t, ok)
+	require.Equal(t, 2, cause.Number)
+}
+
 // A log from a line is what follows the newlines before it, as the Tart
 // guest counts lines where each step of a build begins: a step that wrote
 // nothing last begins after the log's last line, and a line the log never

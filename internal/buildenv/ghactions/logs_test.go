@@ -1,6 +1,7 @@
 package ghactions
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -65,4 +66,16 @@ func TestARunnerListsItsSubportsOrStoppedFirst(t *testing.T) {
 	require.True(t, ListsSubports([]byte(runnerLog)))
 	require.True(t, ListsSubports([]byte("::group::Listing subports\n::endgroup::\n")), "listing none is listing")
 	require.False(t, ListsSubports([]byte("2026-09-25T10:00:00.0000000Z ##[group]Run set -eu\n2026-09-25T10:00:05.0000000Z ##[error]Process completed with exit code 1.\n")))
+}
+
+// A line longer than the scan reads, as a build's output may print, is
+// passed over, and the markers after it are still read: a scan stopped at
+// it silently, and the ports after it read as never built.
+func TestALongLineDoesNotEndTheLogsReading(t *testing.T) {
+	long := "2026-09-25T10:00:00.5000000Z " + strings.Repeat("x", maxLogLine+1) + "\n"
+	log := []byte(long + runnerLog)
+	require.True(t, ListsSubports(log))
+	built := ReadLog(log)
+	require.Equal(t, model.TestsFailed, built["jq"].Tests())
+	require.True(t, built["harbor"].Install, "the last marker is read")
 }

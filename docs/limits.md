@@ -102,6 +102,7 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 | Attempts per environment | 3, retried at once | "failed 3 times for reasons of its own" | `model/execution.go:14` |  |
 | Earlier results tried for reuse | 5 newest | per target and environment | `engine/reuse.go:18` |  |
 | --variants each builds before asking | 12 | asks, or needs --yes | `command/check.go:923` | in usage.md |
+| A build log's line read for a failure's likely cause | 1 MiB | passed over, still counted, and the log read on | `buildlog/buildlog.go` (`maxLine`) |  |
 | Cancel requests checked | every 1 s | — | `engine/runner.go:359` |  |
 | check follows the run | every 200 ms; waitFor every 500 ms | — | `command/check.go:491,550` |  |
 | watch | 1 s poll, 30 s redraw | — | `command/watch.go:21,25` |  |
@@ -147,8 +148,8 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 | A run to appear | 10 min, polled every 30 s | "GitHub started no run… are Actions enabled?" | `buildenv/ghactions/provider.go:136` |  |
 | A run to finish | no bound | — | `buildenv/ghactions/provider.go:213` | gap |
 | Cancelling a run on GitHub | 30 s | — | `buildenv/ghactions/provider.go:200` |  |
-| Job log | 64 MiB | cut silently | `buildenv/ghactions/github.go:19` | gap |
-| A job log line | 4 MiB | the scan stops silently | `buildenv/ghactions/logs.go:60` | gap |
+| Job log | 64 MiB | kept to it, and the kept log ends saying it was cut | `buildenv/ghactions/github.go` (`maxJobLogBytes`) |  |
+| A job log line | 4 MiB | passed over, and the log read on; the workflow's markers are short | `buildenv/ghactions/logs.go` (`maxLogLine`) |  |
 | The command provider's script | no timeout; on cancel SIGINT, 30 s, SIGKILL | — | `buildenv/script/script.go:166` |  |
 
 ## serve and cleanup

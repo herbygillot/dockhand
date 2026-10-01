@@ -1,8 +1,8 @@
 package ghactions
 
 import (
-	"bufio"
 	"bytes"
+	"iter"
 	"regexp"
 	"strings"
 
@@ -56,14 +56,35 @@ func (b Built) Tests() model.TestOutcome {
 // subports it would build: a runner that stopped before then can't say
 // which ports it would have built.
 func ListsSubports(log []byte) bool {
-	scanner := bufio.NewScanner(bytes.NewReader(log))
-	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	for scanner.Scan() {
-		if line := timestamp.ReplaceAllString(scanner.Text(), ""); line == "##[group]Listing subports" || line == "::group::Listing subports" {
+	for line := range lines(log) {
+		if line == "##[group]Listing subports" || line == "::group::Listing subports" {
 			return true
 		}
 	}
 	return false
+}
+
+// maxLogLine is the longest line of a job's log read for the workflow's
+// markers, which are short. A longer one, as a build's output may print,
+// is passed over and the log read on: a scanner stopped at it, without
+// checking why, and every subport and marker after it went unseen (the
+// limits sweep, 2026-10-01).
+const maxLogLine = 4 << 20
+
+// lines are a job's log's lines, each without its timestamp or line end,
+// but for one past maxLogLine.
+func lines(log []byte) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		for line := range bytes.Lines(log) {
+			if len(line) > maxLogLine {
+				continue
+			}
+			text := strings.TrimRight(string(line), "\r\n")
+			if !yield(timestamp.ReplaceAllString(text, "")) {
+				return
+			}
+		}
+	}
 }
 
 // GitHub's job logs begin each line with a timestamp.
@@ -80,10 +101,7 @@ func ReadLog(log []byte) map[string]*Built {
 		return built[name]
 	}
 	listing := false
-	scanner := bufio.NewScanner(bytes.NewReader(log))
-	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	for scanner.Scan() {
-		line := timestamp.ReplaceAllString(scanner.Text(), "")
+	for line := range lines(log) {
 		switch {
 		case line == "##[group]Listing subports" || line == "::group::Listing subports":
 			listing = true

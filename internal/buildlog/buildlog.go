@@ -9,6 +9,7 @@ package buildlog
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"io"
 	"regexp"
 	"strings"
@@ -39,19 +40,35 @@ func First(log io.Reader) (Cause, bool) { return FirstFrom(log, 1) }
 // where the step that failed began: a dependency's build before it may
 // have printed an error of its own and gone on (batch 14).
 func FirstFrom(log io.Reader, from int) (Cause, bool) {
-	lines := bufio.NewScanner(log)
-	lines.Buffer(make([]byte, 64<<10), 1<<20)
-	for number := 1; lines.Scan(); number++ {
-		if number < from {
-			continue
+	lines := bufio.NewReaderSize(log, maxLine)
+	for number := 1; ; number++ {
+		line, err := lines.ReadSlice('\n')
+		long := false
+		for errors.Is(err, bufio.ErrBufferFull) {
+			long = true
+			_, err = lines.ReadSlice('\n')
 		}
-		line := strings.TrimRight(lines.Text(), "\r")
-		if compilerError.MatchString(line) {
-			return Cause{Line: strings.TrimSpace(line), Number: number}, true
+		if err != nil && !errors.Is(err, io.EOF) || len(line) == 0 && !long {
+			return Cause{}, false
+		}
+		if !long && number >= from {
+			text := strings.TrimRight(string(line), "\r\n")
+			if compilerError.MatchString(text) {
+				return Cause{Line: strings.TrimSpace(text), Number: number}, true
+			}
+		}
+		if err != nil {
+			return Cause{}, false
 		}
 	}
-	return Cause{}, false
 }
+
+// maxLine is the longest line of a log read for a cause, which a
+// compiler's error line is well within. A longer one, as a build may
+// print, is passed over, still counted, and the log read on: the scanner
+// before stopped at it without saying, and every cause after it went
+// unseen (the limits sweep, 2026-10-01).
+const maxLine = 1 << 20
 
 // From is a log from the start of one of its lines, counting from 1, as
 // a provider records where each step of a build begins: nothing after a

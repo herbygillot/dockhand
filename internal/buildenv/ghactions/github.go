@@ -15,8 +15,14 @@ import (
 	githubapi "github.com/herbygillot/dockhand/internal/github"
 )
 
-// maxJobLogBytes bounds one job's log; a longer one is kept to the bound.
+// maxJobLogBytes bounds one job's log; a longer one is kept to the bound,
+// and says so (cutJobLog).
 const maxJobLogBytes = 64 << 20
+
+// cutJobLog ends a job's log kept to maxJobLogBytes, where a person reading
+// it, the log a failure names, finds it: a log cut silently read as one
+// whose runner stopped there (the limits sweep, 2026-10-01).
+const cutJobLog = "\ndockhand: this log was cut at 64 MiB, the most dockhand keeps of one job's log; the rest is on the job's page on GitHub\n"
 
 // GitHub is the API on GitHub itself, with your login.
 type GitHub struct {
@@ -145,5 +151,9 @@ func (g GitHub) JobLog(ctx context.Context, repository string, job int64) ([]byt
 		return nil, fmt.Errorf("github: job log: %w", err)
 	}
 	defer response.Body.Close()
-	return io.ReadAll(io.LimitReader(response.Body, maxJobLogBytes))
+	log, err := io.ReadAll(io.LimitReader(response.Body, maxJobLogBytes+1))
+	if err != nil || len(log) <= maxJobLogBytes {
+		return log, err
+	}
+	return append(log[:maxJobLogBytes], cutJobLog...), nil
 }
