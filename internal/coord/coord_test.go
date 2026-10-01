@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/store/sqlite"
 )
@@ -215,8 +216,58 @@ func TestKeepAliveBeats(t *testing.T) {
 	started := s.Record().HeartbeatAt
 	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
 	defer cancel()
-	require.NoError(t, s.KeepAlive(ctx))
+	s.KeepAlive(ctx)
 	require.True(t, s.Record().HeartbeatAt.After(started))
+}
+
+// failingWrites is a store whose next writes fail, as one that waited past
+// SQLite's busy or transaction timeout does.
+type failingWrites struct {
+	store.Store
+	mu   sync.Mutex
+	fail int
+}
+
+func (f *failingWrites) Update(ctx context.Context, repo model.RepositoryID, fn func(store.Tx) error) error {
+	f.mu.Lock()
+	failing := f.fail > 0
+	if failing {
+		f.fail--
+	}
+	f.mu.Unlock()
+	if failing {
+		return context.DeadlineExceeded
+	}
+	return f.Store.Update(ctx, repo, fn)
+}
+
+// A failed beat doesn't end the heartbeat: one write that waited past the
+// store's timeouts stopped it for good, and another session could then
+// judge a live serve hung and take its lead (the limits sweep). The run of
+// failures is said once, and so is the beat that ends it.
+func TestAHeartbeatGoesOnAfterAFailedBeat(t *testing.T) {
+	f := setup(t)
+	f.c.Now, f.c.Heartbeat = nil, 10*time.Millisecond
+	s := f.session(t, 100, model.SessionServe)
+	flaky := &failingWrites{Store: f.c.Store, fail: 3}
+	f.c.Store = flaky
+	started := s.Record().HeartbeatAt
+	var said []string
+	var mu sync.Mutex
+	ctx := progress.WithReporter(t.Context(), func(update progress.Update) {
+		mu.Lock()
+		defer mu.Unlock()
+		said = append(said, update.Message)
+	})
+	ctx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancel()
+	s.KeepAlive(ctx)
+	require.True(t, s.Record().HeartbeatAt.After(started), "it beat again after the failures")
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, said, 2, "%q", said)
+	require.Contains(t, said[0], "Couldn't record that this dockhand is still running (context deadline exceeded)")
+	require.Equal(t, "This dockhand is recorded as running again.", said[1])
 }
 
 func TestSystemLivenessKnowsAReplacedOrExitedProcess(t *testing.T) {

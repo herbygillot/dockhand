@@ -471,7 +471,7 @@ func startSession(ctx context.Context, e *engine.Engine, kind model.SessionKind)
 	if err != nil {
 		return nil, err
 	}
-	go func() { _ = session.KeepAlive(ctx) }()
+	go session.KeepAlive(ctx)
 	return session, nil
 }
 

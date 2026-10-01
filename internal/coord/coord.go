@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -157,17 +158,31 @@ func (s *Session) Beat(ctx context.Context) error {
 	return nil
 }
 
-// KeepAlive beats until ctx is done, returning the first failure.
-func (s *Session) KeepAlive(ctx context.Context) error {
+// KeepAlive beats until ctx is done. A beat that fails is tried again at
+// the next, rather than ending the heartbeat: one write that waited past
+// the store's timeouts once stopped it for good, and two minutes later
+// another session could judge this process hung and take its leases,
+// serve's lead among them (the limits sweep, 2026-10-01). A run of
+// failures is said once, as is the beat that ends it.
+func (s *Session) KeepAlive(ctx context.Context) {
 	ticker := time.NewTicker(s.c.heartbeat())
 	defer ticker.Stop()
+	failing := false
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return
 		case <-ticker.C:
-			if err := s.Beat(ctx); err != nil && ctx.Err() == nil {
-				return err
+			err := s.Beat(ctx)
+			switch {
+			case ctx.Err() != nil:
+				return
+			case err != nil && !failing:
+				failing = true
+				progress.Report(ctx, "Couldn't record that this dockhand is still running (%v); trying again every %s. After %s without it, another dockhand may take over its work.", err, s.c.heartbeat(), s.c.hungAfter())
+			case err == nil && failing:
+				failing = false
+				progress.Report(ctx, "This dockhand is recorded as running again.")
 			}
 		}
 	}
