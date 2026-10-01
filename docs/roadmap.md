@@ -364,7 +364,7 @@ What batches 10 to 15 touch doesn't move with item 6, so they wait without cost,
     - anonymous GitHub remembered for a few minutes (finding 45).
 - **The observer's boundary at Golden Gate.** A boundary at `${os.major} >= 27` samples nothing below it, since its lower neighbor, Darwin 26, never shipped; the release below, 25, should stand in ([note](activity/2026-09-28-facts-with-homes.md)).
 - **What batch 22 left** ([note](activity/2026-09-30-batch-22.md)):
-  - `outdated --mine` still suggests the `{@you example.org:you}` placeholder, where `SuggestMaintainer` would give the person's own line;
+  - `outdated --mine` still suggests the `{@you example.org:you}` placeholder, where `SuggestMaintainer` would give the person's own line. Done 2026-09-30, with hints naming the configuration file read and `serve` saying it as it starts (the dogfood run with 251a1264);
   - `submit --json` doesn't carry a person's `release-moved` or `source-moved` concerns, which only its text and an unattended submission's `held` say;
   - an assessment of a Git-fetched port is recorded once per set of files and never compared with the commit a later check planned; `release-moved` covers an update, and nothing covers a hand edit, which records no release.
 - **A changed directory's subports, named.** `impact` and `diff` say "Changed ports libuv", and `review`'s summary "1 commit changing libuv", where devel/libuv also defines libuv-devel, which the change reaches as much and the assessment already reports (the batch 11 run on #34620). The index at the base names a directory's subports, which `Dependents` already reads; taken when those verbs are next touched.

@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"os"
 	"testing"
 	"time"
 
@@ -56,18 +57,18 @@ func TestTheMaintainerSuggestedIsTheLineThePortsWrite(t *testing.T) {
 	suggestion := e.SuggestMaintainer(t.Context(), base)
 	require.Equal(t, []model.Source{{Commit: base, Tree: tree, Base: base}}, asked, "the index of the commit given")
 	require.Equal(t, MaintainerSuggestion{Login: "ada", Spellings: []portindex.MaintainerSpelling{{Maintainer: own, Portfiles: 41}, {Maintainer: macports.Maintainer{"@ada"}, Portfiles: 3}}}, suggestion)
-	require.Equal(t, `set maintainer = "{example.org:ada @ada}" in ~/.dockhand/config.toml, as 41 of the ports that name @ada write it, or as others do: "@ada" (3)`, MaintainerWords(suggestion))
+	require.Equal(t, `set maintainer = "{example.org:ada @ada}" in ~/.dockhand/config.toml, as 41 of the ports that name @ada write it, or as others do: "@ada" (3)`, MaintainerWords(suggestion, "~/.dockhand/config.toml"))
 	suggestion.Spellings = suggestion.Spellings[:1]
-	require.Equal(t, `set maintainer = "{example.org:ada @ada}" in ~/.dockhand/config.toml, as the ports that name @ada write it`, MaintainerWords(suggestion))
+	require.Equal(t, `set maintainer = "{example.org:ada @ada}" in ~/.dockhand/config.toml, as the ports that name @ada write it`, MaintainerWords(suggestion, "~/.dockhand/config.toml"))
 
 	placeholder := `set maintainer = "{@you example.org:you}" in ~/.dockhand/config.toml`
 	e.PortReader = maintainedPorts{asked: &asked}
-	require.Equal(t, placeholder, MaintainerWords(e.SuggestMaintainer(t.Context(), base)), "nothing names the login")
+	require.Equal(t, placeholder, MaintainerWords(e.SuggestMaintainer(t.Context(), base), "~/.dockhand/config.toml"), "nothing names the login")
 	e.Forge = signedOut{}
 	asked = nil
 	require.Equal(t, MaintainerSuggestion{}, e.SuggestMaintainer(t.Context(), base))
 	require.Empty(t, asked, "with no login, the index isn't read")
-	require.Equal(t, placeholder, MaintainerWords(MaintainerSuggestion{}))
+	require.Equal(t, placeholder, MaintainerWords(MaintainerSuggestion{}, "~/.dockhand/config.toml"))
 }
 
 // serve.for_outdated without a maintainer suggests the person's own line,
@@ -85,4 +86,16 @@ func TestServeSuggestsTheMaintainerLineThePortsWrite(t *testing.T) {
 	require.Equal(t, []string{`serve: serve.for_outdated needs to know your ports: set maintainer = "{example.org:ada @ada}" in ~/.dockhand/config.toml, as the ports that name @ada write it`}, said)
 	require.Len(t, asked, 1)
 	require.Equal(t, f.upstreamMaster(t), asked[0].Commit, "master as fetched")
+
+	// A serve started once the day's look has run says it at once, naming
+	// the file the command read, and the look doesn't say it again (the
+	// dogfood run with 251a1264).
+	said = nil
+	e.ConfigFile = "/tmp/elsewhere.toml"
+	scanner := &outdatedScanner{s: s}
+	scanner.announce(t.Context())
+	require.Equal(t, []string{`serve: serve.for_outdated needs to know your ports: set maintainer = "{example.org:ada @ada}" in /tmp/elsewhere.toml, as the ports that name @ada write it`}, said)
+	require.NoError(t, os.Remove(e.serveFile("outdated.stamp")))
+	scanner.maybe(t.Context())
+	require.Len(t, said, 1, "said once")
 }

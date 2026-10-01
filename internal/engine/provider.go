@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -36,7 +35,7 @@ func (e *Engine) Environments(ctx context.Context, on []string) ([]model.Environ
 				return environments[:1], nil
 			}
 		}
-		return nil, errors.New(`a check needs somewhere to build: --on tart builds in a Tart image of this Mac's macOS, --on github with MacPorts' own workflow in your fork, and --on command with your own script, set up as [providers.command] run = "..." in ~/.dockhand/config.toml; [check] on = ["tart"] makes one the default`)
+		return nil, fmt.Errorf(`a check needs somewhere to build: --on tart builds in a Tart image of this Mac's macOS, --on github with MacPorts' own workflow in your fork, and --on command with your own script, set up as [providers.command] run = "..." in %s; [check] on = ["tart"] makes one the default`, e.configFile())
 	}
 	var environments []model.Environment
 	add := func(environment model.Environment) {

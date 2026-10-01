@@ -91,7 +91,7 @@ func (s *settings) options(ctx context.Context) (engine.Options, config.File, st
 }
 
 func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
-	options, file, _, err := s.options(ctx)
+	options, file, configPath, err := s.options(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -100,6 +100,7 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 		return nil, err
 	}
 	s.file, s.opened, s.openedWith = file, e, options
+	e.ConfigFile = configPath
 	e.Providers = map[string]buildenv.Provider{}
 	if command := file.Providers.Command; command != nil {
 		e.Providers[buildenv.Command] = &script.Provider{Run: command.Run, Label: command.Name, Repo: e.Repo}

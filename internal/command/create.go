@@ -163,7 +163,7 @@ The branch is --branch, else the one checked out here; --new starts one.
 				// The person's own line, as the ports at the branch's base
 				// write their GitHub login, where it can be found (the
 				// flyctl run).
-				fmt.Fprintf(out, "  maintainers: nomaintainer, as your config names none; %s\n", engine.MaintainerWords(e.SuggestMaintainer(ctx, branch.Base)))
+				fmt.Fprintf(out, "  maintainers: nomaintainer, as your config names none; %s\n", engine.MaintainerWords(e.SuggestMaintainer(ctx, branch.Base), e.ConfigFile))
 			}
 			writePlainHTTP(out, created.PlainHTTP)
 			fmt.Fprintf(out, "Next: dockhand edit %s, then dockhand check\n", created.Port)

@@ -78,6 +78,10 @@ type Engine struct {
 	// SourceArchiver writes a Git-fetched port's forge's archive of a
 	// commit, for its assessment; upstream discovery's forges when nil.
 	SourceArchiver SourceArchiver
+	// ConfigFile is the configuration file the command read, which a hint
+	// to set something there names: $DOCKHAND_CONFIG, or the default
+	// (configFile) where empty.
+	ConfigFile string
 	// ArchiveMirror is MacPorts' distfiles mirror, which an assessment
 	// fetches an archive from where upstream no longer serves it;
 	// archives.MacPortsMirror when empty.

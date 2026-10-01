@@ -82,7 +82,11 @@ func TestOutdatedThenUpdateOutdated(t *testing.T) {
 	reader := withOutdated(t)
 
 	_, _, err := dockhand(t, "outdated", "--mine")
-	require.ErrorContains(t, err, `--mine needs to know who you are: set maintainer = "{@you example.org:you}"`)
+	require.ErrorContains(t, err, `--mine needs to know who you are, as your ports' maintainers lines name you: set maintainer = "{@you example.org:you}" in `+filepath.Join(w.home, ".dockhand", "config.toml"))
+	t.Setenv("DOCKHAND_CONFIG", filepath.Join(w.home, "elsewhere.toml"))
+	_, _, err = dockhand(t, "outdated", "--mine")
+	require.ErrorContains(t, err, `in `+filepath.Join(w.home, "elsewhere.toml"), "the file read, not the default (the dogfood run with 251a1264)")
+	t.Setenv("DOCKHAND_CONFIG", "")
 	config := filepath.Join(w.home, ".dockhand", "config.toml")
 	data, err := os.ReadFile(config)
 	require.NoError(t, err)

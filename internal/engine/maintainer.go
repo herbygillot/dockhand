@@ -61,20 +61,46 @@ func (e *Engine) SuggestMaintainer(ctx context.Context, commit model.ObjectID) M
 	return suggestion
 }
 
+// SuggestMaintainerAtMaster is SuggestMaintainer at master as fetched now,
+// for a command that has no branch; empty where master can't be fetched.
+func (e *Engine) SuggestMaintainerAtMaster(ctx context.Context) MaintainerSuggestion {
+	master, err := e.fetchMaster(ctx)
+	if err != nil {
+		return MaintainerSuggestion{}
+	}
+	return e.SuggestMaintainer(ctx, master)
+}
+
+// configFile is the configuration file a hint names: the one the command
+// read, or the default where the engine wasn't told (the dogfood run with
+// 251a1264, whose $DOCKHAND_CONFIG hints didn't name).
+func (e *Engine) configFile() string {
+	if e.ConfigFile != "" {
+		return e.ConfigFile
+	}
+	return "~/.dockhand/config.toml"
+}
+
+// MaintainerHint is MaintainerWords for this engine's person, at master,
+// naming the file the command read.
+func (e *Engine) MaintainerHint(ctx context.Context) string {
+	return MaintainerWords(e.SuggestMaintainerAtMaster(ctx), e.configFile())
+}
+
 // maintainerPlaceholder is the maintainer suggested where none of the
 // person's own can be.
 const maintainerPlaceholder = "{@you example.org:you}"
 
-// MaintainerWords say what to set as maintainer in dockhand's config: the
-// entry most of the ports naming the person's login write, as they write
-// it, and the others they write, to choose from; or, with nothing to
-// suggest, a placeholder to fill in.
-func MaintainerWords(s MaintainerSuggestion) string {
+// MaintainerWords say what to set as maintainer in dockhand's config, the
+// file named, as the command read it: the entry most of the ports naming
+// the person's login write, as they write it, and the others they write,
+// to choose from; or, with nothing to suggest, a placeholder to fill in.
+func MaintainerWords(s MaintainerSuggestion, file string) string {
 	if len(s.Spellings) == 0 {
-		return fmt.Sprintf("set maintainer = %q in ~/.dockhand/config.toml", maintainerPlaceholder)
+		return fmt.Sprintf("set maintainer = %q in %s", maintainerPlaceholder, file)
 	}
 	first, handle := s.Spellings[0], "@"+s.Login
-	words := fmt.Sprintf("set maintainer = %q in ~/.dockhand/config.toml", first.Maintainer.String())
+	words := fmt.Sprintf("set maintainer = %q in %s", first.Maintainer.String(), file)
 	if len(s.Spellings) == 1 {
 		return words + ", as the ports that name " + handle + " write it"
 	}

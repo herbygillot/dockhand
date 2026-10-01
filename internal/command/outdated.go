@@ -23,7 +23,7 @@ type outdatedOptions struct {
 }
 
 // outdatedRequest is what --mine and the ports named choose.
-func outdatedRequest(s *settings, streams Streams, ports []string, mine bool) (engine.OutdatedRequest, *lookups, error) {
+func outdatedRequest(ctx context.Context, s *settings, e *engine.Engine, streams Streams, ports []string, mine bool) (engine.OutdatedRequest, *lookups, error) {
 	looked := newLookups(streams)
 	request := engine.OutdatedRequest{Ports: ports, Progress: looked.progress}
 	if !mine {
@@ -36,7 +36,9 @@ func outdatedRequest(s *settings, streams Streams, ports []string, mine bool) (e
 		return request, looked, errors.New("--mine chooses your ports; name ports or use --mine, not both")
 	}
 	if request.Maintainers = s.file.Maintainers(); len(request.Maintainers) == 0 {
-		return request, looked, errors.New(`--mine needs to know who you are: set maintainer = "{@you example.org:you}" in ~/.dockhand/config.toml, as your ports' maintainers lines name you`)
+		// The person's own line, as master's ports write their GitHub
+		// login, where it can be found, as serve suggests it.
+		return request, looked, fmt.Errorf("--mine needs to know who you are, as your ports' maintainers lines name you: %s", e.MaintainerHint(ctx))
 	}
 	return request, looked, nil
 }
@@ -59,7 +61,7 @@ update --outdated --mine starts on them.`,
 				return err
 			}
 			defer e.Close()
-			request, looked, err := outdatedRequest(s, streams, args, mine)
+			request, looked, err := outdatedRequest(ctx, s, e, streams, args, mine)
 			if err != nil {
 				return err
 			}
@@ -178,7 +180,7 @@ func updateOutdated(ctx context.Context, s *settings, streams Streams, args []st
 		return err
 	}
 	defer e.Close()
-	request, looked, err := outdatedRequest(s, streams, args, options.mine)
+	request, looked, err := outdatedRequest(ctx, s, e, streams, args, options.mine)
 	if err != nil {
 		return err
 	}

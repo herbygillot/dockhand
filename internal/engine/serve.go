@@ -189,6 +189,9 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 	followed := &follower{s: s, reported: map[string]bool{}}
 	cleaned := &cleaner{s: s, session: session}
 	scanned := &outdatedScanner{s: s}
+	if !options.Drain {
+		scanned.announce(ctx)
+	}
 	submitter := &passingSubmitter{s: s, held: map[model.BranchID]string{}}
 
 	// Runs are driven concurrently, each provider up to its capacity. A
@@ -469,6 +472,23 @@ type outdatedScanner struct {
 	reported string
 }
 
+// hint is serve's line for a person whose config names no maintainer.
+func (o *outdatedScanner) hint(ctx context.Context) string {
+	return "serve: serve.for_outdated needs to know your ports: " + o.s.e.MaintainerHint(ctx)
+}
+
+// announce says at once what the day's look would say of a config that
+// names no maintainer, which a serve started after the day's look had run
+// otherwise never said (the dogfood run with 251a1264); the look says it
+// again only where it changed.
+func (o *outdatedScanner) announce(ctx context.Context) {
+	if len(o.s.options.Outdated.Maintainers) == 0 {
+		line := o.hint(ctx)
+		o.s.say("%s", line)
+		o.reported = line
+	}
+}
+
 func (o *outdatedScanner) maybe(ctx context.Context) {
 	e, settings := o.s.e, o.s.options.Outdated
 	now := o.s.options.Now()
@@ -496,11 +516,7 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	if len(settings.Maintainers) == 0 {
 		// The person's own line, as master's ports write their GitHub
 		// login, where it can be found (the flyctl run).
-		var suggestion MaintainerSuggestion
-		if master, err := e.fetchMaster(ctx); err == nil {
-			suggestion = e.SuggestMaintainer(ctx, master)
-		}
-		report("serve: serve.for_outdated needs to know your ports: " + MaintainerWords(suggestion))
+		report(o.hint(ctx))
 		return
 	}
 	found, err := e.Outdated(ctx, OutdatedRequest{Maintainers: settings.Maintainers})
