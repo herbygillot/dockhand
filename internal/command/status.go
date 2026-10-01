@@ -256,6 +256,14 @@ func attentionFor(s engine.BranchStatus) []attention {
 			return row("·", engine.Describe(*s.LatestRevision)+" passed; commit it for review", "dockhand tidy --branch "+name)
 		case s.Branch.PullRequest == nil && len(s.Held) > 0:
 			return row("!", "passed; held for a look: "+s.Held[0], "dockhand submit --branch "+name)
+		case s.Branch.PullRequest == nil && len(s.Moved) > 0:
+			// The check built another source than the update chose: serve
+			// waits for a look, and a person's submission shows it.
+			what := "passed; " + s.Moved[0].Detail
+			if s.Branch.Origin == model.OriginServe {
+				what = "passed; held for a look: " + s.Moved[0].Detail
+			}
+			return row("!", what, "dockhand submit --branch "+name)
 		case s.Branch.PullRequest == nil && s.Assessment == engine.AssessmentPending:
 			// Status collects nothing; submitting assesses what isn't yet.
 			return row("·", "passed; what upstream's change means isn't assessed yet, which submitting does", "dockhand submit --branch "+name)
@@ -471,9 +479,7 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, branch mod
 		}
 		fmt.Fprintf(out, "  Ports    %s\n", ports)
 		fmt.Fprintf(out, "  Work     %s above master %s\n", workWords(status), engine.Short(branch.Base))
-		for _, found := range status.Releases {
-			fmt.Fprintf(out, "  Release  %s\n", releaseWords(found.Port, found.Release))
-		}
+		writeReleases(out, status)
 		if len(status.Edited) > 0 {
 			fmt.Fprintf(out, "  Edited   %s\n", strings.Join(status.Edited, ", "))
 		}
@@ -491,6 +497,18 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, branch mod
 	fmt.Fprintf(out, "  PR       %s\n", pr)
 	writeNext(out, status)
 	return nil
+}
+
+// writeReleases shows the releases the branch's updates chose, and below
+// them each whose tag named another commit when the check planned it, as
+// submit's preview marks it.
+func writeReleases(out io.Writer, status engine.BranchStatus) {
+	for _, found := range status.Releases {
+		fmt.Fprintf(out, "  Release  %s\n", releaseWords(found.Port, found.Release))
+	}
+	for _, moved := range status.Moved {
+		fmt.Fprintf(out, "           ! %s\n", moved.Detail)
+	}
 }
 
 // writeNext says what moves a branch on, as its attention row does.

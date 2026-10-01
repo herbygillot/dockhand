@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -199,6 +200,40 @@ func TestStatusSaysAnEnvironmentWasMadeAgain(t *testing.T) {
 	status.Evidence.Plan.Environments = []model.Environment{monterey, arm, {Provider: "github"}}
 	rows = attentionFor(status)
 	require.Equal(t, "dockhand check --branch jq-update --on tart:12,26 --on github", rows[0].next)
+}
+
+// A passed branch whose update chose a release whose tag named another
+// commit then than when its check planned it says so, as submit does
+// (release-moved): held for a look where serve prepared it, and said for
+// a person's own submission to show. Its JSON lists it under moved.
+// Whether the tag names another commit now (source-moved) takes the
+// network, which status never reads.
+func TestStatusSaysAReleaseMovedBeforeItsCheck(t *testing.T) {
+	latest := model.Run{Number: 7, State: model.RunPassed}
+	detail := "libharbor's git.branch v4 named aaaaaaa when its update chose it, and bbbbbbb when check-7 planned it: the check built another source than the update chose"
+	status := engine.BranchStatus{Branch: model.Branch{Name: "dockhand/libharbor-4", State: model.BranchOpen}, Head: "c0ffee", Commits: 1, Latest: &latest, Current: true,
+		LatestRevision: &model.Revision{Kind: model.RevisionCommit},
+		Evidence:       &engine.Evidence{Targets: []engine.TargetEvidence{{Target: model.PlanTarget{Target: model.Target{Name: "libharbor"}, Role: model.Changed}, Passed: true}}},
+		Moved:          []model.Concern{{Origin: model.FromUpstream, Port: "libharbor", Rule: "release-moved", Subject: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Class: model.Introduced, Detail: detail}}}
+	rows := attentionFor(status)
+	require.Len(t, rows, 1)
+	require.Equal(t, attention{mark: "!", branch: "libharbor-4", what: "passed; " + detail, next: "dockhand submit --branch libharbor-4"}, rows[0])
+
+	status.Branch.Origin = model.OriginServe
+	require.Equal(t, "passed; held for a look: "+detail, attentionFor(status)[0].what)
+
+	view := branchView(status)
+	require.Equal(t, []concernJSON{{Port: "libharbor", Rule: "release-moved", Subject: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Detail: detail}}, view.Moved)
+
+	// The branch's own view says it below the release.
+	status.Releases = []engine.PortRelease{{Port: "libharbor", Release: model.Release{Version: "4.0", Forge: "github", Repository: "harbor/libharbor", Tag: "v4", Commit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}}
+	var out strings.Builder
+	writeReleases(&out, status)
+	require.Equal(t, "  Release  libharbor 4.0, GitHub tag v4 of harbor/libharbor at aaaaaaa\n           ! "+detail+"\n", out.String())
+
+	status.Moved = nil
+	require.Equal(t, "passed; waiting for you to submit", attentionFor(status)[0].what, "without it, the row is what it was")
+	require.Nil(t, branchView(status).Moved)
 }
 
 // A command judges who is alive through one observer session, however

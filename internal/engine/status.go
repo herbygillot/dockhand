@@ -48,6 +48,17 @@ type BranchStatus struct {
 	// Releases are the releases the branch's updates chose, each port's
 	// latest, in the order the ports were first updated.
 	Releases []PortRelease
+	// Moved are the Git-fetched ports whose update chose a release whose
+	// tag named another commit then than when Latest's check planned it
+	// (preparedSources' release-moved), where Latest checked the files as
+	// they are now, which hold a submission nobody looks over, as submit
+	// says them. They're read from the store and the plan alone. Whether a
+	// tag names another commit now than the
+	// check planned (source-moved) takes the network, which status never
+	// reads, and nothing records it: submit's plan isn't kept, serve says
+	// its holds on its own terminal, and an assessment is made once for
+	// its files.
+	Moved []model.Concern
 }
 
 // PortRelease is the release an update chose for a port.
@@ -165,9 +176,10 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 	}
 
 	var checks []model.Run
+	var edits []model.Edit
 	err = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		edits, err := r.Edits(branch.ID)
-		if err != nil {
+		var err error
+		if edits, err = r.Edits(branch.ID); err != nil {
 			return err
 		}
 		for _, edit := range edits {
@@ -222,6 +234,9 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 	}
 	evidence, err := e.evidenceNow(ctx, *status.Latest, checks)
 	status.Evidence = &evidence
+	if status.Current {
+		status.Moved = preparedSources(status.Evidence, edits)
+	}
 	return status, err
 }
 

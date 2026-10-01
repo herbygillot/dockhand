@@ -362,6 +362,25 @@ func TestServeHoldsAnUpdateWhoseTagMovedBeforeItsCheck(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, candidates, 1)
 	require.Equal(t, []string{"jq's git.branch jq-1.8.1 named " + chosen[:7] + " when its update chose it, and " + moved[:7] + " when " + checked.Name() + " planned it: the check built another source than the update chose"}, candidates[0].Held)
+
+	// Status says it too, from the store and the plan alone. With the
+	// repository gone, it reads nothing of it, and says nothing of where
+	// the tag points now (source-moved), which takes the network.
+	run(t, project, "commit", "-q", "--allow-empty", "-m", "1.8.1, a third time")
+	run(t, project, "tag", "-f", "jq-1.8.1")
+	require.NoError(t, os.RemoveAll(forge))
+	status, err := e.BranchStatus(t.Context(), candidates[0].Branch)
+	require.NoError(t, err)
+	require.Len(t, status.Moved, 1)
+	require.Equal(t, model.Concern{Origin: model.FromUpstream, Port: "jq", Rule: "release-moved", Subject: moved, Class: model.Introduced, Detail: candidates[0].Held[0]}, status.Moved[0])
+
+	// Files changed since the check aren't what it planned for: the
+	// question waits for a check of them.
+	write(t, candidates[0].Branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# edited\n"})
+	status, err = e.BranchStatus(t.Context(), candidates[0].Branch)
+	require.NoError(t, err)
+	require.False(t, status.Current)
+	require.Empty(t, status.Moved)
 }
 
 // A target --only left out whose tag moved after the check is a concern as

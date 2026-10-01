@@ -430,6 +430,22 @@ type branchJSON struct {
 	// collects.
 	Held       []string `json:"held,omitempty"`
 	Assessment string   `json:"assessment,omitempty"`
+	// Moved are the Git-fetched ports whose release's tag named another
+	// commit when the update chose it than when the latest check, of the
+	// files as they are now, planned it (rule release-moved), which hold a
+	// submission nobody looks over. Whether a tag names another commit now
+	// (source-moved) takes the network, which status never reads.
+	Moved []concernJSON `json:"moved,omitempty"`
+}
+
+// concernJSON is what a submission nobody looks over waits on a person's
+// look for: the port, the rule that raised it, what it's about, such as
+// the commit the check planned, and its words.
+type concernJSON struct {
+	Port    string `json:"port"`
+	Rule    string `json:"rule"`
+	Subject string `json:"subject,omitempty"`
+	Detail  string `json:"detail"`
 }
 
 func branchView(status engine.BranchStatus) branchJSON {
@@ -442,6 +458,9 @@ func branchView(status engine.BranchStatus) branchJSON {
 		release := found.Release
 		view.Releases = append(view.Releases, releaseJSON{Port: found.Port, Version: release.Version, Forge: release.Forge, Repository: release.Repository,
 			Tag: release.Tag, Commit: release.Commit, Distfiles: release.Archive})
+	}
+	for _, moved := range status.Moved {
+		view.Moved = append(view.Moved, concernJSON{Port: moved.Port, Rule: moved.Rule, Subject: moved.Subject, Detail: moved.Detail})
 	}
 	for _, run := range status.Active {
 		active := runView(run)
