@@ -369,8 +369,14 @@ func checkState(s engine.BranchStatus) string {
 	switch s.Latest.State {
 	case model.RunPassed:
 		// A passed check whose results no longer all stand, as after its
-		// environment changed, isn't a pass for the branch now.
+		// environment changed, isn't a pass for the branch now. An archived
+		// branch asks nothing of its checks, as its attention doesn't, so
+		// its check is said as it ended: archived duckdb-cxx14's read
+		// "needs another check" (the dogfood run with 3086fdb3).
 		if s.Evidence != nil && len(s.Evidence.Missing()) > 0 {
+			if s.Branch.State == model.BranchArchived {
+				return fmt.Sprintf("passed (%s)", s.Latest.Name())
+			}
 			return "passed, but needs another check"
 		}
 		// A check of the working files that tidy then committed unchanged

@@ -273,6 +273,13 @@ func TestAnArchivedBranchAsksNothingOfItsChecks(t *testing.T) {
 	require.Equal(t, "snapshot 1 passed; the files have changed since", rows[0].what)
 	status.Branch.State = model.BranchArchived
 	require.Empty(t, attentionFor(status))
+
+	// Nor does its checks column ask for another (the dogfood run with
+	// 3086fdb3); it says the check as it ended.
+	status.Evidence = &engine.Evidence{Targets: []engine.TargetEvidence{{Target: model.PlanTarget{Target: model.Target{Name: "duckdb"}, Role: model.Changed}, Unchecked: true}}}
+	require.Equal(t, "passed (check-3)", checkState(status))
+	status.Branch.State = model.BranchOpen
+	require.Equal(t, "passed, but needs another check", checkState(status))
 }
 
 // A branch whose work is on master already, landed by another route, asks
