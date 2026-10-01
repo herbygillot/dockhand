@@ -274,3 +274,15 @@ func TestAnArchivedBranchAsksNothingOfItsChecks(t *testing.T) {
 	status.Branch.State = model.BranchArchived
 	require.Empty(t, attentionFor(status))
 }
+
+// A branch whose work is on master already, landed by another route, asks
+// only to be set aside, not to be committed for review (cleaning up
+// duckdb-cxx14, finding 1); one with a pull request is its pull request's
+// to say.
+func TestStatusSaysABranchsWorkIsOnMasterAlready(t *testing.T) {
+	branch := model.Branch{Name: "dockhand/duckdb-cxx14", State: model.BranchOpen}
+	status := engine.BranchStatus{Branch: branch, OnMaster: model.ObjectID(strings.Repeat("e", 40))}
+	require.Equal(t, []attention{{mark: "·", branch: "duckdb-cxx14", what: "its changes are on master already, as of eeeeeee", next: "dockhand archive duckdb-cxx14"}}, attentionFor(status))
+	status.Branch.PullRequest = &model.PullRequest{Number: 35100}
+	require.NotContains(t, attentionFor(status), attention{mark: "·", branch: "duckdb-cxx14", what: "its changes are on master already, as of eeeeeee", next: "dockhand archive duckdb-cxx14"})
+}

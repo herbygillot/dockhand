@@ -59,6 +59,12 @@ type BranchStatus struct {
 	// its holds on its own terminal, and an assessment is made once for
 	// its files.
 	Moved []model.Concern
+	// OnMaster is the master dockhand last fetched where it has every
+	// change the branch's files make, so its work landed by another
+	// route, as duckdb-cxx14's C++14 fix did while status still asked to
+	// commit it for review (cleaning up duckdb-cxx14, finding 1); empty
+	// otherwise, or for a branch that changes nothing.
+	OnMaster model.ObjectID
 }
 
 // PortRelease is the release an update chose for a port.
@@ -169,6 +175,11 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 		return status, err
 	}
 	status.Scope = ScopeOf(changed)
+	if branch.State == model.BranchOpen {
+		if status.OnMaster, err = e.landedOnMaster(ctx, changed, status.Tree); err != nil {
+			return status, err
+		}
+	}
 	if branch.Origin == model.OriginServe {
 		if status.Held, status.Assessment, err = e.assessedHolds(ctx, branch, model.ObjectID(status.Tree), status.Scope.Ports); err != nil {
 			return status, err
@@ -238,6 +249,28 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 		status.Moved = preparedSources(status.Evidence, edits)
 	}
 	return status, err
+}
+
+// landedOnMaster is the master dockhand last fetched where, for each path
+// a branch's files change, its file is the branch's: the branch's work is
+// on master already. Status reads the master kept, never fetching one.
+func (e *Engine) landedOnMaster(ctx context.Context, changed []string, tree string) (model.ObjectID, error) {
+	master, ok := e.lastMaster(ctx)
+	if !ok || len(changed) == 0 {
+		return "", nil
+	}
+	trees, err := e.Repo.CommitTrees(ctx, []string{string(master)})
+	if err != nil {
+		return "", err
+	}
+	differ, err := e.Repo.ChangedPaths(ctx, trees[string(master)], tree)
+	if err != nil {
+		return "", err
+	}
+	if slices.ContainsFunc(changed, func(path string) bool { return slices.Contains(differ, path) }) {
+		return "", nil
+	}
+	return master, nil
 }
 
 // Runs lists runs, newest first.

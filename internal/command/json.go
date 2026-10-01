@@ -450,6 +450,9 @@ type branchJSON struct {
 	// submission nobody looks over. Whether a tag names another commit now
 	// (source-moved) takes the network, which status never reads.
 	Moved []concernJSON `json:"moved,omitempty"`
+	// OnMaster is the master dockhand last fetched where it has every
+	// change the branch's files make: its work landed by another route.
+	OnMaster string `json:"on_master,omitempty"`
 }
 
 // concernJSON is what a submission nobody looks over waits on a person's
@@ -467,7 +470,7 @@ func branchView(status engine.BranchStatus) branchJSON {
 	view := branchJSON{Name: branch.ShortName(), GitBranch: branch.Name, ID: string(branch.ID), State: string(branch.State), Worktree: branch.Worktree, Managed: branch.Managed,
 		Base: string(branch.Base), Head: status.Head, Missing: status.Missing, Cleaned: status.Cleaned(), Commits: status.Commits,
 		Edited: nonNil(status.Edited), Directories: nonNil(status.Scope.Ports), Ports: nonNil(status.Scope.PortNames()), Active: []runJSON{}, Releases: []releaseJSON{},
-		Held: status.Held, Assessment: string(status.Assessment)}
+		Held: status.Held, Assessment: string(status.Assessment), OnMaster: string(status.OnMaster)}
 	for _, found := range status.Releases {
 		release := found.Release
 		view.Releases = append(view.Releases, releaseJSON{Port: found.Port, Version: release.Version, Forge: release.Forge, Repository: release.Repository,

@@ -208,6 +208,11 @@ func attentionFor(s engine.BranchStatus) []attention {
 	if s.Branch.State == model.BranchArchived {
 		return nil
 	}
+	// Work that landed on master by another route asks nothing more of
+	// checks, only to be set aside (cleaning up duckdb-cxx14, finding 1).
+	if s.OnMaster != "" && s.Branch.PullRequest == nil {
+		return row("·", "its changes are on master already, as of "+engine.Short(s.OnMaster), "dockhand archive "+name)
+	}
 	if s.Latest == nil || !s.Current || len(s.Active) > 0 {
 		if s.Latest != nil && !s.Current && s.Latest.State == model.RunPassed && len(s.Active) == 0 {
 			return row("!", engine.Describe(*s.LatestRevision)+" passed; the files have changed since", "dockhand check --branch "+name)

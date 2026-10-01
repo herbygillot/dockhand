@@ -60,7 +60,9 @@ func TestCleanRemovesWhatAMergedBranchLeaves(t *testing.T) {
 	}
 	require.NoDirExists(t, branch.Worktree)
 	require.Empty(t, fake.head("dockhand/jq-update"), "the fork's branch is gone")
-	require.Empty(t, run(t, e.Repo.Root, "for-each-ref", "refs/dockhand/", "refs/heads/dockhand/"))
+	// Nothing of the branch's is left; the master dockhand last fetched
+	// is the repository's, and stays.
+	require.Equal(t, "refs/dockhand/master", run(t, e.Repo.Root, "for-each-ref", "--format=%(refname)", "refs/dockhand/", "refs/heads/dockhand/"))
 
 	again, err := e.PlanClean(t.Context())
 	require.NoError(t, err)

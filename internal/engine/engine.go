@@ -333,13 +333,34 @@ func (e *Engine) UpstreamRemote(ctx context.Context) (*git.Remote, error) {
 	return nil, nil
 }
 
-// fetchMaster freezes MacPorts' current master in the repository.
+// masterRef keeps the master dockhand last fetched, which a command that
+// only reads, as status, compares a branch with (lastMaster).
+const masterRef = "refs/dockhand/master"
+
+// fetchMaster freezes MacPorts' current master in the repository, and
+// keeps it as the master last fetched (masterRef). Keeping it is a saving
+// for status: a ref that can't be written leaves the fetch as it was.
 func (e *Engine) fetchMaster(ctx context.Context) (model.ObjectID, error) {
 	commit, _, err := e.Repo.FetchBranch(ctx, e.Upstream(), "master")
 	if err != nil {
 		return "", fmt.Errorf("fetching master from %s: %w", e.Upstream(), err)
 	}
+	// From the value it had: another fetch moving it meanwhile leaves the
+	// one it kept, as fresh.
+	if kept, err := e.Repo.ReadRef(ctx, masterRef); err == nil {
+		_ = e.Repo.UpdateRefs(ctx, []git.RefChange{{Name: masterRef, Expected: kept, Desired: git.RefValue{Exists: true, Object: commit}}})
+	}
 	return model.ObjectID(commit), nil
+}
+
+// lastMaster is the master dockhand last fetched, as fetchMaster kept it;
+// false where it has fetched none since it kept one.
+func (e *Engine) lastMaster(ctx context.Context) (model.ObjectID, bool) {
+	value, err := e.Repo.ReadRef(ctx, masterRef)
+	if err != nil || !value.Exists {
+		return "", false
+	}
+	return model.ObjectID(value.Object), true
 }
 
 func exists(path string) bool {
