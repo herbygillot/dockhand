@@ -380,6 +380,8 @@ Serve opens no pull requests by default. With `--submit-passing`, or `serve.subm
 | `providers.command.name` | `command` | how its results are labelled |
 | `providers.command.capacity` | `1` | command checks serve runs at once |
 
+The rest of dockhand's bounds are fixed in code: how large an archive it downloads and reads, how long it waits for a host, a VM, or a lock, and how much it runs at once. [Limits](limits.md) lists each, with what happens when it's reached.
+
 ### Environment
 
 | Variable | What it does |

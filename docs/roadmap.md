@@ -220,7 +220,8 @@ The order of all the work, as of 2026-09-30:
 11. batch 13's remainder (done 2026-09-30), then batch 11, whose `review` assesses a pull request as item 9 assesses any revision (done 2026-09-30), then batch 22 (added 2026-09-30, done 2026-09-30);
 12. batches 10 and 12 (done 2026-09-30), 14 and 15 (done 2026-10-01), and item 7's coverage, which item 9 doesn't touch;
 13. batch 23, what the fluent-bit run found (added 2026-09-30);
-14. batch 24, a Cargo port declaring its crates per platform, as cargo does (added 2026-10-01).
+14. batch 24, a Cargo port declaring its crates per platform, as cargo does (added 2026-10-01);
+15. batch 25, what the limits sweep and the SQL rescan found that can't wait (added 2026-10-01, taken the same day at the person's word), then batch 26, the rest of the sweep's gaps.
 
 What batches 10 to 15 touch doesn't move with item 6, so they wait without cost, and batch 12's GitHub work wants item 6's environment identity. The order is the implementer's to re-settle as work lands.
 
@@ -340,6 +341,22 @@ What batches 10 to 15 touch doesn't move with item 6, so they wait without cost,
   - tidy and submit read the commit rules differently: submit said "body has lines over 72 characters [body-wrap]", a warning, while `tidy --plan` said the commits already follow MacPorts' rules and that there was nothing to tidy, since it asks only whether any finding is an error (`tidy.go`). tidy should say the warnings it leaves, and offer the message to rewrite, rather than leaving `restore` and an edited plan as the way;
   - archives larger than dockhand reads. rustc's source is 3.5 GiB uncompressed, past the 1 GiB a walk of an archive reads (`archive.scanLimit`), and rustc-1.99.0-src.tar.gz is 566 MB, past the 512 MiB a download takes (`archives` `MaxBytes`); each is now said, and holds, as archives not compared do. A limit protects against an archive that expands without bound, but a tar stream has no index, so listing it reads it whole. Either the limits rise, a walk's to what it keeps rather than what it streams past, or the comparison and patch check read only what they need: the patched paths, the manifests, the build and license files, as the dogfood session's `tar -x <paths>` did. A recorded "not compared" stands for the same files, as the tool's limits do, until a change to what it can read raises `assess.Policy`;
   - its archives weren't compared, "local patch directory is unavailable", which was a vendored port's evaluation without its crates read in an overlay already removed. Done 2026-10-01 ([note](activity/2026-10-01-vendored-port-patches.md)).
+- **Batch 25: what the limits sweep and the SQL rescan found** ([limits](limits.md), [note](activity/2026-10-01-batch-25.md)). Taken 2026-10-01 at the person's word, ahead of batches 23 and 24.
+  - a heartbeat that stops for good after one failed write, after which another session may judge a live serve hung and take its lead;
+  - web requests with no bound on waiting for a response, which can stall `outdated` and serve's daily look on a host that never answers;
+  - the copy kept before a migration: an interrupted one kept as if whole, and two processes opening at once failing one of them (the SQL review's rescan);
+  - a revision's assessments read by decoding every assessment the branch ever recorded (the SQL review's rescan);
+  - the limits written down, `docs/limits.md`, since all but a dozen were said nowhere.
+- **Batch 26: the rest of the limits sweep** ([limits](limits.md)).
+  - GitHub's rate limits waited out where the wait is short, and the reset said where it isn't: the retry time is computed and never read;
+  - zip archives under the scan limit, as tar archives are, and `diff --archive`'s extraction bounded;
+  - truncations said rather than silent: a GitHub Actions job log past 64 MiB, a log line past the scanners' 4 MiB and 1 MiB, which stop the scan without checking its error, a compressed patch past 64 MiB, and PyPI's JSON past 8 MiB;
+  - a body that stalls after its headers, which the response bound doesn't cover, and the other waits with no bound: a free Tart VM, a GitHub Actions run finishing, the command provider's script, the guest's lint, fetch, and install, a `portindex` run, a Portfile evaluation call, a file lock, another process's indexing;
+  - reads with no memory cap: a guest file, git blobs and working files, GitLab's raw file, a kept archive being signed;
+  - PyPI through `fetch.Open`, for its redirect guard;
+  - `create`'s 4 MiB project-file limit, which GitHub's contents API meets first at about 1 MB;
+  - `cleanup.after` short enough to prune the events the daily submit limit counts, and a config size that overflows;
+  - `patch` overflowing its output cap but exiting 0, which fails the whole check.
 
 ### Taken when their area is next touched
 
@@ -444,7 +461,12 @@ What each exercise run asked for that is done, or that joined a numbered item, w
 
 - **D15. A trailer naming a build nobody can find** (batch 15). submit now says a `Generated-By` whose build GitHub doesn't have. Pushing dockhand's commit answers it for a build of an unpushed commit, but nothing in dockhand can replace a trailer naming a build that will never be found, as a commit rebased away (the hugo exercise's 14320eb7) or a `devel` build: tidy keeps a commit whose only change would be its `Generated-By` unless the build was of uncommitted source (`commitmsg.Unchanged`). Either tidy treats such a build as it treats `+dirty`, which needs submit's answer recorded, since tidy reads nothing remote, or it gains a way to rewrite a message on request. Until then, the line says it and holds nothing.
 
-- **D6. How long build history is kept** (the SQL review's finding 8). Runs, executions, results, plans, revisions, and each build's recorded inputs are never removed. Inputs grow fastest, at about 3.6 KB a build: an estimated 700 MB at 200,000 builds. The review suggests the archives' cutoff: keep what a result still usable for reuse, or an open branch, refers to. A merged branch's own record stays either way, for status. The person would peel it back by weight (2026-09-29): some light records kept for 30 days, others gone once their branch merges. Reuse reads a merged branch's results for later checks, so what goes at merge is settled with item 6's reuse by content.
+- **D6. How long build history is kept** (the SQL review's finding 8, with its rescan of 2026-10-01). Runs, executions, results, plans, revisions, assessments, each build's recorded inputs, and each check's log files are never removed. The person would peel it back by weight (2026-09-29): some light records kept for 30 days, others gone once their branch merges.
+  - **Logs come first by weight.** `~/.dockhand/logs` held 780 MB across 62 checks on 2026-10-01, about 12.5 MB a check and some 300 times the database; nothing removes them, and neither the roadmap nor the design gave them a rule. Kept archives, 2.3 GB, are already pruned by `cleanup.after`.
+  - **Inputs grow fastest in the database:** about 6 KB a build on the live database, 30 KB at most, some 210 bytes for each active port, so about 1.2 GB at 200,000 builds, not the 700 MB first estimated. Each migration's kept copy holds them too, for 30 days.
+  - **Inputs have three readers, not one.** Reuse reads the five newest per target and environment; since batch 20, evidence reads the record of every earlier check of a branch whose plan fetches with Git (`readSources`), and `logs` reads any run's. Each fails on a missing record, and an emptied one reads as "nothing dockhand can name", which changes what an open branch's earlier checks count for. So any rule keeps open branches' records whole, and gives each reader a deliberate answer for a pruned one; pruning at merge costs reuse candidates and the fetched commit in an old `logs`.
+  - **Assessments of superseded trees** are never read again, about 860 bytes each.
+  - The SQL review suggests the archives' cutoff: keep what a result still usable for reuse, or an open branch, refers to. A merged branch's own record stays either way, for status.
 
 
 ### Decided
