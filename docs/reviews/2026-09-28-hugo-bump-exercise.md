@@ -453,3 +453,19 @@ At the implementor session's request, with a build of `f075232d`. sshuttle and b
   - The expected pin note, that `python.default_version` 313 is behind the PortGroup's 3.14, is in neither the text nor the JSON. This Portfile writes the setting across a continuation line (`python.default_version \` / `313`).
   - "! setup.cfg changed" is a false hold. The whole diff is bumpversion's `current_version` line, and the build is hatchling through pyproject.toml.
 - **beekeeper-studio** 5.9.2 → 6.1.4: the workspaces are read, and apps/studio and apps/ui-kit changes appear. But three `!` holds are plain npm additions (devicon, simple-icons, @replit/codemirror-indentation-markers). A yarn-built port needs no Portfile change for those, and Cargo additions get only `·`. As it stands, nearly every beekeeper bump would be held.
+
+## Batch 11 on real ports
+
+With a build of `55325484`.
+
+**`review 34620`** (libuv 1.44.2 → 1.52.1, nothing posted) gained an Upstream block and a dependents line. The patch lines are the best part. "patch-libuv-legacy.diff, which the base applied, is dropped, and no longer applies to 1.52.1's source: 1 out of 1 hunks failed …" names each file. "patch-libuv-unix-core-close-nocancel.diff … is dropped, though it still applies to 1.52.1's source: what it fixed may need it still" is exactly the question a reviewer should ask that PR.
+
+1. **A subport isn't found.** "! libuv-devel: archives not compared: no such port: devel/libuv defines no port libuv-devel". But `devel/libuv/Portfile` declares `subport libuv-devel { … }`, and the PR's global `patchfiles` edit reaches it. The lookup seems to take the directory's main port only. `impact --branch pr-34620` lists "Changed ports libuv" alone, so it misses the subport too.
+2. **One license move reads as two holds.** "! LICENSE changed" and "! LICENSE-extra was added" are one change. 1.52.1 moved the Joyent MIT and tree.h BSD text out of LICENSE into the new LICENSE-extra, so the licenses are the same. When the text a LICENSE loses turns up in a new license file, one `·` line ("LICENSE's Joyent and tree.h text moved to LICENSE-extra") would do.
+3. The dependents line reads well. "candidates to look at, not proof of anything" is a little defensive; "candidates to look at" alone says enough.
+
+**`impact --branch pr-34620`** lists all 21 dependents, with "MoarVM (library, under +macports_libuv)" last, and "Next: dockhand check --also aria2 builds one of each kind of dependent against the branch, 1 of 21". All 21 are libraries, so one suggestion is right.
+
+**`update nuspell 5.1.9 --revbump-dependents --plan`**, from a scratch branch at 5.1.8 (archived): "none", then "· under a variant, which the index doesn't record: enchant2 (+nuspell)", and `--except enchant2` is accepted ("· left out with --except: enchant2"). The CMakeLists false hold is gone too: "· CMakeLists.txt changed only the version it names: "VERSION 5.1.9"".
+
+4. **Two commands disagree on what the index records.** update says a variant dependency is one "the index doesn't record", yet impact reads MoarVM's `+macports_libuv` dependency from an index. If they're different mechanisms, saying how enchant2 was found ("found in enchant2's Portfile under +nuspell") would avoid the contradiction.
