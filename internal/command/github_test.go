@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -148,9 +149,13 @@ func (f *fakeActions) Jobs(_ context.Context, _ string, id int64, attempt int) (
 	var jobs []ghactions.RunnerJob
 	for i, name := range []string{"build (macos-14)", "build (macos-15)"} {
 		if _, ok := f.logs[attempt-1][name]; ok {
-			jobs = append(jobs, ghactions.RunnerJob{ID: int64(attempt*10 + i), Name: name, Status: "completed"})
+			// Each job ran on a runner of the label its name gives.
+			label := strings.TrimSuffix(strings.TrimPrefix(name, "build ("), ")")
+			jobs = append(jobs, ghactions.RunnerJob{ID: int64(attempt*10 + i), Name: name, Status: "completed", Labels: []string{label}, RunnerName: fmt.Sprint("GitHub Actions ", 1000+i)})
 		}
 	}
+	// GitHub doesn't say in what order it lists them.
+	slices.Reverse(jobs)
 	return jobs, nil
 }
 
@@ -354,6 +359,25 @@ func TestGitHubReadsAFailedPortsPhase(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, errs, "github: jq failed at install")
 	require.Equal(t, 0, f.reruns)
+}
+
+// Tested on gives the macOS release of each of the workflow's runners, as
+// the label its job ran on names it in GitHub's jobs API, in one order
+// whichever GitHub lists them in; it says nothing of their Xcode, which
+// only their logs' text gives (the sshuttle run's finding 8).
+func TestTestedOnGivesTheGitHubRunnersReleases(t *testing.T) {
+	f, _ := githubBranch(t)
+	f.logs = []map[string]string{{"build (macos-14)": built("jq", false), "build (macos-15)": built("jq", false)}}
+	f.conclusion = []string{"success"}
+	_, errs, err := dockhand(t, "check", "--on", "github")
+	require.NoError(t, err, errs)
+	_, _, err = dockhand(t, "tidy")
+	require.NoError(t, err)
+
+	previewed, _, err := dockhand(t, "submit", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, previewed, "\n    ###### Tested on\n\n    macOS 14, 15\n"+
+		"    Developer tools not recorded · github: MacPorts' CI workflow in the author's fork (Run ID: https://github.com/ada/macports-ports/actions/runs/7 - checked in check-1)\n")
 }
 
 func TestCancelingAGitHubCheckCancelsItsRun(t *testing.T) {

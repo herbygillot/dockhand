@@ -95,6 +95,9 @@ func (g GitHub) Cancel(ctx context.Context, repository string, id int64) error {
 	return githubapi.RateLimitError(err)
 }
 
+// Jobs lists the run's jobs at an attempt ("List jobs for a workflow run
+// attempt"), each with the labels its runs-on asked for and the runner
+// that took it, as GitHub documents them.
 func (g GitHub) Jobs(ctx context.Context, repository string, id int64, attempt int) ([]RunnerJob, error) {
 	service, owner, name, err := g.service(ctx, repository)
 	if err != nil {
@@ -108,7 +111,7 @@ func (g GitHub) Jobs(ctx context.Context, repository string, id int64, attempt i
 			return nil, githubapi.RateLimitError(err)
 		}
 		for _, j := range page.Jobs {
-			jobs = append(jobs, RunnerJob{ID: j.GetID(), Name: j.GetName(), Status: j.GetStatus(), Conclusion: j.GetConclusion()})
+			jobs = append(jobs, RunnerJob{ID: j.GetID(), Name: j.GetName(), Status: j.GetStatus(), Conclusion: j.GetConclusion(), Labels: j.Labels, RunnerName: j.GetRunnerName()})
 		}
 		if response.NextPage == 0 {
 			return jobs, nil

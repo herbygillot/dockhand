@@ -53,6 +53,38 @@ type RunnerJob struct {
 	ID                 int64
 	Name               string
 	Status, Conclusion string
+	// Labels are the labels the job asked its runner for, its runs-on,
+	// macos-15; RunnerName names the runner that took it, and is empty
+	// for a job no runner took.
+	Labels     []string
+	RunnerName string
+}
+
+// GitHub's labels for its macOS runners name a release, macos-15, with a
+// runner's size or architecture after it, macos-15-xlarge or
+// macos-15-intel; macos-latest names none.
+var releaseLabel = regexp.MustCompile(`^macos-(\d+(?:\.\d+)?)(?:-[a-z0-9-]+)?$`)
+
+// Release is the macOS release of the runner that took the job, as its
+// labels name it: 15 for macos-15. Labels that name no release, such as
+// macos-latest, whose release GitHub moves, say nothing, nor do labels
+// that name two, nor a job no runner took.
+func (j RunnerJob) Release() string {
+	if j.RunnerName == "" {
+		return ""
+	}
+	release := ""
+	for _, label := range j.Labels {
+		match := releaseLabel.FindStringSubmatch(strings.ToLower(label))
+		switch {
+		case match == nil:
+		case release != "" && release != match[1]:
+			return ""
+		default:
+			release = match[1]
+		}
+	}
+	return release
 }
 
 // API is what the provider needs of GitHub Actions.
@@ -230,12 +262,15 @@ func (p *Provider) removeBranch(ctx context.Context, build buildenv.Build, fork 
 	}
 }
 
-// read reads a completed run: each runner's log, kept in the job's
-// directory, and from them each target's result.
+// read reads a completed run: what its runners were, each runner's log,
+// kept in the job's directory, and from them each target's result.
 func (p *Provider) read(ctx context.Context, job buildenv.Job, build buildenv.Build, repository string, run Run) error {
 	jobs, err := p.API.Jobs(ctx, repository, run.ID, run.Attempt)
 	if err != nil {
 		return fmt.Errorf("%w: listing %s's jobs: %w", buildenv.ErrInfrastructure, run.URL, err)
+	}
+	if err := observe(build, jobs); err != nil {
+		return err
 	}
 	var runners []runner
 	for _, j := range jobs {
@@ -282,6 +317,31 @@ func (p *Provider) read(ctx context.Context, job buildenv.Job, build buildenv.Bu
 		return fmt.Errorf("%w: %s ended %s without building a port; see %s", buildenv.ErrInfrastructure, run.URL, run.Conclusion, job.Directory)
 	}
 	return nil
+}
+
+// observe records the macOS release of each of the run's runners, as its
+// job's labels name it (RunnerJob.Release), for the pull request's Tested
+// on: the jobs API is GitHub's documented word for it. A runner's Xcode
+// is only in its log's text, which isn't a documented interface, so it
+// isn't recorded. Where no runner's labels name a release, nothing is.
+func observe(build buildenv.Build, jobs []RunnerJob) error {
+	var observed model.Observed
+	named := false
+	for _, j := range jobs {
+		if j.Conclusion == "skipped" {
+			continue
+		}
+		builder := model.BuilderObserved{Builder: j.Name, MacOS: j.Release()}
+		observed.Builders = append(observed.Builders, builder)
+		named = named || builder.MacOS != ""
+	}
+	if !named {
+		return nil
+	}
+	// One order, whichever GitHub lists them in, so that two attempts'
+	// reports of the same runners are the same.
+	slices.SortStableFunc(observed.Builders, func(a, b model.BuilderObserved) int { return strings.Compare(a.Builder, b.Builder) })
+	return build.Observe(observed)
 }
 
 // stoppedShort is a conclusion that says nothing about the ports.

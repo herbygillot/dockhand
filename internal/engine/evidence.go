@@ -334,11 +334,11 @@ func (e Evidence) Observations(environment int) []Observation {
 	var observations []Observation
 	var silent []model.GuestExecution
 	for _, run := range e.Runs(environment) {
-		if run.Observed == (model.Observed{}) {
+		if run.Observed.IsZero() {
 			silent = append(silent, run)
 			continue
 		}
-		i := slices.IndexFunc(observations, func(o Observation) bool { return o.Observed == run.Observed })
+		i := slices.IndexFunc(observations, func(o Observation) bool { return o.Observed.Equal(run.Observed) })
 		if i < 0 {
 			observations = append(observations, Observation{Observed: run.Observed})
 			i = len(observations) - 1

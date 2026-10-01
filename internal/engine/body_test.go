@@ -49,6 +49,13 @@ func TestTestedOnSaysWhatTheEnvironmentWas(t *testing.T) {
 		{"a workflow run", model.Environment{Provider: "github"}, model.Observed{},
 			[]model.GuestExecution{{ID: "github_q2w8e4r6t1y3u5i7", Run: "run_eleven", ProviderRef: "https://github.com/ada/macports-ports/actions/runs/123"}},
 			"Developer tools not recorded · github: MacPorts' CI workflow in the author's fork (Run ID: https://github.com/ada/macports-ports/actions/runs/123 - checked in check-11)\n\n"},
+		{"a workflow run, its runners' releases reported", model.Environment{Provider: "github"},
+			model.Observed{Builders: []model.BuilderObserved{{Builder: "macos-14", MacOS: "14"}, {Builder: "macos-15", MacOS: "15"}, {Builder: "macos-15-intel", MacOS: "15"}, {Builder: "macos-latest"}}},
+			[]model.GuestExecution{{ID: "github_q2w8e4r6t1y3u5i7", Run: "run_eleven", ProviderRef: "https://github.com/ada/macports-ports/actions/runs/123"}},
+			"macOS 14, 15\nDeveloper tools not recorded · github: MacPorts' CI workflow in the author's fork (Run ID: https://github.com/ada/macports-ports/actions/runs/123 - checked in check-11)\n\n"},
+		{"a workflow run whose runners named no release", model.Environment{Provider: "github"},
+			model.Observed{Builders: []model.BuilderObserved{{Builder: "macos-latest"}}}, nil,
+			"Developer tools not recorded · github: MacPorts' CI workflow in the author's fork\n\n"},
 	} {
 		require.Equal(t, test.want, testedOn(test.environment, test.observed, test.runs, checks, nil), test.name)
 	}
@@ -172,6 +179,36 @@ func TestEachReportNamesTheRunsThatMadeIt(t *testing.T) {
 	require.Len(t, observations, 3, "and stands alone beside two")
 	require.Equal(t, model.Observed{}, observations[2].Observed)
 	require.Empty(t, evidence().Observations(0))
+}
+
+// Reports of an environment's several builders, a workflow's runners, are
+// one report where each builder said the same, and two where one said
+// otherwise.
+func TestBuildersReportsAreOneWhereEachSaidTheSame(t *testing.T) {
+	at := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	runners := func(releases ...string) model.Observed {
+		var observed model.Observed
+		for _, release := range releases {
+			observed.Builders = append(observed.Builders, model.BuilderObserved{Builder: "macos-" + release, MacOS: release})
+		}
+		return observed
+	}
+	evidence := Evidence{Plan: model.Plan{Environments: []model.Environment{{Provider: "github"}}}, Executions: map[model.ExecutionID]model.GuestExecution{
+		"github_a": {ID: "github_a", Run: "run_ten", Observed: runners("14", "15"), CreatedAt: at},
+		"github_b": {ID: "github_b", Run: "run_eleven", Observed: runners("14", "15"), CreatedAt: at.Add(time.Hour)},
+		"github_c": {ID: "github_c", Run: "run_eleven", Observed: runners("14", "15", "26"), CreatedAt: at.Add(2 * time.Hour)},
+	}}
+	for i, id := range []model.ExecutionID{"github_a", "github_b", "github_c"} {
+		evidence.Targets = append(evidence.Targets, TargetEvidence{Target: model.PlanTarget{ID: model.TargetID(fmt.Sprint("port", i))},
+			Outcomes: cells([]model.TargetResult{{Execution: id, Outcome: model.OutcomePassed}})})
+	}
+	observations := evidence.Observations(0)
+	require.Len(t, observations, 2)
+	require.Equal(t, runners("14", "15"), observations[0].Observed)
+	require.Len(t, observations[0].Runs, 2, "the same runners' report is one")
+	require.Equal(t, runners("14", "15", "26"), observations[1].Observed)
+	require.False(t, runners("14").IsZero())
+	require.True(t, model.Observed{}.IsZero())
 }
 
 // An environment where every port is excluded wasn't tested: Tested on

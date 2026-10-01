@@ -294,15 +294,25 @@ func citesTickets(commits []git.HistoryCommit) bool {
 // testedOn is one environment's lines under Tested on, as MacPorts'
 // template has them: the macOS version, build, and architecture, then
 // Xcode's version and build or the Command Line Tools', as the environment
-// reported them, then who built it, and in which runs of which checks. What
-// it didn't report is said by the release's name and the tools the
-// environment stated, and never by the Darwin version, which isn't macOS's.
+// reported them, then who built it, and in which runs of which checks. An
+// environment of several builders, as MacPorts' workflow has, gives the
+// releases they reported, "macOS 14, 15, 26". What it didn't report is
+// said by the release's name and the tools the environment stated, and
+// never by the Darwin version, which isn't macOS's.
 func testedOn(environment model.Environment, observed model.Observed, runs []model.GuestExecution, checks map[model.RunID]string, reusedIn map[model.ExecutionID]string) string {
 	var b strings.Builder
 	platform := environment.Platform
+	var releases []string
+	for _, builder := range observed.Builders {
+		if builder.MacOS != "" && !slices.Contains(releases, builder.MacOS) {
+			releases = append(releases, builder.MacOS)
+		}
+	}
 	switch {
 	case observed.MacOS != "":
 		fmt.Fprintln(&b, strings.Join(nonEmpty("macOS", observed.MacOS, observed.Build, firstOf(observed.Architecture, platform.Architecture)), " "))
+	case len(releases) > 0:
+		fmt.Fprintln(&b, "macOS "+strings.Join(releases, ", "))
 	case platform != (model.Platform{}):
 		fmt.Fprintln(&b, strings.TrimPrefix(describePlace(model.Environment{Platform: platform}), " "))
 	}

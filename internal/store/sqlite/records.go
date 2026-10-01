@@ -528,7 +528,7 @@ func (t *tx) AddExecution(e model.GuestExecution) error {
 // observedJSON is an observed environment as stored: empty when nothing
 // was reported.
 func observedJSON(observed model.Observed) (string, error) {
-	if observed == (model.Observed{}) {
+	if observed.IsZero() {
 		return "", nil
 	}
 	data, err := json.Marshal(observed)

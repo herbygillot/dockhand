@@ -1,10 +1,12 @@
 package ghactions
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -55,4 +57,60 @@ func TestAPortsVerdictIsItsRunnersTogether(t *testing.T) {
 
 	require.Equal(t, "build-macos-14.log", logName("build (macos-14)"))
 	require.Equal(t, "job.log", logName("()"))
+}
+
+// A runner's macOS release is what the labels its job ran on name, as
+// GitHub's jobs API gives them: macos-15 is macOS 15, whatever the
+// runner's size or architecture. A label that names no release says
+// nothing, rather than a guess at what GitHub means by it now, and so do
+// labels naming two, and a job no runner took.
+func TestARunnersLabelsNameItsRelease(t *testing.T) {
+	ran := func(labels ...string) RunnerJob { return RunnerJob{Labels: labels, RunnerName: "GitHub Actions 1000"} }
+	for labels, want := range map[string]string{
+		"macos-15":                             "15",
+		"macos-26":                             "26",
+		"macOS-14":                             "14",
+		"macos-15-intel":                       "15",
+		"macos-14-xlarge":                      "14",
+		"macos-10.15":                          "10.15",
+		"macos-latest":                         "",
+		"macos-latest-large":                   "",
+		"self-hosted macOS":                    "",
+		"ubuntu-24.04":                         "",
+		"macos-14 macos-15":                    "",
+		"macos-15 self-hosted macos-15-xlarge": "15",
+	} {
+		require.Equal(t, want, ran(strings.Fields(labels)...).Release(), labels)
+	}
+	require.Empty(t, ran().Release())
+	require.Empty(t, RunnerJob{Labels: []string{"macos-15"}}.Release(), "no runner took it")
+}
+
+// What the runners were is reported once their jobs are listed, in one
+// order whichever GitHub lists them in, a skipped job left out; nothing is
+// where no runner's labels name a release.
+func TestTheRunnersReleasesAreReported(t *testing.T) {
+	build := &observing{}
+	require.NoError(t, observe(build, []RunnerJob{
+		{Name: "macos-26", Labels: []string{"macos-26"}, RunnerName: "GitHub Actions 3"},
+		{Name: "macos-14", Labels: []string{"macos-14"}, RunnerName: "GitHub Actions 1"},
+		{Name: "macos-latest", Labels: []string{"macos-latest"}, RunnerName: "GitHub Actions 2"},
+		{Name: "macos-13", Labels: []string{"macos-13"}, Conclusion: "skipped"},
+	}))
+	require.Equal(t, []model.Observed{{Builders: []model.BuilderObserved{{Builder: "macos-14", MacOS: "14"}, {Builder: "macos-26", MacOS: "26"}, {Builder: "macos-latest"}}}}, build.observed)
+
+	build = &observing{}
+	require.NoError(t, observe(build, []RunnerJob{{Name: "macos-latest", Labels: []string{"macos-latest"}, RunnerName: "GitHub Actions 2"}}))
+	require.Empty(t, build.observed)
+}
+
+// observing is a build that keeps what it was told the environment is.
+type observing struct {
+	buildenv.Build
+	observed []model.Observed
+}
+
+func (b *observing) Observe(observed model.Observed) error {
+	b.observed = append(b.observed, observed)
+	return nil
 }

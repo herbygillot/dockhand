@@ -40,6 +40,10 @@ A branch dockhand can't remove, because your fork can't be reached, say, is said
 
 The workflow builds only what the commit changes. A port that `--also` adds but the commit doesn't change isn't built there. Its result stays "not run", and the check says why.
 
+## Tested on
+
+A pull request's Tested on gives the macOS release of each runner, from GitHub's jobs API: the labels a job's `runs-on` asked for, which the runner that took it has. `macos-15` is macOS 15, as are `macos-15-xlarge` and `macos-15-intel`, so MacPorts' matrix reads `macOS 14, 15, 26`. A label that names no release, such as `macos-latest`, whose release GitHub moves, says nothing rather than a guess, and so does a job no runner took. The rest of what the template asks for, the macOS build, the architecture, and Xcode's version, the jobs API doesn't give. The runner's log has them as text, which isn't a documented interface, so they aren't read, and the line says "Developer tools not recorded".
+
 ## A port fetched with Git
 
 A check expects a Git-fetched port's build to fetch the commit its `git.branch` names when the check is planned, since a tag can be moved and binds nothing, as an archive's checksums do. Tart checks that commit in the guest, and a command reports what it fetched. MacPorts' workflow says neither, so this provider can't attest which commit a runner built, and doesn't claim to: the check says so as it records the port's result, and `dockhand logs check-N` says "which commit of git.branch … it fetched isn't known: its provider didn't say" under the port. Such a result stands for its own check alone. No later check reuses it, nor does a later check of the same files take it in place of a build of its own.
