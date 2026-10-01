@@ -16,6 +16,24 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
+// cleanStates are the kinds of branch clean takes: --closed and --archived
+// add to merged branches, which stay unless --merged=false leaves them, as
+// the help's default says (clean --archived left three merged branches,
+// unsaid, in the dogfood run with be3f3e06).
+func cleanStates(merged, closed, archived bool) []model.BranchState {
+	var states []model.BranchState
+	if merged {
+		states = append(states, model.BranchMerged)
+	}
+	if closed {
+		states = append(states, model.BranchClosed)
+	}
+	if archived {
+		states = append(states, model.BranchArchived)
+	}
+	return states
+}
+
 func cleanCommand(s *settings, streams Streams) *cobra.Command {
 	var merged, closed, archived, yes, automatic bool
 	cmd := &cobra.Command{
@@ -27,11 +45,12 @@ untracked files, and work that went on past the merge, are kept. The
 branch's record stays: status --all lists it as cleaned, and status
 <branch> still finds it.
 
---closed and --archived take the worktrees of branches whose pull request
-was closed without merging, or that were archived, and nothing else: their
-work isn't merged, so the Git branch, your fork's branch, and the
-checkpoints stay, and dockhand path or any command that needs the worktree
-checks it out again. A worktree with edits or untracked files is kept.
+--closed and --archived also take the worktrees of branches whose pull
+request was closed without merging, or that were archived, and only their
+worktrees: their work isn't merged, so the Git branch, your fork's branch,
+and the checkpoints stay, and dockhand path or any command that needs the
+worktree checks it out again. A worktree with edits or untracked files is
+kept. Merged branches are cleaned with them; --merged=false leaves those.
 
 Whichever branches it cleans, it also removes what checks left in their
 providers when the process running them died: a Tart clone, which a check
@@ -54,16 +73,7 @@ cancel stops a check. None means another.`,
 			if automatic {
 				return cleanAutomatically(ctx, e, streams, s.file)
 			}
-			var states []model.BranchState
-			if merged && (cmd.Flags().Changed("merged") || !closed && !archived) {
-				states = append(states, model.BranchMerged)
-			}
-			if closed {
-				states = append(states, model.BranchClosed)
-			}
-			if archived {
-				states = append(states, model.BranchArchived)
-			}
+			states := cleanStates(merged, closed, archived)
 			if len(states) == 0 {
 				return errors.New("nothing to clean: --merged, --closed, or --archived names what")
 			}
@@ -107,8 +117,8 @@ cancel stops a check. None means another.`,
 		},
 	}
 	cmd.Flags().BoolVar(&merged, "merged", true, "merged branches: their worktree, local branch, and fork branch")
-	cmd.Flags().BoolVar(&closed, "closed", false, "branches whose pull request closed unmerged: their worktree only")
-	cmd.Flags().BoolVar(&archived, "archived", false, "archived branches: their worktree only")
+	cmd.Flags().BoolVar(&closed, "closed", false, "also branches whose pull request closed unmerged: their worktree only")
+	cmd.Flags().BoolVar(&archived, "archived", false, "also archived branches: their worktree only")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "remove without asking")
 	cmd.Flags().BoolVar(&automatic, "automatic", false, "run automatic cleanup's pass, when it is due, as a command starts it once its work is done")
 	_ = cmd.Flags().MarkHidden("automatic")

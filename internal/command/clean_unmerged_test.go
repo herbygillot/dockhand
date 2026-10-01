@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 func TestCleanTakesAnArchivedBranchsWorktreeAndPathBringsItBack(t *testing.T) {
@@ -57,4 +59,15 @@ func TestCleanTakesAnArchivedBranchsWorktreeAndPathBringsItBack(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(dir, "textproc/jq/Portfile"))
 	require.NoError(t, err)
 	require.Equal(t, "name jq\nversion 1.8.1\n", string(data), "checked out again, sparse over the ports it changes")
+}
+
+// --closed and --archived add to what clean takes; merged branches stay in
+// it unless --merged=false leaves them (the dogfood run with be3f3e06,
+// whose clean --archived left three merged branches, unsaid).
+func TestCleanAddsWhatItsFlagsName(t *testing.T) {
+	require.Equal(t, []model.BranchState{model.BranchMerged}, cleanStates(true, false, false))
+	require.Equal(t, []model.BranchState{model.BranchMerged, model.BranchArchived}, cleanStates(true, false, true))
+	require.Equal(t, []model.BranchState{model.BranchMerged, model.BranchClosed, model.BranchArchived}, cleanStates(true, true, true))
+	require.Equal(t, []model.BranchState{model.BranchArchived}, cleanStates(false, false, true))
+	require.Empty(t, cleanStates(false, false, false))
 }
