@@ -1,6 +1,7 @@
 package command
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -70,4 +72,23 @@ func TestCleanAddsWhatItsFlagsName(t *testing.T) {
 	require.Equal(t, []model.BranchState{model.BranchMerged, model.BranchClosed, model.BranchArchived}, cleanStates(true, true, true))
 	require.Equal(t, []model.BranchState{model.BranchArchived}, cleanStates(false, false, true))
 	require.Empty(t, cleanStates(false, false, false))
+}
+
+// clean --legacy says what it does with each branch from before v3: one
+// master has goes, with your fork's holding the same commit; one master
+// superseded is for a look; the rest are adopt's.
+func TestCleanSaysWhatItDoesWithBranchesFromBeforeV3(t *testing.T) {
+	plans := []engine.LegacyBranch{
+		{Name: "dockhand/bump/jq-9c1d", Kind: engine.LegacySuperseded, Detail: "master has jq at 1.8.1, where the branch took 1.7.1 to 1.8.0"},
+		{Name: "dockhand/bump/libharbor-4f2a", Kind: engine.LegacyOnMaster, Detail: "master has its 1 commit, by their changes", Fork: "ada/macports-ports:dockhand/bump/libharbor-4f2a"},
+		{Name: "dockhand/bump/newport-77aa", Kind: engine.LegacyUnfinished, Detail: "1 commit master hasn't"},
+	}
+	var out bytes.Buffer
+	require.Equal(t, 2, writeLegacy(&out, plans, false))
+	require.Equal(t, "Branches from before v3 (dockhand/bump/…):\n"+
+		"  look     dockhand/bump/jq-9c1d: master has jq at 1.8.1, where the branch took 1.7.1 to 1.8.0; git branch -D dockhand/bump/jq-9c1d removes it once you've looked\n"+
+		"  remove   dockhand/bump/libharbor-4f2a: master has its 1 commit, by their changes\n"+
+		"  remove   ada/macports-ports:dockhand/bump/libharbor-4f2a, which holds the same commit\n"+
+		"  keep     dockhand/bump/newport-77aa: 1 commit master hasn't; dockhand adopt dockhand/bump/newport-77aa takes it up\n", out.String())
+	require.Zero(t, writeLegacy(&out, nil, false))
 }

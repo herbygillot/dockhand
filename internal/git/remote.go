@@ -133,6 +133,29 @@ func (r *Repository) CountCommits(ctx context.Context, base, head string) (int, 
 	return strconv.Atoi(strings.TrimSpace(string(out)))
 }
 
+// Cherry counts head's commits that upstream lacks by those whose change
+// upstream has all the same, by patch-id, and those it hasn't, as git
+// cherry marks them "-" and "+": a branch merged by a rebase, as MacPorts
+// merges, has its changes in master under other commits.
+func (r *Repository) Cherry(ctx context.Context, upstream, head string) (equivalent, own int, err error) {
+	if !ValidObjectID(upstream) || !ValidObjectID(head) {
+		return 0, 0, fmt.Errorf("git: literal commit objects are required")
+	}
+	out, err := r.output(ctx, "cherry", upstream, head)
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		switch {
+		case strings.HasPrefix(line, "- "):
+			equivalent++
+		case strings.HasPrefix(line, "+ "):
+			own++
+		}
+	}
+	return equivalent, own, nil
+}
+
 // MergeBase is the best common ancestor of two commits.
 func (r *Repository) MergeBase(ctx context.Context, a, b string) (string, error) {
 	if !ValidObjectID(a) || !ValidObjectID(b) {
