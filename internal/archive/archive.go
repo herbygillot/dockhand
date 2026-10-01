@@ -21,8 +21,38 @@ import (
 // errScanLimit means the archive's uncompressed stream exceeded the walk limit.
 var errScanLimit = errors.New("archive: exceeds scan limit")
 
-// scanLimit bounds the uncompressed bytes one walk reads.
-const scanLimit = 1 << 30
+// scanLimit bounds the uncompressed bytes one walk reads; a variable for
+// tests.
+var scanLimit int64 = 1 << 30
+
+// scanLimited is a stream that stops at the scan limit, and says so where
+// more follows, rather than ending as if the archive had: tar read a
+// member cut short as "unexpected EOF", and rustc's source, 3.5 GiB
+// uncompressed, was said as broken (the rust and cargo run).
+type scanLimited struct {
+	r io.Reader
+	n int64
+}
+
+func (s *scanLimited) Read(p []byte) (int, error) {
+	if s.n <= 0 {
+		var one [1]byte
+		k, err := io.ReadFull(s.r, one[:])
+		switch {
+		case k > 0:
+			return 0, fmt.Errorf("%w: it holds more than the %d MiB dockhand reads of one, uncompressed", errScanLimit, scanLimit>>20)
+		case err != nil && !errors.Is(err, io.EOF):
+			return 0, err
+		}
+		return 0, io.EOF
+	}
+	if int64(len(p)) > s.n {
+		p = p[:s.n]
+	}
+	k, err := s.r.Read(p)
+	s.n -= int64(k)
+	return k, err
+}
 
 // Member is one archive entry. Body is valid only during the callback.
 type Member struct {
@@ -112,20 +142,20 @@ func Walk(ctx context.Context, filename string, fn func(Member) error) error {
 		}()
 		input = out
 	}
-	limited := &io.LimitedReader{R: input, N: scanLimit}
-	tr := tar.NewReader(limited)
+	tr := tar.NewReader(&scanLimited{r: input, n: scanLimit})
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		member, err := tr.Next()
-		if err == io.EOF {
-			if limited.N == 0 {
-				return errScanLimit
-			}
+		switch {
+		case err == io.EOF:
 			return nil
-		}
-		if err != nil {
+		case errors.Is(err, errScanLimit):
+			// Said of the archive by whoever named it: filename may be
+			// a temporary one.
+			return err
+		case err != nil:
 			return fmt.Errorf("archive: reading %s: %w", path.Base(filename), err)
 		}
 		if err := fn(Member{Name: member.Name, Regular: member.Typeflag == tar.TypeReg, Size: member.Size, Body: tr}); err != nil {

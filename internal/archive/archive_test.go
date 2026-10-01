@@ -56,3 +56,34 @@ func TestWalkReadsTarGzipAndZip(t *testing.T) {
 		require.False(t, ok, name)
 	}
 }
+
+// An archive past the scan limit says so, whether the limit falls between
+// members or within one, rather than "unexpected EOF": rustc's source, 3.5
+// GiB uncompressed, read as broken (the rust and cargo run).
+func TestAWalkPastTheLimitSaysSo(t *testing.T) {
+	var data bytes.Buffer
+	gz := gzip.NewWriter(&data)
+	tw := tar.NewWriter(gz)
+	for _, name := range []string{"root/a.txt", "root/b.txt"} {
+		require.NoError(t, tw.WriteHeader(&tar.Header{Name: name, Mode: 0600, Size: 2048, Typeflag: tar.TypeReg}))
+		_, _ = tw.Write(bytes.Repeat([]byte("x"), 2048))
+	}
+	require.NoError(t, tw.Close())
+	require.NoError(t, gz.Close())
+	tarball := filepath.Join(t.TempDir(), "source-123")
+	require.NoError(t, os.WriteFile(tarball, data.Bytes(), 0600))
+
+	saved := scanLimit
+	t.Cleanup(func() { scanLimit = saved })
+	for _, limit := range []int64{1024, 3072} {
+		scanLimit = limit
+		err := Walk(t.Context(), tarball, func(m Member) error {
+			_, err := io.Copy(io.Discard, m.Body)
+			return err
+		})
+		require.ErrorIs(t, err, errScanLimit, "a limit of %d", limit)
+		require.NotContains(t, err.Error(), "source-123", "the temporary file isn't named")
+	}
+	scanLimit = 1 << 20
+	require.NoError(t, Walk(t.Context(), tarball, func(Member) error { return nil }), "within the limit, the archive ends as it does")
+}
