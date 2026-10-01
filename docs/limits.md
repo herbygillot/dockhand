@@ -37,7 +37,7 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 | FTP dial | 30 s | "fetch: <dial error>" | `fetch/ftp.go:31` |  |
 | HTTPS probes of plain-HTTP URLs | 4 at once, 10 s each | the URL is said not to answer over HTTPS | `engine/https.go:24,84` | in usage.md |
 | GitHub API pace | 80 ms apart (750/min) | requests wait their turn | `github/pace.go:21` | in usage.md |
-| GitHub rate limit | a read waits up to 2 min for the reset, or Retry-After, else 1 min, then asks once more | past that, or for a write, never retried: "GitHub's rate limit for your login resets at 14:05, in 23 minutes"; nothing is asked while limited | `github/ratelimit.go` (`rateWait`) |  |
+| GitHub rate limit | a read waits up to 2 min for the reset, or Retry-After, else 1 min, then asks once more | past that, or for a write, never retried: "GitHub's rate limit for your login resets at 14:05, in 23 minutes"; nothing is asked while limited | `github/ratelimit.go` (`rateWait`) | in usage.md |
 | API page size | 100, no page cap | every page is followed | `forge/github/repository.go:17` |  |
 | Pull request search | one page of 50 | more aren't seen | `forge/github/pullrequests.go:148` |  |
 | git ref resolved while planning a check | 1 min per git.url | the target is unresolved, and the check goes on | `engine/plan.go:204` |  |
@@ -163,7 +163,7 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 | The daily look | 07:00 | a failure waits a day | `engine/serve.go:492` | in usage.md · `serve.outdated_at` |
 | Checks at once per provider | tart 1, github 2, command 1 | runs wait | `config/config.go:243` | in usage.md · `providers.*.capacity` |
 | Cleanup | once a day | a failure waits a day | `engine/clean.go:744` | in usage.md |
-| Caches, kept archives, events, sessions | 7 days | pruned; today's events stay whatever the age, as serve.submit_limit counts them | `config/config.go:155 · engine/clean.go` (`dayStart`) | in usage.md · `cleanup.after` |
+| Caches, kept archives, events, sessions | 7 days | pruned; today's events stay whatever the age, as serve.submit_limit counts them | `config/config.go:155 · engine/clean.go`, `serve.go` (`dayStart`) | in usage.md · `cleanup.after` |
 | Free space that triggers cleanup | 30 GB; a 1 h pause when low | — | `config/config.go:123 · engine/clean.go:791` | in usage.md · `cleanup.min_free` |
 | Tart's vanilla images | 30 days unused | removed | `engine/clean.go:739` | in usage.md |
 | Database copies kept at a migration | 30 days | removed | `store/sqlite/sqlite.go:90` | in usage.md |
