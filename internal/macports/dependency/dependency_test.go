@@ -312,3 +312,42 @@ func TestInspectDerivesGitPolicyFromOfflineMode(t *testing.T) {
 }
 
 func ptr(s string) *string { return &s }
+
+// A Portfile declaring its crates in each branch of a platform's if, as
+// cargo's does for current systems and frozen ones for older, has the
+// declaration that ran edited, the one whose list MacPorts evaluated, and
+// the other left as it is, laid out as it was: update refused cargo as
+// declaring none (the rust and cargo run, batch 24).
+func TestTheDeclarationThatRanIsTheOneEdited(t *testing.T) {
+	t.Parallel()
+	sha := func(c string) string { return strings.Repeat(c, 64) }
+	src := []byte(`name cargo
+if {${os.platform} eq "darwin" && ${os.major} <= 15} {
+    # frozen
+    cargo.crates \
+        adler2                           2.0.0  ` + sha("a") + ` \
+        anyhow                         1.0.80  ` + sha("b") + `
+} else {
+    cargo.crates \
+        adler2                           2.0.1  ` + sha("c") + ` \
+        anyhow                         1.0.98  ` + sha("d") + `
+}
+`)
+	current := "adler2 2.0.1 " + sha("c") + " anyhow 1.0.98 " + sha("d")
+	plan, err := Inspect(src, map[string]string{Cargo: current})
+	require.NoError(t, err)
+	updated, err := plan.Apply(src, map[string][]string{Cargo: {"adler2", "2.0.1", sha("c"), "anyhow", "1.0.99", sha("e"), "zstd", "0.13.3", sha("f")}})
+	require.NoError(t, err)
+	require.Contains(t, string(updated), "    # frozen\n    cargo.crates \\\n        adler2                           2.0.0  "+sha("a")+" \\\n        anyhow                         1.0.80  "+sha("b")+"\n} else {", "the frozen list stays as it is")
+	require.Contains(t, string(updated), "anyhow                         1.0.99  "+sha("e"), "the list that ran takes the new crates, in its columns")
+	require.Contains(t, string(updated), "        zstd ")
+	stripped, err := plan.Strip(src)
+	require.NoError(t, err)
+	require.Contains(t, string(stripped), "1.0.80", "stripping sets aside only the list that ran")
+	require.NotContains(t, string(stripped), "1.0.98")
+
+	// Which ran is the one MacPorts evaluated: neither, or both alike,
+	// can't say.
+	_, err = Inspect(src, map[string]string{Cargo: "adler2 9.9.9 " + sha("c")})
+	require.ErrorContains(t, err, "cargo.crates is declared 2 times, and none is what MacPorts evaluated")
+}

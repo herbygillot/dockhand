@@ -52,6 +52,27 @@ func commands(src []byte, script *syntax.Script, nested bool, visit func(cmd syn
 	}
 }
 
+// RunCommand is a command MacPorts runs, and whether it's in a body, which
+// may or may not run, rather than at the Portfile's top, which always does.
+type RunCommand struct {
+	syntax.Command
+	Nested bool
+}
+
+// RunCommands are the commands of a Portfile MacPorts runs, at its top and
+// in each body it runs, a control structure's, a procedure's, or a
+// platform, variant, or subport block's, in the order they're written; a
+// command inside data isn't one. False where the source doesn't parse.
+func RunCommands(src []byte) ([]RunCommand, bool) {
+	script, errs := syntax.Parse(src)
+	if len(errs) > 0 {
+		return nil, false
+	}
+	var found []RunCommand
+	commands(src, script, false, func(cmd syntax.Command, nested bool) { found = append(found, RunCommand{Command: cmd, Nested: nested}) })
+	return found, true
+}
+
 // RevisionOnly reports whether two versions of a Portfile differ only in
 // their revision declarations, the revision commands MacPorts runs: each
 // set aside, with its line where it stands alone on one, the rest of the

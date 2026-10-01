@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/text"
 )
@@ -61,6 +62,9 @@ type Plan struct {
 	Values map[string][]string
 	// Git states how a Cargo port obtains Git-pinned crates; empty for Go.
 	Git GitPolicy
+	// which is the declaration of each name that ran, by its place among
+	// the Portfile's declarations of it (declaration).
+	which map[string]int
 }
 
 // Declared is the crates or Go modules a port's Portfile declares, as
@@ -76,11 +80,11 @@ func Declared(src []byte, info macports.PortInfo) (*Plan, error) {
 }
 
 func Inspect(src []byte, options map[string]string) (*Plan, error) {
-	commands, err := blocks(src)
+	commands, err := declarations(src)
 	if err != nil {
 		return nil, err
 	}
-	_, explicitGo := commands[Go]
+	explicitGo := len(commands[Go]) > 0
 	kind := ""
 	if options[Go] != "" || explicitGo {
 		kind = Go
@@ -95,19 +99,23 @@ func Inspect(src []byte, options map[string]string) (*Plan, error) {
 	if kind == "" {
 		return nil, nil
 	}
-	values := map[string][]string{}
+	values, which := map[string][]string{}, map[string]int{}
 	for _, name := range names(kind) {
 		expected, errs := syntax.ListValues(options[name])
 		if len(errs) > 0 {
 			return nil, fmt.Errorf("dependency: invalid evaluated %s", name)
 		}
-		cmd, found := commands[name]
-		if !found && len(expected) > 0 {
+		i, err := declaration(src, name, commands[name], expected)
+		if err != nil {
+			return nil, err
+		}
+		if i < 0 && len(expected) > 0 {
 			return nil, fmt.Errorf("dependency: %s requires one explicit declaration", name)
 		}
 		var actual []string
-		if found {
-			actual, err = literalWords(src, cmd)
+		if i >= 0 {
+			which[name] = i
+			actual, err = literalWords(src, commands[name][i])
 			if err != nil {
 				return nil, err
 			}
@@ -117,10 +125,9 @@ func Inspect(src []byte, options map[string]string) (*Plan, error) {
 		}
 		values[name] = expected
 	}
-	plan := &Plan{Kind: kind, Values: values, source: slices.Clone(src)}
+	plan := &Plan{Kind: kind, Values: values, source: slices.Clone(src), which: which}
 	if kind == Cargo {
-		_, declared := commands[CargoGit]
-		plan.Git = gitPolicy(options, declared)
+		plan.Git = gitPolicy(options, len(commands[CargoGit]) > 0)
 	}
 	return plan, nil
 }
@@ -130,27 +137,81 @@ func names(kind string) []string {
 	}
 	return []string{Cargo, CargoGit}
 }
-func blocks(src []byte) (map[string]syntax.Command, error) {
-	script, errs := syntax.Parse(src)
-	if len(errs) > 0 {
+
+// declarations are each Go or Cargo declaration MacPorts runs, at the
+// Portfile's top or in a body it runs, by name, in the order they're
+// written. Only the top was read: cargo's Portfile declares cargo.crates
+// in each branch of a platform's if, and update refused it as declaring
+// none (the rust and cargo run, batch 24).
+func declarations(src []byte) (map[string][]syntax.Command, error) {
+	found, ok := portfile.RunCommands(src)
+	if !ok {
 		return nil, fmt.Errorf("dependency: invalid Tcl syntax")
 	}
-	result := map[string]syntax.Command{}
-	for _, item := range script.Items {
-		cmd, ok := item.(syntax.Command)
-		if !ok {
-			continue
+	result := map[string][]syntax.Command{}
+	top := map[string]bool{}
+	for _, cmd := range found {
+		switch name, _ := cmd.Name(src); name {
+		case Go, Cargo, CargoGit:
+			// Two at the top both run, the later replacing the earlier,
+			// which no edit of one can say.
+			if !cmd.Nested && top[name] {
+				return nil, fmt.Errorf("dependency: duplicate %s declarations", name)
+			}
+			top[name] = top[name] || !cmd.Nested
+			result[name] = append(result[name], cmd.Command)
 		}
-		name, _ := cmd.Name(src)
-		if name != Go && name != Cargo && name != CargoGit {
-			continue
-		}
-		if _, found := result[name]; found {
-			return nil, fmt.Errorf("dependency: duplicate %s declarations", name)
-		}
-		result[name] = cmd
 	}
 	return result, nil
+}
+
+// declaration is which of a name's declarations ran, by its place among
+// them: the only one, or of several, the one whose literal list is what
+// MacPorts evaluated, as the branch of cargo's Portfile for current
+// systems is, beside the frozen list for older ones, so an edit is made
+// where the version it moves is; -1 where there's none. Several that are
+// each what was evaluated, or none of them, can't say which ran.
+func declaration(src []byte, name string, candidates []syntax.Command, expected []string) (int, error) {
+	switch len(candidates) {
+	case 0:
+		return -1, nil
+	case 1:
+		return 0, nil
+	}
+	ran := -1
+	for i, cmd := range candidates {
+		words, err := literalWords(src, cmd)
+		if err != nil || !slices.Equal(words, expected) {
+			continue
+		}
+		if ran >= 0 {
+			return -1, fmt.Errorf("dependency: %s is declared %d times, and more than one is what MacPorts evaluated, so which ran can't be told", name, len(candidates))
+		}
+		ran = i
+	}
+	if ran < 0 {
+		return -1, fmt.Errorf("dependency: %s is declared %d times, and none is what MacPorts evaluated", name, len(candidates))
+	}
+	return ran, nil
+}
+
+// pick is the declaration of a name an edit makes: the one which names,
+// or the only one; several with none named can't say which.
+func pick(commands map[string][]syntax.Command, which map[string]int, name string) (syntax.Command, bool, error) {
+	candidates := commands[name]
+	if i, ok := which[name]; ok {
+		if i >= len(candidates) {
+			return syntax.Command{}, false, fmt.Errorf("dependency: the Portfile no longer has the %s declaration the plan was made from", name)
+		}
+		return candidates[i], true, nil
+	}
+	switch len(candidates) {
+	case 0:
+		return syntax.Command{}, false, nil
+	case 1:
+		return candidates[0], true, nil
+	}
+	return syntax.Command{}, false, fmt.Errorf("dependency: %s is declared %d times; which to edit isn't known", name, len(candidates))
 }
 func safeToken(value string) bool {
 	if value == "" {
@@ -178,33 +239,49 @@ func (p *Plan) Strip(src []byte) ([]byte, error) {
 	for _, name := range names(p.Kind) {
 		replacements[name] = nil
 	}
-	return Apply(src, replacements)
+	return apply(src, replacements, nil, p.which)
+}
+
+// ApplyPlain is Apply for the declarations the plan was made from, where
+// the Portfile has several of a name.
+func (p *Plan) ApplyPlain(src []byte, values map[string][]string) ([]byte, error) {
+	return apply(src, values, nil, p.which)
 }
 
 // Apply retains the original spelling of dependency blocks whose values did
 // not change, and lays out changed blocks like the original: unchanged rows
 // stay byte for byte and new rows take the same columns.
 func (p *Plan) Apply(src []byte, values map[string][]string) ([]byte, error) {
-	original, err := blocks(p.source)
+	original, err := declarations(p.source)
 	if err != nil {
 		return nil, err
 	}
 	layouts := map[string]*blockLayout{}
-	for name, cmd := range original {
-		layouts[name] = inferLayout(name, cmd.Span.Text(p.source))
+	for _, name := range []string{Go, Cargo, CargoGit} {
+		if cmd, found, err := pick(original, p.which, name); err != nil {
+			return nil, err
+		} else if found {
+			layouts[name] = inferLayout(name, cmd.Span.Text(p.source))
+		}
 	}
-	out, err := apply(src, values, layouts)
+	out, err := apply(src, values, layouts, p.which)
 	if err != nil {
 		return nil, err
 	}
-	updated, err := blocks(out)
+	updated, err := declarations(out)
 	if err != nil {
 		return nil, err
 	}
 	var edits []text.Edit
 	for name, tokens := range values {
-		before, existed := original[name]
-		after, present := updated[name]
+		before, existed, err := pick(original, p.which, name)
+		if err != nil {
+			return nil, err
+		}
+		after, present, err := pick(updated, p.which, name)
+		if err != nil {
+			return nil, err
+		}
 		if existed && present && Equivalent(name, p.Values[name], tokens) {
 			edits = append(edits, text.Edit{Span: after.Span, New: []byte(before.Span.Text(p.source))})
 		}
@@ -214,11 +291,11 @@ func (p *Plan) Apply(src []byte, values map[string][]string) ([]byte, error) {
 
 // Apply writes plain single-space rows; Plan.Apply follows an existing layout.
 func Apply(src []byte, values map[string][]string) ([]byte, error) {
-	return apply(src, values, nil)
+	return apply(src, values, nil, nil)
 }
 
-func apply(src []byte, values map[string][]string, layouts map[string]*blockLayout) ([]byte, error) {
-	commands, err := blocks(src)
+func apply(src []byte, values map[string][]string, layouts map[string]*blockLayout, which map[string]int) ([]byte, error) {
+	commands, err := declarations(src)
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +326,11 @@ func apply(src []byte, values map[string][]string, layouts map[string]*blockLayo
 				body = layout.format(groups)
 			}
 		}
-		if cmd, found := commands[name]; found {
+		cmd, found, err := pick(commands, which, name)
+		if err != nil {
+			return nil, err
+		}
+		if found {
 			edits = append(edits, text.Edit{Span: cmd.Span, New: []byte(body)})
 		} else if len(tokens) > 0 {
 			added = append(added, []byte("\n"+body+"\n")...)
@@ -262,13 +343,13 @@ func apply(src []byte, values map[string][]string, layouts map[string]*blockLayo
 	return append(out, added...), nil
 }
 func generated(src []byte, name string) ([]string, error) {
-	commands, err := blocks(src)
+	commands, err := declarations(src)
 	if err != nil {
 		return nil, err
 	}
-	command, ok := commands[name]
-	if !ok {
-		return nil, nil
+	command, ok, err := pick(commands, nil, name)
+	if err != nil || !ok {
+		return nil, err
 	}
 	return literalWords(src, command)
 }

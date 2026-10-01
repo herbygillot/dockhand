@@ -207,7 +207,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	}
 	// Preserve maintained overrides by refusing to overwrite declarations that differ
 	// from what the original source and generator describe.
-	oldValues, _, err := s.gitCrateChecksums(ctx, request, input, stripped, old)
+	oldValues, _, err := s.gitCrateChecksums(ctx, request, input, plan, stripped, old)
 	if err != nil {
 		return Result{}, err
 	}
@@ -241,7 +241,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if len(generated.Online) > 0 {
 		progress.Report(ctx, "Leaving %d Git-pinned crates to Cargo's online resolution at build time because cargo.offline_cmd is empty: %s", len(generated.Online), dependency.GitSummary(generated.Online))
 	}
-	values, gitDownloads, err := s.gitCrateChecksums(ctx, request, input, result.Files[0].After, generated)
+	values, gitDownloads, err := s.gitCrateChecksums(ctx, request, input, plan, result.Files[0].After, generated)
 	if err != nil {
 		return Result{}, err
 	}
@@ -348,7 +348,7 @@ func dependencyInput(info macports.PortInfo, archive string, plan *dependency.Pl
 	return dependency.Input{Archive: archive, Worksrcdir: filepath.ToSlash(root), Package: info.Options["go.package"], Tag: info.Options["git.branch"], Git: plan.Git}, nil
 }
 
-func (s *Service) gitCrateChecksums(ctx context.Context, request Request, input *sourceInput, contents []byte, generated dependency.GeneratedBlocks) (map[string][]string, []archives.Download, error) {
+func (s *Service) gitCrateChecksums(ctx context.Context, request Request, input *sourceInput, plan *dependency.Plan, contents []byte, generated dependency.GeneratedBlocks) (map[string][]string, []archives.Download, error) {
 	sums := map[string]string{}
 	for _, crate := range generated.Git {
 		sums[crate.Distfile()] = strings.Repeat("0", 64)
@@ -360,7 +360,7 @@ func (s *Service) gitCrateChecksums(ctx context.Context, request Request, input 
 	if len(generated.Git) == 0 {
 		return values, nil, nil
 	}
-	provisional, err := dependency.Apply(contents, values)
+	provisional, err := plan.ApplyPlain(contents, values)
 	if err != nil {
 		return nil, nil, err
 	}
