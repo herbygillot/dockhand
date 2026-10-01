@@ -20,7 +20,9 @@ import (
 	"sync"
 
 	"github.com/herbygillot/dockhand/internal/archive"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/subprocess"
+	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
 // Patch is one declared patch file as stored in the port's files directory.
@@ -51,6 +53,30 @@ type Result struct {
 	Checked bool
 	Applies bool
 	Detail  string
+}
+
+// Port checks a port's patches against archives as MacPorts would apply
+// them, by the port as evaluated: its worksrcdir, extract.rename,
+// patch.dir, and patch.pre_args. A patch.dir that leaves the source
+// directory can't be modelled, so each patch is unchecked there.
+func Port(ctx context.Context, info macports.PortInfo, archives []string, patches []Patch) ([]Result, error) {
+	dir := info.Options["patch.dir"]
+	if dir != "" && dir != "@worksrc@" && !strings.HasPrefix(dir, "@worksrc@/") {
+		results := make([]Result, 0, len(patches))
+		for _, patch := range patches {
+			results = append(results, Result{Name: patch.Name, Detail: "patch.dir leaves the source directory"})
+		}
+		return results, nil
+	}
+	pre, _ := syntax.ListValues(info.Options["patch.pre_args"])
+	rename, err := info.Bool("extract.rename")
+	if err != nil {
+		return nil, err
+	}
+	return Check(ctx, Request{
+		Archives: archives, Worksrcdir: filepath.ToSlash(info.Options["worksrcdir"]), Rename: rename,
+		PatchDir: strings.TrimPrefix(strings.TrimPrefix(dir, "@worksrc@"), "/"), PreArgs: pre, Patches: patches,
+	})
 }
 
 // Rejected lists the patches that were checked and do not apply.

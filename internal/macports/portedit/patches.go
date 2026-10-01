@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
@@ -52,23 +51,7 @@ func (s *Service) checkPatches(ctx context.Context, input *sourceInput, result *
 		}
 		patches = append(patches, patchcheck.Patch{Name: name, Data: data})
 	}
-	dir := info.Options["patch.dir"]
-	if dir != "" && dir != "@worksrc@" && !strings.HasPrefix(dir, "@worksrc@/") {
-		for _, patch := range patches {
-			result.Patches = append(result.Patches, patchcheck.Result{Name: patch.Name, Detail: "patch.dir leaves the source directory"})
-		}
-		progress.Report(ctx, "Patches: %s", patchcheck.Summary(result.Patches))
-		return nil
-	}
-	pre, _ := syntax.ListValues(info.Options["patch.pre_args"])
-	rename, err := info.Bool("extract.rename")
-	if err != nil {
-		return err
-	}
-	results, err := patchcheck.Check(ctx, patchcheck.Request{
-		Archives: archives, Worksrcdir: filepath.ToSlash(info.Options["worksrcdir"]), Rename: rename,
-		PatchDir: strings.TrimPrefix(strings.TrimPrefix(dir, "@worksrc@"), "/"), PreArgs: pre, Patches: patches,
-	})
+	results, err := patchcheck.Port(ctx, info, archives, patches)
 	if err != nil {
 		return err
 	}
