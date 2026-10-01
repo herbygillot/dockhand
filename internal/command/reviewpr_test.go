@@ -9,6 +9,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 func TestReviewShowsThenPostsOnlyWhenAsked(t *testing.T) {
@@ -67,4 +70,25 @@ func TestAdoptSomeonesPullRequest(t *testing.T) {
 	out, _, err = dockhand(t, "adopt", "--pr", "34905")
 	require.NoError(t, err)
 	require.Equal(t, "#34905 is already tracked, as pr-34905.\n", out)
+}
+
+// A review's terminal output says what the assessment found, marked as
+// update marks it, and the dependents, or why either wasn't read.
+func TestAReviewSaysTheAssessmentAndTheDependents(t *testing.T) {
+	report := engine.ReviewReport{Ref: forge.PullRequestRef{Number: 34620}, Title: "libuv: update to 1.52.1", Login: "you", Permission: "none",
+		Head: strings.Repeat("b", 40), Base: strings.Repeat("a", 40), Ports: []string{"libuv"},
+		Upstream: []engine.PortComparison{{Port: "libuv", Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{
+			{Kind: "patch", Message: "patch-libuv-legacy.diff, which the base applied, is dropped, and no longer applies to 1.52.1's source: 5 out of 5 hunks FAILED"},
+		}}}},
+		Dependents: []engine.Dependent{{Name: "ttyd", Phases: []string{"library"}}, {Name: "luv", Phases: []string{"library"}}}}
+	var out bytes.Buffer
+	writeReview(&out, report)
+	require.Contains(t, out.String(), "  Upstream:\n    · patch-libuv-legacy.diff, which the base applied, is dropped, and no longer applies to 1.52.1's source: 5 out of 5 hunks FAILED\n")
+	require.Contains(t, out.String(), "  2 dependents, from the index at aaaaaaa: ttyd (library), luv (library); candidates to look at, not proof of anything.\n")
+
+	report.Upstream, report.UpstreamUnread, report.Dependents, report.DependentsUnread = nil, "assessing a revision needs MacPorts' evaluator", nil, "reading the port index: no index"
+	out.Reset()
+	writeReview(&out, report)
+	require.Contains(t, out.String(), "  · upstream's change wasn't assessed: assessing a revision needs MacPorts' evaluator\n")
+	require.Contains(t, out.String(), "  Dependents weren't read: reading the port index: no index.\n")
 }

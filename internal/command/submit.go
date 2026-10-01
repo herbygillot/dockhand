@@ -446,12 +446,25 @@ func writeSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 // port when the branch updated several, and, under the Upstream label
 // every list of them has, doesn't say upstream again.
 func upstreamLines(plan engine.SubmitPlan) []string {
+	lines := comparisonLines(plan.Upstream)
+	// A Git-fetched port whose tag has moved since its check: the check
+	// built another source than this would submit.
+	for _, moved := range plan.Moved {
+		lines = append(lines, "! "+moved.Detail)
+	}
+	return lines
+}
+
+// comparisonLines are what each port's assessment found, a line each,
+// marked as update marks them, each naming its port where there are
+// several, under an Upstream label.
+func comparisonLines(comparisons []engine.PortComparison) []string {
 	ports := map[string]bool{}
-	for _, found := range plan.Upstream {
+	for _, found := range comparisons {
 		ports[found.Port] = true
 	}
 	var lines []string
-	for _, found := range plan.Upstream {
+	for _, found := range comparisons {
 		port := ""
 		if len(ports) > 1 {
 			port = found.Port + ": "
@@ -464,11 +477,6 @@ func upstreamLines(plan engine.SubmitPlan) []string {
 			change.Message = port + change.Message
 			lines = append(lines, upstreamWords(change))
 		}
-	}
-	// A Git-fetched port whose tag has moved since its check: the check
-	// built another source than this would submit.
-	for _, moved := range plan.Moved {
-		lines = append(lines, "! "+moved.Detail)
 	}
 	return lines
 }

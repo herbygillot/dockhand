@@ -291,7 +291,7 @@ The description follows MacPorts' pull request template, beginning "Submitted by
 
 `status --refresh`, or `serve` every few minutes, reads your pull requests' state, reviews, and CI. To answer a review, edit the branch, check it, tidy, and submit again; the pull request is updated. When reviewers asked for changes, submit then asks whether to request their review again; `submit.rerequest_review` can make that `always` or `never`. `rebase` replays the branch onto fresh master when it needs that, keeping a checkpoint. It makes the replayed commits before moving anything, so a rebase that conflicts leaves the branch as it was, and names the files. A branch with a merge commit is rebased by hand.
 
-When a pull request is merged, its branch is marked merged. `dockhand review <pr>` applies the same commit rules to anyone's pull request. It posts nothing unless you say so: `--comment`, `--request-changes`, or `--markdown` to print the text for pasting.
+When a pull request is merged, its branch is marked merged. `dockhand review <pr>` applies the same commit rules to anyone's pull request, and says what `update` would find of it: what upstream's change means for each port it changes, against the base it leaves master at, as a branch's revision is assessed (its patches included, and each patch it drops, with whether that still applies), and the other ports that depend on them, from the index at that base, as candidates to look at. Nothing of it is recorded. It posts nothing unless you say so: `--comment`, `--request-changes`, or `--markdown` to print the text for pasting.
 
 ## serve
 

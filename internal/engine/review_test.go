@@ -7,7 +7,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
+	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/store"
 )
 
 // contribution puts someone's pull request #34905 on the upstream: an
@@ -128,4 +131,46 @@ func TestAdoptSomeonesPullRequestAndPushOnlyWhereGitHubAllows(t *testing.T) {
 	require.Equal(t, run(t, adopted.Branch.Worktree, "rev-parse", "HEAD"), run(t, theirs, "rev-parse", "patch-1"), "pushed to their branch")
 	require.Empty(t, fake.updated, "their title and description are theirs")
 	require.Empty(t, fake.created)
+}
+
+// A review says what update would of someone's pull request: what
+// upstream's change means for each port it changes, assessed as a branch's
+// revision is, and the ports that depend on them (the libuv run's finding
+// 2). Nothing is recorded; where the engine can't assess, it says so.
+func TestReviewSaysWhatUpdateWouldOfSomeonesPullRequest(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	fake := f.withFork(t, e)
+	contribution(t, f, fake)
+	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{
+		"textproc/jq":  {{Name: "jq"}},
+		"textproc/jaq": {{Name: "jaq", Dependencies: []macports.Dependency{{Port: "jq", Phase: "lib"}}}},
+	}}
+
+	report, err := e.Review(t.Context(), 34905)
+	require.NoError(t, err)
+	require.Equal(t, "assessing a revision needs MacPorts' evaluator", report.UpstreamUnread, "a reader that can't plan archives")
+	require.Contains(t, report.Markdown(), "Upstream's change wasn't assessed: assessing a revision needs MacPorts' evaluator.")
+
+	trees, err := e.Repo.CommitTrees(t.Context(), []string{report.Base, report.Head})
+	require.NoError(t, err)
+	p := newPlanner(t)
+	e.ArchivePlanner = p
+	p.add(model.ObjectID(trees[report.Base]), plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.7.1"}, archives: map[string]map[string]string{"jq-1.7.1.tar.gz": {"COPYING": "MIT\n"}}})
+	p.add(model.ObjectID(trees[report.Head]), plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.8.1"}, archives: map[string]map[string]string{"jq-1.8.1.tar.gz": {"COPYING": "GPL\n"}}})
+
+	report, err = e.Review(t.Context(), 34905)
+	require.NoError(t, err)
+	require.Empty(t, report.UpstreamUnread)
+	require.Len(t, report.Upstream, 1)
+	require.Equal(t, []string{"upstream's COPYING changed; the Portfile's license line may need to follow"}, report.UpstreamWords())
+	require.Equal(t, []Dependent{{Name: "jaq", Directory: "textproc/jaq", On: []string{"jq"}, Phases: []string{"library"}}}, report.Dependents)
+	markdown := report.Markdown()
+	require.Contains(t, markdown, "What upstream's change means, comparing the source archives with the base's:\n- upstream's COPYING changed; the Portfile's license line may need to follow\n")
+	require.Contains(t, markdown, "1 dependent, from the index at "+short(model.ObjectID(report.Base))+": jaq (library); candidates to look at, not proof of anything.")
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		recorded, err := r.Assessments("")
+		require.Empty(t, recorded, "a review records no assessment")
+		return err
+	}))
 }

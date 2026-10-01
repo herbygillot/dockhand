@@ -131,5 +131,19 @@ func writeReview(out io.Writer, report engine.ReviewReport) {
 	for _, finding := range report.Resolved {
 		fmt.Fprintf(out, "  ✓ resolved since %s: %s [%s]\n", engine.Short(report.Previous.Head), finding.Message, finding.Code)
 	}
+	switch lines := comparisonLines(report.Upstream); {
+	case report.UpstreamUnread != "":
+		fmt.Fprintf(out, "  · upstream's change wasn't assessed: %s\n", report.UpstreamUnread)
+	case len(lines) > 0:
+		fmt.Fprintln(out, "  Upstream:")
+		for _, line := range lines {
+			fmt.Fprintf(out, "    %s\n", line)
+		}
+	case len(report.Upstream) > 0:
+		fmt.Fprintln(out, "  ✓ upstream: no license, build file, dependency, or patch changes")
+	}
+	if words := report.DependentsWords(); words != "" {
+		fmt.Fprintf(out, "  %s\n", words)
+	}
 	fmt.Fprintln(out, "  · not checked here: port lint and the build; MacPorts CI runs both")
 }

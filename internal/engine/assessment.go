@@ -65,67 +65,17 @@ func (e *Engine) revisionAssessments(ctx context.Context, branch model.BranchID,
 	}); err != nil {
 		return nil, err
 	}
-	have := func(port string) (model.Assessment, bool) {
-		i := slices.IndexFunc(recorded, func(a model.Assessment) bool { return a.Port == port })
-		if i < 0 {
-			return model.Assessment{}, false
-		}
-		return recorded[i], true
-	}
 	if !collect {
 		return recorded, nil
 	}
-	reader, err := e.portReader()
-	if err != nil {
-		return nil, err
-	}
-	planner, err := e.archivePlanner()
-	if err != nil {
+	found, made, err := e.makeAssessments(ctx, branch, base, baseTree, tree, changed, recorded)
+	switch {
+	case errors.Is(err, errNoPlanner):
 		// Only an engine given no evaluator can't plan archives: it
 		// collects nothing, and reads what's recorded.
 		return recorded, nil
-	}
-	sources := [2]model.Source{{Commit: base, Tree: baseTree, Base: base}, {Tree: tree, Base: base}}
-	var found, made []model.Assessment
-	for _, directory := range ScopeOf(changed).Ports {
-		exists := [2]bool{}
-		for i, source := range sources {
-			file, _, err := e.Repo.File(ctx, string(source.Tree), directory+"/Portfile")
-			if err != nil {
-				return nil, err
-			}
-			exists[i] = file.Exists
-		}
-		if !exists[1] {
-			// A port removed or moved away is assessed where it now is,
-			// if anywhere.
-			continue
-		}
-		ports, err := reader.Ports(ctx, sources[1], directory, model.Environment{}, nil)
-		if err != nil && slices.ContainsFunc(recorded, func(a model.Assessment) bool { return a.Directory == directory }) {
-			// What was recorded of it stands, as an update recorded it.
-			for _, a := range recorded {
-				if a.Directory == directory {
-					found = append(found, a)
-				}
-			}
-			continue
-		}
-		if err != nil {
-			made = append(made, model.Assessment{Branch: branch, Tree: tree, Base: base, Port: directory, Directory: directory, Policy: assess.Policy, At: e.now(),
-				Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{}, Problem: "its ports couldn't be read: " + err.Error()}})
-			continue
-		}
-		for _, port := range ports {
-			// One recorded incomplete for what another try may not meet, a
-			// network's failure or a forge's rate limit, is tried again.
-			if a, ok := have(port.Name); ok && !a.Comparison.Transient {
-				found = append(found, a)
-				continue
-			}
-			made = append(made, model.Assessment{Branch: branch, Tree: tree, Base: base, Port: port.Name, Directory: directory, Policy: assess.Policy, At: e.now(),
-				Comparison: e.assessPort(ctx, planner, sources, directory, port.Name, exists[0])})
-		}
+	case err != nil:
+		return nil, err
 	}
 	if len(made) > 0 {
 		if err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
@@ -169,10 +119,79 @@ func (e *Engine) archivePlanner() (ArchivePlanner, error) {
 	}
 	planner, ok := reader.(ArchivePlanner)
 	if !ok {
-		return nil, errors.New("assessing a revision needs MacPorts' evaluator")
+		return nil, errNoPlanner
 	}
 	return planner, nil
 }
+
+// makeAssessments makes the assessments of each port a revision's changed
+// paths change, against its base, recording none: those recorded that
+// apply are found, and the rest made, an incomplete one made again where
+// another try may meet what kept it so; errNoPlanner where the engine,
+// given no evaluator, can't plan archives. Review assesses a pull request
+// this way, which no branch records.
+func (e *Engine) makeAssessments(ctx context.Context, branch model.BranchID, base, baseTree, tree model.ObjectID, changed []string, recorded []model.Assessment) (found, made []model.Assessment, err error) {
+	have := func(port string) (model.Assessment, bool) {
+		i := slices.IndexFunc(recorded, func(a model.Assessment) bool { return a.Port == port })
+		if i < 0 {
+			return model.Assessment{}, false
+		}
+		return recorded[i], true
+	}
+	reader, err := e.portReader()
+	if err != nil {
+		return nil, nil, err
+	}
+	planner, err := e.archivePlanner()
+	if err != nil {
+		return nil, nil, err
+	}
+	sources := [2]model.Source{{Commit: base, Tree: baseTree, Base: base}, {Tree: tree, Base: base}}
+	for _, directory := range ScopeOf(changed).Ports {
+		exists := [2]bool{}
+		for i, source := range sources {
+			file, _, err := e.Repo.File(ctx, string(source.Tree), directory+"/Portfile")
+			if err != nil {
+				return nil, nil, err
+			}
+			exists[i] = file.Exists
+		}
+		if !exists[1] {
+			// A port removed or moved away is assessed where it now is,
+			// if anywhere.
+			continue
+		}
+		ports, err := reader.Ports(ctx, sources[1], directory, model.Environment{}, nil)
+		if err != nil && slices.ContainsFunc(recorded, func(a model.Assessment) bool { return a.Directory == directory }) {
+			// What was recorded of it stands, as an update recorded it.
+			for _, a := range recorded {
+				if a.Directory == directory {
+					found = append(found, a)
+				}
+			}
+			continue
+		}
+		if err != nil {
+			made = append(made, model.Assessment{Branch: branch, Tree: tree, Base: base, Port: directory, Directory: directory, Policy: assess.Policy, At: e.now(),
+				Comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{}, Problem: "its ports couldn't be read: " + err.Error()}})
+			continue
+		}
+		for _, port := range ports {
+			// One recorded incomplete for what another try may not meet, a
+			// network's failure or a forge's rate limit, is tried again.
+			if a, ok := have(port.Name); ok && !a.Comparison.Transient {
+				found = append(found, a)
+				continue
+			}
+			made = append(made, model.Assessment{Branch: branch, Tree: tree, Base: base, Port: port.Name, Directory: directory, Policy: assess.Policy, At: e.now(),
+				Comparison: e.assessPort(ctx, planner, sources, directory, port.Name, exists[0])})
+		}
+	}
+	return found, made, nil
+}
+
+// errNoPlanner is an engine that can't plan archives, given no evaluator.
+var errNoPlanner = errors.New("assessing a revision needs MacPorts' evaluator")
 
 // assessPort assesses one port of a directory at the revision against the
 // base, as this Mac's context fetches it. A port new to the directory has

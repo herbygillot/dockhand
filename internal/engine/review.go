@@ -16,8 +16,9 @@ import (
 )
 
 // ReviewReport is what dockhand would say about someone's pull request
-// (Design v3 §6.11): its commits and Portfiles against §8's rules, and
-// which findings of the last review are resolved.
+// (Design v3 §6.11): its commits and Portfiles against §8's rules, which
+// findings of the last review are resolved, what upstream's change means
+// for each port it changes, and the ports that depend on them.
 type ReviewReport struct {
 	Ref   forge.PullRequestRef
 	Title string
@@ -34,6 +35,16 @@ type ReviewReport struct {
 	// Resolved its findings that no longer hold.
 	Previous *model.Review
 	Resolved []model.ReviewFinding
+	// Upstream is what upstream's change means for each port the pull
+	// request changes, against its base, assessed as a branch's revision
+	// is, its patches included; UpstreamUnread why it couldn't be.
+	Upstream       []PortComparison
+	UpstreamUnread string
+	// Dependents are the other ports that depend on those it changes, from
+	// the index at its base: candidates to look at, not proof of anything;
+	// DependentsUnread why they couldn't be read.
+	Dependents       []Dependent
+	DependentsUnread string
 }
 
 // CanRequestChanges reports whether the reviewer may request changes:
@@ -57,8 +68,12 @@ func (r ReviewReport) Summary() string {
 }
 
 // Review reads pull request number of MacPorts' repository: fetches its
-// head, applies the commit rules to its commits and Portfiles, and
-// compares the findings with the last review's. It posts nothing.
+// head, applies the commit rules to its commits and Portfiles, compares
+// the findings with the last review's, assesses each port it changes as
+// a branch's revision is assessed, without recording it, and reads their
+// dependents, as update finds them for one's own (the libuv run's finding
+// 2). What couldn't be assessed or read is said, never an error. It posts
+// nothing.
 func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
 	ref := forge.PullRequestRef{Forge: forge.GitHub, Repository: UpstreamRepository, Number: number}
 	report := ReviewReport{Ref: ref}
@@ -103,6 +118,26 @@ func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
 		return report, err
 	}
 	report.Findings = append(report.Findings, portfiles...)
+	base, head := model.ObjectID(trees[report.Base]), model.ObjectID(trees[report.Head])
+	found, made, err := e.makeAssessments(ctx, "", model.ObjectID(report.Base), base, head, changed, nil)
+	if err != nil {
+		report.UpstreamUnread = err.Error()
+	}
+	for _, a := range append(found, made...) {
+		report.Upstream = append(report.Upstream, PortComparison{Port: a.Port, Comparison: a.Comparison})
+	}
+	scope := ScopeOf(changed)
+	if len(scope.Ports) > 0 {
+		dependents, err := e.dependents(ctx, model.Source{Commit: model.ObjectID(report.Base), Base: model.ObjectID(report.Base), Tree: base}, scope.Ports)
+		if err != nil {
+			report.DependentsUnread = err.Error()
+		}
+		for _, dependent := range dependents {
+			if !slices.Contains(scope.Ports, dependent.Directory) {
+				report.Dependents = append(report.Dependents, dependent)
+			}
+		}
+	}
 
 	err = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		previous, err := r.LastReview(UpstreamRepository, number)
@@ -159,8 +194,65 @@ func (r ReviewReport) Markdown() string {
 			fmt.Fprintf(&b, "- ~~%s~~ [%s]\n", finding.Message, finding.Code)
 		}
 	}
+	switch lines := r.UpstreamWords(); {
+	case r.UpstreamUnread != "":
+		fmt.Fprintf(&b, "\nUpstream's change wasn't assessed: %s.\n", r.UpstreamUnread)
+	case len(lines) > 0:
+		b.WriteString("\nWhat upstream's change means, comparing the source archives with the base's:\n")
+		for _, line := range lines {
+			fmt.Fprintf(&b, "- %s\n", line)
+		}
+	case len(r.Upstream) > 0:
+		b.WriteString("\nComparing the source archives with the base's found no license, build file, dependency, or patch changes.\n")
+	}
+	if words := r.DependentsWords(); words != "" {
+		fmt.Fprintf(&b, "\n%s\n", words)
+	}
 	b.WriteString("\nNot checked here: `port lint` and the build; MacPorts CI runs both.\n")
 	return b.String()
+}
+
+// UpstreamWords are what the assessment of each port found, a line each,
+// naming its port where the pull request changes several.
+func (r ReviewReport) UpstreamWords() []string {
+	var lines []string
+	for _, found := range r.Upstream {
+		port := ""
+		if len(r.Upstream) > 1 {
+			port = found.Port + ": "
+		}
+		if found.Comparison.Problem != "" {
+			lines = append(lines, port+"archives not compared: "+found.Comparison.Problem)
+		}
+		for _, change := range found.Comparison.Changes {
+			lines = append(lines, port+change.Message)
+		}
+	}
+	return lines
+}
+
+// reviewDependentsNamed is how many dependents a review names.
+const reviewDependentsNamed = 8
+
+// DependentsWords says the pull request's dependents in a line, naming the
+// first few with how they depend, and why they couldn't be read where they
+// couldn't; empty where it changes no port that has any.
+func (r ReviewReport) DependentsWords() string {
+	switch {
+	case r.DependentsUnread != "":
+		return "Dependents weren't read: " + r.DependentsUnread + "."
+	case len(r.Dependents) == 0:
+		return ""
+	}
+	var named []string
+	for _, dependent := range r.Dependents[:min(reviewDependentsNamed, len(r.Dependents))] {
+		named = append(named, fmt.Sprintf("%s (%s)", dependent.Name, strings.Join(dependent.Phases, ", ")))
+	}
+	words := strings.Join(named, ", ")
+	if more := len(r.Dependents) - len(named); more > 0 {
+		words += fmt.Sprintf(", and %d more", more)
+	}
+	return fmt.Sprintf("%s, from the index at %s: %s; candidates to look at, not proof of anything.", plural(len(r.Dependents), "dependent"), short(model.ObjectID(r.Base)), words)
 }
 
 // Comments are the findings on a Portfile line, as comments on that line.
