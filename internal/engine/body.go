@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
@@ -166,13 +167,19 @@ func ownedSections(facts bodyFacts) string {
 			fmt.Fprint(&b, " --- |")
 		}
 		fmt.Fprintln(&b)
+		var notes reasonNotes
 		for _, target := range evidence.Targets {
 			fmt.Fprintf(&b, "| %s |", target.Target.ID)
-			for i := range target.Outcomes {
-				fmt.Fprintf(&b, " %s |", evidence.Words(target, i, slices.Contains(facts.Accepted, target.Target.Target.Name)))
+			for i, result := range target.Outcomes {
+				words := evidence.Words(target, i, slices.Contains(facts.Accepted, target.Target.Target.Name))
+				if reason := result.Reason(); reason != "" {
+					words += notes.mark(reason, string(target.Target.ID), EnvironmentHeading(evidence.Plan.Environments[i], evidence.Plan.Environments))
+				}
+				fmt.Fprintf(&b, " %s |", words)
 			}
 			fmt.Fprintln(&b)
 		}
+		b.WriteString(notes.String())
 	}
 	fmt.Fprintf(&b, "\n%s\n\nHave you\n\n", verificationHeading)
 	built := evidence != nil && !facts.NoCheck && allBuilt(*evidence, facts.Accepted)
@@ -252,6 +259,87 @@ func tick(done bool) string {
 
 func cell(text string) string {
 	return strings.ReplaceAll(strings.TrimSpace(text), "|", `\|`)
+}
+
+// reasonNotes are the notes under the Tested on table: one for each reason
+// a result gave for not wholly passing (Cell.Reason), naming each port and
+// environment that gave it, whose cells carry the note's mark. The rust
+// run, #35084, read "tests failed (advisory)" on both its releases, and
+// nothing said that its bootstrap had panicked before any test ran: a
+// reviewer, who can't read the logs on the author's Mac, has only what the
+// pull request says. A note rather than the reason in the cell keeps the
+// table readable, and a reason given in several places is said once.
+type reasonNotes struct {
+	reasons []string
+	places  [][]notePlace
+}
+
+// notePlace is a port that gave a note's reason, and the environments
+// where it did.
+type notePlace struct {
+	target       string
+	environments []string
+}
+
+// mark records a reason a target gave in an environment, and returns the
+// mark its cell carries: ¹ for the first reason, ² for the next.
+func (n *reasonNotes) mark(reason, target, environment string) string {
+	reason = strings.Join(strings.Fields(reason), " ")
+	i := slices.Index(n.reasons, reason)
+	if i < 0 {
+		n.reasons, n.places = append(n.reasons, reason), append(n.places, nil)
+		i = len(n.reasons) - 1
+	}
+	if j := slices.IndexFunc(n.places[i], func(place notePlace) bool { return place.target == target }); j >= 0 {
+		n.places[i][j].environments = append(n.places[i][j].environments, environment)
+	} else {
+		n.places[i] = append(n.places[i], notePlace{target: target, environments: []string{environment}})
+	}
+	return superscript(i + 1)
+}
+
+// String is the notes, a line each after a blank line, which ends the
+// table: "¹ rust on macOS 15, macOS 26: `tests: Failed to test rust:
+// command execution failed`". The reason is quoted as code, as the
+// provider's words, which Markdown would otherwise read for emphasis or
+// HTML.
+func (n reasonNotes) String() string {
+	if len(n.reasons) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n")
+	for i, reason := range n.reasons {
+		var where []string
+		for _, place := range n.places[i] {
+			where = append(where, place.target+" on "+strings.Join(place.environments, ", "))
+		}
+		fmt.Fprintf(&b, "%s %s: %s\n", superscript(i+1), strings.Join(where, "; "), codeSpan(reason))
+	}
+	return b.String()
+}
+
+// superscript writes a number in superscript digits, a note's mark.
+func superscript(number int) string {
+	digits := []rune("⁰¹²³⁴⁵⁶⁷⁸⁹")
+	var b strings.Builder
+	for _, digit := range strconv.Itoa(number) {
+		b.WriteRune(digits[digit-'0'])
+	}
+	return b.String()
+}
+
+// codeSpan quotes text as Markdown code, in a run of backticks longer
+// than any the text holds, as CommonMark has a code span hold them.
+func codeSpan(text string) string {
+	fence := "`"
+	for strings.Contains(text, fence) {
+		fence += "`"
+	}
+	if len(fence) > 1 {
+		return fence + " " + text + " " + fence
+	}
+	return fence + text + fence
 }
 
 // commitBody is a commit message's text after the subject, without

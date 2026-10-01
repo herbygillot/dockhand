@@ -64,7 +64,13 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // after its dependencies' (the hugo exercise). It runs the same steps in
 // the same order and judges them as before, so the protocol stays 2, and
 // the results it recorded earlier stand, without their steps.
-const guestPin = "010786239d3b639c587a16e1129abd0095f0d6b602eb92cfbf9fa6d371abb984"
+//
+// Since batch 24 a failure's reason is read from where the failing step
+// began rather than from the whole log, so an earlier step's Error line,
+// as lint's the rust run quoted for its tests' failure (#35084), isn't
+// taken for it. That changes a result's detail, its words, and nothing
+// it is judged by, so the protocol stays 2.
+const guestPin = "2f4412d38b87d1244975ae1af6d8157c1de3e603981109aef3734973f1c0ee93"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this

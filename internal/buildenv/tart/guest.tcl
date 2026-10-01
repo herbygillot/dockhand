@@ -137,10 +137,22 @@ proc fact {args} {
     return [string trim $value]
 }
 
-# why is what MacPorts said about a failure, from the log's last Error
-# lines, or the command's own message.
+# why is what MacPorts said about a failure, from the last Error lines of
+# the failing step's own part of the log, or the command's own message.
+# Each step is marked before it runs (mark), so the latest mark is where
+# the failing step began. The whole log held earlier steps' errors too:
+# the rust run, #35084, quoted lint's "Line 120 hardcodes /opt/local, use
+# ${prefix} instead", which lint says and goes on, for the test step's
+# failure. A step whose mark couldn't be read is read from the mark
+# before it, as more of the log than its own; with none, the whole log.
 proc why {log message} {
+    global counted
+    set from 0
+    if {[dict exists $counted $log]} { set from [lindex [dict get $counted $log] 0] }
     set fd [open $log r]
+    # seek counts bytes, as mark counts them, whatever the channel's
+    # encoding.
+    seek $fd $from
     set text [read $fd]
     close $fd
     set errors {}

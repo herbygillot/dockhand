@@ -300,3 +300,44 @@ func TestANewPortIsSaidInItsDescription(t *testing.T) {
 	require.Contains(t, body, "#### Description\n\nNew port **txt** 0.8.1: A fast, intuitive terminal text editor\n\n- homepage: https://txt.hellman.io/\n- license: MIT or Apache-2\n\n")
 	require.Contains(t, body, "- [ ] bugfix\n- [ ] enhancement\n- [ ] security fix\n")
 }
+
+// A result's reason for not wholly passing is said in a note under the
+// table, its cell marked, once for each reason with every port and
+// environment that gave it. The rust run, #35084, read "tests failed
+// (advisory)" on both releases, and nothing said that its bootstrap had
+// panicked before any test ran. A failed build's reason is said the same
+// way; a timeout's is its deadline, which its cell says, and a result
+// with no reason has no mark.
+func TestAResultsReasonIsSaidUnderTheTable(t *testing.T) {
+	sequoia := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}}
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
+	failedTests := model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsFailed, Detail: "tests: Failed to test rust: command execution failed"}
+	evidence := Evidence{Plan: model.Plan{Environments: []model.Environment{sequoia, tahoe}}, Targets: []TargetEvidence{
+		{Target: model.PlanTarget{ID: "rust", Target: model.Target{Name: "rust"}}, Passed: true, Outcomes: []Cell{recorded(sequoia, failedTests), recorded(tahoe, failedTests)}},
+		{Target: model.PlanTarget{ID: "cargo", Target: model.Target{Name: "cargo"}}, Outcomes: []Cell{
+			recorded(sequoia, model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsTimedOut, Detail: "tests: timed out"}),
+			recorded(tahoe, model.TargetResult{Outcome: model.OutcomeFailed, Phase: model.PhaseInstall, Detail: "Failed to build cargo: `cc`\nexited 1"}),
+		}},
+		{Target: model.PlanTarget{ID: "rust-src", Target: model.Target{Name: "rust-src"}}, Passed: true, Outcomes: cells([]model.TargetResult{
+			{Outcome: model.OutcomePassed, Tests: model.TestsFailed}, {Outcome: model.OutcomePassed, Tests: model.TestsNone},
+		})},
+	}}
+	_, table, found := strings.Cut(ownedSections(bodyFacts{Evidence: &evidence}), "| Port |")
+	require.True(t, found)
+	table, _, found = strings.Cut(table, "###### Verification")
+	require.True(t, found)
+	require.Equal(t, ` macOS 15 | macOS 26 |
+| --- | --- | --- |
+| rust | ✓ build passed; tests failed (advisory)¹ | ✓ build passed; tests failed (advisory)¹ |
+| cargo | ✓ build passed; tests timed out (advisory) | ✗ failed at install² |
+| rust-src | ✓ build passed; tests failed (advisory) | ✓ |
+
+¹ rust on macOS 15, macOS 26: `+"`tests: Failed to test rust: command execution failed`"+`
+² cargo on macOS 26: `+"`` Failed to build cargo: `cc` exited 1 ``"+`
+
+`, table)
+
+	evidence.Targets = evidence.Targets[2:]
+	require.NotContains(t, ownedSections(bodyFacts{Evidence: &evidence}), "¹", "no reason, no note")
+	require.Equal(t, "¹⁰", superscript(10))
+}

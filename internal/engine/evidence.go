@@ -64,6 +64,25 @@ func noResult(kind CellKind, environment model.Environment, target model.TargetI
 	return Cell{TargetResult: model.TargetResult{Target: target, Outcome: model.OutcomeNotRun}, Kind: kind, Environment: environment}
 }
 
+// Reason is why a recorded result didn't wholly pass, in its provider's
+// words, where it said: for a build that failed, or one that passed with
+// its tests failing, which count for nothing under an advisory policy and
+// so say nothing more than "tests failed" otherwise. The rust run, #35084,
+// read "tests failed (advisory)" on both its releases, where its bootstrap
+// had panicked before any test ran. Empty for anything else: a timeout's
+// reason is its deadline, which its words say, and a blocked target's
+// failed dependency has a row of its own.
+func (c Cell) Reason() string {
+	if c.Kind != CellRecorded {
+		return ""
+	}
+	switch {
+	case c.Outcome == model.OutcomeFailed, c.Outcome == model.OutcomePassed && c.Tests == model.TestsFailed:
+		return c.Detail
+	}
+	return ""
+}
+
 // Unbuilt reports a cell whose target no check of the files built there,
 // where the plan asks it to be: not run, remade, or unmet.
 func (c Cell) Unbuilt() bool {

@@ -21,10 +21,13 @@ import (
 // fakePort stands for MacPorts' port in a guest: it records each command,
 // has the ports ACTIVE lists active ("  name @spec (active)" lines), prints
 // each target's dependencies from DEPS ("name=dep ..."), and fails the
-// phases FAIL names ("phase:port ..."). A port's archive is ARCHIVES/<name>,
-// and its directory devel/<name>, but for UNRESOLVED, which port can't
+// phases FAIL names ("phase:port ..."), with MacPorts' closing Error
+// lines after the failure's own, or with no Error line at all where QUIET
+// is set. A port's archive is ARCHIVES/<name>, and
+// its directory devel/<name>, but for UNRESOLVED, which port can't
 // resolve. Each step of a build writes its command to the log, "port
-// <arguments>", and installing dependencies writes DEPLINES lines more.
+// <arguments>", installing dependencies writes DEPLINES lines more, and
+// lint writes LINTSAYS, an Error line lint says and goes on past.
 const fakePort = `#!/bin/sh
 echo "$*" >> "$PORT_LOG"
 case "$*" in
@@ -52,12 +55,18 @@ case "$*" in
     echo "port $*"
     case "$*" in
       "-N -d install --unrequested "*) if [ "${DEPLINES:-0}" -gt 0 ]; then yes "a dependency's line" | head -n "$DEPLINES"; fi ;;
+      *" lint "*) if [ -n "$LINTSAYS" ]; then echo "$LINTSAYS"; fi ;;
     esac ;;
 esac
 for entry in $FAIL; do
   phase=${entry%%:*}; port=${entry#*:}
   case "$*" in
-    *" $phase "*"subport=$port"*|*" $phase "*"subport=$port "*) echo "Error: Failed to $phase $port: it broke"; exit 1 ;;
+    *" $phase "*"subport=$port"*|*" $phase "*"subport=$port "*)
+      if [ -n "$QUIET" ]; then exit 1; fi
+      echo "Error: Failed to $phase $port: it broke"
+      echo "Error: See /opt/local/var/macports/logs/$port/main.log for details."
+      echo "Error: Processing of port $port failed"
+      exit 1 ;;
   esac
 done
 exit 0
@@ -105,7 +114,7 @@ set foreignManagers {}
 	require.NoError(t, os.WriteFile(script, append([]byte(prelude), guestProgram...), 0o644))
 	command := exec.CommandContext(t.Context(), executable, script)
 	portLog := filepath.Join(root, "port.log")
-	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "PORT_LOG="+portLog, "TESTED=", "DEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
+	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "PORT_LOG="+portLog, "TESTED=", "DEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "QUIET=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
 	output, _ := command.CombinedOutput()
 	data, err = os.ReadFile(filepath.Join(root, "results.json"))
 	require.NoError(t, err, "%s", output)
@@ -264,6 +273,29 @@ func TestTestsAreAdvisoryUnlessRequired(t *testing.T) {
 	for _, command := range commands {
 		require.NotContains(t, command, " test ")
 	}
+}
+
+// A failure's reason is MacPorts' Error lines from the failing step's own
+// part of the log, without its closing lines that point at the log. lint
+// says an error and goes on, and the rust run, #35084, quoted lint's line
+// for the test step's failure, since the whole log was read. A step that
+// says no Error line of its own gives the command's message, never an
+// earlier step's line.
+func TestAFailuresReasonIsTheFailingSteps(t *testing.T) {
+	t.Parallel()
+	lint := "LINTSAYS=Error: Line 120 hardcodes /opt/local, use ${prefix} instead"
+	results, _ := guestRun(t, twoTargets("declared"), "TESTED=libharbor", "FAIL=test:libharbor", lint)
+	require.Equal(t, "passed", results.Targets[0].Outcome)
+	require.Equal(t, "failed", results.Targets[0].Tests)
+	require.Equal(t, "tests: Failed to test libharbor: it broke", results.Targets[0].Detail)
+
+	results, _ = guestRun(t, twoTargets("declared"), "FAIL=install:libharbor", lint)
+	require.Equal(t, "install", results.Targets[0].Phase)
+	require.Equal(t, "Failed to install libharbor: it broke", results.Targets[0].Detail)
+
+	results, _ = guestRun(t, twoTargets("declared"), "TESTED=libharbor", "FAIL=test:libharbor", "QUIET=1", lint)
+	require.Equal(t, "failed", results.Targets[0].Tests)
+	require.Equal(t, "tests: child process exited abnormally", results.Targets[0].Detail, "the command's own message, not lint's line")
 }
 
 // A target an earlier attempt already found blocked is reported blocked
