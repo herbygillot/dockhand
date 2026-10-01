@@ -63,24 +63,46 @@ func (e *Engine) discovery(ports *selection.Reader) *upstream.Service {
 // against an index staged for each source tree.
 func (e *Engine) selectionReader() (*selection.Reader, error) {
 	return assemble(e, &e.ports, func() (*selection.Reader, error) {
-		cache, err := IndexCache()
+		index, err := indexConfig()
 		if err != nil {
 			return nil, err
 		}
 		native := &eval.Evaluator{Executable: e.options.Tclsh}
-		index := portindex.Config{CacheDirectory: cache, Mirror: &portindex.Mirror{HTTP: http.DefaultClient, Base: os.Getenv("DOCKHAND_INDEX_MIRROR")}}
 		return &selection.Reader{Evaluator: native, Index: &portindex.Stager{Repo: e.Repo, Config: index, NativePlatform: native.NativePlatform, WithoutBase: true}}, nil
 	})
 }
 
+// indexConfig is where port indexes are cached, and the mirror whose index
+// seeds a cache with no generation near enough.
+func indexConfig() (portindex.Config, error) {
+	cache, err := IndexCache()
+	if err != nil {
+		return portindex.Config{}, err
+	}
+	return portindex.Config{CacheDirectory: cache, Mirror: &portindex.Mirror{HTTP: http.DefaultClient, Base: os.Getenv("DOCKHAND_INDEX_MIRROR")}}, nil
+}
+
 // PortIndex is how the engine stages a tree's port index for a platform,
-// which a provider that ships the tree to a builder ships with it.
+// which a provider that ships the tree to a builder ships with it. Unlike
+// name lookup's, it keeps the tree's base, as the stager says verification
+// does: a check's index derives from its base's for the release, by the
+// ports the branch changes, and a snapshot, which has no commit, reaches
+// the mirror's index through its base's. Lookup's stager, shared until
+// batch 14, built check-23's whole index for macOS 15 (the ov run, finding
+// 4).
 func (e *Engine) PortIndex() (portindex.Source, error) {
-	ports, err := e.selectionReader()
+	stager, err := assemble(e, &e.checkIndex, func() (*portindex.Stager, error) {
+		index, err := indexConfig()
+		if err != nil {
+			return nil, err
+		}
+		native := &eval.Evaluator{Executable: e.options.Tclsh}
+		return &portindex.Stager{Repo: e.Repo, Config: index, NativePlatform: native.NativePlatform}, nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	return ports.Index, nil
+	return stager, nil
 }
 
 // ReadingCache is where readings of upstream's archives are kept:

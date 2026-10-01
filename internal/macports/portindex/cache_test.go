@@ -87,7 +87,7 @@ func (f *indexFixture) stage(source model.Source) (*Index, []string, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := Stage(ctx, f.repo, source, testPlatform, f.config, into); err != nil {
+	if _, err := Stage(ctx, f.repo, source, testPlatform, f.config, into); err != nil {
 		return nil, messages, err
 	}
 	index, err := Open(snapshot.Root)
@@ -277,7 +277,7 @@ func TestConcurrentStagersShareOneBuild(t *testing.T) {
 				errs[i] = err
 				return
 			}
-			errs[i] = Stage(ctx, f.repo, source, testPlatform, f.config, into)
+			_, errs[i] = Stage(ctx, f.repo, source, testPlatform, f.config, into)
 		}(i, snapshot.Root)
 	}
 	group.Wait()
@@ -442,7 +442,8 @@ func TestIndexGenerationWidensASparseWorkspace(t *testing.T) {
 	require.False(t, ws.Scope().All)
 	into, err := ws.Tree(testPlatform)
 	require.NoError(t, err)
-	require.NoError(t, Stage(t.Context(), f.repo, source, testPlatform, f.config, into))
+	_, err = Stage(t.Context(), f.repo, source, testPlatform, f.config, into)
+	require.NoError(t, err)
 	require.True(t, ws.Scope().All, "generation widened the workspace")
 	index, err := Open(ws.Root())
 	require.NoError(t, err)
@@ -468,4 +469,59 @@ func TestTheIndexerIsToldTheBuildersTools(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, modelled, elsewhere)
 	require.Contains(t, elsewhere, "developer_dir "+macports.XcodeDeveloper, "the builders' tools, with Xcode")
+}
+
+// A stager staging one tree for two releases in one root, as Tart stages
+// two releases of a revision at once, opens each release's own generation:
+// keyed by root and tree alone, the second was handed the first's (batch
+// 14).
+func TestAStagerGivesEachReleaseItsOwnIndex(t *testing.T) {
+	f := newIndexFixture(t)
+	f.put("devel/working/Portfile", workingPortfile)
+	commit, tree := f.commit()
+	source := model.Source{Commit: model.ObjectID(commit), Tree: model.ObjectID(tree)}
+	snapshot, err := f.repo.Materialize(t.Context(), tree)
+	require.NoError(t, err)
+	t.Cleanup(func() { snapshot.Close() })
+	stager := &Stager{Repo: f.repo, Config: f.config}
+	files := map[string][]string{}
+	for _, platform := range []model.Platform{testPlatform, {OS: "darwin", Version: "21", Architecture: "arm64"}} {
+		into, err := macports.NewTree(source, snapshot.Root, platform)
+		require.NoError(t, err)
+		index, err := stager.Index(t.Context(), into)
+		require.NoError(t, err)
+		requireVersion(t, index, "working", "1")
+		files[platform.Version] = index.Files()
+	}
+	require.NotEqual(t, files["25"], files["21"])
+	for _, release := range files {
+		require.True(t, strings.HasPrefix(release[0], f.config.CacheDirectory), "opened where it was staged: %s", release[0])
+	}
+}
+
+// A tree that is its own base, as a baseline check's is, is indexed as
+// upstream's, past a port of its own that doesn't parse; and so is a
+// candidate whose change reaches _resources, whose full pass a strict
+// request would fail on the base's broken port, which isn't the
+// candidate's (batch 14).
+func TestABaselineAndAResourcesChangeIndexPastTheBasesBrokenPorts(t *testing.T) {
+	f := newIndexFixture(t)
+	f.put("_resources/port1.0/group/fixture-1.0.tcl", "# fixture\n")
+	f.put("devel/working/Portfile", workingPortfile)
+	f.put("devel/broken/Portfile", "PortSystem 1.0\nerror {existing failure}\n")
+	base, baseTree := f.commit()
+	index, _, err := f.stage(model.Source{Commit: model.ObjectID(base), Tree: model.ObjectID(baseTree), Base: model.ObjectID(base)})
+	require.NoError(t, err)
+	requireVersion(t, index, "working", "1")
+
+	f.put("_resources/port1.0/group/fixture-1.0.tcl", "# fixture, changed\n")
+	f.put("devel/working/Portfile", strings.Replace(workingPortfile, "version 1", "version 2", 1))
+	candidate, candidateTree := f.commit()
+	index, _, err = f.stage(model.Source{Commit: model.ObjectID(candidate), Tree: model.ObjectID(candidateTree), Base: model.ObjectID(base)})
+	require.NoError(t, err)
+	requireVersion(t, index, "working", "2")
+	meta, ok := readGeneration(filepath.Join(f.environment(), generationsDirectory, candidateTree))
+	require.True(t, ok)
+	require.False(t, meta.Strict)
+	require.Equal(t, baseTree, f.latest(), "the candidate still doesn't displace the upstream seed")
 }

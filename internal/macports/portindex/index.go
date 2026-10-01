@@ -40,8 +40,8 @@ type Config struct {
 	Runtime        string
 	CacheDirectory string
 	// Mirror enables the MacPorts mirror's index as a bootstrap seed for a
-	// cache with no usable generation; nil keeps indexing offline, which
-	// assess and outdated rely on.
+	// cache with no usable generation, for a tree whose commit can be
+	// bracketed against it; nil keeps indexing offline. The engine sets it.
 	Mirror *Mirror
 }
 
@@ -181,29 +181,30 @@ func indexerEnvironment(configuration string) []string {
 }
 
 // Stage installs the PortIndex for an immutable source tree into an already
-// materialized source root. Completed generations are shared by every consumer
-// naming the same tree and indexing environment; a contribution's candidate
-// derives from the generation of its recorded base.
-func Stage(ctx context.Context, repo *git.Repository, source model.Source, platform model.Platform, c Config, into macports.Tree) error {
+// materialized source root, and says where the generation it installed is.
+// Completed generations are shared by every consumer naming the same tree and
+// indexing environment; a contribution's candidate derives from the
+// generation of its recorded base.
+func Stage(ctx context.Context, repo *git.Repository, source model.Source, platform model.Platform, c Config, into macports.Tree) (string, error) {
 	root, projection := into.Root(), into.Projection()
 	resolved, err := ResolveTool(ctx, c)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if resolved.CacheDirectory == "" {
-		return fmt.Errorf("portindex: cache directory is required")
+		return "", fmt.Errorf("portindex: cache directory is required")
 	}
 	if !git.ValidObjectID(string(source.Tree)) {
-		return fmt.Errorf("portindex: source tree is required")
+		return "", fmt.Errorf("portindex: source tree is required")
 	}
 	cache, err := openCache(ctx, resolved, platform)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer cache.Close()
 	baseTree, err := sourceBaseTree(ctx, repo, source)
 	if err != nil {
-		return err
+		return "", err
 	}
 	tree := string(source.Tree)
 	var entry string
@@ -217,16 +218,36 @@ func Stage(ctx context.Context, repo *git.Repository, source model.Source, platf
 			baseCommit = string(source.Base)
 		}
 		if _, err := cache.ensure(ctx, repo, baseTree, "", nil, false, nil, true, baseCommit); err != nil {
-			return err
+			return "", err
 		}
-		entry, err = cache.ensure(ctx, repo, tree, root, projection, true, []string{baseTree}, false, string(source.Commit))
+		// The candidate indexes strictly, every port it changes, from the
+		// base. One whose change reaches _resources needs a full pass, which
+		// a strict request fails on any port that doesn't parse, the base's
+		// own included; it's indexed as the base is, and a check still
+		// requires its targets of it.
+		changed, err := repo.ChangedPaths(ctx, baseTree, tree)
+		if err != nil {
+			return "", err
+		}
+		entry, err = cache.ensure(ctx, repo, tree, root, projection, !requiresFullIndex(changed), []string{baseTree}, false, string(source.Commit))
+		if err != nil {
+			return "", err
+		}
 	} else {
-		entry, err = cache.ensure(ctx, repo, tree, root, projection, source.Base != "", nil, true, string(source.Commit))
+		// A tree that is its own base, as a baseline check's is, is
+		// upstream's, whose ports that don't parse are no contribution's.
+		entry, err = cache.ensure(ctx, repo, tree, root, projection, false, nil, true, string(source.Commit))
+		if err != nil {
+			return "", err
+		}
 	}
-	if err != nil {
-		return err
-	}
-	return install(entry, root)
+	return entry, install(entry, root)
+}
+
+// IsIndexFile reports whether a name at a tree's root is the index Stage
+// installs there, or one being installed.
+func IsIndexFile(name string) bool {
+	return name == portIndexName || name == quickIndexName || strings.HasPrefix(name, "."+portIndexName)
 }
 
 func sourceBaseTree(ctx context.Context, repo *git.Repository, source model.Source) (string, error) {

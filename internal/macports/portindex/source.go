@@ -3,6 +3,7 @@ package portindex
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/herbygillot/dockhand/internal/git"
@@ -26,8 +27,9 @@ type Source interface {
 //
 // WithoutBase builds a tree's index from the nearest cached generation
 // rather than from the tree's recorded base. Name lookup prefers that, as
-// it needs no generation of master to resolve a name; verification and
-// discovery keep the base, so a candidate's index derives from it.
+// it needs no generation of master to resolve a name; verification keeps
+// the base, so a candidate's index derives from it, and a snapshot, which
+// has no commit, is bracketed against the mirror's index by its base's.
 type Stager struct {
 	Repo   *git.Repository
 	Config Config
@@ -37,20 +39,19 @@ type Stager struct {
 	WithoutBase    bool
 
 	mu     sync.Mutex
-	staged map[string]bool
+	staged map[string]string
 }
 
-// Index stages the tree's index on first sight and opens it.
+// Index stages the tree's index for its platform on first sight, and opens
+// the generation it staged, which is that platform's whoever installs
+// another into the same root: Tart stages two releases of one revision at
+// once, in one workspace, and the second was handed the first's index.
 func (s *Stager) Index(ctx context.Context, tree macports.Tree) (*Index, error) {
 	if s == nil || s.Repo == nil {
 		return nil, fmt.Errorf("portindex: a repository is required to stage an index")
 	}
-	key := tree.Root() + "\x00" + string(tree.Source().Tree)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.staged[key] {
-		return Open(tree.Root())
-	}
 	// A workspace projects a tree the repository already validated, and
 	// may hold nothing yet; a plain materialization is checked.
 	if !tree.Projected() {
@@ -68,16 +69,21 @@ func (s *Stager) Index(ctx context.Context, tree macports.Tree) (*Index, error) 
 			return nil, err
 		}
 	}
+	key := strings.Join([]string{tree.Root(), string(tree.Source().Tree), platform.OS, platform.Version, platform.Architecture}, "\x00")
+	if entry, ok := s.staged[key]; ok {
+		return Open(entry)
+	}
 	source := tree.Source()
 	if s.WithoutBase {
 		source.Base = ""
 	}
-	if err := Stage(ctx, s.Repo, source, platform, s.Config, tree); err != nil {
+	entry, err := Stage(ctx, s.Repo, source, platform, s.Config, tree)
+	if err != nil {
 		return nil, err
 	}
 	if s.staged == nil {
-		s.staged = map[string]bool{}
+		s.staged = map[string]string{}
 	}
-	s.staged[key] = true
-	return Open(tree.Root())
+	s.staged[key] = entry
+	return Open(entry)
 }

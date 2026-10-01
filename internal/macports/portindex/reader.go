@@ -59,6 +59,21 @@ func Open(root string) (*Index, error) {
 
 func (i *Index) Len() int { return len(i.offsets) }
 
+// Files are the index's own files, PortIndex and PortIndex.quick where it
+// has one, for a consumer that ships the index as it was staged.
+func (i *Index) Files() []string {
+	files := []string{i.path}
+	if quick := filepath.Join(filepath.Dir(i.path), quickIndexName); fileExists(quick) {
+		files = append(files, quick)
+	}
+	return files
+}
+
+func fileExists(name string) bool {
+	info, err := os.Stat(name)
+	return err == nil && info.Mode().IsRegular()
+}
+
 // Lookup resolves a name case-insensitively and repairs a stale quick index once.
 func (i *Index) Lookup(name string) (Entry, error) {
 	key := strings.ToLower(name)

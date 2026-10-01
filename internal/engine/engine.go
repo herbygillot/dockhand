@@ -18,6 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/selection"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
@@ -102,7 +103,9 @@ type Engine struct {
 	// Providers are where checks build, by name.
 	Providers map[string]buildenv.Provider
 	ports     *selection.Reader
-	options   Options
+	// checkIndex stages the index a check ships; checkIndex.
+	checkIndex *portindex.Stager
+	options    Options
 	// stopAt stops a history change at a step, as if the process ended
 	// there: tests set it (historyStep).
 	stopAt func(step string) error
