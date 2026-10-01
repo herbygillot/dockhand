@@ -516,6 +516,10 @@ What each exercise run asked for that is done, or that joined a numbered item, w
 - **Branch worktrees go in `~/Source/macports-branches`** (2026-09-27, [note](activity/2026-09-27-worktree-root.md)), wherever the clone is, rather than beside it. `worktrees` in the configuration still names another.
 - **xcodes downloads a missing Xcode** (2026-09-27, [note](activity/2026-09-27-xcode-follows-the-buildbots.md)). With xcodes installed, setup downloads the Xcode it's missing: at a terminal it asks first, and without one it uses the sign-in xcodes keeps, showing what xcodes said when it fails. It checks the archive with `pkgutil --check-signature` before taking it. An exception to decision 32, chosen knowingly: dockhand uses only xcodes' documented command, but xcodes signs in through Apple's undocumented sign-in and download endpoints. When Apple changes them, the download fails loudly, and setup still names the Xcode to download by hand.
 
+## Directions
+
+What dockhand could grow into, and what to redesign, from the runs' findings, proposed 2026-10-01 and waiting on the person's word: [directions](directions.md).
+
 ## Later
 
 - **The prefix provider:** checks on a MacPorts installation on this Mac.
