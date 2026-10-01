@@ -55,7 +55,7 @@ func TestDiffAndImpact(t *testing.T) {
 	require.Equal(t, `Changed ports     jq
 Other dependents  jo (build), yq (library, runtime); candidates to look at, not proof of anything
 Shared files      none
-Next: dockhand check --also jo,yq builds some against the branch
+Next: dockhand check --also yq,jo builds them against the branch
 `, out)
 
 	require.NoError(t, os.WriteFile(filepath.Join(worktree, "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\nrevision 1\n"), 0o644))

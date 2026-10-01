@@ -313,12 +313,17 @@ func writeImpact(out io.Writer, impact engine.Impact) {
 			row("", words)
 		}
 	}
-	if len(impact.Dependents) > 0 {
-		names := make([]string, 0, 3)
-		for _, dependent := range impact.Dependents[:min(3, len(impact.Dependents))] {
+	if chosen := impact.OneOfEachKind(); len(chosen) > 0 {
+		var names []string
+		for _, dependent := range chosen {
 			names = append(names, dependent.Name)
 		}
-		fmt.Fprintf(out, "Next: dockhand check --also %s builds some against the branch\n", strings.Join(names, ","))
+		if len(chosen) == len(impact.Dependents) {
+			fmt.Fprintf(out, "Next: dockhand check --also %s builds them against the branch\n", strings.Join(names, ","))
+		} else {
+			fmt.Fprintf(out, "Next: dockhand check --also %s builds one of each kind of dependent against the branch, %d of %d; name others with --also\n",
+				strings.Join(names, ","), len(chosen), len(impact.Dependents))
+		}
 	}
 }
 

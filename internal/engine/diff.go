@@ -133,6 +133,30 @@ type Impact struct {
 	Shared []SharedFile
 }
 
+// dependentKinds are the ways a port depends on another, in the order a
+// check of one is worth most: a library dependent links it, a build one
+// builds with it, a runtime one runs it.
+var dependentKinds = []string{"library", "build", "runtime"}
+
+// OneOfEachKind are dependents to build against the branch first: one of
+// each kind of dependency there is, library first, a dependent of several
+// kinds taken for the first. Nothing sizes a build, so within a kind it's
+// the first the index names; impact suggested the first three in name
+// order, aria2, bind9, and bind9.18, among the heaviest of libuv's to
+// build (the libuv run's finding 3).
+func (i Impact) OneOfEachKind() []Dependent {
+	var chosen []Dependent
+	for _, kind := range dependentKinds {
+		if slices.ContainsFunc(chosen, func(d Dependent) bool { return slices.Contains(d.Phases, kind) }) {
+			continue
+		}
+		if j := slices.IndexFunc(i.Dependents, func(d Dependent) bool { return slices.Contains(d.Phases, kind) }); j >= 0 {
+			chosen = append(chosen, i.Dependents[j])
+		}
+	}
+	return chosen
+}
+
 // Impact reads what a branch's change reaches. Dependents are looked for
 // of the named ports, or else of every port the branch changes beyond its
 // revision, from the index at the branch's base.

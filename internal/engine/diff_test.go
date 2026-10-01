@@ -180,3 +180,23 @@ func TestRevbumpLinkedBumpsEachLinkedPortForTidy(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "yq: rebuild for jq 1.8.1", plan.Groups[0].Subject())
 }
+
+// Impact's dependents to build first are one of each kind there is,
+// library first, a dependent of several kinds taken once: not the first
+// three by name, aria2, bind9, and bind9.18, among the heaviest of
+// libuv's to build (the libuv run's finding 3).
+func TestImpactSuggestsOneDependentOfEachKind(t *testing.T) {
+	impact := Impact{Dependents: []Dependent{
+		{Name: "aria2", Phases: []string{"build"}},
+		{Name: "bind9", Phases: []string{"build"}},
+		{Name: "luv", Phases: []string{"library", "runtime"}},
+		{Name: "ttyd", Phases: []string{"library"}},
+		{Name: "uvw", Phases: []string{"runtime"}},
+	}}
+	var names []string
+	for _, dependent := range impact.OneOfEachKind() {
+		names = append(names, dependent.Name)
+	}
+	require.Equal(t, []string{"luv", "aria2"}, names, "luv is the library and the runtime one")
+	require.Empty(t, Impact{}.OneOfEachKind())
+}
