@@ -353,7 +353,7 @@ What batches 10 to 15 touch doesn't move with item 6, so they wait without cost,
   - the copy kept before a migration: an interrupted one kept as if whole, and two processes opening at once failing one of them (the SQL review's rescan);
   - a revision's assessments read by decoding every assessment the branch ever recorded (the SQL review's rescan);
   - the limits written down, `docs/limits.md`, since all but a dozen were said nowhere.
-- **Batch 26: the rest of the limits sweep** ([limits](limits.md)).
+- **Batch 26: the rest of the limits sweep** ([limits](limits.md)). Its first part done 2026-10-01 ([note](activity/2026-10-01-batch-26.md)): rate limits, truncations, PyPI, forge files, the submit limit's events, overflowing settings, and patch's exit status. Left: the waits with no bound and a body that stalls, and a kept archive signed in memory, whose way forward is the person's.
   - GitHub's rate limits waited out where the wait is short, and the reset said where it isn't: the retry time is computed and never read;
   - zip archives under the scan limit, as tar archives are, and `diff --archive`'s extraction bounded. Done 2026-10-01 with the archive sizes ([note](activity/2026-10-01-archive-sizes.md));
   - truncations said rather than silent: a GitHub Actions job log past 64 MiB, a log line past the scanners' 4 MiB and 1 MiB, which stop the scan without checking its error, a compressed patch past 64 MiB, and PyPI's JSON past 8 MiB;
