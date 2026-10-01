@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	sqlitedriver "modernc.org/sqlite"
@@ -88,6 +89,15 @@ func (s *Store) Migration() *Migration { return s.migration }
 // keptCopies is how long the copies migrations keep are kept, beyond the
 // newest one.
 const keptCopies = 30 * 24 * time.Hour
+
+// partialCopy marks a copy still being made, beside the copy it becomes:
+// dockhand.db.schema-24.partial-123456. One is never a kept copy; one older
+// than abandonedCopies was left by a process that ended before finishing
+// it, since an open's copy is made within its operation timeout.
+const (
+	partialCopy     = ".partial-"
+	abandonedCopies = time.Hour
+)
 
 var _ store.Store = (*Store)(nil)
 
@@ -210,21 +220,64 @@ func (s *Store) keepBeforeMigrating(ctx context.Context) error {
 	}
 	copy := fmt.Sprintf("%s.schema-%d", s.path, version)
 	if _, err := os.Stat(copy); errors.Is(err, os.ErrNotExist) {
-		if _, err := s.db.ExecContext(ctx, "VACUUM INTO ?", copy); err != nil {
-			return fmt.Errorf("%w: keeping a copy of %s before migrating it from schema %d to %d: %w; nothing was migrated", store.ErrUnavailable, s.path, version, schemaVersion, storageError(err))
-		}
-		if err := os.Chmod(copy, 0o600); err != nil {
-			return err
+		if err := s.keepCopy(ctx, copy); err != nil {
+			return fmt.Errorf("%w: keeping a copy of %s before migrating it from schema %d to %d: %w; nothing was migrated", store.ErrUnavailable, s.path, version, schemaVersion, err)
 		}
 	}
 	s.migration = &Migration{From: version, To: schemaVersion, Copy: copy}
 	earlier, _ := filepath.Glob(s.path + ".schema-*")
 	for _, path := range earlier {
-		if info, err := os.Stat(path); err == nil && path != copy && time.Since(info.ModTime()) > keptCopies {
+		kept := keptCopies
+		if strings.Contains(strings.TrimPrefix(path, s.path), partialCopy) {
+			kept = abandonedCopies
+		}
+		if info, err := os.Stat(path); err == nil && path != copy && time.Since(info.ModTime()) > kept {
 			_ = os.Remove(path)
 		}
 	}
 	return nil
+}
+
+// keepCopy copies the database to copy whole, or not at all. VACUUM INTO
+// writes its file as it goes, and one cut short, by a timeout or the
+// process's end, left part of a database, or an empty file, under the
+// copy's name, which the next open took for the copy and migrated past;
+// two processes opening the database at once each copied it to that one
+// name, which VACUUM INTO refuses once it holds a database, failing the
+// later open (the SQL review's rescan). So the copy is made under a name
+// of its own beside the copy's, synced, and renamed into place once whole.
+// Where another process's copy is in place first, it stays and this one
+// goes: that one was made before any migration from this form, and this
+// one may have been made after. One put in place between the check and the
+// rename is replaced by this one, finished before that process migrated.
+func (s *Store) keepCopy(ctx context.Context, copy string) (err error) {
+	// VACUUM INTO writes into an empty file as into a new one, so the
+	// file CreateTemp makes, readable only by its owner, takes the copy.
+	partial, err := os.CreateTemp(filepath.Dir(copy), filepath.Base(copy)+partialCopy+"*")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = partial.Close()
+			_ = os.Remove(partial.Name())
+		}
+	}()
+	if _, err := s.db.ExecContext(ctx, "VACUUM INTO ?", partial.Name()); err != nil {
+		return storageError(err)
+	}
+	// A rename can reach the disk before the copy it names, which a power
+	// loss would leave as part of a database under the copy's name again.
+	if err := partial.Sync(); err != nil {
+		return err
+	}
+	if err := partial.Close(); err != nil {
+		return err
+	}
+	if _, err := os.Stat(copy); err == nil {
+		return os.Remove(partial.Name())
+	}
+	return os.Rename(partial.Name(), copy)
 }
 
 // prepareSchema checks that the database is dockhand v3's, and brings its

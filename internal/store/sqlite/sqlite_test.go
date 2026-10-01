@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -978,18 +979,7 @@ func TestAMigrationKeepsTheDatabaseAsItWas(t *testing.T) {
 	require.Equal(t, &Migration{From: schemaVersion - 1, To: schemaVersion, Copy: path + fmt.Sprintf(".schema-%d", schemaVersion-1)}, s.Migration())
 	require.NoError(t, s.Close())
 	require.NoFileExists(t, stale, "an old copy goes")
-
-	copied, err := sql.Open("sqlite", "file:"+s.Migration().Copy)
-	require.NoError(t, err)
-	defer copied.Close()
-	var version, runs int
-	require.NoError(t, copied.QueryRow("PRAGMA user_version").Scan(&version))
-	require.Equal(t, schemaVersion-1, version, "the copy is the database before")
-	require.NoError(t, copied.QueryRow("SELECT count(*) FROM runs").Scan(&runs))
-	require.Equal(t, 1, runs)
-	info, err := os.Stat(s.Migration().Copy)
-	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	requireWholeCopy(t, s.Migration().Copy)
 
 	again, err := Open(t.Context(), path, Options{})
 	require.NoError(t, err)
@@ -999,4 +989,109 @@ func TestAMigrationKeepsTheDatabaseAsItWas(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, fresh.Migration(), "a new database is made, not migrated")
 	require.NoError(t, fresh.Close())
+}
+
+// A copy cut short leaves nothing under the kept copy's name, and the next
+// open copies the whole database: VACUUM INTO writes its file as it goes,
+// and an empty file it left was taken for the copy and migrated past (the
+// SQL review's rescan). A page the copy can't read stops it partway, as a
+// timeout or the process's end would. A copy a process left partway is
+// never taken for the kept one, and goes once it's old.
+func TestACopyCutShortNeverStandsAsTheKeptOne(t *testing.T) {
+	path := schemaAt(t, schemaVersion-1, schema23Records+
+		"CREATE TABLE filler(x); WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<200) INSERT INTO filler SELECT randomblob(1000) FROM n;")
+	copy := path + fmt.Sprintf(".schema-%d", schemaVersion-1)
+	file, err := os.OpenFile(path, os.O_RDWR, 0)
+	require.NoError(t, err)
+	defer file.Close()
+	info, err := file.Stat()
+	require.NoError(t, err)
+	last := info.Size() - 4096
+	page := make([]byte, 4096)
+	_, err = file.ReadAt(page, last)
+	require.NoError(t, err)
+	_, err = file.WriteAt(bytes.Repeat([]byte{0xff}, len(page)), last)
+	require.NoError(t, err)
+
+	_, err = Open(t.Context(), path, Options{})
+	require.ErrorIs(t, err, store.ErrUnavailable)
+	require.ErrorContains(t, err, "nothing was migrated")
+	left, err := filepath.Glob(path + ".schema-*")
+	require.NoError(t, err)
+	require.Empty(t, left, "a copy cut short leaves nothing")
+
+	_, err = file.WriteAt(page, last)
+	require.NoError(t, err)
+	abandoned, making := copy+partialCopy+"1", copy+partialCopy+"2"
+	for _, partial := range []string{abandoned, making} {
+		require.NoError(t, os.WriteFile(partial, []byte("SQLite format 3\x00 and no more"), 0o600))
+	}
+	old := time.Now().Add(-abandonedCopies - time.Minute)
+	require.NoError(t, os.Chtimes(abandoned, old, old))
+	s, err := Open(t.Context(), path, Options{})
+	require.NoError(t, err)
+	require.NoError(t, s.Close())
+	require.Equal(t, copy, s.Migration().Copy)
+	requireWholeCopy(t, copy)
+	require.NoFileExists(t, abandoned, "one left partway long ago goes")
+	require.FileExists(t, making, "another process may be making one now")
+}
+
+// Processes opening a database to migrate at once all open it, and keep
+// one whole copy: each copied it to the one name, which VACUUM INTO
+// refuses once it holds a database, failing a later open (the SQL review's
+// rescan). A copy finished once another's is in place leaves that one.
+func TestOpensAtOnceAllMigrate(t *testing.T) {
+	path := schemaAt(t, schemaVersion-1, schema23Records)
+	copy := path + fmt.Sprintf(".schema-%d", schemaVersion-1)
+	opened := make(chan error)
+	for range 4 {
+		go func() {
+			s, err := Open(t.Context(), path, Options{})
+			if err == nil {
+				err = s.Close()
+			}
+			opened <- err
+		}()
+	}
+	for range 4 {
+		require.NoError(t, <-opened)
+	}
+	requireWholeCopy(t, copy)
+	left, err := filepath.Glob(path + ".schema-*")
+	require.NoError(t, err)
+	require.Equal(t, []string{copy}, left, "no copy in the making is left")
+
+	s, err := Open(t.Context(), path, Options{})
+	require.NoError(t, err)
+	defer s.Close()
+	kept, err := os.ReadFile(copy)
+	require.NoError(t, err)
+	require.NoError(t, s.keepCopy(t.Context(), copy))
+	again, err := os.ReadFile(copy)
+	require.NoError(t, err)
+	require.Equal(t, kept, again, "the copy in place first stays")
+	left, err = filepath.Glob(path + ".schema-*")
+	require.NoError(t, err)
+	require.Equal(t, []string{copy}, left)
+}
+
+// requireWholeCopy checks that a migration's copy is the database before
+// it, whole, and readable only by its owner.
+func requireWholeCopy(t *testing.T, copy string) {
+	t.Helper()
+	copied, err := sql.Open("sqlite", "file:"+copy)
+	require.NoError(t, err)
+	defer copied.Close()
+	var check string
+	var version, runs int
+	require.NoError(t, copied.QueryRow("PRAGMA integrity_check").Scan(&check))
+	require.Equal(t, "ok", check)
+	require.NoError(t, copied.QueryRow("PRAGMA user_version").Scan(&version))
+	require.Equal(t, schemaVersion-1, version, "the copy is the database before")
+	require.NoError(t, copied.QueryRow("SELECT count(*) FROM runs").Scan(&runs))
+	require.Equal(t, 1, runs)
+	info, err := os.Stat(copy)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 }
