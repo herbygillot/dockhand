@@ -1,4 +1,4 @@
-package newport
+package portcreate
 
 import "github.com/herbygillot/dockhand/internal/project"
 

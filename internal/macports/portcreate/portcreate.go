@@ -1,11 +1,11 @@
-// Package newport writes a new port's first Portfile (Design v3 §6.4) from
+// Package portcreate writes a new port's first Portfile (Design v3 §6.4) from
 // what can be observed of an upstream project: its forge, its latest
 // release, and the build files at that release. It fills in what it
 // observed and marks what it guessed with a comment, since a guessed
 // license or maintainer must never read as fact. The layout is what `port
 // lint --nitpick` expects: the modeline, values in one column, and rmd160,
 // sha256, and size checksums.
-package newport
+package portcreate
 
 import (
 	"fmt"

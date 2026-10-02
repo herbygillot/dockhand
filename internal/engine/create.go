@@ -14,7 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/newport"
+	"github.com/herbygillot/dockhand/internal/macports/portcreate"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -58,11 +58,11 @@ type CreateRequest struct {
 type Observed struct {
 	Project Project
 	Version string
-	Build   newport.Build
+	Build   portcreate.Build
 	// Name and Category are the port's, unless the request names them.
 	Name, Category string
 	// Declared is what the project's own manifest says of it.
-	Declared newport.Declared
+	Declared portcreate.Declared
 	// License is the license line in MacPorts' words, from the manifest
 	// (LicenseFrom names it) or, failing that, the forge (LicenseFrom
 	// empty); empty where neither says one MacPorts has a name for.
@@ -90,13 +90,13 @@ func (e *Engine) ObserveProject(ctx context.Context, address string) (Observed, 
 // its license and one line, which its own manifest says nearer MacPorts'
 // words than the forge does, the forge's being the fallback.
 func observe(project Project) (Observed, error) {
-	_, version, ok := newport.SplitTag(project.Tag)
+	_, version, ok := portcreate.SplitTag(project.Tag)
 	if !ok {
 		return Observed{}, fmt.Errorf("%s's latest release is tagged %q, which names no version", project.Owner+"/"+project.Name, project.Tag)
 	}
-	build := newport.Detect(project.Files)
+	build := portcreate.Detect(project.Files)
 	observed := Observed{Project: project, Version: version, Build: build, Name: defaultName(project, build), Category: build.Category(),
-		Declared: newport.Declare(project.Files, build), Description: project.Description}
+		Declared: portcreate.Declare(project.Files, build), Description: project.Description}
 	if license, ok := macports.License(observed.Declared.License); ok {
 		observed.License, observed.LicenseFrom = license, observed.Declared.File
 	} else if license, ok := macports.License(project.License); ok {
@@ -111,7 +111,7 @@ func observe(project Project) (Observed, error) {
 // defaultName is a new port's name when none is given: the project's, in
 // lower case, with py- before it for a Python project, as MacPorts names
 // Python modules.
-func defaultName(project Project, build newport.Build) string {
+func defaultName(project Project, build portcreate.Build) string {
 	name := strings.ToLower(project.Name)
 	if build.System == "python" && !strings.HasPrefix(name, "py-") {
 		name = "py-" + name
@@ -124,7 +124,7 @@ type Created struct {
 	Port, Directory string
 	Project         Project
 	Version         string
-	Build           newport.Build
+	Build           portcreate.Build
 	Crates          int
 	Category        string
 	// Unconfirmed names what the Portfile marks as guessed.
@@ -165,7 +165,7 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 		return Created{}, err
 	}
 	project, build, version := observed.Project, observed.Build, observed.Version
-	prefix, _, _ := newport.SplitTag(project.Tag)
+	prefix, _, _ := portcreate.SplitTag(project.Tag)
 	name := request.Name
 	if name == "" {
 		name = defaultName(project, build)
@@ -182,15 +182,15 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 		}
 		return e.moveCreated(ctx, worktree, request.Branch, created, request.Category)
 	}
-	spec := newport.Spec{Name: name, Category: request.Category, Owner: project.Owner, Project: project.Name, Version: version, TagPrefix: prefix,
+	spec := portcreate.Spec{Name: name, Category: request.Category, Owner: project.Owner, Project: project.Name, Version: version, TagPrefix: prefix,
 		Description: observed.Description, Homepage: project.Homepage, License: observed.License, LicenseFrom: observed.LicenseFrom, Maintainer: request.Maintainer, Build: build,
-		Binaries: newport.Binaries(project.Files, build)}
+		Binaries: portcreate.Binaries(project.Files, build)}
 	if spec.Category == "" {
 		categories, err := treeCategories(ctx, worktree)
 		if err != nil {
 			return Created{}, err
 		}
-		spec.Category, spec.CategoryFrom = newport.GuessCategory(build, observed.Description, categories)
+		spec.Category, spec.CategoryFrom = portcreate.GuessCategory(build, observed.Description, categories)
 		spec.CategoryGuessed = true
 	}
 	// MacPorts prefers HTTPS: a forge's plain-HTTP homepage is written as
@@ -204,7 +204,7 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 		return Created{}, fmt.Errorf("%q is not a category", spec.Category)
 	}
 	if lock, ok := project.Files["Cargo.lock"]; ok && build.System == "cargo" {
-		if spec.Crates, spec.Unfetched, err = newport.CargoCrates(lock); err != nil {
+		if spec.Crates, spec.Unfetched, err = portcreate.CargoCrates(lock); err != nil {
 			return Created{}, err
 		}
 	}
@@ -221,7 +221,7 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return Created{}, err
 	}
-	contents := newport.Write(spec)
+	contents := portcreate.Write(spec)
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 	if err != nil {
 		return Created{}, fmt.Errorf("%s: %w", portfile, err)
@@ -506,7 +506,7 @@ func (g githubProjects) Project(ctx context.Context, address string) (Project, e
 	if !ok {
 		return found, nil
 	}
-	for _, file := range newport.Files() {
+	for _, file := range portcreate.Files() {
 		data, err := files.File(ctx, tag.Commit, file, projectFileLimit)
 		switch {
 		case errors.Is(err, forge.ErrNotFound):
