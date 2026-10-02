@@ -45,7 +45,9 @@ import (
 // go.bin or a dependency on go-1.NN, older than go.mod requires holds,
 // where only go.toolchain_min was judged and trivy's go-1.26 under 0.75.0's
 // Go 1.27.0 read as gated on (the trivy run, #35083).
-const Policy = 10
+// 11: a CMakeLists.txt that only adds options, and what one off by
+// default gates, holds nothing (D12, revisited 2026-10-01).
+const Policy = 11
 
 // Input is what one port's assessment reads.
 type Input struct {
@@ -102,6 +104,7 @@ const (
 	LicenseMoved        = "license-moved"
 	BuildFileChanged    = "build-file-changed"
 	BuildFileVersion    = "build-file-version"
+	BuildFileOptions    = "build-file-options"
 	DependencyAdded     = "dependency-added"
 	DependencyDropped   = "dependency-dropped"
 	DependencyMoved     = "dependency-moved"
@@ -344,6 +347,8 @@ func finding(change sourcecompare.Change, hold bool) model.UpstreamChange {
 		found.Rule = LicenseChanged
 	case change.Kind == "build" && change.How == "version":
 		found.Rule = BuildFileVersion
+	case change.Kind == "build" && change.How == "options":
+		found.Rule = BuildFileOptions
 	case change.Kind == "build":
 		found.Rule = BuildFileChanged
 	case change.How == "ambiguous":
@@ -434,7 +439,9 @@ func (a *assessment) native(change sourcecompare.Change) (model.UpstreamChange, 
 // keeps its version in, is set apart (the sshuttle run with f075232d); any
 // other holds, the build perhaps needing the Portfile to follow.
 func (a *assessment) build(change sourcecompare.Change, pair Pair) model.UpstreamChange {
-	if change.How == "version" {
+	// One that only adds options, each built as its default, holds
+	// nothing, as the person decided of D12 (2026-10-01).
+	if change.How == "version" || change.How == "options" {
 		return finding(change, false)
 	}
 	if backend, ok := pair.After.PythonBackend(); ok && !project.BackendReads(backend, change.Path) {

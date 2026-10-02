@@ -306,3 +306,19 @@ func TestAGoRequirementIsReadWhereNoEditSaid(t *testing.T) {
 	require.Equal(t, []model.UpstreamChange{{Kind: "toolchain", Path: "go.mod", Rule: GoToolchainRule, Subject: "1.24", Class: model.Introduced, Hold: true,
 		Message: "upstream: go.mod requires Go 1.24, above go.toolchain_min 1.22, which doesn't gate on it"}}, toolchain)
 }
+
+// A CMakeLists.txt that only adds an option, and what it gates off by
+// default, is said with a `·` and holds nothing: fluent-bit 5.1.3's
+// FLB_PROTOBUF_ENCODER held its update (D12, revisited by the person
+// 2026-10-01).
+func TestAnAddedCMakeOptionHoldsNothing(t *testing.T) {
+	before := "project(fluent-bit VERSION 5.1.2)\nadd_library(flb src/a.c)\n"
+	after := "project(fluent-bit VERSION 5.1.3)\noption(FLB_PROTOBUF_ENCODER \"Protobuf\" No)\nif(FLB_PROTOBUF_ENCODER)\n  find_package(Protobuf REQUIRED)\nendif()\nadd_library(flb src/a.c)\n"
+	comparison := Assess(Input{Versions: Versions{Old: "5.1.2", New: "5.1.3"}, Pairs: []Pair{{
+		Before: read(t, "fluent-bit-5.1.2", map[string]string{"CMakeLists.txt": before}, project.Spec{}),
+		After:  read(t, "fluent-bit-5.1.3", map[string]string{"CMakeLists.txt": after}, project.Spec{}),
+	}}})
+	require.Equal(t, []string{"· upstream's CMakeLists.txt adds option FLB_PROTOBUF_ENCODER, off by default, which gates find_package(Protobuf), and changes nothing else the default build reads; each option builds as its default"}, messages(comparison.Changes))
+	require.Equal(t, BuildFileOptions, comparison.Changes[0].Rule)
+	require.False(t, comparison.Held())
+}

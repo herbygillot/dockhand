@@ -95,6 +95,59 @@ func ReadCMake(data []byte) CMakeFacts {
 	return facts
 }
 
+// CMakeWithout is a CMakeLists.txt less the options named, their option()
+// and cmake_dependent_option() commands, and less each if() block that
+// gates on one of gates alone, as if(FLB_PROTOBUF_ENCODER) does, to its
+// endif(), with the lines that leaves empty, for comparing what else
+// changed beside options a version adds: the person decided an added
+// option holds nothing, built as its default, and that what one off by
+// default gates is not reached by the default build (D12, revisited
+// 2026-10-01).
+func CMakeWithout(data []byte, options, gates map[string]bool) []byte {
+	text := string(data)
+	commands := cmakeCommands(text)
+	var cuts [][2]int
+	for i := 0; i < len(commands); i++ {
+		command := commands[i]
+		switch {
+		case (command.name == "option" || command.name == "cmake_dependent_option") && len(command.args) > 0 && options[command.args[0]]:
+			cuts = append(cuts, [2]int{command.start, command.end})
+		case command.name == "if" && len(command.args) == 1 && gates[strings.TrimSuffix(strings.TrimPrefix(command.args[0], "${"), "}")]:
+			depth, end := 0, len(text)
+			for j := i; j < len(commands); j++ {
+				switch commands[j].name {
+				case "if":
+					depth++
+				case "endif":
+					depth--
+				}
+				if depth == 0 {
+					end, i = commands[j].end, j
+					break
+				}
+			}
+			cuts = append(cuts, [2]int{command.start, end})
+			if depth != 0 {
+				i = len(commands)
+			}
+		}
+	}
+	var kept strings.Builder
+	at := 0
+	for _, cut := range cuts {
+		kept.WriteString(text[at:cut[0]])
+		at = cut[1]
+	}
+	kept.WriteString(text[at:])
+	var lines []string
+	for _, line := range strings.Split(kept.String(), "\n") {
+		if line = strings.TrimRight(line, " \t\r"); strings.TrimSpace(line) != "" {
+			lines = append(lines, line)
+		}
+	}
+	return []byte(strings.Join(lines, "\n"))
+}
+
 // cmakeBool is an option's default as CMake reads a boolean constant, ON
 // or OFF, whichever of its spellings it's written in: fluent-bit's "No"
 // read as "added, no by default" (the dogfood run with 58e2d7eb). One that
@@ -115,6 +168,9 @@ func cmakeBool(value string) string {
 type cmakeCommand struct {
 	name string
 	args []string
+	// start and end are where the invocation is in the text, its name to
+	// its closing parenthesis.
+	start, end int
 }
 
 // cmakeCommands splits a CMake file into its command invocations, as
@@ -142,7 +198,7 @@ func cmakeCommands(text string) []cmakeCommand {
 				continue
 			}
 			args, end := cmakeArgs(text, i+1)
-			commands = append(commands, cmakeCommand{name: name, args: args})
+			commands = append(commands, cmakeCommand{name: name, args: args, start: start, end: end})
 			i = end
 		default:
 			i++

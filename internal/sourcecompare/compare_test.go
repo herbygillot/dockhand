@@ -158,3 +158,31 @@ func TestACMakeListsChangeSaysWhatItDoes(t *testing.T) {
 	require.Len(t, changes, 1)
 	require.Equal(t, "upstream's CMakeLists.txt changed: option FLB_KAFKA added, off by default; option FLB_TLS's default moves from ON to OFF; option FLB_OLD removed; find_package(ZLIB) now asks for 1.3; find_package(RdKafka) added, under FLB_KAFKA", changes[0].Message)
 }
+
+// A CMakeLists.txt that only adds options, each built as its default, and
+// what one off by default gates, is said for what it adds and holds
+// nothing; what one on by default gates, a default that flips, or any
+// other change, is still a change (D12, revisited by the person
+// 2026-10-01, from fluent-bit 5.1.3's FLB_PROTOBUF_ENCODER).
+func TestAnAddedCMakeOptionIsSaidAndHoldsNothing(t *testing.T) {
+	before := "cmake_minimum_required(VERSION 3.20)\nproject(fluent-bit VERSION 5.1.2)\noption(FLB_TLS \"TLS\" ON)\nadd_library(flb src/a.c)\n"
+	compare := func(after string) Change {
+		t.Helper()
+		changes, err := compareArchives(t,
+			testsupport.Tarball(t, "fluent-bit-5.1.2", map[string]string{"CMakeLists.txt": before}),
+			testsupport.Tarball(t, "fluent-bit-5.1.3", map[string]string{"CMakeLists.txt": after}), Versions{Old: "5.1.2", New: "5.1.3"})
+		require.NoError(t, err)
+		require.Len(t, changes, 1)
+		return changes[0]
+	}
+	bumped := strings.Replace(before, "5.1.2", "5.1.3", 1)
+
+	gated := compare(strings.Replace(bumped, "add_library", "option(FLB_PROTOBUF_ENCODER \"Protobuf\" No)\nif(FLB_PROTOBUF_ENCODER)\n  find_package(Protobuf REQUIRED)\n  add_definitions(-DFLB_HAVE_PROTOBUF)\nendif()\nadd_library", 1))
+	require.Equal(t, "options", gated.How)
+	require.Equal(t, "upstream's CMakeLists.txt adds option FLB_PROTOBUF_ENCODER, off by default, which gates find_package(Protobuf), and changes nothing else the default build reads; each option builds as its default", gated.Message)
+
+	require.Equal(t, "options", compare(bumped+"option(FLB_METRICS \"Metrics\" ON)\n").How, "one on by default, gating nothing, holds nothing either")
+	require.Equal(t, "changed", compare(bumped+"option(FLB_OTEL \"OTel\" ON)\nif(FLB_OTEL)\n  find_package(OpenTelemetry)\nendif()\n").How, "what one on by default gates is the default build's")
+	require.Equal(t, "changed", compare(strings.Replace(bumped, `"TLS" ON`, `"TLS" OFF`, 1)).How, "a default that flips")
+	require.Equal(t, "changed", compare(strings.Replace(bumped, "src/a.c", "src/a.c src/b.c", 1)+"option(FLB_X \"x\" OFF)\n").How, "anything else beside an option")
+}

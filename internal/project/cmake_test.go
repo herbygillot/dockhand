@@ -39,3 +39,11 @@ endif()
 		{Name: "MbedTLS", Under: []string{"FLB_MBEDTLS"}},
 	}, facts.Packages)
 }
+
+// A CMakeLists.txt less the options named, and the if() blocks that gate
+// on one alone, nested ones included, with the lines left empty dropped.
+func TestCMakeWithoutLeavesOutOptionsAndWhatTheyGate(t *testing.T) {
+	text := "project(x)\noption(A \"a\" OFF)\nif(A)\n  find_package(P)\n  if(WIN32)\n    message(x)\n  endif()\nendif()\nif(${A})\n  add_definitions(-DA)\nendif()\nif(B)\n  find_package(Q)\nendif()\nadd_library(x a.c)\n"
+	require.Equal(t, "project(x)\nif(B)\n  find_package(Q)\nendif()\nadd_library(x a.c)", string(CMakeWithout([]byte(text), map[string]bool{"A": true}, map[string]bool{"A": true})))
+	require.Equal(t, "project(x)\nif(A)\n  find_package(P)\n  if(WIN32)\n    message(x)\n  endif()\nendif()\nif(${A})\n  add_definitions(-DA)\nendif()\nif(B)\n  find_package(Q)\nendif()\nadd_library(x a.c)", string(CMakeWithout([]byte(text), map[string]bool{"A": true}, nil)), "an option on by default gates what the default build reads")
+}

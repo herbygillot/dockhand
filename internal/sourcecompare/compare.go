@@ -167,6 +167,13 @@ func Compare(older, newer project.Reading, versions Versions) []Change {
 					Message: fmt.Sprintf("upstream's %s changed only the version it names: %q", name, line)})
 				continue
 			}
+			if base == "CMakeLists.txt" && hadOld && hasNow {
+				if words, ok := cmakeOptionsOnly(name, old.Data, now.Data, versions); ok {
+					changes = append(changes, Change{Kind: "build", How: "options", Path: name,
+						Message: fmt.Sprintf("upstream's %s %s", name, words)})
+					continue
+				}
+			}
 			how, what := "changed", "changed"
 			switch {
 			case !hadOld:
@@ -514,6 +521,59 @@ func cmakeWords(old, now []byte) string {
 		return fmt.Sprintf(": %s; and %d more", strings.Join(said[:cmakeNamed], "; "), len(said)-cmakeNamed)
 	}
 	return ": " + strings.Join(said, "; ")
+}
+
+// cmakeOptionsOnly says a CMakeLists.txt's change where all it does, but
+// the version it names, is add options, each built as its default, and
+// what one off by default gates: the person decided an added option holds
+// nothing, and that what one off by default gates, as fluent-bit 5.1.3's
+// find_package(Protobuf) under FLB_PROTOBUF_ENCODER, isn't reached by the
+// default build, while what one on by default gates is, and holds (D12,
+// revisited 2026-10-01). A default that flips, or an option removed,
+// still holds. False where anything else changed.
+func cmakeOptionsOnly(name string, old, now []byte, versions Versions) (string, bool) {
+	before, after := project.ReadCMake(old), project.ReadCMake(now)
+	added, off := map[string]bool{}, map[string]bool{}
+	for option, declared := range after.Options {
+		if _, had := before.Options[option]; !had {
+			added[option] = true
+			off[option] = declared.Default == "OFF"
+		}
+	}
+	if len(added) == 0 {
+		return "", false
+	}
+	gates := map[string]bool{}
+	for option := range off {
+		if off[option] {
+			gates[option] = true
+		}
+	}
+	rest, was := project.CMakeWithout(now, added, gates), project.CMakeWithout(old, nil, nil)
+	if !bytes.Equal(rest, was) {
+		if _, ok := versionOnly(name, was, rest, versions); !ok {
+			return "", false
+		}
+	}
+	var said []string
+	for _, option := range slices.Sorted(maps.Keys(added)) {
+		by := after.Options[option].Default
+		if by == "ON" || by == "OFF" {
+			by = strings.ToLower(by)
+		}
+		words := fmt.Sprintf("option %s, %s by default", option, by)
+		var gated []string
+		for _, pkg := range after.Packages {
+			if off[option] && slices.Contains(pkg.Under, option) {
+				gated = append(gated, "find_package("+pkg.Name+")")
+			}
+		}
+		if len(gated) > 0 {
+			words += ", which gates " + strings.Join(gated, ", ")
+		}
+		said = append(said, words)
+	}
+	return "adds " + strings.Join(said, "; ") + ", and changes nothing else the default build reads; each option builds as its default", true
 }
 
 // lockMoves are what a Cargo.lock changes of the crates it pins from
