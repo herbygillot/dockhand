@@ -624,9 +624,15 @@ func TestTheEvaluatorReadsAMinimumXcode(t *testing.T) {
 		return got.Snapshot.Ports[name]
 	}
 	for _, c := range []struct{ name, version, minimum string }{{"swifty", "25", "99.0"}, {"swifty", "24", ""}, {"swifty", "23", ""}, {"plain", "25", ""}} {
-		minimum, err := observe(c.name, c.version).MinimumXcode()
+		port := observe(c.name, c.version)
+		minimum, err := port.MinimumXcode()
 		require.NoError(t, err)
 		require.Equal(t, c.minimum, minimum, "%s on darwin %s", c.name, c.version)
+		if minimum != "" {
+			require.NotEmpty(t, port.Xcode(), "the Xcode the environment is modelled with, which doesn't meet it")
+		} else {
+			require.Empty(t, port.Xcode())
+		}
 	}
 }
 

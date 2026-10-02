@@ -24,6 +24,9 @@ type Evaluated struct {
 	// this macOS, where the environment's is older or none; empty where
 	// it's met.
 	MinimumXcode string
+	// Xcode is the environment's Xcode where MinimumXcode isn't met by
+	// it, "none" for the Command Line Tools alone.
+	Xcode string
 	// Untested is a port whose test.run MacPorts reads as off; one it
 	// couldn't read, or didn't, is left unsaid.
 	Untested bool
@@ -61,7 +64,7 @@ func Evaluate(port macports.PortInfo, platform model.Platform) (Evaluated, error
 	if err != nil {
 		return Evaluated{}, err
 	}
-	evaluated := Evaluated{Eligibility: eligibility, NeedsXcode: needsXcode, MinimumXcode: minimum}
+	evaluated := Evaluated{Eligibility: eligibility, NeedsXcode: needsXcode, MinimumXcode: minimum, Xcode: port.Xcode()}
 	for _, dependency := range port.Dependencies {
 		id := model.TargetID(dependency.Port)
 		if i := slices.IndexFunc(evaluated.Dependencies, func(d Dependency) bool { return d.Port == id }); i >= 0 {
@@ -298,6 +301,9 @@ func EnvironmentPlan(environment model.Environment, targets, candidates []model.
 				planned.MinimumXcode = map[model.TargetID]string{}
 			}
 			planned.MinimumXcode[id] = minimum
+			if xcode := evaluation[id].Xcode; xcode != "" {
+				planned.Xcode = xcode
+			}
 		}
 		if evaluation[id].Untested {
 			planned.Untested = append(planned.Untested, id)
@@ -388,14 +394,19 @@ func unmetNeeds(planned model.EnvironmentPlan) []model.Unmet {
 	cause := map[model.TargetID]model.Unmet{}
 	for _, id := range planned.Order {
 		if requirement, ok := needs(id); ok {
-			cause[id] = model.Unmet{Target: id, Environment: planned.Environment, Needs: requirement}
+			need := model.Unmet{Target: id, Environment: planned.Environment, Needs: requirement}
+			if requirement != model.RequiresXcode {
+				// A minimum unmet says what the environment has.
+				need.Has = planned.Xcode
+			}
+			cause[id] = need
 			unmet = append(unmet, cause[id])
 			continue
 		}
 		for _, prerequisite := range planned.Dependencies[id] {
 			if through, ok := cause[prerequisite]; ok {
 				cause[id] = through
-				unmet = append(unmet, model.Unmet{Target: id, Environment: planned.Environment, Needs: through.Needs, Through: through.Target})
+				unmet = append(unmet, model.Unmet{Target: id, Environment: planned.Environment, Needs: through.Needs, Has: through.Has, Through: through.Target})
 				break
 			}
 		}

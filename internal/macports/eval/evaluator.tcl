@@ -233,6 +233,11 @@ namespace eval ::dockhand {
                 dict set failures dockhand.minimum_xcode $minimum
             } elseif {$minimum ne ""} {
                 dict set out dockhand.minimum_xcode $minimum
+                # And the Xcode the environment is modelled with, which
+                # the minimum isn't met by, for the person to read.
+                dict set out dockhand.xcode [$worker eval {
+                    expr {[info exists ::xcodeversion] ? $::xcodeversion : "none"}
+                }]
             }
             # The PortGroups the port loads, by name, as Base records them
             # for the registry and the PortIndex.

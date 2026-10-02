@@ -256,7 +256,7 @@ func attentionFor(s engine.BranchStatus) []attention {
 			switch {
 			case len(target.Remade()) > 0:
 				remade = append(remade, target.Target.Target.Name)
-				why = target.RemadeWords()
+				why = engine.RemadeWords(target)
 			default:
 				unchecked = append(unchecked, target.Target.Target.Name)
 			}

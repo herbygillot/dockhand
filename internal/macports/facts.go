@@ -179,6 +179,14 @@ func (p PortInfo) MinimumXcode() (string, error) {
 	return p.Options["dockhand.minimum_xcode"], nil
 }
 
+// Xcode is the Xcode the port was evaluated with, where its minimum
+// (MinimumXcode) isn't met: a version, or "none" for the Command Line
+// Tools alone; empty where the minimum is met, or the evaluation didn't
+// say.
+func (p PortInfo) Xcode() string {
+	return p.Options["dockhand.xcode"]
+}
+
 // PlatformsCompatible reports whether the port's platforms admit the
 // release it was evaluated for, as Base's own check decides; known is
 // false where it couldn't say.

@@ -102,10 +102,9 @@ func TestATargetThatNeedsXcodeIsUnmetWithoutIt(t *testing.T) {
 	require.NoError(t, err)
 	for _, target := range evidence.Targets {
 		if target.Target.ID == "harbor-cli" {
-			require.Equal(t, "· not built: needs Xcode, through libharbor", evidence.Words(target, 0, false))
+			require.Equal(t, "· not built: needs Xcode, through libharbor", EvidenceWords(evidence, target, 0, false))
 		}
 	}
-	evidence.settle()
 	problems := publicationProblems(evidence, nil)
 	require.Contains(t, problems, "libharbor needs Xcode, which command macOS 26 (Tahoe) arm64 with the Command Line Tools hasn't; a check with Xcode there builds it, or share the branch as a draft (--draft)")
 

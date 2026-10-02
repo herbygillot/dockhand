@@ -194,7 +194,7 @@ func ownedSections(facts bodyFacts) string {
 		for _, target := range evidence.Targets {
 			fmt.Fprintf(&b, "| %s |", target.Target.ID)
 			for i, result := range target.Outcomes {
-				words := evidence.Words(target, i, slices.Contains(facts.Accepted, target.Target.Target.Name))
+				words := EvidenceWords(*evidence, target, i, slices.Contains(facts.Accepted, target.Target.Target.Name))
 				if reason := result.Reason(); reason != "" {
 					words += notes.mark(reason, string(target.Target.ID), EnvironmentHeading(evidence.Plan.Environments[i], evidence.Plan.Environments))
 				}

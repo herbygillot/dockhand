@@ -10,28 +10,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
-// A result reads under the policy of the check that built it. One that
-// came from an earlier check whose policy differs from the evidence's own
-// names that check, so an advisory failure never reads as required.
-func TestAResultReadsUnderItsOwnChecksPolicy(t *testing.T) {
-	required := model.Run{ID: "run_new", Number: 4}
-	advisory := model.Run{ID: "run_old", Number: 3}
-	evidence := Evidence{
-		Run:     required,
-		Plan:    model.Plan{Tests: model.TestsRequired, Environments: []model.Environment{{Provider: "command"}}},
-		Earlier: []model.Run{advisory},
-		Executions: map[model.ExecutionID]model.GuestExecution{
-			"ex_new": {ID: "ex_new", Run: required.ID},
-			"ex_old": {ID: "ex_old", Run: advisory.ID},
-		},
-		policies: map[model.RunID]model.TestPolicy{required.ID: model.TestsRequired, advisory.ID: model.TestsDeclared},
-	}
-	old := TargetEvidence{Target: model.PlanTarget{ID: "libharbor"}, Outcomes: cells([]model.TargetResult{{Execution: "ex_old", Outcome: model.OutcomePassed, Tests: model.TestsFailed}})}
-	require.Equal(t, "✓ build passed; tests failed (advisory, check-3)", evidence.Words(old, 0, false))
-	evidence.Plan.Tests = model.TestsDeclared
-	require.Equal(t, "✓ build passed; tests failed (advisory)", evidence.Words(old, 0, false), "the same policy needs no check named")
-}
-
 // advisoryHarbor builds every target, and libharbor's tests fail when the
 // check's policy lets them: advisory in one check, required in another.
 type advisoryHarbor struct{}

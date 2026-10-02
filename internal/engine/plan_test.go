@@ -234,7 +234,7 @@ func TestChangedSharedCodeIsSubstantive(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, plan.Targets, 1, c.why)
 		require.Equal(t, c.kind, plan.Targets[0].Kind, c.why)
-		require.Equal(t, c.kind == model.RevisionOnly, Acceptable(plan.Targets[0]), c.why)
+		require.Equal(t, c.kind == model.RevisionOnly, TargetEvidence{Target: plan.Targets[0]}.Acceptable(), c.why)
 	}
 }
 

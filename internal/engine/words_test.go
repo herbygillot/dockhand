@@ -37,6 +37,21 @@ func TestTargetWordsAreDesignV3s(t *testing.T) {
 	// An excluded or unmet cell reads by its kind, not by asking the plan,
 	// which for a cell an earlier check filled isn't the one that found it.
 	require.Equal(t, "— excluded", targetWords(model.Plan{}, target, noResult(CellExcluded, command, "jq"), "", false))
+	knownFail := noResult(CellExcluded, command, "jq")
+	knownFail.Exclusion = model.Exclusion{Reason: "the Portfile marks it known_fail here"}
+	require.Equal(t, "— not built: the Portfile marks it known_fail here", targetWords(model.Plan{}, target, knownFail, "", false), "why the plan left it out")
 	unmet := Cell{TargetResult: model.TargetResult{Outcome: model.OutcomeUnmet}, Kind: CellUnmet, Environment: command, Unmet: model.Unmet{Target: "jq", Environment: command, Needs: model.RequiresXcode}}
 	require.Equal(t, "· not built: "+UnmetWords(unmet.Unmet), targetWords(model.Plan{}, target, unmet, "", false))
+}
+
+// An unmet minimum Xcode says what the environment has, where the plan
+// kept it: "needs Xcode 26.0, which Tart macOS 15 hasn't" left the person
+// to find 16.4 (batch 28's leftover).
+func TestAnUnmetMinimumSaysWhatTheEnvironmentHas(t *testing.T) {
+	unmet := model.Unmet{Target: "sand-runner", Needs: model.RequiresXcodeVersion("26.0"), Has: "16.4"}
+	require.Equal(t, "needs Xcode 26.0 (Xcode 16.4 there)", UnmetWords(unmet))
+	unmet.Has, unmet.Through = "none", "sand-runner"
+	require.Equal(t, "needs Xcode 26.0 (only the Command Line Tools there), through sand-runner", UnmetWords(unmet))
+	unmet.Has = ""
+	require.Equal(t, "needs Xcode 26.0, through sand-runner", UnmetWords(unmet), "a plan made before it was kept")
 }

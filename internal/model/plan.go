@@ -161,6 +161,11 @@ type Unmet struct {
 	Target      TargetID
 	Environment Environment
 	Needs       Requirement
+	// Has is the Xcode the environment has, where what's needed is a newer
+	// one (RequiresXcodeVersion): a version, or "none" for the Command
+	// Line Tools alone; empty where it isn't known, as in a plan made
+	// before it was kept.
+	Has string `json:",omitempty"`
 	// Through is the prerequisite that needs it; empty when the target
 	// needs it itself.
 	Through TargetID `json:",omitempty"`
@@ -187,6 +192,11 @@ type EnvironmentPlan struct {
 	// minimum_xcodeversions this environment's Xcode doesn't meet, the
 	// Xcode it requires here.
 	MinimumXcode map[TargetID]string `json:",omitempty"`
+	// Xcode is the Xcode this environment was evaluated with, where a
+	// target's minimum isn't met by it, "none" for the Command Line Tools
+	// alone; empty where every minimum is met, or in a plan made before it
+	// was kept.
+	Xcode string `json:",omitempty"`
 	// Untested are the targets in Order that declare no tests here, their
 	// test.run off as MacPorts evaluates it: they pass whatever the test
 	// policy, which a plan requiring tests says of them.

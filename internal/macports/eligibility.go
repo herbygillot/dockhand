@@ -44,7 +44,7 @@ func (e Eligibility) Reason() string {
 	case ExcludedPlatforms:
 		return "its platforms, " + e.Detail + ", exclude this release"
 	case ExcludedKnownFail:
-		return "known_fail"
+		return "the Portfile marks it known_fail here"
 	case ExcludedArchs:
 		return "supported_archs " + e.Detail + " only"
 	}

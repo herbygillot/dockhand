@@ -60,7 +60,7 @@ func TestAPlanIsDecidedPhaseByPhase(t *testing.T) {
 
 	reasons := Exclusions(input)
 	require.Equal(t, []map[model.TargetID]string{
-		{"harbor-legacy": "known_fail", "harbor-extra": "check-1 didn't fail it there"},
+		{"harbor-legacy": "the Portfile marks it known_fail here", "harbor-extra": "check-1 didn't fail it there"},
 		{"harbor-viewer": "not defined there", "harbor-legacy": "supported_archs arm64 only"},
 	}, reasons)
 	built := Built(input.Candidates, reasons)
@@ -80,7 +80,7 @@ func TestAPlanIsDecidedPhaseByPhase(t *testing.T) {
 	require.Equal(t, []model.TargetID{"harbor-extra"}, decision.Builds[1].NeedsXcode)
 	require.Equal(t, []model.TargetID{"harbor-extra"}, decision.Builds[1].Untested)
 	require.Equal(t, []model.Unmet{{Target: "harbor-extra", Environment: intel, Needs: model.RequiresXcode}}, decision.Builds[1].Unmet)
-	require.Equal(t, []model.Exclusion{{Target: model.Target{Name: "harbor-legacy"}, Reason: "known_fail"}, {Target: model.Target{Name: "harbor-extra"}, Reason: "check-1 didn't fail it there"}},
+	require.Equal(t, []model.Exclusion{{Target: model.Target{Name: "harbor-legacy"}, Reason: "the Portfile marks it known_fail here"}, {Target: model.Target{Name: "harbor-extra"}, Reason: "check-1 didn't fail it there"}},
 		decision.Builds[0].Exclusions)
 	require.Equal(t, []model.TargetID{"harbor-tools", "harbor-extra", "libharbor", "harbor-cli", "harbor-viewer"}, ids(decision.Targets),
 		"the first environment's order, and what the second adds right after what precedes it there")
@@ -95,16 +95,17 @@ func TestAMinimumXcodeTheEnvironmentLacksIsUnmet(t *testing.T) {
 		Environments: []model.Environment{arm},
 		Candidates:   []model.PlanTarget{candidate("sand-runner", model.Changed), candidate("sand-tools", model.Changed), candidate("harbor-cli", model.Changed)},
 		Evaluations: []Evaluation{{
-			"sand-runner": {MinimumXcode: "26.0"}, "sand-tools": needing("sand-runner"), "harbor-cli": {},
+			"sand-runner": {MinimumXcode: "26.0", Xcode: "16.4"}, "sand-tools": needing("sand-runner"), "harbor-cli": {},
 		}},
 	}
 	decision, err := Decide(input)
 	require.NoError(t, err)
 	require.Equal(t, map[model.TargetID]string{"sand-runner": "26.0"}, decision.Builds[0].MinimumXcode)
 	require.Equal(t, []model.Unmet{
-		{Target: "sand-runner", Environment: arm, Needs: model.RequiresXcodeVersion("26.0")},
-		{Target: "sand-tools", Environment: arm, Needs: model.RequiresXcodeVersion("26.0"), Through: "sand-runner"},
-	}, decision.Builds[0].Unmet)
+		{Target: "sand-runner", Environment: arm, Needs: model.RequiresXcodeVersion("26.0"), Has: "16.4"},
+		{Target: "sand-tools", Environment: arm, Needs: model.RequiresXcodeVersion("26.0"), Has: "16.4", Through: "sand-runner"},
+	}, decision.Builds[0].Unmet, "with the Xcode the environment has")
+	require.Equal(t, "16.4", decision.Builds[0].Xcode)
 	require.Equal(t, "26.0", decision.Builds[0].Unmet[0].Needs.XcodeVersion())
 	require.Empty(t, model.RequiresXcode.XcodeVersion())
 }

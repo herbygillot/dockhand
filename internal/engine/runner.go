@@ -19,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macos"
+	"github.com/herbygillot/dockhand/internal/evidence"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/reuse"
@@ -406,8 +407,15 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 				return err
 			}
 			executions = slices.DeleteFunc(executions, func(x model.GuestExecution) bool { return x.Environment != environment })
-			results, err = mergedResults(r, executions)
-			return err
+			slices.SortFunc(executions, func(a, b model.GuestExecution) int { return a.Attempt - b.Attempt })
+			recorded := map[model.ExecutionID][]model.TargetResult{}
+			for _, execution := range executions {
+				if recorded[execution.ID], err = r.Results(execution.ID); err != nil {
+					return err
+				}
+			}
+			results = evidence.Merged(executions, recorded)
+			return nil
 		}); err != nil {
 			return err
 		}
@@ -863,27 +871,6 @@ func (b *build) blockRemaining(targets []buildenv.Target) {
 	}
 }
 
-// mergedResults are a run's results in one environment across its
-// attempts: a later attempt's result replaces an earlier one's unless the
-// earlier one is a complete verdict, which is final.
-func mergedResults(r store.Reader, executions []model.GuestExecution) (map[model.TargetID]model.TargetResult, error) {
-	merged := map[model.TargetID]model.TargetResult{}
-	slices.SortFunc(executions, func(a, b model.GuestExecution) int { return a.Attempt - b.Attempt })
-	for _, execution := range executions {
-		results, err := r.Results(execution.ID)
-		if err != nil {
-			return nil, err
-		}
-		for _, result := range results {
-			if earlier, ok := merged[result.Target]; ok && earlier.Outcome.Complete() {
-				continue
-			}
-			merged[result.Target] = result
-		}
-	}
-	return merged, nil
-}
-
 // RunEvidence is what a run established for each target in each of its
 // environments.
 func (e *Engine) RunEvidence(ctx context.Context, id model.RunID) (Evidence, error) {
@@ -904,55 +891,13 @@ func (e *Engine) RunEvidence(ctx context.Context, id model.RunID) (Evidence, err
 }
 
 // runEvidence is what a run established for each target in each of its
-// environments.
+// environments, as its own record says (evidence.Of).
 func runEvidence(r store.Reader, run model.Run, plan model.Plan) (Evidence, error) {
-	executions, err := r.Executions(run.ID)
+	check, err := loadCheckWith(r, run, plan, false)
 	if err != nil {
 		return Evidence{}, err
 	}
-	byEnvironment := map[model.Environment][]model.GuestExecution{}
-	for _, execution := range executions {
-		byEnvironment[execution.Environment] = append(byEnvironment[execution.Environment], execution)
-	}
-	evidence := Evidence{Run: run, Plan: plan, Executions: map[model.ExecutionID]model.GuestExecution{}, policies: map[model.RunID]model.TestPolicy{run.ID: plan.Tests}}
-	for _, execution := range executions {
-		evidence.Executions[execution.ID] = execution
-	}
-	merged := map[model.Environment]map[model.TargetID]model.TargetResult{}
-	for environment, list := range byEnvironment {
-		if merged[environment], err = mergedResults(r, list); err != nil {
-			return Evidence{}, err
-		}
-	}
-	for _, target := range plan.Targets {
-		te := TargetEvidence{Target: target, Passed: true}
-		for _, environment := range plan.Environments {
-			if plan.Excludes(target, environment) {
-				te.Outcomes = append(te.Outcomes, noResult(CellExcluded, environment, target.ID))
-				continue
-			}
-			if unmet, ok := plan.UnmetIn(environment, target.ID); ok {
-				te.Outcomes = append(te.Outcomes, Cell{TargetResult: model.TargetResult{Target: target.ID, Outcome: model.OutcomeUnmet}, Kind: CellUnmet, Environment: environment, Unmet: unmet})
-				te.Passed = false
-				continue
-			}
-			result, ok := merged[environment][target.ID]
-			if !ok {
-				te.Outcomes = append(te.Outcomes, noResult(CellNotRun, environment, target.ID))
-				te.Passed = false
-				continue
-			}
-			te.Outcomes = append(te.Outcomes, recorded(environment, result))
-			te.Passed = te.Passed && result.Outcome == model.OutcomePassed
-			if result.ReusedFrom != "" {
-				if err := evidence.origin(r, result.ReusedFrom); err != nil {
-					return Evidence{}, err
-				}
-			}
-		}
-		evidence.Targets = append(evidence.Targets, te)
-	}
-	return evidence, nil
+	return evidence.Of(check), nil
 }
 
 // revisionCommit is a commit holding the revision's files: the commit

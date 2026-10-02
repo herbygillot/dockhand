@@ -11,7 +11,7 @@ import (
 
 // targetWords is how one target's result in one environment reads, on the
 // terminal and in the pull request alike, so the two never word one result
-// differently (Design v3 §7): excluded there by the plan, passed, passed
+// differently (Design v3 §7): excluded there by the plan, and why, passed, passed
 // with its tests failing or timing out where they didn't count, failed at
 // a phase, blocked by a failed changed dependency, not run, or could not
 // evaluate. Reading says how the tests counted, "advisory" when empty
@@ -23,6 +23,12 @@ func targetWords(plan model.Plan, target model.PlanTarget, result Cell, reading 
 	}
 	switch result.Kind {
 	case CellExcluded:
+		// Why the plan left it out is said, as wasmer's macOS 12 column
+		// read only "— excluded", where its Portfile marks it known_fail
+		// on arm64 before macOS 14 (the wasmer run, #35077).
+		if reason := result.Exclusion.Reason; reason != "" {
+			return "— not built: " + reason
+		}
 		return "— excluded"
 	case CellUnmet:
 		return "· not built: " + UnmetWords(result.Unmet)
@@ -144,9 +150,19 @@ func FetchedWords(source model.GitSource, fetched model.ObjectID) string {
 }
 
 // UnmetWords say what an unmet target needs: "needs Xcode", or "needs
-// Xcode, through libharbor" when a prerequisite is what needs it.
+// Xcode, through libharbor" when a prerequisite is what needs it. A newer
+// Xcode than the environment has says what it has, "needs Xcode 26.0
+// (Xcode 16.4 there)", where "needs Xcode 26.0, which Tart macOS 15
+// hasn't" left the person to find it.
 func UnmetWords(unmet model.Unmet) string {
 	words := "needs " + string(unmet.Needs)
+	switch unmet.Has {
+	case "":
+	case "none":
+		words += " (only the Command Line Tools there)"
+	default:
+		words += " (Xcode " + unmet.Has + " there)"
+	}
 	if unmet.Through != "" {
 		words += ", through " + string(unmet.Through)
 	}

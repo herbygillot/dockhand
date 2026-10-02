@@ -647,7 +647,7 @@ func writeResults(out io.Writer, indent string, evidence engine.Evidence, where 
 		for _, target := range evidence.Targets {
 			var cells []string
 			for i := range target.Outcomes {
-				cell := evidence.Words(target, i, false)
+				cell := engine.EvidenceWords(evidence, target, i, false)
 				if where {
 					cell = environmentWords(environments[i]) + " " + cell
 				}
@@ -666,7 +666,7 @@ func writeResults(out io.Writer, indent string, evidence engine.Evidence, where 
 	for _, target := range evidence.Targets {
 		fmt.Fprintf(grid, "%s%s", indent, target.Target.ID)
 		for i := range target.Outcomes {
-			fmt.Fprintf(grid, "\t%s", evidence.Words(target, i, false))
+			fmt.Fprintf(grid, "\t%s", engine.EvidenceWords(evidence, target, i, false))
 		}
 		fmt.Fprintln(grid)
 	}
