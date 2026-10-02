@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -18,7 +19,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/preparation"
 	"github.com/herbygillot/dockhand/internal/project"
 	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/sourcecompare"
@@ -97,20 +97,20 @@ func (v PortVersion) String() string {
 // ErrUnsupported is an edit dockhand can't make by itself, such as a
 // version it can't find in the Portfile; the error says why, after the
 // sentinel's own words.
-var ErrUnsupported = preparation.ErrUnsupported
+var ErrUnsupported = editprep.ErrUnsupported
 
 // ErrFidelity is an edit whose evaluation isn't the change intended, which
 // update refuses as it refuses an edit it can't make, with how to make it
 // by hand.
-var ErrFidelity = preparation.ErrFidelity
+var ErrFidelity = editprep.ErrFidelity
 
 // Unlocated is a checksum declaration dockhand can't find in the Portfile
 // to edit, an unsupported edit that names the archive and why.
-type Unlocated = preparation.Unlocated
+type Unlocated = editprep.Unlocated
 
 // ChecksumsToWrite is a checksum refresh dockhand couldn't write, with the
 // archives' checksums for a person to write.
-type ChecksumsToWrite = preparation.ChecksumsToWrite
+type ChecksumsToWrite = editprep.ChecksumsToWrite
 
 // Update reports an update or checksum refresh.
 type Update struct {
@@ -136,7 +136,7 @@ type Update struct {
 	// and Regenerated the dependency blocks written again, a Git crate's
 	// archive among them, each with its entries.
 	Distfiles   int
-	Regenerated []preparation.Regenerated
+	Regenerated []editprep.Regenerated
 	// PatchProblems name the port's patches that no longer apply, and
 	// PatchesUnchecked those no check reached before the build;
 	// PatchesApplied counts those checked that apply.
@@ -224,7 +224,7 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	if err != nil {
 		return Update{}, err
 	}
-	input := preparation.Request{
+	input := editprep.Request{
 		EditIntent: model.EditIntent{SharedRelease: request.SharedRelease, KeepOldChecksums: request.KeepOldChecksums},
 		Action:     request.Action,
 		Source:     model.Source{Tree: model.ObjectID(captured), Base: model.ObjectID(base)},
@@ -242,7 +242,7 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		if err != nil {
 			return Update{}, err
 		}
-		input.Stealth = &preparation.StealthRequest{Changed: changed, KeepRevision: request.KeepRevision,
+		input.Stealth = &editprep.StealthRequest{Changed: changed, KeepRevision: request.KeepRevision,
 			Base: e.basePort(ctx, model.Source{Tree: model.ObjectID(captured), Base: base}, base, request.Port, changed)}
 	}
 	// own is the branch's own pull request, which is no other.
@@ -411,7 +411,7 @@ func (e *Engine) updateSource(ctx context.Context, request UpdateRequest) (*git.
 
 // editRecord is what tidy later reads: each file's blob before and after,
 // and the subject the edit carries.
-func (e *Engine) editRecord(ctx context.Context, worktree *git.Repository, branch model.Branch, request UpdateRequest, update Update, result preparation.Result) (model.Edit, error) {
+func (e *Engine) editRecord(ctx context.Context, worktree *git.Repository, branch model.Branch, request UpdateRequest, update Update, result editprep.Result) (model.Edit, error) {
 	edit := model.Edit{ID: model.EditID(store.NewID("ed")), Branch: branch.ID, Kind: request.Action, Port: update.Port, Subject: update.Subject, At: e.now(),
 		Upstream: update.Upstream, Release: update.Release}
 	edit.Directory = portDirectory(result.Files[0].Path)
@@ -491,7 +491,7 @@ func changedSinceBase(ctx context.Context, worktree *git.Repository, captured st
 }
 
 // describe reads what the preparation found.
-func describe(branch model.Branch, selector string, result preparation.Result) Update {
+func describe(branch model.Branch, selector string, result editprep.Result) Update {
 	update := Update{Branch: branch, Port: result.Target.Name, Release: result.Release, PatchProblems: result.PatchProblems(), PatchesUnchecked: result.UncheckedPatches(), PatchesApplied: result.PatchesApplied(),
 		Distfiles: len(result.Downloads), Regenerated: result.Regenerated}
 	if update.Port == "" {
@@ -702,7 +702,7 @@ func shortID() string {
 // or not archives are compared. Not being able to compare is reported,
 // never a reason to refuse the update. Nil where nothing was compared or
 // said.
-func (e *Engine) assessUpstream(ctx context.Context, result preparation.Result, versions sourcecompare.Versions, trees [2]model.Source, compare bool) *model.UpstreamComparison {
+func (e *Engine) assessUpstream(ctx context.Context, result editprep.Result, versions sourcecompare.Versions, trees [2]model.Source, compare bool) *model.UpstreamComparison {
 	input := assess.Input{Versions: versions}
 	input.Base, _ = result.PortBefore(result.Target.Name)
 	input.Port, _ = result.PortAfter(result.Target.Name)
@@ -728,7 +728,7 @@ func (e *Engine) assessUpstream(ctx context.Context, result preparation.Result, 
 		read = []model.Coverage{{Path: path.Dir(result.Target.Portfile), Relevance: "unknown", Treatment: "inspected", Policy: notCompared, Reason: result.Target.Name + " fetches no upstream source, so there's nothing to compare"}}
 	default:
 		for _, download := range result.Downloads {
-			if !slices.ContainsFunc(result.Pairs, func(pair preparation.ArchivePair) bool { return pair.Next.Name == download.Name }) {
+			if !slices.ContainsFunc(result.Pairs, func(pair editprep.ArchivePair) bool { return pair.Next.Name == download.Name }) {
 				problem = download.Name + " replaces no archive dockhand could find, so it wasn't compared"
 				break
 			}
@@ -775,9 +775,9 @@ func (e *Engine) readings() project.Cache {
 
 // toolchainOutcomes are what the editor did about go.toolchain_min, as the
 // assessment words them.
-var toolchainOutcomes = map[preparation.GoToolchainOutcome]string{
-	preparation.GoToolchainCovered: assess.ToolchainCovered, preparation.GoToolchainRaised: assess.ToolchainRaised,
-	preparation.GoToolchainUndeclared: assess.ToolchainUndeclared, preparation.GoToolchainByHand: assess.ToolchainByHand,
+var toolchainOutcomes = map[editprep.GoToolchainOutcome]string{
+	editprep.GoToolchainCovered: assess.ToolchainCovered, editprep.GoToolchainRaised: assess.ToolchainRaised,
+	editprep.GoToolchainUndeclared: assess.ToolchainUndeclared, editprep.GoToolchainByHand: assess.ToolchainByHand,
 }
 
 // readPairs reads each pair of archives, each version where its port
@@ -787,7 +787,7 @@ var toolchainOutcomes = map[preparation.GoToolchainOutcome]string{
 // by the archive's content, for an assessment made again. Each pair is the
 // editor's observed replacement, its entry in the port's source set as a
 // revision's assessment's are (macports.MatchSources).
-func (e *Engine) readPairs(ctx context.Context, pairs []preparation.ArchivePair, base, port macports.PortInfo) ([]assess.Pair, error) {
+func (e *Engine) readPairs(ctx context.Context, pairs []editprep.ArchivePair, base, port macports.PortInfo) ([]assess.Pair, error) {
 	var before, after []string
 	var observed [][2]string
 	for _, pair := range pairs {

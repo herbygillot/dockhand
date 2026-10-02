@@ -9,10 +9,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/preparation"
 )
 
 // decoded is a --json envelope, read back loosely.
@@ -220,7 +220,7 @@ func TestJSONForTheWholeLoop(t *testing.T) {
 // couldn't be fetched to compare with the new one's.
 type unfetchedPrevious struct{ bumper }
 
-func (b unfetchedPrevious) Prepare(ctx context.Context, r preparation.Request) (preparation.Result, error) {
+func (b unfetchedPrevious) Prepare(ctx context.Context, r editprep.Request) (editprep.Result, error) {
 	result, err := b.bumper.Prepare(ctx, r)
 	result.PreviousProblem = "HTTP 404"
 	return result, err

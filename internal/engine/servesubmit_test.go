@@ -12,11 +12,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/preparation"
 )
 
 // servePrepared has serve prepare and check jq's update, and returns the
@@ -127,7 +127,7 @@ func TestServeHoldsAnUpdateWhoseGoToolchainNeedsALook(t *testing.T) {
 	e, p := f.withPreparer(t)
 	fake := f.withFork(t, e)
 	fake.others = nil
-	p.toolchain = &preparation.GoToolchain{Required: "1.25", Outcome: preparation.GoToolchainUndeclared}
+	p.toolchain = &editprep.GoToolchain{Required: "1.25", Outcome: editprep.GoToolchainUndeclared}
 	p.upstream = [2]map[string]string{{"go.mod": "module m\n\ngo 1.24\n"}, {"go.mod": "module m\n\ngo 1.25\n"}}
 	branch := servePrepared(t, e)
 
@@ -146,12 +146,12 @@ func TestServeHoldsAnUpdateWhoseGoToolchainNeedsALook(t *testing.T) {
 // previewed, not only as the update ran (the ov run's finding 1).
 func TestServeSaysAGoToolchainMinimumItNeedNotHold(t *testing.T) {
 	for _, test := range []struct {
-		toolchain preparation.GoToolchain
+		toolchain editprep.GoToolchain
 		message   string
 	}{
-		{preparation.GoToolchain{Required: "1.26.8", Declared: "1.25.8", Outcome: preparation.GoToolchainRaised},
+		{editprep.GoToolchain{Required: "1.26.8", Declared: "1.25.8", Outcome: editprep.GoToolchainRaised},
 			"upstream: go.mod requires Go 1.26.8, so go.toolchain_min is raised from 1.25.8"},
-		{preparation.GoToolchain{Required: "1.26.8", Declared: "1.26", Outcome: preparation.GoToolchainCovered},
+		{editprep.GoToolchain{Required: "1.26.8", Declared: "1.26", Outcome: editprep.GoToolchainCovered},
 			"upstream: go.mod requires Go 1.26.8, which go.toolchain_min 1.26 already gates on"},
 	} {
 		t.Run(string(test.toolchain.Outcome), func(t *testing.T) {

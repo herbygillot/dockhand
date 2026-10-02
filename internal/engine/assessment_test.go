@@ -16,12 +16,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/preparation"
 	"github.com/herbygillot/dockhand/internal/project"
 	"github.com/herbygillot/dockhand/internal/sourcecompare"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -783,7 +783,7 @@ func TestAnUpdateOfAGitFetchedPortComparesItsCommits(t *testing.T) {
 	port := func(version, ref string) macports.Snapshot {
 		return macports.Snapshot{Ports: map[string]macports.PortInfo{"libharbor": {Name: "libharbor", Version: version, Options: map[string]string{"fetch.type": "git", "git.url": project, "git.branch": ref}}}}
 	}
-	result := preparation.Result{Target: model.Target{Name: "libharbor", Portfile: "devel/libharbor/Portfile"}, Fidelity: []portedit.Fidelity{{Before: port("1", "v1"), After: port("2", "v2")}}}
+	result := editprep.Result{Target: model.Target{Name: "libharbor", Portfile: "devel/libharbor/Portfile"}, Fidelity: []portedit.Fidelity{{Before: port("1", "v1"), After: port("2", "v2")}}}
 	trees := [2]model.Source{{Tree: base, Base: base}, {Tree: tree, Base: base}}
 	comparison := e.assessUpstream(t.Context(), result, sourcecompare.Versions{Old: "1", New: "2"}, trees, true)
 	require.NotNil(t, comparison)

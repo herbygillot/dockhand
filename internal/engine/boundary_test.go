@@ -42,7 +42,7 @@ var engineImports = map[string]string{
 	"internal/macports/prdescription": "the pull request's description, as MacPorts' template has it",
 	"internal/project":                "reading upstream's project where the port builds, for update's comparison",
 	"internal/outdated":               "what outdated reads of upstream",
-	"internal/preparation":            "preparing an update's edit",
+	"internal/editprep":               "preparing an update's edit",
 	"internal/upstream":               "upstream projects' releases",
 	"internal/forge":                  "the forge's contract: pull requests, releases, tags",
 	"internal/forge/github":           "GitHub as a forge",

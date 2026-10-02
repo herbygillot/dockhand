@@ -1,4 +1,4 @@
-package preparation_test
+package editprep_test
 
 import (
 	"context"
@@ -10,11 +10,11 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/preparation"
 	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/stretchr/testify/require"
 )
@@ -36,7 +36,7 @@ func (r *releaseRepository) Tag(ctx context.Context, name string) (forge.Tag, er
 	return r.tag(ctx, r.name, name)
 }
 
-func versionFixture(t *testing.T, style, extra string, handler http.HandlerFunc) (*preparation.Service, preparation.Request) {
+func versionFixture(t *testing.T, style, extra string, handler http.HandlerFunc) (*editprep.Service, editprep.Request) {
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
@@ -188,17 +188,17 @@ func TestVersionPreparationRefusesCollateralChangesBeforeDownloading(t *testing.
 		expected           error
 		subport            string
 	}{
-		{"dependency", "literal", "if {$version eq {2.0}} {depends_lib port:other}\n", preparation.ErrFidelity, ""},
+		{"dependency", "literal", "if {$version eq {2.0}} {depends_lib port:other}\n", editprep.ErrFidelity, ""},
 		// A named subport moves its siblings, here the main port, only with
 		// --shared-release; a main port's own subports move with it.
-		{"sibling", "setup", "subport fixture-child {}\n", preparation.ErrFidelity, "fixture-child"},
-		{"fetch hook", "literal", "pre-fetch {set distfiles other.tar.gz}\n", preparation.ErrUnsupported, ""},
-		{"conditional hook", "literal", "if {1} { pre-fetch {set distfiles other.tar.gz} }\n", preparation.ErrUnsupported, ""},
-		{"custom hook after Go check", "go-check", "if {1} { pre-fetch {set distfiles other.tar.gz} }\n", preparation.ErrUnsupported, ""},
-		{"post-fetch after Go check", "go-check", "if {1} { post-fetch {error custom} }\n", preparation.ErrUnsupported, ""},
-		{"Go dependency", "go-check", "if {$version eq {2.0}} {depends_lib port:other}\n", preparation.ErrFidelity, ""},
-		{"credentials", "literal", "fetch.password secret-test-value\n", preparation.ErrUnsupported, ""},
-		{"credentials after version edit", "literal", "if {$version eq {2.0}} {fetch.password secret-test-value}\n", preparation.ErrUnsupported, ""},
+		{"sibling", "setup", "subport fixture-child {}\n", editprep.ErrFidelity, "fixture-child"},
+		{"fetch hook", "literal", "pre-fetch {set distfiles other.tar.gz}\n", editprep.ErrUnsupported, ""},
+		{"conditional hook", "literal", "if {1} { pre-fetch {set distfiles other.tar.gz} }\n", editprep.ErrUnsupported, ""},
+		{"custom hook after Go check", "go-check", "if {1} { pre-fetch {set distfiles other.tar.gz} }\n", editprep.ErrUnsupported, ""},
+		{"post-fetch after Go check", "go-check", "if {1} { post-fetch {error custom} }\n", editprep.ErrUnsupported, ""},
+		{"Go dependency", "go-check", "if {$version eq {2.0}} {depends_lib port:other}\n", editprep.ErrFidelity, ""},
+		{"credentials", "literal", "fetch.password secret-test-value\n", editprep.ErrUnsupported, ""},
+		{"credentials after version edit", "literal", "if {$version eq {2.0}} {fetch.password secret-test-value}\n", editprep.ErrUnsupported, ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var requests atomic.Int64
@@ -308,7 +308,7 @@ func TestCalendarPreparationEvaluatesPreservedTransformation(t *testing.T) {
 			request.Release = &release
 			result, err := service.Prepare(t.Context(), request)
 			if mismatch {
-				require.ErrorIs(t, err, preparation.ErrFidelity)
+				require.ErrorIs(t, err, editprep.ErrFidelity)
 				require.Empty(t, result.PreparedTree)
 				require.Zero(t, downloads.Load())
 				return
@@ -435,5 +435,5 @@ func TestAReleaseFoundAlreadyIsCheckedNotFoundAgain(t *testing.T) {
 	moved.Tag = "release-2.0"
 	request.Release = &moved
 	_, err = service.ResolveRelease(t.Context(), request)
-	require.ErrorIs(t, err, preparation.ErrFidelity, "a release the Portfile can't name is refused, found now or before")
+	require.ErrorIs(t, err, editprep.ErrFidelity, "a release the Portfile can't name is refused, found now or before")
 }

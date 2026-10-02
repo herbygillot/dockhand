@@ -1,4 +1,4 @@
-package preparation
+package editprep
 
 import (
 	"context"

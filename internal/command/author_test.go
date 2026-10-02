@@ -13,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
@@ -20,7 +21,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/preparation"
 	"github.com/herbygillot/dockhand/internal/progress"
 )
 
@@ -28,7 +28,7 @@ import (
 // checksum refresh adds a checksums line.
 type bumper struct{ repo *git.Repository }
 
-func (b bumper) ResolveRelease(ctx context.Context, r preparation.Request) (model.Release, error) {
+func (b bumper) ResolveRelease(ctx context.Context, r editprep.Request) (model.Release, error) {
 	version := r.Version
 	if version == "" {
 		version = "1.8.1"
@@ -44,11 +44,11 @@ func (b bumper) ResolveRelease(ctx context.Context, r preparation.Request) (mode
 	return model.Release{ReleaseSelection: model.ReleaseSelection{NoUpdate: noUpdate}, Version: version, Forge: "github", Repository: "jqlang/jq", Tag: "jq-" + version, Commit: "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b"}, nil
 }
 
-func (b bumper) Prepare(ctx context.Context, r preparation.Request) (preparation.Result, error) {
+func (b bumper) Prepare(ctx context.Context, r editprep.Request) (editprep.Result, error) {
 	name := "textproc/" + r.Selection.Selector + "/Portfile"
 	before, data, err := b.repo.File(ctx, string(r.Source.Tree), name)
 	if err != nil {
-		return preparation.Result{}, err
+		return editprep.Result{}, err
 	}
 	line := regexp.MustCompile(`(?m)^version (\S+)$`)
 	old := "1.7.1"
@@ -76,7 +76,7 @@ func (b bumper) Prepare(ctx context.Context, r preparation.Request) (preparation
 	port := func(v string, revision int) macports.Snapshot {
 		return macports.Snapshot{Ports: map[string]macports.PortInfo{"jq": {Version: v, Revision: revision}}}
 	}
-	result := preparation.Result{Target: model.Target{Name: "jq"}, Release: r.Release, PreparedTree: r.Source.Tree, Fidelity: []portedit.Fidelity{{Before: port(old, 0), After: port(next, revision)}}}
+	result := editprep.Result{Target: model.Target{Name: "jq"}, Release: r.Release, PreparedTree: r.Source.Tree, Fidelity: []portedit.Fidelity{{Before: port(old, 0), After: port(next, revision)}}}
 	result.DistSubdirRemoved = removed
 	if after == string(data) {
 		return result, nil
@@ -85,7 +85,7 @@ func (b bumper) Prepare(ctx context.Context, r preparation.Request) (preparation
 	tree, err := b.repo.EditTree(ctx, string(r.Source.Tree), []git.FileEdit{edit})
 	result.Files, result.PreparedTree = []git.FileEdit{edit}, model.ObjectID(tree)
 	if r.Action == model.EditRevbump {
-		result.Commits = []preparation.CommitIntent{{Subject: "jq: " + r.Subject}}
+		result.Commits = []editprep.CommitIntent{{Subject: "jq: " + r.Subject}}
 	}
 	return result, err
 }
@@ -368,7 +368,7 @@ func TestAnUpdatesReleaseIsKept(t *testing.T) {
 // chatty is a bumper that reports as it works, as MacPorts' editor does.
 type chatty struct{ bumper }
 
-func (c chatty) Prepare(ctx context.Context, r preparation.Request) (preparation.Result, error) {
+func (c chatty) Prepare(ctx context.Context, r editprep.Request) (editprep.Result, error) {
 	progress.Report(ctx, "Building the PortIndex; this may take several minutes")
 	progress.VerboseReport(ctx, "Generating full PortIndex for source abc123")
 	progress.VerboseReport(progress.Within(ctx, "macOS 15 (Tart)"), "Using the cached PortIndex for base abc123")
@@ -469,7 +469,7 @@ func TestAnUpdateNamesOtherOpenPullRequests(t *testing.T) {
 // on a commit older than jq-1.7.1's, and found nothing newer.
 type uncertainBumper struct{ bumper }
 
-func (b uncertainBumper) ResolveRelease(ctx context.Context, r preparation.Request) (model.Release, error) {
+func (b uncertainBumper) ResolveRelease(ctx context.Context, r editprep.Request) (model.Release, error) {
 	if r.Version == "" {
 		return model.Release{}, &engine.UncertainRelease{Port: "jq", SetAside: []engine.SetAside{{Tag: "jq-1.9.0", Version: "1.9.0", Source: "1.9.0", Predates: "jq-1.7.1"}}}
 	}
@@ -507,9 +507,9 @@ func TestAnUncertainNewestReleaseIsNamedNotChosen(t *testing.T) {
 // regenerating is a preparer whose update wrote a dependency block again.
 type regenerating struct{ bumper }
 
-func (b regenerating) Prepare(ctx context.Context, r preparation.Request) (preparation.Result, error) {
+func (b regenerating) Prepare(ctx context.Context, r editprep.Request) (editprep.Result, error) {
 	result, err := b.bumper.Prepare(ctx, r)
-	result.Regenerated = []preparation.Regenerated{{Option: "cargo.crates", Count: 352, Changed: 160}, {Option: "cargo.crates_github", Count: 0, Changed: 0}}
+	result.Regenerated = []editprep.Regenerated{{Option: "cargo.crates", Count: 352, Changed: 160}, {Option: "cargo.crates_github", Count: 0, Changed: 0}}
 	return result, err
 }
 

@@ -1,4 +1,4 @@
-package preparation_test
+package editprep_test
 
 import (
 	"context"
@@ -8,16 +8,16 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/preparation"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
-func preparationFixture(t *testing.T, body string) (*preparation.Service, preparation.Request) {
+func preparationFixture(t *testing.T, body string) (*editprep.Service, editprep.Request) {
 	t.Helper()
 	executable := testsupport.MacPortsTclsh(t)
 	root := t.TempDir()
@@ -36,7 +36,7 @@ func preparationFixture(t *testing.T, body string) (*preparation.Service, prepar
 	require.NoError(t, err)
 	commit, tree, err := repo.Branch(t.Context(), "candidate")
 	require.NoError(t, err)
-	return &preparation.Service{Repo: repo, Ports: &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}}, preparation.Request{
+	return &editprep.Service{Repo: repo, Ports: &eval.Evaluator{Executable: executable, Adapter: testsupport.BaseAdapter()}}, editprep.Request{
 		Action: model.EditRevbump, Source: model.Source{Commit: model.ObjectID(commit), Tree: model.ObjectID(tree)}, Selection: macports.Selection{Selector: "fixture"}, Subject: "rebuild against updated dependency",
 	}
 }
@@ -122,9 +122,9 @@ func TestPreparationDeclinesUnintendedEvaluationAndUnsupportedExpressions(t *tes
 		expected error
 		detail   string
 	}{
-		{"revision 4\nsubport fixture-child {}\n", preparation.ErrFidelity, "fixture-child.revision"},
-		{"revision 4\ndescription revision=${revision}\n", preparation.ErrFidelity, "description changed"},
-		{"revision [expr {2+2}]\n", preparation.ErrUnsupported, "matching literal"},
+		{"revision 4\nsubport fixture-child {}\n", editprep.ErrFidelity, "fixture-child.revision"},
+		{"revision 4\ndescription revision=${revision}\n", editprep.ErrFidelity, "description changed"},
+		{"revision [expr {2+2}]\n", editprep.ErrUnsupported, "matching literal"},
 		{"revision 4\nif {${revision} == 5} { error {candidate evaluation fails} }\n", nil, "candidate evaluation fails"},
 	} {
 		t.Run(fixture.detail, func(t *testing.T) {

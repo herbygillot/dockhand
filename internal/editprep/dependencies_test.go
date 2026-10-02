@@ -1,4 +1,4 @@
-package preparation_test
+package editprep_test
 
 import (
 	"archive/tar"
@@ -17,8 +17,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/macports/depblock"
-	"github.com/herbygillot/dockhand/internal/preparation"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
@@ -39,7 +39,7 @@ func manifestArchive(t *testing.T, name, manifest, version string) []byte {
 // shippedChecksums declares the current version's archive in the fixture's
 // Portfile as archive, where the fixture declares placeholders: an update
 // keeping archives to compare fetches it as MacPorts shipped it.
-func shippedChecksums(t *testing.T, service *preparation.Service, source model.Source, archive []byte) model.Source {
+func shippedChecksums(t *testing.T, service *editprep.Service, source model.Source, archive []byte) model.Source {
 	t.Helper()
 	state, data, err := service.Repo.File(t.Context(), string(source.Tree), "devel/fixture/Portfile")
 	require.NoError(t, err)

@@ -1,4 +1,4 @@
-package preparation_test
+package editprep_test
 
 import (
 	"crypto/sha256"
@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/preparation"
 	"github.com/stretchr/testify/require"
 )
 
@@ -55,7 +55,7 @@ func TestRefreshChecksumsRejectsCustomFetchBeforeDownload(t *testing.T) {
 	service, request := preparationFixture(t, "master_sites "+server.URL+"/\ndistfiles source.tar.gz\nchecksums sha256 "+strings.Repeat("0", 64)+"\npre-fetch { set distfiles other.tar.gz }\n")
 	request.Action, request.Subject = model.EditChecksums, ""
 	result, err := service.Prepare(t.Context(), request)
-	require.ErrorIs(t, err, preparation.ErrUnsupported)
+	require.ErrorIs(t, err, editprep.ErrUnsupported)
 	require.Empty(t, result.Commits)
 	require.Zero(t, reads.Load())
 }

@@ -13,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -20,7 +21,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/preparation"
 )
 
 const (
@@ -32,15 +32,15 @@ const (
 // serves jq-1.7.1.tar.gz with other contents.
 type rechecksummer struct{ repo *git.Repository }
 
-func (rechecksummer) ResolveRelease(context.Context, preparation.Request) (model.Release, error) {
+func (rechecksummer) ResolveRelease(context.Context, editprep.Request) (model.Release, error) {
 	return model.Release{}, nil
 }
 
-func (r rechecksummer) Prepare(ctx context.Context, request preparation.Request) (preparation.Result, error) {
+func (r rechecksummer) Prepare(ctx context.Context, request editprep.Request) (editprep.Result, error) {
 	name := "textproc/jq/Portfile"
 	before, data, err := r.repo.File(ctx, string(request.Source.Tree), name)
 	if err != nil {
-		return preparation.Result{}, err
+		return editprep.Result{}, err
 	}
 	line := regexp.MustCompile(`(?m)^checksums .*$`)
 	declared := line.FindString(string(data))[len("checksums "):]
@@ -50,17 +50,17 @@ func (r rechecksummer) Prepare(ctx context.Context, request preparation.Request)
 	// As the editor does, for a Portfile the branch hasn't changed since
 	// its base: the revision bumped unless asked not to, and dist_subdir set.
 	revision := 0
-	var stealth *preparation.Stealth
+	var stealth *editprep.Stealth
 	if asked := request.Stealth; asked != nil && !slices.Contains(asked.Changed, name) {
-		stealth = &preparation.Stealth{Distfiles: []preparation.StealthDistfile{{Name: now.Name, Was: distfetch.Declared(declared)[""], Now: now}}}
+		stealth = &editprep.Stealth{Distfiles: []editprep.StealthDistfile{{Name: now.Name, Was: distfetch.Declared(declared)[""], Now: now}}}
 		if !asked.KeepRevision {
 			if after, err = portfile.BumpRevision(after, "", 0); err != nil {
-				return preparation.Result{}, err
+				return editprep.Result{}, err
 			}
 			stealth.Revbumped, revision = true, 1
 		}
 		if after, _, err = portfile.StealthDistSubdir(after, stealth.Revbumped); err != nil {
-			return preparation.Result{}, err
+			return editprep.Result{}, err
 		}
 		stealth.DistSubdir = "jq/" + version + "_1"
 	}
@@ -69,7 +69,7 @@ func (r rechecksummer) Prepare(ctx context.Context, request preparation.Request)
 	}
 	edit := git.FileEdit{Path: name, Before: before, After: after, Mode: before.Mode}
 	tree, err := r.repo.EditTree(ctx, string(request.Source.Tree), []git.FileEdit{edit})
-	result := preparation.Result{Target: model.Target{Name: "jq", Portfile: name}, PreparedTree: model.ObjectID(tree), Files: []git.FileEdit{edit},
+	result := editprep.Result{Target: model.Target{Name: "jq", Portfile: name}, PreparedTree: model.ObjectID(tree), Files: []git.FileEdit{edit},
 		Fidelity:  []portedit.Fidelity{{Before: port(declared, 0), After: port("", revision)}},
 		Downloads: []distfetch.Download{{Checksum: now}}}
 	result.Stealth = stealth
@@ -109,12 +109,12 @@ func TestAStealthUpdateSaysSoAndKeepsBothArchives(t *testing.T) {
 // refuser stands in for MacPorts with a Portfile dockhand won't edit.
 type refuser struct{}
 
-func (refuser) ResolveRelease(context.Context, preparation.Request) (model.Release, error) {
+func (refuser) ResolveRelease(context.Context, editprep.Request) (model.Release, error) {
 	return model.Release{Version: "1.8.1"}, nil
 }
 
-func (refuser) Prepare(context.Context, preparation.Request) (preparation.Result, error) {
-	return preparation.Result{}, fmt.Errorf("%w: its pre-fetch hook runs exec", preparation.ErrUnsupported)
+func (refuser) Prepare(context.Context, editprep.Request) (editprep.Result, error) {
+	return editprep.Result{}, fmt.Errorf("%w: its pre-fetch hook runs exec", editprep.ErrUnsupported)
 }
 
 func TestWhatDockhandCantEditItSaysHowToDoByHand(t *testing.T) {

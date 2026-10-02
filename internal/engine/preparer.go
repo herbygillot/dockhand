@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/herbygillot/dockhand/internal/credential/keychain"
+	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/fetch"
 	forgegithub "github.com/herbygillot/dockhand/internal/forge/github"
 	forgegitlab "github.com/herbygillot/dockhand/internal/forge/gitlab"
@@ -17,7 +18,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/selection"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/preparation"
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
@@ -25,8 +25,8 @@ import (
 // moves to, and prepares the edited tree. preparation.Service is the real
 // one; tests substitute their own.
 type Preparer interface {
-	ResolveRelease(ctx context.Context, request preparation.Request) (model.Release, error)
-	Prepare(ctx context.Context, request preparation.Request) (preparation.Result, error)
+	ResolveRelease(ctx context.Context, request editprep.Request) (model.Release, error)
+	Prepare(ctx context.Context, request editprep.Request) (editprep.Result, error)
 }
 
 // preparer is the engine's Preparer: the one it was given, or MacPorts'
@@ -38,7 +38,7 @@ func (e *Engine) preparer() (Preparer, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &preparation.Service{Repo: e.Repo, Ports: ports, Upstream: e.discovery(ports), HTTP: fetch.Client, Mirror: distfetch.MacPortsMirror, Workspaces: &workspace.Registry{}}, nil
+		return &editprep.Service{Repo: e.Repo, Ports: ports, Upstream: e.discovery(ports), HTTP: fetch.Client, Mirror: distfetch.MacPortsMirror, Workspaces: &workspace.Registry{}}, nil
 	})
 }
 

@@ -15,13 +15,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/preparation"
 	"github.com/herbygillot/dockhand/internal/sourcecompare"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -38,7 +38,7 @@ type fakePreparer struct {
 	t        *testing.T
 	repo     *git.Repository
 	version  string
-	requests []preparation.Request
+	requests []editprep.Request
 	// during runs while the edit is prepared.
 	during func()
 	// upstream are the old and new versions' archive contents, kept as
@@ -46,14 +46,14 @@ type fakePreparer struct {
 	upstream [2]map[string]string
 	// toolchain is a Go requirement an update's go.mod leaves above the
 	// Portfile's minimum.
-	toolchain *preparation.GoToolchain
+	toolchain *editprep.GoToolchain
 	// dependencies are the ports the updated port depends on.
 	dependencies []string
 	// options are the evaluated port's options after the edit.
 	options map[string]string
 }
 
-func (p *fakePreparer) ResolveRelease(_ context.Context, r preparation.Request) (model.Release, error) {
+func (p *fakePreparer) ResolveRelease(_ context.Context, r editprep.Request) (model.Release, error) {
 	if r.Release != nil {
 		return *r.Release, nil
 	}
@@ -64,12 +64,12 @@ func (p *fakePreparer) ResolveRelease(_ context.Context, r preparation.Request) 
 	return model.Release{Version: version, Forge: "github", Tag: "jq-" + version}, nil
 }
 
-func (p *fakePreparer) Prepare(ctx context.Context, r preparation.Request) (preparation.Result, error) {
+func (p *fakePreparer) Prepare(ctx context.Context, r editprep.Request) (editprep.Result, error) {
 	p.requests = append(p.requests, r)
 	name := "textproc/" + r.Selection.Selector + "/Portfile"
 	before, data, err := p.repo.File(ctx, string(r.Source.Tree), name)
 	if err != nil {
-		return preparation.Result{}, err
+		return editprep.Result{}, err
 	}
 	old := versionLine.FindSubmatch(data)[1]
 	next, after := string(old), string(data)
@@ -100,7 +100,7 @@ func (p *fakePreparer) Prepare(ctx context.Context, r preparation.Request) (prep
 	options := [2]map[string]string{p.options, p.options}
 	if t := p.toolchain; t != nil {
 		for i, minimum := range []string{t.Declared, t.Declared} {
-			if i == 1 && t.Outcome == preparation.GoToolchainRaised {
+			if i == 1 && t.Outcome == editprep.GoToolchainRaised {
 				minimum = t.Required
 			}
 			options[i] = map[string]string{"go.package": "example.org/jq", "go.offline_build": "no"}
@@ -113,7 +113,7 @@ func (p *fakePreparer) Prepare(ctx context.Context, r preparation.Request) (prep
 	snapshot := func(version string, revision int, options map[string]string) macports.Snapshot {
 		return macports.Snapshot{Ports: map[string]macports.PortInfo{r.Selection.Selector: {Name: r.Selection.Selector, Version: version, Revision: revision, Options: options}}}
 	}
-	result := preparation.Result{Target: model.Target{Name: r.Selection.Selector, Portfile: name}, Release: r.Release, PreparedTree: r.Source.Tree,
+	result := editprep.Result{Target: model.Target{Name: r.Selection.Selector, Portfile: name}, Release: r.Release, PreparedTree: r.Source.Tree,
 		Fidelity: []portedit.Fidelity{{Before: snapshot(string(old), revision, options[0]), After: snapshot(next, nextRevision, options[1])}}}
 	// The port depended on the same ports before the edit.
 	if len(p.dependencies) > 0 {
@@ -127,7 +127,7 @@ func (p *fakePreparer) Prepare(ctx context.Context, r preparation.Request) (prep
 	edit := git.FileEdit{Path: name, Before: before, After: []byte(after), Mode: before.Mode}
 	tree, err := p.repo.EditTree(ctx, string(r.Source.Tree), []git.FileEdit{edit})
 	if err != nil {
-		return preparation.Result{}, err
+		return editprep.Result{}, err
 	}
 	result.Files, result.PreparedTree = []git.FileEdit{edit}, model.ObjectID(tree)
 	result.GoToolchain = p.toolchain
@@ -135,7 +135,7 @@ func (p *fakePreparer) Prepare(ctx context.Context, r preparation.Request) (prep
 		result.Prepared = snapshot(next, nextRevision, options[1])
 		result.Prepared.Ports[r.Selection.Selector] = port(r.Selection.Selector, p.dependencies...)
 	}
-	result.Commits = []preparation.CommitIntent{{Subject: r.Selection.Selector + ": update to " + next}}
+	result.Commits = []editprep.CommitIntent{{Subject: r.Selection.Selector + ": update to " + next}}
 	if r.Action == model.EditRevbump {
 		result.Commits[0].Subject = r.Selection.Selector + ": " + r.Subject
 	}
@@ -146,7 +146,7 @@ func (p *fakePreparer) Prepare(ctx context.Context, r preparation.Request) (prep
 		next.Name = "new.tar.gz"
 		result.Downloads = []distfetch.Download{next}
 		if p.upstream[0] != nil {
-			result.Pairs = []preparation.ArchivePair{{Previous: distfetch.Download{Path: writeTarball(p.t, r.KeepArchives, "old", p.upstream[0])}, Next: next}}
+			result.Pairs = []editprep.ArchivePair{{Previous: distfetch.Download{Path: writeTarball(p.t, r.KeepArchives, "old", p.upstream[0])}, Next: next}}
 		}
 	}
 	return result, nil
@@ -373,8 +373,8 @@ func TestAnUpdateComparesTheUpstreamArchives(t *testing.T) {
 // hook runs a command.
 type refusing struct{ *fakePreparer }
 
-func (refusing) Prepare(context.Context, preparation.Request) (preparation.Result, error) {
-	return preparation.Result{}, fmt.Errorf("%w: its pre-fetch hook runs exec", ErrUnsupported)
+func (refusing) Prepare(context.Context, editprep.Request) (editprep.Result, error) {
+	return editprep.Result{}, fmt.Errorf("%w: its pre-fetch hook runs exec", ErrUnsupported)
 }
 
 // A version update asked to start its branch prepares it on master and
@@ -429,7 +429,7 @@ func TestAnUpdateStartsItsBranchOnlyForAnEdit(t *testing.T) {
 // the port is at from the port as it stands, since no fidelity report says
 // it then; "jq is already at ; nothing to change" read nothing.
 func TestAnUpdateThatEditedNothingSaysWhatThePortIsAt(t *testing.T) {
-	update := describe(model.Branch{}, "jq", preparation.Result{Result: portedit.Result{Unchanged: &macports.PortInfo{Name: "jq", Version: "1.8.2", Revision: 1}}})
+	update := describe(model.Branch{}, "jq", editprep.Result{Result: portedit.Result{Unchanged: &macports.PortInfo{Name: "jq", Version: "1.8.2", Revision: 1}}})
 	require.Equal(t, PortVersion{Version: "1.8.2", Revision: 1}, update.Before)
 	require.Equal(t, PortVersion{Version: "1.8.2", Revision: 1}, update.After)
 	require.Equal(t, "1.8.2_1", update.After.String())
@@ -440,16 +440,16 @@ func TestAnUpdateThatEditedNothingSaysWhatThePortIsAt(t *testing.T) {
 // what only one carries names it (the architecture review's finding 2).
 func TestAChangeTheArchivesShareIsSaidOnce(t *testing.T) {
 	dir := t.TempDir()
-	pair := func(name string, before, after map[string]string) preparation.ArchivePair {
+	pair := func(name string, before, after map[string]string) editprep.ArchivePair {
 		next := distfetch.Download{Path: writeTarball(t, dir, name+"-2", after)}
 		next.Name = name + "-2.tar.gz"
-		return preparation.ArchivePair{Previous: distfetch.Download{Path: writeTarball(t, dir, name+"-1", before)}, Next: next}
+		return editprep.ArchivePair{Previous: distfetch.Download{Path: writeTarball(t, dir, name+"-1", before)}, Next: next}
 	}
 	source := pair("source", map[string]string{"LICENSE": "MIT\n"}, map[string]string{"LICENSE": "Apache-2.0\n", "meson.build": "project('x')\n"})
 	binary := pair("binary", map[string]string{"LICENSE": "MIT\n"}, map[string]string{"LICENSE": "Apache-2.0\n"})
-	result := preparation.Result{}
+	result := editprep.Result{}
 	result.Downloads = []distfetch.Download{source.Next, binary.Next}
-	result.Pairs = []preparation.ArchivePair{source, binary}
+	result.Pairs = []editprep.ArchivePair{source, binary}
 	comparison := (&Engine{}).assessUpstream(t.Context(), result, sourcecompare.Versions{}, [2]model.Source{}, true)
 	require.Empty(t, comparison.Problem)
 	require.Equal(t, []model.UpstreamChange{
@@ -471,12 +471,12 @@ func TestTheComparisonReadsWhereThePortBuilds(t *testing.T) {
 	previous := distfetch.Download{Path: writeTarball(t, dir, "demo-1", map[string]string{
 		"LICENSE": "MIT\n", "python/pyproject.toml": "[project]\ndependencies = [\"requests>=2\"]\n",
 	})}
-	result := preparation.Result{}
+	result := editprep.Result{}
 	result.Target = model.Target{Name: "py-demo"}
 	result.Unchanged = &macports.PortInfo{Name: "py-demo", Options: map[string]string{"worksrcdir": "demo-1/python"}}
 	result.Prepared = macports.Snapshot{Ports: map[string]macports.PortInfo{"py-demo": {Name: "py-demo", Options: map[string]string{"worksrcdir": "demo-2/python"}}}}
 	result.Downloads = []distfetch.Download{next}
-	result.Pairs = []preparation.ArchivePair{{Previous: previous, Next: next}}
+	result.Pairs = []editprep.ArchivePair{{Previous: previous, Next: next}}
 	comparison := (&Engine{}).assessUpstream(t.Context(), result, sourcecompare.Versions{}, [2]model.Source{}, true)
 	require.Empty(t, comparison.Problem)
 	require.Equal(t, []model.UpstreamChange{
@@ -571,10 +571,10 @@ func TestAPinIsJudgedAgainstTheBasesTree(t *testing.T) {
 		dir := t.TempDir()
 		old := distfetch.Download{Name: "old.tar.gz", Path: writeTarball(t, dir, "pkg-1", map[string]string{"requirements.txt": "rich>=13\n"})}
 		next := distfetch.Download{Name: "new.tar.gz", Path: writeTarball(t, dir, "pkg-2", map[string]string{"requirements.txt": "rich>=14\n"})}
-		result := preparation.Result{}
+		result := editprep.Result{}
 		result.Target = model.Target{Name: "demo"}
 		result.Downloads = []distfetch.Download{next}
-		result.Pairs = []preparation.ArchivePair{{Previous: old, Next: next}}
+		result.Pairs = []editprep.ArchivePair{{Previous: old, Next: next}}
 		demo := macports.PortInfo{Name: "demo", Options: map[string]string{"dockhand.portgroups": "python"}, Dependencies: []macports.Dependency{{Port: "py313-rich"}}}
 		result.Unchanged = &demo
 		result.Prepared = macports.Snapshot{Ports: map[string]macports.PortInfo{"demo": demo}}
@@ -609,14 +609,14 @@ func TestAChangeTheBuildDoesntReadHoldsNothing(t *testing.T) {
 		"CMakeLists.txt": "project(FlatBuffers VERSION 25.9.23)\nadd_library(flatbuffers src/a.cpp)\n",
 		"package.json":   `{"devDependencies": {"eslint": "8.0.0"}}`,
 	})}
-	result := preparation.Result{}
+	result := editprep.Result{}
 	result.Target = model.Target{Name: "flatbuffers"}
 	result.Prepared = macports.Snapshot{Ports: map[string]macports.PortInfo{"flatbuffers": {Name: "flatbuffers", Options: map[string]string{"dockhand.portgroups": "github cmake", "use_configure": "yes", "configure.cmd": "/opt/local/bin/cmake"}}}}
 	// A second archive with the same package.json counts nothing twice.
 	other := next
 	other.Name = "flatbuffers-25.12.19.zip"
 	result.Downloads = []distfetch.Download{next, other}
-	result.Pairs = []preparation.ArchivePair{{Previous: previous, Next: next}, {Previous: previous, Next: other}}
+	result.Pairs = []editprep.ArchivePair{{Previous: previous, Next: next}, {Previous: previous, Next: other}}
 	comparison := (&Engine{}).assessUpstream(t.Context(), result, sourcecompare.Versions{Old: "25.9.23", New: "25.12.19"}, [2]model.Source{}, true)
 	require.Equal(t, []model.UpstreamChange{
 		{Kind: "build", Path: "CMakeLists.txt", Message: "upstream's CMakeLists.txt changed, though no option or find_package did; lines change outside any if(); the build may need the Portfile to follow", Hold: true, Rule: assess.BuildFileChanged, Class: model.Introduced},
@@ -646,11 +646,11 @@ func TestAnOptionThePortfileNamesHolds(t *testing.T) {
 		run(t, f.clone, "add", "sysutils/fluent-bit/Portfile")
 		run(t, f.clone, "commit", "-q", "-m", "fluent-bit")
 		tree := strings.TrimSpace(run(t, f.clone, "rev-parse", "HEAD^{tree}"))
-		result := preparation.Result{}
+		result := editprep.Result{}
 		result.Target = model.Target{Name: "fluent-bit", Portfile: "sysutils/fluent-bit/Portfile"}
 		result.Prepared = macports.Snapshot{Ports: map[string]macports.PortInfo{"fluent-bit": {Name: "fluent-bit", Options: map[string]string{"dockhand.portgroups": "github cmake", "use_configure": "yes", "configure.cmd": "/opt/local/bin/cmake"}}}}
 		result.Downloads = []distfetch.Download{next}
-		result.Pairs = []preparation.ArchivePair{{Previous: previous, Next: next}}
+		result.Pairs = []editprep.ArchivePair{{Previous: previous, Next: next}}
 		comparison := e.assessUpstream(t.Context(), result, sourcecompare.Versions{Old: "5.1.2", New: "5.1.3"}, [2]model.Source{{}, {Tree: model.ObjectID(tree)}}, true)
 		return comparison.Held()
 	}
@@ -702,10 +702,10 @@ func TestAPinForAnotherPlatformHoldsNothing(t *testing.T) {
 		dir := t.TempDir()
 		old := distfetch.Download{Name: "old.tar.gz", Path: writeTarball(t, dir, "pkg-1", map[string]string{"requirements.txt": "requests==1; " + marker + "\n"})}
 		next := distfetch.Download{Name: "new.tar.gz", Path: writeTarball(t, dir, "pkg-2", map[string]string{"requirements.txt": "requests==999; " + marker + "\n"})}
-		result := preparation.Result{}
+		result := editprep.Result{}
 		result.Target = model.Target{Name: "demo"}
 		result.Downloads = []distfetch.Download{next}
-		result.Pairs = []preparation.ArchivePair{{Previous: old, Next: next}}
+		result.Pairs = []editprep.ArchivePair{{Previous: old, Next: next}}
 		result.Prepared = macports.Snapshot{Ports: map[string]macports.PortInfo{"demo": {Name: "demo", Options: map[string]string{"dockhand.portgroups": "python"},
 			Dependencies: []macports.Dependency{{Port: "py313-requests"}}}}}
 		e := Engine{PortReader: fakePorts{directories: map[string][]macports.PortInfo{"python/py-requests": {{Name: "py313-requests", Version: "1"}}}}}
@@ -749,11 +749,11 @@ func TestAStealthRefreshGetsTheBasesPort(t *testing.T) {
 // An update to a new major version says so: semgrep's 0.14.0 to 1.179.0
 // read as a plain bump (field testing, 2026-10-02).
 func TestAnUpdateSaysANewMajorVersion(t *testing.T) {
-	result := func(from, to string) preparation.Result {
+	result := func(from, to string) editprep.Result {
 		port := func(version string) macports.Snapshot {
 			return macports.Snapshot{Ports: map[string]macports.PortInfo{"semgrep": {Name: "semgrep", Version: version}}}
 		}
-		return preparation.Result{Target: model.Target{Name: "semgrep"}, Fidelity: []portedit.Fidelity{{Before: port(from), After: port(to)}}}
+		return editprep.Result{Target: model.Target{Name: "semgrep"}, Fidelity: []portedit.Fidelity{{Before: port(from), After: port(to)}}}
 	}
 	require.True(t, describe(model.Branch{}, "semgrep", result("0.14.0", "1.179.0")).CrossesMajor)
 	require.False(t, describe(model.Branch{}, "semgrep", result("1.178.0", "1.179.0")).CrossesMajor)
