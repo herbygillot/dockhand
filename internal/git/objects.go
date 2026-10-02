@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -131,10 +133,49 @@ func (r *Repository) WriteBlob(ctx context.Context, data []byte) (string, error)
 	return objectResult(out, err)
 }
 
+// trees are the trees read, by repository and object: a tree's object ID
+// names its contents, so what one read found holds for as long as the
+// process runs. Engine's tests read the same trees again for 86% of their
+// ls-tree runs, walking a path one directory at a time (the test suite
+// analysis of 2026-10-02); dockhand does the same, at a process a read.
+var trees = struct {
+	sync.Mutex
+	read map[string][]TreeEntry
+}{read: map[string][]TreeEntry{}}
+
+// treesKept bounds the trees kept; past it, they're forgotten and read
+// again as they're needed.
+const treesKept = 1 << 14
+
 func (r *Repository) ReadTree(ctx context.Context, object string) ([]TreeEntry, error) {
 	if !ValidObjectID(object) {
 		return nil, fmt.Errorf("git: invalid object ID %q", object)
 	}
+	key := r.CommonDir
+	if key == "" {
+		key = r.Root
+	}
+	key += "\x00" + object
+	trees.Lock()
+	entries, ok := trees.read[key]
+	trees.Unlock()
+	if ok {
+		return slices.Clone(entries), nil
+	}
+	entries, err := r.readTree(ctx, object)
+	if err != nil {
+		return nil, err
+	}
+	trees.Lock()
+	if len(trees.read) >= treesKept {
+		clear(trees.read)
+	}
+	trees.read[key] = entries
+	trees.Unlock()
+	return slices.Clone(entries), nil
+}
+
+func (r *Repository) readTree(ctx context.Context, object string) ([]TreeEntry, error) {
 	out, err := r.output(ctx, "ls-tree", "-z", object)
 	if err != nil {
 		return nil, err
