@@ -21,6 +21,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 const (
@@ -79,7 +80,7 @@ func (r rechecksummer) Prepare(ctx context.Context, request editprep.Request) (e
 func TestAStealthUpdateSaysSoAndKeepsBothArchives(t *testing.T) {
 	w := newWorld(t)
 	require.NoError(t, os.WriteFile(filepath.Join(w.upstream, "textproc/jq/Portfile"), []byte("name                jq\nversion             1.7.1\nchecksums           sha256 "+oldSHA+" size 7114391\n"), 0o644))
-	gitRun(t, w.upstream, "commit", "-q", "-am", "jq: 1.7.1")
+	testsupport.Git(t, w.upstream, "commit", "-q", "-am", "jq: 1.7.1")
 	testPreparer = func(e *engine.Engine) engine.Preparer { return rechecksummer{repo: e.Repo} }
 	t.Cleanup(func() { testPreparer = nil })
 
@@ -154,7 +155,7 @@ func TestUpdateSubmitTidiesChecksAndSubmits(t *testing.T) {
 	require.Regexp(t, `jq: 1.7.1 → 1.8.1 .*\n(.*\n)*\njq-[a-z0-9]{4} · tidying edits not yet committed\n\nProposed commit\n`, out)
 	require.Contains(t, out, "checking commit ")
 	require.Contains(t, out, "Opened #34901")
-	require.Len(t, g.prs, 1)
+	require.Len(t, g.PRs, 1)
 }
 
 // update --submit passes on what submit --check takes, and settles where
@@ -174,7 +175,7 @@ func TestUpdateSubmitPassesOnWhereAndWhatWasTested(t *testing.T) {
 
 	_, _, err = dockhand(t, "update", "jq", "--new", "--submit", "--on", "nowhere")
 	require.EqualError(t, err, `--on nowhere: no provider "nowhere" is set up; nothing was changed`)
-	require.Empty(t, gitRun(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
+	require.Empty(t, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
 
 	terminal := func(args ...string) (string, string) {
 		var out, errs bytes.Buffer
@@ -190,15 +191,15 @@ func TestUpdateSubmitPassesOnWhereAndWhatWasTested(t *testing.T) {
 	require.NotContains(t, prompts, "Apply [a]")
 	require.NotContains(t, prompts, "Did you test", "the flag answered the template's questions")
 	require.Contains(t, out, "Opened #34901")
-	require.Len(t, g.prs, 1)
-	require.Contains(t, g.prs[0].Body, "- [x] tested basic functionality of all binary files?")
-	require.Contains(t, g.prs[0].Body, "- [ ] checked that the Portfile's most important [variants]")
+	require.Len(t, g.PRs, 1)
+	require.Contains(t, g.PRs[34901].Body, "- [x] tested basic functionality of all binary files?")
+	require.Contains(t, g.PRs[34901].Body, "- [ ] checked that the Portfile's most important [variants]")
 }
 
 func TestAStealthUpdateWithoutARevbumpNumbersTheDirectory(t *testing.T) {
 	w := newWorld(t)
 	require.NoError(t, os.WriteFile(filepath.Join(w.upstream, "textproc/jq/Portfile"), []byte("name                jq\nversion             1.7.1\nchecksums           sha256 "+oldSHA+" size 7114391\n"), 0o644))
-	gitRun(t, w.upstream, "commit", "-q", "-am", "jq: 1.7.1")
+	testsupport.Git(t, w.upstream, "commit", "-q", "-am", "jq: 1.7.1")
 	testPreparer = func(e *engine.Engine) engine.Preparer { return rechecksummer{repo: e.Repo} }
 	t.Cleanup(func() { testPreparer = nil })
 
@@ -218,7 +219,7 @@ func TestAStealthUpdateWithoutARevbumpNumbersTheDirectory(t *testing.T) {
 func TestANewVersionRemovesTheStealthDistSubdir(t *testing.T) {
 	w := newWorld(t)
 	require.NoError(t, os.WriteFile(filepath.Join(w.upstream, "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\ndist_subdir         ${name}/${version}_${revision}\nrevision 1\n"), 0o644))
-	gitRun(t, w.upstream, "commit", "-q", "-am", "jq: 1.7.1")
+	testsupport.Git(t, w.upstream, "commit", "-q", "-am", "jq: 1.7.1")
 	withBumper(t)
 
 	planned, _, err := dockhand(t, "update", "jq", "--new", "--plan")

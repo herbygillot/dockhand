@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 func TestEditRevbumpRetryRebaseAndArchive(t *testing.T) {
@@ -48,16 +50,16 @@ func TestEditRevbumpRetryRebaseAndArchive(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "notes already starts from master ")
 	require.NoError(t, os.WriteFile(filepath.Join(w.upstream, "README"), []byte("new\n"), 0o644))
-	gitRun(t, w.upstream, "add", "README")
-	gitRun(t, w.upstream, "commit", "-q", "-m", "README")
+	testsupport.Git(t, w.upstream, "add", "README")
+	testsupport.Git(t, w.upstream, "commit", "-q", "-m", "README")
 	out, _, err = dockhand(t, "rebase")
 	require.NoError(t, err)
 	require.Regexp(t, `Rebased notes \(1 commit\) from master [0-9a-f]{7} onto [0-9a-f]{7}\.\nCheckpoint rebase-2 keeps the old history \(dockhand restore rebase-2\)\.\n`, out)
 	require.Contains(t, out, "Next: dockhand check, since the files it builds on have changed\n")
 	_, _, err = dockhand(t, "check")
 	require.NoError(t, err)
-	oldMaster := gitRun(t, w.upstream, "rev-parse", "--short=7", "HEAD~1")
-	newMaster := gitRun(t, w.upstream, "rev-parse", "--short=7", "HEAD")
+	oldMaster := testsupport.Git(t, w.upstream, "rev-parse", "--short=7", "HEAD~1")
+	newMaster := testsupport.Git(t, w.upstream, "rev-parse", "--short=7", "HEAD")
 
 	// Restoring a rebase puts back its history, files, and master.
 	out, _, err = dockhand(t, "restore", "rebase-2")

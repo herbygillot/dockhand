@@ -47,7 +47,7 @@ if {${xcodeversion} eq "none"} {
     known_fail yes
 }
 `})
-	run(t, branch.Worktree, "add", "-A")
+	testsupport.Git(t, branch.Worktree, "add", "-A")
 	capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
 	require.NoError(t, err)
 	monterey := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // jqIsOutdated stands in for upstream discovery: jq has 1.8.1, and lost
@@ -226,7 +227,7 @@ func TestAnInterruptedLookPrintsWhatItFound(t *testing.T) {
 		require.Contains(t, out.String(), "  jq     1.7.1   1.8.1    update\n", args)
 	}
 	testOutdatedReader = nil
-	require.Empty(t, gitRun(t, w.clone, "branch", "--list", "dockhand/*"), "update --outdated started nothing")
+	require.Empty(t, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "update --outdated started nothing")
 }
 
 // A line printed while the count shows clears it, and draws it again after.

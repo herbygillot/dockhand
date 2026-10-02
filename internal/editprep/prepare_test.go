@@ -3,7 +3,6 @@ package editprep_test
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -21,7 +20,7 @@ func preparationFixture(t *testing.T, body string) (*editprep.Service, editprep.
 	t.Helper()
 	executable := testsupport.MacPortsTclsh(t)
 	root := t.TempDir()
-	fixtureGit(t, root, "init", "--quiet", "-b", "candidate")
+	testsupport.Git(t, root, "init", "--quiet", "-b", "candidate")
 	for name, data := range map[string]string{
 		"devel/fixture/Portfile":                            "PortSystem 1.0\nPortGroup dockhand-fixture 1.0\nname fixture\nversion [format \"%s.%s\" $fixtureMajor 2]\ncategories devel\n" + body,
 		"_resources/port1.0/group/dockhand-fixture-1.0.tcl": "set fixtureMajor 7\n",
@@ -30,8 +29,8 @@ func preparationFixture(t *testing.T, body string) (*editprep.Service, editprep.
 		require.NoError(t, os.MkdirAll(filepath.Dir(filename), 0700))
 		require.NoError(t, os.WriteFile(filename, []byte(data), 0600))
 	}
-	fixtureGit(t, root, "add", "--", ".")
-	fixtureGit(t, root, "commit", "--quiet", "-m", "fixture")
+	testsupport.Git(t, root, "add", "--", ".")
+	testsupport.Git(t, root, "commit", "--quiet", "-m", "fixture")
 	repo, err := git.Open(t.Context(), root, "")
 	require.NoError(t, err)
 	commit, tree, err := repo.Branch(t.Context(), "candidate")
@@ -41,32 +40,16 @@ func preparationFixture(t *testing.T, body string) (*editprep.Service, editprep.
 	}
 }
 
-func fixtureGit(t *testing.T, root string, args ...string) string {
-	t.Helper()
-	flags := []string{"-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgSign=false", "-c", "core.hooksPath=" + os.DevNull}
-	cmd := exec.CommandContext(t.Context(), "git", append(flags, args...)...)
-	cmd.Dir = root
-	for _, variable := range os.Environ() {
-		if !strings.HasPrefix(variable, "GIT_") {
-			cmd.Env = append(cmd.Env, variable)
-		}
-	}
-	cmd.Env = append(cmd.Env, "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, "%s", out)
-	return string(out)
-}
-
 func TestPrepareRevisionUsesWholeSnapshotAndPreservesCheckout(t *testing.T) {
 	t.Parallel()
 	service, request := preparationFixture(t, "revision 4\nsubport fixture-child {\n revision 9\n}\n")
 	filename := filepath.Join(service.Repo.Root, "devel/fixture/Portfile")
 	require.NoError(t, os.WriteFile(filename, []byte("a staged user edit\n"), 0600))
-	fixtureGit(t, service.Repo.Root, "add", "--", "devel/fixture/Portfile")
+	testsupport.Git(t, service.Repo.Root, "add", "--", "devel/fixture/Portfile")
 	require.NoError(t, os.WriteFile(filename, []byte("a subsequent unstaged edit\n"), 0600))
 	index, err := os.ReadFile(filepath.Join(service.Repo.CommonDir, "index"))
 	require.NoError(t, err)
-	status := fixtureGit(t, service.Repo.Root, "status", "--porcelain=v1")
+	status := testsupport.Git(t, service.Repo.Root, "status", "--porcelain=v1")
 	result, err := service.Prepare(t.Context(), request)
 	require.NoError(t, err)
 	require.NotEmpty(t, result.PreparedTree)
@@ -79,7 +62,7 @@ func TestPrepareRevisionUsesWholeSnapshotAndPreservesCheckout(t *testing.T) {
 	require.Equal(t, result.PreparedTree, result.Fidelity[0].After.Source.Tree)
 	require.Equal(t, "fixture: "+request.Subject, result.Commits[0].Subject)
 	require.Empty(t, result.Fidelity[0].UnexpectedChanges)
-	require.Equal(t, status, fixtureGit(t, service.Repo.Root, "status", "--porcelain=v1"))
+	require.Equal(t, status, testsupport.Git(t, service.Repo.Root, "status", "--porcelain=v1"))
 	afterIndex, err := os.ReadFile(filepath.Join(service.Repo.CommonDir, "index"))
 	require.NoError(t, err)
 	require.Equal(t, index, afterIndex)

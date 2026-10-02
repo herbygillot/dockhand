@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // threeChanges makes a branch with a PortGroup edit not yet committed,
@@ -76,7 +77,7 @@ func TestRegroupCombinesAndReorders(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result.Commits, 2)
 	require.Equal(t, []string{"jq: build against libharbor 3", "libharbor: update to 3"}, log(t, plan.Worktree, plan.Branch.Base))
-	require.Empty(t, run(t, plan.Worktree, "status", "--porcelain"))
+	require.Empty(t, testsupport.Git(t, plan.Worktree, "status", "--porcelain"))
 }
 
 func TestASavedPlanAppliesUntilTheBranchMoves(t *testing.T) {
@@ -142,12 +143,12 @@ func TestASavedPlanAppliesUntilTheBranchMoves(t *testing.T) {
 	// Staging something the plan never saw makes it stale too, since
 	// applying would reset the index.
 	write(t, plan.Worktree, map[string]string{"textproc/jq/Portfile": "staged after the plan\n"})
-	run(t, plan.Worktree, "add", "textproc/jq/Portfile")
+	testsupport.Git(t, plan.Worktree, "add", "textproc/jq/Portfile")
 	write(t, plan.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\n# harbor 3\n"})
 	_, err = e.LoadTidyPlan(t.Context(), edited)
 	require.ErrorIs(t, err, ErrStalePlan)
 	require.ErrorContains(t, err, "something was staged since it was made")
-	run(t, plan.Worktree, "read-tree", plan.Index)
+	testsupport.Git(t, plan.Worktree, "read-tree", plan.Index)
 
 	loaded, err = e.LoadTidyPlan(t.Context(), edited)
 	require.NoError(t, err)

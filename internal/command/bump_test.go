@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // bumpOn runs bump where a person could answer, to show it asks nothing.
@@ -28,7 +29,7 @@ func TestBumpGoesFromUpdateToPullRequestAskingNothing(t *testing.T) {
 	withBumper(t)
 	withScript(t, w, "passed")
 	g := withGitHub(t, w)
-	g.others = nil
+	g.Others = nil
 
 	out, errs, err := bumpOn(t, "jq")
 	require.NoError(t, err, errs)
@@ -37,19 +38,19 @@ func TestBumpGoesFromUpdateToPullRequestAskingNothing(t *testing.T) {
 	require.Contains(t, out, "jq: 1.7.1 → 1.8.1")
 	require.Contains(t, out, "checking commit ")
 	require.Contains(t, out, "Opened #34901")
-	require.Len(t, g.prs, 1)
-	require.Contains(t, g.prs[0].Body, "- [ ] tested basic functionality of all binary files?", "only a person can say that")
+	require.Len(t, g.PRs, 1)
+	require.Contains(t, g.PRs[34901].Body, "- [ ] tested basic functionality of all binary files?", "only a person can say that")
 
 	_, _, err = bumpOn(t, "jq")
 	require.Regexp(t, `^jq is already changed in jq-[a-z0-9]{4}, so nothing was changed; dockhand status jq-[a-z0-9]{4} says what it needs$`, err.Error())
-	require.Len(t, g.prs, 1)
+	require.Len(t, g.PRs, 1)
 }
 
 // What would stop bump before the edit stops it with nothing changed.
 func TestBumpChangesNothingWhenItHasNothingToDo(t *testing.T) {
 	w := newWorld(t)
 	require.NoError(t, os.WriteFile(filepath.Join(w.upstream, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n"), 0o644))
-	gitRun(t, w.upstream, "commit", "-q", "-am", "jq: 1.8.1")
+	testsupport.Git(t, w.upstream, "commit", "-q", "-am", "jq: 1.8.1")
 	withBumper(t)
 	withScript(t, w, "passed")
 	withGitHub(t, w)
@@ -68,7 +69,7 @@ func TestBumpChangesNothingWhenItHasNothingToDo(t *testing.T) {
 	_, _, err = bumpOn(t, "jq", "--submit")
 	require.ErrorContains(t, err, "unknown flag: --submit", "bump is update --new --submit --yes already")
 
-	require.Empty(t, gitRun(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
+	require.Empty(t, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
 }
 
 // update --submit and bump report one result: the update's, with each step
@@ -80,7 +81,7 @@ func TestUpdateSubmitAndBumpReportTheSameJSON(t *testing.T) {
 	withBumper(t)
 	withScript(t, w, "passed")
 	g := withGitHub(t, w)
-	g.others = nil
+	g.Others = nil
 
 	for _, command := range [][]string{{"update", "jq", "--new", "--submit"}, {"bump", "jq"}} {
 		t.Setenv("MACPORTS_TREE", w.clone)
@@ -101,8 +102,8 @@ func TestUpdateSubmitAndBumpReportTheSameJSON(t *testing.T) {
 	}
 
 	// #34777 opens while jq is checked, after bump looked before its edit.
-	g.others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}
-	g.quiet = g.searches + 1
+	g.Others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}
+	g.Quiet = g.Searches + 1
 	held, err := jsonOf(t, "bump", "jq")
 	require.Equal(t, 3, ExitCode(err))
 	require.Equal(t, "1.8.1", dig(t, held.Result, "after", "version"))
@@ -126,24 +127,24 @@ func TestBumpHoldsWhatServeWould(t *testing.T) {
 	_, _, err := bumpOn(t, "jq", "--tested-binaries")
 	require.Equal(t, 3, ExitCode(err), "it needs your attention")
 	require.EqualError(t, err, "jq waits for your look, so nothing was changed: #34777 is open for the same port: jq: update to 1.8.0\nOnce it's fine: dockhand update jq --new --submit")
-	require.Equal(t, 1, g.searches, "looked for once, before the edit")
-	g.searchErr = errors.New("rate limited")
-	g.others = nil
+	require.Equal(t, 1, g.Searches, "looked for once, before the edit")
+	g.SearchErr = errors.New("rate limited")
+	g.Others = nil
 	_, _, err = bumpOn(t, "jq", "1.8.1")
 	require.Equal(t, 3, ExitCode(err))
 	require.EqualError(t, err, "jq waits for your look, so nothing was changed: couldn't look for other open pull requests: rate limited\nOnce it's fine: dockhand update jq 1.8.1 --new --submit")
 	held, err := jsonOf(t, "bump", "jq")
 	require.Equal(t, 3, ExitCode(err))
 	require.Nil(t, held.Result, "a refusal before anything is done reports only its error")
-	require.Empty(t, gitRun(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started, so nothing was downloaded or built")
+	require.Empty(t, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started, so nothing was downloaded or built")
 
 	// #34777 opens while jq is checked.
-	g.searchErr, g.others = nil, []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}
-	g.quiet = g.searches + 1
+	g.SearchErr, g.Others = nil, []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}
+	g.Quiet = g.Searches + 1
 	_, _, err = bumpOn(t, "jq", "--tested-binaries")
 	require.Equal(t, 3, ExitCode(err), "it needs your attention")
 	require.Regexp(t, `^jq-[a-z0-9]{4} passed its check and waits for your look, so nothing was submitted: #34777 is open for the same port: jq: update to 1\.8\.0\nOnce it's fine: dockhand submit --branch jq-[a-z0-9]{4}$`, err.Error())
-	require.Empty(t, g.prs)
+	require.Empty(t, g.PRs)
 
 	name := regexp.MustCompile(`--branch (jq-[a-z0-9]{4})$`).FindStringSubmatch(err.Error())[1]
 	out, _, err := dockhand(t, "submit", "--branch", name, "--yes", "--tested-binaries")

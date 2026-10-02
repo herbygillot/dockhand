@@ -1,17 +1,18 @@
 package distfiles_test
 
 import (
+	"github.com/stretchr/testify/require"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
-	"github.com/stretchr/testify/require"
-	"os"
-	"path/filepath"
-	"strings"
-	"testing"
 )
 
 func TestBindingSeparatesEqualChecksumsAndPreservesAppendOwnership(t *testing.T) {

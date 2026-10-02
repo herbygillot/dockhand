@@ -3,9 +3,7 @@ package history_test
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -16,18 +14,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/store/sqlite"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 var at = time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
-
-func gitIn(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command("git", append([]string{"-c", "user.name=Test", "-c", "user.email=test@example.org"}, args...)...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, string(out))
-	return strings.TrimSpace(string(out))
-}
 
 // world is a repository with a branch two commits above master, a store
 // that tracks it, and the transitions over both.
@@ -45,13 +35,13 @@ func newWorld(t *testing.T) world {
 	root = filepath.Join(root, "ports")
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "textproc", "jq"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "textproc", "jq", "Portfile"), []byte("name jq\n"), 0o644))
-	gitIn(t, root, "init", "-q", "-b", "master")
-	gitIn(t, root, "add", "-A")
-	gitIn(t, root, "commit", "-q", "-m", "init")
-	base := gitIn(t, root, "rev-parse", "HEAD")
-	gitIn(t, root, "switch", "-q", "-c", "dockhand/jq")
-	gitIn(t, root, "commit", "-q", "--allow-empty", "-m", "jq: one")
-	head := gitIn(t, root, "rev-parse", "HEAD")
+	testsupport.Git(t, root, "init", "-q", "-b", "master")
+	testsupport.Git(t, root, "add", "-A")
+	testsupport.Git(t, root, "commit", "-q", "-m", "init")
+	base := testsupport.Git(t, root, "rev-parse", "HEAD")
+	testsupport.Git(t, root, "switch", "-q", "-c", "dockhand/jq")
+	testsupport.Git(t, root, "commit", "-q", "--allow-empty", "-m", "jq: one")
+	head := testsupport.Git(t, root, "rev-parse", "HEAD")
 	repo, err := git.Open(t.Context(), root, "")
 	require.NoError(t, err)
 	s, err := sqlite.Open(t.Context(), filepath.Join(filepath.Dir(root), "dockhand.db"), sqlite.Options{})
@@ -71,7 +61,7 @@ func newWorld(t *testing.T) world {
 // moving the branch would have.
 func (w world) prepared(t *testing.T) model.Checkpoint {
 	t.Helper()
-	after := gitIn(t, w.root, "commit-tree", w.base+"^{tree}", "-p", w.base, "-m", "jq: tidied")
+	after := testsupport.Git(t, w.root, "commit-tree", w.base+"^{tree}", "-p", w.base, "-m", "jq: tidied")
 	checkpoint := model.Checkpoint{Kind: model.CheckpointTidy, Branch: w.branch.ID, Before: model.ObjectID(w.head), After: model.ObjectID(after),
 		BaseBefore: w.branch.Base, BaseAfter: w.branch.Base, At: at}
 	require.NoError(t, w.transitions.Prepare(t.Context(), &checkpoint))
@@ -96,9 +86,9 @@ func (w world) state(t *testing.T, number int) model.CheckpointState {
 func TestAChangeWithCommitsOnTopIsMade(t *testing.T) {
 	w := newWorld(t)
 	checkpoint := w.prepared(t)
-	gitIn(t, w.root, "update-ref", "refs/heads/dockhand/jq", string(checkpoint.After), w.head)
-	gitIn(t, w.root, "reset", "-q", "--hard")
-	gitIn(t, w.root, "commit", "-q", "--allow-empty", "-m", "jq: more, by hand")
+	testsupport.Git(t, w.root, "update-ref", "refs/heads/dockhand/jq", string(checkpoint.After), w.head)
+	testsupport.Git(t, w.root, "reset", "-q", "--hard")
+	testsupport.Git(t, w.root, "commit", "-q", "--allow-empty", "-m", "jq: more, by hand")
 	w.settled(t)
 	require.Equal(t, model.CheckpointApplied, w.state(t, checkpoint.Number))
 }
@@ -109,9 +99,9 @@ func TestAChangeWithCommitsOnTopIsMade(t *testing.T) {
 func TestAChangeTheBranchNeverHeldIsAbandoned(t *testing.T) {
 	w := newWorld(t)
 	checkpoint := w.prepared(t)
-	gitIn(t, w.root, "update-ref", checkpoint.Ref(), w.head)
-	gitIn(t, w.root, "reset", "-q", "--hard", w.base)
+	testsupport.Git(t, w.root, "update-ref", checkpoint.Ref(), w.head)
+	testsupport.Git(t, w.root, "reset", "-q", "--hard", w.base)
 	w.settled(t)
 	require.Equal(t, model.CheckpointAbandoned, w.state(t, checkpoint.Number))
-	require.Empty(t, gitIn(t, w.root, "for-each-ref", checkpoint.Ref()), "its ref is gone")
+	require.Empty(t, testsupport.Git(t, w.root, "for-each-ref", checkpoint.Ref()), "its ref is gone")
 }

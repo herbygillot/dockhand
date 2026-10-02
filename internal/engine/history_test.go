@@ -11,6 +11,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // errStopped is a history change stopped at a step, as if its process
@@ -64,7 +65,7 @@ func TestAHistoryChangeStoppedBeforeItsGitChangeIsAbandoned(t *testing.T) {
 	e.stopAt = stopAt("prepared")
 	_, err := e.ApplyTidy(t.Context(), plan)
 	require.ErrorIs(t, err, errStopped)
-	require.Equal(t, string(branch.Base), run(t, branch.Worktree, "rev-parse", "HEAD"), "nothing moved")
+	require.Equal(t, string(branch.Base), testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"), "nothing moved")
 	require.Equal(t, model.CheckpointPrepared, checkpointNumbered(t, e, 1).State)
 
 	restarted, _ := f.withPreparer(t)
@@ -76,8 +77,8 @@ func TestAHistoryChangeStoppedBeforeItsGitChangeIsAbandoned(t *testing.T) {
 	require.ErrorContains(t, err, "tidy-1 was never made: dockhand stopped before its change, so there is nothing to restore")
 
 	write(t, f.upstream, map[string]string{"devel/other/Portfile": "name other\n"})
-	run(t, f.upstream, "add", "devel/other/Portfile")
-	run(t, f.upstream, "commit", "-q", "-m", "other: new port")
+	testsupport.Git(t, f.upstream, "add", "devel/other/Portfile")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "other: new port")
 	restarted.stopAt = stopAt("prepared")
 	_, err = restarted.Rebase(t.Context(), branch)
 	require.ErrorIs(t, err, errStopped)
@@ -86,7 +87,7 @@ func TestAHistoryChangeStoppedBeforeItsGitChangeIsAbandoned(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "rebase-4", rebased.Checkpoint.Name())
 	require.Equal(t, model.CheckpointAbandoned, checkpointNumbered(t, again, 3).State)
-	require.Empty(t, run(t, branch.Worktree, "for-each-ref", "refs/dockhand/checkpoints/rebase-3"), "its ref is gone")
+	require.Empty(t, testsupport.Git(t, branch.Worktree, "for-each-ref", "refs/dockhand/checkpoints/rebase-3"), "its ref is gone")
 }
 
 // A tidy or rebase that stopped after its Git change and before recording
@@ -101,14 +102,14 @@ func TestAHistoryChangeStoppedAfterItsGitChangeIsFinished(t *testing.T) {
 	e.stopAt = stopAt("moved")
 	result, err := e.ApplyTidy(t.Context(), plan)
 	require.ErrorIs(t, err, errStopped)
-	require.Equal(t, string(result.Checkpoint.After), run(t, branch.Worktree, "rev-parse", "HEAD"), "the branch moved")
+	require.Equal(t, string(result.Checkpoint.After), testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"), "the branch moved")
 	require.Equal(t, model.CheckpointPrepared, checkpointNumbered(t, e, 1).State, "and the record wasn't finished")
 
 	restarted, _ := f.withPreparer(t)
 	_, _, err = restarted.Restore(t.Context(), "tidy-1")
 	require.NoError(t, err, "the tidy is recorded first, its index reset, so it can be restored")
 	require.Equal(t, model.CheckpointApplied, checkpointNumbered(t, restarted, 1).State)
-	require.Equal(t, string(branch.Base), run(t, branch.Worktree, "rev-parse", "HEAD"))
+	require.Equal(t, string(branch.Base), testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"))
 
 	tidied, err := restarted.PlanTidy(t.Context(), TidyRequest{Branch: branch})
 	require.NoError(t, err)
@@ -116,8 +117,8 @@ func TestAHistoryChangeStoppedAfterItsGitChangeIsFinished(t *testing.T) {
 	require.NoError(t, err)
 	oldMaster := baseOf(t, restarted, branch)
 	write(t, f.upstream, map[string]string{"devel/other/Portfile": "name other\n"})
-	run(t, f.upstream, "add", "devel/other/Portfile")
-	run(t, f.upstream, "commit", "-q", "-m", "other: new port")
+	testsupport.Git(t, f.upstream, "add", "devel/other/Portfile")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "other: new port")
 	restarted.stopAt = stopAt("moved")
 	rebased, err := restarted.Rebase(t.Context(), branch)
 	require.ErrorIs(t, err, errStopped)
@@ -140,15 +141,15 @@ func TestARestoreStoppedAfterItsGitChangeIsFinished(t *testing.T) {
 	branch := committedUpdate(t, e)
 	oldMaster := baseOf(t, e, branch)
 	write(t, f.upstream, map[string]string{"devel/other/Portfile": "name other\n"})
-	run(t, f.upstream, "add", "devel/other/Portfile")
-	run(t, f.upstream, "commit", "-q", "-m", "other: new port")
+	testsupport.Git(t, f.upstream, "add", "devel/other/Portfile")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "other: new port")
 	rebased, err := e.Rebase(t.Context(), branch)
 	require.NoError(t, err)
 
 	e.stopAt = stopAt("moved")
 	_, _, err = e.Restore(t.Context(), rebased.Checkpoint.Name())
 	require.ErrorIs(t, err, errStopped)
-	require.Equal(t, string(rebased.Checkpoint.Before), run(t, branch.Worktree, "rev-parse", "HEAD"))
+	require.Equal(t, string(rebased.Checkpoint.Before), testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"))
 	require.Equal(t, f.upstreamMaster(t), baseOf(t, e, branch), "the base wasn't put back")
 
 	restarted, _ := f.withPreparer(t)
@@ -239,7 +240,7 @@ func TestAnUncertainCommitIsReadBack(t *testing.T) {
 		}},
 		{"the checkpoint didn't land", prepared, false, func(t *testing.T, e *Engine, branch model.Branch, result TidyResult, err error) {
 			require.ErrorContains(t, err, "recording the checkpoint failed, so nothing was changed")
-			require.Equal(t, string(branch.Base), run(t, branch.Worktree, "rev-parse", "HEAD"))
+			require.Equal(t, string(branch.Base), testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"))
 			_, found := e.history().Read(t.Context(), 1)
 			require.False(t, found)
 		}},
@@ -250,7 +251,7 @@ func TestAnUncertainCommitIsReadBack(t *testing.T) {
 		{"its settling didn't land", applied, false, func(t *testing.T, e *Engine, branch model.Branch, result TidyResult, err error) {
 			require.ErrorContains(t, err, "the commits are made, but recording it failed")
 			require.ErrorContains(t, err, "the next dockhand tidy, rebase, or restore of this branch finishes the record")
-			require.Equal(t, string(result.Checkpoint.After), run(t, branch.Worktree, "rev-parse", "HEAD"), "never undone")
+			require.Equal(t, string(result.Checkpoint.After), testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"), "never undone")
 			require.Equal(t, model.CheckpointPrepared, checkpointNumbered(t, e, 1).State)
 			_, _, err = e.Restore(t.Context(), "tidy-1")
 			require.NoError(t, err, "the next history change records it, and it can be restored")
@@ -286,7 +287,7 @@ func TestAHistoryChangeWaitsForTheBranchsLock(t *testing.T) {
 	defer cancel()
 	_, err := e.ApplyTidy(waiting, plan)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
-	require.Equal(t, string(branch.Base), run(t, branch.Worktree, "rev-parse", "HEAD"))
+	require.Equal(t, string(branch.Base), testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"))
 	_, found := e.history().Read(t.Context(), 1)
 	require.False(t, found)
 	close(release)

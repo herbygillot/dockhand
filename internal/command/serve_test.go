@@ -167,7 +167,7 @@ func TestServeCleansUpAfterAMergeOnceADay(t *testing.T) {
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
-	g.prs[0].State = forge.PullRequestMerged
+	g.PRs[34901].State = forge.PullRequestMerged
 	t.Setenv("MACPORTS_TREE", w.clone)
 	_, _, err = dockhand(t, "status", "--refresh")
 	require.NoError(t, err)

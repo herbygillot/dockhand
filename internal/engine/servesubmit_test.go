@@ -17,6 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // servePrepared has serve prepare and check jq's update, and returns the
@@ -55,8 +56,8 @@ func TestServeSubmitsOnlyWhatPassedWithNothingToLookAt(t *testing.T) {
 	submitted, err := e.SubmitForServe(t.Context(), candidates[0])
 	require.NoError(t, err)
 	require.True(t, submitted.Created)
-	require.Contains(t, fake.created[0].Desired.Body, ServeNote, "the pull request says no person reviewed it")
-	require.Contains(t, fake.created[0].Desired.Body, "- [ ] tested basic functionality of all binary files?", "serve states nothing only a person can")
+	require.Contains(t, fake.Created[0].Desired.Body, ServeNote, "the pull request says no person reviewed it")
+	require.Contains(t, fake.Created[0].Desired.Body, "- [ ] tested basic functionality of all binary files?", "serve states nothing only a person can")
 
 	again, err := e.ServeCandidates(t.Context())
 	require.NoError(t, err)
@@ -101,7 +102,7 @@ func TestServeHoldsAnUpdateWhoseArchivesCouldNotBeCompared(t *testing.T) {
 	f := setup(t)
 	e, p := f.withPreparer(t)
 	fake := f.withFork(t, e)
-	fake.others = nil
+	fake.Others = nil
 	p.upstream = [2]map[string]string{nil, {"LICENSE": "MIT\n"}}
 	branch := servePrepared(t, e)
 
@@ -116,7 +117,7 @@ func TestServeHoldsAnUpdateWhoseArchivesCouldNotBeCompared(t *testing.T) {
 		Problem: "new.tar.gz replaces no archive dockhand could find, so it wasn't compared"}}}, candidates[0].Plan.Upstream)
 	_, err = e.SubmitForServe(t.Context(), candidates[0])
 	require.ErrorContains(t, err, "is held for a look: the upstream archives couldn't be compared")
-	require.Empty(t, fake.created)
+	require.Empty(t, fake.Created)
 }
 
 // A Go release upstream's go.mod requires that the Portfile's minimum
@@ -126,7 +127,7 @@ func TestServeHoldsAnUpdateWhoseGoToolchainNeedsALook(t *testing.T) {
 	f := setup(t)
 	e, p := f.withPreparer(t)
 	fake := f.withFork(t, e)
-	fake.others = nil
+	fake.Others = nil
 	p.toolchain = &editprep.GoToolchain{Required: "1.25", Outcome: editprep.GoToolchainUndeclared}
 	p.upstream = [2]map[string]string{{"go.mod": "module m\n\ngo 1.24\n"}, {"go.mod": "module m\n\ngo 1.25\n"}}
 	branch := servePrepared(t, e)
@@ -138,7 +139,7 @@ func TestServeHoldsAnUpdateWhoseGoToolchainNeedsALook(t *testing.T) {
 	candidates, err := e.ServeCandidates(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, held, candidates[0].Held)
-	require.Empty(t, fake.created)
+	require.Empty(t, fake.Created)
 }
 
 // A minimum the update raised, or one that already gates on the series
@@ -158,7 +159,7 @@ func TestServeSaysAGoToolchainMinimumItNeedNotHold(t *testing.T) {
 			f := setup(t)
 			e, p := f.withPreparer(t)
 			fake := f.withFork(t, e)
-			fake.others = nil
+			fake.Others = nil
 			p.toolchain = &test.toolchain
 			p.upstream = [2]map[string]string{{"go.mod": "module m\n\ngo 1.25.8\n"}, {"go.mod": "module m\n\ngo 1.26.8\n"}}
 			servePrepared(t, e)
@@ -180,7 +181,7 @@ func TestServeHoldsAnUpdateAnotherPullRequestIsOpenFor(t *testing.T) {
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	fake := f.withFork(t, e)
-	fake.others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.1"}}
+	fake.Others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.1"}}
 	servePrepared(t, e)
 
 	candidates, err := e.ServeCandidates(t.Context())
@@ -188,7 +189,7 @@ func TestServeHoldsAnUpdateAnotherPullRequestIsOpenFor(t *testing.T) {
 	require.Equal(t, []string{"#34777 is open for the same port: jq: update to 1.8.1"}, candidates[0].Held)
 	_, err = e.SubmitForServe(t.Context(), candidates[0])
 	require.ErrorContains(t, err, "is held for a look: #34777 is open")
-	require.Empty(t, fake.created)
+	require.Empty(t, fake.Created)
 
 	held := SubmitPlan{SearchProblem: "rate limited"}.held()
 	require.Equal(t, []string{"couldn't look for other open pull requests: rate limited"}, held)
@@ -205,7 +206,7 @@ func TestAnUnattendedUpdateLooksForOthersBeforeItsEdit(t *testing.T) {
 	f := setup(t)
 	e, p := f.withPreparer(t)
 	fake := f.withFork(t, e)
-	fake.others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}
+	fake.Others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}
 	bump := func(name string) UpdateRequest {
 		return UpdateRequest{Start: &StartRequest{Name: name}, Action: model.EditUpdate, Port: "jq", LookForOthers: true, Unattended: true}
 	}
@@ -215,31 +216,31 @@ func TestAnUnattendedUpdateLooksForOthersBeforeItsEdit(t *testing.T) {
 	require.ErrorAs(t, err, &held)
 	require.Equal(t, &HeldBeforeEdit{Port: "jq", Held: []string{"#34777 is open for the same port: jq: update to 1.8.0"}}, held)
 	require.Empty(t, p.requests, "nothing was prepared")
-	fake.others, fake.searchErr = nil, errors.New("rate limited")
+	fake.Others, fake.SearchErr = nil, errors.New("rate limited")
 	_, err = e.Update(t.Context(), bump("jq-bump"))
 	require.ErrorAs(t, err, &held)
 	require.Equal(t, []string{"couldn't look for other open pull requests: rate limited"}, held.Held)
 	require.Empty(t, p.requests)
-	require.Empty(t, run(t, f.clone, "branch", "--list", "dockhand/*"), "no branch was started")
+	require.Empty(t, testsupport.Git(t, f.clone, "branch", "--list", "dockhand/*"), "no branch was started")
 
-	fake.searchErr, fake.searches = nil, 0
+	fake.SearchErr, fake.Searches = nil, 0
 	current := bump("jq-current")
 	current.Version, current.Release = "1.7.1", &model.Release{ReleaseSelection: model.ReleaseSelection{NoUpdate: true}, Version: "1.7.1"}
 	update, err := e.Update(t.Context(), current)
 	require.NoError(t, err)
 	require.True(t, update.Current)
-	require.Zero(t, fake.searches, "a current port has nothing to hold")
+	require.Zero(t, fake.Searches, "a current port has nothing to hold")
 	update, err = e.Update(t.Context(), bump("jq-bump"))
 	require.NoError(t, err)
 	require.True(t, update.Applied)
-	require.Equal(t, 1, fake.searches, "looked for once, before the edit")
+	require.Equal(t, 1, fake.Searches, "looked for once, before the edit")
 
-	fake.others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}
+	fake.Others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}
 	person := bump("jq-update")
 	person.Unattended = false
 	update, err = e.Update(t.Context(), person)
 	require.NoError(t, err, "a person's update stops for none")
-	require.Equal(t, fake.others, update.Others)
+	require.Equal(t, fake.Others, update.Others)
 }
 
 // submit --passing and serve read one definition of a passing branch:
@@ -335,15 +336,15 @@ func TestServeHoldsAnUpdateWhoseTagMovedBeforeItsCheck(t *testing.T) {
 	forge := t.TempDir()
 	project := filepath.Join(forge, "jqlang", "jq")
 	require.NoError(t, os.MkdirAll(project, 0o755))
-	run(t, project, "init", "-q")
-	run(t, project, "commit", "-q", "--allow-empty", "-m", "1.8.1")
-	run(t, project, "tag", "jq-1.8.1")
-	chosen := run(t, project, "rev-parse", "HEAD")
+	testsupport.Git(t, project, "init", "-q")
+	testsupport.Git(t, project, "commit", "-q", "--allow-empty", "-m", "1.8.1")
+	testsupport.Git(t, project, "tag", "jq-1.8.1")
+	chosen := testsupport.Git(t, project, "rev-parse", "HEAD")
 	var moved string
 	p.during = func() {
-		run(t, project, "commit", "-q", "--allow-empty", "-m", "1.8.1, again")
-		run(t, project, "tag", "-f", "jq-1.8.1")
-		moved = run(t, project, "rev-parse", "HEAD")
+		testsupport.Git(t, project, "commit", "-q", "--allow-empty", "-m", "1.8.1, again")
+		testsupport.Git(t, project, "tag", "-f", "jq-1.8.1")
+		moved = testsupport.Git(t, project, "rev-parse", "HEAD")
 	}
 	jq := port("jq")
 	jq.Options = map[string]string{"fetch.type": "git", "git.url": project, "git.branch": "jq-1.8.1"}
@@ -369,8 +370,8 @@ func TestServeHoldsAnUpdateWhoseTagMovedBeforeItsCheck(t *testing.T) {
 	// Status says it too, from the store and the plan alone. With the
 	// repository gone, it reads nothing of it, and says nothing of where
 	// the tag points now (source-moved), which takes the network.
-	run(t, project, "commit", "-q", "--allow-empty", "-m", "1.8.1, a third time")
-	run(t, project, "tag", "-f", "jq-1.8.1")
+	testsupport.Git(t, project, "commit", "-q", "--allow-empty", "-m", "1.8.1, a third time")
+	testsupport.Git(t, project, "tag", "-f", "jq-1.8.1")
 	require.NoError(t, os.RemoveAll(forge))
 	status, err := e.BranchStatus(t.Context(), candidates[0].Branch)
 	require.NoError(t, err)
@@ -391,19 +392,19 @@ func TestServeHoldsAnUpdateWhoseTagMovedBeforeItsCheck(t *testing.T) {
 // check's result of it stands for the commit it named then.
 func TestASourceLeftOutThatMovedSinceItsCheckIsAConcern(t *testing.T) {
 	project := t.TempDir()
-	run(t, project, "init", "-q")
-	run(t, project, "commit", "-q", "--allow-empty", "-m", "one")
-	run(t, project, "tag", "v2")
-	built := run(t, project, "rev-parse", "HEAD")
+	testsupport.Git(t, project, "init", "-q")
+	testsupport.Git(t, project, "commit", "-q", "--allow-empty", "-m", "one")
+	testsupport.Git(t, project, "tag", "v2")
+	built := testsupport.Git(t, project, "rev-parse", "HEAD")
 	f := setup(t)
 	e := f.open(t)
 	evidence := &Evidence{Run: model.Run{Number: 8}, Plan: model.Plan{Omitted: []model.PlanTarget{{ID: "tool", Target: model.Target{Name: "tool"}}},
 		Builds: []model.EnvironmentPlan{{Git: map[model.TargetID]model.GitSource{"tool": {URL: project, Ref: "v2", Commit: model.ObjectID(built)}}}}}}
 	require.Empty(t, e.movedSources(t.Context(), evidence))
 
-	run(t, project, "commit", "-q", "--allow-empty", "-m", "two")
-	run(t, project, "tag", "-f", "v2")
-	now := run(t, project, "rev-parse", "HEAD")
+	testsupport.Git(t, project, "commit", "-q", "--allow-empty", "-m", "two")
+	testsupport.Git(t, project, "tag", "-f", "v2")
+	now := testsupport.Git(t, project, "rev-parse", "HEAD")
 	moved := e.movedSources(t.Context(), evidence)
 	require.Len(t, moved, 1)
 	require.Equal(t, "tool's git.branch v2 named "+built[:7]+" when check-8 planned it, and names "+now[:7]+" now: the check built another source than this would submit", moved[0].Detail)

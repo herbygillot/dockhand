@@ -10,8 +10,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 func TestPullRequestsAreFollowed(t *testing.T) {
@@ -26,7 +28,7 @@ func TestPullRequestsAreFollowed(t *testing.T) {
 	require.NoError(t, err)
 	number := submitted.PullRequest.Ref.Number
 
-	fake.statuses = map[int]forge.PullRequestStatus{number: {Review: "changes-requested", ChangesRequested: 1,
+	fake.Statuses = map[int]forge.PullRequestStatus{number: {Review: "changes-requested", ChangesRequested: 1,
 		Checks: forge.CheckSummary{Total: 3, Passed: 2, Failed: 1, Failing: []string{"macOS 15"}}}}
 	refreshed, err := e.RefreshPullRequests(t.Context())
 	require.NoError(t, err)
@@ -46,11 +48,11 @@ func TestPullRequestsAreFollowed(t *testing.T) {
 
 	// Someone else pushes to the pull request's branch.
 	other := filepath.Join(t.TempDir(), "other")
-	run(t, t.TempDir(), "clone", "-q", "-b", "dockhand/jq-update", fake.fork, other)
+	testsupport.Git(t, t.TempDir(), "clone", "-q", "-b", "dockhand/jq-update", fake.Fork, other)
 	write(t, other, map[string]string{"README": "theirs\n"})
-	run(t, other, "add", "README")
-	run(t, other, "commit", "-q", "-m", "their change")
-	run(t, other, "push", "-q", "origin", "dockhand/jq-update")
+	testsupport.Git(t, other, "add", "README")
+	testsupport.Git(t, other, "commit", "-q", "-m", "their change")
+	testsupport.Git(t, other, "push", "-q", "origin", "dockhand/jq-update")
 	_, err = e.RefreshPullRequests(t.Context())
 	require.NoError(t, err)
 	statuses, err = e.Status(t.Context())
@@ -58,15 +60,15 @@ func TestPullRequestsAreFollowed(t *testing.T) {
 	require.True(t, statuses[0].SomeoneElsePushed())
 
 	// The forge no longer has it.
-	pr := fake.prs[number]
-	delete(fake.prs, number)
+	pr := fake.PRs[number]
+	delete(fake.PRs, number)
 	refreshed, err = e.RefreshPullRequests(t.Context())
 	require.NoError(t, err)
 	require.EqualError(t, refreshed[0].Err, "#34901 was not found")
-	fake.prs[number] = pr
+	fake.PRs[number] = pr
 
 	// And it is merged.
-	fake.prs[number].State = forge.PullRequestMerged
+	fake.PRs[number].State = forge.PullRequestMerged
 	refreshed, err = e.RefreshPullRequests(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, []string{"#34901 is merged"}, refreshed[0].Changes)
@@ -80,7 +82,7 @@ func TestPullRequestsAreFollowed(t *testing.T) {
 }
 
 // endedLogin is GitHub through a login that can't renew itself.
-type endedLogin struct{ *fakeForge }
+type endedLogin struct{ *forgetest.GitHub }
 
 func (endedLogin) Observe(context.Context, forge.PullRequestRef) (forge.PullRequestObservation, error) {
 	return forge.PullRequestObservation{}, fmt.Errorf("Get \"https://api.github.com/repos/macports/macports-ports/pulls/34901\": %w", github.ErrLoginEnded)

@@ -11,6 +11,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // Dependents reads the fake's dependencies backwards, as the port index
@@ -56,8 +57,8 @@ func harborMaster(t *testing.T, f fixture) {
 		"graphics/harbor-tools/Portfile":       "name harbor-tools\n",
 		"net/harbor-sync/Portfile":             "PortGroup           github 1.0\nname harbor-sync\n",
 	})
-	run(t, f.upstream, "add", "-A")
-	run(t, f.upstream, "commit", "-q", "-m", "the harbor ports")
+	testsupport.Git(t, f.upstream, "add", "-A")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "the harbor ports")
 }
 
 func TestDiffShowsTheBranchAsItIsNow(t *testing.T) {
@@ -73,7 +74,7 @@ func TestDiffShowsTheBranchAsItIsNow(t *testing.T) {
 		"textproc/jq/README":                      "not built\n",
 		"_resources/port1.0/group/github-1.0.tcl": "# group, changed\n",
 	})
-	run(t, branch.Worktree, "add", "textproc/jq/README")
+	testsupport.Git(t, branch.Worktree, "add", "textproc/jq/README")
 
 	diff, err := e.Diff(t.Context(), branch, nil)
 	require.NoError(t, err)
@@ -154,8 +155,8 @@ func TestLinkedPortsAreLibraryDependentsOncePerDirectory(t *testing.T) {
 func TestRevbumpLinkedBumpsEachLinkedPortForTidy(t *testing.T) {
 	f := setup(t)
 	write(t, f.upstream, map[string]string{"textproc/yq/Portfile": "name yq\nversion 1\n", "textproc/gojq/Portfile": "name gojq\nversion 1\n"})
-	run(t, f.upstream, "add", "-A")
-	run(t, f.upstream, "commit", "-q", "-m", "yq and gojq")
+	testsupport.Git(t, f.upstream, "add", "-A")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "yq and gojq")
 	e, _ := f.withPreparer(t)
 	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{
 		"textproc/jq": {port("jq")}, "textproc/yq": {port("yq", "jq")}, "textproc/gojq": {port("gojq", "jq")},
@@ -248,7 +249,7 @@ func TestALinkedPortUnderAVariantIsBumpedAndCanBeExcepted(t *testing.T) {
 	f := setup(t)
 	harborMaster(t, f)
 	write(t, f.upstream, map[string]string{"net/harbor-sync/Portfile": "PortGroup github 1.0\nname harbor-sync\nvariant sync description {Sync} {\n    depends_lib-append port:libharbor\n}\n"})
-	run(t, f.upstream, "commit", "-q", "-am", "harbor-sync's variant")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "harbor-sync's variant")
 	e := f.open(t)
 	ports := harborPorts()
 	ports.directories["net/harbor-sync"] = []macports.PortInfo{port("harbor-sync")}

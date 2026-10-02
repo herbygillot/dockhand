@@ -21,7 +21,7 @@ func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
 	versioned(t, w)
 	withBumper(t)
 	g := withGitHub(t, w)
-	g.others = nil // nobody else's pull request updates jq, which would hold serve's
+	g.Others = nil // nobody else's pull request updates jq, which would hold serve's
 	withScript(t, w, "passed")
 	// yq may have a newer release, which serve lists for a look, and
 	// neither calls current nor prepares.
@@ -72,7 +72,7 @@ func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
 	require.NotContains(t, out, "prepared yq")
 	require.Regexp(t, `serve: prepared jq-[a-z0-9]{4}: 1\.7\.1 → 1\.8\.1, check-1 queued\n`, out)
 	require.Regexp(t, `check-1 jq-[a-z0-9]{4}: passed\n`, out)
-	require.Contains(t, g.prs[0].Body, engine.ServeNote)
+	require.Contains(t, g.PRs[34901].Body, engine.ServeNote)
 	mu.Lock()
 	require.GreaterOrEqual(t, len(notes), 3, "prepared, passed, and opened")
 	mu.Unlock()
@@ -94,7 +94,7 @@ func TestServeSubmitsNoMoreThanTheDailyLimit(t *testing.T) {
 	versioned(t, w)
 	withBumper(t)
 	g := withGitHub(t, w)
-	g.others = nil
+	g.Others = nil
 	withScript(t, w, "passed")
 	withOutdated(t)
 	poll := servePoll
@@ -134,7 +134,7 @@ func TestServeSubmitsNoMoreThanTheDailyLimit(t *testing.T) {
 	}, 10*time.Second, 10*time.Millisecond, served.String())
 	stop()
 	require.NoError(t, <-done)
-	require.Empty(t, g.prs, "the limit holds across restarts")
+	require.Empty(t, g.PRs, "the limit holds across restarts")
 	require.Contains(t, served.String(), "at most 1 a day", "the config's submit_passing turns it on")
 }
 
@@ -154,7 +154,7 @@ func TestServeLooksAgainAfterStoppingMidLook(t *testing.T) {
 	versioned(t, w)
 	withBumper(t)
 	g := withGitHub(t, w)
-	g.others = nil
+	g.Others = nil
 	withScript(t, w, "passed")
 	poll := servePoll
 	t.Cleanup(func() { servePoll = poll })

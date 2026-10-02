@@ -388,15 +388,15 @@ func (c commitArchives) SourceArchive(_ context.Context, _ macports.PortInfo, co
 // asked nothing again. A git.branch no ref is can't be compared, and holds.
 func TestAGitFetchedPortIsComparedByItsCommits(t *testing.T) {
 	project := t.TempDir()
-	run(t, project, "init", "-q")
+	testsupport.Git(t, project, "init", "-q")
 	write(t, project, map[string]string{"README": "1\n"})
-	run(t, project, "add", "-A")
-	run(t, project, "commit", "-q", "-m", "one")
-	run(t, project, "tag", "v1")
+	testsupport.Git(t, project, "add", "-A")
+	testsupport.Git(t, project, "commit", "-q", "-m", "one")
+	testsupport.Git(t, project, "tag", "v1")
 	write(t, project, map[string]string{"README": "2\n"})
-	run(t, project, "commit", "-q", "-am", "two")
-	run(t, project, "tag", "v2")
-	v1, v2 := run(t, project, "rev-parse", "v1^{commit}"), run(t, project, "rev-parse", "v2^{commit}")
+	testsupport.Git(t, project, "commit", "-q", "-am", "two")
+	testsupport.Git(t, project, "tag", "v2")
+	v1, v2 := testsupport.Git(t, project, "rev-parse", "v1^{commit}"), testsupport.Git(t, project, "rev-parse", "v2^{commit}")
 
 	e, branch, base, tree := revisionFixture(t, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
 	p := newPlanner(t)
@@ -446,12 +446,12 @@ func TestAGitFetchedPortIsComparedByItsCommits(t *testing.T) {
 // whose tag still names what was built, or can't be read now, isn't.
 func TestASourceMovedSinceItsCheckIsAConcern(t *testing.T) {
 	project := t.TempDir()
-	run(t, project, "init", "-q")
+	testsupport.Git(t, project, "init", "-q")
 	write(t, project, map[string]string{"README": "1\n"})
-	run(t, project, "add", "-A")
-	run(t, project, "commit", "-q", "-m", "one")
-	run(t, project, "tag", "v2")
-	built := run(t, project, "rev-parse", "HEAD")
+	testsupport.Git(t, project, "add", "-A")
+	testsupport.Git(t, project, "commit", "-q", "-m", "one")
+	testsupport.Git(t, project, "tag", "v2")
+	built := testsupport.Git(t, project, "rev-parse", "HEAD")
 	f := setup(t)
 	e := f.open(t)
 	target := model.PlanTarget{ID: "tool", Target: model.Target{Name: "tool"}}
@@ -460,9 +460,9 @@ func TestASourceMovedSinceItsCheckIsAConcern(t *testing.T) {
 	require.Empty(t, e.movedSources(t.Context(), evidence))
 
 	write(t, project, map[string]string{"README": "2\n"})
-	run(t, project, "commit", "-q", "-am", "two")
-	run(t, project, "tag", "-f", "v2")
-	now := run(t, project, "rev-parse", "HEAD")
+	testsupport.Git(t, project, "commit", "-q", "-am", "two")
+	testsupport.Git(t, project, "tag", "-f", "v2")
+	now := testsupport.Git(t, project, "rev-parse", "HEAD")
 	moved := e.movedSources(t.Context(), evidence)
 	require.Len(t, moved, 1)
 	require.Equal(t, model.Concern{Origin: model.FromUpstream, Port: "tool", Rule: "source-moved", Subject: now, Class: model.Introduced,
@@ -768,15 +768,15 @@ func TestAnArchiveNoLongerFetchedIsSaid(t *testing.T) {
 // nothing and said nothing (field testing, 2026-10-02).
 func TestAnUpdateOfAGitFetchedPortComparesItsCommits(t *testing.T) {
 	project := t.TempDir()
-	run(t, project, "init", "-q")
+	testsupport.Git(t, project, "init", "-q")
 	write(t, project, map[string]string{"README": "1\n"})
-	run(t, project, "add", "-A")
-	run(t, project, "commit", "-q", "-m", "one")
-	run(t, project, "tag", "v1")
+	testsupport.Git(t, project, "add", "-A")
+	testsupport.Git(t, project, "commit", "-q", "-m", "one")
+	testsupport.Git(t, project, "tag", "v1")
 	write(t, project, map[string]string{"README": "2\n"})
-	run(t, project, "commit", "-q", "-am", "two")
-	run(t, project, "tag", "v2")
-	v1, v2 := run(t, project, "rev-parse", "v1^{commit}"), run(t, project, "rev-parse", "v2^{commit}")
+	testsupport.Git(t, project, "commit", "-q", "-am", "two")
+	testsupport.Git(t, project, "tag", "v2")
+	v1, v2 := testsupport.Git(t, project, "rev-parse", "v1^{commit}"), testsupport.Git(t, project, "rev-parse", "v2^{commit}")
 
 	e, _, base, tree := revisionFixture(t, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
 	e.SourceArchiver = commitArchives{t: t, files: map[string]map[string]string{v1: {"LICENSE": "MIT\n"}, v2: {"LICENSE": "GPL\n"}}, asked: &atomic.Int64{}}

@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 func TestCaptureNumbersSnapshotsAndReusesUnchangedOnes(t *testing.T) {
@@ -46,7 +47,7 @@ func TestCaptureNumbersSnapshotsAndReusesUnchangedOnes(t *testing.T) {
 	_, err = e.Capture(t.Context(), CaptureRequest{Branch: branch, Include: []string{"missing.txt"}})
 	require.ErrorContains(t, err, "not an untracked file here")
 
-	run(t, dir, "add", "textproc/jq/Portfile")
+	testsupport.Git(t, dir, "add", "textproc/jq/Portfile")
 	write(t, dir, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.9\n"})
 	staged, err = e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureStaged})
 	require.NoError(t, err)

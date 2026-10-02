@@ -15,7 +15,9 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv/ghactions"
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // fakeActions stands in for GitHub Actions in your fork: each push of a
@@ -192,8 +194,8 @@ func githubBranch(t *testing.T) (*fakeActions, world) {
 	testPortReader = onePort{}
 	t.Cleanup(func() { testPortReader = nil })
 	g := withGitHub(t, w)
-	recordPushes(t, g.fork)
-	f := &fakeActions{fork: g.fork}
+	recordPushes(t, g.Fork)
+	f := &fakeActions{fork: g.Fork}
 	withActions(t, f)
 	return f, w
 }
@@ -201,7 +203,7 @@ func githubBranch(t *testing.T) (*fakeActions, world) {
 // checkBranches are the dockhand-check branches on the fork.
 func checkBranches(t *testing.T, f *fakeActions) string {
 	t.Helper()
-	return strings.TrimSpace(gitRun(t, f.fork, "for-each-ref", "--format=%(refname:short)", "refs/heads/dockhand-check/"))
+	return strings.TrimSpace(testsupport.Git(t, f.fork, "for-each-ref", "--format=%(refname:short)", "refs/heads/dockhand-check/"))
 }
 
 func TestGitHubBuildsWithMacPortsWorkflowInYourFork(t *testing.T) {
@@ -453,8 +455,8 @@ func TestCleanRemovesTheCheckBranchesLeftInYourFork(t *testing.T) {
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
-	g := testForge(nil).(*fakeGitHub)
-	g.prs[0].State = forge.PullRequestMerged
+	g := testForge(nil).(*forgetest.GitHub)
+	g.PRs[34901].State = forge.PullRequestMerged
 	t.Setenv("MACPORTS_TREE", w.clone)
 	_, _, err = dockhand(t, "status", "--refresh")
 	require.NoError(t, err)
@@ -464,7 +466,7 @@ func TestCleanRemovesTheCheckBranchesLeftInYourFork(t *testing.T) {
 	require.Contains(t, out, "  remove   ada/macports-ports:"+checked+"\n")
 	_, _, err = dockhand(t, "clean", "--yes")
 	require.NoError(t, err)
-	require.Empty(t, strings.TrimSpace(gitRun(t, f.fork, "for-each-ref", "refs/heads/dockhand-check/")))
+	require.Empty(t, strings.TrimSpace(testsupport.Git(t, f.fork, "for-each-ref", "refs/heads/dockhand-check/")))
 }
 
 // MacPorts' workflow reports a port whose build passed and whose tests

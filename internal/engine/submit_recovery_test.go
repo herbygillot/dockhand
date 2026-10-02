@@ -8,6 +8,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // v2's recovery promises for publishing, as v3 tests (roadmap item 5): a
@@ -30,7 +31,7 @@ func TestALostReplyToOpeningAPullRequestIsReadBack(t *testing.T) {
 	branch := committedUpdate(t, e)
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
-	fake.createFails, fake.lost = true, true
+	fake.CreateFails, fake.Lost = true, true
 	submitted, err := e.ApplySubmit(t.Context(), plan)
 	require.NoError(t, err)
 	require.Equal(t, 34901, submitted.PullRequest.Ref.Number)
@@ -40,8 +41,8 @@ func TestALostReplyToOpeningAPullRequestIsReadBack(t *testing.T) {
 	require.NoError(t, err)
 	_, err = e.ApplySubmit(t.Context(), again)
 	require.NoError(t, err)
-	require.Len(t, fake.created, 1, "opened once")
-	require.Empty(t, fake.updated, "and not written again")
+	require.Len(t, fake.Created, 1, "opened once")
+	require.Empty(t, fake.Updated, "and not written again")
 }
 
 // A request that never reached GitHub leaves the commit pushed and no pull
@@ -53,11 +54,11 @@ func TestARequestThatNeverReachedGitHubIsMadeAgain(t *testing.T) {
 	branch := committedUpdate(t, e)
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
-	fake.createFails = true
+	fake.CreateFails = true
 	_, err = e.ApplySubmit(t.Context(), plan)
 	require.ErrorContains(t, err, "but the pull request was not written")
 	require.ErrorContains(t, err, "dockhand submit again finishes it")
-	require.Empty(t, fake.prs)
+	require.Empty(t, fake.PRs)
 	require.Nil(t, recordedPullRequest(t, e, branch))
 
 	again, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
@@ -67,7 +68,7 @@ func TestARequestThatNeverReachedGitHubIsMadeAgain(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, submitted.Pushed, "the fork has the commit already")
 	require.True(t, submitted.Created)
-	require.Len(t, fake.prs, 1)
+	require.Len(t, fake.PRs, 1)
 	require.Equal(t, submitted.PullRequest.Ref.Number, recordedPullRequest(t, e, branch).Number)
 }
 
@@ -103,8 +104,8 @@ func TestAPullRequestOpenedButNotRecordedIsFoundByTheNextSubmit(t *testing.T) {
 	_, err = e.ApplySubmit(t.Context(), again)
 	require.NoError(t, err)
 	require.Equal(t, 34901, recordedPullRequest(t, e, branch).Number)
-	require.Len(t, fake.created, 1)
-	require.Empty(t, fake.updated)
+	require.Len(t, fake.Created, 1)
+	require.Empty(t, fake.Updated)
 }
 
 // Two submits of one branch racing, each planned before the other pushed,
@@ -126,9 +127,9 @@ func TestTwoSubmitsRacingOpenOnePullRequest(t *testing.T) {
 	joined, err := e.ApplySubmit(t.Context(), second)
 	require.NoError(t, err)
 	require.Equal(t, opened.PullRequest.Ref.Number, joined.PullRequest.Ref.Number)
-	require.Equal(t, first.Commit, string(fake.head("dockhand/jq-update")))
-	require.Len(t, fake.prs, 1)
-	require.Len(t, fake.created, 1)
+	require.Equal(t, first.Commit, string(fake.ForkHead("dockhand/jq-update")))
+	require.Len(t, fake.PRs, 1)
+	require.Len(t, fake.Created, 1)
 	require.Equal(t, opened.PullRequest.Ref.Number, recordedPullRequest(t, e, branch).Number)
 }
 
@@ -142,9 +143,9 @@ func TestASubmitRefusesABranchThatMovedAfterItsPlan(t *testing.T) {
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
 	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# more\n"})
-	run(t, branch.Worktree, "commit", "-q", "-am", "jq: more")
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: more")
 	_, err = e.ApplySubmit(t.Context(), plan)
 	require.ErrorIs(t, err, ErrStaleSubmit)
-	require.Empty(t, string(fake.head("dockhand/jq-update")), "nothing was pushed")
-	require.Empty(t, fake.prs)
+	require.Empty(t, string(fake.ForkHead("dockhand/jq-update")), "nothing was pushed")
+	require.Empty(t, fake.PRs)
 }

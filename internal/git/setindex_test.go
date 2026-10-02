@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // SetIndex restores a recorded index entry by entry: a staged version
@@ -20,17 +21,17 @@ func TestSetIndexRestoresARecordedIndexInASparseCheckout(t *testing.T) {
 		require.NoError(t, os.MkdirAll(filepath.Join(root, filepath.Dir(name)), 0o755))
 		require.NoError(t, os.WriteFile(filepath.Join(root, name), []byte(text), 0o644))
 	}
-	gitIn(t, root, "init", "-q", "-b", "master")
-	gitIn(t, root, "add", "-A")
-	gitIn(t, root, "commit", "-q", "-m", "init")
+	testsupport.Git(t, root, "init", "-q", "-b", "master")
+	testsupport.Git(t, root, "add", "-A")
+	testsupport.Git(t, root, "commit", "-q", "-m", "init")
 	worktree := filepath.Join(filepath.Dir(root), "branch")
-	gitIn(t, root, "worktree", "add", "-q", worktree, "-b", "branch")
-	gitIn(t, worktree, "sparse-checkout", "set", "--no-cone", "/a/")
+	testsupport.Git(t, root, "worktree", "add", "-q", worktree, "-b", "branch")
+	testsupport.Git(t, worktree, "sparse-checkout", "set", "--no-cone", "/a/")
 	require.NoFileExists(t, filepath.Join(worktree, "b/Portfile"))
 
 	require.NoError(t, os.WriteFile(filepath.Join(worktree, "a/Portfile"), []byte("staged\n"), 0o644))
-	gitIn(t, worktree, "add", "a/Portfile")
-	gitIn(t, worktree, "rm", "-q", "--cached", "a/gone")
+	testsupport.Git(t, worktree, "add", "a/Portfile")
+	testsupport.Git(t, worktree, "rm", "-q", "--cached", "a/gone")
 	repo, err := git.Open(t.Context(), worktree, "")
 	require.NoError(t, err)
 	recorded, err := repo.IndexTree(t.Context())
@@ -39,8 +40,8 @@ func TestSetIndexRestoresARecordedIndexInASparseCheckout(t *testing.T) {
 	require.NoError(t, repo.ResetIndex(t.Context()))
 
 	require.NoError(t, repo.SetIndex(t.Context(), recorded))
-	require.Equal(t, "staged", gitIn(t, worktree, "show", ":a/Portfile"))
-	require.Equal(t, "MM a/Portfile\nD  a/gone", gitIn(t, worktree, "status", "--short", "--untracked-files=no"), "b/Portfile keeps its skip-worktree bit")
+	require.Equal(t, "staged", testsupport.Git(t, worktree, "show", ":a/Portfile"))
+	require.Equal(t, "MM a/Portfile\nD  a/gone", testsupport.Git(t, worktree, "status", "--short", "--untracked-files=no"), "b/Portfile keeps its skip-worktree bit")
 	after, err := repo.IndexTree(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, recorded, after)

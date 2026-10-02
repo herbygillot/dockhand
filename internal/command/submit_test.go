@@ -6,9 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -18,137 +16,18 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/scratch"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
-// fakeGitHub stands in for GitHub: the fork is a local bare repository.
-type fakeGitHub struct {
-	upstream, fork string
-	prs            []forge.PullRequest
-	drafts         []bool
-	readied        []int
-	reviews        []forge.ReviewInput
-	rerequested    []string
-	// theirs are other people's pull requests, by number.
-	theirs map[int]forge.PullRequest
-	status forge.PullRequestStatus
-	// others are the open pull requests a search for a port finds, and
-	// searchErr why the search fails. The first quiet searches find
-	// nothing, as before another was opened; searches counts them all.
-	others    []forge.PullRequestSummary
-	searchErr error
-	quiet     int
-	searches  int
-	// readyRefused is GitHub's refusal to mark a pull request ready.
-	readyRefused error
-	// dockhand are the commits of dockhand's own repository GitHub has,
-	// and dockhandErr why asking it fails.
-	dockhand    []string
-	dockhandErr error
-}
-
-func (g *fakeGitHub) AuthenticatedUser(context.Context) (string, error) { return "ada", nil }
-
-func (g *fakeGitHub) Repository(_, name string) (forge.Repository, error) {
-	return fakeDockhand{g: g, name: name}, nil
-}
-
-// fakeDockhand is dockhand's own repository on GitHub, which has no tags.
-type fakeDockhand struct {
-	g    *fakeGitHub
-	name string
-}
-
-func (d fakeDockhand) Name() string { return d.name }
-func (d fakeDockhand) Tag(context.Context, string) (forge.Tag, error) {
-	return forge.Tag{}, forge.ErrNotFound
-}
-func (d fakeDockhand) ListTags(context.Context) ([]forge.Tag, error) { return nil, nil }
-func (d fakeDockhand) HasCommit(_ context.Context, commit string) (bool, error) {
-	if d.g.dockhandErr != nil {
-		return false, d.g.dockhandErr
-	}
-	return slices.ContainsFunc(d.g.dockhand, func(c string) bool { return strings.HasPrefix(c, commit) }), nil
-}
-func (g *fakeGitHub) NameFromRemote(url string) (string, error) {
-	switch url {
-	case g.upstream:
-		return engine.UpstreamRepository, nil
-	case g.fork:
-		return "ada/macports-ports", nil
-	}
-	return "", errors.New("not GitHub")
-}
-func (g *fakeGitHub) RepositoryInfo(_ context.Context, name string) (forge.RepositoryInfo, error) {
-	return forge.RepositoryInfo{Name: name, Parent: engine.UpstreamRepository}, nil
-}
-func (g *fakeGitHub) Find(context.Context, forge.PullRequestQuery) (forge.PullRequestObservation, error) {
-	return forge.PullRequestObservation{}, nil
-}
-func (g *fakeGitHub) Observe(_ context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error) {
-	if pr, ok := g.theirs[ref.Number]; ok {
-		return forge.PullRequestObservation{Found: true, PullRequest: pr}, nil
-	}
-	pr := g.prs[ref.Number-34901]
-	// GitHub reports the head the fork's branch is at, whoever pushed it.
-	if out, err := exec.Command("git", "-C", g.fork, "for-each-ref", "--format=%(objectname)", "refs/heads/"+pr.HeadBranch).Output(); err == nil && len(bytes.TrimSpace(out)) > 0 {
-		pr.RemoteHead = model.ObjectID(bytes.TrimSpace(out))
-	}
-	return forge.PullRequestObservation{Found: true, PullRequest: pr}, nil
-}
-func (g *fakeGitHub) Create(_ context.Context, input forge.PullRequestInput) (forge.PullRequestObservation, error) {
-	number := 34901 + len(g.prs)
-	pr := forge.PullRequest{Ref: forge.PullRequestRef{Repository: input.Repository, Number: number, URL: fmt.Sprintf("https://github.com/%s/pull/%d", input.Repository, number)},
-		HeadBranch: input.HeadBranch, State: forge.PullRequestOpen, Title: input.Desired.Title, Body: input.Desired.Body, RemoteHead: input.Desired.Head}
-	g.prs = append(g.prs, pr)
-	g.drafts = append(g.drafts, input.Draft)
-	return forge.PullRequestObservation{Found: true, PullRequest: pr}, nil
-}
-func (g *fakeGitHub) Update(_ context.Context, input forge.PullRequestInput) (forge.PullRequestObservation, error) {
-	pr := &g.prs[input.ExistingPR.Number-34901]
-	pr.Title, pr.Body, pr.RemoteHead = input.Desired.Title, input.Desired.Body, input.Desired.Head
-	return forge.PullRequestObservation{Found: true, PullRequest: *pr}, nil
-}
-func (g *fakeGitHub) MarkReady(_ context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error) {
-	if g.readyRefused != nil {
-		return forge.PullRequestObservation{}, g.readyRefused
-	}
-	g.readied = append(g.readied, ref.Number)
-	return g.Observe(context.Background(), ref)
-}
-
-func (g *fakeGitHub) Permission(context.Context, string, string) (string, error) {
-	return "read", nil
-}
-
-func (g *fakeGitHub) PostReview(_ context.Context, input forge.ReviewInput) (string, error) {
-	g.reviews = append(g.reviews, input)
-	return fmt.Sprintf("https://github.com/%s/pull/%d#pullrequestreview-%d", input.Ref.Repository, input.Ref.Number, len(g.reviews)), nil
-}
-
-func (g *fakeGitHub) RequestReviewers(_ context.Context, _ forge.PullRequestRef, logins []string) error {
-	g.rerequested = append(g.rerequested, logins...)
-	return nil
-}
-
-func (g *fakeGitHub) Inspect(context.Context, forge.PullRequestRef) (forge.PullRequestStatus, error) {
-	return g.status, nil
-}
-
-func (g *fakeGitHub) OpenPullRequests(context.Context, string, string) ([]forge.PullRequestSummary, error) {
-	g.searches++
-	if g.searches <= g.quiet {
-		return nil, nil
-	}
-	return g.others, g.searchErr
-}
-
-func withGitHub(t *testing.T, w world) *fakeGitHub {
+func withGitHub(t *testing.T, w world) *forgetest.GitHub {
 	fork := filepath.Join(filepath.Dir(w.upstream), "fork.git")
-	gitRun(t, filepath.Dir(w.upstream), "clone", "-q", "--bare", w.upstream, fork)
-	gitRun(t, w.clone, "remote", "add", "fork", fork)
-	g := &fakeGitHub{upstream: w.upstream, fork: fork, others: []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}}
+	testsupport.Git(t, filepath.Dir(w.upstream), "clone", "-q", "--bare", w.upstream, fork)
+	testsupport.Git(t, w.clone, "remote", "add", "fork", fork)
+	g := forgetest.New(w.upstream, fork)
+	g.Others = []forge.PullRequestSummary{{Number: 34777, Title: "jq: update to 1.8.0"}}
 	testForge = func(*engine.Engine) engine.Forge { return g }
 	t.Cleanup(func() { testForge = nil })
 	return g
@@ -186,7 +65,7 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 	require.Contains(t, out, "  Checks   none (--no-check); the pull request says MacPorts CI is its only check\n")
 	require.Contains(t, out, "  Other PRs  #34777 jq: update to 1.8.0\n")
 	require.Contains(t, out, "  PR       opens a new one\n")
-	require.Empty(t, g.prs)
+	require.Empty(t, g.PRs)
 
 	// --plan is the preview on its own: it succeeds, and pushes and
 	// opens nothing.
@@ -194,8 +73,8 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "jq-update · ready to submit\n")
 	require.Contains(t, out, "Nothing was submitted (--plan).\n")
-	require.Empty(t, g.prs)
-	require.Empty(t, gitRun(t, g.fork, "branch", "--list", "dockhand/jq-update"), "nothing was pushed")
+	require.Empty(t, g.PRs)
+	require.Empty(t, testsupport.Git(t, g.Fork, "branch", "--list", "dockhand/jq-update"), "nothing was pushed")
 	_, _, err = dockhand(t, "submit", "--plan", "--check")
 	require.ErrorContains(t, err, "--plan previews one branch's submission")
 
@@ -204,14 +83,14 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, errs.String(), "? Did you test the basic functionality of all binary files? [y/N] ")
 	require.Contains(t, stdout.String(), "Opened draft #34901  https://github.com/macports/macports-ports/pull/34901\n")
-	require.Len(t, g.prs, 1)
-	require.True(t, g.drafts[0])
-	body := g.prs[0].Body
+	require.Len(t, g.PRs, 1)
+	require.True(t, g.Drafts[0])
+	body := g.PRs[34901].Body
 	require.Contains(t, body, "- [x] tested basic functionality of all binary files?")
 	require.Contains(t, body, "- [ ] checked that the Portfile's most important [variants]")
 	require.Contains(t, body, "- [ ] checked that there aren't other open [pull requests](https://github.com/macports/macports-ports/pulls) for the same change? (open for the same ports: #34777)")
 	require.Contains(t, stdout.String(), body, "the preview showed the description")
-	require.Equal(t, gitRun(t, dir, "rev-parse", "HEAD"), gitRun(t, g.fork, "rev-parse", "dockhand/jq-update"))
+	require.Equal(t, testsupport.Git(t, dir, "rev-parse", "HEAD"), testsupport.Git(t, g.Fork, "rev-parse", "dockhand/jq-update"))
 }
 
 // The preview says what comparing the upstream archives found, as update
@@ -300,18 +179,18 @@ func TestSubmitShowsACommitNamingAModifiedBuild(t *testing.T) {
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	trailer := "\n\nGenerated-By: Dockhand v0.0.0-20260924.0.0.20260928175309-2bbcfdb76480%s (https://github.com/herbygillot/dockhand)"
-	gitRun(t, dir, "commit", "-q", "-am", "jq: update to 1.8.1"+fmt.Sprintf(trailer, ""))
+	testsupport.Git(t, dir, "commit", "-q", "-am", "jq: update to 1.8.1"+fmt.Sprintf(trailer, ""))
 	out, _, err := dockhand(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
 	require.NotContains(t, out, "uncommitted source")
 
-	gitRun(t, dir, "commit", "-q", "--amend", "-m", "jq: update to 1.8.1"+fmt.Sprintf(trailer, "+dirty"))
+	testsupport.Git(t, dir, "commit", "-q", "--amend", "-m", "jq: update to 1.8.1"+fmt.Sprintf(trailer, "+dirty"))
 	out, _, err = dockhand(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
-	require.Contains(t, out, "  ! commit "+engine.Short(model.ObjectID(gitRun(t, dir, "rev-parse", "HEAD")))+"'s Generated-By names a dockhand built from uncommitted source, which nobody else can find; tidy it again with a build of a pushed commit\n")
+	require.Contains(t, out, "  ! commit "+engine.Short(model.ObjectID(testsupport.Git(t, dir, "rev-parse", "HEAD")))+"'s Generated-By names a dockhand built from uncommitted source, which nobody else can find; tidy it again with a build of a pushed commit\n")
 	preview, err := jsonOf(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
-	require.Equal(t, []any{gitRun(t, dir, "rev-parse", "HEAD")}, preview.Result["modified_builds"])
+	require.Equal(t, []any{testsupport.Git(t, dir, "rev-parse", "HEAD")}, preview.Result["modified_builds"])
 }
 
 // A commit whose Generated-By names a build dockhand's repository on
@@ -332,8 +211,8 @@ func TestSubmitSaysABuildGitHubDoesntHave(t *testing.T) {
 	_, _, err = dockhand(t, "update", "jq")
 	require.NoError(t, err)
 	unpushed := "v0.0.0-20260924.0.0.20260928190000-14320eb7c0de"
-	gitRun(t, dir, "commit", "-q", "-am", "jq: update to 1.8.1\n\nGenerated-By: Dockhand "+unpushed+" (https://github.com/herbygillot/dockhand)")
-	head := gitRun(t, dir, "rev-parse", "HEAD")
+	testsupport.Git(t, dir, "commit", "-q", "-am", "jq: update to 1.8.1\n\nGenerated-By: Dockhand "+unpushed+" (https://github.com/herbygillot/dockhand)")
+	head := testsupport.Git(t, dir, "rev-parse", "HEAD")
 
 	out, _, err := dockhand(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
@@ -344,7 +223,7 @@ func TestSubmitSaysABuildGitHubDoesntHave(t *testing.T) {
 	require.Equal(t, []any{map[string]any{"build": unpushed, "commits": []any{head}, "commit": "14320eb7c0de"}}, preview.Result["unfound_builds"])
 	require.NotContains(t, preview.Result, "builds_problem")
 
-	g.dockhandErr = errors.New("github: API rate limit exceeded")
+	g.Dockhand.Err = errors.New("github: API rate limit exceeded")
 	out, _, err = dockhand(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
 	require.Contains(t, out, "  ! couldn't ask GitHub whether it has the dockhand builds the commits name in Generated-By: github: API rate limit exceeded\n")
@@ -354,15 +233,15 @@ func TestSubmitSaysABuildGitHubDoesntHave(t *testing.T) {
 	require.Equal(t, []any{}, preview.Result["unfound_builds"])
 	require.Equal(t, "github: API rate limit exceeded", preview.Result["builds_problem"])
 
-	g.dockhandErr, g.dockhand = nil, []string{"14320eb7c0de" + strings.Repeat("0", 28)}
+	g.Dockhand.Err, g.Dockhand.Commits = nil, []string{"14320eb7c0de" + strings.Repeat("0", 28)}
 	out, _, err = dockhand(t, "submit", "--plan", "--no-check")
 	require.NoError(t, err)
 	require.NotContains(t, out, "Generated-By", "a build GitHub has is said nowhere")
 
-	g.dockhand = nil
+	g.Dockhand.Commits = nil
 	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
-	require.Len(t, g.prs, 1, "nothing here stops the submission")
+	require.Len(t, g.PRs, 1, "nothing here stops the submission")
 }
 
 // A build several commits name is said once, naming each; one built at a
@@ -414,19 +293,19 @@ func TestAResubmitRefreshesTheDescriptionItWrote(t *testing.T) {
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
-	require.NotContains(t, g.prs[0].Body, "Built against the new libonig")
+	require.NotContains(t, g.PRs[34901].Body, "Built against the new libonig")
 
-	subject, rest, _ := strings.Cut(gitRun(t, dir, "log", "-1", "--format=%B"), "\n")
-	gitRun(t, dir, "commit", "-q", "--amend", "-m", subject+"\n\nBuilt against the new libonig.\n"+rest)
+	subject, rest, _ := strings.Cut(testsupport.Git(t, dir, "log", "-1", "--format=%B"), "\n")
+	testsupport.Git(t, dir, "commit", "-q", "--amend", "-m", subject+"\n\nBuilt against the new libonig.\n"+rest)
 	out, _, err := dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
 	require.Regexp(t, `  PR       updates #\d+; refreshes its Description section\n`, out)
 	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
-	require.Contains(t, g.prs[0].Body, "#### Description\n\nBuilt against the new libonig.\n\n###### Type(s)")
+	require.Contains(t, g.PRs[34901].Body, "#### Description\n\nBuilt against the new libonig.\n\n###### Type(s)")
 
-	edited := strings.Replace(g.prs[0].Body, "Built against the new libonig.", "What I tested by hand.", 1)
-	g.prs[0].Body = edited
+	edited := strings.Replace(g.PRs[34901].Body, "Built against the new libonig.", "What I tested by hand.", 1)
+	g.PRs[34901].Body = edited
 	out, _, err = dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
 	require.Regexp(t, `  PR       updates #\d+; its description is yours, and stays as it is\n`, out, "a Description a person edited is theirs")
@@ -469,28 +348,28 @@ func TestSubmitNoteIsKeptWithTheBranch(t *testing.T) {
 	require.Contains(t, out, "    > **Author's note:** The tests failed on a permission error,\n    > before any test ran.\n")
 	_, _, err = dockhand(t, "submit", "--no-check", "--yes", "--note", note)
 	require.NoError(t, err)
-	require.Contains(t, g.prs[0].Body, "#### Description\n\n> **Author's note:** The tests failed on a permission error,\n> before any test ran.\n\n###### Type(s)")
+	require.Contains(t, g.PRs[34901].Body, "#### Description\n\n> **Author's note:** The tests failed on a permission error,\n> before any test ran.\n\n###### Type(s)")
 
 	out, _, err = dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
 	require.Contains(t, out, "#34901 has nothing new: the fork has its commit, and its title and description are current\n", "the note is kept")
-	require.Contains(t, g.prs[0].Body, "> **Author's note:** The tests failed")
+	require.Contains(t, g.PRs[34901].Body, "> **Author's note:** The tests failed")
 
 	out, _, err = dockhand(t, "submit", "--no-check", "--yes", "--note", "Fixed upstream.")
 	require.NoError(t, err)
 	require.Contains(t, out, "Updated #34901's description\n")
-	require.Contains(t, g.prs[0].Body, "#### Description\n\n> **Author's note:** Fixed upstream.\n\n###### Type(s)")
-	require.NotContains(t, g.prs[0].Body, "permission error")
+	require.Contains(t, g.PRs[34901].Body, "#### Description\n\n> **Author's note:** Fixed upstream.\n\n###### Type(s)")
+	require.NotContains(t, g.PRs[34901].Body, "permission error")
 
 	out, _, err = dockhand(t, "submit", "--no-check", "--yes", "--note", "")
 	require.NoError(t, err)
 	require.Contains(t, out, "Updated #34901's description\n")
-	require.NotContains(t, g.prs[0].Body, "Author's note")
+	require.NotContains(t, g.PRs[34901].Body, "Author's note")
 	out, _, err = dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
 	require.NotContains(t, out, "  Note ")
 
-	g.prs[0].Body = strings.Replace(g.prs[0].Body, "#### Description\n\n", "#### Description\n\nWhat I tested by hand.\n\n", 1)
+	g.PRs[34901].Body = strings.Replace(g.PRs[34901].Body, "#### Description\n\n", "#### Description\n\nWhat I tested by hand.\n\n", 1)
 	out, _, err = dockhand(t, "submit", "--no-check", "--plan", "--note", "Fixed upstream.")
 	require.NoError(t, err)
 	require.Contains(t, out, "  Note     Fixed upstream.\n           ! not in the description: its Description is yours, edited on GitHub or taken out, and stays as it is\n")
@@ -548,7 +427,7 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "  PR       #34901 · CI not read yet (dockhand status --refresh)\n", "until something reads it, status says how")
 
-	g.status = forge.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, Checks: forge.CheckSummary{Total: 2, Passed: 2}}
+	g.Status = forge.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, Checks: forge.CheckSummary{Total: 2, Passed: 2}}
 	t.Setenv("MACPORTS_TREE", w.clone)
 	out, errs, err := dockhand(t, "status", "--refresh")
 	require.NoError(t, err)
@@ -562,7 +441,7 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	t.Setenv("MACPORTS_TREE", w.clone)
 
 	// serve reads them by itself.
-	g.status = forge.PullRequestStatus{Review: "none", Checks: forge.CheckSummary{Total: 2, Passed: 1, Failed: 1, Failing: []string{"macOS 26"}}}
+	g.Status = forge.PullRequestStatus{Review: "none", Checks: forge.CheckSummary{Total: 2, Passed: 1, Failed: 1, Failing: []string{"macOS 26"}}}
 	poll := servePoll
 	t.Cleanup(func() { servePoll = poll })
 	servePoll = 20 * time.Millisecond
@@ -596,7 +475,7 @@ func TestCleanAfterTheMerge(t *testing.T) {
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
-	g.prs[0].State = forge.PullRequestMerged
+	g.PRs[34901].State = forge.PullRequestMerged
 	t.Setenv("MACPORTS_TREE", w.clone)
 	_, errs, err := dockhand(t, "status", "--refresh")
 	require.NoError(t, err)
@@ -662,7 +541,7 @@ func TestSubmitCheckPassingAndReady(t *testing.T) {
 	require.ErrorContains(t, err, "; nothing was submitted")
 	require.Contains(t, out, "  Checks   runs now; submit follows only if it passes (--check)\n")
 	require.Contains(t, out, "jq-update · checking commit ")
-	require.Empty(t, g.prs, "a failed check submits nothing")
+	require.Empty(t, g.PRs, "a failed check submits nothing")
 
 	withScript(t, w, "passed")
 	_, _, err = dockhand(t, "check")
@@ -686,8 +565,8 @@ func TestSubmitCheckPassingAndReady(t *testing.T) {
 	require.Contains(t, stdout.String(), "+version 1.8.1", "d showed the diff")
 	require.Contains(t, stdout.String(), "Opened #34901")
 	require.Contains(t, stdout.String(), "Submitted 1 of 1.\n")
-	require.Contains(t, g.prs[0].Body, "- [x] tested basic functionality of all binary files?")
-	require.Contains(t, g.prs[0].Body, "- [ ] checked that the Portfile's most important [variants]")
+	require.Contains(t, g.PRs[34901].Body, "- [x] tested basic functionality of all binary files?")
+	require.Contains(t, g.PRs[34901].Body, "- [ ] checked that the Portfile's most important [variants]")
 
 	out, _, err = dockhand(t, "submit", "--passing")
 	require.NoError(t, err)
@@ -702,12 +581,12 @@ func TestSubmitCheckPassingAndReady(t *testing.T) {
 	require.Contains(t, previewed, "#34901 isn't a draft, so --ready has nothing to do.\n")
 	require.Contains(t, previewed, "\nDescription, as the pull request would have it:\n    Submitted by **[dockhand](https://github.com/herbygillot/dockhand)**\n\n    #### Description\n")
 	require.Contains(t, previewed, "Nothing was submitted (--plan).\n")
-	require.Empty(t, g.readied, "a preview marks nothing")
+	require.Empty(t, g.Readied, "a preview marks nothing")
 
 	// GitHub may refuse dockhand's app, as an organization restricting
 	// apps does: what to do instead is said (the sshuttle run, finding 2),
 	// and the GitHub CLI does it where it's signed in as dockhand is (D8).
-	g.readyRefused = restricted{errors.New("github: the `macports` organization has enabled OAuth App access restrictions")}
+	g.ReadyRefused = restricted{errors.New("github: the `macports` organization has enabled OAuth App access restrictions")}
 	refused := "marking #34901 ready for review: github: the `macports` organization has enabled OAuth App access restrictions\n" +
 		"It's still a draft. Mark it ready on its page, https://github.com/macports/macports-ports/pull/34901, or with the GitHub CLI, which signs in as its own app: gh pr ready 34901 --repo macports/macports-ports\n"
 	_, _, err = dockhand(t, "submit", "--ready", "--yes")
@@ -723,27 +602,27 @@ func TestSubmitCheckPassingAndReady(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "Marked #34901 ready for review with the GitHub CLI: the macports organization refuses dockhand's app.\n")
 	require.Equal(t, []int{34901}, byCLI)
-	require.Empty(t, g.readied)
-	g.readyRefused = errors.New("github: Could not resolve to a node")
+	require.Empty(t, g.Readied)
+	g.ReadyRefused = errors.New("github: Could not resolve to a node")
 	_, _, err = dockhand(t, "submit", "--ready", "--yes")
 	require.ErrorContains(t, err, "github: Could not resolve to a node\nIt's still a draft.")
 	require.NotContains(t, err.Error(), "wasn't used", "a refusal that isn't the organization's isn't the CLI's to try")
 	require.Equal(t, []int{34901}, byCLI)
-	g.readyRefused = nil
+	g.ReadyRefused = nil
 
 	out, _, err = dockhand(t, "submit", "--ready", "--yes")
 	require.NoError(t, err)
 	require.Contains(t, out, "Marked #34901 ready for review.\n")
-	require.Equal(t, []int{34901}, g.readied)
+	require.Equal(t, []int{34901}, g.Readied)
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n# reviewed\n"), 0o644))
-	gitRun(t, dir, "commit", "-q", "-am", "jq: note the review")
+	testsupport.Git(t, dir, "commit", "-q", "-am", "jq: note the review")
 	out, _, err = dockhand(t, "submit", "--check")
 	require.NoError(t, err)
 	require.Contains(t, out, "Passed for commit ")
 	require.NotContains(t, out, "Next: ", "submit --check submits; it doesn't send you to submit")
 	require.Contains(t, out, "Updated #34901: pushed up to ")
-	require.Equal(t, gitRun(t, dir, "rev-parse", "HEAD"), gitRun(t, g.fork, "rev-parse", "dockhand/jq-update"))
+	require.Equal(t, testsupport.Git(t, dir, "rev-parse", "HEAD"), testsupport.Git(t, g.Fork, "rev-parse", "dockhand/jq-update"))
 }
 
 func TestSubmitAsksTheReviewersBack(t *testing.T) {
@@ -780,28 +659,28 @@ func TestSubmitAsksTheReviewersBack(t *testing.T) {
 	require.NoError(t, err)
 	require.Regexp(t, `  PR       updates #\d+; its description is current\n`, out, "an update is already an enhancement")
 	// Type(s) a person ticked on GitHub stay theirs, unless --type names others.
-	opened := g.prs[0].Body
-	g.prs[0].Body = strings.Replace(opened, "- [ ] bugfix", "- [x] bugfix", 1)
+	opened := g.PRs[34901].Body
+	g.PRs[34901].Body = strings.Replace(opened, "- [ ] bugfix", "- [x] bugfix", 1)
 	out, _, err = dockhand(t, "submit", "--no-check", "--plan")
 	require.NoError(t, err)
 	require.Regexp(t, `  PR       updates #\d+; its description is current\n`, out, "the person's tick stays")
 	typed, err = jsonOf(t, "submit", "--no-check", "--plan", "--type", "security fix")
 	require.NoError(t, err)
 	require.Contains(t, typed.Result["body"], "- [ ] bugfix\n- [ ] enhancement\n- [x] security fix\n")
-	g.prs[0].Body = opened
-	g.status = forge.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, ChangesRequestedBy: []string{"ryandesign"}}
+	g.PRs[34901].Body = opened
+	g.Status = forge.PullRequestStatus{Review: "changes-requested", ChangesRequested: 1, ChangesRequestedBy: []string{"ryandesign"}}
 	_, _, err = dockhand(t, "status", "--refresh")
 	require.NoError(t, err)
 
 	fix := func(line string) {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n"+line+"\n"), 0o644))
-		gitRun(t, dir, "commit", "-q", "-am", "jq: "+line)
+		testsupport.Git(t, dir, "commit", "-q", "-am", "jq: "+line)
 	}
 	fix("# drop the patch")
 	out, _, err = dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err, out)
 	require.Contains(t, out, "@ryandesign requested changes; ask them to review again on GitHub, or set submit.rerequest_review = \"always\"\n")
-	require.Empty(t, g.rerequested)
+	require.Empty(t, g.Rerequested)
 
 	fix("# and the docs")
 	var stdout, errs bytes.Buffer
@@ -809,7 +688,7 @@ func TestSubmitAsksTheReviewersBack(t *testing.T) {
 	require.NoError(t, err, stdout.String())
 	require.Contains(t, errs.String(), "? ask @ryandesign to review again? [Y/n] ")
 	require.Contains(t, stdout.String(), "Asked @ryandesign to review again.\n")
-	require.Equal(t, []string{"ryandesign"}, g.rerequested)
+	require.Equal(t, []string{"ryandesign"}, g.Rerequested)
 
 	require.NoError(t, os.MkdirAll(filepath.Join(w.home, ".dockhand"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(w.home, ".dockhand", "config.toml"), []byte("[submit]\nrerequest_review = \"never\"\n"), 0o644))
@@ -817,7 +696,7 @@ func TestSubmitAsksTheReviewersBack(t *testing.T) {
 	out, _, err = dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
 	require.NotContains(t, out, "ryandesign")
-	require.Equal(t, []string{"ryandesign"}, g.rerequested, "never asks")
+	require.Equal(t, []string{"ryandesign"}, g.Rerequested, "never asks")
 }
 
 func TestAdoptRecognizesARenamedBranch(t *testing.T) {
@@ -836,7 +715,7 @@ func TestAdoptRecognizesARenamedBranch(t *testing.T) {
 	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
 	require.NoError(t, err)
 
-	gitRun(t, dir, "branch", "-m", "jq-1.8")
+	testsupport.Git(t, dir, "branch", "-m", "jq-1.8")
 	t.Setenv("MACPORTS_TREE", w.clone)
 	out, _, err := dockhand(t, "status", "--attention")
 	require.Equal(t, 3, ExitCode(err))
@@ -890,7 +769,7 @@ JSON
 	_, _, err = dockhand(t, "submit", "--check")
 	require.Error(t, err)
 	require.Regexp(t, `^jq-update moved to [0-9a-f]{7} while it was checked; nothing was submitted, since submit --check binds [0-9a-f]{7}$`, err.Error())
-	require.Empty(t, g.prs)
+	require.Empty(t, g.PRs)
 }
 
 // The description is edited in the process's run root, so a process that
@@ -986,14 +865,14 @@ func TestCleanNamesOneBranch(t *testing.T) {
 	require.NoError(t, err)
 
 	// Cleaned by hand, before status knows of the merge.
-	gitRun(t, w.clone, "worktree", "remove", "--force", dir)
-	gitRun(t, w.clone, "branch", "-D", "dockhand/jq-update")
+	testsupport.Git(t, w.clone, "worktree", "remove", "--force", dir)
+	testsupport.Git(t, w.clone, "branch", "-D", "dockhand/jq-update")
 	out, _, err := dockhand(t, "status")
 	require.NoError(t, err)
 	require.Contains(t, out, "its Git branch is gone, and its pull request, #34901, may have merged")
 	require.Contains(t, out, "dockhand status --refresh reads it")
 
-	g.prs[0].State = forge.PullRequestMerged
+	g.PRs[34901].State = forge.PullRequestMerged
 	_, _, err = dockhand(t, "status", "--refresh")
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "clean", "other-work-missing")

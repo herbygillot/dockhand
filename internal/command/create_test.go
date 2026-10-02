@@ -19,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // riftProject stands in for GitHub: a Rust project with one crate.
@@ -87,12 +88,12 @@ func TestCreateWritesANewPortFromItsProject(t *testing.T) {
 	require.Contains(t, string(data), "maintainers         {@ada example.org:ada} openmaintainer\n")
 	require.Contains(t, string(data), "sha256  bbbb")
 	require.Contains(t, string(data), "    anyhow  1.0.89  86fdf8605db99b54d3cd748a44c6d04df638eb5dafb219b135d0149bd0db01f6\n")
-	require.Equal(t, "textproc/rift/Portfile", strings.TrimSpace(gitRun(t, dir, "diff", "--cached", "--name-only")), "staged, so check includes it")
+	require.Equal(t, "textproc/rift/Portfile", strings.TrimSpace(testsupport.Git(t, dir, "diff", "--cached", "--name-only")), "staged, so check includes it")
 
 	t.Setenv("MACPORTS_TREE", dir)
 	_, _, err = dockhand(t, "tidy")
 	require.NoError(t, err)
-	require.Equal(t, "rift: new port, version 0.4.2", strings.TrimSpace(gitRun(t, dir, "log", "-1", "--format=%s")))
+	require.Equal(t, "rift: new port, version 0.4.2", strings.TrimSpace(testsupport.Git(t, dir, "log", "-1", "--format=%s")))
 
 	// A category the tree keeps for itself is refused before anything is
 	// written (the helper-ownership review's table).
@@ -107,7 +108,7 @@ func TestCreateWritesANewPortFromItsProject(t *testing.T) {
 	require.ErrorContains(t, err, "there is already a port jq, at textproc/jq; --name names this one otherwise, or dockhand update jq updates that one")
 	_, _, err = dockhand(t, "create", "https://github.com/jqlang/jq", "--new", "--category", "sysutils")
 	require.ErrorContains(t, err, "there is already a port jq, at textproc/jq; --name names this one otherwise")
-	require.Empty(t, strings.TrimSpace(gitRun(t, w.clone, "branch", "--list", "dockhand/jq-*")), "no branch was started for it")
+	require.Empty(t, strings.TrimSpace(testsupport.Git(t, w.clone, "branch", "--list", "dockhand/jq-*")), "no branch was started for it")
 }
 
 type jqProject struct{}
@@ -138,7 +139,7 @@ func TestCreateTakesTheManifestsLicenseAndLine(t *testing.T) {
 	testPreparer = func(e *engine.Engine) engine.Preparer { return checksummer{repo: e.Repo} }
 	t.Cleanup(func() { testProjectReader, testPreparer = nil, nil })
 
-	testHTTPS = httpsAnswers{"https://txt.hellman.io/": true}
+	testHTTPS = testsupport.HTTPSAnswers{"https://txt.hellman.io/": true}
 	out, _, err := dockhand(t, "create", "https://github.com/ErikHellman/txt", "--new")
 	require.NoError(t, err)
 	require.Contains(t, out, "  homepage: over HTTPS, as MacPorts prefers; GitHub gives http://txt.hellman.io/\n", "the finding 6 of the txt run")
@@ -166,7 +167,7 @@ func TestCreateTakesTheManifestsLicenseAndLine(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(moved), "# settled by hand\n")
 	require.NoDirExists(t, filepath.Join(dir, "devel/txt"))
-	require.Equal(t, "editors/txt/Portfile", strings.TrimSpace(gitRun(t, dir, "diff", "--cached", "--name-only")), "staged where it now is")
+	require.Equal(t, "editors/txt/Portfile", strings.TrimSpace(testsupport.Git(t, dir, "diff", "--cached", "--name-only")), "staged where it now is")
 	_, _, err = dockhand(t, "create", "https://github.com/ErikHellman/txt")
 	require.ErrorContains(t, err, "txt is this branch's new port, at editors/txt, not yet committed: dockhand edit txt edits it, and create --category <another> moves it")
 
@@ -176,15 +177,15 @@ func TestCreateTakesTheManifestsLicenseAndLine(t *testing.T) {
 	out, _, err = dockhand(t, "tidy")
 	require.NoError(t, err)
 	require.Contains(t, out, "a new port create wrote, with your edits since")
-	require.Equal(t, "txt: new port, version 0.8.1", strings.TrimSpace(gitRun(t, dir, "log", "-1", "--format=%s")))
-	require.NotContains(t, gitRun(t, dir, "log", "-1", "--format=%B"), "Generated-By")
+	require.Equal(t, "txt: new port, version 0.8.1", strings.TrimSpace(testsupport.Git(t, dir, "log", "-1", "--format=%s")))
+	require.NotContains(t, testsupport.Git(t, dir, "log", "-1", "--format=%B"), "Generated-By")
 	_, _, err = dockhand(t, "create", "https://github.com/ErikHellman/txt", "--category", "games")
 	require.ErrorContains(t, err, "txt is this branch's new port, at editors/txt, and committed: dockhand edit txt edits it")
 	t.Setenv("MACPORTS_TREE", w.clone)
 
 	// Where https doesn't answer, the homepage is written as GitHub gives
 	// it, and said.
-	testHTTPS = httpsAnswers{}
+	testHTTPS = testsupport.HTTPSAnswers{}
 	out, _, err = dockhand(t, "create", "https://github.com/ErikHellman/txt", "--new", "--name", "txt-plain")
 	require.NoError(t, err)
 	require.NotContains(t, out, "homepage: over HTTPS")

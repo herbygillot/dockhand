@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // A branch whose files' every change master has, as dockhand last fetched
@@ -27,8 +29,8 @@ func TestABranchWhoseChangesLandedIsOnMaster(t *testing.T) {
 	require.Empty(t, status.OnMaster, "master doesn't have it")
 
 	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.7.1\nconfigure.cxx_standard 2014\n", "devel/other/Portfile": "name other\n"})
-	run(t, f.upstream, "add", "-A")
-	run(t, f.upstream, "commit", "-q", "-m", "jq: fix build on macOS 12 and older")
+	testsupport.Git(t, f.upstream, "add", "-A")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "jq: fix build on macOS 12 and older")
 	status, err = e.BranchStatus(t.Context(), branch)
 	require.NoError(t, err)
 	require.Empty(t, status.OnMaster, "status fetches nothing")

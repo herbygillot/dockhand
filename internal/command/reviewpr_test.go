@@ -2,7 +2,6 @@ package command
 
 import (
 	"bytes"
-	"github.com/herbygillot/dockhand/internal/forge"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,18 +10,20 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 func TestReviewShowsThenPostsOnlyWhenAsked(t *testing.T) {
 	w := newWorld(t)
 	g := withGitHub(t, w)
-	gitRun(t, w.upstream, "switch", "-q", "-c", "contrib")
+	testsupport.Git(t, w.upstream, "switch", "-q", "-c", "contrib")
 	require.NoError(t, os.WriteFile(filepath.Join(w.upstream, "textproc/jq/Portfile"), []byte("name jq\n# docs\n"), 0o644))
-	gitRun(t, w.upstream, "commit", "-q", "-am", "Update jq docs")
-	gitRun(t, w.upstream, "update-ref", "refs/pull/34905/head", "contrib")
-	gitRun(t, w.upstream, "switch", "-q", "master")
-	g.theirs = map[int]forge.PullRequest{34905: {Ref: forge.PullRequestRef{Forge: "github", Repository: "macports/macports-ports", Number: 34905, URL: "https://github.com/macports/macports-ports/pull/34905"}, Title: "Update jq docs", State: forge.PullRequestOpen}}
+	testsupport.Git(t, w.upstream, "commit", "-q", "-am", "Update jq docs")
+	testsupport.Git(t, w.upstream, "update-ref", "refs/pull/34905/head", "contrib")
+	testsupport.Git(t, w.upstream, "switch", "-q", "master")
+	g.Theirs = map[int]forge.PullRequest{34905: {Ref: forge.PullRequestRef{Forge: "github", Repository: "macports/macports-ports", Number: 34905, URL: "https://github.com/macports/macports-ports/pull/34905"}, Title: "Update jq docs", State: forge.PullRequestOpen}}
 
 	_, _, err := dockhand(t, "review", "x")
 	require.ErrorContains(t, err, `"x" is not a pull request number`)
@@ -31,7 +32,7 @@ func TestReviewShowsThenPostsOnlyWhenAsked(t *testing.T) {
 	require.Contains(t, out, "review of #34905 \"Update jq docs\", as @ada (read access to macports/macports-ports)\n  1 commit changing jq\n")
 	require.Contains(t, out, `should start with the port it changes: "jq: …" [subject-port]`)
 	require.Contains(t, out, "Nothing was posted; --comment or --request-changes posts it.\n")
-	require.Empty(t, g.reviews)
+	require.Empty(t, g.Reviews)
 
 	out, _, err = dockhand(t, "review", "34905", "--markdown")
 	require.NoError(t, err)
@@ -43,8 +44,8 @@ func TestReviewShowsThenPostsOnlyWhenAsked(t *testing.T) {
 	require.Contains(t, errs.String(), "? post as: c comment · e edit first · n don't post", "read access can't request changes")
 	require.Contains(t, errs.String(), "Requesting changes is left to people with write or triage access; you have read access.")
 	require.Contains(t, stdout.String(), "✓ review posted on #34905: a comment, 0 inline comments\n  https://github.com/macports/macports-ports/pull/34905#pullrequestreview-1\n")
-	require.Len(t, g.reviews, 1)
-	require.False(t, g.reviews[0].RequestChanges)
+	require.Len(t, g.Reviews, 1)
+	require.False(t, g.Reviews[0].RequestChanges)
 
 	_, _, err = dockhand(t, "review", "34905", "--request-changes")
 	require.ErrorContains(t, err, "requesting changes is left to people with write or triage access")
@@ -53,12 +54,12 @@ func TestReviewShowsThenPostsOnlyWhenAsked(t *testing.T) {
 func TestAdoptSomeonesPullRequest(t *testing.T) {
 	w := newWorld(t)
 	g := withGitHub(t, w)
-	gitRun(t, w.upstream, "switch", "-q", "-c", "contrib")
+	testsupport.Git(t, w.upstream, "switch", "-q", "-c", "contrib")
 	require.NoError(t, os.WriteFile(filepath.Join(w.upstream, "textproc/jq/Portfile"), []byte("name jq\n# docs\n"), 0o644))
-	gitRun(t, w.upstream, "commit", "-q", "-am", "jq: document the options")
-	gitRun(t, w.upstream, "update-ref", "refs/pull/34905/head", "contrib")
-	gitRun(t, w.upstream, "switch", "-q", "master")
-	g.theirs = map[int]forge.PullRequest{34905: {Ref: forge.PullRequestRef{Forge: "github", Repository: "macports/macports-ports", Number: 34905},
+	testsupport.Git(t, w.upstream, "commit", "-q", "-am", "jq: document the options")
+	testsupport.Git(t, w.upstream, "update-ref", "refs/pull/34905/head", "contrib")
+	testsupport.Git(t, w.upstream, "switch", "-q", "master")
+	g.Theirs = map[int]forge.PullRequest{34905: {Ref: forge.PullRequestRef{Forge: "github", Repository: "macports/macports-ports", Number: 34905},
 		HeadRepository: "newcontrib/macports-ports", HeadBranch: "patch-1", Title: "jq: document the options", State: forge.PullRequestOpen, Author: "newcontrib", MaintainerCanModify: true}}
 
 	_, _, err := dockhand(t, "adopt", "x", "--pr", "34905")

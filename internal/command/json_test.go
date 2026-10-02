@@ -190,7 +190,7 @@ func TestJSONForTheWholeLoop(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, float64(34901), dig(t, submitted.Result, "pull_request", "number"))
 	require.Equal(t, true, dig(t, submitted.Result, "pull_request", "created"))
-	require.Len(t, g.prs, 1)
+	require.Len(t, g.PRs, 1)
 	afterSubmit, err := jsonOf(t, "status")
 	require.NoError(t, err)
 	require.Equal(t, "https://github.com/macports/macports-ports/pull/34901", dig(t, afterSubmit.Result, "branches", 0, "pull_request", "url"))
@@ -201,7 +201,7 @@ func TestJSONForTheWholeLoop(t *testing.T) {
 
 	// clean reads the pull request itself, with no status --refresh
 	// before it (field testing, 2026-10-02).
-	g.prs[0].State = forge.PullRequestMerged
+	g.PRs[34901].State = forge.PullRequestMerged
 	t.Setenv("MACPORTS_TREE", w.clone)
 	preview, err := jsonOf(t, "clean")
 	require.NoError(t, err)
@@ -291,7 +291,7 @@ func TestSubmitCheckReportsOneShape(t *testing.T) {
 	require.Equal(t, "jq: update to 1.8.1", refused.Result["title"])
 	require.NotEmpty(t, refused.Result["blocking"])
 	require.NotContains(t, refused.Result, "check", "no check ran")
-	require.Empty(t, g.prs)
+	require.Empty(t, g.PRs)
 
 	committed("jq-passing")
 	next("passed")

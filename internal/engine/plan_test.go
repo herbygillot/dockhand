@@ -14,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // fakePorts stands in for MacPorts' evaluator: each directory's ports, and
@@ -94,9 +95,9 @@ func harborBranch(t *testing.T, e *Engine) model.Revision {
 		"graphics/harbor-viewer/files/a.patch": "a\n",
 		"graphics/harbor-tools/Portfile":       "name harbor-tools\n",
 	})
-	run(t, branch.Worktree, "add", "-A")
-	run(t, branch.Worktree, "commit", "-q", "-m", "base for the ports")
-	base := run(t, branch.Worktree, "rev-parse", "HEAD")
+	testsupport.Git(t, branch.Worktree, "add", "-A")
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-m", "base for the ports")
+	base := testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")
 	write(t, branch.Worktree, map[string]string{
 		"devel/libharbor/Portfile":             "name libharbor\nversion 4\n",
 		"devel/harbor-cli/Portfile":            "name harbor-cli\nrevision 1\n",
@@ -200,8 +201,8 @@ func TestChangedSharedCodeIsSubstantive(t *testing.T) {
 		"_resources/port1.0/group/github-1.0.tcl":        "PortGroup legacysupport 1.1\n",
 		"_resources/port1.0/group/legacysupport-1.1.tcl": "# legacy support\n",
 	})
-	run(t, f.upstream, "add", "-A")
-	run(t, f.upstream, "commit", "-q", "-m", "jq: load group")
+	testsupport.Git(t, f.upstream, "add", "-A")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "jq: load group")
 	e := f.open(t)
 	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}}
 	for i, c := range []struct {
@@ -221,13 +222,13 @@ func TestChangedSharedCodeIsSubstantive(t *testing.T) {
 	} {
 		branch, err := e.Start(t.Context(), StartRequest{Name: fmt.Sprintf("shared-%d", i)})
 		require.NoError(t, err)
-		run(t, branch.Worktree, "sparse-checkout", "add", "_resources")
+		testsupport.Git(t, branch.Worktree, "sparse-checkout", "add", "_resources")
 		files := map[string]string{"textproc/jq/Portfile": "PortGroup github 1.0\nname jq\nversion 1.7.1\nrevision 1\n"}
 		for path, text := range c.files {
 			files[path] = text
 		}
 		write(t, branch.Worktree, files)
-		run(t, branch.Worktree, "add", "-A") // new files are captured once tracked
+		testsupport.Git(t, branch.Worktree, "add", "-A") // new files are captured once tracked
 		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch})
 		require.NoError(t, err)
 		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{tahoeArm}})

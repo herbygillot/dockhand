@@ -5,7 +5,6 @@ import (
 	"compress/gzip"
 	"context"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/forge"
 	"maps"
 	"os"
 	"path/filepath"
@@ -17,6 +16,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/editprep"
+	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
@@ -25,6 +26,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/sourcecompare"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 var (
@@ -224,8 +226,8 @@ func TestUpdateEditsWorkingFilesAndCommitsNothing(t *testing.T) {
 	require.Contains(t, update.Diff, "+version 1.8.1")
 
 	require.Equal(t, "name jq\nversion 1.8.1\n", read(t, portfile), "the cone grew to hold the edited port")
-	require.Equal(t, string(branch.Base), run(t, branch.Worktree, "rev-parse", "HEAD"), "nothing is committed")
-	require.Equal(t, "M textproc/jq/Portfile", run(t, branch.Worktree, "status", "--porcelain"))
+	require.Equal(t, string(branch.Base), testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"), "nothing is committed")
+	require.Equal(t, "M textproc/jq/Portfile", testsupport.Git(t, branch.Worktree, "status", "--porcelain"))
 
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
 		events, err := r.Events(0, 100)
@@ -240,8 +242,8 @@ func TestUpdateEditsWorkingFilesAndCommitsNothing(t *testing.T) {
 		require.Equal(t, model.EditUpdate, edits[0].Kind)
 		require.Equal(t, "textproc/jq", edits[0].Directory)
 		require.Equal(t, "jq: update to 1.8.1", edits[0].Subject)
-		require.Equal(t, run(t, branch.Worktree, "rev-parse", "HEAD:textproc/jq/Portfile"), string(edits[0].Files[0].Before))
-		require.Equal(t, run(t, branch.Worktree, "hash-object", "textproc/jq/Portfile"), string(edits[0].Files[0].After))
+		require.Equal(t, testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD:textproc/jq/Portfile"), string(edits[0].Files[0].Before))
+		require.Equal(t, testsupport.Git(t, branch.Worktree, "hash-object", "textproc/jq/Portfile"), string(edits[0].Files[0].After))
 		return nil
 	}))
 }
@@ -281,7 +283,7 @@ func TestAPlannedUpdateChangesNothing(t *testing.T) {
 	require.False(t, update.Applied)
 	require.Contains(t, update.Diff, "-version 1.7.1\n+version 1.8.1")
 	require.NoFileExists(t, filepath.Join(branch.Worktree, "textproc/jq/Portfile"))
-	require.Empty(t, run(t, branch.Worktree, "status", "--porcelain"))
+	require.Empty(t, testsupport.Git(t, branch.Worktree, "status", "--porcelain"))
 }
 
 func TestAnUpdateWritesNothingOverAFileThatChanged(t *testing.T) {
@@ -305,7 +307,7 @@ func TestUpdateNeedsTheBranchCheckedOut(t *testing.T) {
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
 	require.NoError(t, err)
-	run(t, branch.Worktree, "switch", "-q", "--detach")
+	testsupport.Git(t, branch.Worktree, "switch", "-q", "--detach")
 	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
 	require.ErrorContains(t, err, "is not checked out in")
 
@@ -344,7 +346,7 @@ func TestBranchesChangingAndFreeNames(t *testing.T) {
 
 	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
 	require.NoError(t, err)
-	run(t, branch.Worktree, "commit", "-q", "-am", "jq: update to 1.8.1")
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: update to 1.8.1")
 	changing, err = e.BranchesChanging(t.Context(), "jq")
 	require.NoError(t, err)
 	require.Len(t, changing, 1)
@@ -668,9 +670,9 @@ func TestAnOptionThePortfileNamesHolds(t *testing.T) {
 	held := func(portfile string) bool {
 		t.Helper()
 		write(t, f.clone, map[string]string{"sysutils/fluent-bit/Portfile": portfile})
-		run(t, f.clone, "add", "sysutils/fluent-bit/Portfile")
-		run(t, f.clone, "commit", "-q", "-m", "fluent-bit")
-		tree := strings.TrimSpace(run(t, f.clone, "rev-parse", "HEAD^{tree}"))
+		testsupport.Git(t, f.clone, "add", "sysutils/fluent-bit/Portfile")
+		testsupport.Git(t, f.clone, "commit", "-q", "-m", "fluent-bit")
+		tree := strings.TrimSpace(testsupport.Git(t, f.clone, "rev-parse", "HEAD^{tree}"))
 		result := editprep.Result{}
 		result.Target = model.Target{Name: "fluent-bit", Portfile: "sysutils/fluent-bit/Portfile"}
 		result.Prepared = macports.Snapshot{Ports: map[string]macports.PortInfo{"fluent-bit": {Name: "fluent-bit", Options: map[string]string{"dockhand.portgroups": "github cmake", "use_configure": "yes", "configure.cmd": "/opt/local/bin/cmake"}}}}
@@ -692,7 +694,7 @@ func TestAnUpdateSaysThePortsPlainHTTPURLs(t *testing.T) {
 	f := setup(t)
 	e, p := f.withPreparer(t)
 	p.options = map[string]string{"homepage": "http://jqlang.example/", "master_sites": "http://dl.example/jq/:src gnu https://github.com/jqlang/jq/releases/"}
-	probe := newGatedProbe(httpsAnswers{"https://jqlang.example/": true}, false)
+	probe := newGatedProbe(testsupport.HTTPSAnswers{"https://jqlang.example/": true}, false)
 	e.HTTPS = probe
 	want := []PlainURL{
 		{PlainURL: macports.PlainURL{Option: "homepage", URL: "http://jqlang.example/"}, HTTPS: "https://jqlang.example/", Answers: true},
@@ -798,7 +800,7 @@ func (r renamedRepository) Describe(context.Context) (forge.Description, error) 
 
 // renamingForge answers each repository by the name it has now.
 type renamingForge struct {
-	*fakeForge
+	*forgetest.GitHub
 	now map[string]string
 }
 
@@ -816,7 +818,7 @@ func (f renamingForge) Repository(_, name string) (forge.Repository, error) {
 func TestAnUpdateSaysItsRepositoryWasRenamed(t *testing.T) {
 	f := setup(t)
 	e, _ := f.withPreparer(t)
-	e.Forge = renamingForge{fakeForge: &fakeForge{t: t}, now: map[string]string{"returntocorp/semgrep": "semgrep/semgrep"}}
+	e.Forge = renamingForge{GitHub: forgetest.New("", ""), now: map[string]string{"returntocorp/semgrep": "semgrep/semgrep"}}
 	require.Equal(t, "semgrep/semgrep", e.renamed(t.Context(), model.Release{Forge: forge.GitHub, Repository: "returntocorp/semgrep"}))
 	require.Empty(t, e.renamed(t.Context(), model.Release{Forge: forge.GitHub, Repository: "jqlang/jq"}))
 	require.Empty(t, e.renamed(t.Context(), model.Release{Forge: forge.GitLab, Repository: "returntocorp/semgrep"}))
@@ -829,8 +831,8 @@ func TestAnUpdateSaysItsRepositoryWasRenamed(t *testing.T) {
 func TestAnObsoleteStubMovesWithItsReplacementWhenAsked(t *testing.T) {
 	f := setup(t)
 	write(t, f.upstream, map[string]string{"textproc/jq-old/Portfile": "name jq-old\nversion 1.7.1\n"})
-	run(t, f.upstream, "add", "-A")
-	run(t, f.upstream, "commit", "-q", "-m", "jq-old: obsolete")
+	testsupport.Git(t, f.upstream, "add", "-A")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "jq-old: obsolete")
 	e, p := f.withPreparer(t)
 	p.family = map[string]macports.PortInfo{"jq-old": {Name: "jq-old", Version: "1.7.1", Options: map[string]string{"replaced_by": "jq", "distfiles": ""}}}
 

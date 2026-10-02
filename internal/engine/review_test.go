@@ -8,24 +8,26 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // contribution puts someone's pull request #34905 on the upstream: an
 // update to jq that keeps its revision, then a follow-up commit.
-func contribution(t *testing.T, f fixture, fake *fakeForge) {
+func contribution(t *testing.T, f fixture, fake *forgetest.GitHub) {
 	t.Helper()
-	run(t, f.upstream, "switch", "-q", "-c", "contrib")
+	testsupport.Git(t, f.upstream, "switch", "-q", "-c", "contrib")
 	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nrevision 1\n"})
 	commitAs(t, f.upstream, "New newcontrib@example.org", "Update jq")
 	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nrevision 1\n# docs\n"})
 	commitAs(t, f.upstream, "New newcontrib@example.org", "jq: fix typo")
-	run(t, f.upstream, "update-ref", "refs/pull/34905/head", "contrib")
-	run(t, f.upstream, "switch", "-q", "master")
-	fake.prs[34905] = &forge.PullRequest{Ref: forge.PullRequestRef{Forge: forge.GitHub, Repository: UpstreamRepository, Number: 34905, URL: "https://github.com/macports/macports-ports/pull/34905"},
+	testsupport.Git(t, f.upstream, "update-ref", "refs/pull/34905/head", "contrib")
+	testsupport.Git(t, f.upstream, "switch", "-q", "master")
+	fake.PRs[34905] = &forge.PullRequest{Ref: forge.PullRequestRef{Forge: forge.GitHub, Repository: UpstreamRepository, Number: 34905, URL: "https://github.com/macports/macports-ports/pull/34905"},
 		HeadRepository: "newcontrib/macports-ports", HeadBranch: "patch-1", State: forge.PullRequestOpen, Title: "Update jq"}
 }
 
@@ -49,21 +51,21 @@ func TestReviewAppliesTheRulesAndRemembersWhatItFound(t *testing.T) {
 
 	_, err = e.PostReview(t.Context(), report, report.Markdown(), true)
 	require.ErrorContains(t, err, "requesting changes is left to people with write or triage access")
-	fake.permission = "triage"
+	fake.Role = "triage"
 	report, err = e.Review(t.Context(), 34905)
 	require.NoError(t, err)
 	url, err := e.PostReview(t.Context(), report, report.Markdown(), true)
 	require.NoError(t, err)
 	require.Equal(t, "https://github.com/macports/macports-ports/pull/34905#pullrequestreview-1", url)
-	require.True(t, fake.reviews[0].RequestChanges)
-	require.Equal(t, report.Head, fake.reviews[0].Commit)
+	require.True(t, fake.Reviews[0].RequestChanges)
+	require.Equal(t, report.Head, fake.Reviews[0].Commit)
 
 	// The contributor squashes and fixes the revision.
-	run(t, f.upstream, "switch", "-q", "-c", "contrib-2", "master")
+	testsupport.Git(t, f.upstream, "switch", "-q", "-c", "contrib-2", "master")
 	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nrevision 0\n# docs\n"})
 	commitAs(t, f.upstream, "New newcontrib@example.org", "jq: update to 1.8.1")
-	run(t, f.upstream, "update-ref", "refs/pull/34905/head", "contrib-2")
-	run(t, f.upstream, "switch", "-q", "master")
+	testsupport.Git(t, f.upstream, "update-ref", "refs/pull/34905/head", "contrib-2")
+	testsupport.Git(t, f.upstream, "switch", "-q", "master")
 	again, err := e.Review(t.Context(), 34905)
 	require.NoError(t, err)
 	require.Empty(t, again.Findings)
@@ -87,11 +89,11 @@ func TestAdoptSomeonesPullRequestAndPushOnlyWhereGitHubAllows(t *testing.T) {
 	fake := f.withFork(t, e)
 	contribution(t, f, fake)
 	theirs := filepath.Join(filepath.Dir(f.upstream), "newcontrib.git")
-	run(t, filepath.Dir(f.upstream), "clone", "-q", "--bare", f.upstream, theirs)
-	run(t, theirs, "branch", "-f", "patch-1", "contrib")
-	run(t, f.clone, "remote", "add", "newcontrib", theirs)
-	fake.repos = map[string]string{"newcontrib/macports-ports": theirs}
-	pr := fake.prs[34905]
+	testsupport.Git(t, filepath.Dir(f.upstream), "clone", "-q", "--bare", f.upstream, theirs)
+	testsupport.Git(t, theirs, "branch", "-f", "patch-1", "contrib")
+	testsupport.Git(t, f.clone, "remote", "add", "newcontrib", theirs)
+	fake.Repos = map[string]string{"newcontrib/macports-ports": theirs}
+	pr := fake.PRs[34905]
 	pr.Author = "newcontrib"
 	// A part dockhand would otherwise refresh, as it last saw it.
 	pr.Body = "#### Description\n\ntheirs\n\n###### Tested on\n\nmacOS 15, by hand\n"
@@ -103,25 +105,25 @@ func TestAdoptSomeonesPullRequestAndPushOnlyWhereGitHubAllows(t *testing.T) {
 	require.Equal(t, []string{"jq"}, adopted.Scope.PortNames())
 	require.Equal(t, "newcontrib", adopted.Author)
 	require.FileExists(t, filepath.Join(adopted.Branch.Worktree, "textproc/jq/Portfile"))
-	require.Equal(t, run(t, theirs, "rev-parse", "patch-1"), string(adopted.Branch.PullRequest.Pushed))
+	require.Equal(t, testsupport.Git(t, theirs, "rev-parse", "patch-1"), string(adopted.Branch.PullRequest.Pushed))
 	again, err := e.AdoptPullRequest(t.Context(), 34905)
 	require.NoError(t, err)
 	require.True(t, again.Already)
 
 	write(t, adopted.Branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\nrevision 0\n# docs\n"})
-	run(t, adopted.Branch.Worktree, "commit", "-q", "-am", "jq: reset revision")
+	testsupport.Git(t, adopted.Branch.Worktree, "commit", "-q", "-am", "jq: reset revision")
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: adopted.Branch, NoCheck: true})
 	require.NoError(t, err)
 	require.Equal(t, "newcontrib/macports-ports:patch-1", plan.Head())
 	require.Contains(t, plan.Blocking[0], "@newcontrib's #34905 doesn't let maintainers push to newcontrib/macports-ports:patch-1")
 
 	pr.MaintainerCanModify = true
-	fake.permission = "read"
+	fake.Role = "read"
 	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: adopted.Branch, NoCheck: true})
 	require.NoError(t, err)
 	require.Contains(t, plan.Blocking[0], "needs write access to macports/macports-ports, and you have read")
 
-	fake.permission = "write"
+	fake.Role = "write"
 	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: adopted.Branch, NoCheck: true})
 	require.NoError(t, err)
 	require.Empty(t, plan.Blocking)
@@ -131,9 +133,9 @@ func TestAdoptSomeonesPullRequestAndPushOnlyWhereGitHubAllows(t *testing.T) {
 	require.ErrorContains(t, err, "--note: #34905 was opened from newcontrib/macports-ports, so its description stays theirs", "a note would never be given")
 	_, err = e.ApplySubmit(t.Context(), plan)
 	require.NoError(t, err)
-	require.Equal(t, run(t, adopted.Branch.Worktree, "rev-parse", "HEAD"), run(t, theirs, "rev-parse", "patch-1"), "pushed to their branch")
-	require.Empty(t, fake.updated, "their title and description are theirs")
-	require.Empty(t, fake.created)
+	require.Equal(t, testsupport.Git(t, adopted.Branch.Worktree, "rev-parse", "HEAD"), testsupport.Git(t, theirs, "rev-parse", "patch-1"), "pushed to their branch")
+	require.Empty(t, fake.Updated, "their title and description are theirs")
+	require.Empty(t, fake.Created)
 }
 
 // A review says what update would of someone's pull request: what

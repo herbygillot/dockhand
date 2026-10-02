@@ -2,15 +2,14 @@ package git_test
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // portsCheckout makes a small ports tree with one commit and opens it.
@@ -27,23 +26,14 @@ func portsCheckout(t *testing.T) (*git.Repository, string) {
 		require.NoError(t, os.MkdirAll(filepath.Join(root, filepath.Dir(name)), 0o755))
 		require.NoError(t, os.WriteFile(filepath.Join(root, name), []byte(content), 0o644))
 	}
-	gitIn(t, root, "init", "-q", "-b", "master")
-	gitIn(t, root, "add", "-A")
-	gitIn(t, root, "commit", "-q", "-m", "init")
+	testsupport.Git(t, root, "init", "-q", "-b", "master")
+	testsupport.Git(t, root, "add", "-A")
+	testsupport.Git(t, root, "commit", "-q", "-m", "init")
 	repo, err := git.Open(t.Context(), root, "")
 	require.NoError(t, err)
 	head, err := repo.Resolve(t.Context(), "HEAD")
 	require.NoError(t, err)
 	return repo, head
-}
-
-func gitIn(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command("git", append([]string{"-c", "user.name=Test", "-c", "user.email=test@example.org"}, args...)...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, string(out))
-	return strings.TrimSpace(string(out))
 }
 
 func files(t *testing.T, root string) []string {
@@ -77,10 +67,10 @@ func TestCreateBranchRefusesToMoveOne(t *testing.T) {
 	require.ErrorIs(t, repo.CreateBranch(t.Context(), "dockhand/jq-update", head), git.ErrBranchExists)
 	require.Error(t, repo.CreateBranch(t.Context(), "-bad", head))
 
-	gitIn(t, repo.Root, "commit", "-q", "--allow-empty", "-m", "moved")
+	testsupport.Git(t, repo.Root, "commit", "-q", "--allow-empty", "-m", "moved")
 	moved, err := repo.Resolve(t.Context(), "HEAD")
 	require.NoError(t, err)
-	gitIn(t, repo.Root, "branch", "-f", "dockhand/jq-update", moved)
+	testsupport.Git(t, repo.Root, "branch", "-f", "dockhand/jq-update", moved)
 	require.Error(t, repo.DeleteBranch(t.Context(), "dockhand/jq-update", head), "a branch someone moved is not deleted")
 	require.NoError(t, repo.DeleteBranch(t.Context(), "dockhand/jq-update", moved))
 }
@@ -125,7 +115,7 @@ func TestAFailedWorktreeIsRemoved(t *testing.T) {
 	require.Error(t, repo.AddSparseWorktree(t.Context(), dir, "dockhand/nowhere", []string{"_resources"}))
 	_, err := os.Stat(dir)
 	require.ErrorIs(t, err, os.ErrNotExist)
-	require.NotContains(t, gitIn(t, repo.Root, "worktree", "list"), "missing-branch")
+	require.NotContains(t, testsupport.Git(t, repo.Root, "worktree", "list"), "missing-branch")
 }
 
 func TestTrackedChangesAndSwitch(t *testing.T) {
@@ -137,12 +127,12 @@ func TestTrackedChangesAndSwitch(t *testing.T) {
 	require.Empty(t, changes, "untracked files are not work a switch displaces")
 
 	require.NoError(t, os.WriteFile(filepath.Join(repo.Root, "textproc/jq/Portfile"), []byte("name jq\nversion 2\n"), 0o644))
-	gitIn(t, repo.Root, "mv", "README.md", "README")
+	testsupport.Git(t, repo.Root, "mv", "README.md", "README")
 	changes, err = repo.TrackedChanges(t.Context())
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"textproc/jq/Portfile", "README", "README.md"}, changes, "a rename lists both paths")
 
-	gitIn(t, repo.Root, "reset", "-q", "--hard")
+	testsupport.Git(t, repo.Root, "reset", "-q", "--hard")
 	require.NoError(t, repo.Switch(t.Context(), "dockhand/here"))
 	branch, err := repo.CurrentBranch(t.Context())
 	require.NoError(t, err)
@@ -158,7 +148,7 @@ func TestWorkingTreeCapturesTrackedFilesAsTheyAreOnDisk(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(repo.Root, "devel/libharbor/Portfile")))
 	require.NoError(t, os.MkdirAll(filepath.Join(repo.Root, "textproc/rift"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(repo.Root, "textproc/rift/Portfile"), []byte("name rift\n"), 0o644))
-	gitIn(t, repo.Root, "add", "textproc/rift/Portfile")
+	testsupport.Git(t, repo.Root, "add", "textproc/rift/Portfile")
 	require.NoError(t, os.WriteFile(filepath.Join(repo.Root, "untracked.txt"), []byte("x"), 0o644))
 
 	commit, tree, err := repo.WorkingTree(t.Context())
@@ -171,7 +161,7 @@ func TestWorkingTreeCapturesTrackedFilesAsTheyAreOnDisk(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "name jq\nversion 2\n", string(data))
 	require.Equal(t, uint32(0o100755), state.Mode)
-	require.Contains(t, gitIn(t, repo.Root, "status", "--porcelain"), " M textproc/jq/Portfile", "the index is untouched")
+	require.Contains(t, testsupport.Git(t, repo.Root, "status", "--porcelain"), " M textproc/jq/Portfile", "the index is untouched")
 }
 
 func TestApplyToWorkingFilesChecksEveryFileFirst(t *testing.T) {
@@ -200,21 +190,21 @@ func TestApplyToWorkingFilesChecksEveryFileFirst(t *testing.T) {
 	data, err = os.ReadFile(filepath.Join(repo.Root, "textproc/jq/Portfile"))
 	require.NoError(t, err)
 	require.Equal(t, "name jq\nversion 3\n", string(data))
-	require.Contains(t, gitIn(t, repo.Root, "status", "--porcelain"), "M devel/libharbor/Portfile")
+	require.Contains(t, testsupport.Git(t, repo.Root, "status", "--porcelain"), "M devel/libharbor/Portfile")
 }
 
 // A directory is named by its tree, as a file is by its blob; a path the
 // tree lacks, or holds as the other kind, is absent.
 func TestDirectoriesNameTheirTrees(t *testing.T) {
 	repo, head := portsCheckout(t)
-	tree := gitIn(t, repo.Root, "rev-parse", head+"^{tree}")
+	tree := testsupport.Git(t, repo.Root, "rev-parse", head+"^{tree}")
 	directories, err := repo.Directories(t.Context(), tree, []string{"_resources", "devel/libharbor", "textproc/missing", "README.md"})
 	require.NoError(t, err)
 	require.Equal(t, map[string]string{
-		"_resources":      gitIn(t, repo.Root, "rev-parse", head+":_resources"),
-		"devel/libharbor": gitIn(t, repo.Root, "rev-parse", head+":devel/libharbor"),
+		"_resources":      testsupport.Git(t, repo.Root, "rev-parse", head+":_resources"),
+		"devel/libharbor": testsupport.Git(t, repo.Root, "rev-parse", head+":devel/libharbor"),
 	}, directories)
 	blobs, err := repo.FileBlobs(t.Context(), tree, []string{"README.md", "devel/libharbor"})
 	require.NoError(t, err)
-	require.Equal(t, map[string]string{"README.md": gitIn(t, repo.Root, "rev-parse", head+":README.md")}, blobs)
+	require.Equal(t, map[string]string{"README.md": testsupport.Git(t, repo.Root, "rev-parse", head+":README.md")}, blobs)
 }

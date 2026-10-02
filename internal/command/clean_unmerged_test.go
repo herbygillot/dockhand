@@ -11,6 +11,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 func TestCleanTakesAnArchivedBranchsWorktreeAndPathBringsItBack(t *testing.T) {
@@ -25,7 +26,7 @@ func TestCleanTakesAnArchivedBranchsWorktreeAndPathBringsItBack(t *testing.T) {
 	require.NoError(t, err)
 	_, _, err = dockhand(t, "tidy")
 	require.NoError(t, err)
-	head := strings.TrimSpace(gitRun(t, dir, "rev-parse", "HEAD"))
+	head := strings.TrimSpace(testsupport.Git(t, dir, "rev-parse", "HEAD"))
 	t.Setenv("MACPORTS_TREE", w.clone)
 	archived, _, err := dockhand(t, "archive", "jq-update")
 	require.NoError(t, err)
@@ -52,7 +53,7 @@ func TestCleanTakesAnArchivedBranchsWorktreeAndPathBringsItBack(t *testing.T) {
 	_, _, err = dockhand(t, "clean", "--archived", "--yes")
 	require.NoError(t, err)
 	require.NoDirExists(t, dir)
-	require.Equal(t, head, strings.TrimSpace(gitRun(t, w.clone, "rev-parse", "dockhand/jq-update")), "the branch and its work stay")
+	require.Equal(t, head, strings.TrimSpace(testsupport.Git(t, w.clone, "rev-parse", "dockhand/jq-update")), "the branch and its work stay")
 
 	// status --all says it's archived, which its row didn't (the dogfood
 	// run with bf711891).

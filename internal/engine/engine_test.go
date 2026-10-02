@@ -3,10 +3,8 @@ package engine
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
-	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 func TestMain(m *testing.M) {
@@ -36,15 +35,6 @@ func TestMain(m *testing.M) {
 }
 
 var at = time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
-
-func run(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command("git", append([]string{"-c", "user.name=Test", "-c", "user.email=test@example.org", "-c", "init.defaultBranch=master"}, args...)...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, string(out))
-	return strings.TrimSpace(string(out))
-}
 
 func write(t *testing.T, root string, files map[string]string) {
 	t.Helper()
@@ -70,17 +60,17 @@ func setup(t *testing.T) fixture {
 	require.NoError(t, err)
 	f := fixture{upstream: filepath.Join(root, "upstream"), clone: filepath.Join(root, "src", "macports-ports")}
 	require.NoError(t, os.MkdirAll(f.upstream, 0o755))
-	run(t, f.upstream, "init", "-q")
+	testsupport.Git(t, f.upstream, "init", "-q")
 	write(t, f.upstream, map[string]string{
 		"_resources/port1.0/group/github-1.0.tcl": "# group\n",
 		"textproc/jq/Portfile":                    "name jq\nversion 1.7.1\n",
 		"devel/libharbor/Portfile":                "name libharbor\n",
 	})
-	run(t, f.upstream, "add", "-A")
-	run(t, f.upstream, "commit", "-q", "-m", "init")
-	run(t, root, "clone", "-q", f.upstream, f.clone)
+	testsupport.Git(t, f.upstream, "add", "-A")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "init")
+	testsupport.Git(t, root, "clone", "-q", f.upstream, f.clone)
 	write(t, f.upstream, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 2\n"})
-	run(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 2")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 2")
 	// The worktrees are the fixture's own, never the person's
 	// ~/Source/macports-branches, which the default is.
 	f.options = Options{Tree: f.clone, Database: filepath.Join(root, "home", ".dockhand", "dockhand.db"), Upstream: f.upstream, Now: func() time.Time { return at },
@@ -93,18 +83,12 @@ func (f fixture) open(t *testing.T) *Engine {
 	e, err := Open(t.Context(), f.options)
 	require.NoError(t, err)
 	t.Cleanup(func() { e.Close() })
-	e.HTTPS = httpsAnswers{} // no test asks the network
+	e.HTTPS = testsupport.HTTPSAnswers{} // no test asks the network
 	return e
 }
 
-// httpsAnswers stands in for asking URLs over HTTPS: those it holds true
-// answer.
-type httpsAnswers map[string]bool
-
-func (a httpsAnswers) Answers(_ context.Context, url string) bool { return a[url] }
-
 func (f fixture) upstreamMaster(t *testing.T) model.ObjectID {
-	return model.ObjectID(run(t, f.upstream, "rev-parse", "master"))
+	return model.ObjectID(testsupport.Git(t, f.upstream, "rev-parse", "master"))
 }
 
 func files(t *testing.T, root string) []string {
@@ -132,10 +116,10 @@ func files(t *testing.T, root string) []string {
 
 func TestOpenRefusesADirectoryThatIsNotAPortsTree(t *testing.T) {
 	root := t.TempDir()
-	run(t, root, "init", "-q")
+	testsupport.Git(t, root, "init", "-q")
 	write(t, root, map[string]string{"README.md": "dockhand\n", "internal/cli/main.go": "package cli\n"})
-	run(t, root, "add", "-A")
-	run(t, root, "commit", "-q", "-m", "init")
+	testsupport.Git(t, root, "add", "-A")
+	testsupport.Git(t, root, "commit", "-q", "-m", "init")
 	database := filepath.Join(t.TempDir(), "dockhand.db")
 	_, err := Open(t.Context(), Options{Tree: root, Database: database})
 	require.ErrorIs(t, err, ErrNotPortsTree)
@@ -160,16 +144,16 @@ func TestStartMakesASparseWorktreeFromFreshMaster(t *testing.T) {
 	require.True(t, branch.Managed)
 	require.Equal(t, filepath.Join(e.Worktrees(), "jq-update"), branch.Worktree)
 	require.Equal(t, []string{"_resources/port1.0/group/github-1.0.tcl"}, files(t, branch.Worktree))
-	require.Equal(t, string(branch.Base), run(t, branch.Worktree, "rev-parse", "HEAD"))
+	require.Equal(t, string(branch.Base), testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"))
 	require.Len(t, files(t, f.clone), 3, "the person's checkout is untouched")
-	require.Equal(t, "master", run(t, f.clone, "branch", "--show-current"))
+	require.Equal(t, "master", testsupport.Git(t, f.clone, "branch", "--show-current"))
 
 	_, err = e.Start(t.Context(), StartRequest{Name: "dockhand/jq-update"})
 	require.ErrorContains(t, err, "already a tracked branch")
 	_, err = e.Start(t.Context(), StartRequest{Name: "bad name"})
 	require.ErrorContains(t, err, "not a usable branch name")
 
-	run(t, f.clone, "branch", "dockhand/mine")
+	testsupport.Git(t, f.clone, "branch", "dockhand/mine")
 	_, err = e.Start(t.Context(), StartRequest{Name: "mine"})
 	require.ErrorIs(t, err, git.ErrBranchExists)
 	require.ErrorContains(t, err, "dockhand adopt dockhand/mine")
@@ -177,7 +161,7 @@ func TestStartMakesASparseWorktreeFromFreshMaster(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(e.Worktrees(), "occupied"), 0o755))
 	_, err = e.Start(t.Context(), StartRequest{Name: "occupied"})
 	require.ErrorContains(t, err, "already exists")
-	require.Empty(t, run(t, f.clone, "branch", "--list", "dockhand/occupied"), "a refusal creates no branch")
+	require.Empty(t, testsupport.Git(t, f.clone, "branch", "--list", "dockhand/occupied"), "a refusal creates no branch")
 
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
 		events, err := r.Events(0, 0)
@@ -195,13 +179,13 @@ func TestAFailedStartLeavesNothingBehind(t *testing.T) {
 	e := f.open(t)
 	_, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
 	require.Error(t, err)
-	require.Empty(t, run(t, f.clone, "branch", "--list", "dockhand/jq-update"), "the branch it created is deleted again")
+	require.Empty(t, testsupport.Git(t, f.clone, "branch", "--list", "dockhand/jq-update"), "the branch it created is deleted again")
 
 	f.options.Worktrees, f.options.Upstream = "", filepath.Join(t.TempDir(), "no-such-upstream")
 	e = f.open(t)
 	_, err = e.Start(t.Context(), StartRequest{Name: "jq-update"})
 	require.ErrorContains(t, err, "fetching master")
-	require.Empty(t, run(t, f.clone, "branch", "--list", "dockhand/jq-update"))
+	require.Empty(t, testsupport.Git(t, f.clone, "branch", "--list", "dockhand/jq-update"))
 }
 
 func TestStartHereUsesThePersonsCheckoutOnlyWhenNothingWouldBeDisplaced(t *testing.T) {
@@ -210,27 +194,27 @@ func TestStartHereUsesThePersonsCheckoutOnlyWhenNothingWouldBeDisplaced(t *testi
 	write(t, f.clone, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
 	_, err := e.Start(t.Context(), StartRequest{Name: "jq-here", Here: true})
 	require.ErrorContains(t, err, "uncommitted changes to textproc/jq/Portfile")
-	require.Empty(t, run(t, f.clone, "branch", "--list", "dockhand/jq-here"))
+	require.Empty(t, testsupport.Git(t, f.clone, "branch", "--list", "dockhand/jq-here"))
 
-	run(t, f.clone, "checkout", "-q", "--", ".")
+	testsupport.Git(t, f.clone, "checkout", "-q", "--", ".")
 	write(t, f.clone, map[string]string{"notes.txt": "untracked work is not displaced\n"})
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-here", Here: true})
 	require.NoError(t, err)
 	require.False(t, branch.Managed)
 	require.Equal(t, f.clone, branch.Worktree)
-	require.Equal(t, "dockhand/jq-here", run(t, f.clone, "branch", "--show-current"))
+	require.Equal(t, "dockhand/jq-here", testsupport.Git(t, f.clone, "branch", "--show-current"))
 	require.Equal(t, f.upstreamMaster(t), branch.Base)
 }
 
 func TestAdoptTracksABranchAsItStands(t *testing.T) {
 	f := setup(t)
-	run(t, f.clone, "switch", "-q", "-c", "update-jq")
+	testsupport.Git(t, f.clone, "switch", "-q", "-c", "update-jq")
 	write(t, f.clone, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
-	run(t, f.clone, "commit", "-q", "-am", "Update jq")
+	testsupport.Git(t, f.clone, "commit", "-q", "-am", "Update jq")
 	write(t, f.clone, map[string]string{"textproc/jq/files/patch-fix.diff": "--- a\n", "_resources/port1.0/group/github-1.0.tcl": "# group, fixed\n"})
-	run(t, f.clone, "add", "-A")
-	run(t, f.clone, "commit", "-q", "-m", "oops")
-	head := run(t, f.clone, "rev-parse", "HEAD")
+	testsupport.Git(t, f.clone, "add", "-A")
+	testsupport.Git(t, f.clone, "commit", "-q", "-m", "oops")
+	head := testsupport.Git(t, f.clone, "rev-parse", "HEAD")
 
 	e := f.open(t)
 	adoption, err := e.Adopt(t.Context(), AdoptRequest{})
@@ -243,8 +227,8 @@ func TestAdoptTracksABranchAsItStands(t *testing.T) {
 	require.True(t, adoption.Scope.Resources)
 	require.Equal(t, f.clone, adoption.Branch.Worktree)
 	require.False(t, adoption.Branch.Managed)
-	require.Equal(t, run(t, f.clone, "merge-base", "HEAD", string(f.upstreamMaster(t))), string(adoption.Branch.Base))
-	require.Equal(t, head, run(t, f.clone, "rev-parse", "HEAD"), "adopting moves nothing")
+	require.Equal(t, testsupport.Git(t, f.clone, "merge-base", "HEAD", string(f.upstreamMaster(t))), string(adoption.Branch.Base))
+	require.Equal(t, head, testsupport.Git(t, f.clone, "rev-parse", "HEAD"), "adopting moves nothing")
 
 	again, err := e.Adopt(t.Context(), AdoptRequest{Branch: "update-jq"})
 	require.NoError(t, err)
@@ -256,7 +240,7 @@ func TestAdoptTracksABranchAsItStands(t *testing.T) {
 	// A branch not checked out anywhere is checked out as start checks one
 	// out, not left for git switch to switch the person's own checkout
 	// (the flatbuffers, nuspell, zola, and alertmanager run's finding 3).
-	run(t, f.clone, "branch", "elsewhere", "master")
+	testsupport.Git(t, f.clone, "branch", "elsewhere", "master")
 	elsewhere, err := e.Adopt(t.Context(), AdoptRequest{Branch: "elsewhere"})
 	require.NoError(t, err)
 	require.Equal(t, e.worktreeDirectory("elsewhere"), elsewhere.Branch.Worktree)
@@ -269,7 +253,7 @@ func TestAdoptTracksABranchAsItStands(t *testing.T) {
 	require.ErrorContains(t, err, "what branches start from")
 	_, err = e.Adopt(t.Context(), AdoptRequest{Branch: "absent"})
 	require.ErrorContains(t, err, "no local branch absent")
-	run(t, f.clone, "switch", "-q", "--detach")
+	testsupport.Git(t, f.clone, "switch", "-q", "--detach")
 	_, err = e.Adopt(t.Context(), AdoptRequest{})
 	require.ErrorContains(t, err, "not on a branch")
 }
@@ -301,7 +285,7 @@ func TestPathAndResolve(t *testing.T) {
 
 	// Where dockhand can't check an adopted branch out, a worktree the
 	// person adds for it later is found, and recorded as theirs.
-	run(t, f.clone, "branch", "parked", "master")
+	testsupport.Git(t, f.clone, "branch", "parked", "master")
 	require.NoError(t, os.MkdirAll(e.worktreeDirectory("parked"), 0o755))
 	parked, err := e.Adopt(t.Context(), AdoptRequest{Branch: "parked"})
 	require.NoError(t, err)
@@ -312,7 +296,7 @@ func TestPathAndResolve(t *testing.T) {
 	temporary, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
 	theirs := filepath.Join(temporary, "parked")
-	run(t, f.clone, "worktree", "add", "-q", theirs, "parked")
+	testsupport.Git(t, f.clone, "worktree", "add", "-q", theirs, "parked")
 	path, err = e.Path(t.Context(), "parked")
 	require.NoError(t, err)
 	require.Equal(t, theirs, path)
@@ -328,7 +312,7 @@ func TestPathAndResolve(t *testing.T) {
 	require.NoError(t, err)
 	require.DirExists(t, path)
 	require.NoError(t, e.Repo.RemoveWorktree(context.Background(), branch.Worktree))
-	run(t, f.clone, "branch", "-D", branch.Name)
+	testsupport.Git(t, f.clone, "branch", "-D", branch.Name)
 	_, err = e.Path(t.Context(), "jq-update")
 	require.ErrorContains(t, err, "is gone, and so is its Git branch")
 }
@@ -339,7 +323,7 @@ func TestUpstreamRemoteIsFoundByURL(t *testing.T) {
 	remote, err := e.UpstreamRemote(t.Context())
 	require.NoError(t, err)
 	require.Nil(t, remote)
-	run(t, f.clone, "remote", "add", "macports", "git@github.com:macports/macports-ports.git")
+	testsupport.Git(t, f.clone, "remote", "add", "macports", "git@github.com:macports/macports-ports.git")
 	remote, err = e.UpstreamRemote(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "macports", remote.Name)
@@ -350,7 +334,7 @@ func TestUpstreamRemoteIsFoundByURL(t *testing.T) {
 		"https://github.com/ada/macports-ports.git":      false,
 		"https://example.org/macports/macports-ports":    false,
 	} {
-		run(t, f.clone, "remote", "set-url", "macports", url)
+		testsupport.Git(t, f.clone, "remote", "set-url", "macports", url)
 		remote, err = e.UpstreamRemote(t.Context())
 		require.NoError(t, err)
 		require.Equal(t, want, remote != nil, url)

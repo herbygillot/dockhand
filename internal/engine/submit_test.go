@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -14,212 +13,20 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
-// fakeForge stands in for GitHub: the fork is a local bare repository, and
-// pull requests live in memory.
-type fakeForge struct {
-	t        *testing.T
-	upstream string
-	fork     string
-	prs      map[int]*forge.PullRequest
-	next     int
-	// others are the open pull requests a search for a port finds, and
-	// searchErr why it fails; searches counts them.
-	others    []forge.PullRequestSummary
-	searchErr error
-	searches  int
-	created   []forge.PullRequestInput
-	updated   []forge.PullRequestInput
-	readied   []int
-	// readyRefused is GitHub's refusal to mark a pull request ready.
-	readyRefused error
-	// repos are other people's repositories, by name, as local paths.
-	repos map[string]string
-	// permission is the role Permission reports; reviews are those posted.
-	permission  string
-	reviews     []forge.ReviewInput
-	rerequested []string
-	// statuses are what Inspect reports, by number.
-	statuses map[int]forge.PullRequestStatus
-	// createFails fails the next Create: after opening the pull request,
-	// as a reply lost on the way back, when lost is set, or before.
-	createFails, lost bool
-	// dockhand is dockhand's own repository as GitHub has it: its commits
-	// and tags, why asking it fails, and what was asked of it.
-	dockhand fakeDockhand
-}
-
-// fakeDockhand is dockhand's own repository on GitHub.
-type fakeDockhand struct {
-	name    string
-	commits []string
-	tags    []string
-	err     error
-	asked   []string
-}
-
-func (f *fakeForge) Repository(_, name string) (forge.Repository, error) {
-	f.dockhand.name = name
-	return &f.dockhand, nil
-}
-
-func (d *fakeDockhand) Name() string { return d.name }
-
-func (d *fakeDockhand) Tag(_ context.Context, name string) (forge.Tag, error) {
-	d.asked = append(d.asked, name)
-	switch {
-	case d.err != nil:
-		return forge.Tag{}, d.err
-	case slices.Contains(d.tags, name):
-		return forge.Tag{Name: name, Commit: strings.Repeat("d", 40)}, nil
-	}
-	return forge.Tag{}, forge.ErrNotFound
-}
-
-func (d *fakeDockhand) ListTags(context.Context) ([]forge.Tag, error) {
-	return nil, errors.New("dockhand's tags aren't listed")
-}
-
-func (d *fakeDockhand) HasCommit(_ context.Context, commit string) (bool, error) {
-	d.asked = append(d.asked, commit)
-	if d.err != nil {
-		return false, d.err
-	}
-	return slices.ContainsFunc(d.commits, func(c string) bool { return strings.HasPrefix(c, commit) }), nil
-}
-
-func (f *fakeForge) AuthenticatedUser(context.Context) (string, error) { return "ada", nil }
-
-func (f *fakeForge) NameFromRemote(url string) (string, error) {
-	for name, path := range f.repos {
-		if path == url {
-			return name, nil
-		}
-	}
-	switch url {
-	case f.upstream:
-		return UpstreamRepository, nil
-	case f.fork:
-		return "ada/macports-ports", nil
-	}
-	return "", errors.New("not a GitHub remote")
-}
-
-func (f *fakeForge) RepositoryInfo(_ context.Context, name string) (forge.RepositoryInfo, error) {
-	if name == "ada/macports-ports" {
-		return forge.RepositoryInfo{Name: name, DefaultBranch: "master", Parent: UpstreamRepository}, nil
-	}
-	return forge.RepositoryInfo{Name: name, DefaultBranch: "master"}, nil
-}
-
-// head is what GitHub reports as the pull request's head: the fork's branch.
-func (f *fakeForge) head(branch string) model.ObjectID {
-	out := run(f.t, f.fork, "for-each-ref", "--format=%(objectname)", "refs/heads/"+branch)
-	return model.ObjectID(out)
-}
-
-func (f *fakeForge) observe(pr *forge.PullRequest) forge.PullRequestObservation {
-	copied := *pr
-	copied.RemoteHead = f.head(pr.HeadBranch)
-	if path, ok := f.repos[pr.HeadRepository]; ok {
-		copied.RemoteHead = model.ObjectID(run(f.t, path, "for-each-ref", "--format=%(objectname)", "refs/heads/"+pr.HeadBranch))
-	}
-	return forge.PullRequestObservation{Found: true, PullRequest: copied}
-}
-
-func (f *fakeForge) Find(_ context.Context, q forge.PullRequestQuery) (forge.PullRequestObservation, error) {
-	for _, pr := range f.prs {
-		if pr.HeadRepository == q.HeadRepository && pr.HeadBranch == q.HeadBranch {
-			return f.observe(pr), nil
-		}
-	}
-	return forge.PullRequestObservation{}, nil
-}
-
-func (f *fakeForge) Observe(_ context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error) {
-	pr, ok := f.prs[ref.Number]
-	if !ok {
-		return forge.PullRequestObservation{}, forge.ErrNotFound
-	}
-	return f.observe(pr), nil
-}
-
-func (f *fakeForge) Create(_ context.Context, input forge.PullRequestInput) (forge.PullRequestObservation, error) {
-	if f.createFails && !f.lost {
-		f.createFails = false
-		return forge.PullRequestObservation{}, errors.New("github: connection reset before the request was sent")
-	}
-	// GitHub refuses a second pull request from one head to one base.
-	for _, pr := range f.prs {
-		if pr.HeadRepository == input.HeadRepository && pr.HeadBranch == input.HeadBranch && pr.BaseBranch == input.BaseBranch && pr.State == forge.PullRequestOpen {
-			return forge.PullRequestObservation{}, fmt.Errorf("%w: a pull request already exists for %s:%s", forge.ErrRejected, input.HeadRepository, input.HeadBranch)
-		}
-	}
-	f.created = append(f.created, input)
-	f.next++
-	number := 34900 + f.next
-	f.prs[number] = &forge.PullRequest{Ref: forge.PullRequestRef{Forge: forge.GitHub, Repository: input.Repository, Number: number, URL: fmt.Sprintf("https://github.com/%s/pull/%d", input.Repository, number)},
-		HeadRepository: input.HeadRepository, HeadBranch: input.HeadBranch, BaseBranch: input.BaseBranch, State: forge.PullRequestOpen, Title: input.Desired.Title, Body: input.Desired.Body}
-	if f.createFails {
-		f.createFails = false
-		return forge.PullRequestObservation{}, errors.New("github: connection reset after the request was sent")
-	}
-	return f.observe(f.prs[number]), nil
-}
-
-func (f *fakeForge) Update(_ context.Context, input forge.PullRequestInput) (forge.PullRequestObservation, error) {
-	f.updated = append(f.updated, input)
-	pr := f.prs[input.ExistingPR.Number]
-	pr.Title, pr.Body = input.Desired.Title, input.Desired.Body
-	return f.observe(pr), nil
-}
-
-func (f *fakeForge) OpenPullRequests(context.Context, string, string) ([]forge.PullRequestSummary, error) {
-	f.searches++
-	return f.others, f.searchErr
-}
-
-func (f *fakeForge) MarkReady(_ context.Context, ref forge.PullRequestRef) (forge.PullRequestObservation, error) {
-	if f.readyRefused != nil {
-		return forge.PullRequestObservation{}, f.readyRefused
-	}
-	f.readied = append(f.readied, ref.Number)
-	return f.observe(f.prs[ref.Number]), nil
-}
-
-func (f *fakeForge) Permission(context.Context, string, string) (string, error) {
-	return f.permission, nil
-}
-
-func (f *fakeForge) PostReview(_ context.Context, input forge.ReviewInput) (string, error) {
-	f.reviews = append(f.reviews, input)
-	return fmt.Sprintf("%s#pullrequestreview-%d", input.Ref.URL, len(f.reviews)), nil
-}
-
-func (f *fakeForge) RequestReviewers(_ context.Context, _ forge.PullRequestRef, logins []string) error {
-	f.rerequested = append(f.rerequested, logins...)
-	return nil
-}
-
-func (f *fakeForge) Inspect(_ context.Context, ref forge.PullRequestRef) (forge.PullRequestStatus, error) {
-	status, ok := f.statuses[ref.Number]
-	if !ok {
-		return forge.PullRequestStatus{Review: "none"}, nil
-	}
-	return status, nil
-}
-
 // withFork gives the clone a fork remote and the engine a fake GitHub.
-func (f fixture) withFork(t *testing.T, e *Engine) *fakeForge {
+func (f fixture) withFork(t *testing.T, e *Engine) *forgetest.GitHub {
 	fork := filepath.Join(filepath.Dir(f.upstream), "fork.git")
-	run(t, filepath.Dir(f.upstream), "clone", "-q", "--bare", f.upstream, fork)
-	run(t, f.clone, "remote", "add", "fork", fork)
-	fake := &fakeForge{t: t, upstream: f.upstream, fork: fork, prs: map[int]*forge.PullRequest{}}
+	testsupport.Git(t, filepath.Dir(f.upstream), "clone", "-q", "--bare", f.upstream, fork)
+	testsupport.Git(t, f.clone, "remote", "add", "fork", fork)
+	fake := forgetest.New(f.upstream, fork)
 	e.Forge = fake
 	return fake
 }
@@ -250,7 +57,7 @@ func TestSubmitWithoutACheckSaysSoAndOpensThePullRequest(t *testing.T) {
 	require.Contains(t, plan.Blocking[0], "no check has finished for this commit's files")
 	_, err = e.ApplySubmit(t.Context(), plan)
 	require.ErrorContains(t, err, "can't submit yet")
-	require.Empty(t, fake.created)
+	require.Empty(t, fake.Created)
 
 	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Types: []string{"enhancement"}})
 	require.NoError(t, err)
@@ -270,8 +77,8 @@ func TestSubmitWithoutACheckSaysSoAndOpensThePullRequest(t *testing.T) {
 	require.True(t, submitted.Created)
 	require.True(t, submitted.Pushed)
 	require.Equal(t, 34901, submitted.PullRequest.Ref.Number)
-	head := run(t, branch.Worktree, "rev-parse", "HEAD")
-	require.Equal(t, model.ObjectID(head), fake.head("dockhand/jq-update"), "the fork has the commit")
+	head := testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")
+	require.Equal(t, model.ObjectID(head), fake.ForkHead("dockhand/jq-update"), "the fork has the commit")
 
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
 		recorded, err := r.Branch(branch.ID)
@@ -298,7 +105,7 @@ func TestAnUpdateDockhandMadeIsAnEnhancement(t *testing.T) {
 	require.Contains(t, plan.Body, "###### Type(s)\n\n- [x] bugfix\n- [ ] enhancement\n- [ ] security fix\n", "--type says what it is")
 
 	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# a person's change\n"})
-	run(t, branch.Worktree, "commit", "-q", "-am", "jq: a person's change")
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: a person's change")
 	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
 	require.Contains(t, plan.Body, "###### Type(s)\n\n- [ ] bugfix\n- [ ] enhancement\n- [ ] security fix\n", "a commit dockhand didn't write is the person's to type")
@@ -338,21 +145,21 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 	require.Equal(t, DescriptionSections{Description: SectionCurrent, Types: SectionRefreshed, TestedOn: SectionCurrent}, typed.Sections)
 	_, err = e.ApplySubmit(t.Context(), plan)
 	require.NoError(t, err)
-	require.Len(t, fake.created, 1)
-	require.Empty(t, fake.updated, "the push is the update; the title and description had nothing new")
-	require.Equal(t, model.ObjectID(run(t, branch.Worktree, "rev-parse", "HEAD")), fake.head("dockhand/jq-update"))
+	require.Len(t, fake.Created, 1)
+	require.Empty(t, fake.Updated, "the push is the update; the title and description had nothing new")
+	require.Equal(t, model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")), fake.ForkHead("dockhand/jq-update"))
 
 	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Title: "jq: update to 1.8.1, reviewed"})
 	require.NoError(t, err)
 	_, err = e.ApplySubmit(t.Context(), plan)
 	require.NoError(t, err)
-	require.Equal(t, first.PullRequest.Ref.Number, fake.updated[0].ExistingPR.Number)
-	require.Equal(t, "jq: update to 1.8.1, reviewed", fake.prs[first.PullRequest.Ref.Number].Title, "--title retitles")
+	require.Equal(t, first.PullRequest.Ref.Number, fake.Updated[0].ExistingPR.Number)
+	require.Equal(t, "jq: update to 1.8.1, reviewed", fake.PRs[first.PullRequest.Ref.Number].Title, "--title retitles")
 
 	// Someone edits the description on GitHub; dockhand leaves it be.
-	fake.prs[first.PullRequest.Ref.Number].Body = "My own words.\n"
+	fake.PRs[first.PullRequest.Ref.Number].Body = "My own words.\n"
 	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# reviewed twice\n"})
-	run(t, branch.Worktree, "commit", "-q", "-am", "jq: note the second review")
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: note the second review")
 	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
 	require.True(t, plan.BodyKept)
@@ -361,11 +168,11 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 
 	// And someone else pushes to the branch before this submit runs.
 	other := filepath.Join(t.TempDir(), "other")
-	run(t, t.TempDir(), "clone", "-q", "-b", "dockhand/jq-update", fake.fork, other)
+	testsupport.Git(t, t.TempDir(), "clone", "-q", "-b", "dockhand/jq-update", fake.Fork, other)
 	write(t, other, map[string]string{"README": "theirs\n"})
-	run(t, other, "add", "README")
-	run(t, other, "commit", "-q", "-m", "their change")
-	run(t, other, "push", "-q", "origin", "dockhand/jq-update")
+	testsupport.Git(t, other, "add", "README")
+	testsupport.Git(t, other, "commit", "-q", "-m", "their change")
+	testsupport.Git(t, other, "push", "-q", "origin", "dockhand/jq-update")
 	_, err = e.ApplySubmit(t.Context(), plan)
 	require.ErrorIs(t, err, ErrStaleSubmit, "the push is conditional on the head submit saw")
 	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
@@ -381,7 +188,7 @@ func TestSubmitNeedsCommittedWorkAndYourFork(t *testing.T) {
 	require.NoError(t, err)
 	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
 	require.NoError(t, err)
-	fake := &fakeForge{t: t, upstream: f.upstream, prs: map[int]*forge.PullRequest{}}
+	fake := forgetest.New(f.upstream, "")
 	e.Forge = fake
 
 	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
@@ -403,8 +210,8 @@ func TestSubmitNeedsCommittedWorkAndYourFork(t *testing.T) {
 // harbor-viewer an extra from --also.
 func checked(t *testing.T, e *Engine, branch model.Branch, jq, viewer model.Outcome) {
 	t.Helper()
-	head := model.ObjectID(run(t, branch.Worktree, "rev-parse", "HEAD"))
-	tree := model.ObjectID(run(t, branch.Worktree, "rev-parse", "HEAD^{tree}"))
+	head := model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"))
+	tree := model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD^{tree}"))
 	at := time.Now().UTC().Truncate(time.Millisecond)
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
@@ -499,12 +306,12 @@ func TestSubmitFollowsThePublicationRule(t *testing.T) {
 	_, err = e.ApplySubmit(t.Context(), plan)
 	require.NoError(t, err)
 	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
-		accepted, err := r.Acceptances(branch.ID, model.ObjectID(run(t, branch.Worktree, "rev-parse", "HEAD")))
+		accepted, err := r.Acceptances(branch.ID, model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")))
 		require.NoError(t, err)
 		require.Len(t, accepted, 1)
 		return nil
 	}))
-	require.Len(t, fake.created, 1)
+	require.Len(t, fake.Created, 1)
 
 	// An extra no check reached asks nothing, and there is nothing of it
 	// to accept (TargetEvidence.Extra).
@@ -535,13 +342,13 @@ func TestSubmitFollowsThePublicationRule(t *testing.T) {
 	require.Empty(t, plan.Blocking)
 	_, err = e2.ApplySubmit(t.Context(), plan)
 	require.NoError(t, err)
-	require.True(t, fake2.created[0].Draft)
+	require.True(t, fake2.Created[0].Draft)
 }
 
 // Someone's repository is pushed to by a remote that already pushes there,
 // else at its GitHub address, over SSH where your remotes push over it.
 func TestTheirRemoteIsOneThatPushesThereOrTheirAddress(t *testing.T) {
-	e := &Engine{Forge: &fakeForge{t: t, repos: map[string]string{"bo/macports-ports": "/remotes/bo"}}}
+	e := &Engine{Forge: &forgetest.GitHub{Repos: map[string]string{"bo/macports-ports": "/remotes/bo"}}}
 	remotes := []git.Remote{{Name: "fork", PushURL: "git@github.com:ada/macports-ports.git"}}
 	name, push, err := e.theirRemote(t.Context(), remotes, "bo/macports-ports")
 	require.NoError(t, err)
@@ -591,7 +398,7 @@ func TestAReadyTheOrganizationRefusesGoesThroughTheGitHubCLI(t *testing.T) {
 	require.NoError(t, err)
 	_, err = e.ApplySubmit(t.Context(), plan)
 	require.NoError(t, err)
-	fake.readyRefused = restricted{errors.New("github: the `macports` organization has enabled OAuth App access restrictions")}
+	fake.ReadyRefused = restricted{errors.New("github: the `macports` organization has enabled OAuth App access restrictions")}
 
 	_, byCLI, err := e.Ready(t.Context(), branch)
 	require.ErrorIs(t, err, forge.ErrAppRestricted)
@@ -637,7 +444,7 @@ func TestOtherOpenPullRequestsLeaveOutTheBranchsOwn(t *testing.T) {
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	fake := f.withFork(t, e)
-	fake.others = []forge.PullRequestSummary{{Number: 35044, Title: "flatbuffers: update"}, {Number: 34620, Title: "libuv: update"}}
+	fake.Others = []forge.PullRequestSummary{{Number: 35044, Title: "flatbuffers: update"}, {Number: 34620, Title: "libuv: update"}}
 	others, problem := e.openPullRequests(t.Context(), []string{"flatbuffers", "libsigmf"}, 35044)
 	require.Empty(t, problem)
 	require.Equal(t, []forge.PullRequestSummary{{Number: 34620, Title: "libuv: update"}}, others)
@@ -652,8 +459,8 @@ func TestSubmitSaysTheNewPortsTheBranchAdds(t *testing.T) {
 	f.withFork(t, e)
 	branch := committedUpdate(t, e)
 	write(t, branch.Worktree, map[string]string{"devel/harbor/Portfile": "name harbor\nversion 1.0\n"})
-	run(t, branch.Worktree, "add", "--sparse", "devel/harbor/Portfile")
-	run(t, branch.Worktree, "commit", "-q", "-m", "harbor: new port, version 1.0")
+	testsupport.Git(t, branch.Worktree, "add", "--sparse", "devel/harbor/Portfile")
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-m", "harbor: new port, version 1.0")
 	harbor := macports.PortInfo{Name: "harbor", Version: "1.0", Options: map[string]string{"description": "{Harbor tools for the command line}", "homepage": "https://harbor.example/", "license": "{MIT Apache-2}"}}
 	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"devel/harbor": {harbor}, "textproc/jq": {port("jq")}}}
 	checked(t, e, branch, model.OutcomePassed, model.OutcomePassed)
@@ -704,7 +511,7 @@ func TestANoteIsKeptInTheDescription(t *testing.T) {
 	require.Equal(t, DescriptionSections{Description: SectionCurrent, Types: SectionCurrent, TestedOn: SectionCurrent}, plan.Sections)
 	_, err = e.ApplySubmit(t.Context(), plan)
 	require.NoError(t, err)
-	require.Empty(t, fake.updated, "nothing new")
+	require.Empty(t, fake.Updated, "nothing new")
 
 	// A new note replaces it, and the pull request is updated for it alone.
 	// One with a line that would begin a heading is quoted, and so stays
@@ -716,8 +523,8 @@ func TestANoteIsKeptInTheDescription(t *testing.T) {
 	require.NotContains(t, plan.Body, "permission error")
 	_, err = e.ApplySubmit(t.Context(), plan)
 	require.NoError(t, err)
-	require.Len(t, fake.updated, 1, "the note's change is the pull request's")
-	require.Equal(t, plan.Body, fake.prs[number].Body)
+	require.Len(t, fake.Updated, 1, "the note's change is the pull request's")
+	require.Equal(t, plan.Body, fake.PRs[number].Body)
 	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Note: new("Fixed upstream.")})
 	require.NoError(t, err)
 	require.Contains(t, plan.Body, "#### Description\n\n> **Author's note:** Fixed upstream.\n\n###### Type(s)\n")
@@ -732,13 +539,13 @@ func TestANoteIsKeptInTheDescription(t *testing.T) {
 	require.Contains(t, plan.Body, "#### Description\n\n###### Type(s)\n")
 	_, err = e.ApplySubmit(t.Context(), plan)
 	require.NoError(t, err)
-	require.Len(t, fake.updated, 3)
-	require.NotContains(t, fake.prs[number].Body, "Author's note")
+	require.Len(t, fake.Updated, 3)
+	require.NotContains(t, fake.PRs[number].Body, "Author's note")
 	require.Empty(t, recordedNote())
 
 	// A Description a person edited on GitHub is theirs, and the plan says
 	// the note isn't in it.
-	fake.prs[number].Body = strings.Replace(fake.prs[number].Body, "#### Description\n\n", "#### Description\n\nMy own words.\n\n", 1)
+	fake.PRs[number].Body = strings.Replace(fake.PRs[number].Body, "#### Description\n\n", "#### Description\n\nMy own words.\n\n", 1)
 	plan, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Note: new("Fixed upstream.")})
 	require.NoError(t, err)
 	require.Equal(t, SectionKept, plan.Sections.Description)

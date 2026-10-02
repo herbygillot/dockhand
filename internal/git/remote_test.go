@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -39,19 +40,19 @@ func TestPushUsesExplicitExpectedHeadAndNeverPushesTags(t *testing.T) {
 func TestCherryCountsWhatMasterHasOfABranch(t *testing.T) {
 	repo, _ := portsCheckout(t)
 	dir := repo.Root
-	gitIn(t, dir, "switch", "-q", "-c", "dockhand/bump/jq-4f2a")
+	testsupport.Git(t, dir, "switch", "-q", "-c", "dockhand/bump/jq-4f2a")
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 2\n"), 0o644))
-	gitIn(t, dir, "commit", "-q", "-am", "jq: update to 2")
-	picked := gitIn(t, dir, "rev-parse", "HEAD")
+	testsupport.Git(t, dir, "commit", "-q", "-am", "jq: update to 2")
+	picked := testsupport.Git(t, dir, "rev-parse", "HEAD")
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "textproc/jq/files"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/files/patch.diff"), []byte("+fix\n"), 0o644))
-	gitIn(t, dir, "add", "-A")
-	gitIn(t, dir, "commit", "-q", "-m", "jq: fix the build")
-	head := gitIn(t, dir, "rev-parse", "HEAD")
-	gitIn(t, dir, "switch", "-q", "master")
-	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m", "elsewhere")
-	gitIn(t, dir, "cherry-pick", picked)
-	master := gitIn(t, dir, "rev-parse", "HEAD")
+	testsupport.Git(t, dir, "add", "-A")
+	testsupport.Git(t, dir, "commit", "-q", "-m", "jq: fix the build")
+	head := testsupport.Git(t, dir, "rev-parse", "HEAD")
+	testsupport.Git(t, dir, "switch", "-q", "master")
+	testsupport.Git(t, dir, "commit", "-q", "--allow-empty", "-m", "elsewhere")
+	testsupport.Git(t, dir, "cherry-pick", picked)
+	master := testsupport.Git(t, dir, "rev-parse", "HEAD")
 
 	commits, err := repo.Cherry(t.Context(), master, head)
 	require.NoError(t, err)

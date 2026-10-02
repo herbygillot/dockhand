@@ -11,17 +11,18 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 func commitAs(t *testing.T, dir, author, message string) {
 	t.Helper()
 	name, email, _ := strings.Cut(author, " ")
-	run(t, dir, "-c", "user.name="+name, "-c", "user.email="+email, "commit", "-q", "-am", message)
+	testsupport.Git(t, dir, "-c", "user.name="+name, "-c", "user.email="+email, "commit", "-q", "-am", message)
 }
 
 func log(t *testing.T, dir string, base model.ObjectID) []string {
 	t.Helper()
-	out := run(t, dir, "log", "--reverse", "--format=%s", string(base)+"..HEAD")
+	out := testsupport.Git(t, dir, "log", "--reverse", "--format=%s", string(base)+"..HEAD")
 	if out == "" {
 		return nil
 	}
@@ -54,9 +55,9 @@ func TestTidyCommitsAnUpdateUnambiguouslyAndRestoreUndoesIt(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "tidy-1", result.Checkpoint.Name())
 	require.Equal(t, []string{"jq: update to 1.8.1"}, log(t, branch.Worktree, branch.Base))
-	require.Empty(t, run(t, branch.Worktree, "status", "--porcelain"), "the files are the commit, and the index agrees")
+	require.Empty(t, testsupport.Git(t, branch.Worktree, "status", "--porcelain"), "the files are the commit, and the index agrees")
 	require.Equal(t, "name jq\nversion 1.8.1\nchecksums sha256 0000\n", read(t, filepath.Join(branch.Worktree, "textproc/jq/Portfile")))
-	require.Equal(t, string(branch.Base), run(t, branch.Worktree, "rev-parse", "refs/dockhand/checkpoints/tidy-1"))
+	require.Equal(t, string(branch.Base), testsupport.Git(t, branch.Worktree, "rev-parse", "refs/dockhand/checkpoints/tidy-1"))
 
 	again, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
 	require.NoError(t, err)
@@ -65,7 +66,7 @@ func TestTidyCommitsAnUpdateUnambiguouslyAndRestoreUndoesIt(t *testing.T) {
 	_, _, err = e.Restore(t.Context(), "tidy-1")
 	require.NoError(t, err)
 	require.Empty(t, log(t, branch.Worktree, branch.Base))
-	require.Equal(t, "M textproc/jq/Portfile", run(t, branch.Worktree, "status", "--porcelain"), "the edit reads as uncommitted again")
+	require.Equal(t, "M textproc/jq/Portfile", testsupport.Git(t, branch.Worktree, "status", "--porcelain"), "the edit reads as uncommitted again")
 	_, _, err = e.Restore(t.Context(), "tidy-1")
 	require.ErrorContains(t, err, "already restored")
 }
@@ -100,7 +101,7 @@ func TestTidySquashesCorrectionsAndKeepsTheirTrailers(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result.Commits, 1)
 	require.Equal(t, []string{"jq: update to 1.8.1"}, log(t, dir, branch.Base))
-	require.Equal(t, "Ada <ada@example.org>", run(t, dir, "log", "-1", "--format=%an <%ae>"))
+	require.Equal(t, "Ada <ada@example.org>", testsupport.Git(t, dir, "log", "-1", "--format=%an <%ae>"))
 }
 
 func TestTidyKeepsAGoodHistoryAndOrdersSeveralPorts(t *testing.T) {
@@ -155,7 +156,7 @@ func TestTidyAsksWhatItCannotKnow(t *testing.T) {
 	write(t, dir, map[string]string{"textproc/jq/Portfile": "changed after the plan\n"})
 	_, err = e.ApplyTidy(t.Context(), plan)
 	require.ErrorIs(t, err, ErrStalePlan)
-	run(t, dir, "checkout", "--", ".")
+	testsupport.Git(t, dir, "checkout", "--", ".")
 
 	plan, err = e.PlanTidy(t.Context(), TidyRequest{Branch: branch, Squash: true, Message: "jq: note the harbor dependency", Author: "Ada <ada@example.org>"})
 	require.NoError(t, err)
@@ -184,13 +185,13 @@ func TestTidyRefusesAMerge(t *testing.T) {
 	branch, err := e.Start(t.Context(), StartRequest{Name: "merged", Here: true})
 	require.NoError(t, err)
 	dir := branch.Worktree
-	run(t, dir, "switch", "-q", "-c", "side")
+	testsupport.Git(t, dir, "switch", "-q", "-c", "side")
 	write(t, dir, map[string]string{"textproc/jq/Portfile": "name jq\nversion 2\n"})
 	commitAs(t, dir, "Ada ada@example.org", "jq: update to 2")
-	run(t, dir, "switch", "-q", branch.Name)
+	testsupport.Git(t, dir, "switch", "-q", branch.Name)
 	write(t, dir, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
 	commitAs(t, dir, "Ada ada@example.org", "libharbor: update to 3")
-	run(t, dir, "-c", "user.name=Ada", "-c", "user.email=ada@example.org", "merge", "-q", "--no-edit", "side")
+	testsupport.Git(t, dir, "-c", "user.name=Ada", "-c", "user.email=ada@example.org", "merge", "-q", "--no-edit", "side")
 	_, err = e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
 	require.ErrorContains(t, err, "never flattens a merge")
 }
@@ -204,8 +205,8 @@ func TestRestorePutsTheStagedVersionBack(t *testing.T) {
 	e, _ := f.withPreparer(t)
 	branch := committedUpdate(t, e)
 	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# staged version\n"})
-	run(t, branch.Worktree, "add", "textproc/jq/Portfile")
-	staged := run(t, branch.Worktree, "show", ":textproc/jq/Portfile")
+	testsupport.Git(t, branch.Worktree, "add", "textproc/jq/Portfile")
+	staged := testsupport.Git(t, branch.Worktree, "show", ":textproc/jq/Portfile")
 	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# working version\n"})
 
 	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch, Squash: true, Message: "jq: update to 1.8.1"})
@@ -213,19 +214,19 @@ func TestRestorePutsTheStagedVersionBack(t *testing.T) {
 	tidied, err := e.ApplyTidy(t.Context(), plan)
 	require.NoError(t, err)
 	require.NotEmpty(t, tidied.Checkpoint.Index)
-	require.NotEqual(t, staged, run(t, branch.Worktree, "show", ":textproc/jq/Portfile"), "tidy leaves the index at its new head")
-	require.Equal(t, string(tidied.Checkpoint.Index), run(t, branch.Worktree, "rev-parse", tidied.Checkpoint.IndexRef()+"^{tree}"), "a ref keeps it reachable")
+	require.NotEqual(t, staged, testsupport.Git(t, branch.Worktree, "show", ":textproc/jq/Portfile"), "tidy leaves the index at its new head")
+	require.Equal(t, string(tidied.Checkpoint.Index), testsupport.Git(t, branch.Worktree, "rev-parse", tidied.Checkpoint.IndexRef()+"^{tree}"), "a ref keeps it reachable")
 
 	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# staged after tidy\n"})
-	run(t, branch.Worktree, "add", "textproc/jq/Portfile")
+	testsupport.Git(t, branch.Worktree, "add", "textproc/jq/Portfile")
 	_, _, err = e.Restore(t.Context(), tidied.Checkpoint.Name())
 	require.ErrorContains(t, err, "something was staged in dockhand/jq-update since "+tidied.Checkpoint.Name())
-	run(t, branch.Worktree, "reset", "-q")
+	testsupport.Git(t, branch.Worktree, "reset", "-q")
 	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n# working version\n"})
 
 	_, _, err = e.Restore(t.Context(), tidied.Checkpoint.Name())
 	require.NoError(t, err)
-	require.Equal(t, staged, run(t, branch.Worktree, "show", ":textproc/jq/Portfile"))
+	require.Equal(t, staged, testsupport.Git(t, branch.Worktree, "show", ":textproc/jq/Portfile"))
 	require.Equal(t, "name jq\nversion 1.8.1\n# working version\n", read(t, filepath.Join(branch.Worktree, "textproc/jq/Portfile")), "the working files are untouched")
 }
 
@@ -345,8 +346,8 @@ func TestTidyNamesAHandMadeBumpByThePortsOwnVersion(t *testing.T) {
 func TestTidyKeepsTheCommitsItWouldntChange(t *testing.T) {
 	f := setup(t)
 	write(t, f.upstream, map[string]string{"textproc/yq/Portfile": "name yq\nversion 4.54.1\n"})
-	run(t, f.upstream, "add", "-A")
-	run(t, f.upstream, "commit", "-q", "-m", "yq: new port")
+	testsupport.Git(t, f.upstream, "add", "-A")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "yq: new port")
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
 	require.NoError(t, err)

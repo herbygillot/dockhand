@@ -21,16 +21,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
-
-func git(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command("git", append([]string{"-c", "user.name=Test", "-c", "user.email=test@example.org", "-c", "init.defaultBranch=master"}, args...)...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, string(out))
-	return strings.TrimSpace(string(out))
-}
 
 type ports map[string][]string
 
@@ -82,10 +74,10 @@ func queuedCheckOf(t *testing.T, body string, grace time.Duration, reader ports)
 	upstream, clone := filepath.Join(root, "upstream"), filepath.Join(root, "macports-ports")
 	require.NoError(t, os.MkdirAll(filepath.Join(upstream, "textproc/jq"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(upstream, "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\n"), 0o644))
-	git(t, upstream, "init", "-q")
-	git(t, upstream, "add", "-A")
-	git(t, upstream, "commit", "-q", "-m", "init")
-	git(t, root, "clone", "-q", upstream, clone)
+	testsupport.Git(t, upstream, "init", "-q")
+	testsupport.Git(t, upstream, "add", "-A")
+	testsupport.Git(t, upstream, "commit", "-q", "-m", "init")
+	testsupport.Git(t, root, "clone", "-q", upstream, clone)
 
 	e, err := engine.Open(t.Context(), engine.Options{Tree: clone, Database: filepath.Join(root, "db", "dockhand.db"), Upstream: upstream, Worktrees: filepath.Join(root, "worktrees")})
 	require.NoError(t, err)
@@ -173,9 +165,9 @@ JSON`
 	// As docs/command-provider.md says: a clone holding the base fetches
 	// the bundle and checks out the commit.
 	ports := filepath.Join(t.TempDir(), "ports")
-	git(t, filepath.Dir(ports), "clone", "-q", filepath.Join(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(dir)))), "upstream"), ports)
-	git(t, ports, "fetch", "-q", request.Bundle, request.Ref)
-	git(t, ports, "checkout", "-q", "--detach", request.Commit)
+	testsupport.Git(t, filepath.Dir(ports), "clone", "-q", filepath.Join(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(dir)))), "upstream"), ports)
+	testsupport.Git(t, ports, "fetch", "-q", request.Bundle, request.Ref)
+	testsupport.Git(t, ports, "checkout", "-q", "--detach", request.Commit)
 	portfile, err := os.ReadFile(filepath.Join(ports, "textproc/jq/Portfile"))
 	require.NoError(t, err)
 	require.Equal(t, "name jq\nversion 1.8.1\n", string(portfile), "the snapshot's files")
@@ -189,10 +181,10 @@ JSON`
 // fetch, whatever its outcome says (batch 20).
 func TestTheScriptIsToldTheCommitAGitFetchMustCheckOut(t *testing.T) {
 	upstream := t.TempDir()
-	git(t, upstream, "init", "-q")
-	git(t, upstream, "commit", "-q", "--allow-empty", "-m", "1.8.1")
-	git(t, upstream, "tag", "jq-1.8.1")
-	commit := git(t, upstream, "rev-parse", "HEAD")
+	testsupport.Git(t, upstream, "init", "-q")
+	testsupport.Git(t, upstream, "commit", "-q", "--allow-empty", "-m", "1.8.1")
+	testsupport.Git(t, upstream, "tag", "jq-1.8.1")
+	commit := testsupport.Git(t, upstream, "rev-parse", "HEAD")
 	reader := ports{"textproc/jq": {"jq", "jq-docs"}, "git.url": {upstream}}
 	reporting := func(fetched string) string {
 		return `cat > "$(dirname "$1")/result.json" <<'JSON'

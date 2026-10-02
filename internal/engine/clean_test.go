@@ -11,12 +11,14 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildlog"
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // mergedBranch submits an update and has GitHub merge it.
-func mergedBranch(t *testing.T) (fixture, *Engine, *fakeForge, model.Branch) {
+func mergedBranch(t *testing.T) (fixture, *Engine, *forgetest.GitHub, model.Branch) {
 	t.Helper()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
@@ -26,7 +28,7 @@ func mergedBranch(t *testing.T) (fixture, *Engine, *fakeForge, model.Branch) {
 	require.NoError(t, err)
 	submitted, err := e.ApplySubmit(t.Context(), plan)
 	require.NoError(t, err)
-	fake.prs[submitted.PullRequest.Ref.Number].State = forge.PullRequestMerged
+	fake.PRs[submitted.PullRequest.Ref.Number].State = forge.PullRequestMerged
 	refreshed, err := e.RefreshPullRequests(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, model.BranchMerged, refreshed[0].Branch.State)
@@ -60,10 +62,10 @@ func TestCleanRemovesWhatAMergedBranchLeaves(t *testing.T) {
 		require.True(t, step.Done, step.What)
 	}
 	require.NoDirExists(t, branch.Worktree)
-	require.Empty(t, fake.head("dockhand/jq-update"), "the fork's branch is gone")
+	require.Empty(t, fake.ForkHead("dockhand/jq-update"), "the fork's branch is gone")
 	// Nothing of the branch's is left; the master dockhand last fetched
 	// is the repository's, and stays.
-	require.Equal(t, "refs/dockhand/master", run(t, e.Repo.Root, "for-each-ref", "--format=%(refname)", "refs/dockhand/", "refs/heads/dockhand/"))
+	require.Equal(t, "refs/dockhand/master", testsupport.Git(t, e.Repo.Root, "for-each-ref", "--format=%(refname)", "refs/dockhand/", "refs/heads/dockhand/"))
 
 	again, err := e.PlanClean(t.Context())
 	require.NoError(t, err)
@@ -82,7 +84,7 @@ func TestCleanKeepsWorkOfItsOwn(t *testing.T) {
 
 	require.NoError(t, os.Remove(filepath.Join(branch.Worktree, "notes.txt")))
 	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.2\n"})
-	run(t, branch.Worktree, "commit", "-q", "-am", "jq: update to 1.8.2")
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "jq: update to 1.8.2")
 	plans, err = e.PlanClean(t.Context())
 	require.NoError(t, err)
 	kept := whats(plans)
@@ -91,7 +93,7 @@ func TestCleanKeepsWorkOfItsOwn(t *testing.T) {
 	done, err := e.ApplyClean(t.Context(), plans)
 	require.NoError(t, err)
 	require.DirExists(t, branch.Worktree)
-	require.NotEmpty(t, run(t, e.Repo.Root, "for-each-ref", "refs/dockhand/checkpoints/"), "checkpoints stay while work does")
+	require.NotEmpty(t, testsupport.Git(t, e.Repo.Root, "for-each-ref", "refs/dockhand/checkpoints/"), "checkpoints stay while work does")
 	require.True(t, done[0].Steps[2].Done, "the fork's branch still held the merge, so it went")
 }
 
@@ -120,9 +122,9 @@ func TestCleanupRemovesWhatCleanWouldAndOldIndexes(t *testing.T) {
 		"ada/macports-ports:dockhand/jq-update": "",
 	}, whats(report.Branches))
 	require.Equal(t, 2, report.Removed(), "the fork's branch and the old index")
-	require.Equal(t, "dockhand/jq-update", run(t, branch.Worktree, "branch", "--show-current"), "the kept worktree keeps its branch")
+	require.Equal(t, "dockhand/jq-update", testsupport.Git(t, branch.Worktree, "branch", "--show-current"), "the kept worktree keeps its branch")
 	require.FileExists(t, filepath.Join(branch.Worktree, "notes.txt"), "work of its own is kept")
-	require.Empty(t, fake.head("dockhand/jq-update"))
+	require.Empty(t, fake.ForkHead("dockhand/jq-update"))
 
 	again, err := e.Cleanup(t.Context(), session(t, e), 7*24*time.Hour)
 	require.NoError(t, err)
@@ -147,28 +149,28 @@ func TestCleanKeepsABranchCheckedOutWhereItStays(t *testing.T) {
 	}, whats(plans), "the worktree isn't dockhand's to remove")
 	_, err = e.ApplyClean(t.Context(), plans)
 	require.NoError(t, err)
-	require.Equal(t, "dockhand/jq-update", strings.TrimSpace(run(t, branch.Worktree, "branch", "--show-current")))
-	require.NotEmpty(t, run(t, e.Repo.Root, "for-each-ref", "refs/heads/dockhand/jq-update"), "the branch stays")
-	require.Empty(t, fake.head("dockhand/jq-update"), "the fork's branch still went")
+	require.Equal(t, "dockhand/jq-update", strings.TrimSpace(testsupport.Git(t, branch.Worktree, "branch", "--show-current")))
+	require.NotEmpty(t, testsupport.Git(t, e.Repo.Root, "for-each-ref", "refs/heads/dockhand/jq-update"), "the branch stays")
+	require.Empty(t, fake.ForkHead("dockhand/jq-update"), "the fork's branch still went")
 
 	// Checked out in your checkout instead, it's kept too.
-	run(t, branch.Worktree, "switch", "-q", "--detach")
-	run(t, e.Repo.Root, "switch", "-q", "dockhand/jq-update")
+	testsupport.Git(t, branch.Worktree, "switch", "-q", "--detach")
+	testsupport.Git(t, e.Repo.Root, "switch", "-q", "dockhand/jq-update")
 	plans, err = e.PlanClean(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "it is checked out in your checkout; switch away first", whats(plans)["branch dockhand/jq-update"])
 
 	// Planned while nowhere else, then checked out before clean ran: the
 	// branch is looked for again before it goes.
-	run(t, e.Repo.Root, "switch", "-q", "--detach")
+	testsupport.Git(t, e.Repo.Root, "switch", "-q", "--detach")
 	plans, err = e.PlanClean(t.Context())
 	require.NoError(t, err)
 	require.Empty(t, whats(plans)["branch dockhand/jq-update"])
-	run(t, branch.Worktree, "switch", "-q", "dockhand/jq-update")
+	testsupport.Git(t, branch.Worktree, "switch", "-q", "dockhand/jq-update")
 	done, err := e.ApplyClean(t.Context(), plans)
 	require.NoError(t, err)
 	require.Equal(t, "it is checked out in "+branch.Worktree+"; switch away there first", done[0].Steps[0].Kept)
-	require.NotEmpty(t, run(t, e.Repo.Root, "for-each-ref", "refs/heads/dockhand/jq-update"))
+	require.NotEmpty(t, testsupport.Git(t, e.Repo.Root, "for-each-ref", "refs/heads/dockhand/jq-update"))
 }
 
 // Status only reads: the worktree clean removed from an archived branch
@@ -240,7 +242,7 @@ func TestAnArchivedBranchWithNothingMasterLacksGoesWithItsWorktree(t *testing.T)
 	// adopted and archived pre-v3 zola branch was (the dogfood run with
 	// fb2d195f).
 	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.2\n"})
-	run(t, f.upstream, "commit", "-q", "-am", "jq: update to 1.8.2")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "jq: update to 1.8.2")
 	_, err = e.fetchMaster(t.Context())
 	require.NoError(t, err)
 	plans, err = e.PlanClean(t.Context(), model.BranchArchived)
@@ -253,8 +255,8 @@ func TestAnArchivedBranchWithNothingMasterLacksGoesWithItsWorktree(t *testing.T)
 
 	_, err = e.ApplyClean(t.Context(), plans)
 	require.NoError(t, err)
-	require.Empty(t, run(t, e.Repo.Root, "branch", "--list", "dockhand/duckdb-cxx14"))
-	require.NotEmpty(t, run(t, e.Repo.Root, "branch", "--list", "dockhand/jq-update"))
+	require.Empty(t, testsupport.Git(t, e.Repo.Root, "branch", "--list", "dockhand/duckdb-cxx14"))
+	require.NotEmpty(t, testsupport.Git(t, e.Repo.Root, "branch", "--list", "dockhand/jq-update"))
 	archived, err := e.Branch(t.Context(), empty.ID)
 	require.NoError(t, err)
 	status, err := e.BranchStatus(t.Context(), archived)

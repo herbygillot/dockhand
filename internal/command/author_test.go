@@ -16,12 +16,14 @@ import (
 	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // bumper stands in for MacPorts: a bump rewrites the version line, and a
@@ -98,7 +100,7 @@ func withBumper(t *testing.T) {
 func versioned(t *testing.T, w world) {
 	t.Helper()
 	require.NoError(t, os.WriteFile(filepath.Join(w.upstream, "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\n"), 0o644))
-	gitRun(t, w.upstream, "commit", "-q", "-am", "jq: 1.7.1")
+	testsupport.Git(t, w.upstream, "commit", "-q", "-am", "jq: 1.7.1")
 }
 
 func TestUpdateInTheBranchCheckedOutHere(t *testing.T) {
@@ -148,7 +150,7 @@ func TestUpdateWithoutABranchAsksOrSaysHow(t *testing.T) {
 
 	// A plan changes nothing, so with no branch to plan in it plans on
 	// master, as --new --plan does, and asks nothing on a terminal.
-	none := gitRun(t, w.clone, "branch", "--list", "dockhand/*")
+	none := testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*")
 	planned, _, err := dockhand(t, "update", "jq", "--plan")
 	require.NoError(t, err)
 	require.Regexp(t, `Planned on master [0-9a-f]+ \(fetched just now\); --new without --plan starts the branch\n`, planned)
@@ -158,7 +160,7 @@ func TestUpdateWithoutABranchAsksOrSaysHow(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, asked.String(), "? ", "a plan asks nothing")
 	require.Contains(t, told.String(), "Planned on master ")
-	require.Equal(t, none, gitRun(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
+	require.Equal(t, none, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
 
 	var out, errs bytes.Buffer
 	err = Run(t.Context(), []string{"update", "jq"}, Streams{In: strings.NewReader("\n"), Out: &out, Err: &errs, interactive: true})
@@ -168,7 +170,7 @@ func TestUpdateWithoutABranchAsksOrSaysHow(t *testing.T) {
 	require.NotNil(t, started, out.String())
 	name := started[1]
 	require.Contains(t, out.String(), name+" · ~/Source/macports-branches/"+name+"\n")
-	gitRun(t, filepath.Join(w.home, "Source", "macports-branches", name), "commit", "-q", "-am", "jq: update to 1.8.1")
+	testsupport.Git(t, filepath.Join(w.home, "Source", "macports-branches", name), "commit", "-q", "-am", "jq: update to 1.8.1")
 
 	_, _, err = dockhand(t, "update", "jq")
 	require.ErrorContains(t, err, "jq is changed in "+name+"; name it with --branch "+name+", or start another with --new")
@@ -204,13 +206,13 @@ func TestUpdateWithoutABranchAsksOrSaysHow(t *testing.T) {
 
 	// --new with --plan is a look before starting a branch, on master as
 	// fetched now; it starts none.
-	before := gitRun(t, w.clone, "branch", "--list", "dockhand/*")
+	before := testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*")
 	planned, _, err = dockhand(t, "update", "jq", "--new", "--plan")
 	require.NoError(t, err)
 	require.Regexp(t, `Planned on master [0-9a-f]+ \(fetched just now\); --new without --plan starts the branch\n`, planned)
 	require.Contains(t, planned, "Plan, nothing changed:")
 	require.NotContains(t, planned, "Started ")
-	require.Equal(t, before, gitRun(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
+	require.Equal(t, before, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
 	_, _, err = dockhand(t, "checksums", "jq", "--new", "--plan")
 	require.ErrorContains(t, err, "starts no branch")
 	_, _, err = dockhand(t, "update", "jq", "--new", "--branch", name)
@@ -240,7 +242,7 @@ func TestAnUntrackedBranchHereIsTheirsToAdopt(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
-	gitRun(t, w.clone, "switch", "-q", "-c", "mine")
+	testsupport.Git(t, w.clone, "switch", "-q", "-c", "mine")
 	planned, _, err := dockhand(t, "update", "jq", "--plan")
 	require.NoError(t, err)
 	require.Regexp(t, `Planned on master [0-9a-f]+ \(fetched just now\), since mine doesn't change jq; --new without --plan starts the branch\n`, planned)
@@ -262,7 +264,7 @@ func TestAnUntrackedBranchHereIsTheirsToAdopt(t *testing.T) {
 	portfile := filepath.Join(w.clone, "textproc/jq/Portfile")
 	require.NoError(t, os.WriteFile(portfile, []byte("name jq\n# mine\n"), 0o644))
 	refused("an edit not committed")
-	gitRun(t, w.clone, "commit", "-q", "-am", "jq: mine")
+	testsupport.Git(t, w.clone, "commit", "-q", "-am", "jq: mine")
 	refused("a commit since it left master")
 	planned, _, err = dockhand(t, "update", "jq", "--new", "--plan")
 	require.NoError(t, err)
@@ -291,8 +293,8 @@ func TestUpdateRevbumpsTheLibraryDependents(t *testing.T) {
 		require.NoError(t, os.MkdirAll(filepath.Join(w.upstream, "textproc", port), 0o755))
 		require.NoError(t, os.WriteFile(filepath.Join(w.upstream, "textproc", port, "Portfile"), []byte("name "+port+"\nversion 1\n"), 0o644))
 	}
-	gitRun(t, w.upstream, "add", "-A")
-	gitRun(t, w.upstream, "commit", "-q", "-m", "yq and jo")
+	testsupport.Git(t, w.upstream, "add", "-A")
+	testsupport.Git(t, w.upstream, "commit", "-q", "-m", "yq and jo")
 	withBumper(t)
 	testDependentReader = jqDependents{}
 	t.Cleanup(func() { testDependentReader = nil })
@@ -440,7 +442,7 @@ func TestAnUpdateNamesOtherOpenPullRequests(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
-	g := &fakeGitHub{others: []forge.PullRequestSummary{{Number: 34620, Title: "jq: update to 1.8.0", URL: "https://github.com/macports/macports-ports/pull/34620"}}}
+	g := &forgetest.GitHub{Others: []forge.PullRequestSummary{{Number: 34620, Title: "jq: update to 1.8.0", URL: "https://github.com/macports/macports-ports/pull/34620"}}}
 	testForge = func(*engine.Engine) engine.Forge { return g }
 
 	planned, _, err := dockhand(t, "update", "jq", "--plan")
@@ -454,7 +456,7 @@ func TestAnUpdateNamesOtherOpenPullRequests(t *testing.T) {
 	require.NoError(t, err, "it stops for none")
 	require.Contains(t, made, "Also open for jq: #34620 jq: update to 1.8.0\n")
 
-	g.searchErr = errors.New("rate limited")
+	g.SearchErr = errors.New("rate limited")
 	dir := filepath.Join(w.home, "Source", "macports-branches")
 	entries, err := os.ReadDir(dir)
 	require.NoError(t, err)
@@ -497,7 +499,7 @@ func TestAnUncertainNewestReleaseIsNamedNotChosen(t *testing.T) {
 	result, err := jsonOf(t, "update", "jq", "--plan")
 	require.Equal(t, 3, ExitCode(err))
 	require.Nil(t, result.Result, "a refusal before anything is done reports only its error")
-	require.Empty(t, gitRun(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
+	require.Empty(t, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
 
 	out, _, err := dockhand(t, "update", "jq", "1.9.0", "--new")
 	require.NoError(t, err)

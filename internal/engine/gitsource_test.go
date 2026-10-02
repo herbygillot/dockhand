@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // harborRepository is the repository libharbor's Git fetch clones, with
@@ -22,14 +23,14 @@ func harborRepository(t *testing.T) (url, first string, move func() string) {
 	t.Helper()
 	url = filepath.Join(t.TempDir(), "libharbor")
 	require.NoError(t, os.MkdirAll(url, 0o755))
-	run(t, url, "init", "-q")
-	run(t, url, "commit", "-q", "--allow-empty", "-m", "4.0")
-	run(t, url, "tag", "v4")
-	first = run(t, url, "rev-parse", "HEAD")
+	testsupport.Git(t, url, "init", "-q")
+	testsupport.Git(t, url, "commit", "-q", "--allow-empty", "-m", "4.0")
+	testsupport.Git(t, url, "tag", "v4")
+	first = testsupport.Git(t, url, "rev-parse", "HEAD")
 	return url, first, func() string {
-		run(t, url, "commit", "-q", "--allow-empty", "-m", "4.0, again")
-		run(t, url, "tag", "-f", "v4")
-		return run(t, url, "rev-parse", "HEAD")
+		testsupport.Git(t, url, "commit", "-q", "--allow-empty", "-m", "4.0, again")
+		testsupport.Git(t, url, "tag", "-f", "v4")
+		return testsupport.Git(t, url, "rev-parse", "HEAD")
 	}
 }
 
@@ -417,7 +418,7 @@ func TestAFetchThatFoundItsSourceMovedStandsForNone(t *testing.T) {
 
 	checked, _ := c.check(false)
 	require.Equal(t, model.RunFailed, checked.State, "libharbor fetched another commit than its check expected")
-	run(t, url, "tag", "-f", "v4", first)
+	testsupport.Git(t, url, "tag", "-f", "v4", first)
 	provider.failures = model.MaxAttempts
 	c.check(true)
 	require.Contains(t, c.missing(), model.TargetID("libharbor"), "the fetch that found its source moved built nothing")

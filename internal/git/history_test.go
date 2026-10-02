@@ -6,15 +6,17 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 func TestHistoryAndComposeTree(t *testing.T) {
 	repo, base := portsCheckout(t)
 	require.NoError(t, os.WriteFile(filepath.Join(repo.Root, "textproc/jq/Portfile"), []byte("name jq\nversion 2\n"), 0o644))
-	gitIn(t, repo.Root, "commit", "-q", "-am", "Update jq")
+	testsupport.Git(t, repo.Root, "commit", "-q", "-am", "Update jq")
 	require.NoError(t, os.Remove(filepath.Join(repo.Root, "devel/libharbor/Portfile")))
 	require.NoError(t, os.WriteFile(filepath.Join(repo.Root, "textproc/jq/Portfile"), []byte("name jq\nversion 3\n"), 0o644))
-	gitIn(t, repo.Root, "commit", "-q", "-am", "oops\n\nCloses: https://trac.macports.org/ticket/71234")
+	testsupport.Git(t, repo.Root, "commit", "-q", "-am", "oops\n\nCloses: https://trac.macports.org/ticket/71234")
 	head, err := repo.Resolve(t.Context(), "HEAD")
 	require.NoError(t, err)
 

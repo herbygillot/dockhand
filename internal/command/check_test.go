@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // onePort stands in for MacPorts: every directory defines one port, named
@@ -396,7 +397,7 @@ func TestCheckingABranchWithNoCommitsTakesItsWorkingFiles(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "jq-update · would capture the working files as a new snapshot\n")
 
-	gitRun(t, dir, "commit", "-q", "-am", "jq: update to 1.8.1")
+	testsupport.Git(t, dir, "commit", "-q", "-am", "jq: update to 1.8.1")
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\nrevision 1\n"), 0o644))
 	_, _, err = dockhand(t, "check", "--plan", "--branch", "jq-update")
 	require.ErrorContains(t, err, "jq-update's worktree has edits (textproc/jq/Portfile); choose --head for the committed tip or --working-tree for the files")

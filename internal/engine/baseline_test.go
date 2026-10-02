@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/planning"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // A baseline is planned the way a check is, from the base's own Portfiles
@@ -66,8 +67,8 @@ func TestABaselineUsesTheCheckedBase(t *testing.T) {
 	checked, err := e.Branch(t.Context(), branch.ID)
 	require.NoError(t, err)
 	write(t, f.upstream, map[string]string{"devel/other/Portfile": "name other\nversion 1\n"})
-	run(t, f.upstream, "add", "devel/other/Portfile")
-	run(t, f.upstream, "commit", "-q", "-m", "other: new port")
+	testsupport.Git(t, f.upstream, "add", "devel/other/Portfile")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "other: new port")
 	_, err = e.Rebase(t.Context(), checked)
 	require.NoError(t, err)
 	current, err := e.Branch(t.Context(), branch.ID)

@@ -12,14 +12,15 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // commitNaming adds an empty commit to the branch whose Generated-By
 // names a build, and returns its name.
 func commitNaming(t *testing.T, dir, subject, build string) string {
 	t.Helper()
-	run(t, dir, "commit", "-q", "--allow-empty", "-m", fmt.Sprintf("%s\n\nGenerated-By: Dockhand %s (https://github.com/herbygillot/dockhand)", subject, build))
-	return run(t, dir, "rev-parse", "HEAD")
+	testsupport.Git(t, dir, "commit", "-q", "--allow-empty", "-m", fmt.Sprintf("%s\n\nGenerated-By: Dockhand %s (https://github.com/herbygillot/dockhand)", subject, build))
+	return testsupport.Git(t, dir, "rev-parse", "HEAD")
 }
 
 // A Generated-By naming a build dockhand's repository on GitHub doesn't
@@ -36,10 +37,10 @@ func TestSubmitSaysABuildGitHubDoesntHave(t *testing.T) {
 	e, _ := f.withPreparer(t)
 	fake := f.withFork(t, e)
 	branch := committedUpdate(t, e)
-	fake.dockhand.commits = []string{"2bbcfdb76480" + strings.Repeat("a", 28)}
-	fake.dockhand.tags = []string{"v0.0.0-20260924.0"}
-	devel := run(t, branch.Worktree, "rev-parse", "HEAD")
-	require.Contains(t, run(t, branch.Worktree, "log", "-1", "--format=%B"), "Generated-By: Dockhand devel (", "a test's build records no revision")
+	fake.Dockhand.Commits = []string{"2bbcfdb76480" + strings.Repeat("a", 28)}
+	fake.Dockhand.Tags = []string{"v0.0.0-20260924.0"}
+	devel := testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")
+	require.Contains(t, testsupport.Git(t, branch.Worktree, "log", "-1", "--format=%B"), "Generated-By: Dockhand devel (", "a test's build records no revision")
 	unpushed := "v0.0.0-20260924.0.0.20260928190000-14320eb7c0de"
 	first := commitNaming(t, branch.Worktree, "jq: a first look", unpushed)
 	commitNaming(t, branch.Worktree, "jq: a pushed build", "v0.0.0-20260924.0.0.20260928175309-2bbcfdb76480")
@@ -56,8 +57,8 @@ func TestSubmitSaysABuildGitHubDoesntHave(t *testing.T) {
 		{Build: "v0.3.0", Commits: []string{local}, Source: buildinfo.Source{Release: "v0.3.0"}},
 	}, plan.UnfoundBuilds)
 	require.Empty(t, plan.BuildsProblem)
-	require.Equal(t, []string{"14320eb7c0de", "2bbcfdb76480", "v0.0.0-20260924.0", "v0.3.0"}, fake.dockhand.asked, "each build once, by what finds it")
-	require.Equal(t, "herbygillot/dockhand", fake.dockhand.name)
+	require.Equal(t, []string{"14320eb7c0de", "2bbcfdb76480", "v0.0.0-20260924.0", "v0.3.0"}, fake.Dockhand.Asked, "each build once, by what finds it")
+	require.Equal(t, "herbygillot/dockhand", fake.Dockhand.Name())
 	require.Equal(t, []string{dirty}, plan.ModifiedBuilds)
 	require.Empty(t, plan.Blocking)
 	for _, held := range plan.held() {
@@ -80,14 +81,14 @@ func TestSubmitSaysOnceThatGitHubCouldntBeAskedAboutItsBuilds(t *testing.T) {
 	e, _ := f.withPreparer(t)
 	fake := f.withFork(t, e)
 	branch := committedUpdate(t, e)
-	fake.dockhand.err = &forge.RateLimitError{RetryAt: time.Now().Add(time.Hour), Err: errors.New("github: API rate limit exceeded")}
+	fake.Dockhand.Err = &forge.RateLimitError{RetryAt: time.Now().Add(time.Hour), Err: errors.New("github: API rate limit exceeded")}
 	commitNaming(t, branch.Worktree, "jq: a first look", "devel+14320eb7c0de")
 	commitNaming(t, branch.Worktree, "jq: a second look", "v0.0.0-20260924.0.0.20260928175309-2bbcfdb76480")
 
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true, Title: "jq: update to 1.8.1"})
 	require.NoError(t, err)
 	require.Equal(t, "github: API rate limit exceeded", plan.BuildsProblem)
-	require.Equal(t, []string{"14320eb7c0de"}, fake.dockhand.asked)
+	require.Equal(t, []string{"14320eb7c0de"}, fake.Dockhand.Asked)
 	require.Len(t, plan.UnfoundBuilds, 1)
 	require.Equal(t, "devel", plan.UnfoundBuilds[0].Build)
 	require.Empty(t, plan.Blocking)

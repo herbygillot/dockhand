@@ -2,9 +2,7 @@ package command
 
 import (
 	"bytes"
-	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,16 +10,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/forge/forgetest"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
-
-func gitRun(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command("git", append([]string{"-c", "user.name=Test", "-c", "user.email=test@example.org", "-c", "init.defaultBranch=master"}, args...)...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, string(out))
-	return strings.TrimSpace(string(out))
-}
 
 // world is a home directory, an upstream standing in for
 // macports/macports-ports, and the person's clone of it at ~/src.
@@ -31,8 +22,8 @@ func newWorld(t *testing.T) world {
 	t.Helper()
 	// What would ask GitHub, such as an update looking for other open pull
 	// requests, asks a fake that knows of none, unless a test gives its own.
-	testForge = func(*engine.Engine) engine.Forge { return &fakeGitHub{} }
-	testHTTPS = httpsAnswers{}
+	testForge = func(*engine.Engine) engine.Forge { return forgetest.New("", "") }
+	testHTTPS = testsupport.HTTPSAnswers{}
 	t.Cleanup(func() { testForge, testHTTPS = nil, nil })
 	// Git reports resolved paths; on macOS the temporary directory is
 	// reached through /var, a link to /private/var.
@@ -44,11 +35,11 @@ func newWorld(t *testing.T) world {
 		require.NoError(t, os.MkdirAll(filepath.Join(w.upstream, filepath.Dir(name)), 0o755))
 		require.NoError(t, os.WriteFile(filepath.Join(w.upstream, name), []byte(content), 0o644))
 	}
-	gitRun(t, w.upstream, "init", "-q")
-	gitRun(t, w.upstream, "add", "-A")
-	gitRun(t, w.upstream, "commit", "-q", "-m", "init")
+	testsupport.Git(t, w.upstream, "init", "-q")
+	testsupport.Git(t, w.upstream, "add", "-A")
+	testsupport.Git(t, w.upstream, "commit", "-q", "-m", "init")
 	require.NoError(t, os.MkdirAll(filepath.Dir(w.clone), 0o755))
-	gitRun(t, root, "clone", "-q", w.upstream, w.clone)
+	testsupport.Git(t, root, "clone", "-q", w.upstream, w.clone)
 	require.NoError(t, os.MkdirAll(w.home, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(w.home, ".gitconfig"), []byte("[user]\n\tname = Ada\n\temail = ada@example.org\n"), 0o644))
 	t.Setenv("HOME", w.home)
@@ -87,9 +78,9 @@ func TestInitStartPathAndAdopt(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(w.home, "Source", "macports-branches", "jq-update")+"\n", out, "path prints only the path")
 
-	gitRun(t, w.clone, "switch", "-q", "-c", "update-jq")
+	testsupport.Git(t, w.clone, "switch", "-q", "-c", "update-jq")
 	require.NoError(t, os.WriteFile(filepath.Join(w.clone, "textproc/jq/Portfile"), []byte("name jq\nversion 1.8.1\n"), 0o644))
-	gitRun(t, w.clone, "commit", "-q", "-am", "Update jq")
+	testsupport.Git(t, w.clone, "commit", "-q", "-am", "Update jq")
 	out, _, err = dockhand(t, "adopt")
 	require.NoError(t, err)
 	require.Regexp(t, `^Adopted update-jq: 1 commit above master [0-9a-f]{7}, changing jq\.\n$`, out)
@@ -103,7 +94,7 @@ func TestInitStartPathAndAdopt(t *testing.T) {
 
 func TestInitRemembersAChosenWorktreesDirectory(t *testing.T) {
 	w := newWorld(t)
-	gitRun(t, w.clone, "remote", "add", "upstream", "https://github.com/macports/macports-ports.git")
+	testsupport.Git(t, w.clone, "remote", "add", "upstream", "https://github.com/macports/macports-ports.git")
 	out, _, err := dockhand(t, "init", "--worktrees", "~/work/branches")
 	require.NoError(t, err)
 	require.Contains(t, out, "upstream is macports/macports-ports (remote upstream)")
@@ -168,9 +159,3 @@ func TestMacPortsTreeKeepsTheWorktreeYouAreIn(t *testing.T) {
 	_, _, err = dockhand(t, "path")
 	require.ErrorContains(t, err, "master is not tracked", "outside it, the checkout named, which has master out")
 }
-
-// httpsAnswers stands in for asking URLs over HTTPS: those it holds true
-// answer.
-type httpsAnswers map[string]bool
-
-func (a httpsAnswers) Answers(_ context.Context, url string) bool { return a[url] }

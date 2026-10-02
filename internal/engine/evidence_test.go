@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // A branch changing jq and libharbor, committed, and checkable with the
@@ -19,9 +20,9 @@ import (
 func twoPortBranch(t *testing.T, e *Engine) model.Branch {
 	t.Helper()
 	branch := committedUpdate(t, e)
-	run(t, branch.Worktree, "sparse-checkout", "add", "devel/libharbor")
+	testsupport.Git(t, branch.Worktree, "sparse-checkout", "add", "devel/libharbor")
 	write(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
-	run(t, branch.Worktree, "commit", "-q", "-am", "libharbor: update to 3")
+	testsupport.Git(t, branch.Worktree, "commit", "-q", "-am", "libharbor: update to 3")
 	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{
 		"textproc/jq": {port("jq")}, "devel/libharbor": {port("libharbor")},
 	}}
@@ -199,7 +200,7 @@ func TestAResultStandsOnlyWhileItsEnvironmentDoes(t *testing.T) {
 
 	checkHead(t, e, branch)
 	require.Empty(t, blocking())
-	evidence, _, err := e.EvidenceFor(t.Context(), branch.ID, model.ObjectID(run(t, branch.Worktree, "rev-parse", "HEAD^{tree}")))
+	evidence, _, err := e.EvidenceFor(t.Context(), branch.ID, model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD^{tree}")))
 	require.NoError(t, err)
 	require.NotEmpty(t, evidence.Executions)
 	for _, execution := range evidence.Executions {
@@ -253,7 +254,7 @@ func TestTheProviderSaysWhatChangedInAnEnvironment(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, strings.Join(submission.Blocking, "\n"),
 		"jq's check no longer stands: since it, on "+DescribeEnvironment(tahoeArm)+", dockhand has begun to build otherwise, from verifier 1 to verifier 2; dockhand check builds it there again")
-	evidence, _, err := e.EvidenceFor(t.Context(), branch.ID, model.ObjectID(run(t, branch.Worktree, "rev-parse", "HEAD^{tree}")))
+	evidence, _, err := e.EvidenceFor(t.Context(), branch.ID, model.ObjectID(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD^{tree}")))
 	require.NoError(t, err)
 	cell := evidence.Targets[0].Outcomes[0]
 	require.Equal(t, CellRemade, cell.Kind)

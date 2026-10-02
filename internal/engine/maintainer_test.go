@@ -9,9 +9,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // maintainedPorts are fake ports whose index writes maintainers as given,
@@ -28,7 +30,7 @@ func (p maintainedPorts) Spellings(_ context.Context, source model.Source, spell
 }
 
 // signedOut is a forge nobody is signed in to.
-type signedOut struct{ *fakeForge }
+type signedOut struct{ *forgetest.GitHub }
 
 func (signedOut) AuthenticatedUser(context.Context) (string, error) {
 	return "", errors.New("github: not signed in")
@@ -43,7 +45,7 @@ func (signedOut) AuthenticatedUser(context.Context) (string, error) {
 func TestTheMaintainerSuggestedIsTheLineThePortsWrite(t *testing.T) {
 	f := setup(t)
 	e := f.open(t)
-	e.Forge = &fakeForge{t: t}
+	e.Forge = forgetest.New("", "")
 	var asked []model.Source
 	own := macports.Maintainer{"example.org:ada", "@ada"}
 	e.PortReader = maintainedPorts{asked: &asked, spellings: map[string][]portindex.MaintainerSpelling{"@ada": {
@@ -51,8 +53,8 @@ func TestTheMaintainerSuggestedIsTheLineThePortsWrite(t *testing.T) {
 		{Maintainer: macports.Maintainer{"@ada"}, Portfiles: 3},
 		{Maintainer: macports.Maintainer{"@ada", "ada$x"}, Portfiles: 1},
 	}}}
-	base := model.ObjectID(run(t, f.clone, "rev-parse", "HEAD"))
-	tree := model.ObjectID(run(t, f.clone, "rev-parse", "HEAD^{tree}"))
+	base := model.ObjectID(testsupport.Git(t, f.clone, "rev-parse", "HEAD"))
+	tree := model.ObjectID(testsupport.Git(t, f.clone, "rev-parse", "HEAD^{tree}"))
 
 	suggestion := e.SuggestMaintainer(t.Context(), base)
 	require.Equal(t, []model.Source{{Commit: base, Tree: tree, Base: base}}, asked, "the index of the commit given")
@@ -76,7 +78,7 @@ func TestTheMaintainerSuggestedIsTheLineThePortsWrite(t *testing.T) {
 func TestServeSuggestsTheMaintainerLineThePortsWrite(t *testing.T) {
 	f := setup(t)
 	e := f.open(t)
-	e.Forge = &fakeForge{t: t}
+	e.Forge = forgetest.New("", "")
 	var asked []model.Source
 	e.PortReader = maintainedPorts{asked: &asked, spellings: map[string][]portindex.MaintainerSpelling{"@ada": {{Maintainer: macports.Maintainer{"example.org:ada", "@ada"}, Portfiles: 2}}}}
 	var said []string

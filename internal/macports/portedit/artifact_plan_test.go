@@ -3,12 +3,6 @@ package portedit
 import (
 	"crypto/sha256"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/distfetch"
-	"github.com/herbygillot/dockhand/internal/macports/distfiles"
-	"github.com/herbygillot/dockhand/internal/macports/eval"
-	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +12,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/distfetch"
+	"github.com/herbygillot/dockhand/internal/macports/distfiles"
+	"github.com/herbygillot/dockhand/internal/macports/eval"
+	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 func archiveFixture(t *testing.T, body string) (*Service, Request, *[]string) {

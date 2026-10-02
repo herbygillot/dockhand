@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 type roundTrips func(*http.Request) (*http.Response, error)
@@ -36,10 +37,10 @@ func TestTheHTTPSProbeRejectsADowngrade(t *testing.T) {
 	require.True(t, probe.Answers(t.Context(), "https://example.invalid/secure"))
 }
 
-// gatedProbe answers as httpsAnswers does, once its gate opens, and counts
+// gatedProbe answers as testsupport.HTTPSAnswers does, once its gate opens, and counts
 // each URL's asks, the asks in flight, and the most in flight at once.
 type gatedProbe struct {
-	answers httpsAnswers
+	answers testsupport.HTTPSAnswers
 	open    chan struct{}
 	mu      sync.Mutex
 	asked   map[string]int
@@ -49,7 +50,7 @@ type gatedProbe struct {
 
 // newGatedProbe is a probe whose gate is shut, for the test to open, or
 // open already.
-func newGatedProbe(answers httpsAnswers, shut bool) *gatedProbe {
+func newGatedProbe(answers testsupport.HTTPSAnswers, shut bool) *gatedProbe {
 	probe := &gatedProbe{answers: answers, open: make(chan struct{}), asked: map[string]int{}}
 	if !shut {
 		close(probe.open)
@@ -89,7 +90,7 @@ func TestAPortsURLsAreAskedTogetherEachOnce(t *testing.T) {
 	}
 	info := macports.PortInfo{Options: map[string]string{"homepage": "http://jqlang.example/",
 		"master_sites": strings.Join(append(sites, "http://mirror2.example/jq/:src", "http://jqlang.example/"), " ")}}
-	probe := newGatedProbe(httpsAnswers{"https://mirror3.example/jq/": true}, true)
+	probe := newGatedProbe(testsupport.HTTPSAnswers{"https://mirror3.example/jq/": true}, true)
 	e := &Engine{HTTPS: probe}
 	said := make(chan []PlainURL)
 	go func() { said <- e.plainHTTP(t.Context(), info, nil) }()
@@ -114,7 +115,7 @@ func TestAPortsURLsAreAskedTogetherEachOnce(t *testing.T) {
 // them: create asks a homepage before writing it, and its checksum refresh
 // would otherwise ask again (batch 21).
 func TestAnAnswerHadIsntAskedAgain(t *testing.T) {
-	probe := newGatedProbe(httpsAnswers{"https://jqlang.example/": true}, false)
+	probe := newGatedProbe(testsupport.HTTPSAnswers{"https://jqlang.example/": true}, false)
 	e := &Engine{HTTPS: probe}
 	answered := map[string]bool{"https://dl.example/": false}
 	plain := e.plainHTTP(t.Context(), macports.PortInfo{Options: map[string]string{"homepage": "http://jqlang.example/", "master_sites": "http://dl.example/"}}, answered)

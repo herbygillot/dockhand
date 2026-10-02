@@ -22,6 +22,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // scriptedProvider builds by a script of outcomes: each attempt fails
@@ -242,7 +243,7 @@ func TestAResultKeepsWhatItsBuildRead(t *testing.T) {
 		require.Equal(t, "sha256:"+string(result.Target), result.Archive)
 	}
 	tree := func(path string) model.ObjectID {
-		return model.ObjectID(run(t, e.Repo.Root, "rev-parse", string(revision.Source.Tree)+":"+path))
+		return model.ObjectID(testsupport.Git(t, e.Repo.Root, "rev-parse", string(revision.Source.Tree)+":"+path))
 	}
 	require.Equal(t, "origin a", inputs.Environment)
 	require.NotEmpty(t, inputs.Directory)

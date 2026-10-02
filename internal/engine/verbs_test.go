@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 func TestEditExpandsTheWorktreeToThePort(t *testing.T) {
@@ -59,7 +60,7 @@ func TestRebaseMovesTheBranchOntoFreshMaster(t *testing.T) {
 	require.True(t, up.UpToDate, "nothing new on master")
 
 	write(t, f.upstream, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
-	run(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 3")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 3")
 	rebased, err := e.Rebase(t.Context(), branch)
 	require.NoError(t, err)
 	require.False(t, rebased.UpToDate)
@@ -78,12 +79,12 @@ func TestRebaseMovesTheBranchOntoFreshMaster(t *testing.T) {
 	write(t, branch.Worktree, map[string]string{"devel/libharbor/Portfile": "mine\n"})
 	_, _, err = e.Restore(t.Context(), "rebase-1")
 	require.ErrorContains(t, err, "restoring rebase-1 puts back master's older files too, and a change to one of them stops it, so nothing was changed")
-	require.Equal(t, string(rebased.Checkpoint.After), run(t, branch.Worktree, "rev-parse", "HEAD"))
-	run(t, branch.Worktree, "checkout", "--", "devel/libharbor/Portfile")
+	require.Equal(t, string(rebased.Checkpoint.After), testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"))
+	testsupport.Git(t, branch.Worktree, "checkout", "--", "devel/libharbor/Portfile")
 	_, restored, err := e.Restore(t.Context(), "rebase-1")
 	require.NoError(t, err)
-	require.Equal(t, string(rebased.Checkpoint.Before), run(t, branch.Worktree, "rev-parse", "HEAD"))
-	require.Empty(t, run(t, branch.Worktree, "status", "--porcelain"), "master's newer files don't read as the branch's edits")
+	require.Equal(t, string(rebased.Checkpoint.Before), testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"))
+	require.Empty(t, testsupport.Git(t, branch.Worktree, "status", "--porcelain"), "master's newer files don't read as the branch's edits")
 	require.Equal(t, rebased.From, restored.Base)
 	current, err = e.Resolve(t.Context(), "jq-update")
 	require.NoError(t, err)
@@ -99,14 +100,14 @@ func TestARebaseThatConflictsChangesNothing(t *testing.T) {
 	require.NoError(t, err)
 	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
 	commitAs(t, branch.Worktree, "Ada ada@example.org", "jq: update to 1.8.1")
-	head := run(t, branch.Worktree, "rev-parse", "HEAD")
+	head := testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")
 	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.0\n"})
-	run(t, f.upstream, "commit", "-q", "-am", "jq: update to 1.8.0")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "jq: update to 1.8.0")
 
 	_, err = e.Rebase(t.Context(), branch)
 	require.ErrorContains(t, err, "the rebase stopped on conflicts in textproc/jq/Portfile")
-	require.Equal(t, head, run(t, branch.Worktree, "rev-parse", "HEAD"))
-	require.Empty(t, run(t, branch.Worktree, "status", "--porcelain"))
+	require.Equal(t, head, testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"))
+	require.Empty(t, testsupport.Git(t, branch.Worktree, "status", "--porcelain"))
 
 	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "mine\n"})
 	_, err = e.Rebase(t.Context(), branch)
@@ -166,7 +167,7 @@ func TestARebaseCountsWhatItReplays(t *testing.T) {
 	require.Zero(t, rebases(), "a branch already on master records no rebase from master onto itself")
 
 	write(t, f.upstream, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
-	run(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 3")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 3")
 	rebased, err := e.Rebase(t.Context(), branch)
 	require.NoError(t, err)
 	require.Equal(t, 1, rebased.Commits, "libharbor's change is master's now")
@@ -185,15 +186,15 @@ func TestAMergedBranchIsNotRebased(t *testing.T) {
 	require.NoError(t, err)
 	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
 	commitAs(t, branch.Worktree, "Ada ada@example.org", "jq: update to 1.8.1")
-	head := strings.TrimSpace(run(t, branch.Worktree, "rev-parse", "HEAD"))
+	head := strings.TrimSpace(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD"))
 
 	// Master takes the same change as another commit, as a squash merge
 	// would.
 	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
-	run(t, f.upstream, "commit", "-q", "-am", "jq: update to 1.8.1 (#34901)")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "jq: update to 1.8.1 (#34901)")
 	_, err = e.Rebase(t.Context(), branch)
 	require.ErrorContains(t, err, "already has every change jq-update makes, so there's nothing to rebase; dockhand clean jq-update removes it once its pull request is merged")
-	require.Equal(t, head, strings.TrimSpace(run(t, branch.Worktree, "rev-parse", "HEAD")), "the branch is as it was")
+	require.Equal(t, head, strings.TrimSpace(testsupport.Git(t, branch.Worktree, "rev-parse", "HEAD")), "the branch is as it was")
 
 	require.EqualError(t, ended(model.Branch{Name: "dockhand/jq-update", State: model.BranchMerged, PullRequest: &model.PullRequest{Number: 34901}}),
 		"#34901 merged, so jq-update has nothing to rebase; dockhand clean jq-update removes what it leaves")
@@ -212,7 +213,7 @@ func TestStatusCreditsTheCheckOfTheFilesAsTheyAre(t *testing.T) {
 	before := checkHead(t, e, branch)
 
 	write(t, f.upstream, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
-	run(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 3")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 3")
 	rebased, err := e.Rebase(t.Context(), branch)
 	require.NoError(t, err)
 	branch, err = e.Resolve(t.Context(), "jq-update")
@@ -261,7 +262,7 @@ func TestARebaseAndATidySayAnOlderBuildsAttribution(t *testing.T) {
 	require.Equal(t, []string{old}, plan.OlderBuilds())
 
 	write(t, f.upstream, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
-	run(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 3")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "libharbor: update to 3")
 	rebased, err := e.Rebase(t.Context(), branch)
 	require.NoError(t, err)
 	require.Equal(t, 1, rebased.Commits)

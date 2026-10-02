@@ -7,6 +7,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // An update's assessment, kept as its revision's, checks its patches as a
@@ -18,8 +19,8 @@ func TestAnUpdatesAssessmentChecksItsPatches(t *testing.T) {
 	f := setup(t)
 	patch := "--- src/main.c\n+++ src/main.c\n@@ -1 +1 @@\n-int main;\n+int main(void);\n"
 	write(t, f.upstream, map[string]string{"textproc/jq/files/patch-main.diff": patch})
-	run(t, f.upstream, "add", "-A")
-	run(t, f.upstream, "commit", "-q", "-m", "add patch")
+	testsupport.Git(t, f.upstream, "add", "-A")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "add patch")
 	f.options.Readings = t.TempDir()
 	e, editor := f.withPreparer(t)
 	old := map[string]string{"LICENSE": "MIT\n", "src/main.c": "int main;\n"}

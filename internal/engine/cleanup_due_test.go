@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // caching is a provider that keeps a cache, as Tart keeps the vanilla images
@@ -84,7 +85,7 @@ func TestEachCheckoutKeepsItsOwnCleanupDay(t *testing.T) {
 	f := setup(t)
 	e := f.open(t)
 	other := filepath.Join(t.TempDir(), "other-ports")
-	run(t, filepath.Dir(other), "clone", "-q", f.upstream, other)
+	testsupport.Git(t, filepath.Dir(other), "clone", "-q", f.upstream, other)
 	options := f.options
 	options.Tree, options.Worktrees = other, t.TempDir()
 	o, err := Open(t.Context(), options)

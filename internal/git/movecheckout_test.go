@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // MoveCheckout takes a sparse checkout's branch, index, and files back to
@@ -19,40 +20,40 @@ func TestMoveCheckoutTakesASparseCheckoutBack(t *testing.T) {
 		require.NoError(t, os.MkdirAll(filepath.Join(root, filepath.Dir(name)), 0o755))
 		require.NoError(t, os.WriteFile(filepath.Join(root, name), []byte(text), 0o644))
 	}
-	gitIn(t, root, "init", "-q", "-b", "master")
-	gitIn(t, root, "add", "-A")
-	gitIn(t, root, "commit", "-q", "-m", "init")
+	testsupport.Git(t, root, "init", "-q", "-b", "master")
+	testsupport.Git(t, root, "add", "-A")
+	testsupport.Git(t, root, "commit", "-q", "-m", "init")
 	worktree := filepath.Join(filepath.Dir(root), "branch")
-	gitIn(t, root, "worktree", "add", "-q", worktree, "-b", "branch")
-	gitIn(t, worktree, "sparse-checkout", "set", "--no-cone", "/a/", "/c/")
-	before := gitIn(t, worktree, "rev-parse", "HEAD")
+	testsupport.Git(t, root, "worktree", "add", "-q", worktree, "-b", "branch")
+	testsupport.Git(t, worktree, "sparse-checkout", "set", "--no-cone", "/a/", "/c/")
+	before := testsupport.Git(t, worktree, "rev-parse", "HEAD")
 	// Master moves a and b on, and a rebase brings them in.
 	require.NoError(t, os.WriteFile(filepath.Join(root, "a/Portfile"), []byte("a2\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "b/Portfile"), []byte("b2\n"), 0o644))
-	gitIn(t, root, "commit", "-q", "-am", "a2 and b2")
-	gitIn(t, worktree, "rebase", "-q", "master")
-	after := gitIn(t, worktree, "rev-parse", "HEAD")
+	testsupport.Git(t, root, "commit", "-q", "-am", "a2 and b2")
+	testsupport.Git(t, worktree, "rebase", "-q", "master")
+	after := testsupport.Git(t, worktree, "rev-parse", "HEAD")
 	require.NoFileExists(t, filepath.Join(worktree, "b/Portfile"))
 	repo, err := git.Open(t.Context(), worktree, "")
 	require.NoError(t, err)
 
 	require.NoError(t, os.WriteFile(filepath.Join(worktree, "a/Portfile"), []byte("mine\n"), 0o644))
 	require.Error(t, repo.MoveCheckout(t.Context(), after, before), "a local change to a file it moves")
-	require.Equal(t, after, gitIn(t, worktree, "rev-parse", "HEAD"))
-	gitIn(t, worktree, "checkout", "--", "a/Portfile")
+	require.Equal(t, after, testsupport.Git(t, worktree, "rev-parse", "HEAD"))
+	testsupport.Git(t, worktree, "checkout", "--", "a/Portfile")
 	require.Error(t, repo.MoveCheckout(t.Context(), before, after), "the checkout isn't where it's moved from")
 
 	require.NoError(t, os.WriteFile(filepath.Join(worktree, "c/Portfile"), []byte("kept\n"), 0o644))
 	require.NoError(t, repo.MoveCheckout(t.Context(), after, before))
-	require.Equal(t, before, gitIn(t, worktree, "rev-parse", "HEAD"))
-	require.Equal(t, "branch", gitIn(t, worktree, "branch", "--show-current"))
+	require.Equal(t, before, testsupport.Git(t, worktree, "rev-parse", "HEAD"))
+	require.Equal(t, "branch", testsupport.Git(t, worktree, "branch", "--show-current"))
 	data, err := os.ReadFile(filepath.Join(worktree, "a/Portfile"))
 	require.NoError(t, err)
 	require.Equal(t, "a\n", string(data))
-	require.Equal(t, "M c/Portfile", gitIn(t, worktree, "status", "--short", "--untracked-files=no"), "a change to a file it doesn't move stays, and b stays outside")
+	require.Equal(t, "M c/Portfile", testsupport.Git(t, worktree, "status", "--short", "--untracked-files=no"), "a change to a file it doesn't move stays, and b stays outside")
 	require.NoFileExists(t, filepath.Join(worktree, "b/Portfile"))
 
-	gitIn(t, worktree, "checkout", "-q", "--detach")
+	testsupport.Git(t, worktree, "checkout", "-q", "--detach")
 	require.ErrorContains(t, repo.MoveCheckout(t.Context(), before, after), "no branch is checked out", "a detached checkout has no branch to move")
-	require.Equal(t, before, gitIn(t, worktree, "rev-parse", "HEAD"))
+	require.Equal(t, before, testsupport.Git(t, worktree, "rev-parse", "HEAD"))
 }

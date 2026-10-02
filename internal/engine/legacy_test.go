@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // Branches from before v3, which nothing tracks, are sorted by what master
@@ -17,11 +19,11 @@ func TestBranchesFromBeforeV3AreSortedByWhatMasterHas(t *testing.T) {
 	f.withFork(t, e)
 	branchFrom := func(name, start string, files map[string]string, message string) {
 		t.Helper()
-		run(t, f.clone, "switch", "-q", "-c", name, start)
+		testsupport.Git(t, f.clone, "switch", "-q", "-c", name, start)
 		write(t, f.clone, files)
-		run(t, f.clone, "add", "-A")
-		run(t, f.clone, "commit", "-q", "-m", message)
-		run(t, f.clone, "switch", "-q", "master")
+		testsupport.Git(t, f.clone, "add", "-A")
+		testsupport.Git(t, f.clone, "commit", "-q", "-m", message)
+		testsupport.Git(t, f.clone, "switch", "-q", "master")
 	}
 	branch := func(name string, files map[string]string, message string) {
 		t.Helper()
@@ -29,7 +31,7 @@ func TestBranchesFromBeforeV3AreSortedByWhatMasterHas(t *testing.T) {
 	}
 	// Upstream made this same change as libharbor: update to 2.
 	branch("dockhand/bump/libharbor-4f2a", map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 2\n"}, "libharbor: update to 2, mine")
-	run(t, f.clone, "push", "-q", "fork", "dockhand/bump/libharbor-4f2a")
+	testsupport.Git(t, f.clone, "push", "-q", "fork", "dockhand/bump/libharbor-4f2a")
 	branch("dockhand/bump/jq-9c1d", map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.0\n"}, "jq: update to 1.8.0")
 	branch("dockhand/bump/newport-77aa", map[string]string{"devel/newport/Portfile": "name newport\nversion 1\n"}, "newport: new port")
 	branch("dockhand/bump/adopted-5e5e", map[string]string{"devel/adopted/Portfile": "name adopted\n"}, "adopted: new port")
@@ -37,16 +39,16 @@ func TestBranchesFromBeforeV3AreSortedByWhatMasterHas(t *testing.T) {
 	require.NoError(t, err)
 	// One your fork has and this checkout doesn't, whose change master has.
 	branch("dockhand/bump/libharbor-f0f0", map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 2\n"}, "libharbor: update to 2, on the fork")
-	run(t, f.clone, "push", "-q", "fork", "dockhand/bump/libharbor-f0f0")
-	run(t, f.clone, "branch", "-q", "-D", "dockhand/bump/libharbor-f0f0")
+	testsupport.Git(t, f.clone, "push", "-q", "fork", "dockhand/bump/libharbor-f0f0")
+	testsupport.Git(t, f.clone, "branch", "-q", "-D", "dockhand/bump/libharbor-f0f0")
 	// One that takes a port master hasn't moved.
 	write(t, f.upstream, map[string]string{"textproc/yq/Portfile": "name yq\nversion 4.54.1\n"})
-	run(t, f.upstream, "add", "-A")
-	run(t, f.upstream, "commit", "-q", "-m", "yq: new port")
-	run(t, f.clone, "fetch", "-q", "origin")
+	testsupport.Git(t, f.upstream, "add", "-A")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "yq: new port")
+	testsupport.Git(t, f.clone, "fetch", "-q", "origin")
 	branchFrom("dockhand/bump/yq-1111", "origin/master", map[string]string{"textproc/yq/Portfile": "name yq\nversion 4.55.0\n"}, "yq: update to 4.55.0")
 	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
-	run(t, f.upstream, "commit", "-q", "-am", "jq: update to 1.8.1")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-am", "jq: update to 1.8.1")
 
 	names, err := e.LegacyBranchNames(t.Context())
 	require.NoError(t, err)
@@ -76,8 +78,8 @@ func TestBranchesFromBeforeV3AreSortedByWhatMasterHas(t *testing.T) {
 	for _, branch := range done {
 		require.Equal(t, branch.Kind == LegacyOnMaster, branch.Done, branch.Name)
 	}
-	require.Empty(t, run(t, f.clone, "branch", "--list", "dockhand/bump/libharbor-4f2a"))
-	require.NotEmpty(t, run(t, f.clone, "branch", "--list", "dockhand/bump/jq-9c1d"), "a look first")
-	require.Empty(t, run(t, f.clone, "ls-remote", "fork", "refs/heads/dockhand/bump/libharbor-4f2a"), "and your fork's")
-	require.Empty(t, run(t, f.clone, "ls-remote", "fork", "refs/heads/dockhand/bump/libharbor-f0f0"), "and the one only your fork had")
+	require.Empty(t, testsupport.Git(t, f.clone, "branch", "--list", "dockhand/bump/libharbor-4f2a"))
+	require.NotEmpty(t, testsupport.Git(t, f.clone, "branch", "--list", "dockhand/bump/jq-9c1d"), "a look first")
+	require.Empty(t, testsupport.Git(t, f.clone, "ls-remote", "fork", "refs/heads/dockhand/bump/libharbor-4f2a"), "and your fork's")
+	require.Empty(t, testsupport.Git(t, f.clone, "ls-remote", "fork", "refs/heads/dockhand/bump/libharbor-f0f0"), "and the one only your fork had")
 }
