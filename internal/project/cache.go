@@ -17,7 +17,8 @@ import (
 // keeps a reading made before from standing for one made now. 2: a Node
 // project's workspaces' package.json files. 3: a Cargo workspace's
 // members' Cargo.toml files. 4: the files a CMakeLists.txt include()s.
-const ReaderVersion = 4
+// 5: the archive's directories, to DirectoryDepth deep.
+const ReaderVersion = 5
 
 // Cache keeps readings on disk by what they read: an archive's content, by
 // its sha256, and where in it the project is, with the reader's version

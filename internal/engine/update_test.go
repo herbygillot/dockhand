@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/forge"
 	"maps"
 	"os"
 	"path/filepath"
@@ -61,11 +62,18 @@ func (p *fakePreparer) ResolveRelease(_ context.Context, r editprep.Request) (mo
 	if r.Version != "" {
 		version = r.Version
 	}
-	return model.Release{Version: version, Forge: "github", Tag: "jq-" + version}, nil
+	return model.Release{ReleaseSelection: model.ReleaseSelection{Requested: r.Version}, Version: version, Forge: "github", Tag: "jq-" + version}, nil
 }
 
 func (p *fakePreparer) Prepare(ctx context.Context, r editprep.Request) (editprep.Result, error) {
 	p.requests = append(p.requests, r)
+	// The editor holds a version update's request to its release's, as
+	// portedit's planArchiveVersion does: update --outdated gave a found
+	// release with its version, and every port was refused (field
+	// testing, 2026-10-02).
+	if r.Action == model.EditUpdate && (r.Release == nil || r.Release.Requested != r.Version) {
+		return editprep.Result{}, fmt.Errorf("portedit: a matching resolved release is required")
+	}
 	name := "textproc/" + r.Selection.Selector + "/Portfile"
 	before, data, err := p.repo.File(ctx, string(r.Source.Tree), name)
 	if err != nil {
@@ -306,6 +314,15 @@ func TestUpdateNeedsTheBranchCheckedOut(t *testing.T) {
 	require.ErrorContains(t, err, `the release found is 1.8.1's, for a version update to "1.8.0"`)
 	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditChecksums, Port: "jq", Version: "1.8.1", Release: found})
 	require.ErrorContains(t, err, "the release found is 1.8.1's")
+	// One found automatically, as outdated finds it, is taken with the
+	// version it names, and the editor is asked for no version of its
+	// own: update --outdated refused every port (field testing,
+	// 2026-10-02).
+	fresh, err := e.Start(t.Context(), StartRequest{Name: "jq-found"})
+	require.NoError(t, err)
+	updated, err := e.Update(t.Context(), UpdateRequest{Branch: fresh, Action: model.EditUpdate, Port: "jq", Version: "1.8.1", Release: found})
+	require.NoError(t, err)
+	require.Equal(t, "1.8.1", updated.After.Version)
 }
 
 func TestBranchesChangingAndFreeNames(t *testing.T) {
@@ -757,4 +774,42 @@ func TestAnUpdateSaysANewMajorVersion(t *testing.T) {
 	}
 	require.True(t, describe(model.Branch{}, "semgrep", result("0.14.0", "1.179.0")).CrossesMajor)
 	require.False(t, describe(model.Branch{}, "semgrep", result("1.178.0", "1.179.0")).CrossesMajor)
+}
+
+// renamedRepository is a GitHub repository answering by another name, as
+// a renamed one does through GitHub's redirect.
+type renamedRepository struct {
+	forge.Repository
+	name, now string
+}
+
+func (r renamedRepository) Name() string { return r.name }
+func (r renamedRepository) Describe(context.Context) (forge.Description, error) {
+	return forge.Description{Name: r.now}, nil
+}
+
+// renamingForge answers each repository by the name it has now.
+type renamingForge struct {
+	*fakeForge
+	now map[string]string
+}
+
+func (f renamingForge) Repository(_, name string) (forge.Repository, error) {
+	now := f.now[name]
+	if now == "" {
+		now = name
+	}
+	return renamedRepository{name: name, now: now}, nil
+}
+
+// An update's release from a repository GitHub now names otherwise says
+// so: returntocorp/semgrep answered as semgrep/semgrep by a redirect
+// discovery followed unsaid (field testing, 2026-10-02).
+func TestAnUpdateSaysItsRepositoryWasRenamed(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	e.Forge = renamingForge{fakeForge: &fakeForge{t: t}, now: map[string]string{"returntocorp/semgrep": "semgrep/semgrep"}}
+	require.Equal(t, "semgrep/semgrep", e.renamed(t.Context(), model.Release{Forge: forge.GitHub, Repository: "returntocorp/semgrep"}))
+	require.Empty(t, e.renamed(t.Context(), model.Release{Forge: forge.GitHub, Repository: "jqlang/jq"}))
+	require.Empty(t, e.renamed(t.Context(), model.Release{Forge: forge.GitLab, Repository: "returntocorp/semgrep"}))
 }

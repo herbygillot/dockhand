@@ -60,6 +60,13 @@ func (a *assessment) toolchain() (model.UpstreamChange, bool) {
 	behind := pinned && !pin.Meets(t.Required)
 	found := model.UpstreamChange{Kind: "toolchain", Path: "go.mod", Rule: GoToolchainRule, Subject: t.Required, Class: model.Introduced, Hold: !covered || behind}
 	outcome := t.Outcome
+	// Where no edit said, a minimum above the base's that now gates on
+	// the requirement was raised by the change, which a reviewer needs:
+	// it drops older macOS. submit said "already gates on" of gh-dash's,
+	// raised from 1.25.8 by its update (field testing, 2026-10-02).
+	if was := a.input.Base.Options["go.toolchain_min"]; outcome == "" && covered && was != "" && version.Compare(version.Lang("go"+final), version.Lang("go"+was)) > 0 {
+		outcome, t = ToolchainRaised, &Toolchain{Required: t.Required, Declared: was, Outcome: ToolchainRaised}
+	}
 	if outcome == "" {
 		switch {
 		case covered:

@@ -158,6 +158,12 @@ type Update struct {
 	// they couldn't be looked for.
 	Others        []forge.PullRequestSummary
 	OthersProblem string
+	// Renamed is the GitHub repository the update's release came from as
+	// GitHub names it now, where that's another name than the Portfile's:
+	// returntocorp/semgrep answered as semgrep/semgrep, by a redirect
+	// discovery follows unsaid (field testing, 2026-10-02). Empty where
+	// it's the same, or couldn't be asked.
+	Renamed string
 	// PlainHTTP are the port's URLs over plain HTTP, homepage and
 	// master_sites, each with whether its https form answers, since
 	// MacPorts prefers HTTPS. They're said, never changed: that's the
@@ -257,6 +263,12 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 			return byHand(err)
 		}
 		input.Release = &release
+		// A release outdated found already was chosen automatically, and
+		// asks for no version of its own: the editor holds the version it
+		// edits to the release's request, which update --outdated gave as
+		// its version, and refused every port (field testing,
+		// 2026-10-02: "a matching resolved release is required").
+		input.Version = release.Requested
 		if request.Unattended && !release.NoUpdate {
 			if err := e.heldBeforeEdit(ctx, request.Port, own); err != nil {
 				return Update{}, err
@@ -282,6 +294,9 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 	// looked at, so its plain-HTTP ones are said there, beside the edit. A
 	// port with nothing to change is said to be current without waiting on
 	// its hosts.
+	if request.Action == model.EditUpdate && len(result.Files) > 0 && update.Release != nil {
+		update.Renamed = e.renamed(ctx, *update.Release)
+	}
 	if (request.Action == model.EditUpdate || request.Action == model.EditChecksums) && len(result.Files) > 0 {
 		if info, ok := result.PortAfter(update.Port); ok {
 			update.PlainHTTP = e.plainHTTP(ctx, info, request.answered)
@@ -885,4 +900,27 @@ func editRecorded(branch model.BranchID, id model.EditID) func(store.Reader) boo
 		edits, err := r.Edits(branch)
 		return err == nil && slices.ContainsFunc(edits, func(edit model.Edit) bool { return edit.ID == id })
 	}
+}
+
+// renamed is the release's GitHub repository's name now, where GitHub
+// names it otherwise than the release was found by; empty where it's the
+// same, it isn't GitHub's, or GitHub couldn't be asked, which is no
+// reason to stop an update.
+func (e *Engine) renamed(ctx context.Context, release model.Release) string {
+	if release.Forge != forge.GitHub || release.Repository == "" {
+		return ""
+	}
+	repository, err := e.forge().Repository("https://github.com", release.Repository)
+	if err != nil {
+		return ""
+	}
+	described, ok := repository.(forge.DescribedRepository)
+	if !ok {
+		return ""
+	}
+	description, err := described.Describe(ctx)
+	if err != nil || description.Name == "" || strings.EqualFold(description.Name, release.Repository) {
+		return ""
+	}
+	return description.Name
 }

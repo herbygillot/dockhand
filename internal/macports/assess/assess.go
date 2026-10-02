@@ -64,8 +64,10 @@ import (
 // dependencies counted together (batch 33). 16: a CMakeLists.txt read as
 // one document with the files it include()s, an option they set no longer
 // taken as off, and a change placed in the block the document reads
-// (batch 34).
-const Policy = 16
+// (batch 34). 17: a directory the Portfile's build names below
+// ${worksrcpath} that the new version's source no longer has, and an R
+// package's DESCRIPTION read by its dependency fields (batch 42).
+const Policy = 17
 
 // Input is what one port's assessment reads.
 type Input struct {
@@ -158,6 +160,7 @@ const (
 	PatchDropped        = "patch-dropped"
 	SourceRemoved       = "source-removed"
 	SourceUncertain     = "source-uncertain"
+	WorksrcPathGone     = "worksrc-path-gone"
 )
 
 // proven are the manifests whose dependencies a check proves (D9). A Go
@@ -200,6 +203,9 @@ func Assess(input Input) model.UpstreamComparison {
 	a.source, a.reading = macports.SourceMatch{}, [2]project.Reading{}
 	a.fold()
 	a.unpaired()
+	for _, found := range a.worksrc() {
+		a.add(found)
+	}
 	for _, found := range a.pins() {
 		a.add(found)
 	}
@@ -892,4 +898,47 @@ func declarations(name string, data []byte) map[string][]project.Requirement {
 		byName[declaration.Name] = append(byName[declaration.Name], declaration.Requirement)
 	}
 	return byName
+}
+
+// worksrc are the directories the Portfile's build names below
+// ${worksrcpath} that the base's source had and the new version's
+// doesn't: semgrep 1.179.0 had neither pfff nor semgrep-core, which its
+// build ran in, and the comparison said only setup.py and COPYRIGHT
+// (field testing, 2026-10-02). Each holds, since the build fails, or
+// builds something else. A path the base didn't have either is one the
+// build makes, and is left alone, as is one deeper than a reading lists.
+func (a *assessment) worksrc() []model.UpstreamChange {
+	if a.input.New {
+		return nil
+	}
+	var found []model.UpstreamChange
+	for _, named := range portfile.WorksrcPaths(a.input.Portfile) {
+		for _, pair := range a.input.Pairs {
+			gone := ""
+			segments := strings.Split(named, "/")
+			for i := range segments {
+				dir := path.Join(pair.After.Root, strings.Join(segments[:i+1], "/"))
+				had, knownBefore := pair.Before.HasDirectory(path.Join(pair.Before.Root, strings.Join(segments[:i+1], "/")))
+				has, knownAfter := pair.After.HasDirectory(dir)
+				if !knownBefore || !knownAfter || !had {
+					break
+				}
+				if !has {
+					gone = strings.Join(segments[:i+1], "/")
+					break
+				}
+			}
+			if gone == "" {
+				continue
+			}
+			message := fmt.Sprintf("upstream's source no longer has %s/, which the Portfile's build names as ${worksrcpath}/%s", gone, named)
+			if len(a.input.Pairs) > 1 && pair.Archive != "" {
+				message = inArchive(message, pair.Archive)
+			}
+			found = append(found, model.UpstreamChange{Kind: "build", Path: gone, Rule: WorksrcPathGone, Subject: named, Class: model.Introduced, Hold: true,
+				Message: message + "; the Portfile may need to follow"})
+			break
+		}
+	}
+	return found
 }

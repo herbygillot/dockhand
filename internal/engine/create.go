@@ -478,6 +478,9 @@ func (g githubProjects) Project(ctx context.Context, address string) (Project, e
 		if err != nil {
 			return Project{}, err
 		}
+		if description.Name != "" && !strings.EqualFold(description.Name, repository.Name()) {
+			return Project{}, fmt.Errorf("github: %s answered for %s", repository.Name(), description.Name)
+		}
 		found.Description, found.Homepage, found.License = description.Description, description.Homepage, description.License
 	}
 	releases, ok := repository.(forge.ReleaseRepository)

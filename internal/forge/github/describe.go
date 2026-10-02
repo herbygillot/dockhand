@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -21,8 +20,7 @@ func (r *repository) Describe(ctx context.Context) (forge.Description, error) {
 	if err != nil {
 		return forge.Description{}, githubapi.RateLimitError(err)
 	}
-	if !strings.EqualFold(row.GetFullName(), r.name) {
-		return forge.Description{}, fmt.Errorf("github: %s answered for %s", r.name, row.GetFullName())
-	}
-	return forge.Description{Description: row.GetDescription(), Homepage: row.GetHomepage(), License: row.GetLicense().GetSPDXID()}, nil
+	// A renamed repository answers by its new name, which GitHub's
+	// redirect otherwise hides; the caller weighs it.
+	return forge.Description{Name: row.GetFullName(), Description: row.GetDescription(), Homepage: row.GetHomepage(), License: row.GetLicense().GetSPDXID()}, nil
 }

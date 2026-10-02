@@ -134,3 +134,16 @@ func TestASiblingFetchingItsOwnSourceIsSaidOnce(t *testing.T) {
 	require.EqualError(t, ScopedVersion(false, before, after, "rust", model.Release{Version: "1.99.0"}, "sha256 cccc").Err(),
 		"fidelity: evaluation does not match the intended change: rust-src, another port of the same Portfile, moves with rust's release; --shared-release moves both, and --plan shows what that changes first")
 }
+
+// A path below the source directory is the same path in two evaluations,
+// whatever directory MacPorts builds each in and whatever the version
+// names the source directory: qemu's configure.cmd, ${worksrcpath}/
+// configure, read as a change (field testing, 2026-10-02). A path below
+// it that changes still does.
+func TestAPathBelowTheSourceFollowsIt(t *testing.T) {
+	port := func(cmd string) macports.PortInfo {
+		return macports.PortInfo{Name: "qemu", Options: map[string]string{"configure.cmd": cmd}}
+	}
+	require.Empty(t, Compare("qemu", port("/opt/local/var/macports/build/qemu-234b5126/work/qemu-9.0.2/configure"), port("/opt/local/var/macports/build/qemu-f3e5b0c6/work/qemu-9.1.0/configure")))
+	require.Equal(t, []string{"qemu.configure.cmd changed"}, Compare("qemu", port("/opt/local/var/macports/build/qemu-234b5126/work/qemu-9.0.2/configure"), port("/opt/local/var/macports/build/qemu-f3e5b0c6/work/qemu-9.1.0/build/configure")))
+}

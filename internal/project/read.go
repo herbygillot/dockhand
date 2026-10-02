@@ -59,6 +59,25 @@ type Reading struct {
 	// manifests, and Cargo.lock, and the package.json of each Node
 	// workspace the root's names, each by its path below Top.
 	Files map[string]File
+	// Directories are the archive's directories below Top, to
+	// DirectoryDepth deep, sorted: a Portfile's build names some, as
+	// semgrep's ${worksrcpath}/pfff, which a new version may not have.
+	Directories []string `json:",omitempty"`
+}
+
+// DirectoryDepth is how deep below Top a reading lists directories.
+const DirectoryDepth = 3
+
+// HasDirectory reports whether the reading's archive has a directory at
+// the path below Top; known is false where the path is deeper than a
+// reading lists, or the reading listed none, as one made before it did.
+func (r Reading) HasDirectory(dir string) (has, known bool) {
+	dir = strings.Trim(path.Clean(dir), "/")
+	if len(r.Directories) == 0 || strings.Count(dir, "/") >= DirectoryDepth {
+		return false, false
+	}
+	_, found := slices.BinarySearch(r.Directories, dir)
+	return found, true
 }
 
 // File is a file as it was read: its first FileLimit bytes, and whether
@@ -119,12 +138,16 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 	// kept in this pass too.
 	modules := map[string]File{}
 	tops := map[string]bool{}
+	directories := map[string]bool{}
 	flat := false
 	has := map[string]bool{}
 	err := archive.Walk(ctx, filename, func(member archive.Member) error {
 		name, ok := member.Clean()
 		if !ok || !member.Regular || ignorable(name) {
 			return nil
+		}
+		for dir := path.Dir(name); dir != "." && dir != "/"; dir = path.Dir(dir) {
+			directories[dir] = true
 		}
 		first, rest, nested := strings.Cut(name, "/")
 		if !nested {
@@ -186,6 +209,19 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 			found.Missing = subdirectory
 		}
 	}
+	for dir := range directories {
+		rest := dir
+		if found.Top != "" {
+			var ok bool
+			if rest, ok = strings.CutPrefix(dir, found.Top+"/"); !ok {
+				continue
+			}
+		}
+		if strings.Count(rest, "/") < DirectoryDepth {
+			found.Directories = append(found.Directories, rest)
+		}
+	}
+	slices.Sort(found.Directories)
 	found.Files = map[string]File{}
 	for name, file := range candidates {
 		rest := name

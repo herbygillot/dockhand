@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -139,6 +140,15 @@ func Compare(name string, old, next macports.PortInfo) []string {
 	for key := range keys {
 		a, aok := old.Options[key]
 		b, bok := next.Options[key]
+		// A path below the source directory is the same path in two
+		// evaluations: qemu's configure.cmd is ${worksrcpath}/configure,
+		// whose build directory is named for where the Portfile was
+		// evaluated and whose source directory for the version, and it
+		// read as a change, so update, --outdated, and checksums each
+		// refused qemu (field testing, 2026-10-02).
+		if key != "worksrcdir" {
+			a, b = belowSource(a), belowSource(b)
+		}
 		if aok != bok || a != b {
 			differences = append(differences, name+"."+key+" changed")
 		}
@@ -147,6 +157,18 @@ func Compare(name string, old, next macports.PortInfo) []string {
 		differences = append(differences, name+".option-errors changed")
 	}
 	return differences
+}
+
+// workPath is a path below a port's source directory as MacPorts lays
+// it out: ${portdbpath}/build/<the port's directory, hashed>/work/
+// <worksrcdir>.
+var workPath = regexp.MustCompile(`/build/[^/\s]+/work/[^/\s"'}]+`)
+
+// belowSource is value with each path to a port's source directory
+// written as one placeholder, so a path below it reads alike wherever,
+// and at whichever version, the port was evaluated.
+func belowSource(value string) string {
+	return workPath.ReplaceAllString(value, "/<worksrcpath>")
 }
 
 func fetchKind(port macports.PortInfo) string {

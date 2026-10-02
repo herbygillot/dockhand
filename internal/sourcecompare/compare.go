@@ -194,6 +194,13 @@ func Compare(older, newer project.Reading, versions Versions, named func(option 
 					Message: fmt.Sprintf("upstream's %s changed only the version it names: %q", name, line)})
 				continue
 			}
+			// An R package's DESCRIPTION changes every release; what its
+			// build reads of it are its dependency fields (field
+			// testing, 2026-10-02: R-Matrix held on "DESCRIPTION changed").
+			if base == "DESCRIPTION" && hadOld && hasNow {
+				changes = append(changes, rDescription(name, old.Data, now.Data))
+				continue
+			}
 			if base == "CMakeLists.txt" && hadOld && hasNow {
 				if words, ok := cmakeOptionsOnly(name, documents[0], documents[1], versions, named); ok {
 					changes = append(changes, Change{Kind: "build", How: "options", Path: name,
@@ -1052,4 +1059,30 @@ func nativeLinks(name string, old project.File, hadOld bool, now project.File, h
 			Message: fmt.Sprintf("upstream: Cargo.lock drops %s, which linked the native library %s", pkg.Name, library)})
 	}
 	return changes
+}
+
+// rDescription is an R package's DESCRIPTION's change as its build reads
+// it: its dependency fields changed, which holds as a build file's change
+// does, or not, which holds nothing.
+func rDescription(name string, old, now []byte) Change {
+	before, after := project.RDependencies(old), project.RDependencies(now)
+	var moved []string
+	for _, field := range project.RDependencyFields {
+		was, had := before[field]
+		is, has := after[field]
+		switch {
+		case was == is && had == has:
+		case !had:
+			moved = append(moved, fmt.Sprintf("%s is new: %s", field, is))
+		case !has:
+			moved = append(moved, fmt.Sprintf("%s was removed, which was %s", field, was))
+		default:
+			moved = append(moved, fmt.Sprintf("%s was %s, now %s", field, was, is))
+		}
+	}
+	if len(moved) == 0 {
+		return Change{Kind: "build", How: "version", Path: name,
+			Message: fmt.Sprintf("upstream's %s changed, but not its %s", name, strings.Join(project.RDependencyFields, ", "))}
+	}
+	return Change{Kind: "build", How: "changed", Path: name, Message: fmt.Sprintf("upstream's %s changed: %s", name, strings.Join(moved, "; "))}
 }

@@ -395,6 +395,9 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		if update.CrossesMajor {
 			fmt.Fprintf(out, "A new major version: what depends on %s may need to follow.\n", update.Port)
 		}
+		if update.Renamed != "" {
+			fmt.Fprintf(out, "Upstream moved: GitHub answers %s as %s, by a redirect; the Portfile's github.setup may follow.\n", update.Release.Repository, update.Renamed)
+		}
 	} else if update.Stealth != nil {
 		fmt.Fprintf(out, "%s %s · the distfile changed upstream without a new name (stealth update)\n", update.Port, update.Before)
 		writeStealth(out, update.Stealth)

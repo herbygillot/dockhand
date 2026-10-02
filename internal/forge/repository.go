@@ -92,6 +92,9 @@ type CommitRepository interface {
 // description, its homepage, and the license it detected, as an SPDX
 // identifier.
 type Description struct {
+	// Name is the repository's full name as the forge names it now,
+	// which a renamed repository's differs from the name it was asked by.
+	Name        string
 	Description string
 	Homepage    string
 	License     string

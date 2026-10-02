@@ -54,7 +54,7 @@ func TestAGoPinOlderThanGoModRequiresHolds(t *testing.T) {
 			toolchainFinding("1.27.0", "upstream: go.mod requires Go 1.27.0, so go.toolchain_min is raised from 1.26.3, but the Portfile pins go-1.26 (go.bin, depends_build); the pin may be obsolete", model.Introduced, true)},
 		{"the minimum gating on it, as the check's assessment found it",
 			Input{Port: pinnedGoPort("1.27.0", "1.26"), Base: pinnedGoPort("1.26.3", "1.26"), Pairs: goMods(t, "1.26.3", "1.27.0")},
-			toolchainFinding("1.27.0", "upstream: go.mod requires Go 1.27.0, but the Portfile pins go-1.26 (go.bin, depends_build); the pin may be obsolete", model.Introduced, true)},
+			toolchainFinding("1.27.0", "upstream: go.mod requires Go 1.27.0, so go.toolchain_min is raised from 1.26.3, but the Portfile pins go-1.26 (go.bin, depends_build); the pin may be obsolete", model.Introduced, true)},
 		{"pinned by the dependency alone",
 			Input{Port: byDependency, Base: byDependency, Pairs: goMods(t, "1.26.3", "1.27.0")},
 			toolchainFinding("1.27.0", "upstream: go.mod requires Go 1.27.0, but the Portfile pins go-1.26 (depends_build); the pin may be obsolete", model.Introduced, true)},
@@ -63,7 +63,7 @@ func TestAGoPinOlderThanGoModRequiresHolds(t *testing.T) {
 			toolchainFinding("1.27.0", "upstream: go.mod requires Go 1.27.0, above go.toolchain_min 1.25, which doesn't gate on it; and the Portfile pins go-1.26 (go.bin, depends_build); the pin may be obsolete", model.Introduced, true)},
 		{"the base unread",
 			Input{Port: pinnedGoPort("1.27.0", "1.26"), Base: pinnedGoPort("1.26.3", "1.26"), Toolchain: &Toolchain{Required: "1.27.0"}},
-			toolchainFinding("1.27.0", "upstream: go.mod requires Go 1.27.0, but the Portfile pins go-1.26 (go.bin, depends_build); the pin may be obsolete", model.UnknownBaseline, true)},
+			toolchainFinding("1.27.0", "upstream: go.mod requires Go 1.27.0, so go.toolchain_min is raised from 1.26.3, but the Portfile pins go-1.26 (go.bin, depends_build); the pin may be obsolete", model.UnknownBaseline, true)},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			require.Equal(t, []model.UpstreamChange{test.want}, Assess(test.input).Changes)
@@ -76,7 +76,7 @@ func TestAGoPinOlderThanGoModRequiresHolds(t *testing.T) {
 // judged by its series, as a minimum is.
 func TestAGoPinMeetingTheRequirementSaysNothingMore(t *testing.T) {
 	changes := Assess(Input{Port: pinnedGoPort("1.27.0", "1.27"), Base: pinnedGoPort("1.26.3", "1.26"), Pairs: goMods(t, "1.26.3", "1.27.0")}).Changes
-	require.Equal(t, []model.UpstreamChange{toolchainFinding("1.27.0", "upstream: go.mod requires Go 1.27.0, which go.toolchain_min 1.27.0 already gates on", model.Introduced, false)}, changes)
+	require.Equal(t, []model.UpstreamChange{toolchainFinding("1.27.0", "upstream: go.mod requires Go 1.27.0, so go.toolchain_min is raised from 1.26.3", model.Introduced, false)}, changes)
 	changes = Assess(Input{Port: pinnedGoPort("1.26", "1.26"), Base: pinnedGoPort("1.26", "1.26"), Pairs: goMods(t, "1.26.3", "1.26.8")}).Changes
 	require.Equal(t, []model.UpstreamChange{toolchainFinding("1.26.8", "upstream: go.mod requires Go 1.26.8, which go.toolchain_min 1.26 already gates on", model.Introduced, false)}, changes)
 }
@@ -105,4 +105,15 @@ func TestAGoPinAlreadyBehindAtTheBaseIsSaidAndHoldsNothing(t *testing.T) {
 			require.Equal(t, []model.UpstreamChange{test.want}, Assess(test.input).Changes)
 		})
 	}
+}
+
+// Where no edit said, a minimum the change raised from the base's says so,
+// for a reviewer: it drops older macOS. submit said "already gates on" of
+// gh-dash's 1.27.1, which its update raised from 1.25.8 (field testing,
+// 2026-10-02). One the base had already says that.
+func TestAMinimumRaisedFromTheBasesIsSaid(t *testing.T) {
+	input := Input{Port: goPort("1.27.1"), Base: goPort("1.25.8"), Pairs: goMods(t, "1.25.8", "1.27.1")}
+	require.Contains(t, messages(Assess(input).Changes), "· upstream: go.mod requires Go 1.27.1, so go.toolchain_min is raised from 1.25.8")
+	input.Base = goPort("1.27.1")
+	require.Contains(t, messages(Assess(input).Changes), "· upstream: go.mod requires Go 1.27.1, which go.toolchain_min 1.27.1 already gates on")
 }

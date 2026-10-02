@@ -135,3 +135,27 @@ func TestARevbumpOfASubportSharingTheRevision(t *testing.T) {
 	require.Contains(t, string(result.Files[0].After), "revision 3\n")
 	require.Equal(t, "fixture-b: rebuild for libfoo 2", result.Commits[0].Subject)
 }
+
+// A command below the source directory, as qemu's configure.cmd
+// ${worksrcpath}/configure, moves with the version, and isn't a change of
+// its own: update, update --outdated, and checksums each refused qemu
+// (field testing, 2026-10-02).
+func TestACommandBelowTheSourceMovesWithTheVersion(t *testing.T) {
+	t.Parallel()
+	body := `version 1.2.3
+master_sites @SITE@/
+distfiles fixture-${version}.tar.gz
+checksums sha256 aaaa size 2
+configure.cmd ${worksrcpath}/configure
+`
+	s, r, _ := archiveFixture(t, body)
+	r.Release.Tag = ""
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Contains(t, string(result.Files[0].After), "version 1.2.4")
+
+	s, r, _ = archiveFixture(t, body)
+	r.Action, r.Version, r.Release = model.EditChecksums, "", nil
+	_, err = s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+}

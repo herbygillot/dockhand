@@ -450,3 +450,18 @@ func TestACMakeListsIsComparedWithWhatItIncludes(t *testing.T) {
 	require.Equal(t, "upstream's CMakeLists.txt changed, though no option or find_package did; lines change outside any if() in cmake/plugins_options.cmake, under if(FLB_DEMO)", set[0].Message,
 		"FLB_DEMO, set in a file included, is no longer off, and what it gates is reached")
 }
+
+// An R package's DESCRIPTION is compared by its dependency fields, which
+// its build reads: R-Matrix held on "DESCRIPTION changed", which every
+// release does (field testing, 2026-10-02).
+func TestAnRDescriptionIsComparedByItsDependencies(t *testing.T) {
+	description := func(version, imports string) string {
+		return "Package: Matrix\nVersion: " + version + "\nDepends: R (>= 4.4), methods\nImports: " + imports + "\n"
+	}
+	same := rDescription("DESCRIPTION", []byte(description("1.7-3", "grid, lattice")), []byte(description("1.7-4", "grid,\n    lattice")))
+	require.Equal(t, "version", same.How)
+	require.Equal(t, "upstream's DESCRIPTION changed, but not its Depends, Imports, LinkingTo", same.Message)
+	moved := rDescription("DESCRIPTION", []byte(description("1.7-3", "grid, lattice")), []byte(description("1.7-4", "grid, lattice, stats")))
+	require.Equal(t, "changed", moved.How)
+	require.Equal(t, "upstream's DESCRIPTION changed: Imports was grid, lattice, now grid, lattice, stats", moved.Message)
+}

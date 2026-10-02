@@ -306,7 +306,9 @@ func TestWhatWasntObservedIsSaid(t *testing.T) {
 func TestAGoMinimumThatCoversIsSaidSo(t *testing.T) {
 	changes := Assess(Input{Port: goPort("1.26"), Base: goPort("1.20"), Toolchain: &Toolchain{Required: "1.26.8"}}).Changes
 	require.Equal(t, []model.UpstreamChange{{Kind: "toolchain", Path: "go.mod", Rule: GoToolchainRule, Subject: "1.26.8", Class: model.Introduced,
-		Message: "upstream: go.mod requires Go 1.26.8, which go.toolchain_min 1.26 already gates on"}}, changes)
+		Message: "upstream: go.mod requires Go 1.26.8, so go.toolchain_min is raised from 1.20"}}, changes)
+	changes = Assess(Input{Port: goPort("1.26"), Base: goPort("1.26"), Toolchain: &Toolchain{Required: "1.26.8"}}).Changes
+	require.Equal(t, "upstream: go.mod requires Go 1.26.8, which go.toolchain_min 1.26 already gates on", changes[0].Message)
 }
 
 // Where no edit said what go.mod requires, as for a version changed by
@@ -421,4 +423,28 @@ func TestAWorkspacesMembersAreCountedTogether(t *testing.T) {
 	result := Assess(Input{Port: macports.PortInfo{Name: "demo", Options: map[string]string{"dockhand.portgroups": "cargo"}}, Pairs: []Pair{{Archive: "demo-1.1.tar.gz", Before: before, After: after}}})
 	require.Equal(t, []string{"· upstream: the Cargo.toml of 2 workspace members: 1 added (regex), 1 changed (serde)"}, messages(result.Changes))
 	require.Equal(t, "members", result.Changes[0].Subject)
+}
+
+// A directory the Portfile's build names below ${worksrcpath} that the
+// base's source had and the new version's doesn't holds: semgrep 1.179.0
+// had neither pfff nor semgrep-core, which broke its build, and the
+// comparison said only setup.py and COPYRIGHT (field testing,
+// 2026-10-02). One the base didn't have either is the build's own.
+func TestADirectoryTheBuildNamesThatsGoneHolds(t *testing.T) {
+	portfile := []byte("build {\n    system -W ${worksrcpath}/pfff \"make\"\n    system -W ${worksrcpath}/semgrep-core/src \"dune build\"\n    system -W ${worksrcpath}/_build \"true\"\n}\n")
+	before := map[string]string{"pfff/Makefile": "all:\n", "semgrep-core/src/dune": "(lang dune 3.0)\n", "setup.py": "setup()\n"}
+	after := map[string]string{"cli/setup.py": "setup()\n", "semgrep-core/README": "moved\n"}
+	comparison := Assess(Input{Port: macports.PortInfo{Name: "semgrep"}, Base: macports.PortInfo{Name: "semgrep"}, Portfile: portfile,
+		Pairs: []Pair{{Archive: "commit", Before: read(t, "semgrep-0.14.0", before, project.Spec{}), After: read(t, "semgrep-1.179.0", after, project.Spec{})}}})
+	var gone []string
+	for _, change := range comparison.Changes {
+		if change.Rule == WorksrcPathGone {
+			require.True(t, change.Hold)
+			gone = append(gone, change.Message)
+		}
+	}
+	require.Equal(t, []string{
+		"upstream's source no longer has pfff/, which the Portfile's build names as ${worksrcpath}/pfff; the Portfile may need to follow",
+		"upstream's source no longer has semgrep-core/src/, which the Portfile's build names as ${worksrcpath}/semgrep-core/src; the Portfile may need to follow",
+	}, gone)
 }
