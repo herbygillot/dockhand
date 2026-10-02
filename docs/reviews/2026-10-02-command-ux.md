@@ -9,7 +9,7 @@ The surface is sound where it matters most. Flat verbs grouped by purpose, `--pl
 The friction comes from three patterns, not from any single command:
 
 1. **Naming the branch you mean costs too much.** Branches are named `jq-4k2p`, `--branch` takes only an exact name, and the fallback is to `cd` into a worktree dockhand can't take you to.
-2. **The core loop is a chain of refusals.** `submit` refuses until `tidy` has run, `check` refuses outside a worktree, and `update` refuses (or asks) until you add `--new`. Each refusal names the fix, but it's always the same fix.
+2. **The core loop is a chain of refusals.** `submit` refuses until `tidy` has run, `check` refuses outside a worktree, and `update` refuses (or asks) until you add `--new`. Of the loop's refusals, about a dozen name a fix that is reversible and that dockhand could simply do (§3).
 3. **One idea is spelled several ways.** "How far to go" is `update --submit`, `update --outdated --check`, `bump`, `serve.for_outdated`, and `serve.submit_passing`. "I'm done with this branch" is `archive` followed by `clean --archived`. `--plan`, `--yes`, `--all`, and preview exit codes mean different things on different commands.
 
 Fix those three and the README's update shrinks from five commands, one of which needs a random suffix, to three:
@@ -108,18 +108,74 @@ With names like these, `-b jq-1.8.1` is something you can type from memory, and 
 
 `init`'s closing `Next: dockhand start <name>` should point to `dockhand outdated --mine` or `dockhand update <port>` instead. `start <name>` is the less common path, for work that isn't one port's update.
 
-## 3. `submit` carries the loop
+## 3. Stop only for judgment (revised 2026-10-02, replacing "`submit` carries the loop")
 
-**What happens today.** With uncommitted edits, `submit` refuses: "these edits are not committed… Commit them with dockhand tidy, or submit only what is committed with --head" (`engine/submit.go:215`). Tidy never changes a file, and checks capture files by content, so a check of the working files already covers what tidy will commit. That last point is my inference from the help texts. The refusal is a step dockhand could take itself.
+### The refusals along the loop today
 
-**Proposal.** When edits are uncommitted, `submit`'s preview includes tidy's plan, "will commit: jq: update to 1.8.1", and applies it under the same rules `tidy` uses. A plan made only of dockhand's own edits applies without asking, and anything else is shown on a terminal and refused in a script. `submit --check` already checks and then submits. With tidy folded in, the shortest loop for any branch is:
+I went through every refusal and hold that `update`, `check`, `tidy`, `submit`, and `rebase` can produce (`engine/submit.go`, `tidy.go`, `verbs.go`, `capture.go`, `command/check.go`, `author.go`). They fall into three kinds.
 
-```sh
-dockhand edit jq        # or update, create, revbump…
-dockhand submit jq --check
-```
+**Protective refusals.** Going ahead would be irreversible, would touch someone else's work, or would publish something unverified. These are the guardrails, and they should stay as they are:
 
-The same applies to answering a review. You edit, then `submit --check`, which folds the fix into the port's commit (as `tidy`'s follow-up rule asks), checks it, and pushes. `tidy` stays for when you want to rearrange commits, use `--squash`, or save a plan to edit.
+- someone else pushed to the pull request since dockhand last did (`submit.go:417`);
+- the contributor's pull request doesn't let maintainers push, or you lack write access (`:459`, `:467`);
+- the branch moved since the preview (`ErrStaleSubmit`, `ErrStalePlan`);
+- restoring a checkpoint would discard later work or staged files (`tidy.go:978`, `:993`);
+- a rebase conflicts, which is abandoned with the branch as it was (`verbs.go:182`);
+- a merge commit on the branch (`tidy.go:147`, `submit.go:244`);
+- holds: an upstream finding, a commit-rule finding, or another open pull request for the port.
+
+**Refusals for judgment.** Only the person has the answer. These should stay, but on a terminal they should **ask** rather than exit:
+
+- a commit needs a subject, or a combined commit needs `--author` (`tidy.go:293`, `:306`);
+- a pull request changing several ports needs `--title` (`submit.go:494`);
+- which of several branches you mean (§1).
+
+**Refusals of ceremony.** Dockhand names the exact fix, and the fix is reversible or only reads. These are the ones that make the loop feel like a chain:
+
+| Refusal today | Where | What it should do |
+| --- | --- | --- |
+| "start one with --new" | `author.go:784` | start the branch (§2) |
+| "run this in the branch's worktree" | `check`, `tidy`, `submit` | `-b` / `-p` (§1) |
+| "these edits are not committed… Commit them with dockhand tidy" | `submit.go:215` | include tidy's commits in the preview |
+| "has no commits above master yet; commit your edits with dockhand tidy" | `submit.go:222` | the same |
+| "no check has finished for this commit's files; run dockhand check first" | `submit.go:346` | offer to check first, which is `submit --check` |
+| "check-42 is already running for these files; dockhand wait check-42 follows it" | `check.go:862` | follow check-42 |
+| "check-42 is running for other files; --replace…" | `check.go:868` | ask on a terminal, refuse in a script |
+| "worktree has edits; choose --head or --working-tree" | `check.go:266` | check the working files, as in a worktree, and say so |
+| "has uncommitted edits…; commit them (dockhand tidy) or set them aside before rebasing" | `verbs.go:158` | carry the edits across the rebase, and abandon as now if they don't reapply |
+| "is not above its base; rebase it onto master first" | `tidy.go:139` | offer the rebase |
+| "--plan changes nothing, so it starts no branch" (revbump, checksums) | `verbs.go:147` | plan on master, as `update --plan` does |
+| "X is already changed in Y, so nothing was changed" (bump) | `author.go:240` | continue that branch from where it stopped (§4, rerunning resumes) |
+| "--on… go with --submit", "--mine and --check go with --outdated", "--yes goes with…" | `author.go:95–111` | gone, with one `--to` (§4) |
+
+### The principle
+
+**Dockhand does what a refusal would tell you to do, unless the fix is irreversible, touches someone else's work, or needs your judgment. It shows what it will do in the preview it already gives.**
+
+`tidy` already works this way. A plan made only of dockhand's own edits applies without review, and anything else is shown first. The proposal extends that rule from one command to the loop.
+
+### Where chaining needs care
+
+Chaining steps has costs, and they set the boundaries:
+
+- **Cost.** A check can take most of an hour on a VM, and running one isn't a step to hide. Because of that, implied steps split by cost:
+  - Cheap, reversible, local steps happen anywhere, scripts included: starting a branch, committing dockhand's own edits, following a running check, and planning on master.
+  - Steps that build or take a VM are offered on a terminal, defaulting to yes, and need the flag in a script (`--check`, `--replace`).
+  - Publishing is never implied. `submit` stays the decision, as design principle 7 says.
+- **One confirmation, not one per step.** Today `update --submit` previews each step, so a session asks three times. A chained command should show the whole plan once before anything happens, for example:
+
+  ```
+  jq-1.8.1: commit "jq: update to 1.8.1" → check on tart:26 → push to your fork and open the pull request
+  ? go ahead [Y/n]
+  ```
+
+  After that it stops only on a protective refusal or a hold.
+- **Saying where it stopped.** When a chained command stops partway, the message names the step, what was kept, and the one command that continues, which is usually the same command again (§4). Design §12 already asks errors for this. Chaining makes it matter more.
+- **Keeping the model learnable.** People who never run `tidy` might not learn that dockhand rewrites commits. The plan line above names each step, so the model is still in front of them every time, and the separate commands remain for doing a step alone.
+
+### What changes for the loop
+
+`update`, `edit` or `create`, then `submit`. `submit` shows the commits it will make, offers the check if none covers these files, and opens the pull request. `check` and `tidy` stay for when you want to run a step by itself, and the README teaches the three-command form first.
 
 ## 4. One "how far" setting
 
@@ -224,7 +280,7 @@ These are each small, but together they make the tool feel inconsistent, and a t
 ## Suggested order
 
 1. `-b` with completion, `-p`, and `--pr` (§1), with auto-start (§2). This is the biggest daily win, and mostly in branch resolution (`engine.named`, `BranchesChanging`) and the commands' argument parsing.
-2. `submit` folding in tidy (§3), and the shared-flag test (§9), which would catch the field-testing inconsistencies as they're fixed.
+2. Stop only for judgment (§3), starting with `submit` folding in tidy and `check` following a running check of the same files, and the shared-flag test (§9), which would catch the field-testing inconsistencies as they're fixed.
 3. `archive` taking the worktree (§5) and `explain` for checks and branches (§7). Both are small, and both close friction field testing actually hit.
 4. `setup` (§6) and `review --check` (§8).
 5. `--to` (§4) last, after a discussion, since it changes the most words and touches decided ground.
