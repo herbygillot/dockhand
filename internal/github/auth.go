@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/fetch"
@@ -96,6 +97,9 @@ const (
 type Token struct {
 	Secret string           `json:"-"`
 	Source CredentialSource `json:"source"`
+	// Expiry is when the token stops working; zero for one that doesn't
+	// expire, or whose source doesn't say.
+	Expiry time.Time `json:"-"`
 }
 
 func resolvedToken(secret string, source CredentialSource) (Token, error) {

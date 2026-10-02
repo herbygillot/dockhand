@@ -27,12 +27,12 @@ type Client struct {
 	Config      Config
 	Credentials TokenSource
 
-	once       sync.Once
-	sdk        *gh.Client
-	initErr    error
-	authMu     sync.Mutex
-	authSDK    *gh.Client
-	authSource CredentialSource
+	once        sync.Once
+	sdk         *gh.Client
+	initErr     error
+	authMu      sync.Mutex
+	authSDK     *gh.Client
+	credentials *credentials
 	// anonymousUntil is when finding no credentials stops being
 	// remembered, so an anonymous read doesn't ask the keychain and gh
 	// again each time (the code-organization review's finding 45); now
@@ -91,34 +91,27 @@ func (c *Client) AuthenticatedAPI(ctx context.Context) (*gh.Client, error) {
 	if c.authSDK != nil {
 		return c.authSDK, nil
 	}
-	token := c.Config.Token
-	origin := SourceExplicit
-	if token == "" {
-		source := c.Credentials
+	var source TokenSource = staticToken(c.Config.Token)
+	if c.Config.Token == "" {
+		source = c.Credentials
 		if source == nil && c.Config.BaseURL == "" {
 			source = SystemCredentials{}
 		}
 		if source == nil {
 			return nil, fmt.Errorf("%w: configure an explicit credential for this GitHub API", ErrAuthentication)
 		}
-		resolved, err := source.Token(ctx)
-		if err != nil {
-			return nil, err
-		}
-		token, origin = resolved.Secret, resolved.Source
-		if origin == "" {
-			origin = SourceExplicit
-		}
 	}
-	token, err := validToken(token)
+	// The token is asked for now, so a client with none says so here, and
+	// then again for each request, as its source has it then.
+	held := &credentials{source: source, now: c.now}
+	if _, err := held.current(ctx); err != nil {
+		return nil, err
+	}
+	api, err := c.newAuthenticatedAPI(held)
 	if err != nil {
 		return nil, err
 	}
-	api, err := c.newAPI(token, origin)
-	if err != nil {
-		return nil, err
-	}
-	c.authSDK, c.authSource = api, origin
+	c.authSDK, c.credentials = api, held
 	return c.authSDK, nil
 }
 
@@ -142,7 +135,23 @@ func (c *Client) AuthenticatedUser(ctx context.Context) (string, error) {
 	return user.GetLogin(), nil
 }
 
+// newAPI is an SDK client carrying token, a configured one or none.
 func (c *Client) newAPI(token string, source CredentialSource) (*gh.Client, error) {
+	return c.sdkClient(token != "", func() CredentialSource { return source }, func(transport http.RoundTripper) http.RoundTripper { return transport }, token)
+}
+
+// newAuthenticatedAPI is an SDK client whose requests each carry the
+// token held asks its source for.
+func (c *Client) newAuthenticatedAPI(held *credentials) (*gh.Client, error) {
+	return c.sdkClient(true, held.lastSource, func(transport http.RoundTripper) http.RoundTripper {
+		return credentialTransport{next: transport, credentials: held}
+	}, "")
+}
+
+// sdkClient is go-github over dockhand's transports: GitHub's rate limits
+// read, redirects held to the API's origin, and the credential, where
+// carry adds one; token is a fixed one go-github carries itself.
+func (c *Client) sdkClient(authenticated bool, source func() CredentialSource, carry func(http.RoundTripper) http.RoundTripper, token string) (*gh.Client, error) {
 	client := http.Client{}
 	if c.HTTP != nil {
 		client = *c.HTTP
@@ -154,8 +163,8 @@ func (c *Client) newAPI(token string, source CredentialSource) (*gh.Client, erro
 	// The transport reads GitHub's rate limits (rateLimited), so go-github's
 	// own check, which refuses before the transport could wait, is off.
 	client.Transport = rateLimited{
-		next:   redirectTransport{next: transport, source: source, authenticated: token != ""},
-		limits: newRateLimits(token != ""),
+		next:   redirectTransport{next: carry(transport), source: source, authenticated: authenticated},
+		limits: newRateLimits(authenticated),
 	}
 	options := []gh.ClientOptionsFunc{gh.WithHTTPClient(&client), gh.WithDisableRateLimitCheck()}
 	if c.Config.BaseURL != "" {
@@ -167,8 +176,14 @@ func (c *Client) newAPI(token string, source CredentialSource) (*gh.Client, erro
 	return gh.NewClient(options...)
 }
 
+// CredentialSource is where the token the client last carried came from;
+// empty before it has asked for one.
 func (c *Client) CredentialSource() CredentialSource {
 	c.authMu.Lock()
-	defer c.authMu.Unlock()
-	return c.authSource
+	held := c.credentials
+	c.authMu.Unlock()
+	if held == nil {
+		return ""
+	}
+	return held.lastSource()
 }

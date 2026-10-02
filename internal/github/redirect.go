@@ -8,8 +8,10 @@ import (
 // Leave redirect handling to the HTTP client, but do not replay writes or send
 // API credentials outside the original origin.
 type redirectTransport struct {
-	next          http.RoundTripper
-	source        CredentialSource
+	next http.RoundTripper
+	// source is where the token a request carried came from, for what a
+	// rejection says; nil for a client with none.
+	source        func() CredentialSource
 	authenticated bool
 }
 
@@ -29,7 +31,7 @@ func (t redirectTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	response, err := t.next.RoundTrip(req)
 	if err == nil && t.authenticated && response.StatusCode == http.StatusUnauthorized {
 		response.Body.Close()
-		return nil, t.source.rejected()
+		return nil, t.source().rejected()
 	}
 	return response, err
 }
