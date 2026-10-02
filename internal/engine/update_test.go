@@ -364,7 +364,8 @@ func TestAnUpdateComparesTheUpstreamArchives(t *testing.T) {
 	require.NoError(t, err)
 	quiet, err := e.Update(t.Context(), UpdateRequest{Branch: other, Action: model.EditUpdate, Port: "jq", CompareUpstream: true})
 	require.NoError(t, err)
-	require.Nil(t, quiet.Upstream, "no archives, nothing compared")
+	require.True(t, NothingCompared(*quiet.Upstream), "no archives, nothing compared, and said: %+v", quiet.Upstream)
+	require.Equal(t, "jq fetches no upstream source, so there's nothing to compare", CoverageWords(*quiet.Upstream))
 	require.False(t, quiet.Upstream.Held())
 }
 
@@ -622,7 +623,7 @@ func TestAChangeTheBuildDoesntReadHoldsNothing(t *testing.T) {
 	}, comparison.Changes)
 	// The files of build systems flatbuffers doesn't use are said in
 	// coverage alone, set apart (rust 1.99.0's package.json, batch 23).
-	require.Equal(t, "Read CMakeLists.txt; set apart: Package.swift (swift), package.json (node)", CoverageWords(*comparison))
+	require.Equal(t, "Compared CMakeLists.txt; set apart: Package.swift (swift), package.json (node)", CoverageWords(*comparison))
 }
 
 // What an option off by default gates holds nothing only where the
@@ -743,4 +744,17 @@ func TestAStealthRefreshGetsTheBasesPort(t *testing.T) {
 	require.Equal(t, "1.7.1", port.Version, "the base's, not the branch's")
 	require.Nil(t, e.basePort(t.Context(), source, branch.Base, "jq", []string{"textproc/jq/files/patch-a.diff"}), "the Portfile didn't change")
 	require.Nil(t, e.basePort(t.Context(), source, branch.Base, "gone", []string{"textproc/gone/Portfile"}), "no such port")
+}
+
+// An update to a new major version says so: semgrep's 0.14.0 to 1.179.0
+// read as a plain bump (field testing, 2026-10-02).
+func TestAnUpdateSaysANewMajorVersion(t *testing.T) {
+	result := func(from, to string) preparation.Result {
+		port := func(version string) macports.Snapshot {
+			return macports.Snapshot{Ports: map[string]macports.PortInfo{"semgrep": {Name: "semgrep", Version: version}}}
+		}
+		return preparation.Result{Target: model.Target{Name: "semgrep"}, Fidelity: []portedit.Fidelity{{Before: port(from), After: port(to)}}}
+	}
+	require.True(t, describe(model.Branch{}, "semgrep", result("0.14.0", "1.179.0")).CrossesMajor)
+	require.False(t, describe(model.Branch{}, "semgrep", result("1.178.0", "1.179.0")).CrossesMajor)
 }

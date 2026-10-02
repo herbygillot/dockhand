@@ -193,11 +193,22 @@ func inferColumns(rows []blockLine) lineLayout {
 // token before it having pushed it there. cargo2port starts a long crate
 // version at its field and lets it run on; a block whose long versions
 // end on the column like the others shows no field start, and its versions
-// only keep their distance from the name.
+// only keep their distance from the name. A field holds every version
+// that ends on its column, so a token that starts inside the widest of
+// them is a row placed off the column, not the field's start: skim's
+// table had one at a column past it, and each update since placed its new
+// rows there, two to six columns past the rest (field testing,
+// 2026-10-02).
 func fieldStart(rows []blockLine, i, right, gap int) (int, bool) {
+	widest := 0
+	for _, l := range rows {
+		if i < len(l.tokens) && l.starts[i]+len(l.tokens[i]) == right {
+			widest = max(widest, len(l.tokens[i]))
+		}
+	}
 	start, found := 0, false
 	for _, l := range rows {
-		if i >= len(l.tokens) || i == 0 {
+		if i >= len(l.tokens) || i == 0 || l.starts[i] > right-widest {
 			continue
 		}
 		pushed := l.starts[i]-(l.starts[i-1]+len(l.tokens[i-1])) <= gap

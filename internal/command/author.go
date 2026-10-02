@@ -390,6 +390,11 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	}
 	if request.Action == model.EditUpdate {
 		fmt.Fprintf(out, "%s: %s → %s%s\n", update.Port, update.Before, update.After, releaseLabel(update.Release))
+		// A plain bump read the same for semgrep's 0.14.0 to 1.179.0
+		// (field testing, 2026-10-02).
+		if update.CrossesMajor {
+			fmt.Fprintf(out, "A new major version: what depends on %s may need to follow.\n", update.Port)
+		}
 	} else if update.Stealth != nil {
 		fmt.Fprintf(out, "%s %s · the distfile changed upstream without a new name (stealth update)\n", update.Port, update.Before)
 		writeStealth(out, update.Stealth)
@@ -880,8 +885,10 @@ func writeUpstream(out io.Writer, comparison *model.UpstreamComparison) {
 		// marked as one.
 		fmt.Fprintf(out, "! Upstream archives not compared: %s\n", comparison.Problem)
 		fmt.Fprintln(out, holdLegend)
+	case engine.NothingCompared(*comparison):
+		fmt.Fprintf(out, "Upstream not compared: %s.\n", engine.CoverageWords(*comparison))
 	case len(comparison.Changes) == 0:
-		fmt.Fprintln(out, "Upstream archives compared: no license, build file, or dependency changes.")
+		fmt.Fprintln(out, "Upstream source compared: no license, build file, or dependency changes.")
 		if words := engine.CoverageWords(*comparison); words != "" {
 			fmt.Fprintf(out, "  · %s\n", words)
 		}

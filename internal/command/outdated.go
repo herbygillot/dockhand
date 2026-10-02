@@ -88,7 +88,29 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 	table := tabwriter.NewWriter(out, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(table, "  PORT\tNOW\tNEWEST\tDOCKHAND CAN")
 	newer, unknown, uncertain, moved, own := 0, 0, 0, 0, 0
+	// A subport checked with a sibling that's listed moves with it, so
+	// it's said on the sibling's row rather than its own: five python
+	// ports took about 25 lines, and a subport's row said "update with
+	// py-flatbuffers" while that update was on a branch already (field
+	// testing, 2026-10-02).
+	listed := map[string]bool{}
 	for _, port := range report.Ports {
+		listed[port.Port] = true
+	}
+	following := map[string]int{}
+	for _, port := range report.Ports {
+		if port.With != "" && listed[port.With] {
+			following[port.With]++
+		}
+	}
+	with := func(port string) string {
+		if n := following[port]; n > 0 {
+			return fmt.Sprintf(" (%s with it)", plural(n, "subport"))
+		}
+		return ""
+	}
+	for _, port := range report.Ports {
+		folded := port.With != "" && listed[port.With]
 		switch {
 		case port.OwnVersion:
 			own++
@@ -110,6 +132,8 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 			// a look, with the update that takes it.
 			uncertain++
 			fmt.Fprintf(table, "  %s\t%s\t%s?\tupdate %s %s after a look: %s\n", port.Port, port.Current, port.Newest, port.Port, port.Uncertain[0].Source, setAsideWords(port.Uncertain))
+		case port.Outdated && folded:
+			newer++
 		case port.Outdated:
 			newer++
 			can := "update"
@@ -123,11 +147,12 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 			case port.With != "":
 				can = "update with " + port.With
 			}
-			fmt.Fprintf(table, "  %s\t%s\t%s\t%s\n", port.Port, port.Current, port.Newest, can)
+			fmt.Fprintf(table, "  %s\t%s\t%s\t%s%s\n", port.Port, port.Current, port.Newest, can, with(port.Port))
+		case folded:
 		case all && port.With != "":
 			fmt.Fprintf(table, "  %s\t%s\t%s\tnothing; it is current, as %s is\n", port.Port, port.Current, port.Newest, port.With)
 		case all:
-			fmt.Fprintf(table, "  %s\t%s\t%s\tnothing; it is current\n", port.Port, port.Current, port.Newest)
+			fmt.Fprintf(table, "  %s\t%s\t%s\tnothing; it is current%s\n", port.Port, port.Current, port.Newest, with(port.Port))
 		}
 	}
 	if newer > 0 || uncertain > 0 || moved > 0 || all {
@@ -175,7 +200,7 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 	if uncertain > 0 {
 		// Serve says such a port once, but outdated every time it's asked:
 		// the port's own livecheck can settle it for good.
-		fmt.Fprintln(out, "A tag set aside that's no release, as an old one misspelled is, stays out once the port's livecheck leaves it out.")
+		fmt.Fprintln(out, "Where a tag set aside is an old one spelled oddly rather than a release, a livecheck.regex that skips it keeps it out of later looks.")
 	}
 	return nil
 }

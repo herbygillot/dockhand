@@ -285,7 +285,9 @@ its pull request; status --all still shows it. --undo brings it back.`,
 				fmt.Fprintf(streams.Out, "%s is back among your open branches.\n", branch.ShortName())
 				return nil
 			}
-			fmt.Fprintf(streams.Out, "Archived %s; its files, Git branch, and pull request are untouched. dockhand archive --undo %s brings it back.\n", branch.ShortName(), branch.ShortName())
+			// Where a branch is done with, clean takes its worktree, which
+			// archive alone doesn't say (field testing, 2026-10-02).
+			fmt.Fprintf(streams.Out, "Archived %s; its files, Git branch, and pull request are untouched. dockhand archive --undo %s brings it back, and dockhand clean --archived %s removes its worktree.\n", branch.ShortName(), branch.ShortName(), branch.ShortName())
 			return nil
 		},
 	}

@@ -804,8 +804,9 @@ func elsewhere(declarations []project.Requirement) bool {
 // count says in one line how many of a proven manifest's declared
 // dependencies it gained, lost, and moved, holding nothing (D9), naming
 // them where there are few of a kind: "upstream: Cargo.toml: 1 added
-// (inferno), 1 moved (open)", and "upstream: go.mod: 2 added, 14 moved"
-// (the txt run's finding 6). file is the finding's path, and label what
+// (inferno), 1 changed (open)", and "upstream: go.mod: 2 added, 14
+// changed" (the txt run's finding 6), where a change is to the version or
+// source required; "moved" read as nothing (field testing, 2026-10-02). file is the finding's path, and label what
 // its message names: the file, or a workspace's members together.
 func count(file, label string, changes []sourcecompare.Change) model.UpstreamChange {
 	names := map[string][]string{}
@@ -813,7 +814,7 @@ func count(file, label string, changes []sourcecompare.Change) model.UpstreamCha
 		names[change.How] = append(names[change.How], change.Name)
 	}
 	var parts []string
-	for _, part := range [][2]string{{"adds", "added"}, {"drops", "dropped"}, {"moves", "moved"}} {
+	for _, part := range [][2]string{{"adds", "added"}, {"drops", "dropped"}, {"moves", "changed"}} {
 		some := names[part[0]]
 		switch {
 		case len(some) == 0:

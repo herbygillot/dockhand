@@ -66,6 +66,9 @@ same commit; one whose port master has at another version, as a newer
 update would leave it, is named for you to look at; and the rest are left
 for dockhand adopt. Without it, clean says how many there are.
 
+It reads your open pull requests' state first, as status --refresh does,
+so a branch merged since dockhand last looked is cleaned with the rest.
+
 Naming branches cleans those alone, each as its state has it, merged,
 closed, or archived, and nothing else: no other branch, nothing a check
 left, and no branch from before v3. An open branch has nothing to clean.
@@ -86,6 +89,10 @@ cancel stops a check. None means another.`,
 				}
 				return cleanAutomatically(ctx, e, streams, s.file)
 			}
+			// Which branches merged is their pull requests' to say, read
+			// now: two merged a minute before were left out, unsaid, until
+			// status --refresh (field testing, 2026-10-02).
+			refreshPullRequests(ctx, e, streams.Err)
 			var plans []engine.CleanBranch
 			if len(args) > 0 {
 				if legacy {

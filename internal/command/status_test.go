@@ -164,7 +164,12 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, out, whole)
 	_, _, err = dockhand(t, "logs", "check-3", "--all")
-	require.EqualError(t, err, "--all goes with --port")
+	require.EqualError(t, err, "--all goes with a port")
+	// A port named alone is the branch's latest check's (field testing,
+	// 2026-10-02).
+	alone, _, err := dockhand(t, "logs", "jq")
+	require.NoError(t, err)
+	require.Equal(t, out, alone)
 	_, _, err = dockhand(t, "logs", "check-9")
 	require.ErrorContains(t, err, "there is no run check-9")
 

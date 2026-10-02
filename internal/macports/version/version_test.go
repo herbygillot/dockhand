@@ -45,3 +45,21 @@ func TestValidateAndTagPattern(t *testing.T) {
 	require.False(t, p.Explicit("1.2"))
 	require.False(t, TagPattern{}.Explicit("1.2"))
 }
+
+func TestCrossesMajor(t *testing.T) {
+	for _, test := range []struct {
+		from, to string
+		crosses  bool
+	}{
+		{"0.14.0", "1.179.0", true},
+		{"1.7.1", "1.8.1", false},
+		{"v2.9", "v3.0", true},
+		{"9", "10", true},
+		{"2025.1", "2026.1", false},
+		{"20250914", "20251001", false},
+		{"1.0", "abc", false},
+		{"01.2", "1.3", false},
+	} {
+		require.Equal(t, test.crosses, CrossesMajor(test.from, test.to), "%s → %s", test.from, test.to)
+	}
+}

@@ -38,6 +38,7 @@ func (c *Client) Inspect(ctx context.Context, ref forge.PullRequestRef) (forge.P
 		status.MergeableDetail = ""
 	}
 	latest := map[string]string{}
+	submitted := map[string]time.Time{}
 	for review, err := range client.PullRequests.ListReviewsIter(ctx, owner, repo, ref.Number, nil) {
 		if err != nil {
 			return forge.PullRequestStatus{}, githubapi.RateLimitError(err)
@@ -45,6 +46,7 @@ func (c *Client) Inspect(ctx context.Context, ref forge.PullRequestRef) (forge.P
 		switch review.GetState() {
 		case "APPROVED", "CHANGES_REQUESTED":
 			latest[review.GetUser().GetLogin()] = review.GetState()
+			submitted[review.GetUser().GetLogin()] = review.GetSubmittedAt().Time
 		case "DISMISSED":
 			delete(latest, review.GetUser().GetLogin())
 		}
@@ -63,6 +65,14 @@ func (c *Client) Inspect(ctx context.Context, ref forge.PullRequestRef) (forge.P
 		status.Review = "changes-requested"
 	case status.Approvals > 0:
 		status.Review = "approved"
+	}
+	// When the review that sets it was made, which status says rather
+	// than when dockhand read it: a refresh made a nine-hour-old request
+	// for changes read "just now" (field testing, 2026-10-02).
+	for login, state := range latest {
+		if (state == "CHANGES_REQUESTED") == (status.Review == "changes-requested") && submitted[login].After(status.ReviewedAt) {
+			status.ReviewedAt = submitted[login].UTC()
+		}
 	}
 	head := row.Head.GetSHA()
 	for run, err := range client.Checks.ListCheckRunsForRefIter(ctx, owner, repo, head, nil) {

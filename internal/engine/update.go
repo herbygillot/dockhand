@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/version"
 	"math/rand/v2"
 	"os"
 	"path"
@@ -120,6 +121,9 @@ type Update struct {
 	// Port is the name the Portfile evaluates to.
 	Port          string
 	Before, After PortVersion
+	// CrossesMajor is an update to a new major version, semgrep's 0.14.0
+	// to 1.179.0, which read as a plain bump (field testing, 2026-10-02).
+	CrossesMajor bool
 	// Release is where a bump found its version.
 	Release *model.Release
 	// Files are the paths the edit changes, sorted.
@@ -499,6 +503,7 @@ func describe(branch model.Branch, selector string, result preparation.Result) U
 	if after, ok := result.PortAfter(update.Port); ok {
 		update.After = PortVersion{Version: after.Version, Revision: after.Revision}
 	}
+	update.CrossesMajor = update.Before.Version != "" && version.CrossesMajor(update.Before.Version, update.After.Version)
 	for _, file := range result.Files {
 		update.Files = append(update.Files, file.Path)
 	}
@@ -705,13 +710,22 @@ func (e *Engine) assessUpstream(ctx context.Context, result preparation.Result, 
 		input.Toolchain = &assess.Toolchain{Required: t.Required, Declared: t.Declared, Outcome: toolchainOutcomes[t.Outcome]}
 	}
 	problem := ""
+	// read is how the source was read where it wasn't from the update's
+	// archives: a Git-fetched port's commits through its forge, as a
+	// revision's assessment reads them, or nothing, for a port that
+	// fetches nothing. Either is said, never left silent: semgrep's
+	// update compared nothing and said nothing (field testing, 2026-10-02).
+	var read []model.Coverage
+	again, viaGit := false, false
 	switch {
 	case !compare:
 	case result.PreviousProblem != "":
 		problem = "the current version's archives could not be fetched: " + result.PreviousProblem
+	case len(result.Downloads) == 0 && input.Port.GitFetched():
+		viaGit = true
+		input.Pairs, read, problem, again = e.readCommits(ctx, [2]macports.PortInfo{input.Base, input.Port}, true)
 	case len(result.Downloads) == 0:
-		// A port fetched with git has no archives, so nothing to compare.
-		compare = false
+		read = []model.Coverage{{Path: path.Dir(result.Target.Portfile), Relevance: "unknown", Treatment: "inspected", Policy: notCompared, Reason: result.Target.Name + " fetches no upstream source, so there's nothing to compare"}}
 	default:
 		for _, download := range result.Downloads {
 			if !slices.ContainsFunc(result.Pairs, func(pair preparation.ArchivePair) bool { return pair.Next.Name == download.Name }) {
@@ -720,14 +734,14 @@ func (e *Engine) assessUpstream(ctx context.Context, result preparation.Result, 
 			}
 		}
 	}
-	if compare && problem == "" {
+	if compare && problem == "" && len(result.Downloads) > 0 {
 		pairs, err := e.readPairs(ctx, result.Pairs, input.Base, input.Port)
 		if err != nil {
 			problem = err.Error()
 		}
 		input.Pairs = pairs
 	}
-	if compare && problem == "" {
+	if compare && problem == "" && len(result.Downloads) > 0 {
 		// Its patches are checked as a revision's are, the preparation's
 		// own results taken as they stand, against the archives it kept:
 		// update's assessment had none, and stood as the revision's whole
@@ -742,7 +756,11 @@ func (e *Engine) assessUpstream(ctx context.Context, result preparation.Result, 
 			portdir: path.Dir(result.Target.Portfile), fetched: fetched, checked: result.Patches})
 	}
 	comparison := e.collect(ctx, input, trees, result.Target.Portfile, problem == "")
-	comparison.Problem = problem
+	comparison.Problem, comparison.Transient = problem, again && problem != ""
+	if viaGit && problem == "" && len(input.Pairs) == 1 {
+		comparison.Commit = input.Pairs[0].Archive
+	}
+	comparison.Coverage = append(comparison.Coverage, read...)
 	if !compare && len(comparison.Changes) == 0 {
 		return nil
 	}

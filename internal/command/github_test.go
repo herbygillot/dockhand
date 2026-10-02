@@ -309,6 +309,12 @@ func TestRetryingAGitHubCheckRunsTheWorkflowAgain(t *testing.T) {
 	logged, _, err := dockhand(t, "logs", "check-1", "--port", "jq")
 	require.NoError(t, err)
 	require.Contains(t, logged, "##[group]Installing jq")
+	// The port named after the check is --port's (field testing, 2026-10-02).
+	named, _, err := dockhand(t, "logs", "check-1", "jq")
+	require.NoError(t, err)
+	require.Equal(t, logged, named)
+	_, _, err = dockhand(t, "logs", "check-1", "jq", "--port", "fd")
+	require.ErrorContains(t, err, "name the port once: jq or --port fd")
 }
 
 // A serve that stops leaves the run going and its branch on the fork, so

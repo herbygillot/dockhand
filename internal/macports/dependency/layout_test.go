@@ -133,3 +133,35 @@ func TestChangedCrateBlockKeepsRightAlignedVersions(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, next, regenerated)
 }
+
+// A row placed off the column isn't the field's start: skim's table had
+// rows two columns past it, and each update placed its new rows there too
+// (field testing, 2026-10-02). Rows copied from skim's Portfile.
+func TestARowOffTheColumnIsNoFieldStart(t *testing.T) {
+	t.Parallel()
+	block := "cargo.crates \\\n" +
+		"    lazy_static                      1.5.0  bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe \\\n" +
+		"    libc                           0.2.189  3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2 \\\n" +
+		"    lru                               0.18.5  ef9ac18847474e638e3702b76c65d4eb93428471a74778ef0f1be711717f89b5 \\\n" +
+		"    nix                             0.29.0  71e2746dc3a24dd78b3cfcb7be93368c6de9963d30f43a6a73998a9cf4b17b46"
+	src := []byte("name skim\nversion 1\n" + block + "\nlicense MIT\n")
+	values, err := generated(src, Cargo)
+	require.NoError(t, err)
+	plan, err := Inspect(src, map[string]string{Cargo: strings.Join(values, " ")})
+	require.NoError(t, err)
+	stripped, err := plan.Strip(src)
+	require.NoError(t, err)
+	sha := strings.Repeat("b", 64)
+	next := []string{
+		"lazy_static", "1.5.1", sha,
+		"libc", "0.2.189", "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2",
+		"lru", "0.18.5", "ef9ac18847474e638e3702b76c65d4eb93428471a74778ef0f1be711717f89b5",
+		"nix", "0.30.1", sha,
+	}
+	out, err := plan.Apply(stripped, map[string][]string{Cargo: next})
+	require.NoError(t, err)
+	text := string(out)
+	require.Contains(t, text, "    lazy_static                      1.5.1  "+sha)
+	require.Contains(t, text, "    nix                             0.30.1  "+sha, "a new row ends on the column, as libc's does")
+	require.Contains(t, text, "    lru                               0.18.5  ef9ac188", "the row off the column is kept as it was")
+}

@@ -403,6 +403,6 @@ func TestAWorkspacesMembersAreCountedTogether(t *testing.T) {
 	before := read(t, "demo-1.0", map[string]string{"Cargo.toml": root, "crates/a/Cargo.toml": cargo("a", `serde = "1.0"`), "crates/b/Cargo.toml": cargo("b", `log = "0.4"`)}, project.Spec{})
 	after := read(t, "demo-1.1", map[string]string{"Cargo.toml": root, "crates/a/Cargo.toml": cargo("a", `serde = "1.1"`), "crates/b/Cargo.toml": cargo("b", `log = "0.4"`+"\nregex = \"1\"")}, project.Spec{})
 	result := Assess(Input{Port: macports.PortInfo{Name: "demo", Options: map[string]string{"dockhand.portgroups": "cargo"}}, Pairs: []Pair{{Archive: "demo-1.1.tar.gz", Before: before, After: after}}})
-	require.Equal(t, []string{"· upstream: the Cargo.toml of 2 workspace members: 1 added (regex), 1 moved (serde)"}, messages(result.Changes))
+	require.Equal(t, []string{"· upstream: the Cargo.toml of 2 workspace members: 1 added (regex), 1 changed (serde)"}, messages(result.Changes))
 	require.Equal(t, "members", result.Changes[0].Subject)
 }

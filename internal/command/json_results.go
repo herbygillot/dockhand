@@ -26,17 +26,19 @@ type versionJSON struct {
 }
 
 type updateJSON struct {
-	Branch    branchRefJSON `json:"branch"`
-	Started   bool          `json:"started"`
-	Port      string        `json:"port"`
-	Before    versionJSON   `json:"before"`
-	After     versionJSON   `json:"after"`
-	Current   bool          `json:"current"`
-	Applied   bool          `json:"applied"`
-	Files     []string      `json:"files"`
-	Distfiles int           `json:"distfiles"`
-	Subject   string        `json:"subject"`
-	Patches   []string      `json:"patch_problems"`
+	Branch  branchRefJSON `json:"branch"`
+	Started bool          `json:"started"`
+	Port    string        `json:"port"`
+	Before  versionJSON   `json:"before"`
+	After   versionJSON   `json:"after"`
+	// CrossesMajor is an update to a new major version.
+	CrossesMajor bool     `json:"crosses_major,omitempty"`
+	Current      bool     `json:"current"`
+	Applied      bool     `json:"applied"`
+	Files        []string `json:"files"`
+	Distfiles    int      `json:"distfiles"`
+	Subject      string   `json:"subject"`
+	Patches      []string `json:"patch_problems"`
 	// PatchesApplied counts the port's patches checked that apply.
 	PatchesApplied int `json:"patches_applied"`
 	// Unchecked are the patches no check reached before the build, which
@@ -162,7 +164,7 @@ type otherJSON struct {
 }
 
 func updateView(branch model.Branch, started bool, update engine.Update, plan bool) updateJSON {
-	view := updateJSON{Branch: branchRef(branch), Started: started, Port: update.Port,
+	view := updateJSON{Branch: branchRef(branch), Started: started, Port: update.Port, CrossesMajor: update.CrossesMajor,
 		Before: versionJSON{update.Before.Version, update.Before.Revision}, After: versionJSON{update.After.Version, update.After.Revision},
 		Current: update.Current, Applied: update.Applied, Files: nonNil(update.Files), Distfiles: update.Distfiles, Subject: update.Subject, Patches: nonNil(update.PatchProblems), PatchesApplied: update.PatchesApplied,
 		Unchecked: nonNil(update.PatchesUnchecked)}

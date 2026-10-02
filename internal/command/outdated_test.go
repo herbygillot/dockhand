@@ -69,9 +69,19 @@ func TestOutdatedSaysWhenNothingIsNewer(t *testing.T) {
 	// why and the update that takes it (the update-workflow review's
 	// finding 6).
 	row := "  PORT   NOW      NEWEST   DOCKHAND CAN\n  yq     4.44.1   5.0?     update yq 5.0 after a look: v5.0 compares newer, but its commit is older than v4.44.1's\n"
-	settle := "A tag set aside that's no release, as an old one misspelled is, stays out once the port's livecheck leaves it out.\n"
+	settle := "Where a tag set aside is an old one spelled oddly rather than a release, a livecheck.regex that skips it keeps it out of later looks.\n"
 	require.Equal(t, row+"yq may have a newer release, at master 1bb30d5\n"+settle, said(yqMayBeOutdated))
 	require.Equal(t, row+"None of 2 ports has a newer release, at master 1bb30d5 · 1 may have one, for a look\n"+settle, said(yqMayBeOutdated, current("jq")))
+
+	// Subports checked with a sibling that's listed are said on its row
+	// (field testing, 2026-10-02).
+	follow := func(name string) engine.OutdatedPort {
+		return engine.OutdatedPort{Port: name, Current: "25.9.23", Newest: "25.9.23", With: "py-flatbuffers"}
+	}
+	var folded bytes.Buffer
+	require.NoError(t, writeOutdated(t.Context(), nil, &folded, engine.OutdatedReport{Master: "1bb30d5aaaaa", Ports: []engine.OutdatedPort{
+		{Port: "py-flatbuffers", Current: "25.9.23", Newest: "25.9.23"}, follow("py313-flatbuffers"), follow("py314-flatbuffers")}}, true))
+	require.Equal(t, "  PORT             NOW       NEWEST    DOCKHAND CAN\n  py-flatbuffers   25.9.23   25.9.23   nothing; it is current (2 subports with it)\nNone of 3 ports has a newer release, at master 1bb30d5\n", folded.String())
 
 	// A port with no release to look for, as a _select port, is covered,
 	// not a port that couldn't be checked (batch 37).

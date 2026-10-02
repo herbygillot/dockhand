@@ -203,7 +203,7 @@ func logsCommand(s *settings, streams Streams) *cobra.Command {
 	var port string
 	var all bool
 	cmd := &cobra.Command{
-		Use:   "logs [check or provider run]",
+		Use:   "logs [check or provider run] [port]",
 		Short: "Show where a check's logs are, or one port's log",
 		Long: `Shows a check's provider runs, check-42's, and where each port's log is, or
 one provider run's alone, by the ID a pull request's Tested on names,
@@ -211,14 +211,24 @@ tart_7y62p4sigena6xlr, or by its provider's own reference, such as a workflow
 run's URL. In a branch's worktree, with none named, it shows the branch's
 latest check.
 
---port prints one port's log. Where its provider recorded where each step of
-the build began, as Tart's does, it lists them with their lines first, and
-prints from the port's own build on, leaving out its dependencies' installs
-before it; --all prints the whole log.`,
-		Args: cobra.MaximumNArgs(1),
+A port, named after the check or alone, or with --port, prints that port's
+log: logs check-42 semgrep, or logs semgrep for the branch's latest check.
+Where its provider recorded where each step of the build began, as Tart's
+does, it lists them with their lines first, and prints from the port's own
+build on, leaving out its dependencies' installs before it; --all prints
+the whole log.`,
+		Args: cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// A port named as an argument is --port's (field testing,
+			// 2026-10-02: logs semgrep, and logs check-76 semgrep).
+			if len(args) == 2 {
+				if port != "" && port != args[1] {
+					return fmt.Errorf("name the port once: %s or --port %s", args[1], port)
+				}
+				port, args = args[1], args[:1]
+			}
 			if all && port == "" {
-				return errors.New("--all goes with --port")
+				return errors.New("--all goes with a port")
 			}
 			ctx := cmd.Context()
 			e, err := s.open(ctx)
@@ -232,6 +242,15 @@ before it; --all prints the whole log.`,
 				run, err = latestCheckHere(ctx, e, "name a check, such as check-42, or a provider run; in a branch's worktree, logs shows the branch's latest check")
 			} else {
 				run, only, err = checkOrRun(ctx, e, args[0])
+				if err != nil && port == "" && !checkName.MatchString(args[0]) {
+					// Not a check or a provider run: a port, in the
+					// branch's latest check, where there's one here.
+					if latest, ok := latestLogging(ctx, e, args[0]); ok {
+						run, only, port, err = latest, "", args[0], nil
+					} else {
+						err = fmt.Errorf("%w; for a port's log outside its branch's worktree, name its check too: logs check-42 %s", err, args[0])
+					}
+				}
 			}
 			if err != nil {
 				return err
@@ -373,6 +392,21 @@ func writePortLog(out io.Writer, result model.TargetResult, data []byte, all boo
 // latestCheckHere is the newest check of the branch checked out here, for
 // logs, wait, and cancel with none named; unnamed is what to say where no
 // branch is checked out.
+// latestLogging is the latest check of the branch checked out here, where
+// it recorded a log for port.
+func latestLogging(ctx context.Context, e *engine.Engine, port string) (model.Run, bool) {
+	run, err := latestCheckHere(ctx, e, "")
+	if err != nil {
+		return model.Run{}, false
+	}
+	logs, err := e.Logs(ctx, run.ID)
+	if err != nil {
+		return model.Run{}, false
+	}
+	_, _, ok := portLogs(logs, port)
+	return run, ok
+}
+
 func latestCheckHere(ctx context.Context, e *engine.Engine, unnamed string) (model.Run, error) {
 	branch, err := e.Current(ctx)
 	if errors.Is(err, engine.ErrNoBranch) {

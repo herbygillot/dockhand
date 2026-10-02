@@ -85,6 +85,9 @@ type PullRequestObservation struct {
 	// ChangesRequestedBy are the reviewers whose latest review asks for
 	// changes.
 	ChangesRequestedBy []string `json:",omitempty"`
+	// ReviewedAt is when the review that sets Review was made; zero where
+	// none does, or for an observation from before it was kept.
+	ReviewedAt time.Time `json:",omitzero"`
 	// Checks is passing, failing, pending, or none; Failing names the
 	// checks that concluded unsuccessfully.
 	Checks  string

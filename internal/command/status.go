@@ -313,6 +313,9 @@ func pullRequestAttention(s engine.BranchStatus) []attention {
 	case s.SomeoneElsePushed():
 		return []attention{{mark: "!", branch: name, what: fmt.Sprintf("someone else pushed to #%d%s", pr.Number, age), next: "dockhand submit --branch " + name + " (it shows the comparison)"}}
 	case pr.Observed.Review == "changes-requested":
+		if !pr.Observed.ReviewedAt.IsZero() {
+			age = " (" + ago(pr.Observed.ReviewedAt) + ")"
+		}
 		return []attention{{mark: "!", branch: name, what: fmt.Sprintf("#%d changes requested%s", pr.Number, age), next: next}}
 	case pr.Observed.Checks == "failing":
 		return []attention{{mark: "✗", branch: name, what: fmt.Sprintf("#%d MacPorts CI failing: %s%s", pr.Number, strings.Join(s.Failing(), ", "), age),

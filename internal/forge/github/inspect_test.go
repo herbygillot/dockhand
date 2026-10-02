@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/forge/github"
 	githubapi "github.com/herbygillot/dockhand/internal/github"
@@ -56,7 +57,7 @@ func TestInspectNamesWhoRequestedChangesAndReviewCanBeRequestedAgain(t *testing.
 			requested = payload["reviewers"].([]any)
 			fmt.Fprint(w, `{"number":7}`)
 		case strings.HasSuffix(r.URL.Path, "/pulls/7/reviews"):
-			fmt.Fprint(w, `[{"state":"CHANGES_REQUESTED","user":{"login":"ryandesign"}},{"state":"CHANGES_REQUESTED","user":{"login":"herbygillot"}},{"state":"APPROVED","user":{"login":"carol"}}]`)
+			fmt.Fprint(w, `[{"state":"CHANGES_REQUESTED","user":{"login":"ryandesign"},"submitted_at":"2026-10-01T03:00:00Z"},{"state":"CHANGES_REQUESTED","user":{"login":"herbygillot"},"submitted_at":"2026-10-01T05:00:00Z"},{"state":"APPROVED","user":{"login":"carol"},"submitted_at":"2026-10-01T09:00:00Z"}]`)
 		case strings.HasSuffix(r.URL.Path, "/pulls/7"):
 			fmt.Fprintf(w, `{"number":7,"state":"open","head":{"sha":%q}}`, head)
 		case strings.HasSuffix(r.URL.Path, "/check-runs"):
@@ -74,6 +75,7 @@ func TestInspectNamesWhoRequestedChangesAndReviewCanBeRequestedAgain(t *testing.
 	require.NoError(t, err)
 	require.Equal(t, "changes-requested", status.Review)
 	require.Equal(t, []string{"herbygillot", "ryandesign"}, status.ChangesRequestedBy)
+	require.Equal(t, time.Date(2026, 10, 1, 5, 0, 0, 0, time.UTC), status.ReviewedAt, "the latest request for changes, not carol's later approval (field testing, 2026-10-02)")
 	require.NoError(t, client.RequestReviewers(t.Context(), ref, status.ChangesRequestedBy))
 	require.Equal(t, []any{"herbygillot", "ryandesign"}, requested)
 }

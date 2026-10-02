@@ -123,6 +123,7 @@ func TestUpdateInTheBranchCheckedOutHere(t *testing.T) {
 		"jq: 1.7.1 → 1.8.1   (GitHub tag jq-1.8.1)\n"+
 		"Updated version.\n"+ // the fixture's jq fetches nothing
 		"Changed: textproc/jq/Portfile\n"+
+		"Upstream not compared: jq fetches no upstream source, so there's nothing to compare.\n"+
 		"Next: dockhand check\n", out)
 	data, err := os.ReadFile(filepath.Join(dir, "textproc/jq/Portfile"))
 	require.NoError(t, err)

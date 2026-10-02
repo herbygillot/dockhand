@@ -166,7 +166,7 @@ func TestReviewSaysWhatUpdateWouldOfSomeonesPullRequest(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, report.UpstreamUnread)
 	require.Len(t, report.Upstream, 1)
-	require.Equal(t, []string{"upstream's COPYING changed; the Portfile's license line may need to follow", "Read COPYING"}, report.UpstreamWords(), "what was read is said too (batch 23)")
+	require.Equal(t, []string{"upstream's COPYING changed; the Portfile's license line may need to follow", "Compared COPYING"}, report.UpstreamWords(), "what was read is said too (batch 23)")
 	require.Equal(t, []Dependent{{Name: "jaq", Directory: "textproc/jaq", On: []string{"jq"}, Phases: []string{"library"}}}, report.Dependents)
 	markdown := report.Markdown()
 	require.Contains(t, markdown, "What upstream's change means, comparing the source archives with the base's:\n- upstream's COPYING changed; the Portfile's license line may need to follow\n")

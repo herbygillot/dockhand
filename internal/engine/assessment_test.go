@@ -19,8 +19,11 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
+	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/preparation"
 	"github.com/herbygillot/dockhand/internal/project"
+	"github.com/herbygillot/dockhand/internal/sourcecompare"
 	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -283,7 +286,8 @@ func TestWhatCantBeComparedSaysSo(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, AssessmentIncomplete, state)
 	require.Empty(t, holds(byPort["meta"]))
-	require.Equal(t, []model.Coverage{{Path: "devel/meta", Relevance: "unknown", Treatment: "inspected", Reason: "meta fetches no upstream source, so there's nothing to compare"}}, byPort["meta"].Comparison.Coverage)
+	require.Equal(t, []model.Coverage{{Path: "devel/meta", Relevance: "unknown", Treatment: "inspected", Policy: notCompared, Reason: "meta fetches no upstream source, so there's nothing to compare"}}, byPort["meta"].Comparison.Coverage)
+	require.True(t, NothingCompared(byPort["meta"].Comparison))
 }
 
 // What's recorded for a revision stands: it's read, not made again. One
@@ -756,5 +760,35 @@ func TestAnArchiveNoLongerFetchedIsSaid(t *testing.T) {
 	require.Contains(t, result.Changes, model.UpstreamChange{Kind: "source", Path: "extra-1.0.tar.gz", Message: "upstream: extra-1.0.tar.gz is no longer fetched",
 		Rule: assess.SourceRemoved, Class: model.Introduced, Source: "extra-*.tar.gz"})
 	require.Contains(t, CoverageWords(result), "set apart: extra-1.0.tar.gz")
-	require.Contains(t, CoverageWords(result), "Read LICENSE", "the one archive compared reads as a port of one archive's")
+	require.Contains(t, CoverageWords(result), "Compared LICENSE", "the one archive compared reads as a port of one archive's")
+}
+
+// An update of a Git-fetched port compares its commits, as a revision's
+// assessment does, and says it read them so: semgrep's update compared
+// nothing and said nothing (field testing, 2026-10-02).
+func TestAnUpdateOfAGitFetchedPortComparesItsCommits(t *testing.T) {
+	project := t.TempDir()
+	run(t, project, "init", "-q")
+	write(t, project, map[string]string{"README": "1\n"})
+	run(t, project, "add", "-A")
+	run(t, project, "commit", "-q", "-m", "one")
+	run(t, project, "tag", "v1")
+	write(t, project, map[string]string{"README": "2\n"})
+	run(t, project, "commit", "-q", "-am", "two")
+	run(t, project, "tag", "v2")
+	v1, v2 := run(t, project, "rev-parse", "v1^{commit}"), run(t, project, "rev-parse", "v2^{commit}")
+
+	e, _, base, tree := revisionFixture(t, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\n"})
+	e.SourceArchiver = commitArchives{t: t, files: map[string]map[string]string{v1: {"LICENSE": "MIT\n"}, v2: {"LICENSE": "GPL\n"}}, asked: &atomic.Int64{}}
+	port := func(version, ref string) macports.Snapshot {
+		return macports.Snapshot{Ports: map[string]macports.PortInfo{"libharbor": {Name: "libharbor", Version: version, Options: map[string]string{"fetch.type": "git", "git.url": project, "git.branch": ref}}}}
+	}
+	result := preparation.Result{Target: model.Target{Name: "libharbor", Portfile: "devel/libharbor/Portfile"}, Fidelity: []portedit.Fidelity{{Before: port("1", "v1"), After: port("2", "v2")}}}
+	trees := [2]model.Source{{Tree: base, Base: base}, {Tree: tree, Base: base}}
+	comparison := e.assessUpstream(t.Context(), result, sourcecompare.Versions{Old: "1", New: "2"}, trees, true)
+	require.NotNil(t, comparison)
+	require.Empty(t, comparison.Problem)
+	require.Equal(t, []string{"upstream's LICENSE changed; the Portfile's license line may need to follow"}, comparison.Holds())
+	require.Equal(t, v2, comparison.Commit)
+	require.Equal(t, "Compared LICENSE; read from the forge's archive of each commit, submodules left out; the base's git.branch as it names a commit now", CoverageWords(*comparison))
 }

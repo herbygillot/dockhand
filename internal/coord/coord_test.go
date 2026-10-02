@@ -270,6 +270,38 @@ func TestAHeartbeatGoesOnAfterAFailedBeat(t *testing.T) {
 	require.Equal(t, "This dockhand is recorded as running again.", said[1])
 }
 
+// An ended session's heartbeat stops with it, and says nothing: bump's
+// check ended its session while the process went on to submit, and the
+// next beat, refused, read as a heartbeat lost (field testing, 2026-10-02).
+func TestAnEndedSessionStopsBeatingQuietly(t *testing.T) {
+	f := setup(t)
+	f.c.Now, f.c.Heartbeat = nil, 10*time.Millisecond
+	s := f.session(t, 100, model.SessionForeground)
+	var said []string
+	var mu sync.Mutex
+	ctx := progress.WithReporter(t.Context(), func(update progress.Update) {
+		mu.Lock()
+		defer mu.Unlock()
+		said = append(said, update.Message)
+	})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.KeepAlive(ctx)
+	}()
+	time.Sleep(30 * time.Millisecond)
+	require.NoError(t, s.End(t.Context()))
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the heartbeat went on after the session ended")
+	}
+	time.Sleep(30 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	require.Empty(t, said)
+}
+
 func TestSystemLivenessKnowsAReplacedOrExitedProcess(t *testing.T) {
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		t.Skip("process start times are read on Linux and macOS")

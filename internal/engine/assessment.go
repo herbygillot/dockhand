@@ -238,7 +238,7 @@ func (e *Engine) assessPort(ctx context.Context, planner ArchivePlanner, sources
 	case infos[1].GitFetched():
 		input.Pairs, coverage, problem, again = e.readCommits(ctx, infos, hadBase)
 	case !fetches:
-		coverage = append(coverage, model.Coverage{Path: directory, Relevance: "unknown", Treatment: "inspected", Reason: name + " fetches no upstream source, so there's nothing to compare"})
+		coverage = append(coverage, model.Coverage{Path: directory, Relevance: "unknown", Treatment: "inspected", Policy: notCompared, Reason: name + " fetches no upstream source, so there's nothing to compare"})
 	default:
 		scratchDirectory, err := scratch.Dir("assess-")
 		if err != nil {

@@ -71,8 +71,11 @@ type PullRequestStatus struct {
 	// ChangesRequestedBy are the logins whose latest review requests
 	// changes, sorted.
 	ChangesRequestedBy []string `json:",omitempty"`
-	Checks             CheckSummary
-	ObservedAt         time.Time
+	// ReviewedAt is when the latest review that sets Review was
+	// submitted; zero where none does.
+	ReviewedAt time.Time `json:",omitempty"`
+	Checks     CheckSummary
+	ObservedAt time.Time
 }
 
 // CheckSummary counts the checks and statuses reported for a pull

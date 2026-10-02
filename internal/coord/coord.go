@@ -101,6 +101,9 @@ type Session struct {
 	// lastBeat is when this process last recorded its heartbeat, by its
 	// own clock; a long gap means it was asleep and must not judge peers.
 	lastBeat time.Time
+	// stopBeating ends KeepAlive, which End calls: an ended session has
+	// nothing to keep alive.
+	stopBeating context.CancelFunc
 }
 
 // Start opens a session for the running process.
@@ -163,8 +166,20 @@ func (s *Session) Beat(ctx context.Context) error {
 // the store's timeouts once stopped it for good, and two minutes later
 // another session could judge this process hung and take its leases,
 // serve's lead among them (the limits sweep, 2026-10-01). A run of
-// failures is said once, as is the beat that ends it.
+// failures is said once, as is the beat that ends it. It ends with the
+// session: bump's check ended its session while the process went on to
+// submit, and the next beat, refused for an ended session, was said as a
+// heartbeat lost (field testing, 2026-10-02).
 func (s *Session) KeepAlive(ctx context.Context) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	s.mu.Lock()
+	if s.record.EndedAt != nil {
+		s.mu.Unlock()
+		return
+	}
+	s.stopBeating = cancel
+	s.mu.Unlock()
 	ticker := time.NewTicker(s.c.heartbeat())
 	defer ticker.Stop()
 	failing := false
@@ -191,6 +206,11 @@ func (s *Session) KeepAlive(ctx context.Context) {
 // End closes the session cleanly. Leases it still holds become free to
 // take, since an ended session is dead to every judge.
 func (s *Session) End(ctx context.Context) error {
+	s.mu.Lock()
+	if s.stopBeating != nil {
+		s.stopBeating()
+	}
+	s.mu.Unlock()
 	now := s.c.now()
 	next := s.Record()
 	next.HeartbeatAt, next.EndedAt = now, &now

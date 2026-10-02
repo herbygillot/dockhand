@@ -940,6 +940,11 @@ func orList(words []string) string {
 	return strings.Join(words[:len(words)-1], ", ") + ", or " + words[len(words)-1]
 }
 
+// subset reports whether every version in some is in all.
+func subset(some, all []string) bool {
+	return !slices.ContainsFunc(some, func(v string) bool { return !slices.Contains(all, v) })
+}
+
 // lockMoves are what a Cargo.lock changes of the crates it pins from
 // elsewhere, each crate once: added, dropped, or moved to other versions,
 // which assess counts in one line, holding nothing (D9). A workspace's own
@@ -968,7 +973,19 @@ func lockMoves(name string, earlier, packages []project.CargoPackage) []Change {
 		case !had:
 			changes = append(changes, Change{Kind: "dependency", How: "adds", Path: name, Name: crate, Now: strings.Join(now[crate], ", "),
 				Message: fmt.Sprintf("upstream: %s adds %s %s", name, crate, strings.Join(now[crate], ", "))})
-		case !slices.Equal(old, now[crate]):
+		case slices.Equal(old, now[crate]):
+		case subset(old, now[crate]):
+			// Another version beside those it pinned is an addition: skim's
+			// nix 0.30.1, beside 0.28, 0.29, and 0.31, read as a move
+			// (field testing, 2026-10-02).
+			added := slices.DeleteFunc(slices.Clone(now[crate]), func(v string) bool { return slices.Contains(old, v) })
+			changes = append(changes, Change{Kind: "dependency", How: "adds", Path: name, Name: crate, Now: strings.Join(added, ", "),
+				Message: fmt.Sprintf("upstream: %s adds %s %s, beside %s", name, crate, strings.Join(added, ", "), strings.Join(old, ", "))})
+		case subset(now[crate], old):
+			dropped := slices.DeleteFunc(slices.Clone(old), func(v string) bool { return slices.Contains(now[crate], v) })
+			changes = append(changes, Change{Kind: "dependency", How: "drops", Path: name, Name: crate, Old: strings.Join(dropped, ", "),
+				Message: fmt.Sprintf("upstream: %s drops %s %s, keeping %s", name, crate, strings.Join(dropped, ", "), strings.Join(now[crate], ", "))})
+		default:
 			changes = append(changes, Change{Kind: "dependency", How: "moves", Path: name, Name: crate, Old: strings.Join(old, ", "), Now: strings.Join(now[crate], ", "),
 				Message: fmt.Sprintf("upstream: %s moves %s from %s to %s", name, crate, strings.Join(old, ", "), strings.Join(now[crate], ", "))})
 		}

@@ -75,7 +75,7 @@ func TestCompareFindsWhatAReviewerWouldAskAbout(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{
 		"! upstream's LICENSE changed; the Portfile's license line may need to follow",
-		"· upstream: go.mod: 1 added (golang.org/x/net), 1 dropped (github.com/old/dep), 1 moved (golang.org/x/sys)",
+		"· upstream: go.mod: 1 added (golang.org/x/net), 1 dropped (github.com/old/dep), 1 changed (golang.org/x/sys)",
 		"! upstream's meson.build is new; the build may need the Portfile to follow",
 	}, messages(changes), "unchanged CMakeLists.txt, source files, and indirect modules say nothing")
 
@@ -93,7 +93,7 @@ func TestCompareFindsWhatAReviewerWouldAskAbout(t *testing.T) {
 // version does: here one module is added, and two move.
 func TestAGoModuleTheBuildAlreadyHadIsNoAddition(t *testing.T) {
 	require.Equal(t, []string{
-		"· upstream: go.mod: 1 added (github.com/new/direct), 2 moved (github.com/demoted/moved, github.com/dustin/go-humanize)",
+		"· upstream: go.mod: 1 added (github.com/new/direct), 2 changed (github.com/demoted/moved, github.com/dustin/go-humanize)",
 	}, compared(t, map[string]string{
 		"go.mod": "module chezmoi\n\nrequire (\n\tgithub.com/demoted/moved v1.0.0\n\tgithub.com/demoted/same v1.0.0\n\tgithub.com/dustin/go-humanize v1.0.1 // indirect\n\tgithub.com/promoted/same v1.2.0 // indirect\n\tgithub.com/gone/indirect v0.1.0 // indirect\n)\n",
 	}, map[string]string{
@@ -140,14 +140,14 @@ func TestCargoDependenciesAreReadAsTOML(t *testing.T) {
 			"[dependencies]\ntokio = { git = 'https://github.com/tokio-rs/tokio', tag = '" + tag + "' }\n"}
 	}
 	require.Equal(t, []string{"· upstream: Cargo.toml: 3 added (libc, shared, tokio)"}, compared(t, before, tagged("1.40")))
-	require.Equal(t, []string{"· upstream: Cargo.toml: 1 moved (tokio)"}, compared(t, tagged("1.40"), tagged("1.41")))
+	require.Equal(t, []string{"· upstream: Cargo.toml: 1 changed (tokio)"}, compared(t, tagged("1.40"), tagged("1.41")))
 	// A name is read where it's first declared, the package's own table
 	// before its tests', and a path is compared as one.
 	both := func(test, path string) map[string]string {
 		return map[string]string{"Cargo.toml": "[dependencies]\nserde = '1'\nlocal = { path = '" + path + "' }\n[dev-dependencies]\nserde = '" + test + "'\n"}
 	}
 	require.Empty(t, compared(t, both("1.1", "../a"), both("1.2", "../a")))
-	require.Equal(t, []string{"· upstream: Cargo.toml: 1 moved (local)"}, compared(t, both("1.1", "../a"), both("1.1", "../b")))
+	require.Equal(t, []string{"· upstream: Cargo.toml: 1 changed (local)"}, compared(t, both("1.1", "../a"), both("1.1", "../b")))
 }
 
 // A pyproject.toml is read as TOML: its [project] array in either kind of
@@ -238,6 +238,19 @@ func lock(packages ...string) string {
 	return text
 }
 
+// Another version of a crate pinned beside those it had is an addition,
+// and one of several gone is a drop: skim's nix 0.30.1, beside 0.28,
+// 0.29, and 0.31, read as a move (field testing, 2026-10-02).
+func TestAnotherVersionOfAPinnedCrateIsAnAddition(t *testing.T) {
+	before := map[string]string{"Cargo.lock": lock("nix 0.28.0", "nix 0.29.0", "nix 0.31.3", "serde 1.0.200")}
+	require.Equal(t, []string{"· upstream: Cargo.lock: 1 added (nix)"},
+		compared(t, before, map[string]string{"Cargo.lock": lock("nix 0.28.0", "nix 0.29.0", "nix 0.30.1", "nix 0.31.3", "serde 1.0.200")}))
+	require.Equal(t, []string{"· upstream: Cargo.lock: 1 dropped (nix)"},
+		compared(t, before, map[string]string{"Cargo.lock": lock("nix 0.28.0", "nix 0.31.3", "serde 1.0.200")}))
+	require.Equal(t, []string{"· upstream: Cargo.lock: 1 changed (nix)"},
+		compared(t, before, map[string]string{"Cargo.lock": lock("nix 0.28.0", "nix 0.30.1", "nix 0.31.3", "serde 1.0.200")}))
+}
+
 // A crate new to Cargo.lock that links a native library, as Cargo's -sys
 // crates do, is listed for the person's attention without holding: it may
 // link a copy it finds installed, which a clean check can't see, and
@@ -248,7 +261,7 @@ func TestANewCrateLinkingANativeLibraryIsListed(t *testing.T) {
 	require.Equal(t, []string{
 		"· upstream: Cargo.lock adds libgit2-sys 0.17.0+1.8.1, which links the native library libgit2: MacPorts may provide it, for the Portfile to declare, rather than the crate linking whatever copy it finds",
 		"· upstream: Cargo.lock adds onig_sys 69.8.1, which links the native library onig: MacPorts may provide it, for the Portfile to declare, rather than the crate linking whatever copy it finds",
-		"· upstream: Cargo.lock: 3 added (libgit2-sys, onig_sys, tokio), 2 moved (openssl-sys, serde)",
+		"· upstream: Cargo.lock: 3 added (libgit2-sys, onig_sys, tokio), 2 changed (openssl-sys, serde)",
 	}, compared(t, before, map[string]string{"Cargo.lock": lock("libgit2-sys 0.17.0+1.8.1", "libgit2-sys 0.18.1+1.9.1", "onig_sys 69.8.1", "openssl-sys 0.9.109", "serde 1.0.210", "tokio 1.40.0")}),
 		"one that moves, or a crate that links nothing, isn't listed, and one pinned twice is listed once; all are counted, holding nothing (rust 1.99.0, batch 23)")
 	require.Equal(t, []string{"· upstream's Cargo.lock couldn't be read in the new version, so the crates new to it that link a native library weren't looked for: project: unsupported or empty Cargo.lock"},
@@ -309,7 +322,7 @@ func TestANativeLibraryIsSaidWhereMacPortsHasAPortForIt(t *testing.T) {
 func TestAWorkspacesManifestIsComparedAsTheRootsIs(t *testing.T) {
 	root := `{"workspaces": ["apps/*"], "devDependencies": {"yarn": "1.22.22"}}`
 	require.Equal(t, []string{
-		"· upstream: apps/studio/package.json: 2 added (devicon, simple-icons), 1 moved (electron)",
+		"· upstream: apps/studio/package.json: 2 added (devicon, simple-icons), 1 changed (electron)",
 	}, compared(t,
 		map[string]string{"package.json": root, "apps/studio/package.json": `{"dependencies": {"electron": "39.8.5"}}`},
 		map[string]string{"package.json": root, "apps/studio/package.json": `{"dependencies": {"electron": "39.8.10", "devicon": "2.16.0", "simple-icons": "15.0.0"}}`}))
@@ -537,7 +550,7 @@ func TestARequirementsConditionIsPartOfIt(t *testing.T) {
 	require.Len(t, changes, 1)
 	require.Equal(t, "upstream: requirements.txt moves numpy from <2; python_version < '3.10' to <2; python_version < '3.10' | >=2; python_version >= '3.10'", changes[0].Message)
 
-	require.Equal(t, []string{"· upstream: Cargo.toml: 1 moved (widget)"},
+	require.Equal(t, []string{"· upstream: Cargo.toml: 1 changed (widget)"},
 		compared(t, map[string]string{"Cargo.toml": "[dependencies]\nwidget = { version = '1', git = 'https://example.invalid/widget', rev = 'aaaa' }\n"},
 			map[string]string{"Cargo.toml": "[dependencies]\nwidget = { version = '1', git = 'https://example.invalid/widget', rev = 'bbbb' }\n"}))
 }
@@ -546,7 +559,7 @@ func TestARequirementsConditionIsPartOfIt(t *testing.T) {
 // counts them where there are more; an optional Cargo dependency becoming
 // one every build has is a move (the txt run's finding 6).
 func TestAProvenManifestsCountNamesWhatMoved(t *testing.T) {
-	require.Equal(t, []string{"· upstream: Cargo.toml: 1 added (inferno), 1 moved (open)"},
+	require.Equal(t, []string{"· upstream: Cargo.toml: 1 added (inferno), 1 changed (open)"},
 		compared(t, map[string]string{"Cargo.toml": "[dependencies]\nopen = { version = '5', optional = true }\n"},
 			map[string]string{"Cargo.toml": "[dependencies]\nopen = '5'\ninferno = '0.12'\n"}))
 	many := func(prefix string, n int) string {

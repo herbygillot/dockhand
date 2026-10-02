@@ -164,7 +164,7 @@ func TestJSONForTheWholeLoop(t *testing.T) {
 	require.Equal(t, "1.7.1", dig(t, updated.Result, "before", "version"))
 	require.Equal(t, "1.8.1", dig(t, updated.Result, "after", "version"))
 	require.Equal(t, []any{"textproc/jq/Portfile"}, updated.Result["files"])
-	require.NotContains(t, updated.Result, "upstream", "a port with no archives to compare")
+	require.Equal(t, "not-compared", dig(t, updated.Result, "upstream", "coverage", 0, "policy"), "a port with no archives to compare says so")
 
 	_, err = jsonOf(t, "check")
 	require.NoError(t, err)
@@ -199,10 +199,10 @@ func TestJSONForTheWholeLoop(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "https://guide.macports.org/#project.github", dig(t, explained.Result, "sources", 0, "url"))
 
+	// clean reads the pull request itself, with no status --refresh
+	// before it (field testing, 2026-10-02).
 	g.prs[0].State = forge.PullRequestMerged
 	t.Setenv("MACPORTS_TREE", w.clone)
-	_, _, err = dockhand(t, "status", "--refresh")
-	require.NoError(t, err)
 	preview, err := jsonOf(t, "clean")
 	require.NoError(t, err)
 	require.Equal(t, false, preview.Result["applied"])

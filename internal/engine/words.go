@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -174,13 +175,16 @@ func UnmetWords(unmet model.Unmet) string {
 const coverageNamed = 5
 
 // CoverageWords say in one line what an assessment read and checked: the
-// new version's files it read, the patches that apply and those it
-// couldn't check, and what it set apart. A comparison that found nothing
-// read as one that hadn't looked: rust's said only its package.json, and
-// its Cargo manifests and patches went unmentioned (rust 1.99.0, batch
-// 23). Empty where the comparison recorded no coverage.
+// new version's files it compared, the patches that apply and those it
+// couldn't check, what it set apart, and how it read the source where
+// that's said, a Git-fetched port's commits or nothing for one that
+// fetches nothing. A comparison that found nothing read as one that
+// hadn't looked: rust's said only its package.json, and its Cargo
+// manifests and patches went unmentioned (rust 1.99.0, batch 23). "Read
+// LICENSE, go.mod" read as an instruction (field testing, 2026-10-02).
+// Empty where the comparison recorded no coverage.
 func CoverageWords(comparison model.UpstreamComparison) string {
-	var read, apart []string
+	var read, apart, notes []string
 	applied, unchecked := 0, 0
 	for _, c := range comparison.Coverage {
 		if c.Source != "" && c.Policy != assess.SourceRemoved && c.Policy != assess.SourceUncertain {
@@ -199,11 +203,13 @@ func CoverageWords(comparison model.UpstreamComparison) string {
 			apart = append(apart, c.Path+" ("+c.System+")")
 		case c.Treatment == "set-apart":
 			apart = append(apart, c.Path)
+		case c.Treatment == "inspected" && (c.Policy == "" || c.Policy == notCompared) && c.Reason != "":
+			notes = append(notes, c.Reason)
 		}
 	}
 	var parts []string
 	if len(read) > 0 {
-		parts = append(parts, "read "+namedList(read))
+		parts = append(parts, "compared "+namedList(read))
 	}
 	switch applied {
 	case 0:
@@ -218,10 +224,15 @@ func CoverageWords(comparison model.UpstreamComparison) string {
 	if len(apart) > 0 {
 		parts = append(parts, "set apart: "+namedList(apart))
 	}
+	parts = append(parts, notes...)
 	if len(parts) == 0 {
 		return ""
 	}
 	words := strings.Join(parts, "; ")
+	if len(parts) == len(notes) {
+		// A note may begin with a port's name, which keeps its case.
+		return words
+	}
 	return strings.ToUpper(words[:1]) + words[1:]
 }
 
@@ -242,4 +253,15 @@ func AgeWords(age time.Duration) string {
 		return plural(int(age/time.Hour), "hour")
 	}
 	return plural(int(age.Round(time.Minute)/time.Minute), "minute")
+}
+
+// notCompared is the coverage policy of a port that fetches no upstream
+// source, which has nothing to compare.
+const notCompared = "not-compared"
+
+// NothingCompared reports a comparison of a port that fetches nothing,
+// which had no upstream source to compare, and says so in its coverage.
+func NothingCompared(comparison model.UpstreamComparison) bool {
+	return len(comparison.Changes) == 0 && comparison.Problem == "" &&
+		slices.ContainsFunc(comparison.Coverage, func(c model.Coverage) bool { return c.Policy == notCompared })
 }

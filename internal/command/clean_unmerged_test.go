@@ -27,8 +27,9 @@ func TestCleanTakesAnArchivedBranchsWorktreeAndPathBringsItBack(t *testing.T) {
 	require.NoError(t, err)
 	head := strings.TrimSpace(gitRun(t, dir, "rev-parse", "HEAD"))
 	t.Setenv("MACPORTS_TREE", w.clone)
-	_, _, err = dockhand(t, "archive", "jq-update")
+	archived, _, err := dockhand(t, "archive", "jq-update")
 	require.NoError(t, err)
+	require.Contains(t, archived, "dockhand clean --archived jq-update removes its worktree", "archive says how a branch done with goes (field testing, 2026-10-02)")
 
 	// Plain clean is merged branches only.
 	out, _, err := dockhand(t, "clean")
@@ -43,7 +44,7 @@ func TestCleanTakesAnArchivedBranchsWorktreeAndPathBringsItBack(t *testing.T) {
 	require.DirExists(t, dir)
 	require.NoError(t, os.Remove(filepath.Join(dir, "notes.txt")))
 
-	out, _, err = dockhand(t, "clean", "--archived")
+	out, _, err = dockhand(t, "clean", "--archived", "jq-update")
 	require.NoError(t, err)
 	require.Equal(t, "jq-update (archived)\n  remove   worktree ~/Source/macports-branches/jq-update\n"+
 		"  keep     branch dockhand/jq-update: dockhand path jq-update checks it out again\n"+

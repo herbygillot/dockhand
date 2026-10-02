@@ -346,8 +346,16 @@ const masterRef = "refs/dockhand/master"
 // fetchMaster freezes MacPorts' current master in the repository, and
 // keeps it as the master last fetched (masterRef). Keeping it is a saving
 // for status: a ref that can't be written leaves the fetch as it was.
+// fetchSaid is how long fetching master goes before it's said.
+var fetchSaid = 2 * time.Second
+
 func (e *Engine) fetchMaster(ctx context.Context) (model.ObjectID, error) {
+	// It can take a while, and a bump said nothing for twenty seconds
+	// before "Started" (field testing, 2026-10-02); a quick one says
+	// nothing.
+	slow := time.AfterFunc(fetchSaid, func() { progress.Report(ctx, "Fetching master from %s", e.Upstream()) })
 	commit, _, err := e.Repo.FetchBranch(ctx, e.Upstream(), "master")
+	slow.Stop()
 	if err != nil {
 		return "", fmt.Errorf("fetching master from %s: %w", e.Upstream(), err)
 	}

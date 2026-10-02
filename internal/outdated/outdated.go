@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"runtime"
 	"sync"
 	"time"
@@ -186,6 +187,10 @@ func (s *Service) concurrency() int {
 // observeOne looks up one selected port's newest release. A problem with
 // the port is its result; only releasing its probe can fail the survey.
 func (s *Service) observeOne(ctx context.Context, editor *portedit.Service, files *survey.Workspace, platform model.Platform, selected survey.Port) (Port, error) {
+	// What loading a port says is the editor's, behind the scenes to a
+	// look that edits nothing: "py-wsaccel is a stub; editing
+	// py313-wsaccel" (field testing, 2026-10-02).
+	ctx = progress.Quiet(ctx)
 	item := Port{Selector: selected.Label, Result: upstream.Result{Assessment: upstream.Unknown, ObservedAt: time.Now().UTC()}}
 	probe, problem := editor.Probe(ctx, portedit.ProbeSource{Source: files.Source, Workspace: files.Projection, Selection: selected.Selection, Platform: platform})
 	if problem == nil && selected.Name != "" {

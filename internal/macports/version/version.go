@@ -93,3 +93,20 @@ func Classify(version string) Stability {
 func LeavesStable(from, to string) bool {
 	return Classify(from) == Stable && Classify(to) == Prerelease
 }
+
+// leading is a version's first numeric component, without a leading v.
+var leading = regexp.MustCompile(`^v?([0-9]+)`)
+
+// CrossesMajor reports whether moving from one version to another changes
+// its first numeric component, semgrep's 0.14.0 to 1.179.0: the change a
+// project's own numbering says may break what builds on it. False where
+// either has none, and where one is above 999, a year or a date, as
+// 2025.1 or 20250914, whose first component moves every year.
+func CrossesMajor(from, to string) bool {
+	a, b := leading.FindStringSubmatch(from), leading.FindStringSubmatch(to)
+	if a == nil || b == nil {
+		return false
+	}
+	x, y := strings.TrimLeft(a[1], "0"), strings.TrimLeft(b[1], "0")
+	return x != y && len(x) <= 3 && len(y) <= 3
+}
