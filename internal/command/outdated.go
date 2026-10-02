@@ -320,10 +320,8 @@ func writePrepared(ctx context.Context, e *engine.Engine, out io.Writer, prepare
 			}
 			fmt.Fprintln(out, line)
 		}
-		if done.Update.Upstream != nil {
-			for _, change := range done.Update.Upstream.Changes {
-				fmt.Fprintf(out, "      %s\n", upstreamWords(change))
-			}
+		for _, note := range batchNotes(done.Update) {
+			fmt.Fprintf(out, "      %s\n", note)
 		}
 	}
 	summary := fmt.Sprintf("%s updated and tidied into one commit each", prose.Plural(tidied, "branch"))
@@ -344,6 +342,39 @@ func writePrepared(ctx context.Context, e *engine.Engine, out io.Writer, prepare
 		return &ExitError{Code: 3}
 	}
 	return nil
+}
+
+// batchNotes are what a single update would say of one, beyond its
+// version, each under its port's line: a new major version, a pin
+// dropped, and what comparing upstream found or couldn't. A batch said
+// only the changes, so termusic's dropped soundtouch pin and its archive
+// not compared went unsaid (field testing's ninth report, 2026-10-02).
+func batchNotes(update engine.Update) []string {
+	var notes []string
+	if update.CrossesMajor {
+		notes = append(notes, fmt.Sprintf("A new major version: what depends on %s may need to follow.", update.Port))
+	}
+	for _, block := range update.Regenerated {
+		for _, pin := range block.Dropped {
+			notes = append(notes, fmt.Sprintf("The Portfile pinned %s %s over the lock's %s; the new lock has %s, so the pin is dropped.", pin.Name, pin.Pinned, pin.Was, pin.Locked))
+		}
+		if block.Unchecked != "" {
+			notes = append(notes, block.Unchecked)
+		}
+		if block.Inert != "" {
+			notes = append(notes, "Notice: "+block.Inert)
+		}
+	}
+	switch comparison := update.Upstream; {
+	case comparison == nil:
+	case comparison.Problem != "":
+		notes = append(notes, "! Upstream archives not compared: "+comparison.Problem)
+	default:
+		for _, change := range comparison.Changes {
+			notes = append(notes, upstreamWords(change))
+		}
+	}
+	return notes
 }
 
 // lookupProgress shows, on a terminal, how many ports' newest releases are

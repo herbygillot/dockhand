@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/editprep"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -238,4 +239,19 @@ func TestAReportPrintsAroundTheCount(t *testing.T) {
 	line.say("Building the PortIndex")
 	line.clear()
 	require.Equal(t, "\r\033[KLooking up each port's newest release: 1 of 2\r\033[KBuilding the PortIndex\nLooking up each port's newest release: 1 of 2\r\033[K", err.String())
+}
+
+// Each port's line in a batch says what a single update says of it beyond
+// its version: termusic's dropped pin and its archive not compared went
+// unsaid (field testing's ninth report, 2026-10-02).
+func TestABatchSaysWhatASingleUpdateWould(t *testing.T) {
+	update := engine.Update{Port: "termusic", CrossesMajor: true,
+		Regenerated: []editprep.Regenerated{{Option: "cargo.crates", Dropped: []editprep.Override{{Name: "soundtouch", Pinned: "0.4.1", Was: "0.4.0", Locked: "0.5.4"}}}},
+		Upstream:    &model.UpstreamComparison{Problem: "termusic-0.9.1.tar.gz couldn't be fetched from upstream or MacPorts' mirror"}}
+	require.Equal(t, []string{
+		"A new major version: what depends on termusic may need to follow.",
+		"The Portfile pinned soundtouch 0.4.1 over the lock's 0.4.0; the new lock has 0.5.4, so the pin is dropped.",
+		"! Upstream archives not compared: termusic-0.9.1.tar.gz couldn't be fetched from upstream or MacPorts' mirror",
+	}, batchNotes(update))
+	require.Empty(t, batchNotes(engine.Update{Port: "jq"}))
 }

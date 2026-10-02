@@ -67,13 +67,18 @@ func dependencyHelper(t *testing.T, body string) string {
 func TestGoDependencyPreparation(t *testing.T) {
 	t.Parallel()
 	sha := strings.Repeat("a", 64)
-	for _, scenario := range []string{"success", "kept", "kept-stealth", "kept-unshipped", "removed", "missing", "failed", "partial", "override", "patched", "local-patch", "unsupported-context"} {
+	for _, scenario := range []string{"success", "kept", "kept-stealth", "kept-unshipped", "removed", "missing", "failed", "partial", "override", "patched", "local-patch", "unsupported-context", "moved"} {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
 			old := "module github.com/owner/fixture\ngo 1.24\nrequire example.com/old v1.0.0\n"
 			next := "module github.com/owner/fixture\ngo 1.24\nrequire example.com/new/v2 v2.0.0\n"
 			if scenario == "removed" {
 				next = "module github.com/owner/fixture\ngo 1.24\n"
+			}
+			// The module moved since the current version, as pomo's did
+			// from GitHub to Codeberg (field testing, 2026-10-02).
+			if scenario == "moved" {
+				old = strings.Replace(old, "github.com/owner/fixture", "github.com/elsewhere/fixture", 1)
 			}
 			before := manifestArchive(t, "go.mod", old, "1.0")
 			after := manifestArchive(t, "go.mod", next, "2.0")
@@ -175,9 +180,14 @@ func TestGoDependencyPreparation(t *testing.T) {
 				require.Len(t, result.Files, 1)
 				require.Contains(t, string(result.Files[0].After), "# preserve these instructions\nconfigure.args --keep")
 				require.NotContains(t, string(result.Files[0].After), "example.com/old")
-				if scenario == "success" {
+				if scenario == "success" || scenario == "moved" {
 					require.Contains(t, string(result.Files[0].After), "example.com/new/v2 lock v2.0.0")
 				}
+				unchecked := ""
+				if scenario == "moved" {
+					unchecked = "The module moved from github.com/elsewhere/fixture to github.com/owner/fixture, so the existing go.vendors wasn't checked against 1.0's source; it's regenerated whole."
+				}
+				require.Equal(t, unchecked, result.Regenerated[0].Unchecked)
 				fetched := int64(2)
 				if scenario == "kept-unshipped" {
 					fetched = 3 // once as shipped, which fails, and once as served
@@ -581,4 +591,11 @@ cargo.crates_github scram pgdogdev/scram master ` + oldCommit + " " + checksum +
 	require.Contains(t, contents, "scram pgdogdev/scram master "+newCommit+" "+checksum)
 	require.NotContains(t, contents, oldCommit)
 	require.NotContains(t, contents, "?rev=")
+	// They're kept, and said to look unused: a notice, not a hold (the
+	// person's word, 2026-10-02).
+	var inert string
+	for _, block := range result.Regenerated {
+		inert += block.Inert
+	}
+	require.Equal(t, "cargo.crates_github declares scram (pinned by rev) under a branch, where the lock pins them otherwise; Cargo's source replacement matches only a branch, so they're resolved online and the declarations look unused.", inert)
 }

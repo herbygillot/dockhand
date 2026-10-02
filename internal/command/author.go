@@ -485,6 +485,12 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		for _, pin := range block.Dropped {
 			fmt.Fprintf(out, "The Portfile pinned %s %s over the lock's %s; the new lock has %s, so the pin is dropped.\n", pin.Name, pin.Pinned, pin.Was, pin.Locked)
 		}
+		if block.Unchecked != "" {
+			fmt.Fprintln(out, block.Unchecked)
+		}
+		if block.Inert != "" {
+			fmt.Fprintln(out, "Notice: "+block.Inert)
+		}
 	}
 	if stealth := update.Stealth; stealth != nil {
 		if stealth.RevbumpProblem != "" {

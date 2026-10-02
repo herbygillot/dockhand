@@ -2,6 +2,7 @@ package portedit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -202,15 +203,25 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	}
 	progress.VerboseReport(ctx, "Checking existing %s against the original source", plan.Kind)
 	old, err := depblock.Generate(ctx, plan.Kind, executable, oldInput)
-	if err != nil {
+	// A module that moved can't be generated at its old version under its
+	// new path: the existing block isn't checked, and that's said, rather
+	// than the update refused (pomo's, field testing, 2026-10-02).
+	var moved *depblock.ModuleMoved
+	unchecked := ""
+	switch {
+	case errors.As(err, &moved):
+		unchecked = fmt.Sprintf("The module moved from %s to %s, so the existing %s wasn't checked against %s's source; it's regenerated whole.", moved.From, moved.To, plan.Kind, input.info.Version)
+	case err != nil:
 		return Result{}, err
 	}
 	old = old.KeepingDeclared(plan.Values[depblock.CargoGit])
 	// Preserve maintained overrides by refusing to overwrite declarations that differ
 	// from what the original source and generator describe.
-	oldValues, _, err := s.gitCrateChecksums(ctx, request, input, plan, stripped, old)
-	if err != nil {
-		return Result{}, err
+	oldValues := maps.Clone(plan.Values)
+	if unchecked == "" {
+		if oldValues, _, err = s.gitCrateChecksums(ctx, request, input, plan, stripped, old); err != nil {
+			return Result{}, err
+		}
 	}
 	// A registry crate the Portfile pins at another version than the lock
 	// is an override, kept until the new lock moves past it; any other
@@ -281,6 +292,12 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 			block := Regenerated{Option: name, Count: count, Changed: changed}
 			if name == depblock.Cargo {
 				block.Dropped = dropped
+			}
+			if name == plan.Kind {
+				block.Unchecked = unchecked
+			}
+			if name == depblock.CargoGit && len(generated.Relabelled) > 0 {
+				block.Inert = inertWords(generated.Relabelled)
 			}
 			regenerated = append(regenerated, block)
 		}
@@ -427,4 +444,21 @@ func (s *Service) gitCrateChecksums(ctx context.Context, request Request, input 
 	}
 	values, err = generated.WithGitChecksums(sums)
 	return values, downloads, err
+}
+
+// inertWords says which declared Git crates the lock pins other than by
+// branch: the cargo PortGroup writes their label into Cargo's source
+// replacement as a branch, which matches only a branch, so Cargo resolves
+// them online and the declarations look unused. pgdog's, labelled master,
+// are pinned by rev (field testing, 2026-10-02).
+func inertWords(crates []depblock.GitCrate) string {
+	var names []string
+	for _, crate := range crates {
+		pinned := "the default branch"
+		if crate.Reference.Kind != "" {
+			pinned = crate.Reference.Kind
+		}
+		names = append(names, crate.Name+" (pinned by "+pinned+")")
+	}
+	return fmt.Sprintf("cargo.crates_github declares %s under a branch, where the lock pins them otherwise; Cargo's source replacement matches only a branch, so they're resolved online and the declarations look unused.", strings.Join(names, ", "))
 }

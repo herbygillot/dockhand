@@ -66,8 +66,11 @@ import (
 // taken as off, and a change placed in the block the document reads
 // (batch 34). 17: a directory the Portfile's build names below
 // ${worksrcpath} that the new version's source no longer has, and an R
-// package's DESCRIPTION read by its dependency fields (batch 42).
-const Policy = 17
+// package's DESCRIPTION read by its dependency fields (batch 42). 18: the
+// Go PortGroup's toolchain check recognized for every host go.setup
+// fetches from, so one left incomplete by its github.com-only rule, as
+// pomo's on codeberg.org was, is made again (batch 52).
+const Policy = 18
 
 // Input is what one port's assessment reads.
 type Input struct {

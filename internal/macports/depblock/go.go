@@ -17,6 +17,15 @@ import (
 	"github.com/herbygillot/dockhand/internal/scratch"
 )
 
+// ModuleMoved is a go.mod whose module isn't the go.package the Portfile
+// names: a module that moved, as pomo's did from GitHub to Codeberg, where
+// the source is the version before the move.
+type ModuleMoved struct{ From, To string }
+
+func (m *ModuleMoved) Error() string {
+	return fmt.Sprintf("dependency: go.mod's module is %s, where go.package is %s", m.From, m.To)
+}
+
 func generateGo(ctx context.Context, executable string, in Input) (GeneratedBlocks, error) {
 	data, member, err := Manifest(ctx, in.Archive, in.Worksrcdir, "go.mod")
 	if err != nil {
@@ -34,8 +43,11 @@ func generateGo(ctx context.Context, executable string, in Input) (GeneratedBloc
 	if len(mod.Replace) > 0 || len(mod.Exclude) > 0 {
 		return GeneratedBlocks{}, fmt.Errorf("dependency: go.mod replace/exclude directives require manual preparation; go2port does not preserve them")
 	}
-	if mod.Module == nil || mod.Module.Mod.Path != in.Package {
-		return GeneratedBlocks{}, fmt.Errorf("dependency: go.mod module does not match go.package")
+	if mod.Module == nil {
+		return GeneratedBlocks{}, fmt.Errorf("dependency: go.mod names no module")
+	}
+	if mod.Module.Mod.Path != in.Package {
+		return GeneratedBlocks{}, &ModuleMoved{From: mod.Module.Mod.Path, To: in.Package}
 	}
 	if !safeToken(in.Package) || !safeToken(in.Tag) {
 		return GeneratedBlocks{}, fmt.Errorf("dependency: invalid Go package or tag")

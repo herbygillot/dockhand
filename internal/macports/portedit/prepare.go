@@ -133,6 +133,14 @@ type Regenerated struct {
 	// Dropped are the crates the Portfile pinned over its lock that the
 	// new lock moved past, so the pins went with the rest.
 	Dropped []Override `json:",omitempty"`
+	// Unchecked says why the block as it was couldn't be checked against
+	// the source it was made from, where it couldn't: it's regenerated
+	// whole, with no override found to keep.
+	Unchecked string `json:",omitempty"`
+	// Inert says which Git crates the Portfile declares under a branch
+	// where the lock pins them otherwise, so Cargo resolves them online
+	// and the declarations look unused: a notice, not a hold.
+	Inert string `json:",omitempty"`
 }
 
 // Override is a registry crate a Portfile pinned at another version than

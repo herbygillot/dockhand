@@ -23,6 +23,10 @@ type GeneratedBlocks struct {
 	Values map[string][]string
 	Git    []GitCrate
 	Online []GitCrate
+	// Relabelled are the Git crates KeepingDeclared declared under the
+	// Portfile's label where the lock pins them otherwise: declarations
+	// Cargo's source replacement doesn't match, so likely unused.
+	Relabelled []GitCrate
 }
 
 func run(ctx context.Context, executable, directory string, args ...string) ([]byte, error) {

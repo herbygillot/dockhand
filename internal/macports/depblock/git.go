@@ -120,6 +120,7 @@ func (g GeneratedBlocks) KeepingDeclared(declared []string) GeneratedBlocks {
 			online = append(online, crate)
 			continue
 		}
+		g.Relabelled = append(g.Relabelled, crate)
 		crate.Reference = GitReference{Kind: GitBranch, Value: label}
 		git = append(git, crate)
 	}

@@ -388,5 +388,6 @@ func TestKeepingDeclaredUsesThePortfilesLabel(t *testing.T) {
 	kept := blocks.KeepingDeclared([]string{"scram", "pgdogdev/scram", "master", strings.Repeat("e", 40), strings.Repeat("a", 64)})
 	require.Equal(t, []GitCrate{{Name: "scram", Repository: "pgdogdev/scram", Commit: commit, Reference: GitReference{Kind: GitBranch, Value: "master"}}}, kept.Git)
 	require.Equal(t, []GitCrate{{Name: "other", Repository: "owner/other", Commit: commit, Reference: rev}}, kept.Online)
+	require.Equal(t, []GitCrate{{Name: "scram", Repository: "pgdogdev/scram", Commit: commit, Reference: rev}}, kept.Relabelled, "as the lock pins it")
 	require.Equal(t, blocks, blocks.KeepingDeclared(nil))
 }
