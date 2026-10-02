@@ -124,7 +124,7 @@ func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
 			}
 		}
 	}
-	report.Findings = commitrules.CheckCommits(ruleCommits(report.Commits))
+	report.Findings = commitrules.CheckCommits(e.ruleCommits(ctx, baseSource, report.Commits))
 	portfiles, err := portfileFindings(ctx, e.Repo, trees[report.Base], trees[report.Head], changed)
 	if err != nil {
 		return report, err
@@ -136,7 +136,9 @@ func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
 		report.UpstreamUnread = err.Error()
 	}
 	for _, a := range append(found, made...) {
-		report.Upstream = append(report.Upstream, PortComparison{Port: a.Port, Comparison: a.Comparison})
+		if !SourceUnchanged(a.Comparison) {
+			report.Upstream = append(report.Upstream, PortComparison{Port: a.Port, Comparison: a.Comparison})
+		}
 	}
 	scope := macports.ScopeOf(changed)
 	if len(scope.Ports) > 0 {

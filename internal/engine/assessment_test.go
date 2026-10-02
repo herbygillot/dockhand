@@ -792,3 +792,32 @@ func TestAnUpdateOfAGitFetchedPortComparesItsCommits(t *testing.T) {
 	require.Equal(t, v2, comparison.Commit)
 	require.Equal(t, "Compared LICENSE; read from the forge's archive of each commit, submodules left out; the base's git.branch as it names a commit now", CoverageWords(*comparison))
 }
+
+// A subport whose source the change left as the base had it says nothing
+// of upstream, and the comparisons submit and review show leave it out:
+// terraform-1.16's update listed nine unchanged subports' comparisons
+// (field testing, 2026-10-02).
+func TestASubportWhoseSourceDidntChangeIsLeftOut(t *testing.T) {
+	e, branch, base, tree := revisionFixture(t, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\nsubport tool-2 {}\n"})
+	p := newPlanner(t)
+	e.ArchivePlanner = p
+	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"devel/libharbor": {{Name: "tool-1"}, {Name: "tool-2"}}}}
+	one := plannedPort{info: macports.PortInfo{Name: "tool-1", Version: "1.0"}, archives: map[string]map[string]string{"tool-1.0.tar.gz": {"LICENSE": "MIT\n"}}}
+	p.add(base, one)
+	p.add(tree, one)
+	p.add(base, plannedPort{info: macports.PortInfo{Name: "tool-2", Version: "2.0"}, archives: map[string]map[string]string{"tool-2.0.tar.gz": {"LICENSE": "MIT\n"}}})
+	p.add(tree, plannedPort{info: macports.PortInfo{Name: "tool-2", Version: "2.1"}, archives: map[string]map[string]string{"tool-2.1.tar.gz": {"LICENSE": "MIT\n"}}})
+	assessments, err := e.revisionAssessments(t.Context(), branch.ID, branch.Base, tree, true)
+	require.NoError(t, err)
+	require.Len(t, assessments, 2)
+	byPort := map[string]model.Assessment{}
+	for _, a := range assessments {
+		byPort[a.Port] = a
+	}
+	require.True(t, SourceUnchanged(byPort["tool-1"].Comparison), "%+v", byPort["tool-1"].Comparison)
+	require.False(t, SourceUnchanged(byPort["tool-2"].Comparison))
+	comparisons, err := e.revisionComparisons(t.Context(), branch, tree, true)
+	require.NoError(t, err)
+	require.Len(t, comparisons, 1)
+	require.Equal(t, "tool-2", comparisons[0].Port)
+}

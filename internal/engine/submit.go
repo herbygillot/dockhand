@@ -233,7 +233,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	scope := macports.ScopeOf(changed)
 	plan.Ports = scope.PortNames()
 	newPorts := e.newPorts(ctx, worktree, model.Source{Commit: model.ObjectID(head), Tree: model.ObjectID(plan.Tree), Base: branch.Base}, trees[string(branch.Base)], changed)
-	plan.Findings = commitrules.CheckCommits(ruleCommits(plan.Commits))
+	plan.Findings = commitrules.CheckCommits(e.ruleCommits(ctx, model.Source{Commit: branch.Base, Base: branch.Base, Tree: model.ObjectID(trees[string(branch.Base)])}, plan.Commits))
 	portfiles, err := portfileFindings(ctx, worktree, trees[string(branch.Base)], plan.Tree, changed)
 	if err != nil {
 		return plan, err
@@ -282,11 +282,11 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 		}
 	}
 	e.title(&plan)
-	e.searchOthers(ctx, &plan)
 	plan.UnfoundBuilds, plan.BuildsProblem = e.unfoundBuilds(ctx, plan.Commits)
 	if plan.Upstream, err = e.revisionComparisons(ctx, branch, model.ObjectID(plan.Tree), true); err != nil {
 		return plan, err
 	}
+	e.searchOthers(ctx, &plan)
 	errorsFound := commitrules.Errors(plan.Findings)
 	squashed := !slices.ContainsFunc(plan.Findings, func(f commitrules.Finding) bool { return f.Code == "follow-up" || f.Code == "merge" })
 	plan.Moved = append(append(preparedSources(plan.Evidence, edits), plan.Moved...), assessedSources(plan.Evidence, plan.Upstream)...)
@@ -501,7 +501,17 @@ func (e *Engine) searchOthers(ctx context.Context, plan *SubmitPlan) {
 	if plan.Existing != nil {
 		except = plan.Existing.PullRequest.Ref.Number
 	}
-	plan.Others, plan.SearchProblem = e.openPullRequests(ctx, plan.Ports, except)
+	// The ports whose source changed are searched for, terraform-1.16
+	// rather than the terraform its directory is named for (field
+	// testing, 2026-10-02); the directories' names where none did.
+	ports := plan.Ports
+	if len(plan.Upstream) > 0 {
+		ports = nil
+		for _, found := range plan.Upstream {
+			ports = append(ports, found.Port)
+		}
+	}
+	plan.Others, plan.SearchProblem = e.openPullRequests(ctx, ports, except)
 }
 
 // openPullRequests are the open pull requests for any of the ports, but

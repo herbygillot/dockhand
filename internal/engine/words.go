@@ -256,8 +256,19 @@ func AgeWords(age time.Duration) string {
 }
 
 // notCompared is the coverage policy of a port that fetches no upstream
-// source, which has nothing to compare.
-const notCompared = "not-compared"
+// source, which has nothing to compare; sourceUnchanged of one whose
+// source a change left as the base had it, a subport beside the one
+// changed.
+const (
+	notCompared     = "not-compared"
+	sourceUnchanged = "source-unchanged"
+)
+
+// SourceUnchanged reports a comparison of a port whose source the change
+// left as the base had it, which says nothing of upstream.
+func SourceUnchanged(comparison model.UpstreamComparison) bool {
+	return slices.ContainsFunc(comparison.Coverage, func(c model.Coverage) bool { return c.Policy == sourceUnchanged })
+}
 
 // NothingCompared reports a comparison of a port that fetches nothing,
 // which had no upstream source to compare, and says so in its coverage.

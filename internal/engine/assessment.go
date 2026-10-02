@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -101,10 +100,14 @@ func (e *Engine) revisionComparisons(ctx context.Context, branch model.Branch, t
 	if err != nil {
 		return nil, err
 	}
-	slices.SortFunc(assessments, func(a, b model.Assessment) int { return cmp.Compare(a.Port, b.Port) })
+	slices.SortFunc(assessments, func(a, b model.Assessment) int { return macports.ComparePortNames(a.Port, b.Port) })
 	var comparisons []PortComparison
 	for _, a := range assessments {
-		comparisons = append(comparisons, PortComparison{Port: a.Port, Comparison: a.Comparison})
+		// A subport whose source didn't change is no part of what
+		// upstream's change means (field testing, 2026-10-02).
+		if !SourceUnchanged(a.Comparison) {
+			comparisons = append(comparisons, PortComparison{Port: a.Port, Comparison: a.Comparison})
+		}
 	}
 	return comparisons, nil
 }
@@ -235,6 +238,9 @@ func (e *Engine) assessPort(ctx context.Context, planner ArchivePlanner, sources
 	var coverage []model.Coverage
 	switch {
 	case problem != "":
+	case hadBase && macports.SameSource(infos[0], infos[1]):
+		coverage = append(coverage, model.Coverage{Path: directory, Relevance: "unknown", Treatment: "inspected", Policy: sourceUnchanged,
+			Reason: name + "'s source is the base's, so there's nothing upstream to compare"})
 	case infos[1].GitFetched():
 		input.Pairs, coverage, problem, again = e.readCommits(ctx, infos, hadBase)
 	case !fetches:

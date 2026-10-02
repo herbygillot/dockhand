@@ -49,3 +49,15 @@ func RebindReleaseScope(scope *ReleaseScope, snapshot Snapshot) (*ReleaseScope, 
 func ReleaseStateOf(p PortInfo) ReleaseState {
 	return ReleaseState{MasterSites: p.Options["master_sites"], Worksrcdir: p.Options["worksrcdir"], Epoch: p.Epoch, Version: p.Version, Revision: p.Revision, Tag: p.Options["git.branch"], Distfiles: p.Options["distfiles"], Checksums: p.Options["checksums"]}
 }
+
+// SameSource reports whether a port fetches and patches the same source
+// before and after a change: its version, epoch, sites, distfiles,
+// checksums, Git tag, source directory, and patch files, whatever its
+// revision. Upstream changed nothing of such a port, as nothing changed
+// of terraform-1.15 where terraform-1.16 was updated beside it (field
+// testing, 2026-10-02).
+func SameSource(before, after PortInfo) bool {
+	a, b := ReleaseStateOf(before), ReleaseStateOf(after)
+	a.Revision, b.Revision = 0, 0
+	return a == b && before.Options["patchfiles"] == after.Options["patchfiles"]
+}

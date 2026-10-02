@@ -113,7 +113,7 @@ func (p *evaluatedPorts) Ports(ctx context.Context, source model.Source, directo
 			names = append(names, name)
 		}
 	}
-	slices.Sort(names)
+	slices.SortFunc(names, macports.ComparePortNames)
 	for _, name := range names {
 		ports = append(ports, snapshot.Ports[name])
 	}

@@ -53,3 +53,15 @@ func TestRevisionAfterAnUpdate(t *testing.T) {
 	require.Len(t, findings, 1)
 	require.Equal(t, "✗ textproc/jq/Portfile:3: revision is 1 after a version update; MacPorts expects 0 [revision-after-update]", findings[0].String())
 }
+
+// A subject may name the subport it changes, which tidy writes: the rules
+// held "terraform-1.16: update to 1.16.5" as not naming terraform (field
+// testing, 2026-10-02). A port the directory doesn't define still holds.
+func TestASubjectMayNameTheSubportItChanges(t *testing.T) {
+	commit := func(message string) []Commit {
+		return []Commit{{ID: "a1", Message: message, Ports: []string{"terraform"}, Defined: []string{"terraform", "terraform-1.15", "terraform-1.16", "terraform_select"}}}
+	}
+	require.Empty(t, CheckCommits(commit("terraform-1.16: update to 1.16.5\n")))
+	require.Empty(t, CheckCommits(commit("terraform: update terraform-1.16 to 1.16.5\n")))
+	require.Equal(t, []string{"subject-port"}, codes(CheckCommits(commit("terraform-2.0: update to 2.0.1\n"))))
+}

@@ -172,7 +172,7 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 	// submit says it, with their plan to rewrite the message from: tidy
 	// said "nothing to tidy" where submit warned of a body line over 72
 	// characters, and saved no plan to fix it in (the rust and cargo run).
-	rules := commitrules.CheckCommits(ruleCommits(history))
+	rules := commitrules.CheckCommits(e.ruleCommits(ctx, model.Source{Commit: model.ObjectID(base), Base: model.ObjectID(base), Tree: model.ObjectID(trees[base])}, history))
 	if len(working) == 0 && !request.Squash && !commitrules.Errors(rules) {
 		plan.Keep = true
 		if len(rules) == 0 {
@@ -674,10 +674,27 @@ func parseAuthor(value string, when time.Time) (git.Signature, error) {
 	return git.Signature{Name: strings.TrimSpace(name), Email: strings.TrimSpace(email), When: when}, nil
 }
 
-func ruleCommits(history []git.HistoryCommit) []commitrules.Commit {
+// ruleCommits are a branch's commits as the commit rules read them, each
+// with the ports its directories define at base, as base's index names
+// them, so a subject may name the subport it changes.
+func (e *Engine) ruleCommits(ctx context.Context, base model.Source, history []git.HistoryCommit) []commitrules.Commit {
+	var directories []string
+	for _, commit := range history {
+		for _, directory := range macports.ScopeOf(commit.Paths).Ports {
+			if !slices.Contains(directories, directory) {
+				directories = append(directories, directory)
+			}
+		}
+	}
+	defined := e.portsDefined(ctx, base, directories)
 	var commits []commitrules.Commit
 	for _, commit := range history {
-		commits = append(commits, commitrules.Commit{ID: commit.ID, Message: commit.Message, Merge: commit.Merge(), Ports: macports.ScopeOf(commit.Paths).PortNames()})
+		scope := macports.ScopeOf(commit.Paths)
+		var names []string
+		for _, directory := range scope.Ports {
+			names = append(names, defined[directory]...)
+		}
+		commits = append(commits, commitrules.Commit{ID: commit.ID, Message: commit.Message, Merge: commit.Merge(), Ports: scope.PortNames(), Defined: names})
 	}
 	return commits
 }
