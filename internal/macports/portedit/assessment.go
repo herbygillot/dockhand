@@ -7,7 +7,7 @@ import (
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/dependency"
+	"github.com/herbygillot/dockhand/internal/macports/depblock"
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/textedit"
@@ -59,7 +59,7 @@ const (
 func Problem(check string, err error) Finding {
 	status, code := Unknown, "check-inconclusive"
 	switch {
-	case errors.Is(err, dependency.ErrToolUnavailable):
+	case errors.Is(err, depblock.ErrToolUnavailable):
 		status, code = Blocked, "missing-helper"
 	case errors.Is(err, errProbeInconclusive):
 		code = "probe-inconclusive"

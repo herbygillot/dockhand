@@ -1,4 +1,4 @@
-package dependency
+package depblock
 
 import (
 	"encoding/hex"

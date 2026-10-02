@@ -18,7 +18,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/fetch"
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/dependency"
+	"github.com/herbygillot/dockhand/internal/macports/depblock"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"golang.org/x/crypto/ripemd160" //nolint:staticcheck // MacPorts checksums are rmd160, among others.
@@ -302,7 +302,7 @@ func CheckFetchCredentials(info macports.PortInfo) error {
 // the direct downloader makes. False, with the Portfile as it is, for a
 // port that declares none.
 func OwnArchives(contents []byte, info macports.PortInfo) ([]byte, bool, error) {
-	declared, err := dependency.Declared(contents, info)
+	declared, err := depblock.Declared(contents, info)
 	switch {
 	case err != nil:
 		return nil, false, fmt.Errorf("%w: %s: %w", portfile.ErrUnsupported, info.Name, err)

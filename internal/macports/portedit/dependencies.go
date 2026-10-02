@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/dependency"
+	"github.com/herbygillot/dockhand/internal/macports/depblock"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/progress"
@@ -45,13 +45,13 @@ func (s *Service) prepareNewVersion(ctx context.Context, request Request, input 
 	return s.prepareDependencyVersion(ctx, request, input, plan, executable)
 }
 
-func inspectDependencies(input *sourceInput) (*dependency.Plan, error) {
-	for _, key := range []string{dependency.Go, dependency.Cargo, dependency.CargoGit, "cargo.update", "cargo.dir", "cargo.offline_cmd"} {
+func inspectDependencies(input *sourceInput) (*depblock.Plan, error) {
+	for _, key := range []string{depblock.Go, depblock.Cargo, depblock.CargoGit, "cargo.update", "cargo.dir", "cargo.offline_cmd"} {
 		if input.info.OptionErrors[key] != "" {
 			return nil, fmt.Errorf("%w: cannot evaluate %s", ErrUnsupported, key)
 		}
 	}
-	plan, err := dependency.Inspect(input.data, input.info.Options)
+	plan, err := depblock.Inspect(input.data, input.info.Options)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s: %w", ErrUnsupported, input.target.Name, err)
 	}
@@ -74,13 +74,13 @@ func checkCargoUpdate(info macports.PortInfo) error {
 }
 
 func dependencyPatches(input *sourceInput, kind string) error {
-	if kind == dependency.Cargo {
+	if kind == depblock.Cargo {
 		if err := checkCargoUpdate(input.info); err != nil {
 			return err
 		}
 	}
 	names := []string{"Cargo.lock", "Cargo.toml"}
-	if kind == dependency.Go {
+	if kind == depblock.Go {
 		names = []string{"go.mod", "go.sum", "go.work"}
 	}
 	changed := func(data string) bool {
@@ -146,7 +146,7 @@ func dependencyPatches(input *sourceInput, kind string) error {
 // dependencyBase is the port with its dependency declarations stripped, as
 // the current version's source, with that source's archives, all of them,
 // and the ones that may hold the dependency manifest.
-func (s *Service) dependencyBase(ctx context.Context, request Request, input *sourceInput, plan *dependency.Plan) (*sourceInput, []archives.Source, []archives.Source, error) {
+func (s *Service) dependencyBase(ctx context.Context, request Request, input *sourceInput, plan *depblock.Plan) (*sourceInput, []archives.Source, []archives.Source, error) {
 	stripped, err := plan.Strip(input.data)
 	if err != nil {
 		return nil, nil, nil, err
@@ -171,7 +171,7 @@ func (s *Service) dependencyBase(ctx context.Context, request Request, input *so
 	return base, all, candidates, nil
 }
 
-func (s *Service) prepareDependencyVersion(ctx context.Context, request Request, input *sourceInput, plan *dependency.Plan, executable string) (Result, error) {
+func (s *Service) prepareDependencyVersion(ctx context.Context, request Request, input *sourceInput, plan *depblock.Plan, executable string) (Result, error) {
 	base, all, sources, err := s.dependencyBase(ctx, request, input, plan)
 	if err != nil {
 		return Result{}, err
@@ -201,7 +201,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 		return Result{}, err
 	}
 	progress.VerboseReport(ctx, "Checking existing %s against the original source", plan.Kind)
-	old, err := dependency.Generate(ctx, plan.Kind, executable, oldInput)
+	old, err := depblock.Generate(ctx, plan.Kind, executable, oldInput)
 	if err != nil {
 		return Result{}, err
 	}
@@ -212,7 +212,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 		return Result{}, err
 	}
 	for name, values := range plan.Values {
-		if !dependency.Equivalent(name, values, oldValues[name]) {
+		if !depblock.Equivalent(name, values, oldValues[name]) {
 			return Result{}, fmt.Errorf("%w: existing %s differs from the original manifest/helper output; preserve these overrides with manual preparation", ErrUnsupported, name)
 		}
 	}
@@ -234,12 +234,12 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 		return Result{}, err
 	}
 	progress.VerboseReport(ctx, "Regenerating %s for %s", plan.Kind, request.Release.Tag)
-	generated, err := dependency.Generate(ctx, plan.Kind, executable, nextInput)
+	generated, err := depblock.Generate(ctx, plan.Kind, executable, nextInput)
 	if err != nil {
 		return Result{}, err
 	}
 	if len(generated.Online) > 0 {
-		progress.Report(ctx, "Leaving %d Git-pinned crates to Cargo's online resolution at build time because cargo.offline_cmd is empty: %s", len(generated.Online), dependency.GitSummary(generated.Online))
+		progress.Report(ctx, "Leaving %d Git-pinned crates to Cargo's online resolution at build time because cargo.offline_cmd is empty: %s", len(generated.Online), depblock.GitSummary(generated.Online))
 	}
 	values, gitDownloads, err := s.gitCrateChecksums(ctx, request, input, plan, result.Files[0].After, generated)
 	if err != nil {
@@ -251,7 +251,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	}
 	var regenerated []Regenerated
 	for _, name := range slices.Sorted(maps.Keys(values)) {
-		if count, changed, err := dependency.Entries(name, plan.Values[name], values[name]); err == nil {
+		if count, changed, err := depblock.Entries(name, plan.Values[name], values[name]); err == nil {
 			regenerated = append(regenerated, Regenerated{Option: name, Count: count, Changed: changed})
 		}
 	}
@@ -302,7 +302,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 		before, now := fidelity.ComparablePort(old, family.Root), fidelity.ComparablePort(next, after.Root)
 		if affected[name] {
 			before.Version = now.Version
-			for _, key := range append([]string{"checksums", dependency.Go, dependency.Cargo, dependency.CargoGit}, macports.VersionFollowers...) {
+			for _, key := range append([]string{"checksums", depblock.Go, depblock.Cargo, depblock.CargoGit}, macports.VersionFollowers...) {
 				if value, ok := now.Options[key]; ok {
 					before.Options[key] = value
 				} else {
@@ -337,18 +337,18 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	return result, nil
 }
 
-func dependencyInput(info macports.PortInfo, archive string, plan *dependency.Plan) (dependency.Input, error) {
+func dependencyInput(info macports.PortInfo, archive string, plan *depblock.Plan) (depblock.Input, error) {
 	root := info.Options["worksrcdir"]
 	if dir := info.Options["cargo.dir"]; dir != "" {
 		if dir != "@worksrc@" && !strings.HasPrefix(dir, "@worksrc@/") {
-			return dependency.Input{}, fmt.Errorf("%w: cargo.dir leaves the source archive", ErrUnsupported)
+			return depblock.Input{}, fmt.Errorf("%w: cargo.dir leaves the source archive", ErrUnsupported)
 		}
 		root = filepath.Join(root, strings.TrimPrefix(strings.TrimPrefix(dir, "@worksrc@"), "/"))
 	}
-	return dependency.Input{Archive: archive, Worksrcdir: filepath.ToSlash(root), Package: info.Options["go.package"], Tag: info.Options["git.branch"], Git: plan.Git}, nil
+	return depblock.Input{Archive: archive, Worksrcdir: filepath.ToSlash(root), Package: info.Options["go.package"], Tag: info.Options["git.branch"], Git: plan.Git}, nil
 }
 
-func (s *Service) gitCrateChecksums(ctx context.Context, request Request, input *sourceInput, plan *dependency.Plan, contents []byte, generated dependency.GeneratedBlocks) (map[string][]string, []archives.Download, error) {
+func (s *Service) gitCrateChecksums(ctx context.Context, request Request, input *sourceInput, plan *depblock.Plan, contents []byte, generated depblock.GeneratedBlocks) (map[string][]string, []archives.Download, error) {
 	sums := map[string]string{}
 	for _, crate := range generated.Git {
 		sums[crate.Distfile()] = strings.Repeat("0", 64)
@@ -370,7 +370,7 @@ func (s *Service) gitCrateChecksums(ctx context.Context, request Request, input 
 	}
 	info := evaluated.after.Ports[input.target.Name]
 	info.Options = maps.Clone(info.Options)
-	for _, key := range []string{dependency.Go, dependency.Cargo, dependency.CargoGit} {
+	for _, key := range []string{depblock.Go, depblock.Cargo, depblock.CargoGit} {
 		info.Options[key] = ""
 	}
 	info.Options["patchfiles"] = ""

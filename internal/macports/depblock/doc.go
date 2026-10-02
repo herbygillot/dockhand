@@ -4,4 +4,4 @@
 // the optional go2port or cargo2port helper, and validates and applies generated
 // values. Callers supply the archive and tool choices and integrate the resulting
 // edits with Portfile evaluation and checksum verification.
-package dependency
+package depblock

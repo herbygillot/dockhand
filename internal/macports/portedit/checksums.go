@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/dependency"
+	"github.com/herbygillot/dockhand/internal/macports/depblock"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
@@ -43,8 +43,8 @@ func (s *Service) prepareChecksums(ctx context.Context, request Request, input *
 
 // vendoredSources are a port's crates or Go modules, as its Portfile
 // declares them (dependency.Inspect), or nil for a port with none.
-func vendoredSources(input *sourceInput) (*dependency.Plan, error) {
-	plan, err := dependency.Declared(input.data, input.info)
+func vendoredSources(input *sourceInput) (*depblock.Plan, error) {
+	plan, err := depblock.Declared(input.data, input.info)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s: %w", ErrUnsupported, input.target.Name, err)
 	}
@@ -61,7 +61,7 @@ func vendoredSources(input *sourceInput) (*dependency.Plan, error) {
 // byte; the port then reads its refreshed checksums followed by the ones
 // the declarations append, as it read the old ones, and nothing else of it
 // changes.
-func (s *Service) refreshVendoredChecksums(ctx context.Context, request Request, input *sourceInput, plan *dependency.Plan) (Result, error) {
+func (s *Service) refreshVendoredChecksums(ctx context.Context, request Request, input *sourceInput, plan *depblock.Plan) (Result, error) {
 	stripped, err := plan.Strip(input.data)
 	if err != nil {
 		return Result{Base: request.Source, Target: input.target}, err

@@ -1,4 +1,4 @@
-package dependency
+package depblock
 
 import (
 	"archive/tar"

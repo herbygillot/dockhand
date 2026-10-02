@@ -17,7 +17,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/herbygillot/dockhand/internal/macports/dependency"
+	"github.com/herbygillot/dockhand/internal/macports/depblock"
 	"github.com/herbygillot/dockhand/internal/preparation"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
@@ -131,7 +131,7 @@ func TestGoDependencyPreparation(t *testing.T) {
 			if scenario == "missing" {
 				executable = filepath.Join(t.TempDir(), "absent")
 			}
-			service.DependencyTools = dependency.Tools{Go2Port: executable, Cargo2Port: "absent"}
+			service.DependencyTools = depblock.Tools{Go2Port: executable, Cargo2Port: "absent"}
 			if scenario == "local-patch" {
 				tree, err := service.Repo.EditTree(t.Context(), string(request.Source.Tree), []git.FileEdit{{Path: "devel/fixture/files/fix.patch", After: []byte("--- a/README\n+++ b/README\n@@ -1 +1 @@\n-foo\n+bar\n"), Mode: 0o100644}})
 				require.NoError(t, err)
@@ -290,7 +290,7 @@ extract.rename no
 			if scenario == "missing" {
 				executable = filepath.Join(t.TempDir(), "absent")
 			}
-			service.DependencyTools = dependency.Tools{Cargo2Port: executable, Go2Port: "absent"}
+			service.DependencyTools = depblock.Tools{Cargo2Port: executable, Go2Port: "absent"}
 			// A main-port selection authorizes the siblings sharing its
 			// release; a named subport still needs the flag.
 			if scenario == "shared-unauthorized" {

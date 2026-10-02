@@ -18,7 +18,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/dependency"
+	"github.com/herbygillot/dockhand/internal/macports/depblock"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/selection"
@@ -164,7 +164,7 @@ func survey() (err error) {
 		Repo:            repo,
 		Ports:           &selection.Reader{Evaluator: native, Index: &portindex.Stager{Repo: repo, Config: index, NativePlatform: native.NativePlatform, WithoutBase: true}},
 		Index:           &portindex.Stager{Repo: repo, Config: index},
-		DependencyTools: dependency.Tools{Go2Port: *go2port, Cargo2Port: *cargo2port},
+		DependencyTools: depblock.Tools{Go2Port: *go2port, Cargo2Port: *cargo2port},
 	}
 	Concurrency = max(*parallel, 1)
 	journal, err := OpenJournal(*journalPath)

@@ -8,7 +8,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/dependency"
+	"github.com/herbygillot/dockhand/internal/macports/depblock"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
@@ -91,7 +91,7 @@ type Service struct {
 	Repo             *git.Repository
 	Ports            macports.Evaluator
 	Upstream         *upstream.Service
-	DependencyTools  dependency.Tools
+	DependencyTools  depblock.Tools
 	HTTP             *http.Client
 	MaxDownloadBytes int64
 	// Mirror is where an archive upstream no longer serves as its Portfile

@@ -7,7 +7,7 @@ import (
 	"maps"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/dependency"
+	"github.com/herbygillot/dockhand/internal/macports/depblock"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
@@ -129,7 +129,7 @@ func (s *Service) goRequirement(ctx context.Context, request Request, info macpo
 		if download.Path == "" {
 			continue
 		}
-		data, _, err := dependency.Manifest(ctx, download.Path, info.Options["worksrcdir"], "go.mod")
+		data, _, err := depblock.Manifest(ctx, download.Path, info.Options["worksrcdir"], "go.mod")
 		if errors.Is(err, macports.ErrManifestMissing) {
 			continue
 		}

@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/dependency"
+	"github.com/herbygillot/dockhand/internal/macports/depblock"
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
@@ -210,7 +210,7 @@ func (r *Result) report(report Fidelity) {
 }
 
 type Service struct {
-	DependencyTools dependency.Tools
+	DependencyTools depblock.Tools
 	Ports           macports.Evaluator
 	// Archives fetches source archives; its zero value downloads with the
 	// default client and limits.

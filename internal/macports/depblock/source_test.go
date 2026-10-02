@@ -1,4 +1,4 @@
-package dependency
+package depblock
 
 import (
 	"github.com/herbygillot/dockhand/internal/macports"

@@ -14,7 +14,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/dependency"
+	"github.com/herbygillot/dockhand/internal/macports/depblock"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	portsurvey "github.com/herbygillot/dockhand/internal/macports/survey"
@@ -67,7 +67,7 @@ type Service struct {
 	Repo            *git.Repository
 	Ports           macports.NativeEvaluator
 	Upstream        *upstream.Service
-	DependencyTools dependency.Tools
+	DependencyTools depblock.Tools
 	Index           portindex.Source
 	// Workspaces hands out the tree; nil materializes one for this survey.
 	Workspaces *workspace.Registry
