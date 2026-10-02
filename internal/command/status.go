@@ -198,6 +198,13 @@ func attentionFor(s engine.BranchStatus) []attention {
 	if s.Cleaned() {
 		return nil
 	}
+	if s.Missing && s.Branch.PullRequest != nil {
+		// Status never reads the network, so it can't know the pull
+		// request merged: a branch cleaned by hand after its merge read as
+		// trouble, adopt suggested, until --refresh (the sand-runner
+		// session, batch 31).
+		return row("!", fmt.Sprintf("its Git branch is gone, and its pull request, #%d, may have merged", s.Branch.PullRequest.Number), "dockhand status --refresh reads it; dockhand adopt <new name>, if you renamed the branch")
+	}
 	if s.Missing {
 		return row("!", "its Git branch is gone", "dockhand adopt <new name>, if you renamed it")
 	}

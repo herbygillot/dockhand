@@ -840,7 +840,8 @@ func TestAdoptRecognizesARenamedBranch(t *testing.T) {
 	t.Setenv("MACPORTS_TREE", w.clone)
 	out, _, err := dockhand(t, "status", "--attention")
 	require.Equal(t, 3, ExitCode(err))
-	require.Contains(t, out, "! jq-update  its Git branch is gone  dockhand adopt <new name>, if you renamed it")
+	require.Contains(t, out, "! jq-update  its Git branch is gone, and its pull request, #34901, may have merged  dockhand status --refresh reads it; dockhand adopt <new name>, if you renamed the branch",
+		"with a pull request, either may be so")
 
 	t.Setenv("MACPORTS_TREE", dir)
 	out, _, err = dockhand(t, "adopt")
@@ -955,4 +956,60 @@ func TestTheReadyStepIsPreviewed(t *testing.T) {
 		writeReadyPreview(&out, test.plan, test.ready)
 		require.Equal(t, test.words, out.String())
 	}
+}
+
+// Naming a branch cleans it alone, as its state has it, and nothing else:
+// the sand-runner session's person asked for one merged branch cleaned,
+// and clean would have swept every merged one (batch 31). An open branch
+// has nothing to clean. A branch cleaned by hand after its merge, before
+// status has read the merge, says its pull request may have merged, where
+// it suggested adopt as if something were wrong.
+func TestCleanNamesOneBranch(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	g := withGitHub(t, w)
+	_, _, err := dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
+	t.Setenv("MACPORTS_TREE", dir)
+	_, _, err = dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "tidy")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "submit", "--no-check", "--yes")
+	require.NoError(t, err)
+	t.Setenv("MACPORTS_TREE", w.clone)
+	_, _, err = dockhand(t, "start", "other-work")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "archive", "other-work")
+	require.NoError(t, err)
+
+	// Cleaned by hand, before status knows of the merge.
+	gitRun(t, w.clone, "worktree", "remove", "--force", dir)
+	gitRun(t, w.clone, "branch", "-D", "dockhand/jq-update")
+	out, _, err := dockhand(t, "status")
+	require.NoError(t, err)
+	require.Contains(t, out, "its Git branch is gone, and its pull request, #34901, may have merged")
+	require.Contains(t, out, "dockhand status --refresh reads it")
+
+	g.prs[0].State = forge.PullRequestMerged
+	_, _, err = dockhand(t, "status", "--refresh")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "clean", "other-work-missing")
+	require.ErrorContains(t, err, "no tracked branch named other-work-missing")
+	_, _, err = dockhand(t, "start", "open-work")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "clean", "open-work")
+	require.ErrorContains(t, err, "open-work is open, so there's nothing to clean")
+
+	out, _, err = dockhand(t, "clean", "jq-update")
+	require.NoError(t, err)
+	require.Contains(t, out, "jq-update (#34901, merged at ")
+	require.NotContains(t, out, "other-work", "an archived branch not named is left")
+	require.Contains(t, out, "  remove   ada/macports-ports:dockhand/jq-update\n")
+	out, _, err = dockhand(t, "clean", "jq-update", "--yes")
+	require.NoError(t, err)
+	require.Contains(t, out, "  removed  ada/macports-ports:dockhand/jq-update\n")
+	require.DirExists(t, filepath.Join(w.home, "Source", "macports-branches", "other-work"), "the archived branch's worktree stays")
 }

@@ -72,6 +72,20 @@ func (e *Engine) PlanClean(ctx context.Context, states ...model.BranchState) ([]
 	}); err != nil {
 		return nil, err
 	}
+	return e.PlanCleanBranches(ctx, branches)
+}
+
+// PlanCleanBranches previews cleaning the branches named, each as PlanClean
+// would by its state, and no other: the sand-runner session's person asked
+// for one merged branch cleaned, and clean would have swept every merged
+// branch, so the session did it by hand (batch 31). An open branch has
+// nothing to clean, and is refused.
+func (e *Engine) PlanCleanBranches(ctx context.Context, branches []model.Branch) ([]CleanBranch, error) {
+	for _, branch := range branches {
+		if branch.State == model.BranchOpen {
+			return nil, fmt.Errorf("%s is open, so there's nothing to clean; clean takes a merged, closed, or archived branch, and dockhand archive sets one aside", branch.ShortName())
+		}
+	}
 	var plans []CleanBranch
 	for _, branch := range branches {
 		planner := e.planCleanBranch

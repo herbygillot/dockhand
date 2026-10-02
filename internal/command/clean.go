@@ -37,7 +37,7 @@ func cleanStates(merged, closed, archived bool) []model.BranchState {
 func cleanCommand(s *settings, streams Streams) *cobra.Command {
 	var merged, closed, archived, legacy, yes, automatic bool
 	cmd := &cobra.Command{
-		Use:   "clean [--merged] [--closed] [--archived]",
+		Use:   "clean [branch...] [--merged] [--closed] [--archived]",
 		Short: "Remove what merged branches leave behind",
 		Long: `Removes a merged branch's worktree, local branch, and your fork's branch,
 each only while it still holds the merged commit. A worktree with edits or
@@ -66,11 +66,14 @@ same commit; one whose port master has at another version, as a newer
 update would leave it, is named for you to look at; and the rest are left
 for dockhand adopt. Without it, clean says how many there are.
 
+Naming branches cleans those alone, each as its state has it, merged,
+closed, or archived, and nothing else: no other branch, nothing a check
+left, and no branch from before v3. An open branch has nothing to clean.
+
 It shows what it would remove first; on a terminal it asks, and a script
 passes --yes. archive hides a branch; clean removes a merged one's files;
 cancel stops a check. None means another.`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			e, err := s.open(ctx)
 			if err != nil {
@@ -78,24 +81,48 @@ cancel stops a check. None means another.`,
 			}
 			defer e.Close()
 			if automatic {
+				if len(args) > 0 {
+					return errors.New("--automatic cleans what's due, not branches named")
+				}
 				return cleanAutomatically(ctx, e, streams, s.file)
 			}
-			states := cleanStates(merged, closed, archived)
-			if len(states) == 0 {
-				return errors.New("nothing to clean: --merged, --closed, or --archived names what")
-			}
-			plans, err := e.PlanClean(ctx, states...)
-			if err != nil {
-				return err
+			var plans []engine.CleanBranch
+			if len(args) > 0 {
+				if legacy {
+					return errors.New("--legacy sorts the branches from before v3, not branches named")
+				}
+				var named []model.Branch
+				for _, name := range args {
+					branch, err := e.ResolveRecord(ctx, name)
+					if err != nil {
+						return err
+					}
+					named = append(named, branch)
+				}
+				if plans, err = e.PlanCleanBranches(ctx, named); err != nil {
+					return err
+				}
+			} else {
+				states := cleanStates(merged, closed, archived)
+				if len(states) == 0 {
+					return errors.New("nothing to clean: --merged, --closed, or --archived names what")
+				}
+				if plans, err = e.PlanClean(ctx, states...); err != nil {
+					return err
+				}
 			}
 			session, err := startSession(ctx, e, model.SessionForeground)
 			if err != nil {
 				return err
 			}
 			defer session.End(context.WithoutCancel(ctx))
-			leftovers, err := e.PlanLeftovers(ctx, session)
-			if err != nil {
-				return err
+			// Branches named are cleaned alone: what other checks left is
+			// for a clean that names none.
+			var leftovers []engine.Leftover
+			if len(args) == 0 {
+				if leftovers, err = e.PlanLeftovers(ctx, session); err != nil {
+					return err
+				}
 			}
 			var older []engine.LegacyBranch
 			if legacy {
@@ -105,7 +132,7 @@ cancel stops a check. None means another.`,
 			}
 			streams.emit(map[string]any{"branches": cleanView(plans), "leftovers": leftoversView(leftovers), "legacy": legacyView(older), "applied": false})
 			removable := writeClean(streams.Out, plans, false) + writeLeftovers(streams.Out, leftovers, false) + writeLegacy(streams.Out, older, false)
-			if !legacy {
+			if !legacy && len(args) == 0 {
 				if names, err := e.LegacyBranchNames(ctx); err == nil && len(names) > 0 {
 					fmt.Fprintf(streams.Out, "· %s from before v3 (dockhand/bump/…), which nothing tracks; dockhand clean --legacy sorts them\n", plural(len(names), "branch"))
 				}
