@@ -46,6 +46,7 @@ func whats(plans []CleanBranch) map[string]string {
 }
 
 func TestCleanRemovesWhatAMergedBranchLeaves(t *testing.T) {
+	t.Parallel()
 	_, e, fake, branch := mergedBranch(t)
 	plans, err := e.PlanClean(t.Context())
 	require.NoError(t, err)
@@ -76,6 +77,7 @@ func TestCleanRemovesWhatAMergedBranchLeaves(t *testing.T) {
 }
 
 func TestCleanKeepsWorkOfItsOwn(t *testing.T) {
+	t.Parallel()
 	_, e, _, branch := mergedBranch(t)
 	require.NoError(t, os.WriteFile(filepath.Join(branch.Worktree, "notes.txt"), []byte("mine\n"), 0o644))
 	plans, err := e.PlanClean(t.Context())
@@ -98,10 +100,11 @@ func TestCleanKeepsWorkOfItsOwn(t *testing.T) {
 }
 
 func TestCleanupRemovesWhatCleanWouldAndOldIndexes(t *testing.T) {
+	t.Parallel()
 	_, e, fake, branch := mergedBranch(t)
 	require.NoError(t, os.WriteFile(filepath.Join(branch.Worktree, "notes.txt"), []byte("mine\n"), 0o644))
 	cache := t.TempDir()
-	t.Setenv("DOCKHAND_INDEX_CACHE", cache)
+	e.options.Indexes = cache
 	profile := filepath.Join(cache, strings.Repeat("ab", 32))
 	old, fresh := filepath.Join(profile, "generations", strings.Repeat("1", 40)), filepath.Join(profile, "generations", strings.Repeat("2", 40))
 	for _, dir := range []string{old, fresh} {
@@ -138,6 +141,7 @@ func TestCleanupRemovesWhatCleanWouldAndOldIndexes(t *testing.T) {
 // beekeeper-studio and ov, where clean left an adopted branch's worktree
 // with nothing to stand on.)
 func TestCleanKeepsABranchCheckedOutWhereItStays(t *testing.T) {
+	t.Parallel()
 	_, e, fake, branch := mergedBranch(t)
 	branch.Managed = false
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(branch) }))
@@ -179,6 +183,7 @@ func TestCleanKeepsABranchCheckedOutWhereItStays(t *testing.T) {
 // Work on the branch still checks it out again (the hugo exercise's
 // review, "status --all checks an archived branch out again").
 func TestStatusDoesntCheckOutAgainWhatCleanRemoved(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch := committedUpdate(t, e)
@@ -212,6 +217,7 @@ func TestStatusDoesntCheckOutAgainWhatCleanRemoved(t *testing.T) {
 // duckdb-cxx14, finding 2). One with a commit of its own stays, for path
 // to check it out again.
 func TestAnArchivedBranchWithNothingMasterLacksGoesWithItsWorktree(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	empty, err := e.Start(t.Context(), StartRequest{Name: "duckdb-cxx14"})
@@ -282,6 +288,7 @@ func TestAnArchivedBranchWithNothingMasterLacksGoesWithItsWorktree(t *testing.T)
 // newest check in each environment and its three newest; an ended
 // branch's go once it's been ended past the cutoff.
 func TestCleanupKeepsLogsThatCount(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	f.withFork(t, e)
@@ -331,8 +338,9 @@ func TestCleanupKeepsLogsThatCount(t *testing.T) {
 // newest, which status shows as it ended, and what reuse may choose; a
 // check that's gone is said to be, rather than never there (D6).
 func TestCleanupKeepsAnEndedBranchsNewestCheck(t *testing.T) {
-	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
+	t.Parallel()
 	f := setup(t)
+	f.options.Indexes = t.TempDir()
 	e, _ := f.withPreparer(t)
 	f.withFork(t, e)
 	branch := twoPortBranch(t, e)

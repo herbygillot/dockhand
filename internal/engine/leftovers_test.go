@@ -63,6 +63,7 @@ func (p *leavingProvider) RemoveLeftover(_ context.Context, ref string) error {
 // check, under the check's lease; one a live process drives, even after
 // the plan was made, is kept, and so is one no check of this checkout made.
 func TestLeftoversGoOnlyWhenNoProcessDrivesTheirCheck(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	provider := &leavingProvider{}
@@ -129,9 +130,10 @@ func TestLeftoversGoOnlyWhenNoProcessDrivesTheirCheck(t *testing.T) {
 
 // serve's daily cleanup removes what checks left, as clean does.
 func TestCleanupRemovesWhatChecksLeft(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
-	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
+	e.options.Indexes = t.TempDir()
 	provider := &leavingProvider{}
 	e.Providers = map[string]buildenv.Provider{"command": provider}
 	queued := queuedHarborRun(t, e, tahoeArm)

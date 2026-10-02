@@ -14,6 +14,7 @@ import (
 // another version is for a person to look at; the rest are left for
 // adopt. A tracked one isn't from before v3 (the cleanup, finding 3).
 func TestBranchesFromBeforeV3AreSortedByWhatMasterHas(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	f.withFork(t, e)

@@ -17,6 +17,7 @@ import (
 // (decision 44). One kept already isn't fetched again; one that arrives
 // damaged, or can't be named as a file, is kept nowhere.
 func TestAnArchiveIsKeptOnlyWholeAndOnce(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	content := []byte("libharbor's archive")

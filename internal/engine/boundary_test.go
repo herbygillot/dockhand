@@ -69,6 +69,7 @@ var engineImports = map[string]string{
 // import is named with why, and one no longer imported is taken off (the
 // architecture review of 2026-09-27, finding 4).
 func TestTheEngineImportsWhatItDecidesWith(t *testing.T) {
+	t.Parallel()
 	entries, err := os.ReadDir(".")
 	require.NoError(t, err)
 	files := token.NewFileSet()

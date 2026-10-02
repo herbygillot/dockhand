@@ -9,6 +9,7 @@ import (
 )
 
 func TestARenamedBranchKeepsItsRecordAndItsPullRequest(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	fake := f.withFork(t, e)
@@ -47,6 +48,7 @@ func TestARenamedBranchKeepsItsRecordAndItsPullRequest(t *testing.T) {
 }
 
 func TestAnUnrelatedBranchIsNotTakenForARename(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	first, err := e.Start(t.Context(), StartRequest{Name: "one"})

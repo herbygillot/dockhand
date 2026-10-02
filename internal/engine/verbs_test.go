@@ -15,6 +15,7 @@ import (
 )
 
 func TestEditExpandsTheWorktreeToThePort(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "notes"})
@@ -29,6 +30,7 @@ func TestEditExpandsTheWorktreeToThePort(t *testing.T) {
 }
 
 func TestRevbumpRecordsItsReasonForTidy(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "poppler-25.09"})
@@ -48,6 +50,7 @@ func TestRevbumpRecordsItsReasonForTidy(t *testing.T) {
 }
 
 func TestRebaseMovesTheBranchOntoFreshMaster(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update", Here: true})
@@ -94,6 +97,7 @@ func TestRebaseMovesTheBranchOntoFreshMaster(t *testing.T) {
 }
 
 func TestARebaseThatConflictsChangesNothing(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update", Here: true})
@@ -115,6 +119,7 @@ func TestARebaseThatConflictsChangesNothing(t *testing.T) {
 }
 
 func TestRetryAndArchive(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
@@ -146,6 +151,7 @@ func TestRetryAndArchive(t *testing.T) {
 // dropped, and not counted. A branch already on master is changed in
 // nothing, and no rebase is recorded for it.
 func TestARebaseCountsWhatItReplays(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update", Here: true})
@@ -180,6 +186,7 @@ func TestARebaseCountsWhatItReplays(t *testing.T) {
 // skim's replayed nothing onto master, and said submit would replace the
 // merged pull request's commits (field testing, 2026-10-02).
 func TestAMergedBranchIsNotRebased(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update", Here: true})
@@ -205,6 +212,7 @@ func TestAMergedBranchIsNotRebased(t *testing.T) {
 // restore rebase-29 put gh back at check-35's files, status said "passed
 // for older work" of check-37's (the gh rebase's finding 2).
 func TestStatusCreditsTheCheckOfTheFilesAsTheyAre(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch := committedUpdate(t, e)
@@ -249,6 +257,7 @@ func TestStatusCreditsTheCheckOfTheFilesAsTheyAre(t *testing.T) {
 // keeps and a commit tidy writes again replaces; both say so (the
 // flatbuffers, nuspell, zola, and alertmanager run's finding 4).
 func TestARebaseAndATidySayAnOlderBuildsAttribution(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "zola-legacy", Here: true})

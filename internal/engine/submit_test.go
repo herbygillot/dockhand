@@ -46,6 +46,7 @@ func committedUpdate(t *testing.T, e *Engine) model.Branch {
 }
 
 func TestSubmitWithoutACheckSaysSoAndOpensThePullRequest(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	fake := f.withFork(t, e)
@@ -91,6 +92,7 @@ func TestSubmitWithoutACheckSaysSoAndOpensThePullRequest(t *testing.T) {
 }
 
 func TestAnUpdateDockhandMadeIsAnEnhancement(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	f.withFork(t, e)
@@ -112,6 +114,7 @@ func TestAnUpdateDockhandMadeIsAnEnhancement(t *testing.T) {
 }
 
 func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	fake := f.withFork(t, e)
@@ -182,6 +185,7 @@ func TestSubmitUpdatesThePullRequestAndKeepsAPersonsDescription(t *testing.T) {
 }
 
 func TestSubmitNeedsCommittedWorkAndYourFork(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
@@ -277,6 +281,7 @@ func checked(t *testing.T, e *Engine, branch model.Branch, jq, viewer model.Outc
 }
 
 func TestSubmitFollowsThePublicationRule(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	fake := f.withFork(t, e)
@@ -348,6 +353,7 @@ func TestSubmitFollowsThePublicationRule(t *testing.T) {
 // Someone's repository is pushed to by a remote that already pushes there,
 // else at its GitHub address, over SSH where your remotes push over it.
 func TestTheirRemoteIsOneThatPushesThereOrTheirAddress(t *testing.T) {
+	t.Parallel()
 	e := &Engine{Forge: &forgetest.GitHub{Repos: map[string]string{"bo/macports-ports": "/remotes/bo"}}}
 	remotes := []git.Remote{{Name: "fork", PushURL: "git@github.com:ada/macports-ports.git"}}
 	name, push, err := e.theirRemote(t.Context(), remotes, "bo/macports-ports")
@@ -390,6 +396,7 @@ func (c *signedInCLI) MarkReady(_ context.Context, ref forge.PullRequestRef) err
 // draft ready when it's signed in as dockhand is, and the journal says it
 // did; with none, the refusal says what to do (D8).
 func TestAReadyTheOrganizationRefusesGoesThroughTheGitHubCLI(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	fake := f.withFork(t, e)
@@ -420,6 +427,7 @@ func TestAReadyTheOrganizationRefusesGoesThroughTheGitHubCLI(t *testing.T) {
 // A submission waiting on a check of its files that hasn't finished names
 // it and the wait, not a new check to run (the sshuttle run).
 func TestASubmissionNamesTheCheckItWaitsOn(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	f.withFork(t, e)
@@ -441,6 +449,7 @@ func TestASubmissionNamesTheCheckItWaitsOn(t *testing.T) {
 // The search for a port's other open pull requests leaves out the branch's
 // own, and finds each once however many of the ports it's for.
 func TestOtherOpenPullRequestsLeaveOutTheBranchsOwn(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	fake := f.withFork(t, e)
@@ -454,6 +463,7 @@ func TestOtherOpenPullRequestsLeaveOutTheBranchsOwn(t *testing.T) {
 // said in the pull request as the submitted files evaluate it; a port the
 // base already has is none (the txt run's finding 4).
 func TestSubmitSaysTheNewPortsTheBranchAdds(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	f.withFork(t, e)
@@ -478,6 +488,7 @@ func TestSubmitSaysTheNewPortsTheBranchAdds(t *testing.T) {
 // #35084). A plan records nothing; a Description a person edited on
 // GitHub stays theirs, and the plan says the note isn't in it.
 func TestANoteIsKeptInTheDescription(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	fake := f.withFork(t, e)

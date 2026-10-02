@@ -16,6 +16,7 @@ import (
 // didn't report: its release by name, never its Darwin version, and who
 // built it; and each run with the check it was in.
 func TestAReportIsTheEnvironmentInWords(t *testing.T) {
+	t.Parallel()
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
 	runs := []model.GuestExecution{{ID: "tart_a", Run: "run_ten", ProviderRef: "dockhand-check-run-x"}}
 	got := report(tahoe, model.Observed{}, runs, map[model.RunID]string{"run_ten": "check-10"}, map[model.ExecutionID]string{"tart_a": "check-11"})
@@ -31,6 +32,7 @@ func TestAReportIsTheEnvironmentInWords(t *testing.T) {
 // architecture where two share a release, and its provider where the plan
 // has several.
 func TestEnvironmentHeadingsAreShort(t *testing.T) {
+	t.Parallel()
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
 	sequoia := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}}
 	intel := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"}}
@@ -47,6 +49,7 @@ func TestEnvironmentHeadingsAreShort(t *testing.T) {
 // A log directory names the release as everything else does, macOS 26 as
 // macos26, not by its Darwin version, which isn't macOS's.
 func TestLogDirectoriesNameTheMacOSRelease(t *testing.T) {
+	t.Parallel()
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
 	require.Equal(t, "tart-macos26-arm64", environmentSlug(tahoe))
 	require.Equal(t, "tart-macos15-x86_64", environmentSlug(model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "x86_64"}}))
@@ -59,6 +62,7 @@ func TestLogDirectoriesNameTheMacOSRelease(t *testing.T) {
 // existing tests were tried, and the table says they timed out. (The
 // architecture review of 2026-09-27, finding 1.)
 func TestTimedOutTestsAreNotPassing(t *testing.T) {
+	t.Parallel()
 	evidence := Evidence{Plan: model.Plan{Environments: []model.Environment{{Provider: "command"}}}, Targets: []TargetEvidence{
 		{Target: model.PlanTarget{ID: "jq", Target: model.Target{Name: "jq"}}, Passed: true, Outcomes: cells([]model.TargetResult{{Outcome: model.OutcomePassed, Tests: model.TestsPassed}})},
 		{Target: model.PlanTarget{ID: "libharbor", Target: model.Target{Name: "libharbor"}}, Passed: true, Outcomes: cells([]model.TargetResult{{Outcome: model.OutcomePassed, Tests: model.TestsTimedOut}})},
@@ -73,6 +77,7 @@ func TestTimedOutTestsAreNotPassing(t *testing.T) {
 // with its own runs. From the architecture review of 2026-09-27, which
 // found the latest report standing for every run.
 func TestEachReportNamesTheRunsThatMadeIt(t *testing.T) {
+	t.Parallel()
 	at := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
 	older := model.Observed{MacOS: "26.6.1", Xcode: "26.6", MacPorts: "2.12.5"}
 	newer := model.Observed{MacOS: "26.6.2", Xcode: "26.6", MacPorts: "2.12.6"}
@@ -111,6 +116,7 @@ func TestEachReportNamesTheRunsThatMadeIt(t *testing.T) {
 // one report where each builder said the same, and two where one said
 // otherwise.
 func TestBuildersReportsAreOneWhereEachSaidTheSame(t *testing.T) {
+	t.Parallel()
 	at := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
 	runners := func(releases ...string) model.Observed {
 		var observed model.Observed
@@ -142,6 +148,7 @@ func TestBuildersReportsAreOneWhereEachSaidTheSame(t *testing.T) {
 // run's finding 4, where platforms {darwin >= 23} left macOS 12 out, and
 // the pull request said it was built there).
 func TestAnExcludedEnvironmentIsNotCalledTested(t *testing.T) {
+	t.Parallel()
 	monterey := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "21", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
 	target := model.PlanTarget{ID: "beekeeper-studio", Target: model.Target{Name: "beekeeper-studio"}}
@@ -172,6 +179,7 @@ func TestAnExcludedEnvironmentIsNotCalledTested(t *testing.T) {
 // by itself, and says which it built; each build is its own row. One
 // where a variant build failed leaves the item to the person.
 func TestAVariantsCheckAnswersTheVariantsItem(t *testing.T) {
+	t.Parallel()
 	command := model.Environment{Provider: "command"}
 	passed := func(target model.Target) TargetEvidence {
 		return TargetEvidence{Target: model.PlanTarget{ID: target.ID(), Target: target}, Passed: true,
@@ -203,6 +211,7 @@ func TestAVariantsCheckAnswersTheVariantsItem(t *testing.T) {
 // check's --variants is each, or variants as MacPorts' command line takes
 // them.
 func TestTheVariantsFlag(t *testing.T) {
+	t.Parallel()
 	variants, each, err := VariantsFlag("+tests -docs")
 	require.NoError(t, err)
 	require.False(t, each)
@@ -224,6 +233,7 @@ func TestTheVariantsFlag(t *testing.T) {
 // MacPorts' automation labels a new Portfile a submission (the txt run's
 // finding 4).
 func TestANewPortIsSaidInItsDescription(t *testing.T) {
+	t.Parallel()
 	body := pullRequestBody(bodyFacts{NewPorts: []NewPort{{Name: "txt", Version: "0.8.1", Description: "A fast, intuitive terminal text editor",
 		Homepage: "https://txt.hellman.io/", License: "MIT or Apache-2"}}})
 	require.Contains(t, body, "#### Description\n\nNew port **txt** 0.8.1: A fast, intuitive terminal text editor\n\n- homepage: https://txt.hellman.io/\n- license: MIT or Apache-2\n\n")
@@ -238,6 +248,7 @@ func TestANewPortIsSaidInItsDescription(t *testing.T) {
 // way; a timeout's is its deadline, which its cell says, and a result
 // with no reason has no mark.
 func TestAResultsReasonIsSaidUnderTheTable(t *testing.T) {
+	t.Parallel()
 	sequoia := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}}
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}
 	failedTests := model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsFailed, Detail: "tests: Failed to test rust: command execution failed"}

@@ -16,6 +16,7 @@ import (
 )
 
 func TestTheOldArchiveComesFromTheMirrorAfterAStealthUpdate(t *testing.T) {
+	t.Parallel()
 	old, now := "the old contents", "the new contents"
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, now) }))
 	defer upstream.Close()

@@ -51,6 +51,7 @@ func checkHead(t *testing.T, e *Engine, branch model.Branch, only ...string) mod
 // narrowed check after a full one keeps the full one's results, since a
 // result holds for its tree. From the 2026-09-25 implementation review.
 func TestANarrowedCheckNeverShrinksWhatSubmitRequires(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	f.withFork(t, e)
@@ -93,6 +94,7 @@ func TestANarrowedCheckNeverShrinksWhatSubmitRequires(t *testing.T) {
 // where the other way a check on one release could make a branch ready
 // with nothing built on the others (the sand-runner port).
 func TestEachEnvironmentTakesItsNewestCheck(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	f.withFork(t, e)
@@ -150,6 +152,7 @@ func (p *identified) Identity(context.Context, model.Environment) (string, error
 // that can't say records, evidence would later read the image as made
 // again (the code-organization review, finding 39).
 func TestAnIdentityThatCantBeReadFailsTheAttempt(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	provider := &identified{identity: "origin a", unreadable: 1}
@@ -185,6 +188,7 @@ func TestAnIdentityThatCantBeReadFailsTheAttempt(t *testing.T) {
 // the provider can't say what it is now, the result stands, as it did
 // before environments had identities.
 func TestAResultStandsOnlyWhileItsEnvironmentDoes(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	f.withFork(t, e)
@@ -242,6 +246,7 @@ func (explained) IdentityChange(_ model.Environment, recorded, now string) strin
 // evidence's cell, rather than that the environment was made again (the
 // s2n-tls run's note 1).
 func TestTheProviderSaysWhatChangedInAnEnvironment(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	f.withFork(t, e)
@@ -280,6 +285,7 @@ func recorded(environment model.Environment, result model.TargetResult) Cell {
 // target an environment can't build, as an earlier check's plan found it,
 // and an extra's failure, which is accepted, never fixed.
 func TestWhatEvidenceSaysReadsInWords(t *testing.T) {
+	t.Parallel()
 	tools := model.Environment{Provider: "command", DeveloperTools: model.DeveloperToolsCommandLine}
 	unmet := model.Unmet{Target: "harbor-tools", Environment: tools, Needs: model.RequiresXcode}
 	needsXcode := TargetEvidence{Target: model.PlanTarget{ID: "harbor-tools", Target: model.Target{Name: "harbor-tools"}, Role: model.Changed}, Unchecked: true,

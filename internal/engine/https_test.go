@@ -25,6 +25,7 @@ func (f roundTrips) RoundTrip(r *http.Request) (*http.Response, error) { return 
 // downgrade, and so does the probe now (the helper-ownership review's
 // finding 2, its probe as a regression test).
 func TestTheHTTPSProbeRejectsADowngrade(t *testing.T) {
+	t.Parallel()
 	probe := requestProbe{client: &http.Client{Transport: roundTrips(func(r *http.Request) (*http.Response, error) {
 		status, header := http.StatusOK, http.Header{}
 		if r.URL.Scheme == "https" && r.URL.Path == "/" {
@@ -84,6 +85,7 @@ func (g *gatedProbe) inFlight() int {
 // turn for up to ten seconds, and each once, and they're said in the order
 // the port names them (the update-workflow review's efficiency item).
 func TestAPortsURLsAreAskedTogetherEachOnce(t *testing.T) {
+	t.Parallel()
 	var sites []string
 	for i := range 6 {
 		sites = append(sites, fmt.Sprintf("http://mirror%d.example/jq/", i))
@@ -115,6 +117,7 @@ func TestAPortsURLsAreAskedTogetherEachOnce(t *testing.T) {
 // them: create asks a homepage before writing it, and its checksum refresh
 // would otherwise ask again (batch 21).
 func TestAnAnswerHadIsntAskedAgain(t *testing.T) {
+	t.Parallel()
 	probe := newGatedProbe(testsupport.HTTPSAnswers{"https://jqlang.example/": true}, false)
 	e := &Engine{HTTPS: probe}
 	answered := map[string]bool{"https://dl.example/": false}

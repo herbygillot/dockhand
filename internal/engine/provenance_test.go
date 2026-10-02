@@ -33,6 +33,7 @@ func commitNaming(t *testing.T, dir, subject, build string) string {
 // build of uncommitted source is ModifiedBuilds', and isn't asked about.
 // None of it blocks the submission, or holds one nobody looks over.
 func TestSubmitSaysABuildGitHubDoesntHave(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	fake := f.withFork(t, e)
@@ -77,6 +78,7 @@ func TestSubmitSaysABuildGitHubDoesntHave(t *testing.T) {
 // build that recorded no commit is still said, needing no answer. The
 // submission goes ahead.
 func TestSubmitSaysOnceThatGitHubCouldntBeAskedAboutItsBuilds(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	fake := f.withFork(t, e)

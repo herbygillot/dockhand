@@ -53,6 +53,7 @@ func (p *remedied) Remedy(model.Unmet) string { return "make an Xcode image" }
 // accepted, its provider never sees them, and the run needs attention
 // rather than failing, since nothing failed. One with Xcode builds them.
 func TestATargetThatNeedsXcodeIsUnmetWithoutIt(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	revision := harborBranch(t, e)

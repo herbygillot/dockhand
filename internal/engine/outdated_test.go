@@ -26,6 +26,7 @@ func (n *newReleases) Outdated(_ context.Context, _ model.ObjectID, request Outd
 }
 
 func TestOutdatedPortsArePreparedOneBranchEach(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, p := f.withPreparer(t)
 	releases := &newReleases{}
@@ -73,6 +74,7 @@ func TestOutdatedPortsArePreparedOneBranchEach(t *testing.T) {
 // planned for it (the update-workflow review's finding 6). An update found
 // beyond a version set aside is outdated as any.
 func TestAnUncertainPortIsNeitherOutdatedNorPlanned(t *testing.T) {
+	t.Parallel()
 	aside := []SetAside{{Tag: "v2.0", Version: "2.0", Source: "2.0", Predates: "v1.0"}}
 	uncertain := outdatedPort(outdated.Port{Selector: "yq", Result: upstream.Result{CurrentVersion: "1.0", CandidateVersion: "2.0", Assessment: upstream.Uncertain, SetAside: aside}})
 	require.Equal(t, OutdatedPort{Port: "yq", Current: "1.0", Newest: "2.0", Uncertain: aside}, uncertain)
@@ -92,6 +94,7 @@ func TestAnUncertainPortIsNeitherOutdatedNorPlanned(t *testing.T) {
 // that sibling's update rather than starting a branch of its own (batch
 // 30).
 func TestASubportCheckedWithItsSiblingMovesWithIt(t *testing.T) {
+	t.Parallel()
 	release := &model.Release{Version: "6.1.5"}
 	sibling := outdatedPort(outdated.Port{Selector: "py310-cbor2", With: "py-cbor2", Result: upstream.Result{CurrentVersion: "5.7.1", CandidateVersion: "6.1.5", Assessment: upstream.UpdateAvailable, Release: release}})
 	require.Equal(t, "py-cbor2", sibling.With)

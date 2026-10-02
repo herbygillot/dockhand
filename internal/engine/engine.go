@@ -57,6 +57,8 @@ type Options struct {
 	// Readings is where readings of upstream's archives are kept
 	// (ReadingCache); none are kept when empty.
 	Readings string
+	// Indexes is where port indexes are cached; IndexCache's when empty.
+	Indexes string
 }
 
 // Engine is bound to one ports checkout and its registered repository.

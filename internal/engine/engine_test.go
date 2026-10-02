@@ -115,6 +115,7 @@ func files(t *testing.T, root string) []string {
 }
 
 func TestOpenRefusesADirectoryThatIsNotAPortsTree(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	testsupport.Git(t, root, "init", "-q")
 	write(t, root, map[string]string{"README.md": "dockhand\n", "internal/cli/main.go": "package cli\n"})
@@ -132,6 +133,7 @@ func TestOpenRefusesADirectoryThatIsNotAPortsTree(t *testing.T) {
 }
 
 func TestStartMakesASparseWorktreeFromFreshMaster(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	require.Equal(t, filepath.Join(filepath.Dir(f.clone), "macports-branches"), e.Worktrees(), "beside the clone")
@@ -172,6 +174,7 @@ func TestStartMakesASparseWorktreeFromFreshMaster(t *testing.T) {
 }
 
 func TestAFailedStartLeavesNothingBehind(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	blocker := filepath.Join(t.TempDir(), "not-a-directory")
 	require.NoError(t, os.WriteFile(blocker, []byte("x"), 0o644))
@@ -189,6 +192,7 @@ func TestAFailedStartLeavesNothingBehind(t *testing.T) {
 }
 
 func TestStartHereUsesThePersonsCheckoutOnlyWhenNothingWouldBeDisplaced(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	write(t, f.clone, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
@@ -207,6 +211,7 @@ func TestStartHereUsesThePersonsCheckoutOnlyWhenNothingWouldBeDisplaced(t *testi
 }
 
 func TestAdoptTracksABranchAsItStands(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	testsupport.Git(t, f.clone, "switch", "-q", "-c", "update-jq")
 	write(t, f.clone, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
@@ -259,6 +264,7 @@ func TestAdoptTracksABranchAsItStands(t *testing.T) {
 }
 
 func TestPathAndResolve(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
@@ -318,6 +324,7 @@ func TestPathAndResolve(t *testing.T) {
 }
 
 func TestUpstreamRemoteIsFoundByURL(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	remote, err := e.UpstreamRemote(t.Context())
@@ -343,6 +350,7 @@ func TestUpstreamRemoteIsFoundByURL(t *testing.T) {
 
 // An update's file is in its port's directory, or else in its own.
 func TestAnUpdatedFileIsInItsPortsDirectory(t *testing.T) {
+	t.Parallel()
 	for file, directory := range map[string]string{
 		"textproc/jq/Portfile":                    "textproc/jq",
 		"textproc/jq/files/patch-a.diff":          "textproc/jq",
@@ -359,6 +367,7 @@ func TestAnUpdatedFileIsInItsPortsDirectory(t *testing.T) {
 // checkout named. The name may reach the checkout through a symlink, as
 // ~/Source/ports reaches ~/Source/macports-ports.
 func TestHereIsTheWorktreeACommandRunsIn(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})

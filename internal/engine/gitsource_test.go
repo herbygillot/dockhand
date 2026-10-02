@@ -52,6 +52,7 @@ func gitHarbor(url, ref string, cli ...bool) fakePorts {
 // check's what it names then (batch 20). The Portfile keeps its tag. A tag
 // the repository lacks is said, and the check still runs.
 func TestAPlanExpectsTheCommitAGitFetchedPortsTagNamesNow(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	url, first, move := harborRepository(t)
@@ -95,6 +96,7 @@ func TestAPlanExpectsTheCommitAGitFetchedPortsTagNamesNow(t *testing.T) {
 // and so does what was built against its old build, while the rest is
 // reused; the new build records the new commit.
 func TestAMovedTagDoesntLetEarlierEvidenceStand(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	url, first, move := harborRepository(t)
@@ -183,6 +185,7 @@ func TestAMovedTagDoesntLetEarlierEvidenceStand(t *testing.T) {
 // active, and harbor-viewer against that harbor-cli too, as reuse would
 // build them again (reuse.AgainstOtherSources).
 func TestAnEarlierResultFillsInOnlyForTheCommitExpected(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	url, first, move := harborRepository(t)
@@ -289,6 +292,7 @@ func (c harborChecks) missing() []model.TargetID {
 // others, and a check of it alone leaves libharbor and harbor-viewer to an
 // earlier full check, which stands while the tag names what it built.
 func TestATargetLeftOutExpectsTheCommitItsTagNames(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	url, first, move := harborRepository(t)
@@ -323,6 +327,7 @@ func TestATargetLeftOutExpectsTheCommitItsTagNames(t *testing.T) {
 // blocked by harbor-cli, stands while nothing moved, and once harbor-cli's
 // failure no longer stands, its block doesn't either.
 func TestAnEarlierFailureAgainstAnOldCommitDoesntStand(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	url, first, move := harborRepository(t)
@@ -355,6 +360,7 @@ func TestAnEarlierFailureAgainstAnOldCommitDoesntStand(t *testing.T) {
 // is what it blocked: all three ask for a check, rather than harbor-cli
 // reading as blocked by a failure that no longer stands.
 func TestABlockStandsOnlyWithWhatBlockedIt(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	url, first, move := harborRepository(t)
@@ -390,6 +396,7 @@ func TestABlockStandsOnlyWithWhatBlockedIt(t *testing.T) {
 // for a check, rather than reading as blocked by a failure the evidence no
 // longer holds.
 func TestABlockDoesntOutliveALaterPassOfItsBlocker(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	provider := &identified{scriptedProvider: scriptedProvider{outcomes: map[model.TargetID]model.Outcome{"libharbor": model.OutcomeFailed}}, identity: "origin a"}
@@ -409,6 +416,7 @@ func TestABlockDoesntOutliveALaterPassOfItsBlocker(t *testing.T) {
 // at fetch, and the next check, which expects what the tag names now,
 // builds it rather than reading that failure as its own.
 func TestAFetchThatFoundItsSourceMovedStandsForNone(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	url, first, move := harborRepository(t)
@@ -430,6 +438,7 @@ func TestAFetchThatFoundItsSourceMovedStandsForNone(t *testing.T) {
 // check's result of it doesn't stand for a later check, though the tag
 // names what it did.
 func TestADependentWhoseProviderDidntSayWhatWasActiveDoesntStand(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	url, first, _ := harborRepository(t)
@@ -449,6 +458,7 @@ func TestADependentWhoseProviderDidntSayWhatWasActiveDoesntStand(t *testing.T) {
 // made, so its result doesn't stand once the plan expects libharbor at a
 // commit.
 func TestABuildAgainstAGitFetchedPortItsCheckDidntBuildDoesntStand(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	url, _, _ := harborRepository(t)
@@ -472,6 +482,7 @@ func TestABuildAgainstAGitFetchedPortItsCheckDidntBuildDoesntStand(t *testing.T)
 // that doesn't say what a build fetched leaves its result standing for its
 // own check, and says so; no later check reuses it.
 func TestABuildThatFetchedAnotherCommitFailsAtFetch(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	url, first, move := harborRepository(t)

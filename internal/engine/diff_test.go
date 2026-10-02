@@ -62,6 +62,7 @@ func harborMaster(t *testing.T, f fixture) {
 }
 
 func TestDiffShowsTheBranchAsItIsNow(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	harborMaster(t, f)
 	e := f.open(t)
@@ -93,6 +94,7 @@ func TestDiffShowsTheBranchAsItIsNow(t *testing.T) {
 }
 
 func TestImpactNamesDependentsAndSharedFiles(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	harborMaster(t, f)
 	e := f.open(t)
@@ -129,6 +131,7 @@ func dependentNames(dependents []Dependent) []string {
 }
 
 func TestLinkedPortsAreLibraryDependentsOncePerDirectory(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	harborMaster(t, f)
 	e := f.open(t)
@@ -153,6 +156,7 @@ func TestLinkedPortsAreLibraryDependentsOncePerDirectory(t *testing.T) {
 // update --revbump-dependents is one engine operation: it bumps each
 // linked port with the subject tidy uses, and a plan bumps nothing.
 func TestRevbumpLinkedBumpsEachLinkedPortForTidy(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	write(t, f.upstream, map[string]string{"textproc/yq/Portfile": "name yq\nversion 1\n", "textproc/gojq/Portfile": "name gojq\nversion 1\n"})
 	testsupport.Git(t, f.upstream, "add", "-A")
@@ -187,6 +191,7 @@ func TestRevbumpLinkedBumpsEachLinkedPortForTidy(t *testing.T) {
 // three by name, aria2, bind9, and bind9.18, among the heaviest of
 // libuv's to build (the libuv run's finding 3).
 func TestImpactSuggestsOneDependentOfEachKind(t *testing.T) {
+	t.Parallel()
 	impact := Impact{Dependents: []Dependent{
 		{Name: "aria2", Phases: []string{"build"}},
 		{Name: "bind9", Phases: []string{"build"}},
@@ -211,6 +216,7 @@ func TestImpactSuggestsOneDependentOfEachKind(t *testing.T) {
 // index already names, isn't one again. impact doesn't suggest building
 // it, since check --also builds default variants.
 func TestADependentUnderAVariantIsFound(t *testing.T) {
+	t.Parallel()
 	e, _, base, _ := revisionFixture(t, nil)
 	tree := editTree(t, e, base, map[string]string{
 		"textproc/nuspell/Portfile":  "name nuspell\n",
@@ -246,6 +252,7 @@ func TestADependentUnderAVariantIsFound(t *testing.T) {
 // was refused as not a library dependent (the flatbuffers, nuspell, zola,
 // and alertmanager run's finding 1).
 func TestALinkedPortUnderAVariantIsBumpedAndCanBeExcepted(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	harborMaster(t, f)
 	write(t, f.upstream, map[string]string{"net/harbor-sync/Portfile": "PortGroup github 1.0\nname harbor-sync\nvariant sync description {Sync} {\n    depends_lib-append port:libharbor\n}\n"})

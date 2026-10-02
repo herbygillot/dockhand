@@ -35,6 +35,7 @@ func (c *caching) PruneCache(_ context.Context, unused time.Duration) ([]string,
 // when free space runs short where the database or a provider's cache is
 // (decision 36).
 func TestCleanupIsDueDailyOrWhenSpaceRunsShort(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	cache := &caching{storage: t.TempDir()}
@@ -67,9 +68,10 @@ func TestCleanupIsDueDailyOrWhenSpaceRunsShort(t *testing.T) {
 
 // A pass removes what providers keep that has gone unused for CacheUnused.
 func TestCleanupPrunesProvidersCaches(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
-	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
+	e.options.Indexes = t.TempDir()
 	cache := &caching{storage: t.TempDir()}
 	e.Providers = map[string]buildenv.Provider{"tart": cache}
 	report, err := e.Cleanup(t.Context(), session(t, e), 7*24*time.Hour)
@@ -82,6 +84,7 @@ func TestCleanupPrunesProvidersCaches(t *testing.T) {
 // checkouts, and one stamp beside it let one checkout's commands hold off
 // the other's cleanup of merged branches.
 func TestEachCheckoutKeepsItsOwnCleanupDay(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	other := filepath.Join(t.TempDir(), "other-ports")
@@ -104,8 +107,9 @@ func TestEachCheckoutKeepsItsOwnCleanupDay(t *testing.T) {
 // go, and so do the sessions that ended, or went quiet, before it, but
 // for one a lease still names. What's newer stays.
 func TestCleanupPrunesTheJournal(t *testing.T) {
-	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
+	t.Parallel()
 	f := setup(t)
+	f.options.Indexes = t.TempDir()
 	e := f.open(t)
 	old := e.now().Add(-40 * 24 * time.Hour)
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
@@ -157,8 +161,9 @@ func TestCleanupPrunesTheJournal(t *testing.T) {
 // them, and an hour's after pruned the morning's, so serve opened more
 // than its limit. Yesterday's go as after says.
 func TestCleanupKeepsTheEventsTodaysSubmitLimitCounts(t *testing.T) {
-	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
+	t.Parallel()
 	f := setup(t)
+	f.options.Indexes = t.TempDir()
 	e := f.open(t)
 	now := e.now()
 	morning := dayStart(now).Add(time.Minute)
@@ -188,8 +193,9 @@ func TestCleanupKeepsTheEventsTodaysSubmitLimitCounts(t *testing.T) {
 // whose record never followed, a fetch that didn't finish. An open
 // branch's newest results' archives stay (decisions 36 and 44, D6).
 func TestCleanupRemovesArchivesNoLiveResultNames(t *testing.T) {
-	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
+	t.Parallel()
 	f := setup(t)
+	f.options.Indexes = t.TempDir()
 	e := f.open(t)
 	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{active: []model.ActivePort{}}}
 	run, err := e.Drive(t.Context(), session(t, e), queuedHarborRun(t, e, tahoeArm).ID)

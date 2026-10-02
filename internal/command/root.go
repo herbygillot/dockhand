@@ -258,7 +258,9 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 			supportsJSON(command)
 		}
 	}
-	root.SetArgs(args)
+	// Cobra reads os.Args for nil arguments; Run's are only those given,
+	// so a test binary's own flags never reach a command.
+	root.SetArgs(append([]string{}, args...))
 	root.SetIn(streams.In)
 	root.SetOut(streams.Out)
 	root.SetErr(streams.Err)

@@ -17,6 +17,7 @@ import (
 // release too: a port known to fail without Xcode is excluded with the
 // Command Line Tools and built with Xcode.
 func TestAPlanReadsEachReleaseInItsOwnContext(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	f.options.Tclsh = testsupport.MacPortsTclsh(t)
 	e := f.open(t)

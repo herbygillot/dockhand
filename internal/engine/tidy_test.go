@@ -30,6 +30,7 @@ func log(t *testing.T, dir string, base model.ObjectID) []string {
 }
 
 func TestTidyCommitsAnUpdateUnambiguouslyAndRestoreUndoesIt(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
@@ -72,6 +73,7 @@ func TestTidyCommitsAnUpdateUnambiguouslyAndRestoreUndoesIt(t *testing.T) {
 }
 
 func TestTidySquashesCorrectionsAndKeepsTheirTrailers(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "update-jq", Here: true})
@@ -105,6 +107,7 @@ func TestTidySquashesCorrectionsAndKeepsTheirTrailers(t *testing.T) {
 }
 
 func TestTidyKeepsAGoodHistoryAndOrdersSeveralPorts(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "two", Here: true})
@@ -132,6 +135,7 @@ func TestTidyKeepsAGoodHistoryAndOrdersSeveralPorts(t *testing.T) {
 }
 
 func TestTidyAsksWhatItCannotKnow(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "mixed", Here: true})
@@ -180,6 +184,7 @@ func TestTidyAsksWhatItCannotKnow(t *testing.T) {
 }
 
 func TestTidyRefusesAMerge(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "merged", Here: true})
@@ -201,6 +206,7 @@ func TestTidyRefusesAMerge(t *testing.T) {
 // puts it back, unless something was staged since (Design v3 §8). From
 // the 2026-09-25 implementation review.
 func TestRestorePutsTheStagedVersionBack(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch := committedUpdate(t, e)
@@ -237,6 +243,7 @@ func TestRestorePutsTheStagedVersionBack(t *testing.T) {
 // subject is the person's to give (the hugo exercise's certigo run,
 // finding 2).
 func TestAPersonsEditBesideAnUpdateKeepsItsSubject(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
@@ -277,6 +284,7 @@ func TestAPersonsEditBesideAnUpdateKeepsItsSubject(t *testing.T) {
 // noted on its commit, as the check of the files orders them; the order
 // is still the person's (the libuv run's finding 6).
 func TestARegroupPuttingADependentFirstIsNoted(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch := twoPortBranch(t, e)
@@ -325,6 +333,7 @@ func TestARegroupPuttingADependentFirstIsNoted(t *testing.T) {
 // never read, since git-devel's github.setup came first (the git run's
 // finding 5).
 func TestTidyNamesAHandMadeBumpByThePortsOwnVersion(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-hand", Here: true})
@@ -344,6 +353,7 @@ func TestTidyNamesAHandMadeBumpByThePortsOwnVersion(t *testing.T) {
 // history rather than adding a commit to it (adding py-flatbuffers,
 // finding 3). Once a commit is made anew, those after it are too.
 func TestTidyKeepsTheCommitsItWouldntChange(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	write(t, f.upstream, map[string]string{"textproc/yq/Portfile": "name yq\nversion 4.54.1\n"})
 	testsupport.Git(t, f.upstream, "add", "-A")
@@ -377,6 +387,7 @@ func TestTidyKeepsTheCommitsItWouldntChange(t *testing.T) {
 // back to _resources and the ports the branch changes: edit jq widened the
 // ov branch's worktree for good (the ov run's finding 6).
 func TestTidyNarrowsAWorktreeBackToTheBranchsPorts(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})

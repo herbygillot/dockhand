@@ -204,6 +204,7 @@ func read(t *testing.T, path string) string {
 }
 
 func TestUpdateEditsWorkingFilesAndCommitsNothing(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
@@ -249,6 +250,7 @@ func TestUpdateEditsWorkingFilesAndCommitsNothing(t *testing.T) {
 }
 
 func TestUpdateStartsFromTheWorkingFilesAsTheyAre(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, p := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update", Here: true})
@@ -274,6 +276,7 @@ func TestUpdateStartsFromTheWorkingFilesAsTheyAre(t *testing.T) {
 }
 
 func TestAPlannedUpdateChangesNothing(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
@@ -287,6 +290,7 @@ func TestAPlannedUpdateChangesNothing(t *testing.T) {
 }
 
 func TestAnUpdateWritesNothingOverAFileThatChanged(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, p := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update", Here: true})
@@ -303,6 +307,7 @@ func TestAnUpdateWritesNothingOverAFileThatChanged(t *testing.T) {
 }
 
 func TestUpdateNeedsTheBranchCheckedOut(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
@@ -336,6 +341,7 @@ func TestUpdateNeedsTheBranchCheckedOut(t *testing.T) {
 }
 
 func TestBranchesChangingAndFreeNames(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
@@ -361,6 +367,7 @@ func TestBranchesChangingAndFreeNames(t *testing.T) {
 }
 
 func TestAnUpdateComparesTheUpstreamArchives(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, p := f.withPreparer(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
@@ -408,6 +415,7 @@ func (refusing) Prepare(context.Context, editprep.Request) (editprep.Result, err
 // starts the branch from that master only once there is an edit to make,
 // or one for the person to make by hand.
 func TestAnUpdateStartsItsBranchOnlyForAnEdit(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, p := f.withPreparer(t)
 	master := f.upstreamMaster(t)
@@ -456,6 +464,7 @@ func TestAnUpdateStartsItsBranchOnlyForAnEdit(t *testing.T) {
 // the port is at from the port as it stands, since no fidelity report says
 // it then; "jq is already at ; nothing to change" read nothing.
 func TestAnUpdateThatEditedNothingSaysWhatThePortIsAt(t *testing.T) {
+	t.Parallel()
 	update := describe(model.Branch{}, "jq", editprep.Result{Result: portedit.Result{Unchanged: &macports.PortInfo{Name: "jq", Version: "1.8.2", Revision: 1}}})
 	require.Equal(t, PortVersion{Version: "1.8.2", Revision: 1}, update.Before)
 	require.Equal(t, PortVersion{Version: "1.8.2", Revision: 1}, update.After)
@@ -466,6 +475,7 @@ func TestAnUpdateThatEditedNothingSaysWhatThePortIsAt(t *testing.T) {
 // and a change they share, such as the license both carry, is said once;
 // what only one carries names it (the architecture review's finding 2).
 func TestAChangeTheArchivesShareIsSaidOnce(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	pair := func(name string, before, after map[string]string) editprep.ArchivePair {
 		next := distfetch.Download{Path: writeTarball(t, dir, name+"-2", after)}
@@ -490,6 +500,7 @@ func TestAChangeTheArchivesShareIsSaidOnce(t *testing.T) {
 // archive's top, and a manifest outside it isn't read (the update-workflow
 // review's finding 1).
 func TestTheComparisonReadsWhereThePortBuilds(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	next := distfetch.Download{Path: writeTarball(t, dir, "demo-2", map[string]string{
 		"LICENSE": "MIT\n", "python/pyproject.toml": "[project]\ndependencies = [\"requests>=2\", \"rich>=13\"]\n", "package.json": `{"dependencies":{"x":"1"}}`,
@@ -521,6 +532,7 @@ func TestTheComparisonReadsWhereThePortBuilds(t *testing.T) {
 // provider's version can't be told holds too, and one no dependency's name
 // matches is said, holding nothing (batch 19).
 func TestAPythonPinMacPortsCantMeetHolds(t *testing.T) {
+	t.Parallel()
 	unresolved := model.UpstreamChange{Kind: "dependency", Path: "pyproject.toml", Rule: assess.ProviderUnresolved, Subject: "pyyaml", Class: model.Introduced,
 		Message: "upstream: pyproject.toml requires pyyaml >=6.0.2, and no port the Portfile depends on is named for it"}
 	for _, test := range []struct {
@@ -562,6 +574,7 @@ func TestAPythonPinMacPortsCantMeetHolds(t *testing.T) {
 // base in every context; a Git-fetched port's compared no archives, and
 // records none, so its assessment is made when it's collected.
 func TestAFreshUpdateRecordsItsAssessment(t *testing.T) {
+	t.Parallel()
 	for _, git := range []bool{false, true} {
 		f := setup(t)
 		e, p := f.withPreparer(t)
@@ -591,6 +604,7 @@ func TestAFreshUpdateRecordsItsAssessment(t *testing.T) {
 // candidate's provider doesn't meet, which the base's didn't either, is
 // said and holds nothing, while one the base met holds.
 func TestAPinIsJudgedAgainstTheBasesTree(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		base string
 		hold bool
@@ -625,6 +639,7 @@ func TestAPinIsJudgedAgainstTheBasesTree(t *testing.T) {
 // it uses still holds, and one that changed only the version it names
 // doesn't (nuspell's CMakeLists.txt).
 func TestAChangeTheBuildDoesntReadHoldsNothing(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	next := distfetch.Download{Path: writeTarball(t, dir, "flatbuffers-25.12.19", map[string]string{
 		"CMakeLists.txt": "project(FlatBuffers VERSION 25.12.19)\nadd_library(flatbuffers src/a.cpp src/b.cpp)\n",
@@ -657,6 +672,7 @@ func TestAChangeTheBuildDoesntReadHoldsNothing(t *testing.T) {
 // Portfile, as the update left it, doesn't name the option, in any
 // variant: one that does may set it (D12, revisited 2026-10-01).
 func TestAnOptionThePortfileNamesHolds(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	dir := t.TempDir()
@@ -691,6 +707,7 @@ func TestAnOptionThePortfileNamesHolds(t *testing.T) {
 // revision bump doesn't look. Nor does an update with nothing to change,
 // which says the port is current without waiting on its hosts.
 func TestAnUpdateSaysThePortsPlainHTTPURLs(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, p := f.withPreparer(t)
 	p.options = map[string]string{"homepage": "http://jqlang.example/", "master_sites": "http://dl.example/jq/:src gnu https://github.com/jqlang/jq/releases/"}
@@ -725,6 +742,7 @@ func TestAnUpdateSaysThePortsPlainHTTPURLs(t *testing.T) {
 // py313-requests 1 builds, while the same pin for macOS does (the
 // helper-ownership review's finding 1, its probe as a regression test).
 func TestAPinForAnotherPlatformHoldsNothing(t *testing.T) {
+	t.Parallel()
 	for marker, holds := range map[string]bool{"sys_platform == 'win32'": false, "sys_platform == 'darwin'": true, "python_version >= '3.12'": true, "python_version < '3.10'": false} {
 		dir := t.TempDir()
 		old := distfetch.Download{Name: "old.tar.gz", Path: writeTarball(t, dir, "pkg-1", map[string]string{"requirements.txt": "requests==1; " + marker + "\n"})}
@@ -756,6 +774,7 @@ func TestAPinForAnotherPlatformHoldsNothing(t *testing.T) {
 // evaluates it, where the branch changed its Portfile since, and nothing
 // otherwise, or where the base has no such port.
 func TestAStealthRefreshGetsTheBasesPort(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "stealth"})
@@ -776,6 +795,7 @@ func TestAStealthRefreshGetsTheBasesPort(t *testing.T) {
 // An update to a new major version says so: semgrep's 0.14.0 to 1.179.0
 // read as a plain bump (field testing, 2026-10-02).
 func TestAnUpdateSaysANewMajorVersion(t *testing.T) {
+	t.Parallel()
 	result := func(from, to string) editprep.Result {
 		port := func(version string) macports.Snapshot {
 			return macports.Snapshot{Ports: map[string]macports.PortInfo{"semgrep": {Name: "semgrep", Version: version}}}
@@ -816,6 +836,7 @@ func (f renamingForge) Repository(_, name string) (forge.Repository, error) {
 // so: returntocorp/semgrep answered as semgrep/semgrep by a redirect
 // discovery followed unsaid (field testing, 2026-10-02).
 func TestAnUpdateSaysItsRepositoryWasRenamed(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	e.Forge = renamingForge{GitHub: forgetest.New("", ""), now: map[string]string{"returntocorp/semgrep": "semgrep/semgrep"}}
@@ -829,6 +850,7 @@ func TestAnUpdateSaysItsRepositoryWasRenamed(t *testing.T) {
 // in the same commit, with --with-obsolete: terraform's stayed at 1.16.0
 // while terraform-1.16 moved to 1.16.5 (field testing, 2026-10-02).
 func TestAnObsoleteStubMovesWithItsReplacementWhenAsked(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	write(t, f.upstream, map[string]string{"textproc/jq-old/Portfile": "name jq-old\nversion 1.7.1\n"})
 	testsupport.Git(t, f.upstream, "add", "-A")

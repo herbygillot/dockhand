@@ -32,6 +32,7 @@ func contribution(t *testing.T, f fixture, fake *forgetest.GitHub) {
 }
 
 func TestReviewAppliesTheRulesAndRemembersWhatItFound(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	fake := f.withFork(t, e)
@@ -84,6 +85,7 @@ func findingCodes(findings []commitrules.Finding) []string {
 }
 
 func TestAdoptSomeonesPullRequestAndPushOnlyWhereGitHubAllows(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	fake := f.withFork(t, e)
@@ -143,6 +145,7 @@ func TestAdoptSomeonesPullRequestAndPushOnlyWhereGitHubAllows(t *testing.T) {
 // revision is, and the ports that depend on them (the libuv run's finding
 // 2). Nothing is recorded; where the engine can't assess, it says so.
 func TestReviewSaysWhatUpdateWouldOfSomeonesPullRequest(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	fake := f.withFork(t, e)
@@ -196,6 +199,7 @@ func (definedPorts) PortsDefined(context.Context, model.Source, []string) (map[s
 // index has them: #34620's "1 commit changing libuv", where devel/libuv
 // also defines libuv-devel (the batch 11 run, batch 32).
 func TestReviewNamesADirectorysOtherPorts(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	fake := f.withFork(t, e)
@@ -211,6 +215,7 @@ func TestReviewNamesADirectorysOtherPorts(t *testing.T) {
 // Subports whose comparisons say the same are said once, named together
 // (field testing, 2026-10-02: py-mlx-vlm's block repeated per subport).
 func TestComparisonsThatSayTheSameAreGrouped(t *testing.T) {
+	t.Parallel()
 	same := model.UpstreamComparison{Changes: []model.UpstreamChange{{Message: "upstream: requirements.txt requires tqdm >=4, and no port the Portfile depends on is named for it", Hold: true}}}
 	other := model.UpstreamComparison{Changes: []model.UpstreamChange{{Message: "upstream's LICENSE changed"}}}
 	report := ReviewReport{Upstream: []PortComparison{{Port: "py313-mlx-vlm", Comparison: same}, {Port: "py314-mlx-vlm", Comparison: same}, {Port: "py-mlx-vlm", Comparison: other}}}
