@@ -3,6 +3,7 @@ package portedit
 import (
 	"context"
 	"fmt"
+
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"

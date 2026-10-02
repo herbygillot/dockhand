@@ -2,10 +2,11 @@ package observe
 
 import (
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/stretchr/testify/require"
 	"slices"
 	"testing"
+
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 func TestProfilesIncludeBoundaryAndArchitectureWithoutImpossibleOldARM(t *testing.T) {

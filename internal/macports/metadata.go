@@ -2,9 +2,10 @@ package macports
 
 import (
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/model"
 	"strings"
 	"time"
+
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 type Dependency struct {

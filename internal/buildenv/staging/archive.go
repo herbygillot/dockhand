@@ -5,17 +5,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/atomicfile"
-	"github.com/herbygillot/dockhand/internal/macports/workspace"
-	"github.com/herbygillot/dockhand/internal/model"
 	"io"
 	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
 
+	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
 )
 

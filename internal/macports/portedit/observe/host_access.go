@@ -3,12 +3,12 @@ package observe
 import (
 	"context"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/progress"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 

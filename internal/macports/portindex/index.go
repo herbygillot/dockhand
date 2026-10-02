@@ -9,10 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/atomicfile"
-	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/subprocess"
 	"io"
 	"io/fs"
 	"net/url"
@@ -23,8 +19,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
 const portIndexName = "PortIndex"

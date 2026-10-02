@@ -5,10 +5,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/model"
 	"io"
 	"os"
 	"sync"
+
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // Journal appends one JSON line per assessed port to a file as each port

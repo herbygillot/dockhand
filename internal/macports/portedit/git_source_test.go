@@ -1,12 +1,13 @@
 package portedit
 
 import (
-	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
-	"github.com/herbygillot/dockhand/internal/model"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 func gitRelease(commit string) *model.Release {

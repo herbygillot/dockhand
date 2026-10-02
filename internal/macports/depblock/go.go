@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/scratch"
 	"maps"
 	"os"
 	"path"
@@ -14,6 +12,9 @@ import (
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
+
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/scratch"
 )
 
 func generateGo(ctx context.Context, executable string, in Input) (GeneratedBlocks, error) {

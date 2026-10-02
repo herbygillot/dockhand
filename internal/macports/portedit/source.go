@@ -6,8 +6,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports/fidelity"
-	"github.com/herbygillot/dockhand/internal/model"
 	"maps"
 	"os"
 	"path"
@@ -16,9 +14,11 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
 )
 

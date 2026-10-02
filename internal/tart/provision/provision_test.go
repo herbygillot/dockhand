@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"errors"
-	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/model"
 	"io"
 	"os"
 	"path/filepath"
@@ -16,6 +14,8 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macos"
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/tart"
 	"github.com/stretchr/testify/require"
 )

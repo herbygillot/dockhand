@@ -1,10 +1,11 @@
 package macports
 
 import (
-	"github.com/herbygillot/dockhand/internal/model"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // The spellings use_xcode takes are PortInfo.Bool's, tested there; what is

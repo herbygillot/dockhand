@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/scratch"
 	"io"
 	"io/fs"
 	"os"
@@ -15,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/herbygillot/dockhand/internal/scratch"
 )
 
 var ErrBranchMissing = errors.New("git: local branch no longer exists")

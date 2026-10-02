@@ -3,8 +3,6 @@ package portedit
 import (
 	"context"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports/fidelity"
-	"github.com/herbygillot/dockhand/internal/model"
 	"maps"
 	"math/big"
 	"regexp"
@@ -14,8 +12,10 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
+	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 type carrier struct {

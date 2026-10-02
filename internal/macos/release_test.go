@@ -1,9 +1,10 @@
 package macos
 
 import (
-	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 func TestReleaseForDarwin(t *testing.T) {

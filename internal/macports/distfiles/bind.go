@@ -2,13 +2,14 @@ package distfiles
 
 import (
 	"fmt"
+	"net/url"
+	"slices"
+	"strings"
+
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/textedit"
-	"net/url"
-	"slices"
-	"strings"
 )
 
 type Token struct {

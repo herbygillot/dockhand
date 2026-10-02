@@ -1,12 +1,13 @@
 package fetchguard
 
 import (
-	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
 func TestGoToolchainCheckDoesNotAdmitOtherFetchBehavior(t *testing.T) {

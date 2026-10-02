@@ -1,10 +1,11 @@
 package macports
 
 import (
-	"github.com/herbygillot/dockhand/internal/model"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 func TestRebindReleaseScopePreservesMembershipAndPins(t *testing.T) {

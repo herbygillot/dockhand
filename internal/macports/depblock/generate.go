@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/subprocess"
 	"path/filepath"
 	"time"
+
+	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
 type Input struct {

@@ -1,9 +1,10 @@
 package distfiles
 
 import (
-	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/herbygillot/dockhand/internal/macports"
 )
 
 func TestManifestCandidatesUseNativeExtraction(t *testing.T) {

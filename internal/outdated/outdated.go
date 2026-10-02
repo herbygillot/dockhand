@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/progress"
 	"runtime"
 	"sync"
 	"time"
@@ -18,6 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/survey"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
 

@@ -1,10 +1,10 @@
 package portedit
 
 import (
-	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/stretchr/testify/require"
 )
 

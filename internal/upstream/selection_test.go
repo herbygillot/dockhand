@@ -1,11 +1,11 @@
 package upstream_test
 
 import (
-	"github.com/herbygillot/dockhand/internal/macports/portsource"
-	"github.com/herbygillot/dockhand/internal/macports/version"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/macports/portsource"
+	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/stretchr/testify/require"
 )

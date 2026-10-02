@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/herbygillot/dockhand/internal/subprocess"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
 type Repository struct {

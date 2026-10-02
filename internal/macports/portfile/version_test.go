@@ -1,10 +1,11 @@
 package portfile_test
 
 import (
-	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/stretchr/testify/require"
 	"strings"
 	"testing"
+
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 )
 
 func TestCandidatesPreserveSourceAndExcludeHooksAndData(t *testing.T) {

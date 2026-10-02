@@ -3,9 +3,10 @@ package tart
 import (
 	"context"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/subprocess"
 	"io"
 	"os"
+
+	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
 // Client runs commands against one Tart installation and home directory.

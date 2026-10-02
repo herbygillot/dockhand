@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/model"
 	"io/fs"
 	"strings"
+
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 var (

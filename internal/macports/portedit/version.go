@@ -3,15 +3,15 @@ package portedit
 import (
 	"context"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports/fidelity"
-	"github.com/herbygillot/dockhand/internal/scratch"
 	"os"
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
+	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/scratch"
 )
 
 type archivePlan struct {

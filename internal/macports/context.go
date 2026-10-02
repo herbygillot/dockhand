@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/model"
 	"maps"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // Projection is what a tree can materialize of itself on demand. A sparse

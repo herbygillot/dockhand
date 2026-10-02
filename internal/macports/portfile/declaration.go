@@ -2,12 +2,13 @@ package portfile
 
 import (
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/tcl/syntax"
-	"github.com/herbygillot/dockhand/internal/textedit"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/tcl/syntax"
+	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
 // LocateDeclaration requires a unique source command inside the observed Tcl

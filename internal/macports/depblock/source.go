@@ -3,9 +3,10 @@ package depblock
 import (
 	"context"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports"
 	"path"
 	"strings"
+
+	"github.com/herbygillot/dockhand/internal/macports"
 )
 
 // ConfirmSource checks archive contents before a generator is allowed to run.

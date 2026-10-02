@@ -5,8 +5,6 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports/fetchguard"
-	"github.com/herbygillot/dockhand/internal/model"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -16,6 +14,8 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/fetchguard"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/tcl/rpc"
 	"github.com/herbygillot/dockhand/internal/tcl/shell"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"

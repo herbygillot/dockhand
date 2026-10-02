@@ -4,13 +4,14 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/project"
-	"github.com/herbygillot/dockhand/internal/scratch"
 	"maps"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/herbygillot/dockhand/internal/project"
+	"github.com/herbygillot/dockhand/internal/scratch"
 )
 
 func generateCargo(ctx context.Context, executable string, in Input) (GeneratedBlocks, error) {

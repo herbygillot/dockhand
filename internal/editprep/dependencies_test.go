@@ -7,8 +7,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/git"
-	"github.com/herbygillot/dockhand/internal/model"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -18,7 +16,9 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/editprep"
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/depblock"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )

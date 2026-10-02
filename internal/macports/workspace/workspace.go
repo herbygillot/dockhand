@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/scratch"
 	"os"
 	"path"
 	"path/filepath"
@@ -15,6 +13,8 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/scratch"
 )
 
 // Scope is what a workspace holds: port directories as category/port, and

@@ -1,12 +1,13 @@
 package eval
 
 import (
-	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/portfile"
-	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/stretchr/testify/require"
 	"path/filepath"
 	"testing"
+
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 func TestObservationOwnsDeclarationsAndDoesNotLeakProfiles(t *testing.T) {

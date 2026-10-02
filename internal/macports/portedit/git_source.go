@@ -3,12 +3,12 @@ package portedit
 import (
 	"context"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"regexp"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )

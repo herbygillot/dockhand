@@ -3,12 +3,12 @@ package depblock
 import (
 	"context"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports"
 	"io"
 	"path"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/archive"
+	"github.com/herbygillot/dockhand/internal/macports"
 )
 
 const maxManifestBytes = 16 << 20

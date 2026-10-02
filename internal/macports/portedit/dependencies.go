@@ -3,8 +3,6 @@ package portedit
 import (
 	"context"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports/fidelity"
-	"github.com/herbygillot/dockhand/internal/scratch"
 	"maps"
 	"os"
 	"path/filepath"
@@ -14,8 +12,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/depblock"
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
+	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 

@@ -2,10 +2,11 @@ package macos
 
 import (
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/model"
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 type Release struct {

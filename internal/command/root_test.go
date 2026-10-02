@@ -2,11 +2,12 @@ package command
 
 import (
 	"bytes"
-	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/buildinfo"
 )
 
 // Outside a ports checkout, dockhand alone says how to begin.

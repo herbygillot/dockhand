@@ -3,11 +3,11 @@ package upstream
 import (
 	"errors"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports/version"
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
+	"github.com/herbygillot/dockhand/internal/macports/version"
 )
 
 var (

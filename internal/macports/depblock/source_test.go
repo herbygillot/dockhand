@@ -1,10 +1,11 @@
 package depblock
 
 import (
-	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/stretchr/testify/require"
 	"strings"
 	"testing"
+
+	"github.com/herbygillot/dockhand/internal/macports"
 )
 
 func TestManifestOwnershipHonorsExtractionDirectory(t *testing.T) {

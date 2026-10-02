@@ -1,12 +1,12 @@
 package github_test
 
 import (
-	"github.com/herbygillot/dockhand/internal/forge"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/github"
 	githubapi "github.com/herbygillot/dockhand/internal/github"
 	"github.com/stretchr/testify/require"

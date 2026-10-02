@@ -4,14 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports/version"
-	"github.com/herbygillot/dockhand/internal/model"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
+	"github.com/herbygillot/dockhand/internal/macports/version"
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 var ErrSourceChanged = errors.New("upstream: selected tag now identifies different source")

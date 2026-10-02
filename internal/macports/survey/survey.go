@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports/workspace"
-	"github.com/herbygillot/dockhand/internal/model"
 	"path"
 	"strings"
 
@@ -13,6 +11,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	portselection "github.com/herbygillot/dockhand/internal/macports/selection"
+	"github.com/herbygillot/dockhand/internal/macports/workspace"
+	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
 )
 

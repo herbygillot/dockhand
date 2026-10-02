@@ -3,13 +3,14 @@ package installation
 import (
 	"context"
 	"errors"
-	"github.com/herbygillot/dockhand/internal/model"
 	"io"
 	"os/exec"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 func TestInspectReportsFactsWithoutEnforcingImagePolicy(t *testing.T) {

@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/scratch"
 	"io"
 	"os"
 	"os/exec"
@@ -21,6 +20,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/archive"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/subprocess"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )

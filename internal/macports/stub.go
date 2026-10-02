@@ -2,10 +2,11 @@ package macports
 
 import (
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/model"
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 // ResolveStub resolves a bump's selection once, for binding and editing

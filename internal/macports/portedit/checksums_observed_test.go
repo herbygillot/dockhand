@@ -1,7 +1,6 @@
 package portedit
 
 import (
-	"github.com/herbygillot/dockhand/internal/model"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -9,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/model"
 )
 
 func TestRefreshChecksumsCoversPerArchitectureArchives(t *testing.T) {

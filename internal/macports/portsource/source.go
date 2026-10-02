@@ -4,13 +4,13 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/forge"
-	"github.com/herbygillot/dockhand/internal/macports/version"
 	"net/url"
 	"strings"
 	"unicode"
 
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 

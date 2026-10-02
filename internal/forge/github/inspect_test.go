@@ -3,13 +3,13 @@ package github_test
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/forge"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/github"
 	githubapi "github.com/herbygillot/dockhand/internal/github"
 	"github.com/stretchr/testify/assert"

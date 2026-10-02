@@ -2,12 +2,13 @@ package observe
 
 import (
 	"fmt"
+	"slices"
+	"strconv"
+
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
-	"slices"
-	"strconv"
 )
 
 // archRead names the variables whose value is the build architecture.
