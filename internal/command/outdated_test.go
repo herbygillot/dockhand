@@ -245,12 +245,13 @@ func TestAReportPrintsAroundTheCount(t *testing.T) {
 // its version: termusic's dropped pin and its archive not compared went
 // unsaid (field testing's ninth report, 2026-10-02).
 func TestABatchSaysWhatASingleUpdateWould(t *testing.T) {
-	update := engine.Update{Port: "termusic", CrossesMajor: true,
+	update := engine.Update{Port: "termusic", CrossesMajor: true, PatchesDropped: []string{"fix.diff"},
 		Regenerated: []editprep.Regenerated{{Option: "cargo.crates", Dropped: []editprep.Override{{Name: "soundtouch", Pinned: "0.4.1", Was: "0.4.0", Locked: "0.5.4"}}}},
 		Upstream:    &model.UpstreamComparison{Problem: "termusic-0.9.1.tar.gz couldn't be fetched from upstream or MacPorts' mirror"}}
 	require.Equal(t, []string{
 		"A new major version: what depends on termusic may need to follow.",
 		"The Portfile pinned soundtouch 0.4.1 over the lock's 0.4.0; the new lock has 0.5.4, so the pin is dropped.",
+		"Dropped patch fix.diff, which the new source already holds; its file goes too.",
 		"! Upstream archives not compared: termusic-0.9.1.tar.gz couldn't be fetched from upstream or MacPorts' mirror",
 	}, batchNotes(update))
 	require.Empty(t, batchNotes(engine.Update{Port: "jq"}))

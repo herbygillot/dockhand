@@ -108,6 +108,9 @@ type Result struct {
 	// Patches reports whether each declared patch file still applies to the
 	// candidate source; a rejected patch is a finding, not a refusal.
 	Patches []patchcheck.Result `json:",omitempty"`
+	// Dropped are the patches the update took out, with their files,
+	// since the new source already holds them.
+	Dropped []string `json:",omitempty"`
 	// GoToolchain is what a module-mode port's go.mod requires, and what
 	// the update did about the Portfile's go.toolchain_min; nil where no
 	// go.mod was read.

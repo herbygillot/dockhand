@@ -390,6 +390,9 @@ func batchNotes(update engine.Update) []string {
 			notes = append(notes, "Notice: "+notice)
 		}
 	}
+	for _, dropped := range update.PatchesDropped {
+		notes = append(notes, "Dropped patch "+dropped+", which the new source already holds; its file goes too.")
+	}
 	switch comparison := update.Upstream; {
 	case comparison == nil:
 	case comparison.Problem != "":

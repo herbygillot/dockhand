@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -86,6 +87,11 @@ func (r Result) PatchesApplied() int {
 func (r Result) PatchProblems() []string {
 	var problems []string
 	for _, patch := range patchcheck.Rejected(r.Patches) {
+		// A patch the update dropped, since the source holds it, is no
+		// problem.
+		if slices.Contains(r.Dropped, patch.Name) {
+			continue
+		}
 		problems = append(problems, patch.Name+": "+patch.Detail)
 	}
 	return problems
@@ -214,6 +220,10 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 		before, _, err := s.Repo.File(ctx, string(request.Source.Tree), edit.Path)
 		if err != nil {
 			return result, err
+		}
+		if edit.Delete {
+			result.Files = append(result.Files, git.FileEdit{Path: edit.Path, Before: before, Delete: true})
+			continue
 		}
 		result.Files = append(result.Files, git.FileEdit{Path: edit.Path, Before: before, After: edit.After, Mode: before.Mode})
 	}

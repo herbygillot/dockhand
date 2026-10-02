@@ -42,6 +42,9 @@ type updateJSON struct {
 	Distfiles int      `json:"distfiles"`
 	Subject   string   `json:"subject"`
 	Patches   []string `json:"patch_problems"`
+	// PatchesDropped are the patches the update took out, with their
+	// files, since the new source already holds them.
+	PatchesDropped []string `json:"patches_dropped,omitempty"`
 	// PatchesApplied counts the port's patches checked that apply.
 	PatchesApplied int `json:"patches_applied"`
 	// Unchecked are the patches no check reached before the build, which
@@ -179,7 +182,7 @@ type otherJSON struct {
 func updateView(branch model.Branch, started bool, update engine.Update, plan bool) updateJSON {
 	view := updateJSON{Branch: branchRef(branch), Started: started, Port: update.Port, CrossesMajor: update.CrossesMajor, Renamed: update.Renamed,
 		Before: versionJSON{update.Before.Version, update.Before.Revision}, After: versionJSON{update.After.Version, update.After.Revision},
-		Current: update.Current, Applied: update.Applied, Files: nonNil(update.Files), Distfiles: update.Distfiles, Subject: update.Subject, Patches: nonNil(update.PatchProblems), PatchesApplied: update.PatchesApplied,
+		Current: update.Current, Applied: update.Applied, Files: nonNil(update.Files), Distfiles: update.Distfiles, Subject: update.Subject, Patches: nonNil(update.PatchProblems), PatchesDropped: update.PatchesDropped, PatchesApplied: update.PatchesApplied,
 		Unchecked: nonNil(update.PatchesUnchecked)}
 	if plan {
 		view.Diff = update.Diff

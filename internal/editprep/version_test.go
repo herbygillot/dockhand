@@ -437,3 +437,26 @@ func TestAReleaseFoundAlreadyIsCheckedNotFoundAgain(t *testing.T) {
 	_, err = service.ResolveRelease(t.Context(), request)
 	require.ErrorIs(t, err, editprep.ErrFidelity, "a release the Portfile can't name is refused, found now or before")
 }
+
+// A patch the new release already holds is dropped, with its file: the
+// Portfile's patchfiles loses it, files/ loses the patch, and the result
+// says so rather than calling it a patch that no longer applies (the
+// roadmap's item 7, files preparation deletes).
+func TestAnUpdateDropsAPatchTheReleaseAlreadyHolds(t *testing.T) {
+	t.Parallel()
+	release := manifestArchive(t, "README", "fixed\n", "2.0")
+	service, request := versionFixture(t, "setup", "patchfiles fix.diff\n", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(release) })
+	tree, err := service.Repo.EditTree(t.Context(), string(request.Source.Tree), []git.FileEdit{{Path: "devel/fixture/files/fix.diff", After: []byte("--- README\n+++ README\n@@ -1 +1 @@\n-broken\n+fixed\n"), Mode: 0o100644}})
+	require.NoError(t, err)
+	request.Source = model.Source{Tree: model.ObjectID(tree)}
+	result, err := service.Prepare(t.Context(), request)
+	require.NoError(t, err)
+	require.Equal(t, []string{"fix.diff"}, result.Dropped)
+	require.Empty(t, result.PatchProblems(), "a patch dropped is no problem")
+	require.Len(t, result.Files, 2)
+	require.NotContains(t, string(result.Files[0].After), "patchfiles")
+	require.Equal(t, git.FileEdit{Path: "devel/fixture/files/fix.diff", Before: result.Files[1].Before, Delete: true}, result.Files[1])
+	gone, _, err := service.Repo.File(t.Context(), string(result.PreparedTree), "devel/fixture/files/fix.diff")
+	require.NoError(t, err)
+	require.False(t, gone.Exists, "the patch's file goes with it")
+}

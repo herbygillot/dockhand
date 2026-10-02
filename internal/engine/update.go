@@ -161,6 +161,9 @@ type Update struct {
 	PatchProblems    []string
 	PatchesUnchecked []string
 	PatchesApplied   int
+	// PatchesDropped are the patches the update took out, with their
+	// files, since the new source already holds them.
+	PatchesDropped []string
 	// Current is true when there was nothing to change.
 	Current bool
 	// Started is true when the update started its branch
@@ -577,7 +580,7 @@ func changedSinceBase(ctx context.Context, worktree *git.Repository, captured st
 // describe reads what the preparation found.
 func describe(branch model.Branch, selector string, result editprep.Result) Update {
 	update := Update{Branch: branch, Port: result.Target.Name, Release: result.Release, PatchProblems: result.PatchProblems(), PatchesUnchecked: result.UncheckedPatches(), PatchesApplied: result.PatchesApplied(),
-		Distfiles: len(result.Downloads), Regenerated: result.Regenerated}
+		Distfiles: len(result.Downloads), Regenerated: result.Regenerated, PatchesDropped: result.Dropped}
 	if update.Port == "" {
 		update.Port = selector
 	}

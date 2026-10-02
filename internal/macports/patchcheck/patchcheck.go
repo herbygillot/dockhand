@@ -52,7 +52,11 @@ type Result struct {
 	Name    string
 	Checked bool
 	Applies bool
-	Detail  string
+	// Merged is a patch that doesn't apply because the source already
+	// holds it: it applies in reverse, whole, as upstream merging it
+	// leaves it.
+	Merged bool
+	Detail string
 }
 
 // Port checks a port's patches against archives as MacPorts would apply
@@ -193,6 +197,15 @@ func Check(ctx context.Context, request Request) ([]Result, error) {
 			return nil, err
 		}
 		results[i].Detail = describe(output.Output)
+		// One the source already holds applies in reverse, every hunk:
+		// upstream merged it, and the port can drop it.
+		reverse := append([]string{flag, "-t", "-R", "-p" + strconv.Itoa(strip)}, extra...)
+		if _, err := subprocess.Run(ctx, subprocess.Spec{Tool: "patch", Path: command, Args: reverse, Dir: dir, Stdin: bytes.NewReader(contents[i]), Combined: true, Limit: 1 << 20, Drain: true}); err == nil {
+			results[i].Merged = true
+			results[i].Detail = "is already in the source: it applies in reverse"
+		} else if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 	}
 	return results, nil
 }

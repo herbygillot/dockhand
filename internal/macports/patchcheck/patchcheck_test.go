@@ -150,3 +150,17 @@ func TestUnreadableArchiveLeavesPatchesUnchecked(t *testing.T) {
 	require.Contains(t, results[0].Detail, "source archive not readable")
 	require.Empty(t, Rejected(results))
 }
+
+// A patch the source already holds, as upstream merging it leaves it,
+// applies in reverse, and is said to be merged; one that fails both ways
+// isn't (the roadmap's item 7, files preparation deletes).
+func TestAPatchTheSourceAlreadyHoldsIsMerged(t *testing.T) {
+	archive := sourceArchive(t, map[string]string{"project-2.0/dir/a.txt": "one\nTWO\nthree\n"})
+	results, err := Check(t.Context(), Request{Archives: []string{archive}, Worksrcdir: "project-2.0", PreArgs: []string{"-p0"}, Patches: []Patch{
+		{Name: "merged.diff", Data: []byte(good)}, {Name: "stale.diff", Data: []byte(stale)},
+	}})
+	require.NoError(t, err)
+	require.Equal(t, Result{Name: "merged.diff", Checked: true, Merged: true, Detail: "is already in the source: it applies in reverse"}, results[0])
+	require.False(t, results[1].Merged)
+	require.False(t, results[1].Applies)
+}

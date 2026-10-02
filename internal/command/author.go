@@ -884,6 +884,9 @@ func writePatches(out io.Writer, update engine.Update) {
 	for _, problem := range update.PatchProblems {
 		fmt.Fprintf(out, "! patch %s\n", problem)
 	}
+	for _, dropped := range update.PatchesDropped {
+		fmt.Fprintf(out, "Dropped patch %s, which the new source already holds; its file goes too.\n", dropped)
+	}
 	for _, unchecked := range update.PatchesUnchecked {
 		fmt.Fprintf(out, "· patch %s\n", unchecked)
 	}
