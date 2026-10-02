@@ -173,10 +173,10 @@ Chaining steps has costs, and they set the boundaries:
 - **Saying where it stopped.** When a chained command stops partway, the message names the step, what was kept, and the one command that continues, which is usually the same command again (§4). Design §12 already asks errors for this. Chaining makes it matter more.
 - **Keeping the model learnable.** People who never run `tidy` might not learn that dockhand rewrites commits. The plan line above names each step, so the model is still in front of them every time, and the separate commands remain for doing a step alone.
 
-### Decided, and recommended
+### Decided
 
 - **A script's `submit` never starts a check without `--check`** (Herby, 2026-10-02).
-- **`rebase` carries uncommitted edits** (recommended, awaiting Herby's word).
+- **`rebase` carries uncommitted edits** (Herby, 2026-10-02).
   - Dockhand's own workflow leaves work uncommitted. `update`, `checksums`, and `create` write working files, and `check` builds them, so a branch that is all uncommitted edits is the normal state, not a careless one. Today's advice, to commit with `tidy` first, forces commits mid-work that tidy's follow-up rule then has to fold back together.
   - It's safe if it's atomic. Capture the working files and the index as a snapshot first, as `check` already captures them. Then replay the commits and reapply the edits on top. If any edit doesn't reapply cleanly, put the branch, files, and index back exactly as they were, as a conflicting rebase does now, and name the file. Usually master changed that port, and the message should say so.
   - Git has the same behaviour as `rebase --autostash`, so it's familiar.
