@@ -362,7 +362,7 @@ add_library(flb a.c)
 		testsupport.Tarball(t, "fluent-bit-5.1.2", map[string]string{"CMakeLists.txt": before}),
 		testsupport.Tarball(t, "fluent-bit-5.1.3", map[string]string{"CMakeLists.txt": strings.Replace(comments, "PATCH 2", "PATCH 3", 1) + "\n\n"}), versions)
 	require.Len(t, changes, 1)
-	require.Equal(t, "upstream's CMakeLists.txt changes only comments and blank lines, which the build doesn't read", changes[0].Message)
+	require.Equal(t, "upstream's CMakeLists.txt changes only comments and layout, which the build doesn't read", changes[0].Message)
 }
 
 // A Cargo manifest's dependencies are compared as a macOS build has them,
@@ -391,4 +391,62 @@ func TestACargoManifestIsComparedAsMacOSBuildsIt(t *testing.T) {
 	require.Equal(t, []string{"upstream: Cargo.toml adds libc 0.2"},
 		compare(cargo("1.0.200", ""), cargo("1.0.200", "\n[target.'cfg(unix)'.dependencies]\nlibc = \"0.2\"\n")))
 	require.Empty(t, compare(cargo("1.0.200", ""), strings.Replace(cargo("1.0.200", ""), "fast = {", "quick = {", 1)), "the same crate, renamed otherwise")
+}
+
+// A block has one identity whether it's judged unreached or named where a
+// change is: a multiline if() over an option off by default reads as
+// under it, where the comparison's own line reader said "outside any
+// if()", and an elseif() and an else() read as the document has them (the
+// architecture review's finding 3, its probe turned).
+func TestAChangesPlaceIsTheBlockTheDocumentReads(t *testing.T) {
+	read := func(text string) project.Reading {
+		return project.Reading{Layout: project.Enclosed, Files: map[string]project.File{"CMakeLists.txt": {Data: []byte(text)}}}
+	}
+	compare := func(before, after string) []Change {
+		t.Helper()
+		return Compare(read(before), read(after), Versions{}, nil)
+	}
+	multiline := func(word string) string {
+		return "option(DEMO \"demo\" OFF)\nif(\n  DEMO\n)\n  message(STATUS \"" + word + "\")\nendif()\n"
+	}
+	changes := compare(multiline("old"), multiline("new"))
+	require.Len(t, changes, 1)
+	require.Equal(t, "options", changes[0].How)
+	require.Equal(t, "upstream's CMakeLists.txt changes only what the default build doesn't reach, under if(DEMO): neither it nor the Portfile turns DEMO on", changes[0].Message)
+
+	branches := func(word string) string {
+		return "option(DEMO \"demo\" OFF)\nif(WIN32)\n  a()\nelseif(\n  APPLE\n)\n  b(" + word + ")\nelse()\n  c()\nendif()\n"
+	}
+	changes = compare(branches("old"), branches("new"))
+	require.Len(t, changes, 1)
+	require.Equal(t, "upstream's CMakeLists.txt changed, though no option or find_package did; lines change under if(APPLE)", changes[0].Message)
+	elsewise := strings.Replace(branches("old"), "c()", "c(new)", 1)
+	require.Equal(t, "upstream's CMakeLists.txt changed, though no option or find_package did; lines change under if(NOT (APPLE))", compare(branches("old"), elsewise)[0].Message)
+}
+
+// A CMakeLists.txt is compared with the files it include()s, as one: a
+// default flipped in cmake/plugins_options.cmake is said and holds, where
+// the root alone was read and it went unseen, a change there is placed in
+// it, and an option the root declares off that an included file sets is
+// no longer taken as off (fluent-bit 5.1.3, the dogfood run with
+// 58e2d7eb; D12's bound closed).
+func TestACMakeListsIsComparedWithWhatItIncludes(t *testing.T) {
+	root := "include(cmake/plugins_options.cmake)\noption(FLB_DEMO \"demo\" OFF)\nif(FLB_DEMO)\n  find_package(Demo)\nendif()\n"
+	compare := func(before, after string) []Change {
+		t.Helper()
+		changes, err := compareArchives(t, testsupport.Tarball(t, "fluent-bit-5.1.2", map[string]string{"CMakeLists.txt": root, "cmake/plugins_options.cmake": before}),
+			testsupport.Tarball(t, "fluent-bit-5.1.3", map[string]string{"CMakeLists.txt": root, "cmake/plugins_options.cmake": after}), Versions{})
+		require.NoError(t, err)
+		return changes
+	}
+	flipped := compare("option(FLB_KAFKA \"kafka\" OFF)\n", "option(FLB_KAFKA \"kafka\" ON)\n")
+	require.Len(t, flipped, 1)
+	require.Equal(t, "upstream's CMakeLists.txt changed: option FLB_KAFKA's default moves from OFF to ON", flipped[0].Message)
+
+	placed := compare("option(FLB_KAFKA \"kafka\" OFF)\nset(X 1)\n", "option(FLB_KAFKA \"kafka\" OFF)\nset(X 2)\n")
+	require.Equal(t, "upstream's CMakeLists.txt changed, though no option or find_package did; lines change outside any if() in cmake/plugins_options.cmake", placed[0].Message)
+
+	set := compare("set(Y 1)\n", "set(Y 1)\nset(FLB_DEMO ON)\n")
+	require.Equal(t, "upstream's CMakeLists.txt changed, though no option or find_package did; lines change outside any if() in cmake/plugins_options.cmake, under if(FLB_DEMO)", set[0].Message,
+		"FLB_DEMO, set in a file included, is no longer off, and what it gates is reached")
 }

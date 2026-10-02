@@ -16,8 +16,8 @@ import (
 // ReaderVersion is the version of what a reading reads and how: raising it
 // keeps a reading made before from standing for one made now. 2: a Node
 // project's workspaces' package.json files. 3: a Cargo workspace's
-// members' Cargo.toml files.
-const ReaderVersion = 3
+// members' Cargo.toml files. 4: the files a CMakeLists.txt include()s.
+const ReaderVersion = 4
 
 // Cache keeps readings on disk by what they read: an archive's content, by
 // its sha256, and where in it the project is, with the reader's version

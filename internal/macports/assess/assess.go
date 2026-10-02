@@ -61,8 +61,11 @@ import (
 // a removed archive was dropped and two LICENSE changes were one; a
 // license file classified by its text, which a line that follows it
 // answers; and a Cargo workspace read by the Cargo Book, its members'
-// dependencies counted together (batch 33).
-const Policy = 15
+// dependencies counted together (batch 33). 16: a CMakeLists.txt read as
+// one document with the files it include()s, an option they set no longer
+// taken as off, and a change placed in the block the document reads
+// (batch 34).
+const Policy = 16
 
 // Input is what one port's assessment reads.
 type Input struct {

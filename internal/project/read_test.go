@@ -204,6 +204,18 @@ func TestANodeProjectsWorkspacesAreReadWithIt(t *testing.T) {
 	require.Equal(t, "MIT", manifest.License)
 }
 
+// The files a CMakeLists.txt include()s are read with it, from the
+// archive's first pass, and no other .cmake file is.
+func TestACMakeListsIncludesAreReadWithIt(t *testing.T) {
+	files := map[string]string{
+		"fluent-bit-5.1.3/CMakeLists.txt":              "include(cmake/plugins_options.cmake)\n",
+		"fluent-bit-5.1.3/cmake/plugins_options.cmake": "option(FLB_KAFKA \"kafka\" ON)\n",
+		"fluent-bit-5.1.3/cmake/unused.cmake":          "option(FLB_UNUSED \"no\" ON)\n",
+		"fluent-bit-5.1.3/lib/x/CMakeLists.txt":        "include(y.cmake)\n",
+	}
+	require.Equal(t, []string{"CMakeLists.txt", "cmake/plugins_options.cmake"}, names(read(t, files, Spec{})))
+}
+
 // A Cargo workspace's members' manifests are read with its root's, by its
 // members globs less what it excludes, and a virtual workspace's license
 // is the one its members inherit, as uv's crates do.

@@ -46,9 +46,14 @@ var systems = map[string]System{
 	"go.mod": Go, "Cargo.toml": Cargo, CargoLock: Cargo, "package.json": Node,
 }
 
-// SystemOf is the build system a file belongs to, by its name; empty for
-// one that belongs to none, such as a license file.
+// SystemOf is the build system a file belongs to, by its name, a .cmake
+// file CMake's; empty for one that belongs to none, such as a license
+// file.
 func SystemOf(name string) System {
+	if strings.HasSuffix(name, ".cmake") {
+		// A file a CMakeLists.txt include()s.
+		return CMake
+	}
 	return systems[path.Base(name)]
 }
 

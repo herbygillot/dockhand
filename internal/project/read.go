@@ -3,6 +3,7 @@ package project
 import (
 	"context"
 	"io"
+	"maps"
 	"path"
 	"slices"
 	"strings"
@@ -114,6 +115,9 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 	// a member: kept in this pass, since a second walk of rust's source,
 	// gigabytes, is minutes.
 	manifests := map[string]File{}
+	// modules are every .cmake file, which a CMakeLists.txt may include():
+	// kept in this pass too.
+	modules := map[string]File{}
 	tops := map[string]bool{}
 	flat := false
 	has := map[string]bool{}
@@ -136,10 +140,14 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 		}
 		keep := candidates
 		if !wanted(name, subdirectory) && !wanted(name, "") && (!nested || !wanted(rest, subdirectory) && !wanted(rest, "")) {
-			if path.Base(name) != "Cargo.toml" {
+			switch {
+			case path.Base(name) == "Cargo.toml":
+				keep = manifests
+			case strings.HasSuffix(name, ".cmake"):
+				keep = modules
+			default:
 				return nil
 			}
-			keep = manifests
 		}
 		data, err := io.ReadAll(io.LimitReader(member.Body, FileLimit+1))
 		if err != nil {
@@ -192,7 +200,38 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 		}
 	}
 	found.cargoMembers(manifests)
+	found.cmakeIncludes(modules)
 	return found, found.readWorkspaces(ctx, filename)
+}
+
+// cmakeIncludes keeps each file a CMakeLists.txt the reading has
+// include()s, as CMakeDocument finds it, from modules, every .cmake file
+// the archive holds by its whole path: fluent-bit keeps its plugins'
+// options in cmake/plugins_options.cmake, which reading the root alone
+// didn't see (the dogfood run with 58e2d7eb).
+func (r *Reading) cmakeIncludes(modules map[string]File) {
+	below := map[string]File{}
+	for name, file := range modules {
+		rest, ok := name, true
+		if r.Top != "" {
+			rest, ok = strings.CutPrefix(name, r.Top+"/")
+		}
+		if ok {
+			below[rest] = file
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(r.Files)) {
+		if path.Base(name) != "CMakeLists.txt" {
+			continue
+		}
+		document := parseCMake(string(r.Files[name].Data), path.Dir(name), func(include string) (string, bool) {
+			file, ok := below[include]
+			return string(file.Data), ok && !file.Truncated
+		})
+		for _, include := range document.Included() {
+			r.Files[include] = below[include]
+		}
+	}
 }
 
 // cargoMembers keeps the Cargo.toml of each member a Cargo workspace's
