@@ -17,6 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -162,7 +163,7 @@ func (s *server) lead(ctx context.Context, session *coord.Session) (*model.Lease
 // once, as Tart builds two releases in the Mac's two VMs, which "1 at a
 // time" hid (the sshuttle run).
 func capacityWords(name string, provider buildenv.Provider, checks int) string {
-	words := fmt.Sprintf("%s (%s at a time", name, plural(checks, "check"))
+	words := fmt.Sprintf("%s (%s at a time", name, prose.Plural(checks, "check"))
 	if parallel, ok := provider.(buildenv.ParallelProvider); ok && parallel.Parallel() > 1 {
 		words += fmt.Sprintf(", each building up to %d of its environments at once", parallel.Parallel())
 	}
@@ -442,7 +443,7 @@ func (c *cleaner) maybe(ctx context.Context) {
 		}
 	}
 	if len(report.Indexes) > 0 {
-		c.s.say("serve: removed %s unused for %s", plural(len(report.Indexes), "port index generation"), c.s.options.CleanupAge)
+		c.s.say("serve: removed %s unused for %s", prose.Plural(len(report.Indexes), "port index generation"), c.s.options.CleanupAge)
 	}
 }
 
@@ -477,9 +478,9 @@ func uncertainWords(last OutdatedLook, look OutdatedLook) string {
 	case len(fresh) == 0 && already == 0:
 		return ""
 	case len(fresh) == 0:
-		return fmt.Sprintf("serve: %s of yours may still have newer releases, as before (dockhand status lists them)", plural(already, "port"))
+		return fmt.Sprintf("serve: %s of yours may still have newer releases, as before (dockhand status lists them)", prose.Plural(already, "port"))
 	}
-	line := fmt.Sprintf("serve: %s of yours may have newer releases, for your look: %s (dockhand outdated %s says why)", plural(len(fresh), "port"), strings.Join(fresh, ", "), strings.Join(fresh, " "))
+	line := fmt.Sprintf("serve: %s of yours may have newer releases, for your look: %s (dockhand outdated %s says why)", prose.Plural(len(fresh), "port"), strings.Join(fresh, ", "), strings.Join(fresh, " "))
 	if already > 0 {
 		line += fmt.Sprintf("; %d more as before", already)
 	}
@@ -566,7 +567,7 @@ func (o *outdatedScanner) maybe(ctx context.Context) {
 	if len(names) == 0 {
 		o.s.say("serve: none of your ports has a newer release")
 	} else {
-		o.s.say("serve: %s of yours %s newer releases: %s", plural(len(names), "port"), map[bool]string{true: "has", false: "have"}[len(names) == 1], strings.Join(names, ", "))
+		o.s.say("serve: %s of yours %s newer releases: %s", prose.Plural(len(names), "port"), map[bool]string{true: "has", false: "have"}[len(names) == 1], strings.Join(names, ", "))
 	}
 	// A port whose newest release is uncertain is neither current nor an
 	// update serve prepares: it is listed for a person, who names the
@@ -649,7 +650,7 @@ func (p *passingSubmitter) maybe(ctx context.Context) {
 			return
 		}
 		if opened >= p.s.options.SubmitLimit {
-			p.s.say("serve: %s waits for tomorrow; today's limit of %s is reached (serve.submit_limit)", name, plural(p.s.options.SubmitLimit, "pull request"))
+			p.s.say("serve: %s waits for tomorrow; today's limit of %s is reached (serve.submit_limit)", name, prose.Plural(p.s.options.SubmitLimit, "pull request"))
 			return
 		}
 		submitted, err := e.SubmitForServe(ctx, candidate)

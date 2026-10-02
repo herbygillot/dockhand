@@ -14,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 )
 
 // testPreparer, when set, stands in for MacPorts in every engine a
@@ -442,7 +443,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		what = "Updated version"
 	}
 	if update.Distfiles > 0 {
-		what += fmt.Sprintf(" (%s)", plural(update.Distfiles, "distfile"))
+		what += fmt.Sprintf(" (%s)", prose.Plural(update.Distfiles, "distfile"))
 	}
 	// What the dependency blocks hold, which the diff shows line by line:
 	// hk's said "1 distfile" of 280 lines of crates (the gh, usql, hk, and
@@ -457,7 +458,7 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		if entry == "" {
 			entry = block.Option + " entry"
 		}
-		what += fmt.Sprintf(" and %s (%d changed)", plural(block.Count, entry), block.Changed)
+		what += fmt.Sprintf(" and %s (%d changed)", prose.Plural(block.Count, entry), block.Changed)
 	}
 	if update.Before.Revision != 0 && update.After.Revision == 0 {
 		what += "; revision reset to 0"
@@ -678,7 +679,7 @@ func revbumpLinked(ctx context.Context, e *engine.Engine, out io.Writer, branch 
 	if plan || len(done.Bump) == 0 {
 		return nonNil(names), nil
 	}
-	fmt.Fprintf(out, "Revision bumped %s; subject \"<port>: %s\" recorded for tidy.\n", plural(len(done.Bumped), "port"), done.Subject)
+	fmt.Fprintf(out, "Revision bumped %s; subject \"<port>: %s\" recorded for tidy.\n", prose.Plural(len(done.Bumped), "port"), done.Subject)
 	return names, nil
 }
 

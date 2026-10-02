@@ -50,7 +50,7 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 
 | Limit | Value | When it's hit | Where | |
 | --- | --- | --- | --- | --- |
-| Archive walk (tar, any compression) | 4 GiB uncompressed, all read through | "exceeds scan limit: it holds more than the 4 GiB dockhand reads of one, uncompressed"; holds | `archive/archive.go` |  |
+| Archive walk (tar, any compression) | 4 GiB uncompressed, all read through | "exceeds scan limit: it holds more than the 4.3 GB dockhand reads of one, uncompressed" (4 GiB, said in SI); holds | `archive/archive.go` |  |
 | Zip archives | 4 GiB of what's read | as a tar archive's; a member not read costs nothing | `archive/archive.go` (zip branch) |  |
 | diff --archive extraction to disk | 4 GiB per archive, the walk's bound | writes both archives whole, up to it | `engine/archivediff.go:143` |  |
 | A file the comparison reads (license, build file, manifest, Cargo.lock, package.json) | 1 MiB each | kept truncated; "larger than the 1024 KiB the comparison reads"; holds, but for go.mod, Cargo.toml, Cargo.lock, package.json | `project/read.go:71` | in usage.md |

@@ -16,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -689,7 +690,7 @@ func (e *Engine) Cleanup(ctx context.Context, session *coord.Session, after time
 	if len(report.Indexes) > 0 {
 		err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 			_, err := tx.AppendEvent(model.Event{At: e.now(), Kind: "cleanup", Level: model.LevelInfo,
-				Message: fmt.Sprintf("removed %s unused for %s", plural(len(report.Indexes), "port index generation"), after)})
+				Message: fmt.Sprintf("removed %s unused for %s", prose.Plural(len(report.Indexes), "port index generation"), after)})
 			return err
 		})
 		if err != nil {
@@ -712,7 +713,7 @@ func (e *Engine) Cleanup(ctx context.Context, session *coord.Session, after time
 	if len(report.Caches) > 0 {
 		err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 			_, err := tx.AppendEvent(model.Event{At: e.now(), Kind: "cleanup", Level: model.LevelInfo,
-				Message: fmt.Sprintf("removed %s unused for %s: %s", plural(len(report.Caches), "cached image"), CacheUnused, strings.Join(report.Caches, ", "))})
+				Message: fmt.Sprintf("removed %s unused for %s: %s", prose.Plural(len(report.Caches), "cached image"), CacheUnused, strings.Join(report.Caches, ", "))})
 			return err
 		})
 		if err != nil {
@@ -767,8 +768,8 @@ func (e *Engine) Cleanup(ctx context.Context, session *coord.Session, after time
 	if len(removedArchives) > 0 {
 		err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 			_, err := tx.AppendEvent(model.Event{At: e.now(), Kind: "cleanup", Level: model.LevelInfo,
-				Message: fmt.Sprintf("removed %s, %s, that neither reuse nor an open branch's newest results name; %s kept, %s", plural(len(removedArchives), "kept archive"), archiveBytes(removedArchives),
-					plural(len(keptArchives), "archive"), archiveBytes(keptArchives))})
+				Message: fmt.Sprintf("removed %s, %s, that neither reuse nor an open branch's newest results name; %s kept, %s", prose.Plural(len(removedArchives), "kept archive"), archiveBytes(removedArchives),
+					prose.Plural(len(keptArchives), "archive"), archiveBytes(keptArchives))})
 			return err
 		})
 		if err != nil {
@@ -793,7 +794,7 @@ func (e *Engine) Cleanup(ctx context.Context, session *coord.Session, after time
 			return err
 		}
 		_, err = tx.AppendEvent(model.Event{At: e.now(), Kind: "cleanup", Level: model.LevelVerbose,
-			Message: fmt.Sprintf("pruned %s and %s older than %s from the journal", plural(report.Events, "event"), plural(report.Sessions, "session"), after)})
+			Message: fmt.Sprintf("pruned %s and %s older than %s from the journal", prose.Plural(report.Events, "event"), prose.Plural(report.Sessions, "session"), after)})
 		return err
 	})
 	return report, err
@@ -846,7 +847,7 @@ func (e *Engine) CleanupDue(every time.Duration, minFree uint64) (bool, CleanupR
 	}
 	for _, place := range places {
 		if free, ok := freeSpace(place); ok && free < minFree {
-			return true, CleanupReason{LowSpace: true, Words: fmt.Sprintf("only %s free where %s is, under %s", gigabytes(free), place, gigabytes(minFree))}
+			return true, CleanupReason{LowSpace: true, Words: fmt.Sprintf("only %s free where %s is, under %s", prose.Bytes(int64(free)), place, prose.Bytes(int64(minFree)))}
 		}
 	}
 	return false, CleanupReason{}
@@ -861,5 +862,3 @@ const LowSpacePause = time.Hour
 func (e *Engine) StampCleanup() error {
 	return e.stampServeFile("cleanup.stamp", e.now())
 }
-
-func gigabytes(n uint64) string { return fmt.Sprintf("%.0f GB", float64(n)/(1<<30)) }

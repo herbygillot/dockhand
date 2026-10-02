@@ -99,13 +99,12 @@ func TestAWalkPastTheLimitSaysSo(t *testing.T) {
 	require.NoError(t, zw.Close())
 	zipfile := filepath.Join(t.TempDir(), "source-456")
 	require.NoError(t, os.WriteFile(zipfile, zipped.Bytes(), 0600))
-	scanLimit = 3072
+	scanLimit = 3000
 	err := Walk(t.Context(), zipfile, func(m Member) error {
 		_, err := io.Copy(io.Discard, m.Body)
 		return err
 	})
 	require.ErrorIs(t, err, errScanLimit)
-	require.ErrorContains(t, err, "more than the 3 KiB dockhand reads of one")
+	require.ErrorContains(t, err, "more than the 3 KB dockhand reads of one")
 	require.NoError(t, Walk(t.Context(), zipfile, func(Member) error { return nil }))
-	require.Equal(t, "4 GiB", sizeWords(4<<30))
 }

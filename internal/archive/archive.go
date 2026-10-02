@@ -16,6 +16,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/herbygillot/dockhand/internal/prose"
 )
 
 // errScanLimit means the archive's uncompressed stream exceeded the walk limit.
@@ -37,26 +39,13 @@ type scanLimited struct {
 	n int64
 }
 
-// sizeWords is a limit in the unit that reads naturally.
-func sizeWords(n int64) string {
-	switch {
-	case n >= 1<<30 && n%(1<<30) == 0:
-		return fmt.Sprintf("%d GiB", n>>30)
-	case n >= 1<<20 && n%(1<<20) == 0:
-		return fmt.Sprintf("%d MiB", n>>20)
-	case n >= 1<<10 && n%(1<<10) == 0:
-		return fmt.Sprintf("%d KiB", n>>10)
-	}
-	return fmt.Sprintf("%d bytes", n)
-}
-
 func (s *scanLimited) Read(p []byte) (int, error) {
 	if s.n <= 0 {
 		var one [1]byte
 		k, err := io.ReadFull(s.r, one[:])
 		switch {
 		case k > 0:
-			return 0, fmt.Errorf("%w: it holds more than the %s dockhand reads of one, uncompressed", errScanLimit, sizeWords(scanLimit))
+			return 0, fmt.Errorf("%w: it holds more than the %s dockhand reads of one, uncompressed", errScanLimit, prose.Bytes(scanLimit))
 		case err != nil && !errors.Is(err, io.EOF):
 			return 0, err
 		}

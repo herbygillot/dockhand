@@ -369,7 +369,7 @@ Serve opens no pull requests by default. With `--submit-passing`, or `serve.subm
 | `submit.rerequest_review` | `ask` | after pushing to a pull request with changes requested: `ask`, `always`, or `never` |
 | `cleanup.automatic` | `true` | the daily automatic cleanup |
 | `cleanup.after` | `15d` | how long cleanup keeps what it would remove: a port index unused, events, an ended branch's checks and logs, an open branch's superseded logs |
-| `cleanup.min_free` | `30GB` | the free space below which cleanup runs at once |
+| `cleanup.min_free` | `30GB` | the free space below which cleanup runs at once; sizes are SI, as Finder and `df -H` count them, so `30GB` is 30,000,000,000 bytes; `GiB` and `TiB` name binary ones, and `1.5TB` and `500MB` read too |
 | `serve.for_outdated` | `list` | `list`, `draft`, or `check` |
 | `serve.outdated_at` | `07:00` | when serve looks for new releases, in local time |
 | `serve.submit_passing` | `false` | open pull requests for serve's passing updates |

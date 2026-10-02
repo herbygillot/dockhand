@@ -14,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 )
 
 // cleanStates are the kinds of branch clean takes: --closed and --archived
@@ -141,7 +142,7 @@ cancel stops a check. None means another.`,
 			removable := writeClean(streams.Out, plans, false) + writeLeftovers(streams.Out, leftovers, false) + writeLegacy(streams.Out, older, false)
 			if !legacy && len(args) == 0 {
 				if names, err := e.LegacyBranchNames(ctx); err == nil && len(names) > 0 {
-					fmt.Fprintf(streams.Out, "· %s from before v3 (dockhand/bump/…), which nothing tracks; dockhand clean --legacy sorts them\n", plural(len(names), "branch"))
+					fmt.Fprintf(streams.Out, "· %s from before v3 (dockhand/bump/…), which nothing tracks; dockhand clean --legacy sorts them\n", prose.Plural(len(names), "branch"))
 				}
 			}
 			if removable == 0 {
@@ -153,7 +154,7 @@ cancel stops a check. None means another.`,
 					fmt.Fprintln(streams.Out, "Nothing was removed; --yes removes these.")
 					return nil
 				}
-				ok, err := confirm(streams, fmt.Sprintf("? Remove %s? [y/N] ", plural(removable, "item")))
+				ok, err := confirm(streams, fmt.Sprintf("? Remove %s? [y/N] ", prose.Plural(removable, "item")))
 				if err != nil || !ok {
 					fmt.Fprintln(streams.Out, "Nothing was removed.")
 					return err
@@ -263,7 +264,7 @@ func cleanAutomatically(ctx context.Context, e *engine.Engine, streams Streams, 
 	if words := engine.HistoryWords(report.History, report.Assessments, file.Cleanup.Age()); words != "" {
 		fmt.Fprintf(streams.Out, "  %s\n", words)
 	}
-	fmt.Fprintf(streams.Out, "  removed %s\n", plural(report.Removed(), "item"))
+	fmt.Fprintf(streams.Out, "  removed %s\n", prose.Plural(report.Removed(), "item"))
 	return err
 }
 

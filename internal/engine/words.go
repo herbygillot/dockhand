@@ -8,6 +8,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 )
 
 // targetWords is how one target's result in one environment reads, on the
@@ -219,7 +220,7 @@ func CoverageWords(comparison model.UpstreamComparison) string {
 		parts = append(parts, fmt.Sprintf("%d patches apply", applied))
 	}
 	if unchecked > 0 {
-		parts = append(parts, plural(unchecked, "patch")+" unchecked")
+		parts = append(parts, prose.Plural(unchecked, "patch")+" unchecked")
 	}
 	if len(apart) > 0 {
 		parts = append(parts, "set apart: "+namedList(apart))
@@ -248,11 +249,11 @@ func namedList(items []string) string {
 func AgeWords(age time.Duration) string {
 	switch {
 	case age >= 24*time.Hour && age%(24*time.Hour) == 0:
-		return plural(int(age/(24*time.Hour)), "day")
+		return prose.Plural(int(age/(24*time.Hour)), "day")
 	case age >= time.Hour && age%time.Hour == 0:
-		return plural(int(age/time.Hour), "hour")
+		return prose.Plural(int(age/time.Hour), "hour")
 	}
-	return plural(int(age.Round(time.Minute)/time.Minute), "minute")
+	return prose.Plural(int(age.Round(time.Minute)/time.Minute), "minute")
 }
 
 // notCompared is the coverage policy of a port that fetches no upstream

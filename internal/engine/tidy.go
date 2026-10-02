@@ -18,6 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -871,7 +872,7 @@ func (e *Engine) applyTidy(ctx context.Context, plan TidyPlan) (TidyResult, erro
 	if narrowed, err := e.narrow(ctx, worktree, plan.Branch, plan.Base, plan.Final); err == nil {
 		result.Narrowed = narrowed
 	}
-	message := fmt.Sprintf("tidied %s into %s (checkpoint %s)", plural(len(plan.History), "commit"), plural(len(result.Commits), "commit"), checkpoint.Name())
+	message := fmt.Sprintf("tidied %s into %s (checkpoint %s)", prose.Plural(len(plan.History), "commit"), prose.Plural(len(result.Commits), "commit"), checkpoint.Name())
 	if err := e.history().Settle(ctx, checkpoint, model.CheckpointApplied, message); err != nil {
 		return result, history.Unfinished("the commits are made", err)
 	}
@@ -1040,16 +1041,4 @@ func (e *Engine) restore(ctx context.Context, checkpoint model.Checkpoint, branc
 		return checkpoint, branch, history.Unfinished("the history is restored", err)
 	}
 	return checkpoint, after, nil
-}
-
-func plural(n int, noun string) string {
-	if n == 1 {
-		return "1 " + noun
-	}
-	for _, ending := range []string{"s", "x", "ch", "sh"} {
-		if strings.HasSuffix(noun, ending) {
-			return fmt.Sprintf("%d %ses", n, noun)
-		}
-	}
-	return fmt.Sprintf("%d %ss", n, noun)
 }

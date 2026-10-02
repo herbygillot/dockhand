@@ -13,6 +13,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 )
 
 // workingBranch is the branch a command that changes one works on:
@@ -204,7 +205,7 @@ func decideTidy(ctx context.Context, e *engine.Engine, streams Streams, proposal
 }
 
 func describeWork(plan engine.TidyPlan) string {
-	work := plural(len(plan.History), "commit")
+	work := prose.Plural(len(plan.History), "commit")
 	uncommitted := false
 	for _, group := range plan.Groups {
 		uncommitted = uncommitted || group.Working
@@ -375,13 +376,13 @@ func applyTidy(ctx context.Context, e *engine.Engine, streams Streams, plan engi
 	applied.Applied = &tidyAppliedJSON{Checkpoint: result.Checkpoint.Name(), Commits: result.Commits, Kept: result.Kept}
 	streams.emit(applied)
 	name := result.Checkpoint.Name()
-	made := fmt.Sprintf("Created %s", plural(len(result.Commits), "commit"))
+	made := fmt.Sprintf("Created %s", prose.Plural(len(result.Commits), "commit"))
 	if result.Kept > 0 {
 		as := "they were"
 		if result.Kept == 1 {
 			as = "it was"
 		}
-		made = fmt.Sprintf("Kept %s as %s, and created %d", plural(result.Kept, "commit"), as, len(result.Commits)-result.Kept)
+		made = fmt.Sprintf("Kept %s as %s, and created %d", prose.Plural(result.Kept, "commit"), as, len(result.Commits)-result.Kept)
 	}
 	fmt.Fprintf(streams.Out, "%s. The files are unchanged.\nCheckpoint %s keeps the old history (dockhand restore %s).\n", made, name, name)
 	if len(result.Narrowed) > 0 {
@@ -394,9 +395,9 @@ func applyTidy(ctx context.Context, e *engine.Engine, streams Streams, plan engi
 	case plan.Branch.PullRequest == nil || len(plan.History) == 0:
 	case result.Kept == len(plan.History):
 		// Every commit it has stays, so submitting adds the rest to it.
-		fmt.Fprintf(streams.Out, "#%d gains %s when you submit, on top of the %s it has.\n", plan.Branch.PullRequest.Number, plural(len(result.Commits)-result.Kept, "commit"), plural(len(plan.History), "commit"))
+		fmt.Fprintf(streams.Out, "#%d gains %s when you submit, on top of the %s it has.\n", plan.Branch.PullRequest.Number, prose.Plural(len(result.Commits)-result.Kept, "commit"), prose.Plural(len(plan.History), "commit"))
 	default:
-		fmt.Fprintf(streams.Out, "#%d still shows %s until you submit; submit will replace its history, if no one else has pushed.\n", plan.Branch.PullRequest.Number, plural(len(plan.History), "commit"))
+		fmt.Fprintf(streams.Out, "#%d still shows %s until you submit; submit will replace its history, if no one else has pushed.\n", plan.Branch.PullRequest.Number, prose.Plural(len(plan.History), "commit"))
 	}
 	return nil
 }

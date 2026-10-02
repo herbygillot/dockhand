@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/prose"
 )
 
 func reviewCommand(s *settings, streams Streams) *cobra.Command {
@@ -111,7 +112,7 @@ func postReview(ctx context.Context, e *engine.Engine, streams Streams, report e
 	if requestChanges {
 		how = "changes requested"
 	}
-	fmt.Fprintf(streams.Out, "✓ review posted on #%d: %s, %s\n  %s\n", report.Ref.Number, how, plural(len(report.Comments()), "inline comment"), url)
+	fmt.Fprintf(streams.Out, "✓ review posted on #%d: %s, %s\n  %s\n", report.Ref.Number, how, prose.Plural(len(report.Comments()), "inline comment"), url)
 	return nil
 }
 

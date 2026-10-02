@@ -63,8 +63,8 @@ func TestDownloadRejectsErrorBodiesAndSizeOverflow(t *testing.T) {
 		{"HTML", "<!doctype html><title>error</title>", 200, false, nil, []string{"downloading source-2.tar.gz from ", "the server sent an HTML page instead of the file"}},
 		{"empty", "", 200, false, nil, []string{"the server sent an empty file"}},
 		{"not found", "missing", 404, false, nil, []string{"downloading source-2.tar.gz: fetch: HTTP 404 for ", ": missing; no archive is published at that location yet"}},
-		{"size header", strings.Repeat("x", 1025), 200, false, nil, []string{"larger than the 1024 bytes limit"}},
-		{"size stream", strings.Repeat("x", 1025), 200, true, nil, []string{"larger than the 1024 bytes limit"}},
+		{"size header", strings.Repeat("x", 1025), 200, false, nil, []string{"larger than the 1 KB limit"}},
+		{"size stream", strings.Repeat("x", 1025), 200, true, nil, []string{"larger than the 1 KB limit"}},
 		{"encoded", "x", 200, false, http.Header{"Content-Encoding": {"gzip"}}, []string{"the server sent gzip-encoded content instead of the file"}},
 		{"truncated", "ten bytes!", 200, false, http.Header{"Content-Length": {"100"}}, []string{"transfer stopped after 10 bytes: unexpected EOF"}},
 	} {

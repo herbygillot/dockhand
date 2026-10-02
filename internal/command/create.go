@@ -9,6 +9,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 )
 
 // testProjectReader, when set, stands in for GitHub in create.
@@ -142,15 +143,15 @@ The branch is --branch, else the one checked out here; --new starts one.
 			}
 			fmt.Fprintf(out, "Created %s/Portfile from the %s %s\n", created.Directory, strings.Join(groups, " and "), groupWord)
 			if created.Crates > 0 {
-				fmt.Fprintf(out, "  cargo.crates: %s, from Cargo.lock\n", plural(created.Crates, "crate"))
+				fmt.Fprintf(out, "  cargo.crates: %s, from Cargo.lock\n", prose.Plural(created.Crates, "crate"))
 			}
 			switch {
 			case created.ChecksumsProblem != "":
 				fmt.Fprintf(out, "  checksums: not filled in: %s\n    dockhand checksums %s fills them in once that is fixed\n", firstLine(created.ChecksumsProblem), created.Port)
 			case created.Checksums != nil && created.Checksums.Distfiles > 0:
-				what := plural(created.Checksums.Distfiles, "distfile")
+				what := prose.Plural(created.Checksums.Distfiles, "distfile")
 				if created.Crates > 0 {
-					what += fmt.Sprintf(" + %s", plural(created.Crates, "crate"))
+					what += fmt.Sprintf(" + %s", prose.Plural(created.Crates, "crate"))
 				}
 				fmt.Fprintf(out, "  checksums: %s\n", what)
 			}

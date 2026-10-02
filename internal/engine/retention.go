@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildlog"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -34,14 +34,14 @@ const archiveGrace = time.Hour
 func LogCleanupWords(done LogCleanup, after time.Duration) string {
 	var words []string
 	if c := done.Compressed; c.Logs > 0 {
-		words = append(words, fmt.Sprintf("compressed %s, %s to %s", plural(c.Logs, "log"), byteWords(c.Before), byteWords(c.After)))
+		words = append(words, fmt.Sprintf("compressed %s, %s to %s", prose.Plural(c.Logs, "log"), prose.Bytes(c.Before), prose.Bytes(c.After)))
 	}
 	if len(done.Removed) > 0 {
-		whose := plural(len(done.Removed), "check") + "'"
+		whose := prose.Plural(len(done.Removed), "check") + "'"
 		if len(done.Removed) == 1 {
 			whose = "1 check's"
 		}
-		words = append(words, fmt.Sprintf("removed %s logs, %s, kept for nothing past %s", whose, byteWords(done.Bytes), AgeWords(after)))
+		words = append(words, fmt.Sprintf("removed %s logs, %s, kept for nothing past %s", whose, prose.Bytes(done.Bytes), AgeWords(after)))
 	}
 	return strings.Join(words, "; ")
 }
@@ -51,24 +51,13 @@ func HistoryWords(pruned store.Pruned, assessments int, after time.Duration) str
 	var words []string
 	if pruned != (store.Pruned{}) {
 		words = append(words, fmt.Sprintf("removed what branches ended past %s recorded of %s: %s and %s, %s and %s, keeping what reuse may choose and each one's newest check",
-			AgeWords(after), plural(pruned.Runs, "check"), plural(pruned.Results, "result"), plural(pruned.Executions, "provider run"),
-			plural(pruned.Plans, "plan"), plural(pruned.Revisions, "revision")))
+			AgeWords(after), prose.Plural(pruned.Runs, "check"), prose.Plural(pruned.Results, "result"), prose.Plural(pruned.Executions, "provider run"),
+			prose.Plural(pruned.Plans, "plan"), prose.Plural(pruned.Revisions, "revision")))
 	}
 	if assessments > 0 {
-		words = append(words, fmt.Sprintf("removed %s of trees open branches moved past", plural(assessments, "assessment")))
+		words = append(words, fmt.Sprintf("removed %s of trees open branches moved past", prose.Plural(assessments, "assessment")))
 	}
 	return strings.Join(words, "; ")
-}
-
-// byteWords words a size: 820 MB, 1.4 GB, 12 KB.
-func byteWords(n int64) string {
-	switch {
-	case n >= 1<<30:
-		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
-	case n >= 1<<20:
-		return fmt.Sprintf("%.0f MB", math.Ceil(float64(n)/(1<<20)))
-	}
-	return fmt.Sprintf("%.0f KB", math.Ceil(float64(n)/(1<<10)))
 }
 
 // LogCleanup is what cleanup did to checks' logs: what it compressed, and

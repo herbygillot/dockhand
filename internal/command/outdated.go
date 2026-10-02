@@ -13,6 +13,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 )
 
 // outdatedOptions are update's --outdated, --mine, --check, and --yes.
@@ -105,7 +106,7 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 	}
 	with := func(port string) string {
 		if n := following[port]; n > 0 {
-			return fmt.Sprintf(" (%s with it)", plural(n, "subport"))
+			return fmt.Sprintf(" (%s with it)", prose.Plural(n, "subport"))
 		}
 		return ""
 	}
@@ -158,7 +159,7 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 	if newer > 0 || uncertain > 0 || moved > 0 || all {
 		table.Flush()
 	}
-	ports, master := plural(len(report.Ports), "port"), engine.Short(report.Master)
+	ports, master := prose.Plural(len(report.Ports), "port"), engine.Short(report.Master)
 	var line string
 	alone := len(report.Ports) == 1 && newer == 0 && unknown == 0
 	switch {
@@ -267,7 +268,7 @@ func updateOutdated(ctx context.Context, s *settings, streams Streams, args []st
 	for _, update := range plan.Updates {
 		names = append(names, engine.BranchName(update.Name))
 	}
-	fmt.Fprintf(out, "Will start %s, one per port (unrelated ports go in separate PRs):\n  %s\n", plural(len(plan.Updates), "branch"), strings.Join(names, " · "))
+	fmt.Fprintf(out, "Will start %s, one per port (unrelated ports go in separate PRs):\n  %s\n", prose.Plural(len(plan.Updates), "branch"), strings.Join(names, " · "))
 	writeSkipped(out, plan, report)
 	if options.plan {
 		fmt.Fprintln(out, "Nothing was started (--plan).")
@@ -325,9 +326,9 @@ func writePrepared(ctx context.Context, e *engine.Engine, out io.Writer, prepare
 			}
 		}
 	}
-	summary := fmt.Sprintf("%s updated and tidied into one commit each", plural(tidied, "branch"))
+	summary := fmt.Sprintf("%s updated and tidied into one commit each", prose.Plural(tidied, "branch"))
 	if check {
-		summary += fmt.Sprintf("; %s queued", plural(queued, "check"))
+		summary += fmt.Sprintf("; %s queued", prose.Plural(queued, "check"))
 	}
 	if failed > 0 {
 		summary += fmt.Sprintf("; %d need a look", failed)

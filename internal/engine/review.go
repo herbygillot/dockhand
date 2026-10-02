@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -61,7 +62,7 @@ func (r ReviewReport) Summary() string {
 	if ports == "" {
 		ports = "no port"
 	}
-	summary := fmt.Sprintf("%s changing %s", plural(len(r.Commits), "commit"), ports)
+	summary := fmt.Sprintf("%s changing %s", prose.Plural(len(r.Commits), "commit"), ports)
 	if len(r.Commits) > max(1, len(r.Ports)) {
 		summary += "; MacPorts asks for one commit per logical change. To squash: dockhand tidy, or git rebase -i master and push with --force-with-lease"
 	}
@@ -270,7 +271,7 @@ func (r ReviewReport) DependentsWords() string {
 	if more := len(r.Dependents) - len(named); more > 0 {
 		words += fmt.Sprintf(", and %d more", more)
 	}
-	return fmt.Sprintf("%s, from the index at %s: %s; candidates to look at.", plural(len(r.Dependents), "dependent"), short(model.ObjectID(r.Base)), words)
+	return fmt.Sprintf("%s, from the index at %s: %s; candidates to look at.", prose.Plural(len(r.Dependents), "dependent"), short(model.ObjectID(r.Base)), words)
 }
 
 // Comments are the findings on a Portfile line, as comments on that line.
@@ -296,7 +297,7 @@ func (e *Engine) RecordReview(ctx context.Context, report ReviewReport, posted s
 			Findings: reviewFindings(report.Findings), Posted: posted, At: e.now()}); err != nil {
 			return err
 		}
-		message := fmt.Sprintf("reviewed #%d at %s: %s", report.Ref.Number, short(model.ObjectID(report.Head)), plural(len(report.Findings), "finding"))
+		message := fmt.Sprintf("reviewed #%d at %s: %s", report.Ref.Number, short(model.ObjectID(report.Head)), prose.Plural(len(report.Findings), "finding"))
 		if posted != "" {
 			message += ", posted as " + strings.ReplaceAll(posted, "-", " ")
 		}

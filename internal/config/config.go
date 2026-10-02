@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/big"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -120,8 +121,10 @@ type Cleanup struct {
 	MinFree string `toml:"min_free"`
 }
 
-// DefaultMinFree is the free space cleanup keeps when min_free is unset.
-const DefaultMinFree = 30 << 30
+// DefaultMinFree is the free space cleanup keeps when min_free is unset:
+// 30 GB, in SI units as Finder and df -H count them, like every size
+// dockhand says (the library survey, the person's choice of 2026-10-02).
+const DefaultMinFree = 30_000_000_000
 
 // Free is min_free in bytes.
 func (c Cleanup) Free() uint64 {
@@ -132,26 +135,34 @@ func (c Cleanup) Free() uint64 {
 	return free
 }
 
-// parseSize reads a size in gigabytes or terabytes, such as "30GB", "30G",
-// or "1TB".
+// sizeUnits are the units a size may name: SI, as dockhand says sizes,
+// with G and T for GB and TB, and binary ones by their own names.
+var sizeUnits = map[string]uint64{
+	"MB": 1e6, "GB": 1e9, "TB": 1e12, "G": 1e9, "T": 1e12,
+	"MIB": 1 << 20, "GIB": 1 << 30, "TIB": 1 << 40,
+}
+
+// parseSize reads a size such as "30GB", "1.5TB", "500MB", or "64GiB".
 func parseSize(value string) (uint64, error) {
-	number := strings.TrimSpace(strings.ToUpper(value))
-	unit := uint64(1 << 30)
-	switch {
-	case strings.HasSuffix(number, "TB"), strings.HasSuffix(number, "T"):
-		unit = 1 << 40
-	case strings.HasSuffix(number, "GB"), strings.HasSuffix(number, "G"):
-	default:
-		return 0, fmt.Errorf("%q is not a size such as 30GB", value)
+	refused := fmt.Errorf("%q is not a size such as 30GB", value)
+	text := strings.ToUpper(strings.TrimSpace(value))
+	cut := strings.LastIndexAny(text, "0123456789.") + 1
+	unit, ok := sizeUnits[strings.TrimSpace(text[cut:])]
+	if !ok {
+		return 0, refused
 	}
-	number = strings.TrimSpace(strings.TrimRight(number, "TGB"))
-	n, err := strconv.ParseUint(number, 10, 64)
+	number, ok := new(big.Rat).SetString(strings.TrimSpace(text[:cut]))
+	if !ok || number.Sign() <= 0 {
+		return 0, refused
+	}
+	bytes := new(big.Int).Mul(number.Num(), new(big.Int).SetUint64(unit))
+	bytes.Quo(bytes, number.Denom())
 	// A size past what 64 bits count of bytes wrapped around to a small
 	// one, which cleanup took as min_free (the limits sweep, 2026-10-01).
-	if err != nil || n == 0 || n > math.MaxUint64/unit {
-		return 0, fmt.Errorf("%q is not a size such as 30GB", value)
+	if bytes.Sign() <= 0 || !bytes.IsUint64() {
+		return 0, refused
 	}
-	return n * unit, nil
+	return bytes.Uint64(), nil
 }
 
 // DefaultCleanupAfter is how long cleanup waits when after is unset: for

@@ -13,6 +13,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 )
 
 func editCommand(s *settings, streams Streams) *cobra.Command {
@@ -97,7 +98,7 @@ branch is started, since a rebuild has its own reason.`,
 			if started {
 				fmt.Fprintf(out, "Started %s from master %s (fetched just now)\n", branch.Name, engine.Short(branch.Base))
 			}
-			fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), plural(len(args), "port"))
+			fmt.Fprintf(out, "%s · %s\n", branch.ShortName(), prose.Plural(len(args), "port"))
 			width := 0
 			for _, port := range args {
 				width = max(width, len(port))
@@ -222,7 +223,7 @@ rebase that conflicts is abandoned with the branch as it was.`,
 			}
 			name := rebased.Checkpoint.Name()
 			fmt.Fprintf(streams.Out, "Rebased %s (%s) from master %s onto %s.\nCheckpoint %s keeps the old history (dockhand restore %s).\n",
-				branch.ShortName(), plural(rebased.Commits, "commit"), engine.Short(rebased.From), engine.Short(rebased.To), name, name)
+				branch.ShortName(), prose.Plural(rebased.Commits, "commit"), engine.Short(rebased.From), engine.Short(rebased.To), name, name)
 			if len(rebased.OlderBuilds) > 0 {
 				fmt.Fprintf(streams.Out, "The rebased commits keep their Generated-By, naming an older dockhand, %s; tidy names this build in a commit it writes again.\n", strings.Join(rebased.OlderBuilds, ", "))
 			}

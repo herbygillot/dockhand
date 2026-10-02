@@ -126,30 +126,30 @@ func TestCleanupSettings(t *testing.T) {
 		require.ErrorContains(t, err, "cleanup.after", bad)
 	}
 
-	require.Equal(t, uint64(30<<30), f.Cleanup.Free(), "30 GB when unset")
-	for value, bytes := range map[string]uint64{"50GB": 50 << 30, "12g": 12 << 30, "1TB": 1 << 40, " 2 T ": 2 << 40} {
+	require.Equal(t, uint64(30_000_000_000), f.Cleanup.Free(), "30 GB when unset, as Finder counts it")
+	for value, bytes := range map[string]uint64{"50GB": 50e9, "12g": 12e9, "1TB": 1e12, " 2 T ": 2e12, "1.5TB": 1.5e12, "500MB": 500e6, "64GiB": 64 << 30, "1 tib": 1 << 40} {
 		f, err = parse("config.toml", "[cleanup]\nmin_free = \""+value+"\"\n")
 		require.NoError(t, err, value)
 		require.Equal(t, bytes, f.Cleanup.Free(), value)
 	}
-	for _, bad := range []string{"30", "0GB", "lots", "30MB", "-5GB"} {
+	for _, bad := range []string{"30", "0GB", "lots", "30KB", "-5GB", "GB", "1.2.3GB", "0.0000000001MB"} {
 		_, err = parse("config.toml", "[cleanup]\nmin_free = \""+bad+"\"\n")
 		require.ErrorContains(t, err, "cleanup.min_free", bad)
 	}
 }
 
 // A size or an age past what dockhand counts in is refused, as any value
-// that isn't one is: 16777216TB is 2^64 bytes, which wrapped around to
+// that isn't one is: 16777216TiB is 2^64 bytes, which wrapped around to
 // none, and 106752 days is past a duration's 292 years, which wrapped
 // around to a negative age, before which cleanup would prune everything.
 func TestASettingThatOverflowsIsRefused(t *testing.T) {
-	for _, bad := range []string{"16777216TB", "17179869184GB", "99999999999999999999GB"} {
+	for _, bad := range []string{"18446745TB", "18446744074GB", "16777216TiB", "99999999999999999999GB"} {
 		_, err := parse("config.toml", "[cleanup]\nmin_free = \""+bad+"\"\n")
 		require.EqualError(t, err, "config.toml: cleanup.min_free: \""+bad+"\" is not a size such as 30GB")
 	}
-	f, err := parse("config.toml", "[cleanup]\nmin_free = \"16777215TB\"\n")
+	f, err := parse("config.toml", "[cleanup]\nmin_free = \"18446744TB\"\n")
 	require.NoError(t, err, "the largest that fits")
-	require.Equal(t, uint64(16777215)<<40, f.Cleanup.Free())
+	require.Equal(t, uint64(18446744e12), f.Cleanup.Free())
 
 	for _, bad := range []string{"106752d", "9223372036854775807d"} {
 		_, err := parse("config.toml", "[cleanup]\nafter = \""+bad+"\"\n")

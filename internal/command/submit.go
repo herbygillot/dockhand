@@ -15,6 +15,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/scratch"
 )
 
@@ -328,7 +329,7 @@ func submitPassing(ctx context.Context, e *engine.Engine, streams Streams, reque
 	}
 	ready, others := passing.Ready, passing.Others
 	out := streams.Out
-	line := plural(len(ready), "branch") + " passed their checks"
+	line := prose.Plural(len(ready), "branch") + " passed their checks"
 	if len(ready) == 1 {
 		line = "1 branch passed its check"
 	}
@@ -419,7 +420,7 @@ func writeSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 	fmt.Fprintf(out, "  To       %s:%s\n", plan.Repository, engine.UpstreamBranch)
 	rules := "follows MacPorts' commit rules"
 	if len(plan.Findings) > 0 {
-		rules = plural(len(plan.Findings), "finding") + " below"
+		rules = prose.Plural(len(plan.Findings), "finding") + " below"
 	}
 	fmt.Fprintf(out, "  Commits  %d, %s\n", len(plan.Commits), rules)
 	fmt.Fprintf(out, "  Push     %s\n", pushWords(plan))
@@ -682,7 +683,7 @@ func applySubmit(ctx context.Context, e *engine.Engine, streams Streams, plan en
 	case submitted.Created:
 		fmt.Fprintf(streams.Out, "Opened #%d  %s\n", pr.Ref.Number, pr.Ref.URL)
 	case submitted.Pushed && plan.Replaces:
-		fmt.Fprintf(streams.Out, "Updated #%d: replaced its history with %s (the fork's branch was where submit saw it)\n", pr.Ref.Number, plural(len(plan.Commits), "commit"))
+		fmt.Fprintf(streams.Out, "Updated #%d: replaced its history with %s (the fork's branch was where submit saw it)\n", pr.Ref.Number, prose.Plural(len(plan.Commits), "commit"))
 	case submitted.Pushed:
 		fmt.Fprintf(streams.Out, "Updated #%d: pushed up to %s\n", pr.Ref.Number, engine.Short(model.ObjectID(plan.Commit)))
 	default:

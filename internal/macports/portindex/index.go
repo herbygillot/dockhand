@@ -24,6 +24,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
@@ -271,13 +272,6 @@ func named(role, commit, tree string) string {
 }
 
 // plural counts a noun, "1 changed path", "2 changed paths".
-func plural(n int, noun string) string {
-	if n == 1 {
-		return "1 " + noun
-	}
-	return fmt.Sprintf("%d %ss", n, noun)
-}
-
 // IsIndexFile reports whether a name at a tree's root is the index Stage
 // installs there, or one being installed.
 func IsIndexFile(name string) bool {
@@ -371,7 +365,7 @@ func buildPortIndex(ctx context.Context, c Config, platform model.Platform, sour
 		progress.Report(ctx, "Building the PortIndex; this may take several minutes")
 		progress.VerboseReport(ctx, "Generating full PortIndex for %s", name)
 	} else {
-		progress.VerboseReport(ctx, "Updating PortIndex for %s from %s", name, plural(len(changed), "changed path"))
+		progress.VerboseReport(ctx, "Updating PortIndex for %s from %s", name, prose.Plural(len(changed), "changed path"))
 	}
 	started := time.Now()
 	err = atomicfile.ReplaceDirectory(destination, func(temp string) (err error) {

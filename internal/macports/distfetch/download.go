@@ -20,6 +20,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/depblock"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"golang.org/x/crypto/ripemd160" //nolint:staticcheck // MacPorts checksums are rmd160, among others.
 )
@@ -265,24 +266,13 @@ func downloadError(parent context.Context, name, address string, limit int64, er
 		}
 		return fmt.Errorf("archives: downloading %s: %w%s", name, err, note)
 	case errors.Is(err, fetch.ErrTooLarge):
-		return fmt.Errorf("archives: downloading %s from %s: larger than the %s limit: %w", name, address, byteLabel(limit), err)
+		return fmt.Errorf("archives: downloading %s from %s: larger than the %s limit: %w", name, address, prose.Bytes(limit), err)
 	case errors.Is(err, fetch.ErrStalled):
 		return fmt.Errorf("archives: downloading %s from %s: %w", name, address, err)
 	case errors.As(err, &transport):
 		return fmt.Errorf("archives: downloading %s from %s: %w", name, address, transport.Err)
 	}
 	return fmt.Errorf("archives: downloading %s from %s: %w", name, address, err)
-}
-
-// byteLabel is a size in the unit that reads naturally for a download limit.
-func byteLabel(size int64) string {
-	switch {
-	case size >= 1<<30 && size%(1<<30) == 0:
-		return fmt.Sprintf("%d GiB", size>>30)
-	case size >= 1<<20 && size%(1<<20) == 0:
-		return fmt.Sprintf("%d MiB", size>>20)
-	}
-	return fmt.Sprintf("%d bytes", size)
 }
 
 // CheckFetchCredentials refuses a port whose downloads need MacPorts

@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -193,7 +194,7 @@ func (e *Engine) sortLegacy(ctx context.Context, branch *LegacyBranch, master st
 	case len(takes) > 0:
 		branch.Kind, branch.Detail = LegacyUnfinished, "takes "+strings.Join(takes, "; ")
 	default:
-		branch.Kind, branch.Detail = LegacyUnfinished, plural(len(own), "commit")+" master hasn't"
+		branch.Kind, branch.Detail = LegacyUnfinished, prose.Plural(len(own), "commit")+" master hasn't"
 	}
 	return nil
 }

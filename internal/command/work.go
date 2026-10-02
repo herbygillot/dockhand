@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
+	"github.com/herbygillot/dockhand/internal/prose"
 )
 
 func initCommand(s *settings, streams Streams) *cobra.Command {
@@ -198,7 +199,7 @@ edit and you have write access, and never rewrites their description.`,
 				}
 				return nil
 			}
-			fmt.Fprintf(streams.Out, "Adopted %s: %s above master %s%s.\n", adoption.Branch.Name, plural(adoption.Commits, "commit"), engine.Short(adoption.Branch.Base), describeScope(adoption.Scope))
+			fmt.Fprintf(streams.Out, "Adopted %s: %s above master %s%s.\n", adoption.Branch.Name, prose.Plural(adoption.Commits, "commit"), engine.Short(adoption.Branch.Base), describeScope(adoption.Scope))
 			writePlaced(streams.Out, adoption)
 			return nil
 		},
@@ -236,7 +237,7 @@ func adoptPullRequest(ctx context.Context, e *engine.Engine, streams Streams, nu
 		edits = "maintainers can't push to it; suggest changes with dockhand review " + fmt.Sprint(number)
 	}
 	fmt.Fprintf(streams.Out, "Adopted %s: %q by @%s, %s%s; %s.\nDirectory: %s\n", adoption.Branch.ShortName(), adoption.Title, adoption.Author,
-		plural(adoption.Commits, "commit"), describeScope(adoption.Scope), edits, tilde(adoption.Branch.Worktree))
+		prose.Plural(adoption.Commits, "commit"), describeScope(adoption.Scope), edits, tilde(adoption.Branch.Worktree))
 	return nil
 }
 
@@ -277,18 +278,6 @@ func describeScope(scope engine.Scope) string {
 		return ", changing " + changed[0]
 	}
 	return ", changing " + strings.Join(changed[:len(changed)-1], ", ") + " and " + changed[len(changed)-1]
-}
-
-func plural(n int, noun string) string {
-	if n == 1 {
-		return "1 " + noun
-	}
-	for _, ending := range []string{"s", "x", "ch", "sh"} {
-		if strings.HasSuffix(noun, ending) {
-			return fmt.Sprintf("%d %ses", n, noun)
-		}
-	}
-	return fmt.Sprintf("%d %ss", n, noun)
 }
 
 // ask puts a question on stderr and reads one line. Input that ends

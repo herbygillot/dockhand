@@ -16,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 )
 
 func statusCommand(s *settings, streams Streams) *cobra.Command {
@@ -155,10 +156,10 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 	if found, ok := e.LastOutdatedLook(); ok && (len(found.Outdated) > 0 || len(found.Uncertain) > 0) {
 		fmt.Fprintln(out)
 		if len(found.Outdated) > 0 {
-			fmt.Fprintf(out, "Your ports: %s newer releases, as serve found %s (dockhand update --outdated --mine)\n", plural(len(found.Outdated), "port")+map[bool]string{true: " has", false: " have"}[len(found.Outdated) == 1], ago(found.CheckedAt))
+			fmt.Fprintf(out, "Your ports: %s newer releases, as serve found %s (dockhand update --outdated --mine)\n", prose.Plural(len(found.Outdated), "port")+map[bool]string{true: " has", false: " have"}[len(found.Outdated) == 1], ago(found.CheckedAt))
 		}
 		if len(found.Uncertain) > 0 {
-			fmt.Fprintf(out, "Your ports: %s may have newer releases, for your look, as serve found %s (dockhand outdated %s)\n", plural(len(found.Uncertain), "port"), ago(found.CheckedAt), strings.Join(found.Uncertain, " "))
+			fmt.Fprintf(out, "Your ports: %s may have newer releases, for your look, as serve found %s (dockhand outdated %s)\n", prose.Plural(len(found.Uncertain), "port"), ago(found.CheckedAt), strings.Join(found.Uncertain, " "))
 		}
 	}
 	fmt.Fprintf(out, "\n%s\n", serveWords(serve))
@@ -357,9 +358,9 @@ func workWords(s engine.BranchStatus) string {
 	case s.Commits == 0:
 		return "edits, uncommitted"
 	case len(s.Edited) > 0:
-		return plural(s.Commits, "commit") + " + edits"
+		return prose.Plural(s.Commits, "commit") + " + edits"
 	}
-	return plural(s.Commits, "commit")
+	return prose.Plural(s.Commits, "commit")
 }
 
 // checkState is the checks column: what is running, else what the latest
@@ -468,9 +469,9 @@ func serveWords(s engine.ServeState) string {
 	case s.Queue == 0:
 		return line + " · queue: empty"
 	case s.Stopped > 0:
-		return line + fmt.Sprintf(" · queue: %s, %d stopped", plural(s.Queue, "run"), s.Stopped)
+		return line + fmt.Sprintf(" · queue: %s, %d stopped", prose.Plural(s.Queue, "run"), s.Stopped)
 	}
-	return line + " · queue: " + plural(s.Queue, "run")
+	return line + " · queue: " + prose.Plural(s.Queue, "run")
 }
 
 type observerKey struct{}

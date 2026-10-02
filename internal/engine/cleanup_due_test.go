@@ -236,6 +236,6 @@ func TestCleanupRemovesArchivesNoLiveResultNames(t *testing.T) {
 	events, err := e.Events(t.Context(), 0)
 	require.NoError(t, err)
 	require.True(t, slices.ContainsFunc(events, func(event model.Event) bool {
-		return event.Message == "removed 1 kept archive, 1 MB, that neither reuse nor an open branch's newest results name; 1 archive kept, 1 MB"
+		return event.Message == "removed 1 kept archive, 4 bytes, that neither reuse nor an open branch's newest results name; 1 archive kept, 9 bytes"
 	}), "cleanup says what it removed and what the store keeps")
 }

@@ -12,6 +12,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/prose"
 )
 
 func diffCommand(s *settings, streams Streams) *cobra.Command {
@@ -140,7 +141,7 @@ func diffArchives(ctx context.Context, e *engine.Engine, streams Streams, branch
 		}
 		summary := "the same files, byte for byte"
 		if len(counts) > 0 {
-			summary = plural(diff.Changed+diff.Added+diff.Removed, "file") + " differ: " + strings.Join(counts, ", ")
+			summary = prose.Plural(diff.Changed+diff.Added+diff.Removed, "file") + " differ: " + strings.Join(counts, ", ")
 		}
 		fmt.Fprintf(out, "%s · %s: %s\n", diff.Directory, names, summary)
 		if diff.OldFromMirror {
@@ -203,7 +204,7 @@ func writeDiffSummary(out io.Writer, diff engine.BranchDiff) {
 	status := diff.Status
 	line := fmt.Sprintf("%s · from master %s", status.Branch.ShortName(), engine.Short(status.Branch.Base))
 	if len(status.Edited) > 0 {
-		line += " · with uncommitted edits to " + plural(len(status.Edited), "file")
+		line += " · with uncommitted edits to " + prose.Plural(len(status.Edited), "file")
 	}
 	fmt.Fprintln(out, line)
 	if len(diff.Ports) == 0 && len(diff.Other) == 0 {
@@ -310,7 +311,7 @@ func writeImpact(out io.Writer, impact engine.Impact) {
 	for i, shared := range impact.Shared {
 		words := shared.Path
 		if shared.PortGroup != "" {
-			words += fmt.Sprintf(": PortGroup %s, loaded by %s", shared.PortGroup, plural(len(shared.Users), "port"))
+			words += fmt.Sprintf(": PortGroup %s, loaded by %s", shared.PortGroup, prose.Plural(len(shared.Users), "port"))
 			if len(shared.Users) > 0 && len(shared.Users) <= 5 {
 				var names []string
 				for _, user := range shared.Users {
