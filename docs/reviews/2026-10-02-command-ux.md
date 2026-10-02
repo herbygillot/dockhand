@@ -173,6 +173,20 @@ Chaining steps has costs, and they set the boundaries:
 - **Saying where it stopped.** When a chained command stops partway, the message names the step, what was kept, and the one command that continues, which is usually the same command again (§4). Design §12 already asks errors for this. Chaining makes it matter more.
 - **Keeping the model learnable.** People who never run `tidy` might not learn that dockhand rewrites commits. The plan line above names each step, so the model is still in front of them every time, and the separate commands remain for doing a step alone.
 
+### Decided, and recommended
+
+- **A script's `submit` never starts a check without `--check`** (Herby, 2026-10-02).
+- **`rebase` carries uncommitted edits** (recommended, awaiting Herby's word).
+  - Dockhand's own workflow leaves work uncommitted. `update`, `checksums`, and `create` write working files, and `check` builds them, so a branch that is all uncommitted edits is the normal state, not a careless one. Today's advice, to commit with `tidy` first, forces commits mid-work that tidy's follow-up rule then has to fold back together.
+  - It's safe if it's atomic. Capture the working files and the index as a snapshot first, as `check` already captures them. Then replay the commits and reapply the edits on top. If any edit doesn't reapply cleanly, put the branch, files, and index back exactly as they were, as a conflicting rebase does now, and name the file. Usually master changed that port, and the message should say so.
+  - Git has the same behaviour as `rebase --autostash`, so it's familiar.
+  - Things to get right:
+    - the rebase checkpoint records the snapshot, so `restore rebase-4` brings the uncommitted edits back as they were;
+    - files `create` staged stay staged;
+    - an untracked file at a path master now has stops the rebase;
+    - unresolved conflicts are still refused.
+  - One cost remains. An editor holding a Portfile that the rebase rewrote has a stale buffer, as with `git rebase --autostash`, so the rebase's output lists every file it changed under the edits.
+
 ### What changes for the loop
 
 `update`, `edit` or `create`, then `submit`. `submit` shows the commits it will make, offers the check if none covers these files, and opens the pull request. `check` and `tidy` stay for when you want to run a step by itself, and the README teaches the three-command form first.
