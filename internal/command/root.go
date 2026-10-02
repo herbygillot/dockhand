@@ -32,8 +32,8 @@ type Streams struct {
 }
 
 // logo opens the main help, as it did in dockhand's earlier generations,
-// with the build's version on the line under it. The trailing spaces are
-// the art's own.
+// with the build's version on the line under it, indented a space to sit
+// under the art. The trailing spaces are the art's own.
 const logo = `     _            _    _                     _
   __| | ___   ___| | _| |__   __ _ _ __   __| |
  / _` + "`" + ` |/ _ \ / __| |/ / '_ \ / _` + "`" + ` | '_ \ / _` + "`" + ` |
@@ -117,7 +117,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	root := &cobra.Command{
 		Use:           "dockhand",
 		Short:         "Author, check, and submit changes to MacPorts ports",
-		Long:          logo + buildinfo.Current().String() + "\n\nAuthor, check, and submit changes to MacPorts ports.\n\n" + gettingStarted,
+		Long:          logo + " " + buildinfo.Current().String() + "\n\nAuthor, check, and submit changes to MacPorts ports.\n\n" + gettingStarted,
 		Version:       buildinfo.Current().String(),
 		SilenceUsage:  true,
 		SilenceErrors: true,

@@ -37,5 +37,5 @@ func TestAnUnknownCommandIsRefused(t *testing.T) {
 func TestTheHelpOpensWithTheLogoAndTheVersion(t *testing.T) {
 	out, _, err := dockhand(t, "--help")
 	require.NoError(t, err)
-	require.True(t, strings.HasPrefix(out, logo+buildinfo.Current().String()+"\n\nAuthor, check, and submit changes to MacPorts ports.\n"), out)
+	require.True(t, strings.HasPrefix(out, logo+" "+buildinfo.Current().String()+"\n\nAuthor, check, and submit changes to MacPorts ports.\n"), out)
 }
