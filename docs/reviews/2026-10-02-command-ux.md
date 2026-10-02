@@ -96,6 +96,8 @@ Things the implementation has to get right:
 
 With names like these, `-b jq-1.8.1` is something you can type from memory, and completion does the rest.
 
+`start` should match this. Today `start qemu` makes a branch named `qemu`, where `update` makes `qemu-iafp`. `start`'s sparse worktree also has no port in it, so a script had to run `EDITOR=true dockhand edit qemu` just to get the files (field testing). I propose `start <name> --port qemu`, repeatable, which brings those ports' directories into the worktree. Without a name, `start --port qemu` takes the port's name, under the same rule as other branches: an ID is added only when the name is taken.
+
 ### Left for you to decide
 
 - **Whether `-p` should act alone in scripts when there's exactly one candidate.** I've proposed yes, since the first line names the branch. The cautious alternative is to refuse in scripts and require `-b`. That's safer against overnight drafts, but meaningful names make `-b` cheap enough that it would cost little.
@@ -153,6 +155,15 @@ I went through every refusal and hold that `update`, `check`, `tidy`, `submit`, 
 **Dockhand does what a refusal would tell you to do, unless the fix is irreversible, touches someone else's work, or needs your judgment. It shows what it will do in the preview it already gives.**
 
 `tidy` already works this way. A plan made only of dockhand's own edits applies without review, and anything else is shown first. The proposal extends that rule from one command to the loop.
+
+**A suggested next step must be one dockhand knows will work.** When dockhand can't do a step and tells you to do it yourself, the command it names has to get past the reason dockhand gave up. Field testing hit a dead end with qemu:
+- `update` said "Edit the version yourself; dockhand checksums qemu then fills in the rest".
+- After the hand edit, `checksums` refused for the same reason, a fidelity mismatch on `qemu.configure.cmd`.
+- The checksums had to be computed by hand.
+
+There are two fixes:
+- Before printing a `Next:` command, check that the condition that stopped dockhand doesn't also stop that command. If it does, name the manual step: "compute them with `port checksum qemu`".
+- `checksums` shouldn't sit behind a fidelity check of the whole Portfile, since it edits only the checksum lines.
 
 ### Where chaining needs care
 
@@ -277,6 +288,18 @@ These are each small, but together they make the tool feel inconsistent, and a t
 - **Foreground and serve run checks the same way.** Field testing found `providers.tart.capacity` governs only serve. A foreground `check` or `bump` should take a slot under the same limit.
 - **Help text speaks to users.** `check --help` cites "(decision 29: switching is explicit)" and `serve --submit-passing` cites "(Design v3 §11's guardrails)". No help page has an `Example:` section. Most `Long` texts are one dense paragraph per flag, which the guide could carry instead. Every page also repeats `--db`, `--git`, and `--tree`, which a custom usage template could list once.
 
+## 10. Output a person can act on (from field testing, 2026-10-02)
+
+- **A batch preview shows what will happen, row by row.** `update --outdated a b c` without `--yes` printed only "Will start 9 branches: dockhand/fyne-1rx2 · …". It showed no versions, nothing about which ports can't be done automatically (qemu), and no major-version jumps. The real run then used different random suffixes than the preview. The preview should show the per-port rows `outdated` already computes: port, from → to, what dockhand will do, and any warning or hold, with the confirmation from §3 under them. With meaningful names (§1), the names in the preview are the names the run uses. Where a fallback ID is needed, the preview either reserves it or leaves names out.
+- **How loudly something is marked and whether it blocks automation are separate.** Today `!` holds `bump` and `·` holds nothing, so a new port's review showed missing runtime dependencies as `·`, as if they didn't matter. One mark should say how much a reader should care: `✗` broken, `!` look at this, `·` for your information. A separate word says when something holds automation: "holds bump", "holds serve". A finding can then be serious without holding anything, or minor and still hold.
+- **Long lists are summarized.** Fields like Changed, Order, and dependents print on one line however long they get. They should read "18 ports: terraform-1.16, terraform-1.17, terraform-1.18 and 15 more", as `review` already does for dependents, with the whole list at `-v` and in JSON.
+- **A batch's exit code says whether anything worked.** Exit 3 means "needs a look" both for a held `bump` whose check passed and for an `update --outdated` run where all 9 ports failed. For a batch:
+  - 0 when every item is done;
+  - 3 when some are done or held and need a look;
+  - 1 when none could be done.
+
+  Per-item results stay in the output and the JSON. This joins the exit-code row of the shared-flag contract (§9).
+
 ## Smaller items
 
 - **`restore` → `undo`.** `git restore` restores files; dockhand's restores history. `undo` with no argument undoes the branch's latest tidy or rebase, and `undo tidy-3` picks one.
@@ -296,5 +319,5 @@ These are each small, but together they make the tool feel inconsistent, and a t
 1. `-b` with completion, `-p`, and `--pr` (§1), with auto-start (§2). This is the biggest daily win, and mostly in branch resolution (`engine.named`, `BranchesChanging`) and the commands' argument parsing.
 2. Stop only for judgment (§3), starting with `submit` folding in tidy and `check` following a running check of the same files, and the shared-flag test (§9), which would catch the field-testing inconsistencies as they're fixed.
 3. `archive` taking the worktree (§5) and `explain` for checks and branches (§7). Both are small, and both close friction field testing actually hit.
-4. `setup` (§6) and `review --check` (§8).
+4. `setup` (§6), `review --check` (§8), and the output items (§10), whose batch preview goes with §3's single confirmation.
 5. `--to` (§4) last, after a discussion, since it changes the most words and touches decided ground.
