@@ -72,6 +72,15 @@ for entry in $FAIL; do
   case "$*" in
     *" $phase "*"subport=$port"*|*" $phase "*"subport=$port "*)
       if [ -n "$QUIET" ]; then exit 1; fi
+      if [ -n "$COMMAND" ]; then
+        echo "DEBUG: Executing org.macports.build ($port)"
+        echo "go: github.com/spf13/pflag: cannot find package"
+        echo "Command failed:  cd /work/$port && go build ./..."
+        echo "Exit code: 1"
+        echo "Error: Failed to build $port: command execution failed"
+        echo "Error: See /opt/local/var/macports/logs/$port/main.log for details."
+        exit 1
+      fi
       echo "Error: Failed to $phase $port: it broke"
       echo "Error: See /opt/local/var/macports/logs/$port/main.log for details."
       echo "Error: Processing of port $port failed"
@@ -311,6 +320,13 @@ func TestAFailuresReasonIsTheFailingSteps(t *testing.T) {
 	results, _ = guestRun(t, twoTargets("declared"), "TESTED=libharbor", "FAIL=test:libharbor", "QUIET=1", lint)
 	require.Equal(t, "failed", results.Targets[0].Tests)
 	require.Equal(t, "tests: child process exited abnormally", results.Targets[0].Detail, "the command's own message, not lint's line")
+
+	// The command MacPorts says failed, and what the tool said last before
+	// it, rather than "command execution failed" (field testing,
+	// 2026-10-02: mods' go build).
+	results, _ = guestRun(t, twoTargets("declared"), "FAIL=install:libharbor", "COMMAND=1", lint)
+	require.Equal(t, "install", results.Targets[0].Phase)
+	require.Equal(t, "Failed to build libharbor: go: github.com/spf13/pflag: cannot find package; the command was: cd /work/libharbor && go build ./...", results.Targets[0].Detail)
 }
 
 // A target an earlier attempt already found blocked is reported blocked

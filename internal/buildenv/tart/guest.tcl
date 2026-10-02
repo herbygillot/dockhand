@@ -177,13 +177,46 @@ proc why {log message} {
     set text [read $fd]
     close $fd
     set errors {}
+    # What the failing command was, and what it said last before it
+    # failed: MacPorts' "Command failed:" line, written by its system
+    # call (portutil.tcl), and the tool's own lines above it, not
+    # MacPorts' debug lines. "Failed to build mods: command execution
+    # failed" said neither, where Go's "cannot find package" was in the
+    # log (field testing, 2026-10-02). MacPorts doesn't document these
+    # lines; the person accepted reading them, as an exception to
+    # depending on its documented interfaces only.
+    set command ""
+    set said {}
+    set recent {}
     foreach line [split $text \n] {
         if {[regexp {^Error: (.+)$} $line -> error] && ![regexp {^(See |Follow https://guide|Processing of port )} $error]} {
             lappend errors [string trim $error]
+            continue
         }
+        if {[regexp {^(?::[a-z]+:[a-z]+ )?Command failed:\s*(.+)$} $line -> failed]} {
+            set command [string trim $failed]
+            set said $recent
+            continue
+        }
+        set line [string trim $line]
+        # Each phase MacPorts runs starts what its failure said afresh.
+        if {[regexp {Executing org\.macports\.} $line]} {
+            set recent {}
+            continue
+        }
+        if {$line eq "" || [regexp {^(DEBUG|--->|Exit code|Executing:|:debug:)} $line]} { continue }
+        lappend recent [string range $line 0 299]
+        if {[llength $recent] > 3} { set recent [lrange $recent end-2 end] }
     }
-    if {[llength $errors]} { return [join [lrange $errors end-2 end] "; "] }
-    return $message
+    if {![llength $errors]} { return $message }
+    set detail [join [lrange $errors end-2 end] "; "]
+    if {$command ne ""} {
+        if {[llength $said]} {
+            set detail [regsub {: command execution failed$} $detail ": [join $said {; }]"]
+        }
+        append detail "; the command was: [string range $command 0 499]"
+    }
+    return $detail
 }
 
 # counted is how far each target's log has been counted: the bytes read,

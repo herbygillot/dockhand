@@ -75,7 +75,11 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // with what each started. A build that passed before passed within them,
 // as any that took less does now, so the results stand, and the protocol
 // stays 2.
-const guestPin = "f45be081f692d06e2885492001f3e76ceddf1b43e7b89d40ffa87dc5d2a34b28"
+//
+// Since batch 43 a failure's detail names the command MacPorts says
+// failed and what the tool said last before it: its words, again, and the
+// protocol stays 2.
+const guestPin = "eb7edf50c8c97e262804f7acc65524cd9afe200801fe54f9a7f77ad7f59f6176"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this
