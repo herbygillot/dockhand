@@ -13,7 +13,7 @@ var ReadOptions = []string{
 	"checksums", "distfiles", "distname", "dist_subdir", "extract.only", "extract.rename", "worksrcdir", "filespath", "master_sites", "fetch.type",
 	"fetch.user_agent", "fetch.ignore_sslcert",
 	"patchfiles", "patch.pre_args", "patch.dir",
-	"livecheck.type", "livecheck.url", "livecheck.regex", "livecheck.version", "livecheck.ignore_sslcert", "livecheck.compression", "livecheck.curloptions",
+	"livecheck.type", "livecheck.url", "livecheck.regex", "livecheck.version", "livecheck.branch", "livecheck.ignore_sslcert", "livecheck.compression", "livecheck.curloptions",
 	"go.vendors", "go.version", "go.package", "go.domain", "go.offline_build", "go.toolchain_min", "go.bin",
 	"cargo.crates", "cargo.crates_github", "cargo.update", "cargo.dir", "cargo.offline_cmd",
 	"github.author", "github.project", "github.version", "github.tag_prefix", "github.tag_suffix", "github.tarball_from",

@@ -62,7 +62,7 @@ func (s *Service) newestTied(ctx context.Context, current, expression string, ca
 		return nil, 0, err
 	}
 	if len(selection.Indices) == 0 {
-		return nil, 0, fmt.Errorf("%w: no eligible version matches %s", ErrReleaseMissing, noun)
+		return nil, 0, noneMatch(noun)
 	}
 	for _, index := range selection.Indices {
 		if index < 0 || index >= len(candidates) || selection.Comparison < -1 || selection.Comparison > 1 {
@@ -160,3 +160,16 @@ func (result *Result) finish(release model.Release, current string, selected, am
 	result.Assessment = UpdateAvailable
 	result.Detail = selected
 }
+
+// noneMatch is a catalog nothing in which the port's livecheck admits,
+// ErrReleaseMissing: kubectl-1.10 to 1.28's livecheck reads the newest 100
+// of Kubernetes' releases, none of their series, and read "requested
+// release was not found in the supplied evidence" (batch 30). Base's
+// livecheck finds nothing for them either.
+type noneMatch string
+
+func (n noneMatch) Error() string {
+	return "upstream: nothing upstream lists matches " + string(n) + ", so there's no release to compare with"
+}
+
+func (noneMatch) Is(target error) bool { return target == ErrReleaseMissing }

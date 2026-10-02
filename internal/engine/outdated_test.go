@@ -87,3 +87,21 @@ func TestAnUncertainPortIsNeitherOutdatedNorPlanned(t *testing.T) {
 	require.Empty(t, plan.Updates)
 	require.Empty(t, plan.Skipped, "the command says why it's left for a look")
 }
+
+// A subport checked with its sibling, sharing its release, moves with
+// that sibling's update rather than starting a branch of its own (batch
+// 30).
+func TestASubportCheckedWithItsSiblingMovesWithIt(t *testing.T) {
+	release := &model.Release{Version: "6.1.5"}
+	sibling := outdatedPort(outdated.Port{Selector: "py310-cbor2", With: "py-cbor2", Result: upstream.Result{CurrentVersion: "5.7.1", CandidateVersion: "6.1.5", Assessment: upstream.UpdateAvailable, Release: release}})
+	require.Equal(t, "py-cbor2", sibling.With)
+	main := outdatedPort(outdated.Port{Selector: "py-cbor2", Result: upstream.Result{CurrentVersion: "5.7.1", CandidateVersion: "6.1.5", Assessment: upstream.UpdateAvailable, Release: release}})
+
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	plan, err := e.PlanOutdated(t.Context(), OutdatedReport{Ports: []OutdatedPort{main, sibling}})
+	require.NoError(t, err)
+	require.Len(t, plan.Updates, 1)
+	require.Equal(t, "py-cbor2", plan.Updates[0].Port.Port)
+	require.Equal(t, []SkippedUpdate{{Port: "py310-cbor2", Reason: "moves with py-cbor2, whose release it shares"}}, plan.Skipped)
+}

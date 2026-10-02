@@ -15,7 +15,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
-var errAutomaticUnsupported = errors.New("upstream: automatic selection does not support this source convention")
+// ErrAutomaticUnsupported is a port whose source convention automatic
+// discovery doesn't take, as a livecheck it can't run: the port itself is
+// fine, and a person names the version.
+var ErrAutomaticUnsupported = errors.New("upstream: automatic selection does not support this source convention")
 
 // versionSelector orders and captures versions the way MacPorts does: vercmp
 // for order and its native regex for livecheck captures.
@@ -65,17 +68,20 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 	}
 	discovery, discoveryErr := portsource.Interpret(port, portsource.Discovery)
 	if discoveryErr != nil {
-		return result, fmt.Errorf("%w: %v", errAutomaticUnsupported, discoveryErr)
+		return result, fmt.Errorf("%w: %v", ErrAutomaticUnsupported, discoveryErr)
 	}
 	if discovery.Catalog == portsource.HTTPRegex {
 		return s.discoverListing(ctx, port, discovery)
+	}
+	if discovery.Catalog == portsource.GitHead {
+		return s.discoverHead(ctx, port, discovery)
 	}
 	spec, repository, err := s.repository(port, true)
 	if err != nil {
 		return result, err
 	}
 	if !automatic(port.Version) {
-		return result, fmt.Errorf("%w: require a stable or prerelease numeric version", errAutomaticUnsupported)
+		return result, fmt.Errorf("%w: require a stable or prerelease numeric version", ErrAutomaticUnsupported)
 	}
 	if spec.Livecheck.Overridden {
 		return s.discoverOverridden(ctx, port, spec, repository)
@@ -401,4 +407,23 @@ func (s *Service) evaluateCandidates(ctx context.Context, candidates []macports.
 		candidates[index].Version = version
 	}
 	return nil
+}
+
+// discoverHead checks a port that tracks a branch as Base's git livecheck
+// does: the commit the branch names now, against the one the port pins,
+// livecheck.version, which may be abbreviated. One that differs is Moved,
+// and the version to name for it is a person's.
+func (s *Service) discoverHead(ctx context.Context, port macports.PortInfo, spec portsource.Spec) (Result, error) {
+	result := Result{CurrentVersion: port.Version, Assessment: Unknown, ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}
+	commit, err := git.RemoteBranchCommit(ctx, s.Git, spec.Livecheck.URL, spec.Livecheck.Branch)
+	if err != nil {
+		return result, fmt.Errorf("upstream: reading %s's %s with git: %w", spec.Livecheck.URL, spec.Livecheck.Branch, err)
+	}
+	result.Head = &Head{Branch: spec.Livecheck.Branch, Commit: commit}
+	if strings.HasPrefix(commit, strings.ToLower(spec.Livecheck.Version)) {
+		result.Assessment, result.CandidateVersion = Current, port.Version
+		return result, nil
+	}
+	result.Assessment, result.CandidateVersion = Moved, commit[:min(len(commit), 12)]
+	return result, nil
 }

@@ -450,7 +450,8 @@ func TestOverridingLivecheckSelectsThroughTheCatalog(t *testing.T) {
 	latest = "{\"tag_name\": \"v2.0-rc1\"}"
 	_, err = service.DiscoverPort(t.Context(), archive)
 	require.ErrorIs(t, err, upstream.ErrReleaseMissing)
-	require.ErrorContains(t, err, "no eligible version matches the port's livecheck")
+	require.ErrorContains(t, err, "nothing upstream lists matches the port's livecheck, so there's no release to compare with")
+	require.ErrorIs(t, err, upstream.ErrReleaseMissing)
 
 	// A livecheck the forge does not serve is fetched plainly.
 	page := "<a>v1.10</a>"

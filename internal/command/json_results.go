@@ -547,6 +547,18 @@ type outdatedPortJSON struct {
 	// first of them. Absent for a port that is current or outdated.
 	Uncertain []setAsideJSON `json:"uncertain,omitempty"`
 	Problem   string         `json:"problem,omitempty"`
+	// With is the subport whose check stands for this one, which shares
+	// its Portfile's release.
+	With string `json:"with,omitempty"`
+	// Moved is, for a port that tracks a branch, the branch and the newer
+	// commit it names than the one the port pins.
+	Moved *movedJSON `json:"moved,omitempty"`
+}
+
+// movedJSON is the branch a port tracks and the commit it names now.
+type movedJSON struct {
+	Branch string `json:"branch"`
+	Commit string `json:"commit"`
 }
 
 // setAsideJSON is a version that compares newer than a port's own but was
@@ -568,10 +580,17 @@ func setAsideView(aside []engine.SetAside) []setAsideJSON {
 	return views
 }
 
+func movedView(head *engine.Head) *movedJSON {
+	if head == nil {
+		return nil
+	}
+	return &movedJSON{Branch: head.Branch, Commit: head.Commit}
+}
+
 func outdatedView(report engine.OutdatedReport) map[string]any {
 	ports := []outdatedPortJSON{}
 	for _, port := range report.Ports {
-		ports = append(ports, outdatedPortJSON{Port: port.Port, Current: port.Current, Newest: port.Newest, Outdated: port.Outdated, Uncertain: setAsideView(port.Uncertain), Problem: port.Problem})
+		ports = append(ports, outdatedPortJSON{Port: port.Port, Current: port.Current, Newest: port.Newest, Outdated: port.Outdated, Uncertain: setAsideView(port.Uncertain), Problem: port.Problem, With: port.With, Moved: movedView(port.Moved)})
 	}
 	return map[string]any{"master": report.Master, "ports": ports}
 }

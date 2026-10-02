@@ -51,7 +51,7 @@ func (e *Engine) github() *forgegithub.Client {
 // discovery finds ports' newest releases upstream, on GitHub and GitLab.
 func (e *Engine) discovery(ports *selection.Reader) *upstream.Service {
 	return &upstream.Service{
-		Ports: ports, HTTP: fetch.Client, Versions: ports,
+		Ports: ports, HTTP: fetch.Client, Versions: ports, Git: e.options.Git,
 		Catalogs: map[portsource.Forge]upstream.Catalog{
 			portsource.GitHub: e.github(),
 			portsource.GitLab: &forgegitlab.Client{HTTP: fetch.Client},

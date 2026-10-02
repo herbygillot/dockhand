@@ -214,10 +214,27 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 			_ = p.API.Cancel(stopping, fork.Repository, run.ID)
 		}
 	}()
+	// A run that builds past the bound is cancelled, and what it was
+	// building when it ended is read as timed out (D16); one GitHub
+	// doesn't end within cancelWait of that is given up on.
+	bound := cmp.Or(p.BuildTimeout, JobCap)
+	status, ended := "", ""
+	// A run ended for its time, which a driver that restarted finds
+	// completed, is read as that, not run again: another 6 hours, where
+	// it was cancelled for the bound (batch 26's leftover).
+	if run.Status == "completed" && stoppedShort(run.Conclusion) {
+		jobs, err := p.API.Jobs(ctx, fork.Repository, run.ID, run.Attempt)
+		if err != nil {
+			return fmt.Errorf("%w: listing %s's jobs: %w", buildenv.ErrInfrastructure, run.URL, err)
+		}
+		if slices.ContainsFunc(jobs, func(j RunnerJob) bool { return ranFor(j, bound) }) {
+			ended = fmt.Sprintf("the run built for its %s bound (providers.github.build_timeout), and was ended", bound)
+		}
+	}
 	// A run that stopped short of building, or whose failure an earlier
 	// attempt found no port to blame for, runs again rather than being read
 	// again.
-	if run.Status == "completed" && (stoppedShort(run.Conclusion) || job.Execution.Attempt > 1 && run.Conclusion != "success") {
+	if ended == "" && run.Status == "completed" && (stoppedShort(run.Conclusion) || job.Execution.Attempt > 1 && run.Conclusion != "success") {
 		build.Progress(fmt.Sprintf("running %s's unsuccessful jobs again", run.URL))
 		if err := p.API.Rerun(ctx, fork.Repository, run.ID); err != nil {
 			return fmt.Errorf("%w: running %s again: %w", buildenv.ErrInfrastructure, run.URL, err)
@@ -232,11 +249,6 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 			}
 		}
 	}
-	// A run that builds past the bound is cancelled, and what it was
-	// building when it ended is read as timed out (D16); one GitHub
-	// doesn't end within cancelWait of that is given up on.
-	bound := cmp.Or(p.BuildTimeout, JobCap)
-	status, ended := "", ""
 	var building, cancelling time.Duration
 	for run.Status != "completed" {
 		if run.Status != status {
@@ -328,7 +340,7 @@ func (p *Provider) read(ctx context.Context, job buildenv.Job, build buildenv.Bu
 		case j.Conclusion == "success":
 		case ended != "":
 			capped = ended
-		case !j.Started.IsZero() && j.Completed.Sub(j.Started) >= JobCap-time.Minute:
+		case ranFor(j, JobCap):
 			capped = fmt.Sprintf("GitHub ended the job at its %s cap on a job", JobCap)
 		}
 		runners = append(runners, runner{job: j, log: path, built: ReadLog(log), listing: ListsSubports(log), capped: capped})
@@ -391,6 +403,12 @@ func observe(build buildenv.Build, jobs []RunnerJob) error {
 }
 
 // stoppedShort is a conclusion that says nothing about the ports.
+// ranFor reports whether a job ran for a bound, but a minute: GitHub, or
+// dockhand, ended it for its time.
+func ranFor(j RunnerJob, bound time.Duration) bool {
+	return !j.Started.IsZero() && j.Completed.Sub(j.Started) >= bound-time.Minute
+}
+
 func stoppedShort(conclusion string) bool {
 	switch conclusion {
 	case "cancelled", "timed_out", "startup_failure", "stale":

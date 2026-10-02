@@ -1,6 +1,7 @@
 package portsource
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -28,6 +29,10 @@ type Catalog string
 const (
 	Tags     Catalog = "tags"
 	Releases Catalog = "releases"
+	// GitHead is a port that tracks a branch, livecheck.type git: what
+	// it's checked against is the commit the branch names now, as Base's
+	// git livecheck reads it, not a release (batch 30).
+	GitHead Catalog = "git-head"
 )
 
 type Livecheck struct {
@@ -45,6 +50,8 @@ type Livecheck struct {
 	URL        string
 	Regex      string
 	Version    string
+	// Branch is a git livecheck's branch, HEAD where it names none.
+	Branch string `json:",omitempty"`
 }
 
 type Spec struct {
@@ -78,6 +85,9 @@ func Interpret(port macports.PortInfo, purpose Purpose) (Spec, error) {
 	github := present(port, "github.author")
 	gitlab := present(port, "gitlab.author")
 	if !github && !gitlab {
+		if purpose == Discovery && port.Options["livecheck.type"] == "git" {
+			return gitHead(port, Spec{CurrentVersion: port.Version, SourceVersion: archiveSourceVersion(port)})
+		}
 		if purpose == Discovery {
 			return discoverListing(port)
 		}
@@ -107,6 +117,9 @@ func Interpret(port macports.PortInfo, purpose Purpose) (Spec, error) {
 	spec.Livecheck = Livecheck{
 		Type: port.Options["livecheck.type"], URL: port.Options["livecheck.url"],
 		Regex: port.Options["livecheck.regex"], Version: port.Options["livecheck.version"],
+	}
+	if spec.Livecheck.Type == "git" {
+		return gitHead(port, spec)
 	}
 	switch {
 	case spec.Livecheck.Type == "none":
@@ -298,3 +311,23 @@ func appendPath(base string, elements ...string) (string, error) {
 	return parsed.String(), nil
 }
 func trimURL(value string) string { return strings.TrimRight(value, "/") }
+
+// gitHead is a port that tracks a branch, livecheck.type git, as Base's git
+// livecheck reads it: the repository at livecheck.url, its branch, HEAD
+// where none is named, and the commit the port pins, livecheck.version.
+// 19 of the person's ports, each pinned to a commit with a version a
+// person named, read as unsupported (batch 30).
+func gitHead(port macports.PortInfo, spec Spec) (Spec, error) {
+	for _, key := range []string{"livecheck.url", "livecheck.version", "livecheck.branch"} {
+		if err := evaluated(port, key); err != nil {
+			return Spec{}, fmt.Errorf("%w: %v", ErrUnsupported, err)
+		}
+	}
+	parts, errs := syntax.ListValues(port.Options["livecheck.url"])
+	if len(errs) != 0 || len(parts) != 1 || port.Options["livecheck.version"] == "" {
+		return Spec{}, fmt.Errorf("%w: a git livecheck needs one livecheck.url and a livecheck.version", ErrUnsupported)
+	}
+	spec.Catalog = GitHead
+	spec.Livecheck = Livecheck{Type: "git", URL: parts[0], Version: port.Options["livecheck.version"], Branch: cmp.Or(port.Options["livecheck.branch"], "HEAD")}
+	return spec, nil
+}

@@ -38,7 +38,17 @@ type OutdatedPort struct {
 	// Problem says why the port could not be checked.
 	Problem string
 	Release *model.Release
+	// With is the subport whose check stands for this one, which shares
+	// its Portfile's release; it moves with that one's update.
+	With string
+	// Moved is, for a port that tracks a branch, the branch and the newer
+	// commit it names than the one the port pins: behind, with a version
+	// a person names, so it's neither outdated nor planned.
+	Moved *Head
 }
+
+// Head is the branch a port tracks and the commit it names now.
+type Head = upstream.Head
 
 // SetAside is a version discovery set aside: it compares newer than the
 // port's own, but its tag's commit predates the port's own tag's.
@@ -111,12 +121,14 @@ func (s *surveyedPorts) Outdated(ctx context.Context, commit model.ObjectID, req
 
 // outdatedPort is a port as upstream discovery assessed it.
 func outdatedPort(port outdated.Port) OutdatedPort {
-	entry := OutdatedPort{Port: port.Selector, Current: port.CurrentVersion, Newest: port.CandidateVersion, Release: port.Release}
+	entry := OutdatedPort{Port: port.Selector, Current: port.CurrentVersion, Newest: port.CandidateVersion, Release: port.Release, With: port.With}
 	switch port.Assessment {
 	case upstream.UpdateAvailable:
 		entry.Outdated = true
 	case upstream.Uncertain:
 		entry.Uncertain = port.SetAside
+	case upstream.Moved:
+		entry.Moved = port.Head
 	case upstream.Unknown:
 		entry.Problem = port.Detail
 		if entry.Problem == "" {
@@ -160,6 +172,10 @@ func (e *Engine) PlanOutdated(ctx context.Context, report OutdatedReport) (Outda
 			continue
 		}
 		if !port.Outdated {
+			continue
+		}
+		if port.With != "" {
+			plan.Skipped = append(plan.Skipped, SkippedUpdate{Port: port.Port, Reason: "moves with " + port.With + ", whose release it shares"})
 			continue
 		}
 		open, err := e.BranchesChanging(ctx, port.Port)

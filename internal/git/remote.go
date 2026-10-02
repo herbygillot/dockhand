@@ -203,6 +203,28 @@ func (r *Repository) MergeBase(ctx context.Context, a, b string) (string, error)
 	return base, nil
 }
 
+// RemoteBranchCommit is the commit a remote repository's branch, or HEAD,
+// names, read by URL with ls-remote as MacPorts' git livecheck reads it
+// (livecheck.type git: git ls-remote <url> <branch>, the first object it
+// prints). It runs outside any checkout, and never prompts.
+func RemoteBranchCommit(ctx context.Context, executable, url, branch string) (string, error) {
+	if !validRemoteURL(url) {
+		return "", fmt.Errorf("git: invalid remote")
+	}
+	if branch != "HEAD" && !ValidRefName("refs/heads/"+strings.TrimPrefix(branch, "refs/heads/")) {
+		return "", fmt.Errorf("git: invalid branch %q", branch)
+	}
+	out, err := (&Repository{Root: os.TempDir(), Executable: executable}).output(ctx, "ls-remote", "--", url, branch)
+	if err != nil {
+		return "", err
+	}
+	object, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\t")
+	if !ValidObjectID(object) {
+		return "", fmt.Errorf("git: %s names no %s", url, branch)
+	}
+	return object, nil
+}
+
 // RemoteTag is a tag of a repository read by URL and the object it peels
 // to: the commit an annotated tag finally names, or a lightweight tag's own
 // object. ls-remote does not say what kind of object that is, so a tag that

@@ -208,3 +208,29 @@ func TestArchiveSourceVersionIsTheLivecheckSpelling(t *testing.T) {
 	_, err = portsource.Interpret(port, portsource.Discovery)
 	require.Error(t, err)
 }
+
+// A port that tracks a branch, livecheck.type git, is read as Base's git
+// livecheck reads it: the repository, its branch, HEAD where none is
+// named, and the commit it pins; a forge port and a plain one alike
+// (batch 30).
+func TestAGitLivecheckTracksABranch(t *testing.T) {
+	port := githubPort()
+	port.Version = "20231125"
+	port.Options["github.version"] = "42ffa05d4aca7941be9d9b90c5d243b69521dd61"
+	port.Options["github.tag_prefix"], port.Options["github.tag_suffix"], port.Options["github.tarball_from"] = "", "", "archive"
+	port.Options["git.branch"] = port.Options["github.version"]
+	port.Options["livecheck.type"], port.Options["livecheck.url"], port.Options["livecheck.regex"] = "git", "https://github.com/owner/project.git", ""
+	port.Options["livecheck.version"], port.Options["livecheck.branch"] = port.Options["github.version"], ""
+	spec, err := portsource.Interpret(port, portsource.Discovery)
+	require.NoError(t, err)
+	require.Equal(t, portsource.GitHead, spec.Catalog)
+	require.Equal(t, portsource.Livecheck{Type: "git", URL: "https://github.com/owner/project.git", Version: port.Options["github.version"], Branch: "HEAD"}, spec.Livecheck)
+
+	plain := macports.PortInfo{Name: "goat", Version: "20220814", Options: map[string]string{
+		"livecheck.type": "git", "livecheck.url": "https://example.org/goat.git", "livecheck.version": "6d4db35", "livecheck.branch": "main", "distname": "goat-20220814",
+	}}
+	spec, err = portsource.Interpret(plain, portsource.Discovery)
+	require.NoError(t, err)
+	require.Equal(t, portsource.GitHead, spec.Catalog)
+	require.Equal(t, "main", spec.Livecheck.Branch)
+}

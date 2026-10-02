@@ -32,7 +32,7 @@ func (s *Service) discoverOverridden(ctx context.Context, port macports.PortInfo
 	// compares them against livecheck.version.
 	current := spec.SourceVersion
 	if !automatic(current) {
-		return result, fmt.Errorf("%w: require a stable or prerelease numeric version", errAutomaticUnsupported)
+		return result, fmt.Errorf("%w: require a stable or prerelease numeric version", ErrAutomaticUnsupported)
 	}
 	page, _, err := s.listing(ctx, port, spec)
 	if err != nil {
@@ -90,7 +90,7 @@ func (s *Service) discoverOverridden(ctx context.Context, port macports.PortInfo
 			return result, err
 		}
 		if evaluated == "" || evaluated == port.Version {
-			return result, fmt.Errorf("%w: livecheck capture does not change the evaluated version", errAutomaticUnsupported)
+			return result, fmt.Errorf("%w: livecheck capture does not change the evaluated version", ErrAutomaticUnsupported)
 		}
 	}
 	result.ObservedAt = time.Now().UTC().Truncate(time.Millisecond)

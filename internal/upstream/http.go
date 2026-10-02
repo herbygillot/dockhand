@@ -29,7 +29,7 @@ func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, s
 	// version is evaluated from the selected spelling afterwards.
 	current := spec.SourceVersion
 	if !automatic(current) {
-		return result, fmt.Errorf("%w: require a stable or prerelease numeric version", errAutomaticUnsupported)
+		return result, fmt.Errorf("%w: require a stable or prerelease numeric version", ErrAutomaticUnsupported)
 	}
 	page, validators, err := s.listing(ctx, port, spec)
 	if err != nil {
@@ -59,7 +59,7 @@ func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, s
 			return result, err
 		}
 		if evaluated == "" || evaluated == port.Version {
-			return result, fmt.Errorf("%w: livecheck capture does not change the evaluated version", errAutomaticUnsupported)
+			return result, fmt.Errorf("%w: livecheck capture does not change the evaluated version", ErrAutomaticUnsupported)
 		}
 	} else if current != port.Version {
 		// Already current: the port version stands, and the derived

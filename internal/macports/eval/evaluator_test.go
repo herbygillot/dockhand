@@ -262,6 +262,47 @@ subport selected-broken { error "sibling requires attention" }
 	require.ErrorContains(t, err, "sibling requires attention")
 }
 
+// A port's default livecheck, with a plain master site, resolves through
+// the tree's master-sites.tcl, which reads livecheck.distname: every such
+// port read as unresolved, type default with no regex, while the resolver
+// didn't take Base's globals, libt3config and tilde among them (batch 30).
+func TestTheDefaultLivecheckResolvesFromTheMasterSite(t *testing.T) {
+	t.Parallel()
+	evaluator := liveEvaluator(t)
+	tree := fixtureTree(t)
+	putFile(t, tree.Root(), "_resources/port1.0/livecheck/fallback.tcl", "source [getdefaultportresourcepath \"port1.0/livecheck\"]/master-sites.tcl\n")
+	putFile(t, tree.Root(), "_resources/port1.0/livecheck/master-sites.tcl", `set livecheck.type "regex"
+if {${livecheck.name} eq "default"} {
+    set livecheck.name ${name}
+}
+if {${livecheck.distname} eq "default"} {
+    set livecheck.distname ${livecheck.name}
+}
+if {!$has_homepage || ${livecheck.url} eq ${homepage}} {
+    if {!$has_master_sites || [llength ${master_sites}] == 0} {
+        set livecheck.type "none"
+    } else {
+        set livecheck.url [lindex ${master_sites} 0]
+    }
+}
+if {${livecheck.regex} eq ""} {
+    set livecheck.regex [list "[quotemeta ${livecheck.distname}]-(\\d+(?:\\.\\d+)*)"]
+}
+`)
+	putFile(t, tree.Root(), "devel/tilde/Portfile", "PortSystem 1.0\nname tilde\nversion 1.1.3\ncategories devel\nhomepage https://os.example.org/\nmaster_sites ${homepage}/dist/\n")
+	targets, err := evaluator.Resolve(t.Context(), tree, macports.Selection{Selector: "devel/tilde"})
+	require.NoError(t, err)
+	source, err := tree.Select(targets[0])
+	require.NoError(t, err)
+	snapshot, err := evaluator.Evaluate(t.Context(), source)
+	require.NoError(t, err)
+	port := snapshot.Ports["tilde"]
+	require.Equal(t, "default", port.Options["dockhand.livecheck_declared"])
+	require.Equal(t, "regex", port.Options["livecheck.type"])
+	require.Equal(t, "https://os.example.org//dist/", port.Options["livecheck.url"])
+	require.Contains(t, port.Options["livecheck.regex"], "tilde-")
+}
+
 // A livecheck type such as pypi is resolved through the tree's own checker
 // definitions, exactly as port livecheck does, so dockhand sees the regex
 // livecheck it stands for rather than a type it would have to understand.

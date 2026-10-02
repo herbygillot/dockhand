@@ -3,6 +3,7 @@ package ghactions
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -123,4 +124,18 @@ type observing struct {
 func (b *observing) Observe(observed model.Observed) error {
 	b.observed = append(b.observed, observed)
 	return nil
+}
+
+// A job that ran for a bound, but a minute, was ended for its time: one
+// GitHub ended at its cap, or one dockhand cancelled for its bound, which a
+// driver that restarted reads as that rather than running it again (batch
+// 26's leftover). One that never started ran for nothing.
+func TestAJobEndedForItsTime(t *testing.T) {
+	started := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	job := func(ran time.Duration) RunnerJob { return RunnerJob{Started: started, Completed: started.Add(ran)} }
+	require.True(t, ranFor(job(6*time.Hour), JobCap))
+	require.True(t, ranFor(job(JobCap-30*time.Second), JobCap))
+	require.False(t, ranFor(job(2*time.Hour), JobCap))
+	require.True(t, ranFor(job(2*time.Hour), 2*time.Hour), "a shorter bound of dockhand's")
+	require.False(t, ranFor(RunnerJob{}, JobCap))
 }

@@ -87,9 +87,14 @@ update --outdated --mine starts on them.`,
 func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report engine.OutdatedReport, all bool) error {
 	table := tabwriter.NewWriter(out, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(table, "  PORT\tNOW\tNEWEST\tDOCKHAND CAN")
-	newer, unknown, uncertain := 0, 0, 0
+	newer, unknown, uncertain, moved := 0, 0, 0, 0
 	for _, port := range report.Ports {
 		switch {
+		case port.Moved != nil:
+			// A port pinned to a commit of a branch that has moved on is
+			// behind, and the version to give the commit is a person's.
+			moved++
+			fmt.Fprintf(table, "  %s\t%s\t%s?\tedit %s by hand: its %s names a newer commit than the one it pins\n", port.Port, port.Current, port.Newest, port.Port, port.Moved.Branch)
 		case port.Problem != "":
 			unknown++
 			if all {
@@ -107,15 +112,20 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 			if err != nil {
 				return err
 			}
-			if len(open) > 0 {
+			switch {
+			case len(open) > 0:
 				can = "already in " + open[0].ShortName()
+			case port.With != "":
+				can = "update with " + port.With
 			}
 			fmt.Fprintf(table, "  %s\t%s\t%s\t%s\n", port.Port, port.Current, port.Newest, can)
+		case all && port.With != "":
+			fmt.Fprintf(table, "  %s\t%s\t%s\tnothing; it is current, as %s is\n", port.Port, port.Current, port.Newest, port.With)
 		case all:
 			fmt.Fprintf(table, "  %s\t%s\t%s\tnothing; it is current\n", port.Port, port.Current, port.Newest)
 		}
 	}
-	if newer > 0 || uncertain > 0 || all {
+	if newer > 0 || uncertain > 0 || moved > 0 || all {
 		table.Flush()
 	}
 	ports, master := plural(len(report.Ports), "port"), engine.Short(report.Master)
@@ -135,6 +145,12 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 	}
 	if uncertain > 0 && !alone {
 		line += fmt.Sprintf(" · %d may have one, for a look", uncertain)
+	}
+	switch {
+	case moved == 1:
+		line += " · 1 tracks a branch with a newer commit than it pins"
+	case moved > 1:
+		line += fmt.Sprintf(" · %d track branches with newer commits than they pin", moved)
 	}
 	if unknown > 0 {
 		line += fmt.Sprintf(" · %d couldn't be checked", unknown)

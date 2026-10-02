@@ -79,7 +79,14 @@ namespace eval ::dockhand {
             # already knows. The declared type is kept beside it.
             if {![catch {$worker eval {
                 apply {{} {
-                    global livecheck.url livecheck.type livecheck.regex livecheck.name homepage master_sites name
+                    # Base's own globals for this (portlivecheck_run.tcl):
+                    # master-sites.tcl reads livecheck.distname, and every
+                    # port on a plain master site's default livecheck read
+                    # as unresolved without it (batch 30).
+                    global livecheck.url livecheck.type livecheck.md5 livecheck.regex \
+                           livecheck.branch livecheck.name livecheck.distname livecheck.version \
+                           livecheck.ignore_sslcert livecheck.compression livecheck.curloptions \
+                           livecheck.user_agent homepage master_sites name subport
                     set declared ${livecheck.type}
                     set has_master_sites [info exists master_sites]
                     set has_homepage [info exists homepage]

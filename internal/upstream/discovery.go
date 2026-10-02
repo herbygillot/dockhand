@@ -25,7 +25,17 @@ const (
 	// (Result.SetAside), and nothing newer is found beyond it. Nothing is
 	// selected; a person looks, and names the version to update to.
 	Uncertain Assessment = "uncertain"
+	// Moved is a port that tracks a branch, whose branch names a newer
+	// commit than the one it pins: it's behind, and the version to name
+	// for that commit is a person's (Head).
+	Moved Assessment = "moved"
 )
+
+// Head is what a port tracking a branch is checked against: the branch,
+// HEAD where it names none, and the commit it names now.
+type Head struct {
+	Branch, Commit string
+}
 
 // SetAside is a version that compares newer than the port's own, set aside
 // because its tag's commit was made before the commit of the tag the port
@@ -82,7 +92,10 @@ type Result struct {
 	// but predate the port's own release, newest first. With none selected
 	// beyond them, the assessment is Uncertain, and CandidateVersion is the
 	// newest of them.
-	SetAside   []SetAside
+	SetAside []SetAside
+	// Head is the branch a port tracks and the commit it names now, for a
+	// port that tracks a branch; nil for any other.
+	Head       *Head
 	Evidence   []Observation
 	Detail     string
 	ObservedAt time.Time
@@ -97,6 +110,9 @@ type Service struct {
 	// EvaluateVersions evaluates several source versions in one pass when the
 	// bound probe supports it; discovery falls back to EvaluateVersion otherwise.
 	EvaluateVersions func(context.Context, []string) ([]string, error)
+	// Git is the git executable a port tracking a branch is read with; git
+	// on PATH when empty.
+	Git string
 }
 
 func (s *Service) repository(port macports.PortInfo, automatic bool) (portsource.Spec, forge.Repository, error) {
@@ -109,7 +125,7 @@ func (s *Service) repository(port macports.PortInfo, automatic bool) (portsource
 	spec, err = portsource.Interpret(port, purpose)
 	if err != nil {
 		if automatic && errors.Is(err, portsource.ErrUnsupported) {
-			return spec, nil, fmt.Errorf("%w: %v", errAutomaticUnsupported, err)
+			return spec, nil, fmt.Errorf("%w: %v", ErrAutomaticUnsupported, err)
 		}
 		return spec, nil, err
 	}

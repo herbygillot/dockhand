@@ -30,6 +30,13 @@ type Result struct {
 type Port struct {
 	Selector string
 	upstream.Result
+	// With is the subport whose check stands for this one, which shares
+	// its Portfile's release (WithSiblings); empty for one checked itself.
+	With string
+	// portfile is the Portfile it was selected from, and unsupported that
+	// discovery doesn't take its source convention.
+	portfile    string
+	unsupported bool
 }
 
 // Service observes committed ports using caller-supplied integrations and cache
@@ -131,7 +138,35 @@ func (s *Service) Observe(ctx context.Context, selection Selection) (_ Result, e
 	if failed == nil {
 		failed = ctx.Err()
 	}
+	result.Ports = WithSiblings(result.Ports)
 	return result, failed
+}
+
+// WithSiblings gives a subport whose source convention discovery doesn't
+// take the result of a sibling it shares its Portfile's release with,
+// checked, as dockhand edits subports that share the main version as one
+// release: the python PortGroup turns its subports' livecheck off, so
+// py310-cbor2 to py314-cbor2 read as problems beside py-cbor2, checked
+// and outdated, 65 of the person's 1,079 ports (batch 30). Each names the
+// sibling it's checked with.
+func WithSiblings(ports []Port) []Port {
+	checked := map[[2]string]Port{}
+	for _, port := range ports {
+		if port.portfile != "" && port.Assessment != upstream.Unknown && port.CurrentVersion != "" {
+			key := [2]string{port.portfile, port.CurrentVersion}
+			if _, ok := checked[key]; !ok {
+				checked[key] = port
+			}
+		}
+	}
+	for i, port := range ports {
+		sibling, ok := checked[[2]string{port.portfile, port.CurrentVersion}]
+		if !port.unsupported || port.CurrentVersion == "" || !ok {
+			continue
+		}
+		ports[i].Result, ports[i].With = sibling.Result, sibling.Selector
+	}
+	return ports
 }
 
 // Concurrency is how many ports Observe looks up at once when the service
@@ -164,6 +199,8 @@ func (s *Service) observeOne(ctx context.Context, editor *portedit.Service, file
 	if problem != nil {
 		item.Assessment = upstream.Unknown
 		item.Detail = problem.Error()
+		item.unsupported = errors.Is(problem, upstream.ErrAutomaticUnsupported)
 	}
+	item.portfile = selected.Portfile
 	return item, probe.Close()
 }
