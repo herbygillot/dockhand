@@ -205,12 +205,14 @@ func TestCleanupRemovesArchivesNoLiveResultNames(t *testing.T) {
 	old := e.now().Add(-40 * 24 * time.Hour)
 	directory := e.ArchiveDirectory()
 	require.NoError(t, os.MkdirAll(filepath.Join(directory, ".incoming-1"), 0o755))
-	for _, name := range []string{"libharbor", "gone", "orphan", "fresh"} {
+	// Signatures kept beside an archive (binaryarchive.Sign) go and stay
+	// with it, whatever their age.
+	for _, name := range []string{"libharbor", "libharbor.0a1b2c3d.sig", "gone", "gone.0a1b2c3d.rmd160", "orphan", "fresh"} {
 		require.NoError(t, os.WriteFile(filepath.Join(directory, name), []byte(name), 0o644))
 	}
 	// gone's file is new, though its record is old: it goes because its
 	// record does, not by its age.
-	for _, name := range []string{"libharbor", "orphan", ".incoming-1"} {
+	for _, name := range []string{"libharbor", "libharbor.0a1b2c3d.sig", "orphan", ".incoming-1"} {
 		require.NoError(t, os.Chtimes(filepath.Join(directory, name), old, old))
 	}
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
@@ -228,8 +230,9 @@ func TestCleanupRemovesArchivesNoLiveResultNames(t *testing.T) {
 	require.Len(t, report.Archives, 1)
 	require.Equal(t, "sha256:gone", report.Archives[0].Digest)
 	require.FileExists(t, filepath.Join(directory, "libharbor"), "an open branch's result names it")
+	require.FileExists(t, filepath.Join(directory, "libharbor.0a1b2c3d.sig"), "and what's kept beside it")
 	require.FileExists(t, filepath.Join(directory, "fresh"), "no record names it yet, but it's new")
-	for _, name := range []string{"gone", "orphan", ".incoming-1"} {
+	for _, name := range []string{"gone", "gone.0a1b2c3d.rmd160", "orphan", ".incoming-1"} {
 		require.NoFileExists(t, filepath.Join(directory, name))
 		require.NoDirExists(t, filepath.Join(directory, name))
 	}

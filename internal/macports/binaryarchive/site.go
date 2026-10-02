@@ -7,12 +7,13 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"path/filepath"
 	"strings"
 
+	"golang.org/x/sys/unix"
+
+	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
 // The public keys' files at a site's root: signify's, and the RSA key's,
@@ -59,29 +60,67 @@ type Archive struct {
 }
 
 // Sign makes an archive a site's entry, once it is the archive it was
-// kept as, by its digest: its signify signature and its RSA one, written
-// into directory, which the caller removes. The archive itself isn't
-// copied.
-func Sign(ctx context.Context, keys Keys, archive Archive, directory string) (Entry, error) {
+// kept as, by its digest: its signify signature and its RSA one. They're
+// kept beside the archive, named by the keys that made them, and made
+// once: an archive given to every guest of every check was signed again
+// for each, which the person chose to end (D18, 2026-10-02). The digest is
+// checked on every call, before the entry is given out; the archive is
+// read through a read-only map, whose pages the system can drop, rather
+// than into memory whole. Whoever removes the archive removes its
+// signatures, every file whose name is the archive's and a dot more.
+func Sign(ctx context.Context, keys Keys, archive Archive) (Entry, error) {
 	if !Installable(archive.Port, archive.Name) {
 		return Entry{}, fmt.Errorf("binaryarchive: %s's %s can't be a site's entry", archive.Port, archive.Name)
 	}
-	data, err := os.ReadFile(archive.Path)
+	data, unmap, err := mapped(archive.Path)
 	if err != nil {
 		return Entry{}, err
 	}
+	defer unmap()
 	if sum := sha256.Sum256(data); "sha256:"+hex.EncodeToString(sum[:]) != archive.Digest {
 		return Entry{}, fmt.Errorf("binaryarchive: %s isn't the %s it was kept as", archive.Path, archive.Digest)
 	}
-	sig, rmd160 := filepath.Join(directory, archive.Name+".sig"), filepath.Join(directory, archive.Name+".rmd160")
-	if err := os.WriteFile(sig, keys.Signify.Sign(data, "verify with "+SignifyPublicKey), 0o600); err != nil {
+	id := keys.id()
+	sig, rmd160 := archive.Path+"."+id+".sig", archive.Path+"."+id+".rmd160"
+	if err := signOnce(sig, func() ([]byte, error) { return keys.Signify.Sign(data, "verify with "+SignifyPublicKey), nil }); err != nil {
 		return Entry{}, err
 	}
-	// Signed as pubkeys.conf says to sign one's own archives.
-	if _, err := subprocess.Run(ctx, subprocess.Spec{Tool: "openssl", Command: "dgst", Path: "/usr/bin/openssl",
-		Args: []string{"dgst", "-ripemd160", "-sign", keys.RSA, "-out", rmd160, archive.Path}}); err != nil {
-		os.Remove(sig)
+	if err := signOnce(rmd160, func() ([]byte, error) { return keys.signRIPEMD160(data) }); err != nil {
 		return Entry{}, err
 	}
 	return Entry{Port: archive.Port, Files: map[string]string{archive.Name: archive.Path, archive.Name + ".sig": sig, archive.Name + ".rmd160": rmd160}}, nil
+}
+
+// signOnce writes a signature where none is yet, whole or not at all.
+func signOnce(path string, sign func() ([]byte, error)) error {
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	}
+	signature, err := sign()
+	if err != nil {
+		return err
+	}
+	return atomicfile.Write(path, signature, 0o600)
+}
+
+// mapped is a file's contents through a read-only map, and how to let it
+// go; an empty file, which can't be mapped, is empty.
+func mapped(path string) ([]byte, func(), error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, nil, err
+	}
+	if info.Size() == 0 {
+		return []byte{}, func() {}, nil
+	}
+	data, err := unix.Mmap(int(file.Fd()), 0, int(info.Size()), unix.PROT_READ, unix.MAP_SHARED)
+	if err != nil {
+		return nil, nil, fmt.Errorf("binaryarchive: mapping %s: %w", path, err)
+	}
+	return data, func() { _ = unix.Munmap(data) }, nil
 }

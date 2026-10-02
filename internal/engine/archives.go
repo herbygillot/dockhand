@@ -106,8 +106,14 @@ func (e *Engine) pruneArchives(ctx context.Context, before time.Time) (removed, 
 	}
 	var errs []error
 	for _, archive := range removed {
-		if err := os.Remove(e.archivePath(archive.Digest)); err != nil && !errors.Is(err, os.ErrNotExist) {
-			errs = append(errs, err)
+		// The archive goes with what was kept beside it: its signatures,
+		// named as it is and a dot more (binaryarchive.Sign).
+		path := e.archivePath(archive.Digest)
+		beside, _ := filepath.Glob(path + ".*")
+		for _, file := range append([]string{path}, beside...) {
+			if err := os.Remove(file); err != nil && !errors.Is(err, os.ErrNotExist) {
+				errs = append(errs, err)
+			}
 		}
 	}
 	directory := e.ArchiveDirectory()
@@ -124,7 +130,8 @@ func (e *Engine) pruneArchives(ctx context.Context, before time.Time) (removed, 
 	}
 	for _, entry := range entries {
 		info, err := entry.Info()
-		if err != nil || named[entry.Name()] || !info.ModTime().Before(before) {
+		owner, _, _ := strings.Cut(entry.Name(), ".")
+		if err != nil || named[owner] || !info.ModTime().Before(before) {
 			continue
 		}
 		errs = append(errs, os.RemoveAll(filepath.Join(directory, entry.Name())))

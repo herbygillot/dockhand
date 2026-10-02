@@ -26,11 +26,11 @@ func TestAnArchiveIsSignedAsASitesEntry(t *testing.T) {
 	name := "libharbor-4_0.darwin_25.arm64.tbz2"
 	archive := Archive{Port: "libharbor", Name: name, Digest: "sha256:" + hex.EncodeToString(sum[:]), Path: kept}
 
-	directory := t.TempDir()
-	entry, err := Sign(t.Context(), keys, archive, directory)
+	entry, err := Sign(t.Context(), keys, archive)
 	require.NoError(t, err)
 	require.Equal(t, "libharbor", entry.Port)
-	require.Equal(t, map[string]string{name: kept, name + ".sig": filepath.Join(directory, name+".sig"), name + ".rmd160": filepath.Join(directory, name+".rmd160")}, entry.Files)
+	id := keys.id()
+	require.Equal(t, map[string]string{name: kept, name + ".sig": kept + "." + id + ".sig", name + ".rmd160": kept + "." + id + ".rmd160"}, entry.Files, "beside the archive, named by the keys")
 	signature, err := os.ReadFile(entry.Files[name+".sig"])
 	require.NoError(t, err)
 	require.Equal(t, keys.Signify.Sign(data, "verify with dockhand.pub"), signature)
@@ -38,15 +38,42 @@ func TestAnArchiveIsSignedAsASitesEntry(t *testing.T) {
 	require.NoError(t, os.WriteFile(public, keys.PublicKeys()[RSAPublicKey], 0o644))
 	out, err := exec.CommandContext(t.Context(), "/usr/bin/openssl", "dgst", "-ripemd160", "-verify", public, "-signature", entry.Files[name+".rmd160"], kept).CombinedOutput()
 	require.NoError(t, err, "%s", out)
+	// The very signature openssl makes, which PKCS #1 v1.5 makes the same
+	// every time: Go's own RIPEMD-160 DigestInfo would fail the verify.
+	theirs := filepath.Join(t.TempDir(), "theirs.rmd160")
+	out, err = exec.CommandContext(t.Context(), "/usr/bin/openssl", "dgst", "-ripemd160", "-sign", keys.RSA, "-out", theirs, kept).CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	ours, err := os.ReadFile(entry.Files[name+".rmd160"])
+	require.NoError(t, err)
+	want, err := os.ReadFile(theirs)
+	require.NoError(t, err)
+	require.Equal(t, want, ours)
+
+	// Signed once: a second entry is the same files, not made again.
+	before, err := os.Stat(entry.Files[name+".sig"])
+	require.NoError(t, err)
+	again, err := Sign(t.Context(), keys, archive)
+	require.NoError(t, err)
+	require.Equal(t, entry, again)
+	after, err := os.Stat(entry.Files[name+".sig"])
+	require.NoError(t, err)
+	require.Equal(t, before.ModTime(), after.ModTime())
+
+	// An empty archive, which can't be mapped, is signed all the same.
+	empty := filepath.Join(t.TempDir(), "empty")
+	require.NoError(t, os.WriteFile(empty, nil, 0o644))
+	none := sha256.Sum256(nil)
+	_, err = Sign(t.Context(), keys, Archive{Port: "libharbor", Name: name, Digest: "sha256:" + hex.EncodeToString(none[:]), Path: empty})
+	require.NoError(t, err)
 	require.Equal(t, "/var/tmp/dockhand-archives/libharbor/"+name, EntryPath("/var/tmp/dockhand-archives", "libharbor", name))
 	require.Equal(t, keys.Signify.PublicKey("dockhand archives"), keys.PublicKeys()[SignifyPublicKey])
 
 	changed := archive
 	changed.Digest = "sha256:" + hex.EncodeToString(make([]byte, 32))
-	_, err = Sign(t.Context(), keys, changed, t.TempDir())
+	_, err = Sign(t.Context(), keys, changed)
 	require.ErrorContains(t, err, "isn't the "+changed.Digest+" it was kept as")
 	for _, bad := range []Archive{{Port: "../etc", Name: name}, {Port: "lib#harbor", Name: name}, {Port: "libharbor", Name: "../../etc/passwd"}} {
-		_, err = Sign(t.Context(), keys, Archive{Port: bad.Port, Name: bad.Name, Digest: archive.Digest, Path: kept}, t.TempDir())
+		_, err = Sign(t.Context(), keys, Archive{Port: bad.Port, Name: bad.Name, Digest: archive.Digest, Path: kept})
 		require.ErrorContains(t, err, "can't be a site's entry", "%+v", bad)
 		require.False(t, Installable(bad.Port, bad.Name))
 	}

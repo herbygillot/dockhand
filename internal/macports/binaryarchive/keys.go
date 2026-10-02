@@ -13,12 +13,17 @@ package binaryarchive
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+
+	"golang.org/x/crypto/ripemd160" //nolint:staticcheck // MacPorts verifies a site's RSA signatures over RIPEMD-160 (pubkeys.conf).
 
 	"github.com/herbygillot/dockhand/internal/signify"
 )
@@ -31,10 +36,37 @@ import (
 // signed both ways, as packages.macports.org serves both.
 type Keys struct {
 	Signify signify.Key
-	// RSA is the RSA key's file, which openssl signs with, and RSAPublic
-	// its public half, as openssl writes one.
+	// RSA is the RSA key's file, and RSAPublic its public half, as openssl
+	// writes one.
 	RSA       string
 	RSAPublic []byte
+	rsa       *rsa.PrivateKey
+}
+
+// rmd160DigestInfo is the DER prefix of a PKCS #1 v1.5 signature's
+// DigestInfo for RIPEMD-160 as OpenSSL writes it, TeleTrusT's OID with
+// NULL parameters, which openssl dgst -verify, and so MacPorts, checks.
+// Go's crypto.RIPEMD160 writes ISO's OID without parameters, which openssl
+// rejects (the library survey, verified 2026-10-02).
+var rmd160DigestInfo = []byte{0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x24, 0x03, 0x02, 0x01, 0x05, 0x00, 0x04, 0x14}
+
+// signRIPEMD160 is the signature openssl dgst -ripemd160 -sign writes of
+// the data with the RSA key, byte for byte, since PKCS #1 v1.5 is
+// deterministic: as pubkeys.conf says to sign one's own archives.
+func (k Keys) signRIPEMD160(data []byte) ([]byte, error) {
+	if k.rsa == nil {
+		return nil, fmt.Errorf("binaryarchive: no RSA key loaded")
+	}
+	digest := ripemd160.New()
+	digest.Write(data)
+	return rsa.SignPKCS1v15(nil, k.rsa, 0, append(slices.Clone(rmd160DigestInfo), digest.Sum(nil)...))
+}
+
+// id names the keys, for the signatures they made: a signature kept
+// beside an archive is for the keys of its name, so new keys sign again.
+func (k Keys) id() string {
+	sum := sha256.Sum256(append(slices.Clone(k.RSAPublic), k.Signify.PublicKey("")...))
+	return hex.EncodeToString(sum[:4])
 }
 
 // LoadKeys makes the keys in a directory once, and reads them after. Two
@@ -80,6 +112,7 @@ func LoadKeys(directory string) (Keys, error) {
 		return keys, err
 	}
 	keys.RSAPublic = pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: public})
+	keys.rsa = private
 	return keys, nil
 }
 

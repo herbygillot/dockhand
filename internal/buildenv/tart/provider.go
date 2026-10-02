@@ -745,20 +745,16 @@ func (p *Provider) install(ctx context.Context, g guest, job buildenv.Job, build
 	}
 	for _, archive := range job.Installs {
 		build.Progress(fmt.Sprintf("giving the guest %s, from the archive kept of its build", archive.Target))
-		entry, err := binaryarchive.Sign(ctx, keys, binaryarchive.Archive{Port: archive.Port, Name: archive.Name, Digest: archive.Digest, Path: archive.Path}, job.Directory)
+		// Signed once, beside the kept archive, which cleanup removes them
+		// with; its digest is checked each time (D18).
+		entry, err := binaryarchive.Sign(ctx, keys, binaryarchive.Archive{Port: archive.Port, Name: archive.Name, Digest: archive.Digest, Path: archive.Path})
 		if err != nil {
 			return fmt.Errorf("the archive kept of %s: %w", archive.Target, err)
 		}
 		for _, name := range slices.Sorted(maps.Keys(entry.Files)) {
-			if err == nil {
-				err = g.Upload(ctx, entry.Files[name], binaryarchive.EntryPath(archiveSite, entry.Port, name), true)
+			if err := g.Upload(ctx, entry.Files[name], binaryarchive.EntryPath(archiveSite, entry.Port, name), true); err != nil {
+				return err
 			}
-			if local := entry.Files[name]; local != archive.Path {
-				os.Remove(local)
-			}
-		}
-		if err != nil {
-			return err
 		}
 	}
 	for name, public := range keys.PublicKeys() {

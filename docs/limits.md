@@ -127,7 +127,7 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 | File transfers | 3 tries on a digest mismatch | "arrived as N bytes" | `tart/channel/transfer.go:20` |  |
 | Command output over SSH | 1 MiB | output-limit error | `tart/channel/transfer.go:125` |  |
 | Reading a guest file | no cap | held in memory | `tart/channel/transfer.go:96` | gap |
-| Signing a kept archive for a guest | the whole archive, in memory | signify's signature is Ed25519 of the whole file, which Go signs only from memory; openssl signs it by path | `macports/binaryarchive/site.go:69` | gap |
+| Signing a kept archive for a guest | the whole archive, through a read-only map; once, when first given out | signify's Ed25519 and the RSA RIPEMD-160 signature are made in Go from the map, whose pages the system can drop, and kept beside the archive, so a guest of a later check gets them without signing again; the digest is checked each time (D18) | `macports/binaryarchive/site.go` | decided |
 | Stopping a VM | 1 min per stage; leftovers 30 s | — | `buildenv/tart/provider.go:519 · machine.go:124` |  |
 
 ## Tart setup
