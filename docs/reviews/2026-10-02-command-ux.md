@@ -90,7 +90,7 @@ Branches dockhand starts are named for what they do, and decision 37's short ID 
 
 Things the implementation has to get right:
 
-- **"Taken" covers time, not just open branches.** A name is taken if any branch record has it, merged and cleaned ones included (status --all and `ResolveRecord` still find them), or if the fork has a branch of that name. Otherwise, redoing `jq-1.8.1` after a revert would reuse a merged branch's name. The fallback is `jq-1.8.1-4k2p`.
+- **"Taken" means it exists now, as `FreeName` already checks.** That covers a tracked branch that isn't merged (open, archived, or closed unmerged, which keep their Git branches), a local Git branch, or a worktree directory. A merged branch is the end of its line, and the store already allows its name to be reused (`branch_name`'s unique index excludes merged rows, and `ResolveRecord` falls back to the newest merged branch of a name). So `jq-1.8.1` can be started again after the first one merges and is cleaned. A merged branch that hasn't been cleaned still has its Git branch, so it holds the name until clean runs. A stray fork branch of that name, with no local one, isn't looked up, because `submit`'s push is already conditional on where the fork's branch was and refuses safely.
 - **A name can go stale.** If 1.8.2 comes out before `jq-1.8.1` is submitted and the branch is moved to it, the name lies. Before a pull request exists, `update` renames the branch, keeping the record as `adopt` already does for renames. After one exists, the name stays, as design §3 requires, since the fork's branch is the pull request's head.
 - **Versions are made safe for Git.** Characters Git refuses in a ref (`~ ^ : ? * [ \`, spaces, `..`) become `-`.
 
