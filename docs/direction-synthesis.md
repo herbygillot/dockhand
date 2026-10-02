@@ -95,6 +95,17 @@ Reporting stays scoped to the diff by default, though the analysis may read wide
 
 **F. Advisories.** OSV for vendored crates, Go modules and PyPI packages. Both docs agree it's evidence for investigation, never a hold.
 
+**Before D: a trust rule for other people's Portfiles.** (From the blind-spots review, decided by the person on 2026-10-02.) Today dockhand mostly evaluates the person's own Portfiles. `review <pr>` only reads a Portfile's text (`portfileFindings`) and never evaluates it. Planning or checking a branch made by `adopt --pr` evaluates a stranger's Tcl on the host, as the person (inferred from the code's shape, not yet traced). [Oracle](oracle.md) says a Portfile can deliberately get around that evaluator, and it rules out a host sandbox. That host holds the GitHub login that pushes to the fork, and `~/.dockhand/ssh/archives.key`, which every Tart guest trusts.
+
+What's new is the unattended case. A reviewer who runs `port install` on a pull request already runs a stranger's Tcl, as root. So the risk dockhand adds is evaluating strangers' Portfiles with nobody looking. The rule:
+
+1. **Nothing unattended evaluates a Portfile the person didn't author on the host.** That covers serve, the inbox, and scripts. Such a Portfile goes to a guest, or the step is skipped and reported. This is a fixed rule, not a setting.
+2. **An attended command may do it, and says so once,** naming whose Portfile it is: "planning @alice's Portfile on this Mac". That is the trust a reviewer already extends, made visible.
+3. **The Tart guest is the only real boundary.** No host sandbox, per the oracle's decision.
+4. **One setting, `trust.others = "guest"`,** sends attended evaluation to a guest too, for anyone who wants that. It isn't a setup question, because a newcomer can't judge it. Named policy levels were considered and set aside: a level means nothing beyond where the safeguard lives, and this rule already says where.
+
+**The inbox lists first.** Its first version shows others' pull requests and their state, without planning or building them, so rule 1 costs it nothing. Building one is `review <pr> --check` (UX §8), which a person runs on purpose and which follows rules 2 and 4. `adopt --pr`'s path is traced against the rule, which also covers reproduction bundles from others (G).
+
 **G. Investigations.** Codex #2. First an opt-in to keep a failed Tart guest and open a shell in it (small, and the most-wanted piece). Reproduction bundles come later.
 
 ## Still deferred, and why
@@ -110,7 +121,7 @@ Reporting stays scoped to the diff by default, though the analysis may read wide
 2. **UX naming** (§1, §2), which can start alongside step 1.
 3. **Survey rules** (A) on the ledger, and the person's voice (B), both of which feed the verdict.
 4. **The rest of the UX review**, chaining included, now built on the verdict.
-5. **Consumers** (C), then the **inbox** (D) with `review --check`.
+5. **Consumers** (C). Then the **trust rule** for others' Portfiles, then the **inbox** (D), listing first, with `review --check`.
 6. **Upstream context** (E), **advisories** (F), and **investigations** (G), in whatever order use asks for.
 
 ## Decided
