@@ -30,3 +30,14 @@ func TestLaunchdPlistPreservesArgumentAndEnvironmentValues(t *testing.T) {
 	require.Contains(t, string(data), "<key>KeepAlive</key><false/>")
 	require.Contains(t, string(data), "<key>RunAtLoad</key><true/>")
 }
+
+// A job kept alive in the background, as serve's agent is, says so, and
+// escapes its environment's keys as well as its values, which serve's
+// own writer didn't (the library survey's finding 3).
+func TestALaunchdJobKeptAliveEscapesEveryKey(t *testing.T) {
+	data := string(LaunchdJob{Label: "serve", Arguments: []string{"dockhand", "serve"}, Log: "/tmp/serve.log", Environment: map[string]string{"ODD<KEY>": "v&w"}, KeepAlive: true, ProcessType: "Background"}.Plist())
+	require.Contains(t, data, "<key>KeepAlive</key><true/>")
+	require.Contains(t, data, "<key>ProcessType</key><string>Background</string>")
+	require.Contains(t, data, "<key>ODD&lt;KEY&gt;</key><string>v&amp;w</string>")
+	require.NotContains(t, string(LaunchdPlist("one-shot", nil, "/tmp/log", nil)), "ProcessType", "a one-shot job's plist is as it was")
+}

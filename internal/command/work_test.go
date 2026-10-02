@@ -166,3 +166,23 @@ func TestMacPortsTreeKeepsTheWorktreeYouAreIn(t *testing.T) {
 	_, _, err = dockhand(t, "path")
 	require.ErrorContains(t, err, "master is not tracked", "outside it, the checkout named, which has master out")
 }
+
+// Where Tart is installed, the engine builds with it; the tests find no
+// Tart otherwise, so this ran nowhere (the test plan's step 3).
+func TestTartIsRegisteredWhereItIsFound(t *testing.T) {
+	newWorld(t)
+	look := lookTart
+	t.Cleanup(func() { lookTart = look })
+	var s settings
+	e, err := s.open(t.Context())
+	require.NoError(t, err)
+	require.NotContains(t, e.Providers, "tart")
+	e.Close()
+
+	lookTart = func(string) (string, error) { return "/opt/homebrew/bin/tart", nil }
+	s = settings{}
+	e, err = s.open(t.Context())
+	require.NoError(t, err)
+	defer e.Close()
+	require.Contains(t, e.Providers, "tart")
+}

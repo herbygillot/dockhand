@@ -127,8 +127,9 @@ func TestServeInstallsALaunchdAgent(t *testing.T) {
 	require.Contains(t, out, "serve now starts at login and restarts if it stops.\n  Agent  ~/Library/LaunchAgents/"+AgentLabel+".plist\n  Log    ~/.dockhand/logs/serve.log\n")
 	plist, err := os.ReadFile(filepath.Join(w.home, "Library", "LaunchAgents", AgentLabel+".plist"))
 	require.NoError(t, err)
-	require.Contains(t, string(plist), "<string>serve</string>\n    <string>--tree</string>\n    <string>"+w.clone+"</string>\n")
-	require.Contains(t, string(plist), "<key>KeepAlive</key>\n  <true/>")
+	require.Contains(t, string(plist), "<string>serve</string><string>--tree</string><string>"+w.clone+"</string>")
+	require.Contains(t, string(plist), "<key>KeepAlive</key><true/>")
+	require.Contains(t, string(plist), "<key>ProcessType</key><string>Background</string>")
 	require.NotContains(t, string(plist), "--no-notify")
 	require.Len(t, calls, 2)
 	require.Equal(t, "bootout", calls[0][0])
@@ -138,7 +139,7 @@ func TestServeInstallsALaunchdAgent(t *testing.T) {
 	require.NoError(t, err)
 	plist, err = os.ReadFile(filepath.Join(w.home, "Library", "LaunchAgents", AgentLabel+".plist"))
 	require.NoError(t, err)
-	require.Contains(t, string(plist), "<string>"+filepath.Join(w.home, ".dockhand", "dockhand.db")+"</string>\n    <string>--no-notify</string>\n    <string>--submit-passing</string>\n  </array>")
+	require.Contains(t, string(plist), "<string>"+filepath.Join(w.home, ".dockhand", "dockhand.db")+"</string><string>--no-notify</string><string>--submit-passing</string></array>")
 	calls = nil
 
 	out, _, err = dockhand(t, "serve", "--uninstall")
@@ -307,9 +308,9 @@ func TestServeInstallCarriesTheSettingsItRanWith(t *testing.T) {
 	plist, err := os.ReadFile(filepath.Join(w.home, "Library", "LaunchAgents", AgentLabel+".plist"))
 	require.NoError(t, err)
 	agent := string(plist)
-	require.Contains(t, agent, "<string>--db</string>\n    <string>"+filepath.Join(w.home, ".dockhand", "dockhand.db")+"</string>\n    <string>--git</string>\n    <string>"+git+"</string>\n")
-	require.Contains(t, agent, "<key>DOCKHAND_UPSTREAM</key>\n    <string>"+w.upstream+"</string>\n")
-	require.Contains(t, agent, "<key>TART_HOME</key>\n    <string>"+filepath.Join(w.home, "tart")+"</string>\n", "made absolute")
+	require.Contains(t, agent, "<string>--db</string><string>"+filepath.Join(w.home, ".dockhand", "dockhand.db")+"</string><string>--git</string><string>"+git+"</string>")
+	require.Contains(t, agent, "<key>DOCKHAND_UPSTREAM</key><string>"+w.upstream+"</string>")
+	require.Contains(t, agent, "<key>TART_HOME</key><string>"+filepath.Join(w.home, "tart")+"</string>", "made absolute")
 	require.NotContains(t, agent, "ghp_secret")
 	require.NotContains(t, agent, "GH_TOKEN")
 }

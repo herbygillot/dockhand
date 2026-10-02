@@ -1,6 +1,7 @@
 package command
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -173,7 +174,8 @@ func withActions(t *testing.T, f *fakeActions) {
 
 func built(port string, testsFail bool) string {
 	log := fmt.Sprintf("2026-09-25T10:00:01.0Z ##[group]Listing subports\n2026-09-25T10:00:01.1Z %s\n2026-09-25T10:00:01.2Z ##[endgroup]\n"+
-		"2026-09-25T10:01:31.0Z ##[group]Installing %s\n2026-09-25T10:02:00.0Z ##[endgroup]\n2026-09-25T10:02:01.0Z ##[group]Testing %s\n", port, port, port)
+		"2026-09-25T10:01:00.0Z ##[group]Installing dependencies for %s\n2026-09-25T10:01:30.0Z ##[endgroup]\n"+
+		"2026-09-25T10:01:31.0Z ##[group]Installing %s\n2026-09-25T10:02:00.0Z ##[endgroup]\n2026-09-25T10:02:01.0Z ##[group]Testing %s\n", port, port, port, port)
 	if testsFail {
 		log += "2026-09-25T10:02:30.0Z ##[error]Tests failed for " + port + "\n"
 	}
@@ -311,6 +313,10 @@ func TestRetryingAGitHubCheckRunsTheWorkflowAgain(t *testing.T) {
 	logged, _, err := dockhand(t, "logs", "check-1", "--port", "jq")
 	require.NoError(t, err)
 	require.Contains(t, logged, "##[group]Installing jq")
+	// From the port's own install, by the workflow's headings (D20).
+	require.Contains(t, logged, "  dependencies  line 4\n  install       line 6\n  test          line 8\n")
+	require.Contains(t, logged, "From line 6, where jq's own build begins")
+	require.NotContains(t, logged, "Installing dependencies for jq", "before it")
 	// The port named after the check is --port's (field testing, 2026-10-02).
 	named, _, err := dockhand(t, "logs", "check-1", "jq")
 	require.NoError(t, err)
@@ -484,4 +490,13 @@ func TestRequiredTestsFailACheckOnGitHub(t *testing.T) {
 	out, _, err = dockhand(t, "check", "--on", "github", "--tests", "skip", "--plan")
 	require.NoError(t, err)
 	require.Contains(t, out, "Provider    github · tests skip\n            github runs its workflow's own tests; with --tests skip they run there, and don't count\n")
+}
+
+// A GitHub runner's log without the workflow's headings is printed whole,
+// and said to be (D20).
+func TestAGitHubLogWithoutHeadingsIsPrintedWholeAndSaid(t *testing.T) {
+	var out bytes.Buffer
+	result := model.TargetResult{Target: "jq", Log: "build-macos-15.log", Builders: []model.BuilderResult{{Builder: "build (macos-15)"}}}
+	require.NoError(t, writePortLog(&out, result, []byte("a log\n"), false))
+	require.Equal(t, "No steps of jq's build were found in its log, so it's printed whole.\n\na log\n", out.String())
 }

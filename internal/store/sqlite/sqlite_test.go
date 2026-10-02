@@ -882,6 +882,12 @@ func TestLeasesAreFenced(t *testing.T) {
 	require.ErrorIs(t, f.update(t, func(tx store.Tx) error { return tx.ReleaseLease(first) }), store.ErrStale)
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.ReleaseLease(second) }))
 	require.ErrorIs(t, f.update(t, func(tx store.Tx) error { return tx.CheckLease(second) }), store.ErrStale, "a released lease fences its holder too")
+	// One for a resource never leased, or since gone, is stale too, and
+	// says so (the test plan's step 2, item 22).
+	never := model.Lease{Resource: "never-leased", Holder: "ses_a", Generation: 1}
+	err := f.update(t, func(tx store.Tx) error { return tx.ReleaseLease(never) })
+	require.ErrorIs(t, err, store.ErrStale)
+	require.ErrorContains(t, err, "no lease on never-leased")
 
 	var third model.Lease
 	require.NoError(t, f.update(t, func(tx store.Tx) error {

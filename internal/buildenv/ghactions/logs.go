@@ -24,6 +24,10 @@ type Built struct {
 	Installing, Installed bool
 	// Tested is true when its tests ran, and TestsFailed when they failed.
 	Tested, TestsFailed bool
+	// Steps are where its dependencies' install, its own install, and its
+	// tests begin in the log, by the workflow's group headings, for logs
+	// --port to start at its own build (D20).
+	Steps []model.LogStep
 }
 
 // Outcome is the subport's result on this runner, as the markers show it:
@@ -65,7 +69,7 @@ func (b Built) Tests() model.TestOutcome {
 // subports it would build: a runner that stopped before then can't say
 // which ports it would have built.
 func ListsSubports(log []byte) bool {
-	for line := range lines(log) {
+	for _, line := range lines(log) {
 		if line == "##[group]Listing subports" || line == "::group::Listing subports" {
 			return true
 		}
@@ -80,16 +84,18 @@ func ListsSubports(log []byte) bool {
 // limits sweep, 2026-10-01).
 const maxLogLine = 4 << 20
 
-// lines are a job's log's lines, each without its timestamp or line end,
-// but for one past maxLogLine.
-func lines(log []byte) iter.Seq[string] {
-	return func(yield func(string) bool) {
+// lines are a job's log's lines, by number from 1, each without its
+// timestamp or line end, but for one past maxLogLine.
+func lines(log []byte) iter.Seq2[int, string] {
+	return func(yield func(int, string) bool) {
+		number := 0
 		for line := range bytes.Lines(log) {
+			number++
 			if len(line) > maxLogLine {
 				continue
 			}
 			text := strings.TrimRight(string(line), "\r\n")
-			if !yield(timestamp.ReplaceAllString(text, "")) {
+			if !yield(number, timestamp.ReplaceAllString(text, "")) {
 				return
 			}
 		}
@@ -112,7 +118,11 @@ func ReadLog(log []byte) map[string]*Built {
 	listing := false
 	// installing is the subport whose install group is open.
 	installing := ""
-	for line := range lines(log) {
+	step := func(name string, kind model.Step, number int) {
+		built := get(name)
+		built.Steps = append(built.Steps, model.LogStep{Name: kind, Line: number})
+	}
+	for number, line := range lines(log) {
 		switch {
 		case line == "##[group]Listing subports" || line == "::group::Listing subports":
 			listing = true
@@ -133,11 +143,14 @@ func ReadLog(log []byte) map[string]*Built {
 		case strings.HasPrefix(trimMarker(line), "Tests failed for "):
 			get(strings.TrimPrefix(trimMarker(line), "Tests failed for ")).TestsFailed = true
 		case strings.HasPrefix(groupTitle(line), "Installing dependencies for "):
+			step(strings.TrimPrefix(groupTitle(line), "Installing dependencies for "), model.StepDependencies, number)
 		case strings.HasPrefix(groupTitle(line), "Installing "):
 			installing = strings.TrimSpace(strings.TrimPrefix(groupTitle(line), "Installing "))
 			get(installing).Installing = true
+			step(installing, model.StepInstall, number)
 		case strings.HasPrefix(groupTitle(line), "Testing "):
 			get(strings.TrimPrefix(groupTitle(line), "Testing ")).Tested = true
+			step(strings.TrimPrefix(groupTitle(line), "Testing "), model.StepTest, number)
 		}
 	}
 	return built

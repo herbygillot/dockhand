@@ -1,9 +1,7 @@
 package command
 
 import (
-	"bytes"
 	"context"
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -18,6 +16,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/subprocess"
 )
@@ -220,10 +219,7 @@ func serveAgent(ctx context.Context, s *settings, streams Streams, install bool,
 		return err
 	}
 	logs := filepath.Join(filepath.Dir(database), "logs", "serve.log")
-	data, err := agentPlist(append(arguments, flags...), environment, logs)
-	if err != nil {
-		return err
-	}
+	data := agentPlist(append(arguments, flags...), environment, logs)
 	for _, dir := range []string{filepath.Dir(plist), filepath.Dir(logs)} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
@@ -284,55 +280,12 @@ func agentEnvironment() ([][2]string, error) {
 }
 
 // agentPlist is the launchd property list that runs serve for one ports
-// checkout and database. launchd's PATH is minimal, so the installing
-// shell's PATH is kept, for git and MacPorts.
-func agentPlist(arguments []string, environment [][2]string, log string) ([]byte, error) {
-	var b bytes.Buffer
-	b.WriteString(xml.Header)
-	b.WriteString(`<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">` + "\n")
-	b.WriteString("<plist version=\"1.0\">\n<dict>\n")
-	key := func(name string) { fmt.Fprintf(&b, "  <key>%s</key>\n", name) }
-	str := func(indent, value string) error {
-		b.WriteString(indent + "<string>")
-		if err := xml.EscapeText(&b, []byte(value)); err != nil {
-			return err
-		}
-		b.WriteString("</string>\n")
-		return nil
-	}
-	key("Label")
-	if err := str("  ", AgentLabel); err != nil {
-		return nil, err
-	}
-	key("ProgramArguments")
-	b.WriteString("  <array>\n")
-	for _, arg := range arguments {
-		if err := str("    ", arg); err != nil {
-			return nil, err
-		}
-	}
-	b.WriteString("  </array>\n")
-	key("EnvironmentVariables")
-	b.WriteString("  <dict>\n")
+// checkout and database, kept alive in the background. launchd's PATH is
+// minimal, so the installing shell's PATH is kept, for git and MacPorts.
+func agentPlist(arguments []string, environment [][2]string, log string) []byte {
+	variables := map[string]string{}
 	for _, variable := range environment {
-		fmt.Fprintf(&b, "    <key>%s</key>\n", variable[0])
-		if err := str("    ", variable[1]); err != nil {
-			return nil, err
-		}
+		variables[variable[0]] = variable[1]
 	}
-	b.WriteString("  </dict>\n")
-	key("RunAtLoad")
-	b.WriteString("  <true/>\n")
-	key("KeepAlive")
-	b.WriteString("  <true/>\n")
-	key("ProcessType")
-	b.WriteString("  <string>Background</string>\n")
-	for _, name := range []string{"StandardOutPath", "StandardErrorPath"} {
-		key(name)
-		if err := str("  ", log); err != nil {
-			return nil, err
-		}
-	}
-	b.WriteString("</dict>\n</plist>\n")
-	return b.Bytes(), nil
+	return macos.LaunchdJob{Label: AgentLabel, Arguments: arguments, Log: log, Environment: variables, KeepAlive: true, ProcessType: "Background"}.Plist()
 }

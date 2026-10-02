@@ -214,3 +214,43 @@ esac
 		})
 	}
 }
+
+// DeleteCached removes only an image Tart lists as cached from a registry,
+// and says so where one it deleted is still listed; a local VM of the
+// same name, or none, is left alone (the test plan's step 2, item 19).
+func TestDeleteCachedRemovesOnlyARegistryImage(t *testing.T) {
+	for _, mode := range []string{"cached", "retained", "local", "absent"} {
+		t.Run(mode, func(t *testing.T) {
+			m := fixtureMachine(t, `
+case "$1" in
+ list) cat "$TART_HOME/list.json" ;;
+ delete)
+  touch "$TART_HOME/deleted"
+  if [ ! -f "$TART_HOME/retain" ]; then printf '[]' > "$TART_HOME/list.json"; fi
+ ;;
+esac
+`)
+			list := `[{"Name":"ghcr.io/cirruslabs/macos-tahoe-vanilla:latest","Source":"OCI","State":"stopped"}]`
+			switch mode {
+			case "retained":
+				require.NoError(t, os.WriteFile(filepath.Join(m.Client.Home, "retain"), nil, 0600))
+			case "local":
+				list = `[{"Name":"ghcr.io/cirruslabs/macos-tahoe-vanilla:latest","Source":"local","State":"stopped"}]`
+			case "absent":
+				list = `[]`
+			}
+			require.NoError(t, os.WriteFile(filepath.Join(m.Client.Home, "list.json"), []byte(list), 0600))
+			err := m.DeleteCached(t.Context(), "ghcr.io/cirruslabs/macos-tahoe-vanilla:latest")
+			switch mode {
+			case "cached":
+				require.NoError(t, err)
+				require.FileExists(t, filepath.Join(m.Client.Home, "deleted"))
+			case "retained":
+				require.ErrorContains(t, err, "cached image ghcr.io/cirruslabs/macos-tahoe-vanilla:latest is still listed after delete")
+			case "local", "absent":
+				require.NoError(t, err)
+				require.NoFileExists(t, filepath.Join(m.Client.Home, "deleted"), "nothing cached to delete")
+			}
+		})
+	}
+}

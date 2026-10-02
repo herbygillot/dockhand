@@ -22,6 +22,7 @@ var commandImports = map[string]string{
 	"internal/buildinfo": "the command's own version",
 	"internal/progress":  "the reporter each command installs, printing what the work reports to standard error",
 	"internal/prose":     "counts and sizes worded as everywhere else",
+	"internal/macos":     "the launchd job serve installs, written as dockhand writes every one",
 	"internal/store":     "filter types for engine queries; records are read and written through the engine",
 	"internal/scratch":   "the edit buffer an editor opens, in the process's run root",
 	// Vocabulary the engine's results carry beyond model's: a checksum,

@@ -364,7 +364,17 @@ func portBuildWords(result model.TargetResult) string {
 // prints the whole log alone, as it is printed where no steps were
 // recorded.
 func writePortLog(out io.Writer, result model.TargetResult, data []byte, all bool) error {
-	if all || len(result.Steps) == 0 {
+	if all {
+		_, err := out.Write(data)
+		return err
+	}
+	// A log with no steps recorded is printed whole; one of GitHub's runners
+	// whose log lacked the workflow's headings is said to be (D20). A
+	// provider that records no steps, as the command provider, says nothing.
+	if len(result.Steps) == 0 {
+		if len(result.Builders) > 0 {
+			fmt.Fprintf(out, "No steps of %s's build were found in its log, so it's printed whole.\n\n", result.Target)
+		}
 		_, err := out.Write(data)
 		return err
 	}

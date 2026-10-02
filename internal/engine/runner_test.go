@@ -1096,3 +1096,30 @@ func TestServeSaysHowManyChecksAndEnvironmentsAtOnce(t *testing.T) {
 	require.Equal(t, "tart (1 check at a time, each building up to 2 of its environments at once)", capacityWords("tart", &together{}, 1))
 	require.Equal(t, "command (2 checks at a time)", capacityWords("command", &scriptedProvider{}, 2))
 }
+
+// A run whose cancel was asked for while another session held it, which
+// ended before applying it, is canceled by the next to take it up, not
+// driven on (the test plan's step 2, item 21).
+func TestACancelLeftUnappliedIsAppliedByTheNextDriver(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	provider := &scriptedProvider{}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	queued := queuedHarborRun(t, e, tahoeArm)
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error {
+		run, err := tx.Run(queued.ID)
+		if err != nil {
+			return err
+		}
+		asked := e.now()
+		run.State, run.CancelRequested = model.RunRunning, &asked
+		return tx.UpdateRun(run)
+	}))
+	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunCanceled, run.State)
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+	require.Empty(t, provider.jobs, "nothing was built")
+}
