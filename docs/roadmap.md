@@ -32,7 +32,7 @@ The weak point the review found is the information passed between steps. Several
 - **Layer 3, reach, is held:** "Yes, hold layer 3."
 - **check keeps building every subport of a changed Portfile,** as MacPorts' CI does: "Agreed, we'll follow MacPorts CI." `--only` narrows a check by hand.
 - **pgdog's declarations that look unused are a notice, not a hold** (done with batch 52).
-- **D20 is decided** (yes, below); **D15, D18, D19, and D21 stay open:** the person is walking through them.
+- **D18 and D20 are decided** (below); **D15, D19, and D21 stay open:** the person is walking through them.
 
 In order, with the smaller items' batches between them as [Smaller items](#smaller-items) sets out. From 2026-10-02 the order is batches 31 to 36 there, which take the core's open items, the architecture review's among them, before item 7's rest. Each item lands in its own commits with an activity note, and a review's probe becomes a regression test when its item fixes what it probes. The order is the implementer's to re-settle as work lands.
 
@@ -577,13 +577,13 @@ What each exercise run asked for that is done, or that joined a numbered item, w
 
 ## Decisions for the person
 
-- **D18. Signing a kept archive without holding it in memory** (batch 26). A kept archive is signed for the guest's archive site with signify's Ed25519, which Go's `crypto/ed25519` signs only from memory, so a 287 MB archive is read whole to sign it. Streaming it takes a memory-mapped file, or an Edwards25519 library, a new dependency, in two passes.
 - **D19. `cargo.update`** (batch 24). cargo sets it, and `docs/dependency-preparation.md` refuses it, so `update cargo` stops there; whether dockhand may write it is the person's.
 - **D21. Reusing GitHub Actions' results** (item 6). Only Tart records the identity and inputs reuse requires; whether GitHub's results may be reused, and on what evidence, is the person's.
 - **D15. A trailer naming a build nobody can find** (batch 15). submit now says a `Generated-By` whose build GitHub doesn't have. Pushing dockhand's commit answers it for a build of an unpushed commit, but nothing in dockhand can replace a trailer naming a build that will never be found, as a commit rebased away (the hugo exercise's 14320eb7) or a `devel` build: tidy keeps a commit whose only change would be its `Generated-By` unless the build was of uncommitted source (`commitmsg.Unchanged`). Either tidy treats such a build as it treats `+dirty`, which needs submit's answer recorded, since tidy reads nothing remote, or it gains a way to rewrite a message on request. Until then, the line says it and holds nothing.
 
 
 ### Decided
+- **D18. Signing a kept archive without holding it in memory** (decided 2026-10-02: "mapping only, no threshold"). The archive is mapped read-only for its digest and signify's signature, whatever its size: one path, which every test runs, and pages the system can drop. Taken with batch 57. Signing each archive once when it's kept, rather than for each guest, is a separate idea, not decided.
 - **D20. Positions in GitHub Actions' logs** (decided 2026-10-02, the person's word on the plan thread's take: "we'll go with your take"). Yes: on GitHub, `logs --port` starts at the port's own steps by the `::group::` headings of MacPorts' workflow, which `ghactions/logs.go` already reads for subport outcomes, so nothing new is depended on; where the headings aren't found, the whole log, with a note saying so. Taken with batch 55's providers.
 - **D6. How long build history is kept** (2026-10-01, the SQL review's finding 8, with its rescan of 2026-10-01; batch 29). The person decided, on the measures below:
   - **One setting for all of cleanup:** `cleanup.after`, whose default moves from 7 days to 15, bounds caches, kept archives, events, logs, and build history alike; no second setting. Index generations and caches are then kept twice as long as before.
