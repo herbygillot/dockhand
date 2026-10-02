@@ -555,7 +555,7 @@ type PullRequestAdoption struct {
 // push to their branch, which submit checks.
 func (e *Engine) AdoptPullRequest(ctx context.Context, number int) (PullRequestAdoption, error) {
 	var adoption PullRequestAdoption
-	ref := forge.PullRequestRef{Forge: forge.GitHub, Repository: UpstreamRepository, Number: number}
+	ref := pullRequestRef(UpstreamRepository, number)
 	observed, err := e.forge().Observe(ctx, ref)
 	if err != nil {
 		return adoption, fmt.Errorf("reading #%d: %w", number, err)

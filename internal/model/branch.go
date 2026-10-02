@@ -68,6 +68,13 @@ type PullRequest struct {
 	Observed *PullRequestObservation `json:",omitempty"`
 }
 
+// HeadParts are the pull request's head repository and branch, as Head
+// joins them; empty where Head names none.
+func (p PullRequest) HeadParts() (repository, branch string) {
+	repository, branch, _ = strings.Cut(p.Head, ":")
+	return repository, branch
+}
+
 // PullRequestObservation is a pull request as the forge last reported it.
 type PullRequestObservation struct {
 	// State is open, closed, or merged.

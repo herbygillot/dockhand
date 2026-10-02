@@ -76,7 +76,7 @@ func (r ReviewReport) Summary() string {
 // 2). What couldn't be assessed or read is said, never an error. It posts
 // nothing.
 func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
-	ref := forge.PullRequestRef{Forge: forge.GitHub, Repository: UpstreamRepository, Number: number}
+	ref := pullRequestRef(UpstreamRepository, number)
 	report := ReviewReport{Ref: ref}
 	f := e.forge()
 	observed, err := f.Observe(ctx, ref)

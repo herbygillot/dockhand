@@ -262,6 +262,31 @@ func (e *Engine) requiredEnvironments(ctx context.Context) []model.Environment {
 	return environments
 }
 
+// acceptanceProblem is why a port submit --accept names can't be
+// accepted: it wasn't checked, it passed, no check of these files built
+// it, or it's a changed port, whose failure is shared as a draft. A port
+// may have several builds, its variant builds beside its default one: the
+// one to accept is one that failed.
+func acceptanceProblem(evidence Evidence, accept []string) error {
+	for _, port := range accept {
+		i := slices.IndexFunc(evidence.Targets, func(t TargetEvidence) bool { return t.Target.Target.Name == port && t.Failing() })
+		if i < 0 {
+			i = slices.IndexFunc(evidence.Targets, func(t TargetEvidence) bool { return t.Target.Target.Name == port })
+		}
+		switch {
+		case i < 0:
+			return fmt.Errorf("--accept %s: %s checked no port %s", port, evidence.Run.Name(), port)
+		case evidence.Targets[i].Passed:
+			return fmt.Errorf("--accept %s: it passed in %s; there is nothing to accept", port, evidence.Run.Name())
+		case evidence.Targets[i].Missing() || !evidence.Targets[i].Failing():
+			return fmt.Errorf("--accept %s: no check of these files built it, so there is no failure to accept; dockhand check builds it", port)
+		case !evidence.Targets[i].Acceptable():
+			return fmt.Errorf("--accept %s: %s is a changed port, and a changed port that fails is shared as a draft (--draft), never accepted", port, port)
+		}
+	}
+	return nil
+}
+
 // publicationProblems applies the publication rule to evidence: every
 // changed target checked and every substantive one passed, and every
 // other failure accepted.

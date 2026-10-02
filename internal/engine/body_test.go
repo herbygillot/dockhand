@@ -8,97 +8,23 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/macports/prdescription"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
-// Tested on states what the environment reported, as MacPorts' template
-// has it, and the runs behind its results. Without a report it names the
-// release and the tools the environment stated, and a release dockhand
-// doesn't know keeps its Darwin version: never a Darwin version read as
-// macOS's.
-func TestTestedOnSaysWhatTheEnvironmentWas(t *testing.T) {
-	tahoe := model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
-	tart := []model.GuestExecution{{ID: "tart_7y62p4sigena6xlr", Run: "run_eleven", ProviderRef: "dockhand-check-run-x-tahoe-1"}}
-	checks := map[model.RunID]string{"run_ten": "check-10", "run_eleven": "check-11"}
-	for _, test := range []struct {
-		name        string
-		environment model.Environment
-		observed    model.Observed
-		runs        []model.GuestExecution
-		want        string
-	}{
-		{"reported, with Xcode", model.Environment{Provider: "tart", Platform: tahoe, DeveloperTools: model.DeveloperToolsXcode},
-			model.Observed{MacOS: "26.6.2", Build: "25G71", Architecture: "arm64", Xcode: "26.6", XcodeBuild: "17F42", Tools: "26.6.0.0.1781586589"}, tart,
-			"macOS 26.6.2 25G71 arm64\nXcode 26.6 17F42 · tart: built in a clean VM (Run ID: tart_7y62p4sigena6xlr - checked in check-11)\n\n"},
-		{"reported, with its MacPorts", model.Environment{Provider: "tart", Platform: tahoe, DeveloperTools: model.DeveloperToolsXcode},
-			model.Observed{MacOS: "26.6.2", Build: "25G71", Architecture: "arm64", Xcode: "26.6", XcodeBuild: "17F42", MacPorts: "2.12.6"}, tart,
-			"macOS 26.6.2 25G71 arm64\nXcode 26.6 17F42 · MacPorts 2.12.6 · tart: built in a clean VM (Run ID: tart_7y62p4sigena6xlr - checked in check-11)\n\n"},
-		{"reported, with the tools", model.Environment{Provider: "tart", Platform: tahoe, DeveloperTools: model.DeveloperToolsCommandLine},
-			model.Observed{MacOS: "26.6.2", Build: "25G71", Architecture: "arm64", Tools: "26.6.0.0.1781586589"},
-			append([]model.GuestExecution{{ID: "tart_b3kq9wz0m1xv4ce7", Run: "run_ten"}}, tart...),
-			"macOS 26.6.2 25G71 arm64\nCommand Line Tools 26.6.0.0.1781586589 · tart: built in a clean VM (Run IDs: tart_b3kq9wz0m1xv4ce7 - checked in check-10; tart_7y62p4sigena6xlr - checked in check-11)\n\n"},
-		{"not reported", model.Environment{Provider: "tart", Platform: tahoe, DeveloperTools: model.DeveloperToolsXcode}, model.Observed{}, nil,
-			"macOS 26 (Tahoe) arm64\nXcode, its version not recorded · tart: built in a clean VM\n\n"},
-		{"an unknown release", model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "30", Architecture: "arm64"}}, model.Observed{}, nil,
-			"Darwin 30 arm64\nDeveloper tools not recorded · tart: built in a clean VM\n\n"},
-		{"partly reported, a run of an unknown check", model.Environment{Provider: "tart", Platform: tahoe, DeveloperTools: model.DeveloperToolsXcode},
-			model.Observed{MacOS: "26.6.2", Xcode: "26.6"}, []model.GuestExecution{{ID: "tart_q2w8e4r6t1y3u5i7", Run: "run_gone"}},
-			"macOS 26.6.2 arm64\nXcode 26.6 · tart: built in a clean VM (Run ID: tart_q2w8e4r6t1y3u5i7)\n\n"},
-		{"nothing known", model.Environment{Provider: "command"}, model.Observed{}, nil,
-			"Developer tools not recorded · command: built by the author's own command\n\n"},
-		{"a workflow run", model.Environment{Provider: "github"}, model.Observed{},
-			[]model.GuestExecution{{ID: "github_q2w8e4r6t1y3u5i7", Run: "run_eleven", ProviderRef: "https://github.com/ada/macports-ports/actions/runs/123"}},
-			"Developer tools not recorded · github: MacPorts' CI workflow in the author's fork (Run ID: https://github.com/ada/macports-ports/actions/runs/123 - checked in check-11)\n\n"},
-		{"a workflow run, its runners' releases reported", model.Environment{Provider: "github"},
-			model.Observed{Builders: []model.BuilderObserved{{Builder: "macos-14", MacOS: "14"}, {Builder: "macos-15", MacOS: "15"}, {Builder: "macos-15-intel", MacOS: "15"}, {Builder: "macos-latest"}}},
-			[]model.GuestExecution{{ID: "github_q2w8e4r6t1y3u5i7", Run: "run_eleven", ProviderRef: "https://github.com/ada/macports-ports/actions/runs/123"}},
-			"macOS 14, 15\nDeveloper tools not recorded · github: MacPorts' CI workflow in the author's fork (Run ID: https://github.com/ada/macports-ports/actions/runs/123 - checked in check-11)\n\n"},
-		{"a workflow run whose runners named no release", model.Environment{Provider: "github"},
-			model.Observed{Builders: []model.BuilderObserved{{Builder: "macos-latest"}}}, nil,
-			"Developer tools not recorded · github: MacPorts' CI workflow in the author's fork\n\n"},
-	} {
-		require.Equal(t, test.want, testedOn(test.environment, test.observed, test.runs, checks, nil), test.name)
-	}
-}
-
-// The description's first line names dockhand, and its last line
-// dockhand's version, or dockhand alone when the build doesn't know it.
-func TestTheSignatureNeedsNoVersion(t *testing.T) {
-	require.Equal(t, "Submitted by **[dockhand](https://github.com/herbygillot/dockhand)**", submittedBy)
-	require.Equal(t, "- [dockhand](https://github.com/herbygillot/dockhand) ver. v3.1.0", signature("v3.1.0"))
-	require.Equal(t, "- [dockhand](https://github.com/herbygillot/dockhand)", signature(" "))
-}
-
-// A description dockhand wrote before its first line named dockhand gains
-// that line when submitting again rewrites its last line, which named
-// dockhand then. One whose Tested on a person edited keeps its old last
-// line, and gains nothing; a first line a person took out stays out.
-func TestAnOlderDescriptionGainsItsFirstLine(t *testing.T) {
-	old := "#### Description\n\nupdate\n\n###### Tested on\n\nmacOS 26\n\nSubmitted by **[dockhand](https://github.com/herbygillot/dockhand)** (ver. v3.0.0)\n"
-	fresh := submittedBy + "\n\n#### Description\n\nupdate\n\n###### Tested on\n\nmacOS 26\n\n" + signature("v3.1.0") + "\n"
-	merged, sections := mergeBody(old, old, fresh, false)
-	require.Equal(t, fresh, merged)
-	require.Equal(t, SectionRefreshed, sections.TestedOn)
-
-	edited := strings.Replace(old, "macOS 26", "macOS 26, and by hand", 1)
-	merged, _ = mergeBody(edited, old, fresh, false)
-	require.Equal(t, edited, merged, "its old last line stays, so no first line is added")
-
-	removed := strings.TrimPrefix(fresh, submittedBy+"\n\n")
-	merged, _ = mergeBody(removed, fresh, fresh, false)
-	require.Equal(t, removed, merged, "a first line a person took out stays out")
-
-	introduced := "Why now: a CVE.\n\n" + old
-	merged, _ = mergeBody(introduced, old, fresh, false)
-	require.True(t, strings.HasPrefix(merged, "Why now: a CVE.\n\n#### Description"), "one a person began otherwise begins as they did")
-
-	// One dockhand began with the plain line, before it was bold, is given
-	// the bold one, while it's as dockhand wrote it.
-	plain := plainSubmittedBy + "\n\n#### Description\n\nupdate\n\n###### Tested on\n\nmacOS 26\n\n" + signature("v3.1.0") + "\n"
-	merged, _ = mergeBody(plain, plain, fresh, false)
-	require.Equal(t, fresh, merged)
-	merged, _ = mergeBody("Why now.\n\n"+plain, plain, fresh, false)
-	require.True(t, strings.HasPrefix(merged, "Why now.\n\n"+plainSubmittedBy+"\n"), "a line a person moved stays theirs")
+// A report is the environment as the engine words it, for what it
+// didn't report: its release by name, never its Darwin version, and who
+// built it; and each run with the check it was in.
+func TestAReportIsTheEnvironmentInWords(t *testing.T) {
+	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
+	runs := []model.GuestExecution{{ID: "tart_a", Run: "run_ten", ProviderRef: "dockhand-check-run-x"}}
+	got := report(tahoe, model.Observed{}, runs, map[model.RunID]string{"run_ten": "check-10"}, map[model.ExecutionID]string{"tart_a": "check-11"})
+	require.Equal(t, prdescription.Report{Architecture: "arm64", Release: "macOS 26 (Tahoe) arm64", Tools: model.DeveloperToolsXcode, Provider: "tart: built in a clean VM",
+		Runs: []prdescription.Run{{ID: "tart_a", Ref: "dockhand-check-run-x", Check: "check-10", ReusedIn: "check-11"}}}, got)
+	require.Equal(t, "Darwin 30 arm64", report(model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "30", Architecture: "arm64"}}, model.Observed{}, nil, nil, nil).Release)
+	require.Empty(t, report(model.Environment{Provider: "command"}, model.Observed{}, nil, nil, nil).Release)
+	require.Equal(t, "command: built by the author's own command", providerWords("command"))
+	require.Equal(t, "github: MacPorts' CI workflow in the author's fork", providerWords("github"))
 }
 
 // A column heading is the environment's release alone, with its
@@ -342,5 +268,4 @@ func TestAResultsReasonIsSaidUnderTheTable(t *testing.T) {
 
 	evidence.Targets = evidence.Targets[2:]
 	require.NotContains(t, ownedSections(bodyFacts{Evidence: &evidence}), "¹", "no reason, no note")
-	require.Equal(t, "¹⁰", superscript(10))
 }

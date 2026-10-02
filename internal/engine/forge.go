@@ -52,3 +52,9 @@ func (e *Engine) forge() Forge {
 	}
 	return e.Forge
 }
+
+// pullRequestRef is a pull request on GitHub, where MacPorts' pull
+// requests are, by its base repository and number.
+func pullRequestRef(repository string, number int) forge.PullRequestRef {
+	return forge.PullRequestRef{Forge: forge.GitHub, Repository: repository, Number: number}
+}

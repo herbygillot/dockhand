@@ -388,3 +388,15 @@ func TestATargetsIdentityHasItsVariants(t *testing.T) {
 	require.Equal(t, "-docs +tests", both.VariantSpec())
 	require.Equal(t, TargetID("s2n-tls -docs +tests"), both.ID())
 }
+
+// A pull request's head is its repository and branch, as Head joins them,
+// read one way wherever it's read (the code-organization review's finding
+// 38).
+func TestAPullRequestsHeadHasItsParts(t *testing.T) {
+	repository, branch := PullRequest{Head: "ada/macports-ports:dockhand/jq-4k2p"}.HeadParts()
+	require.Equal(t, "ada/macports-ports", repository)
+	require.Equal(t, "dockhand/jq-4k2p", branch)
+	repository, branch = PullRequest{}.HeadParts()
+	require.Empty(t, repository)
+	require.Empty(t, branch)
+}

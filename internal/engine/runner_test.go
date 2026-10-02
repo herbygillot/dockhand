@@ -17,6 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/prdescription"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -663,7 +664,8 @@ func TestAnUnchangedBuildIsReused(t *testing.T) {
 	require.Empty(t, evidence.Failed())
 	shown, reusedIn := evidence.Built(0, evidence.Runs(0))
 	require.Equal(t, []model.ExecutionID{built[0].ID}, []model.ExecutionID{shown[0].ID})
-	require.Contains(t, runWords(shown, evidence.Checks(), reusedIn), string(built[0].ID)+" - checked in check-1, reused in check-2")
+	require.Equal(t, []prdescription.Run{{ID: string(built[0].ID), Ref: built[0].ProviderRef, Check: "check-1", ReusedIn: "check-2"}},
+		report(model.Environment{}, model.Observed{}, shown, evidence.Checks(), reusedIn).Runs)
 
 	again(true)
 	require.Len(t, provider.jobs, 2, "--fresh builds")

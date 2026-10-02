@@ -2,32 +2,35 @@ package engine
 
 import (
 	"fmt"
-	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
+	"github.com/herbygillot/dockhand/internal/macports/prdescription"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/version"
 )
 
-// The MacPorts pull request template's headings
-// (macports-ports .github/PULL_REQUEST_TEMPLATE.md).
-const (
-	descriptionHeading  = "#### Description"
-	typesHeading        = "###### Type(s)"
-	testedOnHeading     = "###### Tested on"
-	verificationHeading = "###### Verification"
+// The pull request's description is prdescription's (the architecture
+// review's finding 5): the engine establishes what it can claim, in its
+// own words where they're its own, and publishes what it composes. What
+// submitting again does to each part keeps its names here, for the
+// commands that say it.
+type (
+	DescriptionSections = prdescription.Sections
+	SectionOutcome      = prdescription.Outcome
+	NewPort             = prdescription.NewPort
 )
 
-// PullRequestTypes are the template's Type(s) choices.
-var PullRequestTypes = []string{"bugfix", "enhancement", "security fix"}
-
-var cve = regexp.MustCompile(`\bCVE-\d{4}-\d{4,}\b`)
+const (
+	SectionRefreshed = prdescription.Refreshed
+	SectionCurrent   = prdescription.Current
+	SectionKept      = prdescription.Kept
+	SectionAbsent    = prdescription.Absent
+)
 
 // bodyFacts is what the description can claim, each from evidence.
 type bodyFacts struct {
@@ -57,119 +60,21 @@ type bodyFacts struct {
 	Note string
 }
 
-// NewPort is a port a branch adds: its name and version, its one line,
-// its homepage, and its license in a person's words.
-type NewPort struct {
-	Name, Version, Description, Homepage, License string
-}
-
-// pullRequestBody writes the description in the template's sections,
-// ticking only what the facts establish.
-func pullRequestBody(facts bodyFacts) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n\n%s\n\n", submittedBy, descriptionHeading)
-	// A new port is said as its Portfile says it, for a reviewer who has
-	// never heard of it (the txt run's finding 4). Its Type(s) stay as
-	// they are: MacPorts' automation labels a new Portfile a submission.
-	for _, port := range facts.NewPorts {
-		fmt.Fprintf(&b, "New port **%s** %s", port.Name, port.Version)
-		if port.Description != "" {
-			fmt.Fprintf(&b, ": %s", port.Description)
-		}
-		b.WriteString("\n")
-		if port.Homepage != "" {
-			fmt.Fprintf(&b, "\n- homepage: %s", port.Homepage)
-		}
-		if port.License != "" {
-			fmt.Fprintf(&b, "\n- license: %s", port.License)
-		}
-		b.WriteString("\n\n")
-	}
-	if len(facts.Commits) == 1 {
-		if text := commitBody(facts.Commits[0].Message); text != "" {
-			fmt.Fprintf(&b, "%s\n\n", text)
-		}
-	} else {
-		fmt.Fprintln(&b, "| Commit | Port | Change |")
-		fmt.Fprintln(&b, "| --- | --- | --- |")
-		for _, commit := range facts.Commits {
-			ports, change, ok := strings.Cut(commit.Subject(), ":")
-			if !ok {
-				ports, change = "", commit.Subject()
-			}
-			fmt.Fprintf(&b, "| %s | %s | %s |\n", short(model.ObjectID(commit.ID)), cell(ports), cell(change))
-		}
-		fmt.Fprintln(&b)
-	}
-	if facts.Note != "" {
-		b.WriteString(noteWords(facts.Note))
-	}
-	types := slices.Clone(facts.Types)
-	if len(types) == 0 && facts.Updated {
-		types = append(types, "enhancement")
-	}
+// description is what the facts let the description claim, as
+// prdescription composes it: the evidence's reports and table, in the
+// engine's words, and the checklist's answers.
+func (facts bodyFacts) description() prdescription.Facts {
+	described := prdescription.Facts{Note: facts.Note, Types: facts.Types, Updated: facts.Updated, NewPorts: facts.NewPorts,
+		SkipNotification: facts.SkipNotification, Version: version.Current().Tag()}
 	for _, commit := range facts.Commits {
-		if cve.MatchString(commit.Message) && !slices.Contains(types, "security fix") {
-			types = append(types, "security fix")
-		}
+		described.Commits = append(described.Commits, prdescription.Commit{ID: commit.ID, Message: commit.Message})
 	}
-	b.WriteString(typesSection(types))
-	b.WriteString(ownedSections(facts))
-	return b.String()
-}
-
-// noteWords is a person's note as the Description gives it, a quote led
-// by "Author's note:", so a reviewer tells it from what dockhand wrote. A
-// quote also keeps any of its lines from beginning a heading, which would
-// end the Description there (sectionSpan), and submitting again would
-// read the rest of the note as a part dockhand doesn't write.
-func noteWords(note string) string {
-	var b strings.Builder
-	for i, line := range strings.Split(note, "\n") {
-		if i == 0 {
-			line = "**Author's note:** " + line
-		}
-		fmt.Fprintln(&b, strings.TrimRight("> "+line, " \t"))
-	}
-	b.WriteString("\n")
-	return b.String()
-}
-
-// typesSection is a description's Type(s), with these ticked.
-func typesSection(types []string) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n\n", typesHeading)
-	for _, kind := range PullRequestTypes {
-		fmt.Fprintf(&b, "- [%s] %s\n", tick(slices.Contains(types, kind)), kind)
-	}
-	b.WriteString("\n")
-	return b.String()
-}
-
-// tickedTypes are the Type(s) a Type(s) part as dockhand writes it ticks.
-func tickedTypes(section string) []string {
-	var ticked []string
-	for _, line := range strings.Split(section, "\n") {
-		for _, kind := range PullRequestTypes {
-			if strings.TrimSpace(line) == "- [x] "+kind {
-				ticked = append(ticked, kind)
-			}
-		}
-	}
-	return ticked
-}
-
-// ownedSections are the part of the description dockhand keeps up to date:
-// Tested on through Verification.
-func ownedSections(facts bodyFacts) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n\n", testedOnHeading)
 	evidence := facts.Evidence
 	switch {
 	case facts.NoCheck:
-		fmt.Fprintln(&b, "Not built locally: submitted with `dockhand submit --no-check`, so MacPorts CI is the only check this change has had.")
+		described.TestedOn.NoCheck = true
 	case evidence == nil:
-		fmt.Fprintln(&b, "No local check has finished for this commit yet. This is a draft, so MacPorts CI starts early.")
+		described.TestedOn.Pending = true
 	default:
 		checks := evidence.Checks()
 		// An environment where nothing was built or reused, as one where
@@ -178,204 +83,63 @@ func ownedSections(facts bodyFacts) string {
 		for i, environment := range evidence.Plan.Environments {
 			for _, observation := range evidence.Observations(i) {
 				built, reusedIn := evidence.Built(i, observation.Runs)
-				b.WriteString(testedOn(environment, observation.Observed, built, checks, reusedIn))
+				described.TestedOn.Reports = append(described.TestedOn.Reports, report(environment, observation.Observed, built, checks, reusedIn))
 			}
 		}
-		fmt.Fprint(&b, "| Port |")
 		for _, environment := range evidence.Plan.Environments {
-			fmt.Fprintf(&b, " %s |", cell(EnvironmentHeading(environment, evidence.Plan.Environments)))
+			described.TestedOn.Columns = append(described.TestedOn.Columns, EnvironmentHeading(environment, evidence.Plan.Environments))
 		}
-		fmt.Fprint(&b, "\n| --- |")
-		for range evidence.Plan.Environments {
-			fmt.Fprint(&b, " --- |")
-		}
-		fmt.Fprintln(&b)
-		var notes reasonNotes
 		for _, target := range evidence.Targets {
-			fmt.Fprintf(&b, "| %s |", target.Target.ID)
+			row := prdescription.Row{Port: string(target.Target.ID)}
 			for i, result := range target.Outcomes {
-				words := EvidenceWords(*evidence, target, i, slices.Contains(facts.Accepted, target.Target.Target.Name))
-				if reason := result.Reason(); reason != "" {
-					words += notes.mark(reason, string(target.Target.ID), EnvironmentHeading(evidence.Plan.Environments[i], evidence.Plan.Environments))
-				}
-				fmt.Fprintf(&b, " %s |", words)
+				row.Cells = append(row.Cells, prdescription.Cell{Words: EvidenceWords(*evidence, target, i, slices.Contains(facts.Accepted, target.Target.Target.Name)), Reason: result.Reason()})
 			}
-			fmt.Fprintln(&b)
+			described.TestedOn.Rows = append(described.TestedOn.Rows, row)
 		}
-		b.WriteString(notes.String())
 	}
-	fmt.Fprintf(&b, "\n%s\n\nHave you\n\n", verificationHeading)
 	built := evidence != nil && !facts.NoCheck && allBuilt(*evidence, facts.Accepted)
-	item := func(done bool, text, note string) {
-		if note != "" {
-			text += " " + note
-		}
-		fmt.Fprintf(&b, "- [%s] %s\n", tick(done), text)
+	answers := prdescription.Verification{RulesPassed: facts.RulesPassed, Squashed: facts.Squashed, Searched: facts.Searched, Built: built,
+		AsksTests: evidence == nil || testsDeclared(evidence), TestedBinaries: facts.TestedBinaries, Variants: facts.TestedVariants}
+	answers.TestsPassed = built && testsPassed(*evidence)
+	for _, pr := range facts.Others {
+		answers.Others = append(answers.Others, pr.Number)
 	}
-	item(facts.RulesPassed, "followed our [Commit Message Guidelines](https://trac.macports.org/wiki/CommitMessages)?", "")
-	item(facts.Squashed, "squashed and [minimized your commits](https://guide.macports.org/#project.github)?", "")
-	others := ""
-	if !facts.Searched {
-		others = "(dockhand could not search)"
-	} else if len(facts.Others) > 0 {
-		var links []string
-		for _, pr := range facts.Others {
-			links = append(links, fmt.Sprintf("#%d", pr.Number))
-		}
-		others = "(open for the same ports: " + strings.Join(links, ", ") + ")"
-	}
-	item(facts.Searched && len(facts.Others) == 0, "checked that there aren't other open [pull requests](https://github.com/macports/macports-ports/pulls) for the same change?", others)
-	item(citesTickets(facts.Commits), "referenced existing tickets on [Trac](https://trac.macports.org/wiki/Tickets) with full URL in commit message?", "")
-	item(built, "checked your Portfile with `port lint`?", "")
-	if tests := testsDeclared(evidence); evidence == nil || tests {
-		item(built && testsPassed(*evidence), "tried existing tests with `sudo port test`?", "")
-	}
-	item(built, "tried a full install with `sudo port -vst install`?", installNote(built))
-	item(facts.TestedBinaries, "tested basic functionality of all binary files?", "")
 	// A --variants each check that passed answers the variants item, and
 	// says which it built; otherwise it's the person's statement.
-	variants, variantsNote := facts.TestedVariants, ""
 	if evidence != nil && !facts.NoCheck {
 		if port, builds, passed := evidence.VariantsBuilt(); passed {
-			variants, variantsNote = true, fmt.Sprintf("(dockhand built %s with each of %s over its defaults)", port, strings.Join(builds, ", "))
+			answers.Variants, answers.VariantsNote = true, fmt.Sprintf("(dockhand built %s with each of %s over its defaults)", port, strings.Join(builds, ", "))
 		}
 	}
-	item(variants, "checked that the Portfile's most important [variants](https://trac.macports.org/wiki/Variants) haven't been broken?", variantsNote)
-	if facts.SkipNotification {
-		fmt.Fprint(&b, "\n[skip notification]\n")
-	}
-	// A comment, which GitHub doesn't show, ends the checklist's list:
-	// Markdown would take dockhand's line, a list item after a blank line,
-	// for the checklist's last item, and space the checklist out for it.
-	fmt.Fprintf(&b, "\n%s\n\n%s\n", listEnd, signature(version.Current().Tag()))
-	return b.String()
+	described.Verification = answers
+	return described
 }
 
-// submittedBy is the description's first line, naming dockhand in bold,
-// whose version the last line gives. plainSubmittedBy is the line as
-// dockhand wrote it before it was bold, which a description it wrote
-// then, and nobody changed, is given in its place.
-var (
-	submittedBy      = "Submitted by **[dockhand](" + version.ProjectURL + ")**"
-	plainSubmittedBy = "Submitted by [dockhand](" + version.ProjectURL + ")"
-)
-
-// listEnd ends the Verification checklist before dockhand's last line.
-const listEnd = "<!-- dockhand -->"
-
-// signature is the description's last line, dockhand with its version, or
-// dockhand alone when the build doesn't know its version.
-func signature(tag string) string {
-	line := "- [dockhand](" + version.ProjectURL + ")"
-	if tag = strings.TrimSpace(tag); tag != "" {
-		line += " ver. " + tag
-	}
-	return line
+// pullRequestBody writes the description in the template's sections,
+// ticking only what the facts establish.
+func pullRequestBody(facts bodyFacts) string {
+	return prdescription.Compose(facts.description())
 }
 
-func tick(done bool) string {
-	if done {
-		return "x"
-	}
-	return " "
+// ownedSections are the part of the description dockhand keeps up to date:
+// Tested on through Verification.
+func ownedSections(facts bodyFacts) string {
+	return prdescription.Owned(facts.description())
 }
 
-func cell(text string) string {
-	return strings.ReplaceAll(strings.TrimSpace(text), "|", `\|`)
-}
-
-// reasonNotes are the notes under the Tested on table: one for each reason
-// a result gave for not wholly passing (Cell.Reason), naming each port and
-// environment that gave it, whose cells carry the note's mark. The rust
-// run, #35084, read "tests failed (advisory)" on both its releases, and
-// nothing said that its bootstrap had panicked before any test ran: a
-// reviewer, who can't read the logs on the author's Mac, has only what the
-// pull request says. A note rather than the reason in the cell keeps the
-// table readable, and a reason given in several places is said once.
-type reasonNotes struct {
-	reasons []string
-	places  [][]notePlace
-}
-
-// notePlace is a port that gave a note's reason, and the environments
-// where it did.
-type notePlace struct {
-	target       string
-	environments []string
-}
-
-// mark records a reason a target gave in an environment, and returns the
-// mark its cell carries: ¹ for the first reason, ² for the next.
-func (n *reasonNotes) mark(reason, target, environment string) string {
-	reason = strings.Join(strings.Fields(reason), " ")
-	i := slices.Index(n.reasons, reason)
-	if i < 0 {
-		n.reasons, n.places = append(n.reasons, reason), append(n.places, nil)
-		i = len(n.reasons) - 1
+// report is one environment's report as the description gives it: what
+// it observed, the release and tools the environment states, for what it
+// didn't report, who built it, and the runs behind it, each with its
+// check.
+func report(environment model.Environment, observed model.Observed, runs []model.GuestExecution, checks map[model.RunID]string, reusedIn map[model.ExecutionID]string) prdescription.Report {
+	described := prdescription.Report{Observed: observed, Architecture: environment.Platform.Architecture, Tools: environment.DeveloperTools, Provider: providerWords(environment.Provider)}
+	if environment.Platform != (model.Platform{}) {
+		described.Release = strings.TrimPrefix(describePlace(model.Environment{Platform: environment.Platform}), " ")
 	}
-	if j := slices.IndexFunc(n.places[i], func(place notePlace) bool { return place.target == target }); j >= 0 {
-		n.places[i][j].environments = append(n.places[i][j].environments, environment)
-	} else {
-		n.places[i] = append(n.places[i], notePlace{target: target, environments: []string{environment}})
+	for _, run := range runs {
+		described.Runs = append(described.Runs, prdescription.Run{ID: string(run.ID), Ref: run.ProviderRef, Check: checks[run.Run], ReusedIn: reusedIn[run.ID]})
 	}
-	return superscript(i + 1)
-}
-
-// String is the notes, a line each after a blank line, which ends the
-// table: "¹ rust on macOS 15, macOS 26: `tests: Failed to test rust:
-// command execution failed`". The reason is quoted as code, as the
-// provider's words, which Markdown would otherwise read for emphasis or
-// HTML.
-func (n reasonNotes) String() string {
-	if len(n.reasons) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	b.WriteString("\n")
-	for i, reason := range n.reasons {
-		var where []string
-		for _, place := range n.places[i] {
-			where = append(where, place.target+" on "+strings.Join(place.environments, ", "))
-		}
-		fmt.Fprintf(&b, "%s %s: %s\n", superscript(i+1), strings.Join(where, "; "), codeSpan(reason))
-	}
-	return b.String()
-}
-
-// superscript writes a number in superscript digits, a note's mark.
-func superscript(number int) string {
-	digits := []rune("⁰¹²³⁴⁵⁶⁷⁸⁹")
-	var b strings.Builder
-	for _, digit := range strconv.Itoa(number) {
-		b.WriteRune(digits[digit-'0'])
-	}
-	return b.String()
-}
-
-// codeSpan quotes text as Markdown code, in a run of backticks longer
-// than any the text holds, as CommonMark has a code span hold them.
-func codeSpan(text string) string {
-	fence := "`"
-	for strings.Contains(text, fence) {
-		fence += "`"
-	}
-	if len(fence) > 1 {
-		return fence + " " + text + " " + fence
-	}
-	return fence + text + fence
-}
-
-// commitBody is a commit message's text after the subject, without
-// dockhand's attribution.
-func commitBody(message string) string {
-	_, rest, _ := strings.Cut(strings.TrimSpace(message), "\n")
-	var kept []string
-	for _, line := range strings.Split(strings.TrimSpace(rest), "\n") {
-		if !commitmsg.IsAttribution(line) {
-			kept = append(kept, line)
-		}
-	}
-	return strings.TrimSpace(strings.Join(kept, "\n"))
+	return described
 }
 
 // dockhandUpdate reports whether every commit carries dockhand's
@@ -394,101 +158,6 @@ func dockhandUpdate(commits []git.HistoryCommit, edits []model.Edit) bool {
 		})
 	}
 	return updated
-}
-
-func citesTickets(commits []git.HistoryCommit) bool {
-	return slices.ContainsFunc(commits, func(c git.HistoryCommit) bool {
-		return strings.Contains(c.Message, "https://trac.macports.org/ticket/")
-	})
-}
-
-// testedOn is one environment's lines under Tested on, as MacPorts'
-// template has them: the macOS version, build, and architecture, then
-// Xcode's version and build or the Command Line Tools', as the environment
-// reported them, then who built it, and in which runs of which checks. An
-// environment of several builders, as MacPorts' workflow has, gives the
-// releases they reported, "macOS 14, 15, 26". What it didn't report is
-// said by the release's name and the tools the environment stated, and
-// never by the Darwin version, which isn't macOS's.
-func testedOn(environment model.Environment, observed model.Observed, runs []model.GuestExecution, checks map[model.RunID]string, reusedIn map[model.ExecutionID]string) string {
-	var b strings.Builder
-	platform := environment.Platform
-	var releases []string
-	for _, builder := range observed.Builders {
-		if builder.MacOS != "" && !slices.Contains(releases, builder.MacOS) {
-			releases = append(releases, builder.MacOS)
-		}
-	}
-	switch {
-	case observed.MacOS != "":
-		fmt.Fprintln(&b, strings.Join(nonEmpty("macOS", observed.MacOS, observed.Build, firstOf(observed.Architecture, platform.Architecture)), " "))
-	case len(releases) > 0:
-		fmt.Fprintln(&b, "macOS "+strings.Join(releases, ", "))
-	case platform != (model.Platform{}):
-		fmt.Fprintln(&b, strings.TrimPrefix(describePlace(model.Environment{Platform: platform}), " "))
-	}
-	var tools string
-	switch {
-	case observed.Xcode != "":
-		tools = strings.Join(nonEmpty("Xcode", observed.Xcode, observed.XcodeBuild), " ")
-	case observed.Tools != "":
-		tools = "Command Line Tools " + observed.Tools
-	case environment.DeveloperTools == model.DeveloperToolsXcode:
-		tools = "Xcode, its version not recorded"
-	case environment.DeveloperTools == model.DeveloperToolsCommandLine:
-		tools = "Command Line Tools, their version not recorded"
-	default:
-		tools = "Developer tools not recorded"
-	}
-	if observed.MacPorts != "" {
-		tools += " · MacPorts " + observed.MacPorts
-	}
-	fmt.Fprintf(&b, "%s · %s%s\n\n", tools, providerWords(environment.Provider), runWords(runs, checks, reusedIn))
-	return b.String()
-}
-
-// runWords name the provider runs behind an environment's results, each
-// with the check it was in: "(Run ID: tart_7y62p4sigena6xlr - checked in
-// check-11)". A run is named by its provider's own reference where that is
-// a link anyone can follow, such as a workflow run's URL, and by dockhand's
-// ID otherwise, which the author's dockhand logs finds the evidence by.
-func runWords(runs []model.GuestExecution, checks map[model.RunID]string, reusedIn map[model.ExecutionID]string) string {
-	var named []string
-	for _, run := range runs {
-		name := string(run.ID)
-		if strings.HasPrefix(run.ProviderRef, "https://") {
-			name = run.ProviderRef
-		}
-		if check := checks[run.Run]; check != "" {
-			name += " - checked in " + check
-		}
-		if check := reusedIn[run.ID]; check != "" {
-			name += ", reused in " + check
-		}
-		if !slices.Contains(named, name) {
-			named = append(named, name)
-		}
-	}
-	switch len(named) {
-	case 0:
-		return ""
-	case 1:
-		return " (Run ID: " + named[0] + ")"
-	}
-	return " (Run IDs: " + strings.Join(named, "; ") + ")"
-}
-
-func nonEmpty(values ...string) []string {
-	return slices.DeleteFunc(values, func(value string) bool { return value == "" })
-}
-
-func firstOf(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 func providerWords(provider string) string {
@@ -537,165 +206,4 @@ func testsPassed(evidence Evidence) bool {
 		}
 	}
 	return true
-}
-
-func installNote(built bool) string {
-	if !built {
-		return ""
-	}
-	return "(dockhand builds from source as MacPorts CI does, without trace mode)"
-}
-
-// ownedSpan locates the part of a description dockhand keeps up to date,
-// from the Tested on heading to the end.
-func ownedSpan(body string) (int, bool) {
-	at := strings.Index(body, testedOnHeading)
-	return at, at >= 0
-}
-
-// typesSpan locates a description's Type(s). A description may leave them
-// out, as one a person edited, or wrote from another template, can.
-func typesSpan(body string) (int, int, bool) { return sectionSpan(body, typesHeading) }
-
-// sectionSpan locates a part of a description, from its heading to the
-// next heading.
-func sectionSpan(body, heading string) (int, int, bool) {
-	start := strings.Index(body, heading)
-	if start < 0 {
-		return 0, 0, false
-	}
-	end := len(body)
-	if next := strings.Index(body[start+len(heading):], "\n#"); next >= 0 {
-		end = start + len(heading) + next + 1
-	}
-	return start, end, true
-}
-
-// SectionOutcome is what submitting again does to a part of an existing
-// pull request's description that dockhand writes.
-type SectionOutcome string
-
-const (
-	// SectionRefreshed is rewritten, and reads differently for it.
-	SectionRefreshed SectionOutcome = "refreshed"
-	// SectionCurrent is dockhand's, and already as it would write it.
-	SectionCurrent SectionOutcome = "current"
-	// SectionKept is someone's own: edited since dockhand wrote it, or
-	// never dockhand's, and kept as it is.
-	SectionKept SectionOutcome = "kept"
-	// SectionAbsent is left out of the description, and stays out.
-	SectionAbsent SectionOutcome = "absent"
-)
-
-// DescriptionSections are what submitting again does to each part of an
-// existing pull request's description that dockhand writes: its
-// Description, its Type(s), and everything from Tested on down.
-type DescriptionSections struct {
-	Description, Types, TestedOn SectionOutcome
-}
-
-// mergeBody updates an existing description, and says what it did to each
-// part dockhand writes. Each is rewritten only while it is still exactly
-// what dockhand last wrote there, so a person's edits are kept: the
-// Description, which is the commit's body or the commits' table, the
-// Type(s), and everything from Tested on down. The Type(s) only gain ticks
-// that way: what dockhand ticked stays ticked, though a person's change
-// folded in since means it wouldn't tick it now. Types the person named
-// (named) replace the Type(s) however they read, or go before Tested on in
-// a description that leaves them out; unnamed, such a description stays
-// without them.
-func mergeBody(existing, lastWritten, fresh string, named bool) (string, DescriptionSections) {
-	body, testedOn := mergeTestedOn(existing, lastWritten, fresh)
-	body, types := mergeTypes(body, lastWritten, fresh, named)
-	body, description := mergeDescription(body, lastWritten, fresh)
-	return submittedFirst(body, lastWritten, fresh, testedOn), DescriptionSections{Description: description, Types: types, TestedOn: testedOn}
-}
-
-// submittedFirst gives a description dockhand wrote before its first line
-// named dockhand the line fresh begins with, where rewriting everything
-// from Tested on down took away the last line that named dockhand. One
-// that begins otherwise, or whose first line a person took out, stays as
-// it is.
-func submittedFirst(body, lastWritten, fresh string, testedOn SectionOutcome) string {
-	if rest, ok := strings.CutPrefix(body, plainSubmittedBy+"\n"); ok && strings.HasPrefix(lastWritten, plainSubmittedBy+"\n") && strings.HasPrefix(fresh, submittedBy) {
-		return submittedBy + "\n" + rest
-	}
-	switch {
-	case testedOn != SectionRefreshed && testedOn != SectionCurrent:
-		return body
-	case !strings.HasPrefix(fresh, submittedBy) || strings.HasPrefix(lastWritten, submittedBy) || !strings.HasPrefix(body, descriptionHeading):
-		return body
-	}
-	return submittedBy + "\n\n" + body
-}
-
-// mergeDescription rewrites the Description while it is still exactly what
-// dockhand last wrote there, so a commit's body written since the pull
-// request opened reaches it; one a person edited, or left out, stays so.
-func mergeDescription(body, lastWritten, fresh string) (string, SectionOutcome) {
-	from, to, found := sectionSpan(body, descriptionHeading)
-	if !found {
-		return body, SectionAbsent
-	}
-	was, wasEnd, written := sectionSpan(lastWritten, descriptionHeading)
-	start, end, ok := sectionSpan(fresh, descriptionHeading)
-	if !written || !ok || normalize(body[from:to]) != normalize(lastWritten[was:wasEnd]) {
-		return body, SectionKept
-	}
-	section := fresh[start:end]
-	return body[:from] + section + body[to:], rewritten(body[from:to], section)
-}
-
-// rewritten is a part's outcome once dockhand writes it: refreshed, or
-// current where its text stays the same.
-func rewritten(was, is string) SectionOutcome {
-	if normalize(was) == normalize(is) {
-		return SectionCurrent
-	}
-	return SectionRefreshed
-}
-
-func mergeTestedOn(existing, lastWritten, fresh string) (string, SectionOutcome) {
-	at, ok := ownedSpan(existing)
-	if !ok {
-		return existing, SectionAbsent
-	}
-	last, lastOK := ownedSpan(lastWritten)
-	next, nextOK := ownedSpan(fresh)
-	if !lastOK || !nextOK || normalize(existing[at:]) != normalize(lastWritten[last:]) {
-		return existing, SectionKept
-	}
-	return existing[:at] + fresh[next:], rewritten(existing[at:], fresh[next:])
-}
-
-func mergeTypes(body, lastWritten, fresh string, named bool) (string, SectionOutcome) {
-	from, to, found := typesSpan(body)
-	start, end, ok := typesSpan(fresh)
-	switch {
-	case !ok && found:
-		return body, SectionKept
-	case !ok:
-		return body, SectionAbsent
-	}
-	types := fresh[start:end]
-	if found {
-		was, wasEnd, written := typesSpan(lastWritten)
-		switch {
-		case named:
-			return body[:from] + types + body[to:], rewritten(body[from:to], types)
-		case written && normalize(body[from:to]) == normalize(lastWritten[was:wasEnd]):
-			section := typesSection(append(tickedTypes(body[from:to]), tickedTypes(types)...))
-			return body[:from] + section + body[to:], rewritten(body[from:to], section)
-		}
-		return body, SectionKept
-	}
-	if at, owned := ownedSpan(body); owned && named {
-		return body[:at] + types + body[at:], SectionRefreshed
-	}
-	return body, SectionAbsent
-}
-
-// normalize ignores the line endings GitHub's editor may change.
-func normalize(text string) string {
-	return strings.TrimSpace(strings.ReplaceAll(text, "\r\n", "\n"))
 }

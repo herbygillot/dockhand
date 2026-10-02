@@ -156,7 +156,7 @@ func (e *Engine) planCleanBranch(ctx context.Context, branch model.Branch) (Clea
 		plan.Steps = append(plan.Steps, step)
 	}
 	if pr := branch.PullRequest; pr != nil && pr.Head != "" && plan.Merged != "" {
-		repository, name, _ := strings.Cut(pr.Head, ":")
+		repository, name := pr.HeadParts()
 		step := CleanStep{What: pr.Head, kind: "fork", expected: string(plan.Merged)}
 		remote, err := e.remoteFor(ctx, repository)
 		switch {
@@ -416,7 +416,7 @@ func (e *Engine) ApplyClean(ctx context.Context, plans []CleanBranch) ([]CleanBr
 				}
 				err = e.Repo.DeleteBranch(ctx, plan.Branch.Name, step.expected)
 			case "fork":
-				_, name, _ := strings.Cut(plan.Branch.PullRequest.Head, ":")
+				_, name := plan.Branch.PullRequest.HeadParts()
 				err = e.Repo.DeleteRemoteBranch(ctx, step.remote, name, git.RefValue{Exists: true, Object: step.expected})
 			case "check":
 				err = e.Repo.DeleteRemoteBranch(ctx, step.remote, step.name, git.RefValue{Exists: true, Object: step.expected})

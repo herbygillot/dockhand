@@ -48,7 +48,7 @@ func (e *Engine) RefreshPullRequests(ctx context.Context) ([]Refreshed, error) {
 func (e *Engine) refresh(ctx context.Context, branch model.Branch) (Refreshed, error) {
 	refreshed := Refreshed{Branch: branch}
 	pr := branch.PullRequest
-	ref := forge.PullRequestRef{Forge: forge.GitHub, Repository: pr.Repository, Number: pr.Number}
+	ref := pullRequestRef(pr.Repository, pr.Number)
 	observed, err := e.forge().Observe(ctx, ref)
 	if errors.Is(err, forge.ErrNotFound) {
 		return refreshed, fmt.Errorf("#%d was not found", pr.Number)

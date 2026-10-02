@@ -14,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
+	"github.com/herbygillot/dockhand/internal/macports/prdescription"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -146,7 +147,7 @@ func (p *SubmitPlan) Answer(testedBinaries, testedVariants bool) {
 		if p.Branch.PullRequest != nil {
 			last = p.Branch.PullRequest.Body
 		}
-		p.Body, p.Sections = mergeBody(p.Existing.PullRequest.Body, last, p.Body, len(p.Request.Types) > 0)
+		p.Body, p.Sections = prdescription.Merge(p.Existing.PullRequest.Body, last, p.Body, len(p.Request.Types) > 0)
 		// Someone else's description is never rewritten (ApplySubmit).
 		if p.Theirs {
 			p.Sections = DescriptionSections{Description: SectionKept, Types: SectionKept, TestedOn: SectionKept}
@@ -171,7 +172,7 @@ func (p SubmitPlan) Head() string { return p.HeadRepository + ":" + p.RemoteBran
 // (a pull request's head can't change), else the branch's own name.
 func (p SubmitPlan) RemoteBranch() string {
 	if pr := p.Branch.PullRequest; pr != nil {
-		if _, name, ok := strings.Cut(pr.Head, ":"); ok && name != "" {
+		if _, name := pr.HeadParts(); name != "" {
 			return name
 		}
 	}
@@ -244,7 +245,27 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 		}
 	}
 
-	if err := e.evidence(ctx, &plan); err != nil {
+	// What's recorded of the branch at this commit, read once for the
+	// phases below: the failures accepted, and the edits dockhand made.
+	var accepted []string
+	var edits []model.Edit
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		list, err := r.Acceptances(branch.ID, model.ObjectID(head))
+		for _, a := range list {
+			accepted = append(accepted, a.Port)
+		}
+		if err != nil {
+			return err
+		}
+		edits, err = r.Edits(branch.ID)
+		return err
+	}); err != nil {
+		return plan, err
+	}
+	// The phases, in order: the evidence and what blocks publishing it;
+	// where submit pushes, and the pull request open there (Existing),
+	// which the title and the search for others read.
+	if err := e.evidence(ctx, &plan, accepted); err != nil {
 		return plan, err
 	}
 	plan.Moved = e.movedSources(ctx, plan.Evidence)
@@ -268,21 +289,6 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	}
 	errorsFound := commitrules.Errors(plan.Findings)
 	squashed := !slices.ContainsFunc(plan.Findings, func(f commitrules.Finding) bool { return f.Code == "follow-up" || f.Code == "merge" })
-	var accepted []string
-	var edits []model.Edit
-	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		list, err := r.Acceptances(branch.ID, model.ObjectID(head))
-		for _, a := range list {
-			accepted = append(accepted, a.Port)
-		}
-		if err != nil {
-			return err
-		}
-		edits, err = r.Edits(branch.ID)
-		return err
-	}); err != nil {
-		return plan, err
-	}
 	plan.Moved = append(append(preparedSources(plan.Evidence, edits), plan.Moved...), assessedSources(plan.Evidence, plan.Upstream)...)
 	facts := bodyFacts{Commits: plan.Commits, Evidence: plan.Evidence, NoCheck: request.NoCheck, Accepted: slices.Concat(accepted, request.Accept), Types: request.Types,
 		Updated:     dockhandUpdate(plan.Commits, edits),
@@ -294,12 +300,14 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	return plan, nil
 }
 
-// evidence applies the publication rule.
-func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan) error {
+// evidence finds the evidence for the commit's files and applies the
+// publication rule, accepted being the failures already accepted at this
+// commit.
+func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan, accepted []string) error {
 	request := plan.Request
 	for _, kind := range request.Types {
-		if !slices.Contains(PullRequestTypes, kind) {
-			return fmt.Errorf("--type %q is not one of the template's: %s", kind, strings.Join(PullRequestTypes, ", "))
+		if !prdescription.IsType(kind) {
+			return fmt.Errorf("--type %q is not one of the template's: %s", kind, strings.Join(prdescription.Types(), ", "))
 		}
 	}
 	if request.NoCheck {
@@ -339,35 +347,10 @@ func (e *Engine) evidence(ctx context.Context, plan *SubmitPlan) error {
 		return nil
 	}
 	plan.Evidence = &evidence
-	for _, port := range request.Accept {
-		// A port may have several builds, its variant builds beside its
-		// default one: the one to accept is one that failed.
-		i := slices.IndexFunc(evidence.Targets, func(t TargetEvidence) bool { return t.Target.Target.Name == port && t.Failing() })
-		if i < 0 {
-			i = slices.IndexFunc(evidence.Targets, func(t TargetEvidence) bool { return t.Target.Target.Name == port })
-		}
-		switch {
-		case i < 0:
-			return fmt.Errorf("--accept %s: %s checked no port %s", port, evidence.Run.Name(), port)
-		case evidence.Targets[i].Passed:
-			return fmt.Errorf("--accept %s: it passed in %s; there is nothing to accept", port, evidence.Run.Name())
-		case evidence.Targets[i].Missing() || !evidence.Targets[i].Failing():
-			return fmt.Errorf("--accept %s: no check of these files built it, so there is no failure to accept; dockhand check builds it", port)
-		case !evidence.Targets[i].Acceptable():
-			return fmt.Errorf("--accept %s: %s is a changed port, and a changed port that fails is shared as a draft (--draft), never accepted", port, port)
-		}
+	if err := acceptanceProblem(evidence, request.Accept); err != nil {
+		return err
 	}
 	if !request.Draft {
-		var accepted []string
-		if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-			list, err := r.Acceptances(plan.Branch.ID, model.ObjectID(plan.Commit))
-			for _, a := range list {
-				accepted = append(accepted, a.Port)
-			}
-			return err
-		}); err != nil {
-			return err
-		}
 		plan.Blocking = append(plan.Blocking, publicationProblems(evidence, slices.Concat(accepted, request.Accept))...)
 	}
 	return nil
@@ -410,7 +393,7 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 
 	var observed forge.PullRequestObservation
 	if pr := plan.Branch.PullRequest; pr != nil {
-		observed, err = f.Observe(ctx, forge.PullRequestRef{Forge: forge.GitHub, Repository: pr.Repository, Number: pr.Number})
+		observed, err = f.Observe(ctx, pullRequestRef(pr.Repository, pr.Number))
 	} else {
 		observed, err = f.Find(ctx, forge.PullRequestQuery{Repository: UpstreamRepository, HeadRepository: plan.HeadRepository, HeadBranch: plan.RemoteBranch(), BaseBranch: UpstreamBranch})
 	}
@@ -445,7 +428,7 @@ func theirRepository(branch model.Branch, login string) string {
 	if pr == nil {
 		return ""
 	}
-	repository, _, _ := strings.Cut(pr.Head, ":")
+	repository, _ := pr.HeadParts()
 	owner, _, _ := strings.Cut(repository, "/")
 	if repository == "" || strings.EqualFold(owner, login) {
 		return ""
@@ -694,7 +677,7 @@ func (e *Engine) Ready(ctx context.Context, branch model.Branch) (_ model.Branch
 	if pr == nil {
 		return branch, false, fmt.Errorf("%s has no pull request yet; dockhand submit opens one", branch.Name)
 	}
-	ref := forge.PullRequestRef{Forge: forge.GitHub, Repository: pr.Repository, Number: pr.Number}
+	ref := pullRequestRef(pr.Repository, pr.Number)
 	if _, err := e.forge().MarkReady(ctx, ref); err != nil {
 		// GitHub may refuse dockhand's app what it allows another, as an
 		// organization that restricts which apps may act for its members
@@ -742,7 +725,7 @@ func (e *Engine) RequestReview(ctx context.Context, branch model.Branch) ([]stri
 		return nil, nil
 	}
 	logins := pr.Observed.ChangesRequestedBy
-	if err := e.forge().RequestReviewers(ctx, forge.PullRequestRef{Forge: forge.GitHub, Repository: pr.Repository, Number: pr.Number}, logins); err != nil {
+	if err := e.forge().RequestReviewers(ctx, pullRequestRef(pr.Repository, pr.Number), logins); err != nil {
 		return nil, fmt.Errorf("asking %s to review #%d again: %w", strings.Join(logins, ", "), pr.Number, err)
 	}
 	err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
