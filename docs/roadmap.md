@@ -426,6 +426,13 @@ What batches 10 to 15 touch doesn't move with item 6, so they wait without cost,
   - submit's upstream section said go.toolchain_min "already gates on" 1.27.1, where the reviewer needs that update raised it from 1.25.8, which drops older macOS;
   - review of a new python port (py-mlx-vlm, #35088): missing run dependencies on existing ports marked "·", "requirements.txt adds X" marked "!" for a port that's all new, and the block once per pyXY subport;
   - review of R-Matrix (#35100): "DESCRIPTION changed", where its Depends, Imports, and LinkingTo fields are what the build reads.
+- **The command line's UX** ([review](reviews/2026-10-02-command-ux.md), 2026-10-02, against 3c80520). The person agreed to all its proposals on 2026-10-02, to be taken in the review's order, each a batch or more:
+  1. one way to name a branch, a selector (`jq`, `jq-4`, `#34901`, `check-42`) and `-b`, with an authoring verb starting the branch where nothing else could be meant (§1, §2);
+  2. `submit` folding in tidy's plan (§3), and a shared-flag contract held by a test over the command tree (§9): `--plan`, a preview's exit code, `--yes`, `--all`, check's capture, `Next:` from one readiness verdict, foreground checks under the providers' capacity, and help that speaks to users. Field testing's `--plan` without a branch, preview exit codes, and Tart capacity (the command-surface report above) land here;
+  3. `archive` taking the worktree (§5), and `explain` for checks and branches (§7);
+  4. `setup` for first run and the health report (§6), and `review --check` (§8);
+  5. one "how far" option (§4), last, since it changes the most words and touches `bump`'s decided ground. Its name is open: the person suggested `--until`, against the review's `--through`, and the review's thread proposed `--to`; it's settled there.
+  The review's smaller items (`undo`, `queue` and `watch` into status, `--tested`, `open`) are taken where their commands are next touched.
 - **Not now, unless a change needs them:** an engine-level staged preparation (the review's smaller items), `Update`'s and `PlanTidy`'s seams (code organization, 44), tidy's composer in `commitmsg` (9), the history transition as one `Make` (26), and `macports`' mechanics in a subpackage (21): structure with no behavior to fix, taken where a batch above finds it in the way. And the Golden Gate observer boundary, the mirror-seeding and serve-memory optimizations of batches 14 and 15, Tart's workarounds as Tart releases its fixes, and `create`'s SwiftPM and README description. The open decisions, D15 and D18 to D21, block none of this.
 
 ### Taken when their area is next touched
