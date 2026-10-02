@@ -116,7 +116,15 @@ func (f *DeviceFlow) clock() time.Time {
 // seconds it lasts, as refresh_token_expires_in, a number or a string.
 func renewalOf(token *oauth2.Token, now time.Time) (time.Time, error) {
 	var seconds int64
+	// GitHub answers form-encoded, where oauth2 reads an integer as an
+	// int64, or as JSON, where it's a float64 or, here and there, a
+	// string: the int64 case was missing, so every real login was refused
+	// (the auth flow review thread, 2026-10-02).
 	switch value := token.Extra("refresh_token_expires_in").(type) {
+	case int64:
+		seconds = value
+	case int:
+		seconds = int64(value)
 	case float64:
 		seconds = int64(value)
 	case string:

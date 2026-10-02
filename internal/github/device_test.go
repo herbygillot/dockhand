@@ -33,7 +33,10 @@ func TestDeviceFlowUsesOAuthPollingAndValidatesTheAuthenticatedUser(t *testing.T
 			assert.Equal(t, "fixture-client", r.Form.Get("client_id"))
 			assert.Equal(t, "device-secret", r.Form.Get("device_code"))
 			assert.Equal(t, "urn:ietf:params:oauth:grant-type:device_code", r.Form.Get("grant_type"))
-			fmt.Fprint(w, `{"access_token":"oauth-secret","token_type":"bearer","scope":"public_repo","expires_in":28800,"refresh_token":"refresh-secret","refresh_token_expires_in":"15897600"}`)
+			// GitHub's token endpoint answers form-encoded, as its docs
+			// show.
+			w.Header().Set("Content-Type", "application/x-www-form-urlencoded")
+			fmt.Fprint(w, "access_token=oauth-secret&expires_in=28800&refresh_token=refresh-secret&refresh_token_expires_in=15897600&scope=public_repo&token_type=bearer")
 		case "/user":
 			assert.Equal(t, "Bearer oauth-secret", r.Header.Get("Authorization"))
 			fmt.Fprint(w, `{"login":"fixture-user"}`)
@@ -57,7 +60,7 @@ func TestDeviceFlowUsesOAuthPollingAndValidatesTheAuthenticatedUser(t *testing.T
 	require.NoError(t, err)
 	require.Equal(t, "oauth-secret", value.Access)
 	require.Equal(t, "refresh-secret", value.Refresh)
-	require.Equal(t, now.Add(15897600*time.Second), value.RefreshExpiry, "GitHub's six months, said as a string")
+	require.Equal(t, now.Add(15897600*time.Second), value.RefreshExpiry, "GitHub's six months, form-encoded")
 	require.WithinDuration(t, time.Now().Add(8*time.Hour), value.AccessExpiry, time.Minute)
 	require.Equal(t, "fixture-user", value.Account)
 	require.Equal(t, "fixture-client", value.ClientID)
