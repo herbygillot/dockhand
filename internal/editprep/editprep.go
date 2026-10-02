@@ -26,6 +26,10 @@ type ChecksumsToWrite = portedit.ChecksumsToWrite
 type Unlocated = distfiles.Unlocated
 type GoToolchain = portedit.GoToolchain
 type Regenerated = portedit.Regenerated
+
+// Override is a crate a Portfile pinned over its lock, which an update
+// dropped once the new lock moved past it.
+type Override = portedit.Override
 type GoToolchainOutcome = portedit.GoToolchainOutcome
 type Stealth = portedit.Stealth
 type StealthDistfile = portedit.StealthDistfile

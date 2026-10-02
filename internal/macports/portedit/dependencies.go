@@ -205,15 +205,32 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if err != nil {
 		return Result{}, err
 	}
+	old = old.KeepingDeclared(plan.Values[depblock.CargoGit])
 	// Preserve maintained overrides by refusing to overwrite declarations that differ
 	// from what the original source and generator describe.
 	oldValues, _, err := s.gitCrateChecksums(ctx, request, input, plan, stripped, old)
 	if err != nil {
 		return Result{}, err
 	}
-	for name, values := range plan.Values {
-		if !depblock.Equivalent(name, values, oldValues[name]) {
+	// A registry crate the Portfile pins at another version than the lock
+	// is an override, kept until the new lock moves past it; any other
+	// difference is refused, named (termusic's, field testing, 2026-10-02).
+	var overrides []depblock.Difference
+	for _, name := range slices.Sorted(maps.Keys(plan.Values)) {
+		differences, err := depblock.Differences(name, plan.Values[name], oldValues[name])
+		if err != nil {
 			return Result{}, fmt.Errorf("%w: existing %s differs from the original manifest/helper output; preserve these overrides with manual preparation", ErrUnsupported, name)
+		}
+		var named []string
+		for _, difference := range differences {
+			if name == depblock.Cargo && difference.Override() {
+				overrides = append(overrides, difference)
+				continue
+			}
+			named = append(named, difference.Name)
+		}
+		if len(named) > 0 {
+			return Result{}, fmt.Errorf("%w: existing %s differs from the original manifest/helper output for %s; preserve these overrides with manual preparation", ErrUnsupported, name, strings.Join(named, ", "))
 		}
 	}
 	result, err := s.applyArchivePlan(ctx, baseRequest, base, archivePlan, store)
@@ -238,12 +255,21 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if err != nil {
 		return Result{}, err
 	}
+	generated = generated.KeepingDeclared(plan.Values[depblock.CargoGit])
 	if len(generated.Online) > 0 {
 		progress.Report(ctx, "Leaving %d Git-pinned crates to Cargo's online resolution at build time because cargo.offline_cmd is empty: %s", len(generated.Online), depblock.GitSummary(generated.Online))
 	}
 	values, gitDownloads, err := s.gitCrateChecksums(ctx, request, input, plan, result.Files[0].After, generated)
 	if err != nil {
 		return Result{}, err
+	}
+	var dropped []Override
+	for _, override := range overrides {
+		locked, past := override.MovedPast(values[depblock.Cargo])
+		if !past {
+			return Result{}, fmt.Errorf("%w: existing %s pins %s %s over the lock's %s, and %s's lock doesn't move past it; preserve this override with manual preparation", ErrUnsupported, depblock.Cargo, override.Name, override.Declared, override.Generated, request.Release.Version)
+		}
+		dropped = append(dropped, Override{Name: override.Name, Pinned: override.Declared, Was: override.Generated, Locked: locked})
 	}
 	contents, err := plan.Apply(result.Files[0].After, values)
 	if err != nil {
@@ -252,7 +278,11 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	var regenerated []Regenerated
 	for _, name := range slices.Sorted(maps.Keys(values)) {
 		if count, changed, err := depblock.Entries(name, plan.Values[name], values[name]); err == nil {
-			regenerated = append(regenerated, Regenerated{Option: name, Count: count, Changed: changed})
+			block := Regenerated{Option: name, Count: count, Changed: changed}
+			if name == depblock.Cargo {
+				block.Dropped = dropped
+			}
+			regenerated = append(regenerated, block)
 		}
 	}
 	evaluated, err := s.evaluateEdit(ctx, input, contents)

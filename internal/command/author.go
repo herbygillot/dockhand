@@ -478,6 +478,13 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		}
 	}
 	fmt.Fprintf(out, "%s.\nChanged: %s\n", what, strings.Join(update.Files, ", "))
+	// A crate the Portfile pinned over its lock goes once the new lock
+	// moves past it, and says so (termusic's, field testing, 2026-10-02).
+	for _, block := range update.Regenerated {
+		for _, pin := range block.Dropped {
+			fmt.Fprintf(out, "The Portfile pinned %s %s over the lock's %s; the new lock has %s, so the pin is dropped.\n", pin.Name, pin.Pinned, pin.Was, pin.Locked)
+		}
+	}
 	if stealth := update.Stealth; stealth != nil {
 		if stealth.RevbumpProblem != "" {
 			fmt.Fprintf(out, "! the revision was not bumped: %s. Bump it yourself if the change needs a rebuild.\n", stealth.RevbumpProblem)

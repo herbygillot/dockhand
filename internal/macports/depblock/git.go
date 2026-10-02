@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 )
 
@@ -97,6 +98,34 @@ func parseGitCrate(name, raw string) (GitCrate, error) {
 		return GitCrate{}, fmt.Errorf("dependency: %s combines Git source selectors", name)
 	}
 	return crate, nil
+}
+
+// KeepingDeclared is the blocks with each Git crate left to Cargo's online
+// resolution that the Portfile declares all the same, by name and
+// repository, declared again at the lock's commit under the Portfile's
+// own label. pgdog declares the commits its lock pins by rev under
+// "master" (field testing, 2026-10-02); its maintainer's declarations
+// are kept in step rather than dropped. declared is the Portfile's
+// cargo.crates_github.
+func (g GeneratedBlocks) KeepingDeclared(declared []string) GeneratedBlocks {
+	labels := map[string]string{}
+	for i := 0; i+5 <= len(declared); i += 5 {
+		labels[declared[i]+" "+declared[i+1]] = declared[i+2]
+	}
+	var online []GitCrate
+	git := slices.Clone(g.Git)
+	for _, crate := range g.Online {
+		label, ok := labels[crate.Name+" "+crate.Repository]
+		if !ok || !safeToken(label) {
+			online = append(online, crate)
+			continue
+		}
+		crate.Reference = GitReference{Kind: GitBranch, Value: label}
+		git = append(git, crate)
+	}
+	slices.SortFunc(git, func(a, b GitCrate) int { return strings.Compare(a.Name, b.Name) })
+	g.Git, g.Online = git, online
+	return g
 }
 
 // GitSummary names crates with their short commits for reports.

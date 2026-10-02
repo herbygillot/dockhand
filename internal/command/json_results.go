@@ -157,6 +157,16 @@ type regeneratedJSON struct {
 	Option  string `json:"option"`
 	Count   int    `json:"count"`
 	Changed int    `json:"changed"`
+	// Dropped are the crates the Portfile pinned over its lock that the
+	// new lock moved past.
+	Dropped []droppedPinJSON `json:"dropped_pins,omitempty"`
+}
+
+type droppedPinJSON struct {
+	Name   string `json:"name"`
+	Pinned string `json:"pinned"`
+	Was    string `json:"lock_had"`
+	Locked string `json:"lock_has"`
 }
 
 // otherJSON is another open pull request for a port.
@@ -179,7 +189,11 @@ func updateView(branch model.Branch, started bool, update engine.Update, plan bo
 		view.Upstream = &comparison
 	}
 	for _, block := range update.Regenerated {
-		view.Regenerated = append(view.Regenerated, regeneratedJSON{Option: block.Option, Count: block.Count, Changed: block.Changed})
+		regenerated := regeneratedJSON{Option: block.Option, Count: block.Count, Changed: block.Changed}
+		for _, pin := range block.Dropped {
+			regenerated.Dropped = append(regenerated.Dropped, droppedPinJSON{Name: pin.Name, Pinned: pin.Pinned, Was: pin.Was, Locked: pin.Locked})
+		}
+		view.Regenerated = append(view.Regenerated, regenerated)
 	}
 	for _, pr := range update.Others {
 		view.Others = append(view.Others, otherJSON{Number: pr.Number, Title: pr.Title, URL: pr.URL})

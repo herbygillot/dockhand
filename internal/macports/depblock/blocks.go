@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 
+	"golang.org/x/mod/semver"
+
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
@@ -383,6 +385,97 @@ func formattedRows(kind string, tokens []string) ([]string, error) {
 		rows[i] = strings.Join(row, " ")
 	}
 	return rows, nil
+}
+
+// Difference is one crate, module, or Git crate whose declarations in a
+// Portfile's block differ from what the source and its helper give, by
+// name. Declared and Generated are its versions where it's a registry
+// crate declared once in each, at different versions: an override, such
+// as termusic's soundtouch 0.4.1 over its lock's 0.4.0.
+type Difference struct {
+	Name                string
+	Declared, Generated string
+}
+
+// Override reports a registry crate pinned at another version than the
+// lock's.
+func (d Difference) Override() bool {
+	return d.Declared != "" && d.Generated != "" && d.Declared != d.Generated
+}
+
+// MovedPast reports whether a lock's crates, next, have moved past the
+// override: the crate once, at the pinned version or a later one, which
+// it then gives.
+func (d Difference) MovedPast(next []string) (string, bool) {
+	rows, err := tokenRows(Cargo, next)
+	if err != nil || !d.Override() {
+		return "", false
+	}
+	var versions []string
+	for _, row := range rows {
+		if row[0] == d.Name {
+			versions = append(versions, row[1])
+		}
+	}
+	if len(versions) != 1 || !semver.IsValid("v"+versions[0]) || !semver.IsValid("v"+d.Declared) {
+		return "", false
+	}
+	return versions[0], semver.Compare("v"+versions[0], "v"+d.Declared) >= 0
+}
+
+// Differences are what differs between a block as declared and as
+// generated, by name, in order: what Equivalent finds, named. A block
+// that doesn't read as rows is an error.
+func Differences(kind string, declared, generated []string) ([]Difference, error) {
+	byName := func(tokens []string) (map[string][]string, error) {
+		groups, err := tokenRows(kind, tokens)
+		if err != nil {
+			return nil, err
+		}
+		rows := map[string][]string{}
+		for _, row := range groups {
+			if kind == Go {
+				pairs := []string{}
+				for i := 1; i+1 < len(row); i += 2 {
+					pairs = append(pairs, row[i]+" "+row[i+1])
+				}
+				slices.Sort(pairs)
+				row = append([]string{row[0]}, pairs...)
+			}
+			rows[row[0]] = append(rows[row[0]], strings.Join(row, " "))
+		}
+		for name := range rows {
+			slices.Sort(rows[name])
+		}
+		return rows, nil
+	}
+	before, err := byName(declared)
+	if err != nil {
+		return nil, err
+	}
+	after, err := byName(generated)
+	if err != nil {
+		return nil, err
+	}
+	names := slices.Collect(maps.Keys(before))
+	for name := range after {
+		if _, ok := before[name]; !ok {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	var differences []Difference
+	for _, name := range names {
+		if slices.Equal(before[name], after[name]) {
+			continue
+		}
+		difference := Difference{Name: name}
+		if kind == Cargo && len(before[name]) == 1 && len(after[name]) == 1 {
+			difference.Declared, difference.Generated = strings.Fields(before[name][0])[1], strings.Fields(after[name][0])[1]
+		}
+		differences = append(differences, difference)
+	}
+	return differences, nil
 }
 
 func Equivalent(kind string, a, b []string) bool {

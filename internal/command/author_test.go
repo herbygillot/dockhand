@@ -511,7 +511,7 @@ type regenerating struct{ bumper }
 
 func (b regenerating) Prepare(ctx context.Context, r editprep.Request) (editprep.Result, error) {
 	result, err := b.bumper.Prepare(ctx, r)
-	result.Regenerated = []editprep.Regenerated{{Option: "cargo.crates", Count: 352, Changed: 160}, {Option: "cargo.crates_github", Count: 0, Changed: 0}}
+	result.Regenerated = []editprep.Regenerated{{Option: "cargo.crates", Count: 352, Changed: 160, Dropped: []editprep.Override{{Name: "soundtouch", Pinned: "0.4.1", Was: "0.4.0", Locked: "0.5.4"}}}, {Option: "cargo.crates_github", Count: 0, Changed: 0}}
 	return result, err
 }
 
@@ -525,8 +525,10 @@ func TestAnUpdateCountsTheCratesItWrote(t *testing.T) {
 	t.Cleanup(func() { testPreparer = nil })
 	result, err := jsonOf(t, "update", "jq", "--plan")
 	require.NoError(t, err)
-	require.Equal(t, map[string]any{"option": "cargo.crates", "count": float64(352), "changed": float64(160)}, dig(t, result.Result, "regenerated", 0))
+	require.Equal(t, map[string]any{"option": "cargo.crates", "count": float64(352), "changed": float64(160),
+		"dropped_pins": []any{map[string]any{"name": "soundtouch", "pinned": "0.4.1", "lock_had": "0.4.0", "lock_has": "0.5.4"}}}, dig(t, result.Result, "regenerated", 0))
 	out, _, err := dockhand(t, "update", "jq", "--new")
 	require.NoError(t, err)
 	require.Contains(t, out, " and 352 crates (160 changed).\n", "an empty block says nothing: no \"and 0 Git crates (0 changed)\" (the txt run's finding 6)")
+	require.Contains(t, out, "The Portfile pinned soundtouch 0.4.1 over the lock's 0.4.0; the new lock has 0.5.4, so the pin is dropped.\n")
 }

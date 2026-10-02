@@ -482,3 +482,103 @@ cargo.crates old 1.2.3 ` + sha + "\n"
 		})
 	}
 }
+
+// A crate the Portfile pins over its lock is an override: kept back while
+// the new lock is still below it, and dropped, said, once the new lock
+// moves past it. Any other difference is refused, named. termusic pinned
+// soundtouch 0.4.1 over its lock's 0.4.0, and the refusal named nothing
+// (field testing, 2026-10-02).
+func TestCargoOverridesAreNamedAndDroppedOnceTheLockPassesThem(t *testing.T) {
+	t.Parallel()
+	sha := strings.Repeat("b", 64)
+	lock := func(version string) string {
+		return fmt.Sprintf("version = 4\n[[package]]\nname = \"fixture\"\nversion = \"1.0.0\"\n[[package]]\nname = \"soundtouch\"\nversion = %q\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = %q\n", version, sha)
+	}
+	// The helper writes the lock's one crate as cargo2port does.
+	helper := "version=$(/usr/bin/sed -n 's/^version = \"\\(0[^\"]*\\)\"$/\\1/p' \"$1\")\nprintf 'cargo.crates soundtouch %s " + sha + "\\n' \"$version\""
+	extra := "options cargo.crates cargo.crates_github\n default cargo.crates {}\n default cargo.crates_github {}\n"
+	for _, test := range []struct {
+		name, declared, next, err string
+	}{
+		{"moved past", "soundtouch 0.4.1 " + sha, "0.5.4", ""},
+		{"caught up", "soundtouch 0.4.1 " + sha, "0.4.1", ""},
+		{"still below", "soundtouch 0.4.1 " + sha, "0.4.0", "existing cargo.crates pins soundtouch 0.4.1 over the lock's 0.4.0, and 2.0's lock doesn't move past it"},
+		{"another difference", "soundtouch 0.4.0 " + sha + " stray 1.0.0 " + sha, "0.5.4", "existing cargo.crates differs from the original manifest/helper output for stray"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			before := manifestArchive(t, "Cargo.lock", lock("0.4.0"), "1.0")
+			after := manifestArchive(t, "Cargo.lock", lock(test.next), "2.0")
+			service, request := versionFixture(t, "setup", extra+"cargo.crates "+test.declared+"\n", func(w http.ResponseWriter, r *http.Request) {
+				if strings.Contains(r.URL.Path, "/1.0/") {
+					_, _ = w.Write(before)
+				} else {
+					_, _ = w.Write(after)
+				}
+			})
+			service.DependencyTools = depblock.Tools{Cargo2Port: dependencyHelper(t, helper), Go2Port: "absent"}
+			result, err := service.Prepare(t.Context(), request)
+			if test.err != "" {
+				require.ErrorContains(t, err, test.err)
+				return
+			}
+			require.NoError(t, err)
+			require.Contains(t, string(result.Files[0].After), "soundtouch "+test.next+" "+sha)
+			changed := 1
+			if test.next == "0.4.1" {
+				changed = 0 // the lock caught up with the pin, which reads the same
+			} else {
+				require.NotContains(t, string(result.Files[0].After), "0.4.1 "+sha)
+			}
+			require.Equal(t, []editprep.Regenerated{{Option: "cargo.crates", Count: 1, Changed: changed, Dropped: []editprep.Override{{Name: "soundtouch", Pinned: "0.4.1", Was: "0.4.0", Locked: test.next}}}}, result.Regenerated[:1])
+		})
+	}
+}
+
+// A Git crate the lock pins by rev, left to Cargo's online resolution,
+// that the Portfile declares all the same stays declared under the
+// Portfile's own label, at the new commit: pgdog declares its rev pins
+// as "master" (field testing, 2026-10-02).
+func TestADeclaredRevPinnedCrateKeepsThePortfilesLabel(t *testing.T) {
+	t.Parallel()
+	oldCommit, newCommit := strings.Repeat("a", 40), strings.Repeat("c", 40)
+	gitBody := "git dependency archive"
+	checksum := fmt.Sprintf("%x", sha256.Sum256([]byte(gitBody)))
+	lock := func(commit string) string {
+		return fmt.Sprintf("version = 4\n[[package]]\nname = \"scram\"\nversion = \"0.1.0\"\nsource = \"git+https://github.com/pgdogdev/scram?rev=%s#%s\"\n", commit, commit)
+	}
+	before := manifestArchive(t, "Cargo.lock", lock(oldCommit), "1.0")
+	after := manifestArchive(t, "Cargo.lock", lock(newCommit), "2.0")
+	extra := `options cargo.crates cargo.crates_github cargo.offline_cmd
+ default cargo.crates {}
+ default cargo.crates_github {}
+ default cargo.offline_cmd {--frozen}
+ proc fixture_git_crates {} {
+  set site [lindex [option master_sites] 0]
+  foreach {name repo branch commit sum} [option cargo.crates_github] {
+   set file ${name}-${commit}.tar.gz
+   distfiles-append ${file}:gitcrate
+   master_sites-append ${site}/git/${commit}.tar.gz?dummy=:gitcrate
+   checksums-append ${file} sha256 $sum
+  }
+ }
+ port::register_callback fixture_git_crates
+cargo.offline_cmd
+cargo.crates_github scram pgdogdev/scram master ` + oldCommit + " " + checksum + "\n"
+	service, request := versionFixture(t, "setup", extra, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "/git/"):
+			fmt.Fprint(w, gitBody)
+		case strings.Contains(r.URL.Path, "/1.0/"):
+			_, _ = w.Write(before)
+		default:
+			_, _ = w.Write(after)
+		}
+	})
+	service.DependencyTools.Cargo2Port = dependencyHelper(t, "exit 0")
+	result, err := service.Prepare(t.Context(), request)
+	require.NoError(t, err)
+	contents := string(result.Files[0].After)
+	require.Contains(t, contents, "scram pgdogdev/scram master "+newCommit+" "+checksum)
+	require.NotContains(t, contents, oldCommit)
+	require.NotContains(t, contents, "?rev=")
+}
