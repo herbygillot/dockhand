@@ -132,8 +132,18 @@ func renewalOf(token *oauth2.Token, now time.Time) (time.Time, error) {
 		}
 		seconds = parsed
 	}
-	if seconds <= 0 || token.RefreshToken == "" {
-		return time.Time{}, fmt.Errorf("github: GitHub's login has no refresh token, or no expiry for it, so it couldn't renew itself; nothing was saved")
+	var missing []string
+	if token.RefreshToken == "" {
+		missing = append(missing, "no refresh token")
+	}
+	if seconds <= 0 {
+		missing = append(missing, "no refresh_token_expires_in")
+	}
+	if token.Expiry.IsZero() {
+		missing = append(missing, "no expires_in")
+	}
+	if len(missing) > 0 {
+		return time.Time{}, fmt.Errorf("github: GitHub's login came with %s, so it couldn't renew itself; nothing was saved. GitHub gives a refresh token where the OAuth app expires its user tokens, or the login asks offline_access", strings.Join(missing, ", "))
 	}
 	return now.Add(time.Duration(seconds) * time.Second), nil
 }

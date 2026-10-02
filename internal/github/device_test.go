@@ -98,5 +98,5 @@ func TestALoginWithoutARefreshTokenIsRefused(t *testing.T) {
 	defer server.Close()
 	flow := &github.DeviceFlow{HTTP: server.Client(), Endpoint: oauth2.Endpoint{DeviceAuthURL: server.URL + "/device/code", TokenURL: server.URL + "/access_token", AuthStyle: oauth2.AuthStyleInParams}, APIBaseURL: server.URL}
 	_, err := flow.Authorize(t.Context(), "fixture-client", func(credential.DeviceAuthorization) error { return nil })
-	require.ErrorContains(t, err, "couldn't renew itself; nothing was saved")
+	require.ErrorContains(t, err, "GitHub's login came with no refresh token, no refresh_token_expires_in, no expires_in, so it couldn't renew itself; nothing was saved")
 }
