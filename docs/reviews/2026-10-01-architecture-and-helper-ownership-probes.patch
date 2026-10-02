@@ -1,0 +1,135 @@
+diff --git a/internal/engine/architecture_review_probe_test.go b/internal/engine/architecture_review_probe_test.go
+new file mode 100644
+--- /dev/null
++++ b/internal/engine/architecture_review_probe_test.go
+@@ -0,0 +1,77 @@
++package engine
++
++import (
++	"testing"
++
++	"github.com/herbygillot/dockhand/internal/macports"
++	"github.com/herbygillot/dockhand/internal/model"
++	"github.com/stretchr/testify/require"
++)
++
++// Characterization probes for the 2026-10-01 review, not proposed fixes.
++func TestReviewPrimedAssessmentOmitsPatchCoverage(t *testing.T) {
++	f := setup(t)
++	patch := "--- src/main.c\n+++ src/main.c\n@@ -1 +1 @@\n-int main;\n+int main(void);\n"
++	write(t, f.upstream, map[string]string{"textproc/jq/files/patch-main.diff": patch})
++	run(t, f.upstream, "add", "-A")
++	run(t, f.upstream, "commit", "-q", "-m", "add patch")
++	f.options.Readings = t.TempDir()
++	e, editor := f.withPreparer(t)
++	old := map[string]string{"LICENSE": "MIT\n", "src/main.c": "int main;\n"}
++	new := map[string]string{"LICENSE": "MIT\n", "src/main.c": "int main;\n"}
++	editor.upstream = [2]map[string]string{old, new}
++	editor.options = map[string]string{"patchfiles": "patch-main.diff", "patch.pre_args": "-p0", "extract.rename": "0", "worksrcdir": "jq-1.8.1"}
++	update, err := e.Update(t.Context(), UpdateRequest{Start: &StartRequest{Name: "review-update"}, Action: model.EditUpdate, Port: "jq", CompareUpstream: true})
++	require.NoError(t, err)
++	worktree, err := e.worktree(t.Context(), update.Branch)
++	require.NoError(t, err)
++	_, current, err := worktree.WorkingTree(t.Context())
++	require.NoError(t, err)
++	trees, err := e.Repo.CommitTrees(t.Context(), []string{string(update.Base)})
++	require.NoError(t, err)
++	base, tree := model.ObjectID(trees[string(update.Base)]), model.ObjectID(current)
++	planner := newPlanner(t)
++	e.ArchivePlanner = planner
++	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {{Name: "jq"}}}}
++	planner.add(base, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.7.1", Options: editor.options}, archives: map[string]map[string]string{"jq-1.7.1.tar.gz": old}})
++	planner.add(tree, plannedPort{info: macports.PortInfo{Name: "jq", Version: "1.8.1", Options: editor.options}, archives: map[string]map[string]string{"jq-1.8.1.tar.gz": new}})
++	reused, err := e.revisionAssessments(t.Context(), update.Branch.ID, update.Base, tree, true)
++	require.NoError(t, err)
++	require.Len(t, reused, 1)
++	hasPatch := func(c model.UpstreamComparison) bool {
++		for _, coverage := range c.Coverage {
++			if coverage.Path == "patch-main.diff" {
++				return true
++			}
++		}
++		return false
++	}
++	require.False(t, hasPatch(reused[0].Comparison), "current behavior: the primed record omits patch coverage")
++	require.Zero(t, planner.fetches.Load(), "the primed record bypasses collection")
++	fresh := e.assessPort(t.Context(), planner, [2]model.Source{{Tree: base}, {Tree: tree}}, "textproc/jq", "jq", true)
++	require.Empty(t, fresh.Problem)
++	require.True(t, hasPatch(fresh), "the same revision collected afresh checks its patch")
++	t.Log("same revision: primed assessment has no patch coverage; fresh collection has patch coverage")
++}
++
++func TestReviewRemovedArchiveIsNotRepresented(t *testing.T) {
++	p := newPlanner(t)
++	p.add("base", plannedPort{info: macports.PortInfo{Name: "demo"}, archives: map[string]map[string]string{
++		"main.tar.gz": {"LICENSE": "MIT\n"}, "extra.tar.gz": {"LICENSE": "GPL\n"},
++	}})
++	p.add("candidate", plannedPort{info: macports.PortInfo{Name: "demo"}, archives: map[string]map[string]string{"main.tar.gz": {"LICENSE": "MIT\n"}}})
++	e := &Engine{}
++	e.options.Readings = t.TempDir()
++	var infos [2]macports.PortInfo
++	var plans [2][]macports.Distfile
++	var err error
++	for i, tree := range []model.ObjectID{"base", "candidate"} {
++		infos[i], plans[i], err = p.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/demo", "demo")
++		require.NoError(t, err)
++	}
++	pairs, _, problem, _ := e.readPlans(t.Context(), infos, plans, true, t.TempDir())
++	require.Empty(t, problem)
++	require.Len(t, pairs, 1, "current behavior: only the surviving archive is represented")
++	require.Equal(t, "main.tar.gz", pairs[0].Archive)
++	t.Log("base has two archives, candidate one: only main.tar.gz reaches assessment; extra.tar.gz has no pair or coverage")
++}
+diff --git a/internal/sourcecompare/architecture_review_probe_test.go b/internal/sourcecompare/architecture_review_probe_test.go
+new file mode 100644
+--- /dev/null
++++ b/internal/sourcecompare/architecture_review_probe_test.go
+@@ -0,0 +1,21 @@
++package sourcecompare
++
++import (
++	"testing"
++
++	"github.com/herbygillot/dockhand/internal/project"
++	"github.com/stretchr/testify/require"
++)
++
++func TestReviewCMakeMultilineConditionLosesItsLocation(t *testing.T) {
++	read := func(text string) project.Reading {
++		return project.Reading{Layout: project.Enclosed, Files: map[string]project.File{"CMakeLists.txt": {Data: []byte(text)}}}
++	}
++	before := "option(DEMO \"demo\" OFF)\nif(\n  DEMO\n)\n  message(STATUS \"old\")\nendif()\n"
++	after := "option(DEMO \"demo\" OFF)\nif(\n  DEMO\n)\n  message(STATUS \"new\")\nendif()\n"
++	changes := Compare(read(before), read(after), Versions{}, nil)
++	require.Len(t, changes, 1)
++	require.Equal(t, "options", changes[0].How, "the project reader correctly recognizes the unreachable block")
++	require.Contains(t, changes[0].Message, "outside any if()", "current behavior: the separate line parser loses the multiline condition")
++	t.Log(changes[0].Message)
++}
+diff --git a/internal/macports/assess/architecture_review_probe_test.go b/internal/macports/assess/architecture_review_probe_test.go
+new file mode 100644
+--- /dev/null
++++ b/internal/macports/assess/architecture_review_probe_test.go
+@@ -0,0 +1,22 @@
++package assess
++
++import (
++	"testing"
++
++	"github.com/herbygillot/dockhand/internal/macports"
++	"github.com/herbygillot/dockhand/internal/project"
++	"github.com/stretchr/testify/require"
++)
++
++func TestReviewDifferentArchivesShareAFindingIdentity(t *testing.T) {
++	read := func(license string) project.Reading {
++		return project.Reading{Layout: project.Enclosed, Files: map[string]project.File{"LICENSE": {Data: []byte(license)}}}
++	}
++	result := Assess(Input{Port: macports.PortInfo{Name: "demo"}, Pairs: []Pair{
++		{Archive: "main.tar.gz", Before: read("MIT\n"), After: read("GPL\n")},
++		{Archive: "support.tar.gz", Before: read("BSD\n"), After: read("Apache\n")},
++	}})
++	require.Len(t, result.Changes, 1, "current behavior: two distinct archive LICENSE changes collapse")
++	require.Len(t, result.Coverage, 1, "coverage also has no archive identity")
++	t.Log("two archives with separate LICENSE changes produce one finding and one coverage entry")
++}
