@@ -402,6 +402,31 @@ func TestCancelingAGitHubCheckCancelsItsRun(t *testing.T) {
 	require.NotEmpty(t, checkBranches(t, f))
 }
 
+// A run that builds past its bound is cancelled, and the port it was
+// installing when it ended fails, said as timed out, where it read as
+// passed, an install marked only where it fails (D16).
+func TestAGitHubRunPastItsBoundIsCancelled(t *testing.T) {
+	f, w := githubBranch(t)
+	config, err := os.OpenFile(filepath.Join(w.home, ".dockhand", "config.toml"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	require.NoError(t, err)
+	_, err = config.WriteString("\n[providers.github]\nbuild_timeout = \"1m\"\n")
+	require.NoError(t, err)
+	require.NoError(t, config.Close())
+	f.logs = []map[string]string{{"build (macos-14)": "2026-09-25T10:00:01.0Z ##[group]Listing subports\n2026-09-25T10:00:01.1Z jq\n2026-09-25T10:00:01.2Z ##[endgroup]\n" +
+		"2026-09-25T10:01:31.0Z ##[group]Installing jq\n2026-09-25T10:01:32.0Z checking for gcc... gcc\n"}}
+	f.conclusion = []string{"success"}
+	f.hold = func() bool { return true }
+
+	out, errs, err := dockhand(t, "check", "--on", "github")
+	require.Error(t, err, errs)
+	require.Equal(t, 1, f.canceled)
+	require.Contains(t, errs, "built past its 1m0s bound; cancelling it")
+	require.Contains(t, out, "  jq  ✗ failed at install\n")
+	logs, _, err := dockhand(t, "logs", "check-1")
+	require.NoError(t, err)
+	require.Contains(t, logs, "on build (macos-14): the run built past its 1m0s bound (providers.github.build_timeout), so dockhand cancelled it", errs)
+}
+
 // A branch the check couldn't remove from your fork is said once, doesn't
 // fail the check, and is left for clean, which removes it once the branch
 // is merged.

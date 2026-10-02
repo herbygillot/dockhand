@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -27,7 +28,9 @@ import (
 // its directory devel/<name>, but for UNRESOLVED, which port can't
 // resolve. Each step of a build writes its command to the log, "port
 // <arguments>", installing dependencies writes DEPLINES lines more, and
-// lint writes LINTSAYS, an Error line lint says and goes on past.
+// lint writes LINTSAYS, an Error line lint says and goes on past. A
+// phase HANG names ("phase:port ...") sleeps, as a compiler that never
+// finishes would, in a process of its own.
 const fakePort = `#!/bin/sh
 echo "$*" >> "$PORT_LOG"
 case "$*" in
@@ -58,6 +61,12 @@ case "$*" in
       *" lint "*) if [ -n "$LINTSAYS" ]; then echo "$LINTSAYS"; fi ;;
     esac ;;
 esac
+for entry in $HANG; do
+  phase=${entry%%:*}; port=${entry#*:}
+  case "$*" in
+    *" $phase "*"subport=$port"*) sleep 60 ;;
+  esac
+done
 for entry in $FAIL; do
   phase=${entry%%:*}; port=${entry#*:}
   case "$*" in
@@ -97,6 +106,12 @@ func guestRunIn(t *testing.T, root string, input guestInput, env ...string) (gue
 	if input.TestTimeout == 0 {
 		input.TestTimeout = 60
 	}
+	if input.BuildTimeout == 0 {
+		input.BuildTimeout = 3600
+	}
+	if input.LintTimeout == 0 {
+		input.LintTimeout = 600
+	}
 	data, err := json.Marshal(input)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(root, "input.json"), data, 0o644))
@@ -114,7 +129,7 @@ set foreignManagers {}
 	require.NoError(t, os.WriteFile(script, append([]byte(prelude), guestProgram...), 0o644))
 	command := exec.CommandContext(t.Context(), executable, script)
 	portLog := filepath.Join(root, "port.log")
-	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "PORT_LOG="+portLog, "TESTED=", "DEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "QUIET=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
+	command.Env = append(append(os.Environ(), "DOCKHAND_GUEST_ROOT="+root, "PORT_LOG="+portLog, "TESTED=", "DEPS=", "FAIL=", "ACTIVE=", "ARCHIVES="+root, "UNRESOLVED=", "DEPLINES=", "LINTSAYS=", "QUIET=", "HANG=", "CHECKOUTS="+filepath.Join(root, "checkouts")), env...)
 	output, _ := command.CombinedOutput()
 	data, err = os.ReadFile(filepath.Join(root, "results.json"))
 	require.NoError(t, err, "%s", output)
@@ -474,4 +489,26 @@ func TestKeptArchivesAreAnArchiveSiteOfMacPorts(t *testing.T) {
 	require.Equal(t, "finished", results.State, results.Detail)
 	require.NoFileExists(t, filepath.Join(plain, "prefix", "etc", "macports", "archive_sites.conf"))
 	require.NoFileExists(t, filepath.Join(plain, "prefix", "etc", "macports", "pubkeys.conf"))
+}
+
+// A build past its bound is ended, with what it started, and said, where
+// it ran as long as it would (D16): the target fails at the phase it was
+// in, and what depends on it is blocked. Lint has a bound of its own.
+func TestABuildPastItsBoundIsEnded(t *testing.T) {
+	input := twoTargets("advisory")
+	input.BuildTimeout = 1
+	started := time.Now()
+	results, _ := guestRun(t, input, "HANG=install:libharbor")
+	require.Less(t, time.Since(started), 30*time.Second, "the hung build's sleep was ended with it")
+	require.Len(t, results.Targets, 2)
+	require.Equal(t, "failed", results.Targets[0].Outcome)
+	require.Equal(t, "install", results.Targets[0].Phase)
+	require.Equal(t, "the build ran past its 1s bound (providers.tart.build_timeout), so it was ended", results.Targets[0].Detail)
+	require.Equal(t, "blocked", results.Targets[1].Outcome)
+
+	input = twoTargets("advisory")
+	input.LintTimeout = 1
+	results, _ = guestRun(t, input, "HANG=lint:libharbor")
+	require.Equal(t, "lint", results.Targets[0].Phase)
+	require.Equal(t, "lint ran past its 1s bound, so it was ended", results.Targets[0].Detail)
 }

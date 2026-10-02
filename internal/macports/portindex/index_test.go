@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -44,6 +45,20 @@ func TestResolveToolProbesRuntimeOnlyForTclLaunchers(t *testing.T) {
 	config, err = ResolveTool(t.Context(), Config{Executable: executable})
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(config.Runtime, "macports-"), config.Runtime)
+}
+
+// A portindex run past its bound is ended, and said, where one that hung
+// held its caller, and each process waiting on its lock, as long as it ran
+// (the limits sweep, batch 26).
+func TestAPortIndexRunPastItsBoundIsEnded(t *testing.T) {
+	t.Parallel()
+	stub := filepath.Join(t.TempDir(), "portindex")
+	testsupport.WriteExecutable(t, stub, "#!/bin/sh\nexec sleep 60\n")
+	root := t.TempDir()
+	started := time.Now()
+	err := buildPortIndex(t.Context(), Config{Executable: stub, Bound: 200 * time.Millisecond}, testPlatform, root, nil, filepath.Join(t.TempDir(), "index"), "", nil, true, nil, testGeneration())
+	require.ErrorContains(t, err, "portindex ran past 200ms, so dockhand ended it")
+	require.Less(t, time.Since(started), 30*time.Second)
 }
 
 func TestPortIndexUsesPortGroupsFromFrozenSource(t *testing.T) {

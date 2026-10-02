@@ -71,7 +71,9 @@ if {[llength [info procs run]] == 0} {
     }
 }
 # timed runs a command with a deadline, returning "", "timed out", or why
-# it failed. A run past its deadline is terminated, then killed.
+# it failed. A run past its deadline is asked to stop, with what it
+# started, and killed if it hasn't within 10 seconds: a build's compilers
+# are port's children, and outlive it.
 if {[llength [info procs timed]] == 0} {
     proc timed {log argv seconds} {
         set out [open $log a]
@@ -85,19 +87,38 @@ if {[llength [info procs timed]] == 0} {
         set timer [after [expr {$seconds * 1000}] {set ::timedDone timeout}]
         vwait ::timedDone
         after cancel $timer
-        fileevent $chan readable {}
-        close $out
         if {$::timedDone eq "timeout"} {
-            foreach pid [pid $chan] { catch {exec kill -TERM $pid} }
-            after 10000
-            foreach pid [pid $chan] { catch {exec kill -KILL $pid} }
+            foreach pid [pid $chan] { signal_tree $pid TERM }
+            set timer [after 10000 {set ::timedDone kill}]
+            vwait ::timedDone
+            after cancel $timer
+            if {$::timedDone eq "kill"} {
+                foreach pid [pid $chan] { signal_tree $pid KILL }
+            }
+            fileevent $chan readable {}
+            close $out
             catch {close $chan}
             return "timed out"
         }
+        fileevent $chan readable {}
+        close $out
         fconfigure $chan -blocking 1
         if {[catch {close $chan} message]} { return $message }
         return ""
     }
+}
+# signal_tree signals a process and each it started, theirs first.
+proc signal_tree {pid signal} {
+    if {![catch {exec /usr/bin/pgrep -P $pid} children]} {
+        foreach child [split $children \n] { signal_tree $child $signal }
+    }
+    catch {exec /bin/kill -$signal $pid}
+}
+# bound_words says a bound in seconds as a person would: 6h, 10m, 90s.
+proc bound_words {seconds} {
+    if {$seconds % 3600 == 0} { return "[expr {$seconds / 3600}]h" }
+    if {$seconds % 60 == 0} { return "[expr {$seconds / 60}]m" }
+    return "${seconds}s"
 }
 # declares_tests asks MacPorts whether the port declares a test phase.
 if {[llength [info procs declares_tests]] == 0} {
@@ -318,20 +339,34 @@ proc build {index target} {
     if {[set message [run $log [concat $here clean --work $selection]]] ne ""} {
         return [{*}$fail $result fetch "cleaning an earlier build's work failed: [why $log $message]"]
     }
+    # Lint has its bound, and the build, its dependencies' installs, its
+    # fetch and checksum, and its install, shares one, which a build that
+    # runs past is ended at, as its tests are at theirs (D16).
+    set lintBound [dict get $input lint_timeout]
+    set buildBound [dict get $input build_timeout]
+    set deadline [expr {[clock seconds] + $buildBound}]
+    set left [list apply {{deadline} { expr {max(1, $deadline - [clock seconds])} }} $deadline]
+    set over "the build ran past its [bound_words $buildBound] bound (providers.tart.build_timeout), so it was ended"
     mark result $log lint
-    if {[set message [run $log [concat $here lint $selection]]] ne ""} {
+    if {[set message [timed $log [concat $here lint $selection] $lintBound]] eq "timed out"} {
+        return [{*}$fail $result lint "lint ran past its [bound_words $lintBound] bound, so it was ended"]
+    } elseif {$message ne ""} {
         return [{*}$fail $result lint [why $log $message]]
     }
     set dependencies [fact $port -q echo depof:$name]
     if {$dependencies ne ""} {
         mark result $log dependencies
-        if {[set message [run $log [concat [list $port -N -d install --unrequested] $dependencies]]] ne ""} {
+        if {[set message [timed $log [concat [list $port -N -d install --unrequested] $dependencies] [{*}$left]]] eq "timed out"} {
+            return [{*}$fail $result install "installing its dependencies, $over"]
+        } elseif {$message ne ""} {
             return [{*}$fail $result install "a dependency failed to install: [why $log $message]"]
         }
     }
     foreach phase {fetch checksum} {
         mark result $log $phase
-        if {[set message [run $log [concat $here -d $phase $selection]]] ne ""} {
+        if {[set message [timed $log [concat $here -d $phase $selection] [{*}$left]]] eq "timed out"} {
+            return [{*}$fail $result $phase $over]
+        } elseif {$message ne ""} {
             return [{*}$fail $result $phase [why $log $message]]
         }
         # What a Git fetch checked out is the source the target builds
@@ -371,7 +406,9 @@ proc build {index target} {
     set install [concat $here -dks install --unrequested $selection]
     if {![llength $variants]} { set install [concat $here -dkns install --unrequested $selection] }
     mark result $log install
-    if {[set message [run $log $install]] ne ""} {
+    if {[set message [timed $log $install [{*}$left]]] eq "timed out"} {
+        return [{*}$fail $result install $over]
+    } elseif {$message ne ""} {
         return [{*}$fail $result install [why $log $message]]
     }
     dict set result outcome passed

@@ -22,8 +22,10 @@ type native struct {
 	guests map[string]*channel.Guest
 	// sshKeys is dockhand's SSH material; empty selects ~/.dockhand/ssh.
 	sshKeys channel.Keys
-	// saidBlocked records that setup has said it is waiting for the listing.
+	// saidBlocked records that setup has said it is waiting for the listing,
+	// and blocked how long it has waited on it.
 	saidBlocked bool
+	blocked     time.Duration
 }
 
 func newNative(config Config, progress io.Writer) *native {
@@ -51,12 +53,18 @@ func (n *native) vm() host.Machine {
 }
 
 // waitListing waits out a listing blocked by a running ASIF VM, the
-// person's or a guest another setup left, saying so once per setup.
+// person's or a guest another setup left, saying so once per setup, for
+// listingBound in all: one that runs on held setup as long as it did (the
+// limits sweep, batch 26).
 func (n *native) waitListing(ctx context.Context) error {
 	n.mu.Lock()
-	said := n.saidBlocked
+	said, waited := n.saidBlocked, n.blocked
 	n.saidBlocked = true
+	n.blocked += listingRetry
 	n.mu.Unlock()
+	if waited >= listingBound {
+		return fmt.Errorf("%w for %s: a running VM with an ASIF disk keeps Tart from listing its VMs (openai/tart#1344); stop it, and run setup again", tart.ErrListingBlocked, listingBound)
+	}
 	if !said && n.progress != nil {
 		_, _ = fmt.Fprintln(n.progress, "A running VM with an ASIF disk keeps Tart from listing its VMs (openai/tart#1344); waiting for it to stop...")
 	}
@@ -68,5 +76,9 @@ func (n *native) waitListing(ctx context.Context) error {
 	}
 }
 
-// listingRetry is how often setup asks again while the listing is blocked.
-var listingRetry = 15 * time.Second
+// listingRetry is how often setup asks again while the listing is
+// blocked, and listingBound how long, in all, it waits.
+var (
+	listingRetry = 15 * time.Second
+	listingBound = 30 * time.Minute
+)

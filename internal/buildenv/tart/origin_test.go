@@ -70,7 +70,12 @@ func TestAnEnvironmentsIdentityIsItsImagesOrigin(t *testing.T) {
 // as lint's the rust run quoted for its tests' failure (#35084), isn't
 // taken for it. That changes a result's detail, its words, and nothing
 // it is judged by, so the protocol stays 2.
-const guestPin = "2f4412d38b87d1244975ae1af6d8157c1de3e603981109aef3734973f1c0ee93"
+//
+// Since batch 26 lint ends at 10 minutes and a build at 6 hours (D16),
+// with what each started. A build that passed before passed within them,
+// as any that took less does now, so the results stand, and the protocol
+// stays 2.
+const guestPin = "f45be081f692d06e2885492001f3e76ceddf1b43e7b89d40ffa87dc5d2a34b28"
 
 // How the guest program builds is identified by VerifierProtocol, part of
 // an environment's origin (decision 28). A change to guest.tcl fails this

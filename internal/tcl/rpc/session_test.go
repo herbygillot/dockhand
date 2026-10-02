@@ -144,6 +144,22 @@ func TestCancellationKillsInFlightSession(t *testing.T) {
 	require.ErrorIs(t, err, rpc.ErrBrokenSession)
 }
 
+// A call past the session's bound breaks it and ends its interpreter,
+// where a Portfile's evaluation that hung held its caller as long as it
+// ran (the limits sweep, batch 26); a call within it is answered.
+func TestACallPastItsBoundBreaksTheSession(t *testing.T) {
+	s, p := session(t, rpc.WithCallBound(100*time.Millisecond))
+	result, err := s.Call(t.Context(), "eval", "expr {1 + 1}")
+	require.NoError(t, err)
+	require.Equal(t, "2", result)
+	_, err = s.Call(t.Context(), "eval", "vwait never")
+	require.ErrorIs(t, err, rpc.ErrNoAnswer)
+	require.ErrorIs(t, err, rpc.ErrBrokenSession)
+	require.ErrorContains(t, err, "eval went 100ms unanswered")
+	_, done := p.Err()
+	require.True(t, done)
+}
+
 func TestAlreadyCanceledCallDoesNotSendOrBreakSession(t *testing.T) {
 	s, _ := session(t)
 	ctx, cancel := context.WithCancel(t.Context())

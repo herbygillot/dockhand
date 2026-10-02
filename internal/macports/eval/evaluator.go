@@ -49,6 +49,13 @@ type LedgerReport struct {
 	Entries  []macports.LedgerEntry
 }
 
+// CallBound is how long a call into the evaluator, a Portfile's
+// evaluation among them, may go unanswered before its interpreter is
+// ended: one takes well under a second, and one that hung, as a Portfile
+// running a command that never returns would, held its caller as long as
+// it ran (the limits sweep, batch 26).
+const CallBound = 5 * time.Minute
+
 // DefaultModel is the platform a host that is not a Mac models unless told
 // otherwise: the current macOS on Apple silicon.
 func DefaultModel() model.Platform {
@@ -87,7 +94,7 @@ func (e *Evaluator) start(ctx context.Context, tree macports.Tree) (*rpc.Session
 	if err != nil {
 		return nil, macports.Runtime{}, fmt.Errorf("%w: %w", macports.ErrStartup, err)
 	}
-	session, err := rpc.New(ctx, proc)
+	session, err := rpc.New(ctx, proc, rpc.WithCallBound(CallBound))
 	if err != nil {
 		return nil, macports.Runtime{}, fmt.Errorf("%w: %w", macports.ErrStartup, err)
 	}

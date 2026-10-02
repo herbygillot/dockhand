@@ -34,6 +34,10 @@ var ErrLineLimit = errors.New("rpc: line limit exceeded")
 
 var ErrFrameLimit = errors.New("rpc: frame limit exceeded")
 
+// ErrNoAnswer means a call went past the session's call bound unanswered;
+// the session is then broken, and its interpreter ended.
+var ErrNoAnswer = errors.New("rpc: no answer")
+
 type CallError struct {
 	Msg string
 }
@@ -47,6 +51,9 @@ type Session struct {
 	lineLimit  int
 	frameLimit int
 
+	// callBound is how long a call may go unanswered; none where zero.
+	callBound time.Duration
+
 	mu     sync.Mutex
 	broken error
 }
@@ -56,6 +63,7 @@ const defaultHandshakeTimeout = 30 * time.Second
 type config struct {
 	inits      []string
 	handshake  time.Duration
+	callBound  time.Duration
 	lineLimit  int
 	frameLimit int
 }
@@ -70,6 +78,12 @@ func WithInit(scripts ...string) Option {
 
 func WithHandshakeTimeout(d time.Duration) Option {
 	return func(c *config) { c.handshake = d }
+}
+
+// WithCallBound bounds how long each call, after the handshake, may go
+// unanswered: one past it breaks the session with ErrNoAnswer.
+func WithCallBound(d time.Duration) Option {
+	return func(c *config) { c.callBound = d }
 }
 
 func WithLineLimit(n int) Option { return func(c *config) { c.lineLimit = n } }
@@ -131,6 +145,7 @@ func newSession(ctx context.Context, proc *shell.Proc, cfg config) (*Session, er
 	if _, err := s.Call(ctx, "ping"); err != nil {
 		return nil, fmt.Errorf("rpc: session did not come up: %w", err)
 	}
+	s.callBound = cfg.callBound
 	return s, nil
 }
 
@@ -154,7 +169,15 @@ func (s *Session) Call(ctx context.Context, op string, args ...string) (string, 
 		ch <- result{payload, err}
 	}()
 
+	var bound <-chan time.Time
+	if s.callBound > 0 {
+		timer := time.NewTimer(s.callBound)
+		defer timer.Stop()
+		bound = timer.C
+	}
 	select {
+	case <-bound:
+		return "", s.breakSession(fmt.Errorf("%w: %s went %v unanswered", ErrNoAnswer, op, s.callBound))
 	case res := <-ch:
 		if res.err != nil {
 			var ce CallError

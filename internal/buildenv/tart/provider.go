@@ -68,6 +68,9 @@ type Provider struct {
 	Prefix string
 	// TestTimeout bounds a target's tests, 30 minutes when zero.
 	TestTimeout time.Duration
+	// BuildTimeout bounds a target's build, its dependencies' installs,
+	// fetch, checksum, and install, 6 hours when zero (D16).
+	BuildTimeout time.Duration
 	// Poll is how often a guest's results are read, 10 seconds when zero.
 	Poll time.Duration
 
@@ -347,7 +350,10 @@ type guestInput struct {
 	Platform    model.Platform `json:"platform"`
 	Tests       string         `json:"tests"`
 	TestTimeout int            `json:"test_timeout"`
-	Targets     []guestTarget  `json:"targets"`
+	// BuildTimeout and LintTimeout are seconds, as TestTimeout is.
+	BuildTimeout int           `json:"build_timeout"`
+	LintTimeout  int           `json:"lint_timeout"`
+	Targets      []guestTarget `json:"targets"`
 	// Archives are the kept archives the guest installs targets from
 	// rather than build them: in ArchiveSite, each in its port's
 	// directory beside its signatures, which the keys at ArchiveKeys
@@ -457,7 +463,8 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 	p.sweep(cleanup, m, prefix, job.Execution.Attempt)
 
 	input := guestInput{Protocol: Protocol, Run: job.Run.Name(), Attempt: job.Execution.Attempt, Prefix: p.prefix(),
-		Platform: job.Environment.Platform, Tests: string(job.Plan.Tests), TestTimeout: int(p.testTimeout() / time.Second)}
+		Platform: job.Environment.Platform, Tests: string(job.Plan.Tests), TestTimeout: int(p.testTimeout() / time.Second),
+		BuildTimeout: int(p.buildTimeout() / time.Second), LintTimeout: int(LintTimeout / time.Second)}
 	if input.Tests == "" {
 		input.Tests = string(model.TestsDeclared)
 	}
@@ -547,6 +554,21 @@ func (p *Provider) testTimeout() time.Duration {
 		return p.TestTimeout
 	}
 	return 30 * time.Minute
+}
+
+// BuildTimeout is a target's build's bound where the configuration sets
+// none: GitHub's cap on a job, which a build that's run that long would
+// meet there too (D16).
+const BuildTimeout = 6 * time.Hour
+
+// LintTimeout bounds a target's lint, which takes seconds (D16).
+const LintTimeout = 10 * time.Minute
+
+func (p *Provider) buildTimeout() time.Duration {
+	if p.BuildTimeout > 0 {
+		return p.BuildTimeout
+	}
+	return BuildTimeout
 }
 
 func (p *Provider) poll() time.Duration {

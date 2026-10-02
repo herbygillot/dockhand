@@ -2,6 +2,7 @@ package portindex
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -29,6 +30,14 @@ import (
 const portIndexName = "PortIndex"
 const quickIndexName = "PortIndex.quick"
 const runtimeProbeTimeout = 30 * time.Second
+
+// RunBound is how long a portindex run may take before it's ended: a full
+// pass over the ports tree took 3 to 4 minutes on an Apple silicon Mac
+// across 22 runs, and an incremental one 17 seconds at most, so an hour
+// leaves a slower Mac room. One that hung held its caller, and each
+// process waiting on its lock, as long as it ran (the limits sweep, batch
+// 26).
+const RunBound = time.Hour
 const maxPortIndexBytes = 128 << 20
 
 // Config freezes the indexer identity and names the cache shared by every
@@ -43,6 +52,8 @@ type Config struct {
 	// cache with no usable generation, for a tree whose commit can be
 	// bracketed against it; nil keeps indexing offline. The engine sets it.
 	Mirror *Mirror
+	// Bound is how long a portindex run may take; RunBound where zero.
+	Bound time.Duration `json:"-"`
 }
 
 // DefaultMirrorBase is the tarballs directory of the mirror the index is
@@ -429,7 +440,13 @@ func buildPortIndex(ctx context.Context, c Config, platform model.Platform, sour
 		if err = os.WriteFile(configuration, []byte(configurationText), 0600); err != nil {
 			return err
 		}
-		_, runErr := subprocess.Run(ctx, subprocess.Spec{Tool: "portindex", Path: c.Executable, Args: args, Dir: sourceRoot, Env: indexerEnvironment(configuration), Combined: true, ExtraFiles: []*os.File{guard}})
+		bound := cmp.Or(c.Bound, RunBound)
+		bounded, cancel := context.WithTimeout(ctx, bound)
+		defer cancel()
+		_, runErr := subprocess.Run(bounded, subprocess.Spec{Tool: "portindex", Path: c.Executable, Args: args, Dir: sourceRoot, Env: indexerEnvironment(configuration), Combined: true, ExtraFiles: []*os.File{guard}})
+		if runErr != nil && ctx.Err() == nil && errors.Is(bounded.Err(), context.DeadlineExceeded) {
+			return fmt.Errorf("portindex ran past %v, so dockhand ended it: %w", bound, runErr)
+		}
 		if runErr != nil {
 			var exit *exec.ExitError
 			if ctx.Err() == nil && strict && seed != "" && errors.As(runErr, &exit) && exit.ExitCode() == 2 {

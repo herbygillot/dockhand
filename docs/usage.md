@@ -235,7 +235,7 @@ Setup records what each image was made from: the vanilla image by digest, and th
 
 Xcode is an add-on. `--xcode`, given an Xcode `.xip` from Apple or a folder of them, makes `dockhand-xcode-<release>`: the same image with Xcode too, in up to 65 GB more. Its Xcode is the one MacPorts' arm64 buildbot for the release runs, such as 26.6 on Tahoe, so ports build as MacPorts builds its packages. `providers.tart.xcode` names another for a release. Setup needs the archive of exactly that version, and says which to download when the folder lacks it; betas are never chosen. With `xcodes` installed (`sudo port install xcodes`), setup downloads it for you, signing in with your Apple ID through xcodes: at a terminal it asks first, and without one it uses the sign-in xcodes kept from the last time. When a release has an Xcode image, checks on it use it. A port that needs Xcode, itself or through a changed prerequisite, is built only there; without it, the port is unmet, not failed, and the check says to add the image.
 
-macOS runs at most two VMs at once, your own among them, so `serve` runs one Tart check at a time unless `providers.tart.capacity` says otherwise. `providers.tart.test_timeout` bounds each target's tests, 30 minutes by default.
+macOS runs at most two VMs at once, your own among them, so `serve` runs one Tart check at a time unless `providers.tart.capacity` says otherwise. `providers.tart.test_timeout` bounds each target's tests, 30 minutes by default, and `providers.tart.build_timeout` its build, its dependencies' installs, fetch, checksum, and install together, 6 hours by default, GitHub's own cap on a job; lint has 10 minutes. A build past its bound is ended, with what it started, and fails, said as having run past it. On GitHub, a run building past `providers.github.build_timeout`, 6 hours by default, is cancelled, and the port it was installing then fails, as one does whose job GitHub ended at its cap; a port whose install began and never ended is never read as passed.
 
 ### github
 
@@ -374,9 +374,11 @@ Serve opens no pull requests by default. With `--submit-passing`, or `serve.subm
 | `serve.notify` | `true` | macOS notifications |
 | `providers.tart.capacity` | `1` | Tart checks serve runs at once |
 | `providers.tart.test_timeout` | `30m` | the bound on one target's tests |
+| `providers.tart.build_timeout` | `6h` | the bound on one target's build |
 | `providers.tart.xcode.<release>` | what MacPorts' arm64 buildbot runs | the Xcode a release's Xcode image installs, by release name or number |
 | `providers.github.remote` | the one remote pushing to your fork | which remote, when several push to forks you own |
 | `providers.github.capacity` | `2` | github checks serve runs at once |
+| `providers.github.build_timeout` | `6h` | how long a run builds before it's cancelled |
 | `providers.command.run` | none | your build command, given the request file's path |
 | `providers.command.name` | `command` | how its results are labelled |
 | `providers.command.capacity` | `1` | command checks serve runs at once |

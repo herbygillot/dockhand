@@ -11,6 +11,8 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 | Key | Default |
 | --- | --- |
 | `providers.tart.test_timeout` | 30 min per target's tests |
+| `providers.tart.build_timeout` | 6 h per target's build (D16) |
+| `providers.github.build_timeout` | 6 h per run's build, GitHub's own cap on a job (D16) |
 | `providers.{tart,github,command}.capacity` | 1 / 2 / 1 checks at once |
 | `serve.submit_limit` | 10 pull requests a day |
 | `serve.outdated_at` | 07:00, the daily look |
@@ -41,7 +43,7 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 | API page size | 100, no page cap | every page is followed | `forge/github/repository.go:17` |  |
 | Pull request search | one page of 50 | more aren't seen | `forge/github/pullrequests.go:148` |  |
 | git ref resolved while planning a check | 1 min per git.url | the target is unresolved, and the check goes on | `engine/plan.go:204` |  |
-| Any other HTTP request | 30 s to connect, 10 s for TLS, 1 min for a response | the request fails; a body that stalls after its headers still waits (batch 26) | `fetch/client.go` |  |
+| Any other HTTP request | 30 s to connect, 10 s for TLS, 1 min for a response, 3 min without a byte of its body | the request fails; a body that stalls, "no data arrived for 3m0s after the response began" | `fetch/client.go` (`BodyStall`) |  |
 | GitHub sign-in (device flow) | GitHub's interval, 5 s | until the code expires | `github/device.go:51` |  |
 
 ## Archives and the source comparison
@@ -74,9 +76,9 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 | A PortIndex.quick line | 64 KiB | bufio.ErrTooLong | `macports/portindex/reader.go:150` |  |
 | Generations tried as seeds | latest + 8 recent | else the mirror, else a full pass | `macports/portindex/cache.go:30` |  |
 | Mirror bracket margin | 2 h | below the mirror's Last-Modified | `macports/portindex/mirror.go:41` |  |
-| portindex run | no timeout | "can take minutes" | `macports/portindex/index.go:451` | gap |
+| portindex run | 1 hour; a full pass takes 3 to 4 min, an incremental one seconds | "portindex ran past 1h0m0s, so dockhand ended it" | `macports/portindex/index.go` (`RunBound`) |  |
 | MacPorts runtime probe | 30 s | "probing the MacPorts runtime…" | `macports/portindex/index.go:31` |  |
-| Waiting on another process's indexing | no bound | "Waiting for another process…" | `macports/portindex/cache.go:165` | gap |
+| Waiting on another process's indexing | as long as its portindex run, an hour at most; a process that ends lets go of its lock | "Waiting for another process…" | `macports/portindex/cache.go:165` |  |
 
 ## Evaluating Portfiles and running tools
 
@@ -87,7 +89,7 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 | Interpreter reply frame | 16 MiB | the session breaks | `tcl/rpc/session.go:25` |  |
 | Interpreter stdout not yet read | 32 MiB | "child output queue overflowed" | `tcl/shell/proc.go:16` |  |
 | Interpreter stderr kept | last 64 KiB | older bytes dropped | `tcl/shell/proc.go:14` |  |
-| A Portfile evaluation call | no timeout | only the command's end stops it | `macports/eval` | gap |
+| A call into the Portfile evaluator | 5 min each | the interpreter is ended, "eval went 5m0s unanswered" | `macports/eval` (`CallBound`), `tcl/rpc` |  |
 | Interpreter close | 2 s, then kill | — | `tcl/shell/proc.go:55` |  |
 | A process after cancel | 2 s (git 1 s) | pipes closed | `subprocess/subprocess.go:35` |  |
 | outdated lookups at once | min(8, max(2, CPUs)) | the rest queue | `outdated/outdated.go:140` | in usage.md |
@@ -114,7 +116,8 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 | Releases built at once per check | 2 | the rest wait | `buildenv/tart/provider.go:630` | in usage.md |
 | VMs running on the Mac | 2 | waits, polling every 30 s, with no bound | `buildenv/tart/provider.go:641` | in usage.md |
 | Tests per target | 30 min, then TERM, 10 s, KILL | timed-out; fails only under --tests required | `buildenv/tart/provider.go:70 · guest.tcl` | in usage.md · `providers.tart.test_timeout` |
-| Guest lint, fetch, and install | no deadline | only the VM's end stops them | `buildenv/tart/guest.tcl` | gap |
+| A target's lint | 10 min | ended with what it started; failed at lint | `buildenv/tart/provider.go` (`LintTimeout`) · guest.tcl |  |
+| A target's build: its dependencies' installs, fetch, checksum, and install | 6 h together (D16); a transfer is MacPorts' own, dropped after a minute below its speed | ended with what it started; failed, "the build ran past its 6h bound" | `buildenv/tart/provider.go` (`BuildTimeout`) · guest.tcl | in usage.md · `providers.tart.build_timeout` |
 | Clone to appear in Tart's listing | ≈ 30 s | goes on | `buildenv/tart/provider.go:592` |  |
 | Guest IP | 5 min | infrastructure failure, retried | `buildenv/tart/machine.go:132` |  |
 | SSH to accept | 4 min, every 3 s | "the guest never accepted SSH" | `buildenv/tart/provider.go:525` |  |
@@ -139,7 +142,7 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 | Guest disk | 100 GB raw, 125 GB ASIF | — | `tart/provision/vm.go:93` |  |
 | Guest CPUs and memory | CPUs ÷ 4; max(8 GB, 2 GB × CPUs) | — | `tart/provision/vm.go:118` |  |
 | A listing that raced a delete | 5 tries, 500 ms apart | ErrListingRaced | `tart/images.go:68` |  |
-| An ASIF VM blocking the listing | every 15 s, no bound | — | `tart/provision/native.go:72` | gap |
+| An ASIF VM blocking the listing | every 15 s, 30 min in all | "stop it, and run setup again" | `tart/provision/native.go` (`listingBound`) |  |
 | Cleanup after a failed setup | 2 min | "delete it with tart delete…" | `tart/provision/provision.go:616` |  |
 
 ## GitHub Actions and the command provider
@@ -147,7 +150,7 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 | Limit | Value | When it's hit | Where | |
 | --- | --- | --- | --- | --- |
 | A run to appear | 10 min, polled every 30 s | "GitHub started no run… are Actions enabled?" | `buildenv/ghactions/provider.go:136` |  |
-| A run to finish | no bound | — | `buildenv/ghactions/provider.go:213` | gap |
+| A run to finish | 6 h building (D16), GitHub's own cap on a job, which MacPorts' workflow doesn't shorten; GitHub's cancelling waited 10 min | cancelled; the port it was installing fails, said as ended for its time, as one GitHub ended at its cap does | `buildenv/ghactions/provider.go` (`JobCap`, `cancelWait`) | in usage.md · `providers.github.build_timeout` |
 | Cancelling a run on GitHub | 30 s | — | `buildenv/ghactions/provider.go:200` |  |
 | Job log | 64 MiB | kept to it, and the kept log ends saying it was cut | `buildenv/ghactions/github.go` (`maxJobLogBytes`) |  |
 | A job log line | 4 MiB | passed over, and the log read on; the workflow's markers are short | `buildenv/ghactions/logs.go` (`maxLogLine`) |  |
@@ -184,7 +187,7 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 | One transaction | 30 s | context.DeadlineExceeded | `store/sqlite/sqlite.go:104` |  |
 | Connections | 4 | — | `store/sqlite/sqlite.go:132` |  |
 | Write-ahead log kept | 64 MiB | trimmed at checkpoint | `store/sqlite/sqlite.go:60` |  |
-| File locks (branch, image, index) | polled every 25 ms, no bound | another waits | `filelock/filelock.go:53` | in usage.md |
+| File locks (branch, image, index) | polled every 25 ms, as long as the holder holds it, whose work is bounded; a process that ends lets go | another waits | `filelock/filelock.go:53` | in usage.md |
 | Event pages | 500 (store default 1000) | — | `engine/runner.go:1127` |  |
 
 ## Guards that refuse input

@@ -71,6 +71,7 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			add("serve.notify", notify, "true")
 			add("providers.tart.capacity", positive(file.Providers.Tart.Capacity), "1")
 			add("providers.tart.test_timeout", file.Providers.Tart.TestTimeout, "30m")
+			add("providers.tart.build_timeout", file.Providers.Tart.BuildTimeout, "6h")
 			// Each release's Xcode image installs what MacPorts' arm64
 			// buildbot for it runs, unless the file names another.
 			xcodes, err := tart.Xcodes(file.Providers.Tart.Xcode)
@@ -96,6 +97,7 @@ it is refused by name. Flags, then the environment, come before the file.`,
 			}
 			add("providers.github.remote", file.Providers.GitHub.Remote, "the one remote pushing to your fork")
 			add("providers.github.capacity", positive(file.Providers.GitHub.Capacity), "2")
+			add("providers.github.build_timeout", file.Providers.GitHub.BuildTimeout, "6h")
 			streams.emit(map[string]any{"file": path, "database": options.Database, "settings": all})
 			fmt.Fprintf(streams.Out, "File      %s\nDatabase  %s\n\n", tilde(path), tilde(options.Database))
 			width := 0

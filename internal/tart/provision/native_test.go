@@ -88,3 +88,20 @@ func TestConfigureSizesAnASIFDiskAndEditsNothing(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, string(recorded), "set ", "nothing is set on a disk it refuses")
 }
+
+// A listing an ASIF VM blocks is waited on, said once, for listingBound in
+// all, then given up with what to do, where it held setup as long as the
+// VM ran (the limits sweep, batch 26).
+func TestABlockedListingIsWaitedOnlySoLong(t *testing.T) {
+	retry, bound := listingRetry, listingBound
+	listingRetry, listingBound = time.Millisecond, 3*time.Millisecond
+	t.Cleanup(func() { listingRetry, listingBound = retry, bound })
+	var said bytes.Buffer
+	n := newNative(Config{}, &said)
+	for range 3 {
+		require.NoError(t, n.waitListing(t.Context()))
+	}
+	err := n.waitListing(t.Context())
+	require.ErrorContains(t, err, "for 3ms: a running VM with an ASIF disk keeps Tart from listing its VMs (openai/tart#1344); stop it, and run setup again")
+	require.Equal(t, 1, strings.Count(said.String(), "waiting for it to stop"))
+}

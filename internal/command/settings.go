@@ -107,7 +107,7 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 	}
 	remote := file.Providers.GitHub.Remote
 	github := &ghactions.Provider{Repo: e.Repo, Fork: func(ctx context.Context) (buildenv.Fork, error) { return e.Fork(ctx, remote) },
-		API: ghactions.GitHub{Client: authAPI(authStore)}}
+		API: ghactions.GitHub{Client: authAPI(authStore)}, BuildTimeout: file.Providers.GitHub.BuildBound()}
 	if testActions != nil {
 		github.API, github.Sleep = testActions, func(ctx context.Context, _ time.Duration) error { return ctx.Err() }
 	}
@@ -115,7 +115,7 @@ func (s *settings) open(ctx context.Context) (*engine.Engine, error) {
 	// Tart builds wherever Tart is installed; its images are checked when a
 	// check names a release.
 	if _, err := lookTart("tart"); err == nil || testTart != nil {
-		provider := &tart.Provider{Repo: e.Repo, Index: e.PortIndex, TestTimeout: file.Providers.Tart.Timeout()}
+		provider := &tart.Provider{Repo: e.Repo, Index: e.PortIndex, TestTimeout: file.Providers.Tart.Timeout(), BuildTimeout: file.Providers.Tart.BuildBound()}
 		if testTart != nil {
 			testTart(provider)
 		}

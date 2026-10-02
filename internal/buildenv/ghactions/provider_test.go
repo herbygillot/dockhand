@@ -17,10 +17,11 @@ import (
 // support; a runner that stopped before listing, or never reached it,
 // leaves no verdict yet.
 func TestAPortsVerdictIsItsRunnersTogether(t *testing.T) {
-	passed := map[string]*Built{"jq": {Listed: true, Installing: true, Tested: true}}
-	failed := map[string]*Built{"jq": {Listed: true, Installing: true, Install: true}}
+	passed := map[string]*Built{"jq": {Listed: true, Installing: true, Installed: true, Tested: true}}
+	failed := map[string]*Built{"jq": {Listed: true, Installing: true, Installed: true, Install: true}}
 	unreached := map[string]*Built{"jq": {Listed: true}}
-	elsewhere := map[string]*Built{"harbor": {Listed: true, Installing: true}}
+	elsewhere := map[string]*Built{"harbor": {Listed: true, Installing: true, Installed: true}}
+	cut := map[string]*Built{"jq": {Listed: true, Installing: true}}
 	on := func(name, log string, built map[string]*Built) runner {
 		return runner{job: RunnerJob{Name: name}, log: log, built: built, listing: true}
 	}
@@ -48,6 +49,15 @@ func TestAPortsVerdictIsItsRunnersTogether(t *testing.T) {
 
 	_, ok = verdict("jq", []runner{on("macos-14", "14.log", passed), on("macos-15", "15.log", unreached)})
 	require.False(t, ok, "a runner that listed it and never reached it leaves no verdict")
+	_, ok = verdict("jq", []runner{on("macos-14", "14.log", passed), on("macos-15", "15.log", cut)})
+	require.False(t, ok, "an install that never ended isn't a pass, where it had read as one")
+	capped := on("macos-15", "15.log", cut)
+	capped.capped = "GitHub ended the job at its 6h0m0s cap on a job"
+	result, ok = verdict("jq", []runner{on("macos-14", "14.log", passed), capped})
+	require.True(t, ok)
+	require.Equal(t, model.OutcomeFailed, result.Outcome)
+	require.Equal(t, model.PhaseInstall, result.Phase)
+	require.Equal(t, "on macos-15: GitHub ended the job at its 6h0m0s cap on a job", result.Detail, "what it was installing when its time ended failed")
 	_, ok = verdict("jq", []runner{on("macos-14", "14.log", passed), {job: RunnerJob{Name: "macos-15"}, built: map[string]*Built{}}})
 	require.False(t, ok, "a runner that stopped before listing the subports leaves no verdict")
 	_, ok = verdict("jq", []runner{on("macos-14", "14.log", elsewhere)})

@@ -13,6 +13,7 @@
 package ghactions
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -58,7 +59,15 @@ type RunnerJob struct {
 	// for a job no runner took.
 	Labels     []string
 	RunnerName string
+	// Started and Completed are when the job began and ended; zero where
+	// it hasn't.
+	Started, Completed time.Time
 }
+
+// JobCap is how long GitHub lets a job on its own runners run before it
+// ends it, as its usage limits document; MacPorts' workflow sets no
+// shorter timeout-minutes (D16).
+const JobCap = 6 * time.Hour
 
 // GitHub's labels for its macOS runners name a release, macos-15, with a
 // runner's size or architecture after it, macos-15-xlarge or
@@ -111,6 +120,9 @@ type Provider struct {
 	Poll, Appear time.Duration
 	// Sleep, when set, stands in for waiting.
 	Sleep func(ctx context.Context, d time.Duration) error
+	// BuildTimeout is how long a run may build before dockhand cancels it,
+	// JobCap when zero, past which GitHub ends each job itself (D16).
+	BuildTimeout time.Duration
 }
 
 func (p *Provider) Name() string { return buildenv.GitHub }
@@ -220,21 +232,42 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 			}
 		}
 	}
-	status := ""
+	// A run that builds past the bound is cancelled, and what it was
+	// building when it ended is read as timed out (D16); one GitHub
+	// doesn't end within cancelWait of that is given up on.
+	bound := cmp.Or(p.BuildTimeout, JobCap)
+	status, ended := "", ""
+	var building, cancelling time.Duration
 	for run.Status != "completed" {
 		if run.Status != status {
 			build.Progress(fmt.Sprintf("%s %s", strings.ReplaceAll(run.Status, "_", " "), run.URL))
 			status = run.Status
 		}
+		if building >= bound && ended == "" {
+			ended = fmt.Sprintf("the run built past its %s bound (providers.github.build_timeout), so dockhand cancelled it", bound)
+			build.Progress(fmt.Sprintf("%s built past its %s bound; cancelling it", run.URL, bound))
+			if err := p.API.Cancel(ctx, fork.Repository, run.ID); err != nil {
+				return fmt.Errorf("%w: cancelling %s, which built past its %s bound: %w", buildenv.ErrInfrastructure, run.URL, bound, err)
+			}
+		}
+		if ended != "" && cancelling >= cancelWait {
+			return fmt.Errorf("%w: GitHub didn't end %s within %s of its cancelling", buildenv.ErrInfrastructure, run.URL, cancelWait)
+		}
 		if err := p.sleep(ctx, poll); err != nil {
 			return err
+		}
+		switch {
+		case ended != "":
+			cancelling += poll
+		case run.Status == "in_progress":
+			building += poll
 		}
 		if run, err = p.API.Run(ctx, fork.Repository, run.ID); err != nil {
 			return fmt.Errorf("%w: %w", buildenv.ErrInfrastructure, err)
 		}
 	}
 	build.Progress(fmt.Sprintf("%s: %s; reading the logs", run.URL, run.Conclusion))
-	err = p.read(ctx, job, build, fork.Repository, run)
+	err = p.read(ctx, job, build, fork.Repository, run, ended)
 	// The check is done with the run once it is read, or once its last
 	// attempt has ended: its logs are kept here, and nothing reads the run
 	// again. Until then the branch stays, since a later attempt runs the
@@ -264,7 +297,10 @@ func (p *Provider) removeBranch(ctx context.Context, build buildenv.Build, fork 
 
 // read reads a completed run: what its runners were, each runner's log,
 // kept in the job's directory, and from them each target's result.
-func (p *Provider) read(ctx context.Context, job buildenv.Job, build buildenv.Build, repository string, run Run) error {
+// cancelWait is how long a run dockhand cancelled is waited on to end.
+const cancelWait = 10 * time.Minute
+
+func (p *Provider) read(ctx context.Context, job buildenv.Job, build buildenv.Build, repository string, run Run, ended string) error {
 	jobs, err := p.API.Jobs(ctx, repository, run.ID, run.Attempt)
 	if err != nil {
 		return fmt.Errorf("%w: listing %s's jobs: %w", buildenv.ErrInfrastructure, run.URL, err)
@@ -285,7 +321,17 @@ func (p *Provider) read(ctx context.Context, job buildenv.Job, build buildenv.Bu
 		if err := atomicfile.Write(path, log, 0o644); err != nil {
 			return err
 		}
-		runners = append(runners, runner{job: j, log: path, built: ReadLog(log), listing: ListsSubports(log)})
+		// A job that didn't succeed and ran to GitHub's cap, or that
+		// dockhand cancelled for its bound, was ended for its time.
+		capped := ""
+		switch {
+		case j.Conclusion == "success":
+		case ended != "":
+			capped = ended
+		case !j.Started.IsZero() && j.Completed.Sub(j.Started) >= JobCap-time.Minute:
+			capped = fmt.Sprintf("GitHub ended the job at its %s cap on a job", JobCap)
+		}
+		runners = append(runners, runner{job: j, log: path, built: ReadLog(log), listing: ListsSubports(log), capped: capped})
 	}
 
 	recorded := 0
@@ -367,6 +413,9 @@ type runner struct {
 	// listing is true when the log shows the workflow listing the
 	// subports it would build, which a runner that stopped first doesn't.
 	listing bool
+	// capped says why the job was ended for its time; empty where it
+	// wasn't. The subport it was installing then failed.
+	capped string
 }
 
 // verdict is a port's result across the runners, with each runner's part
@@ -383,6 +432,7 @@ type runner struct {
 func verdict(name string, runners []runner) (model.TargetResult, bool) {
 	var parts []model.BuilderResult
 	var failed *model.BuilderResult
+	why := ""
 	result := model.TargetResult{Outcome: model.OutcomePassed, Tests: model.TestsNone}
 	for _, r := range runners {
 		if !r.listing {
@@ -395,12 +445,19 @@ func verdict(name string, runners []runner) (model.TargetResult, bool) {
 			continue
 		}
 		part.Outcome, part.Phase = built.Outcome()
+		cut := r.capped != "" && built.CutShort()
+		if cut {
+			part.Outcome, part.Phase = model.OutcomeFailed, model.PhaseInstall
+		}
 		part.Tests, part.Log = built.Tests(), r.log
 		parts = append(parts, part)
 		switch {
 		case part.Outcome == model.OutcomeFailed:
 			if failed == nil {
 				failed = &parts[len(parts)-1]
+				if cut {
+					why = r.capped
+				}
 			}
 			continue
 		case part.Outcome != model.OutcomePassed:
@@ -426,6 +483,9 @@ func verdict(name string, runners []runner) (model.TargetResult, bool) {
 		return model.TargetResult{}, false
 	case failed != nil:
 		result = model.TargetResult{Outcome: model.OutcomeFailed, Phase: failed.Phase, Tests: failed.Tests, Log: failed.Log, Detail: "on " + failed.Builder}
+		if why != "" {
+			result.Detail += ": " + why
+		}
 	}
 	result.Builders = parts
 	return result, true

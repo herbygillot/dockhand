@@ -19,25 +19,34 @@ type Built struct {
 	Listed bool
 	// Lint, Dependencies, and Install say a step failed.
 	Lint, Dependencies, Install bool
-	// Installing is true when the workflow began installing it.
-	Installing bool
+	// Installing is true when the workflow began installing it, and
+	// Installed when that step ended, its group closed.
+	Installing, Installed bool
 	// Tested is true when its tests ran, and TestsFailed when they failed.
 	Tested, TestsFailed bool
 }
 
 // Outcome is the subport's result on this runner, as the markers show it:
-// passed once installing began and nothing failed; failed at lint or
-// install; not run when the workflow never reached it.
+// passed once its install ended and nothing failed; failed at lint or
+// install; not run when the workflow never reached it, or its install
+// never ended (CutShort).
 func (b Built) Outcome() (model.Outcome, model.Phase) {
 	switch {
 	case b.Lint:
 		return model.OutcomeFailed, model.PhaseLint
 	case b.Dependencies || b.Install:
 		return model.OutcomeFailed, model.PhaseInstall
-	case b.Installing:
+	case b.Installing && b.Installed:
 		return model.OutcomePassed, ""
 	}
 	return model.OutcomeNotRun, ""
+}
+
+// CutShort reports whether the subport's install began and never ended,
+// as where GitHub ended its job: it read as passed, since only a failure
+// is marked (batch 26).
+func (b Built) CutShort() bool {
+	return b.Installing && !b.Installed && !b.Install && !b.Dependencies && !b.Lint
 }
 
 // Tests is the subport's test outcome on this runner. The workflow counts
@@ -101,12 +110,17 @@ func ReadLog(log []byte) map[string]*Built {
 		return built[name]
 	}
 	listing := false
+	// installing is the subport whose install group is open.
+	installing := ""
 	for line := range lines(log) {
 		switch {
 		case line == "##[group]Listing subports" || line == "::group::Listing subports":
 			listing = true
 		case listing && (strings.HasPrefix(line, "##[endgroup]") || strings.HasPrefix(line, "::endgroup::")):
 			listing = false
+		case installing != "" && (strings.HasPrefix(line, "##[endgroup]") || strings.HasPrefix(line, "::endgroup::")):
+			get(installing).Installed = true
+			installing = ""
 		case listing && line != "" && !strings.ContainsAny(line, " :"):
 			get(line).Listed = true
 		case strings.HasPrefix(trimMarker(line), "port lint "):
@@ -120,7 +134,8 @@ func ReadLog(log []byte) map[string]*Built {
 			get(strings.TrimPrefix(trimMarker(line), "Tests failed for ")).TestsFailed = true
 		case strings.HasPrefix(groupTitle(line), "Installing dependencies for "):
 		case strings.HasPrefix(groupTitle(line), "Installing "):
-			get(strings.TrimPrefix(groupTitle(line), "Installing ")).Installing = true
+			installing = strings.TrimSpace(strings.TrimPrefix(groupTitle(line), "Installing "))
+			get(installing).Installing = true
 		case strings.HasPrefix(groupTitle(line), "Testing "):
 			get(strings.TrimPrefix(groupTitle(line), "Testing ")).Tested = true
 		}

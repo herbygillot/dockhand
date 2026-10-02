@@ -218,6 +218,16 @@ type GitHubProvider struct {
 	// Each run takes one runner per macOS release MacPorts' workflow
 	// builds on, and GitHub queues what a plan's limits won't start.
 	Capacity int `toml:"capacity"`
+	// BuildTimeout bounds how long a run builds before dockhand cancels
+	// it, as a duration such as "4h"; 6 hours when unset, GitHub's own cap
+	// on a job, which a longer one doesn't lift (D16).
+	BuildTimeout string `toml:"build_timeout"`
+}
+
+// BuildBound is the build timeout the configuration sets, or zero.
+func (g GitHubProvider) BuildBound() time.Duration {
+	timeout, _ := time.ParseDuration(g.BuildTimeout)
+	return timeout
 }
 
 // xcodeVersion is an Xcode version as Apple numbers it: 26.6, 14.0.1, 27.
@@ -232,6 +242,10 @@ type TartProvider struct {
 	// TestTimeout bounds a target's tests, as a duration such as "45m";
 	// 30 minutes when unset.
 	TestTimeout string `toml:"test_timeout"`
+	// BuildTimeout bounds a target's build, its dependencies' installs,
+	// fetch, and its own install, as a duration such as "8h"; 6 hours,
+	// GitHub's cap on a job, when unset (D16).
+	BuildTimeout string `toml:"build_timeout"`
 	// Xcode is the Xcode each release's Xcode image installs, by release
 	// name or number: tahoe = "26.6". A release it doesn't name gets what
 	// MacPorts' arm64 builder for the release runs.
@@ -241,6 +255,12 @@ type TartProvider struct {
 // Timeout is the test timeout the configuration sets, or zero.
 func (t TartProvider) Timeout() time.Duration {
 	timeout, _ := time.ParseDuration(t.TestTimeout)
+	return timeout
+}
+
+// BuildBound is the build timeout the configuration sets, or zero.
+func (t TartProvider) BuildBound() time.Duration {
+	timeout, _ := time.ParseDuration(t.BuildTimeout)
 	return timeout
 }
 
@@ -356,6 +376,16 @@ func parse(path, text string) (File, error) {
 	if timeout := f.Providers.Tart.TestTimeout; timeout != "" {
 		if d, err := time.ParseDuration(timeout); err != nil || d <= 0 {
 			return File{}, fmt.Errorf("%s: providers.tart.test_timeout: %q is not a duration such as \"45m\"", path, timeout)
+		}
+	}
+	if timeout := f.Providers.GitHub.BuildTimeout; timeout != "" {
+		if d, err := time.ParseDuration(timeout); err != nil || d <= 0 {
+			return File{}, fmt.Errorf("%s: providers.github.build_timeout: %q is not a duration such as \"4h\"", path, timeout)
+		}
+	}
+	if timeout := f.Providers.Tart.BuildTimeout; timeout != "" {
+		if d, err := time.ParseDuration(timeout); err != nil || d <= 0 {
+			return File{}, fmt.Errorf("%s: providers.tart.build_timeout: %q is not a duration such as \"8h\"", path, timeout)
 		}
 	}
 	for release, version := range f.Providers.Tart.Xcode {
