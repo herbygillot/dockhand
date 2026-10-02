@@ -297,4 +297,3 @@ func kindWords(target model.PlanTarget) string {
 	}
 	return "changed"
 }
-

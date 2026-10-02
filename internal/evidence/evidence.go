@@ -222,7 +222,6 @@ type readSource struct {
 	other   bool
 }
 
-
 // Of is what one check established for each target in each of its
 // environments, as its own record says: its executions' results merged,
 // an earlier attempt's complete result standing over a later one's, and

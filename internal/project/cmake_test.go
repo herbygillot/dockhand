@@ -95,7 +95,7 @@ func TestTheDocumentTakesTheBranchesTheDefaultBuildDoes(t *testing.T) {
 		"if(0)\n  a()\nendif()\nif(Q STREQUAL A)\n  q()\nendif()\n":   "if(Q STREQUAL A)\nq()\nendif()",
 		"if(Q)\n  if(A)\n    a() # A's\n  endif()\n  q()\nendif()\n":  "if(Q)\nq()\nendif()",
 		"x() # a comment\n#[[ a bracket\ncomment ]]\n\ny(\"#not\")\n": "x()\ny(#not)",
-		"if(\n  A\n)\n  a()\nendif()\nx(\"two words\")\n":              "x(\"two words\")",
+		"if(\n  A\n)\n  a()\nendif()\nx(\"two words\")\n":             "x(\"two words\")",
 	} {
 		require.Equal(t, want, StatementsText(ParseCMake([]byte(text)).Without(nil, off)), text)
 	}
@@ -128,7 +128,7 @@ func TestAStatementKnowsTheBlocksItsWithin(t *testing.T) {
 // CMake's own modules, aren't found; a cycle stops.
 func TestADocumentReadsWhatItIncludes(t *testing.T) {
 	reading := Reading{Files: map[string]File{
-		"CMakeLists.txt": {Data: []byte("list(APPEND CMAKE_MODULE_PATH \"${CMAKE_CURRENT_SOURCE_DIR}/cmake\")\ninclude(cmake/plugins_options.cmake)\ninclude(Helpers)\ninclude(GNUInstallDirs)\ninclude(${GENERATED}/x.cmake)\noption(B \"b\" OFF)\n")},
+		"CMakeLists.txt":              {Data: []byte("list(APPEND CMAKE_MODULE_PATH \"${CMAKE_CURRENT_SOURCE_DIR}/cmake\")\ninclude(cmake/plugins_options.cmake)\ninclude(Helpers)\ninclude(GNUInstallDirs)\ninclude(${GENERATED}/x.cmake)\noption(B \"b\" OFF)\n")},
 		"cmake/plugins_options.cmake": {Data: []byte("option(A \"a\" OFF)\ninclude(${CMAKE_CURRENT_LIST_DIR}/more.cmake)\n")},
 		"cmake/more.cmake":            {Data: []byte("set(B ON)\ninclude(${CMAKE_CURRENT_LIST_DIR}/more.cmake)\n")},
 		"cmake/Helpers.cmake":         {Data: []byte("option(C \"c\" ON)\n")},

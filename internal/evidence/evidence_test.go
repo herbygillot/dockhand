@@ -210,7 +210,6 @@ func TestARemadeCellIsMissing(t *testing.T) {
 	require.False(t, evidence.missing())
 }
 
-
 // A result reads under the policy of the check that built it (D1). One
 // that came from an earlier check whose policy differs from the
 // evidence's own names that check, so an advisory failure never reads as
