@@ -630,7 +630,7 @@ What dockhand could grow into, and what to redesign. [Directions](directions.md)
 - **Three layers, built bottom-up:** what dockhand knows of a branch (a coverage ledger, each finding's kind and what it holds, a record of the person's decision on a finding, readiness evaluated for a requested action, and a `Next:` that advances it), then the command surface (the UX review), then new reach.
 - **The verdict comes before the UX review's chaining (§3).** Branch naming (§1, §2) can go alongside it. Editing the declaration that ran is layer 1's too, and independent.
 - **Maintenance reasoning lives in the pull request and in patch headers or Portfile comments,** never only in dockhand's database.
-- **A trust rule for other people's Portfiles comes before the maintainer inbox** (the blind-spots review, 2026-10-02). A Portfile from a pull request the person didn't author is evaluated only in a guest, or dockhand says so and asks first. The rule's own text waits on the person's word.
+- **A trust rule for other people's Portfiles comes before the maintainer inbox** (the blind-spots review; decided 2026-10-02). Nothing unattended evaluates a Portfile the person didn't author on the host: it goes to a guest, or the step is skipped and reported. An attended command may, and says whose Portfile it is evaluating. `trust.others = "guest"` sends attended evaluation to a guest too. The inbox's first version lists pull requests without planning or building them.
 - **Running what a port installs stays under Later until layer 1 lands.** Comparing what an update's libraries declare, which runs nothing, is its first half.
 
 Each step still becomes Next's work at the person's word.
