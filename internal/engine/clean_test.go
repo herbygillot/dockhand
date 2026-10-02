@@ -83,6 +83,7 @@ func TestCleanKeepsWorkOfItsOwn(t *testing.T) {
 	plans, err := e.PlanClean(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "it has untracked files: notes.txt", whats(plans)["worktree "+branch.Worktree])
+	require.Equal(t, "the worktree it is checked out in is kept", whats(plans)["branch dockhand/jq-update"], "planned so, not only found so as clean runs (an escaped mutant)")
 
 	require.NoError(t, os.Remove(filepath.Join(branch.Worktree, "notes.txt")))
 	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.2\n"})

@@ -33,6 +33,12 @@ func TestARecordedBuildStandsWhileItsInputsDo(t *testing.T) {
 	variant := target
 	variant.Target.Variants = map[string]bool{"doc": true}
 	require.False(t, Current(recorded, "origin a", variant, nil, now), "other variants asked for")
+	// Everything the result read is the same but whose directory it was:
+	// a result recorded for another port's directory isn't this one's. No
+	// test noticed this check removed (the test plan's escaped mutant).
+	elsewhere := target
+	elsewhere.Directory = "textproc/jq"
+	require.False(t, Current(recorded, "origin a", elsewhere, nil, now), "a result recorded for another directory")
 
 	incomplete := recorded
 	incomplete.Active = []model.ActivePort{{Name: "oniguruma6", Spec: "@6.9.10_0", Directory: "devel/oniguruma6", Tree: "33"}}

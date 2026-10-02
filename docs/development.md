@@ -12,6 +12,8 @@ The module requires Go 1.27.1 or newer. Dependencies are vendored: the `vendor` 
 
 The syntax package has `FuzzParse` and `FuzzSplitList` targets; their seed cases run in ordinary tests.
 
+`make mutate` runs go-mutesting by version over `MUTATE`'s packages or files (reuse and commitrules by default): each mutant, a small change to the code, runs its package's tests through `go test -overlay`, so the checkout is never edited, and an escaped mutant is a change no test noticed. `MUTATE_RUN` narrows the tests each runs, which engine needs, since its whole suite takes minutes a mutant: `make mutate MUTATE=internal/engine/clean.go MUTATE_RUN='^Test(Clean|Legacy)'`. `MUTATE_TIMEOUT` bounds a mutant that loops. It isn't in CI. Its `report.json` is ignored.
+
 Tests that stand in for an external tool, a fake `tart`, `git`, `gh`, or `portindex`, write it with `testsupport.WriteExecutable`, never with `os.WriteFile` and an executable mode. Tests run in parallel and start commands constantly; a child forked while the program is still open for writing keeps a copy of the descriptor until it execs, and running the program then fails with "text file busy". The helper writes while holding `syscall.ForkLock`, so no fork can start in that window. A script that only an interpreter reads, such as a Tcl file passed to `tclsh`, does not need it.
 
 Engine's tests run in parallel (`t.Parallel`), and `make test` runs the command line's as `COMMAND_SHARDS` processes of its test binary (one for each three cores, at most six, `tools/shard-test.sh`) beside every other package, since its tests set package-level seams and `HOME`; a plain `go test ./...` runs them in one process, as before. On an 18-core Mac, engine went from 338 s to 115 s and command from 280 s to 61 s.

@@ -19,7 +19,7 @@ ifneq ($(strip $(VERSION)),)
 GO_LDFLAGS += -X github.com/herbygillot/dockhand/internal/buildinfo.Version=$(strip $(VERSION))
 endif
 
-.PHONY: build test test-race vet lint fmt-check deadcode vendor vendor-check clean
+.PHONY: build test test-race vet lint fmt-check deadcode mutate vendor vendor-check clean
 
 build:
 	$(GO) build $(if $(strip $(GO_LDFLAGS)),-ldflags "$(GO_LDFLAGS)") -o "$(BINARY)" ./cmd/dockhand
@@ -61,6 +61,23 @@ lint:
 fmt-check:
 	@files=$$(gofmt -l $$(git ls-files --cached --others --exclude-standard '*.go' | grep -v '^vendor/')); \
 	if [ -n "$$files" ]; then echo "not gofmt-formatted:" >&2; echo "$$files" >&2; exit 1; fi
+
+# Mutation testing, by version like deadcode: each mutant of MUTATE's files
+# runs their package's tests, through go test -overlay, so the checkout is
+# never edited; an escaped mutant is a change no test noticed. MUTATE_RUN
+# narrows the tests each mutant runs, as engine's whole suite would take
+# minutes a mutant: make mutate MUTATE=internal/engine/clean.go
+# MUTATE_RUN='^Test(Clean|Legacy)'. Not in CI (the test plan's step 4).
+GO_MUTESTING ?= github.com/jonbaldie/go-mutesting/cmd/go-mutesting@v0.0.0-20260517115904-2b96df113935
+MUTATE ?= ./internal/reuse ./internal/macports/commitrules
+MUTATE_RUN ?=
+# A mutant that loops forever runs until this many seconds, so it is kept
+# short: a few times what the narrowed tests take.
+MUTATE_TIMEOUT ?= 120
+mutate:
+	@bin=$$(mktemp -d) && trap 'rm -rf "$$bin"' EXIT && \
+	GOFLAGS= GOBIN="$$bin" GOTOOLCHAIN=$$($(GO) env GOVERSION) $(GO) install $(GO_MUTESTING) && \
+	GOFLAGS="$(GOFLAGS)$(if $(MUTATE_RUN), -run=$(MUTATE_RUN))" "$$bin/go-mutesting" --quiet --exec-timeout=$(MUTATE_TIMEOUT) $(MUTATE)
 
 # Whole-program reachability including tests; see docs/reviews/2026-09-17-exported-surface-audit.md.
 # A tool run by version is fetched as a module of its own, which the vendor mode forbids.
