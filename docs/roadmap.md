@@ -381,6 +381,10 @@ What batches 10 to 15 touch doesn't move with item 6, so they wait without cost,
   - kept archives held for reuse by the newest passed result per port, environment, and variant set alone, and those of an open branch's evidence;
   - assessments of a superseded tree pruned after 7 days;
   - `limits.md`'s check-logs gap closed, and the cleanup event saying what each pass removed, by kind and size.
+- **Batch 31: cleaning one branch** (the sand-runner session, 2026-10-01, at the person's request). macports/macports-ports#35090 merged, and the person asked for its branch cleaned up; the session did it by hand, since `clean` would have swept every merged branch.
+  - `clean <branch>...`, cleaning only the branches named, merged, closed, or archived, as `--merged` would one; `clean` takes no argument today (`cobra.NoArgs`);
+  - status's word for a branch whose Git branch is gone while it has a pull request. After the hand cleanup it said "branch gone above master … Next: dockhand adopt <new name>, if you renamed it", which reads as trouble, until `status --refresh` read the merge. Status never reads the network, by design, so it can't know the pull request merged; where one is recorded, it can say that it may have merged and that `status --refresh` reads it, before suggesting `adopt`;
+  - Not confirmed: that `clean` and `submit` reach your fork differently. The session saw `clean`'s `git ls-remote` refused without an SSH agent while `submit --yes` had pushed; both go through the remote's push URL with git (`remoteFor`, `Fork`), so a shell without an agent fails both, and the difference was likely the shell. Reading and deleting the fork's branch through GitHub's API with dockhand's login would make both independent of SSH, a choice for when it's taken.
 
 ### Taken when their area is next touched
 
