@@ -19,8 +19,8 @@ func createCommand(s *settings, streams Streams) *cobra.Command {
 	var where branchChoice
 	var name, category string
 	cmd := &cobra.Command{
-		Use:   "create <url>",
-		Short: "Write a new port's first Portfile from its project's URL",
+		Use:   "create <url | pypi:NAME | crates:NAME | go:MODULE>",
+		Short: "Write a new port's first Portfile from its project's URL or registry name",
 		Long: `Reads a project on GitHub, its latest release, and the build files at that
 release, and writes a new port's Portfile in the branch's working files: the
 github PortGroup, and cargo, golang, cmake, meson, or python as its files
@@ -38,7 +38,12 @@ the line to set: the one the ports naming your GitHub login write. The new
 Portfile is staged, so the next check includes it. Nothing is committed.
 
 The branch is --branch, else the one checked out here; --new starts one.
---name names the port when the project's name is not what it should be.`,
+--name names the port when the project's name is not what it should be.
+
+In place of the URL, a registry name reads the project from where its
+registry says its source is: pypi:NAME from PyPI's project URLs, crates:NAME
+from the crate's repository on crates.io, go:MODULE from the module path or
+its go-get answer.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()

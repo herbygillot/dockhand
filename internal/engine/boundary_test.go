@@ -28,6 +28,7 @@ var engineImports = map[string]string{
 	"internal/evidence":               "what recorded checks establish about a tree, from the records the engine loads",
 	"internal/progress":               "what the work reports as a check builds, which its run keeps for whoever follows it",
 	"internal/prose":                  "counts and sizes worded as everywhere else",
+	"internal/registry":               "where a project named in a registry keeps its source, for create",
 	"internal/buildlog":               "what a failed build's log most likely says made it fail",
 	"golang.org/x/sync/errgroup":      "a check's environments building together, and a port's URLs asked over HTTPS together",
 	"github.com/BurntSushi/toml":      "a saved tidy plan, a file a person edits",
