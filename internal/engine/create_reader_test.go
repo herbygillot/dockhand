@@ -37,6 +37,8 @@ func TestCreateReadsAGitHubProject(t *testing.T) {
 			fmt.Fprintf(w, `{"full_name":%q,"description":"a text editor","homepage":"https://txt.example","license":{"spdx_id":"MIT"}}`, fullName)
 		case "/api/repos/erik/txt/releases":
 			fmt.Fprint(w, releases)
+		case "/api/repos/erik/txt/releases/tags/v1.2.0":
+			fmt.Fprint(w, `{"tag_name":"v1.2.0","assets":[{"name":"txt-1.2.0.tar.gz"},{"name":"txt-1.2.0-aarch64-apple-darwin.zip"}]}`)
 		case "/api/repos/erik/txt/git/ref/tags/v1.2.0":
 			fmt.Fprintf(w, `{"ref":"refs/tags/v1.2.0","object":{"type":"commit","sha":%q}}`, commit)
 		case "/api/repos/erik/txt/contents/Cargo.toml":
@@ -52,7 +54,7 @@ func TestCreateReadsAGitHubProject(t *testing.T) {
 	project, err := reader.Project(t.Context(), "https://github.com/erik/txt")
 	require.NoError(t, err)
 	require.Equal(t, Project{Owner: "erik", Name: "txt", Description: "a text editor", Homepage: "https://txt.example", License: "MIT", Tag: "v1.2.0",
-		Files: map[string][]byte{"Cargo.toml": []byte(cargo)}}, project)
+		Assets: []string{"txt-1.2.0.tar.gz", "txt-1.2.0-aarch64-apple-darwin.zip"}, Files: map[string][]byte{"Cargo.toml": []byte(cargo)}}, project)
 
 	listed := releases
 	set("someone/else", listed)

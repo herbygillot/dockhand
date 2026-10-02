@@ -223,8 +223,10 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	old = old.KeepingDeclared(plan.Values[depblock.CargoGit])
 	// Preserve maintained overrides by refusing to overwrite declarations that differ
 	// from what the original source and generator describe.
+	// An empty block holds no maintained override, so there's nothing to
+	// check it against (fillEmptyBlock).
 	oldValues := maps.Clone(plan.Values)
-	if unchecked == "" {
+	if unchecked == "" && !plan.Empty() {
 		if oldValues, _, err = s.gitCrateChecksums(ctx, request, input, plan, stripped, old); err != nil {
 			return Result{}, err
 		}

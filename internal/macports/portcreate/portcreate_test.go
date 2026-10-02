@@ -126,7 +126,10 @@ func TestWhatCantBeObservedIsMarked(t *testing.T) {
 	require.Contains(t, out, "# dockhand: unconfirmed, guessed from the build system\ncategories          python\n")
 	require.Contains(t, out, "license             unknown\n")
 	require.Contains(t, out, "maintainers         nomaintainer\n")
-	require.Contains(t, out, "python.versions     313\n")
+	require.NotContains(t, out, "python.versions", "no version guessed where the PortGroup's default couldn't be read")
+	require.Contains(t, out, "the python PortGroup's default couldn't be read; set the Python versions")
+	spec.PythonVersion = "314"
+	require.Contains(t, string(Write(spec)), "# dockhand: unconfirmed, the python PortGroup's default; add the other versions it supports, and say whether it fetches from PyPI instead\npython.versions     314\n")
 	require.Equal(t, []string{"category", "license", "long_description", "maintainers", "build"}, spec.Unconfirmed())
 
 	prefix, version, ok := SplitTag("rift-0.4.2")
@@ -229,4 +232,17 @@ func TestACategoryGuessedFromTheDescription(t *testing.T) {
 	require.Equal(t, [2]string{"python", "the build system"}, [2]string{category, from})
 	spec := Spec{Name: "txt", Category: "editors", CategoryGuessed: true, CategoryFrom: "its description", Owner: "o", Project: "txt", Version: "1", Build: cargo}
 	require.Contains(t, string(Write(spec)), "# dockhand: unconfirmed, guessed from its description\ncategories          editors\n")
+}
+
+// A release that carries the archive the github PortGroup's releases
+// fetch names is fetched from there; one without, from GitHub's archive
+// of the tag (the library survey, 2026-10-02).
+func TestTheReleasesOwnArchiveIsFetchedWhereThereIsOne(t *testing.T) {
+	require.True(t, HasReleaseArchive([]string{"txt-1.2.0.tar.gz", "txt-1.2.0.zip"}, "txt", "1.2.0"))
+	require.False(t, HasReleaseArchive([]string{"txt-1.2.0-aarch64-apple-darwin.zip"}, "txt", "1.2.0"))
+	require.False(t, HasReleaseArchive(nil, "txt", "1.2.0"))
+	spec := Spec{Name: "txt", Category: "editors", Owner: "erik", Project: "txt", Version: "1.2.0", TagPrefix: "v", Build: Build{System: "cmake"}}
+	require.Contains(t, string(Write(spec)), "github.tarball_from archive\n")
+	spec.ReleaseAsset = true
+	require.Contains(t, string(Write(spec)), "github.tarball_from releases\n")
 }

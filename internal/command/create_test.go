@@ -234,3 +234,36 @@ func TestPlainHTTPURLsAreSaid(t *testing.T) {
 	})
 	require.Equal(t, "MacPorts prefers HTTPS; over plain HTTP:\n  homepage http://jqlang.example/: https://jqlang.example/ answers\n  master_sites http://dl.example/jq/: https doesn't answer there\n", out.String())
 }
+
+// toolProject stands in for GitHub: a Python project.
+type toolProject struct{}
+
+func (toolProject) Project(_ context.Context, address string) (engine.Project, error) {
+	return engine.Project{Owner: "o", Name: "tool", Description: "A tool", License: "MIT", Tag: "v2.0",
+		Files: map[string][]byte{"pyproject.toml": []byte("[project]\nname = \"tool\"\n")}}, nil
+}
+
+// pythonPorts read every port as the python PortGroup defaults it.
+type pythonPorts struct{ onePort }
+
+func (pythonPorts) Ports(_ context.Context, _ model.Source, directory string, _ model.Environment, _ map[string]bool) ([]macports.PortInfo, error) {
+	return []macports.PortInfo{{Name: filepath.Base(directory), Options: map[string]string{"python.default_version": "314"}}}, nil
+}
+
+// A Python project's python.versions starts from the python PortGroup's
+// default, as MacPorts evaluates the new Portfile: create wrote 313 after
+// the PortGroup moved to 314 (the library survey, 2026-10-02).
+func TestCreateTakesThePythonPortGroupsDefault(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	testProjectReader = toolProject{}
+	testPreparer = func(e *engine.Engine) engine.Preparer { return checksummer{repo: e.Repo} }
+	testPortReader = pythonPorts{}
+	t.Cleanup(func() { testProjectReader, testPreparer, testPortReader = nil, nil, nil })
+	out, _, err := dockhand(t, "create", "https://github.com/o/tool", "--new", "--category", "textproc")
+	require.NoError(t, err)
+	branch := regexp.MustCompile(`dockhand/(py-tool-[a-z0-9]{4})`).FindStringSubmatch(out)[1]
+	data, err := os.ReadFile(filepath.Join(w.home, "Source", "macports-branches", branch, "textproc/py-tool/Portfile"))
+	require.NoError(t, err)
+	require.Contains(t, string(data), "python.versions     314\n")
+}

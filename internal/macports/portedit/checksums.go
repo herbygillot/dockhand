@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,12 +12,14 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/depblock"
+	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
@@ -71,9 +74,27 @@ func (s *Service) refreshVendoredChecksums(ctx context.Context, request Request,
 		return Result{Base: request.Source, Target: input.target}, err
 	}
 	base := input.derive(stripped, evaluated.after)
-	result, err := s.refreshChecksums(ctx, request, base)
-	if err != nil || len(result.Files) == 0 {
+	// An empty block is written from the source, which is kept to read
+	// until it is.
+	store := s.Archives.Store("")
+	if plan.Empty() {
+		directory, err := scratch.Dir("vendors-")
+		if err != nil {
+			return Result{Base: request.Source, Target: input.target}, err
+		}
+		defer os.RemoveAll(directory)
+		store = s.Archives.Store(directory)
+	}
+	result, err := s.refreshChecksumsInto(ctx, request, base, store)
+	if err != nil || len(result.Files) == 0 && !plan.Empty() {
 		return result, err
+	}
+	if plan.Empty() {
+		refreshed := input.data
+		if len(result.Files) > 0 {
+			refreshed = result.Files[0].After
+		}
+		return s.fillEmptyBlock(ctx, request, input, base, plan, result, refreshed)
 	}
 	refreshed := result.Files[0].After
 	contents, err := plan.Apply(refreshed, plan.Values)
@@ -106,6 +127,12 @@ func (s *Service) refreshVendoredChecksums(ctx context.Context, request Request,
 // refreshChecksums re-downloads a port's archives and rewrites the
 // checksums they're declared by.
 func (s *Service) refreshChecksums(ctx context.Context, request Request, input *sourceInput) (Result, error) {
+	return s.refreshChecksumsInto(ctx, request, input, s.Archives.Store(""))
+}
+
+// refreshChecksumsInto is refreshChecksums, with the archives fetched
+// into a store of the caller's.
+func (s *Service) refreshChecksumsInto(ctx context.Context, request Request, input *sourceInput, store *distfetch.Store) (Result, error) {
 	result := Result{Base: request.Source, Target: input.target}
 	observed, err := s.planObservedChecksums(ctx, request, input)
 	var unlocated *distfiles.Unlocated
@@ -118,7 +145,7 @@ func (s *Service) refreshChecksums(ctx context.Context, request Request, input *
 	for _, frame := range observed.contexts {
 		result.Coverage = append(result.Coverage, ContextCoverage{Fetch: frame.after.Ports[input.target.Name].Fetch, Platform: frame.profile, Variant: frame.variant, Modeled: frame.profile != input.before.Platform})
 	}
-	return s.applyObservedArchives(ctx, request, input, archivePlan{result: result, contents: input.data, observed: observed, subject: "refresh checksums"}, s.Archives.Store(""))
+	return s.applyObservedArchives(ctx, request, input, archivePlan{result: result, contents: input.data, observed: observed, subject: "refresh checksums"}, store)
 }
 
 func (s *Service) planObservedChecksums(ctx context.Context, request Request, input *sourceInput) (*observedArchivePlan, error) {
@@ -251,4 +278,75 @@ func (s *Service) checksumsToWrite(ctx context.Context, input *sourceInput, refu
 		}
 	}
 	return &ChecksumsToWrite{Checksums: sums, Err: refusal}
+}
+
+// fillEmptyBlock writes a dependency block the Portfile declares empty
+// from the port's own source, with the checksums just refreshed: an empty
+// block holds no maintained override to keep, and create writes a Go
+// port's go.vendors so, for checksums to fill through go2port, as a Rust
+// port's cargo.crates comes from its Cargo.lock (mods 1.8.1, field
+// testing, batch 58). The port's version, revision, and epoch are checked
+// to stay, and the block to read as written.
+func (s *Service) fillEmptyBlock(ctx context.Context, request Request, input, base *sourceInput, plan *depblock.Plan, result Result, refreshed []byte) (Result, error) {
+	name := input.target.Name
+	executable, err := s.DependencyTools.Resolve(plan.Kind)
+	if err != nil {
+		return result, fmt.Errorf("%w: %s: %w", ErrUnsupported, name, err)
+	}
+	port := result.Prepared.Ports[name]
+	sources, err := distfetch.Sources(port, base.portdirIn(result.Prepared.Root))
+	if err != nil {
+		return result, err
+	}
+	if sources, err = dependencySources(port, sources); err != nil {
+		return result, err
+	}
+	// Each archive once, though the refresh fetched it for each context.
+	var downloads []distfetch.Download
+	for _, download := range result.Downloads {
+		if !slices.ContainsFunc(downloads, func(d distfetch.Download) bool { return d.Name == download.Name && d.Path == download.Path }) {
+			downloads = append(downloads, download)
+		}
+	}
+	in, err := selectDependencySource(ctx, port, sources, downloads, plan)
+	if err != nil {
+		return result, err
+	}
+	progress.VerboseReport(ctx, "Writing %s for %s %s", plan.Kind, name, input.info.Version)
+	generated, err := depblock.Generate(ctx, plan.Kind, executable, in)
+	if err != nil {
+		return result, err
+	}
+	values, crates, err := s.gitCrateChecksums(ctx, request, input, plan, refreshed, generated)
+	if err != nil {
+		return result, err
+	}
+	contents, err := plan.Apply(refreshed, values)
+	if err != nil {
+		return result, err
+	}
+	final, err := s.evaluateEdit(ctx, input, contents)
+	if err != nil {
+		return result, err
+	}
+	selected := final.after.Ports[name]
+	if selected.Version != input.info.Version || selected.Revision != input.info.Revision || selected.Epoch != input.info.Epoch {
+		return result, fmt.Errorf("%w: writing %s changed the port's version", ErrFidelity, plan.Kind)
+	}
+	var regenerated []Regenerated
+	for _, option := range slices.Sorted(maps.Keys(values)) {
+		actual, errs := syntax.ListValues(selected.Options[option])
+		if len(errs) > 0 || !slices.Equal(actual, values[option]) {
+			return result, fmt.Errorf("%w: evaluated %s differs from what was written", ErrFidelity, option)
+		}
+		if count, changed, err := depblock.Entries(option, nil, values[option]); err == nil {
+			regenerated = append(regenerated, Regenerated{Option: option, Count: count, Changed: changed})
+		}
+	}
+	report := Fidelity{Before: input.before, After: final.after, ExpectedChanges: []string{name + ".checksums and the " + plan.Kind + " written from its source"}}
+	if err := result.commitEdit(input, request, final.edit, report, "refresh checksums"); err != nil {
+		return result, err
+	}
+	result.Regenerated, result.Crates = regenerated, crates
+	return result, nil
 }

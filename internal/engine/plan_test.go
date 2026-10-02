@@ -504,3 +504,13 @@ func TestVariantsBuildOnePortTheirWay(t *testing.T) {
 	_, err = e.PlanCheck(t.Context(), PlanRequest{Revision: revision, Environments: both, Only: []string{"libharbor"}, EachVariant: true, Variants: map[string]bool{"tests": true}})
 	require.ErrorContains(t, err, "--variants each builds every variant")
 }
+
+// A name the tree's index doesn't hold is no port, as a name check reads
+// it, said as the index says it: create said "whether a subport is named
+// mods wasn't checked: no port named mods" (field testing, batch 58).
+func TestAnUnknownNameIsNoPort(t *testing.T) {
+	t.Parallel()
+	err := error(unknownPort{errors.New("no port named mods")})
+	require.ErrorIs(t, err, ErrNoPort)
+	require.EqualError(t, err, "no port named mods")
+}

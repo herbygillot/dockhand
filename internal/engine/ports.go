@@ -131,6 +131,12 @@ func (p *evaluatedPorts) Directory(ctx context.Context, source model.Source, nam
 		return "", err
 	}
 	targets, err := p.ports.Resolve(ctx, tree, macports.Selection{Selector: name})
+	// A name the index doesn't hold is a port the tree hasn't, which a
+	// new port's name check reads as free: create said "whether a subport
+	// is named mods wasn't checked: no port named mods" (field testing).
+	if errors.Is(err, selection.ErrUnknownPort) {
+		return "", unknownPort{err}
+	}
 	if err != nil {
 		return "", err
 	}
@@ -146,6 +152,12 @@ type notInTree string
 
 func (n notInTree) Error() string      { return "no port " + string(n) + " in this tree" }
 func (notInTree) Is(target error) bool { return target == ErrNoPort }
+
+// unknownPort is a name the tree's port index doesn't hold, said as the
+// index says it, and ErrNoPort.
+type unknownPort struct{ error }
+
+func (unknownPort) Is(target error) bool { return target == ErrNoPort }
 
 // dependencyPhases words the index's reverse-dependency fields.
 var dependencyPhases = map[string]string{portindex.DependsBuild: "build", portindex.DependsLib: "library", portindex.DependsRun: "runtime"}

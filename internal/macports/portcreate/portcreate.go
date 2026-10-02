@@ -159,6 +159,14 @@ type Spec struct {
 	// Unfetched are the crates cargo.crates can't fetch, each said as the
 	// Portfile marks it.
 	Unfetched []string
+	// ReleaseAsset is true where the release carries the archive the
+	// github PortGroup's releases fetch names, project-version.tar.gz,
+	// which a port fetches rather than GitHub's generated archive.
+	ReleaseAsset bool
+	// PythonVersion is the Python the python PortGroup defaults to, as
+	// MacPorts evaluates it, which a Python project's python.versions
+	// starts from; empty where it couldn't be read.
+	PythonVersion string
 }
 
 // Unconfirmed lists what the Portfile marks as guessed.
@@ -214,7 +222,14 @@ func Write(s Spec) []byte {
 		line("go.setup", strings.TrimSpace(fmt.Sprintf("github.com/%s/%s %s %s", s.Owner, s.Project, s.Version, s.TagPrefix)))
 	} else {
 		line("github.setup", setup)
-		line("github.tarball_from", "archive")
+		// The release's own archive where it carries one, as the
+		// PortGroup's default fetches it; else GitHub's archive of the tag
+		// (the library survey, 2026-10-02).
+		if s.ReleaseAsset {
+			line("github.tarball_from", "releases")
+		} else {
+			line("github.tarball_from", "archive")
+		}
 	}
 	if s.Name != s.Project {
 		line("name", s.Name)
@@ -269,11 +284,17 @@ func Write(s Spec) []byte {
 	switch s.Build.System {
 	case "python":
 		b.WriteString("\n")
-		mark("pick the Python versions, and whether it fetches from PyPI instead")
-		line("python.versions", "313")
+		// The PortGroup's default, as MacPorts evaluates it, where it
+		// wrote 313 after the PortGroup moved on (the library survey).
+		if s.PythonVersion != "" {
+			mark("the python PortGroup's default; add the other versions it supports, and say whether it fetches from PyPI instead")
+			line("python.versions", s.PythonVersion)
+		} else {
+			mark("the python PortGroup's default couldn't be read; set the Python versions, and say whether it fetches from PyPI instead")
+		}
 	case "go":
 		b.WriteString("\n")
-		mark("run go2port for go.vendors, and check the build")
+		mark("check the build")
 		line("build.cmd", "${go.bin} build")
 	case "autoreconf":
 		b.WriteString("\n")
@@ -285,6 +306,13 @@ func Write(s Spec) []byte {
 	if s.Build.System == "cargo" || s.Build.System == "go" {
 		b.WriteString("\n")
 		s.writeDestroot(&b)
+	}
+	// A Go port's modules are written by checksums, through go2port, from
+	// its source's go.mod and go.sum, into the block left here empty
+	// (portedit's fillEmptyBlock): they're the module zips' checksums,
+	// which only fetching them gives.
+	if s.Build.System == "go" {
+		b.WriteString("\ngo.vendors\n")
 	}
 	if s.Build.System == "cargo" {
 		b.WriteString("\n")
@@ -359,4 +387,11 @@ func SplitTag(tag string) (prefix, version string, ok bool) {
 		return "", "", false
 	}
 	return tag[:i], tag[i:], true
+}
+
+// HasReleaseArchive reports whether a release's assets hold the archive
+// the github PortGroup's releases fetch names: project-version.tar.gz,
+// its distname and default extract suffix.
+func HasReleaseArchive(assets []string, project, version string) bool {
+	return slices.Contains(assets, project+"-"+version+".tar.gz")
 }

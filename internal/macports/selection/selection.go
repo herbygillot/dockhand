@@ -40,7 +40,10 @@ type unknownPort struct {
 
 func (e unknownPort) Error() string { return "no port named " + e.name }
 
-func (e unknownPort) Unwrap() []error { return []error{macports.ErrTarget, e.err} }
+func (e unknownPort) Unwrap() []error { return []error{macports.ErrTarget, ErrUnknownPort, e.err} }
+
+// ErrUnknownPort is a name the tree's port index doesn't hold.
+var ErrUnknownPort = errors.New("no port of that name")
 
 func (r *Reader) Resolve(ctx context.Context, tree macports.Tree, selected macports.Selection) ([]model.Target, error) {
 	if err := selected.Validate(); err != nil {

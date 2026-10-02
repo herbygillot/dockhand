@@ -244,6 +244,17 @@ func (p *Plan) Strip(src []byte) ([]byte, error) {
 	return apply(src, replacements, nil, p.which)
 }
 
+// Empty reports a block the Portfile declares with nothing in it, which
+// holds no maintained override.
+func (p *Plan) Empty() bool {
+	for _, values := range p.Values {
+		if len(values) > 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // ApplyPlain writes plain single-space rows into the declarations the plan
 // was made from, where the Portfile has several of a name; Apply follows
 // their existing layout.

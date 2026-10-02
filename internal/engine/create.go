@@ -29,7 +29,9 @@ type Project struct {
 	// License is the forge's detection, as an SPDX identifier.
 	License string
 	Tag     string
-	Files   map[string][]byte
+	// Assets are the files the release carries.
+	Assets []string
+	Files  map[string][]byte
 }
 
 // ProjectReader observes an upstream project from its URL.
@@ -184,7 +186,7 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 	}
 	spec := portcreate.Spec{Name: name, Category: request.Category, Owner: project.Owner, Project: project.Name, Version: version, TagPrefix: prefix,
 		Description: observed.Description, Homepage: project.Homepage, License: observed.License, LicenseFrom: observed.LicenseFrom, Maintainer: request.Maintainer, Build: build,
-		Binaries: portcreate.Binaries(project.Files, build)}
+		Binaries: portcreate.Binaries(project.Files, build), ReleaseAsset: portcreate.HasReleaseArchive(project.Assets, project.Name, version)}
 	if spec.Category == "" {
 		categories, err := treeCategories(ctx, worktree)
 		if err != nil {
@@ -235,6 +237,19 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 	}
 	if err := worktree.Add(ctx, portfile); err != nil {
 		return Created{}, err
+	}
+	// A Python project's versions start from the python PortGroup's
+	// default, as MacPorts evaluates the Portfile just written.
+	if build.System == "python" {
+		if spec.PythonVersion = e.pythonDefault(ctx, worktree, directory, name); spec.PythonVersion != "" {
+			contents = portcreate.Write(spec)
+			if err := os.WriteFile(path, contents, 0o644); err != nil {
+				return Created{}, err
+			}
+			if err := worktree.Add(ctx, portfile); err != nil {
+				return Created{}, err
+			}
+		}
 	}
 	blob, err := worktree.BlobID(ctx, contents)
 	if err != nil {
@@ -501,6 +516,11 @@ func (g githubProjects) Project(ctx context.Context, address string) (Project, e
 		return Project{}, fmt.Errorf("%s has no release on GitHub; create names the version from the latest one", name)
 	}
 	found.Tag = latest.Tag
+	if assets, ok := repository.(forge.AssetRepository); ok {
+		if found.Assets, err = assets.Assets(ctx, latest.Tag); err != nil {
+			return Project{}, err
+		}
+	}
 	tag, err := repository.Tag(ctx, latest.Tag)
 	if err != nil {
 		return Project{}, err
@@ -530,4 +550,28 @@ func githubName(address string) (string, error) {
 		return "", fmt.Errorf("create reads projects on GitHub so far, such as https://github.com/owner/project; for %s, write the Portfile yourself", address)
 	}
 	return name, err
+}
+
+// pythonDefault is the Python the python PortGroup defaults to for a new
+// port, as MacPorts evaluates its Portfile in the working tree; empty
+// where it can't be read, which the Portfile then marks.
+func (e *Engine) pythonDefault(ctx context.Context, worktree *git.Repository, directory, name string) string {
+	reader, err := e.portReader()
+	if err != nil {
+		return ""
+	}
+	_, tree, err := worktree.WorkingTree(ctx)
+	if err != nil {
+		return ""
+	}
+	ports, err := reader.Ports(ctx, model.Source{Tree: model.ObjectID(tree)}, directory, model.Environment{}, nil)
+	if err != nil {
+		return ""
+	}
+	for _, port := range ports {
+		if port.Name == name {
+			return port.Options["python.default_version"]
+		}
+	}
+	return ""
 }

@@ -614,3 +614,36 @@ cargo.crates_github scram pgdogdev/scram master ` + oldCommit + " " + checksum +
 	}
 	require.Equal(t, "cargo.crates_github declares scram (pinned by rev) under a branch, where the lock pins them otherwise; Cargo's source replacement matches only a branch, so they're resolved online and the declarations look unused.", inert)
 }
+
+// A Go port whose go.vendors is declared empty, as create writes one, has
+// it written on a checksums refresh, through go2port, from its own
+// source's go.mod: an empty block holds no override to keep. mods 1.8.1's
+// Portfile couldn't build without it (field testing, batch 58).
+func TestChecksumsFillAnEmptyGoVendorsBlock(t *testing.T) {
+	t.Parallel()
+	sha := strings.Repeat("a", 64)
+	source := manifestArchive(t, "go.mod", "module github.com/owner/fixture\ngo 1.24\nrequire example.com/dep v1.0.0\n", "1.0")
+	extra := `options go.vendors
+ default go.vendors {}
+ proc fixture_vendors {} {
+  foreach {module lock value sha checksum} [option go.vendors] {
+   distfiles-append dep.tar.gz:vendor
+   master_sites-append https://invalid.example:vendor
+   checksums-append dep.tar.gz sha256 $checksum
+  }
+ }
+ port::register_callback fixture_vendors
+go.vendors
+`
+	service, request := versionFixture(t, "go-setup", extra, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(source) })
+	service.DependencyTools = depblock.Tools{Go2Port: dependencyHelper(t, "printf '%s\\n' 'go.vendors example.com/dep lock v1.0.0 sha256 "+sha+"'"), Cargo2Port: "absent"}
+	request.Action, request.Version, request.Release = model.EditChecksums, "", nil
+	result, err := service.Prepare(t.Context(), request)
+	require.NoError(t, err)
+	require.Len(t, result.Files, 1)
+	after := string(result.Files[0].After)
+	sum := sha256.Sum256(source)
+	require.Contains(t, after, "sha256 "+hex.EncodeToString(sum[:]), "the port's own archive is refreshed")
+	require.Contains(t, after, "example.com/dep lock v1.0.0 sha256 "+sha, "and its modules written")
+	require.Equal(t, []editprep.Regenerated{{Option: "go.vendors", Count: 1, Changed: 1}}, result.Regenerated)
+}

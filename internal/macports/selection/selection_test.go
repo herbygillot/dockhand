@@ -93,6 +93,7 @@ func TestMissingOrStaleNamesNeverFallBackToParent(t *testing.T) {
 	_, err := reader.Resolve(t.Context(), tree, macports.Selection{Selector: "fixture-1.17"})
 	require.ErrorIs(t, err, portindex.ErrNotIndexed)
 	require.ErrorIs(t, err, macports.ErrTarget)
+	require.ErrorIs(t, err, selection.ErrUnknownPort, "a name no port has, which create's name check reads as free")
 	require.EqualError(t, err, "no port named fixture-1.17", "said as a person would, not as the chain that found it")
 	body := "name fixture-1.17 portdir sysutils/fixture\n"
 	require.NoError(t, os.WriteFile(filepath.Join(tree.Root(), "PortIndex"), []byte(fmt.Sprintf("fixture-1.17 %d\n%s", len(body), body)), 0600))

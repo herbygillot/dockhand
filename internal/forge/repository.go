@@ -35,6 +35,11 @@ type Release struct {
 	PublishedAt time.Time
 }
 
+// AssetRepository names the files a release carries, by its tag.
+type AssetRepository interface {
+	Assets(ctx context.Context, tag string) ([]string, error)
+}
+
 // Repository binds tag observations to one validated repository.
 // Catalog methods return complete observations or an error, never partial success.
 // Tag resolves an exact name to a commit; an absent ref reports ErrNotFound.
