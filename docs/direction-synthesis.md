@@ -30,17 +30,27 @@ The main pushback is on order. The UX review's biggest change, "stop only for ju
 
 ## Layer 1: one model of a branch's state
 
-These five pieces turn out to be one design: **ledger → verdict → next step**.
+These six pieces turn out to be one design: **ledger → decisions → readiness for an action → next step**.
 
 | Piece | From | Its role in the model |
 | --- | --- | --- |
 | Coverage ledger: each rule says what it read and what it found | directions R1 | the input: findings, *including* "checked, clean" |
 | A refusal is a type with a reason and a `Next:` | directions R4 | each finding's kind: **protective**, **needs judgment**, or **ceremony** (UX §3's taxonomy) |
 | How loud a mark is vs whether it holds automation | UX §10 | two fields on a finding: severity (`✗ ! ·`) and what it holds (bump, serve, submit) |
-| One readiness verdict | directions R3 | the function that reads the ledger and returns ready or not, and why |
-| `Next:` lines from the branch's state, and checked to work | UX §3 and §9 | the verdict's output: one next step, verified not to hit the same wall (qemu's dead end) |
+| One readiness evaluation | directions R3 | reads the ledger for a requested action and mode, and says what can proceed, what prevents it, and what's unknown |
+| A recorded decision on a finding | Codex #3 (its model; its interface is theme B) | how "needs judgment" becomes "judgment supplied": which finding it answers, the evidence it rests on, and when it expires |
+| `Next:` lines from the branch's state, checked to advance it | UX §3 and §9 | the evaluation's output: a step valid for the captured state that doesn't repeat the same refusal (qemu's dead end), or, where no command can, a decision to make, something to wait on, or information to supply |
 
-**Deliverable:** one `branchstate` evaluation that `status`, `tidy`, `submit`, `explain` and serve all render, plus a contract test that every refusal carries a kind and a working `Next:`.
+**Deliverable:** one `branchstate` evaluation that `status`, `tidy`, `submit`, `explain` and serve all render, plus a contract test that every refusal carries a kind and a `Next:` that advances it.
+
+Its contracts (from Codex's review of this document, at the person's request):
+
+- **Readiness is for an action, not a boolean.** A branch can be ready to check but not to submit, ready for a draft pull request but not for unattended publication, or ready to tidy while a build runs. The question is: given these recorded facts, this action, and this mode (a terminal or a script, a person or serve), what can proceed, what prevents it, and what remains unknown?
+- **Collecting evidence and evaluating it stay apart.** The evaluation reads what was recorded. It never fetches sources, runs checks, or rewrites state.
+- **The decision record is layer 1's, though its interface ships later.** Without it, the first evaluation could say "needs judgment" with no durable way to say "judgment supplied". A decision names its finding, references the evidence it rests on, and expires when that evidence changes. Branch notes and the pull request section (theme B) are its interface.
+- **A `Next:` advances the situation; it doesn't promise success.** A contract test can show that a step is valid for the captured state and doesn't repeat the refusal. It can't show that a network request, a build, or a review will succeed.
+
+**First validation:** before widening the model, make `status`, `tidy` and `submit` agree on three real contradictions: one commit-rule finding, one stale check, and one upstream finding that needs judgment.
 
 **Edit the declaration that ran** (directions R2) belongs in this layer too, but it's independent: it's about the evaluator, not the verdict. It can run in parallel, and it's what turns `update`'s per-port refusals (cargo, rust-src, py-flatbuffers, git, trivy) into one capability.
 
@@ -64,13 +74,20 @@ The order within this layer becomes:
 
 Overlaps between the docs collapse to seven themes. They're ranked by value to a maintainer, against cost and risk.
 
-**A. Reviewer rules from the survey.** *Top of this layer; it's evidence-backed and cheap.* Lines a PortGroup already sets, unnecessary revbumps, `Closes:` trailers, `github.tarball_from`, path-style deps, `-append`, the Python version in `create`, licence names, maintainers, and noarch platforms. Each rule flags only lines the diff touched. Each is a ledger rule (layer 1), so build it after the ledger, not before.
+**A. Reviewer rules from the survey.** *Top of this layer, because the evidence for it is strongest, but not uniformly cheap.* Lines a PortGroup already sets, unnecessary revbumps, `Closes:` trailers, `github.tarball_from`, path-style deps, `-append`, the Python version in `create`, licence names, maintainers, and noarch platforms. Each rule flags only lines the diff touched. Each is a ledger rule (layer 1), so build it after the ledger, not before.
+
+The survey sets priority; each rule still needs its own validation. Mechanical rules (`-append`, a `Closes:` trailer) are distinct from contextual suggestions, and several of these are contextual:
+- a line that gives the same value without it in one environment isn't shown redundant across variants, platforms, or later evaluation;
+- a build-dependency or compiler-flag change can change what's installed, so neither alone shows a revision bump unnecessary;
+- an `X-devel` port existing doesn't make it a correct interchangeable path dependency.
+
+Reporting stays scoped to the diff by default, though the analysis may read wider. An ambiguous rule starts as a notice, and holds automation only once its false positives are measured.
 
 **B. The person's voice in the PR.** This merges directions' branch notes, directions R5 (a PR section the person owns), and Codex #3 (recorded decisions on findings: resolved by an edit, acceptable because…, awaiting info). It's one feature: a note attached to a branch or to one finding, carried into a PR section dockhand never writes. A decision on a finding is invalidated when its evidence changes. In layer 1 terms, it's how a "needs judgment" finding gets its judgment.
 
 > **Pushback on Codex #3 and #7:** don't make dockhand's database the home of long-lived maintenance knowledge. It's one person's local store, and it's lost on a maintainer handoff. Reasoning about *this change* belongs in the PR, which is durable and public. Reasoning about *a patch's existence* belongs in the patch file's header or a Portfile comment, where the next maintainer will find it. Dockhand can help write those; it shouldn't be the only place they live.
 
-**C. What an update does to consumers.** This merges Codex #4 and directions area 2. Compare the destroot's Mach-O install names and compatibility versions, the installed files, and the `.pc` and CMake metadata, before and after. That turns `--revbump-dependents` from a guess into evidence, and it answers survey gap 2 (unnecessary or missing revbumps). It inspects files and runs nothing, so it stays clear of the deferral below.
+**C. What an update does to consumers.** This merges Codex #4 and directions area 2. Compare the destroot's Mach-O install names and compatibility versions, the installed files, and the `.pc` and CMake metadata, before and after. It supplies observed interface changes that help justify dependent rebuilds, and bears on survey gap 2 (unnecessary or missing revbumps). A changed install name can establish a concrete problem. Unchanged names, compatibility versions, or exported symbols don't establish that consumers still work, and static inspection covers neither configuration migrations nor runtime behavior. Those limits are the standing reason to revisit the deferred testing work. It inspects files and runs nothing, so it stays clear of the deferral below.
 
 **D. A maintainer's inbox.** This merges Codex #5 with directions' review queue, Trac tickets, and after-merge buildbot follow-up. It extends `outdated --mine` and serve's daily look: others' PRs on your ports with the 72-hour clock, open Trac tickets with a `Closes:` offer, and your merged updates failing on a buildbot. `review --check` (UX §8) is how you act on the "needs a test on hardware you have" item.
 
@@ -89,7 +106,7 @@ Overlaps between the docs collapse to seven themes. They're ranked by value to a
 
 ## Suggested sequence
 
-1. **Layer 1:** ledger, finding kinds and holds, verdict, `Next:` contract. Edit-what-ran in parallel.
+1. **Layer 1:** ledger, finding kinds and holds, the decision record, the per-action evaluation, and the `Next:` contract, proven first on the three contradictions above. Edit-what-ran in parallel.
 2. **UX naming** (§1, §2), which can start alongside step 1.
 3. **Survey rules** (A) on the ledger, and the person's voice (B), both of which feed the verdict.
 4. **The rest of the UX review**, chaining included, now built on the verdict.
