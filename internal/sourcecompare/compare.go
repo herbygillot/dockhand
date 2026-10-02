@@ -55,6 +55,10 @@ type Change struct {
 	// the new version and the old, each with its specifier and marker;
 	// none for every other change.
 	Requirements, Before []project.Requirement
+	// Licenses are what a license file's text is in the old version and
+	// the new (project.File.License), where it has one; zero for every
+	// other change.
+	Licenses [2]project.LicenseText
 }
 
 // A copyright line names its holder and years: "Copyright (c) 2016-2026
@@ -156,20 +160,21 @@ func Compare(older, newer project.Reading, versions Versions, named func(option 
 			}
 			fallthrough
 		case project.LicenseFile(base):
-			how, what := "changed", "changed"
+			change := Change{Kind: "license", How: "changed", Path: name}
+			if hadOld {
+				change.Licenses[0] = old.License()
+			}
+			if hasNow {
+				change.Licenses[1] = now.License()
+			}
 			switch {
 			case !hadOld:
-				how, what = "added", "was added"
+				change.How = "added"
 			case !hasNow:
-				how, what = "removed", "was removed"
+				change.How = "removed"
 			}
-			if how == "changed" {
-				if dropped, ok := onlyDrops(old.Data, now.Data); ok {
-					what = "only drops text, " + dropped
-				}
-			}
-			changes = append(changes, Change{Kind: "license", How: how, Path: name,
-				Message: fmt.Sprintf("upstream's %s %s", name, what)})
+			change.Message = fmt.Sprintf("upstream's %s %s", name, licenseWords(change, old.Data, now.Data))
+			changes = append(changes, change)
 		default:
 			if line, ok := versionOnly(name, old.Data, now.Data, versions); hadOld && hasNow && ok {
 				changes = append(changes, Change{Kind: "build", How: "version", Path: name,
@@ -207,6 +212,43 @@ func Compare(older, newer project.Reading, versions Versions, named func(option 
 		changes[i].System = project.SystemOf(changes[i].Path)
 	}
 	return changes
+}
+
+// licenseWords say what happened to a license file, by what its text is
+// at each end, as licensecheck classifies it: "was MIT, now Apache-2.0",
+// or "is still MIT, and only drops text", where "changed" alone asked a
+// person to read both (the architecture review's library survey, batch
+// 33). Text no license it knows covers is said as it was.
+func licenseWords(change Change, old, now []byte) string {
+	was, is := change.Licenses[0], change.Licenses[1]
+	switch change.How {
+	case "added":
+		if is.Known() {
+			return "was added, " + is.String() + " by its text"
+		}
+		return "was added"
+	case "removed":
+		if was.Known() {
+			return "was removed, which was " + was.String() + " by its text"
+		}
+		return "was removed"
+	}
+	dropped, drops := onlyDrops(old, now)
+	switch {
+	case was.Known() && is.Known() && !was.Same(is):
+		return fmt.Sprintf("was %s, now %s, by its text", was, is)
+	case was.Known() && is.Known() && drops:
+		return fmt.Sprintf("is still %s by its text, and only drops text beside it, %s", is, dropped)
+	case was.Known() && is.Known():
+		return fmt.Sprintf("is still %s by its text, and changed beside it", is)
+	case was.Known():
+		return fmt.Sprintf("was %s by its text, and now reads as no license that's known", was)
+	case is.Known():
+		return "changed, and now reads as " + is.String()
+	case drops:
+		return "only drops text, " + dropped
+	}
+	return "changed"
 }
 
 // movedAside is the most lines of license text that may go, beside what

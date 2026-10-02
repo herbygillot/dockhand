@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -166,6 +167,11 @@ func CoverageWords(comparison model.UpstreamComparison) string {
 	var read, apart []string
 	applied, unchecked := 0, 0
 	for _, c := range comparison.Coverage {
+		if c.Source != "" && c.Policy != assess.SourceRemoved && c.Policy != assess.SourceUncertain {
+			// Where the port fetches more than one archive, each file is
+			// named in its own; an archive set apart is named itself.
+			c.Path = c.Source + ":" + c.Path
+		}
 		switch {
 		case c.Policy == "read":
 			read = append(read, c.Path)

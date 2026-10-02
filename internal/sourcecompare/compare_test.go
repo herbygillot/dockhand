@@ -226,6 +226,39 @@ func TestALicenseThatOnlyDropsTextSaysWhat(t *testing.T) {
 	require.Equal(t, []string{"upstream's LICENSE changed"}, compare(after+"Also under the GPL.\n"), "a word added")
 }
 
+// A license file's change says what its text is at each end, as
+// licensecheck classifies it: a relicensing, a license kept with text
+// beside it changed, and MIT losing its notice clause, which is MIT-0.
+func TestALicenseChangeSaysWhatItsTextIs(t *testing.T) {
+	mit := "Copyright (c) 2020 Ann Author\n\n" + testsupport.MITText
+	compare := func(before, after map[string]string) []Change {
+		t.Helper()
+		changes, err := compareArchives(t, testsupport.Tarball(t, "demo-1.0", before), testsupport.Tarball(t, "demo-1.1", after), Versions{})
+		require.NoError(t, err)
+		return changes
+	}
+	messages := func(changes []Change) []string {
+		var said []string
+		for _, change := range changes {
+			said = append(said, change.Message)
+		}
+		return said
+	}
+	relicensed := compare(map[string]string{"LICENSE": mit}, map[string]string{"LICENSE": "Copyright (c) 2020 Ann Author\n\n" + testsupport.ISCText})
+	require.Equal(t, []string{"upstream's LICENSE was MIT, now ISC, by its text"}, messages(relicensed))
+	require.Equal(t, [2]project.LicenseText{{IDs: []string{"MIT"}, Percent: relicensed[0].Licenses[0].Percent}, {IDs: []string{"ISC"}, Percent: relicensed[0].Licenses[1].Percent}}, relicensed[0].Licenses)
+
+	require.Equal(t, []string{"upstream's LICENSE is still MIT by its text, and changed beside it"},
+		messages(compare(map[string]string{"LICENSE": mit}, map[string]string{"LICENSE": strings.Replace(mit, "Ann Author", "Bea Builder", 1)})))
+	clause := "The above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n"
+	require.Equal(t, []string{"upstream's LICENSE was MIT, now MIT-0, by its text"},
+		messages(compare(map[string]string{"LICENSE": mit}, map[string]string{"LICENSE": strings.Replace(mit, clause, "", 1)})))
+	require.Equal(t, []string{"upstream's LICENSE-ISC was added, ISC by its text"},
+		messages(compare(map[string]string{"LICENSE": mit}, map[string]string{"LICENSE": mit, "LICENSE-ISC": testsupport.ISCText})))
+	require.Equal(t, []string{"upstream's LICENSE changed, and now reads as MIT"},
+		messages(compare(map[string]string{"LICENSE": "All rights reserved.\n"}, map[string]string{"LICENSE": mit})))
+}
+
 // A CMakeLists.txt change that holds says where else it changed, by the
 // if() each change is under, beside the options it adds: fluent-bit
 // 5.1.3's read as held for FLB_PROTOBUF_ENCODER, which holds nothing, where
@@ -330,4 +363,32 @@ add_library(flb a.c)
 		testsupport.Tarball(t, "fluent-bit-5.1.3", map[string]string{"CMakeLists.txt": strings.Replace(comments, "PATCH 2", "PATCH 3", 1) + "\n\n"}), versions)
 	require.Len(t, changes, 1)
 	require.Equal(t, "upstream's CMakeLists.txt changes only comments and blank lines, which the build doesn't read", changes[0].Message)
+}
+
+// A Cargo manifest's dependencies are compared as a macOS build has them,
+// by the Cargo Book's rules: a crate only cfg(windows) has isn't one, a
+// renamed crate is the crate, and a version its workspace gives moves
+// where the root's package takes it with workspace = true, which read as
+// "workspace" and hid it.
+func TestACargoManifestIsComparedAsMacOSBuildsIt(t *testing.T) {
+	cargo := func(serde, extra string) string {
+		return "[package]\nname = \"demo\"\n\n[dependencies]\nserde = { workspace = true }\nfast = { package = \"fast-hash\", version = \"1\" }\n" + extra +
+			"\n[workspace]\nmembers = []\n\n[workspace.dependencies]\nserde = \"" + serde + "\"\n"
+	}
+	compare := func(before, after string) []string {
+		t.Helper()
+		changes, err := compareArchives(t, testsupport.Tarball(t, "demo-1.0", map[string]string{"Cargo.toml": before}),
+			testsupport.Tarball(t, "demo-1.1", map[string]string{"Cargo.toml": after}), Versions{})
+		require.NoError(t, err)
+		var said []string
+		for _, change := range changes {
+			said = append(said, change.Message)
+		}
+		return said
+	}
+	require.Equal(t, []string{"upstream: Cargo.toml moves serde from 1.0.200 to 1.0.210"}, compare(cargo("1.0.200", ""), cargo("1.0.210", "")))
+	require.Empty(t, compare(cargo("1.0.200", ""), cargo("1.0.200", "\n[target.'cfg(windows)'.dependencies]\nwinapi = \"0.3\"\n")), "a crate only Windows builds with")
+	require.Equal(t, []string{"upstream: Cargo.toml adds libc 0.2"},
+		compare(cargo("1.0.200", ""), cargo("1.0.200", "\n[target.'cfg(unix)'.dependencies]\nlibc = \"0.2\"\n")))
+	require.Empty(t, compare(cargo("1.0.200", ""), strings.Replace(cargo("1.0.200", ""), "fast = {", "quick = {", 1)), "the same crate, renamed otherwise")
 }

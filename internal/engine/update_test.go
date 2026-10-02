@@ -435,7 +435,8 @@ func TestAnUpdateThatEditedNothingSaysWhatThePortIsAt(t *testing.T) {
 }
 
 // Each archive an update replaced is compared with its own replacement,
-// and a change they share, such as the license both carry, is said once.
+// and a change they share, such as the license both carry, is said once;
+// what only one carries names it (the architecture review's finding 2).
 func TestAChangeTheArchivesShareIsSaidOnce(t *testing.T) {
 	dir := t.TempDir()
 	pair := func(name string, before, after map[string]string) preparation.ArchivePair {
@@ -452,7 +453,7 @@ func TestAChangeTheArchivesShareIsSaidOnce(t *testing.T) {
 	require.Empty(t, comparison.Problem)
 	require.Equal(t, []model.UpstreamChange{
 		{Kind: "license", Path: "LICENSE", Message: "upstream's LICENSE changed; the Portfile's license line may need to follow", Hold: true, Rule: assess.LicenseChanged, Class: model.Introduced},
-		{Kind: "build", Path: "meson.build", Message: "upstream's meson.build is new; the build may need the Portfile to follow", Hold: true, Rule: assess.BuildFileChanged, Class: model.Introduced},
+		{Kind: "build", Path: "meson.build", Message: "upstream: source-2.tar.gz: meson.build is new; the build may need the Portfile to follow", Hold: true, Rule: assess.BuildFileChanged, Class: model.Introduced, Source: "source-*.tar.gz"},
 	}, comparison.Changes)
 }
 

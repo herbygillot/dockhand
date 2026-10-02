@@ -52,10 +52,17 @@ func readManifest(name string, data []byte) (reading, error) {
 		if err != nil {
 			return reading{}, err
 		}
-		// A name declared in several tables is read where it's first.
+		// A crate declared in several tables is read where it's first, by
+		// the crate it is, whatever the project renames it; one only a
+		// target other than macOS's has, as cfg(windows)'s, isn't the
+		// build's, and a target table whose key can't be read applies as
+		// far as can be told.
 		for _, dependency := range manifest.Dependencies {
-			if _, seen := found.dependencies[dependency.Name]; !seen {
-				found.dependencies[dependency.Name] = cargoConstraint(dependency)
+			if applies, err := dependency.OnMacOS(); err == nil && applies == project.No {
+				continue
+			}
+			if _, seen := found.dependencies[dependency.Crate()]; !seen {
+				found.dependencies[dependency.Crate()] = cargoConstraint(dependency)
 			}
 		}
 	case "package.json":

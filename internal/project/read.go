@@ -110,6 +110,10 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 	// Each file any layout could keep, by its whole path, and what's
 	// learned of the layout on the way.
 	candidates := map[string]File{}
+	// manifests are every Cargo.toml, which a workspace's root may name as
+	// a member: kept in this pass, since a second walk of rust's source,
+	// gigabytes, is minutes.
+	manifests := map[string]File{}
 	tops := map[string]bool{}
 	flat := false
 	has := map[string]bool{}
@@ -130,18 +134,22 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 		if subdirectory != "" && strings.HasPrefix(name, subdirectory+"/") {
 			has[""] = true
 		}
+		keep := candidates
 		if !wanted(name, subdirectory) && !wanted(name, "") && (!nested || !wanted(rest, subdirectory) && !wanted(rest, "")) {
-			return nil
+			if path.Base(name) != "Cargo.toml" {
+				return nil
+			}
+			keep = manifests
 		}
 		data, err := io.ReadAll(io.LimitReader(member.Body, FileLimit+1))
 		if err != nil {
 			return err
 		}
 		if len(data) > FileLimit {
-			candidates[name] = File{Data: data[:FileLimit], Truncated: true}
+			keep[name] = File{Data: data[:FileLimit], Truncated: true}
 			return nil
 		}
-		candidates[name] = File{Data: data}
+		keep[name] = File{Data: data}
 		return nil
 	})
 	if err != nil {
@@ -183,7 +191,40 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 			found.Files[rest] = file
 		}
 	}
+	found.cargoMembers(manifests)
 	return found, found.readWorkspaces(ctx, filename)
+}
+
+// cargoMembers keeps the Cargo.toml of each member a Cargo workspace's
+// root names, by its members globs less what it excludes (The Cargo
+// Book, "Workspaces"), from manifests, every one the archive holds by its
+// whole path.
+func (r *Reading) cargoMembers(manifests map[string]File) {
+	root, ok := r.RootFile("Cargo.toml")
+	if !ok || root.Truncated {
+		return
+	}
+	manifest, err := ReadCargoManifest(root.Data)
+	if err != nil || manifest.Workspace == nil {
+		return
+	}
+	for name, file := range manifests {
+		rest := name
+		if r.Top != "" {
+			if rest, ok = strings.CutPrefix(name, r.Top+"/"); !ok {
+				continue
+			}
+		}
+		below := rest
+		if r.Root != "" {
+			if below, ok = strings.CutPrefix(rest, r.Root+"/"); !ok {
+				continue
+			}
+		}
+		if directory := path.Dir(below); directory != "." && manifest.Workspace.Member(directory) {
+			r.Files[rest] = file
+		}
+	}
 }
 
 // RootFile is a file at the project's root, by its name, as read.
@@ -197,7 +238,11 @@ func (r Reading) RootFile(name string) (File, bool) {
 // Cargo.toml's [package], pyproject.toml's [project], or package.json's,
 // the first of them that declares one as a string; false where none does.
 // zola declares EUPL-1.2 in Cargo.toml, which its license files alone
-// don't say (the zola run with 68df8b57).
+// don't say (the zola run with 68df8b57). A Cargo package's license
+// inherited from its workspace is the workspace's, and a virtual
+// workspace's is what its members inherit. One that's an SPDX expression is
+// given as its specification normalizes it (LicenseExpression), so "mit"
+// and "MIT" are one license; one that isn't is given as written.
 func (r Reading) DeclaredLicense() (license, file string, ok bool) {
 	for _, name := range []string{"Cargo.toml", "pyproject.toml", "package.json"} {
 		found, ok := r.RootFile(name)
@@ -208,6 +253,8 @@ func (r Reading) DeclaredLicense() (license, file string, ok bool) {
 		case "Cargo.toml":
 			if manifest, err := ReadCargoManifest(found.Data); err == nil && manifest.Package != nil {
 				license = manifest.Package.License
+			} else if err == nil {
+				license = r.inheritedLicense(manifest)
 			}
 		case "pyproject.toml":
 			if manifest, err := ReadPyproject(found.Data); err == nil && manifest.Project != nil {
@@ -219,10 +266,34 @@ func (r Reading) DeclaredLicense() (license, file string, ok bool) {
 			}
 		}
 		if license != "" {
+			if normalized, ok := LicenseExpression(license); ok {
+				license = normalized
+			}
 			return license, path.Join(r.Root, name), true
 		}
 	}
 	return "", "", false
+}
+
+// inheritedLicense is the license a virtual Cargo workspace's members
+// inherit from its [workspace.package], where a member read does: uv's
+// root declares no package, and its crates license = { workspace = true }.
+// Empty where none inherits it, since a workspace's field is no package's
+// until one takes it.
+func (r Reading) inheritedLicense(root CargoManifest) string {
+	if root.Workspace == nil || root.Workspace.Package.License == "" {
+		return ""
+	}
+	for name, file := range r.Files {
+		directory, ok := strings.CutPrefix(path.Dir(name), r.Root)
+		if path.Base(name) != "Cargo.toml" || !ok || file.Truncated || !root.Workspace.Member(strings.TrimPrefix(directory, "/")) {
+			continue
+		}
+		if member, err := ReadCargoManifest(file.Data); err == nil && member.Package != nil && slices.Contains(member.Package.Inherited, "license") {
+			return root.Workspace.Package.License
+		}
+	}
+	return ""
 }
 
 // PythonBackend is the PEP 517 backend the project's pyproject.toml at its
@@ -240,19 +311,23 @@ func (r Reading) PythonBackend() (string, bool) {
 	return manifest.BuildBackend, true
 }
 
-// readWorkspaces reads the package.json of each workspace the root's
-// package.json names, as yarn and npm install them with it: beekeeper-studio
-// moved electron in apps/studio/package.json, which reading the root alone
-// didn't see (the beekeeper-studio run's finding 1). They're read in a
-// second pass, only where the root names workspaces, since the root's may
-// come after theirs in the archive; a node_modules directory is never one.
+// readWorkspaces reads the manifest of each workspace member the root's
+// manifest names, as the build reads them with it: each package.json a
+// Node root's workspaces name, as yarn and npm install them, since
+// beekeeper-studio moved electron in apps/studio/package.json, which
+// reading the root alone didn't see (the beekeeper-studio run's finding
+// 1). They're read in a second pass, only where the root names
+// workspaces, since the root's may come after theirs in the archive; a
+// node_modules directory is never one. A Cargo workspace's are kept from
+// the first (cargoMembers).
 func (r *Reading) readWorkspaces(ctx context.Context, filename string) error {
-	root, ok := r.RootFile("package.json")
-	if !ok || root.Truncated {
-		return nil
+	var node []string
+	if root, ok := r.RootFile("package.json"); ok && !root.Truncated {
+		if manifest, err := ReadPackageJSON(root.Data); err == nil {
+			node = manifest.Workspaces
+		}
 	}
-	manifest, err := ReadPackageJSON(root.Data)
-	if err != nil || len(manifest.Workspaces) == 0 {
+	if len(node) == 0 {
 		return nil
 	}
 	return archive.Walk(ctx, filename, func(member archive.Member) error {
@@ -268,11 +343,8 @@ func (r *Reading) readWorkspaces(ctx context.Context, filename string) error {
 		if ok && r.Root != "" {
 			below, ok = strings.CutPrefix(rest, r.Root+"/")
 		}
-		if !ok || path.Base(below) != "package.json" {
-			return nil
-		}
 		directory := path.Dir(below)
-		if directory == "." || slices.Contains(strings.Split(directory, "/"), "node_modules") || !workspace(manifest.Workspaces, directory) {
+		if !ok || directory == "." || path.Base(below) != "package.json" || slices.Contains(strings.Split(directory, "/"), "node_modules") || !workspace(node, directory) {
 			return nil
 		}
 		data, err := io.ReadAll(io.LimitReader(member.Body, FileLimit+1))

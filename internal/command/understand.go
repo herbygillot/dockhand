@@ -86,7 +86,7 @@ func diffArchives(ctx context.Context, e *engine.Engine, streams Streams, branch
 	}
 	var views []archiveDiffJSON
 	for _, diff := range diffs {
-		view := archiveDiffJSON{Directory: diff.Directory, Old: diff.Old, New: diff.New, OldFromMirror: diff.OldFromMirror, Same: diff.Same,
+		view := archiveDiffJSON{Directory: diff.Directory, Old: diff.Old, New: diff.New, Status: string(diff.Match.Status), Basis: string(diff.Match.Basis), OldFromMirror: diff.OldFromMirror, Same: diff.Same,
 			Changed: diff.Changed, Added: diff.Added, Removed: diff.Removed, Problem: diff.Problem}
 		if !stat {
 			view.Patch = string(diff.Patch)
@@ -106,6 +106,13 @@ func diffArchives(ctx context.Context, e *engine.Engine, streams Streams, branch
 		switch {
 		case diff.Problem != "":
 			fmt.Fprintf(out, "%s · not compared: %s\n", diff.Directory, diff.Problem)
+			continue
+		case diff.Uncertain():
+			side := "the base's"
+			if diff.New == "" {
+				side = "the branch's"
+			}
+			fmt.Fprintf(out, "%s · %s corresponds to none of %s archives by name, so it wasn't compared\n", diff.Directory, diff.Match.Name(), side)
 			continue
 		case diff.Old == "":
 			fmt.Fprintf(out, "%s · %s is a new archive\n", diff.Directory, diff.New)
@@ -153,6 +160,8 @@ type archiveDiffJSON struct {
 	Directory     string `json:"directory"`
 	Old           string `json:"old,omitempty"`
 	New           string `json:"new,omitempty"`
+	Status        string `json:"status,omitempty"`
+	Basis         string `json:"basis,omitempty"`
 	OldFromMirror bool   `json:"old_from_mirror,omitempty"`
 	Same          bool   `json:"same"`
 	Changed       int    `json:"changed"`

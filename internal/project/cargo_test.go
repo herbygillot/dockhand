@@ -83,7 +83,7 @@ nix = { path = "../nix" }
 shared = { workspace = true }
 `))
 	require.NoError(t, err)
-	require.Equal(t, &CargoPackageInfo{Name: "txt", License: "MIT OR Apache-2.0"}, manifest.Package)
+	require.Equal(t, &CargoPackageInfo{Name: "txt", License: "MIT OR Apache-2.0", Inherited: []string{"description"}}, manifest.Package)
 	require.Equal(t, []string{"a"}, manifest.Bins)
 	require.Equal(t, []CargoDependency{
 		{Name: "fork", Table: "dependencies", Version: "2", Git: "https://example.org/fork", Pin: "rev", At: "abc", Optional: true},
@@ -97,4 +97,82 @@ shared = { workspace = true }
 	require.ErrorContains(t, err, "odd: neither a version, a Git source, a path, nor the workspace's")
 	_, err = ReadCargoManifest([]byte("dependencies = 1\n"))
 	require.ErrorContains(t, err, "[dependencies] isn't a table")
+}
+
+// A workspace is read by the Cargo Book's rules: a field or dependency
+// a package inherits is the workspace's, in the root's own package as in
+// a member's, a renamed dependency is the crate it renames, and members
+// are the directories its globs match, less those it excludes. cargo's
+// own root declares license.workspace = true, and uv's crates do.
+func TestACargoWorkspaceIsReadByTheCargoBook(t *testing.T) {
+	root, err := ReadCargoManifest([]byte(`[package]
+name = "cargo"
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true, optional = true }
+toml_edit = { package = "toml-edit-fork", version = "0.2" }
+
+[workspace]
+members = ["crates/*", "credential/*"]
+exclude = ["crates/xtask", "target"]
+
+[workspace.package]
+license = "MIT OR Apache-2.0"
+description = "Cargo"
+
+[workspace.dependencies]
+serde = { version = "1.0.200", features = ["derive"] }
+`))
+	require.NoError(t, err)
+	require.Equal(t, "MIT OR Apache-2.0", root.Package.License, "the root inherits from its own workspace")
+	require.Equal(t, CargoDependency{Name: "serde", Table: "dependencies", Version: "1.0.200", Workspace: true, Optional: true}, root.Dependencies[0])
+	require.Equal(t, "toml-edit-fork", root.Dependencies[1].Crate())
+	require.Equal(t, "serde", root.Dependencies[0].Crate())
+
+	member, err := ReadCargoManifest([]byte("[package]\nname = \"uv\"\nlicense = { workspace = true }\n\n[dependencies]\nserde = { workspace = true }\nlocal = \"0.1\"\n"))
+	require.NoError(t, err)
+	require.Empty(t, member.Package.License, "a member alone doesn't know its workspace")
+	member = member.Inherit(root)
+	require.Equal(t, "MIT OR Apache-2.0", member.Package.License)
+	require.Equal(t, "0.1", member.Dependencies[0].Version, "local, a dependency of its own")
+	require.Equal(t, "1.0.200", member.Dependencies[1].Version, "serde, the workspace's")
+
+	for directory, member := range map[string]bool{"crates/cargo-util": true, "credential/osx": true, "crates/xtask": false, "crates/xtask/sub": false, "src": false, "crates": false} {
+		require.Equal(t, member, root.Workspace.Member(directory), directory)
+	}
+}
+
+// A target table's key is read as a macOS build sees it, on either of a
+// Mac's architectures: what macOS settles is said, and what an
+// architecture or a feature decides is unknown.
+func TestACargoTargetIsReadForMacOS(t *testing.T) {
+	for key, want := range map[string]Applies{
+		`cfg(unix)`:                                                 Yes,
+		`cfg(windows)`:                                              No,
+		`cfg(target_os = "macos")`:                                  Yes,
+		`cfg(target_os = "linux")`:                                  No,
+		`cfg(target_vendor = "apple")`:                              Yes,
+		`cfg(all(unix, not(target_os = "macos")))`:                  No,
+		`cfg(any(windows, target_os = "macos"))`:                    Yes,
+		`cfg(not(windows))`:                                         Yes,
+		`cfg(target_arch = "aarch64")`:                              Unknown,
+		`cfg(any(target_arch = "aarch64", target_arch = "x86_64"))`: Yes,
+		`cfg(target_arch = "wasm32")`:                               No,
+		`cfg(feature = "tls")`:                                      Unknown,
+		`cfg(all(windows, feature = "tls"))`:                        No,
+		`cfg(target_env = "msvc")`:                                  No,
+		`cfg(target_pointer_width = "64")`:                          Yes,
+		`x86_64-pc-windows-msvc`:                                    No,
+		`aarch64-apple-darwin`:                                      Unknown,
+		`cfg(target_family = "wasm")`:                               No,
+	} {
+		got, err := CargoTargetOnMacOS(key)
+		require.NoError(t, err, key)
+		require.Equal(t, want, got, key)
+	}
+	for _, key := range []string{`cfg(`, `cfg(all(unix)`, `cfg(target_os = )`, `cfg(not(unix, windows))`} {
+		_, err := CargoTargetOnMacOS(key)
+		require.Error(t, err, key)
+	}
 }

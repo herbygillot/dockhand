@@ -5,12 +5,20 @@ github.com/BurntSushi/toml/internal
 # github.com/dustin/go-humanize v1.0.1
 ## explicit; go 1.16
 github.com/dustin/go-humanize
+# github.com/github/go-spdx/v2 v2.7.0
+## explicit; go 1.24
+github.com/github/go-spdx/v2/spdxexp
+github.com/github/go-spdx/v2/spdxexp/spdxlicenses
 # github.com/google/go-github/v91 v91.0.0
 ## explicit; go 1.26.0
 github.com/google/go-github/v91/github
 # github.com/google/go-querystring v1.2.0
 ## explicit; go 1.13
 github.com/google/go-querystring/query
+# github.com/google/licensecheck v0.3.1
+## explicit; go 1.12
+github.com/google/licensecheck
+github.com/google/licensecheck/internal/match
 # github.com/google/uuid v1.6.0
 ## explicit
 github.com/google/uuid

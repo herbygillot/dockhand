@@ -247,7 +247,7 @@ func (e *Engine) assessPort(ctx context.Context, planner ArchivePlanner, sources
 		}
 		defer os.RemoveAll(scratchDirectory)
 		var fetched map[string]string
-		input.Pairs, fetched, problem, again = e.readPlans(ctx, infos, plans, hadBase, scratchDirectory)
+		input.Pairs, input.Unpaired, fetched, problem, again = e.readPlans(ctx, infos, plans, hadBase, scratchDirectory)
 		if problem == "" {
 			input.Patches = e.patchesFor(ctx, patchRequest{infos: infos, sources: sources, portdir: directory, plan: plans[1], fetched: fetched, scratch: scratchDirectory})
 		}
@@ -517,21 +517,38 @@ func (e *Engine) sourceArchiver() (SourceArchiver, error) {
 	return e.discovery(ports), nil
 }
 
-// readPlans reads the archives each version's fetch plan names, paired:
-// an archive both name alike is itself on each side, the rest are paired
-// in the order the plans name them, and one only the revision names is
-// read beside nothing, as new. A reading kept for an archive's content,
+// readPlans reads the archives each version's fetch plan names, paired by
+// the port's source set (macports.MatchSources): one only the revision
+// names is read beside nothing, as new, and one only the base names, or
+// one several could correspond to, is returned unpaired, unread. A reading kept for an archive's content,
 // by the sha256 its Portfile declares, stands without fetching it again;
 // the rest are fetched as the Portfile's checksums declare them, and
 // kept, in directory, the caller's, which the revision's fetched are
 // returned by name from. What couldn't be fetched or read is the problem.
-func (e *Engine) readPlans(ctx context.Context, infos [2]macports.PortInfo, plans [2][]macports.Distfile, hadBase bool, directory string) ([]assess.Pair, map[string]string, string, bool) {
+func (e *Engine) readPlans(ctx context.Context, infos [2]macports.PortInfo, plans [2][]macports.Distfile, hadBase bool, directory string) ([]assess.Pair, []macports.SourceMatch, map[string]string, string, bool) {
 	type side struct {
 		info     macports.PortInfo
 		plan     []macports.Distfile
 		declared map[string]portfile.Checksum
 		spec     project.Spec
 		readings map[string]project.Reading
+	}
+	var names [2][]string
+	for i := range names {
+		if i == 0 && !hadBase {
+			continue
+		}
+		for _, file := range plans[i] {
+			names[i] = append(names[i], file.Name)
+		}
+	}
+	matches := macports.MatchSources(names[0], names[1], nil)
+	// What's read is what the matched and added entries name.
+	wanted := [2]map[string]bool{{}, {}}
+	for _, match := range matches {
+		if match.Status == macports.SourceMatched || match.Status == macports.SourceAdded {
+			wanted[0][match.Before], wanted[1][match.After] = true, true
+		}
 	}
 	var sides [2]side
 	for i := range sides {
@@ -557,6 +574,9 @@ func (e *Engine) readPlans(ctx context.Context, infos [2]macports.PortInfo, plan
 	for i, s := range sides {
 		var missing []macports.Distfile
 		for _, file := range s.plan {
+			if !wanted[i][file.Name] {
+				continue
+			}
 			if reading, ok := cache.Kept(digest(s, file.Name), s.spec); ok {
 				s.readings[file.Name] = reading
 				continue
@@ -568,7 +588,7 @@ func (e *Engine) readPlans(ctx context.Context, infos [2]macports.PortInfo, plan
 		}
 		into, err := os.MkdirTemp(directory, "")
 		if err != nil {
-			return nil, nil, err.Error(), false
+			return nil, nil, nil, err.Error(), false
 		}
 		fetched, err := fetchPlanned(ctx, archives.Client{Mirror: e.mirror()}.Store(into), s.info, missing)
 		if err != nil {
@@ -576,12 +596,12 @@ func (e *Engine) readPlans(ctx context.Context, infos [2]macports.PortInfo, plan
 			if i == 0 {
 				which = "the base's"
 			}
-			return nil, nil, fmt.Sprintf("%s archives couldn't be fetched: %v", which, err), transient(err)
+			return nil, nil, nil, fmt.Sprintf("%s archives couldn't be fetched: %v", which, err), transient(err)
 		}
 		for _, archive := range fetched {
 			reading, err := cache.Read(ctx, archive.Path, archive.Sum.SHA256, s.spec)
 			if err != nil {
-				return nil, nil, fmt.Sprintf("reading %s: %v", archive.Name, err), false
+				return nil, nil, nil, fmt.Sprintf("reading %s: %v", archive.Name, err), false
 			}
 			s.readings[archive.Name] = reading
 			if i == 1 {
@@ -589,27 +609,17 @@ func (e *Engine) readPlans(ctx context.Context, infos [2]macports.PortInfo, plan
 			}
 		}
 	}
-	// Pair them: alike by name first, then in the order the plans name the
-	// rest.
 	var pairs []assess.Pair
-	var before, after []string
-	for _, file := range sides[1].plan {
-		after = append(after, file.Name)
-	}
-	for _, file := range sides[0].plan {
-		if i := slices.Index(after, file.Name); i >= 0 {
-			pairs = append(pairs, assess.Pair{Archive: file.Name, Before: sides[0].readings[file.Name], After: sides[1].readings[file.Name]})
-			after = slices.Delete(after, i, i+1)
-			continue
+	var unpaired []macports.SourceMatch
+	for _, match := range matches {
+		switch match.Status {
+		case macports.SourceMatched:
+			pairs = append(pairs, assess.Pair{Archive: match.After, Before: sides[0].readings[match.Before], After: sides[1].readings[match.After], Match: match})
+		case macports.SourceAdded:
+			pairs = append(pairs, assess.Pair{Archive: match.After, Before: project.Reading{Layout: project.Enclosed, Files: map[string]project.File{}}, After: sides[1].readings[match.After], Match: match})
+		default:
+			unpaired = append(unpaired, match)
 		}
-		before = append(before, file.Name)
 	}
-	for i, name := range after {
-		pair := assess.Pair{Archive: name, Before: project.Reading{Layout: project.Enclosed, Files: map[string]project.File{}}, After: sides[1].readings[name]}
-		if i < len(before) {
-			pair.Before = sides[0].readings[before[i]]
-		}
-		pairs = append(pairs, pair)
-	}
-	return pairs, fetchedNow, "", false
+	return pairs, unpaired, fetchedNow, "", false
 }

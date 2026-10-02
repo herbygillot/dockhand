@@ -3,6 +3,8 @@ package macports
 import (
 	"slices"
 	"strings"
+
+	"github.com/herbygillot/dockhand/internal/project"
 )
 
 // A Portfile's license line, as the Guide writes one (portfile-keywords,
@@ -29,55 +31,70 @@ var spdxLicenses = map[string]string{
 // a forge detects one or a manifest declares one: "MIT OR Apache-2.0" is
 // {MIT Apache-2}, "MIT AND Zlib" is MIT zlib, and "(MIT OR Apache-2.0)
 // AND Unicode-3.0" would be {MIT Apache-2} and its third, were that one
-// named. Cargo's old "MIT/Apache-2.0" is a choice too. It reports false
-// for an expression it can't say in MacPorts' words: a license it has no
-// name for, GitHub's NOASSERTION, an exception (WITH), or a choice among
-// licenses that apply together, which a braced sub-list can't say.
+// named. Cargo's old "MIT/Apache-2.0" is a choice too. The expression is
+// read as SPDX's specification has it first (project.LicenseExpression),
+// so one that isn't an expression at all, as "Apache 2", is refused rather
+// than read word by word. It reports false for an expression it can't say
+// in MacPorts' words: one that isn't valid, a license it has no name for,
+// GitHub's NOASSERTION, an exception (WITH), or a choice among licenses
+// that apply together, which a braced sub-list can't say.
 func License(expression string) (string, bool) {
-	tokens := spdxTokens(expression)
-	if len(tokens) == 0 {
+	normalized, ok := project.LicenseExpression(expression)
+	if !ok {
 		return "", false
 	}
-	// Each term of the top-level AND is one license, or a choice among
-	// single licenses; nothing nests deeper.
+	tokens := unwrap(spdxTokens(normalized))
+	// OR binds loosest, as SPDX's precedence has it, and go-spdx drops the
+	// parentheses that say no more than it: "MIT AND Zlib OR ISC" is a
+	// choice, of which one applies two licenses together, which a braced
+	// sub-list can't say.
+	if top := splitTop(tokens, "OR"); len(top) > 1 {
+		choice, ok := choiceOf(top)
+		return choice, ok
+	}
+	// Each term of the AND is one license, or a choice among single
+	// licenses; nothing nests deeper.
 	var terms []string
 	for _, term := range splitTop(tokens, "AND") {
-		choices := splitTop(unwrap(term), "OR")
-		var names []string
-		for _, choice := range choices {
-			choice = unwrap(choice)
-			if len(choice) != 1 {
-				return "", false
-			}
-			name, ok := spdxLicenses[choice[0]]
-			if !ok {
-				return "", false
-			}
-			if !slices.Contains(names, name) {
-				names = append(names, name)
-			}
+		choice, ok := choiceOf(splitTop(unwrap(term), "OR"))
+		if !ok {
+			return "", false
 		}
-		if len(names) == 1 {
-			terms = append(terms, names[0])
-		} else {
-			terms = append(terms, "{"+strings.Join(names, " ")+"}")
-		}
+		terms = append(terms, choice)
 	}
 	return strings.Join(terms, " "), true
 }
 
-// spdxTokens splits an expression into identifiers, operators, and
-// parentheses. Cargo's deprecated "/" is OR.
-func spdxTokens(expression string) []string {
-	expression = strings.NewReplacer("(", " ( ", ")", " ) ", "/", " OR ").Replace(expression)
-	fields := strings.Fields(expression)
-	for i, field := range fields {
-		switch strings.ToUpper(field) {
-		case "AND", "OR", "WITH":
-			fields[i] = strings.ToUpper(field)
+// choiceOf is a choice among single licenses in MacPorts' words, braced
+// where there's more than one name; false where a choice isn't a single
+// license, or one MacPorts has no name for.
+func choiceOf(choices [][]string) (string, bool) {
+	var names []string
+	for _, choice := range choices {
+		choice = unwrap(choice)
+		if len(choice) != 1 {
+			return "", false
+		}
+		name, ok := spdxLicenses[choice[0]]
+		if !ok {
+			return "", false
+		}
+		if !slices.Contains(names, name) {
+			names = append(names, name)
 		}
 	}
-	return fields
+	if len(names) == 1 {
+		return names[0], true
+	}
+	return "{" + strings.Join(names, " ") + "}", true
+}
+
+// spdxTokens splits a valid expression, as go-spdx normalizes one, into
+// identifiers, operators, and parentheses: go-spdx validates an
+// expression's structure, and doesn't export it, so the terms MacPorts'
+// line has are found here.
+func spdxTokens(expression string) []string {
+	return strings.Fields(strings.NewReplacer("(", " ( ", ")", " ) ").Replace(expression))
 }
 
 // splitTop splits tokens at an operator outside parentheses.

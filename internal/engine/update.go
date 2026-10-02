@@ -763,8 +763,17 @@ var toolchainOutcomes = map[preparation.GoToolchainOutcome]string{
 // builds in the context that fetches it (the assessment design's step 1):
 // a monorepo's Python bindings in bindings/python. A pair a context didn't
 // name the port for is read with the update's own. What's read is kept,
-// by the archive's content, for an assessment made again.
+// by the archive's content, for an assessment made again. Each pair is the
+// editor's observed replacement, its entry in the port's source set as a
+// revision's assessment's are (macports.MatchSources).
 func (e *Engine) readPairs(ctx context.Context, pairs []preparation.ArchivePair, base, port macports.PortInfo) ([]assess.Pair, error) {
+	var before, after []string
+	var observed [][2]string
+	for _, pair := range pairs {
+		before, after = append(before, pair.Previous.Name), append(after, pair.Next.Name)
+		observed = append(observed, [2]string{pair.Previous.Name, pair.Next.Name})
+	}
+	matches := macports.MatchSources(before, after, observed)
 	var read []assess.Pair
 	for _, pair := range pairs {
 		if pair.Previous.Path == "" || pair.Next.Path == "" {
@@ -784,7 +793,11 @@ func (e *Engine) readPairs(ctx context.Context, pairs []preparation.ArchivePair,
 			}
 			readings[i] = reading
 		}
-		read = append(read, assess.Pair{Archive: pair.Next.Name, Before: readings[0], After: readings[1], Port: pair.Port})
+		var match macports.SourceMatch
+		if i := slices.IndexFunc(matches, func(m macports.SourceMatch) bool { return m.After == pair.Next.Name }); i >= 0 {
+			match = matches[i]
+		}
+		read = append(read, assess.Pair{Archive: pair.Next.Name, Before: readings[0], After: readings[1], Port: pair.Port, Match: match})
 	}
 	return read, nil
 }

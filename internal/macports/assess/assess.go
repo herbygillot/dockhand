@@ -11,6 +11,8 @@
 package assess
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"maps"
 	"path"
@@ -54,7 +56,13 @@ import (
 // declares another, and its build files, all new, not said (batch 28).
 // 14: an update's assessment checks its patches, as a revision's does, so
 // one kept from an update without them is made again (batch 32).
-const Policy = 14
+// 15: a port's archives paired by its source set, one no longer fetched
+// said, one past telling held, and each archive's findings its own, where
+// a removed archive was dropped and two LICENSE changes were one; a
+// license file classified by its text, which a line that follows it
+// answers; and a Cargo workspace read by the Cargo Book, its members'
+// dependencies counted together (batch 33).
+const Policy = 15
 
 // Input is what one port's assessment reads.
 type Input struct {
@@ -62,8 +70,13 @@ type Input struct {
 	// does.
 	Port, Base macports.PortInfo
 	// Pairs are each archive the candidate fetches beside the base's it
-	// replaces, as read.
-	Pairs    []Pair
+	// replaces, as read, by the port's source set
+	// (macports.MatchSources); one it adds is beside nothing.
+	Pairs []Pair
+	// Unpaired are the source set's entries with nothing to read: an
+	// archive the base fetched and the candidate doesn't, and one that
+	// several could correspond to.
+	Unpaired []macports.SourceMatch
 	Versions sourcecompare.Versions
 	// Portfile is the candidate's Portfile as written, for the build
 	// options it names, in any variant, which it may set: a CMake option
@@ -88,11 +101,13 @@ type Input struct {
 // Pair is one archive the candidate fetches, read, beside the base's it
 // replaces, read, in the context that fetches them: Port is the port as
 // that context evaluates the candidate, whose zero value is the input's
-// own.
+// own. Match is its entry in the source set, whose zero value is a port's
+// one archive, or commit.
 type Pair struct {
 	Archive       string
 	Before, After project.Reading
 	Port          macports.PortInfo
+	Match         macports.SourceMatch
 }
 
 // Provider is a port whose version an assessment needs, in the base's
@@ -138,6 +153,8 @@ const (
 	PythonPinBehind     = "python-pin-behind"
 	PatchRejected       = "patch-rejected"
 	PatchDropped        = "patch-dropped"
+	SourceRemoved       = "source-removed"
+	SourceUncertain     = "source-uncertain"
 )
 
 // proven are the manifests whose dependencies a check proves (D9). A Go
@@ -158,14 +175,28 @@ const namedDependencies = 3
 
 // Assess assesses a port's update: each pair's changes, what the new
 // version's Python requirements ask of the ports that provide them, and
-// what its go.mod asks of go.toolchain_min. A change the pairs share is
-// said once. Findings that hold come first within each manifest, as a
-// person reads them.
+// what its go.mod asks of go.toolchain_min. Where the port's archives are
+// compared in more than one pair, what's found in each is its own, by the
+// archive's identity: two archives' LICENSE changes are two findings, and
+// two coverage lines (the architecture review's finding 2). A change every
+// pair carries alike, the same file changed the same way, is one, said as
+// a port of one archive's is: flatbuffers' tar.gz and zip are one source
+// for two contexts. Findings that hold come first within each manifest,
+// as a person reads them.
 func Assess(input Input) model.UpstreamComparison {
 	a := assessment{input: input, comparison: model.UpstreamComparison{Changes: []model.UpstreamChange{}}}
 	for _, pair := range input.Pairs {
+		if len(input.Pairs) > 1 {
+			a.source, a.reading = pair.Match, [2]project.Reading{pair.Before, pair.After}
+			if a.source.Name() == "" {
+				a.source.After = pair.Archive
+			}
+		}
 		a.pair(pair)
 	}
+	a.source, a.reading = macports.SourceMatch{}, [2]project.Reading{}
+	a.fold()
+	a.unpaired()
 	for _, found := range a.pins() {
 		a.add(found)
 	}
@@ -194,6 +225,22 @@ type assessment struct {
 	// wanted are the ports whose presence judging a native library needs
 	// that weren't observed, for Wanted.
 	wanted []Provider
+	// source is the archive whose pair is being assessed, where there's
+	// more than one pair, which what's found is stamped with, and reading
+	// the pair's readings, by which a change two archives carry alike is
+	// known.
+	source  macports.SourceMatch
+	reading [2]project.Reading
+	// found and covered are where each finding and coverage line came
+	// from, beside them, for fold.
+	found, covered []origin
+}
+
+// origin is where a finding or coverage line was found: the archive's
+// name, its words before they named it, and its file's content at each
+// end; zero for one no archive's pair found.
+type origin struct {
+	archive, words, content string
 }
 
 // requirement is a Python dependency a used manifest declares, in the new
@@ -204,18 +251,111 @@ type requirement struct {
 	changed        bool
 }
 
-// add adds a finding, once.
+// add adds a finding, once, as found in the archive being assessed.
 func (a *assessment) add(found model.UpstreamChange) {
+	var from origin
+	if name := a.source.Name(); name != "" && found.Source == "" {
+		from = origin{archive: name, words: found.Message, content: a.content(found.Path)}
+		found.Source, found.Message = a.source.Identity(), inArchive(found.Message, name)
+	}
 	if !slices.ContainsFunc(a.comparison.Changes, func(c model.UpstreamChange) bool { return c.Key() == found.Key() && c.Message == found.Message }) {
 		a.comparison.Changes = append(a.comparison.Changes, found)
+		a.found = append(a.found, from)
 	}
 }
 
-// cover records coverage, once.
+// cover records coverage, once, as of the archive being assessed.
 func (a *assessment) cover(coverage model.Coverage) {
+	var from origin
+	if name := a.source.Name(); name != "" && coverage.Source == "" {
+		from = origin{archive: name, content: a.content(coverage.Path)}
+		coverage.Source = a.source.Identity()
+	}
 	if !slices.Contains(a.comparison.Coverage, coverage) {
 		a.comparison.Coverage = append(a.comparison.Coverage, coverage)
+		a.covered = append(a.covered, from)
 	}
+}
+
+// content is a file's content at each end of the pair being assessed, by
+// its digest, which two archives carrying it alike share.
+func (a *assessment) content(file string) string {
+	digest := sha256.New()
+	for _, reading := range a.reading {
+		data := reading.Files[file].Data
+		fmt.Fprintf(digest, "%d:", len(data))
+		digest.Write(data)
+	}
+	return hex.EncodeToString(digest.Sum(nil))
+}
+
+// fold makes a change every pair carries alike one change, said as a port
+// of one archive's is, and one that some carry alike one that names them:
+// what differs between archives stays each archive's own.
+func (a *assessment) fold() {
+	pairs := len(a.input.Pairs)
+	if pairs < 2 {
+		return
+	}
+	var changes []model.UpstreamChange
+	var origins []origin
+	groups := map[string][]int{}
+	var order []string
+	for i, change := range a.comparison.Changes {
+		from := a.found[i]
+		if from.archive == "" {
+			changes, origins = append(changes, change), append(origins, from)
+			continue
+		}
+		key := strings.Join([]string{change.Kind, change.Rule, change.Path, change.Subject, fmt.Sprint(change.Hold), string(change.Class), from.words, from.content}, "\x00")
+		if _, ok := groups[key]; !ok {
+			order = append(order, key)
+		}
+		groups[key] = append(groups[key], i)
+	}
+	for _, key := range order {
+		first := groups[key][0]
+		change, from := a.comparison.Changes[first], a.found[first]
+		var archives []string
+		for _, i := range groups[key] {
+			archives = append(archives, a.found[i].archive)
+		}
+		switch {
+		case len(archives) == pairs:
+			change.Source, change.Message = "", from.words
+		case len(archives) > 1:
+			change.Message = inArchive(from.words, strings.Join(archives, " and "))
+		}
+		changes, origins = append(changes, change), append(origins, from)
+	}
+	a.comparison.Changes, a.found = changes, origins
+
+	// A coverage line every pair has alike is one; any other stays each
+	// archive's.
+	key := func(i int) string {
+		bare := a.comparison.Coverage[i]
+		bare.Source = ""
+		return fmt.Sprintf("%+v\x00%s", bare, a.covered[i].content)
+	}
+	counts := map[string]int{}
+	for i := range a.comparison.Coverage {
+		if a.covered[i].archive != "" {
+			counts[key(i)]++
+		}
+	}
+	var coverage []model.Coverage
+	said := map[string]bool{}
+	for i, c := range a.comparison.Coverage {
+		if a.covered[i].archive != "" && counts[key(i)] == pairs {
+			if said[key(i)] {
+				continue
+			}
+			said[key(i)] = true
+			c.Source = ""
+		}
+		coverage = append(coverage, c)
+	}
+	a.comparison.Coverage, a.covered = coverage, nil
 }
 
 // pair assesses one pair's changes.
@@ -257,9 +397,14 @@ func (a *assessment) pair(pair Pair) {
 	// file is.
 	var run []model.UpstreamChange
 	var proved []sourcecompare.Change
+	// members are a Cargo workspace's members' manifests' dependency
+	// changes, counted in one line: rust's workspace has hundreds, each
+	// of which would be a line, where the Cargo.lock says what moves
+	// across them all.
+	var members []sourcecompare.Change
 	flush := func() {
 		if len(proved) > 0 {
-			a.add(count(proved[0].Path, proved))
+			a.add(count(proved[0].Path, proved[0].Path, proved))
 			proved = nil
 		}
 		slices.SortStableFunc(run, func(x, y model.UpstreamChange) int {
@@ -296,6 +441,9 @@ func (a *assessment) pair(pair Pair) {
 				a.add(found)
 			}
 			continue
+		case change.Kind == "dependency" && change.How != "native" && base == "Cargo.toml" && change.Path != path.Join(pair.After.Root, base):
+			members = append(members, change)
+			continue
 		case change.Kind == "dependency" && change.How != "native" && proven[base]:
 			proved = append(proved, change)
 			continue
@@ -330,8 +478,67 @@ func (a *assessment) pair(pair Pair) {
 		}
 	}
 	flush()
+	if len(members) > 0 {
+		files := map[string]bool{}
+		for _, change := range members {
+			files[change.Path] = true
+		}
+		label := members[0].Path
+		if len(files) > 1 {
+			label = fmt.Sprintf("the Cargo.toml of %d workspace members", len(files))
+		}
+		found := count(path.Join(pair.After.Root, "Cargo.toml"), label, members)
+		found.Subject = "members"
+		a.add(found)
+	}
 	a.unchanged(pair, unused)
 	a.read(pair, unused, known, why)
+}
+
+// inArchive is a finding's message naming the archive it was found in:
+// "upstream: support-2.0.tar.gz: LICENSE changed", where one archive's
+// read "upstream's LICENSE changed".
+func inArchive(message, archive string) string {
+	for _, prefix := range []string{"upstream: ", "upstream's "} {
+		if rest, ok := strings.CutPrefix(message, prefix); ok {
+			message = rest
+			break
+		}
+	}
+	return "upstream: " + archive + ": " + message
+}
+
+// unpaired represents the source set's entries that had nothing to read.
+// An archive the candidate no longer fetches is said, and set apart: it
+// holds nothing, since what's gone isn't built, but it isn't silently
+// left out, as it was when its reading was obtained and dropped. One that
+// several could correspond to wasn't compared, which holds, as what
+// couldn't be checked does (D4).
+func (a *assessment) unpaired() {
+	var before []string
+	for _, entry := range a.input.Unpaired {
+		if entry.Status == macports.SourceUncertain && entry.Before != "" {
+			before = append(before, entry.Before)
+		}
+	}
+	for _, entry := range a.input.Unpaired {
+		identity := entry.Identity()
+		switch {
+		case entry.Status == macports.SourceRemoved:
+			a.add(model.UpstreamChange{Kind: "source", Path: entry.Before, Source: identity, Rule: SourceRemoved, Class: model.Introduced,
+				Message: fmt.Sprintf("upstream: %s is no longer fetched", entry.Before)})
+			a.cover(model.Coverage{Path: entry.Before, Source: identity, Relevance: "unknown", Treatment: "set-apart", Policy: SourceRemoved,
+				Reason: "the port no longer fetches it, so what it held isn't compared"})
+		case entry.Status == macports.SourceUncertain && entry.After != "":
+			a.add(model.UpstreamChange{Kind: "source", Path: entry.After, Source: identity, Rule: SourceUncertain, Hold: true, Class: model.UnknownBaseline,
+				Message: fmt.Sprintf("upstream: %s corresponds to none of the base's archives (%s) by name, so it wasn't compared", entry.After, strings.Join(before, ", "))})
+			a.cover(model.Coverage{Path: entry.After, Source: identity, Relevance: "unknown", Treatment: "set-apart", Policy: SourceUncertain,
+				Reason: "no archive of the base's corresponds to it by name, so it wasn't compared"})
+		case entry.Status == macports.SourceUncertain:
+			a.cover(model.Coverage{Path: entry.Before, Source: identity, Relevance: "unknown", Treatment: "set-apart", Policy: SourceUncertain,
+				Reason: "no archive of the candidate's corresponds to it by name, so it wasn't compared"})
+		}
+	}
 }
 
 // read covers each file of the new version's that was read, so a
@@ -486,12 +693,29 @@ func (a *assessment) build(change sourcecompare.Change, pair Pair) model.Upstrea
 // 68df8b57). Where the candidate's license line names what the manifest
 // declares and the base's didn't, the Portfile has followed, and it holds
 // nothing.
+//
+// The file's own text is evidence too: one that now reads as a license
+// the candidate's line names and the base's didn't has been followed, as
+// a declaration has (batch 33).
 func (a *assessment) license(change sourcecompare.Change, pair Pair, port macports.PortInfo) model.UpstreamChange {
 	found := finding(change, true)
+	if was, is := change.Licenses[0], change.Licenses[1]; is.Known() && !(was.Known() && was.Same(is)) {
+		if named, ok := macports.License(strings.Join(is.IDs, " AND ")); ok && macports.LicenseNames(port.Options["license"], named) && !macports.LicenseNames(a.input.Base.Options["license"], named) {
+			found.Hold = false
+			found.Message += "; the Portfile's license line now names it"
+			return found
+		}
+	}
 	declared, file, ok := pair.After.DeclaredLicense()
 	evidence := ""
+	if line := port.Options["license"]; !ok && line != "" && change.Licenses[1].Known() {
+		evidence = "the Portfile says " + macports.LicenseWords(line)
+	}
 	if ok {
 		evidence = file + " says " + declared
+		if _, valid := project.LicenseExpression(declared); !valid {
+			evidence += ", which isn't an SPDX expression"
+		}
 		if was, _, ok := pair.Before.DeclaredLicense(); ok && was != declared {
 			evidence = fmt.Sprintf("%s's license moves from %s to %s", file, was, declared)
 		}
@@ -519,9 +743,13 @@ func (a *assessment) license(change sourcecompare.Change, pair Pair, port macpor
 func newLicense(change sourcecompare.Change, pair Pair, port macports.PortInfo) model.UpstreamChange {
 	found := finding(change, false)
 	line := port.Options["license"]
-	found.Message = fmt.Sprintf("upstream ships %s, and the Portfile names no license", change.Path)
+	ships := change.Path + ","
+	if text := change.Licenses[1]; text.Known() {
+		ships = change.Path + ", " + text.String() + " by its text,"
+	}
+	found.Message = fmt.Sprintf("upstream ships %s and the Portfile names no license", ships)
 	if line != "" {
-		found.Message = fmt.Sprintf("upstream ships %s, and the Portfile says %s", change.Path, macports.LicenseWords(line))
+		found.Message = fmt.Sprintf("upstream ships %s and the Portfile says %s", ships, macports.LicenseWords(line))
 	}
 	declared, file, ok := pair.After.DeclaredLicense()
 	if !ok {
@@ -574,8 +802,9 @@ func elsewhere(declarations []project.Requirement) bool {
 // dependencies it gained, lost, and moved, holding nothing (D9), naming
 // them where there are few of a kind: "upstream: Cargo.toml: 1 added
 // (inferno), 1 moved (open)", and "upstream: go.mod: 2 added, 14 moved"
-// (the txt run's finding 6).
-func count(file string, changes []sourcecompare.Change) model.UpstreamChange {
+// (the txt run's finding 6). file is the finding's path, and label what
+// its message names: the file, or a workspace's members together.
+func count(file, label string, changes []sourcecompare.Change) model.UpstreamChange {
 	names := map[string][]string{}
 	for _, change := range changes {
 		names[change.How] = append(names[change.How], change.Name)
@@ -592,7 +821,7 @@ func count(file string, changes []sourcecompare.Change) model.UpstreamChange {
 		}
 	}
 	return model.UpstreamChange{Kind: "dependency", Path: file, Rule: DependenciesCounted, Class: model.Introduced,
-		Message: fmt.Sprintf("upstream: %s: %s", file, strings.Join(parts, ", "))}
+		Message: fmt.Sprintf("upstream: %s: %s", label, strings.Join(parts, ", "))}
 }
 
 // unchanged gathers the Python requirements of the new version's used

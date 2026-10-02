@@ -384,6 +384,27 @@ func TestALicenseChangeNamesTheManifestsLicense(t *testing.T) {
 	}, messages(Assess(input).Changes))
 }
 
+// A license file's own text is evidence, as a manifest's declaration is:
+// one relicensed from MIT to ISC holds until the candidate's license line
+// names ISC where the base's didn't, and a declaration that isn't an SPDX
+// expression is said to be none (batch 33).
+func TestALicenseFilesTextIsEvidence(t *testing.T) {
+	pair := Pair{Archive: "demo-1.1.tar.gz",
+		Before: read(t, "demo-1.0", map[string]string{"LICENSE": "Copyright (c) 2020 A\n\n" + testsupport.MITText}, project.Spec{}),
+		After:  read(t, "demo-1.1", map[string]string{"LICENSE": "Copyright (c) 2020 A\n\n" + testsupport.ISCText}, project.Spec{})}
+	demo := func(license string) macports.PortInfo {
+		return macports.PortInfo{Name: "demo", Options: map[string]string{"license": license}}
+	}
+	input := Input{Port: demo("MIT"), Base: demo("MIT"), Pairs: []Pair{pair}}
+	require.Equal(t, []string{"! upstream's LICENSE was MIT, now ISC, by its text; the Portfile's license line may need to follow; the Portfile says MIT"}, messages(Assess(input).Changes))
+	input.Port = demo("ISC")
+	require.Equal(t, []string{"· upstream's LICENSE was MIT, now ISC, by its text; the Portfile's license line now names it"}, messages(Assess(input).Changes))
+
+	input.Port = demo("MIT")
+	input.Pairs[0].After.Files["package.json"] = project.File{Data: []byte(`{"name": "demo", "license": "ISC License"}`)}
+	require.Equal(t, []string{"! upstream's LICENSE was MIT, now ISC, by its text; the Portfile's license line may need to follow; package.json says ISC License, which isn't an SPDX expression, and the Portfile says MIT"}, messages(Assess(input).Changes))
+}
+
 // License text moved between files, none of it new, is said once and holds
 // nothing: libuv 1.52.1 moved its Joyent and tree.h sections out of
 // LICENSE into LICENSE-extra, and dockhand held twice, "LICENSE changed"

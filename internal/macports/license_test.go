@@ -31,13 +31,20 @@ func TestALicenseExpressionInMacPortsWords(t *testing.T) {
 		"((MIT))":                         "MIT",
 		"(MIT) OR (ISC)":                  "{MIT ISC}",
 		"(MIT OR ISC) AND (Zlib)":         "{MIT ISC} zlib",
+		"apache-2.0":                      "Apache-2",
+		"mit or isc":                      "{MIT ISC}",
 	} {
 		got, ok := License(expression)
 		require.True(t, ok, expression)
 		require.Equal(t, want, got, expression)
 	}
 	for _, expression := range []string{"", "NOASSERTION", "Unicode-3.0", "MIT OR Unicode-3.0", "Apache-2.0 WITH LLVM-exception",
-		"(MIT AND Zlib) OR ISC", "MIT AND", "(MIT OR ISC"} {
+		"(MIT AND Zlib) OR ISC", "MIT AND", "(MIT OR ISC",
+		// SPDX's precedence binds AND before OR, so this is a choice of
+		// two licenses together or ISC, as the parenthesized one is.
+		"MIT AND Zlib OR ISC",
+		// Not an expression, so not read word by word.
+		"Apache 2", "MIT, Apache-2.0"} {
 		_, ok := License(expression)
 		require.False(t, ok, expression)
 	}

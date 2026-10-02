@@ -100,7 +100,7 @@ func upstreamView(comparison model.UpstreamComparison) upstreamJSON {
 	view := upstreamJSON{Changes: []upstreamChangeJSON{}, Problem: comparison.Problem, Held: comparison.Held(), Coverage: comparison.Coverage}
 	for _, change := range comparison.Changes {
 		view.Changes = append(view.Changes, upstreamChangeJSON{Kind: change.Kind, Path: change.Path, Message: underUpstream(change).Message, Hold: change.Hold,
-			Rule: change.Rule, Subject: change.Subject, Class: string(change.Class)})
+			Rule: change.Rule, Subject: change.Subject, Class: string(change.Class), Source: change.Source})
 	}
 	return view
 }
@@ -117,11 +117,13 @@ type upstreamChangeJSON struct {
 	Path    string `json:"path"`
 	Message string `json:"message"`
 	Hold    bool   `json:"hold"`
-	// Rule, with the path and subject, is what identifies it; class is
-	// how the candidate stands against its base on it.
+	// Rule, with the source, path, and subject, is what identifies it;
+	// class is how the candidate stands against its base on it. Source is
+	// the archive it was found in, where the port fetches more than one.
 	Rule    string `json:"rule,omitempty"`
 	Subject string `json:"subject,omitempty"`
 	Class   string `json:"class,omitempty"`
+	Source  string `json:"source,omitempty"`
 }
 
 type stealthJSON struct {
@@ -356,7 +358,7 @@ func submitView(plan engine.SubmitPlan) submitJSON {
 	}
 	view.Concerns = []concernJSON{}
 	for _, concern := range plan.Concerns() {
-		view.Concerns = append(view.Concerns, concernJSON{Origin: string(concern.Origin), Port: concern.Port, Rule: concern.Rule, Path: concern.Path, Subject: concern.Subject,
+		view.Concerns = append(view.Concerns, concernJSON{Origin: string(concern.Origin), Port: concern.Port, Rule: concern.Rule, Source: concern.Source, Path: concern.Path, Subject: concern.Subject,
 			Class: string(concern.Class), Detail: concern.Detail})
 	}
 	return view

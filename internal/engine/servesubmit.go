@@ -121,7 +121,7 @@ func (p SubmitPlan) Concerns() []model.Concern {
 	for _, found := range p.Upstream {
 		for _, change := range found.Comparison.Changes {
 			if change.Hold {
-				add(model.Concern{Origin: model.FromUpstream, Port: found.Port, Rule: change.Rule, Path: change.Path, Subject: change.Subject, Class: change.Class, Detail: change.Message})
+				add(model.Concern{Origin: model.FromUpstream, Port: found.Port, Rule: change.Rule, Source: change.Source, Path: change.Path, Subject: change.Subject, Class: change.Class, Detail: change.Message})
 			}
 		}
 		if problem := found.Comparison.Problem; problem != "" {

@@ -204,6 +204,28 @@ func TestANodeProjectsWorkspacesAreReadWithIt(t *testing.T) {
 	require.Equal(t, "MIT", manifest.License)
 }
 
+// A Cargo workspace's members' manifests are read with its root's, by its
+// members globs less what it excludes, and a virtual workspace's license
+// is the one its members inherit, as uv's crates do.
+func TestACargoWorkspacesMembersAreReadWithIt(t *testing.T) {
+	files := map[string]string{
+		"uv-0.9/Cargo.toml":                    "[workspace]\nmembers = [\"crates/*\"]\nexclude = [\"crates/bench\"]\n\n[workspace.package]\nlicense = \"MIT OR Apache-2.0\"\n",
+		"uv-0.9/crates/uv/Cargo.toml":          "[package]\nname = \"uv\"\nlicense = { workspace = true }\n",
+		"uv-0.9/crates/bench/Cargo.toml":       "[package]\nname = \"bench\"\n",
+		"uv-0.9/crates/uv/fixtures/Cargo.toml": "[package]\nname = \"fixture\"\n",
+		"uv-0.9/scripts/Cargo.toml":            "[package]\nname = \"scripts\"\n",
+	}
+	found := read(t, files, Spec{})
+	require.Equal(t, []string{"Cargo.toml", "crates/uv/Cargo.toml"}, names(found))
+	license, file, ok := found.DeclaredLicense()
+	require.True(t, ok)
+	require.Equal(t, []string{"MIT OR Apache-2.0", "Cargo.toml"}, []string{license, file})
+
+	files["uv-0.9/crates/uv/Cargo.toml"] = "[package]\nname = \"uv\"\nlicense = \"MIT\"\n"
+	_, _, ok = read(t, files, Spec{}).DeclaredLicense()
+	require.False(t, ok, "a workspace's license is no package's until one inherits it")
+}
+
 // A project's declared license is its root manifest's: Cargo.toml's,
 // pyproject.toml's, or package.json's, the first declaring one as a
 // string, where zola says EUPL-1.2; none where no manifest declares one.

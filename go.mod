@@ -4,7 +4,9 @@ go 1.27.1
 
 require (
 	github.com/BurntSushi/toml v1.6.0
+	github.com/github/go-spdx/v2 v2.7.0
 	github.com/google/go-github/v91 v91.0.0
+	github.com/google/licensecheck v0.3.1
 	github.com/jlaffaye/ftp v0.2.4
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1

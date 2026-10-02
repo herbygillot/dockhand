@@ -119,15 +119,20 @@ type UpstreamChange struct {
 	Subject string `json:"subject,omitempty"`
 	// Class says how the candidate stands against the base on it.
 	Class ConcernClass `json:"class,omitempty"`
+	// Source is the archive it was found in, by its identity from one
+	// version to the next (macports.SourceMatch.Identity), where the port
+	// fetches more than one: two archives' LICENSE changes are two
+	// findings. Empty for a port of one archive.
+	Source string `json:"source,omitempty"`
 }
 
-// Key identifies a finding: its rule, path, and subject, or where it was
-// recorded without a rule, its kind, path, and message.
+// Key identifies a finding: its rule, source, path, and subject, or where
+// it was recorded without a rule, its kind, path, and message.
 func (c UpstreamChange) Key() string {
 	if c.Rule == "" {
 		return c.Kind + "\x00" + c.Path + "\x00" + c.Message
 	}
-	return c.Rule + "\x00" + c.Path + "\x00" + c.Subject
+	return c.Rule + "\x00" + c.Source + "\x00" + c.Path + "\x00" + c.Subject
 }
 
 // ConcernClass is how a candidate stands against its base on a finding.
@@ -151,7 +156,9 @@ const (
 // kept apart from what the assessment did with it (Treatment), so a
 // policy's setting apart is never mistaken for a proof.
 type Coverage struct {
-	Path   string `json:"path"`
+	Path string `json:"path"`
+	// Source is the archive Path is in, as a finding's is.
+	Source string `json:"source,omitempty"`
 	System string `json:"system,omitempty"`
 	// Relevance is used, irrelevant, or unknown: whether the port's build
 	// is known to read the file.

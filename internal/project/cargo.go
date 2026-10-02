@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"path"
 	"slices"
 	"strings"
 
@@ -13,12 +14,18 @@ import (
 )
 
 // CargoManifest is what a Cargo.toml declares: its package, the binaries
-// it names, and its dependencies.
+// it names, its dependencies, and the workspace it's the root of, read by
+// the Cargo Book's rules.
 type CargoManifest struct {
 	// Package is nil where the file has none, as a workspace's root may
-	// not. Its fields are empty where they aren't strings, as a field a
-	// workspace inherits isn't.
+	// not. A field it inherits from the workspace, as license.workspace =
+	// true, is the workspace's where this file is the root, which is the
+	// only place [workspace.package] can be; a member's is resolved by
+	// Inherit.
 	Package *CargoPackageInfo
+	// Workspace is the workspace this file is the root of; nil where it
+	// isn't one.
+	Workspace *CargoWorkspace
 	// Bins are its [[bin]] targets' names.
 	Bins []string
 	// Dependencies are in the order a name declared in several places is
@@ -27,9 +34,86 @@ type CargoManifest struct {
 	Dependencies []CargoDependency
 }
 
-// CargoPackageInfo is a Cargo.toml's [package].
+// CargoPackageInfo is a Cargo.toml's [package], or a workspace's
+// [workspace.package].
 type CargoPackageInfo struct {
 	Name, License, Description string
+	// Inherited are the fields it takes from its workspace, by name, which
+	// stay empty until they're resolved.
+	Inherited []string
+}
+
+// CargoWorkspace is a workspace's root: its members, as globs of their
+// directories, those excluded, as paths, and the package fields and
+// dependencies its members may inherit (The Cargo Book, "Workspaces").
+type CargoWorkspace struct {
+	Members, Exclude []string
+	Package          CargoPackageInfo
+}
+
+// Member reports whether a directory below the workspace's root is a
+// member: matched by a members glob, and not inside an excluded path. A
+// path dependency inside the workspace is a member too, which a manifest
+// alone doesn't say.
+func (w CargoWorkspace) Member(directory string) bool {
+	directory = strings.Trim(path.Clean("/"+directory), "/")
+	for _, excluded := range w.Exclude {
+		excluded = strings.Trim(path.Clean("/"+excluded), "/")
+		if directory == excluded || strings.HasPrefix(directory, excluded+"/") {
+			return false
+		}
+	}
+	for _, pattern := range w.Members {
+		pattern = strings.Trim(path.Clean("/"+pattern), "/")
+		if pattern != "" && glob(strings.Split(pattern, "/"), strings.Split(directory, "/")) {
+			return true
+		}
+	}
+	return false
+}
+
+// Inherit resolves what a member's manifest takes from its workspace's
+// root: each package field it inherits, and each dependency declared with
+// workspace = true, which takes the root's [workspace.dependencies] entry
+// of its name, its own optional mark kept. uv's crates declare license =
+// { workspace = true }, which reads as the workspace's license rather
+// than as none.
+func (m CargoManifest) Inherit(root CargoManifest) CargoManifest {
+	if root.Workspace == nil {
+		return m
+	}
+	if m.Package != nil {
+		resolved := *m.Package
+		resolved.inherit(root.Workspace.Package)
+		m.Package = &resolved
+	}
+	m.Dependencies = slices.Clone(m.Dependencies)
+	for i, dependency := range m.Dependencies {
+		if !dependency.Workspace || strings.HasPrefix(dependency.Table, "workspace.") {
+			continue
+		}
+		j := slices.IndexFunc(root.Dependencies, func(d CargoDependency) bool { return d.Table == "workspace.dependencies" && d.Name == dependency.Name })
+		if j < 0 {
+			continue
+		}
+		inherited := root.Dependencies[j]
+		inherited.Name, inherited.Table, inherited.Workspace = dependency.Name, dependency.Table, true
+		inherited.Optional = inherited.Optional || dependency.Optional
+		m.Dependencies[i] = inherited
+	}
+	return m
+}
+
+// inherit fills the fields a package inherits from its workspace's.
+func (p *CargoPackageInfo) inherit(workspace CargoPackageInfo) {
+	for _, field := range p.Inherited {
+		switch field {
+		case "license":
+			p.License = workspace.License
+		case "description":
+			p.Description = workspace.Description
+		}
+	}
 }
 
 // CargoDependency is one dependency a Cargo.toml declares, in one table:
@@ -50,6 +134,32 @@ type CargoDependency struct {
 	Workspace bool
 	// Optional is a dependency a feature turns on.
 	Optional bool
+	// Package is the crate a dependency renamed with package = is, where
+	// Name is what the project calls it.
+	Package string
+}
+
+// OnMacOS says whether a dependency applies to a macOS build: one of a
+// target table, by its key (CargoTargetOnMacOS); any other always does.
+func (d CargoDependency) OnMacOS() (Applies, error) {
+	key, ok := strings.CutPrefix(d.Table, "target.")
+	if !ok {
+		return Yes, nil
+	}
+	for _, table := range cargoTables {
+		if trimmed, ok := strings.CutSuffix(key, "."+table); ok {
+			return CargoTargetOnMacOS(trimmed)
+		}
+	}
+	return Unknown, fmt.Errorf("%s isn't a target's dependency table", d.Table)
+}
+
+// Crate is the crate a dependency is: its name, or what it renames.
+func (d CargoDependency) Crate() string {
+	if d.Package != "" {
+		return d.Package
+	}
+	return d.Name
 }
 
 // cargoTables are where a Cargo.toml declares dependencies, in the order a
@@ -68,8 +178,27 @@ func ReadCargoManifest(data []byte) (CargoManifest, error) {
 	if pkg, ok := manifest["package"].(map[string]any); ok {
 		found.Package = &CargoPackageInfo{}
 		found.Package.Name, _ = pkg["name"].(string)
-		found.Package.License, _ = pkg["license"].(string)
-		found.Package.Description, _ = pkg["description"].(string)
+		for field, value := range map[string]*string{"license": &found.Package.License, "description": &found.Package.Description} {
+			switch given := pkg[field].(type) {
+			case string:
+				*value = given
+			case map[string]any:
+				if given["workspace"] == true {
+					found.Package.Inherited = append(found.Package.Inherited, field)
+				}
+			}
+		}
+		slices.Sort(found.Package.Inherited)
+	}
+	if workspace, ok := manifest["workspace"].(map[string]any); ok {
+		found.Workspace = &CargoWorkspace{Members: cargoStrings(workspace["members"]), Exclude: cargoStrings(workspace["exclude"])}
+		if pkg, ok := workspace["package"].(map[string]any); ok {
+			found.Workspace.Package.License, _ = pkg["license"].(string)
+			found.Workspace.Package.Description, _ = pkg["description"].(string)
+		}
+		if found.Package != nil {
+			found.Package.inherit(found.Workspace.Package)
+		}
 	}
 	if bins, ok := manifest["bin"].([]map[string]any); ok {
 		for _, bin := range bins {
@@ -113,6 +242,11 @@ func ReadCargoManifest(data []byte) (CargoManifest, error) {
 		if err := read("workspace.", workspace, []string{"dependencies"}); err != nil {
 			return CargoManifest{}, err
 		}
+		// The root's own package inherits from its own workspace: cargo's
+		// [dependencies] serde = { workspace = true } is the version its
+		// [workspace.dependencies] gives, which reading it as "workspace",
+		// first, kept that version moving from being seen.
+		found = found.Inherit(found)
 	}
 	return found, nil
 }
@@ -136,6 +270,7 @@ func cargoDependency(value any) (CargoDependency, error) {
 			}
 		}
 		found.Path, _ = value["path"].(string)
+		found.Package, _ = value["package"].(string)
 		found.Workspace = value["workspace"] == true
 		found.Optional = value["optional"] == true
 		if found.Version == "" && found.Git == "" && found.Path == "" && !found.Workspace {
@@ -144,6 +279,18 @@ func cargoDependency(value any) (CargoDependency, error) {
 		return found, nil
 	}
 	return CargoDependency{}, fmt.Errorf("a %T isn't a requirement", value)
+}
+
+// cargoStrings is a TOML array of strings; nil for anything else.
+func cargoStrings(value any) []string {
+	items, _ := value.([]any)
+	var found []string
+	for _, item := range items {
+		if text, ok := item.(string); ok {
+			found = append(found, text)
+		}
+	}
+	return found
 }
 
 // CrateSource is where a package a Cargo.lock pins comes from.

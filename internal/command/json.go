@@ -465,6 +465,7 @@ type concernJSON struct {
 	Origin  string `json:"origin,omitempty"`
 	Port    string `json:"port"`
 	Rule    string `json:"rule"`
+	Source  string `json:"source,omitempty"`
 	Path    string `json:"path,omitempty"`
 	Subject string `json:"subject,omitempty"`
 	Class   string `json:"class,omitempty"`

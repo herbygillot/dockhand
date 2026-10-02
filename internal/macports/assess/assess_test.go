@@ -1,6 +1,7 @@
 package assess
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -349,4 +350,59 @@ func TestANewPortsLicenseIsSaidWithItsManifests(t *testing.T) {
 	other := assess("MIT", "EUPL-1.2")
 	require.Equal(t, []string{"! upstream ships LICENSE, and the Portfile says MIT, where Cargo.toml says EUPL-1.2; the Portfile's license line may need to follow"}, messages(other.Changes))
 	require.True(t, other.Held())
+}
+
+// Two archives that each change their LICENSE are two findings and two
+// coverage lines, each known by its archive, where they collapsed into
+// one (the architecture review's finding 2, its third probe). A change
+// every archive carries alike is one, and a port of one archive keeps its
+// findings' identity as it was.
+func TestEachArchivesFindingsAreItsOwn(t *testing.T) {
+	reading := func(license string) project.Reading {
+		return project.Reading{Layout: project.Enclosed, Files: map[string]project.File{"LICENSE": {Data: []byte(license)}}}
+	}
+	match := func(before, after string) macports.SourceMatch {
+		return macports.SourceMatch{Before: before, After: after, Status: macports.SourceMatched, Basis: macports.ByPattern}
+	}
+	result := Assess(Input{Port: macports.PortInfo{Name: "demo"}, Pairs: []Pair{
+		{Archive: "main-2.0.tar.gz", Before: reading("MIT\n"), After: reading("GPL\n"), Match: match("main-1.0.tar.gz", "main-2.0.tar.gz")},
+		{Archive: "support-2.0.tar.gz", Before: reading("BSD\n"), After: reading("Apache\n"), Match: match("support-1.0.tar.gz", "support-2.0.tar.gz")},
+	}})
+	require.Len(t, result.Changes, 2)
+	require.Equal(t, "main-*.tar.gz", result.Changes[0].Source)
+	require.Equal(t, "support-*.tar.gz", result.Changes[1].Source)
+	require.True(t, strings.HasPrefix(result.Changes[1].Message, "upstream: support-2.0.tar.gz: LICENSE"), result.Changes[1].Message)
+	require.NotEqual(t, result.Changes[0].Key(), result.Changes[1].Key())
+	require.Len(t, result.Coverage, 2)
+	require.Equal(t, []string{"main-*.tar.gz", "support-*.tar.gz"}, []string{result.Coverage[0].Source, result.Coverage[1].Source})
+
+	alike := Assess(Input{Port: macports.PortInfo{Name: "demo"}, Pairs: []Pair{
+		{Archive: "demo-2.0.tar.gz", Before: reading("MIT\n"), After: reading("GPL\n"), Match: match("demo-1.0.tar.gz", "demo-2.0.tar.gz")},
+		{Archive: "demo-2.0.zip", Before: reading("MIT\n"), After: reading("GPL\n"), Match: match("demo-1.0.zip", "demo-2.0.zip")},
+	}})
+	require.Len(t, alike.Changes, 1, "one source in two forms, as flatbuffers' tar.gz and zip, changed alike")
+	require.Empty(t, alike.Changes[0].Source)
+	require.Len(t, alike.Coverage, 1)
+	require.Empty(t, alike.Coverage[0].Source)
+
+	one := Assess(Input{Port: macports.PortInfo{Name: "demo"}, Pairs: []Pair{
+		{Archive: "main-2.0.tar.gz", Before: reading("MIT\n"), After: reading("GPL\n"), Match: match("main-1.0.tar.gz", "main-2.0.tar.gz")},
+	}})
+	require.Len(t, one.Changes, 1)
+	require.Empty(t, one.Changes[0].Source, "one archive's findings name none")
+	require.True(t, strings.HasPrefix(one.Changes[0].Message, "upstream's LICENSE"), one.Changes[0].Message)
+}
+
+// A Cargo workspace's members' dependency changes are counted in one line,
+// beside the root's own, where each member would be a line of its own.
+func TestAWorkspacesMembersAreCountedTogether(t *testing.T) {
+	cargo := func(name, dependency string) string {
+		return "[package]\nname = \"" + name + "\"\n\n[dependencies]\n" + dependency + "\n"
+	}
+	root := "[workspace]\nmembers = [\"crates/*\"]\n"
+	before := read(t, "demo-1.0", map[string]string{"Cargo.toml": root, "crates/a/Cargo.toml": cargo("a", `serde = "1.0"`), "crates/b/Cargo.toml": cargo("b", `log = "0.4"`)}, project.Spec{})
+	after := read(t, "demo-1.1", map[string]string{"Cargo.toml": root, "crates/a/Cargo.toml": cargo("a", `serde = "1.1"`), "crates/b/Cargo.toml": cargo("b", `log = "0.4"`+"\nregex = \"1\"")}, project.Spec{})
+	result := Assess(Input{Port: macports.PortInfo{Name: "demo", Options: map[string]string{"dockhand.portgroups": "cargo"}}, Pairs: []Pair{{Archive: "demo-1.1.tar.gz", Before: before, After: after}}})
+	require.Equal(t, []string{"· upstream: the Cargo.toml of 2 workspace members: 1 added (regex), 1 moved (serde)"}, messages(result.Changes))
+	require.Equal(t, "members", result.Changes[0].Subject)
 }

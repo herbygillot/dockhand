@@ -48,8 +48,11 @@ func (a Assessment) Validate() error {
 type Concern struct {
 	Origin                    ConcernOrigin
 	Port, Rule, Path, Subject string
-	Class                     ConcernClass
-	Detail                    string
+	// Source is the archive an upstream finding is in, where the port
+	// fetches more than one.
+	Source string
+	Class  ConcernClass
+	Detail string
 }
 
 // ConcernOrigin is where a concern came from.
@@ -69,7 +72,7 @@ const (
 // Key identifies a concern: the same concern for two ports, or in two
 // places, is two. One raised by no named rule is known by its words too.
 func (c Concern) Key() string {
-	key := string(c.Origin) + "\x00" + c.Port + "\x00" + c.Rule + "\x00" + c.Path + "\x00" + c.Subject
+	key := string(c.Origin) + "\x00" + c.Port + "\x00" + c.Rule + "\x00" + c.Source + "\x00" + c.Path + "\x00" + c.Subject
 	if c.Rule == "" {
 		key += "\x00" + c.Detail
 	}

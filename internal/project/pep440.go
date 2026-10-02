@@ -44,7 +44,7 @@ func parseVersion(text string) (version, error) {
 		n, _ := strconv.Atoi(s)
 		return n
 	}
-	v := version{epoch: number(m[1]), local: strings.ToLower(m[10])}
+	v := version{epoch: number(m[1]), local: localLabel(m[10])}
 	for _, part := range strings.Split(m[2], ".") {
 		v.release = append(v.release, number(part))
 	}
@@ -65,6 +65,19 @@ func parseVersion(text string) (version, error) {
 		v.dev = &dev
 	}
 	return v, nil
+}
+
+// localLabel is a local version label as PEP 440 compares one: its
+// segments, separated by "-", "_", or ".", each in lower case, and a
+// number's without its leading zeros, so "deadbeef.00" is "deadbeef.0".
+func localLabel(label string) string {
+	segments := strings.FieldsFunc(strings.ToLower(label), func(r rune) bool { return r == '-' || r == '_' || r == '.' })
+	for i, segment := range segments {
+		if n, err := strconv.Atoi(segment); err == nil {
+			segments[i] = strconv.Itoa(n)
+		}
+	}
+	return strings.Join(segments, ".")
 }
 
 // compare orders two versions as PEP 440 does, local labels aside: a
@@ -158,7 +171,13 @@ func admitsClause(operator, text string, have version, installed string) (bool, 
 		if err != nil {
 			return false, err
 		}
-		matches := want.epoch == have.epoch && len(have.release) >= len(want.release) && slices.Equal(have.release[:len(want.release)], want.release)
+		// The candidate's release is padded with zeros to the prefix's
+		// length: 2 is 2.0.0 to ==2.0.0.*.
+		release := have.release
+		for len(release) < len(want.release) {
+			release = append(slices.Clone(release), 0)
+		}
+		matches := want.epoch == have.epoch && slices.Equal(release[:len(want.release)], want.release)
 		return matches == (operator == "=="), nil
 	}
 	want, err := parseVersion(text)

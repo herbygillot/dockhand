@@ -169,6 +169,7 @@ func (p *markerParser) expression() (Applies, error) {
 		p.at++
 		return inner, nil
 	}
+	extra := p.peek() == "extra"
 	left, leftKnown, err := p.value()
 	if err != nil {
 		return Unknown, err
@@ -182,12 +183,18 @@ func (p *markerParser) expression() (Applies, error) {
 		p.at++
 		operator = "not in"
 	}
+	extra = extra || p.peek() == "extra"
 	right, rightKnown, err := p.value()
 	if err != nil {
 		return Unknown, err
 	}
 	if !leftKnown || !rightKnown {
 		return Unknown, nil
+	}
+	if extra {
+		// An extra's name compares as PEP 685 normalizes one: "SECURITY"
+		// is "security", and "PEP_685...norm" "pep-685-norm".
+		left, right = NormalizeName(left), NormalizeName(right)
 	}
 	return compareMarker(left, operator, right)
 }

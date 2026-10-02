@@ -692,3 +692,69 @@ func TestASubportsArchivesArePlannedForIt(t *testing.T) {
 	_, _, err = planner.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/zdemo", "zdemo-nightly")
 	require.ErrorIs(t, err, ErrNoPort)
 }
+
+// A revision's archives are paired by the port's source set: one the base
+// fetched and the candidate doesn't is represented, unfetched, where it
+// had been read and dropped, and the rest are paired by what they are,
+// never by the order the plans name them (the architecture review's
+// finding 2, its second probe).
+func TestARemovedArchiveIsRepresented(t *testing.T) {
+	p := newPlanner(t)
+	p.add("base", plannedPort{info: macports.PortInfo{Name: "demo"}, archives: map[string]map[string]string{
+		"main-1.0.tar.gz": {"LICENSE": "MIT\n"}, "extra-1.0.tar.gz": {"LICENSE": "GPL\n"}, "aaa-docs.tar.gz": {"README": "old\n"},
+	}})
+	p.add("candidate", plannedPort{info: macports.PortInfo{Name: "demo"}, archives: map[string]map[string]string{
+		"main-1.1.tar.gz": {"LICENSE": "MIT\n"}, "zzz-docs.tar.gz": {"README": "new\n"},
+	}})
+	e := &Engine{}
+	e.options.Readings = t.TempDir()
+	var infos [2]macports.PortInfo
+	var plans [2][]macports.Distfile
+	for i, tree := range []model.ObjectID{"base", "candidate"} {
+		var err error
+		infos[i], plans[i], err = p.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/demo", "demo")
+		require.NoError(t, err)
+	}
+	pairs, unpaired, _, problem, _ := e.readPlans(t.Context(), infos, plans, true, t.TempDir())
+	require.Empty(t, problem)
+	require.Len(t, pairs, 1)
+	require.Equal(t, macports.SourceMatch{Before: "main-1.0.tar.gz", After: "main-1.1.tar.gz", Status: macports.SourceMatched, Basis: macports.ByPattern}, pairs[0].Match)
+	require.Equal(t, []macports.SourceMatch{
+		{Before: "aaa-docs.tar.gz", Status: macports.SourceUncertain}, {Before: "extra-1.0.tar.gz", Status: macports.SourceUncertain},
+		{After: "zzz-docs.tar.gz", Status: macports.SourceUncertain},
+	}, unpaired, "two of the base's left and one of the candidate's: which replaces which isn't guessed")
+	require.EqualValues(t, 2, p.fetches.Load(), "only what's compared is fetched")
+
+	result := assess.Assess(assess.Input{Port: infos[1], Base: infos[0], Pairs: pairs, Unpaired: unpaired})
+	held := result.Holds()
+	require.Len(t, held, 1)
+	require.Contains(t, held[0], "zzz-docs.tar.gz corresponds to none of the base's archives (aaa-docs.tar.gz, extra-1.0.tar.gz) by name")
+}
+
+// An archive only the base fetched, with the candidate's each matched, is
+// said and set apart, and holds nothing.
+func TestAnArchiveNoLongerFetchedIsSaid(t *testing.T) {
+	p := newPlanner(t)
+	p.add("base", plannedPort{info: macports.PortInfo{Name: "demo"}, archives: map[string]map[string]string{
+		"main-1.0.tar.gz": {"LICENSE": "MIT\n"}, "extra-1.0.tar.gz": {"LICENSE": "GPL\n"},
+	}})
+	p.add("candidate", plannedPort{info: macports.PortInfo{Name: "demo"}, archives: map[string]map[string]string{"main-1.1.tar.gz": {"LICENSE": "MIT\n"}}})
+	e := &Engine{}
+	e.options.Readings = t.TempDir()
+	var infos [2]macports.PortInfo
+	var plans [2][]macports.Distfile
+	for i, tree := range []model.ObjectID{"base", "candidate"} {
+		var err error
+		infos[i], plans[i], err = p.ArchivePlan(t.Context(), model.Source{Tree: tree}, "devel/demo", "demo")
+		require.NoError(t, err)
+	}
+	pairs, unpaired, _, problem, _ := e.readPlans(t.Context(), infos, plans, true, t.TempDir())
+	require.Empty(t, problem)
+	require.Equal(t, []macports.SourceMatch{{Before: "extra-1.0.tar.gz", Status: macports.SourceRemoved}}, unpaired)
+	result := assess.Assess(assess.Input{Port: infos[1], Base: infos[0], Pairs: pairs, Unpaired: unpaired})
+	require.False(t, result.Held())
+	require.Contains(t, result.Changes, model.UpstreamChange{Kind: "source", Path: "extra-1.0.tar.gz", Message: "upstream: extra-1.0.tar.gz is no longer fetched",
+		Rule: assess.SourceRemoved, Class: model.Introduced, Source: "extra-*.tar.gz"})
+	require.Contains(t, CoverageWords(result), "set apart: extra-1.0.tar.gz")
+	require.Contains(t, CoverageWords(result), "Read LICENSE", "the one archive compared reads as a port of one archive's")
+}

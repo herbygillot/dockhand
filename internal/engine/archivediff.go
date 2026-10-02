@@ -43,8 +43,11 @@ type FetchedArchive struct {
 type ArchiveDiff struct {
 	Directory string
 	// Old and New name the archives; one is empty when only one side
-	// declares it.
+	// declares it. Match is how they correspond, by the port's source set
+	// (macports.MatchSources): an uncertain one has a side alone, and
+	// isn't compared.
 	Old, New string
+	Match    macports.SourceMatch
 	// OldFromMirror is true when the base's archive came from MacPorts'
 	// mirror, upstream serving something else under its name.
 	OldFromMirror bool
@@ -55,6 +58,10 @@ type ArchiveDiff struct {
 	// Problem is why the port's archives could not be compared.
 	Problem string
 }
+
+// Uncertain reports an archive that several of the other side's could
+// correspond to, which wasn't compared.
+func (d ArchiveDiff) Uncertain() bool { return d.Match.Status == macports.SourceUncertain }
 
 // ArchiveDiff compares the source archives of the ports a branch changes,
 // or of the ports named, as the base declares them and as the branch's
@@ -111,19 +118,27 @@ func (e *Engine) archiveDiff(ctx context.Context, fetcher ArchiveFetcher, branch
 	if err != nil {
 		return nil, fmt.Errorf("the branch's archives: %w", err)
 	}
+	// Each archive is diffed with the one it corresponds to, as an
+	// assessment pairs them, never merely the one in its place.
+	named := func(fetched []FetchedArchive) ([]string, map[string]FetchedArchive) {
+		var names []string
+		byName := map[string]FetchedArchive{}
+		for _, archive := range fetched {
+			names, byName[archive.Name] = append(names, archive.Name), archive
+		}
+		return names, byName
+	}
+	beforeNames, old := named(before)
+	afterNames, now := named(after)
 	var diffs []ArchiveDiff
-	for i := 0; i < max(len(before), len(after)); i++ {
-		diff := ArchiveDiff{Directory: directory}
-		switch {
-		case i >= len(before):
-			diff.New = after[i].Name
-		case i >= len(after):
-			diff.Old, diff.OldFromMirror = before[i].Name, before[i].Mirror
-		default:
-			diff.Old, diff.OldFromMirror, diff.New = before[i].Name, before[i].Mirror, after[i].Name
-			diff.Same = before[i].Sum.SHA256 != "" && before[i].Sum.SHA256 == after[i].Sum.SHA256
+	for i, match := range macports.MatchSources(beforeNames, afterNames, nil) {
+		diff := ArchiveDiff{Directory: directory, Old: match.Before, New: match.After, Match: match}
+		previous, next := old[match.Before], now[match.After]
+		diff.OldFromMirror = previous.Mirror
+		if match.Status == macports.SourceMatched {
+			diff.Same = previous.Sum.SHA256 != "" && previous.Sum.SHA256 == next.Sum.SHA256
 			if !diff.Same {
-				if err := e.compareArchives(ctx, filepath.Join(root, fmt.Sprint(i)), before[i].Path, after[i].Path, &diff); err != nil {
+				if err := e.compareArchives(ctx, filepath.Join(root, fmt.Sprint(i)), previous.Path, next.Path, &diff); err != nil {
 					return nil, err
 				}
 			}
