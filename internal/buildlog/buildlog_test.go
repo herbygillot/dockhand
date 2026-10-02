@@ -27,16 +27,16 @@ func TestTheFirstCompilerErrorIsTheLikelyCause(t *testing.T) {
 		"make: *** [Release/obj.target/sqlanywhere/src/sqlanywhere.o] Error 1",
 		"Error: Failed to build beekeeper-studio: command execution failed",
 	}, "\n")
-	cause, ok := First(strings.NewReader(log))
+	cause, ok := FirstFrom(strings.NewReader(log), 1)
 	require.True(t, ok)
 	require.Equal(t, Cause{Line: "../src/h/sqlany_utils.h:14:10: fatal error: 'source_location' file not found", Number: 6}, cause)
 
-	cause, ok = First(strings.NewReader("main.c:3: error: expected ';' before '}' token\r\n"))
+	cause, ok = FirstFrom(strings.NewReader("main.c:3: error: expected ';' before '}' token\r\n"), 1)
 	require.True(t, ok, "GCC's, without a column")
 	require.Equal(t, "main.c:3: error: expected ';' before '}' token", cause.Line)
 
 	long := strings.Repeat("x", 200<<10)
-	cause, ok = First(strings.NewReader(long + "\nfoo.swift:1:2: error: cannot find 'bar' in scope\n"))
+	cause, ok = FirstFrom(strings.NewReader(long+"\nfoo.swift:1:2: error: cannot find 'bar' in scope\n"), 1)
 	require.True(t, ok, "past a line longer than the scanner's first buffer")
 	require.Equal(t, 2, cause.Number)
 
@@ -47,7 +47,7 @@ func TestTheFirstCompilerErrorIsTheLikelyCause(t *testing.T) {
 		"12:34:56: error: a time isn't a file\n",
 		"",
 	} {
-		_, ok := First(strings.NewReader(none))
+		_, ok := FirstFrom(strings.NewReader(none), 1)
 		require.False(t, ok, none)
 	}
 }
@@ -65,9 +65,9 @@ func TestALongLineDoesNotHideTheCauseAfterIt(t *testing.T) {
 	require.True(t, ok)
 	require.True(t, strings.HasPrefix(string(rest), cause.Line))
 
-	_, ok = First(strings.NewReader("foo.c:1:2: error: " + long))
+	_, ok = FirstFrom(strings.NewReader("foo.c:1:2: error: "+long), 1)
 	require.False(t, ok, "a cause past the bound, with no newline, is passed over too")
-	cause, ok = First(strings.NewReader("--->  Building foo\nfoo.c:1:2: error: no newline at the end"))
+	cause, ok = FirstFrom(strings.NewReader("--->  Building foo\nfoo.c:1:2: error: no newline at the end"), 1)
 	require.True(t, ok)
 	require.Equal(t, 2, cause.Number)
 }

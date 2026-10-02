@@ -210,16 +210,16 @@ git.branch v${version}
 	require.Contains(t, string(result.Files[0].After), "go.toolchain_min 1.22", "no manifest source leaves the minimum")
 }
 
-// cargo.update is read as Tcl reads a boolean, and a value that is not one
-// is refused as true would be, since it would rewrite the lockfile.
+// cargo.update is read as Tcl reads a boolean: on or off, either is taken,
+// the person's word (D19); a value that is neither is refused.
 func TestCargoUpdateIsReadAsTclBoolean(t *testing.T) {
 	t.Parallel()
-	for value, allowed := range map[string]bool{"": true, "no": true, "Off": true, "false": true, "yes": false, "ON": false, "1": false, "sometimes": false} {
+	for value, allowed := range map[string]bool{"": true, "no": true, "Off": true, "false": true, "yes": true, "ON": true, "1": true, "sometimes": false} {
 		err := checkCargoUpdate(macports.PortInfo{Options: map[string]string{"cargo.update": value}})
 		if allowed {
 			require.NoError(t, err, value)
 		} else {
-			require.ErrorContains(t, err, "cargo.update changes the upstream lockfile", value)
+			require.ErrorContains(t, err, "cargo.update can't be read as yes or no", value)
 		}
 	}
 }

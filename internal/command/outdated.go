@@ -301,6 +301,31 @@ func writeSkipped(out io.Writer, plan engine.OutdatedPlan, report engine.Outdate
 			fmt.Fprintf(out, "Skipped: %s (%s; after a look, dockhand update %s %s)\n", port.Port, setAsideWords(port.Uncertain), port.Port, port.Uncertain[0].Source)
 		}
 	}
+	// Every port asked about has a line: one already at its newest
+	// release said nothing, so pomo and tokei, given by name, went unsaid
+	// (field testing's eighth report, 2026-10-02).
+	said := map[string]bool{}
+	for _, update := range plan.Updates {
+		said[update.Port.Port] = true
+	}
+	for _, skipped := range plan.Skipped {
+		said[skipped.Port] = true
+	}
+	var current []string
+	for _, port := range report.Ports {
+		switch {
+		case said[port.Port] || len(port.Uncertain) > 0 || port.Outdated:
+		case port.Problem != "":
+			fmt.Fprintf(out, "Skipped: %s (couldn't check: %s)\n", port.Port, port.Problem)
+		case port.Moved != nil:
+			fmt.Fprintf(out, "Skipped: %s (its branch %s moved past the commit it pins; name the version to set)\n", port.Port, port.Moved.Branch)
+		case port.Current != "":
+			current = append(current, port.Port+" "+port.Current)
+		}
+	}
+	if len(current) > 0 {
+		fmt.Fprintf(out, "Current: %s\n", strings.Join(current, ", "))
+	}
 }
 
 func writePrepared(ctx context.Context, e *engine.Engine, out io.Writer, prepared []engine.PreparedUpdate, check bool) error {
@@ -361,8 +386,8 @@ func batchNotes(update engine.Update) []string {
 		if block.Unchecked != "" {
 			notes = append(notes, block.Unchecked)
 		}
-		if block.Inert != "" {
-			notes = append(notes, "Notice: "+block.Inert)
+		for _, notice := range block.Notices {
+			notes = append(notes, "Notice: "+notice)
 		}
 	}
 	switch comparison := update.Upstream; {

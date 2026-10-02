@@ -137,10 +137,10 @@ type Regenerated struct {
 	// the source it was made from, where it couldn't: it's regenerated
 	// whole, with no override found to keep.
 	Unchecked string `json:",omitempty"`
-	// Inert says which Git crates the Portfile declares under a branch
-	// where the lock pins them otherwise, so Cargo resolves them online
-	// and the declarations look unused: a notice, not a hold.
-	Inert string `json:",omitempty"`
+	// Notices are what the update says of the block that holds nothing:
+	// Git crates the Portfile declares under a branch where the lock pins
+	// them otherwise, which look unused, and cargo.update being on.
+	Notices []string `json:",omitempty"`
 }
 
 // Override is a registry crate a Portfile pinned at another version than

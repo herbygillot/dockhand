@@ -244,8 +244,9 @@ func (p *Plan) Strip(src []byte) ([]byte, error) {
 	return apply(src, replacements, nil, p.which)
 }
 
-// ApplyPlain is Apply for the declarations the plan was made from, where
-// the Portfile has several of a name.
+// ApplyPlain writes plain single-space rows into the declarations the plan
+// was made from, where the Portfile has several of a name; Apply follows
+// their existing layout.
 func (p *Plan) ApplyPlain(src []byte, values map[string][]string) ([]byte, error) {
 	return apply(src, values, nil, p.which)
 }
@@ -289,11 +290,6 @@ func (p *Plan) Apply(src []byte, values map[string][]string) ([]byte, error) {
 		}
 	}
 	return textedit.Apply(out, edits)
-}
-
-// Apply writes plain single-space rows; Plan.Apply follows an existing layout.
-func Apply(src []byte, values map[string][]string) ([]byte, error) {
-	return apply(src, values, nil, nil)
 }
 
 func apply(src []byte, values map[string][]string, layouts map[string]*blockLayout, which map[string]int) ([]byte, error) {

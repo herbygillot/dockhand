@@ -102,7 +102,7 @@ func selectDependencySource(ctx context.Context, info macports.PortInfo, sources
 		selected = &input
 	}
 	if selected == nil {
-		return depblock.Input{}, fmt.Errorf("%w: no extracted archive contains the dependency manifest at worksrcdir", ErrUnsupported)
+		return depblock.Input{}, fmt.Errorf("%w: no extracted archive contains the dependency manifest at worksrcdir (%w)", ErrUnsupported, macports.ErrManifestMissing)
 	}
 	return *selected, nil
 }

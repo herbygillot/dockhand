@@ -231,7 +231,7 @@ func TestGoDependencyPreparation(t *testing.T) {
 func TestCargoDependencyPreparation(t *testing.T) {
 	t.Parallel()
 	sha := strings.Repeat("b", 64)
-	for _, scenario := range []string{"success", "auxiliary", "added", "removed", "missing", "failed", "partial", "shared", "shared-unauthorized"} {
+	for _, scenario := range []string{"success", "auxiliary", "added", "removed", "missing", "failed", "partial", "shared", "shared-unauthorized", "cargo-update", "cargo-update-unlocked"} {
 		t.Run(scenario, func(t *testing.T) {
 			lock := func(name string) string {
 				result := "version = 4\n[[package]]\nname = \"fixture\"\nversion = \"1.0.0\"\n"
@@ -249,6 +249,11 @@ func TestCargoDependencyPreparation(t *testing.T) {
 			}
 			before := manifestArchive(t, "Cargo.lock", lock(oldName), "1.0")
 			after := manifestArchive(t, "Cargo.lock", lock(newName), "2.0")
+			if scenario == "cargo-update-unlocked" {
+				// A source that ships no Cargo.lock, which cargo.update
+				// would make.
+				before = manifestArchive(t, "Cargo.toml", "[package]\nname = \"fixture\"\n", "1.0")
+			}
 			extra := `options cargo.crates cargo.crates_github cargo.update cargo.dir
  default cargo.crates {}
  default cargo.crates_github {}
@@ -274,6 +279,9 @@ extract.rename no
 			}
 			if oldName != "" {
 				extra += "cargo.crates old 1.2.3 " + sha + "\n"
+			}
+			if strings.HasPrefix(scenario, "cargo-update") {
+				extra += "cargo.update yes\n"
 			}
 			if strings.HasPrefix(scenario, "shared") {
 				// A buildable subport sharing the version, the checksums, and
@@ -322,6 +330,8 @@ extract.rename no
 				require.ErrorContains(t, err, "invalid lockfile")
 			case "partial":
 				require.ErrorContains(t, err, "registry checksums exactly")
+			case "cargo-update-unlocked":
+				require.ErrorContains(t, err, "cargo.update is on and 1.0's source ships no Cargo.lock")
 			default:
 				require.NoError(t, err)
 				require.NotEmpty(t, result.PreparedTree)
@@ -334,6 +344,11 @@ extract.rename no
 				if scenario == "auxiliary" {
 					require.Contains(t, string(result.Files[0].After), "pinned-v8.gz sha256 cccc size 4")
 					require.Len(t, result.Downloads, 1)
+				}
+				if scenario == "cargo-update" {
+					// Taken, said, and the option left as it was (D19).
+					require.Contains(t, result.Regenerated[0].Notices, "cargo.update is on; MacPorts re-resolves offline against these crates.")
+					require.Contains(t, string(result.Files[0].After), "cargo.update yes\n")
 				}
 				if scenario == "shared" {
 					require.NotNil(t, result.Scope)
@@ -595,7 +610,7 @@ cargo.crates_github scram pgdogdev/scram master ` + oldCommit + " " + checksum +
 	// person's word, 2026-10-02).
 	var inert string
 	for _, block := range result.Regenerated {
-		inert += block.Inert
+		inert += strings.Join(block.Notices, "")
 	}
 	require.Equal(t, "cargo.crates_github declares scram (pinned by rev) under a branch, where the lock pins them otherwise; Cargo's source replacement matches only a branch, so they're resolved online and the declarations look unused.", inert)
 }

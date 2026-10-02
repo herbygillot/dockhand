@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -107,4 +108,27 @@ func TestASubportCheckedWithItsSiblingMovesWithIt(t *testing.T) {
 	require.Len(t, plan.Updates, 1)
 	require.Equal(t, "py-cbor2", plan.Updates[0].Port.Port)
 	require.Equal(t, []SkippedUpdate{{Port: "py310-cbor2", Reason: "moves with py-cbor2, whose release it shares"}}, plan.Skipped)
+}
+
+// What upstream discovery assessed becomes outdated's port: newer, set
+// aside, a branch moved, MacPorts' own version, or unknown, with why or
+// a default reason; and a check that can't be planned says what it can't
+// build (the test plan's step 3).
+func TestDiscoveryBecomesOutdatedsPort(t *testing.T) {
+	t.Parallel()
+	of := func(result upstream.Result) OutdatedPort {
+		return outdatedPort(outdated.Port{Selector: "jq", Result: result})
+	}
+	require.Equal(t, OutdatedPort{Port: "jq", Current: "1.7.1", Newest: "1.8.1", Outdated: true}, of(upstream.Result{CurrentVersion: "1.7.1", CandidateVersion: "1.8.1", Assessment: upstream.UpdateAvailable}))
+	aside := []upstream.SetAside{{Version: "5.0"}}
+	require.Equal(t, aside, of(upstream.Result{Assessment: upstream.Uncertain, SetAside: aside}).Uncertain)
+	head := &upstream.Head{Branch: "main", Commit: strings.Repeat("a", 40)}
+	require.Equal(t, head, of(upstream.Result{Assessment: upstream.Moved, Head: head}).Moved)
+	require.True(t, of(upstream.Result{Assessment: upstream.OwnVersion}).OwnVersion)
+	require.Equal(t, "no forge could be found for it", of(upstream.Result{Assessment: upstream.Unknown, Detail: "no forge could be found for it"}).Problem)
+	require.Equal(t, "its newest release could not be found", of(upstream.Result{Assessment: upstream.Unknown}).Problem)
+
+	require.Equal(t, "it builds nothing", unresolvedWords(model.Plan{}))
+	require.Equal(t, "jq: no Portfile; fd: excluded on arm64", unresolvedWords(model.Plan{Unresolved: []model.Unresolved{
+		{Target: model.Target{Name: "jq"}, Reason: "no Portfile"}, {Target: model.Target{Name: "fd"}, Reason: "excluded on arm64"}}}))
 }

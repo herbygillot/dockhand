@@ -824,9 +824,15 @@ func elsewhere(declarations []project.Requirement) bool {
 // source required; "moved" read as nothing (field testing, 2026-10-02). file is the finding's path, and label what
 // its message names: the file, or a workspace's members together.
 func count(file, label string, changes []sourcecompare.Change) model.UpstreamChange {
+	// Each dependency once for what happened to it: a workspace's members
+	// declaring one dependency each counted it once a member, as
+	// wasmtime's "3 changed (cranelift-isle, cranelift-codegen-meta,
+	// cranelift-isle)" did (field testing, 2026-10-02).
 	names := map[string][]string{}
 	for _, change := range changes {
-		names[change.How] = append(names[change.How], change.Name)
+		if !slices.Contains(names[change.How], change.Name) {
+			names[change.How] = append(names[change.How], change.Name)
+		}
 	}
 	var parts []string
 	for _, part := range [][2]string{{"adds", "added"}, {"drops", "dropped"}, {"moves", "changed"}} {

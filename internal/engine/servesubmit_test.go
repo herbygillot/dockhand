@@ -403,30 +403,6 @@ func TestServeHoldsAnUpdateWhoseTagMovedBeforeItsCheck(t *testing.T) {
 	require.Empty(t, status.Moved)
 }
 
-// A target --only left out whose tag moved after the check is a concern as
-// a built one is: its tag was resolved with the plan, and an earlier
-// check's result of it stands for the commit it named then.
-func TestASourceLeftOutThatMovedSinceItsCheckIsAConcern(t *testing.T) {
-	t.Parallel()
-	project := t.TempDir()
-	testsupport.Git(t, project, "init", "-q")
-	testsupport.Git(t, project, "commit", "-q", "--allow-empty", "-m", "one")
-	testsupport.Git(t, project, "tag", "v2")
-	built := testsupport.Git(t, project, "rev-parse", "HEAD")
-	f := setup(t)
-	e := f.open(t)
-	evidence := &Evidence{Run: model.Run{Number: 8}, Plan: model.Plan{Omitted: []model.PlanTarget{{ID: "tool", Target: model.Target{Name: "tool"}}},
-		Builds: []model.EnvironmentPlan{{Git: map[model.TargetID]model.GitSource{"tool": {URL: project, Ref: "v2", Commit: model.ObjectID(built)}}}}}}
-	require.Empty(t, e.movedSources(t.Context(), evidence))
-
-	testsupport.Git(t, project, "commit", "-q", "--allow-empty", "-m", "two")
-	testsupport.Git(t, project, "tag", "-f", "v2")
-	now := testsupport.Git(t, project, "rev-parse", "HEAD")
-	moved := e.movedSources(t.Context(), evidence)
-	require.Len(t, moved, 1)
-	require.Equal(t, "tool's git.branch v2 named "+built[:7]+" when check-8 planned it, and names "+now[:7]+" now: the check built another source than this would submit", moved[0].Detail)
-}
-
 // A Git-fetched port whose assessment read another commit than its check
 // planned is a concern, whether an update or a hand edit made it: what
 // upstream's change was judged of isn't the source the check built

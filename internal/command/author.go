@@ -488,8 +488,8 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		if block.Unchecked != "" {
 			fmt.Fprintln(out, block.Unchecked)
 		}
-		if block.Inert != "" {
-			fmt.Fprintln(out, "Notice: "+block.Inert)
+		for _, notice := range block.Notices {
+			fmt.Fprintln(out, "Notice: "+notice)
 		}
 	}
 	if stealth := update.Stealth; stealth != nil {

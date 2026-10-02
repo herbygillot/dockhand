@@ -586,3 +586,16 @@ func TestArchivesOfEveryLayoutAreComparedOrSaid(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"! upstream's new archive holds a-2, b-2 and no file beside them, so which is the project wasn't found, and it wasn't compared"}, messages(changes))
 }
+
+// A dependency a workspace's members each declare is counted once for
+// what happened to it, where wasmtime's line named cranelift-isle twice
+// (field testing, 2026-10-02).
+func TestAWorkspacesDependenciesAreCountedOnce(t *testing.T) {
+	changes := []sourcecompare.Change{
+		{Path: "cranelift/codegen/Cargo.toml", Name: "cranelift-isle", How: "moves"},
+		{Path: "cranelift/codegen/meta/Cargo.toml", Name: "cranelift-codegen-meta", How: "moves"},
+		{Path: "cranelift/isle/Cargo.toml", Name: "cranelift-isle", How: "moves"},
+	}
+	found := count("Cargo.toml", "the Cargo.toml of 3 workspace members", changes)
+	require.Equal(t, "upstream: the Cargo.toml of 3 workspace members: 2 changed (cranelift-isle, cranelift-codegen-meta)", found.Message)
+}

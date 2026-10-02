@@ -255,3 +255,19 @@ func TestABatchSaysWhatASingleUpdateWould(t *testing.T) {
 	}, batchNotes(update))
 	require.Empty(t, batchNotes(engine.Update{Port: "jq"}))
 }
+
+// Every port update --outdated is given has a line: pomo and tokei, given
+// by name and already at their newest, said nothing (field testing's
+// eighth report, 2026-10-02).
+func TestUpdateOutdatedSaysEveryPortItWasGiven(t *testing.T) {
+	var out bytes.Buffer
+	plan := engine.OutdatedPlan{Skipped: []engine.SkippedUpdate{{Port: "pgdog", Reason: "already in pgdog-a1b2"}}}
+	report := engine.OutdatedReport{Ports: []engine.OutdatedPort{
+		{Port: "pgdog", Current: "0.1.53", Newest: "0.1.60", Outdated: true},
+		{Port: "pomo", Current: "0.8.1", Newest: "0.8.1"},
+		{Port: "tokei", Current: "14.0.0", Newest: "14.0.0"},
+		{Port: "lost", Problem: "no forge could be found for it"},
+	}}
+	writeSkipped(&out, plan, report)
+	require.Equal(t, "Skipped: pgdog (already in pgdog-a1b2)\nSkipped: lost (couldn't check: no forge could be found for it)\nCurrent: pomo 0.8.1, tokei 14.0.0\n", out.String())
+}

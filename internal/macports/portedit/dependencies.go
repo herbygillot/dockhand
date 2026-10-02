@@ -1,6 +1,7 @@
 package portedit
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -64,12 +65,15 @@ func inspectDependencies(input *sourceInput) (*depblock.Plan, error) {
 	return plan, nil
 }
 
-// checkCargoUpdate refuses a Cargo port that updates its lockfile. The
-// option is read as Tcl reads a boolean, and a value that is not one is
-// refused as true would be.
+// checkCargoUpdate refuses a Cargo port whose cargo.update can't be read
+// as Tcl reads a boolean. One that's on is taken, the person's word (D19,
+// 2026-10-02): its crates are regenerated from the Cargo.lock the source
+// ships, which a source without one has none of, and refuses, and
+// MacPorts re-resolves offline against them; dockhand never sets or
+// clears the option.
 func checkCargoUpdate(info macports.PortInfo) error {
-	if update, err := info.Bool("cargo.update"); err != nil || update {
-		return fmt.Errorf("%w: cargo.update changes the upstream lockfile", ErrUnsupported)
+	if _, err := info.Bool("cargo.update"); err != nil {
+		return fmt.Errorf("%w: cargo.update can't be read as yes or no", ErrUnsupported)
 	}
 	return nil
 }
@@ -197,12 +201,14 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if kept {
 		store, fetch = s.Archives.Store(request.KeepArchives), all
 	}
+	cargoUpdate, _ := input.info.Bool("cargo.update")
 	oldInput, previous, previousProblem, err := originalDependencySource(ctx, store, base.info, fetch, sources, plan, kept)
-	if err != nil {
+	if err = unlocked(err, cargoUpdate, input.info.Version); err != nil {
 		return Result{}, err
 	}
 	progress.VerboseReport(ctx, "Checking existing %s against the original source", plan.Kind)
 	old, err := depblock.Generate(ctx, plan.Kind, executable, oldInput)
+	err = unlocked(err, cargoUpdate, input.info.Version)
 	// A module that moved can't be generated at its old version under its
 	// new path: the existing block isn't checked, and that's said, rather
 	// than the update refused (pomo's, field testing, 2026-10-02).
@@ -258,12 +264,12 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 		return Result{}, err
 	}
 	nextInput, err := selectDependencySource(ctx, next, nextSources, result.Downloads, plan)
-	if err != nil {
+	if err = unlocked(err, cargoUpdate, request.Release.Version); err != nil {
 		return Result{}, err
 	}
-	progress.VerboseReport(ctx, "Regenerating %s for %s", plan.Kind, request.Release.Tag)
+	progress.VerboseReport(ctx, "Regenerating %s for %s", plan.Kind, cmp.Or(nextInput.Tag, request.Release.Tag))
 	generated, err := depblock.Generate(ctx, plan.Kind, executable, nextInput)
-	if err != nil {
+	if err = unlocked(err, cargoUpdate, request.Release.Version); err != nil {
 		return Result{}, err
 	}
 	generated = generated.KeepingDeclared(plan.Values[depblock.CargoGit])
@@ -297,7 +303,10 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 				block.Unchecked = unchecked
 			}
 			if name == depblock.CargoGit && len(generated.Relabelled) > 0 {
-				block.Inert = inertWords(generated.Relabelled)
+				block.Notices = append(block.Notices, inertWords(generated.Relabelled))
+			}
+			if name == depblock.Cargo && cargoUpdate {
+				block.Notices = append(block.Notices, "cargo.update is on; MacPorts re-resolves offline against these crates.")
 			}
 			regenerated = append(regenerated, block)
 		}
@@ -461,4 +470,14 @@ func inertWords(crates []depblock.GitCrate) string {
 		names = append(names, crate.Name+" (pinned by "+pinned+")")
 	}
 	return fmt.Sprintf("cargo.crates_github declares %s under a branch, where the lock pins them otherwise; Cargo's source replacement matches only a branch, so they're resolved online and the declarations look unused.", strings.Join(names, ", "))
+}
+
+// unlocked says a cargo.update port's source that ships no Cargo.lock as
+// what it is: its crates can't be regenerated, which the person's word on
+// cargo.update requires (D19).
+func unlocked(err error, cargoUpdate bool, version string) error {
+	if cargoUpdate && errors.Is(err, macports.ErrManifestMissing) {
+		return fmt.Errorf("%w: cargo.update is on and %s's source ships no Cargo.lock, so its crates can't be regenerated: %w", ErrUnsupported, version, err)
+	}
+	return err
 }

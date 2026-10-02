@@ -98,7 +98,9 @@ func generateGo(ctx context.Context, executable string, in Input) (GeneratedBloc
 		}
 	}
 	if !maps.Equal(actual, expected) {
-		return GeneratedBlocks{}, fmt.Errorf("dependency: go2port output does not cover the source go.mod requirements exactly")
+		// go2port fetches the module by its path itself, which is where
+		// pomo's, on codeberg.org, went wrong (field testing, 2026-10-02).
+		return GeneratedBlocks{}, fmt.Errorf("dependency: go2port's output for %s %s does not cover the source go.mod requirements exactly; go2port fetches the module from %s itself", in.Package, in.Tag, strings.SplitN(in.Package, "/", 2)[0])
 	}
 	return GeneratedBlocks{Values: map[string][]string{Go: values}}, nil
 }

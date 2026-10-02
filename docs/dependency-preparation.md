@@ -45,7 +45,7 @@ Git dependencies must come from HTTPS GitHub repositories with a full commit has
 
 Non-GitHub repositories, combined selectors, and conflicting branches for one declared repository still require manual preparation. For declared crates, Dockhand evaluates provisional declarations to obtain the PortGroup's actual archive locations, downloads those archives, and fills their SHA-256 checksums. It does not invent a second GitHub archive URL convention. `cargo2port` ignores Git sources, so the registry comparison is unaffected. See the [Git reference report](activity/2026-09-16-cargo-git-references.md).
 
-`cargo.dir` must stay inside the source archive. `cargo.update` must be disabled. Local patches or recognized preparation hooks that edit dependency manifests require manual preparation; otherwise the upstream lockfile would not describe what the port builds. Dynamic or overridden dependency declarations are likewise refused.
+`cargo.dir` must stay inside the source archive. A port with `cargo.update` on is taken where its source ships a Cargo.lock, and refused where it doesn't, since the crates are regenerated from that lock; the update says "cargo.update is on; MacPorts re-resolves offline against these crates.", dockhand never sets or clears the option, and the check is what proves the port builds (D19, 2026-10-02). Local patches or recognized preparation hooks that edit dependency manifests require manual preparation; otherwise the upstream lockfile would not describe what the port builds. Dynamic or overridden dependency declarations are likewise refused.
 
 ## Validation
 

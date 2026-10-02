@@ -31,13 +31,10 @@ type Cause struct {
 // make's or MacPorts' own.
 var compilerError = regexp.MustCompile(`^[^\s:]*[^\s:\d][^:]*:\d+:(\d+:)? (fatal )?error: \S`)
 
-// First reads a log for the first line a reading takes as a failure's
-// likely cause: in a C or C++ build, the first error is the one the rest
-// follow from. None where the log has none, or can't be read.
-func First(log io.Reader) (Cause, bool) { return FirstFrom(log, 1) }
-
-// FirstFrom is First from a line of the log on, counting from 1, as from
-// where the step that failed began: a dependency's build before it may
+// FirstFrom reads a log, from a line on, counting from 1, for the first
+// line a reading takes as a failure's likely cause: in a C or C++ build,
+// the first error is the one the rest follow from. None where the log has
+// none, or can't be read. The line is where the step that failed began: a dependency's build before it may
 // have printed an error of its own and gone on (batch 14).
 func FirstFrom(log io.Reader, from int) (Cause, bool) {
 	lines := bufio.NewReaderSize(log, maxLine)

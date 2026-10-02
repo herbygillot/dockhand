@@ -99,7 +99,7 @@ func TestLiteralBlockEditingPreservesUnrelatedPortfile(t *testing.T) {
 	stripped, err := plan.Strip(src)
 	require.NoError(t, err)
 	require.NotContains(t, string(stripped), "old 1.0")
-	updated, err := Apply(stripped, map[string][]string{Cargo: {"new", "2.0", sha, "extra", "1.0", sha}})
+	updated, err := plan.ApplyPlain(stripped, map[string][]string{Cargo: {"new", "2.0", sha, "extra", "1.0", sha}})
 	require.NoError(t, err)
 	require.Contains(t, string(updated), "# human notes\nconfigure.args --keep")
 	values, err := generated(updated, Cargo)
@@ -110,7 +110,7 @@ func TestLiteralBlockEditingPreservesUnrelatedPortfile(t *testing.T) {
 		_, err := Inspect([]byte(source), map[string]string{Cargo: "a 1 hash"})
 		require.Error(t, err)
 	}
-	_, err = Apply(src, map[string][]string{Cargo: {"[exec evil]", "1", sha}})
+	_, err = plan.ApplyPlain(stripped, map[string][]string{Cargo: {"[exec evil]", "1", sha}})
 	require.Error(t, err)
 }
 func TestGoGeneratorChecksExactManifestRequirements(t *testing.T) {
