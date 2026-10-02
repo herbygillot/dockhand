@@ -1,4 +1,4 @@
-// Package dependency handles generated MacPorts Go and Rust dependency blocks.
+// Package depblock handles generated MacPorts Go and Rust dependency blocks.
 //
 // It inspects editable declarations, reads manifests from source archives, invokes
 // the optional go2port or cargo2port helper, and validates and applies generated

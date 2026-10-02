@@ -52,7 +52,7 @@ Non-GitHub repositories, combined selectors, and conflicting branches for one de
 Default tests use controlled archives and executable helpers, plus native MacPorts evaluation where available. To exercise installed helpers and an upstream Go module archive:
 
 ```sh
-DOCKHAND_TEST_DEPENDENCY_HELPERS=1 go test ./internal/macports/dependency -run TestInstalledHelpers -v
+DOCKHAND_TEST_DEPENDENCY_HELPERS=1 go test ./internal/macports/depblock -run TestInstalledHelpers -v
 ```
 
 This test requires network access for the Go example. It does not create a branch, start a VM, or publish a pull request. Verification builds remain necessary for real updates; generating a consistent dependency block is not build evidence.
