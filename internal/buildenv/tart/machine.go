@@ -12,7 +12,7 @@ import (
 	"time"
 
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
-	"github.com/herbygillot/dockhand/internal/tart/channel"
+	"github.com/herbygillot/dockhand/internal/tart/guestssh"
 	"github.com/herbygillot/dockhand/internal/tart/host"
 )
 
@@ -57,10 +57,10 @@ type guest interface {
 // native is the Mac's Tart, in dockhand's own home.
 type native struct {
 	host.Machine
-	keys channel.Keys
+	keys guestssh.Keys
 }
 
-func newNative(client tartvm.Client, keys channel.Keys) *native {
+func newNative(client tartvm.Client, keys guestssh.Keys) *native {
 	return &native{Machine: host.Machine{Client: client}, keys: keys}
 }
 
@@ -133,7 +133,7 @@ func (n *native) Reach(ctx context.Context, vm, image string) (guest, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &channel.Guest{Address: address, Image: image, Keys: n.keys}, nil
+	return &guestssh.Guest{Address: address, Image: image, Keys: n.keys}, nil
 }
 
 // vmName is the clone an attempt builds in: the run's, the release's, and

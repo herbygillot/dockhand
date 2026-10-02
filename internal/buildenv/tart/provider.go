@@ -36,7 +36,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
-	"github.com/herbygillot/dockhand/internal/tart/channel"
+	"github.com/herbygillot/dockhand/internal/tart/guestssh"
 )
 
 // Protocol is the guest program's input and results format.
@@ -104,7 +104,7 @@ func (p *Provider) vms() (machine, error) {
 	if err != nil {
 		return nil, err
 	}
-	keys, err := channel.DefaultKeys()
+	keys, err := guestssh.DefaultKeys()
 	if err != nil {
 		return nil, err
 	}
@@ -535,7 +535,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		return p.trouble(ctx, "reaching "+vm, err)
 	}
 	defer g.Close(cleanup)
-	if err := channel.AwaitSSH(ctx, g, started, 4*time.Minute, 3*time.Second); err != nil {
+	if err := guestssh.AwaitSSH(ctx, g, started, 4*time.Minute, 3*time.Second); err != nil {
 		return p.trouble(ctx, "reaching "+vm, err)
 	}
 	if err := p.install(ctx, g, job, build); err != nil {
@@ -589,7 +589,7 @@ func (p *Provider) trouble(ctx context.Context, doing string, err error) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	if errors.Is(err, channel.ErrRefused) {
+	if errors.Is(err, guestssh.ErrRefused) {
 		// A guest that refuses dockhand refuses it again: the image's keys
 		// or password are another's, which another attempt won't change.
 		return fmt.Errorf("%w: %w: %s: %w", buildenv.ErrInfrastructure, buildenv.ErrNeedsAttention, doing, err)
@@ -782,7 +782,7 @@ func (p *Provider) signingKeys() (binaryarchive.Keys, error) {
 	if p.archiveKeys != nil {
 		return p.archiveKeys()
 	}
-	keys, err := channel.DefaultKeys()
+	keys, err := guestssh.DefaultKeys()
 	if err != nil {
 		return binaryarchive.Keys{}, err
 	}

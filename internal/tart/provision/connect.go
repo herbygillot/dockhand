@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/tart"
-	"github.com/herbygillot/dockhand/internal/tart/channel"
+	"github.com/herbygillot/dockhand/internal/tart/guestssh"
 	"github.com/herbygillot/dockhand/internal/tart/host"
 )
 
@@ -35,7 +35,7 @@ func (n *native) Connect(ctx context.Context, name, alias string, bootstrap bool
 		if err := keys.Forget(alias); err != nil {
 			return err
 		}
-		first := &channel.Guest{Address: address, Image: alias, Keys: keys, Bootstrap: true}
+		first := &guestssh.Guest{Address: address, Image: alias, Keys: keys, Bootstrap: true}
 		if err := n.await(ctx, name, first); err != nil {
 			return err
 		}
@@ -43,7 +43,7 @@ func (n *native) Connect(ctx context.Context, name, alias string, bootstrap bool
 			return err
 		}
 	}
-	guest := &channel.Guest{Address: address, Image: alias, Keys: keys}
+	guest := &guestssh.Guest{Address: address, Image: alias, Keys: keys}
 	if err := n.await(ctx, name, guest); err != nil {
 		return err
 	}
@@ -54,20 +54,20 @@ func (n *native) Connect(ctx context.Context, name, alias string, bootstrap bool
 }
 
 // await waits for a guest to accept SSH, reporting the run's own exit if
-// the VM stops first (channel.AwaitSSH): only a failed connection is
+// the VM stops first (guestssh.AwaitSSH): only a failed connection is
 // waited out; a guest that answers and refuses is not.
-func (n *native) await(ctx context.Context, name string, guest *channel.Guest) error {
-	var vm channel.Running
+func (n *native) await(ctx context.Context, name string, guest *guestssh.Guest) error {
+	var vm guestssh.Running
 	if run := n.run(name); run != nil {
 		vm = run
 	}
-	if err := channel.AwaitSSH(ctx, guest, vm, connectWait, 2*time.Second); err != nil {
+	if err := guestssh.AwaitSSH(ctx, guest, vm, connectWait, 2*time.Second); err != nil {
 		return fmt.Errorf("setup: the guest at %s: %w", guest.Address, err)
 	}
 	return nil
 }
 
-func (n *native) guestFor(name string) (*channel.Guest, error) {
+func (n *native) guestFor(name string) (*guestssh.Guest, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	guest := n.guests[name]
@@ -77,11 +77,11 @@ func (n *native) guestFor(name string) (*channel.Guest, error) {
 	return guest, nil
 }
 
-func (n *native) keys() (channel.Keys, error) {
+func (n *native) keys() (guestssh.Keys, error) {
 	if n.sshKeys.Directory != "" {
 		return n.sshKeys, nil
 	}
-	return channel.DefaultKeys()
+	return guestssh.DefaultKeys()
 }
 
 func (n *native) HostKeysRecorded(image string) bool {

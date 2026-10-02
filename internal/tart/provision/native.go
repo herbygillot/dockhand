@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/tart"
-	"github.com/herbygillot/dockhand/internal/tart/channel"
+	"github.com/herbygillot/dockhand/internal/tart/guestssh"
 	"github.com/herbygillot/dockhand/internal/tart/host"
 )
 
@@ -19,9 +19,9 @@ type native struct {
 	mu       sync.Mutex
 	runs     map[string]*host.Foreground
 	// guests are the guests reached over SSH, by VM name.
-	guests map[string]*channel.Guest
+	guests map[string]*guestssh.Guest
 	// sshKeys is dockhand's SSH material; empty selects ~/.dockhand/ssh.
-	sshKeys channel.Keys
+	sshKeys guestssh.Keys
 	// saidBlocked records that setup has said it is waiting for the listing,
 	// and blocked how long it has waited on it.
 	saidBlocked bool
@@ -32,7 +32,7 @@ func newNative(config Config, progress io.Writer) *native {
 	if progress != nil {
 		progress = &progressWriter{writer: progress}
 	}
-	return &native{config: config, progress: progress, runs: map[string]*host.Foreground{}, guests: map[string]*channel.Guest{}}
+	return &native{config: config, progress: progress, runs: map[string]*host.Foreground{}, guests: map[string]*guestssh.Guest{}}
 }
 
 func (n *native) command(ctx context.Context, input io.Reader, stream bool, args ...string) ([]byte, error) {

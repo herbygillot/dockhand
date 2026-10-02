@@ -1,11 +1,11 @@
-// Package channel reaches a Tart guest over SSH through Apple's
+// Package guestssh reaches a Tart guest over SSH through Apple's
 // /usr/bin/ssh, macOS's own documented client, which Local Network privacy
 // does not stop the way it stops a Go program's direct dial, whichever app
 // launched dockhand (decision 43 of the contracts direction). Commands
 // share one multiplexed connection per guest. Files move by `ssh … cat`,
 // every transfer checked against a size and sha256 computed on the other
 // side, since a transport can report success while losing data.
-package channel
+package guestssh
 
 import (
 	"context"

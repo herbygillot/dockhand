@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/herbygillot/dockhand/internal/tart/channel"
+	"github.com/herbygillot/dockhand/internal/tart/guestssh"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
@@ -49,7 +49,7 @@ exec /bin/sh -c "$1"
 `)
 	var progress bytes.Buffer
 	n := newNative(Config{}, &progress)
-	n.guests["candidate"] = &channel.Guest{Address: "guest", Image: "fixture", Keys: channel.Keys{Directory: t.TempDir()}, Executable: ssh}
+	n.guests["candidate"] = &guestssh.Guest{Address: "guest", Image: "fixture", Keys: guestssh.Keys{Directory: t.TempDir()}, Executable: ssh}
 	output, err := n.guestStream(t.Context(), "candidate", strings.NewReader("payload\n"), "/bin/sh", "-c", `
 cat
 printf 'diagnostic\n' >&2

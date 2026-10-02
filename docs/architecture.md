@@ -45,7 +45,7 @@ internal/model         the records' vocabulary; imports nothing from dockhand
 
 The providers implement `buildenv.Provider`, the contract in `internal/buildenv` for providers of build environments, and live beneath it: the `Job` a provider is given, the `Build` it records through, `ErrInfrastructure`, and the capabilities the engine looks for (`ReleaseProvider`, `Remedier`, `OwnTestsProvider`, `LeftoverProvider`, `IdentityProvider`). A provider that sees the ports active as a target built reports them (`Build.Consumed`). The runner names them by the revision's trees (`reuse.Inputs`), and the result keeps them as its inputs (decision 28). A provider imports the contract and `model`, never the engine; the command layer composes them, and a test holds that line.
 
-- **`buildenv/tart`** clones a prepared image for each release and attempt, and deletes the clone afterwards. It stages the revision's tree and a port index into the guest (`buildenv/staging`), reaches the guest over SSH (`tart/channel`), and runs `guest.tcl` there, in MacPorts CI's order. `tart/host` controls the VMs, and `tart/provision` makes and checks the images `providers setup tart` builds. Setup reads the vanilla image's digest from its registry (`tart.Registry`) and records each image's origin on the host (`tart.WriteImageRecord`). The provider reads it back as the environment's identity. [Tart provider](tart-provider.md).
+- **`buildenv/tart`** clones a prepared image for each release and attempt, and deletes the clone afterwards. It stages the revision's tree and a port index into the guest (`buildenv/staging`), reaches the guest over SSH (`tart/guestssh`), and runs `guest.tcl` there, in MacPorts CI's order. `tart/host` controls the VMs, and `tart/provision` makes and checks the images `providers setup tart` builds. Setup reads the vanilla image's digest from its registry (`tart.Registry`) and records each image's origin on the host (`tart.WriteImageRecord`). The provider reads it back as the environment's identity. [Tart provider](tart-provider.md).
 - **`buildenv/ghactions`** pushes the revision's commit to your fork and reads MacPorts' own workflow run. [github provider](github-provider.md).
 - **`buildenv/script`** hands a request file to your command and reads its result file. [command provider](command-provider.md).
 
@@ -87,7 +87,7 @@ Several dockhand processes can share one database: a foreground `check`, a `serv
 | `~/.dockhand/dockhand.db` (`--db`, `$DOCKHAND_DB`) | the records |
 | `~/.dockhand/logs/check-N/` | each execution's logs, beside the database |
 | `~/.dockhand/tart/` (`$DOCKHAND_TART_HOME`) | dockhand's Tart images, their golden copies, and the check clones |
-| `~/.dockhand/ssh/` | the key the host uses to reach its guests (`tart/channel`), and the keys kept archives are signed with for them (`macports/binaryarchive`) |
+| `~/.dockhand/ssh/` | the key the host uses to reach its guests (`tart/guestssh`), and the keys kept archives are signed with for them (`macports/binaryarchive`) |
 | the user cache directory, `dockhand/indexes` (`$DOCKHAND_INDEX_CACHE`) | port indexes, keyed by source tree; disposable |
 | one run root under the system temporary directory | a process's short-lived workspaces, removed when it exits (`scratch`) |
 | `~/Source/macports-branches` | branch worktrees, unless `worktrees` says otherwise |

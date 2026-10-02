@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/tart"
-	"github.com/herbygillot/dockhand/internal/tart/channel"
+	"github.com/herbygillot/dockhand/internal/tart/guestssh"
 	"github.com/herbygillot/dockhand/internal/tart/host"
 )
 
@@ -47,7 +47,7 @@ func harvestTart(ctx context.Context, executable, out string, parallel int, imag
 		return err
 	}
 	machine := host.Machine{Client: client}
-	keys, err := channel.DefaultKeys()
+	keys, err := guestssh.DefaultKeys()
 	if err != nil {
 		return err
 	}
@@ -109,7 +109,7 @@ func harvestTart(ctx context.Context, executable, out string, parallel int, imag
 
 // probeImage clones an image, boots the clone, runs the probe over the
 // channel, and stops and deletes the clone whatever happens.
-func probeImage(ctx context.Context, machine host.Machine, keys channel.Keys, script, version, image, out string) (err error) {
+func probeImage(ctx context.Context, machine host.Machine, keys guestssh.Keys, script, version, image, out string) (err error) {
 	profile, slug, ok := strings.Cut(strings.TrimPrefix(image, "dockhand-"), "-")
 	if !ok || (profile != "base" && profile != "xcode") {
 		return fmt.Errorf("not one of dockhand's base or Xcode images")
@@ -130,9 +130,9 @@ func probeImage(ctx context.Context, machine host.Machine, keys channel.Keys, sc
 		return err
 	}
 	// Every clone presents its image's host keys, recorded at setup.
-	guest := &channel.Guest{Address: address, Image: image, Keys: keys}
+	guest := &guestssh.Guest{Address: address, Image: image, Keys: keys}
 	defer guest.Close(cleanup)
-	if err := channel.AwaitSSH(ctx, guest, run, 4*time.Minute, 5*time.Second); err != nil {
+	if err := guestssh.AwaitSSH(ctx, guest, run, 4*time.Minute, 5*time.Second); err != nil {
 		return err
 	}
 	doc := probed{Image: image, Slug: slug, Profile: profile, Date: time.Now().UTC().Format(time.RFC3339), Host: map[string]any{"tart": version}}

@@ -24,7 +24,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/binaryarchive"
 	"github.com/herbygillot/dockhand/internal/model"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
-	"github.com/herbygillot/dockhand/internal/tart/channel"
+	"github.com/herbygillot/dockhand/internal/tart/guestssh"
 )
 
 // fakeMac stands for the Mac's Tart: its images, what runs, and a guest
@@ -206,7 +206,7 @@ func (g *fakeGuest) Read(_ context.Context, path string, _ bool) ([]byte, error)
 		return []byte("the runner's last words"), nil
 	}
 	if len(g.results) == 0 {
-		return nil, channel.ErrTransport
+		return nil, guestssh.ErrTransport
 	}
 	next := g.results[0]
 	if len(g.results) > 1 {
