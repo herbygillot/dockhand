@@ -229,7 +229,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	if err != nil {
 		return plan, err
 	}
-	scope := ScopeOf(changed)
+	scope := macports.ScopeOf(changed)
 	plan.Ports = scope.PortNames()
 	newPorts := e.newPorts(ctx, worktree, model.Source{Commit: model.ObjectID(head), Tree: model.ObjectID(plan.Tree), Base: branch.Base}, trees[string(branch.Base)], changed)
 	plan.Findings = commitrules.CheckCommits(ruleCommits(plan.Commits))
@@ -283,7 +283,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	}); err != nil {
 		return plan, err
 	}
-	plan.Moved = append(preparedSources(plan.Evidence, edits), plan.Moved...)
+	plan.Moved = append(append(preparedSources(plan.Evidence, edits), plan.Moved...), assessedSources(plan.Evidence, plan.Upstream)...)
 	facts := bodyFacts{Commits: plan.Commits, Evidence: plan.Evidence, NoCheck: request.NoCheck, Accepted: slices.Concat(accepted, request.Accept), Types: request.Types,
 		Updated:     dockhandUpdate(plan.Commits, edits),
 		RulesPassed: !errorsFound, Squashed: squashed, Searched: plan.SearchProblem == "", Others: plan.Others,

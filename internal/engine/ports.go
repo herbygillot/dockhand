@@ -189,6 +189,21 @@ func (p *evaluatedPorts) Dependents(ctx context.Context, source model.Source, di
 	return all, err
 }
 
+// PortsDefined names the ports each directory defines, as the source's
+// index has them (portNamer).
+func (p *evaluatedPorts) PortsDefined(ctx context.Context, source model.Source, directories []string) (map[string][]string, error) {
+	defined := map[string][]string{}
+	err := p.index(ctx, source, func(index *portindex.Index) error {
+		return index.Each(func(entry portindex.Entry) bool {
+			if slices.Contains(directories, entry.Portdir) {
+				defined[entry.Portdir] = append(defined[entry.Portdir], entry.Name)
+			}
+			return true
+		})
+	})
+	return defined, err
+}
+
 // dependentsIn are the direct dependents of the directories' ports in an
 // index.
 func dependentsIn(index *portindex.Index, directories []string) ([]Dependent, error) {

@@ -677,7 +677,7 @@ func parseAuthor(value string, when time.Time) (git.Signature, error) {
 func ruleCommits(history []git.HistoryCommit) []commitrules.Commit {
 	var commits []commitrules.Commit
 	for _, commit := range history {
-		commits = append(commits, commitrules.Commit{ID: commit.ID, Message: commit.Message, Merge: commit.Merge(), Ports: ScopeOf(commit.Paths).PortNames()})
+		commits = append(commits, commitrules.Commit{ID: commit.ID, Message: commit.Message, Merge: commit.Merge(), Ports: macports.ScopeOf(commit.Paths).PortNames()})
 	}
 	return commits
 }
@@ -884,7 +884,7 @@ func (e *Engine) narrow(ctx context.Context, worktree *git.Repository, branch mo
 	if err != nil {
 		return nil, err
 	}
-	want := append([]string{macports.ResourcesDirectory}, ScopeOf(changed).Ports...)
+	want := append([]string{macports.ResourcesDirectory}, macports.ScopeOf(changed).Ports...)
 	var left []string
 	for _, directory := range cone {
 		if !slices.Contains(want, directory) {

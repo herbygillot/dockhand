@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -175,4 +176,32 @@ func TestReviewSaysWhatUpdateWouldOfSomeonesPullRequest(t *testing.T) {
 		require.Empty(t, recorded, "a review records no assessment")
 		return err
 	}))
+}
+
+// definedPorts names the ports textproc/jq defines, as an index with a
+// subport there would, and reads no dependents.
+type definedPorts struct{}
+
+func (definedPorts) Dependents(context.Context, model.Source, []string) ([]Dependent, error) {
+	return nil, nil
+}
+
+func (definedPorts) PortsDefined(context.Context, model.Source, []string) (map[string][]string, error) {
+	return map[string][]string{"textproc/jq": {"jq", "jq-devel"}}, nil
+}
+
+// A review names each port the changed directory defines, as the base's
+// index has them: #34620's "1 commit changing libuv", where devel/libuv
+// also defines libuv-devel (the batch 11 run, batch 32).
+func TestReviewNamesADirectorysOtherPorts(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	fake := f.withFork(t, e)
+	contribution(t, f, fake)
+	e.DependentReader = definedPorts{}
+
+	report, err := e.Review(t.Context(), 34905)
+	require.NoError(t, err)
+	require.Equal(t, []string{"jq", "jq-devel"}, report.Ports)
+	require.Contains(t, report.Summary(), "2 commits changing jq, jq-devel")
 }

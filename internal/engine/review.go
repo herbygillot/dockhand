@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/commitrules"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -111,7 +112,18 @@ func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
 	if err != nil {
 		return report, err
 	}
-	report.Ports = ScopeOf(changed).PortNames()
+	report.Ports = macports.ScopeOf(changed).PortNames()
+	// A changed directory's other ports are said too, as the base's index
+	// names them: devel/libuv's libuv-devel.
+	baseSource := model.Source{Commit: model.ObjectID(report.Base), Base: model.ObjectID(report.Base), Tree: model.ObjectID(trees[report.Base])}
+	defined := e.portsDefined(ctx, baseSource, macports.ScopeOf(changed).Ports)
+	for _, directory := range macports.ScopeOf(changed).Ports {
+		for _, name := range AlsoDefined(directory, defined) {
+			if !slices.Contains(report.Ports, name) {
+				report.Ports = append(report.Ports, name)
+			}
+		}
+	}
 	report.Findings = commitrules.CheckCommits(ruleCommits(report.Commits))
 	portfiles, err := portfileFindings(ctx, e.Repo, trees[report.Base], trees[report.Head], changed)
 	if err != nil {
@@ -126,7 +138,7 @@ func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
 	for _, a := range append(found, made...) {
 		report.Upstream = append(report.Upstream, PortComparison{Port: a.Port, Comparison: a.Comparison})
 	}
-	scope := ScopeOf(changed)
+	scope := macports.ScopeOf(changed)
 	if len(scope.Ports) > 0 {
 		dependents, err := e.dependents(ctx, model.Source{Commit: model.ObjectID(report.Base), Base: model.ObjectID(report.Base), Tree: base}, scope.Ports)
 		if err != nil {

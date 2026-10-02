@@ -52,7 +52,9 @@ import (
 // turns on, holds nothing, nor do comments (the same). 13: a new port's
 // license said with its Portfile's line, holding only where its manifest
 // declares another, and its build files, all new, not said (batch 28).
-const Policy = 13
+// 14: an update's assessment checks its patches, as a revision's does, so
+// one kept from an update without them is made again (batch 32).
+const Policy = 14
 
 // Input is what one port's assessment reads.
 type Input struct {

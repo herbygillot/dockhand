@@ -408,3 +408,26 @@ func TestASourceLeftOutThatMovedSinceItsCheckIsAConcern(t *testing.T) {
 	require.Len(t, moved, 1)
 	require.Equal(t, "tool's git.branch v2 named "+built[:7]+" when check-8 planned it, and names "+now[:7]+" now: the check built another source than this would submit", moved[0].Detail)
 }
+
+// A Git-fetched port whose assessment read another commit than its check
+// planned is a concern, whether an update or a hand edit made it: what
+// upstream's change was judged of isn't the source the check built
+// (batch 22's leftover, batch 32). One that read the planned commit, or
+// kept none, as one assessed before it was kept, says nothing.
+func TestAnAssessmentOfAnotherCommitIsAConcern(t *testing.T) {
+	read, planned := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	source := model.GitSource{URL: "https://github.com/harbor/libharbor.git", Ref: "v4", Commit: model.ObjectID(planned), ResolvedAt: time.Now()}
+	evidence := &Evidence{Run: model.Run{Number: 7}, Plan: model.Plan{Targets: []model.PlanTarget{{ID: "libharbor", Target: model.Target{Name: "libharbor"}}},
+		Builds: []model.EnvironmentPlan{{Order: []model.TargetID{"libharbor"}, Git: map[model.TargetID]model.GitSource{"libharbor": source}}}}}
+	assessed := func(commit string) []PortComparison {
+		return []PortComparison{{Port: "libharbor", Comparison: model.UpstreamComparison{Commit: commit}}}
+	}
+	moved := assessedSources(evidence, assessed(read))
+	require.Len(t, moved, 1)
+	require.Equal(t, "assessment-moved", moved[0].Rule)
+	require.Equal(t, "libharbor's assessment read aaaaaaa, and check-7 planned bbbbbbb: what upstream's change was judged of isn't the source the check built", moved[0].Detail)
+	require.Empty(t, assessedSources(evidence, assessed(planned)), "it read what the check built")
+	require.Empty(t, assessedSources(evidence, assessed("")), "it kept no commit")
+	require.Empty(t, assessedSources(evidence, nil), "no assessment")
+	require.Empty(t, assessedSources(nil, assessed(read)), "no check")
+}

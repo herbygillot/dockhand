@@ -457,12 +457,17 @@ type branchJSON struct {
 }
 
 // concernJSON is what a submission nobody looks over waits on a person's
-// look for: the port, the rule that raised it, what it's about, such as
-// the commit the check planned, and its words.
+// look for: where it came from, upstream, the commit rules, or another
+// pull request, where submit gives it; the port, the rule that raised it,
+// what it's about, such as the commit the check planned, how it stands
+// against the base, and its words.
 type concernJSON struct {
+	Origin  string `json:"origin,omitempty"`
 	Port    string `json:"port"`
 	Rule    string `json:"rule"`
+	Path    string `json:"path,omitempty"`
 	Subject string `json:"subject,omitempty"`
+	Class   string `json:"class,omitempty"`
 	Detail  string `json:"detail"`
 }
 
@@ -620,12 +625,16 @@ func diffView(diff engine.BranchDiff, patch bool) diffJSON {
 }
 
 type impactJSON struct {
-	Branch          string          `json:"branch"`
-	Changed         []string        `json:"changed_directories"`
-	LookedFor       []string        `json:"dependents_of"`
-	Dependents      []dependentJSON `json:"dependents"`
-	DependentsError string          `json:"dependents_error,omitempty"`
-	Shared          []sharedJSON    `json:"shared_files"`
+	Branch  string   `json:"branch"`
+	Changed []string `json:"changed_directories"`
+	// Defined are the ports each changed directory defines at the base,
+	// as its index names them, devel/libuv's libuv and libuv-devel; absent
+	// where it couldn't be read.
+	Defined         map[string][]string `json:"defined,omitempty"`
+	LookedFor       []string            `json:"dependents_of"`
+	Dependents      []dependentJSON     `json:"dependents"`
+	DependentsError string              `json:"dependents_error,omitempty"`
+	Shared          []sharedJSON        `json:"shared_files"`
 }
 
 type dependentJSON struct {
@@ -642,7 +651,7 @@ type sharedJSON struct {
 }
 
 func impactView(impact engine.Impact) impactJSON {
-	view := impactJSON{Branch: impact.Diff.Status.Branch.ShortName(), Changed: nonNil(impact.Diff.Status.Scope.Ports), LookedFor: nonNil(impact.Of),
+	view := impactJSON{Branch: impact.Diff.Status.Branch.ShortName(), Changed: nonNil(impact.Diff.Status.Scope.Ports), Defined: impact.Defined, LookedFor: nonNil(impact.Of),
 		Dependents: []dependentJSON{}, DependentsError: impact.Unread, Shared: []sharedJSON{}}
 	for _, dependent := range impact.Dependents {
 		view.Dependents = append(view.Dependents, dependentJSON{Name: dependent.Name, Directory: dependent.Directory, On: nonNil(dependent.On), Phases: nonNil(dependent.Phases)})

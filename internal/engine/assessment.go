@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -148,7 +149,7 @@ func (e *Engine) makeAssessments(ctx context.Context, branch model.BranchID, bas
 		return nil, nil, err
 	}
 	sources := [2]model.Source{{Commit: base, Tree: baseTree, Base: base}, {Tree: tree, Base: base}}
-	for _, directory := range ScopeOf(changed).Ports {
+	for _, directory := range macports.ScopeOf(changed).Ports {
 		exists := [2]bool{}
 		for i, source := range sources {
 			file, _, err := e.Repo.File(ctx, string(source.Tree), directory+"/Portfile")
@@ -231,9 +232,6 @@ func (e *Engine) assessPort(ctx context.Context, planner ArchivePlanner, sources
 		infos[side], plans[side] = info, plan
 	}
 	input := assess.Input{Base: infos[0], Port: infos[1], Versions: sourcecompare.Versions{Old: infos[0].Version, New: infos[1].Version}, New: !hadBase}
-	if file, data, err := e.Repo.File(ctx, string(sources[1].Tree), directory+"/Portfile"); err == nil && file.Exists {
-		input.Portfile = data
-	}
 	var coverage []model.Coverage
 	switch {
 	case problem != "":
@@ -251,26 +249,61 @@ func (e *Engine) assessPort(ctx context.Context, planner ArchivePlanner, sources
 		var fetched map[string]string
 		input.Pairs, fetched, problem, again = e.readPlans(ctx, infos, plans, hadBase, scratchDirectory)
 		if problem == "" {
-			input.Patches = e.revisionPatches(ctx, infos, plans[1], sources, directory, scratchDirectory, fetched)
+			input.Patches = e.patchesFor(ctx, patchRequest{infos: infos, sources: sources, portdir: directory, plan: plans[1], fetched: fetched, scratch: scratchDirectory})
 		}
 	}
-	if problem == "" && len(input.Pairs) > 0 {
-		input.Observed = e.observeProviders(ctx, input, sources)
-	}
-	comparison := assess.Assess(input)
+	comparison := e.collect(ctx, input, sources, directory+"/Portfile", problem == "")
 	comparison.Problem, comparison.Transient = problem, again && problem != ""
+	if infos[1].GitFetched() && problem == "" && len(input.Pairs) == 1 {
+		// What a Git-fetched port's assessment read is the commit its
+		// git.branch named then, which a later check may not build.
+		comparison.Commit = input.Pairs[0].Archive
+	}
 	comparison.Coverage = append(comparison.Coverage, coverage...)
 	return comparison
 }
 
-// revisionPatches checks the revision's patches, and those the base applied
-// that it drops, against the revision's archives (patchcheck.Port): those
-// readPlans fetched, by name, and the rest fetched now into directory,
-// where a kept reading spared fetching them. Each patch is read from the
+// collect is the one place an assessment is made from what was gathered
+// for it, by update and by a revision's assessment alike (the
+// architecture review's finding 1): the candidate's Portfile read at its
+// path, the providers its requirements name observed where its archives
+// were read, and the rules applied.
+func (e *Engine) collect(ctx context.Context, input assess.Input, trees [2]model.Source, portfile string, observe bool) model.UpstreamComparison {
+	if file, data, err := e.Repo.File(ctx, string(trees[1].Tree), portfile); err == nil && file.Exists {
+		input.Portfile = data
+	}
+	if observe && len(input.Pairs) > 0 {
+		input.Observed = e.observeProviders(ctx, input, trees)
+	}
+	return assess.Assess(input)
+}
+
+// patchRequest is what checking a revision's patches reads: each version's
+// port, the trees its patch files are in, the port's directory, and the
+// candidate's archives, fetched by name where fetched has them, else from
+// its plan into scratch. checked are the candidate's own patches an
+// update's preparation already checked against those archives, which
+// aren't checked again; nil where none were.
+type patchRequest struct {
+	infos   [2]macports.PortInfo
+	sources [2]model.Source
+	portdir string
+	plan    []macports.Distfile
+	fetched map[string]string
+	scratch string
+	checked []patchcheck.Result
+}
+
+// patchesFor checks the revision's patches, and those the base applied that
+// it drops, against the revision's archives (patchcheck.Port), for update
+// and a revision's assessment alike: update's assessment had none, and
+// was kept as the revision's whole one, so a later look reused it without
+// them (the architecture review's finding 1). Each patch is read from the
 // port's files in its own version's tree, where filespath names below the
-// port's directory; one the check can't reach is unchecked, with why.
-// None where neither version declares patches.
-func (e *Engine) revisionPatches(ctx context.Context, infos [2]macports.PortInfo, plan []macports.Distfile, sources [2]model.Source, portdir, directory string, fetched map[string]string) []assess.Patch {
+// port's directory; one the check can't reach is unchecked, with why. None
+// where neither version declares patches.
+func (e *Engine) patchesFor(ctx context.Context, request patchRequest) []assess.Patch {
+	infos, sources, portdir := request.infos, request.sources, request.portdir
 	own, ownErr := infos[1].Patchfiles()
 	had, hadErr := infos[0].Patchfiles()
 	var dropped []string
@@ -295,10 +328,32 @@ func (e *Engine) revisionPatches(ctx context.Context, infos [2]macports.PortInfo
 	if err := errors.Join(ownErr, hadErr); err != nil {
 		return unchecked("patchfiles couldn't be read: " + err.Error())
 	}
+	// What the update's preparation checked stands; only what it didn't
+	// check, the patches the candidate drops, is checked here.
+	checking := own
+	if request.checked != nil {
+		for _, name := range own {
+			at := slices.IndexFunc(request.checked, func(r patchcheck.Result) bool { return r.Name == name })
+			if at < 0 {
+				found = append(found, assess.Patch{Result: patchcheck.Result{Name: name, Detail: "the update didn't check it"}})
+				continue
+			}
+			found = append(found, assess.Patch{Result: request.checked[at]})
+		}
+		if checking = nil; len(dropped) == 0 {
+			return found
+		}
+		own = nil
+	}
 	var paths, missing []string
 	var missed []macports.Distfile
-	for _, file := range plan {
-		if path, ok := fetched[file.Name]; ok {
+	if request.plan == nil {
+		for _, name := range slices.Sorted(maps.Keys(request.fetched)) {
+			paths = append(paths, request.fetched[name])
+		}
+	}
+	for _, file := range request.plan {
+		if path, ok := request.fetched[file.Name]; ok {
 			paths = append(paths, path)
 		} else {
 			missed = append(missed, file)
@@ -306,7 +361,7 @@ func (e *Engine) revisionPatches(ctx context.Context, infos [2]macports.PortInfo
 		}
 	}
 	if len(missed) > 0 {
-		into, err := os.MkdirTemp(directory, "")
+		into, err := os.MkdirTemp(request.scratch, "")
 		if err != nil {
 			return unchecked(err.Error())
 		}
@@ -318,6 +373,7 @@ func (e *Engine) revisionPatches(ctx context.Context, infos [2]macports.PortInfo
 			paths = append(paths, archive.Path)
 		}
 	}
+	own = checking
 	var patches []patchcheck.Patch
 	read := func(side int, name string) ([]byte, string) {
 		where, ok := infos[side].FilesPath(portdir, name)

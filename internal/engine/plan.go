@@ -101,7 +101,7 @@ func (e *Engine) PlanCheck(ctx context.Context, request PlanRequest) (model.Plan
 	if err != nil {
 		return plan, err
 	}
-	scope := ScopeOf(changed)
+	scope := macports.ScopeOf(changed)
 
 	// Each environment evaluates the ports for itself: a port may be
 	// defined, eligible, need Xcode, or need a changed library on one

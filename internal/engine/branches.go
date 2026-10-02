@@ -170,7 +170,7 @@ func (e *Engine) changes(ctx context.Context, base model.ObjectID, head string) 
 	if err != nil {
 		return 0, Scope{}, err
 	}
-	return commits, ScopeOf(paths), nil
+	return commits, macports.ScopeOf(paths), nil
 }
 
 // AdoptRequest asks to track an existing branch.
@@ -344,7 +344,7 @@ func (e *Engine) placeWorktree(ctx context.Context, branch model.Branch) (model.
 		if err != nil {
 			return branch, err
 		}
-		if err := e.Repo.AddSparseWorktree(ctx, directory, branch.Name, append([]string{macports.ResourcesDirectory}, ScopeOf(changed).Ports...)); err != nil {
+		if err := e.Repo.AddSparseWorktree(ctx, directory, branch.Name, append([]string{macports.ResourcesDirectory}, macports.ScopeOf(changed).Ports...)); err != nil {
 			return branch, fmt.Errorf("checking %s out in %s: %w", branch.Name, directory, err)
 		}
 		branch.Worktree, branch.Managed = directory, true
@@ -500,7 +500,7 @@ func (e *Engine) checkOutAgain(ctx context.Context, branch model.Branch) error {
 	if err := e.Repo.PruneWorktrees(ctx); err != nil {
 		return err
 	}
-	if err := e.Repo.AddSparseWorktree(ctx, branch.Worktree, branch.Name, append([]string{macports.ResourcesDirectory}, ScopeOf(changed).Ports...)); err != nil {
+	if err := e.Repo.AddSparseWorktree(ctx, branch.Worktree, branch.Name, append([]string{macports.ResourcesDirectory}, macports.ScopeOf(changed).Ports...)); err != nil {
 		return fmt.Errorf("checking %s out again in %s: %w", branch.Name, branch.Worktree, err)
 	}
 	return e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
@@ -609,7 +609,7 @@ func (e *Engine) AdoptPullRequest(ctx context.Context, number int) (PullRequestA
 	if err != nil {
 		return adoption, err
 	}
-	adoption.Scope = ScopeOf(paths)
+	adoption.Scope = macports.ScopeOf(paths)
 	if err := e.Repo.CreateBranch(ctx, name, head); err != nil {
 		return adoption, err
 	}

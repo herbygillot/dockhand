@@ -265,6 +265,9 @@ func writeImpact(out io.Writer, impact engine.Impact) {
 	var changed []string
 	for _, port := range impact.Diff.Ports {
 		words := filepath.Base(port.Directory)
+		if also := engine.AlsoDefined(port.Directory, impact.Defined); len(also) > 0 {
+			words += " and " + strings.Join(also, ", ")
+		}
 		if kind := portChangeWords(port); kind != "changed" {
 			words += " (" + kind + ")"
 		}

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -243,7 +244,7 @@ func (e *Engine) portMoves(ctx context.Context, master, head string) ([]portMove
 		return portfile.DeclaredVersion(data, "")
 	}
 	var moves []portMove
-	for _, directory := range ScopeOf(changed).Ports {
+	for _, directory := range macports.ScopeOf(changed).Ports {
 		was, ok := declared(trees[base], directory)
 		now, okNow := declared(trees[master], directory)
 		if !ok || !okNow {

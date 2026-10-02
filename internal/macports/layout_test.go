@@ -76,3 +76,24 @@ func TestACategoryANewPortCanGoIn(t *testing.T) {
 		require.False(t, macports.ValidCategory(name), name)
 	}
 }
+
+// A change marks a port by CI's rule, its Portfile or anything under its
+// files/, and _resources apart; a scope names them as a person reads them.
+// The rule was engine's (the architecture review's smaller items, batch
+// 32).
+func TestScopeFollowsCIsRule(t *testing.T) {
+	scope := macports.ScopeOf([]string{
+		"textproc/jq/Portfile",
+		"textproc/jq/files/patch-a.diff",
+		"devel/libharbor/files/extra/x.patch",
+		"devel/libharbor/README",
+		"_resources/port1.0/group/github-1.0.tcl",
+		".github/workflows/main.yml",
+		"README.md",
+	})
+	require.Equal(t, []string{"devel/libharbor", "textproc/jq"}, scope.Ports)
+	require.True(t, scope.Resources)
+	require.Equal(t, []string{"libharbor", "jq", "_resources"}, scope.Changed(), "as a person reads it")
+	require.Empty(t, macports.ScopeOf([]string{"devel/libharbor/README"}).Ports, "only a Portfile or files/ marks a port")
+	require.Equal(t, []string{"jq"}, macports.ScopeOf([]string{"textproc/jq/Portfile"}).Changed())
+}

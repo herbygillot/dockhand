@@ -25,6 +25,15 @@ func (d jqDependents) Dependents(context.Context, model.Source, []string) ([]eng
 	return []engine.Dependent{jo, {Name: "yq", Directory: "textproc/yq", On: []string{"jq"}, Phases: []string{"library", "runtime"}}}, nil
 }
 
+// jqAndDevel reads jq's dependents as jqDependents does, and names the
+// ports textproc/jq defines, as the index does for a directory with a
+// subport.
+type jqAndDevel struct{ jqDependents }
+
+func (jqAndDevel) PortsDefined(context.Context, model.Source, []string) (map[string][]string, error) {
+	return map[string][]string{"textproc/jq": {"jq", "jq-devel"}}, nil
+}
+
 func TestDiffAndImpact(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
@@ -60,6 +69,14 @@ Other dependents  jo (build), yq (library, runtime); candidates to look at
 Shared files      none
 Next: dockhand check --also yq,jo builds them against the branch
 `, out)
+
+	// A changed directory's other ports are named as the base's index has
+	// them: devel/libuv's libuv-devel read as libuv alone (batch 32).
+	testDependentReader = jqAndDevel{}
+	out, _, err = dockhand(t, "impact")
+	require.NoError(t, err)
+	require.Contains(t, out, "Changed ports     jq and jq-devel\n")
+	testDependentReader = jqDependents{}
 
 	require.NoError(t, os.WriteFile(filepath.Join(worktree, "textproc/jq/Portfile"), []byte("name jq\nversion 1.7.1\nrevision 1\n"), 0o644))
 	out, _, err = dockhand(t, "impact")

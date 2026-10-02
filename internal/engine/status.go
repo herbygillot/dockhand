@@ -8,6 +8,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -181,7 +182,7 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 	if err != nil {
 		return status, err
 	}
-	status.Scope = ScopeOf(changed)
+	status.Scope = macports.ScopeOf(changed)
 	if branch.State == model.BranchOpen {
 		if status.OnMaster, err = e.landedOnMaster(ctx, changed, status.Tree); err != nil {
 			return status, err

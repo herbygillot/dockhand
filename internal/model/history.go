@@ -72,6 +72,10 @@ type UpstreamComparison struct {
 	// again tries; a refusal, as a 404, or a port that doesn't evaluate,
 	// stands for its files.
 	Transient bool `json:"transient,omitempty"`
+	// Commit is the commit a Git-fetched port's source was read at, as
+	// its git.branch named it when it was assessed; empty for one read
+	// from archives, and for one assessed before it was kept.
+	Commit string `json:"commit,omitempty"`
 }
 
 // Held reports whether the comparison holds the update for a person's

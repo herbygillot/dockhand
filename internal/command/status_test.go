@@ -388,3 +388,17 @@ func TestStatusSaysABranchsWorkIsOnMasterAlready(t *testing.T) {
 	status.Branch.PullRequest = &model.PullRequest{Number: 35100}
 	require.NotContains(t, attentionFor(status), attention{mark: "·", branch: "duckdb-cxx14", what: "its changes are on master already, as of eeeeeee", next: "dockhand archive duckdb-cxx14"})
 }
+
+// A submission's JSON lists its concerns, a moved tag's among them, with
+// where each came from and the rule that raised it, for a person's own
+// submission too, where only its text and an unattended submission's held
+// said them (batch 22's leftover, batch 32).
+func TestSubmitJSONListsItsConcerns(t *testing.T) {
+	detail := "libharbor's git.branch v4 named aaaaaaa when its update chose it, and bbbbbbb when check-7 planned it: the check built another source than the update chose"
+	plan := engine.SubmitPlan{Branch: model.Branch{Name: "dockhand/libharbor-4"},
+		Moved: []model.Concern{{Origin: model.FromUpstream, Port: "libharbor", Rule: "release-moved", Subject: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Class: model.Introduced, Detail: detail}}}
+	view := submitView(plan)
+	require.Equal(t, []concernJSON{{Origin: "upstream", Port: "libharbor", Rule: "release-moved", Subject: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Class: string(model.Introduced), Detail: detail}}, view.Concerns)
+	require.Empty(t, view.Held, "held is an unattended submission's")
+	require.Equal(t, []concernJSON{}, submitView(engine.SubmitPlan{}).Concerns, "an empty list, never null")
+}

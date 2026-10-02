@@ -2,6 +2,7 @@ package macports
 
 import (
 	"io/fs"
+	"slices"
 	"strings"
 )
 
@@ -83,4 +84,66 @@ func PortGroupAt(path string) (PortGroup, bool) {
 		return PortGroup{}, false
 	}
 	return PortGroup{Name: stem[:hyphen], Version: stem[hyphen+1:]}, true
+}
+
+// ChangedPort is the port directory a changed path changes by MacPorts
+// CI's rule: its Portfile, or anything under its files/ (macports-ports
+// .github/workflows/main.yml). A path elsewhere in a port's directory
+// changes no port CI builds.
+func ChangedPort(path string) (string, bool) {
+	directory, ok := PortDirectoryOf(path)
+	rest := strings.TrimPrefix(path, directory+"/")
+	return directory, ok && (rest == "Portfile" || strings.HasPrefix(rest, "files/"))
+}
+
+// Scope is what a set of changed paths touches, by CI's rule.
+type Scope struct {
+	// Ports are the changed port directories, sorted.
+	Ports []string
+	// Resources reports a change under _resources, which CI builds nothing
+	// for and which may affect every port that loads it.
+	Resources bool
+}
+
+// ScopeOf applies CI's rule to changed paths: the port directories they
+// change (ChangedPort), and whether _resources changed. It was engine's,
+// a MacPorts fact kept as a workflow's helper (the architecture review's
+// smaller items, batch 32).
+func ScopeOf(paths []string) Scope {
+	var s Scope
+	for _, path := range paths {
+		if strings.HasPrefix(path, ResourcesDirectory+"/") {
+			s.Resources = true
+			continue
+		}
+		directory, ok := ChangedPort(path)
+		if !ok {
+			continue
+		}
+		if !slices.Contains(s.Ports, directory) {
+			s.Ports = append(s.Ports, directory)
+		}
+	}
+	slices.Sort(s.Ports)
+	return s
+}
+
+// Changed names what the scope changes, as a person reads it: the ports'
+// directory names, and _resources when it changed.
+func (s Scope) Changed() []string {
+	names := s.PortNames()
+	if s.Resources {
+		names = append(names, ResourcesDirectory)
+	}
+	return names
+}
+
+// PortNames are the ports' directory names: the last part of each
+// directory.
+func (s Scope) PortNames() []string {
+	names := make([]string, len(s.Ports))
+	for i, directory := range s.Ports {
+		names[i] = directory[strings.LastIndexByte(directory, '/')+1:]
+	}
+	return names
 }

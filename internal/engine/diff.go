@@ -73,7 +73,7 @@ func (e *Engine) Diff(ctx context.Context, branch model.Branch, paths []string) 
 		diff.Ports = append(diff.Ports, port)
 	}
 	for _, path := range changed {
-		if _, ok := portChange(path); !ok {
+		if _, ok := macports.ChangedPort(path); !ok {
 			diff.Other = append(diff.Other, path)
 		}
 		if within(path, paths) {
@@ -127,6 +127,51 @@ type DependentReader interface {
 	Dependents(ctx context.Context, source model.Source, directories []string) ([]Dependent, error)
 }
 
+// portNamer names the ports each of some directories defines, as a
+// source's port index has them; the port reader that reads the index is
+// one.
+type portNamer interface {
+	PortsDefined(ctx context.Context, source model.Source, directories []string) (map[string][]string, error)
+}
+
+// portsDefined are the ports each directory defines at a source, as its
+// index names them: devel/libuv defines libuv and libuv-devel, which a
+// change to it reaches alike, where impact and review named libuv alone
+// (the batch 11 run on #34620, batch 32). None where the reader can't say,
+// or the index couldn't be read, which names nothing wrongly.
+func (e *Engine) portsDefined(ctx context.Context, source model.Source, directories []string) map[string][]string {
+	var reader any = e.DependentReader
+	if reader == nil {
+		ports, err := e.portReader()
+		if err != nil {
+			return nil
+		}
+		reader = ports
+	}
+	namer, ok := reader.(portNamer)
+	if !ok || len(directories) == 0 {
+		return nil
+	}
+	defined, err := namer.PortsDefined(ctx, source, directories)
+	if err != nil {
+		return nil
+	}
+	return defined
+}
+
+// AlsoDefined are the ports a directory defines beside the one named for
+// it, sorted.
+func AlsoDefined(directory string, defined map[string][]string) []string {
+	var also []string
+	for _, name := range defined[directory] {
+		if name != directoryName(directory) {
+			also = append(also, name)
+		}
+	}
+	slices.Sort(also)
+	return also
+}
+
 // SharedFile is a changed file that ports load rather than own.
 type SharedFile struct {
 	Path string
@@ -142,6 +187,9 @@ type SharedFile struct {
 // not proof of anything.
 type Impact struct {
 	Diff BranchDiff
+	// Defined are the ports each changed directory defines at the base, as
+	// its index names them; none where it couldn't be read.
+	Defined map[string][]string
 	// Of are the directories whose dependents were looked for.
 	Of         []string
 	Dependents []Dependent
@@ -185,6 +233,7 @@ func (e *Engine) Impact(ctx context.Context, branch model.Branch, ports []string
 		return impact, err
 	}
 	source := model.Source{Commit: branch.Base, Base: branch.Base, Tree: model.ObjectID(diff.BaseTree)}
+	impact.Defined = e.portsDefined(ctx, source, diff.Status.Scope.Ports)
 	for _, name := range ports {
 		directory := ""
 		for _, port := range diff.Ports {

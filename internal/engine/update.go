@@ -590,7 +590,7 @@ func (e *Engine) BranchesChanging(ctx context.Context, port string) ([]model.Bra
 		if err != nil {
 			return nil, err
 		}
-		if slices.Contains(ScopeOf(append(paths, edited...)).PortNames(), port) {
+		if slices.Contains(macports.ScopeOf(append(paths, edited...)).PortNames(), port) {
 			changing = append(changing, branch)
 		}
 	}
@@ -628,7 +628,7 @@ func (e *Engine) ChangesHere(ctx context.Context, port string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return slices.Contains(ScopeOf(slices.Concat(paths, edited, added)).PortNames(), port), nil
+	return slices.Contains(macports.ScopeOf(slices.Concat(paths, edited, added)).PortNames(), port), nil
 }
 
 // workingEdits are the tracked files edited in a branch's worktree and not
@@ -698,9 +698,6 @@ func (e *Engine) assessUpstream(ctx context.Context, result preparation.Result, 
 	input := assess.Input{Versions: versions}
 	input.Base, _ = result.PortBefore(result.Target.Name)
 	input.Port, _ = result.PortAfter(result.Target.Name)
-	if file, data, err := e.Repo.File(ctx, string(trees[1].Tree), result.Target.Portfile); err == nil && file.Exists {
-		input.Portfile = data
-	}
 	if t := result.GoToolchain; t != nil {
 		input.Toolchain = &assess.Toolchain{Required: t.Required, Declared: t.Declared, Outcome: toolchainOutcomes[t.Outcome]}
 	}
@@ -727,10 +724,21 @@ func (e *Engine) assessUpstream(ctx context.Context, result preparation.Result, 
 		}
 		input.Pairs = pairs
 	}
-	if problem == "" && len(input.Pairs) > 0 {
-		input.Observed = e.observeProviders(ctx, input, trees)
+	if compare && problem == "" {
+		// Its patches are checked as a revision's are, the preparation's
+		// own results taken as they stand, against the archives it kept:
+		// update's assessment had none, and stood as the revision's whole
+		// one (the architecture review's finding 1).
+		fetched := map[string]string{}
+		for _, download := range result.Downloads {
+			if download.Path != "" {
+				fetched[download.Name] = download.Path
+			}
+		}
+		input.Patches = e.patchesFor(ctx, patchRequest{infos: [2]macports.PortInfo{input.Base, input.Port}, sources: trees,
+			portdir: path.Dir(result.Target.Portfile), fetched: fetched, checked: result.Patches})
 	}
-	comparison := assess.Assess(input)
+	comparison := e.collect(ctx, input, trees, result.Target.Portfile, problem == "")
 	comparison.Problem = problem
 	if !compare && len(comparison.Changes) == 0 {
 		return nil

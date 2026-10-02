@@ -357,23 +357,6 @@ func TestUpstreamRemoteIsFoundByURL(t *testing.T) {
 	}
 }
 
-func TestScopeFollowsCIsRule(t *testing.T) {
-	scope := ScopeOf([]string{
-		"textproc/jq/Portfile",
-		"textproc/jq/files/patch-a.diff",
-		"devel/libharbor/files/extra/x.patch",
-		"devel/libharbor/README",
-		"_resources/port1.0/group/github-1.0.tcl",
-		".github/workflows/main.yml",
-		"README.md",
-	})
-	require.Equal(t, []string{"devel/libharbor", "textproc/jq"}, scope.Ports)
-	require.True(t, scope.Resources)
-	require.Equal(t, []string{"libharbor", "jq", "_resources"}, scope.Changed(), "as a person reads it")
-	require.Empty(t, ScopeOf([]string{"devel/libharbor/README"}).Ports, "only a Portfile or files/ marks a port")
-	require.Equal(t, []string{"jq"}, ScopeOf([]string{"textproc/jq/Portfile"}).Changed())
-}
-
 // An update's file is in its port's directory, or else in its own.
 func TestAnUpdatedFileIsInItsPortsDirectory(t *testing.T) {
 	for file, directory := range map[string]string{

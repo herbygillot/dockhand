@@ -201,6 +201,33 @@ func preparedSources(evidence *Evidence, edits []model.Edit) []model.Concern {
 	return concerns
 }
 
+// assessedSources are the Git-fetched ports whose assessment read another
+// commit than the check a submission rests on planned: what upstream's
+// change means was judged of one source, and the check built another.
+// release-moved says it of an update's release; a hand edit records no
+// release, and nothing said it (batch 22's leftover, batch 32). An
+// assessment that kept no commit says nothing.
+func assessedSources(evidence *Evidence, upstream []PortComparison) []model.Concern {
+	if evidence == nil {
+		return nil
+	}
+	var concerns []model.Concern
+	for _, p := range plannedSources(evidence.Plan) {
+		target, planned := p.target, p.source
+		at := slices.IndexFunc(upstream, func(found PortComparison) bool { return found.Port == target.Target.Name })
+		if at < 0 || planned.Commit == "" {
+			continue
+		}
+		read := upstream[at].Comparison.Commit
+		if read == "" || model.ObjectID(read) == planned.Commit {
+			continue
+		}
+		concerns = append(concerns, model.Concern{Origin: model.FromUpstream, Port: target.Target.Name, Rule: "assessment-moved", Subject: string(planned.Commit), Class: model.Introduced,
+			Detail: fmt.Sprintf("%s's assessment read %s, and %s planned %s: what upstream's change was judged of isn't the source the check built", target.Target.Name, short(model.ObjectID(read)), evidence.Run.Name(), short(planned.Commit))})
+	}
+	return concerns
+}
+
 // plannedSource is a Git-fetched target of a plan, and the source the plan
 // expects it to fetch.
 type plannedSource struct {

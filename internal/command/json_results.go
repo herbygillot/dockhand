@@ -301,6 +301,12 @@ type submitJSON struct {
 	// Held are why a submission nobody looked over, bump's, waits for a
 	// person's look.
 	Held []string `json:"held,omitempty"`
+	// Concerns are what the submission would wait on a person's look for,
+	// were nobody to look it over, each with where it came from and the
+	// rule that raised it: a person's own submission shows them and goes
+	// ahead. A Git-fetched port whose tag moved, release-moved or
+	// source-moved, was said only in text (batch 32).
+	Concerns []concernJSON `json:"concerns"`
 	// Check is the check submit --check ran, as far as it went.
 	Check *checkJSON `json:"check,omitempty"`
 }
@@ -347,6 +353,11 @@ func submitView(plan engine.SubmitPlan) submitJSON {
 	}
 	for _, build := range plan.UnfoundBuilds {
 		view.UnfoundBuilds = append(view.UnfoundBuilds, unfoundBuildJSON{Build: build.Build, Commits: build.Commits, Commit: build.Source.Commit, Release: build.Source.Release})
+	}
+	view.Concerns = []concernJSON{}
+	for _, concern := range plan.Concerns() {
+		view.Concerns = append(view.Concerns, concernJSON{Origin: string(concern.Origin), Port: concern.Port, Rule: concern.Rule, Path: concern.Path, Subject: concern.Subject,
+			Class: string(concern.Class), Detail: concern.Detail})
 	}
 	return view
 }

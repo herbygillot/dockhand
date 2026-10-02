@@ -414,6 +414,7 @@ func TestAGitFetchedPortIsComparedByItsCommits(t *testing.T) {
 		{Path: "LICENSE", Relevance: "used", Treatment: "inspected", Policy: "read", Reason: "compared with the base's"},
 		{Path: v2, Relevance: "unknown", Treatment: "inspected",
 			Reason: "read from the forge's archive of each commit, submodules left out; the base's git.branch as it names a commit now"}}, assessments[0].Comparison.Coverage)
+	require.Equal(t, v2, assessments[0].Comparison.Commit, "the commit it read is kept, for submit to compare with what a check built")
 	require.EqualValues(t, 2, archives.asked.Load())
 
 	later := editTree(t, e, tree, map[string]string{"devel/libharbor/files/a.diff": "a"})
@@ -644,7 +645,7 @@ func TestTheBasesPatchesARevisionDropsAreChecked(t *testing.T) {
 	require.NoError(t, err)
 	had := macports.PortInfo{Name: "libuv", Options: map[string]string{"patchfiles": "patch-legacy.diff patch-still.diff patch-lost.diff"}}
 	directory := t.TempDir()
-	patches := e.revisionPatches(t.Context(), [2]macports.PortInfo{had, info}, plan, [2]model.Source{{Tree: before}, {Tree: after}}, "devel/libuv", directory, nil)
+	patches := e.patchesFor(t.Context(), patchRequest{infos: [2]macports.PortInfo{had, info}, sources: [2]model.Source{{Tree: before}, {Tree: after}}, portdir: "devel/libuv", plan: plan, scratch: directory})
 	byName := map[string]assess.Patch{}
 	for _, patch := range patches {
 		byName[patch.Name] = patch
