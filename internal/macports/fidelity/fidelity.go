@@ -320,8 +320,10 @@ func ReleaseScope(before, after macports.Snapshot, selected string, authorized b
 		if old.Version != oldRoot.Version || next.Version != nextRoot.Version {
 			return nil, fmt.Errorf("%w: %s, another port of the same Portfile, keeps a version of its own, which updating %s doesn't move", ErrMismatch, name, selected)
 		}
-		// A shared input must describe the same source, not just coincident versions.
-		if !member.MetadataOnly {
+		// A shared input must describe the same source, not just coincident
+		// versions. A member with no source, one that builds nothing or
+		// fetches nothing, as libgcc14 beside gcc14, has none to get wrong.
+		if !member.MetadataOnly && !fetchesNothing(old, next) {
 			for _, key := range []string{"git.branch", "distfiles", "master_sites", "checksums"} {
 				if old.Options[key] != oldRoot.Options[key] || next.Options[key] != nextRoot.Options[key] {
 					return nil, fmt.Errorf("%w: %s, another port of the same Portfile, fetches its own source (its %s differ from %s's), which updating %s doesn't move", ErrMismatch, name, key, selected, selected)
@@ -333,6 +335,17 @@ func ReleaseScope(before, after macports.Snapshot, selected string, authorized b
 	slices.SortFunc(scope.Affected, func(a, b macports.ReleaseMember) int { return model.CompareTargets(a.Target, b.Target) })
 	slices.SortFunc(scope.Protected, func(a, b macports.ReleaseMember) int { return model.CompareTargets(a.Target, b.Target) })
 	return scope, nil
+}
+
+// fetchesNothing reports a port with nothing to download, before the
+// release and after.
+func fetchesNothing(old, next macports.PortInfo) bool {
+	before, err := old.FetchesNothing()
+	if err != nil || !before {
+		return false
+	}
+	after, err := next.FetchesNothing()
+	return err == nil && after
 }
 
 // followsObsolete reports whether name is an obsolete follower of the selected

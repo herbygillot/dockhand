@@ -1,0 +1,120 @@
+package portedit
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+// A port that fetches nothing, a metaport or a _select port, is updated
+// only where its livecheck reads its version, and then edits its version
+// alone, with nothing to download (batch 37).
+func TestAPortThatFetchesNothingEditsItsVersionAloneWhereALivecheckReadsIt(t *testing.T) {
+	t.Parallel()
+	s, r, requests := archiveFixture(t, `version 1.2.3
+revision 1
+distfiles
+homepage @SITE@/
+livecheck.type regex
+livecheck.url @SITE@/releases
+livecheck.regex {fixture-(\d+(?:\.\d+)*)}
+`)
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Empty(t, result.Downloads)
+	require.Empty(t, *requests, "nothing is downloaded")
+	require.Contains(t, string(result.Files[0].After), "version 1.2.4")
+	require.Contains(t, string(result.Files[0].After), "revision 0")
+}
+
+// One whose livecheck reads no version keeps MacPorts' own, named or not.
+func TestAPortWhoseVersionIsMacPortsOwnIsLeftByUpdate(t *testing.T) {
+	t.Parallel()
+	for name, livecheck := range map[string]string{"none": "livecheck.type none", "fallback": ""} {
+		t.Run(name, func(t *testing.T) {
+			s, r, requests := archiveFixture(t, "version 1.2.3\ndistfiles\n"+livecheck)
+			_, err := s.Prepare(t.Context(), r)
+			require.ErrorIs(t, err, ErrUnsupported)
+			require.ErrorContains(t, err, "fixture fetches nothing, and no livecheck reads its version: its version is MacPorts' own, which update leaves; dockhand edit fixture changes it by hand")
+			require.Empty(t, *requests)
+		})
+	}
+}
+
+// A subport that fetches nothing moves with its sibling's release, and
+// owns none of its archives; selected itself, it doesn't move the sibling
+// that fetches them.
+func TestAFamilyMemberThatFetchesNothing(t *testing.T) {
+	t.Parallel()
+	family := `version 1.2.3
+master_sites @SITE@/${version}
+checksums sha256 aaaa size 2
+subport fixture-select {
+    distfiles
+}
+`
+	s, r, _ := archiveFixture(t, family)
+	r.SharedRelease = true
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err, "fixture-select owns none of fixture's archives")
+	require.Len(t, result.Downloads, 1)
+
+	s, r, _ = archiveFixture(t, family)
+	r.SharedRelease = true
+	r.Selection.Subport = "fixture-select"
+	_, err = s.Prepare(t.Context(), r)
+	require.ErrorIs(t, err, ErrFidelity)
+	require.ErrorContains(t, err, "fixture, another port of the same Portfile, fetches its own source (its distfiles differ from fixture-select's), which updating fixture-select doesn't move")
+}
+
+// A port that fetches nothing is covered: its assessment finds its version
+// input where update edits it, and has none to find where its version is
+// MacPorts' own (batch 37).
+func TestAPortThatFetchesNothingIsCovered(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct{ name, livecheck, fetch, outcome string }{
+		{"a _select port", "livecheck.type none", "Fetches nothing, and no livecheck reads its version: its version is MacPorts' own, which update leaves", OwnVersion},
+		{"a metaport following its release", "homepage @SITE@/\nlivecheck.type regex\nlivecheck.url @SITE@/releases\nlivecheck.regex {fixture-(\\d+(?:\\.\\d+)*)}", "Fetches nothing in any observed context; an update edits its version alone", InputFound},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			s, r, _ := archiveFixture(t, "version 1.2.3\ndistfiles\n"+test.livecheck)
+			input, err := s.load(t.Context(), &r)
+			require.NoError(t, err)
+			p := &VersionProbe{editor: s, request: r, input: input}
+			local, err := p.Assess(t.Context(), nil)
+			require.NoError(t, err)
+			require.Equal(t, test.outcome, local.Outcome, "%+v", local.Findings)
+			require.Equal(t, test.fetch, assessmentFinding(t, local, "fetch").Detail)
+			require.Equal(t, "No checksums: nothing is downloaded", assessmentFinding(t, local, "checksums").Detail)
+			require.NotEmpty(t, local.Coverage)
+			for _, context := range local.Coverage {
+				require.True(t, context.FetchesNothing, "%+v", context)
+			}
+		})
+	}
+}
+
+// A port that fetches nothing on one platform but its source on another,
+// as libcxx, follows that source: its version isn't MacPorts' own, though
+// no livecheck reads it.
+func TestAPortThatFetchesOnlyElsewhereIsUpdatedAsAnyOther(t *testing.T) {
+	t.Parallel()
+	body := `version 1.2.3
+master_sites @SITE@/${version}
+checksums intel.zip sha256 bbbb size 3
+if {${build_arch} eq "arm64"} {distfiles} else {distfiles intel.zip}
+livecheck.type none
+`
+	s, r, requests := archiveFixture(t, body)
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Len(t, result.Downloads, 1)
+	require.Equal(t, []string{"/1.2.4/intel.zip"}, *requests)
+
+	s, r, _ = archiveFixture(t, body)
+	input, err := s.load(t.Context(), &r)
+	require.NoError(t, err)
+	local, err := (&VersionProbe{editor: s, request: r, input: input}).Assess(t.Context(), nil)
+	require.NoError(t, err)
+	require.Equal(t, InputFound, local.Outcome, "%+v", local.Findings)
+}

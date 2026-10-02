@@ -148,11 +148,13 @@ func (s *Service) Observe(ctx context.Context, selection Selection) (_ Result, e
 // release: the python PortGroup turns its subports' livecheck off, so
 // py310-cbor2 to py314-cbor2 read as problems beside py-cbor2, checked
 // and outdated, 65 of the person's 1,079 ports (batch 30). Each names the
-// sibling it's checked with.
+// sibling it's checked with. A subport that fetches nothing, as
+// mysql8-server beside mysql8, moves with its sibling too, where one
+// shares its release; its version is MacPorts' own only where none does.
 func WithSiblings(ports []Port) []Port {
 	checked := map[[2]string]Port{}
 	for _, port := range ports {
-		if port.portfile != "" && port.Assessment != upstream.Unknown && port.CurrentVersion != "" {
+		if port.portfile != "" && port.Assessment != upstream.Unknown && port.Assessment != upstream.OwnVersion && port.CurrentVersion != "" {
 			key := [2]string{port.portfile, port.CurrentVersion}
 			if _, ok := checked[key]; !ok {
 				checked[key] = port
@@ -161,7 +163,7 @@ func WithSiblings(ports []Port) []Port {
 	}
 	for i, port := range ports {
 		sibling, ok := checked[[2]string{port.portfile, port.CurrentVersion}]
-		if !port.unsupported || port.CurrentVersion == "" || !ok {
+		if !port.unsupported && port.Assessment != upstream.OwnVersion || port.CurrentVersion == "" || !ok {
 			continue
 		}
 		ports[i].Result, ports[i].With = sibling.Result, sibling.Selector

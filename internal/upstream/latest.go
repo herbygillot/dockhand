@@ -63,6 +63,10 @@ func (s *Service) discoverPort(ctx context.Context, port macports.PortInfo) (res
 			result.Detail = err.Error()
 		}
 	}()
+	if port.OwnVersion() {
+		result.Assessment, result.Detail = OwnVersion, "it fetches nothing here, and no livecheck reads its version"
+		return result, nil
+	}
 	if s == nil || s.Versions == nil || s.EvaluateVersion == nil {
 		return result, fmt.Errorf("upstream: version comparison and Portfile evaluation are required")
 	}

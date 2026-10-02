@@ -2,6 +2,7 @@ package portedit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -62,10 +63,16 @@ func (s *Service) bindArchives(ctx context.Context, input *sourceInput, contents
 	}
 	binding, err := distfiles.Bind(contents, input.portfileIn(observed.Snapshot.Root), info, port)
 	if err == nil && len(binding.Artifacts) == 0 {
-		err = fmt.Errorf("%w: no downloadable source archives; select a release subport when this is a metaport", ErrUnsupported)
+		err = fmt.Errorf("%w; select a release subport when this is a metaport", errFetchesNothing)
 	}
 	return binding, err
 }
+
+// errFetchesNothing is a context where the port has no archive to
+// download, as a metaport or a _select port has. It adds no archive to
+// an update's plan, and an update of a port that fetches nothing anywhere
+// edits its version alone; a checksum refresh has nothing to refresh.
+var errFetchesNothing = fmt.Errorf("%w: no downloadable source archives", ErrUnsupported)
 
 func (s *Service) planObservedArchives(ctx context.Context, request Request, input *sourceInput, contents []byte) (*observedArchivePlan, error) {
 	profiles, err := input.observe.Profiles(ctx, contents)
@@ -78,6 +85,8 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 	changed := map[string]bool{}
 	paired := map[string]bool{}
 	progress.DebugReport(ctx, "Observing %d archive contexts", len(profiles))
+	// fetches is whether the port fetches anything in any context.
+	fetches := false
 	befores, err := input.observe.Observe(ctx, input.data, profiles, true, false)
 	if err != nil {
 		return nil, fmt.Errorf("%w: observing baseline %v", errProbeInconclusive, err)
@@ -113,14 +122,22 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 				return fmt.Errorf("%w: context %+v: %s", ErrFidelity, profile, strings.Join(report.UnexpectedChanges, "; "))
 			}
 		}
+		// A context where the port fetches nothing, before and after,
+		// adds no archive to plan.
 		oldBinding, err := s.bindArchives(ctx, input, input.data, before)
-		if err != nil {
+		hadNothing := errors.Is(err, errFetchesNothing)
+		if err != nil && !hadNothing {
 			return fmt.Errorf("baseline %+v: %w", profile, err)
 		}
 		binding, err := s.bindArchives(ctx, input, contents, after)
-		if err != nil {
+		nothing := errors.Is(err, errFetchesNothing)
+		if err != nil && !nothing {
 			return fmt.Errorf("candidate %+v: %w", profile, err)
 		}
+		if hadNothing != nothing {
+			return fmt.Errorf("%w: candidate changed whether %s fetches anything on %+v", ErrFidelity, input.target.Name, profile)
+		}
+		fetches = fetches || !nothing
 		if err := s.checkSharedArchiveOwners(ctx, input, input.data, before, oldBinding); err != nil {
 			return err
 		}
@@ -216,8 +233,17 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 			return nil, fmt.Errorf("%w: checksum declaration %s is shared with a protected archive", ErrFidelity, id)
 		}
 	}
-	if len(plan.downloads) == 0 {
+	// A port that fetches nothing anywhere, a metaport or a _select port,
+	// downloads nothing, and its update edits its version alone, where a
+	// livecheck reads it or it moves with siblings that share its release.
+	switch {
+	case len(plan.downloads) > 0:
+	case fetches:
 		return nil, fmt.Errorf("%w: version edit did not change the download source", ErrUnsupported)
+	case input.scope == nil:
+		if err := ownVersion(input.info); err != nil {
+			return nil, err
+		}
 	}
 	return plan, nil
 }

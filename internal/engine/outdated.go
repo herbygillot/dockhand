@@ -45,6 +45,10 @@ type OutdatedPort struct {
 	// commit it names than the one the port pins: behind, with a version
 	// a person names, so it's neither outdated nor planned.
 	Moved *Head
+	// OwnVersion is a port with no release to look for: it fetches
+	// nothing, and no livecheck reads its version, as a _select port's.
+	// Its version is MacPorts' own; it's covered, and never planned.
+	OwnVersion bool
 }
 
 // Head is the branch a port tracks and the commit it names now.
@@ -129,6 +133,8 @@ func outdatedPort(port outdated.Port) OutdatedPort {
 		entry.Uncertain = port.SetAside
 	case upstream.Moved:
 		entry.Moved = port.Head
+	case upstream.OwnVersion:
+		entry.OwnVersion = true
 	case upstream.Unknown:
 		entry.Problem = port.Detail
 		if entry.Problem == "" {

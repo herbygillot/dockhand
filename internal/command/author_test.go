@@ -121,7 +121,7 @@ func TestUpdateInTheBranchCheckedOutHere(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "jq-update · ~/Source/macports-branches/jq-update\n"+
 		"jq: 1.7.1 → 1.8.1   (GitHub tag jq-1.8.1)\n"+
-		"Updated version and checksums.\n"+
+		"Updated version.\n"+ // the fixture's jq fetches nothing
 		"Changed: textproc/jq/Portfile\n"+
 		"Next: dockhand check\n", out)
 	data, err := os.ReadFile(filepath.Join(dir, "textproc/jq/Portfile"))

@@ -39,3 +39,25 @@ func TestASubportIsCheckedWithItsSibling(t *testing.T) {
 		require.Equal(t, upstream.Unknown, port.Assessment, port.Selector)
 	}
 }
+
+// A subport that fetches nothing moves with a checked sibling that shares
+// its release, as mysql8-server with mysql8; one with none, as a _select
+// port, keeps its own version, and stands for no sibling (batch 37).
+func TestASubportThatFetchesNothingMovesWithItsSibling(t *testing.T) {
+	own := func(selector, portfile, version string) Port {
+		return Port{Selector: selector, Result: upstream.Result{CurrentVersion: version, Assessment: upstream.OwnVersion}, portfile: portfile}
+	}
+	checked := Port{Selector: "mysql8", Result: upstream.Result{CurrentVersion: "8.0.43", CandidateVersion: "8.0.44", Assessment: upstream.UpdateAvailable}, portfile: "databases/mysql8/Portfile"}
+	ports := WithSiblings([]Port{
+		own("mysql8-server", "databases/mysql8/Portfile", "8.0.43"),
+		checked,
+		own("kubectl_select", "sysutils/kubectl/Portfile", "0.0.0"),
+		own("kubectl-1.34", "sysutils/kubectl/Portfile", "0.0.0"),
+	})
+	require.Equal(t, "mysql8", ports[0].With)
+	require.Equal(t, upstream.UpdateAvailable, ports[0].Assessment)
+	for _, port := range ports[2:] {
+		require.Empty(t, port.With, port.Selector)
+		require.Equal(t, upstream.OwnVersion, port.Assessment, port.Selector)
+	}
+}

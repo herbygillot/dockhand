@@ -139,3 +139,37 @@ func TestWhereAPortsFileIsInItsTree(t *testing.T) {
 		require.Equal(t, test.want, where, test.filespath)
 	}
 }
+
+// A metaport or a _select port fetches nothing, and its version is
+// tracked only where its livecheck reads one (batch 37).
+func TestWhatAPortFetchesAndWhetherItsLivecheckReadsAVersion(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name            string
+		options         map[string]string
+		nothing, reads  bool
+		fetchErr, lcErr bool
+	}{
+		{"a _select port", map[string]string{"distfiles": "", "livecheck.type": "none"}, true, false, false, false},
+		{"a metaport whose livecheck reads its release", map[string]string{"distfiles": "", "livecheck.type": "regex"}, true, true, false, false},
+		{"the fallback reads only a page's change", map[string]string{"distfiles": "{}", "livecheck.type": "fallback"}, true, false, false, false},
+		{"an archive", map[string]string{"distfiles": "foo-1.0.tar.gz", "livecheck.type": "regexm"}, false, true, false, false},
+		{"a clone", map[string]string{"fetch.type": "git", "distfiles": "", "livecheck.type": "git"}, false, false, false, false},
+		{"distfiles not read", map[string]string{"livecheck.type": "none"}, true, false, true, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			port := PortInfo{Options: test.options}
+			nothing, err := port.FetchesNothing()
+			require.Equal(t, test.fetchErr, err != nil, "%v", err)
+			if err == nil {
+				require.Equal(t, test.nothing, nothing)
+			}
+			reads, err := port.LivecheckReadsVersion()
+			require.NoError(t, err)
+			require.Equal(t, test.reads, reads)
+			require.Equal(t, test.nothing && !test.reads && !test.fetchErr, port.OwnVersion(), "an unread fact is no own version")
+		})
+	}
+	_, err := PortInfo{OptionErrors: map[string]string{"livecheck.type": "boom"}}.LivecheckReadsVersion()
+	require.Error(t, err, "an unread livecheck isn't one that reads nothing")
+}

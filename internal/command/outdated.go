@@ -87,9 +87,14 @@ update --outdated --mine starts on them.`,
 func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report engine.OutdatedReport, all bool) error {
 	table := tabwriter.NewWriter(out, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(table, "  PORT\tNOW\tNEWEST\tDOCKHAND CAN")
-	newer, unknown, uncertain, moved := 0, 0, 0, 0
+	newer, unknown, uncertain, moved, own := 0, 0, 0, 0, 0
 	for _, port := range report.Ports {
 		switch {
+		case port.OwnVersion:
+			own++
+			if all {
+				fmt.Fprintf(table, "  %s\t%s\t—\tnothing; it fetches nothing here, and no livecheck reads its version\n", port.Port, orDash(port.Current))
+			}
 		case port.Moved != nil:
 			// A port pinned to a commit of a branch that has moved on is
 			// behind, and the version to give the commit is a person's.
@@ -132,6 +137,8 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 	var line string
 	alone := len(report.Ports) == 1 && newer == 0 && unknown == 0
 	switch {
+	case alone && own == 1:
+		line = fmt.Sprintf("%s has no release to look for, at master %s: it fetches nothing here, and no livecheck reads its version", report.Ports[0].Port, master)
 	case alone && uncertain == 0:
 		line = fmt.Sprintf("%s has no newer release, at master %s", report.Ports[0].Port, master)
 	case alone:
@@ -151,6 +158,12 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 		line += " · 1 tracks a branch with a newer commit than it pins"
 	case moved > 1:
 		line += fmt.Sprintf(" · %d track branches with newer commits than they pin", moved)
+	}
+	switch {
+	case own == 1 && !alone:
+		line += " · 1 has no release to look for"
+	case own > 1:
+		line += fmt.Sprintf(" · %d have no release to look for", own)
 	}
 	if unknown > 0 {
 		line += fmt.Sprintf(" · %d couldn't be checked", unknown)

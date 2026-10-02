@@ -42,7 +42,10 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 			return contexts, fmt.Errorf("%w: %v", ErrUnsupported, metadata.Problems), nil
 		}
 		if len(metadata.Distfiles) == 0 {
-			return contexts, fmt.Errorf("%w: no source archives; select a release subport if this is a metaport", ErrUnsupported), nil
+			// Nothing to download here, as a metaport or a _select
+			// port has; the context adds no archive to cover.
+			contexts[len(contexts)-1].FetchesNothing = true
+			continue
 		}
 		binding, err := distfiles.Bind(input.data, input.portfileIn(observed.Snapshot.Root), info, metadata)
 		if err != nil {

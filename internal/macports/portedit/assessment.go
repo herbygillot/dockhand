@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
@@ -43,11 +44,15 @@ type Finding struct {
 const (
 	InputFound       = "input-found"
 	CandidateChecked = "candidate-checked"
-	Passed           = "passed"
-	Blocked          = "blocked"
-	Unsupported      = "unsupported"
-	Unknown          = "unknown"
-	NotTested        = "not-tested"
+	// OwnVersion is a port whose version is MacPorts' own, which update
+	// leaves: it fetches nothing, and no livecheck reads its version, as
+	// a _select port. It's covered, with no version input to find.
+	OwnVersion  = "own-version"
+	Passed      = "passed"
+	Blocked     = "blocked"
+	Unsupported = "unsupported"
+	Unknown     = "unknown"
+	NotTested   = "not-tested"
 )
 
 // Problem preserves typed failure distinctions without interpreting error text.
@@ -77,6 +82,9 @@ func (a *Assessment) Summarize() {
 	for _, f := range a.Findings {
 		if f.Check == "version-input" && f.Status == Passed {
 			a.Outcome = InputFound
+		}
+		if f.Check == "version-input" && f.Code == OwnVersion {
+			a.Outcome = OwnVersion
 		}
 		if f.Check == "candidate" && f.Status == Passed {
 			a.Outcome = CandidateChecked
@@ -113,16 +121,32 @@ func (p *VersionProbe) Assess(ctx context.Context, release *model.Release) (Asse
 		sourceDetail = "Archive source version " + spec.SourceVersion
 	}
 	add("source", sourceDetail, err)
-	if discovery, discoveryErr := portsource.Interpret(p.input.info, portsource.Discovery); discoveryErr == nil {
+	// A port's version is MacPorts' own where it fetches nothing in any
+	// context, as update reads it (ownVersion): libcxx fetches nothing on
+	// this Mac, and its source on Mac OS X 10.4.
+	own := false
+	if p.input.info.OwnVersion() {
+		coverage, fetchErr, _ := p.editor.assessArchives(ctx, p.request, p.input)
+		own = fetchErr == nil && fetchesNothing(coverage)
+	}
+	discovery, discoveryErr := portsource.Interpret(p.input.info, portsource.Discovery)
+	switch {
+	case own:
+		a.Findings = append(a.Findings, Finding{Check: "discovery", Status: NotTested, Code: OwnVersion, Detail: "No release upstream to look for: it fetches nothing, and no livecheck reads its version"})
+	case discoveryErr == nil:
 		detail := "Supported " + string(discovery.Catalog) + " discovery; remote availability is untested"
 		if discovery.Livecheck.Overridden {
 			detail = "Supported discovery through the port's own livecheck, proven against the " + string(discovery.Catalog) + " catalog; remote availability is untested"
 		}
 		a.Findings = append(a.Findings, Finding{Check: "discovery", Status: Passed, Code: "discovery-supported", Detail: detail})
-	} else {
+	default:
 		a.Findings = append(a.Findings, Finding{Check: "discovery", Status: NotTested, Code: "explicit-version-required", Detail: discoveryErr.Error() + "; supply an explicit version"})
 	}
-	if err == nil {
+	switch {
+	case err == nil && own:
+		// As update, which leaves such a port's version (ownVersion).
+		a.Findings = append(a.Findings, Finding{Check: "version-input", Status: NotTested, Code: OwnVersion, Detail: "Its version is MacPorts' own, which update leaves; no version input is needed"})
+	case err == nil:
 		err = p.prepare(ctx)
 		add("version-input", "Literal input candidates found; a specific release still needs edit-fidelity checks", err)
 		if err == nil {
@@ -131,7 +155,7 @@ func (p *VersionProbe) Assess(ctx context.Context, release *model.Release) (Asse
 				a.Inputs = append(a.Inputs, VersionInput{Line: line, Column: col, Value: carrier.candidate.Value})
 			}
 		}
-	} else {
+	default:
 		a.Findings = append(a.Findings, Finding{Check: "version-input", Status: NotTested, Code: "source-required", Detail: "Version probing requires an evaluable version convention"})
 	}
 	base := p.input
@@ -160,8 +184,13 @@ func (p *VersionProbe) Assess(ctx context.Context, release *model.Release) (Asse
 			}
 		}
 		fetchDetail, checksumDetail := "MacPorts archive locations are observed; availability is untested", "Checksum declarations are associated across the observed contexts"
-		if p.input.info.GitFetched() {
+		switch {
+		case p.input.info.GitFetched():
 			fetchDetail, checksumDetail = "Git source; the build clones git.url at git.branch", "No checksums: the source is cloned, not downloaded"
+		case fetchesNothing(coverage) && own:
+			fetchDetail, checksumDetail = "Fetches nothing, and no livecheck reads its version: its version is MacPorts' own, which update leaves", "No checksums: nothing is downloaded"
+		case fetchesNothing(coverage):
+			fetchDetail, checksumDetail = "Fetches nothing in any observed context; an update edits its version alone", "No checksums: nothing is downloaded"
 		}
 		add("fetch", fetchDetail, fetchErr)
 		if fetchErr == nil {
@@ -191,4 +220,10 @@ func (p *VersionProbe) Assess(ctx context.Context, release *model.Release) (Asse
 		Finding{Check: "verification", Status: NotTested, Code: "build-not-run", Detail: "Lint, builds, tests, and installation were not performed"})
 	a.Summarize()
 	return a, ctx.Err()
+}
+
+// fetchesNothing reports a port with nothing to download in any of the
+// contexts observed, as a metaport or a _select port.
+func fetchesNothing(coverage []ContextCoverage) bool {
+	return len(coverage) > 0 && !slices.ContainsFunc(coverage, func(c ContextCoverage) bool { return !c.FetchesNothing })
 }

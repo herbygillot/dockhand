@@ -218,3 +218,18 @@ func TestResolveClassifiesStabilityWithoutRefusing(t *testing.T) {
 	require.Equal(t, "stable", release.Stability)
 	require.False(t, release.LeavesStable)
 }
+
+// A port with no release to look for, as a _select port, is said to be
+// one, and an update without a version named chooses none (batch 37).
+func TestAPortWhoseVersionIsMacPortsOwnHasNoReleaseToChoose(t *testing.T) {
+	t.Parallel()
+	port := macports.PortInfo{Name: "kubectl_select", Version: "0.1", Options: map[string]string{"distfiles": "", "livecheck.type": "none"}}
+	service := upstream.Service{}
+	result, err := service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, upstream.OwnVersion, result.Assessment)
+	require.Equal(t, "it fetches nothing here, and no livecheck reads its version", result.Detail)
+	_, err = service.Resolve(t.Context(), port, "")
+	require.ErrorIs(t, err, upstream.ErrOwnVersion)
+	require.EqualError(t, err, "upstream: no release to look for: kubectl_select fetches nothing here, and no livecheck reads its version")
+}

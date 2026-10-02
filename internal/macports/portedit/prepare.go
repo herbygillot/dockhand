@@ -71,6 +71,9 @@ type ContextCoverage struct {
 	Variant  string `json:",omitempty"`
 	Modeled  bool
 	Affected bool
+	// FetchesNothing is a context where the port has no archive to
+	// download, as a metaport or a _select port has.
+	FetchesNothing bool `json:",omitempty"`
 }
 
 type Result struct {

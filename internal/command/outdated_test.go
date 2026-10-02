@@ -72,6 +72,17 @@ func TestOutdatedSaysWhenNothingIsNewer(t *testing.T) {
 	settle := "A tag set aside that's no release, as an old one misspelled is, stays out once the port's livecheck leaves it out.\n"
 	require.Equal(t, row+"yq may have a newer release, at master 1bb30d5\n"+settle, said(yqMayBeOutdated))
 	require.Equal(t, row+"None of 2 ports has a newer release, at master 1bb30d5 · 1 may have one, for a look\n"+settle, said(yqMayBeOutdated, current("jq")))
+
+	// A port with no release to look for, as a _select port, is covered,
+	// not a port that couldn't be checked (batch 37).
+	own := func(name string) engine.OutdatedPort {
+		return engine.OutdatedPort{Port: name, Current: "0.1", OwnVersion: true}
+	}
+	require.Equal(t, "kubectl_select has no release to look for, at master 1bb30d5: it fetches nothing here, and no livecheck reads its version\n", said(own("kubectl_select")))
+	require.Equal(t, "None of 2 ports has a newer release, at master 1bb30d5 · 1 has no release to look for\n", said(own("kubectl_select"), current("jq")))
+	var out bytes.Buffer
+	require.NoError(t, writeOutdated(t.Context(), nil, &out, engine.OutdatedReport{Master: "1bb30d5aaaaa", Ports: []engine.OutdatedPort{own("helm_select"), own("kubectl_select")}}, true))
+	require.Equal(t, "  PORT             NOW   NEWEST   DOCKHAND CAN\n  helm_select      0.1   —        nothing; it fetches nothing here, and no livecheck reads its version\n  kubectl_select   0.1   —        nothing; it fetches nothing here, and no livecheck reads its version\nNone of 2 ports has a newer release, at master 1bb30d5 · 2 have no release to look for\n", out.String())
 }
 
 func TestOutdatedThenUpdateOutdated(t *testing.T) {

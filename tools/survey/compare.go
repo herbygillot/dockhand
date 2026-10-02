@@ -29,7 +29,7 @@ type assessed struct {
 
 // quality orders outcomes from best to worst, for what counts as a
 // regression.
-var quality = map[string]int{"ready": 0, "candidate-ready": 0, "input-found": 0, "unknown": 1, "unsupported": 2, "blocked": 3}
+var quality = map[string]int{"ready": 0, "candidate-ready": 0, "input-found": 0, "own-version": 0, "unknown": 1, "unsupported": 2, "blocked": 3}
 
 func loadJournal(path string) (map[string]assessed, string, error) {
 	file, err := os.Open(path)
@@ -198,7 +198,7 @@ func compareJournals(out io.Writer, basePath, newPath string, top int) error {
 }
 
 // fullyCovered counts the Portfiles all of whose shared ports found their
-// version input.
+// version input, or have none to find, their version being MacPorts' own.
 func fullyCovered(ports map[string]assessed, shared []string) int {
 	covered := map[string]bool{}
 	for _, selector := range shared {
@@ -206,7 +206,7 @@ func fullyCovered(ports map[string]assessed, shared []string) int {
 		if _, seen := covered[p.Portfile]; !seen {
 			covered[p.Portfile] = true
 		}
-		covered[p.Portfile] = covered[p.Portfile] && p.Outcome == "input-found"
+		covered[p.Portfile] = covered[p.Portfile] && (p.Outcome == "input-found" || p.Outcome == "own-version")
 	}
 	count := 0
 	for _, all := range covered {

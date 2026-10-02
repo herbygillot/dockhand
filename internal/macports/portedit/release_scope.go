@@ -2,6 +2,7 @@ package portedit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -18,7 +19,12 @@ func (s *Service) checkSharedArchiveOwners(ctx context.Context, input *sourceInp
 			continue
 		}
 		binding, err := s.bindArchives(ctx, input.forMember(member.Target), contents, observed)
-		if err != nil {
+		switch {
+		case errors.Is(err, errFetchesNothing):
+			// A member with no archive of its own, as libgcc beside gcc,
+			// owns none of the selected port's.
+			continue
+		case err != nil:
 			return err
 		}
 		if len(binding.Artifacts) != len(selected.Artifacts) {

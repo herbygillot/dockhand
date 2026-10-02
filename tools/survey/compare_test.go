@@ -45,3 +45,32 @@ func TestCompareReportsMovesRegressionsAndStops(t *testing.T) {
 	require.Contains(t, report, "       1 →      0  fetch/unsupported-convention")
 	require.Contains(t, report, "       0 →      1  fetch/probe-inconclusive")
 }
+
+// A port whose version is MacPorts' own is covered: an improvement on
+// unsupported, and its Portfile fully covered (batch 37).
+func TestAnOwnVersionIsCovered(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name string, lines ...string) string {
+		path := filepath.Join(dir, name)
+		var data []byte
+		for _, line := range lines {
+			data = append(data, line+"\n"...)
+		}
+		require.NoError(t, os.WriteFile(path, data, 0o644))
+		return path
+	}
+	base := write("base.jsonl",
+		`{"Source":{"Commit":"abd9fff84df525aef309d4f1ffddff52ce0f4a8e"}}`,
+		`{"Selector":"kubectl_select","Outcome":"unsupported","Portfile":"sysutils/kubectl/Portfile","Findings":[{"Check":"fetch","Status":"unsupported","Code":"unsupported-convention"}]}`,
+	)
+	next := write("next.jsonl",
+		`{"Source":{"Commit":"abd9fff84df525aef309d4f1ffddff52ce0f4a8e"}}`,
+		`{"Selector":"kubectl_select","Outcome":"own-version","Portfile":"sysutils/kubectl/Portfile","Findings":[{"Check":"version-input","Status":"not-tested","Code":"own-version"}]}`,
+	)
+	var out bytes.Buffer
+	require.NoError(t, compareJournals(&out, base, next, 5))
+	report := out.String()
+	require.Contains(t, report, "regressions: 0\n")
+	require.Contains(t, report, "improvements: 1\n  kubectl_select: unsupported → own-version\n")
+	require.Contains(t, report, "Portfiles fully covered: 0 → 1")
+}

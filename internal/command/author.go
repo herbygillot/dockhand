@@ -417,8 +417,13 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		return branch, update, nil
 	}
 	what := "Updated version and checksums"
-	if request.Action == model.EditChecksums {
+	switch {
+	case request.Action == model.EditChecksums:
 		what = "Updated checksums"
+	case update.Distfiles == 0:
+		// A port cloned with Git, or one that fetches nothing, has no
+		// checksums to update (the semgrep run's finding 5).
+		what = "Updated version"
 	}
 	if update.Distfiles > 0 {
 		what += fmt.Sprintf(" (%s)", plural(update.Distfiles, "distfile"))

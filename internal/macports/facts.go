@@ -27,6 +27,43 @@ func (p PortInfo) MetadataOnly() (bool, error) { return p.Bool("dockhand.metadat
 // without a procedure of its own replacing it.
 func (p PortInfo) LivecheckStandard() (bool, error) { return p.Bool("dockhand.livecheck_standard") }
 
+// FetchesNothing reports a port with nothing to download, no distfiles
+// and no Git clone, as a metaport or a _select port has; an error where
+// its distfiles weren't read.
+func (p PortInfo) FetchesNothing() (bool, error) {
+	if p.GitFetched() {
+		return false, nil
+	}
+	files, set, err := p.optionList("distfiles")
+	if err == nil && !set {
+		err = fmt.Errorf("macports: distfiles wasn't read")
+	}
+	// distfiles {} is a list of one empty name, which names nothing.
+	return !slices.ContainsFunc(files, func(file string) bool { return file != "" }), err
+}
+
+// OwnVersion reports a port with no release upstream to follow: it
+// fetches nothing, and its livecheck reads no version, as a _select
+// port's. Its version is MacPorts' own. False where either fact wasn't
+// read, so the port is taken as any other.
+func (p PortInfo) OwnVersion() bool {
+	nothing, err := p.FetchesNothing()
+	if err != nil || !nothing {
+		return false
+	}
+	reads, err := p.LivecheckReadsVersion()
+	return err == nil && !reads
+}
+
+// LivecheckReadsVersion reports a port whose livecheck, as MacPorts
+// resolves it, reads a version: regex or regexm, which the tree's checkers
+// resolve a PortGroup's type to. none reads nothing, git a branch's
+// commit, and fallback, md5, and moddate only whether a page changed.
+func (p PortInfo) LivecheckReadsVersion() (bool, error) {
+	value, _, err := p.option("livecheck.type")
+	return err == nil && (value == "regex" || value == "regexm"), err
+}
+
 // DeclaresTests reports whether the port declares tests, as MacPorts
 // reads test.run; known is false where that wasn't read.
 func (p PortInfo) DeclaresTests() (declares, known bool) {

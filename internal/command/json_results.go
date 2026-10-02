@@ -560,6 +560,9 @@ type outdatedPortJSON struct {
 	// first of them. Absent for a port that is current or outdated.
 	Uncertain []setAsideJSON `json:"uncertain,omitempty"`
 	Problem   string         `json:"problem,omitempty"`
+	// OwnVersion is a port with no release to look for: it fetches
+	// nothing, and no livecheck reads its version, as a _select port's.
+	OwnVersion bool `json:"own_version,omitempty"`
 	// With is the subport whose check stands for this one, which shares
 	// its Portfile's release.
 	With string `json:"with,omitempty"`
@@ -603,7 +606,7 @@ func movedView(head *engine.Head) *movedJSON {
 func outdatedView(report engine.OutdatedReport) map[string]any {
 	ports := []outdatedPortJSON{}
 	for _, port := range report.Ports {
-		ports = append(ports, outdatedPortJSON{Port: port.Port, Current: port.Current, Newest: port.Newest, Outdated: port.Outdated, Uncertain: setAsideView(port.Uncertain), Problem: port.Problem, With: port.With, Moved: movedView(port.Moved)})
+		ports = append(ports, outdatedPortJSON{Port: port.Port, Current: port.Current, Newest: port.Newest, Outdated: port.Outdated, Uncertain: setAsideView(port.Uncertain), Problem: port.Problem, OwnVersion: port.OwnVersion, With: port.With, Moved: movedView(port.Moved)})
 	}
 	return map[string]any{"master": report.Master, "ports": ports}
 }

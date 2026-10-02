@@ -29,7 +29,16 @@ const (
 	// commit than the one it pins: it's behind, and the version to name
 	// for that commit is a person's (Head).
 	Moved Assessment = "moved"
+	// OwnVersion is a port with no release to look for: it fetches
+	// nothing, and its livecheck reads no version, as a _select port's or
+	// a metaport's. Its version is MacPorts' own, so it's covered, and
+	// neither current nor outdated.
+	OwnVersion Assessment = "own-version"
 )
+
+// ErrOwnVersion is Resolve's answer for a port whose discovery is
+// OwnVersion: there's no release to choose.
+var ErrOwnVersion = errors.New("upstream: no release to look for")
 
 // Head is what a port tracking a branch is checked against: the branch,
 // HEAD where it names none, and the commit it names now.
