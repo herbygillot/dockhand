@@ -775,7 +775,7 @@ func TestAnArchiveNoLongerFetchedIsSaid(t *testing.T) {
 	require.False(t, result.Held())
 	require.Contains(t, result.Changes, model.UpstreamChange{Kind: "source", Path: "extra-1.0.tar.gz", Message: "upstream: extra-1.0.tar.gz is no longer fetched",
 		Rule: assess.SourceRemoved, Class: model.Introduced, Source: "extra-*.tar.gz"})
-	require.Contains(t, CoverageWords(result), "set apart: extra-1.0.tar.gz")
+	require.Contains(t, CoverageWords(result), "not compared: extra-1.0.tar.gz")
 	require.Contains(t, CoverageWords(result), "Compared LICENSE", "the one archive compared reads as a port of one archive's")
 }
 

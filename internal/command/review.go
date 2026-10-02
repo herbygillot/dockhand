@@ -41,7 +41,8 @@ commits give, and every uncommitted edit included. The final files are
 exactly what you have; tidy never changes a file.
 
 A plan made only of dockhand's own edits applies without review, which is
-what a script gets. Anything else is shown for review first, on a terminal.
+what a script gets. Anything else is shown for review first, on a terminal,
+or applied as shown with --yes.
 --squash --message "port: what changed" makes one commit of the whole
 branch, applied as given, since the message is yours. Before rewriting,
 tidy keeps the old history as a checkpoint that dockhand restore brings
@@ -146,7 +147,7 @@ commits, and its files are as they were when it was saved.`,
 	cmd.MarkFlagsMutuallyExclusive("apply", "squash")
 	cmd.MarkFlagsMutuallyExclusive("apply", "group")
 	cmd.MarkFlagsMutuallyExclusive("apply", "branch")
-	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "apply a plan made only of dockhand's own edits without asking")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "apply the plan as shown, without asking; a plan made only of dockhand's own edits applies without it")
 	return cmd
 }
 
@@ -156,9 +157,15 @@ commits, and its files are as they were when it was saved.`,
 // and anything else needs review. It reports whether the plan applied.
 func decideTidy(ctx context.Context, e *engine.Engine, streams Streams, proposal engine.TidyPlan, explicit, yes bool, author string) (bool, error) {
 	out := streams.Out
-	if explicit || !streams.terminal() || yes && proposal.Unambiguous() {
-		if !explicit && !proposal.Unambiguous() {
-			return false, errors.New("this plan needs review before it is applied: run dockhand tidy on a terminal, or make one commit with --squash --message \"port: what changed\"")
+	// --yes applies the plan as shown, whosever its edits are, as --yes
+	// does elsewhere: a hand edit's plan tidy proposed itself had no way
+	// to be taken without a terminal (field testing's seventh report).
+	if explicit || !streams.terminal() || yes {
+		if !explicit && !yes && !proposal.Unambiguous() {
+			return false, errors.New("this plan needs review before it is applied: review it on a terminal, apply it as shown with --yes, or make one commit with --squash --message \"port: what changed\"")
+		}
+		if blocking := proposal.Blocking(); len(blocking) > 0 {
+			return false, fmt.Errorf("nothing was applied: %s", strings.Join(blocking, "; "))
 		}
 		return true, applyTidy(ctx, e, streams, proposal)
 	}

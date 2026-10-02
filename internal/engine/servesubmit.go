@@ -64,14 +64,27 @@ const ServeNote = "Opened by `dockhand serve` for an update it prepared and chec
 // started, with no pull request yet. Each is planned as submit would plan
 // it, and held when anything asks for a person (SubmitPlan.held).
 func (e *Engine) ServeCandidates(ctx context.Context) ([]ServeCandidate, error) {
+	candidates, _, err := e.serveCandidates(ctx)
+	return candidates, err
+}
+
+// serveCandidates are ServeCandidates, and the passing branches a person
+// started, which serve leaves to them: update --outdated --check's seven
+// passing branches waited, unsaid (field testing's seventh report).
+func (e *Engine) serveCandidates(ctx context.Context) ([]ServeCandidate, []model.Branch, error) {
 	passing, err := e.PassingBranches(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var candidates []ServeCandidate
+	var yours []model.Branch
 	for _, status := range passing.Ready {
 		branch := status.Branch
-		if branch.Origin != model.OriginServe || branch.PullRequest != nil {
+		if branch.PullRequest != nil {
+			continue
+		}
+		if branch.Origin != model.OriginServe {
+			yours = append(yours, branch)
 			continue
 		}
 		plan, err := e.PlanSubmit(ctx, SubmitRequest{Branch: branch})
@@ -84,7 +97,7 @@ func (e *Engine) ServeCandidates(ctx context.Context) ([]ServeCandidate, error) 
 		candidate.Held = plan.held()
 		candidates = append(candidates, candidate)
 	}
-	return candidates, nil
+	return candidates, yours, nil
 }
 
 // Held are the reasons a submission no person looked over waits for one,

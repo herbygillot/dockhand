@@ -185,7 +185,7 @@ const coverageNamed = 5
 // LICENSE, go.mod" read as an instruction (field testing, 2026-10-02).
 // Empty where the comparison recorded no coverage.
 func CoverageWords(comparison model.UpstreamComparison) string {
-	var read, apart, notes []string
+	var read, apart, unused, notes []string
 	applied, unchecked := 0, 0
 	for _, c := range comparison.Coverage {
 		if c.Source != "" && c.Policy != assess.SourceRemoved && c.Policy != assess.SourceUncertain {
@@ -201,7 +201,7 @@ func CoverageWords(comparison model.UpstreamComparison) string {
 		case c.Policy == "patch-unchecked":
 			unchecked++
 		case c.Treatment == "set-apart" && c.System != "":
-			apart = append(apart, c.Path+" ("+c.System+")")
+			unused = append(unused, c.Path+" ("+c.System+")")
 		case c.Treatment == "set-apart":
 			apart = append(apart, c.Path)
 		case c.Treatment == "inspected" && (c.Policy == "" || c.Policy == notCompared) && c.Reason != "":
@@ -222,8 +222,13 @@ func CoverageWords(comparison model.UpstreamComparison) string {
 	if unchecked > 0 {
 		parts = append(parts, prose.Plural(unchecked, "patch")+" unchecked")
 	}
+	// What was set apart is said as what it is: field testing read "set
+	// apart: meson.build (meson)" as saying nothing (the seventh report).
+	if len(unused) > 0 {
+		parts = append(parts, "not compared, as the port doesn't build with them: "+namedList(unused))
+	}
 	if len(apart) > 0 {
-		parts = append(parts, "set apart: "+namedList(apart))
+		parts = append(parts, "not compared: "+namedList(apart))
 	}
 	parts = append(parts, notes...)
 	if len(parts) == 0 {

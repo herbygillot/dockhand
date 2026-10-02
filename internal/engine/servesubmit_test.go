@@ -24,6 +24,12 @@ import (
 // branch.
 func servePrepared(t *testing.T, e *Engine) model.Branch {
 	t.Helper()
+	return preparedBy(t, e, model.OriginServe)
+}
+
+// preparedBy is servePrepared for a branch of the origin given.
+func preparedBy(t *testing.T, e *Engine, origin model.Origin) model.Branch {
+	t.Helper()
 	e.OutdatedReader = &newReleases{}
 	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}}}
 	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
@@ -31,7 +37,7 @@ func servePrepared(t *testing.T, e *Engine) model.Branch {
 	require.NoError(t, err)
 	plan, err := e.PlanOutdated(t.Context(), report)
 	require.NoError(t, err)
-	prepared := e.PrepareOutdated(t.Context(), plan, PrepareOptions{Origin: model.OriginServe, Check: true, Environments: []model.Environment{{Provider: "command"}}, Tests: model.TestsDeclared})
+	prepared := e.PrepareOutdated(t.Context(), plan, PrepareOptions{Origin: origin, Check: true, Environments: []model.Environment{{Provider: "command"}}, Tests: model.TestsDeclared})
 	require.Len(t, prepared, 1)
 	require.Empty(t, prepared[0].Problem)
 	run, err := e.Drive(t.Context(), session(t, e), prepared[0].Run.ID)
@@ -443,4 +449,20 @@ func TestAnAssessmentOfAnotherCommitIsAConcern(t *testing.T) {
 	require.Empty(t, assessedSources(evidence, assessed("")), "it kept no commit")
 	require.Empty(t, assessedSources(evidence, nil), "no assessment")
 	require.Empty(t, assessedSources(nil, assessed(read)), "no check")
+}
+
+// A passing branch a person started isn't serve's to submit, and is said
+// as theirs: update --outdated --check's seven passing branches waited,
+// unsaid (field testing's seventh report, 2026-10-02).
+func TestServeLeavesAPersonsPassingBranchToThem(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := preparedBy(t, e, model.OriginPerson)
+	candidates, yours, err := e.serveCandidates(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, candidates)
+	require.Len(t, yours, 1)
+	require.Equal(t, branch.ID, yours[0].ID)
 }

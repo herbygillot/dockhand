@@ -215,6 +215,10 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 		err       error
 	}
 	done := make(chan finished)
+	// ended are the runs whose end serve said, each said once: field
+	// testing saw "check-100 lego-7ny0: passed" twice, from a cause not
+	// found (the ninth report).
+	ended := map[model.RunID]bool{}
 	var failure error
 	launch := func(run model.Run, branch model.Branch, needs []string) {
 		inFlight[run.ID] = true
@@ -253,6 +257,10 @@ func (s *server) run(ctx context.Context, session *coord.Session, lease model.Le
 			s.say("%s: left running for the next serve", f.run.Name())
 			return
 		}
+		if ended[f.run.ID] {
+			return
+		}
+		ended[f.run.ID] = true
 		line := fmt.Sprintf("%s %s: %s", f.run.Name(), f.branch.ShortName(), f.run.State)
 		if f.run.Detail != "" && f.run.State != model.RunPassed {
 			line += ": " + f.run.Detail
@@ -622,6 +630,8 @@ type passingSubmitter struct {
 	s    *server
 	last time.Time
 	held map[model.BranchID]string
+	// yours are the passing branches a person started, as last said.
+	yours string
 }
 
 func (p *passingSubmitter) maybe(ctx context.Context) {
@@ -630,10 +640,26 @@ func (p *passingSubmitter) maybe(ctx context.Context) {
 	}
 	p.last = time.Now()
 	e := p.s.e
-	candidates, err := e.ServeCandidates(ctx)
+	candidates, yours, err := e.serveCandidates(ctx)
 	if err != nil {
 		p.s.say("serve: finding passing updates: %v", err)
 		return
+	}
+	// The passing branches a person started are theirs to submit, and
+	// said once for each set of them.
+	var names []string
+	for _, branch := range yours {
+		names = append(names, branch.ShortName())
+	}
+	if said := strings.Join(names, " "); said != p.yours {
+		p.yours = said
+		if len(names) > 0 {
+			whose := "they're"
+			if len(names) == 1 {
+				whose = "it's"
+			}
+			p.s.say("serve: %s you started passed (%s); serve submits only what it prepared, so %s yours: dockhand submit --passing", prose.Plural(len(names), "branch"), strings.Join(names, ", "), whose)
+		}
 	}
 	for _, candidate := range candidates {
 		name := candidate.Branch.ShortName()

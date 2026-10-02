@@ -55,8 +55,9 @@ status; draft prepares a branch for each; check also checks each.
 --submit-passing, or serve.submit_passing, also opens a pull request for
 each branch serve prepared whose check passed, at most serve.submit_limit a
 day, and never one with an upstream or commit-rule finding, or one needing
---accept: those wait on the attention list. --no-submit-passing turns it
-off for one run.
+--accept: those wait on the attention list. The passing branches you
+started are yours: it names them, for dockhand submit --passing.
+--no-submit-passing turns it off for one run.
 
 serve.notify posts macOS notifications as checks finish and pull requests
 change; --no-notify turns them off for one run. They are posted through

@@ -72,6 +72,33 @@ func TestTidyAsksAboutAPersonsCommits(t *testing.T) {
 	require.ErrorContains(t, err, "add --squash")
 }
 
+// A plan tidy proposes of a person's own edits, which needs a review on a
+// terminal, applies as shown with --yes where nothing holds it, and isn't
+// applied where something does: qemu's hand edit had no way to be taken
+// without a terminal (field testing's seventh report, 2026-10-02).
+func TestTidyYesAppliesAPersonsPlanAsShown(t *testing.T) {
+	w := newWorld(t)
+	withBumper(t)
+	testsupport.Git(t, w.clone, "switch", "-q", "-c", "update-jq")
+	require.NoError(t, os.WriteFile(filepath.Join(w.clone, "textproc/jq/Portfile"), []byte("name jq\n# a\n"), 0o644))
+	testsupport.Git(t, w.clone, "commit", "-q", "-am", "wip")
+	_, _, err := dockhand(t, "adopt")
+	require.NoError(t, err)
+
+	_, _, err = dockhand(t, "tidy", "--yes")
+	require.ErrorContains(t, err, "nothing was applied: the commit for textproc/jq needs a subject")
+	_, _, err = dockhand(t, "tidy")
+	require.ErrorContains(t, err, "apply it as shown with --yes")
+
+	testsupport.Git(t, w.clone, "commit", "-q", "--amend", "-m", "jq: note a")
+	require.NoError(t, os.WriteFile(filepath.Join(w.clone, "textproc/jq/Portfile"), []byte("name jq\n# a, and b\n"), 0o644))
+	out, _, err := dockhand(t, "tidy", "--yes")
+	require.NoError(t, err)
+	require.Contains(t, out, "Created 1 commit.")
+	require.Equal(t, "jq: note a", testsupport.Git(t, w.clone, "log", "-1", "--format=%s"))
+	require.Empty(t, testsupport.Git(t, w.clone, "status", "--porcelain"))
+}
+
 func TestTidyRegroupsAndAppliesASavedPlan(t *testing.T) {
 	w := newWorld(t)
 	testsupport.Git(t, w.clone, "switch", "-q", "-c", "harbor")

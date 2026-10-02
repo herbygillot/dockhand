@@ -665,7 +665,7 @@ func TestAChangeTheBuildDoesntReadHoldsNothing(t *testing.T) {
 	}, comparison.Changes)
 	// The files of build systems flatbuffers doesn't use are said in
 	// coverage alone, set apart (rust 1.99.0's package.json, batch 23).
-	require.Equal(t, "Compared CMakeLists.txt; set apart: Package.swift (swift), package.json (node)", CoverageWords(*comparison))
+	require.Equal(t, "Compared CMakeLists.txt; not compared, as the port doesn't build with them: Package.swift (swift), package.json (node)", CoverageWords(*comparison))
 }
 
 // What an option off by default gates holds nothing only where the
