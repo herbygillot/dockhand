@@ -159,6 +159,11 @@ func Compare(older, newer project.Reading, versions Versions) []Change {
 			case !hasNow:
 				how, what = "removed", "was removed"
 			}
+			if how == "changed" {
+				if dropped, ok := onlyDrops(old.Data, now.Data); ok {
+					what = "only drops text, " + dropped
+				}
+			}
 			changes = append(changes, Change{Kind: "license", How: how, Path: name,
 				Message: fmt.Sprintf("upstream's %s %s", name, what)})
 		default:
@@ -288,6 +293,59 @@ func licenseMove(changes []Change, before, after map[string]project.File) []Chan
 		}
 	}
 	return folded
+}
+
+// licenseYear is a year in a license's text, or a range of them, which a
+// change of only its years leaves, as yearsOnly has it.
+var licenseYear = regexp.MustCompile(`^\(?(19|20)\d\d([-–,](19|20)\d\d)*[),.;:]*$`)
+
+// onlyDrops says what a license file's change drops, where all it does,
+// but its years and how its lines wrap, is drop text: entr 5.9's LICENSE
+// dropped its "Compatibility Libraries" section, and said only "changed",
+// for a look a sentence could have spared (the dogfood run with
+// ce6a206d). It still holds, as the person decided: dropping text can
+// narrow a license as surely as adding it can, "MIT or GPL-2" losing "MIT
+// or". It names how many words went, from the first run of them.
+func onlyDrops(old, now []byte) (string, bool) {
+	normal := func(words []string) []string {
+		normalized := slices.Clone(words)
+		for i, word := range normalized {
+			if licenseYear.MatchString(word) {
+				normalized[i] = "YEAR"
+			}
+		}
+		return normalized
+	}
+	original := strings.Fields(string(old))
+	before, after := normal(original), normal(strings.Fields(string(now)))
+	if len(after) >= len(before) {
+		return "", false
+	}
+	var dropped []int
+	j := 0
+	for i, word := range before {
+		if j < len(after) && word == after[j] {
+			j++
+			continue
+		}
+		dropped = append(dropped, i)
+	}
+	if j < len(after) {
+		return "", false
+	}
+	first, end := dropped[0], dropped[0]
+	for end+1 < len(before) && slices.Contains(dropped, end+1) && end-first < 15 {
+		end++
+	}
+	quote := strings.Join(original[first:end+1], " ")
+	if end+1 < len(before) && slices.Contains(dropped, end+1) {
+		quote += " …"
+	}
+	count := fmt.Sprintf("%d words", len(dropped))
+	if len(dropped) == 1 {
+		count = "1 word"
+	}
+	return fmt.Sprintf("%s from %q on", count, quotable(quote)), true
 }
 
 // quotable is a line as a message quotes it: trimmed, and cut short past

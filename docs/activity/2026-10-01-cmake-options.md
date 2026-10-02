@@ -12,3 +12,8 @@ The person revisited D12 after the dogfood run with 58e2d7eb, where fluent-bit 5
 
 - Tests: `TestAnAddedCMakeOptionIsSaidAndHoldsNothing` (an option off with what it gates, one on gating nothing, one on gating a package, a flipped default, an option beside another change), `TestCMakeWithoutLeavesOutOptionsAndWhatTheyGate`, `TestAnAddedCMakeOptionHoldsNothing`, and `TestACMakeListsOptionsAndPackagesAreRead` for the booleans.
 - The full suite with `DOCKHAND_TEST_MACPORTS_TCLSH`, vet, fmt-check, vendor-check, deadcode, and lint.
+
+## A license that only drops text (the same day)
+
+The dogfood run with ce6a206d bumped entr 5.8 to 5.9 cleanly, held on "LICENSE changed", where 5.9's LICENSE had only dropped its "Compatibility Libraries" section, for libraries no longer shipped, rewrapped a paragraph, and moved a year. The dogfood session proposed that a license that only loses text hold nothing. Losing text can narrow a license as surely as gaining it, "MIT or GPL-2" losing "MIT or", or one paragraph of a dual license, so the person chose that it still holds, said plainly. A license file whose words, years and wrapping aside, are the old ones less some now says "upstream's LICENSE only drops text, 22 words from "2) Compatibility Libraries (MacOS and Linux only) …" on", so the look takes seconds (`TestALicenseThatOnlyDropsTextSaysWhat`).
+

@@ -186,3 +186,26 @@ func TestAnAddedCMakeOptionIsSaidAndHoldsNothing(t *testing.T) {
 	require.Equal(t, "changed", compare(strings.Replace(bumped, `"TLS" ON`, `"TLS" OFF`, 1)).How, "a default that flips")
 	require.Equal(t, "changed", compare(strings.Replace(bumped, "src/a.c", "src/a.c src/b.c", 1)+"option(FLB_X \"x\" OFF)\n").How, "anything else beside an option")
 }
+
+// A license file whose change only drops text, but for its years and how
+// its lines wrap, says what it drops, as entr 5.9's LICENSE dropped its
+// "Compatibility Libraries" section; one that adds a word is changed (the
+// dogfood run with ce6a206d). Either is said; holding is assess's.
+func TestALicenseThatOnlyDropsTextSaysWhat(t *testing.T) {
+	before := "1) entr\n\nCopyright (c) 2012-2024 Eric Radman\n\nPermission to use, copy, modify, and distribute this software for any\npurpose with or without fee is hereby granted.\n\n2) Compatibility Libraries (MacOS and Linux only)\n\nCopyright (c) 2011 Jonathan Lemon\nRedistribution and use in source and binary forms are permitted.\n"
+	after := "1) entr\n\nCopyright (c) 2012-2025 Eric Radman\n\nPermission to use, copy, modify, and distribute this software for any purpose\nwith or without fee is hereby granted.\n"
+	compare := func(after string) []string {
+		t.Helper()
+		changes, err := compareArchives(t,
+			testsupport.Tarball(t, "entr-5.8", map[string]string{"LICENSE": before}),
+			testsupport.Tarball(t, "entr-5.9", map[string]string{"LICENSE": after}), Versions{})
+		require.NoError(t, err)
+		var said []string
+		for _, change := range changes {
+			said = append(said, change.Message)
+		}
+		return said
+	}
+	require.Equal(t, []string{`upstream's LICENSE only drops text, 22 words from "2) Compatibility Libraries (MacOS and Linux only) Copyright (c) 2011 Jonathan Lemon Redistribution and use in …" on`}, compare(after))
+	require.Equal(t, []string{"upstream's LICENSE changed"}, compare(after+"Also under the GPL.\n"), "a word added")
+}
