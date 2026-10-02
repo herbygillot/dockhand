@@ -95,6 +95,12 @@ Reporting stays scoped to the diff by default, though the analysis may read wide
 
 **F. Advisories.** OSV for vendored crates, Go modules and PyPI packages. Both docs agree it's evidence for investigation, never a hold.
 
+**Before D: a trust rule for other people's Portfiles.** (From the blind-spots review of 2026-10-02, at the person's word.) Today dockhand mostly evaluates the person's own Portfiles, and [oracle](oracle.md) puts resisting a malicious Portfile out of scope, with a Tart guest as the boundary "if that ever matters". The inbox is when it matters. `adopt --pr` already exists, and `review <pr> --check` (UX §8) and the inbox (D) would bring strangers' Portfiles in routinely. Host-side evaluation runs `port-tclsh` as the person, and the oracle says its isolation can be deliberately escaped. That Mac holds the GitHub login that pushes to the fork, and `~/.dockhand/ssh/archives.key`, which every Tart guest trusts. The rule is written before any inbox work starts, because it's cheap to decide now and expensive to retrofit. The recommended default:
+- a Portfile from a pull request the person didn't author is evaluated and built only in a guest, never by the host's evaluator;
+- where some step can't avoid the host, dockhand says plainly that it is about to evaluate someone else's code on this Mac and asks first, and a script refuses.
+
+`adopt --pr`'s current path gets checked against the rule when it's written. The same rule covers anything else that evaluates a Portfile the person didn't write, such as reproduction bundles from others (G).
+
 **G. Investigations.** Codex #2. First an opt-in to keep a failed Tart guest and open a shell in it (small, and the most-wanted piece). Reproduction bundles come later.
 
 ## Still deferred, and why
@@ -110,7 +116,7 @@ Reporting stays scoped to the diff by default, though the analysis may read wide
 2. **UX naming** (§1, §2), which can start alongside step 1.
 3. **Survey rules** (A) on the ledger, and the person's voice (B), both of which feed the verdict.
 4. **The rest of the UX review**, chaining included, now built on the verdict.
-5. **Consumers** (C), then the **inbox** (D) with `review --check`.
+5. **Consumers** (C). Then the **trust rule** for others' Portfiles, then the **inbox** (D) with `review --check`.
 6. **Upstream context** (E), **advisories** (F), and **investigations** (G), in whatever order use asks for.
 
 ## Decided
