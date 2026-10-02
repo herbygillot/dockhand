@@ -1,6 +1,6 @@
 # Directions
 
-Where dockhand could go past its [roadmap](roadmap.md), proposed 2026-10-01 at the person's asking, from what the dogfood runs of September and October showed. Nothing here is decided: each becomes roadmap work at the person's word. What the roadmap already holds, as running what a port installs, the prefix provider, and expiring credentials, isn't repeated, nor what's been decided against, as MacPorts' buildbot history as a baseline (D1's decision 20).
+Where dockhand could go past its [roadmap](roadmap.md), proposed 2026-10-01 at the person's asking, from what the dogfood runs of September and October showed. Nothing here is decided: each becomes roadmap work at the person's word. Its order, merged with Codex's directions and the UX review, is the [direction synthesis](direction-synthesis.md). What the roadmap already holds, as running what a port installs, the prefix provider, and expiring credentials, isn't repeated, nor what's been decided against, as MacPorts' buildbot history as a baseline (D1's decision 20).
 
 ## Areas to grow into
 

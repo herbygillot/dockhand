@@ -614,7 +614,14 @@ What each exercise run asked for that is done, or that joined a numbered item, w
 
 ## Directions
 
-What dockhand could grow into, and what to redesign, from the runs' findings, proposed 2026-10-01 and waiting on the person's word: [directions](directions.md).
+What dockhand could grow into, and what to redesign. [Directions](directions.md) (2026-10-01, from the runs' findings), [Codex's directions](codex-directions.md), the [command UX review](reviews/2026-10-02-command-ux.md), and the maintainer review survey are merged into one order in the [direction synthesis](direction-synthesis.md), which the person accepted on 2026-10-02:
+
+- **Three layers, built bottom-up:** what dockhand knows of a branch (a coverage ledger, each finding's kind and what it holds, one readiness verdict, and a `Next:` checked to work), then the command surface (the UX review), then new reach.
+- **The verdict comes before the UX review's chaining (§3).** Branch naming (§1, §2) can go alongside it. Editing the declaration that ran is layer 1's too, and independent.
+- **Maintenance reasoning lives in the pull request and in patch headers or Portfile comments,** never only in dockhand's database.
+- **Running what a port installs stays under Later until layer 1 lands.** Comparing what an update's libraries declare, which runs nothing, is its first half.
+
+Each step still becomes Next's work at the person's word.
 
 ## Later
 
