@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -49,6 +50,12 @@ func newWorld(t *testing.T) world {
 	t.Setenv("MACPORTS_TREE", w.clone)
 	return w
 }
+
+// settle bounds a wait for what a running serve or watch says. It's a
+// bound, not a pace: a wait ends as soon as the words appear, and on a
+// loaded machine, such as CI's runner beside the other tests, they can
+// take far longer than they do here; five seconds failed there (2026-10-02).
+const settle = 2 * time.Minute
 
 func dockhand(t *testing.T, args ...string) (string, string, error) {
 	t.Helper()

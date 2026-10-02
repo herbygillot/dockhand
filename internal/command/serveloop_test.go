@@ -58,7 +58,7 @@ func TestServeWorksThroughYourOutdatedPorts(t *testing.T) {
 			done <- Run(ctx, append([]string{"serve"}, args...), Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 		}()
 		for _, text := range until {
-			require.Eventually(t, func() bool { return strings.Contains(served.String(), text) }, 10*time.Second, 10*time.Millisecond, served.String())
+			require.Eventually(t, func() bool { return strings.Contains(served.String(), text) }, settle, 10*time.Millisecond, served.String())
 		}
 		stop()
 		require.NoError(t, <-done)
@@ -131,7 +131,7 @@ func TestServeSubmitsNoMoreThanTheDailyLimit(t *testing.T) {
 	}()
 	require.Eventually(t, func() bool {
 		return strings.Contains(served.String(), "waits for tomorrow; today's limit of 1 pull request is reached")
-	}, 10*time.Second, 10*time.Millisecond, served.String())
+	}, settle, 10*time.Millisecond, served.String())
 	stop()
 	require.NoError(t, <-done)
 	require.Empty(t, g.PRs, "the limit holds across restarts")
@@ -183,7 +183,7 @@ func TestServeLooksAgainAfterStoppingMidLook(t *testing.T) {
 		done <- Run(ctx, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &again, Err: &again})
 	}()
 	require.Eventually(t, func() bool { return strings.Contains(again.String(), "serve: 1 port of yours has newer releases: jq") },
-		10*time.Second, 10*time.Millisecond, again.String())
+		settle, 10*time.Millisecond, again.String())
 	stop()
 	require.NoError(t, <-done)
 }

@@ -78,7 +78,7 @@ func TestACheckIsHandedToServe(t *testing.T) {
 	go func() {
 		done <- Run(ctx, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 	}()
-	require.Eventually(t, func() bool { return strings.Contains(served.String(), "serve: leading") }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return strings.Contains(served.String(), "serve: leading") }, settle, 10*time.Millisecond)
 
 	out, errs, err := dockhand(t, "check")
 	require.NoError(t, err)
@@ -95,7 +95,7 @@ func TestACheckIsHandedToServe(t *testing.T) {
 	go func() {
 		secondDone <- Run(second, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &standby, Err: &standby})
 	}()
-	require.Eventually(t, func() bool { return strings.Contains(standby.String(), "serve: standing by; serve (pid ") }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return strings.Contains(standby.String(), "serve: standing by; serve (pid ") }, settle, 10*time.Millisecond)
 	drained, _, err := dockhand(t, "serve", "--drain")
 	require.NoError(t, err)
 	require.Contains(t, drained, "leads and runs the queue; nothing to drain here")
@@ -179,7 +179,7 @@ func TestServeCleansUpAfterAMergeOnceADay(t *testing.T) {
 		go func() {
 			done <- Run(ctx, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 		}()
-		require.Eventually(t, func() bool { return strings.Contains(served.String(), until) }, 5*time.Second, 10*time.Millisecond)
+		require.Eventually(t, func() bool { return strings.Contains(served.String(), until) }, settle, 10*time.Millisecond)
 		time.Sleep(100 * time.Millisecond)
 		stop()
 		require.NoError(t, <-done)
@@ -248,7 +248,7 @@ JSON
 	}
 
 	out := serveUntil(2, func() {
-		require.Eventually(t, func() bool { return started("check-1") && started("check-2") }, 5*time.Second, 10*time.Millisecond,
+		require.Eventually(t, func() bool { return started("check-1") && started("check-2") }, settle, 10*time.Millisecond,
 			"with capacity 2, both checks run at once")
 	})
 	require.Contains(t, out, "builds on command (2 checks at a time)")
@@ -265,7 +265,7 @@ JSON
 	_, _, err = dockhand(t, "check", "-d")
 	require.NoError(t, err)
 	serveUntil(1, func() {
-		require.Eventually(t, func() bool { return started("check-3") || started("check-4") }, 5*time.Second, 10*time.Millisecond)
+		require.Eventually(t, func() bool { return started("check-3") || started("check-4") }, settle, 10*time.Millisecond)
 		time.Sleep(200 * time.Millisecond)
 		require.False(t, started("check-3") && started("check-4"), "with capacity 1, one check at a time")
 	})

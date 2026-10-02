@@ -451,7 +451,7 @@ func TestStatusRefreshShowsWhatTheReviewersSaid(t *testing.T) {
 	go func() {
 		done <- Run(ctx, []string{"serve"}, Streams{In: strings.NewReader(""), Out: &served, Err: &served})
 	}()
-	require.Eventually(t, func() bool { return strings.Contains(served.String(), "jq-update: #34901: CI failing\n") }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return strings.Contains(served.String(), "jq-update: #34901: CI failing\n") }, settle, 10*time.Millisecond)
 	stop()
 	require.NoError(t, <-done)
 	out, _, err = dockhand(t, "status", "--attention")
