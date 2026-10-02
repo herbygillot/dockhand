@@ -491,6 +491,7 @@ func upstreamLines(plan engine.SubmitPlan) []string {
 // marked as update marks them, each naming its port where there are
 // several, under an Upstream label.
 func comparisonLines(comparisons []engine.PortComparison) []string {
+	comparisons = engine.Grouped(comparisons)
 	ports := map[string]bool{}
 	for _, found := range comparisons {
 		ports[found.Port] = true

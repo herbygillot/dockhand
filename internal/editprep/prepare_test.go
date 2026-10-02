@@ -100,6 +100,7 @@ func TestPrepareRevisionScopesSelectedSubportAndDefaultRevision(t *testing.T) {
 		{body: "description fixture\n", revision: 1},
 		{body: "revision 4\nsubport fixture-child {\n revision 9\n}\n", subport: "fixture-child", revision: 10},
 		{body: "revision 4\nsubport fixture-child {\n description {inherited revision}\n}\n", subport: "fixture-child", revision: 5},
+		{body: "revision 4\nsubport fixture-child {}\n", revision: 5},
 	} {
 		t.Run(fixture.subport+fixture.body, func(t *testing.T) {
 			service, request := preparationFixture(t, fixture.body)
@@ -122,7 +123,10 @@ func TestPreparationDeclinesUnintendedEvaluationAndUnsupportedExpressions(t *tes
 		expected error
 		detail   string
 	}{
-		{"revision 4\nsubport fixture-child {}\n", editprep.ErrFidelity, "fixture-child.revision"},
+		// A subport sharing the revision line moves with it, as revbump's
+		// help says (batch 41); one whose revision follows it otherwise
+		// is still refused.
+		{"revision 4\nsubport fixture-child {\n revision [expr {${revision} * 2}]\n}\n", editprep.ErrFidelity, "fixture-child.revision"},
 		{"revision 4\ndescription revision=${revision}\n", editprep.ErrFidelity, "description changed"},
 		{"revision [expr {2+2}]\n", editprep.ErrUnsupported, "matching literal"},
 		{"revision 4\nif {${revision} == 5} { error {candidate evaluation fails} }\n", nil, "candidate evaluation fails"},

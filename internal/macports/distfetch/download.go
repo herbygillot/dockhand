@@ -84,8 +84,12 @@ func LocalPatches(info macports.PortInfo, portdir string) error {
 		return fmt.Errorf("%w: patches must be inside the frozen port directory; filespath %s is outside %s", portfile.ErrUnsupported, resolved, base)
 	}
 	for _, name := range files {
-		if !portfile.Literal(name) || name == "." || name == ".." {
-			return fmt.Errorf("%w: remote or ambiguous patchfile %s", portfile.ErrUnsupported, name)
+		// A patch in a subdirectory of files, as perl5's
+		// 5.16/clean-up-paths.patch, is local too (field testing,
+		// 2026-10-02); each segment is a plain name, so the path stays
+		// inside files. One with a site tag, name:tag, is fetched.
+		if !localPatchName(name) {
+			return fmt.Errorf("%w: patchfile %s isn't a file under the port's files directory, and patches fetched from a site aren't checked", portfile.ErrUnsupported, name)
 		}
 		stat, err := os.Lstat(filepath.Join(resolved, name))
 		if err != nil || !stat.Mode().IsRegular() {
@@ -344,4 +348,15 @@ func CheckPolicy(info macports.PortInfo, portdir string) error {
 	}
 
 	return nil
+}
+
+// localPatchName reports a patchfile named as a path under files: plain
+// segments, none "." or "..".
+func localPatchName(name string) bool {
+	for segment := range strings.SplitSeq(name, "/") {
+		if !portfile.Literal(segment) || segment == "." || segment == ".." {
+			return false
+		}
+	}
+	return true
 }

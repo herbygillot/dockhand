@@ -115,6 +115,22 @@ func TestAPythonRequirementIsJudgedAgainstTheBase(t *testing.T) {
 	}
 }
 
+// A new port's requirements are each new to it: one no dependency is
+// named for holds, and none is said as the manifest adding it (field
+// testing, 2026-10-02: py-mlx-vlm said "requirements.txt adds" of each,
+// and its missing dependencies held nothing).
+func TestANewPortsUnmetRequirementsHold(t *testing.T) {
+	input := Input{
+		Port: pythonPort("py313-mlx-vlm", "py313-pillow"), New: true,
+		Pairs: []Pair{{After: read(t, "pkg-1", map[string]string{"requirements.txt": "pillow>=10\ntqdm>=4\n"}, project.Spec{})}},
+	}
+	comparison := observed(t, input, map[Provider]Observation{{Port: "py313-pillow"}: {Version: "11.0"}})
+	require.Equal(t, []string{"! upstream: requirements.txt requires tqdm >=4, and no port the Portfile depends on is named for it"}, pins(comparison))
+	for _, change := range comparison.Changes {
+		require.NotEqual(t, DependencyAdded, change.Rule, change.Message)
+	}
+}
+
 // The base's provider is asked about only once the candidate's doesn't
 // meet a requirement.
 func TestTheBaseIsAskedOnlyWhereTheCandidateFails(t *testing.T) {

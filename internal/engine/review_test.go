@@ -205,3 +205,15 @@ func TestReviewNamesADirectorysOtherPorts(t *testing.T) {
 	require.Equal(t, []string{"jq", "jq-devel"}, report.Ports)
 	require.Contains(t, report.Summary(), "2 commits changing jq, jq-devel")
 }
+
+// Subports whose comparisons say the same are said once, named together
+// (field testing, 2026-10-02: py-mlx-vlm's block repeated per subport).
+func TestComparisonsThatSayTheSameAreGrouped(t *testing.T) {
+	same := model.UpstreamComparison{Changes: []model.UpstreamChange{{Message: "upstream: requirements.txt requires tqdm >=4, and no port the Portfile depends on is named for it", Hold: true}}}
+	other := model.UpstreamComparison{Changes: []model.UpstreamChange{{Message: "upstream's LICENSE changed"}}}
+	report := ReviewReport{Upstream: []PortComparison{{Port: "py313-mlx-vlm", Comparison: same}, {Port: "py314-mlx-vlm", Comparison: same}, {Port: "py-mlx-vlm", Comparison: other}}}
+	require.Equal(t, []string{
+		"py313-mlx-vlm, py314-mlx-vlm: upstream: requirements.txt requires tqdm >=4, and no port the Portfile depends on is named for it",
+		"py-mlx-vlm: upstream's LICENSE changed",
+	}, report.UpstreamWords())
+}

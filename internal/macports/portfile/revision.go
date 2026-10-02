@@ -19,11 +19,16 @@ func BumpRevision(src []byte, subport string, current int) ([]byte, error) {
 		return nil, fmt.Errorf("%w: invalid Tcl syntax: %v", ErrUnsupported, errs)
 	}
 	if subport != "" {
-		body, ok := subportBody(src, script, subport)
-		if !ok {
-			return nil, fmt.Errorf("%w: select a single literal subport block for %s", ErrUnsupported, subport)
+		// A subport with no literal block of its own, as the python
+		// PortGroup makes py314-lmdb, takes the Portfile's revision:
+		// that's the line to bump. The literal must be the subport's
+		// revision, below, and the evaluated edit is held to raising it
+		// (field testing, 2026-10-02).
+		if body, ok := subportBody(src, script, subport); ok {
+			script = body
+		} else {
+			subport = ""
 		}
-		script = body
 	}
 	var revisions []syntax.Command
 	for _, item := range script.Items {

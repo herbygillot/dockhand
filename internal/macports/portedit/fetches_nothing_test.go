@@ -3,6 +3,8 @@ package portedit
 import (
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/model"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -117,4 +119,19 @@ livecheck.type none
 	local, err := (&VersionProbe{editor: s, request: r, input: input}).Assess(t.Context(), nil)
 	require.NoError(t, err)
 	require.Equal(t, InputFound, local.Outcome, "%+v", local.Findings)
+}
+
+// A subport with no block of its own shares the Portfile's revision, as
+// the python PortGroup's do: a revbump of one bumps that line, and its
+// siblings move with it, as revbump's help says (field testing,
+// 2026-10-02: py-lmdb and py313-lmdb were refused).
+func TestARevbumpOfASubportSharingTheRevision(t *testing.T) {
+	t.Parallel()
+	s, r, _ := archiveFixture(t, "version 1.2.3\nrevision 2\ndistfiles\nforeach v {a b} {\n    subport fixture-$v {}\n}\n")
+	r.Action, r.Version, r.Release, r.Subject = model.EditRevbump, "", nil, "rebuild for libfoo 2"
+	r.Selection.Subport = "fixture-b"
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Contains(t, string(result.Files[0].After), "revision 3\n")
+	require.Equal(t, "fixture-b: rebuild for libfoo 2", result.Commits[0].Subject)
 }

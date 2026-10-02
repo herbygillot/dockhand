@@ -230,9 +230,10 @@ func (r ReviewReport) Markdown() string {
 // naming its port where the pull request changes several.
 func (r ReviewReport) UpstreamWords() []string {
 	var lines []string
-	for _, found := range r.Upstream {
+	grouped := Grouped(r.Upstream)
+	for _, found := range grouped {
 		port := ""
-		if len(r.Upstream) > 1 {
+		if len(grouped) > 1 {
 			port = found.Port + ": "
 		}
 		if found.Comparison.Problem != "" {

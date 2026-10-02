@@ -68,8 +68,15 @@ func Revision(before, after macports.Snapshot, selected string) Report {
 			continue
 		}
 		wanted := old.Revision
-		if name == selected {
+		// A sibling that shares the selected port's revision line moves
+		// with it, as the python PortGroup's subports share their stub's:
+		// one at the selected port's revision that rises with it.
+		shared := name != selected && old.Revision == before.Ports[selected].Revision && next.Revision == wanted+1
+		if name == selected || shared {
 			wanted++
+		}
+		if shared {
+			result.ExpectedChanges = append(result.ExpectedChanges, name+".revision +1, shared")
 		}
 		if next.Revision != wanted {
 			result.UnexpectedChanges = append(result.UnexpectedChanges, fmt.Sprintf("%s.revision: expected %d, got %d", name, wanted, next.Revision))

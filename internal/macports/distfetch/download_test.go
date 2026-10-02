@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -208,4 +210,20 @@ func TestCheckPolicyReadsIgnoreSSLCertAsTclBoolean(t *testing.T) {
 	info := archiveInfo("https://example.invalid/")
 	delete(info.Options, "fetch.ignore_sslcert")
 	require.ErrorIs(t, CheckPolicy(info, t.TempDir()), portfile.ErrUnsupported, "an unevaluated option is not assumed false")
+}
+
+// A patch in a subdirectory of files is local, as perl5's
+// 5.16/clean-up-paths.patch is; a path out of files, or one with a site
+// tag, isn't (field testing, 2026-10-02).
+func TestALocalPatchMayBeInASubdirectoryOfFiles(t *testing.T) {
+	portdir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(portdir, "files", "5.16"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(portdir, "files", "5.16", "clean-up-paths.patch"), []byte("--- a\n"), 0o644))
+	port := func(patches string) macports.PortInfo {
+		return macports.PortInfo{Name: "perl5.16", Options: map[string]string{"patchfiles": patches}}
+	}
+	require.NoError(t, LocalPatches(port("5.16/clean-up-paths.patch"), portdir))
+	for _, patches := range []string{"../escape.patch", "5.16/../../escape.patch", "remote.patch:patches", "/etc/passwd"} {
+		require.ErrorContains(t, LocalPatches(port(patches), portdir), "isn't a file under the port's files directory", patches)
+	}
 }

@@ -157,6 +157,19 @@ func (e *Engine) rebase(ctx context.Context, branch model.Branch) (Rebased, erro
 	if len(edited) > 0 {
 		return Rebased{}, fmt.Errorf("%s has uncommitted edits to %s; commit them (dockhand tidy) or set them aside before rebasing", current.ShortName(), listPaths(edited))
 	}
+	// A branch whose pull request merged has nothing to rebase: skim's
+	// replayed nothing onto master, and then said submit would replace
+	// the merged pull request's commits (field testing, 2026-10-02). Its
+	// pull request is read now, since the record may be older than the
+	// merge; a read that fails leaves the replay below to tell.
+	if pr := current.PullRequest; pr != nil && current.State == model.BranchOpen {
+		if refreshed, err := e.refresh(ctx, current); err == nil && refreshed.Branch.ID != "" {
+			current = refreshed.Branch
+		}
+	}
+	if err := ended(current); err != nil {
+		return Rebased{}, err
+	}
 	master, err := e.fetchMaster(ctx)
 	if err != nil {
 		return Rebased{}, err
@@ -188,6 +201,12 @@ func (e *Engine) rebase(ctx context.Context, branch model.Branch) (Rebased, erro
 	replayed, err := worktree.History(ctx, string(master), rebased)
 	if err != nil {
 		return Rebased{}, err
+	}
+	if len(replayed) == 0 {
+		// Master has every change the branch makes: it was merged, by
+		// its pull request or another's, and moving it onto master would
+		// leave a branch that changes nothing.
+		return Rebased{}, fmt.Errorf("master %s already has every change %s makes, so there's nothing to rebase; dockhand clean %s removes it once its pull request is merged", short(master), current.ShortName(), current.ShortName())
 	}
 	result.Commits = len(replayed)
 	var messages []string
@@ -253,4 +272,20 @@ func (e *Engine) Archive(ctx context.Context, branch model.Branch, undo bool) (m
 		return err
 	})
 	return branch, err
+}
+
+// ended refuses a branch whose pull request merged or closed: there's
+// nothing to rebase, and submitting it again would reopen nothing.
+func ended(branch model.Branch) error {
+	number := 0
+	if branch.PullRequest != nil {
+		number = branch.PullRequest.Number
+	}
+	switch branch.State {
+	case model.BranchMerged:
+		return fmt.Errorf("#%d merged, so %s has nothing to rebase; dockhand clean %s removes what it leaves", number, branch.ShortName(), branch.ShortName())
+	case model.BranchClosed:
+		return fmt.Errorf("#%d was closed without merging, so %s has nothing to rebase; dockhand archive %s sets it aside", number, branch.ShortName(), branch.ShortName())
+	}
+	return nil
 }

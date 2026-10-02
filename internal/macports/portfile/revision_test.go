@@ -29,8 +29,14 @@ func TestRevisionEditPreservesSurroundingSourceAndScope(t *testing.T) {
 		_, err := BumpRevision([]byte(source), "", 2)
 		require.ErrorIs(t, err, ErrUnsupported)
 	}
-	_, err = BumpRevision([]byte("version 1"), "dynamic-child", 0)
-	require.ErrorIs(t, err, ErrUnsupported)
+	// A subport with no literal block, as the python PortGroup makes,
+	// takes the Portfile's revision line, which the evaluated edit is
+	// then held to (field testing, 2026-10-02: py314-lmdb).
+	got, err = BumpRevision([]byte("version 1\nrevision 2\npython.versions 313 314\n"), "py314-lmdb", 2)
+	require.NoError(t, err)
+	require.Equal(t, "version 1\nrevision 3\npython.versions 313 314\n", string(got))
+	_, err = BumpRevision([]byte("version 1\nrevision 2\n"), "py314-lmdb", 0)
+	require.ErrorIs(t, err, ErrUnsupported, "the Portfile's revision isn't the subport's")
 	_, err = BumpRevision([]byte("version 1"), "", int(^uint(0)>>1))
 	require.ErrorIs(t, err, ErrUnsupported)
 }

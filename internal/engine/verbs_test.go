@@ -3,6 +3,7 @@ package engine
 import (
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -171,6 +172,31 @@ func TestARebaseCountsWhatItReplays(t *testing.T) {
 	require.Equal(t, 1, rebased.Commits, "libharbor's change is master's now")
 	require.Equal(t, []string{"jq: update to 1.8.1"}, log(t, branch.Worktree, rebased.To))
 	require.Equal(t, 1, rebases())
+}
+
+// A branch master already has every change of has nothing to rebase, and
+// is refused as it is, as is one whose pull request is recorded merged:
+// skim's replayed nothing onto master, and said submit would replace the
+// merged pull request's commits (field testing, 2026-10-02).
+func TestAMergedBranchIsNotRebased(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update", Here: true})
+	require.NoError(t, err)
+	write(t, branch.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
+	commitAs(t, branch.Worktree, "Ada ada@example.org", "jq: update to 1.8.1")
+	head := strings.TrimSpace(run(t, branch.Worktree, "rev-parse", "HEAD"))
+
+	// Master takes the same change as another commit, as a squash merge
+	// would.
+	write(t, f.upstream, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
+	run(t, f.upstream, "commit", "-q", "-am", "jq: update to 1.8.1 (#34901)")
+	_, err = e.Rebase(t.Context(), branch)
+	require.ErrorContains(t, err, "already has every change jq-update makes, so there's nothing to rebase; dockhand clean jq-update removes it once its pull request is merged")
+	require.Equal(t, head, strings.TrimSpace(run(t, branch.Worktree, "rev-parse", "HEAD")), "the branch is as it was")
+
+	require.EqualError(t, ended(model.Branch{Name: "dockhand/jq-update", State: model.BranchMerged, PullRequest: &model.PullRequest{Number: 34901}}),
+		"#34901 merged, so jq-update has nothing to rebase; dockhand clean jq-update removes what it leaves")
 }
 
 // A branch restored to the files an earlier check passed is that check's,

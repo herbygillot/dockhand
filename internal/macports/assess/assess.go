@@ -454,7 +454,13 @@ func (a *assessment) pair(pair Pair) {
 			if change.Requirements != nil {
 				a.need(requirement{manifest: change.Path, name: change.Name, now: change.Requirements, before: change.Before, changed: true})
 			}
-			run = append(run, dependency(change))
+			// Every requirement of a new port is new to it: whether a
+			// port the Portfile depends on provides it is the finding
+			// (pins), not that the manifest "adds" it (field testing,
+			// 2026-10-02: py-mlx-vlm).
+			if !a.input.New {
+				run = append(run, dependency(change))
+			}
 			continue
 		case change.Kind == "unread":
 			// What couldn't be read holds, as a change would, but for a

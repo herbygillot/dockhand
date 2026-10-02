@@ -276,3 +276,28 @@ func NothingCompared(comparison model.UpstreamComparison) bool {
 	return len(comparison.Changes) == 0 && comparison.Problem == "" &&
 		slices.ContainsFunc(comparison.Coverage, func(c model.Coverage) bool { return c.Policy == notCompared })
 }
+
+// Grouped are comparisons that say the same thing, one for each set of
+// ports, named together in the order given: a new python port's subports
+// each repeated its stub's block (field testing, 2026-10-02: py-mlx-vlm).
+func Grouped(comparisons []PortComparison) []PortComparison {
+	said := func(c model.UpstreamComparison) string {
+		var lines []string
+		for _, change := range c.Changes {
+			lines = append(lines, change.Message)
+		}
+		return strings.Join(append(lines, c.Problem, CoverageWords(c)), "\n")
+	}
+	var grouped []PortComparison
+	var keys []string
+	for _, found := range comparisons {
+		key := said(found.Comparison)
+		if i := slices.Index(keys, key); i >= 0 {
+			grouped[i].Port += ", " + found.Port
+			continue
+		}
+		keys = append(keys, key)
+		grouped = append(grouped, found)
+	}
+	return grouped
+}

@@ -172,8 +172,10 @@ func (a *assessment) pins() []model.UpstreamChange {
 				finding.Rule, finding.Hold = ProviderRemoved, true
 				finding.Message = fmt.Sprintf("upstream: %s requires %s, which %s provided at the base, and the Portfile no longer depends on it", q.manifest, wanted, q.before)
 			default:
-				// In question with no provider on either side, it changed.
-				finding.Rule = ProviderUnresolved
+				// In question with no provider on either side, it changed,
+				// which an update's "adds" holds on; a new port has no
+				// such finding, so this one holds for it.
+				finding.Rule, finding.Hold = ProviderUnresolved, a.input.New
 				finding.Message = fmt.Sprintf("upstream: %s requires %s, and no port the Portfile depends on is named for it", q.manifest, wanted)
 			}
 			found = append(found, finding)
