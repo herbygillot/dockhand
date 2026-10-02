@@ -404,6 +404,12 @@ func (c *cleaner) maybe(ctx context.Context) {
 	for _, name := range report.Caches {
 		c.s.say("removed %s from Tart's cache, unused for %s", name, CacheUnused)
 	}
+	if words := LogCleanupWords(report.Logs, c.s.options.CleanupAge); words != "" {
+		c.s.say("%s", words)
+	}
+	if words := HistoryWords(report.History, report.Assessments, c.s.options.CleanupAge); words != "" {
+		c.s.say("%s", words)
+	}
 	for _, branch := range report.Branches {
 		var removed []string
 		for _, step := range branch.Steps {

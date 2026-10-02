@@ -16,6 +16,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildenv/script"
+	"github.com/herbygillot/dockhand/internal/buildlog"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -178,7 +179,7 @@ JSON`
 	portfile, err := os.ReadFile(filepath.Join(ports, "textproc/jq/Portfile"))
 	require.NoError(t, err)
 	require.Equal(t, "name jq\nversion 1.8.1\n", string(portfile), "the snapshot's files")
-	require.FileExists(t, filepath.Join(dir, "command.log"))
+	require.FileExists(t, filepath.Join(dir, "command.log.gz"), "kept compressed once the check ended (D6)")
 }
 
 // A Git-fetched target's request names its repository, git.branch, and
@@ -236,7 +237,7 @@ func TestNoResultFileIsInfrastructureTrouble(t *testing.T) {
 	run, dir, _ := checked(t, `echo "the build box is unreachable" >&2; exit 3`)
 	require.Equal(t, model.RunAttention, run.State)
 	require.Contains(t, run.Detail, "failed 3 times")
-	log, err := os.ReadFile(filepath.Join(dir, "command.log"))
+	log, err := buildlog.ReadFile(filepath.Join(dir, "command.log"))
 	require.NoError(t, err)
 	require.Contains(t, string(log), "unreachable")
 	require.DirExists(t, strings.TrimSuffix(dir, "1")+"3", "three attempts, each with its own directory")

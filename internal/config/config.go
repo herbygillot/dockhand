@@ -154,8 +154,10 @@ func parseSize(value string) (uint64, error) {
 	return n * unit, nil
 }
 
-// DefaultCleanupAfter is how long cleanup waits when after is unset.
-const DefaultCleanupAfter = 7 * 24 * time.Hour
+// DefaultCleanupAfter is how long cleanup waits when after is unset: for
+// caches, kept archives, events, logs, and what an ended branch's checks
+// recorded alike, one setting the person chose at 15 days (D6).
+const DefaultCleanupAfter = 15 * 24 * time.Hour
 
 // On reports whether automatic cleanup runs.
 func (c Cleanup) On() bool { return c.Automatic == nil || *c.Automatic }

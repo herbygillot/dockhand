@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/buildlog"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -360,7 +361,7 @@ func evidenceView(evidence engine.Evidence) []targetJSON {
 		passed := target.Passed
 		view.Passed = &passed
 		for _, result := range target.Outcomes {
-			view.Results = append(view.Results, resultJSON{Outcome: string(result.Outcome), Phase: string(result.Phase), Tests: string(result.Tests), Log: result.Log, Detail: result.Detail, ReusedFrom: string(result.ReusedFrom),
+			view.Results = append(view.Results, resultJSON{Outcome: string(result.Outcome), Phase: string(result.Phase), Tests: string(result.Tests), Log: logWhere(result.Log), Detail: result.Detail, ReusedFrom: string(result.ReusedFrom),
 				Builders: builderViews(result.Builders),
 				Excluded: result.Kind == engine.CellExcluded, Remade: result.Kind == engine.CellRemade})
 		}
@@ -514,7 +515,7 @@ type builderJSON struct {
 func builderViews(parts []model.BuilderResult) []builderJSON {
 	var views []builderJSON
 	for _, part := range parts {
-		views = append(views, builderJSON{Builder: part.Builder, Outcome: string(part.Outcome), Phase: string(part.Phase), Tests: string(part.Tests), Log: part.Log})
+		views = append(views, builderJSON{Builder: part.Builder, Outcome: string(part.Outcome), Phase: string(part.Phase), Tests: string(part.Tests), Log: logWhere(part.Log)})
 	}
 	return views
 }
@@ -650,4 +651,13 @@ func impactView(impact engine.Impact) impactJSON {
 		view.Shared = append(view.Shared, sharedJSON{Path: shared.Path, PortGroup: shared.PortGroup, Users: nonNil(shared.Users)})
 	}
 	return view
+}
+
+// logWhere is where a log is now, kept compressed or as written; empty for
+// none.
+func logWhere(path string) string {
+	if path == "" {
+		return ""
+	}
+	return buildlog.Where(path)
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/buildlog"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
@@ -272,4 +273,85 @@ func TestAnArchivedBranchWithNothingMasterLacksGoesWithItsWorktree(t *testing.T)
 	require.Equal(t, "dockhand/jq-update", plans[0].Branch.Name)
 	require.Empty(t, plans[0].Steps)
 	require.Equal(t, "master has jq at 1.8.2, where the branch took 1.7.1 to 1.8.1", plans[0].Superseded)
+}
+
+// Cleanup keeps every finished check's logs compressed, and removes those
+// that stand for nothing past the cutoff (D6): an open branch keeps its
+// newest check in each environment and its three newest; an ended
+// branch's go once it's been ended past the cutoff.
+func TestCleanupKeepsLogsThatCount(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := twoPortBranch(t, e)
+	var runs []model.Run
+	for range 5 {
+		runs = append(runs, checkHead(t, e, branch))
+	}
+	for _, run := range runs {
+		path := filepath.Join(e.LogDirectory(), run.Name(), "tart-26-arm64-1", "target-1.log")
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte(strings.Repeat("checking for gcc... gcc\n", 500)), 0o644))
+	}
+	logOf := func(run model.Run) string {
+		return filepath.Join(e.LogDirectory(), run.Name(), "tart-26-arm64-1", "target-1.log")
+	}
+
+	done, err := e.cleanLogs(t.Context(), at.Add(time.Hour))
+	require.NoError(t, err)
+	require.Equal(t, []string{runs[1].Name(), runs[0].Name()}, done.Removed, "the two oldest, superseded and counting for nothing")
+	require.Equal(t, 3, done.Compressed.Logs)
+	for _, run := range runs[2:] {
+		require.FileExists(t, logOf(run)+".gz")
+	}
+	data, err := buildlog.ReadFile(logOf(runs[4]))
+	require.NoError(t, err)
+	require.Contains(t, string(data), "checking for gcc")
+	require.Contains(t, LogCleanupWords(done, 15*24*time.Hour), "compressed 3 logs")
+	require.Contains(t, LogCleanupWords(done, 15*24*time.Hour), "removed 2 checks' logs")
+
+	again, err := e.cleanLogs(t.Context(), at.Add(time.Hour))
+	require.NoError(t, err)
+	require.Equal(t, LogCleanup{}, again)
+
+	branch.State, branch.EndedAt = model.BranchArchived, at
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(branch) }))
+	kept, err := e.cleanLogs(t.Context(), at)
+	require.NoError(t, err)
+	require.Empty(t, kept.Removed, "ended only since the cutoff")
+	ended, err := e.cleanLogs(t.Context(), at.Add(time.Hour))
+	require.NoError(t, err)
+	require.Len(t, ended.Removed, 3)
+	require.NoDirExists(t, filepath.Join(e.LogDirectory(), runs[4].Name()))
+}
+
+// What a branch ended past the cutoff recorded of its checks goes, but its
+// newest, which status shows as it ended, and what reuse may choose; a
+// check that's gone is said to be, rather than never there (D6).
+func TestCleanupKeepsAnEndedBranchsNewestCheck(t *testing.T) {
+	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := twoPortBranch(t, e)
+	var runs []model.Run
+	for range 3 {
+		runs = append(runs, checkHead(t, e, branch))
+	}
+	branch.State, branch.EndedAt = model.BranchArchived, at.Add(-20*24*time.Hour)
+	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(branch) }))
+
+	report, err := e.Cleanup(t.Context(), session(t, e), 15*24*time.Hour)
+	require.NoError(t, err)
+	require.Equal(t, 2, report.History.Runs, "all but the newest")
+	require.Contains(t, HistoryWords(report.History, report.Assessments, 15*24*time.Hour), "removed what branches ended past 15 days recorded of 2 checks")
+	status, err := e.BranchStatus(t.Context(), branch)
+	require.NoError(t, err)
+	require.True(t, status.Pruned)
+	require.Nil(t, status.Evidence)
+	require.Equal(t, runs[2].ID, status.Latest.ID)
+	_, err = e.RunNamed(t.Context(), runs[0].Name())
+	require.ErrorContains(t, err, runs[0].Name()+" is no longer recorded")
+	_, err = e.RunNamed(t.Context(), "check-99")
+	require.ErrorContains(t, err, "there is no run check-99")
 }

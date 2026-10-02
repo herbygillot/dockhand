@@ -177,10 +177,18 @@ type Tx interface {
 	// checked (decision 44). Keeping one already kept changes nothing.
 	KeepArchive(archive model.Archive) error
 	// PruneArchives forgets the archives kept before a time that no live
-	// result names: none in a check of an open branch, and none recorded
-	// at or after it (decisions 36 and 44). It returns what it forgot,
-	// whose files go next.
+	// result names (decisions 36 and 44, D6): the newest passed build of
+	// each target in each environment that reuse may choose, and an open
+	// branch's newest passed result of each target in each environment.
+	// It returns what it forgot, whose files go next.
 	PruneArchives(before time.Time) ([]model.Archive, error)
+	// PruneHistory removes what the branches that ended before a time
+	// recorded of their checks, sparing what reuse may still choose and
+	// each branch's newest run (D6), and says how much.
+	PruneHistory(before time.Time) (Pruned, error)
+	// PruneAssessments removes the assessments of trees an open branch
+	// moved past before a time, and says how many.
+	PruneAssessments(before time.Time) (int, error)
 
 	AddSession(session model.Session) error
 	UpdateSession(session model.Session) error
@@ -227,4 +235,9 @@ func NewID(prefix string) string {
 	var b [10]byte
 	_, _ = rand.Read(b[:])
 	return prefix + "_" + strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b[:]))
+}
+
+// Pruned counts what PruneHistory removed, by kind.
+type Pruned struct {
+	Runs, Executions, Results, Plans, Revisions, Assessments, Inputs int
 }

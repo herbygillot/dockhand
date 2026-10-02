@@ -509,7 +509,7 @@ type portLogElsewhereJSON struct {
 }
 
 func portLogView(run model.Run, result model.TargetResult, data []byte) portLogJSON {
-	view := portLogJSON{Run: runView(run), Port: string(result.Target), Log: result.Log, Steps: logStepViews(result.Steps), Text: string(data)}
+	view := portLogJSON{Run: runView(run), Port: string(result.Target), Log: logWhere(result.Log), Steps: logStepViews(result.Steps), Text: string(data)}
 	if own, ok := result.OwnBuild(); ok {
 		view.OwnBuild = own.Line
 	}
@@ -523,7 +523,7 @@ func logsView(logs engine.RunLogs) logsJSON {
 		entry := executionLogsJSON{ID: string(x.ID), Reference: x.ProviderRef, Environment: environmentView(x.Environment), Attempt: x.Attempt, Identity: x.Identity, State: string(x.State), Detail: x.Detail,
 			Reused: x.Reused, Results: []resultLogJSON{}}
 		for _, result := range execution.Results {
-			view := resultLogJSON{Target: string(result.Target), Outcome: string(result.Outcome), Phase: string(result.Phase), Log: result.Log,
+			view := resultLogJSON{Target: string(result.Target), Outcome: string(result.Outcome), Phase: string(result.Phase), Log: logWhere(result.Log),
 				ReusedFrom: string(result.ReusedFrom), Steps: logStepViews(result.Steps)}
 			if fetch, ok := execution.Git[result.Target]; ok {
 				source := gitSourceView(fetch.Expected)

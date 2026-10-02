@@ -18,7 +18,7 @@ func TestConfigShowsWhatIsInEffect(t *testing.T) {
 		return `(?m)^` + regexp.QuoteMeta(key) + ` +` + regexp.QuoteMeta(value) + `$`
 	}
 	require.Regexp(t, setting("submit.rerequest_review", "ask  (default)"), out)
-	require.Regexp(t, setting("cleanup.after", "7d  (default)"), out)
+	require.Regexp(t, setting("cleanup.after", "15d  (default)"), out)
 	require.Regexp(t, setting("serve.notify", "true  (default)"), out)
 	require.Regexp(t, setting("providers.tart.test_timeout", "30m  (default)"), out)
 	require.Regexp(t, setting("providers.tart.xcode.sonoma", "15.4, as MacPorts' arm64 buildbot runs  (default)"), out)

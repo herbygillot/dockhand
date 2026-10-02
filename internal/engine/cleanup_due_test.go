@@ -185,7 +185,7 @@ func TestCleanupKeepsTheEventsTodaysSubmitLimitCounts(t *testing.T) {
 // Cleanup removes the kept archives no live result names, with their
 // files, and what no record names once it is older than its age: a file
 // whose record never followed, a fetch that didn't finish. An open
-// branch's archives stay (decisions 36 and 44).
+// branch's newest results' archives stay (decisions 36 and 44, D6).
 func TestCleanupRemovesArchivesNoLiveResultNames(t *testing.T) {
 	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
 	f := setup(t)
@@ -229,6 +229,6 @@ func TestCleanupRemovesArchivesNoLiveResultNames(t *testing.T) {
 	events, err := e.Events(t.Context(), 0)
 	require.NoError(t, err)
 	require.True(t, slices.ContainsFunc(events, func(event model.Event) bool {
-		return event.Message == "removed 1 kept archive, 1 MB, that no open branch's checks name; 1 archive kept, 1 MB"
+		return event.Message == "removed 1 kept archive, 1 MB, that neither reuse nor an open branch's newest results name; 1 archive kept, 1 MB"
 	}), "cleanup says what it removed and what the store keeps")
 }

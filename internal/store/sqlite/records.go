@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"cmp"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -16,7 +17,7 @@ import (
 // Times are stored in milliseconds, so a record read back carries its times
 // truncated to the millisecond.
 
-const branchColumns = "id, name, base, worktree, managed, title, state, pr_repository, pr_number, pr_head, pr_pushed, pr_body, pr_draft, pr_observed, created_at, origin, note"
+const branchColumns = "id, name, base, worktree, managed, title, state, pr_repository, pr_number, pr_head, pr_pushed, pr_body, pr_draft, pr_observed, created_at, origin, note, ended_at"
 
 func (t *tx) scanBranch(row interface{ Scan(...any) error }) (model.Branch, error) {
 	var b model.Branch
@@ -26,10 +27,14 @@ func (t *tx) scanBranch(row interface{ Scan(...any) error }) (model.Branch, erro
 	var prPushed, prBody, prObserved string
 	var prDraft int
 	var created int64
-	if err := row.Scan(&b.ID, &b.Name, &b.Base, &b.Worktree, &managed, &b.Title, &b.State, &prRepository, &prNumber, &prHead, &prPushed, &prBody, &prDraft, &prObserved, &created, &b.Origin, &b.Note); err != nil {
+	var ended sql.NullInt64
+	if err := row.Scan(&b.ID, &b.Name, &b.Base, &b.Worktree, &managed, &b.Title, &b.State, &prRepository, &prNumber, &prHead, &prPushed, &prBody, &prDraft, &prObserved, &created, &b.Origin, &b.Note, &ended); err != nil {
 		return model.Branch{}, storageError(err)
 	}
 	b.Repository, b.Managed, b.CreatedAt = t.repo, managed == 1, fromMillis(created)
+	if ended.Valid {
+		b.EndedAt = fromMillis(ended.Int64)
+	}
 	if prNumber.Valid {
 		b.PullRequest = &model.PullRequest{Repository: prRepository.String, Number: int(prNumber.Int64), Head: prHead.String,
 			Pushed: model.ObjectID(prPushed), Body: prBody, Draft: prDraft == 1}
@@ -109,9 +114,32 @@ func (t *tx) AddBranch(b model.Branch) error {
 		b.Origin = model.OriginPerson
 	}
 	repository, number, head, pushed, body, draft, observed := pullRequestColumns(b.PullRequest)
-	_, err := t.exec("INSERT INTO branches(repository_id, "+branchColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		t.repo, b.ID, b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, millis(b.CreatedAt), b.Origin, b.Note)
+	var ended any
+	if b.State != model.BranchOpen {
+		ended = millis(cmp.Or(b.EndedAt, time.Now()))
+	}
+	_, err := t.exec("INSERT INTO branches(repository_id, "+branchColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		t.repo, b.ID, b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, millis(b.CreatedAt), b.Origin, b.Note, ended)
 	return err
+}
+
+// endedAt is when a branch going from one state to another ended: none
+// once it's open, the time given or now as it leaves open, and else when
+// it ended before, unless a time is given.
+func endedAt(current, next model.Branch) any {
+	ended := current.EndedAt
+	switch {
+	case next.State == model.BranchOpen:
+		return nil
+	case current.State == model.BranchOpen:
+		ended = cmp.Or(next.EndedAt, time.Now())
+	case !next.EndedAt.IsZero():
+		ended = next.EndedAt
+	}
+	if ended.IsZero() {
+		return nil
+	}
+	return millis(ended)
 }
 
 func (t *tx) UpdateBranch(b model.Branch) error {
@@ -132,8 +160,8 @@ func (t *tx) UpdateBranch(b model.Branch) error {
 		return fmt.Errorf("%w: branch %s's creation time is fixed", store.ErrConflict, b.ID)
 	}
 	repository, number, head, pushed, body, draft, observed := pullRequestColumns(b.PullRequest)
-	return t.update("branch "+string(b.ID), "UPDATE branches SET name=?, base=?, worktree=?, managed=?, title=?, state=?, pr_repository=?, pr_number=?, pr_head=?, pr_pushed=?, pr_body=?, pr_draft=?, pr_observed=?, note=? WHERE repository_id=? AND id=?",
-		b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, b.Note, t.repo, b.ID)
+	return t.update("branch "+string(b.ID), "UPDATE branches SET name=?, base=?, worktree=?, managed=?, title=?, state=?, pr_repository=?, pr_number=?, pr_head=?, pr_pushed=?, pr_body=?, pr_draft=?, pr_observed=?, note=?, ended_at=? WHERE repository_id=? AND id=?",
+		b.Name, b.Base, b.Worktree, boolInt(b.Managed), b.Title, b.State, repository, number, head, pushed, body, draft, observed, b.Note, endedAt(current, b), t.repo, b.ID)
 }
 
 const revisionColumns = "id, branch_id, kind, snapshot, commit_id, tree_id, base_id, head_id, created_at"
@@ -747,11 +775,27 @@ func (t *tx) Archives() ([]model.Archive, error) {
 
 // unnamedArchive selects the archives kept before a time that no live
 // result names, finding the results that name each through result_archive.
-const unnamedArchive = "a.repository_id=? AND a.kept_at<? AND NOT EXISTS (SELECT 1 FROM results r " +
-	"JOIN executions e ON e.repository_id=r.repository_id AND e.id=r.execution_id " +
-	"JOIN runs u ON u.repository_id=e.repository_id AND u.id=e.run_id " +
-	"JOIN branches b ON b.repository_id=u.repository_id AND b.id=u.branch_id " +
-	"WHERE r.repository_id=a.repository_id AND r.archive=a.digest AND (b.state='open' OR r.recorded_at>=?))"
+// reusableBuilds are, for each target in each environment, its newest
+// passed build that recorded what it read and kept an archive, from the
+// build itself rather than a reuse of it: the one result reuse may still
+// choose, which keeps its archive and its record (D6). Its columns are
+// the result's execution, target, and archive.
+const reusableBuilds = "SELECT execution_id, target_id, archive FROM (SELECT r.execution_id, r.target_id, r.archive, ROW_NUMBER() OVER (" +
+	"PARTITION BY r.target_id, e.provider, e.platform_os, e.platform_version, e.platform_architecture, e.developer_tools " +
+	"ORDER BY r.recorded_at DESC, r.rowid DESC) AS newest FROM results r JOIN executions e ON e.repository_id=r.repository_id AND e.id=r.execution_id " +
+	"WHERE r.repository_id=? AND r.outcome='passed' AND r.inputs<>'' AND r.reused_from='' AND r.archive<>'') WHERE newest=1"
+
+// openBranchArchives are the archives an open branch's newest passed
+// result of each target in each environment names, a reuse's included:
+// what its evidence may name.
+const openBranchArchives = "SELECT archive FROM (SELECT r.archive, ROW_NUMBER() OVER (" +
+	"PARTITION BY u.branch_id, r.target_id, e.provider, e.platform_os, e.platform_version, e.platform_architecture, e.developer_tools " +
+	"ORDER BY r.recorded_at DESC, r.rowid DESC) AS newest FROM results r JOIN executions e ON e.repository_id=r.repository_id AND e.id=r.execution_id " +
+	"JOIN runs u ON u.repository_id=e.repository_id AND u.id=e.run_id JOIN branches b ON b.repository_id=u.repository_id AND b.id=u.branch_id " +
+	"WHERE r.repository_id=? AND r.outcome='passed' AND r.archive<>'' AND b.state='open') WHERE newest=1"
+
+const unnamedArchive = "a.repository_id=? AND a.kept_at<? AND a.digest NOT IN (SELECT archive FROM (" + reusableBuilds + ")) " +
+	"AND a.digest NOT IN (" + openBranchArchives + ")"
 
 // PruneArchives forgets the unnamed archives and reads them back in the one
 // statement, which returns them in no order of its own.
@@ -759,7 +803,7 @@ func (t *tx) PruneArchives(before time.Time) ([]model.Archive, error) {
 	if err := t.write(); err != nil {
 		return nil, err
 	}
-	pruned, err := t.archives("DELETE FROM archives AS a WHERE "+unnamedArchive+" RETURNING digest, name, size, kept_at", t.repo, millis(before), millis(before))
+	pruned, err := t.archives("DELETE FROM archives AS a WHERE "+unnamedArchive+" RETURNING digest, name, size, kept_at", t.repo, millis(before), t.repo, t.repo)
 	slices.SortFunc(pruned, func(a, b model.Archive) int { return strings.Compare(a.Digest, b.Digest) })
 	return pruned, err
 }
@@ -799,4 +843,80 @@ func boolInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// PruneHistory removes what the branches that ended before a time recorded
+// of their checks (D6), in the order foreign keys allow: the results of
+// their checks but those reuse may still choose (reusableBuilds); the
+// executions left with no result, but one a remaining result reused; the
+// runs left with no execution, but each branch's newest, which status
+// shows; the plans and revisions no remaining run needs; the branches'
+// assessments; and the inputs no remaining result names.
+func (t *tx) PruneHistory(before time.Time) (store.Pruned, error) {
+	var pruned store.Pruned
+	if err := t.write(); err != nil {
+		return pruned, err
+	}
+	ended := "SELECT id FROM branches WHERE repository_id=? AND state<>'open' AND ended_at IS NOT NULL AND ended_at<?"
+	endedRuns := "SELECT id FROM runs WHERE repository_id=? AND branch_id IN (" + ended + ")"
+	endedExecutions := "SELECT id FROM executions WHERE repository_id=? AND run_id IN (" + endedRuns + ")"
+	at := millis(before)
+	steps := []struct {
+		count *int
+		query string
+		args  []any
+	}{
+		{&pruned.Results, "DELETE FROM results WHERE repository_id=? AND execution_id IN (" + endedExecutions + ") " +
+			"AND (execution_id, target_id) NOT IN (SELECT execution_id, target_id FROM (" + reusableBuilds + "))",
+			[]any{t.repo, t.repo, t.repo, t.repo, at, t.repo}},
+		{&pruned.Executions, "DELETE FROM executions AS e WHERE e.repository_id=? AND e.run_id IN (" + endedRuns + ") " +
+			"AND NOT EXISTS (SELECT 1 FROM results r WHERE r.repository_id=e.repository_id AND (r.execution_id=e.id OR r.reused_from=e.id))",
+			[]any{t.repo, t.repo, t.repo, at}},
+		{&pruned.Runs, "DELETE FROM runs AS u WHERE u.repository_id=? AND u.branch_id IN (" + ended + ") " +
+			"AND u.number<(SELECT max(v.number) FROM runs v WHERE v.repository_id=u.repository_id AND v.branch_id=u.branch_id) " +
+			"AND NOT EXISTS (SELECT 1 FROM executions e WHERE e.repository_id=u.repository_id AND e.run_id=u.id)",
+			[]any{t.repo, t.repo, at}},
+		{&pruned.Plans, "DELETE FROM plans AS p WHERE p.repository_id=? AND p.revision_id IN (SELECT id FROM revisions WHERE repository_id=? AND branch_id IN (" + ended + ")) " +
+			"AND NOT EXISTS (SELECT 1 FROM runs u WHERE u.repository_id=p.repository_id AND u.plan_id=p.id)",
+			[]any{t.repo, t.repo, t.repo, at}},
+		{&pruned.Revisions, "DELETE FROM revisions AS v WHERE v.repository_id=? AND v.branch_id IN (" + ended + ") " +
+			"AND NOT EXISTS (SELECT 1 FROM runs u WHERE u.repository_id=v.repository_id AND u.revision_id=v.id) " +
+			"AND NOT EXISTS (SELECT 1 FROM plans p WHERE p.repository_id=v.repository_id AND p.revision_id=v.id)",
+			[]any{t.repo, t.repo, at}},
+		{&pruned.Assessments, "DELETE FROM assessments WHERE repository_id=? AND branch_id IN (" + ended + ")",
+			[]any{t.repo, t.repo, at}},
+		{&pruned.Inputs, "DELETE FROM inputs WHERE repository_id=? AND key NOT IN (SELECT inputs FROM results WHERE repository_id=? AND inputs<>'')",
+			[]any{t.repo, t.repo}},
+	}
+	for _, step := range steps {
+		result, err := t.conn.ExecContext(t.ctx, step.query, step.args...)
+		if err != nil {
+			return pruned, storageError(err)
+		}
+		n, err := result.RowsAffected()
+		if err != nil {
+			return pruned, storageError(err)
+		}
+		*step.count = int(n)
+	}
+	return pruned, nil
+}
+
+// PruneAssessments removes the assessments of the trees an open branch has
+// moved past: each one of a tree its newest revision doesn't have, where
+// that revision was recorded before a time (D6). Nothing reads them again;
+// a branch restored to such a tree is assessed again.
+func (t *tx) PruneAssessments(before time.Time) (int, error) {
+	if err := t.write(); err != nil {
+		return 0, err
+	}
+	result, err := t.conn.ExecContext(t.ctx, "DELETE FROM assessments AS a WHERE a.repository_id=? AND a.branch_id IN (SELECT id FROM branches WHERE repository_id=? AND state='open') "+
+		"AND EXISTS (SELECT 1 FROM revisions v WHERE v.repository_id=a.repository_id AND v.branch_id=a.branch_id AND v.created_at<? AND v.tree_id<>a.tree "+
+		"AND v.created_at=(SELECT max(w.created_at) FROM revisions w WHERE w.repository_id=v.repository_id AND w.branch_id=v.branch_id))",
+		t.repo, t.repo, millis(before))
+	if err != nil {
+		return 0, storageError(err)
+	}
+	n, err := result.RowsAffected()
+	return int(n), storageError(err)
 }

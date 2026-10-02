@@ -1,6 +1,8 @@
 package buildlog
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -88,4 +90,36 @@ func TestALogFromALineStartsAtThatLine(t *testing.T) {
 	rest, ok := From([]byte("a line with no newline"), 1)
 	require.True(t, ok)
 	require.Equal(t, "a line with no newline", string(rest))
+}
+
+// A log kept compressed is read as it was written, by the path it was
+// written at, and said to be where it is; a log already compressed, or
+// gone, is left (D6).
+func TestALogKeptCompressedIsReadAsWritten(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "env-1", "target-1.log")
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+	text := strings.Repeat("checking for gcc... gcc\n", 1000)
+	require.NoError(t, os.WriteFile(path, []byte(text), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(directory, "notes.txt"), []byte("not a log"), 0o644))
+
+	done, err := CompressAll(directory)
+	require.NoError(t, err)
+	require.Equal(t, 1, done.Logs)
+	require.Equal(t, int64(len(text)), done.Before)
+	require.Less(t, done.After, done.Before/10)
+	require.NoFileExists(t, path)
+	require.FileExists(t, filepath.Join(directory, "notes.txt"), "only logs")
+	require.Equal(t, path+Compressed, Where(path))
+	data, err := ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, text, string(data))
+
+	again, err := CompressAll(directory)
+	require.NoError(t, err)
+	require.Zero(t, again.Logs, "a log already compressed is left")
+	gone := filepath.Join(directory, "gone.log")
+	require.Equal(t, gone, Where(gone))
+	_, err = ReadFile(gone)
+	require.ErrorIs(t, err, os.ErrNotExist)
 }

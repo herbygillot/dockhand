@@ -327,14 +327,16 @@ Serve opens no pull requests by default. With `--submit-passing`, or `serve.subm
 - **What checks left behind.** A check deletes its Tart clone when it ends, and a later attempt of the same check deletes an earlier one's. A check whose process dies with no later attempt leaves its clone behind, sometimes still running and holding one of the Mac's two VM slots. Whichever branches it cleans, `clean` lists these clones too, and removes one once no process is running its check, stopping it first. It keeps a clone no check of this checkout made, since another database may be using it, and it never touches the images checks clone from.
 - **`archive [branch]`** hides a branch from status without touching anything; `status --all` still shows it, and `archive --undo` brings it back.
 
-`clean` shows what it would remove first. On a terminal it asks, and a script passes `--yes`. A branch's record always stays, so `status --all` still lists it, as cleaned, and `status <branch>` still finds it. Check logs in `~/.dockhand/logs` are kept.
+`clean` shows what it would remove first. On a terminal it asks, and a script passes `--yes`. A branch's record always stays, so `status --all` still lists it, as cleaned, and `status <branch>` still finds it. Its checks' records and logs are automatic cleanup's to keep or remove, below.
 
 **Automatic cleanup.** Once a day, dockhand cleans up by itself, unless `cleanup.automatic = false`. It removes:
 - what `clean --merged` would;
 - what checks whose process died left behind;
 - port indexes unused for `cleanup.after`;
 - the journal's events older than `cleanup.after`, and the sessions that ended or went quiet before then, but for one a lease still names, and for today's, which `serve.submit_limit` counts, however short `cleanup.after` is;
-- the archives Tart's builds made, which checks keep in `~/.dockhand/archives` for later builds to install, once no open branch's check names them and none has named them within `cleanup.after`. It says how much stays;
+- the archives Tart's builds made, which checks keep in `~/.dockhand/archives` for later builds to install, but for the newest passed build of each port, on each environment, with each set of variants, which reuse may choose, and each open branch's newest passed result of each port on each environment. An older build's archive goes, however recent, so a port rebuilt often keeps one. It says how much stays;
+- checks' logs, in `~/.dockhand/logs`, which are kept compressed with gzip once their check ends (`logs` reads them as they were written): an ended branch's, once it has been merged, closed, or archived for `cleanup.after`, and an open branch's where they stand for nothing, superseded for `cleanup.after`. An open branch keeps the logs of its newest check in each environment it has built in, and of its three newest checks;
+- what an ended branch recorded of its checks, once it has been merged, closed, or archived for `cleanup.after`: each check's provider runs, results, plan, and revision, and the branch's assessments, but for its newest check, which `status --all` shows as it ended, and the builds reuse may still choose. `logs` says of a check that's gone that it's no longer recorded. An open branch's records are never touched, but for its assessments of a tree it moved past more than 7 days ago, which it would assess again;
 - the vanilla images Tart pulled for `providers setup tart`, once unused for 30 days. Each is deleted from dockhand's own Tart home with `tart delete`, never `tart prune`, and the next setup of its release downloads it again.
 
 `serve` runs it. Without serve, a command starts it in the background once its own work is done, and doesn't wait for it; what it removed goes to `cleanup.log` beside the database. When free space where the database or Tart's images are falls below `cleanup.min_free`, it runs at once, and says so, at most once an hour.
@@ -365,7 +367,7 @@ Serve opens no pull requests by default. With `--submit-passing`, or `serve.subm
 | `check.baseline` | `false` | run a baseline after a failed check |
 | `submit.rerequest_review` | `ask` | after pushing to a pull request with changes requested: `ask`, `always`, or `never` |
 | `cleanup.automatic` | `true` | the daily automatic cleanup |
-| `cleanup.after` | `7d` | how long a port index goes unused, or a kept archive unnamed by an open branch, before cleanup removes it |
+| `cleanup.after` | `15d` | how long cleanup keeps what it would remove: a port index unused, events, an ended branch's checks and logs, an open branch's superseded logs |
 | `cleanup.min_free` | `30GB` | the free space below which cleanup runs at once |
 | `serve.for_outdated` | `list` | `list`, `draft`, or `check` |
 | `serve.outdated_at` | `07:00` | when serve looks for new releases, in local time |

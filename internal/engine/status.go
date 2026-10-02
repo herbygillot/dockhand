@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/coord"
@@ -18,6 +19,10 @@ type BranchStatus struct {
 	Branch model.Branch
 	// Missing is true when the Git branch is gone.
 	Missing bool
+	// Pruned is true for an ended branch whose checks cleanup has
+	// removed but its newest, kept without what it built (D6): Latest is
+	// that check, and there's no Evidence.
+	Pruned  bool
 	Head    string
 	Commits int
 	// Edited lists tracked files changed and not committed.
@@ -240,9 +245,19 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 		if !status.Current {
 			checks, err = treeRuns(r, branch.ID, revision.Source.Tree)
 		}
+		if err != nil || branch.State == model.BranchOpen {
+			return err
+		}
+		// An ended branch's checks are kept only as its newest, without
+		// what it built, once cleanup removed the rest (D6): its check is
+		// said as it ended, from the run, with no evidence to read.
+		executions, err := r.Executions(status.Latest.ID)
+		if err == nil && len(executions) == 0 {
+			status.Pruned = true
+		}
 		return err
 	})
-	if err != nil || status.Latest == nil {
+	if err != nil || status.Latest == nil || status.Pruned {
 		return status, err
 	}
 	evidence, err := e.evidenceNow(ctx, *status.Latest, checks)
@@ -302,10 +317,16 @@ func (e *Engine) RunNamed(ctx context.Context, name string) (model.Run, error) {
 	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		var err error
 		run, err = r.RunNumbered(number)
-		if errors.Is(err, store.ErrNotFound) {
-			return errors.New("there is no run " + name)
+		if !errors.Is(err, store.ErrNotFound) {
+			return err
 		}
-		return err
+		// One numbered below a run there is was there once: cleanup
+		// removes an ended branch's checks but its newest (D6).
+		newest, err := r.Runs(store.RunFilter{Limit: 1})
+		if err == nil && len(newest) > 0 && newest[0].Number > number {
+			return fmt.Errorf("check-%d is no longer recorded: cleanup removes what a branch's checks recorded once it has been merged, closed, or archived for cleanup.after, keeping its newest check", number)
+		}
+		return errors.New("there is no run " + name)
 	})
 	return run, err
 }

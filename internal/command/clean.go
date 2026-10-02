@@ -223,6 +223,12 @@ func cleanAutomatically(ctx context.Context, e *engine.Engine, streams Streams, 
 	for _, name := range report.Caches {
 		fmt.Fprintf(streams.Out, "  removed %s from Tart's cache, unused for %s\n", name, engine.CacheUnused)
 	}
+	if words := engine.LogCleanupWords(report.Logs, file.Cleanup.Age()); words != "" {
+		fmt.Fprintf(streams.Out, "  %s\n", words)
+	}
+	if words := engine.HistoryWords(report.History, report.Assessments, file.Cleanup.Age()); words != "" {
+		fmt.Fprintf(streams.Out, "  %s\n", words)
+	}
 	fmt.Fprintf(streams.Out, "  removed %s\n", plural(report.Removed(), "item"))
 	return err
 }

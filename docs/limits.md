@@ -16,7 +16,7 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 | `providers.{tart,github,command}.capacity` | 1 / 2 / 1 checks at once |
 | `serve.submit_limit` | 10 pull requests a day |
 | `serve.outdated_at` | 07:00, the daily look |
-| `cleanup.after` | 7 days for caches, archives, events |
+| `cleanup.after` | 15 days for caches, events, logs, and ended branches' checks (D6) |
 | `cleanup.min_free` | 30 GB free before cleanup runs |
 | `cleanup.automatic` | whether cleanup runs on its own |
 
@@ -166,12 +166,15 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 | The daily look | 07:00 | a failure waits a day | `engine/serve.go:492` | in usage.md · `serve.outdated_at` |
 | Checks at once per provider | tart 1, github 2, command 1 | runs wait | `config/config.go:243` | in usage.md · `providers.*.capacity` |
 | Cleanup | once a day | a failure waits a day | `engine/clean.go:744` | in usage.md |
-| Caches, kept archives, events, sessions | 7 days | pruned; today's events stay whatever the age, as serve.submit_limit counts them | `config/config.go:155 · engine/clean.go`, `serve.go` (`dayStart`) | in usage.md · `cleanup.after` |
+| Caches, events, sessions | 15 days | pruned; today's events stay whatever the age, as serve.submit_limit counts them | `config/config.go` (`DefaultCleanupAfter`) · `engine/clean.go`, `serve.go` (`dayStart`) | in usage.md · `cleanup.after` |
+| Kept archives | the newest passed build per port, environment, and variants, which reuse may choose, and each open branch's newest passed result of each; an hour's grace for one just kept | an older build's goes, however recent | `store/sqlite/records.go` (`reusableBuilds`, `openBranchArchives`) · `engine/retention.go` (`archiveGrace`) | in usage.md |
+| What an ended branch recorded of its checks | 15 days after it ended; its newest check, and what reuse may choose, kept | pruned; status shows the newest as it ended, and `logs` says a check is no longer recorded | `store/sqlite/records.go` (`PruneHistory`) | in usage.md · `cleanup.after` |
+| An open branch's assessments of a tree it moved past | 7 days after it moved | pruned; assessed again if it returns | `engine/retention.go` (`supersededAssessments`) | in usage.md |
 | Free space that triggers cleanup | 30 GB; a 1 h pause when low | — | `config/config.go:123 · engine/clean.go:791` | in usage.md · `cleanup.min_free` |
 | Tart's vanilla images | 30 days unused | removed | `engine/clean.go:739` | in usage.md |
 | Database copies kept at a migration | 30 days | removed | `store/sqlite/sqlite.go:90` | in usage.md |
 | A migration's copy left unfinished | 1 h | removed at the next migration; never counts as a kept copy | `store/sqlite/sqlite.go` (`abandonedCopies`) | |
-| Check logs (~/.dockhand/logs) | never removed | 780 MB across 62 checks on 2026-10-01; D6 decided, batch 29 | `engine/runner.go:548` | gap |
+| Check logs (~/.dockhand/logs) | gzip once their check ends; an ended branch's 15 days after it ended; an open branch's past its newest per environment and three newest, 15 days after they're superseded | removed; `logs` says a log is gone and why | `buildlog/files.go` · `engine/retention.go` (`keptNewest`) | in usage.md · `cleanup.after` |
 | Reading cache | never removed | only a reader version bump clears it | `project/cache.go` |  |
 | Abandoned scratch run roots | 10 min | swept | `scratch/scratch.go:30` |  |
 | Notifications | 10 s | — | `command/serve.go:146` |  |

@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/model"
 )
@@ -208,4 +209,15 @@ func namedList(items []string) string {
 		return strings.Join(items, ", ")
 	}
 	return fmt.Sprintf("%s, and %d more", strings.Join(items[:coverageNamed], ", "), len(items)-coverageNamed)
+}
+
+// AgeWords says an age as a person would: 15 days, 36 hours, 90 minutes.
+func AgeWords(age time.Duration) string {
+	switch {
+	case age >= 24*time.Hour && age%(24*time.Hour) == 0:
+		return plural(int(age/(24*time.Hour)), "day")
+	case age >= time.Hour && age%time.Hour == 0:
+		return plural(int(age/time.Hour), "hour")
+	}
+	return plural(int(age.Round(time.Minute)/time.Minute), "minute")
 }

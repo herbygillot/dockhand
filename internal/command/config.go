@@ -55,7 +55,7 @@ it is refused by name. Flags, then the environment, come before the file.`,
 				automatic = fmt.Sprint(*file.Cleanup.Automatic)
 			}
 			add("cleanup.automatic", automatic, "true")
-			add("cleanup.after", file.Cleanup.After, "7d")
+			add("cleanup.after", file.Cleanup.After, "15d")
 			add("serve.for_outdated", file.Serve.ForOutdated, "list")
 			add("serve.outdated_at", file.Serve.OutdatedAt, "07:00")
 			submitPassing := ""

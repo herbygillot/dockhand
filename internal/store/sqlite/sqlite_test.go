@@ -29,6 +29,13 @@ type fixture struct {
 	path  string
 }
 
+// db is the fixture's database, for counting what a test can't read
+// through the store.
+func (f fixture) db(t *testing.T) *sql.DB {
+	t.Helper()
+	return f.store.db
+}
+
 func open(t *testing.T) fixture {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "dockhand.db")
@@ -652,33 +659,41 @@ func TestAnArchiveIsRecordedOnceByDigest(t *testing.T) {
 	}))
 }
 
-// An archive is forgotten once no live result names it: none of an open
-// branch's checks, and none recorded since the cutoff. One kept since the
-// cutoff stays however it is named (decisions 36 and 44).
+// An archive is forgotten once no live result names it (D6): an open
+// branch's newest passed result of each target in each environment keeps
+// its own, and the newest passed build reuse may choose keeps its own
+// whatever its branch; an older build's goes, however recent. One kept
+// since the cutoff stays however it is named (decisions 36 and 44).
 func TestArchivesGoWhenNoLiveResultNamesThem(t *testing.T) {
 	f := open(t)
 	b, r, p := f.seed(t)
 	run := f.run(t, b, r, p)
 	later := at.Add(2 * time.Hour)
+	inputs := model.NewTargetInputs("source sha256:a; setup 2", "devel/libharbor", "1111111111111111111111111111111111111111", "2222222222222222222222222222222222222222", nil, nil)
 	require.NoError(t, f.update(t, func(tx store.Tx) error {
-		for i, recorded := range []time.Time{at, later} {
+		key, err := tx.RecordInputs(inputs)
+		if err != nil {
+			return err
+		}
+		for i, result := range []model.TargetResult{
+			{Target: "libharbor", Archive: "sha256:aa", Inputs: key, RecordedAt: at},
+			{Target: "libharbor", Archive: "sha256:a2", Inputs: key, RecordedAt: later},
+			// One that recorded nothing it read, which reuse can't choose.
+			{Target: "harbor-cli", Archive: "sha256:cc", RecordedAt: later},
+		} {
 			execution := model.GuestExecution{ID: model.ExecutionID(fmt.Sprintf("ex_%d", i+1)), Run: run.ID, Environment: tahoe, Attempt: i + 1, State: model.ExecutionWaiting, CreatedAt: at}
 			if err := tx.AddExecution(execution); err != nil {
 				return err
 			}
-			target, archive := model.TargetID("libharbor"), "sha256:aa"
-			if i == 1 {
-				target, archive = "harbor-cli", "sha256:cc"
-			}
-			if err := tx.RecordResult(model.TargetResult{Execution: execution.ID, Target: target, Outcome: model.OutcomePassed, Tests: model.TestsNone, Archive: archive, RecordedAt: recorded}); err != nil {
+			result.Execution, result.Outcome, result.Tests = execution.ID, model.OutcomePassed, model.TestsNone
+			if err := tx.RecordResult(result); err != nil {
 				return err
 			}
 		}
 		for _, archive := range []model.Archive{
-			{Digest: "sha256:aa", Name: "libharbor.tbz2", Size: 1, KeptAt: at},
+			{Digest: "sha256:aa", Name: "libharbor-1.tbz2", Size: 1, KeptAt: at},
+			{Digest: "sha256:a2", Name: "libharbor-2.tbz2", Size: 1, KeptAt: at},
 			{Digest: "sha256:bb", Name: "unnamed.tbz2", Size: 1, KeptAt: at},
-			// Kept long ago, and named by a result recorded since, as a
-			// later check's reuse of the build names its archive.
 			{Digest: "sha256:cc", Name: "harbor-cli.tbz2", Size: 1, KeptAt: at},
 			{Digest: "sha256:dd", Name: "fresh.tbz2", Size: 1, KeptAt: later},
 			// Kept after bb, and listed before it: what's forgotten is
@@ -703,18 +718,139 @@ func TestArchivesGoWhenNoLiveResultNamesThem(t *testing.T) {
 		}))
 		return digests
 	}
-	require.Equal(t, []string{"sha256:ab", "sha256:bb"}, prune(), "no result names them; an open branch's are kept")
+	require.Equal(t, []string{"sha256:aa", "sha256:ab", "sha256:bb"}, prune(), "no result names two, and libharbor's older build is superseded")
 	b.State = model.BranchMerged
 	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.UpdateBranch(b) }))
-	require.Equal(t, []string{"sha256:aa"}, prune(), "a retired branch's goes once its results are older than the cutoff, and one a recent result names stays")
+	require.Equal(t, []string{"sha256:cc"}, prune(), "a retired branch's goes, but for what reuse may choose")
 	require.Empty(t, prune())
 	require.NoError(t, f.store.View(t.Context(), f.repo, func(rd store.Reader) error {
 		kept, err := rd.Archives()
 		require.NoError(t, err)
-		require.Len(t, kept, 2)
-		require.Equal(t, []string{"sha256:cc", "sha256:dd"}, []string{kept[0].Digest, kept[1].Digest})
+		require.Equal(t, []string{"sha256:a2", "sha256:dd"}, []string{kept[0].Digest, kept[1].Digest})
 		return nil
 	}))
+}
+
+// A branch records when it leaves open, and forgets it when it opens
+// again; a time given is kept (D6).
+func TestABranchRecordsWhenItEnded(t *testing.T) {
+	f := open(t)
+	b, _, _ := f.seed(t)
+	read := func() model.Branch {
+		t.Helper()
+		var got model.Branch
+		require.NoError(t, f.store.View(t.Context(), f.repo, func(rd store.Reader) error {
+			var err error
+			got, err = rd.Branch(b.ID)
+			return err
+		}))
+		return got
+	}
+	require.True(t, read().EndedAt.IsZero())
+	b.State, b.EndedAt = model.BranchArchived, at.Add(time.Hour)
+	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.UpdateBranch(b) }))
+	require.Equal(t, at.Add(time.Hour), read().EndedAt)
+	b.State, b.EndedAt = model.BranchOpen, time.Time{}
+	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.UpdateBranch(b) }))
+	require.True(t, read().EndedAt.IsZero(), "opened again")
+	b.State = model.BranchClosed
+	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.UpdateBranch(b) }))
+	require.WithinDuration(t, time.Now(), read().EndedAt, time.Minute, "the moment it left open, where none was given")
+}
+
+// What an ended branch recorded of its checks goes once it's been ended
+// past the cutoff (D6): its runs but its newest, which status shows, with
+// their executions, results, plans, and revisions, and its assessments;
+// but a result reuse may still choose stays with its execution and run,
+// and so does an execution a remaining result reused. An open branch's
+// records, and a branch ended since the cutoff, are untouched.
+func TestAnEndedBranchsHistoryGoesButWhatReuseNeeds(t *testing.T) {
+	f := open(t)
+	b, r, p := f.seed(t)
+	old, reusedFrom, newest := f.run(t, b, r, p), f.run(t, b, r, p), f.run(t, b, r, p)
+	inputs := model.NewTargetInputs("source sha256:a; setup 2", "devel/libharbor", "1111111111111111111111111111111111111111", "2222222222222222222222222222222222222222", nil, nil)
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		key, err := tx.RecordInputs(inputs)
+		if err != nil {
+			return err
+		}
+		for _, e := range []struct {
+			execution model.ExecutionID
+			run       model.RunID
+			result    model.TargetResult
+		}{
+			{"ex_old", old.ID, model.TargetResult{Target: "harbor-cli", Outcome: model.OutcomeFailed, Phase: model.PhaseInstall, RecordedAt: at}},
+			{"ex_built", reusedFrom.ID, model.TargetResult{Target: "libharbor", Outcome: model.OutcomePassed, Inputs: key, Archive: "sha256:aa", RecordedAt: at}},
+			{"ex_newest", newest.ID, model.TargetResult{Target: "harbor-cli", Outcome: model.OutcomeFailed, Phase: model.PhaseInstall, RecordedAt: at}},
+		} {
+			if err := tx.AddExecution(model.GuestExecution{ID: e.execution, Run: e.run, Environment: tahoe, Attempt: 1, State: model.ExecutionWaiting, CreatedAt: at}); err != nil {
+				return err
+			}
+			e.result.Execution, e.result.Tests = e.execution, model.TestsNone
+			if err := tx.RecordResult(e.result); err != nil {
+				return err
+			}
+		}
+		return tx.RecordAssessment(model.Assessment{Branch: b.ID, Tree: "tree", Base: "base", Port: "libharbor", Directory: "devel/libharbor", Policy: 1, At: at})
+	}))
+	count := func(table string) int {
+		t.Helper()
+		var n int
+		require.NoError(t, f.db(t).QueryRow("SELECT count(*) FROM "+table).Scan(&n))
+		return n
+	}
+	pruneAt := func(before time.Time) store.Pruned {
+		t.Helper()
+		var pruned store.Pruned
+		require.NoError(t, f.update(t, func(tx store.Tx) error {
+			var err error
+			pruned, err = tx.PruneHistory(before)
+			return err
+		}))
+		return pruned
+	}
+	require.Equal(t, store.Pruned{}, pruneAt(at.Add(time.Hour)), "an open branch keeps everything")
+	b.State, b.EndedAt = model.BranchMerged, at
+	require.NoError(t, f.update(t, func(tx store.Tx) error { return tx.UpdateBranch(b) }))
+	require.Equal(t, store.Pruned{}, pruneAt(at), "ended since the cutoff")
+	require.Equal(t, store.Pruned{Runs: 1, Executions: 2, Results: 2, Assessments: 1}, pruneAt(at.Add(time.Hour)))
+	require.Equal(t, 2, count("runs"), "the newest run, and the one whose build reuse may choose")
+	require.Equal(t, []int{1, 1, 1, 1, 1}, []int{count("executions"), count("results"), count("plans"), count("revisions"), count("inputs")})
+	require.Equal(t, store.Pruned{}, pruneAt(at.Add(time.Hour)))
+	var violations int
+	require.NoError(t, f.db(t).QueryRow("SELECT count(*) FROM pragma_foreign_key_check").Scan(&violations))
+	require.Zero(t, violations)
+}
+
+// An open branch's assessments of a tree it moved past go once its newer
+// revision is older than the cutoff; those of its newest tree stay (D6).
+func TestAssessmentsOfATreeMovedPastGo(t *testing.T) {
+	f := open(t)
+	b, _, _ := f.seed(t)
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		if err := tx.AddRevision(model.Revision{ID: "rev_2", Branch: b.ID, Kind: model.RevisionSnapshot, Snapshot: 2, Source: model.Source{Tree: "tree2", Base: "base"}, Head: "head", CreatedAt: at.Add(time.Hour)}); err != nil {
+			return err
+		}
+		for _, tree := range []model.ObjectID{"tree", "tree2"} {
+			if err := tx.RecordAssessment(model.Assessment{Branch: b.ID, Tree: tree, Base: "base", Port: "libharbor", Directory: "devel/libharbor", Policy: 1, At: at}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	prune := func(before time.Time) int {
+		t.Helper()
+		var n int
+		require.NoError(t, f.update(t, func(tx store.Tx) error {
+			var err error
+			n, err = tx.PruneAssessments(before)
+			return err
+		}))
+		return n
+	}
+	require.Zero(t, prune(at.Add(time.Hour)), "moved past only since the cutoff")
+	require.Equal(t, 1, prune(at.Add(2*time.Hour)))
+	require.Zero(t, prune(at.Add(2*time.Hour)))
 }
 
 func session(f fixture, id model.SessionID, kind model.SessionKind) model.Session {
@@ -892,7 +1028,7 @@ func TestHistoryIsReadThroughIndexes(t *testing.T) {
 		args  []any
 		index string
 	}{
-		{"SELECT digest FROM archives a WHERE " + unnamedArchive, []any{f.repo, 1, 1}, "result_archive (repository_id=? AND archive=?)"},
+		{"SELECT digest FROM archives a WHERE " + unnamedArchive, []any{f.repo, 1, f.repo, f.repo}, "result_target (repository_id=?)"},
 		{reusableQuery, reusable, "result_target (repository_id=? AND target_id=?)"},
 		{revisionsQuery, []any{f.repo, "br_1"}, "revision_branch (repository_id=? AND branch_id=?)"},
 		{referredQuery, []any{f.repo, "clone"}, "execution_ref (repository_id=? AND provider_ref=?)"},

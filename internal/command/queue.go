@@ -252,9 +252,9 @@ before it; --all prints the whole log.`,
 				return fmt.Errorf("%s recorded no log for %s", run.Name(), port)
 			}
 			found := chosen.result
-			data, err := os.ReadFile(found.Log)
+			data, err := buildlog.ReadFile(found.Log)
 			if errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("%s's log for %s, %s, is gone", run.Name(), port, found.Log)
+				return fmt.Errorf("%s's log for %s, %s, is gone; cleanup removes a check's logs %s after they stop counting, or its branch ends", run.Name(), port, found.Log, engine.AgeWords(s.file.Cleanup.Age()))
 			}
 			if err != nil {
 				return err
@@ -349,7 +349,7 @@ func writePortLog(out io.Writer, result model.TargetResult, data []byte, all boo
 		_, err := out.Write(data)
 		return err
 	}
-	fmt.Fprintf(out, "Steps in %s:\n", tilde(result.Log))
+	fmt.Fprintf(out, "Steps in %s:\n", tilde(buildlog.Where(result.Log)))
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	for _, step := range result.Steps {
 		fmt.Fprintf(tw, "  %s\tline %d\n", step.Name, step.Line)
@@ -426,6 +426,9 @@ func writeLogs(out io.Writer, logs engine.RunLogs) error {
 		fmt.Fprintf(out, ": %s", logs.Run.Detail)
 	}
 	fmt.Fprintln(out)
+	if len(logs.Executions) == 0 && logs.Run.State.Terminal() {
+		fmt.Fprintln(out, "  nothing is recorded of its provider runs: it reached none, or its branch ended and cleanup kept the check alone (cleanup.after)")
+	}
 	for _, execution := range logs.Executions {
 		x := execution.Execution
 		fmt.Fprintf(out, "  %s, attempt %d, run %s: %s", environmentWords(x.Environment), x.Attempt, x.ID, x.State)
@@ -451,7 +454,7 @@ func writeLogs(out io.Writer, logs engine.RunLogs) error {
 				line += ", as built by run " + string(result.ReusedFrom)
 			}
 			if result.Log != "" {
-				line += "  " + tilde(result.Log)
+				line += "  " + tilde(buildlog.Where(result.Log))
 			}
 			fmt.Fprintln(out, line)
 			// A Git-fetched target's build says what it fetched, or that
@@ -469,7 +472,7 @@ func writeLogs(out io.Writer, logs engine.RunLogs) error {
 					line += " at " + string(part.Phase)
 				}
 				if part.Log != "" {
-					line += "  " + tilde(part.Log)
+					line += "  " + tilde(buildlog.Where(part.Log))
 				}
 				fmt.Fprintln(out, line)
 			}

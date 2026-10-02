@@ -142,7 +142,7 @@ func TestQueueWaitCancelAndLogs(t *testing.T) {
 
 	out, _, err = dockhand(t, "logs", "check-3")
 	require.NoError(t, err)
-	require.Regexp(t, `check-3 · passed\n  command, attempt 1, run command_[a-z0-9]{16}: finished\n    jq passed  ~/\.dockhand/logs/check-3/command-1/command\.log\n`, out)
+	require.Regexp(t, `check-3 · passed\n  command, attempt 1, run command_[a-z0-9]{16}: finished\n    jq passed  ~/\.dockhand/logs/check-3/command-1/command\.log\.gz\n`, out, "kept compressed once the check ended (D6)")
 	here, _, err := dockhand(t, "logs")
 	require.NoError(t, err)
 	require.Equal(t, out, here, "in the branch's worktree, logs is its latest check's")

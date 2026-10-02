@@ -604,11 +604,18 @@ type CleanupReport struct {
 	// Archives are the kept archives it removed, which no live result
 	// named.
 	Archives []model.Archive
+	// Logs is what it compressed of checks' logs, and removed (D6).
+	Logs LogCleanup
+	// History is what it removed of what ended branches recorded of their
+	// checks, and Assessments the assessments of trees open branches moved
+	// past (D6).
+	History     store.Pruned
+	Assessments int
 }
 
 // Removed counts what it removed.
 func (r CleanupReport) Removed() int {
-	n := len(r.Indexes) + len(r.Caches) + len(r.Archives)
+	n := len(r.Indexes) + len(r.Caches) + len(r.Archives) + len(r.Logs.Removed) + r.History.Runs + r.Assessments
 	for _, leftover := range r.Leftovers {
 		if leftover.Done {
 			n++
@@ -698,10 +705,47 @@ func (e *Engine) Cleanup(ctx context.Context, session *coord.Session, after time
 			return report, err
 		}
 	}
-	// Kept archives go once no live result names them: none of an open
-	// branch's checks, and none recorded within after (decisions 36 and
-	// 44). What stays is said, as the store has no cap.
-	removedArchives, keptArchives, err := e.pruneArchives(ctx, e.now().Add(-after))
+	// Checks' logs are kept compressed, and go where they stand for
+	// nothing after after (D6).
+	if report.Logs, err = e.cleanLogs(ctx, e.now().Add(-after)); err != nil {
+		return report, fmt.Errorf("cleaning checks' logs: %w", err)
+	}
+	if logs := report.Logs; len(logs.Removed) > 0 || logs.Compressed.Logs > 0 {
+		err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+			_, err := tx.AppendEvent(model.Event{At: e.now(), Kind: "cleanup", Level: model.LevelInfo, Message: LogCleanupWords(logs, after)})
+			return err
+		})
+		if err != nil {
+			return report, err
+		}
+	}
+	// What a branch ended past after recorded of its checks goes, but for
+	// what reuse may still choose and its newest check, which status
+	// shows; and an open branch's assessments of a tree it moved past
+	// (D6).
+	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		var err error
+		if report.History, err = tx.PruneHistory(e.now().Add(-after)); err != nil {
+			return err
+		}
+		if report.Assessments, err = tx.PruneAssessments(e.now().Add(-supersededAssessments)); err != nil {
+			return err
+		}
+		if report.History == (store.Pruned{}) && report.Assessments == 0 {
+			return nil
+		}
+		_, err = tx.AppendEvent(model.Event{At: e.now(), Kind: "cleanup", Level: model.LevelInfo, Message: HistoryWords(report.History, report.Assessments, after)})
+		return err
+	})
+	if err != nil {
+		return report, fmt.Errorf("cleaning build history: %w", err)
+	}
+	// Kept archives go once no live result names them: the newest passed
+	// build of each target in each environment that reuse may choose, and
+	// an open branch's newest passed result of each, which its evidence
+	// may name (decisions 36 and 44, D6). One kept within archiveGrace
+	// stays, as a build's that has just kept it. What stays is said.
+	removedArchives, keptArchives, err := e.pruneArchives(ctx, e.now().Add(-archiveGrace))
 	report.Archives = removedArchives
 	if err != nil {
 		return report, fmt.Errorf("cleaning kept archives: %w", err)
@@ -709,7 +753,7 @@ func (e *Engine) Cleanup(ctx context.Context, session *coord.Session, after time
 	if len(removedArchives) > 0 {
 		err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
 			_, err := tx.AppendEvent(model.Event{At: e.now(), Kind: "cleanup", Level: model.LevelInfo,
-				Message: fmt.Sprintf("removed %s, %s, that no open branch's checks name; %s kept, %s", plural(len(removedArchives), "kept archive"), archiveBytes(removedArchives),
+				Message: fmt.Sprintf("removed %s, %s, that neither reuse nor an open branch's newest results name; %s kept, %s", plural(len(removedArchives), "kept archive"), archiveBytes(removedArchives),
 					plural(len(keptArchives), "archive"), archiveBytes(keptArchives))})
 			return err
 		})

@@ -114,6 +114,10 @@ type Branch struct {
 	// run, #35084). It is the branch's, not the pull request's, so a note
 	// given before one opens is kept for it.
 	Note string
+	// EndedAt is when it left open, merged, closed, or archived, which
+	// cleanup times what it keeps of its checks from (D6); zero while it's
+	// open. The store records the moment it leaves open where it's zero.
+	EndedAt time.Time
 }
 
 // Validate checks the rules every stored branch keeps.

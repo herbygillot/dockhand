@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -642,6 +641,13 @@ func (d *driver) finish(ctx context.Context) (model.Run, error) {
 		_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: "run.state", Level: model.LevelInfo, Message: fmt.Sprintf("%s %s: %s", d.run.Name(), state, detail)})
 		return err
 	})
+	if err == nil {
+		// Its logs are kept compressed from now on (D6); one that can't be
+		// is said, and cleanup tries again.
+		if _, compressErr := buildlog.CompressAll(filepath.Join(d.e.LogDirectory(), d.run.Name())); compressErr != nil {
+			d.emit(ctx, "progress", fmt.Sprintf("%s's logs couldn't be compressed, which cleanup tries again: %v", d.run.Name(), compressErr))
+		}
+	}
 	return d.run, err
 }
 
@@ -825,7 +831,7 @@ func withCause(detail string, result model.TargetResult) string {
 	if result.Log == "" {
 		return detail
 	}
-	file, err := os.Open(result.Log)
+	file, err := buildlog.Open(result.Log)
 	if err != nil {
 		return detail
 	}

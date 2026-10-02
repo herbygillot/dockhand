@@ -226,6 +226,9 @@ func attentionFor(s engine.BranchStatus) []attention {
 		return nil
 	}
 	run := *s.Latest
+	if s.Evidence == nil {
+		return nil
+	}
 	switch run.State {
 	case model.RunFailed:
 		for _, target := range s.Evidence.Failed() {
@@ -389,6 +392,9 @@ func checkState(s engine.BranchStatus) string {
 		}
 		return "passed for older work"
 	case model.RunFailed:
+		if s.Evidence == nil {
+			return fmt.Sprintf("failed (%s)", s.Latest.Name())
+		}
 		failed := len(s.Evidence.Failed())
 		return fmt.Sprintf("%d failed, %d passed%s", failed, len(s.Evidence.Targets)-failed, suffix)
 	}
