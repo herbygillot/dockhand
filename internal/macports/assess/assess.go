@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/project"
 	"github.com/herbygillot/dockhand/internal/sourcecompare"
@@ -46,8 +47,10 @@ import (
 // where only go.toolchain_min was judged and trivy's go-1.26 under 0.75.0's
 // Go 1.27.0 read as gated on (the trivy run, #35083).
 // 11: a CMakeLists.txt that only adds options, and what one off by
-// default gates, holds nothing (D12, revisited 2026-10-01).
-const Policy = 11
+// default gates, holds nothing (D12, revisited 2026-10-01). 12: what any
+// option off by default gates, which neither the file nor the Portfile
+// turns on, holds nothing, nor do comments (the same).
+const Policy = 12
 
 // Input is what one port's assessment reads.
 type Input struct {
@@ -58,6 +61,12 @@ type Input struct {
 	// replaces, as read.
 	Pairs    []Pair
 	Versions sourcecompare.Versions
+	// Portfile is the candidate's Portfile as written, for the build
+	// options it names, in any variant, which it may set: a CMake option
+	// off by default gates what the default build doesn't reach only
+	// where the Portfile doesn't name it (D12). Nil where it wasn't read,
+	// which takes every option as one it may set.
+	Portfile []byte
 	// Toolchain is what the candidate's go.mod requires of a module-mode
 	// Go port, where it was read, and what an edit did about it.
 	Toolchain *Toolchain
@@ -233,7 +242,9 @@ func (a *assessment) pair(pair Pair) {
 	why := func(system project.System) string {
 		return fmt.Sprintf("%s builds with %s, not %s", port.Name, strings.Join(names, " and "), system)
 	}
-	changes := sourcecompare.Compare(pair.Before, pair.After, a.input.Versions)
+	changes := sourcecompare.Compare(pair.Before, pair.After, a.input.Versions, func(option string) bool {
+		return a.input.Portfile == nil || portfile.Mentions(a.input.Portfile, option)
+	})
 	// Each manifest's dependency findings are put in order as a run: what
 	// holds first. A proven manifest's are counted in one line, where the
 	// file is.

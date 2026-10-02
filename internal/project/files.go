@@ -144,3 +144,44 @@ func DeclaresVersion(name, line, version string) bool {
 	}
 	return false
 }
+
+// cmakeVersionPart is a CMakeLists.txt setting one part of its project's
+// version, where it spells the version in parts: fluent-bit's
+// set(FLB_VERSION_PATCH 3).
+var cmakeVersionPart = regexp.MustCompile(`(?i)^(\s*set\s*\(\s*\w*VERSION_(MAJOR|MINOR|PATCH|TWEAK)\s+"?)(\d+)("?\s*\)\s*)$`)
+
+// DeclaresVersionPart reports whether a line of a build file, as it reads
+// in each version, sets the same part of the project's version, as the old
+// version has it and then the new: fluent-bit's set(FLB_VERSION_PATCH 2)
+// becoming 3 from 5.1.2 to 5.1.3, which read as a change to the build (the
+// dogfood run with 91340a56). Only a CMakeLists.txt is read this way.
+func DeclaresVersionPart(name, before, after, old, now string) bool {
+	if path.Base(name) != "CMakeLists.txt" {
+		return false
+	}
+	was, is := cmakeVersionPart.FindStringSubmatch(before), cmakeVersionPart.FindStringSubmatch(after)
+	if was == nil || is == nil || was[1] != is[1] || was[4] != is[4] {
+		return false
+	}
+	part := slices.Index([]string{"MAJOR", "MINOR", "PATCH", "TWEAK"}, strings.ToUpper(is[2]))
+	olds, nows := strings.Split(old, "."), strings.Split(now, ".")
+	return part < len(olds) && part < len(nows) && olds[part] == was[3] && nows[part] == is[3]
+}
+
+// VersionPartsAs is a CMakeLists.txt's text with each part of the old
+// version it sets, as DeclaresVersionPart reads one, set as the new
+// version's, so a comparison can leave the version aside.
+func VersionPartsAs(text, old, now string) string {
+	olds, nows := strings.Split(old, "."), strings.Split(now, ".")
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		m := cmakeVersionPart.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		if part := slices.Index([]string{"MAJOR", "MINOR", "PATCH", "TWEAK"}, strings.ToUpper(m[2])); part < len(olds) && part < len(nows) && olds[part] == m[3] {
+			lines[i] = m[1] + nows[part] + m[4]
+		}
+	}
+	return strings.Join(lines, "\n")
+}

@@ -100,8 +100,12 @@ type Versions struct{ Old, New string }
 // new, and what it couldn't read of them. Each is by its path below its
 // archive's top, whose name, the version's, is set aside so the same file
 // compares across versions. A version whose project couldn't be found is
-// said.
-func Compare(older, newer project.Reading, versions Versions) []Change {
+// said. named says whether the port's Portfile names a build option, so
+// may set it, in any variant; nil names none.
+func Compare(older, newer project.Reading, versions Versions, named func(option string) bool) []Change {
+	if named == nil {
+		named = func(string) bool { return false }
+	}
 	var lost []Change
 	for _, side := range []struct {
 		version string
@@ -173,7 +177,7 @@ func Compare(older, newer project.Reading, versions Versions) []Change {
 				continue
 			}
 			if base == "CMakeLists.txt" && hadOld && hasNow {
-				if words, ok := cmakeOptionsOnly(name, old.Data, now.Data, versions); ok {
+				if words, ok := cmakeOptionsOnly(name, old.Data, now.Data, versions, named); ok {
 					changes = append(changes, Change{Kind: "build", How: "options", Path: name,
 						Message: fmt.Sprintf("upstream's %s %s", name, words)})
 					continue
@@ -188,7 +192,7 @@ func Compare(older, newer project.Reading, versions Versions) []Change {
 			case base == "CMakeLists.txt":
 				summary := cmakeWords(old.Data, now.Data)
 				what += summary
-				if where := cmakeElsewhere(old.Data, now.Data, versions); where != "" && strings.HasPrefix(summary, ":") {
+				if where := cmakeElsewhere(old.Data, now.Data, versions, named); where != "" && strings.HasPrefix(summary, ":") {
 					what += "; besides, lines change " + where
 				} else if where != "" {
 					what += "; lines change " + where
@@ -396,7 +400,8 @@ func versionOnly(name string, old, now []byte, versions Versions) (string, bool)
 		if before[i] == after[i] {
 			continue
 		}
-		if strings.ReplaceAll(before[i], versions.Old, versions.New) != after[i] || !project.DeclaresVersion(name, after[i], versions.New) {
+		spelled := strings.ReplaceAll(before[i], versions.Old, versions.New) == after[i] && project.DeclaresVersion(name, after[i], versions.New)
+		if !spelled && !project.DeclaresVersionPart(name, before[i], after[i], versions.Old, versions.New) {
 			return "", false
 		}
 		if first == "" {
@@ -598,45 +603,93 @@ func cmakeWords(old, now []byte) string {
 	return ": " + strings.Join(said, "; ")
 }
 
-// cmakeElsewhere says where a CMakeLists.txt changed beside the options it
-// adds and what those off by default gate, by the if() each change is
-// under, so a hold names what it's for: fluent-bit 5.1.3's read as held
-// for FLB_PROTOBUF_ENCODER, which the person had just decided holds
-// nothing, where it held for lines under if(FLB_ALL) and a block re-gated
-// on FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER (the dogfood run with
-// 11d1df2f). The version it names isn't a change.
-func cmakeElsewhere(old, now []byte, versions Versions) string {
-	before, after := project.ReadCMake(old), project.ReadCMake(now)
-	added, gates := map[string]bool{}, map[string]bool{}
-	for option, declared := range after.Options {
-		if _, had := before.Options[option]; !had {
-			added[option] = true
-			gates[option] = declared.Default == "OFF"
-		}
-	}
-	was := string(project.CMakeRest(old, nil))
+// cmakeElsewhere says where a CMakeLists.txt changed beside what it
+// declares, its options and the packages it finds, among what the default
+// build reaches, by the if() each change is under, so a hold names what
+// it's for: fluent-bit 5.1.3's read as held for FLB_PROTOBUF_ENCODER,
+// which the person had just decided holds nothing, where it held for
+// lines under if(FLB_ALL) and a block re-gated on FLB_AVRO_ENCODER OR
+// FLB_PROTOBUF_ENCODER (the dogfood run with 11d1df2f). The version it
+// names isn't a change, nor are its comments.
+func cmakeElsewhere(old, now []byte, versions Versions, named func(string) bool) string {
+	was := withVersion(string(project.CMakeRest(old, project.CMakeOff(old, named))), versions)
+	return cmakePlaces(cmakeWhere(was, string(project.CMakeRest(now, project.CMakeOff(now, named)))))
+}
+
+// withVersion is a CMakeLists.txt's text with the version an update moves
+// from spelled as the one it moves to, whole or in parts, so the version
+// it names isn't a change.
+func withVersion(text string, versions Versions) string {
 	if versions.Old != "" && versions.New != "" {
-		was = strings.ReplaceAll(was, versions.Old, versions.New)
+		return project.VersionPartsAs(strings.ReplaceAll(text, versions.Old, versions.New), versions.Old, versions.New)
 	}
-	rest := string(project.CMakeRest(now, gates))
+	return text
+}
+
+// cmakePlace is where a CMakeLists.txt changes: the outermost if() its
+// lines are under, empty for none, as a person finds the block in the
+// file, and each if() they're within.
+type cmakePlace struct {
+	Condition string
+	Within    []string
+}
+
+// cmakeWhere are where a CMakeLists.txt's changed lines are, each place
+// once, in the order the new file has them and then the old. Lines are
+// compared with the conditions they're under, so an endif() pairs only
+// with its own block's: fluent-bit 5.1.3's blocks added after
+// if(FLB_UTF8_ENCODER)'s read as under it, its endif() paired with
+// theirs (the dogfood run with 91340a56).
+func cmakeWhere(was, rest string) []cmakePlace {
 	oldLines, newLines := strings.Split(was, "\n"), strings.Split(rest, "\n")
-	gone, come := changedLines(oldLines, newLines)
-	var where []string
-	seen := map[string]bool{}
-	note := func(conditions []string, changed []int) {
-		for _, i := range changed {
-			at := "outside any if()"
-			if c := conditions[i]; c != "" {
-				at = "under if(" + c + ")"
+	keyed := func(lines []string) ([][]string, []string) {
+		conditions := cmakeConditions(lines)
+		keys := make([]string, len(lines))
+		for i, line := range lines {
+			keys[i] = strings.Join(conditions[i], "\x00") + "\x01" + line
+		}
+		return conditions, keys
+	}
+	oldConditions, oldKeys := keyed(oldLines)
+	newConditions, newKeys := keyed(newLines)
+	gone, come := changedLines(oldKeys, newKeys)
+	var where []cmakePlace
+	for _, changed := range []struct {
+		conditions [][]string
+		lines      []int
+	}{{newConditions, come}, {oldConditions, gone}} {
+		for _, i := range changed.lines {
+			within := changed.conditions[i]
+			place := cmakePlace{Within: within}
+			if len(within) > 0 {
+				place.Condition = within[0]
 			}
-			if !seen[at] {
-				seen[at] = true
-				where = append(where, at)
+			at := slices.IndexFunc(where, func(p cmakePlace) bool { return p.Condition == place.Condition })
+			if at < 0 {
+				where = append(where, place)
+				continue
+			}
+			for _, condition := range within {
+				if !slices.Contains(where[at].Within, condition) {
+					where[at].Within = append(where[at].Within, condition)
+				}
 			}
 		}
 	}
-	note(cmakeConditions(newLines), come)
-	note(cmakeConditions(oldLines), gone)
+	return where
+}
+
+// cmakePlaces says the conditions changes are under, "under if(FLB_ALL)"
+// or "outside any if()", the first five, and how many more.
+func cmakePlaces(places []cmakePlace) string {
+	var where []string
+	for _, place := range places {
+		if place.Condition == "" {
+			where = append(where, "outside any if()")
+		} else {
+			where = append(where, "under if("+place.Condition+")")
+		}
+	}
 	if len(where) > cmakeNamed {
 		return fmt.Sprintf("%s, and in %d more places", strings.Join(where[:cmakeNamed], ", "), len(where)-cmakeNamed)
 	}
@@ -646,15 +699,15 @@ func cmakeElsewhere(old, now []byte, versions Versions) string {
 // cmakeCondition is a line opening, continuing, or closing an if() block.
 var cmakeCondition = regexp.MustCompile(`(?i)^\s*(if|elseif|else|endif)\s*\((.*)\)\s*$`)
 
-// cmakeConditions are the innermost if() each line is under, as written;
-// empty for a line under none. A line opening or closing a block is the
-// block's, so an if() whose condition changes reads as under it, as
+// cmakeConditions are the if()s each line is under, as written, outermost
+// first; none for a line under none. A line opening or closing a block is
+// the block's, so an if() whose condition changes reads as under it, as
 // fluent-bit's if(FLB_AVRO_ENCODER) becoming if(FLB_AVRO_ENCODER OR
 // FLB_PROTOBUF_ENCODER) does. An else() reads as the if() it's the rest
 // of, negated.
-func cmakeConditions(lines []string) []string {
+func cmakeConditions(lines []string) [][]string {
 	var stack []string
-	conditions := make([]string, len(lines))
+	conditions := make([][]string, len(lines))
 	for i, line := range lines {
 		m := cmakeCondition.FindStringSubmatch(line)
 		switch {
@@ -666,9 +719,7 @@ func cmakeConditions(lines []string) []string {
 		case strings.EqualFold(m[1], "else") && len(stack) > 0:
 			stack[len(stack)-1] = "NOT (" + stack[len(stack)-1] + ")"
 		}
-		if len(stack) > 0 {
-			conditions[i] = stack[len(stack)-1]
-		}
+		conditions[i] = slices.Clone(stack)
 		if m != nil && strings.EqualFold(m[1], "endif") && len(stack) > 0 {
 			stack = stack[:len(stack)-1]
 		}
@@ -730,33 +781,27 @@ func changedLines(old, now []string) (gone, come []int) {
 	return gone, come
 }
 
-// cmakeOptionsOnly says a CMakeLists.txt's change where all it does, but
-// the version it names, is add options, each built as its default, and
-// what one off by default gates: the person decided an added option holds
-// nothing, and that what one off by default gates, as fluent-bit 5.1.3's
-// find_package(Protobuf) under FLB_PROTOBUF_ENCODER, isn't reached by the
-// default build, while what one on by default gates is, and holds (D12,
-// revisited 2026-10-01). A default that flips, or an option removed,
-// still holds. False where anything else changed.
-func cmakeOptionsOnly(name string, old, now []byte, versions Versions) (string, bool) {
+// cmakeOptionsOnly says a CMakeLists.txt's change where all it does that
+// the default build reads, but the version it names, is add options, each
+// built as its default: the person decided an added option holds nothing,
+// and that what the default build doesn't reach holds nothing, as a
+// branch whose condition is false where each option off by default that
+// nothing turns on is OFF (project.CMakeOff): fluent-bit 5.1.3's
+// find_package(Protobuf) under FLB_PROTOBUF_ENCODER, and its lines under
+// if(FLB_ALL) (D12, revisited 2026-10-01). What an option on by default
+// gates holds, as do a default that flips and an option removed; so does
+// a change under an option the Portfile names, in any variant, or the
+// file sets. False where anything else changed.
+func cmakeOptionsOnly(name string, old, now []byte, versions Versions, named func(string) bool) (string, bool) {
 	before, after := project.ReadCMake(old), project.ReadCMake(now)
-	added, off := map[string]bool{}, map[string]bool{}
-	for option, declared := range after.Options {
+	added := map[string]bool{}
+	for option := range after.Options {
 		if _, had := before.Options[option]; !had {
 			added[option] = true
-			off[option] = declared.Default == "OFF"
 		}
 	}
-	if len(added) == 0 {
-		return "", false
-	}
-	gates := map[string]bool{}
-	for option := range off {
-		if off[option] {
-			gates[option] = true
-		}
-	}
-	rest, was := project.CMakeWithout(now, added, gates), project.CMakeWithout(old, nil, nil)
+	offOld, offNew := project.CMakeOff(old, named), project.CMakeOff(now, named)
+	rest, was := project.CMakeWithout(now, added, offNew), project.CMakeWithout(old, nil, offOld)
 	if !bytes.Equal(rest, was) {
 		if _, ok := versionOnly(name, was, rest, versions); !ok {
 			return "", false
@@ -771,7 +816,7 @@ func cmakeOptionsOnly(name string, old, now []byte, versions Versions) (string, 
 		words := fmt.Sprintf("option %s, %s by default", option, by)
 		var gated []string
 		for _, pkg := range after.Packages {
-			if off[option] && slices.Contains(pkg.Under, option) {
+			if offNew[option] && slices.Contains(pkg.Under, option) {
 				gated = append(gated, "find_package("+pkg.Name+")")
 			}
 		}
@@ -780,7 +825,89 @@ func cmakeOptionsOnly(name string, old, now []byte, versions Versions) (string, 
 		}
 		said = append(said, words)
 	}
-	return "adds " + strings.Join(said, "; ") + ", and changes nothing else the default build reads; each option builds as its default", true
+	// Where else it changed is said, with what leaves it unreached; what
+	// an added option's own block gates is said with the option.
+	addedOff := map[string]bool{}
+	for option := range added {
+		if offNew[option] {
+			addedOff[option] = true
+		}
+	}
+	was = []byte(withVersion(string(project.CMakeWithout(old, nil, nil)), versions))
+	places := cmakeWhere(string(was), string(project.CMakeWithout(now, added, addedOff)))
+	var words []string
+	if len(said) > 0 {
+		words = append(words, "adds "+strings.Join(said, "; "))
+	}
+	if len(places) > 0 {
+		// The options named are those off that an if() over a change
+		// tests, an else()'s negated test aside.
+		tested := func(option string) bool {
+			return slices.ContainsFunc(places, func(place cmakePlace) bool {
+				return slices.ContainsFunc(place.Within, func(condition string) bool {
+					return !strings.HasPrefix(condition, "NOT (") && cmakeTests(condition, option)
+				})
+			})
+		}
+		var gates []string
+		for option := range offNew {
+			if tested(option) {
+				gates = append(gates, option)
+			}
+		}
+		for option := range offOld {
+			if !offNew[option] && tested(option) {
+				gates = append(gates, option)
+			}
+		}
+		slices.Sort(gates)
+		reach := "changes only what the default build doesn't reach, " + cmakePlaces(places)
+		if len(gates) > 0 {
+			reach += ": neither it nor the Portfile turns " + orList(gates) + " on"
+		}
+		if len(words) > 0 {
+			reach = "otherwise " + reach
+		}
+		words = append(words, reach)
+	}
+	switch {
+	case len(words) == 0:
+		return "changes only comments and blank lines, which the build doesn't read", true
+	case len(places) == 0:
+		words[0] += ", and changes nothing else the default build reads"
+	}
+	what := strings.Join(words, "; ")
+	if len(said) > 0 {
+		what += "; each option builds as its default"
+	}
+	return what, true
+}
+
+// cmakeTests reports whether an if() condition names an option, as a word
+// of its own: FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER names both.
+func cmakeTests(condition, option string) bool {
+	for _, word := range strings.FieldsFunc(condition, func(r rune) bool {
+		return !(r == '_' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9')
+	}) {
+		if word == option {
+			return true
+		}
+	}
+	return false
+}
+
+// orList joins words as a sentence lists alternatives: "A", "A or B", "A,
+// B, or C".
+func orList(words []string) string {
+	switch len(words) {
+	case 0:
+		return ""
+	case 1:
+		return words[0]
+	case 2:
+		return words[0] + " or " + words[1]
+	}
+	return strings.Join(words[:len(words)-1], ", ") + ", or " + words[len(words)-1]
 }
 
 // lockMoves are what a Cargo.lock changes of the crates it pins from

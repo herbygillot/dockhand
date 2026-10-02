@@ -1,6 +1,7 @@
 package sourcecompare
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -22,7 +23,20 @@ func compareArchives(t *testing.T, older, newer string, versions Versions) ([]Ch
 		}
 		readings[i] = reading
 	}
-	return Compare(readings[0], readings[1], versions), nil
+	return Compare(readings[0], readings[1], versions, nil), nil
+}
+
+// compareNamed compares two archives as compareArchives does, with a
+// Portfile that names the options given.
+func compareNamed(t *testing.T, older, newer string, versions Versions, options ...string) []Change {
+	t.Helper()
+	var readings [2]project.Reading
+	for i, archive := range []string{older, newer} {
+		reading, err := project.Read(t.Context(), archive, project.Spec{})
+		require.NoError(t, err)
+		readings[i] = reading
+	}
+	return Compare(readings[0], readings[1], versions, func(option string) bool { return slices.Contains(options, option) })
 }
 
 // hows are the changes as their kind, how, and path.
@@ -227,4 +241,93 @@ func TestACMakeListsChangeSaysWhereElseItChanged(t *testing.T) {
 	require.Len(t, changes, 1)
 	require.Equal(t, "changed", changes[0].How)
 	require.Equal(t, "upstream's CMakeLists.txt changed: option FLB_PROTOBUF_ENCODER added, off by default; find_package(Jansson) moves, under FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER; besides, lines change under if(FLB_ALL), under if(FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER), under if(FLB_AVRO_ENCODER)", changes[0].Message)
+}
+
+// What the default build can't reach holds nothing, as the person decided
+// (D12, revisited 2026-10-01): a change under if() blocks gated by options
+// off by default that neither the file nor the Portfile turns on, as
+// fluent-bit 5.1.3's under if(FLB_ALL) and its Avro blocks. Its comments,
+// and its version set in parts, aren't changes; blocks added after
+// if(FLB_UTF8_ENCODER)'s endif() aren't read as under it (the dogfood run
+// with 91340a56). An option the Portfile names may be set, and what it
+// gates holds, said by where.
+func TestWhatTheDefaultBuildCantReachHoldsNothing(t *testing.T) {
+	before := `project(fluent-bit C)
+set(FLB_VERSION_MAJOR 5)
+set(FLB_VERSION_MINOR 1)
+set(FLB_VERSION_PATCH 2)
+option(FLB_ALL "Enable all features" No)
+option(FLB_AVRO_ENCODER "Build with Avro encoding support" No)
+option(FLB_UTF8_ENCODER "UTF8" Yes)
+if(FLB_ALL)
+  set(FLB_OUT_A 1)
+endif()
+# Avro
+if(FLB_AVRO_ENCODER)
+  find_package(Jansson)
+endif()
+if(FLB_UTF8_ENCODER)
+  FLB_DEFINITION(FLB_HAVE_UTF8_ENCODER)
+endif()
+
+add_library(flb a.c)
+`
+	after := `project(fluent-bit C)
+set(FLB_VERSION_MAJOR 5)
+set(FLB_VERSION_MINOR 1)
+set(FLB_VERSION_PATCH 3)
+option(FLB_ALL "Enable all features" No)
+option(FLB_PROTOBUF_ENCODER "Protobuf" No)
+option(FLB_AVRO_ENCODER "Build with Avro encoding support" No)
+option(FLB_UTF8_ENCODER "UTF8" Yes)
+if(FLB_ALL)
+  set(FLB_OUT_A 1)
+  set(FLB_OUT_B 1)
+endif()
+# Schema Registry JSON support
+if(FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER)
+  find_package(Jansson)
+endif()
+if(FLB_AVRO_ENCODER)
+  FLB_DEFINITION(FLB_HAVE_AVRO_ENCODER)
+endif()
+if(FLB_UTF8_ENCODER)
+  FLB_DEFINITION(FLB_HAVE_UTF8_ENCODER)
+endif()
+
+# Kafka runtime schema serializers
+if(FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER)
+  FLB_DEFINITION(FLB_HAVE_KAFKA_SCHEMA_REGISTRY)
+endif()
+if(FLB_PROTOBUF_ENCODER)
+  find_package(Protobuf 3.12 REQUIRED)
+  if(NOT TARGET protobuf::libprotoc)
+    message(FATAL_ERROR "FLB_PROTOBUF_ENCODER requires libprotoc")
+  endif()
+endif()
+
+add_library(flb a.c)
+`
+	versions := Versions{Old: "5.1.2", New: "5.1.3"}
+	compare := func(named ...string) Change {
+		t.Helper()
+		changes := compareNamed(t,
+			testsupport.Tarball(t, "fluent-bit-5.1.2", map[string]string{"CMakeLists.txt": before}),
+			testsupport.Tarball(t, "fluent-bit-5.1.3", map[string]string{"CMakeLists.txt": after}), versions, named...)
+		require.Len(t, changes, 1)
+		return changes[0]
+	}
+	unset := compare()
+	require.Equal(t, "options", unset.How)
+	require.Equal(t, "upstream's CMakeLists.txt adds option FLB_PROTOBUF_ENCODER, off by default, which gates find_package(Protobuf); otherwise changes only what the default build doesn't reach, under if(FLB_ALL), under if(FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER), under if(FLB_AVRO_ENCODER): neither it nor the Portfile turns FLB_ALL, FLB_AVRO_ENCODER, or FLB_PROTOBUF_ENCODER on; each option builds as its default", unset.Message)
+	all := compare("FLB_ALL")
+	require.Equal(t, "changed", all.How, "a variant may turn FLB_ALL on")
+	require.Equal(t, "upstream's CMakeLists.txt changed: option FLB_PROTOBUF_ENCODER added, off by default; find_package(Jansson) moves, under FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER; find_package(Protobuf) added, under FLB_PROTOBUF_ENCODER; besides, lines change under if(FLB_ALL)", all.Message)
+
+	comments := strings.Replace(before, "# Avro", "# Avro, and nothing else", 1)
+	changes := compareNamed(t,
+		testsupport.Tarball(t, "fluent-bit-5.1.2", map[string]string{"CMakeLists.txt": before}),
+		testsupport.Tarball(t, "fluent-bit-5.1.3", map[string]string{"CMakeLists.txt": strings.Replace(comments, "PATCH 2", "PATCH 3", 1) + "\n\n"}), versions)
+	require.Len(t, changes, 1)
+	require.Equal(t, "upstream's CMakeLists.txt changes only comments and blank lines, which the build doesn't read", changes[0].Message)
 }

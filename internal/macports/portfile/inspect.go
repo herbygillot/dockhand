@@ -270,3 +270,31 @@ func PortGroupReferences(src []byte) (references []macports.PortGroup, conclusiv
 	})
 	return references, conclusive
 }
+
+// Mentions reports whether a Portfile's source names word anywhere, in
+// any variant or platform block, its comments included: as a word of its
+// own, or one a compiler's or CMake's -D or -U defines, so
+// "-DFLB_AVRO_ENCODER=ON" names FLB_AVRO_ENCODER, where
+// FLB_AVRO_ENCODER_SCHEMA doesn't. It's a bound, not a reading, for
+// knowing what a port can't set: a name built from a variable isn't seen.
+func Mentions(src []byte, word string) bool {
+	if word == "" {
+		return false
+	}
+	part := func(c byte) bool {
+		return c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+	}
+	for at := 0; ; {
+		i := bytes.Index(src[at:], []byte(word))
+		if i < 0 {
+			return false
+		}
+		i += at
+		end := i + len(word)
+		defined := i >= 2 && src[i-2] == '-' && (src[i-1] == 'D' || src[i-1] == 'U')
+		if (i == 0 || !part(src[i-1]) || defined) && (end == len(src) || !part(src[end])) {
+			return true
+		}
+		at = i + 1
+	}
+}

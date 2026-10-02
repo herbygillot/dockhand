@@ -624,6 +624,38 @@ func TestAChangeTheBuildDoesntReadHoldsNothing(t *testing.T) {
 	require.Equal(t, "Read CMakeLists.txt; set apart: Package.swift (swift), package.json (node)", CoverageWords(*comparison))
 }
 
+// What an option off by default gates holds nothing only where the
+// Portfile, as the update left it, doesn't name the option, in any
+// variant: one that does may set it (D12, revisited 2026-10-01).
+func TestAnOptionThePortfileNamesHolds(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	dir := t.TempDir()
+	next := archives.Download{Path: writeTarball(t, dir, "fluent-bit-5.1.3", map[string]string{
+		"CMakeLists.txt": "project(fluent-bit VERSION 5.1.3)\noption(FLB_PROTOBUF_ENCODER \"Protobuf\" No)\nif(FLB_PROTOBUF_ENCODER)\n  find_package(Protobuf REQUIRED)\nendif()\nadd_library(flb a.c)\n",
+	})}
+	next.Name = "fluent-bit-5.1.3.tar.gz"
+	previous := archives.Download{Path: writeTarball(t, dir, "fluent-bit-5.1.2", map[string]string{
+		"CMakeLists.txt": "project(fluent-bit VERSION 5.1.2)\nadd_library(flb a.c)\n",
+	})}
+	held := func(portfile string) bool {
+		t.Helper()
+		write(t, f.clone, map[string]string{"sysutils/fluent-bit/Portfile": portfile})
+		run(t, f.clone, "add", "sysutils/fluent-bit/Portfile")
+		run(t, f.clone, "commit", "-q", "-m", "fluent-bit")
+		tree := strings.TrimSpace(run(t, f.clone, "rev-parse", "HEAD^{tree}"))
+		result := preparation.Result{}
+		result.Target = model.Target{Name: "fluent-bit", Portfile: "sysutils/fluent-bit/Portfile"}
+		result.Prepared = macports.Snapshot{Ports: map[string]macports.PortInfo{"fluent-bit": {Name: "fluent-bit", Options: map[string]string{"dockhand.portgroups": "github cmake", "use_configure": "yes", "configure.cmd": "/opt/local/bin/cmake"}}}}
+		result.Downloads = []archives.Download{next}
+		result.Pairs = []preparation.ArchivePair{{Previous: previous, Next: next}}
+		comparison := e.assessUpstream(t.Context(), result, sourcecompare.Versions{Old: "5.1.2", New: "5.1.3"}, [2]model.Source{{}, {Tree: model.ObjectID(tree)}}, true)
+		return comparison.Held()
+	}
+	require.False(t, held("name fluent-bit\nversion 5.1.3\nconfigure.args-append -DFLB_WASM=OFF\n"))
+	require.True(t, held("name fluent-bit\nversion 5.1.3\nvariant protobuf {\n    configure.args-append -DFLB_PROTOBUF_ENCODER=ON\n}\n"))
+}
+
 // A version update or a checksum refresh says the port's URLs over plain
 // HTTP, its homepage and its master_sites, with whether each answers over
 // HTTPS, which MacPorts prefers; a mirror group is MacPorts' own, and a

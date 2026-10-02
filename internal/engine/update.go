@@ -698,6 +698,9 @@ func (e *Engine) assessUpstream(ctx context.Context, result preparation.Result, 
 	input := assess.Input{Versions: versions}
 	input.Base, _ = result.PortBefore(result.Target.Name)
 	input.Port, _ = result.PortAfter(result.Target.Name)
+	if file, data, err := e.Repo.File(ctx, string(trees[1].Tree), result.Target.Portfile); err == nil && file.Exists {
+		input.Portfile = data
+	}
 	if t := result.GoToolchain; t != nil {
 		input.Toolchain = &assess.Toolchain{Required: t.Required, Declared: t.Declared, Outcome: toolchainOutcomes[t.Outcome]}
 	}

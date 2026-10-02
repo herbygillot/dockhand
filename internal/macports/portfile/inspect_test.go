@@ -87,3 +87,13 @@ func TestPortGroupReferencesAreReadFromTheSource(t *testing.T) {
 	_, conclusive = portfile.PortGroupReferences([]byte("# _resources in a comment\nPortGroup github 1.0\n"))
 	require.True(t, conclusive)
 }
+
+// A Portfile names a build option where a word of its own, or a -D or -U
+// definition, is the option, in any block or comment, and not where it's
+// part of a longer name.
+func TestAPortfileMentionsAWordOfItsOwn(t *testing.T) {
+	src := []byte("variant avro {\n    configure.args-append -DFLB_AVRO_ENCODER=ON -UFLB_KAFKA\n}\n# FLB_ALL is too much\nset opt FLB_TLS_EXTRA\n")
+	for word, named := range map[string]bool{"FLB_AVRO_ENCODER": true, "FLB_KAFKA": true, "FLB_ALL": true, "FLB_TLS": false, "FLB_AVRO": false, "AVRO_ENCODER": false, "": false} {
+		require.Equal(t, named, portfile.Mentions(src, word), word)
+	}
+}

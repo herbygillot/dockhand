@@ -310,15 +310,23 @@ func TestAGoRequirementIsReadWhereNoEditSaid(t *testing.T) {
 // A CMakeLists.txt that only adds an option, and what it gates off by
 // default, is said with a `·` and holds nothing: fluent-bit 5.1.3's
 // FLB_PROTOBUF_ENCODER held its update (D12, revisited by the person
-// 2026-10-01).
+// 2026-10-01). Where the Portfile names the option, in a variant, it may
+// set it, and the change holds, as it does where the Portfile wasn't read.
 func TestAnAddedCMakeOptionHoldsNothing(t *testing.T) {
 	before := "project(fluent-bit VERSION 5.1.2)\nadd_library(flb src/a.c)\n"
 	after := "project(fluent-bit VERSION 5.1.3)\noption(FLB_PROTOBUF_ENCODER \"Protobuf\" No)\nif(FLB_PROTOBUF_ENCODER)\n  find_package(Protobuf REQUIRED)\nendif()\nadd_library(flb src/a.c)\n"
-	comparison := Assess(Input{Versions: Versions{Old: "5.1.2", New: "5.1.3"}, Pairs: []Pair{{
-		Before: read(t, "fluent-bit-5.1.2", map[string]string{"CMakeLists.txt": before}, project.Spec{}),
-		After:  read(t, "fluent-bit-5.1.3", map[string]string{"CMakeLists.txt": after}, project.Spec{}),
-	}}})
+	assess := func(portfile []byte) model.UpstreamComparison {
+		return Assess(Input{Versions: Versions{Old: "5.1.2", New: "5.1.3"}, Portfile: portfile, Pairs: []Pair{{
+			Before: read(t, "fluent-bit-5.1.2", map[string]string{"CMakeLists.txt": before}, project.Spec{}),
+			After:  read(t, "fluent-bit-5.1.3", map[string]string{"CMakeLists.txt": after}, project.Spec{}),
+		}}})
+	}
+	comparison := assess([]byte("PortGroup cmake 1.1\nconfigure.args-append -DFLB_WASM=OFF\n"))
 	require.Equal(t, []string{"· upstream's CMakeLists.txt adds option FLB_PROTOBUF_ENCODER, off by default, which gates find_package(Protobuf), and changes nothing else the default build reads; each option builds as its default"}, messages(comparison.Changes))
 	require.Equal(t, BuildFileOptions, comparison.Changes[0].Rule)
 	require.False(t, comparison.Held())
+	variant := assess([]byte("variant protobuf {\n    configure.args-append -DFLB_PROTOBUF_ENCODER=ON\n}\n"))
+	require.True(t, variant.Held(), "a variant sets it: %v", messages(variant.Changes))
+	unread := assess(nil)
+	require.True(t, unread.Held(), "the Portfile wasn't read")
 }
