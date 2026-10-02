@@ -74,10 +74,31 @@ The goal stays the same: nobody should have to type or look up `jq-4k2p`. The fi
 
 The README's loop then reads `dockhand check -p jq` and `dockhand submit -p jq`, or, with completion, `dockhand check -b jq<Tab>`.
 
+### Meaningful branch names (Herby's decision, 2026-10-02)
+
+Branches dockhand starts are named for what they do, and decision 37's short ID is added only when that name is taken:
+
+| Started by | Name | Example |
+| --- | --- | --- |
+| `update` | port and new version | `jq-1.8.1`, `terraform-1.16-1.16.5` |
+| `update --revbump-dependents` | the library's update | `libuv-1.52.0` |
+| `revbump` | first port, `rebuild` | `gdal-rebuild` |
+| `create` | port, `new` | `mods-new` |
+| `checksums` (stealth update) | port, `checksums` | `jq-checksums` |
+| `edit`, or nothing more specific | port and ID, as today | `jq-4k2p` |
+| `start <name>`, `adopt`, `adopt --pr` | unchanged | `my-fix`, `pr-34905` |
+
+Things the implementation has to get right:
+
+- **"Taken" covers time, not just open branches.** A name is taken if any branch record has it, merged and cleaned ones included (status --all and `ResolveRecord` still find them), or if the fork has a branch of that name. Otherwise, redoing `jq-1.8.1` after a revert would reuse a merged branch's name. The fallback is `jq-1.8.1-4k2p`.
+- **A name can go stale.** If 1.8.2 comes out before `jq-1.8.1` is submitted and the branch is moved to it, the name lies. Before a pull request exists, `update` renames the branch, keeping the record as `adopt` already does for renames. After one exists, the name stays, as design §3 requires, since the fork's branch is the pull request's head.
+- **Versions are made safe for Git.** Characters Git refuses in a ref (`~ ^ : ? * [ \`, spaces, `..`) become `-`.
+
+With names like these, `-b jq-1.8.1` is something you can type from memory, and completion does the rest.
+
 ### Left for you to decide
 
-- **Meaningful names.** `update jq` could name its branch `jq-1.8.1` (port and version), with a suffix only on a collision. A revbump branch would be `jq-rebuild`. That gets readable names without any resolution rules. It changes decision 37 and earlier roadmap triage, so I've not folded it in.
-- **Whether `-p` should act alone in scripts when there's exactly one candidate.** I've proposed yes, since the first line names the branch. The cautious alternative is to refuse in scripts and require `-b`. That's safer against overnight drafts, but it puts the lookup back.
+- **Whether `-p` should act alone in scripts when there's exactly one candidate.** I've proposed yes, since the first line names the branch. The cautious alternative is to refuse in scripts and require `-b`. That's safer against overnight drafts, but meaningful names make `-b` cheap enough that it would cost little.
 
 ## 2. Start a branch when nothing else could be meant
 
