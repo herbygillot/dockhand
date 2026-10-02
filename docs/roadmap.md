@@ -160,7 +160,7 @@ The order is the roadmap's own: a guardrail first, then what's written into a Po
    - **The 144 ports `outdated --mine` can't check,** sized by reason first. Most use Portfile conventions discovery doesn't take ([note](activity/2026-09-27-outdated-speed.md)). On 2026-09-29, `outdated --all` over the person's 896 ports couldn't check 44: 18 with custom livecheck hooks, 17 with `livecheck.type git`, 2 with no release matching the filter, 2 with no editable version input, and one each with a non-numeric version, livecheck off, a GitHub 404, an HTTPS downgrade the server redirects to (rightly refused; the Portfile's URL wants its trailing slash), and mise's dependency, which is dockhand's (a smaller item).
    - **Files that preparation adds and deletes** (40).
    - **An outcome for the 441 ports with nothing to fetch.**
-   - **Literal segments of composed versions,** llvm's and openjdk's.
+   - **Literal segments of composed versions,** llvm's and openjdk's. Done 2026-10-02 for llvm ([note](activity/2026-10-02-composed-versions.md)): 15 ports moved to input-found, llvm 13 to 23 and openjdk. openjdk's tag carries a build number in a second literal, which a release changes too, so its update needs an edit of two literals, which is still to build.
    - **Smaller buckets:** the Go toolchain check on gitlab.com, and the R ports' condition.
    - **Re-sizing:** the host-reader buckets after the oracle, and the PortGroup inclusion map.
    - **`create`:** from registry names (`pypi:`, `crates:`, `go:`), `--like`, and `go.vendors`. `crates:` builds on the Cargo.lock reader that creating and updating share (the private-helper review's finding 4).

@@ -19,7 +19,7 @@ func TestCandidatesPreserveSourceAndExcludeHooksAndData(t *testing.T) {
 	require.Error(t, err)
 }
 func TestCandidatesFindSetupAndComposedInputs(t *testing.T) {
-	for _, src := range []string{"go.setup github.com/owner/project 1.2 v\n", "gitlab.setup owner project 1.2 v\n", "github.setup owner project 2026-09-07\nversion [string map {- {}} ${github.version}]\n", "set patch 3\nproc release {} {global patch; return 1.2.${patch}}\nversion [release]\n", "perl5.setup App-cpanminus 1.7049 ../../authors/id/M/MI/MIYAGAWA\n", "R.setup cran jeroen jsonlite 1.8.9\n", "R.setup github tidyverse ggplot2 3.5.1 v\n", "ruby.setup 3llo 1.3.1 gem {} rubygems\n", "ruby.setup {rails railties} 7.1.2 gem {} rubygems ruby33\n",
+	for _, src := range []string{"go.setup github.com/owner/project 1.2 v\n", "gitlab.setup owner project 1.2 v\n", "github.setup owner project 2026-09-07\nversion [string map {- {}} ${github.version}]\n", "perl5.setup App-cpanminus 1.7049 ../../authors/id/M/MI/MIYAGAWA\n", "R.setup cran jeroen jsonlite 1.8.9\n", "R.setup github tidyverse ggplot2 3.5.1 v\n", "ruby.setup 3llo 1.3.1 gem {} rubygems\n", "ruby.setup {rails railties} 7.1.2 gem {} rubygems ruby33\n",
 		"aspelldict.setup af 0.50-0 {Afrikaans}\n", "hunspelldict.setup af_ZA 2006-01-17 {Afrikaans (South Africa)} ooo\n", "x11font.setup font-adobe-100dpi 1.0.3 100dpi\n", "pure.setup faust2pd 2.16\n", "crossbinutils.setup aarch64-elf 2.47\n",
 		"bitbucket.setup Coin3D coin 3.1.3 Coin-\n", "codeberg.setup mrirecon bart 1.0.01 v\n", "octave.setup github gnu-octave pkg-apa 1.2.2 v\n", "octave.setup pkg-apa 1.2.2\n"} {
 		values, err := portfile.Candidates([]byte(src))
@@ -27,6 +27,33 @@ func TestCandidatesFindSetupAndComposedInputs(t *testing.T) {
 		require.Len(t, values, 1)
 		require.NotEqual(t, values[0].Value, values[0].Probe())
 	}
+}
+
+// A composed version's literal text is an input beside its variables: llvm's
+// ".1.7" after ${llvm_version}, and a proc's "1.2." before ${patch}, without
+// the separators that join them.
+func TestCandidatesFindLiteralSegmentsOfComposedVersions(t *testing.T) {
+	t.Parallel()
+	for src, want := range map[string][]string{
+		"set llvm_version 19\nversion ${llvm_version}.1.7\nname llvm-${llvm_version}\n":         {"19", "1.7"},
+		"set patch 3\nproc release {} {global patch; return 1.2.${patch}}\nversion [release]\n": {"3", "1.2"},
+		"set feature 21\nset openjdk_version \"${feature}.0.12.1\"\n":                           {"21", "0.12.1"},
+		"version ${major}.${minor}\n": nil,
+	} {
+		candidates, err := portfile.Candidates([]byte(src))
+		require.NoError(t, err)
+		var values []string
+		for _, candidate := range candidates {
+			values = append(values, candidate.Value)
+		}
+		require.Equal(t, want, values, src)
+	}
+	src := []byte("version ${llvm_version}.1.7\n")
+	candidates, err := portfile.Candidates(src)
+	require.NoError(t, err)
+	edited, err := candidates[0].Replace(src, "1.8")
+	require.NoError(t, err)
+	require.Equal(t, "version ${llvm_version}.1.8\n", string(edited))
 }
 
 // php sets its version inside a switch on the subport's branch. The arms'

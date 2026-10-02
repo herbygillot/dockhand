@@ -104,9 +104,10 @@ func assessmentFinding(t *testing.T, a Assessment, check string) Finding {
 
 func TestLocalAssessmentKeepsFailedCounterfactualUnknown(t *testing.T) {
 	t.Parallel()
-	p, input := assessmentFixture(t, `set patchNumber 3
-if {$patchNumber ne "3"} {error "artificial patch not allowed"}
-proc release {} {global patchNumber; return 1.2.${patchNumber}}
+	p, input := assessmentFixture(t, `set base 1.2
+set patchNumber 3
+if {$base ne "1.2" || $patchNumber ne "3"} {error "artificial release not allowed"}
+proc release {} {global base patchNumber; return ${base}.${patchNumber}}
 github.setup owner fixture [release] v`)
 	result, err := p.Assess(t.Context(), nil)
 	require.NoError(t, err)

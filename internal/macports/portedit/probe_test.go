@@ -61,6 +61,9 @@ version [clock format [clock scan ${github.version} -format %Y-%m-%d -gmt 1] -fo
 		{"mapped separators", "set real_version 7.5\ngithub.setup owner fixture [string map {. _} $real_version] v\nversion $real_version", "7_6", "7.6", "set real_version 7.6"},
 		{"equivalent numeric and substitution mappings", "set release 3\ngithub.setup owner fixture [expr {$release * 10 + 1}] v", "41", "41", "set release 4"},
 		{"arithmetic source", "set patch 3\ngithub.setup owner fixture 1.2.[expr {$patch + 1}] v", "1.2.5", "1.2.5", "set patch 4"},
+		// llvm's: the major is the port's name, and the rest a literal
+		// segment after it.
+		{"literal segment of a composed version", "set llvm_version 19\ngithub.setup owner fixture ${llvm_version}.1.7 v", "19.1.8", "19.1.8", "${llvm_version}.1.8"},
 		{"inactive assignments", "set unused 1.2.3\nif {0} {set release 1.2.3}\nset release {1.2.3}\ngithub.setup owner fixture $release v", "1.2.4", "1.2.4", "set unused 1.2.3"},
 	} {
 		t.Run(test.name, func(t *testing.T) {

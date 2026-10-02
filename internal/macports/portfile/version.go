@@ -35,14 +35,28 @@ func Candidates(src []byte) ([]Candidate, error) {
 	seen := map[text.Span]bool{}
 	var walk func(*syntax.Script, bool)
 	var word func(syntax.Word)
-	var substitutions func([]syntax.Segment)
-	substitutions = func(segments []syntax.Segment) {
+	add := func(span text.Span) {
+		value := span.Text(src)
+		if Literal(value) && strings.ContainsAny(value, "0123456789") && !seen[span] {
+			seen[span] = true
+			result = append(result, Candidate{Span: span, Value: value})
+		}
+	}
+	var substitutions func([]syntax.Segment, bool)
+	substitutions = func(segments []syntax.Segment, composed bool) {
 		for _, segment := range segments {
 			switch value := segment.(type) {
 			case syntax.CmdSub:
 				walk(value.Script, true)
 			case syntax.Quoted:
-				substitutions(value.Segments)
+				substitutions(value.Segments, composed)
+			case syntax.Literal:
+				// A composed word's literal text is an input too, as
+				// llvm's ".1.7" in ${llvm_version}.1.7, without the
+				// separators that join it to what's substituted.
+				if composed {
+					add(trimSeparators(src, value.Span))
+				}
 			}
 		}
 	}
@@ -50,13 +64,9 @@ func Candidates(src []byte) ([]Candidate, error) {
 		if w.Expand {
 			return
 		}
-		span := w.Inner()
-		value := span.Text(src)
-		if Literal(value) && strings.ContainsAny(value, "0123456789") && !seen[span] {
-			seen[span] = true
-			result = append(result, Candidate{Span: span, Value: value})
-		}
-		substitutions(w.Segments)
+		add(w.Inner())
+		_, whole := w.Literal(src)
+		substitutions(w.Segments, !whole)
 	}
 	walk = func(script *syntax.Script, expression bool) {
 		for _, item := range script.Items {
@@ -96,6 +106,17 @@ func Candidates(src []byte) ([]Candidate, error) {
 	walk(script, false)
 
 	return result, nil
+}
+
+// trimSeparators is span without the version separators at either end.
+func trimSeparators(src []byte, span text.Span) text.Span {
+	for span.Start < span.End && strings.IndexByte("._-+", src[span.Start]) >= 0 {
+		span.Start++
+	}
+	for span.End > span.Start && strings.IndexByte("._-+", src[span.End-1]) >= 0 {
+		span.End--
+	}
+	return span
 }
 
 func (c Candidate) Replace(src []byte, value string) ([]byte, error) {
