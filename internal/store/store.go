@@ -166,6 +166,9 @@ type Reader interface {
 	// Assessments lists what was recorded of what upstream's change means
 	// for the ports revisions change, newest first.
 	Assessments(filter AssessmentFilter) ([]model.Assessment, error)
+	// ChangeRecords lists what revisions changed in their port
+	// directories, selected as assessments are, newest first.
+	ChangeRecords(filter AssessmentFilter) ([]model.ChangeRecord, error)
 	Checkpoint(number int) (model.Checkpoint, error)
 	// Checkpoints lists a branch's checkpoints, oldest first.
 	Checkpoints(branch model.BranchID) ([]model.Checkpoint, error)
@@ -220,8 +223,8 @@ type Tx interface {
 	// recorded of their checks, sparing what reuse may still choose and
 	// each branch's newest run (D6), and says how much.
 	PruneHistory(before time.Time) (Pruned, error)
-	// PruneAssessments removes the assessments of trees an open branch
-	// moved past before a time, and says how many.
+	// PruneAssessments removes the assessments and change records of trees
+	// an open branch moved past before a time, and says how many.
 	PruneAssessments(before time.Time) (int, error)
 
 	AddSession(session model.Session) error
@@ -248,6 +251,9 @@ type Tx interface {
 	// RecordAssessment records a revision's assessment of a port,
 	// replacing one recorded for the same revision, base, and port.
 	RecordAssessment(assessment model.Assessment) error
+	// RecordChange records what a revision changed in a port directory,
+	// replacing one recorded for the same revision, base, and directory.
+	RecordChange(record model.ChangeRecord) error
 	// AddCheckpoint records a checkpoint; its Number must be
 	// NextCheckpointNumber's.
 	AddCheckpoint(checkpoint model.Checkpoint) error
@@ -273,5 +279,5 @@ func NewID(prefix string) string {
 
 // Pruned counts what PruneHistory removed, by kind.
 type Pruned struct {
-	Runs, Executions, Results, Plans, Revisions, Assessments, Inputs int
+	Runs, Executions, Results, Plans, Revisions, Assessments, Changes, Inputs int
 }

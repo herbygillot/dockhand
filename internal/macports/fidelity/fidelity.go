@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -112,32 +113,51 @@ func ComparablePort(port macports.PortInfo, root string) macports.PortInfo {
 
 // Compare lists the metadata differences between two normalized ports.
 func Compare(name string, old, next macports.PortInfo) []string {
-	var differences []string
-	if old.Name != next.Name {
-		differences = append(differences, name+".name changed")
+	var changed []string
+	for _, change := range differences(old, next) {
+		changed = append(changed, name+"."+change.Field+" changed")
 	}
-	if old.Version != next.Version {
-		differences = append(differences, name+".version changed")
+	return changed
+}
+
+// Changes are the evaluated fields that moved between two evaluations of
+// a port, each normalized by the root it was evaluated in: the revision,
+// and every field Compare compares. A change record is made of them.
+func Changes(old, next macports.PortInfo, oldRoot, nextRoot string) []model.FieldChange {
+	var changes []model.FieldChange
+	if old.Revision != next.Revision {
+		changes = append(changes, model.FieldChange{Field: "revision", From: strconv.Itoa(old.Revision), To: strconv.Itoa(next.Revision)})
 	}
-	if old.Epoch != next.Epoch {
-		differences = append(differences, name+".epoch changed")
+	return append(changes, differences(ComparablePort(old, oldRoot), ComparablePort(next, nextRoot))...)
+}
+
+// differences are the fields that moved between two normalized ports:
+// the name, version, epoch, dependencies, and fetch's kind, then the
+// options in order, then the options' errors.
+func differences(old, next macports.PortInfo) []model.FieldChange {
+	var changes []model.FieldChange
+	field := func(name, from, to string) {
+		if from != to {
+			changes = append(changes, model.FieldChange{Field: name, From: from, To: to})
+		}
 	}
+	field("name", old.Name, next.Name)
+	field("version", old.Version, next.Version)
+	field("epoch", strconv.Itoa(old.Epoch), strconv.Itoa(next.Epoch))
 	if !reflect.DeepEqual(old.Dependencies, next.Dependencies) {
-		differences = append(differences, name+".dependencies changed")
+		changes = append(changes, model.FieldChange{Field: "dependencies", From: dependencyWords(old.Dependencies), To: dependencyWords(next.Dependencies)})
 	}
 	// The fetch is compared by its kind, which the options' compatible
 	// flag doesn't tell apart among the kinds a direct download repeats.
-	if fetchKind(old) != fetchKind(next) {
-		differences = append(differences, name+".fetch changed")
-	}
-	keys := map[string]bool{}
-	for key := range old.Options {
-		keys[key] = true
-	}
+	field("fetch", fetchKind(old), fetchKind(next))
+	keys := slices.Sorted(maps.Keys(old.Options))
 	for key := range next.Options {
-		keys[key] = true
+		if _, ok := old.Options[key]; !ok {
+			keys = append(keys, key)
+		}
 	}
-	for key := range keys {
+	slices.Sort(keys)
+	for _, key := range keys {
 		a, aok := old.Options[key]
 		b, bok := next.Options[key]
 		// A path below the source directory is the same path in two
@@ -150,13 +170,31 @@ func Compare(name string, old, next macports.PortInfo) []string {
 			a, b = belowSource(a), belowSource(b)
 		}
 		if aok != bok || a != b {
-			differences = append(differences, name+"."+key+" changed")
+			changes = append(changes, model.FieldChange{Field: key, From: a, To: b})
 		}
 	}
 	if !maps.Equal(old.OptionErrors, next.OptionErrors) {
-		differences = append(differences, name+".option-errors changed")
+		changes = append(changes, model.FieldChange{Field: "option-errors", From: errorWords(old.OptionErrors), To: errorWords(next.OptionErrors)})
 	}
-	return differences
+	return changes
+}
+
+// dependencyWords are dependencies as one line, each phase:port.
+func dependencyWords(dependencies []macports.Dependency) string {
+	words := make([]string, 0, len(dependencies))
+	for _, d := range dependencies {
+		words = append(words, d.Phase+":"+d.Spec)
+	}
+	return strings.Join(words, " ")
+}
+
+// errorWords are options' errors as one line, by option.
+func errorWords(errs map[string]string) string {
+	var words []string
+	for _, key := range slices.Sorted(maps.Keys(errs)) {
+		words = append(words, key+": "+errs[key])
+	}
+	return strings.Join(words, "; ")
 }
 
 // workPath is a path below a port's source directory as MacPorts lays
@@ -444,4 +482,62 @@ func ScopedChecksums(scope *macports.ReleaseScope, before, after macports.Snapsh
 		result.UnexpectedChanges = append(result.UnexpectedChanges, err.Error())
 	}
 	return result
+}
+
+// SubportChanges are what moved in each subport of a directory between
+// its evaluation at a base and at a revision, each side normalized by its
+// own root: the main port first, then the rest in MacPorts' order. A nil
+// side is a directory the base or the revision doesn't have, whose
+// subports are all added or all removed.
+func SubportChanges(base, revision *macports.Snapshot) []model.SubportChange {
+	var names []string
+	main := ""
+	for _, side := range []*macports.Snapshot{revision, base} {
+		if side == nil {
+			continue
+		}
+		if main == "" {
+			main = side.Target.Name
+		}
+		for name := range side.Ports {
+			if !slices.Contains(names, name) {
+				names = append(names, name)
+			}
+		}
+	}
+	slices.SortFunc(names, func(a, b string) int {
+		switch {
+		case a == main:
+			return -1
+		case b == main:
+			return 1
+		}
+		return macports.ComparePortNames(a, b)
+	})
+	changes := make([]model.SubportChange, 0, len(names))
+	for _, name := range names {
+		var old, next macports.PortInfo
+		had, has := false, false
+		if base != nil {
+			old, had = base.Ports[name]
+		}
+		if revision != nil {
+			next, has = revision.Ports[name]
+		}
+		change := model.SubportChange{Port: name}
+		switch {
+		case !had:
+			change.Kind = model.SubportAdded
+		case !has:
+			change.Kind = model.SubportRemoved
+		default:
+			change.Fields = Changes(old, next, base.Root, revision.Root)
+			change.Kind = model.SubportUnchanged
+			if len(change.Fields) > 0 {
+				change.Kind = model.SubportChanged
+			}
+		}
+		changes = append(changes, change)
+	}
+	return changes
 }

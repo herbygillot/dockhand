@@ -224,6 +224,56 @@ func (t *tx) RecordAssessment(a model.Assessment) error {
 	return err
 }
 
+func (t *tx) RecordChange(r model.ChangeRecord) error {
+	if err := r.Validate(); err != nil {
+		return err
+	}
+	record, err := json.Marshal(r)
+	if err != nil {
+		return err
+	}
+	_, err = t.exec("INSERT INTO change_records(repository_id, branch_id, tree, base, directory, record, policy, at) VALUES(?,?,?,?,?,?,?,?) "+
+		"ON CONFLICT(repository_id, branch_id, tree, base, directory) DO UPDATE SET record=excluded.record, policy=excluded.policy, at=excluded.at",
+		t.repo, r.Branch, r.Tree, r.Base, r.Directory, string(record), r.Policy, millis(r.At))
+	return err
+}
+
+func (t *tx) ChangeRecords(filter store.AssessmentFilter) ([]model.ChangeRecord, error) {
+	query, args := "SELECT record, at FROM change_records WHERE repository_id=?", []any{any(t.repo)}
+	if filter.Branch != "" {
+		query += " AND branch_id=?"
+		args = append(args, filter.Branch)
+	}
+	if filter.Tree != "" {
+		query += " AND tree=?"
+		args = append(args, filter.Tree)
+	}
+	if filter.Base != "" {
+		query += " AND base=?"
+		args = append(args, filter.Base)
+	}
+	rows, err := t.conn.QueryContext(t.ctx, query+" ORDER BY +at DESC, rowid DESC", args...)
+	if err != nil {
+		return nil, storageError(err)
+	}
+	defer rows.Close()
+	var records []model.ChangeRecord
+	for rows.Next() {
+		var record string
+		var at int64
+		if err := rows.Scan(&record, &at); err != nil {
+			return nil, storageError(err)
+		}
+		var r model.ChangeRecord
+		if err := json.Unmarshal([]byte(record), &r); err != nil {
+			return nil, fmt.Errorf("%w: change record: %w", store.ErrUnavailable, err)
+		}
+		r.At = fromMillis(at)
+		records = append(records, r)
+	}
+	return records, storageError(rows.Err())
+}
+
 // assessmentsQuery reads the assessments a filter selects. A revision's,
 // by its branch, tree, and base, are found through the key they're kept
 // by, where every check read and decoded all its branch had ever recorded

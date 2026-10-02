@@ -835,6 +835,9 @@ func TestAssessmentsOfATreeMovedPastGo(t *testing.T) {
 			if err := tx.RecordAssessment(model.Assessment{Branch: b.ID, Tree: tree, Base: "base", Port: "libharbor", Directory: "devel/libharbor", Policy: 1, At: at}); err != nil {
 				return err
 			}
+			if err := tx.RecordChange(model.ChangeRecord{Branch: b.ID, Tree: tree, Base: "base", Directory: "devel/libharbor", Policy: 1, At: at}); err != nil {
+				return err
+			}
 		}
 		return nil
 	}))
@@ -849,7 +852,7 @@ func TestAssessmentsOfATreeMovedPastGo(t *testing.T) {
 		return n
 	}
 	require.Zero(t, prune(at.Add(time.Hour)), "moved past only since the cutoff")
-	require.Equal(t, 1, prune(at.Add(2*time.Hour)))
+	require.Equal(t, 2, prune(at.Add(2*time.Hour)), "the old tree's assessment and change record")
 	require.Zero(t, prune(at.Add(2*time.Hour)))
 }
 

@@ -253,6 +253,44 @@ func TestAnAssessmentIsTheRevisions(t *testing.T) {
 	}))
 }
 
+// A change record is the revision's, by its tree, base, and directory:
+// recorded again it replaces what was, and it reads back as it was kept.
+func TestAChangeRecordIsTheRevisions(t *testing.T) {
+	f := open(t)
+	b := f.branch("br_1", "dockhand/terraform-1.17-7hq2")
+	first := model.ChangeRecord{Branch: b.ID, Tree: "t1", Base: "b1", Directory: "sysutils/terraform", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"},
+		Ports: []model.SubportChange{
+			{Port: "terraform-1.17", Kind: model.SubportAdded},
+			{Port: "terraform-1.16", Kind: model.SubportChanged, Fields: []model.FieldChange{{Field: "version", From: "1.16.0", To: "1.16.1"}}},
+			{Port: "terraform-1.15", Kind: model.SubportUnchanged},
+		}, Policy: 1, At: at}
+	again := first
+	again.Ports, again.At = first.Ports[2:], at.Add(time.Minute)
+	other := first
+	other.Tree = "t2"
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		if err := tx.AddBranch(b); err != nil {
+			return err
+		}
+		for _, r := range []model.ChangeRecord{first, other, again} {
+			if err := tx.RecordChange(r); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	require.NoError(t, f.update(t, func(tx store.Tx) error {
+		records, err := tx.ChangeRecords(store.AssessmentFilter{Branch: b.ID, Tree: "t1", Base: "b1"})
+		require.NoError(t, err)
+		require.Equal(t, []model.ChangeRecord{again}, records)
+		require.Empty(t, again.Changed())
+		require.Equal(t, []string{"terraform-1.17", "terraform-1.16"}, other.Changed())
+		require.Error(t, tx.RecordChange(model.ChangeRecord{Branch: b.ID, Tree: "t1", Base: "b1", Directory: "sysutils/terraform"}), "no policy")
+		require.Error(t, tx.RecordChange(model.ChangeRecord{Branch: b.ID, Tree: "t1", Base: "b1", Directory: "sysutils/terraform", Policy: 1, Ports: []model.SubportChange{{Port: "terraform", Kind: "moved"}}}), "no such kind")
+		return nil
+	}))
+}
+
 // A revision's assessments are read by its branch, tree, and base alone,
 // newest first: every check read and decoded all its branch had ever
 // recorded, to keep its revision's (the SQL review's rescan).

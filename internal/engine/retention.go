@@ -55,7 +55,7 @@ func HistoryWords(pruned store.Pruned, assessments int, after time.Duration) str
 			prose.Plural(pruned.Plans, "plan"), prose.Plural(pruned.Revisions, "revision")))
 	}
 	if assessments > 0 {
-		words = append(words, fmt.Sprintf("removed %s of trees open branches moved past", prose.Plural(assessments, "assessment")))
+		words = append(words, fmt.Sprintf("removed %s of trees open branches moved past, assessments and change records", prose.Plural(assessments, "record")))
 	}
 	return strings.Join(words, "; ")
 }

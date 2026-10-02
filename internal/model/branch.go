@@ -64,6 +64,10 @@ type PullRequest struct {
 	// it are recognized and kept.
 	Body  string
 	Draft bool
+	// Adopted is someone else's pull request, adopted with adopt --pr: its
+	// Portfile isn't the person's, so nothing evaluates it for a change
+	// record until the trust rule is in code.
+	Adopted bool
 	// Observed is what the forge last reported about it; nil until then.
 	Observed *PullRequestObservation `json:",omitempty"`
 }

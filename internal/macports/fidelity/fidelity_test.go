@@ -147,3 +147,32 @@ func TestAPathBelowTheSourceFollowsIt(t *testing.T) {
 	require.Empty(t, Compare("qemu", port("/opt/local/var/macports/build/qemu-234b5126/work/qemu-9.0.2/configure"), port("/opt/local/var/macports/build/qemu-f3e5b0c6/work/qemu-9.1.0/configure")))
 	require.Equal(t, []string{"qemu.configure.cmd changed"}, Compare("qemu", port("/opt/local/var/macports/build/qemu-234b5126/work/qemu-9.0.2/configure"), port("/opt/local/var/macports/build/qemu-f3e5b0c6/work/qemu-9.1.0/build/configure")))
 }
+
+// A directory's subports are compared each for itself, every side
+// normalized by its own root: one new at the revision is added, one gone
+// is removed, and one whose fields moved says from what to what.
+func TestSubportChangesSayWhatMovedInEach(t *testing.T) {
+	before := snapshot(map[string]macports.PortInfo{
+		"main":       {Name: "main", Version: "1", Options: map[string]string{"filespath": "/before/devel/main/files"}},
+		"main-old":   {Name: "main-old", Version: "0.9"},
+		"main-devel": {Name: "main-devel", Version: "2", Dependencies: []macports.Dependency{{Port: "zlib", Phase: "lib", Spec: "port:zlib"}}},
+	})
+	before.Root = "/before"
+	after := snapshot(map[string]macports.PortInfo{
+		"main":       {Name: "main", Version: "1", Options: map[string]string{"filespath": "/after/devel/main/files"}},
+		"main-devel": {Name: "main-devel", Version: "2", Revision: 1, Dependencies: []macports.Dependency{{Port: "zstd", Phase: "lib", Spec: "port:zstd"}}},
+		"main-new":   {Name: "main-new", Version: "3"},
+	})
+	after.Root = "/after"
+	require.Equal(t, []model.SubportChange{
+		{Port: "main", Kind: model.SubportUnchanged},
+		{Port: "main-devel", Kind: model.SubportChanged, Fields: []model.FieldChange{
+			{Field: "revision", From: "0", To: "1"},
+			{Field: "dependencies", From: "lib:port:zlib", To: "lib:port:zstd"},
+		}},
+		{Port: "main-new", Kind: model.SubportAdded},
+		{Port: "main-old", Kind: model.SubportRemoved},
+	}, SubportChanges(&before, &after))
+	require.Equal(t, []model.SubportChange{{Port: "main", Kind: model.SubportAdded}, {Port: "main-devel", Kind: model.SubportAdded}, {Port: "main-new", Kind: model.SubportAdded}},
+		SubportChanges(nil, &after), "a directory new at the revision")
+}

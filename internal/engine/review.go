@@ -132,7 +132,7 @@ func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
 	}
 	report.Findings = append(report.Findings, portfiles...)
 	base, head := model.ObjectID(trees[report.Base]), model.ObjectID(trees[report.Head])
-	found, made, err := e.makeAssessments(ctx, "", model.ObjectID(report.Base), base, head, changed, nil)
+	found, made, err := e.makeAssessments(ctx, "", model.ObjectID(report.Base), base, head, changed, nil, nil)
 	if err != nil {
 		report.UpstreamUnread = err.Error()
 	}

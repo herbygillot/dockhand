@@ -48,61 +48,12 @@ func (p *evaluatedPorts) nativePlatform(ctx context.Context) (model.Platform, er
 	return p.native, p.nativeErr
 }
 
-func (p *evaluatedPorts) Ports(ctx context.Context, source model.Source, directory string, environment model.Environment, variants map[string]bool) (_ []macports.PortInfo, err error) {
-	files, done, err := p.workspaces.Acquire(ctx, p.repo, source)
+func (p *evaluatedPorts) Ports(ctx context.Context, source model.Source, directory string, environment model.Environment, variants map[string]bool) ([]macports.PortInfo, error) {
+	snapshot, err := p.family(ctx, source, directory, environment, variants)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { err = errors.Join(err, done()) }()
-	if err := files.EnsurePort(ctx, model.Target{Portfile: directory + "/Portfile"}); err != nil {
-		return nil, err
-	}
-	// MacPorts runs as this Mac's release. Another release is modelled in
-	// its session, as the oracle's contexts are, its developer tools from
-	// the facts table (decision 7), and so is this Mac's own where the
-	// environment states its tools, which needn't be this Mac's. The
-	// directory's main port is found natively, and its subports come from
-	// the modelled evaluation.
-	native, err := p.nativePlatform(ctx)
-	if err != nil {
-		return nil, err
-	}
-	platform := environment.Platform
-	session := platform
-	modelled := platform != (model.Platform{}) && platform != native || environment.DeveloperTools != ""
-	if modelled {
-		session = model.Platform{}
-		if platform == (model.Platform{}) {
-			platform = native
-		}
-	}
-	tree, err := files.Tree(session)
-	if err != nil {
-		return nil, err
-	}
-	targets, err := p.ports.Resolve(ctx, tree, macports.Selection{Selector: directory, Variants: variants})
-	if err != nil {
-		return nil, fmt.Errorf("evaluating %s: %w", directory, err)
-	}
-	if len(targets) == 0 {
-		return nil, fmt.Errorf("evaluating %s: it defines no port", directory)
-	}
-	bound, err := files.Context(targets[0], session)
-	if err != nil {
-		return nil, err
-	}
-	var snapshot macports.Snapshot
-	if modelled {
-		var observation macports.Observation
-		observation, err = p.ports.Observe(ctx, bound, macports.ObservationRequest{Platform: platform, DeveloperTools: environment.DeveloperTools})
-		snapshot = observation.Snapshot
-	} else {
-		snapshot, err = p.ports.Evaluate(ctx, bound)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("evaluating %s: %w", directory, err)
-	}
-	main := targets[0].Name
+	main := snapshot.Target.Name
 	var ports []macports.PortInfo
 	if info, ok := snapshot.Ports[main]; ok {
 		ports = append(ports, info)
@@ -118,6 +69,72 @@ func (p *evaluatedPorts) Ports(ctx context.Context, source model.Source, directo
 		ports = append(ports, snapshot.Ports[name])
 	}
 	return ports, nil
+}
+
+// Family is a directory's evaluation in this Mac's own context, with its
+// defaults, every subport and the root it was evaluated in, which a
+// change record compares.
+func (p *evaluatedPorts) Family(ctx context.Context, source model.Source, directory string) (macports.Snapshot, error) {
+	return p.family(ctx, source, directory, model.Environment{}, nil)
+}
+
+// family evaluates a directory as Ports reads it, its main port the
+// snapshot's target.
+func (p *evaluatedPorts) family(ctx context.Context, source model.Source, directory string, environment model.Environment, variants map[string]bool) (_ macports.Snapshot, err error) {
+	files, done, err := p.workspaces.Acquire(ctx, p.repo, source)
+	if err != nil {
+		return macports.Snapshot{}, err
+	}
+	defer func() { err = errors.Join(err, done()) }()
+	if err := files.EnsurePort(ctx, model.Target{Portfile: directory + "/Portfile"}); err != nil {
+		return macports.Snapshot{}, err
+	}
+	// MacPorts runs as this Mac's release. Another release is modelled in
+	// its session, as the oracle's contexts are, its developer tools from
+	// the facts table (decision 7), and so is this Mac's own where the
+	// environment states its tools, which needn't be this Mac's. The
+	// directory's main port is found natively, and its subports come from
+	// the modelled evaluation.
+	native, err := p.nativePlatform(ctx)
+	if err != nil {
+		return macports.Snapshot{}, err
+	}
+	platform := environment.Platform
+	session := platform
+	modelled := platform != (model.Platform{}) && platform != native || environment.DeveloperTools != ""
+	if modelled {
+		session = model.Platform{}
+		if platform == (model.Platform{}) {
+			platform = native
+		}
+	}
+	tree, err := files.Tree(session)
+	if err != nil {
+		return macports.Snapshot{}, err
+	}
+	targets, err := p.ports.Resolve(ctx, tree, macports.Selection{Selector: directory, Variants: variants})
+	if err != nil {
+		return macports.Snapshot{}, fmt.Errorf("evaluating %s: %w", directory, err)
+	}
+	if len(targets) == 0 {
+		return macports.Snapshot{}, fmt.Errorf("evaluating %s: it defines no port", directory)
+	}
+	bound, err := files.Context(targets[0], session)
+	if err != nil {
+		return macports.Snapshot{}, err
+	}
+	var snapshot macports.Snapshot
+	if modelled {
+		var observation macports.Observation
+		observation, err = p.ports.Observe(ctx, bound, macports.ObservationRequest{Platform: platform, DeveloperTools: environment.DeveloperTools})
+		snapshot = observation.Snapshot
+	} else {
+		snapshot, err = p.ports.Evaluate(ctx, bound)
+	}
+	if err != nil {
+		return macports.Snapshot{}, fmt.Errorf("evaluating %s: %w", directory, err)
+	}
+	return snapshot, nil
 }
 
 func (p *evaluatedPorts) Directory(ctx context.Context, source model.Source, name string) (_ string, err error) {

@@ -69,7 +69,11 @@ func (e *Engine) revisionAssessments(ctx context.Context, branch model.BranchID,
 	if !collect {
 		return recorded, nil
 	}
-	found, made, err := e.makeAssessments(ctx, branch, base, baseTree, tree, changed, recorded)
+	records, err := e.revisionChanges(ctx, branch, base, tree, true)
+	if err != nil {
+		return nil, err
+	}
+	found, made, err := e.makeAssessments(ctx, branch, base, baseTree, tree, changed, recorded, records)
 	switch {
 	case errors.Is(err, errNoPlanner):
 		// Only an engine given no evaluator can't plan archives: it
@@ -133,9 +137,11 @@ func (e *Engine) archivePlanner() (ArchivePlanner, error) {
 // paths change, against its base, recording none: those recorded that
 // apply are found, and the rest made, an incomplete one made again where
 // another try may meet what kept it so; errNoPlanner where the engine,
-// given no evaluator, can't plan archives. Review assesses a pull request
-// this way, which no branch records.
-func (e *Engine) makeAssessments(ctx context.Context, branch model.BranchID, base, baseTree, tree model.ObjectID, changed []string, recorded []model.Assessment) (found, made []model.Assessment, err error) {
+// given no evaluator, can't plan archives. Only the subports the
+// revision's change records say it changes are assessed, every one of a
+// directory with no record. Review assesses a pull request this way,
+// which no branch records, by its text.
+func (e *Engine) makeAssessments(ctx context.Context, branch model.BranchID, base, baseTree, tree model.ObjectID, changed []string, recorded []model.Assessment, records map[string]model.ChangeRecord) (found, made []model.Assessment, err error) {
 	have := func(port string) (model.Assessment, bool) {
 		i := slices.IndexFunc(recorded, func(a model.Assessment) bool { return a.Port == port })
 		if i < 0 {
@@ -182,6 +188,12 @@ func (e *Engine) makeAssessments(ctx context.Context, branch model.BranchID, bas
 			continue
 		}
 		for _, port := range ports {
+			// A subport the revision's record says it didn't change is no
+			// part of what upstream's change means: terraform-1.16's
+			// branch compared upstream for its 16 other subports.
+			if !recordedChange(records, directory, port.Name) {
+				continue
+			}
 			// One recorded incomplete for what another try may not meet, a
 			// network's failure or a forge's rate limit, is tried again.
 			if a, ok := have(port.Name); ok && !a.Comparison.Transient {
