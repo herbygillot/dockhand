@@ -2,6 +2,7 @@ package command
 
 import (
 	"bytes"
+	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"strings"
 	"testing"
 
@@ -29,4 +30,12 @@ func TestAnUnknownCommandIsRefused(t *testing.T) {
 	var out bytes.Buffer
 	err := Run(t.Context(), []string{"bump", "jq"}, Streams{In: strings.NewReader(""), Out: &out, Err: &out})
 	require.Error(t, err)
+}
+
+// The main help opens with dockhand's logo, as earlier generations' did,
+// and the build's version on the line under it.
+func TestTheHelpOpensWithTheLogoAndTheVersion(t *testing.T) {
+	out, _, err := dockhand(t, "--help")
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(out, logo+buildinfo.Current().String()+"\n\nAuthor, check, and submit changes to MacPorts ports.\n"), out)
 }
