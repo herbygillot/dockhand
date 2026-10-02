@@ -1,6 +1,6 @@
 package syntax
 
-import "github.com/herbygillot/dockhand/internal/text"
+import "github.com/herbygillot/dockhand/internal/textedit"
 
 // Expr is a node of a Tcl expression, the language of an if or while
 // condition and of expr's argument. The tree gives a reader the shape of a
@@ -9,12 +9,12 @@ import "github.com/herbygillot/dockhand/internal/text"
 type Expr interface{ expr() }
 
 // Number is a numeric literal.
-type Number struct{ Span text.Span }
+type Number struct{ Span textedit.Span }
 
 // Text is a quoted or braced operand. Its Word carries the segments, so a
 // quoted string's substitutions are reachable and a braced one has none.
 type Text struct {
-	Span text.Span
+	Span textedit.Span
 	Word Word
 }
 
@@ -25,25 +25,25 @@ type Variable struct{ VarSub }
 type Call struct{ CmdSub }
 
 // Bareword is one of Tcl's boolean words: true, false, yes, no, on, off.
-type Bareword struct{ Span text.Span }
+type Bareword struct{ Span textedit.Span }
 
 // Unary is ! - or + applied to an operand.
 type Unary struct {
-	Span text.Span
+	Span textedit.Span
 	Op   string
 	X    Expr
 }
 
 // Binary is an operator between two operands.
 type Binary struct {
-	Span text.Span
+	Span textedit.Span
 	Op   string
 	L, R Expr
 }
 
 // Group is a parenthesized expression.
 type Group struct {
-	Span text.Span
+	Span textedit.Span
 	X    Expr
 }
 
@@ -57,7 +57,7 @@ func (Binary) expr()   {}
 func (Group) expr()    {}
 
 // ExprSpan is the source span of a node.
-func ExprSpan(e Expr) text.Span {
+func ExprSpan(e Expr) textedit.Span {
 	switch e := e.(type) {
 	case Number:
 		return e.Span
@@ -104,7 +104,7 @@ var ComparisonOps = map[string]bool{"<": true, ">": true, "<=": true, ">=": true
 // where Tcl would, and ExprUnsupported for the forms this parser does not
 // model, the ternary, the bitwise and shift operators, exponentiation, and
 // function calls, so a reader refuses them rather than misreading them.
-func ParseExpr(src []byte, window text.Span) (Expr, []Error) {
+func ParseExpr(src []byte, window textedit.Span) (Expr, []Error) {
 	p := &exprParser{parser: parser{src: src, pos: window.Start, end: window.End}}
 	e := p.or()
 	p.skip()
@@ -339,7 +339,7 @@ func ExprVariables(src []byte, e Expr) []VarSub {
 // its one braced word's body or the span across its bare words, since Tcl
 // joins those before evaluating. Every other word of every command is
 // text, substitutions, or a body.
-func (c Command) Expressions(src []byte) []text.Span {
+func (c Command) Expressions(src []byte) []textedit.Span {
 	name, _ := c.Name(src)
 	switch name {
 	case "if", "while", "for":
@@ -347,7 +347,7 @@ func (c Command) Expressions(src []byte) []text.Span {
 		if !ok {
 			return nil
 		}
-		var windows []text.Span
+		var windows []textedit.Span
 		for _, control := range controls {
 			windows = append(windows, control.Inner())
 		}
@@ -355,9 +355,9 @@ func (c Command) Expressions(src []byte) []text.Span {
 	case "expr":
 		switch {
 		case len(c.Words) == 2:
-			return []text.Span{c.Words[1].Inner()}
+			return []textedit.Span{c.Words[1].Inner()}
 		case len(c.Words) > 2:
-			return []text.Span{{Start: c.Words[1].Span.Start, End: c.Words[len(c.Words)-1].Span.End}}
+			return []textedit.Span{{Start: c.Words[1].Span.Start, End: c.Words[len(c.Words)-1].Span.End}}
 		}
 	}
 	return nil
@@ -365,7 +365,7 @@ func (c Command) Expressions(src []byte) []text.Span {
 
 // Covered reports whether the word lies in one of the windows, as a
 // condition does in its own body or expr's bare words in their span.
-func (w Word) Covered(windows []text.Span) bool {
+func (w Word) Covered(windows []textedit.Span) bool {
 	for _, window := range windows {
 		if (window.Start <= w.Span.Start && w.Span.End <= window.End) || w.Inner() == window {
 			return true
@@ -399,7 +399,7 @@ func (c Command) Reads(src []byte) []VarSub {
 	return reads
 }
 
-func readsIn(src []byte, window text.Span) []VarSub {
+func readsIn(src []byte, window textedit.Span) []VarSub {
 	if e, errs := ParseExpr(src, window); len(errs) == 0 {
 		return ExprVariables(src, e)
 	}

@@ -10,7 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/text"
+	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
 // Assessment describes preparation evidence, not whether a port will build.
@@ -151,7 +151,7 @@ func (p *VersionProbe) Assess(ctx context.Context, release *model.Release) (Asse
 		add("version-input", "Literal input candidates found; a specific release still needs edit-fidelity checks", err)
 		if err == nil {
 			for _, carrier := range p.carriers {
-				line, col := text.Position(p.input.data, carrier.candidate.Span.Start)
+				line, col := textedit.Position(p.input.data, carrier.candidate.Span.Start)
 				a.Inputs = append(a.Inputs, VersionInput{Line: line, Column: col, Value: carrier.candidate.Value})
 			}
 		}

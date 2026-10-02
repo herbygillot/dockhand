@@ -1,6 +1,6 @@
 package syntax
 
-import "github.com/herbygillot/dockhand/internal/text"
+import "github.com/herbygillot/dockhand/internal/textedit"
 
 // TokenRuns lists the runs of sibling tokens at every depth. A command
 // contributes its words as one run. A braced word contributes the runs of
@@ -13,11 +13,11 @@ import "github.com/herbygillot/dockhand/internal/text"
 //
 // Tokens are spans of the source, so a caller can compare them, count them,
 // and edit in place.
-func (s *Script) TokenRuns(src []byte) [][]text.Span {
-	var runs [][]text.Span
+func (s *Script) TokenRuns(src []byte) [][]textedit.Span {
+	var runs [][]textedit.Span
 	var script func(*Script)
 	var segments func([]Segment)
-	var window func(text.Span)
+	var window func(textedit.Span)
 	segments = func(segs []Segment) {
 		for _, segment := range segs {
 			switch value := segment.(type) {
@@ -28,7 +28,7 @@ func (s *Script) TokenRuns(src []byte) [][]text.Span {
 			}
 		}
 	}
-	window = func(body text.Span) {
+	window = func(body textedit.Span) {
 		if nested, errs := ParseScript(src, body); len(errs) == 0 {
 			script(nested)
 			return
@@ -37,7 +37,7 @@ func (s *Script) TokenRuns(src []byte) [][]text.Span {
 		if len(errs) != 0 {
 			return
 		}
-		var run []text.Span
+		var run []textedit.Span
 		for _, element := range elements {
 			if element.Len() >= 2 && src[element.Start] == '{' && src[element.End-1] == '}' {
 				window(span(element.Start+1, element.End-1))
@@ -58,7 +58,7 @@ func (s *Script) TokenRuns(src []byte) [][]text.Span {
 			if !ok {
 				continue
 			}
-			var run []text.Span
+			var run []textedit.Span
 			for _, word := range cmd.Words {
 				if !word.Expand && len(word.Segments) == 1 {
 					switch segment := word.Segments[0].(type) {

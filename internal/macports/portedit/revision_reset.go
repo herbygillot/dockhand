@@ -7,7 +7,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
-	"github.com/herbygillot/dockhand/internal/text"
+	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
 func (s *Service) resetRevision(ctx context.Context, request Request, input *sourceInput, contents []byte) ([]byte, error) {
@@ -15,7 +15,7 @@ func (s *Service) resetRevision(ctx context.Context, request Request, input *sou
 	if err != nil {
 		return nil, err
 	}
-	edits := map[text.Span]text.Edit{}
+	edits := map[textedit.Span]textedit.Edit{}
 	selectedVersion := ""
 	for _, profile := range profiles {
 		mode := macports.ObservationRequest{Platform: profile, Declarations: true}
@@ -48,16 +48,16 @@ func (s *Service) resetRevision(ctx context.Context, request Request, input *sou
 			edits[edit.Span] = edit
 		}
 	}
-	replacements := make([]text.Edit, 0, len(edits))
+	replacements := make([]textedit.Edit, 0, len(edits))
 	for _, edit := range edits {
 		replacements = append(replacements, edit)
 	}
 	// Full context and sibling fidelity is checked after applying the complete
 	// candidate, including shared revision declarations in protected releases.
-	return text.Apply(contents, replacements)
+	return textedit.Apply(contents, replacements)
 }
 
-func revisionReset(contents []byte, path string, info macports.PortInfo, events []macports.Declaration) (text.Edit, error) {
+func revisionReset(contents []byte, path string, info macports.PortInfo, events []macports.Declaration) (textedit.Edit, error) {
 	for i := len(events) - 1; i >= 0; i-- {
 		d := events[i]
 		if d.Command != "revision" {
@@ -65,14 +65,14 @@ func revisionReset(contents []byte, path string, info macports.PortInfo, events 
 		}
 		cmd, err := portfile.LocateDeclaration(contents, path, d)
 		if err != nil {
-			return text.Edit{}, err
+			return textedit.Edit{}, err
 		}
 		if len(cmd.Words) != 2 {
-			return text.Edit{}, fmt.Errorf("%w: revision is not a literal", ErrUnsupported)
+			return textedit.Edit{}, fmt.Errorf("%w: revision is not a literal", ErrUnsupported)
 		}
 		value, literal := cmd.Words[1].Literal(contents)
 		if literal && value == strconv.Itoa(info.Revision) {
-			return text.Edit{Span: cmd.Words[1].Span, New: []byte("0")}, nil
+			return textedit.Edit{Span: cmd.Words[1].Span, New: []byte("0")}, nil
 		}
 		// A calculated revision, as the qt family reads from its module
 		// table, is owned by the one place the Portfile writes it as the
@@ -80,10 +80,10 @@ func revisionReset(contents []byte, path string, info macports.PortInfo, events 
 		// a table is refreshed at its one literal.
 		if !literal {
 			if span, ok := portfile.UniqueLiteral(contents, "revision "+strconv.Itoa(info.Revision)); ok {
-				return text.Edit{Span: span, New: []byte("revision 0")}, nil
+				return textedit.Edit{Span: span, New: []byte("revision 0")}, nil
 			}
 		}
-		return text.Edit{}, fmt.Errorf("%w: revision is calculated or overridden", ErrUnsupported)
+		return textedit.Edit{}, fmt.Errorf("%w: revision is calculated or overridden", ErrUnsupported)
 	}
-	return text.Edit{}, fmt.Errorf("%w: nonzero revision has no editable declaration", ErrUnsupported)
+	return textedit.Edit{}, fmt.Errorf("%w: nonzero revision has no editable declaration", ErrUnsupported)
 }

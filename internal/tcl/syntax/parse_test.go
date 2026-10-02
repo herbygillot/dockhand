@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
-	"github.com/herbygillot/dockhand/internal/text"
+	"github.com/herbygillot/dockhand/internal/textedit"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,7 +25,7 @@ func parse(t *testing.T, source []byte) *syntax.Script {
 	script, errs := syntax.Parse(source)
 	require.Empty(t, errs, "Parse(%q): %v", source, errs)
 
-	checkScript(t, source, script, text.Span{End: len(source)})
+	checkScript(t, source, script, textedit.Span{End: len(source)})
 	return script
 }
 
@@ -39,7 +39,7 @@ func commands(script *syntax.Script) []syntax.Command {
 	return result
 }
 
-func wantText(t *testing.T, source []byte, span text.Span, want string) {
+func wantText(t *testing.T, source []byte, span textedit.Span, want string) {
 	t.Helper()
 	got := span.Text(source)
 	require.Equal(t, want, got, "source[%d:%d] = %q, want %q", span.Start, span.End, got, want)
@@ -161,7 +161,7 @@ func TestParseWindowsAndErrorRecovery(t *testing.T) {
 		t.Run(test.kind.String(), func(t *testing.T) {
 			prefix := "outside\n"
 			source := []byte(prefix + test.body + " } ] \" suffix")
-			window := text.Span{Start: len(prefix), End: len(prefix) + len(test.body)}
+			window := textedit.Span{Start: len(prefix), End: len(prefix) + len(test.body)}
 			script, errs := syntax.ParseScript(source, window)
 			require.Len(t, errs, 1, "diagnostics: %v", errs)
 			require.Equal(t, test.kind, errs[0].Type, "diagnostics: %v", errs)

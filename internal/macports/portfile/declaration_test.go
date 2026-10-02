@@ -5,7 +5,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
-	"github.com/herbygillot/dockhand/internal/text"
+	"github.com/herbygillot/dockhand/internal/textedit"
 	"github.com/stretchr/testify/require"
 )
 
@@ -53,11 +53,11 @@ variant other description {other} {
 	}
 	cmd, err := portfile.LocateDeclaration(src, "/tree/devel/observed/Portfile", declared("doc", "checksums-append    b.tar.gz  sha256  bbbb  size    3"))
 	require.NoError(t, err)
-	line, _ := text.Position(src, cmd.Span.Start)
+	line, _ := textedit.Position(src, cmd.Span.Start)
 	require.Equal(t, 7, line, "doc's own, not other's of the same text")
 	cmd, err = portfile.LocateDeclaration(src, "/tree/devel/observed/Portfile", declared("other", "checksums-append    b.tar.gz  sha256  bbbb  size    3"))
 	require.NoError(t, err)
-	line, _ = text.Position(src, cmd.Span.Start)
+	line, _ = textedit.Position(src, cmd.Span.Start)
 	require.Equal(t, 13, line)
 
 	_, err = portfile.LocateDeclaration(src, "/tree/devel/observed/Portfile", declared("doc", "add_docs b.tar.gz"))

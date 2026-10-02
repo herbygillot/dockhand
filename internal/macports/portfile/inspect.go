@@ -7,7 +7,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
-	"github.com/herbygillot/dockhand/internal/text"
+	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
 // A conservative inspection of a Portfile's source: what it can prove from
@@ -91,7 +91,7 @@ func withoutRevisions(src []byte) ([]byte, bool) {
 	if len(errs) > 0 {
 		return nil, false
 	}
-	var edits []text.Edit
+	var edits []textedit.Edit
 	commands(src, script, false, func(cmd syntax.Command, _ bool) {
 		if name, _ := cmd.Name(src); name != "revision" || len(cmd.Words) != 2 {
 			return
@@ -100,11 +100,11 @@ func withoutRevisions(src []byte) ([]byte, bool) {
 		start := bytes.LastIndexByte(src[:span.Start], '\n') + 1
 		end := span.End + bytes.IndexByte(append(src[span.End:], '\n'), '\n')
 		if len(bytes.TrimSpace(src[start:span.Start])) == 0 && len(bytes.TrimSpace(src[span.End:end])) == 0 {
-			span = text.Span{Start: start, End: min(end+1, len(src))}
+			span = textedit.Span{Start: start, End: min(end+1, len(src))}
 		}
-		edits = append(edits, text.Edit{Span: span})
+		edits = append(edits, textedit.Edit{Span: span})
 	})
-	out, err := text.Apply(src, edits)
+	out, err := textedit.Apply(src, edits)
 	return out, err == nil
 }
 
@@ -231,7 +231,7 @@ func DeclaredRevision(src []byte) (value string, line int, ok bool) {
 	if !ok || !Literal(value) {
 		return "", 0, false
 	}
-	line, _ = text.Position(src, last.Words[1].Span.Start)
+	line, _ = textedit.Position(src, last.Words[1].Span.Start)
 	return value, line, true
 }
 

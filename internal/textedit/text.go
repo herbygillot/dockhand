@@ -1,4 +1,4 @@
-package text
+package textedit
 
 type Span struct {
 	Start int

@@ -3,7 +3,7 @@ package syntax
 import (
 	"strings"
 
-	"github.com/herbygillot/dockhand/internal/text"
+	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
 // Direct lists the script's own commands, without descending into bodies.
@@ -72,7 +72,7 @@ func plainSegments(segments []Segment) bool {
 // Inner is the span of the word's content inside one layer of braces or
 // quotes when the word is exactly one braced or quoted segment, and the
 // word's own span otherwise.
-func (w Word) Inner() text.Span {
+func (w Word) Inner() textedit.Span {
 	if w.Expand || len(w.Segments) != 1 {
 		return w.Span
 	}
@@ -80,7 +80,7 @@ func (w Word) Inner() text.Span {
 	case Braced:
 		return segment.Body
 	case Quoted:
-		return text.Span{Start: segment.Span.Start + 1, End: segment.Span.End - 1}
+		return textedit.Span{Start: segment.Span.Start + 1, End: segment.Span.End - 1}
 	}
 	return w.Span
 }

@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/herbygillot/dockhand/internal/text"
+	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
 // ModernChecksumKinds is the layout MacPorts writes today, in the order
@@ -32,7 +32,7 @@ func LegacyChecksums(kinds []string) bool {
 
 // ChecksumWords locates one algorithm and its value as written.
 type ChecksumWords struct {
-	Kind, Value text.Span
+	Kind, Value textedit.Span
 }
 
 func (c Checksum) modern() []string {
@@ -50,9 +50,9 @@ func (c Checksum) modern() []string {
 // the line continuation between pairs. A group written as a single pair continues
 // onto new lines aligned under its first algorithm. It returns the edit
 // and the evaluated words the group will then produce.
-func RewriteChecksumGroup(src []byte, pairs []ChecksumWords, sums Checksum) (text.Edit, []string) {
+func RewriteChecksumGroup(src []byte, pairs []ChecksumWords, sums Checksum) (textedit.Edit, []string) {
 	first, last := pairs[0], pairs[len(pairs)-1]
-	span := text.Span{Start: first.Kind.Start, End: last.Value.End}
+	span := textedit.Span{Start: first.Kind.Start, End: last.Value.End}
 	// Values aligned in a column wider than the first algorithm needs keep
 	// that column; otherwise one space separates each algorithm from its value.
 	column := first.Value.Start - first.Kind.Start
@@ -82,7 +82,7 @@ func RewriteChecksumGroup(src []byte, pairs []ChecksumWords, sums Checksum) (tex
 		out.WriteString(strings.Repeat(" ", max(1, column-len(values[i]))))
 		out.WriteString(values[i+1])
 	}
-	return text.Edit{Span: span, New: []byte(out.String())}, values
+	return textedit.Edit{Span: span, New: []byte(out.String())}, values
 }
 
 var ErrUnsupported = errors.New("portfile: unsupported source edit")

@@ -1,22 +1,22 @@
 package syntax
 
-import "github.com/herbygillot/dockhand/internal/text"
+import "github.com/herbygillot/dockhand/internal/textedit"
 
-func span(start, end int) text.Span { return text.Span{Start: start, End: end} }
+func span(start, end int) textedit.Span { return textedit.Span{Start: start, End: end} }
 
 type Script struct {
-	Span  text.Span
+	Span  textedit.Span
 	Items []Item
 }
 
 type Item interface{ item() }
 
 type Comment struct {
-	Span text.Span
+	Span textedit.Span
 }
 
 type Command struct {
-	Span  text.Span
+	Span  textedit.Span
 	Words []Word
 }
 
@@ -24,7 +24,7 @@ func (Comment) item() {}
 func (Command) item() {}
 
 type Word struct {
-	Span     text.Span
+	Span     textedit.Span
 	Expand   bool
 	Segments []Segment
 }
@@ -32,28 +32,28 @@ type Word struct {
 type Segment interface{ segment() }
 
 type Literal struct {
-	Span text.Span
+	Span textedit.Span
 }
 
 type VarSub struct {
-	Span     text.Span
-	Name     text.Span
-	Index    text.Span
+	Span     textedit.Span
+	Name     textedit.Span
+	Index    textedit.Span
 	HasIndex bool
 }
 
 type CmdSub struct {
-	Span   text.Span
+	Span   textedit.Span
 	Script *Script
 }
 
 type Braced struct {
-	Span text.Span
-	Body text.Span
+	Span textedit.Span
+	Body textedit.Span
 }
 
 type Quoted struct {
-	Span     text.Span
+	Span     textedit.Span
 	Segments []Segment
 }
 

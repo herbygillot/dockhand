@@ -11,7 +11,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
-	"github.com/herbygillot/dockhand/internal/text"
+	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
 // Origin says where a pre-fetch hook was written: the Portfile or a
@@ -84,8 +84,8 @@ func (r refusal) where(hook string, origin Origin) string {
 	line := origin.Line
 	if body, ok := hookBody(hook); ok && r.at >= 0 {
 		src := []byte(body)
-		offending, _ := text.Position(src, r.at)
-		lead, _ := text.Position(src, len(body)-len(strings.TrimLeft(body, " \t\r\n")))
+		offending, _ := textedit.Position(src, r.at)
+		lead, _ := textedit.Position(src, len(body)-len(strings.TrimLeft(body, " \t\r\n")))
 		line += offending - lead
 	}
 	if origin.Label == "Portfile" {
@@ -268,7 +268,7 @@ var hostReadCommands = map[string]func(args []string) bool{
 	"info":   func(args []string) bool { return len(args) == 2 && args[0] == "exists" },
 }
 
-func pureConditionReason(src []byte, body text.Span, defs Definitions) refusal {
+func pureConditionReason(src []byte, body textedit.Span, defs Definitions) refusal {
 	e, errs := syntax.ParseExpr(src, body)
 	if len(errs) != 0 {
 		return refuse(body.Start, "has a condition that does not parse as an expression: `%s`", snippet(src, body))
@@ -378,7 +378,7 @@ func goToolchainReason(src []byte, commands []syntax.Command) refusal {
 
 // snippet is one line of source for a message: whitespace collapsed and cut
 // at sixty characters.
-func snippet(src []byte, span text.Span) string {
+func snippet(src []byte, span textedit.Span) string {
 	line := strings.Join(strings.Fields(span.Text(src)), " ")
 	if len(line) > 60 {
 		line = line[:57] + "..."

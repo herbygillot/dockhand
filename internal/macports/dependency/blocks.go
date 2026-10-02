@@ -12,7 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
-	"github.com/herbygillot/dockhand/internal/text"
+	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
 const Go = "go.vendors"
@@ -272,7 +272,7 @@ func (p *Plan) Apply(src []byte, values map[string][]string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	var edits []text.Edit
+	var edits []textedit.Edit
 	for name, tokens := range values {
 		before, existed, err := pick(original, p.which, name)
 		if err != nil {
@@ -283,10 +283,10 @@ func (p *Plan) Apply(src []byte, values map[string][]string) ([]byte, error) {
 			return nil, err
 		}
 		if existed && present && Equivalent(name, p.Values[name], tokens) {
-			edits = append(edits, text.Edit{Span: after.Span, New: []byte(before.Span.Text(p.source))})
+			edits = append(edits, textedit.Edit{Span: after.Span, New: []byte(before.Span.Text(p.source))})
 		}
 	}
-	return text.Apply(out, edits)
+	return textedit.Apply(out, edits)
 }
 
 // Apply writes plain single-space rows; Plan.Apply follows an existing layout.
@@ -299,7 +299,7 @@ func apply(src []byte, values map[string][]string, layouts map[string]*blockLayo
 	if err != nil {
 		return nil, err
 	}
-	var edits []text.Edit
+	var edits []textedit.Edit
 	var added []byte
 	for _, name := range []string{Go, Cargo, CargoGit} {
 		tokens, ok := values[name]
@@ -331,12 +331,12 @@ func apply(src []byte, values map[string][]string, layouts map[string]*blockLayo
 			return nil, err
 		}
 		if found {
-			edits = append(edits, text.Edit{Span: cmd.Span, New: []byte(body)})
+			edits = append(edits, textedit.Edit{Span: cmd.Span, New: []byte(body)})
 		} else if len(tokens) > 0 {
 			added = append(added, []byte("\n"+body+"\n")...)
 		}
 	}
-	out, err := text.Apply(src, edits)
+	out, err := textedit.Apply(src, edits)
 	if err != nil {
 		return nil, err
 	}

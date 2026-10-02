@@ -1,12 +1,12 @@
 package syntax
 
-import "github.com/herbygillot/dockhand/internal/text"
+import "github.com/herbygillot/dockhand/internal/textedit"
 
 func Parse(src []byte) (*Script, []Error) {
 	return ParseScript(src, span(0, len(src)))
 }
 
-func ParseScript(src []byte, window text.Span) (*Script, []Error) {
+func ParseScript(src []byte, window textedit.Span) (*Script, []Error) {
 	p := &parser{src: src, pos: window.Start, end: window.End}
 	s := p.script()
 	s.Span = window
@@ -25,7 +25,7 @@ type parser struct {
 	errs []Error
 }
 
-func (p *parser) addError(sp text.Span, typ ErrorType) {
+func (p *parser) addError(sp textedit.Span, typ ErrorType) {
 	p.errs = append(p.errs, Error{Type: typ, Span: sp})
 }
 

@@ -4,18 +4,18 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
-	"github.com/herbygillot/dockhand/internal/text"
+	"github.com/herbygillot/dockhand/internal/textedit"
 	"github.com/stretchr/testify/require"
 )
 
-func checkSpan(t *testing.T, span, parent text.Span) {
+func checkSpan(t *testing.T, span, parent textedit.Span) {
 	t.Helper()
 	require.GreaterOrEqual(t, span.Start, parent.Start, "span %+v outside %+v", span, parent)
 	require.GreaterOrEqual(t, span.End, span.Start, "span %+v outside %+v", span, parent)
 	require.LessOrEqual(t, span.End, parent.End, "span %+v outside %+v", span, parent)
 }
 
-func checkScript(t *testing.T, source []byte, script *syntax.Script, parent text.Span) {
+func checkScript(t *testing.T, source []byte, script *syntax.Script, parent textedit.Span) {
 	t.Helper()
 	require.NotNil(t, script, "nil script")
 
@@ -44,7 +44,7 @@ func checkScript(t *testing.T, source []byte, script *syntax.Script, parent text
 	}
 }
 
-func checkSegments(t *testing.T, source []byte, segments []syntax.Segment, parent text.Span) {
+func checkSegments(t *testing.T, source []byte, segments []syntax.Segment, parent textedit.Span) {
 	t.Helper()
 	end := parent.Start
 	for _, segment := range segments {
@@ -77,7 +77,7 @@ func FuzzParse(f *testing.F) {
 		if len(source) > 4096 {
 			t.Skip()
 		}
-		window := text.Span{End: len(source)}
+		window := textedit.Span{End: len(source)}
 		script, errs := syntax.Parse(source)
 		checkScript(t, source, script, window)
 		for _, err := range errs {
@@ -103,7 +103,7 @@ func FuzzSplitList(f *testing.F) {
 		if len(source) > 4096 {
 			t.Skip()
 		}
-		window := text.Span{End: len(source)}
+		window := textedit.Span{End: len(source)}
 		elements, errs := syntax.SplitList(source, window)
 		end := window.Start
 		for _, element := range elements {

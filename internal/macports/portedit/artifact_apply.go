@@ -18,12 +18,12 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/progress"
-	"github.com/herbygillot/dockhand/internal/text"
+	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
 func (s *Service) applyObservedArchives(ctx context.Context, request Request, input *sourceInput, plan archivePlan, store *archives.Store) (Result, error) {
 	result := plan.result
-	updates := map[text.Span]checksumUpdate{}
+	updates := map[textedit.Span]checksumUpdate{}
 	var downloads []archives.Download
 	for _, item := range plan.observed.downloads {
 		progress.VerboseReport(ctx, "Refreshing %s", item.artifact.Name)
@@ -50,11 +50,11 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 		}
 		downloads = append(downloads, download)
 	}
-	var edits []text.Edit
+	var edits []textedit.Edit
 	for span, update := range updates {
-		edits = append(edits, text.Edit{Span: span, New: []byte(update.text)})
+		edits = append(edits, textedit.Edit{Span: span, New: []byte(update.text)})
 	}
-	contents, err := text.Apply(plan.contents, edits)
+	contents, err := textedit.Apply(plan.contents, edits)
 	if err != nil {
 		return result, err
 	}
@@ -110,7 +110,7 @@ type checksumUpdate struct {
 	values []string
 }
 
-func recordChecksumUpdate(updates map[text.Span]checksumUpdate, span text.Span, update checksumUpdate) error {
+func recordChecksumUpdate(updates map[textedit.Span]checksumUpdate, span textedit.Span, update checksumUpdate) error {
 	if previous, ok := updates[span]; ok && previous.text != update.text {
 		return fmt.Errorf("%w: contexts require different bytes for one checksum declaration", ErrFidelity)
 	}
@@ -121,7 +121,7 @@ func recordChecksumUpdate(updates map[text.Span]checksumUpdate, span text.Span, 
 // wantedChecksums is the checksums option a context evaluates to once the
 // updates apply: each group's name, then its rewritten words or its edited
 // values in written order.
-func wantedChecksums(binding distfiles.Binding, updates map[text.Span]checksumUpdate) []string {
+func wantedChecksums(binding distfiles.Binding, updates map[textedit.Span]checksumUpdate) []string {
 	var wanted []string
 	for _, group := range binding.Groups {
 		if group.Name != "" {

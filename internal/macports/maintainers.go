@@ -7,7 +7,7 @@ import (
 	"unicode"
 
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
-	"github.com/herbygillot/dockhand/internal/text"
+	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
 // The keywords a maintainers entry can be in place of a person, which name
@@ -104,7 +104,7 @@ func CheckMaintainers(line string) error {
 		}
 	}
 	src := []byte(line)
-	entries, failures := syntax.SplitList(src, text.Span{Start: 0, End: len(src)})
+	entries, failures := syntax.SplitList(src, textedit.Span{Start: 0, End: len(src)})
 	if len(failures) > 0 {
 		if failures[0].Type == syntax.ListUntermBrace {
 			return fmt.Errorf("%q leaves a group open", line)

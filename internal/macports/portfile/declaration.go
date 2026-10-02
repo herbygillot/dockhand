@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
-	"github.com/herbygillot/dockhand/internal/text"
+	"github.com/herbygillot/dockhand/internal/textedit"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -64,7 +64,7 @@ func LocateDeclaration(src []byte, path string, declaration macports.Declaration
 				if scopeName == strings.TrimPrefix(declaration.Command, "::") {
 					continue
 				}
-				line, _ := text.Position(src, scope.Span.Start)
+				line, _ := textedit.Position(src, scope.Span.Start)
 				if line != frame.Line || sourceCommand(scope.Span.Text(src)) != sourceCommand(frame.Command) {
 					continue
 				}
@@ -108,7 +108,7 @@ func locateInVariant(src []byte, commands []syntax.Command, declaration macports
 			return syntax.Command{}, true, fmt.Errorf("%w: variant %s makes the declaration through another procedure", ErrUnsupported, variant)
 		}
 		inner := sourceCommand(declaration.Frames[i+1].Command)
-		var bodies []text.Span
+		var bodies []textedit.Span
 		for _, cmd := range commands {
 			if command, _ := cmd.Name(src); command != "variant" || len(cmd.Words) < 3 {
 				continue
@@ -156,17 +156,17 @@ func RewriteLiteralDeclaration(contents []byte, command, old, next string) ([]by
 	if len(errs) > 0 {
 		return nil, fmt.Errorf("%w: invalid Portfile syntax", ErrUnsupported)
 	}
-	var edits []text.Edit
+	var edits []textedit.Edit
 	for cmd := range script.Commands(contents, func(syntax.Command) bool { return true }) {
 		if name, _ := cmd.Name(contents); name != command || len(cmd.Words) != 2 {
 			continue
 		}
 		if literal, ok := cmd.Words[1].Literal(contents); ok && literal == old && !cmd.Words[1].Expand {
-			edits = append(edits, text.Edit{Span: cmd.Words[1].Span, New: []byte(next)})
+			edits = append(edits, textedit.Edit{Span: cmd.Words[1].Span, New: []byte(next)})
 		}
 	}
 	if len(edits) != 1 {
 		return nil, fmt.Errorf("%w: %s is %s but no single literal declaration carries it", ErrUnsupported, command, old)
 	}
-	return text.Apply(contents, edits)
+	return textedit.Apply(contents, edits)
 }

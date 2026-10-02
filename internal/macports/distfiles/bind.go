@@ -5,7 +5,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
-	"github.com/herbygillot/dockhand/internal/text"
+	"github.com/herbygillot/dockhand/internal/textedit"
 	"net/url"
 	"slices"
 	"strings"
@@ -14,7 +14,7 @@ import (
 type Token struct {
 	Owner   string
 	Value   string
-	Span    text.Span
+	Span    textedit.Span
 	Literal bool
 	// Traced marks a value whose declaration word is not a literal but whose
 	// evaluated value has exactly one literal occurrence elsewhere in the
@@ -79,8 +79,8 @@ func (g Group) Traced() bool {
 }
 
 // Span covers the group's written pairs, first algorithm through last value.
-func (g Group) Span() text.Span {
-	return text.Span{Start: g.Pairs[0].Kind.Start, End: g.Pairs[len(g.Pairs)-1].Value.End}
+func (g Group) Span() textedit.Span {
+	return textedit.Span{Start: g.Pairs[0].Kind.Start, End: g.Pairs[len(g.Pairs)-1].Value.End}
 }
 
 type Artifact struct {

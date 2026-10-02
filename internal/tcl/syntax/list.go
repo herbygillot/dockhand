@@ -3,11 +3,11 @@ package syntax
 import (
 	"unicode/utf8"
 
-	"github.com/herbygillot/dockhand/internal/text"
+	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
-func SplitList(src []byte, window text.Span) ([]text.Span, []Error) {
-	var elems []text.Span
+func SplitList(src []byte, window textedit.Span) ([]textedit.Span, []Error) {
+	var elems []textedit.Span
 	var errs []Error
 	pos, end := window.Start, window.End
 
@@ -194,7 +194,7 @@ func stringsContainsByte(s string, b byte) bool {
 
 func ListValues(s string) ([]string, []Error) {
 	src := []byte(s)
-	elems, errs := SplitList(src, text.Span{Start: 0, End: len(src)})
+	elems, errs := SplitList(src, textedit.Span{Start: 0, End: len(src)})
 	if len(errs) != 0 {
 		return nil, errs
 	}
@@ -211,7 +211,7 @@ func DictValues(s string) (map[string]string, []Error) {
 		return nil, errs
 	}
 	if len(vals)%2 != 0 {
-		return nil, []Error{{Type: DictMissingValue, Span: text.Span{Start: 0, End: len(s)}}}
+		return nil, []Error{{Type: DictMissingValue, Span: textedit.Span{Start: 0, End: len(s)}}}
 	}
 	out := make(map[string]string, len(vals)/2)
 	for i := 0; i < len(vals); i += 2 {

@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
-	"github.com/herbygillot/dockhand/internal/text"
+	"github.com/herbygillot/dockhand/internal/textedit"
 	"github.com/stretchr/testify/require"
 )
 
@@ -69,7 +69,7 @@ func TestMalformedListsReturnDiagnosticsWithoutValues(t *testing.T) {
 		t.Run(test.source, func(t *testing.T) {
 			prefix := "ignored "
 			source := []byte(prefix + test.source + " }")
-			_, errs := syntax.SplitList(source, text.Span{Start: len(prefix), End: len(prefix) + len(test.source)})
+			_, errs := syntax.SplitList(source, textedit.Span{Start: len(prefix), End: len(prefix) + len(test.source)})
 			require.NotEmpty(t, errs, "diagnostic: %v", errs)
 			require.Equal(t, test.kind, errs[0].Type, "diagnostic: %v", errs)
 			require.Equal(t, len(prefix)+test.offset, errs[0].Span.Start, "diagnostic: %v", errs)

@@ -5,11 +5,11 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
-	"github.com/herbygillot/dockhand/internal/text"
+	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
 type Candidate struct {
-	Span  text.Span
+	Span  textedit.Span
 	Value string
 }
 
@@ -32,10 +32,10 @@ func Candidates(src []byte) ([]Candidate, error) {
 	}
 
 	var result []Candidate
-	seen := map[text.Span]bool{}
+	seen := map[textedit.Span]bool{}
 	var walk func(*syntax.Script, bool)
 	var word func(syntax.Word)
-	add := func(span text.Span) {
+	add := func(span textedit.Span) {
 		value := span.Text(src)
 		if Literal(value) && strings.ContainsAny(value, "0123456789") && !seen[span] {
 			seen[span] = true
@@ -109,7 +109,7 @@ func Candidates(src []byte) ([]Candidate, error) {
 }
 
 // trimSeparators is span without the version separators at either end.
-func trimSeparators(src []byte, span text.Span) text.Span {
+func trimSeparators(src []byte, span textedit.Span) textedit.Span {
 	for span.Start < span.End && strings.IndexByte("._-+", src[span.Start]) >= 0 {
 		span.Start++
 	}
@@ -123,7 +123,7 @@ func (c Candidate) Replace(src []byte, value string) ([]byte, error) {
 	if !Literal(value) {
 		return nil, fmt.Errorf("portfile: replacement is not a safe version literal")
 	}
-	return text.Apply(src, []text.Edit{{Span: c.Span, New: []byte(value)}})
+	return textedit.Apply(src, []textedit.Edit{{Span: c.Span, New: []byte(value)}})
 }
 
 func (c Candidate) Probe() string {

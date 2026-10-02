@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
-	"github.com/herbygillot/dockhand/internal/text"
+	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
 // The dist_subdir forms a stealth update writes: numbered for each one,
@@ -61,7 +61,7 @@ func StealthDistSubdir(src []byte, revbumped bool) ([]byte, DistSubdir, error) {
 		}
 		n, _ := strconv.Atoi(m[1])
 		next := fmt.Sprintf("${name}/${version}_%d", n+1)
-		out, err := text.Apply(src, []text.Edit{{Span: cmd.Words[1].Span, New: []byte(next)}})
+		out, err := textedit.Apply(src, []textedit.Edit{{Span: cmd.Words[1].Span, New: []byte(next)}})
 		return out, DistSubdir{Counter: n + 1}, err
 	}
 	newline := "\n"
@@ -87,7 +87,7 @@ func StealthDistSubdir(src []byte, revbumped bool) ([]byte, DistSubdir, error) {
 	if at == script.Span.End && at > 0 && src[at-1] == '\n' {
 		insert = line + newline
 	}
-	out, err := text.Apply(src, []text.Edit{{Span: text.Span{Start: at, End: at}, New: []byte(insert)}})
+	out, err := textedit.Apply(src, []textedit.Edit{{Span: textedit.Span{Start: at, End: at}, New: []byte(insert)}})
 	return out, form, err
 }
 
@@ -114,7 +114,7 @@ func RemoveStealthDistSubdir(src []byte) ([]byte, bool, error) {
 	if strings.TrimSpace(string(src[start:cmd.Span.Start])) != "" || strings.TrimSpace(string(src[cmd.Span.End:end])) != "" {
 		return src, false, nil
 	}
-	out, err := text.Apply(src, []text.Edit{{Span: text.Span{Start: start, End: end}}})
+	out, err := textedit.Apply(src, []textedit.Edit{{Span: textedit.Span{Start: start, End: end}}})
 	return out, err == nil, err
 }
 

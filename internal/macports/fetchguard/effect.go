@@ -5,7 +5,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
-	"github.com/herbygillot/dockhand/internal/text"
+	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
 // A definition is what the worker says a command a hook calls is: an
@@ -390,7 +390,7 @@ func switchReason(src []byte, command syntax.Command, defs Definitions, depth in
 
 // conditionEffectReason judges a braced condition by effect: it must parse
 // as an expression, and every command it substitutes must be harmless.
-func conditionEffectReason(src []byte, body text.Span, defs Definitions, depth int) refusal {
+func conditionEffectReason(src []byte, body textedit.Span, defs Definitions, depth int) refusal {
 	e, errs := syntax.ParseExpr(src, body)
 	if len(errs) != 0 {
 		return refuse(body.Start, "has a condition that does not parse as an expression: `%s`", snippet(src, body))

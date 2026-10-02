@@ -1,8 +1,8 @@
 package syntax
 
-import "github.com/herbygillot/dockhand/internal/text"
+import "github.com/herbygillot/dockhand/internal/textedit"
 
-func SpanOf(it Item) text.Span {
+func SpanOf(it Item) textedit.Span {
 	switch it := it.(type) {
 	case Command:
 		return it.Span
@@ -12,7 +12,7 @@ func SpanOf(it Item) text.Span {
 	panic("syntax: unknown item kind")
 }
 
-func SegmentSpan(s Segment) text.Span {
+func SegmentSpan(s Segment) textedit.Span {
 	switch s := s.(type) {
 	case Literal:
 		return s.Span

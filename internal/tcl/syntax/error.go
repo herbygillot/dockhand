@@ -3,7 +3,7 @@ package syntax
 import (
 	"fmt"
 
-	"github.com/herbygillot/dockhand/internal/text"
+	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
 type ErrorType int
@@ -70,7 +70,7 @@ func (t ErrorType) String() string {
 
 type Error struct {
 	Type ErrorType
-	Span text.Span
+	Span textedit.Span
 }
 
 func (e Error) Error() string {
@@ -78,6 +78,6 @@ func (e Error) Error() string {
 }
 
 func (e Error) Describe(src []byte) string {
-	line, col := text.Position(src, e.Span.Start)
+	line, col := textedit.Position(src, e.Span.Start)
 	return fmt.Sprintf("%d:%d: %s", line, col, e.Type)
 }

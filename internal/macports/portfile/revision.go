@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
-	"github.com/herbygillot/dockhand/internal/text"
+	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
 func BumpRevision(src []byte, subport string, current int) ([]byte, error) {
@@ -49,7 +49,7 @@ func BumpRevision(src []byte, subport string, current int) ([]byte, error) {
 		if !literal || err != nil || n != current {
 			return nil, fmt.Errorf("%w: revision expression does not have a matching literal", ErrUnsupported)
 		}
-		return text.Apply(src, []text.Edit{{Span: cmd.Words[1].Span, New: []byte(next)}})
+		return textedit.Apply(src, []textedit.Edit{{Span: cmd.Words[1].Span, New: []byte(next)}})
 	}
 	if subport == "" && current != 0 {
 		return nil, fmt.Errorf("%w: nonzero revision is set outside the supported scope", ErrUnsupported)
@@ -65,14 +65,14 @@ func BumpRevision(src []byte, subport string, current int) ([]byte, error) {
 			lineStart := bytes.LastIndexByte(src[:version.Span.Start], '\n') + 1
 			width := max(version.Words[1].Span.Start-lineStart, len("revision")+1)
 			line := "revision" + strings.Repeat(" ", width-len("revision")) + next
-			return text.Apply(src, []text.Edit{{Span: text.Span{Start: version.Span.End, End: version.Span.End}, New: []byte(newline + line)}})
+			return textedit.Apply(src, []textedit.Edit{{Span: textedit.Span{Start: version.Span.End, End: version.Span.End}, New: []byte(newline + line)}})
 		}
 	}
 	insert := newline + "revision                " + next + newline
 	if subport != "" {
 		insert = newline + "    revision            " + next + newline
 	}
-	return text.Apply(src, []text.Edit{{Span: text.Span{Start: script.Span.End, End: script.Span.End}, New: []byte(insert)}})
+	return textedit.Apply(src, []textedit.Edit{{Span: textedit.Span{Start: script.Span.End, End: script.Span.End}, New: []byte(insert)}})
 }
 
 // lastCommand is the last top-level command of the name.
