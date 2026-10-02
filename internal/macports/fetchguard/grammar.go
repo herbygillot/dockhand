@@ -6,6 +6,7 @@ package fetchguard
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -119,11 +120,13 @@ func classifyHook(info macports.PortInfo, hook string, defs Definitions) (guard 
 	name, _ := commands[0].Name(src)
 	switch {
 	case commands[0].Is(src, "global", "go.toolchain_unmet"):
-		if domain := info.Options["go.domain"]; domain != "github.com" {
+		// Recognized for the hosts go.setup fetches from, github.com
+		// alone until reposurgeon's gitlab.com (field testing, 2026-10-02).
+		if domain := info.Options["go.domain"]; !slices.Contains(macports.GoDomains, domain) {
 			if domain == "" {
 				domain = "unset"
 			}
-			return "", false, refuse(-1, "is the Go PortGroup's toolchain check, recognized only when go.domain is github.com; this port's is %s", domain)
+			return "", false, refuse(-1, "is the Go PortGroup's toolchain check, recognized only when go.domain is one go.setup fetches from (%s); this port's is %s", strings.Join(macports.GoDomains, ", "), domain)
 		}
 		return "Go toolchain compatibility guard", false, goToolchainReason(src, commands)
 	case name == "if":

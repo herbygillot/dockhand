@@ -15,6 +15,7 @@ import (
 // a branch master hasn't caught up with, or one that changes nothing,
 // isn't on master.
 func TestABranchWhoseChangesLandedIsOnMaster(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "duckdb-cxx14"})

@@ -123,6 +123,7 @@ func harborPorts() fakePorts {
 }
 
 func TestPlanFollowsCIsScopeOrderAndEligibility(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	revision := harborBranch(t, e)
@@ -166,6 +167,7 @@ func TestPlanFollowsCIsScopeOrderAndEligibility(t *testing.T) {
 }
 
 func TestAPlanThatCannotEvaluateIsUnresolved(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	revision := harborBranch(t, e)
@@ -195,6 +197,7 @@ func TestAPlanThatCannotEvaluateIsUnresolved(t *testing.T) {
 // settles who loads a PortGroup, through other PortGroups too; what it
 // can't settle counts as substantive.
 func TestChangedSharedCodeIsSubstantive(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	write(t, f.upstream, map[string]string{
 		"textproc/jq/Portfile":                           "PortGroup github 1.0\nname jq\nversion 1.7.1\nrevision 0\n",
@@ -269,6 +272,7 @@ func (p harborByPlatform) Ports(ctx context.Context, source model.Source, direct
 // guest blocks a target only on what it needs on its own platform. From
 // the 2026-09-25 implementation review.
 func TestEachPlatformKeepsItsOwnDependencies(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	revision := harborBranch(t, e)
@@ -353,6 +357,7 @@ func (p armOnlyViewer) Ports(ctx context.Context, source model.Source, directory
 // whichever environment defined it. (The architecture review of
 // 2026-09-27, finding 2.)
 func TestAPortAnEnvironmentDoesNotDefineIsNotBuiltThere(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	revision := harborBranch(t, e)
@@ -372,6 +377,7 @@ func TestAPortAnEnvironmentDoesNotDefineIsNotBuiltThere(t *testing.T) {
 // nothing of them (the ov run's finding 3). One whose test.run wasn't read
 // is left unsaid.
 func TestAPlanRecordsWhatDeclaresNoTests(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	revision := harborBranch(t, e)
@@ -393,6 +399,7 @@ func TestAPlanRecordsWhatDeclaresNoTests(t *testing.T) {
 // A port whose eligibility couldn't be read is unresolved, neither built
 // nor excluded; one excluded by its platforms is named for them.
 func TestAPlanKeepsAnUnreadEligibilityApart(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	revision := harborBranch(t, e)
@@ -458,6 +465,7 @@ func (p x86LacksDocs) Ports(ctx context.Context, source model.Source, directory 
 // check of more than one port, and GitHub's workflow, which builds
 // default variants alone, are refused (item 8).
 func TestVariantsBuildOnePortTheirWay(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	revision := harborBranch(t, e)

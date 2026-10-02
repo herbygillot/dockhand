@@ -1,6 +1,7 @@
 package git_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -54,7 +55,9 @@ func TestReplayRebasesWithoutACheckout(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, head, testsupport.Git(t, root, "rev-parse", "branch"), "no ref moves")
 	require.Equal(t, "a note\nc: new port\na: update", testsupport.Git(t, root, "log", "--format=%s", master+".."+replayed), "b's update, which master has, is dropped; the empty note is kept")
-	require.Equal(t, "Ada <ada@example.org> 2026-09-20T08:00:00Z|Dockhand Test", testsupport.Git(t, root, "log", "-1", "--format=%an <%ae> %aI|%cn", replayed+"~2"), "each keeps its author and date")
+	// The date as seconds, since git spells UTC Z or +00:00 by version.
+	authored := time.Date(2026, 9, 20, 8, 0, 0, 0, time.UTC).Unix()
+	require.Equal(t, fmt.Sprintf("Ada <ada@example.org> %d|Dockhand Test", authored), testsupport.Git(t, root, "log", "-1", "--format=%an <%ae> %at|%cn", replayed+"~2"), "each keeps its author and date")
 	require.Equal(t, master, testsupport.Git(t, root, "rev-parse", replayed+"~3"))
 
 	// git rebase makes the same tree.

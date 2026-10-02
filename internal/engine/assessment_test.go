@@ -159,6 +159,7 @@ func holds(a model.Assessment) []string {
 // status without collecting, and a later revision whose archives are the
 // same fetches nothing again.
 func TestARevisionIsAssessedByItsNetChange(t *testing.T) {
+	t.Parallel()
 	e, branch, base, tree := revisionFixture(t, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
 	p := newPlanner(t)
 	e.ArchivePlanner = p
@@ -220,6 +221,7 @@ func messagesOf(comparison model.UpstreamComparison) []string {
 // files, all new to it, aren't said: "LICENSE was added" and "Package.swift
 // is new" held every new port (the sand-runner port).
 func TestANewPortIsAssessedAlone(t *testing.T) {
+	t.Parallel()
 	e, branch, _, tree := revisionFixture(t, map[string]string{"sysutils/rift/Portfile": "name rift\nversion 0.4.2\n"})
 	p := newPlanner(t)
 	e.ArchivePlanner = p
@@ -238,6 +240,7 @@ func TestANewPortIsAssessedAlone(t *testing.T) {
 // Pythons before 3.13 asks something of py312-demo's provider, and nothing
 // of py313-demo's (the design's fixture).
 func TestEachSubportIsAssessedForItself(t *testing.T) {
+	t.Parallel()
 	e, branch, base, tree := revisionFixture(t, map[string]string{"python/py-demo/Portfile": "name py-demo\nversion 2\n"})
 	p := newPlanner(t)
 	e.ArchivePlanner = p
@@ -267,6 +270,7 @@ func TestEachSubportIsAssessedForItself(t *testing.T) {
 // holds as what couldn't be checked does (D4); a port that fetches no
 // source has nothing to compare, and says so without holding.
 func TestWhatCantBeComparedSaysSo(t *testing.T) {
+	t.Parallel()
 	e, branch, base, tree := revisionFixture(t, map[string]string{"devel/gitty/Portfile": "name gitty\n", "devel/meta/Portfile": "name meta\n"})
 	p := newPlanner(t)
 	e.ArchivePlanner = p
@@ -295,6 +299,7 @@ func TestWhatCantBeComparedSaysSo(t *testing.T) {
 // doesn't stand for it, and is made again; a port the revision removed
 // isn't assessed.
 func TestWhatsRecordedForARevisionStands(t *testing.T) {
+	t.Parallel()
 	e, branch, base, tree := revisionFixture(t, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
 	p := newPlanner(t)
 	e.ArchivePlanner = p
@@ -350,6 +355,7 @@ func TestWhatsRecordedForARevisionStands(t *testing.T) {
 // named first in the base's plan and last in the revision's, and the
 // source archives pair with each other.
 func TestAlikeArchivesPairByName(t *testing.T) {
+	t.Parallel()
 	e, branch, base, tree := revisionFixture(t, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n"})
 	p := newPlanner(t)
 	e.ArchivePlanner = p
@@ -387,6 +393,7 @@ func (c commitArchives) SourceArchive(_ context.Context, _ macports.PortInfo, co
 // be read so; a reading of a commit is kept by the commit, so the forge is
 // asked nothing again. A git.branch no ref is can't be compared, and holds.
 func TestAGitFetchedPortIsComparedByItsCommits(t *testing.T) {
+	t.Parallel()
 	project := t.TempDir()
 	testsupport.Git(t, project, "init", "-q")
 	write(t, project, map[string]string{"README": "1\n"})
@@ -445,6 +452,7 @@ func TestAGitFetchedPortIsComparedByItsCommits(t *testing.T) {
 // check built one source, and the submission would ship another. One
 // whose tag still names what was built, or can't be read now, isn't.
 func TestASourceMovedSinceItsCheckIsAConcern(t *testing.T) {
+	t.Parallel()
 	project := t.TempDir()
 	testsupport.Git(t, project, "init", "-q")
 	write(t, project, map[string]string{"README": "1\n"})
@@ -480,6 +488,7 @@ func TestASourceMovedSinceItsCheckIsAConcern(t *testing.T) {
 // one refused, as a 404 refuses, stands for its files, and isn't fetched
 // again.
 func TestAnAssessmentStoppedByTheNetworkIsTriedAgain(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		status, mirror int
 		again          bool
@@ -519,6 +528,7 @@ func TestAnAssessmentStoppedByTheNetworkIsTriedAgain(t *testing.T) {
 // reads, and MacPorts' fetch of them isn't one dockhand checks. One
 // fetched with Git plans none, and is compared by its commits.
 func TestAVendoredPortIsComparedByItsOwnArchives(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	f.options.Tclsh = testsupport.MacPortsTclsh(t)
 	e := f.open(t)
@@ -578,6 +588,7 @@ port::register_callback demo_crates
 // absent, which a native library with no port is set apart for, and not
 // as a problem.
 func TestAPortTheTreeHasntGotIsObservedAbsent(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"archivers/zstd": {{Name: "zstd", Version: "1.5.7"}}}}
@@ -605,6 +616,7 @@ func TestAPortTheTreeHasntGotIsObservedAbsent(t *testing.T) {
 // are: one that no longer applies is said, and one that does isn't
 // (the libuv run's finding 2).
 func TestARevisionsPatchesAreCheckedAgainstItsSource(t *testing.T) {
+	t.Parallel()
 	kept := "--- src/main.c\n+++ src/main.c\n@@ -1 +1 @@\n-int main;\n+int main(void);\n"
 	stale := "--- src/gone.c\n+++ src/gone.c\n@@ -1 +1 @@\n-old\n+new\n"
 	e, branch, base, tree := revisionFixture(t, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.8.1\n", "textproc/jq/files/patch-kept.diff": kept, "textproc/jq/files/patch-stale.diff": stale})
@@ -637,6 +649,7 @@ func TestARevisionsPatchesAreCheckedAgainstItsSource(t *testing.T) {
 // patch whose file isn't in the tree is unchecked, with why, and an
 // archive a kept reading spared fetching is fetched for the check.
 func TestTheBasesPatchesARevisionDropsAreChecked(t *testing.T) {
+	t.Parallel()
 	e, _, base, _ := revisionFixture(t, nil)
 	p := newPlanner(t)
 	legacy := "--- src/unix/core.c\n+++ src/unix/core.c\n@@ -1 +1 @@\n-legacy\n+legacy, patched\n"
@@ -669,6 +682,7 @@ func TestTheBasesPatchesARevisionDropsAreChecked(t *testing.T) {
 // alone (the batch 11 run on #34620). A name the directory doesn't define
 // is ErrNoPort, as a subport new to it is on the base's side.
 func TestASubportsArchivesArePlannedForIt(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	f.options.Tclsh = testsupport.MacPortsTclsh(t)
 	e := f.open(t)
@@ -703,6 +717,7 @@ func TestASubportsArchivesArePlannedForIt(t *testing.T) {
 // never by the order the plans name them (the architecture review's
 // finding 2, its second probe).
 func TestARemovedArchiveIsRepresented(t *testing.T) {
+	t.Parallel()
 	p := newPlanner(t)
 	p.add("base", plannedPort{info: macports.PortInfo{Name: "demo"}, archives: map[string]map[string]string{
 		"main-1.0.tar.gz": {"LICENSE": "MIT\n"}, "extra-1.0.tar.gz": {"LICENSE": "GPL\n"}, "aaa-docs.tar.gz": {"README": "old\n"},
@@ -738,6 +753,7 @@ func TestARemovedArchiveIsRepresented(t *testing.T) {
 // An archive only the base fetched, with the candidate's each matched, is
 // said and set apart, and holds nothing.
 func TestAnArchiveNoLongerFetchedIsSaid(t *testing.T) {
+	t.Parallel()
 	p := newPlanner(t)
 	p.add("base", plannedPort{info: macports.PortInfo{Name: "demo"}, archives: map[string]map[string]string{
 		"main-1.0.tar.gz": {"LICENSE": "MIT\n"}, "extra-1.0.tar.gz": {"LICENSE": "GPL\n"},
@@ -767,6 +783,7 @@ func TestAnArchiveNoLongerFetchedIsSaid(t *testing.T) {
 // assessment does, and says it read them so: semgrep's update compared
 // nothing and said nothing (field testing, 2026-10-02).
 func TestAnUpdateOfAGitFetchedPortComparesItsCommits(t *testing.T) {
+	t.Parallel()
 	project := t.TempDir()
 	testsupport.Git(t, project, "init", "-q")
 	write(t, project, map[string]string{"README": "1\n"})
@@ -798,6 +815,7 @@ func TestAnUpdateOfAGitFetchedPortComparesItsCommits(t *testing.T) {
 // terraform-1.16's update listed nine unchanged subports' comparisons
 // (field testing, 2026-10-02).
 func TestASubportWhoseSourceDidntChangeIsLeftOut(t *testing.T) {
+	t.Parallel()
 	e, branch, base, tree := revisionFixture(t, map[string]string{"devel/libharbor/Portfile": "name libharbor\nversion 3\nsubport tool-2 {}\n"})
 	p := newPlanner(t)
 	e.ArchivePlanner = p

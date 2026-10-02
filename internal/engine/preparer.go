@@ -63,7 +63,7 @@ func (e *Engine) discovery(ports *selection.Reader) *upstream.Service {
 // against an index staged for each source tree.
 func (e *Engine) selectionReader() (*selection.Reader, error) {
 	return assemble(e, &e.ports, func() (*selection.Reader, error) {
-		index, err := indexConfig()
+		index, err := e.indexConfig()
 		if err != nil {
 			return nil, err
 		}
@@ -74,8 +74,8 @@ func (e *Engine) selectionReader() (*selection.Reader, error) {
 
 // indexConfig is where port indexes are cached, and the mirror whose index
 // seeds a cache with no generation near enough.
-func indexConfig() (portindex.Config, error) {
-	cache, err := IndexCache()
+func (e *Engine) indexConfig() (portindex.Config, error) {
+	cache, err := e.indexCache()
 	if err != nil {
 		return portindex.Config{}, err
 	}
@@ -92,7 +92,7 @@ func indexConfig() (portindex.Config, error) {
 // 4).
 func (e *Engine) PortIndex() (portindex.Source, error) {
 	stager, err := assemble(e, &e.checkIndex, func() (*portindex.Stager, error) {
-		index, err := indexConfig()
+		index, err := e.indexConfig()
 		if err != nil {
 			return nil, err
 		}
@@ -117,6 +117,15 @@ func ReadingCache() (string, error) {
 		return "", err
 	}
 	return filepath.Join(cache, "dockhand", "readings"), nil
+}
+
+// indexCache is where this engine keeps port indexes: Options.Indexes,
+// else IndexCache.
+func (e *Engine) indexCache() (string, error) {
+	if e.options.Indexes != "" {
+		return e.options.Indexes, nil
+	}
+	return IndexCache()
 }
 
 // IndexCache is where port indexes are kept: $DOCKHAND_INDEX_CACHE, else

@@ -129,8 +129,8 @@ func TestRefusalNamesTheCommandTheGrammarStoppedAt(t *testing.T) {
 		{"procedure after the if", wrapper + "if {${a}} { return -code error no }\nmpi.action_enforce_variants ${name}\n", plain, "runs `mpi.action_enforce_variants ${name}` outside an if, which is unknown to the grammar"},
 		{"unbraced condition", wrapper + "if $a { return -code error no }\n", plain, "has a condition that is not braced: `$a`"},
 		{"branch doing work", wrapper + "if {${a}} { set distfiles other }\n", plain, "has a branch that ends with `set distfiles other` rather than return -code error, which writes `distfiles`"},
-		{"go check off github", goCheck, macports.PortInfo{Options: map[string]string{"go.domain": "gitlab.com"}}, "is the Go PortGroup's toolchain check, recognized only when go.domain is github.com; this port's is gitlab.com"},
-		{"go check without a domain", goCheck, plain, "is the Go PortGroup's toolchain check, recognized only when go.domain is github.com; this port's is unset"},
+		{"go check off go.setup's hosts", goCheck, macports.PortInfo{Options: map[string]string{"go.domain": "example.com"}}, "is the Go PortGroup's toolchain check, recognized only when go.domain is one go.setup fetches from (github.com, gitlab.com, bitbucket.org, git.sr.ht, codeberg.org, gitea.com); this port's is example.com"},
+		{"go check without a domain", goCheck, plain, "is the Go PortGroup's toolchain check, recognized only when go.domain is one go.setup fetches from (github.com, gitlab.com, bitbucket.org, git.sr.ht, codeberg.org, gitea.com); this port's is unset"},
 		{"altered go check", strings.Replace(goCheck, "[go_toolchain.ceiling]", "[other.check]", 1), github, "differs from the Go PortGroup's toolchain check as dockhand knows it"},
 		{"unwrapped", "return -code error", plain, "is not wrapped as a Base hook"},
 		{"empty", wrapper + "\n", plain, "is empty"},
@@ -140,6 +140,13 @@ func TestRefusalNamesTheCommandTheGrammarStoppedAt(t *testing.T) {
 			require.Equal(t, "custom", semantics.Kind)
 			require.Equal(t, "pre-fetch hook 1 "+test.want, semantics.Problem)
 		})
+	}
+	// The PortGroup registers one toolchain check whichever host go.setup
+	// fetches from: reposurgeon's is gitlab.com (field testing, 2026-10-02).
+	for _, domain := range macports.GoDomains {
+		semantics := Assess(macports.PortInfo{Options: map[string]string{"go.domain": domain}}, "portfetch::fetch_main", "{"+goCheck+"}", "", nil, nil)
+		require.Empty(t, semantics.Problem, domain)
+		require.Equal(t, []string{"Go toolchain compatibility guard"}, semantics.Guards, domain)
 	}
 	// The origin places the offending command at its own line in the file:
 	// the hook body starts at Portfile line 12, its first line blank, and the

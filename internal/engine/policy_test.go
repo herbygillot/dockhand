@@ -34,6 +34,7 @@ func (*advisoryHarbor) Execute(_ context.Context, job buildenv.Job, build builde
 // the submission isn't blocked by it, and the pull request says under
 // which check's policy its tests failed.
 func TestAnEarlierAdvisoryResultKeepsItsPolicy(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	f.withFork(t, e)

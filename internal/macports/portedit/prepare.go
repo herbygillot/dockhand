@@ -130,6 +130,16 @@ type Result struct {
 type Regenerated struct {
 	Option         string
 	Count, Changed int
+	// Dropped are the crates the Portfile pinned over its lock that the
+	// new lock moved past, so the pins went with the rest.
+	Dropped []Override `json:",omitempty"`
+}
+
+// Override is a registry crate a Portfile pinned at another version than
+// its lock: Pinned over the lock's Was, which the new lock's Locked
+// moved past.
+type Override struct {
+	Name, Pinned, Was, Locked string
 }
 
 // GoToolchain is the Go release a module-mode port's go.mod requires, and

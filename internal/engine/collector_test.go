@@ -16,6 +16,7 @@ import (
 // regression test). The record is reused, collecting nothing again, and
 // says of the patch what it found, as a fresh collection does.
 func TestAnUpdatesAssessmentChecksItsPatches(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	patch := "--- src/main.c\n+++ src/main.c\n@@ -1 +1 @@\n-int main;\n+int main(void);\n"
 	write(t, f.upstream, map[string]string{"textproc/jq/files/patch-main.diff": patch})

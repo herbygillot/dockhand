@@ -15,6 +15,7 @@ import (
 // where the provider can build on them; with none, the command provider
 // when there is one.
 func TestEnvironmentsAreTheProvidersOnNames(t *testing.T) {
+	t.Parallel()
 	e := &Engine{Providers: map[string]buildenv.Provider{"command": &scriptedProvider{}, "github": &scriptedProvider{}}}
 	environments, err := e.Environments(t.Context(), nil)
 	require.NoError(t, err)
@@ -61,6 +62,7 @@ func (*releasing) Environments(ctx context.Context, releases string) ([]model.En
 // release name means Tart, and Tart on the Mac's release is the default
 // when no command provider is set up.
 func TestEnvironmentsOfAProviderThatTakesReleases(t *testing.T) {
+	t.Parallel()
 	e := &Engine{Providers: map[string]buildenv.Provider{"tart": &releasing{}, "github": &scriptedProvider{}}}
 	sonoma := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "23", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsCommandLine}
 	tahoe := model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, DeveloperTools: model.DeveloperToolsXcode}
@@ -80,6 +82,7 @@ func TestEnvironmentsOfAProviderThatTakesReleases(t *testing.T) {
 // their product versions; one whose release dockhand doesn't know can't
 // be.
 func TestEnvironmentsAreNamedAsOnNamesThem(t *testing.T) {
+	t.Parallel()
 	tart := func(darwin string, tools model.DeveloperTools) model.Environment {
 		return model.Environment{Provider: "tart", Platform: model.Platform{OS: "darwin", Version: darwin, Architecture: "arm64"}, DeveloperTools: tools}
 	}

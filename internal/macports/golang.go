@@ -16,6 +16,12 @@ import (
 // an upper bound on what the source needs, and says nothing of the
 // minimum.
 
+// GoDomains are the hosts the Go PortGroup's go.setup fetches from, each
+// through its own PortGroup; the PortGroup's toolchain check is the same
+// pre-fetch hook for every one. gopkg.in and golang.org/x name GitHub
+// repositories and set go.domain github.com.
+var GoDomains = []string{"github.com", "gitlab.com", "bitbucket.org", "git.sr.ht", "codeberg.org", "gitea.com"}
+
 // GoModuleMode reports a Go PortGroup port that builds in module mode:
 // go.offline_build set and false, read as Tcl reads a boolean. An unset or
 // unreadable value is not module mode.

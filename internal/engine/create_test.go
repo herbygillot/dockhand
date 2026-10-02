@@ -7,6 +7,7 @@ import (
 )
 
 func TestCreateReadsGitHubURLs(t *testing.T) {
+	t.Parallel()
 	for _, address := range []string{"https://github.com/rift-dev/rift", "github.com/rift-dev/rift", "https://github.com/rift-dev/rift.git", "https://github.com/rift-dev/rift/releases/tag/v0.4.2"} {
 		name, err := githubName(address)
 		require.NoError(t, err, address)

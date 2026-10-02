@@ -17,6 +17,7 @@ import (
 )
 
 func TestPullRequestsAreFollowed(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	fake := f.withFork(t, e)
@@ -92,6 +93,7 @@ func (endedLogin) Observe(context.Context, forge.PullRequestRef) (forge.PullRequ
 // than each pull request's, and notified once a process (the GitHub auth
 // flow review's plan, step 4).
 func TestServeSaysAnEndedLoginOnce(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	fake := f.withFork(t, e)

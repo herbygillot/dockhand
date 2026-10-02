@@ -25,6 +25,7 @@ func recordedPullRequest(t *testing.T, e *Engine, branch model.Branch) *model.Pu
 // A reply lost after GitHub opened the pull request is read back at once:
 // the pull request is found by its head, recorded, and not written again.
 func TestALostReplyToOpeningAPullRequestIsReadBack(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	fake := f.withFork(t, e)
@@ -48,6 +49,7 @@ func TestALostReplyToOpeningAPullRequestIsReadBack(t *testing.T) {
 // A request that never reached GitHub leaves the commit pushed and no pull
 // request; the next submit opens one, without pushing again.
 func TestARequestThatNeverReachedGitHubIsMadeAgain(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	fake := f.withFork(t, e)
@@ -83,6 +85,7 @@ func (refusingStore) Update(context.Context, model.RepositoryID, func(store.Tx) 
 // A pull request opened but not recorded, as when the record fails or the
 // process ends, is found by the next submit, recorded, and left as it is.
 func TestAPullRequestOpenedButNotRecordedIsFoundByTheNextSubmit(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	fake := f.withFork(t, e)
@@ -113,6 +116,7 @@ func TestAPullRequestOpenedButNotRecordedIsFoundByTheNextSubmit(t *testing.T) {
 // holds its commit already, and GitHub's refusal of a second pull request
 // is read back as the first one's.
 func TestTwoSubmitsRacingOpenOnePullRequest(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	fake := f.withFork(t, e)
@@ -136,6 +140,7 @@ func TestTwoSubmitsRacingOpenOnePullRequest(t *testing.T) {
 // A branch that moved after its submit was planned is refused before
 // anything is pushed; the plan is for the commit it saw.
 func TestASubmitRefusesABranchThatMovedAfterItsPlan(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	fake := f.withFork(t, e)

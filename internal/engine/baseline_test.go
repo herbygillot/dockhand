@@ -19,6 +19,7 @@ import (
 // ports it names, not the rest of their directories. (The architecture
 // review of 2026-09-27, finding 2.)
 func TestABaselineKeepsEachEnvironmentsRequirements(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	revision := harborBranch(t, e)
@@ -60,6 +61,7 @@ func TestABaselineKeepsEachEnvironmentsRequirements(t *testing.T) {
 // started from, even after a rebase has moved the branch's base on. (The
 // architecture review of 2026-09-27, finding 2.)
 func TestABaselineUsesTheCheckedBase(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch := twoPortBranch(t, e)
@@ -104,6 +106,7 @@ func TestABaselineUsesTheCheckedBase(t *testing.T) {
 // checksum, is left out, since master can't speak to it; one blocked or
 // unmet didn't fail.
 func TestABaselineTakesPortsThatFailedWhileBuilding(t *testing.T) {
+	t.Parallel()
 	failed := func(phase model.Phase) model.TargetResult {
 		return model.TargetResult{Outcome: model.OutcomeFailed, Phase: phase}
 	}
@@ -134,6 +137,7 @@ func TestABaselineTakesPortsThatFailedWhileBuilding(t *testing.T) {
 // port its --only left out isn't among them, whatever an earlier check of
 // the same files found.
 func TestOnlyTheNewestFailedCheckPointsToABaseline(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch := twoPortBranch(t, e)
@@ -198,6 +202,7 @@ func (p failsOn) Execute(_ context.Context, job buildenv.Job, build buildenv.Bui
 // port named that failed nowhere, in every one the check built it in.
 // (Roadmap item 2.)
 func TestABaselineRebuildsAPortOnlyWhereItFailed(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch := twoPortBranch(t, e)

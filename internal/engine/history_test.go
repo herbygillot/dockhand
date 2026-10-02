@@ -59,6 +59,7 @@ func baseOf(t *testing.T, e *Engine, branch model.Branch) model.ObjectID {
 // change on the branch abandons, removing what it made. (The architecture
 // review of 2026-09-27, finding 3.)
 func TestAHistoryChangeStoppedBeforeItsGitChangeIsAbandoned(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch, plan := updated(t, e)
@@ -96,6 +97,7 @@ func TestAHistoryChangeStoppedBeforeItsGitChangeIsAbandoned(t *testing.T) {
 // index reset as the tidy would have reset it. (The architecture review of
 // 2026-09-27, finding 3.)
 func TestAHistoryChangeStoppedAfterItsGitChangeIsFinished(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch, plan := updated(t, e)
@@ -136,6 +138,7 @@ func TestAHistoryChangeStoppedAfterItsGitChangeIsFinished(t *testing.T) {
 // recorded by the next history change on the branch: a rebase's base goes
 // back with it. (The architecture review of 2026-09-27, finding 3.)
 func TestARestoreStoppedAfterItsGitChangeIsFinished(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch := committedUpdate(t, e)
@@ -226,6 +229,7 @@ func (s *uncertainStore) Update(ctx context.Context, repository model.Repository
 // the change where it is. A Git change once made is never undone. (The
 // architecture review of 2026-09-27, finding 3.)
 func TestAnUncertainCommitIsReadBack(t *testing.T) {
+	t.Parallel()
 	prepared := func(tx *watchedTx) bool { return tx.added }
 	applied := func(tx *watchedTx) bool { return tx.settled == model.CheckpointApplied }
 	for _, c := range []struct {
@@ -271,6 +275,7 @@ func TestAnUncertainCommitIsReadBack(t *testing.T) {
 // A history change waits for the branch's lock, which another one holds
 // throughout its change, and changes nothing if it gives up waiting.
 func TestAHistoryChangeWaitsForTheBranchsLock(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	branch, plan := updated(t, e)
@@ -302,6 +307,7 @@ func TestAHistoryChangeWaitsForTheBranchsLock(t *testing.T) {
 // didn't land is undone, and the name is free. (The code-organization
 // review of 2026-09-27, finding 24.)
 func TestAnUncertainBranchRecordIsReadBack(t *testing.T) {
+	t.Parallel()
 	adds := func(tx *watchedTx) bool { return tx.branch }
 	for _, landed := range []bool{true, false} {
 		f := setup(t)
@@ -329,6 +335,7 @@ func TestAnUncertainBranchRecordIsReadBack(t *testing.T) {
 // didn't land is the error, with the files as written (the
 // code-organization review's finding 24).
 func TestAnUncertainEditRecordIsReadBack(t *testing.T) {
+	t.Parallel()
 	edits := func(tx *watchedTx) bool { return tx.edit }
 	for _, landed := range []bool{true, false} {
 		f := setup(t)

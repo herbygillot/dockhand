@@ -39,6 +39,7 @@ func threeChanges(t *testing.T) (*Engine, TidyPlan) {
 }
 
 func TestRegroupCombinesAndReorders(t *testing.T) {
+	t.Parallel()
 	e, plan := threeChanges(t)
 
 	for spec, problem := range map[string]string{
@@ -81,6 +82,7 @@ func TestRegroupCombinesAndReorders(t *testing.T) {
 }
 
 func TestASavedPlanAppliesUntilTheBranchMoves(t *testing.T) {
+	t.Parallel()
 	e, plan := threeChanges(t)
 	regrouped, err := plan.Regroup("1+2 3", "")
 	require.NoError(t, err)
@@ -164,6 +166,7 @@ func TestASavedPlanAppliesUntilTheBranchMoves(t *testing.T) {
 // message, escaped where it can't (the hugo exercise's re-submitting
 // sshuttle, finding 1).
 func TestASavedPlansMessagesReadAsWritten(t *testing.T) {
+	t.Parallel()
 	when := time.Date(2026, 9, 28, 12, 0, 0, 0, time.FixedZone("", -4*60*60))
 	body := "sshuttle: update to 2.0.0\n\nBuild with Python 3.14, the python PortGroup's default.\n\nGenerated-By: Dockhand v3 (https://github.com/herbygillot/dockhand)\n"
 	for message, literal := range map[string]bool{
@@ -188,6 +191,7 @@ func TestASavedPlansMessagesReadAsWritten(t *testing.T) {
 // its attribution line, or the person's (the hugo exercise's re-submitting
 // sshuttle, finding 2).
 func TestASubjectSaysWhoseCommitItCameFrom(t *testing.T) {
+	t.Parallel()
 	_, plan := threeChanges(t)
 	at := slices.IndexFunc(plan.Groups, func(g TidyGroup) bool { return g.Directory == "textproc/jq" })
 	require.GreaterOrEqual(t, at, 0)

@@ -11,6 +11,7 @@ import (
 // A result reads the same on the terminal and in the pull request, in
 // Design v3 §7's words.
 func TestTargetWordsAreDesignV3s(t *testing.T) {
+	t.Parallel()
 	target := model.PlanTarget{}
 	command := model.Environment{Provider: "command"}
 	for _, c := range []struct {
@@ -48,6 +49,7 @@ func TestTargetWordsAreDesignV3s(t *testing.T) {
 // kept it: "needs Xcode 26.0, which Tart macOS 15 hasn't" left the person
 // to find 16.4 (batch 28's leftover).
 func TestAnUnmetMinimumSaysWhatTheEnvironmentHas(t *testing.T) {
+	t.Parallel()
 	unmet := model.Unmet{Target: "sand-runner", Needs: model.RequiresXcodeVersion("26.0"), Has: "16.4"}
 	require.Equal(t, "needs Xcode 26.0 (Xcode 16.4 there)", UnmetWords(unmet))
 	unmet.Has, unmet.Through = "none", "sand-runner"

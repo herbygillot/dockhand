@@ -351,3 +351,42 @@ if {${os.platform} eq "darwin" && ${os.major} <= 15} {
 	_, err = Inspect(src, map[string]string{Cargo: "adler2 9.9.9 " + sha("c")})
 	require.ErrorContains(t, err, "cargo.crates is declared 2 times, and none is what MacPorts evaluated")
 }
+
+// Differences name what Equivalent finds, by crate, module, or Git crate;
+// a registry crate at two versions is an override, which a lock moves past
+// only with the crate once, at the pin's version or later.
+func TestDifferencesNameWhatDiffers(t *testing.T) {
+	t.Parallel()
+	sha, other := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	differences, err := Differences(Cargo, []string{"same", "1.0.0", sha, "pinned", "0.4.1", sha, "stray", "1.0.0", sha, "twice", "1.0.0", sha}, []string{"same", "1.0.0", sha, "pinned", "0.4.0", sha, "twice", "1.0.0", sha, "twice", "2.0.0", sha, "resummed", "1.0.0", other})
+	require.NoError(t, err)
+	require.Equal(t, []Difference{{Name: "pinned", Declared: "0.4.1", Generated: "0.4.0"}, {Name: "resummed"}, {Name: "stray"}, {Name: "twice"}}, differences)
+	require.True(t, differences[0].Override())
+	require.False(t, differences[1].Override())
+	for next, want := range map[string]bool{"0.5.4": true, "0.4.1": true, "0.4.0": false, "0.4.1-rc.1": false} {
+		locked, past := differences[0].MovedPast([]string{"pinned", next, sha})
+		require.Equal(t, want, past, next)
+		require.Equal(t, next, locked)
+	}
+	_, past := differences[0].MovedPast([]string{"pinned", "0.5.0", sha, "pinned", "0.6.0", sha})
+	require.False(t, past, "a crate the lock has twice is no override's successor")
+
+	differences, err = Differences(CargoGit, []string{"scram", "pgdogdev/scram", "master", strings.Repeat("c", 40), sha}, []string{"scram", "pgdogdev/scram", "master", strings.Repeat("d", 40), sha})
+	require.NoError(t, err)
+	require.Equal(t, []Difference{{Name: "scram"}}, differences)
+	_, err = Differences(Cargo, []string{"incomplete", "1.0.0"}, nil)
+	require.Error(t, err)
+}
+
+// A crate left to online resolution that the Portfile declares keeps the
+// Portfile's label; one it doesn't declare stays online.
+func TestKeepingDeclaredUsesThePortfilesLabel(t *testing.T) {
+	t.Parallel()
+	commit := strings.Repeat("c", 40)
+	rev := GitReference{Kind: GitRev, Value: commit}
+	blocks := GeneratedBlocks{Online: []GitCrate{{Name: "scram", Repository: "pgdogdev/scram", Commit: commit, Reference: rev}, {Name: "other", Repository: "owner/other", Commit: commit, Reference: rev}}}
+	kept := blocks.KeepingDeclared([]string{"scram", "pgdogdev/scram", "master", strings.Repeat("e", 40), strings.Repeat("a", 64)})
+	require.Equal(t, []GitCrate{{Name: "scram", Repository: "pgdogdev/scram", Commit: commit, Reference: GitReference{Kind: GitBranch, Value: "master"}}}, kept.Git)
+	require.Equal(t, []GitCrate{{Name: "other", Repository: "owner/other", Commit: commit, Reference: rev}}, kept.Online)
+	require.Equal(t, blocks, blocks.KeepingDeclared(nil))
+}

@@ -176,6 +176,7 @@ func outcomes(t *testing.T, e *Engine, run model.Run) map[string]model.Outcome {
 }
 
 func TestARunPassesAndIsEvidence(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	provider := &scriptedProvider{}
@@ -211,6 +212,7 @@ func TestARunPassesAndIsEvidence(t *testing.T) {
 // each directory by the revision's tree, and the environment by its
 // identity as the execution began (decision 28).
 func TestAResultKeepsWhatItsBuildRead(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	tools := model.ActivePort{Name: "harbor-tools", Spec: "@1_0", Directory: "graphics/harbor-tools", Archive: "sha256:aa"}
@@ -255,6 +257,7 @@ func TestAResultKeepsWhatItsBuildRead(t *testing.T) {
 }
 
 func TestAFailedDependencyBlocksAndInfrastructureIsRetried(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	provider := &scriptedProvider{outcomes: map[model.TargetID]model.Outcome{"harbor-cli": model.OutcomeFailed}, failures: 1, partial: true}
@@ -274,6 +277,7 @@ func TestAFailedDependencyBlocksAndInfrastructureIsRetried(t *testing.T) {
 }
 
 func TestADependencyFailureBlocksWithoutARetry(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	provider := &scriptedProvider{outcomes: map[model.TargetID]model.Outcome{"libharbor": model.OutcomeFailed}, failures: 1, partial: true}
@@ -288,6 +292,7 @@ func TestADependencyFailureBlocksWithoutARetry(t *testing.T) {
 }
 
 func TestRepeatedInfrastructureTroubleNeedsAttention(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	provider := &scriptedProvider{failures: 99}
@@ -306,6 +311,7 @@ func TestRepeatedInfrastructureTroubleNeedsAttention(t *testing.T) {
 // login, is said after one attempt, where every attempt was spent on it
 // (the code-organization review's finding 7).
 func TestTroubleAnotherAttemptWontFixIsTriedOnce(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	provider := &scriptedProvider{failures: 99, refused: true}
@@ -320,6 +326,7 @@ func TestTroubleAnotherAttemptWontFixIsTriedOnce(t *testing.T) {
 }
 
 func TestACancelIsAppliedByWhoeverHoldsTheRun(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	f.options.Poll = 10 * time.Millisecond
 	e := f.open(t)
@@ -366,6 +373,7 @@ func mustPlan(t *testing.T, e *Engine, run model.Run) model.Plan {
 }
 
 func TestAStoppedServeLeavesTheRunForTheNext(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	f.options.Poll = 10 * time.Millisecond
 	e := f.open(t)
@@ -410,6 +418,7 @@ func TestAStoppedServeLeavesTheRunForTheNext(t *testing.T) {
 // earlier one; and the checks queued or running, with those whose process
 // ended counted as stopped (the hugo exercise's certigo run, finding 6).
 func TestServeStateSaysWhoLeadsAndWhatStopped(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	ctx := t.Context()
@@ -455,6 +464,7 @@ func TestServeStateSaysWhoLeadsAndWhatStopped(t *testing.T) {
 // command driving its own check still shows it only when asked (the hugo
 // exercise's certigo run, finding 7).
 func TestWhatTheWorkReportsIsTheRunsProgress(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	says := "Building the PortIndex; this may take several minutes"
@@ -488,6 +498,7 @@ func TestWhatTheWorkReportsIsTheRunsProgress(t *testing.T) {
 // provider built it, the log is on this Mac (D10, from the beekeeper-studio
 // run's finding 2).
 func TestAFailuresDetailSaysWhatItsLogShows(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	log := filepath.Join(t.TempDir(), "harbor-cli.log")
@@ -526,6 +537,7 @@ func TestAFailuresDetailSaysWhatItsLogShows(t *testing.T) {
 }
 
 func TestServeTakesPeoplesChecksFirst(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
@@ -606,6 +618,7 @@ func (p *together) Execute(ctx context.Context, job buildenv.Job, build buildenv
 // A check's environments build together where their provider can, each
 // with its own execution and results.
 func TestEnvironmentsBuildTogetherWhereTheProviderCan(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	provider := &together{}
@@ -625,6 +638,7 @@ func TestEnvironmentsBuildTogetherWhereTheProviderCan(t *testing.T) {
 // (decision 28); a remade environment, a changed dependency, or --fresh
 // builds again.
 func TestAnUnchangedBuildIsReused(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	tools := model.ActivePort{Name: "harbor-tools", Spec: "@1_0", Directory: "graphics/harbor-tools", Archive: "sha256:aa"}
@@ -718,6 +732,7 @@ func TestAnUnchangedBuildIsReused(t *testing.T) {
 // what was active as it last built, which it may reach through ports the
 // branch doesn't change (decision 28).
 func TestTheTargetsThatChangedBuildAndTheRestAreReused(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	lib := model.ActivePort{Name: "libharbor", Spec: "@4_0", Directory: "devel/libharbor", Archive: "sha256:aa"}
@@ -825,6 +840,7 @@ func TestTheTargetsThatChangedBuildAndTheRestAreReused(t *testing.T) {
 // that shows it active from another archive is said to have been given
 // another by MacPorts.
 func TestTheGuestInstallsWhatABuildNeedsFromItsKeptArchive(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	_, _, libDigest := scriptedArchive("libharbor")
@@ -918,6 +934,7 @@ func TestTheGuestInstallsWhatABuildNeedsFromItsKeptArchive(t *testing.T) {
 // with no directory, so its build's inputs are incomplete: a later check
 // doesn't reuse that build, and builds again rather than failing.
 func TestABuildReadingAPortOutsideTheTreeIsBuiltAgain(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	elsewhere := model.ActivePort{Name: "harbor-legacy", Spec: "@1_0", Archive: "sha256:aa"}
@@ -965,9 +982,10 @@ func (p *indexing) Execute(ctx context.Context, job buildenv.Job, build buildenv
 // first use: go test -race sees them race for it without the engine's
 // lock.
 func TestEnvironmentsBuildingTogetherShareWhatTheEngineAssembles(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
-	t.Setenv("DOCKHAND_INDEX_CACHE", t.TempDir())
+	e.options.Indexes = t.TempDir()
 	provider := &indexing{index: func() error { _, err := e.PortIndex(); return err }}
 	provider.begun.Add(2)
 	e.Providers = map[string]buildenv.Provider{"command": provider}
@@ -982,6 +1000,7 @@ func TestEnvironmentsBuildingTogetherShareWhatTheEngineAssembles(t *testing.T) {
 // Retry alike. A baseline looks beside the check it explains, and a check
 // asked to stop no longer counts.
 func TestABranchHasOneCheckAtATime(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	e.Providers = map[string]buildenv.Provider{"command": &scriptedProvider{}}
@@ -1030,6 +1049,7 @@ func TestABranchHasOneCheckAtATime(t *testing.T) {
 // of its 5.7 minutes, without a word (the gh rebase's finding 1). Where no
 // environment of the check could, it's nothing to remark on.
 func TestAnEnvironmentThatCantReuseSaysSo(t *testing.T) {
+	t.Parallel()
 	github := model.Environment{Provider: "github", Platform: tahoeArm.Platform}
 	said := func(t *testing.T, e *Engine) []string {
 		t.Helper()
@@ -1072,6 +1092,7 @@ func TestAnEnvironmentThatCantReuseSaysSo(t *testing.T) {
 // Serve's banner counts checks, and says where one builds several of its
 // environments at once, as Tart builds two releases (the sshuttle run).
 func TestServeSaysHowManyChecksAndEnvironmentsAtOnce(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "tart (1 check at a time, each building up to 2 of its environments at once)", capacityWords("tart", &together{}, 1))
 	require.Equal(t, "command (2 checks at a time)", capacityWords("command", &scriptedProvider{}, 2))
 }

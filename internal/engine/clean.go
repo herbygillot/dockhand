@@ -673,7 +673,7 @@ func (e *Engine) Cleanup(ctx context.Context, session *coord.Session, after time
 	if report.Leftovers, err = e.RemoveLeftovers(ctx, session, leftovers); err != nil {
 		return report, err
 	}
-	cache, err := IndexCache()
+	cache, err := e.indexCache()
 	if err != nil {
 		return report, err
 	}

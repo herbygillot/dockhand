@@ -43,6 +43,7 @@ func (signedOut) AuthenticatedUser(context.Context) (string, error) {
 // isn't known, or nothing names it, the placeholder stays (the flyctl
 // run, macports/macports-ports#35069).
 func TestTheMaintainerSuggestedIsTheLineThePortsWrite(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	e.Forge = forgetest.New("", "")
@@ -76,6 +77,7 @@ func TestTheMaintainerSuggestedIsTheLineThePortsWrite(t *testing.T) {
 // serve.for_outdated without a maintainer suggests the person's own line,
 // from master as fetched, rather than a placeholder, and writes nothing.
 func TestServeSuggestsTheMaintainerLineThePortsWrite(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	e.Forge = forgetest.New("", "")

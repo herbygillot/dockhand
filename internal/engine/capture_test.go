@@ -10,6 +10,7 @@ import (
 )
 
 func TestCaptureNumbersSnapshotsAndReusesUnchangedOnes(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update", Here: true})
@@ -58,6 +59,7 @@ func TestCaptureNumbersSnapshotsAndReusesUnchangedOnes(t *testing.T) {
 // A capture stands only if the files didn't move while it read them,
 // the files --include adds among them.
 func TestACaptureOfFilesThatMovedIsRefused(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e := f.open(t)
 	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update", Here: true})

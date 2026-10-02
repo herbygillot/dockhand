@@ -28,11 +28,22 @@ build:
 # ten-minute default on a loaded Mac; the bound is room, not a target.
 TEST_TIMEOUT ?= 40m
 
+# The command line's tests set package-level seams and HOME, so they can't
+# run in parallel in one process; they run as COMMAND_SHARDS processes
+# (tools/shard-test.sh), beside every other package's. On a Mac with 18
+# cores, 280 s became 61 s (batch 49).
+COMMAND_PACKAGE := github.com/herbygillot/dockhand/internal/command
+COMMAND_SHARDS ?= 6
+
 test:
-	$(GO) test -timeout $(TEST_TIMEOUT) ./...
+	@$(GO) test -timeout $(TEST_TIMEOUT) $$($(GO) list ./... | grep -vxF $(COMMAND_PACKAGE)) & others=$$!; \
+	GO="$(GO)" tools/shard-test.sh $(COMMAND_PACKAGE) $(COMMAND_SHARDS) $(TEST_TIMEOUT); command=$$?; \
+	wait $$others; others=$$?; [ $$others = 0 ] && [ $$command = 0 ]
 
 test-race:
-	$(GO) test -race -timeout $(TEST_TIMEOUT) ./...
+	@$(GO) test -race -timeout $(TEST_TIMEOUT) $$($(GO) list ./... | grep -vxF $(COMMAND_PACKAGE)) & others=$$!; \
+	GO="$(GO)" tools/shard-test.sh $(COMMAND_PACKAGE) $(COMMAND_SHARDS) $(TEST_TIMEOUT) -race; command=$$?; \
+	wait $$others; others=$$?; [ $$others = 0 ] && [ $$command = 0 ]
 
 vet:
 	$(GO) vet ./...

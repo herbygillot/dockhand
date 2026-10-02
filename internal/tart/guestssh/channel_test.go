@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -21,6 +22,11 @@ import (
 // fails as ssh does, with status 255.
 func fakeGuest(t *testing.T) *Guest {
 	t.Helper()
+	// The guest's scripts are a Mac's, with BSD stat's -f %z, which
+	// GNU stat on Linux reads otherwise.
+	if runtime.GOOS != "darwin" {
+		t.Skip("the guest's scripts run against a Mac's tools")
+	}
 	for _, tool := range []string{"/usr/bin/openssl", "/usr/bin/stat", "/usr/bin/cut", "/usr/bin/head", "/usr/bin/tail"} {
 		if _, err := os.Stat(tool); err != nil {
 			t.Skipf("%s is required", tool)

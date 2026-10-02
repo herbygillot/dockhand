@@ -41,6 +41,7 @@ func servePrepared(t *testing.T, e *Engine) model.Branch {
 }
 
 func TestServeSubmitsOnlyWhatPassedWithNothingToLookAt(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	fake := f.withFork(t, e)
@@ -75,6 +76,7 @@ func TestServeSubmitsOnlyWhatPassedWithNothingToLookAt(t *testing.T) {
 }
 
 func TestServeHoldsAnUpdateWhoseUpstreamChangedItsLicense(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, p := f.withPreparer(t)
 	f.withFork(t, e)
@@ -99,6 +101,7 @@ func TestServeHoldsAnUpdateWhoseUpstreamChangedItsLicense(t *testing.T) {
 // Archives the update couldn't compare hold serve's submission as a
 // finding would (D4): nobody looks, and the comparison couldn't.
 func TestServeHoldsAnUpdateWhoseArchivesCouldNotBeCompared(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, p := f.withPreparer(t)
 	fake := f.withFork(t, e)
@@ -124,6 +127,7 @@ func TestServeHoldsAnUpdateWhoseArchivesCouldNotBeCompared(t *testing.T) {
 // doesn't holds serve's submission: the builder's Go passes the build, and
 // raising or declaring the minimum is a person's call.
 func TestServeHoldsAnUpdateWhoseGoToolchainNeedsALook(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, p := f.withPreparer(t)
 	fake := f.withFork(t, e)
@@ -146,6 +150,7 @@ func TestServeHoldsAnUpdateWhoseGoToolchainNeedsALook(t *testing.T) {
 // go.mod requires, holds nothing, and is said where the submission is
 // previewed, not only as the update ran (the ov run's finding 1).
 func TestServeSaysAGoToolchainMinimumItNeedNotHold(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		toolchain editprep.GoToolchain
 		message   string
@@ -178,6 +183,7 @@ func TestServeSaysAGoToolchainMinimumItNeedNotHold(t *testing.T) {
 // otherwise open a second one for the same update; so does not knowing,
 // when the search fails.
 func TestServeHoldsAnUpdateAnotherPullRequestIsOpenFor(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	fake := f.withFork(t, e)
@@ -203,6 +209,7 @@ func TestServeHoldsAnUpdateAnotherPullRequestIsOpenFor(t *testing.T) {
 // before, and a port already current asks nothing (the update-workflow
 // review's efficiency item).
 func TestAnUnattendedUpdateLooksForOthersBeforeItsEdit(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, p := f.withPreparer(t)
 	fake := f.withFork(t, e)
@@ -246,6 +253,7 @@ func TestAnUnattendedUpdateLooksForOthersBeforeItsEdit(t *testing.T) {
 // submit --passing and serve read one definition of a passing branch:
 // editing a passed branch takes it out of both.
 func TestPassingIsOneDefinitionForSubmitAndServe(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	f.withFork(t, e)
@@ -279,6 +287,7 @@ func TestPassingIsOneDefinitionForSubmitAndServe(t *testing.T) {
 // repository, or another port, or that found no commit, says nothing. A
 // target --only left out is compared as a built one is.
 func TestATagMovedBetweenAnUpdateAndItsCheckIsAConcern(t *testing.T) {
+	t.Parallel()
 	chosen, planned := strings.Repeat("a", 40), strings.Repeat("b", 40)
 	source := model.GitSource{URL: "https://github.com/harbor/libharbor.git", Ref: "v4", Commit: model.ObjectID(planned), ResolvedAt: time.Now()}
 	evidence := &Evidence{Run: model.Run{Number: 7}, Plan: model.Plan{Targets: []model.PlanTarget{{ID: "libharbor", Target: model.Target{Name: "libharbor"}}},
@@ -330,6 +339,7 @@ func (r taggedRelease) Outdated(context.Context, model.ObjectID, OutdatedRequest
 // update chose it and before its check was planned: the check built
 // another source than the update chose, and nobody looked.
 func TestServeHoldsAnUpdateWhoseTagMovedBeforeItsCheck(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	e, p := f.withPreparer(t)
 	f.withFork(t, e)
@@ -391,6 +401,7 @@ func TestServeHoldsAnUpdateWhoseTagMovedBeforeItsCheck(t *testing.T) {
 // a built one is: its tag was resolved with the plan, and an earlier
 // check's result of it stands for the commit it named then.
 func TestASourceLeftOutThatMovedSinceItsCheckIsAConcern(t *testing.T) {
+	t.Parallel()
 	project := t.TempDir()
 	testsupport.Git(t, project, "init", "-q")
 	testsupport.Git(t, project, "commit", "-q", "--allow-empty", "-m", "one")
@@ -416,6 +427,7 @@ func TestASourceLeftOutThatMovedSinceItsCheckIsAConcern(t *testing.T) {
 // (batch 22's leftover, batch 32). One that read the planned commit, or
 // kept none, as one assessed before it was kept, says nothing.
 func TestAnAssessmentOfAnotherCommitIsAConcern(t *testing.T) {
+	t.Parallel()
 	read, planned := strings.Repeat("a", 40), strings.Repeat("b", 40)
 	source := model.GitSource{URL: "https://github.com/harbor/libharbor.git", Ref: "v4", Commit: model.ObjectID(planned), ResolvedAt: time.Now()}
 	evidence := &Evidence{Run: model.Run{Number: 7}, Plan: model.Plan{Targets: []model.PlanTarget{{ID: "libharbor", Target: model.Target{Name: "libharbor"}}},
