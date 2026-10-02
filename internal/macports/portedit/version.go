@@ -9,7 +9,7 @@ import (
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
+	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portsource"
 	"github.com/herbygillot/dockhand/internal/model"
 )
@@ -122,7 +122,7 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 	return result, s.checkPatches(ctx, input, &result)
 }
 
-func (s *Service) applyArchivePlan(ctx context.Context, request Request, input *sourceInput, plan archivePlan, store *archives.Store) (Result, error) {
+func (s *Service) applyArchivePlan(ctx context.Context, request Request, input *sourceInput, plan archivePlan, store *distfetch.Store) (Result, error) {
 	result := plan.result
 	if request.Release.NoUpdate {
 		return result, nil
@@ -154,7 +154,7 @@ func (p archivePlan) pairs() []archivePair {
 // it, before the edit and after, whose build systems and worksrcdir are
 // that context's.
 type ArchivePair struct {
-	Previous, Next archives.Download
+	Previous, Next distfetch.Download
 	Base, Port     macports.PortInfo
 }
 
@@ -164,11 +164,11 @@ type ArchivePair struct {
 // it declares it, and pairs each with the archive that replaces it there.
 // have are archives already fetched as shipped, found by name. Not getting
 // one is a problem to report, never a reason to refuse the update.
-func pairArchives(ctx context.Context, store *archives.Store, pairs []archivePair, have, downloads []archives.Download) ([]ArchivePair, string) {
-	named := func(downloads []archives.Download, name string) (archives.Download, bool) {
-		i := slices.IndexFunc(downloads, func(d archives.Download) bool { return d.Name == name })
+func pairArchives(ctx context.Context, store *distfetch.Store, pairs []archivePair, have, downloads []distfetch.Download) ([]ArchivePair, string) {
+	named := func(downloads []distfetch.Download, name string) (distfetch.Download, bool) {
+		i := slices.IndexFunc(downloads, func(d distfetch.Download) bool { return d.Name == name })
 		if i < 0 {
-			return archives.Download{}, false
+			return distfetch.Download{}, false
 		}
 		return downloads[i], true
 	}
@@ -196,7 +196,7 @@ func pairArchives(ctx context.Context, store *archives.Store, pairs []archivePai
 // from, a mirror group such as PyPI's expanded as MacPorts expands it. The
 // new version's archives are fetched from its plan the same way.
 func shippedPlan(ctx context.Context, input *sourceInput) ([]macports.Distfile, error) {
-	if err := archives.CheckPolicy(input.info, input.portdirIn(input.before.Root)); err != nil {
+	if err := distfetch.CheckPolicy(input.info, input.portdirIn(input.before.Root)); err != nil {
 		return nil, err
 	}
 	observations, err := input.observe.Observe(ctx, input.data, []model.Platform{input.before.Platform}, true, true)
@@ -211,8 +211,8 @@ func shippedPlan(ctx context.Context, input *sourceInput) ([]macports.Distfile, 
 }
 
 // downloadsOf are the shipped archives' downloads.
-func downloadsOf(shipped []archives.Shipped) []archives.Download {
-	downloads := make([]archives.Download, len(shipped))
+func downloadsOf(shipped []distfetch.Shipped) []distfetch.Download {
+	downloads := make([]distfetch.Download, len(shipped))
 	for i, archive := range shipped {
 		downloads[i] = archive.Download
 	}

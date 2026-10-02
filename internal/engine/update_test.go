@@ -18,8 +18,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
+	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
-	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
 	"github.com/herbygillot/dockhand/internal/sourcecompare"
@@ -142,11 +142,11 @@ func (p *fakePreparer) Prepare(ctx context.Context, r preparation.Request) (prep
 	// The new archive replaces the old one where both are given; given
 	// alone, it replaces none dockhand found.
 	if r.KeepArchives != "" && p.upstream[1] != nil {
-		next := archives.Download{Path: writeTarball(p.t, r.KeepArchives, "new", p.upstream[1])}
+		next := distfetch.Download{Path: writeTarball(p.t, r.KeepArchives, "new", p.upstream[1])}
 		next.Name = "new.tar.gz"
-		result.Downloads = []archives.Download{next}
+		result.Downloads = []distfetch.Download{next}
 		if p.upstream[0] != nil {
-			result.Pairs = []preparation.ArchivePair{{Previous: archives.Download{Path: writeTarball(p.t, r.KeepArchives, "old", p.upstream[0])}, Next: next}}
+			result.Pairs = []preparation.ArchivePair{{Previous: distfetch.Download{Path: writeTarball(p.t, r.KeepArchives, "old", p.upstream[0])}, Next: next}}
 		}
 	}
 	return result, nil
@@ -441,14 +441,14 @@ func TestAnUpdateThatEditedNothingSaysWhatThePortIsAt(t *testing.T) {
 func TestAChangeTheArchivesShareIsSaidOnce(t *testing.T) {
 	dir := t.TempDir()
 	pair := func(name string, before, after map[string]string) preparation.ArchivePair {
-		next := archives.Download{Path: writeTarball(t, dir, name+"-2", after)}
+		next := distfetch.Download{Path: writeTarball(t, dir, name+"-2", after)}
 		next.Name = name + "-2.tar.gz"
-		return preparation.ArchivePair{Previous: archives.Download{Path: writeTarball(t, dir, name+"-1", before)}, Next: next}
+		return preparation.ArchivePair{Previous: distfetch.Download{Path: writeTarball(t, dir, name+"-1", before)}, Next: next}
 	}
 	source := pair("source", map[string]string{"LICENSE": "MIT\n"}, map[string]string{"LICENSE": "Apache-2.0\n", "meson.build": "project('x')\n"})
 	binary := pair("binary", map[string]string{"LICENSE": "MIT\n"}, map[string]string{"LICENSE": "Apache-2.0\n"})
 	result := preparation.Result{}
-	result.Downloads = []archives.Download{source.Next, binary.Next}
+	result.Downloads = []distfetch.Download{source.Next, binary.Next}
 	result.Pairs = []preparation.ArchivePair{source, binary}
 	comparison := (&Engine{}).assessUpstream(t.Context(), result, sourcecompare.Versions{}, [2]model.Source{}, true)
 	require.Empty(t, comparison.Problem)
@@ -464,18 +464,18 @@ func TestAChangeTheArchivesShareIsSaidOnce(t *testing.T) {
 // review's finding 1).
 func TestTheComparisonReadsWhereThePortBuilds(t *testing.T) {
 	dir := t.TempDir()
-	next := archives.Download{Path: writeTarball(t, dir, "demo-2", map[string]string{
+	next := distfetch.Download{Path: writeTarball(t, dir, "demo-2", map[string]string{
 		"LICENSE": "MIT\n", "python/pyproject.toml": "[project]\ndependencies = [\"requests>=2\", \"rich>=13\"]\n", "package.json": `{"dependencies":{"x":"1"}}`,
 	})}
 	next.Name = "demo-2.tar.gz"
-	previous := archives.Download{Path: writeTarball(t, dir, "demo-1", map[string]string{
+	previous := distfetch.Download{Path: writeTarball(t, dir, "demo-1", map[string]string{
 		"LICENSE": "MIT\n", "python/pyproject.toml": "[project]\ndependencies = [\"requests>=2\"]\n",
 	})}
 	result := preparation.Result{}
 	result.Target = model.Target{Name: "py-demo"}
 	result.Unchanged = &macports.PortInfo{Name: "py-demo", Options: map[string]string{"worksrcdir": "demo-1/python"}}
 	result.Prepared = macports.Snapshot{Ports: map[string]macports.PortInfo{"py-demo": {Name: "py-demo", Options: map[string]string{"worksrcdir": "demo-2/python"}}}}
-	result.Downloads = []archives.Download{next}
+	result.Downloads = []distfetch.Download{next}
 	result.Pairs = []preparation.ArchivePair{{Previous: previous, Next: next}}
 	comparison := (&Engine{}).assessUpstream(t.Context(), result, sourcecompare.Versions{}, [2]model.Source{}, true)
 	require.Empty(t, comparison.Problem)
@@ -569,11 +569,11 @@ func TestAPinIsJudgedAgainstTheBasesTree(t *testing.T) {
 		hold bool
 	}{{"12", false}, {"13.1", true}} {
 		dir := t.TempDir()
-		old := archives.Download{Name: "old.tar.gz", Path: writeTarball(t, dir, "pkg-1", map[string]string{"requirements.txt": "rich>=13\n"})}
-		next := archives.Download{Name: "new.tar.gz", Path: writeTarball(t, dir, "pkg-2", map[string]string{"requirements.txt": "rich>=14\n"})}
+		old := distfetch.Download{Name: "old.tar.gz", Path: writeTarball(t, dir, "pkg-1", map[string]string{"requirements.txt": "rich>=13\n"})}
+		next := distfetch.Download{Name: "new.tar.gz", Path: writeTarball(t, dir, "pkg-2", map[string]string{"requirements.txt": "rich>=14\n"})}
 		result := preparation.Result{}
 		result.Target = model.Target{Name: "demo"}
-		result.Downloads = []archives.Download{next}
+		result.Downloads = []distfetch.Download{next}
 		result.Pairs = []preparation.ArchivePair{{Previous: old, Next: next}}
 		demo := macports.PortInfo{Name: "demo", Options: map[string]string{"dockhand.portgroups": "python"}, Dependencies: []macports.Dependency{{Port: "py313-rich"}}}
 		result.Unchanged = &demo
@@ -599,13 +599,13 @@ func TestAPinIsJudgedAgainstTheBasesTree(t *testing.T) {
 // doesn't (nuspell's CMakeLists.txt).
 func TestAChangeTheBuildDoesntReadHoldsNothing(t *testing.T) {
 	dir := t.TempDir()
-	next := archives.Download{Path: writeTarball(t, dir, "flatbuffers-25.12.19", map[string]string{
+	next := distfetch.Download{Path: writeTarball(t, dir, "flatbuffers-25.12.19", map[string]string{
 		"CMakeLists.txt": "project(FlatBuffers VERSION 25.12.19)\nadd_library(flatbuffers src/a.cpp src/b.cpp)\n",
 		"package.json":   `{"devDependencies": {"eslint": "9.0.0", "typescript": "5.8.3"}}`,
 		"Package.swift":  "// swift-tools-version:5.9\n",
 	})}
 	next.Name = "flatbuffers-25.12.19.tar.gz"
-	previous := archives.Download{Path: writeTarball(t, dir, "flatbuffers-25.9.23", map[string]string{
+	previous := distfetch.Download{Path: writeTarball(t, dir, "flatbuffers-25.9.23", map[string]string{
 		"CMakeLists.txt": "project(FlatBuffers VERSION 25.9.23)\nadd_library(flatbuffers src/a.cpp)\n",
 		"package.json":   `{"devDependencies": {"eslint": "8.0.0"}}`,
 	})}
@@ -615,7 +615,7 @@ func TestAChangeTheBuildDoesntReadHoldsNothing(t *testing.T) {
 	// A second archive with the same package.json counts nothing twice.
 	other := next
 	other.Name = "flatbuffers-25.12.19.zip"
-	result.Downloads = []archives.Download{next, other}
+	result.Downloads = []distfetch.Download{next, other}
 	result.Pairs = []preparation.ArchivePair{{Previous: previous, Next: next}, {Previous: previous, Next: other}}
 	comparison := (&Engine{}).assessUpstream(t.Context(), result, sourcecompare.Versions{Old: "25.9.23", New: "25.12.19"}, [2]model.Source{}, true)
 	require.Equal(t, []model.UpstreamChange{
@@ -633,11 +633,11 @@ func TestAnOptionThePortfileNamesHolds(t *testing.T) {
 	f := setup(t)
 	e := f.open(t)
 	dir := t.TempDir()
-	next := archives.Download{Path: writeTarball(t, dir, "fluent-bit-5.1.3", map[string]string{
+	next := distfetch.Download{Path: writeTarball(t, dir, "fluent-bit-5.1.3", map[string]string{
 		"CMakeLists.txt": "project(fluent-bit VERSION 5.1.3)\noption(FLB_PROTOBUF_ENCODER \"Protobuf\" No)\nif(FLB_PROTOBUF_ENCODER)\n  find_package(Protobuf REQUIRED)\nendif()\nadd_library(flb a.c)\n",
 	})}
 	next.Name = "fluent-bit-5.1.3.tar.gz"
-	previous := archives.Download{Path: writeTarball(t, dir, "fluent-bit-5.1.2", map[string]string{
+	previous := distfetch.Download{Path: writeTarball(t, dir, "fluent-bit-5.1.2", map[string]string{
 		"CMakeLists.txt": "project(fluent-bit VERSION 5.1.2)\nadd_library(flb a.c)\n",
 	})}
 	held := func(portfile string) bool {
@@ -649,7 +649,7 @@ func TestAnOptionThePortfileNamesHolds(t *testing.T) {
 		result := preparation.Result{}
 		result.Target = model.Target{Name: "fluent-bit", Portfile: "sysutils/fluent-bit/Portfile"}
 		result.Prepared = macports.Snapshot{Ports: map[string]macports.PortInfo{"fluent-bit": {Name: "fluent-bit", Options: map[string]string{"dockhand.portgroups": "github cmake", "use_configure": "yes", "configure.cmd": "/opt/local/bin/cmake"}}}}
-		result.Downloads = []archives.Download{next}
+		result.Downloads = []distfetch.Download{next}
 		result.Pairs = []preparation.ArchivePair{{Previous: previous, Next: next}}
 		comparison := e.assessUpstream(t.Context(), result, sourcecompare.Versions{Old: "5.1.2", New: "5.1.3"}, [2]model.Source{{}, {Tree: model.ObjectID(tree)}}, true)
 		return comparison.Held()
@@ -700,11 +700,11 @@ func TestAnUpdateSaysThePortsPlainHTTPURLs(t *testing.T) {
 func TestAPinForAnotherPlatformHoldsNothing(t *testing.T) {
 	for marker, holds := range map[string]bool{"sys_platform == 'win32'": false, "sys_platform == 'darwin'": true, "python_version >= '3.12'": true, "python_version < '3.10'": false} {
 		dir := t.TempDir()
-		old := archives.Download{Name: "old.tar.gz", Path: writeTarball(t, dir, "pkg-1", map[string]string{"requirements.txt": "requests==1; " + marker + "\n"})}
-		next := archives.Download{Name: "new.tar.gz", Path: writeTarball(t, dir, "pkg-2", map[string]string{"requirements.txt": "requests==999; " + marker + "\n"})}
+		old := distfetch.Download{Name: "old.tar.gz", Path: writeTarball(t, dir, "pkg-1", map[string]string{"requirements.txt": "requests==1; " + marker + "\n"})}
+		next := distfetch.Download{Name: "new.tar.gz", Path: writeTarball(t, dir, "pkg-2", map[string]string{"requirements.txt": "requests==999; " + marker + "\n"})}
 		result := preparation.Result{}
 		result.Target = model.Target{Name: "demo"}
-		result.Downloads = []archives.Download{next}
+		result.Downloads = []distfetch.Download{next}
 		result.Pairs = []preparation.ArchivePair{{Previous: old, Next: next}}
 		result.Prepared = macports.Snapshot{Ports: map[string]macports.PortInfo{"demo": {Name: "demo", Options: map[string]string{"dockhand.portgroups": "python"},
 			Dependencies: []macports.Dependency{{Port: "py313-requests"}}}}}

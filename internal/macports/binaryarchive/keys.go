@@ -6,7 +6,7 @@
 // MacPorts reads them, and configures MacPorts to.
 //
 // Three kinds of archive are distinct in dockhand: upstream source
-// archives (internal/archive, portedit/archives), the packages MacPorts
+// archives (internal/archive, macports/distfetch), the packages MacPorts
 // builds (model.Archive), and here, a package signed as a site's entry.
 package binaryarchive
 

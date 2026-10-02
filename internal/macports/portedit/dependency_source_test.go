@@ -8,14 +8,14 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/depblock"
-	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
+	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/stretchr/testify/require"
 )
 
 func TestManifestSourceAmbiguityAndAbsence(t *testing.T) {
 	t.Parallel()
-	archive := func(name, member string) archives.Download {
+	archive := func(name, member string) distfetch.Download {
 		filename := filepath.Join(t.TempDir(), name)
 		f, err := os.Create(filename)
 		require.NoError(t, err)
@@ -25,11 +25,11 @@ func TestManifestSourceAmbiguityAndAbsence(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, writer.Close())
 		require.NoError(t, f.Close())
-		return archives.Download{Path: filename, Checksum: portfile.Checksum{Name: name}}
+		return distfetch.Download{Path: filename, Checksum: portfile.Checksum{Name: name}}
 	}
 	info := macports.PortInfo{Options: map[string]string{"worksrcdir": "root", "extract.rename": "no"}}
-	sources := []archives.Source{{Name: "source.tar"}, {Name: "auxiliary.tar"}}
-	downloads := []archives.Download{archive("source.tar", "root/Cargo.lock"), archive("auxiliary.tar", "root/Cargo.lock")}
+	sources := []distfetch.Source{{Name: "source.tar"}, {Name: "auxiliary.tar"}}
+	downloads := []distfetch.Download{archive("source.tar", "root/Cargo.lock"), archive("auxiliary.tar", "root/Cargo.lock")}
 	_, err := selectDependencySource(t.Context(), info, sources, downloads, &depblock.Plan{Kind: depblock.Cargo})
 	require.ErrorContains(t, err, "multiple extracted archives")
 	downloads[1] = archive("auxiliary.tar", "other/Cargo.lock")

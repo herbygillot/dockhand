@@ -1,4 +1,4 @@
-package archives
+package distfetch
 
 import (
 	"crypto/sha256"

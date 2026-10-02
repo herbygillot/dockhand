@@ -16,8 +16,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
-	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
@@ -52,7 +52,7 @@ func (r rechecksummer) Prepare(ctx context.Context, request preparation.Request)
 	revision := 0
 	var stealth *preparation.Stealth
 	if asked := request.Stealth; asked != nil && !slices.Contains(asked.Changed, name) {
-		stealth = &preparation.Stealth{Distfiles: []preparation.StealthDistfile{{Name: now.Name, Was: archives.Declared(declared)[""], Now: now}}}
+		stealth = &preparation.Stealth{Distfiles: []preparation.StealthDistfile{{Name: now.Name, Was: distfetch.Declared(declared)[""], Now: now}}}
 		if !asked.KeepRevision {
 			if after, err = portfile.BumpRevision(after, "", 0); err != nil {
 				return preparation.Result{}, err
@@ -71,7 +71,7 @@ func (r rechecksummer) Prepare(ctx context.Context, request preparation.Request)
 	tree, err := r.repo.EditTree(ctx, string(request.Source.Tree), []git.FileEdit{edit})
 	result := preparation.Result{Target: model.Target{Name: "jq", Portfile: name}, PreparedTree: model.ObjectID(tree), Files: []git.FileEdit{edit},
 		Fidelity:  []portedit.Fidelity{{Before: port(declared, 0), After: port("", revision)}},
-		Downloads: []archives.Download{{Checksum: now}}}
+		Downloads: []distfetch.Download{{Checksum: now}}}
 	result.Stealth = stealth
 	return result, err
 }

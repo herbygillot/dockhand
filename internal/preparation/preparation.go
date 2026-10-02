@@ -9,11 +9,11 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/depblock"
+	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
-	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/upstream"
@@ -104,7 +104,7 @@ type Service struct {
 }
 
 func (s *Service) editor() *portedit.Service {
-	editor := &portedit.Service{Ports: s.Ports, DependencyTools: s.DependencyTools, Archives: archives.Client{HTTP: s.HTTP, MaxBytes: s.MaxDownloadBytes, Mirror: s.Mirror}}
+	editor := &portedit.Service{Ports: s.Ports, DependencyTools: s.DependencyTools, Archives: distfetch.Client{HTTP: s.HTTP, MaxBytes: s.MaxDownloadBytes, Mirror: s.Mirror}}
 	if s.Upstream != nil {
 		editor.Manifests = s.Upstream
 	}

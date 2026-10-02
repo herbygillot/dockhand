@@ -16,8 +16,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
+	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
-	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
@@ -365,7 +365,7 @@ func (e *Engine) patchesFor(ctx context.Context, request patchRequest) []assess.
 		if err != nil {
 			return unchecked(err.Error())
 		}
-		archives, err := fetchPlanned(ctx, archives.Client{Mirror: e.mirror()}.Store(into), infos[1], missed)
+		archives, err := fetchPlanned(ctx, distfetch.Client{Mirror: e.mirror()}.Store(into), infos[1], missed)
 		if err != nil {
 			return unchecked(fmt.Sprintf("%s couldn't be fetched to check them against: %v", strings.Join(missing, ", "), err))
 		}
@@ -481,7 +481,7 @@ func (e *Engine) mirror() string {
 	if e.ArchiveMirror != "" {
 		return e.ArchiveMirror
 	}
-	return archives.MacPortsMirror
+	return distfetch.MacPortsMirror
 }
 
 // transient reports a failure another try may not meet, as HTTP and the
@@ -555,7 +555,7 @@ func (e *Engine) readPlans(ctx context.Context, infos [2]macports.PortInfo, plan
 		if i == 0 && !hadBase {
 			continue
 		}
-		sides[i] = side{info: infos[i], plan: plans[i], declared: archives.Declared(infos[i].Options["checksums"]),
+		sides[i] = side{info: infos[i], plan: plans[i], declared: distfetch.Declared(infos[i].Options["checksums"]),
 			spec: project.Spec{Subdirectory: macports.SourceSubdirectory(infos[i].Options["worksrcdir"])}, readings: map[string]project.Reading{}}
 	}
 	digest := func(s side, name string) string {
@@ -590,7 +590,7 @@ func (e *Engine) readPlans(ctx context.Context, infos [2]macports.PortInfo, plan
 		if err != nil {
 			return nil, nil, nil, err.Error(), false
 		}
-		fetched, err := fetchPlanned(ctx, archives.Client{Mirror: e.mirror()}.Store(into), s.info, missing)
+		fetched, err := fetchPlanned(ctx, distfetch.Client{Mirror: e.mirror()}.Store(into), s.info, missing)
 		if err != nil {
 			which := "the revision's"
 			if i == 0 {

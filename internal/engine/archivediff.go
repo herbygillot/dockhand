@@ -14,7 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/archive"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
+	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -202,7 +202,7 @@ func (p *evaluatedPorts) FetchArchives(ctx context.Context, source model.Source,
 	if err != nil {
 		return nil, err
 	}
-	return fetchPlanned(ctx, archives.Client{Mirror: archives.MacPortsMirror}.Store(into), info, plan)
+	return fetchPlanned(ctx, distfetch.Client{Mirror: distfetch.MacPortsMirror}.Store(into), info, plan)
 }
 
 // ArchivePlanner says what a port fetches in a source, as MacPorts
@@ -285,7 +285,7 @@ func (p *evaluatedPorts) withoutVendored(ctx context.Context, files *workspace.W
 	if err != nil {
 		return nil, err
 	}
-	stripped, vendored, err := archives.OwnArchives(contents, info)
+	stripped, vendored, err := distfetch.OwnArchives(contents, info)
 	if err != nil || !vendored {
 		return nil, err
 	}
@@ -328,7 +328,7 @@ func planOf(info macports.PortInfo, observed macports.PortObservation, portdir s
 	case err != nil:
 		return nil, err
 	}
-	if err := archives.CheckPolicy(info, portdir); err != nil {
+	if err := distfetch.CheckPolicy(info, portdir); err != nil {
 		return nil, err
 	}
 	return plan, nil
@@ -337,7 +337,7 @@ func planOf(info macports.PortInfo, observed macports.PortObservation, portdir s
 // fetchPlanned fetches each archive of a fetch plan as the port's
 // checksums declare it, from upstream, where MacPorts' own fetch plan
 // finds it, or else MacPorts' mirror (Store.Shipped).
-func fetchPlanned(ctx context.Context, store *archives.Store, info macports.PortInfo, plan []macports.Distfile) ([]FetchedArchive, error) {
+func fetchPlanned(ctx context.Context, store *distfetch.Store, info macports.PortInfo, plan []macports.Distfile) ([]FetchedArchive, error) {
 	shipped, err := store.Shipped(ctx, info, plan)
 	if err != nil {
 		return nil, err

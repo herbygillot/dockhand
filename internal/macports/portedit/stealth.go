@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
-	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/progress"
 )
@@ -79,14 +79,14 @@ func (s *Service) stealthUpdate(ctx context.Context, request Request, input *sou
 			keep, byHand = true, true
 		}
 	}
-	was := archives.Declared(result.Fidelity[0].Before.Ports[name].Options["checksums"])
+	was := distfetch.Declared(result.Fidelity[0].Before.Ports[name].Options["checksums"])
 	found := &Stealth{}
 	for _, download := range result.Downloads {
 		before, ok := was[download.Name]
 		if !ok && len(was) == 1 && len(result.Downloads) == 1 {
 			before, ok = was[""]
 		}
-		if ok && archives.Differs(before, download.Checksum) {
+		if ok && distfetch.Differs(before, download.Checksum) {
 			found.Distfiles = append(found.Distfiles, StealthDistfile{Name: download.Name, Was: before, Now: download.Checksum})
 		}
 	}
@@ -168,7 +168,7 @@ func (s *Service) dropStealthDistSubdir(ctx context.Context, input *sourceInput,
 // sharedDistfile is an archive the new version fetches under a name the
 // current version's has too, by MacPorts' own fetch plan for the Portfile
 // as it stands; empty where every name changes.
-func sharedDistfile(ctx context.Context, input *sourceInput, downloads []archives.Download) (string, error) {
+func sharedDistfile(ctx context.Context, input *sourceInput, downloads []distfetch.Download) (string, error) {
 	current, err := shippedPlan(ctx, input)
 	if err != nil {
 		return "", err

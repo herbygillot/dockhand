@@ -15,7 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
-	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
+	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/preparation"
@@ -807,7 +807,7 @@ func (e *Engine) readPairs(ctx context.Context, pairs []preparation.ArchivePair,
 			}
 		}
 		var readings [2]project.Reading
-		for i, archive := range []archives.Download{pair.Previous, pair.Next} {
+		for i, archive := range []distfetch.Download{pair.Previous, pair.Next} {
 			reading, err := e.readings().Read(ctx, archive.Path, archive.SHA256, project.Spec{Subdirectory: macports.SourceSubdirectory(ports[i].Options["worksrcdir"])})
 			if err != nil {
 				return nil, fmt.Errorf("reading %s: %v", path.Base(archive.Path), err)

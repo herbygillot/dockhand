@@ -3,8 +3,8 @@ package portedit
 import (
 	"context"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
-	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
 )
 
@@ -31,7 +31,7 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 			// An obsolete follower has no archive in this context by design.
 			continue
 		}
-		if err := archives.CheckPolicy(info, input.portdirIn(observed.Snapshot.Root)); err != nil {
+		if err := distfetch.CheckPolicy(info, input.portdirIn(observed.Snapshot.Root)); err != nil {
 			return contexts, err, nil
 		}
 		metadata, inconclusive := observe.Tolerate(ctx, observed.Ports[input.target.Name], input.data, observed.Snapshot.Root)

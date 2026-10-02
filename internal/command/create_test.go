@@ -13,8 +13,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
-	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/model"
@@ -54,7 +54,7 @@ func (c checksummer) Prepare(ctx context.Context, request preparation.Request) (
 	port := macports.Snapshot{Ports: map[string]macports.PortInfo{"rift": {Name: "rift", Version: "0.4.2"}}}
 	return preparation.Result{Target: model.Target{Name: "rift", Portfile: name}, PreparedTree: model.ObjectID(tree), Files: []git.FileEdit{edit},
 		Fidelity:  []portedit.Fidelity{{Before: port, After: port}},
-		Downloads: []archives.Download{{Checksum: portfile.Checksum{Name: "rift-0.4.2.tar.gz", SHA256: "bbbb", Size: 4096}}}}, err
+		Downloads: []distfetch.Download{{Checksum: portfile.Checksum{Name: "rift-0.4.2.tar.gz", SHA256: "bbbb", Size: 4096}}}}, err
 }
 
 func TestCreateWritesANewPortFromItsProject(t *testing.T) {

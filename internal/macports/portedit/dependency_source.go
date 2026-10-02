@@ -8,11 +8,11 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/depblock"
+	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
-	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 )
 
-func dependencySources(info macports.PortInfo, sources []archives.Source) ([]archives.Source, error) {
+func dependencySources(info macports.PortInfo, sources []distfetch.Source) ([]distfetch.Source, error) {
 	names := make([]string, len(sources))
 	for i, s := range sources {
 		names[i] = s.Name
@@ -21,7 +21,7 @@ func dependencySources(info macports.PortInfo, sources []archives.Source) ([]arc
 	if err != nil {
 		return nil, err
 	}
-	var result []archives.Source
+	var result []distfetch.Source
 	for _, source := range sources {
 		if slices.Contains(selected, source.Name) {
 			result = append(result, source)
@@ -37,11 +37,11 @@ func dependencySources(info macports.PortInfo, sources []archives.Source) ([]arc
 // from what upstream serves, as it was before they were kept, and the
 // problem is returned in their place: the update can't be compared with
 // bytes MacPorts didn't ship.
-func originalDependencySource(ctx context.Context, store *archives.Store, info macports.PortInfo, fetch, candidates []archives.Source, plan *depblock.Plan, kept bool) (depblock.Input, []archives.Download, string, error) {
-	var downloads []archives.Download
+func originalDependencySource(ctx context.Context, store *distfetch.Store, info macports.PortInfo, fetch, candidates []distfetch.Source, plan *depblock.Plan, kept bool) (depblock.Input, []distfetch.Download, string, error) {
+	var downloads []distfetch.Download
 	problem := ""
 	if kept {
-		shipped, err := store.Shipped(ctx, info, archives.FetchPlan(fetch))
+		shipped, err := store.Shipped(ctx, info, distfetch.FetchPlan(fetch))
 		switch {
 		case ctx.Err() != nil:
 			return depblock.Input{}, nil, "", ctx.Err()
@@ -67,7 +67,7 @@ func originalDependencySource(ctx context.Context, store *archives.Store, info m
 	return input, downloads, problem, err
 }
 
-func selectDependencySource(ctx context.Context, info macports.PortInfo, sources []archives.Source, downloads []archives.Download, plan *depblock.Plan) (depblock.Input, error) {
+func selectDependencySource(ctx context.Context, info macports.PortInfo, sources []distfetch.Source, downloads []distfetch.Download, plan *depblock.Plan) (depblock.Input, error) {
 	var selected *depblock.Input
 	for _, source := range sources {
 		matches := 0

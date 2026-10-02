@@ -14,17 +14,17 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
-	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/textedit"
 )
 
-func (s *Service) applyObservedArchives(ctx context.Context, request Request, input *sourceInput, plan archivePlan, store *archives.Store) (Result, error) {
+func (s *Service) applyObservedArchives(ctx context.Context, request Request, input *sourceInput, plan archivePlan, store *distfetch.Store) (Result, error) {
 	result := plan.result
 	updates := map[textedit.Span]checksumUpdate{}
-	var downloads []archives.Download
+	var downloads []distfetch.Download
 	for _, item := range plan.observed.downloads {
 		progress.VerboseReport(ctx, "Refreshing %s", item.artifact.Name)
 		download, err := store.FetchFirst(ctx, item.info, item.artifact.Name, item.artifact.URLs)

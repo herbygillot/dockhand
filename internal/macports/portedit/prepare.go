@@ -12,8 +12,8 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/depblock"
+	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
-	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
@@ -91,11 +91,11 @@ type Result struct {
 	// any reader having to know that.
 	Prepared  macports.Snapshot `json:"-"`
 	Release   *model.Release
-	Downloads []archives.Download
+	Downloads []distfetch.Download
 	// Crates are the archives of the Git-pinned crates a Cargo update
 	// fetched for their checksums: dependencies, not the port's source, so
 	// no pair is theirs to compare.
-	Crates []archives.Download `json:",omitempty"`
+	Crates []distfetch.Download `json:",omitempty"`
 	// Regenerated are the dependency blocks the update wrote again, each
 	// with how many entries it has, and how many aren't as they were.
 	Regenerated []Regenerated `json:",omitempty"`
@@ -214,7 +214,7 @@ type Service struct {
 	Ports           macports.Evaluator
 	// Archives fetches source archives; its zero value downloads with the
 	// default client and limits.
-	Archives archives.Client
+	Archives distfetch.Client
 	// Manifests reads a manifest from the resolved release's repository, for
 	// a git-fetched port that downloads no archive to read it from; nil
 	// leaves such a port's toolchain minimum as declared.

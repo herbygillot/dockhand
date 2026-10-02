@@ -8,8 +8,8 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/depblock"
+	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
-	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/project"
@@ -106,7 +106,7 @@ func (s *Service) raiseGoToolchain(ctx context.Context, request Request, input *
 // goRequirement finds go.mod in the first kept archive that holds one at
 // the port's worksrcdir, or in the repository at the resolved commit when
 // the port is fetched with git, and reports the Go release it requires.
-func (s *Service) goRequirement(ctx context.Context, request Request, info macports.PortInfo, downloads []archives.Download) (required string, found bool, err error) {
+func (s *Service) goRequirement(ctx context.Context, request Request, info macports.PortInfo, downloads []distfetch.Download) (required string, found bool, err error) {
 	if info.GitFetched() {
 		if s.Manifests == nil || request.Release == nil {
 			progress.VerboseReport(ctx, "%s is fetched with git and no manifest source is configured; go.toolchain_min is left as declared", info.Name)

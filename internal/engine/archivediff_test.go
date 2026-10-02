@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
+	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 )
 
 func TestTheOldArchiveComesFromTheMirrorAfterAStealthUpdate(t *testing.T) {
@@ -34,7 +34,7 @@ func TestTheOldArchiveComesFromTheMirrorAfterAStealthUpdate(t *testing.T) {
 			"fetch.type": "standard", "fetch.archive_compatible": "1", "fetch.ignore_sslcert": "0", "fetch.has_credentials": "0",
 		}}
 	}
-	store := archives.Client{Mirror: mirror.URL + "/"}.Store(t.TempDir())
+	store := distfetch.Client{Mirror: mirror.URL + "/"}.Store(t.TempDir())
 	// MacPorts' fetch plan, which knows its mirror groups, says where
 	// upstream serves it.
 	plan := macports.PortObservation{Distfiles: []macports.Distfile{{Name: "croc-10.2.4.tar.gz", URLs: []string{upstream.URL + "/releases/croc-10.2.4.tar.gz"}}}}

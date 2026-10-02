@@ -13,7 +13,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/depblock"
-	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
+	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
@@ -123,7 +123,7 @@ func dependencyPatches(input *sourceInput, kind string) error {
 	// for a derived baseline, and its filespath names that projection: the
 	// port directory it is checked against is the same projection's.
 	portdir := input.portdirIn(input.before.Root)
-	if err := archives.LocalPatches(input.info, portdir); err != nil {
+	if err := distfetch.LocalPatches(input.info, portdir); err != nil {
 		return err
 	}
 	patches, _ := syntax.ListValues(input.info.Options["patchfiles"])
@@ -146,7 +146,7 @@ func dependencyPatches(input *sourceInput, kind string) error {
 // dependencyBase is the port with its dependency declarations stripped, as
 // the current version's source, with that source's archives, all of them,
 // and the ones that may hold the dependency manifest.
-func (s *Service) dependencyBase(ctx context.Context, request Request, input *sourceInput, plan *depblock.Plan) (*sourceInput, []archives.Source, []archives.Source, error) {
+func (s *Service) dependencyBase(ctx context.Context, request Request, input *sourceInput, plan *depblock.Plan) (*sourceInput, []distfetch.Source, []distfetch.Source, error) {
 	stripped, err := plan.Strip(input.data)
 	if err != nil {
 		return nil, nil, nil, err
@@ -160,7 +160,7 @@ func (s *Service) dependencyBase(ctx context.Context, request Request, input *so
 	// The stripped baseline was evaluated in an overlay, and its paths name
 	// that overlay; the sources policy checks them against its port
 	// directory there.
-	all, err := archives.Sources(base.info, base.portdirIn(base.before.Root))
+	all, err := distfetch.Sources(base.info, base.portdirIn(base.before.Root))
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -221,7 +221,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 		return Result{}, err
 	}
 	next := result.Prepared.Ports[input.target.Name]
-	nextSources, err := archives.Sources(next, base.portdirIn(result.Prepared.Root))
+	nextSources, err := distfetch.Sources(next, base.portdirIn(result.Prepared.Root))
 	if err != nil {
 		return Result{}, err
 	}
@@ -348,7 +348,7 @@ func dependencyInput(info macports.PortInfo, archive string, plan *depblock.Plan
 	return depblock.Input{Archive: archive, Worksrcdir: filepath.ToSlash(root), Package: info.Options["go.package"], Tag: info.Options["git.branch"], Git: plan.Git}, nil
 }
 
-func (s *Service) gitCrateChecksums(ctx context.Context, request Request, input *sourceInput, plan *depblock.Plan, contents []byte, generated depblock.GeneratedBlocks) (map[string][]string, []archives.Download, error) {
+func (s *Service) gitCrateChecksums(ctx context.Context, request Request, input *sourceInput, plan *depblock.Plan, contents []byte, generated depblock.GeneratedBlocks) (map[string][]string, []distfetch.Download, error) {
 	sums := map[string]string{}
 	for _, crate := range generated.Git {
 		sums[crate.Distfile()] = strings.Repeat("0", 64)
@@ -374,15 +374,15 @@ func (s *Service) gitCrateChecksums(ctx context.Context, request Request, input 
 		info.Options[key] = ""
 	}
 	info.Options["patchfiles"] = ""
-	sources, err := archives.Sources(info, "")
+	sources, err := distfetch.Sources(info, "")
 	if err != nil {
 		return nil, nil, err
 	}
-	byName := map[string]archives.Source{}
+	byName := map[string]distfetch.Source{}
 	for _, source := range sources {
 		byName[source.Name] = source
 	}
-	var downloads []archives.Download
+	var downloads []distfetch.Download
 	for _, crate := range generated.Git {
 		source, ok := byName[crate.Distfile()]
 		if !ok {

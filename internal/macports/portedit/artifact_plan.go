@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/distfetch"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
-	"github.com/herbygillot/dockhand/internal/macports/portedit/archives"
 	"github.com/herbygillot/dockhand/internal/macports/portedit/observe"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/progress"
@@ -58,7 +58,7 @@ func (s *Service) bindArchives(ctx context.Context, input *sourceInput, contents
 		return distfiles.Binding{}, fmt.Errorf("%w: modeled context depends on host state%s", errProbeInconclusive, observe.HostInputs(port))
 	}
 	info := observed.Snapshot.Ports[input.target.Name]
-	if err := archives.CheckPolicy(info, input.portdirIn(observed.Snapshot.Root)); err != nil {
+	if err := distfetch.CheckPolicy(info, input.portdirIn(observed.Snapshot.Root)); err != nil {
 		return distfiles.Binding{}, err
 	}
 	binding, err := distfiles.Bind(contents, input.portfileIn(observed.Snapshot.Root), info, port)
