@@ -296,10 +296,16 @@ func (p *Provider) PruneCache(ctx context.Context, unused time.Duration) ([]stri
 // its Xcode image.
 func (p *Provider) Remedy(unmet model.Unmet) string {
 	release, err := tartvm.ReleaseForPlatform(unmet.Environment.Platform)
-	if err != nil || unmet.Needs != model.RequiresXcode {
+	switch {
+	case err != nil:
 		return ""
+	case unmet.Needs == model.RequiresXcode:
+		return fmt.Sprintf("dockhand providers setup tart %s --xcode <Xcode .xip, or a folder of them> makes macOS %s's Xcode image", release.Slug, release.Product)
+	case unmet.Needs.XcodeVersion() != "":
+		version := unmet.Needs.XcodeVersion()
+		return fmt.Sprintf("%s = %q under [providers.tart.xcode], then dockhand providers setup tart %s --xcode <Xcode %s .xip>, gives macOS %s's Xcode image Xcode %s", release.Slug, version, release.Slug, version, release.Product, version)
 	}
-	return fmt.Sprintf("dockhand providers setup tart %s --xcode <Xcode .xip, or a folder of them> makes macOS %s's Xcode image", release.Slug, release.Product)
+	return ""
 }
 
 // Leftovers are the check clones in dockhand's Tart home. An attempt

@@ -47,25 +47,10 @@ func (e *Engine) findDirectory(ctx context.Context, tree, name string) (string, 
 	if strings.Contains(name, "/") {
 		return strings.TrimSuffix(name, "/Portfile"), nil
 	}
-	entries, err := e.Repo.ReadTree(ctx, tree)
+	directories, err := e.directoriesNamed(ctx, tree, name)
 	if err != nil {
 		return "", err
 	}
-	var candidates []string
-	for _, entry := range entries {
-		if entry.Type == "tree" && macports.IsCategory(entry.Name) {
-			candidates = append(candidates, entry.Name+"/"+name+"/Portfile")
-		}
-	}
-	found, err := e.Repo.FileBlobs(ctx, tree, candidates)
-	if err != nil {
-		return "", err
-	}
-	var directories []string
-	for path := range found {
-		directories = append(directories, strings.TrimSuffix(path, "/Portfile"))
-	}
-	slices.Sort(directories)
 	switch len(directories) {
 	case 1:
 		return directories[0], nil
@@ -82,6 +67,31 @@ func (e *Engine) findDirectory(ctx context.Context, tree, name string) (string, 
 		return "", fmt.Errorf("no port %s in this tree: %w", name, err)
 	}
 	return directory, nil
+}
+
+// directoriesNamed are the directories of a tree's categories named for
+// a port, category/<name>, that hold a Portfile.
+func (e *Engine) directoriesNamed(ctx context.Context, tree, name string) ([]string, error) {
+	entries, err := e.Repo.ReadTree(ctx, tree)
+	if err != nil {
+		return nil, err
+	}
+	var candidates []string
+	for _, entry := range entries {
+		if entry.Type == "tree" && macports.IsCategory(entry.Name) {
+			candidates = append(candidates, entry.Name+"/"+name+"/Portfile")
+		}
+	}
+	found, err := e.Repo.FileBlobs(ctx, tree, candidates)
+	if err != nil {
+		return nil, err
+	}
+	var directories []string
+	for path := range found {
+		directories = append(directories, strings.TrimSuffix(path, "/Portfile"))
+	}
+	slices.Sort(directories)
+	return directories, nil
 }
 
 // Retry queues a run's exact request again: the same revision and plan,

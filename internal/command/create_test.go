@@ -99,10 +99,15 @@ func TestCreateWritesANewPortFromItsProject(t *testing.T) {
 	_, _, err = dockhand(t, "create", "https://github.com/rift-dev/rift", "--new", "--name", "rift2", "--category", "_resources")
 	require.ErrorContains(t, err, `"_resources" is not a category`)
 
-	// A name a port already has is refused.
+	// A name a port already has is refused, with --name named; with
+	// --new, before a branch is started for it, where one was started and
+	// left behind (the sand-runner port).
 	testProjectReader = jqProject{}
 	_, _, err = dockhand(t, "create", "https://github.com/jqlang/jq", "--category", "sysutils")
-	require.ErrorContains(t, err, "there is already a port jq, at textproc/jq")
+	require.ErrorContains(t, err, "there is already a port jq, at textproc/jq; --name names this one otherwise, or dockhand update jq updates that one")
+	_, _, err = dockhand(t, "create", "https://github.com/jqlang/jq", "--new", "--category", "sysutils")
+	require.ErrorContains(t, err, "there is already a port jq, at textproc/jq; --name names this one otherwise")
+	require.Empty(t, strings.TrimSpace(gitRun(t, w.clone, "branch", "--list", "dockhand/jq-*")), "no branch was started for it")
 }
 
 type jqProject struct{}

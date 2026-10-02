@@ -73,6 +73,9 @@ type Engine struct {
 	GitHubCLI GitHubCLI
 	// PortReader reads ports for plans; MacPorts' own evaluator when nil.
 	PortReader PortReader
+	// CheckOn is where a check builds by default, check.on's values, which
+	// a branch's evidence always requires (D17).
+	CheckOn []string
 	// ArchivePlanner says what a port fetches, for its assessment;
 	// MacPorts' own evaluator when nil.
 	ArchivePlanner ArchivePlanner

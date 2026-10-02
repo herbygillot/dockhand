@@ -463,19 +463,20 @@ func (e *Engine) identityNow(ctx context.Context, environment model.Environment)
 // evidenceNow is treeEvidence as it stands now: the environments' current
 // identities are read first, then the evidence judged by them.
 func (e *Engine) evidenceNow(ctx context.Context, primary model.Run, runs []model.Run) (Evidence, error) {
-	var environments []model.Environment
+	required := e.requiredEnvironments(ctx)
+	var plan model.Plan
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		plan, err := r.Plan(primary.Plan)
-		environments = plan.Environments
+		var err error
+		plan, err = evidencePlan(r, primary, runs, required)
 		return err
 	}); err != nil {
 		return Evidence{}, err
 	}
-	now := e.identitiesNow(ctx, environments)
+	now := e.identitiesNow(ctx, plan.Environments)
 	var evidence Evidence
 	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		var err error
-		evidence, err = treeEvidence(r, primary, runs, now)
+		evidence, err = treeEvidence(r, primary, plan, runs, now)
 		return err
 	})
 	// What changed where a result no longer stands is its provider's to
@@ -532,11 +533,7 @@ func runsOfTree(r store.Reader, branch model.BranchID, tree model.ObjectID, stat
 // doesn't (standing). The run's own blocked results were recorded in the
 // attempt that recorded what blocked them, after its provider
 // (blockRemaining), so they stand and fall with it.
-func treeEvidence(r store.Reader, primary model.Run, runs []model.Run, now identities) (Evidence, error) {
-	plan, err := r.Plan(primary.Plan)
-	if err != nil {
-		return Evidence{}, err
-	}
+func treeEvidence(r store.Reader, primary model.Run, plan model.Plan, runs []model.Run, now identities) (Evidence, error) {
 	evidence, err := runEvidence(r, primary, plan)
 	if err != nil {
 		return Evidence{}, err
@@ -575,6 +572,64 @@ func treeEvidence(r store.Reader, primary model.Run, runs []model.Run, now ident
 	}
 	evidence.settle()
 	return evidence, nil
+}
+
+// requiredEnvironments are the environments a check builds in by default,
+// check.on's, which a branch's evidence always requires (D17); none where
+// they can't be resolved, as where a provider isn't set up.
+func (e *Engine) requiredEnvironments(ctx context.Context) []model.Environment {
+	environments, err := e.Environments(ctx, e.CheckOn)
+	if err != nil {
+		return nil
+	}
+	return environments
+}
+
+// evidencePlan is the plan a branch's evidence is judged against: the
+// primary check's, with each environment another check of the same files
+// planned, by the newest that did, and the default ones, which no check
+// may have planned (D17). A check narrowed to one release replaced the
+// others' results: sand-runner's check on macOS 15 alone left its pass on
+// 26 out of status and submit (the sand-runner port). An environment no
+// check planned has no plan of its own, and what it requires is unchecked
+// there.
+func evidencePlan(r store.Reader, primary model.Run, runs []model.Run, required []model.Environment) (model.Plan, error) {
+	plan, err := r.Plan(primary.Plan)
+	if err != nil {
+		return model.Plan{}, err
+	}
+	plan.Environments = slices.Clone(plan.Environments)
+	plan.Builds = slices.Clone(plan.Builds)
+	for _, run := range runs {
+		if run.ID == primary.ID {
+			continue
+		}
+		earlier, err := r.Plan(run.Plan)
+		if err != nil {
+			return model.Plan{}, err
+		}
+		for _, build := range earlier.Builds {
+			if !slices.Contains(plan.Environments, build.Environment) {
+				plan.Environments = append(plan.Environments, build.Environment)
+				plan.Builds = append(plan.Builds, build)
+			}
+		}
+	}
+	for _, environment := range required {
+		if !slices.ContainsFunc(plan.Environments, func(planned model.Environment) bool { return covers(environment, planned) }) {
+			plan.Environments = append(plan.Environments, environment)
+		}
+	}
+	return plan, nil
+}
+
+// covers reports whether a check in planned stands for a default
+// environment: the same provider, on the same release and architecture
+// where the default names one. Where its tools since differ, as when a
+// release has since had its Xcode image made, whether its results still
+// stand is the environment's identity's to say (Counts).
+func covers(required, planned model.Environment) bool {
+	return required.Provider == planned.Provider && (required.Platform == model.Platform{} || required.Platform == planned.Platform)
 }
 
 // missing reports whether any target has no result in an environment it

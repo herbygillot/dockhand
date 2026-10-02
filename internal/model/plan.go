@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -133,6 +134,22 @@ type Requirement string
 // RequiresXcode is Xcode, not only the Command Line Tools.
 const RequiresXcode Requirement = "Xcode"
 
+// RequiresXcodeVersion is an Xcode of a version or later, as a port's
+// minimum_xcodeversions asks of the macOS it builds on: Xcode 26.0.
+func RequiresXcodeVersion(version string) Requirement {
+	return Requirement(string(RequiresXcode) + " " + version)
+}
+
+// XcodeVersion is the version an Xcode requirement names; empty for
+// RequiresXcode, or another requirement.
+func (r Requirement) XcodeVersion() string {
+	version, _ := strings.CutPrefix(string(r), string(RequiresXcode)+" ")
+	if version == string(r) {
+		return ""
+	}
+	return version
+}
+
 // Unmet is a target an environment can't build, because the environment
 // lacks what the target needs: Xcode, where there are only the Command
 // Line Tools. The target needs it itself, or through a prerequisite: a
@@ -166,6 +183,10 @@ type EnvironmentPlan struct {
 	// the Command Line Tools: their use_xcode, as MacPorts decides it with
 	// the environment's tools.
 	NeedsXcode []TargetID `json:",omitempty"`
+	// MinimumXcode is, for each target in Order whose
+	// minimum_xcodeversions this environment's Xcode doesn't meet, the
+	// Xcode it requires here.
+	MinimumXcode map[TargetID]string `json:",omitempty"`
 	// Untested are the targets in Order that declare no tests here, their
 	// test.run off as MacPorts evaluates it: they pass whatever the test
 	// policy, which a plan requiring tests says of them.

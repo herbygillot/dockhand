@@ -76,8 +76,23 @@ The branch is --branch, else the one checked out here; --new starts one.
 			case where.branch != "":
 				branch, err = e.Resolve(ctx, where.branch)
 			case where.new:
-				var started bool
-				if branch, started, err = startFor(ctx, e, name); err == nil && started {
+				// A name master has is refused before a branch is started
+				// for it.
+				var taken, unchecked, free string
+				var base model.ObjectID
+				if taken, base, unchecked, err = e.NameTaken(ctx, name); err != nil {
+					return err
+				}
+				if taken != "" {
+					return errors.New(engine.TakenWords(name, taken))
+				}
+				if unchecked != "" {
+					fmt.Fprintf(streams.Err, "whether a subport is named %s wasn't checked: %s\n", name, unchecked)
+				}
+				if free, err = e.FreeName(ctx, name); err != nil {
+					return err
+				}
+				if branch, err = e.Start(ctx, engine.StartRequest{Name: free, Base: base}); err == nil {
 					fmt.Fprintf(out, "Started %s from master %s (fetched just now)\n", branch.Name, engine.Short(branch.Base))
 				}
 			default:

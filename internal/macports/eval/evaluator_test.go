@@ -561,6 +561,34 @@ func TestTheEvaluatorSaysWhyAPortIsKnownToFail(t *testing.T) {
 	require.Equal(t, macports.ExcludedKnownFail, eligibility.Excluded)
 }
 
+// A port's minimum_xcodeversions is read against the Xcode the evaluation
+// models for the macOS: the one it asks of this macOS where that Xcode is
+// older, and nothing where it's met or asked of another, where
+// sand-runner's {24 26.0} read as a failed fetch on macOS 15 with Xcode
+// 16.4 (the sand-runner port).
+func TestTheEvaluatorReadsAMinimumXcode(t *testing.T) {
+	t.Parallel()
+	e := liveEvaluator(t)
+	tree := fixtureTree(t)
+	putFile(t, tree.Root(), "devel/swifty/Portfile", "PortSystem 1.0\nname swifty\nversion 1\noptions minimum_xcodeversions\ndefault minimum_xcodeversions {}\nminimum_xcodeversions {25 99.0 24 1.0}\n")
+	putFile(t, tree.Root(), "devel/plain/Portfile", "PortSystem 1.0\nname plain\nversion 1\n")
+	observe := func(name, version string) macports.PortInfo {
+		t.Helper()
+		targets, err := e.Resolve(t.Context(), tree, macports.Selection{Selector: name})
+		require.NoError(t, err)
+		bound, err := tree.Select(targets[0])
+		require.NoError(t, err)
+		got, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: model.Platform{OS: "darwin", Version: version, Architecture: "arm64"}})
+		require.NoError(t, err)
+		return got.Snapshot.Ports[name]
+	}
+	for _, c := range []struct{ name, version, minimum string }{{"swifty", "25", "99.0"}, {"swifty", "24", ""}, {"swifty", "23", ""}, {"plain", "25", ""}} {
+		minimum, err := observe(c.name, c.version).MinimumXcode()
+		require.NoError(t, err)
+		require.Equal(t, c.minimum, minimum, "%s on darwin %s", c.name, c.version)
+	}
+}
+
 // The variants a port declares come from Base's own record of them, its
 // universal among them:
 // which are defaults, what each requires and conflicts with, and its

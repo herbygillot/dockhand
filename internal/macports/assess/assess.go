@@ -49,8 +49,10 @@ import (
 // 11: a CMakeLists.txt that only adds options, and what one off by
 // default gates, holds nothing (D12, revisited 2026-10-01). 12: what any
 // option off by default gates, which neither the file nor the Portfile
-// turns on, holds nothing, nor do comments (the same).
-const Policy = 12
+// turns on, holds nothing, nor do comments (the same). 13: a new port's
+// license said with its Portfile's line, holding only where its manifest
+// declares another, and its build files, all new, not said (batch 28).
+const Policy = 13
 
 // Input is what one port's assessment reads.
 type Input struct {
@@ -76,6 +78,9 @@ type Input struct {
 	// it doesn't, each checked against the candidate's archives; none
 	// where neither declares any, or the archives weren't fetched.
 	Patches []Patch
+	// New is a port the base doesn't have: its archives are read against
+	// nothing, so every file is new to it.
+	New bool
 }
 
 // Pair is one archive the candidate fetches, read, beside the base's it
@@ -309,8 +314,13 @@ func (a *assessment) pair(pair Pair) {
 			}
 		case change.Kind == "license" && (change.How == "years" || change.How == "moved"):
 			a.add(finding(change, false))
+		case change.Kind == "license" && a.input.New:
+			a.add(newLicense(change, pair, port))
 		case change.Kind == "license":
 			a.add(a.license(change, pair, port))
+		case change.Kind == "build" && a.input.New:
+			// Every build file of a new port is new to it, which a passing
+			// build speaks for; what was read is said in coverage.
 		case change.Kind == "build":
 			a.add(a.build(change, pair))
 		default:
@@ -496,6 +506,31 @@ func (a *assessment) license(change sourcecompare.Change, pair Pair, port macpor
 	if evidence != "" {
 		found.Message += "; " + evidence
 	}
+	return found
+}
+
+// newLicense is a new port's license file, which has no earlier one to
+// compare: said with the Portfile's license line, and what the project's
+// manifest declares beside it, which holds only where the line doesn't
+// name it. sand-runner's "LICENSE was added; the Portfile's license line
+// may need to follow" asked a look of every new port (batch 28).
+func newLicense(change sourcecompare.Change, pair Pair, port macports.PortInfo) model.UpstreamChange {
+	found := finding(change, false)
+	line := port.Options["license"]
+	found.Message = fmt.Sprintf("upstream ships %s, and the Portfile names no license", change.Path)
+	if line != "" {
+		found.Message = fmt.Sprintf("upstream ships %s, and the Portfile says %s", change.Path, macports.LicenseWords(line))
+	}
+	declared, file, ok := pair.After.DeclaredLicense()
+	if !ok {
+		return found
+	}
+	if named, known := macports.License(declared); known && macports.LicenseNames(line, named) {
+		found.Message += ", as " + file + " does"
+		return found
+	}
+	found.Hold = true
+	found.Message += fmt.Sprintf(", where %s says %s; the Portfile's license line may need to follow", file, declared)
 	return found
 }
 

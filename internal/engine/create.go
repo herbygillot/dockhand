@@ -386,6 +386,45 @@ func (e *Engine) moveCreated(ctx context.Context, worktree *git.Repository, bran
 	return Created{Port: name, Directory: to, Category: category, MovedFrom: from}, nil
 }
 
+// NameTaken is the directory of the port master, fetched just now,
+// already has by name, a subport's among them, which the port index
+// knows; empty where none does. base is the master it read, for the
+// branch create starts. create --new asks it before it starts a branch for
+// the name, where it refused only once it had started one, left behind:
+// sand's upstream name is textproc/sand's (the sand-runner port). Where
+// the index couldn't say whether a subport has the name, unchecked says
+// why, and a directory named for it is still found.
+func (e *Engine) NameTaken(ctx context.Context, name string) (directory string, base model.ObjectID, unchecked string, err error) {
+	if base, err = e.fetchMaster(ctx); err != nil {
+		return "", "", "", err
+	}
+	trees, err := e.Repo.CommitTrees(ctx, []string{string(base)})
+	if err != nil {
+		return "", "", "", err
+	}
+	tree := trees[string(base)]
+	directories, err := e.directoriesNamed(ctx, tree, name)
+	if err != nil || len(directories) > 0 {
+		return strings.Join(directories, ", "), base, "", err
+	}
+	reader, err := e.portReader()
+	if err == nil {
+		directory, err = reader.Directory(ctx, model.Source{Tree: model.ObjectID(tree)}, name)
+	}
+	switch {
+	case errors.Is(err, ErrNoPort):
+		return "", base, "", nil
+	case err != nil:
+		return "", base, err.Error(), nil
+	}
+	return directory, base, "", nil
+}
+
+// TakenWords says a port name already taken, and what to do.
+func TakenWords(name, directory string) string {
+	return fmt.Sprintf("there is already a port %s, at %s; --name names this one otherwise, or dockhand update %s updates that one", name, directory, name)
+}
+
 // refuseExisting refuses a name a port in the base, or in the branch,
 // already has, in any category.
 func (e *Engine) refuseExisting(ctx context.Context, worktree *git.Repository, name string) error {
@@ -406,7 +445,7 @@ func (e *Engine) refuseExisting(ctx context.Context, worktree *git.Repository, n
 		return err
 	}
 	if len(existing) > 0 {
-		return fmt.Errorf("there is already a port %s, at %s; dockhand update %s updates it", name, existing[0], name)
+		return errors.New(TakenWords(name, existing[0]))
 	}
 	return nil
 }

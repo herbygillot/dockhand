@@ -212,18 +212,23 @@ func messagesOf(comparison model.UpstreamComparison) []string {
 }
 
 // A new port has no base: its candidate is assessed alone, license and all,
-// with nothing said of a missing old archive (the design's fixture).
+// with nothing said of a missing old archive (the design's fixture). Its
+// license is said with the Portfile's line, holding nothing, and its build
+// files, all new to it, aren't said: "LICENSE was added" and "Package.swift
+// is new" held every new port (the sand-runner port).
 func TestANewPortIsAssessedAlone(t *testing.T) {
 	e, branch, _, tree := revisionFixture(t, map[string]string{"sysutils/rift/Portfile": "name rift\nversion 0.4.2\n"})
 	p := newPlanner(t)
 	e.ArchivePlanner = p
 	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"sysutils/rift": {{Name: "rift"}}}}
-	p.add(tree, plannedPort{info: macports.PortInfo{Name: "rift", Version: "0.4.2"}, archives: map[string]map[string]string{"rift-0.4.2.tar.gz": {"LICENSE": "MIT\n"}}})
+	p.add(tree, plannedPort{info: macports.PortInfo{Name: "rift", Version: "0.4.2", Options: map[string]string{"license": "MIT"}},
+		archives: map[string]map[string]string{"rift-0.4.2.tar.gz": {"LICENSE": "MIT\n", "Package.swift": "// swift-tools-version:6.2\n"}}})
 	assessments, err := e.revisionAssessments(t.Context(), branch.ID, branch.Base, tree, true)
 	require.NoError(t, err)
 	require.Len(t, assessments, 1)
 	require.Empty(t, assessments[0].Comparison.Problem)
-	require.Equal(t, []string{"upstream's LICENSE was added; the Portfile's license line may need to follow"}, messagesOf(assessments[0].Comparison))
+	require.Equal(t, []string{"upstream ships LICENSE, and the Portfile says MIT"}, messagesOf(assessments[0].Comparison))
+	require.False(t, assessments[0].Comparison.Held())
 }
 
 // Each subport is assessed for itself: a requirement that applies only to

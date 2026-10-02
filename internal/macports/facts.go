@@ -2,6 +2,7 @@ package macports
 
 import (
 	"errors"
+	"fmt"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -165,6 +166,17 @@ func (p PortInfo) KnownFail() (bool, error) {
 		return p.Bool("dockhand.known_fail")
 	}
 	return p.Bool("known_fail")
+}
+
+// MinimumXcode is the Xcode the port requires where it was evaluated, by
+// minimum_xcodeversions for that macOS, where the Xcode it was evaluated
+// with is older, or there's none; empty where that's met, or the port
+// declares none. An error where it couldn't be read.
+func (p PortInfo) MinimumXcode() (string, error) {
+	if problem := p.OptionErrors["dockhand.minimum_xcode"]; problem != "" {
+		return "", fmt.Errorf("minimum_xcodeversions: %s", problem)
+	}
+	return p.Options["dockhand.minimum_xcode"], nil
 }
 
 // PlatformsCompatible reports whether the port's platforms admit the

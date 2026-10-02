@@ -88,6 +88,47 @@ func TestANarrowedCheckNeverShrinksWhatSubmitRequires(t *testing.T) {
 	require.Len(t, passing.Ready, 1)
 }
 
+// Each environment takes its newest result from any check of the same
+// files, and the default ones are always required (D17): a check on
+// macOS 15 alone after one on 26 left 26's pass out of status and submit,
+// where the other way a check on one release could make a branch ready
+// with nothing built on the others (the sand-runner port).
+func TestEachEnvironmentTakesItsNewestCheck(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	f.withFork(t, e)
+	branch := twoPortBranch(t, e)
+	sequoiaArm := model.Environment{Provider: "command", Platform: model.Platform{OS: "darwin", Version: "24", Architecture: "arm64"}}
+	checkOn := func(environment model.Environment) model.Run {
+		t.Helper()
+		capture, err := e.Capture(t.Context(), CaptureRequest{Branch: branch, Mode: CaptureHead})
+		require.NoError(t, err)
+		plan, err := e.PlanCheck(t.Context(), PlanRequest{Revision: capture.Revision, Environments: []model.Environment{environment}})
+		require.NoError(t, err)
+		queued, err := e.Enqueue(t.Context(), branch, plan, model.OriginPerson)
+		require.NoError(t, err)
+		completed, err := e.Drive(t.Context(), session(t, e), queued.ID)
+		require.NoError(t, err)
+		return completed
+	}
+	tahoe := checkOn(tahoeArm)
+	sequoia := checkOn(sequoiaArm)
+	submission, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq, libharbor: update"})
+	require.NoError(t, err)
+	require.Empty(t, submission.Blocking)
+	require.Equal(t, []model.Environment{sequoiaArm, tahoeArm}, submission.Evidence.Plan.Environments, "the check on 26 stands beside the newer one on 15")
+	require.Equal(t, sequoia.ID, submission.Evidence.Run.ID)
+	require.Equal(t, []model.RunID{tahoe.ID}, []model.RunID{submission.Evidence.Earlier[0].ID})
+
+	// A default environment no check of these files planned is required.
+	e.Providers["github"] = &scriptedProvider{}
+	e.CheckOn = []string{"command", "github"}
+	submission, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, Title: "jq, libharbor: update"})
+	require.NoError(t, err)
+	require.Len(t, submission.Blocking, 2)
+	require.Contains(t, submission.Blocking[0], "is changed, and no check of these files built it everywhere it's required")
+}
+
 // identified is a scripted provider that says what its environments are
 // now (buildenv.IdentityProvider).
 type identified struct {

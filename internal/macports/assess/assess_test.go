@@ -330,3 +330,23 @@ func TestAnAddedCMakeOptionHoldsNothing(t *testing.T) {
 	unread := assess(nil)
 	require.True(t, unread.Held(), "the Portfile wasn't read")
 }
+
+// A new port's license is said with the Portfile's line and what the
+// project's manifest declares, holding only where the line doesn't name
+// it; its build files, all new to it, aren't said (the sand-runner port).
+func TestANewPortsLicenseIsSaidWithItsManifests(t *testing.T) {
+	assess := func(license, declared string) model.UpstreamComparison {
+		t.Helper()
+		return Assess(Input{New: true, Port: macports.PortInfo{Name: "rift", Options: map[string]string{"license": license}}, Pairs: []Pair{{
+			Before: project.Reading{Layout: project.Enclosed, Files: map[string]project.File{}},
+			After: read(t, "rift-0.4.2", map[string]string{"LICENSE": "MIT\n", "CMakeLists.txt": "project(rift)\n",
+				"Cargo.toml": "[package]\nname = \"rift\"\nversion = \"0.4.2\"\nlicense = \"" + declared + "\"\n"}, project.Spec{}),
+		}}})
+	}
+	same := assess("MIT", "MIT")
+	require.Equal(t, []string{"· upstream ships LICENSE, and the Portfile says MIT, as Cargo.toml does"}, messages(same.Changes))
+	require.False(t, same.Held())
+	other := assess("MIT", "EUPL-1.2")
+	require.Equal(t, []string{"! upstream ships LICENSE, and the Portfile says MIT, where Cargo.toml says EUPL-1.2; the Portfile's license line may need to follow"}, messages(other.Changes))
+	require.True(t, other.Held())
+}

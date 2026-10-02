@@ -86,6 +86,29 @@ func TestAPlanIsDecidedPhaseByPhase(t *testing.T) {
 		"the first environment's order, and what the second adds right after what precedes it there")
 }
 
+// A target whose minimum_xcodeversions an environment's Xcode doesn't
+// meet can't be built there, whatever its tools, nor can a target it's a
+// prerequisite of: sand-runner's Xcode 26.0 on macOS 15 with 16.4 read as
+// a failed fetch (the sand-runner port).
+func TestAMinimumXcodeTheEnvironmentLacksIsUnmet(t *testing.T) {
+	input := Input{
+		Environments: []model.Environment{arm},
+		Candidates:   []model.PlanTarget{candidate("sand-runner", model.Changed), candidate("sand-tools", model.Changed), candidate("harbor-cli", model.Changed)},
+		Evaluations: []Evaluation{{
+			"sand-runner": {MinimumXcode: "26.0"}, "sand-tools": needing("sand-runner"), "harbor-cli": {},
+		}},
+	}
+	decision, err := Decide(input)
+	require.NoError(t, err)
+	require.Equal(t, map[model.TargetID]string{"sand-runner": "26.0"}, decision.Builds[0].MinimumXcode)
+	require.Equal(t, []model.Unmet{
+		{Target: "sand-runner", Environment: arm, Needs: model.RequiresXcodeVersion("26.0")},
+		{Target: "sand-tools", Environment: arm, Needs: model.RequiresXcodeVersion("26.0"), Through: "sand-runner"},
+	}, decision.Builds[0].Unmet)
+	require.Equal(t, "26.0", decision.Builds[0].Unmet[0].Needs.XcodeVersion())
+	require.Empty(t, model.RequiresXcode.XcodeVersion())
+}
+
 // --only keeps the named changed targets and the changed prerequisites
 // they need anywhere, and leaves out the rest, which submission requires;
 // a loop among what one environment builds is that environment's cycle.

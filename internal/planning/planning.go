@@ -20,6 +20,10 @@ type Evaluated struct {
 	Eligibility  macports.Eligibility
 	Dependencies []Dependency
 	NeedsXcode   bool
+	// MinimumXcode is the Xcode the port's minimum_xcodeversions asks of
+	// this macOS, where the environment's is older or none; empty where
+	// it's met.
+	MinimumXcode string
 	// Untested is a port whose test.run MacPorts reads as off; one it
 	// couldn't read, or didn't, is left unsaid.
 	Untested bool
@@ -53,7 +57,11 @@ func Evaluate(port macports.PortInfo, platform model.Platform) (Evaluated, error
 	if err != nil {
 		return Evaluated{}, err
 	}
-	evaluated := Evaluated{Eligibility: eligibility, NeedsXcode: needsXcode}
+	minimum, err := port.MinimumXcode()
+	if err != nil {
+		return Evaluated{}, err
+	}
+	evaluated := Evaluated{Eligibility: eligibility, NeedsXcode: needsXcode, MinimumXcode: minimum}
 	for _, dependency := range port.Dependencies {
 		id := model.TargetID(dependency.Port)
 		if i := slices.IndexFunc(evaluated.Dependencies, func(d Dependency) bool { return d.Port == id }); i >= 0 {
@@ -285,6 +293,12 @@ func EnvironmentPlan(environment model.Environment, targets, candidates []model.
 		if evaluation[id].NeedsXcode {
 			planned.NeedsXcode = append(planned.NeedsXcode, id)
 		}
+		if minimum := evaluation[id].MinimumXcode; minimum != "" {
+			if planned.MinimumXcode == nil {
+				planned.MinimumXcode = map[model.TargetID]string{}
+			}
+			planned.MinimumXcode[id] = minimum
+		}
 		if evaluation[id].Untested {
 			planned.Untested = append(planned.Untested, id)
 		}
@@ -351,30 +365,37 @@ func Merge(builds []model.EnvironmentPlan, targets []model.PlanTarget) []model.P
 }
 
 // unmetNeeds are the targets an environment can't build. With the Command
-// Line Tools alone, that is a target that needs Xcode, and one whose
-// prerequisite does: the plan builds a changed prerequisite from source
-// before its dependents, never from an archive, so what it needs, they
-// need. An environment whose tools are Xcode, or unstated, builds them
-// all.
+// Line Tools alone, that is a target that needs Xcode; with any tools, one
+// whose minimum_xcodeversions the environment's Xcode doesn't meet, as
+// sand-runner's Xcode 26.0 on macOS 15 with 16.4, which read as a failed
+// fetch (the sand-runner port); and one whose prerequisite is either: the
+// plan builds a changed prerequisite from source before its dependents,
+// never from an archive, so what it needs, they need.
 func unmetNeeds(planned model.EnvironmentPlan) []model.Unmet {
-	if planned.Environment.DeveloperTools != model.DeveloperToolsCommandLine {
-		return nil
+	needs := func(id model.TargetID) (model.Requirement, bool) {
+		if planned.Environment.DeveloperTools == model.DeveloperToolsCommandLine && slices.Contains(planned.NeedsXcode, id) {
+			return model.RequiresXcode, true
+		}
+		if minimum := planned.MinimumXcode[id]; minimum != "" {
+			return model.RequiresXcodeVersion(minimum), true
+		}
+		return "", false
 	}
 	var unmet []model.Unmet
-	// cause is, for each target that needs Xcode, the one that needs it
-	// itself. The order puts a prerequisite before its dependents, so it
-	// is settled first.
-	cause := map[model.TargetID]model.TargetID{}
+	// cause is, for each target that can't be built, the one that needs
+	// what's missing itself, and what. The order puts a prerequisite
+	// before its dependents, so it is settled first.
+	cause := map[model.TargetID]model.Unmet{}
 	for _, id := range planned.Order {
-		if slices.Contains(planned.NeedsXcode, id) {
-			cause[id] = id
-			unmet = append(unmet, model.Unmet{Target: id, Environment: planned.Environment, Needs: model.RequiresXcode})
+		if requirement, ok := needs(id); ok {
+			cause[id] = model.Unmet{Target: id, Environment: planned.Environment, Needs: requirement}
+			unmet = append(unmet, cause[id])
 			continue
 		}
 		for _, prerequisite := range planned.Dependencies[id] {
 			if through, ok := cause[prerequisite]; ok {
 				cause[id] = through
-				unmet = append(unmet, model.Unmet{Target: id, Environment: planned.Environment, Needs: model.RequiresXcode, Through: through})
+				unmet = append(unmet, model.Unmet{Target: id, Environment: planned.Environment, Needs: through.Needs, Through: through.Target})
 				break
 			}
 		}

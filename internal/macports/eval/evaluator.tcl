@@ -205,6 +205,28 @@ namespace eval ::dockhand {
             } elseif {$compatible ne ""} {
                 dict set out dockhand.platforms_compatible $compatible
             }
+            # The Xcode the port requires on this macOS where the modelled
+            # one is older, or none: minimum_xcodeversions, the xcodeversion
+            # PortGroup's documented option, which it refuses by before
+            # extracting. sand-runner's {24 26.0} read as a failed build on
+            # macOS 15 with Xcode 16.4 (the sand-runner port); empty where
+            # it's met or declared for another macOS.
+            if {[catch {$worker eval {
+                apply {{} {
+                    if {![exists minimum_xcodeversions]} { return "" }
+                    foreach {major minimum} [concat {*}[option minimum_xcodeversions]] {
+                        if {$major != [option os.major]} { continue }
+                        if {![info exists ::xcodeversion] || $::xcodeversion eq "none" || [vercmp $::xcodeversion $minimum] < 0} {
+                            return $minimum
+                        }
+                    }
+                    return ""
+                }}
+            }} minimum]} {
+                dict set failures dockhand.minimum_xcode $minimum
+            } elseif {$minimum ne ""} {
+                dict set out dockhand.minimum_xcode $minimum
+            }
             # The PortGroups the port loads, by name, as Base records them
             # for the registry and the PortIndex.
             if {[catch {$worker eval {

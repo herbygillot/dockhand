@@ -230,7 +230,7 @@ func (e *Engine) assessPort(ctx context.Context, planner ArchivePlanner, sources
 		}
 		infos[side], plans[side] = info, plan
 	}
-	input := assess.Input{Base: infos[0], Port: infos[1], Versions: sourcecompare.Versions{Old: infos[0].Version, New: infos[1].Version}}
+	input := assess.Input{Base: infos[0], Port: infos[1], Versions: sourcecompare.Versions{Old: infos[0].Version, New: infos[1].Version}, New: !hadBase}
 	if file, data, err := e.Repo.File(ctx, string(sources[1].Tree), directory+"/Portfile"); err == nil && file.Exists {
 		input.Portfile = data
 	}
