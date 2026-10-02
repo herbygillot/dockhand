@@ -69,9 +69,20 @@ func (p *pendingLogin) set(login *credential.Login) {
 // errOldLogin and errExpiredLogin are a saved login that can't renew
 // itself: one an earlier dockhand kept, a bare token, or one unused six
 // months.
+// ErrLoginEnded is a saved login that can't renew itself any more, which
+// only dockhand auth login answers: serve says it once, rather than a
+// failure for each pull request.
+var ErrLoginEnded = errors.New("github: the saved login can't renew itself")
+
+// loginEnded is an error that is ErrLoginEnded, in its own words.
+type loginEnded struct{ error }
+
+func (e loginEnded) Unwrap() error        { return e.error }
+func (e loginEnded) Is(target error) bool { return target == ErrLoginEnded }
+
 var (
-	errOldLogin     = fmt.Errorf("%w: the saved GitHub login is from an earlier dockhand; run dockhand auth login", ErrAuthentication)
-	errExpiredLogin = fmt.Errorf("%w: the GitHub login expired after six months unused; run dockhand auth login", ErrAuthentication)
+	errOldLogin     = loginEnded{fmt.Errorf("%w: the saved GitHub login is from an earlier dockhand; run dockhand auth login", ErrAuthentication)}
+	errExpiredLogin = loginEnded{fmt.Errorf("%w: the GitHub login expired after six months unused; run dockhand auth login", ErrAuthentication)}
 )
 
 // login is the token of the login the store keeps, renewed where its
@@ -175,7 +186,7 @@ func (s SystemCredentials) refresh(ctx context.Context, saved credential.Login) 
 	var refused *oauth2.RetrieveError
 	switch {
 	case errors.As(err, &refused) && (refused.ErrorCode == "bad_refresh_token" || refused.ErrorCode == "invalid_grant" || refused.ErrorCode == "unauthorized_client"):
-		return credential.Login{}, fmt.Errorf("%w: GitHub refused to renew the login (%s); run dockhand auth login", ErrAuthentication, refused.ErrorCode)
+		return credential.Login{}, loginEnded{fmt.Errorf("%w: GitHub refused to renew the login (%s); run dockhand auth login", ErrAuthentication, refused.ErrorCode)}
 	case err != nil:
 		return credential.Login{}, fmt.Errorf("github: renewing the GitHub login, which stays as it was: %w", RateLimitError(err))
 	}
@@ -212,4 +223,29 @@ func usable(login credential.Login, rejected Token, now time.Time) (Token, bool)
 
 func tokenOf(login credential.Login) Token {
 	return Token{Secret: login.Access, Source: SourceKeychain, Expiry: login.AccessExpiry}
+}
+
+// SavedLogin is the login the store keeps, as the person sees it: whose,
+// and until when it renews itself; ErrLoginEnded, wrapped, where it's from
+// an earlier dockhand or expired, and the store's ErrNotFound where it
+// keeps none. It asks GitHub nothing.
+func SavedLogin(ctx context.Context, store credential.Store) (credential.Login, error) {
+	value, err := store.Get(ctx, CredentialKey)
+	if err != nil {
+		return credential.Login{}, err
+	}
+	login, err := credential.DecodeLogin(value)
+	if err != nil {
+		return credential.Login{}, errOldLogin
+	}
+	if !time.Now().Before(login.RefreshExpiry) {
+		return login, errExpiredLogin
+	}
+	return login, nil
+}
+
+// RevocationPage is where the person revokes the login an OAuth app was
+// given, at GitHub.
+func RevocationPage(clientID string) string {
+	return "https://github.com/settings/connections/applications/" + clientID
 }

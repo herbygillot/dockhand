@@ -1,12 +1,16 @@
 package engine
 
 import (
+	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/model"
 )
 
@@ -72,4 +76,35 @@ func TestPullRequestsAreFollowed(t *testing.T) {
 	merged, err := e.Status(t.Context(), model.BranchMerged)
 	require.NoError(t, err)
 	require.Len(t, merged, 1, "and stays searchable")
+}
+
+// endedLogin is GitHub through a login that can't renew itself.
+type endedLogin struct{ *fakeForge }
+
+func (endedLogin) Observe(context.Context, forge.PullRequestRef) (forge.PullRequestObservation, error) {
+	return forge.PullRequestObservation{}, fmt.Errorf("Get \"https://api.github.com/repos/macports/macports-ports/pulls/34901\": %w", github.ErrLoginEnded)
+}
+
+// A login that can't renew itself is said once, as one problem rather
+// than each pull request's, and notified once a process (the GitHub auth
+// flow review's plan, step 4).
+func TestServeSaysAnEndedLoginOnce(t *testing.T) {
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	_, err = e.ApplySubmit(t.Context(), plan)
+	require.NoError(t, err)
+	e.Forge = endedLogin{fake}
+	var said, notified []string
+	s := newServer(e, ServeOptions{Say: func(line string) { said = append(said, line) }, Notify: func(title, text string) { notified = append(notified, title+": "+text) }, Refresh: time.Nanosecond})
+	follow := &follower{s: s}
+	for range 3 {
+		follow.last = time.Time{}
+		follow.maybe(t.Context())
+	}
+	require.Equal(t, []string{"serve: dockhand's GitHub login can't renew itself, so pull requests can't be read; run dockhand auth login, which serve uses without a restart"}, said)
+	require.Equal(t, []string{"GitHub login: dockhand's GitHub login can't renew itself; run dockhand auth login"}, notified)
 }

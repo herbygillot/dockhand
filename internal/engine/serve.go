@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/github"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
@@ -89,6 +91,9 @@ type server struct {
 	e       *Engine
 	options ServeOptions
 	mu      sync.Mutex
+	// loginEnded is whether serve has notified that the GitHub login
+	// can't renew itself, which it does once a process.
+	loginEnded atomic.Bool
 }
 
 func newServer(e *Engine, options ServeOptions) *server {
@@ -357,6 +362,16 @@ func (f *follower) maybe(ctx context.Context) {
 		report(fmt.Sprintf("serve: could not read pull requests: %v", err))
 	}
 	for _, r := range refreshed {
+		// A login that can't renew itself is said once, and notified
+		// once a process, rather than as each pull request it couldn't
+		// read (the auth flow review's plan, step 4).
+		if errors.Is(r.Err, github.ErrLoginEnded) {
+			report("serve: dockhand's GitHub login can't renew itself, so pull requests can't be read; run dockhand auth login, which serve uses without a restart")
+			if f.s.loginEnded.CompareAndSwap(false, true) {
+				f.s.notify("GitHub login", "dockhand's GitHub login can't renew itself; run dockhand auth login")
+			}
+			continue
+		}
 		if r.Err != nil {
 			report(fmt.Sprintf("serve: could not read %s's #%d: %v", r.Branch.ShortName(), r.Branch.PullRequest.Number, r.Err))
 		}

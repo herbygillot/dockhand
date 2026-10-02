@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -61,6 +62,11 @@ macOS Keychain. GH_TOKEN or GITHUB_TOKEN, when set, take precedence over it.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			value, err := authFlow.Authorize(ctx, clientID, func(authorization credential.DeviceAuthorization) error {
+				// The address is opened, or followed, only where it's
+				// GitHub's over https (the auth flow review's plan, step 4).
+				if address, err := url.Parse(authorization.VerificationURL); err != nil || address.Scheme != "https" || address.Host == "" {
+					return fmt.Errorf("GitHub's device flow named %q to authorize at, which isn't an https address; nothing was opened", authorization.VerificationURL)
+				}
 				fmt.Fprintf(streams.Err, "Copy this one-time code: %s\n", authorization.UserCode)
 				if noBrowser {
 					fmt.Fprintf(streams.Err, "Open %s, enter the code, and authorize dockhand.\nWaiting for authorization...\n", authorization.VerificationURL)
@@ -83,7 +89,7 @@ macOS Keychain. GH_TOKEN or GITHUB_TOKEN, when set, take precedence over it.`,
 			if err := authStore.Put(ctx, github.CredentialKey, saved); err != nil {
 				return err
 			}
-			fmt.Fprintf(streams.Out, "Logged in to github.com as %s, kept in the macOS Keychain.\n", value.Account)
+			fmt.Fprintf(streams.Out, "Logged in to github.com as %s, kept in the macOS Keychain. It renews itself while dockhand is used at least once every six months.\n", value.Account)
 			if name := overridingToken(); name != "" {
 				fmt.Fprintf(streams.Err, "%s is set and takes precedence over this login; unset it to use the Keychain's.\n", name)
 			}
@@ -107,6 +113,11 @@ func authStatusCommand(streams Streams) *cobra.Command {
 				return err
 			}
 			fmt.Fprintf(streams.Out, "Logged in to github.com as %s, using %s.\n", account, client.CredentialSource())
+			if client.CredentialSource() == github.SourceKeychain {
+				if login, err := github.SavedLogin(cmd.Context(), authStore); err == nil {
+					fmt.Fprintf(streams.Out, "It renews itself until %s, six months from its last use.\n", login.RefreshExpiry.Local().Format("2 January 2006"))
+				}
+			}
 			return nil
 		},
 	}
@@ -117,10 +128,14 @@ func authLogoutCommand(streams Streams) *cobra.Command {
 		Use:   "logout",
 		Short: "Remove dockhand's GitHub login from the macOS Keychain",
 		Long: `Removes only the login dockhand keeps in the macOS Keychain. GH_TOKEN,
-GITHUB_TOKEN, and the GitHub CLI's login are untouched, and the token is not
-revoked at GitHub.`,
+GITHUB_TOKEN, and the GitHub CLI's login are untouched. GitHub keeps dockhand
+authorized until you revoke it on GitHub's page for it, which logout names.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			clientID := github.DefaultOAuthClientID
+			if login, err := github.SavedLogin(cmd.Context(), authStore); err == nil || login.ClientID != "" {
+				clientID = firstOf(login.ClientID, clientID)
+			}
 			err := authStore.Delete(cmd.Context(), github.CredentialKey)
 			switch {
 			case errors.Is(err, credential.ErrNotFound):
@@ -129,6 +144,7 @@ revoked at GitHub.`,
 				return err
 			default:
 				fmt.Fprintln(streams.Out, "Removed dockhand's GitHub login from the Keychain. GH_TOKEN, GITHUB_TOKEN, and the GitHub CLI's login are unchanged.")
+				fmt.Fprintf(streams.Out, "GitHub still has dockhand authorized until you revoke it: %s\n", github.RevocationPage(clientID))
 			}
 			return nil
 		},

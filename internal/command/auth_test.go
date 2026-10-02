@@ -89,7 +89,7 @@ func TestAuthLoginStatusAndLogout(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, errs, "Copy this one-time code: ABCD-1234\nOpening https://github.com/login/device in your browser...\n")
 	require.Equal(t, "https://github.com/login/device", opened)
-	require.Equal(t, "Logged in to github.com as ada, kept in the macOS Keychain.\n", out)
+	require.Equal(t, "Logged in to github.com as ada, kept in the macOS Keychain. It renews itself while dockhand is used at least once every six months.\n", out)
 	saved, err := credential.DecodeLogin(store[github.CredentialKey])
 	require.NoError(t, err)
 	require.Equal(t, "secret-token", saved.Access)
@@ -101,16 +101,18 @@ func TestAuthLoginStatusAndLogout(t *testing.T) {
 	newWorld(t)
 	out, _, err = dockhand(t, "init")
 	require.NoError(t, err)
-	require.Contains(t, out, "  Publishing   ✓ GitHub login in the Keychain\n")
+	until := time.Now().AddDate(0, 6, 0).Format("2 January 2006")
+	require.Contains(t, out, "  Publishing   ✓ GitHub login in the Keychain, renewing itself until "+until+"\n")
 	t.Setenv("PATH", emptyPath)
 
 	out, _, err = dockhand(t, "auth", "status")
 	require.NoError(t, err)
-	require.Equal(t, "Logged in to github.com as ada, using Dockhand macOS Keychain.\n", out)
+	require.Equal(t, "Logged in to github.com as ada, using Dockhand macOS Keychain.\nIt renews itself until "+until+", six months from its last use.\n", out)
 
 	out, _, err = dockhand(t, "auth", "logout")
 	require.NoError(t, err)
 	require.Contains(t, out, "Removed dockhand's GitHub login from the Keychain.")
+	require.Contains(t, out, "GitHub still has dockhand authorized until you revoke it: https://github.com/settings/connections/applications/fixture-client\n")
 	out, _, err = dockhand(t, "auth", "logout")
 	require.NoError(t, err)
 	require.Equal(t, "dockhand keeps no GitHub login in the Keychain.\n", out)
@@ -124,4 +126,35 @@ func TestAFailedLoginSavesNothing(t *testing.T) {
 	require.ErrorContains(t, err, "the code expired")
 	require.Contains(t, errs, "Open https://github.com/login/device, enter the code, and authorize dockhand.")
 	require.Empty(t, store)
+}
+
+// A login kept by an earlier dockhand, or one that expired, says so in
+// the setup line, and a device flow naming an address that isn't https is
+// opened nowhere (the auth flow review's plan, step 4).
+func TestALoginThatCantRenewIsSaid(t *testing.T) {
+	store := withAuth(t, deviceFlow{value: login("secret-token", "ada")})
+	store[github.CredentialKey] = "gho_a_bare_token_from_an_earlier_dockhand"
+	require.Equal(t, "! the saved GitHub login is from an earlier dockhand; run dockhand auth login", publishing(t.Context()))
+	expired := login("secret-token", "ada")
+	expired.RefreshExpiry = time.Now().Add(-time.Hour)
+	saved, err := expired.Encode()
+	require.NoError(t, err)
+	store[github.CredentialKey] = saved
+	require.Equal(t, "! the GitHub login expired after six months unused; run dockhand auth login", publishing(t.Context()))
+}
+
+func TestADeviceFlowAddressThatIsntHTTPSIsntOpened(t *testing.T) {
+	withAuth(t, plainFlow{})
+	opened := ""
+	openBrowser = func(_ context.Context, url string) error { opened = url; return nil }
+	_, _, err := dockhand(t, "auth", "login")
+	require.ErrorContains(t, err, "isn't an https address; nothing was opened")
+	require.Empty(t, opened)
+}
+
+// plainFlow names an http address to authorize at.
+type plainFlow struct{}
+
+func (plainFlow) Authorize(_ context.Context, _ string, present func(credential.DeviceAuthorization) error) (credential.Login, error) {
+	return credential.Login{}, present(credential.DeviceAuthorization{UserCode: "ABCD-1234", VerificationURL: "http://example.invalid/device"})
 }

@@ -145,6 +145,15 @@ These config keys are the only knobs on any limit. No flag or `DOCKHAND_*` varia
 | An ASIF VM blocking the listing | every 15 s, 30 min in all | "stop it, and run setup again" | `tart/provision/native.go` (`listingBound`) |  |
 | Cleanup after a failed setup | 2 min | "delete it with tart delete…" | `tart/provision/provision.go:616` |  |
 
+## The GitHub login
+
+| Limit | Value | When it's hit | Where | |
+| --- | --- | --- | --- | --- |
+| The access token | 8 h, GitHub's; renewed 5 min before it expires, or when GitHub rejects it | renewed with the refresh token | `github/credentials.go` (`renewBefore`) |  |
+| The refresh token | 6 months from its last use, GitHub's | "the GitHub login expired after six months unused; run dockhand auth login" | `github/login.go` |  |
+| Waiting for another dockhand's renewal | 30 s, on `~/.dockhand/github-login.lock` | "waiting to renew the GitHub login, which another dockhand is renewing" | `github/login.go` (`lockWait`) |  |
+| A request GitHub rejects | tried once more, with a token asked anew, where it was dockhand's login or gh's | the rejection, naming where the token came from | `github/credentials.go` |  |
+
 ## GitHub Actions and the command provider
 
 | Limit | Value | When it's hit | Where | |

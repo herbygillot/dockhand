@@ -333,8 +333,12 @@ func publishing(ctx context.Context) string {
 	if name := overridingToken(); name != "" {
 		return "✓ GitHub token from " + name
 	}
-	if _, err := authStore.Get(ctx, github.CredentialKey); err == nil {
-		return "✓ GitHub login in the Keychain"
+	login, err := github.SavedLogin(ctx, authStore)
+	switch {
+	case err == nil:
+		return "✓ GitHub login in the Keychain, renewing itself until " + login.RefreshExpiry.Local().Format("2 January 2006")
+	case errors.Is(err, github.ErrLoginEnded):
+		return "! " + strings.TrimPrefix(err.Error(), github.ErrAuthentication.Error()+": ")
 	}
 	return "· not set up: dockhand auth login, when you're ready to submit"
 }

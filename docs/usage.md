@@ -30,10 +30,10 @@ See [Providers](#providers) for the others and for more releases.
 `submit`, the github provider, and `status --refresh` need to act as you on GitHub. Dockhand takes the first of these it finds:
 
 1. `GH_TOKEN`, then `GITHUB_TOKEN`;
-2. its own login, from `dockhand auth login`, kept in the macOS Keychain. The login is a one-time code in the browser, asking for the `public_repo` scope;
+2. its own login, from `dockhand auth login`, kept in the macOS Keychain. The login is a one-time code in the browser, asking for the `public_repo` scope and a refresh token (`offline_access`). Its access token lasts eight hours, and dockhand renews it, `serve` included, with a refresh token that lasts six months from its last use: a login used at least once every six months never needs making again. A login an earlier dockhand kept, a single token, is asked to be made again;
 3. the GitHub CLI's login, through `gh auth token`.
 
-`dockhand auth status` says which account that is, and `dockhand auth logout` removes dockhand's own login. Reading public data, as `outdated` does, needs none, and goes on without one; where none was found, it isn't looked for again for five minutes, so a running `serve` picks up a login made meanwhile soon after.
+`dockhand auth status` says which account that is, and until when dockhand's own login renews itself; `dockhand auth logout` removes it, and names GitHub's page where you revoke dockhand's authorization too. A running `serve` uses a new `auth login` without a restart, and says once when its login can't renew itself. Reading public data, as `outdated` does, needs none, and goes on without one; where none was found, it isn't looked for again for five minutes, so a running `serve` picks up a login made meanwhile soon after.
 
 ### The configuration file
 
