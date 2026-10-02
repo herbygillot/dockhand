@@ -14,12 +14,12 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/buildenv/ghactions"
+	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/coord"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/store"
-	"github.com/herbygillot/dockhand/internal/version"
 )
 
 func checkCommand(s *settings, streams Streams) *cobra.Command {
@@ -467,7 +467,7 @@ func environmentWords(environment model.Environment) string {
 // startSession records this process's session and keeps its heartbeat.
 func startSession(ctx context.Context, e *engine.Engine, kind model.SessionKind) (*coord.Session, error) {
 	c := &coord.Coordinator{Store: e.Store, Repository: e.Repository}
-	session, err := c.Start(ctx, kind, version.Current().String())
+	session, err := c.Start(ctx, kind, buildinfo.Current().String())
 	if err != nil {
 		return nil, err
 	}

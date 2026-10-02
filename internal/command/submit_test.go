@@ -15,11 +15,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/scratch"
-	"github.com/herbygillot/dockhand/internal/version"
 )
 
 // fakeGitHub stands in for GitHub: the fork is a local bare repository.
@@ -370,7 +370,7 @@ func TestSubmitSaysABuildGitHubDoesntHave(t *testing.T) {
 func TestAnUnfoundBuildIsSaidOnceForItsCommits(t *testing.T) {
 	commits := []string{strings.Repeat("a", 40), strings.Repeat("b", 40)}
 	require.Equal(t, "commits aaaaaaa, bbbbbbb name dockhand v0.3.0 in Generated-By, built at a tag dockhand's GitHub repository doesn't have, which nobody else can find until it's pushed there",
-		unfoundBuildWords(engine.UnfoundBuild{Build: "v0.3.0", Commits: commits, Source: version.Source{Release: "v0.3.0"}}))
+		unfoundBuildWords(engine.UnfoundBuild{Build: "v0.3.0", Commits: commits, Source: buildinfo.Source{Release: "v0.3.0"}}))
 	require.Equal(t, "commit aaaaaaa's Generated-By names dockhand devel, which recorded no commit, so nobody can find what it was built from",
 		unfoundBuildWords(engine.UnfoundBuild{Build: "devel", Commits: commits[:1]}))
 }

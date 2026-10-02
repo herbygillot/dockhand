@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/herbygillot/dockhand/internal/version"
+	"github.com/herbygillot/dockhand/internal/buildinfo"
 )
 
 const generatedByPrefix = "Generated-By: Dockhand "
@@ -21,7 +21,7 @@ var legacyPrefixes = []string{"Assisted-By: Dockhand ", "Generated-by: "}
 // "Generated-By: Dockhand devel+1a2b3c4d5e6f (https://github.com/herbygillot/dockhand)".
 // It is plain text; a commit message is not Markdown.
 func GeneratedBy() string {
-	return generatedByPrefix + version.Current().Tag() + " (" + version.ProjectURL + ")"
+	return generatedByPrefix + buildinfo.Current().Tag() + " (" + buildinfo.ProjectURL + ")"
 }
 
 // IsAttribution reports whether a message line is dockhand's trailer, in
@@ -63,7 +63,7 @@ func Build(message string) (string, bool) {
 // built from uncommitted source, which nobody else can find.
 func ModifiedBuild(message string) bool {
 	tag, ok := Build(message)
-	return ok && version.TagModified(tag)
+	return ok && buildinfo.TagModified(tag)
 }
 
 // OtherBuilds are the builds messages' attribution lines name other than
@@ -72,7 +72,7 @@ func ModifiedBuild(message string) bool {
 // replaces (the flatbuffers, nuspell, zola, and alertmanager run's finding
 // 4). A legacy form is named by its whole line.
 func OtherBuilds(messages []string) []string {
-	current := version.Current().Tag()
+	current := buildinfo.Current().Tag()
 	var builds []string
 	for _, message := range messages {
 		for _, line := range strings.Split(message, "\n") {

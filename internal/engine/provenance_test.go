@@ -9,9 +9,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/version"
 )
 
 // commitNaming adds an empty commit to the branch whose Generated-By
@@ -52,8 +52,8 @@ func TestSubmitSaysABuildGitHubDoesntHave(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []UnfoundBuild{
 		{Build: "devel", Commits: []string{devel}},
-		{Build: unpushed, Commits: []string{first, second}, Source: version.Source{Commit: "14320eb7c0de"}},
-		{Build: "v0.3.0", Commits: []string{local}, Source: version.Source{Release: "v0.3.0"}},
+		{Build: unpushed, Commits: []string{first, second}, Source: buildinfo.Source{Commit: "14320eb7c0de"}},
+		{Build: "v0.3.0", Commits: []string{local}, Source: buildinfo.Source{Release: "v0.3.0"}},
 	}, plan.UnfoundBuilds)
 	require.Empty(t, plan.BuildsProblem)
 	require.Equal(t, []string{"14320eb7c0de", "2bbcfdb76480", "v0.0.0-20260924.0", "v0.3.0"}, fake.dockhand.asked, "each build once, by what finds it")

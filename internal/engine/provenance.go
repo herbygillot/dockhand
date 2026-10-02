@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
-	"github.com/herbygillot/dockhand/internal/version"
 )
 
 // UnfoundBuild is a dockhand build a branch's commits name in Generated-By
@@ -24,7 +24,7 @@ type UnfoundBuild struct {
 	Commits []string
 	// Source is what GitHub was asked for; neither field, for a build
 	// that names nothing to ask about.
-	Source version.Source
+	Source buildinfo.Source
 }
 
 // unfoundBuilds asks dockhand's repository on GitHub for what each build
@@ -39,20 +39,20 @@ func (e *Engine) unfoundBuilds(ctx context.Context, commits []git.HistoryCommit)
 	var builds []UnfoundBuild
 	for _, commit := range commits {
 		build, ok := commitmsg.Build(commit.Message)
-		if !ok || version.TagModified(build) {
+		if !ok || buildinfo.TagModified(build) {
 			continue
 		}
 		if i := slices.IndexFunc(builds, func(b UnfoundBuild) bool { return b.Build == build }); i >= 0 {
 			builds[i].Commits = append(builds[i].Commits, commit.ID)
 			continue
 		}
-		builds = append(builds, UnfoundBuild{Build: build, Commits: []string{commit.ID}, Source: version.SourceOf(build)})
+		builds = append(builds, UnfoundBuild{Build: build, Commits: []string{commit.ID}, Source: buildinfo.SourceOf(build)})
 	}
 	var unfound []UnfoundBuild
 	var repository forge.Repository
 	problem := ""
 	for _, build := range builds {
-		if build.Source == (version.Source{}) {
+		if build.Source == (buildinfo.Source{}) {
 			unfound = append(unfound, build)
 			continue
 		}
@@ -80,7 +80,7 @@ func (e *Engine) unfoundBuilds(ctx context.Context, commits []git.HistoryCommit)
 // dockhandRepository is dockhand's own repository on GitHub, as the forge
 // reads it.
 func (e *Engine) dockhandRepository() (forge.Repository, error) {
-	name, err := github.PageRepository(version.ProjectURL)
+	name, err := github.PageRepository(buildinfo.ProjectURL)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func (e *Engine) dockhandRepository() (forge.Repository, error) {
 
 // hasSource reports whether a repository has a build's source: its commit,
 // or its release's tag.
-func hasSource(ctx context.Context, repository forge.Repository, source version.Source) (bool, error) {
+func hasSource(ctx context.Context, repository forge.Repository, source buildinfo.Source) (bool, error) {
 	if source.Commit == "" {
 		_, err := repository.Tag(ctx, source.Release)
 		if errors.Is(err, forge.ErrNotFound) {

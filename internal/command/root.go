@@ -10,8 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/progress"
-	"github.com/herbygillot/dockhand/internal/version"
 )
 
 // Streams are the standard streams a command reads and writes.
@@ -108,7 +108,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 		Use:           "dockhand",
 		Short:         "Author, check, and submit changes to MacPorts ports",
 		Long:          "Author, check, and submit changes to MacPorts ports.\n\n" + gettingStarted,
-		Version:       version.Current().String(),
+		Version:       buildinfo.Current().String(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args:          cobra.NoArgs,

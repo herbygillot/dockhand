@@ -16,7 +16,7 @@ ifneq ($(strip $(GITHUB_OAUTH_CLIENT_ID)),)
 GO_LDFLAGS += -X github.com/herbygillot/dockhand/internal/github.DefaultOAuthClientID=$(strip $(GITHUB_OAUTH_CLIENT_ID))
 endif
 ifneq ($(strip $(VERSION)),)
-GO_LDFLAGS += -X github.com/herbygillot/dockhand/internal/version.Version=$(strip $(VERSION))
+GO_LDFLAGS += -X github.com/herbygillot/dockhand/internal/buildinfo.Version=$(strip $(VERSION))
 endif
 
 .PHONY: build test test-race vet lint fmt-check deadcode vendor vendor-check clean

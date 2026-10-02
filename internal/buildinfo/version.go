@@ -1,4 +1,4 @@
-package version
+package buildinfo
 
 import (
 	"runtime/debug"
@@ -26,7 +26,7 @@ type Info struct {
 // Version is the version a packager names at link time when no version
 // control data is available, as when building from a release tarball:
 //
-//	go build -ldflags "-X github.com/herbygillot/dockhand/internal/version.Version=v0.9.0" ./cmd/dockhand
+//	go build -ldflags "-X github.com/herbygillot/dockhand/internal/buildinfo.Version=v0.9.0" ./cmd/dockhand
 //
 // A version the toolchain stamped from a tag wins over it, so a build from a
 // checkout is never mislabeled by a stale build variable.

@@ -33,7 +33,7 @@ var engineImports = map[string]string{
 	"internal/macos":                  "macOS releases, for environments and their words",
 	"internal/scratch":                "temporary directories for archives and preparation",
 	"internal/atomicfile":             "kept archives, whole or not at all",
-	"internal/version":                "its own version, in the pull request",
+	"internal/buildinfo":              "its own version, in the pull request",
 	"internal/archive":                "reading archives, for diff --archive",
 	"internal/fetch":                  "asking a URL whether it answers over HTTPS, as fetching follows redirects",
 	"internal/sourcecompare":          "what upstream's source changed, for update",

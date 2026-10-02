@@ -16,9 +16,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/version"
 )
 
 // The MacPorts pull request template's headings.
@@ -394,8 +394,8 @@ func cmpOr(values ...string) string {
 // dockhand wrote it before it was bold, which a description it wrote
 // then, and nobody changed, is given in its place.
 var (
-	submittedBy      = "Submitted by **[dockhand](" + version.ProjectURL + ")**"
-	plainSubmittedBy = "Submitted by [dockhand](" + version.ProjectURL + ")"
+	submittedBy      = "Submitted by **[dockhand](" + buildinfo.ProjectURL + ")**"
+	plainSubmittedBy = "Submitted by [dockhand](" + buildinfo.ProjectURL + ")"
 )
 
 // listEnd ends the Verification checklist before dockhand's last line.
@@ -404,7 +404,7 @@ const listEnd = "<!-- dockhand -->"
 // signature is the description's last line, dockhand with its version, or
 // dockhand alone when the build doesn't know its version.
 func signature(tag string) string {
-	line := "- [dockhand](" + version.ProjectURL + ")"
+	line := "- [dockhand](" + buildinfo.ProjectURL + ")"
 	if tag = strings.TrimSpace(tag); tag != "" {
 		line += " ver. " + tag
 	}

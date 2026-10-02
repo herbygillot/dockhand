@@ -6,12 +6,12 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/buildenv"
+	"github.com/herbygillot/dockhand/internal/buildinfo"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/commitmsg"
 	"github.com/herbygillot/dockhand/internal/macports/prdescription"
 	"github.com/herbygillot/dockhand/internal/model"
-	"github.com/herbygillot/dockhand/internal/version"
 )
 
 // The pull request's description is prdescription's (the architecture
@@ -65,7 +65,7 @@ type bodyFacts struct {
 // engine's words, and the checklist's answers.
 func (facts bodyFacts) description() prdescription.Facts {
 	described := prdescription.Facts{Note: facts.Note, Types: facts.Types, Updated: facts.Updated, NewPorts: facts.NewPorts,
-		SkipNotification: facts.SkipNotification, Version: version.Current().Tag()}
+		SkipNotification: facts.SkipNotification, Version: buildinfo.Current().Tag()}
 	for _, commit := range facts.Commits {
 		described.Commits = append(described.Commits, prdescription.Commit{ID: commit.ID, Message: commit.Message})
 	}
