@@ -174,6 +174,12 @@ type watchedTx struct {
 	added   bool
 	settled model.CheckpointState
 	branch  bool
+	edit    bool
+}
+
+func (t *watchedTx) AddEdit(edit model.Edit) error {
+	t.edit = true
+	return t.Tx.AddEdit(edit)
 }
 
 func (t *watchedTx) AddBranch(b model.Branch) error {
@@ -313,5 +319,36 @@ func TestAnUncertainBranchRecordIsReadBack(t *testing.T) {
 		require.NoDirExists(t, filepath.Join(e.Worktrees(), "jq-update"), "what Git made for it is undone")
 		_, err = e.Start(t.Context(), StartRequest{Name: "jq-update"})
 		require.NoError(t, err, "the name is free again")
+	}
+}
+
+// An update's edit record the store reports as uncertain is read back:
+// the files are written first, and one that landed stands, where saying
+// the update failed left the person to edit again what's there; one that
+// didn't land is the error, with the files as written (the
+// code-organization review's finding 24).
+func TestAnUncertainEditRecordIsReadBack(t *testing.T) {
+	edits := func(tx *watchedTx) bool { return tx.edit }
+	for _, landed := range []bool{true, false} {
+		f := setup(t)
+		e, _ := f.withPreparer(t)
+		branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
+		require.NoError(t, err)
+		e.Store = &uncertainStore{Store: e.Store, when: edits, landed: landed}
+		update, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
+		require.True(t, update.Applied, "the files are written first")
+		var recorded []model.Edit
+		require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+			var read error
+			recorded, read = r.Edits(branch.ID)
+			return read
+		}))
+		if landed {
+			require.NoError(t, err, "the record landed, so the update stands")
+			require.Len(t, recorded, 1)
+			continue
+		}
+		require.ErrorIs(t, err, store.ErrUncertain)
+		require.Empty(t, recorded)
 	}
 }

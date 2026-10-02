@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/herbygillot/dockhand/internal/scratch"
 )
 
 type Remote struct{ Name, FetchURL, PushURL string }
@@ -214,7 +217,7 @@ func RemoteBranchCommit(ctx context.Context, executable, url, branch string) (st
 	if branch != "HEAD" && !ValidRefName("refs/heads/"+strings.TrimPrefix(branch, "refs/heads/")) {
 		return "", fmt.Errorf("git: invalid branch %q", branch)
 	}
-	out, err := (&Repository{Root: os.TempDir(), Executable: executable}).output(ctx, "ls-remote", "--", url, branch)
+	out, err := outside(ctx, executable, "ls-remote", "--", url, branch)
 	if err != nil {
 		return "", err
 	}
@@ -250,7 +253,7 @@ func ListRemoteTags(ctx context.Context, executable, url string, names ...string
 		// A pattern matches the tag, not its peeled line; ask for both.
 		args = append(args, "refs/tags/"+name, "refs/tags/"+name+"^{}")
 	}
-	out, err := (&Repository{Root: os.TempDir(), Executable: executable}).output(ctx, args...)
+	out, err := outside(ctx, executable, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -332,7 +335,7 @@ func CloneCheckout(ctx context.Context, executable, url, name string) (Checkout,
 	if lower := strings.ToLower(name); ValidObjectID(lower) {
 		return Checkout{Commit: lower}, nil
 	}
-	out, err := (&Repository{Root: os.TempDir(), Executable: executable}).output(ctx, "ls-remote", "--symref", "--", url, "HEAD", "refs/heads/*", "refs/tags/*")
+	out, err := outside(ctx, executable, "ls-remote", "--symref", "--", url, "HEAD", "refs/heads/*", "refs/tags/*")
 	if err != nil {
 		return Checkout{}, err
 	}
@@ -403,4 +406,19 @@ func CloneCheckout(ctx context.Context, executable, url, name string) (Checkout,
 		return Checkout{Abbreviation: lower}, nil
 	}
 	return Checkout{}, fmt.Errorf("%w: %s", ErrNoRef, name)
+}
+
+// outside runs git where no repository's configuration applies, as a
+// command that reads a remote by its URL promises: in a fresh scratch
+// directory, with GIT_CEILING_DIRECTORIES at its parent, so git looks for
+// no repository above it. Run from the temporary directory, a repository
+// enclosing it, with url.insteadOf, rewrote ls-remote's URL to a local
+// path (the code-organization review's finding 30).
+func outside(ctx context.Context, executable string, args ...string) ([]byte, error) {
+	dir, err := scratch.Dir("git-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+	return (&Repository{Root: dir, Executable: executable}).run(ctx, nil, []string{"GIT_CEILING_DIRECTORIES=" + filepath.Dir(dir)}, args...)
 }

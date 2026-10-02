@@ -2,7 +2,6 @@ package provision
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -55,35 +54,17 @@ func (n *native) Connect(ctx context.Context, name, alias string, bootstrap bool
 }
 
 // await waits for a guest to accept SSH, reporting the run's own exit if
-// the VM stops first. Only a failed connection is waited out; a guest that
-// answers and refuses is not.
+// the VM stops first (channel.AwaitSSH): only a failed connection is
+// waited out; a guest that answers and refuses is not.
 func (n *native) await(ctx context.Context, name string, guest *channel.Guest) error {
-	ctx, cancel := context.WithTimeout(ctx, connectWait)
-	defer cancel()
-	for {
-		output, err := guest.Command(ctx, nil, "/usr/bin/true")
-		if err == nil {
-			return nil
-		}
-		if !errors.Is(err, channel.ErrTransport) || strings.Contains(string(output), "Host key verification failed") || strings.Contains(string(output), "Permission denied") {
-			return fmt.Errorf("setup: the guest at %s refused SSH: %w", guest.Address, err)
-		}
-		if run := n.run(name); run != nil {
-			select {
-			case <-run.Done():
-				if run.Err() != nil {
-					return run.Err()
-				}
-				return fmt.Errorf("tart: VM %s stopped before it accepted SSH", name)
-			default:
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("setup: the guest at %s did not accept SSH within %s: %w", guest.Address, connectWait, err)
-		case <-time.After(2 * time.Second):
-		}
+	var vm channel.Running
+	if run := n.run(name); run != nil {
+		vm = run
 	}
+	if err := channel.AwaitSSH(ctx, guest, vm, connectWait, 2*time.Second); err != nil {
+		return fmt.Errorf("setup: the guest at %s: %w", guest.Address, err)
+	}
+	return nil
 }
 
 func (n *native) guestFor(name string) (*channel.Guest, error) {

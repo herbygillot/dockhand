@@ -132,7 +132,7 @@ func probeImage(ctx context.Context, machine host.Machine, keys channel.Keys, sc
 	// Every clone presents its image's host keys, recorded at setup.
 	guest := &channel.Guest{Address: address, Image: image, Keys: keys}
 	defer guest.Close(cleanup)
-	if err := await(ctx, guest, run); err != nil {
+	if err := channel.AwaitSSH(ctx, guest, run, 4*time.Minute, 5*time.Second); err != nil {
 		return err
 	}
 	doc := probed{Image: image, Slug: slug, Profile: profile, Date: time.Now().UTC().Format(time.RFC3339), Host: map[string]any{"tart": version}}
@@ -157,27 +157,4 @@ func probeImage(ctx context.Context, machine host.Machine, keys channel.Keys, sc
 		return err
 	}
 	return os.WriteFile(filepath.Join(out, slug+"-"+profile+".json"), append(data, '\n'), 0o644)
-}
-
-// await waits for a booted guest to accept SSH; macOS guests take a minute
-// or two to reach sshd.
-func await(ctx context.Context, guest *channel.Guest, run *host.Foreground) error {
-	ctx, cancel := context.WithTimeout(ctx, 4*time.Minute)
-	defer cancel()
-	for {
-		_, err := guest.Command(ctx, nil, "/usr/bin/true")
-		if err == nil {
-			return nil
-		}
-		if !errors.Is(err, channel.ErrTransport) {
-			return err
-		}
-		select {
-		case <-run.Done():
-			return fmt.Errorf("the VM stopped before it accepted SSH: %v", run.Err())
-		case <-ctx.Done():
-			return fmt.Errorf("the guest never accepted SSH: %w", err)
-		case <-time.After(5 * time.Second):
-		}
-	}
 }

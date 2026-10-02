@@ -357,7 +357,10 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 				Comparison: *update.Upstream, Policy: assess.Policy, At: edit.At}
 		}
 	}
-	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+	// The files are written; a record that landed though its commit's
+	// outcome is unknown stands, where saying the update failed would
+	// leave the person to edit again what's there (store.Recorded).
+	err = store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
 		if err := tx.AddEdit(edit); err != nil {
 			return err
 		}
@@ -369,7 +372,7 @@ func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, err
 		_, err := tx.AppendEvent(model.Event{At: edit.At, Branch: branch.ID, Kind: "branch.edit", Level: model.LevelInfo,
 			Message: fmt.Sprintf("%s: %s (%s)", update.Port, change, listPaths(update.Files))})
 		return err
-	})
+	}, editRecorded(branch.ID, edit.ID))
 	return update, err
 }
 
@@ -856,4 +859,12 @@ func portVersion(ctx context.Context, reader PortReader, source model.Source, na
 		}
 	}
 	return "", "", fmt.Errorf("%w: %s defines no port %s", ErrNoPort, directory, name)
+}
+
+// editRecorded witnesses an edit's record (store.Recorded).
+func editRecorded(branch model.BranchID, id model.EditID) func(store.Reader) bool {
+	return func(r store.Reader) bool {
+		edits, err := r.Edits(branch)
+		return err == nil && slices.ContainsFunc(edits, func(edit model.Edit) bool { return edit.ID == id })
+	}
 }

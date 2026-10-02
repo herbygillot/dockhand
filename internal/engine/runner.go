@@ -563,6 +563,14 @@ func (d *driver) environment(ctx context.Context, provider buildenv.Provider, en
 			return d.endExecution(ctx, execution, model.ExecutionInfrastructure, "interrupted: the process driving it stopped")
 		case ctx.Err() != nil:
 			return d.endExecution(ctx, execution, model.ExecutionCanceled, "canceled")
+		case errors.Is(err, buildenv.ErrNeedsAttention):
+			// Another attempt won't fix it, as a guest refusing dockhand's
+			// login won't: it's said, and no attempt is spent on it.
+			if err := d.endExecution(ctx, execution, model.ExecutionInfrastructure, err.Error()); err != nil {
+				return err
+			}
+			d.problem(fmt.Sprintf("%s: %v; another attempt won't fix it, so none was made", describeEnvironment(environment), err))
+			return nil
 		case err != nil:
 			d.emit(ctx, "execution.retry", fmt.Sprintf("%s: %v", describeEnvironment(environment), err))
 			if err := d.endExecution(ctx, execution, model.ExecutionInfrastructure, err.Error()); err != nil {

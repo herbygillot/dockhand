@@ -33,7 +33,7 @@ See [Providers](#providers) for the others and for more releases.
 2. its own login, from `dockhand auth login`, kept in the macOS Keychain. The login is a one-time code in the browser, asking for the `public_repo` scope;
 3. the GitHub CLI's login, through `gh auth token`.
 
-`dockhand auth status` says which account that is, and `dockhand auth logout` removes dockhand's own login.
+`dockhand auth status` says which account that is, and `dockhand auth logout` removes dockhand's own login. Reading public data, as `outdated` does, needs none, and goes on without one; where none was found, it isn't looked for again for five minutes, so a running `serve` picks up a login made meanwhile soon after.
 
 ### The configuration file
 

@@ -535,7 +535,7 @@ func (p *Provider) Execute(ctx context.Context, job buildenv.Job, build buildenv
 		return p.trouble(ctx, "reaching "+vm, err)
 	}
 	defer g.Close(cleanup)
-	if err := await(ctx, g, started, 4*time.Minute); err != nil {
+	if err := channel.AwaitSSH(ctx, g, started, 4*time.Minute, 3*time.Second); err != nil {
 		return p.trouble(ctx, "reaching "+vm, err)
 	}
 	if err := p.install(ctx, g, job, build); err != nil {
@@ -588,6 +588,11 @@ func (p *Provider) poll() time.Duration {
 func (p *Provider) trouble(ctx context.Context, doing string, err error) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
+	}
+	if errors.Is(err, channel.ErrRefused) {
+		// A guest that refuses dockhand refuses it again: the image's keys
+		// or password are another's, which another attempt won't change.
+		return fmt.Errorf("%w: %w: %s: %w", buildenv.ErrInfrastructure, buildenv.ErrNeedsAttention, doing, err)
 	}
 	return fmt.Errorf("%w: %s: %w", buildenv.ErrInfrastructure, doing, err)
 }

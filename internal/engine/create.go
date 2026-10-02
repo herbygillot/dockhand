@@ -243,14 +243,14 @@ func (e *Engine) Create(ctx context.Context, request CreateRequest) (Created, er
 	subject := fmt.Sprintf("%s: new port, version %s", name, version)
 	edit := model.Edit{ID: model.EditID(store.NewID("ed")), Branch: request.Branch.ID, Kind: model.EditCreate, Port: name, Directory: directory,
 		Subject: subject, At: e.now(), Files: []model.EditedFile{{Path: portfile, After: model.ObjectID(blob)}}}
-	if err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+	if err := store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
 		if err := tx.AddEdit(edit); err != nil {
 			return err
 		}
 		_, err := tx.AppendEvent(model.Event{At: edit.At, Branch: request.Branch.ID, Kind: "branch.edit", Level: model.LevelInfo,
 			Message: fmt.Sprintf("%s: created %s from %s", name, portfile, request.URL)})
 		return err
-	}); err != nil {
+	}, editRecorded(request.Branch.ID, edit.ID)); err != nil {
 		return Created{}, err
 	}
 

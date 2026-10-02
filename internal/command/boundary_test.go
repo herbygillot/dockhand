@@ -34,6 +34,7 @@ var commandImports = map[string]string{
 	"internal/github":               "composition and auth: GitHub's client and login",
 	"internal/credential":           "auth: where the login is kept",
 	"internal/credential/keychain":  "auth: the macOS Keychain",
+	"internal/subprocess":           "a one-shot command run to completion, bounded: open, osascript, launchctl",
 	"github.com/spf13/cobra":        "the command line itself",
 	"golang.org/x/sys/unix":         "whether a stream is a terminal",
 	// Where a port's own build begins is the result's (model.OwnBuild);

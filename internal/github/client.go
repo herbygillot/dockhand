@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	gh "github.com/google/go-github/v91/github"
 
@@ -32,6 +33,25 @@ type Client struct {
 	authMu     sync.Mutex
 	authSDK    *gh.Client
 	authSource CredentialSource
+	// anonymousUntil is when finding no credentials stops being
+	// remembered, so an anonymous read doesn't ask the keychain and gh
+	// again each time (the code-organization review's finding 45); now
+	// is the clock, time.Now where nil.
+	anonymousUntil time.Time
+	now            func() time.Time
+}
+
+// anonymousFor is how long API remembers finding no credentials: long
+// enough that outdated's reads don't each run security and gh, short
+// enough that a login made meanwhile is soon used. AuthenticatedAPI,
+// which needs one, always looks.
+const anonymousFor = 5 * time.Minute
+
+func (c *Client) clock() time.Time {
+	if c.now != nil {
+		return c.now()
+	}
+	return time.Now()
 }
 
 // API uses available credentials for public reads, allowing anonymous reads only when none exist.
@@ -40,12 +60,12 @@ func (c *Client) API(ctx context.Context) (*gh.Client, error) {
 		return nil, fmt.Errorf("github: client is required")
 	}
 	c.authMu.Lock()
-	authenticated := c.authSDK
+	authenticated, anonymous := c.authSDK, c.clock().Before(c.anonymousUntil)
 	c.authMu.Unlock()
 	if authenticated != nil {
 		return authenticated, nil
 	}
-	if c.Config.Token != "" || c.Credentials != nil || c.Config.BaseURL == "" {
+	if !anonymous && (c.Config.Token != "" || c.Credentials != nil || c.Config.BaseURL == "") {
 		api, err := c.AuthenticatedAPI(ctx)
 		if err == nil {
 			return api, nil
@@ -53,6 +73,9 @@ func (c *Client) API(ctx context.Context) (*gh.Client, error) {
 		if !errors.Is(err, ErrNoCredentials) {
 			return nil, err
 		}
+		c.authMu.Lock()
+		c.anonymousUntil = c.clock().Add(anonymousFor)
+		c.authMu.Unlock()
 	}
 	c.once.Do(func() { c.sdk, c.initErr = c.newAPI(c.Config.Token, SourceExplicit) })
 	return c.sdk, c.initErr

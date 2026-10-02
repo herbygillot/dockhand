@@ -28,17 +28,51 @@ var (
 	ErrNotFound = errors.New("not found")
 	// ErrConflict reports a write that another row forbids: a duplicate, a
 	// state change the record may not make, a checkpoint that is final.
+	// It's the store keeping its own contract, which dockhand's code keeps
+	// first: no caller recovers from one, and it says a rule was broken,
+	// not that another try may succeed (the code-organization review's
+	// finding 41).
 	ErrConflict = errors.New("conflict")
 	// ErrStale reports a lease generation that is no longer current: the
 	// writer lost its claim and must not act on it.
 	ErrStale = errors.New("stale lease")
 	// ErrSchema reports a database this build cannot use.
 	ErrSchema = errors.New("unusable database")
-	// ErrUnavailable reports storage that could not be read or written.
+	// ErrUnavailable reports storage that could not be read or written,
+	// for any reason the driver gives but a conflict: the disk, the file,
+	// or a database still locked once the busy timeout has queued the
+	// writer behind another. No caller tells one cause from another; each
+	// fails what it was doing, and says why.
 	ErrUnavailable = errors.New("storage unavailable")
-	// ErrUncertain reports a commit whose outcome is unknown.
+	// ErrUncertain reports a commit whose outcome is unknown: the write
+	// may have landed or not, as when a cancel arrives while the commit
+	// syncs. A writer that would undo work outside the store on a failed
+	// write reads the record back first, and never undoes on this alone.
 	ErrUncertain = errors.New("commit outcome unknown")
 )
+
+// Recorded runs a write, and where its commit's outcome is unknown
+// (ErrUncertain), reads it back: witness reports whether what it wrote is
+// there, which then answers for it. A write that landed is no failure; one
+// that didn't, and any other error, is returned. The witness reads outside
+// the caller's cancel, which is what can leave the outcome unknown. A
+// writer that would undo, or leave unrecorded, work done outside the store
+// writes through it (the code-organization review's finding 24).
+func Recorded(ctx context.Context, s Store, repository model.RepositoryID, write func(Tx) error, witness func(Reader) bool) error {
+	err := s.Update(ctx, repository, write)
+	if !errors.Is(err, ErrUncertain) {
+		return err
+	}
+	landed := false
+	_ = s.View(context.WithoutCancel(ctx), repository, func(r Reader) error {
+		landed = witness(r)
+		return nil
+	})
+	if landed {
+		return nil
+	}
+	return err
+}
 
 // Store opens transactions on one database.
 type Store interface {

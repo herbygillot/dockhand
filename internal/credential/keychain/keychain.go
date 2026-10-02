@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/credential"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
 const encodedPrefix = "dockhand-base64:"
@@ -25,7 +26,8 @@ func (s Store) Get(ctx context.Context, key credential.Key) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	output, err := exec.CommandContext(ctx, path, "find-generic-password", "-a", key.Account, "-s", key.Service, "-w").Output()
+	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "security", Path: path, Args: []string{"find-generic-password", "-a", key.Account, "-s", key.Service, "-w"}, Limit: 1 << 16})
+	output := result.Output
 	if err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) && exit.ExitCode() == 44 {
@@ -62,11 +64,17 @@ func (s Store) Put(ctx context.Context, key credential.Key, secret string) error
 		return err
 	}
 	encoded := encodedPrefix + base64.StdEncoding.EncodeToString([]byte(secret))
-	command := exec.CommandContext(ctx, path, "-i")
-	command.Stdin = strings.NewReader(fmt.Sprintf("add-generic-password -U -a %s -s %s -w %s\n", key.Account, key.Service, encoded))
-	if err := command.Run(); err != nil {
+	// What it's given on standard input is the secret, which an error
+	// never repeats: only how it ended is said, never what it wrote.
+	_, err = subprocess.Run(ctx, subprocess.Spec{Tool: "security", Path: path, Args: []string{"-i"}, Limit: 1 << 16,
+		Stdin: strings.NewReader(fmt.Sprintf("add-generic-password -U -a %s -s %s -w %s\n", key.Account, key.Service, encoded))})
+	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		var failed *subprocess.Error
+		if errors.As(err, &failed) {
+			err = failed.Cause
 		}
 		return fmt.Errorf("keychain: storing credential: %w", err)
 	}
@@ -109,7 +117,7 @@ func (s Store) Delete(ctx context.Context, key credential.Key) error {
 	if err != nil {
 		return err
 	}
-	err = exec.CommandContext(ctx, path, "delete-generic-password", "-a", key.Account, "-s", key.Service).Run()
+	_, err = subprocess.Run(ctx, subprocess.Spec{Tool: "security", Path: path, Args: []string{"delete-generic-password", "-a", key.Account, "-s", key.Service}, Limit: 1 << 16})
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}

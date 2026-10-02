@@ -24,11 +24,15 @@ endif
 build:
 	$(GO) build $(if $(strip $(GO_LDFLAGS)),-ldflags "$(GO_LDFLAGS)") -o "$(BINARY)" ./cmd/dockhand
 
+# The engine and command packages take minutes alone, and past go test's
+# ten-minute default on a loaded Mac; the bound is room, not a target.
+TEST_TIMEOUT ?= 40m
+
 test:
-	$(GO) test ./...
+	$(GO) test -timeout $(TEST_TIMEOUT) ./...
 
 test-race:
-	$(GO) test -race ./...
+	$(GO) test -race -timeout $(TEST_TIMEOUT) ./...
 
 vet:
 	$(GO) vet ./...

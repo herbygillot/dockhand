@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,6 +50,9 @@ type scriptedProvider struct {
 	// fetches are the commits Git-fetched targets' builds say they
 	// checked out.
 	fetches map[model.TargetID]string
+	// refused makes each failure one another attempt won't fix, as a
+	// guest refusing dockhand's login is.
+	refused bool
 	jobs    []buildenv.Job
 }
 
@@ -68,6 +72,9 @@ func (p *scriptedProvider) Execute(ctx context.Context, job buildenv.Job, build 
 	failing := p.failures > 0
 	p.failures--
 	p.mu.Unlock()
+	if failing && p.refused {
+		return fmt.Errorf("%w: %w: reaching the VM: the guest refused SSH", buildenv.ErrInfrastructure, buildenv.ErrNeedsAttention)
+	}
 	if failing && !p.partial {
 		return errors.New("the VM did not start")
 	}
@@ -292,6 +299,23 @@ func TestRepeatedInfrastructureTroubleNeedsAttention(t *testing.T) {
 	require.Len(t, provider.jobs, model.MaxAttempts)
 	require.Contains(t, run.Detail, "no provider \"tart\" is set up here")
 	require.Contains(t, run.Detail, "failed 3 times")
+}
+
+// Trouble another attempt won't fix, as a guest refusing dockhand's
+// login, is said after one attempt, where every attempt was spent on it
+// (the code-organization review's finding 7).
+func TestTroubleAnotherAttemptWontFixIsTriedOnce(t *testing.T) {
+	f := setup(t)
+	e := f.open(t)
+	provider := &scriptedProvider{failures: 99, refused: true}
+	e.Providers = map[string]buildenv.Provider{"command": provider}
+	queued := queuedHarborRun(t, e, tahoeArm)
+
+	run, err := e.Drive(t.Context(), session(t, e), queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.RunAttention, run.State)
+	require.Len(t, provider.jobs, 1, "one attempt")
+	require.Contains(t, run.Detail, "the guest refused SSH; another attempt won't fix it, so none was made")
 }
 
 func TestACancelIsAppliedByWhoeverHoldsTheRun(t *testing.T) {

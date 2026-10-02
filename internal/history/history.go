@@ -18,7 +18,6 @@ package history
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -64,19 +63,16 @@ func (h *Transitions) Step(step string) error {
 // keeps is made, and gives it its number.
 func (h *Transitions) Prepare(ctx context.Context, checkpoint *model.Checkpoint) error {
 	checkpoint.State = model.CheckpointPrepared
-	err := h.Store.Update(ctx, h.Repository, func(tx store.Tx) error {
+	err := store.Recorded(ctx, h.Store, h.Repository, func(tx store.Tx) error {
 		number, err := tx.NextCheckpointNumber()
 		if err != nil {
 			return err
 		}
 		checkpoint.Number = number
 		return tx.AddCheckpoint(*checkpoint)
-	})
-	if errors.Is(err, store.ErrUncertain) {
-		if recorded, found := h.Read(ctx, checkpoint.Number); found && recorded.Branch == checkpoint.Branch && recorded.Before == checkpoint.Before && recorded.After == checkpoint.After {
-			return nil
-		}
-	}
+	}, checkpointRecorded(&checkpoint.Number, func(recorded model.Checkpoint) bool {
+		return recorded.Branch == checkpoint.Branch && recorded.Before == checkpoint.Before && recorded.After == checkpoint.After
+	}))
 	if err != nil {
 		return fmt.Errorf("recording the checkpoint failed, so nothing was changed: %w", err)
 	}
@@ -88,7 +84,7 @@ func (h *Transitions) Prepare(ctx context.Context, checkpoint *model.Checkpoint)
 // in the same transaction.
 func (h *Transitions) Settle(ctx context.Context, checkpoint model.Checkpoint, state model.CheckpointState, message string) error {
 	checkpoint.State = state
-	err := h.Store.Update(ctx, h.Repository, func(tx store.Tx) error {
+	return store.Recorded(ctx, h.Store, h.Repository, func(tx store.Tx) error {
 		if err := tx.SettleCheckpoint(checkpoint); err != nil {
 			return err
 		}
@@ -102,20 +98,16 @@ func (h *Transitions) Settle(ctx context.Context, checkpoint model.Checkpoint, s
 		}
 		_, err := tx.AppendEvent(model.Event{At: h.Now(), Branch: checkpoint.Branch, Kind: "branch." + string(checkpoint.Kind), Level: model.LevelInfo, Message: message})
 		return err
-	})
-	if errors.Is(err, store.ErrUncertain) {
-		if recorded, found := h.Read(ctx, checkpoint.Number); found && recorded.State == state {
-			return nil
-		}
-	}
-	return err
+	}, checkpointRecorded(&checkpoint.Number, func(recorded model.Checkpoint) bool { return recorded.State == state }))
 }
 
 // RecordRestore records a checkpoint's restore, and puts back the base the
 // restored history starts from, in one transaction.
 func (h *Transitions) RecordRestore(ctx context.Context, checkpoint model.Checkpoint, message string) (model.Branch, error) {
 	var branch model.Branch
-	err := h.Store.Update(ctx, h.Repository, func(tx store.Tx) error {
+	// The branch is as the transaction wrote it, where its commit's
+	// outcome was unknown and the restore is there all the same.
+	err := store.Recorded(ctx, h.Store, h.Repository, func(tx store.Tx) error {
 		if err := tx.MarkRestored(checkpoint); err != nil {
 			return err
 		}
@@ -135,13 +127,18 @@ func (h *Transitions) RecordRestore(ctx context.Context, checkpoint model.Checkp
 		branch = current
 		_, err = tx.AppendEvent(model.Event{At: *checkpoint.RestoredAt, Branch: checkpoint.Branch, Kind: "branch.restore", Level: model.LevelInfo, Message: message})
 		return err
-	})
-	if errors.Is(err, store.ErrUncertain) {
-		if recorded, found := h.Read(ctx, checkpoint.Number); found && recorded.RestoredAt != nil {
-			branch, err = h.branch(ctx, checkpoint.Branch)
-		}
-	}
+	}, checkpointRecorded(&checkpoint.Number, func(recorded model.Checkpoint) bool { return recorded.RestoredAt != nil }))
 	return branch, err
+}
+
+// checkpointRecorded witnesses a checkpoint's record, as recorded is
+// what was written (store.Recorded). A checkpoint numbered as it's
+// written is read by the number the write gave it.
+func checkpointRecorded(number *int, recorded func(model.Checkpoint) bool) func(store.Reader) bool {
+	return func(r store.Reader) bool {
+		checkpoint, err := r.Checkpoint(*number)
+		return err == nil && recorded(checkpoint)
+	}
 }
 
 // Read reads a checkpoint back, as it is recorded now.
@@ -297,17 +294,6 @@ func (h *Transitions) dropCheckpointRefs(ctx context.Context, checkpoint model.C
 // finishes the record.
 func Unfinished(what string, err error) error {
 	return fmt.Errorf("%s, but recording it failed: %w; the next dockhand tidy, rebase, or restore of this branch finishes the record", what, err)
-}
-
-// branch reads a branch as it is recorded now.
-func (h *Transitions) branch(ctx context.Context, id model.BranchID) (model.Branch, error) {
-	var branch model.Branch
-	err := h.Store.View(ctx, h.Repository, func(r store.Reader) error {
-		var err error
-		branch, err = r.Branch(id)
-		return err
-	})
-	return branch, err
 }
 
 // short abbreviates a commit for people.

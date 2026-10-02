@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/fetch"
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
 var ErrAuthentication = forge.ErrAuthentication
@@ -64,7 +65,8 @@ func (s SystemCredentials) Token(ctx context.Context) (Token, error) {
 	if err != nil {
 		return Token{}, fmt.Errorf("%w: run dockhand auth login, set GH_TOKEN or GITHUB_TOKEN, or authenticate with the GitHub CLI", ErrNoCredentials)
 	}
-	output, err := exec.CommandContext(ctx, path, "auth", "token", "--hostname", "github.com").Output()
+	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "gh", Path: path, Args: []string{"auth", "token", "--hostname", "github.com"}, Limit: 1 << 16})
+	output := result.Output
 	if err != nil {
 		if ctx.Err() != nil {
 			return Token{}, ctx.Err()

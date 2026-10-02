@@ -47,6 +47,12 @@ const (
 // model.MaxAttempts; it never repeats a verdict.
 var ErrInfrastructure = errors.New("provider infrastructure failed")
 
+// ErrNeedsAttention marks trouble another attempt won't fix, beside
+// ErrInfrastructure: a guest that refuses dockhand's login refuses it
+// again. The runner tries such an execution no more, and says why, where
+// it had spent every attempt on it.
+var ErrNeedsAttention = errors.New("another attempt won't fix it")
+
 // Job is one guest execution's work.
 type Job struct {
 	Run         model.Run
@@ -104,6 +110,9 @@ type Build interface {
 	// rather than building it.
 	Blocked(target model.TargetID) (model.TargetID, bool)
 	// Record checkpoints one target's result. A complete verdict is final.
+	// An error is the store's: the result wasn't recorded, and the
+	// provider stops, whose execution then ends as an infrastructure
+	// failure and spends an attempt, since what it built can't be said.
 	Record(result model.TargetResult) error
 	// Consumed reports the ports that were active as a target built,
 	// other than the target, before its Record: they are inputs of its

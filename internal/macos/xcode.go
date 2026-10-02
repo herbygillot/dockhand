@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
 type xcodeArchive struct {
@@ -100,7 +101,8 @@ func (e *MissingXcode) Error() string {
 // CheckXcodeSignature checks an Xcode archive is Apple's, as pkgutil
 // --check-signature says: "signed Apple Software".
 func CheckXcodeSignature(ctx context.Context, path string) error {
-	out, err := exec.CommandContext(ctx, "/usr/sbin/pkgutil", "--check-signature", path).CombinedOutput()
+	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "pkgutil", Path: "/usr/sbin/pkgutil", Args: []string{"--check-signature", path}, Combined: true, Limit: 1 << 20})
+	out := result.Output
 	if err != nil || !strings.Contains(string(out), "Status: signed Apple Software") {
 		return fmt.Errorf("macos: %s isn't signed by Apple: %s", path, strings.TrimSpace(string(out)))
 	}

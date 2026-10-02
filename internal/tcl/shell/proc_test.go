@@ -15,7 +15,9 @@ import (
 
 func start(t *testing.T, script string, opts ...shell.Option) *shell.Proc {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	// An upper bound, as long as any test's process may take under load;
+	// each ends its own.
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	t.Cleanup(cancel)
 	opts = append([]shell.Option{shell.WithArgs("-c", script)}, opts...)
 	p, err := shell.Start(ctx, "/bin/sh", opts...)
@@ -67,8 +69,17 @@ func TestBoundedOutputDoesNotBlockExit(t *testing.T) {
 	require.NoError(t, p.Close())
 }
 
+// What a process wrote last to standard error is kept, to a bound. It
+// writes 70 kB first, which under load took longer than Close waits for a
+// process, and the tail was cut short; it's waited for, as long as it
+// takes.
 func TestStderrRetainsTail(t *testing.T) {
 	p := start(t, "i=0; while [ $i -lt 7000 ]; do printf 0123456789 >&2; i=$((i+1)); done; printf END >&2")
+	select {
+	case <-p.Done():
+	case <-time.After(time.Minute):
+		t.Fatal("the writer never finished")
+	}
 	require.NoError(t, p.Close())
 	tail := string(p.StderrTail())
 	require.Len(t, tail, 64<<10)

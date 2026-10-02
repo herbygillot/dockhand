@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -20,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/config"
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
 // servePoll is how often serve looks for work and a standby for the leader.
@@ -153,7 +153,8 @@ var postNotification = func(title, text string) error {
 	quote := func(value string) string { return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(value) + `"` }
 	ctx, cancel := context.WithTimeout(context.Background(), notificationTimeout)
 	defer cancel()
-	return exec.CommandContext(ctx, "osascript", "-e", "display notification "+quote(text)+" with title "+quote("dockhand · "+title)).Run()
+	_, err := subprocess.Run(ctx, subprocess.Spec{Tool: "osascript", Path: "osascript", Args: []string{"-e", "display notification " + quote(text) + " with title " + quote("dockhand · "+title)}, Limit: 1 << 16})
+	return err
 }
 
 // AgentLabel names serve's launchd agent.
@@ -161,11 +162,8 @@ const AgentLabel = "io.github.herbygillot.dockhand.serve"
 
 // launchctl runs launchctl; tests stand in for it.
 var launchctl = func(ctx context.Context, args ...string) error {
-	out, err := exec.CommandContext(ctx, "launchctl", args...).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("launchctl %s: %w: %s", strings.Join(args, " "), err, bytes.TrimSpace(out))
-	}
-	return nil
+	_, err := subprocess.Run(ctx, subprocess.Spec{Tool: "launchctl", Path: "launchctl", Command: strings.Join(args, " "), Args: args, Combined: true, Limit: 1 << 20})
+	return err
 }
 
 // agentOS is the operating system serve --install targets; tests set it.

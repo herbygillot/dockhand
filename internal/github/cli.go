@@ -1,7 +1,6 @@
 package github
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
 // CLI is the GitHub CLI, gh, which acts on GitHub as its own app with its
@@ -53,19 +53,16 @@ func (c CLI) run(ctx context.Context, args ...string) ([]byte, error) {
 		}
 		path = found
 	}
-	var stderr bytes.Buffer
-	command := exec.CommandContext(ctx, path, args...)
-	command.Stderr = &stderr
-	out, err := command.Output()
+	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "gh", Path: path, Args: args, Limit: 1 << 20})
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		said := strings.TrimSpace(stderr.String())
+		said := strings.TrimSpace(string(result.Stderr))
 		if said == "" {
 			said = err.Error()
 		}
 		return nil, fmt.Errorf("gh %s: %s", strings.Join(args[:2], " "), said)
 	}
-	return out, nil
+	return result.Output, nil
 }

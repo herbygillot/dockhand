@@ -16,8 +16,9 @@ import (
 
 // setupPin is the digest of the provisioning code tart.SetupProtocol 3
 // covers: this package's, and the MacPorts installation it runs. Batch 26
-// bounded setup's wait on a blocked listing, which changes no image.
-const setupPin = "6ce7b61d0a1199b1addb36617c017cc5f3545d19a65148e25403aec59153ac89"
+// bounded setup's wait on a blocked listing, and batch 36 made its SSH
+// wait channel.AwaitSSH, neither of which changes an image.
+const setupPin = "19a1208621b939edd801bf9d2a45a075601e6ec0ab2da320df189b77178c9c2b"
 
 // What setup puts in an image is identified by tart.SetupProtocol, which
 // evidence's reuse compares (decision 28). A change to the provisioning

@@ -76,3 +76,38 @@ func TestListRemoteTagsReturnsOnlyTheExactNamesAsked(t *testing.T) {
 	_, err = git.ListRemoteTags(t.Context(), "", filepath.Join(t.TempDir(), "missing.git"))
 	require.Error(t, err)
 }
+
+// A remote read by its URL is read where no repository's configuration
+// applies: with the temporary directory inside a repository whose
+// url.insteadOf rewrites the URL to a local one, git run there reads the
+// local repository, and ListRemoteTags doesn't (the code-organization
+// review's finding 30). The read runs in a child process, whose run root
+// is made under that temporary directory.
+func TestARemoteIsReadOutsideAnyRepository(t *testing.T) {
+	if url := os.Getenv("DOCKHAND_TEST_OUTSIDE_URL"); url != "" {
+		tags, err := git.ListRemoteTags(t.Context(), "git", url)
+		if err != nil {
+			t.Log("outside: not read")
+			return
+		}
+		t.Logf("outside: read %d tags", len(tags))
+		return
+	}
+	remote, _ := tagged(t)
+	enclosing := t.TempDir()
+	for _, args := range [][]string{{"init", "-q", enclosing}, {"-C", enclosing, "config", "url." + remote + ".insteadOf", "https://example.invalid/project.git"}} {
+		out, err := exec.CommandContext(t.Context(), "git", args...).CombinedOutput()
+		require.NoError(t, err, "%s", out)
+	}
+	tmp := filepath.Join(enclosing, "tmp")
+	require.NoError(t, os.Mkdir(tmp, 0o755))
+	out, err := exec.CommandContext(t.Context(), "git", "-C", tmp, "ls-remote", "--tags", "https://example.invalid/project.git").CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	require.Contains(t, string(out), "refs/tags/v1.0", "git run there reads the local repository")
+
+	child := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestARemoteIsReadOutsideAnyRepository$", "-test.v")
+	child.Env = append(os.Environ(), "TMPDIR="+tmp, "DOCKHAND_TEST_OUTSIDE_URL=https://example.invalid/project.git")
+	out, err = child.CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	require.Contains(t, string(out), "outside: not read", "the enclosing repository's configuration doesn't apply")
+}

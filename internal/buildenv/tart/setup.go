@@ -14,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/installation"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
 	"github.com/herbygillot/dockhand/internal/tart/provision"
 )
@@ -278,10 +279,10 @@ func HostMacPorts(ctx context.Context, tclsh string) string {
 	if tclsh == "" {
 		return ""
 	}
-	out, err := exec.CommandContext(ctx, filepath.Join(filepath.Dir(tclsh), "port"), "version").Output()
+	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "port", Path: filepath.Join(filepath.Dir(tclsh), "port"), Args: []string{"version"}, Limit: 1 << 16})
 	if err != nil {
 		return ""
 	}
-	version, _ := installation.ParseVersion(out)
+	version, _ := installation.ParseVersion(result.Output)
 	return version
 }

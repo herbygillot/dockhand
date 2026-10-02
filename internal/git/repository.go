@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 type Repository struct {
@@ -67,7 +66,7 @@ func (r *Repository) command(ctx context.Context, env []string, args ...string) 
 	if file, ok := ctx.Value(branchLockKey{}).(*os.File); ok {
 		command.ExtraFiles = []*os.File{file}
 	}
-	command.WaitDelay = time.Second
+	command.WaitDelay = subprocess.DefaultWaitDelay
 	return command
 }
 

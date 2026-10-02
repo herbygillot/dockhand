@@ -38,11 +38,14 @@ type fakeMac struct {
 	// most of its own it ran at once.
 	live           bool
 	base, up, peak int
-	cloneErr       error
-	running        []int // counts Running reports, one per call, the last repeating
-	events         []string
-	guest          *fakeGuest
-	run            *fakeRun
+	// beforeStop, where set, runs as a live VM stops, before it frees its
+	// slot.
+	beforeStop func()
+	cloneErr   error
+	running    []int // counts Running reports, one per call, the last repeating
+	events     []string
+	guest      *fakeGuest
+	run        *fakeRun
 }
 
 func (m *fakeMac) log(event string) {
@@ -108,6 +111,9 @@ func (r *liveRun) Done() <-chan struct{} { return r.done }
 func (r *liveRun) Err() error            { return nil }
 func (r *liveRun) Stop(context.Context, time.Duration) error {
 	r.once.Do(func() {
+		if r.mac.beforeStop != nil {
+			r.mac.beforeStop()
+		}
 		r.mac.mu.Lock()
 		r.mac.up--
 		r.mac.mu.Unlock()
@@ -728,7 +734,10 @@ func TestTheCacheKeepsWhatIsUsed(t *testing.T) {
 
 // Releases checked together start their VMs one at a time, each once the
 // last is listed as running, so they never both take a slot the Mac has
-// only one of: here the person's own VM holds the other.
+// only one of: here the person's own VM holds the other. The first VM
+// stops only once a release has said it's waiting, so they overlap
+// however the machine schedules them: under load, the first had finished
+// before the second asked for a slot, and nothing waited.
 func TestReleasesTakeTheMacsSlotsInTurn(t *testing.T) {
 	t.Parallel()
 	mac := newMac(guestResults{State: "finished"})
@@ -737,6 +746,22 @@ func TestReleasesTakeTheMacsSlotsInTurn(t *testing.T) {
 	p := testProvider(mac)
 	sonoma := model.Platform{OS: "darwin", Version: "23", Architecture: "arm64"}
 	builds := []*fakeBuild{{}, {}}
+	waiting := func() bool {
+		for _, build := range builds {
+			build.mu.Lock()
+			said := slices.ContainsFunc(build.progress, func(line string) bool { return strings.HasPrefix(line, "waiting for the Mac's VMs: 2 are running") })
+			build.mu.Unlock()
+			if said {
+				return true
+			}
+		}
+		return false
+	}
+	mac.beforeStop = func() {
+		for deadline := time.Now().Add(time.Minute); !waiting() && time.Now().Before(deadline); {
+			time.Sleep(time.Millisecond)
+		}
+	}
 	var group errgroup.Group
 	for i, platform := range []model.Platform{tahoe, sonoma} {
 		job := tartJob(t, 1)

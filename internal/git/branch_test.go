@@ -111,14 +111,16 @@ func TestBranchLockSurvivesDriverExitWhileGitStillRuns(t *testing.T) {
 	child.Env = append(os.Environ(), "DOCKHAND_BRANCH_LOCK_CHILD="+root, "DOCKHAND_BRANCH_LOCK_GIT="+wrapper)
 	require.NoError(t, child.Start())
 	defer child.Process.Kill()
-	require.Eventually(t, func() bool { _, err := os.Stat(started); return err == nil }, 5*time.Second, 10*time.Millisecond)
+	// Upper bounds, as long as a child process may take to start under
+	// load, which five seconds wasn't; each ends as soon as it holds.
+	require.Eventually(t, func() bool { _, err := os.Stat(started); return err == nil }, time.Minute, 10*time.Millisecond)
 	require.NoError(t, child.Process.Kill())
 	require.Error(t, child.Wait())
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 	require.ErrorIs(t, repo.WithBranchLock(ctx, "candidate", func(context.Context) error { t.Error("Git subprocess lost exclusion"); return nil }), context.DeadlineExceeded)
 	require.NoError(t, os.WriteFile(gate, nil, 0600))
-	ctx2, cancel2 := context.WithTimeout(t.Context(), 3*time.Second)
+	ctx2, cancel2 := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel2()
 	require.NoError(t, repo.WithBranchLock(ctx2, "candidate", func(context.Context) error { return nil }))
 }

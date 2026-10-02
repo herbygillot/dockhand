@@ -136,29 +136,6 @@ func (n *native) Reach(ctx context.Context, vm, image string) (guest, error) {
 	return &channel.Guest{Address: address, Image: image, Keys: n.keys}, nil
 }
 
-// await waits for a booted guest to accept SSH; macOS guests take a minute
-// or two to reach sshd. A run that stops first ends the wait.
-func await(ctx context.Context, g guest, vm run, wait time.Duration) error {
-	ctx, cancel := context.WithTimeout(ctx, wait)
-	defer cancel()
-	for {
-		_, err := g.Command(ctx, nil, "/usr/bin/true")
-		if err == nil {
-			return nil
-		}
-		if !errors.Is(err, channel.ErrTransport) {
-			return err
-		}
-		select {
-		case <-vm.Done():
-			return fmt.Errorf("the VM stopped before it accepted SSH: %v", vm.Err())
-		case <-ctx.Done():
-			return fmt.Errorf("the guest never accepted SSH: %w", err)
-		case <-time.After(3 * time.Second):
-		}
-	}
-}
-
 // vmName is the clone an attempt builds in: the run's, the release's, and
 // the attempt's, so a later attempt can find and remove what an earlier
 // one left when its process died.

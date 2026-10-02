@@ -32,8 +32,9 @@ type Spec struct {
 	// Combined captures standard error into the same buffer as standard output.
 	Combined   bool
 	ExtraFiles []*os.File
-	// WaitDelay bounds how long the process may outlive a canceled context;
-	// zero selects two seconds.
+	// WaitDelay bounds how long the process may outlive a canceled context,
+	// and how long its output may take to arrive once it has exited; zero
+	// selects DefaultWaitDelay.
 	WaitDelay time.Duration
 	// Limit bounds the captured bytes of each stream; zero imposes none.
 	Limit int64
@@ -69,6 +70,15 @@ func (e *Error) Error() string {
 
 func (e *Error) Unwrap() error { return e.Cause }
 
+// DefaultWaitDelay is how long a command's output may take to arrive once
+// it has exited, and a command may outlive a canceled context before it's
+// killed. The timer starts as the process exits, so it bounds copying what
+// the process already wrote: a second's delay failed git ls-tree under a
+// load average of 190, "exec: WaitDelay expired before I/O complete". A
+// canceled command is killed at once, so the delay matters only to a
+// command whose children keep its pipes open, which is a hang this ends.
+const DefaultWaitDelay = 15 * time.Second
+
 // errOutputLimit means a stream exceeded the spec's limit.
 var errOutputLimit = errors.New("subprocess: output exceeds limit")
 
@@ -83,7 +93,7 @@ func Run(ctx context.Context, spec Spec) (Result, error) {
 	command.Stdin = spec.Stdin
 	command.WaitDelay = spec.WaitDelay
 	if command.WaitDelay == 0 {
-		command.WaitDelay = 2 * time.Second
+		command.WaitDelay = DefaultWaitDelay
 	}
 	for _, file := range spec.ExtraFiles {
 		if file != nil {

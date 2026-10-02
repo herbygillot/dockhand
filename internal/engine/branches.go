@@ -121,38 +121,28 @@ func (e *Engine) Start(ctx context.Context, request StartRequest) (model.Branch,
 	if branch.Origin == "" {
 		branch.Origin = model.OriginPerson
 	}
-	if err := e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+	// A record that landed keeps the Git branch made for it, where undoing
+	// that would leave a record whose branch is gone and whose name stays
+	// taken (roadmap item 3); one that didn't land is undone.
+	if err := store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
 		if err := tx.AddBranch(branch); err != nil {
 			return err
 		}
 		_, err := tx.AppendEvent(model.Event{At: branch.CreatedAt, Branch: branch.ID, Kind: "branch.start", Level: model.LevelVerbose,
 			Message: fmt.Sprintf("started %s from master %s in %s", name, short(base), directory)})
 		return err
-	}); err != nil {
-		if e.recordedAfterAll(ctx, err, branch.ID) {
-			return branch, nil
-		}
+	}, branchRecorded(branch.ID)); err != nil {
 		return model.Branch{}, errors.Join(err, undo())
 	}
 	return branch, nil
 }
 
-// recordedAfterAll reads a new branch's record back when the store couldn't
-// say whether its commit landed, as an interrupt during the commit leaves
-// it (roadmap item 3): a record that landed keeps the Git branch made for
-// it, where undoing that would leave a record whose branch is gone and
-// whose name stays taken; one that didn't land is undone.
-func (e *Engine) recordedAfterAll(ctx context.Context, err error, id model.BranchID) bool {
-	if !errors.Is(err, store.ErrUncertain) {
-		return false
-	}
-	found := false
-	_ = e.Store.View(context.WithoutCancel(ctx), e.Repository, func(r store.Reader) error {
+// branchRecorded witnesses a new branch's record (store.Recorded).
+func branchRecorded(id model.BranchID) func(store.Reader) bool {
+	return func(r store.Reader) bool {
 		_, err := r.Branch(id)
-		found = err == nil
-		return nil
-	})
-	return found
+		return err == nil
+	}
 }
 
 // worktreeDirectory is where a branch's managed worktree goes.
@@ -621,15 +611,15 @@ func (e *Engine) AdoptPullRequest(ctx context.Context, number int) (PullRequestA
 		Title: pr.Title, State: model.BranchOpen, CreatedAt: e.now(),
 		PullRequest: &model.PullRequest{Repository: UpstreamRepository, Number: number, Head: pr.HeadRepository + ":" + pr.HeadBranch, Pushed: model.ObjectID(head), Body: pr.Body},
 	}
-	err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+	err = store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
 		if err := tx.AddBranch(adoption.Branch); err != nil {
 			return err
 		}
 		_, err := tx.AppendEvent(model.Event{At: adoption.Branch.CreatedAt, Branch: adoption.Branch.ID, Kind: "branch.adopt", Level: model.LevelInfo,
 			Message: fmt.Sprintf("adopted #%d by @%s as %s", number, pr.Author, name)})
 		return err
-	})
-	if err != nil && !e.recordedAfterAll(ctx, err, adoption.Branch.ID) {
+	}, branchRecorded(adoption.Branch.ID))
+	if err != nil {
 		err = errors.Join(err, e.Repo.RemoveWorktree(context.WithoutCancel(ctx), directory), e.Repo.DeleteBranch(context.WithoutCancel(ctx), name, head))
 		return adoption, err
 	}

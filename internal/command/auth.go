@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/credential/keychain"
 	"github.com/herbygillot/dockhand/internal/github"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 )
 
 // credentials is where the GitHub login is kept.
@@ -31,7 +32,8 @@ var (
 		if err != nil {
 			return err
 		}
-		return exec.CommandContext(ctx, path, url).Run()
+		_, err = subprocess.Run(ctx, subprocess.Spec{Tool: "open", Path: path, Args: []string{url}, Limit: 1 << 16})
+		return err
 	}
 )
 
