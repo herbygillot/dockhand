@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -22,8 +23,15 @@ type savedCredential struct {
 	err    error
 }
 
-func (s savedCredential) Get(context.Context, credential.Key) (string, error) { return s.secret, s.err }
-func (savedCredential) Put(context.Context, credential.Key, string) error     { return nil }
+// Get gives the saved login, its access token the secret, good for hours,
+// and its refresh token spent, so nothing here renews it.
+func (s savedCredential) Get(context.Context, credential.Key) (string, error) {
+	if s.err != nil || s.secret == "" {
+		return s.secret, s.err
+	}
+	return credential.Login{Access: s.secret, AccessExpiry: time.Now().Add(8 * time.Hour), Refresh: "spent", RefreshExpiry: time.Now().Add(-time.Hour), Account: "ada", ClientID: "fixture"}.Encode()
+}
+func (savedCredential) Put(context.Context, credential.Key, string) error { return nil }
 
 func TestSystemCredentialsPreferEnvironmentAndReuseGitHubCLI(t *testing.T) {
 	t.Run("GH_TOKEN", func(t *testing.T) {

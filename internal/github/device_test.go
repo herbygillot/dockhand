@@ -24,7 +24,7 @@ func TestDeviceFlowUsesOAuthPollingAndValidatesTheAuthenticatedUser(t *testing.T
 		case "/device/code":
 			require.NoError(t, r.ParseForm())
 			assert.Equal(t, "fixture-client", r.Form.Get("client_id"))
-			assert.Equal(t, "public_repo", r.Form.Get("scope"))
+			assert.Equal(t, "public_repo offline_access", r.Form.Get("scope"))
 			fmt.Fprint(w, `{"device_code":"device-secret","user_code":"ABCD-EFGH","verification_uri":"https://github.com/login/device","expires_in":10,"interval":1}`)
 		case "/access_token":
 			tokenRequests++
@@ -33,7 +33,7 @@ func TestDeviceFlowUsesOAuthPollingAndValidatesTheAuthenticatedUser(t *testing.T
 			assert.Equal(t, "fixture-client", r.Form.Get("client_id"))
 			assert.Equal(t, "device-secret", r.Form.Get("device_code"))
 			assert.Equal(t, "urn:ietf:params:oauth:grant-type:device_code", r.Form.Get("grant_type"))
-			fmt.Fprint(w, `{"access_token":"oauth-secret","token_type":"bearer","scope":"public_repo"}`)
+			fmt.Fprint(w, `{"access_token":"oauth-secret","token_type":"bearer","scope":"public_repo","expires_in":28800,"refresh_token":"refresh-secret","refresh_token_expires_in":"15897600"}`)
 		case "/user":
 			assert.Equal(t, "Bearer oauth-secret", r.Header.Get("Authorization"))
 			fmt.Fprint(w, `{"login":"fixture-user"}`)
@@ -45,7 +45,8 @@ func TestDeviceFlowUsesOAuthPollingAndValidatesTheAuthenticatedUser(t *testing.T
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(t.Context(), 4*time.Second)
 	defer cancel()
-	flow := &github.DeviceFlow{HTTP: server.Client(), Endpoint: oauth2.Endpoint{DeviceAuthURL: server.URL + "/device/code", TokenURL: server.URL + "/access_token", AuthStyle: oauth2.AuthStyleInParams}, APIBaseURL: server.URL}
+	now := time.Date(2026, 10, 2, 17, 0, 0, 0, time.UTC)
+	flow := &github.DeviceFlow{HTTP: server.Client(), Endpoint: oauth2.Endpoint{DeviceAuthURL: server.URL + "/device/code", TokenURL: server.URL + "/access_token", AuthStyle: oauth2.AuthStyleInParams}, APIBaseURL: server.URL, Now: func() time.Time { return now }}
 	value, err := flow.Authorize(ctx, "fixture-client", func(authorization credential.DeviceAuthorization) error {
 		presented = true
 		require.Equal(t, "ABCD-EFGH", authorization.UserCode)
@@ -54,7 +55,12 @@ func TestDeviceFlowUsesOAuthPollingAndValidatesTheAuthenticatedUser(t *testing.T
 		return nil
 	})
 	require.NoError(t, err)
-	require.Equal(t, credential.Value{Secret: "oauth-secret", Account: "fixture-user"}, value)
+	require.Equal(t, "oauth-secret", value.Access)
+	require.Equal(t, "refresh-secret", value.Refresh)
+	require.Equal(t, now.Add(15897600*time.Second), value.RefreshExpiry, "GitHub's six months, said as a string")
+	require.WithinDuration(t, time.Now().Add(8*time.Hour), value.AccessExpiry, time.Minute)
+	require.Equal(t, "fixture-user", value.Account)
+	require.Equal(t, "fixture-client", value.ClientID)
 	require.Equal(t, 1, tokenRequests)
 }
 
@@ -75,4 +81,22 @@ func TestDeviceFlowStopsWhenThePromptCannotBePresented(t *testing.T) {
 	require.Zero(t, tokenRequests)
 	_, err = flow.Authorize(t.Context(), "", func(credential.DeviceAuthorization) error { return nil })
 	require.Error(t, err)
+}
+
+// A login GitHub gives without a refresh token, as an OAuth app whose
+// tokens don't expire does, can't renew itself, and isn't kept.
+func TestALoginWithoutARefreshTokenIsRefused(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/device/code":
+			fmt.Fprint(w, `{"device_code":"device-secret","user_code":"ABCD-EFGH","verification_uri":"https://github.com/login/device","expires_in":10,"interval":1}`)
+		case "/access_token":
+			fmt.Fprint(w, `{"access_token":"oauth-secret","token_type":"bearer","scope":"public_repo"}`)
+		}
+	}))
+	defer server.Close()
+	flow := &github.DeviceFlow{HTTP: server.Client(), Endpoint: oauth2.Endpoint{DeviceAuthURL: server.URL + "/device/code", TokenURL: server.URL + "/access_token", AuthStyle: oauth2.AuthStyleInParams}, APIBaseURL: server.URL}
+	_, err := flow.Authorize(t.Context(), "fixture-client", func(credential.DeviceAuthorization) error { return nil })
+	require.ErrorContains(t, err, "couldn't renew itself; nothing was saved")
 }

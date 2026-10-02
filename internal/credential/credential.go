@@ -13,11 +13,6 @@ type Key struct {
 	Account string
 }
 
-type Value struct {
-	Secret  string
-	Account string
-}
-
 type Store interface {
 	Get(context.Context, Key) (string, error)
 	Put(context.Context, Key, string) error
@@ -29,8 +24,10 @@ type DeviceAuthorization struct {
 	ExpiresAt       time.Time
 }
 
+// DeviceFlow logs in with a one-time code, giving a login that renews
+// itself.
 type DeviceFlow interface {
-	Authorize(context.Context, string, func(DeviceAuthorization) error) (Value, error)
+	Authorize(context.Context, string, func(DeviceAuthorization) error) (Login, error)
 }
 
 type Remover interface {

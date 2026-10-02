@@ -76,10 +76,11 @@ macOS Keychain. GH_TOKEN or GITHUB_TOKEN, when set, take precedence over it.`,
 			if err != nil {
 				return err
 			}
-			if value.Secret == "" || value.Account == "" {
+			saved, err := value.Encode()
+			if err != nil {
 				return errors.New("GitHub returned an incomplete login; nothing was saved")
 			}
-			if err := authStore.Put(ctx, github.CredentialKey, value.Secret); err != nil {
+			if err := authStore.Put(ctx, github.CredentialKey, saved); err != nil {
 				return err
 			}
 			fmt.Fprintf(streams.Out, "Logged in to github.com as %s, kept in the macOS Keychain.\n", value.Account)

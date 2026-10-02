@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -39,15 +40,20 @@ func (m memoryStore) Delete(_ context.Context, key credential.Key) error {
 }
 
 type deviceFlow struct {
-	value credential.Value
+	value credential.Login
 	err   error
 }
 
-func (f deviceFlow) Authorize(_ context.Context, clientID string, present func(credential.DeviceAuthorization) error) (credential.Value, error) {
+func (f deviceFlow) Authorize(_ context.Context, clientID string, present func(credential.DeviceAuthorization) error) (credential.Login, error) {
 	if err := present(credential.DeviceAuthorization{UserCode: "ABCD-1234", VerificationURL: "https://github.com/login/device"}); err != nil {
-		return credential.Value{}, err
+		return credential.Login{}, err
 	}
 	return f.value, f.err
+}
+
+// login is a renewing login for the account, its access token secret.
+func login(secret, account string) credential.Login {
+	return credential.Login{Access: secret, AccessExpiry: time.Now().Add(8 * time.Hour), Refresh: "refresh-" + secret, RefreshExpiry: time.Now().AddDate(0, 6, 0), Account: account, ClientID: "fixture-client"}
 }
 
 func withAuth(t *testing.T, flow credential.DeviceFlow) memoryStore {
@@ -75,7 +81,7 @@ func withAuth(t *testing.T, flow credential.DeviceFlow) memoryStore {
 
 func TestAuthLoginStatusAndLogout(t *testing.T) {
 	path := os.Getenv("PATH")
-	store := withAuth(t, deviceFlow{value: credential.Value{Secret: "secret-token", Account: "ada"}})
+	store := withAuth(t, deviceFlow{value: login("secret-token", "ada")})
 	var opened string
 	openBrowser = func(_ context.Context, url string) error { opened = url; return nil }
 
@@ -84,7 +90,9 @@ func TestAuthLoginStatusAndLogout(t *testing.T) {
 	require.Contains(t, errs, "Copy this one-time code: ABCD-1234\nOpening https://github.com/login/device in your browser...\n")
 	require.Equal(t, "https://github.com/login/device", opened)
 	require.Equal(t, "Logged in to github.com as ada, kept in the macOS Keychain.\n", out)
-	require.Equal(t, "secret-token", store[github.CredentialKey])
+	saved, err := credential.DecodeLogin(store[github.CredentialKey])
+	require.NoError(t, err)
+	require.Equal(t, "secret-token", saved.Access)
 
 	// The rest keeps the GitHub CLI out of reach, so a login it has on
 	// this machine can't stand in; init needs git, though.

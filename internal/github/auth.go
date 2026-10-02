@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -37,13 +36,21 @@ var CredentialKey = credential.Key{Service: "github.com/herbygillot/dockhand", A
 type SystemCredentials struct {
 	Store credential.Store
 	Key   credential.Key
+	// Lock is the file processes renewing the login take in turn;
+	// LoginLock where empty.
+	Lock string
+	// Flow renews the login; GitHub's device flow where nil.
+	Flow *DeviceFlow
+	// renewed is a login renewed that the store didn't take, used until
+	// it does; nil for credentials that keep none.
+	renewed *pendingLogin
 }
 
 // SystemClient is GitHub as the person's login reaches it: GH_TOKEN or
 // GITHUB_TOKEN where set, else the login dockhand keeps in the store. It
 // is the one way dockhand makes that client.
 func SystemClient(store credential.Store) *Client {
-	return &Client{HTTP: fetch.Client, Credentials: SystemCredentials{Store: store, Key: CredentialKey}}
+	return &Client{HTTP: fetch.Client, Credentials: SystemCredentials{Store: store, Key: CredentialKey, renewed: &pendingLogin{}}}
 }
 
 func (s SystemCredentials) Token(ctx context.Context) (Token, error) {
@@ -54,12 +61,9 @@ func (s SystemCredentials) Token(ctx context.Context) (Token, error) {
 		return resolvedToken(token, SourceGitHubEnvironment)
 	}
 	if s.Store != nil {
-		token, err := s.Store.Get(ctx, s.Key)
-		if err == nil {
-			return resolvedToken(token, SourceKeychain)
-		}
-		if !errors.Is(err, credential.ErrNotFound) {
-			return Token{}, fmt.Errorf("github: reading saved credential: %w", err)
+		token, found, err := s.login(ctx, Token{})
+		if found || err != nil {
+			return token, err
 		}
 	}
 	path, err := exec.LookPath("gh")
@@ -123,4 +127,17 @@ func (s CredentialSource) rejected() error {
 		s = SourceExplicit
 	}
 	return fmt.Errorf("%w: GitHub rejected the credential from %s; %s; no alternative credential was tried", ErrAuthentication, s, remedy)
+}
+
+// Renew is a token after GitHub rejected one: the login renewed, where the
+// rejected token was its own, else whatever Token gives now.
+func (s SystemCredentials) Renew(ctx context.Context, rejected Token) (Token, error) {
+	if rejected.Source != SourceKeychain || s.Store == nil || os.Getenv("GH_TOKEN") != "" || os.Getenv("GITHUB_TOKEN") != "" {
+		return s.Token(ctx)
+	}
+	token, found, err := s.login(ctx, rejected)
+	if !found && err == nil {
+		return s.Token(ctx)
+	}
+	return token, err
 }
