@@ -166,8 +166,8 @@ The branch is --branch, else the one checked out here; --new starts one.
 // versionUpdate is what update and bump share: how the edit is made, and
 // what going on to the pull request takes.
 type versionUpdate struct {
-	keepOld, shared bool
-	linked          linkedOptions
+	keepOld, shared, obsolete bool
+	linked                    linkedOptions
 }
 
 // flags adds the flags update and bump share. goesOn is what the
@@ -179,6 +179,7 @@ func (v *versionUpdate) flags(cmd *cobra.Command, goesOn string) {
 	cmd.Flags().BoolVar(&v.linked.testedVariants, "tested-variants", false, goesOn+"state that you checked the most important variants")
 	cmd.Flags().BoolVar(&v.keepOld, "keep-old-checksums", false, "refresh legacy md5 or sha1 checksums in place rather than rewriting them as rmd160, sha256, and size")
 	cmd.Flags().BoolVar(&v.shared, "shared-release", false, "move every subport that shares the port's release")
+	cmd.Flags().BoolVar(&v.obsolete, "with-obsolete", false, "also move the Portfile's obsolete stub for the port, one replaced_by it, to the same version")
 	cmd.Flags().BoolVar(&v.linked.revbump, "revbump-dependents", false, "also bump the revision of the ports that link it directly")
 	cmd.Flags().StringSliceVar(&v.linked.except, "except", nil, "leave this dependent out of --revbump-dependents")
 }
@@ -189,7 +190,7 @@ func (v versionUpdate) request(args []string, plan bool) (engine.UpdateRequest, 
 	if len(v.linked.except) > 0 && !v.linked.revbump {
 		return engine.UpdateRequest{}, errors.New("--except takes a port out of --revbump-dependents; add --revbump-dependents")
 	}
-	request := engine.UpdateRequest{Action: model.EditUpdate, Port: args[0], KeepOldChecksums: v.keepOld, SharedRelease: v.shared, Plan: plan, CompareUpstream: true, LookForOthers: true}
+	request := engine.UpdateRequest{Action: model.EditUpdate, Port: args[0], KeepOldChecksums: v.keepOld, SharedRelease: v.shared, WithObsolete: v.obsolete, Plan: plan, CompareUpstream: true, LookForOthers: true}
 	if len(args) == 2 {
 		request.Version = args[1]
 	}
@@ -394,6 +395,13 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		// (field testing, 2026-10-02).
 		if update.CrossesMajor {
 			fmt.Fprintf(out, "A new major version: what depends on %s may need to follow.\n", update.Port)
+		}
+		switch stub := update.Obsolete; {
+		case stub == nil:
+		case stub.Moved:
+			fmt.Fprintf(out, "Its obsolete %s moves to %s too, in the same commit.\n", stub.Port, update.After.Version)
+		case stub.Version != update.After.Version:
+			fmt.Fprintf(out, "%s (obsolete, replaced_by %s) stays at %s; --with-obsolete moves it to %s.\n", stub.Port, update.Port, stub.Version, update.After.Version)
 		}
 		if update.Renamed != "" {
 			fmt.Fprintf(out, "Upstream moved: GitHub answers %s as %s, by a redirect; the Portfile's github.setup may follow.\n", update.Release.Repository, update.Renamed)

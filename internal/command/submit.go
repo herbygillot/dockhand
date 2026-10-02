@@ -572,7 +572,9 @@ func otherWords(plan engine.SubmitPlan) string {
 		return "not searched: " + plan.SearchProblem
 	}
 	if len(plan.Others) == 0 {
-		return "none open for " + strings.Join(plan.Ports, ", ")
+		// The ports it looked under, which "none open for terraform" didn't
+		// say of terraform-1.16's update (field testing, 2026-10-02).
+		return "none open for " + strings.Join(plan.Searched, ", ")
 	}
 	var found []string
 	for _, pr := range plan.Others {

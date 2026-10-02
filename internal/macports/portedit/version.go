@@ -218,15 +218,3 @@ func downloadsOf(shipped []distfetch.Shipped) []distfetch.Download {
 	}
 	return downloads
 }
-
-// ownVersion refuses to update a port alone whose version is MacPorts'
-// own, as a _select port's: no release upstream is its (batch 37). The
-// archive plan asks it of a port that fetches nothing in any context; one
-// whose livecheck reads a version, as a metaport following its release
-// may, is edited as any other, with nothing to download.
-func ownVersion(port macports.PortInfo) error {
-	if !port.OwnVersion() {
-		return nil
-	}
-	return fmt.Errorf("%w: %s fetches nothing, and no livecheck reads its version: its version is MacPorts' own, which update leaves; dockhand edit %s changes it by hand", ErrUnsupported, port.Name, port.Name)
-}

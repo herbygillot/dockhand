@@ -21,6 +21,7 @@ func TestPullRequestsAreFollowed(t *testing.T) {
 	branch := committedUpdate(t, e)
 	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
 	require.NoError(t, err)
+	require.Equal(t, []string{"jq"}, plan.Searched, "the ports other pull requests were looked for under")
 	submitted, err := e.ApplySubmit(t.Context(), plan)
 	require.NoError(t, err)
 	number := submitted.PullRequest.Ref.Number

@@ -102,6 +102,11 @@ type SubmitPlan struct {
 	// person's submission shows them; only one nobody looks over is held
 	// for them (D4).
 	Upstream []PortComparison
+	// Searched are the ports other pull requests were looked for under:
+	// the ports whose source changed, terraform-1.16, rather than the
+	// directory's terraform (batch 40); the directories' names where none
+	// did.
+	Searched []string
 	Others   []forge.PullRequestSummary
 	// SearchProblem says why other pull requests could not be looked for.
 	SearchProblem string
@@ -505,12 +510,18 @@ func (e *Engine) searchOthers(ctx context.Context, plan *SubmitPlan) {
 	// rather than the terraform its directory is named for (field
 	// testing, 2026-10-02); the directories' names where none did.
 	ports := plan.Ports
-	if len(plan.Upstream) > 0 {
-		ports = nil
-		for _, found := range plan.Upstream {
-			ports = append(ports, found.Port)
+	var changed []string
+	for _, found := range plan.Upstream {
+		// A directory whose ports couldn't be read is recorded by its
+		// path, which names no port to search under.
+		if !strings.Contains(found.Port, "/") {
+			changed = append(changed, found.Port)
 		}
 	}
+	if len(changed) > 0 {
+		ports = changed
+	}
+	plan.Searched = ports
 	plan.Others, plan.SearchProblem = e.openPullRequests(ctx, ports, except)
 }
 

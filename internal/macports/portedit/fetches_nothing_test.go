@@ -29,15 +29,18 @@ livecheck.regex {fixture-(\d+(?:\.\d+)*)}
 	require.Contains(t, string(result.Files[0].After), "revision 0")
 }
 
-// One whose livecheck reads no version keeps MacPorts' own, named or not.
-func TestAPortWhoseVersionIsMacPortsOwnIsLeftByUpdate(t *testing.T) {
+// One whose livecheck reads no version has no release discovery finds,
+// but a version named is set, revision 0, as terraform's obsolete stub's
+// was by hand (field testing, 2026-10-02, the person's word).
+func TestAPortWhoseVersionIsMacPortsOwnTakesAVersionNamed(t *testing.T) {
 	t.Parallel()
 	for name, livecheck := range map[string]string{"none": "livecheck.type none", "fallback": ""} {
 		t.Run(name, func(t *testing.T) {
-			s, r, requests := archiveFixture(t, "version 1.2.3\ndistfiles\n"+livecheck)
-			_, err := s.Prepare(t.Context(), r)
-			require.ErrorIs(t, err, ErrUnsupported)
-			require.ErrorContains(t, err, "fixture fetches nothing, and no livecheck reads its version: its version is MacPorts' own, which update leaves; dockhand edit fixture changes it by hand")
+			s, r, requests := archiveFixture(t, "version 1.2.3\nrevision 2\ndistfiles\n"+livecheck)
+			result, err := s.Prepare(t.Context(), r)
+			require.NoError(t, err)
+			require.Contains(t, string(result.Files[0].After), "version 1.2.4")
+			require.Contains(t, string(result.Files[0].After), "revision 0")
 			require.Empty(t, *requests)
 		})
 	}

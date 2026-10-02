@@ -234,16 +234,13 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 		}
 	}
 	// A port that fetches nothing anywhere, a metaport or a _select port,
-	// downloads nothing, and its update edits its version alone, where a
-	// livecheck reads it or it moves with siblings that share its release.
-	switch {
-	case len(plan.downloads) > 0:
-	case fetches:
+	// downloads nothing, and its update edits its version alone: one a
+	// livecheck reads, or one named, as terraform's obsolete stub was
+	// (field testing, 2026-10-02, the person's word). One whose version is
+	// MacPorts' own has no release to find, so only a named one reaches
+	// here.
+	if len(plan.downloads) == 0 && fetches {
 		return nil, fmt.Errorf("%w: version edit did not change the download source", ErrUnsupported)
-	case input.scope == nil:
-		if err := ownVersion(input.info); err != nil {
-			return nil, err
-		}
 	}
 	return plan, nil
 }

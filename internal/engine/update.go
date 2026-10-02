@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/version"
+	"maps"
 	"math/rand/v2"
 	"os"
 	"path"
@@ -75,6 +76,16 @@ type UpdateRequest struct {
 	// would hold the submission after the check: nothing is downloaded or
 	// built for it. Submit looks again before publishing.
 	Unattended bool
+	// WithObsolete also moves the obsolete stub the Portfile keeps for the
+	// port, one replaced_by it that fetches nothing, to the same version,
+	// in the same commit: terraform beside terraform-1.16, whose version
+	// follows the newest subport's by convention (field testing,
+	// 2026-10-02, the person's word).
+	WithObsolete bool
+	// subject is the commit subject the edit is recorded with, where it's
+	// another edit's: an obsolete stub moved with its replacement is the
+	// replacement's update.
+	subject string
 	// answered are the HTTPS answers the command making the update has had
 	// already, create's for the homepage it wrote, which aren't asked
 	// again (plainHTTP).
@@ -132,6 +143,13 @@ type Update struct {
 	Diff string
 	// Subject is the commit subject the edit would be committed with.
 	Subject string
+	// Obsolete is the obsolete stub the Portfile keeps for the port, where
+	// it has one: replaced_by the port, fetching nothing, and whether the
+	// update moved it too (WithObsolete).
+	Obsolete *ObsoleteStub
+	// family is the port's Portfile's ports before the edit, as the edit
+	// evaluated them.
+	family macports.Snapshot
 	// Distfiles counts the port's archives whose checksums were written,
 	// and Regenerated the dependency blocks written again, a Git crate's
 	// archive among them, each with its entries.
@@ -181,6 +199,53 @@ type Update struct {
 // from there. The edit is prepared from a capture of the tracked files, and
 // written only if none of the files it touches changed in the meantime.
 func (e *Engine) Update(ctx context.Context, request UpdateRequest) (Update, error) {
+	update, err := e.update(ctx, request)
+	if err != nil || request.Action != model.EditUpdate || update.Current || update.Port == "" {
+		return update, err
+	}
+	update.Obsolete = obsoleteStub(update)
+	if update.Obsolete == nil || !request.WithObsolete || update.Obsolete.Version == update.After.Version {
+		return update, nil
+	}
+	follow := UpdateRequest{Branch: update.Branch, Action: model.EditUpdate, Port: update.Obsolete.Port, Version: update.After.Version,
+		Plan: request.Plan, FromMaster: request.FromMaster, subject: update.Subject}
+	if request.Plan {
+		// A plan changes nothing, so the stub's edit is planned on the
+		// files as they are, and said beside the port's.
+		follow.Branch = request.Branch
+	}
+	moved, err := e.update(ctx, follow)
+	if err != nil {
+		return update, fmt.Errorf("%s moved to %s, but its obsolete %s couldn't: %w", update.Port, update.After.Version, update.Obsolete.Port, err)
+	}
+	update.Obsolete.Moved = true
+	update.Files = append(update.Files, moved.Files...)
+	update.Diff += moved.Diff
+	return update, nil
+}
+
+// ObsoleteStub is a port the Portfile keeps for an old name, replaced_by
+// the one updated, fetching nothing, at its version: terraform's, at
+// 1.16.0 beside terraform-1.16.
+type ObsoleteStub struct {
+	Port, Version string
+	Moved         bool
+}
+
+// obsoleteStub is the updated port's obsolete stub, in the family the
+// edit evaluated; nil where it has none.
+func obsoleteStub(update Update) *ObsoleteStub {
+	for _, name := range slices.Sorted(maps.Keys(update.family.Ports)) {
+		port := update.family.Ports[name]
+		nothing, err := port.FetchesNothing()
+		if name != update.Port && port.Options["replaced_by"] == update.Port && err == nil && nothing {
+			return &ObsoleteStub{Port: name, Version: port.Version}
+		}
+	}
+	return nil
+}
+
+func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, error) {
 	switch request.Action {
 	case model.EditUpdate, model.EditChecksums:
 	case model.EditRevbump:
@@ -427,7 +492,11 @@ func (e *Engine) updateSource(ctx context.Context, request UpdateRequest) (*git.
 // editRecord is what tidy later reads: each file's blob before and after,
 // and the subject the edit carries.
 func (e *Engine) editRecord(ctx context.Context, worktree *git.Repository, branch model.Branch, request UpdateRequest, update Update, result editprep.Result) (model.Edit, error) {
-	edit := model.Edit{ID: model.EditID(store.NewID("ed")), Branch: branch.ID, Kind: request.Action, Port: update.Port, Subject: update.Subject, At: e.now(),
+	subject := update.Subject
+	if request.subject != "" {
+		subject = request.subject
+	}
+	edit := model.Edit{ID: model.EditID(store.NewID("ed")), Branch: branch.ID, Kind: request.Action, Port: update.Port, Subject: subject, At: e.now(),
 		Upstream: update.Upstream, Release: update.Release}
 	edit.Directory = portDirectory(result.Files[0].Path)
 	if result.Target.Portfile != "" {
@@ -517,6 +586,9 @@ func describe(branch model.Branch, selector string, result editprep.Result) Upda
 	}
 	if after, ok := result.PortAfter(update.Port); ok {
 		update.After = PortVersion{Version: after.Version, Revision: after.Revision}
+	}
+	if len(result.Fidelity) > 0 {
+		update.family = result.Fidelity[0].Before
 	}
 	update.CrossesMajor = update.Before.Version != "" && version.CrossesMajor(update.Before.Version, update.After.Version)
 	for _, file := range result.Files {

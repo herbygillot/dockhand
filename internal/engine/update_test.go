@@ -52,6 +52,9 @@ type fakePreparer struct {
 	dependencies []string
 	// options are the evaluated port's options after the edit.
 	options map[string]string
+	// family are the other ports the Portfile defines, as the edit
+	// evaluates them before it.
+	family map[string]macports.PortInfo
 }
 
 func (p *fakePreparer) ResolveRelease(_ context.Context, r editprep.Request) (model.Release, error) {
@@ -123,6 +126,11 @@ func (p *fakePreparer) Prepare(ctx context.Context, r editprep.Request) (editpre
 	}
 	result := editprep.Result{Target: model.Target{Name: r.Selection.Selector, Portfile: name}, Release: r.Release, PreparedTree: r.Source.Tree,
 		Fidelity: []portedit.Fidelity{{Before: snapshot(string(old), revision, options[0]), After: snapshot(next, nextRevision, options[1])}}}
+	for other, info := range p.family {
+		if other != r.Selection.Selector {
+			result.Fidelity[0].Before.Ports[other] = info
+		}
+	}
 	// The port depended on the same ports before the edit.
 	if len(p.dependencies) > 0 {
 		before := port(r.Selection.Selector, p.dependencies...)
@@ -812,4 +820,37 @@ func TestAnUpdateSaysItsRepositoryWasRenamed(t *testing.T) {
 	require.Equal(t, "semgrep/semgrep", e.renamed(t.Context(), model.Release{Forge: forge.GitHub, Repository: "returntocorp/semgrep"}))
 	require.Empty(t, e.renamed(t.Context(), model.Release{Forge: forge.GitHub, Repository: "jqlang/jq"}))
 	require.Empty(t, e.renamed(t.Context(), model.Release{Forge: forge.GitLab, Repository: "returntocorp/semgrep"}))
+}
+
+// The obsolete stub a Portfile keeps for a port, replaced_by it and
+// fetching nothing, is said to stay where it is, and moved with the port,
+// in the same commit, with --with-obsolete: terraform's stayed at 1.16.0
+// while terraform-1.16 moved to 1.16.5 (field testing, 2026-10-02).
+func TestAnObsoleteStubMovesWithItsReplacementWhenAsked(t *testing.T) {
+	f := setup(t)
+	write(t, f.upstream, map[string]string{"textproc/jq-old/Portfile": "name jq-old\nversion 1.7.1\n"})
+	run(t, f.upstream, "add", "-A")
+	run(t, f.upstream, "commit", "-q", "-m", "jq-old: obsolete")
+	e, p := f.withPreparer(t)
+	p.family = map[string]macports.PortInfo{"jq-old": {Name: "jq-old", Version: "1.7.1", Options: map[string]string{"replaced_by": "jq", "distfiles": ""}}}
+
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
+	require.NoError(t, err)
+	stays, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq", Plan: true})
+	require.NoError(t, err)
+	require.Equal(t, &ObsoleteStub{Port: "jq-old", Version: "1.7.1"}, stays.Obsolete)
+
+	moved, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq", WithObsolete: true})
+	require.NoError(t, err)
+	require.Equal(t, &ObsoleteStub{Port: "jq-old", Version: "1.7.1", Moved: true}, moved.Obsolete)
+	require.Equal(t, "name jq-old\nversion 1.8.1\n", read(t, filepath.Join(branch.Worktree, "textproc/jq-old/Portfile")))
+	var edits []model.Edit
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		edits, err = r.Edits(branch.ID)
+		return err
+	}))
+	require.Len(t, edits, 2)
+	for _, edit := range edits {
+		require.Equal(t, "jq: update to 1.8.1", edit.Subject, "the stub's edit is the replacement's update")
+	}
 }
