@@ -653,13 +653,10 @@ Each step still becomes Next's work at the person's word.
 
 ## Deferred
 
+What dockhand won't do at all is in [principles](principles.md#what-dockhand-wont-do), since 2026-10-02: portable evidence, a scheduler, changing branches by itself, provider matrices, a QEMU provider, and v1 or v2 parity moved there from this list.
+
 - Exporting state to Git notes, or rebuilding the database from Git metadata.
-- Portable verification evidence between machines.
-- A generic workflow graph or package-build scheduler.
-- Changing branches by itself in response to reviews, CI failures, or merge conflicts.
-- Broad provider matrices and an `all`-platforms mode. A list of releases a person names, each of which must pass, is supported.
-- A QEMU provider without a concrete use, and direct use of Apple's Virtualization framework (decision 41); the provider interface stays open for either.
-- Parity with v1 or v2 commands that have no current use.
+- A full-screen terminal interface (the person, 2026-10-02: there's room for one, but not now). `watch` and `status` keep their line output. The library survey's note (2026-10-02) stands: bubbletea is taken again only if `watch`'s designed panes are built.
 
 ## Reviews
 
