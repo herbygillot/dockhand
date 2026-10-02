@@ -186,7 +186,13 @@ func Compare(older, newer project.Reading, versions Versions) []Change {
 			case !hasNow:
 				how, what = "removed", "was removed"
 			case base == "CMakeLists.txt":
-				what += cmakeWords(old.Data, now.Data)
+				summary := cmakeWords(old.Data, now.Data)
+				what += summary
+				if where := cmakeElsewhere(old.Data, now.Data, versions); where != "" && strings.HasPrefix(summary, ":") {
+					what += "; besides, lines change " + where
+				} else if where != "" {
+					what += "; lines change " + where
+				}
 			}
 			changes = append(changes, Change{Kind: "build", How: how, Path: name,
 				Message: fmt.Sprintf("upstream's %s %s", name, what)})
@@ -307,14 +313,25 @@ var licenseYear = regexp.MustCompile(`^\(?(19|20)\d\d([-–,](19|20)\d\d)*[),.;:
 // narrow a license as surely as adding it can, "MIT or GPL-2" losing "MIT
 // or". It names how many words went, from the first run of them.
 func onlyDrops(old, now []byte) (string, bool) {
-	normal := func(words []string) []string {
-		normalized := slices.Clone(words)
-		for i, word := range normalized {
-			if licenseYear.MatchString(word) {
-				normalized[i] = "YEAR"
+	// Years, and the punctuation a word ends with, aren't terms: entr 5.9
+	// wrote "Eric Radman, 2012" for "Eric Radman" beside the section it
+	// dropped (the dogfood run with 11d1df2f). Each word keeps its place
+	// in the old text, to quote from.
+	type word struct {
+		text string
+		at   int
+	}
+	normal := func(fields []string) []word {
+		var words []word
+		for i, field := range fields {
+			if licenseYear.MatchString(field) {
+				continue
+			}
+			if trimmed := strings.TrimRight(field, ",.;:"); trimmed != "" {
+				words = append(words, word{text: trimmed, at: i})
 			}
 		}
-		return normalized
+		return words
 	}
 	original := strings.Fields(string(old))
 	before, after := normal(original), normal(strings.Fields(string(now)))
@@ -323,21 +340,21 @@ func onlyDrops(old, now []byte) (string, bool) {
 	}
 	var dropped []int
 	j := 0
-	for i, word := range before {
-		if j < len(after) && word == after[j] {
+	for i, w := range before {
+		if j < len(after) && w.text == after[j].text {
 			j++
 			continue
 		}
 		dropped = append(dropped, i)
 	}
-	if j < len(after) {
+	if j < len(after) || len(dropped) == 0 {
 		return "", false
 	}
 	first, end := dropped[0], dropped[0]
 	for end+1 < len(before) && slices.Contains(dropped, end+1) && end-first < 15 {
 		end++
 	}
-	quote := strings.Join(original[first:end+1], " ")
+	quote := strings.Join(original[before[first].at:before[end].at+1], " ")
 	if end+1 < len(before) && slices.Contains(dropped, end+1) {
 		quote += " …"
 	}
@@ -579,6 +596,138 @@ func cmakeWords(old, now []byte) string {
 		return fmt.Sprintf(": %s; and %d more", strings.Join(said[:cmakeNamed], "; "), len(said)-cmakeNamed)
 	}
 	return ": " + strings.Join(said, "; ")
+}
+
+// cmakeElsewhere says where a CMakeLists.txt changed beside the options it
+// adds and what those off by default gate, by the if() each change is
+// under, so a hold names what it's for: fluent-bit 5.1.3's read as held
+// for FLB_PROTOBUF_ENCODER, which the person had just decided holds
+// nothing, where it held for lines under if(FLB_ALL) and a block re-gated
+// on FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER (the dogfood run with
+// 11d1df2f). The version it names isn't a change.
+func cmakeElsewhere(old, now []byte, versions Versions) string {
+	before, after := project.ReadCMake(old), project.ReadCMake(now)
+	added, gates := map[string]bool{}, map[string]bool{}
+	for option, declared := range after.Options {
+		if _, had := before.Options[option]; !had {
+			added[option] = true
+			gates[option] = declared.Default == "OFF"
+		}
+	}
+	was := string(project.CMakeRest(old, nil))
+	if versions.Old != "" && versions.New != "" {
+		was = strings.ReplaceAll(was, versions.Old, versions.New)
+	}
+	rest := string(project.CMakeRest(now, gates))
+	oldLines, newLines := strings.Split(was, "\n"), strings.Split(rest, "\n")
+	gone, come := changedLines(oldLines, newLines)
+	var where []string
+	seen := map[string]bool{}
+	note := func(conditions []string, changed []int) {
+		for _, i := range changed {
+			at := "outside any if()"
+			if c := conditions[i]; c != "" {
+				at = "under if(" + c + ")"
+			}
+			if !seen[at] {
+				seen[at] = true
+				where = append(where, at)
+			}
+		}
+	}
+	note(cmakeConditions(newLines), come)
+	note(cmakeConditions(oldLines), gone)
+	if len(where) > cmakeNamed {
+		return fmt.Sprintf("%s, and in %d more places", strings.Join(where[:cmakeNamed], ", "), len(where)-cmakeNamed)
+	}
+	return strings.Join(where, ", ")
+}
+
+// cmakeCondition is a line opening, continuing, or closing an if() block.
+var cmakeCondition = regexp.MustCompile(`(?i)^\s*(if|elseif|else|endif)\s*\((.*)\)\s*$`)
+
+// cmakeConditions are the innermost if() each line is under, as written;
+// empty for a line under none. A line opening or closing a block is the
+// block's, so an if() whose condition changes reads as under it, as
+// fluent-bit's if(FLB_AVRO_ENCODER) becoming if(FLB_AVRO_ENCODER OR
+// FLB_PROTOBUF_ENCODER) does. An else() reads as the if() it's the rest
+// of, negated.
+func cmakeConditions(lines []string) []string {
+	var stack []string
+	conditions := make([]string, len(lines))
+	for i, line := range lines {
+		m := cmakeCondition.FindStringSubmatch(line)
+		switch {
+		case m == nil:
+		case strings.EqualFold(m[1], "if"):
+			stack = append(stack, strings.TrimSpace(m[2]))
+		case strings.EqualFold(m[1], "elseif") && len(stack) > 0:
+			stack[len(stack)-1] = strings.TrimSpace(m[2])
+		case strings.EqualFold(m[1], "else") && len(stack) > 0:
+			stack[len(stack)-1] = "NOT (" + stack[len(stack)-1] + ")"
+		}
+		if len(stack) > 0 {
+			conditions[i] = stack[len(stack)-1]
+		}
+		if m != nil && strings.EqualFold(m[1], "endif") && len(stack) > 0 {
+			stack = stack[:len(stack)-1]
+		}
+	}
+	return conditions
+}
+
+// changedLines are the lines of each side a longest common subsequence
+// leaves out: those gone from the old, and those come in the new. Past
+// what's cheap to compare line by line, the lines between the common
+// start and end are all said.
+func changedLines(old, now []string) (gone, come []int) {
+	start := 0
+	for start < len(old) && start < len(now) && old[start] == now[start] {
+		start++
+	}
+	endOld, endNew := len(old), len(now)
+	for endOld > start && endNew > start && old[endOld-1] == now[endNew-1] {
+		endOld--
+		endNew--
+	}
+	a, b := old[start:endOld], now[start:endNew]
+	if len(a)*len(b) > 4_000_000 {
+		for i := range a {
+			gone = append(gone, start+i)
+		}
+		for j := range b {
+			come = append(come, start+j)
+		}
+		return gone, come
+	}
+	lcs := make([][]int32, len(a)+1)
+	for i := range lcs {
+		lcs[i] = make([]int32, len(b)+1)
+	}
+	for i := len(a) - 1; i >= 0; i-- {
+		for j := len(b) - 1; j >= 0; j-- {
+			if a[i] == b[j] {
+				lcs[i][j] = lcs[i+1][j+1] + 1
+			} else {
+				lcs[i][j] = max(lcs[i+1][j], lcs[i][j+1])
+			}
+		}
+	}
+	i, j := 0, 0
+	for i < len(a) || j < len(b) {
+		switch {
+		case i < len(a) && j < len(b) && a[i] == b[j]:
+			i++
+			j++
+		case j < len(b) && (i == len(a) || lcs[i][j+1] >= lcs[i+1][j]):
+			come = append(come, start+j)
+			j++
+		default:
+			gone = append(gone, start+i)
+			i++
+		}
+	}
+	return gone, come
 }
 
 // cmakeOptionsOnly says a CMakeLists.txt's change where all it does, but

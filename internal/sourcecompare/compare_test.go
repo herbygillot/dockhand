@@ -206,6 +206,25 @@ func TestALicenseThatOnlyDropsTextSaysWhat(t *testing.T) {
 		}
 		return said
 	}
-	require.Equal(t, []string{`upstream's LICENSE only drops text, 22 words from "2) Compatibility Libraries (MacOS and Linux only) Copyright (c) 2011 Jonathan Lemon Redistribution and use in …" on`}, compare(after))
+	require.Equal(t, []string{`upstream's LICENSE only drops text, 21 words from "2) Compatibility Libraries (MacOS and Linux only) Copyright (c) 2011 Jonathan Lemon Redistribution and use in source …" on`}, compare(after))
+	require.Equal(t, []string{`upstream's LICENSE only drops text, 21 words from "2) Compatibility Libraries (MacOS and Linux only) Copyright (c) 2011 Jonathan Lemon Redistribution and use in source …" on`},
+		compare(strings.Replace(after, "Eric Radman", "Eric Radman, 2012", 1)), "a year and a comma added, as entr 5.9's")
 	require.Equal(t, []string{"upstream's LICENSE changed"}, compare(after+"Also under the GPL.\n"), "a word added")
+}
+
+// A CMakeLists.txt change that holds says where else it changed, by the
+// if() each change is under, beside the options it adds: fluent-bit
+// 5.1.3's read as held for FLB_PROTOBUF_ENCODER, which holds nothing, where
+// it held for lines under if(FLB_ALL) and a block re-gated (the dogfood
+// run with 11d1df2f).
+func TestACMakeListsChangeSaysWhereElseItChanged(t *testing.T) {
+	before := "project(fluent-bit VERSION 5.1.2)\nif(FLB_ALL)\n  set(FLB_OUT_A 1)\nendif()\nif(FLB_AVRO_ENCODER)\n  find_package(Jansson)\nendif()\nadd_library(flb a.c)\n"
+	after := "project(fluent-bit VERSION 5.1.3)\noption(FLB_PROTOBUF_ENCODER \"Protobuf\" No)\nif(FLB_ALL)\n  set(FLB_OUT_A 1)\n  set(FLB_OUT_ARVANCLOUD 1)\nendif()\nif(FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER)\n  find_package(Jansson)\n  add_definitions(-DFLB_HAVE_SCHEMA_REGISTRY)\nendif()\nadd_library(flb a.c)\n"
+	changes, err := compareArchives(t,
+		testsupport.Tarball(t, "fluent-bit-5.1.2", map[string]string{"CMakeLists.txt": before}),
+		testsupport.Tarball(t, "fluent-bit-5.1.3", map[string]string{"CMakeLists.txt": after}), Versions{Old: "5.1.2", New: "5.1.3"})
+	require.NoError(t, err)
+	require.Len(t, changes, 1)
+	require.Equal(t, "changed", changes[0].How)
+	require.Equal(t, "upstream's CMakeLists.txt changed: option FLB_PROTOBUF_ENCODER added, off by default; find_package(Jansson) moves, under FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER; besides, lines change under if(FLB_ALL), under if(FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER), under if(FLB_AVRO_ENCODER)", changes[0].Message)
 }

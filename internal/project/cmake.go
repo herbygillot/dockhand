@@ -104,13 +104,35 @@ func ReadCMake(data []byte) CMakeFacts {
 // default gates is not reached by the default build (D12, revisited
 // 2026-10-01).
 func CMakeWithout(data []byte, options, gates map[string]bool) []byte {
+	return cmakeLess(data, func(command cmakeCommand) bool {
+		return (command.name == "option" || command.name == "cmake_dependent_option") && len(command.args) > 0 && options[command.args[0]]
+	}, gates)
+}
+
+// CMakeRest is a CMakeLists.txt less what ReadCMake reads of it, every
+// option and every find_package, and less each if() block gating on one of
+// gates alone, for saying what else changed beside what it says.
+func CMakeRest(data []byte, gates map[string]bool) []byte {
+	return cmakeLess(data, func(command cmakeCommand) bool {
+		switch command.name {
+		case "option", "cmake_dependent_option", "find_package":
+			return true
+		}
+		return false
+	}, gates)
+}
+
+// cmakeLess is a CMakeLists.txt less the commands leave names, and the
+// if() blocks gating on one of gates alone, with the lines that leaves
+// empty.
+func cmakeLess(data []byte, leave func(cmakeCommand) bool, gates map[string]bool) []byte {
 	text := string(data)
 	commands := cmakeCommands(text)
 	var cuts [][2]int
 	for i := 0; i < len(commands); i++ {
 		command := commands[i]
 		switch {
-		case (command.name == "option" || command.name == "cmake_dependent_option") && len(command.args) > 0 && options[command.args[0]]:
+		case leave(command):
 			cuts = append(cuts, [2]int{command.start, command.end})
 		case command.name == "if" && len(command.args) == 1 && gates[strings.TrimSuffix(strings.TrimPrefix(command.args[0], "${"), "}")]:
 			depth, end := 0, len(text)

@@ -617,7 +617,7 @@ func TestAChangeTheBuildDoesntReadHoldsNothing(t *testing.T) {
 	result.Pairs = []preparation.ArchivePair{{Previous: previous, Next: next}, {Previous: previous, Next: other}}
 	comparison := (&Engine{}).assessUpstream(t.Context(), result, sourcecompare.Versions{Old: "25.9.23", New: "25.12.19"}, [2]model.Source{}, true)
 	require.Equal(t, []model.UpstreamChange{
-		{Kind: "build", Path: "CMakeLists.txt", Message: "upstream's CMakeLists.txt changed, though no option or find_package did; the build may need the Portfile to follow", Hold: true, Rule: assess.BuildFileChanged, Class: model.Introduced},
+		{Kind: "build", Path: "CMakeLists.txt", Message: "upstream's CMakeLists.txt changed, though no option or find_package did; lines change outside any if(); the build may need the Portfile to follow", Hold: true, Rule: assess.BuildFileChanged, Class: model.Introduced},
 	}, comparison.Changes)
 	// The files of build systems flatbuffers doesn't use are said in
 	// coverage alone, set apart (rust 1.99.0's package.json, batch 23).

@@ -480,7 +480,7 @@ func TestABuildFileNamingTheNewVersionHoldsNothing(t *testing.T) {
 	}
 	bumped := strings.Replace(before, "5.1.8", "5.1.9", 1)
 	require.Equal(t, []string{`· upstream's CMakeLists.txt changed only the version it names: "project(nuspell VERSION 5.1.9 LANGUAGES CXX)"`}, compare(bumped, versions))
-	held := []string{"! upstream's CMakeLists.txt changed, though no option or find_package did; the build may need the Portfile to follow"}
+	held := []string{"! upstream's CMakeLists.txt changed, though no option or find_package did; lines change outside any if(); the build may need the Portfile to follow"}
 	require.Equal(t, held, compare(strings.Replace(bumped, "add_subdirectory(src)", "add_subdirectory(src)\nadd_subdirectory(tests)", 1), versions), "a line added")
 	require.Equal(t, held, compare(bumped+"install(TARGETS nuspell)\n", versions), "a line added at the end")
 	unended := func(before, after string) []string {
