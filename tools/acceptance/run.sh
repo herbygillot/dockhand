@@ -33,6 +33,9 @@ if [ -z "${ACCEPT_STATE:-}" ] || [ ! -d "$ACCEPT_STATE" ]; then
 	echo "run.sh: ACCEPT_STATE names no directory; the stage's environment sets it, so a run never touches your own state" >&2
 	exit 2
 fi
+# shellcheck source=lib/guard.sh
+. "$here/lib/guard.sh"
+guard "$stage" || exit 2
 [ -n "$candidate" ] || candidate=$(git -C "$here" describe --tags --always --dirty 2>/dev/null || echo dev)
 export ACCEPT_STAGE=$stage ACCEPT_CANDIDATE=$candidate
 

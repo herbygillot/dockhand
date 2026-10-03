@@ -3,9 +3,17 @@
 The release-candidate test, run as scripts, as the project's plan/prime-time.md sets out its rows and plan/acceptance-harness.md the work. Nothing here changes how dockhand itself behaves, and nothing runs against your own state: a run needs `ACCEPT_STATE`, a scratch directory the stage sets up.
 
 ```sh
-tools/acceptance/run.sh --stage quick --candidate v0.3.0-rc1 [--rows "A3 B1"]
+make acceptance                     # the quick stage: tools/acceptance/quick.sh
+tools/acceptance/quick.sh --rows A3 # some of its rows
 make acceptance-selftest
 ```
+
+**The quick stage** (`quick.sh`) builds the dockhand under test from this checkout and makes its environment afresh in `ACCEPT_STATE`, `~/.dockhand-acceptance/quick` unless set:
+- its own database, configuration (automatic cleanup off), caches, and worktrees;
+- a scratch ports clone whose master, `upstream.git`, is pinned at `ACCEPT_PIN`, a fixed older commit of MacPorts' master, so the same ports are always due and two runs compare. It borrows the objects of `ACCEPT_PORTS_SOURCE`, `~/Source/macports-ports` unless set, which it only reads;
+- a local bare fork, `fork.git`, so nothing is pushed anywhere real.
+
+`lib/guard.sh` refuses any quick run where dockhand's database, configuration, caches, tree, or upstream would be outside `ACCEPT_STATE`, and any full run but the test host's `dhtest` user.
 
 - **A row** is `rows/<ID>.sh`. Its header line `# stages: quick full` says the stages it runs in. It defines `setup`, `act`, and `assert`, and uses `lib/common.sh`:
   - `dh` and `dh_json` run dockhand, the second once with `--json` for H8;

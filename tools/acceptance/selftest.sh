@@ -48,6 +48,8 @@ for spec in ok:pass h1allowed:pass h2allowed:pass h1:blocker:H1 h2:blocker:H2 h3
 	(
 		export ACCEPT_STATE="$tmp/state" ACCEPT_WATCH="$tmp/clone" ACCEPT_UPSTREAM="" ACCEPT_RUN_DIR="$tmp/clone"
 		export SELFTEST_CLONE="$tmp/clone" FAKE_DH_STATE="$tmp/fake" DH_BIN="$here/selftest/bin/dockhand"
+		export DOCKHAND_DB="$tmp/state/db" DOCKHAND_CONFIG="$tmp/state/config.toml" MACPORTS_TREE="$tmp/state/clone"
+		export DOCKHAND_UPSTREAM="$tmp/state/upstream.git" DOCKHAND_INDEX_CACHE="$tmp/state/index" DOCKHAND_READING_CACHE="$tmp/state/readings"
 		export PATH="$here/selftest/bin:$PATH"
 		unset ACCEPT_GH_LOGIN ACCEPT_SECRET_DIRS
 		"$here/run.sh" --stage quick --candidate selftest --rows "$row" --row-dir "$here/selftest/rows" >/dev/null || :
@@ -55,4 +57,21 @@ for spec in ok:pass h1allowed:pass h2allowed:pass h1:blocker:H1 h2:blocker:H2 h3
 	check "$row" "$want" "$harm" "$tmp/state"
 	rm -rf "$tmp"
 done
+# The guard: a quick run with dockhand's state outside the scratch
+# directory, as your own database, runs nothing.
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/dockhand-selftest.XXXXXX")
+mkdir -p "$tmp/state"
+status=0
+(
+	export ACCEPT_STATE="$tmp/state" DOCKHAND_DB="$HOME/.dockhand/dockhand.db" DOCKHAND_CONFIG="$tmp/state/config.toml"
+	export MACPORTS_TREE="$tmp/state/clone" DOCKHAND_UPSTREAM="$tmp/state/upstream.git" DOCKHAND_INDEX_CACHE="$tmp/state/index" DOCKHAND_READING_CACHE="$tmp/state/readings"
+	"$here/run.sh" --stage quick --candidate selftest --rows ok --row-dir "$here/selftest/rows" >/dev/null 2>"$tmp/guard.err"
+) || status=$?
+if [ "$status" -ne 2 ] || [ -e "$tmp/state/results" ] || ! grep -q "DOCKHAND_DB is $HOME/.dockhand/dockhand.db, outside" "$tmp/guard.err"; then
+	echo "selftest: the guard let a run near your own database through (exit $status): $(cat "$tmp/guard.err")"
+	fail=1
+else
+	echo "selftest: the guard refuses your own database"
+fi
+rm -rf "$tmp"
 exit "$fail"

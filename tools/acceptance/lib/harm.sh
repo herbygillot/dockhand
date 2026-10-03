@@ -246,6 +246,7 @@ harm_h6() {
 		line=$(printf '%s\n' "$line" | awk '{gsub(/, then |; |, or /, "\n"); print}')
 		while IFS= read -r segment; do
 			segment=$(printf '%s' "$segment" | sed 's/^ *//; s/ *$//; s/[.]$//')
+			[ -n "$segment" ] || continue
 			case "$segment" in
 			'cd "$(dockhand path '*')"')
 				word=${segment#cd \"\$(dockhand path }
