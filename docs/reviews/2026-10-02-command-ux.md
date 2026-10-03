@@ -9,7 +9,7 @@ The surface is sound where it matters most. Flat verbs grouped by purpose, `--pl
 The friction comes from three patterns, not from any single command:
 
 1. **Naming the branch you mean costs too much.** Branches are named `jq-4k2p`, `--branch` takes only an exact name, and the fallback is to `cd` into a worktree dockhand can't take you to.
-2. **The core loop is a chain of refusals.** `submit` refuses until `tidy` has run, `check` refuses outside a worktree, and `update` refuses (or asks) until you add `--new`. Each refusal names the fix, but it's always the same fix.
+2. **The core loop is a chain of refusals.** `submit` refuses until `tidy` has run, `check` refuses outside a worktree, and `update` refuses (or asks) until you add `--new`. Of the loop's refusals, about a dozen name a fix that is reversible and that dockhand could simply do (§3).
 3. **One idea is spelled several ways.** "How far to go" is `update --submit`, `update --outdated --check`, `bump`, `serve.for_outdated`, and `serve.submit_passing`. "I'm done with this branch" is `archive` followed by `clean --archived`. `--plan`, `--yes`, `--all`, and preview exit codes mean different things on different commands.
 
 Fix those three and the README's update shrinks from five commands, one of which needs a random suffix, to three:
@@ -24,13 +24,13 @@ dockhand submit
 
 # proposed
 dockhand update jq
-dockhand check jq
-dockhand submit jq
+dockhand check -p jq
+dockhand submit -p jq
 ```
 
 The rest of this document is the proposals in the order I'd take them, then smaller items, then what I'd leave alone.
 
-## 1. One way to name a branch
+## 1. Naming the branch you mean (revised 2026-10-02 after scrutiny)
 
 **What happens today.** There are three conventions:
 
@@ -38,28 +38,69 @@ The rest of this document is the proposals in the order I'd take them, then smal
 - `--branch <exact name>`: `update`, `edit`, `create`, `checksums`, `revbump`, `check`, `diff`, `impact`, `tidy`, `rebase`, `submit`;
 - a positional run ID, falling back to the branch's latest only inside its worktree: `logs`, `cancel`, `wait`, `retry`.
 
-`--branch` has no short form, though `--tree` has `-t`. Names carry a random suffix (decision 37), so you look one up in `status` before you can type it. Outside a worktree, `check` says "no tracked branch… run this in the branch's worktree (dockhand path <name>)", and `start` ends with `Next: cd "$(dockhand path uxprobe)"`. Field testing spent its first minutes on most runs finding branch names.
+`--branch` has no short form, though `--tree` has `-t`, and no command offers shell completion for branch names (no `ValidArgsFunction` or `RegisterFlagCompletionFunc` in `internal/command`). Names carry a random suffix (decision 37), so you look one up in `status` before you can type it. Outside a worktree, `check` says to run it in the branch's worktree, and `start` ends with `Next: cd "$(dockhand path uxprobe)"`.
 
-**Proposal.** Every place a command takes a branch accepts a **selector**, resolved in this order, and refused with the choices when it's ambiguous:
+### Why the first version doesn't hold up
 
-| Selector | Means |
-| --- | --- |
-| `jq-4k2p`, `dockhand/jq-4k2p` | that branch (as today) |
-| `jq-4` | the one branch whose name starts with it |
-| `jq` | the one open branch that changes port `jq` |
-| `#34901` | the branch whose pull request that is |
-| `check-42` | (for run commands) that check; anywhere else, its branch |
+The first version proposed one positional "selector" that took a branch name, a unique prefix, a port, `#PR`, or `check-42`. Walking it through dockhand's workflows breaks it in several places.
 
-- `--branch` gets `-b`, and accepts a selector.
-- Commands whose only object is a branch or a run take the selector positionally: `check jq`, `tidy jq`, `submit jq`, `rebase jq`, `logs jq`, `cancel jq`, `wait jq`, `status jq`, `path jq`, `archive jq`. `logs jq` already means "jq's log in the latest check" inside a worktree, and resolving `jq` to its branch keeps that meaning everywhere.
-- Commands whose positionals are ports or paths (`update`, `edit`, `diff`, `impact`) keep `-b`.
-- `status`'s `Next:` lines and the attention list then print `dockhand check jq` rather than `dockhand check --branch jq-4k2p`.
+- **Two branches on one port is a normal state, not an edge case.** An adopted branch of your own beside dockhand's branch for the same port, a contributor's pull request (`adopt --pr` makes `pr-34905`) beside your own update, or yesterday's draft beside the one serve prepared overnight (`serve.for_outdated = "draft"`) are all ordinary. In each, `jq` stops resolving, so the shortcut fails exactly when you have the most branches to tell apart.
+- **Resolution changes over time.** `dockhand submit jq` names one branch today and is refused tomorrow, after serve opens another. Once the first merges, it silently names a different branch. That's harmless for `status` but wrong for `submit`, `archive`, `cancel`, and `clean`, and for any `Next:` line a person copies an hour later.
+- **Namespaces collide.** Branch names are anything for an adopted branch, and `start jq` makes `dockhand/jq`, which needn't change jq. If one argument can be a branch or a port, `check jq` checks the branch named `jq` even when another branch is the one changing port jq, and nothing says so.
+- **Prefixes collide by construction.** Names are `<port>-<ID>`, so `libuv` is a prefix of `libuv-4k2p` and `libuv-devel-9x2m`, and `py-` of hundreds. Prefix matching has to go.
+- **"Changes the port" is fuzzier than it sounds.**
+  - `BranchesChanging` matches by directory name (`macports.ScopeOf(…).PortNames()`), so a subport isn't found: libuv-devel lives in `devel/libuv`, and terraform-1.17 in a directory named for another port. Meanwhile 3c80520's roadmap note says a change to one subport is that subport's.
+  - `update --revbump-dependents` puts 30 revision bumps in libuv's branch. `jq` would then resolve to "rebuild jq for libuv", which is surprising when you meant jq's own update.
+  - A `_resources` change touches no port at all.
+- **`#34901` is a shell comment.** `dockhand submit #34901` reaches dockhand as `dockhand submit`, which then acts on the branch you're standing in.
+- **A run ID that selects its branch misleads.** `submit check-42` reads as "submit what check-42 checked", but the branch may have moved since.
+- **`logs` already uses its positional for a port within the branch,** so a selector there would mean two things.
 
-**This relaxes a design rule, deliberately.** Design v3 §4 says "a port name never picks a branch." The rule exists so that an edit never lands silently in the wrong one of two branches touching `jq`. A selector that resolves only when exactly one open branch changes the port, and refuses with the list otherwise, keeps that guarantee. The interactive prompt in `update` already picks the branch from the port when there's exactly one, so this just extends it to scripts and the other verbs.
+### Revised proposal
 
-One risk is that `check jq` reads as "check only jq" when the branch changes more ports. It checks the whole branch, which is almost always what you want; `--only` still narrows it.
+The goal stays the same: nobody should have to type or look up `jq-4k2p`. The fix is to keep **one meaning per argument** and resolve ambiguity where a person can see it.
 
-With selectors in place, being inside a worktree becomes optional. You go there to edit, never to run dockhand.
+1. **`-b` takes an exact branch name, with completion.** Add `-b` to every `--branch`. Add dynamic shell completion for branch names that shows each one's ports and purpose: `jq-4k2p  jq: update to 1.8.1`, `pr-34905  @alice's #34905 (jq)`. Most of the typing problem goes away here, while a person is looking, and nothing about it shifts over time. Drop prefix matching.
+2. **`-p/--port <port>` picks the branch changing that port,** as `status --port` already finds them. It never comes from a bare positional, so a port name and a branch name can't collide.
+   - It matches by port name and includes subports, using the same rule the roadmap now uses for subports.
+   - With one candidate, it acts and names the branch on its first line, as design §4 already requires.
+   - With several on a terminal, it asks, labelling each by purpose: "your update to 1.8.1", "@alice's #34905", "revision only, in libuv-4k2p". In a script it refuses and lists exact names.
+   - When a branch changes the port only by its revision, it ranks below branches with a substantive change. It still counts, but it's labelled.
+3. **`--pr <number>`**, the spelling `adopt --pr` already uses, picks the branch tracking that pull request. When none tracks it, the command offers `adopt --pr`. No `#`.
+4. **Run IDs stay with the run commands** (`logs`, `cancel`, `wait`, `retry`) and never stand for a branch.
+5. **A port-scoped command keeps the port as its positional.** `update`, `edit`, `checksums`, and `logs <port>` already have the port, so with no `-b` and no worktree, they resolve the branch from it under the same rule as `-p`, which `update` already does on a terminal. A command about the whole branch (`check`, `tidy`, `submit`, `rebase`, `archive`) never guesses from a positional; it takes the worktree, `-b`, `-p`, or `--pr`.
+6. **Output prints exact names.** `Next:` lines, the attention list, and errors say `-b jq-4k2p`, never `-p jq`, because a person copies them later, when `-p jq` may mean something else.
+7. **Explicit beats where you are.** `-b`, `-p`, or `--pr` overrides the worktree you're standing in. When the two differ, the first line says so: "jq-4k2p (not uxprobe, checked out here)".
+
+The README's loop then reads `dockhand check -p jq` and `dockhand submit -p jq`, or, with completion, `dockhand check -b jq<Tab>`.
+
+### Meaningful branch names (Herby's decision, 2026-10-02)
+
+Branches dockhand starts are named for what they do, and decision 37's short ID is added only when that name is taken:
+
+| Started by | Name | Example |
+| --- | --- | --- |
+| `update` | port and new version | `jq-1.8.1`, `terraform-1.16-1.16.5` |
+| `update --revbump-dependents` | the library's update | `libuv-1.52.0` |
+| `revbump` | first port, `rebuild` | `gdal-rebuild` |
+| `create` | port, `new` | `mods-new` |
+| `checksums` (stealth update) | port, `checksums` | `jq-checksums` |
+| `edit`, or nothing more specific | port and ID, as today | `jq-4k2p` |
+| `start <name>`, `adopt`, `adopt --pr` | unchanged | `my-fix`, `pr-34905` |
+
+Things the implementation has to get right:
+
+- **"Taken" means it exists now, as `FreeName` already checks.** That covers a tracked branch that isn't merged (open, archived, or closed unmerged, which keep their Git branches), a local Git branch, or a worktree directory. A merged branch is the end of its line, and the store already allows its name to be reused (`branch_name`'s unique index excludes merged rows, and `ResolveRecord` falls back to the newest merged branch of a name). So `jq-1.8.1` can be started again after the first one merges and is cleaned. A merged branch that hasn't been cleaned still has its Git branch, so it holds the name until clean runs. A stray fork branch of that name, with no local one, isn't looked up, because `submit`'s push is already conditional on where the fork's branch was and refuses safely.
+- **A name can go stale.** If 1.8.2 comes out before `jq-1.8.1` is submitted and the branch is moved to it, the name lies. Before a pull request exists, `update` renames the branch, keeping the record as `adopt` already does for renames. After one exists, the name stays, as design §3 requires, since the fork's branch is the pull request's head.
+- **Versions are made safe for Git.** Characters Git refuses in a ref (`~ ^ : ? * [ \`, spaces, `..`) become `-`.
+
+With names like these, `-b jq-1.8.1` is something you can type from memory, and completion does the rest.
+
+`start` should match this. Today `start qemu` makes a branch named `qemu`, where `update` makes `qemu-iafp`. `start`'s sparse worktree also has no port in it, so a script had to run `EDITOR=true dockhand edit qemu` just to get the files (field testing). I propose `start <name> --port qemu`, repeatable, which brings those ports' directories into the worktree. Without a name, `start --port qemu` takes the port's name, under the same rule as other branches: an ID is added only when the name is taken.
+
+### Left for you to decide
+
+- **Whether `-p` should act alone in scripts when there's exactly one candidate.** I've proposed yes, since the first line names the branch. The cautious alternative is to refuse in scripts and require `-b`. That's safer against overnight drafts, but meaningful names make `-b` cheap enough that it would cost little.
 
 ## 2. Start a branch when nothing else could be meant
 
@@ -69,18 +110,97 @@ With selectors in place, being inside a worktree becomes optional. You go there 
 
 `init`'s closing `Next: dockhand start <name>` should point to `dockhand outdated --mine` or `dockhand update <port>` instead. `start <name>` is the less common path, for work that isn't one port's update.
 
-## 3. `submit` carries the loop
+## 3. Stop only for judgment (revised 2026-10-02, replacing "`submit` carries the loop")
 
-**What happens today.** With uncommitted edits, `submit` refuses: "these edits are not committed… Commit them with dockhand tidy, or submit only what is committed with --head" (`engine/submit.go:215`). Tidy never changes a file, and checks capture files by content, so a check of the working files already covers what tidy will commit. That last point is my inference from the help texts. The refusal is a step dockhand could take itself.
+### The refusals along the loop today
 
-**Proposal.** When edits are uncommitted, `submit`'s preview includes tidy's plan, "will commit: jq: update to 1.8.1", and applies it under the same rules `tidy` uses. A plan made only of dockhand's own edits applies without asking, and anything else is shown on a terminal and refused in a script. `submit --check` already checks and then submits. With tidy folded in, the shortest loop for any branch is:
+I went through every refusal and hold that `update`, `check`, `tidy`, `submit`, and `rebase` can produce (`engine/submit.go`, `tidy.go`, `verbs.go`, `capture.go`, `command/check.go`, `author.go`). They fall into three kinds.
 
-```sh
-dockhand edit jq        # or update, create, revbump…
-dockhand submit jq --check
-```
+**Protective refusals.** Going ahead would be irreversible, would touch someone else's work, or would publish something unverified. These are the guardrails, and they should stay as they are:
 
-The same applies to answering a review. You edit, then `submit --check`, which folds the fix into the port's commit (as `tidy`'s follow-up rule asks), checks it, and pushes. `tidy` stays for when you want to rearrange commits, use `--squash`, or save a plan to edit.
+- someone else pushed to the pull request since dockhand last did (`submit.go:417`);
+- the contributor's pull request doesn't let maintainers push, or you lack write access (`:459`, `:467`);
+- the branch moved since the preview (`ErrStaleSubmit`, `ErrStalePlan`);
+- restoring a checkpoint would discard later work or staged files (`tidy.go:978`, `:993`);
+- a rebase conflicts, which is abandoned with the branch as it was (`verbs.go:182`);
+- a merge commit on the branch (`tidy.go:147`, `submit.go:244`);
+- holds: an upstream finding, a commit-rule finding, or another open pull request for the port.
+
+**Refusals for judgment.** Only the person has the answer. These should stay, but on a terminal they should **ask** rather than exit:
+
+- a commit needs a subject, or a combined commit needs `--author` (`tidy.go:293`, `:306`);
+- a pull request changing several ports needs `--title` (`submit.go:494`);
+- which of several branches you mean (§1).
+
+**Refusals of ceremony.** Dockhand names the exact fix, and the fix is reversible or only reads. These are the ones that make the loop feel like a chain:
+
+| Refusal today | Where | What it should do |
+| --- | --- | --- |
+| "start one with --new" | `author.go:784` | start the branch (§2) |
+| "run this in the branch's worktree" | `check`, `tidy`, `submit` | `-b` / `-p` (§1) |
+| "these edits are not committed… Commit them with dockhand tidy" | `submit.go:215` | include tidy's commits in the preview |
+| "has no commits above master yet; commit your edits with dockhand tidy" | `submit.go:222` | the same |
+| "no check has finished for this commit's files; run dockhand check first" | `submit.go:346` | offer to check first, which is `submit --check` |
+| "check-42 is already running for these files; dockhand wait check-42 follows it" | `check.go:862` | follow check-42 |
+| "check-42 is running for other files; --replace…" | `check.go:868` | ask on a terminal, refuse in a script |
+| "worktree has edits; choose --head or --working-tree" | `check.go:266` | check the working files, as in a worktree, and say so |
+| "has uncommitted edits…; commit them (dockhand tidy) or set them aside before rebasing" | `verbs.go:158` | carry the edits across the rebase, and abandon as now if they don't reapply |
+| "is not above its base; rebase it onto master first" | `tidy.go:139` | offer the rebase |
+| "--plan changes nothing, so it starts no branch" (revbump, checksums) | `verbs.go:147` | plan on master, as `update --plan` does |
+| "X is already changed in Y, so nothing was changed" (bump) | `author.go:240` | continue that branch from where it stopped (§4, rerunning resumes) |
+| "--on… go with --submit", "--mine and --check go with --outdated", "--yes goes with…" | `author.go:95–111` | gone, with one `--to` (§4) |
+
+### The principle
+
+**Dockhand does what a refusal would tell you to do, unless the fix is irreversible, touches someone else's work, or needs your judgment. It shows what it will do in the preview it already gives.**
+
+`tidy` already works this way. A plan made only of dockhand's own edits applies without review, and anything else is shown first. The proposal extends that rule from one command to the loop.
+
+**A suggested next step must be one dockhand knows will work.** When dockhand can't do a step and tells you to do it yourself, the command it names has to get past the reason dockhand gave up. Field testing hit a dead end with qemu:
+- `update` said "Edit the version yourself; dockhand checksums qemu then fills in the rest".
+- After the hand edit, `checksums` refused for the same reason, a fidelity mismatch on `qemu.configure.cmd`.
+- The checksums had to be computed by hand.
+
+There are two fixes:
+- Before printing a `Next:` command, check that the condition that stopped dockhand doesn't also stop that command. If it does, name the manual step: "compute them with `port checksum qemu`".
+- `checksums` shouldn't sit behind a fidelity check of the whole Portfile, since it edits only the checksum lines.
+
+### Where chaining needs care
+
+Chaining steps has costs, and they set the boundaries:
+
+- **Cost.** A check can take most of an hour on a VM, and running one isn't a step to hide. Because of that, implied steps split by cost:
+  - Cheap, reversible, local steps happen anywhere, scripts included: starting a branch, committing dockhand's own edits, following a running check, and planning on master.
+  - Steps that build or take a VM are offered on a terminal, defaulting to yes, and need the flag in a script (`--check`, `--replace`).
+  - Publishing is never implied. `submit` stays the decision, as design principle 7 says.
+- **One confirmation, not one per step.** Today `update --submit` previews each step, so a session asks three times. A chained command should show the whole plan once before anything happens, for example:
+
+  ```
+  jq-1.8.1: commit "jq: update to 1.8.1" → check on tart:26 → push to your fork and open the pull request
+  ? go ahead [Y/n]
+  ```
+
+  After that it stops only on a protective refusal or a hold.
+- **Saying where it stopped.** When a chained command stops partway, the message names the step, what was kept, and the one command that continues, which is usually the same command again (§4). Design §12 already asks errors for this. Chaining makes it matter more.
+- **Keeping the model learnable.** People who never run `tidy` might not learn that dockhand rewrites commits. The plan line above names each step, so the model is still in front of them every time, and the separate commands remain for doing a step alone.
+
+### Decided
+
+- **A script's `submit` never starts a check without `--check`** (Herby, 2026-10-02).
+- **`rebase` carries uncommitted edits** (Herby, 2026-10-02).
+  - Dockhand's own workflow leaves work uncommitted. `update`, `checksums`, and `create` write working files, and `check` builds them, so a branch that is all uncommitted edits is the normal state, not a careless one. Today's advice, to commit with `tidy` first, forces commits mid-work that tidy's follow-up rule then has to fold back together.
+  - It's safe if it's atomic. Capture the working files and the index as a snapshot first, as `check` already captures them. Then replay the commits and reapply the edits on top. If any edit doesn't reapply cleanly, put the branch, files, and index back exactly as they were, as a conflicting rebase does now, and name the file. Usually master changed that port, and the message should say so.
+  - Git has the same behaviour as `rebase --autostash`, so it's familiar.
+  - Things to get right:
+    - the rebase checkpoint records the snapshot, so `restore rebase-4` brings the uncommitted edits back as they were;
+    - files `create` staged stay staged;
+    - an untracked file at a path master now has stops the rebase;
+    - unresolved conflicts are still refused.
+  - One cost remains. An editor holding a Portfile that the rebase rewrote has a stale buffer, as with `git rebase --autostash`, so the rebase's output lists every file it changed under the edits.
+
+### What changes for the loop
+
+`update`, `edit` or `create`, then `submit`. `submit` shows the commits it will make, offers the check if none covers these files, and opens the pull request. `check` and `tidy` stay for when you want to run a step by itself, and the README teaches the three-command form first.
 
 ## 4. One "how far" setting
 
@@ -98,20 +218,20 @@ The same applies to answering a review. You edit, then `submit --check`, which f
 
 `update` has 15 flags, and several only work in one mode: `--check` only with `--outdated`, `--on` and `--tested-*` only with `--submit`, and `--yes` means "start without asking" with `--outdated` but "apply the tidy" with `--submit`. `serve.for_outdated = "draft"` means "prepare a branch", which is easy to confuse with a draft pull request (`submit --draft`).
 
-**Proposal.** One option, `--through edit|check|submit`, with `--yes` meaning only "don't ask":
+**Proposal.** One option, `--to edit|check|submit`, with `--yes` meaning only "don't ask":
 
 | Proposed | Replaces |
 | --- | --- |
 | `update jq` | `update jq --new` |
-| `update jq --through submit` | `update jq --new --submit` |
-| `bump jq` | unchanged; documented as `update jq --through submit --yes` with serve's holds |
+| `update jq --to submit` | `update jq --new --submit` |
+| `bump jq` | unchanged; documented as `update jq --to submit --yes` with serve's holds |
 | `update --mine` | `update --outdated --mine` (a current port already starts nothing) |
-| `update --mine --through check` | `update --outdated --mine --check` |
+| `update --mine --to check` | `update --outdated --mine --check` |
 | `serve.for_outdated = list / edit / check / submit` | `list / draft / check`, plus `submit_passing` |
 
 Two consequences are worth more than the flags:
 
-- **Running it again resumes.** `bump jq` today says "a branch already changes the port" and stops. After a hold (terraform-1.16's false commit-rule finding today), you continue with `submit --branch <name>`. If the pipeline ran up to `--through` from wherever the branch is now, running `bump jq` again after you looked would continue, and the held branch would say "rerun to continue".
+- **Running it again resumes.** `bump jq` today says "a branch already changes the port" and stops. After a hold (terraform-1.16's false commit-rule finding today), you continue with `submit --branch <name>`. If the pipeline ran up to `--to` from wherever the branch is now, running `bump jq` again after you looked would continue, and the held branch would say "rerun to continue".
 - **serve's daily work and a person's command use the same words.** `serve.for_outdated = "submit"` keeps the guardrails and the daily limit that `submit_passing` has now, and `serve` still announces it at start.
 
 This is the largest change here, and it touches the 2026-09-27 decision on `bump`, so it's the one I'd discuss before anything is built.
@@ -141,13 +261,13 @@ That is two fewer top-level commands, and one line under "Getting started".
 
 **What happens today.** `explain` takes only a commit-rule code. The directions doc proposes a separate `why <check>`. Field testing hit three different "why" questions today: a check that said only "command execution failed", a bump held on a finding, and a branch on the attention list.
 
-**Proposal.** `explain <thing>` takes any identifier dockhand prints and says why it's in that state:
+**Proposal.** `explain` says why something dockhand printed is in its state. Its positional takes a finding code or a run ID, which can't be confused because run IDs always look like `check-42`, and a branch comes through the same flags as everywhere else (§1):
 
 - a finding code, as today;
 - a check: the step that failed, the log's lines for it, whether it was advisory, and whether a baseline can answer (the directions doc's `why`);
-- a branch or port selector: why it's held or on the attention list, and what clears it.
+- a branch (`-b`, `-p`, or `--pr`): why it's held or on the attention list, and what clears it.
 
-`Next:` lines on a failed check or a held bump then point to `dockhand explain check-42` or `dockhand explain jq`. One verb that means "tell me more about what you just said" is easier to learn than three.
+`Next:` lines on a failed check or a held bump then point to `dockhand explain check-42` or `dockhand explain -b jq-4k2p`. One verb that means "tell me more about what you just said" is easier to learn than three.
 
 ## 8. A bridge for maintainers: test someone's pull request here
 
@@ -168,12 +288,24 @@ These are each small, but together they make the tool feel inconsistent, and a t
 - **Foreground and serve run checks the same way.** Field testing found `providers.tart.capacity` governs only serve. A foreground `check` or `bump` should take a slot under the same limit.
 - **Help text speaks to users.** `check --help` cites "(decision 29: switching is explicit)" and `serve --submit-passing` cites "(Design v3 §11's guardrails)". No help page has an `Example:` section. Most `Long` texts are one dense paragraph per flag, which the guide could carry instead. Every page also repeats `--db`, `--git`, and `--tree`, which a custom usage template could list once.
 
+## 10. Output a person can act on (from field testing, 2026-10-02)
+
+- **A batch preview shows what will happen, row by row.** `update --outdated a b c` without `--yes` printed only "Will start 9 branches: dockhand/fyne-1rx2 · …". It showed no versions, nothing about which ports can't be done automatically (qemu), and no major-version jumps. The real run then used different random suffixes than the preview. The preview should show the per-port rows `outdated` already computes: port, from → to, what dockhand will do, and any warning or hold, with the confirmation from §3 under them. With meaningful names (§1), the names in the preview are the names the run uses. Where a fallback ID is needed, the preview either reserves it or leaves names out.
+- **How loudly something is marked and whether it blocks automation are separate.** Today `!` holds `bump` and `·` holds nothing, so a new port's review showed missing runtime dependencies as `·`, as if they didn't matter. One mark should say how much a reader should care: `✗` broken, `!` look at this, `·` for your information. A separate word says when something holds automation: "holds bump", "holds serve". A finding can then be serious without holding anything, or minor and still hold.
+- **Long lists are summarized.** Fields like Changed, Order, and dependents print on one line however long they get. They should read "18 ports: terraform-1.16, terraform-1.17, terraform-1.18 and 15 more", as `review` already does for dependents, with the whole list at `-v` and in JSON.
+- **A batch's exit code says whether anything worked.** Exit 3 means "needs a look" both for a held `bump` whose check passed and for an `update --outdated` run where all 9 ports failed. For a batch:
+  - 0 when every item is done;
+  - 3 when some are done or held and need a look;
+  - 1 when none could be done.
+
+  Per-item results stay in the output and the JSON. This joins the exit-code row of the shared-flag contract (§9).
+
 ## Smaller items
 
 - **`restore` → `undo`.** `git restore` restores files; dockhand's restores history. `undo` with no argument undoes the branch's latest tidy or rebase, and `undo tidy-3` picks one.
 - **`queue` → part of `status`.** It's already status's footer line. **`watch` → `status --watch`**, keeping its keys.
 - **`--tested-binaries --tested-variants` → `--tested binaries,variants`** on `submit`, `update`, and `bump`.
-- **`dockhand open [selector]`** opens the branch's pull request in the browser, since status shows its number but no link.
+- **`dockhand open [-b|-p|--pr]`** opens the branch's pull request in the browser, since status shows its number but no link.
 
 ## What I'd leave alone
 
@@ -184,8 +316,8 @@ These are each small, but together they make the tool feel inconsistent, and a t
 
 ## Suggested order
 
-1. Selectors and `-b` (§1) with auto-start (§2). This is the biggest daily win, and mostly in branch resolution (`engine.named`) and the commands' argument parsing.
-2. `submit` folding in tidy (§3), and the shared-flag test (§9), which would catch the field-testing inconsistencies as they're fixed.
+1. `-b` with completion, `-p`, and `--pr` (§1), with auto-start (§2). This is the biggest daily win, and mostly in branch resolution (`engine.named`, `BranchesChanging`) and the commands' argument parsing.
+2. Stop only for judgment (§3), starting with `submit` folding in tidy and `check` following a running check of the same files, and the shared-flag test (§9), which would catch the field-testing inconsistencies as they're fixed.
 3. `archive` taking the worktree (§5) and `explain` for checks and branches (§7). Both are small, and both close friction field testing actually hit.
-4. `setup` (§6) and `review --check` (§8).
-5. `--through` (§4) last, after a discussion, since it changes the most words and touches decided ground.
+4. `setup` (§6), `review --check` (§8), and the output items (§10), whose batch preview goes with §3's single confirmation.
+5. `--to` (§4) last, after a discussion, since it changes the most words and touches decided ground.

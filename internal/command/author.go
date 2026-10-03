@@ -37,7 +37,7 @@ type branchChoice struct {
 }
 
 func (c *branchChoice) flags(cmd *cobra.Command) {
-	cmd.Flags().StringVarP(&c.branch, "branch", "b", "", "work in this branch: its name or the start of it, a port only it changes, #<pull request>, or check-<n>")
+	cmd.Flags().StringVarP(&c.branch, "branch", "b", "", "work in this branch, by its exact name (the dockhand/ prefix is optional)")
 	cmd.Flags().BoolVar(&c.new, "new", false, "start a new branch for this, in its own worktree")
 	cmd.MarkFlagsMutuallyExclusive("branch", "new")
 }
@@ -768,7 +768,7 @@ func untrackedHere(ctx context.Context, e *engine.Engine) string {
 // terminal is asked, and a script is told the choices.
 func chooseBranch(ctx context.Context, e *engine.Engine, streams Streams, where branchChoice, port, purpose string) (model.Branch, bool, error) {
 	if where.branch != "" {
-		branch, err := e.Select(ctx, where.branch)
+		branch, err := e.Resolve(ctx, where.branch)
 		return branch, false, err
 	}
 	if where.new {
@@ -792,13 +792,13 @@ func chooseBranch(ctx context.Context, e *engine.Engine, streams Streams, where 
 		}
 	}
 
-	changing, err := e.BranchesChanging(ctx, port)
+	changing, err := e.PortBranches(ctx, port)
 	if err != nil {
 		return model.Branch{}, false, err
 	}
 	var names []string
-	for _, branch := range changing {
-		names = append(names, branch.ShortName())
+	for _, found := range changing {
+		names = append(names, found.Branch.ShortName())
 	}
 	// Where nothing else could be meant, the branch is chosen, and said
 	// first (the command-line UX review, §1 and §2): no open branch
@@ -813,11 +813,11 @@ func chooseBranch(ctx context.Context, e *engine.Engine, streams Streams, where 
 		fmt.Fprintf(streams.Err, "%s is in no open branch, so this starts %s for it.\n", port, engine.BranchName(name))
 		return startNamed(ctx, e, name)
 	case 1:
-		fmt.Fprintf(streams.Err, "Working in %s, the one open branch changing %s; --new starts another.\n", changing[0].ShortName(), port)
-		return changing[0], false, nil
+		fmt.Fprintf(streams.Err, "Working in %s, the one open branch changing %s; --new starts another.\n", changing[0].Branch.ShortName(), port)
+		return changing[0].Branch, false, nil
 	}
 	if !streams.terminal() {
-		return model.Branch{}, false, &engine.AmbiguousError{Selector: port, Branches: changing}
+		return model.Branch{}, false, &engine.AmbiguousError{Port: port, Branches: changing}
 	}
 	name, err := e.FreeName(ctx, port)
 	if err != nil {

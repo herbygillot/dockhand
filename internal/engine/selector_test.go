@@ -2,7 +2,6 @@ package engine
 
 import (
 	"errors"
-	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -11,57 +10,56 @@ import (
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
-// A selector names a branch by its name, the start of its name, the one
-// port only it changes, its pull request, or a check of it (the
-// command-line UX review, §1); one more than one branch answers to is
-// refused with them, never guessed.
-func TestASelectorNamesOneBranchOrSaysWhichItCouldMean(t *testing.T) {
+// The branches changing a port are found by it, and a pull request's
+// branch by its number (the command-line UX review's §1, revised); a port
+// two branches change says both, and a pull request no branch tracks
+// names the adopt that tracks it.
+func TestABranchIsFoundByThePortItChangesOrItsPullRequest(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	e, _ := f.withPreparer(t)
 	jq := committedUpdate(t, e)
-	other, err := e.Start(t.Context(), StartRequest{Name: "jq-tools-9x1z"})
+	found, err := e.PortBranches(t.Context(), "jq")
 	require.NoError(t, err)
-	select_ := func(selector string) (model.Branch, error) {
-		t.Helper()
-		return e.Select(t.Context(), selector)
-	}
-	for _, selector := range []string{jq.ShortName(), jq.Name, "jq"} {
-		found, err := select_(selector)
-		require.NoError(t, err, selector)
-		require.Equal(t, jq.ID, found.ID, selector)
-	}
-	found, err := select_("jq-t")
+	require.Len(t, found, 1)
+	require.Equal(t, jq.ID, found[0].Branch.ID)
+	require.False(t, found[0].RevisionOnly, "without a record, its text says it changes jq")
+	none, err := e.PortBranches(t.Context(), "libharbor")
 	require.NoError(t, err)
-	require.Equal(t, other.ID, found.ID, "the one name starting so")
-
-	checked(t, e, jq, model.OutcomePassed, model.OutcomePassed)
-	runs, err := e.Runs(t.Context(), store.RunFilter{Limit: 1})
-	require.NoError(t, err)
-	found, err = select_("check-" + strconv.Itoa(runs[0].Number))
-	require.NoError(t, err)
-	require.Equal(t, jq.ID, found.ID, "a check names its branch")
+	require.Empty(t, none)
 
 	jq.PullRequest = &model.PullRequest{Repository: UpstreamRepository, Number: 34901, Head: "ada/macports-ports:" + jq.Name}
 	require.NoError(t, e.Store.Update(t.Context(), e.Repository, func(tx store.Tx) error { return tx.UpdateBranch(jq) }))
-	found, err = select_("#34901")
+	tracking, err := e.PullRequestBranch(t.Context(), 34901)
 	require.NoError(t, err)
-	require.Equal(t, jq.ID, found.ID)
-	_, err = select_("#4711")
+	require.Equal(t, jq.ID, tracking.ID)
+	_, err = e.PullRequestBranch(t.Context(), 4711)
 	require.ErrorIs(t, err, ErrNoBranch)
 	require.ErrorContains(t, err, "dockhand adopt --pr 4711 tracks it")
 
-	_, err = select_("libharbor")
-	require.ErrorIs(t, err, ErrNoBranch)
-
-	// Two branches changing jq: its name is no longer enough.
+	other, err := e.Start(t.Context(), StartRequest{Name: "jq-again"})
+	require.NoError(t, err)
 	_, err = e.Edit(t.Context(), other, "jq")
 	require.NoError(t, err)
 	write(t, other.Worktree, map[string]string{"textproc/jq/Portfile": "name jq\nversion 1.9\n"})
-	_, err = select_("jq")
-	var ambiguous *AmbiguousError
-	require.True(t, errors.As(err, &ambiguous), "%v", err)
-	require.ErrorIs(t, err, ErrAmbiguous)
-	require.Len(t, ambiguous.Branches, 2)
-	require.ErrorContains(t, err, "jq names more than one branch: ")
+	found, err = e.PortBranches(t.Context(), "jq")
+	require.NoError(t, err)
+	require.Len(t, found, 2)
+	err = &AmbiguousError{Port: "jq", Branches: found}
+	require.True(t, errors.Is(err, ErrAmbiguous))
+	require.ErrorContains(t, err, "jq is changed in more than one open branch: ")
+	require.ErrorContains(t, err, "name one with -b")
+}
+
+// A change record that moves only a subport's revision says so, and such
+// a branch ranks after one that changes more: `-p jq` means jq's own
+// update before a library branch's rebuild of it.
+func TestARevisionOnlyChangeIsSaid(t *testing.T) {
+	record := model.ChangeRecord{Ports: []model.SubportChange{
+		{Port: "jq", Kind: model.SubportChanged, Fields: []model.FieldChange{{Field: "revision", From: "0", To: "1"}}},
+		{Port: "jq-devel", Kind: model.SubportChanged, Fields: []model.FieldChange{{Field: "revision", From: "0", To: "1"}, {Field: "version", From: "1", To: "2"}}},
+	}}
+	require.True(t, record.RevisionOnly("jq"))
+	require.False(t, record.RevisionOnly("jq-devel"))
+	require.False(t, record.RevisionOnly("libharbor"))
 }

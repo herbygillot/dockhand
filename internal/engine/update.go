@@ -693,15 +693,32 @@ func expandFor(ctx context.Context, worktree *git.Repository, files []string) er
 // and not terraform-1.17; a directory without one changes the port its
 // name is, as its text says.
 func (e *Engine) BranchesChanging(ctx context.Context, port string) ([]model.Branch, error) {
-	var open []model.Branch
-	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		var err error
-		open, err = r.Branches(store.BranchFilter{States: []model.BranchState{model.BranchOpen}})
-		return err
-	}); err != nil {
+	found, err := e.PortBranches(ctx, port)
+	branches := make([]model.Branch, 0, len(found))
+	for _, f := range found {
+		branches = append(branches, f.Branch)
+	}
+	return branches, err
+}
+
+// PortBranch is an open branch that changes a port, and whether its
+// change record says it changes only the port's revision, as a branch of
+// --revbump-dependents does.
+type PortBranch struct {
+	Branch       model.Branch
+	RevisionOnly bool
+}
+
+// PortBranches are the open branches that change a port, as
+// BranchesChanging finds them, those that change more than its revision
+// first (the command-line UX review's §1, revised): `-p jq` means jq's
+// own update before the rebuild of jq a library's branch carries.
+func (e *Engine) PortBranches(ctx context.Context, port string) ([]PortBranch, error) {
+	open, err := e.OpenBranches(ctx)
+	if err != nil {
 		return nil, err
 	}
-	var changing []model.Branch
+	var substantive, revisionOnly []PortBranch
 	for _, branch := range open {
 		head, _, err := e.Repo.Branch(ctx, branch.Name)
 		if errors.Is(err, git.ErrBranchMissing) {
@@ -718,30 +735,33 @@ func (e *Engine) BranchesChanging(ctx context.Context, port string) ([]model.Bra
 		if err != nil {
 			return nil, err
 		}
-		changes, err := e.branchChanges(ctx, branch, head, macports.ScopeOf(append(paths, edited...)).Ports, port)
-		if err != nil {
+		changes, onlyRevision, err := e.branchChanges(ctx, branch, head, macports.ScopeOf(append(paths, edited...)).Ports, port)
+		switch {
+		case err != nil:
 			return nil, err
-		}
-		if changes {
-			changing = append(changing, branch)
+		case changes && onlyRevision:
+			revisionOnly = append(revisionOnly, PortBranch{Branch: branch, RevisionOnly: true})
+		case changes:
+			substantive = append(substantive, PortBranch{Branch: branch})
 		}
 	}
-	return changing, nil
+	return append(substantive, revisionOnly...), nil
 }
 
 // branchChanges says whether a branch whose files change these directories
-// changes a port: by the change record of its files as they stand, where
-// one says, and else by a directory's name. The branch's files are read
-// for their tree only where a record might name the port, so a branch
-// nothing of which could is passed over cheaply.
-func (e *Engine) branchChanges(ctx context.Context, branch model.Branch, head string, directories []string, port string) (bool, error) {
+// changes a port, and whether only its revision: by the change record of
+// its files as they stand, where one says, and else by a directory's
+// name. The branch's files are read for their tree only where a record
+// might name the port, so a branch nothing of which could is passed over
+// cheaply.
+func (e *Engine) branchChanges(ctx context.Context, branch model.Branch, head string, directories []string, port string) (changes, revisionOnly bool, err error) {
 	var recorded []model.ChangeRecord
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		var err error
 		recorded, err = r.ChangeRecords(store.AssessmentFilter{Branch: branch.ID})
 		return err
 	}); err != nil {
-		return false, err
+		return false, false, err
 	}
 	candidates := false
 	for _, directory := range directories {
@@ -754,11 +774,11 @@ func (e *Engine) branchChanges(ctx context.Context, branch model.Branch, head st
 		candidates = candidates || named
 	}
 	if !candidates {
-		return false, nil
+		return false, false, nil
 	}
 	tree, err := e.branchTree(ctx, branch, head)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	records := map[string]model.ChangeRecord{}
 	for _, record := range recorded {
@@ -769,15 +789,15 @@ func (e *Engine) branchChanges(ctx context.Context, branch model.Branch, head st
 	for _, directory := range directories {
 		if changed, ok := changedSubports(records, directory); ok {
 			if slices.Contains(changed, port) {
-				return true, nil
+				return true, records[directory].RevisionOnly(port), nil
 			}
 			continue
 		}
 		if path.Base(directory) == port {
-			return true, nil
+			return true, false, nil
 		}
 	}
-	return false, nil
+	return false, false, nil
 }
 
 // branchTree is a branch's files as they stand: its worktree's, edits and

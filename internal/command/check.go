@@ -23,11 +23,12 @@ import (
 )
 
 func checkCommand(s *settings, streams Streams) *cobra.Command {
-	var selector, tests, variants string
+	var where branchFlags
+	var tests, variants string
 	var plan, head, staged, workingTree, enqueue, baseline, replace, fresh, yes bool
 	var include, only, also, on []string
 	cmd := &cobra.Command{
-		Use:   "check [branch]",
+		Use:   "check",
 		Short: "Build and test what you have, committed or not",
 		Long: `Captures the branch's files, the tracked ones as they are on disk unless
 --staged or --head says otherwise, as a numbered snapshot, and builds every
@@ -57,12 +58,9 @@ planned there as a check would be, and reports each beside the branch's
 result. It says what happened in each run and nothing more. A failed check
 points to it when a baseline can answer something; with check.baseline =
 true, it runs that baseline by itself.`,
-		Args: cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			if err := branchArgument(args, &selector); err != nil {
-				return err
-			}
 			// A misspelled policy is refused before anything is captured.
 			if tests != "" && !model.TestPolicy(tests).Valid() {
 				return fmt.Errorf("--tests %q is not declared, required, or skip", tests)
@@ -72,7 +70,7 @@ true, it runs that baseline by itself.`,
 				return err
 			}
 			defer e.Close()
-			branch, err := workingBranch(ctx, e, selector)
+			branch, err := where.resolve(ctx, e, streams)
 			if err != nil {
 				return err
 			}
@@ -85,7 +83,7 @@ true, it runs that baseline by itself.`,
 			if baseline {
 				return runBaseline(ctx, e, streams, branch, only, enqueue)
 			}
-			mode, err := captureMode(ctx, e, branch, selector, head, staged, workingTree)
+			mode, err := captureMode(ctx, e, branch, where.explicit(), head, staged, workingTree)
 			if err != nil {
 				return err
 			}
@@ -168,7 +166,7 @@ true, it runs that baseline by itself.`,
 			return err
 		},
 	}
-	cmd.Flags().StringVarP(&selector, "branch", "b", "", "check this branch: its name or the start of it, a port only it changes, #<pull request>, or check-<n>")
+	where.register(cmd, s, "Check")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show what would be built and change nothing")
 	cmd.Flags().BoolVar(&head, "head", false, "check the committed tip")
 	cmd.Flags().BoolVar(&staged, "staged", false, "check the index")
@@ -236,13 +234,13 @@ func firstNonEmpty(values ...[]string) []string {
 // captureMode is what a check captures: what was asked for; else the
 // working files in the branch's own worktree; else, for a --branch checked
 // out elsewhere, its committed tip when that worktree has no edits.
-func captureMode(ctx context.Context, e *engine.Engine, branch model.Branch, selector string, head, staged, workingTree bool) (engine.CaptureMode, error) {
+func captureMode(ctx context.Context, e *engine.Engine, branch model.Branch, named bool, head, staged, workingTree bool) (engine.CaptureMode, error) {
 	switch {
 	case head:
 		return engine.CaptureHead, nil
 	case staged:
 		return engine.CaptureStaged, nil
-	case workingTree || selector == "":
+	case workingTree || !named:
 		return engine.CaptureWorking, nil
 	}
 	here, err := e.Current(ctx)

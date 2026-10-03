@@ -20,12 +20,13 @@ import (
 )
 
 func submitCommand(s *settings, streams Streams) *cobra.Command {
-	var selector, note string
+	var where branchFlags
+	var note string
 	var request engine.SubmitRequest
 	var yes, testedBinaries, testedVariants, check, passing, ready, preview bool
 	var on []string
 	cmd := &cobra.Command{
-		Use:   "submit [branch]",
+		Use:   "submit",
 		Short: "Open or update the pull request",
 		Long: `Pushes the branch's committed head to your fork and opens its pull request
 against macports/macports-ports, or updates the one it has. The preview shows
@@ -52,12 +53,9 @@ it, so nobody else's push is ever overwritten. A description you edited on
 GitHub is kept.
 
 --plan shows the preview and changes nothing, here or on GitHub.`,
-		Args: cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			if err := branchArgument(args, &selector); err != nil {
-				return err
-			}
 			e, err := s.open(ctx)
 			if err != nil {
 				return err
@@ -79,7 +77,7 @@ GitHub is kept.
 			if passing {
 				return submitPassing(ctx, e, streams, request, s.file.Submit.RerequestReview)
 			}
-			if request.Branch, err = workingBranch(ctx, e, selector); err != nil {
+			if request.Branch, err = where.resolve(ctx, e, streams); err != nil {
 				return err
 			}
 			if check {
@@ -133,7 +131,7 @@ GitHub is kept.
 			}
 		},
 	}
-	cmd.Flags().StringVarP(&selector, "branch", "b", "", "submit this branch: its name or the start of it, a port only it changes, #<pull request>, or check-<n>")
+	where.register(cmd, s, "Submit")
 	cmd.Flags().BoolVar(&preview, "plan", false, "show what would be pushed and opened, and change nothing")
 	cmd.Flags().BoolVar(&request.Head, "head", false, "submit the committed head, leaving uncommitted edits out")
 	cmd.Flags().BoolVar(&request.Draft, "draft", false, "open the pull request as a draft, which unfinished or failing checks allow")

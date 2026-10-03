@@ -121,7 +121,7 @@ The context is the branch you're working on. It comes from, in order:
 
 The first line of every command that changes something names the branch and directory. There is no persistent "current branch" shared between terminals.
 
-**A port name picks a branch only where nothing else could be meant** (relaxed 2026-10-02 with the command-line UX review's §1 and §2, at the person's word). Two branches may both touch `jq`, and neither silently receives the other's next edit: `jq` as a selector, or an authoring command's port on master, names the one open branch that changes jq, and is refused with the list where two do. `dockhand status --port jq` finds them. Where none does, an authoring command starts one and says so; `--new` starts another beside one: `dockhand update jq --new` creates `dockhand/jq-4k2p` and updates jq in it.
+**A port name picks a branch only where nothing else could be meant** (relaxed 2026-10-02 with the command-line UX review's §1 and §2, at the person's word). Two branches may both touch `jq`, and neither silently receives the other's next edit: `-p jq`, or an authoring command's port on master, names the one open branch that changes jq, and is refused with the list where two do; `-b` takes only a branch's exact name, and output always prints exact names. `dockhand status --port jq` finds them. Where none does, an authoring command starts one and says so; `--new` starts another beside one: `dockhand update jq --new` creates `dockhand/jq-4k2p` and updates jq in it.
 
 At the repository root, with no context, a terminal offers the choice, with the obvious one first:
 

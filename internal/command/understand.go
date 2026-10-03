@@ -16,7 +16,7 @@ import (
 )
 
 func diffCommand(s *settings, streams Streams) *cobra.Command {
-	var selector string
+	var where branchFlags
 	var stat, archives bool
 	cmd := &cobra.Command{
 		Use:   "diff [<path>...]",
@@ -43,7 +43,7 @@ MacPorts' distfiles mirror.`,
 				return err
 			}
 			defer e.Close()
-			branch, err := workingBranch(ctx, e, selector)
+			branch, err := where.resolve(ctx, e, streams)
 			if err != nil {
 				return err
 			}
@@ -73,7 +73,7 @@ MacPorts' distfiles mirror.`,
 			return err
 		},
 	}
-	cmd.Flags().StringVarP(&selector, "branch", "b", "", "show this branch: its name or the start of it, a port only it changes, #<pull request>, or check-<n>")
+	where.register(cmd, s, "Show")
 	cmd.Flags().BoolVar(&stat, "stat", false, "list the changed files, not the patch")
 	cmd.Flags().BoolVar(&archives, "archive", false, "compare what the ports' source archives hold, not the Portfiles")
 	return cmd
@@ -236,7 +236,7 @@ func portChangeWords(port engine.PortDiff) string {
 }
 
 func impactCommand(s *settings, streams Streams) *cobra.Command {
-	var selector string
+	var where branchFlags
 	cmd := &cobra.Command{
 		Use:   "impact [<port>...]",
 		Short: "Show what the branch's change reaches beyond its ports",
@@ -253,7 +253,7 @@ some against the branch.`,
 				return err
 			}
 			defer e.Close()
-			branch, err := workingBranch(ctx, e, selector)
+			branch, err := where.resolve(ctx, e, streams)
 			if err != nil {
 				return err
 			}
@@ -266,7 +266,7 @@ some against the branch.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&selector, "branch", "b", "", "show this branch: its name or the start of it, a port only it changes, #<pull request>, or check-<n>")
+	where.register(cmd, s, "Show")
 	return cmd
 }
 

@@ -71,6 +71,17 @@ func (r ChangeRecord) Changed() []string {
 	return names
 }
 
+// RevisionOnly says whether the record changes a subport by its revision
+// alone, as a rebuild does.
+func (r ChangeRecord) RevisionOnly(port string) bool {
+	for _, p := range r.Ports {
+		if p.Port == port {
+			return p.Kind == SubportChanged && len(p.Fields) == 1 && p.Fields[0].Field == "revision"
+		}
+	}
+	return false
+}
+
 // Validate checks the rules every recorded change keeps.
 func (r ChangeRecord) Validate() error {
 	switch {

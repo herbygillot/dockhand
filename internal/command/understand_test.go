@@ -83,3 +83,46 @@ Next: dockhand check --also yq,jo builds them against the branch
 	require.NoError(t, err)
 	require.Contains(t, out, "Changed ports     jq (revision only)\nOther dependents  none looked for; the branch changes no existing port beyond its revision\n")
 }
+
+// A command about a whole branch is told which by -b, its exact name,
+// with completion; -p, the port it changes, said on the first line; or
+// --pr, its pull request (the command-line UX review's §1, revised). A
+// flag beats where the command runs, and says so.
+func TestABranchIsNamedByItsNameItsPortOrItsPullRequest(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	_, _, err := dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "jq-update"))
+	_, _, err = dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	t.Setenv("MACPORTS_TREE", w.clone)
+
+	out, said, err := dockhand(t, "diff", "-p", "jq")
+	require.NoError(t, err)
+	require.Contains(t, said, "Working in jq-update, the one open branch changing jq.\n")
+	require.Contains(t, out, "jq-update · from master ")
+	out, _, err = dockhand(t, "diff", "-b", "jq-update")
+	require.NoError(t, err)
+	require.Contains(t, out, "jq-update · from master ")
+	_, _, err = dockhand(t, "diff", "-b", "jq")
+	require.ErrorContains(t, err, "no tracked branch named jq", "-b takes an exact name, never a port")
+	_, _, err = dockhand(t, "diff", "-p", "libharbor")
+	require.ErrorContains(t, err, "no tracked branch changes libharbor")
+	_, _, err = dockhand(t, "diff", "--pr", "4711")
+	require.ErrorContains(t, err, "dockhand adopt --pr 4711 tracks it")
+	_, _, err = dockhand(t, "diff", "-b", "jq-update", "-p", "jq")
+	require.Error(t, err, "one way at a time")
+
+	completed, _, err := dockhand(t, "__complete", "diff", "-b", "jq")
+	require.NoError(t, err)
+	require.Contains(t, completed, "jq-update")
+
+	_, _, err = dockhand(t, "start", "elsewhere")
+	require.NoError(t, err)
+	t.Setenv("MACPORTS_TREE", filepath.Join(w.home, "Source", "macports-branches", "elsewhere"))
+	_, said, err = dockhand(t, "diff", "-b", "jq-update")
+	require.NoError(t, err)
+	require.Contains(t, said, "jq-update (not elsewhere, checked out here)\n")
+}

@@ -80,7 +80,7 @@ its go-get answer.`,
 			var branch model.Branch
 			switch {
 			case where.branch != "":
-				branch, err = e.Select(ctx, where.branch)
+				branch, err = e.Resolve(ctx, where.branch)
 			case where.new:
 				// A name master has is refused before a branch is started
 				// for it.

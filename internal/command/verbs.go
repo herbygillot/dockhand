@@ -124,7 +124,7 @@ branch is started, since a rebuild has its own reason.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&selector, "branch", "b", "", "work in this tracked branch")
+	cmd.Flags().StringVarP(&selector, "branch", "b", "", "work in this branch, by its exact name (the dockhand/ prefix is optional)")
 	cmd.Flags().StringVar(&subject, "subject", "", "the reason, which becomes each commit's subject after the port's name")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show the edits and change nothing")
 	return cmd
@@ -134,7 +134,7 @@ branch is started, since a rebuild has its own reason.`,
 // one named for the first port.
 func revbumpBranch(ctx context.Context, e *engine.Engine, selector, port string, plan bool) (model.Branch, bool, error) {
 	if selector != "" {
-		branch, err := e.Select(ctx, selector)
+		branch, err := e.Resolve(ctx, selector)
 		return branch, false, err
 	}
 	branch, err := e.Current(ctx)
@@ -188,26 +188,23 @@ whole plan is built again.`,
 }
 
 func rebaseCommand(s *settings, streams Streams) *cobra.Command {
-	var selector string
+	var where branchFlags
 	cmd := &cobra.Command{
-		Use:   "rebase [branch]",
+		Use:   "rebase",
 		Short: "Move the branch's commits onto fresh master",
 		Long: `Fetches MacPorts' master and replays the branch's commits on it, in the
 branch's worktree, keeping the old history as a checkpoint that dockhand
 restore brings back. A branch with uncommitted edits is refused, and a
 rebase that conflicts is abandoned with the branch as it was.`,
-		Args: cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			if err := branchArgument(args, &selector); err != nil {
-				return err
-			}
 			e, err := s.open(ctx)
 			if err != nil {
 				return err
 			}
 			defer e.Close()
-			branch, err := workingBranch(ctx, e, selector)
+			branch, err := where.resolve(ctx, e, streams)
 			if err != nil {
 				return err
 			}
@@ -253,7 +250,7 @@ rebase that conflicts is abandoned with the branch as it was.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&selector, "branch", "b", "", "rebase this branch: its name or the start of it, a port only it changes, #<pull request>, or check-<n>")
+	where.register(cmd, s, "Rebase")
 	return cmd
 }
 
@@ -272,11 +269,11 @@ its pull request; status --all still shows it. --undo brings it back.`,
 				return err
 			}
 			defer e.Close()
-			selector := ""
+			var where branchFlags
 			if len(args) == 1 {
-				selector = args[0]
+				where.branch = args[0]
 			}
-			branch, err := workingBranch(ctx, e, selector)
+			branch, err := where.resolve(ctx, e, streams)
 			if err != nil {
 				return err
 			}
