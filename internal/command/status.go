@@ -130,6 +130,12 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 		}
 		return nil
 	}
+	// A branch renamed by hand is followed, and said the once.
+	for _, status := range statuses {
+		if status.Renamed != "" {
+			fmt.Fprintf(out, "Followed %s, renamed by hand to %s.\n\n", status.Renamed, status.Branch.ShortName())
+		}
+	}
 	if len(rows) > 0 {
 		fmt.Fprintln(out, "Needs you")
 		writeAttention(out, rows)

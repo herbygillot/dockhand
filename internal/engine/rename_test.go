@@ -66,3 +66,34 @@ func TestAnUnrelatedBranchIsNotTakenForARename(t *testing.T) {
 	require.Equal(t, "dockhand/one", renamed.Renamed, "the missing branch's worktree has it checked out")
 	require.Equal(t, first.ID, renamed.Branch.ID)
 }
+
+// A branch renamed with git branch -m is followed without being asked:
+// status carries its record over and says so once, and the new name finds
+// it (the person's ruling on the M1's quick stage, D-S5, 2026-10-03).
+func TestStatusFollowsARenamedBranch(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "before"})
+	require.NoError(t, err)
+	testsupport.Git(t, branch.Worktree, "branch", "-m", "dockhand/after")
+
+	statuses, err := e.Status(t.Context())
+	require.NoError(t, err)
+	require.Len(t, statuses, 1)
+	require.Equal(t, branch.ID, statuses[0].Branch.ID, "the same record")
+	require.Equal(t, "dockhand/after", statuses[0].Branch.Name)
+	require.Equal(t, "before", statuses[0].Renamed)
+	require.False(t, statuses[0].Missing)
+
+	statuses, err = e.Status(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, statuses[0].Renamed, "said once")
+
+	other, err := e.Start(t.Context(), StartRequest{Name: "other"})
+	require.NoError(t, err)
+	testsupport.Git(t, other.Worktree, "branch", "-m", "dockhand/moved")
+	found, err := e.Resolve(t.Context(), "moved")
+	require.NoError(t, err)
+	require.Equal(t, other.ID, found.ID, "the new name finds it")
+}

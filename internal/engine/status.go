@@ -20,6 +20,9 @@ type BranchStatus struct {
 	Branch model.Branch
 	// Missing is true when the Git branch is gone.
 	Missing bool
+	// Renamed is the branch's name before a rename by hand that this
+	// status followed (followRenames), said once.
+	Renamed string
 	// Pruned is true for an ended branch whose checks cleanup has
 	// removed but its newest, kept without what it built (D6): Latest is
 	// that check, and there's no Evidence.
@@ -130,6 +133,10 @@ func (e *Engine) Status(ctx context.Context, states ...model.BranchState) ([]Bra
 	if len(states) == 0 {
 		states = []model.BranchState{model.BranchOpen}
 	}
+	renamed, err := e.followRenames(ctx, "")
+	if err != nil {
+		return nil, err
+	}
 	var branches []model.Branch
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
 		var err error
@@ -144,6 +151,7 @@ func (e *Engine) Status(ctx context.Context, states ...model.BranchState) ([]Bra
 		if err != nil {
 			return nil, err
 		}
+		status.Renamed = renamed[branch.ID]
 		all = append(all, status)
 	}
 	return all, nil

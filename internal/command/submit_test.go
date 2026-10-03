@@ -724,19 +724,32 @@ func TestAdoptRecognizesARenamedBranch(t *testing.T) {
 	require.NoError(t, err)
 
 	testsupport.Git(t, dir, "branch", "-m", "jq-1.8")
-	t.Setenv("MACPORTS_TREE", w.clone)
-	out, _, err := dockhand(t, "status", "--attention")
-	require.Equal(t, 3, ExitCode(err))
-	require.Contains(t, out, "! jq-update  its Git branch is gone, and its pull request, #34901, may have merged  dockhand status --refresh reads it; dockhand adopt <new name>, if you renamed the branch",
-		"with a pull request, either may be so")
-
 	t.Setenv("MACPORTS_TREE", dir)
-	out, _, err = dockhand(t, "adopt")
+	out, _, err := dockhand(t, "adopt")
 	require.NoError(t, err)
 	require.Equal(t, "Recognized jq-1.8 as dockhand/jq-update, renamed with Git: its record, checks, and history carry over.\n#34901's head can't move, so submit keeps pushing to ada/macports-ports:dockhand/jq-update.\n", out)
 	out, _, err = dockhand(t, "status")
 	require.NoError(t, err)
 	require.Contains(t, out, "#34901")
+}
+
+// status follows a branch renamed with Git without being asked, and says
+// so once (the person's ruling on the M1's quick stage, D-S5).
+func TestStatusFollowsARenamedBranch(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	_, _, err := dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
+	testsupport.Git(t, dir, "branch", "-m", "dockhand/jq-1.8")
+	out, _, err := dockhand(t, "status")
+	require.NoError(t, err)
+	require.Contains(t, out, "Followed jq-update, renamed by hand to jq-1.8.\n")
+	require.NotContains(t, out, "Git branch is gone")
+	out, _, err = dockhand(t, "status")
+	require.NoError(t, err)
+	require.NotContains(t, out, "Followed", "said once")
+	require.Contains(t, out, "jq-1.8")
 }
 
 // A branch has one check at a time: submit --check doesn't queue a second

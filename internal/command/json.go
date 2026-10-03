@@ -428,6 +428,9 @@ type branchJSON struct {
 	Base      string `json:"base"`
 	Head      string `json:"head,omitempty"`
 	Missing   bool   `json:"missing,omitempty"`
+	// Renamed is the name a branch had before a rename by hand this
+	// status followed.
+	Renamed string `json:"renamed_from,omitempty"`
 	// Cleaned is a merged branch whose Git branch clean removed.
 	Cleaned     bool     `json:"cleaned,omitempty"`
 	Commits     int      `json:"commits"`
@@ -480,7 +483,7 @@ type concernJSON struct {
 func branchView(status engine.BranchStatus) branchJSON {
 	branch := status.Branch
 	view := branchJSON{Name: branch.ShortName(), GitBranch: branch.Name, ID: string(branch.ID), State: string(branch.State), Worktree: branch.Worktree, Managed: branch.Managed,
-		Base: string(branch.Base), Head: status.Head, Missing: status.Missing, Cleaned: status.Cleaned(), Commits: status.Commits,
+		Base: string(branch.Base), Head: status.Head, Missing: status.Missing, Renamed: status.Renamed, Cleaned: status.Cleaned(), Commits: status.Commits,
 		Edited: nonNil(status.Edited), Directories: nonNil(status.Scope.Ports), Ports: nonNil(status.Scope.PortNames()), Active: []runJSON{}, Releases: []releaseJSON{},
 		Held: status.Held, Assessment: string(status.Assessment), OnMaster: string(status.OnMaster)}
 	view.Changed, view.Notes = status.ChangedPorts()

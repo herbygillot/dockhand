@@ -237,22 +237,10 @@ func (e *Engine) Adopt(ctx context.Context, request AdoptRequest) (Adoption, err
 			return adoption, err
 		}
 		adoption.Renamed = renamed.Name
-		renamed.Name = name
-		if checkouts, err := e.Repo.Checkouts(ctx, name); err == nil && len(checkouts) > 0 {
-			renamed.Worktree = checkouts[0]
-		}
 		if adoption.Commits, adoption.Scope, err = e.changes(ctx, renamed.Base, head); err != nil {
 			return adoption, err
 		}
-		err = e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
-			if err := tx.UpdateBranch(renamed); err != nil {
-				return err
-			}
-			_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: renamed.ID, Kind: "branch.rename", Level: model.LevelInfo,
-				Message: fmt.Sprintf("%s was renamed %s with Git; its record carries over", adoption.Renamed, name)})
-			return err
-		})
-		adoption.Branch = renamed
+		adoption.Branch, err = e.carryRename(ctx, renamed, name)
 		return adoption, err
 	}
 
@@ -349,6 +337,25 @@ func (e *Engine) placeWorktree(ctx context.Context, branch model.Branch) (model.
 	})
 }
 
+// carryRename moves a tracked branch renamed with Git to its new name, and
+// to the worktree that has it checked out, with the event that says so:
+// its record, checks, and history carry over.
+func (e *Engine) carryRename(ctx context.Context, renamed model.Branch, name string) (model.Branch, error) {
+	old := renamed.Name
+	renamed.Name = name
+	if checkouts, err := e.Repo.Checkouts(ctx, name); err == nil && len(checkouts) > 0 {
+		renamed.Worktree = checkouts[0]
+	}
+	return renamed, e.Store.Update(ctx, e.Repository, func(tx store.Tx) error {
+		if err := tx.UpdateBranch(renamed); err != nil {
+			return err
+		}
+		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: renamed.ID, Kind: "branch.rename", Level: model.LevelInfo,
+			Message: fmt.Sprintf("%s was renamed %s with Git; its record carries over", old, name)})
+		return err
+	})
+}
+
 // renamedFrom finds the tracked branch a Git branch was renamed from: one
 // whose own Git branch is gone, and whose worktree now has this branch
 // checked out, or whose last push to its pull request this branch
@@ -396,6 +403,15 @@ func (e *Engine) renamedFrom(ctx context.Context, name, head string) (model.Bran
 // Resolve finds a tracked branch by the name a person typed: the Git name,
 // or the name without dockhand's prefix.
 func (e *Engine) Resolve(ctx context.Context, selector string) (model.Branch, error) {
+	branch, err := e.named(ctx, selector, store.Reader.BranchNamed)
+	if !errors.Is(err, ErrNoBranch) {
+		return branch, err
+	}
+	// A name no record has may be one a branch was renamed to by hand,
+	// which is followed, then found.
+	if followed, ferr := e.followRenames(ctx, selector); ferr != nil || len(followed) == 0 {
+		return branch, err
+	}
 	return e.named(ctx, selector, store.Reader.BranchNamed)
 }
 
