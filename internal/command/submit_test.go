@@ -489,7 +489,7 @@ func TestCleanAfterTheMerge(t *testing.T) {
 
 	out, _, err = dockhand(t, "clean", "--yes")
 	require.NoError(t, err)
-	require.Contains(t, out, "  removed  worktree ~/Source/macports-branches/jq-update\n")
+	require.Contains(t, out, "jq-update: removed worktree ~/Source/macports-branches/jq-update, branch dockhand/jq-update, ada/macports-ports:dockhand/jq-update\n")
 	require.NoDirExists(t, dir)
 	out, _, err = dockhand(t, "clean")
 	require.NoError(t, err)
@@ -861,7 +861,7 @@ func TestCleanNamesOneBranch(t *testing.T) {
 	t.Setenv("MACPORTS_TREE", w.clone)
 	_, _, err = dockhand(t, "start", "other-work")
 	require.NoError(t, err)
-	_, _, err = dockhand(t, "archive", "other-work")
+	_, _, err = dockhand(t, "archive", "other-work", "--keep-worktree")
 	require.NoError(t, err)
 
 	// Cleaned by hand, before status knows of the merge.
@@ -889,6 +889,6 @@ func TestCleanNamesOneBranch(t *testing.T) {
 	require.Contains(t, out, "  remove   ada/macports-ports:dockhand/jq-update\n")
 	out, _, err = dockhand(t, "clean", "jq-update", "--yes")
 	require.NoError(t, err)
-	require.Contains(t, out, "  removed  ada/macports-ports:dockhand/jq-update\n")
+	require.Contains(t, out, "jq-update: removed ada/macports-ports:dockhand/jq-update\n")
 	require.DirExists(t, filepath.Join(w.home, "Source", "macports-branches", "other-work"), "the archived branch's worktree stays")
 }

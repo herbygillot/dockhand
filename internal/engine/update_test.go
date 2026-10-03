@@ -458,6 +458,14 @@ func TestAnUpdateStartsItsBranchOnlyForAnEdit(t *testing.T) {
 	require.ErrorIs(t, err, ErrUnsupported)
 	require.True(t, update.Started, "the branch to make the edit in by hand")
 	require.DirExists(t, update.Branch.Worktree)
+
+	batch := start("jq-unattended")
+	batch.NoHandBranch = true
+	update, err = e.Update(t.Context(), batch)
+	require.ErrorIs(t, err, ErrUnsupported)
+	require.False(t, update.Started, "a batch, which no person is at, leaves no empty branch")
+	_, err = e.Resolve(t.Context(), "jq-unattended")
+	require.ErrorIs(t, err, ErrNoBranch)
 }
 
 // An update that edited nothing, the port already at the release, says what

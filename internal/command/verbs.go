@@ -255,12 +255,22 @@ rebase that conflicts is abandoned with the branch as it was.`,
 }
 
 func archiveCommand(s *settings, streams Streams) *cobra.Command {
-	var undo bool
+	var undo, keep, discard bool
 	cmd := &cobra.Command{
 		Use:   "archive [branch]",
-		Short: "Hide a branch you are not working on",
-		Long: `Hides a branch from status without touching its files, its Git branch, or
-its pull request; status --all still shows it. --undo brings it back.`,
+		Short: "Set aside a branch you are not working on",
+		Long: `Sets a branch aside: status leaves it out, and its worktree is removed
+where it holds nothing the branch's commits don't. The Git branch, your
+fork's branch, the checkpoints, the record, and the pull request stay, so
+--undo brings it back, and the worktree is checked out again when a command
+next needs it; status --all still shows it.
+
+A worktree with uncommitted edits or untracked files is asked about on a
+terminal: commit them, as tidy would, where its plan needs no words from
+you; discard them; or keep the worktree. A script keeps it and says so;
+--discard removes it, edits and all, and --keep-worktree keeps any worktree.
+A pull request still open is said, with how to close it: archive never
+closes it.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -277,21 +287,71 @@ its pull request; status --all still shows it. --undo brings it back.`,
 			if err != nil {
 				return err
 			}
-			branch, err = e.Archive(ctx, branch, undo)
+			request := engine.ArchiveRequest{Branch: branch, Undo: undo, KeepWorktree: keep, Discard: discard}
+			archived, err := e.ArchiveBranch(ctx, request)
 			if err != nil {
 				return err
 			}
-			streams.emit(map[string]any{"branch": branch.ShortName(), "state": branch.State})
+			if archived.Kept != "" && streams.terminal() {
+				if archived, err = commitOrDiscard(ctx, e, streams, request, archived); err != nil {
+					return err
+				}
+			}
+			branch = archived.Branch
+			streams.emit(map[string]any{"branch": branch.ShortName(), "state": branch.State, "worktree_removed": archived.Removed != "", "worktree_kept": archived.Kept})
+			out := streams.Out
 			if undo {
-				fmt.Fprintf(streams.Out, "%s is back among your open branches.\n", branch.ShortName())
+				fmt.Fprintf(out, "%s is back among your open branches.\n", branch.ShortName())
 				return nil
 			}
-			// Where a branch is done with, clean takes its worktree, which
-			// archive alone doesn't say (field testing, 2026-10-02).
-			fmt.Fprintf(streams.Out, "Archived %s; its files, Git branch, and pull request are untouched. dockhand archive --undo %s brings it back, and dockhand clean --archived %s removes its worktree.\n", branch.ShortName(), branch.ShortName(), branch.ShortName())
+			switch {
+			case archived.Removed != "":
+				fmt.Fprintf(out, "Archived %s, and removed its worktree; its Git branch and pull request stay. dockhand archive --undo %s brings it back.\n", branch.ShortName(), branch.ShortName())
+			case archived.Kept != "":
+				fmt.Fprintf(out, "Archived %s; its worktree stays, since %s. dockhand archive --discard %s removes it, edits and all.\n", branch.ShortName(), archived.Kept, branch.ShortName())
+			default:
+				fmt.Fprintf(out, "Archived %s; its files, Git branch, and pull request are untouched. dockhand archive --undo %s brings it back.\n", branch.ShortName(), branch.ShortName())
+			}
+			if pr := branch.PullRequest; pr != nil && (pr.Observed == nil || pr.Observed.State == "open") {
+				fmt.Fprintf(out, "#%d is still open; archive doesn't close it. Close it on GitHub, or with: gh pr close %d --repo %s\n", pr.Number, pr.Number, pr.Repository)
+			}
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&undo, "undo", false, "bring an archived branch back")
+	cmd.Flags().BoolVar(&keep, "keep-worktree", false, "keep the worktree")
+	cmd.Flags().BoolVar(&discard, "discard", false, "remove the worktree though it has uncommitted edits or untracked files, which go")
+	cmd.MarkFlagsMutuallyExclusive("keep-worktree", "discard")
 	return cmd
+}
+
+// commitOrDiscard asks what to do with the edits a worktree being
+// archived holds: commit them, where tidy's plan needs no words from the
+// person; discard them; or keep the worktree.
+func commitOrDiscard(ctx context.Context, e *engine.Engine, streams Streams, request engine.ArchiveRequest, archived engine.Archived) (engine.Archived, error) {
+	fmt.Fprintf(streams.Err, "%s's worktree stays for now: %s.\n", archived.Branch.ShortName(), archived.Kept)
+	answer, err := ask(streams, "? commit them, discard them, or keep the worktree? [c]ommit / [d]iscard / [K]eep ")
+	if err != nil {
+		return archived, err
+	}
+	request.Branch = archived.Branch
+	switch strings.ToLower(answer) {
+	case "c", "commit":
+		plan, err := e.PlanTidy(ctx, engine.TidyRequest{Branch: archived.Branch})
+		if err != nil {
+			return archived, err
+		}
+		if !plan.Unambiguous() {
+			fmt.Fprintf(streams.Err, "Its commits need your words; dockhand tidy -b %s shapes them, and archive takes the worktree after.\n", archived.Branch.ShortName())
+			return archived, nil
+		}
+		if _, err := e.ApplyTidy(ctx, plan); err != nil {
+			return archived, err
+		}
+		return e.ArchiveBranch(ctx, request)
+	case "d", "discard":
+		request.Discard = true
+		return e.ArchiveBranch(ctx, request)
+	}
+	return archived, nil
 }

@@ -87,7 +87,7 @@ func TestEditRevbumpRetryRebaseAndArchive(t *testing.T) {
 
 	out, _, err = dockhand(t, "archive")
 	require.NoError(t, err)
-	require.Contains(t, out, "Archived notes;")
+	require.Contains(t, out, "Archived notes, and removed its worktree;")
 	t.Setenv("MACPORTS_TREE", w.clone)
 	out, _, err = dockhand(t, "status")
 	require.NoError(t, err)

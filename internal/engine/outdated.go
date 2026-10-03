@@ -244,10 +244,13 @@ func (e *Engine) prepareOne(ctx context.Context, planned PlannedUpdate, options 
 	done := PreparedUpdate{Planned: planned}
 	var err error
 	done.Update, err = e.Update(ctx, UpdateRequest{Start: &StartRequest{Name: planned.Name, Origin: options.Origin}, Action: model.EditUpdate, Port: planned.Port.Port, Version: planned.Port.Newest,
-		Release: planned.Port.Release, CompareUpstream: true})
+		Release: planned.Port.Release, CompareUpstream: true, NoHandBranch: true})
 	done.Branch = done.Update.Branch
 	if err != nil {
 		done.Problem = err.Error()
+		if !done.Update.Started {
+			done.Problem += "; no branch was started"
+		}
 		return done
 	}
 	if done.Update.Current {

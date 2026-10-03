@@ -274,6 +274,52 @@ func (e *Engine) Archive(ctx context.Context, branch model.Branch, undo bool) (m
 	return branch, err
 }
 
+// ArchiveRequest asks to set a branch aside, or bring one back.
+type ArchiveRequest struct {
+	Branch model.Branch
+	Undo   bool
+	// KeepWorktree leaves the worktree where it is; Discard removes it
+	// though it holds uncommitted edits or untracked files, which go.
+	KeepWorktree, Discard bool
+}
+
+// Archived is a branch set aside: its worktree removed, or why it stayed.
+type Archived struct {
+	Branch model.Branch
+	// Removed is the worktree removed, and Kept why it stayed: what it
+	// holds that its Git branch doesn't.
+	Removed, Kept string
+}
+
+// ArchiveBranch sets a branch aside in one step (the command-line UX
+// review's §5): it leaves status, and its worktree goes where it holds
+// nothing its Git branch doesn't, as clean --archived took it. The Git
+// branch, the fork's branch, the checkpoints, and the record stay, so
+// --undo brings it back, and the worktree is checked out again when a
+// command next needs it. A worktree with uncommitted edits or untracked
+// files stays, and says so, unless Discard says they go. Only a worktree
+// dockhand made is removed.
+func (e *Engine) ArchiveBranch(ctx context.Context, request ArchiveRequest) (Archived, error) {
+	branch, err := e.Archive(ctx, request.Branch, request.Undo)
+	result := Archived{Branch: branch}
+	if err != nil || request.Undo || request.KeepWorktree || !branch.Managed || !exists(branch.Worktree) {
+		return result, err
+	}
+	dirty, err := e.dirty(ctx, branch.Worktree)
+	if err != nil {
+		return result, err
+	}
+	if dirty != "" && !request.Discard {
+		result.Kept = dirty
+		return result, nil
+	}
+	if err := e.Repo.RemoveWorktree(ctx, branch.Worktree); err != nil {
+		return result, err
+	}
+	result.Removed = branch.Worktree
+	return result, nil
+}
+
 // ended refuses a branch whose pull request merged or closed: there's
 // nothing to rebase, and submitting it again would reopen nothing.
 func ended(branch model.Branch) error {

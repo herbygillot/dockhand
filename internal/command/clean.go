@@ -111,12 +111,17 @@ cancel stops a check. None means another.`,
 					return err
 				}
 			} else {
+				// --legacy names what to clean by itself: clean --legacy
+				// --merged=false refused as naming nothing (field testing's
+				// cleanup, af03bbab).
 				states := cleanStates(merged, closed, archived)
-				if len(states) == 0 {
-					return errors.New("nothing to clean: --merged, --closed, or --archived names what")
+				if len(states) == 0 && !legacy {
+					return errors.New("nothing to clean: --merged, --closed, or --legacy names what")
 				}
-				if plans, err = e.PlanClean(ctx, states...); err != nil {
-					return err
+				if len(states) > 0 {
+					if plans, err = e.PlanClean(ctx, states...); err != nil {
+						return err
+					}
 				}
 			}
 			session, err := startSession(ctx, e, model.SessionForeground)
@@ -164,16 +169,24 @@ cancel stops a check. None means another.`,
 			removed, leftoverErr := e.RemoveLeftovers(ctx, session, leftovers)
 			older, legacyErr := e.RemoveLegacy(ctx, older)
 			streams.emit(map[string]any{"branches": cleanView(done), "leftovers": leftoversView(removed), "legacy": legacyView(older), "applied": true})
+			// What was done is one line a branch, its plan having been
+			// shown in full: thirty branches' blocks printed twice were
+			// a lot to read (field testing's cleanup, af03bbab).
 			fmt.Fprintln(streams.Out)
-			writeClean(streams.Out, done, true)
+			writeCleanDone(streams.Out, done)
 			writeLeftovers(streams.Out, removed, true)
-			writeLegacy(streams.Out, older, true)
+			if n := removedLegacy(older); n > 0 {
+				fmt.Fprintf(streams.Out, "removed  %s from before v3\n", prose.Plural(n, "branch"))
+			}
 			return errors.Join(err, leftoverErr, legacyErr)
 		},
 	}
 	cmd.Flags().BoolVar(&merged, "merged", true, "merged branches: their worktree, local branch, and fork branch")
 	cmd.Flags().BoolVar(&closed, "closed", false, "also branches whose pull request closed unmerged: their worktree only")
 	cmd.Flags().BoolVar(&archived, "archived", false, "also archived branches: their worktree only")
+	// archive takes the worktree itself now (the command-line UX review,
+	// §5); --archived stays for one archived before, hidden.
+	_ = cmd.Flags().MarkHidden("archived")
 	cmd.Flags().BoolVar(&legacy, "legacy", false, "also sort the branches from before v3, removing those master has")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "remove without asking")
 	cmd.Flags().BoolVar(&automatic, "automatic", false, "run automatic cleanup's pass, when it is due, as a command starts it once its work is done")
@@ -363,4 +376,45 @@ func cleanWords(what string) string {
 		return "worktree " + tilde(path)
 	}
 	return what
+}
+
+// writeCleanDone says what clean did, one line a branch: what it removed,
+// and what it kept and why.
+func writeCleanDone(out io.Writer, plans []engine.CleanBranch) {
+	for _, plan := range plans {
+		var removed, kept []string
+		for _, step := range plan.Steps {
+			switch {
+			case step.Kept != "":
+				kept = append(kept, cleanWords(step.What)+" ("+step.Kept+")")
+			case step.Done:
+				removed = append(removed, cleanWords(step.What))
+			}
+		}
+		line := plan.Branch.ShortName()
+		if len(removed) > 0 {
+			line += ": removed " + strings.Join(removed, ", ")
+		}
+		if len(kept) > 0 {
+			sep := ": "
+			if len(removed) > 0 {
+				sep = "; "
+			}
+			line += sep + "kept " + strings.Join(kept, ", ")
+		}
+		if len(removed) > 0 || len(kept) > 0 {
+			fmt.Fprintln(out, line)
+		}
+	}
+}
+
+// removedLegacy counts the branches from before v3 clean removed.
+func removedLegacy(branches []engine.LegacyBranch) int {
+	n := 0
+	for _, branch := range branches {
+		if branch.Done {
+			n++
+		}
+	}
+	return n
 }
