@@ -39,7 +39,7 @@ tools/acceptance/resume.sh done     # answer a WAITING checkpoint: done, skip, o
   - H9, in the quick stage, your own `~/.dockhand`, `~/.tart`, and `~/.ssh` as they were. Your own dockhand at work during a run, such as a `serve` agent, trips it too.
   
   A row any of them breaks is a blocker, whatever it said of itself.
-- **Results** are `$ACCEPT_STATE/results/<candidate>/<row>.json`, with each invariant's verdict and the row's log.
+- **Results** are `$ACCEPT_STATE/results/<candidate>/<row>.json`, with each invariant's verdict, the row's log, and `github_requests`, what the row spent of the stage's token's hourly allowance, read from GitHub's `rate_limit`, which costs none of it. dockhand's own `--json` envelopes carry `github_requests` for each command, and `-v` says it.
 - **The self-test** (`selftest.sh`) runs a harmless row, two that change only what they say, and one made to break each invariant, against a stand-in dockhand, `gh`, and `tart` in `selftest/bin`. Each must be caught by its own invariant alone.
 - **Results are labelled** with the rc tag at HEAD where there is one, and HEAD's short commit otherwise, unless `--candidate` names it.
 - **The stage's GitHub token** (`ACCEPT_GH_TOKEN`, or `~/.dockhand-acceptance/gh-token`) needs no scopes. GitHub's hourly limit is per account, so the test account's token keeps the stage from spending what your own work, field testing included, draws on.

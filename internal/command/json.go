@@ -38,6 +38,8 @@ type outputMode struct {
 	// whole, while a command goes on from one step to the next, is its one
 	// result, which each step's result is gathered into (linkSteps).
 	whole gatherer
+	// githubRequests is how many requests the command sent GitHub's API.
+	githubRequests int64
 }
 
 // A gatherer is a command's result that the steps it goes on to report
@@ -96,10 +98,12 @@ type envelope struct {
 	ExitCode int     `json:"exit_code"`
 	Error    *string `json:"error"`
 	Result   any     `json:"result"`
+	// GitHubRequests is how many requests the command sent GitHub's API.
+	GitHubRequests int64 `json:"github_requests"`
 }
 
 func writeEnvelope(out io.Writer, mode *outputMode, err error) error {
-	value := envelope{Version: JSONVersion, Command: mode.command, Result: mode.result}
+	value := envelope{Version: JSONVersion, Command: mode.command, Result: mode.result, GitHubRequests: mode.githubRequests}
 	if err != nil {
 		value.ExitCode = ExitCode(err)
 		if message := err.Error(); message != "" {

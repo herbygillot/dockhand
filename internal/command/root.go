@@ -11,7 +11,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/buildinfo"
+	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/prose"
 )
 
 // Streams are the standard streams a command reads and writes.
@@ -267,8 +269,16 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	root.SetIn(streams.In)
 	root.SetOut(streams.Out)
 	root.SetErr(streams.Err)
+	before := github.Requests()
 	err := root.ExecuteContext(ctx)
 	settings.cleanupAfter(streams, mode.command)
+	// What the command spent of GitHub's hourly allowance, said with -v
+	// and in the envelope, so a run that runs out can say which command
+	// spent it (the M1's run at 10aac0c3).
+	mode.githubRequests = github.Requests() - before
+	if verbosity > 0 && mode.githubRequests > 0 {
+		streams.status.say(fmt.Sprintf("GitHub's API: %s", prose.Plural(int(mode.githubRequests), "request")))
+	}
 	if !mode.json {
 		return err
 	}

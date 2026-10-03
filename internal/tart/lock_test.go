@@ -55,6 +55,9 @@ func TestStateFollowsDockhandsTartHome(t *testing.T) {
 // Locks live in dockhand's own directory, never inside the Tart home, and
 // every spelling of one Tart home shares them.
 func TestLocksLiveOutsideTheTartHomeKeyedByItsCanonicalPath(t *testing.T) {
+	// ~/.dockhand's, whatever dockhand's Tart home the environment names,
+	// as the quick stage's does (the M1's run at 10aac0c3, A0).
+	t.Setenv("DOCKHAND_TART_HOME", "")
 	home := t.TempDir()
 	alias := filepath.Join(t.TempDir(), "alias")
 	require.NoError(t, os.Symlink(home, alias))

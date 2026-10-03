@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	gh "github.com/google/go-github/v91/github"
@@ -115,6 +116,15 @@ var limitSleep = func(ctx context.Context, d time.Duration) error {
 // GitHub asks of a client: a write, which is never retried here, and a
 // read the limit holds longer. Before, the reset was computed and nothing
 // read it (the limits sweep, 2026-10-01).
+// apiRequests counts the requests this process sent GitHub's API, each
+// try of each, so a run can say what it spent of the hour's allowance
+// (the M1's run at 10aac0c3: the test account's 5,000 went before B1,
+// and nothing said which command spent them).
+var apiRequests atomic.Int64
+
+// Requests is how many requests this process has sent GitHub's API.
+func Requests() int64 { return apiRequests.Load() }
+
 type rateLimited struct {
 	next   http.RoundTripper
 	limits *rateLimits
@@ -133,6 +143,7 @@ func (t rateLimited) RoundTrip(req *http.Request) (*http.Response, error) {
 		waited = true
 	}
 	for {
+		apiRequests.Add(1)
 		response, err := t.next.RoundTrip(req)
 		if err != nil {
 			return nil, err

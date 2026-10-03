@@ -87,11 +87,31 @@ row_fail() { row_result fail "$1"; }
 say() { printf '%s\n' "$*" >&2; }
 
 # with_timeout runs a command, killing it after some seconds: a command
-# that would hang reads as exit 142 (SIGALRM) rather than holding the run.
+# that would hang reads as exit 142 rather than holding the run. It sends
+# TERM at the deadline, and KILL five seconds on, from a parent that
+# waits: exec'ing the command under an alarm left it to the command,
+# and Go ignores SIGALRM, so a dockhand check waiting on the VM limit ran
+# 2h47m past its 180 seconds (the M1's run at 10aac0c3, D-R2).
 with_timeout() {
 	local seconds=$1
 	shift
-	perl -e 'alarm shift; exec @ARGV' "$seconds" "$@"
+	perl -e '
+		my $seconds = shift;
+		my $pid = fork();
+		die "fork: $!" unless defined $pid;
+		if ($pid == 0) { exec { $ARGV[0] } @ARGV or exit 127; }
+		$SIG{ALRM} = sub {
+			kill "TERM", $pid;
+			for (1 .. 5) { exit 142 if waitpid($pid, 1) == $pid; sleep 1; }
+			kill "KILL", $pid;
+			waitpid($pid, 0);
+			exit 142;
+		};
+		alarm $seconds;
+		waitpid($pid, 0);
+		alarm 0;
+		exit(($? & 127) ? 128 + ($? & 127) : $? >> 8);
+	' "$seconds" "$@"
 }
 
 # dh_bg starts dockhand in the background, its output in a file of the

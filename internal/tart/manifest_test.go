@@ -33,6 +33,7 @@ func TestAnImagesOriginIsItsSourceAndWhatSetupPutInIt(t *testing.T) {
 func TestAnImagesRecordIsKeptBesideTheTartHome(t *testing.T) {
 	user := t.TempDir()
 	t.Setenv("HOME", user)
+	t.Setenv("DOCKHAND_TART_HOME", "")
 	home := filepath.Join(user, "tart")
 	require.NoError(t, os.MkdirAll(home, 0o700))
 	_, found, err := ReadImageRecord(home, "dockhand-base-tahoe")

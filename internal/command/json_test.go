@@ -22,6 +22,9 @@ type decoded struct {
 	ExitCode int            `json:"exit_code"`
 	Error    *string        `json:"error"`
 	Result   map[string]any `json:"result"`
+	// GitHubRequests is a pointer, so an envelope without it is told
+	// from one that sent none.
+	GitHubRequests *int64 `json:"github_requests"`
 }
 
 // jsonOf runs a command line with --json and decodes all of standard
@@ -64,6 +67,7 @@ func TestJSONEnvelopes(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "check", planned.Command)
 	require.Nil(t, planned.Error)
+	require.NotNil(t, planned.GitHubRequests, "every envelope says what it spent of GitHub's API")
 	require.Equal(t, "jq", dig(t, planned.Result, "plan", "targets", 0, "name"))
 	require.Equal(t, "substantive", dig(t, planned.Result, "plan", "targets", 0, "kind"))
 	require.Equal(t, "command", dig(t, planned.Result, "plan", "builds", 0, "environment", "provider"))

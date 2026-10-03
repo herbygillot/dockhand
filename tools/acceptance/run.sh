@@ -59,6 +59,15 @@ if [ -z "$rows" ]; then
 	done
 fi
 
+# github_used is how much of the stage's token's hourly GitHub allowance is
+# spent, as GitHub's rate_limit endpoint says, which costs none of it;
+# empty without a token. Each row records what it spent (the M1's run at
+# 10aac0c3: the allowance went before B1, and nothing said where).
+github_used() {
+	[ -n "${GH_TOKEN:-}" ] || return 0
+	curl -fsS -m 10 -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/rate_limit 2>/dev/null | jq -r '.resources.core.used // empty' 2>/dev/null
+}
+
 results="$ACCEPT_STATE/results/$candidate"
 mkdir -p "$results"
 failed=0
@@ -100,6 +109,7 @@ for row in $rows; do
 	fi
 	mkdir -p "$ROW_DIR/json"
 	: >"$ROW_DIR/out.log"
+	used_before=$(github_used)
 	export ROW_DIR ROW_ID=$row ROW_LIB="$here/lib"
 	(
 		set +e
@@ -124,6 +134,11 @@ for row in $rows; do
 		harm_check
 	) >"$ROW_DIR/runner.log" 2>&1 || :
 
+	used_after=$(github_used)
+	spent=""
+	if [ -n "$used_before" ] && [ -n "$used_after" ] && [ "$used_after" -ge "$used_before" ]; then
+		spent=$((used_after - used_before))
+	fi
 	result=$(cat "$ROW_DIR/result" 2>/dev/null || echo fail)
 	why=$(cat "$ROW_DIR/why" 2>/dev/null || echo "the row gave no result")
 	[ -f "$ROW_DIR/result" ] || why="the row gave no result"
@@ -144,7 +159,9 @@ for row in $rows; do
 	jq -n --arg row "$row" --arg stage "$stage" --arg candidate "$candidate" --arg result "$result" --arg why "$why" \
 		--arg log "$ROW_DIR/out.log" --argjson harm "$(for v in "$ROW_DIR"/harm/H*; do [ -f "$v" ] && jq -n --arg k "$(basename "$v")" --arg v "$(cat "$v")" '{($k): $v}'; done | jq -s 'add // {}')" \
 		--argjson exits "$(for e in "$ROW_DIR"/json/*.json.exit; do [ -f "$e" ] && cat "$e"; done | jq -s '.')" \
-		'{row: $row, stage: $stage, candidate: $candidate, result: $result, why: $why, harm: $harm, exit_codes: $exits, log: $log}' >"$results/$row.json"
+		--arg spent "$spent" \
+		'{row: $row, stage: $stage, candidate: $candidate, result: $result, why: $why, harm: $harm, exit_codes: $exits, log: $log,
+		  github_requests: (if $spent == "" then null else ($spent | tonumber) end)}' >"$results/$row.json"
 	printf '%-8s %-14s %s\n' "$row" "$result" "$why"
 	case "$result" in
 	pass | "refused well" | "known issue") ;;

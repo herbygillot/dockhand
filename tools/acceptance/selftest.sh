@@ -139,4 +139,24 @@ for answer in done fail; do
 	esac
 	rm -rf "$tmp"
 done
+# with_timeout ends a command that ignores the alarm and TERM, as Go does
+# SIGALRM, by KILL after its grace, and keeps a command's own exit.
+(
+	ROW_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dockhand-selftest.XXXXXX")
+	# shellcheck source=lib/common.sh
+	. "$here/lib/common.sh"
+	started=$SECONDS
+	status=0
+	with_timeout 2 sh -c 'trap "" ALRM TERM; sleep 30' || status=$?
+	took=$((SECONDS - started))
+	own=0
+	with_timeout 5 sh -c 'exit 7' || own=$?
+	rm -rf "$ROW_DIR"
+	if [ "$status" = 142 ] && [ "$took" -lt 15 ] && [ "$own" = 7 ]; then
+		echo "selftest: with_timeout ends a command that ignores its alarm, in ${took}s, and keeps a command's own exit"
+	else
+		echo "selftest: with_timeout gave $status after ${took}s, and $own for a command's own exit 7"
+		exit 1
+	fi
+) || fail=1
 exit "$fail"
