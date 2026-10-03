@@ -60,7 +60,9 @@ jobs:
 
   # Row A6 of the release-candidate test (the project's plan/prime-time.md):
   # an Intel Mac, which prepares changes and checks them on GitHub. The
-  # suite, MacPorts' evaluator included, runs on x86_64, and dockhand builds.
+  # suite runs on x86_64, and dockhand, run as a new user would, sets up,
+  # plans an update as x86_64 evaluates it, and says a check has nowhere
+  # to build here but GitHub.
   intel:
     runs-on: macos-15-intel
     timeout-minutes: 40
@@ -89,10 +91,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          git clone -q --depth 1 https://github.com/macports/macports-ports.git "$RUNNER_TEMP/ports"
-          export MACPORTS_TREE="$RUNNER_TEMP/ports" DOCKHAND_DB="$RUNNER_TEMP/dockhand.db" DOCKHAND_CONFIG="$RUNNER_TEMP/config.toml"
+          # $RUNNER_TEMP/ports is MacPorts' own source, root's (macports.sh).
+          git clone -q --depth 1 https://github.com/macports/macports-ports.git "$RUNNER_TEMP/ports-tree"
+          export MACPORTS_TREE="$RUNNER_TEMP/ports-tree" DOCKHAND_DB="$RUNNER_TEMP/dockhand.db" DOCKHAND_CONFIG="$RUNNER_TEMP/config.toml"
           ./dockhand setup -y | tee "$RUNNER_TEMP/setup.log"
           grep -q 'tart' "$RUNNER_TEMP/setup.log"
           ./dockhand update jq --new --plan | tee "$RUNNER_TEMP/plan.log"
-          if ./dockhand check --plan 2>"$RUNNER_TEMP/check.err"; then echo "a check planned with nowhere to build" >&2; exit 1; fi
+          ./dockhand start intel-check
+          if ./dockhand check -b intel-check --plan 2>"$RUNNER_TEMP/check.err"; then echo "a check planned with nowhere to build" >&2; exit 1; fi
           grep -q -- '--on github' "$RUNNER_TEMP/check.err"
