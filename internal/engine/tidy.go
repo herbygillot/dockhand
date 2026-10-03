@@ -209,6 +209,20 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 			}
 		}
 	}
+	// Then the directories dockhand edited, an update's before the rest,
+	// each in the order edited: the rebuilds --revbump-dependents makes
+	// follow the library they rebuild for, where the names' order put
+	// games/taisei before textproc/libunibreak (field testing, batch 12).
+	changes := func(directory string) bool {
+		return slices.ContainsFunc(changed, func(path string) bool { return groupOf(path) == directory })
+	}
+	for _, updates := range []bool{true, false} {
+		for _, edit := range edits {
+			if (edit.Kind == model.EditUpdate) == updates && edit.Directory != "" && !slices.Contains(order, edit.Directory) && changes(edit.Directory) {
+				order = append(order, edit.Directory)
+			}
+		}
+	}
 	for _, path := range changed {
 		directory := groupOf(path)
 		if !slices.Contains(order, directory) {

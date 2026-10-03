@@ -31,7 +31,8 @@ type Change struct {
 	//     "years" where only a license's copyright years moved, or "moved"
 	//     where license text moved between files and none is new, and
 	//     "version" where a build file changed only the project's version
-	//     it declares;
+	//     it declares, or "library" where a Makefile.am's -version-info
+	//     moved, a new library version;
 	//   - a dependency "adds", "drops", or "moves", or "native" for a crate
 	//     new to a Cargo.lock that links a native library, and "unlinked"
 	//     for one gone from it;
@@ -229,6 +230,8 @@ func Compare(older, newer project.Reading, versions Versions, named func(option 
 				Message: fmt.Sprintf("upstream's %s %s", name, what)})
 		}
 	}
+	changes = append(changes, libraryVersions(older.LibraryVersions, newer.LibraryVersions)...)
+	changes = append(changes, cargoBinaries(older.Files, newer.Files)...)
 	changes = licenseMove(changes, before, after)
 	for i := range changes {
 		changes[i].System = project.SystemOf(changes[i].Path)
@@ -599,6 +602,81 @@ const cmakeNamed = 5
 // diff, where nothing concerned the port (the fluent-bit run, batch 23).
 // It says; what holds is assess's, and D12's: any other change to a build
 // file still holds.
+// libraryVersions are the libraries whose libtool version moved, each a
+// Makefile.am's -version-info anywhere in the source: a new one names a
+// new dylib, which what links the library needs rebuilding against
+// (field testing, batch 12: libunibreak's src/Makefile.am, 7:0:0 to
+// 8:0:0, which the root's Makefile.am alone didn't show).
+func libraryVersions(old, now map[string]string) []Change {
+	var changes []Change
+	for _, name := range slices.Sorted(maps.Keys(now)) {
+		was, had := old[name]
+		if !had || was == now[name] {
+			continue
+		}
+		changes = append(changes, Change{Kind: "build", How: "library", Path: name,
+			Message: fmt.Sprintf("upstream's %s moves its library's -version-info from %s to %s, a new library version", name, was, now[name])})
+	}
+	return changes
+}
+
+// cargoBinaries is a change in the programs a Cargo project builds, its
+// [[bin]] targets', or else each package's own, by name, across its root
+// and the members a reading kept: a Portfile's destroot names them, and a
+// renamed one isn't there to install. jgenesis 0.14.0 merged jgenesis-cli
+// and jgenesis-gui into one jgenesis, which nothing said (field testing,
+// batch 12). A library package's renaming reads as one too, which a look
+// settles.
+func cargoBinaries(old, now map[string]project.File) []Change {
+	binaries := func(files map[string]project.File) []string {
+		var names []string
+		for name, file := range files {
+			if path.Base(name) != "Cargo.toml" || file.Truncated {
+				continue
+			}
+			manifest, err := project.ReadCargoManifest(file.Data)
+			if err != nil {
+				continue
+			}
+			found := manifest.Bins
+			if len(found) == 0 && manifest.Package != nil && manifest.Package.Name != "" {
+				found = []string{manifest.Package.Name}
+			}
+			for _, binary := range found {
+				if !slices.Contains(names, binary) {
+					names = append(names, binary)
+				}
+			}
+		}
+		slices.Sort(names)
+		return names
+	}
+	before, after := binaries(old), binaries(now)
+	if len(before) == 0 || len(after) == 0 || slices.Equal(before, after) {
+		return nil
+	}
+	var added, removed []string
+	for _, name := range after {
+		if !slices.Contains(before, name) {
+			added = append(added, name)
+		}
+	}
+	for _, name := range before {
+		if !slices.Contains(after, name) {
+			removed = append(removed, name)
+		}
+	}
+	var said []string
+	if len(added) > 0 {
+		said = append(said, strings.Join(added, ", ")+" added")
+	}
+	if len(removed) > 0 {
+		said = append(said, strings.Join(removed, ", ")+" removed")
+	}
+	return []Change{{Kind: "build", How: "binaries", Path: "Cargo.toml",
+		Message: "upstream's Cargo packages and binaries change: " + strings.Join(said, "; ")}}
+}
+
 // autoconfWords say what a configure.ac's change asks of the build, as
 // its macros name it: ": --enable-gui added; pkg-config module gtk4
 // added", or nothing where none moved (field testing, batch 11:

@@ -508,10 +508,43 @@ func (e *Engine) title(plan *SubmitPlan) {
 				break
 			}
 		}
+	default:
+		plan.Title = updateWithRebuilds(plan.Commits)
 	}
 	if plan.Title == "" {
 		plan.Blocking = append(plan.Blocking, "the pull request needs a title, since the branch changes several ports: give one with --title")
 	}
+}
+
+// updateWithRebuilds is the subject of the one commit of a branch that
+// isn't a rebuild for it, where every other is, as update
+// --revbump-dependents makes them: "libunibreak: update to 8.0" beside
+// "taisei: rebuild for libunibreak 8.0" titles the pull request. It's
+// empty for any other branch (field testing, batch 12).
+func updateWithRebuilds(commits []git.HistoryCommit) string {
+	var update string
+	var rebuilds []string
+	for _, commit := range commits {
+		subject := commit.Subject()
+		if _, rest, ok := strings.Cut(subject, ": rebuild for "); ok {
+			rebuilds = append(rebuilds, rest)
+			continue
+		}
+		if update != "" {
+			return ""
+		}
+		update = subject
+	}
+	port, _, ok := strings.Cut(update, ":")
+	if !ok || len(rebuilds) == 0 {
+		return ""
+	}
+	for _, rest := range rebuilds {
+		if !strings.HasPrefix(rest, port+" ") {
+			return ""
+		}
+	}
+	return update
 }
 
 // searchOthers looks for other open pull requests for the same ports.
@@ -796,11 +829,18 @@ func (e *Engine) hasForkRemote(ctx context.Context) bool {
 // loginError says why asking GitHub who you are failed: a rate limit is
 // one to wait out, never a login wanting (field testing, batch 11: every
 // submit after a drain said it needed a login, and the limit had run out).
+//
+// Only a login missing or refused is said as one: a request that never
+// got an answer, as in GitHub's outage, is said as GitHub out of reach
+// (field testing, batch 12: yank's http2 timeout read as a login wanting).
 func loginError(what string, err error) error {
 	if limited := (*forge.RateLimitError)(nil); errors.As(err, &limited) {
 		return fmt.Errorf("%s waits on GitHub: %w", what, err)
 	}
-	return fmt.Errorf("%s needs your GitHub login: %w", what, err)
+	if errors.Is(err, forge.ErrAuthentication) {
+		return fmt.Errorf("%s needs your GitHub login: %w", what, err)
+	}
+	return fmt.Errorf("%s couldn't ask GitHub who you are: %w", what, err)
 }
 
 // Fork finds your fork: the one Git remote that pushes to a fork of

@@ -279,3 +279,28 @@ func TestALinkedPortUnderAVariantIsBumpedAndCanBeExcepted(t *testing.T) {
 	require.Equal(t, []string{"harbor-sync"}, linked.Excepted)
 	require.Equal(t, []string{"harbor-cli", "harbor-viewer"}, dependentNames(linked.Bump))
 }
+
+// tidy commits the library's update before the rebuilds for it, though a
+// dependent's directory sorts first by name, textproc/aaa before
+// textproc/jq (field testing, batch 12:
+// games/taisei came before textproc/libunibreak).
+func TestTheUpdateIsCommittedBeforeTheRebuildsForIt(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	write(t, f.upstream, map[string]string{"textproc/aaa/Portfile": "name aaa\nversion 1\n"})
+	testsupport.Git(t, f.upstream, "add", "-A")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "aaa")
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-update"})
+	require.NoError(t, err)
+	_, err = e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
+	require.NoError(t, err)
+	e.PortReader = fakePorts{directories: map[string][]macports.PortInfo{"textproc/jq": {port("jq")}, "textproc/aaa": {port("aaa", "jq")}}}
+	_, err = e.RevbumpLinked(t.Context(), branch, Update{Port: "jq", After: PortVersion{Version: "1.8.1"}}, nil, false)
+	require.NoError(t, err)
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Len(t, plan.Groups, 2)
+	require.Equal(t, "textproc/jq", plan.Groups[0].Directory, "the update first")
+	require.Equal(t, "aaa: rebuild for jq 1.8.1", plan.Groups[1].Subject())
+}

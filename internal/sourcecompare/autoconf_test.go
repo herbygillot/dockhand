@@ -18,3 +18,29 @@ func TestAConfigureAcChangeSaysWhatItAsks(t *testing.T) {
 	require.Equal(t, ": --enable-contrib added; pkg-config module libtzdb added; library m removed", autoconfWords(old, now))
 	require.Equal(t, ", in nothing it names as an option, a pkg-config module, or a library", autoconfWords(old, old))
 }
+
+// A Makefile.am's -version-info moving anywhere in the source is a new
+// library version, said by its file (field testing, batch 12: libunibreak).
+func TestAMovedLibtoolVersionIsSaid(t *testing.T) {
+	t.Parallel()
+	changes := libraryVersions(map[string]string{"src/Makefile.am": "7:0:0", "tools/Makefile.am": "1:0:0"}, map[string]string{"src/Makefile.am": "8:0:0", "tools/Makefile.am": "1:0:0", "new/Makefile.am": "1:0:0"})
+	require.Equal(t, []Change{{Kind: "build", How: "library", Path: "src/Makefile.am", Message: "upstream's src/Makefile.am moves its library's -version-info from 7:0:0 to 8:0:0, a new library version"}}, changes)
+}
+
+// The programs a Cargo project builds changing is said: jgenesis 0.14.0
+// merged jgenesis-cli and jgenesis-gui into one jgenesis (field testing,
+// batch 12).
+func TestACargoProjectsChangedBinariesAreSaid(t *testing.T) {
+	t.Parallel()
+	old := map[string]project.File{
+		"Cargo.toml":              {Data: []byte("[workspace]\nmembers = [\"jgenesis-cli\", \"jgenesis-gui\"]\n")},
+		"jgenesis-cli/Cargo.toml": {Data: []byte("[package]\nname = \"jgenesis-cli\"\n")},
+		"jgenesis-gui/Cargo.toml": {Data: []byte("[package]\nname = \"jgenesis-gui\"\n")},
+	}
+	now := map[string]project.File{
+		"Cargo.toml":          {Data: []byte("[workspace]\nmembers = [\"jgenesis\"]\n")},
+		"jgenesis/Cargo.toml": {Data: []byte("[package]\nname = \"jgenesis\"\n")},
+	}
+	require.Equal(t, []Change{{Kind: "build", How: "binaries", Path: "Cargo.toml", Message: "upstream's Cargo packages and binaries change: jgenesis added; jgenesis-cli, jgenesis-gui removed"}}, cargoBinaries(old, now))
+	require.Empty(t, cargoBinaries(now, now))
+}

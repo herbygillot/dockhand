@@ -5,6 +5,7 @@ import (
 	"io"
 	"maps"
 	"path"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -63,6 +64,13 @@ type Reading struct {
 	// DirectoryDepth deep, sorted: a Portfile's build names some, as
 	// semgrep's ${worksrcpath}/pfff, which a new version may not have.
 	Directories []string `json:",omitempty"`
+	// LibraryVersions are the libtool version each Makefile.am anywhere
+	// in the archive gives the libraries it builds, -version-info's
+	// current:revision:age, by the file's path below Top: a new one names
+	// a new dylib, whose dependents need rebuilding. libunibreak 8.0 moved
+	// src/Makefile.am's from 7:0:0 to 8:0:0, and only the root's
+	// Makefile.am was read (field testing, batch 12).
+	LibraryVersions map[string]string `json:",omitempty"`
 }
 
 // DirectoryDepth is how deep below Top a reading lists directories.
@@ -138,6 +146,7 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 	// kept in this pass too.
 	modules := map[string]File{}
 	tops := map[string]bool{}
+	libraries := map[string]string{}
 	directories := map[string]bool{}
 	flat := false
 	has := map[string]bool{}
@@ -162,6 +171,21 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 			has[""] = true
 		}
 		keep := candidates
+		if path.Base(name) == "Makefile.am" {
+			data, err := io.ReadAll(io.LimitReader(member.Body, FileLimit))
+			if err != nil {
+				return err
+			}
+			if versions := libtoolVersions(data); versions != "" {
+				libraries[name] = versions
+			}
+			// What a reading keeps of the root's own is read from these
+			// bytes, the member's body being read once.
+			if wanted(name, subdirectory) || wanted(name, "") || nested && (wanted(rest, subdirectory) || wanted(rest, "")) {
+				keep[name] = File{Data: data, Truncated: len(data) >= FileLimit}
+			}
+			return nil
+		}
 		if !wanted(name, subdirectory) && !wanted(name, "") && (!nested || !wanted(rest, subdirectory) && !wanted(rest, "")) {
 			switch {
 			case path.Base(name) == "Cargo.toml":
@@ -234,6 +258,19 @@ func Read(ctx context.Context, filename string, spec Spec) (Reading, error) {
 		if wanted(rest, found.Root) {
 			found.Files[rest] = file
 		}
+	}
+	for name, versions := range libraries {
+		rest := name
+		if found.Top != "" {
+			var ok bool
+			if rest, ok = strings.CutPrefix(name, found.Top+"/"); !ok {
+				continue
+			}
+		}
+		if found.LibraryVersions == nil {
+			found.LibraryVersions = map[string]string{}
+		}
+		found.LibraryVersions[rest] = versions
 	}
 	found.cargoMembers(manifests)
 	found.cmakeIncludes(modules)
@@ -469,4 +506,17 @@ func glob(pattern, segments []string) bool {
 	}
 	matched, err := path.Match(pattern[0], segments[0])
 	return err == nil && matched && glob(pattern[1:], segments[1:])
+}
+
+// libtoolVersion is a -version-info flag's value, current:revision:age.
+var libtoolVersion = regexp.MustCompile(`-version-info\s+([0-9]+:[0-9]+:[0-9]+)`)
+
+// libtoolVersions are the -version-info values a Makefile.am gives,
+// joined in order, or empty for one that gives none.
+func libtoolVersions(data []byte) string {
+	var found []string
+	for _, match := range libtoolVersion.FindAllSubmatch(data, -1) {
+		found = append(found, string(match[1]))
+	}
+	return strings.Join(found, " ")
 }

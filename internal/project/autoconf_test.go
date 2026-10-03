@@ -19,3 +19,10 @@ AC_SEARCH_LIBS([clock_gettime], [rt posix4])
 `))
 	require.Equal(t, AutoconfFacts{Enables: []string{"fast-arith"}, Withs: []string{"old-links"}, Modules: []string{"gio-2.0", "glib-2.0"}, Libraries: []string{"m", "posix4", "rt"}}, facts)
 }
+
+// Every Makefile.am's -version-info is read, however deep.
+func TestLibtoolVersionsAreReadFromAMakefileAm(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "8:0:0", libtoolVersions([]byte("libunibreak_la_LDFLAGS = -no-undefined -version-info 8:0:0\n")))
+	require.Empty(t, libtoolVersions([]byte("SUBDIRS = src\n")))
+}

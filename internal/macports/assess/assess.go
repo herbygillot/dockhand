@@ -692,6 +692,18 @@ func (a *assessment) build(change sourcecompare.Change, pair Pair) model.Upstrea
 	if change.How == "version" || change.How == "options" {
 		return finding(change, false)
 	}
+	// A new library version names a new dylib: what links it needs a
+	// rebuild, which update's --revbump-dependents makes.
+	if change.How == "binaries" {
+		found := finding(change, true)
+		found.Message += ": the Portfile's destroot may name the old ones"
+		return found
+	}
+	if change.How == "library" {
+		found := finding(change, true)
+		found.Message += ": the ports that link it need rebuilding, which update --revbump-dependents does"
+		return found
+	}
 	if backend, ok := pair.After.PythonBackend(); ok && !project.BackendReads(backend, change.Path) {
 		reason := fmt.Sprintf("the project builds with %s, which doesn't read %s", backend, path.Base(change.Path))
 		a.cover(model.Coverage{Path: change.Path, System: string(change.System), Relevance: "unknown", Treatment: "set-apart", Policy: "build-backend", Reason: reason})

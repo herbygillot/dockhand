@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -141,11 +143,49 @@ func dependencyPatches(input *sourceInput, kind string) error {
 		if err != nil {
 			return err
 		}
-		if changed(string(data)) {
+		if changed(string(data)) && !(kind == depblock.Cargo && featuresOnly(data)) {
 			return fmt.Errorf("%w: patch %s edits dependency manifests; regenerate manually", ErrUnsupported, name)
 		}
 	}
 	return nil
+}
+
+// cargoFeatures is a dependency's features as a Cargo.toml line spells
+// them, its list and whether its defaults stay.
+var cargoFeatures = regexp.MustCompile(`,?\s*(default-features|features)\s*=\s*(\[[^\]]*\]|true|false)`)
+
+// featuresOnly says whether a patch changes nothing of a Cargo project's
+// dependencies but the features it asks of them: it touches no
+// Cargo.lock, and its Cargo.toml lines differ only in their features
+// lists. Cargo resolves a lock for every feature at once, so asking other
+// features of a dependency leaves the lock, and the crates, as they are
+// (field testing, batch 12: jgenesis's patch asked sdl3 for
+// use-pkg-config, and was refused).
+func featuresOnly(patch []byte) bool {
+	var removed, added []string
+	cargo := false
+	for _, line := range strings.Split(string(patch), "\n") {
+		switch {
+		case strings.HasPrefix(line, "+++ ") || strings.HasPrefix(line, "--- "):
+			name := strings.Fields(strings.TrimSpace(line[4:]))
+			if len(name) == 0 {
+				return false
+			}
+			base := path.Base(name[0])
+			if base == "Cargo.lock" {
+				return false
+			}
+			cargo = base == "Cargo.toml"
+		case !cargo:
+		case strings.HasPrefix(line, "-"):
+			removed = append(removed, strings.TrimSpace(cargoFeatures.ReplaceAllString(line[1:], "")))
+		case strings.HasPrefix(line, "+"):
+			added = append(added, strings.TrimSpace(cargoFeatures.ReplaceAllString(line[1:], "")))
+		}
+	}
+	slices.Sort(removed)
+	slices.Sort(added)
+	return len(removed)+len(added) > 0 && slices.Equal(removed, added)
 }
 
 // dependencyBase is the port with its dependency declarations stripped, as
@@ -237,7 +277,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	// A registry crate the Portfile pins at another version than the lock
 	// is an override, kept until the new lock moves past it; any other
 	// difference is refused, named (termusic's, field testing, 2026-10-02).
-	var overrides []depblock.Difference
+	var overrides, keptModules []depblock.Difference
 	for _, name := range slices.Sorted(maps.Keys(plan.Values)) {
 		differences, err := depblock.Differences(name, plan.Values[name], oldValues[name])
 		if err != nil {
@@ -247,6 +287,12 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 		for _, difference := range differences {
 			if name == depblock.Cargo && difference.Override() {
 				overrides = append(overrides, difference)
+				continue
+			}
+			// A Go module kept by hand beside go2port's, which leaves out
+			// test-only ones, is kept where the new go.sum still pins it.
+			if name == depblock.Go && difference.Kept {
+				keptModules = append(keptModules, difference)
 				continue
 			}
 			named = append(named, difference.Name)
@@ -285,6 +331,22 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if err != nil {
 		return Result{}, err
 	}
+	var keptNames []string
+	if len(keptModules) > 0 {
+		gosum, _, err := depblock.Manifest(ctx, nextInput.Archive, nextInput.Worksrcdir, "go.sum")
+		if err != nil {
+			return Result{}, fmt.Errorf("%w: existing %s keeps modules go2port leaves out, and %s's go.sum couldn't be read to see whether it still pins them: %w", ErrUnsupported, depblock.Go, request.Release.Version, err)
+		}
+		for _, kept := range keptModules {
+			if !depblock.GoSumPins(gosum, kept.Name, kept.Declared) {
+				return Result{}, fmt.Errorf("%w: existing %s keeps %s %s, which go2port leaves out, and %s's go.sum no longer pins it there; preserve this override with manual preparation", ErrUnsupported, depblock.Go, kept.Name, kept.Declared, request.Release.Version)
+			}
+			keptNames = append(keptNames, kept.Name)
+		}
+		if values[depblock.Go], err = depblock.KeepGoModules(plan.Values[depblock.Go], values[depblock.Go], keptNames); err != nil {
+			return Result{}, err
+		}
+	}
 	var dropped []Override
 	for _, override := range overrides {
 		locked, past := override.MovedPast(values[depblock.Cargo])
@@ -309,6 +371,9 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 			}
 			if name == depblock.CargoGit && len(generated.Relabelled) > 0 {
 				block.Notices = append(block.Notices, inertWords(generated.Relabelled))
+			}
+			if name == depblock.Go && len(keptNames) > 0 {
+				block.Notices = append(block.Notices, "Kept the modules go2port leaves out that the Portfile has, since the new go.sum still pins them: "+strings.Join(keptNames, ", ")+".")
 			}
 			if name == depblock.Cargo && cargoUpdate {
 				block.Notices = append(block.Notices, "cargo.update is on; MacPorts re-resolves offline against these crates.")

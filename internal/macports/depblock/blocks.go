@@ -402,6 +402,11 @@ func formattedRows(kind string, tokens []string) ([]string, error) {
 type Difference struct {
 	Name                string
 	Declared, Generated string
+	// Kept is a Go module the Portfile declares that the generator
+	// doesn't, as a test-only module go2port leaves out and a maintainer
+	// keeps by hand; Declared is its version (macpine's c2sp.org/CCTV/age,
+	// field testing, batch 12).
+	Kept bool
 }
 
 // Override reports a registry crate pinned at another version than the
@@ -479,6 +484,9 @@ func Differences(kind string, declared, generated []string) ([]Difference, error
 		difference := Difference{Name: name}
 		if kind == Cargo && len(before[name]) == 1 && len(after[name]) == 1 {
 			difference.Declared, difference.Generated = strings.Fields(before[name][0])[1], strings.Fields(after[name][0])[1]
+		}
+		if kind == Go && len(before[name]) == 1 && len(after[name]) == 0 {
+			difference.Kept, difference.Declared = true, goField(strings.Fields(before[name][0]), "lock")
 		}
 		differences = append(differences, difference)
 	}
@@ -566,4 +574,52 @@ func Entries(kind string, old, next []string) (count, changed int, err error) {
 		}
 	}
 	return count, changed, nil
+}
+
+// goField is a sorted Go row's value for a field, as Differences writes
+// it: the module, then "field value" pairs.
+func goField(row []string, field string) string {
+	for i := 1; i+1 < len(row); i += 2 {
+		if row[i] == field {
+			return row[i+1]
+		}
+	}
+	return ""
+}
+
+// KeepGoModules adds to generated go.vendors tokens the rows declared
+// keeps for modules, as they're declared, in module order: the modules a
+// maintainer keeps that the generator leaves out.
+func KeepGoModules(declared, generated []string, modules []string) ([]string, error) {
+	keptRows, err := goRows(declared)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := goRows(generated)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range keptRows {
+		if slices.Contains(modules, row[0]) {
+			rows = append(rows, row)
+		}
+	}
+	slices.SortStableFunc(rows, func(a, b []string) int { return strings.Compare(a[0], b[0]) })
+	var tokens []string
+	for _, row := range rows {
+		tokens = append(tokens, row...)
+	}
+	return tokens, nil
+}
+
+// GoSumPins says whether a go.sum pins a module at a version, by either
+// of its lines: the module's or its go.mod's.
+func GoSumPins(gosum []byte, module, version string) bool {
+	for _, line := range strings.Split(string(gosum), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == module && (fields[1] == version || fields[1] == version+"/go.mod") {
+			return true
+		}
+	}
+	return false
 }

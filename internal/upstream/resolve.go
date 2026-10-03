@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -76,6 +77,13 @@ func (s *Service) resolve(ctx context.Context, port macports.PortInfo, requested
 	if !explicit && inferred != requested {
 		candidates = append(candidates, inferred)
 	}
+	// A port whose version is its source's with other separators, as
+	// libunibreak's 7.0 is the tag's 7_0, takes the version as people
+	// type it, 8.0, as the tag spells it, 8_0 (field testing, batch 12).
+	spelled := sourceSpelling(requested, port.Version, spec.SourceVersion)
+	if !explicit && spelled != requested {
+		candidates = append(candidates, spelled, spec.Pattern.Tag(spelled))
+	}
 	var evidence []Candidate
 	commits := map[string]string{}
 	for _, candidate := range candidates {
@@ -93,6 +101,9 @@ func (s *Service) resolve(ctx context.Context, port macports.PortInfo, requested
 		commits[tag.Name] = tag.Commit
 	}
 	selection, err := MatchRelease(requested, &spec.Pattern, evidence)
+	if err != nil && spelled != requested {
+		selection, err = MatchRelease(spelled, &spec.Pattern, evidence)
+	}
 	if err != nil {
 		return model.Release{}, err
 	}
@@ -157,4 +168,35 @@ func (s *Service) Check(ctx context.Context, port macports.PortInfo, release mod
 func matchesTag(spec portsource.Spec, tag string) bool {
 	_, ok := spec.Pattern.Version(tag)
 	return ok
+}
+
+// sourceSpelling is a requested version in the source's spelling, where
+// the port's version is the source's with its separators changed, 7.0
+// for 7_0: 8.0 is asked for as 8_0. Otherwise it's the version asked.
+func sourceSpelling(requested, current, source string) string {
+	separators := func(r rune) rune {
+		if r == '.' || r == '_' || r == '-' {
+			return '.'
+		}
+		return r
+	}
+	if source == "" || source == current || strings.Map(separators, source) != strings.Map(separators, current) {
+		return requested
+	}
+	separator := rune(0)
+	for _, r := range source {
+		if r == '.' || r == '_' || r == '-' {
+			separator = r
+			break
+		}
+	}
+	if separator == 0 {
+		return requested
+	}
+	return strings.Map(func(r rune) rune {
+		if r == '.' || r == '_' || r == '-' {
+			return separator
+		}
+		return r
+	}, requested)
 }

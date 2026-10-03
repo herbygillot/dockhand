@@ -2,6 +2,7 @@ package engine
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
@@ -114,5 +116,25 @@ func TestARateLimitIsNotALoginWanting(t *testing.T) {
 	t.Parallel()
 	limited := &forge.RateLimitError{RetryAt: time.Now().Add(time.Hour), Err: errors.New("GitHub's rate limit resets at 09:46, in 60 minutes")}
 	require.EqualError(t, loginError("submit", limited), "submit waits on GitHub: GitHub's rate limit resets at 09:46, in 60 minutes")
-	require.EqualError(t, loginError("submit", errors.New("no credentials")), "submit needs your GitHub login: no credentials")
+	require.EqualError(t, loginError("submit", fmt.Errorf("%w: no credentials", forge.ErrAuthentication)), "submit needs your GitHub login: forge: authentication is required: no credentials")
+	require.EqualError(t, loginError("submit", errors.New("http2: timeout awaiting response headers")), "submit couldn't ask GitHub who you are: http2: timeout awaiting response headers",
+		"an outage isn't a login wanting (field testing, batch 12)")
+}
+
+// A branch of an update and the rebuilds for it, as update
+// --revbump-dependents makes, is titled by its update; any other branch of
+// several ports still asks for one (field testing, batch 12).
+func TestAnUpdateWithItsRebuildsIsTitledByTheUpdate(t *testing.T) {
+	t.Parallel()
+	commits := func(subjects ...string) []git.HistoryCommit {
+		var all []git.HistoryCommit
+		for _, subject := range subjects {
+			all = append(all, git.HistoryCommit{Message: subject + "\n"})
+		}
+		return all
+	}
+	require.Equal(t, "libunibreak: update to 8.0", updateWithRebuilds(commits("libunibreak: update to 8.0", "taisei: rebuild for libunibreak 8.0", "foot: rebuild for libunibreak 8.0")))
+	require.Empty(t, updateWithRebuilds(commits("jq: update to 1.8.1", "libharbor: update to 2.0")))
+	require.Empty(t, updateWithRebuilds(commits("libunibreak: update to 8.0", "taisei: rebuild for libfoo 2")))
+	require.Empty(t, updateWithRebuilds(commits("taisei: rebuild for libunibreak 8.0")))
 }
