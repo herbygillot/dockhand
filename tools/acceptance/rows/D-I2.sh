@@ -3,7 +3,7 @@
 # it; clean leaves no clone behind (H7).
 port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
 act() {
-	dh update "$(port)" --new || return 0
+	dh_setup update "$(port)" --new || return 0
 	dh_bg check -p "$(port)"
 	if wait_for_line "$DH_BG_LOG" 'building in' 900; then
 		kill -9 "$DH_BG_PID" 2>/dev/null

@@ -6,7 +6,9 @@
 # it) is opened by the build before that schema, then by the candidate: the migration says so and keeps the copy
 # of the old schema; status --all lists the same branches before and
 # after; and the older build then refuses the database by name. Status
-# reads the person's ports checkout (ACCEPT_REAL_TREE), as it only reads.
+# reads the person's ports checkout (ACCEPT_REAL_TREE, else the stage's
+# ACCEPT_PORTS_SOURCE), as it only reads. The database is opened read-only;
+# where there's none, the row isn't run.
 
 setup() {
 	local schema newest previous
@@ -17,9 +19,16 @@ setup() {
 		ACCEPT_REAL_DB=$HOME/.dockhand/dockhand.db
 		[ -f "$HOME/.dockhand/dockhand.db.schema-$previous" ] && ACCEPT_REAL_DB=$HOME/.dockhand/dockhand.db.schema-$previous
 	fi
-	: "${ACCEPT_REAL_TREE:=$HOME/Source/macports-ports}"
+	: "${ACCEPT_REAL_TREE:=${ACCEPT_PORTS_SOURCE:-$HOME/Source/macports-ports}}"
+	# Without a database of the person's, there's nothing to migrate, and
+	# the row touches nothing of theirs: SQLite would make an empty one
+	# where it's asked to read a file that isn't there.
+	if [ ! -f "$ACCEPT_REAL_DB" ]; then
+		row_result "not run" "no database of yours to copy at $ACCEPT_REAL_DB; set ACCEPT_REAL_DB"
+		return 0
+	fi
 	mkdir -p "$ROW_DIR/db" "$ROW_DIR/old"
-	sqlite3 "$ACCEPT_REAL_DB" ".backup '$ROW_DIR/db/dockhand.db'" || return 1
+	sqlite3 "file:$ACCEPT_REAL_DB?mode=ro" ".backup '$ROW_DIR/db/dockhand.db'" || return 1
 	# The build before the newest schema: the parent of the commit that
 	# added it.
 	A5_OLD_REV=$(git -C "$ACCEPT_REPO" log -1 --format=%H -- "internal/store/sqlite/schema/$newest")^

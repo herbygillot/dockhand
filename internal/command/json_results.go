@@ -644,7 +644,31 @@ type preparedJSON struct {
 	Upstream *model.UpstreamComparison `json:"upstream,omitempty"`
 }
 
-func preparedView(prepared []engine.PreparedUpdate) map[string]any {
+// skippedJSON is a port a batch left alone, and why: an update already in
+// a branch, one it couldn't check, or one held for a look.
+type skippedJSON struct {
+	Port   string `json:"port"`
+	Reason string `json:"reason"`
+}
+
+// preparedView is a batch's result: what it prepared, and every port it
+// left alone, with why, so an empty batch says why it is (the M1's quick
+// stage, B3: a batch offline said null).
+func preparedView(prepared []engine.PreparedUpdate, plan engine.OutdatedPlan, report engine.OutdatedReport) map[string]any {
+	skipped := []skippedJSON{}
+	said := map[string]bool{}
+	for _, update := range plan.Updates {
+		said[update.Port.Port] = true
+	}
+	for _, skip := range plan.Skipped {
+		said[skip.Port] = true
+		skipped = append(skipped, skippedJSON{Port: skip.Port, Reason: skip.Reason})
+	}
+	for _, port := range report.Ports {
+		if !said[port.Port] && port.Problem != "" {
+			skipped = append(skipped, skippedJSON{Port: port.Port, Reason: "couldn't check: " + port.Problem})
+		}
+	}
 	views := []preparedJSON{}
 	for _, done := range prepared {
 		view := preparedJSON{Port: done.Planned.Port.Port, Branch: engine.BranchName(done.Planned.Name), Before: done.Update.Before.String(), After: done.Update.After.String(),
@@ -654,7 +678,7 @@ func preparedView(prepared []engine.PreparedUpdate) map[string]any {
 		}
 		views = append(views, view)
 	}
-	return map[string]any{"prepared": views}
+	return map[string]any{"prepared": views, "skipped": skipped}
 }
 
 // plainHTTPJSON is a URL a port names over plain HTTP, its https form, and

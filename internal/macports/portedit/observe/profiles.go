@@ -256,10 +256,18 @@ func profilesForBoundaries(majors map[int]bool, archDependent bool, native model
 			result = append(result, p)
 		}
 	}
+	// A port that reads the architecture is sampled on each, on this
+	// release where it runs here, and otherwise on the newest release it
+	// runs on: on macOS 27, which runs on arm64 alone, x86_64 is sampled
+	// on macOS 26, whose Intel builds still fetch the port's Intel archive
+	// (the M1's quick stage, 2026-10-03).
 	if archDependent {
 		for _, arch := range []string{"arm64", "x86_64"} {
-			if macos.RunsOn(current, arch) {
-				appendProfile(current, arch)
+			for major := current; major >= 8; major-- {
+				if _, err := macos.ProductForDarwin(major); err == nil && macos.RunsOn(major, arch) {
+					appendProfile(major, arch)
+					break
+				}
 			}
 		}
 	}

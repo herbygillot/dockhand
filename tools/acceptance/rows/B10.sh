@@ -6,7 +6,7 @@
 port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
 
 act() {
-	dh start b10-broken --port "$(port)" || return 0
+	dh_setup start b10-broken --port "$(port)" || return 0
 	local dir portfile
 	dir=$("$DH_BIN" path b10-broken) || return 0
 	portfile=$(find "$dir" -path "*/$(port)/Portfile" | head -1)

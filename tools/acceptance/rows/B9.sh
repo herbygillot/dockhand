@@ -12,7 +12,7 @@ act() {
 	allow_push "*dockhand-check/*"
 	dh providers || :
 	printf '\n[check]\non = ["github"]\n' >>"${DOCKHAND_CONFIG:-$HOME/.dockhand/config.toml}"
-	dh update "$(port)" --new || return 0
+	dh_setup update "$(port)" --new || return 0
 	B9_BRANCH=$(dh_quiet --json status --port "$(port)" | jq -r '.result.branches[0].name')
 	dh_json check -b "$B9_BRANCH" || :
 	dh tidy -b "$B9_BRANCH" -y || :

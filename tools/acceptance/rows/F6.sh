@@ -10,14 +10,15 @@ setup() {
 act() {
 	(
 		export DOCKHAND_DB="$F6_DIR/dockhand.db" DOCKHAND_CONFIG="$F6_DIR/config.toml"
-		dh_json setup -y || :
+		# setup has no --json yet; its exit is the row's to read.
+		dh_setup setup -y || exit 0
 		dh_json start f6 --port "${ACCEPT_GO_PORT:?}" || :
 		dh_json status || :
 	)
 }
 assert() {
 	local n
-	for n in 1 2 3; do
+	for n in 1 2; do
 		[ "$(cat "$ROW_DIR/json/$n.json.exit" 2>/dev/null)" = 0 ] || { row_fail "$(cat "$ROW_DIR/json/$n.json.args") exited $(cat "$ROW_DIR/json/$n.json.exit" 2>/dev/null): $(jq -r '.error // empty' "$ROW_DIR/json/$n.json")"; return; }
 	done
 	[ -f "$F6_DIR/worktrees/f6/_resources/port1.0/group/github-1.0.tcl" ] || find "$F6_DIR/worktrees/f6" -maxdepth 2 -name Portfile | grep -q . || { row_fail "the worktree under a spaced path is missing"; return; }

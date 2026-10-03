@@ -13,7 +13,7 @@ c9_signatures() {
 }
 
 act() {
-	dh update "$(port)" --new || return 0
+	dh_setup update "$(port)" --new || return 0
 	dh_json check -p "$(port)" || :
 	c9_signatures >"$ROW_DIR/c9.first"
 	dh_json check -p "$(port)" --fresh || :

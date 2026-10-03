@@ -6,9 +6,9 @@
 port() { printf '%s' "${ACCEPT_RUST_PORT:?}"; }
 
 act() {
-	dh update "$(port)" --new || return 0
+	dh_setup update "$(port)" --new || return 0
 	dh_json tidy -p "$(port)" -y || :
-	dh start c8-hand --port "${ACCEPT_GO_PORT:?}" || return 0
+	dh_setup start c8-hand --port "${ACCEPT_GO_PORT:?}" || return 0
 	local dir portfile
 	dir=$("$DH_BIN" path c8-hand)
 	portfile=$(find "$dir" -path "*/${ACCEPT_GO_PORT}/Portfile" | head -1)

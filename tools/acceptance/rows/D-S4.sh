@@ -3,7 +3,7 @@
 # worktree: tidy keeps both, and proposes them as yours.
 port() { printf '%s' "${ACCEPT_RUST_PORT:?}"; }
 act() {
-	dh update "$(port)" --new || return 0
+	dh_setup update "$(port)" --new || return 0
 	local dir portfile
 	dir=$("$DH_BIN" path "$(git -C "$MACPORTS_TREE" branch --list 'dockhand/*' --format='%(refname:short)' | head -1)") || return 0
 	portfile=$(find "$dir" -path "*/$(port)/Portfile" | head -1)

@@ -18,6 +18,19 @@ dh() {
 	return "$status"
 }
 
+# dh_setup runs a step that only sets the row up, such as the update
+# that makes a branch for it: where it fails, the row fails as its setup's,
+# with what dockhand said, rather than as a later step's that never ran.
+dh_setup() {
+	local status=0 mark
+	mark=$(wc -l <"$ROW_DIR/out.log")
+	dh "$@" || status=$?
+	if [ "$status" -ne 0 ]; then
+		row_fail "its setup, dockhand $*, exited $status: $(tail -n +"$((mark + 2))" "$ROW_DIR/out.log" | grep -v '^\[exit' | tail -2 | tr '\n' ' ')"
+		return "$status"
+	fi
+}
+
 # dh_json runs dockhand with --json once, keeping the envelope and the
 # process's exit status for H8, and returns that status; DH_LAST_JSON
 # names the envelope's file. Its output is also in out.log, for H4.

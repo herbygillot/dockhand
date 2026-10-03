@@ -6,7 +6,7 @@ port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
 act() {
 	host_only "sleep and reboot" || return 0
 	allow_change "*"
-	dh update "$(port)" --new || return 0
+	dh_setup update "$(port)" --new || return 0
 	DI5_BRANCH=$(dh_quiet --json status --port "$(port)" | jq -r '.result.branches[0].name')
 	dh_bg check -b "$DI5_BRANCH"
 	wait_for_line "$DH_BG_LOG" 'building|running' 900 || :

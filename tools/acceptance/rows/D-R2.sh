@@ -11,7 +11,7 @@ setup() {
 act() {
 	[ -n "${ACCEPT_VANILLA:-}" ] || return 0
 	allow_running "vm dhaccept-slot-1" "vm dhaccept-slot-2"
-	dh update "$(port)" --new || return 0
+	dh_setup update "$(port)" --new || return 0
 	with_timeout 180 "$DH_BIN" check -p "$(port)" >"$ROW_DIR/dr2.log" 2>&1
 	echo "$?" >"$ROW_DIR/dr2.exit"
 	cat "$ROW_DIR/dr2.log" >>"$ROW_DIR/out.log"

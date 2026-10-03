@@ -3,8 +3,8 @@
 # remove: status says so, path checks it out again, and the branch's
 # record is intact.
 act() {
-	dh start ds3-rm --port "${ACCEPT_GO_PORT:?}" || return 0
-	dh start ds3-git --port "${ACCEPT_GO_PORT}" || return 0
+	dh_setup start ds3-rm --port "${ACCEPT_GO_PORT:?}" || return 0
+	dh_setup start ds3-git --port "${ACCEPT_GO_PORT}" || return 0
 	local rm_dir git_dir
 	rm_dir=$("$DH_BIN" path ds3-rm) && git_dir=$("$DH_BIN" path ds3-git) || return 0
 	allow_change "$rm_dir/*" "$git_dir/*"

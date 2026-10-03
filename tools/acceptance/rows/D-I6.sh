@@ -3,7 +3,7 @@
 # queued, and nothing is left running (H7).
 port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
 act() {
-	dh update "$(port)" --new || return 0
+	dh_setup update "$(port)" --new || return 0
 	dh_json check -p "$(port)" -d || return 0
 	DI6_RUN=$(jq -r '.result.run.name // empty' "$ROW_DIR/json/1.json")
 	dh_bg serve --drain

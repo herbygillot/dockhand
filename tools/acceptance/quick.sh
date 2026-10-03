@@ -20,6 +20,13 @@
 #   - its own Tart homes, dockhand's (DOCKHAND_TART_HOME), its SSH keys
 #     (DOCKHAND_SSH_DIR) and Tart's (TART_HOME), under tart/, with the one
 #     image the check rows build in, which --image makes once.
+#   - a GitHub token that reads only: ACCEPT_GH_TOKEN, or the file
+#     ACCEPT_GH_TOKEN_FILE names, ~/.dockhand-acceptance/gh-token unless
+#     set, made on GitHub with no scopes. dockhand reads it as GH_TOKEN,
+#     before your own login, so the rows that ask GitHub get its limit of
+#     5,000 requests an hour, not the 60 a request without one gets, and
+#     your login is neither read nor renewed. Without one, quick.sh says
+#     so: those rows run into the limit, and dockhand may read your login.
 # The pinned upstream borrows the objects of ACCEPT_PORTS_SOURCE, your
 # ports clone, which is only read: a gc --prune or a fresh clone there
 # can drop objects upstream.git needs, and quick.sh then makes it again.
@@ -72,6 +79,18 @@ export ACCEPT_WATCH="$state/clone" ACCEPT_UPSTREAM=origin ACCEPT_RUN_DIR="$state
 # tens of gigabytes to make.
 mkdir -p "$state/tart"
 export DOCKHAND_TART_HOME="$state/tart/dockhand" DOCKHAND_SSH_DIR="$state/tart/ssh" TART_HOME="$state/tart/tart"
+# The stage's token, which reads only.
+: "${ACCEPT_GH_TOKEN_FILE:=$HOME/.dockhand-acceptance/gh-token}"
+if [ -z "${ACCEPT_GH_TOKEN:-}" ] && [ -r "$ACCEPT_GH_TOKEN_FILE" ]; then
+	ACCEPT_GH_TOKEN=$(tr -d '[:space:]' <"$ACCEPT_GH_TOKEN_FILE")
+fi
+if [ -n "${ACCEPT_GH_TOKEN:-}" ]; then
+	export GH_TOKEN=$ACCEPT_GH_TOKEN
+	unset GITHUB_TOKEN
+else
+	echo "quick.sh: no GitHub token for the stage (ACCEPT_GH_TOKEN, or $ACCEPT_GH_TOKEN_FILE): rows that ask GitHub will run into its limit of 60 requests an hour, and dockhand may read your own login; make a token with no scopes and put it there" >&2
+fi
+unset ACCEPT_GH_TOKEN
 export ACCEPT_SECRET_DIRS="$state/home"
 export ACCEPT_HOME_DIRS="$HOME/.dockhand $HOME/.tart $HOME/.ssh"
 unset ACCEPT_GH_LOGIN
@@ -132,6 +151,15 @@ if ! ls -d "$DOCKHAND_TART_HOME"/vms/dockhand-base-* >/dev/null 2>&1; then
 	echo "  make it once with tools/acceptance/quick.sh --image, which downloads macOS's vanilla image" >&2
 	exit 2
 fi
+# D-R2 takes both VM slots with two clones of a vanilla image, as a
+# person's own VMs, in the stage's own TART_HOME: unless ACCEPT_VANILLA
+# names one, the vanilla image dockhand's setup started from, which that
+# home pulls once and keeps.
+if [ -z "${ACCEPT_VANILLA:-}" ] && command -v tart >/dev/null; then
+	ACCEPT_VANILLA=$(TART_HOME=$DOCKHAND_TART_HOME tart list --source oci --format json 2>/dev/null |
+		jq -r '[.[] | .Name | select(test("cirruslabs/macos-.*-vanilla"))][0] // empty')
+fi
+export ACCEPT_VANILLA
 export ACCEPT_RESET="$here/quick.sh --reset"
 if [ "${1:-}" = --dry-full ]; then
 	shift

@@ -5,14 +5,14 @@
 # moved, and no work is lost (H1).
 port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
 act() {
-	dh update "$(port)" --new || return 0
+	dh_setup update "$(port)" --new || return 0
 	dh_bg check -p "$(port)"
 	wait_for_line "$DH_BG_LOG" 'building in' 900 || :
 	git -C "$MACPORTS_TREE" gc -q --prune=now 2>>"$ROW_DIR/git.log" || :
 	git -C "$MACPORTS_TREE" fetch -q --prune origin 2>>"$ROW_DIR/git.log" || :
 	dh_bg_wait || :
 	echo "$?" >"$ROW_DIR/ds9.check"
-	dh start ds9-gone || return 0
+	dh_setup start ds9-gone || return 0
 	allow_ref_gone refs/heads/dockhand/ds9-gone
 	git -C "$MACPORTS_TREE" worktree remove --force "$("$DH_BIN" path ds9-gone)" 2>>"$ROW_DIR/git.log" || :
 	git -C "$MACPORTS_TREE" branch -D dockhand/ds9-gone >>"$ROW_DIR/git.log" 2>&1 || :

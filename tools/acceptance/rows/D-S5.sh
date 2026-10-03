@@ -2,7 +2,7 @@
 # D-S5: a branch renamed with git branch -m is found again, by its
 # worktree.
 act() {
-	dh start ds5-before --port "${ACCEPT_GO_PORT:?}" || return 0
+	dh_setup start ds5-before --port "${ACCEPT_GO_PORT:?}" || return 0
 	allow_ref_gone refs/heads/dockhand/ds5-before
 	git -C "$MACPORTS_TREE" branch -m dockhand/ds5-before dockhand/ds5-after
 	DS5_DIR=$("$DH_BIN" path ds5-before 2>/dev/null || :)

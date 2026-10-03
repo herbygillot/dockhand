@@ -3,7 +3,7 @@
 # port's update, then check's plan of each variant. --plan only.
 port() { printf '%s' "${ACCEPT_RUST_PORT:?}"; }
 act() {
-	dh update "$(port)" --new || return 0
+	dh_setup update "$(port)" --new || return 0
 	dh_json check -p "$(port)" --variants each --plan || :
 }
 assert() {

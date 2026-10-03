@@ -6,7 +6,12 @@
 # text assumes it. submit, which would push, and check, which would build,
 # run as their --plan. A line that can't run here, as one that makes a
 # Tart image, installs serve, or names a project that isn't one, is listed
-# as not run, with why. outdated --mine reads ACCEPT_MAINTAINER's ports.
+# as not run, with why. outdated --mine reads ACCEPT_MAINTAINER's ports,
+# and runs only with the stage's GitHub token, since it asks GitHub of
+# each; update --outdated --mine, which prepares every one, isn't run (B3
+# runs a batch, on two ports). jq, the docs' example, is current at the
+# stage's pin, so the stage's small Go port, which is due, stands in for
+# it; a line naming one of jq's versions isn't run.
 
 setup() {
 	local maintainer=${ACCEPT_MAINTAINER:-@herbygillot}
@@ -24,13 +29,14 @@ a10_examples() {
 }
 
 act() {
-	local line words verb why dir branch name
+	local line words verb why dir branch name port=${ACCEPT_GO_PORT:?}
 	dir=$MACPORTS_TREE
 	: >"$ROW_DIR/a10.notrun"
 	: >"$ROW_DIR/a10.failed"
 	while IFS= read -r line; do
 		case "$line" in
 		'cd "$(dockhand path '*)
+			line=${line//jq-/$port-}
 			name=${line#cd \"\$(dockhand path }
 			name=${name%%)*}
 			name=${name%…}
@@ -44,6 +50,7 @@ act() {
 			;;
 		esac
 		words=${line#dockhand }
+		words=$(printf '%s' " $words " | sed "s/ jq / $port /g; s/^ //; s/ \$//")
 		verb=${words%% *}
 		why=""
 		case "$line" in
@@ -52,6 +59,9 @@ act() {
 		"dockhand serve"*) why="runs or installs serve, which the stage doesn't" ;;
 		"dockhand setup tart"*) why="makes a Tart image" ;;
 		"dockhand submit --passing"*) why="submits, and has no --plan" ;;
+		*" jq "[0-9]*) why="names one of jq's versions, and jq is current at the stage's pin" ;;
+		*"--outdated --mine"*) why="prepares every outdated port of the maintainer's; B3 runs a batch on two" ;;
+		"dockhand outdated --mine"*) [ -n "${GH_TOKEN:-}" ] || why="asks GitHub of each of the maintainer's ports, which needs the stage's token" ;;
 		esac
 		if [ -n "$why" ]; then
 			printf '%s: %s\n' "$line" "$why" >>"$ROW_DIR/a10.notrun"

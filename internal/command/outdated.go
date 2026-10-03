@@ -89,6 +89,13 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 	table := tabwriter.NewWriter(out, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(table, "  PORT\tNOW\tNEWEST\tDOCKHAND CAN")
 	newer, unknown, uncertain, moved, own := 0, 0, 0, 0, 0
+	// Where no port could be checked, as offline, each says why, and the
+	// command fails: "none has a newer release" would be a guess (the M1's
+	// quick stage, D-N1, 2026-10-03).
+	none := len(report.Ports) > 0
+	for _, port := range report.Ports {
+		none = none && port.Problem != ""
+	}
 	// A subport checked with a sibling that's listed moves with it, so
 	// it's said on the sibling's row rather than its own: five python
 	// ports took about 25 lines, and a subport's row said "update with
@@ -125,8 +132,8 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 			fmt.Fprintf(table, "  %s\t%s\t%s?\tedit %s by hand: its %s names a newer commit than the one it pins\n", port.Port, port.Current, port.Newest, port.Port, port.Moved.Branch)
 		case port.Problem != "":
 			unknown++
-			if all {
-				fmt.Fprintf(table, "  %s\t%s\t?\tcouldn't check: %s\n", port.Port, orDash(port.Current), port.Problem)
+			if all || none {
+				fmt.Fprintf(table, "  %s\t%s\t?\tcouldn't check: %s\n", port.Port, orDash(port.Current), strings.ReplaceAll(port.Problem, "\n", "; "))
 			}
 		case len(port.Uncertain) > 0:
 			// Neither current nor outdated for sure, so it's listed for
@@ -156,8 +163,11 @@ func writeOutdated(ctx context.Context, e *engine.Engine, out io.Writer, report 
 			fmt.Fprintf(table, "  %s\t%s\t%s\tnothing; it is current%s\n", port.Port, port.Current, port.Newest, with(port.Port))
 		}
 	}
-	if newer > 0 || uncertain > 0 || moved > 0 || all {
+	if newer > 0 || uncertain > 0 || moved > 0 || all || none {
 		table.Flush()
+	}
+	if none {
+		return noneChecked(report)
 	}
 	ports, master := prose.Plural(len(report.Ports), "port"), engine.Short(report.Master)
 	var line string
@@ -227,6 +237,23 @@ func orDash(value string) string {
 	return value
 }
 
+// noneChecked is the error of a report none of whose ports could be
+// checked, as offline, with the first one's reason; nil where any was.
+// Saying none has a newer release would be a guess (the M1's quick stage,
+// D-N1 and B3, 2026-10-03).
+func noneChecked(report engine.OutdatedReport) error {
+	if len(report.Ports) == 0 {
+		return nil
+	}
+	for _, port := range report.Ports {
+		if port.Problem == "" {
+			return nil
+		}
+	}
+	problem, _, _ := strings.Cut(report.Ports[0].Problem, "\n")
+	return fmt.Errorf("no port could be checked, at master %s: %s", engine.Short(report.Master), problem)
+}
+
 // updateOutdated is update --outdated: it shows how it splits the work,
 // one branch per port, then prepares each.
 func updateOutdated(ctx context.Context, s *settings, streams Streams, args []string, options outdatedOptions) error {
@@ -260,6 +287,11 @@ func updateOutdated(ctx context.Context, s *settings, streams Streams, args []st
 	}
 	out := streams.Out
 	if len(plan.Updates) == 0 {
+		streams.emit(preparedView(nil, plan, report))
+		if err := noneChecked(report); err != nil {
+			writeSkipped(out, plan, report)
+			return err
+		}
 		fmt.Fprintln(out, "Nothing to update: none of them has a newer release that isn't already in a branch.")
 		writeSkipped(out, plan, report)
 		return nil
@@ -294,7 +326,7 @@ func updateOutdated(ctx context.Context, s *settings, streams Streams, args []st
 		}
 	}
 	prepared := e.PrepareOutdated(ctx, plan, engine.PrepareOptions{Origin: model.OriginPerson, Check: options.check, Environments: environments, Tests: model.TestPolicy(s.file.Check.Tests)})
-	streams.emit(preparedView(prepared))
+	streams.emit(preparedView(prepared, plan, report))
 	return writePrepared(ctx, e, out, prepared, options.check)
 }
 

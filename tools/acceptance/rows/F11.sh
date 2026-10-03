@@ -6,7 +6,7 @@ port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
 act() {
 	host_only "serve as a launchd agent with Tart" || return 0
 	allow_change "*"
-	dh update "$(port)" --new --check || return 0
+	dh_setup update "$(port)" --new --check || return 0
 	dh serve --install || return 0
 	sleep 900
 	dh_json status --port "$(port)" || :

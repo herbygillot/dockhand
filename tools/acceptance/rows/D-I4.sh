@@ -7,7 +7,7 @@ port() { printf '%s' "${ACCEPT_RUST_PORT:?}"; }
 act() {
 	host_only "a pull request on GitHub" || return 0
 	pr_approved "$(port)" || { row_result "not run" "its pull request wasn't approved"; return 0; }
-	dh update "$(port)" --new || return 0
+	dh_setup update "$(port)" --new || return 0
 	DI4_BRANCH=$(dh_quiet --json status --port "$(port)" | jq -r '.result.branches[0].name')
 	dh check -b "$DI4_BRANCH" && dh tidy -b "$DI4_BRANCH" -y || return 0
 	allow_push "*$DI4_BRANCH*"

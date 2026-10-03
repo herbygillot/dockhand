@@ -20,7 +20,7 @@ name = "acceptance stub"
 TOML
 }
 act() {
-	dh update "$(port)" --new || return 0
+	dh_setup update "$(port)" --new || return 0
 	dh_json check -p "$(port)" --on command || :
 }
 assert() {

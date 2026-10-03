@@ -7,7 +7,7 @@
 port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
 act() {
 	host_only "the test account on GitHub" || return 0
-	dh update "$(port)" --new || return 0
+	dh_setup update "$(port)" --new || return 0
 	F1_BRANCH=$(dh_quiet --json status --port "$(port)" | jq -r '.result.branches[0].name')
 	dh check -b "$F1_BRANCH" && dh tidy -b "$F1_BRANCH" -y || return 0
 	submit_pr "$(port)" "$F1_BRANCH" --draft || return 0

@@ -5,7 +5,7 @@
 # and no work is lost (H1).
 port() { printf '%s' "${ACCEPT_RUST_PORT:?}"; }
 act() {
-	dh update "$(port)" --new || return 0
+	dh_setup update "$(port)" --new || return 0
 	local branch
 	branch=$(git -C "$MACPORTS_TREE" branch --list 'dockhand/*' --format='%(refname:short)' | head -1)
 	DI3_BRANCH=${branch#dockhand/}

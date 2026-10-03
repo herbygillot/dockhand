@@ -64,8 +64,15 @@ func TestOutdatedSaysWhenNothingIsNewer(t *testing.T) {
 	}
 	require.Equal(t, "jq has no newer release, at master 1bb30d5\n", said(current("jq")))
 	require.Equal(t, "None of 2 ports has a newer release, at master 1bb30d5\n", said(current("jq"), current("fd")))
-	require.Equal(t, "None of 1 port has a newer release, at master 1bb30d5 · 1 couldn't be checked (--all says why)\n",
-		said(engine.OutdatedPort{Port: "jq", Problem: "no forge"}), "a port that couldn't be checked isn't said to have none")
+	require.Equal(t, "None of 2 ports has a newer release, at master 1bb30d5 · 1 couldn't be checked (--all says why)\n",
+		said(engine.OutdatedPort{Port: "jq", Problem: "no forge"}, current("fd")), "a port that couldn't be checked isn't said to have none")
+
+	// Where none could be checked, as offline, each says why, and the
+	// command fails rather than guess (the M1's quick stage, D-N1).
+	var offline bytes.Buffer
+	err := writeOutdated(t.Context(), nil, &offline, engine.OutdatedReport{Master: "1bb30d5aaaaa", Ports: []engine.OutdatedPort{{Port: "jq", Current: "1.8.2", Problem: "dial tcp: connection refused\ngit ls-remote: exit status 128"}}}, false)
+	require.EqualError(t, err, "no port could be checked, at master 1bb30d5: dial tcp: connection refused")
+	require.Equal(t, "  PORT   NOW     NEWEST   DOCKHAND CAN\n  jq     1.8.2   ?        couldn't check: dial tcp: connection refused; git ls-remote: exit status 128\n", offline.String())
 
 	// Nor is one whose newest release is uncertain, which is listed, with
 	// why and the update that takes it (the update-workflow review's

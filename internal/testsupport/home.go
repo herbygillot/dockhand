@@ -18,12 +18,23 @@ func IsolateHome() func() {
 	return func() { os.RemoveAll(home) }
 }
 
+// liveTart are the variables that opt a test binary into its live Tart
+// tests.
+var liveTart = []string{"DOCKHAND_TEST_TART_LIVE", "DOCKHAND_TEST_BOOTSTRAP_VM", "DOCKHAND_TEST_TART_IMAGE"}
+
 // IsolateHomeKeepingTart is IsolateHome for packages with opt-in live Tart
-// tests: it first pins dockhand's Tart home, DOCKHAND_TART_HOME, its SSH
-// keys, DOCKHAND_SSH_DIR, and the person's Tart home, TART_HOME, unless
-// set, to the real ones, so those tests still find and reach their images.
+// tests: where one is asked for, it first pins dockhand's Tart home,
+// DOCKHAND_TART_HOME, its SSH keys, DOCKHAND_SSH_DIR, and the person's Tart
+// home, TART_HOME, unless set, to the real ones, so those tests still find
+// and reach their images, and share their locks. Otherwise it's
+// IsolateHome, and the locks the other tests take stay out of the
+// person's ~/.dockhand.
 func IsolateHomeKeepingTart() func() {
-	if home, err := os.UserHomeDir(); err == nil {
+	live := false
+	for _, name := range liveTart {
+		live = live || os.Getenv(name) != ""
+	}
+	if home, err := os.UserHomeDir(); err == nil && live {
 		if os.Getenv("DOCKHAND_TART_HOME") == "" {
 			os.Setenv("DOCKHAND_TART_HOME", filepath.Join(home, ".dockhand", "tart"))
 		}

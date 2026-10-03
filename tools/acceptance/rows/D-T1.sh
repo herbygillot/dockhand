@@ -5,7 +5,7 @@
 . "${ROW_LIB:?}/fault.sh"
 port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
 act() {
-	dh update "$(port)" --new || return 0
+	dh_setup update "$(port)" --new || return 0
 	dh check -p "$(port)" || return 0
 	local archives archive
 	archives="$(dirname "${DOCKHAND_DB:?}")/archives"

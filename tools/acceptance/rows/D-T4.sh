@@ -5,8 +5,8 @@
 # hangs.
 port() { printf '%s' "${ACCEPT_GO_PORT:?}"; }
 act() {
-	dh start dt4-a --port "$(port)" || return 0
-	dh start dt4-b --port "$(port)" || return 0
+	dh_setup start dt4-a --port "$(port)" || return 0
+	dh_setup start dt4-b --port "$(port)" || return 0
 	local dir
 	for b in dt4-a dt4-b; do
 		dir=$("$DH_BIN" path "$b")
