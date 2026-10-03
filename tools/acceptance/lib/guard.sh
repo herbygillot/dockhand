@@ -32,7 +32,7 @@ guard() {
 		return 0
 	fi
 	state=$(cd "${ACCEPT_STATE:?}" && pwd -P)
-	for name in DOCKHAND_DB DOCKHAND_CONFIG MACPORTS_TREE DOCKHAND_UPSTREAM DOCKHAND_INDEX_CACHE DOCKHAND_READING_CACHE; do
+	for name in DOCKHAND_DB DOCKHAND_CONFIG MACPORTS_TREE DOCKHAND_UPSTREAM DOCKHAND_INDEX_CACHE DOCKHAND_READING_CACHE DOCKHAND_TART_HOME DOCKHAND_SSH_DIR TART_HOME; do
 		value=$(eval "printf '%s' \"\${$name:-}\"")
 		if [ -z "$value" ]; then
 			echo "guard: $name is unset, so dockhand would use your own; the quick stage sets every one inside $state" >&2

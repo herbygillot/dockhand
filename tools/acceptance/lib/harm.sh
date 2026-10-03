@@ -1,5 +1,6 @@
 # shellcheck shell=bash
-# The harm sweep: prime-time.md's eight invariants, H1 to H8, checked by
+# The harm sweep: prime-time.md's eight invariants, H1 to H8, and the
+# quick stage's own, H9, checked by
 # snapshotting before a row acts and again after. Each check writes
 # $ROW_DIR/harm/H<n>: "ok", "broken: <what>", or "skipped: <why>".
 #
@@ -9,6 +10,7 @@
 #   ACCEPT_GH_LOGIN       the GitHub login whose pull requests count (H3)
 #   ACCEPT_SECRET_DIRS    where a token mustn't be written (H4)
 #   ACCEPT_RUN_DIR        where Next: lines run from (H6)
+#   ACCEPT_HOME_DIRS      a person's own state the stage mustn't touch (H9)
 
 # The token prefixes GitHub gives, and a fine-grained token's.
 HARM_TOKEN='(gh[opsur]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,})'
@@ -48,6 +50,21 @@ harm_snapshot() {
 	done
 	harm_prs >"$out/prs" 2>/dev/null || :
 	harm_running >"$out/running" 2>/dev/null || :
+	harm_home >"$out/home"
+}
+
+# harm_home lists the person's own state directories: whether each is
+# there, and each file in it with its size and modification time.
+harm_home() {
+	local dir
+	for dir in ${ACCEPT_HOME_DIRS:-}; do
+		if [ ! -e "$dir" ]; then
+			printf 'absent %s\n' "$dir"
+			continue
+		fi
+		printf 'present %s\n' "$dir"
+		find "$dir" \( -type f -o -type l \) -exec stat -f 'file %N %z %m' {} + 2>/dev/null | sort
+	done
 }
 
 # harm_work_files lists a worktree's work that its commits don't hold, its
@@ -89,8 +106,14 @@ harm_prs() {
 
 # harm_running lists the Tart VMs running and the checks queued or running.
 harm_running() {
+	local home
 	if command -v tart >/dev/null; then
-		tart list --format json 2>/dev/null | jq -r '.[] | select(.State == "running") | "vm " + .Name' 2>/dev/null || :
+		# dockhand's Tart home and Tart's own, each listed only where it's
+		# there, since listing makes one.
+		for home in "${DOCKHAND_TART_HOME:-$HOME/.dockhand/tart}" "${TART_HOME:-$HOME/.tart}"; do
+			[ -d "$home" ] || continue
+			TART_HOME=$home tart list --format json 2>/dev/null | jq -r '.[] | select(.State == "running") | "vm " + .Name' 2>/dev/null || :
+		done
 	fi
 	"$DH_BIN" --json queue 2>/dev/null | jq -r '.result.runs[]? | select(.state == "queued" or .state == "running") | "run " + .name' 2>/dev/null || :
 }
@@ -110,6 +133,7 @@ harm_check() {
 	harm_h6
 	harm_h7 "$before" "$after"
 	harm_h8
+	harm_h9 "$before" "$after"
 }
 
 # H1: no work lost. Every edited or untracked file is still there with
@@ -245,7 +269,9 @@ harm_h6() {
 		line=${line#Next: }
 		line=$(printf '%s\n' "$line" | awk '{gsub(/, then |; |, or /, "\n"); print}')
 		while IFS= read -r segment; do
-			segment=$(printf '%s' "$segment" | sed 's/^ *//; s/ *$//; s/[.]$//')
+			# What a step says in parentheses is for the reader, not the
+			# command: "dockhand check (the files changed)".
+			segment=$(printf '%s' "$segment" | sed 's/ *([^)]*)//g; s/^ *//; s/ *$//; s/[.]$//')
 			[ -n "$segment" ] || continue
 			case "$segment" in
 			'cd "$(dockhand path '*')"')
@@ -342,5 +368,22 @@ harm_h8() {
 		harm_write H8 "broken:$broken"
 	else
 		harm_write H8 "ok: $n checked"
+	fi
+}
+
+# H9: the quick stage leaves the person's own state alone. Their
+# ~/.dockhand, ~/.tart and ~/.ssh are as they were: none made, none gone,
+# no file in them added, removed, or changed.
+harm_h9() {
+	local before=$1 after=$2 changed
+	if [ -z "${ACCEPT_HOME_DIRS:-}" ]; then
+		harm_write H9 "skipped: the stage's user is the test's own"
+		return
+	fi
+	changed=$(diff "$before/home" "$after/home" | sed -n 's/^[<>] //p' | awk '{print $2}' | sort -u | head -5 | tr '\n' ' ')
+	if [ -n "$changed" ]; then
+		harm_write H9 "broken: changed your own state: ${changed% }"
+	else
+		harm_write H9 ok
 	fi
 }

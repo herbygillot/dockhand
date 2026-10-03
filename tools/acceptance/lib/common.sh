@@ -19,8 +19,8 @@ dh() {
 }
 
 # dh_json runs dockhand with --json once, keeping the envelope and the
-# process's exit status for H8, and returns that status. Its output is
-# also in out.log, for H4.
+# process's exit status for H8, and returns that status; DH_LAST_JSON
+# names the envelope's file. Its output is also in out.log, for H4.
 dh_json() {
 	local status=0 n
 	n=$(find "$ROW_DIR/json" -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
@@ -30,6 +30,7 @@ dh_json() {
 	cat "$file" >>"$ROW_DIR/out.log"
 	printf '%s\n' "$status" >"$file.exit"
 	printf '%s\n' "$*" >"$file.args"
+	DH_LAST_JSON=$file
 	return "$status"
 }
 
@@ -66,3 +67,44 @@ row_fail() { row_result fail "$1"; }
 
 # say writes to the runner's own output, not the row's log.
 say() { printf '%s\n' "$*" >&2; }
+
+# with_timeout runs a command, killing it after some seconds: a command
+# that would hang reads as exit 142 (SIGALRM) rather than holding the run.
+with_timeout() {
+	local seconds=$1
+	shift
+	perl -e 'alarm shift; exec @ARGV' "$seconds" "$@"
+}
+
+# dh_bg starts dockhand in the background, its output in a file of the
+# row's, and sets DH_BG_PID; the file is DH_BG_LOG.
+dh_bg() {
+	local n
+	n=$(find "$ROW_DIR" -maxdepth 1 -name 'bg.*.log' 2>/dev/null | wc -l | tr -d ' ')
+	DH_BG_LOG="$ROW_DIR/bg.$((n + 1)).log"
+	printf '$ dockhand %s &\n' "$*" >>"$ROW_DIR/out.log"
+	"$DH_BIN" "$@" >"$DH_BG_LOG" 2>&1 &
+	DH_BG_PID=$!
+}
+
+# dh_bg_wait waits for the background dockhand, adds its output to the
+# row's log, and returns its exit status.
+dh_bg_wait() {
+	local status=0
+	wait "$DH_BG_PID" || status=$?
+	cat "$DH_BG_LOG" >>"$ROW_DIR/out.log"
+	printf '[exit %d]\n' "$status" >>"$ROW_DIR/out.log"
+	return "$status"
+}
+
+# wait_for_line waits until a file has a line matching a pattern, for up
+# to some seconds; it fails where none comes.
+wait_for_line() {
+	local file=$1 pattern=$2 seconds=${3:-600} waited=0
+	while [ "$waited" -lt "$seconds" ]; do
+		grep -qE "$pattern" "$file" 2>/dev/null && return 0
+		sleep 2
+		waited=$((waited + 2))
+	done
+	return 1
+}

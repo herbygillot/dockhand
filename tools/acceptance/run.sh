@@ -36,7 +36,7 @@ fi
 # shellcheck source=lib/guard.sh
 . "$here/lib/guard.sh"
 guard "$stage" || exit 2
-[ -n "$candidate" ] || candidate=$(git -C "$here" describe --tags --always --dirty 2>/dev/null || echo dev)
+[ -n "$candidate" ] || candidate=$(git -C "$here" describe --tags --match 'v*' --exact-match 2>/dev/null || git -C "$here" rev-parse --short HEAD 2>/dev/null || echo dev)
 export ACCEPT_STAGE=$stage ACCEPT_CANDIDATE=$candidate
 
 # The rows of this stage, in order, unless --rows names them.
@@ -59,9 +59,15 @@ for row in $rows; do
 	fi
 	ROW_DIR="$results/$row"
 	rm -rf "$ROW_DIR"
+	# A row starts from the stage's environment as made, where the stage
+	# says how to make it again.
+	if [ -n "${ACCEPT_RESET:-}" ]; then
+		# shellcheck disable=SC2086
+		$ACCEPT_RESET || { echo "run.sh: the stage's environment couldn't be made again for $row" >&2; exit 1; }
+	fi
 	mkdir -p "$ROW_DIR/json"
 	: >"$ROW_DIR/out.log"
-	export ROW_DIR ROW_ID=$row
+	export ROW_DIR ROW_ID=$row ROW_LIB="$here/lib"
 	(
 		set +e
 		# shellcheck source=lib/common.sh

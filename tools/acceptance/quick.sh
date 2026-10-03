@@ -4,6 +4,7 @@
 # scratch environment, and runs the quick stage's rows there.
 #
 #   tools/acceptance/quick.sh [--candidate <rc>] [--rows "A3 B1"]
+#   tools/acceptance/quick.sh --image     # once: the stage's Tart image
 #
 # The environment lives in ACCEPT_STATE, ~/.dockhand-acceptance/quick
 # unless set:
@@ -11,11 +12,18 @@
 #   - a scratch ports clone whose master, upstream.git, is pinned at
 #     ACCEPT_PIN, a fixed older commit, so the same ports are always due
 #     and two runs compare;
-#   - a local bare fork, fork.git, so nothing can be pushed anywhere real.
+#   - a local bare fork, fork.git, so nothing can be pushed anywhere real:
+#     submit needs a fork on GitHub, so it stops at its preview.
+#   - its own Tart homes, dockhand's (DOCKHAND_TART_HOME), its SSH keys
+#     (DOCKHAND_SSH_DIR) and Tart's (TART_HOME), under tart/, with the one
+#     image the check rows build in, which --image makes once.
 # The pinned upstream borrows the objects of ACCEPT_PORTS_SOURCE, your
-# ports clone, which is only read. Everything but upstream.git and the
-# results is made afresh each run. Nothing runs against your own
-# database or configuration: lib/guard.sh refuses that.
+# ports clone, which is only read: a gc --prune or a fresh clone there
+# can drop objects upstream.git needs, and quick.sh then makes it again.
+# Everything but upstream.git, tart/, the port index cache, and the
+# results are made afresh each run. Nothing runs against your own
+# database, configuration, or Tart homes: lib/guard.sh refuses that, and
+# the harm sweep fails a row that changes ~/.dockhand, ~/.tart or ~/.ssh.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -23,6 +31,11 @@ repo=$(cd "$here/../.." && pwd)
 : "${ACCEPT_STATE:=$HOME/.dockhand-acceptance/quick}"
 : "${ACCEPT_PORTS_SOURCE:=$HOME/Source/macports-ports}"
 : "${ACCEPT_PIN:=026b3878a258b85619633709d89871f2f8750b94}"
+# The ports the rows update: a small Go port and a small Rust port that
+# the pin has at an older release than upstream's.
+: "${ACCEPT_GO_PORT:=go-critic}"
+: "${ACCEPT_RUST_PORT:=dust}"
+export ACCEPT_GO_PORT ACCEPT_RUST_PORT ACCEPT_REPO="$repo"
 mkdir -p "$ACCEPT_STATE"
 state=$(cd "$ACCEPT_STATE" && pwd -P)
 export ACCEPT_STATE=$state
@@ -34,47 +47,87 @@ if ! git -C "$ACCEPT_PORTS_SOURCE" cat-file -e "$ACCEPT_PIN^{commit}" 2>/dev/nul
 fi
 
 # The pinned upstream, kept between runs: an empty bare repository that
-# borrows the ports clone's objects, its master at the pin.
+# borrows the ports clone's objects, its master at the pin. One whose
+# borrowed objects are gone is made again.
+if [ -d "$state/upstream.git" ] && ! git -C "$state/upstream.git" cat-file -e "$ACCEPT_PIN^{tree}" 2>/dev/null; then
+	echo "quick.sh: upstream.git has lost objects it borrowed from $ACCEPT_PORTS_SOURCE; making it again" >&2
+	rm -rf "$state/upstream.git"
+fi
 if [ ! -d "$state/upstream.git" ]; then
 	git init -q --bare -b master "$state/upstream.git"
 	printf '%s\n' "$source_objects" >"$state/upstream.git/objects/info/alternates"
 fi
-git -C "$state/upstream.git" update-ref refs/heads/master "$ACCEPT_PIN"
 
-# The rest afresh: the fork, the clone, dockhand's own state.
-rm -rf "$state/fork.git" "$state/clone" "$state/home" "$state/worktrees" "$state/bin"
-git init -q --bare -b master "$state/fork.git"
-printf '%s\n' "$source_objects" >"$state/fork.git/objects/info/alternates"
-git clone -q --shared --no-checkout "$state/upstream.git" "$state/clone"
-git -C "$state/clone" sparse-checkout set --cone _resources
-git -C "$state/clone" checkout -q master
-git -C "$state/clone" remote add fork "$state/fork.git"
-git -C "$state/clone" config user.name "Dockhand Acceptance"
-git -C "$state/clone" config user.email acceptance@example.invalid
-mkdir -p "$state/home" "$state/worktrees" "$state/bin"
-cat >"$state/home/config.toml" <<TOML
+export DOCKHAND_DB="$state/home/dockhand.db" DOCKHAND_CONFIG="$state/home/config.toml"
+export MACPORTS_TREE="$state/clone" DOCKHAND_UPSTREAM="$state/upstream.git"
+# The port index cache is kept between runs, since an index is the
+# pinned tree's, and building one takes minutes; the readings aren't.
+mkdir -p "$state/cache/index"
+export DOCKHAND_INDEX_CACHE="$state/cache/index" DOCKHAND_READING_CACHE="$state/home/readings"
+export ACCEPT_WATCH="$state/clone" ACCEPT_UPSTREAM=origin ACCEPT_RUN_DIR="$state/clone"
+# The Tart homes, kept between runs, since an image takes an hour and
+# tens of gigabytes to make.
+mkdir -p "$state/tart"
+export DOCKHAND_TART_HOME="$state/tart/dockhand" DOCKHAND_SSH_DIR="$state/tart/ssh" TART_HOME="$state/tart/tart"
+export ACCEPT_SECRET_DIRS="$state/home"
+export ACCEPT_HOME_DIRS="$HOME/.dockhand $HOME/.tart $HOME/.ssh"
+unset ACCEPT_GH_LOGIN
+
+# fresh makes the rest afresh: the fork, the clone, dockhand's own state,
+# registered with setup. The runner does it again before each row, so a
+# row starts from the pin, whatever the one before it left.
+fresh() {
+	git -C "$state/upstream.git" update-ref refs/heads/master "$ACCEPT_PIN"
+	rm -rf "$state/fork.git" "$state/clone" "$state/home" "$state/worktrees"
+	git init -q --bare -b master "$state/fork.git"
+	printf '%s\n' "$source_objects" >"$state/fork.git/objects/info/alternates"
+	git clone -q --shared --no-checkout "$state/upstream.git" "$state/clone"
+	git -C "$state/clone" sparse-checkout set --cone _resources
+	git -C "$state/clone" checkout -q master
+	git -C "$state/clone" remote add fork "$state/fork.git"
+	git -C "$state/clone" config user.name "Dockhand Acceptance"
+	git -C "$state/clone" config user.email acceptance@example.invalid
+	mkdir -p "$state/home" "$state/worktrees"
+	cat >"$state/home/config.toml" <<TOML
 worktrees = "$state/worktrees"
 
 [cleanup]
 automatic = false
 TOML
+	"$DH_BIN" setup -y >"$state/home/setup.log" 2>&1 || {
+		echo "quick.sh: dockhand setup failed in the scratch environment:" >&2
+		cat "$state/home/setup.log" >&2
+		exit 1
+	}
+}
+
+if [ "${1:-}" = --reset ]; then
+	: "${DH_BIN:?quick.sh --reset is the runner's, with the stage's environment}"
+	fresh
+	exit 0
+fi
 
 # The dockhand under test, built from this checkout.
 if [ -z "${DH_BIN:-}" ]; then
+	rm -rf "$state/bin"
+	mkdir -p "$state/bin"
 	(cd "$repo" && make -s build BINARY="$state/bin/dockhand")
 	DH_BIN="$state/bin/dockhand"
 fi
-
-export DH_BIN
-export DOCKHAND_DB="$state/home/dockhand.db" DOCKHAND_CONFIG="$state/home/config.toml"
-export MACPORTS_TREE="$state/clone" DOCKHAND_UPSTREAM="$state/upstream.git"
-export DOCKHAND_INDEX_CACHE="$state/home/index" DOCKHAND_READING_CACHE="$state/home/readings"
-export ACCEPT_WATCH="$state/clone" ACCEPT_UPSTREAM=origin ACCEPT_RUN_DIR="$state/clone"
-export ACCEPT_SECRET_DIRS="$state/home"
-unset ACCEPT_GH_LOGIN
-"$DH_BIN" setup -y >"$state/home/setup.log" 2>&1 || {
-	echo "quick.sh: dockhand setup failed in the scratch environment:" >&2
-	cat "$state/home/setup.log" >&2
-	exit 1
-}
+# The same, with the acceptance build's failpoints, for the kill rows.
+if [ -z "${DH_FAILPOINT_BIN:-}" ]; then
+	(cd "$repo" && GOFLAGS=-mod=vendor go build -tags acceptance -o "$state/bin/dockhand-failpoints" ./cmd/dockhand)
+	DH_FAILPOINT_BIN="$state/bin/dockhand-failpoints"
+fi
+export DH_BIN DH_FAILPOINT_BIN
+fresh
+if [ "${1:-}" = --image ]; then
+	exec "$DH_BIN" providers setup tart
+fi
+if ! ls -d "$DOCKHAND_TART_HOME"/vms/dockhand-base-* >/dev/null 2>&1; then
+	echo "quick.sh: the stage's Tart home, $DOCKHAND_TART_HOME, has no image, and the check rows build in one;" >&2
+	echo "  make it once with tools/acceptance/quick.sh --image, which downloads macOS's vanilla image" >&2
+	exit 2
+fi
+export ACCEPT_RESET="$here/quick.sh --reset"
 exec "$here/run.sh" --stage quick "$@"
