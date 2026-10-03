@@ -62,8 +62,11 @@ var ErrBusy = errors.New("filelock: busy")
 // A child process forked while some goroutine held a lock inherits the
 // descriptor until it execs, so a lock its holder has already closed can look
 // busy for a few milliseconds whenever the process spawns commands. A real
-// holder keeps a lock for far longer than a fork-to-exec window.
-const forkGrace = 250 * time.Millisecond
+// holder keeps a lock for far longer than a fork-to-exec window. On a
+// loaded Mac that window has run past 250ms (the Intel CI runner's three
+// cores, with commands spawning on four goroutines), so the grace is a
+// second: a lock that's really busy is said so a little later.
+const forkGrace = time.Second
 
 // TryExisting acquires an existing lock without creating paths, waiting only
 // long enough to see past a forked child that has not yet execd. This lets
