@@ -73,7 +73,7 @@ MacPorts' distfiles mirror.`,
 			return err
 		},
 	}
-	cmd.Flags().StringVar(&selector, "branch", "", "show this tracked branch")
+	cmd.Flags().StringVarP(&selector, "branch", "b", "", "show this branch: its name or the start of it, a port only it changes, #<pull request>, or check-<n>")
 	cmd.Flags().BoolVar(&stat, "stat", false, "list the changed files, not the patch")
 	cmd.Flags().BoolVar(&archives, "archive", false, "compare what the ports' source archives hold, not the Portfiles")
 	return cmd
@@ -266,7 +266,7 @@ some against the branch.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&selector, "branch", "", "show this tracked branch")
+	cmd.Flags().StringVarP(&selector, "branch", "b", "", "show this branch: its name or the start of it, a port only it changes, #<pull request>, or check-<n>")
 	return cmd
 }
 

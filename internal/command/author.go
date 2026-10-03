@@ -37,7 +37,7 @@ type branchChoice struct {
 }
 
 func (c *branchChoice) flags(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&c.branch, "branch", "", "work in this tracked branch (the dockhand/ prefix is optional)")
+	cmd.Flags().StringVarP(&c.branch, "branch", "b", "", "work in this branch: its name or the start of it, a port only it changes, #<pull request>, or check-<n>")
 	cmd.Flags().BoolVar(&c.new, "new", false, "start a new branch for this, in its own worktree")
 	cmd.MarkFlagsMutuallyExclusive("branch", "new")
 }
@@ -768,7 +768,7 @@ func untrackedHere(ctx context.Context, e *engine.Engine) string {
 // terminal is asked, and a script is told the choices.
 func chooseBranch(ctx context.Context, e *engine.Engine, streams Streams, where branchChoice, port, purpose string) (model.Branch, bool, error) {
 	if where.branch != "" {
-		branch, err := e.Resolve(ctx, where.branch)
+		branch, err := e.Select(ctx, where.branch)
 		return branch, false, err
 	}
 	if where.new {
@@ -800,47 +800,31 @@ func chooseBranch(ctx context.Context, e *engine.Engine, streams Streams, where 
 	for _, branch := range changing {
 		names = append(names, branch.ShortName())
 	}
-	if !streams.terminal() {
-		if len(names) == 0 {
-			here := "this checkout is on none"
-			if beside != "" {
-				here = beside + ", checked out here, doesn't change it"
-			}
-			return model.Branch{}, false, fmt.Errorf("%s is in no open branch, and %s; start one with --new, or name one with --branch <name>", port, here)
+	// Where nothing else could be meant, the branch is chosen, and said
+	// first (the command-line UX review, §1 and §2): no open branch
+	// changes the port, so one is started, as revbump starts one; or
+	// exactly one does, so the work goes there. --new starts another.
+	switch len(changing) {
+	case 0:
+		name, err := e.FreeName(ctx, port)
+		if err != nil {
+			return model.Branch{}, false, err
 		}
-		return model.Branch{}, false, fmt.Errorf("%s is changed in %s; name it with --branch %s, or start another with --new", port, strings.Join(names, ", "), names[0])
+		fmt.Fprintf(streams.Err, "%s is in no open branch, so this starts %s for it.\n", port, engine.BranchName(name))
+		return startNamed(ctx, e, name)
+	case 1:
+		fmt.Fprintf(streams.Err, "Working in %s, the one open branch changing %s; --new starts another.\n", changing[0].ShortName(), port)
+		return changing[0], false, nil
+	}
+	if !streams.terminal() {
+		return model.Branch{}, false, &engine.AmbiguousError{Selector: port, Branches: changing}
 	}
 	name, err := e.FreeName(ctx, port)
 	if err != nil {
 		return model.Branch{}, false, err
 	}
-	switch len(changing) {
-	case 0:
-		fmt.Fprintf(streams.Err, "%s is in no open branch.\n", port)
-		answer, err := ask(streams, fmt.Sprintf("? start %s for it? [Y/n] ", engine.BranchName(name)))
-		if err != nil {
-			return model.Branch{}, false, err
-		}
-		if answer != "" && !strings.EqualFold(answer, "y") && !strings.EqualFold(answer, "yes") {
-			return model.Branch{}, false, errors.New("nothing changed")
-		}
-		return startNamed(ctx, e, name)
-	case 1:
-		fmt.Fprintf(streams.Err, "%s is changed in 1 open branch: %s\n", port, changing[0].Name)
-		answer, err := ask(streams, fmt.Sprintf("? %s %s there, or start a new branch? [t]here / [n]ew / [q]uit ", verb(purpose), port))
-		if err != nil {
-			return model.Branch{}, false, err
-		}
-		switch strings.ToLower(answer) {
-		case "t", "there":
-			return changing[0], false, nil
-		case "n", "new":
-			return startNamed(ctx, e, name)
-		}
-		return model.Branch{}, false, errors.New("nothing changed")
-	}
 	fmt.Fprintf(streams.Err, "%s is changed in %d open branches: %s\n", port, len(changing), strings.Join(names, ", "))
-	answer, err := ask(streams, fmt.Sprintf("? start %s instead? (--branch <name> picks one of them) [y/N] ", engine.BranchName(name)))
+	answer, err := ask(streams, fmt.Sprintf("? start %s instead? (-b <branch> picks one of them) [y/N] ", engine.BranchName(name)))
 	if err != nil {
 		return model.Branch{}, false, err
 	}
@@ -848,13 +832,6 @@ func chooseBranch(ctx context.Context, e *engine.Engine, streams Streams, where 
 		return model.Branch{}, false, errors.New("nothing changed")
 	}
 	return startNamed(ctx, e, name)
-}
-
-func verb(purpose string) string {
-	if purpose == "checksums" {
-		return "refresh"
-	}
-	return purpose
 }
 
 func startFor(ctx context.Context, e *engine.Engine, port string) (model.Branch, bool, error) {

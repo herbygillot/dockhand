@@ -20,20 +20,33 @@ import (
 // --branch, else the one checked out here. It never asks.
 func workingBranch(ctx context.Context, e *engine.Engine, selector string) (model.Branch, error) {
 	if selector != "" {
-		return e.Resolve(ctx, selector)
+		return e.Select(ctx, selector)
 	}
 	branch, err := e.Current(ctx)
 	if errors.Is(err, engine.ErrNoBranch) {
-		return model.Branch{}, fmt.Errorf("%w; name one with --branch <name>, or run this in the branch's worktree (dockhand path <name>)", err)
+		return model.Branch{}, fmt.Errorf("%w; name one with -b <branch or port>, or run this in the branch's worktree (dockhand path <name>)", err)
 	}
 	return branch, err
+}
+
+// branchArgument takes a command's one positional argument as its branch
+// selector, as -b takes one: check jq is check -b jq.
+func branchArgument(args []string, selector *string) error {
+	if len(args) == 0 {
+		return nil
+	}
+	if *selector != "" && *selector != args[0] {
+		return fmt.Errorf("the branch is named twice, %s and -b %s; name it once", args[0], *selector)
+	}
+	*selector = args[0]
+	return nil
 }
 
 func tidyCommand(s *settings, streams Streams) *cobra.Command {
 	var selector, message, author, group, saveTo, apply string
 	var squash, plan, yes bool
 	cmd := &cobra.Command{
-		Use:   "tidy",
+		Use:   "tidy [branch]",
 		Short: "Shape the branch's commits for review",
 		Long: `Proposes the commits a reviewer should see: by default one per port
 directory, with the subject dockhand's commands wrote or the one your own
@@ -54,9 +67,12 @@ one commit of 1 and 3. On a terminal, [g] does the same.
 --plan --out <file> saves the plan for review; edit its messages there if
 you like. --apply <file> applies it, as long as the branch's base, its
 commits, and its files are as they were when it was saved.`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
+			if err := branchArgument(args, &selector); err != nil {
+				return err
+			}
 			if message != "" && !squash {
 				return errors.New("--message names the one commit --squash makes; add --squash")
 			}
@@ -135,7 +151,7 @@ commits, and its files are as they were when it was saved.`,
 			return err
 		},
 	}
-	cmd.Flags().StringVar(&selector, "branch", "", "tidy this tracked branch")
+	cmd.Flags().StringVarP(&selector, "branch", "b", "", "tidy this branch: its name or the start of it, a port only it changes, #<pull request>, or check-<n>")
 	cmd.Flags().BoolVar(&squash, "squash", false, "make one commit of the whole branch")
 	cmd.Flags().StringVar(&message, "message", "", "the message of the commit --squash makes")
 	cmd.Flags().StringVar(&author, "author", "", "attribute a commit that combines several people's commits: \"Name <email>\"")

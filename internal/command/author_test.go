@@ -140,13 +140,10 @@ func TestUpdateInTheBranchCheckedOutHere(t *testing.T) {
 	require.Contains(t, out, "jq 1.8.1\nUpdated checksums.\n")
 }
 
-func TestUpdateWithoutABranchAsksOrSaysHow(t *testing.T) {
+func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
 	w := newWorld(t)
 	versioned(t, w)
 	withBumper(t)
-
-	_, _, err := dockhand(t, "update", "jq")
-	require.ErrorContains(t, err, "jq is in no open branch, and this checkout is on none; start one with --new, or name one with --branch <name>")
 
 	// A plan changes nothing, so with no branch to plan in it plans on
 	// master, as --new --plan does, and asks nothing on a terminal.
@@ -162,30 +159,29 @@ func TestUpdateWithoutABranchAsksOrSaysHow(t *testing.T) {
 	require.Contains(t, told.String(), "Planned on master ")
 	require.Equal(t, none, testsupport.Git(t, w.clone, "branch", "--list", "dockhand/*"), "no branch was started")
 
+	// With no open branch changing the port, the update starts one, in
+	// a script too, and says so first (the command-line UX review, §2).
 	var out, errs bytes.Buffer
-	err = Run(t.Context(), []string{"update", "jq"}, Streams{In: strings.NewReader("\n"), Out: &out, Err: &errs, interactive: true})
+	err = Run(t.Context(), []string{"update", "jq"}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
 	require.NoError(t, err)
-	require.Regexp(t, `^jq is in no open branch\.\n\? start dockhand/jq-[a-z0-9]{4} for it\? \[Y/n\] $`, errs.String())
+	require.Regexp(t, `^jq is in no open branch, so this starts dockhand/jq-[a-z0-9]{4} for it\.\n`, errs.String())
 	started := regexp.MustCompile(`Started dockhand/(jq-[a-z0-9]{4}) from master `).FindStringSubmatch(out.String())
 	require.NotNil(t, started, out.String())
 	name := started[1]
 	require.Contains(t, out.String(), name+" · ~/Source/macports-branches/"+name+"\n")
 	testsupport.Git(t, filepath.Join(w.home, "Source", "macports-branches", name), "commit", "-q", "-am", "jq: update to 1.8.1")
 
-	_, _, err = dockhand(t, "update", "jq")
-	require.ErrorContains(t, err, "jq is changed in "+name+"; name it with --branch "+name+", or start another with --new")
-	// A plan for a port a branch changes says which to plan in, on a
-	// terminal too, rather than offering to start a branch.
-	asked.Reset()
-	err = Run(t.Context(), []string{"update", "jq", "--plan"}, Streams{In: strings.NewReader("n\n"), Out: &told, Err: &asked, interactive: true})
-	require.ErrorContains(t, err, "jq is changed in "+name+"; name it with --branch "+name)
-	require.NotContains(t, asked.String(), "? ")
+	// With exactly one, the work goes there, a plan's too, and says so.
+	_, said, err := dockhand(t, "update", "jq", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, said, "Working in "+name+", the one open branch changing jq; --new starts another.\n")
 
 	out.Reset()
 	errs.Reset()
-	err = Run(t.Context(), []string{"checksums", "jq"}, Streams{In: strings.NewReader("t\n"), Out: &out, Err: &errs, interactive: true})
+	err = Run(t.Context(), []string{"checksums", "jq"}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs, interactive: true})
 	require.NoError(t, err)
-	require.Contains(t, errs.String(), "jq is changed in 1 open branch: dockhand/"+name+"\n? refresh jq there, or start a new branch? [t]here / [n]ew / [q]uit ")
+	require.Contains(t, errs.String(), "Working in "+name+", the one open branch changing jq")
+	require.NotContains(t, errs.String(), "? ", "nothing else could be meant, so nothing is asked")
 	require.Contains(t, out.String(), name+" · ")
 	require.Contains(t, out.String(), "Updated checksums.")
 
@@ -246,8 +242,9 @@ func TestAnUntrackedBranchHereIsTheirsToAdopt(t *testing.T) {
 	planned, _, err := dockhand(t, "update", "jq", "--plan")
 	require.NoError(t, err)
 	require.Regexp(t, `Planned on master [0-9a-f]+ \(fetched just now\), since mine doesn't change jq; --new without --plan starts the branch\n`, planned)
-	_, _, err = dockhand(t, "update", "jq")
-	require.ErrorContains(t, err, "jq is in no open branch, and mine, checked out here, doesn't change it; start one with --new, or name one with --branch <name>")
+	_, said, err := dockhand(t, "update", "jq", "1.8.1")
+	require.NoError(t, err)
+	require.Regexp(t, `jq is in no open branch, so this starts dockhand/jq-[a-z0-9]{4} for it\.`, said, "mine is no context, as master isn't")
 
 	refused := func(why string) {
 		t.Helper()

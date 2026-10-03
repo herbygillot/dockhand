@@ -298,7 +298,7 @@ func watchVerb(ctx context.Context, e *engine.Engine, line string) (args []strin
 	case "l":
 		filter := store.RunFilter{}
 		if branch != "" {
-			found, err := e.Resolve(ctx, branch)
+			found, err := e.Select(ctx, branch)
 			if err != nil {
 				return nil, false, err
 			}

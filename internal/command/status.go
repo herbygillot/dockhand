@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -72,7 +73,10 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 		return showBranch(ctx, e, streams.Out, branch)
 	}
 	if len(args) == 1 {
-		branch, err := e.ResolveRecord(ctx, args[0])
+		branch, err := e.Select(ctx, args[0])
+		if errors.Is(err, engine.ErrNoBranch) {
+			branch, err = e.ResolveRecord(ctx, args[0])
+		}
 		if err != nil {
 			return err
 		}
@@ -136,7 +140,7 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 		fmt.Fprintln(out)
 	}
 	if len(statuses) == 0 {
-		fmt.Fprintln(out, "No open branches. Start one with dockhand start <name>.")
+		fmt.Fprintln(out, "No open branches. dockhand update <port> starts one for a port, and dockhand start <name> one for other work.")
 	} else {
 		table := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(table, "BRANCH\tPORTS\tWORK\tCHECKS\tPR")

@@ -27,7 +27,7 @@ func checkCommand(s *settings, streams Streams) *cobra.Command {
 	var plan, head, staged, workingTree, enqueue, baseline, replace, fresh, yes bool
 	var include, only, also, on []string
 	cmd := &cobra.Command{
-		Use:   "check",
+		Use:   "check [branch]",
 		Short: "Build and test what you have, committed or not",
 		Long: `Captures the branch's files, the tracked ones as they are on disk unless
 --staged or --head says otherwise, as a numbered snapshot, and builds every
@@ -57,9 +57,12 @@ planned there as a check would be, and reports each beside the branch's
 result. It says what happened in each run and nothing more. A failed check
 points to it when a baseline can answer something; with check.baseline =
 true, it runs that baseline by itself.`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
+			if err := branchArgument(args, &selector); err != nil {
+				return err
+			}
 			// A misspelled policy is refused before anything is captured.
 			if tests != "" && !model.TestPolicy(tests).Valid() {
 				return fmt.Errorf("--tests %q is not declared, required, or skip", tests)
@@ -165,7 +168,7 @@ true, it runs that baseline by itself.`,
 			return err
 		},
 	}
-	cmd.Flags().StringVar(&selector, "branch", "", "check this tracked branch")
+	cmd.Flags().StringVarP(&selector, "branch", "b", "", "check this branch: its name or the start of it, a port only it changes, #<pull request>, or check-<n>")
 	cmd.Flags().BoolVar(&plan, "plan", false, "show what would be built and change nothing")
 	cmd.Flags().BoolVar(&head, "head", false, "check the committed tip")
 	cmd.Flags().BoolVar(&staged, "staged", false, "check the index")

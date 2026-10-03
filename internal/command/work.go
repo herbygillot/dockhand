@@ -107,7 +107,7 @@ one older than 2.40, which rebase needs.`,
 			}
 			fmt.Fprintf(out, "  Publishing   %s\n", publishing(cmd.Context()))
 			fmt.Fprintf(out, "  Records      %s\n\n", tilde(options.Database))
-			fmt.Fprintln(out, "Next: dockhand start <name>")
+			fmt.Fprintln(out, "Next: dockhand outdated --mine, or dockhand update <port>")
 			return nil
 		},
 	}
