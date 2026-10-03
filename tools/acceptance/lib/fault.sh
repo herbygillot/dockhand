@@ -59,7 +59,8 @@ fault_vm_slots_stop() {
 }
 
 # fault_shims makes a directory of PATH shims and says it: each tool named
-# hidden, as if not installed, and with old-git, a git that says it's 2.39.
+# hidden, as if not installed; with old-git, a git that says it's 2.39;
+# and with old-tart, a Tart that says it's 2.38.0.
 fault_shims() {
 	local dir="$ROW_DIR/shims" tool real
 	mkdir -p "$dir"
@@ -73,11 +74,19 @@ fault_shims() {
 exec "$real" "\$@"
 SH
 			;;
+		old-tart)
+			real=$(command -v tart)
+			cat >"$dir/tart" <<SH
+#!/bin/sh
+[ "\$1" = --version ] && { echo "2.38.0"; exit 0; }
+exec "$real" "\$@"
+SH
+			;;
 		*)
 			printf '#!/bin/sh\necho "%s: command not found" >&2\nexit 127\n' "$tool" >"$dir/$tool"
 			;;
 		esac
-		chmod +x "$dir/$tool" "$dir/git" 2>/dev/null || :
+		chmod +x "$dir"/* 2>/dev/null || :
 	done
 	printf '%s' "$dir"
 }

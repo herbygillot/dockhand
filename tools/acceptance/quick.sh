@@ -5,6 +5,9 @@
 #
 #   tools/acceptance/quick.sh [--candidate <rc>] [--rows "A3 B1"]
 #   tools/acceptance/quick.sh --image     # once: the stage's Tart image
+#   tools/acceptance/quick.sh --dry-full [--rows ...]
+#                                         # the full stage's rows, each up
+#                                         # to its first step for the host
 #
 # The environment lives in ACCEPT_STATE, ~/.dockhand-acceptance/quick
 # unless set:
@@ -130,4 +133,8 @@ if ! ls -d "$DOCKHAND_TART_HOME"/vms/dockhand-base-* >/dev/null 2>&1; then
 	exit 2
 fi
 export ACCEPT_RESET="$here/quick.sh --reset"
+if [ "${1:-}" = --dry-full ]; then
+	shift
+	exec "$here/run.sh" --stage full --dry-run --candidate "dry-$(git -C "$repo" rev-parse --short HEAD)" "$@"
+fi
 exec "$here/run.sh" --stage quick "$@"

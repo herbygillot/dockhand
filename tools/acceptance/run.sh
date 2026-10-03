@@ -3,7 +3,11 @@
 # results/<candidate>/<row>.json (prime-time.md; the project's
 # plan/acceptance-harness.md, H1).
 #
-#   tools/acceptance/run.sh --stage quick|full --candidate <rc> [--rows "A3 B1"]
+#   tools/acceptance/run.sh --stage quick|full --candidate <rc> [--rows "A3 B1"] [--dry-run]
+#
+# --dry-run walks the full stage's rows in the quick stage's scratch
+# environment, each up to its first step that needs the test host or a
+# person, where it stops as "not run" (lib/protocol.sh).
 #
 # A row is rows/<ID>.sh, which says the stages it runs in on a line
 # "# stages: quick full" and defines setup, act, and assert. The runner
@@ -24,7 +28,8 @@ while [ $# -gt 0 ]; do
 	--candidate) candidate=$2; shift 2 ;;
 	--rows) rows=$(printf '%s' "$2" | tr ',' ' '); shift 2 ;;
 	--row-dir) rowdir=$2; shift 2 ;;
-	-h | --help) sed -n '2,13p' "$0"; exit 0 ;;
+	--dry-run) ACCEPT_DRY=1; shift ;;
+	-h | --help) sed -n '2,17p' "$0"; exit 0 ;;
 	*) echo "run.sh: unknown argument $1" >&2; exit 2 ;;
 	esac
 done
@@ -35,7 +40,14 @@ if [ -z "${ACCEPT_STATE:-}" ] || [ ! -d "$ACCEPT_STATE" ]; then
 fi
 # shellcheck source=lib/guard.sh
 . "$here/lib/guard.sh"
-guard "$stage" || exit 2
+# A dry run takes no step of the host's, and is held to the quick stage's
+# guard, since it runs in the quick stage's environment.
+export ACCEPT_DRY=${ACCEPT_DRY:-0}
+if [ "$ACCEPT_DRY" = 1 ]; then
+	guard quick || exit 2
+else
+	guard "$stage" || exit 2
+fi
 [ -n "$candidate" ] || candidate=$(git -C "$here" describe --tags --match 'v*' --exact-match 2>/dev/null || git -C "$here" rev-parse --short HEAD 2>/dev/null || echo dev)
 export ACCEPT_STAGE=$stage ACCEPT_CANDIDATE=$candidate
 
@@ -50,6 +62,27 @@ fi
 results="$ACCEPT_STATE/results/$candidate"
 mkdir -p "$results"
 failed=0
+notrun=0
+
+# The full stage's pull requests are approved before any row runs: the
+# list goes to the person, who leaves the lines they approve.
+# shellcheck source=lib/protocol.sh
+. "$here/lib/protocol.sh"
+if [ "$stage" = full ]; then
+	# shellcheck disable=SC2086
+	protocol_list_prs "$ACCEPT_STATE/prs.intended" "$rowdir" $rows
+	if [ -s "$ACCEPT_STATE/prs.intended" ] && protocol_live; then
+		echo "The pull requests the rows mean to open, row, port, and test or real:"
+		sed 's/^/  /' "$ACCEPT_STATE/prs.intended"
+		ROW_ID=approval ROW_DIR="$results/approval"
+		mkdir -p "$ROW_DIR"
+		say() { printf '%s\n' "$*"; }
+		row_result() { :; }
+		checkpoint "approve the pull requests in $ACCEPT_STATE/prs.intended: delete any line you don't approve, and change test to real for a real update" ||
+			: >"$ACCEPT_STATE/prs.intended"
+		unset -f say row_result
+	fi
+fi
 printf '%-8s %-14s %s\n' ROW RESULT WHY
 for row in $rows; do
 	file="$rowdir/$row.sh"
@@ -74,6 +107,8 @@ for row in $rows; do
 		. "$here/lib/common.sh"
 		# shellcheck source=lib/harm.sh
 		. "$here/lib/harm.sh"
+		# shellcheck source=lib/protocol.sh
+		. "$here/lib/protocol.sh"
 		setup() { :; }
 		act() { :; }
 		assert() { :; }
@@ -106,7 +141,12 @@ for row in $rows; do
 		--argjson exits "$(for e in "$ROW_DIR"/json/*.json.exit; do [ -f "$e" ] && cat "$e"; done | jq -s '.')" \
 		'{row: $row, stage: $stage, candidate: $candidate, result: $result, why: $why, harm: $harm, exit_codes: $exits, log: $log}' >"$results/$row.json"
 	printf '%-8s %-14s %s\n' "$row" "$result" "$why"
-	case "$result" in pass | "refused well" | "known issue") ;; *) failed=$((failed + 1)) ;; esac
+	case "$result" in
+	pass | "refused well" | "known issue") ;;
+	"not run") notrun=$((notrun + 1)) ;;
+	*) failed=$((failed + 1)) ;;
+	esac
 done
+[ "$notrun" -eq 0 ] || echo "$notrun not run: each stopped at a step for the host or a person, as its row says"
 echo "Results: $results"
 [ "$failed" -eq 0 ]

@@ -271,7 +271,7 @@ harm_h6() {
 		while IFS= read -r segment; do
 			# What a step says in parentheses is for the reader, not the
 			# command: "dockhand check (the files changed)".
-			segment=$(printf '%s' "$segment" | sed 's/ *([^)]*)//g; s/^ *//; s/ *$//; s/[.]$//')
+			segment=$(printf '%s' "$segment" | sed 's/ *([^()]*)$//; s/^ *//; s/ *$//; s/[.]$//')
 			[ -n "$segment" ] || continue
 			case "$segment" in
 			'cd "$(dockhand path '*')"')

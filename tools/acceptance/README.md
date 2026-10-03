@@ -6,7 +6,10 @@ The release-candidate test, run as scripts, as the project's plan/prime-time.md 
 make acceptance                     # the quick stage: tools/acceptance/quick.sh
 tools/acceptance/quick.sh --rows A3 # some of its rows
 tools/acceptance/quick.sh --image   # once: the stage's own Tart image
+tools/acceptance/quick.sh --dry-full  # the full stage's rows, each up to its first host step
 make acceptance-selftest
+tools/acceptance/full.sh --candidate v0.3.0-rcN   # on the test host, as dhtest
+tools/acceptance/resume.sh done     # answer a WAITING checkpoint: done, skip, or fail
 ```
 
 **The quick stage** (`quick.sh`) builds the dockhand under test from this checkout and makes its environment afresh in `ACCEPT_STATE`, `~/.dockhand-acceptance/quick` unless set:
@@ -42,3 +45,9 @@ make acceptance-selftest
 - **The fault kit** (`lib/fault.sh`) gives rows their faults: `faultproxy`, a proxy that tunnels without decrypting and can stall, cut, or answer 5xx, as `HTTPS_PROXY`; `PATH` shims that hide or age a tool; and a byte flipped, a file truncated, or bad TOML written.
 - **Failpoints:** the kill rows run `DH_FAILPOINT_BIN`, built with the `acceptance` tag, where `DOCKHAND_FAILPOINT=<step>:kill` kills dockhand at that step (`internal/failpoint`). A release build has no failpoints, which a test proves.
 - **The test host** (`host/`): `provision-host.sh` sets up a Mac once, `reset-user.sh` makes the full stage's `dhtest` user afresh and refuses without the host's marker or as any other user, and `stage-candidate.sh` writes the candidate's Portfile into the overlay. Each is a dry run, saying what it would do, unless given `--run`.
+- **The full stage** (`full.sh`) runs on the test host as `dhtest`, against its own ports clone, the dockhand row A1 installs, and the test GitHub account (`ACCEPT_GH_LOGIN`), with the day's small Go and Rust ports (`ACCEPT_GO_PORT`, `ACCEPT_RUST_PORT`). Its protocol is `lib/protocol.sh`:
+  - `checkpoint "<what>"` stops with `WAITING: <what>` until `resume.sh` answers `done`, `skip` (the row is not run), or `fail`; `judged "<claim>"` asks a person whether what a row shows holds;
+  - `host_only "<what>"` marks a row's first step that needs the host;
+  - a row's `# prs: <port> test|real` lines are the pull requests it means to open. Before the first row, run.sh lists them all in `$ACCEPT_STATE/prs.intended` and waits: the person deletes a line to decline it, or changes `test` to `real` for a real update. `submit_pr` opens only an approved one, a test one titled `[testing]` with a `--note` saying it will be closed and `--skip-notification`; `close_test_pr` closes it once the row has its evidence, then runs `clean --closed`.
+
+  In the quick stage and a dry run (`--dry-run`, which `quick.sh --dry-full` passes), a row stops as "not run" at its first checkpoint or host-only step, saying which. The self-test walks every full-stage-only row that way, with nothing of dockhand's run, and answers a checkpoint `done` and `fail`.

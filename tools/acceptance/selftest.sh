@@ -82,4 +82,61 @@ guard_case() {
 }
 guard_case DOCKHAND_DB "$HOME/.dockhand/dockhand.db"
 guard_case TART_HOME "$HOME/.tart"
+
+# The full stage's protocol (lib/protocol.sh). A dry run walks every row
+# only the full stage runs up to its first step for the host or a person,
+# where each stops as not run, having run nothing of dockhand's.
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/dockhand-selftest.XXXXXX")
+mkdir -p "$tmp/state" "$tmp/fake"
+git init -q -b master "$tmp/clone"
+git -C "$tmp/clone" -c user.name=t -c user.email=t@example.org commit -q --allow-empty -m init
+fullrows=$(cd "$here/rows" && grep -lx '# stages: full' -- *.sh | sed 's/[.]sh$//' | tr '\n' ' ')
+(
+	export ACCEPT_STATE="$tmp/state" ACCEPT_WATCH="$tmp/clone" ACCEPT_UPSTREAM="" ACCEPT_RUN_DIR="$tmp/clone"
+	export SELFTEST_CLONE="$tmp/clone" FAKE_DH_STATE="$tmp/fake" DH_BIN="$here/selftest/bin/dockhand"
+	export DOCKHAND_DB="$tmp/state/db" DOCKHAND_CONFIG="$tmp/state/config.toml" MACPORTS_TREE="$tmp/state/clone"
+	export DOCKHAND_UPSTREAM="$tmp/state/upstream.git" DOCKHAND_INDEX_CACHE="$tmp/state/index" DOCKHAND_READING_CACHE="$tmp/state/readings"
+	export DOCKHAND_TART_HOME="$tmp/state/tart/dockhand" DOCKHAND_SSH_DIR="$tmp/state/tart/ssh" TART_HOME="$tmp/state/tart/tart"
+	export ACCEPT_GO_PORT=go-port ACCEPT_RUST_PORT=rust-port PATH="$here/selftest/bin:$PATH"
+	unset ACCEPT_GH_LOGIN ACCEPT_SECRET_DIRS ACCEPT_HOME_DIRS
+	# shellcheck disable=SC2086
+	"$here/run.sh" --stage full --dry-run --candidate dry --rows "$fullrows" >/dev/null || :
+)
+walked=0
+for row in $fullrows; do
+	result=$(jq -r '.result + ": " + .why' "$tmp/state/results/dry/$row.json" 2>/dev/null || echo "no result")
+	case "$result" in
+	"not run: host only, from: "* | "not run: waits on a person, from: "*) walked=$((walked + 1)) ;;
+	*) echo "selftest: the dry run of $row gave $result"; fail=1 ;;
+	esac
+done
+ran=$(grep -l '^\$ dockhand' "$tmp"/state/results/dry/*/out.log 2>/dev/null | head -3 | tr '\n' ' ' || :)
+[ -z "$ran" ] || { echo "selftest: a dry run ran dockhand in $ran"; fail=1; }
+echo "selftest: a dry run walked $walked full-stage rows, each to its first step for the host or a person"
+rm -rf "$tmp"
+
+# A checkpoint waits on WAITING until resume.sh answers: done goes on,
+# and fail fails the row.
+for answer in done fail; do
+	tmp=$(mktemp -d "${TMPDIR:-/tmp}/dockhand-selftest.XXXXXX")
+	mkdir -p "$tmp/row"
+	(
+		export ACCEPT_STATE="$tmp" ACCEPT_STAGE=full ACCEPT_DRY=0 ROW_DIR="$tmp/row" ROW_ID=X1
+		# shellcheck source=lib/common.sh
+		. "$here/lib/common.sh"
+		# shellcheck source=lib/protocol.sh
+		. "$here/lib/protocol.sh"
+		say() { :; }
+		if checkpoint "do the thing"; then echo went-on >"$tmp/row/after"; fi
+	) &
+	waiter=$!
+	for _ in 1 2 3 4 5 6 7 8 9 10; do [ -f "$tmp/waiting" ] && break; sleep 1; done
+	ACCEPT_STATE="$tmp" "$here/resume.sh" "$answer"
+	wait "$waiter" || :
+	case "$answer:$(cat "$tmp/row/after" 2>/dev/null):$(cat "$tmp/row/result" 2>/dev/null)" in
+	done:went-on: | fail::fail) echo "selftest: a checkpoint answered $answer did as it should" ;;
+	*) echo "selftest: a checkpoint answered $answer: after=$(cat "$tmp/row/after" 2>/dev/null) result=$(cat "$tmp/row/result" 2>/dev/null)"; fail=1 ;;
+	esac
+	rm -rf "$tmp"
+done
 exit "$fail"
