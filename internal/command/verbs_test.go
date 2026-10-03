@@ -21,7 +21,7 @@ func TestEditRevbumpRetryRebaseAndArchive(t *testing.T) {
 	require.ErrorContains(t, err, "revbump needs the reason as --subject")
 	out, _, err := dockhand(t, "revbump", "jq", "--subject", "rebuild for oniguruma 6.9.10")
 	require.NoError(t, err, "outside any branch, revbump starts one")
-	require.Regexp(t, `^Started dockhand/jq-[a-z0-9]{4} from master `, out)
+	require.Regexp(t, `^Started dockhand/jq-rebuild from master `, out)
 	require.Contains(t, out, "· 1 port\n  jq  revision 0 → 1\nRecorded the subject for tidy: \"<port>: rebuild for oniguruma 6.9.10\"\n")
 
 	_, _, err = dockhand(t, "start", "notes")
@@ -95,4 +95,20 @@ func TestEditRevbumpRetryRebaseAndArchive(t *testing.T) {
 	out, _, err = dockhand(t, "archive", "--undo", "notes")
 	require.NoError(t, err)
 	require.Equal(t, "notes is back among your open branches.\n", out)
+}
+
+// start --port brings a port's directory in from the start, so a script
+// needn't run edit for the files; with no name, the branch is named for
+// the port, as an edit's is.
+func TestStartBringsItsPortsIn(t *testing.T) {
+	w := newWorld(t)
+	out, _, err := dockhand(t, "start", "notes", "--port", "jq")
+	require.NoError(t, err)
+	require.Contains(t, out, "Created dockhand/notes from master ")
+	require.FileExists(t, filepath.Join(w.home, "Source", "macports-branches", "notes", "textproc/jq/Portfile"))
+	out, _, err = dockhand(t, "start", "--port", "jq")
+	require.NoError(t, err)
+	require.Regexp(t, `^Created dockhand/jq-[a-z0-9]{4} from master `, out)
+	_, _, err = dockhand(t, "start")
+	require.ErrorContains(t, err, "start needs a name, or a --port to name the branch for")
 }

@@ -147,7 +147,7 @@ func revbumpBranch(ctx context.Context, e *engine.Engine, selector, port string,
 	if plan {
 		return model.Branch{}, false, errors.New("--plan changes nothing, so it starts no branch; plan in an existing one with --branch")
 	}
-	return startFor(ctx, e, port)
+	return startFor(ctx, e, port, whatFor("revbump"))
 }
 
 func retryCommand(s *settings, streams Streams) *cobra.Command {

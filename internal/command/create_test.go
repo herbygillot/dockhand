@@ -73,14 +73,14 @@ func TestCreateWritesANewPortFromItsProject(t *testing.T) {
 	out, _, err := dockhand(t, "create", "https://github.com/rift-dev/rift", "--new", "--category", "textproc")
 	require.NoError(t, err)
 	require.Regexp(t, `^rift 0\.4\.2 · Rust \(Cargo\.toml\) · GitHub says MIT · "Fast structural diff for config files"\n`+
-		`Started dockhand/rift-[a-z0-9]{4} from master [0-9a-f]+ \(fetched just now\)\n`+
+		`Started dockhand/rift-new from master [0-9a-f]+ \(fetched just now\)\n`+
 		`Created textproc/rift/Portfile from the github and cargo PortGroups\n`+
 		`  cargo.crates: 1 crate, from Cargo.lock\n`+
 		`  checksums: 1 distfile \+ 1 crate\n`+
 		`  Unconfirmed, marked in the file: license \(from GitHub's detection\), long_description, destroot\n`+
 		`Next: dockhand edit rift, then dockhand check\n$`, out)
 
-	branch := regexp.MustCompile(`dockhand/(rift-[a-z0-9]{4})`).FindStringSubmatch(out)[1]
+	branch := regexp.MustCompile(`dockhand/(rift-new)`).FindStringSubmatch(out)[1]
 	dir := filepath.Join(w.home, "Source", "macports-branches", branch)
 	data, err := os.ReadFile(filepath.Join(dir, "textproc/rift/Portfile"))
 	require.NoError(t, err)
@@ -147,7 +147,7 @@ func TestCreateTakesTheManifestsLicenseAndLine(t *testing.T) {
 	require.Contains(t, out, "Unconfirmed, marked in the file: category devel (guessed from the build system; create --category moves it), license (from Cargo.toml), long_description, maintainers")
 	require.Contains(t, out, "  maintainers: nomaintainer, as your config names none; set maintainer = \"{@you example.org:you}\" in "+filepath.Join(w.home, ".dockhand", "config.toml")+"\n",
 		"no port at the base names @ada")
-	branch := regexp.MustCompile(`dockhand/(txt-[a-z0-9]{4})`).FindStringSubmatch(out)[1]
+	branch := regexp.MustCompile(`dockhand/(txt-new)`).FindStringSubmatch(out)[1]
 	data, err := os.ReadFile(filepath.Join(w.home, "Source", "macports-branches", branch, "devel/txt/Portfile"))
 	require.NoError(t, err)
 	require.Contains(t, string(data), "# dockhand: unconfirmed, from Cargo.toml's license field\nlicense             {MIT Apache-2}\n")
@@ -262,7 +262,7 @@ func TestCreateTakesThePythonPortGroupsDefault(t *testing.T) {
 	t.Cleanup(func() { testProjectReader, testPreparer, testPortReader = nil, nil, nil })
 	out, _, err := dockhand(t, "create", "https://github.com/o/tool", "--new", "--category", "textproc")
 	require.NoError(t, err)
-	branch := regexp.MustCompile(`dockhand/(py-tool-[a-z0-9]{4})`).FindStringSubmatch(out)[1]
+	branch := regexp.MustCompile(`dockhand/(py-tool-new)`).FindStringSubmatch(out)[1]
 	data, err := os.ReadFile(filepath.Join(w.home, "Source", "macports-branches", branch, "textproc/py-tool/Portfile"))
 	require.NoError(t, err)
 	require.Contains(t, string(data), "python.versions     314\n")

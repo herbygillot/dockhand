@@ -118,23 +118,42 @@ one older than 2.40, which rebase needs.`,
 
 func startCommand(s *settings, streams Streams) *cobra.Command {
 	var here bool
+	var ports []string
 	cmd := &cobra.Command{
-		Use:   "start <name>",
+		Use:   "start [<name>] [--port <port>]...",
 		Short: "Start a branch from freshly fetched master",
 		Long: `Creates dockhand/<name> from MacPorts' master, fetched just now, in a sparse
 worktree of its own: _resources plus the ports you edit, beside your clone.
-With --here, the branch is created in this checkout instead, which must
-have no uncommitted changes to tracked files.`,
-		Args: cobra.ExactArgs(1),
+--port brings a port's directory in from the start, as edit does, and can
+be given more than once; with no name, the branch is named for the first
+port, with a short ID, as an edit's is. With --here, the branch is created
+in this checkout instead, which must have no uncommitted changes to
+tracked files.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			e, err := s.open(cmd.Context())
+			ctx := cmd.Context()
+			if len(args) == 0 && len(ports) == 0 {
+				return errors.New("start needs a name, or a --port to name the branch for")
+			}
+			e, err := s.open(ctx)
 			if err != nil {
 				return err
 			}
 			defer e.Close()
-			branch, err := e.Start(cmd.Context(), engine.StartRequest{Name: args[0], Here: here})
+			name := ""
+			if len(args) == 1 {
+				name = args[0]
+			} else if name, err = e.FreeName(ctx, ports[0]); err != nil {
+				return err
+			}
+			branch, err := e.Start(ctx, engine.StartRequest{Name: name, Here: here})
 			if err != nil {
 				return err
+			}
+			for _, port := range ports {
+				if _, err := e.Edit(ctx, branch, port); err != nil {
+					return fmt.Errorf("%s was started, but %w", branch.Name, err)
+				}
 			}
 			streams.emit(map[string]any{"branch": branchRef(branch)})
 			if here {
@@ -147,6 +166,7 @@ have no uncommitted changes to tracked files.`,
 		},
 	}
 	cmd.Flags().BoolVar(&here, "here", false, "create the branch in this checkout instead of its own worktree")
+	cmd.Flags().StringArrayVar(&ports, "port", nil, "bring this port's directory into the worktree; more than one may be given")
 	return cmd
 }
 

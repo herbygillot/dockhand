@@ -45,7 +45,7 @@ func TestOutdatedPortsArePreparedOneBranchEach(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, plan.Updates, 1)
 	require.Equal(t, "jq", plan.Updates[0].Port.Port)
-	require.Regexp(t, `^jq-[a-z0-9]{4}$`, plan.Updates[0].Name)
+	require.Equal(t, "jq-1.8.1", plan.Updates[0].Name, "named for the version it moves to")
 	require.Equal(t, []SkippedUpdate{{Port: "lost", Reason: "no forge could be found for its master_sites"}}, plan.Skipped)
 
 	prepared := e.PrepareOutdated(t.Context(), plan, PrepareOptions{Origin: model.OriginServe, Check: true, Environments: []model.Environment{tahoeArm}, Tests: model.TestsDeclared})

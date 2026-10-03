@@ -192,7 +192,7 @@ func (e *Engine) PlanOutdated(ctx context.Context, report OutdatedReport) (Outda
 			plan.Skipped = append(plan.Skipped, SkippedUpdate{Port: port.Port, Reason: "already in " + open[0].ShortName()})
 			continue
 		}
-		name, err := e.FreeName(ctx, port.Port)
+		name, err := e.NameFor(ctx, port.Port, port.Newest)
 		if err != nil {
 			return plan, err
 		}

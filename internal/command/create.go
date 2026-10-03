@@ -95,7 +95,7 @@ its go-get answer.`,
 				if unchecked != "" {
 					fmt.Fprintf(streams.Err, "whether a subport is named %s wasn't checked: %s\n", name, unchecked)
 				}
-				if free, err = e.FreeName(ctx, name); err != nil {
+				if free, err = e.NameFor(ctx, name, "new"); err != nil {
 					return err
 				}
 				if branch, err = e.Start(ctx, engine.StartRequest{Name: free, Base: base}); err == nil {

@@ -63,3 +63,25 @@ func TestARevisionOnlyChangeIsSaid(t *testing.T) {
 	require.False(t, record.RevisionOnly("jq-devel"))
 	require.False(t, record.RevisionOnly("libharbor"))
 }
+
+// A branch is named for what it does, its short ID added only where the
+// name is taken now; what Git refuses in a ref is written -.
+func TestABranchIsNamedForWhatItDoes(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e := f.open(t)
+	name, err := e.NameFor(t.Context(), "jq", "1.8.1")
+	require.NoError(t, err)
+	require.Equal(t, "jq-1.8.1", name)
+	_, err = e.Start(t.Context(), StartRequest{Name: name})
+	require.NoError(t, err)
+	again, err := e.NameFor(t.Context(), "jq", "1.8.1")
+	require.NoError(t, err)
+	require.Regexp(t, `^jq-1\.8\.1-[a-z0-9]{4}$`, again, "taken, so the ID is added")
+	odd, err := e.NameFor(t.Context(), "jq", "1.8~rc1:2 ")
+	require.NoError(t, err)
+	require.Equal(t, "jq-1.8-rc1-2", odd)
+	plain, err := e.FreeName(t.Context(), "jq")
+	require.NoError(t, err)
+	require.Regexp(t, `^jq-[a-z0-9]{4}$`, plain, "nothing more to say: the port and an ID")
+}

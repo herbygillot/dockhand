@@ -321,21 +321,23 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 	out := streams.Out
 	// A version update with --new starts its branch once there is an edit
 	// to make, so a port already current starts nothing.
+	// It's named for the version it moves to, which the update finds.
 	deferred := where.new && !request.Plan && request.Action == model.EditUpdate
 	switch {
 	case deferred:
-		name, err := e.FreeName(ctx, request.Port)
-		if err != nil {
-			return branch, update, err
-		}
-		request.Start = &engine.StartRequest{Name: name}
+		request.Start = &engine.StartRequest{}
 	case !fromMaster:
 		// A plan asks nothing that would start a branch.
 		choosing := streams
 		if request.Plan {
 			choosing = streams.unattended()
 		}
-		if branch, started, err = chooseBranch(ctx, e, choosing, where, request.Port, purpose); err != nil {
+		branch, started, err = chooseBranch(ctx, e, choosing, where, request.Port, purpose)
+		if errors.Is(err, errStartForVersion) && !request.Plan && request.Action == model.EditUpdate {
+			deferred, err = true, nil
+			request.Start = &engine.StartRequest{}
+		}
+		if err != nil {
 			return branch, update, err
 		}
 		announce(out, branch, started)
@@ -772,7 +774,7 @@ func chooseBranch(ctx context.Context, e *engine.Engine, streams Streams, where 
 		return branch, false, err
 	}
 	if where.new {
-		return startFor(ctx, e, port)
+		return startFor(ctx, e, port, whatFor(purpose))
 	}
 	branch, err := e.Current(ctx)
 	if err == nil || !errors.Is(err, engine.ErrNoBranch) {
@@ -806,7 +808,11 @@ func chooseBranch(ctx context.Context, e *engine.Engine, streams Streams, where 
 	// exactly one does, so the work goes there. --new starts another.
 	switch len(changing) {
 	case 0:
-		name, err := e.FreeName(ctx, port)
+		if purpose == "update" {
+			fmt.Fprintf(streams.Err, "%s is in no open branch, so this starts one for it, named for the version it moves to.\n", port)
+			return model.Branch{}, false, errStartForVersion
+		}
+		name, err := e.NameFor(ctx, port, whatFor(purpose))
 		if err != nil {
 			return model.Branch{}, false, err
 		}
@@ -819,7 +825,7 @@ func chooseBranch(ctx context.Context, e *engine.Engine, streams Streams, where 
 	if !streams.terminal() {
 		return model.Branch{}, false, &engine.AmbiguousError{Port: port, Branches: changing}
 	}
-	name, err := e.FreeName(ctx, port)
+	name, err := e.NameFor(ctx, port, whatFor(purpose))
 	if err != nil {
 		return model.Branch{}, false, err
 	}
@@ -834,8 +840,24 @@ func chooseBranch(ctx context.Context, e *engine.Engine, streams Streams, where 
 	return startNamed(ctx, e, name)
 }
 
-func startFor(ctx context.Context, e *engine.Engine, port string) (model.Branch, bool, error) {
-	name, err := e.FreeName(ctx, port)
+// errStartForVersion is an update's branch to start once the update knows
+// the version it moves to, which names it.
+var errStartForVersion = errors.New("start the branch for the version the update finds")
+
+// whatFor is what a branch an authoring command starts is named for
+// (engine.NameFor): an edit's says nothing more than its port.
+func whatFor(purpose string) string {
+	switch purpose {
+	case "checksums":
+		return "checksums"
+	case "revbump":
+		return "rebuild"
+	}
+	return ""
+}
+
+func startFor(ctx context.Context, e *engine.Engine, port, what string) (model.Branch, bool, error) {
+	name, err := e.NameFor(ctx, port, what)
 	if err != nil {
 		return model.Branch{}, false, err
 	}

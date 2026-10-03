@@ -8,6 +8,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -272,13 +273,21 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		return Update{}, err
 	}
 	// start starts the branch a Start request asks for, from the master
-	// the update was prepared on.
+	// the update was prepared on; startFor is the version that names it.
+	startFor := ""
 	start := func() error {
 		if request.Start == nil {
 			return nil
 		}
 		started := *request.Start
 		started.Base = base
+		// One not yet named is named for the version the update moves
+		// to, where it found one (NameFor).
+		if started.Name == "" {
+			if started.Name, err = e.NameFor(ctx, request.Port, startFor); err != nil {
+				return err
+			}
+		}
 		if branch, err = e.Start(ctx, started); err != nil {
 			return err
 		}
@@ -397,6 +406,9 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		return update, nil
 	}
 	if request.Start != nil {
+		if request.Action == model.EditUpdate {
+			startFor = update.After.Version
+		}
 		if err := start(); err != nil {
 			return update, err
 		}
@@ -873,27 +885,65 @@ func (e *Engine) workingEdits(ctx context.Context, branch model.Branch) ([]strin
 
 // FreeName is a name for a new branch for work on a port, per decision 37:
 // <port>-<short ID>, such as jq-4k2p, which no branch, tracked or not, and
-// no worktree directory already uses. It holds no verb or version, since
-// the work may become more than it started as, and the name never changes.
+// no worktree directory already uses. It holds no verb or version: it's
+// for work, such as an edit, that says nothing more specific. NameFor
+// names a branch for what it does.
 func (e *Engine) FreeName(ctx context.Context, port string) (string, error) {
+	return e.NameFor(ctx, port, "")
+}
+
+// NameFor is a name for a new branch that says what it does, the person's
+// decision of 2026-10-02 (the command-line UX review's §1, revised):
+// <port>-<what>, such as jq-1.8.1 for an update, gdal-rebuild, or
+// mods-new, with decision 37's short ID added only where that name is
+// taken, as jq-1.8.1-4k2p; with nothing to say, <port>-<short ID>. Taken
+// means it exists now: a tracked branch that isn't merged, a Git branch,
+// or a worktree directory, so a merged and cleaned branch's name is free
+// again. What Git refuses in a ref becomes -.
+func (e *Engine) NameFor(ctx context.Context, port, what string) (string, error) {
+	base := port
+	if what != "" {
+		base = refSafe(port + "-" + what)
+		if free, err := e.nameFree(ctx, base); err != nil || free {
+			return base, err
+		}
+	}
 	for range 20 {
-		name := port + "-" + shortID()
-		if _, err := e.Resolve(ctx, name); err == nil {
-			continue
-		} else if !errors.Is(err, ErrNoBranch) {
+		name := base + "-" + shortID()
+		free, err := e.nameFree(ctx, name)
+		if err != nil {
 			return "", err
 		}
-		if _, _, err := e.Repo.Branch(ctx, BranchName(name)); err == nil {
-			continue
-		} else if !errors.Is(err, git.ErrBranchMissing) {
-			return "", err
+		if free {
+			return name, nil
 		}
-		if exists(e.worktreeDirectory(BranchName(name))) {
-			continue
-		}
-		return name, nil
 	}
 	return "", fmt.Errorf("no free branch name for %s; name one with dockhand start <name>", port)
+}
+
+// nameFree says whether no branch, tracked or Git's, and no worktree
+// directory has a name.
+func (e *Engine) nameFree(ctx context.Context, name string) (bool, error) {
+	if _, err := e.Resolve(ctx, name); err == nil {
+		return false, nil
+	} else if !errors.Is(err, ErrNoBranch) {
+		return false, err
+	}
+	if _, _, err := e.Repo.Branch(ctx, BranchName(name)); err == nil {
+		return false, nil
+	} else if !errors.Is(err, git.ErrBranchMissing) {
+		return false, err
+	}
+	return !exists(e.worktreeDirectory(BranchName(name))), nil
+}
+
+// refUnsafe is what Git refuses in a ref's name (git-check-ref-format):
+// control characters, space, ~ ^ : ? * [ \, and a run of dots.
+var refUnsafe = regexp.MustCompile(`[\x00-\x20\x7f~^:?*\[\\]+|\.\.+`)
+
+// refSafe is a name with what Git refuses in a ref written -.
+func refSafe(name string) string {
+	return strings.Trim(refUnsafe.ReplaceAllString(name, "-"), "-./")
 }
 
 // shortID is four random lowercase letters and digits.

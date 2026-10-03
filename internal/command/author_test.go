@@ -164,8 +164,8 @@ func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
 	var out, errs bytes.Buffer
 	err = Run(t.Context(), []string{"update", "jq"}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
 	require.NoError(t, err)
-	require.Regexp(t, `^jq is in no open branch, so this starts dockhand/jq-[a-z0-9]{4} for it\.\n`, errs.String())
-	started := regexp.MustCompile(`Started dockhand/(jq-[a-z0-9]{4}) from master `).FindStringSubmatch(out.String())
+	require.Regexp(t, `^jq is in no open branch, so this starts one for it, named for the version it moves to\.\n`, errs.String())
+	started := regexp.MustCompile(`Started dockhand/(jq-1\.8\.1) from master `).FindStringSubmatch(out.String())
 	require.NotNil(t, started, out.String())
 	name := started[1]
 	require.Contains(t, out.String(), name+" · ~/Source/macports-branches/"+name+"\n")
@@ -188,7 +188,7 @@ func TestUpdateWithoutABranchStartsOneOrUsesTheOne(t *testing.T) {
 	out.Reset()
 	err = Run(t.Context(), []string{"update", "jq", "1.9", "--new"}, Streams{In: strings.NewReader(""), Out: &out, Err: &errs})
 	require.NoError(t, err)
-	another := regexp.MustCompile(`Started dockhand/(jq-[a-z0-9]{4}) from master `).FindStringSubmatch(out.String())
+	another := regexp.MustCompile(`Started dockhand/(jq-1\.9) from master `).FindStringSubmatch(out.String())
 	require.NotNil(t, another, out.String())
 	require.NotEqual(t, name, another[1])
 	require.Contains(t, out.String(), "jq: 1.7.1 → 1.9")
@@ -244,7 +244,7 @@ func TestAnUntrackedBranchHereIsTheirsToAdopt(t *testing.T) {
 	require.Regexp(t, `Planned on master [0-9a-f]+ \(fetched just now\), since mine doesn't change jq; --new without --plan starts the branch\n`, planned)
 	_, said, err := dockhand(t, "update", "jq", "1.8.1")
 	require.NoError(t, err)
-	require.Regexp(t, `jq is in no open branch, so this starts dockhand/jq-[a-z0-9]{4} for it\.`, said, "mine is no context, as master isn't")
+	require.Contains(t, said, "jq is in no open branch, so this starts one for it, named for the version it moves to.", "mine is no context, as master isn't")
 
 	refused := func(why string) {
 		t.Helper()

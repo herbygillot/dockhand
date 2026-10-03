@@ -152,7 +152,7 @@ func TestUpdateSubmitTidiesChecksAndSubmits(t *testing.T) {
 	out, errs, err := dockhand(t, "update", "jq", "--new", "--submit")
 	require.NoError(t, err, errs)
 	require.NotContains(t, out, "Next: review it")
-	require.Regexp(t, `jq: 1.7.1 → 1.8.1 .*\n(.*\n)*\njq-[a-z0-9]{4} · tidying edits not yet committed\n\nProposed commit\n`, out)
+	require.Regexp(t, `jq: 1.7.1 → 1.8.1 .*\n(.*\n)*\njq-1\.8\.1 · tidying edits not yet committed\n\nProposed commit\n`, out)
 	require.Contains(t, out, "checking commit ")
 	require.Contains(t, out, "Opened #34901")
 	require.Len(t, g.PRs, 1)
