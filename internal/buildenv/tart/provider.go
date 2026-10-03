@@ -1008,3 +1008,7 @@ func tail(text string, n int) string {
 	}
 	return text
 }
+
+// Supported says whether the provider can build on this Mac: Tart's
+// macOS guests need Apple silicon (tartvm.Supported).
+func Supported() bool { return tartvm.Supported() }

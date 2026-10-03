@@ -100,6 +100,9 @@ as it is. --rebuild makes a replacement, and keeps the old one until the
 new one has passed.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if !tartSupported() {
+				return errors.New("Tart's macOS images need Apple silicon, and this Mac isn't; checks here build on GitHub, with --on github")
+			}
 			if len(args) == 1 {
 				options.Release = args[0]
 			}
@@ -165,7 +168,16 @@ func providerLines(ctx context.Context, file config.File) []string {
 	return lines
 }
 
+// tartSupported is tart.Supported, which a test sets to see an Intel Mac.
+var tartSupported = tart.Supported
+
+// noTart says why Tart isn't for this Mac, and where its checks build.
+const noTart = "· needs Apple silicon; checks here build on GitHub, with --on github"
+
 func tartReadiness(ctx context.Context) string {
+	if !tartSupported() {
+		return noTart
+	}
 	images := images()
 	if images == nil {
 		return "· needs Tart: " + installTart + ", then dockhand setup tart"

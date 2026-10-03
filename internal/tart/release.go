@@ -2,12 +2,18 @@ package tart
 
 import (
 	"fmt"
+	"runtime"
 	"strconv"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/model"
 )
+
+// Supported says whether Tart's macOS guests run on this Mac: Apple
+// silicon's, which Virtualization.framework's macOS guests need. An Intel
+// Mac checks on GitHub instead.
+func Supported() bool { return runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" }
 
 func ReleaseForPlatform(platform model.Platform) (macos.Release, error) {
 	if platform.OS != "darwin" || platform.Architecture != "arm64" {

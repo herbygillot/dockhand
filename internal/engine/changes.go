@@ -7,6 +7,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
 )
@@ -22,7 +23,9 @@ type FamilyReader interface {
 // revisionChanges are what a revision changed in each port directory its
 // files change, against the base it was captured on, by directory: those
 // recorded under this policy, and, where collect, those made now for the
-// rest, which are recorded. A directory with no record keeps its text
+// rest, and again for any whose record couldn't be made, which are
+// recorded. Without collect, nothing is evaluated: a record that couldn't
+// be made is read as it is, saying why. A directory with no record keeps its text
 // scope: every subport of it reads as changed, as before records. An
 // adopted pull request's branch gets none, since its Portfile isn't the
 // person's (the trust rule), and neither does a revision no evaluator
@@ -71,19 +74,24 @@ func (e *Engine) revisionChanges(ctx context.Context, id model.BranchID, base, t
 	sources := [2]model.Source{{Commit: base, Tree: baseTree, Base: base}, {Tree: tree, Base: base}}
 	var made []model.ChangeRecord
 	for _, directory := range macports.ScopeOf(changed).Ports {
-		if _, ok := records[directory]; ok {
+		// A record whose evaluation failed is tried again: what kept it
+		// may have been this Mac's, such as MacPorts busy or a timeout
+		// (Codex's review of 386ac2cc, finding 5).
+		if recorded, ok := records[directory]; ok && recorded.Problem == "" {
 			continue
 		}
 		record := model.ChangeRecord{Branch: id, Tree: tree, Base: base, Directory: directory, Policy: fidelity.ChangePolicy, At: e.now()}
 		var sides [2]*macports.Snapshot
+		var texts [2][]byte
 		for i, source := range sources {
-			file, _, err := e.Repo.File(ctx, string(source.Tree), directory+"/Portfile")
+			file, text, err := e.Repo.File(ctx, string(source.Tree), directory+"/Portfile")
 			if err != nil {
 				return nil, err
 			}
 			if !file.Exists {
 				continue
 			}
+			texts[i] = text
 			snapshot, err := family.Family(ctx, source, directory)
 			if err != nil {
 				record.Problem = sideWords[i] + ": " + err.Error()
@@ -94,6 +102,7 @@ func (e *Engine) revisionChanges(ctx context.Context, id model.BranchID, base, t
 		}
 		if record.Problem == "" {
 			record.Ports = fidelity.SubportChanges(directory, sides[0], sides[1])
+			record.Unseen, record.AllUnseen = portfile.UnseenChanges(texts[0], texts[1])
 		}
 		made = append(made, record)
 		records[directory] = record
@@ -114,20 +123,22 @@ func (e *Engine) revisionChanges(ctx context.Context, id model.BranchID, base, t
 // sideWords say which side of a change record couldn't be evaluated.
 var sideWords = [2]string{"the base couldn't be evaluated", "the revision couldn't be evaluated"}
 
-// changedSubports are the subports of a directory a revision changes, as
-// its record says, and whether it says: a directory with no record, or
-// one whose record couldn't be made, has its text scope, every subport.
-// So does one whose record finds no subport changed though its files
-// did: the change is in what this Mac's evaluation doesn't see, such as
-// a block for another macOS release (the multi-subport sweep: openssh's
-// for macOS 27, py-tkinter's for older ones).
+// changedSubports are the subports of a directory a revision may change,
+// as its record says, and whether it says: a directory with no record has
+// its text scope, every subport, and a record never narrows further than
+// it covered (model.ChangeRecord.Scope). One that finds no subport
+// changed though its files did keeps the text scope: the change is in
+// what this Mac's evaluation doesn't see, such as a block for another
+// macOS release (the multi-subport sweep: openssh's for macOS 27,
+// py-tkinter's for older ones). A subport whose text changed only in
+// such a block keeps it too, beside those the record finds changed
+// (Codex's review of 386ac2cc, finding 1).
 func changedSubports(records map[string]model.ChangeRecord, directory string) ([]string, bool) {
 	record, ok := records[directory]
-	if !ok || record.Problem != "" {
+	if !ok {
 		return nil, false
 	}
-	changed := record.Changed()
-	return changed, len(changed) > 0
+	return record.Scope()
 }
 
 // recordedChange says whether a subport of a directory is one the
@@ -141,19 +152,32 @@ func recordedChange(records map[string]model.ChangeRecord, directory, port strin
 // recordedPorts are the ports changed directories change, as their change
 // records say: each directory's changed subports, and else the port the
 // directory is named for, its text saying only that some of its subports
-// may have changed, with a note of why: its record isn't made yet, or
-// found nothing this Mac's evaluation sees.
+// may have changed, with a note of why: its record isn't made yet,
+// couldn't be made and why, or found nothing this Mac's evaluation sees.
 func recordedPorts(directories []string, records map[string]model.ChangeRecord) (ports []string, notes map[string]string) {
 	notes = map[string]string{}
 	for _, directory := range directories {
+		record, recorded := records[directory]
 		if changed, ok := changedSubports(records, directory); ok {
 			ports = append(ports, changed...)
+			for _, port := range changed {
+				if slices.Contains(record.Unseen, port) && !slices.Contains(record.Changed(), port) {
+					notes[port] = "changed where this Mac's evaluation doesn't look"
+				}
+			}
 			continue
 		}
 		port := path.Base(directory)
 		ports = append(ports, port)
-		notes[port] = "not yet evaluated"
-		if record, ok := records[directory]; ok && record.Problem == "" {
+		switch {
+		case !recorded:
+			notes[port] = "not yet evaluated"
+		case record.Problem != "":
+			// "the base couldn't be evaluated: …", or the revision.
+			notes[port] = record.Problem
+		case record.AllUnseen && len(record.Changed()) > 0:
+			notes[port] = "changed where this Mac's evaluation doesn't look, besides what it sees"
+		default:
 			notes[port] = "no change this Mac's evaluation sees"
 		}
 	}

@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 // ChangeRecord is what a revision changed in one port directory, against
 // the revision's base, as MacPorts evaluates both (the evaluated-change
@@ -24,8 +27,16 @@ type ChangeRecord struct {
 	// did: a side that couldn't be evaluated. Its readers then take the
 	// directory's text scope, as without a record.
 	Problem string
-	Policy  int
-	At      time.Time
+	// Unseen are subports whose Portfile text changed under a condition
+	// this Mac's evaluation doesn't take, a platform block or a platform
+	// condition (portfile.UnseenChanges): the record can't say they're
+	// unchanged. AllUnseen is such a change outside any subport's block,
+	// which leaves the record saying nothing of any subport it finds
+	// unchanged.
+	Unseen    []string `json:",omitempty"`
+	AllUnseen bool     `json:",omitempty"`
+	Policy    int
+	At        time.Time
 }
 
 // SubportChange is one subport's part of a change record.
@@ -69,6 +80,26 @@ func (r ChangeRecord) Changed() []string {
 		}
 	}
 	return names
+}
+
+// Scope is the subports a revision may change as far as the record can
+// say, and whether it narrows the directory's text scope at all: those it
+// finds changed, and those whose text changed where it can't see. It
+// never narrows further than it covered: a record with a Problem, one
+// that finds nothing changed though the files did, and one with a change
+// it can't see outside any subport's block leave the text scope, every
+// subport.
+func (r ChangeRecord) Scope() ([]string, bool) {
+	changed := r.Changed()
+	if r.Problem != "" || len(changed) == 0 || r.AllUnseen {
+		return nil, false
+	}
+	for _, port := range r.Ports {
+		if slices.Contains(r.Unseen, port.Port) && !slices.Contains(changed, port.Port) {
+			changed = append(changed, port.Port)
+		}
+	}
+	return changed, true
 }
 
 // RevisionOnly says whether the record changes a subport by its revision

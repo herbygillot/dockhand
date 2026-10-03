@@ -35,7 +35,7 @@ func TestARegistryNameIsReadAsItsSource(t *testing.T) {
 			fmt.Fprint(w, `{"crate":{"name":"ripgrep","repository":"https://github.com/BurntSushi/ripgrep"}}`)
 		case "/crates/bare":
 			fmt.Fprint(w, `{"crate":{"name":"bare"}}`)
-		case "/golang.org/x/tools":
+		case "/golang.org/x/tools", "/golang.org/x/tools/gopls":
 			fmt.Fprint(w, `<html><head><meta name="go-import" content="golang.org/x/tools git https://go.googlesource.com/tools"></head></html>`)
 		case "/sigs.k8s.io/yaml":
 			fmt.Fprint(w, `<html><head><meta name="go-import" content="sigs.k8s.io/yaml git https://github.com/kubernetes-sigs/yaml.git"></head></html>`)
@@ -62,6 +62,18 @@ func TestARegistryNameIsReadAsItsSource(t *testing.T) {
 	for name, why := range map[string]error{"pypi:sourceless": ErrNoSource, "crates:bare": ErrNoSource} {
 		_, err := c.Source(context.Background(), name)
 		require.True(t, errors.Is(err, why), "%s: %v", name, err)
+	}
+	// A module below its repository's root is refused by its
+	// subdirectory, whether its path names its forge or a go-import tag
+	// says its root; a major version's suffix is no subdirectory.
+	for name, below := range map[string]string{
+		"go:github.com/hashicorp/vault/api": "subdirectory api",
+		"go:github.com/o/p/tools/cmd/v3":    "subdirectory tools/cmd",
+		"go:golang.org/x/tools/gopls":       "subdirectory gopls",
+	} {
+		_, err := c.Source(context.Background(), name)
+		require.ErrorIs(t, err, ErrSubdirectory, name)
+		require.ErrorContains(t, err, below, name)
 	}
 	_, err := c.Source(context.Background(), "crates:missing")
 	require.ErrorContains(t, err, "crates:missing")

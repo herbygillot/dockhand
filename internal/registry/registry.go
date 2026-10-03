@@ -52,6 +52,11 @@ const maxAnswer = 8 << 20
 // project.
 var ErrNoSource = errors.New("registry: no source repository named")
 
+// ErrSubdirectory is a module path below its repository's root: a module
+// in a subdirectory, whose port builds there, which create can't yet start
+// from (Codex's review of 386ac2cc, finding 3).
+var ErrSubdirectory = errors.New("registry: the module is below its repository's root")
+
 // Source is the address of the source repository a registry name's
 // project names: its repository, homepage, or source link, or the
 // module's own path.
@@ -149,7 +154,11 @@ func (c Client) module(ctx context.Context, path string) (string, error) {
 	}
 	// A module path that names its forge is its repository's address.
 	if parts := strings.Split(path, "/"); len(parts) >= 3 && forge("https://"+path) {
-		return "https://" + strings.Join(parts[:3], "/"), nil
+		root := strings.Join(parts[:3], "/")
+		if err := atRoot(path, root); err != nil {
+			return "", err
+		}
+		return "https://" + root, nil
 	}
 	base := c.GoGet
 	if base == "" {
@@ -166,15 +175,35 @@ func (c Client) module(ctx context.Context, path string) (string, error) {
 	for _, match := range goImport.FindAllStringSubmatch(string(page), -1) {
 		fields := strings.Fields(match[1])
 		if len(fields) == 3 && fields[1] == "git" && (path == fields[0] || strings.HasPrefix(path, fields[0]+"/")) {
+			if err := atRoot(path, fields[0]); err != nil {
+				return "", err
+			}
 			return strings.TrimSuffix(fields[2], ".git"), nil
 		}
 	}
 	return "", fmt.Errorf("go:%s: %w", path, ErrNoSource)
 }
 
+// atRoot refuses a module path below its repository's root, naming the
+// subdirectory. A major version's suffix, /v2 and on, is the module's,
+// not a directory, as Go's modules reference has it.
+func atRoot(path, root string) error {
+	below := strings.TrimPrefix(strings.TrimPrefix(path, root), "/")
+	if majorSuffix.MatchString(below) {
+		below = ""
+	} else if i := strings.LastIndex(below, "/"); i >= 0 && majorSuffix.MatchString(below[i+1:]) {
+		below = below[:i]
+	}
+	if below == "" {
+		return nil
+	}
+	return fmt.Errorf("go:%s is in %s's subdirectory %s, and create starts a port only from a module at its repository's root: %w", path, root, below, ErrSubdirectory)
+}
+
 var (
-	plainName  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
-	modulePath = regexp.MustCompile(`^[a-z0-9.-]+\.[a-z]{2,}(/[A-Za-z0-9._~-]+)*$`)
+	majorSuffix = regexp.MustCompile(`^v[2-9][0-9]*$|^v[1-9][0-9]+$`)
+	plainName   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+	modulePath  = regexp.MustCompile(`^[a-z0-9.-]+\.[a-z]{2,}(/[A-Za-z0-9._~-]+)*$`)
 )
 
 // forge reports an address on a forge whose repositories create reads or

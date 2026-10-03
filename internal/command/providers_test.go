@@ -71,6 +71,25 @@ func release(t *testing.T, name string) macos.Release {
 	return found
 }
 
+// onIntel says this Mac is an Intel one, which Tart's macOS guests
+// don't run on, whichever Mac runs the test.
+func onIntel(t *testing.T) {
+	previous := tartSupported
+	tartSupported = func() bool { return false }
+	t.Cleanup(func() { tartSupported = previous })
+}
+
+// An Intel Mac is told Tart isn't for it, and where its checks build,
+// rather than to install Tart (the Intel CI job, 2026-10-03).
+func TestAnIntelMacChecksOnGitHub(t *testing.T) {
+	onIntel(t)
+	out, _, err := dockhand(t, "providers")
+	require.NoError(t, err)
+	require.Contains(t, out, "tart     · needs Apple silicon; checks here build on GitHub, with --on github\n")
+	_, _, err = dockhand(t, "providers", "setup", "tart")
+	require.ErrorContains(t, err, "Tart's macOS images need Apple silicon, and this Mac isn't; checks here build on GitHub, with --on github")
+}
+
 func TestProvidersWithoutTart(t *testing.T) {
 	out, _, err := dockhand(t, "providers")
 	require.NoError(t, err)

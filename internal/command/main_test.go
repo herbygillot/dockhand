@@ -41,6 +41,9 @@ func TestMain(m *testing.M) {
 		os.Unsetenv(name)
 	}
 	lookTart = func(string) (string, error) { return "", exec.ErrNotFound }
+	// Every test's Mac takes Tart, whichever Mac runs it, but where it
+	// says it's an Intel Mac's (onIntel).
+	tartSupported = func() bool { return true }
 	// Nor the GitHub CLI this Mac has, signed in as its person.
 	gitHubCLI = signedIn{}
 	// The executable is the test binary, which isn't dockhand.
