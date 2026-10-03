@@ -36,7 +36,9 @@ func acquire(ctx context.Context, home, kind, image string, mode filelock.Mode) 
 // in dockhand's own directory, ~/.dockhand/tart-locks, keyed by the
 // canonical Tart home, since nothing inside a Tart home is dockhand's to
 // write. It is per user rather than per database, so every dockhand
-// process sharing the Tart home shares the locks.
+// process sharing the Tart home shares the locks. Where
+// DOCKHAND_TART_HOME places dockhand's Tart home elsewhere, the locks are
+// beside it (StateDirectory).
 func LockDirectory(home string) (string, error) {
 	return homeDirectory(home, "tart-locks")
 }
@@ -48,9 +50,29 @@ func homeDirectory(home, kind string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	state, err := StateDirectory()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(state, kind, model.Digest([]byte(home))), nil
+}
+
+// StateDirectory is the directory dockhand's Tart home is in, which holds
+// its locks and image records beside it: ~/.dockhand, unless
+// DOCKHAND_TART_HOME places that home elsewhere, as the acceptance test's
+// scratch environment does, so nothing of its lands in the person's
+// ~/.dockhand (the M1's quick stage, 2026-10-03).
+func StateDirectory() (string, error) {
+	if home := os.Getenv("DOCKHAND_TART_HOME"); home != "" {
+		canonical, err := CanonicalDirectory(home)
+		if err != nil {
+			return "", err
+		}
+		return filepath.Dir(canonical), nil
+	}
 	user, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(user, ".dockhand", kind, model.Digest([]byte(home))), nil
+	return filepath.Join(user, ".dockhand"), nil
 }

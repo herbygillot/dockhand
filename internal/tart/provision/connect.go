@@ -150,18 +150,19 @@ func (n *native) PersonalImages(ctx context.Context) (map[string]image, error) {
 }
 
 // Import copies an image of the person's Tart home into dockhand's with
-// Tart's export and import, through a file under ~/.dockhand removed
-// afterwards; the person's image is only read.
+// Tart's export and import, through a file in dockhand's own directory
+// (tart.StateDirectory), ~/.dockhand, removed afterwards; the person's
+// image is only read.
 func (n *native) Import(ctx context.Context, source, destination string) error {
 	home, err := tart.PersonalHome()
 	if err != nil {
 		return err
 	}
-	user, err := os.UserHomeDir()
+	state, err := tart.StateDirectory()
 	if err != nil {
 		return err
 	}
-	directory := filepath.Join(user, ".dockhand", "imports")
+	directory := filepath.Join(state, "imports")
 	if err := os.MkdirAll(directory, 0700); err != nil {
 		return err
 	}

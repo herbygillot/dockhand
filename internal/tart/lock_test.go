@@ -33,6 +33,25 @@ func TestImageLocksAllowReadersAndExcludeWriter(t *testing.T) {
 	require.NoError(t, writer.Close())
 }
 
+// With dockhand's Tart home placed elsewhere, its locks and image records
+// are beside it, and nothing lands in ~/.dockhand.
+func TestStateFollowsDockhandsTartHome(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	scratch := t.TempDir()
+	t.Setenv("DOCKHAND_TART_HOME", filepath.Join(scratch, "tart", "dockhand"))
+	canonical, err := filepath.EvalSymlinks(scratch)
+	require.NoError(t, err)
+	locks, err := LockDirectory(filepath.Join(scratch, "tart", "tart"))
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(locks, filepath.Join(canonical, "tart", "tart-locks")+string(filepath.Separator)), locks)
+	records, err := ImageRecordDirectory(filepath.Join(scratch, "tart", "dockhand"))
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(records, filepath.Join(canonical, "tart", "tart-images")+string(filepath.Separator)), records)
+	user, err := os.UserHomeDir()
+	require.NoError(t, err)
+	require.NoDirExists(t, filepath.Join(user, ".dockhand"))
+}
+
 // Locks live in dockhand's own directory, never inside the Tart home, and
 // every spelling of one Tart home shares them.
 func TestLocksLiveOutsideTheTartHomeKeyedByItsCanonicalPath(t *testing.T) {
