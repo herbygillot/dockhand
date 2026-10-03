@@ -15,6 +15,9 @@
 #   ACCEPT_GH_LOGIN    the test GitHub account's login, whose PRs H3 counts
 #   ACCEPT_GO_PORT     a small Go port that's due, and ACCEPT_RUST_PORT a
 #                      small Rust one, chosen on the day
+#   ACCEPT_GH_KEY      the test account's SSH key, which git offers alone,
+#                      ~/.dockhand-acceptance/test-account_ed25519 unless
+#                      set: never the agent's keys, which may be a person's
 #   ACCEPT_SANDBOX     where test pull requests go, within it: the test
 #                      account's fork, <login>/macports-ports unless set.
 #                      Only the pull requests the person marks real on the
@@ -38,6 +41,12 @@ if [ -d "$MACPORTS_TREE/.git" ]; then
 		esac
 	done
 fi
+
+# Git reaches GitHub with the test account's key alone: the agent, and any
+# key in ~/.ssh, may be a person's, whose pushes would be theirs.
+: "${ACCEPT_GH_KEY:=$HOME/.dockhand-acceptance/test-account_ed25519}"
+[ -r "$ACCEPT_GH_KEY" ] || { echo "full.sh: ACCEPT_GH_KEY, $ACCEPT_GH_KEY, isn't there; reset-user.sh puts the test account's key there" >&2; exit 2; }
+export GIT_SSH_COMMAND="ssh -i $ACCEPT_GH_KEY -o IdentitiesOnly=yes -o IdentityAgent=none"
 
 # Test pull requests go to the sandbox (engine.Options.PullRequests).
 export DOCKHAND_PULL_REQUESTS=${ACCEPT_SANDBOX:-$ACCEPT_GH_LOGIN/macports-ports}

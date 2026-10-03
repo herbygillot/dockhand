@@ -15,8 +15,12 @@
 #   - a scratch ports clone whose master, upstream.git, is pinned at
 #     ACCEPT_PIN, a fixed older commit, so the same ports are always due
 #     and two runs compare;
-#   - a local bare fork, fork.git, so nothing can be pushed anywhere real:
-#     submit needs a fork on GitHub, so it stops at its preview.
+#   - a local bare fork, fork.git, so nothing can be pushed anywhere real;
+#     and, where ACCEPT_GH_FORK names the test account's fork on GitHub,
+#     such as herbyg-test/macports-ports, a remote "github" for it, which
+#     submit's preview finds as the fork, as the stage's token's login
+#     owns it. The stage never pushes there: its GIT_SSH_COMMAND refuses
+#     every connection, so a push fails before it leaves the Mac.
 #   - its own Tart homes, dockhand's (DOCKHAND_TART_HOME), its SSH keys
 #     (DOCKHAND_SSH_DIR) and Tart's (TART_HOME), under tart/, with the one
 #     image the check rows build in, which --image makes once.
@@ -76,7 +80,11 @@ export MACPORTS_TREE="$state/clone" DOCKHAND_UPSTREAM="$state/upstream.git"
 # pinned tree's, and building one takes minutes; the readings aren't.
 mkdir -p "$state/cache/index"
 export DOCKHAND_INDEX_CACHE="$state/cache/index" DOCKHAND_READING_CACHE="$state/home/readings"
-export ACCEPT_WATCH="$state/clone" ACCEPT_UPSTREAM=origin ACCEPT_RUN_DIR="$state/clone"
+# The github remote, where there is one, is read, never pushed to: SSH,
+# which a push to it takes, is refused outright, and no key, the agent's
+# included, is offered. H2 watches fork.git.
+export ACCEPT_WATCH="$state/clone" ACCEPT_UPSTREAM="origin github" ACCEPT_RUN_DIR="$state/clone"
+export GIT_SSH_COMMAND="sh -c 'echo \"the quick stage never pushes\" >&2; exit 1' --"
 # The Tart homes, kept between runs, since an image takes an hour and
 # tens of gigabytes to make.
 mkdir -p "$state/tart"
@@ -114,6 +122,13 @@ fresh() {
 	git -C "$state/clone" sparse-checkout set --cone _resources
 	git -C "$state/clone" checkout -q master
 	git -C "$state/clone" remote add fork "$state/fork.git"
+	if [ -n "${ACCEPT_GH_FORK:-}" ]; then
+		# Read over HTTPS, which a public fork answers without a login;
+		# pushed to only over SSH, which GIT_SSH_COMMAND refuses, so no
+		# credential helper's login can push there either.
+		git -C "$state/clone" remote add github "https://github.com/$ACCEPT_GH_FORK.git"
+		git -C "$state/clone" remote set-url --push github "git@github.com:$ACCEPT_GH_FORK.git"
+	fi
 	git -C "$state/clone" config user.name "Dockhand Acceptance"
 	git -C "$state/clone" config user.email acceptance@example.invalid
 	mkdir -p "$state/home" "$state/worktrees"
