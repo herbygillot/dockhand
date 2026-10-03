@@ -6,6 +6,7 @@ package fetchguard
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -28,9 +29,13 @@ func Assess(info macports.PortInfo, procedure, pre, post string, origins []Origi
 		result.Problem = "custom fetch procedure " + procedure
 		return result
 	}
+	submodules := false
 	if post != "" {
-		result.Problem = "post-fetch hooks can modify archive preparation"
-		return result
+		if !onlySubmodules(info, post) {
+			result.Problem = "post-fetch hooks can modify archive preparation"
+			return result
+		}
+		submodules = true
 	}
 	hooks, errs := syntax.ListValues(pre)
 	if len(errs) != 0 {
@@ -54,11 +59,62 @@ func Assess(info macports.PortInfo, procedure, pre, post string, origins []Origi
 			result.Guards = append(result.Guards, fmt.Sprintf("pre-fetch hook %d %s", i+1, guard))
 		}
 	}
+	if submodules {
+		result.Guards = append(result.Guards, "post-fetch checks out the Git submodules the commit pins")
+	}
 	result.Kind = "standard"
 	if len(result.Guards) > 0 {
 		result.Kind = "guarded"
 	}
 	return result
+}
+
+// submoduleUpdate is the one command a Git-fetched port's post-fetch may
+// run and stay standard: git submodule update --init, with --recursive or
+// a --depth, in the source directory, which checks out exactly what the
+// fetched commit pins.
+var submoduleUpdate = regexp.MustCompile(`^git submodule update --init( --recursive)?( --depth [0-9]+)?$`)
+
+// onlySubmodules says whether every post-fetch hook of a Git-fetched port
+// only runs system -W ${worksrcpath} "git submodule update --init".
+func onlySubmodules(info macports.PortInfo, post string) bool {
+	if info.Options["fetch.type"] != "git" {
+		return false
+	}
+	hooks, errs := syntax.ListValues(post)
+	if len(errs) != 0 || len(hooks) == 0 {
+		return false
+	}
+	for _, hook := range hooks {
+		src := []byte(hook)
+		script, errs := syntax.Parse(src)
+		if len(errs) != 0 {
+			return false
+		}
+		commands := 0
+		for _, item := range script.Items {
+			cmd, ok := item.(syntax.Command)
+			if !ok {
+				continue
+			}
+			commands++
+			if len(cmd.Words) != 4 || cmd.Words[0].Span.Text(src) != "system" || cmd.Words[1].Span.Text(src) != "-W" {
+				return false
+			}
+			dir := cmd.Words[2].Span.Text(src)
+			if dir != "${worksrcpath}" && dir != "$worksrcpath" {
+				return false
+			}
+			text := strings.Trim(cmd.Words[3].Span.Text(src), `"{}`)
+			if !submoduleUpdate.MatchString(text) {
+				return false
+			}
+		}
+		if commands == 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // A refusal names the first command or condition the grammar stopped at,

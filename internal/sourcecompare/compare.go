@@ -214,6 +214,8 @@ func Compare(older, newer project.Reading, versions Versions, named func(option 
 				how, what = "added", "is new"
 			case !hasNow:
 				how, what = "removed", "was removed"
+			case base == "configure.ac" || base == "configure.in":
+				what += autoconfWords(project.ReadAutoconf(old.Data), project.ReadAutoconf(now.Data))
 			case base == "CMakeLists.txt":
 				summary := cmakeWords(documents[0], documents[1])
 				what += summary
@@ -597,6 +599,34 @@ const cmakeNamed = 5
 // diff, where nothing concerned the port (the fluent-bit run, batch 23).
 // It says; what holds is assess's, and D12's: any other change to a build
 // file still holds.
+// autoconfWords say what a configure.ac's change asks of the build, as
+// its macros name it: ": --enable-gui added; pkg-config module gtk4
+// added", or nothing where none moved (field testing, batch 11:
+// dateutils's "configure.ac changed" held with nothing to act on).
+func autoconfWords(old, now project.AutoconfFacts) string {
+	var said []string
+	moved := func(before, after []string, what string) {
+		for _, name := range after {
+			if !slices.Contains(before, name) {
+				said = append(said, what+name+" added")
+			}
+		}
+		for _, name := range before {
+			if !slices.Contains(after, name) {
+				said = append(said, what+name+" removed")
+			}
+		}
+	}
+	moved(old.Enables, now.Enables, "--enable-")
+	moved(old.Withs, now.Withs, "--with-")
+	moved(old.Modules, now.Modules, "pkg-config module ")
+	moved(old.Libraries, now.Libraries, "library ")
+	if len(said) == 0 {
+		return ", in nothing it names as an option, a pkg-config module, or a library"
+	}
+	return ": " + strings.Join(said, "; ")
+}
+
 func cmakeWords(old, now project.CMakeDocument) string {
 	before, after := old.Facts(), now.Facts()
 	var said []string

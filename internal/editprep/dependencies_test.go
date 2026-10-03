@@ -440,6 +440,7 @@ source = "git+https://github.com/owner/pinned?rev=%s#%s"
 	service.DependencyTools.Cargo2Port = dependencyHelper(t, "exit 0")
 	_, err := service.Prepare(t.Context(), request)
 	require.ErrorContains(t, err, "pinned is pinned to Git rev "+oldCommit)
+	require.ErrorContains(t, err, "checking the existing cargo.crates against 1.0's source, the version now", "says whose lock it read (field testing, batch 11: halloy)")
 	require.ErrorContains(t, err, "declares branches only")
 
 	service, request = versionFixture(t, "setup", extra+"# Disable offline mode to work around Git dependencies\ncargo.offline_cmd\n", handler)

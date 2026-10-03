@@ -43,7 +43,7 @@ func (a *assessment) patches() []model.UpstreamChange {
 			change.Message = fmt.Sprintf("%s, which the base applied, is dropped, and no longer applies to %s: %s", patch.Name, source, patch.Detail)
 		case !patch.Applies:
 			change.Rule = PatchRejected
-			change.Message = fmt.Sprintf("%s doesn't apply to %s, so the build fails at its patch phase: %s", patch.Name, source, patch.Detail)
+			change.Message = fmt.Sprintf("%s doesn't apply to %s, as dockhand read it, and a check shows whether the build's patch phase fails: %s", patch.Name, source, patch.Detail)
 		default:
 			// One that applies is coverage, said so a check that found
 			// nothing isn't taken for none: fluent-bit's six applied, and

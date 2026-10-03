@@ -297,11 +297,24 @@ func targets(data []byte, strip int) []string {
 func extract(ctx context.Context, request Request, wanted map[string]bool, directory string) error {
 	worksrc := strings.Trim(request.Worksrcdir, "/")
 	_, subdir, _ := strings.Cut(worksrc, "/")
+	// A source directory no archive holds is one a PortGroup's
+	// post-extract moves an archive's top directory to, as golang's moves
+	// lima-2.2.1 to gopath/src/github.com/lima-vm/lima: it's read as that
+	// top directory, as extract.rename reads one (field testing, batch 11:
+	// lima's patches read as finding no file to patch, and built).
+	moved := false
+	if !request.Rename {
+		held, err := holds(ctx, request.Archives, worksrc)
+		if err != nil {
+			return err
+		}
+		moved, subdir = !held, ""
+	}
 	relative := func(member string) (string, bool) {
 		if rest, ok := strings.CutPrefix(member, worksrc+"/"); ok {
 			return rest, true
 		}
-		if !request.Rename {
+		if !request.Rename && !moved {
 			return "", false
 		}
 		_, rest, nested := strings.Cut(member, "/")
@@ -342,6 +355,26 @@ func extract(ctx context.Context, request Request, wanted map[string]bool, direc
 		}
 	}
 	return nil
+}
+
+// holds says whether any archive has a member inside a directory.
+func holds(ctx context.Context, archives []string, directory string) (bool, error) {
+	errFound := errors.New("found")
+	for _, filename := range archives {
+		err := archive.Walk(ctx, filename, func(member archive.Member) error {
+			if clean, ok := member.Clean(); ok && strings.HasPrefix(clean, directory+"/") {
+				return errFound
+			}
+			return nil
+		})
+		if errors.Is(err, errFound) {
+			return true, nil
+		}
+		if err != nil {
+			return false, err
+		}
+	}
+	return false, nil
 }
 
 var (

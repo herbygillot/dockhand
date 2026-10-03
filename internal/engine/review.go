@@ -90,7 +90,7 @@ func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
 	pr := observed.PullRequest
 	report.Title, report.State, report.Ref.URL, report.Author = pr.Title, pr.State, pr.Ref.URL, pr.Author
 	if report.Login, err = f.AuthenticatedUser(ctx); err != nil {
-		return report, fmt.Errorf("review needs your GitHub login: %w", err)
+		return report, loginError("review", err)
 	}
 	if report.Permission, err = f.Permission(ctx, e.PullRequestRepository(), report.Login); err != nil {
 		return report, fmt.Errorf("reading your access to %s: %w", e.PullRequestRepository(), err)

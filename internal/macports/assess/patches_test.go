@@ -25,7 +25,7 @@ func TestPatchesAreSaidAgainstTheCandidatesSource(t *testing.T) {
 		{Result: patchcheck.Result{Name: "patch-elsewhere.diff", Detail: "patch.dir leaves the source directory"}},
 	}})
 	require.Equal(t, []string{
-		"· patch-stale.diff doesn't apply to 1.52.1's source, so the build fails at its patch phase: 1 out of 1 hunk FAILED",
+		"· patch-stale.diff doesn't apply to 1.52.1's source, as dockhand read it, and a check shows whether the build's patch phase fails: 1 out of 1 hunk FAILED",
 		"· patch-libuv-legacy.diff, which the base applied, is dropped, and no longer applies to 1.52.1's source: 5 out of 5 hunks FAILED",
 		"· patch-still.diff, which the base applied, is dropped, though it still applies to 1.52.1's source: what it fixed may need it still",
 	}, messages(comparison.Changes))

@@ -197,18 +197,30 @@ func setupVersionIndex(name string, words int) int {
 		if words == 4 {
 			index = 2
 		}
-	case "pure.setup", "crossbinutils.setup":
+	case "pure.setup", "crossbinutils.setup", "crossgcc.setup", "crossgdb.setup":
 		if words == 3 {
 			index = 2
 		}
-	// Two more forges take it third, after author and project:
-	// bitbucket.setup author project version ?tag_prefix? and
-	// codeberg.setup author project version ?tag_prefix? ?tag_suffix?.
+	// elpa.setup name version ?repo?, and luarocks.setup module vers
+	// ?type? ?docs? ?source? ?implementation?, as ruby's.
+	case "elpa.setup":
+		if words >= 3 && words <= 4 {
+			index = 2
+		}
+	case "luarocks.setup":
+		if words >= 3 && words <= 7 {
+			index = 2
+		}
+	// The other forges take it third, after author and project:
+	// bitbucket.setup author project version ?tag_prefix?, and codeberg,
+	// gitea, sourcehut, notabug, and cgit's setup author project version
+	// ?tag_prefix? ?tag_suffix?, cgit's naming its URL for the author
+	// (field testing, batch 11: garage's gitea.setup wasn't one).
 	case "bitbucket.setup":
 		if words >= 4 && words <= 5 {
 			index = 3
 		}
-	case "codeberg.setup":
+	case "codeberg.setup", "gitea.setup", "sourcehut.setup", "notabug.setup", "cgit.setup":
 		if words >= 4 && words <= 6 {
 			index = 3
 		}

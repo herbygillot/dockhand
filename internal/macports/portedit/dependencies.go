@@ -218,7 +218,10 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	case errors.As(err, &moved):
 		unchecked = fmt.Sprintf("The module moved from %s to %s, so the existing %s wasn't checked against %s's source; it's regenerated whole.", moved.From, moved.To, plan.Kind, input.info.Version)
 	case err != nil:
-		return Result{}, err
+		// Said as the current version's: halloy's refusal named the Git
+		// pin of 2025's lock, and the update after it listed the new
+		// version's, another commit (field testing, batch 11).
+		return Result{}, fmt.Errorf("checking the existing %s against %s's source, the version now: %w", plan.Kind, base.info.Version, err)
 	}
 	old = old.KeepingDeclared(plan.Values[depblock.CargoGit])
 	// Preserve maintained overrides by refusing to overwrite declarations that differ
@@ -319,8 +322,13 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	}
 	after := evaluated.after
 	selected := after.Ports[input.target.Name]
-	if selected.Version != request.Release.Version || selected.Revision != 0 || selected.Epoch != input.info.Epoch || selected.Options["git.branch"] != request.Release.Tag {
-		return Result{}, fmt.Errorf("%w: dependency regeneration changed the selected version or source", ErrFidelity)
+	// A release read from a livecheck's listing, as garage's on its own
+	// Gitea, names no tag, so the tag the PortGroup composes stands
+	// (field testing, batch 11).
+	tagMoved := request.Release.Tag != "" && selected.Options["git.branch"] != request.Release.Tag
+	if selected.Version != request.Release.Version || selected.Revision != 0 || selected.Epoch != input.info.Epoch || tagMoved {
+		return Result{}, fmt.Errorf("%w: dependency regeneration changed the selected version or source: it evaluates as version %s, revision %d, epoch %d, tag %q, where the update chose %s, revision 0, epoch %d, tag %q",
+			ErrFidelity, selected.Version, selected.Revision, selected.Epoch, selected.Options["git.branch"], request.Release.Version, input.info.Epoch, request.Release.Tag)
 	}
 	for name, wanted := range values {
 		actual, errs := syntax.ListValues(selected.Options[name])

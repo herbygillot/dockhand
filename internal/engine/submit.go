@@ -383,7 +383,7 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 	f := e.forge()
 	login, err := f.AuthenticatedUser(ctx)
 	if err != nil {
-		return fmt.Errorf("submit needs your GitHub login: %w", err)
+		return loginError("submit", err)
 	}
 	remotes, err := worktree.Remotes(ctx)
 	if err != nil {
@@ -774,6 +774,16 @@ func (e *Engine) RequestReview(ctx context.Context, branch model.Branch) ([]stri
 	return logins, err
 }
 
+// loginError says why asking GitHub who you are failed: a rate limit is
+// one to wait out, never a login wanting (field testing, batch 11: every
+// submit after a drain said it needed a login, and the limit had run out).
+func loginError(what string, err error) error {
+	if limited := (*forge.RateLimitError)(nil); errors.As(err, &limited) {
+		return fmt.Errorf("%s waits on GitHub: %w", what, err)
+	}
+	return fmt.Errorf("%s needs your GitHub login: %w", what, err)
+}
+
 // Fork finds your fork: the one Git remote that pushes to a fork of
 // MacPorts' repository your GitHub login owns, or the remote named. With
 // a sandbox (Options.PullRequests), the fork is the sandbox itself, which
@@ -781,7 +791,7 @@ func (e *Engine) RequestReview(ctx context.Context, branch model.Branch) ([]stri
 func (e *Engine) Fork(ctx context.Context, remote string) (buildenv.Fork, error) {
 	login, err := e.forge().AuthenticatedUser(ctx)
 	if err != nil {
-		return buildenv.Fork{}, fmt.Errorf("finding your fork needs your GitHub login: %w", err)
+		return buildenv.Fork{}, loginError("finding your fork", err)
 	}
 	remotes, err := e.Repo.Remotes(ctx)
 	if err != nil {

@@ -22,7 +22,9 @@ func TestCandidatesPreserveSourceAndExcludeHooksAndData(t *testing.T) {
 func TestCandidatesFindSetupAndComposedInputs(t *testing.T) {
 	for _, src := range []string{"go.setup github.com/owner/project 1.2 v\n", "gitlab.setup owner project 1.2 v\n", "github.setup owner project 2026-09-07\nversion [string map {- {}} ${github.version}]\n", "perl5.setup App-cpanminus 1.7049 ../../authors/id/M/MI/MIYAGAWA\n", "R.setup cran jeroen jsonlite 1.8.9\n", "R.setup github tidyverse ggplot2 3.5.1 v\n", "ruby.setup 3llo 1.3.1 gem {} rubygems\n", "ruby.setup {rails railties} 7.1.2 gem {} rubygems ruby33\n",
 		"aspelldict.setup af 0.50-0 {Afrikaans}\n", "hunspelldict.setup af_ZA 2006-01-17 {Afrikaans (South Africa)} ooo\n", "x11font.setup font-adobe-100dpi 1.0.3 100dpi\n", "pure.setup faust2pd 2.16\n", "crossbinutils.setup aarch64-elf 2.47\n",
-		"bitbucket.setup Coin3D coin 3.1.3 Coin-\n", "codeberg.setup mrirecon bart 1.0.01 v\n", "octave.setup github gnu-octave pkg-apa 1.2.2 v\n", "octave.setup pkg-apa 1.2.2\n"} {
+		"bitbucket.setup Coin3D coin 3.1.3 Coin-\n", "codeberg.setup mrirecon bart 1.0.01 v\n", "octave.setup github gnu-octave pkg-apa 1.2.2 v\n", "octave.setup pkg-apa 1.2.2\n",
+		"gitea.setup Deuxfleurs garage 2.3.0 v\n", "sourcehut.setup ~sircmpwn aerc 0.20.1\n", "notabug.setup owner project 1.0\n", "cgit.setup https://git.example.org project 1.0 v\n",
+		"crossgcc.setup arm-none-eabi 15.2.0\n", "elpa.setup compat 30.1.0.0\n", "luarocks.setup luafilesystem 1.8.0-1\n"} {
 		values, err := portfile.Candidates([]byte(src))
 		require.NoError(t, err)
 		require.Len(t, values, 1)

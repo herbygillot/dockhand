@@ -86,6 +86,19 @@ func TestCheckHonorsStripRenameAndPatchDir(t *testing.T) {
 	require.Equal(t, "1 patches apply", Summary([]Result{{Name: "x", Checked: true, Applies: true}}))
 }
 
+// A source directory no archive holds is one a PortGroup's post-extract
+// moves the archive's top directory to, as golang's does: the patches
+// apply against that directory (field testing, batch 11: lima).
+func TestAMovedSourceIsTheArchivesTopDirectory(t *testing.T) {
+	archive := sourceArchive(t, map[string]string{"lima-2.2.1/dir/a.txt": "one\ntwo\nthree\n"})
+	results, err := Check(t.Context(), Request{Archives: []string{archive}, Worksrcdir: "gopath/src/github.com/lima-vm/lima", PreArgs: []string{"-t", "-N", "-p0"},
+		Patches: []Patch{{Name: "good.diff", Data: []byte(good)}, {Name: "stale.diff", Data: []byte(stale)}}})
+	require.NoError(t, err)
+	require.True(t, results[0].Applies, results[0].Detail)
+	require.False(t, results[1].Applies, "a stale patch is still said")
+	require.Regexp(t, staleHunk, results[1].Detail)
+}
+
 func TestTargets(t *testing.T) {
 	data := "diff --git a/src/x.c b/src/x.c\nIndex: src/y.c\n--- a/src/x.c\t2026-01-01\n+++ b/src/x.c\n--- /dev/null\n+++ b/new.txt\n*** old/ctx.c\n"
 	require.Equal(t, []string{"src/x.c", "y.c", "new.txt", "ctx.c"}, targets([]byte(data), 1))

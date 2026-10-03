@@ -125,8 +125,17 @@ namespace eval ::dockhand {
                 }
                 lappend origins $origin
             }
-            set post [ditem_key $target post]
-            llength $post
+            # The post-fetch hooks' bodies, so the recognizer can read what
+            # they do: one that only checks out the Git submodules a
+            # commit pins changes nothing else fetched (fnox, field
+            # testing batch 11). One it can't read is still refused.
+            set post {}
+            foreach hook [ditem_key $target post] {
+                if {![llength [info procs user${hook}]]} { error "unrecognized post-fetch wrapper" }
+                set body [info body user${hook}]
+                if {[string first "global {*}\[info globals\]\n" $body] != 0} { error "unrecognized post-fetch scope wrapper" }
+                lappend post [string range $body [string length "global {*}\[info globals\]\n"] end]
+            }
             # The commands the hooks call, with what they are: an option
             # command with its option, a procedure with its arguments and
             # body, or a built-in command. The recognizer judges a hook by

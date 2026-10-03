@@ -1,11 +1,14 @@
 package engine
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/forgetest"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/testsupport"
@@ -103,4 +106,13 @@ func TestSubmitHoldsSeveralPortsForATitle(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, plan.Blocking, "the pull request needs a title, since the branch changes several ports: give one with --title")
 	require.Equal(t, "jq, libharbor: update", plan.Title)
+}
+
+// A rate limit is said as one to wait out, never as a login wanting
+// (field testing, batch 11).
+func TestARateLimitIsNotALoginWanting(t *testing.T) {
+	t.Parallel()
+	limited := &forge.RateLimitError{RetryAt: time.Now().Add(time.Hour), Err: errors.New("GitHub's rate limit resets at 09:46, in 60 minutes")}
+	require.EqualError(t, loginError("submit", limited), "submit waits on GitHub: GitHub's rate limit resets at 09:46, in 60 minutes")
+	require.EqualError(t, loginError("submit", errors.New("no credentials")), "submit needs your GitHub login: no credentials")
 }

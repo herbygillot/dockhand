@@ -415,3 +415,40 @@ func parseHook(hook string) ([]byte, []syntax.Command, bool) {
 	}
 	return src, script.Direct(), true
 }
+
+// A Git-fetched port's post-fetch that only checks out the submodules the
+// commit pins stays standard, said as a guard; any other post-fetch, or
+// one on a port that doesn't fetch with Git, is refused (field testing,
+// batch 11: fnox).
+func TestAPostFetchThatOnlyUpdatesSubmodulesIsStandard(t *testing.T) {
+	t.Parallel()
+	git := macports.PortInfo{Options: map[string]string{"fetch.type": "git"}}
+	submodules := braced("\n    system -W ${worksrcpath} \"git submodule update --init\"\n")
+	got := Assess(git, "portfetch::fetch_main", "", submodules, nil, nil)
+	require.Empty(t, got.Problem)
+	require.Equal(t, "guarded", got.Kind)
+	require.Contains(t, got.Guards, "post-fetch checks out the Git submodules the commit pins")
+
+	recursive := braced("system -W ${worksrcpath} \"git submodule update --init --recursive\"")
+	require.Empty(t, Assess(git, "portfetch::fetch_main", "", recursive, nil, nil).Problem)
+
+	for _, post := range []string{
+		braced("system -W ${worksrcpath} \"git submodule update --init\"\nsystem \"curl example.invalid\""),
+		braced("system -W ${worksrcpath} \"git submodule foreach git pull\""),
+		braced("system -W /tmp \"git submodule update --init\""),
+	} {
+		require.Equal(t, "post-fetch hooks can modify archive preparation", Assess(git, "portfetch::fetch_main", "", post, nil, nil).Problem, post)
+	}
+	standard := macports.PortInfo{Options: map[string]string{"fetch.type": "standard"}}
+	require.Equal(t, "post-fetch hooks can modify archive preparation", Assess(standard, "portfetch::fetch_main", "", submodules, nil, nil).Problem)
+}
+
+// braced is a Tcl list of hook bodies, each braced, as the evaluator lists
+// them.
+func braced(bodies ...string) string {
+	var list []string
+	for _, body := range bodies {
+		list = append(list, "{"+body+"}")
+	}
+	return strings.Join(list, " ")
+}
