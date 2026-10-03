@@ -85,3 +85,34 @@ func TestABranchIsNamedForWhatItDoes(t *testing.T) {
 	require.NoError(t, err)
 	require.Regexp(t, `^jq-[a-z0-9]{4}$`, plain, "nothing more to say: the port and an ID")
 }
+
+// A branch named for the version an update moved it to is renamed for
+// the next version, while no pull request has it; its worktree stays
+// where it is, and its record follows. One with a pull request keeps its
+// name, the pull request's head.
+func TestABranchNamedForAVersionFollowsIt(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "jq-1.7.1"})
+	require.NoError(t, err)
+	update, err := e.Update(t.Context(), UpdateRequest{Branch: branch, Action: model.EditUpdate, Port: "jq"})
+	require.NoError(t, err)
+	require.Equal(t, "jq-1.7.1", update.RenamedFrom)
+	require.Equal(t, "dockhand/jq-1.8.1", update.Branch.Name)
+	require.Equal(t, branch.Worktree, update.Branch.Worktree, "the worktree stays where it is")
+	found, err := e.Resolve(t.Context(), "jq-1.8.1")
+	require.NoError(t, err)
+	require.Equal(t, branch.ID, found.ID)
+	_, _, err = e.Repo.Branch(t.Context(), "dockhand/jq-1.8.1")
+	require.NoError(t, err, "the Git branch is renamed")
+
+	withPR := found
+	withPR.PullRequest = &model.PullRequest{Repository: UpstreamRepository, Number: 34901, Head: "ada/macports-ports:" + found.Name}
+	renamed, err := e.renameForVersion(t.Context(), &withPR, "jq", "1.8.1", "1.8.2")
+	require.NoError(t, err)
+	require.Empty(t, renamed, "its pull request's head keeps its name")
+	renamed, err = e.renameForVersion(t.Context(), &found, "jq", "1.8.0", "1.8.2")
+	require.NoError(t, err)
+	require.Empty(t, renamed, "named for another version than it moves from")
+}

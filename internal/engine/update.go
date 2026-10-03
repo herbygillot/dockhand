@@ -188,6 +188,9 @@ type Update struct {
 	// discovery follows unsaid (field testing, 2026-10-02). Empty where
 	// it's the same, or couldn't be asked.
 	Renamed string
+	// RenamedFrom is the branch's name before the update renamed it for
+	// the version it now moves to; empty where it wasn't renamed.
+	RenamedFrom string
 	// PlainHTTP are the port's URLs over plain HTTP, homepage and
 	// master_sites, each with whether its https form answers, since
 	// MacPorts prefers HTTPS. They're said, never changed: that's the
@@ -425,6 +428,15 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 		return Update{}, err
 	}
 	update.Applied = true
+	if request.Start == nil && request.Action == model.EditUpdate {
+		renamed, err := e.renameForVersion(ctx, &branch, request.Port, update.Before.Version, update.After.Version)
+		switch {
+		case err != nil:
+			progress.VerboseReport(ctx, "%s keeps its name: %v", branch.ShortName(), err)
+		case renamed != "":
+			update.RenamedFrom, update.Branch = renamed, branch
+		}
+	}
 	edit, err := e.editRecord(ctx, worktree, branch, request, update, result)
 	if err != nil {
 		return update, err
@@ -810,6 +822,36 @@ func (e *Engine) branchChanges(ctx context.Context, branch model.Branch, head st
 		}
 	}
 	return false, false, nil
+}
+
+// renameForVersion renames a branch named for the version an update moved
+// it from, jq-1.8.1, for the one it moves to, jq-1.8.2, while no pull
+// request has it: after one does, its name is the pull request's head,
+// and stays (design v3, §3). The worktree stays where it is, since a
+// person may be in it; its Git branch and record follow. It says the old
+// name, or nothing where the branch keeps its name.
+func (e *Engine) renameForVersion(ctx context.Context, branch *model.Branch, port, from, to string) (string, error) {
+	if branch.PullRequest != nil || from == "" || from == to || branch.ShortName() != refSafe(port+"-"+from) {
+		return "", nil
+	}
+	name, err := e.NameFor(ctx, port, to)
+	if err != nil {
+		return "", err
+	}
+	old := branch.ShortName()
+	if err := e.Repo.RenameBranch(ctx, branch.Name, BranchName(name)); err != nil {
+		return "", err
+	}
+	branch.Name = BranchName(name)
+	err = store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
+		if err := tx.UpdateBranch(*branch); err != nil {
+			return err
+		}
+		_, err := tx.AppendEvent(model.Event{At: e.now(), Branch: branch.ID, Kind: "branch.rename", Level: model.LevelInfo,
+			Message: fmt.Sprintf("renamed %s to %s, for the version it now moves to", old, name)})
+		return err
+	}, branchRecorded(branch.ID))
+	return old, err
 }
 
 // branchTree is a branch's files as they stand: its worktree's, edits and

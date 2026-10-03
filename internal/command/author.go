@@ -348,6 +348,10 @@ func author(ctx context.Context, s *settings, streams Streams, where branchChoic
 		branch, started = update.Branch, true
 		announce(out, branch, started)
 	}
+	if update.RenamedFrom != "" {
+		branch = update.Branch
+		fmt.Fprintf(out, "Renamed %s to %s, for the version it now moves to.\n", update.RenamedFrom, branch.ShortName())
+	}
 	if err != nil && started {
 		// The branch it started stays, for the edit by hand.
 		streams.emit(updateView(branch, started, update, request.Plan))

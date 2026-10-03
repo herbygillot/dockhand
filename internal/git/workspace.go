@@ -39,6 +39,24 @@ func (r *Repository) DeleteBranch(ctx context.Context, name, commit string) erro
 	return r.UpdateRefs(ctx, []RefChange{{Name: "refs/heads/" + name, Expected: RefValue{Exists: true, Object: commit}}})
 }
 
+// RenameBranch renames refs/heads/<old> to refs/heads/<next>, with its
+// reflog, and the worktree that has it checked out follows (git branch
+// -m). A name another branch has is refused.
+func (r *Repository) RenameBranch(ctx context.Context, old, next string) error {
+	if !ValidBranchName(old) || !ValidBranchName(next) {
+		return fmt.Errorf("git: invalid branch %q or %q", old, next)
+	}
+	current, err := r.ReadRef(ctx, "refs/heads/"+next)
+	if err != nil {
+		return err
+	}
+	if current.Exists {
+		return fmt.Errorf("%w: %s", ErrBranchExists, next)
+	}
+	_, err = r.output(ctx, "branch", "-m", "--", old, next)
+	return err
+}
+
 // AddSparseWorktree checks branch out into a new linked worktree at
 // directory, holding only the cone paths given (and the files at the top of
 // the tree, which cone mode always keeps). The sparse patterns belong to the
