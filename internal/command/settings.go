@@ -38,6 +38,10 @@ func (s *settings) flags(root *cobra.Command) {
 	root.PersistentFlags().StringVar(&s.git, "git", "", "the git executable (default $GIT_BIN, else git on PATH)")
 }
 
+// pullRequestsVariable names the sandbox pull requests go to instead of
+// MacPorts' repository (engine.Options.PullRequests).
+const pullRequestsVariable = "DOCKHAND_PULL_REQUESTS"
+
 func firstOf(values ...string) string {
 	for _, value := range values {
 		if value != "" {
@@ -83,7 +87,11 @@ func (s *settings) options(ctx context.Context) (engine.Options, config.File, st
 		// DOCKHAND_UPSTREAM fetches master from a mirror or, in tests, a
 		// local repository.
 		Upstream: os.Getenv("DOCKHAND_UPSTREAM"),
-		Tclsh:    portTclsh(),
+		// DOCKHAND_PULL_REQUESTS sends pull requests to a sandbox, a fork
+		// of MacPorts' repository, for the acceptance test's repeatable
+		// rows; submit's preview names it.
+		PullRequests: os.Getenv(pullRequestsVariable),
+		Tclsh:        portTclsh(),
 		// Readings are a saving: where the cache can't be placed, none
 		// are kept.
 		Readings: readingCache(),

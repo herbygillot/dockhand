@@ -36,15 +36,24 @@ step sudo -u dhtest git config --global user.name "Dockhand Acceptance"
 step sudo -u dhtest git config --global user.email "dhtest@example.invalid"
 human "put the test GitHub account's SSH key in /Users/dhtest/.ssh, readable by dhtest alone"
 
-# 4. The test account's fork, cleared: leftover [testing] pull requests
-# closed, and dockhand's branches deleted.
+# 4. The test account's fork, cleared. It's also the sandbox the full
+# stage's test pull requests go to (DOCKHAND_PULL_REQUESTS), within it:
+# leftover [testing] pull requests closed, there and at MacPorts;
+# dockhand's branches deleted; and its master made MacPorts' again, so a
+# pull request within it shows only its own commits.
 if command -v gh >/dev/null && [ -n "${ACCEPT_TEST_ACCOUNT:-}" ]; then
-	for number in $(gh pr list --repo macports/macports-ports --author "$ACCEPT_TEST_ACCOUNT" --state open --json number,title --jq '.[] | select(.title | startswith("[testing]")) | .number'); do
-		step gh pr close "$number" --repo macports/macports-ports
+	sandbox="$ACCEPT_TEST_ACCOUNT/macports-ports"
+	for repo in macports/macports-ports "$sandbox"; do
+		for number in $(gh pr list --repo "$repo" --author "$ACCEPT_TEST_ACCOUNT" --state open --json number,title --jq '.[] | select(.title | startswith("[testing]")) | .number'); do
+			step gh pr close "$number" --repo "$repo"
+		done
 	done
-	for ref in $(gh api "repos/$ACCEPT_TEST_ACCOUNT/macports-ports/git/matching-refs/heads/dockhand" --jq '.[].ref' 2>/dev/null); do
-		step gh api -X DELETE "repos/$ACCEPT_TEST_ACCOUNT/macports-ports/git/$ref"
+	for prefix in dockhand dockhand-check; do
+		for ref in $(gh api "repos/$sandbox/git/matching-refs/heads/$prefix/" --jq '.[].ref' 2>/dev/null); do
+			step gh api -X DELETE "repos/$sandbox/git/$ref"
+		done
 	done
+	step gh repo sync "$sandbox" --branch master --force
 else
 	echo "skipped: clearing the fork needs gh and ACCEPT_TEST_ACCOUNT, the test GitHub login"
 fi

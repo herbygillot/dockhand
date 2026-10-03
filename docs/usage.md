@@ -410,8 +410,9 @@ The rest of dockhand's bounds are fixed in code: how large an archive it downloa
 | `TART_HOME` | your own Tart home, read to count your running VMs against the Mac's two; `~/.tart` otherwise |
 | `DOCKHAND_SSH_DIR` | the keys dockhand reaches its Tart guests with; `~/.dockhand/ssh` otherwise |
 | `DOCKHAND_UPSTREAM` | where master is fetched from, a mirror or a local repository, rather than MacPorts' own |
+| `DOCKHAND_PULL_REQUESTS` | for testing dockhand: a sandbox, a fork of MacPorts' repository such as `you/macports-ports`, that pull requests go to instead, made within it. `submit`'s preview says so |
 | `DOCKHAND_INDEX_MIRROR` | the directory port indexes are downloaded from, a nearer mirror's, rather than MacPorts' |
 | `DOCKHAND_INDEX_CACHE` | where port indexes are cached; `dockhand/indexes` in your cache directory otherwise |
 | `DOCKHAND_GITHUB_CLIENT_ID` | the OAuth application `setup github` uses |
 
-`serve --install` keeps the ones serve reads, as they are when it's run, in the agent: `DOCKHAND_CONFIG`, `DOCKHAND_UPSTREAM`, `DOCKHAND_INDEX_MIRROR`, `DOCKHAND_INDEX_CACHE`, `DOCKHAND_TART_HOME`, `TART_HOME`, and `DOCKHAND_SSH_DIR`, with `--git` and `--db`. A token is never kept there, since anyone on the Mac can read the agent's file.
+`serve --install` keeps the ones serve reads, as they are when it's run, in the agent: `DOCKHAND_CONFIG`, `DOCKHAND_UPSTREAM`, `DOCKHAND_PULL_REQUESTS`, `DOCKHAND_INDEX_MIRROR`, `DOCKHAND_INDEX_CACHE`, `DOCKHAND_TART_HOME`, `TART_HOME`, and `DOCKHAND_SSH_DIR`, with `--git` and `--db`. A token is never kept there, since anyone on the Mac can read the agent's file.

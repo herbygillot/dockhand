@@ -98,10 +98,14 @@ harm_remote_refs() {
 	done
 }
 
-# harm_prs lists the pull requests the login has opened, where one's set.
+# harm_prs lists the pull requests the login has opened, where one's set,
+# at MacPorts and in the sandbox the full stage's test ones go to.
 harm_prs() {
 	[ -n "${ACCEPT_GH_LOGIN:-}" ] && command -v gh >/dev/null || return 1
-	gh pr list --repo macports/macports-ports --author "$ACCEPT_GH_LOGIN" --state all --limit 200 --json number --jq '.[].number' | sort
+	local repo
+	for repo in macports/macports-ports ${DOCKHAND_PULL_REQUESTS:-}; do
+		gh pr list --repo "$repo" --author "$ACCEPT_GH_LOGIN" --state all --limit 200 --json number --jq ".[] | \"$repo#\(.number)\"" || return 1
+	done | sort
 }
 
 # harm_running lists the Tart VMs running and the checks queued or running.

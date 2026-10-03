@@ -419,6 +419,9 @@ func writeSubmitPlan(out io.Writer, plan engine.SubmitPlan) {
 	fmt.Fprintf(out, "  Title    %s\n", title)
 	fmt.Fprintf(out, "  From     %s\n", plan.Head())
 	fmt.Fprintf(out, "  To       %s:%s\n", plan.Repository, engine.UpstreamBranch)
+	if !strings.EqualFold(plan.Repository, engine.UpstreamRepository) {
+		fmt.Fprintf(out, "           a sandbox, not %s, as %s says\n", engine.UpstreamRepository, pullRequestsVariable)
+	}
 	rules := "follows MacPorts' commit rules"
 	if len(plan.Findings) > 0 {
 		rules = prose.Plural(len(plan.Findings), "finding") + " below"

@@ -45,6 +45,33 @@ func TestSubmitPushesOnlyToYourFork(t *testing.T) {
 	require.ErrorContains(t, err, "choose one with --remote")
 }
 
+// With a sandbox, the acceptance test's, pull requests go to it and are
+// made within it: the fork is the sandbox, which must be a fork of
+// MacPorts' repository, and no other remote stands in for it.
+func TestASandboxTakesThePullRequestsWithinItself(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	e, _ := f.withPreparer(t)
+	fake := f.withFork(t, e)
+	branch := committedUpdate(t, e)
+	e.options.PullRequests = "ada/macports-ports"
+	require.True(t, e.Sandboxed())
+	plan, err := e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.NoError(t, err)
+	require.Equal(t, "ada/macports-ports", plan.Repository)
+	require.Equal(t, "ada/macports-ports", plan.HeadRepository)
+
+	e.options.PullRequests = "tester/macports-ports"
+	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.ErrorContains(t, err, "no Git remote pushes to the sandbox tester/macports-ports that pull requests go to")
+
+	e.options.PullRequests = "ada/macports-ports"
+	fake.ForkParent = "someone/other-ports"
+	_, err = e.PlanSubmit(t.Context(), SubmitRequest{Branch: branch, NoCheck: true})
+	require.ErrorContains(t, err, "ada/macports-ports is not a fork of macports/macports-ports")
+	require.Empty(t, testsupport.Git(t, fake.Fork, "branch", "--list", "dockhand/*"), "nothing was pushed")
+}
+
 // A branch holding a merge commit is held: MacPorts asks for a rebase.
 func TestSubmitHoldsAMergeCommit(t *testing.T) {
 	t.Parallel()

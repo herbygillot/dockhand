@@ -46,6 +46,11 @@ type Options struct {
 	Worktrees string
 	// Upstream is the URL master is fetched from; UpstreamURL when empty.
 	Upstream string
+	// PullRequests is the repository pull requests go to;
+	// UpstreamRepository when empty. The acceptance test names its
+	// sandbox, a fork of MacPorts' repository that takes pull requests
+	// within itself, so its repeatable rows open nothing at MacPorts.
+	PullRequests string
 	// Tclsh is MacPorts' port-tclsh, which evaluates Portfiles; found on
 	// PATH when empty.
 	Tclsh string
@@ -188,6 +193,20 @@ func (e *Engine) Upstream() string {
 		return e.options.Upstream
 	}
 	return UpstreamURL
+}
+
+// PullRequestRepository is the repository pull requests go to, and are
+// read from: MacPorts' ports, unless Options.PullRequests names a sandbox.
+func (e *Engine) PullRequestRepository() string {
+	if e.options.PullRequests != "" {
+		return e.options.PullRequests
+	}
+	return UpstreamRepository
+}
+
+// Sandboxed says whether pull requests go to a sandbox, not MacPorts.
+func (e *Engine) Sandboxed() bool {
+	return !strings.EqualFold(e.PullRequestRepository(), UpstreamRepository)
 }
 
 // Clone is the main checkout's directory, whichever worktree the engine

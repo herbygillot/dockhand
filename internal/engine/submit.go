@@ -204,7 +204,7 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 		return SubmitPlan{}, err
 	}
 	request.Branch = branch
-	plan := SubmitPlan{Request: request, Branch: branch, Repository: UpstreamRepository}
+	plan := SubmitPlan{Request: request, Branch: branch, Repository: e.PullRequestRepository()}
 	worktree, err := e.worktree(ctx, branch)
 	if err != nil {
 		return plan, err
@@ -414,7 +414,7 @@ func (e *Engine) destination(ctx context.Context, worktree *git.Repository, plan
 	if pr := plan.Branch.PullRequest; pr != nil {
 		observed, err = f.Observe(ctx, pullRequestRef(pr.Repository, pr.Number))
 	} else {
-		observed, err = f.Find(ctx, forge.PullRequestQuery{Repository: UpstreamRepository, HeadRepository: plan.HeadRepository, HeadBranch: plan.RemoteBranch(), BaseBranch: UpstreamBranch})
+		observed, err = f.Find(ctx, forge.PullRequestQuery{Repository: e.PullRequestRepository(), HeadRepository: plan.HeadRepository, HeadBranch: plan.RemoteBranch(), BaseBranch: UpstreamBranch})
 	}
 	if err != nil {
 		return err
@@ -478,12 +478,12 @@ func (e *Engine) mayPushTheirs(ctx context.Context, plan *SubmitPlan, login stri
 		plan.Blocking = append(plan.Blocking, fmt.Sprintf("@%s's #%d doesn't let maintainers push to %s; suggest your changes in a review (dockhand review %d), or ask them to allow edits", pr.Author, pr.Ref.Number, plan.Head(), pr.Ref.Number))
 		return nil
 	}
-	permission, err := e.forge().Permission(ctx, UpstreamRepository, login)
+	permission, err := e.forge().Permission(ctx, e.PullRequestRepository(), login)
 	if err != nil {
-		return fmt.Errorf("reading your access to %s: %w", UpstreamRepository, err)
+		return fmt.Errorf("reading your access to %s: %w", e.PullRequestRepository(), err)
 	}
 	if !slices.Contains([]string{"admin", "maintain", "write"}, permission) {
-		plan.Blocking = append(plan.Blocking, fmt.Sprintf("pushing to @%s's %s needs write access to %s, and you have %s; suggest your changes in a review (dockhand review %d)", pr.Author, plan.Head(), UpstreamRepository, permission, pr.Ref.Number))
+		plan.Blocking = append(plan.Blocking, fmt.Sprintf("pushing to @%s's %s needs write access to %s, and you have %s; suggest your changes in a review (dockhand review %d)", pr.Author, plan.Head(), e.PullRequestRepository(), permission, pr.Ref.Number))
 	}
 	return nil
 }
@@ -546,7 +546,7 @@ func (e *Engine) searchOthers(ctx context.Context, plan *SubmitPlan) {
 func (e *Engine) openPullRequests(ctx context.Context, ports []string, except int) ([]forge.PullRequestSummary, string) {
 	var others []forge.PullRequestSummary
 	for _, port := range ports {
-		found, err := e.forge().OpenPullRequests(ctx, UpstreamRepository, port)
+		found, err := e.forge().OpenPullRequests(ctx, e.PullRequestRepository(), port)
 		if err != nil {
 			return nil, err.Error()
 		}
@@ -671,7 +671,7 @@ func (e *Engine) ApplySubmit(ctx context.Context, plan SubmitPlan) (Submitted, e
 // one opened it first. One found is this branch's, and is not written
 // again; with none, the failure stands.
 func (e *Engine) createdAnyway(ctx context.Context, plan SubmitPlan, failed error) (forge.PullRequestObservation, error) {
-	found, err := e.forge().Find(ctx, forge.PullRequestQuery{Repository: UpstreamRepository, HeadRepository: plan.HeadRepository, HeadBranch: plan.RemoteBranch(), BaseBranch: UpstreamBranch})
+	found, err := e.forge().Find(ctx, forge.PullRequestQuery{Repository: e.PullRequestRepository(), HeadRepository: plan.HeadRepository, HeadBranch: plan.RemoteBranch(), BaseBranch: UpstreamBranch})
 	if err != nil || !found.Found || found.PullRequest.State != forge.PullRequestOpen {
 		return forge.PullRequestObservation{}, failed
 	}
@@ -775,7 +775,9 @@ func (e *Engine) RequestReview(ctx context.Context, branch model.Branch) ([]stri
 }
 
 // Fork finds your fork: the one Git remote that pushes to a fork of
-// MacPorts' repository your GitHub login owns, or the remote named.
+// MacPorts' repository your GitHub login owns, or the remote named. With
+// a sandbox (Options.PullRequests), the fork is the sandbox itself, which
+// must be a fork of MacPorts' repository: its pull requests are within it.
 func (e *Engine) Fork(ctx context.Context, remote string) (buildenv.Fork, error) {
 	login, err := e.forge().AuthenticatedUser(ctx)
 	if err != nil {
@@ -790,6 +792,7 @@ func (e *Engine) Fork(ctx context.Context, remote string) (buildenv.Fork, error)
 
 func (e *Engine) fork(ctx context.Context, remotes []git.Remote, login, named string) (buildenv.Fork, error) {
 	f := e.forge()
+	sandbox := e.Sandboxed()
 	var candidates []string
 	var fork buildenv.Fork
 	for _, remote := range remotes {
@@ -798,7 +801,11 @@ func (e *Engine) fork(ctx context.Context, remotes []git.Remote, login, named st
 			continue
 		}
 		owner, _, _ := strings.Cut(name, "/")
-		if named != "" && remote.Name == named || named == "" && strings.EqualFold(owner, login) {
+		mine := named == "" && strings.EqualFold(owner, login)
+		if sandbox {
+			mine = named == "" && strings.EqualFold(name, e.PullRequestRepository())
+		}
+		if named != "" && remote.Name == named || mine {
 			candidates = append(candidates, remote.Name+" ("+name+")")
 			fork = buildenv.Fork{Repository: name, Remote: remote.Name, PushURL: remote.PushURL}
 		}
@@ -806,10 +813,15 @@ func (e *Engine) fork(ctx context.Context, remotes []git.Remote, login, named st
 	switch {
 	case len(candidates) == 0 && named != "":
 		return buildenv.Fork{}, fmt.Errorf("there is no remote %s that pushes to a GitHub repository other than %s", named, UpstreamRepository)
+	case len(candidates) == 0 && sandbox:
+		return buildenv.Fork{}, fmt.Errorf("no Git remote pushes to the sandbox %s that pull requests go to", e.PullRequestRepository())
 	case len(candidates) == 0:
 		return buildenv.Fork{}, fmt.Errorf("no Git remote pushes to a fork of %s that %s owns; fork it on GitHub, then git remote add fork https://github.com/%s/macports-ports.git", UpstreamRepository, login, login)
 	case len(candidates) > 1:
 		return buildenv.Fork{}, fmt.Errorf("several remotes push to your forks: %s; choose one with --remote", strings.Join(candidates, ", "))
+	}
+	if sandbox && !strings.EqualFold(fork.Repository, e.PullRequestRepository()) {
+		return buildenv.Fork{}, fmt.Errorf("%s isn't the sandbox %s that pull requests go to", fork.Repository, e.PullRequestRepository())
 	}
 	info, err := f.RepositoryInfo(ctx, fork.Repository)
 	if err != nil {

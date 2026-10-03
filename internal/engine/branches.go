@@ -545,7 +545,7 @@ type PullRequestAdoption struct {
 // push to their branch, which submit checks.
 func (e *Engine) AdoptPullRequest(ctx context.Context, number int) (PullRequestAdoption, error) {
 	var adoption PullRequestAdoption
-	ref := pullRequestRef(UpstreamRepository, number)
+	ref := pullRequestRef(e.PullRequestRepository(), number)
 	observed, err := e.forge().Observe(ctx, ref)
 	if err != nil {
 		return adoption, fmt.Errorf("reading #%d: %w", number, err)
@@ -563,7 +563,7 @@ func (e *Engine) AdoptPullRequest(ctx context.Context, number int) (PullRequestA
 		return adoption, err
 	}
 	for _, branch := range tracked {
-		if branch.PullRequest != nil && branch.PullRequest.Repository == UpstreamRepository && branch.PullRequest.Number == number {
+		if branch.PullRequest != nil && branch.PullRequest.Repository == e.PullRequestRepository() && branch.PullRequest.Number == number {
 			adoption.Branch, adoption.Already = branch, true
 			if head, _, err := e.Repo.Branch(ctx, branch.Name); err == nil {
 				adoption.Commits, adoption.Scope, err = e.changes(ctx, branch.Base, head)
@@ -609,7 +609,7 @@ func (e *Engine) AdoptPullRequest(ctx context.Context, number int) (PullRequestA
 	adoption.Branch = model.Branch{
 		ID: model.BranchID(store.NewID("br")), Repository: e.Repository, Name: name, Base: model.ObjectID(base), Worktree: directory, Managed: true,
 		Title: pr.Title, State: model.BranchOpen, CreatedAt: e.now(),
-		PullRequest: &model.PullRequest{Repository: UpstreamRepository, Number: number, Head: pr.HeadRepository + ":" + pr.HeadBranch, Pushed: model.ObjectID(head), Body: pr.Body, Adopted: true},
+		PullRequest: &model.PullRequest{Repository: e.PullRequestRepository(), Number: number, Head: pr.HeadRepository + ":" + pr.HeadBranch, Pushed: model.ObjectID(head), Body: pr.Body, Adopted: true},
 	}
 	err = store.Recorded(ctx, e.Store, e.Repository, func(tx store.Tx) error {
 		if err := tx.AddBranch(adoption.Branch); err != nil {

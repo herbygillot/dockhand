@@ -80,7 +80,7 @@ func (r ReviewReport) Summary() string {
 // 2). What couldn't be assessed or read is said, never an error. It posts
 // nothing.
 func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
-	ref := pullRequestRef(UpstreamRepository, number)
+	ref := pullRequestRef(e.PullRequestRepository(), number)
 	report := ReviewReport{Ref: ref}
 	f := e.forge()
 	observed, err := f.Observe(ctx, ref)
@@ -92,8 +92,8 @@ func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
 	if report.Login, err = f.AuthenticatedUser(ctx); err != nil {
 		return report, fmt.Errorf("review needs your GitHub login: %w", err)
 	}
-	if report.Permission, err = f.Permission(ctx, UpstreamRepository, report.Login); err != nil {
-		return report, fmt.Errorf("reading your access to %s: %w", UpstreamRepository, err)
+	if report.Permission, err = f.Permission(ctx, e.PullRequestRepository(), report.Login); err != nil {
+		return report, fmt.Errorf("reading your access to %s: %w", e.PullRequestRepository(), err)
 	}
 	if report.Head, err = e.Repo.FetchPullRequest(ctx, e.Upstream(), number); err != nil {
 		return report, fmt.Errorf("fetching #%d: %w", number, err)
@@ -158,7 +158,7 @@ func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
 	}
 
 	err = e.Store.View(ctx, e.Repository, func(r store.Reader) error {
-		previous, err := r.LastReview(UpstreamRepository, number)
+		previous, err := r.LastReview(e.PullRequestRepository(), number)
 		if errors.Is(err, store.ErrNotFound) {
 			return nil
 		}

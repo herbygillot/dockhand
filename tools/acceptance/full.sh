@@ -15,6 +15,10 @@
 #   ACCEPT_GH_LOGIN    the test GitHub account's login, whose PRs H3 counts
 #   ACCEPT_GO_PORT     a small Go port that's due, and ACCEPT_RUST_PORT a
 #                      small Rust one, chosen on the day
+#   ACCEPT_SANDBOX     where test pull requests go, within it: the test
+#                      account's fork, <login>/macports-ports unless set.
+#                      Only the pull requests the person marks real on the
+#                      approval list go to MacPorts.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 : "${ACCEPT_GH_LOGIN:?full.sh needs ACCEPT_GH_LOGIN, the test GitHub account}"
@@ -35,6 +39,8 @@ if [ -d "$MACPORTS_TREE/.git" ]; then
 	done
 fi
 
+# Test pull requests go to the sandbox (engine.Options.PullRequests).
+export DOCKHAND_PULL_REQUESTS=${ACCEPT_SANDBOX:-$ACCEPT_GH_LOGIN/macports-ports}
 export ACCEPT_STATE ACCEPT_GH_LOGIN ACCEPT_GO_PORT ACCEPT_RUST_PORT MACPORTS_TREE
 export ACCEPT_REPO=$(cd "$here/../.." && pwd)
 export DH_BIN=${DH_BIN:-/opt/local/bin/dockhand}

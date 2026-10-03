@@ -37,7 +37,7 @@ func (c signedIn) MarkReady(_ context.Context, ref forge.PullRequestRef) error {
 // upstream, or token. On a Mac with MACPORTS_TREE set, a bare dockhand
 // otherwise registered the person's checkout in their real database.
 func TestMain(m *testing.M) {
-	for _, name := range []string{"MACPORTS_TREE", "DOCKHAND_DB", "DOCKHAND_CONFIG", "DOCKHAND_UPSTREAM", "DOCKHAND_GITHUB_CLIENT_ID", "GH_TOKEN", "GITHUB_TOKEN"} {
+	for _, name := range []string{"MACPORTS_TREE", "DOCKHAND_DB", "DOCKHAND_CONFIG", "DOCKHAND_UPSTREAM", "DOCKHAND_PULL_REQUESTS", "DOCKHAND_GITHUB_CLIENT_ID", "GH_TOKEN", "GITHUB_TOKEN"} {
 		os.Unsetenv(name)
 	}
 	lookTart = func(string) (string, error) { return "", exec.ErrNotFound }

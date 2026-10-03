@@ -51,9 +51,12 @@ judged() {
 }
 
 # The pull requests a row means to open are on its header line
-# "# prs: <port> test|real", one per port. Before the first row, run.sh
-# lists every one in $ACCEPT_STATE/prs.intended and checkpoints once;
-# the person approves by leaving a line, and declines by deleting it. A
+# "# prs: <port> test|real", one per port. A test one goes to the sandbox
+# DOCKHAND_PULL_REQUESTS names, within the test account's fork; a real one
+# to MacPorts. Before the first row, run.sh lists every one in
+# $ACCEPT_STATE/prs.intended and checkpoints once: the person changes test
+# to real for the few that go to MacPorts, and deletes a line to open
+# nothing for it. A
 # port may be named as ${ACCEPT_GO_PORT} or ${ACCEPT_RUST_PORT}.
 
 # protocol_list_prs writes the pull requests the rows mean to open.
@@ -81,9 +84,10 @@ pr_approved() {
 pr_kind() { sed -n "s/^${ROW_ID:?} $1 //p" "$ACCEPT_STATE/prs.intended" | head -1; }
 
 # submit_pr opens the pull request for a port's branch, if the person
-# approved it: a real update as it is, and a test one titled [testing],
-# with a note that says it will be closed and no maintainer mentioned. It
-# says to the row's allowances that one pull request may open.
+# approved it: a real update at MacPorts, as it is, and a test one in the
+# sandbox, titled [testing], with a note that says it will be closed and
+# no maintainer mentioned. It says to the row's allowances that one pull
+# request may open.
 submit_pr() {
 	local port=$1 branch=$2 subject
 	shift 2
@@ -95,7 +99,7 @@ submit_pr() {
 	allow_prs "$(($(cat "$ROW_DIR/allow.prs" 2>/dev/null || echo 0) + 1))"
 	allow_push "*$branch*"
 	if [ "$(pr_kind "$port")" = real ]; then
-		dh_json submit -b "$branch" -y "$@"
+		DOCKHAND_PULL_REQUESTS="" dh_json submit -b "$branch" -y "$@"
 		return
 	fi
 	subject=$(git -C "$(dh_quiet path "$branch")" log -1 --format=%s)

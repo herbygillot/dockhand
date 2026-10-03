@@ -29,6 +29,14 @@ guard() {
 			echo "guard: the full stage runs only as the test host's dhtest user, never in an account someone uses" >&2
 			return 1
 		fi
+		# Test pull requests go to the sandbox; only those marked real
+		# go to MacPorts, one call at a time.
+		case "${DOCKHAND_PULL_REQUESTS:-}" in
+		"" | [Mm]ac[Pp]orts/macports-ports)
+			echo "guard: DOCKHAND_PULL_REQUESTS must name the test account's sandbox, so test pull requests stay out of MacPorts; full.sh sets it" >&2
+			return 1
+			;;
+		esac
 		return 0
 	fi
 	state=$(cd "${ACCEPT_STATE:?}" && pwd -P)

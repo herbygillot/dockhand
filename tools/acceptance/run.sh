@@ -78,7 +78,7 @@ if [ "$stage" = full ]; then
 		mkdir -p "$ROW_DIR"
 		say() { printf '%s\n' "$*"; }
 		row_result() { :; }
-		checkpoint "approve the pull requests in $ACCEPT_STATE/prs.intended: delete any line you don't approve, and change test to real for a real update" ||
+		checkpoint "approve the pull requests in $ACCEPT_STATE/prs.intended: test ones go to the sandbox ${DOCKHAND_PULL_REQUESTS:-}; change test to real for the few that go to MacPorts, and delete a line to open nothing" ||
 			: >"$ACCEPT_STATE/prs.intended"
 		unset -f say row_result
 	fi

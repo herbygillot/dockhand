@@ -45,7 +45,7 @@ func (e *Engine) PullRequestBranch(ctx context.Context, number int) (model.Branc
 			return err
 		}
 		for _, branch := range open {
-			if pr := branch.PullRequest; pr != nil && pr.Repository == UpstreamRepository && pr.Number == number {
+			if pr := branch.PullRequest; pr != nil && pr.Repository == e.PullRequestRepository() && pr.Number == number {
 				found = branch
 				return nil
 			}

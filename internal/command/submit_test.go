@@ -75,6 +75,14 @@ func TestSubmitPreviewsThenOpensThePullRequest(t *testing.T) {
 	require.Contains(t, out, "Nothing was submitted (--plan).\n")
 	require.Empty(t, g.PRs)
 	require.Empty(t, testsupport.Git(t, g.Fork, "branch", "--list", "dockhand/jq-update"), "nothing was pushed")
+
+	// The acceptance test's sandbox takes the pull requests within itself,
+	// and the preview says it isn't MacPorts'.
+	t.Setenv("DOCKHAND_PULL_REQUESTS", "ada/macports-ports")
+	out, _, err = dockhand(t, "submit", "--no-check", "--plan")
+	require.NoError(t, err)
+	require.Contains(t, out, "  To       ada/macports-ports:master\n           a sandbox, not macports/macports-ports, as DOCKHAND_PULL_REQUESTS says\n")
+	t.Setenv("DOCKHAND_PULL_REQUESTS", "")
 	_, _, err = dockhand(t, "submit", "--plan", "--check")
 	require.ErrorContains(t, err, "--plan previews one branch's submission")
 
