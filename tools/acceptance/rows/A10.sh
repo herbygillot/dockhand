@@ -6,10 +6,11 @@
 # text assumes it. submit, which would push, and check, which would build,
 # run as their --plan. A line that can't run here, as one that makes a
 # Tart image, installs serve, or names a project that isn't one, is listed
-# as not run, with why. outdated --mine reads ACCEPT_MAINTAINER's ports,
-# and runs only with the stage's GitHub token, since it asks GitHub of
-# each; update --outdated --mine, which prepares every one, isn't run (B3
-# runs a batch, on two ports). jq, the docs' example, is current at the
+# as not run, with why. Neither outdated --mine nor update --outdated
+# --mine runs: each asks GitHub of every port the maintainer has, about
+# 320 of Herby's, from the account's hourly quota, which field testing
+# shares (the M1's rerun, 2026-10-03); outdated runs on the stage's two
+# ports instead, and B3 runs a batch on them. jq, the docs' example, is current at the
 # stage's pin, so the stage's small Go port, which is due, stands in for
 # it; a line naming one of jq's versions isn't run.
 
@@ -61,7 +62,7 @@ act() {
 		"dockhand submit --passing"*) why="submits, and has no --plan" ;;
 		*" jq "[0-9]*) why="names one of jq's versions, and jq is current at the stage's pin" ;;
 		*"--outdated --mine"*) why="prepares every outdated port of the maintainer's; B3 runs a batch on two" ;;
-		"dockhand outdated --mine"*) [ -n "${GH_TOKEN:-}" ] || why="asks GitHub of each of the maintainer's ports, which needs the stage's token" ;;
+		"dockhand outdated --mine"*) why="asks GitHub of each of the maintainer's ports, hundreds, from the account's hourly quota; outdated runs on the stage's two ports instead" ;;
 		esac
 		if [ -n "$why" ]; then
 			printf '%s: %s\n' "$line" "$why" >>"$ROW_DIR/a10.notrun"
@@ -83,6 +84,13 @@ act() {
 	done <<EOT
 $(a10_examples)
 EOT
+	a10_outdated
+}
+
+# a10_outdated is outdated --mine's stand-in: the stage's two ports.
+a10_outdated() {
+	(cd "$MACPORTS_TREE" && dh outdated "${ACCEPT_GO_PORT:?}" "${ACCEPT_RUST_PORT:?}" </dev/null)
+	case $? in 0 | 3) ;; *) printf 'dockhand outdated %s %s (outdated --mine'"'"'s stand-in)\n' "$ACCEPT_GO_PORT" "$ACCEPT_RUST_PORT" >>"$ROW_DIR/a10.failed" ;; esac
 }
 
 assert() {

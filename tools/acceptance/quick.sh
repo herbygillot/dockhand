@@ -27,6 +27,8 @@
 #     5,000 requests an hour, not the 60 a request without one gets, and
 #     your login is neither read nor renewed. Without one, quick.sh says
 #     so: those rows run into the limit, and dockhand may read your login.
+#     GitHub's limit is the account's, so a token of the test account
+#     keeps the stage's requests out of what your own work spends.
 # The pinned upstream borrows the objects of ACCEPT_PORTS_SOURCE, your
 # ports clone, which is only read: a gc --prune or a fresh clone there
 # can drop objects upstream.git needs, and quick.sh then makes it again.
