@@ -20,7 +20,7 @@
 #     such as herbyg-test/macports-ports, a remote "github" for it, which
 #     submit's preview finds as the fork, as the stage's token's login
 #     owns it. The stage never pushes there: its GIT_SSH_COMMAND refuses
-#     every connection, so a push fails before it leaves the Mac.
+#     every push, and reads with the test account's key alone (ACCEPT_GH_KEY).
 #   - its own Tart homes, dockhand's (DOCKHAND_TART_HOME), its SSH keys
 #     (DOCKHAND_SSH_DIR) and Tart's (TART_HOME), under tart/, with the one
 #     image the check rows build in, which --image makes once.
@@ -84,7 +84,10 @@ export DOCKHAND_INDEX_CACHE="$state/cache/index" DOCKHAND_READING_CACHE="$state/
 # which a push to it takes, is refused outright, and no key, the agent's
 # included, is offered. H2 watches fork.git.
 export ACCEPT_WATCH="$state/clone" ACCEPT_UPSTREAM="origin github" ACCEPT_RUN_DIR="$state/clone"
-export GIT_SSH_COMMAND="sh -c 'echo \"the quick stage never pushes\" >&2; exit 1' --"
+# SSH reads the fork with the test account's key alone, and a push, which
+# SSH alone would carry, is refused (lib/ssh-read-only.sh).
+: "${ACCEPT_GH_KEY:=$HOME/.dockhand-acceptance/herbyg-test_ed25519}"
+export ACCEPT_GH_KEY GIT_SSH_COMMAND="$here/lib/ssh-read-only.sh"
 # The Tart homes, kept between runs, since an image takes an hour and
 # tens of gigabytes to make.
 mkdir -p "$state/tart"
@@ -124,8 +127,8 @@ fresh() {
 	git -C "$state/clone" remote add fork "$state/fork.git"
 	if [ -n "${ACCEPT_GH_FORK:-}" ]; then
 		# Read over HTTPS, which a public fork answers without a login;
-		# pushed to only over SSH, which GIT_SSH_COMMAND refuses, so no
-		# credential helper's login can push there either.
+		# pushed to only over SSH, where GIT_SSH_COMMAND refuses a push, so
+		# no credential helper's login can push there either.
 		git -C "$state/clone" remote add github "https://github.com/$ACCEPT_GH_FORK.git"
 		git -C "$state/clone" remote set-url --push github "git@github.com:$ACCEPT_GH_FORK.git"
 	fi

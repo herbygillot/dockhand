@@ -12,6 +12,10 @@ fault_proxy() {
 	fi
 	"$bin" -mode "$mode" >"$ROW_DIR/faultproxy.addr" 2>"$ROW_DIR/faultproxy.log" &
 	FAULT_PROXY_PID=$!
+	# A row calls this in $(...), whose variables go with it: the pid is
+	# kept in a file, which _stop reads (the M1's runs: D-N1's proxy was
+	# left running each time).
+	echo "$FAULT_PROXY_PID" >"$ROW_DIR/faultproxy.pid"
 	local i
 	for i in 1 2 3 4 5 6 7 8 9 10; do
 		[ -s "$ROW_DIR/faultproxy.addr" ] && break
@@ -19,7 +23,13 @@ fault_proxy() {
 	done
 	printf 'http://%s' "$(head -1 "$ROW_DIR/faultproxy.addr")"
 }
-fault_proxy_stop() { [ -n "${FAULT_PROXY_PID:-}" ] && kill "$FAULT_PROXY_PID" 2>/dev/null; FAULT_PROXY_PID=""; }
+fault_proxy_stop() {
+	local pid=${FAULT_PROXY_PID:-}
+	[ -n "$pid" ] || pid=$(cat "$ROW_DIR/faultproxy.pid" 2>/dev/null)
+	[ -n "$pid" ] && kill "$pid" 2>/dev/null
+	rm -f "$ROW_DIR/faultproxy.pid"
+	FAULT_PROXY_PID=""
+}
 
 # fault_low_disk mounts a sparse disk image of a size, such as 2g, and says
 # where; fault_low_disk_fill fills it but for some megabytes.

@@ -37,7 +37,11 @@ func (c signedIn) MarkReady(_ context.Context, ref forge.PullRequestRef) error {
 // upstream, or token. On a Mac with MACPORTS_TREE set, a bare dockhand
 // otherwise registered the person's checkout in their real database.
 func TestMain(m *testing.M) {
-	for _, name := range []string{"MACPORTS_TREE", "DOCKHAND_DB", "DOCKHAND_CONFIG", "DOCKHAND_UPSTREAM", "DOCKHAND_PULL_REQUESTS", "DOCKHAND_GITHUB_CLIENT_ID", "GH_TOKEN", "GITHUB_TOKEN"} {
+	// Nor a shell's Tart homes, caches, or proxy, as the acceptance
+	// stage's (the M1's run at 10aac0c3: serve's test read its
+	// DOCKHAND_UPSTREAM's neighbours into the agent).
+	for _, name := range []string{"MACPORTS_TREE", "DOCKHAND_DB", "DOCKHAND_CONFIG", "DOCKHAND_UPSTREAM", "DOCKHAND_PULL_REQUESTS", "DOCKHAND_GITHUB_CLIENT_ID", "GH_TOKEN", "GITHUB_TOKEN",
+		"DOCKHAND_INDEX_MIRROR", "DOCKHAND_INDEX_CACHE", "DOCKHAND_READING_CACHE", "DOCKHAND_TART_HOME", "TART_HOME", "DOCKHAND_SSH_DIR", "GIT_SSH_COMMAND", "HTTPS_PROXY", "HTTP_PROXY"} {
 		os.Unsetenv(name)
 	}
 	lookTart = func(string) (string, error) { return "", exec.ErrNotFound }

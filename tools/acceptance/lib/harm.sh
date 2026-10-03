@@ -120,6 +120,10 @@ harm_running() {
 		done
 	fi
 	"$DH_BIN" --json queue 2>/dev/null | jq -r '.result.runs[]? | select(.state == "queued" or .state == "running") | "run " + .name' 2>/dev/null || :
+	# The fault kit's own processes, a row's proxy among them.
+	if [ -n "${ACCEPT_STATE:-}" ]; then
+		pgrep -f "$ACCEPT_STATE/bin/faultproxy" 2>/dev/null | sed 's/^/process faultproxy /' || :
+	fi
 }
 
 harm_write() { printf '%s\n' "$2" >"$ROW_DIR/harm/$1"; }
@@ -322,7 +326,7 @@ harm_h6() {
 			ran=$((ran + 1))
 			# The quick stage has no GitHub fork, so a submit it's told to
 			# run can't be tried there (the M1's rerun, D-S6).
-			if [ "$status" = 1 ] && [ "$verb" = submit ] && [ "${ACCEPT_STAGE:-}" = quick ] && tail -3 "$ROW_DIR/next.log" | grep -q 'fork of'; then
+			if [ "$status" = 1 ] && [ "$verb" = submit ] && [ "${ACCEPT_STAGE:-}" = quick ] && tail -3 "$ROW_DIR/next.log" | grep -qE 'fork of|the quick stage (never pushes|reads the fork)'; then
 				unverified="$unverified [dockhand $words: the stage has no GitHub fork]"
 				continue
 			fi

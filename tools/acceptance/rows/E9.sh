@@ -3,7 +3,14 @@
 # code: review of a public pull request prints the notice, saying whose
 # Portfile it evaluates. ACCEPT_REVIEW_PR names it.
 act() {
-	dh review "${ACCEPT_REVIEW_PR:-34756}" --markdown </dev/null || :
+	local pr=${ACCEPT_REVIEW_PR:-34756}
+	# The quick stage's pinned upstream has no pull requests' refs; review
+	# fetches the pull request's head from it, so the row gives it this
+	# one's, read from MacPorts' repository (the M1's run at 10aac0c3).
+	if [ "${ACCEPT_STAGE:-}" = quick ] && [ -n "${DOCKHAND_UPSTREAM:-}" ]; then
+		git -C "$DOCKHAND_UPSTREAM" fetch -q https://github.com/macports/macports-ports.git "refs/pull/$pr/head:refs/pull/$pr/head" >>"$ROW_DIR/out.log" 2>&1 || :
+	fi
+	dh review "$pr" --markdown </dev/null || :
 }
 assert() {
 	if grep -qi 'experimental' "$ROW_DIR/out.log"; then
