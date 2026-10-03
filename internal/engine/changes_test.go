@@ -74,6 +74,70 @@ func TestARevisionsRecordSaysWhichSubportsChanged(t *testing.T) {
 	require.Equal(t, []string{"zdemo-devel"}, assessed, "upstream is compared for the subport the revision changed")
 }
 
+// A branch changes the subports its record says: one editing
+// zdemo-devel's block changes zdemo-devel, and neither zdemo nor
+// zdemo-legacy, though the directory is zdemo's; before it has a record,
+// it changes the port its directory is named for, as its text says.
+func TestABranchChangesTheSubportsItsRecordSays(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	f.options.Tclsh = testsupport.MacPortsTclsh(t)
+	write(t, f.upstream, map[string]string{"devel/zdemo/Portfile": zdemo("0", "2.0")})
+	testsupport.Git(t, f.upstream, "add", ".")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "zdemo: new port")
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "zdemo-devel"})
+	require.NoError(t, err)
+	_, err = e.Edit(t.Context(), branch, "zdemo")
+	require.NoError(t, err)
+	write(t, branch.Worktree, map[string]string{"devel/zdemo/Portfile": zdemo("0", "2.1")})
+	changing := func(port string) int {
+		t.Helper()
+		branches, err := e.BranchesChanging(t.Context(), port)
+		require.NoError(t, err)
+		return len(branches)
+	}
+	require.Equal(t, 1, changing("zdemo"), "no record yet: the directory's name")
+	require.Zero(t, changing("zdemo-devel"))
+
+	head, _, err := e.Repo.Branch(t.Context(), branch.Name)
+	require.NoError(t, err)
+	tree, err := e.branchTree(t.Context(), branch, head)
+	require.NoError(t, err)
+	_, err = e.revisionChanges(t.Context(), branch.ID, branch.Base, tree, true)
+	require.NoError(t, err)
+	require.Equal(t, 1, changing("zdemo-devel"))
+	require.Zero(t, changing("zdemo"), "the record says the main port is as it was")
+	require.Zero(t, changing("zdemo-legacy"))
+
+	write(t, branch.Worktree, map[string]string{"devel/zdemo/Portfile": zdemo("1", "2.1")})
+	require.Equal(t, 1, changing("zdemo"), "files edited since their record are read by their text again")
+}
+
+// tidy names the subport a hand edit changes, as its record says: a
+// version moved in zdemo-devel's block is "zdemo-devel: update to 2.1",
+// where the directory's name read the main port's version, which didn't
+// move, and found no subject.
+func TestTidyNamesTheSubportAHandEditChanges(t *testing.T) {
+	t.Parallel()
+	f := setup(t)
+	f.options.Tclsh = testsupport.MacPortsTclsh(t)
+	write(t, f.upstream, map[string]string{"devel/zdemo/Portfile": zdemo("0", "2.0")})
+	testsupport.Git(t, f.upstream, "add", ".")
+	testsupport.Git(t, f.upstream, "commit", "-q", "-m", "zdemo: new port")
+	e := f.open(t)
+	branch, err := e.Start(t.Context(), StartRequest{Name: "zdemo-devel"})
+	require.NoError(t, err)
+	_, err = e.Edit(t.Context(), branch, "zdemo")
+	require.NoError(t, err)
+	write(t, branch.Worktree, map[string]string{"devel/zdemo/Portfile": zdemo("0", "2.1")})
+	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
+	require.NoError(t, err)
+	require.Len(t, plan.Groups, 1)
+	require.Equal(t, []string{"zdemo-devel"}, plan.Groups[0].Ports)
+	require.Equal(t, "zdemo-devel: update to 2.1", plan.Groups[0].Subject())
+}
+
 // An adopted pull request's Portfile isn't the person's, so nothing
 // evaluates it for a record (the trust rule), and its directories keep
 // their text scope.

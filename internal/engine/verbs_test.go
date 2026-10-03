@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/buildenv"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/store"
 	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
@@ -42,6 +43,15 @@ func TestRevbumpRecordsItsReasonForTidy(t *testing.T) {
 	require.Equal(t, 0, update.Before.Revision)
 	require.Equal(t, 1, update.After.Revision)
 	require.Equal(t, "name jq\nversion 1.7.1\nrevision 1\n", read(t, filepath.Join(branch.Worktree, "textproc/jq/Portfile")))
+	var records []model.ChangeRecord
+	require.NoError(t, e.Store.View(t.Context(), e.Repository, func(r store.Reader) error {
+		records, err = r.ChangeRecords(store.AssessmentFilter{Branch: branch.ID})
+		return err
+	}))
+	require.Len(t, records, 1, "the revbump's own evaluations are the revision's change record")
+	require.Equal(t, "textproc/jq", records[0].Directory)
+	require.Equal(t, []string{"jq"}, records[0].Changed())
+	require.Contains(t, records[0].Ports[0].Fields, model.FieldChange{Field: "revision", From: "0", To: "1"})
 
 	plan, err := e.PlanTidy(t.Context(), TidyRequest{Branch: branch})
 	require.NoError(t, err)

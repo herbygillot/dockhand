@@ -172,7 +172,27 @@ func TestSubportChangesSayWhatMovedInEach(t *testing.T) {
 		}},
 		{Port: "main-new", Kind: model.SubportAdded},
 		{Port: "main-old", Kind: model.SubportRemoved},
-	}, SubportChanges(&before, &after))
+	}, SubportChanges("devel/main", &before, &after))
 	require.Equal(t, []model.SubportChange{{Port: "main", Kind: model.SubportAdded}, {Port: "main-devel", Kind: model.SubportAdded}, {Port: "main-new", Kind: model.SubportAdded}},
-		SubportChanges(nil, &after), "a directory new at the revision")
+		SubportChanges("devel/main", nil, &after), "a directory new at the revision")
+}
+
+// A port's code is compared part by part: a hook whose body moved is said
+// by its name, one an option known to move without an edit is said as
+// unstable, and neither is a change ComparablePort keeps, so an edit's
+// fidelity never reads them.
+func TestAPortsCodeIsComparedPartByPart(t *testing.T) {
+	code := func(hook, epoch string) macports.PortInfo {
+		return macports.PortInfo{Name: "main", Version: "1", Options: map[string]string{"dockhand.code": "procedures aa userproc-post-org.macports.destroot-destroot-0 " + hook + " unstable:source_date_epoch " + epoch}}
+	}
+	before, after := snapshot(map[string]macports.PortInfo{"main": code("11", "1")}), snapshot(map[string]macports.PortInfo{"main": code("22", "2")})
+	require.Equal(t, []model.SubportChange{{Port: "main", Kind: model.SubportChanged,
+		Fields:   []model.FieldChange{{Field: "code userproc-post-org.macports.destroot-destroot-0", From: "11", To: "22"}},
+		Unstable: []model.FieldChange{{Field: "code unstable:source_date_epoch", From: "1", To: "2"}},
+	}}, SubportChanges("devel/main", &before, &after))
+	moved := snapshot(map[string]macports.PortInfo{"main": code("11", "2")})
+	require.Equal(t, []model.SubportChange{{Port: "main", Kind: model.SubportUnchanged,
+		Unstable: []model.FieldChange{{Field: "code unstable:source_date_epoch", From: "1", To: "2"}},
+	}}, SubportChanges("devel/main", &before, &moved), "a part that moves without an edit is no change")
+	require.NoError(t, Equivalent(before, after), "an edit's fidelity doesn't read the port's code")
 }

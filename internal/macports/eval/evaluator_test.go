@@ -676,3 +676,32 @@ default_variants +python313
 		{Name: "universal"}, // Base's own, for a port it can build for several architectures
 	}, variants)
 }
+
+// The port's code no option shows is reported as checksums: each hook's
+// and variant's body, the rest of its procedures together, every
+// option's value together, and source_date_epoch apart, as it moves
+// with the Portfile's modification time.
+func TestTheEvaluatorReportsThePortsCode(t *testing.T) {
+	t.Parallel()
+	e := liveEvaluator(t)
+	tree := fixtureTree(t)
+	putFile(t, tree.Root(), "devel/coded/Portfile", "PortSystem 1.0\nname coded\nversion 1\npost-destroot {\n    puts hello\n}\nvariant extra description {Extra} {\n    configure.args-append --extra\n}\n")
+	targets, err := e.Resolve(t.Context(), tree, macports.Selection{Selector: "coded"})
+	require.NoError(t, err)
+	bound, err := tree.Select(targets[0])
+	require.NoError(t, err)
+	snapshot, err := e.Evaluate(t.Context(), bound)
+	require.NoError(t, err)
+	port := snapshot.Ports["coded"]
+	require.Empty(t, port.OptionErrors["dockhand.code"])
+	code := strings.Fields(port.Options["dockhand.code"])
+	var names []string
+	for i := 0; i < len(code); i += 2 {
+		names = append(names, code[i])
+	}
+	require.Contains(t, names, "userproc-post-org.macports.destroot-destroot-0")
+	require.Contains(t, names, "variant-extra")
+	require.Contains(t, names, "procedures")
+	require.Contains(t, names, "options")
+	require.Contains(t, names, "unstable:source_date_epoch")
+}

@@ -46,6 +46,67 @@ namespace eval ::dockhand {
         return [list $::macports::os_platform $::macports::os_major $::macports::build_arch]
     }
 
+    # code_fingerprint is a checksum of each Portfile hook and variant
+    # body in a port's worker, the userproc- and variant- procedures Base
+    # makes of them (portutil.tcl's target_provides and variant), one of
+    # every other procedure, the Portfile's and its PortGroups' own, one
+    # of every option's value, and one of each patch it applies, as name
+    # and checksum pairs. Each is read with the evaluation's root written
+    # <source>, so two roots read alike.
+    proc code_fingerprint {worker} {
+        variable source_root
+        variable base_root
+        set code [dict create]
+        set rest {}
+        foreach name [lsort [$worker eval {info procs}]] {
+            set text "[$worker eval [list info args $name]]\n[$worker eval [list info body $name]]"
+            set text [string map [list $source_root <source> $base_root <source>] $text]
+            if {[string match userproc-* $name] || [string match variant-* $name]} {
+                dict set code $name [checksum $text]
+            } else {
+                append rest $name \n $text \n
+            }
+        }
+        dict set code procedures [checksum $rest]
+        # Every option's value, each read as the Portfile would, with the
+        # port's build directory, which is named for where it was
+        # evaluated, written <build>: the options dockhand reads are
+        # compared by name, so this says any other moved. A value known
+        # to move without an edit is its own, unstable: source_date_epoch
+        # is the Portfile's modification time, which is when the
+        # evaluation's files were written.
+        set build [file dirname [$worker eval {option workpath}]]
+        set values {}
+        foreach name [lsort [$worker eval {interp aliases {}}]] {
+            if {[lindex [$worker eval [list interp alias {} $name]] 0] ne "handle_option"} { continue }
+            if {$name in $::dockhand::read_options || $name in {name version revision epoch}} { continue }
+            if {[catch {$worker eval [list set ::$name]} value]} { set value "<unset>" }
+            set value [string map [list $build <build> $source_root <source> $base_root <source>] $value]
+            if {$name eq "source_date_epoch"} {
+                dict set code unstable:$name [checksum $value]
+                continue
+            }
+            append values $name \n $value \n
+        }
+        dict set code options [checksum $values]
+        # The patches the port applies, as they are in its files.
+        foreach patch [$worker eval {expr {[exists patchfiles] ? [option patchfiles] : {}}}] {
+            set file [file join [$worker eval {option filespath}] $patch]
+            if {[file isfile $file]} {
+                set channel [open $file rb]
+                try { dict set code patch:$patch [checksum [read $channel] 0] } finally { close $channel }
+            }
+        }
+        return $code
+    }
+
+    # checksum tells two texts apart: their CRC-32 and Adler-32, which Tcl
+    # has without a package.
+    proc checksum {text {encode 1}} {
+        set bytes [expr {$encode ? [encoding convertto utf-8 $text] : $text}]
+        format %08x%08x [zlib crc32 $bytes] [zlib adler32 $bytes]
+    }
+
     # metadata reports a port that attempted a refused effect by its
     # refusals alone, dockhand.refused, whether or not it opened.
     proc metadata {portdir subport args} {
@@ -294,6 +355,14 @@ namespace eval ::dockhand {
                 dict set failures fetch.has_credentials "cannot determine applicable fetch credentials"
             }
             dict set out fetch.has_credentials $credentials
+            # The port's code that no option shows: its phases' bodies, its
+            # variants' and its own procedures, which a change record
+            # compares (fidelity.Changes).
+            if {[catch {code_fingerprint $worker} code]} {
+                dict set failures dockhand.code "cannot read the port's procedures: $code"
+            } else {
+                dict set out dockhand.code $code
+            }
             dict set out option_errors $failures
             if {$::dockhand::observing} { dict set out dockhand.observation [observation_details $worker] }
             if {[llength $refusals]} { return [dict create dockhand.refused $refusals] }

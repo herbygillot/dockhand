@@ -434,6 +434,11 @@ type branchJSON struct {
 	Edited      []string `json:"edited"`
 	Directories []string `json:"directories"`
 	Ports       []string `json:"ports"`
+	// Changed are the ports the branch changes, each directory's changed
+	// subports where its change record says, and Notes say why a port is
+	// its directory's, read from the text instead.
+	Changed []string          `json:"changed_ports"`
+	Notes   map[string]string `json:"port_notes,omitempty"`
 	// Releases are where the branch's updates found their versions.
 	Releases    []releaseJSON    `json:"releases"`
 	Latest      *latestJSON      `json:"latest_check"`
@@ -478,6 +483,11 @@ func branchView(status engine.BranchStatus) branchJSON {
 		Base: string(branch.Base), Head: status.Head, Missing: status.Missing, Cleaned: status.Cleaned(), Commits: status.Commits,
 		Edited: nonNil(status.Edited), Directories: nonNil(status.Scope.Ports), Ports: nonNil(status.Scope.PortNames()), Active: []runJSON{}, Releases: []releaseJSON{},
 		Held: status.Held, Assessment: string(status.Assessment), OnMaster: string(status.OnMaster)}
+	view.Changed, view.Notes = status.ChangedPorts()
+	view.Changed = nonNil(view.Changed)
+	if len(view.Notes) == 0 {
+		view.Notes = nil
+	}
 	for _, found := range status.Releases {
 		release := found.Release
 		view.Releases = append(view.Releases, releaseJSON{Port: found.Port, Version: release.Version, Forge: release.Forge, Repository: release.Repository,

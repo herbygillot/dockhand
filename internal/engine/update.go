@@ -17,9 +17,11 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/assess"
 	"github.com/herbygillot/dockhand/internal/macports/distfetch"
+	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/model"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/project"
 	"github.com/herbygillot/dockhand/internal/scratch"
 	"github.com/herbygillot/dockhand/internal/sourcecompare"
@@ -429,19 +431,30 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 	// design, D), or couldn't, which it says. A Git-fetched port's update
 	// compared no archives, and records none, so its assessment is made
 	// when it's collected.
+	trees, err := worktree.CommitTrees(ctx, []string{string(base)})
+	if err != nil {
+		return update, err
+	}
+	atBase := trees[string(base)] == captured
+	_, applied, err := worktree.WorkingTree(ctx)
+	if err != nil {
+		return update, err
+	}
 	var primed *model.Assessment
-	if after, _ := result.PortAfter(update.Port); compare && update.Upstream != nil && !after.GitFetched() {
-		trees, err := worktree.CommitTrees(ctx, []string{string(base)})
-		if err != nil {
-			return update, err
-		}
-		if trees[string(base)] == captured {
-			_, applied, err := worktree.WorkingTree(ctx)
-			if err != nil {
-				return update, err
-			}
-			primed = &model.Assessment{Branch: branch.ID, Tree: model.ObjectID(applied), Base: base, Port: update.Port, Directory: edit.Directory,
-				Comparison: *update.Upstream, Policy: assess.Policy, At: edit.At}
+	if after, _ := result.PortAfter(update.Port); compare && update.Upstream != nil && !after.GitFetched() && atBase {
+		primed = &model.Assessment{Branch: branch.ID, Tree: model.ObjectID(applied), Base: base, Port: update.Port, Directory: edit.Directory,
+			Comparison: *update.Upstream, Policy: assess.Policy, At: edit.At}
+	}
+	// Where the branch was as its base, the edit's own evaluations, before
+	// and after, are the change record of the files it leaves, as its
+	// comparison is their assessment; elsewhere the record is made below,
+	// from the base.
+	var record *model.ChangeRecord
+	if len(result.Fidelity) > 0 && atBase && (branch.PullRequest == nil || !branch.PullRequest.Adopted) {
+		before, after := result.Fidelity[0].Before, result.Fidelity[len(result.Fidelity)-1].After
+		if before.Platform == after.Platform {
+			record = &model.ChangeRecord{Branch: branch.ID, Tree: model.ObjectID(applied), Base: base, Directory: edit.Directory, Platform: after.Platform,
+				Ports: fidelity.SubportChanges(edit.Directory, &before, &after), Policy: fidelity.ChangePolicy, At: edit.At}
 		}
 	}
 	// The files are written; a record that landed though its commit's
@@ -456,11 +469,24 @@ func (e *Engine) update(ctx context.Context, request UpdateRequest) (Update, err
 				return err
 			}
 		}
+		if record != nil {
+			if err := tx.RecordChange(*record); err != nil {
+				return err
+			}
+		}
 		_, err := tx.AppendEvent(model.Event{At: edit.At, Branch: branch.ID, Kind: "branch.edit", Level: model.LevelInfo,
 			Message: fmt.Sprintf("%s: %s (%s)", update.Port, change, listPaths(update.Files))})
 		return err
 	}, editRecorded(branch.ID, edit.ID))
-	return update, err
+	if err != nil || record != nil {
+		return update, err
+	}
+	// The record is what the files say, made again whenever it's read
+	// for; one this edit couldn't make is no failure of the edit.
+	if _, err := e.revisionChanges(ctx, branch.ID, base, model.ObjectID(applied), true); err != nil {
+		progress.VerboseReport(ctx, "%s: what this revision changes wasn't recorded: %v", edit.Directory, err)
+	}
+	return update, nil
 }
 
 // updateSource is what an update is prepared from: the branch's working
@@ -660,8 +686,12 @@ func expandFor(ctx context.Context, worktree *git.Repository, files []string) er
 }
 
 // BranchesChanging lists the open branches whose commits or working files
-// change a port, by its directory's name: update commits nothing, so a
-// branch it edited changes the port before tidy commits it.
+// change a port: update commits nothing, so a branch it edited changes the
+// port before tidy commits it. Where a branch's files as they stand have a
+// change record for a directory, the record says which of its subports
+// they change, so a branch updating terraform-1.16 changes that subport
+// and not terraform-1.17; a directory without one changes the port its
+// name is, as its text says.
 func (e *Engine) BranchesChanging(ctx context.Context, port string) ([]model.Branch, error) {
 	var open []model.Branch
 	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
@@ -688,11 +718,86 @@ func (e *Engine) BranchesChanging(ctx context.Context, port string) ([]model.Bra
 		if err != nil {
 			return nil, err
 		}
-		if slices.Contains(macports.ScopeOf(append(paths, edited...)).PortNames(), port) {
+		changes, err := e.branchChanges(ctx, branch, head, macports.ScopeOf(append(paths, edited...)).Ports, port)
+		if err != nil {
+			return nil, err
+		}
+		if changes {
 			changing = append(changing, branch)
 		}
 	}
 	return changing, nil
+}
+
+// branchChanges says whether a branch whose files change these directories
+// changes a port: by the change record of its files as they stand, where
+// one says, and else by a directory's name. The branch's files are read
+// for their tree only where a record might name the port, so a branch
+// nothing of which could is passed over cheaply.
+func (e *Engine) branchChanges(ctx context.Context, branch model.Branch, head string, directories []string, port string) (bool, error) {
+	var recorded []model.ChangeRecord
+	if err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		var err error
+		recorded, err = r.ChangeRecords(store.AssessmentFilter{Branch: branch.ID})
+		return err
+	}); err != nil {
+		return false, err
+	}
+	candidates := false
+	for _, directory := range directories {
+		named := path.Base(directory) == port
+		for _, record := range recorded {
+			if record.Directory == directory && slices.ContainsFunc(record.Ports, func(p model.SubportChange) bool { return p.Port == port }) {
+				named = true
+			}
+		}
+		candidates = candidates || named
+	}
+	if !candidates {
+		return false, nil
+	}
+	tree, err := e.branchTree(ctx, branch, head)
+	if err != nil {
+		return false, err
+	}
+	records := map[string]model.ChangeRecord{}
+	for _, record := range recorded {
+		if _, ok := records[record.Directory]; !ok && record.Tree == tree && record.Base == branch.Base && record.Policy == fidelity.ChangePolicy {
+			records[record.Directory] = record
+		}
+	}
+	for _, directory := range directories {
+		if changed, ok := changedSubports(records, directory); ok {
+			if slices.Contains(changed, port) {
+				return true, nil
+			}
+			continue
+		}
+		if path.Base(directory) == port {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// branchTree is a branch's files as they stand: its worktree's, edits and
+// all, where it's checked out there, else its head's.
+func (e *Engine) branchTree(ctx context.Context, branch model.Branch, head string) (model.ObjectID, error) {
+	if branch.Worktree != "" && exists(branch.Worktree) {
+		worktree, err := git.Open(ctx, branch.Worktree, e.options.Git)
+		if err != nil {
+			return "", err
+		}
+		if current, err := worktree.CurrentBranch(ctx); err == nil && current == branch.Name {
+			_, tree, err := worktree.WorkingTree(ctx)
+			return model.ObjectID(tree), err
+		}
+	}
+	trees, err := e.Repo.CommitTrees(ctx, []string{head})
+	if err != nil {
+		return "", err
+	}
+	return model.ObjectID(trees[head]), nil
 }
 
 // ChangesHere reports whether what's checked out where the engine was

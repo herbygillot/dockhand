@@ -29,6 +29,9 @@ type BranchStatus struct {
 	// Edited lists tracked files changed and not committed.
 	Edited []string
 	Scope  Scope
+	// Changes are the change records of the files as they are now, by
+	// directory, where they've been made; status makes none.
+	Changes map[string]model.ChangeRecord
 	// Tree is the files as they are now: the working files when edited,
 	// else the head's.
 	Tree string
@@ -183,6 +186,9 @@ func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchS
 		return status, err
 	}
 	status.Scope = macports.ScopeOf(changed)
+	if status.Changes, err = e.revisionChanges(ctx, branch.ID, branch.Base, model.ObjectID(status.Tree), false); err != nil {
+		return status, err
+	}
 	if branch.State == model.BranchOpen {
 		if status.OnMaster, err = e.landedOnMaster(ctx, changed, status.Tree); err != nil {
 			return status, err
@@ -442,4 +448,15 @@ func (e *Engine) Logs(ctx context.Context, id model.RunID) (RunLogs, error) {
 		return nil
 	})
 	return logs, err
+}
+
+// ChangedPorts are what the branch's files change as they are now, as a
+// person reads it: the ports its change records say (recordedPorts), then
+// _resources, where it changed.
+func (s BranchStatus) ChangedPorts() (ports []string, notes map[string]string) {
+	ports, notes = recordedPorts(s.Scope.Ports, s.Changes)
+	if s.Scope.Resources {
+		ports = append(ports, macports.ResourcesDirectory)
+	}
+	return ports, notes
 }

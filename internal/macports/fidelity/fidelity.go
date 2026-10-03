@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"path"
 	"reflect"
 	"regexp"
 	"slices"
@@ -92,12 +93,16 @@ func Revision(before, after macports.Snapshot, selected string) Report {
 }
 
 // ComparablePort normalizes a port for comparison: the revision is compared
-// separately, and the workspace root the port was evaluated in is replaced
-// so relocated snapshots compare equal. An empty root, as a snapshot read
-// back from a record has, leaves values as they are.
+// separately, the port's code is left out, and the workspace root the
+// port was evaluated in is replaced so relocated snapshots compare equal.
+// An empty root, as a snapshot read back from a record has, leaves values
+// as they are.
 func ComparablePort(port macports.PortInfo, root string) macports.PortInfo {
 	port.Options = maps.Clone(port.Options)
 	delete(port.Options, "revision")
+	// The port's code is a change record's to compare (Changes), and part
+	// of it moves without an edit.
+	delete(port.Options, codeOption)
 	port.OptionErrors = maps.Clone(port.OptionErrors)
 	if root == "" {
 		return port
@@ -128,7 +133,51 @@ func Changes(old, next macports.PortInfo, oldRoot, nextRoot string) []model.Fiel
 	if old.Revision != next.Revision {
 		changes = append(changes, model.FieldChange{Field: "revision", From: strconv.Itoa(old.Revision), To: strconv.Itoa(next.Revision)})
 	}
-	return append(changes, differences(ComparablePort(old, oldRoot), ComparablePort(next, nextRoot))...)
+	changes = append(changes, differences(ComparablePort(old, oldRoot), ComparablePort(next, nextRoot))...)
+	return append(changes, codeChanges(old.Options[codeOption], next.Options[codeOption])...)
+}
+
+// codeOption is the evaluator's checksum of each of a port's hook and
+// variant bodies and of its other procedures, which no option shows: a
+// phase's body changed, a variant's, or a procedure the Portfile defines.
+const codeOption = "dockhand.code"
+
+// unstableCode starts the field of a part of a port's code known to move
+// without an edit, such as source_date_epoch, the Portfile's modification
+// time: said in a change record, but no change.
+const unstableCode = "code unstable:"
+
+// codeChanges are the parts of a port's code whose checksums moved
+// between two evaluations, each as the field "code <part>": a hook's is
+// Base's name for it, such as userproc-post-org.macports.destroot-
+// destroot-0, a variant's variant-<name>, the rest of its procedures'
+// together "procedures", every option's value together "options", a
+// patch it applies patch:<name>, and an option known to move without an
+// edit unstable:<name>.
+func codeChanges(old, next string) []model.FieldChange {
+	pairs := func(value string) map[string]string {
+		fields := strings.Fields(value)
+		sums := map[string]string{}
+		for i := 0; i+1 < len(fields); i += 2 {
+			sums[fields[i]] = fields[i+1]
+		}
+		return sums
+	}
+	before, after := pairs(old), pairs(next)
+	names := slices.Sorted(maps.Keys(before))
+	for name := range after {
+		if _, ok := before[name]; !ok {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	var changes []model.FieldChange
+	for _, name := range names {
+		if before[name] != after[name] {
+			changes = append(changes, model.FieldChange{Field: "code " + name, From: before[name], To: after[name]})
+		}
+	}
+	return changes
 }
 
 // differences are the fields that moved between two normalized ports:
@@ -158,6 +207,12 @@ func differences(old, next macports.PortInfo) []model.FieldChange {
 	}
 	slices.Sort(keys)
 	for _, key := range keys {
+		// The name, version, and epoch are the port's own fields, compared
+		// above; their options say them again. The port's code is a
+		// change record's to compare (Changes), not an edit's.
+		if key == "name" || key == "version" || key == "epoch" || key == codeOption {
+			continue
+		}
 		a, aok := old.Options[key]
 		b, bok := next.Options[key]
 		// A path below the source directory is the same path in two
@@ -486,18 +541,15 @@ func ScopedChecksums(scope *macports.ReleaseScope, before, after macports.Snapsh
 
 // SubportChanges are what moved in each subport of a directory between
 // its evaluation at a base and at a revision, each side normalized by its
-// own root: the main port first, then the rest in MacPorts' order. A nil
-// side is a directory the base or the revision doesn't have, whose
-// subports are all added or all removed.
-func SubportChanges(base, revision *macports.Snapshot) []model.SubportChange {
+// own root: the main port first, the one the directory is named for, then
+// the rest in MacPorts' order. A nil side is a directory the base or the
+// revision doesn't have, whose subports are all added or all removed.
+func SubportChanges(directory string, base, revision *macports.Snapshot) []model.SubportChange {
 	var names []string
-	main := ""
+	main := path.Base(directory)
 	for _, side := range []*macports.Snapshot{revision, base} {
 		if side == nil {
 			continue
-		}
-		if main == "" {
-			main = side.Target.Name
 		}
 		for name := range side.Ports {
 			if !slices.Contains(names, name) {
@@ -531,7 +583,13 @@ func SubportChanges(base, revision *macports.Snapshot) []model.SubportChange {
 		case !has:
 			change.Kind = model.SubportRemoved
 		default:
-			change.Fields = Changes(old, next, base.Root, revision.Root)
+			for _, field := range Changes(old, next, base.Root, revision.Root) {
+				if strings.HasPrefix(field.Field, unstableCode) {
+					change.Unstable = append(change.Unstable, field)
+				} else {
+					change.Fields = append(change.Fields, field)
+				}
+			}
 			change.Kind = model.SubportUnchanged
 			if len(change.Fields) > 0 {
 				change.Kind = model.SubportChanged

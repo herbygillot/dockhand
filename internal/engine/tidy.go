@@ -221,11 +221,17 @@ func (e *Engine) PlanTidy(ctx context.Context, request TidyRequest) (TidyPlan, e
 		order = append([]string{""}, slices.Delete(order, i, i+1)...)
 	}
 
+	// A directory's commit names the subports its change record says the
+	// files change, terraform-1.16 where the directory is terraform's.
+	records, err := e.revisionChanges(ctx, branch.ID, model.ObjectID(base), model.ObjectID(final), true)
+	if err != nil {
+		return TidyPlan{}, err
+	}
 	for _, directory := range order {
 		paths := byDirectory[directory]
 		group := TidyGroup{Directory: directory, Paths: paths, Working: slices.ContainsFunc(paths, func(p string) bool { return slices.Contains(working, p) })}
 		if directory != "" {
-			group.Ports = []string{directory[strings.LastIndexByte(directory, '/')+1:]}
+			group.Ports, _ = recordedPorts([]string{directory}, records)
 		}
 		for _, commit := range history {
 			if slices.ContainsFunc(commit.Paths, func(p string) bool { return slices.Contains(paths, p) }) {

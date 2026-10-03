@@ -95,7 +95,10 @@ func showStatus(ctx context.Context, e *engine.Engine, streams Streams, args []s
 		return err
 	}
 	if port != "" {
-		statuses = slices.DeleteFunc(statuses, func(s engine.BranchStatus) bool { return !slices.Contains(s.Scope.PortNames(), port) })
+		statuses = slices.DeleteFunc(statuses, func(s engine.BranchStatus) bool {
+			changed, _ := s.ChangedPorts()
+			return !slices.Contains(s.Scope.PortNames(), port) && !slices.Contains(changed, port)
+		})
 	}
 	var rows []attention
 	for _, status := range statuses {
@@ -507,7 +510,7 @@ func showBranch(ctx context.Context, e *engine.Engine, out io.Writer, branch mod
 		// its pull request says what became of the work.
 		fmt.Fprintln(out, "  Work     cleaned after its merge")
 	} else {
-		ports := strings.Join(status.Scope.Changed(), ", ")
+		ports := portWords(status)
 		if ports == "" {
 			ports = "none yet"
 		}
@@ -583,4 +586,18 @@ func refreshPullRequests(ctx context.Context, e *engine.Engine, out io.Writer) {
 			fmt.Fprintf(out, "%s: %s\n", r.Branch.ShortName(), change)
 		}
 	}
+}
+
+// portWords are what a branch changes as status says it, a port read
+// from its directory's text rather than its change record marked why.
+func portWords(status engine.BranchStatus) string {
+	ports, notes := status.ChangedPorts()
+	var words []string
+	for _, port := range ports {
+		if note, ok := notes[port]; ok {
+			port += " (" + note + ")"
+		}
+		words = append(words, port)
+	}
+	return strings.Join(words, ", ")
 }

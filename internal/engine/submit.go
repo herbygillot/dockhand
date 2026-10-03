@@ -57,12 +57,14 @@ type SubmitRequest struct {
 // SubmitPlan is exactly what submit would do, bound to the branch head
 // and the fork's branch head it saw.
 type SubmitPlan struct {
-	Request  SubmitRequest
-	Branch   model.Branch
-	Commit   string
-	Tree     string
-	Commits  []git.HistoryCommit
-	Ports    []string
+	Request SubmitRequest
+	Branch  model.Branch
+	Commit  string
+	Tree    string
+	Commits []git.HistoryCommit
+	Ports   []string
+	// recorded is Ports read from every directory's change record.
+	recorded bool
 	Findings []commitrules.Finding
 	// LeftOut are uncommitted files --head leaves out.
 	LeftOut []string
@@ -235,8 +237,15 @@ func (e *Engine) PlanSubmit(ctx context.Context, request SubmitRequest) (SubmitP
 	if err != nil {
 		return plan, err
 	}
-	scope := macports.ScopeOf(changed)
-	plan.Ports = scope.PortNames()
+	// The ports are the subports the revision's change records say it
+	// changes: terraform-1.16, where the directory is terraform's.
+	records, err := e.revisionChanges(ctx, branch.ID, branch.Base, model.ObjectID(plan.Tree), true)
+	if err != nil {
+		return plan, err
+	}
+	var notes map[string]string
+	plan.Ports, notes = recordedPorts(macports.ScopeOf(changed).Ports, records)
+	plan.recorded = len(notes) == 0
 	newPorts := e.newPorts(ctx, worktree, model.Source{Commit: model.ObjectID(head), Tree: model.ObjectID(plan.Tree), Base: branch.Base}, trees[string(branch.Base)], changed)
 	plan.Findings = commitrules.CheckCommits(e.ruleCommits(ctx, model.Source{Commit: branch.Base, Base: branch.Base, Tree: model.ObjectID(trees[string(branch.Base)])}, plan.Commits))
 	portfiles, err := portfileFindings(ctx, worktree, trees[string(branch.Base)], plan.Tree, changed)
@@ -506,9 +515,11 @@ func (e *Engine) searchOthers(ctx context.Context, plan *SubmitPlan) {
 	if plan.Existing != nil {
 		except = plan.Existing.PullRequest.Ref.Number
 	}
-	// The ports whose source changed are searched for, terraform-1.16
-	// rather than the terraform its directory is named for (field
-	// testing, 2026-10-02); the directories' names where none did.
+	// The ports the revision's change records say it changes are searched
+	// for, terraform-1.16 rather than the terraform its directory is
+	// named for (field testing, 2026-10-02); a directory's name where it
+	// has no record. Without one, the ports whose source changed narrow
+	// it, as before records.
 	ports := plan.Ports
 	var changed []string
 	for _, found := range plan.Upstream {
@@ -518,7 +529,7 @@ func (e *Engine) searchOthers(ctx context.Context, plan *SubmitPlan) {
 			changed = append(changed, found.Port)
 		}
 	}
-	if len(changed) > 0 {
+	if len(changed) > 0 && !plan.recorded {
 		ports = changed
 	}
 	plan.Searched = ports

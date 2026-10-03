@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"path"
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -92,7 +93,7 @@ func (e *Engine) revisionChanges(ctx context.Context, id model.BranchID, base, t
 			record.Platform = snapshot.Platform
 		}
 		if record.Problem == "" {
-			record.Ports = fidelity.SubportChanges(sides[0], sides[1])
+			record.Ports = fidelity.SubportChanges(directory, sides[0], sides[1])
 		}
 		made = append(made, record)
 		records[directory] = record
@@ -116,12 +117,17 @@ var sideWords = [2]string{"the base couldn't be evaluated", "the revision couldn
 // changedSubports are the subports of a directory a revision changes, as
 // its record says, and whether it says: a directory with no record, or
 // one whose record couldn't be made, has its text scope, every subport.
+// So does one whose record finds no subport changed though its files
+// did: the change is in what this Mac's evaluation doesn't see, such as
+// a block for another macOS release (the multi-subport sweep: openssh's
+// for macOS 27, py-tkinter's for older ones).
 func changedSubports(records map[string]model.ChangeRecord, directory string) ([]string, bool) {
 	record, ok := records[directory]
 	if !ok || record.Problem != "" {
 		return nil, false
 	}
-	return record.Changed(), true
+	changed := record.Changed()
+	return changed, len(changed) > 0
 }
 
 // recordedChange says whether a subport of a directory is one the
@@ -130,4 +136,26 @@ func changedSubports(records map[string]model.ChangeRecord, directory string) ([
 func recordedChange(records map[string]model.ChangeRecord, directory, port string) bool {
 	changed, ok := changedSubports(records, directory)
 	return !ok || slices.Contains(changed, port)
+}
+
+// recordedPorts are the ports changed directories change, as their change
+// records say: each directory's changed subports, and else the port the
+// directory is named for, its text saying only that some of its subports
+// may have changed, with a note of why: its record isn't made yet, or
+// found nothing this Mac's evaluation sees.
+func recordedPorts(directories []string, records map[string]model.ChangeRecord) (ports []string, notes map[string]string) {
+	notes = map[string]string{}
+	for _, directory := range directories {
+		if changed, ok := changedSubports(records, directory); ok {
+			ports = append(ports, changed...)
+			continue
+		}
+		port := path.Base(directory)
+		ports = append(ports, port)
+		notes[port] = "not yet evaluated"
+		if record, ok := records[directory]; ok && record.Problem == "" {
+			notes[port] = "no change this Mac's evaluation sees"
+		}
+	}
+	return ports, notes
 }
