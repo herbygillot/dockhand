@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -178,7 +179,8 @@ func TestTheGuestBuildsEachTargetInCIsOrder(t *testing.T) {
 		{ID: "libharbor", Outcome: "passed", Tests: "passed", Log: "target-1.log", Active: []guestPort{}, Steps: append(slices.Clone(steps), guestStep{"test", 7})},
 		{ID: "harbor-cli", Outcome: "passed", Tests: "none", Log: "target-2.log", Active: []guestPort{}, Steps: steps},
 	}, results.Targets)
-	require.Equal(t, "arm64", results.Environment["architecture"])
+	// The guest says what uname -m says, here the Mac running the test's.
+	require.Equal(t, map[string]string{"arm64": "arm64", "amd64": "x86_64"}[runtime.GOARCH], results.Environment["architecture"])
 	var libharbor []string
 	for _, command := range commands {
 		if strings.Contains(command, "devel/libharbor") || strings.Contains(command, "depof:libharbor") {
