@@ -19,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/prose"
 	"github.com/herbygillot/dockhand/internal/store"
 )
 
@@ -302,10 +303,10 @@ func writePlan(out io.Writer, plan model.Plan, notes []string, remedy func(model
 		}
 	}
 	if len(changed) > 0 {
-		fmt.Fprintf(out, "Changed     %s\n", strings.Join(changed, ", "))
+		fmt.Fprintf(out, "Changed     %s\n", prose.Few(changed, listShown, "port"))
 	}
 	if len(extra) > 0 {
-		fmt.Fprintf(out, "Also        %s\n", strings.Join(extra, ", "))
+		fmt.Fprintf(out, "Also        %s\n", prose.Few(extra, listShown, "port"))
 	}
 	if len(plan.Omitted) > 0 {
 		var omitted []string
@@ -397,6 +398,10 @@ func writeGitSources(out io.Writer, plan model.Plan) {
 	}
 }
 
+// listShown is how many of a long list a line names before it counts the
+// rest; --json carries every one (the command-line UX review's §10).
+const listShown = 8
+
 // writeOrder shows the order the plan builds in: one line where every
 // environment builds in the plan's order, and a line for each where
 // their dependencies put them in different orders.
@@ -409,7 +414,7 @@ func writeOrder(out io.Writer, plan model.Plan) {
 		for _, id := range ids {
 			words = append(words, string(id))
 		}
-		return strings.Join(words, " → ")
+		return prose.FewJoined(words, listShown, "port", " → ")
 	}
 	var order []model.TargetID
 	for _, target := range plan.Targets {

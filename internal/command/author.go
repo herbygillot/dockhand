@@ -675,7 +675,7 @@ func revbumpLinked(ctx context.Context, e *engine.Engine, out io.Writer, branch 
 			indexed = append(indexed, dependent.Name)
 		}
 	}
-	fmt.Fprintf(out, "Direct library dependents, from the index at %s:\n  %s\n", engine.Short(done.Base), orNone(strings.Join(indexed, "  ")))
+	fmt.Fprintf(out, "Direct library dependents, from the index at %s:\n  %s\n", engine.Short(done.Base), orNone(prose.Few(indexed, 12, "port")))
 	if len(under) > 0 {
 		fmt.Fprintf(out, "  · under a variant, found in the Portfile, which the index doesn't record: %s\n", strings.Join(under, ", "))
 	}

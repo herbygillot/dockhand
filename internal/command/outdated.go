@@ -264,11 +264,20 @@ func updateOutdated(ctx context.Context, s *settings, streams Streams, args []st
 		writeSkipped(out, plan, report)
 		return nil
 	}
-	var names []string
+	// A row a port, what the run does and what to know before it, with
+	// the names it uses: "Will start 9 branches" and the names alone
+	// showed no versions, and no major jump (field testing, the
+	// command-line UX review's §10).
+	fmt.Fprintf(out, "Will start %s, one per port (unrelated ports go in separate PRs):\n", prose.Plural(len(plan.Updates), "branch"))
+	rows := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	for _, update := range plan.Updates {
-		names = append(names, engine.BranchName(update.Name))
+		row := fmt.Sprintf("  %s\t%s %s → %s", engine.BranchName(update.Name), update.Port.Port, update.Port.Current, update.Port.Newest)
+		if update.CrossesMajor() {
+			row += ", a new major version"
+		}
+		fmt.Fprintln(rows, row)
 	}
-	fmt.Fprintf(out, "Will start %s, one per port (unrelated ports go in separate PRs):\n  %s\n", prose.Plural(len(plan.Updates), "branch"), strings.Join(names, " · "))
+	_ = rows.Flush()
 	writeSkipped(out, plan, report)
 	if options.plan {
 		fmt.Fprintln(out, "Nothing was started (--plan).")
@@ -363,7 +372,13 @@ func writePrepared(ctx context.Context, e *engine.Engine, out io.Writer, prepare
 			fmt.Fprintln(out, "serve isn't running: dockhand serve, or dockhand wait to run them here")
 		}
 	}
-	if failed > 0 {
+	// A batch's exit says whether anything worked (the command-line UX
+	// review's §10): 3, a look, where some did; 1 where none could, as
+	// an update --outdated whose nine ports all failed read 3 as well.
+	switch {
+	case failed > 0 && tidied == 0:
+		return &ExitError{Code: 1}
+	case failed > 0:
 		return &ExitError{Code: 3}
 	}
 	return nil

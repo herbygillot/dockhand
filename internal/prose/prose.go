@@ -41,3 +41,19 @@ func Bytes(n int64) string {
 	}
 	return strings.TrimSuffix(fmt.Sprintf("%.1f", value), ".0") + " " + unit
 }
+
+// Few is a list as a line can carry it: the whole list where it has at
+// most shown items, and else its count and its first few, "18 ports:
+// terraform-1.16, terraform-1.17, terraform-1.18 and 15 more", as review
+// says a port's dependents (the command-line UX review's §10).
+func Few(items []string, shown int, noun string) string {
+	return FewJoined(items, shown, noun, ", ")
+}
+
+// FewJoined is Few with the items joined by sep, as an order's " → ".
+func FewJoined(items []string, shown int, noun, sep string) string {
+	if len(items) <= shown {
+		return strings.Join(items, sep)
+	}
+	return fmt.Sprintf("%s: %s and %d more", Plural(len(items), noun), strings.Join(items[:shown], sep), len(items)-shown)
+}

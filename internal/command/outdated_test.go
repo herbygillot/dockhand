@@ -129,7 +129,7 @@ func TestOutdatedThenUpdateOutdated(t *testing.T) {
 	out, _, err = dockhand(t, "update", "--outdated", "--plan", "jq", "lost", "gawk")
 	require.NoError(t, err)
 	require.Equal(t, []string{"jq", "lost", "gawk"}, reader.asked[len(reader.asked)-1].Ports)
-	require.Contains(t, out, "Will start 1 branch, one per port (unrelated ports go in separate PRs):\n  dockhand/jq-")
+	require.Contains(t, out, "Will start 1 branch, one per port (unrelated ports go in separate PRs):\n  dockhand/jq-1.8.1  jq 1.7.1 → 1.8.1\n", "a row a port, with the name the run uses")
 	require.Contains(t, out, "Nothing was started (--plan).\n")
 
 	out, _, err = dockhand(t, "update", "--outdated", "--mine", "--check")
@@ -271,4 +271,15 @@ func TestUpdateOutdatedSaysEveryPortItWasGiven(t *testing.T) {
 	}}
 	writeSkipped(&out, plan, report)
 	require.Equal(t, "Skipped: pgdog (already in pgdog-a1b2)\nSkipped: lost (couldn't check: no forge could be found for it)\nCurrent: pomo 0.8.1, tokei 14.0.0\n", out.String())
+}
+
+// A batch's exit says whether anything worked: 1 where none could be
+// done, 3 where some need a look, and 0 where all were.
+func TestABatchsExitSaysWhetherAnythingWorked(t *testing.T) {
+	failed := []engine.PreparedUpdate{{Planned: engine.PlannedUpdate{Name: "jq-1.8.1"}, Problem: "can't update jq by itself"}}
+	done := engine.PreparedUpdate{Planned: engine.PlannedUpdate{Name: "fd-10.3.0"}, Update: engine.Update{Before: engine.PortVersion{Version: "10.2.0"}, After: engine.PortVersion{Version: "10.3.0"}}}
+	var out bytes.Buffer
+	require.Equal(t, 1, ExitCode(writePrepared(t.Context(), nil, &out, failed, false)), "none could be done")
+	require.Equal(t, 3, ExitCode(writePrepared(t.Context(), nil, &out, append(failed, done), false)), "some need a look")
+	require.NoError(t, writePrepared(t.Context(), nil, &out, []engine.PreparedUpdate{done}, false), "all were done")
 }

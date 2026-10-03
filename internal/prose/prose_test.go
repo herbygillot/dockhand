@@ -28,3 +28,10 @@ func TestBytes(t *testing.T) {
 		require.Equal(t, want, Bytes(n), n)
 	}
 }
+
+func TestFewSaysALongListByItsCount(t *testing.T) {
+	ports := []string{"terraform-1.16", "terraform-1.17", "terraform-1.18", "terraform-1.19"}
+	require.Equal(t, "terraform-1.16, terraform-1.17, terraform-1.18, terraform-1.19", Few(ports, 4, "port"))
+	require.Equal(t, "4 ports: terraform-1.16, terraform-1.17, terraform-1.18 and 1 more", Few(ports, 3, "port"))
+	require.Empty(t, Few(nil, 3, "port"))
+}

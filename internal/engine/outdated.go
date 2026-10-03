@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/macports/workspace"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/outdated"
@@ -158,6 +159,13 @@ type PlannedUpdate struct {
 	Port OutdatedPort
 	// Name is the branch's name, without dockhand/.
 	Name string
+}
+
+// CrossesMajor says whether the update moves the port to a new major
+// version, which what depends on it may need to follow; a preview says
+// it before the update is made.
+func (p PlannedUpdate) CrossesMajor() bool {
+	return p.Port.Current != "" && version.CrossesMajor(p.Port.Current, p.Port.Newest)
 }
 
 // SkippedUpdate is a port left alone, and why.
