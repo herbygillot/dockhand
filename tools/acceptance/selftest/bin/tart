@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# A stand-in for tart, so the self-test never lists the Mac's own VMs.
+echo '[]'

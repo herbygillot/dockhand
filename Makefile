@@ -19,7 +19,7 @@ ifneq ($(strip $(VERSION)),)
 GO_LDFLAGS += -X github.com/herbygillot/dockhand/internal/buildinfo.Version=$(strip $(VERSION))
 endif
 
-.PHONY: build test test-race vet lint fmt-check deadcode mutate vendor vendor-check clean
+.PHONY: build test test-race vet lint fmt-check deadcode mutate vendor vendor-check acceptance-selftest clean
 
 build:
 	$(GO) build $(if $(strip $(GO_LDFLAGS)),-ldflags "$(GO_LDFLAGS)") -o "$(BINARY)" ./cmd/dockhand
@@ -99,6 +99,11 @@ vendor-check:
 	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && $(GO) mod vendor -o "$$tmp" && \
 	if diff -rq "$$tmp" vendor >/dev/null; then echo "vendor is in sync with go.mod"; \
 	else diff -rq "$$tmp" vendor; echo "vendor is out of date; run make vendor and commit the result" >&2; exit 1; fi
+
+# The acceptance harness's own test: its runner and harm sweep, against a
+# stand-in dockhand (tools/acceptance).
+acceptance-selftest:
+	tools/acceptance/selftest.sh
 
 clean:
 	rm -f -- "$(BINARY)"

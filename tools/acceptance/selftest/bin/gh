@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# A stand-in for gh: the pull requests the self-test says are open.
+cat "${FAKE_DH_STATE:?}/prs" 2>/dev/null || :
