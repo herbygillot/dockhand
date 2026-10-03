@@ -164,6 +164,7 @@ const (
 	SourceRemoved       = "source-removed"
 	SourceUncertain     = "source-uncertain"
 	WorksrcPathGone     = "worksrc-path-gone"
+	GitHubTarball       = "github-tarball"
 )
 
 // proven are the manifests whose dependencies a check proves (D9). A Go
@@ -222,6 +223,9 @@ func Assess(input Input) model.UpstreamComparison {
 		a.add(found)
 	}
 	for _, found := range a.patches() {
+		a.add(found)
+	}
+	if found, ok := a.githubTarball(); ok {
 		a.add(found)
 	}
 	return a.comparison
@@ -962,4 +966,17 @@ func (a *assessment) worksrc() []model.UpstreamChange {
 		}
 	}
 	return found
+}
+
+// githubTarball is a port that still fetches GitHub's tarball, which
+// MacPorts prefers a release's own source tarball to, and then GitHub's
+// archive: an update is the time to move it, as the github PortGroup's
+// stock comment says. It holds nothing (the person's wish, 2026-10-03,
+// with mindforger: "We prefer releases, and then archives").
+func (a *assessment) githubTarball() (model.UpstreamChange, bool) {
+	if a.input.Port.Options["github.tarball_from"] != "tarball" {
+		return model.UpstreamChange{}, false
+	}
+	return model.UpstreamChange{Kind: "source", Rule: GitHubTarball, Subject: "github.tarball_from", Class: model.Introduced,
+		Message: "the port fetches GitHub's tarball: MacPorts prefers a release's source tarball, github.tarball_from releases, where the project publishes one, and else github.tarball_from archive"}, true
 }

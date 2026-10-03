@@ -448,3 +448,24 @@ func TestADirectoryTheBuildNamesThatsGoneHolds(t *testing.T) {
 		"upstream's source no longer has semgrep-core/src/, which the Portfile's build names as ${worksrcpath}/semgrep-core/src; the Portfile may need to follow",
 	}, gone)
 }
+
+// A port still fetching GitHub's tarball is said, holding nothing, with
+// the sources MacPorts prefers (the person's wish, 2026-10-03).
+func TestAPortFetchingGitHubsTarballIsSaid(t *testing.T) {
+	t.Parallel()
+	tarball := macports.PortInfo{Name: "mindforger", Options: map[string]string{"github.tarball_from": "tarball"}}
+	found := Assess(Input{Port: tarball, Base: tarball})
+	var said []model.UpstreamChange
+	for _, change := range found.Changes {
+		if change.Rule == GitHubTarball {
+			said = append(said, change)
+		}
+	}
+	require.Len(t, said, 1)
+	require.False(t, said[0].Hold)
+	require.Contains(t, said[0].Message, "github.tarball_from releases")
+	archive := macports.PortInfo{Name: "jq", Options: map[string]string{"github.tarball_from": "archive"}}
+	for _, change := range Assess(Input{Port: archive, Base: archive}).Changes {
+		require.NotEqual(t, GitHubTarball, change.Rule)
+	}
+}
