@@ -957,6 +957,27 @@ func (e *Engine) Restore(ctx context.Context, name string) (model.Checkpoint, mo
 	return checkpoint, branch, err
 }
 
+// LatestCheckpoint is the name of a branch's latest tidy or rebase that
+// undo can take back: applied, and not restored since. Where it has none,
+// the error says so.
+func (e *Engine) LatestCheckpoint(ctx context.Context, branch model.Branch) (string, error) {
+	var name string
+	err := e.Store.View(ctx, e.Repository, func(r store.Reader) error {
+		checkpoints, err := r.Checkpoints(branch.ID)
+		if err != nil {
+			return err
+		}
+		for i := len(checkpoints) - 1; i >= 0; i-- {
+			if c := checkpoints[i]; c.State == model.CheckpointApplied && c.RestoredAt == nil {
+				name = c.Name()
+				return nil
+			}
+		}
+		return fmt.Errorf("%s has no tidy or rebase to undo", branch.ShortName())
+	})
+	return name, err
+}
+
 // checkpointNamed reads a checkpoint by its name's kind and number, and
 // its branch.
 func (e *Engine) checkpointNamed(ctx context.Context, name, kind string, number int) (model.Checkpoint, model.Branch, error) {

@@ -33,7 +33,7 @@ what a script gets. Anything else is shown for review first, on a terminal,
 or applied as shown with --yes.
 --squash --message "port: what changed" makes one commit of the whole
 branch, applied as given, since the message is yours. Before rewriting,
-tidy keeps the old history as a checkpoint that dockhand restore brings
+tidy keeps the old history as a checkpoint that dockhand undo brings
 back.
 
 --group rearranges the proposed commits: "2 1+3" makes commit 2 first, then
@@ -379,7 +379,7 @@ func applyTidy(ctx context.Context, e *engine.Engine, streams Streams, plan engi
 		}
 		made = fmt.Sprintf("Kept %s as %s, and created %d", prose.Plural(result.Kept, "commit"), as, len(result.Commits)-result.Kept)
 	}
-	fmt.Fprintf(streams.Out, "%s. The files are unchanged.\nCheckpoint %s keeps the old history (dockhand restore %s).\n", made, name, name)
+	fmt.Fprintf(streams.Out, "%s. The files are unchanged.\nCheckpoint %s keeps the old history (dockhand undo %s).\n", made, name, name)
 	if len(result.Narrowed) > 0 {
 		fmt.Fprintf(streams.Out, "Left %s out of the worktree again, as nothing of the branch's is there.\n", strings.Join(result.Narrowed, ", "))
 	}
@@ -404,46 +404,95 @@ func modifiedBuildWarning(plan engine.TidyPlan, checkpoint string) string {
 	if !plan.ModifiedBuild() {
 		return ""
 	}
-	return fmt.Sprintf("! Generated-By names this dockhand, built from uncommitted source, which nobody else can find. Before submitting, tidy again with a build of a pushed commit: dockhand restore %s, then dockhand tidy.", checkpoint)
+	return fmt.Sprintf("! Generated-By names this dockhand, built from uncommitted source, which nobody else can find. Before submitting, tidy again with a build of a pushed commit: dockhand undo %s, then dockhand tidy.", checkpoint)
 }
 
+// restoreCommand is undo's former name, kept for scripts: it takes the
+// checkpoint by its name.
 func restoreCommand(s *settings, streams Streams) *cobra.Command {
 	return &cobra.Command{
-		Use:   "restore <checkpoint>",
-		Short: "Put back the history a tidy or rebase replaced",
-		Long: `Puts a branch's commits back as they were before the tidy or rebase that
-made the checkpoint, such as tidy-3 or rebase-4, when nothing has been
-committed since. After a tidy, the files are not touched: edits that tidy
-committed read as uncommitted again. After a rebase, the files go back as
-they were before it, with the master the branch started from; a change to
-one of those files stops it.`,
-		Args: cobra.ExactArgs(1),
+		Use:    "restore <checkpoint>",
+		Short:  "Put back the history a tidy or rebase replaced (now dockhand undo)",
+		Hidden: true,
+		Args:   cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := s.open(cmd.Context())
 			if err != nil {
 				return err
 			}
 			defer e.Close()
-			checkpoint, branch, err := e.Restore(cmd.Context(), args[0])
+			return restoreCheckpoint(cmd.Context(), e, streams, args[0])
+		},
+	}
+}
+
+// undoCommand puts back what a tidy or rebase replaced: the branch's
+// latest, or the checkpoint named (the command-line UX review's smaller
+// items: git restore restores files, and dockhand's restores history).
+func undoCommand(s *settings, streams Streams) *cobra.Command {
+	var where branchFlags
+	cmd := &cobra.Command{
+		Use:   "undo [<checkpoint>]",
+		Short: "Put back the history the latest tidy or rebase replaced",
+		Long: `Puts a branch's commits back as they were before its latest tidy or
+rebase, or the checkpoint named, such as tidy-3 or rebase-4, when nothing
+has been committed since. After a tidy, the files are not touched: edits
+that tidy committed read as uncommitted again. After a rebase, the files go
+back as they were before it, with the master the branch started from; a
+change to one of those files stops it.
+
+With no checkpoint named, the branch is -b, -p, or --pr, else the one
+checked out here.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			e, err := s.open(ctx)
 			if err != nil {
 				return err
 			}
-			streams.emit(map[string]any{"checkpoint": checkpoint.Name(), "branch": branch.ShortName(), "head": checkpoint.Before, "base": branch.Base})
-			if checkpoint.Kind != model.CheckpointRebase {
-				fmt.Fprintf(streams.Out, "Restored %s to its history before %s (%s). The files are unchanged.\n", branch.Name, checkpoint.Name(), engine.Short(checkpoint.Before))
-				return nil
+			defer e.Close()
+			if len(args) == 1 {
+				if where.explicit() {
+					return errors.New("a checkpoint names its branch already; name the checkpoint or the branch, not both")
+				}
+				return restoreCheckpoint(ctx, e, streams, args[0])
 			}
-			fmt.Fprintf(streams.Out, "Restored %s to its history and files before %s (%s)", branch.Name, checkpoint.Name(), engine.Short(checkpoint.Before))
-			if checkpoint.BaseBefore != "" {
-				fmt.Fprintf(streams.Out, ", on master %s again.\n", engine.Short(branch.Base))
-				return nil
+			branch, err := where.resolve(ctx, e, streams)
+			if err != nil {
+				return err
 			}
-			// A rebase recorded before checkpoints kept the base leaves the
-			// branch's base where the rebase moved it, which the history
-			// put back doesn't start from.
-			fmt.Fprintf(streams.Out, ".\n%s didn't record the master it moved %s from, so dockhand still takes it to start from master %s. dockhand rebase puts its commits there.\n",
-				checkpoint.Name(), branch.Name, engine.Short(branch.Base))
-			return nil
+			name, err := e.LatestCheckpoint(ctx, branch)
+			if err != nil {
+				return err
+			}
+			return restoreCheckpoint(ctx, e, streams, name)
 		},
 	}
+	where.register(cmd, s, "Undo in")
+	return cmd
+}
+
+// restoreCheckpoint puts a branch back as it was before a checkpoint, and
+// says what it did.
+func restoreCheckpoint(ctx context.Context, e *engine.Engine, streams Streams, name string) error {
+	checkpoint, branch, err := e.Restore(ctx, name)
+	if err != nil {
+		return err
+	}
+	streams.emit(map[string]any{"checkpoint": checkpoint.Name(), "branch": branch.ShortName(), "head": checkpoint.Before, "base": branch.Base})
+	if checkpoint.Kind != model.CheckpointRebase {
+		fmt.Fprintf(streams.Out, "Restored %s to its history before %s (%s). The files are unchanged.\n", branch.Name, checkpoint.Name(), engine.Short(checkpoint.Before))
+		return nil
+	}
+	fmt.Fprintf(streams.Out, "Restored %s to its history and files before %s (%s)", branch.Name, checkpoint.Name(), engine.Short(checkpoint.Before))
+	if checkpoint.BaseBefore != "" {
+		fmt.Fprintf(streams.Out, ", on master %s again.\n", engine.Short(branch.Base))
+		return nil
+	}
+	// A rebase recorded before checkpoints kept the base leaves the
+	// branch's base where the rebase moved it, which the history put
+	// back doesn't start from.
+	fmt.Fprintf(streams.Out, ".\n%s didn't record the master it moved %s from, so dockhand still takes it to start from master %s. dockhand rebase puts its commits there.\n",
+		checkpoint.Name(), branch.Name, engine.Short(branch.Base))
+	return nil
 }

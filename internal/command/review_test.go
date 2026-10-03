@@ -30,7 +30,7 @@ func TestTidyAppliesDockhandsOwnEditsAndRestoreUndoesIt(t *testing.T) {
 
 	out, _, err = dockhand(t, "tidy")
 	require.NoError(t, err, "a script applies an unambiguous plan")
-	require.Contains(t, out, "Created 1 commit. The files are unchanged.\nCheckpoint tidy-1 keeps the old history (dockhand restore tidy-1).\n")
+	require.Contains(t, out, "Created 1 commit. The files are unchanged.\nCheckpoint tidy-1 keeps the old history (dockhand undo tidy-1).\n")
 	require.Equal(t, "jq: update to 1.8.1", testsupport.Git(t, dir, "log", "-1", "--format=%s"))
 
 	out, _, err = dockhand(t, "tidy")

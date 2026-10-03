@@ -346,3 +346,39 @@ func orNone(value string) string {
 	}
 	return value
 }
+
+// openCommand opens a branch's pull request in the browser (the
+// command-line UX review's smaller items): status shows its number, and
+// no link.
+func openCommand(s *settings, streams Streams) *cobra.Command {
+	var where branchFlags
+	cmd := &cobra.Command{
+		Use:   "open",
+		Short: "Open the branch's pull request in your browser",
+		Long: `Opens the pull request of the branch -b, -p, or --pr names, else of the one
+checked out here, in your browser, and prints its address.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx := cmd.Context()
+			e, err := s.open(ctx)
+			if err != nil {
+				return err
+			}
+			defer e.Close()
+			branch, err := where.resolve(ctx, e, streams)
+			if err != nil {
+				return err
+			}
+			pr := branch.PullRequest
+			if pr == nil {
+				return fmt.Errorf("%s has no pull request yet; dockhand submit -b %s opens one", branch.ShortName(), branch.ShortName())
+			}
+			address := fmt.Sprintf("https://github.com/%s/pull/%d", pr.Repository, pr.Number)
+			streams.emit(map[string]any{"branch": branch.ShortName(), "url": address})
+			fmt.Fprintln(streams.Out, address)
+			return openBrowser(ctx, address)
+		},
+	}
+	where.register(cmd, s, "Open")
+	return cmd
+}

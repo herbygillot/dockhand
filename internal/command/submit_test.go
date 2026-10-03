@@ -260,7 +260,7 @@ func TestTidyWarnsOfAModifiedBuild(t *testing.T) {
 	plan := func(tag string) engine.TidyPlan {
 		return engine.TidyPlan{Groups: []engine.TidyGroup{{Message: "jq: update to 1.8.1\n\nGenerated-By: Dockhand " + tag + " (https://github.com/herbygillot/dockhand)"}}}
 	}
-	require.Equal(t, "! Generated-By names this dockhand, built from uncommitted source, which nobody else can find. Before submitting, tidy again with a build of a pushed commit: dockhand restore tidy-3, then dockhand tidy.",
+	require.Equal(t, "! Generated-By names this dockhand, built from uncommitted source, which nobody else can find. Before submitting, tidy again with a build of a pushed commit: dockhand undo tidy-3, then dockhand tidy.",
 		modifiedBuildWarning(plan("devel+1a2b3c4d5e6f.modified"), "tidy-3"))
 	require.Empty(t, modifiedBuildWarning(plan("devel+1a2b3c4d5e6f"), "tidy-3"))
 }

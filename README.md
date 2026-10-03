@@ -83,7 +83,7 @@ dockhand submit --passing                 # go through the ones that passed
 | `adopt --pr <number>` | brings someone's pull request into a branch of its own |
 | `review <pr>` | applies MacPorts' commit rules to a pull request, posting nothing unless asked |
 | `diff`, `impact` | what the branch changes, and which other ports that reaches |
-| `rebase` | moves the branch onto fresh master, keeping a checkpoint `restore` brings back |
+| `rebase` | moves the branch onto fresh master, keeping a checkpoint `undo` brings back |
 | `clean` | removes merged branches' worktrees and branches, here and in your fork |
 
 ## Requirements

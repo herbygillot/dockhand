@@ -201,6 +201,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	for _, command := range []*cobra.Command{
 		statusCommand(&settings, streams),
 		diffCommand(&settings, streams),
+		openCommand(&settings, streams),
 		impactCommand(&settings, streams),
 		outdatedCommand(&settings, streams),
 		watchCommand(&settings, streams),
@@ -241,6 +242,7 @@ func Run(ctx context.Context, args []string, streams Streams) error {
 	for _, command := range []*cobra.Command{
 		providersCommand(&settings, streams),
 		authCommand(streams),
+		undoCommand(&settings, streams),
 		restoreCommand(&settings, streams),
 		archiveCommand(&settings, streams),
 		cleanCommand(&settings, streams),

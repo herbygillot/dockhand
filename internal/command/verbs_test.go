@@ -1,6 +1,7 @@
 package command
 
 import (
+	"context"
 	"database/sql"
 	"os"
 	"path/filepath"
@@ -54,7 +55,7 @@ func TestEditRevbumpRetryRebaseAndArchive(t *testing.T) {
 	testsupport.Git(t, w.upstream, "commit", "-q", "-m", "README")
 	out, _, err = dockhand(t, "rebase")
 	require.NoError(t, err)
-	require.Regexp(t, `Rebased notes \(1 commit\) from master [0-9a-f]{7} onto [0-9a-f]{7}\.\nCheckpoint rebase-2 keeps the old history \(dockhand restore rebase-2\)\.\n`, out)
+	require.Regexp(t, `Rebased notes \(1 commit\) from master [0-9a-f]{7} onto [0-9a-f]{7}\.\nCheckpoint rebase-2 keeps the old history \(dockhand undo rebase-2\)\.\n`, out)
 	require.Contains(t, out, "Next: dockhand check, since the files it builds on have changed\n")
 	_, _, err = dockhand(t, "check")
 	require.NoError(t, err)
@@ -111,4 +112,36 @@ func TestStartBringsItsPortsIn(t *testing.T) {
 	require.Regexp(t, `^Created dockhand/jq-[a-z0-9]{4} from master `, out)
 	_, _, err = dockhand(t, "start")
 	require.ErrorContains(t, err, "start needs a name, or a --port to name the branch for")
+}
+
+// undo takes back the branch's latest tidy, its checkpoint found for it;
+// open opens a branch's pull request, and says one it hasn't.
+func TestUndoAndOpen(t *testing.T) {
+	w := newWorld(t)
+	versioned(t, w)
+	withBumper(t)
+	_, _, err := dockhand(t, "start", "jq-update")
+	require.NoError(t, err)
+	dir := filepath.Join(w.home, "Source", "macports-branches", "jq-update")
+	t.Setenv("MACPORTS_TREE", dir)
+	_, _, err = dockhand(t, "update", "jq")
+	require.NoError(t, err)
+	_, _, err = dockhand(t, "tidy")
+	require.NoError(t, err)
+	out, _, err := dockhand(t, "undo")
+	require.NoError(t, err)
+	require.Regexp(t, `^Restored dockhand/jq-update to its history before tidy-\d+ \([0-9a-f]+\)\. The files are unchanged\.\n$`, out)
+	_, _, err = dockhand(t, "undo")
+	require.ErrorContains(t, err, "jq-update has no tidy or rebase to undo")
+
+	var opened []string
+	real := openBrowser
+	t.Cleanup(func() { openBrowser = real })
+	openBrowser = func(_ context.Context, address string) error {
+		opened = append(opened, address)
+		return nil
+	}
+	_, _, err = dockhand(t, "open")
+	require.ErrorContains(t, err, "jq-update has no pull request yet; dockhand submit -b jq-update opens one")
+	require.Empty(t, opened)
 }

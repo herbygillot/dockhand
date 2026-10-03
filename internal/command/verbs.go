@@ -222,7 +222,7 @@ rebase that conflicts is abandoned with the branch as it was.`,
 				return nil
 			}
 			name := rebased.Checkpoint.Name()
-			fmt.Fprintf(streams.Out, "Rebased %s (%s) from master %s onto %s.\nCheckpoint %s keeps the old history (dockhand restore %s).\n",
+			fmt.Fprintf(streams.Out, "Rebased %s (%s) from master %s onto %s.\nCheckpoint %s keeps the old history (dockhand undo %s).\n",
 				branch.ShortName(), prose.Plural(rebased.Commits, "commit"), engine.Short(rebased.From), engine.Short(rebased.To), name, name)
 			if len(rebased.OlderBuilds) > 0 {
 				fmt.Fprintf(streams.Out, "The rebased commits keep their Generated-By, naming an older dockhand, %s; tidy names this build in a commit it writes again.\n", strings.Join(rebased.OlderBuilds, ", "))
