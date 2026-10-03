@@ -21,6 +21,21 @@ import (
 // (Design v3 §6.11): its commits and Portfiles against §8's rules, which
 // findings of the last review are resolved, what upstream's change means
 // for each port it changes, and the ports that depend on them.
+// AccessUnknown is a role on the repository the forge wouldn't say.
+const AccessUnknown = "unknown"
+
+// Access words a role on the repository: "write access", "no access", or
+// "access dockhand couldn't read with this login".
+func Access(permission string) string {
+	switch permission {
+	case "", "none":
+		return "no access"
+	case AccessUnknown:
+		return "access dockhand couldn't read with this login"
+	}
+	return permission + " access"
+}
+
 type ReviewReport struct {
 	Ref   forge.PullRequestRef
 	Title string
@@ -29,7 +44,8 @@ type ReviewReport struct {
 	Author string
 	State  forge.PullRequestState
 	// Login is who would post it, and Permission their role on the
-	// repository: admin, maintain, write, triage, read, or none.
+	// repository: admin, maintain, write, triage, read, or none, or
+	// AccessUnknown where the forge wouldn't say.
 	Login, Permission string
 	// Head is the commit reviewed; Base where it leaves master.
 	Head, Base string
@@ -92,7 +108,12 @@ func (e *Engine) Review(ctx context.Context, number int) (ReviewReport, error) {
 	if report.Login, err = f.AuthenticatedUser(ctx); err != nil {
 		return report, loginError("review", err)
 	}
-	if report.Permission, err = f.Permission(ctx, e.PullRequestRepository(), report.Login); err != nil {
+	// A role the forge won't say, as GitHub won't to a fine-grained
+	// token, is unknown: the review goes on, and only requesting changes,
+	// which needs one, waits (the M1's rerun, E9).
+	if report.Permission, err = f.Permission(ctx, e.PullRequestRepository(), report.Login); errors.Is(err, forge.ErrAccessUnknown) {
+		report.Permission = AccessUnknown
+	} else if err != nil {
 		return report, fmt.Errorf("reading your access to %s: %w", e.PullRequestRepository(), err)
 	}
 	if report.Head, err = e.Repo.FetchPullRequest(ctx, e.Upstream(), number); err != nil {
@@ -313,7 +334,7 @@ func (e *Engine) RecordReview(ctx context.Context, report ReviewReport, posted s
 // request at the commit it reviewed, and records it.
 func (e *Engine) PostReview(ctx context.Context, report ReviewReport, body string, requestChanges bool) (string, error) {
 	if requestChanges && !report.CanRequestChanges() {
-		return "", fmt.Errorf("requesting changes is left to people with write or triage access to %s; you have %s access, so post it as a comment", report.Ref.Repository, report.Permission)
+		return "", fmt.Errorf("requesting changes is left to people with write or triage access to %s; you have %s, so post it as a comment", report.Ref.Repository, Access(report.Permission))
 	}
 	url, err := e.forge().PostReview(ctx, forge.ReviewInput{Ref: report.Ref, Commit: report.Head, RequestChanges: requestChanges, Body: body, Comments: report.Comments()})
 	if err != nil {

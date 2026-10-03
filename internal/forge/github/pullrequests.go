@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -240,9 +241,13 @@ func (c *Client) Permission(ctx context.Context, repository, login string) (stri
 		return "", githubapi.RateLimitError(err)
 	}
 	owner, repo, _ := strings.Cut(repository, "/")
-	level, _, err := client.Repositories.GetPermissionLevel(ctx, owner, repo, login)
+	level, response, err := client.Repositories.GetPermissionLevel(ctx, owner, repo, login)
 	if err != nil {
-		return "", githubapi.RateLimitError(err)
+		err = githubapi.RateLimitError(err)
+		if limited := (*forge.RateLimitError)(nil); !errors.As(err, &limited) && response != nil && response.StatusCode == http.StatusForbidden {
+			return "", fmt.Errorf("%w: %w", forge.ErrAccessUnknown, err)
+		}
+		return "", err
 	}
 	if role := level.GetRoleName(); role != "" {
 		return role, nil

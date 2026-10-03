@@ -125,10 +125,12 @@ func (r *Repository) EditTree(ctx context.Context, tree string, edits []FileEdit
 	if len(ordered) == 0 {
 		return tree, ctx.Err()
 	}
-	return r.editTree(ctx, tree, ordered)
+	return r.editTree(ctx, tree, "", ordered)
 }
 
-func (r *Repository) editTree(ctx context.Context, tree string, edits []FileEdit) (string, error) {
+// editTree edits a tree at prefix, its path from the root ("" or ending
+// in a slash), which each blob's attributes are read by.
+func (r *Repository) editTree(ctx context.Context, tree, prefix string, edits []FileEdit) (string, error) {
 	var entries []TreeEntry
 	var err error
 	if tree != "" {
@@ -153,7 +155,11 @@ func (r *Repository) editTree(ctx context.Context, tree string, edits []FileEdit
 			delete(byName, head)
 			continue
 		}
-		blob, err := r.WriteBlob(ctx, edit.After)
+		// Written as Git stores a working file at its path: under
+		// core.autocrlf, a worktree's CRLF lines are the LF they came
+		// from, where a raw write made every line a change (the M1's
+		// rerun, F4).
+		blob, err := r.writeBlobAt(ctx, edit.After, prefix+head)
 		if err != nil {
 			return "", err
 		}
@@ -165,7 +171,7 @@ func (r *Repository) editTree(ctx context.Context, tree string, edits []FileEdit
 	}
 	slices.Sort(childNames)
 	for _, name := range childNames {
-		next, err := r.editTree(ctx, byName[name].Object, children[name])
+		next, err := r.editTree(ctx, byName[name].Object, prefix+name+"/", children[name])
 		if err != nil {
 			return "", err
 		}

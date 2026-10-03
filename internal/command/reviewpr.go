@@ -73,7 +73,7 @@ access. --markdown prints the text, for pasting.`,
 					return postReview(ctx, e, streams, report, body, false)
 				case "r":
 					if !report.CanRequestChanges() {
-						fmt.Fprintf(streams.Err, "Requesting changes is left to people with write or triage access; you have %s access.\n", report.Permission)
+						fmt.Fprintf(streams.Err, "Requesting changes is left to people with write or triage access; you have %s.\n", engine.Access(report.Permission))
 						continue
 					}
 					return postReview(ctx, e, streams, report, body, true)
@@ -118,10 +118,7 @@ func postReview(ctx context.Context, e *engine.Engine, streams Streams, report e
 }
 
 func writeReview(out io.Writer, report engine.ReviewReport) {
-	access := report.Permission + " access"
-	if report.Permission == "none" || report.Permission == "" {
-		access = "no access"
-	}
+	access := engine.Access(report.Permission)
 	fmt.Fprintf(out, "review of #%d %q, as @%s (%s to %s)\n", report.Ref.Number, report.Title, report.Login, access, report.Ref.Repository)
 	fmt.Fprintf(out, "  %s\n", report.Summary())
 	for _, finding := range report.Findings {

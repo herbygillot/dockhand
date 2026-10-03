@@ -774,6 +774,25 @@ func (e *Engine) RequestReview(ctx context.Context, branch model.Branch) ([]stri
 	return logins, err
 }
 
+// hasForkRemote says whether any Git remote pushes to a GitHub repository
+// other than MacPorts' own, as a fork or a sandbox would, by its address
+// alone: a Next: line suggests a submit only
+// where one could push (the M1's rerun, D-S6). A remote that can't be read
+// counts as one, so nothing is withheld on a guess.
+func (e *Engine) hasForkRemote(ctx context.Context) bool {
+	remotes, err := e.Repo.Remotes(ctx)
+	if err != nil {
+		return true
+	}
+	for _, remote := range remotes {
+		name, err := github.RemoteRepository(remote.PushURL)
+		if err == nil && !strings.EqualFold(name, UpstreamRepository) {
+			return true
+		}
+	}
+	return false
+}
+
 // loginError says why asking GitHub who you are failed: a rate limit is
 // one to wait out, never a login wanting (field testing, batch 11: every
 // submit after a drain said it needed a login, and the limit had run out).

@@ -84,6 +84,11 @@ export DOCKHAND_TART_HOME="$state/tart/dockhand" DOCKHAND_SSH_DIR="$state/tart/s
 # The stage's token, which reads only.
 : "${ACCEPT_GH_TOKEN_FILE:=$HOME/.dockhand-acceptance/gh-token}"
 if [ -z "${ACCEPT_GH_TOKEN:-}" ] && [ -r "$ACCEPT_GH_TOKEN_FILE" ]; then
+	# A token others on the Mac can read is said, not used quietly.
+	case "$(stat -f %Lp "$ACCEPT_GH_TOKEN_FILE")" in
+	600 | 400) ;;
+	*) echo "quick.sh: $ACCEPT_GH_TOKEN_FILE can be read by others on this Mac; chmod 600 it" >&2 ;;
+	esac
 	ACCEPT_GH_TOKEN=$(tr -d '[:space:]' <"$ACCEPT_GH_TOKEN_FILE")
 fi
 if [ -n "${ACCEPT_GH_TOKEN:-}" ]; then

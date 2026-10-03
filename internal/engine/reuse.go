@@ -94,6 +94,20 @@ func (d *driver) installs(ctx context.Context, environment model.Environment, bu
 			if !kept {
 				continue
 			}
+			// A kept archive changed since it was kept, by a byte or more,
+			// isn't given to the guest: MacPorts builds the target instead,
+			// and the check says why (prime-time D-T1). Signing would refuse
+			// it too, and fail the check, where a build does the work.
+			if _, digest, err := sha256File(d.e.archivePath(archive.Digest)); err != nil || digest != archive.Digest {
+				if err := d.fenced(ctx, func(tx store.Tx) error {
+					_, err := d.session.Emit(tx, model.Event{Branch: d.run.Branch, Run: d.run.ID, Kind: "archive.altered", Level: model.LevelInfo,
+						Message: fmt.Sprintf("%s: the archive kept of %s isn't the one it was kept as, %s, so the guest builds it instead", d.run.Name(), need, archive.Digest)})
+					return err
+				}); err != nil {
+					return nil, err
+				}
+				continue
+			}
 			planned, _ := d.plan.Target(need)
 			port := planned.Target.Name
 			if planned.Target.Subport != "" {

@@ -5,6 +5,7 @@ act() {
 	dh_setup start ds5-before --port "${ACCEPT_GO_PORT:?}" || return 0
 	allow_ref_gone refs/heads/dockhand/ds5-before
 	git -C "$MACPORTS_TREE" branch -m dockhand/ds5-before dockhand/ds5-after
+	next_superseded "ds5-before renamed ds5-after"
 	DS5_DIR=$("$DH_BIN" path ds5-before 2>/dev/null || :)
 	dh_json status || :
 }

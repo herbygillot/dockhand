@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -162,6 +163,32 @@ func TestWorkingTreeCapturesTrackedFilesAsTheyAreOnDisk(t *testing.T) {
 	require.Equal(t, "name jq\nversion 2\n", string(data))
 	require.Equal(t, uint32(0o100755), state.Mode)
 	require.Contains(t, testsupport.Git(t, repo.Root, "status", "--porcelain"), " M textproc/jq/Portfile", "the index is untouched")
+}
+
+// Under core.autocrlf, a checkout's CRLF lines are the LF blob they came
+// from: the working tree captures no change, and an edit prepared against
+// the blob applies (the M1's rerun, F4).
+func TestCRLFCheckoutsAreTheirLFBlobs(t *testing.T) {
+	repo, head := portsCheckout(t)
+	testsupport.Git(t, repo.Root, "config", "core.autocrlf", "true")
+	portfile := filepath.Join(repo.Root, "textproc/jq/Portfile")
+	original, err := os.ReadFile(portfile)
+	require.NoError(t, err)
+	crlf := strings.ReplaceAll(string(original), "\n", "\r\n")
+	require.NoError(t, os.WriteFile(portfile, []byte(crlf), 0o644))
+
+	_, tree, err := repo.WorkingTree(t.Context())
+	require.NoError(t, err)
+	changed, err := repo.ChangedPaths(t.Context(), head, tree)
+	require.NoError(t, err)
+	require.Empty(t, changed, "CRLF is the checkout's, not a change")
+
+	before, _, err := repo.File(t.Context(), head, "textproc/jq/Portfile")
+	require.NoError(t, err)
+	require.NoError(t, repo.ApplyToWorkingFiles(t.Context(), []git.FileEdit{{Path: "textproc/jq/Portfile", Before: before, After: []byte("name jq\nversion 3\n"), Mode: before.Mode}}))
+	data, err := os.ReadFile(portfile)
+	require.NoError(t, err)
+	require.Equal(t, "name jq\nversion 3\n", string(data))
 }
 
 func TestApplyToWorkingFilesChecksEveryFileFirst(t *testing.T) {

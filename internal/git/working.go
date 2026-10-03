@@ -93,6 +93,14 @@ func (r *Repository) BlobID(ctx context.Context, data []byte) (string, error) {
 	return objectResult(out, err)
 }
 
+// workingBlobID is the object ID a working file would have as a blob, as
+// Git cleans it for its path: under core.autocrlf, a checked-out CRLF file
+// is the LF blob it came from, not another (the M1's rerun, F4).
+func (r *Repository) workingBlobID(ctx context.Context, data []byte, path string) (string, error) {
+	out, err := r.run(ctx, data, nil, "hash-object", "--stdin", "--path="+path)
+	return objectResult(out, err)
+}
+
 // ApplyToWorkingFiles writes edits into the checkout's working files, and
 // nothing into its index or refs. Every file must still be as each edit's
 // Before describes it: the same contents and executable bit, or absent.
@@ -113,7 +121,7 @@ func (r *Repository) ApplyToWorkingFiles(ctx context.Context, edits []FileEdit) 
 		if !present {
 			continue
 		}
-		blob, err := r.BlobID(ctx, data)
+		blob, err := r.workingBlobID(ctx, data, edit.Path)
 		if err != nil {
 			return err
 		}

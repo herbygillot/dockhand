@@ -25,6 +25,11 @@ var ErrNotFound = errors.New("forge: requested object was not found")
 var ErrAppRestricted = errors.New("forge: the organization restricts which apps may act for it")
 var ErrIncomplete = errors.New("forge: incomplete repository evidence")
 
+// ErrAccessUnknown is a role on a repository the forge wouldn't say, as
+// GitHub won't to a fine-grained token not granted the repository
+// (403 "Resource not accessible by personal access token").
+var ErrAccessUnknown = errors.New("forge: your access to the repository isn't readable with this login")
+
 type Tag struct{ Name, Commit string }
 
 type Release struct {

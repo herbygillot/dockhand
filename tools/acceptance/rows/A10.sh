@@ -61,6 +61,8 @@ act() {
 		"dockhand setup tart"*) why="makes a Tart image" ;;
 		"dockhand submit --passing"*) why="submits, and has no --plan" ;;
 		*" jq "[0-9]*) why="names one of jq's versions, and jq is current at the stage's pin" ;;
+		"dockhand submit"*) [ "${ACCEPT_STAGE:-}" = quick ] && why="submits to a GitHub fork, which the quick stage hasn't" ;;
+		*"--on sequoia"* | *"--on tahoe"* | *"--on "[0-9]*) [ "${ACCEPT_STAGE:-}" = quick ] && why="builds on another release's Tart image, and the quick stage makes only this Mac's" ;;
 		*"--outdated --mine"*) why="prepares every outdated port of the maintainer's; B3 runs a batch on two" ;;
 		"dockhand outdated --mine"*) why="asks GitHub of each of the maintainer's ports, hundreds, from the account's hourly quota; outdated runs on the stage's two ports instead" ;;
 		esac

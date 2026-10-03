@@ -133,6 +133,13 @@ func (r *Repository) WriteBlob(ctx context.Context, data []byte) (string, error)
 	return objectResult(out, err)
 }
 
+// writeBlobAt writes data as a blob as Git cleans a working file at path,
+// its attributes and core.autocrlf applied.
+func (r *Repository) writeBlobAt(ctx context.Context, data []byte, path string) (string, error) {
+	out, err := r.run(ctx, data, nil, "hash-object", "-w", "--stdin", "--path="+path)
+	return objectResult(out, err)
+}
+
 // trees are the trees read, by repository and object: a tree's object ID
 // names its contents, so what one read found holds for as long as the
 // process runs. Engine's tests read the same trees again for 86% of their

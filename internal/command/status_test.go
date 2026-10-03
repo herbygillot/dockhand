@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/model"
 	"github.com/herbygillot/dockhand/internal/store"
+	"github.com/herbygillot/dockhand/internal/testsupport"
 )
 
 // A check made before tidy, the order the design gives, checked the files
@@ -35,7 +36,12 @@ func TestStatusCreditsACheckOfTheCommittedFilesToTheCommit(t *testing.T) {
 	out, _, err := dockhand(t, "status")
 	require.NoError(t, err)
 	require.Contains(t, out, "  Checks   passed for this commit\n")
-	require.Contains(t, out, "Next: dockhand submit --branch jq-update\n")
+	require.Contains(t, out, "Next: fork macports/macports-ports on GitHub and add it as a Git remote, then dockhand submit --branch jq-update\n",
+		"no remote pushes to a fork yet (the M1's rerun, D-S6)")
+	testsupport.Git(t, w.clone, "remote", "add", "github-fork", "https://github.com/ada/macports-ports.git")
+	out, _, err = dockhand(t, "status")
+	require.NoError(t, err)
+	require.Contains(t, out, "Next: dockhand submit --branch jq-update\n", "one does")
 
 	// Edits on top of the commit are what a check of the working files
 	// checked, not the commit.
@@ -89,7 +95,7 @@ func TestStatusFollowsABranchThroughItsWork(t *testing.T) {
 	out, _, err = dockhand(t, "status")
 	require.NoError(t, err, "inside a worktree, status is the branch's")
 	require.Contains(t, out, "jq-update · ~/Source/macports-branches/jq-update\n  Ports    jq (not yet evaluated)\n  Work     1 commit above master ")
-	require.Contains(t, out, "  Checks   passed for this commit\n           jq  command ✓\n  PR       —\nNext: dockhand submit --branch jq-update\n")
+	require.Contains(t, out, "  Checks   passed for this commit\n           jq  command ✓\n  PR       —\nNext: fork macports/macports-ports on GitHub and add it as a Git remote, then dockhand submit --branch jq-update\n")
 
 	out, _, err = dockhand(t, "status", "--port", "fd")
 	require.NoError(t, err)

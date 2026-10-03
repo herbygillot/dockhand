@@ -80,7 +80,11 @@ func TestTheDispatcherAdmitsProgramsThatOnlyReport(t *testing.T) {
 		"set cpus [exec sysctl -n hw.ncpu]",
 		"set said [exec -ignorestderr echo hi 2>/dev/null]",
 		"set machine [exec env LC_ALL=C uname -m 2>@1]",
-		"set read [exec echo hi | /usr/bin/true]",
+		// A pipeline whose writer writes nothing: true exits without
+		// reading, and echo, writing to it, now and then found no reader
+		// (the M1's rerun, A0: "child killed: write on pipe with no
+		// readers"). No admitted program reads its input to drain one.
+		"set read [exec /usr/bin/true | /usr/bin/true]",
 		"set version [exec sw_vers -productVersion]",
 		"set f [open " + os.DevNull + " r]; close $f",
 		"set found [file exists /usr/bin/true]",

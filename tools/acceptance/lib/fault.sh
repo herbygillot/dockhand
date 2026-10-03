@@ -44,6 +44,9 @@ fault_low_disk_stop() { [ -n "${FAULT_LOW_DISK:-}" ] && hdiutil detach -quiet -f
 fault_vm_slots() {
 	[ -n "${ACCEPT_VANILLA:-}" ] || return 1
 	local n
+	# Slots a run killed before it stopped them are its own, cleared first
+	# (the M1's rerun: VM "dhaccept-slot-1" already exists).
+	fault_vm_slots_stop
 	for n in 1 2; do
 		tart clone "$ACCEPT_VANILLA" "dhaccept-slot-$n" || return 1
 		tart run --no-graphics "dhaccept-slot-$n" >"$ROW_DIR/slot-$n.log" 2>&1 &

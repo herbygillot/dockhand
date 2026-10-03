@@ -18,6 +18,11 @@ dh() {
 	return "$status"
 }
 
+# next_superseded marks the Next: lines printed so far as undone by the
+# row's own doing, as a rename or a deletion it makes on purpose: H6 runs
+# only the Next: lines after the last mark (the M1's rerun, D-S5, D-S9).
+next_superseded() { printf '# Next: lines above were superseded by the row: %s\n' "$*" >>"$ROW_DIR/out.log"; }
+
 # dh_setup runs a step that only sets the row up, such as the update
 # that makes a branch for it: where it fails, the row fails as its setup's,
 # with what dockhand said, rather than as a later step's that never ran.

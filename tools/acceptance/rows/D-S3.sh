@@ -9,6 +9,7 @@ act() {
 	rm_dir=$("$DH_BIN" path ds3-rm) && git_dir=$("$DH_BIN" path ds3-git) || return 0
 	allow_change "$rm_dir/*" "$git_dir/*"
 	rm -rf "$rm_dir"
+	next_superseded "ds3-rm's worktree removed"
 	git -C "$MACPORTS_TREE" worktree remove --force "$git_dir"
 	dh_json status ds3-rm || :
 	dh_json status ds3-git || :

@@ -73,7 +73,7 @@ func TestEditRevbumpRetryRebaseAndArchive(t *testing.T) {
 	out, _, err = dockhand(t, "rebase")
 	require.NoError(t, err)
 	require.Contains(t, out, "Checkpoint rebase-3 keeps the old history")
-	require.Contains(t, out, "check-3 checked these files already: passed for this commit.\nNext: dockhand submit --branch notes\n")
+	require.Contains(t, out, "check-3 checked these files already: passed for this commit.\nNext: fork macports/macports-ports on GitHub and add it as a Git remote, then dockhand submit --branch notes\n", "no remote pushes to a fork in this world")
 	require.NotContains(t, out, "Next: dockhand check")
 
 	// One recorded before checkpoints kept the base says what it leaves.

@@ -24,7 +24,7 @@ CONFIG
 act() {
 	(
 		export GIT_CONFIG_GLOBAL="$ROW_DIR/gitconfig"
-		dh update "$(port)" --new || exit 0
+		dh_setup update "$(port)" --new || exit 0
 		dh_json tidy -p "$(port)" -y || :
 	)
 }

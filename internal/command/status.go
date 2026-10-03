@@ -286,7 +286,7 @@ func attentionFor(s engine.BranchStatus) []attention {
 		case len(s.Edited) > 0:
 			return row("·", engine.Describe(*s.LatestRevision)+" passed; commit it for review", "dockhand tidy --branch "+name)
 		case s.Branch.PullRequest == nil && len(s.Held) > 0:
-			return row("!", "passed; held for a look: "+s.Held[0], "dockhand submit --branch "+name)
+			return row("!", "passed; held for a look: "+s.Held[0], submitNext(s, name))
 		case s.Branch.PullRequest == nil && len(s.Moved) > 0:
 			// The check built another source than the update chose: serve
 			// waits for a look, and a person's submission shows it.
@@ -294,14 +294,14 @@ func attentionFor(s engine.BranchStatus) []attention {
 			if s.Branch.Origin == model.OriginServe {
 				what = "passed; held for a look: " + s.Moved[0].Detail
 			}
-			return row("!", what, "dockhand submit --branch "+name)
+			return row("!", what, submitNext(s, name))
 		case s.Branch.PullRequest == nil && s.Assessment == engine.AssessmentPending:
 			// Status collects nothing; submitting assesses what isn't yet.
-			return row("·", "passed; what upstream's change means isn't assessed yet, which submitting does", "dockhand submit --branch "+name)
+			return row("·", "passed; what upstream's change means isn't assessed yet, which submitting does", submitNext(s, name))
 		case s.Branch.PullRequest == nil:
-			return row("·", "passed; waiting for you to submit", "dockhand submit --branch "+name)
+			return row("·", "passed; waiting for you to submit", submitNext(s, name))
 		case !s.Pushed():
-			return row("·", fmt.Sprintf("passed; #%d does not have it yet", s.Branch.PullRequest.Number), "dockhand submit --branch "+name)
+			return row("·", fmt.Sprintf("passed; #%d does not have it yet", s.Branch.PullRequest.Number), submitNext(s, name))
 		}
 	}
 	return nil
@@ -346,6 +346,16 @@ func ago(at time.Time) string {
 		return fmt.Sprintf("%dh ago", int(elapsed.Hours()))
 	}
 	return fmt.Sprintf("%dd ago", int(elapsed.Hours()/24))
+}
+
+// submitNext is the submit a branch is ready for, with the fork it needs
+// first where no remote pushes to one: a Next: line names only what
+// would take the branch (the M1's rerun, D-S6).
+func submitNext(s engine.BranchStatus, name string) string {
+	if s.NoFork {
+		return "fork macports/macports-ports on GitHub and add it as a Git remote, then dockhand submit --branch " + name
+	}
+	return "dockhand submit --branch " + name
 }
 
 func writeAttention(out io.Writer, rows []attention) {

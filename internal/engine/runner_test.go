@@ -919,6 +919,22 @@ func TestTheGuestInstallsWhatABuildNeedsFromItsKeptArchive(t *testing.T) {
 	third := check(false)
 	require.Contains(t, strings.Join(messages(third), "\n"), "harbor-cli built with libharbor from another archive than the one kept of its build: MacPorts chose sha256:upstream")
 
+	// A kept archive altered since, a byte the same size, isn't given to
+	// the guest: MacPorts builds libharbor instead, and the check says
+	// why (prime-time D-T1).
+	altered := []byte("libharbor's archive")
+	altered[0] = 'L'
+	require.NoError(t, os.WriteFile(installed.Path, altered, 0o600))
+	provider.consumes["harbor-cli"] = []model.ActivePort{lib}
+	write(t, branch.Worktree, map[string]string{"devel/harbor-cli/Portfile": "name harbor-cli\nrevision 4\n"})
+	capture, err = e.Capture(t.Context(), CaptureRequest{Branch: branch})
+	require.NoError(t, err)
+	revision = capture.Revision
+	fourth := check(false)
+	require.Empty(t, provider.jobs[len(provider.jobs)-1].Installs, "the altered archive isn't given")
+	require.Contains(t, strings.Join(messages(fourth), "\n"), "the archive kept of libharbor isn't the one it was kept as, "+libDigest+", so the guest builds it instead")
+	require.NoError(t, os.WriteFile(installed.Path, []byte("libharbor's archive"), 0o600))
+
 	// A retry installs what the attempt before it finished.
 	provider.consumes["harbor-cli"] = []model.ActivePort{lib}
 	provider.failures, provider.partial = 1, true

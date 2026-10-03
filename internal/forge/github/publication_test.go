@@ -360,6 +360,19 @@ func TestPermissionAndPostReview(t *testing.T) {
 	require.Equal(t, "https://github.com/upstream/ports/pull/3#pullrequestreview-1", url)
 }
 
+// A role GitHub won't say, as it won't to a fine-grained token not granted
+// the repository, is access unknown, not a failure (the M1's rerun, E9).
+func TestAPermissionGitHubWontSayIsUnknown(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprint(w, `{"message": "Resource not accessible by personal access token"}`)
+	}))
+	defer server.Close()
+	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL, Token: "fixture-token"}}}
+	_, err := client.Permission(t.Context(), "upstream/ports", "ada")
+	require.ErrorIs(t, err, forge.ErrAccessUnknown)
+}
+
 // GitHub refusing an app an organization hasn't approved is told apart, as
 // GitHub's own words say it, from its other refusals (D8).
 func TestMarkReadyTellsAnOrganizationsRefusalOfTheApp(t *testing.T) {

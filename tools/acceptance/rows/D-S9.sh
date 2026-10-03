@@ -16,6 +16,7 @@ act() {
 	allow_ref_gone refs/heads/dockhand/ds9-gone
 	git -C "$MACPORTS_TREE" worktree remove --force "$("$DH_BIN" path ds9-gone)" 2>>"$ROW_DIR/git.log" || :
 	git -C "$MACPORTS_TREE" branch -D dockhand/ds9-gone >>"$ROW_DIR/git.log" 2>&1 || :
+	next_superseded "ds9-gone deleted"
 	dh_json status ds9-gone || :
 }
 assert() {

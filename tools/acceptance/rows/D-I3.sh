@@ -12,9 +12,10 @@ act() {
 	DOCKHAND_FAILPOINT=tidy.prepared:kill DH_BIN="${DH_FAILPOINT_BIN:?}" dh tidy -b "$DI3_BRANCH" -y || :
 	dh_json status "$DI3_BRANCH" || :
 	dh_json tidy -b "$DI3_BRANCH" -y || :
-	# The pinned upstream moves on a commit, so the rebase has somewhere
-	# to go.
-	git -C "$DOCKHAND_UPSTREAM" update-ref refs/heads/master "$(git -C "$DOCKHAND_UPSTREAM" rev-list -1 --ancestry-path --reverse master..$(git -C "${ACCEPT_PORTS_SOURCE:-$HOME/Source/macports-ports}" rev-parse origin/master) 2>/dev/null | head -1)" 2>/dev/null || :
+	# The pinned upstream moves on one commit, so the rebase has somewhere
+	# to go. rev-list's -1 limits before --reverse, which gave the tip of
+	# the person's tree, where dust's update had landed (the M1's rerun).
+	git -C "$DOCKHAND_UPSTREAM" update-ref refs/heads/master "$(git -C "$DOCKHAND_UPSTREAM" rev-list --ancestry-path --reverse master..$(git -C "${ACCEPT_PORTS_SOURCE:-$HOME/Source/macports-ports}" rev-parse origin/master) 2>/dev/null | head -1)" 2>/dev/null || :
 	DOCKHAND_FAILPOINT=rebase.prepared:kill DH_BIN="$DH_FAILPOINT_BIN" dh rebase -b "$DI3_BRANCH" || :
 	dh_json rebase -b "$DI3_BRANCH" || :
 }

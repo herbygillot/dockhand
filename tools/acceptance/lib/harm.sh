@@ -320,12 +320,18 @@ harm_h6() {
 			# shellcheck disable=SC2086
 			(cd "$dir" && "$DH_BIN" $words) >>"$ROW_DIR/next.log" 2>&1 </dev/null || status=$?
 			ran=$((ran + 1))
+			# The quick stage has no GitHub fork, so a submit it's told to
+			# run can't be tried there (the M1's rerun, D-S6).
+			if [ "$status" = 1 ] && [ "$verb" = submit ] && [ "${ACCEPT_STAGE:-}" = quick ] && tail -3 "$ROW_DIR/next.log" | grep -q 'fork of'; then
+				unverified="$unverified [dockhand $words: the stage has no GitHub fork]"
+				continue
+			fi
 			case "$status" in 0 | 3) ;; *) broken="$broken [dockhand $words: exit $status]" ;; esac
 		done <<EOT
 $line
 EOT
 	done <<EOT
-$(grep -h '^Next: ' "$ROW_DIR/out.log" 2>/dev/null)
+$(awk '/^# Next: lines above were superseded/ {kept = ""; next} {kept = kept $0 "\n"} END {printf "%s", kept}' "$ROW_DIR/out.log" 2>/dev/null | grep -h '^Next: ')
 EOT
 	if [ -n "$unverified" ]; then
 		printf '%s\n' "$unverified" >"$ROW_DIR/next.unverified"

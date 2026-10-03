@@ -23,6 +23,10 @@ type BranchStatus struct {
 	// Renamed is the branch's name before a rename by hand that this
 	// status followed (followRenames), said once.
 	Renamed string
+	// NoFork is true where no Git remote pushes to a GitHub repository
+	// but MacPorts' own, so submit has nowhere to push yet: read from
+	// the remotes' addresses alone, as status reads no network.
+	NoFork bool
 	// Pruned is true for an ended branch whose checks cleanup has
 	// removed but its newest, kept without what it built (D6): Latest is
 	// that check, and there's no Evidence.
@@ -159,7 +163,7 @@ func (e *Engine) Status(ctx context.Context, states ...model.BranchState) ([]Bra
 
 // BranchStatus gathers one branch's status.
 func (e *Engine) BranchStatus(ctx context.Context, branch model.Branch) (BranchStatus, error) {
-	status := BranchStatus{Branch: branch}
+	status := BranchStatus{Branch: branch, NoFork: !e.hasForkRemote(ctx)}
 	head, _, err := e.Repo.Branch(ctx, branch.Name)
 	if errors.Is(err, git.ErrBranchMissing) {
 		status.Missing = true

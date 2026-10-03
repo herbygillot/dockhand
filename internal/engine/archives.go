@@ -58,8 +58,13 @@ func (e *Engine) keepArchive(ctx context.Context, archive model.Archive, fetch f
 	if !strings.HasPrefix(archive.Digest, "sha256:") || !model.ValidArchiveName(archive.Name) {
 		return fmt.Errorf("an archive named %q with digest %q can't be kept", archive.Name, archive.Digest)
 	}
-	if _, kept, err := e.keptArchive(ctx, archive.Digest); err != nil || kept {
+	if _, kept, err := e.keptArchive(ctx, archive.Digest); err != nil {
 		return err
+	} else if kept {
+		// One altered since it was kept is replaced by this build's.
+		if _, digest, err := sha256File(e.archivePath(archive.Digest)); err == nil && digest == archive.Digest {
+			return nil
+		}
 	}
 	directory := e.ArchiveDirectory()
 	if err := os.MkdirAll(directory, 0o755); err != nil {
